@@ -21,7 +21,7 @@ use winit::keyboard::KeyCode;
 
 pub(crate) const ID: &str = "solstice";
 pub(crate) const NAME: &str = "Solstice";
-pub(crate) const VERSION: &str = "0.2.0";
+pub(crate) const VERSION: &str = "0.3.0";
 pub(crate) const DESCRIPTION: &str =
     "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
 // The menu key's name on the mod's page and its default (Right Shift).
@@ -283,6 +283,45 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Range", 64.0, 8.0, 256.0, 8.0),
         Module::new("Storage ESP", Render, "Draws boxes around chests and other storage.")
             .num("Range", 64.0, 8.0, 128.0, 8.0),
+        // Added in 0.3
+        Module::new("Auto Weapon", Combat, "Switches to your best weapon before Kill Aura or Trigger Bot hits.")
+            .bool("Prefer axes", false),
+        Module::new("Auto Log", Combat, "Leaves the server when your health is low.")
+            .num("Health", 6.0, 1.0, 19.0, 1.0),
+        Module::new("Sneak", Movement, "Sneaks for you."),
+        Module::new("Safe Walk", Movement, "Sneaks at the edge of a drop, so you don't walk off it."),
+        Module::new("Fast Climb", Movement, "Climbs ladders and vines faster.")
+            .num("Speed", 0.3, 0.1, 1.0, 0.05),
+        Module::new("High Jump", Movement, "Jumps higher.")
+            .num("Multiplier", 2.0, 1.0, 5.0, 0.5),
+        Module::new("Parkour", Movement, "Jumps for you at the edge of a block."),
+        Module::new("Blink", Movement, "Holds back your movement packets, then sends them all at once when off.")
+            .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
+        Module::new("Scaffold", Movement, "Places blocks under your feet as you walk.")
+            .bool("Auto switch", true)
+            .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0),
+        Module::new("Anti Hunger", Player, "Spends less food by hiding that you are sprinting and on the ground.")
+            .bool("Sprint", true)
+            .bool("Ground", true),
+        Module::new("Anti AFK", Player, "Moves a little every few seconds so you aren't kicked for idling.")
+            .num("Seconds", 10.0, 3.0, 60.0, 1.0),
+        Module::new("Auto Clicker", Player, "Clicks for you while you hold a mouse button.")
+            .bool("Left", true)
+            .bool("Right", false)
+            .num("Delay (ticks)", 4.0, 1.0, 20.0, 1.0),
+        Module::new("Auto Eat", Player, "Eats food from your hotbar when you get hungry.")
+            .num("Hunger", 14.0, 1.0, 19.0, 1.0),
+        Module::new("Zoom", Render, "Zooms in.")
+            .num("Factor", 4.0, 1.5, 10.0, 0.5)
+            .bool("Smooth", true),
+        Module::new("Breadcrumbs", Render, "Draws a line along where you have been.")
+            .num("Length", 300.0, 20.0, 1000.0, 20.0),
+        Module::new("Block ESP", Render, "Draws boxes around ores and other blocks, through walls.")
+            .pick("Blocks", &["Ores", "Diamond", "Ancient Debris", "Spawners", "Portals"])
+            .num("Range", 32.0, 8.0, 48.0, 4.0)
+            .bool("Fill", true),
+        Module::new("Waypoints", Render, "Shows the places saved with .waypoint, on screen.")
+            .num("Range", 1000.0, 50.0, 10000.0, 50.0),
     ]
 }
 
@@ -318,6 +357,29 @@ pub(crate) struct State {
     // the next one is the server's push (Velocity).
     velocity: Option<[f64; 3]>,
     gui: Gui,
+    crumbs: Vec<[f64; 3]>,
+    waypoints: Vec<Waypoint>,
+    // Block ESP's finds: where, and which colour; and when and for what it was made.
+    found: Vec<([i32; 3], u32)>,
+    found_for: (usize, i32, [i32; 3]),
+    found_at: u64,
+    afk_wait: u32,
+    scaffold_wait: u32,
+    click_wait: u32,
+    blink_ticks: u32,
+    eating: bool,
+    was_ground: bool,
+    eat_ticks: u32,
+    crumb_at: u64,
+    crit_target: Option<(u32, Option<(f32, f32)>)>,
+    crit_ticks: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Waypoint {
+    name: String,
+    pos: [f64; 3],
+    dim: String,
 }
 
 impl State {
@@ -338,6 +400,21 @@ impl State {
             totem_from: None,
             velocity: None,
             gui: Gui::default(),
+            crumbs: Vec::new(),
+            waypoints: Vec::new(),
+            found: Vec::new(),
+            found_for: (usize::MAX, 0, [0; 3]),
+            found_at: 0,
+            afk_wait: 0,
+            scaffold_wait: 0,
+            click_wait: 0,
+            blink_ticks: 0,
+            eating: false,
+            was_ground: false,
+            eat_ticks: 0,
+            crumb_at: 0,
+            crit_target: None,
+            crit_ticks: 0,
         }
     }
     fn find(&self, name: &str) -> Option<usize> {
@@ -355,12 +432,16 @@ impl State {
             }
         }
         out.push_str(&format!("friends={}\n", self.friends.join(",")));
+        for w in &self.waypoints {
+            out.push_str(&format!("waypoint={}|{}|{}|{}|{}\n", w.name, w.pos[0], w.pos[1], w.pos[2], w.dim));
+        }
         for (c, p) in CATEGORIES.iter().zip(&self.gui.panels) {
             out.push_str(&format!("panel.{}={},{},{}\n", norm(c.label()), p.x, p.y, p.collapsed));
         }
         out
     }
     fn load_text(&mut self, text: &str) {
+        self.waypoints.clear();
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else {
                 continue;
@@ -372,6 +453,15 @@ impl State {
                     && let (Ok(x), Ok(y)) = (x.parse(), y.parse())
                 {
                     self.gui.panels[i] = Panel { x, y, collapsed: *c == "true" };
+                }
+                continue;
+            }
+            if k == "waypoint" {
+                let f: Vec<&str> = v.split('|').collect();
+                if let [name, x, y, z, dim] = f.as_slice()
+                    && let (Ok(x), Ok(y), Ok(z)) = (x.parse(), y.parse(), z.parse())
+                {
+                    self.waypoints.push(Waypoint { name: (*name).to_owned(), pos: [x, y, z], dim: (*dim).to_owned() });
                 }
                 continue;
             }
@@ -414,6 +504,19 @@ static STATE: Mutex<Option<State>> = Mutex::new(None);
 // The packet hooks read these: they run inside the game's own sends, which
 // may happen while a module holds the state.
 static NO_FALL: AtomicBool = AtomicBool::new(false);
+static BLINK: AtomicBool = AtomicBool::new(false);
+static ANTI_SPRINT: AtomicBool = AtomicBool::new(false);
+static ANTI_GROUND: AtomicBool = AtomicBool::new(false);
+// The server takes one position packet per tick and disconnects a client that
+// sends more ("Invalid move player packet received"). Criticals hops over two
+// ticks instead: stage 1 and 2 turn the next position packets into the hop up
+// and the hop back (both off the ground), stage 3 lets the hit follow.
+static CRIT_STAGE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+static POS_THIS_TICK: AtomicBool = AtomicBool::new(false);
+// Blink held at least one move packet.
+static BLINK_HELD: AtomicBool = AtomicBool::new(false);
+// Scaffold's block placements count up from here (the game's own are small).
+static SEQUENCE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(1_000_000_000);
 
 fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
@@ -426,6 +529,10 @@ fn snapshot() -> Vec<Module> {
 
 fn sync_flags(s: &State) {
     NO_FALL.store(s.is_on("No Fall"), Ordering::Relaxed);
+    BLINK.store(s.is_on("Blink"), Ordering::Relaxed);
+    let hunger = s.module("Anti Hunger").filter(|m| m.on);
+    ANTI_SPRINT.store(hunger.is_some_and(|m| m.b("Sprint")), Ordering::Relaxed);
+    ANTI_GROUND.store(hunger.is_some_and(|m| m.b("Ground")), Ordering::Relaxed);
 }
 
 fn ensure_loaded(game: &Game<'_>) {
@@ -826,6 +933,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         return;
     }
     ensure_loaded(game);
+    POS_THIS_TICK.store(false, Ordering::Relaxed);
     let mods = snapshot();
     let on = |n: &str| mods.iter().any(|m| m.name == n && m.on);
     let get = |n: &str| mods.iter().find(|m| m.name == n).cloned();
@@ -840,6 +948,12 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     if on("Sprint") && playing {
         want.push(KeyCode::ControlLeft);
+    }
+    if on("Sneak") && playing {
+        want.push(KeyCode::ShiftLeft);
+    }
+    if on("Safe Walk") && playing && at_edge(game) {
+        want.push(KeyCode::ShiftLeft);
     }
     let mut injected = Vec::new();
     for k in want {
@@ -1019,15 +1133,412 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     }
 
     remember_velocity(game);
+    let alive = game.player.as_ref().is_some_and(|p| p.health.health() > 0.0);
+    // Blink: let go of what it held when it turns off, or at its limit.
+    {
+        let max = get("Blink").map_or(0.0, |m| m.n("Max ticks")) as u32;
+        let held = BLINK_HELD.load(Ordering::Relaxed);
+        let ticks = with(|s| {
+            s.blink_ticks = if get("Blink").is_some() && held { s.blink_ticks + 1 } else { 0 };
+            s.blink_ticks
+        });
+        if held && (get("Blink").is_none() || (max > 0 && ticks >= max)) {
+            // Moves go through again from the next tick; this one carries the player.
+            let was_on = BLINK.swap(false, Ordering::Relaxed);
+            flush_blink(game);
+            BLINK.store(was_on && get("Blink").is_some(), Ordering::Relaxed);
+            with(|s| s.blink_ticks = 0);
+        }
+    }
+    let (jump_now, ground_now) = (
+        game.native_playing() && game.keys.contains(&KeyCode::Space),
+        game.player.as_ref().is_some_and(|p| p.ground.on_ground),
+    );
+    let was_ground = with(|s| std::mem::replace(&mut s.was_ground, ground_now));
+    if let Some(p) = game.player.as_mut() {
+        if let Some(m) = get("High Jump")
+            && was_ground
+            && !ground_now
+            && jump_now
+            && p.velocity.y > 0.3
+        {
+            // The jump's own speed (0.42), scaled, after this tick's gravity.
+            p.velocity.y = (0.42 * m.n("Multiplier") - 0.08) * 0.98;
+        }
+        if let Some(m) = get("Fast Climb")
+            && p.last_climbable.is_some()
+            && (forward || jump_now)
+            && !p.flying
+        {
+            p.velocity.y = m.n("Speed");
+        }
+    }
+    if get("Parkour").is_some()
+        && ground_now
+        && !sneak
+        && let Some((x, y, z)) = ahead(game)
+        && !solid_at(game, x, y, z)
+        && let Some(p) = game.player.as_mut()
+    {
+        p.velocity.y = 0.42;
+    }
+    if alive && let Some(m) = get("Auto Log") && game.remote.is_some()
+        && game.player.as_ref().is_some_and(|p| f64::from(p.health.health()) <= m.n("Health"))
+    {
+        let health = game.player.as_ref().map_or(0.0, |p| p.health.health());
+        if let Some(i) = with(|s| s.find("Auto Log")) {
+            toggle(game, i, false);
+        }
+        let _ = game.leave_server(Some(format!("Solstice Auto Log: health was {health}")));
+        return;
+    }
+    if let Some(m) = get("Scaffold") {
+        scaffold(game, m);
+    }
+    if let Some(m) = get("Auto Clicker") {
+        auto_click(game, m);
+    }
+    if let Some(m) = get("Auto Eat") {
+        auto_eat(game, m);
+    }
+    if let Some(m) = get("Anti AFK") {
+        anti_afk(game, m);
+    }
+    // Breadcrumbs: a point every few ticks once the player has moved.
+    if let Some(m) = get("Breadcrumbs") {
+        let max = m.n("Length") as usize;
+        if let Some(p) = game.player.as_ref() {
+            let here = [p.position.x, p.position.y + 0.1, p.position.z];
+            with(|s| {
+                let far = s
+                    .crumbs
+                    .last()
+                    .is_none_or(|l| (l[0] - here[0]).powi(2) + (l[1] - here[1]).powi(2) + (l[2] - here[2]).powi(2) > 0.25);
+                if far && ticks.saturating_sub(s.crumb_at) >= 2 {
+                    s.crumbs.push(here);
+                    s.crumb_at = ticks;
+                }
+                let over = s.crumbs.len().saturating_sub(max);
+                s.crumbs.drain(..over);
+            });
+        }
+    } else {
+        with(|s| s.crumbs.clear());
+    }
+    if let Some(m) = get("Block ESP") {
+        scan_blocks(game, m, ticks);
+    } else {
+        with(|s| {
+            s.found.clear();
+            s.found_at = 0;
+        });
+    }
     if let Some(m) = get("Auto Totem") {
         auto_totem(game, m.b("Swap back"));
     }
+    crit_tick(game);
     if let Some(m) = get("Kill Aura") {
         kill_aura(game, m, get("Criticals").is_some());
     }
     if let Some(m) = get("Trigger Bot") {
         trigger_bot(game, m, get("Criticals").is_some());
     }
+}
+
+fn solid_at(game: &Game<'_>, x: i32, y: i32, z: i32) -> bool {
+    !game.res.facts().is_air(game.world.block(x, y, z))
+}
+
+// The block column just ahead of the player's feet, in the direction the
+// move keys point: its x and z, and the y of the block under the feet.
+fn ahead(game: &Game<'_>) -> Option<(i32, i32, i32)> {
+    let p = game.player.as_ref()?;
+    let d = move_direction(game)?;
+    let (ax, az) = (p.position.x + d[0] * 0.35, p.position.z + d[1] * 0.35);
+    Some((ax.floor() as i32, (p.position.y - 0.5).floor() as i32, az.floor() as i32))
+}
+
+// Standing on the ground and walking toward a drop of two blocks or more.
+fn at_edge(game: &Game<'_>) -> bool {
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    if !p.ground.on_ground || p.flying || p.fall_flying {
+        return false;
+    }
+    match ahead(game) {
+        Some((x, y, z)) => !solid_at(game, x, y, z) && !solid_at(game, x, y - 1, z),
+        None => false,
+    }
+}
+
+// Switches the held slot now: the server is told before anything is sent
+// that depends on it.
+fn hold(game: &mut Game<'_>, slot: usize) {
+    if game.selected != slot {
+        game.selected = slot;
+        game.send(S::SetCarriedItem(play::SetCarriedItem { slot: slot as i16 }));
+    }
+}
+
+fn item_info(game: &Game<'_>, slot: usize) -> Option<horizon_client::items::ItemInfo> {
+    let stack = game.inventory.get(slot)?.as_ref()?;
+    game.res.items().get(&stack.item).cloned()
+}
+
+fn best_weapon(game: &Game<'_>, prefer_axes: bool) -> Option<usize> {
+    let mut best: Option<(usize, f32)> = None;
+    for slot in 0..9 {
+        let Some(stack) = game.inventory.get(slot).and_then(|s| s.as_ref()) else {
+            continue;
+        };
+        let Some(info) = game.res.items().get(&stack.item) else {
+            continue;
+        };
+        if info.attack_damage <= 0.0 {
+            continue;
+        }
+        let kind = if stack.item.ends_with("_axe") && prefer_axes {
+            100.0
+        } else if stack.item.ends_with("_sword") && !prefer_axes {
+            100.0
+        } else {
+            0.0
+        };
+        let score = info.attack_damage + kind;
+        if best.is_none_or(|(_, b)| score > b) {
+            best = Some((slot, score));
+        }
+    }
+    best.map(|(slot, _)| slot)
+}
+
+fn scaffold(game: &mut Game<'_>, m: &Module) {
+    if !game.native_playing() || game.remote.is_none() {
+        return;
+    }
+    if with(|s| {
+        s.scaffold_wait = s.scaffold_wait.saturating_sub(1);
+        s.scaffold_wait > 0
+    }) {
+        return;
+    }
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let t = [p.position.x.floor() as i32, (p.position.y - 0.5).floor() as i32, p.position.z.floor() as i32];
+    if solid_at(game, t[0], t[1], t[2]) {
+        return;
+    }
+    // A block to put it against, and the face of that block that points at it.
+    let sides: [([i32; 3], i32); 5] = [
+        ([0, -1, 0], 1),
+        ([-1, 0, 0], 5),
+        ([1, 0, 0], 4),
+        ([0, 0, -1], 3),
+        ([0, 0, 1], 2),
+    ];
+    let Some((against, face)) = sides
+        .iter()
+        .map(|(d, f)| ([t[0] + d[0], t[1] + d[1], t[2] + d[2]], *f))
+        .find(|(n, _)| solid_at(game, n[0], n[1], n[2]))
+    else {
+        return;
+    };
+    let is_block = |game: &Game<'_>, slot: usize| item_info(game, slot).is_some_and(|i| i.block.is_some());
+    if !is_block(game, game.selected) {
+        if !m.b("Auto switch") {
+            return;
+        }
+        let Some(slot) = (0..9).find(|&i| is_block(game, i)) else {
+            return;
+        };
+        hold(game, slot);
+        // The server takes the slot first; the block goes next tick.
+        return;
+    }
+    let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    game.send(S::UseItemOn(play::UseItemOn {
+        hand: 0,
+        pos: against,
+        face,
+        cursor: [0.5, 0.5, 0.5],
+        inside: false,
+        world_border: false,
+        sequence,
+    }));
+    game.swing_arm();
+    game.send(S::Punch(Empty));
+    with(|s| s.scaffold_wait = m.n("Delay (ticks)") as u32 + 1);
+}
+
+fn auto_click(game: &mut Game<'_>, m: &Module) {
+    use winit::event::MouseButton;
+    if !game.native_playing() {
+        return;
+    }
+    let (left, right) = (
+        m.b("Left") && game.physical_buttons.contains(&MouseButton::Left),
+        m.b("Right") && game.physical_buttons.contains(&MouseButton::Right),
+    );
+    if !left && !right {
+        return;
+    }
+    if with(|s| {
+        s.click_wait = s.click_wait.saturating_sub(1);
+        s.click_wait > 0
+    }) {
+        return;
+    }
+    for (down, button) in [(left, MouseButton::Left), (right, MouseButton::Right)] {
+        if down {
+            let _ = game.play_mouse(button, true);
+            let _ = game.play_mouse(button, false);
+        }
+    }
+    with(|s| s.click_wait = m.n("Delay (ticks)") as u32);
+}
+
+fn auto_eat(game: &mut Game<'_>, m: &Module) {
+    use winit::event::MouseButton;
+    if !game.native_playing() {
+        return;
+    }
+    let Some(food) = game.player.as_ref().map(|p| p.health.food.food) else {
+        return;
+    };
+    if with(|s| s.eating) {
+        let ticks = with(|s| {
+            s.eat_ticks += 1;
+            s.eat_ticks
+        });
+        // Done: the item is used up, or it never started.
+        if game.using.is_none() && ticks > 3 || ticks > 100 {
+            let _ = game.play_mouse(MouseButton::Right, false);
+            with(|s| {
+                s.eating = false;
+                s.eat_ticks = 0;
+            });
+        }
+        return;
+    }
+    if f64::from(food) > m.n("Hunger") || game.using.is_some() {
+        return;
+    }
+    const BAD: [&str; 6] = ["rotten_flesh", "spider_eye", "pufferfish", "poisonous_potato", "chorus_fruit", "suspicious_stew"];
+    let mut best: Option<(usize, u32)> = None;
+    for slot in 0..9 {
+        let Some(stack) = game.inventory.get(slot).and_then(|s| s.as_ref()) else {
+            continue;
+        };
+        if BAD.iter().any(|b| stack.item.ends_with(b)) {
+            continue;
+        }
+        if let Some((nutrition, _)) = game.res.items().get(&stack.item).and_then(|i| i.food)
+            && best.is_none_or(|(_, n)| nutrition > n)
+        {
+            best = Some((slot, nutrition));
+        }
+    }
+    let Some((slot, _)) = best else {
+        return;
+    };
+    hold(game, slot);
+    let _ = game.play_mouse(MouseButton::Right, true);
+    with(|s| {
+        s.eating = true;
+        s.eat_ticks = 0;
+    });
+}
+
+fn anti_afk(game: &mut Game<'_>, m: &Module) {
+    if !game.native_playing() || game.remote.is_none() {
+        return;
+    }
+    let ticks = with(|s| {
+        s.afk_wait += 1;
+        s.afk_wait
+    });
+    if f64::from(ticks) < m.n("Seconds") * 20.0 {
+        return;
+    }
+    with(|s| s.afk_wait = 0);
+    game.yaw += if game.ticks % 40 < 20 { 4.0 } else { -4.0 };
+    game.swing_arm();
+    game.send(S::Punch(Empty));
+}
+
+fn block_colour(preset: &str, name: &str) -> Option<u32> {
+    let n = name.strip_prefix("minecraft:").unwrap_or(name);
+    let ore = |n: &str| -> Option<u32> {
+        let core = n.strip_prefix("deepslate_").unwrap_or(n);
+        Some(match core {
+            "diamond_ore" => 0xFF55_FFFF,
+            "emerald_ore" => 0xFF55_FF55,
+            "gold_ore" | "nether_gold_ore" => 0xFFFF_D040,
+            "iron_ore" => 0xFFD8_AF93,
+            "coal_ore" => 0xFF90_9090,
+            "redstone_ore" => 0xFFFF_3030,
+            "lapis_ore" => 0xFF30_50FF,
+            "copper_ore" => 0xFFE0_7040,
+            "nether_quartz_ore" => 0xFFEE_EEEE,
+            _ => return None,
+        })
+    };
+    match preset {
+        "Ores" => ore(n).or((n == "ancient_debris").then_some(0xFFB0_6040)),
+        "Diamond" => matches!(n, "diamond_ore" | "deepslate_diamond_ore").then_some(0xFF55_FFFF),
+        "Ancient Debris" => (n == "ancient_debris").then_some(0xFFB0_6040),
+        "Spawners" => matches!(n, "spawner" | "trial_spawner").then_some(0xFF80_40FF),
+        "Portals" => matches!(n, "nether_portal" | "end_portal" | "end_portal_frame" | "end_gateway").then_some(0xFFB0_50FF),
+        _ => None,
+    }
+}
+
+// Block ESP's search of the loaded blocks around the player: again when the
+// player has moved, the settings changed, or it has been a while.
+fn scan_blocks(game: &Game<'_>, m: &Module, ticks: u64) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let preset = m.p("Blocks");
+    let key = match preset {
+        "Ores" => 0,
+        "Diamond" => 1,
+        "Ancient Debris" => 2,
+        "Spawners" => 3,
+        _ => 4,
+    };
+    let range = m.n("Range") as i32;
+    let at = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
+    let (last, last_at, last_ticks) = with(|s| (s.found_for, s.found_at, s.found_at));
+    let moved = (at[0] - last.2[0]).abs().max((at[1] - last.2[1]).abs()).max((at[2] - last.2[2]).abs());
+    if (key, range) == (last.0, last.1) && moved < 6 && ticks.saturating_sub(last_ticks) < 100 && last_at != 0 {
+        return;
+    }
+    let facts = game.res.facts();
+    let mut found = Vec::new();
+    'scan: for x in at[0] - range..=at[0] + range {
+        for z in at[2] - range..=at[2] + range {
+            for y in (at[1] - range).max(-64)..=(at[1] + range).min(320) {
+                let state = game.world.block(x, y, z);
+                if facts.is_air(state) {
+                    continue;
+                }
+                if let Some(c) = block_colour(preset, &facts.get(state).name) {
+                    found.push(([x, y, z], c));
+                    if found.len() >= 2000 {
+                        break 'scan;
+                    }
+                }
+            }
+        }
+    }
+    with(|s| {
+        s.found = found;
+        s.found_for = (key, range, at);
+        s.found_at = ticks.max(1);
+    });
 }
 
 fn remember_velocity(game: &Game<'_>) {
@@ -1052,9 +1563,21 @@ fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(f32, f32)>)
     let Some(p) = game.player.as_ref() else {
         return;
     };
-    let (x, y, z) = (p.position.x, p.position.y, p.position.z);
-    let ground = p.ground.on_ground;
     let in_water = p.swimming || p.fluids.was_touching_water;
+    // Criticals: the hit waits for the two-tick hop (see CRIT_STAGE).
+    if crits && p.ground.on_ground && !in_water && !p.flying {
+        with(|s| {
+            s.crit_target = Some((id, rotate));
+            s.crit_ticks = 0;
+        });
+        CRIT_STAGE.store(1, Ordering::Relaxed);
+        return;
+    }
+    strike(game, id, rotate);
+}
+
+fn strike(game: &mut Game<'_>, id: u32, rotate: Option<(f32, f32)>) {
+    let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
     if let Some((yaw, pitch)) = rotate {
         game.send(S::MovePlayerRot(play::MovePlayerRot {
             yaw,
@@ -1062,11 +1585,10 @@ fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(f32, f32)>)
             flags: u8::from(ground),
         }));
     }
-    // Packet Criticals (as Meteor's): a tiny hop the server sees, so the hit
-    // lands while falling.
-    if crits && ground && !in_water {
-        game.send(S::MovePlayerPos(play::MovePlayerPos { x, y: y + 0.0625, z, flags: 0 }));
-        game.send(S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags: 0 }));
+    if let Some(m) = with(|s| s.module("Auto Weapon").filter(|m| m.on).cloned())
+        && let Some(slot) = best_weapon(game, m.b("Prefer axes"))
+    {
+        hold(game, slot);
     }
     game.send(S::Attack(play::Attack { id: id as i32 }));
     game.swing_arm();
@@ -1074,8 +1596,45 @@ fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(f32, f32)>)
     game.reset_attack_strength();
 }
 
+// The Criticals hop, a tick at a time. The regular position packet of a tick
+// becomes the hop (see `outgoing`); when a tick has none, this sends it.
+fn crit_tick(game: &mut Game<'_>) {
+    let stage = CRIT_STAGE.load(Ordering::Relaxed);
+    if stage == 0 {
+        return;
+    }
+    let grounded_or_hopping = game.player.as_ref().is_some_and(|p| p.ground.on_ground || stage > 1);
+    let ticks = with(|s| {
+        s.crit_ticks += 1;
+        s.crit_ticks
+    });
+    if !grounded_or_hopping || ticks > 6 {
+        CRIT_STAGE.store(0, Ordering::Relaxed);
+        with(|s| s.crit_target = None);
+        return;
+    }
+    let mut stage = stage;
+    if (stage == 1 || stage == 2) && !POS_THIS_TICK.load(Ordering::Relaxed) {
+        let Some(p) = game.player.as_ref() else {
+            return;
+        };
+        let (x, y, z) = (p.position.x, p.position.y, p.position.z);
+        let y = if stage == 1 { y + 0.0625 } else { y };
+        game.send(S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags: 0 }));
+        stage += 1;
+        CRIT_STAGE.store(stage, Ordering::Relaxed);
+        POS_THIS_TICK.store(true, Ordering::Relaxed);
+    }
+    if CRIT_STAGE.load(Ordering::Relaxed) == 3 {
+        CRIT_STAGE.store(0, Ordering::Relaxed);
+        if let Some((id, rotate)) = with(|s| s.crit_target.take()) {
+            strike(game, id, rotate);
+        }
+    }
+}
+
 fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
-    if !game.native_playing() || game.remote.is_none() {
+    if !game.native_playing() || game.remote.is_none() || CRIT_STAGE.load(Ordering::Relaxed) != 0 {
         return;
     }
     if m.b("Pause while using") && game.using.is_some() {
@@ -1120,7 +1679,11 @@ fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
 }
 
 fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
-    if !game.native_playing() || game.remote.is_none() || game.using.is_some() {
+    if !game.native_playing()
+        || game.remote.is_none()
+        || game.using.is_some()
+        || CRIT_STAGE.load(Ordering::Relaxed) != 0
+    {
         return;
     }
     let Some((i, _)) = game.mob_hit() else {
@@ -1178,39 +1741,120 @@ fn auto_totem(game: &mut Game<'_>, swap_back: bool) {
 
 // ---------------------------------------------------------------- packets
 
-// An outgoing packet to send instead (No Fall), or none to send it as it is.
-pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Option<S> {
-    if !NO_FALL.load(Ordering::Relaxed) {
-        return None;
-    }
-    let p = game.player.as_ref()?;
-    if p.fall_distance <= 2.0 || p.flying || p.fall_flying {
-        return None;
-    }
-    // On the ground, as the server reads it: its fall distance starts over.
+// What the send hook does with an outgoing packet.
+pub(super) enum Out {
+    Pass,
+    Drop,
+    Replace(S),
+}
+
+fn with_ground(packet: &S, ground: bool) -> Option<S> {
+    let f = |flags: u8| (flags & !1) | u8::from(ground);
     Some(match packet {
-        S::MovePlayerPos(m) => S::MovePlayerPos(play::MovePlayerPos {
-            x: m.x,
-            y: m.y,
-            z: m.z,
-            flags: m.flags | 1,
-        }),
+        S::MovePlayerPos(m) => S::MovePlayerPos(play::MovePlayerPos { x: m.x, y: m.y, z: m.z, flags: f(m.flags) }),
         S::MovePlayerPosRot(m) => S::MovePlayerPosRot(play::MovePlayerPosRot {
             x: m.x,
             y: m.y,
             z: m.z,
             yaw: m.yaw,
             pitch: m.pitch,
-            flags: m.flags | 1,
+            flags: f(m.flags),
         }),
-        S::MovePlayerRot(m) => S::MovePlayerRot(play::MovePlayerRot {
-            yaw: m.yaw,
-            pitch: m.pitch,
-            flags: m.flags | 1,
-        }),
-        S::MovePlayerStatus(m) => S::MovePlayerStatus(play::MovePlayerStatus { flags: m.flags | 1 }),
+        S::MovePlayerRot(m) => S::MovePlayerRot(play::MovePlayerRot { yaw: m.yaw, pitch: m.pitch, flags: f(m.flags) }),
+        S::MovePlayerStatus(m) => S::MovePlayerStatus(play::MovePlayerStatus { flags: f(m.flags) }),
         _ => return None,
     })
+}
+
+// Outgoing packets: Blink holds moves, Anti Hunger hides sprinting and the
+// ground, No Fall claims the ground after a long fall.
+pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
+    let is_move = matches!(
+        packet,
+        S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_) | S::MovePlayerStatus(_)
+    );
+    if is_move && BLINK.load(Ordering::Relaxed) {
+        BLINK_HELD.store(true, Ordering::Relaxed);
+        return Out::Drop;
+    }
+    if ANTI_SPRINT.load(Ordering::Relaxed)
+        && let S::PlayerCommand(c) = packet
+        && (c.action == 1 || c.action == 2)
+    {
+        return Out::Drop;
+    }
+    if !is_move {
+        return Out::Pass;
+    }
+    let has_position = matches!(packet, S::MovePlayerPos(_) | S::MovePlayerPosRot(_));
+    // Criticals: this tick's regular position packet is the hop (stage 1: up,
+    // stage 2: back down), both off the ground.
+    let stage = CRIT_STAGE.load(Ordering::Relaxed);
+    if has_position && (stage == 1 || stage == 2) {
+        let hop = |y: f64| if stage == 1 { y + 0.0625 } else { y };
+        let changed = match packet {
+            S::MovePlayerPos(m) => S::MovePlayerPos(play::MovePlayerPos { x: m.x, y: hop(m.y), z: m.z, flags: 0 }),
+            S::MovePlayerPosRot(m) => S::MovePlayerPosRot(play::MovePlayerPosRot {
+                x: m.x,
+                y: hop(m.y),
+                z: m.z,
+                yaw: m.yaw,
+                pitch: m.pitch,
+                flags: 0,
+            }),
+            _ => unreachable!(),
+        };
+        CRIT_STAGE.store(stage + 1, Ordering::Relaxed);
+        POS_THIS_TICK.store(true, Ordering::Relaxed);
+        return Out::Replace(changed);
+    }
+    if has_position {
+        POS_THIS_TICK.store(true, Ordering::Relaxed);
+    }
+    let Some(p) = game.player.as_ref() else {
+        return Out::Pass;
+    };
+    let ground = if NO_FALL.load(Ordering::Relaxed) && p.fall_distance > 2.0 && !p.flying && !p.fall_flying {
+        Some(true)
+    } else if ANTI_GROUND.load(Ordering::Relaxed) && (p.fall_distance <= 0.0 || p.flying) {
+        Some(false)
+    } else {
+        None
+    };
+    match ground.and_then(|g| with_ground(packet, g)) {
+        Some(changed) => Out::Replace(changed),
+        None => Out::Pass,
+    }
+}
+
+// Where the player is, as one position packet: what Blink held back is a
+// single move to here, as the server takes one position packet a tick.
+fn flush_blink(game: &mut Game<'_>) {
+    if !BLINK_HELD.swap(false, Ordering::Relaxed) || POS_THIS_TICK.load(Ordering::Relaxed) {
+        return;
+    }
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let flags = u8::from(p.ground.on_ground) | u8::from(p.collision.horizontal) << 1;
+    let (x, y, z) = (p.position.x, p.position.y, p.position.z);
+    game.send(S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags }));
+    POS_THIS_TICK.store(true, Ordering::Relaxed);
+}
+
+// Zoom, through the zoom hook point.
+pub(super) fn zoom(game: &Game<'_>, zoom: &mut Option<super::native_hooks::NativeZoom>) {
+    if zoom.is_some() || !game.native_window() || !game.native_on(ID) {
+        return;
+    }
+    let Some(m) = with(|s| s.module("Zoom").filter(|m| m.on).cloned()) else {
+        return;
+    };
+    *zoom = Some(super::native_hooks::NativeZoom {
+        factor: m.n("Factor") as f32,
+        smooth: m.b("Smooth"),
+        turn: 0.3,
+    });
 }
 
 // ---------------------------------------------------------------- commands
@@ -1244,6 +1888,7 @@ const HELP: &[(&str, &str)] = &[
     (".binds", "list key binds"),
     (".reset <module>", "put a module back to its defaults"),
     (".friend add|remove|list [name]", "Kill Aura and Trigger Bot skip friends"),
+    (".waypoint add|remove|list [name]", "save a place (.wp)"),
     (".vclip <blocks>", "move up or down"),
     (".hclip <blocks>", "move forward"),
 ];
@@ -1401,6 +2046,50 @@ fn run(game: &mut Game<'_>, args: &[&str]) {
                 _ => {
                     let list = with(|s| s.friends.join(", "));
                     say(game, &format!("Friends: {}", if list.is_empty() { "none" } else { &list }));
+                }
+            }
+        }
+        "waypoint" | "waypoints" | "wp" => {
+            let sub = args.get(1).map(|a| a.to_ascii_lowercase());
+            match (sub.as_deref(), args.get(2)) {
+                (Some("add" | "set"), Some(name)) => {
+                    let Some(p) = game.native_player() else {
+                        say(game, "Join a world first.");
+                        return;
+                    };
+                    let w = Waypoint {
+                        name: (*name).replace(['|', '='], ""),
+                        pos: [p.x.floor() + 0.5, p.y.floor() + 1.0, p.z.floor() + 0.5],
+                        dim: p.dimension.to_owned(),
+                    };
+                    with(|s| {
+                        s.waypoints.retain(|o| !o.name.eq_ignore_ascii_case(&w.name) || o.dim != w.dim);
+                        s.waypoints.push(w.clone());
+                        if let Some(i) = s.find("Waypoints") {
+                            s.modules[i].on = true;
+                        }
+                    });
+                    save(game);
+                    say(game, &format!("Saved {} at {} {} {}", w.name, w.pos[0].floor(), w.pos[1].floor(), w.pos[2].floor()));
+                }
+                (Some("remove" | "del" | "rm"), Some(name)) => {
+                    with(|s| s.waypoints.retain(|o| !o.name.eq_ignore_ascii_case(name)));
+                    save(game);
+                    say(game, &format!("Removed {name}."));
+                }
+                _ => {
+                    let lines: Vec<String> = with(|s| {
+                        s.waypoints
+                            .iter()
+                            .map(|w| format!("{}: {} {} {} ({})", w.name, w.pos[0].floor(), w.pos[1].floor(), w.pos[2].floor(), w.dim.trim_start_matches("minecraft:")))
+                            .collect()
+                    });
+                    if lines.is_empty() {
+                        say(game, "No waypoints. Use .waypoint add <name>");
+                    }
+                    for l in lines {
+                        say(game, &l);
+                    }
                 }
             }
         }
@@ -1619,7 +2308,15 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
 fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut Vec<Shape>) {
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     let (esp, tracers, tags, storage) = (get("ESP"), get("Tracers"), get("Nametags"), get("Storage ESP"));
-    if esp.is_none() && tracers.is_none() && tags.is_none() && storage.is_none() {
+    let (crumbs, blocks, points) = (get("Breadcrumbs"), get("Block ESP"), get("Waypoints"));
+    if esp.is_none()
+        && tracers.is_none()
+        && tags.is_none()
+        && storage.is_none()
+        && crumbs.is_none()
+        && blocks.is_none()
+        && points.is_none()
+    {
         return;
     }
     let alpha = game.clock.camera_fraction();
@@ -1728,6 +2425,59 @@ fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: 
             if let Some(r) = cam.rect(lo, hi) {
                 outline(out, r, col, lw, true);
             }
+        }
+    }
+
+    if crumbs.is_some() {
+        let trail = with(|s| s.crumbs.clone());
+        let mut last: Option<[f32; 2]> = None;
+        for point in &trail {
+            let now = cam.project(*point);
+            if let (Some(a), Some(b)) = (last, now) {
+                line(out, a, b, 0xFF00_0000 | ACCENT, lw);
+            }
+            last = now;
+        }
+        // To where you are now.
+        if let (Some(a), Some(p)) = (last, game.player.as_ref())
+            && let Some(b) = cam.project([p.position.x, p.position.y + 0.1, p.position.z])
+        {
+            line(out, a, b, 0xFF00_0000 | ACCENT, lw);
+        }
+    }
+
+    if let Some(m) = blocks {
+        let found = with(|s| s.found.clone());
+        let range = m.n("Range") * 1.5;
+        for (pos, col) in found {
+            let at = [f64::from(pos[0]) + 0.5, f64::from(pos[1]) + 0.5, f64::from(pos[2]) + 0.5];
+            if dist(at) > range {
+                continue;
+            }
+            let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
+            let hi = [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0];
+            if let Some(r) = cam.rect(lo, hi) {
+                outline(out, r, col, lw, m.b("Fill"));
+            }
+        }
+    }
+
+    if let Some(m) = points {
+        let here = game.native_player().map(|p| p.dimension);
+        let waypoints = with(|s| s.waypoints.clone());
+        for w in waypoints.iter().filter(|w| Some(w.dim.as_str()) == here) {
+            let d = dist(w.pos);
+            if d > m.n("Range") {
+                continue;
+            }
+            let Some([x, y]) = cam.project(w.pos) else {
+                continue;
+            };
+            let text = format!("{} {}m", w.name, d.round());
+            let tw = game.native_text_width(&text);
+            out.push(Shape::Fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000));
+            out.push(Shape::Text(text, [x - tw / 2.0, y], ACCENT));
+            out.push(Shape::Fill([x - 1.0, y + 11.0, 2.0, 4.0], 0xFF00_0000 | ACCENT));
         }
     }
 }

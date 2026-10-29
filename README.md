@@ -61,6 +61,7 @@ after Horizon updates, but plays that Nightly's game until the mod moves to a ne
 | `.binds` | list key binds |
 | `.reset <module>` | back to defaults |
 | `.friend add\|remove\|list [name]` | Kill Aura and Trigger Bot skip friends |
+| `.waypoint add\|remove\|list [name]` | save places; shown on screen by the Waypoints module (`.wp`) |
 | `.vclip <blocks>`, `.hclip <blocks>` | move up or down, or forward |
 
 Settings and binds are saved in `horizon-mods/.horizon-mod-data/solstice/config`.
@@ -69,10 +70,10 @@ Settings and binds are saved in `horizon-mods/.horizon-mod-data/solstice/config`
 
 | Category | Modules |
 | --- | --- |
-| Combat | Kill Aura, Trigger Bot, Criticals, Auto Totem |
-| Movement | Sprint, Auto Walk, Flight, Speed, No Fall, Velocity, Spider, Step, Air Jump, Elytra Boost, Anti Void |
-| Player | Fast Place, Fast Break, Auto Respawn |
-| Render | HUD, Fullbright, ESP, Tracers, Nametags, Storage ESP |
+| Combat | Kill Aura, Trigger Bot, Criticals, Auto Totem, Auto Weapon, Auto Log |
+| Movement | Sprint, Sneak, Auto Walk, Flight, Speed, No Fall, Velocity, Spider, Step, Air Jump, Elytra Boost, Anti Void, Safe Walk, Fast Climb, High Jump, Parkour, Blink, Scaffold |
+| Player | Fast Place, Fast Break, Auto Respawn, Anti Hunger, Anti AFK, Auto Clicker, Auto Eat |
+| Render | HUD, Fullbright, ESP, Tracers, Nametags, Storage ESP, Zoom, Breadcrumbs, Block ESP, Waypoints |
 
 Combat modules and No Fall work on servers, single player included (Horizon plays single
 player through its own integrated server). ESP, Tracers and Nametags are drawn on the HUD.

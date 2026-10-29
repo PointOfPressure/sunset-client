@@ -1,13 +1,17 @@
-// Outgoing packets: No Fall sends its own version of a move.
+// Outgoing packets: Blink holds moves, Anti Hunger and No Fall change them.
 fn solstice_send(
     game: &crate::game::Game<'_>,
     packet: &horizon_protocol::packets::play::Serverbound,
 ) -> std::ops::ControlFlow<()> {
-    if let Some(changed) = crate::game::solstice::outgoing(game, packet) {
-        if let Some(r) = &game.remote {
-            r.session.send(changed);
+    use crate::game::solstice::Out;
+    match crate::game::solstice::outgoing(game, packet) {
+        Out::Pass => std::ops::ControlFlow::Continue(()),
+        Out::Drop => std::ops::ControlFlow::Break(()),
+        Out::Replace(changed) => {
+            if let Some(r) = &game.remote {
+                r.session.send(changed);
+            }
+            std::ops::ControlFlow::Break(())
         }
-        return std::ops::ControlFlow::Break(());
     }
-    std::ops::ControlFlow::Continue(())
 }
