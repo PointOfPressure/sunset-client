@@ -13,21 +13,34 @@ Not made by, or affiliated with, MeteorDevelopment or the Horizon project.
 
 ## Install
 
-1. Download `meteor-<version>.hnmod` and `install.sh` from [Releases](../../releases).
-2. Run `./install.sh meteor-<version>.hnmod`. It copies the file into Horizon's default
-   instance (`~/.local/share/horizon/horizon-native-mods/`) and turns it on in `horizon-mods.txt`.
-   For another instance, pass its folder as the second argument.
-3. In the Horizon launcher: Settings > Game > **Native mods (experimental)** on, then **Build**,
-   then "I trust these mods: build". The first build downloads Rust and takes 10 to 30 minutes;
-   later builds are a few minutes.
-4. Play. The instance now plays the version with Meteor built in.
+Horizon's launcher has no button for adding a native mod from a file (it installs them only from
+its own registry, and a file dropped on its window can only be a .mrpack, .zip or .hshader), so
+step 2 puts the file in place.
 
-Horizon's launcher has no button yet for importing a native mod from a file, only from its
-registry, so step 2 does that part by hand.
+1. Download `meteor-<version>.hnmod` and `install.sh` from
+   [Releases](https://github.com/PointOfPressure/horizon-meteor/releases/latest).
+2. In the folder you downloaded them to, run:
+   ```sh
+   chmod +x install.sh
+   ./install.sh meteor-<version>.hnmod
+   ```
+   It copies the mod into Horizon's default instance
+   (`~/.local/share/horizon/horizon-native-mods/meteor.hnmod`) and turns it on
+   (`mod.meteor: true` in `~/.local/share/horizon/horizon-mods.txt`). For another instance,
+   pass its game folder as a second argument.
+3. Open the Horizon launcher: **Settings > Game > Native mods (experimental)**, switch it on.
+4. Press **Build**, then **I trust these mods: build**. The first build downloads Rust and
+   compiles the whole game: 10 to 30 minutes at full CPU. Later builds take a few minutes.
+5. Press **Play**. The instance now plays a version named `native-...` with Meteor built in.
+6. In game: **Right Shift** opens the menu, `.help` in chat lists the commands.
+
+To update, run `install.sh` with the new file and press Build again. To remove it, turn it off
+in Options > Mods (it does nothing from then on), or delete the file and pick the plain
+Nightly again in the launcher.
 
 Each version is pinned to one Horizon Nightly (`horizon` in `horizon-native.json`) because it
 hooks the game's own functions. The launcher builds it on that commit, so it keeps working
-after Horizon updates, but plays that Nightly's game until the mod is moved to a newer one.
+after Horizon updates, but plays that Nightly's game until the mod moves to a newer one.
 
 ## Use
 
