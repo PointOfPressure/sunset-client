@@ -13,28 +13,21 @@ Not made by, or affiliated with, MeteorDevelopment or the Horizon project.
 
 ## Install
 
-Horizon's launcher has no button for adding a native mod from a file (it installs them only from
-its own registry, and a file dropped on its window can only be a .mrpack, .zip or .hshader), so
-step 2 puts the file in place.
-
-1. Download `meteor-<version>.hnmod` and `install.sh` from
-   [Releases](https://github.com/PointOfPressure/horizon-meteor/releases/latest).
-2. In the folder you downloaded them to, run:
+1. Open a terminal and run:
    ```sh
-   chmod +x install.sh
-   ./install.sh meteor-<version>.hnmod
+   curl -fsSL https://github.com/PointOfPressure/horizon-meteor/releases/latest/download/install.sh | sh
    ```
-   It copies the mod into Horizon's default instance
-   (`~/.local/share/horizon/horizon-native-mods/meteor.hnmod`) and turns it on
-   (`mod.meteor: true` in `~/.local/share/horizon/horizon-mods.txt`). For another instance,
-   pass its game folder as a second argument.
-3. Open the Horizon launcher: **Settings > Game > Native mods (experimental)**, switch it on.
-4. Press **Build**, then **I trust these mods: build**. The first build downloads Rust and
-   compiles the whole game: 10 to 30 minutes at full CPU. Later builds take a few minutes.
-5. Press **Play**. The instance now plays a version named `native-...` with Meteor built in.
-6. In game: **Right Shift** opens the menu, `.help` in chat lists the commands.
+2. In the Horizon launcher: **Settings > Game > Native mods (experimental)**, switch it on,
+   press **Build**, then **I trust these mods: build**. The first build takes 10 to 30 minutes
+   (it downloads Rust and compiles the game); later ones take a few minutes.
+3. Press **Play**, then **Right Shift** in game opens the menu. `.help` in chat lists the commands.
 
-To update, run `install.sh` with the new file and press Build again. To remove it, turn it off
+Why step 1 is a command: Horizon's launcher has no button for adding a native mod from a file
+(only its own registry installs them). The script puts `meteor.hnmod` in
+`~/.local/share/horizon/horizon-native-mods/` and turns it on in `horizon-mods.txt`. With a
+downloaded file instead: `sh install.sh meteor.hnmod [instance folder]`.
+
+To update, run the same command and press Build again. To remove it, turn it off
 in Options > Mods (it does nothing from then on), or delete the file and pick the plain
 Nightly again in the launcher.
 
