@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "meteor",
+  "version": "0.1.0",
+  "game": "26.3",
+  "horizon": "baa379d71777f06a95b4e7650b2209a3d4209033",
+  "mixins": "0d6b103c70633d8fd9443d8d0acd3aadaacedb06"
+}
