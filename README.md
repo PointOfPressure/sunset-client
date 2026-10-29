@@ -40,9 +40,12 @@ after Horizon updates, but plays that Nightly's game until the mod moves to a ne
 
 ## Use
 
-- **Right Shift** opens the menu (rebind it under Options > Mods > Solstice). Categories, then
-  modules: each module's page turns it on, sets its key bind and changes its settings.
-  Shift-click lowers a number.
+- **Right Shift** opens the click GUI (rebind it under Options > Mods > Solstice): every
+  category as a panel. Left click turns a module on or off, right click opens its settings
+  (sliders for numbers, right click a slider to reset it), the Bind row takes the next key.
+  Drag the headers to move panels, right click a header to fold it. Esc closes it. The game
+  keeps running while it's open.
+- The same settings are also pages under Options > Mods > Solstice (`.pages`).
 - **Key binds** toggle a module while you play.
 - **Chat commands** start with `.` and never reach the server (`..text` sends `.text`):
 

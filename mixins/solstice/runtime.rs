@@ -21,7 +21,7 @@ use winit::keyboard::KeyCode;
 
 pub(crate) const ID: &str = "solstice";
 pub(crate) const NAME: &str = "Solstice";
-pub(crate) const VERSION: &str = "0.1.2";
+pub(crate) const VERSION: &str = "0.2.0";
 pub(crate) const DESCRIPTION: &str =
     "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
 // The menu key's name on the mod's page and its default (Right Shift).
@@ -317,6 +317,7 @@ pub(crate) struct State {
     // The player's velocity when the last tick ended: what changes it before
     // the next one is the server's push (Velocity).
     velocity: Option<[f64; 3]>,
+    gui: Gui,
 }
 
 impl State {
@@ -336,6 +337,7 @@ impl State {
             stepping: false,
             totem_from: None,
             velocity: None,
+            gui: Gui::default(),
         }
     }
     fn find(&self, name: &str) -> Option<usize> {
@@ -353,6 +355,9 @@ impl State {
             }
         }
         out.push_str(&format!("friends={}\n", self.friends.join(",")));
+        for (c, p) in CATEGORIES.iter().zip(&self.gui.panels) {
+            out.push_str(&format!("panel.{}={},{},{}\n", norm(c.label()), p.x, p.y, p.collapsed));
+        }
         out
     }
     fn load_text(&mut self, text: &str) {
@@ -361,6 +366,15 @@ impl State {
                 continue;
             };
             let v = v.trim();
+            if let Some(cat) = k.strip_prefix("panel.") {
+                let parts: Vec<&str> = v.split(',').collect();
+                if let (Some(i), [x, y, c]) = (CATEGORIES.iter().position(|c| norm(c.label()) == cat), parts.as_slice())
+                    && let (Ok(x), Ok(y)) = (x.parse(), y.parse())
+                {
+                    self.gui.panels[i] = Panel { x, y, collapsed: *c == "true" };
+                }
+                continue;
+            }
             if k == "friends" {
                 self.friends = v
                     .split(',')
@@ -754,6 +768,10 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
         return;
     }
     ensure_loaded(game);
+    if gui_open() {
+        gui_key(game, key);
+        return;
+    }
     if let Some(i) = with(|s| s.binding) {
         let chosen = match key {
             "key.keyboard.escape" => {
@@ -776,7 +794,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
         return;
     }
     if key == game.native_mod_key(ID, MENU_KEY, MENU_DEFAULT) {
-        open_menu(game);
+        open_gui(game);
         return;
     }
     let bound: Vec<usize> = with(|s| {
@@ -812,6 +830,10 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     let on = |n: &str| mods.iter().any(|m| m.name == n && m.on);
     let get = |n: &str| mods.iter().find(|m| m.name == n).cloned();
     let playing = game.native_playing();
+    // The click GUI holds no movement keys, as a screen would.
+    if gui_open() {
+        game.keys.clear();
+    }
     let mut want = Vec::new();
     if on("Auto Walk") && playing {
         want.push(KeyCode::KeyW);
@@ -1212,7 +1234,8 @@ pub(super) fn chat(game: &mut Game<'_>, message: &str) -> bool {
 }
 
 const HELP: &[(&str, &str)] = &[
-    (".menu", "open the menu (or press Right Shift)"),
+    (".menu", "open the click GUI (or press Right Shift)"),
+    (".pages", "the same settings as pages in Options > Mods"),
     (".toggle <module>", "turn a module on or off (.t)"),
     (".modules", "list every module"),
     (".settings <module>", "list a module's settings"),
@@ -1245,7 +1268,8 @@ fn run(game: &mut Game<'_>, args: &[&str]) {
                 say(game, &format!("{c} - {d}"));
             }
         }
-        "menu" | "gui" => open_menu(game),
+        "menu" | "gui" => open_gui(game),
+        "pages" => open_menu(game),
         "toggle" | "t" => {
             if let Some(i) = module_arg(game, args.get(1)) {
                 toggle(game, i, true);
@@ -1570,6 +1594,19 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         }
     }
 
+    if with(|s| s.gui.open && s.gui.closing) {
+        close_gui(game);
+    }
+    if with(|s| s.gui.open) {
+        if game.screen == Screen::Playing && game.player.is_some() {
+            draw_gui(game, w, h, &mut shapes);
+        } else {
+            with(|s| {
+                s.gui.open = false;
+                s.gui.drag = None;
+            });
+        }
+    }
     let game = &*game;
     for s in shapes {
         match s {
@@ -1730,4 +1767,344 @@ fn line(out: &mut Vec<Shape>, from: [f32; 2], to: [f32; 2], argb: u32, lw: f32) 
         let t = i as f32 / n.max(1) as f32;
         out.push(Shape::Fill([from[0] + dx * t - lw / 2.0, from[1] + dy * t - lw / 2.0, lw, lw], argb));
     }
+}
+
+// ---------------------------------------------------------------- click GUI
+//
+// Meteor's style: every category as a panel at once, over the world. Left
+// click turns a module on or off, right click opens its settings under it;
+// headers drag the panels (right click folds one). Numbers are sliders. The
+// game keeps running (single player does not pause), the pointer is free and
+// the window's keys and clicks come here while it is open.
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Panel {
+    x: f32,
+    y: f32,
+    collapsed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Drag {
+    Panel(usize, f32, f32),
+    Slider(usize, usize),
+}
+
+#[derive(Clone, Debug)]
+struct Gui {
+    open: bool,
+    // Esc or the menu key closes it at the next frame, so the same key
+    // press can't also reach the game (Esc would open the pause menu).
+    closing: bool,
+    panels: Vec<Panel>,
+    expanded: Vec<usize>,
+    drag: Option<Drag>,
+}
+
+impl Default for Gui {
+    fn default() -> Self {
+        Self {
+            open: false,
+            closing: false,
+            panels: (0..CATEGORIES.len())
+                .map(|i| Panel { x: 4.0 + i as f32 * (PANEL_W + 4.0), y: 32.0, collapsed: false })
+                .collect(),
+            expanded: Vec::new(),
+            drag: None,
+        }
+    }
+}
+
+// Four panels fit a 427-pixel-wide GUI (1280 by 720 at scale 3).
+const PANEL_W: f32 = 100.0;
+const HEAD_H: f32 = 13.0;
+const ROW_H: f32 = 11.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Hit {
+    Header(usize),
+    Module(usize),
+    Bind(usize),
+    Setting(usize, usize),
+}
+
+// Each row of every panel, top to bottom: its rectangle and what it is.
+fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
+    let mut out = Vec::new();
+    for (c, (cat, p)) in CATEGORIES.iter().zip(&s.gui.panels).enumerate() {
+        out.push(([p.x, p.y, PANEL_W, HEAD_H], Hit::Header(c)));
+        if p.collapsed {
+            continue;
+        }
+        let mut y = p.y + HEAD_H;
+        for (i, m) in s.modules.iter().enumerate().filter(|(_, m)| m.category == *cat) {
+            out.push(([p.x, y, PANEL_W, ROW_H], Hit::Module(i)));
+            y += ROW_H;
+            if s.gui.expanded.contains(&i) {
+                out.push(([p.x, y, PANEL_W, ROW_H], Hit::Bind(i)));
+                y += ROW_H;
+                for j in 0..m.settings.len() {
+                    out.push(([p.x, y, PANEL_W, ROW_H], Hit::Setting(i, j)));
+                    y += ROW_H;
+                }
+            }
+        }
+    }
+    out
+}
+
+fn inside(r: [f32; 4], (x, y): (f32, f32)) -> bool {
+    x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]
+}
+
+fn hit_at(s: &State, at: (f32, f32)) -> Option<([f32; 4], Hit)> {
+    gui_rows(s).into_iter().find(|(r, _)| inside(*r, at))
+}
+
+pub(super) fn open_gui(game: &mut Game<'_>) {
+    if !game.native_playing() {
+        return;
+    }
+    ensure_loaded(game);
+    game.keys.clear();
+    game.capture(false);
+    with(|s| {
+        s.gui.open = true;
+        s.gui.closing = false;
+        s.gui.drag = None;
+        s.binding = None;
+    });
+}
+
+fn close_gui(game: &mut Game<'_>) {
+    with(|s| {
+        s.gui.open = false;
+        s.gui.closing = false;
+        s.gui.drag = None;
+        s.binding = None;
+    });
+    save(game);
+    if game.screen == Screen::Playing {
+        game.capture(true);
+    }
+}
+
+// A slider's value from the pointer's place along its row.
+fn slide(s: &mut State, i: usize, j: usize, r: [f32; 4], x: f32) -> bool {
+    let Some(setting) = s.modules[i].settings.get_mut(j) else {
+        return false;
+    };
+    if let Value::Num { v, min, max, step } = &mut setting.value {
+        let t = ((x - r[0] - 2.0) / (r[2] - 4.0)).clamp(0.0, 1.0);
+        let n = round_to(*min + f64::from(t) * (*max - *min), *step).clamp(*min, *max);
+        let changed = (n - *v).abs() > 1e-9;
+        *v = n;
+        return changed;
+    }
+    false
+}
+
+pub(super) fn gui_open() -> bool {
+    with(|s| s.gui.open)
+}
+
+// A key while the GUI is open: a bind being chosen, or Esc and the menu key
+// closing it. Every key stops here.
+fn gui_key(game: &mut Game<'_>, name: &str) {
+    if let Some(i) = with(|s| s.binding) {
+        let chosen = match name {
+            "key.keyboard.escape" => {
+                with(|s| s.binding = None);
+                return;
+            }
+            "key.keyboard.backspace" | "key.keyboard.delete" => None,
+            k => Some(k.to_owned()),
+        };
+        with(|s| {
+            s.modules[i].key = chosen;
+            s.binding = None;
+        });
+        save(game);
+        return;
+    }
+    if name == "key.keyboard.escape" || name == game.native_mod_key(ID, MENU_KEY, MENU_DEFAULT) {
+        with(|s| s.gui.closing = true);
+    }
+}
+
+// A mouse button pressed while the GUI is open (its release is read from
+// the held buttons each frame).
+pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) {
+    use winit::event::MouseButton;
+    let at = game.cursor;
+    let right = match button {
+        MouseButton::Left => false,
+        MouseButton::Right => true,
+        _ => return,
+    };
+    let mut toggled = None;
+    let mut changed = false;
+    with(|s| {
+        let Some((r, hit)) = hit_at(s, at) else {
+            return;
+        };
+        match (hit, right) {
+            (Hit::Header(c), false) => {
+                let p = s.gui.panels[c];
+                s.gui.drag = Some(Drag::Panel(c, at.0 - p.x, at.1 - p.y));
+            }
+            (Hit::Header(c), true) => {
+                s.gui.panels[c].collapsed = !s.gui.panels[c].collapsed;
+                changed = true;
+            }
+            (Hit::Module(i), false) => toggled = Some(i),
+            (Hit::Module(i), true) => {
+                if let Some(k) = s.gui.expanded.iter().position(|&e| e == i) {
+                    s.gui.expanded.remove(k);
+                } else {
+                    s.gui.expanded.push(i);
+                }
+            }
+            (Hit::Bind(i), false) => s.binding = if s.binding == Some(i) { None } else { Some(i) },
+            (Hit::Bind(i), true) => {
+                s.modules[i].key = None;
+                s.binding = None;
+                changed = true;
+            }
+            (Hit::Setting(i, j), right) => {
+                let num = matches!(s.modules[i].settings[j].value, Value::Num { .. });
+                if num && !right {
+                    s.gui.drag = Some(Drag::Slider(i, j));
+                    changed = slide(s, i, j, r, at.0);
+                } else if num {
+                    // Right click on a slider: back to its default.
+                    let fresh = defaults().swap_remove(i).settings.swap_remove(j);
+                    s.modules[i].settings[j] = fresh;
+                    changed = true;
+                } else {
+                    s.modules[i].settings[j].click(right);
+                    changed = true;
+                }
+            }
+        }
+    });
+    if let Some(i) = toggled {
+        toggle(game, i, false);
+    } else if changed {
+        save(game);
+    }
+}
+
+// A drag follows the pointer each frame.
+fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
+    let at = game.cursor;
+    with(|s| match s.gui.drag {
+        Some(Drag::Panel(c, dx, dy)) => {
+            let p = &mut s.gui.panels[c];
+            p.x = (at.0 - dx).clamp(0.0, (w - PANEL_W).max(0.0));
+            p.y = (at.1 - dy).clamp(0.0, (h - HEAD_H).max(0.0));
+        }
+        Some(Drag::Slider(i, j)) => {
+            let row = gui_rows(s).into_iter().find(|(_, hit)| *hit == Hit::Setting(i, j));
+            if let Some((r, _)) = row {
+                slide(s, i, j, r, at.0);
+            }
+        }
+        None => {}
+    });
+    // The left button came up: the drag ends where the pointer is.
+    if !game.physical_buttons.contains(&winit::event::MouseButton::Left)
+        && with(|s| s.gui.drag.take().is_some())
+    {
+        save(game);
+    }
+}
+
+fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
+    follow_drag(game, w, h);
+    with(|s| {
+        for p in &mut s.gui.panels {
+            p.x = p.x.clamp(0.0, (w - PANEL_W).max(0.0));
+            p.y = p.y.clamp(0.0, (h - HEAD_H).max(0.0));
+        }
+    });
+    let at = game.cursor;
+    let (rows, modules, binding, hover) = with(|s| (gui_rows(s), s.modules.clone(), s.binding, hit_at(s, at).map(|(_, h)| h)));
+    let fit = |text: &str, max: f32| -> String {
+        if game.native_text_width(text) <= max {
+            return text.to_owned();
+        }
+        let mut t = text.to_owned();
+        while !t.is_empty() && game.native_text_width(&format!("{t}...")) > max {
+            t.pop();
+        }
+        format!("{t}...")
+    };
+    // The world dims a little behind the panels, as a screen would.
+    out.push(Shape::Fill([0.0, 0.0, w, h], 0x3000_0000));
+    for (r, hit) in &rows {
+        let [x, y, rw, rh] = *r;
+        let hovered = hover == Some(*hit);
+        match *hit {
+            Hit::Header(c) => {
+                out.push(Shape::Fill([x, y, rw, rh], 0xF014_1414));
+                out.push(Shape::Fill([x, y + rh - 1.0, rw, 1.0], 0xFF00_0000 | ACCENT));
+                let label = CATEGORIES[c].label();
+                let on = modules.iter().filter(|m| m.category == CATEGORIES[c] && m.on).count();
+                let count = format!("{on}");
+                out.push(Shape::Text(label.to_owned(), [x + 4.0, y + 2.5], 0xFFFFFF));
+                let cw = game.native_text_width(&count);
+                out.push(Shape::Text(count, [x + rw - 4.0 - cw, y + 2.5], 0xAAAAAA));
+            }
+            Hit::Module(i) => {
+                let m = &modules[i];
+                out.push(Shape::Fill([x, y, rw, rh], if hovered { 0xD02A_2A2A } else { 0xC010_1010 }));
+                if m.on {
+                    out.push(Shape::Fill([x, y, 2.0, rh], 0xFF00_0000 | ACCENT));
+                }
+                let colour = if m.on { ACCENT } else { 0xE0E0E0 };
+                out.push(Shape::Text(fit(m.name, rw - 16.0), [x + 5.0, y + 1.5], colour));
+                if !m.settings.is_empty() || m.key.is_some() {
+                    out.push(Shape::Text("...".into(), [x + rw - 12.0, y + 0.5], 0x808080));
+                }
+            }
+            Hit::Bind(i) => {
+                out.push(Shape::Fill([x, y, rw, rh], 0xD008_0808));
+                let text = if binding == Some(i) {
+                    "Bind: press a key".to_owned()
+                } else {
+                    format!("Bind: {}", key_label(modules[i].key.as_deref()))
+                };
+                out.push(Shape::Text(fit(&text, rw - 12.0), [x + 9.0, y + 1.5], if binding == Some(i) { 0xFFFF55 } else { 0xB0B0B0 }));
+            }
+            Hit::Setting(i, j) => {
+                let st = &modules[i].settings[j];
+                out.push(Shape::Fill([x, y, rw, rh], if hovered { 0xD01C_1C1C } else { 0xD008_0808 }));
+                if let Value::Num { v, min, max, .. } = st.value {
+                    let t = if max > min { ((v - min) / (max - min)) as f32 } else { 0.0 };
+                    out.push(Shape::Fill([x + 2.0, y + rh - 2.0, (rw - 4.0) * t, 1.0], 0xFF00_0000 | ACCENT));
+                }
+                let colour = match st.value {
+                    Value::Bool(true) => ACCENT,
+                    _ => 0xD0D0D0,
+                };
+                out.push(Shape::Text(fit(&st.shown(), rw - 12.0), [x + 9.0, y + 1.5], colour));
+            }
+        }
+    }
+    // The hovered module's description, under the pointer.
+    if let Some(Hit::Module(i)) = hover
+        && with(|s| s.gui.drag.is_none())
+    {
+        let about = modules[i].about;
+        let tw = game.native_text_width(about);
+        let bx = (at.0 + 8.0).min(w - tw - 6.0).max(0.0);
+        let by = (at.1 + 10.0).min(h - 12.0);
+        out.push(Shape::Fill([bx, by, tw + 6.0, 12.0], 0xF000_0000));
+        out.push(Shape::Text(about.to_owned(), [bx + 3.0, by + 2.0], 0xFFFFFF));
+    }
+    // Above the hotbar, the hearts and the food bar.
+    let hint = "Left click: on/off   Right click: settings   Drag headers   Esc: close";
+    let hw = game.native_text_width(hint);
+    out.push(Shape::Text(hint.to_owned(), [(w - hw) / 2.0, h - 54.0], 0xA0A0A0));
 }
