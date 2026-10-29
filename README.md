@@ -1,13 +1,14 @@
-# Meteor for Horizon
+# Delta Client
 
-A [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) style utility mod for
+A utility client for
 [Horizon](https://github.com/horizon-rust/horizon), the Rust rewrite of Minecraft: Java Edition 26.3.
 Vibecoded with Claude Code.
 
-Horizon can't run Java mods, so none of Meteor's code is used. This is a new Rust mod: a
-Horizon *native mod* (a mixin bundle the launcher compiles into the game), built to work like
-Meteor: modules in categories, settings, key binds, a menu and `.` chat commands.
-Not made by, or affiliated with, MeteorDevelopment or the Horizon project.
+It's a Horizon *native mod* (a mixin bundle the launcher compiles into the game) in the style of
+[Meteor Client](https://github.com/MeteorDevelopment/meteor-client): modules in categories,
+settings, key binds, a menu and `.` chat commands. Horizon can't run Java mods, so it's new
+Rust code, with Meteor as the reference for what the modules do. Not made by, or affiliated
+with, MeteorDevelopment or the Horizon project.
 
 > Using these on servers that don't allow them will get you banned. Play where it's allowed.
 
@@ -15,7 +16,7 @@ Not made by, or affiliated with, MeteorDevelopment or the Horizon project.
 
 1. Open a terminal and run:
    ```sh
-   curl -fsSL https://github.com/PointOfPressure/horizon-meteor/releases/latest/download/install.sh | sh
+   curl -fsSL https://github.com/PointOfPressure/delta-client/releases/latest/download/install.sh | sh
    ```
 2. In the Horizon launcher: **Settings > Game > Native mods (experimental)**, switch it on,
    press **Build**, then **I trust these mods: build**. The first build takes 10 to 30 minutes
@@ -23,9 +24,9 @@ Not made by, or affiliated with, MeteorDevelopment or the Horizon project.
 3. Press **Play**, then **Right Shift** in game opens the menu. `.help` in chat lists the commands.
 
 Why step 1 is a command: Horizon's launcher has no button for adding a native mod from a file
-(only its own registry installs them). The script puts `meteor.hnmod` in
+(only its own registry installs them). The script puts `delta.hnmod` in
 `~/.local/share/horizon/horizon-native-mods/` and turns it on in `horizon-mods.txt`. With a
-downloaded file instead: `sh install.sh meteor.hnmod [instance folder]`.
+downloaded file instead: `sh install.sh delta.hnmod [instance folder]`.
 
 To update, run the same command and press Build again. To remove it, turn it off
 in Options > Mods (it does nothing from then on), or delete the file and pick the plain
@@ -37,7 +38,7 @@ after Horizon updates, but plays that Nightly's game until the mod moves to a ne
 
 ## Use
 
-- **Right Shift** opens the menu (rebind it under Options > Mods > Meteor). Categories, then
+- **Right Shift** opens the menu (rebind it under Options > Mods > Delta Client). Categories, then
   modules: each module's page turns it on, sets its key bind and changes its settings.
   Shift-click lowers a number.
 - **Key binds** toggle a module while you play.
@@ -57,7 +58,7 @@ after Horizon updates, but plays that Nightly's game until the mod moves to a ne
 | `.friend add\|remove\|list [name]` | Kill Aura and Trigger Bot skip friends |
 | `.vclip <blocks>`, `.hclip <blocks>` | move up or down, or forward |
 
-Settings and binds are saved in `horizon-mods/.horizon-mod-data/meteor/config`.
+Settings and binds are saved in `horizon-mods/.horizon-mod-data/delta/config`.
 
 ## Modules
 
@@ -73,7 +74,7 @@ player through its own integrated server). ESP, Tracers and Nametags are drawn o
 
 ## Build it yourself
 
-`python3 tools/pack.py` writes `dist/meteor-<version>.hnmod`. To compile-check against the
+`python3 tools/pack.py` writes `dist/delta-<version>.hnmod`. To compile-check against the
 pinned Horizon, stage it with [horizon-mixins](https://github.com/horizon-rust/horizon-mixins)
 (`horizon-mixins apply --workspace <horizon at the pinned commit> --mods mixins --out stage`)
 and run `cargo check -p horizon-client` in the stage.

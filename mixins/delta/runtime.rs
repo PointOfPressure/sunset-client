@@ -1,8 +1,8 @@
-// Meteor for Horizon: a Meteor Client style utility mod, rebuilt in Rust as a
+// Delta Client: a Meteor Client style utility mod, rebuilt in Rust as a
 // Horizon native mod. Modules in categories, each with settings and a key
 // bind, a menu on vanilla's own Options > Mods page, `.` chat commands, and a
 // HUD with the active modules. The bundle adds this file to the game as
-// `crate::game::meteor`, so it reads and changes the game's own state.
+// `crate::game::delta`, so it reads and changes the game's own state.
 //
 // Ordinary comments only: module payloads cannot hold inner attributes.
 
@@ -19,16 +19,16 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use winit::keyboard::KeyCode;
 
-pub(crate) const ID: &str = "meteor";
-pub(crate) const NAME: &str = "Meteor";
-pub(crate) const VERSION: &str = "0.1.0";
+pub(crate) const ID: &str = "delta";
+pub(crate) const NAME: &str = "Delta Client";
+pub(crate) const VERSION: &str = "0.1.1";
 pub(crate) const DESCRIPTION: &str =
-    "Meteor Client style utility mod: combat, movement and render modules, a menu, key binds and . commands.";
-// The menu key's name on the mod's page and its default (Meteor's Right Shift).
+    "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
+// The menu key's name on the mod's page and its default (Right Shift).
 pub(crate) const MENU_KEY: &str = "menu";
 pub(crate) const MENU_DEFAULT: &str = "key.keyboard.right.shift";
-// Meteor's purple.
-const PURPLE: u32 = 0x913DE2;
+// Delta's blue.
+const ACCENT: u32 = 0x4FA3FF;
 
 // ---------------------------------------------------------------- modules
 
@@ -196,7 +196,7 @@ impl Module {
             _ => "",
         }
     }
-    // What the module list shows beside the name (Meteor's info string).
+    // What the module list shows beside the name (as Meteor's info string).
     fn info(&self) -> Option<String> {
         match self.name {
             "Flight" => Some(self.p("Mode").to_owned()),
@@ -513,10 +513,10 @@ fn key_label(key: Option<&str>) -> String {
     }
 }
 
-// A line in chat: Meteor's purple tag, then the message.
+// A line in chat: Delta's tag, then the message.
 fn say(game: &mut Game<'_>, msg: &str) {
-    let line = Text::literal("[Meteor] ")
-        .with_color(PURPLE)
+    let line = Text::literal("[Delta] ")
+        .with_color(ACCENT)
         .append(Text::literal(msg).with_color(horizon_client::text::WHITE));
     let focused = game.screen == Screen::Chat;
     let atlas = &game.gui.atlas;
@@ -617,7 +617,7 @@ pub(super) fn listed(mods: &mut Vec<super::native_hooks::NativeMod>) {
         id: ID.into(),
         title: format!("{NAME} {VERSION}"),
         description: DESCRIPTION.into(),
-        keys: vec![[MENU_KEY.into(), "Open Meteor menu".into(), MENU_DEFAULT.into()]],
+        keys: vec![[MENU_KEY.into(), "Open Delta menu".into(), MENU_DEFAULT.into()]],
     });
 }
 
@@ -633,7 +633,7 @@ fn refresh(game: &mut Game<'_>) {
 
 pub(super) fn open_menu(game: &mut Game<'_>) {
     let Some(i) = mod_index(game) else {
-        say(game, "Turn Meteor on in Options > Mods first.");
+        say(game, "Turn Delta Client on in Options > Mods first.");
         return;
     };
     with(|s| {
@@ -856,9 +856,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
             p.flying_speed = 0.05;
         }
         if let Some(st) = &step {
-            let _ = p.set_modifier("minecraft:step_height", "meteor:step", st.n("Height") - 0.6, "add_value", true);
+            let _ = p.set_modifier("minecraft:step_height", "delta:step", st.n("Height") - 0.6, "add_value", true);
         } else if was_stepping {
-            let _ = p.set_modifier("minecraft:step_height", "meteor:step", 0.0, "add_value", false);
+            let _ = p.set_modifier("minecraft:step_height", "delta:step", 0.0, "add_value", false);
         }
     }
     with(|s| {
@@ -1015,7 +1015,9 @@ fn remember_velocity(game: &Game<'_>) {
 
 fn cooldown_ready(game: &Game<'_>, m: &Module, wait: &mut u32) -> bool {
     if m.b("Wait for cooldown") {
-        game.attack_strength_scale() >= 1.0
+        // The ticker the hand counts on a server (attack_ticks is the
+        // local world's).
+        game.hand_strength.scale(0.5, game.main_hand_attack_speed()) >= 1.0
     } else if *wait > 0 {
         *wait -= 1;
         false
@@ -1038,7 +1040,7 @@ fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(f32, f32)>)
             flags: u8::from(ground),
         }));
     }
-    // Meteor's packet Criticals: a tiny hop the server sees, so the hit
+    // Packet Criticals (as Meteor's): a tiny hop the server sees, so the hit
     // lands while falling.
     if crits && ground && !in_water {
         game.send(S::MovePlayerPos(play::MovePlayerPos { x, y: y + 0.0625, z, flags: 0 }));
@@ -1528,7 +1530,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             let text = format!("{NAME} {VERSION}");
             let tw = game.native_text_width(&text);
             let (x, y) = corners.place(Corner::TopLeft, tw + 4.0, 12.0);
-            shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], PURPLE));
+            shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], ACCENT));
         }
         if hud.b("Module list") && game.native_corner_shown(Corner::TopRight) {
             let mut lines: Vec<String> = mods
@@ -1552,7 +1554,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             }
         }
         if hud.b("Coordinates")
-            && game.native_corner_shown(Corner::BottomLeft)
+            && game.native_corner_shown(Corner::TopLeft)
             && let Some(p) = game.native_player()
         {
             let (x, y, z) = (p.x.floor(), p.y.floor(), p.z.floor());
@@ -1563,7 +1565,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             };
             let text = format!("XYZ {x} {y} {z}{other}");
             let tw = game.native_text_width(&text);
-            let (bx, by) = corners.place(Corner::BottomLeft, tw + 4.0, 12.0);
+            let (bx, by) = corners.place(Corner::TopLeft, tw + 4.0, 12.0);
             shapes.push(Shape::Text(text, [bx + 2.0, by + 2.0], 0xFFFFFF));
         }
     }
