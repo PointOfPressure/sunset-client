@@ -1,8 +1,8 @@
-// Delta Client: a Meteor Client style utility mod, rebuilt in Rust as a
+// Solstice: Horizon's first cheat client, a Meteor Client style utility mod, rebuilt in Rust as a
 // Horizon native mod. Modules in categories, each with settings and a key
 // bind, a menu on vanilla's own Options > Mods page, `.` chat commands, and a
 // HUD with the active modules. The bundle adds this file to the game as
-// `crate::game::delta`, so it reads and changes the game's own state.
+// `crate::game::solstice`, so it reads and changes the game's own state.
 //
 // Ordinary comments only: module payloads cannot hold inner attributes.
 
@@ -19,16 +19,16 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use winit::keyboard::KeyCode;
 
-pub(crate) const ID: &str = "delta";
-pub(crate) const NAME: &str = "Delta Client";
-pub(crate) const VERSION: &str = "0.1.1";
+pub(crate) const ID: &str = "solstice";
+pub(crate) const NAME: &str = "Solstice";
+pub(crate) const VERSION: &str = "0.1.2";
 pub(crate) const DESCRIPTION: &str =
     "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
 // The menu key's name on the mod's page and its default (Right Shift).
 pub(crate) const MENU_KEY: &str = "menu";
 pub(crate) const MENU_DEFAULT: &str = "key.keyboard.right.shift";
-// Delta's blue.
-const ACCENT: u32 = 0x4FA3FF;
+// Solstice's sun gold.
+const ACCENT: u32 = 0xFFB020;
 
 // ---------------------------------------------------------------- modules
 
@@ -513,9 +513,9 @@ fn key_label(key: Option<&str>) -> String {
     }
 }
 
-// A line in chat: Delta's tag, then the message.
+// A line in chat: Solstice's tag, then the message.
 fn say(game: &mut Game<'_>, msg: &str) {
-    let line = Text::literal("[Delta] ")
+    let line = Text::literal("[Solstice] ")
         .with_color(ACCENT)
         .append(Text::literal(msg).with_color(horizon_client::text::WHITE));
     let focused = game.screen == Screen::Chat;
@@ -617,7 +617,7 @@ pub(super) fn listed(mods: &mut Vec<super::native_hooks::NativeMod>) {
         id: ID.into(),
         title: format!("{NAME} {VERSION}"),
         description: DESCRIPTION.into(),
-        keys: vec![[MENU_KEY.into(), "Open Delta menu".into(), MENU_DEFAULT.into()]],
+        keys: vec![[MENU_KEY.into(), "Open Solstice menu".into(), MENU_DEFAULT.into()]],
     });
 }
 
@@ -633,7 +633,7 @@ fn refresh(game: &mut Game<'_>) {
 
 pub(super) fn open_menu(game: &mut Game<'_>) {
     let Some(i) = mod_index(game) else {
-        say(game, "Turn Delta Client on in Options > Mods first.");
+        say(game, "Turn Solstice on in Options > Mods first.");
         return;
     };
     with(|s| {
@@ -856,9 +856,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
             p.flying_speed = 0.05;
         }
         if let Some(st) = &step {
-            let _ = p.set_modifier("minecraft:step_height", "delta:step", st.n("Height") - 0.6, "add_value", true);
+            let _ = p.set_modifier("minecraft:step_height", "solstice:step", st.n("Height") - 0.6, "add_value", true);
         } else if was_stepping {
-            let _ = p.set_modifier("minecraft:step_height", "delta:step", 0.0, "add_value", false);
+            let _ = p.set_modifier("minecraft:step_height", "solstice:step", 0.0, "add_value", false);
         }
     }
     with(|s| {

@@ -1,6 +1,6 @@
 [mod]
-id = "delta"
-version = "0.1.1"
+id = "solstice"
+version = "0.1.2"
 priority = 100
 
 # It hooks the game's own functions as well as the native hook points, so it
@@ -11,7 +11,7 @@ horizon_revision = "baa379d71777f06a95b4e7650b2209a3d4209033"
 [[module]]
 id = "runtime"
 file = "crates/horizon-client/src/game.rs"
-name = "delta"
+name = "solstice"
 source = "runtime.rs"
 
 [[injection]]

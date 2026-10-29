@@ -1,6 +1,6 @@
-# Delta Client
+# Solstice
 
-A utility client for
+Horizon's first cheat client: a utility client for
 [Horizon](https://github.com/horizon-rust/horizon), the Rust rewrite of Minecraft: Java Edition 26.3.
 Vibecoded with Claude Code.
 
@@ -16,17 +16,19 @@ with, MeteorDevelopment or the Horizon project.
 
 1. Open a terminal and run:
    ```sh
-   curl -fsSL https://github.com/PointOfPressure/delta-client/releases/latest/download/install.sh | sh
+   curl -fsSL https://github.com/PointOfPressure/solstice-client/releases/latest/download/install.sh | sh
    ```
 2. In the Horizon launcher: **Settings > Game > Native mods (experimental)**, switch it on,
    press **Build**, then **I trust these mods: build**. The first build takes 10 to 30 minutes
    (it downloads Rust and compiles the game); later ones take a few minutes.
+   On Linux the build needs the sound and device headers once:
+   `sudo apt install libasound2-dev libudev-dev pkg-config` (Debian, Ubuntu, Zorin, Mint).
 3. Press **Play**, then **Right Shift** in game opens the menu. `.help` in chat lists the commands.
 
 Why step 1 is a command: Horizon's launcher has no button for adding a native mod from a file
-(only its own registry installs them). The script puts `delta.hnmod` in
+(only its own registry installs them). The script puts `solstice.hnmod` in
 `~/.local/share/horizon/horizon-native-mods/` and turns it on in `horizon-mods.txt`. With a
-downloaded file instead: `sh install.sh delta.hnmod [instance folder]`.
+downloaded file instead: `sh install.sh solstice.hnmod [instance folder]`.
 
 To update, run the same command and press Build again. To remove it, turn it off
 in Options > Mods (it does nothing from then on), or delete the file and pick the plain
@@ -38,7 +40,7 @@ after Horizon updates, but plays that Nightly's game until the mod moves to a ne
 
 ## Use
 
-- **Right Shift** opens the menu (rebind it under Options > Mods > Delta Client). Categories, then
+- **Right Shift** opens the menu (rebind it under Options > Mods > Solstice). Categories, then
   modules: each module's page turns it on, sets its key bind and changes its settings.
   Shift-click lowers a number.
 - **Key binds** toggle a module while you play.
@@ -58,7 +60,7 @@ after Horizon updates, but plays that Nightly's game until the mod moves to a ne
 | `.friend add\|remove\|list [name]` | Kill Aura and Trigger Bot skip friends |
 | `.vclip <blocks>`, `.hclip <blocks>` | move up or down, or forward |
 
-Settings and binds are saved in `horizon-mods/.horizon-mod-data/delta/config`.
+Settings and binds are saved in `horizon-mods/.horizon-mod-data/solstice/config`.
 
 ## Modules
 
@@ -74,7 +76,7 @@ player through its own integrated server). ESP, Tracers and Nametags are drawn o
 
 ## Build it yourself
 
-`python3 tools/pack.py` writes `dist/delta-<version>.hnmod`. To compile-check against the
+`python3 tools/pack.py` writes `dist/solstice-<version>.hnmod`. To compile-check against the
 pinned Horizon, stage it with [horizon-mixins](https://github.com/horizon-rust/horizon-mixins)
 (`horizon-mixins apply --workspace <horizon at the pinned commit> --mods mixins --out stage`)
 and run `cargo check -p horizon-client` in the stage.
