@@ -461,3 +461,13 @@ cancellable = true
 target = "horizon_client_render::menu_blur::MenuBlur::apply"
 helper = "menu_blur_hook.rs"
 bindings = []
+
+[[injection]]
+id = "patches"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::font::Font::take_patches"
+helper = "patches_hook.rs"
+bindings = [
+  { name = "this", ty = "&Font", value = "&*self" },
+]
