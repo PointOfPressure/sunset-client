@@ -85,6 +85,7 @@ impl Setting {
         match &self.value {
             Value::Bool(b) => format!("{}: {}", self.name, on_off(*b)),
             Value::Num { v, .. } => format!("{}: {}", self.name, num(*v)),
+            Value::Pick { of, .. } if self.name == "Bind activation" && of.len() == 1 => "Bind activation: Toggle (Hold unavailable)".into(),
             Value::Pick { i, of } => format!("{}: {}", self.name, of[*i]),
             Value::Text(t) => {
                 let n = t.split(',').filter(|x| !x.trim().is_empty()).count();
@@ -166,7 +167,10 @@ impl Module {
             about,
             on: false,
             key: None,
-            settings: Vec::new(),
+            settings: vec![Setting {
+                name: "Bind activation",
+                value: Value::Pick { i: 0, of: super::solstice_bind_state::activation_modes(name) },
+            }],
         }
     }
     pub(super) fn on(mut self) -> Self {
@@ -461,6 +465,8 @@ pub(super) struct State {
     page: Page,
     // A module waiting for its key bind (its index).
     binding: Option<usize>,
+    inputs: super::solstice_bind_state::Inputs,
+    pending_mouse_bind: Option<String>,
     pub(super) friends: Vec<String>,
     // The config file as read: modules a plugin registers later take their saved settings from it.
     raw: String,
@@ -530,6 +536,8 @@ impl State {
             modules: defaults(),
             page: Page::Main,
             binding: None,
+            inputs: super::solstice_bind_state::Inputs::default(),
+            pending_mouse_bind: None,
             friends: Vec::new(),
             raw: String::new(),
             injected: Vec::new(),
@@ -576,9 +584,9 @@ impl State {
     }
     fn save_text(&self) -> String {
         let mut out = String::new();
-        for m in &self.modules {
+        for (i, m) in self.modules.iter().enumerate() {
             let id = norm(m.name);
-            out.push_str(&format!("{id}.on={}\n", m.on));
+            out.push_str(&format!("{id}.on={}\n", self.inputs.saved_on(i, m.on)));
             out.push_str(&format!("{id}.key={}\n", m.key.as_deref().unwrap_or("none")));
             for s in &m.settings {
                 out.push_str(&format!("{id}.{}={}\n", norm(s.name), s.stored()));
@@ -635,7 +643,7 @@ impl State {
             };
             match field {
                 "on" => m.on = v == "true",
-                "key" => m.key = (v != "none" && !v.is_empty()).then(|| v.to_owned()),
+                "key" => m.key = key_from_text(v),
                 _ => {
                     if let Some(s) = m.settings.iter_mut().find(|s| norm(s.name) == field) {
                         s.parse(v);
@@ -720,6 +728,7 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
 
 pub(super) fn save(game: &Game<'_>) {
     let text = with(|s| {
+        release_changed_binds(s);
         sync_flags(s);
         s.save_text()
     });
@@ -756,38 +765,16 @@ pub(super) fn norm(s: &str) -> String {
 // A key typed in a command (`r`, `rshift`, `f6`, `key.keyboard.r`) as the
 // game names it.
 pub(super) fn key_from_text(t: &str) -> Option<String> {
-    let t = t.trim().to_ascii_lowercase();
-    if t.starts_with("key.") {
-        return Some(t);
-    }
-    let name = match t.as_str() {
-        "rshift" | "rightshift" => "right.shift",
-        "lshift" | "leftshift" | "shift" => "left.shift",
-        "rctrl" | "rightctrl" | "rightcontrol" => "right.control",
-        "lctrl" | "leftctrl" | "ctrl" | "control" => "left.control",
-        "ralt" | "rightalt" => "right.alt",
-        "lalt" | "leftalt" | "alt" => "left.alt",
-        "space" => "space",
-        "tab" => "tab",
-        "enter" | "return" => "enter",
-        "caps" | "capslock" => "caps.lock",
-        "up" | "down" | "left" | "right" => t.as_str(),
-        "insert" | "home" | "end" | "delete" => t.as_str(),
-        "pageup" => "page.up",
-        "pagedown" => "page.down",
-        "grave" | "`" => "grave.accent",
-        _ if t.chars().count() == 1 => t.as_str(),
-        _ if t.starts_with('f') && t[1..].parse::<u32>().is_ok() => t.as_str(),
-        _ if t.starts_with("kp") => return Some(format!("key.keyboard.keypad.{}", &t[2..])),
-        _ => return None,
-    };
-    Some(format!("key.keyboard.{name}"))
+    super::solstice_bind_state::canonical(t)
 }
 
 pub(super) fn key_label(key: Option<&str>) -> String {
     match key {
         None => "None".into(),
         Some(k) => {
+            if let Some(mouse) = k.strip_prefix("key.mouse.") {
+                return format!("Mouse {}", match mouse { "4" => "Back", "5" => "Forward", other => other });
+            }
             let short = k.strip_prefix("key.keyboard.").or_else(|| k.strip_prefix("key.mouse.")).unwrap_or(k);
             let mut out = String::new();
             for (i, part) in short.split('.').enumerate() {
@@ -932,6 +919,7 @@ pub(super) fn is_menu_key(game: &Game<'_>, key: &str) -> bool {
 }
 
 pub(super) fn open_menu(game: &mut Game<'_>) {
+    release_binds();
     let Some(i) = mod_index(game) else {
         say(game, "Turn Solstice on in Options > Mods first.");
         return;
@@ -967,7 +955,7 @@ pub(super) fn buttons(game: &Game<'_>, out: &mut Vec<String>) {
             out.push(format!("< Back to {}", m.category.label()));
             out.push(format!("{}: {}", m.name, on_off(m.on)));
             if s.binding == Some(i) {
-                out.push("Keybind: > press a key (Backspace: none) <".into());
+                out.push("Keybind: > press a key or mouse button (Backspace: none) <".into());
             } else {
                 out.push(format!("Keybind: {}", key_label(m.key.as_deref())));
             }
@@ -1037,6 +1025,8 @@ pub(super) fn click(game: &mut Game<'_>, button: usize) {
 
 pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
     let (name, on) = with(|s| {
+        // An explicit GUI/chat toggle takes ownership from a momentary bind.
+        s.inputs.take_where(|held| held.module == i);
         let m = &mut s.modules[i];
         m.on = !m.on;
         (m.name, m.on)
@@ -1049,14 +1039,151 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
 
 // ---------------------------------------------------------------- keys
 
+fn restore_holds(s: &mut State, held: Vec<super::solstice_bind_state::Held>) {
+    if held.is_empty() {
+        return;
+    }
+    for held in held {
+        if let Some(module) = s.modules.get_mut(held.module) {
+            if module.on {
+                module.on = held.previous;
+            }
+        }
+    }
+    sync_flags(s);
+}
+
+fn release_changed_binds(s: &mut State) {
+    let modules = &s.modules;
+    let held = s.inputs.take_where(|held| {
+        modules.get(held.module).is_none_or(|module| {
+            !module.on || module.key.as_deref() != Some(held.key.as_str()) || module.p("Bind activation") != "Hold"
+        })
+    });
+    restore_holds(s, held);
+}
+
+fn release_binds() {
+    with(|s| {
+        let held = s.inputs.suspend();
+        restore_holds(s, held);
+    });
+}
+
+fn set_bind(s: &mut State, module: usize, key: Option<String>) {
+    let held = s.inputs.take_where(|held| held.module == module);
+    restore_holds(s, held);
+    s.modules[module].key = key;
+}
+
+// Runs even when native mods are disabled or a screen swallowed key-up.
+pub(super) fn sync_binds(game: &mut Game<'_>) {
+    if !game.native_window() {
+        return;
+    }
+    capture_mouse_bind(game);
+    with(|s| {
+        let held = s.inputs.missing(|name| {
+            game.physical_keys.iter().any(|key| horizon_client::keybinds::key_name(*key) == Some(name))
+                || game.physical_buttons.iter().any(|button| horizon_client::keybinds::mouse_name(*button) == name)
+        });
+        restore_holds(s, held);
+        release_changed_binds(s);
+        if !game.native_on(ID) || !game.focused || game.player.is_none() || !game.native_playing() || s.gui.open {
+            let held = s.inputs.suspend();
+            restore_holds(s, held);
+        }
+    });
+}
+
+// follow_keymap runs before screen dispatch, including for swallowed releases.
+// It has no Game receiver; activation stays in the existing native_key hook.
+pub(super) fn bind_event(event: &winit::event::WindowEvent) {
+    use winit::event::{ElementState, WindowEvent};
+    if matches!(event, WindowEvent::Focused(false) | WindowEvent::CloseRequested | WindowEvent::Destroyed) {
+        release_binds();
+    }
+    let (name, pressed, synthetic) = match event {
+        WindowEvent::KeyboardInput { event, is_synthetic, .. } => {
+            // Follow Horizon's Escape/Caps keymap correction, without changing the event.
+            let key = match &event.logical_key {
+                winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape) => KeyCode::Escape,
+                winit::keyboard::Key::Named(winit::keyboard::NamedKey::CapsLock) => KeyCode::CapsLock,
+                _ => match event.physical_key { winit::keyboard::PhysicalKey::Code(key) => key, _ => return },
+            };
+            let Some(name) = horizon_client::keybinds::key_name(key) else { return; };
+            (name.to_owned(), event.state == ElementState::Pressed, *is_synthetic)
+        }
+        WindowEvent::MouseInput { state, button, .. } => (horizon_client::keybinds::mouse_name(*button), *state == ElementState::Pressed, false),
+        _ => return,
+    };
+    with(|s| {
+        if !pressed {
+            let held = s.inputs.release(&name);
+            restore_holds(s, held);
+            return;
+        }
+        if s.gui.open || synthetic {
+            s.inputs.block(&name);
+            let held = s.inputs.suspend();
+            restore_holds(s, held);
+        }
+        if synthetic {
+            s.inputs.synthetic(&name);
+        }
+        if name.starts_with("key.mouse.") && s.binding.is_some() {
+            s.pending_mouse_bind = Some(name);
+        }
+    });
+}
+
+// The next GUI click is captured before it can also activate a settings row.
+// A side button ignored by Options is picked up at the next native frame.
+pub(super) fn capture_mouse_bind(game: &mut Game<'_>) -> bool {
+    let context = game.native_window() && game.native_on(ID) && game.focused
+        && (gui_open() || game.screen == Screen::Options);
+    let captured = with(|s| {
+        let pending = s.pending_mouse_bind.take();
+        if !context {
+            s.binding = None;
+            return false;
+        }
+        if let (Some(i), Some(key)) = (s.binding, pending) {
+            set_bind(s, i, Some(key));
+            s.binding = None;
+            return true;
+        }
+        false
+    });
+    if captured {
+        save(game);
+        refresh(game);
+    }
+    captured
+}
+
 pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
-    if !pressed || !game.native_window() || !game.native_on(ID) {
+    if !game.native_window() {
+        return;
+    }
+    if !pressed {
+        with(|s| { let held = s.inputs.release(key); restore_holds(s, held); });
+        return;
+    }
+    if !game.native_on(ID) || !game.focused {
+        release_binds();
+        return;
+    }
+    if with(|s| s.inputs.is_synthetic(key)) {
         return;
     }
     ensure_loaded(game);
     if gui_open() {
         gui_key(game, key);
         return;
+    }
+    if game.screen != Screen::Options {
+        with(|s| s.binding = None);
     }
     if let Some(i) = with(|s| s.binding) {
         let chosen = match key {
@@ -1069,14 +1196,26 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
             k => Some(k.to_owned()),
         };
         with(|s| {
-            s.modules[i].key = chosen;
+            set_bind(s, i, chosen);
             s.binding = None;
         });
         save(game);
         refresh(game);
         return;
     }
-    if !game.native_playing() {
+    if !game.native_playing() || game.player.is_none() {
+        with(|s| s.inputs.block(key));
+        release_binds();
+        return;
+    }
+    // The key that enters chat belongs to the text screen as well. Keep
+    // a shared module bind from activating before Horizon opens that screen.
+    if !is_menu_key(game, key) && (key == game.settings.keys.get("key.chat") || key == game.settings.keys.get("key.command")) {
+        with(|s| s.inputs.block(key));
+        release_binds();
+        return;
+    }
+    if !with(|s| s.inputs.press(key)) {
         return;
     }
     if is_menu_key(game, key) {
@@ -1095,7 +1234,16 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
             .collect()
     });
     for i in bound {
-        toggle(game, i, true);
+        if with(|s| s.modules[i].p("Bind activation") == "Hold") {
+            with(|s| {
+                let previous = s.modules[i].on;
+                s.inputs.hold(i, key, previous);
+                s.modules[i].on = true;
+                sync_flags(s);
+            });
+        } else {
+            toggle(game, i, true);
+        }
     }
     // Air Jump: the jump key in mid-air jumps again.
     if key == "key.keyboard.space" && with(|s| s.is_on("Air Jump")) {
@@ -1114,6 +1262,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
 
 // Before the game ticks: keys this mod holds, abilities, step height.
 pub(super) fn pre_tick(game: &mut Game<'_>) {
+    sync_binds(game);
     if !game.native_window() || !game.native_on(ID) || game.player.is_none() {
         return;
     }
@@ -2547,8 +2696,8 @@ const HELP: &[(&str, &str)] = &[
     (".menu [search]", "open the click menu, searching for the text"),
     (".settings <module>", "list a module's settings"),
     (".set <module> <setting> <value>", "change a setting"),
-    (".bind <module> <key|none>", "bind a key to a module"),
-    (".binds", "list key binds"),
+    (".bind <module> <key|mouse4|none>", "bind a keyboard key or mouse button"),
+    (".binds", "list input binds"),
     (".reset <module>", "put a module back to its defaults"),
     (".friend add|remove|list [name]", "Kill Aura and Trigger Bot skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
@@ -2665,7 +2814,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 return;
             };
             let Some(k) = args.get(2) else {
-                say(game, "Use .bind <module> <key>, or none");
+                say(game, "Use .bind <module> <key|mouse1..mouse5|none>; .set <module> bindactivation Hold|Toggle");
                 return;
             };
             let key = if k.eq_ignore_ascii_case("none") {
@@ -2680,7 +2829,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 }
             };
             let name = with(|s| {
-                s.modules[i].key = key.clone();
+                set_bind(s, i, key.clone());
                 s.modules[i].name
             });
             save(game);
@@ -2690,7 +2839,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
             let lines: Vec<String> = with(|s| {
                 s.modules
                     .iter()
-                    .filter_map(|m| m.key.as_deref().map(|k| format!("{}: {}", m.name, key_label(Some(k)))))
+                    .filter_map(|m| m.key.as_deref().map(|k| format!("{}: {} ({})", m.name, key_label(Some(k)), m.p("Bind activation"))))
                     .collect()
             });
             if lines.is_empty() {
@@ -2703,6 +2852,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         "reset" => {
             if let Some(i) = module_arg(game, args.get(1)) {
                 let name = with(|s| {
+                    s.inputs.take_where(|held| held.module == i);
                     let fresh = defaults().swap_remove(i);
                     s.modules[i] = fresh;
                     s.modules[i].name
@@ -3534,6 +3684,7 @@ pub(super) fn hit_at(s: &State, at: (f32, f32)) -> Option<([f32; 4], Hit)> {
 }
 
 pub(super) fn open_gui(game: &mut Game<'_>) {
+    release_binds();
     if !game.native_playing() {
         return;
     }
@@ -3593,7 +3744,7 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
             k => Some(k.to_owned()),
         };
         with(|s| {
-            s.modules[i].key = chosen;
+            set_bind(s, i, chosen);
             s.binding = None;
         });
         save(game);
@@ -3725,7 +3876,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             }
             (Hit::Bind(i), false) => s.binding = if s.binding == Some(i) { None } else { Some(i) },
             (Hit::Bind(i), true) => {
-                s.modules[i].key = None;
+                set_bind(s, i, None);
                 s.binding = None;
                 changed = true;
             }
@@ -3847,7 +3998,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
             Hit::Bind(i) => {
                 out.push(Shape::Fill([x, y, rw, rh], 0xD008_0808));
                 let text = if binding == Some(i) {
-                    "Bind: press a key".to_owned()
+                    "Bind: press a key or mouse".to_owned()
                 } else {
                     format!("Bind: {}", key_label(modules[i].key.as_deref()))
                 };

@@ -15,6 +15,32 @@ name = "solstice"
 source = "runtime.rs"
 
 [[module]]
+id = "bind_state"
+file = "crates/horizon-client/src/game.rs"
+name = "solstice_bind_state"
+source = "bind_state.rs"
+
+[[injection]]
+id = "bind_events"
+kind = "HEAD"
+target = "horizon_client::game::follow_keymap"
+helper = "bind_event.rs"
+bindings = [
+  { name = "event", ty = "&winit::event::WindowEvent", value = "&*event" },
+]
+
+[[injection]]
+id = "bind_options_mouse"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::options::Game<'_>::options_mouse"
+helper = "bind_options_mouse.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
+
+[[module]]
 id = "util"
 file = "crates/horizon-client/src/game.rs"
 name = "solstice_util"

@@ -45,8 +45,10 @@ Press **`** (or **Right Shift**) for the menu. Every category is a panel.
 - **Left click** a module to turn it on or off. Click the **...** at its right (or right click it) for its settings and key bind.
 - **Just type** to search: `esp` shows the modules with ESP in the name. **Enter** turns on the first match (Enter again turns it off). **Ctrl+A** selects the search text, **Esc** clears it, then closes the menu.
 - **Drag** a panel's header to move it, **right click** a header to fold it, **scroll** a long panel.
-- Change a **key bind** with the *Bind* row (press a key; Backspace clears it). Both menu keys can be rebound under
+- Change a **bind** with the *Bind* row (press a key or mouse button; Backspace clears it). Both menu keys can be rebound under
   Options > Mods > Solstice.
+- **Bind activation** defaults to Toggle. Supported modules also offer Hold, which temporarily enables the module
+  while its input is down. See [keyboard and mouse binds](docs/input-binds.md) for aliases, commands, and supported modules.
 
 Everything is saved as you change it.
 
