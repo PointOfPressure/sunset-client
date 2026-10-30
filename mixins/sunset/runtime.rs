@@ -33,13 +33,15 @@ pub(crate) const MENU2_KEY: &str = "menu2";
 pub(crate) const MENU2_DEFAULT: &str = "key.keyboard.right.shift";
 // Sunset's sun gold.
 // The menu's look, set by the ClickGUI module (accent colour, panel width, background opacity and dim).
-// [accent, wanted panel width, opacity, dim, the panel width in use: what fits the screen, 0 before the first draw] (floats as bits).
-static LOOK: [std::sync::atomic::AtomicU32; 5] = [
+// [accent, wanted panel width, opacity, dim, the panel width in use: what fits the screen, 0 before the first draw,
+// text indent] (floats as bits).
+static LOOK: [std::sync::atomic::AtomicU32; 6] = [
     std::sync::atomic::AtomicU32::new(0xFFB020),
     std::sync::atomic::AtomicU32::new(0x42A4_0000),
     std::sync::atomic::AtomicU32::new(0x3F40_0000),
     std::sync::atomic::AtomicU32::new(0),
     std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0x4000_0000),
 ];
 
 pub(super) fn accent() -> u32 {
@@ -48,6 +50,11 @@ pub(super) fn accent() -> u32 {
 
 fn panel_w() -> f32 {
     f32::from_bits(LOOK[4].load(Ordering::Relaxed))
+}
+
+// How far a module's name sits in from its row's edge; its settings sit 4 further in.
+fn indent() -> f32 {
+    f32::from_bits(LOOK[5].load(Ordering::Relaxed))
 }
 
 // A menu background colour with the ClickGUI's opacity (the defaults are drawn at 0.75).
@@ -323,14 +330,16 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Auto Respawn", Player, "Respawns as soon as you die."),
         Module::new("Panic", Player, "Turns every module off at once. Bind it to a key."),
         // Render
-        Module::new("ClickGUI", Render, "How this menu looks: accent colour, panel width, background opacity and a dim behind it.")
+        Module::new("ClickGUI", Render, "How this menu looks: accent colour, panel width, text indent, background opacity and a dim behind it. Menu dim is the game's own dim and blur behind the inventory and the Esc menu.")
             .colour("Accent color", "Gold")
             .num("Panel width", 82.0, 60.0, 140.0, 2.0)
+            .num("Text indent", 2.0, 0.0, 8.0, 1.0)
             .num("Background opacity", 0.75, 0.2, 1.0, 0.05)
-            .bool("Background dim", false),
+            .bool("Background dim", false)
+            .bool("Menu dim", false),
         Module::new("HUD", Render, "The watermark, the active modules, your coordinates and more.")
             .on()
-            .pick("Font", &["Clean", "Minecraft"])
+            .pick("Font", &horizon_client::font::sunset_fontdata::LABELS)
             .bool("Watermark", true)
             .bool("Module list", true)
             .bool("Coordinates", true)
@@ -675,7 +684,9 @@ impl State {
             "on" => m.on = v == "true",
             "key" => m.key = (v != "none" && !v.is_empty()).then(|| v.to_owned()),
             _ => {
-                if let Some(s) = m.settings.iter_mut().find(|s| norm(s.name) == field) {
+                // No Render's switches were called "Fog", "Water fog" and so on before 0.8.1.
+                let legacy = format!("hide{field}");
+                if let Some(s) = m.settings.iter_mut().find(|s| norm(s.name) == field || (id == "norender" && norm(s.name) == legacy)) {
                     s.parse(v);
                 }
             }
@@ -750,6 +761,7 @@ pub(super) fn sync_flags(s: &State) {
     LOOK[1].store(g.map_or(82.0, |m| m.n("Panel width") as f32).to_bits(), Ordering::Relaxed);
     LOOK[2].store(g.map_or(0.75, |m| m.n("Background opacity") as f32).to_bits(), Ordering::Relaxed);
     LOOK[3].store(u32::from(g.is_some_and(|m| m.b("Background dim"))), Ordering::Relaxed);
+    LOOK[5].store(g.map_or(2.0, |m| m.n("Text indent") as f32).to_bits(), Ordering::Relaxed);
     NO_FALL.store(s.is_on("No Fall"), Ordering::Relaxed);
     let flying = s.module("Flight").is_some_and(|m| m.on && m.p("Mode") == "Velocity");
     FLIGHT_GROUND.store(flying || s.is_on("Glide"), Ordering::Relaxed);
@@ -3066,6 +3078,8 @@ pub(super) enum Shape {
     // A slanted shape (a line): its four corners in order round it.
     Quad([[f32; 2]; 4], u32),
     Text(String, [f32; 2], u32),
+    // A line of text in the font's bolder weight: a panel's header.
+    Head(String, [f32; 2], u32),
 }
 
 pub(super) fn outline(out: &mut Vec<Shape>, r: [f32; 4], argb: u32, lw: f32, fill: bool) {
@@ -3207,6 +3221,11 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
                 batch.fill_quad(&game.gui.atlas, corners, horizon_client::hud::rgba(r, g, b, a));
             }
             Shape::Text(t, at, rgb) => game.native_text(batch, &t, at, rgb, true),
+            Shape::Head(t, at, rgb) => {
+                horizon_client::font::sunset_font::BOLD.store(true, Ordering::Relaxed);
+                game.native_text(batch, &t, at, rgb, true);
+                horizon_client::font::sunset_font::BOLD.store(false, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -3617,7 +3636,7 @@ pub(super) enum Hit {
 fn aliases(name: &str) -> &'static str {
     match name {
         "Step" => "step up stepup stairs",
-        "ClickGUI" => "gui menu color colour theme accent opacity width",
+        "ClickGUI" => "gui menu color colour theme accent opacity width dim blur background indent",
         "Glide" => "slow fall slowfall",
         "Panic" => "disable all off hide",
         "Auto Steal" => "chest stealer loot",
@@ -3632,7 +3651,7 @@ fn aliases(name: &str) -> &'static str {
         "Criticals" => "crits",
         "Auto Totem" => "totem",
         "Xray" => "x-ray",
-        "No Render" => "no fog fog water darkness blindness overlay",
+        "No Render" => "no hide fog fog water darkness blindness overlay",
         _ => "",
     }
 }
@@ -3895,14 +3914,6 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                 s.gui.panels[c].collapsed = !s.gui.panels[c].collapsed;
                 changed = true;
             }
-            // The dots at the row's end open the settings, as a right click does.
-            (Hit::Module(i), false) if at.0 >= r[0] + r[2] - 14.0 => {
-                if let Some(k) = s.gui.expanded.iter().position(|&e| e == i) {
-                    s.gui.expanded.remove(k);
-                } else {
-                    s.gui.expanded.push(i);
-                }
-            }
             (Hit::Module(i), false) => toggled = Some(i),
             (Hit::Module(i), true) => {
                 if let Some(k) = s.gui.expanded.iter().position(|&e| e == i) {
@@ -4031,7 +4042,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
                 let label = CATEGORIES[c].label();
                 let on = modules.iter().filter(|m| m.category == CATEGORIES[c] && m.on).count();
                 let count = format!("{on}");
-                out.push(Shape::Text(label.to_owned(), [x + 4.0, y + 2.5], 0xFFFFFF));
+                out.push(Shape::Head(label.to_owned(), [x + 4.0, y + 2.5], 0xFFFFFF));
                 let cw = game.native_text_width(&count);
                 out.push(Shape::Text(count, [x + rw - 4.0 - cw, y + 2.5], 0xAAAAAA));
             }
@@ -4042,15 +4053,13 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
                     out.push(Shape::Fill([x, y, 2.0, rh], 0xFF00_0000 | accent()));
                 }
                 let colour = if m.on { accent() } else { 0xE0E0E0 };
-                // A bound key shows beside the dots.
+                // A bound key shows at the row's end.
                 let tag = m.key.as_deref().map(|k| fit(&key_label(Some(k)), 30.0)).unwrap_or_default();
                 let tag_w = if tag.is_empty() { 0.0 } else { game.native_text_width(&tag) + 3.0 };
-                out.push(Shape::Text(fit(m.name, rw - 16.0 - tag_w), [x + 5.0, y + 1.5], colour));
+                out.push(Shape::Text(fit(m.name, rw - indent() - 4.0 - tag_w), [x + indent(), y + 1.5], colour));
                 if !tag.is_empty() {
-                    out.push(Shape::Text(tag, [x + rw - 13.0 - tag_w + 3.0, y + 1.5], 0x808080));
+                    out.push(Shape::Text(tag, [x + rw - tag_w - 1.0, y + 1.5], 0x808080));
                 }
-                let open = with(|st| st.gui.expanded.contains(&i));
-                out.push(Shape::Text("...".into(), [x + rw - 12.0, y + 0.5], if open { accent() } else { 0xB0B0B0 }));
             }
             Hit::Bind(i) => {
                 out.push(Shape::Fill([x, y, rw, rh], bg(0xD008_0808)));
@@ -4059,7 +4068,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
                 } else {
                     format!("Bind: {}", key_label(modules[i].key.as_deref()))
                 };
-                out.push(Shape::Text(fit(&text, rw - 12.0), [x + 9.0, y + 1.5], if binding == Some(i) { 0xFFFF55 } else { 0xB0B0B0 }));
+                out.push(Shape::Text(fit(&text, rw - indent() - 7.0), [x + indent() + 4.0, y + 1.5], if binding == Some(i) { 0xFFFF55 } else { 0xB0B0B0 }));
             }
             Hit::Setting(i, j) => {
                 let st = &modules[i].settings[j];
@@ -4072,7 +4081,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
                     Value::Bool(true) => accent(),
                     _ => 0xD0D0D0,
                 };
-                out.push(Shape::Text(fit(&st.shown(), rw - 12.0), [x + 9.0, y + 1.5], colour));
+                out.push(Shape::Text(fit(&st.shown(), rw - indent() - 7.0), [x + indent() + 4.0, y + 1.5], colour));
             }
         }
     }

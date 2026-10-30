@@ -42,8 +42,9 @@ On Linux the installer may ask for your password once, to install two small syst
 
 Press **`** (or **Right Shift**) for the menu. Every category is a panel.
 
-- **Left click** a module to turn it on or off. Click the **...** at its right (or right click it) for its settings and key bind.
+- **Left click** a module to turn it on or off. **Right click** it for its settings and key bind.
 - **Just type** to search: `esp` shows the modules with ESP in the name. **Enter** turns on the first match (Enter again turns it off). **Ctrl+A** selects the search text, **Esc** clears it, then closes the menu.
+- The dark dim and the blur the game puts behind the inventory, chests and the Esc menu are off; **ClickGUI > Menu dim** brings them back.
 - **Drag** a panel's header to move it, **right click** a header to fold it, **scroll** a long panel.
 - Change a **key bind** with the *Bind* row (press a key; Backspace clears it). Both menu keys can be rebound under
   Options > Mods > Sunset.
@@ -134,4 +135,6 @@ game; `tools/audit.py` lists which of Meteor's settings are still missing.
 
 Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine: the plugin docs and `examples/` may be copied to make them. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-The menu and HUD font is [Inter](https://rsms.me/inter/) (SIL Open Font License 1.1), cut down to the characters Sunset draws (`assets/ui.ttf`, made by `tools/font.py`). Set **HUD > Font** to *Minecraft* to use the game's own.
+The menu and HUD font is [Inter](https://rsms.me/inter/), [JetBrains Mono](https://www.jetbrains.com/lp/mono/) or
+[Poppins](https://github.com/itfoundry/Poppins) (all SIL Open Font License 1.1, licences in `assets/`), cut down to the
+characters Sunset draws (`assets/*.ttf`, made by `tools/font.py`). Choose with **HUD > Font**; *Minecraft* is the game's own.

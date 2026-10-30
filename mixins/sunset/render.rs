@@ -41,18 +41,17 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Horizontal range", 8.0, 2.0, 16.0, 1.0)
             .num("Vertical range", 4.0, 1.0, 8.0, 1.0)
             .num("Light level", 0.0, 0.0, 15.0, 1.0),
-        Module::new("No Render", Render, "Hides fog, darkness, blindness, nausea, screen overlays (fire, water, in a wall, pumpkin, powder snow) and the dark sheet and blur behind menus.")
-            .bool("Fog", true)
-            .bool("Water fog", true)
-            .bool("Lava and powder snow fog", false)
-            .bool("Blindness", true)
-            .bool("Darkness", true)
-            .bool("Nausea", true)
-            .bool("Fire overlay", true)
-            .bool("Liquid overlay", true)
-            .bool("In wall overlay", true)
-            .bool("Pumpkin, spyglass and powder snow overlays", false)
-            .bool("Menu background", true),
+        Module::new("No Render", Render, "Hides fog, darkness, blindness, nausea and screen overlays (fire, water, in a wall, pumpkin, powder snow). A switch that is on hides it.")
+            .bool("Hide fog", true)
+            .bool("Hide water fog", true)
+            .bool("Hide lava and powder snow fog", false)
+            .bool("Hide blindness", true)
+            .bool("Hide darkness", true)
+            .bool("Hide nausea", true)
+            .bool("Hide fire overlay", true)
+            .bool("Hide liquid overlay", true)
+            .bool("Hide in-wall overlay", true)
+            .bool("Hide pumpkin, spyglass and powder snow overlays", false),
         Module::new("Timer", World, "Changes the speed the game runs at.")
             .num("Multiplier", 2.0, 0.1, 10.0, 0.1),
         Module::new("No Slow", Movement, "Stops using an item (eating, drawing a bow, blocking) from slowing you down."),
@@ -304,8 +303,8 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
         }
     }
     engine_flags(game, mods);
-    let clean = mods.iter().find(|m| m.name == "HUD").is_none_or(|m| m.p("Font") != "Minecraft");
-    horizon_client::font::sunset_font::ON.store(clean, Ordering::Relaxed);
+    let font = mods.iter().find(|m| m.name == "HUD").map_or(1, |m| horizon_client::font::sunset_font::style(m.p("Font")));
+    horizon_client::font::sunset_font::STYLE.store(font, Ordering::Relaxed);
     no_render(game, mods);
     xray(game, mods);
     if let Some(m) = on(mods, "Tunnel ESP") {
@@ -333,7 +332,7 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     let m = on(mods, "No Render");
     let flag = |name: &str| m.as_ref().is_some_and(|m| m.b(name));
     // Fog: Horizon's Fog option, remembered and put back.
-    if flag("Fog") {
+    if flag("Hide fog") {
         if rs(|r| r.fog_before.is_none()) {
             rs(|r| r.fog_before = Some(game.settings.horizon.fog));
         }
@@ -341,15 +340,16 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     } else if let Some(before) = rs(|r| r.fog_before.take()) {
         game.settings.horizon.fog = before;
     }
-    fog::NO_WATER.store(flag("Water fog"), Ordering::Relaxed);
-    fog::NO_LAVA.store(flag("Lava and powder snow fog"), Ordering::Relaxed);
-    overlay::NO_FIRE.store(flag("Fire overlay"), Ordering::Relaxed);
-    overlay::NO_LIQUID.store(flag("Liquid overlay"), Ordering::Relaxed);
-    overlay::NO_WALL.store(flag("In wall overlay"), Ordering::Relaxed);
-    overlay::NO_GUI.store(flag("Pumpkin, spyglass and powder snow overlays"), Ordering::Relaxed);
-    overlay::NO_MENU.store(flag("Menu background"), Ordering::Relaxed);
+    fog::NO_WATER.store(flag("Hide water fog"), Ordering::Relaxed);
+    fog::NO_LAVA.store(flag("Hide lava and powder snow fog"), Ordering::Relaxed);
+    overlay::NO_FIRE.store(flag("Hide fire overlay"), Ordering::Relaxed);
+    overlay::NO_LIQUID.store(flag("Hide liquid overlay"), Ordering::Relaxed);
+    overlay::NO_WALL.store(flag("Hide in-wall overlay"), Ordering::Relaxed);
+    overlay::NO_GUI.store(flag("Hide pumpkin, spyglass and powder snow overlays"), Ordering::Relaxed);
+    // The dim and blur behind menus: ClickGUI's Menu dim switch (off hides them).
+    overlay::NO_MENU.store(!mods.iter().find(|m| m.name == "ClickGUI").is_some_and(|m| m.b("Menu dim")), Ordering::Relaxed);
     // Effects the server put on the player that only change what it sees.
-    let (blind, dark, nausea) = (flag("Blindness"), flag("Darkness"), flag("Nausea"));
+    let (blind, dark, nausea) = (flag("Hide blindness"), flag("Hide darkness"), flag("Hide nausea"));
     if blind || dark || nausea {
         game.potions.effects.list.retain(|e| {
             !((blind && e.id == "blindness") || (dark && e.id == "darkness") || (nausea && e.id == "nausea"))

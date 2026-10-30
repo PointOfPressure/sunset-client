@@ -288,21 +288,24 @@ def _():
     return dry > wet * 1.2, f"brightness {wet:.2f} in water, {dry:.2f} with No Render"
 
 
-@test("No Render (menu background)")
+def inventory_brightness(name):
+    ctl("open-inventory")
+    wait(10)
+    value = brightness(name)
+    ctl("close")
+    return value
+
+
+@test("Menu dim (inventory)")
 def _():
     reset("survival")
     ctl("look", "0", "10")
-    ctl("open-inventory")
-    wait(10)
-    dim = brightness("nr_menu_dark")
-    ctl("close")
-    only("norender")
-    ctl("open-inventory")
-    wait(10)
-    clear = brightness("nr_menu_clear")
-    ctl("close")
     only()
-    return clear > dim * 1.3, f"brightness {dim:.2f} behind the inventory, {clear:.2f} with No Render"
+    setting("clickgui", "menu dim", "true")
+    dim = inventory_brightness("md_dark")
+    setting("clickgui", "menu dim", "false")
+    clear = inventory_brightness("md_clear")
+    return clear > dim * 1.3, f"brightness {dim:.2f} behind the inventory with Menu dim on, {clear:.2f} off"
 
 
 def floor(name):
@@ -314,28 +317,28 @@ def floor(name):
     return sum(ImageStat.Stat(Image.open(path).convert("RGB").crop((40, 150, 300, 320))).mean) / 3
 
 
-@test("No Render (pause menu)")
+@test("Menu dim (pause menu)")
 def _():
     reset("creative")
     ctl("look", "0", "50")
     wait(5)
+    only()
     plain = floor("pm_plain")
+    setting("clickgui", "menu dim", "true")
     ctl("pause")
     wait(10)
     dim = floor("pm_dim")
     ctl("resume")
     wait(5)
-    only("norender")
-    wait(5)
+    setting("clickgui", "menu dim", "false")
     ctl("pause")
     wait(10)
     clear = floor("pm_clear")
     ctl("resume")
-    only()
-    return dim < plain * 0.85 and abs(clear - plain) < plain * 0.03, f"floor {plain:.0f}, {dim:.0f} behind the pause menu, {clear:.0f} with No Render"
+    return dim < plain * 0.85 and abs(clear - plain) < plain * 0.03, f"floor {plain:.0f}, {dim:.0f} behind the pause menu with Menu dim on, {clear:.0f} off"
 
 
-@test("No Render (menu background, GUI scales)")
+@test("Menu dim (GUI scales)")
 def _():
     scale = ctl("options-get", "guiScale")["options"]["guiScale"]["value"]
     notes = []
@@ -345,16 +348,10 @@ def _():
         reset("survival")
         ctl("look", "0", "10")
         only()
-        ctl("open-inventory")
-        wait(10)
-        dim = brightness("nr_scale_dark")
-        ctl("close")
-        only("norender")
-        ctl("open-inventory")
-        wait(10)
-        clear = brightness("nr_scale_clear")
-        ctl("close")
-        only()
+        setting("clickgui", "menu dim", "true")
+        dim = inventory_brightness("md_scale_dark")
+        setting("clickgui", "menu dim", "false")
+        clear = inventory_brightness("md_scale_clear")
         ok = ok and clear > dim * 1.3
         notes.append(f"scale {n}: {dim:.2f} -> {clear:.2f}")
     ctl("options-set", "guiScale", str(scale))
