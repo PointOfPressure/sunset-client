@@ -376,8 +376,8 @@ def _():
     vanilla = fly(speed="0.05")
     vel = fly(mode="Velocity", speed="0.1")
     match = fly(mode="Velocity", speed="0.1", vertical_speed_match="true")
-    cmd(f"tp @s {X0 + 0.5} {Y + 14} {Z0 + 0.5}")
-    falling = fall_rate(ticks=6, warm=2)
+    cmd(f"tp @s {X0 + 0.5} {Y + 16} {Z0 + 0.5}")
+    falling = fall_rate(ticks=6, warm=4)
     ok = (abs(ab[2] - 2 * vanilla[2]) < 1.5 and abs(vanilla[2] - 10.9) < 1 and abs(vel[2] - 20) < 1 and abs(vel[0] - 10) < 1
           and abs(match[0] - 20) < 2 and max(abs(r[1]) for r in (ab, vanilla, vel, match)) < 0.05 and falling > 3)
     return ok, (f"Abilities, Speed 0.1: across {ab[2]:.1f} blocks/s, up {ab[0]:.1f}; Speed 0.05: across {vanilla[2]:.1f}, up {vanilla[0]:.1f}; "
@@ -1047,15 +1047,17 @@ def _():
         reset("creative")
         cmd(f"fill {X0-3} {Y+1} {Z0-3} {X0+3} {Y+4} {Z0+3} minecraft:stone", f"fill {X0-3} {Y+3} {Z0-3} {X0+3} {Y+3} {Z0+3} minecraft:dirt",
             f"fill {X0} {Y+1} {Z0} {X0} {Y+2} {Z0} minecraft:air", f"tp @s {X0+0.5} {Y+1} {Z0+0.5}")
-        wait(10)
+        wait(20)
         for k, v in sets.items():
             setting("nuker", k.replace("_", " "), v)
         only("nuker")
         wait(20)
+        only()
+        # What the server took in that second, once its answers are all back.
+        wait(10)
         left = count(*box, "stone") + count(*box, "dirt")
         floor_ = 289 - count(X0 - 8, Y, Z0 - 8, X0 + 8, Y, Z0 + 8, "stone")
         dirt = 49 - count(*box, "dirt")
-        only()
         cmd(f"fill {X0-16} {Y} {Z0-16} {X0+16} {Y} {Z0+16} minecraft:stone")
         touched.discard("nuker")
         say(".reset nuker")
@@ -1080,21 +1082,29 @@ def _():
     wait(6)
 
     def taken(per_tick):
+        """Ticks from the first item taken to the last, and how many were taken."""
         setting("autosteal", "items per tick", per_tick)
         only("autosteal")
         ctl("interact", str(X0 + 1), str(Y + 1), str(Z0))
-        wait(4)
-        got = ctl("inventory").get("counts", {}).get("minecraft:stone", 0)
-        wait(30)
-        everything = ctl("inventory").get("counts", {}).get("minecraft:stone", 0)
+        first = last = None
+        got = 0
+        for _ in range(60):
+            wait(1)
+            got = ctl("inventory").get("counts", {}).get("minecraft:stone", 0)
+            now = state()["ticks"]
+            if got and first is None:
+                first = now
+            if got == 27:
+                last = now
+                break
         ctl("close")
         only()
-        return got, everything
+        return (last - first if first is not None and last is not None else 99), got
 
     slow = taken("1")
     cmd("clear @s", f"setblock {X0+1} {Y+1} {Z0} minecraft:air", f"setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]{{Items:[{items}]}}")
     fast = taken("9")
-    return slow[1] == 27 and fast[1] == 27 and fast[0] > slow[0] * 2, f"in 4 ticks: {slow[0]} items at 1 a tick, {fast[0]} at 9; all 27 taken either way"
+    return slow[1] == 27 and fast[1] == 27 and slow[0] > fast[0] * 2, f"27 stacks taken in {slow[0]} ticks at 1 a tick, {fast[0]} at 9"
 
 
 @test("Inventory Cleaner")
@@ -1349,8 +1359,9 @@ def _():
 def _():
     def walk_off(**sets):
         reset(z=15.0)
-        cmd(f"fill {X0-2} {Y} {Z0+17} {X0+2} {Y} {Z0+26} minecraft:air")
+        cmd(f"fill {X0-2} {Y-1} {Z0+17} {X0+2} {Y} {Z0+26} minecraft:air")
         slot(0, "stone", 32)
+        wait(10)
         for k, v in sets.items():
             setting("scaffold", k.replace("_", " "), v)
         only("scaffold")
