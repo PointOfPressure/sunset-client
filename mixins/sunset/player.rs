@@ -185,6 +185,11 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
 }
 
+// Auto Gap is eating: Auto Eat waits.
+pub(super) fn gap_eating() -> bool {
+    ps(|p| p.gap_eating)
+}
+
 // ---- Auto Fish
 
 fn rod_ok(game: &Game<'_>, slot: usize, anti_break: bool) -> Option<u32> {

@@ -11,11 +11,11 @@
 pub(super) const API_VERSION: u32 = 1;
 
 #[allow(unused_imports)]
-pub(super) use super::sunset::{Camera, Category, Module, Shape, hold, look_at, outline, line};
+pub(super) use super::sunset::{Camera, Canvas, Category, Module, Shape, hold, line, look_at, outline, turn, turn_then};
 #[allow(unused_imports)]
 pub(super) use super::sunset_util::{
     PRIORITIES, Target, can_place, center_of, clear_line, dist, every_living, facts, find_hotbar, find_inventory, in_reach,
-    is_air, listed, other_players, place_block, player_target, replaceable, sequence, short, show, toggle_off,
+    is_air, listed, other_players, place_block, player_target, replaceable, sequence, short, show, toggle_off, turned_to,
 };
 
 // Adds a module to the click GUI, the .modules list and the config file. Call

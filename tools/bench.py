@@ -16,7 +16,7 @@ RUNS = [
     ("Nametags", "nametags", ["Full", "Potato"]),
     ("Storage ESP", "storageesp", ["3D box", "Outline", "Potato"]),
     ("Block ESP", "blockesp", ["Box", "Outline", "Potato"]),
-    ("Hole ESP", "holeesp", ["Box", "Outline", "Potato"]),
+    ("Hole ESP", "holeesp", ["3D box", "Outline", "Potato"]),
     ("Breadcrumbs", "breadcrumbs", ["Line", "Potato"]),
     ("Waypoints", "waypoints", ["Full", "Potato"]),
     ("Trajectories", "trajectories", ["Line", "Potato"]),

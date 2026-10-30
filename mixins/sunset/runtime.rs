@@ -484,8 +484,14 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Left", true)
             .bool("Right", false)
             .num("Delay (ticks)", 4.0, 1.0, 20.0, 1.0),
-        Module::new("Auto Eat", Player, "Eats food from your hotbar when you get hungry.")
-            .num("Hunger", 14.0, 1.0, 19.0, 1.0),
+        Module::new("Auto Eat", Player, "Eats food when your hunger or health gets low (Meteor's Auto Eat).")
+            .text("Blacklist", "enchanted_golden_apple,golden_apple,chorus_fruit,poisonous_potato,pufferfish,chicken,rotten_flesh,spider_eye,suspicious_stew")
+            .bool("Pause auras", true)
+            .bool("Search inventory", false)
+            .pick("Food priority", &["Saturation", "Combined", "Hunger"])
+            .pick("Threshold mode", &["Any", "Health", "Hunger", "Both"])
+            .num("Health threshold", 10.0, 0.0, 19.0, 1.0)
+            .num("Hunger threshold", 16.0, 1.0, 19.0, 1.0),
         Module::new("Zoom", Render, "Zooms in.")
             .num("Factor", 4.0, 1.5, 10.0, 0.5)
             .bool("Smooth", true),
@@ -513,8 +519,17 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Auto Replenish", Player, "Refills hotbar stacks from your inventory when they run low.")
             .num("Threshold", 8.0, 1.0, 32.0, 1.0)
             .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0),
-        Module::new("Auto Tool", Player, "Picks the fastest tool in your hotbar for the block you mine.")
-            .bool("Switch back", true),
+        Module::new("Auto Tool", Player, "Switches to the hotbar tool that breaks the block you mine best (Meteor's Auto Tool).")
+            .pick("Prefer", &["Fortune", "None", "Silk touch"])
+            .bool("Silk touch for ender chest", true)
+            .bool("Fortune for ores and crops", false)
+            .bool("Anti break", false)
+            .num("Anti break percentage", 10.0, 1.0, 100.0, 1.0)
+            .bool("Switch back", false)
+            .num("Switch delay", 0.0, 0.0, 20.0, 1.0)
+            .pick("List mode", &["Blacklist", "Whitelist"])
+            .text("Whitelist", "")
+            .text("Blacklist", ""),
         Module::new("Middle Click Extra", Player, "Middle click uses an item from your hotbar, then switches back.")
             .pick("Item", &["Pearl", "Rocket", "XP bottle"]),
         Module::new("Trajectories", Render, "Draws where a bow shot or a throw will land. Potato: a dot where it lands.")
@@ -529,10 +544,20 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Leave", true),
         Module::new("Weather Changer", World, "Sets the weather you see.")
             .pick("Weather", &["Clear", "Rain", "Thunder"]),
-        Module::new("Hole ESP", Render, "Marks holes you can stand in: green all obsidian or bedrock, yellow other solid blocks.")
-            .pick("Mode", &["Box", "Outline", "Potato"])
-            .num("Range", 8.0, 3.0, 16.0, 1.0)
-            .bool("Fill", true)
+        Module::new("Hole ESP", Render, "Marks holes walled with bedrock or obsidian, where explosions hurt less (Meteor's Hole ESP).")
+            .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
+            .num("Horizontal radius", 10.0, 1.0, 32.0, 1.0)
+            .num("Vertical radius", 5.0, 1.0, 16.0, 1.0)
+            .num("Min height", 3.0, 1.0, 5.0, 1.0)
+            .bool("Doubles", true)
+            .bool("Ignore own", false)
+            .bool("Webs", false)
+            .pick("Shape mode", &["Both", "Lines", "Sides"])
+            .num("Fill opacity", 0.25, 0.0, 1.0, 0.05)
+            .num("Height", 0.2, 0.0, 1.0, 0.05)
+            .colour("Bedrock color", "Lime")
+            .colour("Obsidian color", "Red")
+            .colour("Mixed color", "Orange")
             .num("Max", 200.0, 10.0, 1000.0, 10.0),
         Module::new("Nuker", World, "Breaks blocks around you.")
             .pick("Shape", &["Sphere", "Cube", "Uniform cube"])
@@ -627,13 +652,19 @@ pub(super) struct State {
     click_wait: u32,
     blink_ticks: u32,
     eating: bool,
+    // Auto Eat: the slot it eats from (None: the off hand), the one held before, and Kill Aura turned off meanwhile.
+    eat_slot: Option<usize>,
+    eat_prev: usize,
+    eat_paused_aura: bool,
+    // Auto Tool's switch waiting out Switch delay: the slot and the ticks left.
+    tool_wait: Option<(usize, u32)>,
     was_ground: bool,
-    eat_ticks: u32,
     crumb_at: u64,
     crit_target: Option<u32>,
     crit_ticks: u32,
     notify: Option<Vec<String>>,
-    holes: Sweep<u32>,
+    // Hole ESP's finds: where, and what walls them (0 bedrock, 1 obsidian, 2 both).
+    holes: Sweep<u8>,
     tool_back: Option<usize>,
     mc_back: Option<(usize, u32)>,
     nuke: Option<([i32; 3], u32)>,
@@ -702,8 +733,11 @@ impl State {
             click_wait: 0,
             blink_ticks: 0,
             eating: false,
+            eat_slot: None,
+            eat_prev: 0,
+            eat_paused_aura: false,
+            tool_wait: None,
             was_ground: false,
-            eat_ticks: 0,
             crumb_at: 0,
             crit_target: None,
             crit_ticks: 0,
@@ -1770,6 +1804,8 @@ fn module_tick(game: &mut Game<'_>) {
     }
     if let Some(m) = get("Auto Eat") {
         auto_eat(game, m);
+    } else if with(|s| s.eating) {
+        eat_stop(game);
     }
     // Breadcrumbs: a point every few ticks once the player has moved.
     if let Some(m) = get("Breadcrumbs") {
@@ -2044,56 +2080,145 @@ pub(super) fn auto_click(game: &mut Game<'_>, m: &Module) {
     with(|s| s.click_wait = m.n("Delay (ticks)") as u32);
 }
 
+// Auto Eat (Meteor's): once health or hunger is at its threshold, holds use on the best food (the off hand's first,
+// then the hotbar's, then the inventory's moved into the hotbar), with Kill Aura off meanwhile, until neither is.
 pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
-    if !game.native_playing() {
+    if !game.native_playing() || super::sunset_player::gap_eating() {
         return;
     }
-    let Some(food) = game.player.as_ref().map(|p| p.health.food.food) else {
-        return;
-    };
     if with(|s| s.eating) {
-        let ticks = with(|s| {
-            s.eat_ticks += 1;
-            s.eat_ticks
-        });
-        // Done: the item is used up, or it never started.
-        if game.using.is_none() && ticks > 3 || ticks > 100 {
-            let _ = game.play_mouse(MouseButton::Right, false);
-            with(|s| {
-                s.eating = false;
-                s.eat_ticks = 0;
-            });
+        if !eat_due(game, m) {
+            eat_stop(game);
+            return;
         }
-        return;
-    }
-    if f64::from(food) > m.n("Hunger") || game.using.is_some() {
-        return;
-    }
-    const BAD: [&str; 6] = ["rotten_flesh", "spider_eye", "pufferfish", "poisonous_potato", "chorus_fruit", "suspicious_stew"];
-    let mut best: Option<(usize, u32)> = None;
-    for slot in 0..9 {
-        let Some(stack) = game.inventory.get(slot).and_then(|s| s.as_ref()) else {
-            continue;
+        let slot = with(|s| s.eat_slot);
+        let edible = match slot {
+            Some(i) => edible(game, m, game.inventory.get(i).and_then(|s| s.as_ref())),
+            None => edible(game, m, game.offhand.as_ref()),
         };
-        if BAD.iter().any(|b| stack.item.ends_with(b)) {
-            continue;
+        if !edible {
+            if !food_slot(game, m).is_some_and(|next| eat_from(game, next)) {
+                eat_stop(game);
+                return;
+            }
         }
-        if let Some((nutrition, _)) = game.res.items().get(&stack.item).and_then(|i| i.food)
-            && best.is_none_or(|(_, n)| nutrition > n)
-        {
-            best = Some((slot, nutrition));
+        if game.using.is_none() {
+            let _ = game.play_mouse(MouseButton::Right, true);
         }
+        return;
     }
-    let Some((slot, _)) = best else {
+    if !eat_due(game, m) {
+        return;
+    }
+    let Some(slot) = food_slot(game, m) else {
         return;
     };
-    hold(game, slot);
-    let _ = game.play_mouse(MouseButton::Right, true);
+    let prev = game.selected;
+    if !eat_from(game, slot) {
+        return;
+    }
+    let paused = m.b("Pause auras") && with(|s| s.is_on("Kill Aura"));
+    if paused {
+        toggle_named(game, "Kill Aura", false);
+    }
     with(|s| {
         s.eating = true;
-        s.eat_ticks = 0;
+        s.eat_prev = prev;
+        s.eat_paused_aura = paused;
     });
+    let _ = game.play_mouse(MouseButton::Right, true);
+}
+
+// Health and hunger against the thresholds, as Threshold mode joins them.
+fn eat_due(game: &Game<'_>, m: &Module) -> bool {
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    let health = f64::from(p.health.health()) <= m.n("Health threshold");
+    let hunger = f64::from(p.health.food.food) <= m.n("Hunger threshold");
+    match m.p("Threshold mode") {
+        "Health" => health,
+        "Hunger" => hunger,
+        "Both" => health && hunger,
+        _ => health || hunger,
+    }
+}
+
+// Food that is not on the blacklist and that you can eat now (hungry, or food you can always eat).
+fn edible(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items::ItemStack>) -> bool {
+    let Some(stack) = stack else {
+        return false;
+    };
+    let Some(info) = game.res.items().get(&stack.item) else {
+        return false;
+    };
+    let hungry = game.player.as_ref().is_some_and(|p| p.health.food.food < 20);
+    info.food.is_some() && !super::sunset_util::listed(m.t("Blacklist"), &stack.item) && (hungry || info.can_always_eat)
+}
+
+// Where to eat from: None for the off hand, else the inventory slot (0 to 8 the hotbar) of the best food.
+fn food_slot(game: &Game<'_>, m: &Module) -> Option<Option<usize>> {
+    if edible(game, m, game.offhand.as_ref()) {
+        return Some(None);
+    }
+    let value = |i: usize| -> Option<f32> {
+        let stack = game.inventory.get(i)?.as_ref();
+        let (nutrition, saturation) = game.res.items().get(&stack?.item)?.food?;
+        edible(game, m, stack).then(|| match m.p("Food priority") {
+            "Combined" => nutrition as f32 + saturation,
+            "Hunger" => nutrition as f32,
+            _ => saturation,
+        })
+    };
+    let best = |range: std::ops::Range<usize>| {
+        range.filter_map(|i| value(i).map(|v| (i, v))).fold(None, |b: Option<(usize, f32)>, (i, v)| if b.is_none_or(|b| v > b.1) { Some((i, v)) } else { b })
+    };
+    let found = best(0..9).or_else(|| if m.b("Search inventory") { best(9..36) } else { None });
+    found.map(|(i, _)| Some(i))
+}
+
+// Holds the food: the off hand as it is, a hotbar slot selected, or food from the inventory moved to an empty
+// hotbar slot first. False when there is no room for it.
+fn eat_from(game: &mut Game<'_>, slot: Option<usize>) -> bool {
+    let at = match slot {
+        None => {
+            with(|s| s.eat_slot = None);
+            return true;
+        }
+        Some(i) if i < 9 => i,
+        Some(i) => {
+            let Some(empty) = (0..9).find(|&h| game.inventory.get(h).is_some_and(Option::is_none)) else {
+                return false;
+            };
+            menu_click(game, &[(i, horizon_client::menu::Input::Pickup), (empty, horizon_client::menu::Input::Pickup)]);
+            empty
+        }
+    };
+    hold(game, at);
+    with(|s| s.eat_slot = Some(at));
+    true
+}
+
+fn eat_stop(game: &mut Game<'_>) {
+    use winit::event::MouseButton;
+    let (prev, from_hand, aura) = with(|s| {
+        s.eating = false;
+        (s.eat_prev, s.eat_slot.is_none(), std::mem::take(&mut s.eat_paused_aura))
+    });
+    if !from_hand {
+        hold(game, prev);
+    }
+    let _ = game.play_mouse(MouseButton::Right, false);
+    if aura {
+        toggle_named(game, "Kill Aura", true);
+    }
+}
+
+fn toggle_named(game: &mut Game<'_>, name: &str, on: bool) {
+    if let Some(i) = with(|s| s.find(name)) {
+        toggle(game, i, on);
+    }
 }
 
 pub(super) fn block_colour(preset: &str, name: &str) -> Option<u32> {
@@ -2293,43 +2418,106 @@ pub(super) fn auto_replenish(game: &mut Game<'_>, m: &Module) {
 
 // The hotbar tool that mines the block under the crosshair fastest, while
 // the attack button is held; back to the old slot after.
+// Auto Tool (Meteor's): while you break a block, the hotbar tool with the best score for it (Meteor's getScore:
+// a tool that is right for the block's drops, by its speed and enchantments), after Switch delay; Switch back when you
+// let go; Anti break lets go of a tool about to break.
 pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
     let down = game.native_playing() && (game.physical_buttons.contains(&MouseButton::Left) || game.left) && !gui_open();
     if !down {
-        if let Some(back) = with(|s| s.tool_back.take())
-            && m.b("Switch back")
-        {
+        let back = with(|s| {
+            s.tool_wait = None;
+            s.tool_back.take()
+        });
+        if let Some(back) = back.filter(|_| m.b("Switch back")) {
             hold(game, back);
         }
         return;
     }
-    if game.remote.is_none() || game.entity_targeted() {
+    if let Some((slot, left)) = with(|s| s.tool_wait) {
+        if left == 0 {
+            hold(game, slot);
+            with(|s| s.tool_wait = None);
+        } else {
+            with(|s| s.tool_wait = Some((slot, left - 1)));
+        }
+    }
+    if game.creative || game.remote.is_none() || game.entity_targeted() {
         return;
     }
     let Some(hit) = game.pick() else {
         return;
     };
     let name = game.res.facts().get(game.world.block(hit.pos[0], hit.pos[1], hit.pos[2])).name.clone();
-    let speed = |game: &Game<'_>, slot: usize| {
-        game.res.items().mining_speed(game.inventory.get(slot).and_then(|s| s.as_ref()), &name)
+    let list = if m.p("List mode") == "Whitelist" { m.t("Whitelist") } else { m.t("Blacklist") };
+    let allowed = |stack: Option<&horizon_client::items::ItemStack>| {
+        let listed = stack.is_some_and(|s| super::sunset_util::listed(list, &s.item));
+        listed == (m.p("List mode") == "Whitelist")
     };
-    let current = game.selected;
-    let mut best = (current, speed(game, current));
-    for slot in 0..9 {
-        let sp = speed(game, slot);
-        if sp > best.1 + 0.01 {
-            best = (slot, sp);
+    let stack = |i: usize| game.inventory.get(i).and_then(|s| s.as_ref());
+    let best = (0..9)
+        .filter(|&i| allowed(stack(i)))
+        .map(|i| (i, tool_score(game, m, stack(i), &name)))
+        .filter(|(_, score)| *score >= 0.0)
+        .fold(None, |b: Option<(usize, f64)>, (i, v)| if b.is_none_or(|b| v > b.1) { Some((i, v)) } else { b });
+    let current = stack(game.selected);
+    let switch = best
+        .filter(|&(slot, score)| slot != game.selected && (score > tool_score(game, m, current, &name) || tool_spent(game, m, current) || !is_tool(current)))
+        .map(|(slot, _)| slot);
+    if let Some(slot) = switch {
+        let selected = game.selected;
+        with(|s| {
+            s.tool_back.get_or_insert(selected);
+        });
+        match m.n("Switch delay") as u32 {
+            0 => hold(game, slot),
+            delay => with(|s| s.tool_wait = Some((slot, delay))),
         }
     }
-    if best.0 != current {
-        with(|s| {
-            if s.tool_back.is_none() {
-                s.tool_back = Some(current);
-            }
-        });
-        hold(game, best.0);
+    let held = game.inventory.get(game.selected).and_then(|s| s.as_ref());
+    if tool_spent(game, m, held) && is_tool(held) {
+        let _ = game.play_mouse(MouseButton::Left, false);
     }
+}
+
+fn is_tool(stack: Option<&horizon_client::items::ItemStack>) -> bool {
+    stack.is_some_and(|s| ["_axe", "_hoe", "_pickaxe", "_shovel", ":shears"].iter().any(|t| s.item.ends_with(t)))
+}
+
+// Anti break: a tool worn down to its last Anti break percentage.
+fn tool_spent(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items::ItemStack>) -> bool {
+    let Some(s) = stack else {
+        return false;
+    };
+    let max = game.res.items().get(&s.item).map_or(0, |i| i.max_damage);
+    m.b("Anti break") && max > 0 && f64::from(max - s.damage.min(max)) < f64::from(max) * m.n("Anti break percentage") / 100.0
+}
+
+// Meteor's AutoTool.getScore: -1 for what is no tool for this block.
+fn tool_score(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items::ItemStack>, block: &str) -> f64 {
+    let Some(s) = stack.filter(|s| is_tool(Some(s)) && !tool_spent(game, m, Some(s))) else {
+        return -1.0;
+    };
+    let items = game.res.items();
+    let short = super::sunset_util::short(block);
+    let shears = s.item.ends_with(":shears") && short.ends_with("_leaves");
+    if !items.correct_for_drops(stack, block) && !shears && !short.ends_with("_wool") {
+        return -1.0;
+    }
+    let level = |e: &str| f64::from(s.enchantment_level(e));
+    if m.b("Silk touch for ender chest") && short == "ender_chest" && level("minecraft:silk_touch") == 0.0 {
+        return -1.0;
+    }
+    let fortunable = (short.ends_with("_ore") && short != "ancient_debris") || matches!(short, "wheat" | "carrots" | "potatoes" | "beetroots" | "torchflower_crop");
+    if m.b("Fortune for ores and crops") && fortunable && level("minecraft:fortune") == 0.0 {
+        return -1.0;
+    }
+    let preferred = match m.p("Prefer") {
+        "Fortune" => level("minecraft:fortune"),
+        "Silk touch" => level("minecraft:silk_touch"),
+        _ => 0.0,
+    };
+    f64::from(items.mining_speed(stack, block)) * 1000.0 + level("minecraft:unbreaking") + level("minecraft:efficiency") + level("minecraft:mending") + preferred
 }
 
 // Middle click: throws or uses the chosen item from the hotbar, and switches
@@ -2650,39 +2838,78 @@ pub(super) fn notify(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// Holes to stand in around the player: air two high, solid below and on the four sides. Searched again every second,
-// a few slices a tick.
+// Hole ESP (Meteor's): open blocks Min height tall, walled below and on the four sides by bedrock (unbreakable) or
+// blast-proof blocks (obsidian and the like), or with Doubles two such side by side. Searched again every second, a
+// few slices a tick.
 pub(super) fn scan_holes(game: &Game<'_>, m: &Module, ticks: u64) {
     let Some(at) = block_pos(game) else {
         return;
     };
-    let r = m.n("Range") as i32;
+    let (h, v) = (m.n("Horizontal radius") as i32, m.n("Vertical radius") as i32);
+    let (height, doubles, own, webs) = (m.n("Min height") as i32, m.b("Doubles"), m.b("Ignore own"), m.b("Webs"));
     let facts = game.res.facts();
-    let hard = |x: i32, y: i32, z: i32| -> Option<bool> {
-        let state = game.world.block(x, y, z);
-        if facts.is_air(state) {
-            return None;
-        }
-        let n = &facts.get(state).name;
-        Some(n.ends_with("obsidian") || n.ends_with("bedrock"))
+    let solid = |p: [i32; 3]| {
+        let state = game.world.block(p[0], p[1], p[2]);
+        !facts.is_air(state) && facts.get(state).full_collision
     };
+    let open = |p: [i32; 3]| {
+        let state = game.world.block(p[0], p[1], p[2]);
+        !(own && p == at) && (webs || !facts.get(state).name.ends_with(":cobweb")) && (0..height).all(|i| !solid([p[0], p[1] + i, p[2]]))
+    };
+    // 0 bedrock, 1 blast-proof, None anything else.
+    let wall = |p: [i32; 3]| {
+        let state = game.world.block(p[0], p[1], p[2]);
+        let f = facts.get(state);
+        if facts.is_air(state) {
+            None
+        } else if f.full_collision && f.hardness < 0.0 {
+            Some(0u8)
+        } else if f.explosion_resistance >= 600.0 && f.hardness >= 0.0 {
+            Some(1u8)
+        } else {
+            None
+        }
+    };
+    const SIDES: [[i32; 3]; 5] = [[0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+    let plus = |p: [i32; 3], d: [i32; 3]| [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
+    let key = (h as u64) | (v as u64) << 8 | (height as u64) << 16 | u64::from(doubles) << 24 | u64::from(own) << 25 | u64::from(webs) << 26;
     with(|s| {
-        s.holes.tick(ticks, at, r, r as u64, 20, 4, |c, x, out| {
-            let ys = (c[1] - r).max(-63)..=c[1] + r;
-            for z in c[2] - r..=c[2] + r {
-                for y in ys.clone() {
-                    if hard(x, y, z).is_some() || hard(x, y + 1, z).is_some() {
+        s.holes.tick(ticks, at, h, key, 20, 4, |c, x, out| {
+            for z in c[2] - h..=c[2] + h {
+                'cell: for y in c[1] - v..=c[1] + v {
+                    let p = [x, y, z];
+                    if !open(p) {
                         continue;
                     }
-                    let around = [hard(x, y - 1, z), hard(x + 1, y, z), hard(x - 1, y, z), hard(x, y, z + 1), hard(x, y, z - 1)];
-                    if around.iter().any(Option::is_none) {
-                        continue;
+                    let (mut walls, mut kinds, mut pair) = (0, [0u8; 2], false);
+                    for d in SIDES {
+                        let q = plus(p, d);
+                        if let Some(k) = wall(q) {
+                            walls += 1;
+                            kinds[usize::from(k)] += 1;
+                        } else if d[1] == -1 || !doubles || pair || !open(q) {
+                            continue 'cell;
+                        } else {
+                            // The other half of a double: walled all round but towards this one.
+                            for e in SIDES.iter().filter(|e| **e != [-d[0], 0, -d[2]]) {
+                                match wall(plus(q, *e)) {
+                                    Some(k) => {
+                                        walls += 1;
+                                        kinds[usize::from(k)] += 1;
+                                    }
+                                    None => continue 'cell,
+                                }
+                            }
+                            pair = true;
+                        }
                     }
-                    let safe = around.iter().all(|a| *a == Some(true));
-                    out.push(([x, y, z], if safe { 0xFF55_FF55 } else { 0xFFFF_FF55 }));
+                    if walls == if pair { 8 } else { 5 } {
+                        let kind = if kinds[1] == 0 { 0 } else if kinds[0] == 0 { 1 } else { 2 };
+                        out.push((p, kind));
+                    }
                 }
             }
-            (2 * r as usize + 1) * ys.count() * 7
+            (2 * h as usize + 1) * (2 * v as usize + 1) * 6
         })
     });
 }
@@ -4159,15 +4386,13 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     }
 
     if let Some(m) = get("Hole ESP") {
-        let (look, range, max) = (Look::of(m), m.n("Range") + 2.0, m.n("Max") as usize);
+        let (look, height, max) = (Look::of(m), m.n("Height").max(0.02), m.n("Max") as usize);
+        let colours = [m.c("Bedrock color"), m.c("Obsidian color"), m.c("Mixed color")];
         with(|s| {
             let mut drawn = 0;
-            for &(pos, col) in &s.holes.found {
+            for &(pos, kind) in &s.holes.found {
                 let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
-                if dist([lo[0] + 0.5, lo[1], lo[2] + 0.5]) > range {
-                    continue;
-                }
-                if draw_box(cam, out, &look, lo, [lo[0] + 1.0, lo[1] + 0.02, lo[2] + 1.0], col, lw) {
+                if draw_box(cam, out, &look, lo, [lo[0] + 1.0, lo[1] + height, lo[2] + 1.0], colours[usize::from(kind)], lw) {
                     drawn += 1;
                     if drawn >= max {
                         break;

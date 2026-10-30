@@ -1253,13 +1253,41 @@ def _():
         wait(5)
         return item, held().get("item", "")
 
-    dirt, after = mining("dirt")
+    dirt, kept = mining("dirt")
     stone, _ = mining("stone")
-    setting("autotool", "switch back", "false")
-    _, kept = mining("dirt")
+    setting("autotool", "switch back", "true")
+    ctl("key", "1", "tap")
+    _, after = mining("dirt")
+    # Blacklisted, the shovel is passed over; Anti break passes over a pickaxe about to break.
+    setting("autotool", "blacklist", "diamond_shovel")
+    ctl("key", "1", "tap")
+    listed, _ = mining("dirt")
+    cmd("item replace entity @s hotbar.1 with minecraft:diamond_pickaxe[damage=1550]")
+    setting("autotool", "anti break", "true")
+    ctl("key", "1", "tap")
+    worn, _ = mining("stone")
     only()
-    return "shovel" in dirt and "pickaxe" in stone and "sword" in after and "shovel" in kept, (
-        f"mining dirt: {dirt}, stone: {stone}; let go: {after} again, {kept} with Switch back off")
+    return ("shovel" in dirt and "pickaxe" in stone and "shovel" in kept and "sword" in after and "sword" in listed and "sword" in worn), (
+        f"mining dirt: {dirt}, stone: {stone}; let go: {kept} kept, {after} with Switch back; dirt with the shovel blacklisted: {listed}; "
+        f"stone with Anti break and a worn pickaxe: {worn}")
+
+
+@test("Auto Eat")
+def _():
+    slot(2, "bread", 8)
+    slot(3, "golden_apple", 2)
+    # Hunger drains the food bar fast (not in peaceful); Auto Eat eats bread (golden apples are blacklisted) until it
+    # is past 16.
+    cmd("difficulty easy", "effect give @s minecraft:hunger 6 255 true")
+    wait(130)
+    low = state()["player"]["food"]
+    only("autoeat")
+    wait(200)
+    food = state()["player"]["food"]
+    counts = ctl("inventory").get("counts", {})
+    only()
+    bread, apples = counts.get("minecraft:bread", 0), counts.get("minecraft:golden_apple", 0)
+    return low <= 16 and food > 16 and bread < 8 and apples == 2, f"food {low} -> {food} with it on; {8 - bread} bread eaten, golden apples left {apples}"
 
 
 @test("Middle Click Extra")
@@ -1469,7 +1497,24 @@ def _():
     setting("offhand", "item", "Totem")
     wait(40)
     totem = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
-    return crystal and totem, f"offhand holds the crystal with Item Crystal: {crystal}, the totem with Item Totem: {totem}"
+    # Always gap on sword: a sword in hand brings the enchanted golden apple.
+    setting("offhand", "item", "Crystal")
+    setting("offhand", "always gap on sword", "true")
+    slot(0, "diamond_sword")
+    cmd("item replace entity @s inventory.6 with minecraft:enchanted_golden_apple 1")
+    ctl("key", "1", "tap")
+    wait(40)
+    gap = check("execute if items entity @s weapon.offhand minecraft:enchanted_golden_apple")
+    # At Min health 19 with less health, the totem comes whatever the Item.
+    setting("offhand", "min health", "19")
+    cmd("damage @s 6 minecraft:generic")
+    # Before the regeneration of a full food bar heals it back past 19 and the gapple returns.
+    wait(4)
+    health = hp()
+    low = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
+    only()
+    return crystal and totem and gap and low, (f"offhand holds the crystal with Item Crystal: {crystal}, the totem with Item Totem: {totem}, "
+                                              f"the gapple with a sword and Always gap on sword: {gap}, the totem at {health} health: {low}")
 
 
 @test("Auto Armor")
@@ -1622,6 +1667,33 @@ def _():
     return 5000 < near3d < near2d and behind < 0.3 * screen and inside < 0.02 * screen, (
         f"orange pixels: chest close beside the view {near3d} with 3D sides, {near2d} as a 2D box; partly behind the "
         f"camera {behind}; camera inside it {inside} (of {screen})")
+
+
+@test("Hole ESP")
+def _():
+    # An obsidian hole, a bedrock one, and a double (two side by side, obsidian), each a block deep, in front.
+    def hole(x, z, block, wide=1):
+        cmd(f"fill {x-1} {Y} {z-1} {x+wide} {Y+1} {z+1} minecraft:{block}", f"fill {x} {Y+1} {z} {x+wide-1} {Y+1} {z} minecraft:air")
+    hole(X0 - 3, Z0 + 4, "obsidian")
+    hole(X0, Z0 + 4, "bedrock")
+    hole(X0 + 3, Z0 + 4, "obsidian", wide=2)
+    ctl("look", "0", "40")
+    wait(5)
+    red = lambda r, g, b: r > 200 and g < 110 and b < 110
+    lime = lambda r, g, b: g > 200 and 110 < r < 190 and b < 110
+    setting("holeesp", "mode", "2D box")
+    setting("holeesp", "shape mode", "Sides")
+    setting("holeesp", "fill opacity", "1")
+    before = (shot_pixels("hole0", red), shot_pixels("hole0", lime))
+    only("holeesp")
+    wait(30)
+    on = (shot_pixels("hole1", red), shot_pixels("hole1", lime))
+    setting("holeesp", "doubles", "false")
+    wait(30)
+    single = shot_pixels("hole2", red)
+    only()
+    return on[0] > before[0] + 200 and on[1] > before[1] + 100 and on[0] - single > 100, (
+        f"obsidian red pixels {before[0]} -> {on[0]} ({single} with Doubles off), bedrock lime {before[1]} -> {on[1]}")
 
 
 @test("Target HUD")

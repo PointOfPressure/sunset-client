@@ -39,7 +39,9 @@ Helpers Meteor's own modules use, so a plugin can place blocks and pick targets 
 `place_block(game, pos, hotbar_slot, rotate, check_entities)`, `can_place`, `replaceable`, `is_air`,
 `facts` (a block's properties), `find_hotbar`, `find_inventory`, `in_reach`, `clear_line`, `listed` (is a
 name in a comma list), `player_target`, `other_players`, `every_living`, `PRIORITIES`, `show(pos, argb)`
-(a box drawn this frame), `hold(game, slot)`, `look_at`, `dist`, `center_of`, `sequence(game)`.
+(a box drawn this frame), `hold(game, slot)`, `look_at`, `dist`, `center_of`, `sequence(game)`, and
+`turn_then(who, yaw, pitch, |game| ...)` / `turned_to(game, who, rotate, point, |game| ...)`: the server sees you
+look there (on the tick's own move packet), then your closure runs.
 
 Anything else of the game's is reachable from your module (it sits inside the game's source): `game.inventory`,
 `game.player`, `game.mobs`, `game.send(packet)`, and so on. Those are Horizon's internals and can change between
@@ -47,8 +49,9 @@ Nightlies, which is why a plugin names a Horizon commit.
 
 ## Rules that keep a server from kicking you
 
-- **One position packet a tick.** Horizon's server (like vanilla's) disconnects a client that sends a second
-  `MovePlayerPos` in one tick. Let the game send the tick's own packet.
+- **One move packet a tick.** Horizon's server (like vanilla's) disconnects a client that sends a second
+  `MovePlayerPos` in one tick, and other servers count any second move packet. Let the game send the tick's own
+  packet; to turn the look the server sees, use `turn_then` / `turned_to` instead of sending `MovePlayerRot`.
 - **Block-action sequence numbers must never go down.** Use `api::sequence(game)`, never your own counter.
 - Don't hook a function that contains a macro (`vec!`, `format!`, `log::...`): the mixin tool refuses it.
 
