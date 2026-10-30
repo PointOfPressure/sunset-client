@@ -412,3 +412,40 @@ pub(super) fn crystal_damage(game: &Game<'_>, at: [f64; 3]) -> f64 {
     }
     worst
 }
+
+// The highest point of the fall so far.
+static FALL_PEAK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+// How far you have dropped from your highest point since you last stood on something (0 when you are on the
+// ground, flying or gliding). Called once a tick by whoever needs it.
+pub(super) fn fallen(game: &Game<'_>) -> f64 {
+    use std::sync::atomic::Ordering::Relaxed;
+    let Some(p) = game.player.as_ref() else {
+        return 0.0;
+    };
+    let y = p.position.y;
+    let mut peak = f64::from_bits(FALL_PEAK.load(Relaxed));
+    if p.ground.on_ground || p.flying || p.fall_flying || peak < y {
+        peak = y;
+    }
+    FALL_PEAK.store(peak.to_bits(), Relaxed);
+    peak - y
+}
+
+// What falling to the ground below would cost you (Meteor's PlayerUtils.possibleHealthReductions, fall part):
+// the drop so far plus the drop still to come, less three blocks.
+pub(super) fn fall_damage(game: &Game<'_>) -> f64 {
+    let so_far = fallen(game);
+    let Some(p) = game.player.as_ref() else {
+        return 0.0;
+    };
+    if p.velocity.y > -0.2 || p.flying {
+        return 0.0;
+    }
+    let y = p.position.y;
+    let (x, z) = (p.position.x.floor() as i32, p.position.z.floor() as i32);
+    let top = y.floor() as i32;
+    let ground = (0..256).find(|d| super::solstice::solid_at(game, x, top - 1 - d, z));
+    let to_come = ground.map_or(256.0, |d| y - f64::from(top - 1 - d + 1));
+    (so_far + to_come - 3.0).max(0.0).ceil()
+}

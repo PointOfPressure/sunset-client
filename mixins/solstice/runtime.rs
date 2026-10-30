@@ -7,6 +7,7 @@
 // Ordinary comments only: module payloads cannot hold inner attributes.
 
 use super::{Game, Screen};
+use super::solstice_visual::{distance_colour, draw_box, entity_colour, faded};
 use horizon_client::extras::Corner;
 use horizon_client::extras_hud::Corners;
 use horizon_client::hud::HudBatch;
@@ -21,7 +22,7 @@ use winit::keyboard::KeyCode;
 
 pub(crate) const ID: &str = "solstice";
 pub(crate) const NAME: &str = "Solstice";
-pub(crate) const VERSION: &str = "0.7.0";
+pub(crate) const VERSION: &str = "0.8.0";
 pub(crate) const DESCRIPTION: &str =
     "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
 // The menu key's name on the mod's page and its default (Right Shift).
@@ -249,8 +250,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Wait for cooldown", true)
             .num("Delay (ticks)", 10.0, 0.0, 20.0, 1.0),
         Module::new("Criticals", Combat, "Makes your hits from the ground critical hits."),
-        Module::new("Auto Totem", Combat, "Moves a totem from your hotbar to your offhand.")
-            .bool("Swap back", true),
+        Module::new("Auto Totem", Combat, "Moves a totem from your inventory to your offhand.")
+            .pick("Mode", &["Smart", "Strict"])
+            .num("Delay (ticks)", 0.0, 0.0, 20.0, 1.0)
+            .num("Health", 10.0, 0.0, 36.0, 1.0)
+            .bool("Elytra", true)
+            .bool("Fall", true)
+            .bool("Explosion", true),
         // Movement
         Module::new("Sprint", Movement, "Sprints for you whenever you walk forward."),
         Module::new("Auto Walk", Movement, "Walks forward for you."),
@@ -272,6 +278,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Active when", &["Always", "Sneaking", "Not sneaking"])
             .bool("Safe step", false)
             .num("Step health", 5.0, 1.0, 36.0, 1.0),
+        Module::new("GUI Move", Movement, "Lets you walk, jump and look around while your inventory is open.")
+            .bool("Jump", true)
+            .bool("Sneak", true)
+            .bool("Arrows", true),
         Module::new("Air Jump", Movement, "Jumps again in mid-air."),
         Module::new("Elytra Boost", Movement, "Speeds up gliding while you hold forward.")
             .num("Boost", 0.05, 0.01, 0.2, 0.01)
@@ -295,22 +305,51 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Totems", false),
         Module::new("Fullbright", Render, "Lights everything up."),
         Module::new("ESP", Render, "Draws boxes around entities, through walls.")
+            .pick("Mode", &["3D box", "2D box"])
+            .pick("Shape mode", &["Lines", "Sides", "Both"])
+            .num("Fill opacity", 0.3, 0.0, 1.0, 0.05)
+            .num("Fade distance", 3.0, 0.0, 12.0, 0.5)
             .bool("Players", true)
             .bool("Hostiles", true)
             .bool("Passive", true)
             .bool("Items", false)
-            .bool("Fill", false)
+            .bool("Show friend colors", true)
+            .colour("Players color", "White")
+            .colour("Hostiles color", "Red")
+            .colour("Passive color", "Green")
+            .colour("Items color", "Orange")
             .num("Range", 64.0, 8.0, 256.0, 8.0),
         Module::new("Tracers", Render, "Draws lines from your crosshair to entities.")
+            .pick("Target", &["Body", "Head", "Feet"])
+            .pick("Start", &["Crosshair", "Bottom"])
+            .bool("Distance colors", false)
             .bool("Players", true)
             .bool("Hostiles", false)
             .bool("Passive", false)
+            .bool("Show friend colors", true)
+            .colour("Players color", "White")
+            .colour("Hostiles color", "Red")
+            .colour("Passive color", "Green")
             .num("Range", 64.0, 8.0, 256.0, 8.0),
         Module::new("Nametags", Render, "Big name tags with health and distance, through walls.")
             .bool("Players", true)
             .bool("Mobs", false)
+            .bool("Ignore friends", false)
+            .bool("Health", true)
+            .bool("Distance", true)
+            .bool("Background", true)
+            .colour("Name color", "White")
             .num("Range", 64.0, 8.0, 256.0, 8.0),
         Module::new("Storage ESP", Render, "Draws boxes around chests and other storage.")
+            .pick("Mode", &["3D box", "2D box"])
+            .pick("Shape mode", &["Both", "Lines", "Sides"])
+            .num("Fill opacity", 0.16, 0.0, 1.0, 0.02)
+            .num("Fade distance", 3.0, 0.0, 12.0, 0.5)
+            .bool("Chests", true)
+            .bool("Ender chests", true)
+            .bool("Barrels", true)
+            .bool("Shulkers", true)
+            .bool("Other", true)
             .num("Range", 64.0, 8.0, 128.0, 8.0),
         // Added in 0.3
         Module::new("Auto Weapon", Combat, "Switches to your best weapon before Kill Aura or Trigger Bot hits.")
@@ -332,8 +371,20 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Anti Hunger", Player, "Spends less food by hiding that you are sprinting and on the ground.")
             .bool("Sprint", true)
             .bool("Ground", true),
-        Module::new("Anti AFK", Player, "Moves a little every few seconds so you aren't kicked for idling.")
-            .num("Seconds", 10.0, 3.0, 60.0, 1.0),
+        Module::new("Anti AFK", Player, "Performs different actions to prevent getting kicked while AFK.")
+            .bool("Jump", true)
+            .bool("Swing", false)
+            .bool("Sneak", false)
+            .num("Sneak time", 5.0, 1.0, 100.0, 1.0)
+            .bool("Strafe", false)
+            .bool("Spin", true)
+            .pick("Spin mode", &["Server", "Client"])
+            .num("Speed", 7.0, 1.0, 30.0, 1.0)
+            .num("Pitch", 0.0, -90.0, 90.0, 5.0)
+            .bool("Send messages", false)
+            .bool("Random", false)
+            .num("Delay (seconds)", 15.0, 1.0, 120.0, 1.0)
+            .text("Messages", "Solstice on top!|Solstice on crack!"),
         Module::new("Auto Clicker", Player, "Clicks for you while you hold a mouse button.")
             .bool("Left", true)
             .bool("Right", false)
@@ -607,6 +658,9 @@ static STATE: Mutex<Option<State>> = Mutex::new(None);
 // may happen while a module holds the state.
 static NO_FALL: AtomicBool = AtomicBool::new(false);
 static BLINK: AtomicBool = AtomicBool::new(false);
+// Flight in Velocity mode: its position packets claim the ground, so nothing counts as a fall.
+static FLIGHT_GROUND: AtomicBool = AtomicBool::new(false);
+static FLIGHT_DIP: AtomicBool = AtomicBool::new(false);
 static ANTI_SPRINT: AtomicBool = AtomicBool::new(false);
 static ANTI_GROUND: AtomicBool = AtomicBool::new(false);
 // The server takes one position packet per tick and disconnects a client that
@@ -644,6 +698,7 @@ pub(super) fn snapshot() -> Vec<Module> {
 
 pub(super) fn sync_flags(s: &State) {
     NO_FALL.store(s.is_on("No Fall"), Ordering::Relaxed);
+    FLIGHT_GROUND.store(s.module("Flight").is_some_and(|m| m.on && m.p("Mode") == "Velocity"), Ordering::Relaxed);
     BLINK.store(s.is_on("Blink"), Ordering::Relaxed);
     let hunger = s.module("Anti Hunger").filter(|m| m.on);
     ANTI_SPRINT.store(hunger.is_some_and(|m| m.b("Sprint")), Ordering::Relaxed);
@@ -1086,6 +1141,11 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if on("Sneak") && playing {
         want.push(KeyCode::ShiftLeft);
     }
+    if let Some(m) = get("Anti AFK").filter(|m| m.on)
+        && playing
+    {
+        want.extend(super::solstice_player::afk_keys(&m));
+    }
     if on("Safe Walk") && playing && at_edge(game) {
         want.push(KeyCode::ShiftLeft);
     }
@@ -1233,7 +1293,39 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     let dim = game.dim.id();
     let (yaw, pitch) = (game.yaw, game.pitch);
 
+    // GUI Move: the game ignores the keys while the inventory is open, so what is held moves you by hand.
+    let screen_move = get("GUI Move").filter(|_| game.screen == Screen::Inventory && !gui_open() && game.remote_menu().1 != "anvil");
+    let held = |k: KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
+    let screen_keys = screen_move.as_ref().map(|m| {
+        (
+            f64::from(i8::from(held(KeyCode::KeyW)) - i8::from(held(KeyCode::KeyS))),
+            f64::from(i8::from(held(KeyCode::KeyA)) - i8::from(held(KeyCode::KeyD))),
+            m.b("Jump") && held(KeyCode::Space),
+            held(KeyCode::ControlLeft),
+            m.b("Sneak") && held(KeyCode::ShiftLeft),
+            m.b("Arrows"),
+            [held(KeyCode::ArrowLeft), held(KeyCode::ArrowRight), held(KeyCode::ArrowUp), held(KeyCode::ArrowDown)],
+        )
+    });
+    if let Some((.., true, arrows)) = screen_keys {
+        let turn = |neg: bool, pos: bool| f32::from(i8::from(pos) - i8::from(neg));
+        game.yaw += turn(arrows[0], arrows[1]) * 6.0;
+        game.pitch = (game.pitch + turn(arrows[2], arrows[3]) * 4.0).clamp(-90.0, 90.0);
+    }
     if let Some(p) = game.player.as_mut() {
+        if let Some((fwd, strafe, jumping, sprinting, sneaking, ..)) = screen_keys {
+            if fwd != 0.0 || strafe != 0.0 {
+                let a = f64::from(yaw).to_radians();
+                let (x, z) = (-a.sin() * fwd + a.cos() * strafe, a.cos() * fwd + a.sin() * strafe);
+                let len = (x * x + z * z).sqrt();
+                let speed = if sprinting { 0.13 } else { 0.1 } * if sneaking { 0.3 } else { 1.0 };
+                p.velocity.x = x / len * speed;
+                p.velocity.z = z / len * speed;
+            }
+            if jumping && p.ground.on_ground {
+                p.velocity.y = 0.42;
+            }
+        }
         if let Some(f) = get("Flight")
             && f.p("Mode") == "Velocity"
         {
@@ -1250,8 +1342,16 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
             };
             // Vanilla kicks a player floating for 80 ticks: drop a little
             // every 40.
-            if f.b("Anti kick") && ticks % 40 == 0 && p.velocity.y >= 0.0 {
-                p.velocity.y = -0.04;
+            // The dip is paid back the next tick, so hovering stays level.
+            if f.b("Anti kick") && p.velocity.y == 0.0 {
+                if FLIGHT_DIP.swap(false, Ordering::Relaxed) {
+                    p.velocity.y = 0.04;
+                } else if ticks % 40 == 0 {
+                    p.velocity.y = -0.04;
+                    FLIGHT_DIP.store(true, Ordering::Relaxed);
+                }
+            } else {
+                FLIGHT_DIP.store(false, Ordering::Relaxed);
             }
             p.fall_distance = 0.0;
         }
@@ -1455,9 +1555,6 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Auto Eat") {
         auto_eat(game, m);
     }
-    if let Some(m) = get("Anti AFK") {
-        anti_afk(game, m);
-    }
     // Breadcrumbs: a point every few ticks once the player has moved.
     if let Some(m) = get("Breadcrumbs") {
         let max = m.n("Length") as usize;
@@ -1491,9 +1588,6 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     super::solstice_render::tick(game, &mods, ticks);
     super::solstice_player::tick(game, &mods);
     super::solstice_world::tick(game, &mods);
-    if let Some(m) = get("Auto Totem") {
-        auto_totem(game, m.b("Swap back"));
-    }
     crit_tick(game);
     if let Some(m) = get("Kill Aura") {
         kill_aura(game, m, get("Criticals").is_some());
@@ -1707,23 +1801,6 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
         s.eating = true;
         s.eat_ticks = 0;
     });
-}
-
-pub(super) fn anti_afk(game: &mut Game<'_>, m: &Module) {
-    if !game.native_playing() || game.remote.is_none() {
-        return;
-    }
-    let ticks = with(|s| {
-        s.afk_wait += 1;
-        s.afk_wait
-    });
-    if f64::from(ticks) < m.n("Seconds") * 20.0 {
-        return;
-    }
-    with(|s| s.afk_wait = 0);
-    game.yaw += if game.ticks % 40 < 20 { 4.0 } else { -4.0 };
-    game.swing_arm();
-    game.send(S::Punch(Empty));
 }
 
 pub(super) fn block_colour(preset: &str, name: &str) -> Option<u32> {
@@ -2316,34 +2393,9 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
 
 // A totem in the hotbar goes to the offhand by selecting it and pressing the
 // swap key, as a player would; then the old slot comes back.
-static TOTEM_WAIT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 // Moves a totem from the hotbar to the offhand: select it, swap hands, select
 // the old slot again, then give the server a few ticks to answer.
-pub(super) fn auto_totem(game: &mut Game<'_>, _swap_back: bool) {
-    if game.remote.is_none() || !game.native_playing() {
-        return;
-    }
-    if TOTEM_WAIT.load(Ordering::Relaxed) > 0 {
-        TOTEM_WAIT.fetch_sub(1, Ordering::Relaxed);
-        return;
-    }
-    let is_totem = |s: &Option<horizon_client::items::ItemStack>| {
-        s.as_ref().is_some_and(|s| &*s.item == "minecraft:totem_of_undying")
-    };
-    if is_totem(&game.offhand) {
-        return;
-    }
-    let Some(slot) = (0..9).find(|&i| game.inventory.get(i).is_some_and(is_totem)) else {
-        return;
-    };
-    let before = game.selected;
-    hold(game, slot);
-    game.remote_swap_hands();
-    hold(game, before);
-    TOTEM_WAIT.store(10, Ordering::Relaxed);
-}
-
 // ---------------------------------------------------------------- packets
 
 // What the send hook does with an outgoing packet.
@@ -2419,7 +2471,12 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     let Some(p) = game.player.as_ref() else {
         return Out::Pass;
     };
-    let ground = if NO_FALL.load(Ordering::Relaxed) && p.velocity.y < -0.55 && !p.ground.on_ground && !p.flying && !p.fall_flying {
+    // The server counts a fall from the packets: once you have dropped a block, claiming the ground every tick keeps
+    // the count under three blocks, so there is never damage to take. Flying that way claims it all the time.
+    let grounded = || !p.ground.on_ground && !p.flying && !p.fall_flying;
+    let ground = if FLIGHT_GROUND.load(Ordering::Relaxed) && !p.flying {
+        Some(true)
+    } else if NO_FALL.load(Ordering::Relaxed) && grounded() && super::solstice_util::fallen(game) > 1.0 {
         Some(true)
     } else if ANTI_GROUND.load(Ordering::Relaxed) && (p.fall_distance <= 0.0 || p.flying) {
         Some(false)
@@ -2575,7 +2632,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
             let (found, value) = with(|s| {
                 let m = &s.modules[i];
                 for exact in [true, false] {
-                    for k in 1..args.len() - 2 {
+                    for k in (1..args.len() - 2).rev() {
                         let name = norm(&args[2..2 + k].join(""));
                         let at = m.settings.iter().position(|st| {
                             if exact { norm(st.name) == name } else { norm(st.name).starts_with(&name) }
@@ -3013,24 +3070,32 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
         let mid = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
         let d = dist(mid);
         let friend = kind == Kind::Player && is_friend(&friends, &names, mob.id);
-        let col = if friend { 0xFF55_FFFF } else { colour(kind) };
         if let Some(m) = esp
             && wanted(m, kind)
             && d <= m.n("Range")
-            && let Some(r) = cam.rect(lo, hi)
         {
-            outline(out, r, col, lw, m.b("Fill"));
+            let col = faded(entity_colour(m, kind, friend), d, m.n("Fade distance"));
+            draw_box(cam, out, m, lo, hi, col, lw);
         }
         if let Some(m) = tracers
             && wanted(m, kind)
             && d <= m.n("Range")
-            && let Some(to) = cam.project(mid)
         {
-            line(out, centre, to, col, lw);
+            let aim = match m.p("Target") {
+                "Head" => [mid[0], hi[1] - 0.1, mid[2]],
+                "Feet" => [mid[0], lo[1], mid[2]],
+                _ => mid,
+            };
+            let col = if m.b("Distance colors") { distance_colour(d) } else { entity_colour(m, kind, friend) };
+            let from = if m.p("Start") == "Bottom" { [centre[0], cam.h as f32] } else { centre };
+            if let Some(to) = cam.project(aim) {
+                line(out, from, to, col, lw);
+            }
         }
         if let Some(m) = tags
             && d <= m.n("Range")
             && (if kind == Kind::Player { m.b("Players") } else { m.b("Mobs") })
+            && !(friend && m.b("Ignore friends"))
             && let Some([x, y]) = cam.project([mid[0], hi[1] + 0.6, mid[2]])
         {
             let name = names
@@ -3040,15 +3105,22 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
                 .or_else(|| mob.custom_name.clone())
                 .unwrap_or_else(|| pretty_id(&mob.kind.id));
             let max = mob.kind.max_health.max(1.0);
-            let hp = format!("{}", (mob.health * 10.0).round() / 10.0);
-            let tail = format!(" {}m", d.round());
+            let hp = if m.b("Health") { format!("{}", (mob.health * 10.0).round() / 10.0) } else { String::new() };
+            let tail = if m.b("Distance") { format!(" {}m", d.round()) } else { String::new() };
             let (nw, hw, tw) = (game.native_text_width(&name), game.native_text_width(&hp), game.native_text_width(&tail));
-            let total = nw + 4.0 + hw + tw;
+            let gap = if hp.is_empty() { 0.0 } else { 4.0 };
+            let total = nw + gap + hw + tw;
             let x0 = x - total / 2.0;
-            out.push(Shape::Fill([x0 - 2.0, y - 2.0, total + 4.0, 12.0], 0x7800_0000));
-            out.push(Shape::Text(name, [x0, y], if friend { 0x55FFFF } else { 0xFFFFFF }));
-            out.push(Shape::Text(hp, [x0 + nw + 4.0, y], health_colour(mob.health / max)));
-            out.push(Shape::Text(tail, [x0 + nw + 4.0 + hw, y], 0xAAAAAA));
+            if m.b("Background") {
+                out.push(Shape::Fill([x0 - 2.0, y - 2.0, total + 4.0, 12.0], 0x7800_0000));
+            }
+            out.push(Shape::Text(name, [x0, y], if friend { 0x55FFFF } else { m.c("Name color") & 0x00FF_FFFF }));
+            if !hp.is_empty() {
+                out.push(Shape::Text(hp, [x0 + nw + gap, y], health_colour(mob.health / max)));
+            }
+            if !tail.is_empty() {
+                out.push(Shape::Text(tail, [x0 + nw + gap + hw, y], 0xAAAAAA));
+            }
         }
     }
 
@@ -3066,9 +3138,8 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
             }
             let lo = [at[0] - 0.125, at[1], at[2] - 0.125];
             let hi = [at[0] + 0.125, at[1] + 0.25, at[2] + 0.125];
-            if let Some(r) = cam.rect(lo, hi) {
-                outline(out, r, 0xFFFF_AA00, lw, m.b("Fill"));
-            }
+            let col = faded(m.c("Items color"), dist(at), m.n("Fade distance"));
+            draw_box(cam, out, m, lo, hi, col, lw);
         }
     }
 
@@ -3084,12 +3155,26 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
             let Some(col) = storage_colour(name) else {
                 continue;
             };
+            let short = name.strip_prefix("minecraft:").unwrap_or(name);
+            let allowed = if short == "ender_chest" {
+                m.b("Ender chests")
+            } else if short.ends_with("chest") {
+                m.b("Chests")
+            } else if short == "barrel" {
+                m.b("Barrels")
+            } else if short.ends_with("shulker_box") {
+                m.b("Shulkers")
+            } else {
+                m.b("Other")
+            };
+            if !allowed {
+                continue;
+            }
+            let col = faded(col, dist(at), m.n("Fade distance"));
             let inset = if name.ends_with("chest") { 0.0625 } else { 0.0 };
             let lo = [f64::from(x) + inset, f64::from(y), f64::from(z) + inset];
             let hi = [f64::from(x + 1) - inset, f64::from(y + 1) - inset * 2.0, f64::from(z + 1) - inset];
-            if let Some(r) = cam.rect(lo, hi) {
-                outline(out, r, col, lw, true);
-            }
+            draw_box(cam, out, m, lo, hi, col, lw);
         }
     }
 
@@ -3311,6 +3396,8 @@ pub(super) struct Gui {
     view_h: f32,
     // Typed letters: only the modules whose names contain them show.
     search: String,
+    // Ctrl+A: the next letter replaces the whole search, Backspace clears it.
+    select_all: bool,
 }
 
 impl Default for Gui {
@@ -3318,6 +3405,7 @@ impl Default for Gui {
         Self {
             open: false,
             closing: false,
+            select_all: false,
             panels: (0..CATEGORIES.len())
                 .map(|_| Panel { x: -1.0, y: 32.0, collapsed: false, scroll: 0.0 })
                 .collect(),
@@ -3346,6 +3434,7 @@ pub(super) enum Hit {
 fn aliases(name: &str) -> &'static str {
     match name {
         "Step" => "step up stepup stairs",
+        "GUI Move" => "inventory move invmove gui walk",
         "Reverse Step" => "step down stepdown",
         "Flight" => "fly",
         "Kill Aura" => "aura killaura",
@@ -3512,6 +3601,7 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
     }
     if name == "key.keyboard.escape" {
         // The first Esc clears a search; the next closes the GUI.
+        with(|s| s.gui.select_all = false);
         if with(|s| std::mem::take(&mut s.gui.search)).is_empty() {
             with(|s| s.gui.closing = true);
         }
@@ -3521,19 +3611,64 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
         with(|s| s.gui.closing = true);
         return;
     }
-    if name == "key.keyboard.backspace" {
+    let control = game.modifiers.control_key();
+    if name.ends_with("enter") {
+        // Enter in the search turns on (or off) the module it found.
+        if let Some(i) = with(|s| first_match(s)) {
+            toggle(game, i, true);
+        }
+    } else if control && name == "key.keyboard.a" {
+        with(|s| s.gui.select_all = !s.gui.search.is_empty());
+    } else if name == "key.keyboard.backspace" || name == "key.keyboard.delete" {
         with(|s| {
-            s.gui.search.pop();
+            if control || s.gui.select_all {
+                s.gui.search.clear();
+            } else {
+                s.gui.search.pop();
+            }
+            s.gui.select_all = false;
         });
     } else if let Some(c) = key_char(name)
-        && !game.modifiers.control_key()
+        && !control
     {
         with(|s| {
+            if std::mem::take(&mut s.gui.select_all) {
+                s.gui.search.clear();
+            }
             if s.gui.search.chars().count() < 20 {
                 s.gui.search.push(c);
             }
         });
     }
+}
+
+// The module a search points at: an exact name, then a name that starts with it, then one that contains it, then
+// one known by another name.
+fn first_match(s: &State) -> Option<usize> {
+    let query = norm(&s.gui.search);
+    if query.is_empty() {
+        return None;
+    }
+    s.modules
+        .iter()
+        .enumerate()
+        .filter_map(|(i, m)| {
+            let name = norm(m.name);
+            let rank = if name == query {
+                0
+            } else if name.starts_with(&query) {
+                1
+            } else if name.contains(&query) {
+                2
+            } else if norm(aliases(m.name)).contains(&query) {
+                3
+            } else {
+                return None;
+            };
+            Some((rank, i))
+        })
+        .min()
+        .map(|(_, i)| i)
 }
 
 // A letter, digit or space typed in the click GUI's search.
@@ -3767,10 +3902,11 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     } else {
         (format!("Search: {search}_"), ACCENT)
     };
+    let selected = with(|s| s.gui.select_all) && !search.is_empty();
     let lw_ = game.native_text_width(&label);
-    out.push(Shape::Fill([(w - lw_) / 2.0 - 4.0, 14.0, lw_ + 8.0, 12.0], 0xC010_1010));
-    out.push(Shape::Text(label, [(w - lw_) / 2.0, 16.0], colour));
-    let hint = "Left click: on/off   Right click: settings   Drag headers   Esc: close";
+    out.push(Shape::Fill([(w - lw_) / 2.0 - 4.0, 14.0, lw_ + 8.0, 12.0], if selected { 0xFF30_60B0 } else { 0xC010_1010 }));
+    out.push(Shape::Text(label, [(w - lw_) / 2.0, 16.0], if selected { 0xFFFFFF } else { colour }));
+    let hint = "Right click: settings   Enter: toggle search result   Esc: close";
     let hw = game.native_text_width(hint);
-    out.push(Shape::Text(hint.to_owned(), [(w - hw) / 2.0, h - 54.0], 0xA0A0A0));
+    out.push(Shape::Text(hint.to_owned(), [(w - hw) / 2.0, 3.0], 0xC0C0C0));
 }

@@ -41,7 +41,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Horizontal range", 8.0, 2.0, 16.0, 1.0)
             .num("Vertical range", 4.0, 1.0, 8.0, 1.0)
             .num("Light level", 0.0, 0.0, 15.0, 1.0),
-        Module::new("No Render", Render, "Hides fog, darkness, blindness, nausea and screen overlays (fire, water, in a wall, pumpkin, powder snow).")
+        Module::new("No Render", Render, "Hides fog, darkness, blindness, nausea, screen overlays (fire, water, in a wall, pumpkin, powder snow) and the dark sheet behind menus.")
             .bool("Fog", true)
             .bool("Water fog", true)
             .bool("Lava and powder snow fog", false)
@@ -51,7 +51,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Fire overlay", true)
             .bool("Liquid overlay", true)
             .bool("In wall overlay", true)
-            .bool("Pumpkin, spyglass and powder snow overlays", false),
+            .bool("Pumpkin, spyglass and powder snow overlays", false)
+            .bool("Menu background", true),
         Module::new("Timer", World, "Changes the speed the game runs at.")
             .num("Multiplier", 2.0, 0.1, 10.0, 0.1),
         Module::new("No Slow", Movement, "Stops using an item (eating, drawing a bow, blocking) from slowing you down."),
@@ -347,6 +348,7 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     overlay::NO_LIQUID.store(flag("Liquid overlay"), Ordering::Relaxed);
     overlay::NO_WALL.store(flag("In wall overlay"), Ordering::Relaxed);
     overlay::NO_GUI.store(flag("Pumpkin, spyglass and powder snow overlays"), Ordering::Relaxed);
+    overlay::NO_MENU.store(flag("Menu background"), Ordering::Relaxed);
     // Effects the server put on the player that only change what it sees.
     let (blind, dark, nausea) = (flag("Blindness"), flag("Darkness"), flag("Nausea"));
     if blind || dark || nausea {

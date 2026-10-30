@@ -5,7 +5,9 @@ use super::solstice::{Category, Module, hold};
 use super::solstice_util::*;
 use super::{Game, Screen};
 use std::sync::Mutex;
+use horizon_protocol::packets::{Empty, play::{self, Serverbound as S}};
 use winit::event::MouseButton;
+use winit::keyboard::KeyCode;
 
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
@@ -57,6 +59,14 @@ struct Ps {
     spam_timer: u32,
     spam_index: usize,
     rng: u64,
+    afk_jump: bool,
+    afk_sneak: u32,
+    afk_strafe: i32,
+    afk_right: bool,
+    afk_key: Option<KeyCode>,
+    afk_yaw: Option<f32>,
+    afk_message: i32,
+    afk_index: usize,
 }
 
 static PS: Mutex<Option<Ps>> = Mutex::new(None);
@@ -128,6 +138,14 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
     if let Some(m) = get("Fast Use") {
         fast_use(game, m);
+    }
+    if let Some(m) = get("Anti AFK") {
+        anti_afk(game, m);
+    } else {
+        ps(|p| {
+            p.afk_yaw = None;
+            p.afk_message = 0;
+        });
     }
     if let Some(m) = get("Spam") {
         spam(game, m);
@@ -319,6 +337,96 @@ fn fast_use(game: &mut Game<'_>, m: &Module) {
         });
     if applies && game.use_delay > m.n("Cooldown (ticks)") as u32 {
         game.use_delay = m.n("Cooldown (ticks)") as u32;
+    }
+}
+
+// ---- Anti AFK (Meteor's AntiAFK)
+
+// The keys it holds this tick: a jump now and then, sneaking, and strafing left and right.
+pub(super) fn afk_keys(m: &Module) -> Vec<KeyCode> {
+    let mut keys = Vec::new();
+    if m.b("Jump") {
+        let jump = ps(|p| {
+            p.afk_jump = !p.afk_jump && rand(99) == 0;
+            p.afk_jump
+        });
+        if jump {
+            keys.push(KeyCode::Space);
+        }
+    }
+    if m.b("Sneak") {
+        let sneak = ps(|p| {
+            let held = p.afk_sneak < m.n("Sneak time") as u32;
+            p.afk_sneak += 1;
+            held
+        });
+        if sneak {
+            keys.push(KeyCode::ShiftLeft);
+        } else if rand(99) == 0 {
+            ps(|p| p.afk_sneak = 0);
+        }
+    }
+    if m.b("Strafe") {
+        let key = ps(|p| {
+            p.afk_strafe -= 1;
+            if p.afk_strafe <= 0 {
+                p.afk_key = Some(if p.afk_right { KeyCode::KeyD } else { KeyCode::KeyA });
+                p.afk_right = !p.afk_right;
+                p.afk_strafe = 20;
+            }
+            p.afk_key
+        });
+        keys.extend(key);
+    }
+    keys
+}
+
+fn anti_afk(game: &mut Game<'_>, m: &Module) {
+    if !in_world(game) {
+        return;
+    }
+    if m.b("Swing") && rand(99) == 0 {
+        game.swing_arm();
+        game.send(S::Punch(Empty));
+    }
+    if m.b("Spin") {
+        let yaw = ps(|p| {
+            let y = p.afk_yaw.unwrap_or(game.yaw) + m.n("Speed") as f32;
+            p.afk_yaw = Some(y);
+            y
+        });
+        if m.p("Spin mode") == "Client" {
+            game.yaw = yaw;
+        } else {
+            let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
+            game.send(S::MovePlayerRot(play::MovePlayerRot {
+                yaw,
+                pitch: m.n("Pitch") as f32,
+                flags: u8::from(ground),
+            }));
+        }
+    }
+    if m.b("Send messages") {
+        let messages: Vec<&str> = m.t("Messages").split('|').map(str::trim).filter(|s| !s.is_empty()).collect();
+        if messages.is_empty() {
+            return;
+        }
+        let due = ps(|p| {
+            p.afk_message -= 1;
+            p.afk_message <= 0
+        });
+        if due {
+            let i = if m.b("Random") {
+                rand(messages.len())
+            } else {
+                ps(|p| {
+                    p.afk_index = (p.afk_index + 1) % messages.len();
+                    p.afk_index
+                })
+            };
+            game.send_chat(messages[i]);
+            ps(|p| p.afk_message = m.n("Delay (seconds)") as i32 * 20);
+        }
     }
 }
 

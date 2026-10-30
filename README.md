@@ -43,7 +43,7 @@ On Linux the installer may ask for your password once, to install two small syst
 Press **`** (or **Right Shift**) for the menu. Every category is a panel.
 
 - **Left click** a module to turn it on or off. Click the **...** at its right (or right click it) for its settings and key bind.
-- **Just type** to search: `esp` shows the modules with ESP in the name. **Esc** clears the search, then closes the menu.
+- **Just type** to search: `esp` shows the modules with ESP in the name. **Enter** turns on the first match (Enter again turns it off). **Ctrl+A** selects the search text, **Esc** clears it, then closes the menu.
 - **Drag** a panel's header to move it, **right click** a header to fold it, **scroll** a long panel.
 - Change a **key bind** with the *Bind* row (press a key; Backspace clears it). Both menu keys can be rebound under
   Options > Mods > Solstice.
@@ -75,7 +75,7 @@ List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the sa
 | | |
 | --- | --- |
 | **Combat** | Kill Aura, Trigger Bot, Aim Assist, Criticals, Crystal Optimizer, Auto Totem, Auto Weapon, Auto Armor, Offhand, Auto EXP, Auto Log, Bow Spam, Bow Aimbot, Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow |
-| **Movement** | Flight, Speed, Sprint, Sneak, Auto Walk, Auto Jump, Step, Spider, High Jump, Long Jump, Air Jump, Parkour, Reverse Step, Fast Climb, Safe Walk, Anchor, Anti Void, Elytra Boost, Chest Swap, Blink, Scaffold, No Fall, No Slow, Velocity |
+| **Movement** | Flight, Speed, Sprint, Sneak, Auto Walk, Auto Jump, Step, Spider, High Jump, Long Jump, Air Jump, Parkour, Reverse Step, Fast Climb, Safe Walk, Anchor, Anti Void, Elytra Boost, Chest Swap, Blink, Scaffold, No Fall, No Slow, Velocity, GUI Move (walk with the inventory open) |
 | **Player** | Fast Place, Break Delay, Fast Use, Air Place, Reach, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam |
 | **Render** | ESP, Tracers, Nametags, Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories, Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, No Render (no fog, water fog, darkness, blindness, fire or other overlays), HUD |
 | **World** | Nuker, Timer, Time Changer, Weather Changer, Liquid Filler, Spawn Proofer, Flamethrower, Auto Shearer, Auto Nametag, Auto Mount |
@@ -84,7 +84,7 @@ List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the sa
 
 ![Freecam](docs/images/freecam.jpg)
 
-Not here (no clean way to do it in Horizon yet): Crystal Aura, Jesus, GUI Move, Click TP, and the Baritone-based
+Not here (no clean way to do it in Horizon yet): Crystal Aura, Jesus, Click TP, and the Baritone-based
 Highway Builder and Infinity Miner.
 
 ## Updating and removing

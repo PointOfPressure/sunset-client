@@ -81,8 +81,13 @@ def arena():
     p = pos()
     X0, Z0 = int(p[0] // 1), int(p[2] // 1)
     say("/gamemode creative")
+    say("/difficulty peaceful")
+    say("/time set 6000")
+    say("/weather clear")
+    # A world with real terrain (a server's) has hills round the platform: clear a wide ring first.
+    say(f"/fill {X0-24} {Y-1} {Z0-24} {X0+24} {Y+4} {Z0+24} minecraft:air")
+    say(f"/fill {X0-24} {Y+5} {Z0-24} {X0+24} {Y+12} {Z0+24} minecraft:air")
     say(f"/fill {X0-16} {Y} {Z0-16} {X0+16} {Y} {Z0+16} minecraft:stone")
-    say(f"/fill {X0-16} {Y+1} {Z0-16} {X0+16} {Y+12} {Z0+16} minecraft:air")
 
 
 def ensure_alive():
@@ -275,6 +280,95 @@ def _():
     return dry > wet * 1.2, f"brightness {wet:.2f} in water, {dry:.2f} with No Render"
 
 
+@test("No Render (menu background)")
+def _():
+    reset("survival")
+    ctl("look", "0", "10")
+    ctl("open-inventory")
+    wait(10)
+    dim = brightness("nr_menu_dark")
+    ctl("close")
+    only("norender")
+    ctl("open-inventory")
+    wait(10)
+    clear = brightness("nr_menu_clear")
+    ctl("close")
+    only()
+    return clear > dim * 1.3, f"brightness {dim:.2f} behind the inventory, {clear:.2f} with No Render"
+
+
+@test("Flight (no fall damage, level hover)")
+def _():
+    reset("survival")
+    only("flight")
+    ctl("key", "space", "down")
+    wait(60)
+    ctl("key", "space", "up")
+    wait(6)
+    y0 = pos()[1]
+    wait(100)
+    drift = pos()[1] - y0
+    ctl("key", "shift", "down")
+    wait(120)
+    ctl("key", "shift", "up")
+    wait(10)
+    health = hp()
+    only()
+    return abs(drift) < 0.05 and health >= 20, f"hovered {drift:+.3f} blocks in 5 s, health {health} after flying up 15 and sneaking down"
+
+
+@test("No Fall (after Flight)")
+def _():
+    reset("survival")
+    only("flight", "nofall")
+    ctl("key", "space", "down")
+    wait(80)
+    ctl("key", "space", "up")
+    only("nofall")
+    wait(80)
+    health = hp()
+    only()
+    return health >= 20, f"health {health} after dropping from {pos()[1]-Y:.0f}"
+
+
+@test("GUI Move")
+def _():
+    reset("survival")
+    only("guimove")
+    ctl("open-inventory")
+    wait(6)
+    start = pos()
+    ctl("key", "w", "down")
+    wait(30)
+    ctl("key", "w", "up")
+    end = pos()
+    ctl("close")
+    only()
+    moved = ((end[0] - start[0]) ** 2 + (end[2] - start[2]) ** 2) ** 0.5
+    return moved > 2.0, f"walked {moved:.1f} blocks with the inventory open"
+
+
+@test("Search + Enter")
+def _():
+    reset("survival")
+    say(".menu timer")
+    wait(6)
+    ctl("key", "enter", "tap")
+    wait(4)
+    t0, c0 = ctl("status")["ticks"], time.time()
+    time.sleep(2)
+    t1, c1 = ctl("status")["ticks"], time.time()
+    rate = (t1 - t0) / (c1 - c0)
+    for _ in range(2):
+        ctl("key", "esc", "tap")
+        time.sleep(1)
+    if state().get("screen") == "paused":
+        ctl("key", "esc", "tap")
+    on.add("timer")
+    only()
+    return rate > 30, f"{rate:.0f} ticks a second after Enter (20 is normal, Timer doubles it)"
+
+
 @test("Auto Jump")
 def _():
     reset()
@@ -430,15 +524,16 @@ def _():
 @test("Anti AFK")
 def _():
     reset()
-    setting("antiafk", "seconds", "3")
+    setting("antiafk", "jump", "false")
+    setting("antiafk", "spin mode", "Client")
     only("antiafk")
-    y0 = state()["player"].get("yaw", 0)
+    y0 = ctl("status").get("yaw", 0)
     far = 0
-    for _ in range(14):
+    for _ in range(8):
         wait(10)
-        far = max(far, abs(state()["player"].get("yaw", 0) - y0))
+        far = max(far, abs(ctl("status").get("yaw", 0) - y0))
     only()
-    return far > 1, f"yaw moved up to {far:.0f} degrees"
+    return far > 20, f"yaw moved up to {far:.0f} degrees"
 
 
 def slot(i, item, n):
@@ -491,12 +586,16 @@ def _():
 @test("Auto Totem")
 def _():
     reset()
-    say("/item replace entity @s hotbar.2 with minecraft:totem_of_undying 1")
+    say("/item replace entity @s inventory.4 with minecraft:totem_of_undying 1")
     only("autototem")
+    wait(30)
+    smart = check("/execute if items entity @s weapon.offhand minecraft:totem_of_undying")
+    setting("autototem", "mode", "Strict")
     wait(40)
-    ok = check("/execute if items entity @s weapon.offhand minecraft:totem_of_undying")
+    strict = check("/execute if items entity @s weapon.offhand minecraft:totem_of_undying")
+    setting("autototem", "mode", "Smart")
     only()
-    return ok, "totem in the offhand" if ok else "offhand empty"
+    return strict and not smart, f"healthy: offhand {'filled' if smart else 'empty'} in Smart, {'filled' if strict else 'empty'} in Strict"
 
 
 @test("Trigger Bot")
@@ -692,11 +791,65 @@ def _():
     return gone, "crystal hit and gone" if gone else "crystal still there"
 
 
+def held_count():
+    return (ctl("state").get("held") or {}).get("count", 0)
+
+
+@test("Fast Use")
+def _():
+    reset("survival")
+    say("/item replace entity @s hotbar.0 with minecraft:snowball 16")
+    ctl("key", "1", "tap")
+    wait(4)
+    ctl("look", "0", "-30")
+    start = held_count()
+    ctl("mouse", "right", "down")
+    wait(40)
+    ctl("mouse", "right", "up")
+    plain = start - held_count()
+    reset("survival")
+    say("/item replace entity @s hotbar.0 with minecraft:snowball 16")
+    ctl("key", "1", "tap")
+    wait(4)
+    ctl("look", "0", "-30")
+    only("fastuse")
+    start = held_count()
+    ctl("mouse", "right", "down")
+    wait(40)
+    ctl("mouse", "right", "up")
+    fast = start - held_count()
+    only()
+    return fast > plain + 4, f"{plain} snowballs thrown holding use for 2 s, {fast} with Fast Use"
+
+
+@test("Break Delay")
+def _():
+    reset("survival")
+    row = f"/fill {X0} {Y+2} {Z0+1} {X0} {Y+2} {Z0+4} minecraft:dirt"
+    say(row)
+    say("/item replace entity @s hotbar.0 with minecraft:stone_shovel")
+    ctl("key", "1", "tap")
+    wait(2)
+    ctl("look", "0", "0")
+
+    def dug():
+        ctl("mouse", "left", "down")
+        wait(24)
+        ctl("mouse", "left", "up")
+        return sum(1 for dz in range(1, 5) if not check(f"/execute if block {X0} {Y+2} {Z0+dz} minecraft:dirt"))
+
+    plain = dug()
+    say(row)
+    only("breakdelay")
+    fast = dug()
+    only()
+    return fast > plain, f"{plain} of 4 blocks in 1.2 s, {fast} with Break Delay"
+
+
 @test("Nuker")
 def _():
     reset("creative")
     say(f"/fill {X0+1} {Y+1} {Z0+1} {X0+2} {Y+2} {Z0+2} minecraft:stone")
-    setting("nuker", "keepground", "false")
     only("nuker")
     wait(40)
     ok = check(f"/execute unless block {X0+2} {Y+2} {Z0+2} minecraft:stone")

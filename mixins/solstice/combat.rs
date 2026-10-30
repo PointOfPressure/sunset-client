@@ -129,6 +129,7 @@ struct Cs {
     hole_timer: i32,
     burrow: Option<([i32; 3], bool)>,
     offhand_ticks: u32,
+    totem_ticks: u32,
     exp_repairing: Option<usize>,
     aim_target: Option<u32>,
     aim_last: [f64; 2],
@@ -157,7 +158,7 @@ fn activated(name: &str, on: bool) -> bool {
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     show_clear();
     let get = |n: &str| mods.iter().find(|m| m.name == n);
-    for name in ["Surround", "Self Trap", "Auto Trap", "Self Web", "Auto Web", "Hole Filler", "Burrow", "Offhand", "Auto EXP"] {
+    for name in ["Surround", "Self Trap", "Auto Trap", "Self Web", "Auto Web", "Hole Filler", "Burrow", "Offhand", "Auto Totem", "Auto EXP"] {
         let Some(m) = get(name).filter(|m| m.on) else {
             activated(name, false);
             continue;
@@ -177,6 +178,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
             "Hole Filler" => hole_filler(game, m, just),
             "Burrow" => burrow(game, m, just),
             "Offhand" => offhand(game, m),
+            "Auto Totem" => auto_totem(game, m),
             _ => auto_exp(game, m),
         }
     }
@@ -777,6 +779,46 @@ fn offhand(game: &mut Game<'_>, m: &Module) {
         // Pick it up, put it in the offhand slot, put back what was there.
         super::solstice::menu_click(game, &[(i, Pickup), (504, Pickup), (i, Pickup)]);
         cs(|c| c.offhand_ticks = 0);
+    }
+}
+
+// ---- Auto Totem (Meteor's AutoTotem: Smart holds a totem when low, gliding or about to take a lethal
+// fall or blast; Strict always does)
+
+fn auto_totem(game: &mut Game<'_>, m: &Module) {
+    use horizon_client::menu::Input::Pickup;
+    if !inventory_idle(game) {
+        return;
+    }
+    let is_totem = |s: &Option<horizon_client::items::ItemStack>| s.as_ref().is_some_and(|s| short(&s.item) == "totem_of_undying");
+    let Some(found) = (0..36).find(|&i| game.inventory.get(i).is_some_and(is_totem)) else {
+        return;
+    };
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let ticks = cs(|c| {
+        c.totem_ticks += 1;
+        c.totem_ticks
+    });
+    if f64::from(ticks) <= m.n("Delay (ticks)") {
+        return;
+    }
+    let health = f64::from(p.health.health() + p.health.absorption());
+    let at = [p.position.x, p.position.y, p.position.z];
+    let mut loss = 0.0;
+    if m.b("Explosion") {
+        loss = f64::max(loss, crystal_damage(game, at));
+    }
+    if m.b("Fall") {
+        loss = f64::max(loss, fall_damage(game));
+    }
+    let low = health - loss <= m.n("Health");
+    let gliding = m.b("Elytra") && p.fall_flying;
+    let locked = m.p("Mode") == "Strict" || low || gliding;
+    if locked && !is_totem(&game.offhand) {
+        super::solstice::menu_click(game, &[(found, Pickup), (504, Pickup), (found, Pickup)]);
+        cs(|c| c.totem_ticks = 0);
     }
 }
 
