@@ -3,7 +3,7 @@
 // engine hooks, Timer and No Slow.
 
 use super::perspective::CameraType;
-use super::solstice::{ACCENT, Camera, Category, Module, Shape, line, outline};
+use super::solstice::{Camera, Category, Module, Shape, accent, line, outline};
 use super::solstice_util::*;
 use super::{Game, Screen};
 use std::collections::HashSet;
@@ -559,7 +559,7 @@ pub(super) fn overlay(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut 
         let h = m.n("Height");
         for p in rs(|r| r.tunnels.clone()) {
             if let Some(r) = flat(p, h) {
-                outline(out, r, 0xFF00_0000 | ACCENT, lw, true);
+                outline(out, r, 0xFF00_0000 | accent(), lw, true);
             }
         }
     }

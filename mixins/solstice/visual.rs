@@ -4,11 +4,12 @@
 use super::solstice::{Camera, Kind, Module, Setting, Shape, Value, line, outline};
 
 pub(super) const PALETTE: &[&str] = &[
-    "White", "Red", "Orange", "Yellow", "Lime", "Green", "Cyan", "Blue", "Purple", "Pink", "Gray", "Black",
+    "White", "Gold", "Red", "Orange", "Yellow", "Lime", "Green", "Cyan", "Blue", "Purple", "Pink", "Gray", "Black",
 ];
 
 pub(super) fn palette(name: &str) -> u32 {
     match name {
+        "Gold" => 0xFFFF_B020,
         "Red" => 0xFFFF_4040,
         "Orange" => 0xFFFF_A030,
         "Yellow" => 0xFFFF_FF50,

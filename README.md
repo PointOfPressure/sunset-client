@@ -66,6 +66,9 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 | `.friend add\|remove\|list <name>` | friends are left alone by Kill Aura, Aim Assist and the other targeting modules |
 | `.waypoint add\|remove\|list <name>` | places the Waypoints module shows on screen |
 | `.vclip <n>`, `.hclip <n>` | move up or down, forward |
+| `.profile save\|load\|delete <name>`, `.profile list` | keep every module's on/off, settings and keys under a name and bring them back (a PvP set-up, a building one) |
+| `.panic` | turn every module off (or bind the **Panic** module to a key) |
+| `.menu [text]` | open the menu, already searching for the text |
 
 List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the same way:
 `.set xray blocks diamond_ore,ancient_debris`.
@@ -75,8 +78,8 @@ List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the sa
 | | |
 | --- | --- |
 | **Combat** | Kill Aura, Trigger Bot, Aim Assist, Criticals, Crystal Optimizer, Auto Totem, Auto Weapon, Auto Armor, Offhand, Auto EXP, Auto Log, Bow Spam, Bow Aimbot, Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow |
-| **Movement** | Flight, Speed, Sprint, Sneak, Auto Walk, Auto Jump, Step, Spider, High Jump, Long Jump, Air Jump, Parkour, Reverse Step, Fast Climb, Safe Walk, Anchor, Anti Void, Elytra Boost, Chest Swap, Blink, Scaffold, No Fall, No Slow, Velocity, GUI Move (walk with the inventory open) |
-| **Player** | Fast Place, Break Delay, Fast Use, Air Place, Reach, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam |
+| **Movement** | Flight, Speed, Sprint, Sneak, Auto Walk, Auto Jump, Step, Spider, High Jump, Long Jump, Air Jump, Parkour, Reverse Step, Fast Climb, Safe Walk, Anchor, Anti Void, Elytra Boost, Chest Swap, Blink, Scaffold, No Fall, No Slow, Velocity, Glide, No Jump Delay, GUI Move (walk with the inventory open) |
+| **Player** | Fast Place, Break Delay, Fast Use, Air Place, Reach, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam, Auto Steal, Inventory Cleaner, Panic |
 | **Render** | ESP, Tracers, Nametags, Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories, Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, No Render (no fog, water fog, darkness, blindness, fire or other overlays), HUD |
 | **World** | Nuker, Timer, Time Changer, Weather Changer, Liquid Filler, Spawn Proofer, Flamethrower, Auto Shearer, Auto Nametag, Auto Mount |
 
@@ -125,6 +128,6 @@ game; `tools/audit.py` lists which of Meteor's settings are still missing.
 
 ## Licence
 
-MIT. Solstice's modules are written from Meteor Client's behaviour, in Rust, for Horizon; no Meteor code is used.
+Solstice 0.8.1 and later: all rights reserved, see [LICENSE](LICENSE). You can use it, read it and write plugins for it; you can't copy, fork or redistribute it. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon.
 
 The menu and HUD font is [Inter](https://rsms.me/inter/) (SIL Open Font License 1.1), cut down to the characters Solstice draws (`assets/ui.ttf`, made by `tools/font.py`). Set **HUD > Font** to *Minecraft* to use the game's own.

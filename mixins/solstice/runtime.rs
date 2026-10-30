@@ -22,7 +22,7 @@ use winit::keyboard::KeyCode;
 
 pub(crate) const ID: &str = "solstice";
 pub(crate) const NAME: &str = "Solstice";
-pub(crate) const VERSION: &str = "0.8.0";
+pub(crate) const VERSION: &str = "0.8.1";
 pub(crate) const DESCRIPTION: &str =
     "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
 // The menu key's name on the mod's page and its default (Right Shift).
@@ -32,7 +32,28 @@ pub(crate) const MENU_DEFAULT: &str = "key.keyboard.grave.accent";
 pub(crate) const MENU2_KEY: &str = "menu2";
 pub(crate) const MENU2_DEFAULT: &str = "key.keyboard.right.shift";
 // Solstice's sun gold.
-pub(super) const ACCENT: u32 = 0xFFB020;
+// The menu's look, set by the ClickGUI module (accent colour, panel width, background opacity and dim).
+static LOOK: [std::sync::atomic::AtomicU32; 4] = [
+    std::sync::atomic::AtomicU32::new(0xFFB020),
+    std::sync::atomic::AtomicU32::new(0x42A4_0000),
+    std::sync::atomic::AtomicU32::new(0x3F40_0000),
+    std::sync::atomic::AtomicU32::new(0),
+];
+
+pub(super) fn accent() -> u32 {
+    LOOK[0].load(Ordering::Relaxed)
+}
+
+fn panel_w() -> f32 {
+    f32::from_bits(LOOK[1].load(Ordering::Relaxed))
+}
+
+// A menu background colour with the ClickGUI's opacity (the defaults are drawn at 0.75).
+fn bg(argb: u32) -> u32 {
+    let k = f32::from_bits(LOOK[2].load(Ordering::Relaxed)) / 0.75;
+    let a = ((argb >> 24) as f32 * k).round().clamp(0.0, 255.0) as u32;
+    (a << 24) | (argb & 0x00FF_FFFF)
+}
 
 // ---------------------------------------------------------------- modules
 
@@ -297,6 +318,11 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Auto Respawn", Player, "Respawns as soon as you die."),
         Module::new("Panic", Player, "Turns every module off at once. Bind it to a key."),
         // Render
+        Module::new("ClickGUI", Render, "How this menu looks: accent colour, panel width, background opacity and a dim behind it.")
+            .colour("Accent color", "Gold")
+            .num("Panel width", 82.0, 60.0, 140.0, 2.0)
+            .num("Background opacity", 0.75, 0.2, 1.0, 0.05)
+            .bool("Background dim", false),
         Module::new("HUD", Render, "The watermark, the active modules, your coordinates and more.")
             .on()
             .pick("Font", &["Clean", "Minecraft"])
@@ -713,6 +739,11 @@ pub(super) fn snapshot() -> Vec<Module> {
 }
 
 pub(super) fn sync_flags(s: &State) {
+    let g = s.module("ClickGUI");
+    LOOK[0].store(g.map_or(0xFFB020, |m| m.c("Accent color") & 0x00FF_FFFF), Ordering::Relaxed);
+    LOOK[1].store(g.map_or(82.0, |m| m.n("Panel width") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[2].store(g.map_or(0.75, |m| m.n("Background opacity") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[3].store(u32::from(g.is_some_and(|m| m.b("Background dim"))), Ordering::Relaxed);
     NO_FALL.store(s.is_on("No Fall"), Ordering::Relaxed);
     let flying = s.module("Flight").is_some_and(|m| m.on && m.p("Mode") == "Velocity");
     FLIGHT_GROUND.store(flying || s.is_on("Glide"), Ordering::Relaxed);
@@ -825,7 +856,7 @@ pub(super) fn key_label(key: Option<&str>) -> String {
 // A line in chat: Solstice's tag, then the message.
 pub(super) fn say(game: &mut Game<'_>, msg: &str) {
     let line = Text::literal("[Solstice] ")
-        .with_color(ACCENT)
+        .with_color(accent())
         .append(Text::literal(msg).with_color(horizon_client::text::WHITE));
     let focused = game.screen == Screen::Chat;
     let atlas = &game.gui.atlas;
@@ -3035,7 +3066,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             let text = format!("{NAME} {VERSION}");
             let tw = game.native_text_width(&text);
             let (x, y) = corners.place(Corner::TopLeft, tw + 4.0, 12.0);
-            shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], ACCENT));
+            shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], accent()));
         }
         if hud.b("Module list") && game.native_corner_shown(Corner::TopRight) {
             let mut lines: Vec<String> = mods
@@ -3295,7 +3326,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
         for point in &trail {
             let now = cam.project(*point);
             if let (Some(a), Some(b)) = (last, now) {
-                line(out, a, b, 0xFF00_0000 | ACCENT, lw);
+                line(out, a, b, 0xFF00_0000 | accent(), lw);
             }
             last = now;
         }
@@ -3303,7 +3334,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
         if let (Some(a), Some(p)) = (last, game.player.as_ref())
             && let Some(b) = cam.project([p.position.x, p.position.y + 0.1, p.position.z])
         {
-            line(out, a, b, 0xFF00_0000 | ACCENT, lw);
+            line(out, a, b, 0xFF00_0000 | accent(), lw);
         }
     }
 
@@ -3373,8 +3404,8 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
             let text = format!("{} {}m", w.name, d.round());
             let tw = game.native_text_width(&text);
             out.push(Shape::Fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000));
-            out.push(Shape::Text(text, [x - tw / 2.0, y], ACCENT));
-            out.push(Shape::Fill([x - 1.0, y + 11.0, 2.0, 4.0], 0xFF00_0000 | ACCENT));
+            out.push(Shape::Text(text, [x - tw / 2.0, y], accent()));
+            out.push(Shape::Fill([x - 1.0, y + 11.0, 2.0, 4.0], 0xFF00_0000 | accent()));
         }
     }
 }
@@ -3417,14 +3448,14 @@ pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, out: &mut Vec<Shape>, lw
         let hit = solid_at(game, x, y, z);
         let now = cam.project(pos);
         if let (Some(a), Some(b)) = (last, now) {
-            line(out, a, b, 0xFF00_0000 | ACCENT, lw);
+            line(out, a, b, 0xFF00_0000 | accent(), lw);
         }
         last = now;
         if hit {
             let lo = [pos[0] - 0.25, pos[1] - 0.25, pos[2] - 0.25];
             let hi = [pos[0] + 0.25, pos[1] + 0.25, pos[2] + 0.25];
             if let Some(r) = cam.rect(lo, hi) {
-                outline(out, r, 0xFF00_0000 | ACCENT, lw, true);
+                outline(out, r, 0xFF00_0000 | accent(), lw, true);
             }
             break;
         }
@@ -3528,8 +3559,6 @@ impl Default for Gui {
     }
 }
 
-// Five panels fit a 427-pixel-wide GUI (1280 by 720 at scale 3).
-const PANEL_W: f32 = 82.0;
 const HEAD_H: f32 = 13.0;
 const ROW_H: f32 = 11.0;
 
@@ -3545,8 +3574,11 @@ pub(super) enum Hit {
 fn aliases(name: &str) -> &'static str {
     match name {
         "Step" => "step up stepup stairs",
+        "ClickGUI" => "gui menu color colour theme accent opacity width",
         "Glide" => "slow fall slowfall",
         "Panic" => "disable all off hide",
+        "Auto Steal" => "chest stealer loot",
+        "Inventory Cleaner" => "inventory cleaner junk drop clean",
         "GUI Move" => "inventory move invmove gui walk",
         "Reverse Step" => "step down stepdown",
         "Flight" => "fly",
@@ -3604,7 +3636,7 @@ pub(super) fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
         if rows.is_empty() && !s.gui.search.is_empty() {
             continue;
         }
-        out.push(([p.x, p.y, PANEL_W, HEAD_H], Hit::Header(c)));
+        out.push(([p.x, p.y, panel_w(), HEAD_H], Hit::Header(c)));
         if p.collapsed {
             continue;
         }
@@ -3614,7 +3646,7 @@ pub(super) fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
             if top < -0.01 || top + ROW_H > room + 0.01 {
                 continue;
             }
-            out.push(([p.x, p.y + HEAD_H + top, PANEL_W, ROW_H], hit));
+            out.push(([p.x, p.y + HEAD_H + top, panel_w(), ROW_H], hit));
         }
     }
     out
@@ -3629,7 +3661,7 @@ pub(super) fn gui_wheel(game: &Game<'_>, steps: f32) {
             let (_, content) = panel_body(s, c);
             let room = body_room(s, c);
             let shown = if p.collapsed { 0.0 } else { content.min(room) };
-            if inside([p.x, p.y, PANEL_W, HEAD_H + shown], at) {
+            if inside([p.x, p.y, panel_w(), HEAD_H + shown], at) {
                 let max = (content - room).max(0.0);
                 s.gui.panels[c].scroll = (p.scroll - steps * ROW_H * 2.0).clamp(0.0, max);
                 return;
@@ -3872,7 +3904,7 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
     with(|s| match s.gui.drag {
         Some(Drag::Panel(c, dx, dy)) => {
             let p = &mut s.gui.panels[c];
-            p.x = (at.0 - dx).clamp(0.0, (w - PANEL_W).max(0.0));
+            p.x = (at.0 - dx).clamp(0.0, (w - panel_w()).max(0.0));
             p.y = (at.1 - dy).clamp(0.0, (h - HEAD_H).max(0.0));
         }
         Some(Drag::Slider(i, j)) => {
@@ -3893,6 +3925,9 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
 
 pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     follow_drag(game, w, h);
+    if LOOK[3].load(Ordering::Relaxed) != 0 {
+        out.push(Shape::Fill([0.0, 0.0, w, h], 0x6000_0000));
+    }
     with(|s| {
         s.gui.view_h = h;
         // Panels with no place yet go left to right, in a second row when the
@@ -3900,15 +3935,15 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
         let mut x = 2.0;
         let mut y = 32.0;
         for p in s.gui.panels.iter_mut().filter(|p| p.x < 0.0) {
-            if x + PANEL_W > w {
+            if x + panel_w() > w {
                 x = 2.0;
                 y += 16.0;
             }
             (p.x, p.y) = (x, y);
-            x += PANEL_W + 3.0;
+            x += panel_w() + 3.0;
         }
         for p in &mut s.gui.panels {
-            p.x = p.x.clamp(0.0, (w - PANEL_W).max(0.0));
+            p.x = p.x.clamp(0.0, (w - panel_w()).max(0.0));
             p.y = p.y.clamp(0.0, (h - HEAD_H).max(0.0));
         }
         // A scroll past the end (a shorter body, a taller window) comes back.
@@ -3938,7 +3973,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
         match *hit {
             Hit::Header(c) => {
                 out.push(Shape::Fill([x, y, rw, rh], 0xF014_1414));
-                out.push(Shape::Fill([x, y + rh - 1.0, rw, 1.0], 0xFF00_0000 | ACCENT));
+                out.push(Shape::Fill([x, y + rh - 1.0, rw, 1.0], 0xFF00_0000 | accent()));
                 let label = CATEGORIES[c].label();
                 let on = modules.iter().filter(|m| m.category == CATEGORIES[c] && m.on).count();
                 let count = format!("{on}");
@@ -3948,11 +3983,11 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
             }
             Hit::Module(i) => {
                 let m = &modules[i];
-                out.push(Shape::Fill([x, y, rw, rh], if hovered { 0xD02A_2A2A } else { 0xC010_1010 }));
+                out.push(Shape::Fill([x, y, rw, rh], if hovered { bg(0xD02A_2A2A) } else { bg(0xC010_1010) }));
                 if m.on {
-                    out.push(Shape::Fill([x, y, 2.0, rh], 0xFF00_0000 | ACCENT));
+                    out.push(Shape::Fill([x, y, 2.0, rh], 0xFF00_0000 | accent()));
                 }
-                let colour = if m.on { ACCENT } else { 0xE0E0E0 };
+                let colour = if m.on { accent() } else { 0xE0E0E0 };
                 // A bound key shows beside the dots.
                 let tag = m.key.as_deref().map(|k| fit(&key_label(Some(k)), 30.0)).unwrap_or_default();
                 let tag_w = if tag.is_empty() { 0.0 } else { game.native_text_width(&tag) + 3.0 };
@@ -3961,10 +3996,10 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
                     out.push(Shape::Text(tag, [x + rw - 13.0 - tag_w + 3.0, y + 1.5], 0x808080));
                 }
                 let open = with(|st| st.gui.expanded.contains(&i));
-                out.push(Shape::Text("...".into(), [x + rw - 12.0, y + 0.5], if open { ACCENT } else { 0xB0B0B0 }));
+                out.push(Shape::Text("...".into(), [x + rw - 12.0, y + 0.5], if open { accent() } else { 0xB0B0B0 }));
             }
             Hit::Bind(i) => {
-                out.push(Shape::Fill([x, y, rw, rh], 0xD008_0808));
+                out.push(Shape::Fill([x, y, rw, rh], bg(0xD008_0808)));
                 let text = if binding == Some(i) {
                     "Bind: press a key".to_owned()
                 } else {
@@ -3974,13 +4009,13 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
             }
             Hit::Setting(i, j) => {
                 let st = &modules[i].settings[j];
-                out.push(Shape::Fill([x, y, rw, rh], if hovered { 0xD01C_1C1C } else { 0xD008_0808 }));
+                out.push(Shape::Fill([x, y, rw, rh], if hovered { bg(0xD01C_1C1C) } else { bg(0xD008_0808) }));
                 if let Value::Num { v, min, max, .. } = st.value {
                     let t = if max > min { ((v - min) / (max - min)) as f32 } else { 0.0 };
-                    out.push(Shape::Fill([x + 2.0, y + rh - 2.0, (rw - 4.0) * t, 1.0], 0xFF00_0000 | ACCENT));
+                    out.push(Shape::Fill([x + 2.0, y + rh - 2.0, (rw - 4.0) * t, 1.0], 0xFF00_0000 | accent()));
                 }
                 let colour = match st.value {
-                    Value::Bool(true) => ACCENT,
+                    Value::Bool(true) => accent(),
                     _ => 0xD0D0D0,
                 };
                 out.push(Shape::Text(fit(&st.shown(), rw - 12.0), [x + 9.0, y + 1.5], colour));
@@ -4000,8 +4035,8 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
             .collect()
     });
     for (x, y) in more {
-        out.push(Shape::Fill([x, y, PANEL_W, 8.0], 0xE014_1414));
-        out.push(Shape::Text("v".into(), [x + PANEL_W / 2.0 - 2.0, y - 0.5], 0xB0B0B0));
+        out.push(Shape::Fill([x, y, panel_w(), 8.0], bg(0xE014_1414)));
+        out.push(Shape::Text("v".into(), [x + panel_w() / 2.0 - 2.0, y - 0.5], 0xB0B0B0));
     }
     // The hovered module's description, under the pointer.
     if let Some(Hit::Module(i)) = hover
@@ -4019,11 +4054,11 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     let (label, colour) = if search.is_empty() {
         ("Type to search".to_owned(), 0x909090)
     } else {
-        (format!("Search: {search}_"), ACCENT)
+        (format!("Search: {search}_"), accent())
     };
     let selected = with(|s| s.gui.select_all) && !search.is_empty();
     let lw_ = game.native_text_width(&label);
-    out.push(Shape::Fill([(w - lw_) / 2.0 - 4.0, 14.0, lw_ + 8.0, 12.0], if selected { 0xFF30_60B0 } else { 0xC010_1010 }));
+    out.push(Shape::Fill([(w - lw_) / 2.0 - 4.0, 14.0, lw_ + 8.0, 12.0], if selected { 0xFF30_60B0 } else { bg(0xC010_1010) }));
     out.push(Shape::Text(label, [(w - lw_) / 2.0, 16.0], if selected { 0xFFFFFF } else { colour }));
     let hint = "Right click: settings   Enter: toggle search result   Esc: close";
     let hw = game.native_text_width(hint);

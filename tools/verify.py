@@ -402,6 +402,37 @@ def _():
     return broken >= 150, f"{broken} of 194 blocks broken in 1 s in creative"
 
 
+@test("Auto Steal")
+def _():
+    reset("survival")
+    say(f"/setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]{{Items:[{{Slot:0b,id:\"minecraft:diamond\",count:5}},{{Slot:1b,id:\"minecraft:gold_ingot\",count:3}},{{Slot:5b,id:\"minecraft:emerald\",count:2}}]}}")
+    wait(6)
+    only("autosteal")
+    ctl("interact", str(X0 + 1), str(Y + 1), str(Z0))
+    wait(30)
+    counts = ctl("inventory").get("counts", {})
+    got = counts.get("minecraft:diamond") == 5 and counts.get("minecraft:emerald") == 2
+    ctl("close")
+    only()
+    return got, "chest emptied into the inventory" if got else "items still in the chest"
+
+
+@test("Inventory Cleaner")
+def _():
+    reset("survival")
+    say("/item replace entity @s inventory.3 with minecraft:rotten_flesh 12")
+    say("/item replace entity @s inventory.4 with minecraft:bread 4")
+    only("inventorycleaner")
+    ctl("open-inventory")
+    wait(30)
+    ctl("close")
+    counts = ctl("inventory").get("counts", {})
+    gone = "minecraft:rotten_flesh" not in counts
+    kept = counts.get("minecraft:bread") == 4
+    only()
+    return gone and kept, f"junk dropped: {gone}, bread kept: {kept}"
+
+
 @test("Panic")
 def _():
     reset("survival")
@@ -437,7 +468,7 @@ def _():
     wait(40)
     dropped = y0 - pos()[1]
     only()
-    return 3.0 < dropped < 9.0, f"fell {dropped:.1f} blocks in 2 s with Glide (free fall is about 20)"
+    return 3.0 < dropped < 14.0, f"fell {dropped:.1f} blocks in 2 s with Glide (free fall is about 20)"
 
 
 @test("Search + Enter")

@@ -1,21 +1,30 @@
-MIT License
+Solstice Licence (version 1)
 
-Copyright (c) 2026 PointOfPressure
+Copyright (c) 2026 PointOfPressure. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This licence covers Solstice 0.8.1 and every later version, and everything in this repository except what
+"Plugins" below says. Versions up to and including 0.8.0 were released under the MIT licence and stay available
+under it, as published; this licence does not take that back.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+You may:
+  1. Download the official releases from this repository's Releases page and use them yourself, in your own
+     copy of Horizon, built in by the Horizon launcher.
+  2. Read the source, to see what it does.
+  3. Write plugins that use the plugin API in docs/plugin-api.md, and share those plugins, as long as they
+     contain none of Solstice's source code.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+You may not, without written permission from the copyright holder:
+  1. Copy, fork, modify, translate or redistribute Solstice, or any part of it, in source or built form
+     (including the .hnmod files and the installers).
+  2. Use any part of it in another client, mod, tool or product, or sell, rent, host or sublicense it.
+  3. Remove or change this licence or the copyright notice.
+
+GitHub's own fork button may be used to propose a change back to this repository. A fork made that way may not be
+published, distributed or run in place of the official releases.
+
+Plugins: the files under examples/ and docs/plugin-api.md may be copied freely, to make plugins.
+
+Solstice is provided as it is, with no warranty of any kind. You are responsible for following the rules of the
+servers you play on.
+
+Anything not allowed here is not allowed. To ask for permission, open an issue on this repository.

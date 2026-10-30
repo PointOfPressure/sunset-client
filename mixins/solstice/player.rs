@@ -26,6 +26,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Potions absorption", false)
             .bool("Health enabled", true)
             .num("Health threshold", 20.0, 1.0, 40.0, 1.0),
+        Module::new("Auto Steal", Player, "Takes everything out of a chest, barrel, shulker box or hopper as you open it.")
+            .num("Items per tick", 3.0, 1.0, 27.0, 1.0)
+            .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0),
+        Module::new("Inventory Cleaner", Player, "Drops the listed items from your inventory while it is open.")
+            .text("Items", "rotten_flesh,spider_eye,poisonous_potato,gravel,cobblestone,netherrack,cobbled_deepslate,andesite,diorite,granite,tuff")
+            .num("Delay (ticks)", 1.0, 0.0, 10.0, 1.0),
         Module::new("Fast Use", Player, "Lets you use items at very high speeds.")
             .pick("Mode", &["All", "Some"])
             .text("Items", "ender_pearl,experience_bottle,snowball,egg")
@@ -67,6 +73,12 @@ struct Ps {
     afk_yaw: Option<f32>,
     afk_message: i32,
     afk_index: usize,
+    steal_wait: u32,
+    steal_id: i32,
+    steal_last: usize,
+    steal_same: u32,
+    steal_done: i32,
+    clean_wait: u32,
 }
 
 static PS: Mutex<Option<Ps>> = Mutex::new(None);
@@ -123,6 +135,15 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         get("Reach").map_or(u64::MAX, |m| m.n("Extra block reach").to_bits()),
         std::sync::atomic::Ordering::Relaxed,
     );
+    // These work on the inventory screen, which in_world leaves out.
+    if game.remote.is_some() && game.player.is_some() {
+        if let Some(m) = get("Auto Steal") {
+            auto_steal(game, m);
+        }
+        if let Some(m) = get("Inventory Cleaner") {
+            inventory_cleaner(game, m);
+        }
+    }
     if !in_world(game) {
         return;
     }
@@ -337,6 +358,80 @@ fn fast_use(game: &mut Game<'_>, m: &Module) {
         });
     if applies && game.use_delay > m.n("Cooldown (ticks)") as u32 {
         game.use_delay = m.n("Cooldown (ticks)") as u32;
+    }
+}
+
+// ---- Auto Steal and Inventory Cleaner
+
+// How many slots a server's container menu has, for the ones that are just a grid of items.
+fn container_size(menu: &str) -> Option<usize> {
+    let name = menu.strip_prefix("minecraft:").unwrap_or(menu);
+    match name {
+        "shulker_box" | "generic_9x3" => Some(27),
+        "hopper" => Some(5),
+        "generic_3x3" => Some(9),
+        _ => name.strip_prefix("generic_9x")?.parse::<usize>().ok().map(|rows| rows * 9),
+    }
+}
+
+fn auto_steal(game: &mut Game<'_>, m: &Module) {
+    use horizon_client::menu::Input::QuickMove;
+    if game.screen != Screen::Inventory {
+        // Closed: the next chest starts afresh.
+        ps(|p| p.steal_done = i32::MIN);
+        return;
+    }
+    // A chest of your own world, or the menu a server opened.
+    let (id, size) = match game.container {
+        Some(key) if matches!(game.container_kind(), Some(super::BlockEntity::Chest(_))) => {
+            (key.0 ^ key.1.rotate_left(10) ^ key.2.rotate_left(20) | 1, game.container_size())
+        }
+        Some(_) => return,
+        None => {
+            let (id, menu) = game.remote_menu();
+            match container_size(&menu) {
+                Some(n) => (id, n),
+                None => return,
+            }
+        }
+    };
+    if ps(|p| p.steal_done == id) || ps(|p| {
+        p.steal_wait = p.steal_wait.saturating_sub(1);
+        p.steal_wait > 0
+    }) {
+        return;
+    }
+    let items: Vec<usize> = (0..size).filter(|&i| game.slot_mut(300 + i).is_some()).collect();
+    // Done when it is empty, or when taking stopped changing it (your inventory is full).
+    let stuck = ps(|p| {
+        p.steal_same = if p.steal_id == id && p.steal_last == items.len() { p.steal_same + 1 } else { 0 };
+        (p.steal_id, p.steal_last) = (id, items.len());
+        p.steal_same >= 6
+    });
+    if items.is_empty() || stuck {
+        ps(|p| p.steal_done = id);
+        return;
+    }
+    let ops: Vec<_> = items.iter().take(m.n("Items per tick") as usize).map(|&i| (Some(300 + i), 0, QuickMove)).collect();
+    game.menu_ops(&ops);
+    ps(|p| p.steal_wait = m.n("Delay (ticks)") as u32);
+}
+
+fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
+    use horizon_client::menu::Input::Throw;
+    if game.screen != Screen::Inventory || game.remote_menu().1 != "inventory" {
+        return;
+    }
+    if ps(|p| {
+        p.clean_wait = p.clean_wait.saturating_sub(1);
+        p.clean_wait > 0
+    }) {
+        return;
+    }
+    let junk = (0..36).find(|&i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| listed(m.t("Items"), short(&s.item))));
+    if let Some(i) = junk {
+        game.menu_ops(&[(Some(i), 1, Throw)]);
+        ps(|p| p.clean_wait = m.n("Delay (ticks)") as u32 + 1);
     }
 }
 
