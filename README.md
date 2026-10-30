@@ -17,13 +17,13 @@ everything (installs Sunset, builds it into the game, starts it):
 **Windows** (PowerShell)
 
 ```powershell
-irm https://github.com/PointOfPressure/solstice-client/releases/latest/download/install.ps1 | iex
+irm https://github.com/PointOfPressure/sunset-client/releases/latest/download/install.ps1 | iex
 ```
 
 **Linux and macOS** (terminal)
 
 ```sh
-curl -fsSL https://github.com/PointOfPressure/solstice-client/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/PointOfPressure/sunset-client/releases/latest/download/install.sh | sh
 ```
 
 The first run takes **10 to 30 minutes** (it compiles the game with Sunset inside) and shows progress. Later
@@ -116,7 +116,7 @@ Each Sunset version is built for one Horizon Nightly, so Sunset keeps working wh
 - **No Sunset in game**: you played the plain **Horizon** instance. Pick **Native mods**.
 - **The first build is slow**: yes. It compiles the whole game once.
 - The Windows and macOS installers could only be tested on Linux so far. If one doesn't work, open an
-  [issue](https://github.com/PointOfPressure/solstice-client/issues) with what it printed.
+  [issue](https://github.com/PointOfPressure/sunset-client/issues) with what it printed.
 
 ## Plugins
 

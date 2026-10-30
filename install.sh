@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs Sunset into Horizon, builds it into the game and starts it. One command:
 #
-#   curl -fsSL https://github.com/PointOfPressure/solstice-client/releases/latest/download/install.sh | sh
+#   curl -fsSL https://github.com/PointOfPressure/sunset-client/releases/latest/download/install.sh | sh
 #
 # Options (after `sh -s --` when piping): --no-build (only put the file in place), --no-play (build, don't start),
 # and, from a downloaded copy: sh install.sh [sunset.hnmod] [game folder]. SUNSET_DRY=1 shows what it would run.
@@ -67,7 +67,7 @@ say "Sunset: getting the mod..."
 if [ -n "$file" ]; then
     cp "$file" "$tmp"
 else
-    curl -fsSL -o "$tmp" https://github.com/PointOfPressure/solstice-client/releases/latest/download/sunset.hnmod
+    curl -fsSL -o "$tmp" https://github.com/PointOfPressure/sunset-client/releases/latest/download/sunset.hnmod
 fi
 
 echo "$homes" | while IFS= read -r h; do

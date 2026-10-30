@@ -1,6 +1,6 @@
 # Installs Sunset into Horizon on Windows, builds it into the game and starts it. One command, in PowerShell:
 #
-#   irm https://github.com/PointOfPressure/solstice-client/releases/latest/download/install.ps1 | iex
+#   irm https://github.com/PointOfPressure/sunset-client/releases/latest/download/install.ps1 | iex
 #
 # Options (from a downloaded copy): .\install.ps1 [-NoBuild] [-NoPlay] [-File sunset.hnmod] [-GameHome C:\path\to\horizon]
 param(
@@ -24,7 +24,7 @@ $tmp = Join-Path ([IO.Path]::GetTempPath()) ("sunset-" + [Guid]::NewGuid().ToStr
 if ($File) {
     Copy-Item -LiteralPath $File -Destination $tmp
 } else {
-    Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/PointOfPressure/solstice-client/releases/latest/download/sunset.hnmod" -OutFile $tmp
+    Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/PointOfPressure/sunset-client/releases/latest/download/sunset.hnmod" -OutFile $tmp
 }
 
 $utf8 = New-Object System.Text.UTF8Encoding($false)
