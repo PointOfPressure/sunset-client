@@ -382,6 +382,26 @@ def _():
     return broken >= 6, f"{broken} of 12 stone blocks broken in 3 s with an iron pickaxe"
 
 
+@test("Nuker (creative shred)")
+def _():
+    reset("creative")
+    say(f"/fill {X0-3} {Y+1} {Z0-3} {X0+3} {Y+4} {Z0+3} minecraft:stone")
+    say(f"/fill {X0} {Y+1} {Z0} {X0} {Y+2} {Z0} minecraft:air")
+    say(f"/tp @s {X0+0.5} {Y+1} {Z0+0.5}")
+    wait(10)
+    only("nuker")
+    wait(20)
+    n = 0
+    for dx in range(-3, 4):
+        for dy in range(1, 5):
+            for dz in range(-3, 4):
+                if ctl("block", str(X0 + dx), str(Y + dy), str(Z0 + dz)).get("block") == "minecraft:stone":
+                    n += 1
+    only()
+    broken = 194 - n
+    return broken >= 150, f"{broken} of 194 blocks broken in 1 s in creative"
+
+
 @test("Search + Enter")
 def _():
     reset("survival")
@@ -878,17 +898,6 @@ def _():
     fast = dug()
     only()
     return fast > plain, f"{plain} of 4 blocks in 1.2 s, {fast} with Break Delay"
-
-
-@test("Nuker")
-def _():
-    reset("creative")
-    say(f"/fill {X0+1} {Y+1} {Z0+1} {X0+2} {Y+2} {Z0+2} minecraft:stone")
-    only("nuker")
-    wait(40)
-    ok = check(f"/execute unless block {X0+2} {Y+2} {Z0+2} minecraft:stone")
-    only()
-    return ok, "blocks broken"
 
 
 if __name__ == "__main__":

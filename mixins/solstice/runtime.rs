@@ -433,7 +433,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Fill", true),
         Module::new("Nuker", World, "Breaks the blocks around you.")
             .num("Range", 4.5, 1.0, 6.0, 0.5)
-            .num("Blocks per tick", 4.0, 1.0, 10.0, 1.0)
+            .num("Blocks per tick", 24.0, 1.0, 256.0, 4.0)
             .bool("Instant only", false)
             .bool("Keep ground", true),
         Module::new("Time Changer", World, "Sets the time of day you see.")
@@ -2170,6 +2170,7 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
     }
     found.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut broke = 0;
+    let mut sent: Vec<([i32; 3], u64)> = Vec::new();
     for (_, pos, instant, ticks) in found {
         if instant {
             if broke >= m.n("Blocks per tick") as usize {
@@ -2177,6 +2178,8 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
             }
             let seq = super::solstice_util::sequence(game);
             game.send(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: seq }));
+            // The block shows until the server's update comes back: next tick go on to new ones, not these again.
+            sent.push((pos, now + 4));
             broke += 1;
         } else if broke == 0 {
             let seq = super::solstice_util::sequence(game);
@@ -2184,6 +2187,9 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
             with(|s| s.nuke = Some((pos, ticks)));
             break;
         }
+    }
+    if !sent.is_empty() {
+        with(|s| s.nuke_skip.extend(sent));
     }
     if broke > 0 {
         game.swing_arm();
