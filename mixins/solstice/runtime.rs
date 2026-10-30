@@ -38,13 +38,15 @@ pub(crate) enum Category {
     Movement,
     Player,
     Render,
+    World,
 }
 
-const CATEGORIES: [Category; 4] = [
+const CATEGORIES: [Category; 5] = [
     Category::Combat,
     Category::Movement,
     Category::Player,
     Category::Render,
+    Category::World,
 ];
 
 impl Category {
@@ -54,6 +56,7 @@ impl Category {
             Category::Movement => "Movement",
             Category::Player => "Player",
             Category::Render => "Render",
+            Category::World => "World",
         }
     }
 }
@@ -322,6 +325,32 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Fill", true),
         Module::new("Waypoints", Render, "Shows the places saved with .waypoint, on screen.")
             .num("Range", 1000.0, 50.0, 10000.0, 50.0),
+        // Added in 0.4
+        Module::new("Auto Armor", Combat, "Wears the best armor in your inventory.")
+            .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0),
+        Module::new("Reverse Step", Movement, "Falls fast when you step off a block.")
+            .num("Speed", 1.0, 0.5, 3.0, 0.5),
+        Module::new("Long Jump", Movement, "Jumps further.")
+            .num("Multiplier", 2.0, 1.5, 5.0, 0.5),
+        Module::new("Auto Jump", Movement, "Jumps for you whenever you walk."),
+        Module::new("Chest Swap", Movement, "Swaps your chestplate and elytra, once, then turns itself off."),
+        Module::new("Auto Replenish", Player, "Refills hotbar stacks from your inventory when they run low.")
+            .num("Threshold", 8.0, 1.0, 32.0, 1.0)
+            .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0),
+        Module::new("Auto Tool", Player, "Picks the fastest tool in your hotbar for the block you mine.")
+            .bool("Switch back", true),
+        Module::new("Middle Click Extra", Player, "Middle click uses an item from your hotbar, then switches back.")
+            .pick("Item", &["Pearl", "Rocket", "XP bottle"]),
+        Module::new("Trajectories", Render, "Draws where a bow shot or a throw will land."),
+        Module::new("Logout Spots", Render, "Marks where players were when they logged out.")
+            .num("Minutes", 10.0, 1.0, 60.0, 1.0),
+        Module::new("Nuker", World, "Breaks the blocks around you.")
+            .num("Range", 4.0, 1.0, 6.0, 0.5)
+            .num("Blocks per tick", 2.0, 1.0, 10.0, 1.0)
+            .bool("Instant only", true)
+            .bool("Keep ground", true),
+        Module::new("Time Changer", World, "Sets the time of day you see.")
+            .num("Time", 6000.0, 0.0, 24000.0, 1000.0),
     ]
 }
 
@@ -373,6 +402,23 @@ pub(crate) struct State {
     crumb_at: u64,
     crit_target: Option<(u32, Option<(f32, f32)>)>,
     crit_ticks: u32,
+    tool_back: Option<usize>,
+    mc_back: Option<(usize, u32)>,
+    nuke: Option<([i32; 3], u32)>,
+    nuke_wait: u32,
+    armor_wait: u32,
+    replenish_wait: u32,
+    online: Vec<String>,
+    last_pos: Vec<(String, [f64; 3], String)>,
+    spots: Vec<Spot>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Spot {
+    name: String,
+    pos: [f64; 3],
+    dim: String,
+    at: u64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -415,6 +461,15 @@ impl State {
             crumb_at: 0,
             crit_target: None,
             crit_ticks: 0,
+            tool_back: None,
+            mc_back: None,
+            nuke: None,
+            nuke_wait: 0,
+            armor_wait: 0,
+            replenish_wait: 0,
+            online: Vec::new(),
+            last_pos: Vec::new(),
+            spots: Vec::new(),
         }
     }
     fn find(&self, name: &str) -> Option<usize> {
@@ -452,7 +507,7 @@ impl State {
                 if let (Some(i), [x, y, c]) = (CATEGORIES.iter().position(|c| norm(c.label()) == cat), parts.as_slice())
                     && let (Ok(x), Ok(y)) = (x.parse(), y.parse())
                 {
-                    self.gui.panels[i] = Panel { x, y, collapsed: *c == "true" };
+                    self.gui.panels[i] = Panel { x, y, collapsed: *c == "true", scroll: 0.0 };
                 }
                 continue;
             }
@@ -904,6 +959,9 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
         open_gui(game);
         return;
     }
+    if key == "key.mouse.middle" && with(|s| s.is_on("Middle Click Extra")) {
+        middle_click(game);
+    }
     let bound: Vec<usize> = with(|s| {
         (0..s.modules.len())
             .filter(|&i| s.modules[i].key.as_deref() == Some(key))
@@ -948,6 +1006,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     if on("Sprint") && playing {
         want.push(KeyCode::ControlLeft);
+    }
+    if on("Auto Jump") && playing && move_input(game) != (0.0, 0.0) {
+        want.push(KeyCode::Space);
     }
     if on("Sneak") && playing {
         want.push(KeyCode::ShiftLeft);
@@ -1165,6 +1226,24 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
             // The jump's own speed (0.42), scaled, after this tick's gravity.
             p.velocity.y = (0.42 * m.n("Multiplier") - 0.08) * 0.98;
         }
+        if let Some(m) = get("Long Jump")
+            && was_ground
+            && !ground_now
+            && jump_now
+            && p.velocity.y > 0.3
+        {
+            p.velocity.x *= m.n("Multiplier");
+            p.velocity.z *= m.n("Multiplier");
+        }
+        if let Some(m) = get("Reverse Step")
+            && was_ground
+            && !ground_now
+            && !jump_now
+            && p.velocity.y <= 0.0
+            && !p.flying
+        {
+            p.velocity.y = -m.n("Speed");
+        }
         if let Some(m) = get("Fast Climb")
             && p.last_climbable.is_some()
             && (forward || jump_now)
@@ -1194,6 +1273,47 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     }
     if let Some(m) = get("Scaffold") {
         scaffold(game, m);
+    }
+    if let Some(m) = get("Auto Armor") {
+        auto_armor(game, m);
+    }
+    if get("Chest Swap").is_some() {
+        chest_swap(game);
+        if let Some(i) = with(|s| s.find("Chest Swap")) {
+            toggle(game, i, false);
+        }
+    }
+    if let Some(m) = get("Auto Replenish") {
+        auto_replenish(game, m);
+    }
+    if let Some(m) = get("Nuker") {
+        nuker(game, m);
+    } else {
+        with(|s| s.nuke = None);
+    }
+    if let Some(m) = get("Auto Tool") {
+        auto_tool(game, m);
+    }
+    if let Some((back, wait)) = with(|s| s.mc_back) {
+        if wait <= 1 {
+            hold(game, back);
+            with(|s| s.mc_back = None);
+        } else {
+            with(|s| s.mc_back = Some((back, wait - 1)));
+        }
+    }
+    if let Some(m) = get("Logout Spots") {
+        track_logouts(game, m);
+    } else {
+        with(|s| {
+            s.spots.clear();
+            s.last_pos.clear();
+        });
+    }
+    // Time Changer: the sky the player sees; the server's own time comes back
+    // with its next update.
+    if let Some(m) = get("Time Changer") {
+        game.world.day_time = m.n("Time") as i64;
     }
     if let Some(m) = get("Auto Clicker") {
         auto_click(game, m);
@@ -1538,6 +1658,312 @@ fn scan_blocks(game: &Game<'_>, m: &Module, ticks: u64) {
         s.found = found;
         s.found_for = (key, range, at);
         s.found_at = ticks.max(1);
+    });
+}
+
+// A click or several in the player's own inventory (the menu with no
+// container open), by the menu's slot numbers: 0 to 8 the hotbar, 9 to 35
+// the rest, 500 to 503 the armor.
+fn menu_click(game: &mut Game<'_>, ops: &[(usize, horizon_client::menu::Input)]) {
+    let ops: Vec<(Option<usize>, i32, horizon_client::menu::Input)> =
+        ops.iter().map(|&(slot, input)| (Some(slot), 0, input)).collect();
+    game.remote_menu_ops(&ops);
+}
+
+fn inventory_idle(game: &Game<'_>) -> bool {
+    game.native_playing() && game.remote.is_some() && game.remote_menu().1 == "inventory"
+}
+
+// A rough rank of an armor piece: its material, less what it has worn.
+fn armor_score(item: &str, damage: u32) -> f32 {
+    let n = item.strip_prefix("minecraft:").unwrap_or(item);
+    let tier = if n.starts_with("netherite") {
+        6.0
+    } else if n.starts_with("diamond") {
+        5.0
+    } else if n.starts_with("iron") {
+        4.0
+    } else if n.starts_with("chainmail") {
+        3.0
+    } else if n.starts_with("copper") {
+        2.5
+    } else if n.starts_with("golden") {
+        2.0
+    } else if n.starts_with("turtle") {
+        2.0
+    } else {
+        1.0
+    };
+    tier - (damage as f32 / 2000.0).min(0.9)
+}
+
+// Puts the stack in inventory slot `i` on armor slot `a`: shift-click into an
+// empty slot, else swap by picking both up.
+fn wear(game: &mut Game<'_>, i: usize, a: usize) {
+    use horizon_client::menu::Input::{Pickup, QuickMove};
+    if game.armor[a].is_none() {
+        menu_click(game, &[(i, QuickMove)]);
+    } else {
+        menu_click(game, &[(i, Pickup), (500 + a, Pickup), (i, Pickup)]);
+    }
+}
+
+fn auto_armor(game: &mut Game<'_>, m: &Module) {
+    if !inventory_idle(game) {
+        return;
+    }
+    if with(|s| {
+        s.armor_wait = s.armor_wait.saturating_sub(1);
+        s.armor_wait > 0
+    }) {
+        return;
+    }
+    const SLOTS: [&str; 4] = ["head", "chest", "legs", "feet"];
+    for (a, slot_name) in SLOTS.iter().enumerate() {
+        let worn = game.armor[a].as_ref().map_or(0.0, |s| armor_score(&s.item, s.damage));
+        let mut best: Option<(usize, f32)> = None;
+        for i in 0..36 {
+            let Some(st) = game.inventory.get(i).and_then(|s| s.as_ref()) else {
+                continue;
+            };
+            if st.item.ends_with("elytra") {
+                continue;
+            }
+            let fits = game
+                .res
+                .items()
+                .get(&st.item)
+                .is_some_and(|inf| inf.equip_slot.as_deref() == Some(*slot_name));
+            let score = armor_score(&st.item, st.damage);
+            if fits && score > worn && best.is_none_or(|(_, b)| score > b) {
+                best = Some((i, score));
+            }
+        }
+        if let Some((i, _)) = best {
+            wear(game, i, a);
+            with(|s| s.armor_wait = m.n("Delay (ticks)") as u32);
+            return;
+        }
+    }
+}
+
+// Swaps the chestplate and the elytra, once.
+fn chest_swap(game: &mut Game<'_>) {
+    if !inventory_idle(game) {
+        return;
+    }
+    let wearing_elytra = game.armor[1].as_ref().is_some_and(|s| s.item.ends_with("elytra"));
+    let found = (0..36).find(|&i| {
+        game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| {
+            if wearing_elytra {
+                !s.item.ends_with("elytra")
+                    && game.res.items().get(&s.item).is_some_and(|inf| inf.equip_slot.as_deref() == Some("chest"))
+            } else {
+                s.item.ends_with("elytra")
+            }
+        })
+    });
+    match found {
+        Some(i) => wear(game, i, 1),
+        None => say(game, if wearing_elytra { "No chestplate in your inventory." } else { "No elytra in your inventory." }),
+    }
+}
+
+fn auto_replenish(game: &mut Game<'_>, m: &Module) {
+    use horizon_client::menu::Input::QuickMove;
+    if !inventory_idle(game) {
+        return;
+    }
+    if with(|s| {
+        s.replenish_wait = s.replenish_wait.saturating_sub(1);
+        s.replenish_wait > 0
+    }) {
+        return;
+    }
+    for h in 0..9 {
+        let Some(st) = game.inventory.get(h).and_then(|s| s.as_ref()) else {
+            continue;
+        };
+        let max = game.res.items().get(&st.item).map_or(64, |i| i.max_stack);
+        if max <= 1 || st.count >= max || f64::from(st.count) > m.n("Threshold") {
+            continue;
+        }
+        let item = st.item.clone();
+        let source = (9..36).find(|&i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| s.item == item));
+        if let Some(src) = source {
+            // Shift-click from the main inventory fills the hotbar stack first.
+            menu_click(game, &[(src, QuickMove)]);
+            with(|s| s.replenish_wait = m.n("Delay (ticks)") as u32);
+            return;
+        }
+    }
+}
+
+// The hotbar tool that mines the block under the crosshair fastest, while
+// the attack button is held; back to the old slot after.
+fn auto_tool(game: &mut Game<'_>, m: &Module) {
+    use winit::event::MouseButton;
+    let down = game.native_playing() && game.physical_buttons.contains(&MouseButton::Left) && !gui_open();
+    if !down {
+        if let Some(back) = with(|s| s.tool_back.take())
+            && m.b("Switch back")
+        {
+            hold(game, back);
+        }
+        return;
+    }
+    if game.remote.is_none() || game.entity_targeted() {
+        return;
+    }
+    let Some(hit) = game.pick() else {
+        return;
+    };
+    let name = game.res.facts().get(game.world.block(hit.pos[0], hit.pos[1], hit.pos[2])).name.clone();
+    let speed = |game: &Game<'_>, slot: usize| {
+        game.res.items().mining_speed(game.inventory.get(slot).and_then(|s| s.as_ref()), &name)
+    };
+    let current = game.selected;
+    let mut best = (current, speed(game, current));
+    for slot in 0..9 {
+        let sp = speed(game, slot);
+        if sp > best.1 + 0.01 {
+            best = (slot, sp);
+        }
+    }
+    if best.0 != current {
+        with(|s| {
+            if s.tool_back.is_none() {
+                s.tool_back = Some(current);
+            }
+        });
+        hold(game, best.0);
+    }
+}
+
+// Middle click: throws or uses the chosen item from the hotbar, and switches
+// back a few ticks later.
+fn middle_click(game: &mut Game<'_>) {
+    use winit::event::MouseButton;
+    let Some(m) = with(|s| s.module("Middle Click Extra").filter(|m| m.on).cloned()) else {
+        return;
+    };
+    let want = match m.p("Item") {
+        "Pearl" => "ender_pearl",
+        "Rocket" => "firework_rocket",
+        _ => "experience_bottle",
+    };
+    let slot = (0..9).find(|&i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| s.item.ends_with(want)));
+    let Some(slot) = slot else {
+        return;
+    };
+    let before = game.selected;
+    hold(game, slot);
+    let _ = game.play_mouse(MouseButton::Right, true);
+    let _ = game.play_mouse(MouseButton::Right, false);
+    with(|s| {
+        if s.mc_back.is_none() {
+            s.mc_back = Some((before, 3));
+        }
+    });
+}
+
+fn nuker(game: &mut Game<'_>, m: &Module) {
+    if !game.native_playing() || game.remote.is_none() {
+        return;
+    }
+    let Some(eye) = game.eye_position() else {
+        return;
+    };
+    // A block being mined the slow way: stop it when its time is up.
+    if let Some((pos, left)) = with(|s| s.nuke) {
+        if left <= 1 {
+            game.send(S::PlayerAction(play::PlayerAction { action: 3, pos, direction: 1, sequence: SEQUENCE.fetch_add(1, Ordering::Relaxed) }));
+            with(|s| s.nuke = None);
+        } else {
+            with(|s| s.nuke = Some((pos, left - 1)));
+        }
+        return;
+    }
+    let range = m.n("Range");
+    let floor_y = game.player.as_ref().map_or(0, |p| p.position.y.floor() as i32);
+    let facts = game.res.facts();
+    let mut found: Vec<(f64, [i32; 3], bool, u32)> = Vec::new();
+    let r = range.ceil() as i32;
+    let (ex, ey, ez) = (eye[0].floor() as i32, eye[1].floor() as i32, eye[2].floor() as i32);
+    for x in ex - r..=ex + r {
+        for y in ey - r..=ey + r {
+            for z in ez - r..=ez + r {
+                if m.b("Keep ground") && y < floor_y {
+                    continue;
+                }
+                let state = game.world.block(x, y, z);
+                if facts.is_air(state) {
+                    continue;
+                }
+                let f = facts.get(state);
+                if f.hardness < 0.0 || f.name.ends_with("water") || f.name.ends_with("lava") {
+                    continue;
+                }
+                let d = ((f64::from(x) + 0.5 - eye[0]).powi(2) + (f64::from(y) + 0.5 - eye[1]).powi(2) + (f64::from(z) + 0.5 - eye[2]).powi(2)).sqrt();
+                if d > range {
+                    continue;
+                }
+                let speed = game.res.items().mining_speed(game.held(), &f.name);
+                let per_tick = if f.hardness <= 0.0 { 1.0 } else { speed / f.hardness / if speed > 1.0 { 30.0 } else { 100.0 } };
+                let instant = game.creative || per_tick >= 1.0;
+                if m.b("Instant only") && !instant {
+                    continue;
+                }
+                let ticks = if instant { 0 } else { (1.0 / per_tick).ceil() as u32 + 2 };
+                found.push((d, [x, y, z], instant, ticks));
+            }
+        }
+    }
+    found.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut broke = 0;
+    for (_, pos, instant, ticks) in found {
+        if instant {
+            if broke >= m.n("Blocks per tick") as usize {
+                break;
+            }
+            game.send(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: SEQUENCE.fetch_add(1, Ordering::Relaxed) }));
+            broke += 1;
+        } else if broke == 0 {
+            game.send(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: SEQUENCE.fetch_add(1, Ordering::Relaxed) }));
+            with(|s| s.nuke = Some((pos, ticks)));
+            break;
+        }
+    }
+    if broke > 0 {
+        game.swing_arm();
+        game.send(S::Punch(Empty));
+    }
+}
+
+// Players who left the list since they were last seen: where they stood.
+fn track_logouts(game: &Game<'_>, m: &Module) {
+    let Some(online) = game.remote_online_names() else {
+        return;
+    };
+    let dim = game.dim.id().to_owned();
+    let mut seen: Vec<(String, [f64; 3], String)> = Vec::new();
+    for (id, name) in game.remote_player_names() {
+        if let Some(mob) = game.mobs.iter().find(|mob| mob.id == id) {
+            seen.push((name, [mob.position.x, mob.position.y, mob.position.z], dim.clone()));
+        }
+    }
+    let now = game.ticks;
+    let keep = (m.n("Minutes") * 1200.0) as u64;
+    with(|s| {
+        for (name, pos, d) in s.last_pos.clone() {
+            if !online.iter().any(|n| *n == name) {
+                s.spots.retain(|sp| sp.name != name);
+                s.spots.push(Spot { name, pos, dim: d, at: now });
+            }
+        }
+        s.last_pos.retain(|(n, _, _)| online.contains(n) && !seen.iter().any(|(sn, _, _)| sn == n));
+        s.last_pos.extend(seen);
+        s.spots.retain(|sp| now.saturating_sub(sp.at) < keep);
     });
 }
 
@@ -2309,6 +2735,7 @@ fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: 
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     let (esp, tracers, tags, storage) = (get("ESP"), get("Tracers"), get("Nametags"), get("Storage ESP"));
     let (crumbs, blocks, points) = (get("Breadcrumbs"), get("Block ESP"), get("Waypoints"));
+    let (spots, flight_path) = (get("Logout Spots"), get("Trajectories"));
     if esp.is_none()
         && tracers.is_none()
         && tags.is_none()
@@ -2316,6 +2743,8 @@ fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: 
         && crumbs.is_none()
         && blocks.is_none()
         && points.is_none()
+        && spots.is_none()
+        && flight_path.is_none()
     {
         return;
     }
@@ -2462,6 +2891,29 @@ fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: 
         }
     }
 
+    if spots.is_some() {
+        let here = game.native_player().map(|p| p.dimension);
+        let spots = with(|s| s.spots.clone());
+        for sp in spots.iter().filter(|sp| Some(sp.dim.as_str()) == here) {
+            let lo = [sp.pos[0] - 0.3, sp.pos[1], sp.pos[2] - 0.3];
+            let hi = [sp.pos[0] + 0.3, sp.pos[1] + 1.8, sp.pos[2] + 0.3];
+            if let Some(r) = cam.rect(lo, hi) {
+                outline(out, r, 0xFFFF_5050, lw, true);
+            }
+            if let Some([x, y]) = cam.project([sp.pos[0], sp.pos[1] + 2.2, sp.pos[2]]) {
+                let mins = game.ticks.saturating_sub(sp.at) / 1200;
+                let text = format!("{} logged out {}m ago", sp.name, mins);
+                let tw = game.native_text_width(&text);
+                out.push(Shape::Fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000));
+                out.push(Shape::Text(text, [x - tw / 2.0, y], 0xFF5555));
+            }
+        }
+    }
+
+    if flight_path.is_some() {
+        trajectory(game, cam, out, lw);
+    }
+
     if let Some(m) = points {
         let here = game.native_player().map(|p| p.dimension);
         let waypoints = with(|s| s.waypoints.clone());
@@ -2478,6 +2930,61 @@ fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: 
             out.push(Shape::Fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000));
             out.push(Shape::Text(text, [x - tw / 2.0, y], ACCENT));
             out.push(Shape::Fill([x - 1.0, y + 11.0, 2.0, 4.0], 0xFF00_0000 | ACCENT));
+        }
+    }
+}
+
+// Where what the player holds would land: a bow being drawn, or a throwable.
+fn trajectory(game: &Game<'_>, cam: &Camera, out: &mut Vec<Shape>, lw: f32) {
+    let Some(stack) = game.held() else {
+        return;
+    };
+    let name = stack.item.strip_prefix("minecraft:").unwrap_or(&stack.item);
+    let (speed, gravity) = match name {
+        "bow" => match game.using {
+            Some((_, ticks)) => {
+                let t = f64::from(ticks) / 20.0;
+                (((t * t + t * 2.0) / 3.0).min(1.0) * 3.0, 0.05)
+            }
+            None => return,
+        },
+        "trident" => (2.5, 0.05),
+        "ender_pearl" | "snowball" | "egg" => (1.5, 0.03),
+        "splash_potion" | "lingering_potion" => (0.5, 0.05),
+        "experience_bottle" => (0.7, 0.07),
+        _ => return,
+    };
+    let Some(eye) = game.eye_position() else {
+        return;
+    };
+    let (yaw, pitch) = (f64::from(game.yaw).to_radians(), f64::from(game.pitch).to_radians());
+    let dir = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
+    let mut pos = [eye[0], eye[1] - 0.1, eye[2]];
+    let mut vel = [dir[0] * speed, dir[1] * speed, dir[2] * speed];
+    let mut last = cam.project(pos);
+    for _ in 0..200 {
+        for i in 0..3 {
+            pos[i] += vel[i];
+            vel[i] *= 0.99;
+        }
+        vel[1] -= gravity;
+        let (x, y, z) = (pos[0].floor() as i32, pos[1].floor() as i32, pos[2].floor() as i32);
+        let hit = solid_at(game, x, y, z);
+        let now = cam.project(pos);
+        if let (Some(a), Some(b)) = (last, now) {
+            line(out, a, b, 0xFF00_0000 | ACCENT, lw);
+        }
+        last = now;
+        if hit {
+            let lo = [pos[0] - 0.25, pos[1] - 0.25, pos[2] - 0.25];
+            let hi = [pos[0] + 0.25, pos[1] + 0.25, pos[2] + 0.25];
+            if let Some(r) = cam.rect(lo, hi) {
+                outline(out, r, 0xFF00_0000 | ACCENT, lw, true);
+            }
+            break;
+        }
+        if pos[1] < -80.0 {
+            break;
         }
     }
 }
@@ -2529,9 +3036,11 @@ fn line(out: &mut Vec<Shape>, from: [f32; 2], to: [f32; 2], argb: u32, lw: f32) 
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Panel {
+    // Negative until the first frame places it.
     x: f32,
     y: f32,
     collapsed: bool,
+    scroll: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2549,6 +3058,8 @@ struct Gui {
     panels: Vec<Panel>,
     expanded: Vec<usize>,
     drag: Option<Drag>,
+    // The height of the GUI the panels last drew in.
+    view_h: f32,
 }
 
 impl Default for Gui {
@@ -2557,10 +3068,11 @@ impl Default for Gui {
             open: false,
             closing: false,
             panels: (0..CATEGORIES.len())
-                .map(|i| Panel { x: 4.0 + i as f32 * (PANEL_W + 4.0), y: 32.0, collapsed: false })
+                .map(|_| Panel { x: -1.0, y: 32.0, collapsed: false, scroll: 0.0 })
                 .collect(),
             expanded: Vec::new(),
             drag: None,
+            view_h: 240.0,
         }
     }
 }
@@ -2578,29 +3090,70 @@ enum Hit {
     Setting(usize, usize),
 }
 
-// Each row of every panel, top to bottom: its rectangle and what it is.
+// The rows of one panel before scrolling: their offset from the top of its
+// body, what they are, and how tall the whole body is.
+fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
+    let mut rows = Vec::new();
+    let mut y = 0.0;
+    for (i, m) in s.modules.iter().enumerate().filter(|(_, m)| m.category == CATEGORIES[c]) {
+        rows.push((y, Hit::Module(i)));
+        y += ROW_H;
+        if s.gui.expanded.contains(&i) {
+            rows.push((y, Hit::Bind(i)));
+            y += ROW_H;
+            for j in 0..m.settings.len() {
+                rows.push((y, Hit::Setting(i, j)));
+                y += ROW_H;
+            }
+        }
+    }
+    (rows, y)
+}
+
+// How much of a panel's body shows: what is left of the screen under it.
+fn body_room(s: &State, c: usize) -> f32 {
+    (s.gui.view_h - s.gui.panels[c].y - HEAD_H - 14.0).max(ROW_H * 3.0)
+}
+
+// Each row of every panel, top to bottom: its rectangle and what it is. A
+// row only part way in view is left out.
 fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
     let mut out = Vec::new();
-    for (c, (cat, p)) in CATEGORIES.iter().zip(&s.gui.panels).enumerate() {
+    for c in 0..CATEGORIES.len() {
+        let p = s.gui.panels[c];
         out.push(([p.x, p.y, PANEL_W, HEAD_H], Hit::Header(c)));
         if p.collapsed {
             continue;
         }
-        let mut y = p.y + HEAD_H;
-        for (i, m) in s.modules.iter().enumerate().filter(|(_, m)| m.category == *cat) {
-            out.push(([p.x, y, PANEL_W, ROW_H], Hit::Module(i)));
-            y += ROW_H;
-            if s.gui.expanded.contains(&i) {
-                out.push(([p.x, y, PANEL_W, ROW_H], Hit::Bind(i)));
-                y += ROW_H;
-                for j in 0..m.settings.len() {
-                    out.push(([p.x, y, PANEL_W, ROW_H], Hit::Setting(i, j)));
-                    y += ROW_H;
-                }
+        let (rows, _) = panel_body(s, c);
+        let room = body_room(s, c);
+        for (off, hit) in rows {
+            let top = off - p.scroll;
+            if top < -0.01 || top + ROW_H > room + 0.01 {
+                continue;
             }
+            out.push(([p.x, p.y + HEAD_H + top, PANEL_W, ROW_H], hit));
         }
     }
     out
+}
+
+// The wheel over a panel scrolls it.
+pub(super) fn gui_wheel(game: &Game<'_>, steps: f32) {
+    let at = game.cursor;
+    with(|s| {
+        for c in 0..CATEGORIES.len() {
+            let p = s.gui.panels[c];
+            let (_, content) = panel_body(s, c);
+            let room = body_room(s, c);
+            let shown = if p.collapsed { 0.0 } else { content.min(room) };
+            if inside([p.x, p.y, PANEL_W, HEAD_H + shown], at) {
+                let max = (content - room).max(0.0);
+                s.gui.panels[c].scroll = (p.scroll - steps * ROW_H * 2.0).clamp(0.0, max);
+                return;
+            }
+        }
+    });
 }
 
 fn inside(r: [f32; 4], (x, y): (f32, f32)) -> bool {
@@ -2773,9 +3326,28 @@ fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
 fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     follow_drag(game, w, h);
     with(|s| {
+        s.gui.view_h = h;
+        // Panels with no place yet go left to right, in a second row when the
+        // window is narrow.
+        let mut x = 4.0;
+        let mut y = 32.0;
+        for p in s.gui.panels.iter_mut().filter(|p| p.x < 0.0) {
+            if x + PANEL_W > w {
+                x = 4.0;
+                y += 16.0;
+            }
+            (p.x, p.y) = (x, y);
+            x += PANEL_W + 4.0;
+        }
         for p in &mut s.gui.panels {
             p.x = p.x.clamp(0.0, (w - PANEL_W).max(0.0));
             p.y = p.y.clamp(0.0, (h - HEAD_H).max(0.0));
+        }
+        // A scroll past the end (a shorter body, a taller window) comes back.
+        for c in 0..CATEGORIES.len() {
+            let (_, content) = panel_body(s, c);
+            let max = (content - body_room(s, c)).max(0.0);
+            s.gui.panels[c].scroll = s.gui.panels[c].scroll.clamp(0.0, max);
         }
     });
     let at = game.cursor;
@@ -2841,6 +3413,22 @@ fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
                 out.push(Shape::Text(fit(&st.shown(), rw - 12.0), [x + 9.0, y + 1.5], colour));
             }
         }
+    }
+    // A panel with more below its last row shows it.
+    let more: Vec<(f32, f32)> = with(|s| {
+        (0..CATEGORIES.len())
+            .filter(|&c| !s.gui.panels[c].collapsed)
+            .filter_map(|c| {
+                let p = s.gui.panels[c];
+                let (_, content) = panel_body(s, c);
+                let room = body_room(s, c);
+                (content - p.scroll > room + 0.5).then_some((p.x, p.y + HEAD_H + room))
+            })
+            .collect()
+    });
+    for (x, y) in more {
+        out.push(Shape::Fill([x, y, PANEL_W, 8.0], 0xE014_1414));
+        out.push(Shape::Text("v".into(), [x + PANEL_W / 2.0 - 2.0, y - 0.5], 0xB0B0B0));
     }
     // The hovered module's description, under the pointer.
     if let Some(Hit::Module(i)) = hover

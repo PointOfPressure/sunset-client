@@ -43,7 +43,7 @@ after Horizon updates, but plays that Nightly's game until the mod moves to a ne
 - **Right Shift** opens the click GUI (rebind it under Options > Mods > Solstice): every
   category as a panel. Left click turns a module on or off, right click opens its settings
   (sliders for numbers, right click a slider to reset it), the Bind row takes the next key.
-  Drag the headers to move panels, right click a header to fold it. Esc closes it. The game
+  Drag the headers to move panels, right click a header to fold it, scroll a long panel with the wheel. Esc closes it. The game
   keeps running while it's open.
 - The same settings are also pages under Options > Mods > Solstice (`.pages`).
 - **Key binds** toggle a module while you play.
@@ -70,10 +70,11 @@ Settings and binds are saved in `horizon-mods/.horizon-mod-data/solstice/config`
 
 | Category | Modules |
 | --- | --- |
-| Combat | Kill Aura, Trigger Bot, Criticals, Auto Totem, Auto Weapon, Auto Log |
-| Movement | Sprint, Sneak, Auto Walk, Flight, Speed, No Fall, Velocity, Spider, Step, Air Jump, Elytra Boost, Anti Void, Safe Walk, Fast Climb, High Jump, Parkour, Blink, Scaffold |
-| Player | Fast Place, Fast Break, Auto Respawn, Anti Hunger, Anti AFK, Auto Clicker, Auto Eat |
-| Render | HUD, Fullbright, ESP, Tracers, Nametags, Storage ESP, Zoom, Breadcrumbs, Block ESP, Waypoints |
+| Combat | Kill Aura, Trigger Bot, Criticals, Auto Totem, Auto Weapon, Auto Log, Auto Armor |
+| Movement | Sprint, Sneak, Auto Walk, Flight, Speed, No Fall, Velocity, Spider, Step, Air Jump, Elytra Boost, Anti Void, Safe Walk, Fast Climb, High Jump, Long Jump, Parkour, Blink, Scaffold, Reverse Step, Auto Jump, Chest Swap |
+| Player | Fast Place, Fast Break, Auto Respawn, Anti Hunger, Anti AFK, Auto Clicker, Auto Eat, Auto Replenish, Auto Tool, Middle Click Extra |
+| Render | HUD, Fullbright, ESP, Tracers, Nametags, Storage ESP, Zoom, Breadcrumbs, Block ESP, Waypoints, Trajectories, Logout Spots |
+| World | Nuker, Time Changer |
 
 Combat modules and No Fall work on servers, single player included (Horizon plays single
 player through its own integrated server). ESP, Tracers and Nametags are drawn on the HUD.
