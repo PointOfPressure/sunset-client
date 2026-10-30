@@ -441,8 +441,10 @@ fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
 pub(super) fn afk_keys(m: &Module) -> Vec<KeyCode> {
     let mut keys = Vec::new();
     if m.b("Jump") {
+        // rand takes the same lock as ps: roll first, or the game freezes.
+        let roll = rand(99) == 0;
         let jump = ps(|p| {
-            p.afk_jump = !p.afk_jump && rand(99) == 0;
+            p.afk_jump = !p.afk_jump && roll;
             p.afk_jump
         });
         if jump {
