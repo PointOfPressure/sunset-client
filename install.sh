@@ -84,6 +84,27 @@ echo "$homes" | while IFS= read -r h; do
 done
 say "Solstice: installed."
 
+# Native mods are compiled into the game together, so they all have to be made for the same Horizon version.
+others=""
+echo "$homes" | {
+    while IFS= read -r h; do
+        [ -d "$h/horizon-native-mods" ] || continue
+        for f in "$h"/horizon-native-mods/*.hnmod; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f" .hnmod)
+            [ "$n" = solstice ] || echo "$n"
+        done
+    done
+} | sort -u > "$tmp.others"
+if [ -s "$tmp.others" ]; then
+    say ""
+    say "You also have other native mods: $(tr '\n' ' ' < "$tmp.others")"
+    say "They are built into the game together with Solstice, so they must be made for the same Horizon version (Solstice 0.8.0 is made for Nightly ba6344a)."
+    say "If the build says 'made for different Horizon revisions', turn the others off in the launcher's Mods page, or delete their .hnmod from horizon-native-mods, and run this again."
+    say ""
+fi
+rm -f "$tmp.others"
+
 if [ "$build" = 0 ]; then
     say "Next: in the Horizon launcher, Settings > Game > Native mods (experimental) on, then Build. Or run this again without --no-build."
     exit 0
@@ -120,7 +141,11 @@ if [ -n "$SOLSTICE_DRY" ]; then
     [ "$play" = 1 ] && say "would run: $launcher play --instance native-mods"
     exit 0
 fi
-"$launcher" native-build --trust-native-code
+if ! "$launcher" native-build --trust-native-code; then
+    say ""
+    say "The build failed. If it said the mods were 'made for different Horizon revisions', you have another native mod built for a different Horizon version: turn it off in the launcher's Mods page (or delete its .hnmod from horizon-native-mods) and run this again."
+    exit 1
+fi
 say "Solstice: done."
 if [ "$play" = 1 ]; then
     say "Starting Horizon (the \"Native mods\" instance). In the game, press the \` key."

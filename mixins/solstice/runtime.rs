@@ -432,9 +432,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Range", 8.0, 3.0, 16.0, 1.0)
             .bool("Fill", true),
         Module::new("Nuker", World, "Breaks the blocks around you.")
-            .num("Range", 4.0, 1.0, 6.0, 0.5)
-            .num("Blocks per tick", 2.0, 1.0, 10.0, 1.0)
-            .bool("Instant only", true)
+            .num("Range", 4.5, 1.0, 6.0, 0.5)
+            .num("Blocks per tick", 4.0, 1.0, 10.0, 1.0)
+            .bool("Instant only", false)
             .bool("Keep ground", true),
         Module::new("Time Changer", World, "Sets the time of day you see.")
             .num("Time", 6000.0, 0.0, 24000.0, 1000.0),
@@ -503,6 +503,8 @@ pub(super) struct State {
     tool_back: Option<usize>,
     mc_back: Option<(usize, u32)>,
     nuke: Option<([i32; 3], u32)>,
+    // Blocks Nuker just stopped on and the tick to forget them at.
+    nuke_skip: Vec<([i32; 3], u64)>,
     armor_wait: u32,
     replenish_wait: u32,
     last_pos: Vec<(String, [f64; 3], String)>,
@@ -564,6 +566,7 @@ impl State {
             tool_back: None,
             mc_back: None,
             nuke: None,
+            nuke_skip: Vec::new(),
             armor_wait: 0,
             replenish_wait: 0,
             last_pos: Vec::new(),
@@ -1286,14 +1289,8 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
         super::remote::solstice_remote::clear_destroy_delay(game, wait);
     }
 
-    let dir = move_direction(game);
-    let jump = game.native_playing() && game.keys.contains(&KeyCode::Space);
-    let sneak = game.native_playing() && game.keys.contains(&KeyCode::ShiftLeft);
-    let forward = move_input(game).0 > 0.0;
-    let dim = game.dim.id();
-    let (yaw, pitch) = (game.yaw, game.pitch);
-
-    // GUI Move: the game ignores the keys while the inventory is open, so what is held moves you by hand.
+    // GUI Move: the game ignores the keys while the inventory is open, so what is held steers by hand. Flight,
+    // Speed and the rest read the same keys, so they work with it open too.
     let screen_move = get("GUI Move").filter(|_| game.screen == Screen::Inventory && !gui_open() && game.remote_menu().1 != "anvil");
     let held = |k: KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
     let screen_keys = screen_move.as_ref().map(|m| {
@@ -1312,18 +1309,44 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
         game.yaw += turn(arrows[0], arrows[1]) * 6.0;
         game.pitch = (game.pitch + turn(arrows[2], arrows[3]) * 4.0).clamp(-90.0, 90.0);
     }
+    let (yaw, pitch) = (game.yaw, game.pitch);
+    let flat = |f: f64, s: f64| {
+        let a = f64::from(yaw).to_radians();
+        let (x, z) = (-a.sin() * f + a.cos() * s, a.cos() * f + a.sin() * s);
+        let len = (x * x + z * z).sqrt();
+        (len > 0.0).then(|| [x / len, z / len])
+    };
+    let dir = move_direction(game).or_else(|| screen_keys.and_then(|(f, s, ..)| flat(f, s)));
+    let jump = game.native_playing() && game.keys.contains(&KeyCode::Space) || screen_keys.is_some_and(|k| k.2);
+    let sneak = game.native_playing() && game.keys.contains(&KeyCode::ShiftLeft) || screen_keys.is_some_and(|k| k.4);
+    let forward = move_input(game).0 > 0.0 || screen_keys.is_some_and(|k| k.0 > 0.0);
+    let dim = game.dim.id();
+    let flight_velocity = get("Flight").is_some_and(|f| f.p("Mode") == "Velocity");
+    let speed_hack = get("Speed").is_some();
+
     if let Some(p) = game.player.as_mut() {
-        if let Some((fwd, strafe, jumping, sprinting, sneaking, ..)) = screen_keys {
-            if fwd != 0.0 || strafe != 0.0 {
-                let a = f64::from(yaw).to_radians();
-                let (x, z) = (-a.sin() * fwd + a.cos() * strafe, a.cos() * fwd + a.sin() * strafe);
-                let len = (x * x + z * z).sqrt();
-                let speed = if sprinting { 0.13 } else { 0.1 } * if sneaking { 0.3 } else { 1.0 };
-                p.velocity.x = x / len * speed;
-                p.velocity.z = z / len * speed;
-            }
-            if jumping && p.ground.on_ground {
-                p.velocity.y = 0.42;
+        // Without Flight or Speed to move you, the inventory screen walks you at the game's own speeds.
+        if let Some((.., sprinting, sneaking, _, _)) = screen_keys
+            && !flight_velocity
+            && !speed_hack
+        {
+            if p.flying {
+                // Creative flight: about 11 blocks a second at the default flying speed.
+                let fly = f64::from(p.flying_speed) / 0.05 * 10.9 / 20.0;
+                if let Some([x, z]) = dir {
+                    p.velocity.x = x * fly;
+                    p.velocity.z = z * fly;
+                }
+                p.velocity.y = if jump { fly * 0.6 } else if sneak { -fly * 0.6 } else { 0.0 };
+            } else {
+                if let Some([x, z]) = dir {
+                    let speed = if sneaking { 0.0655 } else if sprinting { 0.2806 } else { 0.2159 };
+                    p.velocity.x = x * speed;
+                    p.velocity.z = z * speed;
+                }
+                if jump && p.ground.on_ground {
+                    p.velocity.y = 0.42;
+                }
             }
         }
         if let Some(f) = get("Flight")
@@ -2089,17 +2112,26 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
     let Some(eye) = game.eye_position() else {
         return;
     };
-    // A block being mined the slow way: stop it when its time is up.
+    // A block being mined the slow way: stop it when its time is up, and start the next one in the same tick.
+    let now = game.ticks;
     if let Some((pos, left)) = with(|s| s.nuke) {
         if left <= 1 {
             let seq = super::solstice_util::sequence(game);
             game.send(S::PlayerAction(play::PlayerAction { action: 3, pos, direction: 1, sequence: seq }));
-            with(|s| s.nuke = None);
+            // The block is still there until the server's update arrives: leave it alone meanwhile.
+            with(|s| {
+                s.nuke = None;
+                s.nuke_skip.push((pos, now + 6));
+            });
         } else {
             with(|s| s.nuke = Some((pos, left - 1)));
+            return;
         }
-        return;
     }
+    let skip = with(|s| {
+        s.nuke_skip.retain(|&(_, until)| until > now);
+        s.nuke_skip.iter().map(|&(pos, _)| pos).collect::<Vec<_>>()
+    });
     let range = m.n("Range");
     let floor_y = game.player.as_ref().map_or(0, |p| p.position.y.floor() as i32);
     let facts = game.res.facts();
@@ -2117,7 +2149,7 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
                     continue;
                 }
                 let f = facts.get(state);
-                if f.hardness < 0.0 || f.name.ends_with("water") || f.name.ends_with("lava") {
+                if f.hardness < 0.0 || f.name.ends_with("water") || f.name.ends_with("lava") || skip.contains(&[x, y, z]) {
                     continue;
                 }
                 let d = ((f64::from(x) + 0.5 - eye[0]).powi(2) + (f64::from(y) + 0.5 - eye[1]).powi(2) + (f64::from(z) + 0.5 - eye[2]).powi(2)).sqrt();
@@ -2130,7 +2162,8 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
                 if m.b("Instant only") && !instant {
                     continue;
                 }
-                let ticks = if instant { 0 } else { (1.0 / per_tick).ceil() as u32 + 2 };
+                // The server lets a stop through once the progress reaches 0.7, counting the tick it started in.
+                let ticks = if instant { 0 } else { ((0.7 / per_tick).ceil() as u32).max(1) };
                 found.push((d, [x, y, z], instant, ticks));
             }
         }

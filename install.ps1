@@ -47,6 +47,23 @@ foreach ($h in $homes) {
 Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue
 Write-Host "Solstice: installed."
 
+# Native mods are compiled into the game together, so they all have to be made for the same Horizon version.
+$others = @()
+foreach ($h in $homes) {
+    $mods = Join-Path $h "horizon-native-mods"
+    if (Test-Path $mods) {
+        $others += @(Get-ChildItem -LiteralPath $mods -Filter "*.hnmod" | Where-Object { $_.BaseName -ne "solstice" } | ForEach-Object { $_.BaseName })
+    }
+}
+$others = @($others | Sort-Object -Unique)
+if ($others.Count -gt 0) {
+    Write-Host ""
+    Write-Host ("You also have other native mods: " + ($others -join ", "))
+    Write-Host "They are built into the game together with Solstice, so they must be made for the same Horizon version (Solstice 0.8.0 is made for Nightly ba6344a)."
+    Write-Host "If the build says 'made for different Horizon revisions', turn the others off in the launcher's Mods page, or delete their .hnmod from horizon-native-mods, and run this again."
+    Write-Host ""
+}
+
 # The launcher's program: running now, on the PATH, in its usual places, or behind a shortcut.
 function Find-Launcher {
     $running = Get-Process -Name "horizon-launcher" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -95,6 +112,20 @@ if (-not $launcher) {
     Write-Host "I couldn't find the Horizon launcher. Install it from https://playhorizon.dev, open it once, then run this command again."
     exit 1
 }
+# Horizon's build (its Windows resource compiler) fails when the path to the launcher's folder has a space in it,
+# which it does for a Windows user name like "Jo Smith". Keep the launcher's files somewhere without one.
+$launcherHome = $env:HORIZON_LAUNCHER_HOME
+if (-not $launcherHome) { $launcherHome = Join-Path $env:APPDATA "horizon-launcher" }
+if ($launcherHome -match '\s') {
+    $newHome = "C:\horizon-launcher"
+    Write-Host ""
+    Write-Host "Your Windows user name has a space in it, and Horizon's build can't handle that."
+    Write-Host "Using $newHome for the launcher's files instead. The launcher will ask you to sign in again, and it fetches its files again (a few minutes)."
+    $env:HORIZON_LAUNCHER_HOME = $newHome
+    [Environment]::SetEnvironmentVariable("HORIZON_LAUNCHER_HOME", $newHome, "User")
+    Write-Host "If the launcher window is open, close it and open it again so it uses the new folder."
+    Write-Host ""
+}
 Write-Host "Solstice: building it into the game (10 to 30 minutes the first time, a few after that; Windows needs nothing else installed)..."
 if ($Dry) {
     Write-Host "would run: $launcher native-build --trust-native-code"
@@ -102,7 +133,11 @@ if ($Dry) {
     return
 }
 & $launcher native-build --trust-native-code
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "The build failed. If it said the mods were 'made for different Horizon revisions', you have another native mod built for a different Horizon version: turn it off in the launcher's Mods page (or delete its .hnmod from horizon-native-mods) and run this again."
+    exit $LASTEXITCODE
+}
 Write-Host "Solstice: done."
 if ($NoPlay) {
     Write-Host 'Play the "Native mods" instance in the Horizon launcher. In the game, press the ` key.'

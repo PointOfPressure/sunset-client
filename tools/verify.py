@@ -348,6 +348,40 @@ def _():
     return moved > 2.0, f"walked {moved:.1f} blocks with the inventory open"
 
 
+@test("GUI Move (with Flight)")
+def _():
+    reset("survival")
+    only("guimove", "flight")
+    ctl("open-inventory")
+    wait(6)
+    start = pos()
+    ctl("key", "w", "down")
+    wait(30)
+    ctl("key", "w", "up")
+    end = pos()
+    ctl("close")
+    only()
+    moved = ((end[0] - start[0]) ** 2 + (end[2] - start[2]) ** 2) ** 0.5
+    return moved > 6.0, f"flew {moved:.1f} blocks in 1.5 s with the inventory open"
+
+
+@test("Nuker (survival)")
+def _():
+    reset("survival")
+    say("/item replace entity @s hotbar.0 with minecraft:iron_pickaxe")
+    ctl("key", "1", "tap")
+    wait(2)
+    say(f"/fill {X0-1} {Y+1} {Z0+1} {X0+1} {Y+2} {Z0+2} minecraft:stone")
+    wait(4)
+    only("nuker")
+    wait(60)
+    left = sum(1 for dx in (-1, 0, 1) for dy in (1, 2) for dz in (1, 2)
+               if check(f"/execute if block {X0+dx} {Y+dy} {Z0+dz} minecraft:stone"))
+    only()
+    broken = 12 - left
+    return broken >= 6, f"{broken} of 12 stone blocks broken in 3 s with an iron pickaxe"
+
+
 @test("Search + Enter")
 def _():
     reset("survival")
