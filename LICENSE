@@ -1,30 +1,65 @@
-Solstice Licence (version 1)
+Sunset is licensed under the PolyForm Strict License 1.0.0, below, from version 0.8.1 on.
+Versions up to and including 0.8.0 (released as Solstice) were released under the MIT licence and stay available under it, as published.
+Additional permission from the licensor: the files under examples/ and docs/plugin-api.md may be copied, changed and shared freely to make plugins for Sunset.
 
-Copyright (c) 2026 PointOfPressure. All rights reserved.
+Required Notice: Copyright (c) 2026 PointOfPressure (https://github.com/PointOfPressure)
 
-This licence covers Solstice 0.8.1 and every later version, and everything in this repository except what
-"Plugins" below says. Versions up to and including 0.8.0 were released under the MIT licence and stay available
-under it, as published; this licence does not take that back.
+# PolyForm Strict License 1.0.0
 
-You may:
-  1. Download the official releases from this repository's Releases page and use them yourself, in your own
-     copy of Horizon, built in by the Horizon launcher.
-  2. Read the source, to see what it does.
-  3. Write plugins that use the plugin API in docs/plugin-api.md, and share those plugins, as long as they
-     contain none of Solstice's source code.
+<https://polyformproject.org/licenses/strict/1.0.0>
 
-You may not, without written permission from the copyright holder:
-  1. Copy, fork, modify, translate or redistribute Solstice, or any part of it, in source or built form
-     (including the .hnmod files and the installers).
-  2. Use any part of it in another client, mod, tool or product, or sell, rent, host or sublicense it.
-  3. Remove or change this licence or the copyright notice.
+## Acceptance
 
-GitHub's own fork button may be used to propose a change back to this repository. A fork made that way may not be
-published, distributed or run in place of the official releases.
+In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
 
-Plugins: the files under examples/ and docs/plugin-api.md may be copied freely, to make plugins.
+## Copyright License
 
-Solstice is provided as it is, with no warranty of any kind. You are responsible for following the rules of the
-servers you play on.
+The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose, other than distributing the software or making changes or new works based on the software.
 
-Anything not allowed here is not allowed. To ask for permission, open an issue on this repository.
+## Patent License
+
+The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
+
+## Noncommercial Purposes
+
+Any noncommercial purpose is a permitted purpose.
+
+## Personal Uses
+
+Personal use for research, experiment, and testing for the benefit of public knowledge, personal study, private entertainment, hobby projects, amateur pursuits, or religious observance, without any anticipated commercial application, is use for a permitted purpose.
+
+## Noncommercial Organizations
+
+Use by any charitable organization, educational institution, public research organization, public safety or health organization, environmental protection organization, or government institution is use for a permitted purpose regardless of the source of funding or obligations resulting from the funding.
+
+## Fair Use
+
+You may have "fair use" rights for the software under the law. These terms do not limit them.
+
+## No Other Rights
+
+These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else.  These terms do not imply any other licenses.
+
+## Patent Defense
+
+If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
+
+## Violations
+
+The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 32 days of receiving notice.  Otherwise, all your licenses end immediately.
+
+## No Liability
+
+***As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.***
+
+## Definitions
+
+The **licensor** is the individual or entity offering these terms, and the **software** is the software the licensor makes available under these terms.
+
+**You** refers to the individual or entity agreeing to these terms.
+
+**Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
+
+**Your licenses** are all the licenses granted to you for the software under these terms.
+
+**Use** means anything you do with the software requiring one of your licenses.

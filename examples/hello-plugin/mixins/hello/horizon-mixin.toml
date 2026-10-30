@@ -3,7 +3,7 @@ id = "hello"
 version = "0.1.0"
 priority = 100
 
-# The same Horizon commit as the Solstice it plugs into.
+# The same Horizon commit as the Sunset it plugs into.
 [compatibility]
 horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
 

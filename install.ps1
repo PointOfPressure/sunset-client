@@ -1,8 +1,8 @@
-# Installs Solstice into Horizon on Windows, builds it into the game and starts it. One command, in PowerShell:
+# Installs Sunset into Horizon on Windows, builds it into the game and starts it. One command, in PowerShell:
 #
 #   irm https://github.com/PointOfPressure/solstice-client/releases/latest/download/install.ps1 | iex
 #
-# Options (from a downloaded copy): .\install.ps1 [-NoBuild] [-NoPlay] [-File solstice.hnmod] [-GameHome C:\path\to\horizon]
+# Options (from a downloaded copy): .\install.ps1 [-NoBuild] [-NoPlay] [-File sunset.hnmod] [-GameHome C:\path\to\horizon]
 param(
     [switch]$NoBuild,
     [switch]$NoPlay,
@@ -20,46 +20,46 @@ $homes = @($GameHome)
 $nativeInstance = Join-Path $GameHome "instances\native-mods"
 if (Test-Path $nativeInstance) { $homes += $nativeInstance }
 
-$tmp = Join-Path ([IO.Path]::GetTempPath()) ("solstice-" + [Guid]::NewGuid().ToString("N") + ".hnmod")
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("sunset-" + [Guid]::NewGuid().ToString("N") + ".hnmod")
 if ($File) {
     Copy-Item -LiteralPath $File -Destination $tmp
 } else {
-    Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/PointOfPressure/solstice-client/releases/latest/download/solstice.hnmod" -OutFile $tmp
+    Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/PointOfPressure/solstice-client/releases/latest/download/sunset.hnmod" -OutFile $tmp
 }
 
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 foreach ($h in $homes) {
     $mods = Join-Path $h "horizon-native-mods"
     New-Item -ItemType Directory -Force -Path $mods | Out-Null
-    Copy-Item -LiteralPath $tmp -Destination (Join-Path $mods "solstice.hnmod") -Force
-    # An older name of the same mod.
-    foreach ($old in @("meteor.hnmod", "delta.hnmod")) {
+    Copy-Item -LiteralPath $tmp -Destination (Join-Path $mods "sunset.hnmod") -Force
+    # Older names of the same mod.
+    foreach ($old in @("solstice.hnmod", "meteor.hnmod", "delta.hnmod")) {
         Remove-Item -LiteralPath (Join-Path $mods $old) -ErrorAction SilentlyContinue
     }
     $list = Join-Path $h "horizon-mods.txt"
     $lines = @()
     if (Test-Path $list) {
-        $lines = @(Get-Content -LiteralPath $list | Where-Object { $_ -notmatch '^mod\.(solstice|meteor|delta):' })
+        $lines = @(Get-Content -LiteralPath $list | Where-Object { $_ -notmatch '^mod\.(sunset|solstice|meteor|delta):' })
     }
-    $lines += "mod.solstice: true"
+    $lines += "mod.sunset: true"
     [IO.File]::WriteAllText($list, (($lines -join "`n") + "`n"), $utf8)
 }
 Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue
-Write-Host "Solstice: installed."
+Write-Host "Sunset: installed."
 
 # Native mods are compiled into the game together, so they all have to be made for the same Horizon version.
 $others = @()
 foreach ($h in $homes) {
     $mods = Join-Path $h "horizon-native-mods"
     if (Test-Path $mods) {
-        $others += @(Get-ChildItem -LiteralPath $mods -Filter "*.hnmod" | Where-Object { $_.BaseName -ne "solstice" } | ForEach-Object { $_.BaseName })
+        $others += @(Get-ChildItem -LiteralPath $mods -Filter "*.hnmod" | Where-Object { $_.BaseName -ne "sunset" } | ForEach-Object { $_.BaseName })
     }
 }
 $others = @($others | Sort-Object -Unique)
 if ($others.Count -gt 0) {
     Write-Host ""
     Write-Host ("You also have other native mods: " + ($others -join ", "))
-    Write-Host "They are built into the game together with Solstice, so they must be made for the same Horizon version (Solstice 0.8.0 is made for Nightly ba6344a)."
+    Write-Host "They are built into the game together with Sunset, so they must be made for the same Horizon version (Sunset 0.8.1 is made for Nightly ba6344a)."
     Write-Host "If the build says 'made for different Horizon revisions', turn the others off in the launcher's Mods page, or delete their .hnmod from horizon-native-mods, and run this again."
     Write-Host ""
 }
@@ -126,7 +126,7 @@ if ($launcherHome -match '\s') {
     Write-Host "If the launcher window is open, close it and open it again so it uses the new folder."
     Write-Host ""
 }
-Write-Host "Solstice: building it into the game (10 to 30 minutes the first time, a few after that; Windows needs nothing else installed)..."
+Write-Host "Sunset: building it into the game (10 to 30 minutes the first time, a few after that; Windows needs nothing else installed)..."
 if ($Dry) {
     Write-Host "would run: $launcher native-build --trust-native-code"
     if (-not $NoPlay) { Write-Host "would run: $launcher play --instance native-mods" }
@@ -138,7 +138,7 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "The build failed. If it said the mods were 'made for different Horizon revisions', you have another native mod built for a different Horizon version: turn it off in the launcher's Mods page (or delete its .hnmod from horizon-native-mods) and run this again."
     exit $LASTEXITCODE
 }
-Write-Host "Solstice: done."
+Write-Host "Sunset: done."
 if ($NoPlay) {
     Write-Host 'Play the "Native mods" instance in the Horizon launcher. In the game, press the ` key.'
 } else {

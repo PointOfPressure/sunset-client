@@ -1,10 +1,10 @@
 #!/bin/sh
-# Installs Solstice into Horizon, builds it into the game and starts it. One command:
+# Installs Sunset into Horizon, builds it into the game and starts it. One command:
 #
 #   curl -fsSL https://github.com/PointOfPressure/solstice-client/releases/latest/download/install.sh | sh
 #
 # Options (after `sh -s --` when piping): --no-build (only put the file in place), --no-play (build, don't start),
-# and, from a downloaded copy: sh install.sh [solstice.hnmod] [game folder]. SOLSTICE_DRY=1 shows what it would run.
+# and, from a downloaded copy: sh install.sh [sunset.hnmod] [game folder]. SUNSET_DRY=1 shows what it would run.
 set -e
 
 build=1
@@ -63,26 +63,26 @@ find_launcher() {
 
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
-say "Solstice: getting the mod..."
+say "Sunset: getting the mod..."
 if [ -n "$file" ]; then
     cp "$file" "$tmp"
 else
-    curl -fsSL -o "$tmp" https://github.com/PointOfPressure/solstice-client/releases/latest/download/solstice.hnmod
+    curl -fsSL -o "$tmp" https://github.com/PointOfPressure/solstice-client/releases/latest/download/sunset.hnmod
 fi
 
 echo "$homes" | while IFS= read -r h; do
     [ -n "$h" ] || continue
     mkdir -p "$h/horizon-native-mods"
-    cp "$tmp" "$h/horizon-native-mods/solstice.hnmod"
-    # An older name of the same mod.
-    rm -f "$h/horizon-native-mods/meteor.hnmod" "$h/horizon-native-mods/delta.hnmod"
+    cp "$tmp" "$h/horizon-native-mods/sunset.hnmod"
+    # Older names of the same mod.
+    rm -f "$h/horizon-native-mods/solstice.hnmod" "$h/horizon-native-mods/meteor.hnmod" "$h/horizon-native-mods/delta.hnmod"
     list="$h/horizon-mods.txt"
     touch "$list"
-    grep -v -e '^mod\.solstice:' -e '^mod\.meteor:' -e '^mod\.delta:' "$list" > "$list.tmp" || true
-    echo 'mod.solstice: true' >> "$list.tmp"
+    grep -v -e '^mod\.sunset:' -e '^mod\.solstice:' -e '^mod\.meteor:' -e '^mod\.delta:' "$list" > "$list.tmp" || true
+    echo 'mod.sunset: true' >> "$list.tmp"
     mv "$list.tmp" "$list"
 done
-say "Solstice: installed."
+say "Sunset: installed."
 
 # Native mods are compiled into the game together, so they all have to be made for the same Horizon version.
 others=""
@@ -92,14 +92,14 @@ echo "$homes" | {
         for f in "$h"/horizon-native-mods/*.hnmod; do
             [ -f "$f" ] || continue
             n=$(basename "$f" .hnmod)
-            [ "$n" = solstice ] || echo "$n"
+            [ "$n" = sunset ] || echo "$n"
         done
     done
 } | sort -u > "$tmp.others"
 if [ -s "$tmp.others" ]; then
     say ""
     say "You also have other native mods: $(tr '\n' ' ' < "$tmp.others")"
-    say "They are built into the game together with Solstice, so they must be made for the same Horizon version (Solstice 0.8.0 is made for Nightly ba6344a)."
+    say "They are built into the game together with Sunset, so they must be made for the same Horizon version (Sunset 0.8.1 is made for Nightly ba6344a)."
     say "If the build says 'made for different Horizon revisions', turn the others off in the launcher's Mods page, or delete their .hnmod from horizon-native-mods, and run this again."
     say ""
 fi
@@ -118,8 +118,8 @@ launcher=$(find_launcher) || {
 
 # Linux needs the sound and device headers to compile the game. Install them if they're missing.
 if [ "$(uname -s)" = Linux ] && command -v pkg-config >/dev/null 2>&1 && ! pkg-config --exists alsa libudev 2>/dev/null; then
-    say "Solstice: the build needs two system libraries (sound and device headers). Installing them (it may ask for your password)..."
-    if [ -n "$SOLSTICE_DRY" ]; then
+    say "Sunset: the build needs two system libraries (sound and device headers). Installing them (it may ask for your password)..."
+    if [ -n "$SUNSET_DRY" ]; then
         say "would install the libraries"
     elif command -v apt-get >/dev/null 2>&1; then
         sudo apt-get install -y libasound2-dev libudev-dev pkg-config
@@ -135,8 +135,8 @@ if [ "$(uname -s)" = Linux ] && command -v pkg-config >/dev/null 2>&1 && ! pkg-c
     fi
 fi
 
-say "Solstice: building it into the game (10 to 30 minutes the first time, a few after that)..."
-if [ -n "$SOLSTICE_DRY" ]; then
+say "Sunset: building it into the game (10 to 30 minutes the first time, a few after that)..."
+if [ -n "$SUNSET_DRY" ]; then
     say "would run: $launcher native-build --trust-native-code"
     [ "$play" = 1 ] && say "would run: $launcher play --instance native-mods"
     exit 0
@@ -146,7 +146,7 @@ if ! "$launcher" native-build --trust-native-code; then
     say "The build failed. If it said the mods were 'made for different Horizon revisions', you have another native mod built for a different Horizon version: turn it off in the launcher's Mods page (or delete its .hnmod from horizon-native-mods) and run this again."
     exit 1
 fi
-say "Solstice: done."
+say "Sunset: done."
 if [ "$play" = 1 ]; then
     say "Starting Horizon (the \"Native mods\" instance). In the game, press the \` key."
     nohup "$launcher" play --instance native-mods >/dev/null 2>&1 &

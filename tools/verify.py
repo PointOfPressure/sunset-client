@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Runs each Solstice module in a flat test arena in a headless Horizon (see
+# Runs each Sunset module in a flat test arena in a headless Horizon (see
 # tools/README in the repo's notes: ctl = horizon-ctl on the test session) and
 # checks a measurable result. Usage: verify.py CTL_PATH [test names...]
 # Tests that need a second player (on a dedicated server) use the control

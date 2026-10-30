@@ -1,8 +1,8 @@
-# Solstice plugin API (version 1)
+# Sunset plugin API (version 1)
 
-A Solstice plugin is another [Horizon native mod](https://github.com/horizon-rust/horizon/blob/main/docs/native-mods.md)
-that adds modules to Solstice's click GUI. It is built into the game together with Solstice, so it
-needs no access to Solstice's source: it uses a small module Solstice provides, `solstice_api`.
+A Sunset plugin is another [Horizon native mod](https://github.com/horizon-rust/horizon/blob/main/docs/native-mods.md)
+that adds modules to Sunset's click GUI. It is built into the game together with Sunset, so it
+needs no access to Sunset's source: it uses a small module Sunset provides, `sunset_api`.
 
 A whole working plugin is in [`examples/hello-plugin`](../examples/hello-plugin).
 
@@ -15,20 +15,20 @@ Three files in a folder `mixins/<id>/`:
 - `plugin.rs`: your code.
 - `tick.rs`: a one-line helper that calls `plugin.rs`.
 
-It must name the same `horizon_revision` as the Solstice it plugs into (Solstice's own
-`horizon-native.json` says which). Put `solstice.hnmod` and your plugin's `.hnmod` in
+It must name the same `horizon_revision` as the Sunset it plugs into (Sunset's own
+`horizon-native.json` says which). Put `sunset.hnmod` and your plugin's `.hnmod` in
 `horizon-native-mods/` and the launcher builds them together.
 
 ## The API
 
-In your module, `use super::solstice_api as api;`.
+In your module, `use super::sunset_api as api;`.
 
 | | |
 | --- | --- |
 | `api::API_VERSION` | `1`. A new version only adds things. |
 | `api::register(module)` | Adds a module to the GUI, the `.modules` list and the config. Safe to call every tick: a name already there is left alone. |
 | `api::module("Name")` | The module's current settings while the player has it **on**, else `None`. |
-| `api::chat(game, "text")` | A `[Solstice]` line in chat. |
+| `api::chat(game, "text")` | A `[Sunset]` line in chat. |
 | `api::turn_off(game, "Name")` | Turns a module off. |
 | `api::Module::new(name, category, about)` | Builds a module; then `.bool(name, default)`, `.num(name, default, min, max, step)`, `.pick(name, &[choices])`, `.text(name, default)` add settings. |
 | `m.b("x")`, `m.n("x")`, `m.p("x")`, `m.t("x")` | Read a bool, number, choice or text setting. |
@@ -58,7 +58,7 @@ Nightlies, which is why a plugin names a Horizon commit.
 
 ```rust
 use super::Game;
-use super::solstice_api as api;
+use super::sunset_api as api;
 
 pub(crate) fn tick(game: &mut Game<'_>) {
     api::register(

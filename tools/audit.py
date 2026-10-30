@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import re, pathlib, sys, json
 base = pathlib.Path.home()/".cache/tmp/meteor-src/meteor-client/src/main/java/meteordevelopment/meteorclient/systems/modules"
-sol = pathlib.Path.home()/"dev/horizon-meteor/mixins/solstice"
+sol = pathlib.Path.home()/"dev/horizon-meteor/mixins/sunset"
 def norm(s): return re.sub(r'[^a-z0-9]','',s.lower())
 # ours
 ours = {}

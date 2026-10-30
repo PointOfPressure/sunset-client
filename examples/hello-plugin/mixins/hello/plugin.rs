@@ -1,12 +1,12 @@
-// An example Solstice plugin: one module, "Hello", that says something in chat
+// An example Sunset plugin: one module, "Hello", that says something in chat
 // every few seconds while it is on.
 
 use super::Game;
-use super::solstice_api as api;
+use super::sunset_api as api;
 
 pub(crate) fn tick(game: &mut Game<'_>) {
     // Adds the module to the click GUI the first time; later calls do nothing.
-    // Its settings (and whether it is on) are saved with Solstice's config.
+    // Its settings (and whether it is on) are saved with Sunset's config.
     api::register(
         api::Module::new("Hello", api::Category::Player, "Says hello in chat now and then (an example plugin).")
             .num("Every (seconds)", 10.0, 1.0, 60.0, 1.0)
