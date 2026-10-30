@@ -47,8 +47,16 @@ Press **`** (or **Right Shift**) for the menu. Every category is a panel.
 - **Drag** a panel's header to move it, **right click** a header to fold it, **scroll** a long panel.
 - Change a **key bind** with the *Bind* row (press a key; Backspace clears it). Both menu keys can be rebound under
   Options > Mods > Solstice.
+- Click a **text setting** to edit its single-line value, then click **Apply** to save or **Cancel** / **Esc** to discard it.
+  Backspace, Delete, Home, End, arrows and Ctrl+A work in the editor. Values keep their spaces, commas, pipes and
+  punctuation exactly; the editor accepts at most 4096 UTF-8 bytes and rejects control characters. Existing invalid
+  or longer values stay unchanged and can still be changed with `.set`.
 
-Everything is saved as you change it.
+Changes are saved immediately, except text drafts, which are saved only on **Apply**. Losing window focus cancels a draft.
+The text editor reads native Winit keyboard text, including punctuation and layout-produced Unicode; cursor movement and
+deletion use Unicode scalar boundaries (combining marks are separate). IME composition, clipboard shortcuts and mouse
+caret positioning are not implemented. The existing font determines which glyphs display. Window shortcuts such as
+screenshots and fullscreen retain Horizon's usual behavior.
 
 ### Chat commands
 

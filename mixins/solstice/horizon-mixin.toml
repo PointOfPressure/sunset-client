@@ -21,6 +21,12 @@ name = "solstice_util"
 source = "util.rs"
 
 [[module]]
+id = "text_edit"
+file = "crates/horizon-client/src/game.rs"
+name = "solstice_text_edit"
+source = "text_edit.rs"
+
+[[module]]
 id = "combat"
 file = "crates/horizon-client/src/game.rs"
 name = "solstice_combat"
@@ -223,6 +229,17 @@ cancellable = true
 target = "horizon_client::game::Game<'_>::mapped_key"
 helper = "input.rs"
 bindings = []
+
+# native_key has physical key names only. Observe real layout text/repeats
+# without replacing events or interfering with physical-key release tracking.
+[[injection]]
+id = "text_event"
+kind = "HEAD"
+target = "horizon_client::game::follow_keymap"
+helper = "text_event.rs"
+bindings = [
+  { name = "event", ty = "&winit::event::WindowEvent", value = "&*event" },
+]
 
 [[injection]]
 id = "buttons"

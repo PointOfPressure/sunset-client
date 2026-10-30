@@ -8,6 +8,7 @@
 
 use super::{Game, Screen};
 use super::solstice_visual::{distance_colour, draw_box, entity_colour, faded};
+use super::solstice_text_edit::{Draft, EditKey};
 use horizon_client::extras::Corner;
 use horizon_client::extras_hud::Corners;
 use horizon_client::hud::HudBatch;
@@ -70,7 +71,7 @@ pub(super) enum Value {
     Bool(bool),
     Num { v: f64, min: f64, max: f64, step: f64 },
     Pick { i: usize, of: &'static [&'static str] },
-    // A comma separated list (blocks, items, entities): set with `.set`.
+    // Free-form text; some modules interpret this as a list or message.
     Text(String),
 }
 
@@ -87,8 +88,9 @@ impl Setting {
             Value::Num { v, .. } => format!("{}: {}", self.name, num(*v)),
             Value::Pick { i, of } => format!("{}: {}", self.name, of[*i]),
             Value::Text(t) => {
-                let n = t.split(',').filter(|x| !x.trim().is_empty()).count();
-                format!("{}: {} listed", self.name, n)
+                let mut chars = t.chars();
+                let preview: String = chars.by_ref().take(40).map(|c| if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') { '?' } else { c }).collect();
+                format!("{}: {}{}", self.name, if t.is_empty() { "(empty)" } else { &preview }, if chars.next().is_some() { "..." } else { "" })
             }
         }
     }
@@ -213,7 +215,7 @@ impl Module {
             _ => 0.0,
         }
     }
-    // A list setting's text.
+    // A text setting's value, interpreted by its module.
     pub(super) fn t(&self, name: &str) -> &str {
         match self.setting(name) {
             Some(Setting { value: Value::Text(t), .. }) => t,
@@ -599,6 +601,7 @@ impl State {
             let Some((k, v)) = line.split_once('=') else {
                 continue;
             };
+            let raw_value = v;
             let v = v.trim();
             if let Some(cat) = k.strip_prefix("panel.") {
                 let parts: Vec<&str> = v.split(',').collect();
@@ -638,7 +641,13 @@ impl State {
                 "key" => m.key = (v != "none" && !v.is_empty()).then(|| v.to_owned()),
                 _ => {
                     if let Some(s) = m.settings.iter_mut().find(|s| norm(s.name) == field) {
-                        s.parse(v);
+                        // Config text is already a complete RHS. Keep its
+                        // whitespace; command parsing (.set) still trims.
+                        if let Value::Text(text) = &mut s.value {
+                            *text = raw_value.to_owned();
+                        } else {
+                            s.parse(v);
+                        }
                     }
                 }
             }
@@ -3009,6 +3018,8 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             with(|s| {
                 s.gui.open = false;
                 s.gui.drag = None;
+                s.gui.text_edit = None;
+                s.gui.text_key_consumed = false;
             });
         }
     }
@@ -3362,6 +3373,8 @@ pub(super) fn line(out: &mut Vec<Shape>, from: [f32; 2], to: [f32; 2], argb: u32
 
 // ---------------------------------------------------------------- click GUI
 //
+// Text editor additions assisted by OpenAI Codex (GPT-6.1 Sol), under MIT.
+//
 // Meteor's style: every category as a panel at once, over the world. Left
 // click turns a module on or off, right click opens its settings under it;
 // headers drag the panels (right click folds one). Numbers are sliders. The
@@ -3394,6 +3407,11 @@ pub(super) struct Gui {
     drag: Option<Drag>,
     // The height of the GUI the panels last drew in.
     view_h: f32,
+    view_w: f32,
+    // Modal, isolated draft: settings are untouched until Apply is clicked.
+    text_edit: Option<TextEditor>,
+    text_modifiers: winit::keyboard::ModifiersState,
+    text_key_consumed: bool,
     // Typed letters: only the modules whose names contain them show.
     search: String,
     // Ctrl+A: the next letter replaces the whole search, Backspace clears it.
@@ -3412,9 +3430,31 @@ impl Default for Gui {
             expanded: Vec::new(),
             drag: None,
             view_h: 240.0,
+            view_w: 427.0,
+            text_edit: None,
+            text_modifiers: winit::keyboard::ModifiersState::empty(),
+            text_key_consumed: false,
             search: String::new(),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+struct TextEditor {
+    module: usize,
+    setting: usize,
+    // Invalid existing .set/config values are never silently truncated.
+    draft: Result<Draft, &'static str>,
+}
+
+fn text_editor_rect(w: f32, h: f32) -> [f32; 4] {
+    let width = (w - 8.0).clamp(1.0, 320.0);
+    [(w - width) / 2.0, ((h - 76.0) / 2.0).max(0.0), width, 76.0]
+}
+
+fn text_editor_buttons(r: [f32; 4]) -> ([f32; 4], [f32; 4]) {
+    let width = ((r[2] - 18.0) / 2.0).clamp(1.0, 48.0);
+    ([r[0] + 6.0, r[1] + 42.0, width, 13.0], [r[0] + 12.0 + width, r[1] + 42.0, width, 13.0])
 }
 
 // Five panels fit a 427-pixel-wide GUI (1280 by 720 at scale 3).
@@ -3511,6 +3551,7 @@ pub(super) fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
 pub(super) fn gui_wheel(game: &Game<'_>, steps: f32) {
     let at = game.cursor;
     with(|s| {
+        if s.gui.text_edit.is_some() { return; }
         for c in 0..CATEGORIES.len() {
             let p = s.gui.panels[c];
             let (_, content) = panel_body(s, c);
@@ -3544,6 +3585,9 @@ pub(super) fn open_gui(game: &mut Game<'_>) {
         s.gui.open = true;
         s.gui.closing = false;
         s.gui.drag = None;
+        s.gui.text_edit = None;
+        s.gui.text_key_consumed = false;
+        s.gui.text_modifiers = game.modifiers;
         s.binding = None;
     });
 }
@@ -3553,6 +3597,8 @@ pub(super) fn close_gui(game: &mut Game<'_>) {
         s.gui.open = false;
         s.gui.closing = false;
         s.gui.drag = None;
+        s.gui.text_edit = None;
+        s.gui.text_key_consumed = false;
         s.binding = None;
     });
     save(game);
@@ -3580,9 +3626,61 @@ pub(super) fn gui_open() -> bool {
     with(|s| s.gui.open)
 }
 
+// The named native-key API has no layout text and omits repeats. Observe
+// Winit's actual text only for this modal; the host still tracks every raw
+// key/release/focus event. No input injection or keyboard-layout guesswork.
+pub(super) fn text_event(event: &winit::event::WindowEvent) {
+    use winit::event::{ElementState, WindowEvent};
+    with(|s| {
+        if let WindowEvent::ModifiersChanged(modifiers) = event {
+            s.gui.text_modifiers = modifiers.state();
+        }
+        if let WindowEvent::Focused(false) = event {
+            s.gui.text_edit = None;
+            s.gui.text_key_consumed = false;
+            s.gui.text_modifiers = winit::keyboard::ModifiersState::empty();
+        }
+        let WindowEvent::KeyboardInput { event, is_synthetic, .. } = event else { return; };
+        if event.state != ElementState::Pressed { return; }
+        s.gui.text_key_consumed = s.gui.open && s.gui.text_edit.is_some();
+        if !s.gui.text_key_consumed || *is_synthetic { return; }
+        // Respect the host's Escape/Caps-Lock keymap normalization: this
+        // observer runs before follow_keymap rewrites the physical code.
+        if matches!(event.logical_key, winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)) {
+            s.gui.text_edit = None;
+            return;
+        }
+        let Some(TextEditor { draft: Ok(draft), .. }) = s.gui.text_edit.as_mut() else { return; };
+        let modifiers = s.gui.text_modifiers;
+        // AltGr may report Ctrl+Alt; its produced text is still ordinary text.
+        let shortcut = (modifiers.control_key() && !modifiers.alt_key()) || modifiers.super_key();
+        let select_all = shortcut && matches!(&event.logical_key, winit::keyboard::Key::Character(c) if c.eq_ignore_ascii_case("a"));
+        let edit = if select_all { Some(EditKey::SelectAll) } else { match event.physical_key {
+            winit::keyboard::PhysicalKey::Code(KeyCode::ArrowLeft) => Some(EditKey::Left),
+            winit::keyboard::PhysicalKey::Code(KeyCode::ArrowRight) => Some(EditKey::Right),
+            winit::keyboard::PhysicalKey::Code(KeyCode::Home) => Some(EditKey::Home),
+            winit::keyboard::PhysicalKey::Code(KeyCode::End) => Some(EditKey::End),
+            winit::keyboard::PhysicalKey::Code(KeyCode::Backspace) => Some(EditKey::Backspace),
+            winit::keyboard::PhysicalKey::Code(KeyCode::Delete) => Some(EditKey::Delete),
+            _ => None,
+        } };
+        if let Some(edit) = edit {
+            draft.key(edit);
+        } else if !shortcut && let Some(text) = event.text.as_deref() {
+            // Return/Tab are commands, never an attempted multi-line insert.
+            if !text.chars().any(char::is_control) { draft.insert(text); }
+        }
+    });
+}
+
 // A key while the GUI is open: a bind being chosen, or Esc and the menu key
 // closing it. Every key stops here.
 pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
+    // Raw text is handled once by text_event, including the Esc that just
+    // cancelled a draft. It must not reach binds, search, or Enter-to-toggle.
+    if with(|s| std::mem::take(&mut s.gui.text_key_consumed) || s.gui.text_edit.is_some()) {
+        return;
+    }
     if let Some(i) = with(|s| s.binding) {
         let chosen = match name {
             "key.keyboard.escape" => {
@@ -3695,6 +3793,24 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
     let mut toggled = None;
     let mut changed = false;
     with(|s| {
+        if let Some(edit) = s.gui.text_edit.as_ref() {
+            let (apply, cancel) = text_editor_buttons(text_editor_rect(s.gui.view_w, s.gui.view_h));
+            if !right && inside(cancel, at) {
+                s.gui.text_edit = None;
+            } else if !right && inside(apply, at) {
+                // Commit verbatim, without .set's trimming or list assumptions.
+                if let Ok(draft) = &edit.draft
+                    && let Ok(value) = draft.value()
+                    && let Some(setting) = s.modules.get_mut(edit.module).and_then(|m| m.settings.get_mut(edit.setting))
+                    && let Value::Text(stored) = &mut setting.value
+                {
+                    changed = stored != value;
+                    *stored = value.to_owned();
+                    s.gui.text_edit = None;
+                }
+            }
+            return;
+        }
         let Some((r, hit)) = hit_at(s, at) else {
             return;
         };
@@ -3730,6 +3846,12 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                 changed = true;
             }
             (Hit::Setting(i, j), right) => {
+                if let Value::Text(text) = &s.modules[i].settings[j].value {
+                    s.gui.text_edit = Some(TextEditor { module: i, setting: j, draft: Draft::new(text) });
+                    s.gui.drag = None;
+                    s.binding = None;
+                    return;
+                }
                 let num = matches!(s.modules[i].settings[j].value, Value::Num { .. });
                 if num && !right {
                     s.gui.drag = Some(Drag::Slider(i, j));
@@ -3782,6 +3904,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     follow_drag(game, w, h);
     with(|s| {
         s.gui.view_h = h;
+        s.gui.view_w = w;
         // Panels with no place yet go left to right, in a second row when the
         // window is narrow.
         let mut x = 2.0;
@@ -3909,4 +4032,47 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     let hint = "Right click: settings   Enter: toggle search result   Esc: close";
     let hw = game.native_text_width(hint);
     out.push(Shape::Text(hint.to_owned(), [(w - hw) / 2.0, 3.0], 0xC0C0C0));
+    if let Some(edit) = with(|s| s.gui.text_edit.clone()) {
+        let r = text_editor_rect(w, h);
+        let [x, y, rw, _] = r;
+        let max = (rw - 16.0).max(0.0);
+        out.push(Shape::Fill([0.0, 0.0, w, h], 0xB000_0000));
+        out.push(Shape::Fill(r, 0xFF14_1414));
+        out.push(Shape::Fill([x, y, rw, 1.0], 0xFF00_0000 | ACCENT));
+        let title = format!("{} / {}", modules[edit.module].name, modules[edit.module].settings[edit.setting].name);
+        out.push(Shape::Text(fit(&title, max), [x + 6.0, y + 5.0], ACCENT));
+        let selected = edit.draft.as_ref().is_ok_and(Draft::selected);
+        out.push(Shape::Fill([x + 6.0, y + 20.0, (rw - 12.0).max(0.0), 14.0], if selected { 0xFF30_60B0 } else { 0xFF08_0808 }));
+        let message = match &edit.draft {
+            Ok(draft) => {
+                // Scroll at scalar boundaries to keep the caret in view.
+                let text = draft.text();
+                let caret = draft.caret();
+                let mut start = 0;
+                while start < caret && game.native_text_width(&text[start..caret]) > (max - 3.0).max(0.0) {
+                    start += text[start..].chars().next().unwrap().len_utf8();
+                }
+                let mut end = caret;
+                while end < text.len() {
+                    let next = end + text[end..].chars().next().unwrap().len_utf8();
+                    if game.native_text_width(&text[start..next]) > max { break; }
+                    end = next;
+                }
+                out.push(Shape::Text(text[start..end].to_owned(), [x + 8.0, y + 23.0], 0xFFFFFF));
+                let cx = game.native_text_width(&text[start..caret]);
+                out.push(Shape::Fill([x + 8.0 + cx, y + 22.0, 1.0, 10.0], 0xFF00_0000 | ACCENT));
+                draft.error.unwrap_or("Ctrl+A: select all   Esc: cancel   4096 bytes max")
+            }
+            Err(error) => {
+                out.push(Shape::Text(fit("Existing value cannot be edited", max), [x + 8.0, y + 23.0], 0xFF7777));
+                error
+            }
+        };
+        let (apply, cancel) = text_editor_buttons(r);
+        for (button, label, enabled) in [(apply, "Apply", edit.draft.is_ok()), (cancel, "Cancel", true)] {
+            out.push(Shape::Fill(button, if enabled && inside(button, at) { 0xFF38_3838 } else { 0xFF24_2424 }));
+            out.push(Shape::Text(label.to_owned(), [button[0] + 4.0, button[1] + 2.0], if enabled { 0xFFFFFF } else { 0x707070 }));
+        }
+        out.push(Shape::Text(fit(message, max), [x + 6.0, y + 61.0], 0xB0B0B0));
+    }
 }
