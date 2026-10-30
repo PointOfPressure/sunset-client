@@ -2697,7 +2697,7 @@ const HELP: &[(&str, &str)] = &[
     (".reset <module>", "put a module back to its defaults"),
     (".panic", "turn every module off"),
     (".profile save|load|delete|list [name]", "keep the modules' settings under a name and bring them back"),
-    (".friend add|remove|list [name]", "Kill Aura and Trigger Bot skip friends"),
+    (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
     (".vclip <blocks>", "move up or down"),
     (".hclip <blocks>", "move forward"),

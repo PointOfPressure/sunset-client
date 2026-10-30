@@ -1,0 +1,25 @@
+# A test probe for tools/verify.py, staged next to Sunset on the test machine only (never packed or shipped):
+# once a frame, just before the frame is drawn, it appends what the frame is drawn from to the file named by
+# the SUNSET_PROBE environment variable.
+[mod]
+id = "probe"
+version = "0.1.0"
+priority = 50
+
+[compatibility]
+horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
+
+[[module]]
+id = "probe"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_probe"
+source = "probe.rs"
+
+[[injection]]
+id = "frame"
+kind = "HEAD"
+target = "horizon_client::game::pad::Game<'_>::pad_look"
+helper = "hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]

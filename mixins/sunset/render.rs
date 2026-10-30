@@ -138,11 +138,20 @@ pub(super) fn camera(game: &mut Game<'_>, partial: f32) -> Option<Option<(glam::
     None
 }
 
+fn free_look_player() -> bool {
+    super::sunset::with(|s| s.module("Free Look").is_some_and(|m| m.on && m.p("Mode") == "Player"))
+}
+
+// Whether the mouse turns a free camera (Freecam, or Free Look in Player mode) instead of the player.
+pub(super) fn camera_takes_mouse() -> bool {
+    let free_look_player = free_look_player();
+    rs(|r| r.fc.is_some() || (r.fl.is_some() && free_look_player))
+}
+
 // Mouse movement goes to the camera instead of the player: true when it did.
 pub(super) fn turn(game: &mut Game<'_>, xo: f64, yo: f64) -> bool {
     let _ = game;
-    super::sunset_combat::aim_note_user(xo, yo);
-    let free_look_player = super::sunset::with(|s| s.module("Free Look").is_some_and(|m| m.on && m.p("Mode") == "Player"));
+    let free_look_player = free_look_player();
     let sens = super::sunset::with(|s| s.module("Free Look").map_or(8.0, |m| m.n("Camera sensitivity"))) / 8.0;
     rs(|r| {
         if let Some(f) = r.fc.as_mut() {
@@ -585,10 +594,4 @@ pub(super) fn overlay(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut 
         }
     }
     let _ = Screen::Playing;
-}
-
-// Once a frame.
-pub(super) fn frame(game: &mut Game<'_>) {
-    let mods = super::sunset::snapshot();
-    super::sunset_combat::aim_frame(game, &mods);
 }

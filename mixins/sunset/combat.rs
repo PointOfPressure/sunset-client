@@ -2,12 +2,13 @@
 // Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow,
 // Offhand and Auto EXP.
 
-use super::sunset::{Category, Module, hold};
+use super::sunset::{Category, Module, gui_open, hold, is_friend, own_id, with};
 use super::sunset_util::*;
 use super::{Game, Screen};
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use std::collections::HashSet;
 use std::sync::Mutex;
+use std::time::Instant;
 
 const HORIZONTAL: [[i32; 3]; 4] = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]];
 
@@ -88,21 +89,28 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Switch delay (ticks)", 0.0, 0.0, 20.0, 1.0)
             .num("Min health", 10.0, 1.0, 36.0, 1.0)
             .bool("Elytra", false),
-        Module::new("Aim Assist", Combat, "Adds to your own aim toward a player or mob in front of you; never moves you by itself (as Duelkit's).")
-            .num("Range", 4.5, 1.0, 8.0, 0.5)
-            .num("Cone (degrees)", 40.0, 10.0, 120.0, 5.0)
-            .num("Pull", 0.3, 0.0, 1.0, 0.05)
-            .num("Stickiness", 0.3, 0.0, 1.0, 0.05)
-            .num("Tracking", 0.5, 0.0, 1.0, 0.05)
-            .num("Track within (degrees)", 8.0, 2.0, 30.0, 1.0)
-            .num("Keep target", 1.5, 1.0, 3.0, 0.1)
-            .num("Inset", 0.1, 0.0, 0.4, 0.05)
+        Module::new("Aim Assist", Combat, "Adds to your own aim while you hold a weapon: never moves you on its own, never pulls against you, never attacks. Falling onto someone (mace dive) it pulls you onto them. Duelkit's.")
             .bool("Players", true)
             .bool("Hostiles", true)
-            .bool("Passive", false)
+            .num("Pull", 0.4, 0.0, 2.0, 0.05)
+            .num("Stickiness", 0.25, 0.0, 0.9, 0.05)
+            .num("Tracking", 0.5, 0.0, 1.0, 0.05)
+            .num("Cone (degrees)", 30.0, 10.0, 120.0, 5.0)
+            .num("Range", 6.0, 2.0, 8.0, 0.5)
+            .pick("Range shape", &["Sphere", "Column"])
+            .num("Column height", 0.0, 0.0, 64.0, 1.0)
+            .bool("Mace dive", true)
+            .num("Dive magnet", 6.0, 0.0, 30.0, 0.5)
+            .num("Dive from fall of", 3.0, 1.0, 20.0, 0.5)
+            .num("Dive cone (degrees)", 90.0, 10.0, 180.0, 5.0)
+            .num("Dive range", 12.0, 3.0, 32.0, 1.0)
+            .num("Dive tracking", 1.0, 0.0, 1.0, 0.05)
+            .num("Aim inset", 0.15, 0.0, 0.3, 0.01)
+            .num("Track within (degrees)", 3.0, 0.0, 15.0, 0.5)
+            .num("Keep target", 1.5, 1.0, 3.0, 0.1)
+            .bool("Only with a weapon", true)
             .bool("Anti bot", false)
-            .bool("Ignore teams", false)
-            .bool("Only with a weapon", true),
+            .bool("Ignore teams", false),
         Module::new("Crystal Optimizer", Combat, "Breaks the end crystal you hit on your screen at once, without waiting for the server (as Marlow's Crystal Optimizer).")
             .bool("Instant break", true)
             .num("Reach", 4.5, 3.0, 6.0, 0.5)
@@ -133,9 +141,10 @@ struct Cs {
     offhand_ticks: u32,
     totem_ticks: u32,
     exp_repairing: Option<usize>,
+    aim_before: [f32; 2],
+    aim_frame: Option<Instant>,
     aim_target: Option<u32>,
     aim_last: [f64; 2],
-    aim_user: [f64; 2],
 }
 
 static CS: Mutex<Option<Cs>> = Mutex::new(None);
@@ -894,11 +903,22 @@ fn auto_exp(game: &mut Game<'_>, m: &Module) {
 #[allow(dead_code)]
 fn unused(_: Screen) {}
 
-// ---- Aim Assist (Duelkit's, ported)
+// ---- Aim Assist (Duelkit's AimAssist, around your own mouse turn once a frame)
+//
+// Only ever adds to what your hand is doing. Pull: moving the mouse toward the target turns you a bit further toward
+// it. Stickiness: while the crosshair is on the target your own turning is slowed. Tracking: while on (or almost on)
+// the target, follows part of its movement across your screen. One target is kept until it leaves the cone, so it
+// does not flick between people. Mace dive: falling onto someone the cone and range widen, tracking is full, and it
+// also pulls on its own.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-
-static AIM_BUSY: AtomicBool = AtomicBool::new(false);
+use horizon_client::collisions::SceneCollisions;
+use horizon_client::mobs::Mob;
+use horizon_core::geometry::{Vec3, VoxelShape};
+use horizon_core::position::BlockPos;
+use horizon_world::collision_context::{CollisionContext, CollisionEntity, CollisionItem};
+use horizon_world::entity_obstruction::EntityIdentity;
+use horizon_world::registry::BlockStateId;
+use horizon_world::world_ray::{RayBlockMode, RayFluidMode, RayWorld, clip_world};
 
 fn yaw_of(v: [f64; 3]) -> f64 {
     (-v[0]).atan2(v[2]).to_degrees()
@@ -908,6 +928,7 @@ fn pitch_of(v: [f64; 3]) -> f64 {
     -v[1].atan2((v[0] * v[0] + v[2] * v[2]).sqrt()).to_degrees()
 }
 
+// Mth.wrapDegrees.
 fn wrap(d: f64) -> f64 {
     (d + 180.0).rem_euclid(360.0) - 180.0
 }
@@ -922,127 +943,280 @@ fn angle_between(a: [f64; 3], b: [f64; 3]) -> f64 {
     ((a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / n).clamp(-1.0, 1.0).acos()
 }
 
-// The point of the target's box nearest the line of sight, the box shrunk by `inset`.
-fn closest_point(t: &Target, eye: [f64; 3], look: [f64; 3], inset: f64) -> ([f64; 3], [f64; 3]) {
-    let lo = [t.lo[0] + inset, t.lo[1] + inset, t.lo[2] + inset];
-    let hi = [t.hi[0] - inset, t.hi[1] - inset, t.hi[2] - inset];
-    let centre = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
-    let d = dist(eye, centre);
-    let ray = [eye[0] + look[0] * d, eye[1] + look[1] * d, eye[2] + look[2] * d];
-    (
-        [ray[0].clamp(lo[0], hi[0]), ray[1].clamp(lo[1], hi[1]), ray[2].clamp(lo[2], hi[2])],
-        centre,
-    )
+fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
-fn aim_valid(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3], look: [f64; 3], half_cone: f64) -> bool {
-    let hostile = t.kind.contains("zombie") || t.kind.contains("skeleton") || t.kind.contains("creeper") || t.kind.contains("spider") || t.kind.contains("witch") || t.kind.contains("enderman") || t.kind.contains("husk") || t.kind.contains("drowned") || t.kind.contains("phantom") || t.kind.contains("pillager") || t.kind.contains("vindicator") || t.kind.contains("blaze") || t.kind.contains("piglin");
-    let wanted = if t.player { m.b("Players") } else if hostile { m.b("Hostiles") } else { m.b("Passive") };
-    if !wanted || t.health <= 0.0 || spared(game, m, t.id, t.player) {
+// A box as its low and high corners.
+type Box3 = [[f64; 3]; 2];
+
+fn centre(b: &Box3) -> [f64; 3] {
+    std::array::from_fn(|i| (b[0][i] + b[1][i]) / 2.0)
+}
+
+// The box where this frame draws a mob, shrunk by `inset` (AABB.deflate, which keeps low below high).
+fn drawn_box(mob: &Mob, alpha: f64, inset: f64) -> Box3 {
+    let b = mob.bounds();
+    let (lo, hi) = (b.min_position(), b.max_position());
+    let (lo, hi) = ([lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z]);
+    let (prev, now) = ([mob.previous.x, mob.previous.y, mob.previous.z], [mob.position.x, mob.position.y, mob.position.z]);
+    let mut out = [[0.0; 3]; 2];
+    for i in 0..3 {
+        let off = (prev[i] - now[i]) * (1.0 - alpha);
+        let (a, z) = (lo[i] + off + inset, hi[i] + off - inset);
+        out[0][i] = a.min(z);
+        out[1][i] = a.max(z);
+    }
+    out
+}
+
+// The point of the box closest to the look ray, at the box's distance.
+fn closest_point(b: &Box3, eye: [f64; 3], look: [f64; 3]) -> [f64; 3] {
+    let d = dist(eye, centre(b));
+    std::array::from_fn(|i| (eye[i] + look[i] * d).clamp(b[0][i], b[1][i]))
+}
+
+// `Level.clip` with `ClipContext.Block.COLLIDER`, no fluids and your collision context.
+struct ColliderRays<'a, 'r> {
+    scene: SceneCollisions<'a, 'r>,
+    context: CollisionContext<'static>,
+}
+
+impl RayWorld for ColliderRays<'_, '_> {
+    type Error = std::io::Error;
+    type Block = BlockStateId;
+    type Fluid = ();
+    fn block_state(&mut self, p: BlockPos) -> std::io::Result<BlockStateId> {
+        Ok(self.scene.world.block(p.x, p.y, p.z))
+    }
+    fn fluid_state(&mut self, _: BlockPos) -> std::io::Result<()> {
+        Ok(())
+    }
+    fn block_shape(&mut self, state: BlockStateId, p: BlockPos, _: RayBlockMode) -> std::io::Result<VoxelShape> {
+        let binding = self.scene.binding;
+        binding
+            .collision_shape_with_context(&mut self.scene, state, p, &self.context)
+            .map_err(|e| std::io::Error::other(format!("{e:?}")))
+    }
+    fn interaction_shape(&mut self, _: BlockStateId, _: BlockPos) -> std::io::Result<VoxelShape> {
+        Ok(VoxelShape::empty())
+    }
+    fn fluid_is_source(&mut self, _: ()) -> std::io::Result<bool> {
+        Ok(false)
+    }
+    fn fluid_is_empty(&mut self, _: ()) -> std::io::Result<bool> {
+        Ok(true)
+    }
+    fn fluid_is_water(&mut self, _: ()) -> std::io::Result<bool> {
+        Ok(false)
+    }
+    fn fluid_shape(&mut self, _: (), _: BlockPos) -> std::io::Result<VoxelShape> {
+        Ok(VoxelShape::empty())
+    }
+}
+
+// Nothing solid between the eyes and `to` (`d` away): the ray misses, or stops no nearer than 0.01 short of it.
+fn clip_clear(game: &Game<'_>, eye: [f64; 3], to: [f64; 3], d: f64) -> bool {
+    let Some(p) = game.player.as_ref() else {
         return false;
-    }
-    let (aim, _) = closest_point(t, eye, look, m.n("Inset"));
-    let to = [aim[0] - eye[0], aim[1] - eye[1], aim[2] - eye[2]];
-    let d = dist(eye, aim);
-    if d < 1e-4 || angle_between(to, look).to_degrees() > half_cone || d > m.n("Range") {
-        return false;
-    }
-    clear_line(game, aim, [i32::MIN; 3])
+    };
+    let mut rays = ColliderRays {
+        scene: SceneCollisions { world: &game.world, binding: game.collision, subject: None },
+        context: CollisionContext::for_entity(
+            CollisionEntity {
+                identity: EntityIdentity(0),
+                y: p.position.y,
+                descending: p.shift_key_down,
+                main_hand: Some(CollisionItem::EMPTY),
+            },
+            false,
+        ),
+    };
+    let from = Vec3::new(eye[0], eye[1], eye[2]);
+    clip_world(&mut rays, from, Vec3::new(to[0], to[1], to[2]), RayBlockMode::Collider, RayFluidMode::None, 4096)
+        .is_ok_and(|r| r.miss || r.hit.location.distance_squared(from).sqrt() >= d - 0.01)
 }
 
-// The user's own mouse movement, noted for the frame's pass (not changed).
-pub(super) fn aim_note_user(xo: f64, yo: f64) {
-    if AIM_BUSY.load(Ordering::Relaxed) {
-        return;
-    }
-    cs(|c| {
-        c.aim_user[0] += xo * 0.15;
-        c.aim_user[1] += yo * 0.15;
-    });
+// `Entity.isInvisibleTo`: invisible, unless on your team and the team sees friendly invisibles.
+fn invisible_to_you(game: &Game<'_>, e: &Mob) -> bool {
+    let own = game.score.board.players_team(&game.options.player_name());
+    e.invisible && !(horizon_client::scoreboard::teams_allied(own, game.mob_team(e.id)) && own.is_some_and(|t| t.see_friendly_invisibles))
 }
 
-// Once a frame, after the mouse: Duelkit's pull, stickiness and tracking.
-pub(super) fn aim_frame(game: &mut Game<'_>, mods: &[Module]) {
-    let user = cs(|c| std::mem::take(&mut c.aim_user));
-    let Some(m) = mods.iter().find(|m| m.name == "Aim Assist" && m.on) else {
-        cs(|c| c.aim_target = None);
-        return;
-    };
-    if !in_world(game) || game.screen != Screen::Playing {
-        cs(|c| c.aim_target = None);
-        return;
+// `Weapons.isWeapon`: a sword, axe or spear (by their item tags), a mace or a trident in the main hand.
+fn holds_weapon(game: &Game<'_>) -> bool {
+    let tags = &game.res.items().item_tags;
+    game.inventory.get(game.selected).and_then(|s| s.as_ref()).is_some_and(|s| {
+        let item = &*s.item;
+        item == "minecraft:mace"
+            || item == "minecraft:trident"
+            || ["minecraft:swords", "minecraft:axes", "minecraft:spears"].iter().any(|t| tags.get(*t).is_some_and(|t| t.contains(item)))
+    })
+}
+
+// One frame's view: the eyes and the look at the frame's partial tick, and the settings in force.
+struct Aim<'a, 'g> {
+    game: &'a Game<'g>,
+    m: &'a Module,
+    eye: [f64; 3],
+    look: [f64; 3],
+    alpha: f64,
+    range: f64,
+    own: Option<u32>,
+    names: Vec<(u32, String)>,
+    friends: Vec<String>,
+}
+
+impl<'a> Aim<'a, '_> {
+    fn boxed(&self, e: &Mob) -> Box3 {
+        drawn_box(e, self.alpha, self.m.n("Aim inset"))
     }
-    if m.b("Only with a weapon") {
-        let weapon = game.held().is_some_and(|s| {
-            let n = short(&s.item);
-            n.ends_with("_sword") || n.ends_with("_axe") || n == "mace" || n == "trident" || n.ends_with("spear")
-        });
-        if !weapon {
-            cs(|c| c.aim_target = None);
-            return;
+
+    // `Targets.matches`: alive and visible to you, never yourself or an armour stand (Horizon keeps those apart);
+    // players and hostile mobs as chosen. Friends, bots (Anti bot) and teammates (Ignore teams) are left alone.
+    fn matches(&self, e: &Mob) -> bool {
+        let player = e.kind.id == "minecraft:player";
+        let wanted = if player { self.m.b("Players") } else { e.hostile() && self.m.b("Hostiles") };
+        wanted
+            && Some(e.id) != self.own
+            && e.alive()
+            && !e.removed
+            && !invisible_to_you(self.game, e)
+            && !(player && is_friend(&self.friends, &self.names, e.id))
+            && !spared(self.game, self.m, e.id, player)
+    }
+
+    // A target, within `half_cone` degrees of the crosshair, in range and not behind a block.
+    fn valid(&self, e: &Mob, half_cone: f64) -> bool {
+        if !self.matches(e) {
+            return false;
         }
-    }
-    let Some(eye) = game.eye_position() else {
-        return;
-    };
-    let (yaw, pitch) = (game.yaw, game.pitch);
-    let look = view_vector(yaw, pitch);
-    let own = game.remote.as_ref().map(|r| r.entity_id as u32);
-    let list: Vec<Target> = every_living(game).into_iter().filter(|t| Some(t.id) != own).collect();
-    let (cone, keep) = (m.n("Cone (degrees)"), m.n("Keep target"));
-    let previous = cs(|c| c.aim_target);
-    let mut target = previous.and_then(|id| list.iter().find(|t| t.id == id).cloned());
-    if !target.as_ref().is_some_and(|t| aim_valid(game, m, t, eye, look, cone / 2.0 * keep)) {
-        let mut best: Option<(f64, Target)> = None;
-        for t in &list {
-            if !aim_valid(game, m, t, eye, look, cone / 2.0) {
-                continue;
-            }
-            let (aim, _) = closest_point(t, eye, look, m.n("Inset"));
-            let a = angle_between([aim[0] - eye[0], aim[1] - eye[1], aim[2] - eye[2]], look);
-            if best.as_ref().is_none_or(|(b, _)| a < *b) {
-                best = Some((a, t.clone()));
-            }
+        let aim = closest_point(&self.boxed(e), self.eye, self.look);
+        let to = sub(aim, self.eye);
+        let d = dist(self.eye, aim);
+        if d < 1e-4 || angle_between(to, self.look).to_degrees() > half_cone {
+            return false;
         }
-        target = best.map(|(_, t)| t);
+        if self.m.p("Range shape") == "Column" {
+            let height = self.m.n("Column height");
+            if to[0].hypot(to[2]) > self.range || (height > 0.0 && to[1].abs() > height) {
+                return false;
+            }
+        } else if d > self.range {
+            return false;
+        }
+        clip_clear(self.game, self.eye, aim, d)
     }
-    let Some(t) = target else {
-        cs(|c| c.aim_target = None);
-        return;
+
+    // The target nearest the crosshair.
+    fn pick(&self, cone: f64) -> Option<&'a Mob> {
+        let game: &'a Game<'_> = self.game;
+        let angle = |e: &Mob| angle_between(sub(closest_point(&self.boxed(e), self.eye, self.look), self.eye), self.look);
+        game.mobs.iter().filter(|e| self.valid(e, cone / 2.0)).min_by(|a, b| angle(a).total_cmp(&angle(b)))
+    }
+}
+
+// In the world with no screen open, not a spectator, holding a weapon (with Only with a weapon), and the mouse
+// turning you rather than a free camera.
+fn aim_allowed(game: &Game<'_>, m: &Module) -> bool {
+    in_world(game)
+        && !gui_open()
+        && !game.spectator()
+        && !super::sunset_render::camera_takes_mouse()
+        && (!m.b("Only with a weapon") || holds_weapon(game))
+}
+
+// Before your own mouse turn this frame.
+pub(super) fn aim_before(game: &Game<'_>) {
+    let rot = [game.yaw, game.pitch];
+    cs(|c| c.aim_before = rot);
+}
+
+// After it: how far to turn you on top of it, in degrees.
+fn aim_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
+    let Some(p) = game.player.as_ref() else {
+        return [0.0; 2];
     };
-    cs(|c| c.aim_target = Some(t.id));
-    let (aim, centre) = closest_point(&t, eye, look, m.n("Inset"));
-    let to_centre = [centre[0] - eye[0], centre[1] - eye[1], centre[2] - eye[2]];
-    let (yaw_to, pitch_to) = (yaw_of(to_centre), pitch_of(to_centre));
-    let to = [aim[0] - eye[0], aim[1] - eye[1], aim[2] - eye[2]];
-    let gap_yaw = wrap(yaw_of(to) - f64::from(yaw));
-    let gap_pitch = pitch_of(to) - f64::from(pitch);
+    let dive = m.b("Mace dive") && !p.ground.on_ground && !p.fall_flying && p.velocity.y < 0.0 && p.fall_distance >= m.n("Dive from fall of");
+    let (cone, range, tracking) = if dive {
+        (m.n("Dive cone (degrees)"), m.n("Dive range"), m.n("Dive tracking"))
+    } else {
+        (m.n("Cone (degrees)"), m.n("Range"), m.n("Tracking"))
+    };
+    let alpha = game.clock.camera_fraction();
+    let lerp = |a: f64, b: f64| a + alpha * (b - a);
+    let was = game.previous_position;
+    let eye = [
+        lerp(was.x, p.position.x),
+        lerp(was.y, p.position.y) + f64::from(p.dimensions.eye_height),
+        lerp(was.z, p.position.z),
+    ];
+    let look = view_vector(game.yaw, game.pitch);
+    let aim = Aim { game, m, eye, look, alpha, range, own: own_id(game), names: game.remote_player_names(), friends: with(|s| s.friends.clone()) };
+    let (previous, last, before) = cs(|c| (c.aim_target, c.aim_last, c.aim_before));
+    let kept = previous
+        .and_then(|id| game.mobs.iter().find(|e| e.id == id))
+        .filter(|e| aim.valid(e, cone / 2.0 * m.n("Keep target")));
+    let Some(target) = kept.or_else(|| aim.pick(cone)) else {
+        cs(|c| c.aim_target = None);
+        return [0.0; 2];
+    };
+    let b = aim.boxed(target);
+    let middle = sub(centre(&b), eye);
+    let (yaw_to, pitch_to) = (yaw_of(middle), pitch_of(middle));
+    // The gap from the crosshair to the nearest point of the hitbox, zero when already on it.
+    let to = sub(closest_point(&b, eye, look), eye);
+    let (yaw, pitch) = (f64::from(game.yaw), f64::from(game.pitch));
+    let gap_yaw = wrap(yaw_of(to) - yaw);
+    let gap_pitch = pitch_of(to) - pitch;
     let gap = gap_yaw.hypot(gap_pitch);
     let on_target = gap < 0.05;
-    let (mut turn_yaw, mut turn_pitch) = (0.0, 0.0);
-    let last = cs(|c| c.aim_last);
+    let mut turn = [0.0; 2];
+    // Tracking fades out as the crosshair drifts off the hitbox, instead of switching off at a hard edge.
     let within = m.n("Track within (degrees)");
-    if previous == Some(t.id) && gap < within {
-        let k = m.n("Tracking") * (1.0 - gap / within);
-        turn_yaw += wrap(yaw_to - last[0]) * k;
-        turn_pitch += (pitch_to - last[1]) * k;
+    if previous == Some(target.id) && gap < within {
+        let t = tracking * (1.0 - gap / within);
+        turn[0] += wrap(yaw_to - last[0]) * t;
+        turn[1] += (pitch_to - last[1]) * t;
     }
-    let user_len = user[0].hypot(user[1]);
-    if user_len > 1e-4 {
+    if dive && !on_target && dt > 0.0 {
+        let f = 1.0 - (-m.n("Dive magnet") * dt).exp();
+        turn[0] += gap_yaw * f;
+        turn[1] += gap_pitch * f;
+    }
+    let user = [wrap(yaw - f64::from(before[0])), pitch - f64::from(before[1])];
+    let moved = user[0].hypot(user[1]);
+    if moved > 1e-4 {
+        // Stickiness ramps in over the last degree, so there is no hard edge to stutter on.
         let stick = m.n("Stickiness") * (1.0 - gap).clamp(0.0, 1.0);
-        turn_yaw -= user[0] * stick;
-        turn_pitch -= user[1] * stick;
+        turn[0] -= user[0] * stick;
+        turn[1] -= user[1] * stick;
         if !on_target && gap_yaw * user[0] + gap_pitch * user[1] > 0.0 {
-            let extra = gap.min(m.n("Pull") * user_len);
-            turn_yaw += gap_yaw / gap * extra;
-            turn_pitch += gap_pitch / gap * extra;
+            let extra = gap.min(m.n("Pull") * moved);
+            turn[0] += gap_yaw / gap * extra;
+            turn[1] += gap_pitch / gap * extra;
         }
     }
-    cs(|c| c.aim_last = [yaw_to, pitch_to]);
-    if turn_yaw != 0.0 || turn_pitch != 0.0 {
-        AIM_BUSY.store(true, Ordering::Relaxed);
-        game.turn_player(turn_yaw / 0.15, turn_pitch / 0.15);
-        AIM_BUSY.store(false, Ordering::Relaxed);
+    let id = target.id;
+    cs(|c| {
+        c.aim_target = Some(id);
+        c.aim_last = [yaw_to, pitch_to];
+    });
+    turn
+}
+
+// After your own mouse turn this frame.
+pub(super) fn aim_after(game: &mut Game<'_>) {
+    let now = Instant::now();
+    let dt = cs(|c| c.aim_frame.replace(now)).map_or(0.0, |t| now.duration_since(t).as_secs_f64().min(0.05));
+    let Some(m) = with(|s| s.module("Aim Assist").filter(|m| m.on).cloned()).filter(|m| aim_allowed(game, m)) else {
+        cs(|c| c.aim_target = None);
+        return;
+    };
+    let turn = aim_turn(game, &m, dt);
+    // turn_player takes mouse units, 0.15 degrees each (Entity.turn), and keeps the interpolation in step.
+    if turn != [0.0; 2] {
+        game.turn_player(turn[0] / 0.15, turn[1] / 0.15);
     }
 }
 

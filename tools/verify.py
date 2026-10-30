@@ -4,7 +4,12 @@
 # checks a measurable result. Usage: verify.py CTL_PATH [test names...]
 # Tests that need a second player (on a dedicated server) use the control
 # wrapper in the CTL2 environment variable and are skipped without it.
-import json, os, subprocess, sys, time
+# The per-frame Aim Assist tests read the test probe's file (tools/probe,
+# staged next to Sunset on the test machine; the game writes it to the path in
+# SUNSET_PROBE): PROBE names it, else <session>/probe.log. They move mobs with
+# a small data pack written into the world folder: WORLD names it, else the
+# single player world of the session or ~/hzmeteor/srv/world on a server.
+import json, math, os, subprocess, sys, time
 
 CTL = sys.argv[1]
 CTL2 = os.environ.get("CTL2")
@@ -88,6 +93,8 @@ def arena():
     global X0, Z0
     p = pos()
     X0, Z0 = int(p[0] // 1), int(p[2] // 1)
+    # Unattended, the game drops to 30 frames a second after a minute ("afk"): keep the full rate.
+    ctl("options-set", "inactivityFpsLimit", "minimized")
     say("/gamemode creative")
     say("/difficulty peaceful")
     say("/time set 6000")
@@ -1071,6 +1078,462 @@ def _():
     say("/team remove sunsettest")
     setting("killaura", "anti bot", "false")
     return real > 0 and spared == 0 and hit > 0, f"player in the list hurt {real}, teammate {spared}, same teammate without Ignore teams {hit}"
+
+
+# ---- Aim Assist (Duelkit's): real mouse motion (mouse-move), and for moving targets the probe's frames
+
+HUSK = "{NoAI:1b,Invulnerable:1b,PersistenceRequired:1b,Silent:1b}"
+
+
+def session_dir():
+    with open(os.path.join(os.path.dirname(CTL), "session")) as f:
+        return f.read().strip()
+
+
+def probe_path():
+    path = os.environ.get("PROBE") or os.path.join(session_dir(), "probe.log")
+    return path if os.path.exists(path) else None
+
+
+def world_dir():
+    if os.environ.get("WORLD"):
+        return os.environ["WORLD"]
+    if ctl("status")["server"]["address"] == "local":
+        return os.path.join(session_dir(), "home", "saves", ctl("worlds")["worlds"][0]["folder"])
+    return os.path.expanduser("~/hzmeteor/srv/world")
+
+
+def aim_pack():
+    """A data pack that, every tick, steps husks tagged aim_e 0.1 blocks east and aim_w 0.1 west."""
+    root = os.path.join(world_dir(), "datapacks", "sunset_verify")
+    os.makedirs(os.path.join(root, "data", "sunset_verify", "function"), exist_ok=True)
+    os.makedirs(os.path.join(root, "data", "minecraft", "tags", "function"), exist_ok=True)
+    with open(os.path.join(root, "pack.mcmeta"), "w") as f:
+        json.dump({"pack": {"description": "Sunset verify", "min_format": 121, "max_format": 121}}, f)
+    with open(os.path.join(root, "data", "sunset_verify", "function", "tick.mcfunction"), "w") as f:
+        f.write("execute as @e[tag=aim_e] at @s run tp @s ~0.1 ~ ~\nexecute as @e[tag=aim_w] at @s run tp @s ~-0.1 ~ ~\n")
+    with open(os.path.join(root, "data", "minecraft", "tags", "function", "tick.json"), "w") as f:
+        json.dump({"values": ["sunset_verify:tick"]}, f)
+    say("/reload")
+    wait(20)
+
+
+def probe_mark():
+    return os.path.getsize(probe_path())
+
+
+class Frame:
+    def __init__(self, w):
+        self.t, self.tick, self.yaw, self.pitch, self.alpha = float(w[0]), int(w[1]), float(w[2]), float(w[3]), float(w[4])
+        self.eye = tuple(map(float, w[5:8]))
+        self.mobs = {int(w[i]): (tuple(map(float, w[i + 1:i + 4])), float(w[i + 4]), float(w[i + 5])) for i in range(8, len(w) - 5, 6)}
+
+
+def probe_frames(mark):
+    with open(probe_path()) as f:
+        f.seek(mark)
+        lines = f.read().split("\n")[:-1]
+    return [Frame(line.split()) for line in lines if line]
+
+
+def wrap(d):
+    return (d + 180.0) % 360.0 - 180.0
+
+
+def view(yaw, pitch):
+    y, p = math.radians(yaw), math.radians(pitch)
+    return (-math.sin(y) * math.cos(p), -math.sin(p), math.cos(y) * math.cos(p))
+
+
+def angle(a, b):
+    n = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(x * x for x in b))
+    return math.degrees(math.acos(max(-1.0, min(1.0, sum(x * y for x, y in zip(a, b)) / max(n, 1e-12)))))
+
+
+def off_centre(f, eid):
+    """Degrees from the crosshair to the middle of the mob's box, where the frame draws it."""
+    c = f.mobs[eid][0]
+    return angle(view(f.yaw, f.pitch), [c[i] - f.eye[i] for i in range(3)])
+
+
+def aim_gap(f, eid, inset=0.15):
+    """Duelkit's gap: degrees from the crosshair to the nearest point of the box shrunk by the inset."""
+    c, hw, hh = f.mobs[eid]
+    half = (hw - inset, hh - inset, hw - inset)
+    look = view(f.yaw, f.pitch)
+    d = math.sqrt(sum((c[i] - f.eye[i]) ** 2 for i in range(3)))
+    near = [min(max(f.eye[i] + look[i] * d, c[i] - abs(half[i])), c[i] + abs(half[i])) for i in range(3)]
+    return angle(look, [near[i] - f.eye[i] for i in range(3)])
+
+
+def aim_defaults():
+    say(".reset aimassist")
+    on.discard("aimassist")
+
+
+def aim_setup(dx=0.0, dz=3.0, dy=0.0, weapon=True, mode="survival"):
+    """Aim Assist at its defaults (off), a sword in hand (or nothing), one NoAI husk at (dx, dy, dz) from your
+    feet; its id."""
+    reset(mode)
+    aim_defaults()
+    say("/difficulty easy")
+    if weapon:
+        slot(0, "diamond_sword", 1)
+    ctl("key", "1", "tap")
+    say(f"/summon husk {X0 + 0.5 + dx} {Y + 1 + dy} {Z0 + 0.5 + dz} {HUSK}")
+    wait(10)
+    return next(e["id"] for e in ctl("entities")["entities"] if e.get("type") == "minecraft:husk")
+
+
+def aim_view():
+    s = ctl("status")
+    return s["yaw"], s["pitch"]
+
+
+def face(eid, yaw_off=0.0):
+    """Looks at the mob's middle, then `yaw_off` degrees to its side (negative: it is on your right)."""
+    ctl("look-at-entity", str(eid))
+    wait(2)
+    yaw, pitch = aim_view()
+    ctl("look", str(yaw + yaw_off), str(pitch))
+    wait(2)
+
+
+def mouse_turns(units, n):
+    """The yaw each of n mouse moves of `units` turned you by, Aim Assist included."""
+    turns = []
+    yaw = aim_view()[0]
+    for _ in range(n):
+        now = ctl("mouse-move", str(units), "0")["yaw"]
+        turns.append(wrap(now - yaw))
+        yaw = now
+    return turns
+
+
+def husk_box(eid):
+    e = next(e for e in ctl("entities")["entities"] if e["id"] == eid)
+    x, y, z = e["pos"]
+    return (x - 0.3, y, z - 0.3), (x + 0.3, y + 1.95, z + 0.3)
+
+
+def on_box(lo, hi):
+    """Whether the crosshair is over the box (a ray from the eyes; you stand still)."""
+    s = state()
+    p = s["player"]["position"]
+    eye = (p[0], p[1] + 1.62, p[2])
+    look = view(*aim_view())
+    t0, t1 = 0.0, 1e9
+    for i in range(3):
+        if abs(look[i]) < 1e-12:
+            if not lo[i] <= eye[i] <= hi[i]:
+                return False
+            continue
+        a, b = (lo[i] - eye[i]) / look[i], (hi[i] - eye[i]) / look[i]
+        t0, t1 = max(t0, min(a, b)), min(t1, max(a, b))
+    return t0 <= t1
+
+
+def steps_onto(eid, units=10, limit=40):
+    """Mouse moves of `units` until the crosshair is on the mob."""
+    lo, hi = husk_box(eid)
+    for i in range(1, limit + 1):
+        ctl("mouse-move", str(units), "0")
+        if on_box(lo, hi):
+            return i
+    return limit + 1
+
+
+def first_turn(eid, yaw_off, units=10, mods=("aimassist",)):
+    """With the mob `yaw_off` degrees to the side, the turn of one mouse move toward it: (plain, with mods).
+    The modules go on only once you face that way, so nothing is a target kept from before."""
+    only()
+    face(eid, yaw_off)
+    plain = mouse_turns(units, 1)[0]
+    face(eid, yaw_off)
+    only(*mods)
+    mine = mouse_turns(units, 1)[0]
+    only()
+    return plain, mine
+
+
+def aim_done():
+    aim_defaults()
+    only()
+    say("/difficulty peaceful")
+
+
+@test("Aim Assist (pull)")
+def _():
+    eid = aim_setup()
+    only()
+    face(eid, -12)
+    plain = steps_onto(eid)
+    face(eid, -12)
+    only("aimassist")
+    pulled = steps_onto(eid)
+    first = first_turn(eid, -12)
+    # Away from it: slowed by Stickiness while on it (by less over the last degree), never held back beyond that.
+    face(eid)
+    only("aimassist")
+    away = mouse_turns(-10, 6)
+    only()
+    face(eid)
+    free = mouse_turns(-10, 6)
+    aim_done()
+    step = abs(free[0])
+    slowed = all(step * 0.75 - 0.01 <= abs(t) <= step + 0.01 for t in away) and abs(away[0]) < step * 0.8
+    note = (f"onto a husk 12 deg off in {plain} mouse moves of 10 without, {pulled} with (first move {first[0]:.2f} -> {first[1]:.2f} deg); "
+            f"moving off it: {', '.join(f'{abs(t):.2f}' for t in away)} deg a move (plain {step:.2f})")
+    return pulled < plain and first[1] > first[0] * 1.3 and slowed, note
+
+
+@test("Aim Assist (leaves you alone)")
+def _():
+    notes, ok = [], True
+
+    def case(name, plain_mine, pulled=False):
+        nonlocal ok
+        plain, mine = plain_mine
+        good = (mine > plain + 0.2) if pulled else abs(mine - plain) < 0.01
+        ok = ok and good
+        notes.append(f"{name} {plain:.2f}->{mine:.2f}")
+
+    eid = aim_setup()
+    case("in front (pulls)", first_turn(eid, -8), pulled=True)
+    case("outside the cone", first_turn(eid, -25))
+    say("/effect give @e[type=husk] minecraft:invisibility 60 0 true")
+    case("invisible", first_turn(eid, -8))
+    eid = aim_setup()
+    # Its raycast is the collision shape's (ClipContext.Block.COLLIDER): cobwebs let it through, stone does not.
+    say(f"/fill {X0-3} {Y+1} {Z0+2} {X0+3} {Y+3} {Z0+2} minecraft:cobweb")
+    case("behind cobwebs (pulls)", first_turn(eid, -8), pulled=True)
+    say(f"/fill {X0-3} {Y+1} {Z0+2} {X0+3} {Y+3} {Z0+2} minecraft:stone")
+    case("behind a wall", first_turn(eid, -8))
+    unwall()
+    eid = aim_setup(dz=7.0)
+    case("out of range", first_turn(eid, -5))
+    eid = aim_setup(weapon=False)
+    case("no weapon", first_turn(eid, -8))
+    setting("aimassist", "only with a weapon", "false")
+    case("no weapon, Only with a weapon off (pulls)", first_turn(eid, -8), pulled=True)
+    eid = aim_setup()
+    setting("aimassist", "hostiles", "false")
+    case("Hostiles off", first_turn(eid, -8))
+    # Held still on a target that does not move, nothing turns you.
+    setting("aimassist", "hostiles", "true")
+    only("aimassist")
+    face(eid, -2)
+    before = aim_view()
+    wait(40)
+    after = aim_view()
+    still = abs(wrap(after[0] - before[0])) < 1e-4 and abs(after[1] - before[1]) < 1e-4
+    ok = ok and still
+    notes.append(f"held still 2 s beside it: turned {abs(wrap(after[0] - before[0])):.4f} deg")
+    aim_done()
+    return ok, "; ".join(notes)
+
+
+@test("Aim Assist (settings)")
+def _():
+    notes, ok = [], True
+
+    def pair(name, a, b, want):
+        nonlocal ok
+        good = want(a, b)
+        ok = ok and good
+        notes.append(f"{name}: {a:.2f} vs {b:.2f}")
+
+    eid = aim_setup(dz=5.0)
+    setting("aimassist", "range", "6")
+    wide = first_turn(eid, -6)[1]
+    setting("aimassist", "range", "4")
+    narrow = first_turn(eid, -6)[1]
+    pair("Range 6 vs 4 (husk 5 away, first move)", wide, narrow, lambda a, b: a > b + 0.2)
+    eid = aim_setup()
+    setting("aimassist", "cone", "30")
+    small = first_turn(eid, -22)[1]
+    setting("aimassist", "cone", "60")
+    big = first_turn(eid, -22)[1]
+    pair("Cone 30 vs 60 (husk 22 deg off)", small, big, lambda a, b: b > a + 0.2)
+    setting("aimassist", "cone", "30")
+    plain, low = first_turn(eid, -12)
+    setting("aimassist", "pull", "1")
+    high = first_turn(eid, -12)[1]
+    pair("Pull 0.4 vs 1 (as a share of the plain move)", low / plain - 1, high / plain - 1, lambda a, b: abs(a - 0.4) < 0.05 and abs(b - 1.0) < 0.05)
+    setting("aimassist", "pull", "0.4")
+
+    def away(stick):
+        setting("aimassist", "stickiness", stick)
+        face(eid)
+        only("aimassist")
+        t = abs(mouse_turns(-10, 1)[0])
+        only()
+        return t
+
+    pair("Stickiness 0.25 vs 0.6 (first move off it, share kept)", away("0.25") / plain, away("0.6") / plain,
+         lambda a, b: abs(a - 0.75) < 0.03 and abs(b - 0.4) < 0.03)
+    setting("aimassist", "stickiness", "0.25")
+    # Five out and five up: 6.5 away in a straight line, under 5 across.
+    say(f"/setblock {X0} {Y+5} {Z0+5} minecraft:stone")
+    eid = aim_setup(dz=5.0, dy=5.0)
+    sphere = first_turn(eid, -5)[1]
+    setting("aimassist", "range shape", "Column")
+    column = first_turn(eid, -5)[1]
+    setting("aimassist", "column height", "2")
+    capped = first_turn(eid, -5)[1]
+    pair("Range shape Sphere vs Column (husk 5 across, 5 up)", sphere, column, lambda a, b: b > a + 0.2)
+    pair("Column height 0 vs 2", column, capped, lambda a, b: a > b + 0.2)
+    say(f"/setblock {X0} {Y+5} {Z0+5} minecraft:air")
+    aim_done()
+    return ok, "; ".join(notes)
+
+
+def track_run(eid, frames):
+    """What the frames of a husk walking past show: degrees off its middle at the start, at the end and at most;
+    the view's turn per frame over the husk's (its median share, and how many frames stalled while it moved)."""
+    moving = [i for i in range(1, len(frames)) if abs(frames[i].mobs[eid][0][0] - frames[i - 1].mobs[eid][0][0]) > 1e-6]
+    if len(moving) < 10:
+        return None
+    win = frames[moving[0] - 1:moving[-1] + 1]
+    errs = [off_centre(f, eid) for f in win]
+    shares, stalls, still = [], 0, 0
+    for a, b in zip(win, win[1:]):
+        ca, cb = a.mobs[eid][0], b.mobs[eid][0]
+        dt = math.degrees(math.atan2(-(cb[0] - b.eye[0]), cb[2] - b.eye[2]) - math.atan2(-(ca[0] - a.eye[0]), ca[2] - a.eye[2]))
+        dy = wrap(b.yaw - a.yaw)
+        if abs(dt) < 1e-5:
+            still += 1
+            continue
+        shares.append(dy / dt)
+        stalls += abs(dy) < 0.1 * abs(dt)
+    shares.sort()
+    fps = (len(win) - 1) / max(win[-1].t - win[0].t, 1e-6)
+    return {"start": errs[0], "end": errs[-1], "max": max(errs), "share": shares[len(shares) // 2] if shares else 0.0,
+            "stalled": stalls / max(len(shares), 1), "still": still / (len(win) - 1), "fps": fps, "frames": len(win)}
+
+
+def track(tracking, start_dx=-1.5, tag="aim_e", wall=False):
+    eid = aim_setup(dx=start_dx)
+    if wall:
+        say(f"/fill {X0-4} {Y+1} {Z0+2} {X0+4} {Y+3} {Z0+2} minecraft:stone")
+    setting("aimassist", "tracking", tracking)
+    only("aimassist")
+    face(eid)
+    wait(5)
+    mark = probe_mark()
+    say(f"/tag @e[type=husk] add {tag}")
+    wait(30)
+    # Typing the next command opens the chat, a screen, and Aim Assist rests behind screens: the frames end here.
+    cut = time.time()
+    say(f"/tag @e[type=husk] remove {tag}")
+    wait(5)
+    frames = [f for f in probe_frames(mark) if eid in f.mobs and f.t < cut]
+    only()
+    if wall:
+        say(f"/fill {X0-4} {Y+1} {Z0+2} {X0+4} {Y+3} {Z0+2} minecraft:air")
+    return track_run(eid, frames), frames
+
+
+@test("Aim Assist (tracking)")
+def _():
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    aim_pack()
+    runs = {}
+    for t in ("1", "0.5", "0"):
+        runs[t] = track(t)[0]
+    walled, frames = track("1", wall=True)
+    turned = max(abs(wrap(f.yaw - frames[0].yaw)) for f in frames) if frames else 0
+    aim_done()
+    if not all(runs.values()):
+        return False, "the husk did not move (data pack not loaded?)"
+    one, half, off = runs["1"], runs["0.5"], runs["0"]
+    note = "; ".join(f"Tracking {t}: off its middle {r['start']:.2f} -> {r['end']:.2f} deg (max {r['max']:.2f}), view turned {r['share']:.2f} of the husk's turn per frame, {r['stalled']*100:.0f}% frames stalled, husk still in {r['still']*100:.0f}% of frames, {r['fps']:.0f} fps"
+                     for t, r in runs.items())
+    note += f"; behind a wall the view turned {turned:.3f} deg"
+    ok = (one["max"] < 1.0 and 0.85 < one["share"] < 1.15 and one["stalled"] < 0.05
+          and off["end"] > 10 and half["end"] < off["end"] - 3 and turned < 1e-3)
+    return ok, note
+
+
+@test("Aim Assist (mace dive)")
+def _():
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+
+    def dive(on_):
+        eid = aim_setup(dz=4.0, mode="creative")
+        setting("aimassist", "mace dive", "true" if on_ else "false")
+        only("aimassist")
+        say(f"/tp @s {X0 + 0.5} {Y + 13} {Z0 + 0.5} 0 30")
+        mark = probe_mark()
+        wait(40)
+        frames = [f for f in probe_frames(mark) if eid in f.mobs]
+        only()
+        # The frames of the fall past the 3 blocks it waits for, until landing: how far off the hitbox the crosshair
+        # starts, how long it takes to get within a degree, and the share of the frames after that within a degree.
+        fall = [f for f in frames if f.eye[1] < Y + 13 + 1.62 - 3.2 and f.eye[1] > Y + 2.7]
+        if not fall:
+            return None
+        gaps = [aim_gap(f, eid) for f in fall]
+        on_ = next((i for i, g in enumerate(gaps) if g < 1.0), len(gaps))
+        after = gaps[on_:]
+        return {"start": gaps[0], "time": fall[min(on_, len(fall) - 1)].t - fall[0].t, "kept": sum(g < 1.0 for g in after) / max(len(after), 1),
+                "near": sum(g < 1.0 for g in gaps) / len(gaps), "frames": len(fall)}
+
+    with_dive = dive(True)
+    without = dive(False)
+    aim_done()
+    if not with_dive or not without:
+        return False, "no frames of the fall"
+    note = (f"falling onto a husk 4 blocks out ({with_dive['frames']} frames): {with_dive['start']:.1f} deg off the hitbox, on it within "
+            f"{with_dive['time']:.2f} s and on it for {with_dive['kept']*100:.0f}% of the fall after that with Mace dive; without it "
+            f"{without['start']:.1f} deg off and on it in {without['near']*100:.0f}% of the frames")
+    return with_dive["start"] > 5.0 and with_dive["time"] < 0.5 and with_dive["kept"] > 0.9 and without["near"] < 0.3, note
+
+
+@test("Aim Assist (players)")
+def _():
+    if not CTL2:
+        return None, "needs a second player"
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    reset("survival")
+    aim_defaults()
+    slot(0, "diamond_sword", 1)
+    ctl("key", "1", "tap")
+    say("/gamemode survival Bot1")
+    bot = next(e["id"] for e in ctl("entities")["entities"] if e.get("type") == "minecraft:player")
+
+    def strafe():
+        say(f"/tp Bot1 {X0 + 2.0} {Y + 1} {Z0 + 3.5} 180 0")
+        wait(20)
+        only("aimassist")
+        ctl("look-at-entity", str(bot))
+        wait(5)
+        mark = probe_mark()
+        # Facing you, sneaking to its left: east to west across your view at sneaking speed.
+        ctl2("key", "shift", "down")
+        ctl2("key", "a", "down")
+        wait(30)
+        ctl2("key", "a", "up")
+        ctl2("key", "shift", "up")
+        wait(5)
+        frames = [f for f in probe_frames(mark) if bot in f.mobs]
+        only()
+        return track_run(bot, frames)
+
+    setting("aimassist", "tracking", "1")
+    real = strafe()
+    say(".friend add Bot1")
+    friend = strafe()
+    say(".friend remove Bot1")
+    aim_done()
+    if not real or not friend:
+        return False, "Bot1 did not move"
+    note = (f"Bot1 sneak-strafing 3 blocks away, Tracking 1: off its middle {real['start']:.2f} -> {real['end']:.2f} deg (max {real['max']:.2f}), "
+            f"view turned {real['share']:.2f} of its turn per frame, {real['stalled']*100:.0f}% frames stalled; as a friend: {friend['start']:.2f} -> {friend['end']:.2f} deg")
+    return real["max"] < 1.5 and real["stalled"] < 0.05 and friend["end"] > 5.0, note
 
 
 @test("Crystal Optimizer")

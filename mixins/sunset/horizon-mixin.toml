@@ -342,11 +342,21 @@ bindings = [
 ]
 
 [[injection]]
-id = "frame"
+id = "mouse_before"
 kind = "HEAD"
-target = "horizon_client::game::native_hooks::Game<'_>::native_frame"
-helper = "frame.rs"
+target = "horizon_client::game::Game<'_>::apply_mouse_look"
+helper = "mouse_before.rs"
 bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[injection]]
+id = "mouse_after"
+kind = "RETURN"
+target = "horizon_client::game::Game<'_>::apply_mouse_look"
+helper = "mouse_after.rs"
+bindings = [
+  { name = "value", ty = "()", value = "$value" },
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
 ]
 
