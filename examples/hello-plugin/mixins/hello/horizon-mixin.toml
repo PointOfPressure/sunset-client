@@ -1,0 +1,25 @@
+[mod]
+id = "hello"
+version = "0.1.0"
+priority = 100
+
+# The same Horizon commit as the Solstice it plugs into.
+[compatibility]
+horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
+
+# Your code: a module added to the game's source.
+[[module]]
+id = "plugin"
+file = "crates/horizon-client/src/game.rs"
+name = "hello_plugin"
+source = "plugin.rs"
+
+# Horizon's own tick hook point calls it.
+[[injection]]
+id = "tick"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_tick"
+helper = "tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]

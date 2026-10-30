@@ -41,6 +41,17 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Horizontal range", 8.0, 2.0, 16.0, 1.0)
             .num("Vertical range", 4.0, 1.0, 8.0, 1.0)
             .num("Light level", 0.0, 0.0, 15.0, 1.0),
+        Module::new("No Render", Render, "Hides fog, darkness, blindness, nausea and screen overlays (fire, water, in a wall, pumpkin, powder snow).")
+            .bool("Fog", true)
+            .bool("Water fog", true)
+            .bool("Lava and powder snow fog", false)
+            .bool("Blindness", true)
+            .bool("Darkness", true)
+            .bool("Nausea", true)
+            .bool("Fire overlay", true)
+            .bool("Liquid overlay", true)
+            .bool("In wall overlay", true)
+            .bool("Pumpkin, spyglass and powder snow overlays", false),
         Module::new("Timer", World, "Changes the speed the game runs at.")
             .num("Multiplier", 2.0, 0.1, 10.0, 0.1),
         Module::new("No Slow", Movement, "Stops using an item (eating, drawing a bow, blocking) from slowing you down."),
@@ -74,6 +85,8 @@ struct Rs {
     voids_at: u64,
     lights: Vec<([i32; 3], bool)>,
     lights_at: u64,
+    // The Fog option as it was before No Render turned it off.
+    fog_before: Option<bool>,
 }
 
 impl Default for Fc {
@@ -291,6 +304,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
         }
     }
     engine_flags(game, mods);
+    no_render(game, mods);
     xray(game, mods);
     if let Some(m) = on(mods, "Tunnel ESP") {
         scan_tunnels(game, &m, ticks);
@@ -308,6 +322,36 @@ fn engine_flags(_game: &mut Game<'_>, mods: &[Module]) {
     let mult = on(mods, "Timer").map_or(1.0, |m| m.n("Multiplier") as f32);
     horizon_client::clock::solstice_timer::MULT.store(mult.to_bits(), Ordering::Relaxed);
     horizon_client::input::solstice_flags::NO_SLOW.store(on(mods, "No Slow").is_some(), Ordering::Relaxed);
+}
+
+// No Render: fog through Horizon's own Fog option, the effects the player does
+// not want to see taken off its list, and the overlay switches.
+fn no_render(game: &mut Game<'_>, mods: &[Module]) {
+    use horizon_client::{fog::solstice_fog as fog, screen_effects::solstice_overlay as overlay};
+    let m = on(mods, "No Render");
+    let flag = |name: &str| m.as_ref().is_some_and(|m| m.b(name));
+    // Fog: Horizon's Fog option, remembered and put back.
+    if flag("Fog") {
+        if rs(|r| r.fog_before.is_none()) {
+            rs(|r| r.fog_before = Some(game.settings.horizon.fog));
+        }
+        game.settings.horizon.fog = false;
+    } else if let Some(before) = rs(|r| r.fog_before.take()) {
+        game.settings.horizon.fog = before;
+    }
+    fog::NO_WATER.store(flag("Water fog"), Ordering::Relaxed);
+    fog::NO_LAVA.store(flag("Lava and powder snow fog"), Ordering::Relaxed);
+    overlay::NO_FIRE.store(flag("Fire overlay"), Ordering::Relaxed);
+    overlay::NO_LIQUID.store(flag("Liquid overlay"), Ordering::Relaxed);
+    overlay::NO_WALL.store(flag("In wall overlay"), Ordering::Relaxed);
+    overlay::NO_GUI.store(flag("Pumpkin, spyglass and powder snow overlays"), Ordering::Relaxed);
+    // Effects the server put on the player that only change what it sees.
+    let (blind, dark, nausea) = (flag("Blindness"), flag("Darkness"), flag("Nausea"));
+    if blind || dark || nausea {
+        game.potions.effects.list.retain(|e| {
+            !((blind && e.id == "blindness") || (dark && e.id == "darkness") || (nausea && e.id == "nausea"))
+        });
+    }
 }
 
 // Xray: the mesher draws only the listed blocks; the world is rebuilt when

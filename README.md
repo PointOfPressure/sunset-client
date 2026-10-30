@@ -1,94 +1,126 @@
 # Solstice
 
-Horizon's first cheat client: a utility client for
-[Horizon](https://github.com/horizon-rust/horizon), the Rust rewrite of Minecraft: Java Edition 26.3.
-Vibecoded with Claude Code.
+A utility client for [Horizon](https://github.com/horizon-rust/horizon) (Minecraft 26.3, rewritten in Rust),
+in the style of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client): about 90 modules for combat,
+movement, building and seeing through walls, a click menu, key binds and chat commands.
 
-It's a Horizon *native mod* (a mixin bundle the launcher compiles into the game) in the style of
-[Meteor Client](https://github.com/MeteorDevelopment/meteor-client): modules in categories,
-settings, key binds, a menu and `.` chat commands. Horizon can't run Java mods, so it's new
-Rust code, with Meteor as the reference for what the modules do. Not made by, or affiliated
-with, MeteorDevelopment or the Horizon project.
+![Solstice's ESP, tracers, name tags and storage ESP](docs/images/esp.jpg)
 
-> Using these on servers that don't allow them will get you banned. Play where it's allowed.
+> Not made by, or affiliated with, the Horizon or Meteor projects. Use it where it's allowed: many servers ban
+> modules like these.
 
-## Install
+## Get it running
 
-1. Open a terminal and run:
-   ```sh
-   curl -fsSL https://github.com/PointOfPressure/solstice-client/releases/latest/download/install.sh | sh
-   ```
-2. In the Horizon launcher: **Settings > Game > Native mods (experimental)**, switch it on,
-   press **Build**, then **I trust these mods: build**. The first build takes 10 to 30 minutes
-   (it downloads Rust and compiles the game); later ones take a few minutes.
-   On Linux the build needs the sound and device headers once:
-   `sudo apt install libasound2-dev libudev-dev pkg-config` (Debian, Ubuntu, Zorin, Mint).
-3. Press **Play**, then **Right Shift** in game opens the menu. `.help` in chat lists the commands.
+You need the [Horizon launcher](https://playhorizon.dev) installed and opened once. Then one command does
+everything (installs Solstice, builds it into the game, starts it):
 
-Why step 1 is a command: Horizon's launcher has no button for adding a native mod from a file
-(only its own registry installs them). The script puts `solstice.hnmod` in
-`~/.local/share/horizon/horizon-native-mods/` and turns it on in `horizon-mods.txt`. With a
-downloaded file instead: `sh install.sh solstice.hnmod [instance folder]`.
+**Windows** (PowerShell)
 
-To update, run the same command and press Build again. To remove it, turn it off
-in Options > Mods (it does nothing from then on), or delete the file and pick the plain
-Nightly again in the launcher.
+```powershell
+irm https://github.com/PointOfPressure/solstice-client/releases/latest/download/install.ps1 | iex
+```
 
-Each version is pinned to one Horizon Nightly (0.7.0: `ba6344a`) (`horizon` in `horizon-native.json`) because it
-hooks the game's own functions. The launcher builds it on that commit, so it keeps working
-after Horizon updates, but plays that Nightly's game until the mod moves to a newer one.
+**Linux and macOS** (terminal)
 
-## Use
+```sh
+curl -fsSL https://github.com/PointOfPressure/solstice-client/releases/latest/download/install.sh | sh
+```
 
-- **Right Shift** opens the click GUI (rebind it under Options > Mods > Solstice): every
-  category as a panel. Left click turns a module on or off, right click opens its settings
-  (sliders for numbers, right click a slider to reset it), the Bind row takes the next key.
-  Drag the headers to move panels, right click a header to fold it, scroll a long panel with the wheel. Esc closes it. The game
-  keeps running while it's open.
-- The same settings are also pages under Options > Mods > Solstice (`.pages`).
-- Just type to search the modules while the GUI is open. Esc clears the search, then closes the GUI.
-- **Key binds** toggle a module while you play.
-- **Chat commands** start with `.` and never reach the server (`..text` sends `.text`):
+The first run takes **10 to 30 minutes** (it compiles the game with Solstice inside) and shows progress. Later
+runs take a few minutes. When it finishes, Horizon starts with Solstice in it. **In the game, press `** (the key
+under Esc).
+
+Next time, start Horizon from the launcher and pick the **Native mods** instance.
+
+On Linux the installer may ask for your password once, to install two small system libraries the build needs.
+
+## Using it
+
+![The click menu, with Kill Aura's settings open](docs/images/gui.jpg)
+
+Press **`** (or **Right Shift**) for the menu. Every category is a panel.
+
+- **Left click** a module to turn it on or off. Click the **...** at its right (or right click it) for its settings and key bind.
+- **Just type** to search: `esp` shows the modules with ESP in the name. **Esc** clears the search, then closes the menu.
+- **Drag** a panel's header to move it, **right click** a header to fold it, **scroll** a long panel.
+- Change a **key bind** with the *Bind* row (press a key; Backspace clears it). Both menu keys can be rebound under
+  Options > Mods > Solstice.
+
+Everything is saved as you change it.
+
+### Chat commands
+
+They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 
 | Command | Does |
 | --- | --- |
 | `.help` | list the commands |
-| `.menu` | open the menu |
-| `.t <module>` | toggle a module (`.toggle`) |
-| `.modules` | list every module, `*` on |
-| `.settings <module>` | list a module's settings |
-| `.set <module> <setting> <value>` | change one (`.set killaura range 4`); the start of a setting's name is enough (`.set aimassist cone 60`); a value can be several words (`.set spam messages hello | hi`); lists like Xray's blocks are set this way (`.set xray blocks diamond_ore,ancient_debris`) |
-| `.bind <module> <key\|none>` | bind a key (`r`, `rshift`, `f6`...) |
-| `.binds` | list key binds |
-| `.reset <module>` | back to defaults |
-| `.friend add\|remove\|list [name]` | Kill Aura and Trigger Bot skip friends |
-| `.waypoint add\|remove\|list [name]` | save places; shown on screen by the Waypoints module (`.wp`) |
-| `.vclip <blocks>`, `.hclip <blocks>` | move up or down, or forward |
+| `.t <module>` | turn a module on or off (`.t killaura`) |
+| `.set <module> <setting> <value>` | change a setting: `.set killaura range 4`. The start of a name is enough, and a value can be several words |
+| `.settings <module>` | show a module's settings |
+| `.bind <module> <key>` | bind a key: `.bind flight r`, or `none` |
+| `.reset <module>` | put a module back to its defaults |
+| `.modules`, `.binds` | list the modules, the binds |
+| `.friend add\|remove\|list <name>` | friends are left alone by Kill Aura, Aim Assist and the other targeting modules |
+| `.waypoint add\|remove\|list <name>` | places the Waypoints module shows on screen |
+| `.vclip <n>`, `.hclip <n>` | move up or down, forward |
 
-Settings and binds are saved in `horizon-mods/.horizon-mod-data/solstice/config`.
+List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the same way:
+`.set xray blocks diamond_ore,ancient_debris`.
 
-## Modules
+## What's in it
 
-| Category | Modules |
+| | |
 | --- | --- |
-| Combat | Kill Aura, Trigger Bot, Criticals, Aim Assist, Auto Totem, Auto Weapon, Auto Log, Auto Armor, Offhand, Auto EXP, Bow Spam, Bow Aimbot, Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow |
-| Movement | Sprint, Sneak, Auto Walk, Flight, Speed, No Fall, No Slow, Velocity, Spider, Step, Air Jump, Elytra Boost, Anti Void, Safe Walk, Fast Climb, High Jump, Long Jump, Parkour, Blink, Scaffold, Reverse Step, Auto Jump, Chest Swap, Anchor |
-| Player | Fast Place, Fast Break, Fast Use, Auto Respawn, Anti Hunger, Anti AFK, Auto Clicker, Auto Eat, Auto Gap, Auto Fish, Auto Replenish, Auto Tool, Middle Click Extra, Reach, Air Place, Notifier, Spam |
-| Render | HUD, Fullbright, ESP, Tracers, Nametags, Storage ESP, Zoom, Breadcrumbs, Block ESP, Waypoints, Trajectories, Logout Spots, Hole ESP, Freecam, Free Look, Xray, Tunnel ESP, Void ESP, Light Overlay |
-| World | Nuker, Time Changer, Weather Changer, Timer, Auto Shearer, Auto Nametag, Auto Mount, Flamethrower, Liquid Filler, Spawn Proofer |
+| **Combat** | Kill Aura, Trigger Bot, Aim Assist, Criticals, Crystal Optimizer, Auto Totem, Auto Weapon, Auto Armor, Offhand, Auto EXP, Auto Log, Bow Spam, Bow Aimbot, Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow |
+| **Movement** | Flight, Speed, Sprint, Sneak, Auto Walk, Auto Jump, Step, Spider, High Jump, Long Jump, Air Jump, Parkour, Reverse Step, Fast Climb, Safe Walk, Anchor, Anti Void, Elytra Boost, Chest Swap, Blink, Scaffold, No Fall, No Slow, Velocity |
+| **Player** | Fast Place, Fast Break, Fast Use, Air Place, Reach, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam |
+| **Render** | ESP, Tracers, Nametags, Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories, Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, HUD |
+| **World** | Nuker, Timer, Time Changer, Weather Changer, Liquid Filler, Spawn Proofer, Flamethrower, Auto Shearer, Auto Nametag, Auto Mount |
 
-Horizon's own auto-reconnect is in Options > Horizon Extras.
+![Xray](docs/images/xray.jpg)
 
-Combat modules and No Fall work on servers, single player included (Horizon plays single
-player through its own integrated server). ESP, Tracers and Nametags are drawn on the HUD.
+![Freecam](docs/images/freecam.jpg)
 
-## Build it yourself
+![Surround and Trajectories](docs/images/surround.jpg)
 
-`python3 tools/pack.py` writes `dist/solstice-<version>.hnmod`. To compile-check against the
-pinned Horizon, stage it with [horizon-mixins](https://github.com/horizon-rust/horizon-mixins)
-(`horizon-mixins apply --workspace <horizon at the pinned commit> --mods mixins --out stage`)
-and run `cargo check -p horizon-client` in the stage.
+Not here (no clean way to do it in Horizon yet): Crystal Aura, Jesus, GUI Move, Click TP, and the Baritone-based
+Highway Builder and Infinity Miner.
+
+## Updating and removing
+
+**Update:** run the same command again.
+
+**Remove:** delete `solstice.hnmod` from the `horizon-native-mods` folder in Horizon's game folder (Windows:
+`%APPDATA%\horizon`, Linux: `~/.local/share/horizon`, macOS: `~/Library/Application Support/horizon`, and the same
+folder inside `instances\native-mods`), then play the plain **Horizon** instance.
+
+Each Solstice version is built for one Horizon Nightly, so Solstice keeps working when Horizon updates, but the
+**Native mods** instance plays the Nightly it was built on until you run the command again.
+
+## If something goes wrong
+
+- **"I couldn't find the Horizon launcher"**: install it from [playhorizon.dev](https://playhorizon.dev), open it once, run the command again.
+- **The build fails on Linux** with a message about `alsa` or `libudev`: install `libasound2-dev libudev-dev pkg-config` (Debian, Ubuntu), or your system's equivalents, and run the command again.
+- **The command did nothing on Windows**: run it in *PowerShell*, not Command Prompt.
+- **No Solstice in game**: you played the plain **Horizon** instance. Pick **Native mods**.
+- **The first build is slow**: yes. It compiles the whole game once.
+- The Windows and macOS installers could only be tested on Linux so far. If one doesn't work, open an
+  [issue](https://github.com/PointOfPressure/solstice-client/issues) with what it printed.
+
+## Plugins
+
+Other native mods can add modules to Solstice: see [docs/plugin-api.md](docs/plugin-api.md) and
+[examples/hello-plugin](examples/hello-plugin).
+
+## Building from source
+
+`python3 tools/pack.py` writes `dist/solstice-<version>.hnmod`. To compile-check it against the Horizon Nightly it
+pins, stage it with [horizon-mixins](https://github.com/horizon-rust/horizon-mixins)
+(`horizon-mixins apply --workspace <horizon at that commit> --mods mixins --out stage`) and run
+`cargo check -p horizon-client` in the stage. `tools/verify.py` runs the modules in a test arena in a headless
+game; `tools/audit.py` lists which of Meteor's settings are still missing.
 
 ## Licence
 
-MIT.
+MIT. Solstice's modules are written from Meteor Client's behaviour, in Rust, for Horizon; no Meteor code is used.

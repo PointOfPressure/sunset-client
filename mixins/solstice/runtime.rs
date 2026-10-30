@@ -26,7 +26,10 @@ pub(crate) const DESCRIPTION: &str =
     "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
 // The menu key's name on the mod's page and its default (Right Shift).
 pub(crate) const MENU_KEY: &str = "menu";
-pub(crate) const MENU_DEFAULT: &str = "key.keyboard.right.shift";
+pub(crate) const MENU_DEFAULT: &str = "key.keyboard.grave.accent";
+// A second key for the same thing, Meteor's own default.
+pub(crate) const MENU2_KEY: &str = "menu2";
+pub(crate) const MENU2_DEFAULT: &str = "key.keyboard.right.shift";
 // Solstice's sun gold.
 pub(super) const ACCENT: u32 = 0xFFB020;
 
@@ -239,15 +242,6 @@ pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
     let mut v = vec![
         // Combat
-        Module::new("Kill Aura", Combat, "Attacks the nearest living thing in range.")
-            .num("Range", 3.5, 1.0, 6.0, 0.5)
-            .bool("Players", true)
-            .bool("Hostiles", true)
-            .bool("Passive", false)
-            .bool("Wait for cooldown", true)
-            .num("Delay (ticks)", 10.0, 0.0, 20.0, 1.0)
-            .bool("Rotate", true)
-            .bool("Pause while using", true),
         Module::new("Trigger Bot", Combat, "Attacks what your crosshair is on.")
             .bool("Players", true)
             .bool("Hostiles", true)
@@ -282,7 +276,8 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Anti Void", Movement, "Bounces you out of the void."),
         // Player
         Module::new("Fast Place", Player, "Removes the delay between placing blocks."),
-        Module::new("Fast Break", Player, "Removes the delay between breaking blocks."),
+        Module::new("Break Delay", Player, "Changes the delay between breaking one block and the next (Meteor's Break Delay): 0 means none.")
+            .num("Cooldown (ticks)", 0.0, 0.0, 5.0, 1.0),
         Module::new("Auto Respawn", Player, "Respawns as soon as you die."),
         // Render
         Module::new("HUD", Render, "The watermark, the active modules, your coordinates and more.")
@@ -389,6 +384,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Time Changer", World, "Sets the time of day you see.")
             .num("Time", 6000.0, 0.0, 24000.0, 1000.0),
     ];
+    v.splice(0..0, super::solstice_aura::defaults());
     v.extend(super::solstice_combat::defaults());
     v.extend(super::solstice_render::defaults());
     v.extend(super::solstice_player::defaults());
@@ -411,6 +407,8 @@ pub(super) struct State {
     // A module waiting for its key bind (its index).
     binding: Option<usize>,
     pub(super) friends: Vec<String>,
+    // The config file as read: modules a plugin registers later take their saved settings from it.
+    raw: String,
     // Keys this mod held down for the tick (Auto Walk, Sprint).
     injected: Vec<KeyCode>,
     loaded: bool,
@@ -478,6 +476,7 @@ impl State {
             page: Page::Main,
             binding: None,
             friends: Vec::new(),
+            raw: String::new(),
             injected: Vec::new(),
             loaded: false,
             ticks: 0,
@@ -610,16 +609,29 @@ static ANTI_GROUND: AtomicBool = AtomicBool::new(false);
 // sends more ("Invalid move player packet received"). Criticals hops over two
 // ticks instead: stage 1 and 2 turn the next position packets into the hop up
 // and the hop back (both off the ground), stage 3 lets the hit follow.
-static CRIT_STAGE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+static WELCOMED: AtomicBool = AtomicBool::new(false);
+pub(super) static CRIT_STAGE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 static POS_THIS_TICK: AtomicBool = AtomicBool::new(false);
 // Blink held at least one move packet.
 static BLINK_HELD: AtomicBool = AtomicBool::new(false);
 // Scaffold's block placements count up from here (the game's own are small).
-static SEQUENCE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(1_000_000_000);
 
 pub(super) fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
     f(guard.get_or_insert_with(State::new))
+}
+
+// A module from a plugin: added once (by name), with its saved settings.
+pub(super) fn register_module(m: Module) {
+    with(|s| {
+        if s.modules.iter().any(|x| x.name == m.name) {
+            return;
+        }
+        s.modules.push(m);
+        let raw = s.raw.clone();
+        s.load_text(&raw);
+        sync_flags(s);
+    });
 }
 
 pub(super) fn snapshot() -> Vec<Module> {
@@ -640,6 +652,7 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
     }
     let text = game.native_setting(ID, "config").unwrap_or_default();
     with(|s| {
+        s.raw = text.clone();
         s.load_text(&text);
         s.loaded = true;
         sync_flags(s);
@@ -837,7 +850,10 @@ pub(super) fn listed(mods: &mut Vec<super::native_hooks::NativeMod>) {
         id: ID.into(),
         title: format!("{NAME} {VERSION}"),
         description: DESCRIPTION.into(),
-        keys: vec![[MENU_KEY.into(), "Open Solstice menu".into(), MENU_DEFAULT.into()]],
+        keys: vec![
+            [MENU_KEY.into(), "Open Solstice menu".into(), MENU_DEFAULT.into()],
+            [MENU2_KEY.into(), "Open Solstice menu (2nd key)".into(), MENU2_DEFAULT.into()],
+        ],
     });
 }
 
@@ -849,6 +865,11 @@ pub(super) fn refresh(game: &mut Game<'_>) {
     if let Some(i) = mod_index(game) {
         game.native_settings_refresh(i);
     }
+}
+
+// Either of the two keys that open the click GUI.
+pub(super) fn is_menu_key(game: &Game<'_>, key: &str) -> bool {
+    key == game.native_mod_key(ID, MENU_KEY, MENU_DEFAULT) || key == game.native_mod_key(ID, MENU2_KEY, MENU2_DEFAULT)
 }
 
 pub(super) fn open_menu(game: &mut Game<'_>) {
@@ -999,7 +1020,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     if !game.native_playing() {
         return;
     }
-    if key == game.native_mod_key(ID, MENU_KEY, MENU_DEFAULT) {
+    if is_menu_key(game, key) {
         open_gui(game);
         return;
     }
@@ -1127,6 +1148,10 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     }
     let mods = snapshot();
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
+    // Once a session, in a world: how to get to the menu.
+    if game.remote.is_some() && game.player.is_some() && !WELCOMED.swap(true, Ordering::Relaxed) {
+        say(game, &format!("{VERSION} is on. Press ` for the menu (or Right Shift), type .help for the commands."));
+    }
     let ticks = with(|s| {
         s.ticks += 1;
         s.ticks
@@ -1164,8 +1189,10 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     if get("Fast Place").is_some() {
         game.use_delay = 0;
     }
-    if get("Fast Break").is_some() {
-        game.destroy_delay = 0;
+    if let Some(m) = get("Break Delay") {
+        let wait = m.n("Cooldown (ticks)") as u32;
+        game.destroy_delay = game.destroy_delay.min(wait);
+        super::remote::solstice_remote::clear_destroy_delay(game, wait);
     }
 
     let dir = move_direction(game);
@@ -1557,7 +1584,7 @@ pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
         // The server takes the slot first; the block goes next tick.
         return;
     }
-    let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let sequence = super::solstice_util::sequence(game);
     game.send(S::UseItemOn(play::UseItemOn {
         hand: 0,
         pos: against,
@@ -1578,8 +1605,8 @@ pub(super) fn auto_click(game: &mut Game<'_>, m: &Module) {
         return;
     }
     let (left, right) = (
-        m.b("Left") && game.physical_buttons.contains(&MouseButton::Left),
-        m.b("Right") && game.physical_buttons.contains(&MouseButton::Right),
+        m.b("Left") && (game.physical_buttons.contains(&MouseButton::Left) || game.left),
+        m.b("Right") && (game.physical_buttons.contains(&MouseButton::Right) || game.right),
     );
     if !left && !right {
         return;
@@ -1883,7 +1910,7 @@ pub(super) fn auto_replenish(game: &mut Game<'_>, m: &Module) {
 // the attack button is held; back to the old slot after.
 pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
-    let down = game.native_playing() && game.physical_buttons.contains(&MouseButton::Left) && !gui_open();
+    let down = game.native_playing() && (game.physical_buttons.contains(&MouseButton::Left) || game.left) && !gui_open();
     if !down {
         if let Some(back) = with(|s| s.tool_back.take())
             && m.b("Switch back")
@@ -1957,7 +1984,8 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
     // A block being mined the slow way: stop it when its time is up.
     if let Some((pos, left)) = with(|s| s.nuke) {
         if left <= 1 {
-            game.send(S::PlayerAction(play::PlayerAction { action: 3, pos, direction: 1, sequence: SEQUENCE.fetch_add(1, Ordering::Relaxed) }));
+            let seq = super::solstice_util::sequence(game);
+            game.send(S::PlayerAction(play::PlayerAction { action: 3, pos, direction: 1, sequence: seq }));
             with(|s| s.nuke = None);
         } else {
             with(|s| s.nuke = Some((pos, left - 1)));
@@ -2006,10 +2034,12 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
             if broke >= m.n("Blocks per tick") as usize {
                 break;
             }
-            game.send(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: SEQUENCE.fetch_add(1, Ordering::Relaxed) }));
+            let seq = super::solstice_util::sequence(game);
+            game.send(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: seq }));
             broke += 1;
         } else if broke == 0 {
-            game.send(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: SEQUENCE.fetch_add(1, Ordering::Relaxed) }));
+            let seq = super::solstice_util::sequence(game);
+            game.send(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: seq }));
             with(|s| s.nuke = Some((pos, ticks)));
             break;
         }
@@ -2050,7 +2080,7 @@ pub(super) fn track_logouts(game: &Game<'_>, m: &Module) {
 pub(super) fn bow_spam(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
     if !game.native_playing()
-        || !game.physical_buttons.contains(&MouseButton::Right)
+        || !(game.physical_buttons.contains(&MouseButton::Right) || game.right)
         || !game.held().is_some_and(|s| &*s.item == "minecraft:bow")
     {
         return;
@@ -2222,48 +2252,7 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
 }
 
 pub(super) fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
-    if !game.native_playing() || game.remote.is_none() || CRIT_STAGE.load(Ordering::Relaxed) != 0 {
-        return;
-    }
-    if m.b("Pause while using") && game.using.is_some() {
-        return;
-    }
-    let mut wait = with(|s| s.aura_wait);
-    let ready = cooldown_ready(game, m, &mut wait);
-    with(|s| s.aura_wait = wait);
-    if !ready {
-        return;
-    }
-    let Some(eye) = game.eye_position() else {
-        return;
-    };
-    let own = own_id(game);
-    let names = game.remote_player_names();
-    let friends = with(|s| s.friends.clone());
-    let range = m.n("Range");
-    let mut best: Option<(u32, [f64; 3], f64)> = None;
-    for mob in &game.mobs {
-        if !mob.alive() || mob.removed || Some(mob.id) == own || Some(mob.id) == game.riding {
-            continue;
-        }
-        let kind = kind_of(mob);
-        if !wanted(m, kind) || (kind == Kind::Player && is_friend(&friends, &names, mob.id)) {
-            continue;
-        }
-        let b = mob.bounds();
-        let d = box_distance(eye, &b);
-        if d <= range && best.is_none_or(|(_, _, bd)| d < bd) {
-            let (lo, hi) = (b.min_position(), b.max_position());
-            let centre = [(lo.x + hi.x) / 2.0, (lo.y + hi.y) / 2.0, (lo.z + hi.z) / 2.0];
-            best = Some((mob.id, centre, d));
-        }
-    }
-    let Some((id, centre, _)) = best else {
-        return;
-    };
-    let rotate = m.b("Rotate").then(|| look_at(eye, centre));
-    attack(game, id, crits, rotate);
-    with(|s| s.aura_wait = m.n("Delay (ticks)") as u32);
+    super::solstice_aura::tick(game, m, crits);
 }
 
 pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
@@ -2296,35 +2285,32 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
 
 // A totem in the hotbar goes to the offhand by selecting it and pressing the
 // swap key, as a player would; then the old slot comes back.
-pub(super) fn auto_totem(game: &mut Game<'_>, swap_back: bool) {
+static TOTEM_WAIT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+// Moves a totem from the hotbar to the offhand: select it, swap hands, select
+// the old slot again, then give the server a few ticks to answer.
+pub(super) fn auto_totem(game: &mut Game<'_>, _swap_back: bool) {
     if game.remote.is_none() || !game.native_playing() {
+        return;
+    }
+    if TOTEM_WAIT.load(Ordering::Relaxed) > 0 {
+        TOTEM_WAIT.fetch_sub(1, Ordering::Relaxed);
         return;
     }
     let is_totem = |s: &Option<horizon_client::items::ItemStack>| {
         s.as_ref().is_some_and(|s| &*s.item == "minecraft:totem_of_undying")
     };
     if is_totem(&game.offhand) {
-        if let Some(back) = with(|s| s.totem_from.take())
-            && swap_back
-            && back < 9
-        {
-            game.selected = back;
-        }
         return;
     }
     let Some(slot) = (0..9).find(|&i| game.inventory.get(i).is_some_and(is_totem)) else {
         return;
     };
     let before = game.selected;
-    game.selected = slot;
-    // The server swaps the slot it last heard about: tell it first.
-    game.send(S::SetCarriedItem(play::SetCarriedItem { slot: slot as i16 }));
+    hold(game, slot);
     game.remote_swap_hands();
-    with(|s| {
-        if s.totem_from.is_none() && before != slot {
-            s.totem_from = Some(before);
-        }
-    });
+    hold(game, before);
+    TOTEM_WAIT.store(10, Ordering::Relaxed);
 }
 
 // ---------------------------------------------------------------- packets
@@ -2402,7 +2388,7 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     let Some(p) = game.player.as_ref() else {
         return Out::Pass;
     };
-    let ground = if NO_FALL.load(Ordering::Relaxed) && p.fall_distance > 2.0 && !p.flying && !p.fall_flying {
+    let ground = if NO_FALL.load(Ordering::Relaxed) && p.velocity.y < -0.55 && !p.ground.on_ground && !p.flying && !p.fall_flying {
         Some(true)
     } else if ANTI_GROUND.load(Ordering::Relaxed) && (p.fall_distance <= 0.0 || p.flying) {
         Some(false)
@@ -3471,7 +3457,7 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
         }
         return;
     }
-    if name == game.native_mod_key(ID, MENU_KEY, MENU_DEFAULT) {
+    if is_menu_key(game, name) {
         with(|s| s.gui.closing = true);
         return;
     }
@@ -3525,6 +3511,14 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             (Hit::Header(c), true) => {
                 s.gui.panels[c].collapsed = !s.gui.panels[c].collapsed;
                 changed = true;
+            }
+            // The dots at the row's end open the settings, as a right click does.
+            (Hit::Module(i), false) if at.0 >= r[0] + r[2] - 14.0 => {
+                if let Some(k) = s.gui.expanded.iter().position(|&e| e == i) {
+                    s.gui.expanded.remove(k);
+                } else {
+                    s.gui.expanded.push(i);
+                }
             }
             (Hit::Module(i), false) => toggled = Some(i),
             (Hit::Module(i), true) => {
@@ -3652,9 +3646,8 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
                 }
                 let colour = if m.on { ACCENT } else { 0xE0E0E0 };
                 out.push(Shape::Text(fit(m.name, rw - 16.0), [x + 5.0, y + 1.5], colour));
-                if !m.settings.is_empty() || m.key.is_some() {
-                    out.push(Shape::Text("...".into(), [x + rw - 12.0, y + 0.5], 0x808080));
-                }
+                let open = with(|st| st.gui.expanded.contains(&i));
+                out.push(Shape::Text("...".into(), [x + rw - 12.0, y + 0.5], if open { ACCENT } else { 0xB0B0B0 }));
             }
             Hit::Bind(i) => {
                 out.push(Shape::Fill([x, y, rw, rh], 0xD008_0808));

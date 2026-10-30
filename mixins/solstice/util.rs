@@ -9,13 +9,10 @@ use horizon_protocol::packets::{
     play::{self, Serverbound as S},
 };
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicI32, Ordering};
 
-// Block placements count up from here; the game's own are small.
-static SEQUENCE: AtomicI32 = AtomicI32::new(1_500_000_000);
-
-pub(super) fn sequence() -> i32 {
-    SEQUENCE.fetch_add(1, Ordering::Relaxed)
+// The next block-action sequence number, from the game's own counter.
+pub(super) fn sequence(game: &mut Game<'_>) -> i32 {
+    super::remote::solstice_remote::next(game)
 }
 
 // Boxes the modules want drawn this frame: where they will place or break.
@@ -235,6 +232,7 @@ pub(super) fn place_block(game: &mut Game<'_>, p: [i32; 3], slot: usize, rotate:
     }
     let before = game.selected;
     hold(game, slot);
+    let seq = sequence(game);
     game.send(S::UseItemOn(play::UseItemOn {
         hand: 0,
         pos: neighbor,
@@ -242,7 +240,7 @@ pub(super) fn place_block(game: &mut Game<'_>, p: [i32; 3], slot: usize, rotate:
         cursor,
         inside: false,
         world_border: false,
-        sequence: sequence(),
+        sequence: seq,
     }));
     game.swing_arm();
     game.send(S::Punch(Empty));

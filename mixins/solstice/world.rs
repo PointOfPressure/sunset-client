@@ -441,6 +441,7 @@ fn flamethrower(game: &mut Game<'_>, m: &Module) {
     }
     let before = game.selected;
     hold(game, slot);
+    let seq = sequence(game);
     game.send(S::UseItemOn(play::UseItemOn {
         hand: 0,
         pos: below,
@@ -448,7 +449,7 @@ fn flamethrower(game: &mut Game<'_>, m: &Module) {
         cursor: [0.5, 1.0, 0.5],
         inside: false,
         world_border: false,
-        sequence: sequence(),
+        sequence: seq,
     }));
     game.swing_arm();
     hold(game, before);
@@ -459,7 +460,7 @@ fn flamethrower(game: &mut Game<'_>, m: &Module) {
 
 fn bow_aimbot(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
-    if !game.physical_buttons.contains(&MouseButton::Right) || !game.native_playing() {
+    if !(game.physical_buttons.contains(&MouseButton::Right) || game.right) || !game.native_playing() {
         return;
     }
     let Some(stack) = game.held() else {

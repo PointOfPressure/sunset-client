@@ -39,10 +39,28 @@ name = "solstice_world"
 source = "world.rs"
 
 [[module]]
+id = "remote_seq"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "solstice_remote"
+source = "remote_seq.rs"
+
+[[module]]
 id = "fishing_hook"
 file = "crates/horizon-client/src/game/fishing.rs"
 name = "solstice_fishing"
 source = "fishing_hook.rs"
+
+[[module]]
+id = "aura"
+file = "crates/horizon-client/src/game.rs"
+name = "solstice_aura"
+source = "aura.rs"
+
+[[module]]
+id = "api"
+file = "crates/horizon-client/src/game.rs"
+name = "solstice_api"
+source = "api.rs"
 
 [[module]]
 id = "render"
@@ -62,6 +80,20 @@ id = "timer_flags"
 file = "crates/horizon-client/src/clock.rs"
 name = "solstice_timer"
 source = "timer_flags.rs"
+visibility = "pub"
+
+[[module]]
+id = "fog_flags"
+file = "crates/horizon-client-render/src/fog.rs"
+name = "solstice_fog"
+source = "fog_flags.rs"
+visibility = "pub"
+
+[[module]]
+id = "overlay_flags"
+file = "crates/horizon-client-render/src/screen_effects.rs"
+name = "solstice_overlay"
+source = "overlay_flags.rs"
 visibility = "pub"
 
 [[module]]
@@ -306,4 +338,38 @@ target = "horizon_client::game::Game<'_>::reach"
 helper = "reach.rs"
 bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[injection]]
+id = "crystal"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_start_attack"
+helper = "crystal.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "fog"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::fog::fog_type"
+helper = "fog_hook.rs"
+bindings = [
+  { name = "world", ty = "&World", value = "world" },
+  { name = "facts", ty = "&BlockFacts", value = "facts" },
+  { name = "camera", ty = "[f64; 3]", value = "camera" },
+  { name = "forward", ty = "[f64; 3]", value = "forward" },
+]
+
+[[injection]]
+id = "overlay"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::screen_effects::ScreenEffects::build"
+helper = "overlay_hook.rs"
+bindings = [
+  { name = "this", ty = "&ScreenEffects", value = "&*self" },
+  { name = "input", ty = "&ScreenInputs<'_>", value = "input" },
 ]

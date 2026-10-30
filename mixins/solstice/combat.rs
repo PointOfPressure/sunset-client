@@ -101,6 +101,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Hostiles", true)
             .bool("Passive", false)
             .bool("Only with a weapon", true),
+        Module::new("Crystal Optimizer", Combat, "Breaks the end crystal you hit on your screen at once, without waiting for the server (as Marlow's Crystal Optimizer).")
+            .bool("Instant break", true)
+            .num("Reach", 4.5, 3.0, 6.0, 0.5)
+            .bool("Swing", true),
         Module::new("Auto EXP", Combat, "Automatically repairs your armor and tools in pvp.")
             .pick("Mode", &["Both", "Armor", "Hands"])
             .bool("Replenish", true)
@@ -709,6 +713,7 @@ fn burrow(game: &mut Game<'_>, m: &Module, just: bool) {
         }
         let before = game.selected;
         hold(game, slot);
+        let seq = sequence(game);
         game.send(S::UseItemOn(play::UseItemOn {
             hand: 0,
             pos: start,
@@ -716,7 +721,7 @@ fn burrow(game: &mut Game<'_>, m: &Module, just: bool) {
             cursor: [0.5, 0.5, 0.5],
             inside: false,
             world_border: false,
-            sequence: sequence(),
+            sequence: seq,
         }));
         hold(game, before);
     }
@@ -837,7 +842,8 @@ fn auto_exp(game: &mut Game<'_>, m: &Module) {
     game.send(S::MovePlayerRot(play::MovePlayerRot { yaw, pitch: 90.0, flags: 1 }));
     let before = game.selected;
     hold(game, slot);
-    game.send(S::UseItem(play::UseItem { hand: 0, sequence: sequence(), yaw, pitch: 90.0 }));
+    let seq = sequence(game);
+    game.send(S::UseItem(play::UseItem { hand: 0, sequence: seq, yaw, pitch: 90.0 }));
     hold(game, before);
 }
 
@@ -994,4 +1000,45 @@ pub(super) fn aim_frame(game: &mut Game<'_>, mods: &[Module]) {
         game.turn_player(turn_yaw / 0.15, turn_pitch / 0.15);
         AIM_BUSY.store(false, Ordering::Relaxed);
     }
+}
+
+// ---- Crystal Optimizer
+
+// Called when you attack: if an end crystal is on the crosshair, hit it now and
+// remove it from your screen, then the click is done. Some(instant) when it
+// took the click.
+pub(super) fn crystal_attack(game: &mut Game<'_>) -> Option<bool> {
+    let m = super::solstice::with(|s| s.module("Crystal Optimizer").filter(|m| m.on).cloned())?;
+    if !m.b("Instant break") || !in_world(game) {
+        return None;
+    }
+    let eye = game.eye_position()?;
+    let dir = view_vector(game.yaw, game.pitch);
+    let reach = m.n("Reach");
+    let mut best: Option<(f64, u32)> = None;
+    for c in &game.crystals {
+        if c.id == 0 || c.invulnerable {
+            continue;
+        }
+        let lo = horizon_core::geometry::Vec3::new(c.position.x - 1.0, c.position.y, c.position.z - 1.0);
+        let hi = horizon_core::geometry::Vec3::new(c.position.x + 1.0, c.position.y + 2.0, c.position.z + 1.0);
+        let b = horizon_core::geometry::Aabb::new(lo, hi);
+        if let Some(d) = super::ray_box(eye, dir, reach, b)
+            && best.is_none_or(|(bd, _)| d < bd)
+        {
+            let at = [eye[0] + dir[0] * d, eye[1] + dir[1] * d, eye[2] + dir[2] * d];
+            if clear_line(game, at, [i32::MIN; 3]) {
+                best = Some((d, c.id));
+            }
+        }
+    }
+    let (_, id) = best?;
+    game.send(S::Attack(play::Attack { id: id as i32 }));
+    if m.b("Swing") {
+        game.swing_arm();
+        game.send(S::Punch(horizon_protocol::packets::Empty));
+    }
+    game.reset_attack_strength();
+    game.crystals.retain(|c| c.id != id);
+    Some(false)
 }
