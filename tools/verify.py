@@ -560,6 +560,8 @@ def _():
     plain = ctl("status")
     sprinting = state()["player"].get("sprinting")
     on.clear()
+    # Panic switched the HUD off too: the tests after this one that look at it need it on.
+    say(".t hud")
     return sprinting in (None, False), "every module off after .panic"
 
 
@@ -1021,13 +1023,11 @@ def _():
 def _():
     reset()
     say("/difficulty peaceful")
-    say(f"/summon pig {X0+0.5} {Y+1} {Z0+2.0} {{NoAI:1b}}")
+    say(f"/summon pig {X0+0.5} {Y+1} {Z0+2.0} {{NoAI:1b,Invulnerable:1b}}")
     say("/item replace entity @s hotbar.0 with minecraft:diamond_sword")
     ctl("key", "1", "tap")
     wait(20)
     setting("killaura", "entities", "pig")
-    setting("killaura", "custom delay", "true")
-    setting("killaura", "hit delay", "400")
     only("killaura")
     wait(10)
     ctl("screenshot", "/tmp/targethud.png")
