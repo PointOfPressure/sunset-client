@@ -15,8 +15,9 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new(
             "Radar",
             Category::Render,
-            "Shows nearby players on a round radar.",
+            "Shows nearby players on a round radar. Potato: a plain square with a dot for each player.",
         )
+        .pick("Mode", &["Round", "Potato"])
         .num("Range", 64.0, 8.0, 256.0, 1.0)
         .num("Size", 100.0, 80.0, 320.0, 1.0)
         .bool("Rotate", true)
@@ -117,6 +118,42 @@ pub(super) fn draw(
     let radius = size / 2.0 - 1.0;
     let reach = radius - 17.0;
     let pixel = pixel_width(batch.scale);
+    let rotate = module.b("Rotate");
+    let yaw = f64::from(game.yaw);
+    let range = module.n("Range");
+    let alpha = game.clock.camera_fraction();
+    let lerp = |previous: f64, current: f64| previous + alpha * (current - previous);
+    let local = [
+        lerp(game.previous_position.x, player.position.x),
+        lerp(game.previous_position.z, player.position.z),
+    ];
+    let own = own_id(game);
+    let color = module.c("Players color");
+    // The players on it: where on the radar, from its middle.
+    let dots = game
+        .mobs
+        .iter()
+        .filter(|other| {
+            other.kind.id == "minecraft:player"
+                && Some(other.id) != own
+                && other.alive()
+                && !other.removed
+                && !other.is_invisible()
+                && !super::remote::sunset_radar_players::spectator(game, other.id)
+        })
+        .filter_map(|other| {
+            let dx = lerp(other.previous.x, other.position.x) - local[0];
+            let dz = lerp(other.previous.z, other.position.z) - local[1];
+            project(dx, dz, yaw, rotate, range, reach - 3.0)
+        });
+    if module.p("Mode") == "Potato" {
+        game.native_fill(batch, [x, y, size, size], 0xD016_1B24);
+        for [ox, oy] in dots {
+            game.native_fill(batch, [center[0] + ox - 2.0, center[1] + oy - 2.0, 4.0, 4.0], color);
+        }
+        game.native_fill(batch, [center[0] - 2.0, center[1] - 2.0, 4.0, 4.0], 0xFF00_0000 | accent());
+        return;
+    }
     // Keep the background fringe under the solid rim, so only one layer
     // contributes coverage at the outer device-pixel edge.
     disc(game, batch, center, radius - pixel, 0xD016_1B24);
@@ -151,8 +188,6 @@ pub(super) fn draw(
         0xFF35_3E49,
     );
 
-    let rotate = module.b("Rotate");
-    let yaw = f64::from(game.yaw);
     for (label, dx, dz) in [
         ("N", 0.0, -1.0),
         ("E", 1.0, 0.0),
@@ -173,34 +208,12 @@ pub(super) fn draw(
         );
     }
 
-    let range = module.n("Range");
-    let alpha = game.clock.camera_fraction();
-    let lerp = |previous: f64, current: f64| previous + alpha * (current - previous);
-    let local = [
-        lerp(game.previous_position.x, player.position.x),
-        lerp(game.previous_position.z, player.position.z),
-    ];
-    let own = own_id(game);
-    let color = module.c("Players color");
     let mut count = 0;
-    for other in &game.mobs {
-        if other.kind.id != "minecraft:player"
-            || Some(other.id) == own
-            || !other.alive()
-            || other.removed
-            || other.is_invisible()
-            || super::remote::sunset_radar_players::spectator(game, other.id)
-        {
-            continue;
-        }
-        let dx = lerp(other.previous.x, other.position.x) - local[0];
-        let dz = lerp(other.previous.z, other.position.z) - local[1];
-        if let Some([ox, oy]) = project(dx, dz, yaw, rotate, range, reach - 3.0) {
-            let dot = [center[0] + ox, center[1] + oy];
-            disc(game, batch, dot, 3.2, 0xFF09_0D13);
-            disc(game, batch, dot, 2.3, color);
-            count += 1;
-        }
+    for [ox, oy] in dots {
+        let dot = [center[0] + ox, center[1] + oy];
+        disc(game, batch, dot, 3.2, 0xFF09_0D13);
+        disc(game, batch, dot, 2.3, color);
+        count += 1;
     }
     disc(game, batch, center, 3.0, 0xFF00_0000 | accent());
     let [fx, fy] = if rotate {

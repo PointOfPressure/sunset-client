@@ -3,9 +3,10 @@
 // engine hooks, Timer and No Slow.
 
 use super::perspective::CameraType;
-use super::sunset::{Camera, Category, Module, Shape, accent, line, outline};
+use super::sunset::{Camera, Canvas, Category, Module, accent, line};
+use super::sunset_visual::{Look, draw_box, potato};
 use super::sunset_util::*;
-use super::{Game, Screen};
+use super::Game;
 use std::collections::HashSet;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,17 +31,23 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Xray", Render, "Only draws the listed blocks. Good for mining. Turning it on or off redraws the world.")
             .text("Blocks", ORES),
         Module::new("Tunnel ESP", Render, "Highlights one-block tunnels.")
+            .pick("Mode", &["Box", "Outline", "Potato"])
             .num("Range", 24.0, 8.0, 48.0, 4.0)
-            .num("Height", 0.1, 0.02, 1.0, 0.02),
+            .num("Height", 0.1, 0.02, 1.0, 0.02)
+            .num("Max", 1000.0, 50.0, 4000.0, 50.0),
         Module::new("Void ESP", Render, "Marks holes in the bedrock that lead to the void.")
+            .pick("Mode", &["Box", "Outline", "Potato"])
             .bool("Air only", false)
             .num("Horizontal radius", 32.0, 8.0, 64.0, 4.0)
             .num("Hole height", 1.0, 1.0, 5.0, 1.0)
-            .bool("Nether roof", true),
-        Module::new("Light Overlay", Render, "Shows the blocks where mobs can spawn: red always, yellow in the day.")
+            .bool("Nether roof", true)
+            .num("Max", 1000.0, 50.0, 4000.0, 50.0),
+        Module::new("Light Overlay", Render, "Shows the blocks where mobs can spawn: red always, yellow in the day. Potato: a dot on each.")
+            .pick("Mode", &["Cross", "Potato"])
             .num("Horizontal range", 8.0, 2.0, 16.0, 1.0)
             .num("Vertical range", 4.0, 1.0, 8.0, 1.0)
-            .num("Light level", 0.0, 0.0, 15.0, 1.0),
+            .num("Light level", 0.0, 0.0, 15.0, 1.0)
+            .num("Max", 1000.0, 50.0, 4000.0, 50.0),
         Module::new("No Render", Render, "Hides fog, darkness, blindness, nausea and screen overlays (fire, water, in a wall, pumpkin, powder snow). A switch that is on hides it.")
             .bool("Hide fog", true)
             .bool("Hide water fog", true)
@@ -78,12 +85,10 @@ struct Rs {
     fc: Option<Fc>,
     fl: Option<Fl>,
     xray: Option<(bool, String)>,
-    tunnels: Vec<[i32; 3]>,
-    tunnels_at: u64,
-    voids: Vec<([i32; 3], u32)>,
-    voids_at: u64,
-    lights: Vec<([i32; 3], bool)>,
-    lights_at: u64,
+    tunnels: Sweep<()>,
+    voids: Sweep<()>,
+    // Where mobs can spawn, and whether only at night (lit by the sky).
+    lights: Sweep<bool>,
     // The Fog option as it was before No Render turned it off.
     fog_before: Option<bool>,
     // The effects No Render hides, to put back.
@@ -318,14 +323,17 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
     horizon_client::font::sunset_font::STYLE.store(font, Ordering::Relaxed);
     no_render(game, mods);
     xray(game, mods);
-    if let Some(m) = on(mods, "Tunnel ESP") {
-        scan_tunnels(game, &m, ticks);
+    match on(mods, "Tunnel ESP") {
+        Some(m) => scan_tunnels(game, &m, ticks),
+        None => rs(|r| r.tunnels = Sweep::new()),
     }
-    if let Some(m) = on(mods, "Void ESP") {
-        scan_voids(game, &m, ticks);
+    match on(mods, "Void ESP") {
+        Some(m) => scan_voids(game, &m, ticks),
+        None => rs(|r| r.voids = Sweep::new()),
     }
-    if let Some(m) = on(mods, "Light Overlay") {
-        scan_lights(game, &m, ticks);
+    match on(mods, "Light Overlay") {
+        Some(m) => scan_lights(game, &m, ticks),
+        None => rs(|r| r.lights = Sweep::new()),
     }
 }
 
@@ -416,16 +424,21 @@ fn xray(game: &mut Game<'_>, mods: &[Module]) {
 
 // ---- Tunnel ESP
 
-fn solid(game: &Game<'_>, p: [i32; 3]) -> bool {
-    !is_air(game, p) && facts(game, p).full_collision
+// Meteor's TunnelESP: a block you can walk through (air, or no collision and no fluid) or stand on (collision and no
+// fluid), each from one lookup.
+fn through(game: &Game<'_>, p: [i32; 3]) -> bool {
+    let (facts, state) = (game.res.facts(), game.world.block(p[0], p[1], p[2]));
+    facts.is_air(state) || (facts.get(state).fluid_level == 0 && !facts.get(state).full_collision)
 }
 
-fn can_walk(game: &Game<'_>, p: [i32; 3]) -> bool {
-    !solid(game, p) && !solid(game, [p[0], p[1] + 1, p[2]]) && !is_fluid(game, p)
+fn walk_on(game: &Game<'_>, p: [i32; 3]) -> bool {
+    let (facts, state) = (game.res.facts(), game.world.block(p[0], p[1], p[2]));
+    !facts.is_air(state) && facts.get(state).fluid_level == 0 && facts.get(state).full_collision
 }
 
-fn is_fluid(game: &Game<'_>, p: [i32; 3]) -> bool {
-    facts(game, p).fluid_level > 0
+// Room to walk in: a floor, two blocks of space and a roof.
+fn walk_in(game: &Game<'_>, [x, y, z]: [i32; 3]) -> bool {
+    walk_on(game, [x, y - 1, z]) && through(game, [x, y, z]) && !through(game, [x, y + 2, z]) && through(game, [x, y + 1, z])
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -436,65 +449,60 @@ enum Side {
 }
 
 fn side(game: &Game<'_>, p: [i32; 3]) -> Side {
-    if can_walk(game, p) {
+    if walk_in(game, p) {
         Side::Walkable
-    } else if solid(game, p) && solid(game, [p[0], p[1] + 1, p[2]]) {
+    } else if !through(game, p) && !through(game, [p[0], p[1] + 1, p[2]]) {
         Side::Blocked
     } else {
         Side::Partial
     }
 }
 
+// Walkable on two opposite sides and walled on the other two; the cheap tests first, so open ground and solid rock
+// are turned away after a lookup or two.
 fn is_tunnel(game: &Game<'_>, p: [i32; 3]) -> bool {
-    if !can_walk(game, p) {
+    if !walk_in(game, p) {
         return false;
     }
-    let s = |dx: i32, dz: i32| side(game, [p[0] + dx, p[1], p[2] + dz]);
-    let (e, w, n, so) = (s(1, 0), s(-1, 0), s(0, -1), s(0, 1));
-    if [e, w, n, so].contains(&Side::Partial) {
-        return false;
+    let mut sides = [Side::Partial; 4];
+    for (s, [dx, dz]) in sides.iter_mut().zip([[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        *s = side(game, [p[0] + dx, p[1], p[2] + dz]);
+        if *s == Side::Partial {
+            return false;
+        }
     }
-    (e == Side::Walkable && w == Side::Walkable && n == Side::Blocked && so == Side::Blocked)
-        || (e == Side::Blocked && w == Side::Blocked && n == Side::Walkable && so == Side::Walkable)
+    let [e, w, s, n] = sides;
+    (e == Side::Walkable && w == Side::Walkable && s == Side::Blocked && n == Side::Blocked)
+        || (e == Side::Blocked && w == Side::Blocked && s == Side::Walkable && n == Side::Walkable)
 }
 
 fn scan_tunnels(game: &Game<'_>, m: &Module, ticks: u64) {
-    if rs(|r| r.tunnels_at != 0 && ticks.saturating_sub(r.tunnels_at) < 40) {
-        return;
-    }
     let Some(at) = block_pos(game) else {
         return;
     };
     let range = m.n("Range") as i32;
-    let mut found: HashSet<[i32; 3]> = HashSet::new();
-    for x in at[0] - range..=at[0] + range {
-        for z in at[2] - range..=at[2] + range {
-            for y in at[1] - 12..=at[1] + 12 {
-                if is_tunnel(game, [x, y, z]) {
-                    found.insert([x, y, z]);
+    rs(|r| {
+        let ended = r.tunnels.tick(ticks, at, range, range as u64, 40, 8, |c, x, out| {
+            for z in c[2] - range..=c[2] + range {
+                for y in c[1] - 12..=c[1] + 12 {
+                    if is_tunnel(game, [x, y, z]) {
+                        out.push(([x, y, z], ()));
+                    }
                 }
             }
+            (2 * range as usize + 1) * 25 * 2
+        });
+        // Only runs of tunnel, not lone cells.
+        if ended {
+            let all: HashSet<[i32; 3]> = r.tunnels.found.iter().map(|f| f.0).collect();
+            r.tunnels.found.retain(|(p, ())| [[1, 0], [-1, 0], [0, 1], [0, -1]].iter().any(|d| all.contains(&[p[0] + d[0], p[1], p[2] + d[1]])));
         }
-    }
-    // Only runs of tunnel, not lone cells.
-    let kept: Vec<[i32; 3]> = found
-        .iter()
-        .copied()
-        .filter(|p| [[1, 0], [-1, 0], [0, 1], [0, -1]].iter().any(|d| found.contains(&[p[0] + d[0], p[1], p[2] + d[1]])))
-        .take(1500)
-        .collect();
-    rs(|r| {
-        r.tunnels = kept;
-        r.tunnels_at = ticks.max(1);
     });
 }
 
 // ---- Void ESP
 
 fn scan_voids(game: &Game<'_>, m: &Module, ticks: u64) {
-    if rs(|r| r.voids_at != 0 && ticks.saturating_sub(r.voids_at) < 40) {
-        return;
-    }
     let dim = game.dim.id();
     if dim == "minecraft:the_end" {
         return;
@@ -505,6 +513,7 @@ fn scan_voids(game: &Game<'_>, m: &Module, ticks: u64) {
     let radius = m.n("Horizontal radius") as i32;
     let height = m.n("Hole height") as i32;
     let air_only = m.b("Air only");
+    let roof = m.b("Nether roof") && dim == "minecraft:the_nether";
     let wrong = |x: i32, y: i32, z: i32| -> bool {
         if !game.world.loaded(x, z) {
             return true;
@@ -516,101 +525,111 @@ fn scan_voids(game: &Game<'_>, m: &Module, ticks: u64) {
         (0..height).all(|i| !wrong(x, if roof { floor - i } else { floor + i }, z))
     };
     let min_y = if dim == "minecraft:the_nether" { 0 } else { -64 };
-    let mut found = Vec::new();
-    for x in at[0] - radius..=at[0] + radius {
-        for z in at[2] - radius..=at[2] + radius {
-            if hole(x, z, min_y, false) {
-                found.push(([x, min_y, z], 0xFF80_40FF));
-            }
-            if m.b("Nether roof") && dim == "minecraft:the_nether" && hole(x, z, 127, true) {
-                found.push(([x, 127, z], 0xFF80_40FF));
-            }
-        }
-    }
-    found.truncate(2500);
+    let key = u64::from(air_only) | u64::from(roof) << 1 | (height as u64) << 2 | (radius as u64) << 8;
     rs(|r| {
-        r.voids = found;
-        r.voids_at = ticks.max(1);
+        r.voids.tick(ticks, at, radius, key, 40, 8, |c, x, out| {
+            for z in c[2] - radius..=c[2] + radius {
+                if hole(x, z, min_y, false) {
+                    out.push(([x, min_y, z], ()));
+                }
+                if roof && hole(x, z, 127, true) {
+                    out.push(([x, 127, z], ()));
+                }
+            }
+            (2 * radius as usize + 1) * height as usize * 2
+        })
     });
 }
 
 // ---- Light Overlay
 
 fn scan_lights(game: &Game<'_>, m: &Module, ticks: u64) {
-    if rs(|r| r.lights_at != 0 && ticks.saturating_sub(r.lights_at) < 10) {
-        return;
-    }
     let Some(at) = block_pos(game) else {
         return;
     };
     let (hr, vr) = (m.n("Horizontal range") as i32, m.n("Vertical range") as i32);
     let limit = m.n("Light level") as u8;
-    let mut found = Vec::new();
-    for x in at[0] - hr..=at[0] + hr {
-        for z in at[2] - hr..=at[2] + hr {
-            for y in at[1] - vr..=at[1] + vr {
-                let p = [x, y, z];
-                if !is_air(game, p) {
-                    continue;
-                }
-                let below = [x, y - 1, z];
-                let f = facts(game, below);
-                // `isValidSpawnBlock`.
-                if is_air(game, below) || !f.solid_render || f.name.ends_with("bedrock") || f.name.ends_with("barrier") {
-                    continue;
-                }
-                let light = game.world.light(x, y, z);
-                let (block, sky) = (light & 0x0F, light >> 4);
-                if block > limit {
-                    continue;
-                }
-                found.push((p, sky > limit));
-            }
-        }
-    }
-    found.truncate(2500);
+    let key = (hr as u64) | (vr as u64) << 8 | u64::from(limit) << 16;
     rs(|r| {
-        r.lights = found;
-        r.lights_at = ticks.max(1);
+        r.lights.tick(ticks, at, hr, key, 10, 2, |c, x, out| {
+            for z in c[2] - hr..=c[2] + hr {
+                for y in c[1] - vr..=c[1] + vr {
+                    let p = [x, y, z];
+                    if !is_air(game, p) {
+                        continue;
+                    }
+                    let below = [x, y - 1, z];
+                    let f = facts(game, below);
+                    // `isValidSpawnBlock`.
+                    if is_air(game, below) || !f.solid_render || f.name.ends_with("bedrock") || f.name.ends_with("barrier") {
+                        continue;
+                    }
+                    let light = game.world.light(x, y, z);
+                    let (block, sky) = (light & 0x0F, light >> 4);
+                    if block > limit {
+                        continue;
+                    }
+                    out.push((p, sky > limit));
+                }
+            }
+            (2 * hr as usize + 1) * (2 * vr as usize + 1) * 3
+        })
     });
 }
 
 // ---- drawing
 
-pub(super) fn overlay(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut Vec<Shape>, lw: f32) {
-    let flat = |p: [i32; 3], h: f64| {
-        let lo = [f64::from(p[0]), f64::from(p[1]), f64::from(p[2])];
-        cam.rect(lo, [lo[0] + 1.0, lo[1] + h, lo[2] + 1.0])
-    };
+pub(super) fn overlay(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut impl Canvas, lw: f32) {
+    let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     let me = player_pos(game).unwrap_or([0.0; 3]);
-    if let Some(m) = on(mods, "Tunnel ESP") {
-        let h = m.n("Height");
-        for p in rs(|r| r.tunnels.clone()) {
-            if let Some(r) = flat(p, h) {
-                outline(out, r, 0xFF00_0000 | accent(), lw, true);
-            }
-        }
+    if let Some(m) = get("Tunnel ESP") {
+        rs(|r| flat_boxes(cam, out, m, r.tunnels.found.iter().map(|f| f.0), m.n("Height"), 0xFF00_0000 | accent(), lw));
     }
-    if on(mods, "Void ESP").is_some() {
-        for (p, c) in rs(|r| r.voids.clone()) {
-            if dist(me, center_of(p)) < 64.0 {
-                if let Some(r) = flat(p, 1.0) {
-                    outline(out, r, c, lw, true);
+    if let Some(m) = get("Void ESP") {
+        rs(|r| flat_boxes(cam, out, m, r.voids.found.iter().map(|f| f.0).filter(|p| dist(me, center_of(*p)) < 64.0), 1.0, 0xFF80_40FF, lw));
+    }
+    if let Some(m) = get("Light Overlay") {
+        let (dots, max) = (m.p("Mode") == "Potato", m.n("Max") as usize);
+        rs(|r| {
+            let mut drawn = 0;
+            for &(p, potential) in &r.lights.found {
+                let (x, y, z) = (f64::from(p[0]), f64::from(p[1]) + 0.0075, f64::from(p[2]));
+                let colour = if potential { 0xFFFF_FF55 } else { 0xFFFF_5555 };
+                let shown = if dots {
+                    potato(cam, out, [x + 0.5, y, z + 0.5], colour, lw)
+                } else if cam.sees([x + 0.5, y, z + 0.5], 0.71) {
+                    if let (Some(a), Some(b)) = (cam.project([x, y, z]), cam.project([x + 1.0, y, z + 1.0])) {
+                        line(out, a, b, colour, lw);
+                    }
+                    if let (Some(a), Some(b)) = (cam.project([x + 1.0, y, z]), cam.project([x, y, z + 1.0])) {
+                        line(out, a, b, colour, lw);
+                    }
+                    true
+                } else {
+                    false
+                };
+                if shown {
+                    drawn += 1;
+                    if drawn >= max {
+                        break;
+                    }
                 }
             }
+        });
+    }
+}
+
+// Flat boxes on blocks, `h` high, nearest first, up to the module's Max.
+fn flat_boxes(cam: &Camera, out: &mut impl Canvas, m: &Module, found: impl Iterator<Item = [i32; 3]>, h: f64, colour: u32, lw: f32) {
+    let (look, max) = (Look::of(m), m.n("Max") as usize);
+    let mut drawn = 0;
+    for p in found {
+        let lo = [f64::from(p[0]), f64::from(p[1]), f64::from(p[2])];
+        if draw_box(cam, out, &look, lo, [lo[0] + 1.0, lo[1] + h, lo[2] + 1.0], colour, lw) {
+            drawn += 1;
+            if drawn >= max {
+                return;
+            }
         }
     }
-    if on(mods, "Light Overlay").is_some() {
-        for (p, potential) in rs(|r| r.lights.clone()) {
-            let (x, y, z) = (f64::from(p[0]), f64::from(p[1]) + 0.0075, f64::from(p[2]));
-            let colour = if potential { 0xFFFF_FF55 } else { 0xFFFF_5555 };
-            if let (Some(a), Some(b)) = (cam.project([x, y, z]), cam.project([x + 1.0, y, z + 1.0])) {
-                line(out, a, b, colour, lw);
-            }
-            if let (Some(a), Some(b)) = (cam.project([x + 1.0, y, z]), cam.project([x, y, z + 1.0])) {
-                line(out, a, b, colour, lw);
-            }
-        }
-    }
-    let _ = Screen::Playing;
 }

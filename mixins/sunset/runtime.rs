@@ -7,7 +7,9 @@
 // Ordinary comments only: module payloads cannot hold inner attributes.
 
 use super::{Game, Screen};
-use super::sunset_visual::{distance_colour, draw_box, entity_colour, faded};
+use super::sunset_visual::{Draw, Kinds, Look, distance_colour, draw_box, faded, potato};
+use super::sunset_util::{Sweep, block_pos};
+use std::fmt::Write as _;
 use horizon_client::extras::Corner;
 use horizon_client::extras_hud::Corners;
 use horizon_client::hud::HudBatch;
@@ -366,10 +368,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Speed", false)
             .bool("Facing", true)
             .bool("Totems", false)
-            .bool("Target HUD", true),
+            .bool("Target HUD", true)
+            .pick("Target HUD mode", &["Full", "Potato"]),
         Module::new("Fullbright", Render, "Lights everything up."),
-        Module::new("ESP", Render, "Draws boxes around entities, through walls.")
-            .pick("Mode", &["3D box", "2D box"])
+        Module::new("ESP", Render, "Draws boxes around entities, through walls. Outline and Potato (a dot on each) are the cheapest.")
+            .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
             .pick("Shape mode", &["Lines", "Sides", "Both"])
             .num("Fill opacity", 0.3, 0.0, 1.0, 0.05)
             .num("Fade distance", 3.0, 0.0, 12.0, 0.5)
@@ -382,8 +385,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .colour("Hostiles color", "Red")
             .colour("Passive color", "Green")
             .colour("Items color", "Orange")
-            .num("Range", 64.0, 8.0, 256.0, 8.0),
-        Module::new("Tracers", Render, "Draws lines from your crosshair to entities.")
+            .num("Range", 64.0, 8.0, 256.0, 8.0)
+            .num("Max", 256.0, 8.0, 1024.0, 8.0),
+        Module::new("Tracers", Render, "Draws lines from your crosshair to entities. Potato draws the lines alone, to the middle.")
+            .pick("Mode", &["Lines", "Potato"])
             .pick("Target", &["Body", "Head", "Feet"])
             .pick("Start", &["Crosshair", "Bottom"])
             .bool("Distance colors", false)
@@ -394,8 +399,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .colour("Players color", "White")
             .colour("Hostiles color", "Red")
             .colour("Passive color", "Green")
-            .num("Range", 64.0, 8.0, 256.0, 8.0),
-        Module::new("Nametags", Render, "Big name tags with health and distance, through walls.")
+            .num("Range", 64.0, 8.0, 256.0, 8.0)
+            .num("Max", 256.0, 8.0, 1024.0, 8.0),
+        Module::new("Nametags", Render, "Big name tags with health and distance, through walls. Potato shows the name alone.")
+            .pick("Mode", &["Full", "Potato"])
             .bool("Players", true)
             .bool("Mobs", false)
             .bool("Ignore friends", false)
@@ -403,9 +410,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Distance", true)
             .bool("Background", true)
             .colour("Name color", "White")
-            .num("Range", 64.0, 8.0, 256.0, 8.0),
-        Module::new("Storage ESP", Render, "Draws boxes around chests and other storage.")
-            .pick("Mode", &["3D box", "2D box"])
+            .num("Range", 64.0, 8.0, 256.0, 8.0)
+            .num("Max", 64.0, 1.0, 512.0, 1.0),
+        Module::new("Storage ESP", Render, "Draws boxes around chests and other storage. Outline and Potato (a dot on each) are the cheapest.")
+            .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
             .pick("Shape mode", &["Both", "Lines", "Sides"])
             .num("Fill opacity", 0.16, 0.0, 1.0, 0.02)
             .num("Fade distance", 3.0, 0.0, 12.0, 0.5)
@@ -414,7 +422,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Barrels", true)
             .bool("Shulkers", true)
             .bool("Other", true)
-            .num("Range", 64.0, 8.0, 128.0, 8.0),
+            .num("Range", 64.0, 8.0, 128.0, 8.0)
+            .num("Max", 256.0, 8.0, 1024.0, 8.0),
         // Added in 0.3
         Module::new("Auto Weapon", Combat, "Switches to your best weapon before Kill Aura or Trigger Bot hits.")
             .bool("Prefer axes", false),
@@ -474,13 +483,17 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Zoom", Render, "Zooms in.")
             .num("Factor", 4.0, 1.5, 10.0, 0.5)
             .bool("Smooth", true),
-        Module::new("Breadcrumbs", Render, "Draws a line along where you have been.")
+        Module::new("Breadcrumbs", Render, "Draws a line along where you have been. Potato: a dot on each point.")
+            .pick("Mode", &["Line", "Potato"])
             .num("Length", 300.0, 20.0, 1000.0, 20.0),
-        Module::new("Block ESP", Render, "Draws boxes around ores and other blocks, through walls.")
+        Module::new("Block ESP", Render, "Draws boxes around ores and other blocks, through walls. Outline and Potato (a dot on each) are the cheapest.")
+            .pick("Mode", &["Box", "Outline", "Potato"])
             .pick("Blocks", &["Ores", "Diamond", "Ancient Debris", "Spawners", "Portals"])
             .num("Range", 32.0, 8.0, 48.0, 4.0)
-            .bool("Fill", true),
-        Module::new("Waypoints", Render, "Shows the places saved with .waypoint, on screen.")
+            .bool("Fill", true)
+            .num("Max", 1000.0, 50.0, 4000.0, 50.0),
+        Module::new("Waypoints", Render, "Shows the places saved with .waypoint, on screen. Potato: a dot, no name.")
+            .pick("Mode", &["Full", "Potato"])
             .num("Range", 1000.0, 50.0, 10000.0, 50.0),
         // Added in 0.4
         Module::new("Auto Armor", Combat, "Wears the best armor in your inventory.")
@@ -498,8 +511,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Switch back", true),
         Module::new("Middle Click Extra", Player, "Middle click uses an item from your hotbar, then switches back.")
             .pick("Item", &["Pearl", "Rocket", "XP bottle"]),
-        Module::new("Trajectories", Render, "Draws where a bow shot or a throw will land."),
-        Module::new("Logout Spots", Render, "Marks where players were when they logged out.")
+        Module::new("Trajectories", Render, "Draws where a bow shot or a throw will land. Potato: a dot where it lands.")
+            .pick("Mode", &["Line", "Potato"]),
+        Module::new("Logout Spots", Render, "Marks where players were when they logged out. Potato: a dot, no name.")
+            .pick("Mode", &["Box", "Outline", "Potato"])
             .num("Minutes", 10.0, 1.0, 60.0, 1.0),
         Module::new("Bow Spam", Combat, "Fires arrows as fast as you can draw them while you hold use.")
             .num("Charge (ticks)", 5.0, 3.0, 20.0, 1.0),
@@ -509,8 +524,10 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Weather Changer", World, "Sets the weather you see.")
             .pick("Weather", &["Clear", "Rain", "Thunder"]),
         Module::new("Hole ESP", Render, "Marks holes you can stand in: green all obsidian or bedrock, yellow other solid blocks.")
+            .pick("Mode", &["Box", "Outline", "Potato"])
             .num("Range", 8.0, 3.0, 16.0, 1.0)
-            .bool("Fill", true),
+            .bool("Fill", true)
+            .num("Max", 200.0, 10.0, 1000.0, 10.0),
         Module::new("Nuker", World, "Breaks blocks around you.")
             .pick("Shape", &["Sphere", "Cube", "Uniform cube"])
             .pick("Mode", &["Flatten", "All", "Smash"])
@@ -596,10 +613,8 @@ pub(super) struct State {
     gui: Gui,
     crumbs: Vec<[f64; 3]>,
     waypoints: Vec<Waypoint>,
-    // Block ESP's finds: where, and which colour; and when and for what it was made.
-    found: Vec<([i32; 3], u32)>,
-    found_for: (usize, i32, [i32; 3]),
-    found_at: u64,
+    // Block ESP's finds: where, and which colour.
+    blocks: Sweep<u32>,
     scaffold_wait: u32,
     // Scaffold's placed blocks, drawn for 8 ticks as they fade.
     scaffold_placed: Vec<([i32; 3], u8)>,
@@ -612,8 +627,7 @@ pub(super) struct State {
     crit_target: Option<(u32, Option<(f32, f32)>)>,
     crit_ticks: u32,
     notify: Option<Vec<String>>,
-    holes: Vec<([i32; 3], u32)>,
-    holes_at: u64,
+    holes: Sweep<u32>,
     tool_back: Option<usize>,
     mc_back: Option<(usize, u32)>,
     nuke: Option<([i32; 3], u32)>,
@@ -676,9 +690,7 @@ impl State {
             gui: Gui::default(),
             crumbs: Vec::new(),
             waypoints: Vec::new(),
-            found: Vec::new(),
-            found_for: (usize::MAX, 0, [0; 3]),
-            found_at: 0,
+            blocks: Sweep::new(),
                     scaffold_wait: 0,
                     scaffold_placed: Vec::new(),
             click_wait: 0,
@@ -690,8 +702,7 @@ impl State {
             crit_target: None,
             crit_ticks: 0,
             notify: None,
-            holes: Vec::new(),
-            holes_at: 0,
+            holes: Sweep::new(),
             tool_back: None,
             mc_back: None,
             nuke: None,
@@ -1699,10 +1710,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Hole ESP") {
         scan_holes(game, m, ticks);
     } else {
-        with(|s| {
-            s.holes.clear();
-            s.holes_at = 0;
-        });
+        with(|s| s.holes = Sweep::new());
     }
     if let Some(m) = get("Nuker") {
         nuker(game, m);
@@ -1763,10 +1771,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Block ESP") {
         scan_blocks(game, m, ticks);
     } else {
-        with(|s| {
-            s.found.clear();
-            s.found_at = 0;
-        });
+        with(|s| s.blocks = Sweep::new());
     }
     super::sunset_combat::tick(game, &mods);
     super::sunset_render::tick(game, &mods, ticks);
@@ -2094,49 +2099,33 @@ pub(super) fn block_colour(preset: &str, name: &str) -> Option<u32> {
     }
 }
 
-// Block ESP's search of the loaded blocks around the player: again when the
-// player has moved, the settings changed, or it has been a while.
+// Block ESP's search of the loaded blocks around the player, spread over ticks: again when the player has moved, the
+// settings changed, or it has been a while.
 pub(super) fn scan_blocks(game: &Game<'_>, m: &Module, ticks: u64) {
-    let Some(p) = game.player.as_ref() else {
+    let Some(at) = block_pos(game) else {
         return;
     };
     let preset = m.p("Blocks");
-    let key = match preset {
-        "Ores" => 0,
-        "Diamond" => 1,
-        "Ancient Debris" => 2,
-        "Spawners" => 3,
-        _ => 4,
-    };
     let range = m.n("Range") as i32;
-    let at = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
-    let (last, last_at, last_ticks) = with(|s| (s.found_for, s.found_at, s.found_at));
-    let moved = (at[0] - last.2[0]).abs().max((at[1] - last.2[1]).abs()).max((at[2] - last.2[2]).abs());
-    if (key, range) == (last.0, last.1) && moved < 6 && ticks.saturating_sub(last_ticks) < 100 && last_at != 0 {
-        return;
-    }
+    let kind = ["Ores", "Diamond", "Ancient Debris", "Spawners", "Portals"].iter().position(|p| *p == preset).unwrap_or(0);
+    let key = (kind as u64) << 32 | range as u64;
     let facts = game.res.facts();
-    let mut found = Vec::new();
-    'scan: for x in at[0] - range..=at[0] + range {
-        for z in at[2] - range..=at[2] + range {
-            for y in (at[1] - range).max(-64)..=(at[1] + range).min(320) {
-                let state = game.world.block(x, y, z);
-                if facts.is_air(state) {
-                    continue;
-                }
-                if let Some(c) = block_colour(preset, &facts.get(state).name) {
-                    found.push(([x, y, z], c));
-                    if found.len() >= 2000 {
-                        break 'scan;
+    with(|s| {
+        s.blocks.tick(ticks, at, range, key, 100, 6, |c, x, out| {
+            let ys = (c[1] - range).max(-64)..=(c[1] + range).min(320);
+            for z in c[2] - range..=c[2] + range {
+                for y in ys.clone() {
+                    let state = game.world.block(x, y, z);
+                    if facts.is_air(state) {
+                        continue;
+                    }
+                    if let Some(col) = block_colour(preset, &facts.get(state).name) {
+                        out.push(([x, y, z], col));
                     }
                 }
             }
-        }
-    }
-    with(|s| {
-        s.found = found;
-        s.found_for = (key, range, at);
-        s.found_at = ticks.max(1);
+            (2 * range as usize + 1) * ys.count()
+        })
     });
 }
 
@@ -2627,17 +2616,13 @@ pub(super) fn notify(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// Holes to stand in around the player: air two high, solid below and on the
-// four sides. Found again every second.
+// Holes to stand in around the player: air two high, solid below and on the four sides. Searched again every second,
+// a few slices a tick.
 pub(super) fn scan_holes(game: &Game<'_>, m: &Module, ticks: u64) {
-    let Some(p) = game.player.as_ref() else {
+    let Some(at) = block_pos(game) else {
         return;
     };
-    if with(|s| s.holes_at != 0 && ticks.saturating_sub(s.holes_at) < 20) {
-        return;
-    }
     let r = m.n("Range") as i32;
-    let (px, py, pz) = (p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32);
     let facts = game.res.facts();
     let hard = |x: i32, y: i32, z: i32| -> Option<bool> {
         let state = game.world.block(x, y, z);
@@ -2647,28 +2632,24 @@ pub(super) fn scan_holes(game: &Game<'_>, m: &Module, ticks: u64) {
         let n = &facts.get(state).name;
         Some(n.ends_with("obsidian") || n.ends_with("bedrock"))
     };
-    let mut found = Vec::new();
-    for x in px - r..=px + r {
-        for z in pz - r..=pz + r {
-            for y in (py - r).max(-63)..=py + r {
-                if hard(x, y, z).is_some() || hard(x, y + 1, z).is_some() {
-                    continue;
-                }
-                let around = [hard(x, y - 1, z), hard(x + 1, y, z), hard(x - 1, y, z), hard(x, y, z + 1), hard(x, y, z - 1)];
-                if around.iter().any(Option::is_none) {
-                    continue;
-                }
-                let safe = around.iter().all(|a| *a == Some(true));
-                found.push(([x, y, z], if safe { 0xFF55_FF55 } else { 0xFFFF_FF55 }));
-                if found.len() >= 400 {
-                    break;
+    with(|s| {
+        s.holes.tick(ticks, at, r, r as u64, 20, 4, |c, x, out| {
+            let ys = (c[1] - r).max(-63)..=c[1] + r;
+            for z in c[2] - r..=c[2] + r {
+                for y in ys.clone() {
+                    if hard(x, y, z).is_some() || hard(x, y + 1, z).is_some() {
+                        continue;
+                    }
+                    let around = [hard(x, y - 1, z), hard(x + 1, y, z), hard(x - 1, y, z), hard(x, y, z + 1), hard(x, y, z - 1)];
+                    if around.iter().any(Option::is_none) {
+                        continue;
+                    }
+                    let safe = around.iter().all(|a| *a == Some(true));
+                    out.push(([x, y, z], if safe { 0xFF55_FF55 } else { 0xFFFF_FF55 }));
                 }
             }
-        }
-    }
-    with(|s| {
-        s.holes = found;
-        s.holes_at = ticks.max(1);
+            (2 * r as usize + 1) * ys.count() * 7
+        })
     });
 }
 
@@ -3604,6 +3585,8 @@ pub(super) struct Camera {
     aspect: f64,
     w: f64,
     h: f64,
+    // The sine and cosine of half the view's width and of half its height: the sides of what it sees.
+    cone: [f64; 4],
 }
 
 impl Camera {
@@ -3628,16 +3611,33 @@ impl Camera {
         };
         let (sy, cy) = f64::from(yaw.to_radians()).sin_cos();
         let (sp, cp) = f64::from(pitch.to_radians()).sin_cos();
+        let focal = 1.0 / f64::from((fov / 2.0).to_radians()).tan();
+        let aspect = f64::from(w) / f64::from(h);
+        let (sh, ch) = (aspect / focal).atan().sin_cos();
+        let (sv, cv) = (1.0 / focal).atan().sin_cos();
         Some(Self {
             pos,
             fwd: [-sy * cp, -sp, cy * cp],
             up: [-sy * sp, cp, cy * sp],
             right: [-cy, 0.0, -sy],
-            focal: 1.0 / f64::from((fov / 2.0).to_radians()).tan(),
-            aspect: f64::from(w) / f64::from(h),
+            focal,
+            aspect,
             w: f64::from(w),
             h: f64::from(h),
+            cone: [sh, ch, sv, cv],
         })
+    }
+    // Whether anything of a ball round `at` can be on screen: the test before any other work on a thing.
+    pub(super) fn sees(&self, at: [f64; 3], radius: f64) -> bool {
+        let o = [at[0] - self.pos[0], at[1] - self.pos[1], at[2] - self.pos[2]];
+        let dot = |a: [f64; 3]| a[0] * o[0] + a[1] * o[1] + a[2] * o[2];
+        let depth = dot(self.fwd);
+        let [sh, ch, sv, cv] = self.cone;
+        depth > -radius && depth * sh - dot(self.right).abs() * ch > -radius && depth * sv - dot(self.up).abs() * cv > -radius
+    }
+    // Whether a point on screen is within `margin` of it.
+    pub(super) fn on_screen(&self, p: [f32; 2], margin: f32) -> bool {
+        p[0] > -margin && p[1] > -margin && p[0] < self.w as f32 + margin && p[1] < self.h as f32 + margin
     }
     pub(super) fn project(&self, at: [f64; 3]) -> Option<[f32; 2]> {
         let o = [at[0] - self.pos[0], at[1] - self.pos[1], at[2] - self.pos[2]];
@@ -3650,20 +3650,28 @@ impl Camera {
         let y = dot(self.up) * self.focal / depth;
         Some([((1.0 + x) / 2.0 * self.w) as f32, ((1.0 - y) / 2.0 * self.h) as f32])
     }
-    // The screen rectangle around a box, when all of it is in front.
-    pub(super) fn rect(&self, lo: [f64; 3], hi: [f64; 3]) -> Option<[f32; 4]> {
-        let mut r = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
-        for i in 0..8 {
-            let c = [
+    // A box's eight corners on screen, when all of it is in front: corner i is at hi on x, y and z where bits 1, 2
+    // and 4 of i are set.
+    pub(super) fn corners(&self, lo: [f64; 3], hi: [f64; 3]) -> Option<[[f32; 2]; 8]> {
+        let mut pts = [[0.0; 2]; 8];
+        for (i, p) in pts.iter_mut().enumerate() {
+            *p = self.project([
                 if i & 1 == 0 { lo[0] } else { hi[0] },
                 if i & 2 == 0 { lo[1] } else { hi[1] },
                 if i & 4 == 0 { lo[2] } else { hi[2] },
-            ];
-            let [x, y] = self.project(c)?;
-            r = [r[0].min(x), r[1].min(y), r[2].max(x), r[3].max(y)];
+            ])?;
         }
+        Some(pts)
+    }
+    // The screen rectangle round those corners, unless it is far off screen.
+    pub(super) fn bounds(&self, pts: &[[f32; 2]; 8]) -> Option<[f32; 4]> {
+        let r = pts.iter().fold([f32::MAX, f32::MAX, f32::MIN, f32::MIN], |r, &[x, y]| [r[0].min(x), r[1].min(y), r[2].max(x), r[3].max(y)]);
         let margin = 4.0 * self.w as f32;
         (r[2] > -margin && r[0] < margin && r[3] > -margin && r[1] < margin).then_some(r)
+    }
+    // The screen rectangle around a box, when all of it is in front.
+    pub(super) fn rect(&self, lo: [f64; 3], hi: [f64; 3]) -> Option<[f32; 4]> {
+        self.bounds(&self.corners(lo, hi)?)
     }
 }
 
@@ -3676,15 +3684,53 @@ pub(super) enum Shape {
     Head(String, [f32; 2], u32),
 }
 
-pub(super) fn outline(out: &mut Vec<Shape>, r: [f32; 4], argb: u32, lw: f32, fill: bool) {
+// Where shapes go: a list drawn after the frame's other work (the menu, plugins), or straight into the frame's
+// batch (what the world overlays draw, so a frame of them makes no list and no copies of their text).
+pub(super) trait Canvas {
+    fn fill(&mut self, r: [f32; 4], argb: u32);
+    fn quad(&mut self, corners: [[f32; 2]; 4], argb: u32);
+    fn text(&mut self, text: &str, at: [f32; 2], rgb: u32);
+}
+
+impl Canvas for Vec<Shape> {
+    fn fill(&mut self, r: [f32; 4], argb: u32) {
+        self.push(Shape::Fill(r, argb));
+    }
+    fn quad(&mut self, corners: [[f32; 2]; 4], argb: u32) {
+        self.push(Shape::Quad(corners, argb));
+    }
+    fn text(&mut self, text: &str, at: [f32; 2], rgb: u32) {
+        self.push(Shape::Text(text.to_owned(), at, rgb));
+    }
+}
+
+pub(super) struct Painter<'a, 'g> {
+    pub(super) game: &'a Game<'g>,
+    pub(super) batch: &'a mut HudBatch,
+}
+
+impl Canvas for Painter<'_, '_> {
+    fn fill(&mut self, r: [f32; 4], argb: u32) {
+        self.game.native_fill(self.batch, r, argb);
+    }
+    fn quad(&mut self, corners: [[f32; 2]; 4], argb: u32) {
+        let [a, r, g, b] = argb.to_be_bytes();
+        self.batch.fill_quad(&self.game.gui.atlas, corners, horizon_client::hud::rgba(r, g, b, a));
+    }
+    fn text(&mut self, text: &str, at: [f32; 2], rgb: u32) {
+        self.game.native_text(self.batch, text, at, rgb, true);
+    }
+}
+
+pub(super) fn outline(out: &mut impl Canvas, r: [f32; 4], argb: u32, lw: f32, fill: bool) {
     let [x0, y0, x1, y1] = r;
     if fill {
-        out.push(Shape::Fill([x0, y0, x1 - x0, y1 - y0], (argb & 0x00FF_FFFF) | 0x2800_0000));
+        out.fill([x0, y0, x1 - x0, y1 - y0], (argb & 0x00FF_FFFF) | 0x2800_0000);
     }
-    out.push(Shape::Fill([x0, y0, x1 - x0, lw], argb));
-    out.push(Shape::Fill([x0, y1 - lw, x1 - x0, lw], argb));
-    out.push(Shape::Fill([x0, y0, lw, y1 - y0], argb));
-    out.push(Shape::Fill([x1 - lw, y0, lw, y1 - y0], argb));
+    out.fill([x0, y0, x1 - x0, lw], argb);
+    out.fill([x0, y1 - lw, x1 - x0, lw], argb);
+    out.fill([x0, y0, lw, y1 - y0], argb);
+    out.fill([x1 - lw, y0, lw, y1 - y0], argb);
 }
 
 pub(super) fn health_colour(fraction: f32) -> u32 {
@@ -3697,6 +3743,9 @@ pub(super) fn health_colour(fraction: f32) -> u32 {
     }
 }
 
+// The frame's list of shapes, kept from frame to frame so it is not grown again each time.
+static SHAPES: Mutex<Vec<Shape>> = Mutex::new(Vec::new());
+
 pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corners) {
     if !game.native_window() || !game.native_on(ID) {
         return;
@@ -3706,17 +3755,17 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     let (w, h) = (batch.width, batch.height);
     let lw = (1.5 / batch.scale).max(0.5);
-    let mut shapes = Vec::new();
+    let mut shapes = std::mem::take(&mut *SHAPES.lock().unwrap_or_else(|e| e.into_inner()));
 
     if let Some(cam) = Camera::of(game, w, h)
         && game.player.is_some()
     {
-        world_overlays(game, &cam, &mods, lw, &mut shapes);
+        world_overlays(game, &cam, &mods, lw, &mut Painter { game, batch: &mut *batch });
     }
 
     if let Some(hud) = get("HUD") {
         if hud.b("Target HUD") && get("Kill Aura").is_some() {
-            super::sunset_aura::draw_target(game, w, h, &mut shapes);
+            super::sunset_aura::draw_target(game, w, h, hud.p("Target HUD mode") == "Potato", &mut shapes);
         }
         if hud.b("Watermark") && game.native_corner_shown(Corner::TopLeft) {
             let text = format!("{NAME} {VERSION}");
@@ -3807,85 +3856,284 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         }
     }
     let game = &*game;
-    for s in shapes {
+    let mut p = Painter { game, batch: &mut *batch };
+    for s in shapes.drain(..) {
         match s {
-            Shape::Fill(r, argb) => game.native_fill(batch, r, argb),
-            Shape::Quad(corners, argb) => {
-                let [a, r, g, b] = argb.to_be_bytes();
-                batch.fill_quad(&game.gui.atlas, corners, horizon_client::hud::rgba(r, g, b, a));
-            }
-            Shape::Text(t, at, rgb) => game.native_text(batch, &t, at, rgb, true),
+            Shape::Fill(r, argb) => p.fill(r, argb),
+            Shape::Quad(corners, argb) => p.quad(corners, argb),
+            Shape::Text(t, at, rgb) => p.text(&t, at, rgb),
             Shape::Head(t, at, rgb) => {
                 horizon_client::font::sunset_font::BOLD.store(true, Ordering::Relaxed);
-                game.native_text(batch, &t, at, rgb, true);
+                p.text(&t, at, rgb);
                 horizon_client::font::sunset_font::BOLD.store(false, Ordering::Relaxed);
             }
         }
     }
+    *SHAPES.lock().unwrap_or_else(|e| e.into_inner()) = shapes;
     if !with(|s| s.gui.open) {
         super::sunset_radar::draw(game, batch, corners, &mods);
     }
 }
 
-pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut Vec<Shape>) {
+pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
     super::sunset_util::draw_shown(cam, out, lw);
     super::sunset_render::overlay(game, cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
-    let (esp, tracers, tags, storage) = (get("ESP"), get("Tracers"), get("Nametags"), get("Storage ESP"));
-    let (crumbs, blocks, points) = (get("Breadcrumbs"), get("Block ESP"), get("Waypoints"));
-    let (spots, flight_path, holes) = (get("Logout Spots"), get("Trajectories"), get("Hole ESP"));
     if let Some(m) = get("Nuker") {
-        let (cube, broken) = with(|s| (s.nuke_box, s.nuke_broken.clone()));
-        if let Some([lo, hi]) = cube.filter(|_| m.b("Bounding box") && m.p("Mode") != "Smash") {
-            draw_box(cam, out, m, lo, hi, m.c("Box color"), lw);
-        }
-        for (pos, left) in broken {
-            let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
-            let argb = m.c("Broken color");
-            let a = ((argb >> 24) * u32::from(left) / 8) << 24;
-            draw_box(cam, out, m, lo, [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0], a | (argb & 0x00FF_FFFF), lw);
-        }
+        let (look, argb) = (Look::of(m), m.c("Broken color"));
+        with(|s| {
+            if let Some([lo, hi]) = s.nuke_box.filter(|_| m.b("Bounding box") && m.p("Mode") != "Smash") {
+                draw_box(cam, out, &look, lo, hi, m.c("Box color"), lw);
+            }
+            for &(pos, left) in &s.nuke_broken {
+                let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
+                let a = ((argb >> 24) * u32::from(left) / 8) << 24;
+                draw_box(cam, out, &look, lo, [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0], a | (argb & 0x00FF_FFFF), lw);
+            }
+        });
     }
     if let Some(m) = get("Scaffold").filter(|m| m.b("Render")) {
-        for (pos, left) in with(|s| s.scaffold_placed.clone()) {
-            let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
-            let argb = m.c("Color");
-            let a = ((argb >> 24) * u32::from(left) / 8) << 24;
-            draw_box(cam, out, m, lo, [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0], a | (argb & 0x00FF_FFFF), lw);
-        }
-    }
-    if esp.is_none()
-        && tracers.is_none()
-        && tags.is_none()
-        && storage.is_none()
-        && crumbs.is_none()
-        && blocks.is_none()
-        && points.is_none()
-        && spots.is_none()
-        && flight_path.is_none()
-        && holes.is_none()
-    {
-        return;
+        let (look, argb) = (Look::of(m), m.c("Color"));
+        with(|s| {
+            for &(pos, left) in &s.scaffold_placed {
+                let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
+                let a = ((argb >> 24) * u32::from(left) / 8) << 24;
+                draw_box(cam, out, &look, lo, [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0], a | (argb & 0x00FF_FFFF), lw);
+            }
+        });
     }
     let alpha = game.clock.camera_fraction();
     let lerp = |a: f64, b: f64| a + alpha * (b - a);
-    let own = own_id(game);
-    let names = game.remote_player_names();
-    let friends = with(|s| s.friends.clone());
-    let centre = [cam.w as f32 / 2.0, cam.h as f32 / 2.0];
     let dist = |at: [f64; 3]| {
         let d = [at[0] - cam.pos[0], at[1] - cam.pos[1], at[2] - cam.pos[2]];
         (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
     };
+    let (esp, tracers, tags) = (get("ESP"), get("Tracers"), get("Nametags"));
+    if esp.is_some() || tracers.is_some() || tags.is_some() {
+        entity_overlays(game, cam, [esp, tracers, tags], lw, out);
+    }
+    // Text drawn from one buffer, written over for each label.
+    let mut text = String::new();
 
-    for mob in &game.mobs {
+    if let Some(m) = esp.filter(|m| m.b("Items")) {
+        let (look, colour, range, fade) = (Look::of(m), m.c("Items color"), m.n("Range"), m.n("Fade distance"));
+        for item in &game.dropped {
+            let at = [
+                lerp(item.previous.x, item.position.x),
+                lerp(item.previous.y, item.position.y),
+                lerp(item.previous.z, item.position.z),
+            ];
+            let d = dist(at);
+            if d > range {
+                continue;
+            }
+            let lo = [at[0] - 0.125, at[1], at[2] - 0.125];
+            let hi = [at[0] + 0.125, at[1] + 0.25, at[2] + 0.125];
+            draw_box(cam, out, &look, lo, hi, faded(colour, d, fade), lw);
+        }
+    }
+
+    if let Some(m) = get("Storage ESP") {
+        let (look, range, fade, max) = (Look::of(m), m.n("Range"), m.n("Fade distance"), m.n("Max") as usize);
+        let want = [m.b("Ender chests"), m.b("Chests"), m.b("Barrels"), m.b("Shulkers"), m.b("Other")];
+        let facts = game.res.facts();
+        let mut drawn = 0;
+        for &(x, y, z) in game.world.block_entities.keys() {
+            let at = [f64::from(x) + 0.5, f64::from(y) + 0.5, f64::from(z) + 0.5];
+            let d = dist(at);
+            // Out of range or off screen: nothing more is looked up.
+            if d > range || !cam.sees(at, 0.87) {
+                continue;
+            }
+            let name = &facts.get(game.world.block(x, y, z)).name;
+            let Some(col) = storage_colour(name) else {
+                continue;
+            };
+            let short = name.strip_prefix("minecraft:").unwrap_or(name);
+            let group = if short == "ender_chest" {
+                0
+            } else if short.ends_with("chest") {
+                1
+            } else if short == "barrel" {
+                2
+            } else if short.ends_with("shulker_box") {
+                3
+            } else {
+                4
+            };
+            if !want[group] {
+                continue;
+            }
+            let inset = if name.ends_with("chest") { 0.0625 } else { 0.0 };
+            let lo = [f64::from(x) + inset, f64::from(y), f64::from(z) + inset];
+            let hi = [f64::from(x + 1) - inset, f64::from(y + 1) - inset * 2.0, f64::from(z + 1) - inset];
+            if draw_box(cam, out, &look, lo, hi, faded(col, d, fade), lw) {
+                drawn += 1;
+                if drawn >= max {
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some(m) = get("Breadcrumbs") {
+        let (dots, colour) = (m.p("Mode") == "Potato", 0xFF00_0000 | accent());
+        let now = game.player.as_ref().map(|p| [p.position.x, p.position.y + 0.1, p.position.z]);
+        with(|s| {
+            let mut last: Option<[f32; 2]> = None;
+            // To where you are now at the end.
+            for point in s.crumbs.iter().chain(now.as_ref()) {
+                if dots {
+                    potato(cam, out, *point, colour, lw);
+                    continue;
+                }
+                let next = cam.project(*point);
+                if let (Some(a), Some(b)) = (last, next) {
+                    line(out, a, b, colour, lw);
+                }
+                last = next;
+            }
+        });
+    }
+
+    if let Some(m) = get("Block ESP") {
+        let (look, range, max) = (Look::of(m), m.n("Range") * 1.5, m.n("Max") as usize);
+        with(|s| {
+            let mut drawn = 0;
+            for &(pos, col) in &s.blocks.found {
+                let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
+                if dist([lo[0] + 0.5, lo[1] + 0.5, lo[2] + 0.5]) > range {
+                    continue;
+                }
+                if draw_box(cam, out, &look, lo, [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0], col, lw) {
+                    drawn += 1;
+                    if drawn >= max {
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    if let Some(m) = get("Logout Spots") {
+        let look = Look::of(m);
+        let here = game.native_player().map(|p| p.dimension);
+        with(|s| {
+            for sp in s.spots.iter().filter(|sp| Some(sp.dim.as_str()) == here) {
+                let lo = [sp.pos[0] - 0.3, sp.pos[1], sp.pos[2] - 0.3];
+                let hi = [sp.pos[0] + 0.3, sp.pos[1] + 1.8, sp.pos[2] + 0.3];
+                if !draw_box(cam, out, &look, lo, hi, 0xFFFF_5050, lw) || look.draw == Draw::Potato {
+                    continue;
+                }
+                if let Some([x, y]) = cam.project([sp.pos[0], sp.pos[1] + 2.2, sp.pos[2]]) {
+                    text.clear();
+                    let _ = write!(text, "{} logged out {}m ago", sp.name, game.ticks.saturating_sub(sp.at) / 1200);
+                    let tw = game.native_text_width(&text);
+                    out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000);
+                    out.text(&text, [x - tw / 2.0, y], 0xFF5555);
+                }
+            }
+        });
+    }
+
+    if let Some(m) = get("Trajectories") {
+        trajectory(game, cam, m.p("Mode") == "Potato", out, lw);
+    }
+
+    if let Some(m) = get("Hole ESP") {
+        let (look, range, max) = (Look::of(m), m.n("Range") + 2.0, m.n("Max") as usize);
+        with(|s| {
+            let mut drawn = 0;
+            for &(pos, col) in &s.holes.found {
+                let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
+                if dist([lo[0] + 0.5, lo[1], lo[2] + 0.5]) > range {
+                    continue;
+                }
+                if draw_box(cam, out, &look, lo, [lo[0] + 1.0, lo[1] + 0.02, lo[2] + 1.0], col, lw) {
+                    drawn += 1;
+                    if drawn >= max {
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    if let Some(m) = get("Waypoints") {
+        let (range, dots, colour) = (m.n("Range"), m.p("Mode") == "Potato", 0xFF00_0000 | accent());
+        let here = game.native_player().map(|p| p.dimension);
+        with(|s| {
+            for w in s.waypoints.iter().filter(|w| Some(w.dim.as_str()) == here) {
+                let d = dist(w.pos);
+                if d > range {
+                    continue;
+                }
+                if dots {
+                    potato(cam, out, w.pos, colour, lw);
+                    continue;
+                }
+                let Some([x, y]) = cam.project(w.pos).filter(|p| cam.on_screen(*p, 200.0)) else {
+                    continue;
+                };
+                text.clear();
+                let _ = write!(text, "{} {}m", w.name, d.round());
+                let tw = game.native_text_width(&text);
+                out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000);
+                out.text(&text, [x - tw / 2.0, y], accent());
+                out.fill([x - 1.0, y + 11.0, 2.0, 4.0], colour);
+            }
+        });
+    }
+}
+
+// The settings ESP, Tracers and Nametags draw with, read once a frame.
+struct EntityLook {
+    kinds: Kinds,
+    look: Look,
+    range: f64,
+    max: usize,
+    fade: f64,
+    potato: bool,
+}
+
+impl EntityLook {
+    fn of(m: &Module) -> Self {
+        let look = Look::of(m);
+        Self {
+            kinds: Kinds::of(m),
+            potato: look.draw == Draw::Potato,
+            look,
+            range: m.n("Range"),
+            max: m.n("Max") as usize,
+            fade: m.n("Fade distance"),
+        }
+    }
+}
+
+// ESP, Tracers and Nametags in one pass over the mobs: those in range of any of them, nearest first when a Max
+// leaves some out.
+fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw: f32, out: &mut impl Canvas) {
+    let [esp, tracers, tags] = mods.map(|m| m.map(EntityLook::of));
+    let tags_module = mods[2];
+    let (tracer_target, tracer_bottom, tracer_by_distance) =
+        mods[1].map_or(("Body", false, false), |m| (m.p("Target"), m.p("Start") == "Bottom", m.b("Distance colors")));
+    let (tag_players, tag_mobs, tag_friends) =
+        tags_module.map_or((false, false, false), |m| (m.b("Players"), m.b("Mobs"), !m.b("Ignore friends")));
+    let (show_health, show_distance, tag_back, tag_colour) =
+        tags_module.map_or((false, false, false, 0), |m| (m.b("Health"), m.b("Distance"), m.b("Background"), m.c("Name color") & 0x00FF_FFFF));
+    let looks = [&esp, &tracers, &tags];
+    let range = looks.iter().filter_map(|l| l.as_ref().map(|l| l.range)).fold(0.0, f64::max);
+    let alpha = game.clock.camera_fraction();
+    let lerp = |a: f64, b: f64| a + alpha * (b - a);
+    let own = own_id(game);
+    // The mobs in range: distance, index, and the box where the frame draws them.
+    let mut near: Vec<(f64, usize, [f64; 3], [f64; 3])> = Vec::with_capacity(game.mobs.len());
+    for (i, mob) in game.mobs.iter().enumerate() {
         if !mob.alive() || mob.removed || Some(mob.id) == own {
             continue;
         }
-        let kind = kind_of(mob);
         let b = mob.bounds();
         let (lo, hi) = (b.min_position(), b.max_position());
-        // The box where the frame draws the mob.
         let off = [
             lerp(mob.previous.x, mob.position.x) - mob.position.x,
             lerp(mob.previous.y, mob.position.y) - mob.position.y,
@@ -3894,203 +4142,111 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
         let lo = [lo.x + off[0], lo.y + off[1], lo.z + off[2]];
         let hi = [hi.x + off[0], hi.y + off[1], hi.z + off[2]];
         let mid = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
-        let d = dist(mid);
-        let friend = kind == Kind::Player && is_friend(&friends, &names, mob.id);
-        if let Some(m) = esp
-            && wanted(m, kind)
-            && d <= m.n("Range")
-        {
-            let col = faded(entity_colour(m, kind, friend), d, m.n("Fade distance"));
-            draw_box(cam, out, m, lo, hi, col, lw);
+        let d = super::sunset_util::dist(mid, cam.pos);
+        if d <= range {
+            near.push((d, i, lo, hi));
         }
-        if let Some(m) = tracers
-            && wanted(m, kind)
-            && d <= m.n("Range")
+    }
+    if looks.iter().any(|l| l.as_ref().is_some_and(|l| l.max < near.len())) {
+        near.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+    }
+    // Friends only matter to the full modes.
+    let friendly = esp.as_ref().is_some_and(|l| !l.potato) || tracers.as_ref().is_some_and(|l| !l.potato) || tags.is_some();
+    let names = if friendly { game.remote_player_names() } else { Vec::new() };
+    let friends = if friendly { with(|s| s.friends.clone()) } else { Vec::new() };
+    let centre = [cam.w as f32 / 2.0, cam.h as f32 / 2.0];
+    let from = if tracer_bottom { [centre[0], cam.h as f32] } else { centre };
+    let mut drawn = [0usize; 3];
+    let (mut name, mut hp, mut tail) = (String::new(), String::new(), String::new());
+    for &(d, i, lo, hi) in &near {
+        let mob = &game.mobs[i];
+        let kind = kind_of(mob);
+        let mid = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
+        let friend = || kind == Kind::Player && is_friend(&friends, &names, mob.id);
+        if let Some(l) = &esp
+            && drawn[0] < l.max
+            && d <= l.range
+            && l.kinds.wants(kind)
         {
-            let aim = match m.p("Target") {
-                "Head" => [mid[0], hi[1] - 0.1, mid[2]],
-                "Feet" => [mid[0], lo[1], mid[2]],
-                _ => mid,
-            };
-            let col = if m.b("Distance colors") { distance_colour(d) } else { entity_colour(m, kind, friend) };
-            let from = if m.p("Start") == "Bottom" { [centre[0], cam.h as f32] } else { centre };
-            if let Some(to) = cam.project(aim) {
-                line(out, from, to, col, lw);
+            let col = if l.potato { l.kinds.colour(kind, false) } else { faded(l.kinds.colour(kind, friend()), d, l.fade) };
+            if draw_box(cam, out, &l.look, lo, hi, col, lw) {
+                drawn[0] += 1;
             }
         }
-        if let Some(m) = tags
-            && d <= m.n("Range")
-            && (if kind == Kind::Player { m.b("Players") } else { m.b("Mobs") })
-            && !(friend && m.b("Ignore friends"))
-            && let Some([x, y]) = cam.project([mid[0], hi[1] + 0.6, mid[2]])
+        if let Some(l) = &tracers
+            && drawn[1] < l.max
+            && d <= l.range
+            && l.kinds.wants(kind)
         {
-            let name = super::sunset_util::display_name(game, mob);
-            let max = mob.kind.max_health.max(1.0);
-            let hp = if m.b("Health") { format!("{}", (mob.health * 10.0).round() / 10.0) } else { String::new() };
-            let tail = if m.b("Distance") { format!(" {}m", d.round()) } else { String::new() };
-            let (nw, hw, tw) = (game.native_text_width(&name), game.native_text_width(&hp), game.native_text_width(&tail));
+            // Potato: the line alone, to the middle, in the kind's colour.
+            let (aim, col) = if l.potato {
+                (mid, l.kinds.colour(kind, false))
+            } else {
+                let aim = match tracer_target {
+                    "Head" => [mid[0], hi[1] - 0.1, mid[2]],
+                    "Feet" => [mid[0], lo[1], mid[2]],
+                    _ => mid,
+                };
+                (aim, if tracer_by_distance { distance_colour(d) } else { l.kinds.colour(kind, friend()) })
+            };
+            if let Some(to) = cam.project(aim) {
+                line(out, from, to, col, lw);
+                drawn[1] += 1;
+            }
+        }
+        if let Some(l) = &tags
+            && drawn[2] < l.max
+            && d <= l.range
+            && (if kind == Kind::Player { tag_players } else { tag_mobs })
+        {
+            let top = [mid[0], hi[1] + 0.6, mid[2]];
+            if !cam.sees(top, 1.0) {
+                continue;
+            }
+            let friend = friend();
+            if friend && !tag_friends {
+                continue;
+            }
+            let Some([x, y]) = cam.project(top) else {
+                continue;
+            };
+            drawn[2] += 1;
+            super::sunset_util::name_into(game, mob, &mut name);
+            let name_colour = if friend { 0x55FFFF } else { tag_colour };
+            let nw = game.native_text_width(&name);
+            // Potato: the name alone.
+            if l.potato {
+                out.text(&name, [x - nw / 2.0, y], name_colour);
+                continue;
+            }
+            hp.clear();
+            tail.clear();
+            if show_health {
+                let _ = write!(hp, "{}", (mob.health * 10.0).round() / 10.0);
+            }
+            if show_distance {
+                let _ = write!(tail, " {}m", d.round());
+            }
+            let (hw, tw) = (game.native_text_width(&hp), game.native_text_width(&tail));
             let gap = if hp.is_empty() { 0.0 } else { 4.0 };
             let total = nw + gap + hw + tw;
             let x0 = x - total / 2.0;
-            if m.b("Background") {
-                out.push(Shape::Fill([x0 - 2.0, y - 2.0, total + 4.0, 12.0], 0x7800_0000));
+            if tag_back {
+                out.fill([x0 - 2.0, y - 2.0, total + 4.0, 12.0], 0x7800_0000);
             }
-            out.push(Shape::Text(name, [x0, y], if friend { 0x55FFFF } else { m.c("Name color") & 0x00FF_FFFF }));
+            out.text(&name, [x0, y], name_colour);
             if !hp.is_empty() {
-                out.push(Shape::Text(hp, [x0 + nw + gap, y], health_colour(mob.health / max)));
+                out.text(&hp, [x0 + nw + gap, y], health_colour(mob.health / mob.kind.max_health.max(1.0)));
             }
             if !tail.is_empty() {
-                out.push(Shape::Text(tail, [x0 + nw + gap + hw, y], 0xAAAAAA));
+                out.text(&tail, [x0 + nw + gap + hw, y], 0xAAAAAA);
             }
-        }
-    }
-
-    if let Some(m) = esp
-        && m.b("Items")
-    {
-        for item in &game.dropped {
-            let at = [
-                lerp(item.previous.x, item.position.x),
-                lerp(item.previous.y, item.position.y),
-                lerp(item.previous.z, item.position.z),
-            ];
-            if dist(at) > m.n("Range") {
-                continue;
-            }
-            let lo = [at[0] - 0.125, at[1], at[2] - 0.125];
-            let hi = [at[0] + 0.125, at[1] + 0.25, at[2] + 0.125];
-            let col = faded(m.c("Items color"), dist(at), m.n("Fade distance"));
-            draw_box(cam, out, m, lo, hi, col, lw);
-        }
-    }
-
-    if let Some(m) = storage {
-        let range = m.n("Range");
-        let facts = game.res.facts();
-        for (&(x, y, z), _) in game.world.block_entities.iter() {
-            let at = [f64::from(x) + 0.5, f64::from(y) + 0.5, f64::from(z) + 0.5];
-            if dist(at) > range {
-                continue;
-            }
-            let name = &facts.get(game.world.block(x, y, z)).name;
-            let Some(col) = storage_colour(name) else {
-                continue;
-            };
-            let short = name.strip_prefix("minecraft:").unwrap_or(name);
-            let allowed = if short == "ender_chest" {
-                m.b("Ender chests")
-            } else if short.ends_with("chest") {
-                m.b("Chests")
-            } else if short == "barrel" {
-                m.b("Barrels")
-            } else if short.ends_with("shulker_box") {
-                m.b("Shulkers")
-            } else {
-                m.b("Other")
-            };
-            if !allowed {
-                continue;
-            }
-            let col = faded(col, dist(at), m.n("Fade distance"));
-            let inset = if name.ends_with("chest") { 0.0625 } else { 0.0 };
-            let lo = [f64::from(x) + inset, f64::from(y), f64::from(z) + inset];
-            let hi = [f64::from(x + 1) - inset, f64::from(y + 1) - inset * 2.0, f64::from(z + 1) - inset];
-            draw_box(cam, out, m, lo, hi, col, lw);
-        }
-    }
-
-    if crumbs.is_some() {
-        let trail = with(|s| s.crumbs.clone());
-        let mut last: Option<[f32; 2]> = None;
-        for point in &trail {
-            let now = cam.project(*point);
-            if let (Some(a), Some(b)) = (last, now) {
-                line(out, a, b, 0xFF00_0000 | accent(), lw);
-            }
-            last = now;
-        }
-        // To where you are now.
-        if let (Some(a), Some(p)) = (last, game.player.as_ref())
-            && let Some(b) = cam.project([p.position.x, p.position.y + 0.1, p.position.z])
-        {
-            line(out, a, b, 0xFF00_0000 | accent(), lw);
-        }
-    }
-
-    if let Some(m) = blocks {
-        let found = with(|s| s.found.clone());
-        let range = m.n("Range") * 1.5;
-        for (pos, col) in found {
-            let at = [f64::from(pos[0]) + 0.5, f64::from(pos[1]) + 0.5, f64::from(pos[2]) + 0.5];
-            if dist(at) > range {
-                continue;
-            }
-            let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
-            let hi = [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0];
-            if let Some(r) = cam.rect(lo, hi) {
-                outline(out, r, col, lw, m.b("Fill"));
-            }
-        }
-    }
-
-    if spots.is_some() {
-        let here = game.native_player().map(|p| p.dimension);
-        let spots = with(|s| s.spots.clone());
-        for sp in spots.iter().filter(|sp| Some(sp.dim.as_str()) == here) {
-            let lo = [sp.pos[0] - 0.3, sp.pos[1], sp.pos[2] - 0.3];
-            let hi = [sp.pos[0] + 0.3, sp.pos[1] + 1.8, sp.pos[2] + 0.3];
-            if let Some(r) = cam.rect(lo, hi) {
-                outline(out, r, 0xFFFF_5050, lw, true);
-            }
-            if let Some([x, y]) = cam.project([sp.pos[0], sp.pos[1] + 2.2, sp.pos[2]]) {
-                let mins = game.ticks.saturating_sub(sp.at) / 1200;
-                let text = format!("{} logged out {}m ago", sp.name, mins);
-                let tw = game.native_text_width(&text);
-                out.push(Shape::Fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000));
-                out.push(Shape::Text(text, [x - tw / 2.0, y], 0xFF5555));
-            }
-        }
-    }
-
-    if flight_path.is_some() {
-        trajectory(game, cam, out, lw);
-    }
-
-    if let Some(m) = holes {
-        let found = with(|s| s.holes.clone());
-        for (pos, col) in found {
-            let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
-            if dist([lo[0] + 0.5, lo[1], lo[2] + 0.5]) > m.n("Range") + 2.0 {
-                continue;
-            }
-            if let Some(r) = cam.rect(lo, [lo[0] + 1.0, lo[1] + 0.02, lo[2] + 1.0]) {
-                outline(out, r, col, lw, m.b("Fill"));
-            }
-        }
-    }
-
-    if let Some(m) = points {
-        let here = game.native_player().map(|p| p.dimension);
-        let waypoints = with(|s| s.waypoints.clone());
-        for w in waypoints.iter().filter(|w| Some(w.dim.as_str()) == here) {
-            let d = dist(w.pos);
-            if d > m.n("Range") {
-                continue;
-            }
-            let Some([x, y]) = cam.project(w.pos) else {
-                continue;
-            };
-            let text = format!("{} {}m", w.name, d.round());
-            let tw = game.native_text_width(&text);
-            out.push(Shape::Fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000));
-            out.push(Shape::Text(text, [x - tw / 2.0, y], accent()));
-            out.push(Shape::Fill([x - 1.0, y + 11.0, 2.0, 4.0], 0xFF00_0000 | accent()));
         }
     }
 }
 
-// Where what the player holds would land: a bow being drawn, or a throwable.
-pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, out: &mut Vec<Shape>, lw: f32) {
+// Where what the player holds would land: a bow being drawn, or a throwable. Potato: only a square where it lands.
+pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, potato_only: bool, out: &mut impl Canvas, lw: f32) {
     let Some(stack) = game.held() else {
         return;
     };
@@ -4112,11 +4268,12 @@ pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, out: &mut Vec<Shape>, lw
     let Some(eye) = game.eye_position() else {
         return;
     };
+    let colour = 0xFF00_0000 | accent();
     let (yaw, pitch) = (f64::from(game.yaw).to_radians(), f64::from(game.pitch).to_radians());
     let dir = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
     let mut pos = [eye[0], eye[1] - 0.1, eye[2]];
     let mut vel = [dir[0] * speed, dir[1] * speed, dir[2] * speed];
-    let mut last = cam.project(pos);
+    let mut last = if potato_only { None } else { cam.project(pos) };
     for _ in 0..200 {
         for i in 0..3 {
             pos[i] += vel[i];
@@ -4125,16 +4282,22 @@ pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, out: &mut Vec<Shape>, lw
         vel[1] -= gravity;
         let (x, y, z) = (pos[0].floor() as i32, pos[1].floor() as i32, pos[2].floor() as i32);
         let hit = solid_at(game, x, y, z);
-        let now = cam.project(pos);
-        if let (Some(a), Some(b)) = (last, now) {
-            line(out, a, b, 0xFF00_0000 | accent(), lw);
+        if !potato_only {
+            let now = cam.project(pos);
+            if let (Some(a), Some(b)) = (last, now) {
+                line(out, a, b, colour, lw);
+            }
+            last = now;
         }
-        last = now;
         if hit {
+            if potato_only {
+                potato(cam, out, pos, colour, lw);
+                break;
+            }
             let lo = [pos[0] - 0.25, pos[1] - 0.25, pos[2] - 0.25];
             let hi = [pos[0] + 0.25, pos[1] + 0.25, pos[2] + 0.25];
             if let Some(r) = cam.rect(lo, hi) {
-                outline(out, r, 0xFF00_0000 | accent(), lw, true);
+                outline(out, r, colour, lw, true);
             }
             break;
         }
@@ -4161,13 +4324,8 @@ pub(super) fn storage_colour(name: &str) -> Option<u32> {
     })
 }
 
-pub(super) fn pretty_id(id: &str) -> String {
-    let n = id.strip_prefix("minecraft:").unwrap_or(id);
-    key_label(Some(&n.replace('_', ".")))
-}
-
 // A line, as one slanted quad.
-pub(super) fn line(out: &mut Vec<Shape>, from: [f32; 2], to: [f32; 2], argb: u32, lw: f32) {
+pub(super) fn line(out: &mut impl Canvas, from: [f32; 2], to: [f32; 2], argb: u32, lw: f32) {
     let (dx, dy) = (to[0] - from[0], to[1] - from[1]);
     let len = (dx * dx + dy * dy).sqrt();
     if !len.is_finite() || len < 1.0 {
@@ -4175,10 +4333,10 @@ pub(super) fn line(out: &mut Vec<Shape>, from: [f32; 2], to: [f32; 2], argb: u32
     }
     let half = lw.max(1.0) / 2.0;
     let (nx, ny) = (-dy / len * half, dx / len * half);
-    out.push(Shape::Quad(
+    out.quad(
         [[from[0] + nx, from[1] + ny], [to[0] + nx, to[1] + ny], [to[0] - nx, to[1] - ny], [from[0] - nx, from[1] - ny]],
         argb,
-    ));
+    );
 }
 
 // ---------------------------------------------------------------- click GUI

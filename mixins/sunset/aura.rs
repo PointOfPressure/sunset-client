@@ -2,7 +2,7 @@
 // attacks with, how it rotates and switches, who it targets and how many at
 // once, and its timing.
 
-use super::sunset::{Category, Module, Shape, health_colour, hold, look_at};
+use super::sunset::{Canvas, Category, Module, health_colour, hold, look_at};
 use super::sunset_util::*;
 use super::Game;
 use std::sync::Mutex;
@@ -284,25 +284,31 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
 }
 
 // The Target HUD: a box by the crosshair with the name, distance and health of who Kill Aura is hitting.
-pub(super) fn draw_target(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
+// Potato: the health bar alone, no text.
+pub(super) fn draw_target(game: &Game<'_>, w: f32, h: f32, potato: bool, out: &mut impl Canvas) {
     let Some(id) = st(|s| s.target) else {
         return;
     };
     let (Some(mob), Some(eye)) = (game.mobs.iter().find(|x| x.id == id), game.eye_position()) else {
         return;
     };
+    let fraction = (mob.health / mob.kind.max_health.max(1.0)).clamp(0.0, 1.0);
+    let (x, y) = (w / 2.0 + 12.0, h / 2.0 + 12.0);
+    if potato {
+        out.fill([x, y, 60.0, 4.0], 0xFF30_3030);
+        out.fill([x, y, 60.0 * fraction, 4.0], 0xFF00_0000 | health_colour(fraction));
+        return;
+    }
     let name = display_name(game, mob);
     let away = format!("{:.1}m", reach(eye, &mob_target(mob)));
     let health = format!("{:.1}", (mob.health * 10.0).round() / 10.0);
     let (nw, aw, hw) = (game.native_text_width(&name), game.native_text_width(&away), game.native_text_width(&health));
     let width = (nw + aw + 16.0).max(90.0);
-    let (x, y) = (w / 2.0 + 12.0, h / 2.0 + 12.0);
-    out.push(Shape::Fill([x, y, width, 26.0], 0x9000_0000));
-    out.push(Shape::Text(name, [x + 4.0, y + 3.0], 0xFFFFFF));
-    out.push(Shape::Text(away, [x + width - 4.0 - aw, y + 3.0], 0xFFFFFF));
-    let fraction = (mob.health / mob.kind.max_health.max(1.0)).clamp(0.0, 1.0);
+    out.fill([x, y, width, 26.0], 0x9000_0000);
+    out.text(&name, [x + 4.0, y + 3.0], 0xFFFFFF);
+    out.text(&away, [x + width - 4.0 - aw, y + 3.0], 0xFFFFFF);
     let bar = width - 12.0 - hw;
-    out.push(Shape::Fill([x + 4.0, y + 17.0, bar, 4.0], 0xFF30_3030));
-    out.push(Shape::Fill([x + 4.0, y + 17.0, bar * fraction, 4.0], 0xFF00_0000 | health_colour(fraction)));
-    out.push(Shape::Text(health, [x + width - 4.0 - hw, y + 14.0], health_colour(fraction)));
+    out.fill([x + 4.0, y + 17.0, bar, 4.0], 0xFF30_3030);
+    out.fill([x + 4.0, y + 17.0, bar * fraction, 4.0], 0xFF00_0000 | health_colour(fraction));
+    out.text(&health, [x + width - 4.0 - hw, y + 14.0], health_colour(fraction));
 }

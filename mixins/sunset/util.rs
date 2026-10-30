@@ -2,7 +2,7 @@
 // InvUtils, PlayerUtils and TargetUtils: placing blocks, finding items in the
 // hotbar, picking targets, seeing a block through the world.
 
-use super::sunset::{Camera, Module, Shape, hold, look_at, outline, pretty_id, say, toggle, with};
+use super::sunset::{Camera, Canvas, Module, hold, look_at, outline, say, toggle, with};
 use super::{Game, Screen};
 use horizon_protocol::packets::{
     Empty,
@@ -29,13 +29,103 @@ pub(super) fn show(pos: [i32; 3], argb: u32) {
     }
 }
 
-pub(super) fn draw_shown(cam: &Camera, out: &mut Vec<Shape>, lw: f32) {
-    let v = SHOW.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    for (p, c) in v {
+pub(super) fn draw_shown(cam: &Camera, out: &mut impl Canvas, lw: f32) {
+    for &(p, c) in SHOW.lock().unwrap_or_else(|e| e.into_inner()).iter() {
+        if !cam.sees(center_of(p), 0.87) {
+            continue;
+        }
         let lo = [f64::from(p[0]), f64::from(p[1]), f64::from(p[2])];
         if let Some(r) = cam.rect(lo, [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0]) {
             outline(out, r, c, lw, true);
         }
+    }
+}
+
+// ---- block searches spread over ticks
+
+// About how many blocks a search reads in one tick: Block ESP's whole cube (65 blocks a side) takes a second instead
+// of one long tick.
+const SWEEP_BUDGET: usize = 12_000;
+// What a search keeps, nearest first; the drawing stops at the module's Max long before.
+const SWEEP_KEEP: usize = 16_384;
+
+// A search of the blocks round the player (Block ESP, Hole ESP, Tunnel ESP, Void ESP, Light Overlay), a slice of
+// columns (one x) at a time over as many ticks as it takes; each whole pass replaces what the last one found.
+pub(super) struct Sweep<V> {
+    // The last whole pass: where, and what the search noted there, nearest its centre first.
+    pub(super) found: Vec<([i32; 3], V)>,
+    next: Vec<([i32; 3], V)>,
+    centre: [i32; 3],
+    radius: i32,
+    // The next slice while a pass runs.
+    x: Option<i32>,
+    // The settings the search is for, and the tick its last pass ended (0: none yet).
+    key: u64,
+    done: u64,
+}
+
+impl<V> Default for Sweep<V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<V> Sweep<V> {
+    pub(super) const fn new() -> Self {
+        Self { found: Vec::new(), next: Vec::new(), centre: [0; 3], radius: 0, x: None, key: 0, done: 0 }
+    }
+
+    // One tick of the search round `at`, `radius` slices each way. A pass starts `every` ticks after the last one
+    // ended, when the player is `moved` blocks from where it was made, or at once when `key` (what it looks for)
+    // changes. `slice(centre, x, out)` searches the slice at `x` and says how many blocks it read. True when a pass
+    // ended this tick.
+    pub(super) fn tick(
+        &mut self,
+        ticks: u64,
+        at: [i32; 3],
+        radius: i32,
+        key: u64,
+        every: u64,
+        moved: i32,
+        mut slice: impl FnMut([i32; 3], i32, &mut Vec<([i32; 3], V)>) -> usize,
+    ) -> bool {
+        if key != self.key {
+            self.found.clear();
+            self.x = None;
+        }
+        if self.x.is_none() {
+            let far = (0..3).any(|i| (at[i] - self.centre[i]).abs() >= moved);
+            if self.done != 0 && key == self.key && ticks.saturating_sub(self.done) < every && !far {
+                return false;
+            }
+            (self.key, self.centre, self.radius, self.x) = (key, at, radius, Some(at[0] - radius));
+            self.next.clear();
+        }
+        let mut read = 0;
+        while let Some(x) = self.x.filter(|x| *x <= self.centre[0] + self.radius) {
+            read += slice(self.centre, x, &mut self.next);
+            self.x = Some(x + 1);
+            if self.next.len() > 2 * SWEEP_KEEP {
+                self.nearest();
+            }
+            if read >= SWEEP_BUDGET {
+                return false;
+            }
+        }
+        self.nearest();
+        std::mem::swap(&mut self.found, &mut self.next);
+        self.next.clear();
+        self.done = ticks.max(1);
+        self.x = None;
+        true
+    }
+
+    // The pass so far, nearest first and cut to what is kept.
+    fn nearest(&mut self) {
+        let c = self.centre;
+        let far = |p: &[i32; 3]| (0..3).map(|i| i64::from(p[i] - c[i]).pow(2)).sum::<i64>();
+        self.next.sort_unstable_by_key(|(p, _)| far(p));
+        self.next.truncate(SWEEP_KEEP);
     }
 }
 
@@ -322,10 +412,29 @@ pub(super) fn every_living(game: &Game<'_>) -> Vec<Target> {
 
 // What to call an entity: a player's name, a custom name, or what it is.
 pub(super) fn display_name(game: &Game<'_>, mob: &horizon_client::mobs::Mob) -> String {
-    game.remote_player_name(mob.id)
-        .map(str::to_owned)
-        .or_else(|| mob.custom_name.clone())
-        .unwrap_or_else(|| pretty_id(&mob.kind.id))
+    let mut name = String::new();
+    name_into(game, mob, &mut name);
+    name
+}
+
+// The same, written over `out`: Nametags reuse one buffer for every mob of every frame.
+pub(super) fn name_into(game: &Game<'_>, mob: &horizon_client::mobs::Mob, out: &mut String) {
+    out.clear();
+    if let Some(n) = game.remote_player_name(mob.id).or(mob.custom_name.as_deref()) {
+        out.push_str(n);
+        return;
+    }
+    // "minecraft:zombie_villager" as "Zombie Villager".
+    for (i, part) in short(&mob.kind.id).split('_').enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        let mut c = part.chars();
+        if let Some(f) = c.next() {
+            out.extend(f.to_uppercase());
+            out.push_str(c.as_str());
+        }
+    }
 }
 
 // Who the targeting modules leave alone: with Anti bot, a player the server's player list does not show; with
