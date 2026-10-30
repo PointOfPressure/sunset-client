@@ -442,6 +442,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.splice(0..0, super::solstice_aura::defaults());
     v.extend(super::solstice_combat::defaults());
     v.extend(super::solstice_render::defaults());
+    v.extend(super::solstice_radar::defaults());
     v.extend(super::solstice_player::defaults());
     v.extend(super::solstice_world::defaults());
     v
@@ -3018,6 +3019,9 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             Shape::Fill(r, argb) => game.native_fill(batch, r, argb),
             Shape::Text(t, at, rgb) => game.native_text(batch, &t, at, rgb, true),
         }
+    }
+    if !with(|s| s.gui.open) {
+        super::solstice_radar::draw(game, batch, corners, &mods);
     }
 }
 

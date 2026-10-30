@@ -1,0 +1,148 @@
+{
+  "upstream_base": "d48f0ea8f19b3c78c78d2564dbe1c3bff55ece4d",
+  "host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins_revision": "0d6b103c70633d8fd9443d8d0acd3aadaacedb06",
+  "version_unchanged": "0.8.0",
+  "new_code_license": "MIT",
+  "checks": {
+    "production_geometry_tests_passed": 6,
+    "official_plan_apply": "pass",
+    "cargo_check": "pass",
+    "linked_client_control_build": "pass"
+  },
+  "test_names": [
+    "game::solstice_radar_math::tests::cached_circle_vertices_are_closed_and_not_quantized_to_gui_scanlines",
+    "game::solstice_radar_math::tests::circle_tessellation_tracks_device_resolution_with_bounded_chord_error",
+    "game::solstice_radar_math::tests::edge_width_is_one_physical_pixel_at_fractional_and_integer_gui_scales",
+    "game::solstice_radar_math::tests::range_is_horizontal_inclusive_and_rejects_invalid_coordinates",
+    "game::solstice_radar_math::tests::requested_size_fits_small_viewports_without_mutating_settings",
+    "game::solstice_radar_math::tests::north_up_and_heading_up_match_minecraft_cardinal_yaws"
+  ],
+  "frozen_artifacts": {
+    "client": "d5a294dc6bd45ce7f5f2b8376e3043dd264e8fcf881da1a40ac0b1d1c6b3c758",
+    "control": "bdaf79b1966ab03de9e44e6b9a1cf6e5980d64d2958dc797105d07fdfb0f22b0",
+    "package": "cc0ddee47e5a999fa5ca2b10696860f486a9f0cff8714ebb2c99c7fc7d90e03a",
+    "script": "4f84b2a6e8cdcdeba2efdee756dff54f642aa17fbb4b2c71f4fbda7909fc58f4"
+  },
+  "native_resolution_measurements": [
+    {
+      "gui_scale": 3,
+      "framebuffer": [
+        1600,
+        900
+      ],
+      "probe_row": 678,
+      "crosshair_color_rgb": [
+        53,
+        62,
+        73
+      ],
+      "physical_columns": [
+        156
+      ],
+      "measured_width_physical_pixels": 1,
+      "image_sha256": "d4c8f9ca311b254ece6b7c0276758f7aa073ac5d89dd042c6638dd284cc23ced"
+    },
+    {
+      "gui_scale": 1,
+      "framebuffer": [
+        1600,
+        900
+      ],
+      "probe_row": 826,
+      "crosshair_color_rgb": [
+        53,
+        62,
+        73
+      ],
+      "physical_columns": [
+        52
+      ],
+      "measured_width_physical_pixels": 1,
+      "image_sha256": "17c567164a730584f3dd5ecdbda91d2e0e47e113339f2168d63c41f27f184993"
+    }
+  ],
+  "runtime": {
+    "isolated_generated_singleplayer": true,
+    "real_accounts_existing_worlds_multiplayer_used": false,
+    "clean_session_error": null,
+    "process_exit_codes": [
+      0,
+      0
+    ],
+    "settings_byte_identical_after_restart": true,
+    "configured_settings": [
+      "radar.on=true",
+      "radar.key=none",
+      "radar.range=80",
+      "radar.size=120",
+      "radar.rotate=false",
+      "radar.playerscolor=White"
+    ],
+    "disabled_settings": [
+      "radar.on=false",
+      "radar.key=none",
+      "radar.range=80",
+      "radar.size=120",
+      "radar.rotate=false",
+      "radar.playerscolor=White"
+    ],
+    "screenshots": {
+      "off-default.png": {
+        "width": 1600,
+        "height": 900,
+        "rim_color_pixels": 0,
+        "sha256": "3547fdba02acd6a12a24cbfece36eb555320231f98bd4ec06863cde8603a45e5"
+      },
+      "scale3.png": {
+        "width": 1600,
+        "height": 900,
+        "rim_color_pixels": 908,
+        "sha256": "d4c8f9ca311b254ece6b7c0276758f7aa073ac5d89dd042c6638dd284cc23ced"
+      },
+      "scale1.png": {
+        "width": 1600,
+        "height": 900,
+        "rim_color_pixels": 296,
+        "sha256": "17c567164a730584f3dd5ecdbda91d2e0e47e113339f2168d63c41f27f184993"
+      },
+      "f1-hidden.png": {
+        "width": 1600,
+        "height": 900,
+        "rim_color_pixels": 0,
+        "sha256": "1048b51983df211b606fdbc74c5d734b0250b08f108a8bc1dfec04b3216ca274"
+      },
+      "configured.png": {
+        "width": 1600,
+        "height": 900,
+        "rim_color_pixels": 368,
+        "sha256": "d1c17bfa2314bc1c420993b0ea5f4656e8c8832da89e76993bcb0e78bf11ac18"
+      },
+      "restart.png": {
+        "width": 800,
+        "height": 450,
+        "rim_color_pixels": 324,
+        "sha256": "ac188aca412e655c5994e5c452ef16f3995c4c289d4c0369c0d20a146e62a23d"
+      },
+      "disabled.png": {
+        "width": 800,
+        "height": 450,
+        "rim_color_pixels": 0,
+        "sha256": "9923795d96d405f07ddbf161a08c802c78c0198d299526a62071aca422ab3342"
+      }
+    },
+    "additional_gui_observation": "Actual mouse right-click opened Radar settings in a separate owned session using the same frozen build; the displayed documentation images came from that session.",
+    "limits": [
+      "No other players in these singleplayer worlds: live remote-player dots/spectator/invisibility filtering are not runtime-verified.",
+      "Geometry tests cover orientation, horizontal range and physical-pixel tessellation/edge width; not a performance benchmark.",
+      "Restart uses a fresh process and smaller viewport in the same generated home; not live window-resize coverage.",
+      "Keyboard commands in the clean driver use the control API; no blanket physical-device/GUI coverage claim.",
+      "The separate GUI observation session later ended after a pause-navigation driver timeout; it is not presented as a clean full smoke run."
+    ]
+  },
+  "source_files_sha256": {
+    "radar.rs": "a74b7706dc88e26775bde842c11ebfe0550477b458bf78065f5548a7d2a92715",
+    "radar_math.rs": "8673d5650de357f9792e56c5a0fc3b1bfe460bfb5bd4a99553846ab9bd6089c6",
+    "radar_players.rs": "2b80461e0112fbfab36530601b25808f65d22eb91554e243f30b3463f481a8cd"
+  }
+}

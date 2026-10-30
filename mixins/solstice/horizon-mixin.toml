@@ -69,6 +69,25 @@ name = "solstice_visual"
 source = "visual.rs"
 
 [[module]]
+id = "radar"
+file = "crates/horizon-client/src/game.rs"
+name = "solstice_radar"
+source = "radar.rs"
+
+[[module]]
+id = "radar_math"
+file = "crates/horizon-client/src/game.rs"
+name = "solstice_radar_math"
+source = "radar_math.rs"
+
+[[module]]
+id = "radar_players"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "solstice_radar_players"
+source = "radar_players.rs"
+visibility = "pub(crate)"
+
+[[module]]
 id = "render"
 file = "crates/horizon-client/src/game.rs"
 name = "solstice_render"
