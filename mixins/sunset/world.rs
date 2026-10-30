@@ -277,21 +277,13 @@ fn spawn_proofer(game: &mut Game<'_>, m: &Module) {
 
 // The tool in the hotbar for entity `want`, switched to now.
 fn use_on(game: &mut Game<'_>, slot: usize, id: u32, centre: [f64; 3], rotate: bool) {
-    if rotate {
-        if let Some(eye) = game.eye_position() {
-            let (yaw, pitch) = super::sunset::look_at(eye, centre);
-            game.send(S::MovePlayerRot(play::MovePlayerRot {
-                yaw,
-                pitch,
-                flags: u8::from(game.player.as_ref().is_some_and(|p| p.ground.on_ground)),
-            }));
-        }
-    }
-    let before = game.selected;
-    hold(game, slot);
-    game.send(S::Interact(play::Interact { id: id as i32, hand: 0, location: [0.0, 1.0, 0.0], secondary: false }));
-    game.swing_arm();
-    hold(game, before);
+    turned_to(game, "Use on", rotate, centre, move |game| {
+        let before = game.selected;
+        hold(game, slot);
+        game.send(S::Interact(play::Interact { id: id as i32, hand: 0, location: [0.0, 1.0, 0.0], secondary: false }));
+        game.swing_arm();
+        hold(game, before);
+    });
 }
 
 fn cooling(id: u32) -> bool {
@@ -387,14 +379,11 @@ fn auto_mount(game: &mut Game<'_>, m: &Module) {
         !(short(&t.kind) != "llama" && m.b("Check saddle") && !saddled(t))
     });
     if let Some(t) = pick {
-        if m.b("Rotate") {
-            if let Some(e) = game.eye_position() {
-                let (yaw, pitch) = super::sunset::look_at(e, centre(&t));
-                game.send(S::MovePlayerRot(play::MovePlayerRot { yaw, pitch, flags: 1 }));
-            }
-        }
-        game.send(S::Interact(play::Interact { id: t.id as i32, hand: 0, location: [0.0, 1.0, 0.0], secondary: false }));
-        game.swing_arm();
+        let id = t.id as i32;
+        turned_to(game, "Auto Mount", m.b("Rotate"), centre(&t), move |game| {
+            game.send(S::Interact(play::Interact { id, hand: 0, location: [0.0, 1.0, 0.0], secondary: false }));
+            game.swing_arm();
+        });
         cool(t.id, 20);
     }
 }
@@ -435,18 +424,15 @@ fn flamethrower(game: &mut Game<'_>, m: &Module) {
     };
     // The look goes to the point clicked, as a real click's does: a look through the mob is a click on the mob, and
     // Horizon's server leaves a block use alone while you look at one.
-    if m.b("Rotate") {
-        let (yaw, pitch) = super::sunset::look_at(eye, point);
-        let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
-        game.send(S::MovePlayerRot(play::MovePlayerRot { yaw, pitch, flags: u8::from(ground) }));
-    }
-    let before = game.selected;
-    hold(game, slot);
-    let seq = sequence(game);
     let cursor = [(point[0] - f64::from(below[0])) as f32, 1.0, (point[2] - f64::from(below[2])) as f32];
-    game.send(S::UseItemOn(play::UseItemOn { hand: 0, pos: below, face: 1, cursor, inside: false, world_border: false, sequence: seq }));
-    game.swing_arm();
-    hold(game, before);
+    turned_to(game, "Flamethrower", m.b("Rotate"), point, move |game| {
+        let before = game.selected;
+        hold(game, slot);
+        let seq = sequence(game);
+        game.send(S::UseItemOn(play::UseItemOn { hand: 0, pos: below, face: 1, cursor, inside: false, world_border: false, sequence: seq }));
+        game.swing_arm();
+        hold(game, before);
+    });
     ws(|w| w.flame_ticks = 0);
 }
 

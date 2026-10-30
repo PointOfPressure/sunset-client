@@ -243,12 +243,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     let rotate_mode = m.p("Rotate");
     if rotate_mode == "Always" {
         let (yaw, pitch) = look_at(eye, centre);
-        let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
-        game.send(horizon_protocol::packets::play::Serverbound::MovePlayerRot(horizon_protocol::packets::play::MovePlayerRot {
-            yaw,
-            pitch,
-            flags: u8::from(ground),
-        }));
+        super::sunset::turn("Kill Aura", yaw, pitch);
     }
     // The delay: the game's cooldown, or a fixed number of ticks.
     if st(|s| {

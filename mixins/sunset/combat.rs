@@ -717,26 +717,21 @@ fn burrow(game: &mut Game<'_>, m: &Module, just: bool) {
         center_player(game);
     }
     if let Some(slot) = burrow_slot(game, m) {
-        let hit = center_of(start);
-        if m.b("Rotate") {
-            if let Some(eye) = game.eye_position() {
-                let (yaw, pitch) = super::sunset::look_at(eye, hit);
-                game.send(S::MovePlayerRot(play::MovePlayerRot { yaw, pitch, flags: 0 }));
-            }
-        }
-        let before = game.selected;
-        hold(game, slot);
-        let seq = sequence(game);
-        game.send(S::UseItemOn(play::UseItemOn {
-            hand: 0,
-            pos: start,
-            face: 1,
-            cursor: [0.5, 0.5, 0.5],
-            inside: false,
-            world_border: false,
-            sequence: seq,
-        }));
-        hold(game, before);
+        turned_to(game, "Burrow", m.b("Rotate"), center_of(start), move |game| {
+            let before = game.selected;
+            hold(game, slot);
+            let seq = sequence(game);
+            game.send(S::UseItemOn(play::UseItemOn {
+                hand: 0,
+                pos: start,
+                face: 1,
+                cursor: [0.5, 0.5, 0.5],
+                inside: false,
+                world_border: false,
+                sequence: seq,
+            }));
+            hold(game, before);
+        });
     }
     if let Some(p) = game.player.as_mut() {
         p.position.y += m.n("Rubberband height");
@@ -892,12 +887,13 @@ fn auto_exp(game: &mut Game<'_>, m: &Module) {
     };
     // Throw it at your feet.
     let yaw = game.yaw;
-    game.send(S::MovePlayerRot(play::MovePlayerRot { yaw, pitch: 90.0, flags: 1 }));
-    let before = game.selected;
-    hold(game, slot);
-    let seq = sequence(game);
-    game.send(S::UseItem(play::UseItem { hand: 0, sequence: seq, yaw, pitch: 90.0 }));
-    hold(game, before);
+    super::sunset::turn_then("EXP Thrower", yaw, 90.0, move |game| {
+        let before = game.selected;
+        hold(game, slot);
+        let seq = sequence(game);
+        game.send(S::UseItem(play::UseItem { hand: 0, sequence: seq, yaw, pitch: 90.0 }));
+        hold(game, before);
+    });
 }
 
 #[allow(dead_code)]

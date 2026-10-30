@@ -630,7 +630,7 @@ pub(super) struct State {
     was_ground: bool,
     eat_ticks: u32,
     crumb_at: u64,
-    crit_target: Option<(u32, Option<(f32, f32)>)>,
+    crit_target: Option<u32>,
     crit_ticks: u32,
     notify: Option<Vec<String>>,
     holes: Sweep<u32>,
@@ -850,7 +850,8 @@ static ANTI_GROUND: AtomicBool = AtomicBool::new(false);
 // and the hop back (both off the ground), stage 3 lets the hit follow.
 static WELCOMED: AtomicBool = AtomicBool::new(false);
 pub(super) static CRIT_STAGE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
-static POS_THIS_TICK: AtomicBool = AtomicBool::new(false);
+// A move packet went out this tick (the game's or Sunset's): Sunset never sends a second.
+static MOVED_THIS_TICK: AtomicBool = AtomicBool::new(false);
 // Blink held at least one move packet.
 static BLINK_HELD: AtomicBool = AtomicBool::new(false);
 // Scaffold's block placements count up from here (the game's own are small).
@@ -1318,7 +1319,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         return;
     }
     ensure_loaded(game);
-    POS_THIS_TICK.store(false, Ordering::Relaxed);
+    MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     let mods = snapshot();
     super::sunset_render::pre_tick(game, &mods);
     let on = |n: &str| mods.iter().any(|m| m.name == n && m.on);
@@ -1440,10 +1441,18 @@ fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
 }
 
 // After the game ticks: let go of held keys, then each module's work.
+// After the tick: first what waited for the look its move packet carried, then the modules, then (in a tick that
+// sent no move packet) the one that carries the next look.
 pub(super) fn post_tick(game: &mut Game<'_>) {
     if !game.native_window() || !game.native_on(ID) {
         return;
     }
+    turned(game);
+    module_tick(game);
+    end_turns(game);
+}
+
+fn module_tick(game: &mut Game<'_>) {
     ensure_loaded(game);
     let injected = with(|s| std::mem::take(&mut s.injected));
     for k in injected {
@@ -2515,14 +2524,11 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
     if wait {
         return;
     }
-    if m.b("Rotate") {
-        let (yaw, pitch) = look_at(eye, super::sunset_util::center_of(first));
-        let flags = u8::from(game.player.as_ref().is_some_and(|p| p.ground.on_ground));
-        game.send(S::MovePlayerRot(play::MovePlayerRot { yaw, pitch, flags }));
-    }
     let (max, packet) = (m.n("Max blocks per tick") as usize, m.b("Packet mine"));
     let mut done = 0;
     let mut sent: Vec<([i32; 3], u64)> = Vec::new();
+    // What goes to the server, after the look when Rotate is on.
+    let mut out: Vec<S> = Vec::new();
     for (pos, instant, ticks) in found {
         if done >= max {
             break;
@@ -2530,14 +2536,14 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
         if interact {
             let seq = super::sunset_util::sequence(game);
             let face = if eye[1] > f64::from(pos[1]) + 1.0 { 1 } else { 0 };
-            game.send(S::UseItemOn(play::UseItemOn { hand: 0, pos, face, cursor: [0.5, 0.5, 0.5], inside: true, world_border: false, sequence: seq }));
+            out.push(S::UseItemOn(play::UseItemOn { hand: 0, pos, face, cursor: [0.5, 0.5, 0.5], inside: true, world_border: false, sequence: seq }));
             with(|s| s.nuke_interacted.push(pos));
         } else {
             let seq = super::sunset_util::sequence(game);
-            game.send(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: seq }));
+            out.push(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: seq }));
             if packet && !instant {
                 let seq = super::sunset_util::sequence(game);
-                game.send(S::PlayerAction(play::PlayerAction { action: 2, pos, direction: 1, sequence: seq }));
+                out.push(S::PlayerAction(play::PlayerAction { action: 2, pos, direction: 1, sequence: seq }));
             } else if !instant {
                 with(|s| s.nuke = Some((pos, ticks)));
             }
@@ -2559,11 +2565,24 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
         s.nuke_skip.extend(sent);
         s.nuke_first = false;
     });
-    if done > 0 {
-        if m.b("Swing") {
+    if done == 0 {
+        return;
+    }
+    let swing = m.b("Swing");
+    let send = move |game: &mut Game<'_>| {
+        for p in out {
+            game.send(p);
+        }
+        if swing {
             game.swing_arm();
         }
         game.send(S::Punch(Empty));
+    };
+    if m.b("Rotate") {
+        let (yaw, pitch) = look_at(eye, super::sunset_util::center_of(first));
+        turn_then("Nuker", yaw, pitch, send);
+    } else {
+        send(game);
     }
 }
 
@@ -2971,24 +2990,23 @@ pub(super) fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(
     // Criticals: the hit waits for the two-tick hop (see CRIT_STAGE).
     if crits && p.ground.on_ground && !in_water && !p.flying {
         with(|s| {
-            s.crit_target = Some((id, rotate));
+            s.crit_target = Some(id);
             s.crit_ticks = 0;
         });
+        // The look rides on the hop's packets, and the hit follows them.
+        if let Some((yaw, pitch)) = rotate {
+            turn("Attack", yaw, pitch);
+        }
         CRIT_STAGE.store(1, Ordering::Relaxed);
         return;
     }
-    strike(game, id, rotate);
+    match rotate {
+        Some((yaw, pitch)) => turn_then("Attack", yaw, pitch, move |game| strike(game, id)),
+        None => strike(game, id),
+    }
 }
 
-pub(super) fn strike(game: &mut Game<'_>, id: u32, rotate: Option<(f32, f32)>) {
-    let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
-    if let Some((yaw, pitch)) = rotate {
-        game.send(S::MovePlayerRot(play::MovePlayerRot {
-            yaw,
-            pitch,
-            flags: u8::from(ground),
-        }));
-    }
+pub(super) fn strike(game: &mut Game<'_>, id: u32) {
     if let Some(m) = with(|s| s.module("Auto Weapon").filter(|m| m.on).cloned())
         && let Some(slot) = best_weapon(game, m.b("Prefer axes"))
     {
@@ -3017,22 +3035,18 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
         with(|s| s.crit_target = None);
         return;
     }
-    let mut stage = stage;
-    if (stage == 1 || stage == 2) && !POS_THIS_TICK.load(Ordering::Relaxed) {
+    if (stage == 1 || stage == 2) && !MOVED_THIS_TICK.load(Ordering::Relaxed) {
         let Some(p) = game.player.as_ref() else {
             return;
         };
         let (x, y, z) = (p.position.x, p.position.y, p.position.z);
-        let y = if stage == 1 { y + 0.0625 } else { y };
+        // outgoing makes it the hop and moves the stage on.
         game.send(S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags: 0 }));
-        stage += 1;
-        CRIT_STAGE.store(stage, Ordering::Relaxed);
-        POS_THIS_TICK.store(true, Ordering::Relaxed);
     }
     if CRIT_STAGE.load(Ordering::Relaxed) == 3 {
         CRIT_STAGE.store(0, Ordering::Relaxed);
-        if let Some((id, rotate)) = with(|s| s.crit_target.take()) {
-            strike(game, id, rotate);
+        if let Some(id) = with(|s| s.crit_target.take()) {
+            strike(game, id);
         }
     }
 }
@@ -3084,134 +3098,214 @@ pub(super) enum Out {
     Replace(S),
 }
 
-pub(super) fn with_ground(packet: &S, ground: bool) -> Option<S> {
-    let f = |flags: u8| (flags & !1) | u8::from(ground);
-    Some(match packet {
-        S::MovePlayerPos(m) => S::MovePlayerPos(play::MovePlayerPos { x: m.x, y: m.y, z: m.z, flags: f(m.flags) }),
-        S::MovePlayerPosRot(m) => S::MovePlayerPosRot(play::MovePlayerPosRot {
-            x: m.x,
-            y: m.y,
-            z: m.z,
-            yaw: m.yaw,
-            pitch: m.pitch,
-            flags: f(m.flags),
-        }),
-        S::MovePlayerRot(m) => S::MovePlayerRot(play::MovePlayerRot { yaw: m.yaw, pitch: m.pitch, flags: f(m.flags) }),
-        S::MovePlayerStatus(m) => S::MovePlayerStatus(play::MovePlayerStatus { flags: f(m.flags) }),
-        _ => return None,
-    })
+// A move packet taken apart: where (if it says), the look (if it says), and its flags (bit 0 on the ground, bit 1
+// against a wall).
+#[derive(Clone, Copy, PartialEq)]
+struct Move {
+    at: Option<[f64; 3]>,
+    look: Option<(f32, f32)>,
+    flags: u8,
 }
 
-// Outgoing packets: Blink holds moves, Anti Hunger hides sprinting and the
-// ground, No Fall claims the ground as you fall (or, in No ground, never).
-pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
-    let is_move = matches!(
-        packet,
-        S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_) | S::MovePlayerStatus(_)
-    );
-    if is_move && BLINK.load(Ordering::Relaxed) {
-        BLINK_HELD.store(true, Ordering::Relaxed);
-        return Out::Drop;
+impl Move {
+    fn of(packet: &S) -> Option<Self> {
+        Some(match packet {
+            S::MovePlayerPos(m) => Self { at: Some([m.x, m.y, m.z]), look: None, flags: m.flags },
+            S::MovePlayerPosRot(m) => Self { at: Some([m.x, m.y, m.z]), look: Some((m.yaw, m.pitch)), flags: m.flags },
+            S::MovePlayerRot(m) => Self { at: None, look: Some((m.yaw, m.pitch)), flags: m.flags },
+            S::MovePlayerStatus(m) => Self { at: None, look: None, flags: m.flags },
+            _ => return None,
+        })
     }
+    fn packet(self) -> S {
+        let flags = self.flags;
+        match (self.at, self.look) {
+            (Some([x, y, z]), Some((yaw, pitch))) => S::MovePlayerPosRot(play::MovePlayerPosRot { x, y, z, yaw, pitch, flags }),
+            (Some([x, y, z]), None) => S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags }),
+            (None, Some((yaw, pitch))) => S::MovePlayerRot(play::MovePlayerRot { yaw, pitch, flags }),
+            (None, None) => S::MovePlayerStatus(play::MovePlayerStatus { flags }),
+        }
+    }
+}
+
+// Outgoing packets: Blink holds moves, Anti Hunger hides sprinting and the ground, No Fall claims the ground as you
+// fall (or, in No ground, never), Criticals hops, Flight's anti kick sinks, and the look modules asked for (turn_then)
+// rides along. Each is a change to the tick's own move packet, never another one.
+pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     if ANTI_SPRINT.load(Ordering::Relaxed)
         && let S::PlayerCommand(c) = packet
         && (c.action == 1 || c.action == 2)
     {
         return Out::Drop;
     }
-    if !is_move {
+    let Some(sent) = Move::of(packet) else {
         return Out::Pass;
+    };
+    if BLINK.load(Ordering::Relaxed) {
+        BLINK_HELD.store(true, Ordering::Relaxed);
+        return Out::Drop;
     }
-    let has_position = matches!(packet, S::MovePlayerPos(_) | S::MovePlayerPosRot(_));
-    // Criticals: this tick's regular position packet is the hop (stage 1: up,
-    // stage 2: back down), both off the ground.
-    let stage = CRIT_STAGE.load(Ordering::Relaxed);
-    if has_position && (stage == 1 || stage == 2) {
-        let hop = |y: f64| if stage == 1 { y + 0.0625 } else { y };
-        let changed = match packet {
-            S::MovePlayerPos(m) => S::MovePlayerPos(play::MovePlayerPos { x: m.x, y: hop(m.y), z: m.z, flags: 0 }),
-            S::MovePlayerPosRot(m) => S::MovePlayerPosRot(play::MovePlayerPosRot {
-                x: m.x,
-                y: hop(m.y),
-                z: m.z,
-                yaw: m.yaw,
-                pitch: m.pitch,
-                flags: 0,
-            }),
-            _ => unreachable!(),
-        };
-        CRIT_STAGE.store(stage + 1, Ordering::Relaxed);
-        POS_THIS_TICK.store(true, Ordering::Relaxed);
-        return Out::Replace(changed);
-    }
+    MOVED_THIS_TICK.store(true, Ordering::Relaxed);
     let Some(p) = game.player.as_ref() else {
         return Out::Pass;
     };
-    // Flight's Packet anti kick: the move carries the position, sunk 0.0313 below the last height sent while it is
-    // due and you are in the air (Meteor's antiKickPacket).
-    let kicked = FLY_PACKET.load(Ordering::Relaxed).then(|| fly_down(game, packet)).flatten();
-    let packet = kicked.as_ref().unwrap_or(packet);
-    let has_position = matches!(packet, S::MovePlayerPos(_) | S::MovePlayerPosRot(_));
-    if has_position {
-        POS_THIS_TICK.store(true, Ordering::Relaxed);
-    }
-    // The server adds each move's drop to the fall, and a move that says you are on the ground costs what has added up
-    // beyond three blocks. No Fall's Packet mode claims the ground on every move down, so the count never passes one
-    // move's drop (Meteor's waits for 0.5 blocks a tick, which leaves a fall the server counted before to hurt); past
-    // three blocks a tick (a fall of about 130 blocks) even that costs a little. No ground never claims it. Flying
-    // that way claims it all the time.
-    let grounded = || !p.ground.on_ground && !p.flying && !p.fall_flying;
-    let no_fall = NO_FALL.load(Ordering::Relaxed);
-    let paused = game.creative || (NO_FALL_MACE.load(Ordering::Relaxed) && game.held().is_some_and(|s| s.item.ends_with(":mace")));
-    let ground = if FLIGHT_GROUND.load(Ordering::Relaxed) || (GLIDE_GROUND.load(Ordering::Relaxed) && !p.flying) {
-        Some(true)
-    } else if no_fall == 1 && !paused && grounded() && p.velocity.y < 0.0 {
-        Some(true)
-    } else if no_fall == 2 && !paused {
-        Some(false)
-    } else if ANTI_GROUND.load(Ordering::Relaxed) && (p.fall_distance <= 0.0 || p.flying) {
-        Some(false)
+    let mut m = sent;
+    let here = [p.position.x, p.position.y, p.position.z];
+    // Criticals: this tick's move is the hop (stage 1: up, stage 2: back down), both off the ground.
+    let stage = CRIT_STAGE.load(Ordering::Relaxed);
+    if stage == 1 || stage == 2 {
+        let [x, y, z] = m.at.unwrap_or(here);
+        m.at = Some([x, if stage == 1 { y + 0.0625 } else { y }, z]);
+        m.flags = 0;
+        CRIT_STAGE.store(stage + 1, Ordering::Relaxed);
     } else {
-        None
-    };
-    let grounded_packet = ground.and_then(|g| with_ground(packet, g));
-    match grounded_packet.or(kicked) {
-        Some(changed) => Out::Replace(changed),
-        None => Out::Pass,
+        // Flight's Packet anti kick: the move carries the position, sunk 0.0313 below the last height sent while it
+        // is due and you are in the air (Meteor's antiKickPacket).
+        if FLY_PACKET.load(Ordering::Relaxed) {
+            fly_down(game, &mut m, here);
+        }
+        // The server adds each move's drop to the fall, and a move that says you are on the ground costs what has
+        // added up beyond three blocks. No Fall's Packet mode claims the ground on every move down, so the count
+        // never passes one move's drop (Meteor's waits for 0.5 blocks a tick, which leaves a fall the server counted
+        // before to hurt); past three blocks a tick (a fall of about 130 blocks) even that costs a little. No ground
+        // never claims it. Flying that way claims it all the time.
+        let grounded = !p.ground.on_ground && !p.flying && !p.fall_flying;
+        let no_fall = NO_FALL.load(Ordering::Relaxed);
+        let paused = game.creative || (NO_FALL_MACE.load(Ordering::Relaxed) && game.held().is_some_and(|s| s.item.ends_with(":mace")));
+        let ground = if FLIGHT_GROUND.load(Ordering::Relaxed) || (GLIDE_GROUND.load(Ordering::Relaxed) && !p.flying) {
+            Some(true)
+        } else if no_fall == 1 && !paused && grounded && p.velocity.y < 0.0 {
+            Some(true)
+        } else if no_fall == 2 && !paused {
+            Some(false)
+        } else if ANTI_GROUND.load(Ordering::Relaxed) && (p.fall_distance <= 0.0 || p.flying) {
+            Some(false)
+        } else {
+            None
+        };
+        if let Some(g) = ground {
+            m.flags = (m.flags & !1) | u8::from(g);
+        }
     }
+    // The look a module asked for, else the player's own back after one (not during the Criticals hop, whose hit
+    // follows it).
+    let own = (game.yaw, game.pitch);
+    let hopping = stage == 1 || stage == 2;
+    let look = turns(|t| {
+        if let Some(head) = t.queue.first().filter(|_| !t.carried) {
+            t.carried = true;
+            t.restore = head.look != own;
+            Some(head.look)
+        } else if t.restore && !hopping {
+            t.restore = false;
+            Some(own)
+        } else {
+            None
+        }
+    });
+    if let Some(look) = look {
+        m.look = Some(look);
+    }
+    if m == sent { Out::Pass } else { Out::Replace(m.packet()) }
 }
 
-// Flight's Packet anti kick on one move packet: the packet to send instead, if it changes. Moves without a position
-// get the player's; while it is due and you are in the air the height sinks 0.0313 below the last one sent.
-fn fly_down(game: &Game<'_>, packet: &S) -> Option<S> {
-    let p = game.player.as_ref()?;
-    let here = [p.position.x, p.position.y, p.position.z];
-    let (mut at, rot, flags, had) = match packet {
-        S::MovePlayerPos(m) => ([m.x, m.y, m.z], None, m.flags, true),
-        S::MovePlayerPosRot(m) => ([m.x, m.y, m.z], Some((m.yaw, m.pitch)), m.flags, true),
-        S::MovePlayerRot(m) => (here, Some((m.yaw, m.pitch)), m.flags, false),
-        S::MovePlayerStatus(m) => (here, None, m.flags, false),
-        _ => return None,
-    };
+// Flight's Packet anti kick on the move: while it is due and you are in the air, the height sinks 0.0313 below the
+// last one sent (a move without a position gets the player's).
+fn fly_down(game: &Game<'_>, m: &mut Move, here: [f64; 3]) {
+    let mut at = m.at.unwrap_or(here);
     let bits = FLY_LAST_Y.load(Ordering::Relaxed);
     let last = f64::from_bits(bits);
     let sinking = at[1] >= last || last - at[1] < 0.03130;
-    let sunk = FLY_DOWN.load(Ordering::Relaxed) && bits != u64::MAX && sinking && in_the_air(game);
-    if sunk {
+    if FLY_DOWN.load(Ordering::Relaxed) && bits != u64::MAX && sinking && in_the_air(game) {
         at[1] = last - 0.03130;
+        m.at = Some(at);
     } else {
         FLY_LAST_Y.store(at[1].to_bits(), Ordering::Relaxed);
     }
-    if had && !sunk {
-        return None;
-    }
-    Some(match rot {
-        Some((yaw, pitch)) => S::MovePlayerPosRot(play::MovePlayerPosRot { x: at[0], y: at[1], z: at[2], yaw, pitch, flags }),
-        None => S::MovePlayerPos(play::MovePlayerPos { x: at[0], y: at[1], z: at[2], flags }),
-    })
 }
 
-// Meteor's EntityUtils.isOnAir: nothing but air in your box grown by 0.0625 and reaching 0.55 lower.
+// ---- the look the server sees
+//
+// Rotate in Kill Aura, Nuker, Scaffold and the rest: a module asks for a look and hands over what to do once the server
+// has it. The look rides on the tick's own move packet, or in a tick without one on the single one Sunset sends at
+// its end, and what was asked runs after that packet has gone (Meteor's Rotations). Servers kick for a second move
+// packet in a tick, and some check the look of a click.
+
+type Deed = Box<dyn for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send>;
+
+struct Ask {
+    who: &'static str,
+    look: (f32, f32),
+    deeds: Vec<Deed>,
+    // Asked this tick: another ask of the same module joins it instead of replacing it.
+    fresh: bool,
+}
+
+struct Turns {
+    // Oldest first, one a module; one look goes out a tick.
+    queue: Vec<Ask>,
+    // This tick's move packet carried the first ask's look.
+    carried: bool,
+    // A look went out that is not the player's own: the next move packet puts the player's back.
+    restore: bool,
+}
+
+static TURNS: Mutex<Turns> = Mutex::new(Turns { queue: Vec::new(), carried: false, restore: false });
+
+fn turns<R>(f: impl FnOnce(&mut Turns) -> R) -> R {
+    f(&mut TURNS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+// Has the server see the player look at (yaw, pitch), then does `then`. `who` names the module: what it asks again in
+// the same tick goes along under its first look, and an ask from an earlier tick still waiting is replaced.
+pub(super) fn turn_then(who: &'static str, yaw: f32, pitch: f32, then: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) {
+    if !yaw.is_finite() || !pitch.is_finite() {
+        return;
+    }
+    let look = ((yaw + 180.0).rem_euclid(360.0) - 180.0, pitch.clamp(-90.0, 90.0));
+    turns(|t| match t.queue.iter_mut().position(|a| a.who == who) {
+        Some(i) if t.queue[i].fresh => t.queue[i].deeds.push(Box::new(then)),
+        Some(i) => {
+            if i == 0 && t.carried {
+                // Its look is on the way already: the new ask waits behind it.
+                t.queue.push(Ask { who, look, deeds: vec![Box::new(then)], fresh: true });
+            } else {
+                t.queue[i] = Ask { who, look, deeds: vec![Box::new(then)], fresh: true };
+            }
+        }
+        None => t.queue.push(Ask { who, look, deeds: vec![Box::new(then)], fresh: true }),
+    });
+}
+
+// A look alone (Anti AFK's spin).
+pub(super) fn turn(who: &'static str, yaw: f32, pitch: f32) {
+    turn_then(who, yaw, pitch, |_| {});
+}
+
+// Runs what waited for the look this tick's move packet carried.
+fn turned(game: &mut Game<'_>) {
+    let ask = turns(|t| std::mem::take(&mut t.carried).then(|| t.queue.remove(0)));
+    for deed in ask.map_or_else(Vec::new, |a| a.deeds) {
+        deed(game);
+    }
+}
+
+// The end of the tick: with no move packet in it, one to carry the first look asked for (or the player's own back),
+// and what waited for it.
+fn end_turns(game: &mut Game<'_>) {
+    if !MOVED_THIS_TICK.load(Ordering::Relaxed) && !BLINK.load(Ordering::Relaxed) && turns(|t| !t.queue.is_empty() || t.restore) {
+        let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
+        // outgoing puts the look in.
+        game.send(S::MovePlayerRot(play::MovePlayerRot { yaw: game.yaw, pitch: game.pitch, flags: u8::from(ground) }));
+        turned(game);
+    }
+    turns(|t| {
+        for a in &mut t.queue {
+            a.fresh = false;
+        }
+    });
+}
+
 fn in_the_air(game: &Game<'_>) -> bool {
     let Some(p) = game.player.as_ref() else {
         return false;
@@ -3234,7 +3328,7 @@ fn in_the_air(game: &Game<'_>) -> bool {
 // Where the player is, as one position packet: what Blink held back is a
 // single move to here, as the server takes one position packet a tick.
 pub(super) fn flush_blink(game: &mut Game<'_>) {
-    if !BLINK_HELD.swap(false, Ordering::Relaxed) || POS_THIS_TICK.load(Ordering::Relaxed) {
+    if !BLINK_HELD.swap(false, Ordering::Relaxed) || MOVED_THIS_TICK.load(Ordering::Relaxed) {
         return;
     }
     let Some(p) = game.player.as_ref() else {
@@ -3243,7 +3337,6 @@ pub(super) fn flush_blink(game: &mut Game<'_>) {
     let flags = u8::from(p.ground.on_ground) | u8::from(p.collision.horizontal) << 1;
     let (x, y, z) = (p.position.x, p.position.y, p.position.z);
     game.send(S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags }));
-    POS_THIS_TICK.store(true, Ordering::Relaxed);
 }
 
 // Zoom, through the zoom hook point.

@@ -2159,6 +2159,40 @@ def _():
 
 
 
+@test("One move packet a tick (Nuker, Kill Aura, Scaffold)")
+def _():
+    # The probe logs each move packet and each end of a client tick on the wire: never two moves in one tick, and no
+    # kick, with the three that turn the player's look for the server on at once (Rotate on).
+    if not probe_path() or ctl("status")["server"]["address"] == "local":
+        return None, "servers only, with the probe (in single player its log would hold the built-in server's packets too)"
+    # Dirt in front for Nuker, a husk behind for Kill Aura, and the platform's edge behind that for Scaffold.
+    reset(z=-12.5)
+    cmd(f"fill {X0-4} {Y+1} {Z0-10} {X0+4} {Y+2} {Z0-8} minecraft:dirt", f"summon husk {X0+0.5} {Y+1} {Z0-15.5} {HUSK}")
+    slot(0, "stone", 64)
+    slot(1, "diamond_sword")
+    wait(10)
+    mark = probe_mark()
+    only("nuker", "killaura", "scaffold")
+    wait(40)
+    walk(50, "s")
+    walk(50, "w")
+    only()
+    with open(probe_path(), errors="replace") as f:
+        f.seek(mark)
+        sent = [line.split()[1] for line in f if line.startswith("send ")]
+    ticks, most, moves, now = 0, 0, 0, 0
+    for kind in sent:
+        if kind == "tickend":
+            ticks, most, now = ticks + 1, max(most, now), 0
+        else:
+            moves, now = moves + 1, now + 1
+    alive = "player" in state()
+    broken = 54 - count(X0 - 4, Y + 1, Z0 - 10, X0 + 4, Y + 2, Z0 - 8, "dirt")
+    placed = count(X0 - 2, Y, Z0 - 30, X0 + 2, Y, Z0 - 17, "stone")
+    return ticks > 50 and most <= 1 and alive, (f"{moves} move packets over {ticks} ticks, at most {most} in a tick; Nuker broke {broken} dirt, "
+                                                f"Scaffold placed {placed} past the edge; still in the game: {alive}")
+
+
 def overran(*_):
     raise TimeoutError("the test ran over 10 minutes")
 

@@ -2,7 +2,7 @@
 // InvUtils, PlayerUtils and TargetUtils: placing blocks, finding items in the
 // hotbar, picking targets, seeing a block through the world.
 
-use super::sunset::{Camera, Canvas, Module, hold, look_at, outline, say, toggle, with};
+use super::sunset::{Camera, Canvas, Module, hold, look_at, outline, say, toggle, turn_then, with};
 use super::{Game, Screen};
 use horizon_protocol::packets::{
     Empty,
@@ -295,9 +295,9 @@ pub(super) fn place_block(game: &mut Game<'_>, p: [i32; 3], slot: usize, rotate:
     if slot > 8 || game.remote.is_none() || !can_place(game, p, check_entities) {
         return false;
     }
-    let Some(eye) = game.eye_position() else {
+    if game.eye_position().is_none() {
         return false;
-    };
+    }
     let (neighbor, face) = place_side(game, p).unwrap_or((p, 1));
     let hit = if neighbor == p {
         let c = center_of(p);
@@ -312,30 +312,41 @@ pub(super) fn place_block(game: &mut Game<'_>, p: [i32; 3], slot: usize, rotate:
         (hit[1] - f64::from(neighbor[1])) as f32,
         (hit[2] - f64::from(neighbor[2])) as f32,
     ];
-    if rotate {
-        let (yaw, pitch) = look_at(eye, hit);
-        game.send(S::MovePlayerRot(play::MovePlayerRot {
-            yaw,
-            pitch,
-            flags: u8::from(game.player.as_ref().is_some_and(|pl| pl.ground.on_ground)),
+    turned_to(game, "Place", rotate, hit, move |game| {
+        let before = game.selected;
+        hold(game, slot);
+        let seq = sequence(game);
+        game.send(S::UseItemOn(play::UseItemOn {
+            hand: 0,
+            pos: neighbor,
+            face,
+            cursor,
+            inside: false,
+            world_border: false,
+            sequence: seq,
         }));
-    }
-    let before = game.selected;
-    hold(game, slot);
-    let seq = sequence(game);
-    game.send(S::UseItemOn(play::UseItemOn {
-        hand: 0,
-        pos: neighbor,
-        face,
-        cursor,
-        inside: false,
-        world_border: false,
-        sequence: seq,
-    }));
-    game.swing_arm();
-    game.send(S::Punch(Empty));
-    hold(game, before);
+        game.swing_arm();
+        game.send(S::Punch(Empty));
+        hold(game, before);
+    });
     true
+}
+
+// Does `deed`, after the server's look has turned to `at` when `rotate` says so (see turn_then).
+pub(super) fn turned_to(
+    game: &mut Game<'_>,
+    who: &'static str,
+    rotate: bool,
+    at: [f64; 3],
+    deed: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static,
+) {
+    match game.eye_position().filter(|_| rotate) {
+        Some(eye) => {
+            let (yaw, pitch) = look_at(eye, at);
+            turn_then(who, yaw, pitch, deed);
+        }
+        None => deed(game),
+    }
 }
 
 // ---- items

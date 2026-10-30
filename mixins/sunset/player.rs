@@ -502,12 +502,7 @@ fn anti_afk(game: &mut Game<'_>, m: &Module) {
         if m.p("Spin mode") == "Client" {
             game.yaw = yaw;
         } else {
-            let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
-            game.send(S::MovePlayerRot(play::MovePlayerRot {
-                yaw,
-                pitch: m.n("Pitch") as f32,
-                flags: u8::from(ground),
-            }));
+            super::sunset::turn("Anti AFK", yaw, m.n("Pitch") as f32);
         }
     }
     if m.b("Send messages") {
