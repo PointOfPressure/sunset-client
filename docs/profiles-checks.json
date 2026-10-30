@@ -1,0 +1,38 @@
+{
+  "feature": "Settings-only local profiles",
+  "source_commit": "e44f9ce46720baa49afeac3246230bbd5db77442",
+  "host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins_version": "0.5.0",
+  "rustc": "1.99.1",
+  "host_free_tests": 15,
+  "exact_host_plan_apply_check_and_linked_build": "passed",
+  "runtime": {
+    "environment": "Fresh generated creative singleplayer; isolated homes/resources; no accounts or external servers",
+    "windows_process_exit_codes": [
+      0,
+      0
+    ],
+    "observed": [
+      "case-normalized save/list/delete",
+      "load restores Zoom factor while keeping enabled Tracers, F6 bind, two friends and two waypoints",
+      "automatic before-load snapshot restores prior factor",
+      "changed-setting load refuses enabled Zoom",
+      "generated NaN fixture refuses entire load; config byte-identical",
+      "restart plus in-memory command readback retains settings/binds/friends/waypoints",
+      "1600x900 unmodified framebuffer screenshot"
+    ],
+    "frozen_inputs_unchanged": true
+  },
+  "frozen_sha256": {
+    "client": "301c9206f46fc9605f3f76f3af918109254faaf276fa111056798bdbdb48b115",
+    "control": "bdaf79b1966ab03de9e44e6b9a1cf6e5980d64d2958dc797105d07fdfb0f22b0",
+    "package": "5afa112a3c14484999f2a127608884794c461ee5863bbd5a248a422d323ad8e7",
+    "script": "db7396f0556c17df19248c796219ff42cd75fbcb2b08485a4d5e10159d516b47"
+  },
+  "limits": [
+    "Windows only; no Linux/macOS runtime claim",
+    "No multiplayer or performance claim",
+    "Individual file replacements are atomic; no multi-file power-loss transaction",
+    "Padded text remains refused on this standalone branch because its base config loader trims it"
+  ]
+}

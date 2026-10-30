@@ -71,3 +71,20 @@ python tools/test_profiles.py --rustc <path-to-rustc>
 This compiles the production profile helper, production model/serialization methods and profile command
 against a minimal game-storage/chat fixture. It exercises parsing, precision, scope preservation, recovery,
 failed writes, Windows replacement and junction handling. It is not an in-game verification.
+
+## Isolated client check
+
+On Windows, the exact pinned host was staged with Mixins 0.5.0, compile-checked
+with Rust 1.99.1, linked and run in a fresh generated singleplayer home. Save,
+list, load, delete and backup recovery worked. Loading restored Zoom's factor
+while retaining a changed F6 bind, enabled Tracers, two generated friends and
+two waypoints. A changed setting on enabled Zoom was refused. A generated NaN
+profile left the current config byte-identical. A fresh-process restart and
+command readback confirmed settings and preserved data. Both processes quit
+normally; frozen inputs stayed unchanged.
+
+The 15 host-free tests cover additional parser, precision and file-failure
+cases. This live check does not establish other platforms, multiplayer behavior
+or recovery from every power-loss scenario. See [check details](profiles-checks.json).
+
+![Profiles and guarded loads in the isolated client](images/profiles-native.png)
