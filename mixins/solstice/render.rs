@@ -41,7 +41,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Horizontal range", 8.0, 2.0, 16.0, 1.0)
             .num("Vertical range", 4.0, 1.0, 8.0, 1.0)
             .num("Light level", 0.0, 0.0, 15.0, 1.0),
-        Module::new("No Render", Render, "Hides fog, darkness, blindness, nausea, screen overlays (fire, water, in a wall, pumpkin, powder snow) and the dark sheet behind menus.")
+        Module::new("No Render", Render, "Hides fog, darkness, blindness, nausea, screen overlays (fire, water, in a wall, pumpkin, powder snow) and the dark sheet and blur behind menus.")
             .bool("Fog", true)
             .bool("Water fog", true)
             .bool("Lava and powder snow fog", false)

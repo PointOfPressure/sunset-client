@@ -303,7 +303,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Active when", &["Always", "Sneaking", "Not sneaking"])
             .bool("Safe step", false)
             .num("Step health", 5.0, 1.0, 36.0, 1.0),
-        Module::new("GUI Move", Movement, "Lets you walk, jump and look around while your inventory is open.")
+        Module::new("GUI Move", Movement, "Lets you walk, jump and look around while a menu is open.")
+            .pick("Screens", &["All menus", "Inventory"])
             .bool("Jump", true)
             .bool("Sneak", true)
             .bool("Arrows", true),
@@ -1267,6 +1268,29 @@ fn step_height(game: &Game<'_>, m: &Module) -> f64 {
     m.n("Height")
 }
 
+// The screens GUI Move walks you in: the inventory and containers (not an anvil's rename box) and, with "All menus",
+// the pause menu, the Options pages with no search box, Statistics, Advancements and the creative tabs but the search. Never
+// a screen you type in. (A single-player game stops while the pause menu and the like are open: nothing moves there.)
+fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
+    if game.screen == Screen::Inventory {
+        return game.remote_menu().1 != "anvil";
+    }
+    if m.p("Screens") != "All menus" {
+        return false;
+    }
+    match game.screen {
+        Screen::Paused | Screen::Stats | Screen::Advancements => true,
+        Screen::Options => {
+            use horizon_client::options_ui::Page;
+            let options = &game.ui.options;
+            options.selected_key.is_none()
+                && !matches!(options.page(), Page::Video | Page::Controls | Page::KeyBinds | Page::Language | Page::Packs)
+        }
+        Screen::Creative => game.creative_screen.tabs.get(game.creative_screen.selected).is_some_and(|t| !t.search),
+        _ => false,
+    }
+}
+
 // After the game ticks: let go of held keys, then each module's work.
 pub(super) fn post_tick(game: &mut Game<'_>) {
     if !game.native_window() || !game.native_on(ID) {
@@ -1332,9 +1356,9 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
         super::remote::solstice_remote::clear_destroy_delay(game, wait);
     }
 
-    // GUI Move: the game ignores the keys while the inventory is open, so what is held steers by hand. Flight,
+    // GUI Move: the game ignores the keys while a menu is open, so what is held steers by hand. Flight,
     // Speed and the rest read the same keys, so they work with it open too.
-    let screen_move = get("GUI Move").filter(|_| game.screen == Screen::Inventory && !gui_open() && game.remote_menu().1 != "anvil");
+    let screen_move = get("GUI Move").filter(|m| !gui_open() && gui_move_screen(game, m));
     let held = |k: KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
     let screen_keys = screen_move.as_ref().map(|m| {
         (

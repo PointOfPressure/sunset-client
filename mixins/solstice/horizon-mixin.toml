@@ -453,3 +453,11 @@ helper = "menu_pause_hook.rs"
 bindings = [
   { name = "in_world", ty = "bool", value = "in_world" },
 ]
+
+[[injection]]
+id = "menu_blur"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::menu_blur::MenuBlur::apply"
+helper = "menu_blur_hook.rs"
+bindings = []

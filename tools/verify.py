@@ -305,6 +305,62 @@ def _():
     return clear > dim * 1.3, f"brightness {dim:.2f} behind the inventory, {clear:.2f} with No Render"
 
 
+def floor(name):
+    """The mean colour of a patch of the platform floor clear of the pause menu's buttons and the chat."""
+    from PIL import Image, ImageStat
+    path = f"/tmp/{name}.png"
+    ctl("screenshot", path)
+    time.sleep(2)
+    return sum(ImageStat.Stat(Image.open(path).convert("RGB").crop((40, 150, 300, 320))).mean) / 3
+
+
+@test("No Render (pause menu)")
+def _():
+    reset("creative")
+    ctl("look", "0", "50")
+    wait(5)
+    plain = floor("pm_plain")
+    ctl("pause")
+    wait(10)
+    dim = floor("pm_dim")
+    ctl("resume")
+    wait(5)
+    only("norender")
+    wait(5)
+    ctl("pause")
+    wait(10)
+    clear = floor("pm_clear")
+    ctl("resume")
+    only()
+    return dim < plain * 0.85 and abs(clear - plain) < plain * 0.03, f"floor {plain:.0f}, {dim:.0f} behind the pause menu, {clear:.0f} with No Render"
+
+
+@test("No Render (menu background, GUI scales)")
+def _():
+    scale = ctl("options-get", "guiScale")["options"]["guiScale"]["value"]
+    notes = []
+    ok = True
+    for n in (2, 4):
+        ctl("options-set", "guiScale", str(n))
+        reset("survival")
+        ctl("look", "0", "10")
+        only()
+        ctl("open-inventory")
+        wait(10)
+        dim = brightness("nr_scale_dark")
+        ctl("close")
+        only("norender")
+        ctl("open-inventory")
+        wait(10)
+        clear = brightness("nr_scale_clear")
+        ctl("close")
+        only()
+        ok = ok and clear > dim * 1.3
+        notes.append(f"scale {n}: {dim:.2f} -> {clear:.2f}")
+    ctl("options-set", "guiScale", str(scale))
+    return ok, ", ".join(notes)
+
+
 @test("Flight (no fall damage, level hover)")
 def _():
     reset("survival")
@@ -354,6 +410,60 @@ def _():
     only()
     moved = ((end[0] - start[0]) ** 2 + (end[2] - start[2]) ** 2) ** 0.5
     return moved > 2.0, f"walked {moved:.1f} blocks with the inventory open"
+
+
+def walked_in(screen_open, screen_close, key="w", ticks=30):
+    start = pos()
+    screen_open()
+    wait(6)
+    ctl("key", key, "down")
+    wait(ticks)
+    ctl("key", key, "up")
+    end = pos()
+    screen_close()
+    wait(6)
+    return ((end[0] - start[0]) ** 2 + (end[2] - start[2]) ** 2) ** 0.5
+
+
+def leave_pause():
+    ctl("resume")
+
+
+@test("GUI Move (pause menu)")
+def _():
+    reset("survival")
+    only("guimove")
+    ctl("pause")
+    wait(4)
+    stopped = state().get("paused")
+    ctl("resume")
+    if stopped:
+        only()
+        return None, "single player stops the world behind the pause menu: nothing can move there"
+    wait(4)
+    all_menus = walked_in(lambda: ctl("pause"), leave_pause)
+    setting("guimove", "screens", "Inventory")
+    reset("survival")
+    inventory_only = walked_in(lambda: ctl("pause"), leave_pause)
+    setting("guimove", "screens", "All menus")
+    only()
+    return all_menus > 2.0 and inventory_only < 0.5, f"walked {all_menus:.1f} blocks in the pause menu, {inventory_only:.1f} with Screens on Inventory"
+
+
+@test("GUI Move (not in chat)")
+def _():
+    reset("survival")
+    only("guimove")
+
+    def open_chat():
+        ctl("key", "t", "tap")
+
+    def close_chat():
+        ctl("key", "esc", "tap")
+
+    moved = walked_in(open_chat, close_chat)
+    only()
+    return moved < 0.5, f"walked {moved:.1f} blocks with the chat open"
 
 
 @test("GUI Move (with Flight)")
