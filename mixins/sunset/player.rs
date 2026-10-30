@@ -1,7 +1,7 @@
 // More of Meteor's player and misc modules: Auto Fish, Auto Gap, Fast Use,
 // Spam, and Anchor.
 
-use super::sunset::{Category, Module, hold};
+use super::sunset::{Category, Module, hold, look_at};
 use super::sunset_util::*;
 use super::{Game, Screen};
 use std::sync::Mutex;
@@ -79,6 +79,9 @@ struct Ps {
     steal_same: u32,
     steal_done: i32,
     clean_wait: u32,
+    // No Fall's Place: what it put down to land in, the item, the ticks since, the ticks you have stood still, and
+    // whether the server's answer (the water there) has come.
+    fall_placed: Option<([i32; 3], &'static str, u32, u32, bool)>,
 }
 
 static PS: Mutex<Option<Ps>> = Mutex::new(None);
@@ -175,6 +178,10 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
     if let Some(m) = get("Anchor") {
         anchor(game, m);
+    }
+    match get("No Fall") {
+        Some(m) => no_fall(game, m),
+        None => ps(|p| p.fall_placed = None),
     }
 }
 
@@ -620,3 +627,141 @@ fn anchor(game: &mut Game<'_>, m: &Module) {
 
 #[allow(dead_code)]
 fn unused(_: Screen) {}
+
+// ---- No Fall (Meteor's NoFall): Air place and Place. Packet and No ground change the move packets (runtime.rs's
+// outgoing). This runs after the tick, once its move packet has gone, where Meteor uses the item.
+
+// Place's choices: the item, and whether it is a bucket (used, and picked back up) or a block (placed).
+const FALL_ITEMS: [(&str, &str, bool); 5] = [
+    ("Bucket", "water_bucket", true),
+    ("Powder snow", "powder_snow_bucket", true),
+    ("Hay bale", "hay_block", false),
+    ("Cobweb", "cobweb", false),
+    ("Slime block", "slime_block", false),
+];
+
+fn no_fall(game: &mut Game<'_>, m: &Module) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    if game.creative || p.flying || (m.b("Pause on mace") && game.held().is_some_and(|s| short(&s.item) == "mace")) {
+        return;
+    }
+    match m.p("Mode") {
+        "Air place" => fall_air_place(game, m),
+        "Place" => fall_place(game, m),
+        _ => {}
+    }
+}
+
+// Air place: a block under you once the fall would hurt (Before damage) or kill (Before death).
+fn fall_air_place(game: &mut Game<'_>, m: &Module) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let fallen = p.fall_distance;
+    let health = f64::from(p.health.health() + p.health.absorption());
+    let due = if m.p("Air place mode") == "Before damage" { fallen > 2.0 } else { fallen > health.max(2.0) };
+    if !due {
+        return;
+    }
+    let Some(slot) = (0..9).find(|&i| super::sunset::item_info(game, i).is_some_and(|info| info.block.is_some())) else {
+        return;
+    };
+    if m.b("Anchor") {
+        center_player(game);
+    }
+    if let Some(at) = block_pos(game) {
+        place_block(game, [at[0], at[1] - 1, at[2]], slot, m.b("Rotate"), true);
+    }
+}
+
+// Place: water (or what Placed item says) where the fall will land, a moment before it does; once you have stood
+// still for two ticks, the water or powder snow goes back in the bucket.
+fn fall_place(game: &mut Game<'_>, m: &Module) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let (vy, fallen, still) = (p.velocity.y, p.fall_distance, p.fall_distance == 0.0 && p.ground.on_ground);
+    if let Some((at, item, timer, stood, seen)) = ps(|s| s.fall_placed) {
+        let stood = if still { (stood + 1).min(2) } else { 0 };
+        let there = facts(game, at);
+        let present = if item == "water_bucket" { there.fluid_level == 8 && there.name.ends_with("water") } else { there.name.ends_with("powder_snow") };
+        // Gone once it was there (it was picked up, or flowed away), or never there in a second.
+        let mut done = (seen && !present) || timer > 20;
+        if stood >= 2 && present {
+            if let (Some(slot), Some(eye)) = (find_hotbar(game, |n| n == "bucket"), game.eye_position()) {
+                let (yaw, pitch) = look_at(eye, center_of(at));
+                use_held(game, slot, yaw, pitch);
+            }
+            done = true;
+        }
+        ps(|s| s.fall_placed = (!done).then_some((at, item, timer + 1, stood, seen || present)));
+        return;
+    }
+    if vy >= 0.0 || (fallen <= 3.0 && vy > -0.6) || p.fluids.was_touching_water {
+        return;
+    }
+    let chosen = m.p("Placed item");
+    // Water boils away in the Nether: powder snow instead.
+    let chosen = if chosen == "Bucket" && game.dim.id() == "minecraft:the_nether" { "Powder snow" } else { chosen };
+    let Some(&(_, item, bucket)) = FALL_ITEMS.iter().find(|i| i.0 == chosen) else {
+        return;
+    };
+    let Some(slot) = find_hotbar(game, |n| n == item) else {
+        return;
+    };
+    if m.b("Anchor") {
+        center_player(game);
+    }
+    let (Some((ground, point)), Some(eye)) = (landing(game), game.eye_position()) else {
+        return;
+    };
+    // The use reaches as far as a click does (4.5 blocks); further up, it waits for a later tick.
+    if dist(eye, point) > 4.5 {
+        return;
+    }
+    let above = [ground[0], ground[1] + 1, ground[2]];
+    if bucket {
+        let (yaw, pitch) = look_at(eye, point);
+        use_held(game, slot, yaw, pitch);
+        ps(|s| s.fall_placed = Some((above, item, 0, 0, false)));
+    } else {
+        place_block(game, above, slot, m.b("Rotate"), true);
+    }
+}
+
+// Uses the item in a hotbar slot looking at (yaw, pitch), as a right click into the air does, then holds what you
+// held before.
+fn use_held(game: &mut Game<'_>, slot: usize, yaw: f32, pitch: f32) {
+    let before = game.selected;
+    hold(game, slot);
+    let seq = sequence(game);
+    game.send(S::UseItem(play::UseItem { hand: 0, sequence: seq, yaw, pitch }));
+    game.swing_arm();
+    hold(game, before);
+}
+
+// Where the fall lands within the next 8 ticks (Meteor's findLandingSurface, straight down): the block it lands on and
+// the point on its top below you; nothing if it lands in water or later.
+fn landing(game: &Game<'_>) -> Option<([i32; 3], [f64; 3])> {
+    let p = game.player.as_ref()?;
+    let (x, z) = (p.position.x, p.position.z);
+    let (bx, bz) = (x.floor() as i32, z.floor() as i32);
+    let feet = p.position.y.floor() as i32;
+    let below = (0..64).map(|d| feet - 1 - d).find(|&y| !is_air(game, [bx, y, bz]))?;
+    let ground = [bx, below, bz];
+    if facts(game, ground).fluid_level > 0 || !facts(game, ground).full_collision {
+        return None;
+    }
+    let top = f64::from(below + 1);
+    let (mut y, mut vy) = (p.position.y, p.velocity.y);
+    for _ in 0..8 {
+        y += vy;
+        vy = (vy - 0.08) * 0.98;
+        if y <= top {
+            return Some((ground, [x, top, z]));
+        }
+    }
+    None
+}

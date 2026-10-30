@@ -310,7 +310,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("In liquids", false)
             .bool("When sneaking", false)
             .bool("Only on ground", false),
-        Module::new("No Fall", Movement, "Stops fall damage on servers."),
+        Module::new("No Fall", Movement, "Stops fall damage (Meteor's No Fall). Packet tells the server you are on the ground as you fall; No ground never does; Air place puts a block under you; Place puts water (or the Placed item) where you land and picks it back up.")
+            .pick("Mode", &["Packet", "No ground", "Air place", "Place"])
+            .pick("Placed item", &["Bucket", "Powder snow", "Hay bale", "Cobweb", "Slime block"])
+            .pick("Air place mode", &["Before death", "Before damage"])
+            .bool("Rotate", true)
+            .bool("Anchor", true)
+            .bool("Pause on mace", true),
         Module::new("Velocity", Movement, "Prevents you from being moved by external forces.")
             .bool("Knockback", true)
             .num("Knockback horizontal", 0.0, 0.0, 1.0, 0.05)
@@ -823,7 +829,10 @@ static STATE: Mutex<Option<State>> = Mutex::new(None);
 
 // The packet hooks read these: they run inside the game's own sends, which
 // may happen while a module holds the state.
-static NO_FALL: AtomicBool = AtomicBool::new(false);
+// No Fall's move packets: 0 leaves them, 1 claims the ground while falling (Packet), 2 never does (No ground); and
+// whether holding a mace pauses it.
+static NO_FALL: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+static NO_FALL_MACE: AtomicBool = AtomicBool::new(true);
 static BLINK: AtomicBool = AtomicBool::new(false);
 // Flight's position packets claim the ground, so nothing counts as a fall; Glide's too while you are not flying.
 static FLIGHT_GROUND: AtomicBool = AtomicBool::new(false);
@@ -875,7 +884,13 @@ pub(super) fn sync_flags(s: &State) {
     LOOK[2].store(g.map_or(0.75, |m| m.n("Background opacity") as f32).to_bits(), Ordering::Relaxed);
     LOOK[3].store(u32::from(g.is_some_and(|m| m.b("Background dim"))), Ordering::Relaxed);
     LOOK[5].store(g.map_or(2.0, |m| m.n("Text indent") as f32).to_bits(), Ordering::Relaxed);
-    NO_FALL.store(s.is_on("No Fall"), Ordering::Relaxed);
+    let no_fall = s.module("No Fall").filter(|m| m.on);
+    NO_FALL.store(no_fall.map_or(0, |m| match m.p("Mode") {
+        "Packet" => 1,
+        "No ground" => 2,
+        _ => 0,
+    }), Ordering::Relaxed);
+    NO_FALL_MACE.store(no_fall.is_some_and(|m| m.b("Pause on mace")), Ordering::Relaxed);
     let flight = s.module("Flight").filter(|m| m.on);
     FLIGHT_GROUND.store(flight.is_some(), Ordering::Relaxed);
     GLIDE_GROUND.store(s.is_on("Glide"), Ordering::Relaxed);
@@ -3088,7 +3103,7 @@ pub(super) fn with_ground(packet: &S, ground: bool) -> Option<S> {
 }
 
 // Outgoing packets: Blink holds moves, Anti Hunger hides sprinting and the
-// ground, No Fall claims the ground after a long fall.
+// ground, No Fall claims the ground as you fall (or, in No ground, never).
 pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     let is_move = matches!(
         packet,
@@ -3140,13 +3155,20 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     if has_position {
         POS_THIS_TICK.store(true, Ordering::Relaxed);
     }
-    // The server counts a fall from the packets: once you have dropped a block, claiming the ground every tick keeps
-    // the count under three blocks, so there is never damage to take. Flying that way claims it all the time.
+    // The server adds each move's drop to the fall, and a move that says you are on the ground costs what has added up
+    // beyond three blocks. No Fall's Packet mode claims the ground on every move down, so the count never passes one
+    // move's drop (Meteor's waits for 0.5 blocks a tick, which leaves a fall the server counted before to hurt); past
+    // three blocks a tick (a fall of about 130 blocks) even that costs a little. No ground never claims it. Flying
+    // that way claims it all the time.
     let grounded = || !p.ground.on_ground && !p.flying && !p.fall_flying;
+    let no_fall = NO_FALL.load(Ordering::Relaxed);
+    let paused = game.creative || (NO_FALL_MACE.load(Ordering::Relaxed) && game.held().is_some_and(|s| s.item.ends_with(":mace")));
     let ground = if FLIGHT_GROUND.load(Ordering::Relaxed) || (GLIDE_GROUND.load(Ordering::Relaxed) && !p.flying) {
         Some(true)
-    } else if NO_FALL.load(Ordering::Relaxed) && grounded() && super::sunset_util::fallen(game) > 1.0 {
+    } else if no_fall == 1 && !paused && grounded() && p.velocity.y < 0.0 {
         Some(true)
+    } else if no_fall == 2 && !paused {
+        Some(false)
     } else if ANTI_GROUND.load(Ordering::Relaxed) && (p.fall_distance <= 0.0 || p.flying) {
         Some(false)
     } else {

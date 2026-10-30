@@ -425,6 +425,47 @@ def _():
     return plain >= 3 and small == 0 and mine == 0 and back == plain, f"12-block fall costs {plain:.0f} health without, {mine:.0f} with, {back:.0f} with it off again; a 3-block fall {small:.0f}"
 
 
+@test("No Fall (No ground)")
+def _():
+    setting("nofall", "mode", "No ground")
+    only("nofall")
+    mine = drop(12)
+    return mine == 0, f"12-block fall costs {mine:.0f} health with No ground on"
+
+
+@test("No Fall (Air place)")
+def _():
+    setting("nofall", "mode", "Air place")
+    setting("nofall", "air place mode", "Before damage")
+    only("nofall")
+    reset()
+    slot(0, "cobblestone", 16)
+    cmd("gamerule natural_health_regeneration false", f"tp @s {X0 + 0.5} {Y + 13} {Z0 + 0.5}")
+    wait(40)
+    lost, stood = 20 - hp(), pos()[1] - (Y + 1)
+    placed = held().get("count", 16)
+    cmd("gamerule natural_health_regeneration true")
+    only()
+    return lost == 0 and stood > 1 and placed < 16, f"lost {lost:.0f} health, came to rest {stood:.1f} blocks up on {16 - placed} placed block(s)"
+
+
+@test("No Fall (Place: water bucket)")
+def _():
+    setting("nofall", "mode", "Place")
+    only("nofall")
+    reset()
+    slot(1, "water_bucket")
+    cmd("gamerule natural_health_regeneration false", f"tp @s {X0 + 0.5} {Y + 13} {Z0 + 0.5}")
+    wait(60)
+    lost = 20 - hp()
+    inv = ctl("inventory").get("counts", {})
+    water = count(X0 - 2, Y + 1, Z0 - 2, X0 + 2, Y + 2, Z0 + 2, "water")
+    cmd("gamerule natural_health_regeneration true", f"fill {X0-3} {Y+1} {Z0-3} {X0+3} {Y+2} {Z0+3} minecraft:air")
+    only()
+    back = "minecraft:water_bucket" in inv
+    return lost == 0 and back and water == 0, f"lost {lost:.0f} health; water picked back up: {back} ({water} water left)"
+
+
 @test("No Fall (after Flight)")
 def _():
     only("flight", "nofall")
@@ -1157,6 +1198,22 @@ def _():
     fourteen = spun()
     # Speed is degrees a tick.
     return abs(seven - 140) < 20 and abs(fourteen - 280) < 40, f"turned {seven:.0f} degrees in 20 ticks at Speed 7, {fourteen:.0f} at 14"
+
+
+@test("Anti AFK (defaults: Jump on)")
+def _():
+    # Jump on froze the game once (issue #3): it has to keep ticking, and jump now and then (1 in 100 ticks).
+    only("antiafk")
+    t0, c0 = state()["ticks"], time.time()
+    time.sleep(5)
+    tps = (state()["ticks"] - t0) / (time.time() - c0)
+    ys, c0 = [], time.time()
+    while time.time() - c0 < 25 and (not ys or max(ys) - min(ys) < 0.5):
+        ys.append(pos()[1])
+        wait(2)
+    only()
+    rose = max(ys) - min(ys) if ys else 0
+    return tps > 15 and rose >= 0.5, f"{tps:.0f} ticks/s over 5 s with it on; rose {rose:.2f} blocks within {time.time() - c0:.0f} s"
 
 
 @test("Auto Replenish")
