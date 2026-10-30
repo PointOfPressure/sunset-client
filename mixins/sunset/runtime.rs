@@ -261,8 +261,7 @@ impl Module {
         match self.name {
             "Flight" => Some(self.p("Mode").to_owned()),
             "Kill Aura" => Some(num(self.n("Range"))),
-            "Velocity" => Some(format!("{}% {}%", num(self.n("Horizontal %")), num(self.n("Vertical %")))),
-            "Speed" => Some(num(self.n("Speed"))),
+            "Speed" => Some(self.p("Mode").to_owned()),
             _ => None,
         }
     }
@@ -292,17 +291,37 @@ pub(super) fn defaults() -> Vec<Module> {
         // Movement
         Module::new("Sprint", Movement, "Sprints for you whenever you walk forward."),
         Module::new("Auto Walk", Movement, "Walks forward for you."),
-        Module::new("Flight", Movement, "Lets you fly.")
-            .pick("Mode", &["Velocity", "Abilities"])
-            .num("Speed", 10.0, 1.0, 50.0, 1.0)
-            .bool("Anti kick", true),
-        Module::new("Speed", Movement, "Moves you faster on the ground.")
-            .num("Speed", 8.0, 1.0, 30.0, 0.5)
-            .bool("Only on ground", true),
+        Module::new("Flight", Movement, "Lets you fly. Your packets claim the ground while it is on, so landing never hurts.")
+            .pick("Mode", &["Abilities", "Velocity"])
+            .num("Speed", 0.1, 0.0, 5.0, 0.01)
+            .bool("Vertical speed match", false)
+            .bool("No sneak", false)
+            .pick("Anti kick mode", &["Packet", "Normal", "None"])
+            .num("Delay", 20.0, 1.0, 200.0, 1.0)
+            .num("Off time", 1.0, 1.0, 20.0, 1.0),
+        Module::new("Speed", Movement, "Modifies your movement speed when moving on the ground.")
+            .pick("Mode", &["Vanilla", "Strafe"])
+            .num("Vanilla speed", 5.6, 0.0, 20.0, 0.1)
+            .num("Strafe speed", 1.6, 0.0, 3.0, 0.05)
+            .bool("Speed limit", false)
+            .num("Timer", 1.0, 0.01, 10.0, 0.01)
+            .bool("In liquids", false)
+            .bool("When sneaking", false)
+            .bool("Only on ground", false),
         Module::new("No Fall", Movement, "Stops fall damage on servers."),
-        Module::new("Velocity", Movement, "Takes less knockback from hits and explosions.")
-            .num("Horizontal %", 0.0, 0.0, 100.0, 10.0)
-            .num("Vertical %", 0.0, 0.0, 100.0, 10.0),
+        Module::new("Velocity", Movement, "Prevents you from being moved by external forces.")
+            .bool("Knockback", true)
+            .num("Knockback horizontal", 0.0, 0.0, 1.0, 0.05)
+            .num("Knockback vertical", 0.0, 0.0, 1.0, 0.05)
+            .bool("Explosions", true)
+            .num("Explosions horizontal", 0.0, 0.0, 1.0, 0.05)
+            .num("Explosions vertical", 0.0, 0.0, 1.0, 0.05)
+            .bool("Liquids", true)
+            .num("Liquids horizontal", 0.0, 0.0, 1.0, 0.05)
+            .num("Liquids vertical", 0.0, 0.0, 1.0, 0.05)
+            .bool("Entity push", true)
+            .num("Entity push amount", 0.0, 0.0, 1.0, 0.05)
+            .bool("Sinking", false),
         Module::new("Spider", Movement, "Climbs walls.")
             .num("Climb speed", 0.2, 0.1, 1.0, 0.1),
         Module::new("Step", Movement, "Walks up full blocks and more without jumping (step up).")
@@ -410,8 +429,24 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Parkour", Movement, "Jumps for you at the edge of a block."),
         Module::new("Blink", Movement, "Holds back your movement packets, then sends them all at once when off.")
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
-        Module::new("Scaffold", Movement, "Places blocks under your feet as you walk.")
+        Module::new("Scaffold", Movement, "Automatically places blocks under you.")
+            .text("Blocks", "")
+            .pick("Blocks filter", &["Blacklist", "Whitelist"])
+            .bool("Fast tower", false)
+            .num("Tower speed", 0.5, 0.0, 1.0, 0.05)
+            .bool("While moving", false)
+            .bool("Only on click", false)
             .bool("Auto switch", true)
+            .bool("Rotate", true)
+            .bool("Air place", false)
+            .num("Ahead distance", 0.0, 0.0, 1.0, 0.05)
+            .num("Closest block range", 4.0, 0.0, 8.0, 0.5)
+            .num("Radius", 0.0, 0.0, 6.0, 0.5)
+            .num("Blocks per tick", 3.0, 1.0, 10.0, 1.0)
+            .bool("Render", true)
+            .pick("Shape mode", &["Both", "Lines", "Sides"])
+            .num("Fill opacity", 0.04, 0.0, 1.0, 0.02)
+            .colour("Color", "Purple")
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0),
         Module::new("Anti Hunger", Player, "Spends less food by hiding that you are sprinting and on the ground.")
             .bool("Sprint", true)
@@ -476,11 +511,35 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Hole ESP", Render, "Marks holes you can stand in: green all obsidian or bedrock, yellow other solid blocks.")
             .num("Range", 8.0, 3.0, 16.0, 1.0)
             .bool("Fill", true),
-        Module::new("Nuker", World, "Breaks the blocks around you.")
-            .num("Range", 4.5, 1.0, 6.0, 0.5)
-            .num("Blocks per tick", 24.0, 1.0, 256.0, 4.0)
+        Module::new("Nuker", World, "Breaks blocks around you.")
+            .pick("Shape", &["Sphere", "Cube", "Uniform cube"])
+            .pick("Mode", &["Flatten", "All", "Smash"])
+            .num("Range", 4.0, 0.0, 6.0, 0.5)
+            .num("Up", 1.0, 0.0, 6.0, 1.0)
+            .num("Down", 1.0, 0.0, 6.0, 1.0)
+            .num("Left", 1.0, 0.0, 6.0, 1.0)
+            .num("Right", 1.0, 0.0, 6.0, 1.0)
+            .num("Forward", 1.0, 0.0, 6.0, 1.0)
+            .num("Back", 1.0, 0.0, 6.0, 1.0)
+            .num("Walls range", 4.0, 0.0, 6.0, 0.5)
+            .num("Delay", 0.0, 0.0, 20.0, 1.0)
+            .num("Max blocks per tick", 24.0, 1.0, 256.0, 1.0)
+            .pick("Sort mode", &["Closest", "None", "Furthest", "Top down"])
+            .bool("Packet mine", false)
+            .bool("Only suitable tools", false)
+            .bool("Interact", false)
+            .bool("Rotate", true)
+            .pick("List mode", &["Blacklist", "Whitelist"])
+            .text("Blacklist", "")
+            .text("Whitelist", "")
+            .bool("Swing", true)
             .bool("Instant only", false)
-            .bool("Keep ground", true),
+            .bool("Bounding box", true)
+            .bool("Broken blocks", true)
+            .pick("Shape mode", &["Both", "Lines", "Sides"])
+            .num("Fill opacity", 0.3, 0.0, 1.0, 0.05)
+            .colour("Box color", "Cyan")
+            .colour("Broken color", "Red"),
         Module::new("Time Changer", World, "Sets the time of day you see.")
             .num("Time", 6000.0, 0.0, 24000.0, 1000.0),
     ];
@@ -520,10 +579,20 @@ pub(super) struct State {
     flying: bool,
     // The Step modifier is on the player.
     stepping: bool,
+    high_jumping: bool,
     // Auto Totem moved a totem from this hotbar slot and should swap back.
     // The player's velocity when the last tick ended: what changes it before
     // the next one is the server's push (Velocity).
     velocity: Option<[f64; 3]>,
+    strafe: Strafe,
+    // Flight: Meteor's anti kick counters, the yaw it keeps, which way it nudged last, and whether it let go of sneak.
+    fly_delay: i32,
+    fly_off: i32,
+    fly_last_yaw: f32,
+    fly_flip: bool,
+    unsneaked: bool,
+    // What explosions pushed the player by since the last tick.
+    blast: [f64; 3],
     gui: Gui,
     crumbs: Vec<[f64; 3]>,
     waypoints: Vec<Waypoint>,
@@ -532,6 +601,8 @@ pub(super) struct State {
     found_for: (usize, i32, [i32; 3]),
     found_at: u64,
     scaffold_wait: u32,
+    // Scaffold's placed blocks, drawn for 8 ticks as they fade.
+    scaffold_placed: Vec<([i32; 3], u8)>,
     click_wait: u32,
     blink_ticks: u32,
     eating: bool,
@@ -548,6 +619,15 @@ pub(super) struct State {
     nuke: Option<([i32; 3], u32)>,
     // Blocks Nuker just stopped on and the tick to forget them at.
     nuke_skip: Vec<([i32; 3], u64)>,
+    // Nuker (Meteor's): its delay, the first-block flag, the last block, the ticks with nothing to break, the blocks
+    // it right-clicked (Interact), its Cube box and the blocks it broke (drawn for 8 ticks).
+    nuke_timer: u32,
+    nuke_first: bool,
+    nuke_last: Option<[i32; 3]>,
+    nuke_idle: u32,
+    nuke_interacted: Vec<[i32; 3]>,
+    nuke_box: Option<[[f64; 3]; 2]>,
+    nuke_broken: Vec<([i32; 3], u8)>,
     armor_wait: u32,
     replenish_wait: u32,
     last_pos: Vec<(String, [f64; 3], String)>,
@@ -584,7 +664,15 @@ impl State {
             respawn_wait: 0,
             flying: false,
             stepping: false,
+            high_jumping: false,
                     velocity: None,
+                    strafe: Strafe::default(),
+                    fly_delay: 0,
+                    fly_off: 0,
+                    fly_last_yaw: 0.0,
+                    fly_flip: false,
+                    unsneaked: false,
+                    blast: [0.0; 3],
             gui: Gui::default(),
             crumbs: Vec::new(),
             waypoints: Vec::new(),
@@ -592,6 +680,7 @@ impl State {
             found_for: (usize::MAX, 0, [0; 3]),
             found_at: 0,
                     scaffold_wait: 0,
+                    scaffold_placed: Vec::new(),
             click_wait: 0,
             blink_ticks: 0,
             eating: false,
@@ -607,6 +696,13 @@ impl State {
             mc_back: None,
             nuke: None,
             nuke_skip: Vec::new(),
+            nuke_timer: 0,
+            nuke_first: true,
+            nuke_last: None,
+            nuke_idle: 0,
+            nuke_interacted: Vec::new(),
+            nuke_box: None,
+            nuke_broken: Vec::new(),
             armor_wait: 0,
             replenish_wait: 0,
             last_pos: Vec::new(),
@@ -718,9 +814,14 @@ static STATE: Mutex<Option<State>> = Mutex::new(None);
 // may happen while a module holds the state.
 static NO_FALL: AtomicBool = AtomicBool::new(false);
 static BLINK: AtomicBool = AtomicBool::new(false);
-// Flight in Velocity mode: its position packets claim the ground, so nothing counts as a fall.
+// Flight's position packets claim the ground, so nothing counts as a fall; Glide's too while you are not flying.
 static FLIGHT_GROUND: AtomicBool = AtomicBool::new(false);
-static FLIGHT_DIP: AtomicBool = AtomicBool::new(false);
+static GLIDE_GROUND: AtomicBool = AtomicBool::new(false);
+// Flight's Packet anti kick: every move packet carries the position, and while FLY_DOWN the height sent sinks a
+// little below the last one sent (FLY_LAST_Y, f64 bits).
+static FLY_PACKET: AtomicBool = AtomicBool::new(false);
+static FLY_DOWN: AtomicBool = AtomicBool::new(false);
+static FLY_LAST_Y: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
 static ANTI_SPRINT: AtomicBool = AtomicBool::new(false);
 static ANTI_GROUND: AtomicBool = AtomicBool::new(false);
 // The server takes one position packet per tick and disconnects a client that
@@ -764,8 +865,10 @@ pub(super) fn sync_flags(s: &State) {
     LOOK[3].store(u32::from(g.is_some_and(|m| m.b("Background dim"))), Ordering::Relaxed);
     LOOK[5].store(g.map_or(2.0, |m| m.n("Text indent") as f32).to_bits(), Ordering::Relaxed);
     NO_FALL.store(s.is_on("No Fall"), Ordering::Relaxed);
-    let flying = s.module("Flight").is_some_and(|m| m.on && m.p("Mode") == "Velocity");
-    FLIGHT_GROUND.store(flying || s.is_on("Glide"), Ordering::Relaxed);
+    let flight = s.module("Flight").filter(|m| m.on);
+    FLIGHT_GROUND.store(flight.is_some(), Ordering::Relaxed);
+    GLIDE_GROUND.store(s.is_on("Glide"), Ordering::Relaxed);
+    FLY_PACKET.store(flight.is_some_and(|m| m.p("Anti kick mode") == "Packet"), Ordering::Relaxed);
     BLINK.store(s.is_on("Blink"), Ordering::Relaxed);
     let hunger = s.module("Anti Hunger").filter(|m| m.on);
     ANTI_SPRINT.store(hunger.is_some_and(|m| m.b("Sprint")), Ordering::Relaxed);
@@ -1217,42 +1320,26 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     {
         want.extend(super::sunset_player::afk_keys(&m));
     }
-    if on("Safe Walk") && playing && at_edge(game) {
-        want.push(KeyCode::ShiftLeft);
-    }
+    horizon_client::motion::sunset_motion::set_safe_walk(on("Safe Walk") && playing);
     let mut injected = Vec::new();
     for k in want {
         if game.keys.insert(k) {
             injected.push(k);
         }
     }
-    // Velocity: the server's knockback (its SetEntityMotion and an
-    // explosion's push) arrived since the last tick; keep only its share.
-    if let Some(m) = get("Velocity").filter(|m| m.on)
-        && let Some(last) = with(|s| s.velocity.take())
-        && let Some(p) = game.player.as_mut()
-    {
-        let (h, v) = (m.n("Horizontal %") / 100.0, m.n("Vertical %") / 100.0);
-        let now = [p.velocity.x, p.velocity.y, p.velocity.z];
-        if now != last {
-            p.velocity.x = last[0] + (now[0] - last[0]) * h;
-            p.velocity.y = last[1] + (now[1] - last[1]) * v;
-            p.velocity.z = last[2] + (now[2] - last[2]) * h;
-        }
-    }
-    let flight = get("Flight").filter(|m| m.on && m.p("Mode") == "Abilities");
+    velocity(game, get("Velocity").filter(|m| m.on).as_ref());
+    let across = get("Speed").filter(|m| m.on).and_then(|m| speed(game, &m));
+    horizon_client::motion::sunset_motion::set_across(across.map(|(xz, _)| xz));
+    horizon_client::motion::sunset_motion::set_up(across.and_then(|(_, y)| y));
+    let flight = get("Flight").filter(|m| m.on);
+    flight_pre(game, flight.as_ref());
     let step = get("Step").filter(|m| m.on);
-    let (was_flying, was_stepping) = with(|s| (s.flying, s.stepping));
+    let high_jump = get("High Jump").filter(|m| m.on);
+    let (was_flying, was_stepping, was_high_jumping) = with(|s| (s.flying, s.stepping, s.high_jumping));
     let (creative, spectator_mode) = (game.creative, game.spectator());
     let step_to = step.as_ref().map_or(0.6, |st| step_height(game, st));
     if let Some(p) = game.player.as_mut() {
-        if let Some(f) = &flight {
-            p.may_fly = true;
-            p.flying = true;
-            // Vanilla's 0.05 flies about 11 blocks a second.
-            p.flying_speed = (f.n("Speed") * 0.05 / 10.9) as f32;
-            p.fall_distance = 0.0;
-        } else if was_flying {
+        if flight.is_none() && was_flying {
             p.flying = creative && p.flying || spectator_mode;
             p.may_fly = creative || spectator_mode;
             p.flying_speed = 0.05;
@@ -1262,11 +1349,18 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         } else if was_stepping {
             let _ = p.set_modifier("minecraft:step_height", "sunset:step", 0.0, "add_value", false);
         }
+        // High Jump: Meteor multiplies the jump's own speed, so the jump starts higher from its first tick.
+        if let Some(h) = &high_jump {
+            let _ = p.set_modifier("minecraft:jump_strength", "sunset:high_jump", h.n("Multiplier") - 1.0, "add_multiplied_total", true);
+        } else if was_high_jumping {
+            let _ = p.set_modifier("minecraft:jump_strength", "sunset:high_jump", 0.0, "add_multiplied_total", false);
+        }
     }
     with(|s| {
         s.injected.extend(injected);
-        s.flying = flight.is_some();
+        s.flying = flight.as_ref().is_some_and(|m| m.p("Mode") == "Abilities");
         s.stepping = step.is_some();
+        s.high_jumping = high_jump.is_some();
     });
 }
 
@@ -1417,6 +1511,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     let forward = move_input(game).0 > 0.0 || screen_keys.is_some_and(|k| k.0 > 0.0);
     let dim = game.dim.id();
     let flight_velocity = get("Flight").is_some_and(|f| f.p("Mode") == "Velocity");
+    flight_post(game, get("Flight"), jump, sneak, screen_keys.and(dir));
     let speed_hack = get("Speed").is_some();
 
     if let Some(p) = game.player.as_mut() {
@@ -1444,35 +1539,6 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
                 }
             }
         }
-        if let Some(f) = get("Flight")
-            && f.p("Mode") == "Velocity"
-        {
-            let speed = f.n("Speed") / 20.0;
-            let [x, z] = dir.unwrap_or([0.0, 0.0]);
-            p.velocity.x = x * speed;
-            p.velocity.z = z * speed;
-            p.velocity.y = if jump {
-                speed
-            } else if sneak {
-                -speed
-            } else {
-                0.0
-            };
-            // Vanilla kicks a player floating for 80 ticks: drop a little
-            // every 40.
-            // The dip is paid back the next tick, so hovering stays level.
-            if f.b("Anti kick") && p.velocity.y == 0.0 {
-                if FLIGHT_DIP.swap(false, Ordering::Relaxed) {
-                    p.velocity.y = 0.04;
-                } else if ticks % 40 == 0 {
-                    p.velocity.y = -0.04;
-                    FLIGHT_DIP.store(true, Ordering::Relaxed);
-                }
-            } else {
-                FLIGHT_DIP.store(false, Ordering::Relaxed);
-            }
-            p.fall_distance = 0.0;
-        }
         if get("No Jump Delay").is_some() {
             p.no_jump_delay = 0;
         }
@@ -1483,17 +1549,6 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
         {
             p.velocity.y = p.velocity.y.max(-g.n("Fall speed") / 20.0);
             p.fall_distance = 0.0;
-        }
-        if let Some(sp) = get("Speed")
-            && let Some([x, z]) = dir
-            && (!sp.b("Only on ground") || p.ground.on_ground)
-            && !p.flying
-            && !p.fall_flying
-            && get("Flight").is_none()
-        {
-            let speed = sp.n("Speed") / 20.0;
-            p.velocity.x = x * speed;
-            p.velocity.z = z * speed;
         }
         if let Some(sp) = get("Spider")
             && p.collision.horizontal
@@ -1518,6 +1573,15 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
                 let k = max / len;
                 (v.x, v.y, v.z) = (v.x * k, v.y * k, v.z * k);
             }
+        }
+        // Velocity's Sinking: in water or lava you stay level unless you jump or sneak.
+        if get("Velocity").is_some_and(|m| m.b("Sinking"))
+            && !jump
+            && !sneak
+            && (p.fluids.was_touching_water || p.is_in_lava())
+            && p.velocity.y < 0.0
+        {
+            p.velocity.y = 0.0;
         }
         if get("Anti Void").is_some() {
             let floor = if dim == "minecraft:overworld" { -64.0 } else { 0.0 };
@@ -1552,15 +1616,6 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     );
     let was_ground = with(|s| std::mem::replace(&mut s.was_ground, ground_now));
     if let Some(p) = game.player.as_mut() {
-        if let Some(m) = get("High Jump")
-            && was_ground
-            && !ground_now
-            && jump_now
-            && p.velocity.y > 0.3
-        {
-            // The jump's own speed (0.42), scaled, after this tick's gravity.
-            p.velocity.y = (0.42 * m.n("Multiplier") - 0.08) * 0.98;
-        }
         if let Some(m) = get("Long Jump")
             && was_ground
             && !ground_now
@@ -1739,20 +1794,6 @@ pub(super) fn ahead(game: &Game<'_>) -> Option<(i32, i32, i32)> {
     Some((ax.floor() as i32, (p.position.y - 0.5).floor() as i32, az.floor() as i32))
 }
 
-// Standing on the ground and walking toward a drop of two blocks or more.
-pub(super) fn at_edge(game: &Game<'_>) -> bool {
-    let Some(p) = game.player.as_ref() else {
-        return false;
-    };
-    if !p.ground.on_ground || p.flying || p.fall_flying {
-        return false;
-    }
-    match ahead(game) {
-        Some((x, y, z)) => !solid_at(game, x, y, z) && !solid_at(game, x, y - 1, z),
-        None => false,
-    }
-}
-
 // Switches the held slot now: the server is told before anything is sent
 // that depends on it.
 pub(super) fn hold(game: &mut Game<'_>, slot: usize) {
@@ -1794,8 +1835,51 @@ pub(super) fn best_weapon(game: &Game<'_>, prefer_axes: bool) -> Option<usize> {
     best.map(|(slot, _)| slot)
 }
 
+// Scaffold's blocks: a block item in the list (or not in it, as a blacklist) that is a full block and does not fall.
+fn scaffold_item(game: &Game<'_>, m: &Module, slot: usize) -> bool {
+    let Some(state) = item_info(game, slot).and_then(|i| i.block) else {
+        return false;
+    };
+    let f = game.res.facts().get(state);
+    let name = super::sunset_util::short(&f.name);
+    let listed = super::sunset_util::listed(m.t("Blocks"), name);
+    let falls = ["sand", "gravel", "concrete_powder", "anvil"].iter().any(|e| name.ends_with(e)) || name == "dragon_egg";
+    listed == (m.p("Blocks filter") == "Whitelist") && f.full_collision && !falls
+}
+
+fn scaffold_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
+    if scaffold_item(game, m, game.selected) {
+        return Some(game.selected);
+    }
+    (0..9).find(|&i| scaffold_item(game, m, i)).filter(|_| m.b("Auto switch"))
+}
+
+fn scaffold_place(game: &mut Game<'_>, m: &Module, at: [i32; 3]) -> bool {
+    let Some(slot) = scaffold_slot(game, m) else {
+        return false;
+    };
+    let placed = super::sunset_util::place_block(game, at, slot, m.b("Rotate"), true);
+    if placed && m.b("Render") {
+        with(|s| s.scaffold_placed.push((at, 8)));
+    }
+    placed
+}
+
+// Scaffold (Meteor's): the block under where you will be next tick (or a step ahead, Ahead distance), down one more
+// while you sneak; without a side to place it against, the nearest spot within Closest block range that has one.
+// Air place puts it where you will be, and a Radius of blocks round it. Fast tower lifts you while you hold jump.
 pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
+    use winit::event::MouseButton;
+    with(|s| {
+        s.scaffold_placed.retain_mut(|(_, t)| {
+            *t = t.saturating_sub(1);
+            *t > 0
+        });
+    });
     if !game.native_playing() || game.remote.is_none() {
+        return;
+    }
+    if m.b("Only on click") && !(game.physical_buttons.contains(&MouseButton::Right) || game.right) {
         return;
     }
     if with(|s| {
@@ -1807,50 +1891,101 @@ pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
     let Some(p) = game.player.as_ref() else {
         return;
     };
-    let t = [p.position.x.floor() as i32, (p.position.y - 0.5).floor() as i32, p.position.z.floor() as i32];
-    if solid_at(game, t[0], t[1], t[2]) {
-        return;
-    }
-    // A block to put it against, and the face of that block that points at it.
-    let sides: [([i32; 3], i32); 5] = [
-        ([0, -1, 0], 1),
-        ([-1, 0, 0], 5),
-        ([1, 0, 0], 4),
-        ([0, 0, -1], 3),
-        ([0, 0, 1], 2),
-    ];
-    let Some((against, face)) = sides
-        .iter()
-        .map(|(d, f)| ([t[0] + d[0], t[1] + d[1], t[2] + d[2]], *f))
-        .find(|(n, _)| solid_at(game, n[0], n[1], n[2]))
-    else {
-        return;
-    };
-    let is_block = |game: &Game<'_>, slot: usize| item_info(game, slot).is_some_and(|i| i.block.is_some());
-    if !is_block(game, game.selected) {
-        if !m.b("Auto switch") {
-            return;
+    let held = |k: KeyCode| game.keys.contains(&k);
+    let (pos, vel) = ([p.position.x, p.position.y, p.position.z], [p.velocity.x, p.velocity.y, p.velocity.z]);
+    let next = [pos[0] + vel[0], pos[1] + vel[1] - 0.75, pos[2] + vel[2]];
+    let feet = [pos[0].floor() as i32, pos[1].floor() as i32, pos[2].floor() as i32];
+    let (jump, sneak) = (held(KeyCode::Space), held(KeyCode::ShiftLeft));
+    let moving = move_input(game) != (0.0, 0.0);
+    let item = scaffold_slot(game, m).is_some();
+    let towering = m.b("Fast tower") && jump && !sneak && (m.b("While moving") || !moving) && item;
+    let air = m.b("Air place");
+    let mut at = if air {
+        next
+    } else {
+        let mut here = [pos[0], pos[2]];
+        let ahead = m.n("Ahead distance");
+        let below = [feet[0], feet[1] - 1, feet[2]];
+        if ahead != 0.0 && !towering && !super::sunset_util::is_air(game, below) {
+            let yaw = f64::from(game.yaw).to_radians();
+            let d = [-yaw.sin() * ahead, yaw.cos() * ahead];
+            for (key, [x, z]) in [(KeyCode::KeyW, [d[0], d[1]]), (KeyCode::KeyS, [-d[0], -d[1]]), (KeyCode::KeyA, [d[1], -d[0]]), (KeyCode::KeyD, [-d[1], d[0]])] {
+                if held(key) {
+                    here = [here[0] + x, here[1] + z];
+                }
+            }
         }
-        let Some(slot) = (0..9).find(|&i| is_block(game, i)) else {
+        [here[0], next[1], here[1]]
+    }
+    .map(|v| v.floor() as i32);
+    if sneak && !jump && pos[1] + next[1] > -1.0 {
+        at[1] -= 1;
+    }
+    if at[1] >= feet[1] {
+        at[1] = feet[1] - 1;
+    }
+    let target = at;
+    if !air && super::sunset_util::place_side(game, at).is_none() {
+        let Some(eye) = game.eye_position() else {
             return;
         };
-        hold(game, slot);
-        // The server takes the slot first; the block goes next tick.
-        return;
+        let r = m.n("Closest block range");
+        let mut spots = Vec::new();
+        for x in (pos[0] - r) as i32..(pos[0] + r).ceil() as i32 {
+            for z in (pos[2] - r) as i32..(pos[2] + r).ceil() as i32 {
+                for y in (pos[1] - r).max(-64.0) as i32..(pos[1] + r).min(320.0).ceil() as i32 {
+                    let b = [x, y, z];
+                    let Some((side, _)) = super::sunset_util::place_side(game, b) else {
+                        continue;
+                    };
+                    if super::sunset_util::can_place(game, b, true) && super::sunset_util::dist(eye, super::sunset_util::center_of(side)) <= 6.0 {
+                        spots.push(b);
+                    }
+                }
+            }
+        }
+        let far = |b: &[i32; 3]| (0..3).map(|i| (b[i] - target[i]).pow(2)).sum::<i32>();
+        let Some(best) = spots.into_iter().min_by_key(far) else {
+            return;
+        };
+        at = best;
     }
-    let sequence = super::sunset_util::sequence(game);
-    game.send(S::UseItemOn(play::UseItemOn {
-        hand: 0,
-        pos: against,
-        face,
-        cursor: [0.5, 0.5, 0.5],
-        inside: false,
-        world_border: false,
-        sequence,
-    }));
-    game.swing_arm();
-    game.send(S::Punch(Empty));
+    if air {
+        let radius = m.n("Radius");
+        let r = radius.floor() as i32;
+        let mut blocks: Vec<[i32; 3]> = (at[0] - r..=at[0] + r)
+            .flat_map(|x| (at[2] - r..=at[2] + r).map(move |z| [x, at[1], z]))
+            .filter(|b| super::sunset_util::dist(pos, super::sunset_util::center_of(*b)) <= radius || (b[0] == at[0] && b[2] == at[2]))
+            .collect();
+        let near = |b: &[i32; 3]| super::sunset_util::dist(pos, super::sunset_util::center_of(*b));
+        blocks.sort_by(|a, b| near(a).total_cmp(&near(b)));
+        let mut placed = 0;
+        for b in blocks {
+            if placed >= m.n("Blocks per tick") as u32 {
+                break;
+            }
+            if scaffold_place(game, m, b) {
+                placed += 1;
+            }
+        }
+    } else {
+        scaffold_place(game, m, at);
+    }
     with(|s| s.scaffold_wait = m.n("Delay (ticks)") as u32 + 1);
+    if m.b("Fast tower") && jump && !sneak && item {
+        let room = (0..2).all(|dy| super::sunset_util::is_air(game, [feet[0], feet[1] + 2 + dy, feet[2]]));
+        let Some(p) = game.player.as_mut() else {
+            return;
+        };
+        if room {
+            if m.b("While moving") || !moving {
+                p.velocity.y = m.n("Tower speed");
+            }
+        } else {
+            p.velocity.y = p.position.y.ceil() - p.position.y;
+            p.ground.on_ground = true;
+        }
+    }
 }
 
 pub(super) fn auto_click(game: &mut Game<'_>, m: &Module) {
@@ -2211,7 +2346,38 @@ pub(super) fn middle_click(game: &mut Game<'_>) {
     });
 }
 
+// Nuker's box for the Cube shape (Meteor's pos1 and pos2 by the way you face, with its offsets), block corners.
+fn nuke_cube(game: &Game<'_>, m: &Module, at: [f64; 3]) -> [[f64; 3]; 2] {
+    let n = |k: &str| m.n(k);
+    let (x, y, z) = (at[0], at[1], at[2]);
+    let (top, bottom) = ((y + n("Up") + 1.0).ceil(), y.ceil() - n("Down"));
+    // Yaw 0 faces south (+z), 90 west, 180 north, -90 east.
+    let facing = ((f64::from(game.yaw) / 90.0).round() as i32).rem_euclid(4);
+    let (lo, hi) = match facing {
+        0 => ([x + 1.0 - (n("Right") + 1.0), z + 1.0 - (n("Back") + 1.0)], [x + 1.0 + n("Left"), z + 1.0 + n("Forward")]),
+        1 => ([x - n("Forward"), z - n("Right")], [x + n("Back") + 1.0, z + n("Left") + 1.0]),
+        2 => ([x + 1.0 - (n("Left") + 1.0), z + 1.0 - (n("Forward") + 1.0)], [x + 1.0 + n("Right"), z + 1.0 + n("Back")]),
+        _ => ([x + 1.0 - (n("Back") + 1.0), z - n("Left")], [x + 1.0 + n("Forward"), z + n("Right") + 1.0]),
+    };
+    let bottom = if m.p("Mode") == "Flatten" { (y + 0.5).floor() } else { bottom };
+    // BlockPos.set floors each coordinate; the box runs between the two blocks' middles.
+    let lo = [lo[0].floor() + 0.5, bottom.floor() + 0.5, lo[1].floor() + 0.5];
+    let hi = [hi[0].floor() + 0.5, top.floor() + 0.5, hi[1].floor() + 0.5];
+    [std::array::from_fn(|i| lo[i].min(hi[i])), std::array::from_fn(|i| lo[i].max(hi[i]))]
+}
+
+// Nuker (Meteor's): every block in its shape (a sphere of Range round your feet, a box by Up, Down and the sides,
+// or a cube of whole blocks), above your feet in Flatten mode and only the instantly broken in Smash, within reach
+// (behind a block, within Walls range) and the lists allow; sorted, then broken: as many as Max blocks per tick of
+// those that break at once, else the first, mined over the ticks it takes (Packet mine starts and stops them all).
+// Interact right-clicks them instead.
 pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
+    with(|s| {
+        s.nuke_broken.retain_mut(|(_, t)| {
+            *t = t.saturating_sub(1);
+            *t > 0
+        })
+    });
     if !game.native_playing() || game.remote.is_none() {
         return;
     }
@@ -2234,20 +2400,47 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
             return;
         }
     }
+    if with(|s| {
+        let wait = s.nuke_timer > 0;
+        s.nuke_timer = s.nuke_timer.saturating_sub(1);
+        wait
+    }) {
+        return;
+    }
     let skip = with(|s| {
         s.nuke_skip.retain(|&(_, until)| until > now);
         s.nuke_skip.iter().map(|&(pos, _)| pos).collect::<Vec<_>>()
     });
-    let range = m.n("Range");
-    let floor_y = game.player.as_ref().map_or(0, |p| p.position.y.floor() as i32);
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let at = [p.position.x, p.position.y, p.position.z];
+    let feet = at.map(|v| v.floor() as i32);
+    let (shape, mode, range) = (m.p("Shape"), m.p("Mode"), m.n("Range"));
+    let r = range.round() as i32;
+    let cube = (shape == "Cube").then(|| nuke_cube(game, m, at));
+    with(|s| s.nuke_box = cube);
+    let reach = match shape {
+        "Uniform cube" => r + 1,
+        "Cube" => 1 + ["Up", "Down", "Left", "Right", "Forward", "Back"].iter().map(|k| m.n(k) as i32).max().unwrap_or(0),
+        _ => range.ceil() as i32 + 1,
+    };
+    let (interact, suitable) = (m.b("Interact"), m.b("Only suitable tools"));
+    let list = if m.p("List mode") == "Whitelist" { m.t("Whitelist") } else { m.t("Blacklist") };
+    let interacted = with(|s| s.nuke_interacted.clone());
     let facts = game.res.facts();
-    let mut found: Vec<(f64, [i32; 3], bool, u32)> = Vec::new();
-    let r = range.ceil() as i32;
-    let (ex, ey, ez) = (eye[0].floor() as i32, eye[1].floor() as i32, eye[2].floor() as i32);
-    for x in ex - r..=ex + r {
-        for y in ey - r..=ey + r {
-            for z in ez - r..=ez + r {
-                if m.b("Keep ground") && y < floor_y {
+    let mut found: Vec<([i32; 3], bool, u32)> = Vec::new();
+    for x in feet[0] - reach..=feet[0] + reach {
+        for y in feet[1] - reach..=feet[1] + reach {
+            for z in feet[2] - reach..=feet[2] + reach {
+                let b = [x, y, z];
+                let c = [f64::from(x) + 0.5, f64::from(y) + 0.5, f64::from(z) + 0.5];
+                let inside = match shape {
+                    "Uniform cube" => (0..3).map(|i| (b[i] - feet[i]).abs()).max().unwrap_or(0) < r,
+                    "Cube" => cube.is_some_and(|[lo, hi]| (0..3).all(|i| c[i] >= lo[i] && c[i] <= hi[i])),
+                    _ => (0..3).map(|i| (c[i] - at[i]).powi(2)).sum::<f64>() <= range * range,
+                };
+                if !inside || (mode == "Flatten" && c[1] < at[1]) || skip.contains(&b) {
                     continue;
                 }
                 let state = game.world.block(x, y, z);
@@ -2255,11 +2448,24 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
                     continue;
                 }
                 let f = facts.get(state);
-                if f.hardness < 0.0 || f.name.ends_with("water") || f.name.ends_with("lava") || skip.contains(&[x, y, z]) {
+                if mode == "Smash" && f.hardness != 0.0 {
                     continue;
                 }
-                let d = ((f64::from(x) + 0.5 - eye[0]).powi(2) + (f64::from(y) + 0.5 - eye[1]).powi(2) + (f64::from(z) + 0.5 - eye[2]).powi(2)).sqrt();
-                if d > range {
+                if suitable && !interact && !game.res.items().correct_for_drops(game.held(), &f.name) {
+                    continue;
+                }
+                let fluid = f.name.ends_with("water") || f.name.ends_with("lava");
+                if !interact && (f.hardness < 0.0 || fluid) {
+                    continue;
+                }
+                // Behind a block (the line to its middle meets another first): only within Walls range.
+                if !super::sunset_util::clear_line(game, c, b) && super::sunset_util::dist(eye, c) > m.n("Walls range") {
+                    continue;
+                }
+                if super::sunset_util::listed(list, &f.name) != (m.p("List mode") == "Whitelist") {
+                    continue;
+                }
+                if interact && interacted.contains(&b) {
                     continue;
                 }
                 let speed = game.res.items().mining_speed(game.held(), &f.name);
@@ -2270,35 +2476,89 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
                 }
                 // The server lets a stop through once the progress reaches 0.7, counting the tick it started in.
                 let ticks = if instant { 0 } else { ((0.7 / per_tick).ceil() as u32).max(1) };
-                found.push((d, [x, y, z], instant, ticks));
+                found.push((b, instant, ticks));
             }
         }
     }
-    found.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut broke = 0;
-    let mut sent: Vec<([i32; 3], u64)> = Vec::new();
-    for (_, pos, instant, ticks) in found {
-        if instant {
-            if broke >= m.n("Blocks per tick") as usize {
-                break;
+    let far = |b: &[i32; 3]| (0..3).map(|i| (f64::from(b[i]) + 0.5 - at[i]).powi(2)).sum::<f64>();
+    match m.p("Sort mode") {
+        "Top down" => found.sort_by_key(|f| -f.0[1]),
+        "Closest" => found.sort_by(|a, b| far(&a.0).total_cmp(&far(&b.0))),
+        "Furthest" => found.sort_by(|a, b| far(&b.0).total_cmp(&far(&a.0))),
+        _ => {}
+    }
+    let delay = m.n("Delay") as u32;
+    let Some(first) = found.first().map(|f| f.0) else {
+        with(|s| {
+            s.nuke_interacted.clear();
+            s.nuke_idle += 1;
+            if s.nuke_idle > delay {
+                s.nuke_first = true;
             }
+        });
+        return;
+    };
+    let wait = with(|s| {
+        s.nuke_idle = 0;
+        let mut wait = false;
+        if !s.nuke_first && s.nuke_last != Some(first) {
+            s.nuke_timer = delay;
+            s.nuke_last = Some(first);
+            wait = delay > 0;
+        }
+        wait
+    });
+    if wait {
+        return;
+    }
+    if m.b("Rotate") {
+        let (yaw, pitch) = look_at(eye, super::sunset_util::center_of(first));
+        let flags = u8::from(game.player.as_ref().is_some_and(|p| p.ground.on_ground));
+        game.send(S::MovePlayerRot(play::MovePlayerRot { yaw, pitch, flags }));
+    }
+    let (max, packet) = (m.n("Max blocks per tick") as usize, m.b("Packet mine"));
+    let mut done = 0;
+    let mut sent: Vec<([i32; 3], u64)> = Vec::new();
+    for (pos, instant, ticks) in found {
+        if done >= max {
+            break;
+        }
+        if interact {
+            let seq = super::sunset_util::sequence(game);
+            let face = if eye[1] > f64::from(pos[1]) + 1.0 { 1 } else { 0 };
+            game.send(S::UseItemOn(play::UseItemOn { hand: 0, pos, face, cursor: [0.5, 0.5, 0.5], inside: true, world_border: false, sequence: seq }));
+            with(|s| s.nuke_interacted.push(pos));
+        } else {
             let seq = super::sunset_util::sequence(game);
             game.send(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: seq }));
+            if packet && !instant {
+                let seq = super::sunset_util::sequence(game);
+                game.send(S::PlayerAction(play::PlayerAction { action: 2, pos, direction: 1, sequence: seq }));
+            } else if !instant {
+                with(|s| s.nuke = Some((pos, ticks)));
+            }
             // The block shows until the server's update comes back: next tick go on to new ones, not these again.
             sent.push((pos, now + 4));
-            broke += 1;
-        } else if broke == 0 {
-            let seq = super::sunset_util::sequence(game);
-            game.send(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: seq }));
-            with(|s| s.nuke = Some((pos, ticks)));
+        }
+        with(|s| {
+            s.nuke_last = Some(pos);
+            if m.b("Broken blocks") {
+                s.nuke_broken.push((pos, 8));
+            }
+        });
+        done += 1;
+        if !instant && !packet && !interact {
             break;
         }
     }
-    if !sent.is_empty() {
-        with(|s| s.nuke_skip.extend(sent));
-    }
-    if broke > 0 {
-        game.swing_arm();
+    with(|s| {
+        s.nuke_skip.extend(sent);
+        s.nuke_first = false;
+    });
+    if done > 0 {
+        if m.b("Swing") {
+            game.swing_arm();
+        }
         game.send(S::Punch(Empty));
     }
 }
@@ -2415,6 +2675,283 @@ pub(super) fn scan_holes(game: &Game<'_>, m: &Module, ticks: u64) {
 pub(super) fn remember_velocity(game: &Game<'_>) {
     let v = game.player.as_ref().map(|p| [p.velocity.x, p.velocity.y, p.velocity.z]);
     with(|s| s.velocity = v);
+}
+
+// Flight (Meteor's) before the tick: hovering after a fall of three blocks, nudge the yaw a degree either way so the
+// look the server sees moves (put back after the tick); in Velocity mode set the speed the air gives you, and with
+// No sneak let go of sneaking (its key still takes you down).
+fn flight_pre(game: &mut Game<'_>, m: Option<&Module>) {
+    use horizon_client::motion::sunset_motion as motion;
+    let Some(m) = m else {
+        motion::set_flying_speed(None);
+        let (delay, off) = (20, 1);
+        with(|s| {
+            (s.fly_delay, s.fly_off) = (delay, off);
+            if std::mem::take(&mut s.unsneaked) && game.physical_keys.contains(&KeyCode::ShiftLeft) {
+                game.keys.insert(KeyCode::ShiftLeft);
+            }
+        });
+        FLY_DOWN.store(false, Ordering::Relaxed);
+        FLY_LAST_Y.store(u64::MAX, Ordering::Relaxed);
+        return;
+    };
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let yaw = game.yaw;
+    let still = p.velocity.x.hypot(p.velocity.y).hypot(p.velocity.z) < 0.003;
+    let (fallen, sprinting) = (p.fall_distance, p.sprinting);
+    let nudge = with(|s| {
+        let nudge = (fallen >= 3.0 && yaw == s.fly_last_yaw && still).then(|| if s.fly_flip { 1.0 } else { -1.0 });
+        if nudge.is_some() {
+            s.fly_flip = !s.fly_flip;
+        }
+        s.fly_last_yaw = yaw;
+        nudge
+    });
+    if let Some(d) = nudge {
+        game.yaw = yaw + d;
+    }
+    let velocity = m.p("Mode") == "Velocity";
+    let speed = m.n("Speed") as f32;
+    motion::set_flying_speed(velocity.then(|| speed * if sprinting { 15.0 } else { 10.0 }));
+    if velocity && m.b("No sneak") && game.keys.remove(&KeyCode::ShiftLeft) {
+        with(|s| s.unsneaked = true);
+    }
+}
+
+// Flight after the tick: Meteor's anti kick (Packet: every `Delay` ticks the next move packets sink a little for
+// `Off time` ticks, Normal: the flying stops for those ticks), the yaw put back, then the mode: Abilities flies as
+// creative does at Speed; Velocity holds you still but for the jump and sneak keys, and Speed sets the air's pull.
+fn flight_post(game: &mut Game<'_>, m: Option<&Module>, jump: bool, sneak: bool, screen_dir: Option<[f64; 2]>) {
+    let Some(m) = m else {
+        return;
+    };
+    let (velocity, kick) = (m.p("Mode") == "Velocity", m.p("Anti kick mode"));
+    let (delay, off_time) = (m.n("Delay") as i32, m.n("Off time") as i32);
+    let (rest, remind, last_yaw) = with(|s| {
+        let (mut rest, mut remind) = (false, false);
+        if s.fly_delay > 0 {
+            s.fly_delay -= 1;
+        }
+        if s.fly_off <= 0 && s.fly_delay <= 0 {
+            (s.fly_delay, s.fly_off) = (delay, off_time);
+            remind = kick == "Packet";
+        } else if s.fly_delay <= 0 {
+            rest = kick == "Normal" && !velocity;
+            remind = kick == "Packet" && s.fly_off == off_time;
+            s.fly_off -= 1;
+        }
+        FLY_DOWN.store(kick == "Packet" && s.fly_delay <= 0, Ordering::Relaxed);
+        (rest, remind, s.fly_last_yaw)
+    });
+    if remind {
+        horizon_client::player_sync::sunset_sync::remind();
+    }
+    let (creative, spectator) = (game.creative, game.spectator());
+    let Some(p) = game.player.as_mut() else {
+        return;
+    };
+    if rest {
+        p.flying = false;
+        p.flying_speed = 0.05;
+        p.may_fly = creative || spectator;
+        return;
+    }
+    game.yaw = last_yaw;
+    let speed = m.n("Speed");
+    if velocity {
+        p.flying = false;
+        let up = speed * if m.b("Vertical speed match") { 10.0 } else { 5.0 };
+        let down = sneak || game.physical_keys.contains(&KeyCode::ShiftLeft);
+        p.velocity = horizon_core::geometry::Vec3::new(0.0, f64::from(u8::from(jump)) * up - f64::from(u8::from(down)) * up, 0.0);
+        // GUI Move: behind a menu the game takes no move keys, so the pull they would give is set by hand.
+        if let Some([x, z]) = screen_dir {
+            let pull = speed * if p.sprinting { 15.0 } else { 10.0 };
+            (p.velocity.x, p.velocity.z) = (x * pull, z * pull);
+        }
+        if m.b("No sneak") {
+            p.ground.on_ground = false;
+        }
+    } else if !spectator {
+        p.flying_speed = speed as f32;
+        p.flying = true;
+        p.may_fly = true;
+    }
+}
+
+// Speed's Strafe mode between moves: Meteor's stage, the last tick's distance, the speed, and the speed limit's clock.
+#[derive(Default)]
+pub(super) struct Strafe {
+    stage: u8,
+    distance: f64,
+    speed: f64,
+    since: Option<std::time::Instant>,
+}
+
+// Speed (Meteor's): this tick's own move across the ground, blocks a tick (and Strafe's hop up), or None to leave
+// it to the game. Vanilla moves the setting's blocks a second the way the move keys point, and stands still without
+// them; Strafe hops, faster at each jump, slowing in the air.
+fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
+    let p = game.player.as_ref()?;
+    let held = |k: KeyCode| game.keys.contains(&k);
+    let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
+    let vanilla = m.p("Mode") == "Vanilla";
+    let effect = |id: &str| game.potions.effects.amplifier(id).map_or(0.0, |a| f64::from(a + 1));
+    // Meteor's stopSpeed.
+    if p.fall_flying
+        || game.block_in_tag("minecraft:climbable", &game.block_name(feet))
+        || game.riding.is_some()
+        || (!m.b("When sneaking") && held(KeyCode::ShiftLeft))
+        || (vanilla && m.b("Only on ground") && !p.ground.on_ground)
+        || (!m.b("In liquids") && (p.fluids.was_touching_water || p.is_in_lava()))
+    {
+        return None;
+    }
+    let yaw = f64::from(game.yaw).to_radians();
+    if vanilla {
+        // PlayerUtils.getHorizontalVelocity, with the Speed effect's boost.
+        let (forward, right) = ([-yaw.sin(), yaw.cos()], [-yaw.cos(), -yaw.sin()]);
+        let f = f64::from(i8::from(held(KeyCode::KeyW)) - i8::from(held(KeyCode::KeyS)));
+        let r = f64::from(i8::from(held(KeyCode::KeyD)) - i8::from(held(KeyCode::KeyA)));
+        let diagonal = if (held(KeyCode::KeyW) || held(KeyCode::KeyS)) && (held(KeyCode::KeyA) || held(KeyCode::KeyD)) { std::f64::consts::FRAC_1_SQRT_2 } else { 1.0 };
+        let k = m.n("Vanilla speed") / 20.0 * diagonal * (1.0 + effect("speed") * 0.205);
+        return Some(([(forward[0] * f + right[0] * r) * k, (forward[1] * f + right[1] * r) * k], None));
+    }
+    let base = 0.2873 * (1.0 + 0.2 * effect("speed")) / (1.0 + 0.2 * effect("slowness"));
+    let forward = f64::from(i8::from(held(KeyCode::KeyW)) - i8::from(held(KeyCode::KeyS)));
+    let side = f64::from(i8::from(held(KeyCode::KeyA)) - i8::from(held(KeyCode::KeyD)));
+    let moving = forward != 0.0 || side != 0.0;
+    let distance = (p.position.x - game.previous_position.x).hypot(p.position.z - game.previous_position.z);
+    let (ground, landing) = (p.ground.on_ground, p.ground.on_ground || p.collision.vertical);
+    let (strafe_speed, limit) = (m.n("Strafe speed"), m.b("Speed limit"));
+    let (speed, up) = with(|s| {
+        let st = &mut s.strafe;
+        st.distance = distance;
+        let mut up = None;
+        match st.stage {
+            0 => {
+                if moving {
+                    st.stage = 1;
+                    st.speed = 1.18 * base - 0.01;
+                }
+            }
+            1 => {
+                if moving && ground {
+                    up = Some(0.40123128 + effect("jump_boost") * 0.1);
+                    st.speed *= strafe_speed;
+                    st.stage = 2;
+                }
+            }
+            2 => {
+                st.speed = st.distance - 0.76 * (st.distance - base);
+                st.stage = 3;
+            }
+            _ => {
+                if landing {
+                    st.stage = 0;
+                }
+                st.speed = st.distance - st.distance / 159.0;
+            }
+        }
+        st.speed = st.speed.max(base);
+        if limit {
+            let now = std::time::Instant::now();
+            let since = *st.since.get_or_insert(now);
+            if now.duration_since(since).as_millis() > 2500 {
+                st.since = Some(now);
+            }
+            let held_for = now.duration_since(st.since.unwrap_or(now)).as_millis();
+            st.speed = st.speed.min(if held_for > 1250 { 0.44 } else { 0.43 });
+        }
+        (st.speed, up)
+    });
+    // Strafe.transformStrafe: the speed the way the move keys point.
+    if !moving {
+        return Some(([0.0; 2], up));
+    }
+    let mut turn = 90.0 * side.signum();
+    if forward != 0.0 {
+        turn *= forward.signum() * 0.5;
+    }
+    let mut dir = f64::from(game.yaw) - turn;
+    if forward < 0.0 {
+        dir -= 180.0;
+    }
+    let dir = dir.to_radians();
+    Some(([-dir.sin() * speed, dir.cos() * speed], up))
+}
+
+// An explosion packet's push on the player, as it arrives (before the game adds it).
+pub(super) fn explosion_push(push: Option<[f64; 3]>) {
+    if let Some(push) = push {
+        with(|s| (0..3).for_each(|i| s.blast[i] += push[i]));
+    }
+}
+
+// Velocity (Meteor's), before the tick moves the player: of what changed the velocity since the last tick, the
+// explosions' pushes keep their share and the rest, the server's knockback, its own; flowing liquids push by their
+// share (the flow hook), and of the entities pushing you only the push amount is left.
+fn velocity(game: &mut Game<'_>, m: Option<&Module>) {
+    use horizon_client::motion::sunset_motion as motion;
+    let (last, blast) = with(|s| (s.velocity.take(), std::mem::take(&mut s.blast)));
+    let share = |on: &str, h: &str, v: &str| m.filter(|m| m.b(on)).map_or([1.0; 2], |m| [m.n(h), m.n(v)]);
+    let liquids = m.filter(|m| m.b("Liquids")).map(|m| [m.n("Liquids horizontal"), m.n("Liquids vertical")]);
+    motion::set_liquid_flow(liquids);
+    let Some(m) = m else {
+        return;
+    };
+    let pushed = if m.b("Entity push") { entity_push(game) } else { [0.0; 2] };
+    let (knock, blasts) = (share("Knockback", "Knockback horizontal", "Knockback vertical"), share("Explosions", "Explosions horizontal", "Explosions vertical"));
+    let Some(p) = game.player.as_mut() else {
+        return;
+    };
+    let mut v = [p.velocity.x, p.velocity.y, p.velocity.z];
+    if let Some(last) = last {
+        for i in 0..3 {
+            let (k, b) = if i == 1 { (knock[1], blasts[1]) } else { (knock[0], blasts[0]) };
+            v[i] = last[i] + (v[i] - last[i] - blast[i]) * k + blast[i] * b;
+        }
+    }
+    // The game adds the pushes later in the tick: take back what the push amount does not keep.
+    let keep = m.n("Entity push amount");
+    v[0] -= pushed[0] * (1.0 - keep);
+    v[2] -= pushed[1] * (1.0 - keep);
+    (p.velocity.x, p.velocity.y, p.velocity.z) = (v[0], v[1], v[2]);
+}
+
+// The entities' push on the player this tick, x and z (the game's `LivingEntity.pushEntities` with
+// `Entity.push(Entity)`): every living one but bats whose box overlaps yours, pushable by your team.
+fn entity_push(game: &Game<'_>) -> [f64; 2] {
+    let Some(p) = game.player.as_ref() else {
+        return [0.0; 2];
+    };
+    let (bounds, own) = (p.bounds(), own_id(game));
+    let team = game.score.board.players_team(&game.options.player_name());
+    let mut push = [0.0; 2];
+    for m in &game.mobs {
+        if Some(m.id) == own
+            || !m.alive()
+            || m.species() == horizon_client::mobs::Species::Bat
+            || game.riding.is_some_and(|v| v == m.id || m.extra.mount == Some(v))
+            || !m.bounds().intersects(bounds)
+            || !horizon_client::scoreboard::pushable_by(game.mob_team(m.id), team, true)
+        {
+            continue;
+        }
+        let (mut xa, mut za) = (m.position.x - p.position.x, m.position.z - p.position.z);
+        let dd = xa.abs().max(za.abs());
+        if dd < f64::from(0.01_f32) {
+            continue;
+        }
+        let dd = dd.sqrt();
+        let pow = (1.0 / dd).min(1.0) * f64::from(0.05_f32);
+        xa = xa / dd * pow;
+        za = za / dd * pow;
+        push[0] -= xa;
+        push[1] -= za;
+    }
+    push
 }
 
 pub(super) fn cooldown_ready(game: &Game<'_>, m: &Module, wait: &mut u32) -> bool {
@@ -2611,16 +3148,21 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         POS_THIS_TICK.store(true, Ordering::Relaxed);
         return Out::Replace(changed);
     }
-    if has_position {
-        POS_THIS_TICK.store(true, Ordering::Relaxed);
-    }
     let Some(p) = game.player.as_ref() else {
         return Out::Pass;
     };
+    // Flight's Packet anti kick: the move carries the position, sunk 0.0313 below the last height sent while it is
+    // due and you are in the air (Meteor's antiKickPacket).
+    let kicked = FLY_PACKET.load(Ordering::Relaxed).then(|| fly_down(game, packet)).flatten();
+    let packet = kicked.as_ref().unwrap_or(packet);
+    let has_position = matches!(packet, S::MovePlayerPos(_) | S::MovePlayerPosRot(_));
+    if has_position {
+        POS_THIS_TICK.store(true, Ordering::Relaxed);
+    }
     // The server counts a fall from the packets: once you have dropped a block, claiming the ground every tick keeps
     // the count under three blocks, so there is never damage to take. Flying that way claims it all the time.
     let grounded = || !p.ground.on_ground && !p.flying && !p.fall_flying;
-    let ground = if FLIGHT_GROUND.load(Ordering::Relaxed) && !p.flying {
+    let ground = if FLIGHT_GROUND.load(Ordering::Relaxed) || (GLIDE_GROUND.load(Ordering::Relaxed) && !p.flying) {
         Some(true)
     } else if NO_FALL.load(Ordering::Relaxed) && grounded() && super::sunset_util::fallen(game) > 1.0 {
         Some(true)
@@ -2629,10 +3171,61 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     } else {
         None
     };
-    match ground.and_then(|g| with_ground(packet, g)) {
+    let grounded_packet = ground.and_then(|g| with_ground(packet, g));
+    match grounded_packet.or(kicked) {
         Some(changed) => Out::Replace(changed),
         None => Out::Pass,
     }
+}
+
+// Flight's Packet anti kick on one move packet: the packet to send instead, if it changes. Moves without a position
+// get the player's; while it is due and you are in the air the height sinks 0.0313 below the last one sent.
+fn fly_down(game: &Game<'_>, packet: &S) -> Option<S> {
+    let p = game.player.as_ref()?;
+    let here = [p.position.x, p.position.y, p.position.z];
+    let (mut at, rot, flags, had) = match packet {
+        S::MovePlayerPos(m) => ([m.x, m.y, m.z], None, m.flags, true),
+        S::MovePlayerPosRot(m) => ([m.x, m.y, m.z], Some((m.yaw, m.pitch)), m.flags, true),
+        S::MovePlayerRot(m) => (here, Some((m.yaw, m.pitch)), m.flags, false),
+        S::MovePlayerStatus(m) => (here, None, m.flags, false),
+        _ => return None,
+    };
+    let bits = FLY_LAST_Y.load(Ordering::Relaxed);
+    let last = f64::from_bits(bits);
+    let sinking = at[1] >= last || last - at[1] < 0.03130;
+    let sunk = FLY_DOWN.load(Ordering::Relaxed) && bits != u64::MAX && sinking && in_the_air(game);
+    if sunk {
+        at[1] = last - 0.03130;
+    } else {
+        FLY_LAST_Y.store(at[1].to_bits(), Ordering::Relaxed);
+    }
+    if had && !sunk {
+        return None;
+    }
+    Some(match rot {
+        Some((yaw, pitch)) => S::MovePlayerPosRot(play::MovePlayerPosRot { x: at[0], y: at[1], z: at[2], yaw, pitch, flags }),
+        None => S::MovePlayerPos(play::MovePlayerPos { x: at[0], y: at[1], z: at[2], flags }),
+    })
+}
+
+// Meteor's EntityUtils.isOnAir: nothing but air in your box grown by 0.0625 and reaching 0.55 lower.
+fn in_the_air(game: &Game<'_>) -> bool {
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    let b = p.bounds();
+    let (lo, hi) = (b.min_position(), b.max_position());
+    let f = |v: f64| v.floor() as i32;
+    for x in f(lo.x - 0.0625)..=f(hi.x + 0.0625) {
+        for y in f(lo.y - 0.0625 - 0.55)..=f(hi.y + 0.0625) {
+            for z in f(lo.z - 0.0625)..=f(hi.z + 0.0625) {
+                if !super::sunset_util::is_air(game, [x, y, z]) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 // Where the player is, as one position packet: what Blink held back is a
@@ -3241,6 +3834,26 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     let (esp, tracers, tags, storage) = (get("ESP"), get("Tracers"), get("Nametags"), get("Storage ESP"));
     let (crumbs, blocks, points) = (get("Breadcrumbs"), get("Block ESP"), get("Waypoints"));
     let (spots, flight_path, holes) = (get("Logout Spots"), get("Trajectories"), get("Hole ESP"));
+    if let Some(m) = get("Nuker") {
+        let (cube, broken) = with(|s| (s.nuke_box, s.nuke_broken.clone()));
+        if let Some([lo, hi]) = cube.filter(|_| m.b("Bounding box") && m.p("Mode") != "Smash") {
+            draw_box(cam, out, m, lo, hi, m.c("Box color"), lw);
+        }
+        for (pos, left) in broken {
+            let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
+            let argb = m.c("Broken color");
+            let a = ((argb >> 24) * u32::from(left) / 8) << 24;
+            draw_box(cam, out, m, lo, [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0], a | (argb & 0x00FF_FFFF), lw);
+        }
+    }
+    if let Some(m) = get("Scaffold").filter(|m| m.b("Render")) {
+        for (pos, left) in with(|s| s.scaffold_placed.clone()) {
+            let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
+            let argb = m.c("Color");
+            let a = ((argb >> 24) * u32::from(left) / 8) << 24;
+            draw_box(cam, out, m, lo, [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0], a | (argb & 0x00FF_FFFF), lw);
+        }
+    }
     if esp.is_none()
         && tracers.is_none()
         && tags.is_none()

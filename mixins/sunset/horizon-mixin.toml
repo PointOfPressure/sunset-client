@@ -136,6 +136,20 @@ source = "overlay_flags.rs"
 visibility = "pub"
 
 [[module]]
+id = "motion_flags"
+file = "crates/horizon-client/src/motion.rs"
+name = "sunset_motion"
+source = "motion_flags.rs"
+visibility = "pub"
+
+[[module]]
+id = "sync_flags"
+file = "crates/horizon-client/src/player_sync.rs"
+name = "sunset_sync"
+source = "sync_flags.rs"
+visibility = "pub"
+
+[[module]]
 id = "input_flags"
 file = "crates/horizon-client-input/src/input.rs"
 name = "sunset_flags"
@@ -499,4 +513,62 @@ target = "horizon_client_render::font::Font::take_patches"
 helper = "patches_hook.rs"
 bindings = [
   { name = "this", ty = "&Font", value = "&*self" },
+]
+
+[[injection]]
+id = "safe_walk"
+kind = "RETURN"
+target = "horizon_client::motion::<MotionWorld<'_,'_,'_> as EdgeBackoffWorld>::staying_on_ground_surface"
+helper = "ledge_hook.rs"
+bindings = [
+  { name = "value", ty = "Result<bool>", value = "$value" },
+]
+
+[[injection]]
+id = "speed_move"
+kind = "MODIFY_ARG"
+target = "horizon_client::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::move_self"
+selector = "MotionWorld::move_self"
+require = 1
+ordinal = 0
+argument = 1
+helper = "move_hook.rs"
+bindings = [
+  { name = "value", ty = "Vec3", value = "$value" },
+]
+
+[[injection]]
+id = "liquid_flow"
+kind = "RETURN"
+target = "horizon_client::motion::fluids::<MotionWorld<'_,'_,'_> as FluidInteractionWorld>::flow"
+helper = "flow_hook.rs"
+bindings = [
+  { name = "value", ty = "Result<Vec3>", value = "$value" },
+]
+
+[[injection]]
+id = "explode"
+kind = "HEAD"
+target = "horizon_client::game::lan_particles::Game<'_>::remote_explode"
+helper = "explode_hook.rs"
+bindings = [
+  { name = "p", ty = "&play::Explode", value = "p" },
+]
+
+[[injection]]
+id = "flying_speed"
+kind = "RETURN"
+target = "horizon_client::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::flying_speed"
+helper = "flying_hook.rs"
+bindings = [
+  { name = "value", ty = "Result<f32>", value = "$value" },
+]
+
+[[injection]]
+id = "position_reminder"
+kind = "HEAD"
+target = "horizon_client::player_sync::PositionSender::update"
+helper = "sync_hook.rs"
+bindings = [
+  { name = "this", ty = "&mut PositionSender", value = "&mut *self" },
 ]

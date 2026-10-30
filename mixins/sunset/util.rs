@@ -150,7 +150,7 @@ const SIDES: [([i32; 3], i32); 6] = [
 ];
 
 // `BlockUtils.getPlaceSide`: a neighbour to click, the one the eyes face most.
-fn place_side(game: &Game<'_>, p: [i32; 3]) -> Option<([i32; 3], i32)> {
+pub(super) fn place_side(game: &Game<'_>, p: [i32; 3]) -> Option<([i32; 3], i32)> {
     let eye = game.eye_position()?;
     let c = center_of(p);
     let look = [c[0] - eye[0], c[1] - eye[1], c[2] - eye[2]];

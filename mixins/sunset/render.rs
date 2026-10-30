@@ -86,6 +86,8 @@ struct Rs {
     lights_at: u64,
     // The Fog option as it was before No Render turned it off.
     fog_before: Option<bool>,
+    // The effects No Render hides, to put back.
+    hidden_effects: Vec<horizon_client::effects::EffectInstance>,
 }
 
 impl Default for Fc {
@@ -327,9 +329,12 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
     }
 }
 
-// Timer and No Slow: the flags the engine hooks read.
-fn engine_flags(_game: &mut Game<'_>, mods: &[Module]) {
-    let mult = on(mods, "Timer").map_or(1.0, |m| m.n("Multiplier") as f32);
+// Timer and No Slow: the flags the engine hooks read. While you move, Speed's own Timer stands in for Timer's
+// (Meteor's override).
+fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
+    let moving = super::sunset::move_input(game) != (0.0, 0.0);
+    let speed_timer = on(mods, "Speed").map(|m| m.n("Timer")).filter(|t| (*t - 1.0).abs() > 1e-9 && moving);
+    let mult = speed_timer.or_else(|| on(mods, "Timer").map(|m| m.n("Multiplier"))).unwrap_or(1.0) as f32;
     horizon_client::clock::sunset_timer::MULT.store(mult.to_bits(), Ordering::Relaxed);
     horizon_client::input::sunset_flags::NO_SLOW.store(on(mods, "No Slow").is_some(), Ordering::Relaxed);
 }
@@ -357,12 +362,26 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     overlay::NO_GUI.store(flag("Hide pumpkin, spyglass and powder snow overlays"), Ordering::Relaxed);
     // The dim and blur behind menus: ClickGUI's Menu dim switch (off hides them).
     overlay::NO_MENU.store(!mods.iter().find(|m| m.name == "ClickGUI").is_some_and(|m| m.b("Menu dim")), Ordering::Relaxed);
-    // Effects the server put on the player that only change what it sees.
+    // Effects the server put on the player that only change what it sees: kept aside while hidden, counted down
+    // as the game would, and put back when No Render (or its switch) goes off.
     let (blind, dark, nausea) = (flag("Hide blindness"), flag("Hide darkness"), flag("Hide nausea"));
-    if blind || dark || nausea {
-        game.potions.effects.list.retain(|e| {
-            !((blind && e.id == "blindness") || (dark && e.id == "darkness") || (nausea && e.id == "nausea"))
-        });
+    let hide = |id: &str| (blind && id == "blindness") || (dark && id == "darkness") || (nausea && id == "nausea");
+    let taken: Vec<_> = game.potions.effects.list.extract_if(.., |e| hide(e.id)).collect();
+    let back: Vec<_> = rs(|r| {
+        for e in &mut r.hidden_effects {
+            if e.duration > 0 {
+                e.duration -= 1;
+            }
+        }
+        r.hidden_effects.retain(|e| e.duration != 0);
+        for e in taken {
+            r.hidden_effects.retain(|h| h.id != e.id);
+            r.hidden_effects.push(e);
+        }
+        r.hidden_effects.extract_if(.., |e| !hide(e.id)).collect()
+    });
+    for e in back {
+        game.potions.effects.add(e);
     }
 }
 

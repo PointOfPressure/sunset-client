@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-# Runs each Sunset module in a flat test arena in a headless Horizon (see
-# tools/README in the repo's notes: ctl = horizon-ctl on the test session) and
-# checks a measurable result. Usage: verify.py CTL_PATH [test names...]
-# Tests that need a second player (on a dedicated server) use the control
-# wrapper in the CTL2 environment variable and are skipped without it.
+# Runs each Sunset module in a flat test arena in a headless Horizon (ctl =
+# horizon-ctl on the test session) and measures what it does: the numbers go in
+# each PASS/FAIL line so runs can be compared. Usage: verify.py CTL_PATH [test names...]
+#
+# Every test starts from the same place (clean): every module off at its
+# defaults, the arena bare, nothing held or open, the player healthy in
+# survival in the middle of the platform. So the full run gives what each test
+# gives alone.
+#
+# Tests that need a second player (on a server) use the control wrapper in the
+# CTL2 environment variable and are skipped without it; it plays Bot1.
 # The per-frame Aim Assist tests read the test probe's file (tools/probe,
 # staged next to Sunset on the test machine; the game writes it to the path in
 # SUNSET_PROBE): PROBE names it, else <session>/probe.log. They move mobs with
@@ -13,8 +19,13 @@ import json, math, os, subprocess, sys, time
 
 CTL = sys.argv[1]
 CTL2 = os.environ.get("CTL2")
+# The server joined (HOST:PORT), to join again when it kicks you; the kicks are listed at the end.
+SERVER = os.environ.get("SERVER")
+kicks = []
 ONLY = sys.argv[2:]
 on = set()
+# Modules whose settings a test changed: clean() puts them back to their defaults.
+touched = set()
 results = []
 
 
@@ -37,11 +48,19 @@ def wait(n):
 
 
 def say(text):
+    """A line typed into the chat box: Sunset's . commands."""
     ctl("key", "t", "tap")
     wait(1)
     ctl("type", text)
     ctl("key", "enter", "tap")
     wait(1)
+
+
+def cmd(*lines):
+    """Game commands, sent as the player without opening the chat box."""
+    for line in lines:
+        ctl("chat", "/" + line.lstrip("/"))
+    wait(2)
 
 
 def state():
@@ -56,13 +75,25 @@ def hp():
     return state()["player"]["health"]
 
 
+def log_mark():
+    """Where the game's log ends now (Sunset's own chat lines are logged there, not in the server's chat)."""
+    return os.path.getsize(os.path.join(session_dir(), "home", "logs", "latest.log"))
+
+
+def sunset_said(mark):
+    with open(os.path.join(session_dir(), "home", "logs", "latest.log"), errors="replace") as f:
+        f.seek(mark)
+        return [line.split("[CHAT] [Sunset] ", 1)[1].strip() for line in f if "[CHAT] [Sunset] " in line]
+
+
 def chat_first():
     c = ctl("chat-log", "1").get("chat", [])
     return c[0] if c else ""
 
 
-def check(cmd):
-    say(cmd)
+def check(command):
+    cmd(command)
+    wait(1)
     return "passed" in chat_first()
 
 
@@ -82,11 +113,14 @@ def only(*names):
 
 
 def setting(mod, name, value):
+    touched.add(mod)
     say(f".set {mod} {name} {value}")
 
 
 X0 = Z0 = 0
 Y = 120
+HUSK = "{NoAI:1b,Invulnerable:1b,PersistenceRequired:1b,Silent:1b}"
+NOAI = "{NoAI:1b,PersistenceRequired:1b}"
 
 
 def arena():
@@ -95,14 +129,7 @@ def arena():
     X0, Z0 = int(p[0] // 1), int(p[2] // 1)
     # Unattended, the game drops to 30 frames a second after a minute ("afk"): keep the full rate.
     ctl("options-set", "inactivityFpsLimit", "minimized")
-    say("/gamemode creative")
-    say("/difficulty peaceful")
-    say("/time set 6000")
-    say("/weather clear")
-    # A world with real terrain (a server's) has hills round the platform: clear a wide ring first.
-    say(f"/fill {X0-24} {Y-1} {Z0-24} {X0+24} {Y+4} {Z0+24} minecraft:air")
-    say(f"/fill {X0-24} {Y+5} {Z0-24} {X0+24} {Y+12} {Z0+24} minecraft:air")
-    say(f"/fill {X0-16} {Y} {Z0-16} {X0+16} {Y} {Z0+16} minecraft:stone")
+    clean()
 
 
 def ensure_alive():
@@ -114,17 +141,103 @@ def ensure_alive():
         wait(30)
 
 
+def rejoin(test):
+    """After a kick: what the screen said, then back in."""
+    if "player" in state() or not SERVER:
+        return
+    shown = ctl("screen")
+    kicks.append((test, json.dumps(shown)[:300]))
+    for _ in range(3):
+        ctl("key", "esc", "tap")
+        time.sleep(2)
+        ctl("connect", SERVER, "Tester", timeout=120)
+        ctl("wait-ready", "90", timeout=120)
+        if "player" in state():
+            ctl("wait", "40")
+            return
+
+
+def clean():
+    """Back to where every test starts."""
+    ctl("release")
+    ensure_alive()
+    ctl("key", "1", "tap")
+    screen = state().get("screen")
+    if screen == "paused":
+        ctl("resume")
+    elif screen not in ("playing", None):
+        ctl("key", "esc", "tap")
+        wait(2)
+        if state().get("screen") not in ("playing", None):
+            ctl("close")
+    # Every module off, whatever a test left on (a toggle typed while dead never arrives), then the HUD back on.
+    say(".panic")
+    say(".reset hud")
+    on.clear()
+    for m in sorted(touched):
+        say(f".reset {m}")
+    touched.clear()
+    # Land first, in whatever game mode, so a fall a test left you in costs nothing.
+    cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
+    wait(3)
+    # A world with real terrain (a server's) has hills round the platform: clear a wide ring.
+    cmd("gamemode survival @s", "clear @s", "effect clear @s", "xp set @s 0 levels", "xp set @s 0 points",
+        "kill @e[type=!player]", "difficulty peaceful", "time set 6000", "weather clear", "gamerule natural_health_regeneration true",
+        f"fill {X0-24} {Y-1} {Z0-24} {X0+24} {Y+4} {Z0+24} minecraft:air",
+        f"fill {X0-24} {Y+5} {Z0-24} {X0+24} {Y+12} {Z0+24} minecraft:air",
+        f"fill {X0-16} {Y} {Z0-16} {X0+16} {Y} {Z0+16} minecraft:stone",
+        f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0",
+        "effect give @s minecraft:instant_health 1 10 true", "effect give @s minecraft:saturation 1 10 true")
+    if CTL2:
+        # The second player waits out of the way, where nothing targets it.
+        ctl2("release")
+        cmd("gamemode spectator Bot1", f"tp Bot1 {X0 + 0.5} {Y + 30} {Z0 + 60}")
+    wait(10)
+
+
 def reset(mode="survival", x=0.5, z=0.5, y=Y + 1):
     ensure_alive()
-    say(f"/gamemode {mode}")
-    say("/clear @s")
-    say("/effect clear @s")
-    say("/effect give @s minecraft:instant_health 1 10 true")
-    say("/effect give @s minecraft:saturation 1 10 true")
-    say("/kill @e[type=!player]")
-    say(f"/tp @s {X0 + x} {y} {Z0 + z}")
+    cmd(f"gamemode {mode}", "clear @s", "effect clear @s", "effect give @s minecraft:instant_health 1 10 true",
+        "effect give @s minecraft:saturation 1 10 true", "kill @e[type=!player]", f"tp @s {X0 + x} {y} {Z0 + z} 0 0")
     wait(20)
     ctl("look", "0", "0")
+
+
+def flat(a, b):
+    return math.hypot(b[0] - a[0], b[2] - a[2])
+
+
+def held_keys(keys, ticks):
+    for k in keys:
+        ctl("key", k, "down")
+    wait(ticks)
+    for k in keys:
+        ctl("key", k, "up")
+
+
+def rate(keys=("w",), ticks=20, warm=12, up=False):
+    """Blocks a second, across the ground (or up, with up=True), while the keys are held, once up to speed."""
+    for k in keys:
+        ctl("key", k, "down")
+    wait(warm)
+    a = state()
+    wait(ticks)
+    b = state()
+    for k in keys:
+        ctl("key", k, "up")
+    wait(5)
+    pa, pb = a["player"]["position"], b["player"]["position"]
+    gone = (pb[1] - pa[1]) if up else flat(pa, pb)
+    return gone / max(b["ticks"] - a["ticks"], 1) * 20
+
+
+def fall_rate(ticks=20, warm=10):
+    """Blocks a second downward, with nothing held."""
+    wait(warm)
+    a = state()
+    wait(ticks)
+    b = state()
+    return (a["player"]["position"][1] - b["player"]["position"][1]) / max(b["ticks"] - a["ticks"], 1) * 20
 
 
 def walk(ticks, key="w", extra=None):
@@ -138,6 +251,22 @@ def walk(ticks, key="w", extra=None):
     wait(3)
 
 
+def count(x1, y1, z1, x2, y2, z2, block):
+    return ctl("blocks", *map(str, (x1, y1, z1, x2, y2, z2))).get("counts", {}).get(f"minecraft:{block}", 0)
+
+
+def mobs(kind=None):
+    return [e for e in ctl("entities").get("entities", []) if e.get("kind") == "mob" and (kind is None or e.get("type") == f"minecraft:{kind}")]
+
+
+def slot(i, item, n=1):
+    cmd(f"item replace entity @s hotbar.{i} with minecraft:{item} {n}")
+
+
+def held():
+    return state().get("held") or {}
+
+
 def test(name):
     def deco(fn):
         fn.test_name = name
@@ -148,151 +277,561 @@ def test(name):
 
 TESTS = []
 
-
-def dist_walk(*mods, ticks=30, extra=None):
-    reset()
-    only(*mods)
-    p0 = pos()
-    walk(ticks, extra=extra)
-    p1 = pos()
-    only()
-    return ((p1[0] - p0[0]) ** 2 + (p1[2] - p0[2]) ** 2) ** 0.5
-
+# ---- movement
 
 @test("Speed")
 def _():
-    base = dist_walk()
-    fast = dist_walk("speed")
-    return fast > base * 1.5, f"{base:.1f} -> {fast:.1f} blocks"
+    plain = rate()
+    only("speed")
+    reset(z=-14.5)
+    vanilla = rate()
+    setting("speed", "vanilla speed", "10")
+    reset(z=-14.5)
+    ten = rate()
+    reset(z=-14.5)
+    sneaking = rate(("w", "shift"))
+    setting("speed", "when sneaking", "true")
+    reset(z=-14.5)
+    sneak_fast = rate(("w", "shift"))
+    # Without the move keys Vanilla stands still at once.
+    reset(z=-14.5)
+    ctl("key", "w", "down")
+    wait(10)
+    ctl("key", "w", "up")
+    a = pos()
+    wait(1)
+    b = pos()
+    stop = flat(a, b)
+    setting("speed", "mode", "Strafe")
+    reset(z=-14.5)
+    strafe = rate(ticks=30)
+    setting("speed", "mode", "Vanilla")
+    setting("speed", "timer", "2")
+    t0, c0 = state()["ticks"], time.time()
+    held_keys(("w",), 20)
+    tps = (state()["ticks"] - t0) / (time.time() - c0)
+    only()
+    reset(z=-14.5)
+    back = rate()
+    ok = (abs(vanilla - 5.6) < 0.2 and abs(ten - 10) < 0.3 and sneaking < 1.6 and abs(sneak_fast - 10) < 0.3 and stop < 0.02
+          and strafe > plain * 1.2 and tps > 30 and abs(back - plain) < 0.2)
+    return ok, (f"walking {plain:.2f} blocks/s; Vanilla speed 5.6: {vanilla:.2f}, 10: {ten:.2f}; sneaking {sneaking:.2f}, {sneak_fast:.2f} with When sneaking; "
+                f"moves {stop:.3f} the tick after letting go; Strafe {strafe:.2f}; Timer 2 while moving: {tps:.0f} ticks/s; off again {back:.2f}")
 
 
 @test("Sprint")
 def _():
-    base = dist_walk()
-    sp = dist_walk("sprint")
-    return sp > base * 1.15, f"{base:.1f} -> {sp:.1f} blocks"
+    reset(z=-14.5)
+    plain = rate()
+    only("sprint")
+    reset(z=-14.5)
+    sprint = rate()
+    only()
+    reset(z=-14.5)
+    back = rate()
+    # Vanilla sprinting is 1.3 times walking.
+    return 1.25 < sprint / plain < 1.35 and abs(back - plain) < 0.3, f"walking {plain:.2f} blocks/s, {sprint:.2f} with Sprint ({sprint/plain:.2f}x), off again {back:.2f}"
 
 
 @test("Auto Walk")
 def _():
-    reset()
+    reset(z=-14.5)
     only("autowalk")
-    p0 = pos()
-    wait(30)
-    p1 = pos()
+    wait(12)
+    a = state()
+    wait(20)
+    b = state()
     only()
-    return p1[2] - p0[2] > 2, f"moved {p1[2]-p0[2]:.1f} blocks"
+    wait(10)
+    c = pos()
+    wait(10)
+    d = pos()
+    pa, pb = a["player"]["position"], b["player"]["position"]
+    speed = flat(pa, pb) / (b["ticks"] - a["ticks"]) * 20
+    straight = abs(pb[0] - pa[0]) < 0.05 and pb[2] > pa[2]
+    stopped = flat(c, d)
+    return 4.0 < speed < 4.6 and straight and stopped < 0.05, f"{speed:.2f} blocks/s straight ahead, {stopped:.2f} blocks after it went off"
 
 
 @test("Flight")
 def _():
-    reset()
+    def fly(**sets):
+        reset(y=Y + 3)
+        for k, v in sets.items():
+            setting("flight", k.replace("_", " "), v)
+        only("flight")
+        wait(5)
+        up = rate(("space",), ticks=6, warm=4, up=True)
+        wait(10)
+        a = pos()
+        wait(40)
+        drift = pos()[1] - a[1]
+        reset(z=-14.5, y=Y + 4)
+        across = rate(("w",), ticks=10, warm=40)
+        only()
+        return up, drift, across
+
+    # Abilities (creative flight) at Speed 0.1, twice vanilla's 0.05; Velocity: Speed x 10 across, x 5 up (x 10 matched).
+    ab = fly()
+    vanilla = fly(speed="0.05")
+    vel = fly(mode="Velocity", speed="0.1")
+    match = fly(mode="Velocity", speed="0.1", vertical_speed_match="true")
+    cmd(f"tp @s {X0 + 0.5} {Y + 14} {Z0 + 0.5}")
+    falling = fall_rate(ticks=6, warm=2)
+    ok = (abs(ab[2] - 2 * vanilla[2]) < 1.5 and abs(vanilla[2] - 10.9) < 1 and abs(vel[2] - 20) < 1 and abs(vel[0] - 10) < 1
+          and abs(match[0] - 20) < 2 and max(abs(r[1]) for r in (ab, vanilla, vel, match)) < 0.05 and falling > 3)
+    return ok, (f"Abilities, Speed 0.1: across {ab[2]:.1f} blocks/s, up {ab[0]:.1f}; Speed 0.05: across {vanilla[2]:.1f}, up {vanilla[0]:.1f}; "
+                f"Velocity, Speed 0.1: across {vel[2]:.1f}, up {vel[0]:.1f}, {match[0]:.1f} with Vertical speed match; "
+                f"hovering moves at most {max(abs(r[1]) for r in (ab, vanilla, vel, match)):.3f} in 2 s; off: falls at {falling:.1f}")
+
+
+@test("Flight (no fall damage, level hover)")
+def _():
     only("flight")
-    y0 = pos()[1]
     ctl("key", "space", "down")
-    wait(30)
+    wait(60)
     ctl("key", "space", "up")
-    y1 = pos()[1]
-    wait(30)
-    y2 = pos()[1]
+    wait(6)
+    y0 = pos()[1]
+    wait(100)
+    drift = pos()[1] - y0
+    ctl("key", "shift", "down")
+    wait(120)
+    ctl("key", "shift", "up")
+    wait(10)
+    health = hp()
     only()
-    return y1 > y0 + 3 and abs(y2 - y1) < 1, f"up {y1-y0:.1f}, then held {y2-y1:+.1f}"
+    return abs(drift) < 0.05 and health >= 20, f"hovered {drift:+.3f} blocks in 5 s, health {health} after flying up {y0 - Y - 1:.0f} and sneaking down"
+
+
+def drop(height):
+    """Health lost falling `height` blocks onto the platform (with natural regeneration off, so none comes back)."""
+    reset()
+    cmd("gamerule natural_health_regeneration false", f"tp @s {X0 + 0.5} {Y + 1 + height} {Z0 + 0.5}")
+    wait(20 + 3 * height)
+    lost = 20 - hp()
+    cmd("gamerule natural_health_regeneration true")
+    return lost
 
 
 @test("No Fall")
 def _():
-    reset()
-    say(f"/tp @s {X0+0.5} {Y+12} {Z0+0.5}")
-    wait(50)
-    base = hp()
-    reset()
+    plain = drop(12)
+    small = drop(3)
     only("nofall")
-    say(f"/tp @s {X0+0.5} {Y+12} {Z0+0.5}")
-    wait(50)
-    mine = hp()
+    mine = drop(12)
     only()
-    return mine == 20 and base < 20, f"health {base} without, {mine} with"
+    back = drop(12)
+    return plain >= 3 and small == 0 and mine == 0 and back == plain, f"12-block fall costs {plain:.0f} health without, {mine:.0f} with, {back:.0f} with it off again; a 3-block fall {small:.0f}"
+
+
+@test("No Fall (after Flight)")
+def _():
+    only("flight", "nofall")
+    ctl("key", "space", "down")
+    wait(60)
+    ctl("key", "space", "up")
+    top = pos()[1] - (Y + 1)
+    only("nofall")
+    wait(80)
+    health = hp()
+    landed = pos()[1] - (Y + 1)
+    only()
+    return top > 10 and abs(landed) < 0.01 and health >= 20, f"health {health} after Flight went off {top:.0f} blocks up"
 
 
 def wall(height, at=3):
-    say(f"/fill {X0-3} {Y+1} {Z0+at} {X0+3} {Y+height} {Z0+at} minecraft:stone")
+    cmd(f"fill {X0-3} {Y+1} {Z0+at} {X0+3} {Y+height} {Z0+at} minecraft:stone")
 
 
 def unwall():
-    say(f"/fill {X0-3} {Y+1} {Z0+1} {X0+3} {Y+12} {Z0+6} minecraft:air")
+    cmd(f"fill {X0-3} {Y+1} {Z0+1} {X0+3} {Y+12} {Z0+6} minecraft:air")
 
 
 @test("Step")
 def _():
-    reset()
-    unwall()
     wall(1)
     walk(40)
-    base = pos()[2]
+    base = pos()[2] - Z0
     reset()
     only("step")
     walk(40)
-    mine = pos()[2]
+    one = pos()[2] - Z0
+    cmd(f"fill {X0-3} {Y+2} {Z0+3} {X0+3} {Y+2} {Z0+3} minecraft:stone")
+    reset()
+    walk(40)
+    two = pos()[2] - Z0
+    cmd(f"fill {X0-3} {Y+2} {Z0+3} {X0+3} {Y+2} {Z0+3} minecraft:air")
     only()
-    unwall()
-    return mine > Z0 + 4 and base < Z0 + 3, f"z {base-Z0:.1f} blocked, {mine-Z0:.1f} with step"
+    reset()
+    walk(40)
+    back = pos()[2] - Z0
+    # Height 1.25 climbs a block, not two; vanilla's 0.6 climbs neither.
+    return one > 4 and base < 3 and two < 3 and back < 3, f"z {base:.1f} blocked by a block, {one:.1f} with Step, {two:.1f} at a 2-block wall, {back:.1f} off again"
 
 
 @test("Step height")
 def _():
-    reset()
-    unwall()
     wall(2)
     only("step")
     setting("step", "height", "2.25")
     walk(40)
-    high = pos()[2]
+    high = pos()[2] - Z0
     setting("step", "active when", "Sneaking")
     reset()
     walk(40)
-    held = pos()[2]
-    setting("step", "active when", "Always")
-    setting("step", "height", "1.25")
+    held = pos()[2] - Z0
+    reset()
+    walk(100, extra="shift")
+    sneaking = pos()[2] - Z0
     only()
-    unwall()
-    return high > Z0 + 4 and held < Z0 + 3, f"z {high-Z0:.1f} over 2 blocks, {held-Z0:.1f} when only active sneaking"
+    return high > 4 and held < 3 and sneaking > 4, f"z {high:.1f} over 2 blocks at Height 2.25; Active when Sneaking: {held:.1f} walking, {sneaking:.1f} sneaking"
 
+
+@test("Glide")
+def _():
+    # In creative, so the falls cost nothing.
+    reset("creative", y=Y + 60)
+    free = fall_rate(ticks=10, warm=10)
+    reset("creative", y=Y + 60)
+    only("glide")
+    slow = fall_rate()
+    setting("glide", "fall speed", "5")
+    reset("creative", y=Y + 60)
+    faster = fall_rate()
+    reset("creative", y=Y + 30)
+    only()
+    back = fall_rate(ticks=10, warm=10)
+    return abs(slow - 2.5) < 0.2 and abs(faster - 5) < 0.3 and free > 10 and back > 10, f"falls at {slow:.2f} blocks/s with Fall speed 2.5, {faster:.2f} with 5; {free:.1f} without, {back:.1f} off again"
+
+
+@test("Auto Jump")
+def _():
+    wall(1)
+    only("autojump")
+    walk(40)
+    mine = pos()[2] - Z0
+    only()
+    reset()
+    walk(40)
+    back = pos()[2] - Z0
+    return mine > 4 and back < 3, f"reached z {mine:.1f} past a 1-block wall, {back:.1f} off"
+
+
+@test("Spider")
+def _():
+    wall(12, at=1)
+    only("spider")
+    climb = rate(ticks=10, warm=6, up=True)
+    setting("spider", "climb speed", "0.4")
+    reset()
+    faster = rate(ticks=10, warm=6, up=True)
+    only()
+    reset()
+    back = rate(ticks=10, warm=6, up=True)
+    # Climb speed is blocks a tick.
+    return abs(climb - 4) < 0.4 and abs(faster - 8) < 0.8 and abs(back) < 0.1, f"climbs {climb:.1f} blocks/s with Climb speed 0.2, {faster:.1f} with 0.4, {back:.1f} off"
+
+
+def jump_peak():
+    """How high one jump takes you, sampled every tick."""
+    y0 = pos()[1]
+    ctl("key", "space", "down")
+    wait(2)
+    ctl("key", "space", "up")
+    best = y0
+    for _ in range(40):
+        wait(1)
+        best = max(best, pos()[1])
+    return best - y0
+
+
+def jump_height(v0):
+    """The peak of a jump that starts at `v0` blocks a tick (vanilla's step: move, then gravity and drag)."""
+    y = best = 0.0
+    v = v0
+    while v > 0:
+        y += v
+        best = max(best, y)
+        v = (v - 0.08) * 0.98
+    return best
+
+
+@test("High Jump")
+def _():
+    base = jump_peak()
+    only("highjump")
+    reset()
+    two = jump_peak()
+    setting("highjump", "multiplier", "3")
+    reset()
+    three = jump_peak()
+    only()
+    reset()
+    back = jump_peak()
+    want2, want3 = jump_height(0.84), jump_height(1.26)
+    ok = abs(base - 1.25) < 0.05 and abs(two - want2) < want2 * 0.1 and abs(three - want3) < want3 * 0.1 and abs(back - base) < 0.05
+    return ok, f"jump {base:.2f} blocks high; Multiplier 2: {two:.2f} (a 0.84 jump: {want2:.2f}), 3: {three:.2f} ({want3:.2f}); off again {back:.2f}"
+
+
+def jump_length(*keys):
+    """How far one jump from walking (or with `keys`) carries you across, takeoff to landing."""
+    reset(z=-14.5)
+    for k in ("w", *keys):
+        ctl("key", k, "down")
+    wait(12)
+    start = pos()
+    ctl("key", "space", "down")
+    wait(2)
+    ctl("key", "space", "up")
+    landed = None
+    for _ in range(30):
+        wait(1)
+        s = state()["player"]
+        if s["on_ground"]:
+            landed = s["position"]
+            break
+    for k in ("w", *keys):
+        ctl("key", k, "up")
+    return flat(start, landed) if landed else 0.0
+
+
+@test("Long Jump")
+def _():
+    base = jump_length()
+    only("longjump")
+    mine = jump_length()
+    only()
+    back = jump_length()
+    return mine > base * 1.3 and abs(back - base) < 0.3, f"one walking jump covers {base:.2f} blocks, {mine:.2f} with Long Jump, {back:.2f} off again"
+
+
+def air_jump():
+    """Blocks gained over 4 ticks by a jump 8 ticks into a fall."""
+    cmd(f"tp @s {X0 + 0.5} {Y + 12} {Z0 + 0.5}")
+    wait(8)
+    y0 = pos()[1]
+    ctl("key", "space", "down")
+    wait(1)
+    ctl("key", "space", "up")
+    wait(4)
+    return pos()[1] - y0
+
+
+@test("Air Jump")
+def _():
+    only("airjump")
+    mine = air_jump()
+    only()
+    wait(40)
+    plain = air_jump()
+    return mine > 0 and plain < -0.5, f"a jump in mid-air: {mine:+.2f} blocks in 4 ticks with Air Jump, {plain:+.2f} off"
+
+
+@test("Safe Walk")
+def _():
+    reset(z=15.5)
+    only("safewalk")
+    walk(40)
+    p = pos()
+    only()
+    reset(z=15.5)
+    walk(20)
+    q = pos()
+    # The platform ends at z 17; sneaking you may lean 0.3 past an edge.
+    kept = p[1] > Y + 0.99 and p[2] - Z0 < 17.35
+    return kept and q[1] < Y, f"walking at the edge: stopped at z {p[2]-Z0:.2f}, y {p[1]-Y:+.2f}; off: fell to y {q[1]-Y:+.1f}"
+
+
+def peak(ticks=24):
+    best = pos()[1]
+    for _ in range(ticks // 2):
+        wait(2)
+        best = max(best, pos()[1])
+    return best
+
+
+@test("Parkour")
+def _():
+    reset(z=14.0)
+    only("parkour")
+    ctl("key", "w", "down")
+    best = peak(30)
+    ctl("key", "w", "up")
+    only()
+    reset(z=14.0)
+    ctl("key", "w", "down")
+    plain = peak(30)
+    ctl("key", "w", "up")
+    return best > Y + 1.3 and plain < Y + 1.05, f"at the edge: jumped to {best-Y-1:.2f} blocks up, {plain-Y-1:.2f} off"
+
+
+@test("Anchor")
+def _():
+    hx, hz = X0 + 5, Z0
+    cmd(f"setblock {hx} {Y} {hz} minecraft:air", f"setblock {hx} {Y-1} {hz} minecraft:obsidian")
+    cmd(*(f"setblock {hx+dx} {Y} {hz+dz} minecraft:obsidian" for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1))))
+
+    def over_hole():
+        cmd(f"tp @s {X0+5.1} {Y+6} {Z0+0.15}")
+        wait(60)
+        return pos()
+
+    only("anchor")
+    p = over_hole()
+    only()
+    q = over_hole()
+    into = abs(p[0] - (hx + 0.5)) < 0.3 and abs(p[2] - (hz + 0.5)) < 0.3 and p[1] < Y + 0.1
+    return into and q[1] > Y + 0.9, f"from above a hole's edge: landed {p[0]-hx-0.5:+.2f},{p[2]-hz-0.5:+.2f} from its middle, {p[1]-Y:+.2f} high; off: landed beside it at {q[1]-Y:+.2f}"
+
+
+def knocked():
+    """Blocks a husk's hit (/damage ... by it) pushes you across, and how high."""
+    reset()
+    cmd("difficulty easy", f"summon husk {X0 + 2.5} {Y + 1} {Z0 + 0.5} {HUSK}")
+    wait(10)
+    p0 = pos()
+    cmd("damage @s 1 minecraft:mob_attack by @e[type=husk,limit=1]")
+    top = p0[1]
+    for _ in range(10):
+        wait(1)
+        top = max(top, pos()[1])
+    wait(10)
+    return flat(p0, pos()), top - p0[1]
+
+
+@test("Velocity (knockback)")
+def _():
+    plain = knocked()
+    only("velocity")
+    none = knocked()
+    setting("velocity", "knockback horizontal", "0.5")
+    setting("velocity", "knockback vertical", "0.5")
+    half = knocked()
+    setting("velocity", "knockback", "false")
+    full = knocked()
+    only()
+    back = knocked()
+    ok = (plain[0] > 0.5 and none[0] < 0.05 and none[1] < 0.05 and 0.3 < half[0] / plain[0] < 0.7 and abs(full[0] - plain[0]) < 0.2
+          and abs(back[0] - plain[0]) < 0.2)
+    return ok, (f"a husk's hit pushes you {plain[0]:.2f} blocks ({plain[1]:.2f} up); Velocity at 0: {none[0]:.2f} ({none[1]:.2f}); "
+                f"at 0.5: {half[0]:.2f} ({half[1]:.2f}); Knockback off: {full[0]:.2f}; off again {back[0]:.2f}")
+
+
+def drift(ticks=20):
+    """Blocks you drift across in `ticks` with nothing held."""
+    a = pos()
+    wait(ticks)
+    return flat(a, pos())
+
+
+@test("Velocity (liquids, entities, sinking)")
+def _():
+    # A channel of flowing water one block deep, its source at the far end.
+    def in_stream():
+        reset()
+        cmd(f"fill {X0-1} {Y} {Z0-6} {X0+1} {Y} {Z0+6} minecraft:air", f"fill {X0-1} {Y-1} {Z0-6} {X0+1} {Y-1} {Z0+6} minecraft:stone",
+            f"fill {X0-1} {Y} {Z0+6} {X0+1} {Y} {Z0+6} minecraft:water", f"tp @s {X0+0.5} {Y} {Z0+0.5}")
+        wait(30)
+        return drift()
+
+    stream = in_stream()
+    only("velocity")
+    held = in_stream()
+    setting("velocity", "liquids horizontal", "0.5")
+    half = in_stream()
+    only()
+    cmd(f"fill {X0-1} {Y-1} {Z0-6} {X0+1} {Y} {Z0+6} minecraft:air", f"fill {X0-1} {Y} {Z0-6} {X0+1} {Y} {Z0+6} minecraft:stone")
+
+    # A pig standing half inside you.
+    def shoved():
+        reset()
+        cmd(f"summon pig {X0 + 0.7} {Y + 1} {Z0 + 0.5} {NOAI}")
+        return drift(10)
+
+    pushed = shoved()
+    only("velocity")
+    stood = shoved()
+    only()
+
+    # Deep water, nothing held.
+    def sunk():
+        reset()
+        cmd(f"fill {X0-2} {Y+1} {Z0-2} {X0+2} {Y+8} {Z0+2} minecraft:water", f"tp @s {X0+0.5} {Y+5} {Z0+0.5}")
+        wait(10)
+        y0 = pos()[1]
+        wait(20)
+        return y0 - pos()[1]
+
+    sinks = sunk()
+    only("velocity")
+    setting("velocity", "sinking", "true")
+    level = sunk()
+    only()
+    ok = stream > 0.15 and held < 0.05 and 0.3 < half / stream < 0.7 and pushed > 0.1 and stood < 0.01 and sinks > 0.2 and abs(level) < 0.05
+    return ok, (f"flowing water carries you {stream:.2f} blocks in 1 s, {held:.2f} with Velocity, {half:.2f} at Liquids horizontal 0.5; "
+                f"a pig inside you shoves you {pushed:.2f} in 0.5 s, {stood:.2f} with Velocity; in deep water you sink {sinks:.2f} in 1 s, "
+                f"{level:+.2f} with Sinking")
+
+
+@test("Timer")
+def _():
+    def rate_now():
+        t0, c0 = state()["ticks"], time.time()
+        time.sleep(3)
+        return (state()["ticks"] - t0) / (time.time() - c0)
+
+    base = rate_now()
+    only("timer")
+    two = rate_now()
+    setting("timer", "multiplier", "3")
+    three = rate_now()
+    only()
+    back = rate_now()
+    return abs(two / base - 2) < 0.2 and abs(three / base - 3) < 0.3 and abs(back - base) < 1.5, f"{base:.1f} ticks/s; Multiplier 2: {two:.1f}, 3: {three:.1f}; off again {back:.1f}"
+
+# ---- screens, menus and rendering
 
 def brightness(name):
     path = f"/tmp/{name}.png"
     ctl("screenshot", path)
     time.sleep(2)
-    out = subprocess.run(["identify", "-format", "%[fx:mean]", path], capture_output=True, text=True).stdout
+    out = subprocess.run(["identify", "-format", "%[fx:mean]", path], capture_output=True, text=True, timeout=60).stdout
     return float(out)
 
 
 @test("No Render (blindness)")
 def _():
     reset("creative")
-    say("/effect give @s minecraft:blindness 90 0 true")
+    cmd("effect give @s minecraft:blindness 90 0 true")
     wait(40)
     dark = brightness("nr_blind")
     only("norender")
     wait(30)
     clear = brightness("nr_clear")
+    setting("norender", "hide blindness", "false")
+    wait(30)
+    kept = brightness("nr_kept")
     only()
-    say("/effect clear @s")
-    return clear > dark * 1.5, f"brightness {dark:.2f} blinded, {clear:.2f} with No Render"
+    wait(30)
+    back = brightness("nr_back")
+    ok = clear > dark * 1.5 and kept < clear * 0.7 and back < clear * 0.7
+    return ok, f"brightness {dark:.2f} blinded, {clear:.2f} with No Render, {kept:.2f} with Hide blindness off, {back:.2f} with it off"
 
 
 @test("No Render (water)")
 def _():
     reset("creative")
-    say(f"/fill {X0-2} {Y+1} {Z0-2} {X0+2} {Y+6} {Z0+2} minecraft:water")
-    say(f"/tp @s {X0+0.5} {Y+3} {Z0+0.5}")
+    cmd(f"fill {X0-2} {Y+1} {Z0-2} {X0+2} {Y+6} {Z0+2} minecraft:water", f"tp @s {X0+0.5} {Y+3} {Z0+0.5}")
     wait(40)
     wet = brightness("nr_wet")
     only("norender")
     wait(30)
     dry = brightness("nr_dry")
     only()
-    say(f"/fill {X0-2} {Y+1} {Z0-2} {X0+2} {Y+6} {Z0+2} minecraft:air")
-    return dry > wet * 1.2, f"brightness {wet:.2f} in water, {dry:.2f} with No Render"
+    wait(30)
+    back = brightness("nr_wet_back")
+    return dry > wet * 1.2 and back < dry * 0.9, f"brightness {wet:.2f} in water, {dry:.2f} with No Render, {back:.2f} with it off"
 
 
 def inventory_brightness(name):
@@ -305,9 +844,7 @@ def inventory_brightness(name):
 
 @test("Menu dim (inventory)")
 def _():
-    reset("survival")
     ctl("look", "0", "10")
-    only()
     setting("clickgui", "menu dim", "true")
     dim = inventory_brightness("md_dark")
     setting("clickgui", "menu dim", "false")
@@ -329,7 +866,6 @@ def _():
     reset("creative")
     ctl("look", "0", "50")
     wait(5)
-    only()
     plain = floor("pm_plain")
     setting("clickgui", "menu dim", "true")
     ctl("pause")
@@ -354,7 +890,6 @@ def _():
         ctl("options-set", "guiScale", str(n))
         reset("survival")
         ctl("look", "0", "10")
-        only()
         setting("clickgui", "menu dim", "true")
         dim = inventory_brightness("md_scale_dark")
         setting("clickgui", "menu dim", "false")
@@ -363,57 +898,6 @@ def _():
         notes.append(f"scale {n}: {dim:.2f} -> {clear:.2f}")
     ctl("options-set", "guiScale", str(scale))
     return ok, ", ".join(notes)
-
-
-@test("Flight (no fall damage, level hover)")
-def _():
-    reset("survival")
-    only("flight")
-    ctl("key", "space", "down")
-    wait(60)
-    ctl("key", "space", "up")
-    wait(6)
-    y0 = pos()[1]
-    wait(100)
-    drift = pos()[1] - y0
-    ctl("key", "shift", "down")
-    wait(120)
-    ctl("key", "shift", "up")
-    wait(10)
-    health = hp()
-    only()
-    return abs(drift) < 0.05 and health >= 20, f"hovered {drift:+.3f} blocks in 5 s, health {health} after flying up 15 and sneaking down"
-
-
-@test("No Fall (after Flight)")
-def _():
-    reset("survival")
-    only("flight", "nofall")
-    ctl("key", "space", "down")
-    wait(80)
-    ctl("key", "space", "up")
-    only("nofall")
-    wait(80)
-    health = hp()
-    only()
-    return health >= 20, f"health {health} after dropping from {pos()[1]-Y:.0f}"
-
-
-@test("GUI Move")
-def _():
-    reset("survival")
-    only("guimove")
-    ctl("open-inventory")
-    wait(6)
-    start = pos()
-    ctl("key", "w", "down")
-    wait(30)
-    ctl("key", "w", "up")
-    end = pos()
-    ctl("close")
-    only()
-    moved = ((end[0] - start[0]) ** 2 + (end[2] - start[2]) ** 2) ** 0.5
-    return moved > 2.0, f"walked {moved:.1f} blocks with the inventory open"
 
 
 def walked_in(screen_open, screen_close, key="w", ticks=30):
@@ -426,178 +910,69 @@ def walked_in(screen_open, screen_close, key="w", ticks=30):
     end = pos()
     screen_close()
     wait(6)
-    return ((end[0] - start[0]) ** 2 + (end[2] - start[2]) ** 2) ** 0.5
+    return flat(start, end)
 
 
-def leave_pause():
-    ctl("resume")
+@test("GUI Move")
+def _():
+    reset(z=-14.5)
+    only("guimove")
+    ctl("open-inventory")
+    wait(6)
+    speed = rate()
+    ctl("close")
+    only()
+    reset(z=-14.5)
+    ctl("open-inventory")
+    wait(6)
+    plain = rate()
+    ctl("close")
+    return 4.0 < speed < 4.6 and plain < 0.05, f"walks {speed:.2f} blocks/s with the inventory open (the game's walking speed), {plain:.2f} off"
 
 
 @test("GUI Move (pause menu)")
 def _():
-    reset("survival")
     only("guimove")
     ctl("pause")
     wait(4)
     stopped = state().get("paused")
     ctl("resume")
     if stopped:
-        only()
         return None, "single player stops the world behind the pause menu: nothing can move there"
     wait(4)
-    all_menus = walked_in(lambda: ctl("pause"), leave_pause)
+    all_menus = walked_in(lambda: ctl("pause"), lambda: ctl("resume"))
     setting("guimove", "screens", "Inventory")
-    reset("survival")
-    inventory_only = walked_in(lambda: ctl("pause"), leave_pause)
-    setting("guimove", "screens", "All menus")
-    only()
-    return all_menus > 2.0 and inventory_only < 0.5, f"walked {all_menus:.1f} blocks in the pause menu, {inventory_only:.1f} with Screens on Inventory"
+    reset()
+    inventory_only = walked_in(lambda: ctl("pause"), lambda: ctl("resume"))
+    return all_menus > 2.0 and inventory_only < 0.05, f"walked {all_menus:.1f} blocks in the pause menu, {inventory_only:.1f} with Screens on Inventory"
 
 
 @test("GUI Move (not in chat)")
 def _():
-    reset("survival")
     only("guimove")
-
-    def open_chat():
-        ctl("key", "t", "tap")
-
-    def close_chat():
-        ctl("key", "esc", "tap")
-
-    moved = walked_in(open_chat, close_chat)
-    only()
-    return moved < 0.5, f"walked {moved:.1f} blocks with the chat open"
+    moved = walked_in(lambda: ctl("key", "t", "tap"), lambda: ctl("key", "esc", "tap"))
+    return moved < 0.05, f"walked {moved:.2f} blocks with the chat open"
 
 
 @test("GUI Move (with Flight)")
 def _():
-    reset("survival")
+    reset(z=-14.5, y=Y + 3)
     only("guimove", "flight")
     ctl("open-inventory")
     wait(6)
-    start = pos()
-    ctl("key", "w", "down")
-    wait(30)
-    ctl("key", "w", "up")
-    end = pos()
+    speed = rate(ticks=10, warm=4)
     ctl("close")
-    only()
-    moved = ((end[0] - start[0]) ** 2 + (end[2] - start[2]) ** 2) ** 0.5
-    return moved > 6.0, f"flew {moved:.1f} blocks in 1.5 s with the inventory open"
-
-
-@test("Nuker (survival)")
-def _():
-    reset("survival")
-    say("/item replace entity @s hotbar.0 with minecraft:iron_pickaxe")
-    ctl("key", "1", "tap")
-    wait(2)
-    say(f"/fill {X0-1} {Y+1} {Z0+1} {X0+1} {Y+2} {Z0+2} minecraft:stone")
-    wait(4)
-    only("nuker")
-    wait(60)
-    left = sum(1 for dx in (-1, 0, 1) for dy in (1, 2) for dz in (1, 2)
-               if check(f"/execute if block {X0+dx} {Y+dy} {Z0+dz} minecraft:stone"))
-    only()
-    broken = 12 - left
-    return broken >= 6, f"{broken} of 12 stone blocks broken in 3 s with an iron pickaxe"
-
-
-@test("Nuker (creative shred)")
-def _():
-    reset("creative")
-    say(f"/fill {X0-3} {Y+1} {Z0-3} {X0+3} {Y+4} {Z0+3} minecraft:stone")
-    say(f"/fill {X0} {Y+1} {Z0} {X0} {Y+2} {Z0} minecraft:air")
-    say(f"/tp @s {X0+0.5} {Y+1} {Z0+0.5}")
-    wait(10)
-    only("nuker")
-    wait(20)
-    n = 0
-    for dx in range(-3, 4):
-        for dy in range(1, 5):
-            for dz in range(-3, 4):
-                if ctl("block", str(X0 + dx), str(Y + dy), str(Z0 + dz)).get("block") == "minecraft:stone":
-                    n += 1
-    only()
-    broken = 194 - n
-    return broken >= 150, f"{broken} of 194 blocks broken in 1 s in creative"
-
-
-@test("Auto Steal")
-def _():
-    reset("survival")
-    say(f"/setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]{{Items:[{{Slot:0b,id:\"minecraft:diamond\",count:5}},{{Slot:1b,id:\"minecraft:gold_ingot\",count:3}},{{Slot:5b,id:\"minecraft:emerald\",count:2}}]}}")
-    wait(6)
-    only("autosteal")
-    ctl("interact", str(X0 + 1), str(Y + 1), str(Z0))
-    wait(30)
-    counts = ctl("inventory").get("counts", {})
-    got = counts.get("minecraft:diamond") == 5 and counts.get("minecraft:emerald") == 2
-    ctl("close")
-    only()
-    return got, "chest emptied into the inventory" if got else "items still in the chest"
-
-
-@test("Inventory Cleaner")
-def _():
-    reset("survival")
-    say("/item replace entity @s inventory.3 with minecraft:rotten_flesh 12")
-    say("/item replace entity @s inventory.4 with minecraft:bread 4")
-    only("inventorycleaner")
+    setting("flight", "mode", "Velocity")
+    reset(z=-14.5, y=Y + 3)
     ctl("open-inventory")
-    wait(30)
-    ctl("close")
-    counts = ctl("inventory").get("counts", {})
-    gone = "minecraft:rotten_flesh" not in counts
-    kept = counts.get("minecraft:bread") == 4
-    only()
-    return gone and kept, f"junk dropped: {gone}, bread kept: {kept}"
-
-
-@test("Panic")
-def _():
-    reset("survival")
-    only("sprint", "fastplace")
-    say(".panic")
     wait(6)
-    plain = ctl("status")
-    sprinting = state()["player"].get("sprinting")
-    on.clear()
-    # Panic switched the HUD off too: the tests after this one that look at it need it on.
-    say(".t hud")
-    return sprinting in (None, False), "every module off after .panic"
-
-
-@test("Profiles")
-def _():
-    reset("survival")
-    say(".set killaura range 3")
-    say(".profile save pvp")
-    say(".set killaura range 5")
-    say(".profile load pvp")
-    wait(4)
-    say(".settings killaura")
-    wait(4)
-    return True, "saved and loaded (checked by eye in the shots)"
-
-
-@test("Glide")
-def _():
-    reset("survival")
-    say(f"/tp @s {X0+0.5} {Y+40} {Z0+0.5}")
-    wait(10)
-    y0 = pos()[1]
-    only("glide")
-    wait(40)
-    dropped = y0 - pos()[1]
-    only()
-    return 3.0 < dropped < 14.0, f"fell {dropped:.1f} blocks in 2 s with Glide (free fall is about 20)"
+    velocity = rate(ticks=10, warm=4)
+    ctl("close")
+    return abs(speed - 21.8) < 2 and abs(velocity - 20) < 2, f"flew {speed:.1f} blocks/s with the inventory open (Flight's Abilities at Speed 0.1), {velocity:.1f} in Velocity mode"
 
 
 @test("Search + Enter")
 def _():
-    reset("survival")
     say(".menu timer")
     wait(6)
     ctl("key", "enter", "tap")
@@ -605,432 +980,550 @@ def _():
     t0, c0 = ctl("status")["ticks"], time.time()
     time.sleep(2)
     t1, c1 = ctl("status")["ticks"], time.time()
-    rate = (t1 - t0) / (c1 - c0)
+    rate_now = (t1 - t0) / (c1 - c0)
     for _ in range(2):
         ctl("key", "esc", "tap")
         time.sleep(1)
     if state().get("screen") == "paused":
         ctl("key", "esc", "tap")
     on.add("timer")
-    only()
-    return rate > 30, f"{rate:.0f} ticks a second after Enter (20 is normal, Timer doubles it)"
+    return rate_now > 30, f"{rate_now:.0f} ticks a second after Enter (20 is normal, Timer doubles it)"
 
 
-@test("Auto Jump")
+@test("Panic")
 def _():
-    reset()
-    unwall()
-    wall(1)
-    only("autojump")
-    walk(40)
-    mine = pos()[2]
-    only()
-    unwall()
-    return mine > Z0 + 4, f"reached z {mine-Z0:.1f} past a 1-block wall"
+    only("sprint", "fastplace", "fullbright")
+    mark = log_mark()
+    say(".panic")
+    wait(6)
+    said = sunset_said(mark)
+    sprinting = state()["player"].get("sprinting")
+    on.clear()
+    # Panic switched the HUD off too: put it back as it starts.
+    say(".reset hud")
+    return not sprinting and "Everything is off." in said, f"after .panic Sunset says {said}, sprinting: {sprinting}"
 
 
-@test("Spider")
+@test("Profiles")
 def _():
-    reset()
-    unwall()
-    wall(8)
-    only("spider")
-    walk(40)
-    y = pos()[1]
-    only()
-    unwall()
-    return y > Y + 3, f"climbed to {y-Y:.1f}"
-
-
-def peak(ticks=24, keys=()):
-    best = pos()[1]
-    for _ in range(ticks // 2):
-        wait(2)
-        best = max(best, pos()[1])
-    return best
-
-
-@test("High Jump")
-def _():
-    reset()
-    ctl("key", "space", "tap")
-    base = peak() - (Y + 1)
-    reset()
-    only("highjump")
-    setting("highjump", "multiplier", "3")
-    ctl("key", "space", "down")
-    wait(1)
-    ctl("key", "space", "up")
-    mine = peak() - (Y + 1)
-    only()
-    return mine > base * 1.8, f"{base:.2f} -> {mine:.2f} blocks high"
-
-
-@test("Long Jump")
-def _():
-    reset()
-    ctl("key", "w", "down")
-    ctl("key", "space", "down")
-    wait(2)
-    ctl("key", "space", "up")
-    wait(30)
-    ctl("key", "w", "up")
-    base = pos()[2] - Z0
-    reset()
-    only("longjump")
-    ctl("key", "w", "down")
-    ctl("key", "space", "down")
-    wait(2)
-    ctl("key", "space", "up")
-    wait(30)
-    ctl("key", "w", "up")
-    mine = pos()[2] - Z0
-    only()
-    return mine > base * 1.3, f"{base:.1f} -> {mine:.1f} blocks"
-
-
-@test("Air Jump")
-def _():
-    reset()
-    only("airjump")
-    say(f"/tp @s {X0+0.5} {Y+10} {Z0+0.5}")
-    wait(8)
-    y0 = pos()[1]
-    ctl("key", "space", "tap")
+    setting("killaura", "range", "3")
+    say(".profile save verify")
+    setting("killaura", "range", "5")
+    say(".profile load verify")
     wait(4)
-    y1 = pos()[1]
-    only()
-    return y1 > y0 - 0.4, f"{y0:.1f} -> {y1:.1f} (falling would be about {y0-0.9:.1f})"
+    mark = log_mark()
+    say(".settings killaura")
+    wait(4)
+    lines = sunset_said(mark)
+    say(".profile delete verify")
+    shown = next((c for c in lines if c.startswith("Range:")), "")
+    return shown == "Range: 3", f"Kill Aura Range 3 saved, set to 5, loaded: the settings say \"{shown}\""
 
 
-@test("Safe Walk")
+# ---- player and world
+
+@test("Nuker (survival)")
 def _():
-    reset(x=0.5, z=15.5)
-    only("safewalk")
-    walk(40)
-    y = pos()[1]
-    only()
-    return y > Y + 0.9, f"y {y-Y:.1f} after walking at the platform edge"
-
-
-@test("Parkour")
-def _():
-    reset(x=0.5, z=14.0)
-    only("parkour")
-    ctl("key", "w", "down")
-    best = peak(30)
-    ctl("key", "w", "up")
-    only()
-    return best > Y + 1.3, f"jumped to {best-Y:.1f} at the edge"
-
-
-@test("Anchor")
-def _():
-    reset()
-    hx, hz = X0 + 5, Z0
-    say(f"/setblock {hx} {Y-1} {hz} minecraft:obsidian")
-    say(f"/setblock {hx} {Y} {hz} minecraft:air")
-    for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-        say(f"/setblock {hx+dx} {Y} {hz+dz} minecraft:obsidian")
-    reset()
-    only("anchor")
-    say(f"/tp @s {X0+5.1} {Y+6} {Z0+0.15}")
+    slot(0, "iron_pickaxe")
+    ctl("key", "1", "tap")
+    box = (X0 - 1, Y + 1, Z0 + 1, X0 + 1, Y + 2, Z0 + 2)
+    cmd(f"fill {' '.join(map(str, box))} minecraft:stone")
+    wait(4)
+    only("nuker")
     wait(60)
-    p = pos()
+    broken = 12 - count(*box, "stone")
     only()
-    return abs(p[0] - (hx + 0.5)) < 0.3 and abs(p[2] - (hz + 0.5)) < 0.3, f"landed at {p[0]-hx:.2f},{p[2]-hz:.2f} from the hole's corner"
+    cmd(f"fill {' '.join(map(str, box))} minecraft:stone")
+    wait(40)
+    left = count(*box, "stone")
+    return broken >= 6 and left == 12, f"{broken} of 12 stone blocks broken in 3 s with an iron pickaxe, none once it is off"
 
 
-@test("Velocity")
+@test("Nuker (creative shred)")
 def _():
-    def boom():
-        reset()
-        p0 = pos()
-        say(f"/summon tnt {X0+2.5} {Y+1} {Z0+0.5} {{fuse:1}}")
-        wait(25)
-        p1 = pos()
-        return ((p1[0] - p0[0]) ** 2 + (p1[2] - p0[2]) ** 2) ** 0.5
-    base = boom()
-    only("velocity")
-    mine = boom()
-    only()
-    return mine < base * 0.5 and base > 0.5, f"pushed {base:.1f} blocks, {mine:.1f} with Velocity"
+    box = (X0 - 3, Y + 1, Z0 - 3, X0 + 3, Y + 4, Z0 + 3)
+
+    def shred(**sets):
+        reset("creative")
+        cmd(f"fill {X0-3} {Y+1} {Z0-3} {X0+3} {Y+4} {Z0+3} minecraft:stone", f"fill {X0-3} {Y+3} {Z0-3} {X0+3} {Y+3} {Z0+3} minecraft:dirt",
+            f"fill {X0} {Y+1} {Z0} {X0} {Y+2} {Z0} minecraft:air", f"tp @s {X0+0.5} {Y+1} {Z0+0.5}")
+        wait(10)
+        for k, v in sets.items():
+            setting("nuker", k.replace("_", " "), v)
+        only("nuker")
+        wait(20)
+        left = count(*box, "stone") + count(*box, "dirt")
+        floor_ = 289 - count(X0 - 8, Y, Z0 - 8, X0 + 8, Y, Z0 + 8, "stone")
+        dirt = 49 - count(*box, "dirt")
+        only()
+        cmd(f"fill {X0-16} {Y} {Z0-16} {X0+16} {Y} {Z0+16} minecraft:stone")
+        touched.discard("nuker")
+        say(".reset nuker")
+        return 194 - left, floor_, dirt
+
+    wide = shred()
+    near = shred(range="2")
+    slow = shred(max_blocks_per_tick="1")
+    every = shred(mode="All")
+    dirt_only = shred(list_mode="Whitelist", whitelist="dirt")
+    cube = shred(shape="Cube")
+    ok = (wide[0] >= 100 and wide[1] == 0 and near[0] < wide[0] * 0.5 and slow[0] <= 21 and every[1] > 0
+          and dirt_only[0] == dirt_only[2] > 0 and 0 < cube[0] < wide[0])
+    return ok, (f"in 1 s: {wide[0]} of 194 blocks at Range 4 (floor kept, Flatten), {near[0]} at Range 2, {slow[0]} at 1 block a tick, "
+                f"{every[1]} floor blocks too in mode All, {dirt_only[0]} (all dirt: {dirt_only[2]}) with only dirt whitelisted, {cube[0]} in the 3x4x3 Cube")
+
+
+@test("Auto Steal")
+def _():
+    items = ",".join(f"{{Slot:{i}b,id:\"minecraft:stone\",count:1}}" for i in range(27))
+    cmd(f"setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]{{Items:[{items}]}}")
+    wait(6)
+
+    def taken(per_tick):
+        setting("autosteal", "items per tick", per_tick)
+        only("autosteal")
+        ctl("interact", str(X0 + 1), str(Y + 1), str(Z0))
+        wait(4)
+        got = ctl("inventory").get("counts", {}).get("minecraft:stone", 0)
+        wait(30)
+        everything = ctl("inventory").get("counts", {}).get("minecraft:stone", 0)
+        ctl("close")
+        only()
+        return got, everything
+
+    slow = taken("1")
+    cmd("clear @s", f"setblock {X0+1} {Y+1} {Z0} minecraft:air", f"setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]{{Items:[{items}]}}")
+    fast = taken("9")
+    return slow[1] == 27 and fast[1] == 27 and fast[0] > slow[0] * 2, f"in 4 ticks: {slow[0]} items at 1 a tick, {fast[0]} at 9; all 27 taken either way"
+
+
+@test("Inventory Cleaner")
+def _():
+    cmd("item replace entity @s inventory.3 with minecraft:rotten_flesh 12", "item replace entity @s inventory.4 with minecraft:bread 4")
+    only("inventorycleaner")
+    ctl("open-inventory")
+    wait(30)
+    ctl("close")
+    counts = ctl("inventory").get("counts", {})
+    gone, kept = "minecraft:rotten_flesh" not in counts, counts.get("minecraft:bread") == 4
+    setting("inventorycleaner", "items", "bread")
+    ctl("open-inventory")
+    wait(30)
+    ctl("close")
+    bread = "minecraft:bread" not in ctl("inventory").get("counts", {})
+    return gone and kept and bread, f"rotten flesh dropped: {gone}, bread kept: {kept}; bread dropped once listed: {bread}"
 
 
 @test("Auto Respawn")
 def _():
-    reset()
     only("autorespawn")
-    say("/kill @s")
-    wait(90)
-    s = state()["screen"]
-    only()
-    return s == "playing", f"screen after dying: {s}"
+    cmd("kill @s")
+    t0 = state()["ticks"]
+    back = None
+    for _ in range(60):
+        wait(2)
+        s = state()
+        if s.get("screen") == "playing" and s["player"]["health"] > 0:
+            back = s["ticks"] - t0
+            break
+    return back is not None, f"respawned {back} ticks after dying" if back else "still on the death screen"
 
 
 @test("Anti AFK")
 def _():
-    reset()
     setting("antiafk", "jump", "false")
     setting("antiafk", "spin mode", "Client")
-    only("antiafk")
-    y0 = ctl("status").get("yaw", 0)
-    far = 0
-    for _ in range(8):
-        wait(10)
-        far = max(far, abs(ctl("status").get("yaw", 0) - y0))
-    only()
-    return far > 20, f"yaw moved up to {far:.0f} degrees"
 
+    def spun():
+        only("antiafk")
+        y0 = ctl("status").get("yaw", 0)
+        wait(20)
+        y1 = ctl("status").get("yaw", 0)
+        only()
+        return abs(y1 - y0)
 
-def slot(i, item, n):
-    say(f"/item replace entity @s hotbar.{i} with minecraft:{item} {n}")
+    seven = spun()
+    setting("antiafk", "speed", "14")
+    fourteen = spun()
+    # Speed is degrees a tick.
+    return abs(seven - 140) < 20 and abs(fourteen - 280) < 40, f"turned {seven:.0f} degrees in 20 ticks at Speed 7, {fourteen:.0f} at 14"
 
 
 @test("Auto Replenish")
 def _():
-    reset()
-    say("/item replace entity @s hotbar.0 with minecraft:stone 3")
-    say("/item replace entity @s inventory.0 with minecraft:stone 64")
-    only("autoreplenish")
-    wait(80)
-    c = ctl("state").get("held") or {}
-    only()
-    return c.get("count", 0) > 3, f"hotbar stack is {c.get('count')}"
+    def refilled(n):
+        reset()
+        cmd(f"item replace entity @s hotbar.0 with minecraft:stone {n}", "item replace entity @s inventory.0 with minecraft:stone 64")
+        only("autoreplenish")
+        wait(40)
+        c = held().get("count", 0)
+        only()
+        return c
+
+    low, high = refilled(3), refilled(12)
+    setting("autoreplenish", "threshold", "16")
+    high16 = refilled(12)
+    return low == 64 and high == 12 and high16 == 64, f"a stack of 3 goes to {low}, of 12 stays {high} (Threshold 8); at Threshold 16 the 12 goes to {high16}"
 
 
 @test("Auto Tool")
 def _():
-    reset()
-    say(f"/setblock {X0} {Y+1} {Z0+2} minecraft:stone")
-    say("/item replace entity @s hotbar.0 with minecraft:diamond_sword")
-    say("/item replace entity @s hotbar.1 with minecraft:diamond_pickaxe")
+    slot(0, "diamond_sword")
+    slot(1, "diamond_pickaxe")
+    slot(2, "diamond_shovel")
     ctl("key", "1", "tap")
     wait(2)
-    ctl("look", "0", "30")
     only("autotool")
-    ctl("mouse", "left", "down")
-    wait(20)
-    held = (ctl("state").get("held") or {}).get("item", "")
-    ctl("mouse", "left", "up")
+
+    def mining(block):
+        cmd(f"setblock {X0} {Y+1} {Z0+2} minecraft:{block}")
+        ctl("look-at-block", str(X0), str(Y + 1), str(Z0 + 2))
+        wait(2)
+        ctl("mouse", "left", "down")
+        wait(3)
+        item = held().get("item", "")
+        ctl("mouse", "left", "up")
+        wait(5)
+        return item, held().get("item", "")
+
+    dirt, after = mining("dirt")
+    stone, _ = mining("stone")
+    setting("autotool", "switch back", "false")
+    _, kept = mining("dirt")
     only()
-    return "pickaxe" in held, f"holding {held}"
+    return "shovel" in dirt and "pickaxe" in stone and "sword" in after and "shovel" in kept, (
+        f"mining dirt: {dirt}, stone: {stone}; let go: {after} again, {kept} with Switch back off")
 
 
 @test("Middle Click Extra")
 def _():
-    reset()
-    say("/item replace entity @s hotbar.4 with minecraft:ender_pearl 4")
+    slot(4, "ender_pearl", 4)
+    ctl("key", "3", "tap")
     only("middleclickextra")
+    ctl("look", "0", "-30")
     ctl("mouse", "middle", "click")
     wait(10)
-    say("/clear @s minecraft:ender_pearl 0")
-    left = chat_first()
-    only()
-    return "Found 3 " in left, left
+    left = ctl("inventory").get("counts", {}).get("minecraft:ender_pearl", 0)
+    selected = state().get("selected")
+    return left == 3 and selected == 3, f"{left} pearls left after a middle click from slot 3, slot {selected} selected after"
 
 
 @test("Auto Totem")
 def _():
-    reset()
-    say("/item replace entity @s inventory.4 with minecraft:totem_of_undying 1")
+    cmd("item replace entity @s inventory.4 with minecraft:totem_of_undying 1")
     only("autototem")
     wait(30)
-    smart = check("/execute if items entity @s weapon.offhand minecraft:totem_of_undying")
+    smart = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
+    setting("autototem", "health", "36")
+    wait(30)
+    low = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
+    cmd("item replace entity @s weapon.offhand with minecraft:air", "item replace entity @s inventory.4 with minecraft:totem_of_undying 1")
+    setting("autototem", "health", "10")
     setting("autototem", "mode", "Strict")
     wait(40)
-    strict = check("/execute if items entity @s weapon.offhand minecraft:totem_of_undying")
-    setting("autototem", "mode", "Smart")
-    only()
-    return strict and not smart, f"healthy: offhand {'filled' if smart else 'empty'} in Smart, {'filled' if strict else 'empty'} in Strict"
-
-
-@test("Trigger Bot")
-def _():
-    reset()
-    say("/difficulty peaceful")
-    say(f"/summon pig {X0+0.5} {Y+1} {Z0+2.5} {{NoAI:1b}}")
-    say("/item replace entity @s hotbar.0 with minecraft:diamond_sword")
-    ctl("key", "1", "tap")
-    wait(30)
-    pid = [e for e in ctl("entities")["entities"] if e["kind"] == "mob"][0]["id"]
-    ctl("look-at-entity", str(pid))
-    only("triggerbot")
-    setting("triggerbot", "passive", "true")
-    wait(80)
-    e = [x for x in ctl("entities").get("entities", []) if x.get("kind") == "mob"]
-    only()
-    h = e[0]["health"] if e else 0
-    return h < 10, f"pig health {h}"
+    strict = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
+    return strict and low and not smart, (f"at full health: offhand {'filled' if smart else 'empty'} in Smart; Smart with Health 36: "
+                                         f"{'filled' if low else 'empty'}; Strict: {'filled' if strict else 'empty'}")
 
 
 @test("Auto Shearer")
 def _():
-    reset()
-    say("/item replace entity @s hotbar.0 with minecraft:shears")
-    say(f"/summon sheep {X0+1.5} {Y+1} {Z0+1.5} {{NoAI:1b}}")
-    wait(10)
-    only("autoshearer")
-    wait(60)
-    ok = check("/execute if entity @e[type=sheep,nbt={Sheared:1b}]")
-    only()
-    return ok, "sheep sheared" if ok else "sheep still wooly"
+    def sheared(distance):
+        reset()
+        slot(0, "shears")
+        cmd(f"summon sheep {X0+0.5} {Y+1} {Z0+3.0} {NOAI}")
+        setting("autoshearer", "distance", distance)
+        only("autoshearer")
+        wait(40)
+        done = check("execute if entity @e[type=sheep,nbt={Sheared:1b}]")
+        only()
+        return done
+
+    near, far = sheared("5"), sheared("2")
+    return near and not far, f"a sheep 2.5 blocks away: sheared at Distance 5: {near}, at 2: {far}"
 
 
 @test("Auto Nametag")
 def _():
-    reset()
-    say("/item replace entity @s hotbar.0 with minecraft:name_tag[custom_name='\"Bob\"']")
-    say(f"/summon pig {X0+1.5} {Y+1} {Z0+1.5} {{NoAI:1b}}")
-    wait(10)
-    setting("autonametag", "entities", "pig")
-    only("autonametag")
-    wait(60)
-    ok = check("/execute if entity @e[type=pig,nbt={CustomName:'\"Bob\"'}]")
-    only()
-    return ok, "pig named Bob" if ok else "pig not named"
+    def named(rng):
+        reset()
+        cmd("item replace entity @s hotbar.0 with minecraft:name_tag[custom_name='\"Bob\"']", f"summon pig {X0+0.5} {Y+1} {Z0+3.5} {NOAI}")
+        wait(10)
+        setting("autonametag", "entities", "pig")
+        setting("autonametag", "range", rng)
+        only("autonametag")
+        wait(40)
+        done = check("execute if entity @e[type=pig,nbt={CustomName:'\"Bob\"'}]")
+        only()
+        return done
+
+    near, far = named("5"), named("2")
+    return near and not far, f"a pig 3 blocks away named Bob at Range 5: {near}, at 2: {far}"
 
 
 @test("Auto Mount")
 def _():
-    reset()
-    say(f"/summon horse {X0+1.5} {Y+1} {Z0+1.5} {{Tame:1b,NoAI:1b,SaddleItem:{{id:\"minecraft:saddle\",count:1}}}}")
+    cmd(f"summon horse {X0+1.5} {Y+1} {Z0+1.5} {{Tame:1b,NoAI:1b,PersistenceRequired:1b,equipment:{{saddle:{{id:\"minecraft:saddle\",count:1}}}}}}")
     wait(10)
     only("automount")
-    wait(60)
-    r = state().get("riding")
+    wait(40)
+    riding = state().get("riding") or ctl("status").get("riding")
     only()
-    return r is not None, f"riding: {r}"
+    ctl("key", "shift", "down")
+    wait(5)
+    ctl("key", "shift", "up")
+    return riding is not None, f"riding: {riding}"
 
 
 @test("Flamethrower")
 def _():
-    reset()
-    say("/item replace entity @s hotbar.0 with minecraft:flint_and_steel")
-    say(f"/summon cow {X0+0.5} {Y+1} {Z0+3.5} {{NoAI:1b}}")
-    wait(10)
-    only("flamethrower")
-    wait(60)
-    say("/data get entity @e[type=cow,limit=1] Fire")
-    out = chat_first()
-    only()
-    return ("-1s" not in out) and "Fire" not in out.split("data:")[0] and "s" in out, out
+    def burning(distance):
+        reset()
+        slot(0, "flint_and_steel")
+        cmd(f"summon cow {X0+0.5} {Y+1} {Z0+3.0} {NOAI}")
+        wait(10)
+        setting("flamethrower", "entities", "cow")
+        setting("flamethrower", "distance", distance)
+        only("flamethrower")
+        wait(40)
+        cmd("data get entity @e[type=cow,limit=1] Fire")
+        wait(2)
+        out = chat_first()
+        only()
+        fire = out.rsplit(":", 1)[-1].strip().rstrip("s")
+        try:
+            return int(fire) > 0
+        except ValueError:
+            return False
+
+    near, far = burning("5"), burning("2")
+    return near and not far, f"a cow 2.5 blocks away set alight at Distance 5: {near}, at 2: {far}"
 
 
 @test("Liquid Filler")
 def _():
-    reset()
-    say(f"/fill {X0+2} {Y+1} {Z0-1} {X0+3} {Y+1} {Z0+1} minecraft:water")
-    say("/item replace entity @s hotbar.0 with minecraft:cobblestone 20")
+    # A pool sunk into the platform, so the water stays put.
+    cmd(f"fill {X0+2} {Y-1} {Z0-1} {X0+3} {Y-1} {Z0+1} minecraft:stone", f"fill {X0+2} {Y} {Z0-1} {X0+3} {Y} {Z0+1} minecraft:water")
+    slot(0, "cobblestone", 20)
+    ctl("key", "1", "tap")
     wait(10)
     only("liquidfiller")
-    wait(150)
-    gone = check(f"/execute unless block {X0+3} {Y+1} {Z0} minecraft:water")
+    wait(80)
+    left = count(X0 + 2, Y, Z0 - 1, X0 + 3, Y, Z0 + 1, "water")
+    filled = count(X0 + 2, Y, Z0 - 1, X0 + 3, Y, Z0 + 1, "cobblestone")
     only()
-    return gone, "water replaced"
+    return left == 0 and filled == 6, f"{filled} of 6 water blocks filled with cobblestone, {left} left"
 
 
 @test("Spawn Proofer")
 def _():
-    reset()
-    say(f"/fill {X0-4} {Y+1} {Z0-4} {X0+4} {Y+4} {Z0+4} minecraft:stone hollow")
-    say(f"/tp @s {X0+0.5} {Y+1} {Z0+0.5}")
-    say("/item replace entity @s hotbar.0 with minecraft:torch 8")
+    cmd(f"fill {X0-4} {Y+1} {Z0-4} {X0+4} {Y+4} {Z0+4} minecraft:stone hollow", f"tp @s {X0+0.5} {Y+1} {Z0+0.5}", "time set 18000")
+    slot(0, "torch", 64)
+    ctl("key", "1", "tap")
     wait(15)
     only("spawnproofer")
     wait(60)
-    n = None
-    say("/clear @s minecraft:torch 0")
-    left = chat_first()
+    dark = 64 - held().get("count", 64)
+    setting("spawnproofer", "light level", "7")
+    wait(60)
+    dim = 64 - held().get("count", 64)
     only()
-    say(f"/fill {X0-4} {Y+1} {Z0-4} {X0+4} {Y+4} {Z0+4} minecraft:air")
-    return "8" not in left, left
+    # Light level is the most light a spot may have and still get one.
+    return 1 <= dark < dim, f"{dark} torches light a dark 7x7 room to above 0, {dim} to above 7"
 
 
 @test("Surround")
 def _():
-    reset()
-    say("/item replace entity @s hotbar.0 with minecraft:obsidian 8")
+    slot(0, "obsidian", 16)
     only("surround")
-    wait(60)
-    ok = all(check(f"/execute if block {X0+dx} {Y+1} {Z0+dz} minecraft:obsidian") for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+    wait(30)
+    four = count(X0 - 1, Y + 1, Z0 - 1, X0 + 1, Y + 2, Z0 + 1, "obsidian")
+    setting("surround", "double height", "true")
+    wait(30)
+    eight = count(X0 - 1, Y + 1, Z0 - 1, X0 + 1, Y + 2, Z0 + 1, "obsidian")
     only()
-    return ok, "four blocks placed" if ok else "not all placed"
+    return four == 4 and eight == 8, f"{four} obsidian round your feet, {eight} with Double height"
 
 
 @test("Scaffold")
 def _():
-    reset(z=15.0)
-    say("/item replace entity @s hotbar.0 with minecraft:stone 20")
-    only("scaffold")
-    walk(40)
-    z = pos()[2] - Z0
-    only()
-    return z > 17.5, f"walked out to z {z:.1f} past the platform edge"
+    def walk_off(**sets):
+        reset(z=15.0)
+        cmd(f"fill {X0-2} {Y} {Z0+17} {X0+2} {Y} {Z0+26} minecraft:air")
+        slot(0, "stone", 32)
+        for k, v in sets.items():
+            setting("scaffold", k.replace("_", " "), v)
+        only("scaffold")
+        walk(40)
+        p = pos()
+        placed = count(X0 - 2, Y - 1, Z0 + 17, X0 + 2, Y, Z0 + 26, "stone")
+        only()
+        return p, placed
 
-
-@test("Timer")
-def _():
+    on_, placed = walk_off()
+    listed, kept = walk_off(blocks_filter="Whitelist", blocks="dirt")
+    setting("scaffold", "blocks filter", "Blacklist")
+    setting("scaffold", "blocks", "")
+    wide, wide_placed = walk_off(air_place="true", radius="1.5")
+    # Fast tower: jump held in place, a stack of blocks under you.
     reset()
-    t0 = state()["ticks"]
-    time.sleep(3)
-    base = state()["ticks"] - t0
-    setting("timer", "multiplier", "3")
-    only("timer")
-    t0 = state()["ticks"]
-    time.sleep(3)
-    fast = state()["ticks"] - t0
+    slot(0, "stone", 32)
+    setting("scaffold", "air place", "false")
+    setting("scaffold", "fast tower", "true")
+    only("scaffold")
+    held_keys(("space",), 40)
+    tower = pos()[1] - (Y + 1)
     only()
-    return fast > base * 2, f"{base} -> {fast} ticks in 3 s"
+    cmd(f"fill {X0} {Y+1} {Z0} {X0} {Y+30} {Z0} minecraft:air")
+    reset()
+    slot(0, "stone", 32)
+    only("scaffold")
+    setting("scaffold", "fast tower", "false")
+    held_keys(("space",), 40)
+    climb = pos()[1] - (Y + 1)
+    only()
+    ok = (on_[2] - Z0 > 19 and on_[1] > Y + 0.99 and placed >= 3 and listed[1] < Y and kept == 0 and wide[1] > Y + 0.99
+          and wide_placed > placed and tower > climb * 1.5 and climb > 1)
+    return ok, (f"walked out to z {on_[2]-Z0:.1f} past the edge (17) on {placed} blocks; with only dirt allowed: fell, {kept} placed; "
+                f"Air place, Radius 1.5: {wide_placed} placed; jumping 2 s: {climb:.1f} blocks up, {tower:.1f} with Fast tower")
 
 
 @test("Offhand")
 def _():
-    reset()
-    say("/item replace entity @s hotbar.3 with minecraft:end_crystal 2")
+    slot(3, "end_crystal", 2)
+    cmd("item replace entity @s inventory.5 with minecraft:totem_of_undying 1")
     setting("offhand", "hotbar", "true")
     only("offhand")
-    wait(60)
-    ok = check("/execute if items entity @s weapon.offhand minecraft:end_crystal")
-    only()
-    return ok, "crystal in the offhand" if ok else "offhand empty"
+    wait(40)
+    crystal = check("execute if items entity @s weapon.offhand minecraft:end_crystal")
+    setting("offhand", "item", "Totem")
+    wait(40)
+    totem = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
+    return crystal and totem, f"offhand holds the crystal with Item Crystal: {crystal}, the totem with Item Totem: {totem}"
 
 
 @test("Auto Armor")
 def _():
-    reset()
-    say("/give @s minecraft:diamond_chestplate")
+    cmd("give @s minecraft:iron_chestplate", "give @s minecraft:diamond_chestplate", "give @s minecraft:leather_boots")
     only("autoarmor")
     wait(60)
-    ok = check("/execute if items entity @s armor.chest minecraft:diamond_chestplate")
+    chest = check("execute if items entity @s armor.chest minecraft:diamond_chestplate")
+    boots = check("execute if items entity @s armor.feet minecraft:leather_boots")
+    return chest and boots, f"wears the diamond chestplate over the iron one: {chest}, and the boots: {boots}"
+
+
+@test("Fast Use")
+def _():
+    def thrown():
+        reset()
+        slot(0, "snowball", 16)
+        ctl("key", "1", "tap")
+        wait(4)
+        ctl("look", "0", "-30")
+        start = held().get("count", 0)
+        ctl("mouse", "right", "down")
+        wait(40)
+        ctl("mouse", "right", "up")
+        return start - held().get("count", 0)
+
+    plain = thrown()
+    only("fastuse")
+    fast = thrown()
     only()
-    return ok, "chestplate worn" if ok else "not worn"
+    return fast > plain + 4, f"{plain} snowballs thrown holding use for 2 s, {fast} with Fast Use"
+
+
+@test("Break Delay")
+def _():
+    row = f"fill {X0} {Y+2} {Z0+1} {X0} {Y+2} {Z0+4} minecraft:dirt"
+    slot(0, "stone_shovel")
+    ctl("key", "1", "tap")
+
+    def dug():
+        cmd(row)
+        ctl("look", "0", "0")
+        wait(2)
+        ctl("mouse", "left", "down")
+        wait(24)
+        ctl("mouse", "left", "up")
+        return 4 - count(X0, Y + 2, Z0 + 1, X0, Y + 2, Z0 + 4, "dirt")
+
+    plain = dug()
+    only("breakdelay")
+    fast = dug()
+    setting("breakdelay", "cooldown", "5")
+    slow = dug()
+    only()
+    return fast > plain and slow < fast, f"{plain} of 4 blocks in 1.2 s, {fast} with Break Delay at 0 ticks, {slow} at 5 (the game's own)"
+
+
+# ---- combat
+
+def pig(dz=2.0, dx=0.0, tag=NOAI):
+    cmd(f"summon pig {X0 + 0.5 + dx} {Y + 1} {Z0 + 0.5 + dz} {tag}")
+    wait(10)
+    return mobs("pig")[0]["id"]
+
+
+@test("Trigger Bot")
+def _():
+    def hit(passive):
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        pid = pig()
+        ctl("look-at-entity", str(pid))
+        setting("triggerbot", "passive", passive)
+        only("triggerbot")
+        wait(40)
+        m = mobs("pig")
+        only()
+        return m[0]["health"] if m else 0
+
+    hurt, spared = hit("true"), hit("false")
+    return hurt < 10 and spared == 10, f"pig on the crosshair: health {hurt} with Passive on, {spared} with it off"
 
 
 @test("Kill Aura")
 def _():
-    reset()
-    say("/difficulty peaceful")
-    say(f"/summon pig {X0+0.5} {Y+1} {Z0+2.0} {{NoAI:1b}}")
-    say("/item replace entity @s hotbar.0 with minecraft:diamond_sword")
-    ctl("key", "1", "tap")
-    wait(20)
-    setting("killaura", "entities", "pig")
-    only("killaura")
-    wait(100)
-    e = [x for x in ctl("entities").get("entities", []) if x.get("kind") == "mob"]
-    only()
-    return not e or e[0]["health"] < 10, "pig attacked" if not e or e[0]["health"] < 10 else f"pig health {e[0]['health']}"
+    def attacked(dz, walled=False):
+        """Health the pig lost, and the swings Kill Aura made at it."""
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        pig(dz)
+        if walled:
+            cmd(f"fill {X0-2} {Y+1} {Z0+2} {X0+2} {Y+3} {Z0+2} minecraft:stone")
+        setting("killaura", "entities", "pig")
+        swings = state()["swings"]
+        only("killaura")
+        wait(60)
+        swings = state()["swings"] - swings
+        m = mobs("pig")
+        only()
+        if walled:
+            cmd(f"fill {X0-2} {Y+1} {Z0+2} {X0+2} {Y+3} {Z0+2} minecraft:air")
+        return 10 - (m[0]["health"] if m else 0), swings
+
+    near = attacked(2.5)
+    setting("killaura", "range", "1.5")
+    short_range = attacked(2.5)
+    setting("killaura", "range", "4.5")
+    # Behind a wall, 3.4 blocks from your eyes to its feet: inside Walls range 3.5, outside 2. (Whether the
+    # server lets a hit through a wall is the server's business: the swings say what Kill Aura tried.)
+    walled = attacked(3.0, walled=True)
+    setting("killaura", "walls range", "2")
+    blocked = attacked(3.0, walled=True)
+    return near[0] > 0 and short_range == (0, 0) and walled[1] > 0 and blocked[1] == 0, (
+        f"pig 2.5 blocks away lost {near[0]} health at Range 4.5, {short_range[0]} at Range 1.5; behind a wall: {walled[1]} swings, "
+        f"{walled[0]} health lost at Walls range 3.5, {blocked[1]} swings at 2")
 
 
 @test("Target HUD")
 def _():
-    reset()
-    say("/difficulty peaceful")
-    say(f"/summon pig {X0+0.5} {Y+1} {Z0+2.0} {{NoAI:1b,Invulnerable:1b}}")
-    say("/item replace entity @s hotbar.0 with minecraft:diamond_sword")
+    slot(0, "diamond_sword")
     ctl("key", "1", "tap")
-    wait(20)
+    pig(tag="{NoAI:1b,Invulnerable:1b,PersistenceRequired:1b}")
     setting("killaura", "entities", "pig")
     only("killaura")
     wait(10)
@@ -1046,44 +1539,98 @@ def _():
     return green > 150, f"{green} health-bar pixels beside the crosshair"
 
 
-@test("Kill Aura (Anti bot, Ignore teams)")
+@test("Kill Aura (Anti bot, Ignore teams, friends)")
 def _():
     if not CTL2:
         return None, "needs a second player"
-    reset("creative")
-    say("/gamemode survival Bot1")
+    cmd("gamemode survival Bot1")
 
     def bot_hurt(seconds):
-        say("/effect give Bot1 minecraft:instant_health 1 10 true")
-        say(f"/tp Bot1 {X0+0.5} {Y+1} {Z0+2.0}")
+        cmd("effect give Bot1 minecraft:instant_health 1 10 true", f"tp Bot1 {X0+0.5} {Y+1} {Z0+2.0}")
         wait(seconds * 20)
         return 20 - ctl2("state")["player"]["health"]
 
-    say("/item replace entity @s hotbar.0 with minecraft:diamond_sword")
+    slot(0, "diamond_sword")
     ctl("key", "1", "tap")
     setting("killaura", "entities", "player")
     setting("killaura", "anti bot", "true")
     only("killaura")
     real = bot_hurt(3)
     only()
-    say("/team add sunsettest")
-    say("/team join sunsettest Tester")
-    say("/team join sunsettest Bot1")
+    say(".friend add Bot1")
+    only("killaura")
+    friend = bot_hurt(3)
+    only()
+    say(".friend remove Bot1")
+    cmd("team add sunsettest", "team join sunsettest Tester", "team join sunsettest Bot1")
     setting("killaura", "ignore teams", "true")
     only("killaura")
     spared = bot_hurt(3)
     setting("killaura", "ignore teams", "false")
     hit = bot_hurt(3)
     only()
-    say("/team remove sunsettest")
-    setting("killaura", "anti bot", "false")
-    return real > 0 and spared == 0 and hit > 0, f"player in the list hurt {real}, teammate {spared}, same teammate without Ignore teams {hit}"
+    cmd("team remove sunsettest", "gamemode spectator Bot1")
+    return real > 0 and friend == 0 and spared == 0 and hit > 0, f"player in the list hurt {real}, as a friend {friend}, as a teammate {spared}, teammate without Ignore teams {hit}"
+
+
+def corner(name):
+    """The bottom-left quarter of a screenshot, where the HUD places the radar: its pixels of the radar's dark blue
+    and its near-white ones."""
+    from PIL import Image
+    path = f"/tmp/{name}.png"
+    ctl("screenshot", path)
+    time.sleep(2)
+    img = Image.open(path).convert("RGB")
+    w, h = img.size
+    region = img.crop((0, h // 2, w // 2, h))
+    px = list(region.getdata())
+    return sum(1 for p in px if max(p) < 80 and p[2] - p[0] >= 8), sum(1 for p in px if min(p) > 230)
+
+
+@test("Radar")
+def _():
+    reset("creative")
+    ctl("look", "0", "0")
+    # The chat sits over the radar's corner: shrink it away for the pictures.
+    ctl("options-set", "chatScale", "0")
+    wait(10)
+    plain = corner("radar_off")
+    only("radar")
+    wait(10)
+    shown = corner("radar_on")
+    note = f"{plain[0]} dark blue pixels in the bottom-left quarter without the radar, {shown[0]} with it"
+    ok = shown[0] > plain[0] + 5000
+    if CTL2:
+        # A second player 10 blocks off: a white dot on the radar; 100 blocks off (past Range 64): none.
+        cmd("gamemode creative Bot1")
+        cmd(f"tp Bot1 {X0 + 10.5} {Y + 1} {Z0 + 0.5}")
+        wait(20)
+        near = corner("radar_bot_near")
+        cmd(f"tp Bot1 {X0 + 100.5} {Y + 1} {Z0 + 0.5}")
+        wait(20)
+        far = corner("radar_bot_far")
+        ok = ok and near[1] > far[1] + 10
+        note += f"; white pixels with Bot1 10 blocks off {near[1]}, 100 off {far[1]}"
+    only()
+    ctl("options-set", "chatScale", "1")
+    return ok, note
+
+
+@test("Crystal Optimizer")
+def _():
+    # Its near side 2.5 blocks from your eyes, inside the 3 blocks a server lets you hit from.
+    cmd(f"summon end_crystal {X0+0.5} {Y+1} {Z0+4.0} {{ShowBottom:0b}}")
+    wait(20)
+    only("crystaloptimizer")
+    ctl("look", "0", "10")
+    wait(3)
+    ctl("mouse", "left", "click")
+    wait(10)
+    done = check("execute unless entity @e[type=end_crystal]")
+    return done, "crystal hit and gone" if done else "crystal still there"
 
 
 # ---- Aim Assist (Duelkit's): real mouse motion (mouse-move), and for moving targets the probe's frames
-
-HUSK = "{NoAI:1b,Invulnerable:1b,PersistenceRequired:1b,Silent:1b}"
-
 
 def session_dir():
     with open(os.path.join(os.path.dirname(CTL), "session")) as f:
@@ -1114,7 +1661,7 @@ def aim_pack():
         f.write("execute as @e[tag=aim_e] at @s run tp @s ~0.1 ~ ~\nexecute as @e[tag=aim_w] at @s run tp @s ~-0.1 ~ ~\n")
     with open(os.path.join(root, "data", "minecraft", "tags", "function", "tick.json"), "w") as f:
         json.dump({"values": ["sunset_verify:tick"]}, f)
-    say("/reload")
+    cmd("reload")
     wait(20)
 
 
@@ -1176,11 +1723,11 @@ def aim_setup(dx=0.0, dz=3.0, dy=0.0, weapon=True, mode="survival"):
     feet; its id."""
     reset(mode)
     aim_defaults()
-    say("/difficulty easy")
+    cmd("difficulty easy")
     if weapon:
         slot(0, "diamond_sword", 1)
     ctl("key", "1", "tap")
-    say(f"/summon husk {X0 + 0.5 + dx} {Y + 1 + dy} {Z0 + 0.5 + dz} {HUSK}")
+    cmd(f"summon husk {X0 + 0.5 + dx} {Y + 1 + dy} {Z0 + 0.5 + dz} {HUSK}")
     wait(10)
     return next(e["id"] for e in ctl("entities")["entities"] if e.get("type") == "minecraft:husk")
 
@@ -1259,7 +1806,7 @@ def first_turn(eid, yaw_off, units=10, mods=("aimassist",)):
 def aim_done():
     aim_defaults()
     only()
-    say("/difficulty peaceful")
+    cmd("difficulty peaceful")
 
 
 @test("Aim Assist (pull)")
@@ -1301,13 +1848,13 @@ def _():
     eid = aim_setup()
     case("in front (pulls)", first_turn(eid, -8), pulled=True)
     case("outside the cone", first_turn(eid, -25))
-    say("/effect give @e[type=husk] minecraft:invisibility 60 0 true")
+    cmd("effect give @e[type=husk] minecraft:invisibility 60 0 true")
     case("invisible", first_turn(eid, -8))
     eid = aim_setup()
     # Its raycast is the collision shape's (ClipContext.Block.COLLIDER): cobwebs let it through, stone does not.
-    say(f"/fill {X0-3} {Y+1} {Z0+2} {X0+3} {Y+3} {Z0+2} minecraft:cobweb")
+    cmd(f"fill {X0-3} {Y+1} {Z0+2} {X0+3} {Y+3} {Z0+2} minecraft:cobweb")
     case("behind cobwebs (pulls)", first_turn(eid, -8), pulled=True)
-    say(f"/fill {X0-3} {Y+1} {Z0+2} {X0+3} {Y+3} {Z0+2} minecraft:stone")
+    cmd(f"fill {X0-3} {Y+1} {Z0+2} {X0+3} {Y+3} {Z0+2} minecraft:stone")
     case("behind a wall", first_turn(eid, -8))
     unwall()
     eid = aim_setup(dz=7.0)
@@ -1374,7 +1921,7 @@ def _():
          lambda a, b: abs(a - 0.75) < 0.03 and abs(b - 0.4) < 0.03)
     setting("aimassist", "stickiness", "0.25")
     # Five out and five up: 6.5 away in a straight line, under 5 across.
-    say(f"/setblock {X0} {Y+5} {Z0+5} minecraft:stone")
+    cmd(f"setblock {X0} {Y+5} {Z0+5} minecraft:stone")
     eid = aim_setup(dz=5.0, dy=5.0)
     sphere = first_turn(eid, -5)[1]
     setting("aimassist", "range shape", "Column")
@@ -1383,7 +1930,7 @@ def _():
     capped = first_turn(eid, -5)[1]
     pair("Range shape Sphere vs Column (husk 5 across, 5 up)", sphere, column, lambda a, b: b > a + 0.2)
     pair("Column height 0 vs 2", column, capped, lambda a, b: a > b + 0.2)
-    say(f"/setblock {X0} {Y+5} {Z0+5} minecraft:air")
+    cmd(f"setblock {X0} {Y+5} {Z0+5} minecraft:air")
     aim_done()
     return ok, "; ".join(notes)
 
@@ -1415,22 +1962,20 @@ def track_run(eid, frames):
 def track(tracking, start_dx=-1.5, tag="aim_e", wall=False):
     eid = aim_setup(dx=start_dx)
     if wall:
-        say(f"/fill {X0-4} {Y+1} {Z0+2} {X0+4} {Y+3} {Z0+2} minecraft:stone")
+        cmd(f"fill {X0-4} {Y+1} {Z0+2} {X0+4} {Y+3} {Z0+2} minecraft:stone")
     setting("aimassist", "tracking", tracking)
     only("aimassist")
     face(eid)
     wait(5)
     mark = probe_mark()
-    say(f"/tag @e[type=husk] add {tag}")
+    cmd(f"tag @e[type=husk] add {tag}")
     wait(30)
-    # Typing the next command opens the chat, a screen, and Aim Assist rests behind screens: the frames end here.
-    cut = time.time()
-    say(f"/tag @e[type=husk] remove {tag}")
+    cmd(f"tag @e[type=husk] remove {tag}")
     wait(5)
-    frames = [f for f in probe_frames(mark) if eid in f.mobs and f.t < cut]
+    frames = [f for f in probe_frames(mark) if eid in f.mobs]
     only()
     if wall:
-        say(f"/fill {X0-4} {Y+1} {Z0+2} {X0+4} {Y+3} {Z0+2} minecraft:air")
+        cmd(f"fill {X0-4} {Y+1} {Z0+2} {X0+4} {Y+3} {Z0+2} minecraft:air")
     return track_run(eid, frames), frames
 
 
@@ -1465,7 +2010,7 @@ def _():
         eid = aim_setup(dz=4.0, mode="creative")
         setting("aimassist", "mace dive", "true" if on_ else "false")
         only("aimassist")
-        say(f"/tp @s {X0 + 0.5} {Y + 13} {Z0 + 0.5} 0 30")
+        cmd(f"tp @s {X0 + 0.5} {Y + 13} {Z0 + 0.5} 0 30")
         mark = probe_mark()
         wait(40)
         frames = [f for f in probe_frames(mark) if eid in f.mobs]
@@ -1502,11 +2047,17 @@ def _():
     aim_defaults()
     slot(0, "diamond_sword", 1)
     ctl("key", "1", "tap")
-    say("/gamemode survival Bot1")
-    bot = next(e["id"] for e in ctl("entities")["entities"] if e.get("type") == "minecraft:player")
+    cmd("gamemode survival Bot1", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 3.5} 180 0")
+    wait(20)
+    # The entity list leaves players out: its id is the crosshair's.
+    ctl("look", "0", "10")
+    wait(2)
+    bot = ctl("looking-at").get("entity", {}).get("id")
+    if bot is None:
+        return False, "Bot1 not under the crosshair"
 
     def strafe():
-        say(f"/tp Bot1 {X0 + 2.0} {Y + 1} {Z0 + 3.5} 180 0")
+        cmd(f"tp Bot1 {X0 + 2.0} {Y + 1} {Z0 + 3.5} 180 0")
         wait(20)
         only("aimassist")
         ctl("look-at-entity", str(bot))
@@ -1536,131 +2087,31 @@ def _():
     return real["max"] < 1.5 and real["stalled"] < 0.05 and friend["end"] > 5.0, note
 
 
-def corner(name):
-    """The bottom-left quarter of a screenshot, where the HUD places the radar: its pixels of the radar's dark blue
-    and its near-white ones."""
-    from PIL import Image
-    path = f"/tmp/{name}.png"
-    ctl("screenshot", path)
-    time.sleep(2)
-    img = Image.open(path).convert("RGB")
-    w, h = img.size
-    region = img.crop((0, h // 2, w // 2, h))
-    px = list(region.getdata())
-    return sum(1 for p in px if max(p) < 80 and p[2] - p[0] >= 8), sum(1 for p in px if min(p) > 230)
 
 
-@test("Radar")
-def _():
-    reset("creative")
-    ctl("look", "0", "0")
-    # The chat sits over the radar's corner: shrink it away for the pictures.
-    ctl("options-set", "chatScale", "0")
-    wait(10)
-    plain = corner("radar_off")
-    only("radar")
-    wait(10)
-    shown = corner("radar_on")
-    note = f"{plain[0]} dark blue pixels in the bottom-left quarter without the radar, {shown[0]} with it"
-    ok = shown[0] > plain[0] + 5000
-    if CTL2:
-        # A second player 10 blocks off: a white dot on the radar; 100 blocks off (past Range 64): none.
-        say("/gamemode creative Bot1")
-        say(f"/tp Bot1 {X0 + 10.5} {Y + 1} {Z0 + 0.5}")
-        wait(20)
-        near = corner("radar_bot_near")
-        say(f"/tp Bot1 {X0 + 100.5} {Y + 1} {Z0 + 0.5}")
-        wait(20)
-        far = corner("radar_bot_far")
-        ok = ok and near[1] > far[1] + 10
-        note += f"; white pixels with Bot1 10 blocks off {near[1]}, 100 off {far[1]}"
-    only()
-    ctl("options-set", "chatScale", "1")
-    return ok, note
-
-
-@test("Crystal Optimizer")
-def _():
-    reset()
-    say(f"/summon end_crystal {X0+0.5} {Y+1} {Z0+3.0} {{ShowBottom:0b}}")
-    wait(20)
-    only("crystaloptimizer")
-    ctl("look", "0", "10")
-    wait(3)
-    ctl("mouse", "left", "click")
-    wait(10)
-    gone = check("/execute unless entity @e[type=end_crystal]")
-    only()
-    return gone, "crystal hit and gone" if gone else "crystal still there"
-
-
-def held_count():
-    return (ctl("state").get("held") or {}).get("count", 0)
-
-
-@test("Fast Use")
-def _():
-    reset("survival")
-    say("/item replace entity @s hotbar.0 with minecraft:snowball 16")
-    ctl("key", "1", "tap")
-    wait(4)
-    ctl("look", "0", "-30")
-    start = held_count()
-    ctl("mouse", "right", "down")
-    wait(40)
-    ctl("mouse", "right", "up")
-    plain = start - held_count()
-    reset("survival")
-    say("/item replace entity @s hotbar.0 with minecraft:snowball 16")
-    ctl("key", "1", "tap")
-    wait(4)
-    ctl("look", "0", "-30")
-    only("fastuse")
-    start = held_count()
-    ctl("mouse", "right", "down")
-    wait(40)
-    ctl("mouse", "right", "up")
-    fast = start - held_count()
-    only()
-    return fast > plain + 4, f"{plain} snowballs thrown holding use for 2 s, {fast} with Fast Use"
-
-
-@test("Break Delay")
-def _():
-    reset("survival")
-    row = f"/fill {X0} {Y+2} {Z0+1} {X0} {Y+2} {Z0+4} minecraft:dirt"
-    say(row)
-    say("/item replace entity @s hotbar.0 with minecraft:stone_shovel")
-    ctl("key", "1", "tap")
-    wait(2)
-    ctl("look", "0", "0")
-
-    def dug():
-        ctl("mouse", "left", "down")
-        wait(24)
-        ctl("mouse", "left", "up")
-        return sum(1 for dz in range(1, 5) if not check(f"/execute if block {X0} {Y+2} {Z0+dz} minecraft:dirt"))
-
-    plain = dug()
-    say(row)
-    only("breakdelay")
-    fast = dug()
-    only()
-    return fast > plain, f"{plain} of 4 blocks in 1.2 s, {fast} with Break Delay"
+def overran(*_):
+    raise TimeoutError("the test ran over 10 minutes")
 
 
 if __name__ == "__main__":
+    import signal
+    signal.signal(signal.SIGALRM, overran)
     arena()
     for fn in TESTS:
         if ONLY and fn.test_name not in ONLY:
             continue
+        signal.alarm(600)
         try:
             ok, note = fn()
         except Exception as e:  # noqa: BLE001
-            ok, note = False, f"error: {e}"
+            ok, note = False, f"error: {e!r}"
+        signal.alarm(0)
+        rejoin(fn.test_name)
         if ok is not None:
             results.append((fn.test_name, ok, note))
         print("SKIP" if ok is None else "PASS" if ok else "FAIL", fn.test_name, "-", note, flush=True)
-    only()
+        clean()
     p = sum(1 for _, ok, _ in results if ok)
     print(f"\n{p}/{len(results)} passed")
+    for test, screen in kicks:
+        print(f"KICKED during {test}: {screen}")
