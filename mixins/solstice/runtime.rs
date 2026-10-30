@@ -21,7 +21,7 @@ use winit::keyboard::KeyCode;
 
 pub(crate) const ID: &str = "solstice";
 pub(crate) const NAME: &str = "Solstice";
-pub(crate) const VERSION: &str = "0.4.0";
+pub(crate) const VERSION: &str = "0.5.0";
 pub(crate) const DESCRIPTION: &str =
     "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
 // The menu key's name on the mod's page and its default (Right Shift).
@@ -262,11 +262,15 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Fast Break", Player, "Removes the delay between breaking blocks."),
         Module::new("Auto Respawn", Player, "Respawns as soon as you die."),
         // Render
-        Module::new("HUD", Render, "The watermark, the active modules and your coordinates.")
+        Module::new("HUD", Render, "The watermark, the active modules, your coordinates and more.")
             .on()
             .bool("Watermark", true)
             .bool("Module list", true)
-            .bool("Coordinates", true),
+            .bool("Coordinates", true)
+            .bool("FPS", true)
+            .bool("Speed", false)
+            .bool("Facing", true)
+            .bool("Totems", false),
         Module::new("Fullbright", Render, "Lights everything up."),
         Module::new("ESP", Render, "Draws boxes around entities, through walls.")
             .bool("Players", true)
@@ -344,6 +348,16 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Trajectories", Render, "Draws where a bow shot or a throw will land."),
         Module::new("Logout Spots", Render, "Marks where players were when they logged out.")
             .num("Minutes", 10.0, 1.0, 60.0, 1.0),
+        Module::new("Bow Spam", Combat, "Fires arrows as fast as you can draw them while you hold use.")
+            .num("Charge (ticks)", 5.0, 3.0, 20.0, 1.0),
+        Module::new("Notifier", Player, "Says in chat when a player joins or leaves the server.")
+            .bool("Join", true)
+            .bool("Leave", true),
+        Module::new("Weather Changer", World, "Sets the weather you see.")
+            .pick("Weather", &["Clear", "Rain", "Thunder"]),
+        Module::new("Hole ESP", Render, "Marks holes you can stand in: green all obsidian or bedrock, yellow other solid blocks.")
+            .num("Range", 8.0, 3.0, 16.0, 1.0)
+            .bool("Fill", true),
         Module::new("Nuker", World, "Breaks the blocks around you.")
             .num("Range", 4.0, 1.0, 6.0, 0.5)
             .num("Blocks per tick", 2.0, 1.0, 10.0, 1.0)
@@ -402,6 +416,9 @@ pub(crate) struct State {
     crumb_at: u64,
     crit_target: Option<(u32, Option<(f32, f32)>)>,
     crit_ticks: u32,
+    notify: Option<Vec<String>>,
+    holes: Vec<([i32; 3], u32)>,
+    holes_at: u64,
     tool_back: Option<usize>,
     mc_back: Option<(usize, u32)>,
     nuke: Option<([i32; 3], u32)>,
@@ -459,6 +476,9 @@ impl State {
             crumb_at: 0,
             crit_target: None,
             crit_ticks: 0,
+            notify: None,
+            holes: Vec::new(),
+            holes_at: 0,
             tool_back: None,
             mc_back: None,
             nuke: None,
@@ -1282,6 +1302,34 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Auto Replenish") {
         auto_replenish(game, m);
     }
+    if let Some(m) = get("Bow Spam") {
+        bow_spam(game, m);
+    }
+    if let Some(m) = get("Notifier") {
+        notify(game, m);
+    } else {
+        with(|s| s.notify = None);
+    }
+    if let Some(m) = get("Weather Changer") {
+        let w = &mut game.world.weather;
+        let (rain, thunder) = match m.p("Weather") {
+            "Rain" => (true, false),
+            "Thunder" => (true, true),
+            _ => (false, false),
+        };
+        w.raining = rain;
+        w.thundering = thunder;
+        w.rain_level = if rain { (1.0, 1.0) } else { (0.0, 0.0) };
+        w.thunder_level = if thunder { (1.0, 1.0) } else { (0.0, 0.0) };
+    }
+    if let Some(m) = get("Hole ESP") {
+        scan_holes(game, m, ticks);
+    } else {
+        with(|s| {
+            s.holes.clear();
+            s.holes_at = 0;
+        });
+    }
     if let Some(m) = get("Nuker") {
         nuker(game, m);
     } else {
@@ -1960,6 +2008,88 @@ fn track_logouts(game: &Game<'_>, m: &Module) {
         s.last_pos.retain(|(n, _, _)| online.contains(n) && !seen.iter().any(|(sn, _, _)| sn == n));
         s.last_pos.extend(seen);
         s.spots.retain(|sp| now.saturating_sub(sp.at) < keep);
+    });
+}
+
+fn bow_spam(game: &mut Game<'_>, m: &Module) {
+    use winit::event::MouseButton;
+    if !game.native_playing()
+        || !game.physical_buttons.contains(&MouseButton::Right)
+        || !game.held().is_some_and(|s| &*s.item == "minecraft:bow")
+    {
+        return;
+    }
+    if let Some((_, ticks)) = game.using
+        && f64::from(ticks) >= m.n("Charge (ticks)")
+    {
+        let _ = game.play_mouse(MouseButton::Right, false);
+        let _ = game.play_mouse(MouseButton::Right, true);
+    }
+}
+
+// Join and leave messages, from the server's player list.
+fn notify(game: &mut Game<'_>, m: &Module) {
+    let Some(mut now) = game.remote_online_names() else {
+        return;
+    };
+    now.sort();
+    let Some(before) = with(|s| s.notify.replace(now.clone())) else {
+        return;
+    };
+    for name in now.iter().filter(|n| !before.contains(n)) {
+        if m.b("Join") {
+            say(game, &format!("{name} joined"));
+        }
+    }
+    for name in before.iter().filter(|n| !now.contains(n)) {
+        if m.b("Leave") {
+            say(game, &format!("{name} left"));
+        }
+    }
+}
+
+// Holes to stand in around the player: air two high, solid below and on the
+// four sides. Found again every second.
+fn scan_holes(game: &Game<'_>, m: &Module, ticks: u64) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    if with(|s| s.holes_at != 0 && ticks.saturating_sub(s.holes_at) < 20) {
+        return;
+    }
+    let r = m.n("Range") as i32;
+    let (px, py, pz) = (p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32);
+    let facts = game.res.facts();
+    let hard = |x: i32, y: i32, z: i32| -> Option<bool> {
+        let state = game.world.block(x, y, z);
+        if facts.is_air(state) {
+            return None;
+        }
+        let n = &facts.get(state).name;
+        Some(n.ends_with("obsidian") || n.ends_with("bedrock"))
+    };
+    let mut found = Vec::new();
+    for x in px - r..=px + r {
+        for z in pz - r..=pz + r {
+            for y in (py - r).max(-63)..=py + r {
+                if hard(x, y, z).is_some() || hard(x, y + 1, z).is_some() {
+                    continue;
+                }
+                let around = [hard(x, y - 1, z), hard(x + 1, y, z), hard(x - 1, y, z), hard(x, y, z + 1), hard(x, y, z - 1)];
+                if around.iter().any(Option::is_none) {
+                    continue;
+                }
+                let safe = around.iter().all(|a| *a == Some(true));
+                found.push(([x, y, z], if safe { 0xFF55_FF55 } else { 0xFFFF_FF55 }));
+                if found.len() >= 400 {
+                    break;
+                }
+            }
+        }
+    }
+    with(|s| {
+        s.holes = found;
+        s.holes_at = ticks.max(1);
     });
 }
 
@@ -2688,20 +2818,51 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
                 }
             }
         }
-        if hud.b("Coordinates")
-            && game.native_corner_shown(Corner::TopLeft)
+        if game.native_corner_shown(Corner::TopLeft)
             && let Some(p) = game.native_player()
         {
-            let (x, y, z) = (p.x.floor(), p.y.floor(), p.z.floor());
-            let other = match p.dimension {
-                "minecraft:overworld" => format!(" (Nether {} {})", (p.x / 8.0).floor(), (p.z / 8.0).floor()),
-                "minecraft:the_nether" => format!(" (Overworld {} {})", (p.x * 8.0).floor(), (p.z * 8.0).floor()),
-                _ => String::new(),
-            };
-            let text = format!("XYZ {x} {y} {z}{other}");
-            let tw = game.native_text_width(&text);
-            let (bx, by) = corners.place(Corner::TopLeft, tw + 4.0, 12.0);
-            shapes.push(Shape::Text(text, [bx + 2.0, by + 2.0], 0xFFFFFF));
+            let mut lines: Vec<String> = Vec::new();
+            if hud.b("Coordinates") {
+                let (x, y, z) = (p.x.floor(), p.y.floor(), p.z.floor());
+                let other = match p.dimension {
+                    "minecraft:overworld" => format!(" (Nether {} {})", (p.x / 8.0).floor(), (p.z / 8.0).floor()),
+                    "minecraft:the_nether" => format!(" (Overworld {} {})", (p.x * 8.0).floor(), (p.z * 8.0).floor()),
+                    _ => String::new(),
+                };
+                lines.push(format!("XYZ {x} {y} {z}{other}"));
+            }
+            let mut info: Vec<String> = Vec::new();
+            if hud.b("FPS") {
+                info.push(format!("{} FPS", game.native_frame_rate().0));
+            }
+            if hud.b("Speed")
+                && let Some(pl) = game.player.as_ref()
+            {
+                let (dx, dz) = (pl.position.x - game.previous_position.x, pl.position.z - game.previous_position.z);
+                info.push(format!("{:.1} b/s", (dx * dx + dz * dz).sqrt() * 20.0));
+            }
+            if hud.b("Facing") {
+                const NAMES: [&str; 8] = ["South +Z", "South-West", "West -X", "North-West", "North -Z", "North-East", "East +X", "South-East"];
+                let yaw = f64::from(p.yaw).rem_euclid(360.0);
+                info.push(NAMES[((yaw + 22.5) / 45.0).floor() as usize % 8].to_owned());
+            }
+            if hud.b("Totems") {
+                let count = |s: &Option<horizon_client::items::ItemStack>| {
+                    s.as_ref().filter(|s| s.item.ends_with("totem_of_undying")).map_or(0, |s| s.count)
+                };
+                let total: u32 = game.inventory.iter().map(count).sum::<u32>() + count(&game.offhand);
+                info.push(format!("{total} totems"));
+            }
+            if !info.is_empty() {
+                lines.push(info.join("  "));
+            }
+            let width = lines.iter().map(|l| game.native_text_width(l)).fold(0.0, f32::max);
+            if !lines.is_empty() {
+                let (bx, by) = corners.place(Corner::TopLeft, width + 4.0, lines.len() as f32 * 10.0 + 2.0);
+                for (i, line) in lines.into_iter().enumerate() {
+                    shapes.push(Shape::Text(line, [bx + 2.0, by + 2.0 + i as f32 * 10.0], 0xFFFFFF));
+                }
+            }
         }
     }
 
@@ -2731,7 +2892,7 @@ fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: 
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     let (esp, tracers, tags, storage) = (get("ESP"), get("Tracers"), get("Nametags"), get("Storage ESP"));
     let (crumbs, blocks, points) = (get("Breadcrumbs"), get("Block ESP"), get("Waypoints"));
-    let (spots, flight_path) = (get("Logout Spots"), get("Trajectories"));
+    let (spots, flight_path, holes) = (get("Logout Spots"), get("Trajectories"), get("Hole ESP"));
     if esp.is_none()
         && tracers.is_none()
         && tags.is_none()
@@ -2741,6 +2902,7 @@ fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: 
         && points.is_none()
         && spots.is_none()
         && flight_path.is_none()
+        && holes.is_none()
     {
         return;
     }
@@ -2910,6 +3072,19 @@ fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: 
         trajectory(game, cam, out, lw);
     }
 
+    if let Some(m) = holes {
+        let found = with(|s| s.holes.clone());
+        for (pos, col) in found {
+            let lo = [f64::from(pos[0]), f64::from(pos[1]), f64::from(pos[2])];
+            if dist([lo[0] + 0.5, lo[1], lo[2] + 0.5]) > m.n("Range") + 2.0 {
+                continue;
+            }
+            if let Some(r) = cam.rect(lo, [lo[0] + 1.0, lo[1] + 0.02, lo[2] + 1.0]) {
+                outline(out, r, col, lw, m.b("Fill"));
+            }
+        }
+    }
+
     if let Some(m) = points {
         let here = game.native_player().map(|p| p.dimension);
         let waypoints = with(|s| s.waypoints.clone());
@@ -3056,6 +3231,8 @@ struct Gui {
     drag: Option<Drag>,
     // The height of the GUI the panels last drew in.
     view_h: f32,
+    // Typed letters: only the modules whose names contain them show.
+    search: String,
 }
 
 impl Default for Gui {
@@ -3069,6 +3246,7 @@ impl Default for Gui {
             expanded: Vec::new(),
             drag: None,
             view_h: 240.0,
+            search: String::new(),
         }
     }
 }
@@ -3091,7 +3269,8 @@ enum Hit {
 fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
     let mut rows = Vec::new();
     let mut y = 0.0;
-    for (i, m) in s.modules.iter().enumerate().filter(|(_, m)| m.category == CATEGORIES[c]) {
+    let query = norm(&s.gui.search);
+    for (i, m) in s.modules.iter().enumerate().filter(|(_, m)| m.category == CATEGORIES[c] && norm(m.name).contains(&query)) {
         rows.push((y, Hit::Module(i)));
         y += ROW_H;
         if s.gui.expanded.contains(&i) {
@@ -3117,11 +3296,15 @@ fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
     let mut out = Vec::new();
     for c in 0..CATEGORIES.len() {
         let p = s.gui.panels[c];
+        let (rows, _) = panel_body(s, c);
+        // A search leaves out the panels with nothing that matches.
+        if rows.is_empty() && !s.gui.search.is_empty() {
+            continue;
+        }
         out.push(([p.x, p.y, PANEL_W, HEAD_H], Hit::Header(c)));
         if p.collapsed {
             continue;
         }
-        let (rows, _) = panel_body(s, c);
         let room = body_room(s, c);
         for (off, hit) in rows {
             let top = off - p.scroll;
@@ -3226,9 +3409,41 @@ fn gui_key(game: &mut Game<'_>, name: &str) {
         save(game);
         return;
     }
-    if name == "key.keyboard.escape" || name == game.native_mod_key(ID, MENU_KEY, MENU_DEFAULT) {
-        with(|s| s.gui.closing = true);
+    if name == "key.keyboard.escape" {
+        // The first Esc clears a search; the next closes the GUI.
+        if with(|s| std::mem::take(&mut s.gui.search)).is_empty() {
+            with(|s| s.gui.closing = true);
+        }
+        return;
     }
+    if name == game.native_mod_key(ID, MENU_KEY, MENU_DEFAULT) {
+        with(|s| s.gui.closing = true);
+        return;
+    }
+    if name == "key.keyboard.backspace" {
+        with(|s| {
+            s.gui.search.pop();
+        });
+    } else if let Some(c) = key_char(name)
+        && !game.modifiers.control_key()
+    {
+        with(|s| {
+            if s.gui.search.chars().count() < 20 {
+                s.gui.search.push(c);
+            }
+        });
+    }
+}
+
+// A letter, digit or space typed in the click GUI's search.
+fn key_char(name: &str) -> Option<char> {
+    let k = name.strip_prefix("key.keyboard.")?;
+    if k == "space" {
+        return Some(' ');
+    }
+    let mut chars = k.chars();
+    let c = chars.next()?;
+    (chars.next().is_none() && c.is_ascii_alphanumeric()).then_some(c)
 }
 
 // A mouse button pressed while the GUI is open (its release is read from
@@ -3437,7 +3652,16 @@ fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
         out.push(Shape::Fill([bx, by, tw + 6.0, 12.0], 0xF000_0000));
         out.push(Shape::Text(about.to_owned(), [bx + 3.0, by + 2.0], 0xFFFFFF));
     }
-    // Above the hotbar, the hearts and the food bar.
+    // The search box, and above the hotbar a reminder of the clicks.
+    let search = with(|s| s.gui.search.clone());
+    let (label, colour) = if search.is_empty() {
+        ("Type to search".to_owned(), 0x909090)
+    } else {
+        (format!("Search: {search}_"), ACCENT)
+    };
+    let lw_ = game.native_text_width(&label);
+    out.push(Shape::Fill([(w - lw_) / 2.0 - 4.0, 14.0, lw_ + 8.0, 12.0], 0xC010_1010));
+    out.push(Shape::Text(label, [(w - lw_) / 2.0, 16.0], colour));
     let hint = "Left click: on/off   Right click: settings   Drag headers   Esc: close";
     let hw = game.native_text_width(hint);
     out.push(Shape::Text(hint.to_owned(), [(w - hw) / 2.0, h - 54.0], 0xA0A0A0));
