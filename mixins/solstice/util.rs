@@ -2,7 +2,7 @@
 // InvUtils, PlayerUtils and TargetUtils: placing blocks, finding items in the
 // hotbar, picking targets, seeing a block through the world.
 
-use super::solstice::{Camera, Module, Shape, hold, look_at, outline, say, toggle, with};
+use super::solstice::{Camera, Shape, hold, look_at, outline, say, toggle, with};
 use super::{Game, Screen};
 use horizon_protocol::packets::{
     Empty,
@@ -270,23 +270,11 @@ pub(super) fn find_inventory(game: &Game<'_>, want: impl Fn(&str) -> bool) -> Op
     })
 }
 
-pub(super) fn count_items(game: &Game<'_>, want: impl Fn(&str) -> bool) -> u32 {
-    let own: u32 = game
-        .inventory
-        .iter()
-        .flatten()
-        .filter(|s| want(short(&s.item)))
-        .map(|s| s.count)
-        .sum();
-    own + game.offhand.as_ref().filter(|s| want(short(&s.item))).map_or(0, |s| s.count)
-}
-
 // ---- targets
 
 #[derive(Clone, Debug)]
 pub(super) struct Target {
     pub id: u32,
-    pub name: String,
     pub pos: [f64; 3],
     pub prev: [f64; 3],
     pub health: f32,
@@ -296,12 +284,11 @@ pub(super) struct Target {
     pub kind: String,
 }
 
-pub(super) fn mob_target(m: &horizon_client::mobs::Mob, name: Option<String>) -> Target {
+pub(super) fn mob_target(m: &horizon_client::mobs::Mob) -> Target {
     let b = m.bounds();
     let (lo, hi) = (b.min_position(), b.max_position());
     Target {
         id: m.id,
-        name: name.unwrap_or_else(|| short(&m.kind.id).replace('_', " ")),
         pos: [m.position.x, m.position.y, m.position.z],
         prev: [m.previous.x, m.previous.y, m.previous.z],
         health: m.health,
@@ -324,18 +311,13 @@ pub(super) fn other_players(game: &Game<'_>) -> Vec<Target> {
             if friends.iter().any(|f| f.eq_ignore_ascii_case(&name)) {
                 return None;
             }
-            Some(mob_target(m, Some(name)))
+            Some(mob_target(m))
         })
         .collect()
 }
 
 pub(super) fn every_living(game: &Game<'_>) -> Vec<Target> {
-    let names = game.remote_player_names();
-    game.mobs
-        .iter()
-        .filter(|m| m.alive() && !m.removed)
-        .map(|m| mob_target(m, names.iter().find(|(i, _)| *i == m.id).map(|(_, n)| n.clone())))
-        .collect()
+    game.mobs.iter().filter(|m| m.alive() && !m.removed).map(mob_target).collect()
 }
 
 pub(super) const PRIORITIES: &[&str] = &["Lowest distance", "Highest distance", "Lowest health", "Closest angle"];
@@ -368,14 +350,6 @@ pub(super) fn sort_targets(game: &Game<'_>, list: &mut [Target], priority: &str)
     }
 }
 
-// Whether a player stands in a hole: solid all around its feet.
-pub(super) fn is_surrounded(game: &Game<'_>, t: &Target) -> bool {
-    let p = [t.pos[0].floor() as i32, t.pos[1].floor() as i32, t.pos[2].floor() as i32];
-    [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]
-        .iter()
-        .all(|d| !replaceable(game, [p[0] + d[0], p[1] + d[1], p[2] + d[2]]))
-}
-
 // A comma list's choices as Pick values need 'static: these are the shared ones.
 pub(super) const TRAP_BLOCKS: &str = "obsidian,crying_obsidian,netherite_block";
 
@@ -389,11 +363,6 @@ pub(super) fn inventory_idle(game: &Game<'_>) -> bool {
 
 pub(super) fn in_world(game: &Game<'_>) -> bool {
     game.native_playing() && game.remote.is_some() && game.player.is_some() && game.screen == Screen::Playing
-}
-
-// Keeps `Module` in use for the category files that only take it by reference.
-pub(super) fn enabled(mods: &[Module], name: &str) -> Option<Module> {
-    mods.iter().find(|m| m.name == name && m.on).cloned()
 }
 
 // The most damage the nearest end crystal would do to something standing at `at`

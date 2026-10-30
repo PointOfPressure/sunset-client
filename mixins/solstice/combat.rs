@@ -225,7 +225,7 @@ fn surround(game: &mut Game<'_>, m: &Module, just: bool) {
     let (per_tick, rotate) = (m.n("Blocks per tick") as u32, m.b("Rotate"));
     let mut placed = 0;
     let mut complete = true;
-    let mut put = |game: &mut Game<'_>, p: [i32; 3], placed: &mut u32| -> bool {
+    let put = |game: &mut Game<'_>, p: [i32; 3], placed: &mut u32| -> bool {
         show(p, 0x40FF_5050);
         place_block(game, p, slot, rotate, true) && {
             *placed += 1;

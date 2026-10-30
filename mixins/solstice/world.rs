@@ -275,10 +275,6 @@ fn spawn_proofer(game: &mut Game<'_>, m: &Module) {
     ws(|w| w.proof_timer = 0);
 }
 
-fn eye_dist(game: &Game<'_>, t: &Target) -> f64 {
-    game.eye_position().map_or(f64::MAX, |e| dist(e, t.pos))
-}
-
 // The tool in the hotbar for entity `want`, switched to now.
 fn use_on(game: &mut Game<'_>, slot: usize, id: u32, centre: [f64; 3], rotate: bool) {
     if rotate {
@@ -337,7 +333,7 @@ fn auto_shearer(game: &mut Game<'_>, m: &Module) {
                 && !cooling(s.id)
                 && dist(game.eye_position().unwrap_or([0.0; 3]), [s.position.x, s.position.y, s.position.z]) <= range
         })
-        .map(|s| mob_target(s, None));
+        .map(mob_target);
     if let Some(t) = target {
         use_on(game, slot, t.id, centre(&t), m.b("Rotate"));
         cool(t.id, 20);

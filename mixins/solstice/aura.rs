@@ -191,7 +191,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     let friends = super::solstice::with(|s| s.friends.clone());
     let names = game.remote_player_names();
     let mut list: Vec<Target> = if m.b("Only on look") {
-        game.mob_hit().map(|(i, _)| mob_target(&game.mobs[i], None)).into_iter().collect()
+        game.mob_hit().map(|(i, _)| mob_target(&game.mobs[i])).into_iter().collect()
     } else {
         every_living(game)
     };

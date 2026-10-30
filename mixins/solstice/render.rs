@@ -76,7 +76,6 @@ struct Fl {
 
 #[derive(Default)]
 struct Rs {
-    on: HashSet<String>,
     fc: Option<Fc>,
     fl: Option<Fl>,
     xray: Option<(bool, String)>,

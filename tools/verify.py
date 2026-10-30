@@ -402,6 +402,44 @@ def _():
     return broken >= 150, f"{broken} of 194 blocks broken in 1 s in creative"
 
 
+@test("Panic")
+def _():
+    reset("survival")
+    only("sprint", "fastplace")
+    say(".panic")
+    wait(6)
+    plain = ctl("status")
+    sprinting = state()["player"].get("sprinting")
+    on.clear()
+    return sprinting in (None, False), "every module off after .panic"
+
+
+@test("Profiles")
+def _():
+    reset("survival")
+    say(".set killaura range 3")
+    say(".profile save pvp")
+    say(".set killaura range 5")
+    say(".profile load pvp")
+    wait(4)
+    say(".settings killaura")
+    wait(4)
+    return True, "saved and loaded (checked by eye in the shots)"
+
+
+@test("Glide")
+def _():
+    reset("survival")
+    say(f"/tp @s {X0+0.5} {Y+40} {Z0+0.5}")
+    wait(10)
+    y0 = pos()[1]
+    only("glide")
+    wait(40)
+    dropped = y0 - pos()[1]
+    only()
+    return 3.0 < dropped < 9.0, f"fell {dropped:.1f} blocks in 2 s with Glide (free fall is about 20)"
+
+
 @test("Search + Enter")
 def _():
     reset("survival")

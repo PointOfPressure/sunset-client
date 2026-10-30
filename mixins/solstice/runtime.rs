@@ -282,6 +282,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Jump", true)
             .bool("Sneak", true)
             .bool("Arrows", true),
+        Module::new("Glide", Movement, "Falls slowly, and never takes fall damage while it does.")
+            .num("Fall speed", 2.5, 0.5, 8.0, 0.5),
+        Module::new("No Jump Delay", Movement, "Jumps again the moment you land when you hold the jump key."),
         Module::new("Air Jump", Movement, "Jumps again in mid-air."),
         Module::new("Elytra Boost", Movement, "Speeds up gliding while you hold forward.")
             .num("Boost", 0.05, 0.01, 0.2, 0.01)
@@ -292,6 +295,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Break Delay", Player, "Changes the delay between breaking one block and the next (Meteor's Break Delay): 0 means none.")
             .num("Cooldown (ticks)", 0.0, 0.0, 5.0, 1.0),
         Module::new("Auto Respawn", Player, "Respawns as soon as you die."),
+        Module::new("Panic", Player, "Turns every module off at once. Bind it to a key."),
         // Render
         Module::new("HUD", Render, "The watermark, the active modules, your coordinates and more.")
             .on()
@@ -468,7 +472,6 @@ pub(super) struct State {
     injected: Vec<KeyCode>,
     loaded: bool,
     ticks: u64,
-    aura_wait: u32,
     trigger_wait: u32,
     respawn_wait: u32,
     // Flight's Abilities mode is holding the player up.
@@ -476,7 +479,6 @@ pub(super) struct State {
     // The Step modifier is on the player.
     stepping: bool,
     // Auto Totem moved a totem from this hotbar slot and should swap back.
-    totem_from: Option<usize>,
     // The player's velocity when the last tick ended: what changes it before
     // the next one is the server's push (Velocity).
     velocity: Option<[f64; 3]>,
@@ -487,7 +489,6 @@ pub(super) struct State {
     found: Vec<([i32; 3], u32)>,
     found_for: (usize, i32, [i32; 3]),
     found_at: u64,
-    afk_wait: u32,
     scaffold_wait: u32,
     click_wait: u32,
     blink_ticks: u32,
@@ -537,21 +538,18 @@ impl State {
             injected: Vec::new(),
             loaded: false,
             ticks: 0,
-            aura_wait: 0,
-            trigger_wait: 0,
+                    trigger_wait: 0,
             respawn_wait: 0,
             flying: false,
             stepping: false,
-            totem_from: None,
-            velocity: None,
+                    velocity: None,
             gui: Gui::default(),
             crumbs: Vec::new(),
             waypoints: Vec::new(),
             found: Vec::new(),
             found_for: (usize::MAX, 0, [0; 3]),
             found_at: 0,
-            afk_wait: 0,
-            scaffold_wait: 0,
+                    scaffold_wait: 0,
             click_wait: 0,
             blink_ticks: 0,
             eating: false,
@@ -630,20 +628,35 @@ impl State {
                     .collect();
                 continue;
             }
-            let Some((id, field)) = k.split_once('.') else {
-                continue;
-            };
-            let Some(m) = self.modules.iter_mut().find(|m| norm(m.name) == id) else {
-                continue;
-            };
-            match field {
-                "on" => m.on = v == "true",
-                "key" => m.key = (v != "none" && !v.is_empty()).then(|| v.to_owned()),
-                _ => {
-                    if let Some(s) = m.settings.iter_mut().find(|s| norm(s.name) == field) {
-                        s.parse(v);
-                    }
+            self.set_field(k, v);
+        }
+    }
+    // One "module.field=value" line of a config or a profile.
+    fn set_field(&mut self, k: &str, v: &str) {
+        let Some((id, field)) = k.split_once('.') else {
+            return;
+        };
+        let Some(m) = self.modules.iter_mut().find(|m| norm(m.name) == id) else {
+            return;
+        };
+        match field {
+            "on" => m.on = v == "true",
+            "key" => m.key = (v != "none" && !v.is_empty()).then(|| v.to_owned()),
+            _ => {
+                if let Some(s) = m.settings.iter_mut().find(|s| norm(s.name) == field) {
+                    s.parse(v);
                 }
+            }
+        }
+    }
+    // The modules' states, settings and keys: a profile.
+    fn profile_text(&self) -> String {
+        self.save_text().lines().filter(|l| !l.starts_with("panel.") && !l.starts_with("waypoint=") && !l.starts_with("friends=")).collect::<Vec<_>>().join("\n")
+    }
+    fn load_profile(&mut self, text: &str) {
+        for line in text.lines() {
+            if let Some((k, v)) = line.split_once('=') {
+                self.set_field(k, v.trim());
             }
         }
     }
@@ -701,7 +714,8 @@ pub(super) fn snapshot() -> Vec<Module> {
 
 pub(super) fn sync_flags(s: &State) {
     NO_FALL.store(s.is_on("No Fall"), Ordering::Relaxed);
-    FLIGHT_GROUND.store(s.module("Flight").is_some_and(|m| m.on && m.p("Mode") == "Velocity"), Ordering::Relaxed);
+    let flying = s.module("Flight").is_some_and(|m| m.on && m.p("Mode") == "Velocity");
+    FLIGHT_GROUND.store(flying || s.is_on("Glide"), Ordering::Relaxed);
     BLINK.store(s.is_on("Blink"), Ordering::Relaxed);
     let hunger = s.module("Anti Hunger").filter(|m| m.on);
     ANTI_SPRINT.store(hunger.is_some_and(|m| m.b("Sprint")), Ordering::Relaxed);
@@ -885,17 +899,6 @@ pub(super) fn is_friend(friends: &[String], names: &[(u32, String)], id: u32) ->
         .iter()
         .find(|(i, _)| *i == id)
         .is_some_and(|(_, n)| friends.iter().any(|f| f.eq_ignore_ascii_case(n)))
-}
-
-pub(super) fn box_distance(eye: [f64; 3], b: &horizon_core::geometry::Aabb) -> f64 {
-    let (lo, hi) = (b.min_position(), b.max_position());
-    let c = [
-        eye[0].clamp(lo.x, hi.x),
-        eye[1].clamp(lo.y, hi.y),
-        eye[2].clamp(lo.z, hi.z),
-    ];
-    let d = [eye[0] - c[0], eye[1] - c[1], eye[2] - c[2]];
-    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
 }
 
 pub(super) fn look_at(eye: [f64; 3], at: [f64; 3]) -> (f32, f32) {
@@ -1280,6 +1283,10 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
         return;
     }
 
+    if get("Panic").is_some() {
+        panic_off(game);
+        return;
+    }
     if get("Fast Place").is_some() {
         game.use_delay = 0;
     }
@@ -1376,6 +1383,17 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
             } else {
                 FLIGHT_DIP.store(false, Ordering::Relaxed);
             }
+            p.fall_distance = 0.0;
+        }
+        if get("No Jump Delay").is_some() {
+            p.no_jump_delay = 0;
+        }
+        if let Some(g) = get("Glide")
+            && !p.ground.on_ground
+            && !p.flying
+            && !p.fall_flying
+        {
+            p.velocity.y = p.velocity.y.max(-g.n("Fall speed") / 20.0);
             p.fall_distance = 0.0;
         }
         if let Some(sp) = get("Speed")
@@ -2589,11 +2607,65 @@ const HELP: &[(&str, &str)] = &[
     (".bind <module> <key|none>", "bind a key to a module"),
     (".binds", "list key binds"),
     (".reset <module>", "put a module back to its defaults"),
+    (".panic", "turn every module off"),
+    (".profile save|load|delete|list [name]", "keep the modules' settings under a name and bring them back"),
     (".friend add|remove|list [name]", "Kill Aura and Trigger Bot skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
     (".vclip <blocks>", "move up or down"),
     (".hclip <blocks>", "move forward"),
 ];
+
+// Every module off: the Panic module, or .panic.
+pub(super) fn panic_off(game: &mut Game<'_>) {
+    with(|s| {
+        for m in &mut s.modules {
+            m.on = false;
+        }
+    });
+    save(game);
+    say(game, "Everything is off.");
+}
+
+// .profile save|load|delete|list <name>: the modules' settings kept under a name.
+fn profile_command(game: &mut Game<'_>, args: &[&str]) {
+    let names = |game: &Game<'_>| -> Vec<String> {
+        game.native_setting(ID, "profiles").unwrap_or_default().split(',').filter(|n| !n.is_empty()).map(str::to_owned).collect()
+    };
+    let key = |name: &str| format!("profile-{}", norm(name));
+    let sub = args.first().map(|a| a.to_ascii_lowercase());
+    let name = args.get(1..).map(|rest| rest.join(" ")).filter(|n| !norm(n).is_empty());
+    match (sub.as_deref(), name) {
+        (Some("save"), Some(name)) => {
+            let text = with(|s| s.profile_text());
+            game.native_set_setting(ID, &key(&name), &text);
+            let mut all = names(game);
+            if !all.iter().any(|n| norm(n) == norm(&name)) {
+                all.push(name.clone());
+            }
+            game.native_set_setting(ID, "profiles", &all.join(","));
+            say(game, &format!("Saved profile {name}."));
+        }
+        (Some("load"), Some(name)) => match game.native_setting(ID, &key(&name)) {
+            Some(text) => {
+                with(|s| s.load_profile(&text));
+                save(game);
+                say(game, &format!("Loaded profile {name}."));
+            }
+            None => say(game, &format!("No profile called {name}. Try .profile list")),
+        },
+        (Some("delete"), Some(name)) => {
+            let all: Vec<String> = names(game).into_iter().filter(|n| norm(n) != norm(&name)).collect();
+            game.native_set_setting(ID, "profiles", &all.join(","));
+            game.native_set_setting(ID, &key(&name), "");
+            say(game, &format!("Deleted profile {name}."));
+        }
+        (Some("list"), _) => {
+            let all = names(game);
+            say(game, &if all.is_empty() { "No profiles yet. .profile save <name> keeps the current settings.".to_owned() } else { format!("Profiles: {}", all.join(", ")) });
+        }
+        _ => say(game, "Use .profile save|load|delete <name>, or .profile list"),
+    }
+}
 
 pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
     let cmd = args[0].to_ascii_lowercase();
@@ -2739,6 +2811,8 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 say(game, &l);
             }
         }
+        "panic" => panic_off(game),
+        "profile" | "profiles" | "config" | "cfg" => profile_command(game, &args[1..]),
         "reset" => {
             if let Some(i) = module_arg(game, args.get(1)) {
                 let name = with(|s| {
@@ -2913,6 +2987,8 @@ impl Camera {
 
 pub(super) enum Shape {
     Fill([f32; 4], u32),
+    // A slanted shape (a line): its four corners in order round it.
+    Quad([[f32; 2]; 4], u32),
     Text(String, [f32; 2], u32),
 }
 
@@ -2925,14 +3001,6 @@ pub(super) fn outline(out: &mut Vec<Shape>, r: [f32; 4], argb: u32, lw: f32, fil
     out.push(Shape::Fill([x0, y1 - lw, x1 - x0, lw], argb));
     out.push(Shape::Fill([x0, y0, lw, y1 - y0], argb));
     out.push(Shape::Fill([x1 - lw, y0, lw, y1 - y0], argb));
-}
-
-pub(super) fn colour(kind: Kind) -> u32 {
-    match kind {
-        Kind::Player => 0xFFFF_FFFF,
-        Kind::Hostile => 0xFFFF_5050,
-        Kind::Passive => 0xFF50_FF50,
-    }
 }
 
 pub(super) fn health_colour(fraction: f32) -> u32 {
@@ -3055,6 +3123,10 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     for s in shapes {
         match s {
             Shape::Fill(r, argb) => game.native_fill(batch, r, argb),
+            Shape::Quad(corners, argb) => {
+                let [a, r, g, b] = argb.to_be_bytes();
+                batch.fill_quad(&game.gui.atlas, corners, horizon_client::hud::rgba(r, g, b, a));
+            }
             Shape::Text(t, at, rgb) => game.native_text(batch, &t, at, rgb, true),
         }
     }
@@ -3384,19 +3456,19 @@ pub(super) fn pretty_id(id: &str) -> String {
     key_label(Some(&n.replace('_', ".")))
 }
 
-// A line as small squares, which is all the HUD draws.
+// A line, as one slanted quad.
 pub(super) fn line(out: &mut Vec<Shape>, from: [f32; 2], to: [f32; 2], argb: u32, lw: f32) {
     let (dx, dy) = (to[0] - from[0], to[1] - from[1]);
     let len = (dx * dx + dy * dy).sqrt();
     if !len.is_finite() || len < 1.0 {
         return;
     }
-    let step = lw.max(0.75);
-    let n = ((len / step) as usize).min(4000);
-    for i in 0..=n {
-        let t = i as f32 / n.max(1) as f32;
-        out.push(Shape::Fill([from[0] + dx * t - lw / 2.0, from[1] + dy * t - lw / 2.0, lw, lw], argb));
-    }
+    let half = lw.max(1.0) / 2.0;
+    let (nx, ny) = (-dy / len * half, dx / len * half);
+    out.push(Shape::Quad(
+        [[from[0] + nx, from[1] + ny], [to[0] + nx, to[1] + ny], [to[0] - nx, to[1] - ny], [from[0] - nx, from[1] - ny]],
+        argb,
+    ));
 }
 
 // ---------------------------------------------------------------- click GUI
@@ -3473,6 +3545,8 @@ pub(super) enum Hit {
 fn aliases(name: &str) -> &'static str {
     match name {
         "Step" => "step up stepup stairs",
+        "Glide" => "slow fall slowfall",
+        "Panic" => "disable all off hide",
         "GUI Move" => "inventory move invmove gui walk",
         "Reverse Step" => "step down stepdown",
         "Flight" => "fly",
@@ -3879,7 +3953,13 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
                     out.push(Shape::Fill([x, y, 2.0, rh], 0xFF00_0000 | ACCENT));
                 }
                 let colour = if m.on { ACCENT } else { 0xE0E0E0 };
-                out.push(Shape::Text(fit(m.name, rw - 16.0), [x + 5.0, y + 1.5], colour));
+                // A bound key shows beside the dots.
+                let tag = m.key.as_deref().map(|k| fit(&key_label(Some(k)), 30.0)).unwrap_or_default();
+                let tag_w = if tag.is_empty() { 0.0 } else { game.native_text_width(&tag) + 3.0 };
+                out.push(Shape::Text(fit(m.name, rw - 16.0 - tag_w), [x + 5.0, y + 1.5], colour));
+                if !tag.is_empty() {
+                    out.push(Shape::Text(tag, [x + rw - 13.0 - tag_w + 3.0, y + 1.5], 0x808080));
+                }
                 let open = with(|st| st.gui.expanded.contains(&i));
                 out.push(Shape::Text("...".into(), [x + rw - 12.0, y + 0.5], if open { ACCENT } else { 0xB0B0B0 }));
             }
