@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/logo.png" alt="Sunset" width="420"></p>
+
 # Sunset
 
 A utility client for [Horizon](https://github.com/horizon-rust/horizon) (Minecraft 26.3, rewritten in Rust),
