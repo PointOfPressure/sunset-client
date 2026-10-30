@@ -2,7 +2,8 @@
 // InvUtils, PlayerUtils and TargetUtils: placing blocks, finding items in the
 // hotbar, picking targets, seeing a block through the world.
 
-use super::sunset::{Camera, Canvas, Module, hold, look_at, outline, say, toggle, turn_then, with};
+use super::sunset::{Camera, Canvas, Module, hold, look_at, say, toggle, turn_then, with};
+use super::sunset_visual::{Look, draw_box};
 use super::{Game, Screen};
 use horizon_protocol::packets::{
     Empty,
@@ -31,13 +32,8 @@ pub(super) fn show(pos: [i32; 3], argb: u32) {
 
 pub(super) fn draw_shown(cam: &Camera, out: &mut impl Canvas, lw: f32) {
     for &(p, c) in SHOW.lock().unwrap_or_else(|e| e.into_inner()).iter() {
-        if !cam.sees(center_of(p), 0.87) {
-            continue;
-        }
         let lo = [f64::from(p[0]), f64::from(p[1]), f64::from(p[2])];
-        if let Some(r) = cam.rect(lo, [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0]) {
-            outline(out, r, c, lw, true);
-        }
+        draw_box(cam, out, &Look::BOXED, lo, [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0], c, lw);
     }
 }
 

@@ -3765,28 +3765,31 @@ impl Camera {
         let y = dot(self.up) * self.focal / depth;
         Some([((1.0 + x) / 2.0 * self.w) as f32, ((1.0 - y) / 2.0 * self.h) as f32])
     }
-    // A box's eight corners on screen, when all of it is in front: corner i is at hi on x, y and z where bits 1, 2
-    // and 4 of i are set.
-    pub(super) fn corners(&self, lo: [f64; 3], hi: [f64; 3]) -> Option<[[f32; 2]; 8]> {
-        let mut pts = [[0.0; 2]; 8];
-        for (i, p) in pts.iter_mut().enumerate() {
-            *p = self.project([
+    // Where the view is from.
+    pub(super) fn eye(&self) -> [f64; 3] {
+        self.pos
+    }
+    // A box's eight corners on screen (None behind the camera): corner i is at hi on x, y and z where bits 1, 2 and
+    // 4 of i are set.
+    pub(super) fn points(&self, lo: [f64; 3], hi: [f64; 3]) -> [Option<[f32; 2]>; 8] {
+        std::array::from_fn(|i| {
+            self.project([
                 if i & 1 == 0 { lo[0] } else { hi[0] },
                 if i & 2 == 0 { lo[1] } else { hi[1] },
                 if i & 4 == 0 { lo[2] } else { hi[2] },
-            ])?;
-        }
-        Some(pts)
+            ])
+        })
+    }
+    // The eight, when all of the box is in front.
+    pub(super) fn corners(&self, lo: [f64; 3], hi: [f64; 3]) -> Option<[[f32; 2]; 8]> {
+        let pts = self.points(lo, hi);
+        pts.iter().all(Option::is_some).then(|| pts.map(Option::unwrap_or_default))
     }
     // The screen rectangle round those corners, unless it is far off screen.
     pub(super) fn bounds(&self, pts: &[[f32; 2]; 8]) -> Option<[f32; 4]> {
         let r = pts.iter().fold([f32::MAX, f32::MAX, f32::MIN, f32::MIN], |r, &[x, y]| [r[0].min(x), r[1].min(y), r[2].max(x), r[3].max(y)]);
         let margin = 4.0 * self.w as f32;
         (r[2] > -margin && r[0] < margin && r[3] > -margin && r[1] < margin).then_some(r)
-    }
-    // The screen rectangle around a box, when all of it is in front.
-    pub(super) fn rect(&self, lo: [f64; 3], hi: [f64; 3]) -> Option<[f32; 4]> {
-        self.bounds(&self.corners(lo, hi)?)
     }
 }
 
@@ -4411,9 +4414,7 @@ pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, potato_only: bool, out: 
             }
             let lo = [pos[0] - 0.25, pos[1] - 0.25, pos[2] - 0.25];
             let hi = [pos[0] + 0.25, pos[1] + 0.25, pos[2] + 0.25];
-            if let Some(r) = cam.rect(lo, hi) {
-                outline(out, r, colour, lw, true);
-            }
+            draw_box(cam, out, &Look::BOXED, lo, hi, colour, lw);
             break;
         }
         if pos[1] < -80.0 {

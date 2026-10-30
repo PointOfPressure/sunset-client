@@ -97,6 +97,17 @@ const EDGES: [(usize, usize); 12] = [
     (3, 7),
 ];
 
+// A box's faces: the corners round each (bit 1 of a corner index is x at its high end, bit 2 y, bit 4 z), and the
+// side of the box the camera must be on to see it (axis, high end).
+const FACES: [([usize; 4], usize, bool); 6] = [
+    ([0, 2, 6, 4], 0, false),
+    ([1, 3, 7, 5], 0, true),
+    ([0, 1, 5, 4], 1, false),
+    ([2, 3, 7, 6], 1, true),
+    ([0, 1, 3, 2], 2, false),
+    ([4, 5, 7, 6], 2, true),
+];
+
 // The ways a module can draw a thing (its Mode): a 3D box, the 2D box round it on screen, that box's outline alone,
 // or Potato, one small square on its middle, the least work there is.
 #[derive(Clone, Copy, PartialEq)]
@@ -118,7 +129,7 @@ pub(super) struct Look {
 impl Look {
     pub(super) fn of(m: &Module) -> Self {
         let draw = match m.p("Mode") {
-            "2D box" | "Box" => Draw::Box2d,
+            "2D box" => Draw::Box2d,
             "Outline" => Draw::Outline,
             "Potato" => Draw::Potato,
             _ => Draw::Box3d,
@@ -130,6 +141,8 @@ impl Look {
         };
         Self { draw, sides, lines, fill }
     }
+    // Lines and a light fill in 3D: the boxes modules show where they place or break, a throw's landing.
+    pub(super) const BOXED: Self = Self { draw: Draw::Box3d, sides: true, lines: true, fill: 40.0 / 255.0 };
 }
 
 // Potato: one small square on `at`. True when it was on screen.
@@ -144,7 +157,9 @@ pub(super) fn potato(cam: &Camera, out: &mut impl Canvas, at: [f64; 3], argb: u3
     }
 }
 
-// A box in the world as the module's Look says. True when it was on screen (what a Max counts).
+// A box in the world as the module's Look says. True when any of it was on screen (what a Max counts). A 3D box's
+// sides are its faces turned to the camera (at most three, none from inside it), its edges the lines; a corner
+// behind the camera leaves out the faces and edges it belongs to. The 2D modes need the whole box in front.
 pub(super) fn draw_box(cam: &Camera, out: &mut impl Canvas, look: &Look, lo: [f64; 3], hi: [f64; 3], argb: u32, lw: f32) -> bool {
     let mid = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
     if look.draw == Draw::Potato {
@@ -153,24 +168,36 @@ pub(super) fn draw_box(cam: &Camera, out: &mut impl Canvas, look: &Look, lo: [f6
     if !cam.sees(mid, dist(lo, hi) / 2.0) {
         return false;
     }
+    let fill = (((argb >> 24) as f64 * look.fill).round() as u32) << 24 | (argb & 0x00FF_FFFF);
+    if look.draw == Draw::Box3d {
+        let pts = cam.points(lo, hi);
+        let eye = cam.eye();
+        let mut drawn = false;
+        for (face, axis, high) in FACES.iter().filter(|_| look.sides) {
+            let facing = if *high { eye[*axis] > hi[*axis] } else { eye[*axis] < lo[*axis] };
+            if let (true, [Some(a), Some(b), Some(c), Some(d)]) = (facing, face.map(|i| pts[i])) {
+                out.quad([a, b, c, d], fill);
+                drawn = true;
+            }
+        }
+        for (a, b) in EDGES.iter().filter(|_| look.lines) {
+            if let (Some(p), Some(q)) = (pts[*a], pts[*b]) {
+                line(out, p, q, argb, lw);
+                drawn = true;
+            }
+        }
+        return drawn;
+    }
     let Some(pts) = cam.corners(lo, hi) else {
         return false;
     };
     let Some(r) = cam.bounds(&pts) else {
         return false;
     };
-    let sides = look.sides && look.draw != Draw::Outline;
-    if sides {
-        let a = ((argb >> 24) as f64 * look.fill).round() as u32;
-        out.fill([r[0], r[1], r[2] - r[0], r[3] - r[1]], (a << 24) | (argb & 0x00FF_FFFF));
+    if look.sides && look.draw != Draw::Outline {
+        out.fill([r[0], r[1], r[2] - r[0], r[3] - r[1]], fill);
     }
-    if look.draw == Draw::Box3d {
-        if look.lines {
-            for (a, b) in EDGES {
-                line(out, pts[a], pts[b], argb, lw);
-            }
-        }
-    } else if look.lines || look.draw == Draw::Outline {
+    if look.lines || look.draw == Draw::Outline {
         outline(out, r, argb, lw, false);
     }
     true

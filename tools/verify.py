@@ -1589,6 +1589,41 @@ def _():
         f"{walled[0]} health lost at Walls range 3.5, {blocked[1]} swings at 2")
 
 
+def shot_pixels(name, want):
+    """Pixels of a screenshot that `want` (r, g, b) accepts."""
+    from PIL import Image
+    path = f"/tmp/{name}.png"
+    ctl("screenshot", path)
+    time.sleep(2)
+    return sum(1 for px in Image.open(path).convert("RGB").getdata() if want(*px))
+
+
+@test("3D box sides (no flood)")
+def _():
+    # Storage ESP's 3D box with Sides fills the chest's own faces, never the screen rectangle round it: a chest close
+    # beside the view, one partly behind the camera, and the camera inside one.
+    orange = lambda r, g, b: r > 220 and 130 < g < 190 and b < 100
+    setting("storageesp", "shape mode", "Sides")
+    setting("storageesp", "fill opacity", "1")
+    setting("storageesp", "fade distance", "0")
+    only("storageesp")
+    def seen(mode, x, y, z, name):
+        cmd(f"fill {X0-3} {Y+1} {Z0-3} {X0+3} {Y+3} {Z0+3} minecraft:air", f"setblock {X0+x} {Y+y} {Z0+z} minecraft:chest")
+        setting("storageesp", "mode", mode)
+        ctl("look", "0", "0")
+        wait(10)
+        return shot_pixels(name, orange)
+    near3d, near2d = seen("3D box", 1, 1, 1, "box_near3d"), seen("2D box", 1, 1, 1, "box_near2d")
+    behind = seen("3D box", 1, 1, 0, "box_behind")
+    inside = seen("3D box", 0, 2, 0, "box_inside")
+    cmd(f"fill {X0-3} {Y+1} {Z0-3} {X0+3} {Y+3} {Z0+3} minecraft:air")
+    only()
+    screen = 1280 * 720
+    return 5000 < near3d < near2d and behind < 0.3 * screen and inside < 0.02 * screen, (
+        f"orange pixels: chest close beside the view {near3d} with 3D sides, {near2d} as a 2D box; partly behind the "
+        f"camera {behind}; camera inside it {inside} (of {screen})")
+
+
 @test("Target HUD")
 def _():
     slot(0, "diamond_sword")
