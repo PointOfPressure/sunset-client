@@ -1,6 +1,6 @@
 [mod]
 id = "solstice"
-version = "0.3.0"
+version = "0.4.0"
 priority = 100
 
 # It hooks the game's own functions as well as the native hook points, so it

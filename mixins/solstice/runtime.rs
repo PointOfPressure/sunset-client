@@ -21,7 +21,7 @@ use winit::keyboard::KeyCode;
 
 pub(crate) const ID: &str = "solstice";
 pub(crate) const NAME: &str = "Solstice";
-pub(crate) const VERSION: &str = "0.3.0";
+pub(crate) const VERSION: &str = "0.4.0";
 pub(crate) const DESCRIPTION: &str =
     "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
 // The menu key's name on the mod's page and its default (Right Shift).
@@ -405,10 +405,8 @@ pub(crate) struct State {
     tool_back: Option<usize>,
     mc_back: Option<(usize, u32)>,
     nuke: Option<([i32; 3], u32)>,
-    nuke_wait: u32,
     armor_wait: u32,
     replenish_wait: u32,
-    online: Vec<String>,
     last_pos: Vec<(String, [f64; 3], String)>,
     spots: Vec<Spot>,
 }
@@ -464,10 +462,8 @@ impl State {
             tool_back: None,
             mc_back: None,
             nuke: None,
-            nuke_wait: 0,
             armor_wait: 0,
             replenish_wait: 0,
-            online: Vec::new(),
             last_pos: Vec::new(),
             spots: Vec::new(),
         }
@@ -3077,8 +3073,8 @@ impl Default for Gui {
     }
 }
 
-// Four panels fit a 427-pixel-wide GUI (1280 by 720 at scale 3).
-const PANEL_W: f32 = 100.0;
+// Five panels fit a 427-pixel-wide GUI (1280 by 720 at scale 3).
+const PANEL_W: f32 = 82.0;
 const HEAD_H: f32 = 13.0;
 const ROW_H: f32 = 11.0;
 
@@ -3329,15 +3325,15 @@ fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
         s.gui.view_h = h;
         // Panels with no place yet go left to right, in a second row when the
         // window is narrow.
-        let mut x = 4.0;
+        let mut x = 2.0;
         let mut y = 32.0;
         for p in s.gui.panels.iter_mut().filter(|p| p.x < 0.0) {
             if x + PANEL_W > w {
-                x = 4.0;
+                x = 2.0;
                 y += 16.0;
             }
             (p.x, p.y) = (x, y);
-            x += PANEL_W + 4.0;
+            x += PANEL_W + 3.0;
         }
         for p in &mut s.gui.panels {
             p.x = p.x.clamp(0.0, (w - PANEL_W).max(0.0));
