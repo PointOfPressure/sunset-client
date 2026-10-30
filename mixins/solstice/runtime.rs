@@ -21,7 +21,7 @@ use winit::keyboard::KeyCode;
 
 pub(crate) const ID: &str = "solstice";
 pub(crate) const NAME: &str = "Solstice";
-pub(crate) const VERSION: &str = "0.6.0";
+pub(crate) const VERSION: &str = "0.7.0";
 pub(crate) const DESCRIPTION: &str =
     "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
 // The menu key's name on the mod's page and its default (Right Shift).
@@ -391,6 +391,8 @@ pub(super) fn defaults() -> Vec<Module> {
     ];
     v.extend(super::solstice_combat::defaults());
     v.extend(super::solstice_render::defaults());
+    v.extend(super::solstice_player::defaults());
+    v.extend(super::solstice_world::defaults());
     v
 }
 
@@ -1004,6 +1006,9 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     if key == "key.mouse.middle" && with(|s| s.is_on("Middle Click Extra")) {
         middle_click(game);
     }
+    if key == "key.mouse.right" {
+        super::solstice_player::right_click(game);
+    }
     let bound: Vec<usize> = with(|s| {
         (0..s.modules.len())
             .filter(|&i| s.modules[i].key.as_deref() == Some(key))
@@ -1426,6 +1431,8 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     }
     super::solstice_combat::tick(game, &mods);
     super::solstice_render::tick(game, &mods, ticks);
+    super::solstice_player::tick(game, &mods);
+    super::solstice_world::tick(game, &mods);
     if let Some(m) = get("Auto Totem") {
         auto_totem(game, m.b("Swap back"));
     }
@@ -2540,14 +2547,29 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 say(game, "Use .set <module> <setting> <value>");
                 return;
             }
-            let value = args[args.len() - 1];
-            let name = norm(&args[2..args.len() - 1].join(""));
-            let result = with(|s| {
-                let m = &mut s.modules[i];
-                let exact = m.settings.iter().position(|st| norm(st.name) == name);
-                let at = exact.or_else(|| m.settings.iter().position(|st| norm(st.name).starts_with(&name)))?;
-                let setting = &mut m.settings[at];
-                Some((setting.parse(value), setting.shown()))
+            // The setting's name is the first words that name one (exactly, else
+            // by its start); the rest is the value, spaces and all.
+            let (found, value) = with(|s| {
+                let m = &s.modules[i];
+                for exact in [true, false] {
+                    for k in 1..args.len() - 2 {
+                        let name = norm(&args[2..2 + k].join(""));
+                        let at = m.settings.iter().position(|st| {
+                            if exact { norm(st.name) == name } else { norm(st.name).starts_with(&name) }
+                        });
+                        if let Some(at) = at {
+                            return (Some(at), args[2 + k..].join(" "));
+                        }
+                    }
+                }
+                (None, String::new())
+            });
+            let value = value.as_str();
+            let result = found.and_then(|at| {
+                with(|s| {
+                    let setting = &mut s.modules[i].settings[at];
+                    Some((setting.parse(value), setting.shown()))
+                })
             });
             match result {
                 None => say(game, "No such setting. Try .settings <module>"),
