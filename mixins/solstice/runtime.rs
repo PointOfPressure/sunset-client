@@ -33,10 +33,12 @@ pub(crate) const MENU2_KEY: &str = "menu2";
 pub(crate) const MENU2_DEFAULT: &str = "key.keyboard.right.shift";
 // Solstice's sun gold.
 // The menu's look, set by the ClickGUI module (accent colour, panel width, background opacity and dim).
-static LOOK: [std::sync::atomic::AtomicU32; 4] = [
+// [accent, wanted panel width, opacity, dim, the panel width in use: what fits the screen, 0 before the first draw] (floats as bits).
+static LOOK: [std::sync::atomic::AtomicU32; 5] = [
     std::sync::atomic::AtomicU32::new(0xFFB020),
     std::sync::atomic::AtomicU32::new(0x42A4_0000),
     std::sync::atomic::AtomicU32::new(0x3F40_0000),
+    std::sync::atomic::AtomicU32::new(0),
     std::sync::atomic::AtomicU32::new(0),
 ];
 
@@ -45,7 +47,7 @@ pub(super) fn accent() -> u32 {
 }
 
 fn panel_w() -> f32 {
-    f32::from_bits(LOOK[1].load(Ordering::Relaxed))
+    f32::from_bits(LOOK[4].load(Ordering::Relaxed))
 }
 
 // A menu background colour with the ClickGUI's opacity (the defaults are drawn at 0.75).
@@ -3928,8 +3930,19 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     if LOOK[3].load(Ordering::Relaxed) != 0 {
         out.push(Shape::Fill([0.0, 0.0, w, h], 0x6000_0000));
     }
+    // The panels are as wide as asked, or as wide as lets all of them sit in a row.
+    let fits = ((w - 4.0 - 3.0 * (CATEGORIES.len() as f32 - 1.0)) / CATEGORIES.len() as f32).floor();
+    let width = f32::from_bits(LOOK[1].load(Ordering::Relaxed)).min(fits).max(50.0);
+    let before = LOOK[4].swap(width.to_bits(), Ordering::Relaxed);
+    let changed = before != 0 && before != width.to_bits();
     with(|s| {
         s.gui.view_h = h;
+        if changed {
+            // Another width: lay the panels out again.
+            for p in &mut s.gui.panels {
+                p.x = -1.0;
+            }
+        }
         // Panels with no place yet go left to right, in a second row when the
         // window is narrow.
         let mut x = 2.0;
