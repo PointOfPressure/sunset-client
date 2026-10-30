@@ -430,26 +430,73 @@ fn flamethrower(game: &mut Game<'_>, m: &Module) {
             }
         }
     }
-    let below = [t.pos[0].floor() as i32, t.pos[1].floor() as i32 - 1, t.pos[2].floor() as i32];
+    let Some((below, point)) = fire_spot(game, eye, &t) else {
+        return;
+    };
+    // The look goes to the point clicked, as a real click's does: a look through the mob is a click on the mob, and
+    // Horizon's server leaves a block use alone while you look at one.
     if m.b("Rotate") {
-        let (yaw, pitch) = super::sunset::look_at(eye, centre(&t));
-        game.send(S::MovePlayerRot(play::MovePlayerRot { yaw, pitch, flags: 1 }));
+        let (yaw, pitch) = super::sunset::look_at(eye, point);
+        let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
+        game.send(S::MovePlayerRot(play::MovePlayerRot { yaw, pitch, flags: u8::from(ground) }));
     }
     let before = game.selected;
     hold(game, slot);
     let seq = sequence(game);
-    game.send(S::UseItemOn(play::UseItemOn {
-        hand: 0,
-        pos: below,
-        face: 1,
-        cursor: [0.5, 1.0, 0.5],
-        inside: false,
-        world_border: false,
-        sequence: seq,
-    }));
+    let cursor = [(point[0] - f64::from(below[0])) as f32, 1.0, (point[2] - f64::from(below[2])) as f32];
+    game.send(S::UseItemOn(play::UseItemOn { hand: 0, pos: below, face: 1, cursor, inside: false, world_border: false, sequence: seq }));
     game.swing_arm();
     hold(game, before);
     ws(|w| w.flame_ticks = 0);
+}
+
+// Where to click to set `t` alight: the top of a block under its feet with air above (where the fire goes), at the
+// point nearest your eyes that the mob does not hide and that is within reach. The block and the point.
+fn fire_spot(game: &Game<'_>, eye: [f64; 3], t: &Target) -> Option<([i32; 3], [f64; 3])> {
+    let y = t.lo[1].floor() as i32;
+    let grown = (t.lo.map(|v| v - 0.05), t.hi.map(|v| v + 0.05));
+    let mut best: Option<(f64, [i32; 3], [f64; 3])> = None;
+    for x in t.lo[0].floor() as i32..=(t.hi[0] - 1e-6).floor() as i32 {
+        for z in t.lo[2].floor() as i32..=(t.hi[2] - 1e-6).floor() as i32 {
+            let below = [x, y - 1, z];
+            if !is_air(game, [x, y, z]) || is_air(game, below) || !facts(game, below).full_collision {
+                continue;
+            }
+            let (fx, fz) = (f64::from(x), f64::from(z));
+            let nearest = [eye[0].clamp(fx + 0.01, fx + 0.99), eye[2].clamp(fz + 0.01, fz + 0.99)];
+            let points = [0.01, 0.5, 0.99].into_iter().flat_map(|a| [0.01, 0.5, 0.99].map(|b| [fx + a, fz + b]));
+            for [px, pz] in points.chain([nearest]) {
+                let point = [px, f64::from(y), pz];
+                let d = dist(eye, point);
+                if d > 4.5 || best.is_some_and(|b| b.0 <= d) || crosses(eye, point, grown.0, grown.1) {
+                    continue;
+                }
+                best = Some((d, below, point));
+            }
+        }
+    }
+    best.map(|(_, below, point)| (below, point))
+}
+
+// Whether the segment from `a` to `b` passes through the box from `lo` to `hi`.
+fn crosses(a: [f64; 3], b: [f64; 3], lo: [f64; 3], hi: [f64; 3]) -> bool {
+    let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+    for i in 0..3 {
+        let d = b[i] - a[i];
+        if d.abs() < 1e-12 {
+            if a[i] < lo[i] || a[i] > hi[i] {
+                return false;
+            }
+            continue;
+        }
+        let (u, v) = ((lo[i] - a[i]) / d, (hi[i] - a[i]) / d);
+        t0 = t0.max(u.min(v));
+        t1 = t1.min(u.max(v));
+        if t0 > t1 {
+            return false;
+        }
+    }
+    true
 }
 
 // ---- Bow Aimbot
