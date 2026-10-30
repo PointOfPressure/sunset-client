@@ -21,6 +21,12 @@ name = "solstice_util"
 source = "util.rs"
 
 [[module]]
+id = "profiles"
+file = "crates/horizon-client/src/game.rs"
+name = "solstice_profiles"
+source = "profiles.rs"
+
+[[module]]
 id = "combat"
 file = "crates/horizon-client/src/game.rs"
 name = "solstice_combat"

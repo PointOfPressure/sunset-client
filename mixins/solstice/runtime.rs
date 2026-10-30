@@ -95,7 +95,7 @@ impl Setting {
     fn stored(&self) -> String {
         match &self.value {
             Value::Bool(b) => b.to_string(),
-            Value::Num { v, .. } => num(*v),
+            Value::Num { v, .. } => v.to_string(),
             Value::Pick { i, of } => of[*i].to_owned(),
             Value::Text(t) => t.clone(),
         }
@@ -575,8 +575,11 @@ impl State {
         self.modules.iter().position(|m| norm(m.name) == n)
     }
     fn save_text(&self) -> String {
+        self.save_modules_text(&self.modules)
+    }
+    fn save_modules_text(&self, modules: &[Module]) -> String {
         let mut out = String::new();
-        for m in &self.modules {
+        for m in modules {
             let id = norm(m.name);
             out.push_str(&format!("{id}.on={}\n", m.on));
             out.push_str(&format!("{id}.key={}\n", m.key.as_deref().unwrap_or("none")));
@@ -2521,6 +2524,58 @@ pub(super) fn zoom(game: &Game<'_>, zoom: &mut Option<super::native_hooks::Nativ
 
 // ---------------------------------------------------------------- commands
 
+// Settings profiles by OpenAI Codex (GPT-6.1 Sol), MIT, for PointOfPressure.
+// No activation changes: modules whose settings change must already be off.
+fn profile_command(game: &mut Game<'_>, args: &[&str]) {
+    use super::solstice_profiles as profiles;
+    let result = (|| -> Result<String, String> {
+        let action = args.first().map(|a| a.to_ascii_lowercase()).unwrap_or_default();
+        if !matches!((action.as_str(), args.len()), ("list", 1) | ("save" | "load" | "delete", 2)) {
+            return Err("Use .profile save|load|delete <name>, or .profile list. Settings only; on/off, binds, friends and waypoints stay unchanged.".into());
+        }
+        let store = profiles::Store::new(game.native_data_dir(ID))?;
+        if action == "list" {
+            let names = store.list()?;
+            return Ok(format!("Profiles: {}. Load backup with .profile load before-load.",
+                if names.is_empty() { "none".into() } else { names.join(", ") }));
+        }
+        let name = profiles::name(args[1])?;
+        if name == profiles::BACKUP && action != "load" {
+            return Err("before-load is reserved for the automatic backup; use .profile load before-load to restore it.".into());
+        }
+        match action.as_str() {
+            "save" => {
+                let text = with(|s| profiles::encode(&s.modules))?;
+                store.write(&name, &text)?;
+                Ok(format!("Saved settings profile {name}. On/off and binds are not included."))
+            }
+            "delete" => {
+                store.delete(&name)?;
+                Ok(format!("Deleted profile {name}."))
+            }
+            "load" => {
+                let text = store.read(&name)?;
+                with(|s| -> Result<(), String> {
+                    let modules = profiles::stage(&s.modules, &text)?;
+                    let before = profiles::encode(&s.modules)?;
+                    let config = profiles::preserve_pending(&s.raw, &s.save_modules_text(&modules), &modules);
+                    let old_config = profiles::preserve_pending(&s.raw, &s.save_text(), &s.modules);
+                    // All validation precedes I/O. Backup and checked config persistence must
+                    // succeed before the one locked in-memory assignment; no nested state lock.
+                    store.commit(&old_config, &before, &config)?;
+                    s.modules = modules;
+                    s.raw = config;
+                    sync_flags(s);
+                    Ok(())
+                })?;
+                Ok(format!("Loaded settings profile {name}. Previous settings: .profile load before-load. On/off and binds unchanged."))
+            }
+            _ => unreachable!(),
+        }
+    })();
+    say(game, &result.unwrap_or_else(|e| format!("Profile: {e}")));
+}
+
 pub(super) fn chat(game: &mut Game<'_>, message: &str) -> bool {
     if !game.native_window() || !game.native_on(ID) {
         return false;
@@ -2550,6 +2605,7 @@ const HELP: &[(&str, &str)] = &[
     (".bind <module> <key|none>", "bind a key to a module"),
     (".binds", "list key binds"),
     (".reset <module>", "put a module back to its defaults"),
+    (".profile save|load|delete <name>; .profile list", "local settings profiles; enabled states and binds stay unchanged"),
     (".friend add|remove|list [name]", "Kill Aura and Trigger Bot skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
     (".vclip <blocks>", "move up or down"),
@@ -2583,6 +2639,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
             open_gui(game);
         }
         "pages" => open_menu(game),
+        "profile" => profile_command(game, &args[1..]),
         "toggle" | "t" => {
             if let Some(i) = module_arg(game, args.get(1)) {
                 toggle(game, i, true);

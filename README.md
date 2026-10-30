@@ -50,6 +50,12 @@ Press **`** (or **Right Shift**) for the menu. Every category is a panel.
 
 Everything is saved as you change it.
 
+Use `.profile save <name>`, `.profile load <name>`, `.profile list` and `.profile delete <name>` for
+named local **module settings** snapshots. Enabled states, binds, friends and waypoints stay unchanged.
+Turn off modules whose settings will change before loading; the command reports any that are still on.
+Every load keeps a recovery snapshot at `.profile load before-load`. See [profiles](docs/profiles.md)
+for scope, file limits and backup details.
+
 ### Chat commands
 
 They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
