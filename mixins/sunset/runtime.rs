@@ -487,6 +487,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.splice(0..0, super::sunset_aura::defaults());
     v.extend(super::sunset_combat::defaults());
     v.extend(super::sunset_render::defaults());
+    v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
     v
@@ -3227,6 +3228,9 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
                 horizon_client::font::sunset_font::BOLD.store(false, Ordering::Relaxed);
             }
         }
+    }
+    if !with(|s| s.gui.open) {
+        super::sunset_radar::draw(game, batch, corners, &mods);
     }
 }
 

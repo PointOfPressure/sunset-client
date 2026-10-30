@@ -1536,6 +1536,49 @@ def _():
     return real["max"] < 1.5 and real["stalled"] < 0.05 and friend["end"] > 5.0, note
 
 
+def corner(name):
+    """The bottom-left quarter of a screenshot, where the HUD places the radar: its pixels of the radar's dark blue
+    and its near-white ones."""
+    from PIL import Image
+    path = f"/tmp/{name}.png"
+    ctl("screenshot", path)
+    time.sleep(2)
+    img = Image.open(path).convert("RGB")
+    w, h = img.size
+    region = img.crop((0, h // 2, w // 2, h))
+    px = list(region.getdata())
+    return sum(1 for p in px if max(p) < 80 and p[2] - p[0] >= 8), sum(1 for p in px if min(p) > 230)
+
+
+@test("Radar")
+def _():
+    reset("creative")
+    ctl("look", "0", "0")
+    # The chat sits over the radar's corner: shrink it away for the pictures.
+    ctl("options-set", "chatScale", "0")
+    wait(10)
+    plain = corner("radar_off")
+    only("radar")
+    wait(10)
+    shown = corner("radar_on")
+    note = f"{plain[0]} dark blue pixels in the bottom-left quarter without the radar, {shown[0]} with it"
+    ok = shown[0] > plain[0] + 5000
+    if CTL2:
+        # A second player 10 blocks off: a white dot on the radar; 100 blocks off (past Range 64): none.
+        say("/gamemode creative Bot1")
+        say(f"/tp Bot1 {X0 + 10.5} {Y + 1} {Z0 + 0.5}")
+        wait(20)
+        near = corner("radar_bot_near")
+        say(f"/tp Bot1 {X0 + 100.5} {Y + 1} {Z0 + 0.5}")
+        wait(20)
+        far = corner("radar_bot_far")
+        ok = ok and near[1] > far[1] + 10
+        note += f"; white pixels with Bot1 10 blocks off {near[1]}, 100 off {far[1]}"
+    only()
+    ctl("options-set", "chatScale", "1")
+    return ok, note
+
+
 @test("Crystal Optimizer")
 def _():
     reset()
