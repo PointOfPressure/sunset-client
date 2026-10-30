@@ -32,15 +32,18 @@ fn unavailable_hold_uses_production_setting_error_path() {
         };
         assert!(!setting.parse("Hold"), "{name}");
         assert_eq!(setting.stored(), "Toggle", "{name}");
-        assert_eq!(setting.shown(), "Bind activation: Toggle (Hold unavailable)", "{name}");
+        assert_eq!(setting.shown(), "Bind: Toggle (Hold unavailable)", "{name}");
         assert!(setting.parse("Toggle"), "{name}");
     }
     let mut setting = Setting {
         name: "Bind activation",
         value: Value::Pick { i: 0, of: super::bind_state::activation_modes("Zoom") },
     };
+    assert_eq!(setting.shown(), "Bind: Toggle");
     assert!(setting.parse("hold"));
     assert_eq!(setting.stored(), "Hold");
+    assert_eq!(setting.shown(), "Bind: Hold");
+    assert_eq!(setting.name, "Bind activation");
 }
 '''
 with tempfile.TemporaryDirectory(prefix="solstice-bind-tests-") as directory:

@@ -85,7 +85,11 @@ impl Setting {
         match &self.value {
             Value::Bool(b) => format!("{}: {}", self.name, on_off(*b)),
             Value::Num { v, .. } => format!("{}: {}", self.name, num(*v)),
-            Value::Pick { of, .. } if self.name == "Bind activation" && of.len() == 1 => "Bind activation: Toggle (Hold unavailable)".into(),
+            // Keep the chosen activation visible in the narrow settings row.
+            // The full setting name remains unchanged for config and .set.
+            Value::Pick { i, of } if self.name == "Bind activation" => {
+                format!("Bind: {}{}", of[*i], if of.len() == 1 { " (Hold unavailable)" } else { "" })
+            }
             Value::Pick { i, of } => format!("{}: {}", self.name, of[*i]),
             Value::Text(t) => {
                 let n = t.split(',').filter(|x| !x.trim().is_empty()).count();
