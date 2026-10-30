@@ -15,25 +15,44 @@ def shot(name):
 def scene():
     reset("creative")
     say("/gamemode creative")
-    say("/difficulty easy")
     say("/time set 6000")
     say("/weather clear")
 
 
+def settle():
+    # Chat lines fade after ten seconds; the screenshots shouldn't have the command log on them.
+    wait(260)
+
+
+def shot_after(name):
+    settle()
+    shot(name)
+    time.sleep(2)
+
+
+ctl("options-set", "tutorialStep", "none")
 arena()
 only()
-# 1. the click GUI, with Kill Aura's settings open
+# 1. the click GUI, with Kill Aura's settings open, then a search
 scene()
+settle()
 say(".menu")
 wait(8)
 ctl("click-at", "76", "50")
 wait(4)
 shot("gui")
-for k in "esp":
-    ctl("key", k, "tap")
-wait(4)
+time.sleep(2)
+say(".menu esp")
+wait(8)
 shot("gui-search")
-ctl("key", "esc", "tap"); wait(2); ctl("key", "esc", "tap"); wait(4)
+time.sleep(2)
+for _ in range(2):
+    ctl("key", "esc", "tap")
+    time.sleep(1)
+if state().get("screen") == "paused":
+    ctl("key", "esc", "tap")
+    time.sleep(1)
+wait(4)
 # 2. entities and storage through the walls
 scene()
 for n, (dx, dz, kind) in enumerate([(5, 6, "pig"), (-6, 8, "cow"), (9, 3, "sheep"), (-3, 11, "zombie"), (3, 14, "villager"), (-9, 5, "chicken")]):
@@ -44,41 +63,37 @@ say(f"/setblock {X0+1} {Y+1} {Z0+12} minecraft:ender_chest")
 say(f"/fill {X0-3} {Y} {Z0+13} {X0+3} {Y} {Z0+15} minecraft:diamond_ore")
 only("esp", "tracers", "nametags", "storageesp", "blockesp")
 say(".set blockesp blocks Diamond")
-ctl("look", "0", "5")
-wait(40)
-shot("esp")
+ctl("look", "0", "12")
+shot_after("esp")
 only()
-# 3. xray
+# 3. xray: ores in the rock under the arena
 scene()
-say(f"/tp @s {X0+0.5} {Y+40} {Z0+0.5}")
-wait(10)
-ctl("look", "0", "50")
+ORES = ["diamond_ore", "emerald_ore", "gold_ore", "redstone_ore", "lapis_ore", "ancient_debris"]
+import random
+random.seed(7)
+for i in range(60):
+    ore = ORES[i % len(ORES)]
+    x, z, y = X0 + random.randint(-8, 8), Z0 + random.randint(2, 18), Y - random.randint(2, 14)
+    say(f"/fill {x} {y} {z} {x+random.randint(0,1)} {y+random.randint(0,1)} {z+random.randint(0,1)} minecraft:{ore}")
+say(f"/tp @s {X0+0.5} {Y+1} {Z0+0.5}")
 only("xray")
-wait(120)
-shot("xray")
+say(".set xray blocks " + ",".join(ORES))
+ctl("look", "0", "35")
+wait(80)
+shot_after("xray")
 only()
-wait(60)
-# 4. freecam
+# 4. freecam: the camera leaves the player standing among the mobs
 scene()
 say(f"/tp @s {X0+0.5} {Y+1} {Z0+0.5}")
+for dx, dz, kind in [(3, 3, "pig"), (-3, 4, "cow")]:
+    say(f"/summon {kind} {X0+dx+0.5} {Y+1} {Z0+dz+0.5} {{NoAI:1b,PersistenceRequired:1b}}")
 wait(20)
 only("freecam")
-ctl("key", "s", "down"); wait(30); ctl("key", "s", "up")
-ctl("key", "space", "down"); wait(20); ctl("key", "space", "up")
+ctl("key", "w", "down"); wait(26); ctl("key", "w", "up")
+ctl("key", "space", "down"); wait(14); ctl("key", "space", "up")
+ctl("mouse-move", "1200", "250")
 wait(10)
-shot("freecam")
+shot_after("freecam")
 only()
 wait(10)
-# 5. Surround and the HUD
-scene()
-say("/gamemode survival")
-say("/item replace entity @s hotbar.0 with minecraft:obsidian 8")
-say(f"/tp @s {X0+0.5} {Y+1} {Z0+0.5}")
-wait(20)
-only("surround", "trajectories")
-wait(40)
-ctl("look", "30", "15")
-wait(10)
-shot("surround")
-only()
 print("done")

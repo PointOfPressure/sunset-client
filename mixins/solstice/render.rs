@@ -304,6 +304,8 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
         }
     }
     engine_flags(game, mods);
+    let clean = mods.iter().find(|m| m.name == "HUD").is_none_or(|m| m.p("Font") != "Minecraft");
+    horizon_client::font::solstice_font::ON.store(clean, Ordering::Relaxed);
     no_render(game, mods);
     xray(game, mods);
     if let Some(m) = on(mods, "Tunnel ESP") {

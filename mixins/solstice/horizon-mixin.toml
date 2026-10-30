@@ -83,6 +83,20 @@ source = "timer_flags.rs"
 visibility = "pub"
 
 [[module]]
+id = "font_flags"
+file = "crates/horizon-client-render/src/font.rs"
+name = "solstice_font"
+source = "font_flags.rs"
+visibility = "pub"
+
+[[module]]
+id = "font_data"
+file = "crates/horizon-client-render/src/font.rs"
+name = "solstice_fontdata"
+source = "font_data.rs"
+visibility = "pub"
+
+[[module]]
 id = "fog_flags"
 file = "crates/horizon-client-render/src/fog.rs"
 name = "solstice_fog"
@@ -372,4 +386,39 @@ helper = "overlay_hook.rs"
 bindings = [
   { name = "this", ty = "&ScreenEffects", value = "&*self" },
   { name = "input", ty = "&ScreenInputs<'_>", value = "input" },
+]
+
+[[injection]]
+id = "font"
+kind = "HEAD"
+target = "horizon_client_render::font::Font::load"
+helper = "font_hook.rs"
+bindings = [
+  { name = "root", ty = "&Path", value = "root" },
+]
+
+[[injection]]
+id = "text"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::native_hooks::Game<'_>::native_text"
+helper = "text_hook.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut HudBatch", value = "batch" },
+  { name = "text", ty = "&str", value = "text" },
+  { name = "at", ty = "[f32; 2]", value = "at" },
+  { name = "rgb", ty = "u32", value = "rgb" },
+  { name = "shadow", ty = "bool", value = "shadow" },
+]
+
+[[injection]]
+id = "text_width"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::native_hooks::Game<'_>::native_text_width"
+helper = "text_width_hook.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "text", ty = "&str", value = "text" },
 ]

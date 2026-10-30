@@ -38,6 +38,8 @@ On Linux the installer may ask for your password once, to install two small syst
 
 ![The click menu, with Kill Aura's settings open](docs/images/gui.jpg)
 
+![Typing to search](docs/images/gui-search.jpg)
+
 Press **`** (or **Right Shift**) for the menu. Every category is a panel.
 
 - **Left click** a module to turn it on or off. Click the **...** at its right (or right click it) for its settings and key bind.
@@ -74,15 +76,13 @@ List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the sa
 | --- | --- |
 | **Combat** | Kill Aura, Trigger Bot, Aim Assist, Criticals, Crystal Optimizer, Auto Totem, Auto Weapon, Auto Armor, Offhand, Auto EXP, Auto Log, Bow Spam, Bow Aimbot, Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow |
 | **Movement** | Flight, Speed, Sprint, Sneak, Auto Walk, Auto Jump, Step, Spider, High Jump, Long Jump, Air Jump, Parkour, Reverse Step, Fast Climb, Safe Walk, Anchor, Anti Void, Elytra Boost, Chest Swap, Blink, Scaffold, No Fall, No Slow, Velocity |
-| **Player** | Fast Place, Fast Break, Fast Use, Air Place, Reach, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam |
-| **Render** | ESP, Tracers, Nametags, Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories, Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, HUD |
+| **Player** | Fast Place, Break Delay, Fast Use, Air Place, Reach, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam |
+| **Render** | ESP, Tracers, Nametags, Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories, Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, No Render (no fog, water fog, darkness, blindness, fire or other overlays), HUD |
 | **World** | Nuker, Timer, Time Changer, Weather Changer, Liquid Filler, Spawn Proofer, Flamethrower, Auto Shearer, Auto Nametag, Auto Mount |
 
 ![Xray](docs/images/xray.jpg)
 
 ![Freecam](docs/images/freecam.jpg)
-
-![Surround and Trajectories](docs/images/surround.jpg)
 
 Not here (no clean way to do it in Horizon yet): Crystal Aura, Jesus, GUI Move, Click TP, and the Baritone-based
 Highway Builder and Infinity Miner.
@@ -124,3 +124,5 @@ game; `tools/audit.py` lists which of Meteor's settings are still missing.
 ## Licence
 
 MIT. Solstice's modules are written from Meteor Client's behaviour, in Rust, for Horizon; no Meteor code is used.
+
+The menu and HUD font is [Inter](https://rsms.me/inter/) (SIL Open Font License 1.1), cut down to the characters Solstice draws (`assets/ui.ttf`, made by `tools/font.py`). Set **HUD > Font** to *Minecraft* to use the game's own.

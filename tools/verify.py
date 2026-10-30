@@ -218,6 +218,63 @@ def _():
     return mine > Z0 + 4 and base < Z0 + 3, f"z {base-Z0:.1f} blocked, {mine-Z0:.1f} with step"
 
 
+@test("Step height")
+def _():
+    reset()
+    unwall()
+    wall(2)
+    only("step")
+    setting("step", "height", "2.25")
+    walk(40)
+    high = pos()[2]
+    setting("step", "active when", "Sneaking")
+    reset()
+    walk(40)
+    held = pos()[2]
+    setting("step", "active when", "Always")
+    setting("step", "height", "1.25")
+    only()
+    unwall()
+    return high > Z0 + 4 and held < Z0 + 3, f"z {high-Z0:.1f} over 2 blocks, {held-Z0:.1f} when only active sneaking"
+
+
+def brightness(name):
+    path = f"/tmp/{name}.png"
+    ctl("screenshot", path)
+    time.sleep(2)
+    out = subprocess.run(["identify", "-format", "%[fx:mean]", path], capture_output=True, text=True).stdout
+    return float(out)
+
+
+@test("No Render (blindness)")
+def _():
+    reset("creative")
+    say("/effect give @s minecraft:blindness 90 0 true")
+    wait(40)
+    dark = brightness("nr_blind")
+    only("norender")
+    wait(30)
+    clear = brightness("nr_clear")
+    only()
+    say("/effect clear @s")
+    return clear > dark * 1.5, f"brightness {dark:.2f} blinded, {clear:.2f} with No Render"
+
+
+@test("No Render (water)")
+def _():
+    reset("creative")
+    say(f"/fill {X0-2} {Y+1} {Z0-2} {X0+2} {Y+6} {Z0+2} minecraft:water")
+    say(f"/tp @s {X0+0.5} {Y+3} {Z0+0.5}")
+    wait(40)
+    wet = brightness("nr_wet")
+    only("norender")
+    wait(30)
+    dry = brightness("nr_dry")
+    only()
+    say(f"/fill {X0-2} {Y+1} {Z0-2} {X0+2} {Y+6} {Z0+2} minecraft:air")
+    return dry > wet * 1.2, f"brightness {wet:.2f} in water, {dry:.2f} with No Render"
+
+
 @test("Auto Jump")
 def _():
     reset()

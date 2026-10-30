@@ -267,8 +267,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Vertical %", 0.0, 0.0, 100.0, 10.0),
         Module::new("Spider", Movement, "Climbs walls.")
             .num("Climb speed", 0.2, 0.1, 1.0, 0.1),
-        Module::new("Step", Movement, "Steps up full blocks.")
-            .num("Height", 1.0, 0.5, 3.0, 0.5),
+        Module::new("Step", Movement, "Walks up full blocks and more without jumping (step up).")
+            .num("Height", 1.25, 0.5, 5.0, 0.25)
+            .pick("Active when", &["Always", "Sneaking", "Not sneaking"])
+            .bool("Safe step", false)
+            .num("Step health", 5.0, 1.0, 36.0, 1.0),
         Module::new("Air Jump", Movement, "Jumps again in mid-air."),
         Module::new("Elytra Boost", Movement, "Speeds up gliding while you hold forward.")
             .num("Boost", 0.05, 0.01, 0.2, 0.01)
@@ -282,6 +285,7 @@ pub(super) fn defaults() -> Vec<Module> {
         // Render
         Module::new("HUD", Render, "The watermark, the active modules, your coordinates and more.")
             .on()
+            .pick("Font", &["Clean", "Minecraft"])
             .bool("Watermark", true)
             .bool("Module list", true)
             .bool("Coordinates", true)
@@ -1109,6 +1113,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     let step = get("Step").filter(|m| m.on);
     let (was_flying, was_stepping) = with(|s| (s.flying, s.stepping));
     let (creative, spectator_mode) = (game.creative, game.spectator());
+    let step_to = step.as_ref().map_or(0.6, |st| step_height(game, st));
     if let Some(p) = game.player.as_mut() {
         if let Some(f) = &flight {
             p.may_fly = true;
@@ -1121,8 +1126,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
             p.may_fly = creative || spectator_mode;
             p.flying_speed = 0.05;
         }
-        if let Some(st) = &step {
-            let _ = p.set_modifier("minecraft:step_height", "solstice:step", st.n("Height") - 0.6, "add_value", true);
+        if step.is_some() {
+            let _ = p.set_modifier("minecraft:step_height", "solstice:step", step_to - 0.6, "add_value", true);
         } else if was_stepping {
             let _ = p.set_modifier("minecraft:step_height", "solstice:step", 0.0, "add_value", false);
         }
@@ -1132,6 +1137,32 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         s.flying = flight.is_some();
         s.stepping = step.is_some();
     });
+}
+
+// How high Step lets you climb this tick: the setting, or vanilla's 0.6 when
+// its conditions say no (Meteor's Step: active when, safe step).
+fn step_height(game: &Game<'_>, m: &Module) -> f64 {
+    let sneaking = game.keys.contains(&KeyCode::ShiftLeft);
+    let active = match m.p("Active when") {
+        "Sneaking" => sneaking,
+        "Not sneaking" => !sneaking,
+        _ => true,
+    };
+    if !active {
+        return 0.6;
+    }
+    if m.b("Safe step")
+        && let Some(p) = game.player.as_ref()
+    {
+        let health = (p.health.health() + p.health.absorption()) as f64;
+        let at = [p.position.x, p.position.y, p.position.z];
+        let hurt = super::solstice_util::crystal_damage(game, at);
+        // Safe means staying above the limit now and after the nearest crystal goes off.
+        if health <= m.n("Step health") || health - hurt <= m.n("Step health") {
+            return 0.6;
+        }
+    }
+    m.n("Height")
 }
 
 // After the game ticks: let go of held keys, then each module's work.
@@ -2456,6 +2487,7 @@ const HELP: &[(&str, &str)] = &[
     (".pages", "the same settings as pages in Options > Mods"),
     (".toggle <module>", "turn a module on or off (.t)"),
     (".modules", "list every module"),
+    (".menu [search]", "open the click menu, searching for the text"),
     (".settings <module>", "list a module's settings"),
     (".set <module> <setting> <value>", "change a setting"),
     (".bind <module> <key|none>", "bind a key to a module"),
@@ -2487,7 +2519,12 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 say(game, &format!("{c} - {d}"));
             }
         }
-        "menu" | "gui" => open_gui(game),
+        "menu" | "gui" => {
+            // `.menu esp` opens it with that search typed.
+            let search: String = args[1..].join(" ").chars().take(20).collect();
+            with(|s| s.gui.search = search);
+            open_gui(game);
+        }
         "pages" => open_menu(game),
         "toggle" | "t" => {
             if let Some(i) = module_arg(game, args.get(1)) {
@@ -3305,13 +3342,36 @@ pub(super) enum Hit {
     Setting(usize, usize),
 }
 
+// Other names a module is known by, so the search finds it under either.
+fn aliases(name: &str) -> &'static str {
+    match name {
+        "Step" => "step up stepup stairs",
+        "Reverse Step" => "step down stepdown",
+        "Flight" => "fly",
+        "Kill Aura" => "aura killaura",
+        "Break Delay" => "fast break nuker delay",
+        "Fast Place" => "fastplace",
+        "Fullbright" => "gamma night vision",
+        "Criticals" => "crits",
+        "Auto Totem" => "totem",
+        "Xray" => "x-ray",
+        "No Render" => "no fog fog water darkness blindness overlay",
+        _ => "",
+    }
+}
+
 // The rows of one panel before scrolling: their offset from the top of its
 // body, what they are, and how tall the whole body is.
 pub(super) fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
     let mut rows = Vec::new();
     let mut y = 0.0;
     let query = norm(&s.gui.search);
-    for (i, m) in s.modules.iter().enumerate().filter(|(_, m)| m.category == CATEGORIES[c] && norm(m.name).contains(&query)) {
+    for (i, m) in s
+        .modules
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.category == CATEGORIES[c] && (norm(m.name).contains(&query) || norm(aliases(m.name)).contains(&query)))
+    {
         rows.push((y, Hit::Module(i)));
         y += ROW_H;
         if s.gui.expanded.contains(&i) {

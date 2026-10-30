@@ -395,3 +395,20 @@ pub(super) fn in_world(game: &Game<'_>) -> bool {
 pub(super) fn enabled(mods: &[Module], name: &str) -> Option<Module> {
     mods.iter().find(|m| m.name == name && m.on).cloned()
 }
+
+// The most damage the nearest end crystal would do to something standing at `at`
+// (a power 6 blast with nothing in the way and no armour: Meteor's DamageUtils
+// without the raycast).
+pub(super) fn crystal_damage(game: &Game<'_>, at: [f64; 3]) -> f64 {
+    let mut worst: f64 = 0.0;
+    for c in &game.crystals {
+        let from = [c.position.x, c.position.y, c.position.z];
+        let d = dist(from, at) / 12.0;
+        if d > 1.0 {
+            continue;
+        }
+        let impact = 1.0 - d;
+        worst = worst.max(((impact * impact + impact) / 2.0 * 7.0 * 12.0 + 1.0).floor());
+    }
+    worst
+}
