@@ -21,19 +21,19 @@ use winit::keyboard::KeyCode;
 
 pub(crate) const ID: &str = "solstice";
 pub(crate) const NAME: &str = "Solstice";
-pub(crate) const VERSION: &str = "0.5.0";
+pub(crate) const VERSION: &str = "0.6.0";
 pub(crate) const DESCRIPTION: &str =
     "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
 // The menu key's name on the mod's page and its default (Right Shift).
 pub(crate) const MENU_KEY: &str = "menu";
 pub(crate) const MENU_DEFAULT: &str = "key.keyboard.right.shift";
 // Solstice's sun gold.
-const ACCENT: u32 = 0xFFB020;
+pub(super) const ACCENT: u32 = 0xFFB020;
 
 // ---------------------------------------------------------------- modules
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Category {
+pub(super) enum Category {
     Combat,
     Movement,
     Player,
@@ -62,14 +62,16 @@ impl Category {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum Value {
+pub(super) enum Value {
     Bool(bool),
     Num { v: f64, min: f64, max: f64, step: f64 },
     Pick { i: usize, of: &'static [&'static str] },
+    // A comma separated list (blocks, items, entities): set with `.set`.
+    Text(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Setting {
+pub(super) struct Setting {
     pub(crate) name: &'static str,
     pub(crate) value: Value,
 }
@@ -80,6 +82,10 @@ impl Setting {
             Value::Bool(b) => format!("{}: {}", self.name, on_off(*b)),
             Value::Num { v, .. } => format!("{}: {}", self.name, num(*v)),
             Value::Pick { i, of } => format!("{}: {}", self.name, of[*i]),
+            Value::Text(t) => {
+                let n = t.split(',').filter(|x| !x.trim().is_empty()).count();
+                format!("{}: {} listed", self.name, n)
+            }
         }
     }
     fn stored(&self) -> String {
@@ -87,6 +93,7 @@ impl Setting {
             Value::Bool(b) => b.to_string(),
             Value::Num { v, .. } => num(*v),
             Value::Pick { i, of } => of[*i].to_owned(),
+            Value::Text(t) => t.clone(),
         }
     }
     // A click: a switch flips, a number goes up a step (down with Shift) and
@@ -103,6 +110,7 @@ impl Setting {
                 }
                 *v = round_to(n, *step);
             }
+            Value::Text(_) => {}
             Value::Pick { i, of } => {
                 *i = if down {
                     (*i + of.len() - 1) % of.len()
@@ -130,13 +138,14 @@ impl Setting {
                 Some(p) => *i = p,
                 None => return false,
             },
+            Value::Text(v) => *v = t.to_owned(),
         }
         true
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Module {
+pub(super) struct Module {
     pub(crate) name: &'static str,
     pub(crate) category: Category,
     pub(crate) about: &'static str,
@@ -146,7 +155,7 @@ pub(crate) struct Module {
 }
 
 impl Module {
-    fn new(name: &'static str, category: Category, about: &'static str) -> Self {
+    pub(super) fn new(name: &'static str, category: Category, about: &'static str) -> Self {
         Self {
             name,
             category,
@@ -156,51 +165,65 @@ impl Module {
             settings: Vec::new(),
         }
     }
-    fn on(mut self) -> Self {
+    pub(super) fn on(mut self) -> Self {
         self.on = true;
         self
     }
-    fn bool(mut self, name: &'static str, v: bool) -> Self {
+    pub(super) fn bool(mut self, name: &'static str, v: bool) -> Self {
         self.settings.push(Setting {
             name,
             value: Value::Bool(v),
         });
         self
     }
-    fn num(mut self, name: &'static str, v: f64, min: f64, max: f64, step: f64) -> Self {
+    pub(super) fn num(mut self, name: &'static str, v: f64, min: f64, max: f64, step: f64) -> Self {
         self.settings.push(Setting {
             name,
             value: Value::Num { v, min, max, step },
         });
         self
     }
-    fn pick(mut self, name: &'static str, of: &'static [&'static str]) -> Self {
+    pub(super) fn text(mut self, name: &'static str, default: &str) -> Self {
+        self.settings.push(Setting {
+            name,
+            value: Value::Text(default.to_owned()),
+        });
+        self
+    }
+    pub(super) fn pick(mut self, name: &'static str, of: &'static [&'static str]) -> Self {
         self.settings.push(Setting {
             name,
             value: Value::Pick { i: 0, of },
         });
         self
     }
-    fn setting(&self, name: &str) -> Option<&Setting> {
+    pub(super) fn setting(&self, name: &str) -> Option<&Setting> {
         self.settings.iter().find(|s| s.name == name)
     }
-    pub(crate) fn b(&self, name: &str) -> bool {
+    pub(super) fn b(&self, name: &str) -> bool {
         matches!(self.setting(name), Some(Setting { value: Value::Bool(true), .. }))
     }
-    pub(crate) fn n(&self, name: &str) -> f64 {
+    pub(super) fn n(&self, name: &str) -> f64 {
         match self.setting(name) {
             Some(Setting { value: Value::Num { v, .. }, .. }) => *v,
             _ => 0.0,
         }
     }
-    pub(crate) fn p(&self, name: &str) -> &'static str {
+    // A list setting's text.
+    pub(super) fn t(&self, name: &str) -> &str {
+        match self.setting(name) {
+            Some(Setting { value: Value::Text(t), .. }) => t,
+            _ => "",
+        }
+    }
+    pub(super) fn p(&self, name: &str) -> &'static str {
         match self.setting(name) {
             Some(Setting { value: Value::Pick { i, of }, .. }) => of[*i],
             _ => "",
         }
     }
     // What the module list shows beside the name (as Meteor's info string).
-    fn info(&self) -> Option<String> {
+    pub(super) fn info(&self) -> Option<String> {
         match self.name {
             "Flight" => Some(self.p("Mode").to_owned()),
             "Kill Aura" => Some(num(self.n("Range"))),
@@ -214,7 +237,7 @@ impl Module {
 // Every module with its defaults, in menu order.
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
-    vec![
+    let mut v = vec![
         // Combat
         Module::new("Kill Aura", Combat, "Attacks the nearest living thing in range.")
             .num("Range", 3.5, 1.0, 6.0, 0.5)
@@ -365,24 +388,27 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Keep ground", true),
         Module::new("Time Changer", World, "Sets the time of day you see.")
             .num("Time", 6000.0, 0.0, 24000.0, 1000.0),
-    ]
+    ];
+    v.extend(super::solstice_combat::defaults());
+    v.extend(super::solstice_render::defaults());
+    v
 }
 
 // ---------------------------------------------------------------- state
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Page {
+pub(super) enum Page {
     Main,
     Category(Category),
     Module(usize),
 }
 
-pub(crate) struct State {
+pub(super) struct State {
     pub(crate) modules: Vec<Module>,
     page: Page,
     // A module waiting for its key bind (its index).
     binding: Option<usize>,
-    friends: Vec<String>,
+    pub(super) friends: Vec<String>,
     // Keys this mod held down for the tick (Auto Walk, Sprint).
     injected: Vec<KeyCode>,
     loaded: bool,
@@ -429,7 +455,7 @@ pub(crate) struct State {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct Spot {
+pub(super) struct Spot {
     name: String,
     pos: [f64; 3],
     dim: String,
@@ -437,14 +463,14 @@ struct Spot {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct Waypoint {
+pub(super) struct Waypoint {
     name: String,
     pos: [f64; 3],
     dim: String,
 }
 
 impl State {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             modules: defaults(),
             page: Page::Main,
@@ -488,7 +514,7 @@ impl State {
             spots: Vec::new(),
         }
     }
-    fn find(&self, name: &str) -> Option<usize> {
+    pub(super) fn find(&self, name: &str) -> Option<usize> {
         let n = norm(name);
         self.modules.iter().position(|m| norm(m.name) == n)
     }
@@ -562,10 +588,10 @@ impl State {
             }
         }
     }
-    fn module(&self, name: &str) -> Option<&Module> {
+    pub(super) fn module(&self, name: &str) -> Option<&Module> {
         self.modules.iter().find(|m| m.name == name)
     }
-    fn is_on(&self, name: &str) -> bool {
+    pub(super) fn is_on(&self, name: &str) -> bool {
         self.module(name).is_some_and(|m| m.on)
     }
 }
@@ -589,16 +615,16 @@ static BLINK_HELD: AtomicBool = AtomicBool::new(false);
 // Scaffold's block placements count up from here (the game's own are small).
 static SEQUENCE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(1_000_000_000);
 
-fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
+pub(super) fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
     f(guard.get_or_insert_with(State::new))
 }
 
-fn snapshot() -> Vec<Module> {
+pub(super) fn snapshot() -> Vec<Module> {
     with(|s| s.modules.clone())
 }
 
-fn sync_flags(s: &State) {
+pub(super) fn sync_flags(s: &State) {
     NO_FALL.store(s.is_on("No Fall"), Ordering::Relaxed);
     BLINK.store(s.is_on("Blink"), Ordering::Relaxed);
     let hunger = s.module("Anti Hunger").filter(|m| m.on);
@@ -606,7 +632,7 @@ fn sync_flags(s: &State) {
     ANTI_GROUND.store(hunger.is_some_and(|m| m.b("Ground")), Ordering::Relaxed);
 }
 
-fn ensure_loaded(game: &Game<'_>) {
+pub(super) fn ensure_loaded(game: &Game<'_>) {
     if with(|s| s.loaded) {
         return;
     }
@@ -618,7 +644,7 @@ fn ensure_loaded(game: &Game<'_>) {
     });
 }
 
-fn save(game: &Game<'_>) {
+pub(super) fn save(game: &Game<'_>) {
     let text = with(|s| {
         sync_flags(s);
         s.save_text()
@@ -628,17 +654,17 @@ fn save(game: &Game<'_>) {
 
 // ---------------------------------------------------------------- helpers
 
-fn on_off(b: bool) -> &'static str {
+pub(super) fn on_off(b: bool) -> &'static str {
     if b { "ON" } else { "OFF" }
 }
 
-fn num(v: f64) -> String {
+pub(super) fn num(v: f64) -> String {
     let s = format!("{v:.2}");
     let s = s.trim_end_matches('0').trim_end_matches('.');
     if s == "-0" { "0".into() } else { s.into() }
 }
 
-fn round_to(v: f64, step: f64) -> f64 {
+pub(super) fn round_to(v: f64, step: f64) -> f64 {
     if step <= 0.0 {
         return v;
     }
@@ -646,7 +672,7 @@ fn round_to(v: f64, step: f64) -> f64 {
 }
 
 // Lowercase letters and digits only: how commands and the config name things.
-fn norm(s: &str) -> String {
+pub(super) fn norm(s: &str) -> String {
     s.chars()
         .filter(char::is_ascii_alphanumeric)
         .map(|c| c.to_ascii_lowercase())
@@ -655,7 +681,7 @@ fn norm(s: &str) -> String {
 
 // A key typed in a command (`r`, `rshift`, `f6`, `key.keyboard.r`) as the
 // game names it.
-fn key_from_text(t: &str) -> Option<String> {
+pub(super) fn key_from_text(t: &str) -> Option<String> {
     let t = t.trim().to_ascii_lowercase();
     if t.starts_with("key.") {
         return Some(t);
@@ -684,7 +710,7 @@ fn key_from_text(t: &str) -> Option<String> {
     Some(format!("key.keyboard.{name}"))
 }
 
-fn key_label(key: Option<&str>) -> String {
+pub(super) fn key_label(key: Option<&str>) -> String {
     match key {
         None => "None".into(),
         Some(k) => {
@@ -706,7 +732,7 @@ fn key_label(key: Option<&str>) -> String {
 }
 
 // A line in chat: Solstice's tag, then the message.
-fn say(game: &mut Game<'_>, msg: &str) {
+pub(super) fn say(game: &mut Game<'_>, msg: &str) {
     let line = Text::literal("[Solstice] ")
         .with_color(ACCENT)
         .append(Text::literal(msg).with_color(horizon_client::text::WHITE));
@@ -722,12 +748,12 @@ fn say(game: &mut Game<'_>, msg: &str) {
     );
 }
 
-fn own_id(game: &Game<'_>) -> Option<u32> {
+pub(super) fn own_id(game: &Game<'_>) -> Option<u32> {
     game.remote.as_ref().map(|r| r.entity_id as u32)
 }
 
 // The move keys held now: forward minus back, left minus right.
-fn move_input(game: &Game<'_>) -> (f64, f64) {
+pub(super) fn move_input(game: &Game<'_>) -> (f64, f64) {
     if !game.native_playing() {
         return (0.0, 0.0);
     }
@@ -739,7 +765,7 @@ fn move_input(game: &Game<'_>) -> (f64, f64) {
 }
 
 // The direction the move keys point, flat, length 1 (or zero).
-fn move_direction(game: &Game<'_>) -> Option<[f64; 2]> {
+pub(super) fn move_direction(game: &Game<'_>) -> Option<[f64; 2]> {
     let (f, s) = move_input(game);
     if f == 0.0 && s == 0.0 {
         return None;
@@ -753,13 +779,13 @@ fn move_direction(game: &Game<'_>) -> Option<[f64; 2]> {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum Kind {
+pub(super) enum Kind {
     Player,
     Hostile,
     Passive,
 }
 
-fn kind_of(mob: &horizon_client::mobs::Mob) -> Kind {
+pub(super) fn kind_of(mob: &horizon_client::mobs::Mob) -> Kind {
     if mob.kind.id == "minecraft:player" {
         Kind::Player
     } else if mob.hostile() || mob.kind.category == "monster" {
@@ -769,7 +795,7 @@ fn kind_of(mob: &horizon_client::mobs::Mob) -> Kind {
     }
 }
 
-fn wanted(m: &Module, kind: Kind) -> bool {
+pub(super) fn wanted(m: &Module, kind: Kind) -> bool {
     match kind {
         Kind::Player => m.b("Players"),
         Kind::Hostile => m.b("Hostiles"),
@@ -777,14 +803,14 @@ fn wanted(m: &Module, kind: Kind) -> bool {
     }
 }
 
-fn is_friend(friends: &[String], names: &[(u32, String)], id: u32) -> bool {
+pub(super) fn is_friend(friends: &[String], names: &[(u32, String)], id: u32) -> bool {
     names
         .iter()
         .find(|(i, _)| *i == id)
         .is_some_and(|(_, n)| friends.iter().any(|f| f.eq_ignore_ascii_case(n)))
 }
 
-fn box_distance(eye: [f64; 3], b: &horizon_core::geometry::Aabb) -> f64 {
+pub(super) fn box_distance(eye: [f64; 3], b: &horizon_core::geometry::Aabb) -> f64 {
     let (lo, hi) = (b.min_position(), b.max_position());
     let c = [
         eye[0].clamp(lo.x, hi.x),
@@ -795,7 +821,7 @@ fn box_distance(eye: [f64; 3], b: &horizon_core::geometry::Aabb) -> f64 {
     (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
 }
 
-fn look_at(eye: [f64; 3], at: [f64; 3]) -> (f32, f32) {
+pub(super) fn look_at(eye: [f64; 3], at: [f64; 3]) -> (f32, f32) {
     let (dx, dy, dz) = (at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]);
     let yaw = (-dx).atan2(dz).to_degrees();
     let pitch = -dy.atan2((dx * dx + dz * dz).sqrt()).to_degrees();
@@ -813,11 +839,11 @@ pub(super) fn listed(mods: &mut Vec<super::native_hooks::NativeMod>) {
     });
 }
 
-fn mod_index(game: &Game<'_>) -> Option<usize> {
+pub(super) fn mod_index(game: &Game<'_>) -> Option<usize> {
     game.settings.mods.installed.iter().position(|m| m.id == ID)
 }
 
-fn refresh(game: &mut Game<'_>) {
+pub(super) fn refresh(game: &mut Game<'_>) {
     if let Some(i) = mod_index(game) {
         game.native_settings_refresh(i);
     }
@@ -1009,6 +1035,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     ensure_loaded(game);
     POS_THIS_TICK.store(false, Ordering::Relaxed);
     let mods = snapshot();
+    super::solstice_render::pre_tick(game, &mods);
     let on = |n: &str| mods.iter().any(|m| m.name == n && m.on);
     let get = |n: &str| mods.iter().find(|m| m.name == n).cloned();
     let playing = game.native_playing();
@@ -1397,6 +1424,8 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
             s.found_at = 0;
         });
     }
+    super::solstice_combat::tick(game, &mods);
+    super::solstice_render::tick(game, &mods, ticks);
     if let Some(m) = get("Auto Totem") {
         auto_totem(game, m.b("Swap back"));
     }
@@ -1409,13 +1438,13 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     }
 }
 
-fn solid_at(game: &Game<'_>, x: i32, y: i32, z: i32) -> bool {
+pub(super) fn solid_at(game: &Game<'_>, x: i32, y: i32, z: i32) -> bool {
     !game.res.facts().is_air(game.world.block(x, y, z))
 }
 
 // The block column just ahead of the player's feet, in the direction the
 // move keys point: its x and z, and the y of the block under the feet.
-fn ahead(game: &Game<'_>) -> Option<(i32, i32, i32)> {
+pub(super) fn ahead(game: &Game<'_>) -> Option<(i32, i32, i32)> {
     let p = game.player.as_ref()?;
     let d = move_direction(game)?;
     let (ax, az) = (p.position.x + d[0] * 0.35, p.position.z + d[1] * 0.35);
@@ -1423,7 +1452,7 @@ fn ahead(game: &Game<'_>) -> Option<(i32, i32, i32)> {
 }
 
 // Standing on the ground and walking toward a drop of two blocks or more.
-fn at_edge(game: &Game<'_>) -> bool {
+pub(super) fn at_edge(game: &Game<'_>) -> bool {
     let Some(p) = game.player.as_ref() else {
         return false;
     };
@@ -1438,19 +1467,19 @@ fn at_edge(game: &Game<'_>) -> bool {
 
 // Switches the held slot now: the server is told before anything is sent
 // that depends on it.
-fn hold(game: &mut Game<'_>, slot: usize) {
+pub(super) fn hold(game: &mut Game<'_>, slot: usize) {
     if game.selected != slot {
         game.selected = slot;
         game.send(S::SetCarriedItem(play::SetCarriedItem { slot: slot as i16 }));
     }
 }
 
-fn item_info(game: &Game<'_>, slot: usize) -> Option<horizon_client::items::ItemInfo> {
+pub(super) fn item_info(game: &Game<'_>, slot: usize) -> Option<horizon_client::items::ItemInfo> {
     let stack = game.inventory.get(slot)?.as_ref()?;
     game.res.items().get(&stack.item).cloned()
 }
 
-fn best_weapon(game: &Game<'_>, prefer_axes: bool) -> Option<usize> {
+pub(super) fn best_weapon(game: &Game<'_>, prefer_axes: bool) -> Option<usize> {
     let mut best: Option<(usize, f32)> = None;
     for slot in 0..9 {
         let Some(stack) = game.inventory.get(slot).and_then(|s| s.as_ref()) else {
@@ -1477,7 +1506,7 @@ fn best_weapon(game: &Game<'_>, prefer_axes: bool) -> Option<usize> {
     best.map(|(slot, _)| slot)
 }
 
-fn scaffold(game: &mut Game<'_>, m: &Module) {
+pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
     if !game.native_playing() || game.remote.is_none() {
         return;
     }
@@ -1536,7 +1565,7 @@ fn scaffold(game: &mut Game<'_>, m: &Module) {
     with(|s| s.scaffold_wait = m.n("Delay (ticks)") as u32 + 1);
 }
 
-fn auto_click(game: &mut Game<'_>, m: &Module) {
+pub(super) fn auto_click(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
     if !game.native_playing() {
         return;
@@ -1563,7 +1592,7 @@ fn auto_click(game: &mut Game<'_>, m: &Module) {
     with(|s| s.click_wait = m.n("Delay (ticks)") as u32);
 }
 
-fn auto_eat(game: &mut Game<'_>, m: &Module) {
+pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
     if !game.native_playing() {
         return;
@@ -1615,7 +1644,7 @@ fn auto_eat(game: &mut Game<'_>, m: &Module) {
     });
 }
 
-fn anti_afk(game: &mut Game<'_>, m: &Module) {
+pub(super) fn anti_afk(game: &mut Game<'_>, m: &Module) {
     if !game.native_playing() || game.remote.is_none() {
         return;
     }
@@ -1632,7 +1661,7 @@ fn anti_afk(game: &mut Game<'_>, m: &Module) {
     game.send(S::Punch(Empty));
 }
 
-fn block_colour(preset: &str, name: &str) -> Option<u32> {
+pub(super) fn block_colour(preset: &str, name: &str) -> Option<u32> {
     let n = name.strip_prefix("minecraft:").unwrap_or(name);
     let ore = |n: &str| -> Option<u32> {
         let core = n.strip_prefix("deepslate_").unwrap_or(n);
@@ -1661,7 +1690,7 @@ fn block_colour(preset: &str, name: &str) -> Option<u32> {
 
 // Block ESP's search of the loaded blocks around the player: again when the
 // player has moved, the settings changed, or it has been a while.
-fn scan_blocks(game: &Game<'_>, m: &Module, ticks: u64) {
+pub(super) fn scan_blocks(game: &Game<'_>, m: &Module, ticks: u64) {
     let Some(p) = game.player.as_ref() else {
         return;
     };
@@ -1708,18 +1737,18 @@ fn scan_blocks(game: &Game<'_>, m: &Module, ticks: u64) {
 // A click or several in the player's own inventory (the menu with no
 // container open), by the menu's slot numbers: 0 to 8 the hotbar, 9 to 35
 // the rest, 500 to 503 the armor.
-fn menu_click(game: &mut Game<'_>, ops: &[(usize, horizon_client::menu::Input)]) {
+pub(super) fn menu_click(game: &mut Game<'_>, ops: &[(usize, horizon_client::menu::Input)]) {
     let ops: Vec<(Option<usize>, i32, horizon_client::menu::Input)> =
         ops.iter().map(|&(slot, input)| (Some(slot), 0, input)).collect();
     game.remote_menu_ops(&ops);
 }
 
-fn inventory_idle(game: &Game<'_>) -> bool {
+pub(super) fn inventory_idle(game: &Game<'_>) -> bool {
     game.native_playing() && game.remote.is_some() && game.remote_menu().1 == "inventory"
 }
 
 // A rough rank of an armor piece: its material, less what it has worn.
-fn armor_score(item: &str, damage: u32) -> f32 {
+pub(super) fn armor_score(item: &str, damage: u32) -> f32 {
     let n = item.strip_prefix("minecraft:").unwrap_or(item);
     let tier = if n.starts_with("netherite") {
         6.0
@@ -1743,7 +1772,7 @@ fn armor_score(item: &str, damage: u32) -> f32 {
 
 // Puts the stack in inventory slot `i` on armor slot `a`: shift-click into an
 // empty slot, else swap by picking both up.
-fn wear(game: &mut Game<'_>, i: usize, a: usize) {
+pub(super) fn wear(game: &mut Game<'_>, i: usize, a: usize) {
     use horizon_client::menu::Input::{Pickup, QuickMove};
     if game.armor[a].is_none() {
         menu_click(game, &[(i, QuickMove)]);
@@ -1752,7 +1781,7 @@ fn wear(game: &mut Game<'_>, i: usize, a: usize) {
     }
 }
 
-fn auto_armor(game: &mut Game<'_>, m: &Module) {
+pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
     if !inventory_idle(game) {
         return;
     }
@@ -1792,7 +1821,7 @@ fn auto_armor(game: &mut Game<'_>, m: &Module) {
 }
 
 // Swaps the chestplate and the elytra, once.
-fn chest_swap(game: &mut Game<'_>) {
+pub(super) fn chest_swap(game: &mut Game<'_>) {
     if !inventory_idle(game) {
         return;
     }
@@ -1813,7 +1842,7 @@ fn chest_swap(game: &mut Game<'_>) {
     }
 }
 
-fn auto_replenish(game: &mut Game<'_>, m: &Module) {
+pub(super) fn auto_replenish(game: &mut Game<'_>, m: &Module) {
     use horizon_client::menu::Input::QuickMove;
     if !inventory_idle(game) {
         return;
@@ -1845,7 +1874,7 @@ fn auto_replenish(game: &mut Game<'_>, m: &Module) {
 
 // The hotbar tool that mines the block under the crosshair fastest, while
 // the attack button is held; back to the old slot after.
-fn auto_tool(game: &mut Game<'_>, m: &Module) {
+pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
     let down = game.native_playing() && game.physical_buttons.contains(&MouseButton::Left) && !gui_open();
     if !down {
@@ -1886,7 +1915,7 @@ fn auto_tool(game: &mut Game<'_>, m: &Module) {
 
 // Middle click: throws or uses the chosen item from the hotbar, and switches
 // back a few ticks later.
-fn middle_click(game: &mut Game<'_>) {
+pub(super) fn middle_click(game: &mut Game<'_>) {
     use winit::event::MouseButton;
     let Some(m) = with(|s| s.module("Middle Click Extra").filter(|m| m.on).cloned()) else {
         return;
@@ -1911,7 +1940,7 @@ fn middle_click(game: &mut Game<'_>) {
     });
 }
 
-fn nuker(game: &mut Game<'_>, m: &Module) {
+pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
     if !game.native_playing() || game.remote.is_none() {
         return;
     }
@@ -1985,7 +2014,7 @@ fn nuker(game: &mut Game<'_>, m: &Module) {
 }
 
 // Players who left the list since they were last seen: where they stood.
-fn track_logouts(game: &Game<'_>, m: &Module) {
+pub(super) fn track_logouts(game: &Game<'_>, m: &Module) {
     let Some(online) = game.remote_online_names() else {
         return;
     };
@@ -2011,7 +2040,7 @@ fn track_logouts(game: &Game<'_>, m: &Module) {
     });
 }
 
-fn bow_spam(game: &mut Game<'_>, m: &Module) {
+pub(super) fn bow_spam(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
     if !game.native_playing()
         || !game.physical_buttons.contains(&MouseButton::Right)
@@ -2028,7 +2057,7 @@ fn bow_spam(game: &mut Game<'_>, m: &Module) {
 }
 
 // Join and leave messages, from the server's player list.
-fn notify(game: &mut Game<'_>, m: &Module) {
+pub(super) fn notify(game: &mut Game<'_>, m: &Module) {
     let Some(mut now) = game.remote_online_names() else {
         return;
     };
@@ -2050,7 +2079,7 @@ fn notify(game: &mut Game<'_>, m: &Module) {
 
 // Holes to stand in around the player: air two high, solid below and on the
 // four sides. Found again every second.
-fn scan_holes(game: &Game<'_>, m: &Module, ticks: u64) {
+pub(super) fn scan_holes(game: &Game<'_>, m: &Module, ticks: u64) {
     let Some(p) = game.player.as_ref() else {
         return;
     };
@@ -2093,12 +2122,12 @@ fn scan_holes(game: &Game<'_>, m: &Module, ticks: u64) {
     });
 }
 
-fn remember_velocity(game: &Game<'_>) {
+pub(super) fn remember_velocity(game: &Game<'_>) {
     let v = game.player.as_ref().map(|p| [p.velocity.x, p.velocity.y, p.velocity.z]);
     with(|s| s.velocity = v);
 }
 
-fn cooldown_ready(game: &Game<'_>, m: &Module, wait: &mut u32) -> bool {
+pub(super) fn cooldown_ready(game: &Game<'_>, m: &Module, wait: &mut u32) -> bool {
     if m.b("Wait for cooldown") {
         // The ticker the hand counts on a server (attack_ticks is the
         // local world's).
@@ -2111,7 +2140,7 @@ fn cooldown_ready(game: &Game<'_>, m: &Module, wait: &mut u32) -> bool {
     }
 }
 
-fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(f32, f32)>) {
+pub(super) fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(f32, f32)>) {
     let Some(p) = game.player.as_ref() else {
         return;
     };
@@ -2128,7 +2157,7 @@ fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(f32, f32)>)
     strike(game, id, rotate);
 }
 
-fn strike(game: &mut Game<'_>, id: u32, rotate: Option<(f32, f32)>) {
+pub(super) fn strike(game: &mut Game<'_>, id: u32, rotate: Option<(f32, f32)>) {
     let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
     if let Some((yaw, pitch)) = rotate {
         game.send(S::MovePlayerRot(play::MovePlayerRot {
@@ -2150,7 +2179,7 @@ fn strike(game: &mut Game<'_>, id: u32, rotate: Option<(f32, f32)>) {
 
 // The Criticals hop, a tick at a time. The regular position packet of a tick
 // becomes the hop (see `outgoing`); when a tick has none, this sends it.
-fn crit_tick(game: &mut Game<'_>) {
+pub(super) fn crit_tick(game: &mut Game<'_>) {
     let stage = CRIT_STAGE.load(Ordering::Relaxed);
     if stage == 0 {
         return;
@@ -2185,7 +2214,7 @@ fn crit_tick(game: &mut Game<'_>) {
     }
 }
 
-fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
+pub(super) fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
     if !game.native_playing() || game.remote.is_none() || CRIT_STAGE.load(Ordering::Relaxed) != 0 {
         return;
     }
@@ -2230,7 +2259,7 @@ fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
     with(|s| s.aura_wait = m.n("Delay (ticks)") as u32);
 }
 
-fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
+pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     if !game.native_playing()
         || game.remote.is_none()
         || game.using.is_some()
@@ -2260,7 +2289,7 @@ fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
 
 // A totem in the hotbar goes to the offhand by selecting it and pressing the
 // swap key, as a player would; then the old slot comes back.
-fn auto_totem(game: &mut Game<'_>, swap_back: bool) {
+pub(super) fn auto_totem(game: &mut Game<'_>, swap_back: bool) {
     if game.remote.is_none() || !game.native_playing() {
         return;
     }
@@ -2300,7 +2329,7 @@ pub(super) enum Out {
     Replace(S),
 }
 
-fn with_ground(packet: &S, ground: bool) -> Option<S> {
+pub(super) fn with_ground(packet: &S, ground: bool) -> Option<S> {
     let f = |flags: u8| (flags & !1) | u8::from(ground);
     Some(match packet {
         S::MovePlayerPos(m) => S::MovePlayerPos(play::MovePlayerPos { x: m.x, y: m.y, z: m.z, flags: f(m.flags) }),
@@ -2381,7 +2410,7 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
 
 // Where the player is, as one position packet: what Blink held back is a
 // single move to here, as the server takes one position packet a tick.
-fn flush_blink(game: &mut Game<'_>) {
+pub(super) fn flush_blink(game: &mut Game<'_>) {
     if !BLINK_HELD.swap(false, Ordering::Relaxed) || POS_THIS_TICK.load(Ordering::Relaxed) {
         return;
     }
@@ -2445,7 +2474,7 @@ const HELP: &[(&str, &str)] = &[
     (".hclip <blocks>", "move forward"),
 ];
 
-fn run(game: &mut Game<'_>, args: &[&str]) {
+pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
     let cmd = args[0].to_ascii_lowercase();
     let module_arg = |game: &mut Game<'_>, name: Option<&&str>| -> Option<usize> {
         let Some(name) = name else {
@@ -2515,7 +2544,9 @@ fn run(game: &mut Game<'_>, args: &[&str]) {
             let name = norm(&args[2..args.len() - 1].join(""));
             let result = with(|s| {
                 let m = &mut s.modules[i];
-                let setting = m.settings.iter_mut().find(|st| norm(st.name) == name)?;
+                let exact = m.settings.iter().position(|st| norm(st.name) == name);
+                let at = exact.or_else(|| m.settings.iter().position(|st| norm(st.name).starts_with(&name)))?;
+                let setting = &mut m.settings[at];
                 Some((setting.parse(value), setting.shown()))
             });
             match result {
@@ -2667,7 +2698,7 @@ fn run(game: &mut Game<'_>, args: &[&str]) {
 
 // ---------------------------------------------------------------- HUD
 
-struct Camera {
+pub(super) struct Camera {
     pos: [f64; 3],
     fwd: [f64; 3],
     up: [f64; 3],
@@ -2679,7 +2710,7 @@ struct Camera {
 }
 
 impl Camera {
-    fn of(game: &Game<'_>, w: f32, h: f32) -> Option<Self> {
+    pub(super) fn of(game: &Game<'_>, w: f32, h: f32) -> Option<Self> {
         let (last_pos, last_yaw, last_pitch, fov) = game.locator_camera?;
         let p = game.player.as_ref()?;
         let alpha = game.clock.camera_fraction();
@@ -2711,7 +2742,7 @@ impl Camera {
             h: f64::from(h),
         })
     }
-    fn project(&self, at: [f64; 3]) -> Option<[f32; 2]> {
+    pub(super) fn project(&self, at: [f64; 3]) -> Option<[f32; 2]> {
         let o = [at[0] - self.pos[0], at[1] - self.pos[1], at[2] - self.pos[2]];
         let dot = |a: [f64; 3]| a[0] * o[0] + a[1] * o[1] + a[2] * o[2];
         let depth = dot(self.fwd);
@@ -2723,7 +2754,7 @@ impl Camera {
         Some([((1.0 + x) / 2.0 * self.w) as f32, ((1.0 - y) / 2.0 * self.h) as f32])
     }
     // The screen rectangle around a box, when all of it is in front.
-    fn rect(&self, lo: [f64; 3], hi: [f64; 3]) -> Option<[f32; 4]> {
+    pub(super) fn rect(&self, lo: [f64; 3], hi: [f64; 3]) -> Option<[f32; 4]> {
         let mut r = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
         for i in 0..8 {
             let c = [
@@ -2739,12 +2770,12 @@ impl Camera {
     }
 }
 
-enum Shape {
+pub(super) enum Shape {
     Fill([f32; 4], u32),
     Text(String, [f32; 2], u32),
 }
 
-fn outline(out: &mut Vec<Shape>, r: [f32; 4], argb: u32, lw: f32, fill: bool) {
+pub(super) fn outline(out: &mut Vec<Shape>, r: [f32; 4], argb: u32, lw: f32, fill: bool) {
     let [x0, y0, x1, y1] = r;
     if fill {
         out.push(Shape::Fill([x0, y0, x1 - x0, y1 - y0], (argb & 0x00FF_FFFF) | 0x2800_0000));
@@ -2755,7 +2786,7 @@ fn outline(out: &mut Vec<Shape>, r: [f32; 4], argb: u32, lw: f32, fill: bool) {
     out.push(Shape::Fill([x1 - lw, y0, lw, y1 - y0], argb));
 }
 
-fn colour(kind: Kind) -> u32 {
+pub(super) fn colour(kind: Kind) -> u32 {
     match kind {
         Kind::Player => 0xFFFF_FFFF,
         Kind::Hostile => 0xFFFF_5050,
@@ -2763,7 +2794,7 @@ fn colour(kind: Kind) -> u32 {
     }
 }
 
-fn health_colour(fraction: f32) -> u32 {
+pub(super) fn health_colour(fraction: f32) -> u32 {
     if fraction > 0.66 {
         0x55FF55
     } else if fraction > 0.33 {
@@ -2888,7 +2919,9 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     }
 }
 
-fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut Vec<Shape>) {
+pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut Vec<Shape>) {
+    super::solstice_util::draw_shown(cam, out, lw);
+    super::solstice_render::overlay(game, cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     let (esp, tracers, tags, storage) = (get("ESP"), get("Tracers"), get("Nametags"), get("Storage ESP"));
     let (crumbs, blocks, points) = (get("Breadcrumbs"), get("Block ESP"), get("Waypoints"));
@@ -3106,7 +3139,7 @@ fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: 
 }
 
 // Where what the player holds would land: a bow being drawn, or a throwable.
-fn trajectory(game: &Game<'_>, cam: &Camera, out: &mut Vec<Shape>, lw: f32) {
+pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, out: &mut Vec<Shape>, lw: f32) {
     let Some(stack) = game.held() else {
         return;
     };
@@ -3160,7 +3193,7 @@ fn trajectory(game: &Game<'_>, cam: &Camera, out: &mut Vec<Shape>, lw: f32) {
     }
 }
 
-fn storage_colour(name: &str) -> Option<u32> {
+pub(super) fn storage_colour(name: &str) -> Option<u32> {
     let n = name.strip_prefix("minecraft:").unwrap_or(name);
     Some(if n == "ender_chest" {
         0xFFB0_50FF
@@ -3177,13 +3210,13 @@ fn storage_colour(name: &str) -> Option<u32> {
     })
 }
 
-fn pretty_id(id: &str) -> String {
+pub(super) fn pretty_id(id: &str) -> String {
     let n = id.strip_prefix("minecraft:").unwrap_or(id);
     key_label(Some(&n.replace('_', ".")))
 }
 
 // A line as small squares, which is all the HUD draws.
-fn line(out: &mut Vec<Shape>, from: [f32; 2], to: [f32; 2], argb: u32, lw: f32) {
+pub(super) fn line(out: &mut Vec<Shape>, from: [f32; 2], to: [f32; 2], argb: u32, lw: f32) {
     let (dx, dy) = (to[0] - from[0], to[1] - from[1]);
     let len = (dx * dx + dy * dy).sqrt();
     if !len.is_finite() || len < 1.0 {
@@ -3206,7 +3239,7 @@ fn line(out: &mut Vec<Shape>, from: [f32; 2], to: [f32; 2], argb: u32, lw: f32) 
 // the window's keys and clicks come here while it is open.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Panel {
+pub(super) struct Panel {
     // Negative until the first frame places it.
     x: f32,
     y: f32,
@@ -3215,13 +3248,13 @@ struct Panel {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Drag {
+pub(super) enum Drag {
     Panel(usize, f32, f32),
     Slider(usize, usize),
 }
 
 #[derive(Clone, Debug)]
-struct Gui {
+pub(super) struct Gui {
     open: bool,
     // Esc or the menu key closes it at the next frame, so the same key
     // press can't also reach the game (Esc would open the pause menu).
@@ -3257,7 +3290,7 @@ const HEAD_H: f32 = 13.0;
 const ROW_H: f32 = 11.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Hit {
+pub(super) enum Hit {
     Header(usize),
     Module(usize),
     Bind(usize),
@@ -3266,7 +3299,7 @@ enum Hit {
 
 // The rows of one panel before scrolling: their offset from the top of its
 // body, what they are, and how tall the whole body is.
-fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
+pub(super) fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
     let mut rows = Vec::new();
     let mut y = 0.0;
     let query = norm(&s.gui.search);
@@ -3286,13 +3319,13 @@ fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
 }
 
 // How much of a panel's body shows: what is left of the screen under it.
-fn body_room(s: &State, c: usize) -> f32 {
+pub(super) fn body_room(s: &State, c: usize) -> f32 {
     (s.gui.view_h - s.gui.panels[c].y - HEAD_H - 14.0).max(ROW_H * 3.0)
 }
 
 // Each row of every panel, top to bottom: its rectangle and what it is. A
 // row only part way in view is left out.
-fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
+pub(super) fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
     let mut out = Vec::new();
     for c in 0..CATEGORIES.len() {
         let p = s.gui.panels[c];
@@ -3335,11 +3368,11 @@ pub(super) fn gui_wheel(game: &Game<'_>, steps: f32) {
     });
 }
 
-fn inside(r: [f32; 4], (x, y): (f32, f32)) -> bool {
+pub(super) fn inside(r: [f32; 4], (x, y): (f32, f32)) -> bool {
     x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]
 }
 
-fn hit_at(s: &State, at: (f32, f32)) -> Option<([f32; 4], Hit)> {
+pub(super) fn hit_at(s: &State, at: (f32, f32)) -> Option<([f32; 4], Hit)> {
     gui_rows(s).into_iter().find(|(r, _)| inside(*r, at))
 }
 
@@ -3358,7 +3391,7 @@ pub(super) fn open_gui(game: &mut Game<'_>) {
     });
 }
 
-fn close_gui(game: &mut Game<'_>) {
+pub(super) fn close_gui(game: &mut Game<'_>) {
     with(|s| {
         s.gui.open = false;
         s.gui.closing = false;
@@ -3372,7 +3405,7 @@ fn close_gui(game: &mut Game<'_>) {
 }
 
 // A slider's value from the pointer's place along its row.
-fn slide(s: &mut State, i: usize, j: usize, r: [f32; 4], x: f32) -> bool {
+pub(super) fn slide(s: &mut State, i: usize, j: usize, r: [f32; 4], x: f32) -> bool {
     let Some(setting) = s.modules[i].settings.get_mut(j) else {
         return false;
     };
@@ -3392,7 +3425,7 @@ pub(super) fn gui_open() -> bool {
 
 // A key while the GUI is open: a bind being chosen, or Esc and the menu key
 // closing it. Every key stops here.
-fn gui_key(game: &mut Game<'_>, name: &str) {
+pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
     if let Some(i) = with(|s| s.binding) {
         let chosen = match name {
             "key.keyboard.escape" => {
@@ -3436,7 +3469,7 @@ fn gui_key(game: &mut Game<'_>, name: &str) {
 }
 
 // A letter, digit or space typed in the click GUI's search.
-fn key_char(name: &str) -> Option<char> {
+pub(super) fn key_char(name: &str) -> Option<char> {
     let k = name.strip_prefix("key.keyboard.")?;
     if k == "space" {
         return Some(' ');
@@ -3510,7 +3543,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
 }
 
 // A drag follows the pointer each frame.
-fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
+pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
     let at = game.cursor;
     with(|s| match s.gui.drag {
         Some(Drag::Panel(c, dx, dy)) => {
@@ -3534,7 +3567,7 @@ fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
     }
 }
 
-fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
+pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     follow_drag(game, w, h);
     with(|s| {
         s.gui.view_h = h;

@@ -1,18 +1,57 @@
 [mod]
 id = "solstice"
-version = "0.5.0"
+version = "0.6.0"
 priority = 100
 
 # It hooks the game's own functions as well as the native hook points, so it
 # builds on this exact Horizon commit (the Nightly it was made for).
 [compatibility]
-horizon_revision = "baa379d71777f06a95b4e7650b2209a3d4209033"
+horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
 
 [[module]]
 id = "runtime"
 file = "crates/horizon-client/src/game.rs"
 name = "solstice"
 source = "runtime.rs"
+
+[[module]]
+id = "util"
+file = "crates/horizon-client/src/game.rs"
+name = "solstice_util"
+source = "util.rs"
+
+[[module]]
+id = "combat"
+file = "crates/horizon-client/src/game.rs"
+name = "solstice_combat"
+source = "combat.rs"
+
+[[module]]
+id = "render"
+file = "crates/horizon-client/src/game.rs"
+name = "solstice_render"
+source = "render.rs"
+
+[[module]]
+id = "xray_flags"
+file = "crates/horizon-client-render/src/mesher.rs"
+name = "solstice_xray"
+source = "xray_flags.rs"
+visibility = "pub"
+
+[[module]]
+id = "timer_flags"
+file = "crates/horizon-client/src/clock.rs"
+name = "solstice_timer"
+source = "timer_flags.rs"
+visibility = "pub"
+
+[[module]]
+id = "input_flags"
+file = "crates/horizon-client-input/src/input.rs"
+name = "solstice_flags"
+source = "input_flags.rs"
+visibility = "pub"
 
 [[injection]]
 id = "list"
@@ -153,4 +192,90 @@ helper = "zoom.rs"
 bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
   { name = "zoom", ty = "&mut Option<crate::game::native_hooks::NativeZoom>", value = "&mut *zoom" },
+]
+
+[[injection]]
+id = "camera"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::perspective::Game<'_>::camera_view"
+helper = "camera.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "partial", ty = "f32", value = "partial" },
+]
+
+[[injection]]
+id = "turn"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::perspective::Game<'_>::turn_player"
+helper = "turn.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "xo", ty = "f64", value = "xo" },
+  { name = "yo", ty = "f64", value = "yo" },
+]
+
+[[injection]]
+id = "xray"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::mesher::Mesher<'_>::mesh"
+helper = "xray.rs"
+bindings = [
+  { name = "this", ty = "&mut Mesher<'_>", value = "&mut *self" },
+  { name = "region", ty = "&[[Option<&Chunk>; 3]; 3]", value = "region" },
+  { name = "sy", ty = "i32", value = "sy" },
+]
+
+[[injection]]
+id = "xray-get"
+kind = "RETURN"
+target = "horizon_client_render::chunk::Chunk::get"
+helper = "xray_get.rs"
+bindings = [
+  { name = "value", ty = "u32", value = "$value" },
+]
+
+[[injection]]
+id = "xray-unpack"
+kind = "RETURN"
+target = "horizon_client_render::chunk::Section::unpack"
+helper = "xray_unpack.rs"
+bindings = [
+  { name = "out", ty = "&mut [u32; 4096]", value = "&mut *out" },
+  { name = "value", ty = "()", value = "$value" },
+]
+
+[[injection]]
+id = "timer"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::clock::FixedStep::advance"
+helper = "timer.rs"
+bindings = [
+  { name = "this", ty = "&mut FixedStep", value = "&mut *self" },
+  { name = "elapsed", ty = "std::time::Duration", value = "elapsed" },
+]
+
+[[injection]]
+id = "noslow"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_input::input::modify_input"
+helper = "noslow.rs"
+bindings = [
+  { name = "input", ty = "[f32; 2]", value = "input" },
+  { name = "item_use", ty = "Option<f32>", value = "item_use" },
+  { name = "sneaking", ty = "Option<f32>", value = "sneaking" },
+]
+
+[[injection]]
+id = "frame"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_frame"
+helper = "frame.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
 ]

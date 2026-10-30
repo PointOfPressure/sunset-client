@@ -34,7 +34,7 @@ To update, run the same command and press Build again. To remove it, turn it off
 in Options > Mods (it does nothing from then on), or delete the file and pick the plain
 Nightly again in the launcher.
 
-Each version is pinned to one Horizon Nightly (`horizon` in `horizon-native.json`) because it
+Each version is pinned to one Horizon Nightly (0.6.0: `ba6344a`) (`horizon` in `horizon-native.json`) because it
 hooks the game's own functions. The launcher builds it on that commit, so it keeps working
 after Horizon updates, but plays that Nightly's game until the mod moves to a newer one.
 
@@ -46,6 +46,7 @@ after Horizon updates, but plays that Nightly's game until the mod moves to a ne
   Drag the headers to move panels, right click a header to fold it, scroll a long panel with the wheel. Esc closes it. The game
   keeps running while it's open.
 - The same settings are also pages under Options > Mods > Solstice (`.pages`).
+- Just type to search the modules while the GUI is open. Esc clears the search, then closes the GUI.
 - **Key binds** toggle a module while you play.
 - **Chat commands** start with `.` and never reach the server (`..text` sends `.text`):
 
@@ -56,7 +57,7 @@ after Horizon updates, but plays that Nightly's game until the mod moves to a ne
 | `.t <module>` | toggle a module (`.toggle`) |
 | `.modules` | list every module, `*` on |
 | `.settings <module>` | list a module's settings |
-| `.set <module> <setting> <value>` | change one (`.set killaura range 4`) |
+| `.set <module> <setting> <value>` | change one (`.set killaura range 4`); the start of a setting's name is enough (`.set aimassist cone 60`); lists like Xray's blocks are set this way (`.set xray blocks diamond_ore,ancient_debris`) |
 | `.bind <module> <key\|none>` | bind a key (`r`, `rshift`, `f6`...) |
 | `.binds` | list key binds |
 | `.reset <module>` | back to defaults |
@@ -70,11 +71,11 @@ Settings and binds are saved in `horizon-mods/.horizon-mod-data/solstice/config`
 
 | Category | Modules |
 | --- | --- |
-| Combat | Kill Aura, Trigger Bot, Criticals, Auto Totem, Auto Weapon, Auto Log, Auto Armor |
-| Movement | Sprint, Sneak, Auto Walk, Flight, Speed, No Fall, Velocity, Spider, Step, Air Jump, Elytra Boost, Anti Void, Safe Walk, Fast Climb, High Jump, Long Jump, Parkour, Blink, Scaffold, Reverse Step, Auto Jump, Chest Swap |
-| Player | Fast Place, Fast Break, Auto Respawn, Anti Hunger, Anti AFK, Auto Clicker, Auto Eat, Auto Replenish, Auto Tool, Middle Click Extra |
-| Render | HUD, Fullbright, ESP, Tracers, Nametags, Storage ESP, Zoom, Breadcrumbs, Block ESP, Waypoints, Trajectories, Logout Spots |
-| World | Nuker, Time Changer |
+| Combat | Kill Aura, Trigger Bot, Criticals, Aim Assist, Auto Totem, Auto Weapon, Auto Log, Auto Armor, Offhand, Auto EXP, Bow Spam, Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow |
+| Movement | Sprint, Sneak, Auto Walk, Flight, Speed, No Fall, No Slow, Velocity, Spider, Step, Air Jump, Elytra Boost, Anti Void, Safe Walk, Fast Climb, High Jump, Long Jump, Parkour, Blink, Scaffold, Reverse Step, Auto Jump, Chest Swap |
+| Player | Fast Place, Fast Break, Auto Respawn, Anti Hunger, Anti AFK, Auto Clicker, Auto Eat, Auto Replenish, Auto Tool, Middle Click Extra, Notifier |
+| Render | HUD, Fullbright, ESP, Tracers, Nametags, Storage ESP, Zoom, Breadcrumbs, Block ESP, Waypoints, Trajectories, Logout Spots, Hole ESP, Freecam, Free Look, Xray, Tunnel ESP, Void ESP, Light Overlay |
+| World | Nuker, Time Changer, Weather Changer, Timer |
 
 Combat modules and No Fall work on servers, single player included (Horizon plays single
 player through its own integrated server). ESP, Tracers and Nametags are drawn on the HUD.
