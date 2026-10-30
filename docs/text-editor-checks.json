@@ -1,0 +1,38 @@
+{
+  "feature": "Explicit single-line text setting editor",
+  "source_commit": "d478c7bbc24e0b7d30626316e2bcd8fc0507aa7b",
+  "host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins_version": "0.5.0",
+  "rustc": "1.99.1",
+  "host_free_tests": 7,
+  "exact_host_plan_apply_check_and_linked_build": "passed",
+  "runtime": {
+    "environment": "Fresh generated singleplayer, isolated homes and resources; no accounts or external servers",
+    "process_exit_codes": [
+      0,
+      0
+    ],
+    "frozen_inputs_unchanged": true,
+    "observed": [
+      "native OS Home/End/Left/Backspace/Escape dispatch",
+      "leading/trailing spaces edited without saving the draft",
+      "Apply commits verbatim while the module stays off",
+      "Backspace removes one Unicode scalar; Escape discards that draft and leaves menu open",
+      "fresh-process restart followed by an unrelated setting save preserves exact padded Unicode/punctuation text",
+      "real 1600x900 framebuffer screenshot"
+    ]
+  },
+  "frozen_sha256": {
+    "client": "dc4bf684d4fd30307db44c38d42ffdc1c0ccdb8c812c8cd1112a5cd2119a3476",
+    "control": "bdaf79b1966ab03de9e44e6b9a1cf6e5980d64d2958dc797105d07fdfb0f22b0",
+    "package": "c98a9b7b24c05a3e270d4747b8762a87cacd6be2d23abad8e01f7fb4b4a8724c",
+    "script": "db7396f0556c17df19248c796219ff42cd75fbcb2b08485a4d5e10159d516b47"
+  },
+  "limits": [
+    "Raw Unicode/AltGr entry and focus loss were not exercised by this automation backend",
+    "No IME composition, clipboard editing or mouse caret placement",
+    "Unicode scalar navigation, not grapheme-cluster editing",
+    "Font glyph coverage follows the existing host font",
+    "Windows runtime only; no multiplayer or performance claim"
+  ]
+}
