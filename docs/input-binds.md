@@ -44,7 +44,18 @@ The compatible Radar module also supports Hold when installed alongside this cha
 Run the host-free state tests with `python tools/test_binds.py` (or supply `--rustc PATH`).
 These tests cover aliases, press/release edges, transient persistence, cancellation state, the supported module set,
 and the production setting parser's error message when Hold is unavailable.
-Actual window/device dispatch still needs an isolated in-game smoke check.
+Isolated Windows checks also exercised real OS keyboard/right-mouse Toggle presses,
+native-controller keyboard Hold with a raw OS release, menu cancellation, stale-held-key
+blocking, GUI mouse capture, restricted modes and restart readback. The final
+**Bind: Hold/Toggle** display keeps the value visible in the narrow menu; the
+stored and chat setting name remains **Bind activation**.
+
+The test backend cannot demonstrate a complete physically held key sequence or
+side buttons. Focus/native-disable and Options-page capture remain live coverage
+gaps. Controller `chat` bypasses native hooks on this host, so setup used the
+actual key/type/Enter path. See [check details](input-binds-checks.json).
+
+![Readable mouse bind and Hold setting](images/bind-mode-readable.png)
 
 This MIT contribution was written with AI assistance. Its inputs are this repository's existing
 bind/settings code and the exact pinned Horizon input hook implementations. No external client

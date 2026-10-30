@@ -1,0 +1,64 @@
+{
+  "feature": "Named mouse binds and scoped momentary Hold",
+  "source_commit": "eccd1d5618b8ba61be41dd597a632a72c1c2954c",
+  "host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins_version": "0.5.0",
+  "rustc": "1.99.1",
+  "host_free_tests": 9,
+  "exact_host_plan_apply_check_and_linked_build": "passed",
+  "runtime": {
+    "isolation": "Generated singleplayer homes/resources; no accounts, external servers or existing player data",
+    "clean_process_exit_codes": [
+      [
+        0,
+        0
+      ],
+      [
+        0
+      ]
+    ],
+    "observed": [
+      "real OS right-mouse Toggle activation persists after release",
+      "native-controller keyboard Hold and release restore manual OFF",
+      "raw grave-accent menu opening cancels Hold; closing while old input remains down does not reactivate it",
+      "release/new native-controller press activates again",
+      "synthesized window mouse events capture Left and consume the selecting GUI click",
+      "mouse aliases canonicalize and .binds shows Mouse Back (Hold)",
+      "Flight/Reach/Air Place refuse Hold and retain Toggle",
+      "fresh-process readback retains manual OFF, mouse-right and Toggle settings",
+      "final compact Bind: Hold label remains visible in the narrow menu"
+    ],
+    "frozen_inputs_unchanged": true
+  },
+  "checkpoints": [
+    {
+      "client": "bb806dde375cc0bca9cec8ba5cb67f5c4bbe365bdee2cb88740baae69ef61325",
+      "control": "bdaf79b1966ab03de9e44e6b9a1cf6e5980d64d2958dc797105d07fdfb0f22b0",
+      "package": "a35df5707fd5c6bc6021a24d14a61c8bd062efcaf5522a75892bc3c3ba02580a",
+      "script": "ec291c371a948c436fdb572349f369851f44f8480a8dedc61c944c6ced7afe31"
+    },
+    {
+      "client": "fb86899a8af2ce6b698a99fc254b97cbeb6ef13138feafeabea412aed9bbfbc6",
+      "control": "bdaf79b1966ab03de9e44e6b9a1cf6e5980d64d2958dc797105d07fdfb0f22b0",
+      "package": "b919755e01a20cf849142ad16bf065f2cdca005d149ed22ab6f9efa1010e97b0",
+      "script": "0185e8ea8473080fa387f01cd221edd319b3c4e400b3173ec86d2ef5cf3b17d3"
+    }
+  ],
+  "auxiliary_session": {
+    "source_commit": "d0f010999eef81eaef8643eebb63b3760ac0f46f",
+    "observed_before_driver_error": [
+      "real OS keyboard Toggle on/off",
+      "native-controller Hold with raw OS release",
+      "prior manual ON restored after controller Hold/release"
+    ],
+    "driver_error": "Unsupported rshift control alias; client saved and exited 0. Scoped earlier observations, not a clean complete-run proof."
+  },
+  "limits": [
+    "No complete physical key-down/hold/up or side-button device test",
+    "Focus loss, native disable and Options-page mouse capture were not exercised live",
+    "Unrelated saving during an active hold is covered by production helper tests, not a live UI sequence",
+    "An auxiliary R1 run checked keyboard Toggle/raw release/manual-ON restoration but later ended on an unsupported test-driver key alias; not clean-run evidence",
+    "Controller chat bypasses native mod hooks on this host; those setup attempts were excluded from evidence",
+    "Windows runtime only; no performance or multiplayer claim"
+  ]
+}
