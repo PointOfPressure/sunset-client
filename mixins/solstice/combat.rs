@@ -100,6 +100,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Players", true)
             .bool("Hostiles", true)
             .bool("Passive", false)
+            .bool("Anti bot", false)
+            .bool("Ignore teams", false)
             .bool("Only with a weapon", true),
         Module::new("Crystal Optimizer", Combat, "Breaks the end crystal you hit on your screen at once, without waiting for the server (as Marlow's Crystal Optimizer).")
             .bool("Instant break", true)
@@ -936,7 +938,7 @@ fn closest_point(t: &Target, eye: [f64; 3], look: [f64; 3], inset: f64) -> ([f64
 fn aim_valid(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3], look: [f64; 3], half_cone: f64) -> bool {
     let hostile = t.kind.contains("zombie") || t.kind.contains("skeleton") || t.kind.contains("creeper") || t.kind.contains("spider") || t.kind.contains("witch") || t.kind.contains("enderman") || t.kind.contains("husk") || t.kind.contains("drowned") || t.kind.contains("phantom") || t.kind.contains("pillager") || t.kind.contains("vindicator") || t.kind.contains("blaze") || t.kind.contains("piglin");
     let wanted = if t.player { m.b("Players") } else if hostile { m.b("Hostiles") } else { m.b("Passive") };
-    if !wanted || t.health <= 0.0 {
+    if !wanted || t.health <= 0.0 || spared(game, m, t.id, t.player) {
         return false;
     }
     let (aim, _) = closest_point(t, eye, look, m.n("Inset"));

@@ -2,7 +2,7 @@
 // InvUtils, PlayerUtils and TargetUtils: placing blocks, finding items in the
 // hotbar, picking targets, seeing a block through the world.
 
-use super::solstice::{Camera, Shape, hold, look_at, outline, say, toggle, with};
+use super::solstice::{Camera, Module, Shape, hold, look_at, outline, pretty_id, say, toggle, with};
 use super::{Game, Screen};
 use horizon_protocol::packets::{
     Empty,
@@ -318,6 +318,28 @@ pub(super) fn other_players(game: &Game<'_>) -> Vec<Target> {
 
 pub(super) fn every_living(game: &Game<'_>) -> Vec<Target> {
     game.mobs.iter().filter(|m| m.alive() && !m.removed).map(mob_target).collect()
+}
+
+// What to call an entity: a player's name, a custom name, or what it is.
+pub(super) fn display_name(game: &Game<'_>, mob: &horizon_client::mobs::Mob) -> String {
+    game.remote_player_name(mob.id)
+        .map(str::to_owned)
+        .or_else(|| mob.custom_name.clone())
+        .unwrap_or_else(|| pretty_id(&mob.kind.id))
+}
+
+// Who the targeting modules leave alone: with Anti bot, a player the server's player list does not show; with
+// Ignore teams, anyone on your own scoreboard team.
+pub(super) fn spared(game: &Game<'_>, m: &Module, id: u32, player: bool) -> bool {
+    if player
+        && m.b("Anti bot")
+        && let Some(online) = game.remote_online_names()
+        && game.remote_player_name(id).is_none_or(|n| !online.iter().any(|o| o == n))
+    {
+        return true;
+    }
+    m.b("Ignore teams")
+        && horizon_client::scoreboard::teams_allied(game.score.board.players_team(&game.options.player_name()), game.mob_team(id))
 }
 
 pub(super) const PRIORITIES: &[&str] = &["Lowest distance", "Highest distance", "Lowest health", "Closest angle"];

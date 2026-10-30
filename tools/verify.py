@@ -2,9 +2,12 @@
 # Runs each Solstice module in a flat test arena in a headless Horizon (see
 # tools/README in the repo's notes: ctl = horizon-ctl on the test session) and
 # checks a measurable result. Usage: verify.py CTL_PATH [test names...]
-import json, subprocess, sys, time
+# Tests that need a second player (on a dedicated server) use the control
+# wrapper in the CTL2 environment variable and are skipped without it.
+import json, os, subprocess, sys, time
 
 CTL = sys.argv[1]
+CTL2 = os.environ.get("CTL2")
 ONLY = sys.argv[2:]
 on = set()
 results = []
@@ -17,6 +20,11 @@ def ctl(*args, timeout=90):
         return json.loads(out) if out else {}
     except json.JSONDecodeError:
         return {"raw": out}
+
+
+def ctl2(*args):
+    r = subprocess.run([CTL2, *args], capture_output=True, text=True, timeout=90)
+    return json.loads(r.stdout) if r.stdout.strip() else {}
 
 
 def wait(n):
@@ -899,6 +907,65 @@ def _():
     return not e or e[0]["health"] < 10, "pig attacked" if not e or e[0]["health"] < 10 else f"pig health {e[0]['health']}"
 
 
+@test("Target HUD")
+def _():
+    reset()
+    say("/difficulty peaceful")
+    say(f"/summon pig {X0+0.5} {Y+1} {Z0+2.0} {{NoAI:1b}}")
+    say("/item replace entity @s hotbar.0 with minecraft:diamond_sword")
+    ctl("key", "1", "tap")
+    wait(20)
+    setting("killaura", "entities", "pig")
+    setting("killaura", "custom delay", "true")
+    setting("killaura", "hit delay", "400")
+    only("killaura")
+    wait(10)
+    ctl("screenshot", "/tmp/targethud.png")
+    time.sleep(2)
+    only()
+    from PIL import Image
+    img = Image.open("/tmp/targethud.png").convert("RGB")
+    w, h = img.size
+    # The box sits right of and below the crosshair: count the health bar's green and the box's dark fill.
+    region = img.crop((w // 2 + 20, h // 2 + 20, w // 2 + 20 + 260, h // 2 + 20 + 80))
+    green = sum(1 for px in region.getdata() if px[1] > 110 and px[1] - max(px[0], px[2]) > 60)
+    return green > 150, f"{green} health-bar pixels beside the crosshair"
+
+
+@test("Kill Aura (Anti bot, Ignore teams)")
+def _():
+    if not CTL2:
+        return None, "needs a second player"
+    reset("creative")
+    say("/gamemode survival Bot1")
+
+    def bot_hurt(seconds):
+        say("/effect give Bot1 minecraft:instant_health 1 10 true")
+        say(f"/tp Bot1 {X0+0.5} {Y+1} {Z0+2.0}")
+        wait(seconds * 20)
+        return 20 - ctl2("state")["player"]["health"]
+
+    say("/item replace entity @s hotbar.0 with minecraft:diamond_sword")
+    ctl("key", "1", "tap")
+    setting("killaura", "entities", "player")
+    setting("killaura", "anti bot", "true")
+    only("killaura")
+    real = bot_hurt(3)
+    only()
+    say("/team add sunsettest")
+    say("/team join sunsettest Tester")
+    say("/team join sunsettest Bot1")
+    setting("killaura", "ignore teams", "true")
+    only("killaura")
+    spared = bot_hurt(3)
+    setting("killaura", "ignore teams", "false")
+    hit = bot_hurt(3)
+    only()
+    say("/team remove sunsettest")
+    setting("killaura", "anti bot", "false")
+    return real > 0 and spared == 0 and hit > 0, f"player in the list hurt {real}, teammate {spared}, same teammate without Ignore teams {hit}"
+
+
 @test("Crystal Optimizer")
 def _():
     reset()
@@ -978,8 +1045,9 @@ if __name__ == "__main__":
             ok, note = fn()
         except Exception as e:  # noqa: BLE001
             ok, note = False, f"error: {e}"
-        results.append((fn.test_name, ok, note))
-        print(("PASS" if ok else "FAIL"), fn.test_name, "-", note, flush=True)
+        if ok is not None:
+            results.append((fn.test_name, ok, note))
+        print("SKIP" if ok is None else "PASS" if ok else "FAIL", fn.test_name, "-", note, flush=True)
     only()
     p = sum(1 for _, ok, _ in results if ok)
     print(f"\n{p}/{len(results)} passed")

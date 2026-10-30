@@ -270,6 +270,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Players", true)
             .bool("Hostiles", true)
             .bool("Passive", false)
+            .bool("Anti bot", false)
+            .bool("Ignore teams", false)
             .bool("Wait for cooldown", true)
             .num("Delay (ticks)", 10.0, 0.0, 20.0, 1.0),
         Module::new("Criticals", Combat, "Makes your hits from the ground critical hits."),
@@ -334,7 +336,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("FPS", true)
             .bool("Speed", false)
             .bool("Facing", true)
-            .bool("Totems", false),
+            .bool("Totems", false)
+            .bool("Target HUD", true),
         Module::new("Fullbright", Render, "Lights everything up."),
         Module::new("ESP", Render, "Draws boxes around entities, through walls.")
             .pick("Mode", &["3D box", "2D box"])
@@ -2468,7 +2471,8 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     let (id, kind) = (mob.id, kind_of(mob));
     let names = game.remote_player_names();
     let friends = with(|s| s.friends.clone());
-    if !wanted(m, kind) || (kind == Kind::Player && is_friend(&friends, &names, id)) {
+    let player = kind == Kind::Player;
+    if !wanted(m, kind) || (player && is_friend(&friends, &names, id)) || super::solstice_util::spared(game, m, id, player) {
         return;
     }
     let mut wait = with(|s| s.trigger_wait);
@@ -3064,6 +3068,9 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     }
 
     if let Some(hud) = get("HUD") {
+        if hud.b("Target HUD") && get("Kill Aura").is_some() {
+            super::solstice_aura::draw_target(game, w, h, &mut shapes);
+        }
         if hud.b("Watermark") && game.native_corner_shown(Corner::TopLeft) {
             let text = format!("{NAME} {VERSION}");
             let tw = game.native_text_width(&text);
@@ -3242,12 +3249,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
             && !(friend && m.b("Ignore friends"))
             && let Some([x, y]) = cam.project([mid[0], hi[1] + 0.6, mid[2]])
         {
-            let name = names
-                .iter()
-                .find(|(i, _)| *i == mob.id)
-                .map(|(_, n)| n.clone())
-                .or_else(|| mob.custom_name.clone())
-                .unwrap_or_else(|| pretty_id(&mob.kind.id));
+            let name = super::solstice_util::display_name(game, mob);
             let max = mob.kind.max_health.max(1.0);
             let hp = if m.b("Health") { format!("{}", (mob.health * 10.0).round() / 10.0) } else { String::new() };
             let tail = if m.b("Distance") { format!(" {}m", d.round()) } else { String::new() };

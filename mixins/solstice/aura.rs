@@ -2,9 +2,9 @@
 // attacks with, how it rotates and switches, who it targets and how many at
 // once, and its timing.
 
-use super::solstice::{Category, Module, hold, look_at};
+use super::solstice::{Category, Module, Shape, health_colour, hold, look_at};
 use super::solstice_util::*;
-use super::{Game, Screen};
+use super::Game;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 
@@ -27,6 +27,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Hostile mob age filter", &["Both", "Adult", "Baby"])
             .bool("Ignore named", false)
             .bool("Ignore passive", true)
+            .bool("Anti bot", false)
+            .bool("Ignore teams", false)
             .bool("Pause on use", false)
             .bool("Custom delay", false)
             .num("Hit delay", 11.0, 0.0, 60.0, 1.0)
@@ -42,6 +44,8 @@ struct As {
     swapped: bool,
     prev: usize,
     attacking: bool,
+    // Who it is hitting this tick (the Target HUD's).
+    target: Option<u32>,
 }
 
 static AS: Mutex<Option<As>> = Mutex::new(None);
@@ -124,13 +128,16 @@ fn age_ok(filter: &str, baby: bool) -> bool {
     }
 }
 
+// How far the eyes are from the nearest point of the target's box: what Range measures.
+fn reach(eye: [f64; 3], t: &Target) -> f64 {
+    dist(eye, [eye[0].clamp(t.lo[0], t.hi[0]), eye[1].clamp(t.lo[1], t.hi[1]), eye[2].clamp(t.lo[2], t.hi[2])])
+}
+
 fn entity_check(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool {
-    if t.health <= 0.0 {
+    if t.health <= 0.0 || spared(game, m, t.id, t.player) {
         return false;
     }
-    let clamp = |v: f64, lo: f64, hi: f64| v.clamp(lo, hi);
-    let near = [clamp(eye[0], t.lo[0], t.hi[0]), clamp(eye[1], t.lo[1], t.hi[1]), clamp(eye[2], t.lo[2], t.hi[2])];
-    if dist(eye, near) > m.n("Range") || !entity_listed(m.t("Entities"), t) {
+    if reach(eye, t) > m.n("Range") || !entity_listed(m.t("Entities"), t) {
         return false;
     }
     let mob = game.mobs.iter().find(|x| x.id == t.id);
@@ -164,6 +171,7 @@ fn stop(game: &mut Game<'_>, m: &Module) {
 }
 
 pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
+    st(|s| s.target = None);
     if !game.native_playing() || game.remote.is_none() || super::solstice::CRIT_STAGE.load(Ordering::Relaxed) != 0 {
         return;
     }
@@ -226,8 +234,11 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         stop(game, m);
         return;
     }
-    st(|s| s.attacking = true);
     let primary = &list[0];
+    st(|s| {
+        s.attacking = true;
+        s.target = Some(primary.id);
+    });
     let centre = [(primary.lo[0] + primary.hi[0]) / 2.0, (primary.lo[1] + primary.hi[1]) / 2.0, (primary.lo[2] + primary.hi[2]) / 2.0];
     let rotate_mode = m.p("Rotate");
     if rotate_mode == "Always" {
@@ -272,5 +283,26 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     st(|s| s.hit_timer = 0);
 }
 
-#[allow(dead_code)]
-fn unused(_: Screen) {}
+// The Target HUD: a box by the crosshair with the name, distance and health of who Kill Aura is hitting.
+pub(super) fn draw_target(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
+    let Some(id) = st(|s| s.target) else {
+        return;
+    };
+    let (Some(mob), Some(eye)) = (game.mobs.iter().find(|x| x.id == id), game.eye_position()) else {
+        return;
+    };
+    let name = display_name(game, mob);
+    let away = format!("{:.1}m", reach(eye, &mob_target(mob)));
+    let health = format!("{:.1}", (mob.health * 10.0).round() / 10.0);
+    let (nw, aw, hw) = (game.native_text_width(&name), game.native_text_width(&away), game.native_text_width(&health));
+    let width = (nw + aw + 16.0).max(90.0);
+    let (x, y) = (w / 2.0 + 12.0, h / 2.0 + 12.0);
+    out.push(Shape::Fill([x, y, width, 26.0], 0x9000_0000));
+    out.push(Shape::Text(name, [x + 4.0, y + 3.0], 0xFFFFFF));
+    out.push(Shape::Text(away, [x + width - 4.0 - aw, y + 3.0], 0xFFFFFF));
+    let fraction = (mob.health / mob.kind.max_health.max(1.0)).clamp(0.0, 1.0);
+    let bar = width - 12.0 - hw;
+    out.push(Shape::Fill([x + 4.0, y + 17.0, bar, 4.0], 0xFF30_3030));
+    out.push(Shape::Fill([x + 4.0, y + 17.0, bar * fraction, 4.0], 0xFF00_0000 | health_colour(fraction)));
+    out.push(Shape::Text(health, [x + width - 4.0 - hw, y + 14.0], health_colour(fraction)));
+}
