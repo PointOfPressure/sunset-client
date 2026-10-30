@@ -3626,6 +3626,22 @@ pub(super) fn gui_open() -> bool {
     with(|s| s.gui.open)
 }
 
+// Text navigation follows the layout's logical action, including a numeric
+// keypad reporting Home/arrows with NumLock off. Physical codes remain the
+// host's responsibility for gameplay and bind tracking.
+fn text_edit_key(logical: &winit::keyboard::Key) -> Option<EditKey> {
+    use winit::keyboard::{Key, NamedKey};
+    match logical {
+        Key::Named(NamedKey::ArrowLeft) => Some(EditKey::Left),
+        Key::Named(NamedKey::ArrowRight) => Some(EditKey::Right),
+        Key::Named(NamedKey::Home) => Some(EditKey::Home),
+        Key::Named(NamedKey::End) => Some(EditKey::End),
+        Key::Named(NamedKey::Backspace) => Some(EditKey::Backspace),
+        Key::Named(NamedKey::Delete) => Some(EditKey::Delete),
+        _ => None,
+    }
+}
+
 // The named native-key API has no layout text and omits repeats. Observe
 // Winit's actual text only for this modal; the host still tracks every raw
 // key/release/focus event. No input injection or keyboard-layout guesswork.
@@ -3655,15 +3671,7 @@ pub(super) fn text_event(event: &winit::event::WindowEvent) {
         // AltGr may report Ctrl+Alt; its produced text is still ordinary text.
         let shortcut = (modifiers.control_key() && !modifiers.alt_key()) || modifiers.super_key();
         let select_all = shortcut && matches!(&event.logical_key, winit::keyboard::Key::Character(c) if c.eq_ignore_ascii_case("a"));
-        let edit = if select_all { Some(EditKey::SelectAll) } else { match event.physical_key {
-            winit::keyboard::PhysicalKey::Code(KeyCode::ArrowLeft) => Some(EditKey::Left),
-            winit::keyboard::PhysicalKey::Code(KeyCode::ArrowRight) => Some(EditKey::Right),
-            winit::keyboard::PhysicalKey::Code(KeyCode::Home) => Some(EditKey::Home),
-            winit::keyboard::PhysicalKey::Code(KeyCode::End) => Some(EditKey::End),
-            winit::keyboard::PhysicalKey::Code(KeyCode::Backspace) => Some(EditKey::Backspace),
-            winit::keyboard::PhysicalKey::Code(KeyCode::Delete) => Some(EditKey::Delete),
-            _ => None,
-        } };
+        let edit = if select_all { Some(EditKey::SelectAll) } else { text_edit_key(&event.logical_key) };
         if let Some(edit) = edit {
             draft.key(edit);
         } else if !shortcut && let Some(text) = event.text.as_deref() {

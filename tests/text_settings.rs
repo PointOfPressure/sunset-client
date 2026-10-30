@@ -50,3 +50,27 @@ fn command_parse_still_trims_and_nontext_config_rules_are_unchanged() {
     assert_eq!(state.modules[0].n("Amount"), 4.0);
     assert_eq!(state.modules[0].t("Messages"), "  persisted value  ");
 }
+
+#[test]
+fn logical_navigation_drives_the_production_draft() {
+    use crate::winit::keyboard::{Key, NamedKey};
+    // The same logical actions can originate from navigation keys, layout
+    // remappings, or the keypad with NumLock off.
+    for (key, start_at_home, expected) in [
+        (NamedKey::Home, false, "!abc"),
+        (NamedKey::End, true, "abc!"),
+        (NamedKey::ArrowLeft, false, "ab!c"),
+        (NamedKey::ArrowRight, true, "a!bc"),
+        (NamedKey::Backspace, false, "ab!"),
+        (NamedKey::Delete, true, "!bc"),
+    ] {
+        let mut draft = Draft::new("abc").unwrap();
+        if start_at_home { draft.key(EditKey::Home); }
+        draft.key(text_edit_key(&Key::Named(key)).unwrap());
+        draft.insert("!");
+        assert_eq!(draft.value(), Ok(expected));
+    }
+    assert!(text_edit_key(&Key::Character("4".into())).is_none());
+    assert!(text_edit_key(&Key::Named(NamedKey::Escape)).is_none());
+    assert!(text_edit_key(&Key::Unidentified).is_none());
+}

@@ -24,13 +24,23 @@ def section(start, end):
 model = section('#[derive(Clone, Copy, Debug, PartialEq, Eq)]', '// Every module with its defaults')
 helpers = section('pub(super) fn on_off(', '// A key typed in a command')
 serializer = section('    fn save_text(&self)', '    pub(super) fn module(&self')
+navigation = section('fn text_edit_key(', '// The named native-key API')
 draft_path = root / 'mixins/solstice/text_edit.rs'
 tests_path = root / 'tests/text_settings.rs'
 harness = f'''#![allow(dead_code)]
 #[path = r"{draft_path}"] mod text_edit;
+// Only the host key vocabulary is supplied; the navigation mapping below is
+// extracted from production. No physical-code assumptions enter the fixture.
+mod winit {{ pub mod keyboard {{
+    pub enum NamedKey {{ ArrowLeft, ArrowRight, Home, End, Backspace, Delete, Escape }}
+    pub enum Key {{ Named(NamedKey), Character(String), Unidentified }}
+}} }}
 mod runtime {{
+use crate::text_edit::EditKey;
+use crate::winit;
 {model}
 {helpers}
+{navigation}
 struct Panel {{ x: f32, y: f32, collapsed: bool, scroll: f32 }}
 struct Gui {{ panels: Vec<Panel> }}
 struct Waypoint {{ name: String, pos: [f64;3], dim: String }}
