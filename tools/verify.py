@@ -1289,6 +1289,8 @@ def _():
 def _():
     def burning(distance):
         reset()
+        # No fire left from the run before.
+        cmd(f"fill {X0-2} {Y+1} {Z0+1} {X0+2} {Y+1} {Z0+5} minecraft:air")
         slot(0, "flint_and_steel")
         cmd(f"summon cow {X0+0.5} {Y+1} {Z0+3.0} {NOAI}")
         wait(10)
