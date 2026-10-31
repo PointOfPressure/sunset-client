@@ -1852,5 +1852,7 @@
       "unaltered_native_png": true
     }
   },
-  "full_evidence_sha256": "e00cf798c7388c382f210102819da700491b32a257692fbebc62325757e874a5"
+  "full_evidence_sha256": "e00cf798c7388c382f210102819da700491b32a257692fbebc62325757e874a5",
+  "latest_docs_only_upstream_merge": "c0df8dc71ca2ae9fbb3d8e44461b1edaf63482a3",
+  "tested_mixin_bytes_unchanged_after_docs_merge": true
 }
