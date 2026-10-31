@@ -1,0 +1,95 @@
+{
+  "source_commit": "f4c4ce6",
+  "upstream_base": "fa174f362a640caa34c5f080deadd704dc173c85",
+  "host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins_revision": "0d6b103c70633d8fd9443d8d0acd3aadaacedb06",
+  "rustc": "1.99.1",
+  "offline_tests": {
+    "config": 8,
+    "state": 21,
+    "ui": 2,
+    "runtime": 21,
+    "gui_visibility": 13
+  },
+  "offline_test_total": 65,
+  "official_plan_apply_check_link_freeze": "passed; exact source unchanged; no compile/build warnings",
+  "runtime": {
+    "isolation": "Generated singleplayer homes/resources/files; no real accounts/worlds/external servers",
+    "before": {
+      "exit_codes": [
+        0
+      ],
+      "observed": "F1 hid popup while game ticks advanced; another F1 restored retained popup"
+    },
+    "fixed": {
+      "exit_codes": [
+        0
+      ],
+      "ctl_offscreen": true,
+      "observed": [
+        "F1 retains settings popup",
+        "F1 retains edited draft; file unchanged before Apply",
+        "native Apply persists Alice,Bobx",
+        "pause/resume closes stale custom GUI",
+        "F1 outside GUI still hides HUD",
+        "opening GUI restores a hidden HUD",
+        "Escape then actual Back to Game button works",
+        "menu reopens and remains editable",
+        "leave-to-title clears GUI and pointer; player absent",
+        "normal save/quit"
+      ]
+    },
+    "watchlist_data": {
+      "exit_codes": [
+        0,
+        0
+      ],
+      "observed": [
+        "independent server lists",
+        "global profile loading preserves newer watchlist entries",
+        "invalid Java name rejected and fields reverted",
+        "singleplayer monitoring reports no multiplayer connection",
+        "settings/list readback after fresh-process restart"
+      ],
+      "config_and_watchlists_byte_identical_at_restart": true,
+      "second_process_closed_by_user": true
+    }
+  },
+  "f1_title_pixel_check": {
+    "before_settings": 199,
+    "before_f1_hidden": 0,
+    "fixed_settings_f1": 199
+  },
+  "screenshots": [
+    {
+      "file": "sunset-antivanish-settings.png",
+      "size": [
+        1600,
+        900
+      ],
+      "sha256": "7417a04e459cb955d7468d3478937962a4482a40fc1318dbfe016636749177ac",
+      "unaltered_framebuffer": true
+    },
+    {
+      "file": "sunset-antivanish-f1-editor.png",
+      "size": [
+        1600,
+        900
+      ],
+      "sha256": "22db11186feaf53e9749a2b992e593e5163e74e3f1ffb7667f635223b28b03f8",
+      "unaltered_framebuffer": true
+    }
+  ],
+  "frozen_sha256": {
+    "client": "d42396cdf0d5ab5906807147cbf2753e65319a975c7051520f8d271868ba980f",
+    "control": "e52e569fca4925dd3c2432f27cb507ae4e9ff08ccf4669b8b8d017455198c039",
+    "package": "d54795fd0738ebf2e99046650e3730485a3403965f33412abbed0d3671cafb7e",
+    "script": "40a21897981c9c78bd325b703054df9fd16574e12346c6d513fdabb6f3c930b7"
+  },
+  "limits": [
+    "Windows only; no multiplayer or server-plugin compatibility claim",
+    "Post-fix F1/input run uses horizon-ctl against native hooks, not physical keyboard delivery",
+    "Two auxiliary drivers stopped on invalid paused/chat preconditions; games exited normally; their partial observations are separate from the clean fixed run",
+    "No frame-time performance claim; no claim that autocomplete proves proximity or server-side vanish"
+  ]
+}

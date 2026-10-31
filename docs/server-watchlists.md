@@ -143,3 +143,19 @@ of TAB, completion and local-entity signals. These modules were independently
 implemented in Rust from functional requirements. They contain no translated
 Anubis implementation or assets. Research credit belongs in source/docs and
 does not change the runtime client name or existing project licence.
+
+## Verified client snapshot
+
+The exact pinned Windows client passes all 65 offline tests, official Mixins
+plan/apply, full compile check and linked build, with no compiler warnings.
+A ctl-only offscreen regression reproduces the old F1 hidden-menu state and
+checks the fixed settings/editor, native Apply, pause/resume, normal F1, reopening
+with a hidden HUD, Escape/Back to Game, and leave-to-title cleanup. The clean
+fixed process saved and exited normally. Earlier generated-file checks verified
+independent lists, ordinary profile-load isolation, validation rollback and
+restart persistence. No multiplayer server was used. See
+[checks and limitations](server-watchlists-checks.json).
+
+![Editable server watchlists in the native client](images/sunset-antivanish-settings.png)
+
+![F1 preserves the editor and its unsaved draft](images/sunset-antivanish-f1-editor.png)
