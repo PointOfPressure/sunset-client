@@ -147,6 +147,38 @@ fn clock_rollbacks_fail_closed_until_new_deadline() {
  c.reset();assert!(c.waiting.is_none());assert_ne!(old,c.generation);assert!(c.available());
 }
 
+
+#[test]fn temporary_suspend_invalidates_only_queued_generation_and_preserves_scan_state(){
+ let mut c=Clock::default();c.cursor=47;c.crystals=12;c.next=99;c.next_base=44;c.next_place=70;c.next_break=99;
+ c.queued=true;let generation=c.generation;c.suspend();
+ assert_ne!(c.generation,generation);assert!(!c.queued);assert_eq!((c.cursor,c.crystals),(47,12));
+ assert_eq!((c.next,c.next_base,c.next_place,c.next_break),(99,44,70,99));assert!(c.waiting.is_none());
+ assert!(!c.due(Action::Break(77,[0.0;3]),98));assert!(c.due(Action::Break(77,[0.0;3]),99));
+}
+#[test]fn pending_rejected_attack_wait_and_later_cooldown_survive_repeated_suspend(){
+ let mut c=Clock::default();let action=Action::Break(77,[4.5,121.0,0.5]);c.sent(action,100,45);
+ for tick in 101..130{c.suspend();c.observe(tick,false);assert_eq!(c.waiting.unwrap().action,action);
+  assert_eq!(c.waiting.unwrap().sent,100);assert!(!c.due(action,tick));}
+ c.observe(130,false);assert!(c.waiting.is_none());c.suspend();
+ assert!(!c.due(action,144));assert!(c.due(action,145));
+}
+#[test]fn acknowledged_attack_cooldown_is_not_rearmed_by_pausing(){
+ let mut c=Clock::default();let action=Action::Break(77,[0.0;3]);c.sent(action,100,30);c.observe(101,true);
+ for _ in 0..50{c.suspend();assert!(c.waiting.is_none());assert!(!c.due(action,129));}
+ assert!(c.due(action,130));
+}
+#[test]fn independent_base_and_place_deadlines_survive_suspend_without_delaying_ready_break(){
+ let mut c=Clock::default();let base=Action::Base([4,120,0]);let place=Action::Place([3,120,0]);
+ c.sent(base,100,20);c.observe(101,true);c.sent(place,101,30);c.observe(102,true);c.suspend();
+ assert!(!c.due(base,119));assert!(c.due(base,120));assert!(!c.due(place,130));assert!(c.due(place,131));
+ assert!(c.due(Action::Break(77,[0.0;3]),102));
+}
+#[test]fn suspension_does_not_convert_a_rewound_pending_clock_into_a_new_action(){
+ let mut c=Clock::default();let action=Action::Break(77,[0.0;3]);c.sent(action,100,2);
+ c.suspend();c.observe(0,false);assert!(c.waiting.is_some());assert!(!c.available());assert!(!c.due(action,0));
+ c.suspend();c.observe(129,false);assert!(c.waiting.is_some());c.observe(130,false);assert!(c.due(action,130));
+}
+
 '''
 with tempfile.TemporaryDirectory(prefix="sunset-crystal-tests-") as tmp:
     test_path = Path(tmp) / "crystal_state.rs"

@@ -67,7 +67,12 @@ def main():
     assert f'{foundation_count} tests passed' in records[0]['stdout']
     source_routes = sum(int(n) for r in records for n in re.findall(r'source-route contract: (\d+) passed', r['stdout']))
     count += source_routes
-    args.out.write_text(json.dumps({'passed': count, 'source_route_contract_checks': source_routes, 'checks': records,
+    # These four Python assertions pin wiring/order; their familiar test-result
+    # output is deliberately excluded from the compiled/native-adapter count.
+    source_wiring = source_routes + sum(int(n) for r in records if r['name'] == 'loot integration gates'
+        for n in re.findall(r'test result: ok\. (\d+) passed', r['stdout']))
+    args.out.write_text(json.dumps({'passed': count, 'compiled_native_adapter_checks': count - source_wiring,
+        'source_wiring_checks': source_wiring, 'source_route_contract_checks': source_routes, 'checks': records,
         'native_host_revision': 'ba6344a59cb9e755b730dcf02285fc0d33b97d3c',
         'source_sha256': source_hashes,
         'scope': 'Renderer-free production policies and pinned native kernels; no game launched.'},

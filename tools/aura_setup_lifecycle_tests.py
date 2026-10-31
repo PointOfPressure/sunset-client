@@ -30,6 +30,7 @@ def main():
     assert 'else { reset(); return None; }' in prepare
     packet=function(crystal,'pub(super) fn packet(')
     assert 'C::Login(_) | C::Respawn(_) | C::Disconnect(_)' in packet and '{ reset(); return; }' in packet
+    assert 'attempts >= 3' in prepare, 'Production rejected-ID guard must still use the retained retry count'
     print('source-route contract: 1 passed (shared contention, prepare, timeout, explicit boundaries; not compiled)',flush=True)
     state=crystal.split('// BEGIN PURE CRYSTAL STATE\n',1)[1].split('// END PURE CRYSTAL STATE',1)[0]
     suspend=function(crystal,'pub(super) fn suspend(');reset=function(crystal,'pub(super) fn reset(')
@@ -73,16 +74,34 @@ mod game {
  }
  #[test]fn real_ack_and_cell_delay_survive_suspend(){
   let _serial=SERIAL.lock().unwrap();fresh();st(|s|{s.setup_scene=Some(17);assert!(s.setup.sent(P,0,10,20));
-   s.setup.payload(P,49,true);assert!(s.setup.acknowledged(P,true));});
-  suspend();st(|s|{assert!(!s.setup.crystal_allowed(P,29,true));assert!(s.setup.crystal_allowed(P,30,true));assert_eq!(s.setup_scene,Some(17));});
+   s.setup.payload(P,49,true);assert!(s.setup.acknowledged(P,true));
+   s.clock.sent(Action::Base(P),10,20);s.clock.observe(11,true);});
+  suspend();st(|s|{assert!(!s.setup.crystal_allowed(P,29,true));assert!(s.setup.crystal_allowed(P,30,true));assert_eq!(s.setup_scene,Some(17));
+   assert!(!s.clock.due(Action::Base(P),29));assert!(s.clock.due(Action::Base(P),30));});
  }
  #[test]fn suspend_invalidates_queued_generation_but_prediction_still_is_not_ack(){
   let _serial=SERIAL.lock().unwrap();fresh();st(|s|{s.setup.sent(P,0,10,20);s.setup_scene=Some(17);
    s.clock.queued=true;s.queued_at=Some(Instant::now());s.plan=Some(());s.attempts.push((7,3));});
   let before=st(|s|s.clock.generation);suspend();
   st(|s|{assert_ne!(s.clock.generation,before);assert!(!s.clock.queued);assert!(s.queued_at.is_none());assert!(s.plan.is_none());
-   assert!(s.attempts.is_empty());assert!(!s.setup.crystal_allowed(P,50,true));assert!(!s.setup.can_send(P,39));
+   assert_eq!(s.attempts,vec![(7,3)]);assert!(!s.setup.crystal_allowed(P,50,true));assert!(!s.setup.can_send(P,39));
    s.setup.payload(P,49,true);assert!(s.setup.acknowledged(P,true));assert!(s.setup.crystal_allowed(P,50,true));});
+ }
+ #[test]fn rejected_crystal_attempts_and_send_deadlines_survive_repeated_temporary_pauses(){
+  let _serial=SERIAL.lock().unwrap();fresh();
+  st(|s|{s.attempts=vec![(77,3),(88,2)];s.clock.cursor=31;s.clock.crystals=9;
+   s.clock.sent(Action::Break(77,[4.5,121.0,0.5]),100,45);s.clock.queued=true;
+   s.queued_at=Some(Instant::now());s.plan=Some(());});
+  for _ in 0..20{suspend();st(|s|{
+   assert_eq!(s.attempts,vec![(77,3),(88,2)]);assert_eq!(s.clock.cursor,31);assert_eq!(s.clock.crystals,9);
+   let waiting=s.clock.waiting.unwrap();assert_eq!(waiting.action,Action::Break(77,[4.5,121.0,0.5]));assert_eq!(waiting.sent,100);
+   assert_eq!(s.clock.next_break,145);assert!(!s.clock.queued);assert!(s.queued_at.is_none());assert!(s.plan.is_none());
+  });}
+  st(|s|{s.clock.observe(129,false);assert!(!s.clock.available());s.clock.observe(130,false);assert!(s.clock.available());
+   assert!(!s.clock.due(Action::Break(77,[4.5,121.0,0.5]),144));assert!(s.clock.due(Action::Break(77,[4.5,121.0,0.5]),145));
+   assert_eq!(s.attempts,vec![(77,3),(88,2)]);});
+  assert_eq!(super::super::sunset_combat_control::RELEASES.load(SeqCst),20);
+  assert_eq!(super::super::sunset::CANCELS.load(SeqCst),20);
  }
  #[test]fn full_ledger_is_not_evicted_by_contention(){
   let _serial=SERIAL.lock().unwrap();fresh();st(|s|for x in 0..64{assert!(s.setup.sent([x,121,0],0,0,2));});
@@ -90,9 +109,12 @@ mod game {
  }
  #[test]fn explicit_reset_discards_scene_pending_ack_history_and_capacity(){
   let _serial=SERIAL.lock().unwrap();fresh();st(|s|{s.setup_scene=Some(17);s.setup.sent(P,0,10,20);s.setup.payload(P,49,true);
-   s.clock.sent(Action::Base(P),10,20);});let before=st(|s|s.clock.generation);
+   s.clock.sent(Action::Base(P),10,20);s.clock.cursor=8;s.clock.crystals=5;s.clock.queued=true;
+   s.clock.next_place=70;s.clock.next_break=80;s.attempts.push((77,3));s.plan=Some(());s.queued_at=Some(Instant::now());});let before=st(|s|s.clock.generation);
   reset();st(|s|{assert_eq!(s.setup.len(),0);assert_eq!(s.setup_scene,None);assert!(s.clock.waiting.is_none());
-   assert_ne!(s.clock.generation,before);assert!(s.setup.can_send(P,10));});
+   assert_ne!(s.clock.generation,before);assert!(s.setup.can_send(P,10));assert!(s.attempts.is_empty());
+   assert_eq!((s.clock.cursor,s.clock.crystals),(0,0));assert_eq!((s.clock.next,s.clock.next_base,s.clock.next_place,s.clock.next_break),(0,0,0,0));
+   assert!(!s.clock.queued);assert!(s.plan.is_none());assert!(s.queued_at.is_none());});
   assert_eq!(super::super::sunset_combat_control::RELEASES.load(SeqCst),1);assert_eq!(super::super::sunset::CANCELS.load(SeqCst),1);
  }
  }

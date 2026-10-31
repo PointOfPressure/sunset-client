@@ -80,6 +80,10 @@ mod state {
         pub generation: u64,
     }
     impl Clock {
+        pub fn suspend(&mut self) {
+            self.queued = false;
+            self.generation = self.generation.wrapping_add(1);
+        }
         pub fn reset(&mut self) {
             let generation = self.generation.wrapping_add(1);
             *self = Self { generation, ..Self::default() };
@@ -172,12 +176,12 @@ pub(super) fn defaults() -> Vec<Module> {
 pub(super) fn suspend() {
     super::sunset_combat_control::release(NAME);
     sunset::cancel_turns(NAME);
-    st(|s| { s.clock.reset(); s.queued_at = None; s.plan = None; s.attempts.clear(); });
+    st(|s| { s.clock.suspend(); s.queued_at = None; s.plan = None; });
     note(1);
 }
 pub(super) fn reset() {
     suspend();
-    st(|s| { s.setup.clear(); s.setup_scene = None; });
+    st(|s| { s.clock.reset(); s.attempts.clear(); s.setup.clear(); s.setup_scene = None; });
 }
 
 fn allowed(game: &Game<'_>) -> bool {
