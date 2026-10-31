@@ -571,6 +571,18 @@ bindings = [
 ]
 
 [[injection]]
+id = "screen_sprint"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::motion::PlayerMotion::sprint_input_tick_with_window"
+helper = "sprint_hook.rs"
+bindings = [
+  { name = "player", ty = "&mut PlayerMotion", value = "&mut *self" },
+  { name = "keys", ty = "crate::sprint::Keys", value = "keys" },
+  { name = "window", ty = "i32", value = "sprint_window" },
+]
+
+[[injection]]
 id = "liquid_flow"
 kind = "RETURN"
 target = "horizon_client::motion::fluids::<MotionWorld<'_,'_,'_> as FluidInteractionWorld>::flow"

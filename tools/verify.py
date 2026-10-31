@@ -1012,6 +1012,58 @@ def _():
     return abs(speed - 21.8) < 2 and abs(velocity - 20) < 2, f"flew {speed:.1f} blocks/s with the inventory open (Flight's Abilities at Speed 0.1), {velocity:.1f} in Velocity mode"
 
 
+@test("GUI Move (sprinting)")
+def _():
+    def server_sprinting():
+        """Whether the server has you sprinting (an inline predicate); None where the server cannot say (Horizon's
+        server knows no inline predicates)."""
+        cmd("execute if predicate {type:'minecraft:entity_properties',entity:'this',predicate:{flags:{is_sprinting:true}}}")
+        wait(1)
+        said = chat_first()
+        return True if "passed" in said else False if "failed" in said else None
+
+    def in_inventory(how):
+        """Blocks a second walking forward with the inventory open after sprinting in: with Ctrl held throughout, already
+        sprinting (Ctrl let go first, as toggle sprint is: a screen lets go of its key), or by the Sprint module. Then
+        whether the game and the server still have you sprinting."""
+        reset(z=-14.5)
+        ctl("key", "w", "down")
+        if how != "module":
+            ctl("key", "ctrl", "down")
+        wait(8)
+        if how == "already":
+            ctl("key", "ctrl", "up")
+            wait(2)
+        ctl("open-inventory")
+        wait(8)
+        a = state()
+        wait(20)
+        b = state()
+        client = b["player"].get("sprinting")
+        server = server_sprinting()
+        ctl("key", "ctrl", "up")
+        ctl("key", "w", "up")
+        ctl("close")
+        wait(4)
+        pa, pb = a["player"]["position"], b["player"]["position"]
+        return flat(pa, pb) / max(b["ticks"] - a["ticks"], 1) * 20, client, server
+
+    only("guimove")
+    ctrl = in_inventory("ctrl")
+    already = in_inventory("already")
+    only("guimove", "sprint")
+    module = in_inventory("module")
+    only("guimove")
+    setting("guimove", "sprint", "false")
+    walking = in_inventory("already")
+    only()
+    runs = (ctrl, already, module)
+    ok = all(5.3 < r < 5.9 and c and s is not False for r, c, s in runs) and 4.0 < walking[0] < 4.6 and not walking[1]
+    return ok, ("blocks/s with the inventory open (sprinting / the server says so, None: it cannot say): " +
+                ", ".join(f"{name} {r:.2f} ({c}/{s})" for name, (r, c, s) in zip(("Ctrl held", "already sprinting", "Sprint module"), runs)) +
+                f"; GUI Move's Sprint off: {walking[0]:.2f} ({walking[1]}/{walking[2]})")
+
+
 @test("Search + Enter")
 def _():
     say(".menu timer")

@@ -1657,6 +1657,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
         horizon_client::motion::sunset_motion::set_safe_walk(false);
+        horizon_client::motion::sunset_motion::set_screen_sprint(None);
         restore_scaffold_rotation(game);
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
         return;
@@ -1694,6 +1695,13 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.b("Safe walk"));
     horizon_client::motion::sunset_motion::set_safe_walk((on("Safe Walk") || scaffold_walk) && playing);
+    // GUI Move walking you forward behind a screen: a sprint goes on (the game would stop it, a screen gives it no
+    // forward key), and starts with Ctrl held or the Sprint module.
+    let held = |k: KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
+    let screen_sprint = get("GUI Move")
+        .filter(|m| m.on && m.b("Sprint") && !gui_open() && gui_move_screen(game, m) && held(KeyCode::KeyW) && !held(KeyCode::KeyS))
+        .map(|_| on("Sprint") || held(KeyCode::ControlLeft));
+    horizon_client::motion::sunset_motion::set_screen_sprint(screen_sprint);
     let mut injected = Vec::new();
     for k in want {
         if game.keys.insert(k) {
@@ -1865,7 +1873,6 @@ fn module_tick(game: &mut Game<'_>) {
             f64::from(i8::from(held(KeyCode::KeyW)) - i8::from(held(KeyCode::KeyS))),
             f64::from(i8::from(held(KeyCode::KeyA)) - i8::from(held(KeyCode::KeyD))),
             m.b("Jump") && held(KeyCode::Space),
-            m.b("Sprint") && held(KeyCode::ControlLeft),
             m.b("Sneak") && held(KeyCode::ShiftLeft),
             m.b("Arrows"),
             [held(KeyCode::ArrowLeft), held(KeyCode::ArrowRight), held(KeyCode::ArrowUp), held(KeyCode::ArrowDown)],
@@ -1885,7 +1892,7 @@ fn module_tick(game: &mut Game<'_>) {
     };
     let dir = move_direction(game).or_else(|| screen_keys.and_then(|(f, s, ..)| flat(f, s)));
     let jump = game.native_playing() && game.keys.contains(&KeyCode::Space) || screen_keys.is_some_and(|k| k.2);
-    let sneak = game.native_playing() && game.keys.contains(&KeyCode::ShiftLeft) || screen_keys.is_some_and(|k| k.4);
+    let sneak = game.native_playing() && game.keys.contains(&KeyCode::ShiftLeft) || screen_keys.is_some_and(|k| k.3);
     let forward = move_input(game).0 > 0.0 || screen_keys.is_some_and(|k| k.0 > 0.0);
     let dim = game.dim.id();
     let flight_velocity = get("Flight").is_some_and(|f| f.p("Mode") == "Velocity");
@@ -1894,7 +1901,7 @@ fn module_tick(game: &mut Game<'_>) {
 
     if let Some(p) = game.player.as_mut() {
         // Without Flight or Speed to move you, the inventory screen walks you at the game's own speeds.
-        if let Some((.., sprinting, sneaking, _, _)) = screen_keys
+        if let Some((.., sneaking, _, _)) = screen_keys
             && !flight_velocity
             && !speed_hack
         {
@@ -1911,7 +1918,7 @@ fn module_tick(game: &mut Game<'_>) {
                     let factor = screen_move.as_ref().map_or(1.0, |m| {
                         m.n(if p.ground.on_ground { "Ground speed %" } else { "Air speed %" }) / 100.0
                     });
-                    let speed = (if sneaking { 0.0655 } else if sprinting { 0.2806 } else { 0.2159 }) * factor;
+                    let speed = (if sneaking { 0.0655 } else if p.sprinting { 0.2806 } else { 0.2159 }) * factor;
                     p.velocity.x = x * speed;
                     p.velocity.z = z * speed;
                 }
