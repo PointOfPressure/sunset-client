@@ -40,6 +40,8 @@ helpers = '\n'.join(function(s) for s in [
     'pub(super) fn round_to(', 'pub(super) fn norm(', 'pub(super) fn is_friend(',
 ])
 binds = (ROOT / 'mixins/sunset/bind_state.rs').as_posix()
+util = (ROOT / 'mixins/sunset/util.rs').read_text()
+legacy_list = util[util.index('pub(super) fn short('):util.index('pub(super) fn toggle_off(')]
 tests = r'''
 #[cfg(test)]
 mod tests {
@@ -247,6 +249,79 @@ mod tests {
     }
 
     #[test]
+    fn parsed_item_lists_match_namespace_case_empty_and_filter_rules() {
+        for source in ["", ",", " stone, minecraft:dirt ,,stone", "mod:stone, minecraft:STONE,Stone", "minecraft:minecraft:stone,\tstone\n"] {
+            let parsed = ItemList::new(source);
+            for item in ["", "stone", "minecraft:stone", "STONE", "Stone", "minecraft:STONE", "mod:stone", "minecraft:minecraft:stone", "dirt", "minecraft:dirt", "sand"] {
+                for mode in ["All", "Whitelist", "Blacklist", "Unknown"] {
+                    let old = mode == "All" || crate::legacy_list::listed(source, item) == (mode == "Whitelist");
+                    assert_eq!(parsed.allows(mode, item), old, "source={source:?}, item={item:?}, mode={mode}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn item_list_edits_refresh_immutable_readers_and_stable_text_allocates_nothing() {
+        let mut cached = None;
+        let old = shared_item_list("stone", &mut cached);
+        ALLOCS.with(|n| n.set(0));
+        let same = shared_item_list("stone", &mut cached);
+        assert!(same.contains("minecraft:stone"));
+        assert_eq!(ALLOCS.with(|n| n.get()), 0);
+        assert!(Arc::ptr_eq(&old, &same));
+        let next = shared_item_list("minecraft:dirt", &mut cached);
+        assert!(old.contains("stone"));
+        assert!(!next.contains("stone"));
+        assert!(next.contains("dirt"));
+        assert!(!Arc::ptr_eq(&old, &next));
+    }
+
+    #[test]
+    fn item_labels_keep_custom_names_counts_and_translation_fallback() {
+        let mut text = String::with_capacity(64);
+        for count in [0, 1, 2, 64] {
+            ALLOCS.with(|n| n.set(0));
+            item_name_into(&mut text, Some("Custom \u{03a9}"), count, || panic!("custom names must bypass fallback"));
+            assert_eq!(ALLOCS.with(|n| n.get()), 0);
+            let expected = if count > 1 { format!("Custom \u{03a9} x{count}") } else { "Custom \u{03a9}".to_owned() };
+            assert_eq!(text, expected);
+        }
+        item_name_into(&mut text, None, 3, || "Translated Item".to_owned());
+        assert_eq!(text, "Translated Item x3");
+        item_name_into(&mut text, Some(""), 1, || panic!("empty custom names still override fallback"));
+        assert!(text.is_empty());
+    }
+
+    #[test]
+    fn item_filter_microbenchmark() {
+        let source = (0..256).map(|i| format!("minecraft:item_{i}")).collect::<Vec<_>>().join(", ");
+        let items: Vec<_> = (0..512).map(|i| format!("minecraft:item_{i}")).collect();
+        let mut cached = None;
+        let parsed = shared_item_list(&source, &mut cached);
+        const RUNS: usize = 400;
+        let start = Instant::now();
+        let mut old_matches = 0;
+        for _ in 0..RUNS {
+            for item in &items { old_matches += usize::from(crate::legacy_list::listed(black_box(&source), black_box(item))); }
+        }
+        let old = start.elapsed();
+        ALLOCS.with(|n| n.set(0));
+        let start = Instant::now();
+        let mut new_matches = 0;
+        for _ in 0..RUNS {
+            let parsed = shared_item_list(black_box(&source), &mut cached);
+            for item in &items { new_matches += usize::from(parsed.contains(black_box(item))); }
+        }
+        let new = start.elapsed();
+        let allocations = ALLOCS.with(|n| n.get());
+        assert_eq!(new_matches, old_matches);
+        assert_eq!(allocations, 0);
+        black_box(parsed);
+        println!("256-entry ItemESP list, {} lookups: split/trim {old:?}, cached membership {new:?} ({allocations} warm allocations)", RUNS * items.len());
+    }
+
+    #[test]
     fn snapshot_microbenchmark() {
         let live = fixture();
         let mut cached = None;
@@ -271,7 +346,7 @@ mod tests {
 with tempfile.TemporaryDirectory(prefix='sunset-runtime-perf-') as temporary:
     temporary = Path(temporary)
     rust = temporary / 'runtime_perf.rs'
-    rust.write_text(f'#![allow(dead_code)]\n#[path = "{binds}"] mod binds;\nmod runtime {{\nuse std::sync::{{Arc, Mutex}};\n' + production + helpers + tests + '\n}\n')
+    rust.write_text(f'#![allow(dead_code)]\n#[path = "{binds}"] mod binds;\nmod runtime {{\nuse std::sync::{{Arc, Mutex}};\nuse std::fmt::Write as _;\n' + production + helpers + tests + '\n}\nmod legacy_list {\n' + legacy_list + '\n}\n')
     binary = temporary / 'runtime_perf_tests.exe'
     subprocess.run([args.rustc, '--edition=2024', '--test', '-O', str(rust), '-o', str(binary)], check=True)
     subprocess.run([str(binary), '--nocapture'], check=True)

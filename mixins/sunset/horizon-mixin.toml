@@ -15,6 +15,12 @@ name = "sunset"
 source = "runtime.rs"
 
 [[module]]
+id = "movement"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_movement"
+source = "movement.rs"
+
+[[module]]
 id = "util"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_util"
@@ -31,6 +37,12 @@ id = "text_edit"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_text_edit"
 source = "text_edit.rs"
+
+[[module]]
+id = "picker"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_picker"
+source = "picker.rs"
 
 [[module]]
 id = "profiles"
@@ -61,6 +73,12 @@ id = "world"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_world"
 source = "world.rs"
+
+[[module]]
+id = "vanish"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_vanish"
+source = "vanish.rs"
 
 [[module]]
 id = "remote_seq"
@@ -274,6 +292,15 @@ bindings = [
 ]
 
 [[injection]]
+id = "server_correction"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::remote_teleport"
+helper = "correction_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
 id = "keys"
 kind = "HEAD"
 cancellable = true
@@ -428,6 +455,16 @@ bindings = [
 ]
 
 [[injection]]
+id = "crit_click"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_start_attack"
+helper = "crit_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
 id = "crystal"
 kind = "HEAD"
 cancellable = true
@@ -562,6 +599,18 @@ bindings = [
 ]
 
 [[injection]]
+id = "screen_sprint"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::motion::PlayerMotion::sprint_input_tick_with_window"
+helper = "sprint_hook.rs"
+bindings = [
+  { name = "player", ty = "&mut PlayerMotion", value = "&mut *self" },
+  { name = "keys", ty = "crate::sprint::Keys", value = "keys" },
+  { name = "window", ty = "i32", value = "sprint_window" },
+]
+
+[[injection]]
 id = "liquid_flow"
 kind = "RETURN"
 target = "horizon_client::motion::fluids::<MotionWorld<'_,'_,'_> as FluidInteractionWorld>::flow"
@@ -576,6 +625,7 @@ kind = "HEAD"
 target = "horizon_client::game::lan_particles::Game<'_>::remote_explode"
 helper = "explode_hook.rs"
 bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
   { name = "p", ty = "&play::Explode", value = "p" },
 ]
 
@@ -672,3 +722,30 @@ kind = "HEAD"
 target = "horizon_client::game::Game<'_>::finish_perf"
 helper = "atmosphere_finish_hook.rs"
 bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+
+[[injection]]
+id = "hide_hud"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::chat::Game<'_>::toggle_hide_gui"
+helper = "hide_hud.rs"
+bindings = []
+
+[[injection]]
+id = "vanish_connect"
+kind = "HEAD"
+target = "horizon_client::game::extras::Game<'_>::extras_connecting"
+helper = "vanish_connect.rs"
+bindings = [{ name = "address", ty = "&str", value = "address" }]
+
+[[injection]]
+id = "vanish_completions"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::handle_command_suggestions"
+helper = "vanish_completions.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "data", ty = "&[u8]", value = "data" },
+]

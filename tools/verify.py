@@ -57,9 +57,13 @@ def say(text):
 
 
 def cmd(*lines):
-    """Game commands, sent as the player without opening the chat box."""
+    """Game commands, sent as the player without opening the chat box. The chat box takes 256 characters and
+    Paper-family servers kick a longer command packet, so a longer line is a test mistake."""
     for line in lines:
-        ctl("chat", "/" + line.lstrip("/"))
+        line = line.lstrip("/")
+        if len(line) > 256:
+            raise ValueError(f"command over 256 characters: {line[:40]}...")
+        ctl("chat", "/" + line)
     wait(2)
 
 
@@ -135,7 +139,7 @@ def arena():
 def ensure_alive():
     for _ in range(3):
         st = state()
-        if st.get("screen") != "dead" and "player" in st:
+        if st.get("screen") != "dead" and st.get("player"):
             return
         ctl("click", "respawn")
         wait(30)
@@ -143,7 +147,7 @@ def ensure_alive():
 
 def rejoin(test):
     """After a kick: what the screen said, then back in."""
-    if "player" in state() or not SERVER:
+    if state().get("player") or not SERVER:
         return
     shown = ctl("screen")
     kicks.append((test, json.dumps(shown)[:300]))
@@ -152,7 +156,7 @@ def rejoin(test):
         time.sleep(2)
         ctl("connect", SERVER, "Tester", timeout=120)
         ctl("wait-ready", "90", timeout=120)
-        if "player" in state():
+        if state().get("player"):
             ctl("wait", "40")
             return
 
@@ -171,6 +175,8 @@ def clean():
         if state().get("screen") not in ("playing", None):
             ctl("close")
     # Every module off, whatever a test left on (a toggle typed while dead never arrives), then the HUD back on.
+    # .panic hides Sunset too; the second one brings it back.
+    say(".panic")
     say(".panic")
     say(".reset hud")
     on.clear()
@@ -180,11 +186,12 @@ def clean():
     # Land first, in whatever game mode, so a fall a test left you in costs nothing.
     cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
     wait(3)
-    # A world with real terrain (a server's) has hills round the platform: clear a wide ring.
+    # A world with real terrain (a server's) has hills round the platform: clear a wide ring, high enough for No
+    # Fall's 12-block drop (else the player is teleported into a hill and suffocates for 1 health).
     cmd("gamemode survival @s", "clear @s", "effect clear @s", "xp set @s 0 levels", "xp set @s 0 points",
         "kill @e[type=!player]", "difficulty peaceful", "time set 6000", "weather clear", "gamerule natural_health_regeneration true",
         f"fill {X0-24} {Y-1} {Z0-24} {X0+24} {Y+4} {Z0+24} minecraft:air",
-        f"fill {X0-24} {Y+5} {Z0-24} {X0+24} {Y+12} {Z0+24} minecraft:air",
+        f"fill {X0-24} {Y+5} {Z0-24} {X0+24} {Y+16} {Z0+24} minecraft:air",
         f"fill {X0-16} {Y} {Z0-16} {X0+16} {Y} {Z0+16} minecraft:stone",
         f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0",
         "effect give @s minecraft:instant_health 1 10 true", "effect give @s minecraft:saturation 1 10 true")
@@ -684,27 +691,82 @@ def _():
     return kept and q[1] < Y, f"walking at the edge: stopped at z {p[2]-Z0:.2f}, y {p[1]-Y:+.2f}; off: fell to y {q[1]-Y:+.1f}"
 
 
-def peak(ticks=24):
-    best = pos()[1]
-    for _ in range(ticks // 2):
-        wait(2)
-        best = max(best, pos()[1])
-    return best
+def parkour_run(gap, sprint=False):
+    """Walks (or sprints, Ctrl held) at a gap `gap` blocks wide in the platform, its near edge at z +4, a floor 3
+    blocks down. How far past the edge you were on your last tick on the ground (None: a tick went unseen there, or no
+    jump), and whether you landed beyond the gap."""
+    reset(z=-6.5)
+    edge = Z0 + 4
+    cmd(f"fill {X0-2} {Y} {edge} {X0+2} {Y} {edge+8} minecraft:stone", f"fill {X0-2} {Y-3} {edge} {X0+2} {Y-3} {edge+gap-1} minecraft:stone",
+        f"fill {X0-2} {Y-2} {edge} {X0+2} {Y} {edge+gap-1} minecraft:air")
+    wait(5)
+    ctl("key", "w", "down")
+    if sprint:
+        ctl("key", "ctrl", "down")
+    last, takeoff, landed = None, None, False
+    for _ in range(80):
+        st = state()
+        p, tick = st["player"], st["ticks"]
+        z, y = p["position"][2], p["position"][1]
+        if p["on_ground"]:
+            if takeoff is not None:
+                landed = y > Y + 0.99 and z > edge + gap
+                break
+            last = (tick, z)
+        elif takeoff is None and last and last[1] > edge - 1:
+            takeoff = round(last[1] - edge, 3) if tick - last[0] == 1 else None
+            if takeoff is None:
+                break
+        if y < Y - 1:
+            break
+        wait(1)
+    ctl("key", "ctrl", "up")
+    ctl("key", "w", "up")
+    wait(3)
+    return takeoff, landed
 
 
 @test("Parkour")
 def _():
-    reset(z=14.0)
+    # The jump comes on the last tick you stand on the block: walking or sprinting, your middle 0 to 0.3 past its edge
+    # (half your width).
+    # Then the widest gap cleared walking, sprinting and sprinting with Speed (its default and 7 blocks/s), and Jump
+    # when Early's take-off.
+    def widest(sprint, gaps):
+        best, takeoffs = 0, []
+        for gap in gaps:
+            t, landed = parkour_run(gap, sprint)
+            takeoffs.append(t)
+            if landed:
+                best = gap
+        return best, takeoffs
+
+    plain = parkour_run(1)
     only("parkour")
-    ctl("key", "w", "down")
-    best = peak(30)
-    ctl("key", "w", "up")
+    walk_gap, walk_off = widest(False, (1, 2, 3))
+    sprint_gap, sprint_off = widest(True, (2, 3, 4))
+    only("parkour", "speed")
+    speed_gap, speed_off = widest(True, (3, 4))
+    # Speed's default (5.6 blocks/s, sprinting's own) holds you to it in the air too, which a sprint jump outruns.
+    setting("speed", "vanilla speed", "7")
+    fast_gap, fast_off = widest(True, (4, 5))
+    only("parkour")
+    setting("parkour", "jump when", "Early")
+    early = parkour_run(1)
+    setting("parkour", "jump when", "Last tick")
+    setting("parkour", "only while sprinting", "true")
+    walked, sprinted = parkour_run(1), parkour_run(1, True)
     only()
-    reset(z=14.0)
-    ctl("key", "w", "down")
-    plain = peak(30)
-    ctl("key", "w", "up")
-    return best > Y + 1.3 and plain < Y + 1.05, f"at the edge: jumped to {best-Y-1:.2f} blocks up, {plain-Y-1:.2f} off"
+    # Faster than 0.3 blocks a tick, the last tick on the block can leave your middle short of the edge.
+    last_tick = (all(t is not None and 0 < t < 0.3 for t in walk_off + sprint_off)
+                 and all(t is not None and -0.3 < t < 0.3 for t in speed_off + fast_off))
+    ok = (not plain[1] and last_tick and walk_gap >= 1 and sprint_gap == 3 and speed_gap >= 3 and fast_gap == 4
+          and early[0] is not None and early[0] < 0 and not walked[1] and sprinted[1])
+    return ok, (f"off: fell off {plain[0]} past the edge, landed {plain[1]}; past the edge at take-off walking {walk_off}, sprinting {sprint_off}, with "
+                f"Speed {speed_off}, at 7 b/s {fast_off}; widest gap cleared walking {walk_gap}, sprinting {sprint_gap}, with "
+                f"Speed {speed_gap}, at 7 b/s {fast_gap}; "
+                f"Early takes off {early[0]} past the edge; Only while sprinting: a 1-block gap walking cleared {walked[1]}, "
+                f"sprinting {sprinted[1]}")
 
 
 @test("Anchor")
@@ -1013,6 +1075,58 @@ def _():
     return abs(speed - 21.8) < 2 and abs(velocity - 20) < 2, f"flew {speed:.1f} blocks/s with the inventory open (Flight's Abilities at Speed 0.1), {velocity:.1f} in Velocity mode"
 
 
+@test("GUI Move (sprinting)")
+def _():
+    def server_sprinting():
+        """Whether the server has you sprinting (an inline predicate); None where the server cannot say (Horizon's
+        server knows no inline predicates)."""
+        cmd("execute if predicate {type:'minecraft:entity_properties',entity:'this',predicate:{flags:{is_sprinting:true}}}")
+        wait(1)
+        said = chat_first()
+        return True if "passed" in said else False if "failed" in said else None
+
+    def in_inventory(how):
+        """Blocks a second walking forward with the inventory open after sprinting in: with Ctrl held throughout, already
+        sprinting (Ctrl let go first, as toggle sprint is: a screen lets go of its key), or by the Sprint module. Then
+        whether the game and the server still have you sprinting."""
+        reset(z=-14.5)
+        ctl("key", "w", "down")
+        if how != "module":
+            ctl("key", "ctrl", "down")
+        wait(8)
+        if how == "already":
+            ctl("key", "ctrl", "up")
+            wait(2)
+        ctl("open-inventory")
+        wait(8)
+        a = state()
+        wait(20)
+        b = state()
+        client = b["player"].get("sprinting")
+        server = server_sprinting()
+        ctl("key", "ctrl", "up")
+        ctl("key", "w", "up")
+        ctl("close")
+        wait(4)
+        pa, pb = a["player"]["position"], b["player"]["position"]
+        return flat(pa, pb) / max(b["ticks"] - a["ticks"], 1) * 20, client, server
+
+    only("guimove")
+    ctrl = in_inventory("ctrl")
+    already = in_inventory("already")
+    only("guimove", "sprint")
+    module = in_inventory("module")
+    only("guimove")
+    setting("guimove", "sprint", "false")
+    walking = in_inventory("already")
+    only()
+    runs = (ctrl, already, module)
+    ok = all(5.3 < r < 5.9 and c and s is not False for r, c, s in runs) and 4.0 < walking[0] < 4.6 and not walking[1]
+    return ok, ("blocks/s with the inventory open (sprinting / the server says so, None: it cannot say): " +
+                ", ".join(f"{name} {r:.2f} ({c}/{s})" for name, (r, c, s) in zip(("Ctrl held", "already sprinting", "Sprint module"), runs)) +
+                f"; GUI Move's Sprint off: {walking[0]:.2f} ({walking[1]}/{walking[2]})")
+
+
 @test("Search + Enter")
 def _():
     say(".menu timer")
@@ -1034,16 +1148,27 @@ def _():
 
 @test("Panic")
 def _():
+    # .panic turns everything off and hides Sunset on screen: nothing said, no HUD; .panic again brings it back
+    # (everything still off). Sunset stays listed in Options > Mods throughout.
     only("sprint", "fastplace", "fullbright")
+    shown = watermark()
     mark = log_mark()
     say(".panic")
     wait(6)
     said = sunset_said(mark)
     sprinting = state()["player"].get("sprinting")
     on.clear()
-    # Panic switched the HUD off too: put it back as it starts.
+    hidden = watermark()
+    mark = log_mark()
+    say(".panic")
+    wait(6)
+    back_said = sunset_said(mark)
+    # Panic switched the HUD module off too: put it back as it starts.
     say(".reset hud")
-    return not sprinting and "Everything is off." in said, f"after .panic Sunset says {said}, sprinting: {sprinting}"
+    back = watermark()
+    ok = not sprinting and shown and not said and not hidden and back and back_said
+    return ok, (f"HUD before {shown}; after .panic Sunset says {said}, sprinting: {sprinting}, HUD {hidden}; "
+                f"after .panic again it says {back_said}, HUD {back}")
 
 
 @test("Profiles")
@@ -1113,6 +1238,87 @@ def editor_buttons():
     x, y = (w - width) / 2, max((h - 76) / 2, 0)
     button = min(max((width - 18) / 2, 1), 56)
     return (x + 6 + button / 2, y + 54 + 7.5), (x + 12 + button * 1.5, y + 54 + 7.5)
+
+
+def picker_row(n):
+    """The middle of row n of the list picker, in GUI pixels (as picker.rs lays it out)."""
+    w, h = gui_size()
+    width, height = min(max(w - 8, 1), 300), min(max(h - 16, 1), 280)
+    x, y = (w - width) / 2, max((h - height) / 2, 0)
+    return x + 40, y + 42 + 12 * n + 6
+
+
+def open_picker(search, shot=None):
+    """The menu at Xray, its settings in the panel, a click on its Blocks row (the picker opens), `search` typed; a
+    screenshot to `shot` if given."""
+    say(".menu xray")
+    wait(5)
+    ctl("click-at", *map(str, menu_row(3, 1)), "right")
+    wait(3)
+    ctl("click-at", *map(str, menu_row(3, 3)))
+    wait(3)
+    for k in search:
+        ctl("key", k, "tap")
+    wait(3)
+    if shot:
+        ctl("screenshot", shot)
+        time.sleep(2)
+
+
+def close_menu():
+    for _ in range(2):
+        ctl("key", "esc", "tap")
+        wait(3)
+        if state().get("screen") == "paused":
+            ctl("resume")
+            wait(3)
+
+
+@test("F1 with the menu open")
+def _():
+    # F1 leaves the HUD (and the menu drawn with it) shown while the menu is open; closed, F1 hides the HUD again.
+    ctl("look", "0", "0")
+    wait(5)
+    shut = brightness("f1_shut")
+    say(".menu")
+    wait(5)
+    shown = brightness("f1_open")
+    ctl("key", "f1", "tap")
+    wait(5)
+    after = brightness("f1_after")
+    close_menu()
+    ctl("key", "f1", "tap")
+    wait(5)
+    hidden = brightness("f1_hidden")
+    ctl("key", "f1", "tap")
+    wait(5)
+    return abs(after - shown) < abs(after - shut) / 10 and abs(hidden - shut) > 0.001, (
+        f"mean brightness: menu shut {shut:.4f}, open {shown:.4f}, after F1 {after:.4f}; F1 with it shut {hidden:.4f}")
+
+
+@test("List picker")
+def _():
+    # Xray's Blocks chosen in the picker: coal ore listed first, "diamond" typed, the first block it finds clicked in,
+    # coal ore clicked out, then Esc; and .set still sets the list.
+    def blocks():
+        mark = log_mark()
+        say(".settings xray")
+        wait(4)
+        return next((c for c in sunset_said(mark) if c.startswith("Blocks:")), "")
+
+    setting("clickgui", "settings", "Inline")
+    setting("xray", "blocks", "coal_ore")
+    open_picker("diamond", "/tmp/picker.png")
+    ctl("click-at", *map(str, picker_row(1)))
+    wait(2)
+    ctl("click-at", *map(str, picker_row(0)))
+    wait(2)
+    close_menu()
+    picked = blocks()
+    setting("xray", "blocks", "iron_ore,gold_ore")
+    typed = blocks()
+    ok = picked.startswith("Blocks: ") and "diamond" in picked and "coal" not in picked and "," not in picked and typed == "Blocks: iron_ore,gold_ore"
+    return ok, f"after clicking a diamond block in and coal ore out: {picked!r}; after .set: {typed!r}"
 
 
 @test("Text setting editor")
@@ -1561,8 +1767,11 @@ def _():
 
 @test("Auto Steal")
 def _():
-    items = ",".join(f"{{Slot:{i}b,id:\"minecraft:stone\",count:1}}" for i in range(27))
-    cmd(f"setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]{{Items:[{items}]}}")
+    def chest():
+        cmd(f"setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]",
+            *(f"item replace block {X0+1} {Y+1} {Z0} container.{i} with minecraft:stone" for i in range(27)))
+
+    chest()
     wait(6)
 
     def taken(per_tick):
@@ -1586,7 +1795,8 @@ def _():
         return (last - first if first is not None and last is not None else 99), got
 
     slow = taken("1")
-    cmd("clear @s", f"setblock {X0+1} {Y+1} {Z0} minecraft:air", f"setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]{{Items:[{items}]}}")
+    cmd("clear @s", f"setblock {X0+1} {Y+1} {Z0} minecraft:air")
+    chest()
     fast = taken("9")
     return slow[1] == 27 and fast[1] == 27 and slow[0] > fast[0] * 2, f"27 stacks taken in {slow[0]} ticks at 1 a tick, {fast[0]} at 9"
 
@@ -1750,16 +1960,62 @@ def break_ticks(pick, block, tries=3):
     return min(ticks), gone
 
 
+@test("Plain mining (held button)")
+def _():
+    return plain_mining()
+
+
+def plain_mining():
+    """Survival, the left button held on a block as a player does: each of three stone blocks breaks the first time
+    (gone on the server too) in the time an iron pickaxe takes, and nothing comes back. Every module off unless a test
+    turned some on."""
+    slot(0, "iron_pickaxe")
+    ctl("key", "1", "tap")
+    at = (X0, Y + 1, Z0 + 2)
+    took = []
+    for _ in range(3):
+        cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:stone")
+        wait(10)
+        ctl("look-at-block", *map(str, at))
+        wait(3)
+        t0 = state()["ticks"]
+        ctl("mouse", "left", "down")
+        ticks = -1
+        for _ in range(80):
+            wait(1)
+            if ctl("block", *map(str, at)).get("block") == "minecraft:air":
+                ticks = state()["ticks"] - t0
+                break
+        ctl("mouse", "left", "up")
+        wait(20)
+        kept = ctl("block", *map(str, at)).get("block") == "minecraft:air"
+        took.append((ticks, kept and check(f"execute if block {at[0]} {at[1]} {at[2]} minecraft:air")))
+    return all(0 < t <= 20 and gone for t, gone in took), f"(ticks to break, still gone after) for three stone blocks: {took}"
+
+
+@test("Plain mining (Anti Hunger)")
+def _():
+    # Anti Hunger hides the ground from the server, but not while you break a block (the server refuses the break of a
+    # player off the ground and the block comes back).
+    only("antihunger")
+    ok, note = plain_mining()
+    only()
+    return ok, note
+
+
 SPEED_CASES = [("stone_pickaxe", "stone"), ("iron_pickaxe", "stone"), ("diamond_pickaxe", "stone"), ("diamond_pickaxe", "obsidian")]
 
 
 def speed_mine(mode):
+    # The game waits 5 ticks (while you keep attacking) between one block's breaking and the next, and every timed
+    # break but the very first follows another: a first break makes them all wait the same.
+    break_ticks("stone_pickaxe", "stone", 1)
     plain = [break_ticks(p, b, 1 if b == "obsidian" else 3) for p, b in SPEED_CASES]
     setting("speedmine", "mode", mode)
     only("speedmine")
     fast = [break_ticks(p, b, 1 if b == "obsidian" else 3) for p, b in SPEED_CASES]
     only()
-    alive = "player" in state()
+    alive = bool(state().get("player"))
     ok = alive and all(g for _, g in plain + fast) and all(0 < f[0] < p[0] for p, f in zip(plain, fast))
     cells = ", ".join(f"{p.split('_')[0]}/{b} {pt}->{ft}{'' if g else ' (ghost)'}" for (p, b), (pt, _), (ft, g) in zip(SPEED_CASES, plain, fast))
     return ok, f"ticks by hand without -> with {mode}: {cells}"
@@ -1810,6 +2066,28 @@ def _():
     ok = all(g for _, g in (plain, kept, better, worse)) and 0 < kept[0] < plain[0] and 0 < better[0] < plain[0] and worse[0] > kept[0]
     return ok, (f"stone then diamond pickaxe: {plain[0]} ticks, {kept[0]} with it on, {better[0]} with Only to better tools; diamond then "
                 f"stone with Only to better tools: {worse[0]} (started again); server has every block gone: {all(g for _, g in (plain, kept, better, worse))}")
+
+
+@test("No Slow (eating, Ground %)")
+def _():
+    def eating_rate():
+        """Blocks a second walking while eating a golden apple (32 ticks: long enough for the measure)."""
+        reset(z=-14.5)
+        slot(0, "golden_apple", 64)
+        ctl("key", "1", "tap")
+        ctl("mouse", "right", "down")
+        r = rate(ticks=20, warm=8)
+        ctl("mouse", "right", "up")
+        return r
+
+    slow = eating_rate()
+    only("noslow")
+    full = eating_rate()
+    setting("noslow", "ground %", "50")
+    half = eating_rate()
+    only()
+    return slow < 2.0 and full > 3.8 and full * 0.35 < half < full * 0.75, (
+        f"walking while eating: {slow:.2f} blocks/s off, {full:.2f} with No Slow, {half:.2f} at Ground 50%")
 
 
 @test("Fast Place (speeds)")
@@ -2207,6 +2485,77 @@ def _():
     return away == 0 and facing > 0, f"look-only swings looking away: {away}, facing the pig: {facing}"
 
 
+@test("Criticals")
+def _():
+    # What the first hit Kill Aura, Trigger Bot or a click makes at full attack cooldown takes from a pig with 1000
+    # health and no armour, without and with Criticals (a critical hit is 1.5 times): a sword (7) and an axe (9) in
+    # Packet mode, a sword in Jump and Mini jump, a mace (6, and a smash adds 4 a block fallen), the fist (1) with
+    # Only with a weapon, a click with Only Kill Aura. On a server the probe counts the move packets in a tick
+    # through all of it (never two).
+    tough = "{NoAI:1b,PersistenceRequired:1b,Silent:1b,Health:1000f,attributes:[{id:'minecraft:max_health',base:1000.0}]}"
+    mark = probe_mark() if SERVER and probe_path() else None
+
+    def hit(item, how, crits=True):
+        reset()
+        if item:
+            slot(0, item)
+        ctl("key", "1", "tap")
+        pid = pig(tag=tough)
+        ctl("look-at-entity", str(pid))
+        wait(30)
+        before = mobs("pig")[0]["health"]
+        only(*(("criticals",) if crits else ()), *((how,) if how != "click" else ()))
+        if how == "click":
+            ctl("mouse", "left", "click")
+        lost = 0
+        for _ in range(40):
+            wait(1)
+            m = mobs("pig")
+            if m and m[0]["health"] < before:
+                lost = before - m[0]["health"]
+                break
+        only()
+        return round(lost, 2)
+
+    setting("killaura", "entities", "pig")
+    setting("triggerbot", "passive", "true")
+    packet = {(item, how): (hit(item, how, False), hit(item, how))
+              for item in ("diamond_sword", "diamond_axe") for how in ("killaura", "triggerbot", "click")}
+    modes = {}
+    for mode in ("Jump", "Mini jump"):
+        setting("criticals", "mode", mode)
+        modes[mode] = (hit("diamond_sword", "killaura"), hit("diamond_sword", "click"))
+    setting("criticals", "mode", "Packet")
+    setting("criticals", "additional height", "0.5")
+    higher = hit("diamond_sword", "click")
+    setting("criticals", "additional height", "0")
+    mace = (hit("mace", "click", False), hit("mace", "click"))
+    setting("criticals", "additional height", "1")
+    mace_high = hit("mace", "click")
+    setting("criticals", "additional height", "0")
+    fist = hit(None, "click")
+    setting("criticals", "only with a weapon", "true")
+    fist_weapon_only = hit(None, "click")
+    setting("criticals", "only with a weapon", "false")
+    setting("criticals", "only kill aura", "true")
+    click_ka_only = hit("diamond_sword", "click")
+    most = wire_stats(mark)[1] if mark is not None else None
+    # Packet mode's hop is packets only: a server that judges the fall by its own physics (Horizon's, single player's
+    # built-in one) takes no crit from it. Jump and Mini jump really fall, so they crit everywhere.
+    crit = lambda off, on: off > 0 and abs(on / off - 1.5) < 0.02
+    packet_crits = all(crit(*v) for v in packet.values())
+    base = {"diamond_sword": 7, "diamond_axe": 9}
+    ok = (all(abs(v[0] - base[i]) < 0.05 for (i, _), v in packet.items()) and all(abs(d - 10.5) < 0.05 for v in modes.values() for d in v)
+          and (not packet_crits or (abs(higher - 10.5) < 0.05 and abs(fist - 1.5) < 0.05)) and abs(fist_weapon_only - 1) < 0.05
+          and abs(click_ka_only - 7) < 0.05 and most in (None, 0, 1))
+    names = {"diamond_sword": "sword", "diamond_axe": "axe", "killaura": "Kill Aura", "triggerbot": "Trigger Bot", "click": "click"}
+    return ok, (f"Packet crits: {packet_crits}; damage off/on, Packet: " + ", ".join(f"{names[i]} {names[h]} {a}/{b}" for (i, h), (a, b) in packet.items()) +
+                "; sword Kill Aura/click: " + ", ".join(f"{k} {a}/{b}" for k, (a, b) in modes.items()) +
+                f"; Packet with Additional height 0.5: {higher}; mace click off/on {mace[0]}/{mace[1]}, {mace_high} at Additional "
+                f"height 1; fist {fist}, {fist_weapon_only} with Only with a weapon; a click with Only Kill Aura {click_ka_only}; "
+                f"most move packets in a tick: {most}")
+
+
 def shot_pixels(name, want):
     """Pixels of a screenshot that `want` (r, g, b) accepts."""
     from PIL import Image
@@ -2240,6 +2589,95 @@ def _():
     return 5000 < near3d < near2d and behind < 0.3 * screen and inside < 0.02 * screen, (
         f"orange pixels: chest close beside the view {near3d} with 3D sides, {near2d} as a 2D box; partly behind the "
         f"camera {behind}; camera inside it {inside} (of {screen})")
+
+
+@test("ESP (item names, tracers, filter)")
+def _():
+    # A stack of 5 diamonds off to the side ahead: its box, then its name, then a line to it, then none of it with
+    # diamonds blacklisted. In pink, which nothing else on screen is (Sunset's chat lines are orange).
+    pink = lambda r, g, b: r > 230 and 80 < g < 150 and b > 160
+    cmd(f"summon item {X0+3.5} {Y+1} {Z0+5.5} {{Item:{{id:\"minecraft:diamond\",count:5}},PickupDelay:32767,Age:-32768}}")
+    setting("esp", "items", "true")
+    setting("esp", "players", "false")
+    setting("esp", "items color", "Pink")
+    only("esp")
+    ctl("look", "0", "20")
+    wait(10)
+    plain = shot_pixels("itemesp0", pink)
+    setting("esp", "item names", "true")
+    wait(5)
+    named = shot_pixels("itemesp1", pink)
+    setting("esp", "item names", "false")
+    setting("esp", "item tracers", "true")
+    wait(5)
+    traced = shot_pixels("itemesp2", pink)
+    setting("esp", "item filter", "Blacklist")
+    setting("esp", "item list", "diamond")
+    wait(5)
+    hidden = shot_pixels("itemesp3", pink)
+    only()
+    cmd("kill @e[type=item]")
+    return plain > 20 and named > plain + 30 and traced > plain + 30 and hidden < plain / 2, (
+        f"pink pixels: box {plain}, with its name {named}, with a tracer {traced}, diamonds blacklisted {hidden}")
+
+
+@test("Spawner Alerts")
+def _():
+    # A zombie spawner and a trial spawner ahead: a chat line each, once, and their labels.
+    gold = lambda r, g, b: r > 230 and 150 < g < 190 and b < 40
+    cmd(f"setblock {X0+2} {Y+1} {Z0+5} minecraft:spawner{{SpawnData:{{entity:{{id:\"minecraft:zombie\"}}}}}}",
+        f"setblock {X0-2} {Y+1} {Z0+5} minecraft:trial_spawner")
+    ctl("look", "0", "10")
+    wait(5)
+    before = shot_pixels("spawners0", gold)
+    # Within 16 blocks: a server's world can have spawners of its own further out.
+    setting("spawneralerts", "range", "16")
+    mark = log_mark()
+    only("spawneralerts")
+    wait(40)
+    labelled = shot_pixels("spawners1", gold)
+    said = [line for line in sunset_said(mark) if "spawner" in line]
+    only()
+    cmd(f"setblock {X0+2} {Y+1} {Z0+5} minecraft:air", f"setblock {X0-2} {Y+1} {Z0+5} minecraft:air")
+    zombie = any(line.startswith(f"zombie spawner at {X0+2} {Y+1} {Z0+5}") for line in said)
+    trial = any(line.startswith("unknown trial spawner") for line in said)
+    return zombie and trial and len(said) == 2 and labelled > before + 50, (
+        f"chat: {said}; label pixels {before} -> {labelled}")
+
+
+@test("Anti Vanish")
+def _():
+    # Bot1 leaves and comes back with the server's leave and join messages: nothing said. Then it leaves and comes back
+    # with those messages pushed out of the recent chat (as if a vanish plugin had sent none): a line each time. The
+    # completion check (/msg) finds nobody hidden.
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    setting("antivanish", "interval", "200")
+    setting("antivanish", "completion check", "true")
+
+    def bot(away, flood):
+        """Bot1 leaves (or comes back) between two of Anti Vanish's checks; what it said about Bot1."""
+        only("antivanish")
+        wait(210)
+        mark = log_mark()
+        if away:
+            ctl2("disconnect")
+        else:
+            ctl2("key", "esc", "tap")
+            time.sleep(2)
+            ctl2("connect", SERVER, "Bot1")
+            ctl2("wait-ready", "50")
+        if flood:
+            cmd(*(f"say {i}" for i in range(21)))
+        wait(210)
+        only()
+        return [line for line in sunset_said(mark) if "Bot1" in line]
+
+    told = [bot(True, False), bot(False, False), bot(True, True), bot(False, True)]
+    cmd("gamemode spectator Bot1")
+    ok = not told[0] and not told[1] and any("left the tab list" in x for x in told[2]) and any("came back" in x for x in told[3])
+    hidden = any("not in the tab list" in x for t in told for x in t)
+    return ok and not hidden, f"lines about Bot1: with messages {told[0] + told[1]}; without {told[2] + told[3]}"
 
 
 @test("Hole ESP")
@@ -2430,7 +2868,8 @@ def probe_frames(mark):
     with open(probe_path()) as f:
         f.seek(mark)
         lines = f.read().split("\n")[:-1]
-    return [Frame(line.split()) for line in lines if line]
+    # The frame lines start with the time; the wire probe's "send" lines share the file.
+    return [Frame(line.split()) for line in lines if line[:1].isdigit()]
 
 
 def wrap(d):
@@ -2866,7 +3305,7 @@ def _():
             ticks, most, now = ticks + 1, max(most, now), 0
         else:
             moves, now = moves + 1, now + 1
-    alive = "player" in state()
+    alive = bool(state().get("player"))
     broken = 54 - count(X0 - 4, Y + 1, Z0 - 10, X0 + 4, Y + 2, Z0 - 8, "dirt")
     placed = count(X0 - 2, Y, Z0 - 30, X0 + 2, Y, Z0 - 17, "stone")
     return ticks > 50 and most <= 1 and alive, (f"{moves} move packets over {ticks} ticks, at most {most} in a tick; Nuker broke {broken} dirt, "
@@ -2940,7 +3379,7 @@ def sweep(keys, sets):
     sweep_play()
     only()
     st = state()
-    if "player" not in st:
+    if not st.get("player"):
         return False, f"kicked or gone: {json.dumps(ctl('screen'))[:200]}"
     moved = st["ticks"] - t0
     if not on_server:
@@ -3055,6 +3494,7 @@ def light_clean():
     if state().get("screen") not in ("playing", None):
         ctl("key", "esc", "tap")
         wait(2)
+    say(".panic")
     say(".panic")
     say(".reset hud")
     on.clear()

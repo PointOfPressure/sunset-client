@@ -161,6 +161,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         }
     }
     if !in_world(game) {
+        ps(|p| p.place_credit = 0);
         return;
     }
     if let Some(m) = get("Auto Fish") {
@@ -175,6 +176,8 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
     if let Some(m) = get("Fast Place") {
         fast_place(game, m);
+    } else {
+        ps(|p| p.place_credit = 0);
     }
     if let Some(m) = get("Fast Use") {
         fast_use(game, m);
@@ -387,6 +390,17 @@ fn holds_block(game: &Game<'_>) -> bool {
         .any(|s| game.res.items().get(&s.item).is_some_and(|i| i.block.is_some()))
 }
 
+fn place_ready(credit: &mut u32, speed: usize) -> bool {
+    let rate = PLACE_RATES[speed.clamp(1, PLACE_RATES.len()) - 1];
+    *credit += rate;
+    if *credit >= 20 {
+        *credit -= 20;
+        true
+    } else {
+        false
+    }
+}
+
 // Runs after the game counts its delay down and before it reads it: each tick earns a share of a block, and the delay
 // opens when a whole one is earned. So speeds between two whole delays average out to their exact rate.
 fn fast_place(game: &mut Game<'_>, m: &Module) {
@@ -394,15 +408,8 @@ fn fast_place(game: &mut Game<'_>, m: &Module) {
         ps(|p| p.place_credit = 0);
         return;
     }
-    let rate = PLACE_RATES[(m.n("Speed") as usize).clamp(1, PLACE_RATES.len()) - 1];
-    let ready = ps(|p| {
-        p.place_credit += rate;
-        let ready = p.place_credit >= 20;
-        if ready {
-            p.place_credit -= 20;
-        }
-        ready
-    });
+    let speed = m.n("Speed") as usize;
+    let ready = ps(|p| place_ready(&mut p.place_credit, speed));
     game.use_delay = if ready { 0 } else { game.use_delay.max(1) };
 }
 
@@ -421,6 +428,32 @@ fn fast_use(game: &mut Game<'_>, m: &Module) {
         });
     if applies && game.use_delay > m.n("Cooldown (ticks)") as u32 {
         game.use_delay = m.n("Cooldown (ticks)") as u32;
+    }
+}
+
+#[cfg(test)]
+mod fast_place_tests {
+    use super::place_ready;
+
+    #[test]
+    fn each_speed_places_its_configured_average_per_second() {
+        let expected = [6, 8, 10, 14, 20];
+        for (index, count) in expected.into_iter().enumerate() {
+            let mut credit = 0;
+            let placed = (0..20).filter(|_| place_ready(&mut credit, index + 1)).count();
+            assert_eq!(placed, count);
+            assert_eq!(credit, 0);
+        }
+    }
+
+    #[test]
+    fn speed_is_clamped_to_the_supported_range() {
+        let mut low = 0;
+        let low_count = (0..20).filter(|_| place_ready(&mut low, 0)).count();
+        let mut high = 0;
+        let high_count = (0..20).filter(|_| place_ready(&mut high, 99)).count();
+        assert_eq!(low_count, 6);
+        assert_eq!(high_count, 20);
     }
 }
 

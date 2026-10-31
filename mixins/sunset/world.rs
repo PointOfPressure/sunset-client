@@ -1,11 +1,16 @@
 // World modules ported from Meteor's source: Auto Shearer, Auto Nametag,
-// Auto Mount, Flamethrower; and Bow Aimbot.
+// Auto Mount, Flamethrower; and Bow Aimbot and Spawner Alerts.
 
-use super::sunset::{Category, Module, hold};
+use super::sunset::{Camera, Canvas, Category, Module, hold, say};
 use super::sunset_util::*;
 use super::{Game, Screen};
 use horizon_protocol::packets::play::{self, Serverbound as S};
-use std::sync::Mutex;
+use horizon_client::containers::BlockEntity;
+use horizon_client::mobs::spawner::SpawnerExt;
+use horizon_world::nbt::{JavaString, Tag};
+use std::collections::HashSet;
+use std::fmt::Write as _;
+use std::sync::{Mutex, OnceLock};
 
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
@@ -57,6 +62,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Babies", true)
             .bool("Nametagged", false)
             .text("Entities", "player"),
+        Module::new("Spawner Alerts", World, "Says in chat where each spawner and trial spawner within range is, and what it spawns, once each; Labels names them where they are.")
+            .num("Range", 64.0, 8.0, 256.0, 8.0)
+            .bool("Labels", true),
     ]
 }
 
@@ -66,6 +74,13 @@ struct Ws {
     flame_ticks: u32,
     fill_timer: u32,
     proof_timer: u32,
+    // Spawner Alerts: the dimension, and each spawner found in it with its label.
+    spawner_dim: &'static str,
+    spawners: Vec<([i32; 3], String)>,
+    // Membership is separate from the ordered labels: discovery/drawing
+    // order stays the native block-entity iteration order.
+    spawner_seen: HashSet<[i32; 3]>,
+    spawner_text: String,
 }
 
 static WS: Mutex<Option<Ws>> = Mutex::new(None);
@@ -76,17 +91,26 @@ fn ws<R>(f: impl FnOnce(&mut Ws) -> R) -> R {
 }
 
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
+    let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
+    let dim = game.dim.id();
+    let reset_spawners = game.player.is_none() || get("Spawner Alerts").is_none();
     ws(|w| {
         w.cooldowns.retain_mut(|(_, t)| {
             *t = t.saturating_sub(1);
             *t > 0
         });
         w.flame_ticks += 1;
+        // Spawner Alerts starts over in each world/dimension and on disable.
+        // Share the tick's existing lock, including the default-off path.
+        if reset_spawners || w.spawner_dim != dim {
+            w.spawners.clear();
+            w.spawner_seen.clear();
+            w.spawner_dim = dim;
+        }
     });
     if !in_world(game) {
         return;
     }
-    let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     if let Some(m) = get("Auto Shearer") {
         auto_shearer(game, m);
     }
@@ -107,6 +131,9 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
     if let Some(m) = get("Spawn Proofer") {
         spawn_proofer(game, m);
+    }
+    if let Some(m) = get("Spawner Alerts") {
+        spawner_alerts(game, m);
     }
 }
 
@@ -549,6 +576,81 @@ fn bow_aimbot(game: &mut Game<'_>, m: &Module) {
     let (yaw, flat_pitch) = super::sunset::look_at(eye, [t.pos[0], t.pos[1] + (t.hi[1] - t.lo[1]) / 2.0, t.pos[2]]);
     game.yaw = yaw;
     game.pitch = if pitch.is_nan() { flat_pitch } else { pitch as f32 };
+}
+
+// ---- Spawner Alerts
+
+// A spawner's label: what it spawns (from its next spawn's entity id, "unknown" when it has none) and its kind.
+fn spawner_label(entity: &BlockEntity) -> Option<String> {
+    let (data, kind) = match entity {
+        BlockEntity::Spawner(s) => (s.next_data(), "spawner"),
+        BlockEntity::TrialSpawner(s) => (s.next_spawn_data.as_ref(), "trial spawner"),
+        _ => return None,
+    };
+    static ID: OnceLock<JavaString> = OnceLock::new();
+    let mob = match data.and_then(|d| d.entity.get(ID.get_or_init(|| JavaString::from("id")))) {
+        Some(Tag::String(id)) => short(&String::from_utf16_lossy(&id.0)).replace('_', " "),
+        _ => "unknown".into(),
+    };
+    Some(format!("{mob} {kind}"))
+}
+
+// Twice a second: each spawner within range not found before gets its chat line.
+fn spawner_alerts(game: &mut Game<'_>, m: &Module) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    if game.ticks % 10 != 0 {
+        return;
+    }
+    let me = [p.position.x, p.position.y, p.position.z];
+    let range = m.n("Range");
+    let mut found = Vec::new();
+    ws(|w| {
+        for (&(x, y, z), entity) in &game.world.block_entities {
+            // Chests and other unrelated block entities need no distance or
+            // discovery-history lookup, regardless of how many were found.
+            if !matches!(entity, BlockEntity::Spawner(_) | BlockEntity::TrialSpawner(_)) {
+                continue;
+            }
+            let at = [f64::from(x) + 0.5, f64::from(y) + 0.5, f64::from(z) + 0.5];
+            let distance = dist(me, at);
+            if distance > range || w.spawner_seen.contains(&[x, y, z]) {
+                continue;
+            }
+            if let Some(label) = spawner_label(entity) {
+                found.push(format!("{label} at {x} {y} {z}, {distance:.0} blocks away"));
+                w.spawner_seen.insert([x, y, z]);
+                w.spawners.push(([x, y, z], label));
+            }
+        }
+    });
+    for line in found {
+        say(game, &line);
+    }
+}
+
+// Each found spawner within range: its label over it, with how far it is.
+pub(super) fn spawner_labels(game: &Game<'_>, cam: &Camera, range: f64, out: &mut impl Canvas) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let me = [p.position.x, p.position.y, p.position.z];
+    ws(|w| {
+        let text = &mut w.spawner_text;
+        for (pos, label) in &w.spawners {
+            let at = [f64::from(pos[0]) + 0.5, f64::from(pos[1]) + 1.3, f64::from(pos[2]) + 0.5];
+            let d = dist(me, at);
+            let Some([x, y]) = cam.project(at).filter(|_| d <= range) else {
+                continue;
+            };
+            text.clear();
+            let _ = write!(text, "{label} {d:.0}m");
+            let tw = game.native_text_width(text);
+            out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000);
+            out.text(text, [x - tw / 2.0, y], 0xFFAA00);
+        }
+    });
 }
 
 #[allow(dead_code)]

@@ -37,3 +37,10 @@ pub(crate) fn keep_breaking(game: &mut Game<'_>) {
         r.destroying_item = held;
     }
 }
+
+// Anti Vanish: the names in the tab list (the listed players, not you).
+pub(crate) fn tab_names(game: &Game<'_>) -> Vec<String> {
+    game.remote.as_ref().map_or_else(Vec::new, |r| {
+        r.tab_players.values().filter(|p| p.uuid != r.profile && r.listed.contains(&p.uuid)).map(|p| p.name.clone()).collect()
+    })
+}
