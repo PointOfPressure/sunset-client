@@ -160,6 +160,28 @@ pub(super) fn potato(cam: &Camera, out: &mut impl Canvas, at: [f64; 3], argb: u3
 // A box in the world as the module's Look says. True when any of it was on screen (what a Max counts). A 3D box's
 // sides are its faces turned to the camera (at most three, none from inside it), its edges the lines; a corner
 // behind the camera leaves out the faces and edges it belongs to. The 2D modes need the whole box in front.
+// The matching preflight is used before bounded nearest selection: a sphere intersecting the
+// frustum is only a broad rejection test, and may still have no projectable primitives.
+pub(super) fn box_visible(cam: &Camera, look: &Look, lo: [f64; 3], hi: [f64; 3], lw: f32) -> bool {
+    let mid = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
+    if look.draw == Draw::Potato {
+        return cam.project(mid).is_some_and(|p| cam.on_screen(p, 2.0 * lw));
+    }
+    if !cam.sees(mid, dist(lo, hi) / 2.0) {
+        return false;
+    }
+    if look.draw == Draw::Box3d {
+        let pts = cam.points(lo, hi);
+        let eye = cam.eye();
+        return (look.lines && EDGES.iter().any(|&(a, b)| pts[a].is_some() && pts[b].is_some()))
+            || (look.sides && FACES.iter().any(|(face, axis, high)| {
+                (if *high { eye[*axis] > hi[*axis] } else { eye[*axis] < lo[*axis] })
+                    && face.iter().all(|&i| pts[i].is_some())
+            }));
+    }
+    cam.corners(lo, hi).and_then(|pts| cam.bounds(&pts)).is_some()
+}
+
 pub(super) fn draw_box(cam: &Camera, out: &mut impl Canvas, look: &Look, lo: [f64; 3], hi: [f64; 3], argb: u32, lw: f32) -> bool {
     let mid = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
     if look.draw == Draw::Potato {

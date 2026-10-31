@@ -4,7 +4,7 @@ use super::sunset::{Camera, Canvas, Module, line};
 use super::sunset_item_esp_math::{
     Filter, LABEL_LIMIT, Nearest, label_into, label_rect, live_stack, range_sq,
 };
-use super::sunset_visual::{Look, draw_box, faded};
+use super::sunset_visual::{Look, box_visible, draw_box, faded};
 use std::sync::Mutex;
 
 #[derive(Default)]
@@ -66,6 +66,26 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, m: &Module, lw: f32, out: &mut
         // consume the nearest-result budget, and no custom name/translation is examined here.
         if !cam.sees([at[0], at[1] + 0.125, at[2]], 0.217)
             || !filter.allows(filter_mode, &item.stack.item)
+            || !nearest.can_improve(distance_sq, index)
+        {
+            continue;
+        }
+        // Admit only drops with geometry that an enabled primitive can actually draw.
+        // An edge-intersecting sphere may have an off-screen label/tracer anchor, and
+        // near-camera boxes may have no corners beyond the projection near plane.
+        let anchor_visible = (labels || tracers)
+            && cam
+                .project([at[0], at[1] + 0.25, at[2]])
+                .is_some_and(|p| cam.on_screen(p, 0.0));
+        if !anchor_visible
+            && !(boxes
+                && box_visible(
+                    cam,
+                    &look,
+                    [at[0] - 0.125, at[1], at[2] - 0.125],
+                    [at[0] + 0.125, at[1] + 0.25, at[2] + 0.125],
+                    lw,
+                ))
         {
             continue;
         }

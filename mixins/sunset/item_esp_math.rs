@@ -102,7 +102,7 @@ impl Nearest {
     }
 
     pub(super) fn consider(&mut self, distance_sq: f64, index: usize) {
-        if self.limit == 0 || !distance_sq.is_finite() || distance_sq < 0.0 {
+        if !self.can_improve(distance_sq, index) {
             return;
         }
         let candidate = Candidate { distance_sq, index };
@@ -111,6 +111,19 @@ impl Nearest {
         } else if self.heap.peek().is_some_and(|last| candidate < *last) {
             *self.heap.peek_mut().unwrap() = candidate;
         }
+    }
+
+    // Check before doing more expensive projection work for candidates which cannot enter
+    // the bounded result set. Rejected geometry must never occupy the heap in the first place.
+    pub(super) fn can_improve(&self, distance_sq: f64, index: usize) -> bool {
+        self.limit > 0
+            && distance_sq.is_finite()
+            && distance_sq >= 0.0
+            && (self.heap.len() < self.limit
+                || self
+                    .heap
+                    .peek()
+                    .is_some_and(|last| Candidate { distance_sq, index } < *last))
     }
 
     pub(super) fn finish(&mut self) {
