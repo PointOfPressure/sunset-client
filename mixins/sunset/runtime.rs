@@ -878,6 +878,26 @@ impl State {
             }
         }
     }
+    // A profile file read whole before anything changes: its header, then lines this version knows, with values that
+    // fit them. The lines, without the header.
+    fn check_profile<'a>(&self, text: &'a str) -> Result<&'a str, String> {
+        let body = text.strip_prefix(super::sunset_profiles::HEADER).and_then(|t| t.strip_prefix('\n')).ok_or("not a Sunset profile")?;
+        for (n, line) in body.lines().enumerate().filter(|(_, l)| !l.trim().is_empty()) {
+            let bad = |what: &str| format!("line {}: {what}", n + 2);
+            let (k, v) = line.split_once('=').ok_or_else(|| bad("no ="))?;
+            let (id, field) = k.split_once('.').ok_or_else(|| bad("no module"))?;
+            let m = self.modules.iter().find(|m| norm(m.name) == id).ok_or_else(|| bad(&format!("no module called {id}")))?;
+            let fits = match field {
+                "on" => matches!(v.trim(), "true" | "false"),
+                "key" => !v.chars().any(char::is_control),
+                _ => m.settings.iter().find(|s| norm(s.name) == field).is_some_and(|s| s.clone().parse(v)),
+            };
+            if !fits {
+                return Err(bad(&format!("{k} can't be {}", v.chars().take(40).collect::<String>())));
+            }
+        }
+        Ok(body)
+    }
     pub(super) fn module(&self, name: &str) -> Option<&Module> {
         self.modules.iter().find(|m| m.name == name)
     }
@@ -3654,7 +3674,7 @@ const HELP: &[(&str, &str)] = &[
     (".binds", "list key binds"),
     (".reset <module>", "put a module back to its defaults"),
     (".panic", "turn every module off"),
-    (".profile save|load|delete|list [name]", "keep the modules' settings under a name and bring them back"),
+    (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
     (".vclip <blocks>", "move up or down"),
@@ -3673,44 +3693,66 @@ pub(super) fn panic_off(game: &mut Game<'_>) {
 }
 
 // .profile save|load|delete|list <name>: the modules' settings kept under a name.
+// Profiles (`.profile`): files in the mod's data folder (sunset_profiles), with a backup of the settings before every
+// load. Profiles from before 0.9 (kept in the mod's settings) move into files the first time.
 fn profile_command(game: &mut Game<'_>, args: &[&str]) {
-    let names = |game: &Game<'_>| -> Vec<String> {
-        game.native_setting(ID, "profiles").unwrap_or_default().split(',').filter(|n| !n.is_empty()).map(str::to_owned).collect()
-    };
-    let key = |name: &str| format!("profile-{}", norm(name));
-    let sub = args.first().map(|a| a.to_ascii_lowercase());
-    let name = args.get(1..).map(|rest| rest.join(" ")).filter(|n| !norm(n).is_empty());
-    match (sub.as_deref(), name) {
-        (Some("save"), Some(name)) => {
-            let text = with(|s| s.profile_text());
-            game.native_set_setting(ID, &key(&name), &text);
-            let mut all = names(game);
-            if !all.iter().any(|n| norm(n) == norm(&name)) {
-                all.push(name.clone());
+    use super::sunset_profiles::{self as profiles, BACKUP, HEADER};
+    let result = (|| -> Result<String, String> {
+        let store = profiles::Store::new(game.native_data_dir(ID))?;
+        let old: Vec<String> = game.native_setting(ID, "profiles").unwrap_or_default().split(',').filter(|n| !n.is_empty()).map(str::to_owned).collect();
+        for n in &old {
+            let key = format!("profile-{}", norm(n));
+            if let (Ok(file), Some(text)) = (profiles::name(n), game.native_setting(ID, &key))
+                && !store.exists(&file)
+            {
+                store.write(&file, &format!("{HEADER}\n{text}\n"))?;
             }
-            game.native_set_setting(ID, "profiles", &all.join(","));
-            say(game, &format!("Saved profile {name}."));
+            game.native_set_setting(ID, &key, "");
         }
-        (Some("load"), Some(name)) => match game.native_setting(ID, &key(&name)) {
-            Some(text) => {
-                with(|s| s.load_profile(&text));
+        if !old.is_empty() {
+            game.native_set_setting(ID, "profiles", "");
+        }
+        let sub = args.first().map(|a| a.to_ascii_lowercase()).unwrap_or_default();
+        if sub == "list" {
+            let all = store.list()?;
+            return Ok(if all.is_empty() { "No profiles yet. .profile save <name> keeps the current settings.".to_owned() } else { format!("Profiles: {}", all.join(", ")) });
+        }
+        let Some(name) = args.get(1..).filter(|rest| !rest.is_empty()).map(|rest| profiles::name(&rest.join(" "))).transpose()? else {
+            return Err("use .profile save|load|delete|export|import <name>, or .profile list".into());
+        };
+        if name == BACKUP && sub != "load" {
+            return Err(format!("{BACKUP} is the settings before the last load; .profile load {BACKUP} puts them back"));
+        }
+        match sub.as_str() {
+            "save" => {
+                let text = with(|s| s.profile_text());
+                store.write(&name, &format!("{HEADER}\n{text}\n"))?;
+                Ok(format!("Saved profile {name}."))
+            }
+            "load" => {
+                let text = store.read(&name)?;
+                let body = with(|s| s.check_profile(&text).map(str::to_owned))?;
+                let before = with(|s| s.profile_text());
+                store.write(BACKUP, &format!("{HEADER}\n{before}\n"))?;
+                with(|s| s.load_profile(&body));
                 save(game);
-                say(game, &format!("Loaded profile {name}."));
+                Ok(format!("Loaded profile {name}. .profile load {BACKUP} puts the settings back as they were."))
             }
-            None => say(game, &format!("No profile called {name}. Try .profile list")),
-        },
-        (Some("delete"), Some(name)) => {
-            let all: Vec<String> = names(game).into_iter().filter(|n| norm(n) != norm(&name)).collect();
-            game.native_set_setting(ID, "profiles", &all.join(","));
-            game.native_set_setting(ID, &key(&name), "");
-            say(game, &format!("Deleted profile {name}."));
+            "delete" => {
+                store.delete(&name)?;
+                Ok(format!("Deleted profile {name}."))
+            }
+            "export" => Ok(format!("Profile {name} is in {}", store.export(&name)?.display())),
+            "import" => {
+                let text = store.import(&name).map_err(|e| format!("{e} (put {name}.profile in {})", store.imports().display()))?;
+                with(|s| s.check_profile(&text).map(|_| ()))?;
+                store.write(&name, &text)?;
+                Ok(format!("Imported profile {name}; .profile load {name} uses it."))
+            }
+            _ => Err("use .profile save|load|delete|export|import <name>, or .profile list".into()),
         }
-        (Some("list"), _) => {
-            let all = names(game);
-            say(game, &if all.is_empty() { "No profiles yet. .profile save <name> keeps the current settings.".to_owned() } else { format!("Profiles: {}", all.join(", ")) });
-        }
-        _ => say(game, "Use .profile save|load|delete <name>, or .profile list"),
-    }
+    })();
+    say(game, &result.unwrap_or_else(|e| format!("Profile: {e}.")));
 }
 
 pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {

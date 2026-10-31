@@ -1047,18 +1047,43 @@ def _():
 
 @test("Profiles")
 def _():
+    def said(line):
+        mark = log_mark()
+        say(line)
+        wait(4)
+        return sunset_said(mark)
+
+    def range_shown():
+        return next((c for c in said(".settings killaura") if c.startswith("Range:")), "")
+
     setting("killaura", "range", "3")
     say(".profile save verify")
     setting("killaura", "range", "5")
     say(".profile load verify")
-    wait(4)
-    mark = log_mark()
-    say(".settings killaura")
-    wait(4)
-    lines = sunset_said(mark)
-    say(".profile delete verify")
-    shown = next((c for c in lines if c.startswith("Range:")), "")
-    return shown == "Range: 3", f"Kill Aura Range 3 saved, set to 5, loaded: the settings say \"{shown}\""
+    loaded = range_shown()
+    # The settings before the load come back from the backup.
+    say(".profile load before-load")
+    undone = range_shown()
+    # Export, then import the exported file under another name; a broken file and a bad name are refused.
+    exported = said(".profile export verify")
+    found = [os.path.join(r, f) for r, _, fs in os.walk(os.path.join(session_dir(), "home")) for f in fs if f == "verify.profile" and "exports" in r]
+    imported = refused = bad_name = []
+    if found:
+        imports = os.path.join(os.path.dirname(os.path.dirname(found[0])), "imports")
+        with open(found[0]) as f, open(os.path.join(imports, "shared.profile"), "w") as g:
+            g.write(f.read())
+        with open(os.path.join(imports, "broken.profile"), "w") as g:
+            g.write("sunset-profile=1\nkillaura.range=lots\n")
+        imported = said(".profile import shared")
+        refused = said(".profile import broken")
+    bad_name = said(".profile save ../evil")
+    listed = said(".profile list")
+    for n in ("verify", "shared"):
+        say(f".profile delete {n}")
+    ok = (loaded == "Range: 3" and undone == "Range: 5" and any("Imported profile shared" in l for l in imported)
+          and any("killaura.range" in l for l in refused) and any("name is" in l for l in bad_name) and any("shared" in l for l in listed))
+    return ok, (f"loaded: {loaded!r}, after .profile load before-load: {undone!r}; export: {exported[:1]}; import: {imported[:1]}; "
+                f"broken file: {refused[:1]}; bad name: {bad_name[:1]}; list: {listed[:1]}")
 
 
 # ---- player and world

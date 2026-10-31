@@ -70,7 +70,8 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 | `.friend add\|remove\|list <name>` | friends are left alone by Kill Aura, Aim Assist and the other targeting modules |
 | `.waypoint add\|remove\|list <name>` | places the Waypoints module shows on screen |
 | `.vclip <n>`, `.hclip <n>` | move up or down, forward |
-| `.profile save\|load\|delete <name>`, `.profile list` | keep every module's on/off, settings and keys under a name and bring them back (a PvP set-up, a building one) |
+| `.profile save\|load\|delete <name>`, `.profile list` | keep every module's on/off, settings and keys under a name and bring them back (a PvP set-up, a building one); `.profile load before-load` undoes the last load |
+| `.profile export\|import <name>` | share a profile: export copies it to the mod's `exports` folder, import takes `<name>.profile` from its `imports` folder |
 | `.panic` | turn every module off (or bind the **Panic** module to a key) |
 | `.menu [text]` | open the menu, already searching for the text |
 
@@ -136,7 +137,7 @@ game; `tools/audit.py` lists which of Meteor's settings are still missing.
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: [vstxx](https://github.com/vstxx), [zackmsa777-a11y](https://github.com/zackmsa777-a11y) (Radar). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: [vstxx](https://github.com/vstxx), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
