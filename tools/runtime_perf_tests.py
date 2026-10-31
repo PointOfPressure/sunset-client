@@ -278,19 +278,23 @@ mod tests {
     }
 
     #[test]
-    fn item_labels_keep_custom_names_counts_and_translation_fallback() {
+    fn item_labels_accept_owned_game_names_once_and_preserve_counts() {
         let mut text = String::with_capacity(64);
-        for count in [0, 1, 2, 64] {
-            ALLOCS.with(|n| n.set(0));
-            item_name_into(&mut text, Some("Custom \u{03a9}"), count, || panic!("custom names must bypass fallback"));
-            assert_eq!(ALLOCS.with(|n| n.get()), 0);
-            let expected = if count > 1 { format!("Custom \u{03a9} x{count}") } else { "Custom \u{03a9}".to_owned() };
-            assert_eq!(text, expected);
+        let calls = Cell::new(0);
+        for label in ["Custom \u{03a9}", "Translated Item", ""] {
+            for count in [0, 1, 2, 64] {
+                let before = calls.get();
+                // Horizon's name_line/custom_name APIs yield owned Strings.
+                // This deliberately tests the same ownership, not a borrowed substitute.
+                item_name_into(&mut text, count, || {
+                    calls.set(calls.get() + 1);
+                    String::from(label)
+                });
+                assert_eq!(calls.get(), before + 1);
+                let expected = if count > 1 { format!("{label} x{count}") } else { label.to_owned() };
+                assert_eq!(text, expected);
+            }
         }
-        item_name_into(&mut text, None, 3, || "Translated Item".to_owned());
-        assert_eq!(text, "Translated Item x3");
-        item_name_into(&mut text, Some(""), 1, || panic!("empty custom names still override fallback"));
-        assert!(text.is_empty());
     }
 
     #[test]

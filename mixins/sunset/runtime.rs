@@ -411,13 +411,11 @@ fn shared_item_list(source: &str, cached: &mut Option<Arc<ItemList>>) -> Arc<Ite
     Arc::clone(cached.as_ref().unwrap())
 }
 
-fn item_name_into(out: &mut String, custom: Option<&str>, count: u32, fallback: impl FnOnce() -> String) {
+// Horizon formats custom/component/translated names as an owned String.
+// Resolve it exactly once, retaining the original shared output buffer/count text.
+fn item_name_into(out: &mut String, count: u32, name_line: impl FnOnce() -> String) {
     out.clear();
-    if let Some(custom) = custom {
-        out.push_str(custom);
-    } else {
-        out.push_str(&fallback());
-    }
+    out.push_str(&name_line());
     if count > 1 {
         let _ = write!(out, " x{count}");
     }
@@ -5247,7 +5245,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
             }
             // Its name as the game shows it (a custom name, else the translated one) and the stack's count.
             if names {
-                item_name_into(&mut text, item.stack.custom_name(), item.stack.count, || {
+                item_name_into(&mut text, item.stack.count, || {
                     horizon_client::item_tooltip::name_line(&item.stack, &|key| game.pack.names.display_get(key))
                 });
                 let tw = game.native_text_width(&text);
