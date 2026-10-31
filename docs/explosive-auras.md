@@ -90,6 +90,8 @@ No armor/inventory/world data is mutated to calculate a prediction.
   gap and at most three sent attempts per observed crystal ID. Recent hurt
   animation defers another attack; this conservative rule does not recreate
   the reference client's full incremental-damage clock.
+  Ordinary pauses preserve those counters, waits and deadlines; explicit
+  module or scene reset clears them.
 - `.combatdebug` reports preserved numeric decisions, rejects, send and
   acknowledgement counters. Formatting occurs only when explicitly requested.
 - These paths run on ticks, with no added render effects or per-frame scans.

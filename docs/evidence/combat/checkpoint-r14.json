@@ -1,0 +1,68 @@
+{
+  "checkpoint": "R14",
+  "manifest": {
+    "schema": 1,
+    "id": "sunset",
+    "version": "0.8.1",
+    "game": "26.3",
+    "horizon": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+    "mixins": "cb1ad23022392d88f006cf94cbf6552a73f5df12"
+  },
+  "native_client_sha256": "7ec29509ed88ea6126a25f56147ea40c91a5823a3d3ef2671ead3affd2ebd0c1",
+  "package_sha256": "a1136d3de16613718c314aae2deb7109cf00b5bb030bff16b696c7996152f063",
+  "support_modules": 63,
+  "injections": 52,
+  "build_stages": {
+    "plan": {
+      "exit_code": 0,
+      "elapsed_seconds": 63.573371299993596,
+      "source_unchanged": true,
+      "record_sha256": "57566bbb957fa2a1bce3d0bcaa750c612bc247a14428f5d05956dc8fd0a19df1"
+    },
+    "apply": {
+      "exit_code": 0,
+      "elapsed_seconds": 109.24971869999717,
+      "source_unchanged": true,
+      "record_sha256": "24ac6fdf512cdc0e0f26456cb5fe41f01a1a5a9b0172a800027b11527ee382ab"
+    },
+    "check": {
+      "exit_code": 0,
+      "elapsed_seconds": 6.2552166000095895,
+      "source_unchanged": true,
+      "record_sha256": "3f4e471b2007c6d31662a5054f1b9eb80e92d8934e9a6059fc193c6c0d2cb3a6"
+    },
+    "build": {
+      "exit_code": 0,
+      "elapsed_seconds": 151.76063740000245,
+      "source_unchanged": true,
+      "record_sha256": "a4682fa8dd03fa74fa6f49f51e3e134612f2012b745612b8ea671304d4a1704e"
+    },
+    "freeze": {
+      "exit_code": 0,
+      "elapsed_seconds": 1.1367798000137554,
+      "source_unchanged": true,
+      "record_sha256": "15f89a585657d4e779b674af19a41f4aa3b889d621bab2bbf1ac30af58ef4e5f"
+    }
+  },
+  "focused": {
+    "total": 216,
+    "compiled_native_adapted": 211,
+    "source_wiring": 5,
+    "report_sha256": "9c2a65c23e72810da07499aec9bc261a704275af803e5d79488a5b08f999b54c",
+    "foundation_count": 49
+  },
+  "native_warnings": [
+    "unused private Masks.clear/hidden helpers in city_policy.rs"
+  ],
+  "runtime_status": "216 focused checks, native compile check and optimized build pass. Isolated19 and fresh R14 paired AutoBase9+postACKLoot/Aura5 are running/pending. R13 GUI5, R10 Loot16+4 and older suites keep their checkpoint identities.",
+  "source_fingerprints": {
+    "tested_raw": "source-r14.json",
+    "lf_normalized_for_git": "source-r14-lf.json",
+    "note": "Windows tested checkout includes CRLF files. Raw hashes identify tested bytes; LF hashes permit comparison with Git blobs without mistaking line-ending normalization for a source change."
+  },
+  "native_source_git_commit": "376654ab057451f4a3db159e14ea0d42e7fd4a96",
+  "delta_from_r13": [
+    "Ordinary Crystal suspension retains rejected-ID attack counts, actual pending acknowledgements, scan cursors and all independent action deadlines. Queued generations still invalidate. Explicit module/scene reset clears the retained state.",
+    "Six additional compiled tests exercise actual production Clock/State; aggregation explicitly distinguishes211 compiled/native-adapter checks and5 source contracts."
+  ]
+}

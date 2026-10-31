@@ -6,14 +6,13 @@ host source. The incoming packet hook requires the newer official Mixins
 `cb1ad23022392d88f006cf94cbf6552a73f5df12`; the earlier `0d6b103` planner rejects
 opaque macros in that native handler. No Horizon source patch is required.
 
-Latest build: **R13**, with **210 focused checks** (205 compiled/native-adapter
+Latest build: **R14**, with **216 focused checks** (211 compiled/native-adapter
 checks and five source-wiring checks), official native compile check and
-optimized build passing. The [R13 checkpoint](evidence/combat/checkpoint-r13.json)
-and [exact tested source fingerprints](evidence/combat/source-r13.json) identify
-that binary. All **19 isolated native explosive cases pass**, with driver and
-game exit0 and unchanged frozen inputs. All five paired GUI checks pass;
-optional setup and final current-player checks are pending. Earlier native evidence below retains its original
-checkpoint identity.
+optimized build passing. The [R14 checkpoint](evidence/combat/checkpoint-r14.json)
+and [exact tested source fingerprints](evidence/combat/source-r14.json) identify
+that binary. Its isolated explosive, optional setup and final player checks
+are running/pending. R13 passes all 19 isolated cases and all five paired GUI
+checks. Earlier native evidence below retains its original checkpoint identity.
 
 The first R13 run passed all 19 gameplay checks, then its driver failed while
 trying to open chat behind the newly modal overlay for a second GUI screenshot.
@@ -22,8 +21,14 @@ and package, closes the real overlay before further chat commands and cleanup;
 the full rerun passes. Original failure hashes remain in the checkpoint record.
 
 The tested Windows checkout contains CRLF files. The raw fingerprints preserve
-those exact bytes; [LF-only fingerprints](evidence/combat/source-r13-lf.json)
+those exact bytes; [LF-only fingerprints](evidence/combat/source-r14-lf.json)
 allow comparison with Git's normalized blobs. No other transformation applies.
+
+R14 also retains Crystal's rejected-ID attack counts, pending acknowledgement,
+scan cursors and all action deadlines during suspension. A menu or brief hand
+conflict cannot rearm an unchanged rejected crystal or bypass its configured
+delay. Six additional compiled tests exercise the actual Clock/State functions.
+Queued generations still invalidate; explicit module/scene reset clears state.
 
 R13 preserves setup retries, real block acknowledgement and cell delay across
 ordinary pause/contention and queued-work expiry. Explicit module or scene
