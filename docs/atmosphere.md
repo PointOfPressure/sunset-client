@@ -46,5 +46,5 @@ The module is a focused original implementation of three visual directions. It
 does not implement the reference client's hand aura, knife skins, black hole,
 meteors, terrain grading or its complete settings catalogue.
 
-See [source research](atmosphere-source-notes.md) for credit. Native screenshots,
-timings and exact validation pins are recorded with the completed checks.
+See [source research](atmosphere-source-notes.md) for credit and
+[native validation](atmosphere-validation.md) for screenshots, timings and pins.

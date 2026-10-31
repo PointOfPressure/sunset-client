@@ -1,0 +1,628 @@
+{
+  "code_commit": "cb8ae36bc92db8c7564fb2b6f1e3c8e89676142e",
+  "base_commit": "fa174f362a640caa34c5f080deadd704dc173c85",
+  "horizon": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins": "0d6b103c70633d8fd9443d8d0acd3aadaacedb06",
+  "rustc": "1.99.1",
+  "unit_tests": {
+    "shader_math_and_backend": 9,
+    "config_sanitization": 2,
+    "total": 11,
+    "naga_and_hlsl_specializations": 18,
+    "note": "Specializations are cases within one of the nine shader tests, not eighteen additional tests."
+  },
+  "native_pipeline": {
+    "plan": {
+      "passed": true,
+      "seconds": 45.548,
+      "source_unchanged": true
+    },
+    "apply": {
+      "passed": true,
+      "seconds": 76.114,
+      "source_unchanged": true
+    },
+    "check": {
+      "passed": true,
+      "seconds": 12.527,
+      "source_unchanged": true
+    },
+    "build": {
+      "passed": true,
+      "seconds": 234.116,
+      "source_unchanged": true
+    },
+    "freeze": {
+      "passed": true,
+      "seconds": 0.939,
+      "source_unchanged": true
+    }
+  },
+  "compiler_warnings": 0,
+  "client_sha256": "45b12b5ec64b858d3f6bd8a00ba68989fbb5e5565ee4e9a27991e6558f71ee10",
+  "control_sha256": "504f141b15926b8c74c0ac809a620cbb009f80f612c76386b155b23e85574292",
+  "package_sha256": "2f0e7ee3b0e2ef5de8df9b1b277d59d40aae3aaa8debec56ab290108076269ac",
+  "driver_sha256": "d77c4dfbb276f556df1af3eeae3aa36a539ce81586d556c45a49c61edd3a0188",
+  "settings_sha256": "e8a85d6a8873c50913b9b38bc03e97de68b02c76d8852e4354fc99248ebc5be1",
+  "runtime": {
+    "automatic_checks_passed": 59,
+    "failed_checks": 0,
+    "first_exit_code": 0,
+    "final_exit_code": 0,
+    "frozen_inputs_unchanged": true,
+    "framebuffer_sizes": {
+      "initial": [
+        2000,
+        1125
+      ],
+      "restart": [
+        1600,
+        1200
+      ],
+      "display_scale": 1.25
+    },
+    "fresh_generated_singleplayer_only": true,
+    "checks": [
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "day native sky differs when enabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "day disabling restores native sky",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "night native sky differs when enabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "night disabling restores native sky",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "planet-directed-view native sky differs when enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Planet body stays in its world direction as camera rotates",
+        "status": "pass"
+      },
+      {
+        "name": "Returning camera restores static planet view",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "Disabling planet restores native sky",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Planet body and ring visibility",
+        "status": "observed"
+      },
+      {
+        "name": "World anchoring across yaw/pitch",
+        "status": "observed"
+      },
+      {
+        "name": "Changing yaw changes directional sky",
+        "status": "pass"
+      },
+      {
+        "name": "Returning camera returns to static same sky",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "opaque-wall opaque scene preserved",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "enclosed-cave opaque scene preserved",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "submerged-water opaque scene preserved",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "daytime-zero opaque scene preserved",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "native-rain-preserved native sky differs when enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Rain policy",
+        "status": "observed"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "dimension-the_nether opaque scene preserved",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "dimension-the_end opaque scene preserved",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "Local offscreen timing baseline-before",
+        "status": "observed"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Local offscreen timing space-balanced",
+        "status": "observed"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Local offscreen timing aurora-balanced",
+        "status": "observed"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Local offscreen timing ringed-planet-balanced",
+        "status": "observed"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Local offscreen timing space-performance",
+        "status": "observed"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "Local offscreen timing baseline-after",
+        "status": "observed"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "World beauty persists across F1",
+        "status": "pass"
+      },
+      {
+        "name": "World beauty persists behind native module menu",
+        "status": "pass"
+      },
+      {
+        "name": "Native shaderpack selection saved",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass"
+      },
+      {
+        "name": "Real native conflict pack rendered its green sky",
+        "status": "pass"
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Native pack owns sky while Atmosphere enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Cosmic sky returns when native pack disabled",
+        "status": "pass"
+      },
+      {
+        "name": "Title and no-player renderer gates",
+        "status": "not-covered"
+      },
+      {
+        "name": "Settings survive real client restart",
+        "status": "pass"
+      },
+      {
+        "name": "Alternate native render size",
+        "status": "observed"
+      }
+    ],
+    "gaps": [
+      {
+        "name": "Title and no-player renderer gates",
+        "status": "not-covered",
+        "evidence": "Source-reviewed separately; this in-world suite does not claim runtime title/no-player coverage."
+      }
+    ],
+    "completed": "2026-10-31T12:53:19.807085+00:00"
+  },
+  "gpu_observations": {
+    "adapter": "NVIDIA GeForce GTX 1650 Ti",
+    "backend": "Vulkan",
+    "driver": "581.80",
+    "sample_seconds": 3,
+    "benchmarks": [
+      {
+        "label": "baseline-before",
+        "mode": null,
+        "quality": "Balanced",
+        "camera_yaw_pitch": [
+          -35.264,
+          -30
+        ],
+        "native_framebuffer_size": [
+          2000,
+          1125
+        ],
+        "frames": 347,
+        "gpu": {
+          "avg_ms": 0.7387638976663266,
+          "max_ms": 0.8139839768409729,
+          "p50_ms": 0.7373120188713074,
+          "p95_ms": 0.7508479952812195,
+          "p99_ms": 0.8110079765319824
+        },
+        "cpu": {
+          "avg_ms": 0.8381449556144582,
+          "max_ms": 2.864300012588501,
+          "p50_ms": 0.7095000147819519,
+          "p95_ms": 1.8683000802993777,
+          "p99_ms": 2.216400146484375
+        }
+      },
+      {
+        "label": "space-balanced",
+        "mode": "Space",
+        "quality": "Balanced",
+        "camera_yaw_pitch": [
+          -35.264,
+          -30
+        ],
+        "native_framebuffer_size": [
+          2000,
+          1125
+        ],
+        "frames": 348,
+        "gpu": {
+          "avg_ms": 2.7314862423929673,
+          "max_ms": 2.982111930847168,
+          "p50_ms": 2.865151882171631,
+          "p95_ms": 2.945568084716797,
+          "p99_ms": 2.947808027267456
+        },
+        "cpu": {
+          "avg_ms": 0.815506611319109,
+          "max_ms": 2.452000141143799,
+          "p50_ms": 0.6872000098228455,
+          "p95_ms": 1.827699899673462,
+          "p99_ms": 2.1542000770568848
+        }
+      },
+      {
+        "label": "aurora-balanced",
+        "mode": "Aurora",
+        "quality": "Balanced",
+        "camera_yaw_pitch": [
+          -35.264,
+          -30
+        ],
+        "native_framebuffer_size": [
+          2000,
+          1125
+        ],
+        "frames": 347,
+        "gpu": {
+          "avg_ms": 2.5037552479021143,
+          "max_ms": 2.7126400470733643,
+          "p50_ms": 2.541248083114624,
+          "p95_ms": 2.65116810798645,
+          "p99_ms": 2.654144048690796
+        },
+        "cpu": {
+          "avg_ms": 0.8262123896684015,
+          "max_ms": 2.731099843978882,
+          "p50_ms": 0.7106999754905701,
+          "p95_ms": 1.7778000831604004,
+          "p99_ms": 2.225100040435791
+        }
+      },
+      {
+        "label": "ringed-planet-balanced",
+        "mode": "Ringed Planet",
+        "quality": "Balanced",
+        "camera_yaw_pitch": [
+          -35.264,
+          -30
+        ],
+        "native_framebuffer_size": [
+          2000,
+          1125
+        ],
+        "frames": 347,
+        "gpu": {
+          "avg_ms": 3.017966104859234,
+          "max_ms": 3.0945279598236084,
+          "p50_ms": 2.998271942138672,
+          "p95_ms": 3.0598080158233643,
+          "p99_ms": 3.0639359951019287
+        },
+        "cpu": {
+          "avg_ms": 0.810942075180389,
+          "max_ms": 2.455199956893921,
+          "p50_ms": 0.6462999582290649,
+          "p95_ms": 1.7338000535964966,
+          "p99_ms": 2.2848000526428223
+        }
+      },
+      {
+        "label": "space-performance",
+        "mode": "Space",
+        "quality": "Performance",
+        "camera_yaw_pitch": [
+          -35.264,
+          -30
+        ],
+        "native_framebuffer_size": [
+          2000,
+          1125
+        ],
+        "frames": 347,
+        "gpu": {
+          "avg_ms": 2.7007116577467247,
+          "max_ms": 2.8348159790039062,
+          "p50_ms": 2.708832025527954,
+          "p95_ms": 2.7892799377441406,
+          "p99_ms": 2.795488119125366
+        },
+        "cpu": {
+          "avg_ms": 0.8283193062464854,
+          "max_ms": 2.4041998386383057,
+          "p50_ms": 0.671999990940094,
+          "p95_ms": 1.8488999605178833,
+          "p99_ms": 2.2448999881744385
+        }
+      },
+      {
+        "label": "baseline-after",
+        "mode": null,
+        "quality": "Balanced",
+        "camera_yaw_pitch": [
+          -35.264,
+          -30
+        ],
+        "native_framebuffer_size": [
+          2000,
+          1125
+        ],
+        "frames": 348,
+        "gpu": {
+          "avg_ms": 0.737826575150435,
+          "max_ms": 0.8168960213661194,
+          "p50_ms": 0.7358080148696899,
+          "p95_ms": 0.7497280240058899,
+          "p99_ms": 0.8073599934577942
+        },
+        "cpu": {
+          "avg_ms": 0.7663936754581572,
+          "max_ms": 2.8305001258850098,
+          "p50_ms": 0.6349999904632568,
+          "p95_ms": 1.5712000131607056,
+          "p99_ms": 1.7891000509262085
+        }
+      }
+    ],
+    "limits": "One fixed sky-facing fixture, warm pipelines and no portable FPS claim. Performance quality had only a small mean GPU difference in this run."
+  },
+  "regressions_resolved": [
+    "Cached GPU handles now release from supported pre-exit hook before renderer/TLS teardown.",
+    "Solar-height classifier separates daytime strength from rain-attenuated native star brightness.",
+    "Private test vignette and menu dim are explicitly disabled before pixel comparisons."
+  ],
+  "limits": [
+    "No raw physical Winit input or external multiplayer testing.",
+    "Title/no-player exclusion is source-reviewed, not established by this in-world suite.",
+    "Native shader-pack conflict is runtime-tested; classic Java shader-pack gate is source-reviewed.",
+    "Overworld only; other dimensions/fluid/blocked-sky paths use the ordinary sky.",
+    "Custom sky intentionally persists in rain; native weather particles/fog/state are unchanged."
+  ],
+  "screenshots": {
+    "day-cosmic": {
+      "file": "images/atmosphere-day-cosmic.png",
+      "sha256": "8048b322cc172b2b4fda0acf9b2cfca53b360e4fd7a05cf47204b051fb30e4c5",
+      "size": [
+        2000,
+        1125
+      ]
+    },
+    "night-cosmic": {
+      "file": "images/atmosphere-night-cosmic.png",
+      "sha256": "21d92c18c42f2eb823d4397b5f321ad3f77e9598455680a098835baeb42ae11b",
+      "size": [
+        2000,
+        1125
+      ]
+    },
+    "planet-directed-view-cosmic": {
+      "file": "images/atmosphere-planet-directed-view-cosmic.png",
+      "sha256": "1d4c3e943f365bb825a76ca8e4db3984f2428f592007e4de5c10b7ad2081b59f",
+      "size": [
+        2000,
+        1125
+      ]
+    },
+    "restart-alternate-native-resolution": {
+      "file": "images/atmosphere-restart-alternate-native-resolution.png",
+      "sha256": "9539f348ccd5366b6f799f818959dbf5ecf700ef45543b2eb7f36076d9174335",
+      "size": [
+        1600,
+        1200
+      ]
+    }
+  },
+  "natural_world_capture": {
+    "native_exit_code": 0,
+    "driver_exit_code": 0,
+    "frozen_inputs_unchanged": true,
+    "natural_world_seed": 1,
+    "unmodified_terrain": true,
+    "quality": "Balanced",
+    "speed": 0,
+    "daytime_strength": 1,
+    "screenshots": [
+      {
+        "path": "docs/images/atmosphere-hero-space.png",
+        "sha256": "488562499cb6bad43d8f6f4c7e134df305ad9cc1806b1e85de6ce9c5d517c57c",
+        "size": [
+          2000,
+          1125
+        ],
+        "mode": "hero-space-natural-fullbright",
+        "unchanged": true,
+        "fullbright": true,
+        "native_clouds": true
+      },
+      {
+        "path": "docs/images/atmosphere-hero-aurora.png",
+        "sha256": "ca3769896fab06a045aa6881271547082aafc5011eced1b993664c080ecdcff7",
+        "size": [
+          2000,
+          1125
+        ],
+        "mode": "hero-aurora-natural-fullbright",
+        "unchanged": true,
+        "fullbright": true,
+        "native_clouds": true
+      },
+      {
+        "path": "docs/images/atmosphere-hero-planet.png",
+        "sha256": "e7b3126acfe45de874795822887d86b53e8cec50be5c43dc0f4d0630d3462ecc",
+        "size": [
+          2000,
+          1125
+        ],
+        "mode": "hero-planet-day-natural-clouds-off-forest",
+        "unchanged": true,
+        "fullbright": false,
+        "native_clouds": false
+      }
+    ],
+    "note": "Space and Aurora are night captures with existing Fullbright enabled. Planet is daylight with Fullbright off and native clouds disabled. Original native framebuffer PNGs, no image editing."
+  }
+}
