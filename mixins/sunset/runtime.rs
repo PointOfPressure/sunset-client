@@ -1772,8 +1772,10 @@ fn module_tick(game: &mut Game<'_>) {
     }
     if let Some(m) = get("Nuker") {
         nuker(game, m);
-    } else {
-        with(|s| s.nuke = None);
+    } else if let Some((pos, _)) = with(|s| s.nuke.take()) {
+        // Turned off in the middle of a block: the server stops digging it too.
+        let seq = super::sunset_util::sequence(game);
+        game.send(S::PlayerAction(play::PlayerAction { action: 2, pos, direction: 1, sequence: seq }));
     }
     if let Some(m) = get("Auto Tool") {
         auto_tool(game, m);
@@ -2572,6 +2574,9 @@ fn nuke_cube(game: &Game<'_>, m: &Module, at: [f64; 3]) -> [[f64; 3]; 2] {
 // (behind a block, within Walls range) and the lists allow; sorted, then broken: as many as Max blocks per tick of
 // those that break at once, else the first, mined over the ticks it takes (Packet mine starts and stops them all).
 // Interact right-clicks them instead.
+// How long a block Nuker sent waits for the server's update before it is tried again.
+const NUKE_WAIT: u64 = 40;
+
 pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
     with(|s| {
         s.nuke_broken.retain_mut(|(_, t)| {
@@ -2594,7 +2599,7 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
             // The block is still there until the server's update arrives: leave it alone meanwhile.
             with(|s| {
                 s.nuke = None;
-                s.nuke_skip.push((pos, now + 6));
+                s.nuke_skip.push((pos, now + NUKE_WAIT));
             });
         } else {
             with(|s| s.nuke = Some((pos, left - 1)));
@@ -2608,8 +2613,10 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
     }) {
         return;
     }
+    // Blocks sent wait for the server's update (the block gone here) or, should the server refuse, NUKE_WAIT ticks.
     let skip = with(|s| {
-        s.nuke_skip.retain(|&(_, until)| until > now);
+        let facts = game.res.facts();
+        s.nuke_skip.retain(|&(p, until)| until > now && !facts.is_air(game.world.block(p[0], p[1], p[2])));
         s.nuke_skip.iter().map(|&(pos, _)| pos).collect::<Vec<_>>()
     });
     let Some(p) = game.player.as_ref() else {
@@ -2712,7 +2719,10 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
     if wait {
         return;
     }
+    // No more blocks awaiting the server's answer than two ticks' worth: a server that falls behind is not flooded
+    // with blocks sent again and again (Horizon's dropped a client 8000 packets behind).
     let (max, packet) = (m.n("Max blocks per tick") as usize, m.b("Packet mine"));
+    let max = max.min((2 * max).saturating_sub(skip.len()));
     let mut done = 0;
     let mut sent: Vec<([i32; 3], u64)> = Vec::new();
     // What goes to the server, after the look when Rotate is on.
@@ -2731,12 +2741,13 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
             out.push(S::PlayerAction(play::PlayerAction { action: 0, pos, direction: 1, sequence: seq }));
             if packet && !instant {
                 let seq = super::sunset_util::sequence(game);
-                out.push(S::PlayerAction(play::PlayerAction { action: 2, pos, direction: 1, sequence: seq }));
+                // 26.x numbers the actions START 0, ABORT 2, STOP 3.
+                out.push(S::PlayerAction(play::PlayerAction { action: 3, pos, direction: 1, sequence: seq }));
             } else if !instant {
                 with(|s| s.nuke = Some((pos, ticks)));
             }
             // The block shows until the server's update comes back: next tick go on to new ones, not these again.
-            sent.push((pos, now + 4));
+            sent.push((pos, now + NUKE_WAIT));
         }
         with(|s| {
             s.nuke_last = Some(pos);

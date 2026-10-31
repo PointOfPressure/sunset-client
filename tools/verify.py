@@ -1063,6 +1063,49 @@ def _():
 
 # ---- player and world
 
+def nuker_soak(mode):
+    """Nuker on for 60 s in a field (stone, dirt, iron and coal ore, two high) round the player, who strafes left and
+    right: six 10 s rounds of five 2 s steps, the field filled again before each step. Blocks broken a round must not
+    fall off."""
+    reset(mode)
+    slot(0, "diamond_pickaxe")
+    ctl("key", "1", "tap")
+    field = (X0 - 6, Y + 1, Z0 + 1, X0 + 6, Y + 2, Z0 + 15)
+    def fill():
+        x1, y1, z1, x2, y2, z2 = field
+        cmd(f"fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:stone", f"fill {x1} {y1} {z1+4} {x2} {y1} {z1+6} minecraft:dirt",
+            f"fill {x1} {y2} {z1+8} {x2} {y2} {z1+9} minecraft:iron_ore", f"fill {x1} {y1} {z1+11} {x2} {y2} {z1+11} minecraft:coal_ore",
+            f"fill {X0} {y1} {Z0+8} {X0} {y2} {Z0+8} minecraft:air")
+    def left():
+        return sum(ctl("blocks", *map(str, field)).get("counts", {}).values())
+    only("nuker")
+    rounds = []
+    for _ in range(6):
+        broken = 0
+        for step in range(5):
+            cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 8.5} 0 0")
+            fill()
+            wait(3)
+            full = left()
+            held_keys(("a" if step % 2 else "d",), 40)
+            broken += full - left()
+        rounds.append(broken)
+    only()
+    cmd(f"fill {field[0]} {field[1]} {field[2]} {field[3]} {field[4]} {field[5]} minecraft:air")
+    ok = rounds[0] > 8 and min(rounds) >= 0.6 * rounds[0]
+    return ok, f"blocks broken each 10 s ({mode}): {rounds}"
+
+
+@test("Nuker soak (survival, 60 s)")
+def _():
+    return nuker_soak("survival")
+
+
+@test("Nuker soak (creative, 60 s)")
+def _():
+    return nuker_soak("creative")
+
+
 @test("Nuker (survival)")
 def _():
     slot(0, "iron_pickaxe")
