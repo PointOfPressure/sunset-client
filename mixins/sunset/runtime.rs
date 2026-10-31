@@ -1646,7 +1646,12 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
 // Before the game ticks: keys this mod holds, abilities, step height.
 pub(super) fn pre_tick(game: &mut Game<'_>) {
     sync_binds(game);
-    if !game.native_window() || !game.native_on(ID) || game.player.is_none() {
+    // Single player's own server ticks a game of its own (no window) through here too: it must leave the player's
+    // state alone, or it clears Velocity's baseline and Speed's push between the client's ticks.
+    if !game.native_window() {
+        return;
+    }
+    if !game.native_on(ID) || game.player.is_none() {
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
         horizon_client::motion::sunset_motion::set_safe_walk(false);
