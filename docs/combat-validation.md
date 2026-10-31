@@ -301,6 +301,21 @@ the checkpoint record. The private two-client player-death, fresh-input,
 expiry and per-owner bypass checks remain pending.
 Earlier screenshots and R7–R9 results remain evidence for those checkpoints.
 
+## R10 GUI history
+
+[Four GUI behaviors with passing outcomes](evidence/combat/gui-intent-r10.md)
+cover a native Options checkbox, overlay numeric reset, mouse picker and
+numeric Enter ownership. The original strict-save attempt remains a failure:
+the final desired value persisted after normal disable, while the assertion
+expected an immediate file save before closing the overlay. The successful
+R10 rerun used an explicit unrelated save and is labelled accordingly.
+
+Control-socket digit/Enter events also reached native hotbar/chat actions on
+R10. This is the capture defect addressed by R12; the historical GUI ownership
+results do not establish the later fix. One generic failure postframe was
+overwritten during that old runner attempt. Four original failure captures
+remain verified; the missing frame is disclosed rather than substituted.
+
 ## Native screenshots
 
 These files are unmodified native framebuffer captures. The private pair used
