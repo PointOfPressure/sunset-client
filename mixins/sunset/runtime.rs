@@ -698,6 +698,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
+    v.extend(super::sunset_vanish::defaults());
     // Modules that only draw can be held on with their bind instead of toggled.
     for m in v.iter_mut().filter(|m| holds(m.name)) {
         m.settings.push(Setting { name: "Bind mode", value: Value::Pick { i: 0, of: &["Toggle", "Hold"] } });
@@ -2191,6 +2192,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_player::tick(game, &mods);
     super::sunset_world::tick(game, &mods);
+    super::sunset_vanish::tick(game, mods.iter().find(|m| m.name == "Anti Vanish" && m.on));
     crit_tick(game);
     if let Some(m) = get("Kill Aura") {
         kill_aura(game, m, get("Criticals").is_some());
@@ -6028,6 +6030,8 @@ pub(super) fn open_gui(game: &mut Game<'_>) {
         return;
     }
     ensure_loaded(game);
+    // The menu is drawn with the HUD: opened while F1 hides it, the HUD comes back.
+    game.ui.hide_gui = false;
     game.keys.clear();
     game.capture(false);
     with(|s| {

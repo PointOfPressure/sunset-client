@@ -1271,6 +1271,28 @@ def close_menu():
             wait(3)
 
 
+@test("F1 with the menu open")
+def _():
+    # F1 leaves the HUD (and the menu drawn with it) shown while the menu is open; closed, F1 hides the HUD again.
+    ctl("look", "0", "0")
+    wait(5)
+    shut = brightness("f1_shut")
+    say(".menu")
+    wait(5)
+    shown = brightness("f1_open")
+    ctl("key", "f1", "tap")
+    wait(5)
+    after = brightness("f1_after")
+    close_menu()
+    ctl("key", "f1", "tap")
+    wait(5)
+    hidden = brightness("f1_hidden")
+    ctl("key", "f1", "tap")
+    wait(5)
+    return abs(after - shown) < abs(after - shut) / 10 and abs(hidden - shut) > 0.001, (
+        f"mean brightness: menu shut {shut:.4f}, open {shown:.4f}, after F1 {after:.4f}; F1 with it shut {hidden:.4f}")
+
+
 @test("List picker")
 def _():
     # Xray's Blocks chosen in the picker: coal ore listed first, "diamond" typed, the first block it finds clicked in,
@@ -2599,6 +2621,41 @@ def _():
     trial = any(line.startswith("unknown trial spawner") for line in said)
     return zombie and trial and len(said) == 2 and labelled > before + 50, (
         f"chat: {said}; label pixels {before} -> {labelled}")
+
+
+@test("Anti Vanish")
+def _():
+    # Bot1 leaves and comes back with the server's leave and join messages: nothing said. Then it leaves and comes back
+    # with those messages pushed out of the recent chat (as if a vanish plugin had sent none): a line each time. The
+    # completion check (/msg) finds nobody hidden.
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    setting("antivanish", "interval", "200")
+    setting("antivanish", "completion check", "true")
+
+    def bot(away, flood):
+        """Bot1 leaves (or comes back) between two of Anti Vanish's checks; what it said about Bot1."""
+        only("antivanish")
+        wait(210)
+        mark = log_mark()
+        if away:
+            ctl2("disconnect")
+        else:
+            ctl2("key", "esc", "tap")
+            time.sleep(2)
+            ctl2("connect", SERVER, "Bot1")
+            ctl2("wait-ready", "50")
+        if flood:
+            cmd(*(f"say {i}" for i in range(21)))
+        wait(210)
+        only()
+        return [line for line in sunset_said(mark) if "Bot1" in line]
+
+    told = [bot(True, False), bot(False, False), bot(True, True), bot(False, True)]
+    cmd("gamemode spectator Bot1")
+    ok = not told[0] and not told[1] and any("left the tab list" in x for x in told[2]) and any("came back" in x for x in told[3])
+    hidden = any("not in the tab list" in x for t in told for x in t)
+    return ok and not hidden, f"lines about Bot1: with messages {told[0] + told[1]}; without {told[2] + told[3]}"
 
 
 @test("Hole ESP")

@@ -69,6 +69,12 @@ name = "sunset_world"
 source = "world.rs"
 
 [[module]]
+id = "vanish"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_vanish"
+source = "vanish.rs"
+
+[[module]]
 id = "remote_seq"
 file = "crates/horizon-client/src/game/remote.rs"
 name = "sunset_remote"
@@ -644,4 +650,30 @@ target = "horizon_client::game::follow_keymap"
 helper = "window_event.rs"
 bindings = [
   { name = "event", ty = "&winit::event::WindowEvent", value = "&*event" },
+]
+
+[[injection]]
+id = "hide_hud"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::chat::Game<'_>::toggle_hide_gui"
+helper = "hide_hud.rs"
+bindings = []
+
+[[injection]]
+id = "vanish_connect"
+kind = "HEAD"
+target = "horizon_client::game::extras::Game<'_>::extras_connecting"
+helper = "vanish_connect.rs"
+bindings = [{ name = "address", ty = "&str", value = "address" }]
+
+[[injection]]
+id = "vanish_completions"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::handle_command_suggestions"
+helper = "vanish_completions.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "data", ty = "&[u8]", value = "data" },
 ]
