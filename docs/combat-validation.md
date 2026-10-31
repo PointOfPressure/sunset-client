@@ -20,7 +20,9 @@ Aura obsidian setup. Its [checkpoint](evidence/combat/checkpoint-r11.json) and
 [source fingerprints](evidence/combat/source-r11.json) identify client
 `cea1d258a07c498e7d46d805eeaa2f16d10738fe7f8d5b560e7fac478388ea4e`.
 There are 63 support modules, 51 injections and one unused-helper warning.
-R11 live setup checks are pending; build success is not their proof.
+All 19 isolated native explosive cases pass on R11, with exit0 and unchanged
+frozen inputs, while Auto obsidian remains at its default off. Optional live
+setup checks are pending; those regression cases do not test setup.
 
 ## Confirmed R4 player outcomes
 

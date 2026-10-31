@@ -59,5 +59,89 @@
     "Actual obsidian block payload plus observed-world agreement before ordinary fresh Crystal placement.",
     "Three attempts per unchanged cell,30-tick wait,64-cell ledger; independent setup clock."
   ],
-  "runtime_status": "Native R11 standalone regression and paired-player Auto Obsidian tests pending; older results remain tied to their original checkpoints."
+  "runtime_status": "All19 isolated native explosive cases pass with AutoObsidian defaultoff; paired-player optional setup tests pending.",
+  "isolated_native": {
+    "started_utc": "2026-10-31T22:42:50.381372+00:00",
+    "report_sha256": "717388afe55c7ba4b4747e4b5f26b4e31bd923ed689c43310ef6b206295e6cc5",
+    "exit_code": 0,
+    "frozen_unchanged": true,
+    "checks": [
+      {
+        "name": "Explosives: crystal-cycle",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-controls",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-default-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-no-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-no-items",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-self-zero",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-hidden-face",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-cycle",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-existing",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-offhand-fuel",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-disable",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-self-zero",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-no-items",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-default-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-place-off",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: both-enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-anti-suicide",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-anti-suicide",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: equipment-model",
+        "status": "pass"
+      }
+    ]
+  }
 }
