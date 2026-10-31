@@ -138,6 +138,11 @@ pins, stage it with [horizon-mixins](https://github.com/horizon-rust/horizon-mix
 `cargo check -p horizon-client` in the stage. `tools/verify.py` runs the modules in a test arena in a headless
 game; `tools/audit.py` lists which of Meteor's settings are still missing.
 
+## Feature planning
+
+See the [feature roadmap](docs/feature-roadmap.md) for landed contributions,
+priorities, dependencies and remaining validation.
+
 ## Credits
 
 Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: [vstxx](https://github.com/vstxx), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
