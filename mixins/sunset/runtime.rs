@@ -373,6 +373,14 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Max speed", 2.0, 0.5, 5.0, 0.5),
         Module::new("Anti Void", Movement, "Bounces you out of the void."),
         // Player
+        Module::new("Anti Vanish", Player, "Checks watched players on the connected server. Server profile selects auto or an id; Edit profile loads that id's address, player and completion-command fields. TAB checks are passive; Completion checks send requests only when enabled.")
+            .text("Server profile", "auto")
+            .text("Edit profile", "donutsmp")
+            .text("Server addresses", "donutsmp.net")
+            .text("Watched players", "")
+            .pick("Completion command", &["msg", "tell", "w"])
+            .bool("TAB checks", true)
+            .bool("Completion checks", false),
         Module::new("Fast Place", Player, "Places blocks faster while you hold use. Speed 1 is 6 blocks a second, 2 is 8, 3 is 10, 4 is 14 and 5 is 20 (the game's own is 5).")
             .num("Speed", 5.0, 1.0, 5.0, 1.0),
         Module::new("Break Delay", Player, "Changes the delay between breaking one block and the next (Meteor's Break Delay): 0 means none.")
@@ -1023,9 +1031,13 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
         s.loaded = true;
         sync_flags(s);
     });
+    super::sunset_watch_ui::ensure_loaded(game);
 }
 
 pub(super) fn save(game: &Game<'_>) {
+    // Validate and persist watchlists before serializing the module's editor fields.
+    // This runs outside STATE: the watchlist controller also reads the module.
+    super::sunset_watch_ui::sync(game);
     let text = with(|s| {
         release_changed_binds(s);
         sync_flags(s);
@@ -3814,6 +3826,7 @@ const HELP: &[(&str, &str)] = &[
     (".reset <module>", "put a module back to its defaults"),
     (".panic", "turn every module off"),
     (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
+    (".watch help", "manage separate server watchlists and choose auto or a profile id"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
     (".vclip <blocks>", "move up or down"),
@@ -3874,6 +3887,8 @@ fn profile_command(game: &mut Game<'_>, args: &[&str]) {
                 let before = with(|s| s.profile_text());
                 store.write(BACKUP, &format!("{HEADER}\n{before}\n"))?;
                 with(|s| s.load_profile(&body));
+                // Global module profiles never replace independently saved watchlists.
+                super::sunset_watch_ui::reload_editor();
                 save(game);
                 Ok(format!("Loaded profile {name}. .profile load {BACKUP} puts the settings back as they were."))
             }
@@ -4042,6 +4057,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
             }
         }
         "panic" => panic_off(game),
+        "watch" => super::sunset_watch_ui::command(game, &args[1..]),
         "profile" | "profiles" | "config" | "cfg" => profile_command(game, &args[1..]),
         "reset" => {
             if let Some(i) = module_arg(game, args.get(1)) {
@@ -4051,6 +4067,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                     s.modules[i] = fresh;
                     s.modules[i].name
                 });
+                if name == "Anti Vanish" { super::sunset_watch_ui::reload_editor(); }
                 save(game);
                 say(game, &format!("{name} reset."));
             }

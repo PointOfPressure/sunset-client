@@ -9,6 +9,92 @@ priority = 100
 horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
 
 [[module]]
+id = "watch_config"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_watch_config"
+source = "watch_config.rs"
+
+[[module]]
+id = "watch_state"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_watch_state"
+source = "watch_state.rs"
+
+[[module]]
+id = "watch_ui"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_watch_ui"
+source = "watch_ui.rs"
+
+[[module]]
+id = "watch_wire"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_watch_wire"
+source = "watch_wire.rs"
+
+[[module]]
+id = "watch_runtime"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_watch_runtime"
+source = "watch_runtime.rs"
+
+[[module]]
+id = "watch_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_watch_remote"
+source = "watch_remote.rs"
+visibility = "pub(crate)"
+
+[[injection]]
+id = "watch_frame"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_frame"
+helper = "watch_frame.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[injection]]
+id = "watch_connect"
+kind = "HEAD"
+target = "horizon_client::game::extras::Game<'_>::extras_connecting"
+helper = "watch_connect.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "address", ty = "&str", value = "address" },
+]
+
+[[injection]]
+id = "watch_local"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::connect_local"
+helper = "watch_local.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[injection]]
+id = "watch_leave"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::leave_server"
+helper = "watch_leave.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[injection]]
+id = "watch_dimension"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::enter_remote_dimension"
+helper = "watch_dimension.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[injection]]
+id = "watch_suggestions"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::handle_command_suggestions"
+helper = "watch_suggestions.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "data", ty = "&[u8]", value = "data" },
+]
+
+[[module]]
 id = "runtime"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset"

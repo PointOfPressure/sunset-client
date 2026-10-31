@@ -57,6 +57,10 @@ Press **`** (or **Right Shift**) for the menu. Every category is a panel.
 
 Everything is saved as you change it.
 
+**Anti Vanish** supports separate server watchlists, automatic address matching,
+and optional command-completion checks. Start with `.watch help`;
+[setup and evidence meanings](docs/server-watchlists.md) explain the editor and alerts.
+
 ### Chat commands
 
 They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
