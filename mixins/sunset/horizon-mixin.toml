@@ -63,6 +63,24 @@ name = "sunset_explosive_policy"
 source = "explosive_policy.rs"
 
 [[module]]
+id = "loot_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_loot_policy"
+source = "loot_policy.rs"
+
+[[module]]
+id = "loot_guard"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_loot_guard"
+source = "loot_guard.rs"
+
+[[module]]
+id = "loot_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_loot_remote"
+source = "loot_remote.rs"
+
+[[module]]
 id = "explosive_damage"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_explosive_damage"

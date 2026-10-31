@@ -138,7 +138,7 @@ pub(super) fn diagnostics() -> String {
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![Module::new(NAME, Category::Combat,
-        "Places and breaks observed crystals with bounded damage checks. Target damage is estimated; self checks use the selected damage model, friends use unmitigated damage.")
+        "Places and breaks observed crystals with bounded damage checks. Target damage is estimated; self checks use the selected damage model, friends use unmitigated damage. Protect loot pauses module-planned blasts near an observed player death for 30 seconds; it does not track dropped items.")
         .text("Entities", "player")
         .bool("Place", true).bool("Break", true)
         .num("Target range", 8.0, 1.0, 12.0, 0.5)
@@ -148,6 +148,7 @@ pub(super) fn defaults() -> Vec<Module> {
         .num("Min target damage", 6.0, 0.0, 36.0, 0.5)
         .num("Max self damage", 6.0, 0.0, 36.0, 0.5)
         .pick("Damage model", &["Observed equipment", "Unmitigated"])
+        .bool("Protect loot", true)
         .num("Max friend damage", 0.0, 0.0, 36.0, 0.5)
         .bool("Anti suicide", true)
         .num("Min remaining health", 4.0, 1.0, 20.0, 0.5)
@@ -213,6 +214,7 @@ fn valid_damage(game: &mut Game<'_>, m: &Module, at: [f64; 3], targets: &[Target
     // Horizon destroys explosion-damaged neighboring crystals without a
     // second blast (destroy_crystal(..., CrystalDamage::Explosion)).
     let blast = Blast::explosion(at, 6.0);
+    if !super::sunset_loot_guard::allows(game, blast, m.b("Protect loot")) { policy_failed(8); return None; }
     let Some(prediction) = local_damage(game, blast, budget) else { policy_failed(1); return None; };
     let own = safety_damage(prediction, m.p("Damage model"));
     let p = game.player.as_ref()?;

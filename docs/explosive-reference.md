@@ -41,7 +41,7 @@ bounded retries, conservative hurt-window deferral, equipment-aware self
 prediction, shared opportunity selection and diagnostics. Separate native
 manual macros now implement user-triggered observed transactions. This does
 not establish full parity with movement prediction, all manual-macro options, automatic obsidian,
-face placement, loot protection or the reference's visual plan renderer.
+face placement or the reference's visual plan renderer. Recent-death protection is now implemented as the narrower policy below.
 
 ## Native differences kept deliberately
 
@@ -57,3 +57,18 @@ uses a three-block survival ray. An exactly three-block nearest-box contact
 can therefore miss under that server's center-directed ray. Test fixtures
 stay inside the boundary; public-server behavior is not inferred from this
 host-specific observation.
+
+## Original recent-death guard
+
+The exact 1.0 reference sets Protect Loot true in Crystal Aura, Anchor Aura and
+Single Anchor Macro. Crystal Macro invokes its shared death latch without a
+separate checkbox. Native R10 instead offers one consistent optional setting
+across all four owners, true by default. This is an intentional native policy,
+not a claim to reproduce the reference's item detection or input latch.
+
+The original Rust guard records observed player death locations for 30 seconds
+using native entity identity and last-server positions. It uses fixed storage,
+a conservative blast-radius margin, explicit lifecycle boundaries and owned
+transaction cancellation. No decompiled Java expression or implementation is
+included. See [module scope](combat-modules.md#recent-player-death-protection-r10-source)
+for the exact limits and explicit clear command.

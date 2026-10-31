@@ -29,7 +29,7 @@ const ACK_TIMEOUT: u64 = 30;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![Module::new(NAME, Category::Combat,
-        "Observed anchor sequence with target estimates and selected self-damage model. Hidden server rules remain unknown; friends use unmitigated damage.")
+        "Observed anchor sequence with target estimates and selected self-damage model. Hidden server rules remain unknown; friends use unmitigated damage. Protect loot pauses module-planned blasts near an observed player death for 30 seconds; it does not track dropped items.")
         .bool("Place", true)
         .text("Entities", "player")
         .num("Target range", 10.0, 1.0, 16.0, 0.5)
@@ -38,6 +38,7 @@ pub(super) fn defaults() -> Vec<Module> {
         .num("Min damage", 6.0, 0.0, 36.0, 0.5)
         .num("Max self damage", 6.0, 0.0, 36.0, 0.5)
         .pick("Damage model", &["Observed equipment", "Unmitigated"])
+        .bool("Protect loot", true)
         .num("Max friend damage", 0.0, 0.0, 36.0, 0.5)
         .bool("Anti suicide", true)
         .num("Min health remaining", 4.0, 0.0, 36.0, 0.5)
@@ -311,6 +312,10 @@ fn damage_ok(
     budget: &mut Budget,
 ) -> Option<(u32, Rating)> {
     let blast = Blast::anchor(p);
+    if !super::sunset_loot_guard::allows(game, blast, m.b("Protect loot")) {
+        reason("searching", "loot guard rejected blast");
+        return None;
+    }
     let own = safety_damage(local_damage(game, blast, budget)?, m.p("Damage model"));
     let health = game
         .player

@@ -55,3 +55,13 @@ Diagnostics format text only when `.combatdebug` is requested. There is no new
 per-frame combat log, background network service or render-time attack loop.
 See [validation](combat-validation.md) for what has actually run and
 [module scope](combat-modules.md) for remaining reference differences.
+
+## Recent-death guard
+
+The R10 guard has no tick hook, dropped-item scan or background render work.
+Player death observation uses two O(1) native identity lookups and one bounded
+16-cell update. Protected candidate checks inspect at most 16 fixed locations;
+TTL expiry is lazy. Dimensions use an exact, bounded 256-byte key. Invalid
+positions and capacity overflow fail closed instead of evicting live zones.
+Explicit diagnostic commands allocate their formatted output; update paths do
+not format messages. Existing blast prediction budgets remain unchanged.

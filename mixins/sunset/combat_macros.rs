@@ -25,17 +25,17 @@ type Session = Arc<Mutex<Option<Arc<Counters>>>>;
 
 pub(super) fn defaults() -> Vec<Module> {
     let common = |m: Module| {
-        m.bool("Switch back", true)
+        m.bool("Protect loot", true).bool("Switch back", true)
             .num("Max self damage", 8., 0., 36., 0.5)
             .pick("Damage model", &["Observed equipment", "Unmitigated"])
             .num("Max friend damage", 0., 0., 36., 0.5)
             .num("Min remaining health", 4., 1., 20., 0.5)
     };
     vec![
-        common(Module::new(CRYSTAL, Category::Combat, "Manual right-click crystal cycle. Waits for observed base, crystal and removal; checks self and friend safety before exploding.")
+        common(Module::new(CRYSTAL, Category::Combat, "Manual right-click crystal cycle. Waits for observed base, crystal and removal; checks self and friend safety before exploding. Protect loot pauses module-planned blasts near an observed player death for 30 seconds; it does not track dropped items.")
             .num("Place delay", 2., 0., 20., 1.).num("Break delay", 2., 0., 20., 1.)
             .bool("Auto obsidian", true).num("Obsidian delay", 2., 0., 20., 1.)),
-        common(Module::new(ANCHOR, Category::Combat, "Manual anchor sequence outside anchor-compatible dimensions. Double performs two observed cycles at the clicked position. Guard fallback defaults to cancel.")
+        common(Module::new(ANCHOR, Category::Combat, "Manual anchor sequence outside anchor-compatible dimensions. Double performs two observed cycles at the clicked position. Guard fallback defaults to cancel. Protect loot pauses module-planned blasts near an observed player death for 30 seconds; it does not track dropped items.")
             .pick("Mode", &["Single", "Double"]).num("Delay", 2., 0., 20., 1.)
             .bool("Safe anchor", true).pick("If unguarded", &["Cancel", "Detonate"])),
     ]
@@ -95,7 +95,7 @@ struct Run {
     queued_at: Option<Instant>,
     deadline: u64,
 }
-struct AnchorPress { tick: u64, session: Session, entity: i32, dimension: Dim }
+struct AnchorPress { tick: u64, session: Session, entity: i32, dimension: Dim, start_allowed: bool }
 struct State {
     run: Option<Run>,
     anchor_press: Option<AnchorPress>,
@@ -120,14 +120,15 @@ pub(super) fn user_mouse(game: &Game<'_>, button: MouseButton, pressed: bool) {
     if button == MouseButton::Right {
         let user = !pressed || (super::sunset_combat_control::owner().is_none_or(|o| o == CRYSTAL || o == ANCHOR)
             && game.native_playing() && !gui_open());
-        if user {
-            USER_RIGHT.store(pressed, std::sync::atomic::Ordering::Relaxed);
-            if pressed && allowed(game) {
-                if let Some(remote) = game.remote.as_ref() {
-                    state(|s| s.anchor_press = Some(AnchorPress { tick: game.ticks,
-                        session: remote.session.counters.clone(), entity: remote.entity_id,
-                        dimension: game.dim }));
-                }
+        if user { USER_RIGHT.store(pressed, std::sync::atomic::Ordering::Relaxed); }
+        // Retain a guard-only quick edge even while inventory/lease conditions
+        // pause macro startup. It can consume a protected anchor fallback, but
+        // cannot become a delayed macro start after the pause clears.
+        if pressed && game.native_playing() && game.native_on(sunset::ID) && !gui_open() {
+            if let Some(remote) = game.remote.as_ref() {
+                state(|s| s.anchor_press = Some(AnchorPress { tick: game.ticks,
+                    session: remote.session.counters.clone(), entity: remote.entity_id,
+                    dimension: game.dim, start_allowed: user && allowed(game) }));
             }
         }
     }
@@ -397,7 +398,17 @@ fn crosshair_crystal(game: &Game<'_>, budget: &mut Budget) -> Option<(u32, [f64;
     }
     best.map(|(_, id, at, aim)| (id, at, aim))
 }
+fn planned_blast(kind: Kind, pos: [i32; 3]) -> Blast {
+    match kind {
+        Kind::Anchor => Blast::anchor(pos),
+        Kind::Crystal => Blast::explosion([f64::from(pos[0]) + 0.5, f64::from(pos[1]) + 1.0, f64::from(pos[2]) + 0.5], 6.0),
+    }
+}
+fn loot_allowed(game: &Game<'_>, run: &Run) -> bool {
+    super::sunset_loot_guard::allows(game, planned_blast(run.sequence.kind, run.pos), run.settings.b("Protect loot"))
+}
 fn safe_blast(game: &mut Game<'_>, settings: &Module, blast: Blast, budget: &mut Budget) -> bool {
+    if !super::sunset_loot_guard::allows(game, blast, settings.b("Protect loot")) { return false; }
     let Some(own) =
         local_damage(game, blast, budget).map(|p| safety_damage(p, settings.p("Damage model")))
     else {
@@ -583,14 +594,14 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
     // Native use clicks are consumed on an input tick, after a quick release
     // may already have cleared held state. Retain only one fresh press in the
     // same remote session; consuming it here never starts a held Crystal run.
-    let pressed = state(|s| s.anchor_press.take()).is_some_and(|press| {
+    let press = state(|s| s.anchor_press.take()).filter(|press| {
         game.ticks >= press.tick && game.ticks - press.tick <= 2
             && game.dim == press.dimension
             && game.remote.as_ref().is_some_and(|r| r.entity_id == press.entity
                 && Arc::ptr_eq(&r.session.counters, &press.session))
     });
     let held = down(game);
-    if !held && !pressed { return false; }
+    if !held && press.is_none() { return false; }
     if let Some(kind) = state(|s| s.run.as_ref().map(|r| r.sequence.kind)) {
         return held || kind == Kind::Anchor;
     }
@@ -598,22 +609,27 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
     if state(|s| s.anchor_latched) && anchor.is_some() {
         return true;
     }
+    let pick = game.pick().map(|hit| (hit.pos, hit.face));
+    if game.native_window() && game.native_on(sunset::ID) && util::in_world(game) && !game.anchor_works() {
+        if let (Some(m), Some((p, _))) = (anchor.as_ref(), pick) {
+            if anchor_charge(game, p).is_some()
+                && !super::sunset_loot_guard::allows(game, Blast::anchor(p), m.b("Protect loot")) {
+                return true;
+            }
+        }
+    }
+    if !held && !press.is_some_and(|p| p.start_allowed) { return false; }
     if !allowed(game) {
         return false;
     }
     let crystal = with(|s| s.module(CRYSTAL).filter(|m| m.on).cloned());
     let mut budget = Budget::new(16);
-    let pick = game.pick().map(|hit| (hit.pos, hit.face));
     let on_anchor = pick.is_some_and(|(p, _)| anchor_charge(game, p).is_some());
     let anchor_intent = on_anchor || stack(game, game.selected, "respawn_anchor");
     if !held && !anchor_intent { return false; }
     let (settings, kind, pos, step, cid) = if anchor_intent {
-        let Some(m) = anchor.filter(|_| recognized_hand(game, Kind::Anchor)) else {
-            return false;
-        };
-        if game.anchor_works() || stack(game, OFFHAND, "glowstone") {
-            return false;
-        }
+        let Some(m) = anchor else { return false; };
+        if game.anchor_works() { return false; }
         let Some((p, face)) = pick else {
             return false;
         };
@@ -628,6 +644,8 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
         if !on_anchor && support(game, target, &mut budget).is_none() {
             return false;
         }
+        if !super::sunset_loot_guard::allows(game, Blast::anchor(target), m.b("Protect loot")) { return true; }
+        if !recognized_hand(game, Kind::Anchor) || stack(game, OFFHAND, "glowstone") { return false; }
         if anchor_charge(game, target) == Some(0) && item_slot(game, "glowstone").is_none() {
             return false;
         }
@@ -678,6 +696,7 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
             }
         }
     };
+    if !super::sunset_loot_guard::allows(game, planned_blast(kind, pos), settings.b("Protect loot")) { return true; }
     let owner = if kind == Kind::Anchor {
         ANCHOR
     } else {
@@ -885,6 +904,7 @@ pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], _ticks: u64) {
     if !allowed(game)
         || !same_session(game, &run)
         || !enabled(&run)
+        || !loot_allowed(game, &run)
         || game.selected != run.owned
         || game.ticks >= run.deadline
         || (run.sequence.kind == Kind::Crystal && !down(game))
@@ -985,6 +1005,7 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
             || !allowed(game)
             || !same_session(game, &run)
             || !enabled(&run)
+            || !loot_allowed(game, &run)
             || game.selected != run.owned
             || !super::sunset_combat_control::owns(owner)
             || !game

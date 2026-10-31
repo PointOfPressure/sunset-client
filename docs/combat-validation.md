@@ -6,10 +6,12 @@ host source. The incoming packet hook requires the newer official Mixins
 `cb1ad23022392d88f006cf94cbf6552a73f5df12`; the earlier `0d6b103` planner rejects
 opaque macros in that native handler. No Horizon source patch is required.
 
-Latest build: **R9**, with **166 focused checks**, official native compile check
-and optimized build passing. Its paired-player reruns are pending. The
-[R9 checkpoint](evidence/combat/checkpoint-r9.json) and
-[exact source fingerprints](evidence/combat/source-r9.json) identify that binary.
+Latest build: **R10**, with **185 focused checks** (181 compiled/native-adapter
+checks and four source-wiring checks), official native compile check and
+optimized build passing. All 19 isolated native explosive cases pass; its
+paired-player suites are pending. The
+[R10 checkpoint](evidence/combat/checkpoint-r10.json) and
+[exact source fingerprints](evidence/combat/source-r10.json) identify that binary.
 Earlier native evidence below retains its original checkpoint identity.
 
 ## Confirmed R4 player outcomes
@@ -241,6 +243,31 @@ Run the renderer-free checks with:
 ```sh
 python tools/combat_tests.py /path/to/horizon-ba6344a --out combat-tests.json
 ```
+
+## R10 recent-death guard source checks
+
+The new guard integration passes **185 focused checks**: 181 existing/compiled/native-adapter checks and
+four explicit source-wiring checks. The 19 additions are seven production policy
+tests, six real pinned-protocol/identity-adapter tests, two compiled production
+press-observer tests and four source-wiring checks. The latter check hook/gate ordering; they do not
+establish live transaction behavior. [Evidence](evidence/combat/loot-focused-r10.json).
+
+Tests cover the 30-second TTL and clear operation, radius plus drop margin,
+capacity/unknown-position refusal, bounded dimensions, exact EntityEvent bytes,
+player identity versus egg/snowball event 3, connection replacement, guard-only
+quick clicks that cannot replay as macro starts, and
+same-dimension respawn retention. They also verify early protected-anchor click
+consumption and active/deferred macro cleanup wiring. The native maps and
+session-counters handle are checked against the pinned host source.
+
+Official R10 plan/stage, native compile check and optimized build now pass
+(61 support modules, 51 injections). Client SHA-256:
+`6b3c97809e5bb82699c217d48a1aaa2f6912dc8cced8b56f5654d8e574984f51`.
+One unused-helper warning remains. All **19 isolated native explosive cases
+pass**, with native exit0 and unchanged frozen inputs; their report hash is in
+the checkpoint record. The private two-client player-death, fresh-input,
+expiry and per-owner bypass checks remain pending.
+Earlier screenshots and R7–R9 results remain evidence for those checkpoints.
 
 ## Native screenshots
 

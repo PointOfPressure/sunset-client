@@ -7,6 +7,7 @@ fn sunset_combat_packet(
     if crate::game::sunset_packet_delay::incoming(game, packet) {
         return std::ops::ControlFlow::Break(Ok(()));
     }
+    crate::game::sunset_loot_guard::packet(game, packet);
     crate::game::sunset_combat_inventory::packet(game, packet);
     crate::game::sunset_city_trap::packet(game, packet);
     crate::game::sunset_crystal_optimizer::packet(game, packet);

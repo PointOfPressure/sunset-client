@@ -4294,6 +4294,7 @@ const HELP: &[(&str, &str)] = &[
     (".modules", "list every module"),
     (".menu [search]", "open the click menu, searching for the text"),
     (".settings <module>", "list a module's settings"),
+    (".lootguard [status|clear]", "show or explicitly clear recent player-death blast zones"),
     (".combatdebug", "show the last explosive-aura decisions and action counters"),
     (".set <module> <setting> <value>", "change a setting"),
     (".movementpreset <subtle|balanced|aggressive>", "apply explicit movement settings"),
@@ -4471,7 +4472,16 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         found
     };
     match cmd.as_str() {
+        "lootguard" => {
+            match args.get(1).copied().unwrap_or("status") {
+                "clear" => { super::sunset_loot_guard::clear(); say(game, "Recent player-death blast zones cleared."); }
+                "status" => {},
+                _ => { say(game, "Use .lootguard status or .lootguard clear"); return; }
+            }
+            say(game, &super::sunset_loot_guard::diagnostics());
+        }
         "combatdebug" => {
+            say(game, &super::sunset_loot_guard::diagnostics());
             say(game, &super::sunset_crystal_aura::diagnostics());
             say(game, &super::sunset_anchor_aura::diagnostics());
             say(game, &super::sunset_aura::diagnostics());

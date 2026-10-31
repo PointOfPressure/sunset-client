@@ -37,7 +37,7 @@ def main():
         run('explosive foundation', [sys.executable, 'tools/explosive_tests.py',
                                      args.engine.resolve(), '--out', foundation])
         for name in ['combat_lease', 'combat_cleanup', 'macro_policy', 'melee_policy', 'inventory_policy',
-                     'packet_policy', 'sword_policy', 'crystal_bot_policy', 'city_policy', 'roof_scaffold']:
+                     'loot_policy', 'packet_policy', 'sword_policy', 'crystal_bot_policy', 'city_policy', 'roof_scaffold']:
             executable = temporary/(name+'.exe' if sys.platform == 'win32' else name)
             run(name+' compile', ['rustc', '--edition=2024', '--test',
                                   'tools/'+name+'_tests.rs', '-o', executable])
@@ -50,7 +50,10 @@ def main():
         run('exact City ownership', [sys.executable, 'tools/city_ownership_tests.py'])
         run('GUI controller edit intent', [sys.executable, 'tools/gui_intent_tests.py'])
         run('native cleanup schema', [sys.executable, 'tools/combat_cleanup_schema_tests.py', args.engine.resolve()])
+        run('loot integration gates', [sys.executable, 'tools/loot_integration_tests.py'])
+        run('macro protected quick press', [sys.executable, 'tools/loot_press_tests.py'])
         if args.dependency_dir:
+            run('native loot identity and wire', [sys.executable, 'tools/loot_engine_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
             run('native inventory wire round-trip', [sys.executable, 'tools/inventory_protocol_fields.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
     source_hashes = {p.relative_to(repo).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in sorted((repo/'mixins/sunset').glob('*.rs'))}

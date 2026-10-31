@@ -53,7 +53,35 @@ for module toggles. Spear Lunge, pearl and wind keys are separate settings.
 
 The controllers are local arena controllers, not pathfinding or full replicas
 of the reference's autonomous systems. Motion prediction, full incremental
-hurt clocks, automatic Aura obsidian/face placement, loot protection, repairs,
+hurt clocks, automatic Aura obsidian/face placement, repairs,
 pearl retreats and learned opponent history are outside the present scope.
 All damage bounds depend on observed world state and cannot guarantee survival
 after movement, latency, changed cover, other attacks or server modifications.
+
+## Recent player-death protection (R10 source)
+
+Crystal Aura, Anchor Aura, Crystal Macro and Anchor Macro each expose **Protect
+loot**, defaulting to true while the modules themselves remain off by default.
+Module-planned blasts pause for 30 seconds near an observed player death. The
+radius is the full native blast radius plus a two-block drop margin: 14 blocks for
+crystals and 12 for anchors. No cover reduction applies to this guard.
+
+This protects a recorded death location, not tracked item positions. It does
+not detect collection, follow moving drops, guarantee item survival, cancel an
+already sent blast, or intercept every manual attack/use outside these modules.
+Fresh input does not bypass the timer. Recognized protected anchor clicks are
+consumed before unsupported-hand/inventory fallbacks could detonate via vanilla.
+An active sequence newly blocked by a death uses normal owned-slot cleanup.
+
+The guard retains at most 16 locations. Overflow or an unavailable position for
+a recognized player temporarily refuses all protected blasts for 30 seconds.
+Same-connection respawns in the same exact dimension retain zones; login,
+connection changes and dimension changes clear them. Missing scene identity
+refuses protected plans until lifecycle information is available.
+
+`.lootguard status` and `.combatdebug` show the current reason, lazy-expired
+location count and blocked-check count. The counter counts evaluations, not
+packets or prevented explosions. `.lootguard clear` explicitly clears zones;
+disabling one module's Protect loot setting bypasses this guard for that module
+while leaving its other safety checks in place. Runtime proof for this R10
+addition remains pending; earlier R7–R9 results do not test it.
