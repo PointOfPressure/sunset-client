@@ -15,6 +15,12 @@ name = "sunset"
 source = "runtime.rs"
 
 [[module]]
+id = "movement"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_movement"
+source = "movement.rs"
+
+[[module]]
 id = "util"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_util"
@@ -265,6 +271,15 @@ helper = "send.rs"
 bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
   { name = "packet", ty = "&horizon_protocol::packets::play::Serverbound", value = "&packet" },
+]
+
+[[injection]]
+id = "server_correction"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::remote_teleport"
+helper = "correction_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
 ]
 
 [[injection]]
@@ -570,6 +585,7 @@ kind = "HEAD"
 target = "horizon_client::game::lan_particles::Game<'_>::remote_explode"
 helper = "explode_hook.rs"
 bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
   { name = "p", ty = "&play::Explode", value = "p" },
 ]
 
