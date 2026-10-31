@@ -1984,6 +1984,9 @@ SPEED_CASES = [("stone_pickaxe", "stone"), ("iron_pickaxe", "stone"), ("diamond_
 
 
 def speed_mine(mode):
+    # The game waits 5 ticks (while you keep attacking) between one block's breaking and the next, and every timed
+    # break but the very first follows another: a first break makes them all wait the same.
+    break_ticks("stone_pickaxe", "stone", 1)
     plain = [break_ticks(p, b, 1 if b == "obsidian" else 3) for p, b in SPEED_CASES]
     setting("speedmine", "mode", mode)
     only("speedmine")
@@ -2732,7 +2735,8 @@ def probe_frames(mark):
     with open(probe_path()) as f:
         f.seek(mark)
         lines = f.read().split("\n")[:-1]
-    return [Frame(line.split()) for line in lines if line]
+    # The frame lines start with the time; the wire probe's "send" lines share the file.
+    return [Frame(line.split()) for line in lines if line[:1].isdigit()]
 
 
 def wrap(d):
