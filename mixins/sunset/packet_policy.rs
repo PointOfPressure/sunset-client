@@ -68,16 +68,19 @@ impl<T> Queue<T> {
         Ok(())
     }
     pub(super) fn drain(&mut self, now: u64, all: bool) -> Vec<T> {
-        let expired = self
+        let rewound = self
             .items
             .front()
-            .is_some_and(|e| now < e.born || now.saturating_sub(e.born) >= self.age_limit);
-        let mut result = Vec::with_capacity(self.items.len());
+            .is_some_and(|e| now < e.born);
+        let mut result = Vec::new();
         while self
             .items
             .front()
-            .is_some_and(|e| all || expired || e.due <= now)
+            .is_some_and(|e| all || rewound || e.due <= now || now.saturating_sub(e.born) >= self.age_limit)
         {
+            if result.is_empty() {
+                result.reserve(self.items.len());
+            }
             let item = self.items.pop_front().expect("front exists");
             self.bytes -= item.bytes;
             result.push(item.packet);

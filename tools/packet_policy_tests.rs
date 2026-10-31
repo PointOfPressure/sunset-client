@@ -173,13 +173,38 @@ fn count_and_byte_caps_are_absolute_and_fail_without_stealing_packets() {
     assert!(Queue::new(0, 20, 1000).push(1, 0, 0, 1).is_err());
 }
 #[test]
-fn age_ceiling_flushes_a_backlog_even_if_later_packets_are_not_due() {
+fn old_age_ceiling_does_not_release_younger_packets_before_their_deadline() {
     let mut q = Queue::new(64, 4096, 1000);
     q.push(1, 0, 1000, 1).unwrap();
     q.push(2, 999, 1000, 1).unwrap();
     assert_eq!(q.oldest_age(999), 999);
-    assert_eq!(q.drain(1000, false), [1, 2]);
-    assert_eq!(q.oldest_age(1000), 0);
+    assert_eq!(q.drain(1000, false), [1]);
+    assert_eq!(q.oldest_age(1000), 1);
+    assert_eq!(q.bytes(), 1);
+    assert!(q.drain(1998, false).is_empty());
+    assert_eq!(q.drain(1999, false), [2]);
+}
+#[test]
+fn aged_idle_end_prefix_does_not_force_a_fresh_movement_batch_out_early() {
+    let mut q = Queue::new(64, 4096, 1000);
+    q.push(Wire::OriginalEnd(0), 0, 1000, 40).unwrap();
+    q.push(Wire::Position(1), 900, 1000, 40).unwrap();
+    q.push(Wire::OriginalEnd(1), 901, 1000, 40).unwrap();
+    let mut wire = vec![Wire::Position(0)];
+    // Production outgoing drains this prefix before needs_flush/push.
+    wire.extend(q.drain(1000, false));
+    assert!(!q.needs_flush(1000, 40));
+    q.push(Wire::Position(2), 1000, 1000, 40).unwrap();
+    q.push(Wire::OriginalEnd(2), 1001, 1000, 40).unwrap();
+    assert_eq!(wire, [Wire::Position(0), Wire::OriginalEnd(0)]);
+    assert!(q.drain(1899, false).is_empty());
+    wire.extend(q.drain(1900, false));
+    assert_eq!(wire.last(), Some(&Wire::Position(1)));
+    wire.extend(q.drain(1901, false));
+    assert_eq!(wire.last(), Some(&Wire::OriginalEnd(1)));
+    wire.extend(q.drain(2001, false));
+    assert!(vanilla_accepts(&wire));
+    assert_eq!((q.len(), q.bytes()), (0, 0));
 }
 #[test]
 fn clock_rewind_and_disconnect_clear_do_not_replay_into_a_new_epoch() {

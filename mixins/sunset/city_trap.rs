@@ -64,13 +64,13 @@ struct State {
     trap_key: Option<(u32, [i32; 3])>,
     trap_target: Option<Target>,
     trap_plan: Vec<[i32; 3]>,
-    trap_cursor: usize,
     ledger: Ledger,
     roof_jumps: policy::RoofJumps,
     generation: u64,
     reason: &'static str,
     placements: u64,
     mining_steps: u64,
+    manual_cancel: bool,
 }
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
@@ -157,6 +157,24 @@ fn city_generation_current(generation: u64) -> bool {
         s.generation == generation && s.city_finish.as_ref().is_some_and(|guard| guard.current())
     })
 }
+// Native gameplay down/up can both arrive between ticks. Retain the press edge
+// and invalidate queued work immediately; the next tick performs owned cleanup.
+// Module-generated Punch/use packets do not pass through this input hook.
+pub(super) fn user_mouse(game: &Game<'_>, button: winit::event::MouseButton, pressed: bool) {
+    if !pressed
+        || !matches!(button, winit::event::MouseButton::Left | winit::event::MouseButton::Right)
+        || !game.native_window() || !game.native_on(sunset::ID)
+        || !game.native_playing() || sunset::gui_open()
+    { return; }
+    let cancelled = state(|s| {
+        if s.mine.is_none() || !s.session.as_ref().is_some_and(|old| same(game, old)) { return false; }
+        s.manual_cancel = true;
+        s.generation = s.generation.wrapping_add(1);
+        s.city_queued = None;
+        true
+    });
+    if cancelled { sunset::cancel_turns(CITY); }
+}
 fn pause_city(game: &mut Game<'_>) {
     sunset::cancel_turns(CITY);
     let (mine, guard) = state(|s| {
@@ -182,6 +200,7 @@ fn stop_city(game: &mut Game<'_>, reason: &'static str, disable: bool) {
         s.generation = s.generation.wrapping_add(1);
         s.city_queued = None;
         s.reason = reason;
+        s.manual_cancel = false;
         (s.mine.take(), s.city_finish.take())
     });
     if guard.as_ref().is_some_and(|guard| guard.current()) {
@@ -541,7 +560,7 @@ fn select_city(game: &mut Game<'_>, m: &Module, tick: u64) -> Option<Mining> {
 }
 
 fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
-    if clicks(game) {
+    if clicks(game) || state(|s| s.manual_cancel) {
         stop_city(game, "Stopped for manual input", true);
         return;
     }
@@ -772,17 +791,12 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         let facts = util::facts(game, *p);
         game.world.loaded(p[0], p[2]) && !facts.replaceable && facts.full_collision
     });
-    plan.sort_unstable_by(|a, b| {
-        a[1].cmp(&b[1]).then_with(|| {
-            util::dist(eye, util::center_of(*a)).total_cmp(&util::dist(eye, util::center_of(*b)))
-        })
-    });
+    policy::order_trap(&mut plan, eye);
     plan.retain(|p| game.world.loaded(p[0], p[2]) && can_fill(game, *p));
     state(|s| {
         if s.trap_key != Some(key) {
             s.ledger.clear();
             s.roof_jumps.clear();
-            s.trap_cursor = 0;
             s.trap_key = Some(key);
         }
         s.trap_target = Some(target.clone());
@@ -804,15 +818,13 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
     if plan.is_empty() || limit == 0 {
         return;
     }
-    let start = state(|s| s.trap_cursor % plan.len());
     let mut budget = 96;
-    let mut evaluated = 0;
-    for offset in 0..plan.len().min(12) {
+    // A rotating start can erect the near column before farther faces are
+    // reachable. Preserve far-to-near order at each height across ACK waits.
+    for cell in plan.iter().take(36).copied() {
         if selected.len() == limit {
             break;
         }
-        let cell = plan[(start + offset) % plan.len()];
-        evaluated += 1;
         let before = game.world.block(cell[0], cell[1], cell[2]).0;
         if !state(|s| s.ledger.can_try(cell, before)) {
             continue;
@@ -835,7 +847,6 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         }
         selected.push((cell, before, face));
     }
-    state(|s| s.trap_cursor = (start + evaluated) % plan.len());
     if selected.is_empty() {
         let jump = m.b("Top block")
             && m.b("Finish roof jump")

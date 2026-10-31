@@ -46,6 +46,7 @@ def main():
         run('native packet predicates', [sys.executable, 'tools/packet_engine_tests.py', args.engine.resolve()])
         run('native City mining', [sys.executable, 'tools/city_engine_tests.py', args.engine.resolve()])
         run('native roof visibility', [sys.executable, 'tools/roof_engine_tests.py', args.engine.resolve()])
+        run('native Trap placement visibility', [sys.executable, 'tools/trap_visibility_tests.py', args.engine.resolve()])
         run('exact City ownership', [sys.executable, 'tools/city_ownership_tests.py'])
         run('GUI controller edit intent', [sys.executable, 'tools/gui_intent_tests.py'])
         run('native cleanup schema', [sys.executable, 'tools/combat_cleanup_schema_tests.py', args.engine.resolve()])

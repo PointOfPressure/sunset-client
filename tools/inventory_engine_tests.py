@@ -25,7 +25,7 @@ def main():
     parser.add_argument("engine", type=Path)
     args = parser.parse_args()
     engine = args.engine.resolve()
-    if (engine / ".horizon-revision").read_text().strip() != "ba6344a59cb9e755b730dcf02285fc0d33b97d3c":
+    if (engine / ".horizon-revision").read_text(encoding="utf-8").strip() != "ba6344a59cb9e755b730dcf02285fc0d33b97d3c":
         raise SystemExit("Expected pinned Horizon ba6344a")
     repo = Path(__file__).resolve().parents[1]
     remote = (engine / "crates/horizon-client/src/game/remote.rs").read_text(encoding="utf-8")

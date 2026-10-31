@@ -309,6 +309,9 @@ pub(super) fn duplicate(game: &Game<'_>, packet: &S) -> bool {
     let S::Attack(p) = packet else {
         return false;
     };
+    if !HAS_MASKS.load(Ordering::Acquire) || game.crystals.len() > 512 {
+        return false;
+    }
     let Ok(id) = u32::try_from(p.id) else {
         return false;
     };

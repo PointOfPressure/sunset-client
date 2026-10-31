@@ -143,7 +143,7 @@ struct Game<'a> {remote:Option<Remote>,_life:std::marker::PhantomData<&'a ()>}
     with tempfile.TemporaryDirectory(prefix="sunset-packet-source-") as temp:
         rust = Path(temp) / "packet_source.rs"
         binary = Path(temp) / "packet_source.exe"
-        rust.write_text(code)
+        rust.write_text(code,encoding='utf-8')
         subprocess.run(["rustc", "--edition=2024", "--test", str(rust), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
 

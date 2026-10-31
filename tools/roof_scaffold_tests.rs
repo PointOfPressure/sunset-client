@@ -84,3 +84,20 @@ fn roof_jump_requests_have_cooldown_and_a_two_request_ceiling() {
     assert!(jumps.request(5));
     assert!(!jumps.request(4));
 }
+
+#[test]
+fn trap_order_keeps_far_floor_and_head_faces_ahead_of_the_occluding_near_column() {
+    let eye = [0.5, 122.62, 0.5];
+    let mut cells = policy::trap_cells_from([3.2,121.0,0.2],[3.8,122.8,0.8],true,eye).unwrap();
+    policy::order_trap(&mut cells, eye);
+    let index = |cell| cells.iter().position(|p| *p == cell).unwrap();
+    assert!(index([4,121,0]) < index([2,121,0]));
+    assert!(index([4,122,0]) < index([2,122,0]));
+    assert!(index([2,121,0]) < index([4,122,0]));
+    assert!(cells.windows(2).all(|pair| pair[0][1] <= pair[1][1]));
+    // Removing only observed ACKs preserves priority for the remaining cells.
+    let remaining = cells[1..].to_vec();
+    let mut next = remaining.clone();
+    policy::order_trap(&mut next, eye);
+    assert_eq!(next, remaining);
+}

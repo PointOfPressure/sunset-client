@@ -117,6 +117,16 @@ pub(super) fn trap_cells_from(
     Some(cells)
 }
 
+// Near columns can occlude the far floor/head faces. Complete the lower layer
+// first, farthest to nearest, before raising the next layer. ACK-pending cells
+// retain their priority; the caller must not rotate this order between ticks.
+pub(super) fn order_trap(cells: &mut [[i32; 3]], eye: [f64; 3]) {
+    let distance = |p: &[i32; 3]| (0..3).map(|i| (f64::from(p[i]) + 0.5 - eye[i]).powi(2)).sum::<f64>();
+    cells.sort_unstable_by(|a, b| a[1].cmp(&b[1])
+        .then_with(|| distance(b).total_cmp(&distance(a)))
+        .then_with(|| a.cmp(b)));
+}
+
 #[derive(Default)]
 pub(super) struct RoofJumps {
     last: Option<u64>,

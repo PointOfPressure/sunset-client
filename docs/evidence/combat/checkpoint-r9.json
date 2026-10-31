@@ -1,0 +1,183 @@
+{
+  "checkpoint": "R9",
+  "manifest": {
+    "schema": 1,
+    "id": "sunset",
+    "version": "0.8.1",
+    "game": "26.3",
+    "horizon": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+    "mixins": "cb1ad23022392d88f006cf94cbf6552a73f5df12"
+  },
+  "native_client_sha256": "d1504324992f73c885db6b4104997ec04deba3e3e4acb0c6a5ab9cfd81a4aef9",
+  "package_sha256": "80e48b187f1c2b4250114594e9b143fa858c85a45764c0a85378a4b865cd5c82",
+  "support_modules": 58,
+  "injections": 51,
+  "build_stages": {
+    "plan": {
+      "exit_code": 0,
+      "elapsed_seconds": 55.24465490000148,
+      "source_unchanged": true,
+      "record_sha256": "d4a873fd4872f51f36d16606af25c369a5b80973624ee1be9a523734fa5bf1b0"
+    },
+    "apply": {
+      "exit_code": 0,
+      "elapsed_seconds": 94.82911669999885,
+      "source_unchanged": true,
+      "record_sha256": "bff6f30fb6c10f0105df5d248956664e581e41dd612558a2a6ac4503477965f4"
+    },
+    "check": {
+      "exit_code": 0,
+      "elapsed_seconds": 8.279506599996239,
+      "source_unchanged": true,
+      "record_sha256": "8d7492837a2cd966bc2b8eea5df2985473c61cfc774640e3e82272a466e3f25c"
+    },
+    "build": {
+      "exit_code": 0,
+      "elapsed_seconds": 198.64144800000213,
+      "source_unchanged": true,
+      "record_sha256": "9df1a1fdb6c03c02fee766ecf3cc79c69196a42c275412dd0be3cb2aa3f3c4b4"
+    },
+    "freeze": {
+      "exit_code": 0,
+      "elapsed_seconds": 1.1169881000023452,
+      "source_unchanged": true,
+      "record_sha256": "8ba5a9c8aaccad9858c7b4bcd4e4ec5f87debb1267b4ee0da0be5bc613421bb4"
+    }
+  },
+  "focused": {
+    "passed": 166,
+    "report_sha256": "c519d8290800414d8b8fbea4010e97ec96a2bb86ba0bfe77bb808d1c258e7642",
+    "groups": [
+      {
+        "name": "explosive foundation",
+        "exit": 0
+      },
+      {
+        "name": "combat_lease compile",
+        "exit": 0
+      },
+      {
+        "name": "combat_lease",
+        "exit": 0
+      },
+      {
+        "name": "combat_cleanup compile",
+        "exit": 0
+      },
+      {
+        "name": "combat_cleanup",
+        "exit": 0
+      },
+      {
+        "name": "macro_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "macro_policy",
+        "exit": 0
+      },
+      {
+        "name": "melee_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "melee_policy",
+        "exit": 0
+      },
+      {
+        "name": "inventory_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "inventory_policy",
+        "exit": 0
+      },
+      {
+        "name": "packet_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "packet_policy",
+        "exit": 0
+      },
+      {
+        "name": "sword_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "sword_policy",
+        "exit": 0
+      },
+      {
+        "name": "crystal_bot_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "crystal_bot_policy",
+        "exit": 0
+      },
+      {
+        "name": "city_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "city_policy",
+        "exit": 0
+      },
+      {
+        "name": "roof_scaffold compile",
+        "exit": 0
+      },
+      {
+        "name": "roof_scaffold",
+        "exit": 0
+      },
+      {
+        "name": "native menu SWAP",
+        "exit": 0
+      },
+      {
+        "name": "native packet predicates",
+        "exit": 0
+      },
+      {
+        "name": "native City mining",
+        "exit": 0
+      },
+      {
+        "name": "native roof visibility",
+        "exit": 0
+      },
+      {
+        "name": "native Trap placement visibility",
+        "exit": 0
+      },
+      {
+        "name": "exact City ownership",
+        "exit": 0
+      },
+      {
+        "name": "GUI controller edit intent",
+        "exit": 0
+      },
+      {
+        "name": "native cleanup schema",
+        "exit": 0
+      },
+      {
+        "name": "native inventory wire round-trip",
+        "exit": 0
+      }
+    ]
+  },
+  "native_warnings": [
+    "unused private Masks.clear/hidden helpers in city_policy.rs"
+  ],
+  "delta_from_r8": [
+    "Per-entry packet expiry; drain due prefix before capacity checks using one timestamp.",
+    "Retain actual quick City mouse presses between ticks and invalidate queued work immediately.",
+    "Place Trap layers farthest-first without a rotating cursor.",
+    "Optimizer exits before entity scan when there are no visual masks."
+  ],
+  "runtime_status": "R9 paired-player reruns are pending. Retained R7 failures are documented separately and are not relabelled as fixed runtime outcomes."
+}

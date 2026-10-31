@@ -345,16 +345,21 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> bool {
         state(|s| track(s, packet));
         return false;
     }
-    let overflow = state(|s| s.moves.needs_flush(millis(s), MOVEMENT_BYTES));
-    if overflow {
-        flush_moves(game);
-    }
-    state(|s| {
+    // An old idle tick-end reaching its deadline must not flush newer movement
+    // early. Release the due prefix before checking capacity/age pressure.
+    let (due, captured) = state(|s| {
         let now = millis(s);
-        s.moves
+        let mut due = s.moves.drain(now, false);
+        if s.moves.needs_flush(now, MOVEMENT_BYTES) {
+            due.extend(s.moves.drain(now, true));
+        }
+        let captured = s.moves
             .push(packet.clone(), now, config.lag_ms, MOVEMENT_BYTES)
-            .is_ok()
-    })
+            .is_ok();
+        (due, captured)
+    });
+    send_moves(game, due);
+    captured
 }
 
 fn pushes_self(game: &Game<'_>, packet: &C, explosions: bool) -> bool {

@@ -6,6 +6,12 @@ host source. The incoming packet hook requires the newer official Mixins
 `cb1ad23022392d88f006cf94cbf6552a73f5df12`; the earlier `0d6b103` planner rejects
 opaque macros in that native handler. No Horizon source patch is required.
 
+Latest build: **R9**, with **166 focused checks**, official native compile check
+and optimized build passing. Its paired-player reruns are pending. The
+[R9 checkpoint](evidence/combat/checkpoint-r9.json) and
+[exact source fingerprints](evidence/combat/source-r9.json) identify that binary.
+Earlier native evidence below retains its original checkpoint identity.
+
 ## Confirmed R4 player outcomes
 
 [Recorded outcomes, binary hash and screenshot hashes](evidence/combat/player-proof-r4.json)
@@ -197,6 +203,38 @@ water extinguishing and fire cleanup, not at a placement/charge/detonation phase
 The original phase images remain unchanged.
 
 ![Supplementary clear postcycle frame after actual extinguishing](evidence/combat/manual-clear-postcycle-r7.png)
+
+## R7 packet, City, Trap and Optimizer outcomes
+
+[Recorded results and original native images](evidence/combat/packet-city-r7.md)
+cover 7/8 packet cases, 11/13 City/Trap/Optimizer cases and a separate passing
+hotbar-cancel case. Actual sword damage preceded delayed upward knockback by
+approximately 814 ms with an 800 ms setting. Optimizer's four original frames
+show geometry present, masked, restored after timeout, and still visible on
+a repeat hit, while the same authoritative crystal survives throughout.
+
+Three R7 failures remain explicit: a one-second movement delay flushed too
+early; a quick mouse press escaped City's level-only polling; and a near Trap
+column occluded farther faces after four placements. R9 addresses those
+specific causes. Focused checks and compilation do not establish that the
+live fixes pass; those reruns are recorded separately when complete.
+
+## R8 and R9 build checkpoints
+
+R8 passed 159 focused checks and official native check/build. Its source delta
+captures the user's desired GUI value before releasing a controller lease,
+then commits outside the runtime mutex. This covers same-value input as well
+as normal buttons, sliders, pickers and editors. Its client SHA-256 is
+`8c35d30e4bd6ffe7472aee2e97193f68bf7e95c32a0ed23edec8087bf6c7b095`;
+[checkpoint](evidence/combat/checkpoint-r8.json).
+
+R9 passed **166 focused checks**, including actual pinned native outline rays
+with the production Trap face/support/order routines, and official native
+plan/stage, compile check and optimized build (58 support modules, 51 injections).
+Client SHA-256:
+`d1504324992f73c885db6b4104997ec04deba3e3e4acb0c6a5ab9cfd81a4aef9`.
+One unused-helper warning remains. Native packet/City/Trap retests and GUI
+widget intent checks are pending; R7 results must not be presented as R9 runs.
 
 Run the renderer-free checks with:
 

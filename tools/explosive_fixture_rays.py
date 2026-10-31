@@ -15,7 +15,7 @@ def main():
     parser.add_argument("engine", type=Path)
     args = parser.parse_args()
     engine = args.engine.resolve()
-    revision = (engine / ".horizon-revision").read_text().strip()
+    revision = (engine / ".horizon-revision").read_text(encoding="utf-8").strip()
     if revision != "ba6344a59cb9e755b730dcf02285fc0d33b97d3c":
         raise SystemExit("Expected pinned Horizon ba6344a source")
     repo = Path(__file__).resolve().parents[1]
@@ -28,7 +28,7 @@ def main():
     code = "#![allow(dead_code, unused_imports)]\nextern crate self as horizon_core;\n"
     code += "\n".join(f'#[path="{str(path).replace(chr(92), "/")}"] mod {name};'
                       for name, path in paths.items())
-    position = (engine / "crates/horizon-core/src/position.rs").read_text()
+    position = (engine / "crates/horizon-core/src/position.rs").read_text(encoding="utf-8")
     iterator = str(engine / "crates/horizon-core/src/position/iter.rs").replace("\\", "/")
     position = position.replace("mod iter;", f'#[path="{iterator}"] mod iter;')
     code += "\nmod position {\n" + position.replace("//!", "//") + "\n}\n"
@@ -133,7 +133,7 @@ fn main() {
     with tempfile.TemporaryDirectory(prefix="sunset-fixture-rays-") as temp:
         rust = Path(temp) / "fixture_rays.rs"
         binary = Path(temp) / "fixture_rays.exe"
-        rust.write_text(code)
+        rust.write_text(code,encoding="utf-8")
         subprocess.run(["rustc", "--edition=2024", str(rust), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
 
