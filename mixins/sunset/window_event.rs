@@ -3,4 +3,7 @@
 fn sunset_window_event(event: &winit::event::WindowEvent) {
     crate::game::sunset::text_event(event);
     crate::game::sunset::bind_event(event);
+    if matches!(event, winit::event::WindowEvent::Focused(false)) {
+        crate::game::sunset_combat_macros::focus_lost();
+    }
 }

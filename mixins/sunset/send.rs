@@ -4,11 +4,23 @@ fn sunset_send(
     packet: &horizon_protocol::packets::play::Serverbound,
 ) -> std::ops::ControlFlow<()> {
     use crate::game::sunset::Out;
+    if !crate::game::sunset_combat_wire::allowed(game, packet) {
+        return std::ops::ControlFlow::Break(());
+    }
     match crate::game::sunset::outgoing(game, packet) {
-        Out::Pass => std::ops::ControlFlow::Continue(()),
+        Out::Pass => {
+            if crate::game::sunset_packet_delay::outgoing(game, packet) {
+                std::ops::ControlFlow::Break(())
+            } else {
+                crate::game::sunset_combat_wire::forwarded(game, packet);
+                std::ops::ControlFlow::Continue(())
+            }
+        },
         Out::Drop => std::ops::ControlFlow::Break(()),
         Out::Replace(changed) => {
-            if let Some(r) = &game.remote {
+            if !crate::game::sunset_packet_delay::outgoing(game, &changed)
+                && let Some(r) = &game.remote {
+                crate::game::sunset_combat_wire::forwarded(game, &changed);
                 r.session.send(changed);
             }
             std::ops::ControlFlow::Break(())

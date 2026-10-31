@@ -341,13 +341,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Mace smash", true)
             .bool("Only with a weapon", false)
             .bool("Only on ground", true),
-        Module::new("Auto Totem", Combat, "Moves a totem from your inventory to your offhand.")
-            .pick("Mode", &["Smart", "Strict"])
-            .num("Delay (ticks)", 0.0, 0.0, 20.0, 1.0)
-            .num("Health", 10.0, 0.0, 36.0, 1.0)
-            .bool("Elytra", true)
-            .bool("Fall", true)
-            .bool("Explosion", true),
+        super::sunset_combat_inventory::auto_totem_defaults(),
         // Movement
         Module::new("Sprint", Movement, "Sprints for you whenever you walk forward."),
         Module::new("Auto Walk", Movement, "Walks forward for you."),
@@ -694,6 +688,14 @@ pub(super) fn defaults() -> Vec<Module> {
     ];
     v.splice(0..0, super::sunset_aura::defaults());
     v.extend(super::sunset_combat::defaults());
+    v.extend(super::sunset_crystal_aura::defaults());
+    v.extend(super::sunset_anchor_aura::defaults());
+    v.extend(super::sunset_combat_macros::defaults());
+    v.extend(super::sunset_melee_assist::defaults());
+    v.extend(super::sunset_combat_inventory::defaults());
+    v.extend(super::sunset_packet_delay::defaults());
+    v.extend(super::sunset_sword_bot::defaults());
+    super::sunset_melee_assist::augment_defaults(&mut v);
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_player::defaults());
@@ -1451,6 +1453,8 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 horizon_client::motion::sunset_motion::set_up(None);
             },
             "Velocity" => with(|s| { s.velocity = None; s.blast = [0.0; 3]; }),
+            "Crystal Aura" => super::sunset_crystal_aura::reset(),
+            "Anchor Aura" => super::sunset_anchor_aura::reset(),
             "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
             _ => {},
         }
@@ -1582,6 +1586,8 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     if !game.native_window() {
         return;
     }
+    super::sunset_melee_assist::key(game, key, pressed);
+    super::sunset_combat_inventory::key(game, key, pressed);
     if !pressed {
         with(|s| {
             let held = s.inputs.release(key);
@@ -1685,7 +1691,16 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if !game.native_window() {
         return;
     }
+    super::sunset_combat_control::begin_tick(game);
+    super::sunset_packet_delay::tick(game, &snapshot());
     if !game.native_on(ID) || game.player.is_none() {
+        super::sunset_combat_macros::reset(game);
+        super::sunset_combat_inventory::cancel(game);
+        super::sunset_sword_bot::cancel(game);
+        super::sunset_melee_assist::post_input(game);
+        super::sunset_combat_control::reset();
+        super::sunset_crystal_aura::reset();
+        super::sunset_anchor_aura::reset();
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
         horizon_client::motion::sunset_motion::set_safe_walk(false);
@@ -1786,6 +1801,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         s.stepping = step.is_some();
         s.high_jumping = high_jump.is_some();
     });
+    super::sunset_sword_bot::pre_input(game);
+    super::sunset_melee_assist::pre_input(game, &snapshot(), game.ticks);
 }
 
 // How high Step lets you climb this tick: the setting, or vanilla's 0.6 when
@@ -1844,6 +1861,8 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     if !game.native_window() || !game.native_on(ID) {
         return;
     }
+    super::sunset_melee_assist::post_input(game);
+    super::sunset_sword_bot::post_input(game);
     turned(game);
     module_tick(game);
     end_turns(game);
@@ -2086,16 +2105,16 @@ fn module_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Scaffold").filter(|_| get("Kill Aura").is_none() && get("Blink").is_none()) {
         scaffold(game, m);
     }
-    if let Some(m) = get("Auto Armor") {
+    if let Some(m) = get("Auto Armor").filter(|_| super::sunset_combat_control::owner().is_none()) {
         auto_armor(game, m);
     }
-    if get("Chest Swap").is_some() {
+    if get("Chest Swap").is_some() && super::sunset_combat_control::owner().is_none() {
         chest_swap(game);
         if let Some(i) = with(|s| s.find("Chest Swap")) {
             toggle(game, i, false);
         }
     }
-    if let Some(m) = get("Auto Replenish") {
+    if let Some(m) = get("Auto Replenish").filter(|_| super::sunset_combat_control::owner().is_none()) {
         auto_replenish(game, m);
     }
     if let Some(m) = get("Bow Spam") {
@@ -2157,7 +2176,7 @@ fn module_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Auto Clicker") {
         auto_click(game, m);
     }
-    if let Some(m) = get("Auto Eat") {
+    if let Some(m) = get("Auto Eat").filter(|_| super::sunset_combat_control::available("Auto Eat")) {
         auto_eat(game, m);
     } else if with(|s| s.eating) {
         eat_stop(game);
@@ -2188,7 +2207,10 @@ fn module_tick(game: &mut Game<'_>) {
     } else {
         with(|s| s.blocks = Sweep::new());
     }
+    super::sunset_combat_macros::tick(game, &mods, game.ticks);
+    super::sunset_melee_assist::tick(game, &mods, game.ticks);
     super::sunset_combat::tick(game, &mods);
+    super::sunset_explosive_aura::tick(game, &mods, game.ticks);
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_player::tick(game, &mods);
     super::sunset_world::tick(game, &mods);
@@ -2508,6 +2530,7 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
         return;
     }
     if with(|s| s.eating) {
+        if !super::sunset_combat_control::claim("Auto Eat") { eat_stop(game); return; }
         if !eat_due(game, m) {
             eat_stop(game);
             return;
@@ -2535,7 +2558,9 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
         return;
     };
     let prev = game.selected;
+    if !super::sunset_combat_control::claim("Auto Eat") { return; }
     if !eat_from(game, slot) {
+        super::sunset_combat_control::release("Auto Eat");
         return;
     }
     let paused = m.b("Pause auras") && with(|s| s.is_on("Kill Aura"));
@@ -2621,6 +2646,7 @@ fn eat_from(game: &mut Game<'_>, slot: Option<usize>) -> bool {
 }
 
 fn eat_stop(game: &mut Game<'_>) {
+    super::sunset_combat_control::release("Auto Eat");
     use winit::event::MouseButton;
     let (prev, from_hand, aura) = with(|s| {
         s.eating = false;
@@ -3912,33 +3938,8 @@ pub(super) fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
     super::sunset_aura::tick(game, m, crits);
 }
 
-pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
-    if !game.native_playing()
-        || game.remote.is_none()
-        || game.using.is_some()
-        || CRIT_STAGE.load(Ordering::Relaxed) != 0
-    {
-        return;
-    }
-    let Some((i, _)) = game.mob_hit() else {
-        return;
-    };
-    let mob = &game.mobs[i];
-    let (id, kind) = (mob.id, kind_of(mob));
-    let names = game.remote_player_names();
-    let friends = with(|s| s.friends.clone());
-    let player = kind == Kind::Player;
-    if !wanted(m, kind) || (player && is_friend(&friends, &names, id)) || super::sunset_util::spared(game, m, id, player) {
-        return;
-    }
-    let mut wait = with(|s| s.trigger_wait);
-    let ready = cooldown_ready(game, m, &mut wait);
-    with(|s| s.trigger_wait = wait);
-    if !ready {
-        return;
-    }
-    attack(game, id, crits, None);
-    with(|s| s.trigger_wait = m.n("Delay (ticks)") as u32);
+pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, _crits: bool) {
+    super::sunset_melee_assist::trigger_tick(game, m);
 }
 
 // A totem in the hotbar goes to the offhand by selecting it and pressing the
@@ -4120,6 +4121,30 @@ fn turns<R>(f: impl FnOnce(&mut Turns) -> R) -> R {
     f(&mut TURNS.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
+// Explosive actions require a vacant rotation queue. Their inventory switches
+// live inside the accepted deed, so a rejected claim has no side effects.
+pub(super) fn try_turn_then(who: &'static str, yaw: f32, pitch: f32,
+    then: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) -> bool {
+    if !yaw.is_finite() || !pitch.is_finite() || BLINK.load(Ordering::Relaxed) {
+        return false;
+    }
+    let look = ((yaw + 180.0).rem_euclid(360.0) - 180.0, pitch.clamp(-90.0, 90.0));
+    turns(|t| {
+        if t.carried || !t.queue.is_empty() { return false; }
+        t.queue.push(Ask { who, look, deeds: vec![Box::new(then)], fresh: true });
+        true
+    })
+}
+
+pub(super) fn cancel_turns(who: &str) {
+    turns(|t| {
+        if t.queue.first().is_some_and(|ask| ask.who == who) {
+            t.carried = false;
+        }
+        t.queue.retain(|ask| ask.who != who);
+    });
+}
+
 // Has the server see the player look at (yaw, pitch), then does `then`. `who` names the module: what it asks again in
 // the same tick goes along under its first look, and an ask from an earlier tick still waiting is replaced.
 pub(super) fn turn_then(who: &'static str, yaw: f32, pitch: f32, then: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) {
@@ -4254,6 +4279,7 @@ const HELP: &[(&str, &str)] = &[
     (".modules", "list every module"),
     (".menu [search]", "open the click menu, searching for the text"),
     (".settings <module>", "list a module's settings"),
+    (".combatdebug", "show the last explosive-aura decisions and action counters"),
     (".set <module> <setting> <value>", "change a setting"),
     (".movementpreset <subtle|balanced|aggressive>", "apply explicit movement settings"),
     (".bind <module> <key|mouse4|none>", "bind a key or mouse button to a module"),
@@ -4282,6 +4308,11 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
 }
 
 pub(super) fn panic_off(game: &mut Game<'_>) {
+    super::sunset_packet_delay::flush(game);
+    super::sunset_combat_macros::reset(game);
+    super::sunset_combat_inventory::cancel(game);
+    super::sunset_sword_bot::cancel(game);
+    super::sunset_combat_control::reset();
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
         game.pitch = pitch;
@@ -4418,6 +4449,22 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         found
     };
     match cmd.as_str() {
+        "combatdebug" => {
+            say(game, &super::sunset_crystal_aura::diagnostics());
+            say(game, &super::sunset_anchor_aura::diagnostics());
+            say(game, &super::sunset_aura::diagnostics());
+            say(game, &super::sunset_melee_assist::diagnostics());
+            say(game, &super::sunset_sword_bot::diagnostics());
+            say(game, &super::sunset_combat_inventory::debug().to_string());
+            say(game, &super::sunset_packet_delay::debug().to_string());
+            if let (Some(x),Some(y),Some(z)) = (args.get(1).and_then(|v|v.parse::<f64>().ok()),args.get(2).and_then(|v|v.parse::<f64>().ok()),args.get(3).and_then(|v|v.parse::<f64>().ok())) {
+                let power = args.get(4).and_then(|v|v.parse::<f32>().ok()).unwrap_or(6.0);
+                if [x,y,z,f64::from(power)].iter().all(|v|v.is_finite()) && (0.0..=6.0).contains(&power) {
+                    let line=super::sunset_explosive_damage::diagnostics(game,super::sunset_explosive_damage::Blast{center:[x,y,z],power,ignored_block:None});
+                    say(game,&line);
+                }
+            }
+        }
         "help" | "commands" => {
             say(game, "Commands:");
             for (c, d) in HELP {
@@ -5042,6 +5089,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
 }
 
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
+    super::sunset_packet_delay::draw(game, cam, out, lw);
     super::sunset_util::draw_shown(cam, out, lw);
     super::sunset_render::overlay(game, cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);

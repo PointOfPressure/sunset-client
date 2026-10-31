@@ -57,6 +57,48 @@ name = "sunset_combat"
 source = "combat.rs"
 
 [[module]]
+id = "explosive_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_policy"
+source = "explosive_policy.rs"
+
+[[module]]
+id = "explosive_damage"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_damage"
+source = "explosive_damage.rs"
+
+[[module]]
+id = "explosive_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_aura"
+source = "explosive_aura.rs"
+
+[[module]]
+id = "explosive_choice"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_choice"
+source = "explosive_choice.rs"
+
+[[module]]
+id = "crystal_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crystal_aura"
+source = "crystal_aura.rs"
+
+[[module]]
+id = "anchor_state"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anchor_state"
+source = "anchor_state.rs"
+
+[[module]]
+id = "anchor_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anchor_aura"
+source = "anchor_aura.rs"
+
+[[module]]
 id = "player"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_player"
@@ -192,6 +234,105 @@ name = "sunset_flags"
 source = "input_flags.rs"
 visibility = "pub"
 
+[[module]]
+id = "combat_lease"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_lease"
+source = "combat_lease.rs"
+
+[[module]]
+id = "combat_control"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_control"
+source = "combat_control.rs"
+
+[[module]]
+id = "combat_macros"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_macros"
+source = "combat_macros.rs"
+
+[[module]]
+id = "macro_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_macro_policy"
+source = "macro_policy.rs"
+
+[[module]]
+id = "melee_assist"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_melee_assist"
+source = "melee_assist.rs"
+
+[[module]]
+id = "melee_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_melee_policy"
+source = "melee_policy.rs"
+
+[[module]]
+id = "combat_inventory"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_inventory"
+source = "combat_inventory.rs"
+
+[[module]]
+id = "inventory_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_inventory_policy"
+source = "inventory_policy.rs"
+
+[[module]]
+id = "packet_delay"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_packet_delay"
+source = "packet_delay.rs"
+
+[[module]]
+id = "packet_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_packet_policy"
+source = "packet_policy.rs"
+
+[[module]]
+id = "packet_replay"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_packet_replay"
+source = "packet_replay.rs"
+visibility = "pub(crate)"
+
+[[module]]
+id = "sword_bot"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sword_bot"
+source = "sword_bot.rs"
+
+[[module]]
+id = "sword_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sword_policy"
+source = "sword_policy.rs"
+
+[[module]]
+id = "combat_wire"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_wire"
+source = "combat_wire.rs"
+
+[[module]]
+id = "combat_collision"
+file = "crates/horizon-client/src/game/spear.rs"
+name = "sunset_combat_collision"
+source = "combat_collision.rs"
+visibility = "pub(crate)"
+
+[[module]]
+id = "combat_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_combat_remote"
+source = "combat_remote.rs"
+visibility = "pub(crate)"
+
 [[injection]]
 id = "list"
 kind = "HEAD"
@@ -308,7 +449,11 @@ kind = "HEAD"
 cancellable = true
 target = "horizon_client::game::Game<'_>::play_mouse"
 helper = "buttons.rs"
-bindings = []
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "button", ty = "winit::event::MouseButton", value = "button" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
 
 [[injection]]
 id = "press"
@@ -676,4 +821,36 @@ helper = "vanish_completions.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
   { name = "data", ty = "&[u8]", value = "data" },
+]
+
+[[injection]]
+id = "combat_use"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_use"
+helper = "combat_use.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "combat_packet"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::handle_packet"
+helper = "combat_packet.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "packet", ty = "&horizon_protocol::packets::play::Clientbound", value = "&packet" },
+]
+
+[[injection]]
+id = "combat_use_hand"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_use_item"
+helper = "combat_use_hand.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "hand", ty = "horizon_client::first_person::Hand", value = "hand" },
 ]

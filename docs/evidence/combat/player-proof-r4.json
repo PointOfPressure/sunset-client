@@ -1,0 +1,3191 @@
+{
+  "kind": "two-real-native-clients-on-stock-java",
+  "native_client_sha256": "4e1ce3ad4601e8dad407616c3acf7d5d5de0eaaca36e84bfc615be32ed9d6fea",
+  "source_stage": "explosives-r4",
+  "host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "server_version": "26.3",
+  "server_protocol": 777,
+  "server_jar_sha1": "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c",
+  "backend": "stock Java on loopback only",
+  "fixture": {
+    "players": [
+      "CodexAttacker",
+      "CodexTarget"
+    ],
+    "arena": [
+      0,
+      121,
+      0
+    ],
+    "attacker": "survival20HP, resistance255 separate fixture fail-safe",
+    "target": "survival20HP, resistanceIV to survive one blast",
+    "fire_damage": false,
+    "natural_regeneration": false
+  },
+  "raw_report_sha256": "facf71b53c8c84c3acdee2e0050c567e42fadaf0819026c97980326d663e3fa1",
+  "checks": [
+    {
+      "name": "Official Java 26.3 protocol and loopback-only backend",
+      "passed": true,
+      "evidence": {}
+    },
+    {
+      "name": "Two real survival clients and named-player discovery",
+      "passed": true,
+      "evidence": {}
+    },
+    {
+      "name": "Crystal Aura damages the real test player and restores slot",
+      "passed": true,
+      "evidence": {
+        "before": {
+          "attacker": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "looking_at": {
+              "block": null,
+              "entity": null,
+              "kind": "none"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                0,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 255,
+                  "duration_ticks": 19999897,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                0.6,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 5.0,
+              "portal_effect": 0.0,
+              "position": [
+                0.6,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": -90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 9,
+            "sleeping": null,
+            "swings": 7,
+            "ticks": 8221,
+            "time": {
+              "day": 0,
+              "day_time": 6290,
+              "time_of_day": 6290
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "target": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": null,
+            "looking_at": {
+              "block": null,
+              "entity": null,
+              "kind": "none"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                5,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 3,
+                  "duration_ticks": 19999896,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                5.5,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 0.0,
+              "portal_effect": 0.0,
+              "position": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": 90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 1,
+            "sleeping": null,
+            "swings": 0,
+            "ticks": 8196,
+            "time": {
+              "day": 0,
+              "day_time": 6296,
+              "time_of_day": 6296
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "inventory": {
+            "armor": [
+              {
+                "item": null,
+                "part": "head",
+                "slot": 500
+              },
+              {
+                "item": null,
+                "part": "chest",
+                "slot": 501
+              },
+              {
+                "item": null,
+                "part": "legs",
+                "slot": 502
+              },
+              {
+                "item": null,
+                "part": "feet",
+                "slot": 503
+              }
+            ],
+            "carried": null,
+            "counts": {
+              "minecraft:end_crystal": 8,
+              "minecraft:stick": 1
+            },
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "hotbar": [
+              {
+                "count": 8,
+                "item": "minecraft:end_crystal",
+                "slot": 0
+              },
+              {
+                "item": null,
+                "slot": 1
+              },
+              {
+                "item": null,
+                "slot": 2
+              },
+              {
+                "item": null,
+                "slot": 3
+              },
+              {
+                "item": null,
+                "slot": 4
+              },
+              {
+                "item": null,
+                "slot": 5
+              },
+              {
+                "item": null,
+                "slot": 6
+              },
+              {
+                "item": null,
+                "slot": 7
+              },
+              {
+                "count": 1,
+                "item": "minecraft:stick",
+                "slot": 8
+              }
+            ],
+            "main": [
+              {
+                "item": null,
+                "slot": 9
+              },
+              {
+                "item": null,
+                "slot": 10
+              },
+              {
+                "item": null,
+                "slot": 11
+              },
+              {
+                "item": null,
+                "slot": 12
+              },
+              {
+                "item": null,
+                "slot": 13
+              },
+              {
+                "item": null,
+                "slot": 14
+              },
+              {
+                "item": null,
+                "slot": 15
+              },
+              {
+                "item": null,
+                "slot": 16
+              },
+              {
+                "item": null,
+                "slot": 17
+              },
+              {
+                "item": null,
+                "slot": 18
+              },
+              {
+                "item": null,
+                "slot": 19
+              },
+              {
+                "item": null,
+                "slot": 20
+              },
+              {
+                "item": null,
+                "slot": 21
+              },
+              {
+                "item": null,
+                "slot": 22
+              },
+              {
+                "item": null,
+                "slot": 23
+              },
+              {
+                "item": null,
+                "slot": 24
+              },
+              {
+                "item": null,
+                "slot": 25
+              },
+              {
+                "item": null,
+                "slot": 26
+              },
+              {
+                "item": null,
+                "slot": 27
+              },
+              {
+                "item": null,
+                "slot": 28
+              },
+              {
+                "item": null,
+                "slot": 29
+              },
+              {
+                "item": null,
+                "slot": 30
+              },
+              {
+                "item": null,
+                "slot": 31
+              },
+              {
+                "item": null,
+                "slot": 32
+              },
+              {
+                "item": null,
+                "slot": 33
+              },
+              {
+                "item": null,
+                "slot": 34
+              },
+              {
+                "item": null,
+                "slot": 35
+              }
+            ],
+            "offhand": {
+              "item": null,
+              "slot": 504
+            },
+            "selected": 9
+          },
+          "entities": {
+            "entities": [
+              {
+                "baby": false,
+                "distance": 4.9,
+                "health": 20.0,
+                "hurt_time": 0,
+                "id": 2,
+                "kind": "mob",
+                "pos": [
+                  5.5,
+                  121.0,
+                  0.5
+                ],
+                "type": "minecraft:player"
+              }
+            ]
+          },
+          "crystals": [],
+          "anchor": {
+            "block": "minecraft:air",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:air"
+          }
+        },
+        "after": {
+          "attacker": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "looking_at": {
+              "block": null,
+              "entity": null,
+              "kind": "none"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                0,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 255,
+                  "duration_ticks": 19999734,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                0.4217349185677528,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 5.0,
+              "portal_effect": 0.0,
+              "position": [
+                0.4217349185677528,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": -90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 9,
+            "sleeping": null,
+            "swings": 9,
+            "ticks": 8383,
+            "time": {
+              "day": 0,
+              "day_time": 6453,
+              "time_of_day": 6453
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "target": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": null,
+            "looking_at": {
+              "block": null,
+              "entity": null,
+              "kind": "none"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                8,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 3,
+                  "duration_ticks": 19999734,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                8.425494407419707,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 5.041667938232422,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 0.0,
+              "portal_effect": 0.0,
+              "position": [
+                8.425494407419707,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": 90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 1,
+            "sleeping": null,
+            "swings": 0,
+            "ticks": 8358,
+            "time": {
+              "day": 0,
+              "day_time": 6458,
+              "time_of_day": 6458
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "inventory": {
+            "armor": [
+              {
+                "item": null,
+                "part": "head",
+                "slot": 500
+              },
+              {
+                "item": null,
+                "part": "chest",
+                "slot": 501
+              },
+              {
+                "item": null,
+                "part": "legs",
+                "slot": 502
+              },
+              {
+                "item": null,
+                "part": "feet",
+                "slot": 503
+              }
+            ],
+            "carried": null,
+            "counts": {
+              "minecraft:end_crystal": 7,
+              "minecraft:stick": 1
+            },
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "hotbar": [
+              {
+                "count": 7,
+                "item": "minecraft:end_crystal",
+                "slot": 0
+              },
+              {
+                "item": null,
+                "slot": 1
+              },
+              {
+                "item": null,
+                "slot": 2
+              },
+              {
+                "item": null,
+                "slot": 3
+              },
+              {
+                "item": null,
+                "slot": 4
+              },
+              {
+                "item": null,
+                "slot": 5
+              },
+              {
+                "item": null,
+                "slot": 6
+              },
+              {
+                "item": null,
+                "slot": 7
+              },
+              {
+                "count": 1,
+                "item": "minecraft:stick",
+                "slot": 8
+              }
+            ],
+            "main": [
+              {
+                "item": null,
+                "slot": 9
+              },
+              {
+                "item": null,
+                "slot": 10
+              },
+              {
+                "item": null,
+                "slot": 11
+              },
+              {
+                "item": null,
+                "slot": 12
+              },
+              {
+                "item": null,
+                "slot": 13
+              },
+              {
+                "item": null,
+                "slot": 14
+              },
+              {
+                "item": null,
+                "slot": 15
+              },
+              {
+                "item": null,
+                "slot": 16
+              },
+              {
+                "item": null,
+                "slot": 17
+              },
+              {
+                "item": null,
+                "slot": 18
+              },
+              {
+                "item": null,
+                "slot": 19
+              },
+              {
+                "item": null,
+                "slot": 20
+              },
+              {
+                "item": null,
+                "slot": 21
+              },
+              {
+                "item": null,
+                "slot": 22
+              },
+              {
+                "item": null,
+                "slot": 23
+              },
+              {
+                "item": null,
+                "slot": 24
+              },
+              {
+                "item": null,
+                "slot": 25
+              },
+              {
+                "item": null,
+                "slot": 26
+              },
+              {
+                "item": null,
+                "slot": 27
+              },
+              {
+                "item": null,
+                "slot": 28
+              },
+              {
+                "item": null,
+                "slot": 29
+              },
+              {
+                "item": null,
+                "slot": 30
+              },
+              {
+                "item": null,
+                "slot": 31
+              },
+              {
+                "item": null,
+                "slot": 32
+              },
+              {
+                "item": null,
+                "slot": 33
+              },
+              {
+                "item": null,
+                "slot": 34
+              },
+              {
+                "item": null,
+                "slot": 35
+              }
+            ],
+            "offhand": {
+              "item": null,
+              "slot": 504
+            },
+            "selected": 9
+          },
+          "entities": {
+            "entities": [
+              {
+                "baby": false,
+                "distance": 8.003802190807248,
+                "health": 5.041667938232422,
+                "hurt_time": 0,
+                "id": 2,
+                "kind": "mob",
+                "pos": [
+                  8.425537109375,
+                  121.0,
+                  0.5
+                ],
+                "type": "minecraft:player"
+              }
+            ]
+          },
+          "crystals": [],
+          "anchor": {
+            "block": "minecraft:air",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:air"
+          }
+        },
+        "placed": {
+          "attacker": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "looking_at": {
+              "block": null,
+              "entity": null,
+              "kind": "none"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                0,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 255,
+                  "duration_ticks": 19999850,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                0.6,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 5.0,
+              "portal_effect": 0.0,
+              "position": [
+                0.6,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": -90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 9,
+            "sleeping": null,
+            "swings": 8,
+            "ticks": 8268,
+            "time": {
+              "day": 0,
+              "day_time": 6338,
+              "time_of_day": 6338
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "target": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": null,
+            "looking_at": {
+              "block": null,
+              "entity": null,
+              "kind": "none"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                5,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 3,
+                  "duration_ticks": 19999849,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                5.5,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 0.0,
+              "portal_effect": 0.0,
+              "position": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": 90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 1,
+            "sleeping": null,
+            "swings": 0,
+            "ticks": 8243,
+            "time": {
+              "day": 0,
+              "day_time": 6343,
+              "time_of_day": 6343
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "inventory": {
+            "armor": [
+              {
+                "item": null,
+                "part": "head",
+                "slot": 500
+              },
+              {
+                "item": null,
+                "part": "chest",
+                "slot": 501
+              },
+              {
+                "item": null,
+                "part": "legs",
+                "slot": 502
+              },
+              {
+                "item": null,
+                "part": "feet",
+                "slot": 503
+              }
+            ],
+            "carried": null,
+            "counts": {
+              "minecraft:end_crystal": 7,
+              "minecraft:stick": 1
+            },
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "hotbar": [
+              {
+                "count": 7,
+                "item": "minecraft:end_crystal",
+                "slot": 0
+              },
+              {
+                "item": null,
+                "slot": 1
+              },
+              {
+                "item": null,
+                "slot": 2
+              },
+              {
+                "item": null,
+                "slot": 3
+              },
+              {
+                "item": null,
+                "slot": 4
+              },
+              {
+                "item": null,
+                "slot": 5
+              },
+              {
+                "item": null,
+                "slot": 6
+              },
+              {
+                "item": null,
+                "slot": 7
+              },
+              {
+                "count": 1,
+                "item": "minecraft:stick",
+                "slot": 8
+              }
+            ],
+            "main": [
+              {
+                "item": null,
+                "slot": 9
+              },
+              {
+                "item": null,
+                "slot": 10
+              },
+              {
+                "item": null,
+                "slot": 11
+              },
+              {
+                "item": null,
+                "slot": 12
+              },
+              {
+                "item": null,
+                "slot": 13
+              },
+              {
+                "item": null,
+                "slot": 14
+              },
+              {
+                "item": null,
+                "slot": 15
+              },
+              {
+                "item": null,
+                "slot": 16
+              },
+              {
+                "item": null,
+                "slot": 17
+              },
+              {
+                "item": null,
+                "slot": 18
+              },
+              {
+                "item": null,
+                "slot": 19
+              },
+              {
+                "item": null,
+                "slot": 20
+              },
+              {
+                "item": null,
+                "slot": 21
+              },
+              {
+                "item": null,
+                "slot": 22
+              },
+              {
+                "item": null,
+                "slot": 23
+              },
+              {
+                "item": null,
+                "slot": 24
+              },
+              {
+                "item": null,
+                "slot": 25
+              },
+              {
+                "item": null,
+                "slot": 26
+              },
+              {
+                "item": null,
+                "slot": 27
+              },
+              {
+                "item": null,
+                "slot": 28
+              },
+              {
+                "item": null,
+                "slot": 29
+              },
+              {
+                "item": null,
+                "slot": 30
+              },
+              {
+                "item": null,
+                "slot": 31
+              },
+              {
+                "item": null,
+                "slot": 32
+              },
+              {
+                "item": null,
+                "slot": 33
+              },
+              {
+                "item": null,
+                "slot": 34
+              },
+              {
+                "item": null,
+                "slot": 35
+              }
+            ],
+            "offhand": {
+              "item": null,
+              "slot": 504
+            },
+            "selected": 9
+          },
+          "entities": {
+            "entities": [
+              {
+                "baby": false,
+                "distance": 4.9,
+                "health": 20.0,
+                "hurt_time": 0,
+                "id": 2,
+                "kind": "mob",
+                "pos": [
+                  5.5,
+                  121.0,
+                  0.5
+                ],
+                "type": "minecraft:player"
+              }
+            ]
+          },
+          "crystals": [
+            {
+              "id": 5,
+              "position": [
+                4.5,
+                121.0,
+                0.5
+              ]
+            }
+          ],
+          "anchor": {
+            "block": "minecraft:air",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:air"
+          }
+        },
+        "diagnostics": {
+          "actionbar": null,
+          "chat": [
+            "Your game mode has been updated to Survival Mode",
+            "Your game mode has been updated to Spectator Mode",
+            "Your game mode has been updated to Survival Mode",
+            "Your game mode has been updated to Spectator Mode",
+            "Your game mode has been updated to Survival Mode",
+            "Your game mode has been updated to Spectator Mode",
+            "Your game mode has been updated to Survival Mode",
+            "Your game mode has been updated to Spectator Mode"
+          ],
+          "order": "newest first",
+          "styled": [
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Anchor phase=idle reason=reset last_active=searching:no candidate passed reach/material checks sent=3 ack=3 last_sent=Some(3824) last_ack=Some(3826) pending=None plan=None damage=(self,target,friend)None scanned=0 evaluated=0 blocked=0"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Crystal stage=11 reason=2 paused=true ticks=8356 crystals=0 cid=5 invulnerable=false own=7.680 target=74.792 health=20.000 queued=false waiting=false attempts=0 counters=[0, 14791, 2, 182, 0, 0, 50, 0, 6, 0, 3, 285, 57, 0, 0, 3, 6, 0]"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Crystal Aura off"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Crystal Aura on"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Break: ON"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Place: OFF"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Crystal Aura off"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Crystal Aura on"
+                }
+              ],
+              "text": ""
+            }
+          ],
+          "subtitle": null,
+          "title": null
+        }
+      }
+    },
+    {
+      "name": "Friend protection prevents real-player targeting",
+      "passed": true,
+      "evidence": {
+        "before": {
+          "attacker": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "looking_at": {
+              "block": null,
+              "entity": null,
+              "kind": "none"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                0,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 255,
+                  "duration_ticks": 19999898,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                0.6,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 5.0,
+              "portal_effect": 0.0,
+              "position": [
+                0.6,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": -90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 9,
+            "sleeping": null,
+            "swings": 9,
+            "ticks": 8744,
+            "time": {
+              "day": 0,
+              "day_time": 6814,
+              "time_of_day": 6814
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "target": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": null,
+            "looking_at": {
+              "block": null,
+              "entity": null,
+              "kind": "none"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                5,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 3,
+                  "duration_ticks": 19999898,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                5.5,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 0.0,
+              "portal_effect": 0.0,
+              "position": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": 90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 1,
+            "sleeping": null,
+            "swings": 0,
+            "ticks": 8719,
+            "time": {
+              "day": 0,
+              "day_time": 6819,
+              "time_of_day": 6819
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "inventory": {
+            "armor": [
+              {
+                "item": null,
+                "part": "head",
+                "slot": 500
+              },
+              {
+                "item": null,
+                "part": "chest",
+                "slot": 501
+              },
+              {
+                "item": null,
+                "part": "legs",
+                "slot": 502
+              },
+              {
+                "item": null,
+                "part": "feet",
+                "slot": 503
+              }
+            ],
+            "carried": null,
+            "counts": {
+              "minecraft:end_crystal": 8,
+              "minecraft:stick": 1
+            },
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "hotbar": [
+              {
+                "count": 8,
+                "item": "minecraft:end_crystal",
+                "slot": 0
+              },
+              {
+                "item": null,
+                "slot": 1
+              },
+              {
+                "item": null,
+                "slot": 2
+              },
+              {
+                "item": null,
+                "slot": 3
+              },
+              {
+                "item": null,
+                "slot": 4
+              },
+              {
+                "item": null,
+                "slot": 5
+              },
+              {
+                "item": null,
+                "slot": 6
+              },
+              {
+                "item": null,
+                "slot": 7
+              },
+              {
+                "count": 1,
+                "item": "minecraft:stick",
+                "slot": 8
+              }
+            ],
+            "main": [
+              {
+                "item": null,
+                "slot": 9
+              },
+              {
+                "item": null,
+                "slot": 10
+              },
+              {
+                "item": null,
+                "slot": 11
+              },
+              {
+                "item": null,
+                "slot": 12
+              },
+              {
+                "item": null,
+                "slot": 13
+              },
+              {
+                "item": null,
+                "slot": 14
+              },
+              {
+                "item": null,
+                "slot": 15
+              },
+              {
+                "item": null,
+                "slot": 16
+              },
+              {
+                "item": null,
+                "slot": 17
+              },
+              {
+                "item": null,
+                "slot": 18
+              },
+              {
+                "item": null,
+                "slot": 19
+              },
+              {
+                "item": null,
+                "slot": 20
+              },
+              {
+                "item": null,
+                "slot": 21
+              },
+              {
+                "item": null,
+                "slot": 22
+              },
+              {
+                "item": null,
+                "slot": 23
+              },
+              {
+                "item": null,
+                "slot": 24
+              },
+              {
+                "item": null,
+                "slot": 25
+              },
+              {
+                "item": null,
+                "slot": 26
+              },
+              {
+                "item": null,
+                "slot": 27
+              },
+              {
+                "item": null,
+                "slot": 28
+              },
+              {
+                "item": null,
+                "slot": 29
+              },
+              {
+                "item": null,
+                "slot": 30
+              },
+              {
+                "item": null,
+                "slot": 31
+              },
+              {
+                "item": null,
+                "slot": 32
+              },
+              {
+                "item": null,
+                "slot": 33
+              },
+              {
+                "item": null,
+                "slot": 34
+              },
+              {
+                "item": null,
+                "slot": 35
+              }
+            ],
+            "offhand": {
+              "item": null,
+              "slot": 504
+            },
+            "selected": 9
+          },
+          "entities": {
+            "entities": [
+              {
+                "baby": false,
+                "distance": 4.9,
+                "health": 20.0,
+                "hurt_time": 0,
+                "id": 2,
+                "kind": "mob",
+                "pos": [
+                  5.5,
+                  121.0,
+                  0.5
+                ],
+                "type": "minecraft:player"
+              }
+            ]
+          },
+          "crystals": [],
+          "anchor": {
+            "block": "minecraft:air",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:air"
+          }
+        },
+        "after": {
+          "attacker": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "looking_at": {
+              "block": null,
+              "entity": null,
+              "kind": "none"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                0,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 255,
+                  "duration_ticks": 19999765,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                0.6,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 5.0,
+              "portal_effect": 0.0,
+              "position": [
+                0.6,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": -90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 9,
+            "sleeping": null,
+            "swings": 9,
+            "ticks": 8877,
+            "time": {
+              "day": 0,
+              "day_time": 6946,
+              "time_of_day": 6946
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "target": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": null,
+            "looking_at": {
+              "block": null,
+              "entity": null,
+              "kind": "none"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                5,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 3,
+                  "duration_ticks": 19999766,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                5.5,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 0.0,
+              "portal_effect": 0.0,
+              "position": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": 90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 1,
+            "sleeping": null,
+            "swings": 0,
+            "ticks": 8851,
+            "time": {
+              "day": 0,
+              "day_time": 6950,
+              "time_of_day": 6950
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "inventory": {
+            "armor": [
+              {
+                "item": null,
+                "part": "head",
+                "slot": 500
+              },
+              {
+                "item": null,
+                "part": "chest",
+                "slot": 501
+              },
+              {
+                "item": null,
+                "part": "legs",
+                "slot": 502
+              },
+              {
+                "item": null,
+                "part": "feet",
+                "slot": 503
+              }
+            ],
+            "carried": null,
+            "counts": {
+              "minecraft:end_crystal": 8,
+              "minecraft:stick": 1
+            },
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "hotbar": [
+              {
+                "count": 8,
+                "item": "minecraft:end_crystal",
+                "slot": 0
+              },
+              {
+                "item": null,
+                "slot": 1
+              },
+              {
+                "item": null,
+                "slot": 2
+              },
+              {
+                "item": null,
+                "slot": 3
+              },
+              {
+                "item": null,
+                "slot": 4
+              },
+              {
+                "item": null,
+                "slot": 5
+              },
+              {
+                "item": null,
+                "slot": 6
+              },
+              {
+                "item": null,
+                "slot": 7
+              },
+              {
+                "count": 1,
+                "item": "minecraft:stick",
+                "slot": 8
+              }
+            ],
+            "main": [
+              {
+                "item": null,
+                "slot": 9
+              },
+              {
+                "item": null,
+                "slot": 10
+              },
+              {
+                "item": null,
+                "slot": 11
+              },
+              {
+                "item": null,
+                "slot": 12
+              },
+              {
+                "item": null,
+                "slot": 13
+              },
+              {
+                "item": null,
+                "slot": 14
+              },
+              {
+                "item": null,
+                "slot": 15
+              },
+              {
+                "item": null,
+                "slot": 16
+              },
+              {
+                "item": null,
+                "slot": 17
+              },
+              {
+                "item": null,
+                "slot": 18
+              },
+              {
+                "item": null,
+                "slot": 19
+              },
+              {
+                "item": null,
+                "slot": 20
+              },
+              {
+                "item": null,
+                "slot": 21
+              },
+              {
+                "item": null,
+                "slot": 22
+              },
+              {
+                "item": null,
+                "slot": 23
+              },
+              {
+                "item": null,
+                "slot": 24
+              },
+              {
+                "item": null,
+                "slot": 25
+              },
+              {
+                "item": null,
+                "slot": 26
+              },
+              {
+                "item": null,
+                "slot": 27
+              },
+              {
+                "item": null,
+                "slot": 28
+              },
+              {
+                "item": null,
+                "slot": 29
+              },
+              {
+                "item": null,
+                "slot": 30
+              },
+              {
+                "item": null,
+                "slot": 31
+              },
+              {
+                "item": null,
+                "slot": 32
+              },
+              {
+                "item": null,
+                "slot": 33
+              },
+              {
+                "item": null,
+                "slot": 34
+              },
+              {
+                "item": null,
+                "slot": 35
+              }
+            ],
+            "offhand": {
+              "item": null,
+              "slot": 504
+            },
+            "selected": 9
+          },
+          "entities": {
+            "entities": [
+              {
+                "baby": false,
+                "distance": 4.9,
+                "health": 20.0,
+                "hurt_time": 0,
+                "id": 2,
+                "kind": "mob",
+                "pos": [
+                  5.5,
+                  121.0,
+                  0.5
+                ],
+                "type": "minecraft:player"
+              }
+            ]
+          },
+          "crystals": [],
+          "anchor": {
+            "block": "minecraft:air",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:air"
+          }
+        }
+      }
+    },
+    {
+      "name": "Anchor Aura charges and detonates against the real test player",
+      "passed": true,
+      "evidence": {
+        "before": {
+          "attacker": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "looking_at": {
+              "block": {
+                "block": "minecraft:obsidian",
+                "distance": 3.412987447647381,
+                "face": "west",
+                "loaded": true,
+                "point": [
+                  4.0,
+                  122.32253854878024,
+                  0.5000000000000002
+                ],
+                "pos": [
+                  4,
+                  122,
+                  0
+                ],
+                "state": "minecraft:obsidian"
+              },
+              "entity": null,
+              "kind": "block"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                0,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 255,
+                  "duration_ticks": 19999917,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                0.6,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 5.0,
+              "portal_effect": 0.0,
+              "position": [
+                0.6,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": -90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 9,
+            "sleeping": null,
+            "swings": 9,
+            "ticks": 9245,
+            "time": {
+              "day": 0,
+              "day_time": 7315,
+              "time_of_day": 7315
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "target": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": null,
+            "looking_at": {
+              "block": {
+                "block": "minecraft:obsidian",
+                "distance": 0.5,
+                "face": "east",
+                "loaded": true,
+                "point": [
+                  5.0,
+                  122.62000000476836,
+                  0.5
+                ],
+                "pos": [
+                  4,
+                  122,
+                  0
+                ],
+                "state": "minecraft:obsidian"
+              },
+              "entity": null,
+              "kind": "block"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                5,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 3,
+                  "duration_ticks": 19999917,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                5.5,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 0.0,
+              "portal_effect": 0.0,
+              "position": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": 90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 1,
+            "sleeping": null,
+            "swings": 0,
+            "ticks": 9220,
+            "time": {
+              "day": 0,
+              "day_time": 7320,
+              "time_of_day": 7320
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "inventory": {
+            "armor": [
+              {
+                "item": null,
+                "part": "head",
+                "slot": 500
+              },
+              {
+                "item": null,
+                "part": "chest",
+                "slot": 501
+              },
+              {
+                "item": null,
+                "part": "legs",
+                "slot": 502
+              },
+              {
+                "item": null,
+                "part": "feet",
+                "slot": 503
+              }
+            ],
+            "carried": null,
+            "counts": {
+              "minecraft:glowstone": 1,
+              "minecraft:respawn_anchor": 1,
+              "minecraft:stick": 1
+            },
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "hotbar": [
+              {
+                "count": 1,
+                "item": "minecraft:respawn_anchor",
+                "slot": 0
+              },
+              {
+                "count": 1,
+                "item": "minecraft:glowstone",
+                "slot": 1
+              },
+              {
+                "item": null,
+                "slot": 2
+              },
+              {
+                "item": null,
+                "slot": 3
+              },
+              {
+                "item": null,
+                "slot": 4
+              },
+              {
+                "item": null,
+                "slot": 5
+              },
+              {
+                "item": null,
+                "slot": 6
+              },
+              {
+                "item": null,
+                "slot": 7
+              },
+              {
+                "count": 1,
+                "item": "minecraft:stick",
+                "slot": 8
+              }
+            ],
+            "main": [
+              {
+                "item": null,
+                "slot": 9
+              },
+              {
+                "item": null,
+                "slot": 10
+              },
+              {
+                "item": null,
+                "slot": 11
+              },
+              {
+                "item": null,
+                "slot": 12
+              },
+              {
+                "item": null,
+                "slot": 13
+              },
+              {
+                "item": null,
+                "slot": 14
+              },
+              {
+                "item": null,
+                "slot": 15
+              },
+              {
+                "item": null,
+                "slot": 16
+              },
+              {
+                "item": null,
+                "slot": 17
+              },
+              {
+                "item": null,
+                "slot": 18
+              },
+              {
+                "item": null,
+                "slot": 19
+              },
+              {
+                "item": null,
+                "slot": 20
+              },
+              {
+                "item": null,
+                "slot": 21
+              },
+              {
+                "item": null,
+                "slot": 22
+              },
+              {
+                "item": null,
+                "slot": 23
+              },
+              {
+                "item": null,
+                "slot": 24
+              },
+              {
+                "item": null,
+                "slot": 25
+              },
+              {
+                "item": null,
+                "slot": 26
+              },
+              {
+                "item": null,
+                "slot": 27
+              },
+              {
+                "item": null,
+                "slot": 28
+              },
+              {
+                "item": null,
+                "slot": 29
+              },
+              {
+                "item": null,
+                "slot": 30
+              },
+              {
+                "item": null,
+                "slot": 31
+              },
+              {
+                "item": null,
+                "slot": 32
+              },
+              {
+                "item": null,
+                "slot": 33
+              },
+              {
+                "item": null,
+                "slot": 34
+              },
+              {
+                "item": null,
+                "slot": 35
+              }
+            ],
+            "offhand": {
+              "item": null,
+              "slot": 504
+            },
+            "selected": 9
+          },
+          "entities": {
+            "entities": [
+              {
+                "baby": false,
+                "distance": 4.9,
+                "health": 20.0,
+                "hurt_time": 0,
+                "id": 2,
+                "kind": "mob",
+                "pos": [
+                  5.5,
+                  121.0,
+                  0.5
+                ],
+                "type": "minecraft:player"
+              }
+            ]
+          },
+          "crystals": [],
+          "anchor": {
+            "block": "minecraft:air",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:air"
+          }
+        },
+        "after": {
+          "attacker": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "looking_at": {
+              "block": {
+                "block": "minecraft:obsidian",
+                "distance": 3.6671659658110807,
+                "face": "west",
+                "loaded": true,
+                "point": [
+                  4.0,
+                  122.30038543123918,
+                  0.5000000000000002
+                ],
+                "pos": [
+                  4,
+                  122,
+                  0
+                ],
+                "state": "minecraft:obsidian"
+              },
+              "entity": null,
+              "kind": "block"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                0,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 255,
+                  "duration_ticks": 19999811,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                0.3467887078365054,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 20.0,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 5.0,
+              "portal_effect": 0.0,
+              "position": [
+                0.3467887078365054,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": -90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 9,
+            "sleeping": null,
+            "swings": 12,
+            "ticks": 9351,
+            "time": {
+              "day": 0,
+              "day_time": 7420,
+              "time_of_day": 7420
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "target": {
+            "busy": null,
+            "dialog": {
+              "open": null,
+              "screen": null
+            },
+            "dimension": "minecraft:overworld",
+            "gamemode": "survival",
+            "held": null,
+            "looking_at": {
+              "block": {
+                "block": "minecraft:obsidian",
+                "distance": 0.699999988079071,
+                "face": "east",
+                "loaded": true,
+                "point": [
+                  5.0,
+                  122.62000000476836,
+                  0.5
+                ],
+                "pos": [
+                  4,
+                  122,
+                  0
+                ],
+                "state": "minecraft:obsidian"
+              },
+              "entity": null,
+              "kind": "block"
+            },
+            "menu": null,
+            "mining": null,
+            "paused": false,
+            "player": {
+              "absorption": 0.0,
+              "air": 300,
+              "block_pos": [
+                5,
+                121,
+                0
+              ],
+              "death_time": null,
+              "effects": [
+                {
+                  "amplifier": 3,
+                  "duration_ticks": 19999811,
+                  "id": "resistance"
+                }
+              ],
+              "eye": [
+                5.699999988079071,
+                122.62000000476836,
+                0.5
+              ],
+              "fall_flying": false,
+              "flying": false,
+              "food": 20,
+              "fov_modifier": 1.0,
+              "health": 10.263781547546388,
+              "hurt_time": 0,
+              "on_ground": true,
+              "pitch": 0.0,
+              "portal_effect": 0.0,
+              "position": [
+                5.699999988079071,
+                121.0,
+                0.5
+              ],
+              "saturation": 5.0,
+              "shield_cooldown": 0,
+              "sneaking": false,
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ],
+              "xp": {
+                "level": 0,
+                "progress": 0.0,
+                "total": 0
+              },
+              "yaw": 90.0
+            },
+            "pointer_grabbed": true,
+            "screen": "playing",
+            "selected": 1,
+            "sleeping": null,
+            "swings": 0,
+            "ticks": 9326,
+            "time": {
+              "day": 0,
+              "day_time": 7426,
+              "time_of_day": 7426
+            },
+            "using": null,
+            "weather": {
+              "raining": false,
+              "thundering": false
+            },
+            "world": ""
+          },
+          "inventory": {
+            "armor": [
+              {
+                "item": null,
+                "part": "head",
+                "slot": 500
+              },
+              {
+                "item": null,
+                "part": "chest",
+                "slot": 501
+              },
+              {
+                "item": null,
+                "part": "legs",
+                "slot": 502
+              },
+              {
+                "item": null,
+                "part": "feet",
+                "slot": 503
+              }
+            ],
+            "carried": null,
+            "counts": {
+              "minecraft:stick": 1
+            },
+            "held": {
+              "count": 1,
+              "item": "minecraft:stick"
+            },
+            "hotbar": [
+              {
+                "item": null,
+                "slot": 0
+              },
+              {
+                "item": null,
+                "slot": 1
+              },
+              {
+                "item": null,
+                "slot": 2
+              },
+              {
+                "item": null,
+                "slot": 3
+              },
+              {
+                "item": null,
+                "slot": 4
+              },
+              {
+                "item": null,
+                "slot": 5
+              },
+              {
+                "item": null,
+                "slot": 6
+              },
+              {
+                "item": null,
+                "slot": 7
+              },
+              {
+                "count": 1,
+                "item": "minecraft:stick",
+                "slot": 8
+              }
+            ],
+            "main": [
+              {
+                "item": null,
+                "slot": 9
+              },
+              {
+                "item": null,
+                "slot": 10
+              },
+              {
+                "item": null,
+                "slot": 11
+              },
+              {
+                "item": null,
+                "slot": 12
+              },
+              {
+                "item": null,
+                "slot": 13
+              },
+              {
+                "item": null,
+                "slot": 14
+              },
+              {
+                "item": null,
+                "slot": 15
+              },
+              {
+                "item": null,
+                "slot": 16
+              },
+              {
+                "item": null,
+                "slot": 17
+              },
+              {
+                "item": null,
+                "slot": 18
+              },
+              {
+                "item": null,
+                "slot": 19
+              },
+              {
+                "item": null,
+                "slot": 20
+              },
+              {
+                "item": null,
+                "slot": 21
+              },
+              {
+                "item": null,
+                "slot": 22
+              },
+              {
+                "item": null,
+                "slot": 23
+              },
+              {
+                "item": null,
+                "slot": 24
+              },
+              {
+                "item": null,
+                "slot": 25
+              },
+              {
+                "item": null,
+                "slot": 26
+              },
+              {
+                "item": null,
+                "slot": 27
+              },
+              {
+                "item": null,
+                "slot": 28
+              },
+              {
+                "item": null,
+                "slot": 29
+              },
+              {
+                "item": null,
+                "slot": 30
+              },
+              {
+                "item": null,
+                "slot": 31
+              },
+              {
+                "item": null,
+                "slot": 32
+              },
+              {
+                "item": null,
+                "slot": 33
+              },
+              {
+                "item": null,
+                "slot": 34
+              },
+              {
+                "item": null,
+                "slot": 35
+              }
+            ],
+            "offhand": {
+              "item": null,
+              "slot": 504
+            },
+            "selected": 9
+          },
+          "entities": {
+            "entities": [
+              {
+                "baby": false,
+                "distance": 5.353211280242566,
+                "health": 10.263781547546388,
+                "hurt_time": 0,
+                "id": 2,
+                "kind": "mob",
+                "pos": [
+                  5.699999988079071,
+                  121.0,
+                  0.5
+                ],
+                "type": "minecraft:player"
+              }
+            ]
+          },
+          "crystals": [],
+          "anchor": {
+            "block": "minecraft:air",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:air"
+          }
+        },
+        "placed": {
+          "elapsed": 0.314,
+          "anchor": {
+            "block": "minecraft:respawn_anchor",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:respawn_anchor[charges=0]"
+          }
+        },
+        "charged": {
+          "elapsed": 2.0,
+          "anchor": {
+            "block": "minecraft:respawn_anchor",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:respawn_anchor[charges=1]"
+          }
+        },
+        "removed": {
+          "elapsed": 2.305,
+          "anchor": {
+            "block": "minecraft:air",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:air"
+          }
+        },
+        "diagnostics": {
+          "actionbar": null,
+          "chat": [
+            "Your game mode has been updated to Survival Mode",
+            "Your game mode has been updated to Spectator Mode",
+            "Your game mode has been updated to Survival Mode",
+            "Your game mode has been updated to Spectator Mode",
+            "Your game mode has been updated to Survival Mode",
+            "Your game mode has been updated to Spectator Mode",
+            "Your game mode has been updated to Survival Mode",
+            "Your game mode has been updated to Spectator Mode"
+          ],
+          "order": "newest first",
+          "styled": [
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Anchor phase=idle reason=reset last_active=waiting:action delay or failed-state limit sent=6 ack=6 last_sent=Some(9316) last_ack=Some(9318) pending=None plan=None damage=(self,target,friend)None scanned=0 evaluated=0 blocked=0"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Crystal stage=11 reason=2 paused=true ticks=8901 crystals=0 cid=5 invulnerable=false own=7.680 target=74.792 health=20.000 queued=false waiting=false attempts=0 counters=[0, 16232, 2, 182, 0, 0, 50, 0, 6, 0, 3, 408, 57, 0, 0, 3, 6, 0]"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Anchor Aura off"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Anchor Aura on"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Damage model: Unmitigated"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Max self damage: 16"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "extra": [
+                {
+                  "color": "#FFB020",
+                  "text": "[Sunset] "
+                },
+                {
+                  "color": "white",
+                  "text": "Action delay: 20"
+                }
+              ],
+              "text": ""
+            },
+            {
+              "translate": "gameMode.changed",
+              "with": [
+                {
+                  "translate": "gameMode.survival"
+                }
+              ]
+            }
+          ],
+          "subtitle": null,
+          "title": null
+        }
+      }
+    }
+  ],
+  "limits": [
+    "Target keeps ordinary 20 health and receives resistance IV so one blast is nonlethal.",
+    "Attacker has resistance255 as a separate fail-safe; Aura damage model is explicitly Unmitigated.",
+    "Both auras use self cap16 and Anti suicide with remaining health4, matching the singleplayer positive fixtures.",
+    "These stationary fixtures do not prove moving-target performance or anticheat compatibility."
+  ],
+  "finished": true,
+  "completed": true,
+  "screenshots": {
+    "anchor.png": {
+      "sha256": "6c90f8da559bb1af9ef672852dd06ee1aea202c27a343b6fa4eea76e2748d752",
+      "method": "Unmodified native framebuffer screenshot; no crop, resize, compositing or image generation"
+    },
+    "crystal.png": {
+      "sha256": "c1ae4dba9e7872c0abdc8df6a8bbba6070550a282d9946bc9d27528873717f63",
+      "method": "Unmodified native framebuffer screenshot; no crop, resize, compositing or image generation"
+    },
+    "target-anchor.png": {
+      "sha256": "c41bbf610e0443c85c93a4edbf0ac25ac7d1cfe5a013264d7c81d394fe623b2b",
+      "method": "Unmodified native framebuffer screenshot; no crop, resize, compositing or image generation"
+    },
+    "friend-protected.png": {
+      "sha256": "7648e2301712eb6deff6c51c2a7bed7b6624fe43a65eecd27eaaefae9bcbdf40",
+      "method": "Unmodified native framebuffer screenshot; no crop, resize, compositing or image generation"
+    }
+  }
+}
