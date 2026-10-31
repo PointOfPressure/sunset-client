@@ -434,7 +434,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Break Delay", Player, "Changes the delay between breaking one block and the next (Meteor's Break Delay): 0 means none.")
             .num("Cooldown (ticks)", 0.0, 0.0, 5.0, 1.0),
         Module::new("Auto Respawn", Player, "Respawns as soon as you die."),
-        Module::new("Panic", Player, "Turns every module off and hides Sunset: no HUD, menu, chat lines or keys, and gone from Options > Mods, until you type .panic again or restart the game. Bind it to a key."),
+        Module::new("Panic", Player, "Turns every module off and hides Sunset on screen: no HUD, menu, chat lines or keys, until you type .panic again or restart the game. Bind it to a key."),
         // Render
         Module::new("ClickGUI", Render, "How this menu looks: accent colour, size, panel width, corner radius, text indent, background opacity and a dim behind it. Menu dim is the game's own dim and blur behind the inventory and the Esc menu.")
             .colour("Accent color", "Gold")
@@ -1035,7 +1035,7 @@ static FLY_LAST_Y: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 static ANTI_SPRINT: AtomicBool = AtomicBool::new(false);
 static ANTI_GROUND: AtomicBool = AtomicBool::new(false);
 static WELCOMED: AtomicBool = AtomicBool::new(false);
-// Panic hid Sunset: no HUD, menu, chat lines or keys, no row in Options > Mods, and only .panic is read from the chat
+// Panic hid Sunset: no HUD, menu, chat lines or keys, and only .panic is read from the chat
 // (it brings Sunset back). Not saved: a restart brings it back too.
 static HIDDEN: AtomicBool = AtomicBool::new(false);
 // The server takes one position packet per tick and disconnects a client that
@@ -1295,9 +1295,6 @@ pub(super) fn look_at(eye: [f64; 3], at: [f64; 3]) -> (f32, f32) {
 // ---------------------------------------------------------------- the menu
 
 pub(super) fn listed(mods: &mut Vec<super::native_hooks::NativeMod>) {
-    if HIDDEN.load(Ordering::Relaxed) {
-        return;
-    }
     mods.push(super::native_hooks::NativeMod {
         id: ID.into(),
         title: format!("{NAME} {VERSION}"),
@@ -4220,7 +4217,6 @@ pub(super) fn chat(game: &mut Game<'_>, message: &str) -> bool {
             return false;
         }
         HIDDEN.store(false, Ordering::Relaxed);
-        game.list_native_mods();
         say(game, "Back. Everything is still off.");
         return true;
     }
@@ -4286,8 +4282,6 @@ pub(super) fn panic_off(game: &mut Game<'_>) {
         close_gui(game);
     }
     HIDDEN.store(true, Ordering::Relaxed);
-    // Options > Mods keeps the rows it was given: given again, without Sunset's.
-    game.list_native_mods();
 }
 
 // .profile save|load|delete|list <name>: the modules' settings kept under a name.

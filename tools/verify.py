@@ -1142,35 +1142,27 @@ def _():
 
 @test("Panic")
 def _():
-    # .panic turns everything off and hides Sunset: nothing said, no HUD, no row in Options > Mods; .panic again
-    # brings it back (everything still off).
-    def in_mods_list():
-        ctl("options", "mods")
-        wait(4)
-        listed = "Sunset" in json.dumps(ctl("screen"))
-        ctl("close")
-        wait(4)
-        return listed
-
+    # .panic turns everything off and hides Sunset on screen: nothing said, no HUD; .panic again brings it back
+    # (everything still off). Sunset stays listed in Options > Mods throughout.
     only("sprint", "fastplace", "fullbright")
-    shown = (watermark(), in_mods_list())
+    shown = watermark()
     mark = log_mark()
     say(".panic")
     wait(6)
     said = sunset_said(mark)
     sprinting = state()["player"].get("sprinting")
     on.clear()
-    hidden = (watermark(), in_mods_list())
+    hidden = watermark()
     mark = log_mark()
     say(".panic")
     wait(6)
     back_said = sunset_said(mark)
     # Panic switched the HUD module off too: put it back as it starts.
     say(".reset hud")
-    back = (watermark(), in_mods_list())
-    ok = not sprinting and shown == (True, True) and not said and hidden == (False, False) and back == (True, True) and back_said
-    return ok, (f"HUD / in Options > Mods before {shown}; after .panic Sunset says {said}, sprinting: {sprinting}, "
-                f"HUD / listed {hidden}; after .panic again it says {back_said}, HUD / listed {back}")
+    back = watermark()
+    ok = not sprinting and shown and not said and not hidden and back and back_said
+    return ok, (f"HUD before {shown}; after .panic Sunset says {said}, sprinting: {sprinting}, HUD {hidden}; "
+                f"after .panic again it says {back_said}, HUD {back}")
 
 
 @test("Profiles")
