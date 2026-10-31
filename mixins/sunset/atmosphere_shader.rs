@@ -1,6 +1,6 @@
 // Original procedural sky; no textures, donor assets, ray marching or screen-space history.
 // The renderer appends this to its existing Globals/sky declarations. Quality specializes
-// a bounded 2/4/6-octave cloud field and 1/2/3 star layers; all modes use one cached pipeline.
+// a bounded 2/3/5-octave cloud field and 1/2/3 star/aurora layers; one cached pipeline.
 pub const ATMOSPHERE_WGSL: &str = r#"
 override SUNSET_MODE: u32 = 0u;
 override SUNSET_BRIGHTNESS: f32 = 1.0;
@@ -21,30 +21,31 @@ fn sunset_hash(cell: vec3<i32>) -> u32 {
 fn sunset_random(cell: vec3<i32>) -> f32 {
     return f32(sunset_hash(cell) >> 8u) * (1.0 / 16777216.0);
 }
-fn sunset_noise(p: vec3<f32>) -> f32 {
-    let cell = vec3<i32>(floor(p));
+// Project the continuous world direction onto the nebula's own plane. Unlike
+// longitude/latitude coordinates this has no seam or pole, and each lattice
+// sample needs four corner hashes rather than eight 3-D corner hashes.
+fn sunset_noise(p: vec2<f32>) -> f32 {
+    let cell = vec3<i32>(vec2<i32>(floor(p)), 0);
     let f = fract(p);
     let s = f * f * (3.0 - 2.0 * f);
     let a = mix(sunset_random(cell), sunset_random(cell + vec3(1, 0, 0)), s.x);
     let b = mix(sunset_random(cell + vec3(0, 1, 0)), sunset_random(cell + vec3(1, 1, 0)), s.x);
-    let c = mix(sunset_random(cell + vec3(0, 0, 1)), sunset_random(cell + vec3(1, 0, 1)), s.x);
-    let d = mix(sunset_random(cell + vec3(0, 1, 1)), sunset_random(cell + vec3(1, 1, 1)), s.x);
-    return mix(mix(a, b, s.y), mix(c, d, s.y), s.z);
+    return mix(a, b, s.y);
 }
-fn sunset_cloud(position: vec3<f32>) -> vec2<f32> {
+fn sunset_cloud(position: vec2<f32>) -> vec2<f32> {
     var p = position;
     var sum = vec2(0.0);
     var amplitude = 0.5;
     var weight = 0.0;
-    let octaves = 2u + min(SUNSET_QUALITY, 2u) * 2u;
+    let octaves = select(2u + SUNSET_QUALITY, 5u, SUNSET_QUALITY > 1u);
     // The literal cap is part of the performance contract, even if specialization fails.
-    for (var i = 0u; i < 6u; i++) {
+    for (var i = 0u; i < 5u; i++) {
         if i >= octaves { break; }
         let n = sunset_noise(p);
         sum += vec2(n, 1.0 - abs(n * 2.0 - 1.0)) * amplitude;
         weight += amplitude;
         // Rotate the domain between octaves to avoid axis-aligned cloud structure.
-        p = vec3(p.y + p.z * 0.4, p.z - p.x * 0.4, p.x + p.y * 0.4) * 1.91 + vec3(7.1, 13.7, 3.9);
+        p = vec2(p.x * 0.8 - p.y * 0.6, p.x * 0.6 + p.y * 0.8) * 2.03 + vec2(7.1, 13.7);
         amplitude *= 0.49;
     }
     return sum / weight;
@@ -60,10 +61,16 @@ fn sunset_star_layer(ray: vec3<f32>, scale: f32, seed: i32, footprint: f32, time
         f32(h & 1023u), f32((h >> 10u) & 1023u), f32((h >> 20u) & 1023u)
     ) * (0.64 / 1023.0) + vec3(0.18);
     let delta = fract(p) - center;
-    let distance_to_star = length(delta);
     let rare = f32(h >> 30u) / 3.0;
     let radius = mix(0.055, 0.105, rare * rare * rare);
     let pixel = max(footprint * scale, 0.0001);
+    // Almost every cell sample is outside both kernels. Reject it before the
+    // square root, filtered core, tint and animated sine; keep enlarged cores
+    // at small window sizes inside the conservative support as well.
+    let support = max(0.16, radius + pixel);
+    let distance_squared = dot(delta, delta);
+    if distance_squared >= support * support { return vec3(0.0); }
+    let distance_to_star = sqrt(distance_squared);
     let core = 1.0 - smoothstep(max(radius - pixel, 0.0), radius + pixel, distance_to_star);
     // Keep subpixel stars from becoming overbright as their filtered footprint grows.
     let coverage = min(1.0, radius * radius / (pixel * pixel));
@@ -79,14 +86,20 @@ fn sunset_space(ray: vec3<f32>, time: f32) -> vec3<f32> {
     let across = vec3(-0.745241, 0.0, -0.666795);
     let along = vec3(-0.427905, 0.766926, 0.478247);
     let p = vec3(dot(ray, across), dot(ray, along), dot(ray, normal));
-    let drift = vec3(time * 0.0008, -time * 0.0003, 0.0);
-    let warp = vec2(sunset_noise(p * 2.6 + drift + vec3(4.7)),
-                    sunset_noise(p * 2.6 + drift + vec3(19.3, 2.1, 8.4)));
-    let field = sunset_cloud(p * vec3(4.2, 4.2, 6.4) + vec3(warp * 1.7, 0.0) + drift);
+    let domain = p.xy + p.z * vec2(0.37, -0.19);
+    let drift = vec2(time * 0.0008, -time * 0.0003);
+    let warp_x = sunset_noise(domain * 2.6 + drift + vec2(4.7));
+    var warp_y = 1.0 - warp_x;
+    if SUNSET_QUALITY > 0u {
+        warp_y = sunset_noise(domain * 2.6 + drift + vec2(19.3, 2.1));
+    }
+    let warp = vec2(warp_x, warp_y);
+    let field = sunset_cloud(domain * 4.2 + warp * 1.7 + drift);
     let latitude = p.z + (warp.x - 0.5) * 0.31;
     let envelope = exp(-latitude * latitude * 5.2);
     let cloud = smoothstep(0.27, 0.76, field.x) * envelope;
-    let filament = pow(clamp(field.y, 0.0, 1.0), 3.0) * cloud;
+    let ridge = clamp(field.y, 0.0, 1.0);
+    let filament = ridge * ridge * ridge * cloud;
     let pink = smoothstep(0.28, 0.72, warp.y + field.x * 0.18);
     let tint = mix(vec3(0.035, 0.12, 0.62), vec3(0.75, 0.025, 0.42), pink);
     let dust = exp(-abs(latitude + (field.x - 0.5) * 0.35) * 29.0)
@@ -100,23 +113,28 @@ fn sunset_space(ray: vec3<f32>, time: f32) -> vec3<f32> {
 fn sunset_aurora(ray: vec3<f32>, time: f32, footprint: f32) -> vec3<f32> {
     let azimuth = atan2(ray.z, ray.x);
     var glow = vec3(0.0);
+    let layers = 1u + min(SUNSET_QUALITY, 2u);
     // Three analytic curtains, not an unbounded volumetric ray march. All azimuth
     // frequencies are integers so atan2's branch cut cannot form a visible seam.
     for (var i = 0u; i < 3u; i++) {
+        if i >= layers { break; }
         let layer = f32(i);
         let phase = time * 0.035 + layer * 2.1;
         let folds = sin(azimuth * 9.0 + phase + sin(azimuth * 3.0 - phase) * 1.3);
         let base = 0.12 + layer * 0.12 + sin(azimuth * 2.0 + phase) * 0.13 + folds * 0.035;
         let height = ray.y - base;
+        if height <= -footprint * 2.0 { continue; }
         let rise = smoothstep(-footprint * 2.0, 0.027 + footprint * 2.0, height);
         let fall = exp(-max(height, 0.0) * (7.0 + layer));
-        let rays = 0.35 + 0.65 * pow(0.5 + 0.5 * sin(azimuth * 113.0 + folds * 2.0 + phase), 3.0);
+        let wave = 0.5 + 0.5 * sin(azimuth * 113.0 + folds * 2.0 + phase);
+        let rays = 0.35 + 0.65 * wave * wave * wave;
         let curtain = rise * fall * rays;
         let tint = mix(vec3(0.025, 0.65, 0.32), vec3(0.29, 0.055, 0.58),
             smoothstep(0.02, 0.31, height));
         glow += tint * curtain * (0.7 - layer * 0.15);
     }
-    return vec3(0.002, 0.007, 0.021) + glow * clamp(SUNSET_STRENGTH, 0.0, 2.0);
+    let layer_gain = select(select(1.6, 1.25, layers == 2u), 1.0, layers == 3u);
+    return vec3(0.002, 0.007, 0.021) + glow * layer_gain * clamp(SUNSET_STRENGTH, 0.0, 2.0);
 }
 
 fn sunset_ringed_planet(ray: vec3<f32>, background: vec3<f32>, footprint: f32, time: f32) -> vec3<f32> {
@@ -126,9 +144,15 @@ fn sunset_ringed_planet(ray: vec3<f32>, background: vec3<f32>, footprint: f32, t
     let axis = vec3(0.15003751, 0.97024259, -0.19004752);
     let light = vec3(-0.63142230, 0.35079017, -0.69155776);
     let projection = dot(ray, planet_center);
+    let pixel = max(footprint * 6.0, 0.0001);
+    // The full annulus (including its largest filter) fits in radius 2.22.
+    // Most sky rays cannot hit it: skip all sphere/ring sqrt, division and sine.
+    let bound = max(2.24, 1.0 + pixel);
+    if projection <= 0.0 || projection * projection < 36.0 - bound * bound {
+        return background;
+    }
     let discriminant = projection * projection - 35.0;
     let impact = sqrt(max(36.0 - projection * projection, 0.0));
-    let pixel = max(footprint * 6.0, 0.0001);
     let sphere_mask = (1.0 - smoothstep(1.0 - pixel, 1.0 + pixel, impact))
         * select(0.0, 1.0, projection > 0.0);
     let sphere_t = projection - sqrt(max(discriminant, 0.0));
@@ -186,8 +210,14 @@ fn sunset_ringed_planet(ray: vec3<f32>, background: vec3<f32>, footprint: f32, t
 }
 
 // Called once from the sky fragment entry, before terrain/hand/UI render passes.
-fn sunset_atmosphere(ray: vec3<f32>, vanilla: vec3<f32>) -> vec3<f32> {
+fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
+    // Derivatives must execute before any per-pixel early return.
     let footprint = max(length(dpdx(ray)), length(dpdy(ray)));
+    let night = 1.0 - smoothstep(-0.10, 0.15, globals.sun.y);
+    let visibility = mix(clamp(SUNSET_DAY_BLEND, 0.0, 1.0), 1.0, night);
+    let horizon = smoothstep(-0.12, 0.16, ray.y);
+    let blend = visibility * horizon;
+    if blend <= 0.0 { return sky_along_ray(ray); }
     let time = globals.misc.y * clamp(SUNSET_SPEED, 0.0, 3.0);
     var color: vec3<f32>;
     if SUNSET_MODE == 1u {
@@ -195,12 +225,15 @@ fn sunset_atmosphere(ray: vec3<f32>, vanilla: vec3<f32>) -> vec3<f32> {
     } else {
         color = sunset_space(ray, time);
     }
-    var stars = sunset_star_layer(ray, 113.0, 17, footprint, time);
-    if SUNSET_QUALITY > 0u {
-        stars += sunset_star_layer(ray, 237.0, 151, footprint, time) * 0.62;
-    }
-    if SUNSET_QUALITY > 1u {
-        stars += sunset_star_layer(ray, 371.0, 401, footprint, time) * 0.28;
+    var stars = vec3(0.0);
+    if SUNSET_STARS > 0.0 {
+        stars = sunset_star_layer(ray, 113.0, 17, footprint, time);
+        if SUNSET_QUALITY > 0u {
+            stars += sunset_star_layer(ray, 237.0, 151, footprint, time) * 0.62;
+        }
+        if SUNSET_QUALITY > 1u {
+            stars += sunset_star_layer(ray, 371.0, 401, footprint, time) * 0.28;
+        }
     }
     color += stars * clamp(SUNSET_STARS, 0.0, 2.0);
     if SUNSET_MODE == 2u {
@@ -208,10 +241,10 @@ fn sunset_atmosphere(ray: vec3<f32>, vanilla: vec3<f32>) -> vec3<f32> {
     }
     // Compress bright cores without HDR alpha conventions or bloom dependencies.
     color = vec3(1.0) - exp(-max(color, vec3(0.0)) * clamp(SUNSET_BRIGHTNESS, 0.0, 2.0));
-    let night = 1.0 - smoothstep(-0.10, 0.15, globals.sun.y);
-    let visibility = mix(clamp(SUNSET_DAY_BLEND, 0.0, 1.0), 1.0, night);
     // Meet the existing horizon/fog gently; do not recolor geometry or the lower void.
-    let horizon = smoothstep(-0.12, 0.16, ray.y);
-    return mix(vanilla, color, visibility * horizon);
+    // Native sky includes disc trigonometry and sunrise fan intersections. Avoid
+    // evaluating it over the opaque custom sky, where its contribution is zero.
+    if blend >= 1.0 { return color; }
+    return mix(sky_along_ray(ray), color, blend);
 }
 "#;

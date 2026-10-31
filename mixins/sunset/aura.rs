@@ -133,26 +133,25 @@ fn reach(eye: [f64; 3], t: &Target) -> f64 {
     dist(eye, [eye[0].clamp(t.lo[0], t.hi[0]), eye[1].clamp(t.lo[1], t.hi[1]), eye[2].clamp(t.lo[2], t.hi[2])])
 }
 
-fn entity_check(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool {
+fn entity_check(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3], mob: &horizon_client::mobs::Mob) -> bool {
     if t.health <= 0.0 || spared(game, m, t.id, t.player) {
         return false;
     }
     if reach(eye, t) > m.n("Range") || !entity_listed(m.t("Entities"), t) {
         return false;
     }
-    let mob = game.mobs.iter().find(|x| x.id == t.id);
-    if m.b("Ignore named") && mob.is_some_and(|x| x.custom_name.is_some()) {
+    if m.b("Ignore named") && mob.custom_name.is_some() {
         return false;
     }
     let centre = [(t.lo[0] + t.hi[0]) / 2.0, (t.lo[1] + t.hi[1]) / 2.0, (t.lo[2] + t.hi[2]) / 2.0];
-    if !clear_line(game, centre, [i32::MIN; 3]) && dist(eye, t.pos) > m.n("Walls range") {
+    if dist(eye, t.pos) > m.n("Walls range") && !clear_line(game, centre, [i32::MIN; 3]) {
         return false;
     }
     let k = short(&t.kind);
     if m.b("Ignore passive") && matches!(k, "enderman" | "piglin" | "zombified_piglin" | "wolf") {
         return false;
     }
-    let baby = mob.is_some_and(|x| x.is_baby());
+    let baby = mob.is_baby();
     if matches!(k, "zombie" | "piglin" | "hoglin" | "zoglin") {
         return age_ok(m.p("Hostile mob age filter"), baby);
     }
@@ -197,17 +196,20 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     };
     let own = game.remote.as_ref().map(|r| r.entity_id as u32);
     let friends = super::sunset::with(|s| s.friends.clone());
-    let names = game.remote_player_names();
-    let mut list: Vec<Target> = if m.b("Only on look") {
-        game.mob_hit().map(|(i, _)| mob_target(&game.mobs[i])).into_iter().collect()
-    } else {
-        every_living(game)
-    };
-    list.retain(|t| {
-        Some(t.id) != own
-            && !(t.player && names.iter().any(|(i, n)| *i == t.id && friends.iter().any(|f| f.eq_ignore_ascii_case(n))))
-            && entity_check(game, m, t, eye)
-    });
+    let only_look = m.b("Only on look");
+    let looked_at = only_look.then(|| game.mob_hit().map(|(i, _)| i)).flatten();
+    // Keep the source mob beside its Target instead of searching the entire
+    // entity list again for each candidate's name/age metadata.
+    let mobs = super::sunset_target_order::candidates(&game.mobs, looked_at, only_look);
+    let mut list: Vec<Target> = mobs.iter()
+        .filter(|mob| only_look || mob.alive() && !mob.removed)
+        .filter(|mob| Some(mob.id) != own)
+        .filter(|mob| !(mob.kind.id == "minecraft:player"
+            && game.remote_player_name(mob.id).is_some_and(|name| friends.iter().any(|f| f.eq_ignore_ascii_case(name)))))
+        .filter_map(|mob| {
+            let target = mob_target(mob);
+            entity_check(game, m, &target, eye, mob).then_some(target)
+        }).collect();
     sort_targets(game, &mut list, m.p("Priority"));
     list.truncate(if m.b("Only on look") { 1 } else { m.n("Max targets") as usize });
     if list.is_empty() {
@@ -229,8 +231,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             }
         }
     }
-    let held = game.held().map(|s| short(&s.item).to_owned());
-    if !acceptable(m, held.as_deref()) {
+    if !acceptable(m, game.held().map(|s| short(&s.item))) {
         stop(game, m);
         return;
     }

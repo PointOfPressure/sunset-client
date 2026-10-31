@@ -896,7 +896,7 @@ fn auto_totem(game: &mut Game<'_>, m: &Module) {
 
 // ---- Auto EXP
 
-fn needs_repair(game: &Game<'_>, stack: &Option<horizon_client::items::ItemStack>, threshold: f64) -> bool {
+fn needs_repair(game: &Game<'_>, stack: Option<&horizon_client::items::ItemStack>, threshold: f64) -> bool {
     let Some(s) = stack else {
         return false;
     };
@@ -907,32 +907,33 @@ fn needs_repair(game: &Game<'_>, stack: &Option<horizon_client::items::ItemStack
     max > 0 && f64::from(max.saturating_sub(s.damage)) / f64::from(max) * 100.0 <= threshold
 }
 
+fn repair_item_at<'a>(game: &'a Game<'_>, i: usize) -> Option<&'a horizon_client::items::ItemStack> {
+    match i {
+        0..=3 => game.armor[i].as_ref(),
+        10 => game.inventory.get(game.selected).and_then(Option::as_ref),
+        _ => game.offhand.as_ref(),
+    }
+}
+
 fn auto_exp(game: &mut Game<'_>, m: &Module) {
     if m.b("Only on ground") && !game.player.as_ref().is_some_and(|p| p.ground.on_ground) {
         return;
     }
     // 0 to 3 armor, 10 the main hand, 11 the offhand.
-    let item_at = |game: &Game<'_>, i: usize| -> Option<horizon_client::items::ItemStack> {
-        match i {
-            0..=3 => game.armor[i].clone(),
-            10 => game.inventory.get(game.selected).cloned().flatten(),
-            _ => game.offhand.clone(),
-        }
-    };
     let mut repairing = cs(|c| c.exp_repairing);
     if repairing.is_none() {
         if m.p("Mode") != "Hands" {
-            repairing = (0..4).find(|&i| needs_repair(game, &game.armor[i], m.n("Min threshold %")));
+            repairing = (0..4).find(|&i| needs_repair(game, game.armor[i].as_ref(), m.n("Min threshold %")));
         }
         if m.p("Mode") != "Armor" && repairing.is_none() {
-            repairing = [10usize, 11].into_iter().find(|&i| needs_repair(game, &item_at(game, i), m.n("Min threshold %")));
+            repairing = [10usize, 11].into_iter().find(|&i| needs_repair(game, repair_item_at(game, i), m.n("Min threshold %")));
         }
     }
     cs(|c| c.exp_repairing = repairing);
     let Some(i) = repairing else {
         return;
     };
-    if !needs_repair(game, &item_at(game, i), m.n("Max threshold %")) {
+    if !needs_repair(game, repair_item_at(game, i), m.n("Max threshold %")) {
         cs(|c| c.exp_repairing = None);
         return;
     }
@@ -1146,32 +1147,42 @@ impl<'a> Aim<'a, '_> {
     }
 
     // A target, within `half_cone` degrees of the crosshair, in range and not behind a block.
-    fn valid(&self, e: &Mob, half_cone: f64) -> bool {
+    fn candidate(&self, e: &Mob, half_cone: f64) -> Option<(f64, [f64; 3], f64)> {
         if !self.matches(e) {
-            return false;
+            return None;
         }
         let aim = closest_point(&self.boxed(e), self.eye, self.look);
         let to = sub(aim, self.eye);
         let d = dist(self.eye, aim);
-        if d < 1e-4 || angle_between(to, self.look).to_degrees() > half_cone {
-            return false;
+        let angle = angle_between(to, self.look);
+        if d < 1e-4 || angle.to_degrees() > half_cone {
+            return None;
         }
         if self.m.p("Range shape") == "Column" {
             let height = self.m.n("Column height");
             if to[0].hypot(to[2]) > self.range || (height > 0.0 && to[1].abs() > height) {
-                return false;
+                return None;
             }
         } else if d > self.range {
-            return false;
+            return None;
         }
-        clip_clear(self.game, self.eye, aim, d)
+        Some((angle, aim, d))
+    }
+
+    fn valid(&self, e: &Mob, half_cone: f64) -> bool {
+        self.candidate(e, half_cone)
+            .is_some_and(|(_, point, distance)| clip_clear(self.game, self.eye, point, distance))
     }
 
     // The target nearest the crosshair.
     fn pick(&self, cone: f64) -> Option<&'a Mob> {
         let game: &'a Game<'_> = self.game;
-        let angle = |e: &Mob| angle_between(sub(closest_point(&self.boxed(e), self.eye, self.look), self.eye), self.look);
-        game.mobs.iter().filter(|e| self.valid(e, cone / 2.0)).min_by(|a, b| angle(a).total_cmp(&angle(b)))
+        let candidates = game.mobs.iter().filter_map(|e| {
+            self.candidate(e, cone / 2.0).map(|(angle, point, distance)| (angle, (e, point, distance)))
+        });
+        super::sunset_target_order::closest_visible(candidates, |(_, point, distance)| {
+            clip_clear(game, self.eye, *point, *distance)
+        }).map(|(e, _, _)| e)
     }
 }
 

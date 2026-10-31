@@ -40,6 +40,7 @@ pub(super) fn circle_point(center: [f32; 2], radius: f32, i: usize, segments: us
 
 // North-up uses +X right, +Z down. Rotating puts the player's forward
 // direction up (Minecraft yaw zero faces +Z).
+#[allow(dead_code)] // Retained scalar geometry API; frame rendering uses Projection.
 pub(super) fn offset(dx: f64, dz: f64, yaw: f64, rotate: bool) -> [f64; 2] {
     if !rotate {
         return [dx, dz];
@@ -48,6 +49,7 @@ pub(super) fn offset(dx: f64, dz: f64, yaw: f64, rotate: bool) -> [f64; 2] {
     [-dx * cos - dz * sin, dx * sin - dz * cos]
 }
 
+#[allow(dead_code)] // Retained scalar geometry API; frame rendering uses Projection.
 pub(super) fn project(
     dx: f64,
     dz: f64,
@@ -56,17 +58,43 @@ pub(super) fn project(
     range: f64,
     radius: f32,
 ) -> Option<[f32; 2]> {
-    if ![dx, dz, yaw, range, f64::from(radius)]
-        .iter()
-        .all(|n| n.is_finite())
-        || range <= 0.0
-        || radius <= 0.0
-        || dx.hypot(dz) > range
-    {
-        return None;
+    Projection::new(yaw, rotate, range, radius)?.project(dx, dz)
+}
+
+// Camera/range settings are shared by every marker in a frame. In
+// particular, heading-up needs one sin_cos call, not one per player.
+pub(super) struct Projection {
+    rotation: Option<[f64; 2]>,
+    range: f64,
+    radius: f32,
+}
+
+impl Projection {
+    pub(super) fn new(yaw: f64, rotate: bool, range: f64, radius: f32) -> Option<Self> {
+        if !yaw.is_finite() || !range.is_finite() || !radius.is_finite() || range <= 0.0 || radius <= 0.0 {
+            return None;
+        }
+        let rotation = rotate.then(|| {
+            let (sin, cos) = yaw.to_radians().sin_cos();
+            [sin, cos]
+        });
+        Some(Self { rotation, range, radius })
     }
-    let [x, y] = offset(dx, dz, yaw, rotate);
-    Some([(x / range) as f32 * radius, (y / range) as f32 * radius])
+
+    pub(super) fn offset(&self, dx: f64, dz: f64) -> [f64; 2] {
+        match self.rotation {
+            Some([sin, cos]) => [-dx * cos - dz * sin, dx * sin - dz * cos],
+            None => [dx, dz],
+        }
+    }
+
+    pub(super) fn project(&self, dx: f64, dz: f64) -> Option<[f32; 2]> {
+        if !dx.is_finite() || !dz.is_finite() || dx.hypot(dz) > self.range {
+            return None;
+        }
+        let [x, y] = self.offset(dx, dz);
+        Some([(x / self.range) as f32 * self.radius, (y / self.range) as f32 * self.radius])
+    }
 }
 
 pub(super) fn fitted_size(requested: f32, width: f32, height: f32) -> Option<f32> {
@@ -115,6 +143,25 @@ mod tests {
         assert!(project(f64::NAN, 0., 0., false, 48., 60.).is_none());
         assert!(project(0., 0., f64::INFINITY, true, 48., 60.).is_none());
         assert!(project(0., 0., 0., false, 0., 60.).is_none());
+    }
+
+    #[test]
+    fn frame_projection_matches_original_transform_for_all_markers() {
+        for yaw in [-179.5, -90.0, 0.0, 63.75, 180.0] {
+            for rotate in [false, true] {
+                let projection = Projection::new(yaw, rotate, 64.0, 60.0).unwrap();
+                for x in -70..=70 {
+                    for z in [-65.0, -23.5, 0.0, 38.5, 65.0] {
+                        let dx = f64::from(x);
+                        let expected = (dx.hypot(z) <= 64.0).then(|| {
+                            let [x, y] = offset(dx, z, yaw, rotate);
+                            [(x / 64.0) as f32 * 60.0, (y / 64.0) as f32 * 60.0]
+                        });
+                        assert_eq!(projection.project(dx, z), expected);
+                    }
+                }
+            }
+        }
     }
 
     #[test]

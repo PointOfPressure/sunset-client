@@ -413,11 +413,11 @@ fn fast_use(game: &mut Game<'_>, m: &Module) {
     if holds_block(game) && super::sunset::with(|s| s.is_on("Fast Place")) {
         return;
     }
-    let item = game.held().map(|s| short(&s.item).to_owned());
+    let item = game.held();
     let applies = m.p("Mode") == "All"
-        || item.as_ref().is_some_and(|i| {
-            listed(m.t("Items"), i)
-                || m.b("Blocks") && game.res.items().get(&format!("minecraft:{i}")).is_some_and(|inf| inf.block.is_some())
+        || item.is_some_and(|stack| {
+            listed(m.t("Items"), short(&stack.item))
+                || m.b("Blocks") && game.res.items().get(&stack.item).is_some_and(|inf| inf.block.is_some())
         });
     if applies && game.use_delay > m.n("Cooldown (ticks)") as u32 {
         game.use_delay = m.n("Cooldown (ticks)") as u32;

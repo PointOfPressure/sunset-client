@@ -119,9 +119,14 @@ impl<V> Sweep<V> {
     // The pass so far, nearest first and cut to what is kept.
     fn nearest(&mut self) {
         let c = self.centre;
-        let far = |p: &[i32; 3]| (0..3).map(|i| i64::from(p[i] - c[i]).pow(2)).sum::<i64>();
+        let far = |p: &[i32; 3]| (0..3).map(|i| (i64::from(p[i]) - i64::from(c[i])).pow(2)).sum::<i64>();
+        // Only the closest retained entries need ordering. Large passes can
+        // collect tens of thousands of matches between these reductions.
+        if self.next.len() > SWEEP_KEEP {
+            self.next.select_nth_unstable_by_key(SWEEP_KEEP, |(p, _)| far(p));
+            self.next.truncate(SWEEP_KEEP);
+        }
         self.next.sort_unstable_by_key(|(p, _)| far(p));
-        self.next.truncate(SWEEP_KEEP);
     }
 }
 
@@ -157,7 +162,9 @@ pub(super) fn is_air(game: &Game<'_>, p: [i32; 3]) -> bool {
 
 // `BlockState.canBeReplaced`: air, fluids, plants.
 pub(super) fn replaceable(game: &Game<'_>, p: [i32; 3]) -> bool {
-    is_air(game, p) || facts(game, p).replaceable
+    let all = game.res.facts();
+    let state = game.world.block(p[0], p[1], p[2]);
+    all.is_air(state) || all.get(state).replaceable
 }
 
 pub(super) fn center_of(p: [i32; 3]) -> [f64; 3] {
@@ -201,6 +208,8 @@ pub(super) fn clear_line(game: &Game<'_>, to: [f64; 3], except: [i32; 3]) -> boo
     };
     let d = dist(eye, to);
     let steps = (d * 8.0).ceil().max(1.0) as i32;
+    let mut previous = None;
+    let all = game.res.facts();
     for i in 1..steps {
         let t = f64::from(i) / f64::from(steps);
         let at = [
@@ -208,7 +217,17 @@ pub(super) fn clear_line(game: &Game<'_>, to: [f64; 3], except: [i32; 3]) -> boo
             (eye[1] + (to[1] - eye[1]) * t).floor() as i32,
             (eye[2] + (to[2] - eye[2]) * t).floor() as i32,
         ];
-        if at != except && !is_air(game, at) && facts(game, at).full_collision {
+        // Keep the same sample points, but a block crossed by several of
+        // them needs only one lookup. World state cannot change mid-call.
+        if previous == Some(at) {
+            continue;
+        }
+        previous = Some(at);
+        if at == except {
+            continue;
+        }
+        let state = game.world.block(at[0], at[1], at[2]);
+        if !all.is_air(state) && all.get(state).full_collision {
             return false;
         }
     }
@@ -226,7 +245,7 @@ pub(super) fn in_reach(game: &Game<'_>, p: [i32; 3], range: f64, walls: f64) -> 
     if d > range {
         return false;
     }
-    clear_line(game, c, p) || d <= walls
+    d <= walls || clear_line(game, c, p)
 }
 
 // ---- placing
@@ -248,12 +267,14 @@ pub(super) fn place_side(game: &Game<'_>, p: [i32; 3]) -> Option<([i32; 3], i32)
     let c = center_of(p);
     let look = [c[0] - eye[0], c[1] - eye[1], c[2] - eye[2]];
     let mut best: Option<(f64, usize)> = None;
+    let all = game.res.facts();
     for (i, (d, _)) in SIDES.iter().enumerate() {
         let n = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-        if is_air(game, n) {
+        let state = game.world.block(n[0], n[1], n[2]);
+        if all.is_air(state) {
             continue;
         }
-        let f = facts(game, n);
+        let f = all.get(state);
         // A block you would open instead of placing against, or a fluid.
         if f.block_entity || f.fluid_level > 0 {
             continue;
@@ -422,14 +443,13 @@ pub(super) fn mob_target(m: &horizon_client::mobs::Mob) -> Target {
 
 // Every other player the client knows of, friends left out.
 pub(super) fn other_players(game: &Game<'_>) -> Vec<Target> {
-    let names = game.remote_player_names();
     let friends = with(|s| s.friends.clone());
     game.mobs
         .iter()
         .filter(|m| m.kind.id == "minecraft:player" && m.alive() && !m.removed)
         .filter_map(|m| {
-            let name = names.iter().find(|(i, _)| *i == m.id).map(|(_, n)| n.clone())?;
-            if friends.iter().any(|f| f.eq_ignore_ascii_case(&name)) {
+            let name = game.remote_player_name(m.id)?;
+            if friends.iter().any(|f| f.eq_ignore_ascii_case(name)) {
                 return None;
             }
             Some(mob_target(m))
@@ -437,6 +457,7 @@ pub(super) fn other_players(game: &Game<'_>) -> Vec<Target> {
         .collect()
 }
 
+#[allow(dead_code)] // Compatibility helper; built-in callers now filter borrowed mobs first.
 pub(super) fn every_living(game: &Game<'_>) -> Vec<Target> {
     game.mobs.iter().filter(|m| m.alive() && !m.removed).map(mob_target).collect()
 }

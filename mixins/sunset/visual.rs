@@ -176,7 +176,11 @@ pub(super) fn draw_box(cam: &Camera, out: &mut impl Canvas, look: &Look, lo: [f6
         for (face, axis, high) in FACES.iter().filter(|_| look.sides) {
             let facing = if *high { eye[*axis] > hi[*axis] } else { eye[*axis] < lo[*axis] };
             if let (true, [Some(a), Some(b), Some(c), Some(d)]) = (facing, face.map(|i| pts[i])) {
-                out.quad([a, b, c, d], fill);
+                // Rounded alpha can be zero even for a nonzero opacity.
+                // Keep visibility/Max accounting while omitting invisible geometry.
+                if fill >> 24 != 0 {
+                    out.quad([a, b, c, d], fill);
+                }
                 drawn = true;
             }
         }
@@ -194,7 +198,7 @@ pub(super) fn draw_box(cam: &Camera, out: &mut impl Canvas, look: &Look, lo: [f6
     let Some(r) = cam.bounds(&pts) else {
         return false;
     };
-    if look.sides && look.draw != Draw::Outline {
+    if look.sides && look.draw != Draw::Outline && fill >> 24 != 0 {
         out.fill([r[0], r[1], r[2] - r[0], r[3] - r[1]], fill);
     }
     if look.lines || look.draw == Draw::Outline {

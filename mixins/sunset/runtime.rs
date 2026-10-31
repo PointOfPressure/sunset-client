@@ -20,7 +20,7 @@ use horizon_protocol::packets::{
     Empty,
     play::{self, Serverbound as S},
 };
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use winit::keyboard::KeyCode;
 
@@ -289,6 +289,60 @@ impl Module {
             _ => None,
         }
     }
+}
+
+// Tick and frame hooks keep immutable modules while their work can change the live state.
+// Reuse that owned view until values change, instead of cloning every setting each frame.
+// Comparing with the live Vec also covers plugin/internal mutations without relying on
+// every writer remembering to invalidate a revision counter.
+struct SharedModules {
+    modules: Vec<Module>,
+    by_name: std::collections::HashMap<&'static str, usize>,
+}
+
+impl SharedModules {
+    fn new(modules: &[Module]) -> Self {
+        let mut by_name = std::collections::HashMap::with_capacity(modules.len());
+        for (i, module) in modules.iter().enumerate() {
+            by_name.entry(module.name).or_insert(i);
+        }
+        Self { modules: modules.to_vec(), by_name }
+    }
+
+    fn module(&self, name: &str) -> Option<&Module> {
+        self.by_name.get(name).map(|&i| &self.modules[i])
+    }
+
+    fn enabled(&self, name: &str) -> Option<&Module> {
+        self.module(name).filter(|m| m.on)
+    }
+}
+
+impl std::ops::Deref for SharedModules {
+    type Target = [Module];
+    fn deref(&self) -> &Self::Target {
+        &self.modules
+    }
+}
+
+fn shared_modules(live: &[Module], cached: &mut Option<Arc<SharedModules>>) -> Arc<SharedModules> {
+    if cached.as_ref().is_none_or(|snapshot| snapshot.modules != live) {
+        *cached = Some(Arc::new(SharedModules::new(live)));
+    }
+    Arc::clone(cached.as_ref().unwrap())
+}
+
+// Friends change through commands/configuration, while overlay readers need an
+// immutable view outside STATE's lock (Canvas implementations can call back in).
+fn shared_friends(live: &[String], cached: &mut Option<Arc<[String]>>) -> Arc<[String]> {
+    if cached.as_ref().is_none_or(|snapshot| snapshot.as_ref() != live) {
+        *cached = Some(Arc::from(live));
+    }
+    Arc::clone(cached.as_ref().unwrap())
+}
+
+fn friend_named(friends: &[String], name: Option<&str>) -> bool {
+    name.is_some_and(|name| friends.iter().any(|friend| friend.eq_ignore_ascii_case(name)))
 }
 
 // Every module with its defaults, in menu order.
@@ -646,12 +700,14 @@ pub(super) enum Page {
 
 pub(super) struct State {
     pub(crate) modules: Vec<Module>,
+    module_cache: Option<Arc<SharedModules>>,
     page: Page,
     // A module waiting for its key bind (its index).
     binding: Option<usize>,
     // Keys and buttons down, and the modules Hold binds have on.
     inputs: Inputs,
     pub(super) friends: Vec<String>,
+    friends_cache: Option<Arc<[String]>>,
     // The config file as read: modules a plugin registers later take their saved settings from it.
     raw: String,
     // Keys this mod held down for the tick (Auto Walk, Sprint).
@@ -741,10 +797,12 @@ impl State {
     pub(super) fn new() -> Self {
         Self {
             modules: defaults(),
+            module_cache: None,
             page: Page::Main,
             binding: None,
             inputs: Inputs::default(),
             friends: Vec::new(),
+            friends_cache: None,
             raw: String::new(),
             injected: Vec::new(),
             loaded: false,
@@ -806,18 +864,18 @@ impl State {
         let mut out = String::new();
         for (i, m) in self.modules.iter().enumerate() {
             let id = norm(m.name);
-            out.push_str(&format!("{id}.on={}\n", self.inputs.saved_on(i, m.on)));
-            out.push_str(&format!("{id}.key={}\n", m.key.as_deref().unwrap_or("none")));
+            let _ = writeln!(out, "{id}.on={}", self.inputs.saved_on(i, m.on));
+            let _ = writeln!(out, "{id}.key={}", m.key.as_deref().unwrap_or("none"));
             for s in &m.settings {
-                out.push_str(&format!("{id}.{}={}\n", norm(s.name), s.stored()));
+                let _ = writeln!(out, "{id}.{}={}", norm(s.name), s.stored());
             }
         }
-        out.push_str(&format!("friends={}\n", self.friends.join(",")));
+        let _ = writeln!(out, "friends={}", self.friends.join(","));
         for w in &self.waypoints {
-            out.push_str(&format!("waypoint={}|{}|{}|{}|{}\n", w.name, w.pos[0], w.pos[1], w.pos[2], w.dim));
+            let _ = writeln!(out, "waypoint={}|{}|{}|{}|{}", w.name, w.pos[0], w.pos[1], w.pos[2], w.dim);
         }
         for (c, p) in CATEGORIES.iter().zip(&self.gui.panels) {
-            out.push_str(&format!("panel.{}={},{},{}\n", norm(c.label()), p.x, p.y, p.collapsed));
+            let _ = writeln!(out, "panel.{}={},{},{}", norm(c.label()), p.x, p.y, p.collapsed);
         }
         out
     }
@@ -966,8 +1024,14 @@ pub(super) fn register_module(m: Module) {
     });
 }
 
+// Kept for native plugins that need their own mutable module snapshot.
+#[allow(dead_code)]
 pub(super) fn snapshot() -> Vec<Module> {
     with(|s| s.modules.clone())
+}
+
+fn shared_snapshot() -> Arc<SharedModules> {
+    with(|s| shared_modules(&s.modules, &mut s.module_cache))
 }
 
 pub(super) fn sync_flags(s: &State) {
@@ -1545,12 +1609,12 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     ensure_loaded(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
-    let mods = snapshot();
+    let mods = shared_snapshot();
     super::sunset_render::pre_tick(game, &mods);
-    super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
-    super::sunset_player::no_break_reset(game, mods.iter().find(|m| m.name == "No Break Reset" && m.on));
-    let on = |n: &str| mods.iter().any(|m| m.name == n && m.on);
-    let get = |n: &str| mods.iter().find(|m| m.name == n).cloned();
+    super::sunset_player::speed_mine(game, mods.enabled("Speed Mine"));
+    super::sunset_player::no_break_reset(game, mods.enabled("No Break Reset"));
+    let on = |n: &str| mods.enabled(n).is_some();
+    let get = |n: &str| mods.module(n);
     let playing = game.native_playing();
     // The click GUI holds no movement keys, as a screen would.
     if gui_open() {
@@ -1572,7 +1636,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Anti AFK").filter(|m| m.on)
         && playing
     {
-        want.extend(super::sunset_player::afk_keys(&m));
+        want.extend(super::sunset_player::afk_keys(m));
     }
     horizon_client::motion::sunset_motion::set_safe_walk(on("Safe Walk") && playing);
     let mut injected = Vec::new();
@@ -1581,17 +1645,17 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
             injected.push(k);
         }
     }
-    velocity(game, get("Velocity").filter(|m| m.on).as_ref());
-    let across = get("Speed").filter(|m| m.on).and_then(|m| speed(game, &m));
+    velocity(game, get("Velocity").filter(|m| m.on));
+    let across = get("Speed").filter(|m| m.on).and_then(|m| speed(game, m));
     horizon_client::motion::sunset_motion::set_across(across.map(|(xz, _)| xz));
     horizon_client::motion::sunset_motion::set_up(across.and_then(|(_, y)| y));
     let flight = get("Flight").filter(|m| m.on);
-    flight_pre(game, flight.as_ref());
+    flight_pre(game, flight);
     let step = get("Step").filter(|m| m.on);
     let high_jump = get("High Jump").filter(|m| m.on);
     let (was_flying, was_stepping, was_high_jumping) = with(|s| (s.flying, s.stepping, s.high_jumping));
     let (creative, spectator_mode) = (game.creative, game.spectator());
-    let step_to = step.as_ref().map_or(0.6, |st| step_height(game, st));
+    let step_to = step.map_or(0.6, |st| step_height(game, st));
     if let Some(p) = game.player.as_mut() {
         if flight.is_none() && was_flying {
             p.flying = creative && p.flying || spectator_mode;
@@ -1612,7 +1676,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     with(|s| {
         s.injected.extend(injected);
-        s.flying = flight.as_ref().is_some_and(|m| m.p("Mode") == "Abilities");
+        s.flying = flight.is_some_and(|m| m.p("Mode") == "Abilities");
         s.stepping = step.is_some();
         s.high_jumping = high_jump.is_some();
     });
@@ -1687,8 +1751,8 @@ fn module_tick(game: &mut Game<'_>) {
             game.keys.remove(&k);
         }
     }
-    let mods = snapshot();
-    let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
+    let mods = shared_snapshot();
+    let get = |n: &str| mods.enabled(n);
     // Once a session, in a world: how to get to the menu.
     if game.remote.is_some() && game.player.is_some() && !WELCOMED.swap(true, Ordering::Relaxed) {
         say(game, &format!("{VERSION} is on. Press ` for the menu (or Right Shift), type .help for the commands."));
@@ -3772,12 +3836,12 @@ pub(super) fn zoom(game: &Game<'_>, zoom: &mut Option<super::native_hooks::Nativ
     if zoom.is_some() || !game.native_window() || !game.native_on(ID) {
         return;
     }
-    let Some(m) = with(|s| s.module("Zoom").filter(|m| m.on).cloned()) else {
+    let Some((factor, smooth)) = with(|s| s.module("Zoom").filter(|m| m.on).map(|m| (m.n("Factor") as f32, m.b("Smooth")))) else {
         return;
     };
     *zoom = Some(super::native_hooks::NativeZoom {
-        factor: m.n("Factor") as f32,
-        smooth: m.b("Smooth"),
+        factor,
+        smooth,
         turn: 0.3,
     });
 }
@@ -4390,16 +4454,27 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         return;
     }
     ensure_loaded(game);
-    let mods = snapshot();
-    let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
+    let mods = shared_snapshot();
+    let get = |n: &str| mods.enabled(n);
     let (w, h) = (batch.width, batch.height);
+    // World labels and GUI text must use the same glyph rasterization scale:
+    // changing it between them clears the font atlas twice every frame.
+    let scale = f32::from_bits(LOOK[6].load(Ordering::Relaxed)).min((w / MIN_ROW).max(1.0));
+    LOOK[7].store(scale.to_bits(), Ordering::Relaxed);
     let lw = (1.5 / batch.scale).max(0.5);
     let mut shapes = std::mem::take(&mut *SHAPES.lock().unwrap_or_else(|e| e.into_inner()));
 
     if let Some(cam) = Camera::of(game, w, h)
         && game.player.is_some()
     {
+        let real = batch.scale;
+        if game.screen == Screen::Playing && with(|s| s.gui.open && !s.gui.closing) {
+            // HudBatch's fill/quad coordinates do not depend on this scale;
+            // it selects the text glyphs and pixel snapping, as in paint below.
+            batch.scale = real * scale;
+        }
         world_overlays(game, &cam, &mods, lw, &mut Painter { game, batch: &mut *batch });
+        batch.scale = real;
     }
 
     if let Some(hud) = get("HUD") {
@@ -4485,9 +4560,6 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         close_gui(game);
     }
     let mut gui_shapes = Vec::new();
-    // GUI scale, as far as a row of the narrowest panels still fits the window.
-    let scale = f32::from_bits(LOOK[6].load(Ordering::Relaxed)).min((w / MIN_ROW).max(1.0));
-    LOOK[7].store(scale.to_bits(), Ordering::Relaxed);
     if with(|s| s.gui.open) {
         if game.screen == Screen::Playing && game.player.is_some() {
             // The world dims behind the panels by Background dim (percent), the one fill behind them.
@@ -4757,6 +4829,35 @@ impl EntityLook {
     }
 }
 
+// Reuse overlay candidates and label buffers without holding a lock while
+// calling Canvas. A nested call takes another scratch value and cannot deadlock.
+#[derive(Default)]
+struct EntityScratch {
+    near: Vec<(f64, usize, [f64; 3], [f64; 3])>,
+    name: String,
+    hp: String,
+    tail: String,
+}
+
+static ENTITY_SCRATCH: Mutex<Option<EntityScratch>> = Mutex::new(None);
+
+impl EntityScratch {
+    fn take() -> Self {
+        ENTITY_SCRATCH.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_default()
+    }
+
+    fn recycle(mut self) {
+        self.near.clear();
+        self.name.clear();
+        self.hp.clear();
+        self.tail.clear();
+        let mut cached = ENTITY_SCRATCH.lock().unwrap_or_else(|e| e.into_inner());
+        if cached.as_ref().is_none_or(|previous| previous.near.capacity() <= self.near.capacity()) {
+            *cached = Some(self);
+        }
+    }
+}
+
 // ESP, Tracers and Nametags in one pass over the mobs: those in range of any of them, nearest first when a Max
 // leaves some out.
 fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw: f32, out: &mut impl Canvas) {
@@ -4774,7 +4875,9 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
     let lerp = |a: f64, b: f64| a + alpha * (b - a);
     let own = own_id(game);
     // The mobs in range: distance, index, and the box where the frame draws them.
-    let mut near: Vec<(f64, usize, [f64; 3], [f64; 3])> = Vec::with_capacity(game.mobs.len());
+    let mut scratch = EntityScratch::take();
+    let EntityScratch { near, name, hp, tail } = &mut scratch;
+    near.reserve(game.mobs.len());
     for (i, mob) in game.mobs.iter().enumerate() {
         if !mob.alive() || mob.removed || Some(mob.id) == own {
             continue;
@@ -4799,23 +4902,23 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
     }
     // Friends only matter to the full modes.
     let friendly = esp.as_ref().is_some_and(|l| !l.potato) || tracers.as_ref().is_some_and(|l| !l.potato) || tags.is_some();
-    let names = if friendly { game.remote_player_names() } else { Vec::new() };
-    let friends = if friendly { with(|s| s.friends.clone()) } else { Vec::new() };
+    let friends = friendly.then(|| with(|s| shared_friends(&s.friends, &mut s.friends_cache)));
     let centre = [cam.w as f32 / 2.0, cam.h as f32 / 2.0];
     let from = if tracer_bottom { [centre[0], cam.h as f32] } else { centre };
     let mut drawn = [0usize; 3];
-    let (mut name, mut hp, mut tail) = (String::new(), String::new(), String::new());
-    for &(d, i, lo, hi) in &near {
+    for &(d, i, lo, hi) in near.iter() {
         let mob = &game.mobs[i];
         let kind = kind_of(mob);
         let mid = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
-        let friend = || kind == Kind::Player && is_friend(&friends, &names, mob.id);
+        let friend = kind == Kind::Player && friends.as_deref().is_some_and(|friends| {
+            !friends.is_empty() && friend_named(friends, game.remote_player_name(mob.id))
+        });
         if let Some(l) = &esp
             && drawn[0] < l.max
             && d <= l.range
             && l.kinds.wants(kind)
         {
-            let col = if l.potato { l.kinds.colour(kind, false) } else { faded(l.kinds.colour(kind, friend()), d, l.fade) };
+            let col = if l.potato { l.kinds.colour(kind, false) } else { faded(l.kinds.colour(kind, friend), d, l.fade) };
             if draw_box(cam, out, &l.look, lo, hi, col, lw) {
                 drawn[0] += 1;
             }
@@ -4834,7 +4937,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
                     "Feet" => [mid[0], lo[1], mid[2]],
                     _ => mid,
                 };
-                (aim, if tracer_by_distance { distance_colour(d) } else { l.kinds.colour(kind, friend()) })
+                (aim, if tracer_by_distance { distance_colour(d) } else { l.kinds.colour(kind, friend) })
             };
             if let Some(to) = cam.project(aim) {
                 line(out, from, to, col, lw);
@@ -4850,7 +4953,6 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             if !cam.sees(top, 1.0) {
                 continue;
             }
-            let friend = friend();
             if friend && !tag_friends {
                 continue;
             }
@@ -4858,12 +4960,12 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
                 continue;
             };
             drawn[2] += 1;
-            super::sunset_util::name_into(game, mob, &mut name);
+            super::sunset_util::name_into(game, mob, name);
             let name_colour = if friend { 0x55FFFF } else { tag_colour };
-            let nw = game.native_text_width(&name);
+            let nw = game.native_text_width(name);
             // Potato: the name alone.
             if l.potato {
-                out.text(&name, [x - nw / 2.0, y], name_colour);
+                out.text(name, [x - nw / 2.0, y], name_colour);
                 continue;
             }
             hp.clear();
@@ -4874,22 +4976,23 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             if show_distance {
                 let _ = write!(tail, " {}m", d.round());
             }
-            let (hw, tw) = (game.native_text_width(&hp), game.native_text_width(&tail));
+            let (hw, tw) = (game.native_text_width(hp), game.native_text_width(tail));
             let gap = if hp.is_empty() { 0.0 } else { 4.0 };
             let total = nw + gap + hw + tw;
             let x0 = x - total / 2.0;
             if tag_back {
                 out.fill([x0 - 2.0, y - 2.0, total + 4.0, 12.0], 0x7800_0000);
             }
-            out.text(&name, [x0, y], name_colour);
+            out.text(name, [x0, y], name_colour);
             if !hp.is_empty() {
-                out.text(&hp, [x0 + nw + gap, y], health_colour(mob.health / mob.kind.max_health.max(1.0)));
+                out.text(hp, [x0 + nw + gap, y], health_colour(mob.health / mob.kind.max_health.max(1.0)));
             }
             if !tail.is_empty() {
-                out.text(&tail, [x0 + nw + gap + hw, y], 0xAAAAAA);
+                out.text(tail, [x0 + nw + gap + hw, y], 0xAAAAAA);
             }
         }
     }
+    scratch.recycle();
 }
 
 // Where what the player holds would land: a bow being drawn, or a throwable. Potato: only a square where it lands.
@@ -5869,7 +5972,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
     });
     let at = gui_cursor(game);
     let (rows, modules, binding, hover, editing) =
-        with(|s| (panel_rows(s), s.modules.clone(), s.binding, hit_at(s, at).map(|(_, h)| h), s.gui.editor.clone()));
+        with(|s| (panel_rows(s), shared_modules(&s.modules, &mut s.module_cache), s.binding, hit_at(s, at).map(|(_, h)| h), s.gui.editor.clone()));
     // Modules whose settings are open (inline or in the window): a mark by the name.
     let open: Vec<usize> = with(|s| s.gui.expanded.iter().copied().chain(s.gui.window.map(|w| w.module)).collect());
     // Each panel's height of rows, room, scroll and whether it is folded.

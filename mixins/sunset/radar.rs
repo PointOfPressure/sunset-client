@@ -4,7 +4,7 @@
 use super::Game;
 use super::sunset::{Category, Module, accent, own_id};
 use super::sunset_radar_math::{
-    circle_point, circle_segments, fitted_size, offset, pixel_width, project,
+    Projection, circle_point, circle_segments, fitted_size, pixel_width,
 };
 use horizon_client::extras::Corner;
 use horizon_client::extras_hud::Corners;
@@ -42,15 +42,15 @@ fn band(
     color: u32,
     feather: bool,
 ) {
+    let mut previous = [circle_point(center, inner, 0, segments), circle_point(center, outer, 0, segments)];
+    let color = rgba(color);
     for i in 0..segments {
+        let next = [circle_point(center, inner, i + 1, segments), circle_point(center, outer, i + 1, segments)];
         let corners = [
-            circle_point(center, inner, i, segments),
-            circle_point(center, outer, i, segments),
-            circle_point(center, outer, i + 1, segments),
-            circle_point(center, inner, i + 1, segments),
+            previous[0], previous[1], next[1], next[0],
         ];
         let start = batch.vertices.len();
-        batch.fill_quad(&game.gui.atlas, corners, rgba(color));
+        batch.fill_quad(&game.gui.atlas, corners, color);
         if feather {
             // fill_quad's two triangles use corners 0,1,2,0,2,3.
             for (vertex, corner) in batch.vertices[start..].iter_mut().zip([0, 1, 2, 0, 2, 3]) {
@@ -59,6 +59,7 @@ fn band(
                 }
             }
         }
+        previous = next;
     }
 }
 
@@ -121,6 +122,9 @@ pub(super) fn draw(
     let rotate = module.b("Rotate");
     let yaw = f64::from(game.yaw);
     let range = module.n("Range");
+    let Some(projection) = Projection::new(yaw, rotate, range, reach - 3.0) else {
+        return;
+    };
     let alpha = game.clock.camera_fraction();
     let lerp = |previous: f64, current: f64| previous + alpha * (current - previous);
     let local = [
@@ -144,7 +148,7 @@ pub(super) fn draw(
         .filter_map(|other| {
             let dx = lerp(other.previous.x, other.position.x) - local[0];
             let dz = lerp(other.previous.z, other.position.z) - local[1];
-            project(dx, dz, yaw, rotate, range, reach - 3.0)
+            projection.project(dx, dz)
         });
     if module.p("Mode") == "Potato" {
         game.native_fill(batch, [x, y, size, size], 0xD016_1B24);
@@ -194,7 +198,7 @@ pub(super) fn draw(
         ("S", 0.0, 1.0),
         ("W", -1.0, 0.0),
     ] {
-        let [ox, oy] = offset(dx, dz, yaw, rotate);
+        let [ox, oy] = projection.offset(dx, dz);
         let at = [
             center[0] + ox as f32 * (radius - 8.0) - game.native_text_width(label) / 2.0,
             center[1] + oy as f32 * (radius - 8.0) - 4.0,

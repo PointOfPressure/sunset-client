@@ -132,7 +132,7 @@ fn liquid_filler(game: &mut Game<'_>, m: &Module) {
     }) {
         return;
     }
-    let list = if m.p("List mode") == "Whitelist" { m.t("Whitelist") } else { m.t("Blacklist") }.to_owned();
+    let list = if m.p("List mode") == "Whitelist" { m.t("Whitelist") } else { m.t("Blacklist") };
     let white = m.p("List mode") == "Whitelist";
     let slot = find_hotbar(game, |n| {
         let is_block = game.res.items().get(&format!("minecraft:{n}")).is_some_and(|i| i.block.is_some());
@@ -153,20 +153,21 @@ fn liquid_filler(game: &mut Game<'_>, m: &Module) {
         for y in at[1] - rv..=at[1] + rv {
             for z in at[2] - rh..=at[2] + rh {
                 let p = [x, y, z];
-                if is_air(game, p) {
+                // Reject the unused corners before any world/entity lookup.
+                if !in_shape(shape, eye, p, range) {
                     continue;
                 }
-                let name = facts(game, p).name.clone();
+                let name: &str = &facts(game, p).name;
                 let ok = match which {
-                    "Water" => &*name == "minecraft:water",
-                    "Lava" => &*name == "minecraft:lava",
-                    _ => &*name == "minecraft:water" || &*name == "minecraft:lava",
+                    "Water" => name == "minecraft:water",
+                    "Lava" => name == "minecraft:lava",
+                    _ => name == "minecraft:water" || name == "minecraft:lava",
                 };
                 if !ok || !can_place(game, p, true) {
                     continue;
                 }
                 let c = center_of(p);
-                let out = !in_shape(shape, eye, p, range) || (!clear_line(game, c, p) && !in_shape(shape, eye, p, walls));
+                let out = !in_shape(shape, eye, p, walls) && !clear_line(game, c, p);
                 if !out {
                     found.push(p);
                 }
@@ -202,7 +203,7 @@ fn spawn_proofer(game: &mut Game<'_>, m: &Module) {
     }) {
         return;
     }
-    let list = m.t("Blocks").to_owned();
+    let list = m.t("Blocks");
     let Some(slot) = find_hotbar(game, |n| listed(&list, n)) else {
         report(game, "None of the chosen blocks are in your hotbar.");
         toggle_off(game, "Spawn Proofer");
@@ -220,12 +221,19 @@ fn spawn_proofer(game: &mut Game<'_>, m: &Module) {
         for y in at[1] - r..=at[1] + r {
             for z in at[2] - r..=at[2] + r {
                 let p = [x, y, z];
+                let c = center_of(p);
+                let distance = dist(eye, c);
+                if distance > range {
+                    continue;
+                }
                 if !is_air(game, p) {
                     continue;
                 }
                 let below = [x, y - 1, z];
-                let f = facts(game, below);
-                if is_air(game, below) || !f.solid_render || f.name.ends_with("bedrock") || f.name.ends_with("barrier") {
+                let all = game.res.facts();
+                let state = game.world.block(below[0], below[1], below[2]);
+                let f = all.get(state);
+                if all.is_air(state) || !f.solid_render || f.name.ends_with("bedrock") || f.name.ends_with("barrier") {
                     continue;
                 }
                 let light = game.world.light(x, y, z);
@@ -240,8 +248,7 @@ fn spawn_proofer(game: &mut Game<'_>, m: &Module) {
                 if !can_place(game, p, true) {
                     continue;
                 }
-                let c = center_of(p);
-                if dist(eye, c) > range || (!clear_line(game, c, p) && dist(eye, c) > walls) {
+                if distance > walls && !clear_line(game, c, p) {
                     continue;
                 }
                 spots.push((p, light));
@@ -313,6 +320,7 @@ fn auto_shearer(game: &mut Game<'_>, m: &Module) {
             }
         }
     }
+    let eye = game.eye_position().unwrap_or([0.0; 3]);
     let target = game
         .mobs
         .iter()
@@ -323,7 +331,7 @@ fn auto_shearer(game: &mut Game<'_>, m: &Module) {
                 && !s.extra.sheared
                 && !s.is_baby()
                 && !cooling(s.id)
-                && dist(game.eye_position().unwrap_or([0.0; 3]), [s.position.x, s.position.y, s.position.z]) <= range
+                && dist(eye, [s.position.x, s.position.y, s.position.z]) <= range
         })
         .map(mob_target);
     if let Some(t) = target {
@@ -339,19 +347,21 @@ fn auto_nametag(game: &mut Game<'_>, m: &Module) {
         return;
     };
     let range = m.n("Range");
-    let list = m.t("Entities").to_owned();
+    let list = m.t("Entities");
     let eye = game.eye_position().unwrap_or([0.0; 3]);
-    let mut candidates: Vec<Target> = every_living(game)
-        .into_iter()
-        .filter(|t| !t.player && dist(eye, t.pos) <= range && !cooling(t.id))
-        .filter(|t| listed(&list, &t.kind))
-        .filter(|t| {
-            let named = game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.custom_name.is_some());
-            !named || m.b("Renametag")
+    let rename = m.b("Renametag");
+    // Inspect the mob itself: no Target allocation or second entity scan
+    // for each candidate. min_by keeps the first entity for equal distances.
+    let target = game.mobs.iter()
+        .filter(|mob| mob.alive() && !mob.removed && mob.kind.id != "minecraft:player")
+        .filter(|mob| (rename || mob.custom_name.is_none()) && listed(list, &mob.kind.id))
+        .filter_map(|mob| {
+            let distance = dist(eye, [mob.position.x, mob.position.y, mob.position.z]);
+            (distance <= range && !cooling(mob.id)).then_some((distance, mob))
         })
-        .collect();
-    sort_targets(game, &mut candidates, "Lowest distance");
-    if let Some(t) = candidates.into_iter().next() {
+        .min_by(|(a, _), (b, _)| a.total_cmp(b))
+        .map(|(_, mob)| mob_target(mob));
+    if let Some(t) = target {
         use_on(game, slot, t.id, centre(&t), m.b("Rotate"));
         cool(t.id, 20);
     }
@@ -364,20 +374,20 @@ fn auto_mount(game: &mut Game<'_>, m: &Module) {
     if game.held().is_some_and(|s| short(&s.item).ends_with("_spawn_egg")) {
         return;
     }
-    let list = m.t("Entities").to_owned();
+    let list = m.t("Entities");
     let eye = game.eye_position().unwrap_or([0.0; 3]);
-    let saddled = |t: &Target| game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.extra.saddled);
-    let pick = every_living(game).into_iter().find(|t| {
-        if t.player || dist(eye, t.pos) > 4.0 || cooling(t.id) || !listed(&list, &t.kind) {
+    let check_saddle = m.b("Check saddle");
+    let pick = game.mobs.iter().filter(|mob| mob.alive() && !mob.removed).find(|mob| {
+        if mob.kind.id == "minecraft:player" || dist(eye, [mob.position.x, mob.position.y, mob.position.z]) > 4.0 || cooling(mob.id) || !listed(list, &mob.kind.id) {
             return false;
         }
         // Saddled-only rides.
-        let rideable_needs_saddle = ["pig", "skeleton_horse", "strider", "zombie_horse"].iter().any(|k| short(&t.kind) == *k);
-        if rideable_needs_saddle && !saddled(t) {
+        let rideable_needs_saddle = ["pig", "skeleton_horse", "strider", "zombie_horse"].iter().any(|k| short(&mob.kind.id) == *k);
+        if rideable_needs_saddle && !mob.extra.saddled {
             return false;
         }
-        !(short(&t.kind) != "llama" && m.b("Check saddle") && !saddled(t))
-    });
+        !(short(&mob.kind.id) != "llama" && check_saddle && !mob.extra.saddled)
+    }).map(mob_target);
     if let Some(t) = pick {
         let id = t.id as i32;
         turned_to(game, "Auto Mount", m.b("Rotate"), centre(&t), move |game| {
@@ -390,20 +400,20 @@ fn auto_mount(game: &mut Game<'_>, m: &Module) {
 
 fn flamethrower(game: &mut Game<'_>, m: &Module) {
     let range = m.n("Distance");
-    let list = m.t("Entities").to_owned();
+    let list = m.t("Entities");
     let anti = m.b("Anti break");
     let eye = game.eye_position().unwrap_or([0.0; 3]);
     let ticks = ws(|w| w.flame_ticks);
     if ticks < m.n("Tick interval") as u32 {
         return;
     }
-    let target = every_living(game).into_iter().find(|t| {
-        !t.player
-            && dist(eye, t.pos) <= range
-            && listed(&list, &t.kind)
-            && (m.b("Target babies") || !game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.is_baby()))
-            && !game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.is_on_fire())
-    });
+    let babies = m.b("Target babies");
+    let target = game.mobs.iter().find(|mob| {
+        mob.alive() && !mob.removed && mob.kind.id != "minecraft:player"
+            && dist(eye, [mob.position.x, mob.position.y, mob.position.z]) <= range
+            && listed(list, &mob.kind.id)
+            && (babies || !mob.is_baby()) && !mob.is_on_fire()
+    }).map(mob_target);
     let Some(t) = target else {
         return;
     };
@@ -507,17 +517,17 @@ fn bow_aimbot(game: &mut Game<'_>, m: &Module) {
         None => return,
     };
     let range = m.n("Range");
-    let list = m.t("Entities").to_owned();
+    let list = m.t("Entities");
     let own = game.remote.as_ref().map(|r| r.entity_id as u32);
     let friends = super::sunset::with(|s| s.friends.clone());
-    let names = game.remote_player_names();
-    let mut cands: Vec<Target> = every_living(game)
-        .into_iter()
-        .filter(|t| Some(t.id) != own && dist(eye, t.pos) <= range && listed(&list, &t.kind))
+    let (nametagged, babies) = (m.b("Nametagged"), m.b("Babies"));
+    let mut cands: Vec<Target> = game.mobs.iter()
+        .filter(|mob| mob.alive() && !mob.removed && Some(mob.id) != own)
+        .filter(|mob| dist(eye, [mob.position.x, mob.position.y, mob.position.z]) <= range && listed(list, &mob.kind.id))
+        .filter(|mob| (nametagged || mob.custom_name.is_none()) && (babies || !mob.is_baby()))
+        .filter(|mob| !(mob.kind.id == "minecraft:player" && game.remote_player_name(mob.id).is_some_and(|n| friends.iter().any(|f| f.eq_ignore_ascii_case(n)))))
+        .map(mob_target)
         .filter(|t| clear_line(game, centre(t), [i32::MIN; 3]))
-        .filter(|t| m.b("Nametagged") || !game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.custom_name.is_some()))
-        .filter(|t| m.b("Babies") || !game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.is_baby()))
-        .filter(|t| !(t.player && names.iter().any(|(i, n)| *i == t.id && friends.iter().any(|f| f.eq_ignore_ascii_case(n)))))
         .collect();
     sort_targets(game, &mut cands, m.p("Priority"));
     let Some(t) = cands.into_iter().next() else {

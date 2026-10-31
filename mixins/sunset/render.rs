@@ -108,8 +108,8 @@ fn rs<R>(f: impl FnOnce(&mut Rs) -> R) -> R {
     f(g.get_or_insert_with(Rs::default))
 }
 
-fn on(mods: &[Module], name: &str) -> Option<Module> {
-    mods.iter().find(|m| m.name == name && m.on).cloned()
+fn on<'a>(mods: &'a [Module], name: &str) -> Option<&'a Module> {
+    mods.iter().find(|m| m.name == name && m.on)
 }
 
 static IN_CAMERA: AtomicBool = AtomicBool::new(false);
@@ -218,7 +218,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>, mods: &[Module]) {
         }
     }
     // Free Look.
-    match (freelook.clone(), rs(|r| r.fl.is_some())) {
+    match (freelook, rs(|r| r.fl.is_some())) {
         (Some(m), false) => {
             let camera = game.camera_type;
             rs(|r| r.fl = Some(Fl { yaw: game.yaw, pitch: game.pitch, camera }));
@@ -242,7 +242,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
     // of it, the whole of it while sprinting.
     if let Some(m) = on(mods, "Freecam") {
         let playing = game.native_playing();
-        let keys = game.physical_keys.clone();
+        let keys = &game.physical_keys;
         let health = game.player.as_ref().map_or(20.0, |p| p.health.health());
         let gone = game.remote.is_none();
         let mut stop = false;
@@ -304,7 +304,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
     // Free Look's arrow keys.
     if let Some(m) = on(mods, "Free Look") {
         if m.b("Arrows") && game.native_playing() {
-            let keys = game.physical_keys.clone();
+            let keys = &game.physical_keys;
             let n = m.n("Arrow speed") * 2.0;
             let d = |neg: KeyCode, pos: KeyCode| (f32::from(u8::from(keys.contains(&pos))) - f32::from(u8::from(keys.contains(&neg)))) * 0.5 * n as f32;
             let (dx, dy) = (d(KeyCode::ArrowLeft, KeyCode::ArrowRight), d(KeyCode::ArrowUp, KeyCode::ArrowDown));
@@ -396,10 +396,8 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
 // Xray: the mesher draws only the listed blocks; the world is rebuilt when
 // that changes.
 fn xray(game: &mut Game<'_>, mods: &[Module]) {
-    let m = on(mods, "Xray");
-    let want = m.as_ref().map(|m| m.t("Blocks").to_owned());
-    let key = (want.is_some(), want.clone().unwrap_or_default());
-    if rs(|r| r.xray.as_ref() == Some(&key)) {
+    let want = on(mods, "Xray").map(|m| m.t("Blocks"));
+    if rs(|r| r.xray.as_ref().is_some_and(|(enabled, list)| *enabled == want.is_some() && list == want.unwrap_or_default())) {
         return;
     }
     let ids: HashSet<u32> = match &want {
@@ -419,7 +417,7 @@ fn xray(game: &mut Game<'_>, mods: &[Module]) {
     }
     horizon_client::mesher::sunset_xray::ON.store(want.is_some(), Ordering::Relaxed);
     game.all_sections_changed();
-    rs(|r| r.xray = Some(key));
+    rs(|r| r.xray = Some((want.is_some(), want.unwrap_or_default().to_owned())));
 }
 
 // ---- Tunnel ESP
@@ -449,13 +447,16 @@ enum Side {
 }
 
 fn side(game: &Game<'_>, p: [i32; 3]) -> Side {
-    if walk_in(game, p) {
-        Side::Walkable
-    } else if !through(game, p) && !through(game, [p[0], p[1] + 1, p[2]]) {
-        Side::Blocked
-    } else {
-        Side::Partial
+    // Test its two interior blocks once. Walls need two lookups rather
+    // than first probing their floor and then re-reading the lower block.
+    let head = [p[0], p[1] + 1, p[2]];
+    if !through(game, p) {
+        return if !through(game, head) { Side::Blocked } else { Side::Partial };
     }
+    if !through(game, head) {
+        return Side::Partial;
+    }
+    if walk_on(game, [p[0], p[1] - 1, p[2]]) && !through(game, [p[0], p[1] + 2, p[2]]) { Side::Walkable } else { Side::Partial }
 }
 
 // Walkable on two opposite sides and walled on the other two; the cheap tests first, so open ground and solid rock
@@ -518,8 +519,10 @@ fn scan_voids(game: &Game<'_>, m: &Module, ticks: u64) {
         if !game.world.loaded(x, z) {
             return true;
         }
-        let air = is_air(game, [x, y, z]);
-        if air_only { !air } else { !air && facts(game, [x, y, z]).name.ends_with("bedrock") }
+        let all = game.res.facts();
+        let state = game.world.block(x, y, z);
+        let air = all.is_air(state);
+        if air_only { !air } else { !air && all.get(state).name.ends_with("bedrock") }
     };
     let hole = |x: i32, z: i32, floor: i32, roof: bool| -> bool {
         (0..height).all(|i| !wrong(x, if roof { floor - i } else { floor + i }, z))
@@ -559,9 +562,11 @@ fn scan_lights(game: &Game<'_>, m: &Module, ticks: u64) {
                         continue;
                     }
                     let below = [x, y - 1, z];
-                    let f = facts(game, below);
+                    let all = game.res.facts();
+                    let state = game.world.block(below[0], below[1], below[2]);
+                    let f = all.get(state);
                     // `isValidSpawnBlock`.
-                    if is_air(game, below) || !f.solid_render || f.name.ends_with("bedrock") || f.name.ends_with("barrier") {
+                    if all.is_air(state) || !f.solid_render || f.name.ends_with("bedrock") || f.name.ends_with("barrier") {
                         continue;
                     }
                     let light = game.world.light(x, y, z);

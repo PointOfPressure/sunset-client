@@ -77,7 +77,7 @@ pub(super) struct Inputs {
 impl Inputs {
     // Whether this is a fresh press (not a repeat, not one a screen had).
     pub(super) fn press(&mut self, key: &str) -> bool {
-        !self.blocked.contains(key) && self.down.insert(key.to_owned())
+        !self.blocked.contains(key) && !self.down.contains(key) && self.down.insert(key.to_owned())
     }
 
     pub(super) fn block(&mut self, key: &str) {

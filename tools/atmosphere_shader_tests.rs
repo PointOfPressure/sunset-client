@@ -22,7 +22,7 @@ fn native_wgsl_and_all_specializations_validate_and_translate_to_hlsl() {
         shader::ATMOSPHERE_WGSL,
         "@fragment fn fs_sunset_atmosphere(in: SkyOut) -> @location(0) vec4<f32> {\n\
              let ray = view_ray(in.ndc);\n\
-             return vec4(sunset_atmosphere(ray, sky_along_ray(ray)), 1.0);\n}",
+             return vec4(sunset_atmosphere(ray), 1.0);\n}",
     ]
     .join("\n");
     let module = naga::front::wgsl::parse_str(&source)
@@ -129,7 +129,7 @@ fn bounded_shader_work_and_no_new_resource_bindings() {
     // This catches accidental expansion into ray marching or extra frame data;
     // it complements native shader validation with the intended work budget.
     let text = shader::ATMOSPHERE_WGSL;
-    assert!(text.contains("i < 6u"));
+    assert!(text.contains("i < 5u"));
     assert!(text.contains("i < 3u"));
     assert_eq!(text.matches("for (").count(), 2);
     assert_eq!(text.matches("sunset_star_layer(ray,").count(), 3);
@@ -285,4 +285,54 @@ fn ring_ray_tests_reject_parallel_backward_and_unbounded_hits() {
     );
     assert!(!planet.contains("dpdx") && !planet.contains("dpdy"));
     assert!(!planet.contains("for (") && !planet.contains("while "));
+}
+
+#[test]
+fn star_support_rejection_keeps_filtered_cores_at_small_framebuffers() {
+    // Both the halo and the smoothstep core must already be exactly zero at
+    // the reject boundary. A fixed 0.16 bound would clip enlarged pixel cores.
+    for radius in [0.055_f64, 0.075, 0.105] {
+        for pixel in [0.0001_f64, 0.01, 0.06, 0.2, 0.8, 2.0] {
+            let support = 0.16_f64.max(radius + pixel);
+            for scale in [1.0_f64, 1.001, 1.1, 2.0] {
+                let distance = support * scale;
+                let low = (radius - pixel).max(0.0);
+                let high = radius + pixel;
+                let fraction = ((distance - low) / (high - low)).clamp(0.0, 1.0);
+                let core = 1.0 - fraction * fraction * (3.0 - 2.0 * fraction);
+                let halo = (1.0 - distance / 0.16).max(0.0);
+                assert!(core.abs() < 1e-12 && halo == 0.0);
+            }
+        }
+    }
+    let star = section(shader::ATMOSPHERE_WGSL, "fn sunset_star_layer(", "fn sunset_space(");
+    assert!(star.find("return vec3(0.0)").unwrap() < star.find("sqrt(distance_squared)").unwrap());
+}
+
+#[test]
+fn conservative_planet_cap_contains_every_sphere_and_filtered_ring_hit() {
+    let center = vector_after("let planet_center = vec3(");
+    let axis = vector_after("let axis = vec3(");
+    for x in -16..=16 {
+        for y in -16..=16 {
+            for z in -16..=16 {
+                if x == 0 && y == 0 && z == 0 { continue; }
+                let ray = normalized([f64::from(x), f64::from(y), f64::from(z)]);
+                let projection = dot(center, ray);
+                let impact = (36.0 - projection * projection).max(0.0).sqrt();
+                for footprint in [0.00001_f64, 0.001, 0.01, 0.1, 1.0] {
+                    let pixel = (footprint * 6.0).max(0.0001);
+                    let bound = 2.24_f64.max(1.0 + pixel);
+                    let culled = projection <= 0.0 || projection * projection < 36.0 - bound * bound;
+                    if !culled { continue; }
+                    assert!(projection <= 0.0 || impact >= 1.0 + pixel);
+                    if let Some((distance, radius)) = ring_intersection(center, axis, ray) {
+                        let denominator = dot(ray, axis).abs().max(0.08);
+                        let filter = (footprint * distance / denominator).clamp(0.0001, 0.12);
+                        assert!(radius >= 2.10 + filter);
+                    }
+                }
+            }
+        }
+    }
 }

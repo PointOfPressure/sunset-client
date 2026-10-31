@@ -45,6 +45,12 @@ name = "sunset_combat"
 source = "combat.rs"
 
 [[module]]
+id = "target_order"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_target_order"
+source = "target_order.rs"
+
+[[module]]
 id = "player"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_player"
