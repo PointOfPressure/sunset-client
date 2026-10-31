@@ -53,7 +53,7 @@ for module toggles. Spear Lunge, pearl and wind keys are separate settings.
 
 The controllers are local arena controllers, not pathfinding or full replicas
 of the reference's autonomous systems. Motion prediction, full incremental
-hurt clocks, automatic Aura obsidian/face placement, repairs,
+hurt clocks, face placement, repairs,
 pearl retreats and learned opponent history are outside the present scope.
 All damage bounds depend on observed world state and cannot guarantee survival
 after movement, latency, changed cover, other attacks or server modifications.
@@ -85,3 +85,24 @@ packets or prevented explosions. `.lootguard clear` explicitly clears zones;
 disabling one module's Protect loot setting bypasses this guard for that module
 while leaving its other safety checks in place. Runtime proof for this R10
 addition remains pending; earlier R7–R9 results do not test it.
+
+## Optional Aura base setup (R11)
+
+Crystal Aura exposes **Auto obsidian**, off by default, and **Obsidian delay**.
+It is a fallback when no ready break or ordinary existing-base placement wins.
+Place must be enabled and both materials available. A real support ray and
+native dry placement preview must accept the destination; existing solid
+terrain is not mined or overwritten. Hotbar and actual offhand obsidian work
+through ordinary native use and conditional slot return.
+
+An attempted cell requires an actual obsidian block payload and matching
+observed world before Crystal Place can proceed. It then recomputes target,
+self, friend and loot checks using the now-observed terrain. The earlier
+current-air screening can overestimate the later target damage, so a placed
+base can remain unused. It is not cached permission to explode.
+
+Setup uses the existing scan/action planner, with a 64-cell retry ledger,
+three sends per unchanged cell and a 30-tick wait. Ordinary repeated air
+rejections cannot replenish retries. Module/context reset clears that ledger.
+No extra renderer, fake block or predicted crystal ID is introduced. R11
+passes focused/native build checks; paired-player setup proof is pending.

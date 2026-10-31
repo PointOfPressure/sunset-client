@@ -131,6 +131,22 @@ fn clock_rollbacks_fail_closed_until_new_deadline() {
     assert!(!c.ready(0));
     assert!(c.waiting.is_some());
 }
+
+#[test]fn setup_wait_blocks_all_actions_until_payload_and_world_ack_or_timeout(){
+ let mut c=Clock::default();c.sent(Action::Base([4,120,0]),10,20);
+ assert!(!c.due(Action::Place([3,120,0]),11));assert!(!c.due(Action::Break(1,[0.0;3]),11));
+ c.observe(39,false);assert!(!c.available());c.observe(40,false);assert!(c.available());
+}
+#[test]fn acknowledged_base_retains_setup_clock_without_delaying_ready_break(){
+ let mut c=Clock::default();c.sent(Action::Base([4,120,0]),10,20);c.observe(11,true);
+ assert!(!c.due(Action::Base([5,120,0]),29));assert!(c.due(Action::Base([5,120,0]),30));
+ assert!(c.due(Action::Break(1,[0.0;3]),11));assert!(c.due(Action::Place([3,120,0]),11));
+}
+#[test]fn setup_reset_discards_pending_and_invalidates_accepted_generation(){
+ let mut c=Clock::default();let old=c.generation;c.sent(Action::Base([4,120,0]),10,2);
+ c.reset();assert!(c.waiting.is_none());assert_ne!(old,c.generation);assert!(c.available());
+}
+
 '''
 with tempfile.TemporaryDirectory(prefix="sunset-crystal-tests-") as tmp:
     test_path = Path(tmp) / "crystal_state.rs"

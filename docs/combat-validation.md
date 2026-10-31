@@ -14,6 +14,14 @@ paired-player suites are pending. The
 [exact source fingerprints](evidence/combat/source-r10.json) identify that binary.
 Earlier native evidence below retains its original checkpoint identity.
 
+R11 additionally passes 204 focused checks (200 compiled/native-adapter and
+four source-wiring), official native check and optimized build for optional
+Aura obsidian setup. Its [checkpoint](evidence/combat/checkpoint-r11.json) and
+[source fingerprints](evidence/combat/source-r11.json) identify client
+`cea1d258a07c498e7d46d805eeaa2f16d10738fe7f8d5b560e7fac478388ea4e`.
+There are 63 support modules, 51 injections and one unused-helper warning.
+R11 live setup checks are pending; build success is not their proof.
+
 ## Confirmed R4 player outcomes
 
 [Recorded outcomes, binary hash and screenshot hashes](evidence/combat/player-proof-r4.json)
@@ -220,6 +228,23 @@ early; a quick mouse press escaped City's level-only polling; and a near Trap
 column occluded farther faces after four placements. R9 addresses those
 specific causes. Focused checks and compilation do not establish that the
 live fixes pass; those reruns are recorded separately when complete.
+
+[The R10 rerun](evidence/combat/packet-city-r10.md) now has passing outcomes
+for all eight packet scenarios and 13/13 City/Trap/Optimizer cases. It verifies
+the one-second case, real quick-click City cancellation and actual ten-block
+Trap roof completion with native airborne motion and slot return. The initial
+R10 500 ms attempt remains a sampling failure, separate from its warm rerun.
+
+## R7 controllers, melee and cleanup
+
+[The full player proof index](evidence/combat/controllers-melee-r7.md) records
+17 controller, 13 melee and six cleanup behaviors with passing outcomes.
+There were 41 attempts, with five retained fixture failures and corrected
+passing runs. Both controllers prove actual damage, friend/input/ledge controls,
+food use, file persistence and explicit same-value ownership. Slot-menu,
+Panic and module-disable cleanup restores before ordinary expiry; manual
+override remains selected. Master UI proof covers suppression/reactivation,
+with the live-slot limitation stated in the index.
 
 ## R8 and R9 build checkpoints
 

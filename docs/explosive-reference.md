@@ -40,8 +40,14 @@ The native contribution addresses hitbox aiming, independent crystal clocks,
 bounded retries, conservative hurt-window deferral, equipment-aware self
 prediction, shared opportunity selection and diagnostics. Separate native
 manual macros now implement user-triggered observed transactions. This does
-not establish full parity with movement prediction, all manual-macro options, automatic obsidian,
+not establish full parity with movement prediction, all manual-macro options, every obsidian setup mode,
 face placement or the reference's visual plan renderer. Recent-death protection is now implemented as the narrower policy below.
+
+R11 adds an original optional Auto Obsidian fallback to Crystal Aura. It uses
+native support/preview APIs, actual block payload acknowledgement and fresh
+post-base scoring. Its conservative fallback-only preference differs from a
+planner that promotes a better setup over an already-ready opportunity. This
+behavior is opt-in and is not described as exact reference parity.
 
 ## Native differences kept deliberately
 

@@ -63,6 +63,18 @@ name = "sunset_explosive_policy"
 source = "explosive_policy.rs"
 
 [[module]]
+id = "crystal_setup_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crystal_setup_policy"
+source = "crystal_setup_policy.rs"
+
+[[module]]
+id = "aura_base"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_aura_base"
+source = "aura_base.rs"
+
+[[module]]
 id = "loot_policy"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_loot_policy"

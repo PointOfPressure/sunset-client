@@ -36,12 +36,14 @@ def main():
         foundation = temporary/'foundation.json'
         run('explosive foundation', [sys.executable, 'tools/explosive_tests.py',
                                      args.engine.resolve(), '--out', foundation])
+        foundation_count = json.loads(foundation.read_text(encoding='utf-8'))['passed_tests']
         for name in ['combat_lease', 'combat_cleanup', 'macro_policy', 'melee_policy', 'inventory_policy',
-                     'loot_policy', 'packet_policy', 'sword_policy', 'crystal_bot_policy', 'city_policy', 'roof_scaffold']:
+                     'loot_policy', 'crystal_setup_policy', 'packet_policy', 'sword_policy', 'crystal_bot_policy', 'city_policy', 'roof_scaffold']:
             executable = temporary/(name+'.exe' if sys.platform == 'win32' else name)
             run(name+' compile', ['rustc', '--edition=2024', '--test',
                                   'tools/'+name+'_tests.rs', '-o', executable])
             run(name, [executable])
+        run('native Aura base preview and ray', [sys.executable, 'tools/aura_base_engine_tests.py', args.engine.resolve()])
         run('native menu SWAP', [sys.executable, 'tools/inventory_engine_tests.py', args.engine.resolve()])
         run('native packet predicates', [sys.executable, 'tools/packet_engine_tests.py', args.engine.resolve()])
         run('native City mining', [sys.executable, 'tools/city_engine_tests.py', args.engine.resolve()])
@@ -57,11 +59,11 @@ def main():
             run('native inventory wire round-trip', [sys.executable, 'tools/inventory_protocol_fields.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
     source_hashes = {p.relative_to(repo).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in sorted((repo/'mixins/sunset').glob('*.rs'))}
-    count = 41 + sum(int(n) for r in records if not r['name'].endswith('compile')
+    count = foundation_count + sum(int(n) for r in records if not r['name'].endswith('compile')
                      for n in re.findall(r'test result: ok\. (\d+) passed', r['stdout']))
     # The foundation runner summarizes its six harnesses rather than exposing
     # their Rust output; its expected count is verified from its own summary.
-    assert '41 tests passed' in records[0]['stdout']
+    assert f'{foundation_count} tests passed' in records[0]['stdout']
     args.out.write_text(json.dumps({'passed': count, 'checks': records,
         'native_host_revision': 'ba6344a59cb9e755b730dcf02285fc0d33b97d3c',
         'source_sha256': source_hashes,

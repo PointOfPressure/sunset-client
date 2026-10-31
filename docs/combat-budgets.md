@@ -15,6 +15,13 @@ The native renderer, world size, other mods and the server still affect cost.
   per prediction and 4096 rays per budget, including explicit line checks.
   Exhaustion rejects the action. Unknown cover, equipment or malformed bounds
   do not become a zero-damage safety estimate.
+- Optional Aura obsidian setup reuses the same 96-cell scan and four candidate
+  damage evaluations. It adds at most 48 support-ray checks per planning pass,
+  with separate fresh validation for an accepted deed. Its 64-cell ledger
+  waits 30 ticks, permits at most three sends per unchanged cell and requires
+  actual obsidian payload plus observed-world agreement. The optional setting
+  defaults off. Unrelated packets and empty setup history exit the observer
+  before per-block work.
 - Melee/controller target scans stop above 512 observed entities. The Crystal
   controller additionally rejects a scene above 128 crystals, scans at most 64
   anchor cells per tick and evaluates at most four blast sources per threat
