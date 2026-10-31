@@ -447,6 +447,16 @@ bindings = [
 ]
 
 [[injection]]
+id = "crit_click"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_start_attack"
+helper = "crit_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
 id = "fog"
 kind = "HEAD"
 cancellable = true

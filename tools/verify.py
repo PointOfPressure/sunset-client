@@ -2315,6 +2315,77 @@ def _():
         f"{walled[0]} health lost at Walls range 3.5, {blocked[1]} swings at 2")
 
 
+@test("Criticals")
+def _():
+    # What the first hit Kill Aura, Trigger Bot or a click makes at full attack cooldown takes from a pig with 1000
+    # health and no armour, without and with Criticals (a critical hit is 1.5 times): a sword (7) and an axe (9) in
+    # Packet mode, a sword in Jump and Mini jump, a mace (6, and a smash adds 4 a block fallen), the fist (1) with
+    # Only with a weapon, a click with Only Kill Aura. On a server the probe counts the move packets in a tick
+    # through all of it (never two).
+    tough = "{NoAI:1b,PersistenceRequired:1b,Silent:1b,Health:1000f,attributes:[{id:'minecraft:max_health',base:1000.0}]}"
+    mark = probe_mark() if SERVER and probe_path() else None
+
+    def hit(item, how, crits=True):
+        reset()
+        if item:
+            slot(0, item)
+        ctl("key", "1", "tap")
+        pid = pig(tag=tough)
+        ctl("look-at-entity", str(pid))
+        wait(30)
+        before = mobs("pig")[0]["health"]
+        only(*(("criticals",) if crits else ()), *((how,) if how != "click" else ()))
+        if how == "click":
+            ctl("mouse", "left", "click")
+        lost = 0
+        for _ in range(40):
+            wait(1)
+            m = mobs("pig")
+            if m and m[0]["health"] < before:
+                lost = before - m[0]["health"]
+                break
+        only()
+        return round(lost, 2)
+
+    setting("killaura", "entities", "pig")
+    setting("triggerbot", "passive", "true")
+    packet = {(item, how): (hit(item, how, False), hit(item, how))
+              for item in ("diamond_sword", "diamond_axe") for how in ("killaura", "triggerbot", "click")}
+    modes = {}
+    for mode in ("Jump", "Mini jump"):
+        setting("criticals", "mode", mode)
+        modes[mode] = (hit("diamond_sword", "killaura"), hit("diamond_sword", "click"))
+    setting("criticals", "mode", "Packet")
+    setting("criticals", "additional height", "0.5")
+    higher = hit("diamond_sword", "click")
+    setting("criticals", "additional height", "0")
+    mace = (hit("mace", "click", False), hit("mace", "click"))
+    setting("criticals", "additional height", "1")
+    mace_high = hit("mace", "click")
+    setting("criticals", "additional height", "0")
+    fist = hit(None, "click")
+    setting("criticals", "only with a weapon", "true")
+    fist_weapon_only = hit(None, "click")
+    setting("criticals", "only with a weapon", "false")
+    setting("criticals", "only kill aura", "true")
+    click_ka_only = hit("diamond_sword", "click")
+    most = wire_stats(mark)[1] if mark is not None else None
+    # Packet mode's hop is packets only: a server that judges the fall by its own physics (Horizon's, single player's
+    # built-in one) takes no crit from it. Jump and Mini jump really fall, so they crit everywhere.
+    crit = lambda off, on: off > 0 and abs(on / off - 1.5) < 0.02
+    packet_crits = all(crit(*v) for v in packet.values())
+    base = {"diamond_sword": 7, "diamond_axe": 9}
+    ok = (all(abs(v[0] - base[i]) < 0.05 for (i, _), v in packet.items()) and all(abs(d - 10.5) < 0.05 for v in modes.values() for d in v)
+          and (not packet_crits or (abs(higher - 10.5) < 0.05 and abs(fist - 1.5) < 0.05)) and abs(fist_weapon_only - 1) < 0.05
+          and abs(click_ka_only - 7) < 0.05 and most in (None, 0, 1))
+    names = {"diamond_sword": "sword", "diamond_axe": "axe", "killaura": "Kill Aura", "triggerbot": "Trigger Bot", "click": "click"}
+    return ok, (f"Packet crits: {packet_crits}; damage off/on, Packet: " + ", ".join(f"{names[i]} {names[h]} {a}/{b}" for (i, h), (a, b) in packet.items()) +
+                "; sword Kill Aura/click: " + ", ".join(f"{k} {a}/{b}" for k, (a, b) in modes.items()) +
+                f"; Packet with Additional height 0.5: {higher}; mace click off/on {mace[0]}/{mace[1]}, {mace_high} at Additional "
+                f"height 1; fist {fist}, {fist_weapon_only} with Only with a weapon; a click with Only Kill Aura {click_ka_only}; "
+                f"most move packets in a tick: {most}")
+
+
 def shot_pixels(name, want):
     """Pixels of a screenshot that `want` (r, g, b) accepts."""
     from PIL import Image
