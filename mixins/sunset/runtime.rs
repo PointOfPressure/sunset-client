@@ -261,6 +261,7 @@ impl Module {
         match self.name {
             "Flight" => Some(self.p("Mode").to_owned()),
             "Kill Aura" => Some(num(self.n("Range"))),
+            "Fast Place" => Some(num(self.n("Speed"))),
             "Speed" => Some(self.p("Mode").to_owned()),
             _ => None,
         }
@@ -343,7 +344,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Max speed", 2.0, 0.5, 5.0, 0.5),
         Module::new("Anti Void", Movement, "Bounces you out of the void."),
         // Player
-        Module::new("Fast Place", Player, "Removes the delay between placing blocks."),
+        Module::new("Fast Place", Player, "Places blocks faster while you hold use. Speed 1 is 6 blocks a second, 2 is 8, 3 is 10, 4 is 14 and 5 is 20 (the game's own is 5).")
+            .num("Speed", 5.0, 1.0, 5.0, 1.0),
         Module::new("Break Delay", Player, "Changes the delay between breaking one block and the next (Meteor's Break Delay): 0 means none.")
             .num("Cooldown (ticks)", 0.0, 0.0, 5.0, 1.0),
         Module::new("Auto Respawn", Player, "Respawns as soon as you die."),
@@ -1468,9 +1470,6 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     if get("Panic").is_some() {
         panic_off(game);
         return;
-    }
-    if get("Fast Place").is_some() {
-        game.use_delay = 0;
     }
     if let Some(m) = get("Break Delay") {
         let wait = m.n("Cooldown (ticks)") as u32;
@@ -4263,7 +4262,7 @@ fn aliases(name: &str) -> &'static str {
         "Flight" => "fly",
         "Kill Aura" => "aura killaura",
         "Break Delay" => "fast break nuker delay",
-        "Fast Place" => "fastplace",
+        "Fast Place" => "fastplace place speed delay",
         "Fullbright" => "gamma night vision",
         "Criticals" => "crits",
         "Auto Totem" => "totem",

@@ -79,6 +79,7 @@ struct Ps {
     steal_same: u32,
     steal_done: i32,
     clean_wait: u32,
+    place_credit: u32,
 }
 
 static PS: Mutex<Option<Ps>> = Mutex::new(None);
@@ -156,6 +157,9 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         auto_gap(game, m);
     } else if ps(|p| std::mem::take(&mut p.gap_eating)) {
         let _ = game.play_mouse(MouseButton::Right, false);
+    }
+    if let Some(m) = get("Fast Place") {
+        fast_place(game, m);
     }
     if let Some(m) = get("Fast Use") {
         fast_use(game, m);
@@ -347,9 +351,44 @@ fn stop_eating(game: &mut Game<'_>) {
     hold(game, prev);
 }
 
+// ---- Fast Place
+
+// Blocks a second at each speed. The game's own is one every 4 ticks (5 a second), and a tick places one at most (20).
+const PLACE_RATES: [u32; 5] = [6, 8, 10, 14, 20];
+
+fn holds_block(game: &Game<'_>) -> bool {
+    [game.held(), game.offhand.as_ref()]
+        .into_iter()
+        .flatten()
+        .any(|s| game.res.items().get(&s.item).is_some_and(|i| i.block.is_some()))
+}
+
+// Runs after the game counts its delay down and before it reads it: each tick earns a share of a block, and the delay
+// opens when a whole one is earned. So speeds between two whole delays average out to their exact rate.
+fn fast_place(game: &mut Game<'_>, m: &Module) {
+    if !game.right || game.using.is_some() || !holds_block(game) {
+        ps(|p| p.place_credit = 0);
+        return;
+    }
+    let rate = PLACE_RATES[(m.n("Speed") as usize).clamp(1, PLACE_RATES.len()) - 1];
+    let ready = ps(|p| {
+        p.place_credit += rate;
+        let ready = p.place_credit >= 20;
+        if ready {
+            p.place_credit -= 20;
+        }
+        ready
+    });
+    game.use_delay = if ready { 0 } else { game.use_delay.max(1) };
+}
+
 // ---- Fast Use
 
 fn fast_use(game: &mut Game<'_>, m: &Module) {
+    // Blocks are Fast Place's while it is on, or its speed would not hold.
+    if holds_block(game) && super::sunset::with(|s| s.is_on("Fast Place")) {
+        return;
+    }
     let item = game.held().map(|s| short(&s.item).to_owned());
     let applies = m.p("Mode") == "All"
         || item.as_ref().is_some_and(|i| {
