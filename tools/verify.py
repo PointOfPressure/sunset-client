@@ -1086,6 +1086,151 @@ def _():
                 f"broken file: {refused[:1]}; bad name: {bad_name[:1]}; list: {listed[:1]}")
 
 
+def is_on(name):
+    """Whether Sunset has the module on, from .modules (its on modules end in *)."""
+    mark = log_mark()
+    say(".modules")
+    wait(3)
+    return any(f"{name}*" in [x.strip() for x in line.split(":", 1)[-1].split(",")] for line in sunset_said(mark))
+
+
+def turned_itself_off(key, name):
+    """A module that acts once and turns itself off: off now (and so out of the toggles to undo)."""
+    off = not is_on(name)
+    if off:
+        on.discard(key)
+    return off
+
+
+@test("Self Web")
+def _():
+    def webbed(double=False, floor=None, offhand=False):
+        """The webs at feet and head height after one go, and whether it turned itself off."""
+        reset()
+        feet = Y + 1
+        if floor:
+            # Stood on a partial block: the feet are in the block above it.
+            block, height = floor
+            cmd(f"setblock {X0} {Y+1} {Z0} minecraft:{block}", f"tp @s {X0 + 0.5} {Y + 1 + height} {Z0 + 0.5}")
+            feet = Y + 2
+        if offhand:
+            cmd("item replace entity @s weapon.offhand with minecraft:cobweb 8")
+        else:
+            slot(3, "cobweb", 8)
+        setting("selfweb", "double place", "true" if double else "false")
+        wait(10)
+        only("selfweb")
+        wait(10)
+        got = (check(f"execute if block {X0} {feet} {Z0} minecraft:cobweb"), check(f"execute if block {X0} {feet+1} {Z0} minecraft:cobweb"))
+        off = turned_itself_off("selfweb", "Self Web")
+        only()
+        cmd(f"fill {X0} {Y+1} {Z0} {X0} {Y+3} {Z0} minecraft:air")
+        return got, off
+
+    single, double = webbed(), webbed(double=True)
+    slab, soul = webbed(floor=("stone_slab", 0.5)), webbed(floor=("soul_sand", 0.875))
+    offhand = webbed(offhand=True)
+    reset()
+    mark = log_mark()
+    only("selfweb")
+    wait(5)
+    told = sunset_said(mark)
+    turned_itself_off("selfweb", "Self Web")
+    only()
+    ok = (single == ((True, False), True) and double == ((True, True), True) and slab[0][0] and soul[0][0] and offhand[0][0]
+          and any("cobweb" in t.lower() for t in told))
+    return ok, (f"(feet, head) webbed, off after: {single}; Double place {double}; on a slab {slab}; on soul sand {soul}; "
+                f"webs in the offhand {offhand}; with no webs Sunset says {told[-1:]}")
+
+
+@test("Self Trap")
+def _():
+    def trapped(slab=False, blocks=True):
+        reset()
+        feet = Y + 1
+        if slab:
+            cmd(f"setblock {X0} {Y+1} {Z0} minecraft:stone_slab", f"tp @s {X0 + 0.5} {Y + 1.5} {Z0 + 0.5}")
+            feet = Y + 2
+        if blocks:
+            slot(2, "obsidian", 16)
+        wait(10)
+        only("selftrap")
+        wait(20)
+        top = check(f"execute if block {X0} {feet+2} {Z0} minecraft:obsidian")
+        off = turned_itself_off("selftrap", "Self Trap")
+        only()
+        cmd(f"fill {X0-1} {Y+1} {Z0-1} {X0+1} {Y+5} {Z0+1} minecraft:air")
+        return top, off
+
+    flat_, slab_, none = trapped(), trapped(slab=True), trapped(blocks=False)
+    return flat_ == (True, True) and slab_ == (True, True) and none == (False, True), (
+        f"block over your head, off after: {flat_}; stood on a slab {slab_}; with no blocks {none}")
+
+
+@test("Surround (Toggle on complete)")
+def _():
+    slot(0, "obsidian", 16)
+    setting("surround", "toggle on complete", "true")
+    only("surround")
+    wait(30)
+    four = count(X0 - 1, Y + 1, Z0 - 1, X0 + 1, Y + 1, Z0 + 1, "obsidian")
+    off = turned_itself_off("surround", "Surround")
+    only()
+    return four == 4 and off, f"{four} obsidian round your feet before it turned itself off: {off}"
+
+
+@test("Auto Trap")
+def _():
+    if not CTL2:
+        return None, "needs a second player"
+    cmd("gamemode survival Bot1", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5}")
+    slot(0, "obsidian", 32)
+    wait(10)
+    only("autotrap")
+    wait(60)
+    boxed = count(X0 - 1, Y + 1, Z0 + 1, X0 + 1, Y + 3, Z0 + 3, "obsidian")
+    off = turned_itself_off("autotrap", "Auto Trap")
+    only()
+    return boxed == 5 and off, f"{boxed} obsidian round Bot1's head (5 is the Full top); off after: {off}"
+
+
+@test("Burrow")
+def _():
+    slot(0, "ender_chest", 4)
+    wait(5)
+    only("burrow")
+    wait(40)
+    chest = check(f"execute if block {X0} {Y+1} {Z0} minecraft:ender_chest")
+    off = turned_itself_off("burrow", "Burrow")
+    only()
+    return chest and off, f"ender chest where you stood: {chest}; off after: {off}; you at {[round(v, 2) for v in pos()]}"
+
+
+@test("Hole Filler")
+def _():
+    # A one-block hole in obsidian in the floor beside you (Smart off: every hole near you, not only near other players).
+    cmd(f"fill {X0+1} {Y-1} {Z0-1} {X0+3} {Y} {Z0+1} minecraft:obsidian", f"setblock {X0+2} {Y} {Z0} minecraft:air")
+    slot(0, "obsidian", 16)
+    setting("holefiller", "smart", "false")
+    only("holefiller")
+    wait(20)
+    filled = check(f"execute if block {X0+2} {Y} {Z0} minecraft:obsidian")
+    only()
+    return filled, f"the hole beside you filled: {filled}"
+
+
+@test("Chest Swap")
+def _():
+    cmd("item replace entity @s armor.chest with minecraft:iron_chestplate", "item replace entity @s inventory.5 with minecraft:elytra")
+    wait(5)
+    only("chestswap")
+    wait(10)
+    elytra = check("execute if items entity @s armor.chest minecraft:elytra")
+    off = turned_itself_off("chestswap", "Chest Swap")
+    only()
+    return elytra and off, f"elytra on after: {elytra}; off after: {off}"
+
+
 # ---- player and world
 
 def nuker_soak(mode):

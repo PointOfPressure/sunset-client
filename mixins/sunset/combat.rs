@@ -4,7 +4,7 @@
 
 use super::sunset::{Category, Module, gui_open, hold, is_friend, own_id, with};
 use super::sunset_util::*;
-use super::{Game, Screen};
+use super::Game;
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use std::collections::HashSet;
 use std::sync::Mutex;
@@ -209,7 +209,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
 }
 
 fn blocks_slot(game: &Game<'_>, list: &str) -> Option<usize> {
-    find_hotbar(game, |n| listed(list, n))
+    find_held(game, |n| listed(list, n))
 }
 
 // ---- Surround
@@ -286,7 +286,8 @@ fn surround(game: &mut Game<'_>, m: &Module, just: bool) {
         }
     }
     cs(|c| c.surround_timer = 0);
-    if complete && m.b("Toggle on complete") {
+    // Complete once every block is in the world: one sent this tick isn't yet.
+    if complete && placed == 0 && m.b("Toggle on complete") {
         toggle_off(game, "Surround");
         return;
     }
@@ -311,6 +312,9 @@ fn self_trap(game: &mut Game<'_>, m: &Module, just: bool) {
     let slot = blocks_slot(game, m.t("Blocks"));
     let (placed, empty) = cs(|c| (c.trap_placed, c.trap_positions.is_empty()));
     if m.b("Turn off") && ((placed && empty) || slot.is_none()) {
+        if slot.is_none() {
+            report(game, "No Self Trap blocks in your hotbar or offhand.");
+        }
         toggle_off(game, "Self Trap");
         return;
     }
@@ -318,7 +322,7 @@ fn self_trap(game: &mut Game<'_>, m: &Module, just: bool) {
         cs(|c| c.trap_positions.clear());
         return;
     };
-    let Some(at) = block_pos(game) else {
+    let Some(at) = feet_block(game) else {
         return;
     };
     let mut want: Vec<[i32; 3]> = Vec::new();
@@ -385,8 +389,7 @@ fn auto_trap(game: &mut Game<'_>, m: &Module, just: bool) {
             c.auto_trap_placed = false;
         });
     }
-    let (placed, target_id) = cs(|c| (c.auto_trap_placed, c.auto_trap_target));
-    let _ = placed;
+    let target_id = cs(|c| c.auto_trap_target);
     let Some(slot) = blocks_slot(game, m.t("Blocks")) else {
         return;
     };
@@ -499,13 +502,14 @@ fn self_web(game: &mut Game<'_>, m: &Module) {
     if !go {
         return;
     }
-    let Some(slot) = find_hotbar(game, |n| n == "cobweb") else {
+    let Some(slot) = find_held(game, |n| n == "cobweb") else {
+        report(game, "No cobwebs in your hotbar or offhand.");
         if m.b("Auto toggle") {
             toggle_off(game, "Self Web");
         }
         return;
     };
-    if let Some(at) = block_pos(game) {
+    if let Some(at) = feet_block(game) {
         place_block(game, at, slot, m.b("Rotate"), false);
         if m.b("Double place") {
             place_block(game, [at[0], at[1] + 1, at[2]], slot, m.b("Rotate"), false);
@@ -527,7 +531,7 @@ fn auto_web(game: &mut Game<'_>, m: &Module) {
     let Some(t) = target else {
         return;
     };
-    let Some(slot) = find_hotbar(game, |n| n == "cobweb") else {
+    let Some(slot) = find_held(game, |n| n == "cobweb") else {
         return;
     };
     let mut pos = t.pos;
@@ -729,8 +733,16 @@ fn burrow(game: &mut Game<'_>, m: &Module, just: bool) {
     if m.b("Center") {
         center_player(game);
     }
-    if let Some(slot) = burrow_slot(game, m) {
-        turned_to(game, "Burrow", m.b("Rotate"), center_of(start), move |game| {
+    let rubberband = m.n("Rubberband height");
+    // The block first, then the rubberband (the next move packet): a server that took the move first would find the
+    // block out of reach.
+    let lift = move |game: &mut Game<'_>| {
+        if let Some(p) = game.player.as_mut() {
+            p.position.y += rubberband;
+        }
+    };
+    match burrow_slot(game, m) {
+        Some(slot) => turned_to(game, "Burrow", m.b("Rotate"), center_of(start), move |game| {
             let before = game.selected;
             hold(game, slot);
             let seq = sequence(game);
@@ -744,10 +756,9 @@ fn burrow(game: &mut Game<'_>, m: &Module, just: bool) {
                 sequence: seq,
             }));
             hold(game, before);
-        });
-    }
-    if let Some(p) = game.player.as_mut() {
-        p.position.y += m.n("Rubberband height");
+            lift(game);
+        }),
+        None => lift(game),
     }
     cs(|c| c.burrow = None);
     toggle_off(game, "Burrow");
@@ -950,9 +961,6 @@ fn auto_exp(game: &mut Game<'_>, m: &Module) {
         hold(game, before);
     });
 }
-
-#[allow(dead_code)]
-fn unused(_: Screen) {}
 
 // ---- Aim Assist (Duelkit's AimAssist, around your own mouse turn once a frame)
 //

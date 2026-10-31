@@ -178,6 +178,13 @@ pub(super) fn block_pos(game: &Game<'_>) -> Option<[i32; 3]> {
     Some([p[0].floor() as i32, p[1].floor() as i32, p[2].floor() as i32])
 }
 
+// The block the feet are in: on a slab, soul sand, a path, carpet or snow, the block of the position is the one stood
+// on, so it is the one above.
+pub(super) fn feet_block(game: &Game<'_>) -> Option<[i32; 3]> {
+    let p = block_pos(game)?;
+    Some(if replaceable(game, p) { p } else { [p[0], p[1] + 1, p[2]] })
+}
+
 // `PlayerUtils.centerPlayer`: on the middle of its block. The move packet of
 // the tick carries it (the server takes one a tick).
 pub(super) fn center_player(game: &mut Game<'_>) {
@@ -285,10 +292,10 @@ pub(super) fn can_place(game: &Game<'_>, p: [i32; 3], check_entities: bool) -> b
     p[1] >= -64 && p[1] < 320 && replaceable(game, p) && (!check_entities || !obstructed(game, p))
 }
 
-// `BlockUtils.place`: puts the block in hotbar `slot` at `p`, clicking a
+// `BlockUtils.place`: puts the block in hotbar `slot` (or the offhand's, slot OFFHAND) at `p`, clicking a
 // neighbour (or the position itself when there is none, an air place).
 pub(super) fn place_block(game: &mut Game<'_>, p: [i32; 3], slot: usize, rotate: bool, check_entities: bool) -> bool {
-    if slot > 8 || game.remote.is_none() || !can_place(game, p, check_entities) {
+    if (slot > 8 && slot != OFFHAND) || game.remote.is_none() || !can_place(game, p, check_entities) {
         return false;
     }
     if game.eye_position().is_none() {
@@ -310,10 +317,13 @@ pub(super) fn place_block(game: &mut Game<'_>, p: [i32; 3], slot: usize, rotate:
     ];
     turned_to(game, "Place", rotate, hit, move |game| {
         let before = game.selected;
-        hold(game, slot);
+        let offhand = slot == OFFHAND;
+        if !offhand {
+            hold(game, slot);
+        }
         let seq = sequence(game);
         game.send(S::UseItemOn(play::UseItemOn {
-            hand: 0,
+            hand: i32::from(offhand),
             pos: neighbor,
             face,
             cursor,
@@ -323,7 +333,9 @@ pub(super) fn place_block(game: &mut Game<'_>, p: [i32; 3], slot: usize, rotate:
         }));
         game.swing_arm();
         game.send(S::Punch(Empty));
-        hold(game, before);
+        if !offhand {
+            hold(game, before);
+        }
     });
     true
 }
@@ -355,6 +367,18 @@ pub(super) fn find_hotbar(game: &Game<'_>, want: impl Fn(&str) -> bool) -> Optio
             .and_then(|s| s.as_ref())
             .is_some_and(|s| want(short(&s.item)))
     })
+}
+
+// The offhand, as a slot place_block takes.
+pub(super) const OFFHAND: usize = 40;
+
+// `InvUtils.findInHotbar`: the offhand first, then the hand, then the rest of the hotbar.
+pub(super) fn find_held(game: &Game<'_>, want: impl Fn(&str) -> bool) -> Option<usize> {
+    if game.offhand.as_ref().is_some_and(|s| want(short(&s.item))) {
+        return Some(OFFHAND);
+    }
+    let hand = game.inventory.get(game.selected).and_then(|s| s.as_ref()).is_some_and(|s| want(short(&s.item)));
+    if hand { Some(game.selected) } else { find_hotbar(game, want) }
 }
 
 // Anywhere in the inventory (0 to 35): hotbar first.
