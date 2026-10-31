@@ -1412,6 +1412,36 @@ def _():
                 f"stone with Only to better tools: {worse[0]} (started again); server has every block gone: {all(g for _, g in (plain, kept, better, worse))}")
 
 
+@test("Fast Place (speeds)")
+def _():
+    # A stone at eye height 5 blocks ahead: holding use builds a row of 4 back towards you. Ticks until all 4 are in.
+    def row(speed):
+        reset()
+        cmd(f"setblock {X0} {Y+2} {Z0+5} minecraft:stone")
+        slot(0, "cobblestone", 64)
+        ctl("key", "1", "tap")
+        if speed:
+            setting("fastplace", "speed", str(speed))
+            only("fastplace")
+        ctl("look", "0", "0")
+        wait(5)
+        t0 = state()["ticks"]
+        ctl("mouse", "right", "down")
+        took = -1
+        for _ in range(60):
+            wait(1)
+            if count(X0, Y + 2, Z0 + 1, X0, Y + 2, Z0 + 4, "cobblestone") >= 4:
+                took = state()["ticks"] - t0
+                break
+        ctl("mouse", "right", "up")
+        only()
+        cmd(f"fill {X0} {Y+2} {Z0+1} {X0} {Y+2} {Z0+5} minecraft:air")
+        return took
+
+    plain, one, five = row(None), row(1), row(5)
+    return 0 < five < one < plain or (0 < five < plain and one <= plain), f"4 blocks placed in {plain} ticks without, {one} at Speed 1, {five} at Speed 5"
+
+
 @test("Middle Click Extra")
 def _():
     slot(4, "ender_pearl", 4)
