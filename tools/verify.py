@@ -1369,6 +1369,49 @@ for _mode in ("Damage", "Normal", "Haste"):
     test(f"Speed Mine ({_mode})")(lambda _m=_mode: speed_mine(_m))
 
 
+def swap_break(first, then, swap_at=6):
+    """Ticks from pressing to the stone being gone (here) when the held pickaxe changes after `swap_at` ticks, and
+    whether the server has it gone."""
+    slot(0, first)
+    slot(1, then)
+    ctl("key", "1", "tap")
+    at = (X0, Y + 1, Z0 + 2)
+    cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:stone")
+    wait(10)
+    ctl("look-at-block", *map(str, at))
+    wait(3)
+    t0 = state()["ticks"]
+    ctl("mouse", "left", "down")
+    wait(swap_at)
+    ctl("key", "2", "tap")
+    took = -1
+    for _ in range(80):
+        wait(1)
+        if ctl("block", *map(str, at)).get("block") == "minecraft:air":
+            took = state()["ticks"] - t0
+            break
+    ctl("mouse", "left", "up")
+    wait(10)
+    gone = check(f"execute if block {at[0]} {at[1]} {at[2]} minecraft:air")
+    cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:air")
+    return took, gone
+
+
+@test("No Break Reset")
+def _():
+    # A stone pickaxe for 6 ticks (over half the stone), then a diamond one: the game starts again, this keeps on.
+    plain = swap_break("stone_pickaxe", "diamond_pickaxe")
+    only("nobreakreset")
+    kept = swap_break("stone_pickaxe", "diamond_pickaxe")
+    setting("nobreakreset", "only to better tools", "true")
+    better = swap_break("stone_pickaxe", "diamond_pickaxe")
+    worse = swap_break("diamond_pickaxe", "stone_pickaxe", swap_at=3)
+    only()
+    ok = all(g for _, g in (plain, kept, better, worse)) and 0 < kept[0] < plain[0] and 0 < better[0] < plain[0] and worse[0] > kept[0]
+    return ok, (f"stone then diamond pickaxe: {plain[0]} ticks, {kept[0]} with it on, {better[0]} with Only to better tools; diamond then "
+                f"stone with Only to better tools: {worse[0]} (started again); server has every block gone: {all(g for _, g in (plain, kept, better, worse))}")
+
+
 @test("Middle Click Extra")
 def _():
     slot(4, "ender_pearl", 4)

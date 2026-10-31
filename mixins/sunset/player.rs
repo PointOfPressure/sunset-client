@@ -54,6 +54,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Modifier", 1.4, 0.0, 10.0, 0.1)
             .num("Haste amplifier", 2.0, 1.0, 10.0, 1.0)
             .bool("Instamine", true),
+        Module::new("No Break Reset", Player, "Keeps a block's break progress when you switch the item in your hand while breaking it (the game would start again); the server judges the break with what you hold when it ends. Only to better tools: only when the new one breaks it faster.")
+            .bool("Only to better tools", false),
         Module::new("Anchor", Category::Movement, "Stops your movement over a hole so you drop into it.")
             .num("Max height", 10.0, 1.0, 20.0, 1.0)
             .num("Min pitch", 0.0, -90.0, 90.0, 5.0)
@@ -86,6 +88,8 @@ struct Ps {
     steal_same: u32,
     steal_done: i32,
     clean_wait: u32,
+    // No Break Reset: the step the block's break took last tick, with the item held then.
+    break_step: f32,
     // No Fall's Place: what it put down to land in, the item, the ticks since, the ticks you have stood still, and
     // whether the server's answer (the water there) has come.
     fall_placed: Option<([i32; 3], &'static str, u32, u32, bool)>,
@@ -808,4 +812,18 @@ pub(super) fn speed_mine(game: &mut Game<'_>, m: Option<&Module>) {
         "Normal" if done > 0.0 => remote::set_breaking(game, done + step * (m.n("Modifier") as f32 - 1.0)),
         _ => {}
     }
+}
+
+// ---- No Break Reset, before the tick, where the game would see the new item and start the break again
+
+pub(super) fn no_break_reset(game: &mut Game<'_>, m: Option<&Module>) {
+    use super::remote::sunset_remote as remote;
+    let (Some(m), Some((pos, _))) = (m, remote::breaking(game)) else {
+        return;
+    };
+    let step = game.destroy_progress(pos);
+    if remote::breaking_item_changed(game) && (!m.b("Only to better tools") || step >= ps(|p| p.break_step)) {
+        remote::keep_breaking(game);
+    }
+    ps(|p| p.break_step = step);
 }

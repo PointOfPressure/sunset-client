@@ -24,3 +24,16 @@ pub(crate) fn set_breaking(game: &mut Game<'_>, done: f32) {
         *d = done;
     }
 }
+
+// No Break Reset: the item in hand is no longer the one the break began with (the game would start it again).
+pub(crate) fn breaking_item_changed(game: &Game<'_>) -> bool {
+    game.remote.as_ref().is_some_and(|r| r.destroying.is_some() && r.destroying_item != game.main_hand_key())
+}
+
+// ...so the break goes on with the new one.
+pub(crate) fn keep_breaking(game: &mut Game<'_>) {
+    let held = game.main_hand_key();
+    if let Some(r) = game.remote.as_mut() {
+        r.destroying_item = held;
+    }
+}
