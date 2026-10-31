@@ -77,4 +77,5 @@ rustc --test tools/spawner_index_tests.rs -o spawner-index-tests.exe
 
 The adapter tests compile the actual index adapter against a small representation
 of the pinned engine API. Full mixin planning, compile checks and isolated live
-world tests validate the actual host separately.
+world tests passed against the actual host separately; see
+[validation, metadata-delivery limits and screenshots](discovery-validation.md).

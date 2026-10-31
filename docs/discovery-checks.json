@@ -1,0 +1,280 @@
+{
+  "code_commit": "37ace57d15f1e752fc00100a5e1a88325b27090d",
+  "base_commit": "fa174f362a640caa34c5f080deadd704dc173c85",
+  "horizon": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins": "0d6b103c70633d8fd9443d8d0acd3aadaacedb06",
+  "rustc": "1.99.1",
+  "offline_tests": {
+    "item_esp": 16,
+    "spawner_core_and_adapter": 10,
+    "distinct_total": 26,
+    "note": "The ten spawner tests include its seven core tests; counted once."
+  },
+  "native_pipeline": {
+    "plan": {
+      "passed": true,
+      "seconds": 89.786,
+      "source_unchanged": true
+    },
+    "apply": {
+      "passed": true,
+      "seconds": 104.669,
+      "source_unchanged": true
+    },
+    "check": {
+      "passed": true,
+      "seconds": 32.841,
+      "source_unchanged": true
+    },
+    "build": {
+      "passed": true,
+      "seconds": 332.085,
+      "source_unchanged": true
+    },
+    "freeze": {
+      "passed": true,
+      "seconds": 0.888,
+      "source_unchanged": true
+    }
+  },
+  "warnings": 0,
+  "runtime": {
+    "offscreen": true,
+    "fresh_generated_homes_only": true,
+    "spawner_checks": [
+      "Known/unknown normal spawners and unknown trial spawner",
+      "Grouped coordinates/distance notices",
+      "Range 16 excludes a new 23m discovery until expanded to 32",
+      "Disable/re-enable and metadata replacement preserve dedupe",
+      "Removed block loses its label",
+      "64 new blocks generate three details plus +61 summary",
+      "Configured one-label cap",
+      "Different dimensions discover the same coordinates independently",
+      "Returning to Overworld preserves history",
+      "Disconnect clears pointer/player; reopen resets history"
+    ],
+    "item_checks": [
+      "Localized names, custom Fixture Blade name and x32/x5 counts",
+      "Exact diamond Include and Exclude filters",
+      "Nearest cap one and next nearest after removal",
+      "128 summon commands for the stress fixture; cap 16",
+      "Range input 1 is clamped to native ESP minimum 8; farther markers are omitted",
+      "No markers behind the camera or after removing all items",
+      "No Overworld item marker after entering the Nether",
+      "Settings survive save/reopen"
+    ],
+    "item_count_observations": {
+      "stress_summon_commands": 128,
+      "client_snapshot_items": 111,
+      "subsequent_server_removal_count": 127,
+      "after_cleanup_client_readback": null,
+      "after_cleanup_visual": "No item overlays in the inspected native framebuffer.",
+      "empty_probe_limit": "The separate readback occurred after the auxiliary driver closed the socket; its connection error is not evidence of zero entities.",
+      "note": "Counts were observed at different times. Do not describe this as 128 simultaneous client entities."
+    },
+    "gui": "Filtered Spawner Alerts entry rendered; menu close/resume returns playing with pointer captured. Popup controls were not independently exercised.",
+    "clean_lifecycle_run": {
+      "driver_error": null,
+      "game_exit_code": 0,
+      "frozen_inputs_unchanged": true
+    },
+    "auxiliary_runs": [
+      {
+        "scope": "Core and stress observations before the driver error",
+        "driver_error": "Unsupported ctl key alias rshift",
+        "game_exit_code": 0
+      },
+      {
+        "scope": "Menu rendering before the driver error",
+        "driver_error": "Tick wait requested while paused",
+        "game_exit_code": 0
+      }
+    ],
+    "primary_discovery_notices": [
+      "Discovered Spider Spawner at -3 120 7 (13m); Unknown Spawner at 3 120 7 (13m); Zombie Spawner at 30 120 30 (47m)",
+      "Discovered Skeleton Spawner at 20 120 6 (23m)",
+      "Discovered Unknown Spawner at -7 120 15 (22m); Unknown Spawner at -7 120 16 (23m); Unknown Spawner at -7 120 17 (24m); +61 more new spawners",
+      "Discovered Unknown Trial Spawner at -5 120 3 (10m)"
+    ],
+    "clean_lifecycle_notices": [
+      "Discovered Spider Spawner at -3 120 7 (13m)",
+      "Discovered Zombie Spawner at -3 120 7 (13m)",
+      "Discovered Spider Spawner at -3 120 7 (13m)"
+    ]
+  },
+  "frame_samples": [
+    {
+      "case": "small_spawners_enabled",
+      "seconds": 3.0035378971099855,
+      "frames": 177,
+      "avg_fps": 58.93050331421155,
+      "cpu": {
+        "avg_ms": 1.551061581757109,
+        "max_ms": 3.1683998107910156,
+        "p50_ms": 1.48389995098114,
+        "p95_ms": 2.432699918746948,
+        "p99_ms": 2.9916000366210938
+      },
+      "gpu": {
+        "avg_ms": 3.882994799964172,
+        "max_ms": 4.206655979156494,
+        "p50_ms": 3.8777918815612793,
+        "p95_ms": 3.9245119094848633,
+        "p99_ms": 4.1943039894104
+      },
+      "phases_avg_ms": {
+        "prepare": 0.5362621419510599,
+        "render": 0.7781689261312539,
+        "tick": 0.21593276731996128,
+        "update": 0.021918644113097824
+      }
+    },
+    {
+      "case": "64_spawner_fixture_disabled",
+      "seconds": 3.0017567977905273,
+      "frames": 177,
+      "avg_fps": 58.965469864275015,
+      "cpu": {
+        "avg_ms": 1.4655598944189858,
+        "max_ms": 2.77590012550354,
+        "p50_ms": 1.2855000495910645,
+        "p95_ms": 2.329699993133545,
+        "p99_ms": 2.7461001873016357
+      },
+      "gpu": {
+        "avg_ms": 4.003743812862763,
+        "max_ms": 4.267360210418701,
+        "p50_ms": 4.0002241134643555,
+        "p95_ms": 4.06057596206665,
+        "p99_ms": 4.266496181488037
+      },
+      "phases_avg_ms": {
+        "prepare": 0.4852576260849581,
+        "render": 0.7552768379281469,
+        "tick": 0.20682372817885403,
+        "update": 0.019606779697798404
+      }
+    },
+    {
+      "case": "64_spawner_fixture_enabled_one_label",
+      "seconds": 3.0150244140625,
+      "frames": 178,
+      "avg_fps": 59.03766456078526,
+      "cpu": {
+        "avg_ms": 1.6360713578342052,
+        "max_ms": 8.178500175476074,
+        "p50_ms": 1.4424999952316284,
+        "p95_ms": 2.634500026702881,
+        "p99_ms": 3.074399948120117
+      },
+      "gpu": {
+        "avg_ms": 4.02572476462032,
+        "max_ms": 4.347904205322266,
+        "p50_ms": 4.021984100341797,
+        "p95_ms": 4.082208156585693,
+        "p99_ms": 4.336703777313232
+      },
+      "phases_avg_ms": {
+        "prepare": 0.5436550589759698,
+        "render": 0.828898315851608,
+        "tick": 0.24222696601057403,
+        "update": 0.022476966419581617
+      }
+    },
+    {
+      "case": "item_fixture_disabled",
+      "seconds": 3.015470802307129,
+      "frames": 178,
+      "avg_fps": 59.02892505668191,
+      "cpu": {
+        "avg_ms": 3.4322601128160284,
+        "max_ms": 4.9019999504089355,
+        "p50_ms": 3.2291998863220215,
+        "p95_ms": 4.470799922943115,
+        "p99_ms": 4.63129997253418
+      },
+      "gpu": {
+        "avg_ms": 4.572414374083616,
+        "max_ms": 4.941247940063477,
+        "p50_ms": 4.567391872406006,
+        "p95_ms": 4.65715217590332,
+        "p99_ms": 4.876287937164307
+      },
+      "phases_avg_ms": {
+        "prepare": 1.2942629188634036,
+        "render": 1.886868544508902,
+        "tick": 0.22931853864666368,
+        "update": 0.023417415824624595
+      }
+    },
+    {
+      "case": "item_fixture_enabled_cap_16",
+      "seconds": 3.00410458946228,
+      "frames": 177,
+      "avg_fps": 58.919386702072885,
+      "cpu": {
+        "avg_ms": 3.870391522423696,
+        "max_ms": 5.399399757385254,
+        "p50_ms": 3.798799991607666,
+        "p95_ms": 4.974800109863281,
+        "p99_ms": 5.382299900054932
+      },
+      "gpu": {
+        "avg_ms": 4.632958185874809,
+        "max_ms": 5.020319938659668,
+        "p50_ms": 4.623775959014893,
+        "p95_ms": 4.738304138183594,
+        "p99_ms": 4.897791862487793
+      },
+      "phases_avg_ms": {
+        "prepare": 1.62054915212642,
+        "render": 1.9845395404740245,
+        "tick": 0.24402542436747984,
+        "update": 0.02298248590280612
+      }
+    }
+  ],
+  "frame_sample_limits": "Three-second offscreen samples on one Windows PC, maxFps 60; observations only, not a general performance benchmark or zero-overhead claim.",
+  "screenshots": [
+    {
+      "file": "images/discovery-spawners.png",
+      "size": [
+        2000,
+        1125
+      ],
+      "sha256": "b505fbff3b98d2631229788d7c5cd250943e2198a05702d76bbcbcb1ae7f5a59",
+      "unaltered_framebuffer": true
+    },
+    {
+      "file": "images/discovery-items.png",
+      "size": [
+        2000,
+        1125
+      ],
+      "sha256": "655604afe8a65a5cb0763ab0ea5422807b0304f69c12887b342408b950696999",
+      "unaltered_framebuffer": true
+    },
+    {
+      "file": "images/discovery-items-stress.png",
+      "size": [
+        2000,
+        1125
+      ],
+      "sha256": "85a4fed841e15bccd971a5c0d69bf7c240108baf06d80ea7300d48358e1ca46a",
+      "unaltered_framebuffer": true
+    }
+  ],
+  "frozen": {
+    "client": "e3dfcfe78ae2c9d3ba5775641221928880f4113baac755f5dba1122bf58328bd",
+    "control": "fbb666f35a5cd97199605289f36905d72f8671807e55c5b0916e5ab9dd277f10",
+    "package": "7ac740e3ea1deb972b839b93b3917633ba9ddd40675796af7293b4c44a303dfb",
+    "script": "d658ccb2f661f564d97ec1882e2345c5859a74a4403807f435f5a4e1ac0ba1cf"
+  },
+  "limits": [
+    "No external multiplayer server, real account or existing world was used.",
+    "Types reflect metadata received by the native client, never inferred nearby mobs.",
+    "Pinned Horizon same-state /data merge can update server NBT without sending the client BlockEntityData; block recreation delivered the new type.",
+    "Full upstream tools/verify.py was not run: it requires Unix SIGALRM; targeted ctl equivalents ran on Windows.",
+    "Native key/type control does not establish physical keyboard delivery."
+  ]
+}
