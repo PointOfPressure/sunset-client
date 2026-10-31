@@ -48,7 +48,7 @@ most sixteen rectangles. It does not scan the entity list every rendered frame.
 This is a focused visual contribution, not a complete port of another client's
 visual effects. It adds no shaders, particle systems, textures or extra rendering
 passes. Runtime evidence and exact pinned build results are recorded separately
-after the integrated checks finish; pure geometry tests alone do not establish
-in-game appearance or performance improvements.
+in [native validation](visual-validation.md); pure geometry tests alone do not
+establish in-game appearance or performance improvements.
 
 See [source research notes](visuals-source-notes.md) for reference credit.

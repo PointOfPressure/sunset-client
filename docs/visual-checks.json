@@ -1,0 +1,217 @@
+{
+  "code_commit": "ac35428dd8715da31ad741aaa912bddf1cba13ea",
+  "base_commit": "fa174f362a640caa34c5f080deadd704dc173c85",
+  "horizon": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins": "0d6b103c70633d8fd9443d8d0acd3aadaacedb06",
+  "rustc": "1.99.1",
+  "unit_tests": {
+    "crosshair": 10,
+    "crosshair_bridge": 4,
+    "block_overlay": 12,
+    "target_esp": 6
+  },
+  "distinct_unit_tests": 32,
+  "native_pipeline": {
+    "plan": {
+      "passed": true,
+      "seconds": 46.218,
+      "source_unchanged": true
+    },
+    "apply": {
+      "passed": true,
+      "seconds": 77.978,
+      "source_unchanged": true
+    },
+    "check": {
+      "passed": true,
+      "seconds": 86.049,
+      "source_unchanged": true
+    },
+    "build": {
+      "passed": true,
+      "seconds": 481.407,
+      "source_unchanged": true
+    },
+    "freeze": {
+      "passed": true,
+      "seconds": 1.565,
+      "source_unchanged": true
+    }
+  },
+  "compiler_warnings": 0,
+  "client_sha256": "c0402de788ace6ff75f5cf5dfa01b79b856e7783d1649a3ade97971f35fb8e0d",
+  "control_sha256": "3b85400c858166ab5859fc2d050087bbc83df4cf5174ce3374ae5964d27d01f7",
+  "package_sha256": "dabc978d2be9806204818335841e3cc90e4d95256110003ec6148ef177a05980",
+  "runtime_driver_sha256": "d06eade577b878e26299a0a8e8e82d0340560fa06bb2b241bf8b55eb5fe14859",
+  "runtime": {
+    "automatic_checks_passed": 62,
+    "failed_checks": 0,
+    "exit_code": 0,
+    "frozen_inputs_unchanged": true,
+    "fresh_singleplayer_only": true,
+    "offscreen": true,
+    "framebuffer_size": [
+      2000,
+      1125
+    ],
+    "display_scale": 1.25,
+    "crosshair_gui1": [
+      990,
+      553,
+      1008,
+      571
+    ],
+    "crosshair_gui3": [
+      990,
+      553,
+      1008,
+      571
+    ],
+    "dot_gui3": {
+      "color_count": 4,
+      "color_bounds": [
+        999,
+        561,
+        1000,
+        562
+      ]
+    },
+    "attack_indicator": {
+      "manual_visual_review": true,
+      "source_based_roi": [
+        992,
+        571,
+        16,
+        16
+      ],
+      "mean_absolute_channel_error": 0.0,
+      "byte_identical": true,
+      "pixel_sha256": "329153669060e7a9e5a9f285ab43ef628fd91961537f9567a96754d4df5c1be6"
+    },
+    "completed": "2026-10-31T11:45:24.972934+00:00",
+    "observed_behaviors": [
+      "crosshair-default hidden",
+      "crosshair enabled",
+      "Cross visible in native GUI1 screenshot",
+      "Physical Cross pixel count unchanged GUI1 vs GUI3",
+      "Physical Cross extent unchanged GUI1 vs GUI3",
+      "Native Dot is a 2 by2 physical-pixel mark",
+      "crosshair-third-person-back hidden",
+      "crosshair-third-person-front hidden",
+      "crosshair-first-person-restored visible",
+      "Custom Crosshair leaves native F3 crosshair",
+      "crosshair-f3-closed-restored visible",
+      "crosshair-f1-hidden hidden",
+      "crosshair-f1-restored visible",
+      "crosshair disabled",
+      "crosshair-disabled-default-restored hidden",
+      "Disabled module restores original vanilla center pixels",
+      "Native client sees the stationary zombie under crosshair",
+      "crosshair enabled",
+      "crosshair disabled",
+      "targetesp enabled",
+      "target-crosshair-zombie visible",
+      "target-players-filter hidden",
+      "target-range4-rejected hidden",
+      "target-range32-restored visible",
+      "cube obstruction actually intersects native view ray",
+      "target-cube-blocked hidden",
+      "target-cube-through visible",
+      "bottom-slab obstruction actually intersects native view ray",
+      "target-bottom-slab-blocked hidden",
+      "target-bottom-slab-through visible",
+      "closed-door obstruction actually intersects native view ray",
+      "target-closed-door-blocked hidden",
+      "target-closed-door-through visible",
+      "target-f1-hidden hidden",
+      "target-f1-restored visible",
+      "target-menu-closed-restored visible",
+      "targetesp disabled",
+      "target-disabled-while-live hidden",
+      "targetesp enabled",
+      "target-reenabled-while-live visible",
+      "target-killed-cleared hidden",
+      "target-removed-after-kill hidden",
+      "Killed fixture no longer appears in client entities",
+      "targetesp disabled",
+      "blockoverlay enabled",
+      "block-fullcube visible",
+      "Native block target is bottom-slab",
+      "block-bottom-slab visible",
+      "Native block target is fence",
+      "block-fence visible",
+      "Block target changes to second position",
+      "block-target-change visible",
+      "block-f1-hidden hidden",
+      "block-f1-restored visible",
+      "block-no-target hidden",
+      "blockoverlay disabled",
+      "block-disabled-default-restored hidden",
+      "crosshair enabled",
+      "blockoverlay enabled",
+      "targetesp enabled",
+      "fullbright enabled",
+      "hud enabled"
+    ]
+  },
+  "screenshots": {
+    "visuals-overview": {
+      "file": "images/visuals-overview.png",
+      "sha256": "426d4c2ec9613fa8b4801585676f2cf46d8a7fe3d900de7f21e8b28f3d253148",
+      "size": [
+        2000,
+        1125
+      ]
+    },
+    "crosshair-cross-gui3": {
+      "file": "images/crosshair-cross-gui3.png",
+      "sha256": "38f8a6c71ca677f176ee78b33c4f12e947de610df749119e0c0876955a9246f7",
+      "size": [
+        2000,
+        1125
+      ]
+    },
+    "crosshair-dot-gui3": {
+      "file": "images/crosshair-dot-gui3.png",
+      "sha256": "e0d4e49e30eba6b9db7fe2fcc571007d664ff8e26c9a41ccb2738cded134f3b1",
+      "size": [
+        2000,
+        1125
+      ]
+    },
+    "target-crosshair-zombie": {
+      "file": "images/target-crosshair-zombie.png",
+      "sha256": "4e0f54ab5ecbf78ae191ceebfdf2f5d16ebc9adf78906980f83099d9ad22b8d4",
+      "size": [
+        2000,
+        1125
+      ]
+    },
+    "block-fence": {
+      "file": "images/block-fence.png",
+      "sha256": "958798057924b3871f7e1c23c38db7c388e46aeae6ca94c32226d887ff1c7413",
+      "size": [
+        2000,
+        1125
+      ]
+    }
+  },
+  "earlier_harness_attempts": [
+    {
+      "issue": "Incorrect mouse-capture requirement for an unfocused offscreen window",
+      "game_exit_code": 0
+    },
+    {
+      "issue": "Native data merge replied Nothing changed to Health; replaced fixture with /kill",
+      "game_exit_code": 0
+    }
+  ],
+  "limits": [
+    "No multiplayer or raw physical Winit input validation.",
+    "No FPS improvement or frame-time benchmark claimed.",
+    "Target visibility is one native shape ray to center per tick; no per-pixel depth test.",
+    "Block Overlay is projected HUD geometry; component fills can overlap.",
+    "Runtime /kill verifies target killing/removal, not natural death or independent despawn.",
+    "Focused generic visuals; no animated target glyph, custom sky or reference-client parity."
+  ]
+}
