@@ -3543,18 +3543,24 @@ const HELP: &[(&str, &str)] = &[
 ];
 
 // Every module off: the Panic module, or .panic.
+fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
+    for m in &mut s.modules {
+        m.on = false;
+    }
+    s.strafe = Strafe::default();
+    s.knockback_ticks = 0;
+    s.velocity = None;
+    s.blast = [0.0; 3];
+    s.scaffold_recent.clear();
+    s.scaffold_wait = 0;
+    take_scaffold_rotation(&mut s.scaffold_rotation)
+}
+
 pub(super) fn panic_off(game: &mut Game<'_>) {
-    with(|s| {
-        for m in &mut s.modules {
-            m.on = false;
-        }
-        s.strafe = Strafe::default();
-        s.knockback_ticks = 0;
-        s.velocity = None;
-        s.blast = [0.0; 3];
-        s.scaffold_recent.clear();
-        s.scaffold_wait = 0;
-    });
+    if let Some((yaw, pitch)) = with(panic_off_state) {
+        game.yaw = yaw;
+        game.pitch = pitch;
+    }
     horizon_client::motion::sunset_motion::set_across(None);
     horizon_client::motion::sunset_motion::set_up(None);
     horizon_client::motion::sunset_motion::set_safe_walk(false);
@@ -5137,5 +5143,14 @@ mod movement_config_tests {
         let mut saved = Some((135.0, -20.0));
         assert_eq!(take_scaffold_rotation(&mut saved), Some((135.0, -20.0)));
         assert_eq!(take_scaffold_rotation(&mut saved), None);
+    }
+
+    #[test]
+    fn panic_cleanup_disables_modules_and_returns_scaffold_rotation() {
+        let mut state = State::new();
+        state.modules.iter_mut().find(|m| m.name == "Scaffold").unwrap().on = true;
+        state.scaffold_rotation = Some((135.0, -20.0));
+        assert_eq!(panic_off_state(&mut state), Some((135.0, -20.0)));
+        assert!(!state.module("Scaffold").unwrap().on);
     }
 }
