@@ -32,6 +32,16 @@ impl<T: Clone + PartialEq> Owned<T> {
             false
         }
     }
+    // Project a copy for persistence without consuming or changing the live
+    // lease. Values explicitly changed by the user must be serialized as-is.
+    pub fn baseline(&self, current: &mut T) -> bool {
+        if !self.yielded && *current == self.applied {
+            *current = self.before.clone();
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

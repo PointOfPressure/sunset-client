@@ -1,4 +1,4 @@
-// ORIGINAL NATIVE DRAFT. Keep outside active mixins until integration is approved.
+// Original native sword controller.
 // Controller context owns only selected Kill Aura settings; hand actions use
 // the separate short-lived combat lease so walking never blocks inventory work.
 use super::sunset::{self, Category, Module, Value, hold, with};
@@ -6,7 +6,7 @@ use super::sunset_combat_control as control;
 use super::sunset_sword_policy as policy;
 use super::sunset_util as util;
 use super::{Game, Screen};
-use horizon_client::{collisions::SceneCollisions};
+use horizon_client::collisions::SceneCollisions;
 use horizon_core::geometry::Vec3;
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use std::{
@@ -111,6 +111,14 @@ impl AuraLease {
             }
         }
     }
+    fn baseline(&self, m: &mut Module) {
+        self.on.baseline(&mut m.on);
+        for (name, lease) in &self.fields {
+            if let Some(s) = m.settings.iter_mut().find(|s| s.name == *name) {
+                lease.baseline(&mut s.value);
+            }
+        }
+    }
 }
 #[derive(Clone, Copy)]
 struct InputSave {
@@ -155,6 +163,18 @@ fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
 }
 fn module() -> Option<Module> {
     with(|s| s.module(NAME).filter(|m| m.on).cloned())
+}
+
+// Caller clones runtime modules and releases the runtime mutex first. This
+// function touches only that copy and the bot mutex; it never calls with().
+pub(super) fn baseline(modules: &mut [Module]) {
+    state(|s| {
+        if let Some(lease) = &s.aura {
+            if let Some(m) = modules.iter_mut().find(|m| m.name == "Kill Aura") {
+                lease.baseline(m);
+            }
+        }
+    });
 }
 fn same(game: &Game<'_>, old: &Session) -> bool {
     game.dim == old.1
@@ -220,6 +240,25 @@ pub(super) fn cancel(game: &mut Game<'_>) {
     let current = state(|s| s.session.as_ref().is_some_and(|old| same(game, old)));
     stop_food(game, current);
     restore_aura();
+    state(|s| {
+        s.target = None;
+        s.crit_jump = false;
+        s.previous_distance = None;
+        s.tap_until = 0;
+        s.reset_until = 0;
+    });
+}
+fn pause(game: &mut Game<'_>) {
+    post_input(game);
+    let connected = state(|s| s.session.as_ref().is_some_and(|old| same(game, old)));
+    stop_food(game, connected);
+    if state(|s| s.aura.is_some()) && !own_aura(false) {
+        restore_aura();
+        state(|s| {
+            s.yielded = true;
+            s.reason = "Kill Aura edited while paused; waiting for toggle";
+        });
+    }
     state(|s| {
         s.target = None;
         s.crit_jump = false;
@@ -351,7 +390,8 @@ fn safe_step(game: &Game<'_>, direction: [f64; 2]) -> bool {
     ] {
         let from = Vec3::new(x + a, p.position.y + 0.05, z + c);
         let to = Vec3::new(from.x, p.position.y - 1.25, from.z);
-        let support = super::spear::sunset_combat_collision::clip(game, from, to).map(|hit| p.position.y - hit.y);
+        let support = super::spear::sunset_combat_collision::clip(game, from, to)
+            .map(|hit| p.position.y - hit.y);
         let mut hazard = false;
         for down in 0..=2 {
             let pos = [
@@ -383,9 +423,13 @@ fn safe_step(game: &Game<'_>, direction: [f64; 2]) -> bool {
 }
 
 fn urgent_totem(game: &Game<'_>) -> bool {
-    game.offhand
-        .as_ref()
-        .is_none_or(|s| &*s.item != "minecraft:totem_of_undying")
+    game.offhand.as_ref().is_none_or(|s| s.count == 0)
+        && game
+            .inventory
+            .iter()
+            .take(36)
+            .filter_map(Option::as_ref)
+            .any(|s| &*s.item == "minecraft:totem_of_undying" && s.count > 0)
         && with(|s| s.is_on("Auto Totem") || s.is_on("Auto Inventory Totem"))
 }
 fn food_tick(game: &mut Game<'_>, want: bool) -> bool {
@@ -487,31 +531,60 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     let live = game.native_window()
         && game.native_on(sunset::ID)
         && game.remote.is_some()
-        && game.native_playing()
-        && game.screen == Screen::Playing
-        && !sunset::gui_open()
         && !game.spectator()
         && game.riding.is_none()
         && game.player.as_ref().is_some_and(|p| {
             p.health.health().is_finite() && p.health.health() > 0.0 && !p.flying && !p.fall_flying
         })
         && game.mobs.len() <= policy::POPULATION_LIMIT;
-    let manual = KEYS.iter().any(|k| game.physical_keys.contains(k))
+    let hotbar = [
+        KeyCode::Digit1,
+        KeyCode::Digit2,
+        KeyCode::Digit3,
+        KeyCode::Digit4,
+        KeyCode::Digit5,
+        KeyCode::Digit6,
+        KeyCode::Digit7,
+        KeyCode::Digit8,
+        KeyCode::Digit9,
+    ];
+    let manual = game.left
+        || game.right
+        || KEYS
+            .iter()
+            .chain(hotbar.iter())
+            .any(|k| game.physical_keys.contains(k))
         || game.physical_buttons.contains(&MouseButton::Left)
         || game.physical_buttons.contains(&MouseButton::Right)
         || state(|s| s.mouse_until.is_some_and(|until| Instant::now() < until));
-    if !live || manual || game.mining.is_some() || state(|s| s.yielded) {
+    let conflict = with(|s| s.is_on("Crystal PvP Bot"));
+    if !live || conflict || state(|s| s.yielded) {
         cancel(game);
         state(|s| s.reason = "paused for world, physical input or user override");
         return;
     }
+    if !game.native_playing()
+        || game.screen != Screen::Playing
+        || sunset::gui_open()
+        || super::sunset_render::camera_takes_mouse()
+        || manual
+        || game.mining.is_some()
+    {
+        pause(game);
+        state(|s| {
+            if !s.yielded {
+                s.reason = "temporary GUI/input pause; context retained";
+            }
+        });
+        return;
+    }
     // Other hand owners may refill inventory while this controller waits.
     if control::owner().is_some_and(|owner| owner != "Kill Aura" && owner != FOOD) {
-        restore_aura();
+        pause(game);
         return;
     }
     let Some(id) = pick(game, &m) else {
-        cancel(game);
+        pause(game);
         state(|s| s.reason = "no enemy player in fight range");
         return;
     };
@@ -607,7 +680,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     };
     let eating = food_tick(game, decision.eat);
     if game.using.is_some() && !eating {
-        restore_aura();
+        pause(game);
         return;
     }
     if decision.jump {

@@ -21,14 +21,27 @@ use std::io;
 pub(super) struct Blast {
     pub center: [f64; 3],
     pub power: f32,
-    // Anchors disappear before their explosion. Ignore exactly that block's
-    // collision, without editing client state or ignoring neighboring cover.
+    // Ignore exactly one destroyed block without changing the damage source.
     pub ignored_block: Option<[i32; 3]>,
+    kind: BlastKind,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum BlastKind { Explosion, BadRespawnPoint }
 impl Blast {
+    pub(super) fn explosion(center: [f64; 3], power: f32) -> Self {
+        Self { center, power, ignored_block: None, kind: BlastKind::Explosion }
+    }
+    pub(super) fn anchor(block: [i32; 3]) -> Self {
+        Self { center: block.map(|v| f64::from(v)+0.5), power: 5.0,
+            ignored_block: Some(block), kind: BlastKind::BadRespawnPoint }
+    }
+    pub(super) fn ignoring(mut self, block: [i32; 3]) -> Self {
+        self.ignored_block = Some(block);
+        self
+    }
     fn source(self) -> &'static str {
-        if self.ignored_block.is_some() { "minecraft:bad_respawn_point" } else { "minecraft:explosion" }
+        match self.kind { BlastKind::Explosion => "minecraft:explosion", BlastKind::BadRespawnPoint => "minecraft:bad_respawn_point" }
     }
 }
 

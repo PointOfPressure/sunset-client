@@ -604,16 +604,6 @@ bindings = [
 ]
 
 [[injection]]
-id = "crystal"
-kind = "HEAD"
-cancellable = true
-target = "horizon_client::game::remote::Game<'_>::remote_start_attack"
-helper = "crystal.rs"
-bindings = [
-  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
-]
-
-[[injection]]
 id = "fog"
 kind = "HEAD"
 cancellable = true
@@ -853,4 +843,66 @@ helper = "combat_use_hand.rs"
 bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
   { name = "hand", ty = "horizon_client::first_person::Hand", value = "hand" },
+]
+
+[[module]]
+id = "crystal_bot"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crystal_bot"
+source = "crystal_bot.rs"
+
+[[module]]
+id = "crystal_bot_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crystal_bot_policy"
+source = "crystal_bot_policy.rs"
+
+[[module]]
+id="city_policy"
+file="crates/horizon-client/src/game.rs"
+name="sunset_city_policy"
+source="city_policy.rs"
+
+[[module]]
+id="city_trap"
+file="crates/horizon-client/src/game.rs"
+name="sunset_city_trap"
+source="city_trap.rs"
+
+[[module]]
+id="city_mining"
+file="crates/horizon-client/src/game/remote.rs"
+name="sunset_city_mining"
+source="city_mining.rs"
+visibility="pub(crate)"
+
+[[module]]
+id="crystal_optimizer"
+file="crates/horizon-client/src/game.rs"
+name="sunset_crystal_optimizer"
+source="crystal_optimizer.rs"
+
+[[injection]]
+id="city-owned-idle-abort"
+kind="HEAD"
+cancellable=true
+target="horizon_client::game::remote::Game<'_>::remote_continue_attack"
+helper="city_continue_hook.rs"
+bindings=[
+  {name="game",ty="&mut crate::game::Game<'_>",value="&mut *self"},
+  {name="down",ty="bool",value="down"},
+]
+
+[[injection]]
+id="crystal-optimizer-visual-filter"
+kind="MODIFY_EXPRESSION_VALUE"
+target="horizon_client::game::end::Game<'_>::end_crystal_geometry"
+selector="rel.length_squared() > 256.0 * 256.0"
+require=1
+ordinal=0
+helper="optimizer_skip.rs"
+bindings=[
+  {name="culled",ty="bool",value="$value"},
+  {name="game",ty="&crate::game::Game<'_>",value="&*self"},
+  {name="feet",ty="&glam::DVec3",value="$local_ref:feet:0"},
 ]

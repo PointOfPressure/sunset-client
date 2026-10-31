@@ -212,7 +212,7 @@ fn valid_damage(game: &mut Game<'_>, m: &Module, at: [f64; 3], targets: &[Target
 {
     // Horizon destroys explosion-damaged neighboring crystals without a
     // second blast (destroy_crystal(..., CrystalDamage::Explosion)).
-    let blast = Blast { center: at, power: 6.0, ignored_block: None };
+    let blast = Blast::explosion(at, 6.0);
     let Some(prediction) = local_damage(game, blast, budget) else { policy_failed(1); return None; };
     let own = safety_damage(prediction, m.p("Damage model"));
     let p = game.player.as_ref()?;

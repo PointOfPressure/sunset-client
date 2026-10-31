@@ -757,11 +757,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
                 || !safe_blast(
                     game,
                     &run.settings,
-                    Blast {
-                        center: center(p, true),
-                        power: 6.,
-                        ignored_block: None,
-                    },
+                    Blast::explosion(center(p, true), 6.0),
                     budget,
                 )
             {
@@ -787,11 +783,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
                 || !safe_blast(
                     game,
                     &run.settings,
-                    Blast {
-                        center: at,
-                        power: 6.,
-                        ignored_block: None,
-                    },
+                    Blast::explosion(at, 6.0),
                     budget,
                 )
             {
@@ -836,11 +828,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             if !safe_blast(
                 game,
                 &run.settings,
-                Blast {
-                    center: center(p, false),
-                    power: 5.,
-                    ignored_block: Some(p),
-                },
+                Blast::anchor(p),
                 budget,
             ) {
                 return None;

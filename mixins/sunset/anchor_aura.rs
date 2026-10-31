@@ -310,11 +310,7 @@ fn damage_ok(
     step: Step,
     budget: &mut Budget,
 ) -> Option<(u32, Rating)> {
-    let blast = Blast {
-        center: util::center_of(p),
-        power: 5.0,
-        ignored_block: Some(p),
-    };
+    let blast = Blast::anchor(p);
     let own = safety_damage(local_damage(game, blast, budget)?, m.p("Damage model"));
     let health = game
         .player

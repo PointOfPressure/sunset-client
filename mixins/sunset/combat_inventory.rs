@@ -41,7 +41,8 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new(XP, Category::Combat, "Shortens the native item-use delay only while you hold use with an experience bottle. Yields to other combat actions.")
             .num("Delay (ticks)", 0.0, 0.0, 3.0, 1.0),
         Module::new(THROW, Category::Combat, "Throws one pearl or wind charge per key press and returns the selected slot. Never repeats a held key.")
-            .text("Pearl key", "key.keyboard.g").text("Wind charge key", "key.keyboard.v"),
+            .text("Pearl key", "key.keyboard.g").text("Wind charge key", "key.keyboard.v")
+            .bool("Wind jump", true),
     ]
 }
 
@@ -67,7 +68,7 @@ struct Job {
 #[derive(Clone, Copy)]
 enum Throw { Pearl, Wind }
 #[derive(Clone, Copy)]
-struct Press { kind: Throw, slot: usize, at: Instant }
+struct Press { kind: Throw, slot: usize, at: Instant, jump: bool }
 
 #[derive(Default)]
 struct State {
@@ -102,6 +103,11 @@ pub(super) fn debug() -> serde_json::Value {
         "queued_throw":s.press.is_some(),
         "queued_use":s.queued_use.map(|p|p.0),
     }))
+}
+
+pub(super) fn toggled(game: &mut Game<'_>, name: &str, on: bool) {
+    if on && name == AUTO { util::toggle_off(game, INV); }
+    if on && name == INV { util::toggle_off(game, AUTO); }
 }
 
 pub(super) fn reset() {
@@ -227,7 +233,7 @@ fn run_job(game: &mut Game<'_>, mods: &[Module]) -> bool {
                 hold(game, from);
                 job.restore = Some((before, from));
                 state(|s| s.job = Some(job));
-                game.send(S::PlayerAction(play::PlayerAction { action: 6, pos: [0; 3], direction: 0, sequence: 0 }));
+                game.send(S::PlayerAction(play::PlayerAction { action: 7, pos: [0; 3], direction: 0, sequence: 0 }));
             } else {
                 let from = job.slots[0];
                 let button = if job.slots[1] == OFFHAND { 40 } else { job.slots[1] as i32 };
@@ -325,15 +331,18 @@ fn double_hand(game: &mut Game<'_>, m: &Module) -> bool {
     let mut danger = m.b("Double Hand") && game.player.as_ref().is_some_and(|p|
         f64::from(p.health.health() + p.health.absorption()) <= m.n("Double hand health"));
     if m.b("Double Hand") && !danger {
-        let at = util::player_pos(game).unwrap_or([f64::NAN; 3]);
-        let centers: Vec<_> = game.crystals.iter().take(16).map(|c| [c.position.x, c.position.y, c.position.z])
-            .filter(|p| super::sunset_explosive_policy::in_range(at, *p, 6.0)).collect();
-        let mut budget = super::sunset_explosive_policy::Budget::new(16);
-        for center in centers {
-            let blast = super::sunset_explosive_damage::Blast { center, power: 6.0, ignored_block: None };
-            let health = game.player.as_ref().map_or(0.0, |p| f64::from(p.health.health() + p.health.absorption()));
-            if super::sunset_explosive_damage::local_damage(game, blast, &mut budget)
-                .is_none_or(|p| p.equipped_upper >= health) { danger = true; break; }
+        // Never inspect only a prefix and call an omitted blast safe. Every
+        // observed crystal is checked, or the bounded overflow is dangerous.
+        if game.crystals.len() > 16 { danger = true; }
+        else {
+            let centers: Vec<_> = game.crystals.iter().map(|c| [c.position.x, c.position.y, c.position.z]).collect();
+            let mut budget = super::sunset_explosive_policy::Budget::new(16);
+            for center in centers {
+                let blast = super::sunset_explosive_damage::Blast::explosion(center, 6.0);
+                let health = game.player.as_ref().map_or(0.0, |p| f64::from(p.health.health() + p.health.absorption()));
+                if super::sunset_explosive_damage::local_damage(game, blast, &mut budget)
+                    .is_none_or(|p| p.equipped_upper >= health) { danger = true; break; }
+            }
         }
     }
     let main = is_totem(&game.inventory[game.selected]);
@@ -358,7 +367,7 @@ fn hover(game: &mut Game<'_>, m: &Module) -> bool {
 }
 
 fn offhand(game: &mut Game<'_>, m: &Module, totem_priority: bool) -> bool {
-    if !plain(game) || totem_priority { return false; }
+    if !plain(game) { return false; }
     let Some(p) = game.player.as_ref() else { return false; };
     let health = f64::from(p.health.health() + p.health.absorption());
     let mut emergency = health <= m.n("Min health") || (m.b("Elytra") && p.fall_flying)
@@ -369,12 +378,13 @@ fn offhand(game: &mut Game<'_>, m: &Module, totem_priority: bool) -> bool {
             let centers: Vec<_> = game.crystals.iter().map(|c| [c.position.x,c.position.y,c.position.z]).collect();
             let mut budget = super::sunset_explosive_policy::Budget::new(16);
             for center in centers {
-                let blast = super::sunset_explosive_damage::Blast { center,power:6.0,ignored_block:None };
+                let blast = super::sunset_explosive_damage::Blast::explosion(center, 6.0);
                 if super::sunset_explosive_damage::local_damage(game,blast,&mut budget)
                     .is_none_or(|p|health-p.equipped_upper<=m.n("Min health")) { emergency=true; break; }
             }
         }
     }
+    if totem_priority && !emergency { return false; }
     let main = game.inventory[game.selected].as_ref().map_or("", |s| util::short(&s.item));
     let sword = main.ends_with("_sword");
     let axe = main.ends_with("_axe");
@@ -398,8 +408,12 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     let pearl = sunset::key_from_text(m.t("Pearl key")).as_deref() == Some(key);
     let wind = sunset::key_from_text(m.t("Wind charge key")).as_deref() == Some(key);
     let edge = state(|s| (pearl && s.pearl.update(pressed)) || (wind && s.wind.update(pressed)));
-    if !edge || !m.on || !plain(game) || game.left || game.right { return; }
-    state(|s| s.press = Some(Press { kind: if pearl { Throw::Pearl } else { Throw::Wind }, slot: game.selected, at: Instant::now() }));
+    if !edge || !m.on || !plain(game) || game.left || game.right || !control::available(THROW) { return; }
+    if !pearl && wind && !util::find_held(game, |s| s == "wind_charge")
+        .is_some_and(|slot| game.stack_in(slot).is_some_and(|item| can_use(game, item))) { return; }
+    let jump = !pearl && wind && m.b("Wind jump") && game.player.as_ref().is_some_and(|p| p.ground.on_ground);
+    state(|s| s.press = Some(Press { kind: if pearl { Throw::Pearl } else { Throw::Wind }, slot: game.selected, at: Instant::now(), jump }));
+    if jump { super::sunset_melee_assist::request_jump(THROW); }
 }
 
 fn can_use(game: &Game<'_>, item: &ItemStack) -> bool {
@@ -411,19 +425,40 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
     let Some(press) = state(|s| s.press.take()) else { return false; };
     if !plain(game) || game.left || game.right || game.selected != press.slot || press.at.elapsed() > Duration::from_millis(250) { return false; }
     let want = match press.kind { Throw::Pearl => "ender_pearl", Throw::Wind => "wind_charge" };
-    let slot = util::find_held(game, |s| s == want);
-    let Some(slot) = slot else { return false; };
-    let item = if slot == util::OFFHAND { game.offhand.as_ref() } else { game.inventory[slot].as_ref() };
-    if !item.is_some_and(|item| can_use(game, item)) || !control::claim(THROW) { return false; }
-    let before = game.selected;
-    if slot != util::OFFHAND { hold(game, slot); }
-    let sequence = util::sequence(game);
-    game.send(S::UseItem(play::UseItem { hand: i32::from(slot == util::OFFHAND), sequence, yaw: game.yaw, pitch: game.pitch }));
-    if slot != util::OFFHAND && game.selected == slot { hold(game, before); }
-    state(|s| s.next = game.ticks.saturating_add(2));
-    control::release(THROW);
-    let _ = m;
-    true
+    let Some(slot) = util::find_held(game, |s| s == want) else { return false; };
+    let original = if slot == util::OFFHAND { game.offhand.clone() } else { game.inventory[slot].clone() };
+    if !original.as_ref().is_some_and(|item| can_use(game, item)) || !control::claim(THROW) { return false; }
+    let done = control::finish(THROW);
+    // The actual native jump key is consumed by the next input tick. Never
+    // invent an upward velocity or throw early from an unconsumed request.
+    if press.jump && game.player.as_ref().is_some_and(|p| p.ground.on_ground) {
+        super::sunset_melee_assist::request_jump(THROW);
+        state(|s| s.press = Some(press));
+        return true;
+    }
+    let Some(connection) = session(game) else { return false; };
+    let expected = m.clone();
+    let (yaw, pitch) = (game.yaw, if matches!(press.kind, Throw::Wind) && m.b("Wind jump") { 90.0 } else { game.pitch });
+    let queued = Instant::now();
+    state(|s| s.queued_use = Some((THROW, queued)));
+    let accepted = sunset::try_turn_then(THROW, yaw, pitch, move |game| {
+        let done = done;
+        if !done.current() { return; }
+        state(|s| s.queued_use = None);
+        let actual = if slot == util::OFFHAND { game.offhand.as_ref() } else { game.inventory[slot].as_ref() };
+        if queued.elapsed() > Duration::from_millis(200) || !same_session(game, &connection)
+            || !plain(game) || game.left || game.right || game.selected != press.slot
+            || actual != original.as_ref() || !actual.is_some_and(|item| can_use(game,item))
+            || !with(|s| s.module(THROW).is_some_and(|m| m.on && m == &expected)) { return; }
+        let previous = game.selected;
+        if slot != util::OFFHAND { hold(game, slot); }
+        let sequence = util::sequence(game);
+        game.send(S::UseItem(play::UseItem { hand: i32::from(slot == util::OFFHAND), sequence, yaw, pitch }));
+        if slot != util::OFFHAND && game.selected == slot { hold(game, previous); }
+        state(|s| s.next = game.ticks.saturating_add(2));
+    });
+    if !accepted { state(|s| s.queued_use = None); }
+    accepted
 }
 
 fn fast_xp(game: &mut Game<'_>, m: &Module) {

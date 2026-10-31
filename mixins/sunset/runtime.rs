@@ -695,6 +695,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_combat_inventory::defaults());
     v.extend(super::sunset_packet_delay::defaults());
     v.extend(super::sunset_sword_bot::defaults());
+    v.extend(super::sunset_crystal_bot::defaults());
     super::sunset_melee_assist::augment_defaults(&mut v);
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
@@ -731,7 +732,6 @@ pub(super) struct State {
     injected: Vec<KeyCode>,
     loaded: bool,
     ticks: u64,
-    trigger_wait: u32,
     respawn_wait: u32,
     // Flight's Abilities mode is holding the player up.
     flying: bool,
@@ -829,7 +829,6 @@ impl State {
             injected: Vec::new(),
             loaded: false,
             ticks: 0,
-                    trigger_wait: 0,
             respawn_wait: 0,
             flying: false,
             stepping: false,
@@ -887,9 +886,9 @@ impl State {
         let n = norm(name);
         self.modules.iter().position(|m| norm(m.name) == n)
     }
-    fn save_text(&self) -> String {
+    fn save_text(&self, modules: &[Module]) -> String {
         let mut out = String::new();
-        for (i, m) in self.modules.iter().enumerate() {
+        for (i, m) in modules.iter().enumerate() {
             let id = norm(m.name);
             out.push_str(&format!("{id}.on={}\n", self.inputs.saved_on(i, m.on)));
             out.push_str(&format!("{id}.key={}\n", m.key.as_deref().unwrap_or("none")));
@@ -984,8 +983,8 @@ impl State {
         }
     }
     // The modules' states, settings and keys: a profile.
-    fn profile_text(&self) -> String {
-        self.save_text().lines().filter(|l| !l.starts_with("panel.") && !l.starts_with("waypoint=") && !l.starts_with("friends=")).collect::<Vec<_>>().join("\n")
+    fn profile_text(&self, modules: &[Module]) -> String {
+        self.save_text(modules).lines().filter(|l| !l.starts_with("panel.") && !l.starts_with("waypoint=") && !l.starts_with("friends=")).collect::<Vec<_>>().join("\n")
     }
     fn load_profile(&mut self, text: &str) {
         for line in text.lines() {
@@ -1138,12 +1137,22 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
     });
 }
 
+// Serialize a detached baseline so temporary controller settings cannot leak
+// into config, profile files, exports or before-load recovery snapshots.
+fn persistent_modules() -> Vec<Module> {
+    let mut modules = with(|s| s.modules.clone());
+    super::sunset_sword_bot::baseline(&mut modules);
+    super::sunset_crystal_bot::baseline(&mut modules);
+    modules
+}
+fn persistent_profile_text() -> String {
+    let modules = persistent_modules();
+    with(|s| s.profile_text(&modules))
+}
 pub(super) fn save(game: &Game<'_>) {
-    let text = with(|s| {
-        release_changed_binds(s);
-        sync_flags(s);
-        s.save_text()
-    });
+    with(|s| { release_changed_binds(s); sync_flags(s); });
+    let modules = persistent_modules();
+    let text = with(|s| s.save_text(&modules));
     game.native_set_setting(ID, "config", &text);
 }
 
@@ -1441,7 +1450,9 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
         m.on = !m.on;
         (m.name, m.on)
     });
+    super::sunset_combat_inventory::toggled(game, name, on);
     if !on {
+        super::sunset_packet_delay::disabled(game, name);
         match name {
             "Scaffold" => {
                 with(|s| { s.scaffold_wait = 0; s.scaffold_recent.clear(); });
@@ -1453,6 +1464,8 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 horizon_client::motion::sunset_motion::set_up(None);
             },
             "Velocity" => with(|s| { s.velocity = None; s.blast = [0.0; 3]; }),
+            "Sword PvP Bot" => super::sunset_sword_bot::cancel(game),
+            "Crystal PvP Bot" => super::sunset_crystal_bot::cancel(game),
             "Crystal Aura" => super::sunset_crystal_aura::reset(),
             "Anchor Aura" => super::sunset_anchor_aura::reset(),
             "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
@@ -1692,11 +1705,14 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         return;
     }
     super::sunset_combat_control::begin_tick(game);
-    super::sunset_packet_delay::tick(game, &snapshot());
     if !game.native_on(ID) || game.player.is_none() {
+        super::sunset_packet_delay::flush(game);
         super::sunset_combat_macros::reset(game);
         super::sunset_combat_inventory::cancel(game);
         super::sunset_sword_bot::cancel(game);
+        super::sunset_crystal_bot::cancel(game);
+        super::sunset_city_trap::cancel(game);
+        super::sunset_crystal_optimizer::reset();
         super::sunset_melee_assist::post_input(game);
         super::sunset_combat_control::reset();
         super::sunset_crystal_aura::reset();
@@ -1712,6 +1728,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     ensure_loaded(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     let mods = snapshot();
+    super::sunset_packet_delay::tick(game, &mods);
     super::sunset_render::pre_tick(game, &mods);
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
     super::sunset_player::no_break_reset(game, mods.iter().find(|m| m.name == "No Break Reset" && m.on));
@@ -1801,8 +1818,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         s.stepping = step.is_some();
         s.high_jumping = high_jump.is_some();
     });
+    super::sunset_crystal_bot::pre_input(game);
     super::sunset_sword_bot::pre_input(game);
-    super::sunset_melee_assist::pre_input(game, &snapshot(), game.ticks);
+    super::sunset_melee_assist::pre_input(game, &mods, game.ticks);
 }
 
 // How high Step lets you climb this tick: the setting, or vanilla's 0.6 when
@@ -1863,6 +1881,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     }
     super::sunset_melee_assist::post_input(game);
     super::sunset_sword_bot::post_input(game);
+    super::sunset_crystal_bot::post_input(game);
     turned(game);
     module_tick(game);
     end_turns(game);
@@ -3743,19 +3762,6 @@ fn entity_push(game: &Game<'_>) -> [f64; 2] {
     push
 }
 
-pub(super) fn cooldown_ready(game: &Game<'_>, m: &Module, wait: &mut u32) -> bool {
-    if m.b("Wait for cooldown") {
-        // The ticker the hand counts on a server (attack_ticks is the
-        // local world's).
-        game.hand_strength.scale(0.5, game.main_hand_attack_speed()) >= 1.0
-    } else if *wait > 0 {
-        *wait -= 1;
-        false
-    } else {
-        true
-    }
-}
-
 // How Criticals makes a hit critical, when it can: a hop of so many blocks over two ticks (Packet, the mace's
 // smash), or a wait for the fall (Jump, Mini jump, a hit while rising).
 #[derive(Clone, Copy)]
@@ -4312,6 +4318,9 @@ pub(super) fn panic_off(game: &mut Game<'_>) {
     super::sunset_combat_macros::reset(game);
     super::sunset_combat_inventory::cancel(game);
     super::sunset_sword_bot::cancel(game);
+    super::sunset_crystal_bot::cancel(game);
+    super::sunset_city_trap::cancel(game);
+    super::sunset_crystal_optimizer::reset();
     super::sunset_combat_control::reset();
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
@@ -4361,15 +4370,17 @@ fn profile_command(game: &mut Game<'_>, args: &[&str]) {
         }
         match sub.as_str() {
             "save" => {
-                let text = with(|s| s.profile_text());
+                let text = persistent_profile_text();
                 store.write(&name, &format!("{HEADER}\n{text}\n"))?;
                 Ok(format!("Saved profile {name}."))
             }
             "load" => {
                 let text = store.read(&name)?;
                 let body = with(|s| s.check_profile(&text).map(str::to_owned))?;
-                let before = with(|s| s.profile_text());
+                let before = persistent_profile_text();
                 store.write(BACKUP, &format!("{HEADER}\n{before}\n"))?;
+                super::sunset_sword_bot::cancel(game);
+                super::sunset_crystal_bot::cancel(game);
                 with(|s| s.load_profile(&body));
                 save(game);
                 Ok(format!("Loaded profile {name}. .profile load {BACKUP} puts the settings back as they were."))
@@ -4455,12 +4466,15 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
             say(game, &super::sunset_aura::diagnostics());
             say(game, &super::sunset_melee_assist::diagnostics());
             say(game, &super::sunset_sword_bot::diagnostics());
+            say(game, &super::sunset_crystal_bot::diagnostics());
+            say(game, &super::sunset_city_trap::debug().to_string());
+            say(game, &super::sunset_crystal_optimizer::debug().to_string());
             say(game, &super::sunset_combat_inventory::debug().to_string());
             say(game, &super::sunset_packet_delay::debug().to_string());
             if let (Some(x),Some(y),Some(z)) = (args.get(1).and_then(|v|v.parse::<f64>().ok()),args.get(2).and_then(|v|v.parse::<f64>().ok()),args.get(3).and_then(|v|v.parse::<f64>().ok())) {
                 let power = args.get(4).and_then(|v|v.parse::<f32>().ok()).unwrap_or(6.0);
                 if [x,y,z,f64::from(power)].iter().all(|v|v.is_finite()) && (0.0..=6.0).contains(&power) {
-                    let line=super::sunset_explosive_damage::diagnostics(game,super::sunset_explosive_damage::Blast{center:[x,y,z],power,ignored_block:None});
+                    let line=super::sunset_explosive_damage::diagnostics(game,super::sunset_explosive_damage::Blast::explosion([x,y,z], power));
                     say(game,&line);
                 }
             }
@@ -5090,6 +5104,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
 
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
     super::sunset_packet_delay::draw(game, cam, out, lw);
+    super::sunset_city_trap::draw(game, cam, out, lw);
     super::sunset_util::draw_shown(cam, out, lw);
     super::sunset_render::overlay(game, cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
@@ -6897,8 +6912,8 @@ mod movement_config_tests {
     fn presets_round_trip_through_config_and_profile() {
         let mut state = State::new();
         assert!(apply_movement_preset(&mut state, "aggressive"));
-        let config = state.save_text();
-        let profile = state.profile_text();
+        let config = state.save_text(&state.modules);
+        let profile = state.profile_text(&state.modules);
         let mut restored = State::new();
         restored.load_text(&config);
         assert_eq!(restored.module("Speed").unwrap().p("Mode"), "Custom");
@@ -6940,7 +6955,7 @@ mod movement_config_tests {
         assert_eq!(state.module("Fast Place").unwrap().n("Speed"), 3.0);
 
         let mut restored = State::new();
-        restored.load_text(&state.save_text());
+        restored.load_text(&state.save_text(&state.modules));
         assert_eq!(restored.module("Fast Place").unwrap().n("Speed"), 3.0);
     }
 

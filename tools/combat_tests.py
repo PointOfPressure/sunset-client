@@ -36,13 +36,16 @@ def main():
         run('explosive foundation', [sys.executable, 'tools/explosive_tests.py',
                                      args.engine.resolve(), '--out', foundation])
         for name in ['combat_lease', 'macro_policy', 'melee_policy', 'inventory_policy',
-                     'packet_policy', 'sword_policy']:
+                     'packet_policy', 'sword_policy', 'crystal_bot_policy', 'city_policy', 'roof_scaffold']:
             executable = temporary/(name+'.exe' if sys.platform == 'win32' else name)
             run(name+' compile', ['rustc', '--edition=2024', '--test',
                                   'tools/'+name+'_tests.rs', '-o', executable])
             run(name, [executable])
         run('native menu SWAP', [sys.executable, 'tools/inventory_engine_tests.py', args.engine.resolve()])
         run('native packet predicates', [sys.executable, 'tools/packet_engine_tests.py', args.engine.resolve()])
+        run('native City mining', [sys.executable, 'tools/city_engine_tests.py', args.engine.resolve()])
+        run('native roof visibility', [sys.executable, 'tools/roof_engine_tests.py', args.engine.resolve()])
+        run('exact City ownership', [sys.executable, 'tools/city_ownership_tests.py'])
     source_hashes = {p.relative_to(repo).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in sorted((repo/'mixins/sunset').glob('*.rs'))}
     count = 41 + sum(int(n) for r in records if not r['name'].endswith('compile')

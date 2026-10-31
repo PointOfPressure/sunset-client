@@ -47,8 +47,8 @@ The old failed fixture remains separate from the corrected test recipe.
 ## Renderer-free checks
 
 The current foundation, macro, melee, inventory, packet and sword-controller
-helpers have 94 passing renderer-free checks. These include actual pinned
-engine damage and menu SWAP routines, not only simplified test models. They
+helpers have 137 passing renderer-free checks. These include actual pinned
+engine damage, menu SWAP, mining and outline-ray routines, not only simplified test models. They
 do not prove native linking, incoming server acknowledgement or rendering.
 Native build and runtime results for later waves must be recorded separately.
 
@@ -69,6 +69,45 @@ proof for all of them.
 The immutable R5c test bundle still labelled its builder as `0d6b103`; build
 provenance records the actual verified `cb1ad23` tool. The public package
 manifest was corrected in `12f0c4a`. Frozen files and reports were preserved.
+
+## R5c melee player outcomes
+
+[Twelve passing server/input scenarios](evidence/combat/melee-r5c.json) cover
+real hits, native reach, trigger critical conditions, direct and piercing
+friend protection, spear Lunge, shield behavior, Mace, W Tap, Jump Reset and
+recent-input/idle aim behavior.
+
+- Real falling Mace damage was 31.690 versus grounded sword damage7.
+- W Tap reduced early horizontal speed from approximately0.153 to0.084,
+  0.046 and0.025 while forward/sprint input remained held.
+- Actual-knockback jump height increased from0.965 to1.252 blocks.
+- The same mouse input gained3.675 degrees toward the enemy with Aim Assist;
+  after idle input, camera yaw stayed unchanged while the target moved.
+- A raised shield blocked the sword control. After automatic axe use the
+  server's use flag cleared and the subsequent charged sword dealt7.
+
+The original target-UI shield assertion failed because its own native use
+animation remained stale, despite authoritative server lowering. The initial
+Mace fixture also missed due to integer-teleport centering. Both failed traces
+are retained; neither is relabelled as a passing run. An initial Mace image
+label was reused during correction, so that old image is not presented as
+independent immutable failure evidence.
+
+## R6c build checkpoint
+
+The expanded implementation passed137 renderer-free checks, official Mixins
+plan/stage (58 modules,51 injections), native compile check and optimized
+playable build. Client SHA-256:
+`c0a28e274eccb8f6827d19c13fa4960bdaefd0a6fd672bdcdce2b2bfd5418754`.
+One unused-helper warning remains. The frozen package correctly pins Mixins
+`cb1ad23`. City/Trap, visual Optimizer, controller persistence and the inventory
+fixes require their own native outcomes; their build is not runtime proof.
+
+Known runtime follow-ups under investigation: Anchor Macro quick clicks can
+fall through to ordinary placement rather than start the sequence, and City
+activation through chat/menu can be mistaken for a reconnect. Held Anchor
+Single/Double controls, including Delay20, do complete real observed cycles;
+the quick-click path is being fixed separately.
 
 Run the renderer-free checks with:
 

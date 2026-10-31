@@ -645,14 +645,6 @@ pub(super) fn guard_stab_at(game: &Game<'_>, yaw: f32, pitch: f32) -> bool {
     }
     blocked
 }
-pub(super) fn block_use(game: &Game<'_>) -> bool {
-    (game.held().is_some_and(|s| Kinetic::of(&s.item).is_some())
-        || game
-            .offhand
-            .as_ref()
-            .is_some_and(|s| Kinetic::of(&s.item).is_some()))
-        && block_stab(game)
-}
 pub(super) fn stop_guarded_use(game: &mut Game<'_>) -> bool {
     let spear = game
         .using
@@ -1040,7 +1032,7 @@ pub(super) fn pre_input(game: &mut Game<'_>, _modules: &[Module], ticks: u64) {
         return;
     }
     let tap = module(TAP).filter(|_| state(|s| game.ticks < s.tap_until));
-    let assist_jump = state(|s| s.jump_owner.take()).is_some_and(|owner| module(owner).is_some());
+    let assist_jump = state(|s| s.jump_owner.take()).is_some_and(|owner| module(owner).is_some() && control::available(owner));
     let jump = (state(|s| std::mem::take(&mut s.jump_pending))
         && module(JUMP).is_some()
         && game.keys.contains(&KeyCode::KeyW)
@@ -1113,8 +1105,9 @@ pub(super) fn key(game: &Game<'_>, key: &str, pressed: bool) -> bool {
         return false;
     };
     let wanted = m.t("Lunge key").trim();
-    let norm = |k: &str| k.trim().trim_start_matches("Key").to_ascii_lowercase();
-    if wanted.eq_ignore_ascii_case("None") || wanted.is_empty() || norm(wanted) != norm(key) {
+    let Some(wanted_key) = super::sunset::key_from_text(wanted) else { return false; };
+    if wanted.eq_ignore_ascii_case("None") || wanted.is_empty()
+        || super::sunset::key_from_text(key).as_deref() != Some(wanted_key.as_str()) {
         return false;
     }
     request_lunge(game);

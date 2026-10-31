@@ -292,7 +292,7 @@ pub(super) fn draw(game:&Game<'_>,camera:&sunset::Camera,out:&mut impl Canvas,li
 }
 
 pub(super) fn debug()->serde_json::Value {
-    state(|s|{let now=millis(s);serde_json::json!({"movement_only":true,"movement_queued":s.moves.len(),
+    state(|s|{let now=millis(s);serde_json::json!({"replaying":replaying(),"movement_only":true,"movement_queued":s.moves.len(),
         "movement_bytes":s.moves.bytes(),"movement_oldest_ms":s.moves.oldest_age(now),
         "impulses_queued":s.impulses.len(),"impulse_bytes":s.impulses.bytes(),"impulse_oldest_ms":s.impulses.oldest_age(now),
         "movement_held":s.moves.accepted,"movement_released":s.moves.released,"movement_discarded":s.moves.dropped,

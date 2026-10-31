@@ -6,6 +6,7 @@ packet exchange, renderer or remote-server coverage.
 """
 from pathlib import Path
 import argparse
+import re
 import subprocess
 import tempfile
 
@@ -27,6 +28,13 @@ def main():
     if (engine / ".horizon-revision").read_text().strip() != "ba6344a59cb9e755b730dcf02285fc0d33b97d3c":
         raise SystemExit("Expected pinned Horizon ba6344a")
     repo = Path(__file__).resolve().parents[1]
+    remote = (engine / "crates/horizon-client/src/game/remote.rs").read_text(encoding="utf-8")
+    native_hands = block(remote, remote.index("pub(super) fn remote_swap_hands"))
+    production = (repo / "mixins/sunset/combat_inventory.rs").read_text(encoding="utf-8")
+    hotbar = block(production, production.index("if job.hotbar {"))
+    native_action = re.search(r"action:\s*(\d+)", native_hands)
+    actual_action = re.search(r"action:\s*(\d+)", hotbar)
+    assert native_action and actual_action and native_action[1] == actual_action[1], "Hotbar refill must use native SWAP_HANDS, not RELEASE_USE_ITEM"
     menu_source = (engine / "crates/horizon-client/src/menu.rs").read_text(encoding="utf-8")
     native_swap = block(menu_source, menu_source.index("fn swap(&mut self, env: &Env"))
     native_split = block(menu_source, menu_source.index("fn split(stack: &mut ItemStack"))

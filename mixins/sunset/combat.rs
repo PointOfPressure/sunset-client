@@ -1,5 +1,5 @@
 // Sunset's combat modules beyond the core ones, ported from Meteor's source:
-// Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow,
+// Surround, Self Trap, Self Web, Auto Web, Hole Filler, Burrow,
 // Offhand and Auto EXP.
 
 use super::sunset::{Category, Module, gui_open, hold, is_friend, own_id, with};
@@ -14,7 +14,7 @@ const HORIZONTAL: [[i32; 3]; 4] = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]]
 
 pub(super) fn defaults() -> Vec<Module> {
     use Category::Combat;
-    vec![
+    let mut modules = vec![
         Module::new("Surround", Combat, "Surrounds you in blocks to prevent massive crystal damage.")
             .text("Blocks", TRAP_BLOCKS)
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0)
@@ -33,18 +33,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Place delay", 1.0, 0.0, 10.0, 1.0)
             .bool("Center", true)
             .bool("Turn off", true)
-            .bool("Rotate", true),
-        Module::new("Auto Trap", Combat, "Traps people in a box to prevent them from moving.")
-            .text("Blocks", "obsidian,crying_obsidian")
-            .num("Place range", 4.0, 1.0, 6.0, 0.5)
-            .num("Walls range", 4.0, 1.0, 6.0, 0.5)
-            .pick("Priority", PRIORITIES)
-            .num("Target range", 3.0, 1.0, 10.0, 0.5)
-            .num("Place delay", 1.0, 0.0, 10.0, 1.0)
-            .num("Blocks per tick", 1.0, 1.0, 8.0, 1.0)
-            .pick("Top blocks", &["Full", "Face", "Top", "None"])
-            .pick("Bottom blocks", &["Platform", "Full", "Single", "None"])
-            .bool("Self toggle", true)
             .bool("Rotate", true),
         Module::new("Self Web", Combat, "Automatically places webs on you.")
             .pick("Mode", &["Normal", "Smart"])
@@ -118,10 +106,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only with a weapon", true)
             .bool("Anti bot", false)
             .bool("Ignore teams", false),
-        Module::new("Crystal Optimizer", Combat, "Breaks the end crystal you hit on your screen at once, without waiting for the server (as Marlow's Crystal Optimizer).")
-            .bool("Instant break", true)
-            .num("Reach", 4.5, 3.0, 6.0, 0.5)
-            .bool("Swing", true),
         Module::new("Auto EXP", Combat, "Automatically repairs your armor and tools in pvp.")
             .pick("Mode", &["Both", "Armor", "Hands"])
             .bool("Replenish", true)
@@ -129,7 +113,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("EXP slot", 6.0, 1.0, 9.0, 1.0)
             .num("Min threshold %", 30.0, 1.0, 100.0, 1.0)
             .num("Max threshold %", 80.0, 1.0, 100.0, 1.0),
-    ]
+    ];
+    modules.extend(super::sunset_city_trap::defaults());
+    modules.push(super::sunset_crystal_optimizer::defaults());
+    modules
 }
 
 #[derive(Default)]
@@ -139,9 +126,6 @@ struct Cs {
     trap_delay: u32,
     trap_placed: bool,
     trap_positions: Vec<[i32; 3]>,
-    auto_trap_target: Option<u32>,
-    auto_trap_timer: u32,
-    auto_trap_placed: bool,
     web_target: Option<u32>,
     hole_timer: i32,
     burrow: Option<([i32; 3], bool)>,
@@ -173,9 +157,11 @@ fn activated(name: &str, on: bool) -> bool {
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     show_clear();
     super::sunset_combat_inventory::tick(game, mods, game.ticks);
+    super::sunset_crystal_optimizer::tick(game, game.ticks);
+    super::sunset_city_trap::tick(game, mods, game.ticks);
     if super::sunset_combat_control::owner().is_some() { return; }
     let get = |n: &str| mods.iter().find(|m| m.name == n);
-    for name in ["Surround", "Self Trap", "Auto Trap", "Self Web", "Auto Web", "Hole Filler", "Burrow"] {
+    for name in ["Surround", "Self Trap", "Self Web", "Auto Web", "Hole Filler", "Burrow"] {
         let Some(m) = get(name).filter(|m| m.on) else {
             activated(name, false);
             continue;
@@ -189,7 +175,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         match name {
             "Surround" => surround(game, m, just),
             "Self Trap" => self_trap(game, m, just),
-            "Auto Trap" => auto_trap(game, m, just),
             "Self Web" => self_web(game, m),
             "Auto Web" => auto_web(game, m),
             "Hole Filler" => hole_filler(game, m, just),
@@ -372,116 +357,7 @@ fn bad_target(game: &Game<'_>, t: &Option<Target>, range: f64) -> bool {
     }
 }
 
-fn auto_trap(game: &mut Game<'_>, m: &Module, just: bool) {
-    if just {
-        cs(|c| {
-            c.auto_trap_target = None;
-            c.auto_trap_timer = 0;
-            c.auto_trap_placed = false;
-        });
-    }
-    let target_id = cs(|c| c.auto_trap_target);
-    let Some(slot) = blocks_slot(game, m.t("Blocks")) else {
-        return;
-    };
-    let range = m.n("Target range");
-    let mut target = target_id.and_then(|id| target_by_id(game, id));
-    if bad_target(game, &target, range) {
-        target = player_target(game, range, m.p("Priority"));
-        cs(|c| c.auto_trap_target = target.as_ref().map(|t| t.id));
-        if target.is_none() {
-            // Everything placed and nobody left to trap.
-            if m.b("Self toggle") && cs(|c| std::mem::take(&mut c.auto_trap_placed)) {
-                toggle_off(game, "Auto Trap");
-            }
-            return;
-        }
-    }
-    let Some(t) = target else {
-        return;
-    };
-    let (place_range, walls) = (m.n("Place range"), m.n("Walls range"));
-    let eps = 1e-5;
-    let y = t.lo[1].floor() as i32;
-    let mut corners: Vec<[i32; 2]> = vec![
-        [t.lo[0].floor() as i32, t.lo[2].floor() as i32],
-        [t.lo[0].floor() as i32, (t.hi[2] - eps).floor() as i32],
-        [(t.hi[0] - eps).floor() as i32, t.lo[2].floor() as i32],
-        [(t.hi[0] - eps).floor() as i32, (t.hi[2] - eps).floor() as i32],
-    ];
-    corners.dedup();
-    let mut positions: Vec<[i32; 3]> = Vec::new();
-    let mut add = |game: &Game<'_>, p: [i32; 3]| {
-        if !positions.contains(&p) && can_place(game, p, true) && in_reach(game, p, place_range, walls) {
-            positions.push(p);
-        }
-    };
-    for [x, z] in corners {
-        let at = |dx: i32, dy: i32, dz: i32| [x + dx, y + dy, z + dz];
-        match m.p("Top blocks") {
-            "Full" => {
-                for d in [at(0, 2, 0), at(1, 1, 0), at(-1, 1, 0), at(0, 1, 1), at(0, 1, -1)] {
-                    add(game, d);
-                }
-            }
-            "Face" => {
-                for d in [at(1, 1, 0), at(-1, 1, 0), at(0, 1, 1), at(0, 1, -1)] {
-                    add(game, d);
-                }
-            }
-            "Top" => add(game, at(0, 2, 0)),
-            _ => {}
-        }
-        match m.p("Bottom blocks") {
-            "Platform" => {
-                for d in [at(0, -1, 0), at(1, -1, 0), at(-1, -1, 0), at(0, -1, 1), at(0, -1, -1)] {
-                    add(game, d);
-                }
-            }
-            "Full" => {
-                for d in [at(0, -1, 0), at(1, 0, 0), at(-1, 0, 0), at(0, 0, -1), at(0, 0, 1)] {
-                    add(game, d);
-                }
-            }
-            "Single" => add(game, at(0, -1, 0)),
-            _ => {}
-        }
-    }
-    // The furthest first.
-    if let Some(me) = player_pos(game) {
-        positions.sort_by(|a, b| dist(me, center_of(*b)).total_cmp(&dist(me, center_of(*a))));
-    }
-    for &p in &positions {
-        show(p, 0x40FF_5050);
-    }
-    if m.b("Self toggle") && cs(|c| c.auto_trap_placed) && positions.is_empty() {
-        cs(|c| c.auto_trap_placed = false);
-        toggle_off(game, "Auto Trap");
-        return;
-    }
-    let delay = m.n("Place delay") as u32;
-    let ready = cs(|c| {
-        if c.auto_trap_timer >= delay && !positions.is_empty() {
-            c.auto_trap_timer = 0;
-            true
-        } else {
-            c.auto_trap_timer += 1;
-            false
-        }
-    });
-    if ready {
-        let mut count = 0;
-        for p in positions {
-            if count >= m.n("Blocks per tick") as u32 {
-                break;
-            }
-            if place_block(game, p, slot, m.b("Rotate"), true) {
-                cs(|c| c.auto_trap_placed = true);
-                count += 1;
-            }
-        }
-    }
-}
+
 
 // ---- Webs
 
@@ -1067,6 +943,7 @@ pub(super) fn aim_after(game: &mut Game<'_>) {
     let actual = [game.yaw, game.pitch];
     if actual.iter().zip(before).any(|(now, old)| now.is_finite() && old.is_finite() && (now-old).abs() > 0.0001) {
         super::sunset_sword_bot::mouse_input();
+        super::sunset_crystal_bot::mouse_input();
     }
     let now = Instant::now();
     let dt = cs(|c| c.aim_frame.replace(now)).map_or(0.0, |t| now.duration_since(t).as_secs_f64().min(0.05));
@@ -1079,45 +956,4 @@ pub(super) fn aim_after(game: &mut Game<'_>) {
     if turn != [0.0; 2] {
         game.turn_player(turn[0] / 0.15, turn[1] / 0.15);
     }
-}
-
-// ---- Crystal Optimizer
-
-// Called when you attack: if an end crystal is on the crosshair, hit it now and
-// remove it from your screen, then the click is done. Some(instant) when it
-// took the click.
-pub(super) fn crystal_attack(game: &mut Game<'_>) -> Option<bool> {
-    let m = super::sunset::with(|s| s.module("Crystal Optimizer").filter(|m| m.on).cloned())?;
-    if !m.b("Instant break") || !in_world(game) {
-        return None;
-    }
-    let eye = game.eye_position()?;
-    let dir = view_vector(game.yaw, game.pitch);
-    let reach = m.n("Reach");
-    let mut best: Option<(f64, u32)> = None;
-    for c in &game.crystals {
-        if c.id == 0 || c.invulnerable {
-            continue;
-        }
-        let lo = horizon_core::geometry::Vec3::new(c.position.x - 1.0, c.position.y, c.position.z - 1.0);
-        let hi = horizon_core::geometry::Vec3::new(c.position.x + 1.0, c.position.y + 2.0, c.position.z + 1.0);
-        let b = horizon_core::geometry::Aabb::new(lo, hi);
-        if let Some(d) = super::ray_box(eye, dir, reach, b)
-            && best.is_none_or(|(bd, _)| d < bd)
-        {
-            let at = [eye[0] + dir[0] * d, eye[1] + dir[1] * d, eye[2] + dir[2] * d];
-            if clear_line(game, at, [i32::MIN; 3]) {
-                best = Some((d, c.id));
-            }
-        }
-    }
-    let (_, id) = best?;
-    game.send(S::Attack(play::Attack { id: id as i32 }));
-    if m.b("Swing") {
-        game.swing_arm();
-        game.send(S::Punch(horizon_protocol::packets::Empty));
-    }
-    game.reset_attack_strength();
-    game.crystals.retain(|c| c.id != id);
-    Some(false)
 }

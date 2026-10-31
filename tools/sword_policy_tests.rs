@@ -147,3 +147,69 @@ fn malformed_state_yields_before_moving() {
     );
     assert_eq!(POPULATION_LIMIT, 512);
 }
+
+#[test]
+fn gui_pause_retains_owned_false_and_detects_later_user_edit() {
+    let mut value = true;
+    let mut context = Some(Owned::new(false, true));
+    assert!(context.as_mut().unwrap().update(&mut value, false));
+    assert!(!value);
+    assert!(context.is_some());
+    for _ in 0..3 {
+        assert!(context.as_mut().unwrap().update(&mut value, false));
+    }
+    // A .set/toggle received while chat is open changes the current value.
+    value = true;
+    assert!(!context.as_mut().unwrap().update(&mut value, false));
+    assert!(!context.take().unwrap().restore(&mut value));
+    assert!(value);
+    assert!(context.is_none());
+}
+
+#[test]
+fn paused_field_restore_preserves_unedited_prior_true_and_partial_user_edits() {
+    let mut enabled = false;
+    let on = Owned::new(true, false);
+    assert!(on.restore(&mut enabled));
+    assert!(enabled);
+    let mut entities = "player";
+    let mut owned = Owned::new("@all", "player");
+    assert!(owned.update(&mut entities, "player"));
+    entities = "husk";
+    assert!(!owned.update(&mut entities, "player"));
+    assert!(!owned.restore(&mut entities));
+    assert_eq!(entities, "husk");
+}
+
+#[test]
+fn persistence_serializes_baseline_without_consuming_live_context_or_user_edits() {
+    let enabled = Owned::new(true, false); // GUI pause owns false, not no ownership.
+    let entities = Owned::new("@all".to_owned(), "player".to_owned());
+    let auto_switch = Owned::new(false, true);
+    let live = (false, "husk".to_owned(), true, 5.0); // The user edited Entities/Range.
+    let mut saved = live.clone();
+    assert!(enabled.baseline(&mut saved.0));
+    assert!(!entities.baseline(&mut saved.1));
+    assert!(auto_switch.baseline(&mut saved.2));
+    let text = format!(
+        "on={}\nEntities={}\nAutoSwitch={}\nRange={}\n",
+        saved.0, saved.1, saved.2, saved.3
+    );
+    assert_eq!(text, "on=true\nEntities=husk\nAutoSwitch=false\nRange=5\n");
+    assert_eq!(live, (false, "husk".to_owned(), true, 5.0));
+    // Repeated save/export does not consume ownership or adopt the projection.
+    let mut next = live.clone();
+    enabled.baseline(&mut next.0);
+    auto_switch.baseline(&mut next.2);
+    assert_eq!(next, saved);
+}
+
+#[test]
+fn persistence_never_reclaims_a_yielded_field_that_later_matches_applied() {
+    let mut lease = Owned::new("@all", "player");
+    let mut current = "husk";
+    assert!(!lease.update(&mut current, "player"));
+    current = "player";
+    assert!(!lease.baseline(&mut current));
+    assert_eq!(current, "player");
+}

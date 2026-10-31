@@ -111,6 +111,11 @@ Crystal Aura and Anchor Aura are experimental, disabled by default, and share
 bounded action planning. [Their controls and damage models](docs/explosive-auras.md)
 describe the tested scope and limits.
 
+The [native combat development batch](docs/combat-modules.md) extends these
+with coordinated melee, manual, inventory and controller modules. See the
+[checkpoint validation and native screenshots](docs/combat-validation.md)
+for verified behavior and outstanding tests.
+
 Not here (no clean way to do it in Horizon yet): Jesus, Click TP, and the Baritone-based
 Highway Builder and Infinity Miner.
 

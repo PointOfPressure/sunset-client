@@ -1,0 +1,743 @@
+{
+  "kind": "R5c two-real-player melee outcomes",
+  "native_client_sha256": "18863f8fa988a194266a8a2ffe3bc32dc9cb3d039d41c9c301670480dad065f4",
+  "host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "backend": "stock Java26.3 on loopback",
+  "passed_scenarios": 12,
+  "checks": [
+    {
+      "case": "aura-hit",
+      "passed": true,
+      "report": "melee-proof-1793475785948806100.json",
+      "evidence": {
+        "before": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        },
+        "after": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        }
+      }
+    },
+    {
+      "case": "aura-native-reach",
+      "passed": true,
+      "report": "melee-proof-1793475877811950200.json",
+      "evidence": {
+        "geometry": "Player boxes remain beyond native survival3 entity reach despite configured6.5",
+        "before": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        },
+        "after": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        }
+      }
+    },
+    {
+      "case": "trigger-hit",
+      "passed": true,
+      "report": "melee-proof-1793475877811950200.json",
+      "evidence": {
+        "before": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        },
+        "after": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        }
+      }
+    },
+    {
+      "case": "trigger-only-grounded",
+      "passed": true,
+      "report": "melee-proof-1793475877811950200.json",
+      "evidence": {
+        "before": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        },
+        "after": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        }
+      }
+    },
+    {
+      "case": "friend-direct",
+      "passed": true,
+      "report": "melee-proof-1793475877811950200.json",
+      "evidence": {
+        "action": "Real native manual left click at known friend",
+        "before": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        },
+        "after": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        }
+      }
+    },
+    {
+      "case": "friend-piercing",
+      "passed": true,
+      "report": "melee-proof-1793475877811950200.json",
+      "evidence": {
+        "geometry": "Known friend behind first nonfriend husk on the native piercing ray",
+        "before": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        },
+        "after": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        }
+      }
+    },
+    {
+      "case": "spear-lunge",
+      "passed": true,
+      "report": "melee-proof-1793475877811950200.json",
+      "evidence": {
+        "restored": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        },
+        "action": "Actual enchanted-spear native lunge displacement from one key press; no injected velocity",
+        "before": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        },
+        "after": {
+          "attacker": {
+            "selected": 1,
+            "target": null
+          },
+          "target": {
+            "selected": 1,
+            "target": null
+          }
+        }
+      }
+    },
+    {
+      "case": "wtap-ab",
+      "passed": true,
+      "report": "melee-proof-1793476242992950400.json",
+      "evidence": {
+        "off_early_horizontal_speeds": [
+          0.1531847312178261,
+          0.15319928781512213,
+          0.1532072357181689,
+          0.1532115752737365,
+          0.15321394467135163
+        ],
+        "on_early_horizontal_speeds": [
+          0.1531847312178261,
+          0.08363887295980792,
+          0.045666829940377414,
+          0.024934092043606377,
+          0.083174430692427
+        ],
+        "proof": "Matched real sprint hits with physical W/Ctrl held; native forward velocity taper must be stronger with WTap3."
+      }
+    },
+    {
+      "case": "jump-reset-ab",
+      "passed": true,
+      "report": "melee-proof-1793476242992950400.json",
+      "evidence": {
+        "off_peak_y_delta": 0.9647966773263192,
+        "on_peak_y_delta": 1.2522033402537147,
+        "proof": "Both arms require an accepted real-player hit and actual upward KB; enabled native jump must add excursion beyond the off KB baseline. Positive Y alone is insufficient."
+      }
+    },
+    {
+      "case": "aim-recent-idle",
+      "passed": true,
+      "report": "melee-proof-1793476242992950400.json",
+      "evidence": {
+        "extra_toward_enemy_degrees": 3.6754531860351562,
+        "idle_yaw_change": 0.0,
+        "proof": "Official mouse-move passes native MouseHandler; equal input A/B must add recent pull, then no idle camera following while the real target moves.",
+        "idle_before": {
+          "selected": 1,
+          "using": null,
+          "player": {
+            "absorption": 0.0,
+            "health": 999.0,
+            "on_ground": true,
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "sprinting": false,
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ]
+          }
+        },
+        "idle_after": {
+          "selected": 1,
+          "using": null,
+          "player": {
+            "absorption": 0.0,
+            "health": 999.0,
+            "on_ground": true,
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "sprinting": false,
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ]
+          }
+        },
+        "target_after": {
+          "selected": 1,
+          "using": null,
+          "player": {
+            "absorption": 0.0,
+            "health": 999.0,
+            "on_ground": true,
+            "position": [
+              3.0,
+              121.0,
+              2.948665882337216
+            ],
+            "sprinting": false,
+            "velocity": [
+              7.875199981936026e-18,
+              -0.0784000015258789,
+              0.06430588512363279
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "mace-real-fall",
+      "passed": true,
+      "report": "melee-proof-1793476430985924700.json",
+      "evidence": {
+        "grounded_sword_damage": 7.0,
+        "fall_damage_to_target": 31.690063476562386,
+        "observed_mace_slot": true,
+        "restored": {
+          "attacker": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                2.812294574146183,
+                121.0,
+                0.07348298656665883
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          },
+          "target": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 967.3099365234376,
+              "on_ground": true,
+              "position": [
+                3.9152827046864327,
+                121.0,
+                2.579494569208039
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          }
+        },
+        "proof": "Actual server HP loss above a real grounded-sword baseline during observed native downward motion, then slot restoration.",
+        "before": {
+          "attacker": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                0.5,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          },
+          "target": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                3.0,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          }
+        },
+        "after": {
+          "attacker": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                2.812294574146183,
+                121.0,
+                0.07348298656665883
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          },
+          "target": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 967.3099365234376,
+              "on_ground": true,
+              "position": [
+                3.9152827046864327,
+                121.0,
+                2.579494569208039
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "case": "shield-server-control",
+      "passed": true,
+      "report": "melee-proof-1793476430985924700.json",
+      "evidence": {
+        "follow_sword_damage": 7.0,
+        "proof": "Raised shield blocks real sword control; server-observed use flag clears after axe, then charged sword damages while target keeps physical RMB held. The earlier strict local-use assertion stays failed.",
+        "after": {
+          "attacker": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                0.5,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          },
+          "target": {
+            "selected": 1,
+            "using": {
+              "slot": 40,
+              "ticks": 95
+            },
+            "player": {
+              "absorption": 0.0,
+              "health": 992.0,
+              "on_ground": true,
+              "position": [
+                4.988568003894647,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0024761002971754624,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          }
+        },
+        "raised": {
+          "attacker": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                0.5,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          },
+          "target": {
+            "selected": 1,
+            "using": {
+              "slot": 40,
+              "ticks": 18
+            },
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                3.0,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          }
+        },
+        "blocked_sword": {
+          "attacker": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                0.5,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          },
+          "target": {
+            "selected": 1,
+            "using": {
+              "slot": 40,
+              "ticks": 43
+            },
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                3.0,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          }
+        },
+        "before_axe": {
+          "attacker": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                0.5,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          },
+          "target": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                3.0,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          }
+        },
+        "follow_before": {
+          "attacker": {
+            "selected": 1,
+            "using": null,
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                0.5,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          },
+          "target": {
+            "selected": 1,
+            "using": {
+              "slot": 40,
+              "ticks": 74
+            },
+            "player": {
+              "absorption": 0.0,
+              "health": 999.0,
+              "on_ground": true,
+              "position": [
+                3.0,
+                121.0,
+                0.5
+              ],
+              "sprinting": false,
+              "velocity": [
+                0.0,
+                -0.0784000015258789,
+                0.0
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "initial_failed_checks_retained": [
+    {
+      "case": "shield-auto",
+      "report": "melee-proof-1793475877811950200.json",
+      "status": "fail"
+    },
+    {
+      "case": "mace-real-fall",
+      "report": "melee-proof-1793476242992950400.json",
+      "status": "fail"
+    }
+  ],
+  "failure_explanation": [
+    "Initial Shield check required target own using=None; target native UI retained use despite authoritative server metadata lowering shield. Separate positive control proved raised shield blocks sword, then auto axe lowers server use and subsequent sword deals7.",
+    "Initial Mace fixture used integer tp X3, centered at3.5; actual target stood3.0 and rays hit only stone. Corrected exact-decimal physical fall proves31.690 damage versus grounded sword7.",
+    "Initial Mace screenshot label was reused by its correction. The failed JSON/trace is retained; that old image is not presented as independent immutable failure evidence."
+  ],
+  "source_reports": [
+    {
+      "file": "melee-proof-1793475785948806100.json",
+      "sha256": "b80f726d00302aea26a006d9957a2bb49d899ea8a9c2bacef51be52164bfb686",
+      "reported_failed": 0
+    },
+    {
+      "file": "melee-proof-1793475877811950200.json",
+      "sha256": "43a254ebc36282f62e29e656013765a6a1357685163fe7b2cea37fc1e1b2efea",
+      "reported_failed": 1
+    },
+    {
+      "file": "melee-proof-1793476242992950400.json",
+      "sha256": "8cf1fc8b30def7d7e535f8446635ee70c872e49cc90035b8d835aea91817b5be",
+      "reported_failed": 1
+    },
+    {
+      "file": "melee-proof-1793476430985924700.json",
+      "sha256": "533e1e200f4800a0b4bbaf51c07fbe86d5f7cb830479bf8db06e63741fe09199",
+      "reported_failed": 0
+    }
+  ],
+  "screenshots": {
+    "melee-mace-real-fall.png": {
+      "sha256": "491aec85a773428f7633180d95a9c94cfa3b5d9eacfc80548b3ac6167de00c94",
+      "unmodified_native_capture": true
+    },
+    "melee-wtap-ab.png": {
+      "sha256": "e5cc5fb3769b70dd78c181bfcb5f1860b5dbf665eef90987603e54f66dc06603",
+      "unmodified_native_capture": true
+    },
+    "melee-jump-reset-ab.png": {
+      "sha256": "e931338b4dc70c7853a92322917e11cd4e87568c76e2d33c21e9720400317fa3",
+      "unmodified_native_capture": true
+    },
+    "melee-aim-recent-idle.png": {
+      "sha256": "0ccdc335f73e09854b8aea1a06c67ab0bd84ecf95ae468b41a0c1020392ee71e",
+      "unmodified_native_capture": true
+    },
+    "melee-shield-server-control.png": {
+      "sha256": "55b86454e119ed058d955ab6bd927ccdf256aa128dc68f39ec1f88b8e306385c",
+      "unmodified_native_capture": true
+    }
+  }
+}
