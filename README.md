@@ -14,9 +14,9 @@ Sunset brings 100+ modules for combat, movement, building and rendering to Horiz
 key binds, chat commands and saved profiles. It takes inspiration from
 [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) and is written in Rust for Horizon.
 
-![Sunset 0.8.1 ClickGUI showing Scaffold settings](docs/images/gui-current.png)
+![Sunset 0.8.1 ClickGUI showing the five module categories](docs/images/gui-overview.png)
 
-*Sunset 0.8.1 in game: the ClickGUI with Scaffold settings open.*
+*Sunset 0.8.1 in game: Combat, Movement, Player, Render and World panels.*
 
 > Not made by, or affiliated with, the Horizon or Meteor projects. Use it where it's allowed: many servers ban
 > modules like these.
