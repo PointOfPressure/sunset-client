@@ -95,8 +95,10 @@ struct Run {
     queued_at: Option<Instant>,
     deadline: u64,
 }
+struct AnchorPress { tick: u64, session: Session, entity: i32, dimension: Dim }
 struct State {
     run: Option<Run>,
+    anchor_press: Option<AnchorPress>,
     token: u64,
     anchor_latched: bool,
     retries: policy::Retries,
@@ -104,6 +106,7 @@ struct State {
 }
 static STATE: Mutex<State> = Mutex::new(State {
     run: None,
+    anchor_press: None,
     token: 0,
     anchor_latched: false,
     retries: policy::Retries::new(),
@@ -117,10 +120,22 @@ pub(super) fn user_mouse(game: &Game<'_>, button: MouseButton, pressed: bool) {
     if button == MouseButton::Right {
         let user = !pressed || (super::sunset_combat_control::owner().is_none_or(|o| o == CRYSTAL || o == ANCHOR)
             && game.native_playing() && !gui_open());
-        if user { USER_RIGHT.store(pressed, std::sync::atomic::Ordering::Relaxed); }
+        if user {
+            USER_RIGHT.store(pressed, std::sync::atomic::Ordering::Relaxed);
+            if pressed && allowed(game) {
+                if let Some(remote) = game.remote.as_ref() {
+                    state(|s| s.anchor_press = Some(AnchorPress { tick: game.ticks,
+                        session: remote.session.counters.clone(), entity: remote.entity_id,
+                        dimension: game.dim }));
+                }
+            }
+        }
     }
 }
-pub(super) fn focus_lost() { USER_RIGHT.store(false, std::sync::atomic::Ordering::Relaxed); }
+pub(super) fn focus_lost() {
+    USER_RIGHT.store(false, std::sync::atomic::Ordering::Relaxed);
+    state(|s| s.anchor_press = None);
+}
 fn down(game: &Game<'_>) -> bool {
     game.physical_buttons.contains(&MouseButton::Right) || USER_RIGHT.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -166,6 +181,7 @@ fn enabled(run: &Run) -> bool {
 pub(super) fn reset(game: &mut Game<'_>) {
     let run = state(|s| {
         s.token = s.token.wrapping_add(1);
+        s.anchor_press = None;
         s.run.take()
     });
     sunset::cancel_turns(CRYSTAL);
@@ -173,8 +189,6 @@ pub(super) fn reset(game: &mut Game<'_>) {
     if let Some(run) = run {
         if super::sunset_combat_control::owns(run.owner)
             && same_session(game, &run)
-            && util::in_world(game)
-            && !gui_open()
             && game.using.is_none()
             && !super::sunset_player::gap_eating()
         {
@@ -566,11 +580,19 @@ fn recognized_hand(game: &Game<'_>, kind: Kind) -> bool {
 // Called immediately before vanilla's native use-item operation. True consumes
 // that one operation, including repeats during an owned manual sequence.
 pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
-    if !down(game) {
-        return false;
-    }
-    if active() {
-        return true;
+    // Native use clicks are consumed on an input tick, after a quick release
+    // may already have cleared held state. Retain only one fresh press in the
+    // same remote session; consuming it here never starts a held Crystal run.
+    let pressed = state(|s| s.anchor_press.take()).is_some_and(|press| {
+        game.ticks >= press.tick && game.ticks - press.tick <= 2
+            && game.dim == press.dimension
+            && game.remote.as_ref().is_some_and(|r| r.entity_id == press.entity
+                && Arc::ptr_eq(&r.session.counters, &press.session))
+    });
+    let held = down(game);
+    if !held && !pressed { return false; }
+    if let Some(kind) = state(|s| s.run.as_ref().map(|r| r.sequence.kind)) {
+        return held || kind == Kind::Anchor;
     }
     let anchor = with(|s| s.module(ANCHOR).filter(|m| m.on).cloned());
     if state(|s| s.anchor_latched) && anchor.is_some() {
@@ -584,6 +606,7 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
     let pick = game.pick().map(|hit| (hit.pos, hit.face));
     let on_anchor = pick.is_some_and(|(p, _)| anchor_charge(game, p).is_some());
     let anchor_intent = on_anchor || stack(game, game.selected, "respawn_anchor");
+    if !held && !anchor_intent { return false; }
     let (settings, kind, pos, step, cid) = if anchor_intent {
         let Some(m) = anchor.filter(|_| recognized_hand(game, Kind::Anchor)) else {
             return false;

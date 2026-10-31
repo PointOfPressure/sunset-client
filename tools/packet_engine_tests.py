@@ -6,9 +6,11 @@ payload preservation, not live network framing or encryption.
 """
 from pathlib import Path
 import argparse
+import hashlib
 import re
 import subprocess
 import tempfile
+import zipfile
 
 
 def block(text, start):
@@ -23,12 +25,49 @@ def block(text, start):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("engine", type=Path)
+    p.add_argument("--server-jar",type=Path,help="Optional actual vanilla26.3 server jar for primary bytecode contract")
+    p.add_argument("--javap",default="javap")
     args = p.parse_args()
+    if args.server_jar:
+        with zipfile.ZipFile(args.server_jar) as archive:
+            primary=archive.read("net/minecraft/server/network/ServerGamePacketListenerImpl.class")
+            players=archive.read("net/minecraft/server/players/PlayerList.class")
+        with tempfile.TemporaryDirectory(prefix="sunset-vanilla-tick-contract-") as temp:
+            source=Path(temp)/"ServerGamePacketListenerImpl.class";source.write_bytes(primary)
+            bytecode=subprocess.run([args.javap,"-p","-c",str(source)],check=True,capture_output=True,text=True).stdout
+            source=Path(temp)/"PlayerList.class";source.write_bytes(players)
+            player_bytecode=subprocess.run([args.javap,"-p","-c",str(source)],check=True,capture_output=True,text=True).stdout
+        move=bytecode[bytecode.index("public void handleMovePlayer("):]
+        move=re.split(r"\n  (?:public|private|protected) ",move,maxsplit=1)[0]
+        after_position=move[move.index("hasPosition:()Z"):]
+        assert after_position.index("receivedPositionThisTick:Z")<after_position.index("multiplayer.disconnect.invalid_player_movement")
+        assert re.search(r"putfield[^\n]*receivedPositionThisTick:Z",after_position)
+        end=bytecode[bytecode.index("public void handleClientTickEnd("):]
+        end=re.split(r"\n  (?:public|private|protected) ",end,maxsplit=1)[0]
+        assert re.search(r"iconst_0\s+[^\n]*putfield[^\n]*receivedPositionThisTick:Z",end)
+        assert len(re.findall(r"putfield[^\n]*receivedPositionThisTick:Z",bytecode))==2,"Only Move=true and original End=false write this quota"
+        respawn=player_bytecode[player_bytecode.index("public net.minecraft.server.level.ServerPlayer respawn("):]
+        respawn=re.split(r"\n  (?:public|private|protected) ",respawn,maxsplit=1)[0]
+        assert "class net/minecraft/server/level/ServerPlayer" in respawn
+        assert re.search(r"getfield[^\n]*ServerPlayer.connection:[^\n]*\s+[^\n]*putfield[^\n]*ServerPlayer.connection:",respawn)
+        assert not re.search(r"new[^\n]*class net/minecraft/server/network/ServerGamePacketListenerImpl",respawn)
+        assert "ClientboundRespawnPacket" in respawn
+        print("Primary vanilla26.3 position-quota/reset bytecode PASS; class SHA256="+hashlib.sha256(primary).hexdigest())
+        print("Primary same-listener respawn bytecode PASS; PlayerList SHA256="+hashlib.sha256(players).hexdigest())
     engine = args.engine.resolve()
     if (engine / ".horizon-revision").read_text(encoding="utf-8").strip() != "ba6344a59cb9e755b730dcf02285fc0d33b97d3c":
         raise SystemExit("Expected pinned native source ba6344a")
     here = Path(__file__).resolve().parents[1] / "mixins/sunset"
     production = (here / "packet_delay.rs").read_text(encoding="utf-8")
+    incoming=block(production,production.index("pub(super) fn incoming("))
+    assert incoming.index("C::Respawn")<incoming.index("ensure_session"),"Connection frame endings survive pre-respawn dimension checks"
+    login=incoming[incoming.index("C::Login"):incoming.index("C::Respawn")]
+    assert "reset()" in login and "respawn(game)" not in login
+    respawn=block(production,production.index("fn respawn("))
+    assert respawn.index("same_connection")<respawn.index("discard_except")<respawn.index("remote.session.send")<respawn.index("reset()")
+    assert "S::ClientTickEnd" in respawn and "apply(game" not in respawn
+    connection=block(production,production.index("fn same_connection("))
+    assert "counters" in connection and "game.dim" not in connection and "entity_id" not in connection
     native = (engine / "crates/horizon-protocol/src/packets/play.rs").read_text(encoding="utf-8")
     primitives = []
     for name in ["MovePlayerPos", "MovePlayerPosRot", "MovePlayerRot", "MovePlayerStatus", "SetEntityMotion"]:
@@ -57,21 +96,22 @@ def main():
 #[derive(Clone,Debug,PartialEq)] enum C {SetEntityMotion(SetEntityMotion),Explode(Explode),Other}
 struct Remote {entity_id:i32}
 struct Game<'a> {remote:Option<Remote>,_life:std::marker::PhantomData<&'a ()>}
-#[test]fn only_the_four_native_player_movement_variants_can_be_held(){
+#[test]fn four_native_movements_and_their_original_tick_boundaries_can_be_held(){
     let packets=[S::MovePlayerPos(MovePlayerPos{x:1.25,y:63.75,z:-4.5,flags:3}),
         S::MovePlayerPosRot(MovePlayerPosRot{x:1.25,y:63.75,z:-4.5,yaw:179.0,pitch:-89.0,flags:3}),
         S::MovePlayerRot(MovePlayerRot{yaw:179.0,pitch:-89.0,flags:3}),
-        S::MovePlayerStatus(MovePlayerStatus{flags:3})];
+        S::MovePlayerStatus(MovePlayerStatus{flags:3}),S::ClientTickEnd(())];
     let mut queue=policy::Queue::new(64,4096,1000);
     for (i,p) in packets.iter().enumerate(){assert!(movement(p)&&valid_movement(p));queue.push(p.clone(),i as u64,100,40).unwrap();}
     assert_eq!(queue.drain(1000,true),packets);
     for p in [S::MoveVehicle(()),S::Attack(()),S::UseItem(()),S::Unknown(999,vec![1,2,3])]{assert!(!movement(&p));}
 }
-#[test]fn gameplay_actions_flush_but_tickend_ping_keepalive_and_chat_do_not_collapse_delay(){
+#[test]fn gameplay_actions_flush_but_tickend_queues_and_network_control_bypasses(){
     for p in [S::Attack(()),S::UseItem(()),S::UseItemOn(()),S::PlayerAction(()),S::SetCarriedItem(()),S::ContainerClick(()),S::Unknown(999,vec![])] {
         assert!(barrier(&p));assert!(!movement(&p));
     }
-    for p in [S::KeepAlive(()),S::Pong(()),S::PingRequest(()),S::ClientTickEnd(()),S::PlayerInput(()),S::Chat(()),S::ChatCommand(()),S::CookieResponse(()),S::ConfigurationAcknowledged(())] {
+    assert!(movement(&S::ClientTickEnd(())));assert!(!barrier(&S::ClientTickEnd(())));
+    for p in [S::KeepAlive(()),S::Pong(()),S::PingRequest(()),S::PlayerInput(()),S::Chat(()),S::ChatCommand(()),S::CookieResponse(()),S::ConfigurationAcknowledged(())] {
         assert!(!barrier(&p));assert!(!movement(&p));
     }
 }

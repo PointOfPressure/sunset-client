@@ -974,6 +974,28 @@ fn release_lease(game: &mut Game<'_>, force: bool) {
     }
 }
 
+pub(super) fn cancel(game: &mut Game<'_>) {
+    post_input(game);
+    // The retained ticket, not an owner name, authorizes restoration. A stale
+    // ticket drops without a slot packet or release of a replacement lease.
+    release_lease(game, true);
+    for owner in [SHIELD, MACE, SPEAR, "Trigger Bot"] {
+        super::sunset::cancel_turns(owner);
+    }
+    state(|s| {
+        let sent = s.sent;
+        let blocked = s.blocked;
+        *s = State {
+            sent,
+            blocked,
+            tick: game.ticks,
+            aim_before: [game.yaw, game.pitch],
+            reason: "cancelled transient melee state",
+            ..State::default()
+        };
+    });
+}
+
 // Kill Aura's Jump mode uses this same temporary native input path. The
 // source module must still be enabled when the input is consumed.
 pub(super) fn request_jump(owner: &'static str) {
@@ -1032,7 +1054,8 @@ pub(super) fn pre_input(game: &mut Game<'_>, _modules: &[Module], ticks: u64) {
         return;
     }
     let tap = module(TAP).filter(|_| state(|s| game.ticks < s.tap_until));
-    let assist_jump = state(|s| s.jump_owner.take()).is_some_and(|owner| module(owner).is_some() && control::available(owner));
+    let assist_jump = state(|s| s.jump_owner.take())
+        .is_some_and(|owner| module(owner).is_some() && control::available(owner));
     let jump = (state(|s| std::mem::take(&mut s.jump_pending))
         && module(JUMP).is_some()
         && game.keys.contains(&KeyCode::KeyW)
@@ -1105,9 +1128,13 @@ pub(super) fn key(game: &Game<'_>, key: &str, pressed: bool) -> bool {
         return false;
     };
     let wanted = m.t("Lunge key").trim();
-    let Some(wanted_key) = super::sunset::key_from_text(wanted) else { return false; };
-    if wanted.eq_ignore_ascii_case("None") || wanted.is_empty()
-        || super::sunset::key_from_text(key).as_deref() != Some(wanted_key.as_str()) {
+    let Some(wanted_key) = super::sunset::key_from_text(wanted) else {
+        return false;
+    };
+    if wanted.eq_ignore_ascii_case("None")
+        || wanted.is_empty()
+        || super::sunset::key_from_text(key).as_deref() != Some(wanted_key.as_str())
+    {
         return false;
     }
     request_lunge(game);

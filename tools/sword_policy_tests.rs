@@ -213,3 +213,36 @@ fn persistence_never_reclaims_a_yielded_field_that_later_matches_applied() {
     assert!(!lease.baseline(&mut current));
     assert_eq!(current, "player");
 }
+
+#[test]
+fn explicit_same_value_edit_is_written_after_context_restore_and_stays_persistent() {
+    let mut intent = Intent::default();
+    let mut current = "player";
+    let mut context = Some(Owned::new("@all", "player"));
+    assert!(intent.editing(false, context.is_some()));
+    assert!(context.take().unwrap().restore(&mut current));
+    assert_eq!(current, "@all");
+    current = "player"; // Explicit setter intentionally requests the prior applied value.
+    let mut persisted = current;
+    if let Some(lease) = &context {
+        lease.baseline(&mut persisted);
+    }
+    assert_eq!(format!("Entities={persisted}\n"), "Entities=player\n");
+    assert!(intent.yielded);
+    assert!(context.is_none());
+}
+
+#[test]
+fn explicit_disable_rearms_without_an_intervening_tick_and_own_edits_do_not_latch() {
+    let mut intent = Intent::default();
+    assert!(!intent.editing(false, false));
+    assert!(!intent.yielded);
+    assert!(intent.editing(false, true));
+    assert!(intent.yielded);
+    intent.disabled(); // The next command can be enable; no policy tick intervenes.
+    assert!(!intent.yielded);
+    assert!(intent.editing(false, true));
+    assert!(intent.yielded);
+    assert!(intent.editing(true, false));
+    assert!(!intent.yielded);
+}

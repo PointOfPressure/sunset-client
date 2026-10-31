@@ -4,6 +4,18 @@ fn sunset_send(
     packet: &horizon_protocol::packets::play::Serverbound,
 ) -> std::ops::ControlFlow<()> {
     use crate::game::sunset::Out;
+    if !game.native_window() {
+        return std::ops::ControlFlow::Continue(());
+    }
+    if !game.native_on(crate::game::sunset::ID) {
+        // Release original buffered frames before an unmodified native move.
+        // Stale module flags must not alter packets after master disable.
+        if crate::game::sunset_packet_delay::outgoing(game, packet) {
+            return std::ops::ControlFlow::Break(());
+        }
+        crate::game::sunset_combat_wire::forwarded(game, packet);
+        return std::ops::ControlFlow::Continue(());
+    }
     if !crate::game::sunset_combat_wire::allowed(game, packet) {
         return std::ops::ControlFlow::Break(());
     }

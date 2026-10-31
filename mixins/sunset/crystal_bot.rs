@@ -117,7 +117,7 @@ struct State {
     target: Option<u32>,
     side: i8,
     flip_at: u64,
-    yielded: bool,
+    intent: policy::Intent,
     mouse_until: Option<Instant>,
     last_food: u64,
     brain: policy::Brain,
@@ -211,6 +211,31 @@ pub(super) fn cancel(game: &mut Game<'_>) {
         s.phase = None;
     });
 }
+// The caller must release the runtime mutex and invoke this before mutating
+// settings. Only modules with an actual retained lease trigger a user yield.
+pub(super) fn editing(game: &mut Game<'_>, module_name: &str) {
+    let own = module_name == NAME;
+    let cancel_context = state(|s| {
+        let controlled = s.contexts.iter().any(|lease| lease.name == module_name);
+        s.intent.editing(own, controlled)
+    });
+    if cancel_context {
+        cancel(game);
+        state(|s| {
+            s.reason = if own {
+                "controller settings edited; context released"
+            } else {
+                "explicit controlled-module edit; waiting for toggle"
+            }
+        });
+    }
+}
+
+pub(super) fn disabled(game: &mut Game<'_>) {
+    cancel(game);
+    state(|s| s.intent.disabled());
+}
+
 fn pause(game: &mut Game<'_>, keep_totem: bool) {
     post_input(game);
     let connected = state(|s| s.session.as_ref().is_some_and(|old| same(game, old)));
@@ -221,7 +246,7 @@ fn pause(game: &mut Game<'_>, keep_totem: bool) {
     if state(|s| !s.contexts.is_empty()) && !coordinate(false, false, keep_totem) {
         restore_contexts();
         state(|s| {
-            s.yielded = true;
+            s.intent.yielded = true;
             s.reason = "coordinated module edited while paused";
         });
     }
@@ -239,7 +264,7 @@ pub(super) fn diagnostics() -> String {
             s.threat,
             s.threat_complete,
             s.cursor,
-            s.yielded
+            s.intent.yielded
         )
     })
 }
@@ -261,7 +286,7 @@ pub(super) fn correction() {
         }
         s.pause_until = Some(now + Duration::from_millis(500));
         if s.corrections.len() >= 6 {
-            s.yielded = true;
+            s.intent.yielded = true;
             s.reason = "repeated applied position corrections; waiting for toggle";
         }
     });
@@ -532,8 +557,9 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
         .iter()
         .any(|name| s.is_on(name))
     });
-    let paused = state(|s| s.yielded || s.pause_until.is_some_and(|until| Instant::now() < until));
-    if !live || conflict || state(|s| s.yielded) {
+    let paused =
+        state(|s| s.intent.yielded || s.pause_until.is_some_and(|until| Instant::now() < until));
+    if !live || conflict || state(|s| s.intent.yielded) {
         cancel(game);
         state(|s| s.reason = "paused for world, input, controller conflict or correction");
         return;
@@ -549,7 +575,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     {
         pause(game, m.b("Keep totem"));
         state(|s| {
-            if !s.yielded {
+            if !s.intent.yielded {
                 s.reason = "temporary input/GUI/correction pause; ownership retained";
             }
         });
@@ -574,7 +600,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     if !coordinate(false, false, m.b("Keep totem")) {
         cancel(game);
         state(|s| {
-            s.yielded = true;
+            s.intent.yielded = true;
             s.reason = "coordinated module edited; waiting for toggle";
         });
         return;
@@ -648,7 +674,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     if !coordinate(decision.auras && !eating, anchors, m.b("Keep totem")) {
         cancel(game);
         state(|s| {
-            s.yielded = true;
+            s.intent.yielded = true;
             s.reason = "coordinated module edited; waiting for toggle";
         });
         return;

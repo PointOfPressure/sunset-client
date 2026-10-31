@@ -276,3 +276,35 @@ fn yielded_persistence_keeps_later_explicit_user_value() {
     assert!(!lease.baseline(&mut value));
     assert!(value);
 }
+
+#[test]
+fn same_temporary_value_user_edit_survives_restore_then_write() {
+    let mut intent = Intent::default();
+    let mut value = true;
+    let mut context = Some(Owned::new(false, true)); // Bot enabled hotbar totems.
+    assert!(intent.editing(false, context.is_some()));
+    assert!(context.take().unwrap().restore(&mut value));
+    assert!(!value);
+    value = true; // Explicit .set true matches the old temporary value.
+    let mut persisted = value;
+    if let Some(lease) = &context {
+        lease.baseline(&mut persisted);
+    }
+    assert_eq!(format!("UseHotbar={persisted}\n"), "UseHotbar=true\n");
+    assert!(intent.yielded);
+    assert!(context.is_none());
+}
+
+#[test]
+fn own_settings_and_immediate_off_on_release_the_intent_latch() {
+    let mut intent = Intent::default();
+    assert!(!intent.editing(false, false));
+    assert!(intent.editing(false, true));
+    assert!(intent.yielded);
+    intent.disabled();
+    assert!(!intent.yielded); // No game tick is needed.
+    assert!(intent.editing(false, true));
+    assert!(intent.yielded);
+    assert!(intent.editing(true, false));
+    assert!(!intent.yielded);
+}

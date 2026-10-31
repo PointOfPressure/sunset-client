@@ -46,9 +46,9 @@ The old failed fixture remains separate from the corrected test recipe.
 
 ## Renderer-free checks
 
-The current foundation, macro, melee, inventory, packet and sword-controller
-helpers have 137 passing renderer-free checks. These include actual pinned
-engine damage, menu SWAP, mining and outline-ray routines, not only simplified test models. They
+The R7 foundation, ownership, macro, melee, inventory, packet and controller
+helpers have **155 passing renderer-free checks**. These include actual pinned
+engine damage, menu SWAP, protocol encoding/decoding, mining and outline-ray routines, not only simplified test models. They
 do not prove native linking, incoming server acknowledgement or rendering.
 Native build and runtime results for later waves must be recorded separately.
 
@@ -103,11 +103,43 @@ One unused-helper warning remains. The frozen package correctly pins Mixins
 `cb1ad23`. City/Trap, visual Optimizer, controller persistence and the inventory
 fixes require their own native outcomes; their build is not runtime proof.
 
-Known runtime follow-ups under investigation: Anchor Macro quick clicks can
-fall through to ordinary placement rather than start the sequence, and City
-activation through chat/menu can be mistaken for a reconnect. Held Anchor
-Single/Double controls, including Delay20, do complete real observed cycles;
-the quick-click path is being fixed separately.
+All 19 isolated explosive cases also passed on this checkpoint. That does not
+establish the new City/Trap, controller or packet behavior.
+
+## R7 build checkpoint
+
+The next checkpoint passed all 155 focused checks, official Mixins plan/stage
+(58 support modules, 51 injections), native compile check and optimized build.
+Client SHA-256:
+`f856c2fe3f634aefac465517d4ca7ebb8d4e620340421499e174f488939ba696`.
+One unused-helper warning remains. All **19 isolated native explosive cases
+passed** again, with native exit0 and unchanged frozen inputs. See the compact
+[R7 build and runtime record](evidence/combat/checkpoint-r7.json) and
+[source fingerprints](evidence/combat/source-r7.json).
+
+R7 addresses failures found with the earlier real-player fixtures:
+
+- Original movement packets retain their original ClientTickEnd boundaries.
+  Delaying positions while forwarding their boundaries made the stock server
+  reject a later batch as multiple positions in one tick. Correction and
+  same-connection respawn discard old coordinates while retaining only the
+  original required boundaries; they do not invent new game ticks.
+- Inventory swaps use a valid native SWAP click without local prediction, then
+  require both actual server slot updates. The server silently accepts a
+  correctly predicted click, so waiting for two echoes after prediction was
+  an invalid acknowledgement assumption. Official Java bytecode and actual
+  Horizon protocol round trips verify this distinction.
+- A short Anchor Macro press survives until the next native tick. Held
+  Single/Double controls, including Delay20, already completed real observed
+  cycles; the quick-click path is tested separately.
+- Shared cleanup retains only an existing ticket in the same live scene so
+  master disable can restore a borrowed slot. Scene changes invalidate it
+  before cleanup. Bots preserve user baselines in configuration and yield to
+  explicit edits, including edits to the same temporarily applied value.
+
+These changes have compiled and passed their focused checks. Their paired-player
+runtime suites are still being run; no aggregate pass is implied here. Earlier
+failures remain recorded separately from corrected recipes and later results.
 
 Run the renderer-free checks with:
 

@@ -198,10 +198,17 @@ fn stop_city(game: &mut Game<'_>, reason: &'static str, disable: bool) {
 }
 pub(super) fn cancel(game: &mut Game<'_>) {
     let valid = state(|s| s.session.as_ref().is_some_and(|old| same(game, old)));
+    let active = state(|s| s.mine.is_some() || s.city_queued.is_some());
     if valid {
-        stop_city(game, "Cancelled", false);
+        stop_city(game, "Cancelled", active);
     }
     reset();
+    // A screen pause ends active one-shot work but is not a reconnect. Keep
+    // the observed connection so an explicit GUI/chat enable can start once
+    // that screen closes. Only a real session/dimension change disables saved on.
+    if valid {
+        state(|s| { s.session=session(game);s.tick=game.ticks; });
+    }
 }
 
 fn opponents_with(game: &Game<'_>, m: &Module, range: f64, only: Option<u32>) -> Vec<Target> {

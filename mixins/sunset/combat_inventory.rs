@@ -5,7 +5,7 @@ use super::sunset::{self, Category, Module, hold, with};
 use super::sunset_combat_control as control;
 use super::sunset_inventory_policy::{self as policy, Failure, Status, Swap, OFFHAND};
 use super::sunset_util as util;
-use horizon_client::{items::ItemStack, menu::Input};
+use horizon_client::items::ItemStack;
 use horizon_protocol::packets::{play::{self, Clientbound as C, Serverbound as S}};
 use std::{any::Any, sync::{Arc, Mutex}, time::{Duration, Instant}};
 
@@ -87,6 +87,10 @@ struct State {
     hand: policy::Hand,
 }
 static STATE: Mutex<Option<State>> = Mutex::new(None);
+static SWAP_REQUESTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SWAP_CONFIRMED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SWAP_FAILED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SWAP_LAST_ACK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
     let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
     f(guard.get_or_insert_with(State::default))
@@ -102,6 +106,10 @@ pub(super) fn debug() -> serde_json::Value {
         "double_hand":s.hand.held,
         "queued_throw":s.press.is_some(),
         "queued_use":s.queued_use.map(|p|p.0),
+        "swap_requests":SWAP_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
+        "swap_confirmed":SWAP_CONFIRMED.load(std::sync::atomic::Ordering::Relaxed),
+        "swap_failed":SWAP_FAILED.load(std::sync::atomic::Ordering::Relaxed),
+        "swap_last_ack_bits":SWAP_LAST_ACK.load(std::sync::atomic::Ordering::Relaxed),
     }))
 }
 
@@ -167,6 +175,7 @@ fn restore(game: &mut Game<'_>, job: &Job) {
 }
 
 fn fail(game: &mut Game<'_>, job: Job) {
+    SWAP_FAILED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     restore(game, &job);
     state(|s| {
         s.failures.retain(|(owner, _)| *owner != job.owner);
@@ -225,6 +234,7 @@ fn run_job(game: &mut Game<'_>, mods: &[Module]) -> bool {
             }
             job.swap = Swap::new(job.slots, job.before.clone(), game.ticks);
             if job.swap.is_none() { fail(game, job); return true; }
+            SWAP_LAST_ACK.store(0, std::sync::atomic::Ordering::Relaxed);
             job.phase = Phase::Await;
             if job.hotbar {
                 let before = game.selected;
@@ -234,11 +244,15 @@ fn run_job(game: &mut Game<'_>, mods: &[Module]) -> bool {
                 job.restore = Some((before, from));
                 state(|s| s.job = Some(job));
                 game.send(S::PlayerAction(play::PlayerAction { action: 7, pos: [0; 3], direction: 0, sequence: 0 }));
+                SWAP_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             } else {
                 let from = job.slots[0];
-                let button = if job.slots[1] == OFFHAND { 40 } else { job.slots[1] as i32 };
+                let to = job.slots[1];
+                let menu = job.menu.clone();
                 state(|s| s.job = Some(job));
-                if !game.remote_menu_ops(&[(Some(from), button, Input::Swap)]) {
+                if super::remote::sunset_combat_remote::swap_unpredicted(game, &menu, from, to) {
+                    SWAP_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                } else {
                     if let Some(job) = state(|s| s.job.take()) { fail(game, job); }
                 }
             }
@@ -247,6 +261,7 @@ fn run_job(game: &mut Game<'_>, mods: &[Module]) -> bool {
             match job.swap.as_ref().map_or(Status::Rejected, |s| s.status(game.ticks, 30)) {
                 Status::Waiting => state(|s| s.job = Some(job)),
                 Status::Confirmed => {
+                    SWAP_CONFIRMED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     job.phase = Phase::Finish;
                     let close = if job.owner == INV { policy::delay(job.settings.n("Close delay"), 10)
                         .max(policy::delay(job.settings.n("Switch back delay"), 10)) } else { 0 };
@@ -272,6 +287,7 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
         if !s.connection.as_ref().is_some_and(|old| same_session(game, old)) { return; }
         let Some(job) = s.job.as_mut().filter(|j| j.phase == Phase::Await) else { return; };
         let Some(swap) = job.swap.as_mut() else { return; };
+        let before = swap.confirmations();
         let mut at_wire = |container: i32, wire: usize, item: &Option<horizon_protocol::item::Stack>| {
             for i in 0..2 {
                 let matches = (container == job.menu.0 && job.wire[i] == Some(wire))
@@ -297,6 +313,9 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
             C::SetCursorItem(p) if p.item.is_some() => swap.reject(),
             C::OpenScreen(_) => swap.reject(),
             _ => {},
+        }
+        if swap.confirmations() != before {
+            SWAP_LAST_ACK.store(u64::from(swap.confirmations()), std::sync::atomic::Ordering::Relaxed);
         }
     });
 }

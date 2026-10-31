@@ -38,8 +38,9 @@ the native modules use Horizon APIs and original Rust implementation.
 
 The native contribution addresses hitbox aiming, independent crystal clocks,
 bounded retries, conservative hurt-window deferral, equipment-aware self
-prediction, shared opportunity selection and diagnostics. It does not claim
-full parity with movement prediction, the manual macros, automatic obsidian,
+prediction, shared opportunity selection and diagnostics. Separate native
+manual macros now implement user-triggered observed transactions. This does
+not establish full parity with movement prediction, all manual-macro options, automatic obsidian,
 face placement, loot protection or the reference's visual plan renderer.
 
 ## Native differences kept deliberately

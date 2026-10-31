@@ -1,0 +1,263 @@
+{
+  "checkpoint": "R7",
+  "manifest": {
+    "schema": 1,
+    "id": "sunset",
+    "version": "0.8.1",
+    "game": "26.3",
+    "horizon": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+    "mixins": "cb1ad23022392d88f006cf94cbf6552a73f5df12"
+  },
+  "frozen": {
+    "client": "f856c2fe3f634aefac465517d4ca7ebb8d4e620340421499e174f488939ba696",
+    "control": "840d64de53a7258fa441085465030eae3ab79511f59ed98866dd839d82d26b7f",
+    "package": "d233e3163ffd6d3bc7879b8a3c241475a7b937d3179a834fffc24a01faa63cdc",
+    "script": "0464d2b503b550e4191da6c09a140435247a1abbfcdbf2f5a2da359022c1a369",
+    "settings": "e8a85d6a8873c50913b9b38bc03e97de68b02c76d8852e4354fc99248ebc5be1"
+  },
+  "support_modules": 58,
+  "injections": 51,
+  "build_stages": {
+    "plan": {
+      "exit_code": 0,
+      "elapsed_seconds": 57.67224210000131,
+      "source_unchanged": true,
+      "record_sha256": "f5a0ef3cee6a304708313bd7c774447223a16115a4561099f902173893c5bdd5"
+    },
+    "apply": {
+      "exit_code": 0,
+      "elapsed_seconds": 95.80367039999692,
+      "source_unchanged": true,
+      "record_sha256": "b87272059269624da4bfe5fea2a44bd414f6b44958b011cb90031b3a2ad618f5"
+    },
+    "check": {
+      "exit_code": 0,
+      "elapsed_seconds": 20.37158669999917,
+      "source_unchanged": true,
+      "record_sha256": "615eefb379cb12447e355714b74b3b7e4d7194588fec0dce73e3457f4716d17e"
+    },
+    "build": {
+      "exit_code": 0,
+      "elapsed_seconds": 219.66543020000245,
+      "source_unchanged": true,
+      "record_sha256": "3975d213f38a48a2f4e3f893dd3751cbae3886aeb248cbe4d4f9f556bfabe79d"
+    },
+    "freeze": {
+      "exit_code": 0,
+      "elapsed_seconds": 1.0519684000028064,
+      "source_unchanged": true,
+      "record_sha256": "26f2f5add1200dbd466028a100ce94726e4d314e05d79900b88126b1267a1885"
+    }
+  },
+  "native_warnings": [
+    "unused private Masks.clear/hidden helpers in city_policy.rs"
+  ],
+  "focused": {
+    "passed": 155,
+    "report_sha256": "294503571cd36b6ac878c96b34009a5123ac36b6d2cf925c79985bdc915a5b01",
+    "groups": [
+      {
+        "name": "explosive foundation",
+        "exit": 0
+      },
+      {
+        "name": "combat_lease compile",
+        "exit": 0
+      },
+      {
+        "name": "combat_lease",
+        "exit": 0
+      },
+      {
+        "name": "combat_cleanup compile",
+        "exit": 0
+      },
+      {
+        "name": "combat_cleanup",
+        "exit": 0
+      },
+      {
+        "name": "macro_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "macro_policy",
+        "exit": 0
+      },
+      {
+        "name": "melee_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "melee_policy",
+        "exit": 0
+      },
+      {
+        "name": "inventory_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "inventory_policy",
+        "exit": 0
+      },
+      {
+        "name": "packet_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "packet_policy",
+        "exit": 0
+      },
+      {
+        "name": "sword_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "sword_policy",
+        "exit": 0
+      },
+      {
+        "name": "crystal_bot_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "crystal_bot_policy",
+        "exit": 0
+      },
+      {
+        "name": "city_policy compile",
+        "exit": 0
+      },
+      {
+        "name": "city_policy",
+        "exit": 0
+      },
+      {
+        "name": "roof_scaffold compile",
+        "exit": 0
+      },
+      {
+        "name": "roof_scaffold",
+        "exit": 0
+      },
+      {
+        "name": "native menu SWAP",
+        "exit": 0
+      },
+      {
+        "name": "native packet predicates",
+        "exit": 0
+      },
+      {
+        "name": "native City mining",
+        "exit": 0
+      },
+      {
+        "name": "native roof visibility",
+        "exit": 0
+      },
+      {
+        "name": "exact City ownership",
+        "exit": 0
+      },
+      {
+        "name": "native cleanup schema",
+        "exit": 0
+      },
+      {
+        "name": "native inventory wire round-trip",
+        "exit": 0
+      }
+    ]
+  },
+  "isolated_native": {
+    "started_utc": "2026-10-31T21:06:20.570688+00:00",
+    "report_sha256": "4ab0600e22f5a705f378a36f6e510a690ba3e55fca0e39ffa0553107a1360d9d",
+    "exit_code": 0,
+    "failed_checks": 0,
+    "frozen_unchanged": true,
+    "checks": [
+      {
+        "name": "Explosives: crystal-cycle",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-controls",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-default-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-no-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-no-items",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-self-zero",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-hidden-face",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-cycle",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-existing",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-offhand-fuel",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-disable",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-self-zero",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-no-items",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-default-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-place-off",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: both-enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-anti-suicide",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-anti-suicide",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: equipment-model",
+        "status": "pass"
+      }
+    ]
+  },
+  "limits": [
+    "Paired-player R7 suites still pending at publication.",
+    "These 19 cases establish explosive regression only; they do not prove every Combat module.",
+    "Full Anubis parity and anticheat results are not claimed."
+  ]
+}

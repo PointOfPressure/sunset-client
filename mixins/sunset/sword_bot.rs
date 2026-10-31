@@ -151,7 +151,7 @@ struct State {
     tap_until: u64,
     reset_until: u64,
     crit_jump: bool,
-    yielded: bool,
+    intent: policy::Intent,
     mouse_until: Option<Instant>,
     last_food: u64,
     reason: &'static str,
@@ -248,6 +248,32 @@ pub(super) fn cancel(game: &mut Game<'_>) {
         s.reset_until = 0;
     });
 }
+// Invoke outside runtime::with, before an explicit .set/.reset mutates the
+// named module. Restoring first makes even an equal-applied write user-owned.
+pub(super) fn editing(game: &mut Game<'_>, module_name: &str) {
+    let own = module_name == NAME;
+    let cancel_context = state(|s| {
+        let controlled = module_name == "Kill Aura" && s.aura.is_some();
+        s.intent.editing(own, controlled)
+    });
+    if cancel_context {
+        cancel(game);
+        state(|s| {
+            s.reason = if own {
+                "controller settings edited; context released"
+            } else {
+                "explicit controlled-module edit; waiting for toggle"
+            }
+        });
+    }
+}
+
+// An off/on pair can arrive without a native tick between the two commands.
+pub(super) fn disabled(game: &mut Game<'_>) {
+    cancel(game);
+    state(|s| s.intent.disabled());
+}
+
 fn pause(game: &mut Game<'_>) {
     post_input(game);
     let connected = state(|s| s.session.as_ref().is_some_and(|old| same(game, old)));
@@ -255,7 +281,7 @@ fn pause(game: &mut Game<'_>) {
     if state(|s| s.aura.is_some()) && !own_aura(false) {
         restore_aura();
         state(|s| {
-            s.yielded = true;
+            s.intent.yielded = true;
             s.reason = "Kill Aura edited while paused; waiting for toggle";
         });
     }
@@ -276,7 +302,7 @@ pub(super) fn diagnostics() -> String {
             s.side,
             s.food.is_some(),
             s.aura.is_some(),
-            s.yielded
+            s.intent.yielded
         )
     })
 }
@@ -514,7 +540,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     let Some(m) = module() else {
         cancel(game);
         state(|s| {
-            s.yielded = false;
+            s.intent.yielded = false;
             s.session = None;
         });
         return;
@@ -524,7 +550,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
         cancel(game);
         state(|s| {
             s.session = session(game);
-            s.yielded = false;
+            s.intent.yielded = false;
             s.side = 1;
         });
     }
@@ -558,7 +584,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
         || game.physical_buttons.contains(&MouseButton::Right)
         || state(|s| s.mouse_until.is_some_and(|until| Instant::now() < until));
     let conflict = with(|s| s.is_on("Crystal PvP Bot"));
-    if !live || conflict || state(|s| s.yielded) {
+    if !live || conflict || state(|s| s.intent.yielded) {
         cancel(game);
         state(|s| s.reason = "paused for world, physical input or user override");
         return;
@@ -572,7 +598,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     {
         pause(game);
         state(|s| {
-            if !s.yielded {
+            if !s.intent.yielded {
                 s.reason = "temporary GUI/input pause; context retained";
             }
         });
@@ -701,7 +727,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     if !own_aura(attack) {
         cancel(game);
         state(|s| {
-            s.yielded = true;
+            s.intent.yielded = true;
             s.reason = "Kill Aura was edited by user";
         });
         return;

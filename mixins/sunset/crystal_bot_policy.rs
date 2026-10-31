@@ -4,6 +4,27 @@ pub const CRYSTAL_LIMIT: usize = 128;
 pub const ANCHOR_CELLS: usize = 64;
 pub const THREAT_PREDICTIONS: usize = 4;
 
+#[derive(Default)]
+pub struct Intent {
+    pub yielded: bool,
+}
+impl Intent {
+    pub fn editing(&mut self, own_module: bool, controlled_context: bool) -> bool {
+        if own_module {
+            self.yielded = false;
+            true
+        } else if controlled_context {
+            self.yielded = true;
+            true
+        } else {
+            false
+        }
+    }
+    pub fn disabled(&mut self) {
+        self.yielded = false;
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Owned<T> {
     pub before: T,

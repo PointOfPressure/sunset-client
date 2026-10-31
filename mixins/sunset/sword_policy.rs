@@ -1,6 +1,29 @@
 // Original deterministic policy for a native controller; no world mutation.
 pub const POPULATION_LIMIT: usize = 512;
 
+#[derive(Default)]
+pub struct Intent {
+    pub yielded: bool,
+}
+impl Intent {
+    // Explicit intent cannot be inferred from value equality: the user may
+    // deliberately select the controller's current temporary value.
+    pub fn editing(&mut self, own_module: bool, controlled_context: bool) -> bool {
+        if own_module {
+            self.yielded = false;
+            true
+        } else if controlled_context {
+            self.yielded = true;
+            true
+        } else {
+            false
+        }
+    }
+    pub fn disabled(&mut self) {
+        self.yielded = false;
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Owned<T> {
     pub before: T,

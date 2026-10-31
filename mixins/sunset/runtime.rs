@@ -1443,11 +1443,14 @@ pub(super) fn click(game: &mut Game<'_>, button: usize) {
 }
 
 pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
+    let (wanted_name, wanted_on) = with(|s| (s.modules[i].name, !s.modules[i].on));
+    super::sunset_sword_bot::editing(game, wanted_name);
+    super::sunset_crystal_bot::editing(game, wanted_name);
     let (name, on) = with(|s| {
         // Turned on or off by hand: a Hold bind no longer has it.
         s.inputs.take_where(|held| held.module == i);
         let m = &mut s.modules[i];
-        m.on = !m.on;
+        m.on = wanted_on;
         (m.name, m.on)
     });
     super::sunset_combat_inventory::toggled(game, name, on);
@@ -1464,8 +1467,8 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 horizon_client::motion::sunset_motion::set_up(None);
             },
             "Velocity" => with(|s| { s.velocity = None; s.blast = [0.0; 3]; }),
-            "Sword PvP Bot" => super::sunset_sword_bot::cancel(game),
-            "Crystal PvP Bot" => super::sunset_crystal_bot::cancel(game),
+            "Sword PvP Bot" => super::sunset_sword_bot::disabled(game),
+            "Crystal PvP Bot" => super::sunset_crystal_bot::disabled(game),
             "Crystal Aura" => super::sunset_crystal_aura::reset(),
             "Anchor Aura" => super::sunset_anchor_aura::reset(),
             "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
@@ -1704,16 +1707,16 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if !game.native_window() {
         return;
     }
-    super::sunset_combat_control::begin_tick(game);
     if !game.native_on(ID) || game.player.is_none() {
+        super::sunset_combat_control::prepare_cleanup(game);
         super::sunset_packet_delay::flush(game);
         super::sunset_combat_macros::reset(game);
         super::sunset_combat_inventory::cancel(game);
-        super::sunset_sword_bot::cancel(game);
-        super::sunset_crystal_bot::cancel(game);
+        super::sunset_sword_bot::disabled(game);
+        super::sunset_crystal_bot::disabled(game);
         super::sunset_city_trap::cancel(game);
         super::sunset_crystal_optimizer::reset();
-        super::sunset_melee_assist::post_input(game);
+        super::sunset_melee_assist::cancel(game);
         super::sunset_combat_control::reset();
         super::sunset_crystal_aura::reset();
         super::sunset_anchor_aura::reset();
@@ -1724,6 +1727,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         restore_scaffold_rotation(game);
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
         return;
+    }
+    if super::sunset_combat_control::begin_tick(game) {
+        super::sunset_melee_assist::cancel(game);
     }
     ensure_loaded(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
@@ -4314,13 +4320,15 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
 }
 
 pub(super) fn panic_off(game: &mut Game<'_>) {
+    super::sunset_combat_control::prepare_cleanup(game);
     super::sunset_packet_delay::flush(game);
     super::sunset_combat_macros::reset(game);
     super::sunset_combat_inventory::cancel(game);
-    super::sunset_sword_bot::cancel(game);
-    super::sunset_crystal_bot::cancel(game);
+    super::sunset_sword_bot::disabled(game);
+    super::sunset_crystal_bot::disabled(game);
     super::sunset_city_trap::cancel(game);
     super::sunset_crystal_optimizer::reset();
+    super::sunset_melee_assist::cancel(game);
     super::sunset_combat_control::reset();
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
@@ -4379,8 +4387,8 @@ fn profile_command(game: &mut Game<'_>, args: &[&str]) {
                 let body = with(|s| s.check_profile(&text).map(str::to_owned))?;
                 let before = persistent_profile_text();
                 store.write(BACKUP, &format!("{HEADER}\n{before}\n"))?;
-                super::sunset_sword_bot::cancel(game);
-                super::sunset_crystal_bot::cancel(game);
+                super::sunset_sword_bot::disabled(game);
+                super::sunset_crystal_bot::disabled(game);
                 with(|s| s.load_profile(&body));
                 save(game);
                 Ok(format!("Loaded profile {name}. .profile load {BACKUP} puts the settings back as they were."))
@@ -4554,11 +4562,15 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 (None, String::new())
             });
             let value = value.as_str();
-            let result = found.and_then(|at| {
-                with(|s| {
-                    let setting = &mut s.modules[i].settings[at];
-                    Some((setting.parse(value), setting.shown()))
-                })
+            let result = found.map(|at| {
+                let (name, mut candidate) = with(|s| (s.modules[i].name, s.modules[i].settings[at].clone()));
+                let accepted = candidate.parse(value);
+                if accepted {
+                    super::sunset_sword_bot::editing(game, name);
+                    super::sunset_crystal_bot::editing(game, name);
+                    with(|s| s.modules[i].settings[at] = candidate.clone());
+                }
+                (accepted, candidate.shown())
             });
             match result {
                 None => say(game, "No such setting. Try .settings <module>"),
@@ -4624,6 +4636,9 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         "profile" | "profiles" | "config" | "cfg" => profile_command(game, &args[1..]),
         "reset" => {
             if let Some(i) = module_arg(game, args.get(1)) {
+                let editing_name = with(|s| s.modules[i].name);
+                super::sunset_sword_bot::editing(game, editing_name);
+                super::sunset_crystal_bot::editing(game, editing_name);
                 let name = with(|s| {
                     s.inputs.take_where(|h| h.module == i);
                     let fresh = defaults().swap_remove(i);

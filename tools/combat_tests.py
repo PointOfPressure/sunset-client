@@ -13,6 +13,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('engine', type=Path)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--dependency-dir', type=Path, help='Pinned native protocol build dependencies for wire round-trip tests')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     records = []
@@ -35,7 +36,7 @@ def main():
         foundation = temporary/'foundation.json'
         run('explosive foundation', [sys.executable, 'tools/explosive_tests.py',
                                      args.engine.resolve(), '--out', foundation])
-        for name in ['combat_lease', 'macro_policy', 'melee_policy', 'inventory_policy',
+        for name in ['combat_lease', 'combat_cleanup', 'macro_policy', 'melee_policy', 'inventory_policy',
                      'packet_policy', 'sword_policy', 'crystal_bot_policy', 'city_policy', 'roof_scaffold']:
             executable = temporary/(name+'.exe' if sys.platform == 'win32' else name)
             run(name+' compile', ['rustc', '--edition=2024', '--test',
@@ -46,6 +47,9 @@ def main():
         run('native City mining', [sys.executable, 'tools/city_engine_tests.py', args.engine.resolve()])
         run('native roof visibility', [sys.executable, 'tools/roof_engine_tests.py', args.engine.resolve()])
         run('exact City ownership', [sys.executable, 'tools/city_ownership_tests.py'])
+        run('native cleanup schema', [sys.executable, 'tools/combat_cleanup_schema_tests.py', args.engine.resolve()])
+        if args.dependency_dir:
+            run('native inventory wire round-trip', [sys.executable, 'tools/inventory_protocol_fields.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
     source_hashes = {p.relative_to(repo).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in sorted((repo/'mixins/sunset').glob('*.rs'))}
     count = 41 + sum(int(n) for r in records if not r['name'].endswith('compile')

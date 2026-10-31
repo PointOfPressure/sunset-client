@@ -41,9 +41,9 @@ checkpoint, observed outcomes, failures and remaining work.
   coordinating the existing combat modules and real food use. They yield to
   manual input and each other, retain per-field ownership, and serialize a
   detached baseline so temporary settings do not overwrite user configuration.
-- **Fake Lag and Knockback Delay:** bounded movement-only outgoing delay and
-  selected own-impulse delay. Network control passes immediately; gameplay
-  actions flush movement first. An explosion packet's visual/audio metadata
+- **Fake Lag and Knockback Delay:** bounded outgoing movement delay retaining
+  original tick-end markers, and selected own-impulse delay. Network control
+  passes immediately; gameplay actions flush movement first. An explosion packet's visual/audio metadata
   shares its delay. These are not general-purpose packet interception tools.
 
 Open Combat in the menu, or use `.settings <module>` for controls and `.bind`
