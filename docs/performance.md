@@ -13,6 +13,9 @@ Normal module defaults, framebuffer resolution and rendering modes are retained.
   are shared and player names are borrowed. Candidate order, visibility and Max
   accounting retain their previous behavior. World labels and GUI text share
   one font scale, avoiding repeated glyph-atlas resets.
+- Item ESP caches parsed filters with original case/namespace semantics.
+  Spawner Alerts uses hashed membership alongside ordered discoveries; picker
+  names are deduplicated before allocation with cached search keys.
 - Zero-alpha ESP fills emit no invisible faces. Radar computes its heading
   once per frame. Block/tunnel/light scans avoid duplicate reads, and large
   sweep results partition before sorting the retained nearest entries.
@@ -29,8 +32,9 @@ Normal module defaults, framebuffer resolution and rendering modes are retained.
 
 ## Correctness checks
 
-The standalone suites have **45 passing tests**: 13 shader/config tests,
-16 runtime/cache/input tests, 13 world/geometry tests and 3 targeting tests.
+The standalone suites have **55 passing tests**: 13 shader/config tests,
+20 runtime/cache/input/filter tests, 13 world/geometry tests, 3 targeting tests
+and 6 discovery/picker equivalence tests.
 The shader suite includes 18 specialization cases within one test, not 18
 additional tests. The world suite compares 1,125 ray cases and 625 tunnel
 configurations. Tests cover stale edits, nested buffer ownership, target ties,
@@ -58,18 +62,39 @@ cargo test --locked --manifest-path tools/atmosphere-tests/Cargo.toml
 
 ## Native validation and timing
 
-Native validation and paired timing records are recorded in
-[performance-checks.json](performance-checks.json). GPU measurements are total
-frame timestamps on one machine; CPU summaries include the client frame work.
-They are not an isolated shader timer or a portable FPS guarantee. High GPU
-utilization at a high frame cap alone does not establish a regression.
+The final build passes **41 distinct module checks and 59 sky checks**, with
+zero compiler warnings and clean client exits. Results combine the full run
+and the focused corrected-fixture run; repeated checks are counted once.
 
-The controlled comparison keeps the camera, world seed, time, native resolution,
-frame cap and module settings matched, samples each state three times and checks
-restored native rendering before and after sky modes. A 96-mob scene exercises
-HUD/ESP/Nametags, with the GUI closed and at scale two. No existing worlds,
-real accounts or multiplayer servers are involved.
+[performance-checks.json](performance-checks.json) records source pins, build
+hashes and the final native results. Tests use fresh isolated singleplayer data,
+private resources and generated files. Physical keyboard input and external
+multiplayer are outside this validation. Upstream movement, Anti Vanish, F1 and
+discovery features through `23bdc11` are retained; PR 12 remains separate.
 
-The audit also reviewed pending PRs 11 and 12. Their spawner/index and Item ESP
-work is bounded; their additional modules remain separate pending contributions.
-This change does not claim those unmerged features are installed or tested here.
+A surface-free GTX 1650 Ti/Vulkan benchmark at 2000x1125 measures sky-only
+render-pass GPU time, including identical attachment clear/store work.
+Balanced medians: Space **1.520 to 0.735 ms**, Aurora **0.675 to 0.461 ms** and
+Ringed Planet **1.685 to 0.854 ms**. Performance-tier reductions are 51.6%,
+46.2% and 53.1%. All eight paired rounds improve every case. There are 6,272
+valid timed passes, with at least 600 ms of alternating warmup before each
+64-sample block. Every variant renders at the full native framebuffer size.
+
+Both variants receive identical synthetic 1,088-byte Globals, not a captured
+game buffer. Mobile graphics clocks varied 660-1905 MHz, temperature 50-60 C,
+without clock locking or normalization. These observations exclude terrain,
+HUD, game logic, presentation and CPU time. They establish a local shader
+improvement, not a whole-game FPS gain. An uncapped game can still keep its
+GPU busy by rendering more frames. The
+[reproducible harness](../tools/shader-gpu-bench/README.md) records the method.
+
+Early lab runs used per-command process launches, Linux-only image tooling,
+monitor-based GUI dimensions and Windows-converted profile newlines. Corrected
+fixtures use persistent official control, native GUI dimensions, Pillow,
+canonical profile bytes and pause-aware waits. Item-label exact-color tests
+select Minecraft's bitmap font; a native capture also shows the default-font
+label. Zero-frame benchmark samples are excluded from performance claims.
+The final record distinguishes first-run failures from corrected reruns.
+
+[Claude Opus 5.5 review request](review-opus-5-5.md) identifies concrete
+functions, correctness risks and the evidence to inspect.

@@ -1,0 +1,606 @@
+{
+  "kind": "surface-free-shader-only-gpu-microbenchmark",
+  "scope": "Timestamp begin/end each complete sky-only render pass, including identical attachment clear/store; excludes host/game/terrain/HUD/CPU/submission/readback time. Native sky baseline is also shader-only.",
+  "globals_provenance": "Synthetic explicit reconstruction matching native camera/FOV/resolution/night test setup; NOT a captured game Globals buffer. Sky/fog colors are fixed plausible night inputs, identical for both shaders.",
+  "distributions": [
+    {
+      "case": "native",
+      "variant": "native",
+      "n": 128,
+      "mean_ms": 0.1407445,
+      "median_ms": 0.13016,
+      "p95_ms": 0.1732768,
+      "p99_ms": 0.17354208,
+      "min_ms": 0.12352,
+      "max_ms": 0.177376
+    },
+    {
+      "case": "space-balanced",
+      "variant": "original",
+      "n": 512,
+      "mean_ms": 1.4650716875,
+      "median_ms": 1.519936,
+      "p95_ms": 1.6598272,
+      "p99_ms": 1.69918752,
+      "min_ms": 1.174496,
+      "max_ms": 1.701696
+    },
+    {
+      "case": "space-balanced",
+      "variant": "optimized",
+      "n": 512,
+      "mean_ms": 0.7600874375,
+      "median_ms": 0.735072,
+      "p95_ms": 0.902752,
+      "p99_ms": 0.9310092799999999,
+      "min_ms": 0.63488,
+      "max_ms": 1.044544
+    },
+    {
+      "case": "aurora-balanced",
+      "variant": "optimized",
+      "n": 512,
+      "mean_ms": 0.4739151875,
+      "median_ms": 0.46052800000000005,
+      "p95_ms": 0.5321568,
+      "p99_ms": 0.5429584,
+      "min_ms": 0.41776,
+      "max_ms": 0.544768
+    },
+    {
+      "case": "aurora-balanced",
+      "variant": "original",
+      "n": 512,
+      "mean_ms": 0.6734930625,
+      "median_ms": 0.674864,
+      "p95_ms": 0.768,
+      "p99_ms": 0.77000224,
+      "min_ms": 0.569344,
+      "max_ms": 0.775328
+    },
+    {
+      "case": "planet-balanced",
+      "variant": "original",
+      "n": 512,
+      "mean_ms": 1.6021213125,
+      "median_ms": 1.685344,
+      "p95_ms": 1.8660160000000001,
+      "p99_ms": 2.00706848,
+      "min_ms": 1.2288,
+      "max_ms": 2.01056
+    },
+    {
+      "case": "planet-balanced",
+      "variant": "optimized",
+      "n": 512,
+      "mean_ms": 0.8473491875,
+      "median_ms": 0.853936,
+      "p95_ms": 0.9431728,
+      "p99_ms": 1.0083904,
+      "min_ms": 0.71584,
+      "max_ms": 1.021984
+    },
+    {
+      "case": "space-performance",
+      "variant": "optimized",
+      "n": 512,
+      "mean_ms": 0.5106833125,
+      "median_ms": 0.487776,
+      "p95_ms": 0.6081215999999999,
+      "p99_ms": 0.6144,
+      "min_ms": 0.448512,
+      "max_ms": 0.61472
+    },
+    {
+      "case": "space-performance",
+      "variant": "original",
+      "n": 512,
+      "mean_ms": 1.0020205625,
+      "median_ms": 1.008336,
+      "p95_ms": 1.193248,
+      "p99_ms": 1.234944,
+      "min_ms": 0.808224,
+      "max_ms": 1.242496
+    },
+    {
+      "case": "aurora-performance",
+      "variant": "original",
+      "n": 512,
+      "mean_ms": 0.5531825625,
+      "median_ms": 0.555936,
+      "p95_ms": 0.6125104,
+      "p99_ms": 0.62081792,
+      "min_ms": 0.483584,
+      "max_ms": 0.626688
+    },
+    {
+      "case": "aurora-performance",
+      "variant": "optimized",
+      "n": 512,
+      "mean_ms": 0.3024588125,
+      "median_ms": 0.298976,
+      "p95_ms": 0.338024,
+      "p99_ms": 0.342016,
+      "min_ms": 0.256064,
+      "max_ms": 0.346144
+    },
+    {
+      "case": "planet-performance",
+      "variant": "optimized",
+      "n": 512,
+      "mean_ms": 0.5711170625,
+      "median_ms": 0.55568,
+      "p95_ms": 0.6753408,
+      "p99_ms": 0.7406031999999999,
+      "min_ms": 0.49152,
+      "max_ms": 0.749536
+    },
+    {
+      "case": "planet-performance",
+      "variant": "original",
+      "n": 512,
+      "mean_ms": 1.1718050625,
+      "median_ms": 1.1848800000000002,
+      "p95_ms": 1.3392864,
+      "p99_ms": 1.35061344,
+      "min_ms": 0.974496,
+      "max_ms": 1.377408
+    }
+  ],
+  "paired_rounds": [
+    {
+      "case": "space-balanced",
+      "round": 0,
+      "original_median_ms": 1.51592,
+      "optimized_median_ms": 0.8094079999999999,
+      "reduction_percent": 46.60615335901631
+    },
+    {
+      "case": "aurora-balanced",
+      "round": 0,
+      "original_median_ms": 0.700496,
+      "optimized_median_ms": 0.458752,
+      "reduction_percent": 34.510404056554215
+    },
+    {
+      "case": "planet-balanced",
+      "round": 0,
+      "original_median_ms": 1.666416,
+      "optimized_median_ms": 0.8918079999999999,
+      "reduction_percent": 46.483471114055554
+    },
+    {
+      "case": "space-performance",
+      "round": 0,
+      "original_median_ms": 1.020864,
+      "optimized_median_ms": 0.47321599999999997,
+      "reduction_percent": 53.64553946461037
+    },
+    {
+      "case": "aurora-performance",
+      "round": 0,
+      "original_median_ms": 0.5569599999999999,
+      "optimized_median_ms": 0.33752000000000004,
+      "reduction_percent": 39.399597816719314
+    },
+    {
+      "case": "planet-performance",
+      "round": 0,
+      "original_median_ms": 1.16408,
+      "optimized_median_ms": 0.503792,
+      "reduction_percent": 56.72187478523812
+    },
+    {
+      "case": "aurora-balanced",
+      "round": 1,
+      "original_median_ms": 0.587088,
+      "optimized_median_ms": 0.440368,
+      "reduction_percent": 24.991142724770402
+    },
+    {
+      "case": "planet-balanced",
+      "round": 1,
+      "original_median_ms": 1.696912,
+      "optimized_median_ms": 0.881968,
+      "reduction_percent": 48.02511856831704
+    },
+    {
+      "case": "space-performance",
+      "round": 1,
+      "original_median_ms": 0.98912,
+      "optimized_median_ms": 0.454512,
+      "reduction_percent": 54.04885150436751
+    },
+    {
+      "case": "aurora-performance",
+      "round": 1,
+      "original_median_ms": 0.539344,
+      "optimized_median_ms": 0.273728,
+      "reduction_percent": 49.247975318164286
+    },
+    {
+      "case": "planet-performance",
+      "round": 1,
+      "original_median_ms": 1.134,
+      "optimized_median_ms": 0.5096320000000001,
+      "reduction_percent": 55.05890652557318
+    },
+    {
+      "case": "space-balanced",
+      "round": 1,
+      "original_median_ms": 1.557648,
+      "optimized_median_ms": 0.787024,
+      "reduction_percent": 49.47356527277023
+    },
+    {
+      "case": "planet-balanced",
+      "round": 2,
+      "original_median_ms": 1.574048,
+      "optimized_median_ms": 0.866304,
+      "reduction_percent": 44.96330480391958
+    },
+    {
+      "case": "space-performance",
+      "round": 2,
+      "original_median_ms": 0.974608,
+      "optimized_median_ms": 0.521616,
+      "reduction_percent": 46.479405053108536
+    },
+    {
+      "case": "aurora-performance",
+      "round": 2,
+      "original_median_ms": 0.534,
+      "optimized_median_ms": 0.27271999999999996,
+      "reduction_percent": 48.92883895131087
+    },
+    {
+      "case": "planet-performance",
+      "round": 2,
+      "original_median_ms": 1.159216,
+      "optimized_median_ms": 0.545024,
+      "reduction_percent": 52.983395674317826
+    },
+    {
+      "case": "space-balanced",
+      "round": 2,
+      "original_median_ms": 1.526224,
+      "optimized_median_ms": 0.724,
+      "reduction_percent": 52.56266445816604
+    },
+    {
+      "case": "aurora-balanced",
+      "round": 2,
+      "original_median_ms": 0.7061280000000001,
+      "optimized_median_ms": 0.44448,
+      "reduction_percent": 37.05390524097615
+    },
+    {
+      "case": "space-performance",
+      "round": 3,
+      "original_median_ms": 1.023072,
+      "optimized_median_ms": 0.4764,
+      "reduction_percent": 53.43436239091678
+    },
+    {
+      "case": "aurora-performance",
+      "round": 3,
+      "original_median_ms": 0.5059039999999999,
+      "optimized_median_ms": 0.28171199999999996,
+      "reduction_percent": 44.315126980612916
+    },
+    {
+      "case": "planet-performance",
+      "round": 3,
+      "original_median_ms": 1.18552,
+      "optimized_median_ms": 0.545744,
+      "reduction_percent": 53.96585464606248
+    },
+    {
+      "case": "space-balanced",
+      "round": 3,
+      "original_median_ms": 1.518848,
+      "optimized_median_ms": 0.79872,
+      "reduction_percent": 47.412775998651604
+    },
+    {
+      "case": "aurora-balanced",
+      "round": 3,
+      "original_median_ms": 0.7066399999999999,
+      "optimized_median_ms": 0.44430400000000003,
+      "reduction_percent": 37.12441978942601
+    },
+    {
+      "case": "planet-balanced",
+      "round": 3,
+      "original_median_ms": 1.6539679999999999,
+      "optimized_median_ms": 0.84752,
+      "reduction_percent": 48.75837984773586
+    },
+    {
+      "case": "aurora-performance",
+      "round": 4,
+      "original_median_ms": 0.547328,
+      "optimized_median_ms": 0.298672,
+      "reduction_percent": 45.430893358278766
+    },
+    {
+      "case": "planet-performance",
+      "round": 4,
+      "original_median_ms": 1.1400640000000002,
+      "optimized_median_ms": 0.595648,
+      "reduction_percent": 47.75310859741209
+    },
+    {
+      "case": "space-balanced",
+      "round": 4,
+      "original_median_ms": 1.49016,
+      "optimized_median_ms": 0.6576960000000001,
+      "reduction_percent": 55.86406828796907
+    },
+    {
+      "case": "aurora-balanced",
+      "round": 4,
+      "original_median_ms": 0.709472,
+      "optimized_median_ms": 0.524432,
+      "reduction_percent": 26.081367552207833
+    },
+    {
+      "case": "planet-balanced",
+      "round": 4,
+      "original_median_ms": 1.69984,
+      "optimized_median_ms": 0.846128,
+      "reduction_percent": 50.2230798192771
+    },
+    {
+      "case": "space-performance",
+      "round": 4,
+      "original_median_ms": 1.0124,
+      "optimized_median_ms": 0.46129600000000004,
+      "reduction_percent": 54.435401027261946
+    },
+    {
+      "case": "planet-performance",
+      "round": 5,
+      "original_median_ms": 1.210032,
+      "optimized_median_ms": 0.612352,
+      "reduction_percent": 49.3937350417179
+    },
+    {
+      "case": "space-balanced",
+      "round": 5,
+      "original_median_ms": 1.565968,
+      "optimized_median_ms": 0.841696,
+      "reduction_percent": 46.25075352753058
+    },
+    {
+      "case": "aurora-balanced",
+      "round": 5,
+      "original_median_ms": 0.711168,
+      "optimized_median_ms": 0.5105919999999999,
+      "reduction_percent": 28.20374370050397
+    },
+    {
+      "case": "planet-balanced",
+      "round": 5,
+      "original_median_ms": 1.665248,
+      "optimized_median_ms": 0.8541920000000001,
+      "reduction_percent": 48.704817540690634
+    },
+    {
+      "case": "space-performance",
+      "round": 5,
+      "original_median_ms": 0.963488,
+      "optimized_median_ms": 0.47638400000000003,
+      "reduction_percent": 50.55631206615961
+    },
+    {
+      "case": "aurora-performance",
+      "round": 5,
+      "original_median_ms": 0.5687679999999999,
+      "optimized_median_ms": 0.31430400000000003,
+      "reduction_percent": 44.73950714526836
+    },
+    {
+      "case": "space-balanced",
+      "round": 6,
+      "original_median_ms": 1.561968,
+      "optimized_median_ms": 0.6399360000000001,
+      "reduction_percent": 59.030146584309016
+    },
+    {
+      "case": "aurora-balanced",
+      "round": 6,
+      "original_median_ms": 0.686272,
+      "optimized_median_ms": 0.46696000000000004,
+      "reduction_percent": 31.957008299916062
+    },
+    {
+      "case": "planet-balanced",
+      "round": 6,
+      "original_median_ms": 1.696768,
+      "optimized_median_ms": 0.8506560000000001,
+      "reduction_percent": 49.86609837054918
+    },
+    {
+      "case": "space-performance",
+      "round": 6,
+      "original_median_ms": 1.021952,
+      "optimized_median_ms": 0.49016,
+      "reduction_percent": 52.03688627254509
+    },
+    {
+      "case": "aurora-performance",
+      "round": 6,
+      "original_median_ms": 0.5011680000000001,
+      "optimized_median_ms": 0.310944,
+      "reduction_percent": 37.95613446987837
+    },
+    {
+      "case": "planet-performance",
+      "round": 6,
+      "original_median_ms": 1.122304,
+      "optimized_median_ms": 0.503808,
+      "reduction_percent": 55.10948905109488
+    },
+    {
+      "case": "aurora-balanced",
+      "round": 7,
+      "original_median_ms": 0.667664,
+      "optimized_median_ms": 0.434704,
+      "reduction_percent": 34.89180186441085
+    },
+    {
+      "case": "planet-balanced",
+      "round": 7,
+      "original_median_ms": 1.7027519999999998,
+      "optimized_median_ms": 0.880784,
+      "reduction_percent": 48.2729134953299
+    },
+    {
+      "case": "space-performance",
+      "round": 7,
+      "original_median_ms": 0.9639519999999999,
+      "optimized_median_ms": 0.47744,
+      "reduction_percent": 50.470562849602466
+    },
+    {
+      "case": "aurora-performance",
+      "round": 7,
+      "original_median_ms": 0.5672159999999999,
+      "optimized_median_ms": 0.32968,
+      "reduction_percent": 41.87752108544188
+    },
+    {
+      "case": "planet-performance",
+      "round": 7,
+      "original_median_ms": 1.133712,
+      "optimized_median_ms": 0.503424,
+      "reduction_percent": 55.5950717642576
+    },
+    {
+      "case": "space-balanced",
+      "round": 7,
+      "original_median_ms": 1.5170720000000002,
+      "optimized_median_ms": 0.7296320000000001,
+      "reduction_percent": 51.905249058713096
+    }
+  ],
+  "comparisons": [
+    {
+      "case": "aurora-balanced",
+      "original_median_ms": 0.674864,
+      "optimized_median_ms": 0.46052800000000005,
+      "median_reduction_percent": 31.759880509258153,
+      "paired_reduction_percent_range": [
+        24.991142724770402,
+        37.12441978942601
+      ]
+    },
+    {
+      "case": "aurora-performance",
+      "original_median_ms": 0.555936,
+      "optimized_median_ms": 0.298976,
+      "median_reduction_percent": 46.221147758015306,
+      "paired_reduction_percent_range": [
+        37.95613446987837,
+        49.247975318164286
+      ]
+    },
+    {
+      "case": "planet-balanced",
+      "original_median_ms": 1.685344,
+      "optimized_median_ms": 0.853936,
+      "median_reduction_percent": 49.331649799684804,
+      "paired_reduction_percent_range": [
+        44.96330480391958,
+        50.2230798192771
+      ]
+    },
+    {
+      "case": "planet-performance",
+      "original_median_ms": 1.1848800000000002,
+      "optimized_median_ms": 0.55568,
+      "median_reduction_percent": 53.10242387414761,
+      "paired_reduction_percent_range": [
+        47.75310859741209,
+        56.72187478523812
+      ]
+    },
+    {
+      "case": "space-balanced",
+      "original_median_ms": 1.519936,
+      "optimized_median_ms": 0.735072,
+      "median_reduction_percent": 51.637963703734904,
+      "paired_reduction_percent_range": [
+        46.25075352753058,
+        59.030146584309016
+      ]
+    },
+    {
+      "case": "space-performance",
+      "original_median_ms": 1.008336,
+      "optimized_median_ms": 0.487776,
+      "median_reduction_percent": 51.625648593326034,
+      "paired_reduction_percent_range": [
+        46.479405053108536,
+        54.435401027261946
+      ]
+    }
+  ],
+  "source_hashes_unchanged": true,
+  "adapter": {
+    "name": "NVIDIA GeForce GTX 1650 Ti",
+    "backend": "Vulkan",
+    "driver": "581.80",
+    "size": [
+      2000,
+      1125
+    ],
+    "format": "Bgra8Unorm",
+    "timestamp_period_ns": 1
+  },
+  "method": {
+    "rounds": 8,
+    "samples_per_variant_per_case": 512,
+    "native_reference_samples": 128,
+    "total_timed_passes": 6272,
+    "warmup_minimum_ms": 600,
+    "fixture": "identical synthetic 1088-byte Globals; not a live game capture"
+  },
+  "telemetry": {
+    "graphics_clock_mhz": {
+      "min": 660.0,
+      "median": 1275.0,
+      "max": 1905.0,
+      "mean": 1313.109375,
+      "population_stddev": 160.73348643673904
+    },
+    "temperature_c": {
+      "min": 50.0,
+      "median": 57.0,
+      "max": 60.0,
+      "mean": 56.590625,
+      "population_stddev": 2.3112306482424034
+    },
+    "memory_clock_mhz": {
+      "min": 5000.0,
+      "median": 5000.0,
+      "max": 5000.0,
+      "mean": 5000.0,
+      "population_stddev": 0.0
+    },
+    "power_w": {
+      "min": 16.94,
+      "median": 28.77,
+      "max": 67.63,
+      "mean": 28.834125,
+      "population_stddev": 2.8806888038063048
+    },
+    "clock_lock": false,
+    "caveat": "DVFS graphics clock varies materially. Alternating warmed paired rounds mitigate order/thermal bias; these observations are not clock-normalized or portable FPS results."
+  },
+  "measured_rust_source_sha256": "56eab46ceeb3261c8174a475b1654d6e939d3fbe7a4029bb0a5a0f209af6e87e",
+  "raw_csv_sha256": "678a9b37d220f4083f47a426a21f199337e0aa1b5a4e4a222692ac264380bb5e",
+  "raw_samples": "performance-gpu-samples.csv.gz",
+  "raw_samples_gzip_sha256": "c222b630c6f5f6fa80d46ab90c5f333d57a7ada5738c0c9557c0d636a2d9612f"
+}

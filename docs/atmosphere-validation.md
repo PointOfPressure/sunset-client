@@ -1,5 +1,9 @@
 # Native atmosphere validation
 
+This is the historical `cb8ae36` Atmosphere baseline record. For the current
+optimized branch, use [performance validation](performance.md) and its evidence
+JSON. The full-frame observations below are not the shader-only GPU benchmark.
+
 Validated 2026-10-31 on code `cb8ae36`, based on Sunset `fa174f3`.
 Horizon `ba6344a`, Mixins `0d6b103` and Rust 1.99.1 are pinned. Official plan,
 apply, compile check and linked client/control build passed with no compiler

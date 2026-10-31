@@ -47,6 +47,14 @@ def wait(n):
     ctl("wait", str(n))
 
 
+def escape(ticks=3):
+    """A ctl Escape can also open the pause screen; resume before waiting for game ticks."""
+    ctl("key", "esc", "tap")
+    if state().get("screen") == "paused":
+        ctl("resume")
+    wait(ticks)
+
+
 def say(text):
     """A line typed into the chat box: Sunset's . commands."""
     ctl("key", "t", "tap")
@@ -170,8 +178,7 @@ def clean():
     if screen == "paused":
         ctl("resume")
     elif screen not in ("playing", None):
-        ctl("key", "esc", "tap")
-        wait(2)
+        escape(2)
         if state().get("screen") not in ("playing", None):
             ctl("close")
     # Every module off, whatever a test left on (a toggle typed while dead never arrives), then the HUD back on.
@@ -1213,14 +1220,8 @@ def _():
 
 
 def gui_size():
-    """The GUI's size in its own pixels: the window over the game's GUI scale (auto: the largest that keeps 320x240)."""
-    status = ctl("status")
-    # The framebuffer can differ from the monitor (windowed mode and desktop DPI).
-    w, h = status["renderer"]["size"]
-    scale = int(ctl("options-get").get("guiScale", {}).get("value", 0) or 0)
-    if scale <= 0:
-        scale = max(1, min(w // 320, h // 240))
-    return w / scale, h / scale
+    """The exact HudBatch size that click-at uses, including the capped game scale and rounding."""
+    return tuple(ctl("ui")["gui_size"])
 
 
 def menu_row(panel, row):
@@ -1267,11 +1268,7 @@ def open_picker(search, shot=None):
 
 def close_menu():
     for _ in range(2):
-        ctl("key", "esc", "tap")
-        wait(3)
-        if state().get("screen") == "paused":
-            ctl("resume")
-            wait(3)
+        escape()
 
 
 @test("F1 with the menu open")
@@ -1331,10 +1328,7 @@ def _():
 
     def esc():
         """Esc as horizon-ctl presses it, which the game's own Esc gets too (the real keyboard's doesn't): resumed."""
-        ctl("key", "esc", "tap")
-        if state().get("screen") == "paused":
-            ctl("resume")
-        wait(3)
+        escape()
 
     def edit(keys, finish, expand=False):
         """Opens the menu at Spam, clicks its Messages row, types (clear: Backspace over all of it; horizon-ctl's Ctrl
@@ -1410,10 +1404,7 @@ def _():
     wait(2)
     ctl("click-at", *map(str, menu_row(3, 2)), "right")
     wait(2)
-    ctl("key", "esc", "tap")
-    if state().get("screen") == "paused":
-        ctl("resume")
-    wait(3)
+    escape()
     chosen = binds()
     # A middle button bind toggles the HUD from the world.
     say(".bind hud mouse3")
@@ -1457,10 +1448,7 @@ def _():
 def _():
     def esc():
         """horizon-ctl's Esc, which the game gets too (its pause menu closes the GUI): resumed."""
-        ctl("key", "esc", "tap")
-        if state().get("screen") == "paused":
-            ctl("resume")
-        wait(3)
+        escape()
 
     def said(command, prefix):
         mark = log_mark()
@@ -1505,7 +1493,10 @@ def _():
         ctl("click-at", str(right), str(32 + 16 + 28 + 5))
         wait(2)
         for k in keys:
-            ctl("key", k, "tap")
+            if k == "esc":
+                escape(0)
+            else:
+                ctl("key", k, "tap")
         wait(2)
         esc()
         return said(".settings step", "Height:")
@@ -2596,6 +2587,9 @@ def _():
     # A stack of 5 diamonds off to the side ahead: its box, then its name, then a line to it, then none of it with
     # diamonds blacklisted. In pink, which nothing else on screen is (Sunset's chat lines are orange).
     pink = lambda r, g, b: r > 230 and 80 < g < 150 and b > 160
+    # Use solid bitmap glyphs for exact color counts; antialiased font edges
+    # can render the label correctly without reaching this color threshold.
+    setting("hud", "font", "Minecraft")
     cmd(f"summon item {X0+3.5} {Y+1} {Z0+5.5} {{Item:{{id:\"minecraft:diamond\",count:5}},PickupDelay:32767,Age:-32768}}")
     setting("esp", "items", "true")
     setting("esp", "players", "false")
@@ -3492,8 +3486,7 @@ def light_clean():
     ctl("release")
     ensure_alive()
     if state().get("screen") not in ("playing", None):
-        ctl("key", "esc", "tap")
-        wait(2)
+        escape(2)
     say(".panic")
     say(".panic")
     say(".reset hud")

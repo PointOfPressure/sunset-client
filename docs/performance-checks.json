@@ -1,0 +1,1856 @@
+{
+  "tested_code_commit": "b3807ef628fbad1b66094a557b73c9c2027f9e30",
+  "upstream_base": "23bdc11e4c4e529e0efbdedade1b0ec57d1e2e77",
+  "horizon": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins": "0d6b103c70633d8fd9443d8d0acd3aadaacedb06",
+  "rust": "1.99.1",
+  "unit_tests": {
+    "total": 55,
+    "shader_and_config": 13,
+    "runtime_input_and_filters": 20,
+    "visual_world": 13,
+    "target_selection": 3,
+    "discovery_and_picker": 6,
+    "naga_hlsl_specialization_cases_within_one_test": 18
+  },
+  "build": {
+    "plan": {
+      "exit_code": 0,
+      "seconds": 62.22416950000479,
+      "source_unchanged": true
+    },
+    "apply": {
+      "exit_code": 0,
+      "seconds": 84.68174209999415,
+      "source_unchanged": true
+    },
+    "check": {
+      "exit_code": 0,
+      "seconds": 22.907794699996884,
+      "source_unchanged": true
+    },
+    "build": {
+      "exit_code": 0,
+      "seconds": 317.38399349999963,
+      "source_unchanged": true
+    },
+    "freeze": {
+      "exit_code": 0,
+      "seconds": 0.9200516999990214,
+      "source_unchanged": true
+    }
+  },
+  "compiler_warnings": 0,
+  "binary_sha256": {
+    "horizon-client.exe": "decc26bd4aca1bdd7ec399bd76bfb788332a4c526ac4b46e09a302750b341a27",
+    "horizon-ctl.exe": "3ffc7ad55339bfb64f5fa81edb650cf2041c2e70bad9f7e93443f3cd557b23ef"
+  },
+  "package_sha256": "cac602cb4305972d324551aca4e9e751a4d32ba0e84087fe41d1def07b682754",
+  "mixin_source_sha256": {
+    "entry_count": 87,
+    "canonical_sha256": "1129658f21025caa2ffef95c854fc62187c11d5e0a574349f99309453642b75e",
+    "atmosphere_settings": {}
+  },
+  "native_validation": {
+    "module_checks_passed": 41,
+    "sky_checks_passed": 59,
+    "observations": 10,
+    "explicit_coverage_gaps": 1,
+    "unique_module_checks": [
+      {
+        "name": "Full mod: Speed",
+        "status": "pass",
+        "evidence": {
+          "detail": "walking 4.32 blocks/s; Vanilla speed 5.6: 5.60, 10: 10.00; sneaking 1.30, 10.00 with When sneaking; moves 0.000 the tick after letting go; Strafe 7.40; Timer 2 while moving: 37 ticks/s; off again 4.32",
+          "seconds": 23.749907199999143
+        }
+      },
+      {
+        "name": "Full mod: Sprint",
+        "status": "pass",
+        "evidence": {
+          "detail": "walking 4.32 blocks/s, 5.61 with Sprint (1.30x), off again 4.32",
+          "seconds": 9.296104299995932
+        }
+      },
+      {
+        "name": "Full mod: Auto Walk",
+        "status": "pass",
+        "evidence": {
+          "detail": "4.32 blocks/s straight ahead, 0.00 blocks after it went off",
+          "seconds": 4.10958329999994
+        }
+      },
+      {
+        "name": "Full mod: High Jump",
+        "status": "pass",
+        "evidence": {
+          "detail": "jump 1.25 blocks high; Multiplier 2: 4.34 (a 0.84 jump: 4.34), 3: 8.93 (8.93); off again 1.25",
+          "seconds": 12.346462000001338
+        }
+      },
+      {
+        "name": "Full mod: Air Jump",
+        "status": "pass",
+        "evidence": {
+          "detail": "a jump in mid-air: +1.25 blocks in 4 ticks with Air Jump, -3.90 off",
+          "seconds": 3.8646332999996957
+        }
+      },
+      {
+        "name": "Full mod: Safe Walk",
+        "status": "pass",
+        "evidence": {
+          "detail": "walking at the edge: stopped at z 17.30, y +1.00; off: fell to y -5.6",
+          "seconds": 5.940091799995571
+        }
+      },
+      {
+        "name": "Full mod: Timer",
+        "status": "pass",
+        "evidence": {
+          "detail": "19.8 ticks/s; Multiplier 2: 39.9, 3: 59.8; off again 19.8",
+          "seconds": 12.502771500003291
+        }
+      },
+      {
+        "name": "Full mod: No Render (blindness)",
+        "status": "pass",
+        "evidence": {
+          "detail": "brightness 0.04 blinded, 0.66 with No Render, 0.04 with Hide blindness off, 0.04 with it off",
+          "seconds": 16.63835100000142
+        }
+      },
+      {
+        "name": "Full mod: No Render (water)",
+        "status": "pass",
+        "evidence": {
+          "detail": "brightness 0.21 in water, 0.36 with No Render, 0.20 with it off",
+          "seconds": 12.861074100001133
+        }
+      },
+      {
+        "name": "Full mod: Search + Enter",
+        "status": "pass",
+        "evidence": {
+          "detail": "39 ticks a second after Enter (20 is normal, Timer doubles it)",
+          "seconds": 4.6789649999991525
+        }
+      },
+      {
+        "name": "Full mod: Panic",
+        "status": "pass",
+        "evidence": {
+          "detail": "HUD before True; after .panic Sunset says [], sprinting: False, HUD False; after .panic again it says ['Back. Everything is still off.'], HUD True",
+          "seconds": 4.841790899998159
+        }
+      },
+      {
+        "name": "Full mod: Profiles",
+        "status": "pass",
+        "evidence": {
+          "detail": "loaded: 'Range: 3', after .profile load before-load: 'Range: 5'; export: ['Profile verify is in <isolated-test>\\\\horizon_home\\\\horizon-mods\\\\.horizon-mod-data\\\\sunset\\\\exports\\\\verify.profile']; import: ['Imported profile shared; .profile load shared uses it.']; broken file: [\"Profile: line 2: killaura.range can't be lots.\"]; bad name: ['Profile: a name is 1 to 32 letters, digits, - or _, starting with a letter or digit.']; list: ['Profiles: shared, verify']",
+          "seconds": 3.8514162999999826
+        }
+      },
+      {
+        "name": "Full mod: F1 with the menu open",
+        "status": "pass",
+        "evidence": {
+          "detail": "mean brightness: menu shut 0.6627, open 0.4521, after F1 0.4521; F1 with it shut 0.6762",
+          "seconds": 10.070563400004175
+        }
+      },
+      {
+        "name": "Full mod: List picker",
+        "status": "pass",
+        "evidence": {
+          "detail": "after clicking a diamond block in and coal ore out: 'Blocks: deepslate_diamond_ore'; after .set: 'Blocks: iron_ore,gold_ore'",
+          "seconds": 4.785346999997273
+        }
+      },
+      {
+        "name": "Full mod: Text setting editor",
+        "status": "pass",
+        "evidence": {
+          "detail": "'Messages: Sunset on top!'; cleared, hi, Apply: 'Messages: hi'; xyz, Cancel: 'Messages: hi'; Backspace, ok, Enter: 'Messages: hok'; cleared, no, Esc: 'Messages: hok'",
+          "seconds": 7.021147100000235
+        }
+      },
+      {
+        "name": "Full mod: Binds (mouse buttons, Hold)",
+        "status": "pass",
+        "evidence": {
+          "detail": ".bind mouse4: ['HUD: Mouse Back']; chosen with a right click: ['HUD: Mouse Right']; middle button toggles: True, True, True; Hold: off True, on while held True, off when let go True, ended by a screen True",
+          "seconds": 11.972981699997035
+        }
+      },
+      {
+        "name": "Full mod: Click GUI (settings window, typed numbers)",
+        "status": "pass",
+        "evidence": {
+          "detail": "bind set in Auto Walk's window: ['Auto Walk: K']; typed 3: ['Height: 3'], 99: ['Height: 5'], 0: ['Height: 0.5'], ab: ['Height: 0.5'], 1 then Esc: ['Height: 0.5']",
+          "seconds": 7.571814599999925
+        }
+      },
+      {
+        "name": "Full mod: Auto Shearer",
+        "status": "pass",
+        "evidence": {
+          "detail": "a sheep 2.5 blocks away: sheared at Distance 5: True, at 2: False",
+          "seconds": 8.102764499999466
+        }
+      },
+      {
+        "name": "Full mod: Auto Nametag",
+        "status": "pass",
+        "evidence": {
+          "detail": "a pig 3 blocks away named Bob at Range 5: True, at 2: False",
+          "seconds": 9.306693700003962
+        }
+      },
+      {
+        "name": "Full mod: Auto Mount",
+        "status": "pass",
+        "evidence": {
+          "detail": "riding: 30",
+          "seconds": 3.308166099996015
+        }
+      },
+      {
+        "name": "Full mod: Flamethrower",
+        "status": "pass",
+        "evidence": {
+          "detail": "a cow 2.5 blocks away set alight at Distance 5: True, at 2: False",
+          "seconds": 9.80713530000503
+        }
+      },
+      {
+        "name": "Full mod: Liquid Filler",
+        "status": "pass",
+        "evidence": {
+          "detail": "6 of 6 water blocks filled with cobblestone, 0 left",
+          "seconds": 5.098680700000841
+        }
+      },
+      {
+        "name": "Full mod: Spawn Proofer",
+        "status": "pass",
+        "evidence": {
+          "detail": "2 torches light a dark 7x7 room to above 0, 4 to above 7",
+          "seconds": 7.602970599997207
+        }
+      },
+      {
+        "name": "Full mod: Fast Use",
+        "status": "pass",
+        "evidence": {
+          "detail": "10 experience bottles used holding use for 2 s, 39 with Fast Use",
+          "seconds": 7.387955399994098
+        }
+      },
+      {
+        "name": "Full mod: Kill Aura",
+        "status": "pass",
+        "evidence": {
+          "detail": "pig 2.5 blocks away lost 10 health at Range 4.5, 0.0 at Range 1.5; behind a wall: 5 swings, 0.0 health lost at Walls range 3.5, 0 swings at 2",
+          "seconds": 22.851143100000627
+        }
+      },
+      {
+        "name": "Full mod: Kill Aura (look-only)",
+        "status": "pass",
+        "evidence": {
+          "detail": "look-only swings looking away: 0, facing the pig: 2",
+          "seconds": 6.2493630000026315
+        }
+      },
+      {
+        "name": "Full mod: 3D box sides (no flood)",
+        "status": "pass",
+        "evidence": {
+          "detail": "orange pixels: chest close beside the view 23754 with 3D sides, 23984 as a 2D box; partly behind the camera 450; camera inside it 352 (of 921600)",
+          "seconds": 13.050899900001241
+        }
+      },
+      {
+        "name": "Full mod: ESP (item names, tracers, filter)",
+        "status": "pass",
+        "evidence": {
+          "detail": "pink pixels: box 629, with its name 683, with a tracer 1378, diamonds blacklisted 0",
+          "seconds": 12.898850199999288
+        }
+      },
+      {
+        "name": "Full mod: Spawner Alerts",
+        "status": "pass",
+        "evidence": {
+          "detail": "chat: ['unknown trial spawner at 2 121 15, 5 blocks away', 'zombie spawner at 6 121 15, 5 blocks away']; label pixels 3 -> 491",
+          "seconds": 7.598693899999489
+        }
+      },
+      {
+        "name": "Full mod: Hole ESP",
+        "status": "pass",
+        "evidence": {
+          "detail": "obsidian red pixels 300 -> 42406 (16210 with Doubles off), bedrock lime 0 -> 10656",
+          "seconds": 16.40789599999698
+        }
+      },
+      {
+        "name": "Full mod: Radar",
+        "status": "pass",
+        "evidence": {
+          "detail": "0 dark blue pixels in the bottom-left quarter without the radar, 6895 with it",
+          "seconds": 7.0421753999980865
+        }
+      },
+      {
+        "name": "Full mod: Render: esp (3D box)",
+        "status": "pass",
+        "evidence": {
+          "detail": "drawn for 2 s at 116 fps",
+          "seconds": 5.195165900004213
+        }
+      },
+      {
+        "name": "Full mod: Render: esp (2D box)",
+        "status": "pass",
+        "evidence": {
+          "detail": "drawn for 2 s at 116 fps",
+          "seconds": 5.128792299998167
+        }
+      },
+      {
+        "name": "Full mod: Render: esp (Outline)",
+        "status": "pass",
+        "evidence": {
+          "detail": "drawn for 2 s at 116 fps",
+          "seconds": 5.250953299997491
+        }
+      },
+      {
+        "name": "Full mod: Render: esp (Potato)",
+        "status": "pass",
+        "evidence": {
+          "detail": "drawn for 2 s at 116 fps",
+          "seconds": 5.245302199997241
+        }
+      },
+      {
+        "name": "Full mod: Render: nametags (Full)",
+        "status": "pass",
+        "evidence": {
+          "detail": "drawn for 2 s at 116 fps",
+          "seconds": 5.197556999999506
+        }
+      },
+      {
+        "name": "Full mod: Render: nametags (Potato)",
+        "status": "pass",
+        "evidence": {
+          "detail": "drawn for 2 s at 116 fps",
+          "seconds": 5.203221699994174
+        }
+      },
+      {
+        "name": "Full mod: Render: blockesp (Box)",
+        "status": "pass",
+        "evidence": {
+          "detail": "drawn for 2 s at 116 fps",
+          "seconds": 5.198127999996359
+        }
+      },
+      {
+        "name": "Full mod: Render: lightoverlay (Cross)",
+        "status": "pass",
+        "evidence": {
+          "detail": "drawn for 2 s at 116 fps",
+          "seconds": 5.302503900005831
+        }
+      },
+      {
+        "name": "Full mod: Render: tunnelesp (Box)",
+        "status": "pass",
+        "evidence": {
+          "detail": "drawn for 2 s at 116 fps",
+          "seconds": 5.30547690000094
+        }
+      },
+      {
+        "name": "Full mod: Render: voidesp (Box)",
+        "status": "pass",
+        "evidence": {
+          "detail": "drawn for 2 s at 116 fps",
+          "seconds": 5.296335599996382
+        }
+      }
+    ],
+    "sky_checks": [
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "day native sky differs when enabled",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 129.62300266846708,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\day-native.png",
+            "<isolated-test>\\screenshots\\day-cosmic.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "day disabling restores native sky",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.0,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\day-native.png",
+            "<isolated-test>\\screenshots\\day-disabled-restored.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "night native sky differs when enabled",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 10.355275346418466,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\night-native.png",
+            "<isolated-test>\\screenshots\\night-cosmic.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "night disabling restores native sky",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.0,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\night-native.png",
+            "<isolated-test>\\screenshots\\night-disabled-restored.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "da27e4abb437f20ad63d7dfdad29a340ad736fe457e06e5d405a025fee4a92bd",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Ringed Planet",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "dc2282b2f7cd0594cd431def5747875350a73b31274a36402f729377af46b162",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Ringed Planet",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "planet-directed-view native sky differs when enabled",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 34.67617845117845,
+          "region_fraction": [
+            0.25,
+            0.2,
+            0.75,
+            0.75
+          ],
+          "pixels": [
+            320,
+            144,
+            960,
+            540
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\planet-directed-view-native.png",
+            "<isolated-test>\\screenshots\\planet-directed-view-cosmic.png"
+          ]
+        }
+      },
+      {
+        "name": "Planet body stays in its world direction as camera rotates",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 41.575841750841754,
+          "region_fraction": [
+            0.25,
+            0.2,
+            0.75,
+            0.75
+          ],
+          "pixels": [
+            320,
+            144,
+            960,
+            540
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\planet-directed-view-cosmic.png",
+            "<isolated-test>\\screenshots\\planet-rotated-away.png"
+          ]
+        }
+      },
+      {
+        "name": "Returning camera restores static planet view",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.0,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\planet-directed-view-cosmic.png",
+            "<isolated-test>\\screenshots\\planet-returned-to-body.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "da27e4abb437f20ad63d7dfdad29a340ad736fe457e06e5d405a025fee4a92bd",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Ringed Planet",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "Disabling planet restores native sky",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.0,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\planet-directed-view-native.png",
+            "<isolated-test>\\screenshots\\planet-disabled-native-restored.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "dc2282b2f7cd0594cd431def5747875350a73b31274a36402f729377af46b162",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Ringed Planet",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "Planet body and ring visibility",
+        "status": "observed",
+        "evidence": "Directed body/ring native captures require visual inspection. Shader agent independently tests sphere/ring ordering and occlusion; screenshot differences alone do not prove star occlusion."
+      },
+      {
+        "name": "World anchoring across yaw/pitch",
+        "status": "observed",
+        "evidence": "Native camera sweeps captured; human must inspect stars/bands following world rotation rather than fixed screen coordinates."
+      },
+      {
+        "name": "Changing yaw changes directional sky",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 25.873556915663993,
+          "region_fraction": [
+            0.1,
+            0.04,
+            0.9,
+            0.3
+          ],
+          "pixels": [
+            128,
+            29,
+            1152,
+            216
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\anchoring-start.png",
+            "<isolated-test>\\screenshots\\anchoring-rotated.png"
+          ]
+        }
+      },
+      {
+        "name": "Returning camera returns to static same sky",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.0,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\anchoring-start.png",
+            "<isolated-test>\\screenshots\\anchoring-return.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "opaque-wall opaque scene preserved",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.0,
+          "region_fraction": [
+            0.35,
+            0.25,
+            0.65,
+            0.65
+          ],
+          "pixels": [
+            448,
+            180,
+            832,
+            468
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\opaque-wall-native.png",
+            "<isolated-test>\\screenshots\\opaque-wall-cosmic.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "enclosed-cave opaque scene preserved",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.0,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\enclosed-cave-native.png",
+            "<isolated-test>\\screenshots\\enclosed-cave-cosmic.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "submerged-water opaque scene preserved",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.4495588388953189,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\submerged-water-native.png",
+            "<isolated-test>\\screenshots\\submerged-water-cosmic.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "e84e1701e76a636df2796fe8f9217186ce9f381fe1c0a53dd2800039b1314b00",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0"
+          }
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "45511fd214118fdea96f1e183b33c3982595dd015c43b6600ab9529fdb6dfd69",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0"
+          }
+        }
+      },
+      {
+        "name": "daytime-zero opaque scene preserved",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.0,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\daytime-zero-native.png",
+            "<isolated-test>\\screenshots\\daytime-zero-cosmic.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "native-rain-preserved native sky differs when enabled",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 10.740917566872428,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\native-rain-preserved-native.png",
+            "<isolated-test>\\screenshots\\native-rain-preserved-cosmic.png"
+          ]
+        }
+      },
+      {
+        "name": "Rain policy",
+        "status": "observed",
+        "evidence": "No Keep In Rain setting. Custom sky intentionally persists during rain, consistent with reference Keep In Rain=true. Native particles, fog and weather state remain separate; screenshots capture the actual result for human inspection. No native storm-sky fade is claimed."
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "dimension-the_nether opaque scene preserved",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.0,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\dimension-the_nether-native.png",
+            "<isolated-test>\\screenshots\\dimension-the_nether-cosmic.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "dimension-the_end opaque scene preserved",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 5.827224794238683e-05,
+          "region_fraction": [
+            0.05,
+            0.05,
+            0.95,
+            0.85
+          ],
+          "pixels": [
+            64,
+            36,
+            1216,
+            612
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\dimension-the_end-native.png",
+            "<isolated-test>\\screenshots\\dimension-the_end-cosmic.png"
+          ]
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "Local offscreen timing baseline-before",
+        "status": "observed",
+        "evidence": {
+          "frames": 347,
+          "gpu": {
+            "avg_ms": 0.6691878742889987,
+            "max_ms": 0.7858240008354187,
+            "p50_ms": 0.703935980796814,
+            "p95_ms": 0.7152640223503113,
+            "p99_ms": 0.7741439938545227
+          },
+          "cpu": {
+            "avg_ms": 0.8394732010639366,
+            "max_ms": 3.0726001262664795,
+            "p50_ms": 0.7151999473571777,
+            "p95_ms": 1.893499970436096,
+            "p99_ms": 2.301800012588501
+          },
+          "mode": null,
+          "quality": "Balanced",
+          "camera_yaw_pitch": [
+            -35.264,
+            -30
+          ],
+          "scope": "Single local stationary fixture at maxFps120. Same camera/time/weather and speed0; not a portable FPS claim."
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "Local offscreen timing space-balanced",
+        "status": "observed",
+        "evidence": {
+          "frames": 347,
+          "gpu": {
+            "avg_ms": 1.4038400041953976,
+            "max_ms": 1.458367943763733,
+            "p50_ms": 1.4015040397644043,
+            "p95_ms": 1.4148800373077393,
+            "p99_ms": 1.4567999839782717
+          },
+          "cpu": {
+            "avg_ms": 0.8566403452532436,
+            "max_ms": 2.4135000705718994,
+            "p50_ms": 0.699999988079071,
+            "p95_ms": 1.993299961090088,
+            "p99_ms": 2.3582000732421875
+          },
+          "mode": "Space",
+          "quality": "Balanced",
+          "camera_yaw_pitch": [
+            -35.264,
+            -30
+          ],
+          "scope": "Single local stationary fixture at maxFps120. Same camera/time/weather and speed0; not a portable FPS claim."
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "0621e53453b6f02a7f23b873c5ba53412f756c679d13348b4928f87ce18eff8a",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Aurora",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "Local offscreen timing aurora-balanced",
+        "status": "observed",
+        "evidence": {
+          "frames": 347,
+          "gpu": {
+            "avg_ms": 0.9464097749602898,
+            "max_ms": 0.9976959824562072,
+            "p50_ms": 0.945792019367218,
+            "p95_ms": 0.9584959745407104,
+            "p99_ms": 0.9932479858398438
+          },
+          "cpu": {
+            "avg_ms": 0.8679484128952026,
+            "max_ms": 3.1103999614715576,
+            "p50_ms": 0.7164999842643738,
+            "p95_ms": 2.0118000507354736,
+            "p99_ms": 2.299999952316284
+          },
+          "mode": "Aurora",
+          "quality": "Balanced",
+          "camera_yaw_pitch": [
+            -35.264,
+            -30
+          ],
+          "scope": "Single local stationary fixture at maxFps120. Same camera/time/weather and speed0; not a portable FPS claim."
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "dc2282b2f7cd0594cd431def5747875350a73b31274a36402f729377af46b162",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Ringed Planet",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "Local offscreen timing ringed-planet-balanced",
+        "status": "observed",
+        "evidence": {
+          "frames": 347,
+          "gpu": {
+            "avg_ms": 1.4661252838733905,
+            "max_ms": 1.519327998161316,
+            "p50_ms": 1.4642879962921145,
+            "p95_ms": 1.4766080379486084,
+            "p99_ms": 1.511423945426941
+          },
+          "cpu": {
+            "avg_ms": 0.8283184422367932,
+            "max_ms": 2.3809001445770264,
+            "p50_ms": 0.6963000297546387,
+            "p95_ms": 1.898400068283081,
+            "p99_ms": 2.1898000240325928
+          },
+          "mode": "Ringed Planet",
+          "quality": "Balanced",
+          "camera_yaw_pitch": [
+            -35.264,
+            -30
+          ],
+          "scope": "Single local stationary fixture at maxFps120. Same camera/time/weather and speed0; not a portable FPS claim."
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "3830a1e8a912e242386a86d2c1a9d39c33afc954f2ab753a2173cb0517dfe301",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Performance",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "Local offscreen timing space-performance",
+        "status": "observed",
+        "evidence": {
+          "frames": 348,
+          "gpu": {
+            "avg_ms": 0.9966297946099576,
+            "max_ms": 1.0682239532470703,
+            "p50_ms": 0.9965440034866332,
+            "p95_ms": 1.0147520303726196,
+            "p99_ms": 1.0383360385894775
+          },
+          "cpu": {
+            "avg_ms": 0.8716620668426327,
+            "max_ms": 2.4176998138427734,
+            "p50_ms": 0.7520000338554382,
+            "p95_ms": 1.9082000255584717,
+            "p99_ms": 2.326499938964844
+          },
+          "mode": "Space",
+          "quality": "Performance",
+          "camera_yaw_pitch": [
+            -35.264,
+            -30
+          ],
+          "scope": "Single local stationary fixture at maxFps120. Same camera/time/weather and speed0; not a portable FPS claim."
+        }
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "Local offscreen timing baseline-after",
+        "status": "observed",
+        "evidence": {
+          "frames": 347,
+          "gpu": {
+            "avg_ms": 0.7062450712627224,
+            "max_ms": 0.78438401222229,
+            "p50_ms": 0.7086079716682434,
+            "p95_ms": 0.715071976184845,
+            "p99_ms": 0.7805119752883911
+          },
+          "cpu": {
+            "avg_ms": 0.8459573468832187,
+            "max_ms": 2.364000082015991,
+            "p50_ms": 0.715399980545044,
+            "p95_ms": 1.9589999914169312,
+            "p99_ms": 2.1201000213623047
+          },
+          "mode": null,
+          "quality": "Balanced",
+          "camera_yaw_pitch": [
+            -35.264,
+            -30
+          ],
+          "scope": "Single local stationary fixture at maxFps120. Same camera/time/weather and speed0; not a portable FPS claim."
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "World beauty persists across F1",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.05506524342691622,
+          "region_fraction": [
+            0.1,
+            0.04,
+            0.9,
+            0.3
+          ],
+          "pixels": [
+            128,
+            29,
+            1152,
+            216
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\cosmic-hud-hidden.png",
+            "<isolated-test>\\screenshots\\cosmic-hud-shown.png"
+          ]
+        }
+      },
+      {
+        "name": "World beauty persists behind native module menu",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.0,
+          "region_fraction": [
+            0.03,
+            0.08,
+            0.1,
+            0.3
+          ],
+          "pixels": [
+            38,
+            58,
+            128,
+            216
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\cosmic-hud-shown.png",
+            "<isolated-test>\\screenshots\\atmosphere-native-settings-menu.png"
+          ]
+        }
+      },
+      {
+        "name": "Native shaderpack selection saved",
+        "status": "pass",
+        "evidence": "preset:custom\nlodDistance:0\nfarDetail:full\ncaveCulling:true\nentityCulling:false\nchunkUpdates:0\nuploadBudgetKiB:0\nsky:true\nfog:true\nweather:true\nanimatedTextures:true\npresentMode:auto\nframePacing:efficient\nworkers:0\noverlay:off\nresolutionScale:100\nfxaa:false\ntaa:false\nupscaling:native\nhdr:false\nhdrPaperWhite:0\nhdrPeak:0\nhdrBlackLevel:0\nhdrUiBrightness:100\nbatteryMode:false\ngraphicsApi:auto\npickedShaderPack:sunset-sky-conflict\n"
+      },
+      {
+        "name": "atmosphere disabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "9acb8decb0a0f145fc87ed65c1ea7e5f9da387c4d4b1e0ba0cb87e42262b0916",
+          "atmosphere_settings": {
+            "atmosphere.on": "false",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "Real native conflict pack rendered its green sky",
+        "status": "pass",
+        "evidence": {
+          "native_png": "<isolated-test>\\screenshots\\native-pack-off-atmosphere.png",
+          "green_dominance_fraction": 0.9994894644017451,
+          "fixture": {
+            "horizon-shaders.toml": "db9627f185b320878343dcb4253ef7b00e34efe8ac41495c5e6f92f99ee8c9bf",
+            "sky.wgsl": "e25c7b04576fb9b670a993aae48b4841448590b2c5bf27f28c4852c2ddae5c9d"
+          },
+          "criterion": "upper-sky samples have G>R+10 and G>B+5"
+        }
+      },
+      {
+        "name": "atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "entry_count": 786,
+          "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+          "atmosphere_settings": {
+            "atmosphere.on": "true",
+            "atmosphere.key": "none",
+            "atmosphere.mode": "Space",
+            "atmosphere.quality": "Balanced",
+            "atmosphere.brightness": "1",
+            "atmosphere.effectstrength": "1",
+            "atmosphere.stars": "1",
+            "atmosphere.speed": "0",
+            "atmosphere.daytimestrength": "0.65"
+          }
+        }
+      },
+      {
+        "name": "Native pack owns sky while Atmosphere enabled",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 0.0,
+          "region_fraction": [
+            0.1,
+            0.04,
+            0.9,
+            0.3
+          ],
+          "pixels": [
+            128,
+            29,
+            1152,
+            216
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\native-pack-off-atmosphere.png",
+            "<isolated-test>\\screenshots\\native-pack-on-atmosphere.png"
+          ]
+        }
+      },
+      {
+        "name": "Cosmic sky returns when native pack disabled",
+        "status": "pass",
+        "evidence": {
+          "mean_absolute_channel_error": 30.093690814393938,
+          "region_fraction": [
+            0.1,
+            0.04,
+            0.9,
+            0.3
+          ],
+          "pixels": [
+            128,
+            29,
+            1152,
+            216
+          ],
+          "native_images": [
+            "<isolated-test>\\screenshots\\native-pack-on-atmosphere.png",
+            "<isolated-test>\\screenshots\\native-pack-disabled-cosmic-returns.png"
+          ]
+        }
+      },
+      {
+        "name": "Title and no-player renderer gates",
+        "status": "not-covered",
+        "evidence": "Source-reviewed separately; this in-world suite does not claim runtime title/no-player coverage."
+      },
+      {
+        "name": "Settings survive real client restart",
+        "status": "pass",
+        "evidence": {
+          "before": {
+            "entry_count": 786,
+            "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+            "atmosphere_settings": {
+              "atmosphere.on": "true",
+              "atmosphere.key": "none",
+              "atmosphere.mode": "Space",
+              "atmosphere.quality": "Balanced",
+              "atmosphere.brightness": "1",
+              "atmosphere.effectstrength": "1",
+              "atmosphere.stars": "1",
+              "atmosphere.speed": "0",
+              "atmosphere.daytimestrength": "0.65"
+            }
+          },
+          "after": {
+            "entry_count": 786,
+            "canonical_sha256": "36ec42b2699a3f3c29ca963e577860d78816648379447edb5642c0c5d1b7f6c7",
+            "atmosphere_settings": {
+              "atmosphere.on": "true",
+              "atmosphere.key": "none",
+              "atmosphere.mode": "Space",
+              "atmosphere.quality": "Balanced",
+              "atmosphere.brightness": "1",
+              "atmosphere.effectstrength": "1",
+              "atmosphere.stars": "1",
+              "atmosphere.speed": "0",
+              "atmosphere.daytimestrength": "0.65"
+            }
+          }
+        }
+      },
+      {
+        "name": "Alternate native render size",
+        "status": "observed",
+        "evidence": {
+          "first_logical_size": [
+            1024,
+            576
+          ],
+          "restart_logical_size": [
+            1280,
+            960
+          ],
+          "actual_png_size": [
+            1600,
+            1200
+          ],
+          "scope": "Real separate offscreen client initialization. Live window resize and desktop DPI not exercised."
+        }
+      }
+    ],
+    "native_exit_codes": [
+      0,
+      0
+    ],
+    "driver_exit_codes": [
+      0,
+      0
+    ],
+    "all_final_source_inputs_unchanged": true,
+    "first_run_failures": [
+      "Full mod: Click GUI (settings window, typed numbers)",
+      "Full mod: ESP (item names, tracers, filter)",
+      "Full mod: Radar",
+      "Full mod: Render: esp (3D box)",
+      "Full mod: Render: esp (2D box)",
+      "Full mod: Render: esp (Outline)",
+      "Full mod: Render: esp (Potato)",
+      "Full mod: Render: nametags (Full)",
+      "Full mod: Render: nametags (Potato)",
+      "Full mod: Render: blockesp (Box)",
+      "Full mod: Render: lightoverlay (Cross)",
+      "Full mod: Render: tunnelesp (Box)",
+      "Full mod: Render: voidesp (Box)"
+    ],
+    "rerun_note": "First-run failures retained here; a fresh focused run passes all 13. GUI pause-aware fixture and bitmap-font pixel assertion corrected; zero-frame and screenshot-timeout readings excluded from performance claims. No production source changed between runs.",
+    "orchestration_note": "The restart-ready notification caused 13 module checks to run twice. Both sets passed; counts here deduplicate test names. The outer wrapper returned nonzero for its old length assertion; the native validator and all client processes exited zero. The wrapper now uses one initial dispatch and unique-name counting.",
+    "focused_repeated_module_checks": 13,
+    "first_run_source_inputs_unchanged": true
+  },
+  "gpu_benchmark": "performance-gpu.json",
+  "review_request": "review-opus-5-5.md",
+  "limits": [
+    "Shader-only synthetic GPU workload; not whole-game FPS.",
+    "Native control is simulated input; no physical keyboard or multiplayer coverage.",
+    "Title/no-player and Java pack gates source-reviewed; actual native pack conflict is runtime-tested.",
+    "Offscreen frame submission intermittently stops; underlying cause not isolated. Fresh focused native run verifies the affected checks."
+  ],
+  "native_screenshots": {
+    "performance-native-item-esp.png": {
+      "sha256": "5c97f6e72296a7ea71c938b49980f88a8040cd4cd99961b95837ded03908ff55",
+      "size": [
+        1600,
+        1200
+      ],
+      "unaltered_native_png": true
+    },
+    "performance-native-sky.png": {
+      "sha256": "d84c9705f4eba858167c6c6f0ea0b5582826a93274b58fbd137e703dc2cd9a1e",
+      "size": [
+        1280,
+        720
+      ],
+      "unaltered_native_png": true
+    }
+  },
+  "full_evidence_sha256": "e00cf798c7388c382f210102819da700491b32a257692fbebc62325757e874a5"
+}

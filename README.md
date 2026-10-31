@@ -141,6 +141,9 @@ pins, stage it with [horizon-mixins](https://github.com/horizon-rust/horizon-mix
 `cargo check -p horizon-client` in the stage. `tools/verify.py` runs the modules in a test arena in a headless
 game; `tools/audit.py` lists which of Meteor's settings are still missing.
 
+See [performance validation](docs/performance.md) for native checks, source pins,
+GPU benchmark scope and the reviewer handoff.
+
 ## Feature planning
 
 See the [feature roadmap](docs/feature-roadmap.md) for what has landed, what is next and what each contribution needs.
