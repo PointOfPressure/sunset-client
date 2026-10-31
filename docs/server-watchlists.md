@@ -81,6 +81,11 @@ profile changes and disabling clear pending evidence and requests.
 
 ## Limits and saved data
 
+F1 keeps an open Sunset menu, settings window or text editor visible. Outside
+the menu, it retains its normal hide-HUD behavior. Opening the menu while the
+HUD is hidden makes it visible. Menu cleanup runs independently of HUD drawing,
+so leaving a screen/world cannot leave invisible menu input ownership behind.
+
 There are at most 32 profiles, eight addresses per profile and 128 Java names
 per list. Names use 1–16 ASCII letters, digits or underscores; special Bedrock
 name formats are not included. The editor limit is 4096 UTF-8 bytes.
@@ -115,6 +120,7 @@ The standalone suites execute production configuration and evidence code:
 python tools/test_watch_config.py
 python tools/test_watch_state.py
 python tools/test_watch_ui.py
+python tools/test_gui_visibility.py
 ```
 
 Set `SUNSET_TEST_RUSTC` to the compiler used for the pinned host build. The
@@ -132,7 +138,7 @@ on any particular multiplayer server remains server-dependent.
 
 ## Research credit
 
-Anubis by 4ldenz was a behavior-research reference for the earlier discussion
+Anubis Client by Horus and 4ldenz was a behavior-research reference for the earlier discussion
 of TAB, completion and local-entity signals. These modules were independently
 implemented in Rust from functional requirements. They contain no translated
 Anubis implementation or assets. Research credit belongs in source/docs and

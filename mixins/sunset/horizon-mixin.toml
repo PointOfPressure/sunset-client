@@ -53,6 +53,21 @@ helper = "watch_frame.rs"
 bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
 
 [[injection]]
+id = "gui_frame"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_frame"
+helper = "gui_frame.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[injection]]
+id = "gui_visibility"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::chat::Game<'_>::toggle_hide_gui"
+helper = "gui_visibility.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[injection]]
 id = "watch_connect"
 kind = "HEAD"
 target = "horizon_client::game::extras::Game<'_>::extras_connecting"

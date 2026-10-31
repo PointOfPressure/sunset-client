@@ -4497,9 +4497,6 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         }
     }
 
-    if with(|s| s.gui.open && s.gui.closing) {
-        close_gui(game);
-    }
     let mut gui_shapes = Vec::new();
     // GUI scale, as far as a row of the narrowest panels still fits the window.
     let scale = f32::from_bits(LOOK[6].load(Ordering::Relaxed)).min((w / MIN_ROW).max(1.0));
@@ -4512,13 +4509,6 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
                 shapes.push(Shape::Fill([0.0, 0.0, w, h], dim << 24));
             }
             draw_gui(game, w / scale, h / scale, 1.0 / (batch.scale * scale), &mut gui_shapes);
-        } else {
-            with(|s| {
-                s.gui.open = false;
-                s.gui.drag = None;
-                s.gui.editor = None;
-                s.gui.window = None;
-            });
         }
     }
     let game = &*game;
@@ -5475,11 +5465,13 @@ pub(super) fn hit_at(s: &State, at: (f32, f32)) -> Option<([f32; 4], Hit)> {
 }
 
 pub(super) fn open_gui(game: &mut Game<'_>) {
-    release_binds();
-    if !game.native_playing() {
+    if !game.native_window() || !game.native_on(ID) || !game.native_playing() || game.player.is_none() {
         return;
     }
+    release_binds();
     ensure_loaded(game);
+    // The menu draws in native_hud, which Horizon skips while F1 hides the HUD.
+    game.ui.hide_gui = false;
     game.keys.clear();
     game.capture(false);
     with(|s| {
@@ -5491,17 +5483,45 @@ pub(super) fn open_gui(game: &mut Game<'_>) {
 }
 
 pub(super) fn close_gui(game: &mut Game<'_>) {
+    if !game.native_window() {
+        return;
+    }
     with(|s| {
         s.gui.open = false;
         s.gui.closing = false;
         s.gui.drag = None;
         s.gui.editor = None;
         s.gui.window = None;
+        s.gui.typed = false;
         s.binding = None;
     });
     save(game);
-    if game.screen == Screen::Playing {
-        game.capture(true);
+    game.capture(game.native_on(ID) && game.native_playing() && game.player.is_some() && game.focused);
+}
+
+// F1 belongs to the open menu, including settings and text editors. Hook the
+// host's toggle itself so both window events and horizon-ctl take this path.
+pub(super) fn gui_keep_visible(game: &mut Game<'_>) -> bool {
+    if !game.native_window() || !game.native_on(ID) || !gui_open() {
+        return false;
+    }
+    game.ui.hide_gui = false;
+    true
+}
+
+// Closing must run even when Horizon skips native_hud (F1 or another screen).
+// Server Game instances share the module's state but never own its GUI.
+pub(super) fn gui_frame(game: &mut Game<'_>) {
+    if !game.native_window() || !gui_open() {
+        return;
+    }
+    if with(|s| s.gui.closing)
+        || !game.native_on(ID)
+        || !game.native_playing()
+        || game.player.is_none()
+        || game.ui.hide_gui
+    {
+        close_gui(game);
     }
 }
 
