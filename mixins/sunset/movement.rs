@@ -86,6 +86,24 @@ pub(super) fn velocity_factor(scale_percent: f64, blend_percent: f64) -> f64 {
     1.0 + (scale - 1.0) * blend
 }
 
+pub(super) fn item_use_factor(
+    using_item: bool,
+    no_slow_percent: Option<[f64; 2]>,
+    on_ground: bool,
+) -> f64 {
+    if !using_item {
+        return 1.0;
+    }
+    let Some(percent) = no_slow_percent.map(|v| if on_ground { v[0] } else { v[1] }) else {
+        return 1.0;
+    };
+    if percent.is_finite() {
+        percent.clamp(20.0, 100.0) / 100.0
+    } else {
+        1.0
+    }
+}
+
 pub(super) fn turn_toward(from: f32, to: f32, max_degrees: f32) -> f32 {
     if !from.is_finite() || !to.is_finite() || !max_degrees.is_finite() {
         return from;
@@ -232,5 +250,13 @@ mod tests {
         let hit = [3.0, 2.5, 0.5];
         assert!(!clear_voxel_ray(eye, hit, |p| p == [1, 2, 0]));
         assert!(clear_voxel_ray(eye, hit, |p| p == [3, 2, 0]));
+    }
+
+    #[test]
+    fn item_use_factor_preserves_configured_ground_and_air_slowdown() {
+        assert_eq!(item_use_factor(true, Some([50.0, 80.0]), true), 0.5);
+        assert_eq!(item_use_factor(true, Some([50.0, 80.0]), false), 0.8);
+        assert_eq!(item_use_factor(false, Some([50.0, 80.0]), true), 1.0);
+        assert_eq!(item_use_factor(true, None, true), 1.0);
     }
 }

@@ -661,6 +661,7 @@ pub(super) struct State {
     found_at: u64,
     scaffold_wait: u32,
     scaffold_recent: Vec<([i32; 3], u64)>,
+    scaffold_rotation: Option<(f32, f32)>,
     // Scaffold's placed blocks, drawn for 8 ticks as they fade.
     scaffold_placed: Vec<([i32; 3], u8)>,
     click_wait: u32,
@@ -742,6 +743,7 @@ impl State {
             found_at: 0,
                     scaffold_wait: 0,
             scaffold_recent: Vec::new(),
+            scaffold_rotation: None,
                     scaffold_placed: Vec::new(),
             click_wait: 0,
             blink_ticks: 0,
@@ -1299,7 +1301,10 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
     });
     if !on {
         match name {
-            "Scaffold" => with(|s| { s.scaffold_wait = 0; s.scaffold_recent.clear(); }),
+            "Scaffold" => {
+                with(|s| { s.scaffold_wait = 0; s.scaffold_recent.clear(); });
+                restore_scaffold_rotation(game);
+            }
             "Speed" => {
                 with(|s| { s.strafe = Strafe::default(); s.knockback_ticks = 0; });
                 horizon_client::motion::sunset_motion::set_across(None);
@@ -1313,6 +1318,17 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
     save(game);
     if announce {
         say(game, &format!("{name} {}", if on { "on" } else { "off" }));
+    }
+}
+
+fn take_scaffold_rotation(saved: &mut Option<(f32, f32)>) -> Option<(f32, f32)> {
+    saved.take()
+}
+
+fn restore_scaffold_rotation(game: &mut Game<'_>) {
+    if let Some((yaw, pitch)) = with(|s| take_scaffold_rotation(&mut s.scaffold_rotation)) {
+        game.yaw = yaw;
+        game.pitch = pitch;
     }
 }
 
@@ -1387,6 +1403,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
         horizon_client::motion::sunset_motion::set_safe_walk(false);
+        restore_scaffold_rotation(game);
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
         return;
     }
@@ -1974,6 +1991,8 @@ fn scaffold_place(game: &mut Game<'_>, m: &Module, at: [i32; 3]) -> bool {
     if m.b("Rotate") && m.n("Rotation speed") < 180.0 {
         let (yaw, pitch) = look_at(eye, hit);
         let rate = m.n("Rotation speed") as f32;
+    let initial = (game.yaw, game.pitch);
+    with(|s| { s.scaffold_rotation.get_or_insert(initial); });
         game.yaw = super::sunset_movement::turn_toward(game.yaw, yaw, rate);
         game.pitch = super::sunset_movement::turn_toward(game.pitch, pitch, rate).clamp(-90.0, 90.0);
         let turn = (yaw - game.yaw + 180.0).rem_euclid(360.0) - 180.0;
@@ -2962,12 +2981,17 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     let (flight, no_slow, pause) = with(|s| {
         let pause = s.knockback_ticks;
         s.knockback_ticks = pause.saturating_sub(1);
-        (s.is_on("Flight"), s.is_on("No Slow"), pause)
+        let no_slow = s.module("No Slow").filter(|m| m.on).map(|m| [m.n("Ground %"), m.n("Air %")]);
+        (s.is_on("Flight"), no_slow, pause)
     });
+    let slow_factor = super::sunset_movement::item_use_factor(
+        game.using.is_some(), no_slow, p.ground.on_ground,
+    );
     if !super::sunset_movement::speed_can_write(
-        flight || p.flying, p.fall_flying, game.using.is_some(), no_slow,
+        flight || p.flying, p.fall_flying, game.using.is_some(), no_slow.is_some(),
         pause, p.collision.horizontal, m.b("Stop at wall"),
     ) { return None; }
+    let scale_across = |v: [f64; 2]| [v[0] * slow_factor, v[1] * slow_factor];
     let effect = |id: &str| game.potions.effects.amplifier(id).map_or(0.0, |a| f64::from(a + 1));
     // Meteor's stopSpeed.
     if p.fall_flying
@@ -3002,7 +3026,7 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
                 m.n("Deceleration"), m.n("Strafe strength"), m.n("Max speed"),
             )
         };
-        return Some((across, up));
+        return Some((scale_across(across), up));
     }
     let yaw = f64::from(game.yaw).to_radians();
     if vanilla {
@@ -3012,7 +3036,7 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         let r = f64::from(i8::from(held(KeyCode::KeyD)) - i8::from(held(KeyCode::KeyA)));
         let diagonal = if (held(KeyCode::KeyW) || held(KeyCode::KeyS)) && (held(KeyCode::KeyA) || held(KeyCode::KeyD)) { std::f64::consts::FRAC_1_SQRT_2 } else { 1.0 };
         let k = m.n("Vanilla speed") / 20.0 * diagonal * (1.0 + effect("speed") * 0.205);
-        return Some(([(forward[0] * f + right[0] * r) * k, (forward[1] * f + right[1] * r) * k], None));
+        return Some((scale_across([(forward[0] * f + right[0] * r) * k, (forward[1] * f + right[1] * r) * k]), None));
     }
     let base = 0.2873 * (1.0 + 0.2 * effect("speed")) / (1.0 + 0.2 * effect("slowness"));
     let forward = f64::from(i8::from(held(KeyCode::KeyW)) - i8::from(held(KeyCode::KeyS)));
@@ -3064,7 +3088,7 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     });
     // Strafe.transformStrafe: the speed the way the move keys point.
     if !moving {
-        return Some(([0.0; 2], up));
+        return Some((scale_across([0.0; 2]), up));
     }
     let mut turn = 90.0 * side.signum();
     if forward != 0.0 {
@@ -3075,7 +3099,7 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         dir -= 180.0;
     }
     let dir = dir.to_radians();
-    Some(([-dir.sin() * speed, dir.cos() * speed], up))
+    Some((scale_across([-dir.sin() * speed, dir.cos() * speed]), up))
 }
 
 // An explosion packet's push on the player, as it arrives (before the game adds it).
@@ -5106,5 +5130,12 @@ mod movement_config_tests {
         let mut restored = State::new();
         restored.load_text(&state.save_text());
         assert_eq!(restored.module("Fast Place").unwrap().n("Speed"), 3.0);
+    }
+
+    #[test]
+    fn scaffold_rotation_restore_consumes_the_saved_view_once() {
+        let mut saved = Some((135.0, -20.0));
+        assert_eq!(take_scaffold_rotation(&mut saved), Some((135.0, -20.0)));
+        assert_eq!(take_scaffold_rotation(&mut saved), None);
     }
 }
