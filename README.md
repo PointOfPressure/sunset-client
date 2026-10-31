@@ -119,7 +119,7 @@ Highway Builder and Infinity Miner.
 `%APPDATA%\horizon`, Linux: `~/.local/share/horizon`, macOS: `~/Library/Application Support/horizon`, and the same
 folder inside `instances\native-mods`), then play the plain **Horizon** instance.
 
-Each Sunset release targets one Horizon Nightly. The **Native mods** instance stays on that revision until you
+Each Sunset release is built for one Horizon release. The **Native mods** instance stays on that revision until you
 update Sunset with the installer again.
 
 ## If something goes wrong
@@ -153,7 +153,7 @@ See the [feature roadmap](docs/feature-roadmap.md) for what has landed, what is 
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: [vstxx](https://github.com/vstxx), [Rust](https://github.com/zackmsa777-a11y). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
