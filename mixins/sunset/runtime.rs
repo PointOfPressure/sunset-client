@@ -434,7 +434,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Break Delay", Player, "Changes the delay between breaking one block and the next (Meteor's Break Delay): 0 means none.")
             .num("Cooldown (ticks)", 0.0, 0.0, 5.0, 1.0),
         Module::new("Auto Respawn", Player, "Respawns as soon as you die."),
-        Module::new("Panic", Player, "Turns every module off at once. Bind it to a key."),
+        Module::new("Panic", Player, "Turns every module off and hides Sunset: no HUD, menu, chat lines or keys, and gone from Options > Mods, until you type .panic again or restart the game. Bind it to a key."),
         // Render
         Module::new("ClickGUI", Render, "How this menu looks: accent colour, size, panel width, corner radius, text indent, background opacity and a dim behind it. Menu dim is the game's own dim and blur behind the inventory and the Esc menu.")
             .colour("Accent color", "Gold")
@@ -1035,6 +1035,9 @@ static FLY_LAST_Y: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 static ANTI_SPRINT: AtomicBool = AtomicBool::new(false);
 static ANTI_GROUND: AtomicBool = AtomicBool::new(false);
 static WELCOMED: AtomicBool = AtomicBool::new(false);
+// Panic hid Sunset: no HUD, menu, chat lines or keys, no row in Options > Mods, and only .panic is read from the chat
+// (it brings Sunset back). Not saved: a restart brings it back too.
+static HIDDEN: AtomicBool = AtomicBool::new(false);
 // The server takes one position packet per tick and disconnects a client that
 // sends more ("Invalid move player packet received"). Criticals hops over two
 // ticks instead: stage 1 and 2 turn the next position packets into the hop up
@@ -1202,6 +1205,9 @@ pub(super) fn key_label(key: Option<&str>) -> String {
 
 // A line in chat: Sunset's tag, then the message.
 pub(super) fn say(game: &mut Game<'_>, msg: &str) {
+    if HIDDEN.load(Ordering::Relaxed) {
+        return;
+    }
     let line = Text::literal("[Sunset] ")
         .with_color(accent())
         .append(Text::literal(msg).with_color(horizon_client::text::WHITE));
@@ -1289,6 +1295,9 @@ pub(super) fn look_at(eye: [f64; 3], at: [f64; 3]) -> (f32, f32) {
 // ---------------------------------------------------------------- the menu
 
 pub(super) fn listed(mods: &mut Vec<super::native_hooks::NativeMod>) {
+    if HIDDEN.load(Ordering::Relaxed) {
+        return;
+    }
     mods.push(super::native_hooks::NativeMod {
         id: ID.into(),
         title: format!("{NAME} {VERSION}"),
@@ -1578,7 +1587,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
         });
         return;
     }
-    if !game.native_on(ID) {
+    if !game.native_on(ID) || HIDDEN.load(Ordering::Relaxed) {
         release_binds();
         return;
     }
@@ -4205,6 +4214,16 @@ pub(super) fn chat(game: &mut Game<'_>, message: &str) -> bool {
     if !game.native_window() || !game.native_on(ID) {
         return false;
     }
+    // Hidden, the chat is the game's own but for .panic, which brings Sunset back.
+    if HIDDEN.load(Ordering::Relaxed) {
+        if message.trim() != ".panic" {
+            return false;
+        }
+        HIDDEN.store(false, Ordering::Relaxed);
+        game.list_native_mods();
+        say(game, "Back. Everything is still off.");
+        return true;
+    }
     let Some(rest) = message.strip_prefix('.') else {
         return false;
     };
@@ -4231,7 +4250,7 @@ const HELP: &[(&str, &str)] = &[
     (".bind <module> <key|mouse4|none>", "bind a key or mouse button to a module"),
     (".binds", "list the binds"),
     (".reset <module>", "put a module back to its defaults"),
-    (".panic", "turn every module off"),
+    (".panic", "turn every module off and hide Sunset (.panic again brings it back)"),
     (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
@@ -4263,7 +4282,12 @@ pub(super) fn panic_off(game: &mut Game<'_>) {
     horizon_client::motion::sunset_motion::set_safe_walk(false);
     horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed);
     save(game);
-    say(game, "Everything is off.");
+    if gui_open() {
+        close_gui(game);
+    }
+    HIDDEN.store(true, Ordering::Relaxed);
+    // Options > Mods keeps the rows it was given: given again, without Sunset's.
+    game.list_native_mods();
 }
 
 // .profile save|load|delete|list <name>: the modules' settings kept under a name.
@@ -4872,7 +4896,7 @@ fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32
 }
 
 pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corners) {
-    if !game.native_window() || !game.native_on(ID) {
+    if !game.native_window() || !game.native_on(ID) || HIDDEN.load(Ordering::Relaxed) {
         return;
     }
     ensure_loaded(game);

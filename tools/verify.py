@@ -171,6 +171,8 @@ def clean():
         if state().get("screen") not in ("playing", None):
             ctl("close")
     # Every module off, whatever a test left on (a toggle typed while dead never arrives), then the HUD back on.
+    # .panic hides Sunset too; the second one brings it back.
+    say(".panic")
     say(".panic")
     say(".reset hud")
     on.clear()
@@ -1140,16 +1142,35 @@ def _():
 
 @test("Panic")
 def _():
+    # .panic turns everything off and hides Sunset: nothing said, no HUD, no row in Options > Mods; .panic again
+    # brings it back (everything still off).
+    def in_mods_list():
+        ctl("options", "mods")
+        wait(4)
+        listed = "Sunset" in json.dumps(ctl("screen"))
+        ctl("close")
+        wait(4)
+        return listed
+
     only("sprint", "fastplace", "fullbright")
+    shown = (watermark(), in_mods_list())
     mark = log_mark()
     say(".panic")
     wait(6)
     said = sunset_said(mark)
     sprinting = state()["player"].get("sprinting")
     on.clear()
-    # Panic switched the HUD off too: put it back as it starts.
+    hidden = (watermark(), in_mods_list())
+    mark = log_mark()
+    say(".panic")
+    wait(6)
+    back_said = sunset_said(mark)
+    # Panic switched the HUD module off too: put it back as it starts.
     say(".reset hud")
-    return not sprinting and "Everything is off." in said, f"after .panic Sunset says {said}, sprinting: {sprinting}"
+    back = (watermark(), in_mods_list())
+    ok = not sprinting and shown == (True, True) and not said and hidden == (False, False) and back == (True, True) and back_said
+    return ok, (f"HUD / in Options > Mods before {shown}; after .panic Sunset says {said}, sprinting: {sprinting}, "
+                f"HUD / listed {hidden}; after .panic again it says {back_said}, HUD / listed {back}")
 
 
 @test("Profiles")
@@ -3293,6 +3314,7 @@ def light_clean():
     if state().get("screen") not in ("playing", None):
         ctl("key", "esc", "tap")
         wait(2)
+    say(".panic")
     say(".panic")
     say(".reset hud")
     on.clear()
