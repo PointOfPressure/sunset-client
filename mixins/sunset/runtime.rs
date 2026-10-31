@@ -289,6 +289,36 @@ impl Module {
             _ => None,
         }
     }
+
+    fn setting_visible(&self, j: usize) -> bool {
+        let name = self.settings[j].name;
+        let advanced = self.b("Advanced");
+        match self.name {
+            "Speed" => match name {
+                "Vanilla speed" => self.p("Mode") != "Strafe",
+                "Strafe speed" | "Speed limit" => self.p("Mode") == "Strafe",
+                "Ground multiplier" => advanced && self.p("Mode") == "Custom",
+                "Air multiplier" => advanced && matches!(self.p("Mode"), "Smooth" | "Low Hop" | "Custom") && !self.b("Only on ground"),
+                "Acceleration" | "Deceleration" | "Strafe strength" => advanced && matches!(self.p("Mode"), "Smooth" | "Custom"),
+                "Jump height" => advanced && self.p("Mode") == "Low Hop",
+                "Max speed" | "Sprint multiplier" => advanced && matches!(self.p("Mode"), "Smooth" | "Low Hop" | "Custom"),
+                "Knockback pause" | "Stop at wall" => advanced,
+                _ => true,
+            },
+            "Velocity" => match name {
+                "Use air values" => advanced,
+                "Air knockback horizontal" | "Air knockback vertical" => advanced && self.b("Use air values"),
+                "Blend %" => self.p("Mode") == "Blend",
+                _ => true,
+            },
+            "Scaffold" => match name {
+                "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => advanced,
+                "Rotation speed" => advanced && self.b("Rotate"),
+                _ => true,
+            },
+            _ => true,
+        }
+    }
 }
 
 // Every module with its defaults, in menu order.
@@ -324,14 +354,25 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Delay", 20.0, 1.0, 200.0, 1.0)
             .num("Off time", 1.0, 1.0, 20.0, 1.0),
         Module::new("Speed", Movement, "Modifies your movement speed when moving on the ground.")
-            .pick("Mode", &["Vanilla", "Strafe"])
+            .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom"])
             .num("Vanilla speed", 5.6, 0.0, 20.0, 0.1)
             .num("Strafe speed", 1.6, 0.0, 3.0, 0.05)
             .bool("Speed limit", false)
             .num("Timer", 1.0, 0.01, 10.0, 0.01)
             .bool("In liquids", false)
             .bool("When sneaking", false)
-            .bool("Only on ground", false),
+            .bool("Only on ground", false)
+            .bool("Advanced", false)
+            .num("Ground multiplier", 1.0, 0.1, 2.0, 0.05)
+            .num("Air multiplier", 0.8, 0.1, 2.0, 0.05)
+            .num("Acceleration", 0.08, 0.005, 0.5, 0.005)
+            .num("Deceleration", 0.06, 0.005, 0.5, 0.005)
+            .num("Strafe strength", 0.7, 0.0, 1.0, 0.05)
+            .num("Jump height", 0.30, 0.2, 0.42, 0.01)
+            .num("Max speed", 1.5, 0.1, 2.0, 0.05)
+            .num("Knockback pause", 3.0, 0.0, 10.0, 1.0)
+            .num("Sprint multiplier", 1.0, 0.5, 1.5, 0.05)
+            .bool("Stop at wall", false),
         Module::new("No Fall", Movement, "Stops fall damage (Meteor's No Fall). Packet tells the server you are on the ground as you fall; No ground never does; Air place puts a block under you; Place puts water (or the Placed item) where you land and picks it back up.")
             .pick("Mode", &["Packet", "No ground", "Air place", "Place"])
             .pick("Placed item", &["Bucket", "Powder snow", "Hay bale", "Cobweb", "Slime block"])
@@ -340,6 +381,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Anchor", true)
             .bool("Pause on mace", true),
         Module::new("Velocity", Movement, "Prevents you from being moved by external forces.")
+            .pick("Mode", &["Scale", "Blend"])
             .bool("Knockback", true)
             .num("Knockback horizontal", 0.0, 0.0, 1.0, 0.05)
             .num("Knockback vertical", 0.0, 0.0, 1.0, 0.05)
@@ -351,7 +393,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Liquids vertical", 0.0, 0.0, 1.0, 0.05)
             .bool("Entity push", true)
             .num("Entity push amount", 0.0, 0.0, 1.0, 0.05)
-            .bool("Sinking", false),
+            .bool("Sinking", false)
+            .bool("Advanced", false)
+            .bool("Use air values", false)
+            .num("Air knockback horizontal", 1.0, 0.0, 1.0, 0.05)
+            .num("Air knockback vertical", 1.0, 0.0, 1.0, 0.05)
+            .num("Blend %", 50.0, 0.0, 100.0, 5.0),
         Module::new("Spider", Movement, "Climbs walls.")
             .num("Climb speed", 0.2, 0.1, 1.0, 0.1),
         Module::new("Step", Movement, "Walks up full blocks and more without jumping (step up).")
@@ -363,7 +410,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Screens", &["All menus", "Inventory"])
             .bool("Jump", true)
             .bool("Sneak", true)
-            .bool("Arrows", true),
+            .bool("Arrows", true)
+            .bool("Sprint", true)
+            .num("Ground speed %", 100.0, 20.0, 150.0, 5.0)
+            .num("Air speed %", 100.0, 20.0, 150.0, 5.0),
         Module::new("Glide", Movement, "Falls slowly, and never takes fall damage while it does.")
             .num("Fall speed", 2.5, 0.5, 8.0, 0.5),
         Module::new("No Jump Delay", Movement, "Jumps again the moment you land when you hold the jump key."),
@@ -490,7 +540,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Shape mode", &["Both", "Lines", "Sides"])
             .num("Fill opacity", 0.04, 0.0, 1.0, 0.02)
             .colour("Color", "Purple")
-            .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0),
+            .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0)
+            .bool("Advanced", false)
+            .bool("Safe walk", false)
+            .bool("Validate ray", false)
+            .num("Max placement distance", 6.0, 2.0, 6.0, 0.25)
+            .num("Duplicate cooldown", 0.0, 0.0, 8.0, 1.0)
+            .num("Rotation speed", 180.0, 5.0, 180.0, 5.0),
         Module::new("Anti Hunger", Player, "Spends less food by hiding that you are sprinting and on the ground.")
             .bool("Sprint", true)
             .bool("Ground", true),
@@ -669,6 +725,7 @@ pub(super) struct State {
     // the next one is the server's push (Velocity).
     velocity: Option<[f64; 3]>,
     strafe: Strafe,
+    knockback_ticks: u32,
     // Flight: Meteor's anti kick counters, the yaw it keeps, which way it nudged last, and whether it let go of sneak.
     fly_delay: i32,
     fly_off: i32,
@@ -683,6 +740,8 @@ pub(super) struct State {
     // Block ESP's finds: where, and which colour.
     blocks: Sweep<u32>,
     scaffold_wait: u32,
+    scaffold_recent: Vec<([i32; 3], u64)>,
+    scaffold_rotation: Option<(f32, f32)>,
     // Scaffold's placed blocks, drawn for 8 ticks as they fade.
     scaffold_placed: Vec<([i32; 3], u8)>,
     click_wait: u32,
@@ -755,6 +814,7 @@ impl State {
             high_jumping: false,
                     velocity: None,
                     strafe: Strafe::default(),
+            knockback_ticks: 0,
                     fly_delay: 0,
                     fly_off: 0,
                     fly_last_yaw: 0.0,
@@ -766,6 +826,8 @@ impl State {
             waypoints: Vec::new(),
             blocks: Sweep::new(),
                     scaffold_wait: 0,
+            scaffold_recent: Vec::new(),
+            scaffold_rotation: None,
                     scaffold_placed: Vec::new(),
             click_wait: 0,
             blink_ticks: 0,
@@ -869,6 +931,26 @@ impl State {
             "on" => m.on = v == "true",
             "key" => m.key = key_from_text(v),
             _ => {
+                // Settings from the earlier local movement build used different names and percentage units.
+                let migrated = match (id, field) {
+                    ("speed", "speed") => Some(("vanillaspeed", v.to_owned())),
+                    ("speed", "mode") if norm(v) == "ground" => Some(("mode", "Vanilla".to_owned())),
+                    ("velocity", "horizontal") => v.parse::<f64>().ok().filter(|n| n.is_finite())
+                        .map(|n| ("knockbackhorizontal", (n / 100.0).to_string())),
+                    ("velocity", "vertical") => v.parse::<f64>().ok().filter(|n| n.is_finite())
+                        .map(|n| ("knockbackvertical", (n / 100.0).to_string())),
+                    ("velocity", "airhorizontal") => v.parse::<f64>().ok().filter(|n| n.is_finite())
+                        .map(|n| ("airknockbackhorizontal", (n / 100.0).to_string())),
+                    ("velocity", "airvertical") => v.parse::<f64>().ok().filter(|n| n.is_finite())
+                        .map(|n| ("airknockbackvertical", (n / 100.0).to_string())),
+                    ("scaffold", "rotation") => Some(("rotate", (norm(v) != "none").to_string())),
+                    ("scaffold", "maxdistance") => Some(("maxplacementdistance", v.to_owned())),
+                    _ => None,
+                };
+                if let Some((target, value)) = migrated {
+                    if let Some(s) = m.settings.iter_mut().find(|s| norm(s.name) == target) { s.parse(&value); }
+                    return;
+                }
                 // No Render's switches were called "Fog", "Water fog" and so on before 0.8.1.
                 let legacy = format!("hide{field}");
                 if let Some(s) = m.settings.iter_mut().find(|s| norm(s.name) == field || (id == "norender" && norm(s.name) == legacy)) {
@@ -1325,9 +1407,36 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
         m.on = !m.on;
         (m.name, m.on)
     });
+    if !on {
+        match name {
+            "Scaffold" => {
+                with(|s| { s.scaffold_wait = 0; s.scaffold_recent.clear(); });
+                restore_scaffold_rotation(game);
+            }
+            "Speed" => {
+                with(|s| { s.strafe = Strafe::default(); s.knockback_ticks = 0; });
+                horizon_client::motion::sunset_motion::set_across(None);
+                horizon_client::motion::sunset_motion::set_up(None);
+            },
+            "Velocity" => with(|s| { s.velocity = None; s.blast = [0.0; 3]; }),
+            "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
+            _ => {},
+        }
+    }
     save(game);
     if announce {
         say(game, &format!("{name} {}", if on { "on" } else { "off" }));
+    }
+}
+
+fn take_scaffold_rotation(saved: &mut Option<(f32, f32)>) -> Option<(f32, f32)> {
+    saved.take()
+}
+
+fn restore_scaffold_rotation(game: &mut Game<'_>) {
+    if let Some((yaw, pitch)) = with(|s| take_scaffold_rotation(&mut s.scaffold_rotation)) {
+        game.yaw = yaw;
+        game.pitch = pitch;
     }
 }
 
@@ -1539,7 +1648,17 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
 // Before the game ticks: keys this mod holds, abilities, step height.
 pub(super) fn pre_tick(game: &mut Game<'_>) {
     sync_binds(game);
-    if !game.native_window() || !game.native_on(ID) || game.player.is_none() {
+    // Single player's own server ticks a game of its own (no window) through here too: it must leave the player's
+    // state alone, or it clears Velocity's baseline and Speed's push between the client's ticks.
+    if !game.native_window() {
+        return;
+    }
+    if !game.native_on(ID) || game.player.is_none() {
+        horizon_client::motion::sunset_motion::set_across(None);
+        horizon_client::motion::sunset_motion::set_up(None);
+        horizon_client::motion::sunset_motion::set_safe_walk(false);
+        restore_scaffold_rotation(game);
+        with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
         return;
     }
     ensure_loaded(game);
@@ -1573,7 +1692,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     {
         want.extend(super::sunset_player::afk_keys(&m));
     }
-    horizon_client::motion::sunset_motion::set_safe_walk(on("Safe Walk") && playing);
+    let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.b("Safe walk"));
+    horizon_client::motion::sunset_motion::set_safe_walk((on("Safe Walk") || scaffold_walk) && playing);
     let mut injected = Vec::new();
     for k in want {
         if game.keys.insert(k) {
@@ -1745,7 +1865,7 @@ fn module_tick(game: &mut Game<'_>) {
             f64::from(i8::from(held(KeyCode::KeyW)) - i8::from(held(KeyCode::KeyS))),
             f64::from(i8::from(held(KeyCode::KeyA)) - i8::from(held(KeyCode::KeyD))),
             m.b("Jump") && held(KeyCode::Space),
-            held(KeyCode::ControlLeft),
+            m.b("Sprint") && held(KeyCode::ControlLeft),
             m.b("Sneak") && held(KeyCode::ShiftLeft),
             m.b("Arrows"),
             [held(KeyCode::ArrowLeft), held(KeyCode::ArrowRight), held(KeyCode::ArrowUp), held(KeyCode::ArrowDown)],
@@ -1788,7 +1908,10 @@ fn module_tick(game: &mut Game<'_>) {
                 p.velocity.y = if jump { fly * 0.6 } else if sneak { -fly * 0.6 } else { 0.0 };
             } else {
                 if let Some([x, z]) = dir {
-                    let speed = if sneaking { 0.0655 } else if sprinting { 0.2806 } else { 0.2159 };
+                    let factor = screen_move.as_ref().map_or(1.0, |m| {
+                        m.n(if p.ground.on_ground { "Ground speed %" } else { "Air speed %" }) / 100.0
+                    });
+                    let speed = (if sneaking { 0.0655 } else if sprinting { 0.2806 } else { 0.2159 }) * factor;
                     p.velocity.x = x * speed;
                     p.velocity.z = z * speed;
                 }
@@ -1919,7 +2042,7 @@ fn module_tick(game: &mut Game<'_>) {
         let _ = game.leave_server(Some(format!("Sunset Auto Log: health was {health}")));
         return;
     }
-    if let Some(m) = get("Scaffold") {
+    if let Some(m) = get("Scaffold").filter(|_| get("Kill Aura").is_none() && get("Blink").is_none()) {
         scaffold(game, m);
     }
     if let Some(m) = get("Auto Armor") {
@@ -2111,12 +2234,43 @@ fn scaffold_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
 }
 
 fn scaffold_place(game: &mut Game<'_>, m: &Module, at: [i32; 3]) -> bool {
+    let duplicate_cooldown = m.n("Duplicate cooldown") as u64;
+    if duplicate_cooldown > 0 && with(|s| s.scaffold_recent.iter().any(|(pos, _)| *pos == at)) { return false; }
+    let Some(eye) = game.eye_position() else { return false; };
+    let side = super::sunset_util::place_side(game, at);
+    if side.is_none() && !m.b("Air place") { return false; }
+    let neighbor = side.map_or(at, |(pos, _)| pos);
+    let cursor = super::sunset_movement::face_cursor(at, neighbor);
+    let hit = if neighbor == at {
+        [f64::from(at[0]) + 0.5, f64::from(at[1]) + 1.0, f64::from(at[2]) + 0.5]
+    } else {
+        [f64::from(neighbor[0]) + f64::from(cursor[0]), f64::from(neighbor[1]) + f64::from(cursor[1]), f64::from(neighbor[2]) + f64::from(cursor[2])]
+    };
+    if super::sunset_util::dist(eye, hit) > m.n("Max placement distance") { return false; }
+    if m.b("Validate ray") && !super::sunset_movement::clear_voxel_ray(eye, hit, |cell| {
+        super::sunset_util::facts(game, cell).full_collision
+    }) { return false; }
+    if m.b("Rotate") && m.n("Rotation speed") < 180.0 {
+        let (yaw, pitch) = look_at(eye, hit);
+        let rate = m.n("Rotation speed") as f32;
+    let initial = (game.yaw, game.pitch);
+    with(|s| { s.scaffold_rotation.get_or_insert(initial); });
+        game.yaw = super::sunset_movement::turn_toward(game.yaw, yaw, rate);
+        game.pitch = super::sunset_movement::turn_toward(game.pitch, pitch, rate).clamp(-90.0, 90.0);
+        let turn = (yaw - game.yaw + 180.0).rem_euclid(360.0) - 180.0;
+        if turn.abs() > 2.0 || (pitch - game.pitch).abs() > 2.0 { return false; }
+    }
     let Some(slot) = scaffold_slot(game, m) else {
         return false;
     };
     let placed = super::sunset_util::place_block(game, at, slot, m.b("Rotate"), true);
-    if placed && m.b("Render") {
-        with(|s| s.scaffold_placed.push((at, 8)));
+    if placed {
+        with(|s| {
+            if duplicate_cooldown > 0 {
+                s.scaffold_recent.push((at, s.ticks + duplicate_cooldown));
+            }
+            if m.b("Render") { s.scaffold_placed.push((at, 8)); }
+        });
     }
     placed
 }
@@ -2127,6 +2281,8 @@ fn scaffold_place(game: &mut Game<'_>, m: &Module, at: [i32; 3]) -> bool {
 pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
     with(|s| {
+        let ticks = s.ticks;
+        s.scaffold_recent.retain(|(_, until)| *until > ticks);
         s.scaffold_placed.retain_mut(|(_, t)| {
             *t = t.saturating_sub(1);
             *t > 0
@@ -3119,6 +3275,34 @@ pub(super) fn remember_velocity(game: &Game<'_>) {
     with(|s| s.velocity = v);
 }
 
+// A correction replaces the player's position: Speed's strafe and Scaffold's waits start again. (Velocity's baseline
+// stays: Horizon's server can bring a hit's knockback with a position packet, which Velocity has to see.)
+pub(super) fn server_correction(game: &mut Game<'_>) {
+    if !game.native_on(ID) { return; }
+    with(|s| {
+        s.knockback_ticks = 0;
+        s.strafe = Strafe::default();
+        s.scaffold_recent.clear();
+        s.scaffold_wait = 0;
+    });
+    horizon_client::motion::sunset_motion::set_across(None);
+    horizon_client::motion::sunset_motion::set_up(None);
+}
+
+fn velocity_share(m: &Module, name: &str) -> f64 {
+    let blend = if m.p("Mode") == "Blend" { m.n("Blend %") } else { 100.0 };
+    super::sunset_movement::velocity_factor(m.n(name) * 100.0, blend)
+}
+
+fn knockback_shares(m: &Module, ground: bool) -> [f64; 2] {
+    let (h, v) = if !ground && m.b("Use air values") {
+        ("Air knockback horizontal", "Air knockback vertical")
+    } else {
+        ("Knockback horizontal", "Knockback vertical")
+    };
+    [velocity_share(m, h), velocity_share(m, v)]
+}
+
 // Flight (Meteor's) before the tick: hovering after a fall of three blocks, nudge the yaw a degree either way so the
 // look the server sees moves (put back after the tick); in Velocity mode set the speed the air gives you, and with
 // No sneak let go of sneaking (its key still takes you down).
@@ -3238,7 +3422,22 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     let p = game.player.as_ref()?;
     let held = |k: KeyCode| game.keys.contains(&k);
     let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
-    let vanilla = m.p("Mode") == "Vanilla";
+    let mode = m.p("Mode");
+    let vanilla = mode == "Vanilla";
+    let (flight, no_slow, pause) = with(|s| {
+        let pause = s.knockback_ticks;
+        s.knockback_ticks = pause.saturating_sub(1);
+        let no_slow = s.module("No Slow").filter(|m| m.on).map(|m| [m.n("Ground %"), m.n("Air %")]);
+        (s.is_on("Flight"), no_slow, pause)
+    });
+    let slow_factor = super::sunset_movement::item_use_factor(
+        game.using.is_some(), no_slow, p.ground.on_ground,
+    );
+    if !super::sunset_movement::speed_can_write(
+        flight || p.flying, p.fall_flying, game.using.is_some(), no_slow.is_some(),
+        pause, p.collision.horizontal, m.b("Stop at wall"),
+    ) { return None; }
+    let scale_across = |v: [f64; 2]| [v[0] * slow_factor, v[1] * slow_factor];
     let effect = |id: &str| game.potions.effects.amplifier(id).map_or(0.0, |a| f64::from(a + 1));
     // Meteor's stopSpeed.
     if p.fall_flying
@@ -3250,6 +3449,31 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     {
         return None;
     }
+    if matches!(mode, "Smooth" | "Low Hop" | "Custom") {
+        if m.b("Only on ground") && !p.ground.on_ground { return None; }
+        let ground = p.ground.on_ground;
+        let multiplier = if ground {
+            if mode == "Custom" { m.n("Ground multiplier") } else { 1.0 }
+        } else { m.n("Air multiplier") };
+        let sprint = if p.sprinting { m.n("Sprint multiplier") } else { 1.0 };
+        let target = m.n("Vanilla speed") / 20.0 * multiplier * sprint;
+        let dir = move_direction(game);
+        let up = if mode == "Low Hop" && ground && dir.is_some()
+            && !held(KeyCode::Space) && !held(KeyCode::ShiftLeft)
+        { Some(m.n("Jump height")) } else { None };
+        let across = if mode == "Low Hop" {
+            dir.map_or([0.0; 2], |d| {
+                let speed = target.min(m.n("Max speed"));
+                [d[0] * speed, d[1] * speed]
+            })
+        } else {
+            super::sunset_movement::steer(
+                [p.velocity.x, p.velocity.z], dir, target, m.n("Acceleration"),
+                m.n("Deceleration"), m.n("Strafe strength"), m.n("Max speed"),
+            )
+        };
+        return Some((scale_across(across), up));
+    }
     let yaw = f64::from(game.yaw).to_radians();
     if vanilla {
         // PlayerUtils.getHorizontalVelocity, with the Speed effect's boost.
@@ -3258,7 +3482,7 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         let r = f64::from(i8::from(held(KeyCode::KeyD)) - i8::from(held(KeyCode::KeyA)));
         let diagonal = if (held(KeyCode::KeyW) || held(KeyCode::KeyS)) && (held(KeyCode::KeyA) || held(KeyCode::KeyD)) { std::f64::consts::FRAC_1_SQRT_2 } else { 1.0 };
         let k = m.n("Vanilla speed") / 20.0 * diagonal * (1.0 + effect("speed") * 0.205);
-        return Some(([(forward[0] * f + right[0] * r) * k, (forward[1] * f + right[1] * r) * k], None));
+        return Some((scale_across([(forward[0] * f + right[0] * r) * k, (forward[1] * f + right[1] * r) * k]), None));
     }
     let base = 0.2873 * (1.0 + 0.2 * effect("speed")) / (1.0 + 0.2 * effect("slowness"));
     let forward = f64::from(i8::from(held(KeyCode::KeyW)) - i8::from(held(KeyCode::KeyS)));
@@ -3310,7 +3534,7 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     });
     // Strafe.transformStrafe: the speed the way the move keys point.
     if !moving {
-        return Some(([0.0; 2], up));
+        return Some((scale_across([0.0; 2]), up));
     }
     let mut turn = 90.0 * side.signum();
     if forward != 0.0 {
@@ -3321,13 +3545,29 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         dir -= 180.0;
     }
     let dir = dir.to_radians();
-    Some(([-dir.sin() * speed, dir.cos() * speed], up))
+    Some((scale_across([-dir.sin() * speed, dir.cos() * speed]), up))
 }
 
 // An explosion packet's push on the player, as it arrives (before the game adds it).
-pub(super) fn explosion_push(push: Option<[f64; 3]>) {
+pub(super) fn explosion_push(game: &mut Game<'_>, push: Option<[f64; 3]>) {
     if let Some(push) = push {
-        with(|s| (0..3).for_each(|i| s.blast[i] += push[i]));
+        let shares = with(|s| {
+            s.knockback_ticks = s.module("Speed").filter(|m| m.on).map_or(0, |m| m.n("Knockback pause") as u32);
+            s.module("Velocity").filter(|m| m.on && m.b("Explosions"))
+                .map(|m| [velocity_share(m, "Explosions horizontal"), velocity_share(m, "Explosions vertical")])
+        });
+        horizon_client::motion::sunset_motion::set_across(None);
+        horizon_client::motion::sunset_motion::set_up(None);
+        if let (Some([h, v]), Some(p)) = (shares, game.player.as_mut()) {
+            // Horizon adds the original push after this hook; this leaves the chosen share.
+            p.velocity.x += push[0] * (h - 1.0);
+            p.velocity.y += push[1] * (v - 1.0);
+            p.velocity.z += push[2] * (h - 1.0);
+            let after = [p.velocity.x + push[0], p.velocity.y + push[1], p.velocity.z + push[2]];
+            with(|s| { s.velocity = Some(after); s.blast = [0.0; 3]; });
+        } else {
+            with(|s| (0..3).for_each(|i| s.blast[i] += push[i]));
+        }
     }
 }
 
@@ -3337,14 +3577,22 @@ pub(super) fn explosion_push(push: Option<[f64; 3]>) {
 fn velocity(game: &mut Game<'_>, m: Option<&Module>) {
     use horizon_client::motion::sunset_motion as motion;
     let (last, blast) = with(|s| (s.velocity.take(), std::mem::take(&mut s.blast)));
-    let share = |on: &str, h: &str, v: &str| m.filter(|m| m.b(on)).map_or([1.0; 2], |m| [m.n(h), m.n(v)]);
-    let liquids = m.filter(|m| m.b("Liquids")).map(|m| [m.n("Liquids horizontal"), m.n("Liquids vertical")]);
+    if let (Some(last), Some(p)) = (last, game.player.as_ref()) {
+        let impulse = [p.velocity.x - last[0] - blast[0], p.velocity.y - last[1] - blast[1], p.velocity.z - last[2] - blast[2]];
+        if game.remote.is_some() && impulse[0].hypot(impulse[2]).hypot(impulse[1]) > 0.08 {
+            with(|s| s.knockback_ticks = s.module("Speed").filter(|m| m.on).map_or(0, |m| m.n("Knockback pause") as u32));
+        }
+    }
+    let share = |on: &str, h: &str, v: &str| m.filter(|m| m.b(on)).map_or([1.0; 2], |m| [velocity_share(m, h), velocity_share(m, v)]);
+    let liquids = m.filter(|m| m.b("Liquids")).map(|m| [velocity_share(m, "Liquids horizontal"), velocity_share(m, "Liquids vertical")]);
     motion::set_liquid_flow(liquids);
     let Some(m) = m else {
         return;
     };
     let pushed = if m.b("Entity push") { entity_push(game) } else { [0.0; 2] };
-    let (knock, blasts) = (share("Knockback", "Knockback horizontal", "Knockback vertical"), share("Explosions", "Explosions horizontal", "Explosions vertical"));
+    let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
+    let knock = if m.b("Knockback") { knockback_shares(m, ground) } else { [1.0; 2] };
+    let blasts = share("Explosions", "Explosions horizontal", "Explosions vertical");
     let Some(p) = game.player.as_mut() else {
         return;
     };
@@ -3356,7 +3604,7 @@ fn velocity(game: &mut Game<'_>, m: Option<&Module>) {
         }
     }
     // The game adds the pushes later in the tick: take back what the push amount does not keep.
-    let keep = m.n("Entity push amount");
+    let keep = velocity_share(m, "Entity push amount");
     v[0] -= pushed[0] * (1.0 - keep);
     v[2] -= pushed[1] * (1.0 - keep);
     (p.velocity.x, p.velocity.y, p.velocity.z) = (v[0], v[1], v[2]);
@@ -3809,6 +4057,7 @@ const HELP: &[(&str, &str)] = &[
     (".menu [search]", "open the click menu, searching for the text"),
     (".settings <module>", "list a module's settings"),
     (".set <module> <setting> <value>", "change a setting"),
+    (".movementpreset <subtle|balanced|aggressive>", "apply explicit movement settings"),
     (".bind <module> <key|mouse4|none>", "bind a key or mouse button to a module"),
     (".binds", "list the binds"),
     (".reset <module>", "put a module back to its defaults"),
@@ -3821,12 +4070,28 @@ const HELP: &[(&str, &str)] = &[
 ];
 
 // Every module off: the Panic module, or .panic.
+fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
+    for m in &mut s.modules {
+        m.on = false;
+    }
+    s.strafe = Strafe::default();
+    s.knockback_ticks = 0;
+    s.velocity = None;
+    s.blast = [0.0; 3];
+    s.scaffold_recent.clear();
+    s.scaffold_wait = 0;
+    take_scaffold_rotation(&mut s.scaffold_rotation)
+}
+
 pub(super) fn panic_off(game: &mut Game<'_>) {
-    with(|s| {
-        for m in &mut s.modules {
-            m.on = false;
-        }
-    });
+    if let Some((yaw, pitch)) = with(panic_off_state) {
+        game.yaw = yaw;
+        game.pitch = pitch;
+    }
+    horizon_client::motion::sunset_motion::set_across(None);
+    horizon_client::motion::sunset_motion::set_up(None);
+    horizon_client::motion::sunset_motion::set_safe_walk(false);
+    horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed);
     save(game);
     say(game, "Everything is off.");
 }
@@ -3892,6 +4157,50 @@ fn profile_command(game: &mut Game<'_>, args: &[&str]) {
         }
     })();
     say(game, &result.unwrap_or_else(|e| format!("Profile: {e}.")));
+}
+
+fn apply_movement_preset(state: &mut State, style: &str) -> bool {
+    let changes: &[(&str, &str, &str)] = match norm(style).as_str() {
+        "subtle" => &[
+            ("Speed", "Mode", "Smooth"), ("Speed", "Vanilla speed", "3"),
+            ("Speed", "Only on ground", "true"), ("Speed", "Acceleration", "0.025"),
+            ("Speed", "Deceleration", "0.04"), ("Speed", "Strafe strength", "0.5"),
+            ("Velocity", "Mode", "Scale"), ("Velocity", "Knockback horizontal", "1"),
+            ("Velocity", "Knockback vertical", "1"), ("Velocity", "Explosions horizontal", "1"),
+            ("Velocity", "Explosions vertical", "1"),
+            ("Scaffold", "Delay (ticks)", "2"), ("Scaffold", "Rotate", "true"),
+            ("No Slow", "Ground %", "20"), ("No Slow", "Air %", "20"),
+            ("GUI Move", "Ground speed %", "100"), ("GUI Move", "Air speed %", "100"),
+        ],
+        "balanced" => &[
+            ("Speed", "Mode", "Strafe"), ("Speed", "Strafe speed", "1.3"),
+            ("Speed", "Speed limit", "true"),
+            ("Velocity", "Mode", "Scale"), ("Velocity", "Knockback horizontal", "0.7"),
+            ("Velocity", "Knockback vertical", "0.85"),
+            ("Scaffold", "Delay (ticks)", "1"), ("Scaffold", "Rotate", "true"),
+            ("No Slow", "Ground %", "70"), ("No Slow", "Air %", "70"),
+            ("GUI Move", "Ground speed %", "100"), ("GUI Move", "Air speed %", "100"),
+        ],
+        "aggressive" => &[
+            ("Speed", "Mode", "Custom"), ("Speed", "Vanilla speed", "10"),
+            ("Speed", "Only on ground", "false"), ("Speed", "Ground multiplier", "1.2"),
+            ("Speed", "Air multiplier", "1.1"), ("Speed", "Acceleration", "0.15"),
+            ("Speed", "Deceleration", "0.1"), ("Speed", "Strafe strength", "1"),
+            ("Velocity", "Mode", "Scale"), ("Velocity", "Knockback horizontal", "0"),
+            ("Velocity", "Knockback vertical", "0"),
+            ("Scaffold", "Delay (ticks)", "0"), ("Scaffold", "Rotation speed", "180"),
+            ("No Slow", "Ground %", "100"), ("No Slow", "Air %", "100"),
+            ("GUI Move", "Ground speed %", "125"), ("GUI Move", "Air speed %", "125"),
+        ],
+        _ => return false,
+    };
+    for &(module, setting, value) in changes {
+        if let Some(s) = state.modules.iter_mut().find(|m| m.name == module)
+            .and_then(|m| m.settings.iter_mut().find(|s| s.name == setting)) {
+            s.parse(value);
+        }
+    }
+    true
 }
 
 pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
@@ -3996,6 +4305,14 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                     save(game);
                     say(game, &shown);
                 }
+            }
+        }
+        "movementpreset" => {
+            if let Some(style) = args.get(1) && with(|s| apply_movement_preset(s, style)) {
+                save(game);
+                say(game, &format!("{style} movement preset applied. Use .settings <module> to inspect values."));
+            } else {
+                say(game, "Use .movementpreset subtle, balanced or aggressive");
             }
         }
         "bind" => {
@@ -5246,9 +5563,11 @@ pub(super) fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
             rows.push((y, Hit::Bind(i)));
             y += row_hh();
             for j in 0..m.settings.len() {
-                let hit = Hit::Setting(i, j);
-                rows.push((y, hit));
-                y += row_h(s, hit);
+                if m.setting_visible(j) {
+                    let hit = Hit::Setting(i, j);
+                    rows.push((y, hit));
+                    y += row_h(s, hit);
+                }
             }
         }
     }
@@ -5320,7 +5639,8 @@ fn win_w(s: &State) -> f32 {
 // The window's rows under its title and description, each group under its name: the settings, then the bind.
 fn win_body(s: &State, i: usize) -> (Vec<(f32, WinRow)>, f32) {
     let m = &s.modules[i];
-    let (bind, general): (Vec<usize>, Vec<usize>) = (0..m.settings.len()).partition(|&j| m.settings[j].name == "Bind mode");
+    let (bind, general): (Vec<usize>, Vec<usize>) =
+        (0..m.settings.len()).filter(|&j| m.setting_visible(j)).partition(|&j| m.settings[j].name == "Bind mode");
     let groups = [
         ("General", general.into_iter().map(|j| Hit::Setting(i, j)).collect::<Vec<_>>()),
         ("Bind", std::iter::once(Hit::Bind(i)).chain(bind.into_iter().map(|j| Hit::Setting(i, j))).collect()),
@@ -6166,4 +6486,98 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
     let hint = "Right click: settings   Enter: toggle search result   Esc: close";
     let hw = game.native_text_width(hint);
     out.push(Shape::Text(hint.to_owned(), [(w - hw) / 2.0, 3.0], 0xA0A0A0));
+}
+#[cfg(test)]
+mod movement_config_tests {
+    use super::*;
+
+    #[test]
+    fn existing_movement_settings_still_load() {
+        let mut state = State::new();
+        state.load_text("speed.mode=Strafe\nspeed.vanillaspeed=7.2\nvelocity.knockbackhorizontal=0.4\nscaffold.delayticks=2\n");
+        assert_eq!(state.module("Speed").unwrap().p("Mode"), "Strafe");
+        assert_eq!(state.module("Speed").unwrap().n("Vanilla speed"), 7.2);
+        assert_eq!(state.module("Velocity").unwrap().n("Knockback horizontal"), 0.4);
+        assert_eq!(state.module("Scaffold").unwrap().n("Delay (ticks)"), 2.0);
+    }
+
+    #[test]
+    fn local_pre_rename_movement_values_migrate() {
+        let mut state = State::new();
+        state.load_text("speed.mode=Ground\nspeed.speed=8\nvelocity.horizontal=70\nvelocity.vertical=85\nvelocity.airhorizontal=50\nscaffold.rotation=None\nscaffold.maxdistance=4\n");
+        assert_eq!(state.module("Speed").unwrap().p("Mode"), "Vanilla");
+        assert_eq!(state.module("Speed").unwrap().n("Vanilla speed"), 8.0);
+        assert_eq!(state.module("Velocity").unwrap().n("Knockback horizontal"), 0.7);
+        assert_eq!(state.module("Velocity").unwrap().n("Knockback vertical"), 0.85);
+        assert_eq!(state.module("Velocity").unwrap().n("Air knockback horizontal"), 0.5);
+        assert!(!state.module("Scaffold").unwrap().b("Rotate"));
+        assert_eq!(state.module("Scaffold").unwrap().n("Max placement distance"), 4.0);
+    }
+
+    #[test]
+    fn presets_round_trip_through_config_and_profile() {
+        let mut state = State::new();
+        assert!(apply_movement_preset(&mut state, "aggressive"));
+        let config = state.save_text();
+        let profile = state.profile_text();
+        let mut restored = State::new();
+        restored.load_text(&config);
+        assert_eq!(restored.module("Speed").unwrap().p("Mode"), "Custom");
+        assert_eq!(restored.module("Speed").unwrap().n("Vanilla speed"), 10.0);
+        assert_eq!(restored.module("Velocity").unwrap().n("Knockback horizontal"), 0.0);
+        let mut from_profile = State::new();
+        from_profile.load_profile(&profile);
+        assert_eq!(from_profile.module("No Slow").unwrap().n("Ground %"), 100.0);
+        assert!(!apply_movement_preset(&mut state, "unknown"));
+    }
+
+    #[test]
+    fn air_knockback_and_blend_have_distinct_factors() {
+        let mut state = State::new();
+        let velocity = state.modules.iter_mut().find(|m| m.name == "Velocity").unwrap();
+        for (name, value) in [("Mode", "Blend"), ("Use air values", "true"),
+            ("Knockback horizontal", "0"), ("Air knockback horizontal", "0.5"), ("Blend %", "50")] {
+            velocity.settings.iter_mut().find(|s| s.name == name).unwrap().parse(value);
+        }
+        assert_eq!(knockback_shares(velocity, true)[0], 0.5);
+        assert_eq!(knockback_shares(velocity, false)[0], 0.75);
+    }
+
+    #[test]
+    fn advanced_click_rows_follow_mode() {
+        let mut state = State::new();
+        let speed = state.modules.iter_mut().find(|m| m.name == "Speed").unwrap();
+        let index = speed.settings.iter().position(|s| s.name == "Acceleration").unwrap();
+        assert!(!speed.setting_visible(index));
+        speed.settings.iter_mut().find(|s| s.name == "Advanced").unwrap().parse("true");
+        speed.settings.iter_mut().find(|s| s.name == "Mode").unwrap().parse("Smooth");
+        assert!(speed.setting_visible(index));
+    }
+
+    #[test]
+    fn fast_place_speed_survives_config_round_trip() {
+        let mut state = State::new();
+        state.load_text("fastplace.speed=3\n");
+        assert_eq!(state.module("Fast Place").unwrap().n("Speed"), 3.0);
+
+        let mut restored = State::new();
+        restored.load_text(&state.save_text());
+        assert_eq!(restored.module("Fast Place").unwrap().n("Speed"), 3.0);
+    }
+
+    #[test]
+    fn scaffold_rotation_restore_consumes_the_saved_view_once() {
+        let mut saved = Some((135.0, -20.0));
+        assert_eq!(take_scaffold_rotation(&mut saved), Some((135.0, -20.0)));
+        assert_eq!(take_scaffold_rotation(&mut saved), None);
+    }
+
+    #[test]
+    fn panic_cleanup_disables_modules_and_returns_scaffold_rotation() {
+        let mut state = State::new();
+        state.modules.iter_mut().find(|m| m.name == "Scaffold").unwrap().on = true;
+        state.scaffold_rotation = Some((135.0, -20.0));
+        assert_eq!(panic_off_state(&mut state), Some((135.0, -20.0)));
+        assert!(!state.module("Scaffold").unwrap().on);
+    }
 }

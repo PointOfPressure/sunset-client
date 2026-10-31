@@ -1812,6 +1812,28 @@ def _():
                 f"stone with Only to better tools: {worse[0]} (started again); server has every block gone: {all(g for _, g in (plain, kept, better, worse))}")
 
 
+@test("No Slow (eating, Ground %)")
+def _():
+    def eating_rate():
+        """Blocks a second walking while eating a golden apple (32 ticks: long enough for the measure)."""
+        reset(z=-14.5)
+        slot(0, "golden_apple", 64)
+        ctl("key", "1", "tap")
+        ctl("mouse", "right", "down")
+        r = rate(ticks=20, warm=8)
+        ctl("mouse", "right", "up")
+        return r
+
+    slow = eating_rate()
+    only("noslow")
+    full = eating_rate()
+    setting("noslow", "ground %", "50")
+    half = eating_rate()
+    only()
+    return slow < 2.0 and full > 3.8 and full * 0.35 < half < full * 0.75, (
+        f"walking while eating: {slow:.2f} blocks/s off, {full:.2f} with No Slow, {half:.2f} at Ground 50%")
+
+
 @test("Fast Place (speeds)")
 def _():
     # A stone at eye height 5 blocks ahead: holding use builds a row of 4 back towards you. Ticks until all 4 are in.
