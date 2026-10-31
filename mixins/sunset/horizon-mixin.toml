@@ -21,6 +21,12 @@ name = "sunset_util"
 source = "util.rs"
 
 [[module]]
+id = "text_edit"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_text_edit"
+source = "text_edit.rs"
+
+[[module]]
 id = "profiles"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_profiles"
@@ -577,4 +583,14 @@ target = "horizon_client::player_sync::PositionSender::update"
 helper = "sync_hook.rs"
 bindings = [
   { name = "this", ty = "&mut PositionSender", value = "&mut *self" },
+]
+
+# The GUI's text editor types the text the keyboard layout makes (the named keys Sunset gets have none); it only looks.
+[[injection]]
+id = "text_event"
+kind = "HEAD"
+target = "horizon_client::game::follow_keymap"
+helper = "text_event.rs"
+bindings = [
+  { name = "event", ty = "&winit::event::WindowEvent", value = "&*event" },
 ]

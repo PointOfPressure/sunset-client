@@ -8,6 +8,7 @@
 
 use super::{Game, Screen};
 use super::sunset_visual::{Draw, Kinds, Look, distance_colour, draw_box, faded, potato};
+use super::sunset_text_edit::{Draft, EditKey};
 use super::sunset_util::{Sweep, block_pos};
 use std::fmt::Write as _;
 use horizon_client::extras::Corner;
@@ -139,10 +140,8 @@ impl Setting {
             Value::Bool(b) => on_off(*b).to_owned(),
             Value::Num { v, .. } => num(*v),
             Value::Pick { i, of } => of[*i].to_owned(),
-            Value::Text(t) => {
-                let n = t.split(',').filter(|x| !x.trim().is_empty()).count();
-                format!("{n} listed")
-            }
+            Value::Text(t) if t.is_empty() => "(empty)".to_owned(),
+            Value::Text(t) => t.chars().map(|c| if c.is_control() { '?' } else { c }).collect(),
         }
     }
     fn stored(&self) -> String {
@@ -4868,6 +4867,100 @@ pub(super) struct Gui {
     search: String,
     // Ctrl+A: the next letter replaces the whole search, Backspace clears it.
     select_all: bool,
+    // The text editor over the panels (a left click on a text setting), the GUI's width when it last drew, and
+    // whether the key just pressed was the editor's already (from the window's own event, with its text).
+    editor: Option<Editor>,
+    view_w: f32,
+    typed: bool,
+    // Ctrl or Cmd held, as the window last said.
+    shortcut: bool,
+}
+
+// A text setting being edited: the setting changes only when Apply is clicked (or Enter pressed).
+#[derive(Clone, Debug)]
+pub(super) struct Editor {
+    module: usize,
+    setting: usize,
+    // A value from .set or the config that the editor can't hold (too long, more than one line) is shown, not cut.
+    draft: Result<Draft, &'static str>,
+}
+
+fn editor_rect(w: f32, h: f32) -> [f32; 4] {
+    let width = (w - 8.0).clamp(1.0, 320.0);
+    [(w - width) / 2.0, ((h - 76.0) / 2.0).max(0.0), width, 76.0]
+}
+
+// Apply and Cancel.
+fn editor_buttons(r: [f32; 4]) -> ([f32; 4], [f32; 4]) {
+    let width = ((r[2] - 18.0) / 2.0).clamp(1.0, 56.0);
+    ([r[0] + 6.0, r[1] + 54.0, width, 15.0], [r[0] + 12.0 + width, r[1] + 54.0, width, 15.0])
+}
+
+// The editor's draft into its setting, and the editor closed.
+fn apply_editor(s: &mut State) {
+    if let Some(Editor { module, setting, draft: Ok(draft) }) = s.gui.editor.take()
+        && let Some(Value::Text(t)) = s.modules.get_mut(module).and_then(|m| m.settings.get_mut(setting)).map(|st| &mut st.value)
+    {
+        *t = draft.text().to_owned();
+    }
+}
+
+fn edit_key(name: &str) -> Option<EditKey> {
+    Some(match name {
+        "key.keyboard.left" => EditKey::Left,
+        "key.keyboard.right" => EditKey::Right,
+        "key.keyboard.home" => EditKey::Home,
+        "key.keyboard.end" => EditKey::End,
+        "key.keyboard.backspace" => EditKey::Backspace,
+        "key.keyboard.delete" => EditKey::Delete,
+        _ => return None,
+    })
+}
+
+// The window's key events while the editor is open: the text the keyboard layout makes goes into the draft (a real
+// keyboard's keys come here first, then to gui_key, which leaves them be).
+pub(super) fn text_event(event: &winit::event::WindowEvent) {
+    use winit::event::{ElementState, WindowEvent};
+    use winit::keyboard::{Key, NamedKey};
+    with(|s| {
+        if let WindowEvent::ModifiersChanged(m) = event {
+            s.gui.shortcut = m.state().control_key() && !m.state().alt_key() || m.state().super_key();
+        }
+        let WindowEvent::KeyboardInput { event, is_synthetic: false, .. } = event else {
+            return;
+        };
+        if event.state != ElementState::Pressed || !s.gui.open || s.gui.editor.is_none() {
+            return;
+        }
+        s.gui.typed = true;
+        let key = match &event.logical_key {
+            Key::Named(NamedKey::Escape) => {
+                s.gui.editor = None;
+                return;
+            }
+            Key::Named(NamedKey::Enter) => {
+                apply_editor(s);
+                return;
+            }
+            Key::Named(NamedKey::ArrowLeft) => Some(EditKey::Left),
+            Key::Named(NamedKey::ArrowRight) => Some(EditKey::Right),
+            Key::Named(NamedKey::Home) => Some(EditKey::Home),
+            Key::Named(NamedKey::End) => Some(EditKey::End),
+            Key::Named(NamedKey::Backspace) => Some(EditKey::Backspace),
+            Key::Named(NamedKey::Delete) => Some(EditKey::Delete),
+            Key::Character(c) if s.gui.shortcut && c.eq_ignore_ascii_case("a") => Some(EditKey::SelectAll),
+            _ => None,
+        };
+        let shortcut = s.gui.shortcut;
+        let Some(Editor { draft: Ok(draft), .. }) = s.gui.editor.as_mut() else {
+            return;
+        };
+        match (key, event.text.as_deref()) {
+            (Some(k), _) => draft.key(k),
+            (None, Some(text)) if !shortcut && !text.chars().any(char::is_control) => draft.insert(text),
+            _ => {}
+        }
+    });
 }
 
 impl Default for Gui {
@@ -4876,6 +4969,10 @@ impl Default for Gui {
             open: false,
             closing: false,
             select_all: false,
+            editor: None,
+            view_w: 0.0,
+            typed: false,
+            shortcut: false,
             panels: (0..CATEGORIES.len())
                 .map(|_| Panel { x: -1.0, y: 32.0, collapsed: false, scroll: 0.0 })
                 .collect(),
@@ -5077,6 +5174,7 @@ pub(super) fn close_gui(game: &mut Game<'_>) {
         s.gui.open = false;
         s.gui.closing = false;
         s.gui.drag = None;
+        s.gui.editor = None;
         s.binding = None;
     });
     save(game);
@@ -5114,6 +5212,35 @@ pub(super) fn gui_open() -> bool {
 // A key while the GUI is open: a bind being chosen, or Esc and the menu key
 // closing it. Every key stops here.
 pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
+    // The editor takes every key: from the window's event already (text_event), or else here (a key without text of
+    // its own, as horizon-ctl's are, types its letter).
+    if with(|s| s.gui.editor.is_some() || std::mem::take(&mut s.gui.typed)) {
+        let control = game.modifiers.control_key();
+        with(|s| {
+            if std::mem::take(&mut s.gui.typed) {
+                return;
+            }
+            if name == "key.keyboard.escape" {
+                s.gui.editor = None;
+                return;
+            }
+            if name.ends_with("enter") {
+                apply_editor(s);
+                return;
+            }
+            let Some(Editor { draft: Ok(draft), .. }) = s.gui.editor.as_mut() else {
+                return;
+            };
+            if control && name == "key.keyboard.a" {
+                draft.key(EditKey::SelectAll);
+            } else if let Some(k) = edit_key(name) {
+                draft.key(k);
+            } else if let Some(c) = key_char(name).filter(|_| !control) {
+                draft.insert(&c.to_string());
+            }
+        });
+        return;
+    }
     if let Some(i) = with(|s| s.binding) {
         let chosen = match name {
             "key.keyboard.escape" => {
@@ -5226,6 +5353,17 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
     let mut toggled = None;
     let mut changed = false;
     with(|s| {
+        // The editor is in front of everything: its buttons, nothing else.
+        if s.gui.editor.is_some() {
+            let (apply, cancel) = editor_buttons(editor_rect(s.gui.view_w, s.gui.view_h));
+            if !right && inside(apply, at) {
+                apply_editor(s);
+                changed = true;
+            } else if !right && inside(cancel, at) {
+                s.gui.editor = None;
+            }
+            return;
+        }
         let Some((r, hit)) = hit_at(s, at) else {
             return;
         };
@@ -5262,6 +5400,10 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     let fresh = defaults().swap_remove(i).settings.swap_remove(j);
                     s.modules[i].settings[j] = fresh;
                     changed = true;
+                } else if let (Value::Text(t), false) = (&s.modules[i].settings[j].value, right) {
+                    s.gui.editor = Some(Editor { module: i, setting: j, draft: Draft::new(t) });
+                    s.gui.drag = None;
+                    s.binding = None;
                 } else {
                     s.modules[i].settings[j].click(right);
                     changed = true;
@@ -5310,6 +5452,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
     let was = f32::from_bits(before);
     with(|s| {
         s.gui.view_h = h;
+        s.gui.view_w = w;
         if before != 0 && was != width {
             // Another width: the panels spread or close up and a layout of your own keeps its shape.
             let k = (width + 3.0) / (was + 3.0);
@@ -5475,7 +5618,9 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
                         }
                     }
                     Value::Text(_) => {
-                        let value = st.value_text();
+                        // The text itself now: the name keeps its width, the text gets what is left (a quarter at least).
+                        let room = x + rw - RIGHT_PAD - setting_x - game.native_text_width(st.name) - 6.0;
+                        let value = fit(&st.value_text(), room.max(rw * 0.25));
                         let vw = game.native_text_width(&value);
                         out.push(Shape::Text(value, [x + rw - RIGHT_PAD - vw, y + text_y(row_hh())], 0x808080));
                         if label(out, st.name, *r, setting_x, vw, 0xB4B4B4) && hovered {
@@ -5508,6 +5653,41 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
         let by = (at.1 + 10.0).min(h - 14.0);
         out.push(Shape::Round([bx, by, tw + 8.0, 14.0], control, 0xF80A_0A0A));
         out.push(Shape::Text(name.to_owned(), [bx + 4.0, by + text_y(14.0)], 0xE4E4E4));
+    }
+    // The text editor, over everything.
+    if let Some(edit) = with(|s| s.gui.editor.clone()) {
+        let r = editor_rect(w, h);
+        let [x, y, rw, _] = r;
+        let room = (rw - 16.0).max(0.0);
+        out.push(Shape::Fill([0.0, 0.0, w, h], 0x9000_0000));
+        out.push(Shape::Round(r, panel_radius(), 0xF814_1414));
+        let m = &modules[edit.module];
+        out.push(Shape::Head(fit(&format!("{} / {}", m.name, m.settings[edit.setting].name), room), [x + 8.0, y + 6.0], accent()));
+        let selected = edit.draft.as_ref().is_ok_and(Draft::selected);
+        out.push(Shape::Round([x + 6.0, y + 22.0, rw - 12.0, 16.0], control, if selected { 0xFF30_60B0 } else { 0xFF08_0808 }));
+        let note = match &edit.draft {
+            Ok(draft) => {
+                // The end of the text near the caret shows, with the caret at its place.
+                let before = &draft.text()[..draft.caret()];
+                let mut from = 0;
+                while game.native_text_width(&before[from..]) > room - 4.0 {
+                    from += before[from..].chars().next().map_or(1, char::len_utf8);
+                }
+                let shown = fit(&draft.text()[from..], room);
+                let caret = game.native_text_width(&before[from..]);
+                out.push(Shape::Text(shown, [x + 10.0, y + 22.0 + text_y(16.0)], 0xFFFFFF));
+                out.push(Shape::Fill([x + 10.0 + caret, y + 25.0, 1.0, 10.0], solid(accent())));
+                draft.error.unwrap_or("Enter or Apply keeps it, Esc or Cancel leaves it as it was")
+            }
+            Err(e) => e,
+        };
+        out.push(Shape::Text(fit(note, room), [x + 8.0, y + 41.0], if matches!(&edit.draft, Ok(d) if d.error.is_none()) { 0x909090 } else { 0xFF7070 }));
+        let (apply, cancel) = editor_buttons(r);
+        for (b, label, colour) in [(apply, "Apply", solid(accent())), (cancel, "Cancel", 0xFF3A_3A3A)] {
+            out.push(Shape::Round(b, control, colour));
+            let tw = game.native_text_width(label);
+            out.push(Shape::Text(label.to_owned(), [b[0] + (b[2] - tw) / 2.0, b[1] + text_y(b[3])], 0xFFFFFF));
+        }
     }
     // The search box, and over it a reminder of the clicks.
     let search = with(|s| s.gui.search.clone());

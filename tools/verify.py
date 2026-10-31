@@ -1086,6 +1086,90 @@ def _():
                 f"broken file: {refused[:1]}; bad name: {bad_name[:1]}; list: {listed[:1]}")
 
 
+def gui_size():
+    """The GUI's size in its own pixels: the window over the game's GUI scale (auto: the largest that keeps 320x240)."""
+    d = ctl("status")["display"]
+    w, h = d["width"], d["height"]
+    scale = int(ctl("options-get").get("guiScale", {}).get("value", 0) or 0)
+    if scale <= 0:
+        scale = max(1, min(w // 320, h // 240))
+    return w / scale, h / scale
+
+
+def menu_row(panel, row):
+    """The middle of a row of a panel (Combat 0, Movement 1, Player 2...) as the menu first lays them out at the
+    defaults (Comfortable spacing): row 0 is the header, then rows of 14."""
+    w, _ = gui_size()
+    width = min(100, (w - 4 - 3 * 4) // 5)
+    return 2 + panel * (width + 3) + 30, 32 + 16 + 14 * (row - 1) + 7 if row else 32 + 8
+
+
+def editor_buttons():
+    """The middle of the text editor's Apply and Cancel buttons, in GUI pixels (as runtime.rs lays them out)."""
+    w, h = gui_size()
+    width = min(w - 8, 320)
+    x, y = (w - width) / 2, max((h - 76) / 2, 0)
+    button = min(max((width - 18) / 2, 1), 56)
+    return (x + 6 + button / 2, y + 54 + 7.5), (x + 12 + button * 1.5, y + 54 + 7.5)
+
+
+@test("Text setting editor")
+def _():
+    def messages():
+        mark = log_mark()
+        say(".settings spam")
+        wait(4)
+        return next((c for c in sunset_said(mark) if c.startswith("Messages:")), "")
+
+    def esc():
+        """Esc as horizon-ctl presses it, which the game's own Esc gets too (the real keyboard's doesn't): resumed."""
+        ctl("key", "esc", "tap")
+        wait(3)
+        if state().get("screen") == "paused":
+            ctl("resume")
+            wait(3)
+
+    def edit(keys, finish, expand=False):
+        """Opens the menu at Spam, clicks its Messages row, types (clear: Backspace over all of it; horizon-ctl's Ctrl
+        never reaches the window's modifiers, so Ctrl+A is the real keyboard's) and finishes with the Apply or Cancel
+        button or the Enter or Esc key; then closes the menu and reads the setting."""
+        say(".menu spam")
+        wait(5)
+        if expand:
+            ctl("click-at", *map(str, menu_row(2, 1)), "right")
+            wait(3)
+        ctl("click-at", *map(str, menu_row(2, 3)))
+        wait(3)
+        for k in keys:
+            for _ in range(40 if k == "clear" else 1):
+                ctl("key", "backspace" if k == "clear" else k, "tap")
+        wait(2)
+        apply, cancel = editor_buttons()
+        if finish in ("apply", "cancel"):
+            ctl("click-at", *map(str, apply if finish == "apply" else cancel))
+        elif finish == "esc":
+            esc()
+        else:
+            ctl("key", finish, "tap")
+        wait(3)
+        # Esc closes the editor first, the menu after.
+        esc()
+        return messages()
+
+    before = messages()
+    applied = edit(["clear", "h", "i"], "apply", expand=True)
+    if applied != "Messages: hi":
+        # Spam's settings were open already, so the right click closed them: once more.
+        applied = edit(["clear", "h", "i"], "apply", expand=True)
+    cancelled = edit(["x", "y", "z"], "cancel")
+    entered = edit(["backspace", "o", "k"], "enter")
+    escaped = edit(["clear", "n", "o"], "esc")
+    touched.add("spam")
+    ok = (applied, cancelled, entered, escaped) == ("Messages: hi", "Messages: hi", "Messages: hok", "Messages: hok")
+    return ok, (f"{before!r}; cleared, hi, Apply: {applied!r}; xyz, Cancel: {cancelled!r}; Backspace, ok, Enter: {entered!r}; "
+                f"cleared, no, Esc: {escaped!r}")
+
+
 def is_on(name):
     """Whether Sunset has the module on, from .modules (its on modules end in *)."""
     mark = log_mark()
