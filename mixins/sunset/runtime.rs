@@ -4008,6 +4008,7 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         let [x, y, z] = m.at.unwrap_or(here);
         m.at = Some([x, if stage == 1 { y + f64::from_bits(CRIT_HOP.load(Ordering::Relaxed)) } else { y }, z]);
         m.flags = 0;
+        horizon_client::player_sync::sunset_sync::told_ground(false);
         CRIT_STAGE.store(stage + 1, Ordering::Relaxed);
     } else {
         // Flight's Packet anti kick: the move carries the position, sunk 0.0313 below the last height sent while it
@@ -4020,6 +4021,8 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         // never passes one move's drop (Meteor's waits for 0.5 blocks a tick, which leaves a fall the server counted
         // before to hurt); past three blocks a tick (a fall of about 130 blocks) even that costs a little. No ground
         // never claims it. Flying that way claims it all the time.
+        // Anti Hunger hides the ground, but not while you break a block: off the ground the server mines five times
+        // slower and refuses the break, so the block comes back (Meteor's skips it then too).
         let grounded = !p.ground.on_ground && !p.flying && !p.fall_flying;
         let no_fall = NO_FALL.load(Ordering::Relaxed);
         let paused = game.creative || (NO_FALL_MACE.load(Ordering::Relaxed) && game.held().is_some_and(|s| s.item.ends_with(":mace")));
@@ -4029,13 +4032,17 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
             Some(true)
         } else if no_fall == 2 && !paused {
             Some(false)
-        } else if ANTI_GROUND.load(Ordering::Relaxed) && (p.fall_distance <= 0.0 || p.flying) {
+        } else if ANTI_GROUND.load(Ordering::Relaxed)
+            && (p.fall_distance <= 0.0 || p.flying)
+            && super::remote::sunset_remote::breaking(game).is_none()
+        {
             Some(false)
         } else {
             None
         };
         if let Some(g) = ground {
             m.flags = (m.flags & !1) | u8::from(g);
+            horizon_client::player_sync::sunset_sync::told_ground(g);
         }
     }
     // The look a module asked for, else the player's own back after one (not during the Criticals hop, whose hit

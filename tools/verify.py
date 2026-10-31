@@ -1937,6 +1937,49 @@ def break_ticks(pick, block, tries=3):
     return min(ticks), gone
 
 
+@test("Plain mining (held button)")
+def _():
+    return plain_mining()
+
+
+def plain_mining():
+    """Survival, the left button held on a block as a player does: each of three stone blocks breaks the first time
+    (gone on the server too) in the time an iron pickaxe takes, and nothing comes back. Every module off unless a test
+    turned some on."""
+    slot(0, "iron_pickaxe")
+    ctl("key", "1", "tap")
+    at = (X0, Y + 1, Z0 + 2)
+    took = []
+    for _ in range(3):
+        cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:stone")
+        wait(10)
+        ctl("look-at-block", *map(str, at))
+        wait(3)
+        t0 = state()["ticks"]
+        ctl("mouse", "left", "down")
+        ticks = -1
+        for _ in range(80):
+            wait(1)
+            if ctl("block", *map(str, at)).get("block") == "minecraft:air":
+                ticks = state()["ticks"] - t0
+                break
+        ctl("mouse", "left", "up")
+        wait(20)
+        kept = ctl("block", *map(str, at)).get("block") == "minecraft:air"
+        took.append((ticks, kept and check(f"execute if block {at[0]} {at[1]} {at[2]} minecraft:air")))
+    return all(0 < t <= 20 and gone for t, gone in took), f"(ticks to break, still gone after) for three stone blocks: {took}"
+
+
+@test("Plain mining (Anti Hunger)")
+def _():
+    # Anti Hunger hides the ground from the server, but not while you break a block (the server refuses the break of a
+    # player off the ground and the block comes back).
+    only("antihunger")
+    ok, note = plain_mining()
+    only()
+    return ok, note
+
+
 SPEED_CASES = [("stone_pickaxe", "stone"), ("iron_pickaxe", "stone"), ("diamond_pickaxe", "stone"), ("diamond_pickaxe", "obsidian")]
 
 
