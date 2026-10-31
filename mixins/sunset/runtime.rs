@@ -519,7 +519,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Speed", 0.3, 0.1, 1.0, 0.05),
         Module::new("High Jump", Movement, "Jumps higher.")
             .num("Multiplier", 2.0, 1.0, 5.0, 0.5),
-        Module::new("Parkour", Movement, "Jumps for you at the edge of a block."),
+        Module::new("Parkour", Movement, "Jumps for you at the edge of a block, on the last tick you still stand on it.")
+            .num("Edge distance", 0.001, 0.001, 0.1, 0.001)
+            .pick("Jump when", &["Last tick", "Early"])
+            .bool("Only while sprinting", false)
+            .bool("Only when moving forward", false)
+            .bool("Ignore sneaking", false),
         Module::new("Blink", Movement, "Holds back your movement packets, then sends them all at once when off.")
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
         Module::new("Scaffold", Movement, "Automatically places blocks under you.")
@@ -1688,6 +1693,13 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if on("Sneak") && playing {
         want.push(KeyCode::ShiftLeft);
     }
+    // Parkour presses jump for this tick: the game's own jump (a sprint jump's push too).
+    if let Some(m) = get("Parkour").filter(|m| m.on)
+        && playing
+        && parkour_jump(game, &m)
+    {
+        want.push(KeyCode::Space);
+    }
     if let Some(m) = get("Anti AFK").filter(|m| m.on)
         && playing
     {
@@ -2030,15 +2042,6 @@ fn module_tick(game: &mut Game<'_>) {
             p.velocity.y = m.n("Speed");
         }
     }
-    if get("Parkour").is_some()
-        && ground_now
-        && !sneak
-        && let Some((x, y, z)) = ahead(game)
-        && !solid_at(game, x, y, z)
-        && let Some(p) = game.player.as_mut()
-    {
-        p.velocity.y = 0.42;
-    }
     if alive && let Some(m) = get("Auto Log") && game.remote.is_some()
         && game.player.as_ref().is_some_and(|p| f64::from(p.health.health()) <= m.n("Health"))
     {
@@ -2173,6 +2176,37 @@ pub(super) fn solid_at(game: &Game<'_>, x: i32, y: i32, z: i32) -> bool {
 
 // The block column just ahead of the player's feet, in the direction the
 // move keys point: its x and z, and the y of the block under the feet.
+// Parkour (Meteor's), before the tick moves you: on the ground, moving, jump not held and not sneaking. Last tick:
+// jump when your box where this tick's move takes you (as far as the last tick's), Edge distance narrower each side
+// and half a block down, would touch no block, so you leave from the last spot on it. Early: when a point 0.35 blocks
+// ahead of you is over air.
+fn parkour_jump(game: &Game<'_>, m: &Module) -> bool {
+    use horizon_core::geometry::Vec3;
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    let (forward, side) = move_input(game);
+    let held = |k: KeyCode| game.keys.contains(&k);
+    if !p.ground.on_ground
+        || held(KeyCode::Space)
+        || (forward == 0.0 && side == 0.0)
+        || (held(KeyCode::ShiftLeft) && !m.b("Ignore sneaking"))
+        || (m.b("Only while sprinting") && !p.sprinting)
+        || (m.b("Only when moving forward") && forward <= 0.0)
+    {
+        return false;
+    }
+    if m.p("Jump when") == "Early" {
+        return ahead(game).is_some_and(|(x, y, z)| !solid_at(game, x, y, z));
+    }
+    let step = Vec3::new(p.position.x - game.previous_position.x, -0.5, p.position.z - game.previous_position.z);
+    let edge = m.n("Edge distance");
+    let under = p.bounds().move_by(step).deflate(Vec3::new(edge, 0.0, edge));
+    horizon_client::collisions::SceneCollisions { world: &game.world, binding: game.collision, subject: None }
+        .unobstructed(under)
+        .unwrap_or(false)
+}
+
 pub(super) fn ahead(game: &Game<'_>) -> Option<(i32, i32, i32)> {
     let p = game.player.as_ref()?;
     let d = move_direction(game)?;

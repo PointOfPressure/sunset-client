@@ -684,27 +684,82 @@ def _():
     return kept and q[1] < Y, f"walking at the edge: stopped at z {p[2]-Z0:.2f}, y {p[1]-Y:+.2f}; off: fell to y {q[1]-Y:+.1f}"
 
 
-def peak(ticks=24):
-    best = pos()[1]
-    for _ in range(ticks // 2):
-        wait(2)
-        best = max(best, pos()[1])
-    return best
+def parkour_run(gap, sprint=False):
+    """Walks (or sprints, Ctrl held) at a gap `gap` blocks wide in the platform, its near edge at z +4, a floor 3
+    blocks down. How far past the edge you were on your last tick on the ground (None: a tick went unseen there, or no
+    jump), and whether you landed beyond the gap."""
+    reset(z=-6.5)
+    edge = Z0 + 4
+    cmd(f"fill {X0-2} {Y} {edge} {X0+2} {Y} {edge+8} minecraft:stone", f"fill {X0-2} {Y-3} {edge} {X0+2} {Y-3} {edge+gap-1} minecraft:stone",
+        f"fill {X0-2} {Y-2} {edge} {X0+2} {Y} {edge+gap-1} minecraft:air")
+    wait(5)
+    ctl("key", "w", "down")
+    if sprint:
+        ctl("key", "ctrl", "down")
+    last, takeoff, landed = None, None, False
+    for _ in range(80):
+        st = state()
+        p, tick = st["player"], st["ticks"]
+        z, y = p["position"][2], p["position"][1]
+        if p["on_ground"]:
+            if takeoff is not None:
+                landed = y > Y + 0.99 and z > edge + gap
+                break
+            last = (tick, z)
+        elif takeoff is None and last and last[1] > edge - 1:
+            takeoff = round(last[1] - edge, 3) if tick - last[0] == 1 else None
+            if takeoff is None:
+                break
+        if y < Y - 1:
+            break
+        wait(1)
+    ctl("key", "ctrl", "up")
+    ctl("key", "w", "up")
+    wait(3)
+    return takeoff, landed
 
 
 @test("Parkour")
 def _():
-    reset(z=14.0)
+    # The jump comes on the last tick you stand on the block: walking or sprinting, your middle 0 to 0.3 past its edge
+    # (half your width).
+    # Then the widest gap cleared walking, sprinting and sprinting with Speed (its default and 7 blocks/s), and Jump
+    # when Early's take-off.
+    def widest(sprint, gaps):
+        best, takeoffs = 0, []
+        for gap in gaps:
+            t, landed = parkour_run(gap, sprint)
+            takeoffs.append(t)
+            if landed:
+                best = gap
+        return best, takeoffs
+
+    plain = parkour_run(1)
     only("parkour")
-    ctl("key", "w", "down")
-    best = peak(30)
-    ctl("key", "w", "up")
+    walk_gap, walk_off = widest(False, (1, 2, 3))
+    sprint_gap, sprint_off = widest(True, (2, 3, 4))
+    only("parkour", "speed")
+    speed_gap, speed_off = widest(True, (3, 4))
+    # Speed's default (5.6 blocks/s, sprinting's own) holds you to it in the air too, which a sprint jump outruns.
+    setting("speed", "vanilla speed", "7")
+    fast_gap, fast_off = widest(True, (4, 5))
+    only("parkour")
+    setting("parkour", "jump when", "Early")
+    early = parkour_run(1)
+    setting("parkour", "jump when", "Last tick")
+    setting("parkour", "only while sprinting", "true")
+    walked, sprinted = parkour_run(1), parkour_run(1, True)
     only()
-    reset(z=14.0)
-    ctl("key", "w", "down")
-    plain = peak(30)
-    ctl("key", "w", "up")
-    return best > Y + 1.3 and plain < Y + 1.05, f"at the edge: jumped to {best-Y-1:.2f} blocks up, {plain-Y-1:.2f} off"
+    # Faster than 0.3 blocks a tick, the last tick on the block can leave your middle short of the edge.
+    last_tick = (all(t is not None and 0 < t < 0.3 for t in walk_off + sprint_off)
+                 and all(t is not None and -0.3 < t < 0.3 for t in speed_off + fast_off))
+    ok = (not plain[1] and last_tick and walk_gap >= 1 and sprint_gap == 3 and speed_gap >= 3 and fast_gap == 4
+          and early[0] is not None and early[0] < 0 and not walked[1] and sprinted[1])
+    return ok, (f"off: fell off {plain[0]} past the edge, landed {plain[1]}; past the edge at take-off walking {walk_off}, sprinting {sprint_off}, with "
+                f"Speed {speed_off}, at 7 b/s {fast_off}; widest gap cleared walking {walk_gap}, sprinting {sprint_gap}, with "
+                f"Speed {speed_gap}, at 7 b/s {fast_gap}; "
+                f"Early takes off {early[0]} past the edge; Only while sprinting: a 1-block gap walking cleared {walked[1]}, "
+                f"sprinting {sprinted[1]}")
 
 
 @test("Anchor")
