@@ -11,8 +11,8 @@ checks and five source-wiring checks), official native compile check and
 optimized build passing. The [R13 checkpoint](evidence/combat/checkpoint-r13.json)
 and [exact tested source fingerprints](evidence/combat/source-r13.json) identify
 that binary. All **19 isolated native explosive cases pass**, with driver and
-game exit0 and unchanged frozen inputs. Fresh paired GUI and optional setup
-checks are pending. Earlier native evidence below retains its original
+game exit0 and unchanged frozen inputs. All five paired GUI checks pass;
+optional setup and final current-player checks are pending. Earlier native evidence below retains its original
 checkpoint identity.
 
 The first R13 run passed all 19 gameplay checks, then its driver failed while
@@ -36,7 +36,12 @@ R12 makes the open overlay modal on Horizon's control-socket keyboard route.
 That route calls `key_pressed` directly after delivering the editor event,
 whereas physical window events already pass through the existing `mapped_key`
 filter. The new hook suppresses base-game actions without editing the field
-twice. Native widget proof is recorded separately from compile success.
+twice. [All five R13 native widget checks pass](evidence/combat/gui-intent-r13.md):
+native checkbox, numeric Enter, reset, mouse picker and F1 with a floating
+right-click settings window. Number entry leaves the selected slot unchanged,
+keeps chat closed and saves the intended value on ordinary GUI close. The F1
+test proves same-client continuity, visible settings and normal close/reopen on
+the official ctl route; it does not claim OS physical-input coverage.
 
 R11 additionally passes 204 focused checks (200 compiled/native-adapter and
 four source-wiring), official native check and optimized build for optional
@@ -286,8 +291,9 @@ with the production Trap face/support/order routines, and official native
 plan/stage, compile check and optimized build (58 support modules, 51 injections).
 Client SHA-256:
 `d1504324992f73c885db6b4104997ec04deba3e3e4acb0c6a5ab9cfd81a4aef9`.
-One unused-helper warning remains. Native packet/City/Trap retests and GUI
-widget intent checks are pending; R7 results must not be presented as R9 runs.
+One unused-helper warning remains. Later R10 packet/City/Trap and R13 GUI
+outcomes test these fixes; those results retain their own binary identities
+and are not presented as R9 runtime runs.
 
 Run the renderer-free checks with:
 

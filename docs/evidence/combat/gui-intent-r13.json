@@ -1,0 +1,1002 @@
+{
+  "checkpoint": "R13 native GUI intent and F1 lifecycle",
+  "native_client_sha256": "2568f4720bb603d045f2752145ab808fb1c1c748bb95c580aea0ef1217e3f346",
+  "native_package_sha256": "8eb64cc4e8d078abc5c69d203d11ec3518fdf9a900403e4b8e61cc1f4be68d0a",
+  "native_control_sha256": "840d64de53a7258fa441085465030eae3ab79511f59ed98866dd839d82d26b7f",
+  "pair_driver_sha256": "d3c90927f14f702c1310313f6322c635c48cfdd3cf6883b5552c611b28aeb6e6",
+  "host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins_revision": "cb1ad23022392d88f006cf94cbf6552a73f5df12",
+  "backend": {
+    "version": "stock Java26.3",
+    "protocol": 777,
+    "listen": "127.0.0.1:25566",
+    "official_server_jar_sha1": "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c"
+  },
+  "counts": {
+    "recorded_attempts": 5,
+    "passing_attempts": 5,
+    "failed_attempts": 0,
+    "distinct_cases_with_passing_outcomes": 5
+  },
+  "fixture": {
+    "players": [
+      "CodexAttacker",
+      "CodexTarget"
+    ],
+    "health": "GUI controller fixtures request max1000 and use observed health; attacker Resistance255 is a separate fail-safe, not default combat safety proof.",
+    "input": "Official native ctl keys/mouse and real native widget/window events. No OS physical keyboard or game-memory/internal-function call claim.",
+    "settings": "Actual module right-click floating Window mode for F1; verified Inline number editor and registry picker for intent cases."
+  },
+  "completed_checks": [
+    {
+      "case": "native-options-bool",
+      "passed": true,
+      "status": "pass",
+      "native_checkbox_labels": {
+        "before_widget": [
+          "Auto switch: ON"
+        ],
+        "after_widget": [
+          "Auto switch: OFF"
+        ]
+      },
+      "saved_while_bot_active": "false",
+      "saved_after_normal_disable": "false",
+      "settled_position": [
+        9.432669399597742,
+        121.0,
+        0.5
+      ],
+      "later_position": [
+        9.432669399597742,
+        121.0,
+        0.5
+      ],
+      "target_health_after_settle": [
+        992.0,
+        992.0
+      ],
+      "native_screenshots": [
+        {
+          "field": "before_screenshot",
+          "original_basename": "gui-native-bool-before-1793489530708173800-001.png",
+          "sha256": "29d58d5559da8b410df811be3b92b49b8491bd5024291ea1453fd844a7d13e85",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "after_screenshot",
+          "original_basename": "gui-native-bool-after-1793489530708173800-002.png",
+          "sha256": "4367dd596bde5f242f08ba0415716641ee3724150a517273f080d182977a8ae9",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "screenshot",
+          "original_basename": "bots-native-options-bool-1793489530708173800-003.png",
+          "sha256": "948570c7306dbe2badfb0da5c127445ffe01ad55828722a0a304a0326d40f45f",
+          "size": [
+            1280,
+            720
+          ]
+        }
+      ]
+    },
+    {
+      "case": "overlay-number-enter",
+      "passed": true,
+      "status": "pass",
+      "saved_while_bot_active": "3",
+      "saved_after_normal_disable": "3",
+      "settled_position": [
+        9.218102006815602,
+        121.0,
+        0.5
+      ],
+      "later_position": [
+        9.218102006815602,
+        121.0,
+        0.5
+      ],
+      "target_health_after_settle": [
+        992.0,
+        992.0
+      ],
+      "native_close": {
+        "ticks": 4599,
+        "screen": "playing",
+        "selected": 1,
+        "held": {
+          "components": "{\"minecraft:damage\":1}",
+          "count": 1,
+          "damage": 1,
+          "item": "minecraft:diamond_sword"
+        },
+        "pointer_grabbed": true,
+        "player": {
+          "health": 999.0,
+          "position": [
+            9.218102006815602,
+            121.0,
+            0.5
+          ],
+          "velocity": [
+            0.0,
+            -0.0784000015258789,
+            0.0
+          ],
+          "yaw": -90.0,
+          "pitch": -0.01382348407059908
+        }
+      },
+      "saved_after_native_close": "3",
+      "input_capture": {
+        "before_number_input": {
+          "ticks": 4499,
+          "screen": "playing",
+          "selected": 1,
+          "held": {
+            "components": "{\"minecraft:damage\":1}",
+            "count": 1,
+            "damage": 1,
+            "item": "minecraft:diamond_sword"
+          },
+          "pointer_grabbed": false,
+          "player": {
+            "health": 999.0,
+            "position": [
+              9.218102006815602,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "yaw": -90.0,
+            "pitch": -0.01382348407059908
+          }
+        },
+        "after_number_input": {
+          "ticks": 4500,
+          "screen": "playing",
+          "selected": 1,
+          "held": {
+            "components": "{\"minecraft:damage\":1}",
+            "count": 1,
+            "damage": 1,
+            "item": "minecraft:diamond_sword"
+          },
+          "pointer_grabbed": false,
+          "player": {
+            "health": 999.0,
+            "position": [
+              9.218102006815602,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "yaw": -90.0,
+            "pitch": -0.01382348407059908
+          }
+        },
+        "after_editor_enter": {
+          "ticks": 4546,
+          "screen": "playing",
+          "selected": 1,
+          "held": {
+            "components": "{\"minecraft:damage\":1}",
+            "count": 1,
+            "damage": 1,
+            "item": "minecraft:diamond_sword"
+          },
+          "pointer_grabbed": false,
+          "player": {
+            "health": 999.0,
+            "position": [
+              9.218102006815602,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "yaw": -90.0,
+            "pitch": -0.01382348407059908
+          }
+        }
+      },
+      "unrelated_save_trigger_used": false,
+      "native_screenshots": [
+        {
+          "field": "closed_module_screenshot",
+          "original_basename": "gui-overlay-number-enter-module-1793489530708173800-006.png",
+          "sha256": "eb59a6d9a9c56154d028cbf2fad6679db7d3c1bdf36a0ec2b454089d73939f97",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "expanded_screenshot",
+          "original_basename": "gui-overlay-number-enter-expanded-1793489530708173800-007.png",
+          "sha256": "3d317929d7152866766ad2a87792f82ac7bbd095010a7f0fa16ed0b751c93202",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "draft_screenshot",
+          "original_basename": "gui-number-same-draft-1793489530708173800-008.png",
+          "sha256": "570e34c3d2167c6f09c3c781dcf8731eb361c9edaaa36c26ca5e559ba2675b2e",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "after_edit_screenshot",
+          "original_basename": "gui-overlay-number-enter-edited-1793489530708173800-009.png",
+          "sha256": "f93f0fc8d6b935473c820665ea1625974accedebd2ba8cee6524428730a96555",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "screenshot",
+          "original_basename": "bots-overlay-number-enter-1793489530708173800-010.png",
+          "sha256": "9392b90c78622f26eec7d76cc6d8dd03ea8dc63e3a19f7a2a49f3984232a51ae",
+          "size": [
+            1280,
+            720
+          ]
+        }
+      ]
+    },
+    {
+      "case": "overlay-number-reset",
+      "passed": true,
+      "status": "pass",
+      "saved_while_bot_active": "3",
+      "saved_after_normal_disable": "3",
+      "settled_position": [
+        9.432669399597742,
+        121.0,
+        0.5
+      ],
+      "later_position": [
+        9.432669399597742,
+        121.0,
+        0.5
+      ],
+      "target_health_after_settle": [
+        992.0,
+        992.0
+      ],
+      "native_close": {
+        "ticks": 5845,
+        "screen": "playing",
+        "selected": 1,
+        "held": {
+          "components": "{\"minecraft:damage\":1}",
+          "count": 1,
+          "damage": 1,
+          "item": "minecraft:diamond_sword"
+        },
+        "pointer_grabbed": true,
+        "player": {
+          "health": 999.0,
+          "position": [
+            9.432669399597742,
+            121.0,
+            0.5
+          ],
+          "velocity": [
+            0.0,
+            -0.0784000015258789,
+            0.0
+          ],
+          "yaw": -90.0,
+          "pitch": -0.014371871948242188
+        }
+      },
+      "saved_after_native_close": "3",
+      "native_screenshots": [
+        {
+          "field": "closed_module_screenshot",
+          "original_basename": "gui-overlay-number-reset-module-1793489530708173800-011.png",
+          "sha256": "b52f5c507d1d0ffd84e7700f57d2b8fcf0571bf5e0cc555db1d9f6677eb41a79",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "expanded_screenshot",
+          "original_basename": "gui-overlay-number-reset-expanded-1793489530708173800-012.png",
+          "sha256": "a8763fa5ec2ff44acf2876ccfc5ba3e4132498146ad78a33f76ce5593fb2c2db",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "after_edit_screenshot",
+          "original_basename": "gui-overlay-number-reset-edited-1793489530708173800-013.png",
+          "sha256": "ff280f295b638ad5634a5d3617e0c5e2ee4a0dcbf81521ead603685b78864415",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "screenshot",
+          "original_basename": "bots-overlay-number-reset-1793489530708173800-014.png",
+          "sha256": "3a2184d3148d3edf954e7ae88b237b5e2a6d81841da19f483ffb3948633974da",
+          "size": [
+            1280,
+            720
+          ]
+        }
+      ]
+    },
+    {
+      "case": "overlay-picker-intent",
+      "passed": true,
+      "status": "pass",
+      "saved_while_bot_active": "player",
+      "saved_after_normal_disable": "player",
+      "settled_position": [
+        9.432672249137566,
+        121.0,
+        0.5
+      ],
+      "later_position": [
+        9.432672249137566,
+        121.0,
+        0.5
+      ],
+      "target_health_after_settle": [
+        992.0,
+        992.0
+      ],
+      "native_close": {
+        "ticks": 9121,
+        "screen": "playing",
+        "selected": 1,
+        "held": {
+          "components": "{\"minecraft:damage\":1}",
+          "count": 1,
+          "damage": 1,
+          "item": "minecraft:diamond_sword"
+        },
+        "pointer_grabbed": true,
+        "player": {
+          "health": 999.0,
+          "position": [
+            9.432672249137566,
+            121.0,
+            0.5
+          ],
+          "velocity": [
+            0.0,
+            -0.0784000015258789,
+            0.0
+          ],
+          "yaw": -90.0,
+          "pitch": 7.346179962158203
+        }
+      },
+      "saved_after_native_close": "player",
+      "interaction": "Actual Player remove, native wheel scroll -16, visually verified Player reselect, scroll back16 and Done; no keyboard search.",
+      "native_screenshots": [
+        {
+          "field": "expanded_screenshot",
+          "original_basename": "r13-picker-expanded-1793489530708173800-015.png",
+          "sha256": "2bf7b326d859d90732ca2b47343b6f5d00d33414b920c12da1c9d44af0d72b36",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "picker_before",
+          "original_basename": "r13-picker-before-1793489530708173800-016.png",
+          "sha256": "0606242d214c6b8655c4a473593527ef545163ab9c6c24265a25f0bc89152721",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "picker_removed",
+          "original_basename": "r13-picker-removed-1793489530708173800-017.png",
+          "sha256": "7eea9347fbf616cfe879cb416266c1e87d515967676ce1204e3b55986a4d0b94",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "picker_scrolled",
+          "original_basename": "r13-picker-scrolled-1793489530708173800-018.png",
+          "sha256": "a54ce95241ea54d484e9bd42f51550bb3cc9935a637a7fcd06b839dabc767638",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "picker_added",
+          "original_basename": "r13-picker-added-1793489530708173800-019.png",
+          "sha256": "1cae8d092ee299db8208d1a3a5c61f80f787b4b234f3026c91cc6bd3aacaa0df",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "after_edit_screenshot",
+          "original_basename": "r13-picker-final-1793489530708173800-020.png",
+          "sha256": "8c546b8b9041eca9b26c3147452cbc54144637315872aa4cb899153ff5486995",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "screenshot",
+          "original_basename": "bots-overlay-picker-intent-1793489530708173800-021.png",
+          "sha256": "bf164c88ec9f2822e03e5350c36cba9b367c827f501660c343e50312a023b69e",
+          "size": [
+            1280,
+            720
+          ]
+        }
+      ]
+    },
+    {
+      "case": "overlay-f1-lifecycle",
+      "passed": true,
+      "status": "pass",
+      "input_route": "Official ctl key f1 tap; no OS physical event claim",
+      "same_client_continuity": true,
+      "sampled_states": {
+        "before_f1_state": {
+          "ticks": 12450,
+          "screen": "playing",
+          "selected": 1,
+          "held": {
+            "count": 1,
+            "item": "minecraft:diamond_sword"
+          },
+          "pointer_grabbed": false,
+          "player": {
+            "health": 999.0,
+            "position": [
+              0.6,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "yaw": -90.0,
+            "pitch": 0.0
+          }
+        },
+        "after_f1_state": {
+          "ticks": 12502,
+          "screen": "playing",
+          "selected": 1,
+          "held": {
+            "count": 1,
+            "item": "minecraft:diamond_sword"
+          },
+          "pointer_grabbed": false,
+          "player": {
+            "health": 999.0,
+            "position": [
+              0.6,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "yaw": -90.0,
+            "pitch": 0.0
+          }
+        },
+        "closed_after_f1_state": {
+          "ticks": 12561,
+          "screen": "playing",
+          "selected": 1,
+          "held": {
+            "count": 1,
+            "item": "minecraft:diamond_sword"
+          },
+          "pointer_grabbed": true,
+          "player": {
+            "health": 999.0,
+            "position": [
+              0.6,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "yaw": -90.0,
+            "pitch": 0.0
+          }
+        },
+        "reopened_state": {
+          "ticks": 12571,
+          "screen": "playing",
+          "selected": 1,
+          "held": {
+            "count": 1,
+            "item": "minecraft:diamond_sword"
+          },
+          "pointer_grabbed": false,
+          "player": {
+            "health": 999.0,
+            "position": [
+              0.6,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "yaw": -90.0,
+            "pitch": 0.0
+          }
+        },
+        "final_closed_state": {
+          "ticks": 12628,
+          "screen": "playing",
+          "selected": 1,
+          "held": {
+            "count": 1,
+            "item": "minecraft:diamond_sword"
+          },
+          "pointer_grabbed": true,
+          "player": {
+            "health": 999.0,
+            "position": [
+              0.6,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "yaw": -90.0,
+            "pitch": 0.0
+          }
+        }
+      },
+      "uptime_seconds": [
+        626.2582653,
+        628.8589274
+      ],
+      "own_entity_ids": [
+        326,
+        326
+      ],
+      "after_f1_chrome": {
+        "native_frame_sha256": [
+          "7c74f0ce0d8cf2cea76363ca054839a4ebc9beee7e1b5730096a5b2b4b9d6003",
+          "4a87fe620436373e6b87710a5aba3914173a85a53607934ba3c092af13406a1b"
+        ],
+        "visually_verified_settings_region_pixels": [
+          566,
+          118,
+          714,
+          438
+        ],
+        "mean_absolute_channel_delta": 0.00460304054054054,
+        "dark_chrome_fraction": [
+          0.9319045608108109,
+          0.9319045608108109
+        ],
+        "chrome_preserved": true,
+        "limits": "Bounded comparison of an actual settings-window region; original full frames require visual review. No derived image is saved."
+      },
+      "reopened_chrome": {
+        "native_frame_sha256": [
+          "7c74f0ce0d8cf2cea76363ca054839a4ebc9beee7e1b5730096a5b2b4b9d6003",
+          "e4f13448163ee8cf73239723b923b5d4275efef14409809f28ad57d28d153997"
+        ],
+        "visually_verified_settings_region_pixels": [
+          566,
+          118,
+          714,
+          438
+        ],
+        "mean_absolute_channel_delta": 0.009635416666666667,
+        "dark_chrome_fraction": [
+          0.9319045608108109,
+          0.9319045608108109
+        ],
+        "chrome_preserved": true,
+        "limits": "Bounded comparison of an actual settings-window region; original full frames require visual review. No derived image is saved."
+      },
+      "visual_review": "Original-resolution after-F1 and reopened frames inspected; floating Kill Aura settings visibly remain present.",
+      "timing_note": "State samples enclose screenshot debounce waits; tick/uptime deltas demonstrate continuity, not key-response latency.",
+      "native_screenshots": [
+        {
+          "field": "before_f1_screenshot",
+          "original_basename": "gui-f1-settings-before-1793489530708173800-023.png",
+          "sha256": "7c74f0ce0d8cf2cea76363ca054839a4ebc9beee7e1b5730096a5b2b4b9d6003",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "after_f1_screenshot",
+          "original_basename": "gui-f1-settings-after-1793489530708173800-024.png",
+          "sha256": "4a87fe620436373e6b87710a5aba3914173a85a53607934ba3c092af13406a1b",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "reopened_screenshot",
+          "original_basename": "gui-f1-settings-reopened-1793489530708173800-025.png",
+          "sha256": "e4f13448163ee8cf73239723b923b5d4275efef14409809f28ad57d28d153997",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "final_closed_screenshot",
+          "original_basename": "gui-f1-settings-closed-1793489530708173800-026.png",
+          "sha256": "3362d722447c6ec2f94d44b2cb71a6f5b69286b45e995c195b47c05ff35986c9",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        {
+          "field": "screenshot",
+          "original_basename": "bots-overlay-f1-lifecycle-1793489530708173800-027.png",
+          "sha256": "f625264801c16fc9cbc772db900172b5a769002ccee6f25f54c81e7ea016b58f",
+          "size": [
+            1280,
+            720
+          ]
+        }
+      ]
+    }
+  ],
+  "raw_report": {
+    "basename": "bot-gui-proof-1793489530708173800.json",
+    "sha256": "a1b344bb01b6e5a850880738cd5f2f260a87164634e3e8d2cbf57717fb18e16b",
+    "bytes": 740266,
+    "raw_fast_commands": 144,
+    "raw_fast_canonical_json_sha256": "573c39af097f7728f1ee643c796f21aa91428e3a3a93b0e7818a09d7b0804a20"
+  },
+  "raw_hash_encoding": "raw_fast hash uses sorted object keys, compact separators, ASCII-escaped UTF-8 JSON without trailing newline.",
+  "layout": {
+    "raw_basename": "gui-layout-r13.json",
+    "raw_sha256": "613635f9bb938a15a57ffbb0cccfcdd9b019248b125753a697ef2bbbe3b9865b",
+    "renderer_size": [
+      1280,
+      720
+    ],
+    "gui_size": [
+      1280,
+      720
+    ],
+    "points": {
+      "module": [
+        30,
+        55
+      ],
+      "range_value": [
+        92,
+        208
+      ],
+      "range_reset": [
+        42,
+        216
+      ],
+      "entities": [
+        70,
+        181
+      ],
+      "player_selected": [
+        530,
+        268
+      ],
+      "done": [
+        756,
+        488
+      ],
+      "picker_scroll_center": [
+        640,
+        360
+      ],
+      "player_unselected": [
+        530,
+        376
+      ]
+    },
+    "f1_settings_region_pixels": [
+      566,
+      118,
+      714,
+      438
+    ],
+    "f1_region_description": "Inside visually verified floating Kill Aura General settings body, full-resolution native pixels",
+    "verification": "Fresh original-resolution R13 collapsed/expanded/registry/window captures inspected before coordinates/region were used. Region bounds and minimum area checked; original-image SHA verified before pixel comparison."
+  },
+  "bounded_overlay_close_observations": [
+    [
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 3799
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 3801
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": true,
+        "ticks": 3804
+      }
+    ],
+    [
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 4593
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 4596
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": true,
+        "ticks": 4599
+      }
+    ],
+    [
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 5840
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 5842
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": true,
+        "ticks": 5845
+      }
+    ],
+    [
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 9115
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 9118
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": true,
+        "ticks": 9121
+      }
+    ],
+    [
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 10682
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 10684
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": true,
+        "ticks": 10687
+      }
+    ],
+    [
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 11918
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 11920
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 11923
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": true,
+        "ticks": 11926
+      }
+    ],
+    [
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 12553
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 12555
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 12558
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": true,
+        "ticks": 12561
+      }
+    ],
+    [
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 12619
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 12622
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": false,
+        "ticks": 12625
+      },
+      {
+        "screen": "playing",
+        "pointer_grabbed": true,
+        "ticks": 12628
+      }
+    ]
+  ],
+  "image_audit": {
+    "referenced_unique_original_pngs": 28,
+    "all_reference_hashes_verified": true,
+    "conflicting_same_path_hashes": 0,
+    "capture_naming": "Proof timestamp plus per-capture sequence; no image path reused for differing captures."
+  },
+  "native_screenshots": [
+    {
+      "file": "gui-number-captured-r13.png",
+      "case": "overlay-number-enter",
+      "sha256": "570e34c3d2167c6f09c3c781dcf8731eb361c9edaaa36c26ca5e559ba2675b2e",
+      "size": [
+        1280,
+        720
+      ],
+      "bytes": 134120,
+      "transformation": "none; byte-for-byte copy",
+      "caption": "Actual numeric draft3 while original sword slot1 remains held/selected; Enter and close persistence are recorded separately."
+    },
+    {
+      "file": "gui-picker-selected-r13.png",
+      "case": "overlay-picker-intent",
+      "sha256": "1cae8d092ee299db8208d1a3a5c61f80f787b4b234f3026c91cc6bd3aacaa0df",
+      "size": [
+        1280,
+        720
+      ],
+      "bytes": 125311,
+      "transformation": "none; byte-for-byte copy",
+      "caption": "Actual Player selected again after native mouse-only remove/scroll/reselect; other fields show restored baseline."
+    },
+    {
+      "file": "gui-f1-settings-r13.png",
+      "case": "overlay-f1-lifecycle",
+      "sha256": "4a87fe620436373e6b87710a5aba3914173a85a53607934ba3c092af13406a1b",
+      "size": [
+        1280,
+        720
+      ],
+      "bytes": 143287,
+      "transformation": "none; byte-for-byte copy",
+      "caption": "Actual floating right-click settings window remains visible after supported official ctl F1 tap; same client remains alive."
+    }
+  ],
+  "handoff": {
+    "raw_basename": "gui-handoff-r13.json",
+    "raw_sha256": "817654c83785ed45602969f368873cac3e47d6acf88be15d2f2011d6a4f5216a",
+    "modules_on": [],
+    "native_master_on": true,
+    "players": {
+      "attacker": {
+        "health": 20.0,
+        "gamemode": "survival",
+        "screen": "playing",
+        "pointer_grabbed": true,
+        "keys": [],
+        "physical_keys": [],
+        "effects": [],
+        "inventory_counts": {},
+        "carried": null
+      },
+      "target": {
+        "health": 20.0,
+        "gamemode": "survival",
+        "screen": "playing",
+        "pointer_grabbed": true,
+        "keys": [],
+        "physical_keys": [],
+        "effects": [],
+        "inventory_counts": {},
+        "carried": null
+      }
+    }
+  },
+  "historical_comparison": {
+    "record": "gui-intent-r10.json",
+    "difference": "R10 retained a strict-before-save failure and official ctl hotbar/chat leakage. R13 strict numeric input preserves slot1/Playing, and normal overlay close itself saves3; no unrelated save was used. R10 overwritten-generic-frame disclosure stays separate."
+  },
+  "limits": [
+    "Five controlled native scenarios on one disposable loopback pair, not a stress/latency/anticheat or arbitrary UI-state guarantee.",
+    "Official ctl native key route tested; no OS hardware keyboard-event parity claim.",
+    "F1 settings presence uses both full original-frame visual review and a bounded static-window region comparison. It is not a universal UI detector.",
+    "Tick/uptime samples enclose screenshot waits and are not response-latency measurements.",
+    "Screenshots are unchanged original framebuffer PNGs. Region comparisons are in-memory reads; no crop, resize, annotation or composite was saved.",
+    "R7/R10 earlier results keep their own binary identity; R13 does not relabel earlier failed attempts or restore overwritten historical bytes."
+  ]
+}
