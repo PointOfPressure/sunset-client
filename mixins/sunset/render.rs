@@ -54,7 +54,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Hide pumpkin, spyglass and powder snow overlays", false),
         Module::new("Timer", World, "Changes the speed the game runs at.")
             .num("Multiplier", 2.0, 0.1, 10.0, 0.1),
-        Module::new("No Slow", Movement, "Stops using an item (eating, drawing a bow, blocking) from slowing you down."),
+        Module::new("No Slow", Movement, "Controls item-use movement slowdown.")
+            .num("Ground %", 100.0, 20.0, 100.0, 5.0)
+            .num("Air %", 100.0, 20.0, 100.0, 5.0),
     ]
 }
 
@@ -333,10 +335,18 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
 // (Meteor's override).
 fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
     let moving = super::sunset::move_input(game) != (0.0, 0.0);
-    let speed_timer = on(mods, "Speed").map(|m| m.n("Timer")).filter(|t| (*t - 1.0).abs() > 1e-9 && moving);
+    let speed_timer = if on(mods, "Flight").is_none() {
+        on(mods, "Speed").map(|m| m.n("Timer")).filter(|t| (*t - 1.0).abs() > 1e-9 && moving)
+    } else { None };
     let mult = speed_timer.or_else(|| on(mods, "Timer").map(|m| m.n("Multiplier"))).unwrap_or(1.0) as f32;
     horizon_client::clock::sunset_timer::MULT.store(mult.to_bits(), Ordering::Relaxed);
-    horizon_client::input::sunset_flags::NO_SLOW.store(on(mods, "No Slow").is_some(), Ordering::Relaxed);
+    let no_slow = on(mods, "No Slow");
+    let factor = no_slow.as_ref().map_or(0.2, |m| {
+        let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
+        (m.n(if ground { "Ground %" } else { "Air %" }) / 100.0) as f32
+    });
+    horizon_client::input::sunset_flags::NO_SLOW_FACTOR.store(factor.to_bits(), Ordering::Relaxed);
+    horizon_client::input::sunset_flags::NO_SLOW.store(no_slow.is_some(), Ordering::Relaxed);
 }
 
 // No Render: fog through Horizon's own Fog option, the effects the player does

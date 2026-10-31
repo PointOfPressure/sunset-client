@@ -79,6 +79,7 @@ struct Ps {
     steal_same: u32,
     steal_done: i32,
     clean_wait: u32,
+    place_credit: u32,
 }
 
 static PS: Mutex<Option<Ps>> = Mutex::new(None);
@@ -145,6 +146,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         }
     }
     if !in_world(game) {
+        ps(|p| p.place_credit = 0);
         return;
     }
     if let Some(m) = get("Auto Fish") {
@@ -156,6 +158,11 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         auto_gap(game, m);
     } else if ps(|p| std::mem::take(&mut p.gap_eating)) {
         let _ = game.play_mouse(MouseButton::Right, false);
+    }
+    if let Some(m) = get("Fast Place") {
+        fast_place(game, m);
+    } else {
+        ps(|p| p.place_credit = 0);
     }
     if let Some(m) = get("Fast Use") {
         fast_use(game, m);
@@ -347,9 +354,48 @@ fn stop_eating(game: &mut Game<'_>) {
     hold(game, prev);
 }
 
+// ---- Fast Place
+
+// Blocks a second at each speed. The game's own is one every 4 ticks (5 a second), and a tick places one at most (20).
+const PLACE_RATES: [u32; 5] = [6, 8, 10, 14, 20];
+
+fn holds_block(game: &Game<'_>) -> bool {
+    [game.held(), game.offhand.as_ref()]
+        .into_iter()
+        .flatten()
+        .any(|s| game.res.items().get(&s.item).is_some_and(|i| i.block.is_some()))
+}
+
+fn place_ready(credit: &mut u32, speed: usize) -> bool {
+    let rate = PLACE_RATES[speed.clamp(1, PLACE_RATES.len()) - 1];
+    *credit += rate;
+    if *credit >= 20 {
+        *credit -= 20;
+        true
+    } else {
+        false
+    }
+}
+
+// Called after the game's delay counts down and before it reads it. Fractional rates
+// accumulate across ticks, while the game still places no more than one block per tick.
+fn fast_place(game: &mut Game<'_>, m: &Module) {
+    if !game.right || game.using.is_some() || !holds_block(game) {
+        ps(|p| p.place_credit = 0);
+        return;
+    }
+    let speed = m.n("Speed") as usize;
+    let ready = ps(|p| place_ready(&mut p.place_credit, speed));
+    game.use_delay = if ready { 0 } else { game.use_delay.max(1) };
+}
+
 // ---- Fast Use
 
 fn fast_use(game: &mut Game<'_>, m: &Module) {
+    // Block placement uses Fast Place's rate when that module is on.
+    if holds_block(game) && super::sunset::with(|s| s.is_on("Fast Place")) {
+        return;
+    }
     let item = game.held().map(|s| short(&s.item).to_owned());
     let applies = m.p("Mode") == "All"
         || item.as_ref().is_some_and(|i| {
@@ -358,6 +404,32 @@ fn fast_use(game: &mut Game<'_>, m: &Module) {
         });
     if applies && game.use_delay > m.n("Cooldown (ticks)") as u32 {
         game.use_delay = m.n("Cooldown (ticks)") as u32;
+    }
+}
+
+#[cfg(test)]
+mod fast_place_tests {
+    use super::place_ready;
+
+    #[test]
+    fn each_speed_places_its_configured_average_per_second() {
+        let expected = [6, 8, 10, 14, 20];
+        for (index, count) in expected.into_iter().enumerate() {
+            let mut credit = 0;
+            let placed = (0..20).filter(|_| place_ready(&mut credit, index + 1)).count();
+            assert_eq!(placed, count);
+            assert_eq!(credit, 0);
+        }
+    }
+
+    #[test]
+    fn speed_is_clamped_to_the_supported_range() {
+        let mut low = 0;
+        let low_count = (0..20).filter(|_| place_ready(&mut low, 0)).count();
+        let mut high = 0;
+        let high_count = (0..20).filter(|_| place_ready(&mut high, 99)).count();
+        assert_eq!(low_count, 6);
+        assert_eq!(high_count, 20);
     }
 }
 
