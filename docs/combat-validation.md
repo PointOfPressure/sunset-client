@@ -6,13 +6,18 @@ host source. The incoming packet hook requires the newer official Mixins
 `cb1ad23022392d88f006cf94cbf6552a73f5df12`; the earlier `0d6b103` planner rejects
 opaque macros in that native handler. No Horizon source patch is required.
 
-Latest build: **R10**, with **185 focused checks** (181 compiled/native-adapter
+Latest build: **R12**, with **204 focused checks** (200 compiled/native-adapter
 checks and four source-wiring checks), official native compile check and
-optimized build passing. All 19 isolated native explosive cases pass; its
-paired-player suites are pending. The
-[R10 checkpoint](evidence/combat/checkpoint-r10.json) and
-[exact source fingerprints](evidence/combat/source-r10.json) identify that binary.
-Earlier native evidence below retains its original checkpoint identity.
+optimized build passing. The [R12 checkpoint](evidence/combat/checkpoint-r12.json)
+and [exact source fingerprints](evidence/combat/source-r12.json) identify that
+binary. Its fresh paired GUI and optional setup checks are pending. Earlier
+native evidence below retains its original checkpoint identity.
+
+R12 makes the open overlay modal on Horizon's control-socket keyboard route.
+That route calls `key_pressed` directly after delivering the editor event,
+whereas physical window events already pass through the existing `mapped_key`
+filter. The new hook suppresses base-game actions without editing the field
+twice. Native widget proof is recorded separately from compile success.
 
 R11 additionally passes 204 focused checks (200 compiled/native-adapter and
 four source-wiring), official native check and optimized build for optional

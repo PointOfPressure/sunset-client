@@ -474,6 +474,16 @@ helper = "input.rs"
 bindings = []
 
 [[injection]]
+id = "gui_control_key"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::Game<'_>::key_pressed"
+helper = "gui_key_capture.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[injection]]
 id = "buttons"
 kind = "HEAD"
 cancellable = true
