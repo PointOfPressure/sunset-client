@@ -1333,6 +1333,42 @@ def _():
     return low <= 16 and food > 16 and bread < 8 and apples == 2, f"food {low} -> {food} with it on; {8 - bread} bread eaten, golden apples left {apples}"
 
 
+def break_ticks(pick, block, tries=3):
+    """Ticks to break `block` by hand with `pick` (the game's own mining; the least of `tries`), and whether the
+    server had it gone every time."""
+    slot(0, pick)
+    ctl("key", "1", "tap")
+    at = (X0, Y + 1, Z0 + 2)
+    ticks, gone = [], True
+    for _ in range(tries):
+        cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:{block}")
+        wait(10)
+        ticks.append(ctl("break", *map(str, at), "--timeout", "30", timeout=60).get("ticks", -1))
+        wait(10)
+        gone = gone and check(f"execute if block {at[0]} {at[1]} {at[2]} minecraft:air")
+    cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:air")
+    return min(ticks), gone
+
+
+SPEED_CASES = [("stone_pickaxe", "stone"), ("iron_pickaxe", "stone"), ("diamond_pickaxe", "stone"), ("diamond_pickaxe", "obsidian")]
+
+
+def speed_mine(mode):
+    plain = [break_ticks(p, b, 1 if b == "obsidian" else 3) for p, b in SPEED_CASES]
+    setting("speedmine", "mode", mode)
+    only("speedmine")
+    fast = [break_ticks(p, b, 1 if b == "obsidian" else 3) for p, b in SPEED_CASES]
+    only()
+    alive = "player" in state()
+    ok = alive and all(g for _, g in plain + fast) and all(0 < f[0] < p[0] for p, f in zip(plain, fast))
+    cells = ", ".join(f"{p.split('_')[0]}/{b} {pt}->{ft}{'' if g else ' (ghost)'}" for (p, b), (pt, _), (ft, g) in zip(SPEED_CASES, plain, fast))
+    return ok, f"ticks by hand without -> with {mode}: {cells}"
+
+
+for _mode in ("Damage", "Normal", "Haste"):
+    test(f"Speed Mine ({_mode})")(lambda _m=_mode: speed_mine(_m))
+
+
 @test("Middle Click Extra")
 def _():
     slot(4, "ender_pearl", 4)

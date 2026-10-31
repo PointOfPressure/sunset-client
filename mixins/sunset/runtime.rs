@@ -1356,6 +1356,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     let mods = snapshot();
     super::sunset_render::pre_tick(game, &mods);
+    super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
     let on = |n: &str| mods.iter().any(|m| m.name == n && m.on);
     let get = |n: &str| mods.iter().find(|m| m.name == n).cloned();
     let playing = game.native_playing();

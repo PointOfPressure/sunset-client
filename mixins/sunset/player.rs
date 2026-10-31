@@ -47,6 +47,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Extra block reach", 1.0, 0.0, 6.0, 0.5),
         Module::new("Air Place", Player, "Right click places the block you hold where the crosshair points, with nothing to place it against.")
             .num("Range", 5.0, 2.0, 6.0, 0.5),
+        Module::new("Speed Mine", Player, "Mines faster (Meteor's Speed Mine). Damage finishes a block as soon as the server takes it (70% of the way), and with Instamine a block you would break in two ticks the tick after you start it; Normal mines Modifier times faster; Haste gives you Haste (only you see it).")
+            .pick("Mode", &["Damage", "Normal", "Haste"])
+            .text("Blocks", "")
+            .pick("Blocks filter", &["Blacklist", "Whitelist"])
+            .num("Modifier", 1.4, 0.0, 10.0, 0.1)
+            .num("Haste amplifier", 2.0, 1.0, 10.0, 1.0)
+            .bool("Instamine", true),
         Module::new("Anchor", Category::Movement, "Stops your movement over a hole so you drop into it.")
             .num("Max height", 10.0, 1.0, 20.0, 1.0)
             .num("Min pitch", 0.0, -90.0, 90.0, 5.0)
@@ -764,4 +771,41 @@ fn landing(game: &Game<'_>) -> Option<([i32; 3], [f64; 3])> {
         }
     }
     None
+}
+
+// ---- Speed Mine (Meteor's SpeedMine), before the tick, where the game goes on breaking the block
+
+pub(super) fn speed_mine(game: &mut Game<'_>, m: Option<&Module>) {
+    use super::remote::sunset_remote as remote;
+    // Haste mode's own Haste, taken off when it is no longer wanted.
+    let haste = m.filter(|m| m.p("Mode") == "Haste").map(|m| m.n("Haste amplifier") as i32 - 1);
+    let ours = game.potions.effects.get("haste").is_some_and(|e| !e.visible);
+    match haste {
+        Some(amplifier) if game.potions.effects.get("haste").is_none_or(|e| e.amplifier < amplifier) => {
+            let mut effect = horizon_client::effects::EffectInstance::new("haste", -1, amplifier);
+            effect.visible = false;
+            game.potions.effects.add(effect);
+        }
+        None if ours => {
+            game.potions.effects.list.retain(|e| e.id != "haste" || e.visible);
+        }
+        _ => {}
+    }
+    let (Some(m), Some((pos, done))) = (m, remote::breaking(game)) else {
+        return;
+    };
+    let name = &game.res.facts().get(game.world.block(pos[0], pos[1], pos[2])).name;
+    if listed(m.t("Blocks"), name) != (m.p("Blocks filter") == "Whitelist") {
+        return;
+    }
+    let step = game.destroy_progress(pos);
+    match m.p("Mode") {
+        // The server takes the stop once its count reaches 0.7 (counting the tick the break began in): be done then.
+        "Damage" if (done > 0.0 && done + step >= 0.7) || (done == 0.0 && step > 0.5 && m.b("Instamine")) => {
+            remote::set_breaking(game, 1.0);
+        }
+        // Modifier times the game's own step (the game adds one step itself).
+        "Normal" if done > 0.0 => remote::set_breaking(game, done + step * (m.n("Modifier") as f32 - 1.0)),
+        _ => {}
+    }
 }

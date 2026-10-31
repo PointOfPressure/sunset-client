@@ -13,3 +13,14 @@ pub(crate) fn clear_destroy_delay(game: &mut Game<'_>, wait: u32) {
         r.destroy_delay = r.destroy_delay.min(wait);
     }
 }
+
+// The block being broken by hand and how far it is (0 to 1), for Speed Mine.
+pub(crate) fn breaking(game: &Game<'_>) -> Option<([i32; 3], f32)> {
+    game.remote.as_ref()?.destroying.map(|(pos, _, done)| (pos, done))
+}
+
+pub(crate) fn set_breaking(game: &mut Game<'_>, done: f32) {
+    if let Some((_, _, d)) = game.remote.as_mut().and_then(|r| r.destroying.as_mut()) {
+        *d = done;
+    }
+}
