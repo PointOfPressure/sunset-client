@@ -5,8 +5,14 @@ Extracts the exact pure Rust types/helpers from runtime.rs, includes the actual
 bind_state.rs, then uses rustc --test. No running game is accessed.
 """
 from pathlib import Path
+import argparse
+import os
 import subprocess
 import tempfile
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--rustc', default=os.environ.get('RUSTC', 'rustc'))
+args = parser.parse_args()
 
 ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT / 'mixins/sunset/runtime.rs').read_text()
@@ -267,5 +273,5 @@ with tempfile.TemporaryDirectory(prefix='sunset-runtime-perf-') as temporary:
     rust = temporary / 'runtime_perf.rs'
     rust.write_text(f'#![allow(dead_code)]\n#[path = "{binds}"] mod binds;\nmod runtime {{\nuse std::sync::{{Arc, Mutex}};\n' + production + helpers + tests + '\n}\n')
     binary = temporary / 'runtime_perf_tests.exe'
-    subprocess.run(['rustc', '--edition=2024', '--test', '-O', str(rust), '-o', str(binary)], check=True)
+    subprocess.run([args.rustc, '--edition=2024', '--test', '-O', str(rust), '-o', str(binary)], check=True)
     subprocess.run([str(binary), '--nocapture'], check=True)

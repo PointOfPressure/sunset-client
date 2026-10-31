@@ -12,7 +12,7 @@ import tempfile
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--rustc", default="D:/Codex-Meteor-Build/toolchains/1.99.1-x86_64-pc-windows-msvc/bin/rustc.exe")
+    parser.add_argument("--rustc", default=os.environ.get("RUSTC", "rustc"))
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     source = (root / "mixins/sunset/util.rs").read_text(encoding="utf-8")

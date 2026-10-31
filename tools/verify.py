@@ -834,11 +834,12 @@ def _():
 # ---- screens, menus and rendering
 
 def brightness(name):
+    from PIL import Image, ImageStat
     path = f"/tmp/{name}.png"
     ctl("screenshot", path)
     time.sleep(2)
-    out = subprocess.run(["identify", "-format", "%[fx:mean]", path], capture_output=True, text=True, timeout=60).stdout
-    return float(out)
+    with Image.open(path) as image:
+        return sum(ImageStat.Stat(image.convert("RGB")).mean) / (3 * 255)
 
 
 @test("No Render (blindness)")
@@ -1070,9 +1071,9 @@ def _():
     imported = refused = bad_name = []
     if found:
         imports = os.path.join(os.path.dirname(os.path.dirname(found[0])), "imports")
-        with open(found[0]) as f, open(os.path.join(imports, "shared.profile"), "w") as g:
+        with open(found[0]) as f, open(os.path.join(imports, "shared.profile"), "w", newline="\n") as g:
             g.write(f.read())
-        with open(os.path.join(imports, "broken.profile"), "w") as g:
+        with open(os.path.join(imports, "broken.profile"), "w", newline="\n") as g:
             g.write("sunset-profile=1\nkillaura.range=lots\n")
         imported = said(".profile import shared")
         refused = said(".profile import broken")
@@ -1088,8 +1089,9 @@ def _():
 
 def gui_size():
     """The GUI's size in its own pixels: the window over the game's GUI scale (auto: the largest that keeps 320x240)."""
-    d = ctl("status")["display"]
-    w, h = d["width"], d["height"]
+    status = ctl("status")
+    # The framebuffer can differ from the monitor (windowed mode and desktop DPI).
+    w, h = status["renderer"]["size"]
     scale = int(ctl("options-get").get("guiScale", {}).get("value", 0) or 0)
     if scale <= 0:
         scale = max(1, min(w // 320, h // 240))
@@ -1124,10 +1126,9 @@ def _():
     def esc():
         """Esc as horizon-ctl presses it, which the game's own Esc gets too (the real keyboard's doesn't): resumed."""
         ctl("key", "esc", "tap")
-        wait(3)
         if state().get("screen") == "paused":
             ctl("resume")
-            wait(3)
+        wait(3)
 
     def edit(keys, finish, expand=False):
         """Opens the menu at Spam, clicks its Messages row, types (clear: Backspace over all of it; horizon-ctl's Ctrl
@@ -1204,9 +1205,9 @@ def _():
     ctl("click-at", *map(str, menu_row(3, 2)), "right")
     wait(2)
     ctl("key", "esc", "tap")
-    wait(3)
     if state().get("screen") == "paused":
         ctl("resume")
+    wait(3)
     chosen = binds()
     # A middle button bind toggles the HUD from the world.
     say(".bind hud mouse3")
@@ -1251,10 +1252,9 @@ def _():
     def esc():
         """horizon-ctl's Esc, which the game gets too (its pause menu closes the GUI): resumed."""
         ctl("key", "esc", "tap")
-        wait(3)
         if state().get("screen") == "paused":
             ctl("resume")
-            wait(3)
+        wait(3)
 
     def said(command, prefix):
         mark = log_mark()
@@ -2083,7 +2083,8 @@ def _():
 def _():
     def thrown():
         reset()
-        slot(0, "snowball", 16)
+        # A 64-stack avoids exhausting the fast case before its sample ends.
+        slot(0, "experience_bottle", 64)
         ctl("key", "1", "tap")
         wait(4)
         ctl("look", "0", "-30")
@@ -2097,7 +2098,7 @@ def _():
     only("fastuse")
     fast = thrown()
     only()
-    return fast > plain + 4, f"{plain} snowballs thrown holding use for 2 s, {fast} with Fast Use"
+    return fast > plain + 4, f"{plain} experience bottles used holding use for 2 s, {fast} with Fast Use"
 
 
 @test("Break Delay")
@@ -2184,6 +2185,26 @@ def _():
     return near[0] > 0 and short_range == (0, 0) and walled[1] > 0 and blocked[1] == 0, (
         f"pig 2.5 blocks away lost {near[0]} health at Range 4.5, {short_range[0]} at Range 1.5; behind a wall: {walled[1]} swings, "
         f"{walled[0]} health lost at Walls range 3.5, {blocked[1]} swings at 2")
+
+
+@test("Kill Aura (look-only)")
+def _():
+    reset("creative")
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    pig(2.5)
+    setting("killaura", "entities", "pig")
+    setting("killaura", "only on look", "true")
+    ctl("look", "180", "0")
+    before = state()["swings"]
+    only("killaura")
+    wait(30)
+    away = state()["swings"] - before
+    ctl("look-at", str(X0 + 0.5), str(Y + 1.45), str(Z0 + 3.0))
+    wait(40)
+    facing = state()["swings"] - before
+    only()
+    return away == 0 and facing > 0, f"look-only swings looking away: {away}, facing the pig: {facing}"
 
 
 def shot_pixels(name, want):

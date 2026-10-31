@@ -1,0 +1,12 @@
+[package]
+name = "sunset-shader-gpu-bench"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "naga-ir"] }
+naga = { version = "=30.0.1", features = ["wgsl-in"] }
+pollster = "0.4"
+
+[profile.dev]
+debug = 0
