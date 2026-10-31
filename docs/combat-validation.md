@@ -316,8 +316,14 @@ Official R10 plan/stage, native compile check and optimized build now pass
 `6b3c97809e5bb82699c217d48a1aaa2f6912dc8cced8b56f5654d8e574984f51`.
 One unused-helper warning remains. All **19 isolated native explosive cases
 pass**, with native exit0 and unchanged frozen inputs; their report hash is in
-the checkpoint record. The private two-client player-death, fresh-input,
-expiry and per-owner bypass checks remain pending.
+the checkpoint record. [The completed two-client native guard proof](evidence/combat/loot-player-r10.md)
+has passing outcomes for all 16 canonical scenarios plus four actual-action
+positive controls. There were 36 completed attempt records: 24 pass and 12
+retained fixture/runner failures. Both Auras and both macros refuse after real
+death/drop/respawn; charged-anchor fallbacks, actual City hand contention,
+owned active cancellation, expiry, Anchor Macro checkbox bypass, explicit clear,
+respawn/dimension lifecycle and real egg/snowball negatives are covered. The
+sub-tick deferred race and four independent checkbox tests are not claimed.
 Earlier screenshots and R7–R9 results remain evidence for those checkpoints.
 
 ## R10 GUI history

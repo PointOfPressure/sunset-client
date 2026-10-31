@@ -83,8 +83,9 @@ refuses protected plans until lifecycle information is available.
 location count and blocked-check count. The counter counts evaluations, not
 packets or prevented explosions. `.lootguard clear` explicitly clears zones;
 disabling one module's Protect loot setting bypasses this guard for that module
-while leaving its other safety checks in place. Runtime proof for this R10
-addition remains pending; earlier R7–R9 results do not test it.
+while leaving its other safety checks in place. The [R10 native proof](evidence/combat/loot-player-r10.md)
+covers all four owners and 16 guard scenarios, including Anchor Macro's checkbox
+bypass. It does not claim four separate checkbox tests or a global item guard.
 
 ## Optional Aura base setup (R11)
 

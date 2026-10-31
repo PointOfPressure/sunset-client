@@ -1,0 +1,2883 @@
+{
+  "checkpoint": "R10",
+  "native_client_sha256": "6b3c97809e5bb82699c217d48a1aaa2f6912dc8cced8b56f5654d8e574984f51",
+  "backend": "Official stock Java26.3, protocol777, private loopback only",
+  "server_jar_sha1": "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c",
+  "canonical_native_scenarios": 16,
+  "prerequisite_positive_owner_controls": 4,
+  "unique_passing_scenarios": 20,
+  "completed_attempt_records": 36,
+  "attempt_record_passes": 24,
+  "retained_attempt_record_failures": 12,
+  "attempts": [
+    {
+      "report": "loot-proof-r10-3e41288348c348e48d72a27e70a90990.json",
+      "sha256": "d838fad490b255702169f19131f4d33f722cf8e2abae82c96be6a3e4483588b4",
+      "finished": false,
+      "records": 3,
+      "passed": 2,
+      "failed": 1,
+      "raw_ctl_report_contains_commands_and_replies": true,
+      "raw_stream_sha256": null
+    },
+    {
+      "report": "loot-proof-r10-25a2d4e6ab724bbc89f9b62238c35945.json",
+      "sha256": "0ac59820d51f915ec756009070956af926116e9ebc987690beaef6fd6cc5fb79",
+      "finished": false,
+      "records": 3,
+      "passed": 2,
+      "failed": 1,
+      "raw_ctl_report_contains_commands_and_replies": true,
+      "raw_stream_sha256": null
+    },
+    {
+      "report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "sha256": "4c4f9ba7977b129b67f57450b17a1456767ff8538728f33eda97b05fedaeb44f",
+      "finished": true,
+      "records": 20,
+      "passed": 14,
+      "failed": 6,
+      "raw_ctl_report_contains_commands_and_replies": true,
+      "raw_stream_sha256": "a51f05f9c29555db118278dcfab92bc6776fa2036c4e813332bbeb5102bff748"
+    },
+    {
+      "report": "loot-proof-r10-c15aa6b077c74df3869d7e8c58500d14.json",
+      "sha256": "355156b765ca3b5423019fd1c8cbcb5393c21c5dada8718f6b686fbfcaae523e",
+      "finished": true,
+      "records": 5,
+      "passed": 1,
+      "failed": 4,
+      "raw_ctl_report_contains_commands_and_replies": true,
+      "raw_stream_sha256": "e7f3622182a9e541865e0b92ae02da61aa0a9386f35b20e814cb69f6303f13fb"
+    },
+    {
+      "report": "loot-proof-r10-25313f7afb9b4e54bd03f07a843554cf.json",
+      "sha256": "f96bbc211e0ac81c8927b03c2c7bfc5569448293c45dd7ca5af7ddb7c8d77001",
+      "finished": true,
+      "records": 5,
+      "passed": 5,
+      "failed": 0,
+      "raw_ctl_report_contains_commands_and_replies": true,
+      "raw_stream_sha256": "bbfb27aa3e68d0286c5e957ad645c63e92f74a5cdd6495a8f38f88bfd6a2a81f"
+    }
+  ],
+  "retained_fixture_failures": [
+    {
+      "case": "blocked-crystalaura",
+      "report": "loot-proof-r10-3e41288348c348e48d72a27e70a90990.json",
+      "status": "fixture-or-test-error",
+      "reason": "newest-first diagnostic parser selected older line",
+      "native_bug_inferred": false
+    },
+    {
+      "case": "blocked-crystalaura",
+      "report": "loot-proof-r10-25a2d4e6ab724bbc89f9b62238c35945.json",
+      "status": "fixture-or-test-error",
+      "reason": "2.5-block item selector missed normal head-height/scattered death drop",
+      "native_bug_inferred": false
+    },
+    {
+      "case": "positive-anchormacro",
+      "report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "status": "fail",
+      "reason": "new-anchor macro fixture selected sword instead of anchor",
+      "native_bug_inferred": false
+    },
+    {
+      "case": "blocked-anchormacro",
+      "report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "status": "fixture-or-test-error",
+      "reason": "new-anchor macro fixture selected sword instead of anchor",
+      "native_bug_inferred": false
+    },
+    {
+      "case": "macro-active-death-cancel",
+      "report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "status": "fail",
+      "reason": "death inventory/probe setup exceeded live macro delay; blast preceded kill",
+      "native_bug_inferred": false
+    },
+    {
+      "case": "ttl-expiry",
+      "report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "status": "fail",
+      "reason": "new-anchor macro fixture selected sword instead of anchor",
+      "native_bug_inferred": false
+    },
+    {
+      "case": "checkbox-bypass",
+      "report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "status": "fail",
+      "reason": "new-anchor macro fixture selected sword instead of anchor",
+      "native_bug_inferred": false
+    },
+    {
+      "case": "explicit-clear",
+      "report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "status": "fail",
+      "reason": "new-anchor macro fixture selected sword instead of anchor",
+      "native_bug_inferred": false
+    },
+    {
+      "case": "blocked-anchormacro",
+      "report": "loot-proof-r10-c15aa6b077c74df3869d7e8c58500d14.json",
+      "status": "fixture-or-test-error",
+      "reason": "valid omitted empty equipment NBT was rejected by required-field parser",
+      "native_bug_inferred": false
+    },
+    {
+      "case": "ttl-expiry",
+      "report": "loot-proof-r10-c15aa6b077c74df3869d7e8c58500d14.json",
+      "status": "fixture-or-test-error",
+      "reason": "valid omitted empty equipment NBT was rejected by required-field parser",
+      "native_bug_inferred": false
+    },
+    {
+      "case": "checkbox-bypass",
+      "report": "loot-proof-r10-c15aa6b077c74df3869d7e8c58500d14.json",
+      "status": "fixture-or-test-error",
+      "reason": "valid omitted empty equipment NBT was rejected by required-field parser",
+      "native_bug_inferred": false
+    },
+    {
+      "case": "explicit-clear",
+      "report": "loot-proof-r10-c15aa6b077c74df3869d7e8c58500d14.json",
+      "status": "fixture-or-test-error",
+      "reason": "valid omitted empty equipment NBT was rejected by required-field parser",
+      "native_bug_inferred": false
+    }
+  ],
+  "cases": [
+    {
+      "case": "anchor-busy-city",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.012000000104308128,
+            "ticks": 2
+          },
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            4.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "counts": {
+          "minecraft:glowstone": 1,
+          "minecraft:netherite_pickaxe": 1,
+          "minecraft:stick": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:netherite_pickaxe\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "0"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            4.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:glowstone": 1,
+          "minecraft:netherite_pickaxe": 1,
+          "minecraft:stick": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:netherite_pickaxe\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [-0.05348455283660155d, -0.04658044898978632d, 0.0d], Health: 5s, Invulnerable: 0b, fall_distance: 0.05521583277732134d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [259.83813f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.15537498987637d, 122.64902290512907d, 0.125d], PickupDelay: 34s, Fire: 0s, UUID: [I; 1902423590, -1689433310, -1360511332, -908830297], Age: 6s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": null
+      },
+      "guard_after": {
+        "reason": "clear",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 206
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "busy_city": {
+        "actual_borrowed_tool": {
+          "count": 1,
+          "item": "minecraft:netherite_pickaxe"
+        },
+        "charged_before": true,
+        "charged_after": true,
+        "busy_anchor_before": "minecraft:respawn_anchor[charges=4]",
+        "busy_anchor_after": "minecraft:respawn_anchor[charges=4]",
+        "no_replay_after_pause": {
+          "attacker": {
+            "screen": "playing",
+            "gamemode": "survival",
+            "dimension": "minecraft:overworld",
+            "selected": 9,
+            "pointer_grabbed": true,
+            "using": null,
+            "mining": null,
+            "health": 20.0,
+            "position": [
+              0.6,
+              121.0,
+              0.5
+            ]
+          },
+          "target": {
+            "screen": "playing",
+            "gamemode": "survival",
+            "dimension": "minecraft:overworld",
+            "selected": 1,
+            "pointer_grabbed": true,
+            "using": null,
+            "mining": null,
+            "health": 20.0,
+            "position": [
+              4.5,
+              121.0,
+              0.5
+            ]
+          },
+          "selected": 9,
+          "counts": {
+            "minecraft:glowstone": 1,
+            "minecraft:netherite_pickaxe": 1,
+            "minecraft:stick": 1
+          },
+          "carried": null,
+          "anchor_state": "minecraft:air",
+          "crystal_ids": [],
+          "authoritative_target_health": 20.0,
+          "authoritative_inventory_nbt": {
+            "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:netherite_pickaxe\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]",
+            "equipment": "{}",
+            "SelectedItemSlot": "8"
+          },
+          "authoritative_anchor_exists": false,
+          "authoritative_crystal_exists": false
+        }
+      }
+    },
+    {
+      "case": "anchor-fallback-held",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1,
+          "minecraft:stick": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:respawn_anchor[charges=4]",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": true,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1,
+          "minecraft:stick": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:respawn_anchor[charges=4]",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": true,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [0.0d, -0.04658044898978632d, 0.0d], Health: 5s, Invulnerable: 0b, fall_distance: 0.05521583277732134d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [79.93146f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.875d, 122.64902290512907d, 0.875d], PickupDelay: 34s, Fire: 0s, UUID: [I; 1955205957, 357713429, -1373164112, 1447768693], Age: 6s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": null
+      },
+      "guard_after": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 192
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "charged_anchor_preserved": {
+        "before": true,
+        "after": true
+      }
+    },
+    {
+      "case": "anchor-fallback-quick",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1,
+          "minecraft:stick": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:respawn_anchor[charges=4]",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": true,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1,
+          "minecraft:stick": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:respawn_anchor[charges=4]",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": true,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [0.0d, -0.04658044898978632d, 0.0d], Health: 5s, Invulnerable: 0b, fall_distance: 0.05521583277732134d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [330.42947f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.125d, 122.64902290512907d, 0.125d], PickupDelay: 34s, Fire: 0s, UUID: [I; 554973354, -185449268, -1545516930, 560453417], Age: 6s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": null
+      },
+      "guard_after": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 179
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "charged_anchor_preserved": {
+        "before": true,
+        "after": true
+      }
+    },
+    {
+      "case": "anchor-offhand-held",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:glowstone": 2,
+          "minecraft:respawn_anchor": 1,
+          "minecraft:stick": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:respawn_anchor[charges=4]",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]",
+          "equipment": "{offhand: {count: 1, id: \"minecraft:glowstone\"}}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": true,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:glowstone": 2,
+          "minecraft:respawn_anchor": 1,
+          "minecraft:stick": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:respawn_anchor[charges=4]",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]",
+          "equipment": "{offhand: {count: 1, id: \"minecraft:glowstone\"}}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": true,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [-0.021055344640944277d, -0.04658044898978632d, 0.016838307955840976d], Health: 5s, Invulnerable: 0b, fall_distance: 0.05521583277732134d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [144.31752f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.364330952112286d, 122.64902290512907d, 0.6084967853704356d], PickupDelay: 34s, Fire: 0s, UUID: [I; -1675869331, 1088900216, -1735271492, -2070877159], Age: 6s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": null
+      },
+      "guard_after": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 206
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "charged_anchor_preserved": {
+        "before": true,
+        "after": true
+      }
+    },
+    {
+      "case": "anchor-offhand-quick",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:glowstone": 2,
+          "minecraft:respawn_anchor": 1,
+          "minecraft:stick": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:respawn_anchor[charges=4]",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]",
+          "equipment": "{offhand: {count: 1, id: \"minecraft:glowstone\"}}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": true,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:glowstone": 2,
+          "minecraft:respawn_anchor": 1,
+          "minecraft:stick": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:respawn_anchor[charges=4]",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]",
+          "equipment": "{offhand: {count: 1, id: \"minecraft:glowstone\"}}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": true,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [-0.022632137294428135d, -0.04658044898978632d, 0.0d], Health: 5s, Invulnerable: 0b, fall_distance: 0.05521583277732134d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [312.32996f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.354170968428213d, 122.64902290512907d, 0.125d], PickupDelay: 34s, Fire: 0s, UUID: [I; 306419632, -129744476, -1176743294, -1276644641], Age: 6s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": null
+      },
+      "guard_after": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 193
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "charged_anchor_preserved": {
+        "before": true,
+        "after": true
+      }
+    },
+    {
+      "case": "blocked-anchoraura",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [0.0d, -0.04658044898978632d, 0.0d], Health: 5s, Invulnerable: 0b, fall_distance: 0.05521583277732134d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [15.539517f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.875d, 122.64902290512907d, 0.125d], PickupDelay: 34s, Fire: 0s, UUID: [I; 860234504, 1584876477, -1455318766, 240492629], Age: 6s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": null
+      },
+      "guard_after": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 125
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "positive_control_passed": true
+    },
+    {
+      "case": "blocked-anchormacro",
+      "passed": true,
+      "original_report": "loot-proof-r10-25313f7afb9b4e54bd03f07a843554cf.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "0"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "0"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [0.0d, -0.0848488416613816d, 0.0d], Health: 5s, Invulnerable: 0b, fall_distance: 0.14179628062993288d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [154.54736f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.875d, 122.56244245613928d, 0.125d], PickupDelay: 33s, Fire: 0s, UUID: [I; -569670622, 1912817889, -2133544275, -557379179], Age: 7s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "guard_after": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 212
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "positive_control_passed": true
+    },
+    {
+      "case": "blocked-crystalaura",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:end_crystal": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:end_crystal\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:end_crystal": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:end_crystal\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [-0.010306052024607062d, -0.04658044898978632d, -0.011707196966596058d], Health: 5s, Invulnerable: 0b, fall_distance: 0.05521583277732134d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [25.655437f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.433593475219554d, 122.64902290512907d, 0.42456526867751126d], PickupDelay: 34s, Fire: 0s, UUID: [I; 1627365571, 1786531555, -1918995896, -1735490901], Age: 6s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": null
+      },
+      "guard_after": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 36
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "positive_control_passed": true
+    },
+    {
+      "case": "blocked-crystalmacro",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:end_crystal": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:end_crystal\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:end_crystal": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:end_crystal\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [-0.17445674072793807d, -0.04658044898978632d, 0.05166309996973581d], Health: 5s, Invulnerable: 0b, fall_distance: 0.05521583277732134d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [150.31973f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [4.375896817849861d, 122.64902290512907d, 0.8328885707333433d], PickupDelay: 34s, Fire: 0s, UUID: [I; 1750970028, -1221637904, -1178076647, -222109767], Age: 6s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": null
+      },
+      "guard_after": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 178
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "positive_control_passed": true
+    },
+    {
+      "case": "checkbox-bypass",
+      "passed": true,
+      "original_report": "loot-proof-r10-25313f7afb9b4e54bd03f07a843554cf.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "0"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.483354696941952,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 10.263781547546388,
+          "position": [
+            5.699999988079071,
+            121.20000004768372,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "counts": {
+          "minecraft:diamond_sword": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 10.263782,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "0"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [0.0d, -0.0848488416613816d, -0.01469055394350797d], Health: 5s, Invulnerable: 0b, fall_distance: 0.14179628062993288d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [177.79042f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.125d, 122.56244245613928d, 0.38842000727143106d], PickupDelay: 33s, Fire: 0s, UUID: [I; 831880064, 462049019, -2008176596, 1892669921], Age: 7s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "guard_after": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 215
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "intervention_owner": "Anchor Macro"
+    },
+    {
+      "case": "dimension-clear",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": null,
+      "after": null,
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [-0.04078145551543075d, -0.0848488416613816d, 0.044162979238158505d], Health: 5s, Invulnerable: 0b, fall_distance: 0.14179628062993288d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [266.62387f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.190250311365343d, 122.56244245613928d, 0.8354335664410607d], PickupDelay: 33s, Fire: 0s, UUID: [I; 732154277, -1688189334, -2131527124, -148580789], Age: 7s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": null
+      },
+      "guard_after": {
+        "reason": "clear",
+        "spots": 0,
+        "overflow": false,
+        "blocked": 206
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "native_nether_state": {
+        "screen": "playing",
+        "gamemode": "survival",
+        "dimension": "minecraft:the_nether",
+        "selected": 1,
+        "pointer_grabbed": true,
+        "using": null,
+        "mining": null,
+        "health": 20.0,
+        "position": [
+          6.5,
+          121.0,
+          6.5
+        ]
+      },
+      "guard_before_dimension_change": {
+        "reason": "clear",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 206
+      },
+      "guard_after_dimension_change": {
+        "reason": "clear",
+        "spots": 0,
+        "overflow": false,
+        "blocked": 206
+      }
+    },
+    {
+      "case": "explicit-clear",
+      "passed": true,
+      "original_report": "loot-proof-r10-25313f7afb9b4e54bd03f07a843554cf.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "0"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.483354696941952,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 10.263781547546388,
+          "position": [
+            5.699999988079071,
+            121.12160004615784,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "counts": {
+          "minecraft:diamond_sword": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 10.263782,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "0"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [0.0d, -0.0848488416613816d, 0.0d], Health: 5s, Invulnerable: 0b, fall_distance: 0.14179628062993288d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [61.309246f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.875d, 122.56244245613928d, 0.125d], PickupDelay: 33s, Fire: 0s, UUID: [I; 2035305409, -1114814820, -2101951924, 1872614999], Age: 7s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "guard_after": {
+        "reason": "clear",
+        "spots": 0,
+        "overflow": false,
+        "blocked": 216
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "intervention_owner": "Anchor Macro"
+    },
+    {
+      "case": "macro-active-death-cancel",
+      "passed": true,
+      "original_report": "loot-proof-r10-c15aa6b077c74df3869d7e8c58500d14.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:end_crystal": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:end_crystal\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "dead",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": false,
+          "using": null,
+          "mining": null,
+          "health": 0.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [
+          294
+        ],
+        "authoritative_target_health": 0.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": true
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [0.015016521790635286d, -0.12235186720945665d, 0.13505392018049783d], Health: 5s, Invulnerable: 0b, fall_distance: 0.2666451232507825d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [15.445126f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.631706483649849d, 122.4375936144779d, 1.6845270947626212d], PickupDelay: 32s, Fire: 0s, UUID: [I; 546275214, 1747930009, -1349702634, -1321229469], Age: 8s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": null,
+        "actor_immediately_before_kill": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "guard_after": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 207
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "deferred_queue_race_isolated": false,
+      "active_before_death": {
+        "state": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "ids": [
+          294
+        ]
+      }
+    },
+    {
+      "case": "positive-anchoraura",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.483354696941952,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 10.263781547546388,
+          "position": [
+            5.699999988079071,
+            121.20000004768372,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:fire[age=0,east=false,north=false,south=false,up=false,west=false]",
+        "crystal_ids": [],
+        "authoritative_target_health": 10.263782,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": null,
+      "guard_after": {
+        "reason": "clear",
+        "spots": 0,
+        "overflow": false,
+        "blocked": 45
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "placed": true,
+      "charged": true,
+      "removed": true,
+      "observed_ids": []
+    },
+    {
+      "case": "positive-anchormacro",
+      "passed": true,
+      "original_report": "loot-proof-r10-25313f7afb9b4e54bd03f07a843554cf.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "0"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.483354696941952,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 10.263781547546388,
+          "position": [
+            5.699999988079071,
+            121.12160004615784,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "counts": {
+          "minecraft:diamond_sword": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 10.263782,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "0"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": null,
+      "guard_after": {
+        "reason": "clear",
+        "spots": 0,
+        "overflow": false,
+        "blocked": 211
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "placed": true,
+      "charged": true,
+      "removed": true,
+      "observed_ids": []
+    },
+    {
+      "case": "positive-crystalaura",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:end_crystal": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:end_crystal\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.5168650430324117,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 5.041667938232422,
+          "position": [
+            6.244359915781711,
+            122.31085106477758,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 5.041668,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": null,
+      "guard_after": {
+        "reason": "clear",
+        "spots": 0,
+        "overflow": false,
+        "blocked": 0
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "placed": false,
+      "charged": false,
+      "removed": false,
+      "observed_ids": [
+        236
+      ]
+    },
+    {
+      "case": "positive-crystalmacro",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:end_crystal": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:end_crystal\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.47147335125574413,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 5.041667938232422,
+          "position": [
+            6.483585469598515,
+            122.82947601135233,
+            0.5
+          ]
+        },
+        "selected": 9,
+        "counts": {
+          "minecraft:diamond_sword": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 5.041668,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "8"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": null,
+      "guard_after": {
+        "reason": "clear",
+        "spots": 0,
+        "overflow": false,
+        "blocked": 142
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "placed": false,
+      "charged": false,
+      "removed": false,
+      "observed_ids": [
+        244
+      ]
+    },
+    {
+      "case": "projectile-negative",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": null,
+      "after": null,
+      "death": null,
+      "guard_after": {
+        "reason": "clear",
+        "spots": 0,
+        "overflow": false,
+        "blocked": 206
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "projectiles": [
+        {
+          "item": "snowball",
+          "passed": true,
+          "observed_ids": [
+            276
+          ],
+          "remaining_native_count": 0,
+          "guard_after": {
+            "reason": "clear",
+            "spots": 0,
+            "overflow": false,
+            "blocked": 206
+          }
+        },
+        {
+          "item": "egg",
+          "passed": true,
+          "observed_ids": [
+            277
+          ],
+          "remaining_native_count": 0,
+          "guard_after": {
+            "reason": "clear",
+            "spots": 0,
+            "overflow": false,
+            "blocked": 206
+          }
+        }
+      ],
+      "raw_event3_packet_directly_observed": false
+    },
+    {
+      "case": "same-dimension-respawn",
+      "passed": true,
+      "original_report": "loot-proof-r10-3bad4ce1a7df459296fde08b7d90c495.json",
+      "before": null,
+      "after": null,
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [-0.14243863587522126d, -0.04658044898978632d, -0.14475152778195574d], Health: 5s, Invulnerable: 0b, fall_distance: 0.05521583277732134d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [268.33902f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [4.582203856495528d, 122.64902290512907d, -0.4326991454835362d], PickupDelay: 34s, Fire: 0s, UUID: [I; 1212127688, 808077134, -1680881831, -1849502618], Age: 6s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": null
+      },
+      "guard_after": {
+        "reason": "clear",
+        "spots": 2,
+        "overflow": false,
+        "blocked": 206
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "actor_death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [0.12077239145546616d, -0.04658044898978632d, 0.19412095516384095d], Health: 5s, Invulnerable: 0b, fall_distance: 0.05521583277732134d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [313.83646f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [1.3781907938007842d, 122.64902290512907d, 1.7508085529466322d], PickupDelay: 34s, Fire: 0s, UUID: [I; 2114893251, 1888633309, -2138972032, -618747508], Age: 6s}",
+        "native_death_origin": [
+          0.6,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          0.6,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 9,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": null
+      },
+      "guard_before_respawn": {
+        "reason": "clear",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 206
+      },
+      "guard_after_respawn": {
+        "reason": "clear",
+        "spots": 2,
+        "overflow": false,
+        "blocked": 206
+      }
+    },
+    {
+      "case": "ttl-expiry",
+      "passed": true,
+      "original_report": "loot-proof-r10-25313f7afb9b4e54bd03f07a843554cf.json",
+      "before": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:glowstone": 1,
+          "minecraft:respawn_anchor": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:air",
+        "crystal_ids": [],
+        "authoritative_target_health": 20.0,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 0b, id: \"minecraft:respawn_anchor\"}, {count: 1, Slot: 1b, id: \"minecraft:glowstone\"}, {count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "0"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "after": {
+        "attacker": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.41966635407468944,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 10.263781547546388,
+          "position": [
+            5.699999988079071,
+            121.12160004615784,
+            0.5
+          ]
+        },
+        "selected": 1,
+        "counts": {
+          "minecraft:diamond_sword": 1
+        },
+        "carried": null,
+        "anchor_state": "minecraft:fire[age=0,east=false,north=false,south=false,up=false,west=false]",
+        "crystal_ids": [],
+        "authoritative_target_health": 10.263782,
+        "authoritative_inventory_nbt": {
+          "Inventory": "[{count: 1, Slot: 8b, id: \"minecraft:diamond_sword\"}]",
+          "equipment": "{}",
+          "SelectedItemSlot": "0"
+        },
+        "authoritative_anchor_exists": false,
+        "authoritative_crystal_exists": false
+      },
+      "death": {
+        "real_death_screen_health_zero": true,
+        "keep_inventory_false": true,
+        "actual_diamond_item_nbt": "{Motion: [0.0d, -0.0848488416613816d, 0.0d], Health: 5s, Invulnerable: 0b, fall_distance: 0.14179628062993288d, Air: 300s, OnGround: 0b, PortalCooldown: 0, Rotation: [102.99929f, 0.0f], Item: {count: 1, id: \"minecraft:diamond\"}, Pos: [5.125d, 122.56244245613928d, 0.875d], PickupDelay: 33s, Fire: 0s, UUID: [I; -2007447314, 242436540, -1694096019, 275623722], Age: 7s}",
+        "native_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "server_death_origin": [
+          5.5,
+          121.0,
+          0.5
+        ],
+        "drop_tagged": true,
+        "respawned": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            5.5,
+            121.0,
+            0.5
+          ]
+        },
+        "actor_immediately_before_kill": {
+          "screen": "playing",
+          "gamemode": "survival",
+          "dimension": "minecraft:overworld",
+          "selected": 1,
+          "pointer_grabbed": true,
+          "using": null,
+          "mining": null,
+          "health": 20.0,
+          "position": [
+            0.6,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "guard_after": {
+        "reason": "clear",
+        "spots": 0,
+        "overflow": false,
+        "blocked": 214
+      },
+      "world_and_slot_measurement_preceded_chat_debug": true,
+      "intervention_owner": "Anchor Macro",
+      "ttl_bracket_seconds": {
+        "blocked_witness_after_kill_begin": 26.231,
+        "first_action_trace_after_kill_end": 31.053
+      }
+    }
+  ],
+  "screenshots": [
+    {
+      "case": "blocked-crystalaura",
+      "file": "loot-crystal-blocked-r10.png",
+      "sha256": "541aa7744978229eb211f1ed82279d908411b95a6b01ff072e0b979c5d6bd93c",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "byte_identical_native_capture": true
+    },
+    {
+      "case": "anchor-busy-city",
+      "file": "loot-anchor-busy-r10.png",
+      "sha256": "36def652d278203ae29475f2e6f0dd1679244594dae1ddf155914d628964a5ef",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "byte_identical_native_capture": true
+    },
+    {
+      "case": "macro-active-death-cancel",
+      "file": "loot-active-cancel-r10.png",
+      "sha256": "60c925f5849a17165e27ed158e5f0cbf7d6496a3d936f4e19d3bf0acaaac551b",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "byte_identical_native_capture": true
+    }
+  ],
+  "final_handoff": {
+    "both_survival20": true,
+    "both_playing_pointer_grabbed": true,
+    "both_inventory_and_carried_empty": true,
+    "both_effects_empty": true,
+    "no_using_or_mining": true,
+    "attacker_modules_all_off": true,
+    "native_master_enabled": {
+      "attacker": true,
+      "target": false
+    },
+    "input_releases_accepted": true,
+    "recent_death_spots": 0,
+    "arena_test_item_remainder": false,
+    "cleanup_scope": "This disposable arena item entities tagged before removal; unique test diamonds also removed by nonce tag.",
+    "raw_key_mask_exposed_by_ctl": false
+  },
+  "original_handoff_sha256": "8d5a9a963e8d684bebed6d863d5307ba9db2c2a068c06270d1a51dd3612720c9",
+  "limits": [
+    "Recent observed player death locations, not actual item tracking or every manual attack/use, are protected.",
+    "An actual player death and real diamond item were required; entity removal or totem events were not substituted.",
+    "TTL uses conservative before26s/after31s witnesses around the recorded kill interval, not exact incoming-packet timing.",
+    "The live active cancellation case isolates an owned placed crystal and subsequent death/restore; the sub-tick deferred queue race is not independently isolated.",
+    "Projectile Event3 bytes have separate compiled protocol coverage; the live case observes real throws/impact/removal, not raw incoming bytes.",
+    "Historical failures are retained and classified as fixture/runner failures; there was no native source change between these R10 attempts.",
+    "The native checkbox bypass intervention was exercised on Anchor Macro; the other owners have live positive/refusal controls, not four separate live checkbox-bypass tests.",
+    "Guard blocked_checks counts evaluations, not packets, clicks or unique prevented explosions.",
+    "Native screenshots are copied unchanged; numerical claims use recorded native and authoritative Java facts."
+  ]
+}
