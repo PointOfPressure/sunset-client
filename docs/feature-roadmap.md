@@ -19,14 +19,17 @@ branches need rebasing or manual adaptation before review.
 
 ## Next focused contributions
 
-1. **Bound Block ESP work.** Resume a scan cursor under an examined-block
-   allowance, retain coherent results, bound memory and cancel on relevant
-   world/settings changes. Compare sparse and dense fixtures and measure real
-   frame behavior. Extend to Hole ESP, then Tunnel/Void/Light scans only after
-   preserving each consumer's meaning. A result cap does not bound scan work.
-2. **Fix Anti AFK Jump locking.** Release the settings mutex before calling
-   stateful helpers; verify Jump and settings expansion independently against
-   [issue #3](https://github.com/PointOfPressure/sunset-client/issues/3).
+1. **Tighten shared scan accounting.** Current `Sweep` already spreads Block,
+   Hole, Tunnel, Void and Light scans over ticks and retains nearest results.
+   Its nominal 12,000 allowance is checked after whole x slices: a full-height
+   range-48 Block scan can account for 18,818 reads in one tick. Independent
+   consumers also lack an aggregate/time allowance. Preserve nearest-result
+   retention and configurable Max when adding finer cursors and shared limits.
+   Compare sparse/dense fixtures and measure frame behavior before claiming gains.
+2. **Verify Anti AFK regression coverage.** Upstream subsequently fixed the
+   Jump lock recursion in [56b1e36](https://github.com/PointOfPressure/sunset-client/commit/56b1e36858adb5df5008a8ae844d83e9eda2ea12).
+   Verify Jump and settings expansion independently against
+   [issue #3](https://github.com/PointOfPressure/sunset-client/issues/3); avoid a duplicate fix PR.
 3. **Improve HUD control and information.** Start with draft-based placement
    for watermark, module list and coordinates. Add armor durability and optional
    low-health feedback separately; then bound-module state, effects and cooldowns.
@@ -57,9 +60,10 @@ not claimed as merged or released:
 - `overnight-integration` (`a01204a`) passed a compile check, but its final link
   was interrupted. It has no successful complete build result.
 
-The bounded Block ESP pilot and Anti AFK fix are being adapted independently
-onto the current Sunset base. Follow their individual review/build evidence;
-this planning snapshot does not mark them complete.
+The old Block ESP pilot is superseded by current `Sweep`; applying its fixed
+2,000-result cap would regress current retention. The old Anti AFK fix is also
+superseded by the upstream commit above. Reconcile prototypes against current
+Sunset before review; do not install the old integration over current 0.8.1.
 
 ## Reuse existing capabilities
 
