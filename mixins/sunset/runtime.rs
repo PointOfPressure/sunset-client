@@ -34,14 +34,18 @@ pub(crate) const MENU2_DEFAULT: &str = "key.keyboard.right.shift";
 // Sunset's sun gold.
 // The menu's look, set by the ClickGUI module (accent colour, panel width, background opacity and dim).
 // [accent, wanted panel width, opacity, dim, the panel width in use: what fits the screen, 0 before the first draw,
-// text indent] (floats as bits).
-static LOOK: [std::sync::atomic::AtomicU32; 6] = [
+// text indent, wanted GUI scale, the GUI scale in use, panel radius, control radius] (floats as bits).
+static LOOK: [std::sync::atomic::AtomicU32; 10] = [
     std::sync::atomic::AtomicU32::new(0xFFB020),
-    std::sync::atomic::AtomicU32::new(0x42A4_0000),
-    std::sync::atomic::AtomicU32::new(0x3F40_0000),
+    std::sync::atomic::AtomicU32::new(0x42C8_0000),
+    std::sync::atomic::AtomicU32::new(0x3F66_6666),
     std::sync::atomic::AtomicU32::new(0),
     std::sync::atomic::AtomicU32::new(0),
-    std::sync::atomic::AtomicU32::new(0x4000_0000),
+    std::sync::atomic::AtomicU32::new(0x40C0_0000),
+    std::sync::atomic::AtomicU32::new(0x3F80_0000),
+    std::sync::atomic::AtomicU32::new(0x3F80_0000),
+    std::sync::atomic::AtomicU32::new(0x40C0_0000),
+    std::sync::atomic::AtomicU32::new(0x4080_0000),
 ];
 
 pub(super) fn accent() -> u32 {
@@ -57,7 +61,19 @@ fn indent() -> f32 {
     f32::from_bits(LOOK[5].load(Ordering::Relaxed))
 }
 
-// A menu background colour with the ClickGUI's opacity (the defaults are drawn at 0.75).
+fn gui_scale() -> f32 {
+    f32::from_bits(LOOK[7].load(Ordering::Relaxed))
+}
+
+fn panel_radius() -> f32 {
+    f32::from_bits(LOOK[8].load(Ordering::Relaxed))
+}
+
+fn control_radius() -> f32 {
+    f32::from_bits(LOOK[9].load(Ordering::Relaxed))
+}
+
+// A menu background colour with the ClickGUI's opacity (the colours are written at 0.75).
 fn bg(argb: u32) -> u32 {
     let k = f32::from_bits(LOOK[2].load(Ordering::Relaxed)) / 0.75;
     let a = ((argb >> 24) as f32 * k).round().clamp(0.0, 255.0) as u32;
@@ -112,13 +128,16 @@ pub(super) struct Setting {
 
 impl Setting {
     fn shown(&self) -> String {
+        format!("{}: {}", self.name, self.value_text())
+    }
+    fn value_text(&self) -> String {
         match &self.value {
-            Value::Bool(b) => format!("{}: {}", self.name, on_off(*b)),
-            Value::Num { v, .. } => format!("{}: {}", self.name, num(*v)),
-            Value::Pick { i, of } => format!("{}: {}", self.name, of[*i]),
+            Value::Bool(b) => on_off(*b).to_owned(),
+            Value::Num { v, .. } => num(*v),
+            Value::Pick { i, of } => of[*i].to_owned(),
             Value::Text(t) => {
                 let n = t.split(',').filter(|x| !x.trim().is_empty()).count();
-                format!("{}: {} listed", self.name, n)
+                format!("{n} listed")
             }
         }
     }
@@ -349,11 +368,14 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Auto Respawn", Player, "Respawns as soon as you die."),
         Module::new("Panic", Player, "Turns every module off at once. Bind it to a key."),
         // Render
-        Module::new("ClickGUI", Render, "How this menu looks: accent colour, panel width, text indent, background opacity and a dim behind it. Menu dim is the game's own dim and blur behind the inventory and the Esc menu.")
+        Module::new("ClickGUI", Render, "How this menu looks: accent colour, size, panel width, corner radius, text indent, background opacity and a dim behind it. Menu dim is the game's own dim and blur behind the inventory and the Esc menu.")
             .colour("Accent color", "Gold")
-            .num("Panel width", 82.0, 60.0, 140.0, 2.0)
-            .num("Text indent", 2.0, 0.0, 8.0, 1.0)
-            .num("Background opacity", 0.75, 0.2, 1.0, 0.05)
+            .num("GUI scale", 1.0, 0.75, 2.0, 0.05)
+            .num("Panel width", 100.0, 60.0, 140.0, 2.0)
+            .num("Panel radius", 6.0, 0.0, 12.0, 1.0)
+            .num("Control radius", 4.0, 0.0, 6.0, 1.0)
+            .num("Text indent", 6.0, 0.0, 12.0, 1.0)
+            .num("Background opacity", 0.9, 0.2, 1.0, 0.05)
             .bool("Background dim", false)
             .bool("Menu dim", false),
         Module::new("HUD", Render, "The watermark, the active modules, your coordinates and more.")
@@ -860,10 +882,13 @@ pub(super) fn snapshot() -> Vec<Module> {
 pub(super) fn sync_flags(s: &State) {
     let g = s.module("ClickGUI");
     LOOK[0].store(g.map_or(0xFFB020, |m| m.c("Accent color") & 0x00FF_FFFF), Ordering::Relaxed);
-    LOOK[1].store(g.map_or(82.0, |m| m.n("Panel width") as f32).to_bits(), Ordering::Relaxed);
-    LOOK[2].store(g.map_or(0.75, |m| m.n("Background opacity") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[1].store(g.map_or(100.0, |m| m.n("Panel width") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[2].store(g.map_or(0.9, |m| m.n("Background opacity") as f32).to_bits(), Ordering::Relaxed);
     LOOK[3].store(u32::from(g.is_some_and(|m| m.b("Background dim"))), Ordering::Relaxed);
-    LOOK[5].store(g.map_or(2.0, |m| m.n("Text indent") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[5].store(g.map_or(6.0, |m| m.n("Text indent") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[6].store(g.map_or(1.0, |m| m.n("GUI scale") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[8].store(g.map_or(6.0, |m| m.n("Panel radius") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[9].store(g.map_or(4.0, |m| m.n("Control radius") as f32).to_bits(), Ordering::Relaxed);
     NO_FALL.store(s.is_on("No Fall"), Ordering::Relaxed);
     let flight = s.module("Flight").filter(|m| m.on);
     FLIGHT_GROUND.store(flight.is_some(), Ordering::Relaxed);
@@ -3669,6 +3694,8 @@ impl Camera {
 
 pub(super) enum Shape {
     Fill([f32; 4], u32),
+    // A rectangle with rounded corners, and their radius.
+    Round([f32; 4], f32, u32),
     // A slanted shape (a line): its four corners in order round it.
     Quad([[f32; 2]; 4], u32),
     Text(String, [f32; 2], u32),
@@ -3694,6 +3721,61 @@ pub(super) fn health_colour(fraction: f32) -> u32 {
         0xFFFF55
     } else {
         0xFF5555
+    }
+}
+
+// A rounded rectangle: straight sides as plain fills, each corner a fan with one physical pixel of edge fade (`px`).
+fn round_fill(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f32; 4], radius: f32, argb: u32, px: f32) {
+    let r = radius.min(w / 2.0).min(h / 2.0);
+    if r < px {
+        game.native_fill(batch, [x, y, w, h], argb);
+        return;
+    }
+    game.native_fill(batch, [x + r, y, w - 2.0 * r, h], argb);
+    if h > 2.0 * r {
+        game.native_fill(batch, [x, y + r, r, h - 2.0 * r], argb);
+        game.native_fill(batch, [x + w - r, y + r, r, h - 2.0 * r], argb);
+    }
+    let [a, red, g, b] = argb.to_be_bytes();
+    let colour = horizon_client::hud::rgba(red, g, b, a);
+    let (inner, outer) = ((r - px * 0.5).max(0.0), r + px * 0.5);
+    let segments = (((r / px).sqrt() * 2.0).ceil() as usize).clamp(3, 16);
+    let at = |c: [f32; 2], radius: f32, angle: f32| [c[0] + radius * angle.cos(), c[1] + radius * angle.sin()];
+    let quarter = std::f32::consts::FRAC_PI_2;
+    for (c, turn) in [([x + r, y + r], 2.0), ([x + w - r, y + r], 3.0), ([x + w - r, y + h - r], 0.0), ([x + r, y + h - r], 1.0)] {
+        for i in 0..segments {
+            let a0 = (turn + i as f32 / segments as f32) * quarter;
+            let a1 = (turn + (i + 1) as f32 / segments as f32) * quarter;
+            let (p0, p1) = (at(c, inner, a0), at(c, inner, a1));
+            batch.fill_quad(&game.gui.atlas, [c, p0, p1, p1], colour);
+            let start = batch.vertices.len();
+            batch.fill_quad(&game.gui.atlas, [p0, at(c, outer, a0), at(c, outer, a1), p1], colour);
+            // fill_quad's two triangles use corners 0,1,2,0,2,3.
+            for (vertex, corner) in batch.vertices[start..].iter_mut().zip([0, 1, 2, 0, 2, 3]) {
+                if corner == 1 || corner == 2 {
+                    vertex.color &= 0x00FF_FFFF;
+                }
+            }
+        }
+    }
+}
+
+fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: Vec<Shape>, px: f32) {
+    for s in shapes {
+        match s {
+            Shape::Fill(r, argb) => game.native_fill(batch, r, argb),
+            Shape::Round(r, radius, argb) => round_fill(game, batch, r, radius, argb, px),
+            Shape::Quad(corners, argb) => {
+                let [a, r, g, b] = argb.to_be_bytes();
+                batch.fill_quad(&game.gui.atlas, corners, horizon_client::hud::rgba(r, g, b, a));
+            }
+            Shape::Text(t, at, rgb) => game.native_text(batch, &t, at, rgb, true),
+            Shape::Head(t, at, rgb) => {
+                horizon_client::font::sunset_font::BOLD.store(true, Ordering::Relaxed);
+                game.native_text(batch, &t, at, rgb, true);
+                horizon_client::font::sunset_font::BOLD.store(false, Ordering::Relaxed);
+            }
+        }
     }
 }
 
@@ -3796,9 +3878,18 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     if with(|s| s.gui.open && s.gui.closing) {
         close_gui(game);
     }
+    let mut gui_shapes = Vec::new();
+    // GUI scale, as far as a row of the narrowest panels still fits the window.
+    let scale = f32::from_bits(LOOK[6].load(Ordering::Relaxed)).min((w / MIN_ROW).max(1.0));
+    LOOK[7].store(scale.to_bits(), Ordering::Relaxed);
     if with(|s| s.gui.open) {
         if game.screen == Screen::Playing && game.player.is_some() {
-            draw_gui(game, w, h, &mut shapes);
+            // The world dims a little behind the panels, as a screen would.
+            if LOOK[3].load(Ordering::Relaxed) != 0 {
+                shapes.push(Shape::Fill([0.0, 0.0, w, h], 0x6000_0000));
+            }
+            shapes.push(Shape::Fill([0.0, 0.0, w, h], 0x3000_0000));
+            draw_gui(game, w / scale, h / scale, 1.0 / (batch.scale * scale), &mut gui_shapes);
         } else {
             with(|s| {
                 s.gui.open = false;
@@ -3807,21 +3898,18 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         }
     }
     let game = &*game;
-    for s in shapes {
-        match s {
-            Shape::Fill(r, argb) => game.native_fill(batch, r, argb),
-            Shape::Quad(corners, argb) => {
-                let [a, r, g, b] = argb.to_be_bytes();
-                batch.fill_quad(&game.gui.atlas, corners, horizon_client::hud::rgba(r, g, b, a));
-            }
-            Shape::Text(t, at, rgb) => game.native_text(batch, &t, at, rgb, true),
-            Shape::Head(t, at, rgb) => {
-                horizon_client::font::sunset_font::BOLD.store(true, Ordering::Relaxed);
-                game.native_text(batch, &t, at, rgb, true);
-                horizon_client::font::sunset_font::BOLD.store(false, Ordering::Relaxed);
-            }
-        }
+    // Sunset's font is drawn for the scale it is told, and rebuilds its glyphs when that changes: while the GUI is
+    // open all of the frame's text uses the GUI's, so it is sharp at any GUI scale and they rebuild only once.
+    let real = batch.scale;
+    if !gui_shapes.is_empty() {
+        batch.scale = real * scale;
     }
+    paint(game, batch, shapes, 1.0 / batch.scale);
+    // The GUI goes on top, scaled about the corner its coordinates start from.
+    let start = batch.vertices.len();
+    paint(game, batch, gui_shapes, 1.0 / batch.scale);
+    batch.scale_since(start, 0.0, 0.0, scale, scale);
+    batch.scale = real;
     if !with(|s| s.gui.open) {
         super::sunset_radar::draw(game, batch, corners, &mods);
     }
@@ -4201,7 +4289,8 @@ pub(super) struct Panel {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Drag {
     Panel(usize, f32, f32),
-    Slider(usize, usize),
+    // The row and scale at the press: a setting that resizes the GUI must not move the slider under the pointer.
+    Slider(usize, usize, [f32; 4], f32),
 }
 
 #[derive(Clone, Debug)]
@@ -4238,8 +4327,19 @@ impl Default for Gui {
     }
 }
 
-const HEAD_H: f32 = 13.0;
-const ROW_H: f32 = 11.0;
+const HEAD_H: f32 = 16.0;
+const ROW_H: f32 = 14.0;
+// A slider has its track under the text.
+const SLIDER_H: f32 = 19.0;
+// The panel's own space under its last row, and to the right of what the rows draw (the scroll marker sits there).
+const BODY_PAD: f32 = 3.0;
+const RIGHT_PAD: f32 = 7.0;
+// Text is this far down a row of its height.
+const fn text_y(h: f32) -> f32 {
+    (h - 8.0) / 2.0
+}
+// A row of panels still narrow enough to read, in GUI pixels at scale 1: GUI scale stops where this fills the window.
+const MIN_ROW: f32 = 4.0 + 5.0 * 70.0 + 4.0 * 3.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Hit {
@@ -4253,7 +4353,7 @@ pub(super) enum Hit {
 fn aliases(name: &str) -> &'static str {
     match name {
         "Step" => "step up stepup stairs",
-        "ClickGUI" => "gui menu color colour theme accent opacity width dim blur background indent",
+        "ClickGUI" => "gui menu color colour theme accent opacity width dim blur background indent scale size zoom bigger radius corner round",
         "Glide" => "slow fall slowfall",
         "Panic" => "disable all off hide",
         "Auto Steal" => "chest stealer loot",
@@ -4270,6 +4370,13 @@ fn aliases(name: &str) -> &'static str {
         "Xray" => "x-ray",
         "No Render" => "no hide fog fog water darkness blindness overlay",
         _ => "",
+    }
+}
+
+fn row_h(s: &State, hit: Hit) -> f32 {
+    match hit {
+        Hit::Setting(i, j) if matches!(s.modules[i].settings[j].value, Value::Num { .. }) => SLIDER_H,
+        _ => ROW_H,
     }
 }
 
@@ -4291,8 +4398,9 @@ pub(super) fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
             rows.push((y, Hit::Bind(i)));
             y += ROW_H;
             for j in 0..m.settings.len() {
-                rows.push((y, Hit::Setting(i, j)));
-                y += ROW_H;
+                let hit = Hit::Setting(i, j);
+                rows.push((y, hit));
+                y += row_h(s, hit);
             }
         }
     }
@@ -4322,27 +4430,49 @@ pub(super) fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
         let room = body_room(s, c);
         for (off, hit) in rows {
             let top = off - p.scroll;
-            if top < -0.01 || top + ROW_H > room + 0.01 {
+            let rh = row_h(s, hit);
+            if top < -0.01 || top + rh > room + 0.01 {
                 continue;
             }
-            out.push(([p.x, p.y + HEAD_H + top, panel_w(), ROW_H], hit));
+            out.push(([p.x, p.y + HEAD_H + top, panel_w(), rh], hit));
         }
     }
     out
 }
 
-// The wheel over a panel scrolls it.
+// The pointer in the GUI's own coordinates, which GUI scale divides.
+fn gui_cursor(game: &Game<'_>) -> (f32, f32) {
+    let scale = gui_scale();
+    (game.cursor.0 / scale, game.cursor.1 / scale)
+}
+
+// A panel's scroll moved by some rows: it always starts on a row, and stops at the first that shows the panel's end.
+fn snap_scroll(rows: &[(f32, Hit)], content: f32, room: f32, scroll: f32, by: i32) -> f32 {
+    let max = (content - room).max(0.0);
+    let stops = rows.iter().position(|(off, _)| *off >= max - 0.01).map_or(rows.len(), |i| i + 1);
+    let Some(last) = stops.checked_sub(1) else {
+        return 0.0;
+    };
+    let at = rows[..stops].iter().position(|(off, _)| *off >= scroll - 0.01).unwrap_or(last);
+    rows[(at as i32 + by).clamp(0, last as i32) as usize].0
+}
+
+// The wheel over a panel scrolls it: the top one, where panels overlap.
 pub(super) fn gui_wheel(game: &Game<'_>, steps: f32) {
-    let at = game.cursor;
+    let at = gui_cursor(game);
     with(|s| {
-        for c in 0..CATEGORIES.len() {
+        for c in (0..CATEGORIES.len()).rev() {
             let p = s.gui.panels[c];
-            let (_, content) = panel_body(s, c);
+            let (rows, content) = panel_body(s, c);
+            if rows.is_empty() && !s.gui.search.is_empty() {
+                continue;
+            }
             let room = body_room(s, c);
-            let shown = if p.collapsed { 0.0 } else { content.min(room) };
+            let shown = if p.collapsed { 0.0 } else { content.min(room) + BODY_PAD };
             if inside([p.x, p.y, panel_w(), HEAD_H + shown], at) {
-                let max = (content - room).max(0.0);
-                s.gui.panels[c].scroll = (p.scroll - steps * ROW_H * 2.0).clamp(0.0, max);
+                let by = -steps * 2.0;
+                let by = if by > 0.0 { by.ceil() } else { by.floor() } as i32;
+                s.gui.panels[c].scroll = snap_scroll(&rows, content, room, p.scroll, by);
                 return;
             }
         }
@@ -4354,7 +4484,8 @@ pub(super) fn inside(r: [f32; 4], (x, y): (f32, f32)) -> bool {
 }
 
 pub(super) fn hit_at(s: &State, at: (f32, f32)) -> Option<([f32; 4], Hit)> {
-    gui_rows(s).into_iter().find(|(r, _)| inside(*r, at))
+    // The last drawn is the one on top, where panels overlap.
+    gui_rows(s).into_iter().rfind(|(r, _)| inside(*r, at))
 }
 
 pub(super) fn open_gui(game: &mut Game<'_>) {
@@ -4385,13 +4516,20 @@ pub(super) fn close_gui(game: &mut Game<'_>) {
     }
 }
 
+// Where a slider's track starts in its row, and how long it is.
+fn slider_track(r: [f32; 4]) -> (f32, f32) {
+    let x0 = r[0] + indent() + 4.0;
+    (x0, (r[0] + r[2] - RIGHT_PAD - x0).max(1.0))
+}
+
 // A slider's value from the pointer's place along its row.
 pub(super) fn slide(s: &mut State, i: usize, j: usize, r: [f32; 4], x: f32) -> bool {
     let Some(setting) = s.modules[i].settings.get_mut(j) else {
         return false;
     };
     if let Value::Num { v, min, max, step } = &mut setting.value {
-        let t = ((x - r[0] - 2.0) / (r[2] - 4.0)).clamp(0.0, 1.0);
+        let (x0, track) = slider_track(r);
+        let t = ((x - x0) / track).clamp(0.0, 1.0);
         let n = round_to(*min + f64::from(t) * (*max - *min), *step).clamp(*min, *max);
         let changed = (n - *v).abs() > 1e-9;
         *v = n;
@@ -4510,7 +4648,7 @@ pub(super) fn key_char(name: &str) -> Option<char> {
 // the held buttons each frame).
 pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) {
     use winit::event::MouseButton;
-    let at = game.cursor;
+    let at = gui_cursor(game);
     let right = match button {
         MouseButton::Left => false,
         MouseButton::Right => true,
@@ -4548,7 +4686,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             (Hit::Setting(i, j), right) => {
                 let num = matches!(s.modules[i].settings[j].value, Value::Num { .. });
                 if num && !right {
-                    s.gui.drag = Some(Drag::Slider(i, j));
+                    s.gui.drag = Some(Drag::Slider(i, j, r, gui_scale()));
                     changed = slide(s, i, j, r, at.0);
                 } else if num {
                     // Right click on a slider: back to its default.
@@ -4571,17 +4709,17 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
 
 // A drag follows the pointer each frame.
 pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
-    let at = game.cursor;
+    let at = gui_cursor(game);
     with(|s| match s.gui.drag {
         Some(Drag::Panel(c, dx, dy)) => {
             let p = &mut s.gui.panels[c];
             p.x = (at.0 - dx).clamp(0.0, (w - panel_w()).max(0.0));
             p.y = (at.1 - dy).clamp(0.0, (h - HEAD_H).max(0.0));
         }
-        Some(Drag::Slider(i, j)) => {
-            let row = gui_rows(s).into_iter().find(|(_, hit)| *hit == Hit::Setting(i, j));
-            if let Some((r, _)) = row {
-                slide(s, i, j, r, at.0);
+        Some(Drag::Slider(i, j, r, scale)) => {
+            // The look follows as it is dragged.
+            if slide(s, i, j, r, game.cursor.0 / scale) {
+                sync_flags(s);
             }
         }
         None => {}
@@ -4594,22 +4732,20 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
     }
 }
 
-pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
+pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<Shape>) {
     follow_drag(game, w, h);
-    if LOOK[3].load(Ordering::Relaxed) != 0 {
-        out.push(Shape::Fill([0.0, 0.0, w, h], 0x6000_0000));
-    }
     // The panels are as wide as asked, or as wide as lets all of them sit in a row.
     let fits = ((w - 4.0 - 3.0 * (CATEGORIES.len() as f32 - 1.0)) / CATEGORIES.len() as f32).floor();
     let width = f32::from_bits(LOOK[1].load(Ordering::Relaxed)).min(fits).max(50.0);
     let before = LOOK[4].swap(width.to_bits(), Ordering::Relaxed);
-    let changed = before != 0 && before != width.to_bits();
+    let was = f32::from_bits(before);
     with(|s| {
         s.gui.view_h = h;
-        if changed {
-            // Another width: lay the panels out again.
-            for p in &mut s.gui.panels {
-                p.x = -1.0;
+        if before != 0 && was != width {
+            // Another width: the panels spread or close up and a layout of your own keeps its shape.
+            let k = (width + 3.0) / (was + 3.0);
+            for p in s.gui.panels.iter_mut().filter(|p| p.x >= 0.0) {
+                p.x = (2.0 + (p.x - 2.0) * k).max(0.0);
             }
         }
         // Panels with no place yet go left to right, in a second row when the
@@ -4619,7 +4755,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
         for p in s.gui.panels.iter_mut().filter(|p| p.x < 0.0) {
             if x + panel_w() > w {
                 x = 2.0;
-                y += 16.0;
+                y += HEAD_H + 3.0;
             }
             (p.x, p.y) = (x, y);
             x += panel_w() + 3.0;
@@ -4630,13 +4766,19 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
         }
         // A scroll past the end (a shorter body, a taller window) comes back.
         for c in 0..CATEGORIES.len() {
-            let (_, content) = panel_body(s, c);
-            let max = (content - body_room(s, c)).max(0.0);
-            s.gui.panels[c].scroll = s.gui.panels[c].scroll.clamp(0.0, max);
+            let (rows, content) = panel_body(s, c);
+            let room = body_room(s, c);
+            s.gui.panels[c].scroll = snap_scroll(&rows, content, room, s.gui.panels[c].scroll, 0);
         }
     });
-    let at = game.cursor;
+    let at = gui_cursor(game);
     let (rows, modules, binding, hover) = with(|s| (gui_rows(s), s.modules.clone(), s.binding, hit_at(s, at).map(|(_, h)| h)));
+    // Each panel's height of rows, room, scroll and whether it is folded.
+    let bodies: Vec<(f32, f32, f32, bool)> = with(|s| {
+        (0..CATEGORIES.len())
+            .map(|c| (panel_body(s, c).1, body_room(s, c), s.gui.panels[c].scroll, s.gui.panels[c].collapsed))
+            .collect()
+    });
     let fit = |text: &str, max: f32| -> String {
         if game.native_text_width(text) <= max {
             return text.to_owned();
@@ -4647,76 +4789,112 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
         }
         format!("{t}...")
     };
-    // The world dims a little behind the panels, as a screen would.
-    out.push(Shape::Fill([0.0, 0.0, w, h], 0x3000_0000));
+    let solid = |rgb: u32| 0xFF00_0000 | rgb;
+    let control = control_radius();
+    // The label on the left of a row, cut short of what sits to its right.
+    let label = |out: &mut Vec<Shape>, text: &str, r: [f32; 4], x: f32, right: f32, colour: u32| {
+        let room = r[0] + r[2] - RIGHT_PAD - right - x - 3.0;
+        out.push(Shape::Text(fit(text, room), [x, r[1] + text_y(ROW_H)], colour));
+    };
+    // A value in its rounded box at the right of a row; how wide it is.
+    let value_box = |out: &mut Vec<Shape>, text: &str, r: [f32; 4], colour: u32| -> f32 {
+        let text = fit(text, r[2] * 0.5);
+        let tw = game.native_text_width(&text);
+        let bw = tw + 8.0;
+        let bx = r[0] + r[2] - RIGHT_PAD - bw;
+        out.push(Shape::Round([bx, r[1] + 2.0, bw, ROW_H - 4.0], control, 0xFF1E_1E1E));
+        out.push(Shape::Text(text, [bx + 4.0, r[1] + text_y(ROW_H)], colour));
+        bw
+    };
+    let mut first_row = false;
     for (r, hit) in &rows {
         let [x, y, rw, rh] = *r;
         let hovered = hover == Some(*hit);
+        if let Hit::Header(_) = hit {
+            first_row = true;
+        } else if std::mem::take(&mut first_row) {
+            // The header's line is under it already.
+        } else {
+            out.push(Shape::Fill([x, y, rw, px], 0x12FF_FFFF));
+        }
+        if hovered && !matches!(hit, Hit::Header(_)) {
+            out.push(Shape::Round([x + 2.0, y + 1.0, rw - 4.0, rh - 2.0], control, 0x10FF_FFFF));
+        }
+        let setting_x = x + indent() + 4.0;
         match *hit {
             Hit::Header(c) => {
-                out.push(Shape::Fill([x, y, rw, rh], 0xF014_1414));
-                out.push(Shape::Fill([x, y + rh - 1.0, rw, 1.0], 0xFF00_0000 | accent()));
-                let label = CATEGORIES[c].label();
+                let (content, room, scroll, folded) = bodies[c];
+                let body = if folded || content <= 0.0 { 0.0 } else { content.min(room) + BODY_PAD };
+                out.push(Shape::Round([x, y, rw, rh + body], panel_radius(), bg(0xC00E_0E0E)));
+                if body > 0.0 {
+                    out.push(Shape::Fill([x, y + rh - px, rw, px], 0x24FF_FFFF));
+                }
+                let name = CATEGORIES[c].label();
                 let on = modules.iter().filter(|m| m.category == CATEGORIES[c] && m.on).count();
                 let count = format!("{on}");
-                out.push(Shape::Head(label.to_owned(), [x + 4.0, y + 2.5], 0xFFFFFF));
                 let cw = game.native_text_width(&count);
-                out.push(Shape::Text(count, [x + rw - 4.0 - cw, y + 2.5], 0xAAAAAA));
+                out.push(Shape::Head(fit(name, rw - indent() - RIGHT_PAD - cw - 3.0), [x + indent(), y + text_y(rh)], 0xFFFFFF));
+                out.push(Shape::Text(count, [x + rw - RIGHT_PAD - cw, y + text_y(rh)], 0x808080));
+                // The scroll marker: how much of the panel shows, and where.
+                if !folded && content > room {
+                    let thumb = (room * room / content).max(10.0);
+                    let t = (scroll / (content - room)).min(1.0);
+                    out.push(Shape::Round([x + rw - 4.0, y + rh + 1.0 + (room - 2.0 - thumb) * t, 2.0, thumb], 1.0, 0x70FF_FFFF));
+                }
             }
             Hit::Module(i) => {
                 let m = &modules[i];
-                out.push(Shape::Fill([x, y, rw, rh], if hovered { bg(0xD02A_2A2A) } else { bg(0xC010_1010) }));
-                if m.on {
-                    out.push(Shape::Fill([x, y, 2.0, rh], 0xFF00_0000 | accent()));
-                }
-                let colour = if m.on { accent() } else { 0xE0E0E0 };
                 // A bound key shows at the row's end.
                 let tag = m.key.as_deref().map(|k| fit(&key_label(Some(k)), 30.0)).unwrap_or_default();
-                let tag_w = if tag.is_empty() { 0.0 } else { game.native_text_width(&tag) + 3.0 };
-                out.push(Shape::Text(fit(m.name, rw - indent() - 4.0 - tag_w), [x + indent(), y + 1.5], colour));
+                let tag_w = if tag.is_empty() { 0.0 } else { game.native_text_width(&tag) };
+                label(out, m.name, *r, x + indent(), tag_w, if m.on { accent() } else { 0xE4E4E4 });
                 if !tag.is_empty() {
-                    out.push(Shape::Text(tag, [x + rw - tag_w - 1.0, y + 1.5], 0x808080));
+                    out.push(Shape::Text(tag, [x + rw - RIGHT_PAD - tag_w, y + text_y(rh)], 0x707070));
                 }
             }
             Hit::Bind(i) => {
-                out.push(Shape::Fill([x, y, rw, rh], bg(0xD008_0808)));
-                let text = if binding == Some(i) {
-                    "Bind: press a key".to_owned()
-                } else {
-                    format!("Bind: {}", key_label(modules[i].key.as_deref()))
-                };
-                out.push(Shape::Text(fit(&text, rw - indent() - 7.0), [x + indent() + 4.0, y + 1.5], if binding == Some(i) { 0xFFFF55 } else { 0xB0B0B0 }));
+                let waiting = binding == Some(i);
+                let key = if waiting { "Press key".to_owned() } else { key_label(modules[i].key.as_deref()) };
+                let bw = value_box(out, &key, *r, if waiting { accent() } else { 0xC8C8C8 });
+                label(out, "Bind", *r, setting_x, bw, 0xB4B4B4);
             }
             Hit::Setting(i, j) => {
                 let st = &modules[i].settings[j];
-                out.push(Shape::Fill([x, y, rw, rh], if hovered { bg(0xD01C_1C1C) } else { bg(0xD008_0808) }));
-                if let Value::Num { v, min, max, .. } = st.value {
-                    let t = if max > min { ((v - min) / (max - min)) as f32 } else { 0.0 };
-                    out.push(Shape::Fill([x + 2.0, y + rh - 2.0, (rw - 4.0) * t, 1.0], 0xFF00_0000 | accent()));
+                match st.value {
+                    Value::Bool(b) => {
+                        let (tw, th) = (14.0, 8.0);
+                        let (tx, ty) = (x + rw - RIGHT_PAD - tw, y + (rh - th) / 2.0);
+                        out.push(Shape::Round([tx, ty, tw, th], control, if b { solid(accent()) } else { 0xFF2A_2A2A }));
+                        let knob = th - 2.0;
+                        let kx = if b { tx + tw - knob - 1.0 } else { tx + 1.0 };
+                        out.push(Shape::Round([kx, ty + 1.0, knob, knob], (control - 1.0).max(0.0), if b { 0xFF10_1010 } else { 0xFFC8_C8C8 }));
+                        label(out, st.name, *r, setting_x, tw, 0xC8C8C8);
+                    }
+                    Value::Num { v, min, max, .. } => {
+                        let value = num(v);
+                        let vw = game.native_text_width(&value);
+                        out.push(Shape::Text(value, [x + rw - RIGHT_PAD - vw, y + text_y(ROW_H)], 0xE4E4E4));
+                        label(out, st.name, *r, setting_x, vw, 0xB4B4B4);
+                        let (tx, track) = slider_track(*r);
+                        let t = if max > min { ((v - min) / (max - min)) as f32 } else { 0.0 };
+                        let ty = y + 14.0;
+                        out.push(Shape::Round([tx, ty, track, 2.0], 1.0, 0xFF2A_2A2A));
+                        out.push(Shape::Round([tx, ty, track * t, 2.0], 1.0, solid(accent())));
+                        out.push(Shape::Round([tx + track * t - 2.5, ty - 1.5, 5.0, 5.0], control.min(2.5), 0xFFE4_E4E4));
+                    }
+                    Value::Pick { .. } => {
+                        let bw = value_box(out, &st.value_text(), *r, 0xE4E4E4);
+                        label(out, st.name, *r, setting_x, bw, 0xB4B4B4);
+                    }
+                    Value::Text(_) => {
+                        let value = st.value_text();
+                        let vw = game.native_text_width(&value);
+                        out.push(Shape::Text(value, [x + rw - RIGHT_PAD - vw, y + text_y(ROW_H)], 0x808080));
+                        label(out, st.name, *r, setting_x, vw, 0xB4B4B4);
+                    }
                 }
-                let colour = match st.value {
-                    Value::Bool(true) => accent(),
-                    _ => 0xD0D0D0,
-                };
-                out.push(Shape::Text(fit(&st.shown(), rw - indent() - 7.0), [x + indent() + 4.0, y + 1.5], colour));
             }
         }
-    }
-    // A panel with more below its last row shows it.
-    let more: Vec<(f32, f32)> = with(|s| {
-        (0..CATEGORIES.len())
-            .filter(|&c| !s.gui.panels[c].collapsed)
-            .filter_map(|c| {
-                let p = s.gui.panels[c];
-                let (_, content) = panel_body(s, c);
-                let room = body_room(s, c);
-                (content - p.scroll > room + 0.5).then_some((p.x, p.y + HEAD_H + room))
-            })
-            .collect()
-    });
-    for (x, y) in more {
-        out.push(Shape::Fill([x, y, panel_w(), 8.0], bg(0xE014_1414)));
-        out.push(Shape::Text("v".into(), [x + panel_w() / 2.0 - 2.0, y - 0.5], 0xB0B0B0));
     }
     // The hovered module's description, under the pointer.
     if let Some(Hit::Module(i)) = hover
@@ -4724,23 +4902,23 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     {
         let about = modules[i].about;
         let tw = game.native_text_width(about);
-        let bx = (at.0 + 8.0).min(w - tw - 6.0).max(0.0);
-        let by = (at.1 + 10.0).min(h - 12.0);
-        out.push(Shape::Fill([bx, by, tw + 6.0, 12.0], 0xF000_0000));
-        out.push(Shape::Text(about.to_owned(), [bx + 3.0, by + 2.0], 0xFFFFFF));
+        let bx = (at.0 + 8.0).min(w - tw - 8.0).max(0.0);
+        let by = (at.1 + 10.0).min(h - 14.0);
+        out.push(Shape::Round([bx, by, tw + 8.0, 14.0], control, 0xF80A_0A0A));
+        out.push(Shape::Text(about.to_owned(), [bx + 4.0, by + text_y(14.0)], 0xE4E4E4));
     }
-    // The search box, and above the hotbar a reminder of the clicks.
+    // The search box, and over it a reminder of the clicks.
     let search = with(|s| s.gui.search.clone());
-    let (label, colour) = if search.is_empty() {
+    let (text, colour) = if search.is_empty() {
         ("Type to search".to_owned(), 0x909090)
     } else {
         (format!("Search: {search}_"), accent())
     };
     let selected = with(|s| s.gui.select_all) && !search.is_empty();
-    let lw_ = game.native_text_width(&label);
-    out.push(Shape::Fill([(w - lw_) / 2.0 - 4.0, 14.0, lw_ + 8.0, 12.0], if selected { 0xFF30_60B0 } else { bg(0xC010_1010) }));
-    out.push(Shape::Text(label, [(w - lw_) / 2.0, 16.0], if selected { 0xFFFFFF } else { colour }));
+    let lw_ = game.native_text_width(&text);
+    out.push(Shape::Round([(w - lw_) / 2.0 - 6.0, 14.0, lw_ + 12.0, 14.0], control, if selected { 0xFF30_60B0 } else { bg(0xC00E_0E0E) }));
+    out.push(Shape::Text(text, [(w - lw_) / 2.0, 14.0 + text_y(14.0)], if selected { 0xFFFFFF } else { colour }));
     let hint = "Right click: settings   Enter: toggle search result   Esc: close";
     let hw = game.native_text_width(hint);
-    out.push(Shape::Text(hint.to_owned(), [(w - hw) / 2.0, 3.0], 0xC0C0C0));
+    out.push(Shape::Text(hint.to_owned(), [(w - hw) / 2.0, 3.0], 0xA0A0A0));
 }

@@ -46,6 +46,7 @@ Press **`** (or **Right Shift**) for the menu. Every category is a panel.
 - **Just type** to search: `esp` shows the modules with ESP in the name. **Enter** turns on the first match (Enter again turns it off). **Ctrl+A** selects the search text, **Esc** clears it, then closes the menu.
 - The dark dim and the blur the game puts behind the inventory, chests and the Esc menu are off; **ClickGUI > Menu dim** brings them back.
 - **Drag** a panel's header to move it, **right click** a header to fold it, **scroll** a long panel.
+- **ClickGUI** sets the menu's look: **GUI scale** makes it bigger, **Panel radius** and **Control radius** round its corners.
 - Change a **key bind** with the *Bind* row (press a key; Backspace clears it). Both menu keys can be rebound under
   Options > Mods > Sunset.
 
