@@ -44,7 +44,9 @@ On Linux the installer may ask for your password once, to install two small syst
 
 Press **`** (or **Right Shift**) for the menu. Every category is a panel.
 
-- **Left click** a module to turn it on or off. **Right click** it for its settings and key bind.
+- **Left click** a module to turn it on or off. **Right click** it for its settings and key bind, in a window of its own
+  (drag it by its title; Esc closes it), or in the panel with ClickGUI *Settings: Inline*. Click a slider's number to
+  type one.
 - **Just type** to search: `esp` shows the modules with ESP in the name. **Enter** turns on the first match (Enter again turns it off). **Ctrl+A** selects the search text, **Esc** clears it, then closes the menu.
 - The dark dim and the blur the game puts behind the inventory, chests and the Esc menu are off; **ClickGUI > Menu dim** brings them back.
 - **Drag** a panel's header to move it, **right click** a header to fold it, **scroll** a long panel.

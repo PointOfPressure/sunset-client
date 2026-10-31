@@ -388,8 +388,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Control radius", 4.0, 0.0, 6.0, 1.0)
             .pick("Spacing", &["Comfortable", "Compact"])
             .num("Text indent", 6.0, 0.0, 12.0, 1.0)
+            .pick("Settings", &["Window", "Inline"])
             .num("Background opacity", 0.9, 0.2, 1.0, 0.05)
-            .bool("Background dim", false)
+            .num("Background dim", 20.0, 0.0, 100.0, 5.0)
             .bool("Menu dim", false),
         Module::new("HUD", Render, "The watermark, the active modules, your coordinates and more.")
             .on()
@@ -971,7 +972,7 @@ pub(super) fn sync_flags(s: &State) {
     LOOK[0].store(g.map_or(0xFFB020, |m| m.c("Accent color") & 0x00FF_FFFF), Ordering::Relaxed);
     LOOK[1].store(g.map_or(100.0, |m| m.n("Panel width") as f32).to_bits(), Ordering::Relaxed);
     LOOK[2].store(g.map_or(0.9, |m| m.n("Background opacity") as f32).to_bits(), Ordering::Relaxed);
-    LOOK[3].store(u32::from(g.is_some_and(|m| m.b("Background dim"))), Ordering::Relaxed);
+    LOOK[3].store(g.map_or(20.0, |m| m.n("Background dim")) as u32, Ordering::Relaxed);
     LOOK[5].store(g.map_or(6.0, |m| m.n("Text indent") as f32).to_bits(), Ordering::Relaxed);
     LOOK[6].store(g.map_or(1.0, |m| m.n("GUI scale") as f32).to_bits(), Ordering::Relaxed);
     LOOK[8].store(g.map_or(6.0, |m| m.n("Panel radius") as f32).to_bits(), Ordering::Relaxed);
@@ -4247,6 +4248,8 @@ pub(super) enum Shape {
     Fill([f32; 4], u32),
     // A rectangle with rounded corners, and their radius.
     Round([f32; 4], f32, u32),
+    // A rectangle with only some corners rounded: top left, top right, bottom right, bottom left.
+    Corners([f32; 4], f32, [bool; 4], u32),
     // A slanted shape (a line): its four corners in order round it.
     Quad([[f32; 2]; 4], u32),
     Text(String, [f32; 2], u32),
@@ -4317,7 +4320,7 @@ pub(super) fn health_colour(fraction: f32) -> u32 {
 static SHAPES: Mutex<Vec<Shape>> = Mutex::new(Vec::new());
 
 // A rounded rectangle: straight sides as plain fills, each corner a fan with one physical pixel of edge fade (`px`).
-fn round_fill(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f32; 4], radius: f32, argb: u32, px: f32) {
+fn round_fill(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f32; 4], radius: f32, which: [bool; 4], argb: u32, px: f32) {
     let r = radius.min(w / 2.0).min(h / 2.0);
     if r < px {
         game.native_fill(batch, [x, y, w, h], argb);
@@ -4334,7 +4337,13 @@ fn round_fill(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f32; 4], rad
     let segments = (((r / px).sqrt() * 2.0).ceil() as usize).clamp(3, 16);
     let at = |c: [f32; 2], radius: f32, angle: f32| [c[0] + radius * angle.cos(), c[1] + radius * angle.sin()];
     let quarter = std::f32::consts::FRAC_PI_2;
-    for (c, turn) in [([x + r, y + r], 2.0), ([x + w - r, y + r], 3.0), ([x + w - r, y + h - r], 0.0), ([x + r, y + h - r], 1.0)] {
+    let corners = [([x + r, y + r], 2.0), ([x + w - r, y + r], 3.0), ([x + w - r, y + h - r], 0.0), ([x + r, y + h - r], 1.0)];
+    for ((c, turn), round) in corners.into_iter().zip(which) {
+        if !round {
+            // A square corner: the square the arc would have cut.
+            game.native_fill(batch, [c[0] - r * f32::from(u8::from(c[0] < x + w / 2.0)), c[1] - r * f32::from(u8::from(c[1] < y + h / 2.0)), r, r], argb);
+            continue;
+        }
         for i in 0..segments {
             let a0 = (turn + i as f32 / segments as f32) * quarter;
             let a1 = (turn + (i + 1) as f32 / segments as f32) * quarter;
@@ -4357,7 +4366,8 @@ fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32
     for s in shapes.drain(..) {
         match s {
             Shape::Fill(r, argb) => game.native_fill(batch, r, argb),
-            Shape::Round(r, radius, argb) => round_fill(game, batch, r, radius, argb, px),
+            Shape::Round(r, radius, argb) => round_fill(game, batch, r, radius, [true; 4], argb, px),
+            Shape::Corners(r, radius, which, argb) => round_fill(game, batch, r, radius, which, argb, px),
             Shape::Quad(corners, argb) => {
                 let [a, r, g, b] = argb.to_be_bytes();
                 batch.fill_quad(&game.gui.atlas, corners, horizon_client::hud::rgba(r, g, b, a));
@@ -4477,16 +4487,18 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     LOOK[7].store(scale.to_bits(), Ordering::Relaxed);
     if with(|s| s.gui.open) {
         if game.screen == Screen::Playing && game.player.is_some() {
-            // The world dims a little behind the panels, as a screen would.
-            if LOOK[3].load(Ordering::Relaxed) != 0 {
-                shapes.push(Shape::Fill([0.0, 0.0, w, h], 0x6000_0000));
+            // The world dims behind the panels by Background dim (percent), the one fill behind them.
+            let dim = LOOK[3].load(Ordering::Relaxed).min(100) * 255 / 100;
+            if dim > 0 {
+                shapes.push(Shape::Fill([0.0, 0.0, w, h], dim << 24));
             }
-            shapes.push(Shape::Fill([0.0, 0.0, w, h], 0x3000_0000));
             draw_gui(game, w / scale, h / scale, 1.0 / (batch.scale * scale), &mut gui_shapes);
         } else {
             with(|s| {
                 s.gui.open = false;
                 s.gui.drag = None;
+                s.gui.editor = None;
+                s.gui.window = None;
             });
         }
     }
@@ -4991,6 +5003,8 @@ pub(super) enum Drag {
     Panel(usize, f32, f32),
     // The row and scale at the press: a setting that resizes the GUI must not move the slider under the pointer.
     Slider(usize, usize, [f32; 4], f32),
+    // The settings window by its title, where in it the pointer took it.
+    Window(f32, f32),
 }
 
 #[derive(Clone, Debug)]
@@ -5011,6 +5025,8 @@ pub(super) struct Gui {
     // The text editor over the panels (a left click on a text setting), the GUI's width when it last drew, and
     // whether the key just pressed was the editor's already (from the window's own event, with its text).
     editor: Option<Editor>,
+    // A module's settings in their own window (ClickGUI Settings: Window).
+    window: Option<Win>,
     view_w: f32,
     typed: bool,
     // Ctrl or Cmd held, as the window last said.
@@ -5024,6 +5040,8 @@ pub(super) struct Editor {
     setting: usize,
     // A value from .set or the config that the editor can't hold (too long, more than one line) is shown, not cut.
     draft: Result<Draft, &'static str>,
+    // A number typed in its own slider row, instead of the text editor's box over the panels.
+    inline: bool,
 }
 
 fn editor_rect(w: f32, h: f32) -> [f32; 4] {
@@ -5038,11 +5056,24 @@ fn editor_buttons(r: [f32; 4]) -> ([f32; 4], [f32; 4]) {
 }
 
 // The editor's draft into its setting, and the editor closed.
+// A number goes in rounded to its step and kept in its range; what is not a number keeps the field open, in red.
 fn apply_editor(s: &mut State) {
-    if let Some(Editor { module, setting, draft: Ok(draft) }) = s.gui.editor.take()
-        && let Some(Value::Text(t)) = s.modules.get_mut(module).and_then(|m| m.settings.get_mut(setting)).map(|st| &mut st.value)
-    {
-        *t = draft.text().to_owned();
+    let Some(mut edit) = s.gui.editor.take() else {
+        return;
+    };
+    let Ok(draft) = &mut edit.draft else {
+        return;
+    };
+    match s.modules.get_mut(edit.module).and_then(|m| m.settings.get_mut(edit.setting)).map(|st| &mut st.value) {
+        Some(Value::Text(t)) => *t = draft.text().to_owned(),
+        Some(Value::Num { v, min, max, step }) => match draft.text().trim().parse::<f64>() {
+            Ok(n) if n.is_finite() => *v = round_to(n, *step).clamp(*min, *max),
+            _ => {
+                draft.error = Some("not a number");
+                s.gui.editor = Some(edit);
+            }
+        },
+        _ => {}
     }
 }
 
@@ -5111,6 +5142,7 @@ impl Default for Gui {
             closing: false,
             select_all: false,
             editor: None,
+            window: None,
             view_w: 0.0,
             typed: false,
             shortcut: false,
@@ -5138,9 +5170,12 @@ fn row_hh() -> f32 {
 fn slider_h() -> f32 {
     spaced(19.0, 15.0)
 }
-// The panel's own space under its last row, and to the right of what the rows draw (the scroll marker sits there).
-const BODY_PAD: f32 = 3.0;
+// To the right of what the rows draw (the scroll marker sits there).
 const RIGHT_PAD: f32 = 7.0;
+// The panel's own space under its last row: the last row's text is as far from the bottom as the header's from the top.
+fn body_pad() -> f32 {
+    (head_h() - row_hh()) / 2.0
+}
 // Text is this far down a row of its height.
 const fn text_y(h: f32) -> f32 {
     (h - 8.0) / 2.0
@@ -5154,6 +5189,10 @@ pub(super) enum Hit {
     Module(usize),
     Bind(usize),
     Setting(usize, usize),
+    // The settings window: anywhere on it, its title (to drag it) and its close button.
+    WinBody,
+    WinTitle,
+    WinClose,
 }
 
 // Other names a module is known by, so the search finds it under either.
@@ -5221,7 +5260,7 @@ pub(super) fn body_room(s: &State, c: usize) -> f32 {
 
 // Each row of every panel, top to bottom: its rectangle and what it is. A
 // row only part way in view is left out.
-pub(super) fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
+fn panel_rows(s: &State) -> Vec<([f32; 4], Hit)> {
     let mut out = Vec::new();
     for c in 0..CATEGORIES.len() {
         let p = s.gui.panels[c];
@@ -5247,6 +5286,119 @@ pub(super) fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
     out
 }
 
+// What the pointer can hit: the panels' rows, then the settings window over them.
+pub(super) fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
+    let mut rows = panel_rows(s);
+    rows.extend(window_hits(s));
+    rows
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Win {
+    module: usize,
+    x: f32,
+    y: f32,
+    scroll: f32,
+    // As it last drew: its description's height, its rows' height and how much of them shows.
+    about_h: f32,
+    content: f32,
+    room: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum WinRow {
+    Group(&'static str),
+    Row(Hit),
+}
+
+fn win_w(s: &State) -> f32 {
+    (panel_w() * 1.6).max(150.0).min(s.gui.view_w - 8.0)
+}
+
+// The window's rows under its title and description, each group under its name: the settings, then the bind.
+fn win_body(s: &State, i: usize) -> (Vec<(f32, WinRow)>, f32) {
+    let m = &s.modules[i];
+    let (bind, general): (Vec<usize>, Vec<usize>) = (0..m.settings.len()).partition(|&j| m.settings[j].name == "Bind mode");
+    let groups = [
+        ("General", general.into_iter().map(|j| Hit::Setting(i, j)).collect::<Vec<_>>()),
+        ("Bind", std::iter::once(Hit::Bind(i)).chain(bind.into_iter().map(|j| Hit::Setting(i, j))).collect()),
+    ];
+    let mut rows = Vec::new();
+    let mut y = 0.0;
+    for (name, hits) in groups.into_iter().filter(|(_, hits)| !hits.is_empty()) {
+        rows.push((y, WinRow::Group(name)));
+        y += row_hh();
+        for hit in hits {
+            rows.push((y, WinRow::Row(hit)));
+            y += row_h(s, hit);
+        }
+    }
+    (rows, y)
+}
+
+fn win_frame(s: &State, w: &Win) -> [f32; 4] {
+    [w.x, w.y, win_w(s), head_h() + w.about_h + w.content.min(w.room) + body_pad()]
+}
+
+fn win_close(frame: [f32; 4]) -> [f32; 4] {
+    [frame[0] + frame[2] - head_h(), frame[1], head_h(), head_h()]
+}
+
+// The window's rows in view, and where.
+fn win_rows(s: &State) -> Vec<([f32; 4], WinRow)> {
+    let Some(w) = s.gui.window else {
+        return Vec::new();
+    };
+    let [x, y, ww, _] = win_frame(s, &w);
+    let top = y + head_h() + w.about_h;
+    win_body(s, w.module)
+        .0
+        .into_iter()
+        .filter_map(|(off, row)| {
+            let rh = match row {
+                WinRow::Row(hit) => row_h(s, hit),
+                WinRow::Group(_) => row_hh(),
+            };
+            let at = off - w.scroll;
+            (at >= -0.01 && at + rh <= w.room + 0.01).then_some(([x, top + at, ww, rh], row))
+        })
+        .collect()
+}
+
+// What a click on the window hits: before anything under it.
+fn window_hits(s: &State) -> Vec<([f32; 4], Hit)> {
+    let Some(w) = s.gui.window else {
+        return Vec::new();
+    };
+    let frame = win_frame(s, &w);
+    let mut out = vec![(frame, Hit::WinBody), ([frame[0], frame[1], frame[2], head_h()], Hit::WinTitle), (win_close(frame), Hit::WinClose)];
+    out.extend(win_rows(s).into_iter().filter_map(|(r, row)| match row {
+        WinRow::Row(hit) => Some((r, hit)),
+        WinRow::Group(_) => None,
+    }));
+    out
+}
+
+// A number field's width, for its text.
+fn field_width(game: &Game<'_>, text: &str) -> f32 {
+    (game.native_text_width(text) + 6.0).max(24.0)
+}
+
+// A description in lines that fit `width`.
+fn wrap(game: &Game<'_>, text: &str, width: f32) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for word in text.split_whitespace() {
+        match lines.last_mut() {
+            Some(l) if game.native_text_width(&format!("{l} {word}")) <= width => {
+                l.push(' ');
+                l.push_str(word);
+            }
+            _ => lines.push(word.to_owned()),
+        }
+    }
+    lines
+}
+
 // The pointer in the GUI's own coordinates, which GUI scale divides.
 fn gui_cursor(game: &Game<'_>) -> (f32, f32) {
     let scale = gui_scale();
@@ -5268,6 +5420,14 @@ fn snap_scroll(rows: &[(f32, Hit)], content: f32, room: f32, scroll: f32, by: i3
 pub(super) fn gui_wheel(game: &Game<'_>, steps: f32) {
     let at = gui_cursor(game);
     with(|s| {
+        // Over the settings window: it scrolls.
+        if let Some(w) = s.gui.window
+            && inside(win_frame(s, &w), at)
+        {
+            let max = (w.content - w.room).max(0.0);
+            s.gui.window = Some(Win { scroll: (w.scroll - steps * row_hh() * 2.0).clamp(0.0, max), ..w });
+            return;
+        }
         for c in (0..CATEGORIES.len()).rev() {
             let p = s.gui.panels[c];
             let (rows, content) = panel_body(s, c);
@@ -5275,7 +5435,7 @@ pub(super) fn gui_wheel(game: &Game<'_>, steps: f32) {
                 continue;
             }
             let room = body_room(s, c);
-            let shown = if p.collapsed { 0.0 } else { content.min(room) + BODY_PAD };
+            let shown = if p.collapsed { 0.0 } else { content.min(room) + body_pad() };
             if inside([p.x, p.y, panel_w(), head_h() + shown], at) {
                 let by = -steps * 2.0;
                 let by = if by > 0.0 { by.ceil() } else { by.floor() } as i32;
@@ -5317,6 +5477,7 @@ pub(super) fn close_gui(game: &mut Game<'_>) {
         s.gui.closing = false;
         s.gui.drag = None;
         s.gui.editor = None;
+        s.gui.window = None;
         s.binding = None;
     });
     save(game);
@@ -5397,6 +5558,10 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
             s.binding = None;
         });
         save(game);
+        return;
+    }
+    if name == "key.keyboard.escape" && with(|s| s.gui.window.take().is_some()) {
+        // Esc closes the settings window before the menu.
         return;
     }
     if name == "key.keyboard.escape" {
@@ -5517,10 +5682,28 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             }
             return;
         }
-        let Some((r, hit)) = hit_at(s, at) else {
+        let found = hit_at(s, at);
+        // A number being typed: a click in its field leaves it be; anywhere else, it is left as it was.
+        if let Some(Editor { module, setting, draft: Ok(draft), inline: true }) = &s.gui.editor {
+            let in_field = found.is_some_and(|(r, hit)| {
+                hit == Hit::Setting(*module, *setting) && at.0 >= r[0] + r[2] - RIGHT_PAD - field_width(game, draft.text()) && at.1 < r[1] + row_hh()
+            });
+            if in_field {
+                return;
+            }
+            s.gui.editor = None;
+        }
+        let Some((r, hit)) = found else {
             return;
         };
         match (hit, right) {
+            (Hit::WinTitle, false) => {
+                if let Some(w) = s.gui.window {
+                    s.gui.drag = Some(Drag::Window(at.0 - w.x, at.1 - w.y));
+                }
+            }
+            (Hit::WinClose, false) => s.gui.window = None,
+            (Hit::WinBody | Hit::WinTitle | Hit::WinClose, _) => {}
             (Hit::Header(c), false) => {
                 let p = s.gui.panels[c];
                 s.gui.drag = Some(Drag::Panel(c, at.0 - p.x, at.1 - p.y));
@@ -5530,12 +5713,20 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                 changed = true;
             }
             (Hit::Module(i), false) => toggled = Some(i),
-            (Hit::Module(i), true) => {
+            (Hit::Module(i), true) if s.module("ClickGUI").is_some_and(|m| m.p("Settings") == "Inline") => {
                 if let Some(k) = s.gui.expanded.iter().position(|&e| e == i) {
                     s.gui.expanded.remove(k);
                 } else {
                     s.gui.expanded.push(i);
                 }
+            }
+            // Its own window, in the middle at first (the same module again closes it).
+            (Hit::Module(i), true) => {
+                s.gui.window = match s.gui.window {
+                    Some(w) if w.module == i => None,
+                    _ => Some(Win { module: i, x: (s.gui.view_w - win_w(s)) / 2.0, y: 40.0, scroll: 0.0, about_h: 0.0, content: 0.0, room: 0.0 }),
+                };
+                s.binding = None;
             }
             (Hit::Bind(i), false) => s.binding = if s.binding == Some(i) { None } else { Some(i) },
             (Hit::Bind(i), true) => {
@@ -5544,17 +5735,32 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                 changed = true;
             }
             (Hit::Setting(i, j), right) => {
-                let num = matches!(s.modules[i].settings[j].value, Value::Num { .. });
-                if num && !right {
+                let number = match s.modules[i].settings[j].value {
+                    Value::Num { v, .. } => Some(v),
+                    _ => None,
+                };
+                // A click on the number: it is typed instead (all of it selected, so typing replaces it).
+                if let (Some(v), false) = (number, right)
+                    && at.0 >= r[0] + r[2] - RIGHT_PAD - game.native_text_width(&num(v)) - 3.0
+                    && at.1 < r[1] + row_hh()
+                {
+                    let mut draft = Draft::new(&num(v));
+                    if let Ok(d) = &mut draft {
+                        d.key(EditKey::SelectAll);
+                    }
+                    s.gui.editor = Some(Editor { module: i, setting: j, draft, inline: true });
+                    s.gui.drag = None;
+                    s.binding = None;
+                } else if number.is_some() && !right {
                     s.gui.drag = Some(Drag::Slider(i, j, r, gui_scale()));
                     changed = slide(s, i, j, r, at.0);
-                } else if num {
+                } else if number.is_some() {
                     // Right click on a slider: back to its default.
                     let fresh = defaults().swap_remove(i).settings.swap_remove(j);
                     s.modules[i].settings[j] = fresh;
                     changed = true;
                 } else if let (Value::Text(t), false) = (&s.modules[i].settings[j].value, right) {
-                    s.gui.editor = Some(Editor { module: i, setting: j, draft: Draft::new(t) });
+                    s.gui.editor = Some(Editor { module: i, setting: j, draft: Draft::new(t), inline: false });
                     s.gui.drag = None;
                     s.binding = None;
                 } else {
@@ -5581,9 +5787,15 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
             p.y = (at.1 - dy).clamp(0.0, (h - head_h()).max(0.0));
         }
         Some(Drag::Slider(i, j, r, scale)) => {
-            // The look follows as it is dragged.
-            if slide(s, i, j, r, game.cursor.0 / scale) {
+            // The look follows as it is dragged, but for what moves the panels: that waits for the release (save).
+            let layout = s.modules[i].name == "ClickGUI" && matches!(s.modules[i].settings[j].name, "Panel width" | "GUI scale" | "Text indent");
+            if slide(s, i, j, r, game.cursor.0 / scale) && !layout {
                 sync_flags(s);
+            }
+        }
+        Some(Drag::Window(dx, dy)) => {
+            if let Some(win) = &mut s.gui.window {
+                (win.x, win.y) = (at.0 - dx, at.1 - dy);
             }
         }
         None => {}
@@ -5636,9 +5848,27 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
             s.gui.panels[c].scroll = snap_scroll(&rows, content, room, s.gui.panels[c].scroll, 0);
         }
     });
+    // The settings window: its description in lines, sized to what it holds (scrolling past the screen's height),
+    // kept on the screen.
+    let about = with(|s| s.gui.window.map(|w| (s.modules[w.module].about, win_w(s))))
+        .map_or_else(Vec::new, |(text, ww)| wrap(game, text, ww - 2.0 * indent()));
+    let window = with(|s| {
+        let mut win = s.gui.window?;
+        win.about_h = if about.is_empty() { 0.0 } else { about.len() as f32 * 10.0 + 4.0 };
+        win.content = win_body(s, win.module).1;
+        win.room = (h - 8.0 - head_h() - win.about_h - body_pad()).max(row_hh() * 3.0);
+        win.scroll = win.scroll.clamp(0.0, (win.content - win.room).max(0.0));
+        let [_, _, ww, wh] = win_frame(s, &win);
+        win.x = win.x.clamp(0.0, (w - ww).max(0.0));
+        win.y = win.y.clamp(0.0, (h - wh).max(0.0));
+        s.gui.window = Some(win);
+        Some((win, win_frame(s, &win), win_rows(s), about))
+    });
     let at = gui_cursor(game);
-    let (rows, modules, binding, hover, expanded) =
-        with(|s| (gui_rows(s), s.modules.clone(), s.binding, hit_at(s, at).map(|(_, h)| h), s.gui.expanded.clone()));
+    let (rows, modules, binding, hover, editing) =
+        with(|s| (panel_rows(s), s.modules.clone(), s.binding, hit_at(s, at).map(|(_, h)| h), s.gui.editor.clone()));
+    // Modules whose settings are open (inline or in the window): a mark by the name.
+    let open: Vec<usize> = with(|s| s.gui.expanded.iter().copied().chain(s.gui.window.map(|w| w.module)).collect());
     // Each panel's height of rows, room, scroll and whether it is folded.
     let bodies: Vec<(f32, f32, f32, bool)> = with(|s| {
         (0..CATEGORIES.len())
@@ -5665,8 +5895,6 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
         out.push(Shape::Text(shown, [x, r[1] + text_y(row_hh())], colour));
         cut
     };
-    // The hovered row's label, when it is cut short: shown whole by the pointer.
-    let mut whole: Option<&str> = None;
     // A value in its rounded box at the right of a row; how wide it is.
     let value_box = |out: &mut Vec<Shape>, text: &str, r: [f32; 4], colour: u32| -> f32 {
         let text = fit(text, r[2] * 0.5);
@@ -5677,67 +5905,38 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
         out.push(Shape::Text(text, [bx + 4.0, r[1] + text_y(row_hh())], colour));
         bw
     };
-    let mut first_row = false;
-    for (r, hit) in &rows {
-        let [x, y, rw, rh] = *r;
-        let hovered = hover == Some(*hit);
-        if let Hit::Header(_) = hit {
-            first_row = true;
-        } else if std::mem::take(&mut first_row) {
-            // The header's line is under it already.
-        } else {
-            out.push(Shape::Fill([x, y, rw, px], 0x12FF_FFFF));
-        }
-        if hovered && !matches!(hit, Hit::Header(_)) {
-            out.push(Shape::Round([x + 2.0, y + 1.0, rw - 4.0, rh - 2.0], control, 0x10FF_FFFF));
-        }
+    // A number being typed in its slider row: the field's width (the draft and its caret are drawn in it).
+    let typing = |i: usize, j: usize| editing.as_ref().filter(|e| e.inline && e.module == i && e.setting == j).and_then(|e| e.draft.as_ref().ok());
+    // One row of a panel or of the settings window: what it shows, and its name when it had to be cut short.
+    let draw_row = |out: &mut Vec<Shape>, r: [f32; 4], hit: Hit, hovered: bool| -> Option<&'static str> {
+        let [x, y, rw, rh] = r;
         let setting_x = x + indent() + 4.0;
-        match *hit {
-            Hit::Header(c) => {
-                let (content, room, scroll, folded) = bodies[c];
-                let body = if folded || content <= 0.0 { 0.0 } else { content.min(room) + BODY_PAD };
-                out.push(Shape::Round([x, y, rw, rh + body], panel_radius(), bg(0xC00E_0E0E)));
-                if body > 0.0 {
-                    out.push(Shape::Fill([x, y + rh - px, rw, px], 0x24FF_FFFF));
-                }
-                let name = CATEGORIES[c].label();
-                let on = modules.iter().filter(|m| m.category == CATEGORIES[c] && m.on).count();
-                let count = format!("{on}");
-                let cw = game.native_text_width(&count);
-                out.push(Shape::Head(fit(name, rw - indent() - RIGHT_PAD - cw - 3.0), [x + indent(), y + text_y(rh)], 0xFFFFFF));
-                out.push(Shape::Text(count, [x + rw - RIGHT_PAD - cw, y + text_y(rh)], 0x808080));
-                // The scroll marker: how much of the panel shows, and where.
-                if !folded && content > room {
-                    let thumb = (room * room / content).max(10.0);
-                    let t = (scroll / (content - room)).min(1.0);
-                    out.push(Shape::Round([x + rw - 4.0, y + rh + 1.0 + (room - 2.0 - thumb) * t, 2.0, thumb], 1.0, 0x70FF_FFFF));
-                }
-            }
+        match hit {
             Hit::Module(i) => {
                 let m = &modules[i];
                 // A bound key shows at the row's end.
                 let tag = m.key.as_deref().map(|k| fit(&key_label(Some(k)), 30.0)).unwrap_or_default();
                 let tag_w = if tag.is_empty() { 0.0 } else { game.native_text_width(&tag) };
-                if label(out, m.name, *r, x + indent(), tag_w, if m.on { accent() } else { 0xE4E4E4 }) && hovered {
-                    whole = Some(m.name);
-                }
-                // Its settings are open: a mark at the row's left edge.
-                if expanded.contains(&i) {
-                    out.push(Shape::Round([x + 2.0, y + 3.0, 2.0, rh - 6.0], 1.0, 0xFFE4_E4E4));
+                // The name clears the mark of open settings at any Text indent.
+                let name_x = x + indent().max(6.0);
+                if open.contains(&i) {
+                    out.push(Shape::Round([name_x - 5.0, y + 3.0, 2.0, rh - 6.0], 1.0, 0xFFE4_E4E4));
                 }
                 if !tag.is_empty() {
                     out.push(Shape::Text(tag, [x + rw - RIGHT_PAD - tag_w, y + text_y(rh)], 0x707070));
                 }
+                (label(out, m.name, r, name_x, tag_w, if m.on { accent() } else { 0xE4E4E4 }) && hovered).then_some(m.name)
             }
             Hit::Bind(i) => {
                 let waiting = binding == Some(i);
                 let key = if waiting { "Press a key or button".to_owned() } else { key_label(modules[i].key.as_deref()) };
-                let bw = value_box(out, &key, *r, if waiting { accent() } else { 0xC8C8C8 });
-                label(out, "Bind", *r, setting_x, bw, 0xB4B4B4);
+                let bw = value_box(out, &key, r, if waiting { accent() } else { 0xC8C8C8 });
+                label(out, "Bind", r, setting_x, bw, 0xB4B4B4);
+                None
             }
             Hit::Setting(i, j) => {
                 let st = &modules[i].settings[j];
-                match st.value {
+                let right = match st.value {
                     Value::Bool(b) => {
                         let (tw, th) = (14.0, 8.0);
                         let (tx, ty) = (x + rw - RIGHT_PAD - tw, y + (rh - th) / 2.0);
@@ -5746,42 +5945,151 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
                         let knob = th - 2.0;
                         let kx = if b { tx + tw - knob - 1.0 } else { tx + 1.0 };
                         out.push(Shape::Round([kx, ty + 1.0, knob, knob], (control - 1.0).max(0.0), 0xFF10_1010));
-                        if label(out, st.name, *r, setting_x, tw, 0xC8C8C8) && hovered {
-                            whole = Some(st.name);
-                        }
+                        tw
                     }
                     Value::Num { v, min, max, .. } => {
-                        let value = num(v);
-                        let vw = game.native_text_width(&value);
-                        out.push(Shape::Text(value, [x + rw - RIGHT_PAD - vw, y + text_y(row_hh())], 0xE4E4E4));
-                        if label(out, st.name, *r, setting_x, vw, 0xB4B4B4) && hovered {
-                            whole = Some(st.name);
-                        }
-                        let (tx, track) = slider_track(*r);
+                        let vw = match typing(i, j) {
+                            Some(draft) => {
+                                let fw = field_width(game, draft.text());
+                                let fx = x + rw - RIGHT_PAD - fw + 3.0;
+                                let colour = match (draft.error, draft.selected()) {
+                                    (Some(_), _) => 0xFF60_2020,
+                                    (None, true) => 0xFF30_60B0,
+                                    (None, false) => 0xFF08_0808,
+                                };
+                                out.push(Shape::Round([fx - 3.0, y + 1.0, fw, row_hh() - 2.0], control, colour));
+                                out.push(Shape::Text(draft.text().to_owned(), [fx, y + text_y(row_hh())], 0xFFFFFF));
+                                let caret = game.native_text_width(&draft.text()[..draft.caret()]);
+                                out.push(Shape::Fill([fx + caret, y + 3.0, 1.0, row_hh() - 6.0], solid(accent())));
+                                fw
+                            }
+                            None => {
+                                let value = num(v);
+                                let vw = game.native_text_width(&value);
+                                out.push(Shape::Text(value, [x + rw - RIGHT_PAD - vw, y + text_y(row_hh())], 0xE4E4E4));
+                                vw
+                            }
+                        };
+                        let (tx, track) = slider_track(r);
                         let t = if max > min { ((v - min) / (max - min)) as f32 } else { 0.0 };
                         let ty = y + row_hh();
                         out.push(Shape::Round([tx, ty, track, 2.0], 1.0, 0xFF2A_2A2A));
                         out.push(Shape::Round([tx, ty, track * t, 2.0], 1.0, solid(accent())));
                         out.push(Shape::Round([tx + track * t - 2.5, ty - 1.5, 5.0, 5.0], control.min(2.5), 0xFFE4_E4E4));
+                        vw
                     }
-                    Value::Pick { .. } => {
-                        let bw = value_box(out, &st.value_text(), *r, 0xE4E4E4);
-                        if label(out, st.name, *r, setting_x, bw, 0xB4B4B4) && hovered {
-                            whole = Some(st.name);
-                        }
-                    }
+                    Value::Pick { .. } => value_box(out, &st.value_text(), r, 0xE4E4E4),
                     Value::Text(_) => {
-                        // The text itself now: the name keeps its width, the text gets what is left (a quarter at least).
+                        // The text itself: the name keeps its width, the text gets what is left (a quarter at least).
                         let room = x + rw - RIGHT_PAD - setting_x - game.native_text_width(st.name) - 6.0;
                         let value = fit(&st.value_text(), room.max(rw * 0.25));
                         let vw = game.native_text_width(&value);
                         out.push(Shape::Text(value, [x + rw - RIGHT_PAD - vw, y + text_y(row_hh())], 0x808080));
-                        if label(out, st.name, *r, setting_x, vw, 0xB4B4B4) && hovered {
-                            whole = Some(st.name);
-                        }
+                        vw
                     }
+                };
+                (label(out, st.name, r, setting_x, right, 0xB4B4B4) && hovered).then_some(st.name)
+            }
+            _ => None,
+        }
+    };
+    // The pointer's row lit edge to edge, between the lines; at the bottom of a panel, down to its rounded corners.
+    let lit = |out: &mut Vec<Shape>, [x, y, rw, rh]: [f32; 4], line: bool, last: bool| {
+        let top = if line { px } else { 0.0 };
+        let r = [x, y + top, rw, rh - top + if last { body_pad() } else { 0.0 }];
+        out.push(Shape::Corners(r, panel_radius(), [false, false, last, last], 0x14FF_FFFF));
+    };
+    let mut whole: Option<&str> = None;
+    let mut first_row = false;
+    for (k, (r, hit)) in rows.iter().enumerate() {
+        let [x, y, rw, rh] = *r;
+        let hovered = hover == Some(*hit);
+        let line = if let Hit::Header(_) = hit {
+            first_row = true;
+            false
+        } else if std::mem::take(&mut first_row) {
+            // The header's line is under it already.
+            false
+        } else {
+            out.push(Shape::Fill([x, y, rw, px], 0x12FF_FFFF));
+            true
+        };
+        if let Hit::Header(c) = *hit {
+            let (content, room, scroll, folded) = bodies[c];
+            let body = if folded || content <= 0.0 { 0.0 } else { content.min(room) + body_pad() };
+            out.push(Shape::Round([x, y, rw, rh + body], panel_radius(), bg(0xC00E_0E0E)));
+            if body > 0.0 {
+                out.push(Shape::Fill([x, y + rh - px, rw, px], 0x24FF_FFFF));
+            }
+            let name = CATEGORIES[c].label();
+            let on = modules.iter().filter(|m| m.category == CATEGORIES[c] && m.on).count();
+            let count = format!("{on}");
+            let cw = game.native_text_width(&count);
+            out.push(Shape::Head(fit(name, rw - indent() - RIGHT_PAD - cw - 3.0), [x + indent(), y + text_y(rh)], 0xFFFFFF));
+            out.push(Shape::Text(count, [x + rw - RIGHT_PAD - cw, y + text_y(rh)], 0x808080));
+            // The scroll marker: how much of the panel shows, and where.
+            if !folded && content > room {
+                let thumb = (room * room / content).max(10.0);
+                let t = (scroll / (content - room)).min(1.0);
+                out.push(Shape::Round([x + rw - 4.0, y + rh + 1.0 + (room - 2.0 - thumb) * t, 2.0, thumb], 1.0, 0x70FF_FFFF));
+            }
+            continue;
+        }
+        if hovered {
+            let last = rows.get(k + 1).is_none_or(|(_, next)| matches!(next, Hit::Header(_)));
+            lit(out, *r, line, last);
+        }
+        if let Some(name) = draw_row(out, *r, *hit, hovered) {
+            whole = Some(name);
+        }
+    }
+    // The settings window, over the panels: its title, close button, description, groups and rows.
+    if let Some((win, frame, list, about)) = &window {
+        let [x, y, ww, wh] = *frame;
+        out.push(Shape::Round(*frame, panel_radius(), 0xF812_1212));
+        let hh = head_h();
+        out.push(Shape::Head(fit(modules[win.module].name, ww - indent() - hh - 4.0), [x + indent(), y + text_y(hh)], accent()));
+        // The close button: a cross, lit under the pointer.
+        let close = win_close(*frame);
+        if hover == Some(Hit::WinClose) {
+            out.push(Shape::Corners(close, panel_radius(), [false, true, false, false], 0x24FF_FFFF));
+        }
+        let (cx, cy, d) = (close[0] + close[2] / 2.0, close[1] + close[3] / 2.0, 3.0);
+        for (a, b) in [([cx - d, cy - d], [cx + d, cy + d]), ([cx - d, cy + d], [cx + d, cy - d])] {
+            line(out, a, b, 0xFFE4_E4E4, 1.5);
+        }
+        out.push(Shape::Fill([x, y + hh - px, ww, px], 0x24FF_FFFF));
+        for (n, l) in about.iter().enumerate() {
+            out.push(Shape::Text(l.clone(), [x + indent(), y + hh + 3.0 + n as f32 * 10.0], 0xA8A8A8));
+        }
+        let mut line = false;
+        for (n, (r, row)) in list.iter().enumerate() {
+            match row {
+                WinRow::Group(name) => {
+                    out.push(Shape::Text((*name).to_owned(), [r[0] + indent(), r[1] + text_y(r[3])], accent()));
+                    line = false;
+                }
+                WinRow::Row(hit) => {
+                    if line {
+                        out.push(Shape::Fill([r[0], r[1], r[2], px], 0x12FF_FFFF));
+                    }
+                    let hovered = hover == Some(*hit);
+                    if hovered {
+                        lit(out, *r, line, n + 1 == list.len() && r[1] + r[3] + body_pad() >= y + wh - 0.5);
+                    }
+                    if let Some(name) = draw_row(out, *r, *hit, hovered) {
+                        whole = Some(name);
+                    }
+                    line = true;
                 }
             }
+        }
+        // Its scroll marker.
+        let (content, room) = (win.content, win.room);
+        if content > room {
+            let thumb = (room * room / content).max(10.0);
+            let t = (win.scroll / (content - room)).min(1.0);
+            out.push(Shape::Round([x + ww - 4.0, y + hh + win.about_h + 1.0 + (room - 2.0 - thumb) * t, 2.0, thumb], 1.0, 0x70FF_FFFF));
         }
     }
     // The hovered module's description, under the pointer.
@@ -5808,7 +6116,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
         out.push(Shape::Text(name.to_owned(), [bx + 4.0, by + text_y(14.0)], 0xE4E4E4));
     }
     // The text editor, over everything.
-    if let Some(edit) = with(|s| s.gui.editor.clone()) {
+    if let Some(edit) = editing.filter(|e| !e.inline) {
         let r = editor_rect(w, h);
         let [x, y, rw, _] = r;
         let room = (rw - 16.0).max(0.0);

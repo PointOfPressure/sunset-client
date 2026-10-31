@@ -1156,6 +1156,8 @@ def _():
         esc()
         return messages()
 
+    # The settings open in the panel (not their own window), where menu_row finds the rows.
+    setting("clickgui", "settings", "Inline")
     before = messages()
     applied = edit(["clear", "h", "i"], "apply", expand=True)
     if applied != "Messages: hi":
@@ -1188,7 +1190,9 @@ def _():
         wait(3)
         return [line for line in sunset_said(mark) if line.startswith("HUD:")]
 
-    # A mouse button from the chat, then one chosen in the menu (a right click while its Bind row waits).
+    # A mouse button from the chat, then one chosen in the menu (a right click while its Bind row waits), the settings
+    # open in the panel.
+    setting("clickgui", "settings", "Inline")
     say(".bind hud mouse4")
     by_name = binds()
     say(".menu hud")
@@ -1240,6 +1244,76 @@ def _():
           and off and held and let_go and ended)
     return ok, (f".bind mouse4: {by_name}; chosen with a right click: {chosen}; middle button toggles: {shown}, {middle_off}, "
                 f"{middle_on}; Hold: off {off}, on while held {held}, off when let go {let_go}, ended by a screen {ended}")
+
+
+@test("Click GUI (settings window, typed numbers)")
+def _():
+    def esc():
+        """horizon-ctl's Esc, which the game gets too (its pause menu closes the GUI): resumed."""
+        ctl("key", "esc", "tap")
+        wait(3)
+        if state().get("screen") == "paused":
+            ctl("resume")
+            wait(3)
+
+    def said(command, prefix):
+        mark = log_mark()
+        say(command)
+        wait(3)
+        return [line for line in sunset_said(mark) if line.startswith(prefix)]
+
+    # A module with no settings (Auto Walk) gets a window too, centred 40 down, holding its bind: title, one line of
+    # description, the Bind group's name, the Bind row.
+    w, _ = gui_size()
+    panel = min(100, (w - 4 - 3 * 4) // 5)
+    ww = min(max(panel * 1.6, 150), w - 8)
+    x = (w - ww) / 2
+    bind_row = (x + ww / 2, 40 + 16 + 14 + 14 + 7)
+    say(".menu auto walk")
+    wait(5)
+    ctl("click-at", *map(str, menu_row(1, 1)), "right")
+    wait(3)
+    ctl("click-at", *map(str, bind_row))
+    wait(2)
+    ctl("key", "k", "tap")
+    wait(2)
+    # The close button; then nothing is under the Bind row's place.
+    ctl("click-at", str(x + ww - 8), "48")
+    wait(2)
+    ctl("click-at", *map(str, bind_row))
+    wait(2)
+    ctl("key", "m", "tap")
+    esc()
+    bound = said(".binds", "Auto Walk:")
+    # Typed numbers, inline (ClickGUI Settings: Inline): Step's Height, 0.5 to 5 in steps of 0.25 (horizon-ctl has no
+    # "." key: a real keyboard types one through the window's text, and the number is rounded to the step as a slider's).
+    setting("clickgui", "settings", "Inline")
+
+    def typed(keys, first=False):
+        say(".menu step")
+        wait(5)
+        if first:
+            ctl("click-at", *map(str, menu_row(1, 1)), "right")
+            wait(2)
+        right = 2 + (panel + 3) + panel - 7 - 3
+        ctl("click-at", str(right), str(32 + 16 + 28 + 5))
+        wait(2)
+        for k in keys:
+            ctl("key", k, "tap")
+        wait(2)
+        esc()
+        return said(".settings step", "Height:")
+
+    typed_in = typed(["3", "enter"], first=True)
+    clamped = typed(["9", "9", "enter"])
+    low = typed(["0", "enter"])
+    refused = typed(["a", "b", "enter", "esc"])
+    cancelled = typed(["1", "esc"])
+    touched.add("step")
+    ok = (bound == ["Auto Walk: K"] and typed_in == ["Height: 3"] and clamped == ["Height: 5"] and low == ["Height: 0.5"]
+          and refused == ["Height: 0.5"] and cancelled == ["Height: 0.5"])
+    return ok, (f"bind set in Auto Walk's window: {bound}; typed 3: {typed_in}, 99: {clamped}, 0: {low}, ab: {refused}, "
+                f"1 then Esc: {cancelled}")
 
 
 def is_on(name):
