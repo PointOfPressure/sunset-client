@@ -57,9 +57,13 @@ def say(text):
 
 
 def cmd(*lines):
-    """Game commands, sent as the player without opening the chat box."""
+    """Game commands, sent as the player without opening the chat box. The chat box takes 256 characters and
+    Paper-family servers kick a longer command packet, so a longer line is a test mistake."""
     for line in lines:
-        ctl("chat", "/" + line.lstrip("/"))
+        line = line.lstrip("/")
+        if len(line) > 256:
+            raise ValueError(f"command over 256 characters: {line[:40]}...")
+        ctl("chat", "/" + line)
     wait(2)
 
 
@@ -135,7 +139,7 @@ def arena():
 def ensure_alive():
     for _ in range(3):
         st = state()
-        if st.get("screen") != "dead" and "player" in st:
+        if st.get("screen") != "dead" and st.get("player"):
             return
         ctl("click", "respawn")
         wait(30)
@@ -143,7 +147,7 @@ def ensure_alive():
 
 def rejoin(test):
     """After a kick: what the screen said, then back in."""
-    if "player" in state() or not SERVER:
+    if state().get("player") or not SERVER:
         return
     shown = ctl("screen")
     kicks.append((test, json.dumps(shown)[:300]))
@@ -152,7 +156,7 @@ def rejoin(test):
         time.sleep(2)
         ctl("connect", SERVER, "Tester", timeout=120)
         ctl("wait-ready", "90", timeout=120)
-        if "player" in state():
+        if state().get("player"):
             ctl("wait", "40")
             return
 
@@ -1740,8 +1744,11 @@ def _():
 
 @test("Auto Steal")
 def _():
-    items = ",".join(f"{{Slot:{i}b,id:\"minecraft:stone\",count:1}}" for i in range(27))
-    cmd(f"setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]{{Items:[{items}]}}")
+    def chest():
+        cmd(f"setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]",
+            *(f"item replace block {X0+1} {Y+1} {Z0} container.{i} with minecraft:stone" for i in range(27)))
+
+    chest()
     wait(6)
 
     def taken(per_tick):
@@ -1765,7 +1772,8 @@ def _():
         return (last - first if first is not None and last is not None else 99), got
 
     slow = taken("1")
-    cmd("clear @s", f"setblock {X0+1} {Y+1} {Z0} minecraft:air", f"setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]{{Items:[{items}]}}")
+    cmd("clear @s", f"setblock {X0+1} {Y+1} {Z0} minecraft:air")
+    chest()
     fast = taken("9")
     return slow[1] == 27 and fast[1] == 27 and slow[0] > fast[0] * 2, f"27 stacks taken in {slow[0]} ticks at 1 a tick, {fast[0]} at 9"
 
@@ -1938,7 +1946,7 @@ def speed_mine(mode):
     only("speedmine")
     fast = [break_ticks(p, b, 1 if b == "obsidian" else 3) for p, b in SPEED_CASES]
     only()
-    alive = "player" in state()
+    alive = bool(state().get("player"))
     ok = alive and all(g for _, g in plain + fast) and all(0 < f[0] < p[0] for p, f in zip(plain, fast))
     cells = ", ".join(f"{p.split('_')[0]}/{b} {pt}->{ft}{'' if g else ' (ghost)'}" for (p, b), (pt, _), (ft, g) in zip(SPEED_CASES, plain, fast))
     return ok, f"ticks by hand without -> with {mode}: {cells}"
@@ -3117,7 +3125,7 @@ def _():
             ticks, most, now = ticks + 1, max(most, now), 0
         else:
             moves, now = moves + 1, now + 1
-    alive = "player" in state()
+    alive = bool(state().get("player"))
     broken = 54 - count(X0 - 4, Y + 1, Z0 - 10, X0 + 4, Y + 2, Z0 - 8, "dirt")
     placed = count(X0 - 2, Y, Z0 - 30, X0 + 2, Y, Z0 - 17, "stone")
     return ticks > 50 and most <= 1 and alive, (f"{moves} move packets over {ticks} ticks, at most {most} in a tick; Nuker broke {broken} dirt, "
@@ -3191,7 +3199,7 @@ def sweep(keys, sets):
     sweep_play()
     only()
     st = state()
-    if "player" not in st:
+    if not st.get("player"):
         return False, f"kicked or gone: {json.dumps(ctl('screen'))[:200]}"
     moved = st["ticks"] - t0
     if not on_server:
