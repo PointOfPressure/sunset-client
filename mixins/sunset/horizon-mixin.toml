@@ -601,3 +601,96 @@ helper = "window_event.rs"
 bindings = [
   { name = "event", ty = "&winit::event::WindowEvent", value = "&*event" },
 ]
+
+[[module]]
+id = "crosshair"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crosshair"
+source = "crosshair.rs"
+
+[[module]]
+id = "crosshair_math"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crosshair_math"
+source = "crosshair_math.rs"
+
+[[module]]
+id = "block_overlay"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_block_overlay"
+source = "block_overlay.rs"
+
+[[module]]
+id = "block_overlay_math"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_block_overlay_math"
+source = "block_overlay_math.rs"
+
+[[module]]
+id = "target_esp"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_target_esp"
+source = "target_esp.rs"
+
+[[module]]
+id = "target_esp_math"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_target_esp_math"
+source = "target_esp_math.rs"
+
+[[injection]]
+id = "custom_crosshair"
+kind = "HEAD"
+target = "horizon_client::game::Game<'_>::hud_layers"
+helper = "crosshair_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "size", ty = "[u32; 2]", value = "size" },
+]
+
+[[module]]
+id = "crosshair_flags"
+file = "crates/horizon-client-render/src/hud.rs"
+name = "sunset_crosshair"
+source = "crosshair_flags.rs"
+visibility = "pub"
+
+[[injection]]
+id = "crosshair_rect"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::hud::HudBatch::rect_uv"
+helper = "crosshair_rect_hook.rs"
+bindings = [
+  { name = "batch", ty = "&crate::hud::HudBatch", value = "&*self" },
+  { name = "x", ty = "f32", value = "x" },
+  { name = "y", ty = "f32", value = "y" },
+  { name = "w", ty = "f32", value = "w" },
+  { name = "h", ty = "f32", value = "h" },
+  { name = "rect", ty = "crate::hud::Rect", value = "r" },
+  { name = "color", ty = "u32", value = "color" },
+]
+
+[[module]]
+id = "block_overlay_flags"
+file = "crates/horizon-client-render/src/gfx.rs"
+name = "sunset_block_overlay_flags"
+source = "block_overlay_flags.rs"
+visibility = "pub"
+
+[[injection]]
+id = "custom_block_outline"
+kind = "HEAD"
+target = "horizon_client::game::Game<'_>::hud_layers"
+helper = "block_overlay_render_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[injection]]
+id = "block_outline_draw"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::gfx::Renderer::draw_outline"
+helper = "block_overlay_draw_hook.rs"
+bindings = []

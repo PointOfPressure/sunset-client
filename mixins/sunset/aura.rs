@@ -279,6 +279,10 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
 }
 
 // The Target HUD: a box by the crosshair with the name, distance and health of who Kill Aura is hitting.
+pub(super) fn target_id() -> Option<u32> {
+    st(|s| s.target)
+}
+
 // Potato: the health bar alone, no text.
 pub(super) fn draw_target(game: &Game<'_>, w: f32, h: f32, potato: bool, out: &mut impl Canvas) {
     let Some(id) = st(|s| s.target) else {
