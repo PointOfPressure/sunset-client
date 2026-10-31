@@ -1426,15 +1426,17 @@ pub(super) fn click(game: &mut Game<'_>, button: usize) {
                 s.binding = if s.binding == Some(i) { None } else { Some(i) };
                 false
             }
-            b => match s.modules[i].settings.get_mut(b - 3) {
-                Some(setting) => {
+            b => match s.modules[i].settings.get(b - 3).cloned() {
+                Some(mut setting) => {
                     setting.click(shift);
+                    s.gui.pending_edits.push((i, b - 3, setting));
                     true
                 }
                 None => false,
             },
         },
     });
+    commit_edits(game);
     if let Some(i) = toggled {
         toggle(game, i, false);
     } else if changed {
@@ -1707,6 +1709,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if !game.native_window() {
         return;
     }
+    commit_edits(game);
     if !game.native_on(ID) || game.player.is_none() {
         super::sunset_combat_control::prepare_cleanup(game);
         super::sunset_packet_delay::flush(game);
@@ -5656,6 +5659,20 @@ pub(super) struct Gui {
     typed: bool,
     // Ctrl or Cmd held, as the window last said.
     shortcut: bool,
+    // Desired values are captured before releasing a controller's temporary
+    // settings. Apply them outside the runtime mutex, even for a same-value edit.
+    pending_edits: Vec<(usize, usize, Setting)>,
+}
+
+fn commit_edits(game: &mut Game<'_>) {
+    let edits = with(|s| std::mem::take(&mut s.gui.pending_edits));
+    for (i, j, wanted) in edits {
+        let name = with(|s| s.modules.get(i).filter(|m| m.settings.get(j).is_some_and(|st| st.name == wanted.name)).map(|m| m.name));
+        let Some(name) = name else { continue; };
+        super::sunset_sword_bot::editing(game, name);
+        super::sunset_crystal_bot::editing(game, name);
+        with(|s| s.modules[i].settings[j] = wanted);
+    }
 }
 
 // A text setting being edited: the setting changes only when Apply is clicked (or Enter pressed).
@@ -5692,17 +5709,20 @@ fn apply_editor(s: &mut State) {
     let (Ok(draft), None) = (&mut edit.draft, &edit.list) else {
         return;
     };
-    match s.modules.get_mut(edit.module).and_then(|m| m.settings.get_mut(edit.setting)).map(|st| &mut st.value) {
-        Some(Value::Text(t)) => *t = draft.text().to_owned(),
-        Some(Value::Num { v, min, max, step }) => match draft.text().trim().parse::<f64>() {
+    let Some(mut wanted) = s.modules.get(edit.module).and_then(|m| m.settings.get(edit.setting)).cloned() else { return; };
+    match &mut wanted.value {
+        Value::Text(t) => *t = draft.text().to_owned(),
+        Value::Num { v, min, max, step } => match draft.text().trim().parse::<f64>() {
             Ok(n) if n.is_finite() => *v = round_to(n, *step).clamp(*min, *max),
             _ => {
                 draft.error = Some("not a number");
                 s.gui.editor = Some(edit);
+                return;
             }
         },
-        _ => {}
+        _ => return,
     }
+    s.gui.pending_edits.push((edit.module, edit.setting, wanted));
 }
 
 fn edit_key(name: &str) -> Option<EditKey> {
@@ -5778,6 +5798,7 @@ impl Default for Gui {
             view_w: 0.0,
             typed: false,
             shortcut: false,
+            pending_edits: Vec::new(),
             panels: (0..CATEGORIES.len())
                 .map(|_| Panel { x: -1.0, y: 32.0, collapsed: false, scroll: 0.0 })
                 .collect(),
@@ -6121,6 +6142,7 @@ pub(super) fn open_gui(game: &mut Game<'_>) {
 }
 
 pub(super) fn close_gui(game: &mut Game<'_>) {
+    commit_edits(game);
     with(|s| {
         s.gui.open = false;
         s.gui.closing = false;
@@ -6164,6 +6186,9 @@ pub(super) fn gui_open() -> bool {
 // A key while the GUI is open: a bind being chosen, or Esc and the menu key
 // closing it. Every key stops here.
 pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
+    // A real window Enter may have queued an editor value before the keymap
+    // forwards this key. Commit it even when the typed flag consumes the key.
+    commit_edits(game);
     // The editor takes every key: from the window's event already (text_event), or else here (a key without text of
     // its own, as horizon-ctl's are, types its letter).
     if with(|s| s.gui.editor.is_some() || std::mem::take(&mut s.gui.typed)) {
@@ -6194,6 +6219,7 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
                 picker.scroll = 0.0;
             }
         });
+        commit_edits(game);
         return;
     }
     if let Some(i) = with(|s| s.binding) {
@@ -6303,6 +6329,7 @@ pub(super) fn key_char(name: &str) -> Option<char> {
 // the held buttons each frame).
 pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) {
     use winit::event::MouseButton;
+    commit_edits(game);
     let at = gui_cursor(game);
     // A bind being chosen takes any button but the left one (which clicks as ever).
     let captured = with(|s| {
@@ -6337,7 +6364,9 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     && let Some((name, _)) = pick::rows(picker, t, draft.text()).get(row)
                 {
                     let list = pick::toggled(t, name);
-                    s.modules[i].settings[j].value = Value::Text(list);
+                    let mut wanted = s.modules[i].settings[j].clone();
+                    wanted.value = Value::Text(list);
+                    s.gui.pending_edits.push((i, j, wanted));
                     changed = true;
                 }
             }
@@ -6424,11 +6453,15 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     s.binding = None;
                 } else if number.is_some() && !right {
                     s.gui.drag = Some(Drag::Slider(i, j, r, gui_scale()));
-                    changed = slide(s, i, j, r, at.0);
+                    let before = s.modules[i].settings[j].clone();
+                    slide(s, i, j, r, at.0);
+                    let wanted = std::mem::replace(&mut s.modules[i].settings[j], before);
+                    s.gui.pending_edits.push((i, j, wanted));
+                    changed = true;
                 } else if number.is_some() {
                     // Right click on a slider: back to its default.
                     let fresh = defaults().swap_remove(i).settings.swap_remove(j);
-                    s.modules[i].settings[j] = fresh;
+                    s.gui.pending_edits.push((i, j, fresh));
                     changed = true;
                 } else if let (Value::Text(t), false) = (&s.modules[i].settings[j].value, right) {
                     // A list of blocks, items or entities opens the picker (the draft is its search), other text the
@@ -6440,12 +6473,15 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     s.gui.drag = None;
                     s.binding = None;
                 } else {
-                    s.modules[i].settings[j].click(right);
+                    let mut wanted = s.modules[i].settings[j].clone();
+                    wanted.click(right);
+                    s.gui.pending_edits.push((i, j, wanted));
                     changed = true;
                 }
             }
         }
     });
+    commit_edits(game);
     if let Some(i) = toggled {
         toggle(game, i, false);
     } else if changed {

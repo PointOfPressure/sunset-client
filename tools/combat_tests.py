@@ -47,6 +47,7 @@ def main():
         run('native City mining', [sys.executable, 'tools/city_engine_tests.py', args.engine.resolve()])
         run('native roof visibility', [sys.executable, 'tools/roof_engine_tests.py', args.engine.resolve()])
         run('exact City ownership', [sys.executable, 'tools/city_ownership_tests.py'])
+        run('GUI controller edit intent', [sys.executable, 'tools/gui_intent_tests.py'])
         run('native cleanup schema', [sys.executable, 'tools/combat_cleanup_schema_tests.py', args.engine.resolve()])
         if args.dependency_dir:
             run('native inventory wire round-trip', [sys.executable, 'tools/inventory_protocol_fields.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])

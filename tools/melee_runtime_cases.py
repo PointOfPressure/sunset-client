@@ -26,6 +26,38 @@ MODULES = ("Kill Aura", "Trigger Bot", "Shield Breaker", "Mace", "Spear Swap",
            "W Tap", "Jump Reset", "Friend Guard")
 
 
+def target_shield_use(snapshot):
+    """Observer metadata for this exact player, never the user's predicted UI."""
+    target_id = (snapshot.get("target", {}).get("server") or {}).get("entity_id")
+    if target_id is None:
+        return None
+    equipment = (snapshot.get("attacker", {}).get("server") or {}).get("player_equipment", [])
+    matching = [entry for entry in equipment if entry.get("id") == target_id]
+    if len(matching) != 1 or matching[0].get("off_hand") != "minecraft:shield":
+        return None
+    value = matching[0].get("using")
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def shield_proof(before, raised, blocked, lowered, follow_before, after):
+    """Require both decoded lowering and an actual charged-sword outcome."""
+    health = [float((s.get("target", {}).get("player") or {}).get("health", math.nan))
+              for s in (raised, blocked, follow_before, after)]
+    attacker = after.get("attacker", {})
+    selected = before.get("attacker", {}).get("selected")
+    identities = [(s.get("target", {}).get("server") or {}).get("entity_id")
+                  for s in (before, raised, blocked, lowered, follow_before, after)]
+    return (identities[0] is not None and all(value == identities[0] for value in identities)
+            and isinstance(selected, int) and not isinstance(selected, bool) and 1 <= selected <= 9
+            and all(math.isfinite(value) and value > 0 for value in health)
+            and (target_shield_use(raised) or 0) > 0
+            and health[0] == health[1]
+            and target_shield_use(lowered) == 0
+            and health[3] < health[2]
+            and attacker.get("selected") == selected
+            and (attacker.get("held") or {}).get("item") == "minecraft:diamond_sword")
+
+
 def run(ctl, target_ctl, mod, shot, check, *, attacker="CodexAttacker",
         target="CodexTarget", cases=None, x=0, y=121, z=0):
     if not all(re.fullmatch(r"[A-Za-z0-9_]{1,16}", n) for n in (attacker, target)):
@@ -184,17 +216,29 @@ def run(ctl, target_ctl, mod, shot, check, *, attacker="CodexAttacker",
                 target_ctl(["mouse", "right", "down"])
                 wait(10)
                 raised = snapshot()
-                if raised["target"].get("using") is None:
+                if not (target_shield_use(raised) or 0) > 0:
                     raise AssertionError({"shield_did_not_raise": raised})
+                # A real blocked sword hit validates the shield geometry. The
+                # defender keeps use held through the axe and follow-up hit.
+                ctl(["mouse", "left", "click"])
+                wait(8)
+                blocked = snapshot()
+                wait(30)
                 setting("Shield Breaker", "Mode", "Auto")
                 toggle("Shield Breaker")
-                after, trace = poll(lambda s: s["target"].get("using") is None, ticks=50)
+                lowered, trace = poll(lambda s: target_shield_use(s) == 0, ticks=50)
                 toggle("Shield Breaker", False)
-                wait(4)
-                restored = snapshot()
-                report(case, after["target"].get("using") is None and restored["attacker"].get("selected") == before["attacker"].get("selected"),
-                       {"before": raised, "after": after, "restored": restored, "trace": trace,
-                        "action": "Target keeps physical use held; native shield use must stop and attacker slot must return"})
+                wait(24)  # Full native sword cooldown; shield cooldown remains active.
+                follow_before = snapshot()
+                ctl(["mouse", "left", "click"])
+                wait(8)
+                after = snapshot()
+                report(case, shield_proof(before, raised, blocked, lowered, follow_before, after),
+                       {"before": before, "raised": raised, "blocked_sword": blocked,
+                        "lowered": lowered, "follow_before": follow_before, "after": after,
+                        "trace": trace,
+                        "action": "Held shield first blocks a real sword hit; observer metadata clears after axe; charged restored sword then damages while use remains held",
+                        "oracle": "Defender own using UI is retained as evidence and may stay stale; it does not establish authoritative shield blocking"})
             elif case == "spear-lunge":
                 setup(distance=8.0)
                 command(f"item replace entity {attacker} hotbar.1 with minecraft:diamond_spear 1")

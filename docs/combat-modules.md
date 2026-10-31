@@ -4,6 +4,7 @@ This branch implements the core jobs of the 25 inspected Combat capabilities.
 They remain experimental and disabled by default. Implementation is distinct
 from runtime coverage; consult [validation](combat-validation.md) for the exact
 checkpoint, observed outcomes, failures and remaining work.
+The [work limits](combat-budgets.md) document the caps and their scope.
 
 - **Aim Assist, Trigger Bot and Kill Aura:** recent-input aim assistance,
   crosshair attacks, or bounded visible-target selection. Weapon charge uses
