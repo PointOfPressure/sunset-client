@@ -39,6 +39,12 @@ name = "sunset_text_edit"
 source = "text_edit.rs"
 
 [[module]]
+id = "picker"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_picker"
+source = "picker.rs"
+
+[[module]]
 id = "profiles"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_profiles"
@@ -437,21 +443,21 @@ bindings = [
 ]
 
 [[injection]]
-id = "crystal"
-kind = "HEAD"
-cancellable = true
-target = "horizon_client::game::remote::Game<'_>::remote_start_attack"
-helper = "crystal.rs"
-bindings = [
-  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
-]
-
-[[injection]]
 id = "crit_click"
 kind = "HEAD"
 cancellable = true
 target = "horizon_client::game::remote::Game<'_>::remote_start_attack"
 helper = "crit_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "crystal"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_start_attack"
+helper = "crystal.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
 ]

@@ -5531,6 +5531,8 @@ pub(super) struct Editor {
     draft: Result<Draft, &'static str>,
     // A number typed in its own slider row, instead of the text editor's box over the panels.
     inline: bool,
+    // A list of blocks, items or entities: picked from the registries, the draft being the search.
+    list: Option<super::sunset_picker::Picker>,
 }
 
 fn editor_rect(w: f32, h: f32) -> [f32; 4] {
@@ -5550,7 +5552,8 @@ fn apply_editor(s: &mut State) {
     let Some(mut edit) = s.gui.editor.take() else {
         return;
     };
-    let Ok(draft) = &mut edit.draft else {
+    // A picker changed its list as it was clicked: Enter only closes it.
+    let (Ok(draft), None) = (&mut edit.draft, &edit.list) else {
         return;
     };
     match s.modules.get_mut(edit.module).and_then(|m| m.settings.get_mut(edit.setting)).map(|st| &mut st.value) {
@@ -5613,13 +5616,17 @@ pub(super) fn text_event(event: &winit::event::WindowEvent) {
             _ => None,
         };
         let shortcut = s.gui.shortcut;
-        let Some(Editor { draft: Ok(draft), .. }) = s.gui.editor.as_mut() else {
+        let Some(Editor { draft: Ok(draft), list, .. }) = s.gui.editor.as_mut() else {
             return;
         };
         match (key, event.text.as_deref()) {
             (Some(k), _) => draft.key(k),
             (None, Some(text)) if !shortcut && !text.chars().any(char::is_control) => draft.insert(text),
             _ => {}
+        }
+        // A new search starts at the top of the list.
+        if let Some(picker) = list {
+            picker.scroll = 0.0;
         }
     });
 }
@@ -5912,6 +5919,18 @@ fn snap_scroll(rows: &[(f32, Hit)], content: f32, room: f32, scroll: f32, by: i3
 pub(super) fn gui_wheel(game: &Game<'_>, steps: f32) {
     let at = gui_cursor(game);
     with(|s| {
+        // An open picker's list scrolls, wherever the pointer is.
+        let (view_w, view_h) = (s.gui.view_w, s.gui.view_h);
+        if let Some(Editor { module, setting, draft: Ok(draft), list: Some(picker), .. }) = &mut s.gui.editor {
+            use super::sunset_picker as pick;
+            let count = match &s.modules[*module].settings[*setting].value {
+                Value::Text(t) => pick::rows(picker, t, draft.text()).len(),
+                _ => 0,
+            };
+            let max = pick::max_scroll(count, pick::rect(view_w, view_h));
+            picker.scroll = (picker.scroll - steps * pick::ROW * 3.0).clamp(0.0, max);
+            return;
+        }
         // Over the settings window: it scrolls.
         if let Some(w) = s.gui.window
             && inside(win_frame(s, &w), at)
@@ -6023,7 +6042,7 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
                 apply_editor(s);
                 return;
             }
-            let Some(Editor { draft: Ok(draft), .. }) = s.gui.editor.as_mut() else {
+            let Some(Editor { draft: Ok(draft), list, .. }) = s.gui.editor.as_mut() else {
                 return;
             };
             if control && name == "key.keyboard.a" {
@@ -6032,6 +6051,9 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
                 draft.key(k);
             } else if let Some(c) = key_char(name).filter(|_| !control) {
                 draft.insert(&c.to_string());
+            }
+            if let Some(picker) = list {
+                picker.scroll = 0.0;
             }
         });
         return;
@@ -6163,7 +6185,26 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
     let mut toggled = None;
     let mut changed = false;
     with(|s| {
-        // The editor is in front of everything: its buttons, nothing else.
+        // The editor is in front of everything: its buttons, nothing else; a picker's rows too.
+        if let Some(Editor { module, setting, draft: Ok(draft), list: Some(picker), .. }) = &s.gui.editor {
+            use super::sunset_picker as pick;
+            let r = pick::rect(s.gui.view_w, s.gui.view_h);
+            let area = pick::list_area(r);
+            if !right && inside(pick::done_button(r), at) {
+                s.gui.editor = None;
+            } else if !right && inside(area, at) {
+                let (i, j) = (*module, *setting);
+                let row = ((at.1 - area[1] + picker.scroll) / pick::ROW) as usize;
+                if let Value::Text(t) = &s.modules[i].settings[j].value
+                    && let Some((name, _)) = pick::rows(picker, t, draft.text()).get(row)
+                {
+                    let list = pick::toggled(t, name);
+                    s.modules[i].settings[j].value = Value::Text(list);
+                    changed = true;
+                }
+            }
+            return;
+        }
         if s.gui.editor.is_some() {
             let (apply, cancel) = editor_buttons(editor_rect(s.gui.view_w, s.gui.view_h));
             if !right && inside(apply, at) {
@@ -6176,7 +6217,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
         }
         let found = hit_at(s, at);
         // A number being typed: a click in its field leaves it be; anywhere else, it is left as it was.
-        if let Some(Editor { module, setting, draft: Ok(draft), inline: true }) = &s.gui.editor {
+        if let Some(Editor { module, setting, draft: Ok(draft), inline: true, .. }) = &s.gui.editor {
             let in_field = found.is_some_and(|(r, hit)| {
                 hit == Hit::Setting(*module, *setting) && at.0 >= r[0] + r[2] - RIGHT_PAD - field_width(game, draft.text()) && at.1 < r[1] + row_hh()
             });
@@ -6240,7 +6281,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     if let Ok(d) = &mut draft {
                         d.key(EditKey::SelectAll);
                     }
-                    s.gui.editor = Some(Editor { module: i, setting: j, draft, inline: true });
+                    s.gui.editor = Some(Editor { module: i, setting: j, draft, inline: true, list: None });
                     s.gui.drag = None;
                     s.binding = None;
                 } else if number.is_some() && !right {
@@ -6252,7 +6293,12 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     s.modules[i].settings[j] = fresh;
                     changed = true;
                 } else if let (Value::Text(t), false) = (&s.modules[i].settings[j].value, right) {
-                    s.gui.editor = Some(Editor { module: i, setting: j, draft: Draft::new(t), inline: false });
+                    // A list of blocks, items or entities opens the picker (the draft is its search), other text the
+                    // editor.
+                    let m = &s.modules[i];
+                    let list = super::sunset_picker::list_kind(m.name, m.settings[j].name).map(|k| super::sunset_picker::open(game, k));
+                    let draft = if list.is_some() { Draft::new("") } else { Draft::new(t) };
+                    s.gui.editor = Some(Editor { module: i, setting: j, draft, inline: false, list });
                     s.gui.drag = None;
                     s.binding = None;
                 } else {
@@ -6298,6 +6344,65 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
     {
         save(game);
     }
+}
+
+// The text, cut to `max` wide with "..." when it is wider.
+fn fit_to(game: &Game<'_>, text: &str, max: f32) -> String {
+    if game.native_text_width(text) <= max {
+        return text.to_owned();
+    }
+    let mut t = text.to_owned();
+    while !t.is_empty() && game.native_text_width(&format!("{t}...")) > max {
+        t.pop();
+    }
+    format!("{t}...")
+}
+
+// The list picker over the panels: its title, the search box, the rows (a lit mark on the chosen ones, which come
+// first) and Done.
+fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::sunset_picker::Picker, modules: &[Module], at: (f32, f32), out: &mut Vec<Shape>) {
+    use super::sunset_picker as pick;
+    let fit = |text: &str, max: f32| fit_to(game, text, max);
+    let solid = |rgb: u32| 0xFF00_0000 | rgb;
+    let r = pick::rect(w, h);
+    let [x, y, rw, _] = r;
+    let room = (rw - 16.0).max(0.0);
+    let control = control_radius();
+    out.push(Shape::Fill([0.0, 0.0, w, h], 0x9000_0000));
+    out.push(Shape::Round(r, panel_radius(), 0xF814_1414));
+    let m = &modules[edit.module];
+    out.push(Shape::Head(fit(&format!("{} / {}", m.name, m.settings[edit.setting].name), room), [x + 8.0, y + 6.0], accent()));
+    let search = edit.draft.as_ref().map_or("", Draft::text);
+    out.push(Shape::Round([x + 6.0, y + 22.0, rw - 12.0, 16.0], control, 0xFF08_0808));
+    let (shown, colour) = if search.is_empty() { ("Type to search", 0x909090) } else { (search, 0xFFFFFF) };
+    out.push(Shape::Text(fit(shown, room - 4.0), [x + 10.0, y + 22.0 + text_y(16.0)], colour));
+    let text = match &m.settings[edit.setting].value {
+        Value::Text(t) => t.as_str(),
+        _ => "",
+    };
+    let rows = pick::rows(picker, text, search);
+    let area = pick::list_area(r);
+    let scroll = picker.scroll.min(pick::max_scroll(rows.len(), r));
+    let first = (scroll / pick::ROW) as usize;
+    for (n, (name, have)) in rows.iter().enumerate().skip(first) {
+        let ry = area[1] + n as f32 * pick::ROW - scroll;
+        if ry + pick::ROW > area[1] + area[3] {
+            break;
+        }
+        let row = [area[0], ry, area[2], pick::ROW];
+        if inside(row, at) {
+            out.push(Shape::Round(row, control, 0x40FF_FFFF));
+        }
+        out.push(Shape::Round([area[0] + 3.0, ry + 3.0, 6.0, 6.0], 3.0, if *have { solid(accent()) } else { 0xFF3A_3A3A }));
+        out.push(Shape::Text(fit(&pick::readable(name), area[2] - 18.0), [area[0] + 14.0, ry + text_y(pick::ROW)], 0xFFFFFF));
+    }
+    let chosen = rows.iter().filter(|(_, have)| *have).count();
+    let note = format!("{chosen} chosen, {} more. Click to add or take away; Esc closes.", rows.len() - chosen);
+    let done = pick::done_button(r);
+    out.push(Shape::Text(fit(&note, done[0] - x - 12.0), [x + 8.0, done[1] + text_y(done[3])], 0x909090));
+    out.push(Shape::Round(done, control, solid(accent())));
+    let tw = game.native_text_width("Done");
+    out.push(Shape::Text("Done".to_owned(), [done[0] + (done[2] - tw) / 2.0, done[1] + text_y(done[3])], 0xFFFFFF));
 }
 
 pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<Shape>) {
@@ -6367,16 +6472,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
             .map(|c| (panel_body(s, c).1, body_room(s, c), s.gui.panels[c].scroll, s.gui.panels[c].collapsed))
             .collect()
     });
-    let fit = |text: &str, max: f32| -> String {
-        if game.native_text_width(text) <= max {
-            return text.to_owned();
-        }
-        let mut t = text.to_owned();
-        while !t.is_empty() && game.native_text_width(&format!("{t}...")) > max {
-            t.pop();
-        }
-        format!("{t}...")
-    };
+    let fit = |text: &str, max: f32| fit_to(game, text, max);
     let solid = |rgb: u32| 0xFF00_0000 | rgb;
     let control = control_radius();
     // The label on the left of a row, cut short of what sits to its right: whether it had to be.
@@ -6606,6 +6702,11 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
         let by = (at.1 + 10.0).min(h - 14.0);
         out.push(Shape::Round([bx, by, tw + 8.0, 14.0], control, 0xF80A_0A0A));
         out.push(Shape::Text(name.to_owned(), [bx + 4.0, by + text_y(14.0)], 0xE4E4E4));
+    }
+    // The list picker, over everything.
+    if let Some((edit, picker)) = editing.as_ref().and_then(|e| e.list.as_ref().map(|p| (e, p))) {
+        draw_picker(game, w, h, edit, picker, &modules, at, out);
+        return;
     }
     // The text editor, over everything.
     if let Some(edit) = editing.filter(|e| !e.inline) {

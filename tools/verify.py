@@ -1220,6 +1220,65 @@ def editor_buttons():
     return (x + 6 + button / 2, y + 54 + 7.5), (x + 12 + button * 1.5, y + 54 + 7.5)
 
 
+def picker_row(n):
+    """The middle of row n of the list picker, in GUI pixels (as picker.rs lays it out)."""
+    w, h = gui_size()
+    width, height = min(max(w - 8, 1), 300), min(max(h - 16, 1), 280)
+    x, y = (w - width) / 2, max((h - height) / 2, 0)
+    return x + 40, y + 42 + 12 * n + 6
+
+
+def open_picker(search, shot=None):
+    """The menu at Xray, its settings in the panel, a click on its Blocks row (the picker opens), `search` typed; a
+    screenshot to `shot` if given."""
+    say(".menu xray")
+    wait(5)
+    ctl("click-at", *map(str, menu_row(3, 1)), "right")
+    wait(3)
+    ctl("click-at", *map(str, menu_row(3, 3)))
+    wait(3)
+    for k in search:
+        ctl("key", k, "tap")
+    wait(3)
+    if shot:
+        ctl("screenshot", shot)
+        time.sleep(2)
+
+
+def close_menu():
+    for _ in range(2):
+        ctl("key", "esc", "tap")
+        wait(3)
+        if state().get("screen") == "paused":
+            ctl("resume")
+            wait(3)
+
+
+@test("List picker")
+def _():
+    # Xray's Blocks chosen in the picker: coal ore listed first, "diamond" typed, the first block it finds clicked in,
+    # coal ore clicked out, then Esc; and .set still sets the list.
+    def blocks():
+        mark = log_mark()
+        say(".settings xray")
+        wait(4)
+        return next((c for c in sunset_said(mark) if c.startswith("Blocks:")), "")
+
+    setting("clickgui", "settings", "Inline")
+    setting("xray", "blocks", "coal_ore")
+    open_picker("diamond", "/tmp/picker.png")
+    ctl("click-at", *map(str, picker_row(1)))
+    wait(2)
+    ctl("click-at", *map(str, picker_row(0)))
+    wait(2)
+    close_menu()
+    picked = blocks()
+    setting("xray", "blocks", "iron_ore,gold_ore")
+    typed = blocks()
+    ok = picked.startswith("Blocks: ") and "diamond" in picked and "coal" not in picked and "," not in picked and typed == "Blocks: iron_ore,gold_ore"
+    return ok, f"after clicking a diamond block in and coal ore out: {picked!r}; after .set: {typed!r}"
+
+
 @test("Text setting editor")
 def _():
     def messages():
