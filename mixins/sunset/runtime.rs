@@ -625,6 +625,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_combat::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
+    v.extend(super::sunset_atmosphere::defaults());
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
     // Modules that only draw can be held on with their bind instead of toggled.

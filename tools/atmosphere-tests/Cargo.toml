@@ -1,0 +1,18 @@
+[package]
+name = "sunset-atmosphere-shader-validation"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+naga = { version = "=30.0.1", features = ["wgsl-in", "hlsl-out"] }
+
+[[test]]
+name = "atmosphere_shader_tests"
+path = "../atmosphere_shader_tests.rs"
+
+[[test]]
+name = "atmosphere_config_tests"
+path = "../atmosphere_config_tests.rs"
