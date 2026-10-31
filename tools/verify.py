@@ -186,11 +186,12 @@ def clean():
     # Land first, in whatever game mode, so a fall a test left you in costs nothing.
     cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
     wait(3)
-    # A world with real terrain (a server's) has hills round the platform: clear a wide ring.
+    # A world with real terrain (a server's) has hills round the platform: clear a wide ring, high enough for No
+    # Fall's 12-block drop (else the player is teleported into a hill and suffocates for 1 health).
     cmd("gamemode survival @s", "clear @s", "effect clear @s", "xp set @s 0 levels", "xp set @s 0 points",
         "kill @e[type=!player]", "difficulty peaceful", "time set 6000", "weather clear", "gamerule natural_health_regeneration true",
         f"fill {X0-24} {Y-1} {Z0-24} {X0+24} {Y+4} {Z0+24} minecraft:air",
-        f"fill {X0-24} {Y+5} {Z0-24} {X0+24} {Y+12} {Z0+24} minecraft:air",
+        f"fill {X0-24} {Y+5} {Z0-24} {X0+24} {Y+16} {Z0+24} minecraft:air",
         f"fill {X0-16} {Y} {Z0-16} {X0+16} {Y} {Z0+16} minecraft:stone",
         f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0",
         "effect give @s minecraft:instant_health 1 10 true", "effect give @s minecraft:saturation 1 10 true")
