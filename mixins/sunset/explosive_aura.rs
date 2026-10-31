@@ -29,7 +29,7 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], ticks: u64) {
     if crystal.is_none() { super::sunset_crystal_aura::reset(); }
     if anchor.is_none() { super::sunset_anchor_aura::reset(); }
     if !can_act(game) {
-        if crystal.is_some() { super::sunset_crystal_aura::reset(); }
+        if crystal.is_some() { super::sunset_crystal_aura::suspend(); }
         if anchor.is_some() { super::sunset_anchor_aura::reset(); }
         return;
     }

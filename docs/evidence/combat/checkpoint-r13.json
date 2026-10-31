@@ -1,0 +1,67 @@
+{
+  "checkpoint": "R13",
+  "manifest": {
+    "schema": 1,
+    "id": "sunset",
+    "version": "0.8.1",
+    "game": "26.3",
+    "horizon": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+    "mixins": "cb1ad23022392d88f006cf94cbf6552a73f5df12"
+  },
+  "native_client_sha256": "2568f4720bb603d045f2752145ab808fb1c1c748bb95c580aea0ef1217e3f346",
+  "package_sha256": "8eb64cc4e8d078abc5c69d203d11ec3518fdf9a900403e4b8e61cc1f4be68d0a",
+  "support_modules": 63,
+  "injections": 52,
+  "build_stages": {
+    "plan": {
+      "exit_code": 0,
+      "elapsed_seconds": 63.97893080000358,
+      "source_unchanged": true,
+      "record_sha256": "24a16a4ad4a36fd51711e3a186cb8d47ad3ab30093ec1359b9a26b84f98bf6d8"
+    },
+    "apply": {
+      "exit_code": 0,
+      "elapsed_seconds": 108.2890972999885,
+      "source_unchanged": true,
+      "record_sha256": "3290111629a85c819ed1c17934e253113ee8d68cc0cfa8ba472262a534b0c08c"
+    },
+    "check": {
+      "exit_code": 0,
+      "elapsed_seconds": 8.626008899998851,
+      "source_unchanged": true,
+      "record_sha256": "622166aaf312d57226623cc674c87253b53a04210acecaf8386dfa071bc5f093"
+    },
+    "build": {
+      "exit_code": 0,
+      "elapsed_seconds": 170.25701489999483,
+      "source_unchanged": true,
+      "record_sha256": "24b3b2900a89096ba4c98f6189f4f9b486ccbf0e18965e156b181b105de712f9"
+    },
+    "freeze": {
+      "exit_code": 0,
+      "elapsed_seconds": 1.162196799996309,
+      "source_unchanged": true,
+      "record_sha256": "389810035643a0884c148b30586ad13f6528fe3b1e878dd00005012265ff8a52"
+    }
+  },
+  "focused": {
+    "total": 210,
+    "compiled_native_adapted": 205,
+    "source_wiring": 5,
+    "report_sha256": "0afae0a766ec358af8afb136288681f06922771ecb4b242247427488a6b1a602",
+    "foundation_count": 44
+  },
+  "native_warnings": [
+    "unused private Masks.clear/hidden helpers in city_policy.rs"
+  ],
+  "runtime_status": "210 focused checks and official native check/optimized build pass. Isolated19 running; fresh paired GUI5, AutoBase9 and Aura5 queued after Loot release.",
+  "delta_from_r12": [
+    "Preserve exact-scene setup ledger, ACK and cell delay across shared contention, local pause and stale queued-deed cancellation. Explicit module/scene boundaries still reset it.",
+    "Five compiled production lifecycle tests and one separately classified source routing contract."
+  ],
+  "source_fingerprints": {
+    "tested_raw": "source-r13.json",
+    "lf_normalized_for_git": "source-r13-lf.json",
+    "note": "Windows tested checkout includes CRLF files. Raw hashes identify tested bytes; LF hashes permit comparison with Git blobs without mistaking line-ending normalization for a source change."
+  }
+}

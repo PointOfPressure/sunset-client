@@ -6,12 +6,23 @@ host source. The incoming packet hook requires the newer official Mixins
 `cb1ad23022392d88f006cf94cbf6552a73f5df12`; the earlier `0d6b103` planner rejects
 opaque macros in that native handler. No Horizon source patch is required.
 
-Latest build: **R12**, with **204 focused checks** (200 compiled/native-adapter
-checks and four source-wiring checks), official native compile check and
-optimized build passing. The [R12 checkpoint](evidence/combat/checkpoint-r12.json)
-and [exact source fingerprints](evidence/combat/source-r12.json) identify that
-binary. Its fresh paired GUI and optional setup checks are pending. Earlier
+Latest build: **R13**, with **210 focused checks** (205 compiled/native-adapter
+checks and five source-wiring checks), official native compile check and
+optimized build passing. The [R13 checkpoint](evidence/combat/checkpoint-r13.json)
+and [exact tested source fingerprints](evidence/combat/source-r13.json) identify
+that binary. Its fresh paired GUI and optional setup checks are pending. Earlier
 native evidence below retains its original checkpoint identity.
+
+The tested Windows checkout contains CRLF files. The raw fingerprints preserve
+those exact bytes; [LF-only fingerprints](evidence/combat/source-r13-lf.json)
+allow comparison with Git's normalized blobs. No other transformation applies.
+
+R13 preserves setup retries, real block acknowledgement and cell delay across
+ordinary pause/contention and queued-work expiry. Explicit module or scene
+resets still clear history. Five compiled tests use the actual production
+suspend/reset, Clock and Ledger; one separate source contract checks the shared
+scheduler and local call routes. Repeated pauses cannot replenish an unchanged
+cell's three-send budget.
 
 R12 makes the open overlay modal on Horizon's control-socket keyboard route.
 That route calls `key_pressed` directly after delivering the editor event,

@@ -21,7 +21,8 @@ The native renderer, world size, other mods and the server still affect cost.
   waits 30 ticks, permits at most three sends per unchanged cell and requires
   actual obsidian payload plus observed-world agreement. The optional setting
   defaults off. Unrelated packets and empty setup history exit the observer
-  before per-block work.
+  before per-block work. Ordinary pauses and hand-action contention retain the
+  retry/acknowledgement history; explicit module or scene reset clears it.
 - Melee/controller target scans stop above 512 observed entities. The Crystal
   controller additionally rejects a scene above 128 crystals, scans at most 64
   anchor cells per tick and evaluates at most four blast sources per threat

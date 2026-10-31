@@ -44,6 +44,7 @@ def main():
                                   'tools/'+name+'_tests.rs', '-o', executable])
             run(name, [executable])
         run('native Aura base preview and ray', [sys.executable, 'tools/aura_base_engine_tests.py', args.engine.resolve()])
+        run('Aura setup suspend and reset lifecycle', [sys.executable, 'tools/aura_setup_lifecycle_tests.py'])
         run('native menu SWAP', [sys.executable, 'tools/inventory_engine_tests.py', args.engine.resolve()])
         run('native packet predicates', [sys.executable, 'tools/packet_engine_tests.py', args.engine.resolve()])
         run('native City mining', [sys.executable, 'tools/city_engine_tests.py', args.engine.resolve()])
@@ -64,7 +65,9 @@ def main():
     # The foundation runner summarizes its six harnesses rather than exposing
     # their Rust output; its expected count is verified from its own summary.
     assert f'{foundation_count} tests passed' in records[0]['stdout']
-    args.out.write_text(json.dumps({'passed': count, 'checks': records,
+    source_routes = sum(int(n) for r in records for n in re.findall(r'source-route contract: (\d+) passed', r['stdout']))
+    count += source_routes
+    args.out.write_text(json.dumps({'passed': count, 'source_route_contract_checks': source_routes, 'checks': records,
         'native_host_revision': 'ba6344a59cb9e755b730dcf02285fc0d33b97d3c',
         'source_sha256': source_hashes,
         'scope': 'Renderer-free production policies and pinned native kernels; no game launched.'},

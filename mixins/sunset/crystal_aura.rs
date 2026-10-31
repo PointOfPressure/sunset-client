@@ -166,11 +166,18 @@ pub(super) fn defaults() -> Vec<Module> {
         .bool("Auto switch", true).bool("Rotate", true).bool("Swing", true)]
 }
 
-pub(super) fn reset() {
+// A temporary menu, manual use or competing action invalidates queued work,
+// but must not replenish an unchanged setup cell's retry budget or lose its
+// authoritative acknowledgement. Only a module/scene reset clears history.
+pub(super) fn suspend() {
     super::sunset_combat_control::release(NAME);
     sunset::cancel_turns(NAME);
-    st(|s| { s.clock.reset(); s.queued_at = None; s.plan = None; s.attempts.clear(); s.setup.clear(); s.setup_scene = None; });
+    st(|s| { s.clock.reset(); s.queued_at = None; s.plan = None; s.attempts.clear(); });
     note(1);
+}
+pub(super) fn reset() {
+    suspend();
+    st(|s| { s.setup.clear(); s.setup_scene = None; });
 }
 
 fn allowed(game: &Game<'_>) -> bool {
@@ -376,14 +383,14 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
 
 pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Option<Rating> {
     let Some(m) = m.filter(|m| m.on) else { reset(); return None; };
-    if !allowed(game) { reset(); return None; }
     if st(|s| s.setup_scene.as_ref().is_some_and(|old| !same_setup_scene(game, old))) { reset(); }
+    if !allowed(game) { suspend(); return None; }
     st(|s| { s.setup_scene = game.remote.as_ref().map(|r|
         (r.entity_id, game.dim, r.session.counters.clone() as Arc<dyn Any + Send + Sync>)); });
     st(|s| { s.tick = ticks; s.plan = None; s.diagnostics.crystals = game.crystals.len();
         s.attempts.retain(|(id, _)| game.crystals.iter().any(|c| c.id == *id)); });
     // Expired queued closures are canceled instead of building a backlog.
-    if st(|s| s.queued_at.is_some_and(|t| t.elapsed() > Duration::from_millis(200))) { reset(); }
+    if st(|s| s.queued_at.is_some_and(|t| t.elapsed() > Duration::from_millis(200))) { suspend(); }
     let waiting = st(|s| s.clock.waiting);
     if let Some(waiting) = waiting {
         let ack = observed(game, waiting.action);
