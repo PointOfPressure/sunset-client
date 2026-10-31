@@ -2477,6 +2477,196 @@ def _():
                                                 f"Scaffold placed {placed} past the edge; still in the game: {alive}")
 
 
+# ---- sweeps: every mode of every module that talks to the server, through the same short stretch of play, and every
+# render mode once in single player. On a server each one counts, from the probe's wire log, the move packets in a
+# tick (never two) and the times the server put the player back (a teleport accepted); a kick fails it with the
+# server's reason. The measured tests above check what the modules do; these check that the server takes it.
+
+def wire_stats(mark):
+    with open(probe_path(), errors="replace") as f:
+        f.seek(mark)
+        sent = [line.split()[1] for line in f if line.startswith("send ")]
+    ticks, most, now, teleports = 0, 0, 0, 0
+    for kind in sent:
+        if kind == "tickend":
+            ticks, most, now = ticks + 1, max(most, now), 0
+        elif kind == "teleport":
+            teleports += 1
+        else:
+            now += 1
+    return ticks, most, teleports
+
+
+HOTBAR = [("diamond_sword", 1), ("obsidian", 64), ("cobblestone", 64), ("bread", 16), ("diamond_pickaxe", 1),
+          ("water_bucket", 1), ("ender_pearl", 16), ("totem_of_undying", 1), ("experience_bottle", 64)]
+
+
+def sweep_stage():
+    reset()
+    cmd(f"fill {X0-3} {Y+1} {Z0+5} {X0+3} {Y+2} {Z0+5} minecraft:stone", f"setblock {X0+2} {Y+1} {Z0+2} minecraft:stone",
+        f"summon husk {X0-1.5} {Y+1} {Z0+2.5} {HUSK}", f"summon cow {X0+2.5} {Y+1} {Z0+3.5} {NOAI}",
+        "item replace entity @s inventory.0 with minecraft:end_crystal 16", "item replace entity @s inventory.1 with minecraft:golden_apple 8",
+        "item replace entity @s inventory.2 with minecraft:cobweb 16", "item replace entity @s armor.chest with minecraft:iron_chestplate")
+    for i, (item, n) in enumerate(HOTBAR):
+        slot(i, item, n)
+    ctl("key", "1", "tap")
+    wait(5)
+
+
+def sweep_play():
+    """About six seconds of play: walk to the wall, jump, strafe, sneak, dig, use, hold jump, walk back."""
+    walk(20)
+    for _ in range(2):
+        ctl("key", "space", "tap")
+        wait(10)
+    held_keys(("a",), 10)
+    held_keys(("d",), 10)
+    held_keys(("shift",), 10)
+    ctl("mouse", "left", "down")
+    wait(20)
+    ctl("mouse", "left", "up")
+    ctl("mouse", "right", "down")
+    wait(10)
+    ctl("mouse", "right", "up")
+    held_keys(("space",), 20)
+    held_keys(("s",), 15)
+    wait(10)
+
+
+def sweep(keys, sets):
+    sweep_stage()
+    for key, k, v in sets:
+        setting(key, k, v)
+    on_server = SERVER is not None and probe_path() is not None
+    mark = probe_mark() if on_server else 0
+    t0 = state()["ticks"]
+    only(*keys)
+    sweep_play()
+    only()
+    st = state()
+    if "player" not in st:
+        return False, f"kicked or gone: {json.dumps(ctl('screen'))[:200]}"
+    moved = st["ticks"] - t0
+    if not on_server:
+        return moved > 100, f"{moved} ticks played, still in the game"
+    ticks, most, teleports = wire_stats(mark)
+    return most <= 1 and teleports == 0, f"{ticks} ticks: at most {most} move packet(s) in a tick, put back {teleports} time(s), not kicked"
+
+
+def light(fn):
+    fn.light = True
+    return fn
+
+
+SWEEPS = [
+    (("flight",), [("flight", "mode", m), ("flight", "anti kick mode", a)]) for m in ("Abilities", "Velocity") for a in ("Packet", "Normal", "None")
+] + [
+    (("speed",), [("speed", "mode", m)]) for m in ("Vanilla", "Strafe")
+] + [
+    (("nofall",), [("nofall", "mode", m)]) for m in ("Packet", "No ground", "Air place", "Place")
+] + [
+    (("step",), [("step", "active when", m)]) for m in ("Always", "Sneaking", "Not sneaking")
+] + [
+    (("guimove",), [("guimove", "screens", m)]) for m in ("All menus", "Inventory")
+] + [
+    (("killaura",), [("killaura", "rotate", m)]) for m in ("Always", "On hit", "None")
+] + [
+    (("killaura", "criticals"), [("killaura", "rotate", m)]) for m in ("Always", "None")
+] + [
+    (("killaura",), [("killaura", "attack when holding", "All")]),
+] + [
+    (("surround",), [("surround", "center", m)]) for m in ("Never", "On activate", "Always", "Incomplete")
+] + [
+    (("selftrap",), [("selftrap", "top mode", m)]) for m in ("Top", "Anti face place", "Full", "None")
+] + [
+    (("selfweb",), [("selfweb", "mode", m)]) for m in ("Normal", "Smart")
+] + [
+    (("burrow",), [("burrow", "block", m)]) for m in ("Obsidian", "Held")
+] + [
+    (("offhand",), [("offhand", "item", m)]) for m in ("Crystal", "Totem", "Gapple", "Enchanted gapple")
+] + [
+    (("autoexp",), [("autoexp", "mode", m)]) for m in ("Both", "Armor", "Hands")
+] + [
+    (("autototem",), [("autototem", "mode", m)]) for m in ("Smart", "Strict")
+] + [
+    (("fastuse",), [("fastuse", "mode", m)]) for m in ("All", "Some")
+] + [
+    (("speedmine",), [("speedmine", "mode", m)]) for m in ("Damage", "Normal", "Haste")
+] + [
+    (("antiafk",), [("antiafk", "spin mode", m)]) for m in ("Server", "Client")
+] + [
+    (("autoeat",), [("autoeat", "threshold mode", m)]) for m in ("Any", "Health", "Hunger", "Both")
+] + [
+    (("autotool",), [("autotool", "prefer", m)]) for m in ("Fortune", "None", "Silk touch")
+] + [
+    (("nuker",), [("nuker", "shape", m)]) for m in ("Sphere", "Cube", "Uniform cube")
+] + [
+    (("nuker",), [("nuker", "mode", m)]) for m in ("All", "Smash")
+] + [
+    (("nuker",), [("nuker", "sort mode", m)]) for m in ("None", "Furthest", "Top down")
+] + [
+    (("nuker",), [("nuker", "packet mine", "true")]),
+] + [
+    (("liquidfiller",), [("liquidfiller", "place in", m)]) for m in ("Both", "Water", "Lava")
+] + [
+    (("spawnproofer",), [("spawnproofer", "mode", m)]) for m in ("Both", "Always", "Potential")
+] + [
+    (("anti" + k,), [("anti" + k, "sprint" if k == "hunger" else "jump", "true")]) for k in ("hunger",)
+] + [
+    ((k,), []) for k in ("velocity", "blink", "glide", "longjump", "highjump", "airjump", "spider", "parkour", "safewalk", "sprint",
+                         "autowalk", "reversestep", "anchor", "fastclimb", "autojump", "sneak", "noslow", "nojumpdelay", "antivoid",
+                         "elytraboost", "chestswap", "scaffold", "timer", "fastplace", "breakdelay", "autoclicker", "autoweapon",
+                         "triggerbot", "autoarmor", "autoreplenish", "autogap", "airplace", "reach", "autotrap", "autoweb",
+                         "holefiller", "aimassist", "bowspam", "crystaloptimizer", "flamethrower", "autoshearer", "automount",
+                         "autosteal", "inventorycleaner", "middleclickextra", "autofish")
+]
+
+for _keys, _sets in SWEEPS:
+    _label = " + ".join(_keys) + (" (" + ", ".join(f"{k}: {v}" for _, k, v in _sets) + ")" if _sets else "")
+    test(f"Sweep: {_label}")(light(lambda _k=_keys, _s=_sets: sweep(_k, _s)))
+
+RENDER_MODES = [("esp", ["3D box", "2D box", "Outline", "Potato"]), ("tracers", ["Lines", "Potato"]), ("nametags", ["Full", "Potato"]),
+                ("storageesp", ["3D box", "2D box", "Outline", "Potato"]), ("blockesp", ["Box", "Outline", "Potato"]),
+                ("holeesp", ["3D box", "2D box", "Outline", "Potato"]), ("breadcrumbs", ["Line", "Potato"]), ("waypoints", ["Full", "Potato"]),
+                ("trajectories", ["Line", "Potato"]), ("lightoverlay", ["Cross", "Potato"]), ("tunnelesp", ["Box", "Outline", "Potato"]),
+                ("voidesp", ["Box", "Outline", "Potato"]), ("radar", ["Round", "Potato"]), ("logoutspots", ["Box", "Outline", "Potato"])]
+
+
+def render_mode(key, mode):
+    if SERVER:
+        return None, "client only: single player"
+    sweep_stage()
+    cmd(f"setblock {X0+1} {Y+1} {Z0+3} minecraft:chest")
+    setting(key, "mode", mode)
+    only(key)
+    a = ctl("status")
+    wait(40)
+    b = ctl("status")
+    only()
+    fps = (b["frames"] - a["frames"]) / max(b["uptime_seconds"] - a["uptime_seconds"], 1e-6)
+    return b["ticks"] - a["ticks"] >= 38 and fps > 5, f"drawn for 2 s at {fps:.0f} fps"
+
+
+for _key, _modes in RENDER_MODES:
+    for _mode in _modes:
+        test(f"Render: {_key} ({_mode})")(light(lambda _k=_key, _m=_mode: render_mode(_k, _m)))
+
+
+def light_clean():
+    """Between sweeps: let go, everything off and the touched settings back; each sweep sets its own stage."""
+    ctl("release")
+    ensure_alive()
+    if state().get("screen") not in ("playing", None):
+        ctl("key", "esc", "tap")
+        wait(2)
+    say(".panic")
+    say(".reset hud")
+    on.clear()
+    for m in sorted(touched):
+        say(f".reset {m}")
+    touched.clear()
+
+
 def overran(*_):
     raise TimeoutError("the test ran over 10 minutes")
 
@@ -2498,7 +2688,7 @@ if __name__ == "__main__":
         if ok is not None:
             results.append((fn.test_name, ok, note))
         print("SKIP" if ok is None else "PASS" if ok else "FAIL", fn.test_name, "-", note, flush=True)
-        clean()
+        (light_clean if getattr(fn, "light", False) else clean)()
     p = sum(1 for _, ok, _ in results if ok)
     print(f"\n{p}/{len(results)} passed")
     for test, screen in kicks:

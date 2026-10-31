@@ -1,13 +1,14 @@
-// The probe's packet log: every move packet and every end of a client tick as they go on the wire (after Sunset has
-// changed them), so verify.py can count the move packets in a tick. Lines "send <kind>" in the SUNSET_PROBE file.
+// The probe's packet log: every move packet, every end of a client tick and every accepted teleport (a server's
+// correction, or a /tp) as they go on the wire (after Sunset has changed them), so verify.py can count the move
+// packets in a tick and the times a server put the player back. Lines "send <kind>" in the SUNSET_PROBE file.
 // Packets are known by their ids, read off packets of each kind made here.
 
 use std::io::Write as _;
 use std::sync::{Mutex, OnceLock};
 
-const KINDS: [&str; 5] = ["pos", "posrot", "rot", "status", "tickend"];
+const KINDS: [&str; 6] = ["pos", "posrot", "rot", "status", "tickend", "teleport"];
 
-static OUT: OnceLock<Option<(Mutex<std::fs::File>, [i32; 5])>> = OnceLock::new();
+static OUT: OnceLock<Option<(Mutex<std::fs::File>, [i32; 6])>> = OnceLock::new();
 
 // The packet id at the start of an encoded packet (a VarInt).
 fn id(body: &[u8]) -> Option<i32> {
@@ -32,6 +33,7 @@ pub fn sent(body: &[u8]) {
             S::MovePlayerRot(play::MovePlayerRot { yaw: 0.0, pitch: 0.0, flags: 0 }),
             S::MovePlayerStatus(play::MovePlayerStatus { flags: 0 }),
             S::ClientTickEnd(crate::packets::Empty),
+            S::AcceptTeleportation(play::AcceptTeleportation { id: 0, x: 0.0, y: 0.0, z: 0.0, yaw: 0.0, pitch: 0.0 }),
         ];
         Some((Mutex::new(file), made.map(|p| id(&p.encode()).unwrap_or(-1))))
     });
