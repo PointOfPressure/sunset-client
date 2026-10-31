@@ -1,17 +1,27 @@
-<p align="center"><img src="docs/images/logo.png" alt="Sunset" width="420"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/logo-light.png">
+    <img src="docs/images/logo.png" alt="Sunset logo" width="550">
+  </picture>
+</p>
 
-# Sunset
+<h1 align="center">Sunset</h1>
 
-A utility client for [Horizon](https://github.com/horizon-rust/horizon) (Minecraft 26.3, rewritten in Rust),
-in the style of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client): about 90 modules for combat,
-movement, building and seeing through walls, a click menu, key binds and chat commands.
+<p align="center">A native utility client for <a href="https://github.com/horizon-rust/horizon">Horizon</a> on Minecraft 26.3.</p>
+<p align="center"><a href="https://github.com/PointOfPressure/sunset-client/releases/latest">Latest release</a> · <a href="#install">Install</a> · <a href="#features">Features</a> · <a href="CONTRIBUTING.md">Contribute</a></p>
 
-![Sunset's ESP, tracers, name tags and storage ESP](docs/images/esp.jpg)
+Sunset brings 100+ modules for combat, movement, building and rendering to Horizon, with a configurable ClickGUI,
+key binds, chat commands and saved profiles. It takes inspiration from
+[Meteor Client](https://github.com/MeteorDevelopment/meteor-client) and is written in Rust for Horizon.
+
+![Sunset 0.8.1 ClickGUI showing the five module categories](docs/images/gui-overview.png)
+
+*Sunset 0.8.1 in game: Combat, Movement, Player, Render and World panels.*
 
 > Not made by, or affiliated with, the Horizon or Meteor projects. Use it where it's allowed: many servers ban
 > modules like these.
 
-## Get it running
+## Install
 
 You need the [Horizon launcher](https://playhorizon.dev) installed and opened once. Then one command does
 everything (installs Sunset, builds it into the game, starts it):
@@ -28,21 +38,15 @@ irm https://github.com/PointOfPressure/sunset-client/releases/latest/download/in
 curl -fsSL https://github.com/PointOfPressure/sunset-client/releases/latest/download/install.sh | sh
 ```
 
-The first run takes **10 to 30 minutes** (it compiles the game with Sunset inside) and shows progress. Later
-runs take a few minutes. When it finishes, Horizon starts with Sunset in it. **In the game, press `** (the key
-under Esc).
-
-Next time, start Horizon from the launcher and pick the **Native mods** instance.
+The first run builds Horizon with Sunset and can take **10 to 30 minutes**. When it finishes, Horizon starts with
+Sunset installed. Later, open the launcher and choose the **Native mods** instance. Press the **backtick/grave** key
+(usually below Esc) or **Right Shift** to open the ClickGUI.
 
 On Linux the installer may ask for your password once, to install two small system libraries the build needs.
 
-## Using it
+## Quick start
 
-![The click menu, with Kill Aura's settings open](docs/images/gui.jpg)
-
-![Typing to search](docs/images/gui-search.jpg)
-
-Press **`** (or **Right Shift**) for the menu. Every category is a panel.
+The ClickGUI groups modules into five panels: Combat, Movement, Player, Render and World.
 
 - **Left click** a module to turn it on or off. **Right click** it for its settings and key bind, in a window of its own
   (drag it by its title; Esc closes it), or in the panel with ClickGUI *Settings: Inline*. Click a slider's number to
@@ -75,28 +79,33 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 | `.vclip <n>`, `.hclip <n>` | move up or down, forward |
 | `.profile save\|load\|delete <name>`, `.profile list` | keep every module's on/off, settings and keys under a name and bring them back (a PvP set-up, a building one); `.profile load before-load` undoes the last load |
 | `.profile export\|import <name>` | share a profile: export copies it to the mod's `exports` folder, import takes `<name>.profile` from its `imports` folder |
-| `.panic` | turn every module off (or bind the **Panic** module to a key) |
+| `.panic` | turn every module off and hide Sunset until `.panic` again or restart (or bind the **Panic** module to a key) |
 | `.menu [text]` | open the menu, already searching for the text |
 
 List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the same way:
 `.set xray blocks diamond_ore,ancient_debris`.
 
-## What's in it
+## Features
 
-| | |
+Speed has Vanilla, Strafe, Smooth, Low Hop and Custom modes. Velocity can scale or blend knockback; Scaffold has
+Legit and Custom placement modes; Fast Place has five speed levels. ClickGUI settings cover scale, spacing, colors
+and panel shape. Advanced controls appear only for relevant modes.
+
+<details>
+<summary>Browse the built-in modules</summary>
+
+| Category | Modules |
 | --- | --- |
 | **Combat** | Kill Aura, Trigger Bot, Aim Assist, Criticals, Crystal Optimizer, Auto Totem, Auto Weapon, Auto Armor, Offhand, Auto EXP, Auto Log, Bow Spam, Bow Aimbot, Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow |
 | **Movement** | Flight, Speed, Sprint, Sneak, Auto Walk, Auto Jump, Step, Spider, High Jump, Long Jump, Air Jump, Parkour, Reverse Step, Fast Climb, Safe Walk, Anchor, Anti Void, Elytra Boost, Chest Swap, Blink, Scaffold, No Fall, No Slow, Velocity, Glide, No Jump Delay, GUI Move (walk with the inventory or another menu open) |
 | **Player** | Fast Place (speed 1 to 5), Break Delay, Speed Mine, No Break Reset, Fast Use, Air Place, Reach, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam, Auto Steal, Inventory Cleaner, Anti Vanish, Panic |
-| **Render** | Radar, ESP, Tracers, Nametags, Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories, Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, No Render (no fog, water fog, darkness, blindness, fire or other overlays), HUD |
+| **Render** | ClickGUI, HUD, Radar, ESP, Tracers, Nametags, Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories, Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, No Render (no fog, water fog, darkness, blindness, fire or other overlays) |
 | **World** | Nuker, Timer, Time Changer, Weather Changer, Liquid Filler, Spawn Proofer, Flamethrower, Auto Shearer, Auto Nametag, Auto Mount, Spawner Alerts |
+
+</details>
 
 Kill Aura, Trigger Bot and Aim Assist can skip bots (**Anti bot**: players the server's player list doesn't show) and
 players on your own team (**Ignore teams**). **HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
-
-![Xray](docs/images/xray.jpg)
-
-![Freecam](docs/images/freecam.jpg)
 
 Not here (no clean way to do it in Horizon yet): Crystal Aura, Jesus, Click TP, and the Baritone-based
 Highway Builder and Infinity Miner.
@@ -110,8 +119,8 @@ Highway Builder and Infinity Miner.
 `%APPDATA%\horizon`, Linux: `~/.local/share/horizon`, macOS: `~/Library/Application Support/horizon`, and the same
 folder inside `instances\native-mods`), then play the plain **Horizon** instance.
 
-Each Sunset version is built for one Horizon Nightly, so Sunset keeps working when Horizon updates, but the
-**Native mods** instance plays the Nightly it was built on until you run the command again.
+Each Sunset release targets one Horizon Nightly. The **Native mods** instance stays on that revision until you
+update Sunset with the installer again.
 
 ## If something goes wrong
 
@@ -122,8 +131,8 @@ Each Sunset version is built for one Horizon Nightly, so Sunset keeps working wh
 - **The command did nothing on Windows**: run it in *PowerShell*, not Command Prompt.
 - **No Sunset in game**: you played the plain **Horizon** instance. Pick **Native mods**.
 - **The first build is slow**: yes. It compiles the whole game once.
-- The Windows and macOS installers could only be tested on Linux so far. If one doesn't work, open an
-  [issue](https://github.com/PointOfPressure/sunset-client/issues) with what it printed.
+- **Installer or launch still fails**: open an [issue](https://github.com/PointOfPressure/sunset-client/issues)
+  with the installer output, your OS and the Horizon version.
 
 ## Plugins
 
@@ -144,10 +153,15 @@ See the [feature roadmap](docs/feature-roadmap.md) for what has landed, what is 
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: [vstxx](https://github.com/vstxx), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: [vstxx](https://github.com/vstxx), [Rust](https://github.com/zackmsa777-a11y). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
 Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine: the plugin docs and `examples/` may be copied to make them. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+<details>
+<summary>Font credits</summary>
+
 The menu and HUD fonts are [Sora](https://github.com/sora-xor/sora-font), [Inter](https://rsms.me/inter/), [Poppins](https://github.com/itfoundry/Poppins), [Outfit](https://github.com/Outfitio/Outfit-Fonts), [Manrope](https://github.com/googlefonts/manrope), [Geist](https://github.com/vercel/geist-font), [Montserrat](https://github.com/JulietaUla/Montserrat), [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans), [Lexend](https://github.com/googlefonts/lexend), [Rubik](https://github.com/googlefonts/rubik), [Space Grotesk](https://github.com/floriankarsten/space-grotesk), [Red Hat Display](https://github.com/RedHatOfficial/RedHatFont), [Comfortaa](https://github.com/alexeiva/comfortaa), [Quicksand](https://github.com/andrew-paglinawan/QuicksandFamily), [Nunito](https://github.com/googlefonts/nunito) and [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (all SIL Open Font License 1.1, the licences are in `assets/licenses/`), cut down to the characters Sunset draws (`assets/*.ttf`, made by `tools/font.py`). Sora is the default; choose with **HUD > Font** (*Minecraft* is the game's own).
+
+</details>
