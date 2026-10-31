@@ -58,9 +58,17 @@ The combined branch passed official Mixins planning/staging (52 support modules,
 50 injections), the pinned native compile check, and an optimized playable
 build. The client SHA-256 is
 `18863f8fa988a194266a8a2ffe3bc32dc9cb3d039d41c9c301670480dad065f4`.
-Five unused-code warnings remain in this checkpoint. Its new melee, manual,
-inventory, packet and controller paths are entering isolated runtime testing;
-the R4 player evidence above must not be presented as proof for all of them.
+Five unused-code warnings remain in this checkpoint. All **19 isolated native
+explosive cases passed**, with graceful exit0 and unchanged frozen inputs:
+[outcomes](evidence/combat/runtime-r5c.json),
+[source fingerprints](evidence/combat/source-r5c.json).
+Its new melee, manual, inventory, packet and controller paths are entering
+separate runtime testing; the explosive evidence must not be presented as
+proof for all of them.
+
+The immutable R5c test bundle still labelled its builder as `0d6b103`; build
+provenance records the actual verified `cb1ad23` tool. The public package
+manifest was corrected in `12f0c4a`. Frozen files and reports were preserved.
 
 Run the renderer-free checks with:
 
