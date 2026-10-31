@@ -87,6 +87,18 @@ name = "sunset_visual"
 source = "visual.rs"
 
 [[module]]
+id = "item_esp"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_item_esp"
+source = "item_esp.rs"
+
+[[module]]
+id = "item_esp_math"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_item_esp_math"
+source = "item_esp_math.rs"
+
+[[module]]
 id = "radar"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_radar"

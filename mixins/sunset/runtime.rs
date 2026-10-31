@@ -414,6 +414,14 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Hostiles", true)
             .bool("Passive", true)
             .bool("Items", false)
+            .bool("Item boxes", true)
+            .bool("Item labels", false)
+            .bool("Item tracers", false)
+            .pick("Item filter", &["All", "Include", "Exclude"])
+            .text("Item IDs", "")
+            .num("Items max", 256.0, 1.0, 1024.0, 1.0)
+            .num("Item label max", 32.0, 1.0, 64.0, 1.0)
+            .bool("Item label background", true)
             .bool("Show friend colors", true)
             .colour("Players color", "White")
             .colour("Hostiles color", "Red")
@@ -4222,6 +4230,9 @@ impl Camera {
     pub(super) fn eye(&self) -> [f64; 3] {
         self.pos
     }
+    pub(super) fn viewport(&self) -> [f32; 2] {
+        [self.w as f32, self.h as f32]
+    }
     // A box's eight corners on screen (None behind the camera): corner i is at hi on x, y and z where bits 1, 2 and
     // 4 of i are set.
     pub(super) fn points(&self, lo: [f64; 3], hi: [f64; 3]) -> [Option<[f32; 2]>; 8] {
@@ -4550,8 +4561,6 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
             }
         });
     }
-    let alpha = game.clock.camera_fraction();
-    let lerp = |a: f64, b: f64| a + alpha * (b - a);
     let dist = |at: [f64; 3]| {
         let d = [at[0] - cam.pos[0], at[1] - cam.pos[1], at[2] - cam.pos[2]];
         (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
@@ -4564,21 +4573,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     let mut text = String::new();
 
     if let Some(m) = esp.filter(|m| m.b("Items")) {
-        let (look, colour, range, fade) = (Look::of(m), m.c("Items color"), m.n("Range"), m.n("Fade distance"));
-        for item in &game.dropped {
-            let at = [
-                lerp(item.previous.x, item.position.x),
-                lerp(item.previous.y, item.position.y),
-                lerp(item.previous.z, item.position.z),
-            ];
-            let d = dist(at);
-            if d > range {
-                continue;
-            }
-            let lo = [at[0] - 0.125, at[1], at[2] - 0.125];
-            let hi = [at[0] + 0.125, at[1] + 0.25, at[2] + 0.125];
-            draw_box(cam, out, &look, lo, hi, faded(colour, d, fade), lw);
-        }
+        super::sunset_item_esp::draw(game, cam, m, lw, out);
     }
 
     if let Some(m) = get("Storage ESP") {

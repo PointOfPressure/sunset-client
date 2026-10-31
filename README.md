@@ -81,6 +81,8 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the same way:
 `.set xray blocks diamond_ore,ancient_debris`.
 
+ESP's dropped items can show names, stack counts and tracers, with exact item-ID filters and nearest-item caps. See [Item ESP settings](docs/item-esp.md).
+
 ## What's in it
 
 | | |
