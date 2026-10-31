@@ -21,6 +21,12 @@ name = "sunset_util"
 source = "util.rs"
 
 [[module]]
+id = "bind_state"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_bind_state"
+source = "bind_state.rs"
+
+[[module]]
 id = "text_edit"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_text_edit"
@@ -585,12 +591,13 @@ bindings = [
   { name = "this", ty = "&mut PositionSender", value = "&mut *self" },
 ]
 
-# The GUI's text editor types the text the keyboard layout makes (the named keys Sunset gets have none); it only looks.
+# The GUI's text editor types the text the keyboard layout makes (the named keys Sunset gets have none), and the binds
+# see releases a screen swallowed and lost focus; it only looks.
 [[injection]]
-id = "text_event"
+id = "window_event"
 kind = "HEAD"
 target = "horizon_client::game::follow_keymap"
-helper = "text_event.rs"
+helper = "window_event.rs"
 bindings = [
   { name = "event", ty = "&winit::event::WindowEvent", value = "&*event" },
 ]

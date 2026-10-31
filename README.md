@@ -49,8 +49,9 @@ Press **`** (or **Right Shift**) for the menu. Every category is a panel.
 - The dark dim and the blur the game puts behind the inventory, chests and the Esc menu are off; **ClickGUI > Menu dim** brings them back.
 - **Drag** a panel's header to move it, **right click** a header to fold it, **scroll** a long panel.
 - **ClickGUI** sets the menu's look: **GUI scale** makes it bigger, **Panel radius** and **Control radius** round its corners.
-- Change a **key bind** with the *Bind* row (press a key; Backspace clears it). Both menu keys can be rebound under
-  Options > Mods > Sunset.
+- Change a **bind** with the *Bind* row: press a key or a mouse button (right, middle or a side button; Backspace clears
+  it). Drawing modules (ESP, Tracers, Zoom, HUD...) have **Bind mode** *Hold*: on only while the bind is held. Both menu
+  keys can be rebound under Options > Mods > Sunset.
 
 Everything is saved as you change it.
 
@@ -64,7 +65,7 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 | `.t <module>` | turn a module on or off (`.t killaura`) |
 | `.set <module> <setting> <value>` | change a setting: `.set killaura range 4`. The start of a name is enough, and a value can be several words |
 | `.settings <module>` | show a module's settings |
-| `.bind <module> <key>` | bind a key: `.bind flight r`, or `none` |
+| `.bind <module> <key>` | bind a key or mouse button: `.bind flight r`, `.bind zoom mouse4`, or `none` |
 | `.reset <module>` | put a module back to its defaults |
 | `.modules`, `.binds` | list the modules, the binds |
 | `.friend add\|remove\|list <name>` | friends are left alone by Kill Aura, Aim Assist and the other targeting modules |

@@ -1170,6 +1170,78 @@ def _():
                 f"cleared, no, Esc: {escaped!r}")
 
 
+def watermark():
+    """Gold pixels where the HUD writes its name, top left: whether the HUD is on."""
+    from PIL import Image
+    path = "/tmp/sunset-watermark.png"
+    ctl("screenshot", path)
+    time.sleep(1)
+    im = Image.open(path).convert("RGB")
+    return sum(1 for r, g, b in im.crop((0, 0, im.width // 5, im.height // 14)).getdata() if r > 220 and 130 < g < 210 and b < 90) > 20
+
+
+@test("Binds (mouse buttons, Hold)")
+def _():
+    def binds():
+        mark = log_mark()
+        say(".binds")
+        wait(3)
+        return [line for line in sunset_said(mark) if line.startswith("HUD:")]
+
+    # A mouse button from the chat, then one chosen in the menu (a right click while its Bind row waits).
+    say(".bind hud mouse4")
+    by_name = binds()
+    say(".menu hud")
+    wait(5)
+    ctl("click-at", *map(str, menu_row(3, 1)), "right")
+    wait(2)
+    ctl("click-at", *map(str, menu_row(3, 2)))
+    wait(2)
+    ctl("click-at", *map(str, menu_row(3, 2)), "right")
+    wait(2)
+    ctl("key", "esc", "tap")
+    wait(3)
+    if state().get("screen") == "paused":
+        ctl("resume")
+    chosen = binds()
+    # A middle button bind toggles the HUD from the world.
+    say(".bind hud mouse3")
+    wait(5)
+    shown = watermark()
+    ctl("mouse", "middle", "click")
+    wait(5)
+    middle_off = not watermark()
+    ctl("mouse", "middle", "click")
+    wait(5)
+    middle_on = watermark()
+    # Hold: on only while the key is down, then back as it was (off here).
+    say(".bind hud j")
+    setting("hud", "bind mode", "Hold")
+    say(".t hud")
+    wait(5)
+    off = not watermark()
+    ctl("key", "j", "down")
+    wait(5)
+    held = watermark()
+    ctl("key", "j", "up")
+    wait(5)
+    let_go = not watermark()
+    # Held over a screen: the chat box opening ends the hold.
+    ctl("key", "j", "down")
+    wait(3)
+    ctl("key", "t", "tap")
+    wait(3)
+    ctl("key", "esc", "tap")
+    wait(3)
+    ended = not watermark()
+    ctl("key", "j", "up")
+    say(".t hud")
+    ok = (by_name == ["HUD: Mouse Back"] and chosen == ["HUD: Mouse Right"] and shown and middle_off and middle_on
+          and off and held and let_go and ended)
+    return ok, (f".bind mouse4: {by_name}; chosen with a right click: {chosen}; middle button toggles: {shown}, {middle_off}, "
+                f"{middle_on}; Hold: off {off}, on while held {held}, off when let go {let_go}, ended by a screen {ended}")
+
+
 def is_on(name):
     """Whether Sunset has the module on, from .modules (its on modules end in *)."""
     mark = log_mark()
