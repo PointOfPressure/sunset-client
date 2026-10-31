@@ -599,7 +599,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Back", 1.0, 0.0, 6.0, 1.0)
             .num("Walls range", 4.0, 0.0, 6.0, 0.5)
             .num("Delay", 0.0, 0.0, 20.0, 1.0)
-            .num("Max blocks per tick", 24.0, 1.0, 256.0, 1.0)
+            // A block is one packet (START), two with Packet mine (STOP), with a swing and the look each tick: at 6 a
+            // tick that is at most 280 a second, well under Paper's limit of 500 (24 sent about 560 and got kicked).
+            .num("Max blocks per tick", 6.0, 1.0, 256.0, 1.0)
             .pick("Sort mode", &["Closest", "None", "Furthest", "Top down"])
             .bool("Packet mine", false)
             .bool("Only suitable tools", false)
