@@ -104,6 +104,7 @@ base can remain unused. It is not cached permission to explode.
 Setup uses the existing scan/action planner, with a 64-cell retry ledger,
 three sends per unchanged cell and a 30-tick wait. Ordinary repeated air
 rejections, pauses and action contention cannot replenish retries. Module/context
-reset clears that ledger.
+reset clears that ledger. Once 64 distinct cells are retained, new setup cells
+are refused until reset; existing ready breaks and placements still work.
 No extra renderer, fake block or predicted crystal ID is introduced. R11
 passes focused/native build checks; paired-player setup proof is pending.

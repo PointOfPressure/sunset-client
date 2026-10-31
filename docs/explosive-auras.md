@@ -12,6 +12,16 @@ main-hand item to detonate. It refuses to operate in the Nether. Offhand
 glowstone requires full charge before the main-hand detonation can bypass the
 offhand-fuel branch.
 
+Crystal's optional **Auto obsidian** is off by default. It only proposes a base
+when no ready break or existing-base opportunity wins, uses native support and
+dry-placement checks, and waits for a real obsidian block update before fresh
+crystal scoring. Pauses retain the bounded setup retry history.
+
+Both modules default **Protect loot** on: planned blasts pause near observed
+player-death locations for 30 seconds. This guards recorded locations rather
+than following item entities. [Exact setup and death-guard limits](combat-modules.md)
+include the margin, lifecycle boundaries and explicit clear operation.
+
 ## Using the modules
 
 Open Combat in the ClickGUI, or use `.settings crystalaura` and

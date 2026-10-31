@@ -54,6 +54,26 @@ def run(ctl, mod, shot, check, *, y=121, x=0, z=0, cases=None):
     def wait(ticks=2):
         return ctl(["wait", ticks])
 
+    def close_overlay():
+        # A modal Sunset overlay intentionally leaves native Screen::Playing.
+        # Do not type a new chat command until the pointer is captured again.
+        observed = []
+        escapes = 0
+        for _ in range(8):
+            state = ctl(["state"])
+            observed.append({key: state.get(key) for key in ("screen", "pointer_grabbed")})
+            if state.get("screen") == "playing" and state.get("pointer_grabbed") is True:
+                return
+            if state.get("screen") == "paused":
+                ctl(["resume"])
+            elif escapes < 4:
+                ctl(["key", "esc", "tap"])
+                escapes += 1
+            else:
+                break
+            wait(2)
+        raise AssertionError({"ui_did_not_close": observed})
+
     def command(text, optional=False):
         reply = ctl(["command", text], required=not optional)
         chat = " ".join(str(s) for s in reply.get("chat", []))
@@ -418,9 +438,11 @@ def run(ctl, mod, shot, check, *, y=121, x=0, z=0, cases=None):
             stop()
             mod(".menu crystal aura")
             output["crystal_gui"] = shot("explosives-crystal-gui")
+            close_overlay()
             mod(".menu anchor aura")
             output["anchor_gui"] = shot("explosives-anchor-gui")
     finally:
+        close_overlay()
         stop()
         ctl(["release"])
     return output

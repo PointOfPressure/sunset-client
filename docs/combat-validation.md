@@ -10,8 +10,16 @@ Latest build: **R13**, with **210 focused checks** (205 compiled/native-adapter
 checks and five source-wiring checks), official native compile check and
 optimized build passing. The [R13 checkpoint](evidence/combat/checkpoint-r13.json)
 and [exact tested source fingerprints](evidence/combat/source-r13.json) identify
-that binary. Its fresh paired GUI and optional setup checks are pending. Earlier
-native evidence below retains its original checkpoint identity.
+that binary. All **19 isolated native explosive cases pass**, with driver and
+game exit0 and unchanged frozen inputs. Fresh paired GUI and optional setup
+checks are pending. Earlier native evidence below retains its original
+checkpoint identity.
+
+The first R13 run passed all 19 gameplay checks, then its driver failed while
+trying to open chat behind the newly modal overlay for a second GUI screenshot.
+The game exited normally. A distinct immutable recipe, using the same client
+and package, closes the real overlay before further chat commands and cleanup;
+the full rerun passes. Original failure hashes remain in the checkpoint record.
 
 The tested Windows checkout contains CRLF files. The raw fingerprints preserve
 those exact bytes; [LF-only fingerprints](evidence/combat/source-r13-lf.json)
