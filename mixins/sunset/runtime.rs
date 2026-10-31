@@ -633,6 +633,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_combat::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
+    v.extend(super::sunset_spawners::defaults());
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
     // Modules that only draw can be held on with their bind instead of toggled.
@@ -1704,6 +1705,7 @@ fn module_tick(game: &mut Game<'_>) {
         s.ticks += 1;
         s.ticks
     });
+    super::sunset_spawners::tick(game, &mods, ticks);
 
     // Fullbright: the renderer's own fullbright, while on or while the
     // player's own extra is.
@@ -4535,6 +4537,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
 }
 
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
+    super::sunset_spawners::draw(game, cam, mods, out);
     super::sunset_util::draw_shown(cam, out, lw);
     super::sunset_render::overlay(game, cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);

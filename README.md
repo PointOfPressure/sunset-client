@@ -96,6 +96,9 @@ ESP's dropped items can show names, stack counts and tracers, with exact item-ID
 Kill Aura, Trigger Bot and Aim Assist can skip bots (**Anti bot**: players the server's player list doesn't show) and
 players on your own team (**Ignore teams**). **HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
 
+**World > Spawner Alerts** reports newly discovered loaded spawners with coordinates,
+distance and the mob type when metadata supplies it. See [settings and limits](docs/spawner-alerts.md).
+
 ![Xray](docs/images/xray.jpg)
 
 ![Freecam](docs/images/freecam.jpg)

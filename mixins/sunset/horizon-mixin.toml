@@ -9,6 +9,81 @@ priority = 100
 horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
 
 [[module]]
+id = "spawners"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_spawners"
+source = "spawners.rs"
+
+[[module]]
+id = "spawner_data"
+file = "crates/horizon-client-render/src/chunk_map.rs"
+name = "sunset_spawner_data"
+source = "spawner_data.rs"
+visibility = "pub"
+
+[[module]]
+id = "spawner_index"
+file = "crates/horizon-client-render/src/chunk_map.rs"
+name = "sunset_spawner_index"
+source = "spawner_index.rs"
+visibility = "pub"
+
+[[state]]
+id = "spawner_registry"
+target = "horizon_client_render::chunk_map::ChunkMap"
+ty = "sunset_spawner_data::Index"
+initial = "::core::default::Default::default()"
+[[state.constructor]]
+target = "horizon_client_render::chunk_map::<ChunkMap as Default>::default"
+selector = "Self"
+require = 1
+
+[[injection]]
+id = "spawner_load"
+kind = "HEAD"
+target = "horizon_client_render::streaming::Streaming::receive_generated"
+helper = "spawner_load.rs"
+bindings = [
+  { name = "world", ty = "&mut World", value = "&mut *world" },
+  { name = "chunk", ty = "&Chunk", value = "&chunk" },
+]
+
+[[injection]]
+id = "spawner_clear"
+kind = "HEAD"
+target = "horizon_client_render::chunk_map::ChunkMap::clear"
+helper = "spawner_clear.rs"
+bindings = [{ name = "this", ty = "&mut ChunkMap", value = "&mut *self" }]
+
+[[injection]]
+id = "spawner_sync"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::sync_block_entity"
+helper = "spawner_sync.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "pos", ty = "(i32, i32, i32)", value = "pos" },
+  { name = "state", ty = "horizon_world::registry::BlockStateId", value = "state" },
+]
+
+[[injection]]
+id = "spawner_disconnect"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::leave_server"
+helper = "spawner_disconnect.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[injection]]
+id = "spawner_dimension"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::enter_remote_dimension"
+helper = "spawner_dimension.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "spawn", ty = "&play::SpawnInfo", value = "spawn" },
+]
+
+[[module]]
 id = "runtime"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset"
