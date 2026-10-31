@@ -2547,6 +2547,60 @@ def _():
         f"camera {behind}; camera inside it {inside} (of {screen})")
 
 
+@test("ESP (item names, tracers, filter)")
+def _():
+    # A stack of 5 diamonds off to the side ahead: its box, then its name, then a line to it, then none of it with
+    # diamonds blacklisted. In pink, which nothing else on screen is (Sunset's chat lines are orange).
+    pink = lambda r, g, b: r > 230 and 80 < g < 150 and b > 160
+    cmd(f"summon item {X0+3.5} {Y+1} {Z0+5.5} {{Item:{{id:\"minecraft:diamond\",count:5}},PickupDelay:32767,Age:-32768}}")
+    setting("esp", "items", "true")
+    setting("esp", "players", "false")
+    setting("esp", "items color", "Pink")
+    only("esp")
+    ctl("look", "0", "20")
+    wait(10)
+    plain = shot_pixels("itemesp0", pink)
+    setting("esp", "item names", "true")
+    wait(5)
+    named = shot_pixels("itemesp1", pink)
+    setting("esp", "item names", "false")
+    setting("esp", "item tracers", "true")
+    wait(5)
+    traced = shot_pixels("itemesp2", pink)
+    setting("esp", "item filter", "Blacklist")
+    setting("esp", "item list", "diamond")
+    wait(5)
+    hidden = shot_pixels("itemesp3", pink)
+    only()
+    cmd("kill @e[type=item]")
+    return plain > 20 and named > plain + 30 and traced > plain + 30 and hidden < plain / 2, (
+        f"pink pixels: box {plain}, with its name {named}, with a tracer {traced}, diamonds blacklisted {hidden}")
+
+
+@test("Spawner Alerts")
+def _():
+    # A zombie spawner and a trial spawner ahead: a chat line each, once, and their labels.
+    gold = lambda r, g, b: r > 230 and 150 < g < 190 and b < 40
+    cmd(f"setblock {X0+2} {Y+1} {Z0+5} minecraft:spawner{{SpawnData:{{entity:{{id:\"minecraft:zombie\"}}}}}}",
+        f"setblock {X0-2} {Y+1} {Z0+5} minecraft:trial_spawner")
+    ctl("look", "0", "10")
+    wait(5)
+    before = shot_pixels("spawners0", gold)
+    # Within 16 blocks: a server's world can have spawners of its own further out.
+    setting("spawneralerts", "range", "16")
+    mark = log_mark()
+    only("spawneralerts")
+    wait(40)
+    labelled = shot_pixels("spawners1", gold)
+    said = [line for line in sunset_said(mark) if "spawner" in line]
+    only()
+    cmd(f"setblock {X0+2} {Y+1} {Z0+5} minecraft:air", f"setblock {X0-2} {Y+1} {Z0+5} minecraft:air")
+    zombie = any(line.startswith(f"zombie spawner at {X0+2} {Y+1} {Z0+5}") for line in said)
+    trial = any(line.startswith("unknown trial spawner") for line in said)
+    return zombie and trial and len(said) == 2 and labelled > before + 50, (
+        f"chat: {said}; label pixels {before} -> {labelled}")
+
+
 @test("Hole ESP")
 def _():
     # An obsidian hole, a bedrock one, and a double (two side by side, obsidian), each a block deep, in front.

@@ -18,7 +18,7 @@ pub(super) fn list_kind(module: &str, setting: &str) -> Option<ListKind> {
     match setting {
         "Blocks" => Some(ListKind::Blocks),
         "Entities" => Some(ListKind::Entities),
-        "Items" | "Selected weapon types" => Some(ListKind::Items),
+        "Items" | "Item list" | "Selected weapon types" => Some(ListKind::Items),
         "Whitelist" | "Blacklist" if matches!(module, "Auto Eat" | "Auto Tool") => Some(ListKind::Items),
         "Whitelist" | "Blacklist" => Some(ListKind::Blocks),
         _ => None,

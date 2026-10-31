@@ -461,7 +461,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Target HUD", true)
             .pick("Target HUD mode", &["Full", "Potato"]),
         Module::new("Fullbright", Render, "Lights everything up."),
-        Module::new("ESP", Render, "Draws boxes around entities, through walls. Outline and Potato (a dot on each) are the cheapest.")
+        Module::new("ESP", Render, "Draws boxes around entities, through walls, and dropped items with their names and counts if you like. Outline and Potato (a dot on each) are the cheapest.")
             .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
             .pick("Shape mode", &["Lines", "Sides", "Both"])
             .num("Fill opacity", 0.3, 0.0, 1.0, 0.05)
@@ -470,6 +470,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Hostiles", true)
             .bool("Passive", true)
             .bool("Items", false)
+            .bool("Item names", false)
+            .bool("Item tracers", false)
+            .pick("Item filter", &["All", "Whitelist", "Blacklist"])
+            .text("Item list", "")
             .bool("Show friend colors", true)
             .colour("Players color", "White")
             .colour("Hostiles color", "Red")
@@ -5077,7 +5081,12 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
 
     if let Some(m) = esp.filter(|m| m.b("Items")) {
         let (look, colour, range, fade) = (Look::of(m), m.c("Items color"), m.n("Range"), m.n("Fade distance"));
+        let (names, lines, filter, list) = (m.b("Item names"), m.b("Item tracers"), m.p("Item filter"), m.t("Item list"));
+        let middle = [cam.w as f32 / 2.0, cam.h as f32 / 2.0];
         for item in &game.dropped {
+            if filter != "All" && super::sunset_util::listed(list, &item.stack.item) != (filter == "Whitelist") {
+                continue;
+            }
             let at = [
                 lerp(item.previous.x, item.position.x),
                 lerp(item.previous.y, item.position.y),
@@ -5089,7 +5098,25 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
             }
             let lo = [at[0] - 0.125, at[1], at[2] - 0.125];
             let hi = [at[0] + 0.125, at[1] + 0.25, at[2] + 0.125];
-            draw_box(cam, out, &look, lo, hi, faded(colour, d, fade), lw);
+            let colour = faded(colour, d, fade);
+            draw_box(cam, out, &look, lo, hi, colour, lw);
+            let Some([x, y]) = (names || lines).then(|| cam.project([at[0], at[1] + 0.25, at[2]])).flatten() else {
+                continue;
+            };
+            if lines {
+                line(out, middle, [x, y], colour, lw);
+            }
+            // Its name as the game shows it (a custom name, else the translated one) and the stack's count.
+            if names {
+                text.clear();
+                text.push_str(&horizon_client::item_tooltip::name_line(&item.stack, &|key| game.pack.names.display_get(key)));
+                if item.stack.count > 1 {
+                    let _ = write!(text, " x{}", item.stack.count);
+                }
+                let tw = game.native_text_width(&text);
+                out.fill([x - tw / 2.0 - 2.0, y - 14.0, tw + 4.0, 12.0], 0x7800_0000);
+                out.text(&text, [x - tw / 2.0, y - 12.0], colour & 0x00FF_FFFF);
+            }
         }
     }
 
@@ -5194,6 +5221,10 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
                 }
             }
         });
+    }
+
+    if let Some(m) = get("Spawner Alerts").filter(|m| m.b("Labels")) {
+        super::sunset_world::spawner_labels(game, cam, m.n("Range"), out);
     }
 
     if let Some(m) = get("Trajectories") {
