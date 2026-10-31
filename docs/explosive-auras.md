@@ -21,9 +21,11 @@ anchors and glowstone in the hotbar or offhand. Anchor detonation also needs a
 non-glowstone hotbar slot; an empty slot is sufficient.
 
 The modules pause for menus, item use, manual attacks/uses, mining, death,
-spectator/creative mode, Blink, an in-progress Criticals action, or enabled
-Kill Aura, Trigger Bot, Nuker, Scaffold, Auto EXP or Auto Gap. This avoids
-competing automation over the same rotation or held item. Hotbar changes and
+spectator/creative mode, Blink, an in-progress Criticals action, enabled Nuker
+or Scaffold, active gapple eating, or another retained combat action ticket.
+Melee, macros, inventory and controller food actions use that shared ownership
+ledger. Merely leaving Kill Aura or Trigger Bot enabled does not block an
+otherwise idle hand. Hotbar changes and
 restoration happen inside the accepted deferred action, after its look has
 been sent. Only one aura can own a queued action. When both are enabled, they
 share a planner: ready attacks take precedence over setup, then estimated

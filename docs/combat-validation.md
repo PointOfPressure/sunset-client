@@ -137,9 +137,66 @@ R7 addresses failures found with the earlier real-player fixtures:
   before cleanup. Bots preserve user baselines in configuration and yield to
   explicit edits, including edits to the same temporarily applied value.
 
-These changes have compiled and passed their focused checks. Their paired-player
-runtime suites are still being run; no aggregate pass is implied here. Earlier
-failures remain recorded separately from corrected recipes and later results.
+The manual and inventory player outcomes below are separate from those 19
+explosive cases. Packet and controller suites require their own records; no
+all-module aggregate pass is implied. Earlier failures remain recorded
+separately from corrected recipes and later results.
+
+## R7 manual and inventory player outcomes
+
+[Compact outcomes, exact binary, report/raw-control hashes and screenshot hashes](evidence/combat/manual-inventory-r7.json)
+record **23 distinct controller scenarios with passing outcomes**. There were
+24 completed check attempts: 23 passed and one initial Wind fixture failed.
+A separate menu-harness error recorded no completed checks. These counts do not
+replace the R7 build's 155 focused checks or its 19 explosive runtime cases.
+
+- Actual held Crystal use placed and removed an observed crystal after the
+  camera aimed onto its hitbox. Release, user slot changes, self-damage and
+  friend controls stopped the corresponding action. Quick-click Anchor
+  Single and Double completed observed charge/removal sequences; Double also
+  completed twice with Delay set to 20 ticks. Unguarded Cancel kept the anchor uncharged.
+- Five positive inventory scenarios each added one real request and one
+  confirmed transaction, with both incoming slot acknowledgment bits set
+  to 3 and matching authoritative Java inventory/equipment NBT. Auto Inventory
+  closed its inventory in 10 ticks; Hotbar Swap restored its slot in 8.
+  Occupied-offhand, toggle-precedence and actual-pointer Hover controls passed.
+- FastXP consumed 6 bottles in 21 native ticks while off, versus 20 in 20 ticks
+  while on. Pearl and basic Wind Throw consumed one item during a held key
+  with repeat, then one more after a fresh press, and restored slot 9.
+- The enabled Wind Jump consumed one real charge. From floorY121, an ordinary
+  native jump peaked at 122.25220334025371; Wind Jump reached 126.47455524863838.
+  Both traces observed actual upward airborne movement; no velocity was injected.
+
+The initial Wind attempt was contaminated by earlier test pearls teleporting
+their owner outside the arena. That failed trace remains unchanged. The
+corrected recipe removes old test projectiles, tests basic Wind with Wind Jump
+off, and tests enabled Wind Jump separately. The first menu harness also used
+a playing-only mouse command on an inventory screen; replacing it with the
+official release command produced three passing UI controls.
+
+Menu, module-off and master-off paths kept a placed crystal from resuming its
+pending attack. Module-off uses chat and master-off uses the real Mods UI;
+those screens already cancel pending work. This is **not** an isolated claim
+that master disable alone canceled a live lease. These stationary private
+stock-server fixtures also do not establish latency or anticheat compatibility.
+
+The following images retain their original 1280×720 framebuffer bytes. The
+inventory record contains the actual confirmation counters and server NBT.
+
+![Auto Inventory after server-confirmed refill and automatic close](evidence/combat/inventory-confirmed-r7.png)
+
+![Actual inventory after Hover's server-confirmed offhand swap](evidence/combat/hover-confirmed-r7.png)
+
+The Wind image is a postcase frame; its height comparison comes from the
+retained native motion trace.
+
+![Native postcase frame after Wind Jump](evidence/combat/wind-jump-r7.png)
+
+The clear Anchor-area image is supplementary: it was captured after actual
+water extinguishing and fire cleanup, not at a placement/charge/detonation phase.
+The original phase images remain unchanged.
+
+![Supplementary clear postcycle frame after actual extinguishing](evidence/combat/manual-clear-postcycle-r7.png)
 
 Run the renderer-free checks with:
 
