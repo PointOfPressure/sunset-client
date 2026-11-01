@@ -349,7 +349,11 @@ kind = "HEAD"
 cancellable = true
 target = "horizon_client::game::Game<'_>::play_mouse"
 helper = "buttons.rs"
-bindings = []
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "button", ty = "winit::event::MouseButton", value = "button" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
 
 [[injection]]
 id = "press"
@@ -884,3 +888,205 @@ kind = "HEAD"
 target = "horizon_client::game::Game<'_>::finish_perf"
 helper = "atmosphere_finish_hook.rs"
 bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+# Crystal Aura, Anchor Aura and the combat macros (Rust's PR #16), and what they share.
+[[module]]
+id = "explosive_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_policy"
+source = "explosive_policy.rs"
+
+[[module]]
+id = "crystal_setup_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crystal_setup_policy"
+source = "crystal_setup_policy.rs"
+
+[[module]]
+id = "aura_base"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_aura_base"
+source = "aura_base.rs"
+
+[[module]]
+id = "loot_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_loot_policy"
+source = "loot_policy.rs"
+
+[[module]]
+id = "loot_guard"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_loot_guard"
+source = "loot_guard.rs"
+
+[[module]]
+id = "loot_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_loot_remote"
+source = "loot_remote.rs"
+
+[[module]]
+id = "explosive_damage"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_damage"
+source = "explosive_damage.rs"
+
+[[module]]
+id = "explosive_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_aura"
+source = "explosive_aura.rs"
+
+[[module]]
+id = "explosive_choice"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_choice"
+source = "explosive_choice.rs"
+
+[[module]]
+id = "crystal_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crystal_aura"
+source = "crystal_aura.rs"
+
+[[module]]
+id = "anchor_state"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anchor_state"
+source = "anchor_state.rs"
+
+[[module]]
+id = "anchor_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anchor_aura"
+source = "anchor_aura.rs"
+
+[[module]]
+id = "combat_lease"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_lease"
+source = "combat_lease.rs"
+
+[[module]]
+id = "combat_control"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_control"
+source = "combat_control.rs"
+
+[[module]]
+id = "combat_macros"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_macros"
+source = "combat_macros.rs"
+
+[[module]]
+id = "macro_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_macro_policy"
+source = "macro_policy.rs"
+
+[[module]]
+id = "combat_wire"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_wire"
+source = "combat_wire.rs"
+
+[[module]]
+id = "combat_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_combat_remote"
+source = "combat_remote.rs"
+visibility = "pub(crate)"
+
+[[injection]]
+id = "combat_use"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_use"
+helper = "combat_use.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[module]]
+id = "packets"
+file = "crates/horizon-client/src/net.rs"
+name = "sunset_packets"
+source = "packet_tap.rs"
+visibility = "pub"
+
+[[injection]]
+id = "packet_tap"
+kind = "RETURN"
+target = "horizon_client::net::Session::poll"
+helper = "packet_tap_hook.rs"
+bindings = [
+  { name = "value", ty = "Vec<Event>", value = "$value" },
+]
+
+[[module]]
+id = "lead_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_lead_policy"
+source = "lead_policy.rs"
+
+[[module]]
+id = "faceplace_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_faceplace_policy"
+source = "faceplace_policy.rs"
+
+[[module]]
+id = "durability_patch"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_durability_patch"
+source = "durability_patch.rs"
+
+[[module]]
+id = "faceplace_native"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_faceplace_native"
+source = "faceplace_native.rs"
+
+[[module]]
+id = "prediction_native"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_prediction_native"
+source = "prediction_native.rs"
+
+[[module]]
+id = "prediction"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_prediction"
+source = "prediction.rs"
+
+[[module]]
+id = "hurt_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hurt_policy"
+source = "hurt_policy.rs"
+
+[[module]]
+id = "prediction_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_prediction_remote"
+source = "prediction_remote.rs"
+
+[[module]]
+id = "hurt_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_hurt_remote"
+source = "hurt_remote.rs"
+
+[[module]]
+id = "explosive_tactics"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_tactics"
+source = "explosive_tactics.rs"
+
+[[module]]
+id = "aura_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_aura_policy"
+source = "aura_policy.rs"

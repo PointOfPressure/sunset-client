@@ -4147,6 +4147,221 @@ def render_mode(key, mode):
     return b["ticks"] - a["ticks"] >= 38 and fps > 5, f"drawn for 2 s at {fps:.0f} fps"
 
 
+# ---- Crystal Aura, Anchor Aura, Crystal Macro and Anchor Macro (Rust's PR #16), against Bot1 (CTL2) on a server.
+# The arena is obsidian (a crystal needs it under, and nothing round it blows away), Bot1 stands 3 blocks south with a
+# thousand health and no knockback, so every hit can be counted; you wear netherite with Blast Protection IV.
+
+ARMOR = [("head", "netherite_helmet"), ("chest", "netherite_chestplate"), ("legs", "netherite_leggings"),
+         ("feet", "netherite_boots")]
+
+
+def blast_arena(bot=True):
+    cmd(f"fill {X0-5} {Y-1} {Z0-4} {X0+5} {Y} {Z0+8} minecraft:obsidian", "difficulty normal",
+        "gamerule natural_health_regeneration false", "gamerule fire_damage false")
+    for part, item in ARMOR:
+        cmd(f"item replace entity @s armor.{part} with minecraft:{item}[enchantments={{blast_protection:4}}]")
+    if bot:
+        cmd("gamemode survival Bot1", "attribute Bot1 minecraft:max_health base set 1000",
+            "attribute Bot1 minecraft:knockback_resistance base set 1", "attribute Bot1 minecraft:explosion_knockback_resistance base set 1",
+            f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 3.5}", "effect give Bot1 minecraft:instant_health 1 28 true")
+        ctl2("release")
+    wait(20)
+
+
+def blast_done():
+    cmd("difficulty peaceful", "gamerule natural_health_regeneration true", "gamerule fire_damage true",
+        "attribute Bot1 minecraft:max_health base reset", "attribute @s minecraft:max_health base reset",
+        "gamemode spectator Bot1", f"tp Bot1 {X0 + 0.5} {Y + 30} {Z0 + 60}",
+        f"fill {X0-5} {Y-1} {Z0-4} {X0+5} {Y} {Z0+8} minecraft:stone", f"fill {X0-5} {Y+1} {Z0-4} {X0+5} {Y+4} {Z0+8} minecraft:air",
+        "kill @e[type=minecraft:end_crystal]")
+
+
+def bot_health():
+    p = ctl2("state").get("player") or {}
+    return p.get("health", 0) + p.get("absorption", 0)
+
+
+def own_health():
+    p = state()["player"]
+    return p["health"] + p.get("absorption", 0)
+
+
+def crystals_left():
+    """End crystals in the world (the kill command counts them, and clears them)."""
+    cmd("kill @e[type=minecraft:end_crystal]")
+    for line in ctl("chat-log", "3").get("chat", []):
+        if line.startswith("Killed "):
+            return int(line.split()[1])
+        if "No entity was found" in line:
+            return 0
+    return None
+
+
+def hand_crystal():
+    """Damage Bot1 takes from an end crystal you break by hand beside it, with Sunset off: what the server deals a
+    player for a crystal another player set off (Horizon's own server deals none)."""
+    cmd(f"summon minecraft:end_crystal {X0 + 0.5} {Y + 1} {Z0 + 2.5} {{ShowBottom:0b}}", "effect give Bot1 minecraft:instant_health 1 28 true")
+    wait(10)
+    before = bot_health()
+    ctl("look-at", str(X0 + 0.5), str(Y + 2), str(Z0 + 2.5))
+    ctl("mouse", "left", "click")
+    wait(20)
+    lost = before - bot_health()
+    if crystals_left():
+        return None
+    cmd("effect give Bot1 minecraft:instant_health 1 28 true", "effect give @s minecraft:instant_health 1 28 true")
+    wait(10)
+    return lost
+
+
+def blast_run(module, items, ticks, health=None, totem=False):
+    """`module` on for `ticks` with `items` (item, count) in the hotbar from slot 0 and a sword held in slot 8: what
+    was used of each, damage Bot1 took, damage you took, totems popped, the most move packets in a tick, kept in the
+    game, frames a second, and the slot held after it went off."""
+    for i, (item, n) in enumerate(items):
+        slot(i, item, n)
+    slot(8, "diamond_sword")
+    ctl("key", "9", "tap")
+    if health:
+        cmd(f"attribute @s minecraft:max_health base set {health}", "effect give @s minecraft:instant_health 1 28 true")
+    if totem:
+        cmd("item replace entity @s weapon.offhand with minecraft:totem_of_undying")
+    wait(10)
+    mark = probe_mark() if SERVER and probe_path() else None
+    before_inv = ctl("inventory").get("counts", {})
+    bot0, own0 = bot_health(), own_health()
+    a = ctl("status")
+    only(module)
+    wait(ticks)
+    only()
+    b = ctl("status")
+    wait(10)
+    after_inv = ctl("inventory").get("counts", {})
+    used = {item: before_inv.get(f"minecraft:{item}", 0) - after_inv.get(f"minecraft:{item}", 0) for item, _ in items}
+    pops = int(totem and "minecraft:totem_of_undying" not in after_inv and (state().get("offhand") or {}).get("item") != "minecraft:totem_of_undying")
+    st = state()
+    alive = st.get("screen") != "dead" and bool(st.get("player"))
+    taken = own0 - (own_health() if alive else 0)
+    most = wire_stats(mark)[1] if mark is not None else None
+    fps = (b["frames"] - a["frames"]) / max(b["uptime_seconds"] - a["uptime_seconds"], 1e-6)
+    return {"used": used, "dealt": bot0 - bot_health(), "taken": taken, "pops": pops, "alive": alive, "most": most,
+            "fps": fps, "held": (held().get("item") or "").removeprefix("minecraft:"), "seconds": ticks / 20}
+
+
+@test("Crystal Aura")
+def _():
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    reset()
+    blast_arena()
+    control = hand_crystal()
+    # Crystals per second, damage dealt and taken, with room in the self damage limit and the health for it.
+    setting("crystalaura", "max self damage", "20")
+    fast = blast_run("crystalaura", [("end_crystal", 64), ("obsidian", 64)], 200, health=200)
+    ensure_alive()
+    # At 20 health with a totem and the usual limit (8): it never pops you or kills you.
+    setting("crystalaura", "max self damage", "8")
+    cmd("effect give Bot1 minecraft:instant_health 1 28 true")
+    safe = blast_run("crystalaura", [("end_crystal", 64), ("obsidian", 64)], 200, health=20, totem=True)
+    ensure_alive()
+    blast_done()
+    rate = fast["used"]["end_crystal"] / fast["seconds"]
+    # Where the server deals another player nothing for a crystal you set off (the control), only rate and safety count.
+    dealt = fast["dealt"] > fast["taken"] or control == 0
+    ok = (rate >= 1 and dealt and fast["alive"] and fast["most"] in (None, 0, 1)
+          and safe["pops"] == 0 and safe["alive"] and safe["taken"] <= 8 * max(1, safe["used"]["end_crystal"])
+          and fast["held"] == "diamond_sword" and fast["fps"] > 20)
+    return ok, (f"a crystal broken by hand beside Bot1 costs it {control}; "
+                f"{rate:.1f} crystals a second ({fast['used']['end_crystal']} placed, {fast['used']['obsidian']} obsidian), "
+                f"Bot1 took {fast['dealt']:.0f}, you {fast['taken']:.0f} (200 health, limit 20); at 20 health with a totem "
+                f"and limit 8: {safe['used']['end_crystal']} placed, Bot1 took {safe['dealt']:.0f}, you {safe['taken']:.0f}, "
+                f"{safe['pops']} totems popped, alive {safe['alive']}; most move packets in a tick {fast['most']}; "
+                f"{fast['fps']:.0f} fps; holding {fast['held']} after")
+
+
+@test("Anchor Aura")
+def _():
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    reset()
+    blast_arena()
+    control = hand_crystal()
+    cmd("effect give @s minecraft:fire_resistance 120 0 true")
+    setting("anchoraura", "max self damage", "20")
+    fast = blast_run("anchoraura", [("respawn_anchor", 64), ("glowstone", 64)], 200, health=200)
+    ensure_alive()
+    setting("anchoraura", "max self damage", "6")
+    cmd("effect give Bot1 minecraft:instant_health 1 28 true", "effect give @s minecraft:fire_resistance 120 0 true")
+    safe = blast_run("anchoraura", [("respawn_anchor", 64), ("glowstone", 64)], 200, health=20, totem=True)
+    ensure_alive()
+    blast_done()
+    rate = fast["used"]["respawn_anchor"] / fast["seconds"]
+    dealt = fast["dealt"] > fast["taken"] or control == 0
+    ok = (rate >= 0.5 and dealt and fast["alive"] and fast["most"] in (None, 0, 1)
+          and safe["pops"] == 0 and safe["alive"] and fast["held"] == "diamond_sword" and fast["fps"] > 20)
+    return ok, (f"a crystal broken by hand beside Bot1 costs it {control}; {rate:.1f} anchors a second ({fast['used']['respawn_anchor']} anchors, {fast['used']['glowstone']} "
+                f"glowstone), Bot1 took {fast['dealt']:.0f}, you {fast['taken']:.0f} (200 health, limit 20); at 20 health "
+                f"with a totem and limit 6: {safe['used']['respawn_anchor']} anchors, you {safe['taken']:.0f}, "
+                f"{safe['pops']} totems popped, alive {safe['alive']}; most move packets in a tick {fast['most']}; "
+                f"{fast['fps']:.0f} fps; holding {fast['held']} after")
+
+
+def macro_run(module, items, look_at, hold_ticks, health=200):
+    """`module` on, `items` in the hotbar from slot 0 (the first held), right click held `hold_ticks` looking at the
+    block `look_at`: what was used of each, the ticks it ran, damage you took, alive, most move packets in a tick."""
+    for i, (item, n) in enumerate(items):
+        slot(i, item, n)
+    ctl("key", "1", "tap")
+    cmd(f"attribute @s minecraft:max_health base set {health}", "effect give @s minecraft:instant_health 1 28 true",
+        "effect give @s minecraft:fire_resistance 120 0 true")
+    only(module)
+    ctl("look-at", *(str(v) for v in look_at))
+    wait(10)
+    mark = probe_mark() if SERVER and probe_path() else None
+    before_inv = ctl("inventory").get("counts", {})
+    own0 = own_health()
+    ctl("mouse", "right", "down")
+    wait(hold_ticks)
+    ctl("mouse", "right", "up")
+    wait(20)
+    only()
+    after_inv = ctl("inventory").get("counts", {})
+    used = {item: before_inv.get(f"minecraft:{item}", 0) - after_inv.get(f"minecraft:{item}", 0) for item, _ in items}
+    st = state()
+    alive = st.get("screen") != "dead" and bool(st.get("player"))
+    most = wire_stats(mark)[1] if mark is not None else None
+    return used, own0 - (own_health() if alive else 0), alive, most
+
+
+@test("Crystal Macro and Anchor Macro")
+def _():
+    reset()
+    blast_arena(bot=False)
+    # A crystal held on the obsidian 3 blocks ahead: placed and broken over and over for 5 s.
+    cmd(f"setblock {X0} {Y+1} {Z0+3} minecraft:obsidian")
+    setting("crystalmacro", "max self damage", "20")
+    crystals, taken, alive, most = macro_run("crystalmacro", [("end_crystal", 64)], (X0 + 0.5, Y + 2.0, Z0 + 3.5), 100)
+    left = crystals_left()
+    per = 100 / max(crystals["end_crystal"], 1)
+    # An anchor held at the floor 3 blocks ahead: placed, charged, set off, once a click (the block in between guards).
+    cmd(f"fill {X0-1} {Y+1} {Z0+1} {X0+1} {Y+4} {Z0+5} minecraft:air", "kill @e[type=minecraft:end_crystal]")
+    anchors, anchor_taken, anchor_alive, anchor_most = 0, 0, True, None
+    times = []
+    for _ in range(5):
+        used, t, a, m = macro_run("anchormacro", [("respawn_anchor", 16), ("glowstone", 16)], (X0 + 0.5, Y + 1.0, Z0 + 3.5), 3)
+        anchors += used["respawn_anchor"]
+        anchor_taken += t
+        anchor_alive &= a
+        anchor_most = max(anchor_most or 0, m or 0) if m is not None else anchor_most
+        cmd(f"fill {X0-1} {Y+1} {Z0+1} {X0+1} {Y+4} {Z0+5} minecraft:air")
+    blast_done()
+    ok = (crystals["end_crystal"] >= 5 and left in (0, 1) and alive and most in (None, 0, 1) and anchors >= 4 and anchor_alive
+          and anchor_most in (None, 0, 1))
+    return ok, (f"Crystal Macro: {crystals['end_crystal']} crystals in 5 s ({per:.1f} ticks each), {left} left standing, "
+                f"you took {taken:.0f} of 200; Anchor Macro: {anchors} of 5 clicks set an anchor off, you took "
+                f"{anchor_taken:.0f}; most move packets in a tick {most}/{anchor_most}")
+
+
 for _key, _modes in RENDER_MODES:
     for _mode in _modes:
         test(f"Render: {_key} ({_mode})")(light(lambda _k=_key, _m=_mode: render_mode(_k, _m)))

@@ -294,6 +294,8 @@ impl Module {
         let name = self.settings[j].name;
         let advanced = self.b("Advanced");
         match self.name {
+            "Crystal Aura" if name == "Hold key" => self.b("Require hold"),
+            "Crystal Aura" | "Anchor Aura" if name == "Render color" => self.b("Render"),
             "Speed" => match name {
                 "Vanilla speed" => self.p("Mode") != "Strafe",
                 "Strafe speed" | "Speed limit" => self.p("Mode") == "Strafe",
@@ -697,6 +699,9 @@ pub(super) fn defaults() -> Vec<Module> {
     ];
     v.splice(0..0, super::sunset_aura::defaults());
     v.extend(super::sunset_combat::defaults());
+    v.extend(super::sunset_crystal_aura::defaults());
+    v.extend(super::sunset_anchor_aura::defaults());
+    v.extend(super::sunset_combat_macros::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_crosshair::defaults());
@@ -1458,6 +1463,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
         m.on = !m.on;
         (m.name, m.on)
     });
+    super::sunset_combat_macros::toggled(game, name, on);
     if !on {
         match name {
             "Scaffold" => {
@@ -1470,6 +1476,8 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 horizon_client::motion::sunset_motion::set_up(None);
             },
             "Velocity" => with(|s| { s.velocity = None; s.blast = [0.0; 3]; }),
+            "Crystal Aura" => super::sunset_crystal_aura::disabled(game),
+            "Anchor Aura" => super::sunset_anchor_aura::disabled(game),
             "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
             _ => {},
         }
@@ -1707,7 +1715,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if game.player.is_none() {
         fall_died();
     }
+    let packets = horizon_client::net::sunset_packets::take();
     if !game.native_on(ID) || game.player.is_none() {
+        combat_cleanup(game);
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
         horizon_client::motion::sunset_motion::set_safe_walk(false);
@@ -1716,6 +1726,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
         return;
     }
+    super::sunset_combat_control::begin_tick(game);
+    combat_packets(game, &packets);
     ensure_loaded(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     crit_sprint_back(game);
@@ -2115,16 +2127,18 @@ fn module_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Scaffold").filter(|_| get("Kill Aura").is_none() && get("Blink").is_none()) {
         scaffold(game, m);
     }
-    if let Some(m) = get("Auto Armor") {
+    // A combat macro or Crystal/Anchor Aura has the hotbar: the inventory modules wait.
+    let combat_hand = super::sunset_combat_control::owner().is_some();
+    if let Some(m) = get("Auto Armor").filter(|_| !combat_hand) {
         auto_armor(game, m);
     }
-    if get("Chest Swap").is_some() {
+    if get("Chest Swap").is_some() && !combat_hand {
         chest_swap(game);
         if let Some(i) = with(|s| s.find("Chest Swap")) {
             toggle(game, i, false);
         }
     }
-    if let Some(m) = get("Auto Replenish") {
+    if let Some(m) = get("Auto Replenish").filter(|_| !combat_hand) {
         auto_replenish(game, m);
     }
     if let Some(m) = get("Bow Spam") {
@@ -2169,7 +2183,7 @@ fn module_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Auto Clicker") {
         auto_click(game, m);
     }
-    if let Some(m) = get("Auto Eat") {
+    if let Some(m) = get("Auto Eat").filter(|_| super::sunset_combat_control::available("Auto Eat")) {
         auto_eat(game, m);
     } else if with(|s| s.eating) {
         eat_stop(game);
@@ -2200,7 +2214,9 @@ fn module_tick(game: &mut Game<'_>) {
     } else {
         with(|s| s.blocks = Sweep::new());
     }
+    super::sunset_combat_macros::tick(game, &mods, game.ticks);
     super::sunset_combat::tick(game, &mods);
+    super::sunset_explosive_aura::tick(game, &mods, game.ticks);
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_player::tick(game, &mods);
     super::sunset_world::tick(game, &mods);
@@ -2529,7 +2545,7 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
         return;
     }
     if with(|s| s.eating) {
-        if !eat_due(game, m) {
+        if !super::sunset_combat_control::claim("Auto Eat") || !eat_due(game, m) {
             eat_stop(game);
             return;
         }
@@ -2571,7 +2587,11 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
         return;
     };
     let prev = game.selected;
+    if !super::sunset_combat_control::claim("Auto Eat") {
+        return;
+    }
     if !eat_from(game, slot) {
+        super::sunset_combat_control::release("Auto Eat");
         return;
     }
     let paused = m.b("Pause auras") && with(|s| s.is_on("Kill Aura"));
@@ -2680,6 +2700,7 @@ fn eat_from(game: &mut Game<'_>, slot: Option<usize>) -> bool {
 }
 
 fn eat_stop(game: &mut Game<'_>) {
+    super::sunset_combat_control::release("Auto Eat");
     use winit::event::MouseButton;
     let (prev, aura) = with(|s| {
         s.eating = false;
@@ -4326,6 +4347,55 @@ fn turns<R>(f: impl FnOnce(&mut Turns) -> R) -> R {
     f(&mut TURNS.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
+// The packets that came since the last tick, to what Crystal Aura and Anchor Aura keep track of.
+fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::Clientbound]) {
+    use horizon_protocol::packets::play::Clientbound as C;
+    for packet in packets {
+        super::sunset_loot_guard::packet(game, packet);
+        super::sunset_prediction::packet(game, packet);
+        super::sunset_crystal_aura::packet(game, packet);
+        if matches!(packet, C::Login(_) | C::Respawn(_) | C::PlayerPosition(_)) {
+            super::sunset_combat_wire::reset_look();
+        }
+    }
+}
+
+// Crystal Aura, Anchor Aura and the combat macros let go of what they hold: the hand they switched, a look waiting.
+fn combat_cleanup(game: &mut Game<'_>) {
+    super::sunset_combat_control::prepare_cleanup(game);
+    super::sunset_combat_macros::reset(game);
+    super::sunset_combat_control::reset();
+    super::sunset_crystal_aura::disabled(game);
+    super::sunset_anchor_aura::disabled(game);
+}
+
+// turn_then only when no look waits: Crystal Aura, Anchor Aura and the macros switch the hand in `then`, so an ask
+// refused changes nothing. Never while Blink holds the moves.
+pub(super) fn try_turn_then(who: &'static str, yaw: f32, pitch: f32,
+    then: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) -> bool {
+    if !yaw.is_finite() || !pitch.is_finite() || BLINK.load(Ordering::Relaxed) {
+        return false;
+    }
+    let look = ((yaw + 180.0).rem_euclid(360.0) - 180.0, pitch.clamp(-90.0, 90.0));
+    turns(|t| {
+        if t.carried || !t.queue.is_empty() {
+            return false;
+        }
+        t.queue.push(Ask { who, look, deeds: vec![Box::new(then)], fresh: true });
+        true
+    })
+}
+
+// What `who` asked to look at, and do, is dropped.
+pub(super) fn cancel_turns(who: &str) {
+    turns(|t| {
+        if t.queue.first().is_some_and(|ask| ask.who == who) {
+            t.carried = false;
+        }
+        t.queue.retain(|ask| ask.who != who);
+    });
+}
+
 // Has the server see the player look at (yaw, pitch), then does `then`. `who` names the module: what it asks again in
 // the same tick goes along under its first look, and an ask from an earlier tick still waiting is replaced.
 pub(super) fn turn_then(who: &'static str, yaw: f32, pitch: f32, then: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) {
@@ -4488,6 +4558,7 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
 }
 
 pub(super) fn panic_off(game: &mut Game<'_>) {
+    combat_cleanup(game);
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
         game.pitch = pitch;
@@ -5249,6 +5320,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
 }
 
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
+    super::sunset_explosive_aura::draw(game, cam, mods, out, lw);
     super::sunset_block_overlay::overlay(game, cam, mods, out, lw);
     if let Some(m) = mods.iter().find(|m| m.name == "Target ESP" && m.on) {
         super::sunset_target_esp::draw(game, cam, m, [cam.w as f32, cam.h as f32], lw, out);
