@@ -21,6 +21,8 @@ CTL = sys.argv[1]
 CTL2 = os.environ.get("CTL2")
 # The server joined (HOST:PORT), to join again when it kicks you; the kicks are listed at the end.
 SERVER = os.environ.get("SERVER")
+# Where the screenshots go (runs side by side each need their own).
+SHOTS = os.environ.get("SHOTS", "/tmp")
 kicks = []
 ONLY = sys.argv[2:]
 on = set()
@@ -1232,7 +1234,7 @@ def _():
 # ---- screens, menus and rendering
 
 def brightness(name):
-    path = f"/tmp/{name}.png"
+    path = f"{SHOTS}/{name}.png"
     ctl("screenshot", path)
     time.sleep(2)
     out = subprocess.run(["identify", "-format", "%[fx:mean]", path], capture_output=True, text=True, timeout=60).stdout
@@ -1294,7 +1296,7 @@ def _():
 def floor(name):
     """The mean colour of a patch of the platform floor clear of the pause menu's buttons and the chat."""
     from PIL import Image, ImageStat
-    path = f"/tmp/{name}.png"
+    path = f"{SHOTS}/{name}.png"
     ctl("screenshot", path)
     time.sleep(2)
     return sum(ImageStat.Stat(Image.open(path).convert("RGB").crop((40, 150, 300, 320))).mean) / 3
@@ -1695,7 +1697,7 @@ def _():
     setting("clickgui", "settings", "Inline")
     setting("xray", "list", "Advanced")
     setting("xray", "blocks", "coal_ore")
-    open_picker("diamond", "/tmp/picker.png")
+    open_picker("diamond", f"{SHOTS}/picker.png")
     ctl("click-at", *map(str, picker_row(1)))
     wait(2)
     ctl("click-at", *map(str, picker_row(0)))
@@ -1724,7 +1726,7 @@ def _():
     setting("xray", "blocks", start)
     # A right click on Xray opens or closes its settings in the panel: a second try if the first found them open.
     for _ in range(2):
-        open_picker("", "/tmp/picker_simple.png")
+        open_picker("", f"{SHOTS}/picker_simple.png")
         for row in (0, 9, 11):
             ctl("click-at", *map(str, picker_row(row)))
             wait(2)
@@ -1746,7 +1748,7 @@ def _():
     def shot(name):
         # Long enough for the whole view to be meshed again.
         wait(80)
-        path = f"/tmp/{name}.png"
+        path = f"{SHOTS}/{name}.png"
         ctl("screenshot", path)
         time.sleep(2)
         return Image.open(path).convert("L")
@@ -1856,7 +1858,7 @@ def _():
 def watermark():
     """Gold pixels where the HUD writes its name, top left: whether the HUD is on."""
     from PIL import Image
-    path = "/tmp/sunset-watermark.png"
+    path = f"{SHOTS}/sunset-watermark.png"
     ctl("screenshot", path)
     time.sleep(1)
     im = Image.open(path).convert("RGB")
@@ -2421,9 +2423,9 @@ def _():
         wait(3)
         ctl("click", "slot-0", "middle")
         wait(5)
-        ctl("screenshot", f"/tmp/{name}.png")
+        ctl("screenshot", f"{SHOTS}/{name}.png")
         time.sleep(2)
-        img = Image.open(f"/tmp/{name}.png").convert("RGB")
+        img = Image.open(f"{SHOTS}/{name}.png").convert("RGB")
         w, h = gui_size()
         k = img.width / w
         cx, cy = (w - 176) / 2 + 16, (h - 166) / 2 + 150
@@ -2433,9 +2435,9 @@ def _():
     def lit(name):
         # How bright the world is round the inventory (its left side, below the HUD's text): the pinned view dims it.
         from PIL import Image
-        ctl("screenshot", f"/tmp/{name}.png")
+        ctl("screenshot", f"{SHOTS}/{name}.png")
         time.sleep(2)
-        img = Image.open(f"/tmp/{name}.png").convert("L")
+        img = Image.open(f"{SHOTS}/{name}.png").convert("L")
         part = list(img.crop((0, img.height // 4, img.width // 8, img.height * 3 // 4)).getdata())
         return sum(part) / len(part)
 
@@ -3338,7 +3340,7 @@ def _():
 def shot_pixels(name, want):
     """Pixels of a screenshot that `want` (r, g, b) accepts."""
     from PIL import Image
-    path = f"/tmp/{name}.png"
+    path = f"{SHOTS}/{name}.png"
     ctl("screenshot", path)
     time.sleep(2)
     return sum(1 for px in Image.open(path).convert("RGB").getdata() if want(*px))
@@ -3400,19 +3402,19 @@ def _():
 
 
 def frame(name):
-    """The next frame, greyscale (the PNG stays in /tmp to look at)."""
+    """The next frame, greyscale (the PNG stays in SHOTS to look at)."""
     from PIL import Image
-    ctl("screenshot", f"/tmp/{name}.png")
+    ctl("screenshot", f"{SHOTS}/{name}.png")
     time.sleep(2)
-    return Image.open(f"/tmp/{name}.png").convert("L")
+    return Image.open(f"{SHOTS}/{name}.png").convert("L")
 
 
 def colour_frame(name):
-    """The next frame in colour (the PNG stays in /tmp to look at)."""
+    """The next frame in colour (the PNG stays in SHOTS to look at)."""
     from PIL import Image
-    ctl("screenshot", f"/tmp/{name}.png")
+    ctl("screenshot", f"{SHOTS}/{name}.png")
     time.sleep(2)
-    return Image.open(f"/tmp/{name}.png").convert("RGB")
+    return Image.open(f"{SHOTS}/{name}.png").convert("RGB")
 
 
 def recoloured(a, b):
@@ -3463,7 +3465,7 @@ def _():
     block_px, target_px = changed(plain, block), changed(aura, target)
     ok = cross_mid > 20 and cross_out < 0.005 * w * h and dot_vs_cross > 10 and block_px > 200 and target_px > 50
     return ok, (f"pixels changed: Crosshair {cross_mid} in the middle ({cross_out} elsewhere), Dot against Cross {dot_vs_cross}; "
-                f"Block Overlay on a fence {block_px}; Target ESP on Kill Aura's husk {target_px} (frames in /tmp/vis_*.png)")
+                f"Block Overlay on a fence {block_px}; Target ESP on Kill Aura's husk {target_px} (frames in {SHOTS}/vis_*.png)")
 
 
 @test("Atmosphere")
@@ -3494,7 +3496,7 @@ def _():
     share = {m: recoloured(plain, f) / (1280 * 720) for m, (f, _) in seen.items()}
     ok = all(v > noise + 0.005 for v in share.values()) and all(fps > 0.5 * fps0 for _, fps in seen.values())
     return ok, (f"share of the frame recoloured: " + ", ".join(f"{m} {v:.1%} at {seen[m][1]:.0f} fps" for m, v in share.items())
-                + f"; the game's sky {fps0:.0f} fps, {noise:.1%} by itself (frames in /tmp/atmo_*.png)")
+                + f"; the game's sky {fps0:.0f} fps, {noise:.1%} by itself (frames in {SHOTS}/atmo_*.png)")
 
 
 @test("Storage ESP (double chests)")
@@ -3513,7 +3515,7 @@ def _():
         wait(10)
         shot_pixels(name, orange)
         from PIL import Image
-        img = Image.open(f"/tmp/{name}.png").convert("RGB")
+        img = Image.open(f"{SHOTS}/{name}.png").convert("RGB")
         w, h = img.size
         return sum(1 for x in range(w // 2 - 8, w // 2 + 8) for y in range(h) if orange(*img.getpixel((x, y))))
     double = seam("chest", "left", "right", "dchest")
@@ -3543,9 +3545,9 @@ def _():
 
     def shot_pixels(name, want):
         from PIL import Image
-        ctl("screenshot", f"/tmp/{name}.png")
+        ctl("screenshot", f"{SHOTS}/{name}.png")
         time.sleep(2)
-        img = Image.open(f"/tmp/{name}.png").convert("RGB")
+        img = Image.open(f"{SHOTS}/{name}.png").convert("RGB")
         w, h = img.size
         return sum(1 for px in img.crop((w // 4, h // 4, w * 3 // 4, h * 3 // 4)).getdata() if want(*px))
 
@@ -3614,9 +3616,9 @@ def _():
     from PIL import Image, ImageChops
 
     def corner(name):
-        ctl("screenshot", f"/tmp/{name}.png")
+        ctl("screenshot", f"{SHOTS}/{name}.png")
         time.sleep(2)
-        img = Image.open(f"/tmp/{name}.png").convert("L")
+        img = Image.open(f"{SHOTS}/{name}.png").convert("L")
         return img.crop((img.width * 55 // 100, img.height // 2, img.width, img.height))
 
     def changed(a, b):
@@ -3631,9 +3633,9 @@ def _():
         ctl("mouse-move", "800", "0")
         frames = []
         for name in ("hv_moving", "hv_settled"):
-            ctl("screenshot", f"/tmp/{name}.png")
+            ctl("screenshot", f"{SHOTS}/{name}.png")
             time.sleep(2)
-            img = Image.open(f"/tmp/{name}.png").convert("RGB")
+            img = Image.open(f"{SHOTS}/{name}.png").convert("RGB")
             frames.append([stone(*px) for px in img.crop((img.width * 55 // 100, img.height // 2, img.width, img.height)).getdata()])
             wait(15)
         return sum(a != b for a, b in zip(*frames)) / len(frames[0])
@@ -3834,9 +3836,9 @@ def _():
     from PIL import Image, ImageChops
 
     def frame(name):
-        ctl("screenshot", f"/tmp/{name}.png")
+        ctl("screenshot", f"{SHOTS}/{name}.png")
         time.sleep(2)
-        return Image.open(f"/tmp/{name}.png").convert("L")
+        return Image.open(f"{SHOTS}/{name}.png").convert("L")
     before = frame("fc_before")
     changed = []
     for i in range(3):
@@ -3973,11 +3975,11 @@ def _():
     setting("killaura", "entities", "pig")
     only("killaura")
     wait(10)
-    ctl("screenshot", "/tmp/targethud.png")
+    ctl("screenshot", f"{SHOTS}/targethud.png")
     time.sleep(2)
     only()
     from PIL import Image
-    img = Image.open("/tmp/targethud.png").convert("RGB")
+    img = Image.open(f"{SHOTS}/targethud.png").convert("RGB")
     w, h = img.size
     # The box sits right of and below the crosshair: count the health bar's green and the box's dark fill.
     region = img.crop((w // 2 + 20, h // 2 + 20, w // 2 + 20 + 260, h // 2 + 20 + 80))
@@ -4028,7 +4030,7 @@ def corner(name):
     """The bottom-left quarter of a screenshot, where the HUD places the radar: its pixels of the radar's dark blue
     and its near-white ones."""
     from PIL import Image
-    path = f"/tmp/{name}.png"
+    path = f"{SHOTS}/{name}.png"
     ctl("screenshot", path)
     time.sleep(2)
     img = Image.open(path).convert("RGB")
@@ -6034,27 +6036,34 @@ def _():
 
 def x_window():
     """The X window of this session's game (its process has the session's probe path), for real key presses with
-    xdotool on the test display; None without xdotool or a window."""
-    want = f"SUNSET_PROBE={session_dir()}/probe.log".encode()
+    xdotool on its display; None without xdotool or a window."""
+    global XDISPLAY
+    want = f"{session_dir()}/probe.log"
     for pid in subprocess.run(["pgrep", "horizon-client"], capture_output=True, text=True).stdout.split():
         try:
             with open(f"/proc/{pid}/environ", "rb") as f:
-                if want not in f.read().split(b"\0"):
-                    continue
+                env = dict(v.split("=", 1) for v in f.read().decode(errors="replace").split("\0") if "=" in v)
         except OSError:
             continue
+        if env.get("SUNSET_PROBE") != want:
+            continue
+        XDISPLAY = env.get("DISPLAY", XDISPLAY)
         try:
             found = subprocess.run(["xdotool", "search", "--pid", pid], capture_output=True, text=True,
-                                   env={**os.environ, "DISPLAY": ":97"}).stdout.split()
+                                   env={**os.environ, "DISPLAY": XDISPLAY}).stdout.split()
         except FileNotFoundError:
             return None
         return found[-1] if found else None
     return None
 
 
+# The game's X display (each session of a side-by-side run has its own), learnt by x_window().
+XDISPLAY = ":97"
+
+
 def x_keys(window, *keys):
     """Real presses (XTEST) of `keys` with the game's window focused, a few ticks apart; "type:<text>" types text."""
-    env = {**os.environ, "DISPLAY": ":97"}
+    env = {**os.environ, "DISPLAY": XDISPLAY}
     subprocess.run(["xdotool", "windowfocus", "--sync", window], env=env, capture_output=True)
     for k in keys:
         if k.startswith("type:"):
