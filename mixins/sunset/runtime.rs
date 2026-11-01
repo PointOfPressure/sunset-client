@@ -313,11 +313,17 @@ impl Module {
                 "Blend %" => self.p("Mode") == "Blend",
                 _ => true,
             },
-            "Scaffold" => match name {
-                "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => advanced,
-                "Rotation speed" => advanced && self.b("Rotate"),
-                _ => true,
-            },
+            "Scaffold" => {
+                let legit = self.p("Mode") == "Legit";
+                match name {
+                    "Edge distance" => legit,
+                    "Fast tower" | "Tower speed" | "While moving" | "Only on click" | "Rotate" | "Air place" | "Ahead distance"
+                    | "Closest block range" | "Radius" | "Blocks per tick" | "Delay (ticks)" | "Advanced" => !legit,
+                    "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => !legit && advanced,
+                    "Rotation speed" => !legit && advanced && self.b("Rotate"),
+                    _ => true,
+                }
+            }
             _ => true,
         }
     }
@@ -540,7 +546,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ignore sneaking", false),
         Module::new("Blink", Movement, "Holds back your movement packets, then sends them all at once when off.")
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
-        Module::new("Scaffold", Movement, "Automatically places blocks under you.")
+        Module::new("Scaffold", Movement, "Automatically places blocks under you. Legit only places where you are looking, with the game's own use delay, and sneaks at the edge of a block.")
+            .pick("Mode", &["Custom", "Legit"])
+            .bool("Disable with Kill Aura", true)
+            .bool("Block counter", true)
+            .num("Edge distance", 0.3, 0.05, 0.6, 0.05)
             .text("Blocks", "")
             .pick("Blocks filter", &["Blacklist", "Whitelist"])
             .bool("Fast tower", false)
@@ -770,6 +780,8 @@ pub(super) struct State {
     scaffold_wait: u32,
     scaffold_recent: Vec<([i32; 3], u64)>,
     scaffold_rotation: Option<(f32, f32)>,
+    // The hotbar slot Scaffold took as the biggest stack, kept until it runs out.
+    scaffold_stack: Option<usize>,
     // Scaffold's placed blocks, drawn for 8 ticks as they fade.
     scaffold_placed: Vec<([i32; 3], u8)>,
     click_wait: u32,
@@ -860,6 +872,7 @@ impl State {
                     scaffold_wait: 0,
             scaffold_recent: Vec::new(),
             scaffold_rotation: None,
+            scaffold_stack: None,
                     scaffold_placed: Vec::new(),
             click_wait: 0,
             blink_ticks: 0,
@@ -1467,7 +1480,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
     if !on {
         match name {
             "Scaffold" => {
-                with(|s| { s.scaffold_wait = 0; s.scaffold_recent.clear(); });
+                with(|s| { s.scaffold_wait = 0; s.scaffold_recent.clear(); s.scaffold_stack = None; });
                 restore_scaffold_rotation(game);
             }
             "Speed" => {
@@ -1771,7 +1784,15 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     {
         want.extend(super::sunset_player::afk_keys(&m));
     }
-    let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.b("Safe walk"));
+    // Scaffold's Legit mode sneaks at the edge of a block: the game's own sneak, which also stops you walking off.
+    if let Some(m) = get("Scaffold").filter(|m| m.on && m.p("Mode") == "Legit")
+        && playing
+        && !scaffold_paused(&m, on("Kill Aura"), on("Blink"))
+        && legit_at_edge(game, &m)
+    {
+        want.push(KeyCode::ShiftLeft);
+    }
+    let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.p("Mode") == "Custom" && m.b("Safe walk"));
     horizon_client::motion::sunset_motion::set_safe_walk((on("Safe Walk") || scaffold_walk) && playing);
     // GUI Move walking you forward behind a screen: a sprint goes on (the game would stop it, a screen gives it no
     // forward key), and starts with Ctrl held or the Sprint module.
@@ -2124,7 +2145,7 @@ fn module_tick(game: &mut Game<'_>) {
         let _ = game.leave_server(Some(format!("Sunset Auto Log: health was {health}")));
         return;
     }
-    if let Some(m) = get("Scaffold").filter(|_| get("Kill Aura").is_none() && get("Blink").is_none()) {
+    if let Some(m) = get("Scaffold").filter(|m| !scaffold_paused(m, get("Kill Aura").is_some(), get("Blink").is_some())) {
         scaffold(game, m);
     }
     // A combat macro or Crystal/Anchor Aura has the hotbar: the inventory modules wait.
@@ -2329,11 +2350,106 @@ fn scaffold_item(game: &Game<'_>, m: &Module, slot: usize) -> bool {
     listed == (m.p("Blocks filter") == "Whitelist") && f.full_collision && !falls
 }
 
+// Scaffold waits while Blink is on, and while Kill Aura is if Disable with Kill Aura says so.
+fn scaffold_paused(m: &Module, kill_aura: bool, blink: bool) -> bool {
+    blink || (kill_aura && m.b("Disable with Kill Aura"))
+}
+
+// The biggest stack in the hotbar (the one in hand if two are level), kept until it runs out: taking the biggest
+// again each time would swap between two like stacks at every block. Auto switch off: only what is in hand.
 fn scaffold_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
-    if scaffold_item(game, m, game.selected) {
-        return Some(game.selected);
+    if !m.b("Auto switch") {
+        return Some(game.selected).filter(|&i| scaffold_item(game, m, i));
     }
-    (0..9).find(|&i| scaffold_item(game, m, i)).filter(|_| m.b("Auto switch"))
+    if let Some(kept) = with(|s| s.scaffold_stack).filter(|&i| scaffold_item(game, m, i)) {
+        return Some(kept);
+    }
+    let count = |i: usize| game.inventory.get(i).and_then(|s| s.as_ref()).map_or(0, |s| s.count);
+    let best = (0..9).filter(|&i| scaffold_item(game, m, i)).max_by_key(|&i| (count(i), i == game.selected, std::cmp::Reverse(i)));
+    with(|s| s.scaffold_stack = best);
+    best
+}
+
+// The blocks Scaffold can use: the hotbar's, or only the hand's with Auto switch off.
+fn scaffold_blocks(game: &Game<'_>, m: &Module) -> u32 {
+    let count = |i: usize| game.inventory.get(i).and_then(|s| s.as_ref()).map_or(0, |s| s.count);
+    if !m.b("Auto switch") {
+        return if scaffold_item(game, m, game.selected) { count(game.selected) } else { 0 };
+    }
+    (0..9).filter(|&i| scaffold_item(game, m, i)).map(count).sum()
+}
+
+// How far ahead Legit looks: Edge distance along the move keys, or along the way you are still sliding.
+fn legit_step(game: &Game<'_>, m: &Module) -> Option<[f64; 2]> {
+    let p = game.player.as_ref()?;
+    let edge = m.n("Edge distance");
+    if let Some([x, z]) = move_direction(game) {
+        return Some([x * edge, z * edge]);
+    }
+    let speed = p.velocity.x.hypot(p.velocity.z);
+    (speed > 0.02).then(|| [p.velocity.x / speed * edge, p.velocity.z / speed * edge])
+}
+
+// On the ground, with blocks to place, and that step ahead would leave nothing under your feet.
+fn legit_at_edge(game: &Game<'_>, m: &Module) -> bool {
+    use horizon_core::geometry::{Aabb, Vec3};
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    if !p.ground.on_ground || p.flying || game.keys.contains(&KeyCode::Space) || scaffold_slot(game, m).is_none() {
+        return false;
+    }
+    let Some([x, z]) = legit_step(game, m) else {
+        return false;
+    };
+    let b = p.bounds();
+    let (lo, hi) = (b.min_position(), b.max_position());
+    let under = Aabb::new(Vec3::new(lo.x + x, lo.y - 0.1, lo.z + z), Vec3::new(hi.x + x, lo.y, hi.z + z));
+    horizon_client::collisions::SceneCollisions { world: &game.world, binding: game.collision, subject: None }
+        .unobstructed(under)
+        .unwrap_or(false)
+}
+
+// Scaffold's Legit mode: uses the block where your crosshair really is, once that spot is the one under your feet or
+// your next step. The game's own click, so its use delay, reach and look all hold, and your view is never turned.
+fn scaffold_legit(game: &mut Game<'_>, m: &Module) {
+    // Holding use, the game is placing already.
+    if !game.native_playing() || game.remote.is_none() || game.right || game.use_delay > 0 || game.using.is_some() || game.mob_hit().is_some() {
+        return;
+    }
+    let (Some(hit), Some(p)) = (game.pick(), game.player.as_ref()) else {
+        return;
+    };
+    let at = [hit.pos[0] + hit.face[0], hit.pos[1] + hit.face[1], hit.pos[2] + hit.face[2]];
+    let drop = p.position.y.floor() as i32 - at[1];
+    if drop != 1 && (p.ground.on_ground || drop != 2) {
+        return;
+    }
+    let [x, z] = legit_step(game, m).unwrap_or([0.0; 2]);
+    let b = p.bounds();
+    let (lo, hi) = (b.min_position(), b.max_position());
+    let over = lo.x + x.min(0.0) < f64::from(at[0] + 1)
+        && hi.x + x.max(0.0) > f64::from(at[0])
+        && lo.z + z.min(0.0) < f64::from(at[2] + 1)
+        && hi.z + z.max(0.0) > f64::from(at[2]);
+    if !over {
+        return;
+    }
+    // A block that would open, or grass the new block would replace, is not a side to place on.
+    let on = super::sunset_util::facts(game, hit.pos);
+    if on.block_entity || on.fluid_level > 0 || super::sunset_util::can_place(game, hit.pos, false) || !super::sunset_util::can_place(game, at, true) {
+        return;
+    }
+    let Some(slot) = scaffold_slot(game, m) else {
+        return;
+    };
+    hold(game, slot);
+    // What a right click does, without being one: anything watching your mouse is not to take it for yours.
+    let _ = game.use_with_hand();
+    game.use_delay = 4;
+    if m.b("Render") {
+        with(|s| s.scaffold_placed.push((at, 8)));
+    }
 }
 
 fn scaffold_place(game: &mut Game<'_>, m: &Module, at: [i32; 3]) -> bool {
@@ -2391,6 +2507,14 @@ pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
             *t > 0
         });
     });
+    // Another module has the hand (Kill Aura's hit on its way, with Disable with Kill Aura off): not this tick.
+    if !super::sunset_combat_control::available("Scaffold") {
+        return;
+    }
+    if m.p("Mode") == "Legit" {
+        scaffold_legit(game, m);
+        return;
+    }
     if !game.native_playing() || game.remote.is_none() {
         return;
     }
@@ -3435,6 +3559,7 @@ pub(super) fn server_correction(game: &mut Game<'_>) {
         s.strafe = Strafe::default();
         s.scaffold_recent.clear();
         s.scaffold_wait = 0;
+        s.scaffold_stack = None;
     });
     horizon_client::motion::sunset_motion::set_across(None);
     horizon_client::motion::sunset_motion::set_up(None);
@@ -4554,6 +4679,7 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
     s.blast = [0.0; 3];
     s.scaffold_recent.clear();
     s.scaffold_wait = 0;
+    s.scaffold_stack = None;
     take_scaffold_rotation(&mut s.scaffold_rotation)
 }
 
@@ -5274,6 +5400,18 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
                 }
             }
         }
+    }
+
+    // Scaffold's block counter: a number and a word above the hotbar, clear of the hearts, armour and item name.
+    if let Some(m) = get("Scaffold").filter(|m| m.b("Block counter"))
+        && game.native_playing()
+        && game.player.is_some()
+        && !game.spectator()
+    {
+        let blocks = scaffold_blocks(game, m);
+        let text = format!("{blocks} {}", if blocks == 1 { "block" } else { "blocks" });
+        let colour = if blocks < 16 { 0xFF5555 } else { 0xFFFFFF };
+        shapes.push(Shape::Text(text.clone(), [(w - game.native_text_width(&text)) / 2.0, h - 71.0], colour));
     }
 
     if with(|s| s.gui.open && s.gui.closing) {
