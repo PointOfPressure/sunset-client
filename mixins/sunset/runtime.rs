@@ -5478,13 +5478,23 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     let mods = snapshot();
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     let (w, h) = (batch.width, batch.height);
+    // GUI scale, as far as a row of the narrowest panels still fits the window.
+    let scale = f32::from_bits(LOOK[6].load(Ordering::Relaxed)).min((w / MIN_ROW).max(1.0));
+    LOOK[7].store(scale.to_bits(), Ordering::Relaxed);
     let lw = (1.5 / batch.scale).max(0.5);
     let mut shapes = std::mem::take(&mut *SHAPES.lock().unwrap_or_else(|e| e.into_inner()));
 
     if let Some(cam) = Camera::of(game, w, h)
         && game.player.is_some()
     {
+        // World labels use the open GUI's text scale too: one glyph size a frame, so Sunset's font is not rebuilt
+        // twice a frame and the labels' glyphs are not taken from an atlas rebuilt under them.
+        let real = batch.scale;
+        if game.screen == Screen::Playing && with(|s| s.gui.open && !s.gui.closing) {
+            batch.scale = real * scale;
+        }
         world_overlays(game, &cam, &mods, lw, &mut Painter { game, batch: &mut *batch });
+        batch.scale = real;
     }
 
     super::sunset_duel::draw_loadouts(game, w, h, &mut shapes);
@@ -5583,9 +5593,6 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         close_gui(game);
     }
     let mut gui_shapes = Vec::new();
-    // GUI scale, as far as a row of the narrowest panels still fits the window.
-    let scale = f32::from_bits(LOOK[6].load(Ordering::Relaxed)).min((w / MIN_ROW).max(1.0));
-    LOOK[7].store(scale.to_bits(), Ordering::Relaxed);
     if with(|s| s.gui.open) {
         if game.screen == Screen::Playing && game.player.is_some() {
             // The world dims behind the panels by Background dim (percent), the one fill behind them.
