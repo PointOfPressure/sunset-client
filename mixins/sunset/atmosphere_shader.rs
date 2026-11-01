@@ -126,9 +126,15 @@ fn sunset_ringed_planet(ray: vec3<f32>, background: vec3<f32>, footprint: f32, t
     let axis = vec3(0.15003751, 0.97024259, -0.19004752);
     let light = vec3(-0.63142230, 0.35079017, -0.69155776);
     let projection = dot(ray, planet_center);
+    let pixel = max(footprint * 6.0, 0.0001);
+    // The full annulus (including its largest filter) fits in radius 2.22.
+    // Most sky rays cannot hit it: skip all sphere/ring sqrt, division and sine.
+    let bound = max(2.24, 1.0 + pixel);
+    if projection <= 0.0 || projection * projection < 36.0 - bound * bound {
+        return background;
+    }
     let discriminant = projection * projection - 35.0;
     let impact = sqrt(max(36.0 - projection * projection, 0.0));
-    let pixel = max(footprint * 6.0, 0.0001);
     let sphere_mask = (1.0 - smoothstep(1.0 - pixel, 1.0 + pixel, impact))
         * select(0.0, 1.0, projection > 0.0);
     let sphere_t = projection - sqrt(max(discriminant, 0.0));
