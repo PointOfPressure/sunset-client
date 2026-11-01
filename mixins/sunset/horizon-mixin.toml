@@ -673,6 +673,17 @@ bindings = [
 ]
 
 [[injection]]
+id = "packet_mine_held"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_continue_attack"
+helper = "packet_mine_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "down", ty = "bool", value = "down" },
+]
+
+[[injection]]
 id = "crystal"
 kind = "HEAD"
 cancellable = true
@@ -1277,6 +1288,12 @@ id = "pvp_bot"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_pvp_bot"
 source = "pvp_bot.rs"
+
+[[module]]
+id = "packet_mine"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_packet_mine"
+source = "packet_mine.rs"
 
 [[module]]
 id = "hands"

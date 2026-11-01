@@ -5813,6 +5813,73 @@ def _():
     return on and bound and got == want, f"Fast Use on: {on}, bound to J: {bound}, settings {got} of {want}"
 
 
+@test("Packet Mine")
+def _():
+    # Each block 2 in front at head height: ticks to break it holding the right tool and the button, then with Packet
+    # Mine holding a sword: one click, then looking away and walking back half a block; the block's ticks until gone and
+    # the item in hand after (the sword: the tool is held only for the STOP tick). Then two blocks queued by two clicks.
+    # No kick; one move packet a tick (probe, on a server).
+    tools = {"stone": ("diamond_pickaxe", 2), "deepslate": ("diamond_pickaxe", 2), "oak_log": ("stone_axe", 3), "dirt": ("wooden_shovel", 4)}
+    kicked = len(kicks)
+    at = (X0, Y + 2, Z0 + 2)
+
+    def setup():
+        reset()
+        slot(0, "diamond_sword")
+        for item, i in set(tools.values()):
+            slot(i, item)
+        ctl("key", "1", "tap")
+
+    def gone(block, limit):
+        n = 0
+        while n < limit and ctl("block", *map(str, at)).get("block") == f"minecraft:{block}":
+            wait(1)
+            n += 1
+        return n
+
+    got = {}
+    for block, (tool, i) in tools.items():
+        setup()
+        cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:{block}")
+        ctl("look-at", str(at[0] + 0.5), str(at[1] + 0.5), str(at[2] + 0.5))
+        ctl("key", str(i + 1), "tap")
+        wait(2)
+        ctl("mouse", "left", "down")
+        plain = gone(block, 100)
+        ctl("mouse", "left", "up")
+        setup()
+        cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:{block}")
+        ctl("look-at", str(at[0] + 0.5), str(at[1] + 0.5), str(at[2] + 0.5))
+        only("packetmine")
+        mark = probe_mark() if probe_path() and SERVER else None
+        ctl("mouse", "left", "click")
+        wait(2)
+        ctl("look", "90", "0")
+        ctl("key", "s", "down")
+        wait(3)
+        ctl("key", "s", "up")
+        mined = gone(block, 100)
+        wait(3)
+        hand = held().get("item", "")
+        only()
+        got[block] = (plain, mined, hand.replace("minecraft:", ""), wire_stats(mark)[1] if mark is not None else None)
+    # Two blocks queued: both go, one after the other.
+    setup()
+    cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:stone", f"setblock {at[0] + 1} {at[1]} {at[2]} minecraft:stone")
+    only("packetmine")
+    for dx in (0, 1):
+        ctl("look-at", str(at[0] + dx + 0.5), str(at[1] + 0.5), str(at[2] + 0.5))
+        ctl("mouse", "left", "click")
+        wait(1)
+    wait(40)
+    queued = 2 - count(at[0], at[1], at[2], at[0] + 1, at[1], at[2], "stone")
+    only()
+    ok = (all(0 < mined < 100 and mined <= plain + 1 and "sword" in hand and (most or 0) <= 1 for plain, mined, hand, most in got.values())
+          and queued == 2 and len(kicks) == kicked)
+    return ok, ("(ticks plain with the tool, ticks with Packet Mine holding a sword, in hand after, most moves a tick) "
+                f"{got}; two clicks queued, broken: {queued}")
+
+
 @test("Wind Jump")
 def _():
     # 3 wind charges thrown straight down from the ground, without and with Wind Jump: the highest your feet rise

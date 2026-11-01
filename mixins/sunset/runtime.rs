@@ -755,6 +755,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_pvp_bot::defaults());
     v.extend(super::sunset_duel::defaults());
     v.extend(super::sunset_hands::defaults());
+    v.extend(super::sunset_packet_mine::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_crosshair::defaults());
@@ -1678,6 +1679,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
     });
     super::sunset_combat_macros::toggled(game, name, on);
     super::sunset_combat_inventory::toggled(game, name);
+    super::sunset_packet_mine::toggled(game, name, on);
     if name == "Friend Guard" {
         super::sunset_melee::reset_friend_feedback();
     }
@@ -2465,6 +2467,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_player::tick(game, &mods);
     super::sunset_world::tick(game, &mods);
+    super::sunset_packet_mine::tick(game);
     super::sunset_extras::tick(game, &mods);
     super::sunset_vanish::tick(game, mods.iter().find(|m| m.name == "Anti Vanish" && m.on));
     crit_tick(game);
