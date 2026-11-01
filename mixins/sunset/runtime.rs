@@ -4846,6 +4846,7 @@ pub(super) fn chat(game: &mut Game<'_>, message: &str) -> bool {
 }
 
 const HELP: &[(&str, &str)] = &[
+    (".goto <x> <y> <z>|stop", "walk through loaded terrain (within 128 blocks); movement input or a screen cancels"),
     (".menu", "open the click GUI (or press Right Shift)"),
     (".pages", "the same settings as pages in Options > Mods"),
     (".toggle <module>", "turn a module on or off (.t)"),
@@ -4882,6 +4883,7 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
 }
 
 pub(super) fn panic_off(game: &mut Game<'_>) {
+    super::agent::sunset_goto::cancel(game, "navigation stopped by Panic");
     combat_cleanup(game);
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
@@ -5019,6 +5021,10 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         found
     };
     match cmd.as_str() {
+        "goto" => {
+            let text = super::agent::sunset_goto::command(game, &args[1..]).unwrap_or_else(|e| e);
+            say(game, &text);
+        }
         "auradebug" => say(game, &super::sunset_aura::diagnostics()),
         "help" | "commands" => {
             say(game, "Commands:");

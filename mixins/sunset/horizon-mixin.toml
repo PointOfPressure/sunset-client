@@ -9,6 +9,49 @@ priority = 100
 horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
 
 [[module]]
+id = "goto"
+file = "crates/horizon-client/src/game/agent.rs"
+name = "sunset_goto"
+source = "goto.rs"
+visibility = "pub(crate)"
+
+[[module]]
+id = "goto_args"
+file = "crates/horizon-client/src/game/agent.rs"
+name = "sunset_goto_args"
+source = "goto_args.rs"
+
+[[injection]]
+id = "goto_frame"
+kind = "HEAD"
+target = "horizon_client::game::agent::Game<'_>::advance_agent"
+helper = "goto_frame.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "goto_key"
+kind = "HEAD"
+target = "horizon_client::game::Game<'_>::key_pressed"
+helper = "goto_key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "winit::keyboard::KeyCode", value = "key" },
+]
+
+# Socket key-down can skip key_pressed when navigation already holds Forward.
+[[injection]]
+id = "goto_control_key"
+kind = "HEAD"
+target = "horizon_client::game::control::Game<'_>::control_key_down"
+helper = "goto_key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "winit::keyboard::KeyCode", value = "key" },
+]
+
+[[module]]
 id = "runtime"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset"
