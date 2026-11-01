@@ -1796,6 +1796,77 @@ def _():
                 f"(where the command's blocks are: {left:.2%}); {blocks}/12 stone blocks there")
 
 
+@test("Clear Water")
+def _():
+    # A lake 4 deep over diamond ore in a stone rim, seen from a barrier 6 blocks above it and from inside it. Each
+    # frame (a patch of the lake clear of the chat) is compared with the same view drained: Clear Water at 0% must
+    # look nearly drained, at 30% much closer to drained than plain water, at 100% with no tint like plain water, and
+    # under water (its fog hidden) closer than plain. The frame rate with it on holds against off.
+    from PIL import ImageStat
+
+    def patch(name, settle=80):
+        wait(settle)
+        f = colour_frame(name)
+        w, h = f.size
+        return ImageStat.Stat(f.crop((w * 2 // 5, h // 5, w * 7 // 10, h * 9 // 20))).mean
+
+    def apart(a, b):
+        return sum(abs(x - y) for x, y in zip(a, b)) / 3
+
+    def fps():
+        a = ctl("status")
+        wait(60)
+        b = ctl("status")
+        return (b["frames"] - a["frames"]) / max(b["uptime_seconds"] - a["uptime_seconds"], 1e-6)
+
+    def up():
+        cmd(f"tp @s {X0+0.5} {Y+11} {Z0+0.5}")
+        ctl("look", "0", "90")
+
+    def down():
+        cmd(f"tp @s {X0+0.5} {Y+2} {Z0-2.5}")
+        ctl("look", "0", "30")
+
+    reset("creative")
+    # The frame rate uncapped, so a cost would show.
+    cap = ctl("options-get", "maxFps")["options"]["maxFps"]["value"]
+    ctl("options-set", "maxFps", "260")
+    lake = f"{X0-3} {Y+2} {Z0-3} {X0+3} {Y+5} {Z0+3}"
+    cmd(f"fill {X0-4} {Y+1} {Z0-4} {X0+4} {Y+5} {Z0+4} minecraft:stone", f"fill {X0-3} {Y+1} {Z0-3} {X0+3} {Y+1} {Z0+3} minecraft:diamond_ore",
+        f"fill {lake} minecraft:air", f"setblock {X0} {Y+10} {Z0} minecraft:barrier", "effect give @s minecraft:night_vision 600 0 true")
+    down()
+    dry_under = patch("cw_drained_under")
+    up()
+    dry = patch("cw_drained")
+    cmd(f"fill {lake} minecraft:water")
+    plain = apart(dry, patch("cw_plain"))
+    fps_off = fps()
+    setting("clearwater", "opacity", "0")
+    toggle("clear water", True)
+    gone = apart(dry, patch("cw_0"))
+    fps_on = fps()
+    setting("clearwater", "opacity", "30")
+    faint = apart(dry, patch("cw_30"))
+    setting("clearwater", "opacity", "100")
+    setting("clearwater", "lighter tint", "0")
+    full = apart(dry, patch("cw_100"))
+    setting("clearwater", "opacity", "30")
+    setting("clearwater", "lighter tint", "50")
+    down()
+    under = apart(dry_under, patch("cw_under"))
+    toggle("clear water", False)
+    under_plain = apart(dry_under, patch("cw_under_plain"))
+    up()
+    back = apart(dry, patch("cw_back"))
+    cmd(f"fill {X0-4} {Y+1} {Z0-4} {X0+4} {Y+10} {Z0+4} minecraft:air", "effect clear @s")
+    ctl("options-set", "maxFps", str(cap))
+    ok = (gone < plain * 0.25 and faint < plain * 0.6 and abs(full - plain) < plain * 0.15 + 2 and under < under_plain * 0.6
+          and abs(back - plain) < plain * 0.15 + 2 and fps_on > fps_off * 0.85)
+    return ok, (f"colour off the drained lake: plain water {plain:.1f}, 0% {gone:.1f}, 30% {faint:.1f}, 100% no tint {full:.1f}, "
+                f"off again {back:.1f}; under water {under:.1f} on, {under_plain:.1f} off; {fps_off:.0f} fps off, {fps_on:.0f} on "
+                f"(frames in {SHOTS}/cw_*.png)")
+
+
 @test("Text setting editor")
 def _():
     def messages():

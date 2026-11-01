@@ -40,6 +40,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Show lava", false)
             .bool("Show placed blocks", false)
             .num("Placed blocks kept", 2000.0, 100.0, 10000.0, 100.0),
+        Module::new("Clear Water", Render, "See-through water, from above and from inside it: the water's opacity (100% = as it is), a lighter, less blue tint, and no fog under water. Changes redraw the world.")
+            .num("Opacity", 30.0, 0.0, 100.0, 5.0)
+            .num("Lighter tint", 50.0, 0.0, 100.0, 5.0)
+            .bool("Hide fog", true),
         hand_view(),
         Module::new("Shulker Peek", Render, "Hovering a shulker box shows what is in it, in a grid the colour of the box (a middle click keeps it open); hovering an ender chest shows what was in yours when you last opened it.")
             .bool("Ender chest", true),
@@ -443,6 +447,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
     horizon_client::font::sunset_font::STYLE.store(font, Ordering::Relaxed);
     no_render(game, mods);
     xray(game, mods);
+    clear_water(game, mods);
     ender_seen(game);
     match on(mods, "Tunnel ESP") {
         Some(m) => scan_tunnels(game, &m, ticks),
@@ -528,7 +533,8 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     }
     // Particles: all of them, or the listed types, never made.
     horizon_client::particles::sunset_particles::set(flag("Hide all particles"), m.as_ref().map_or("", |m| m.t("Particles")));
-    fog::NO_WATER.store(flag("Hide water fog"), Ordering::Relaxed);
+    let clear_fog = mods.iter().any(|m| m.name == "Clear Water" && m.on && m.b("Hide fog"));
+    fog::NO_WATER.store(flag("Hide water fog") || clear_fog, Ordering::Relaxed);
     fog::NO_LAVA.store(flag("Hide lava and powder snow fog"), Ordering::Relaxed);
     overlay::NO_FIRE.store(flag("Hide fire overlay"), Ordering::Relaxed);
     overlay::NO_LIQUID.store(flag("Hide liquid overlay"), Ordering::Relaxed);
@@ -590,6 +596,19 @@ fn xray(game: &mut Game<'_>, mods: &[Module]) {
     horizon_client::mesher::sunset_xray::ON.store(want.is_some(), Ordering::Relaxed);
     game.all_sections_changed();
     rs(|r| r.xray = Some(key));
+}
+
+// Clear Water: the mesher draws water with the copy of its sprites at the chosen opacity and a lighter tint; the
+// world is rebuilt when that changes.
+fn clear_water(game: &mut Game<'_>, mods: &[Module]) {
+    use horizon_client::mesher::sunset_water as w;
+    let key = mods.iter().find(|m| m.name == "Clear Water" && m.on).map_or((w::STEPS as u32, 0), |m| {
+        ((m.n("Opacity") / 100.0 * w::STEPS as f64).round().clamp(0.0, w::STEPS as f64) as u32, m.n("Lighter tint").round().clamp(0.0, 100.0) as u32)
+    });
+    if (w::LEVEL.swap(key.0, Ordering::Relaxed), w::TINT.swap(key.1, Ordering::Relaxed)) == key {
+        return;
+    }
+    game.all_sections_changed();
 }
 
 // Show placed blocks: where your own placing put a block, oldest first, for the world or server they are in (kept

@@ -6662,6 +6662,7 @@ fn aliases(name: &str) -> &'static str {
         "Criticals" => "crits",
         "Offhand" => "totem auto totem inventory totem hover totem crystal gapple",
         "Xray" => "x-ray",
+        "Clear Water" => "water opacity see through transparent",
         "No Render" => "no hide fog fog water darkness blindness overlay particles particle",
         _ => "",
     }

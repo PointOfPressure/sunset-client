@@ -169,6 +169,13 @@ source = "hand_view_flags.rs"
 visibility = "pub"
 
 [[module]]
+id = "water_flags"
+file = "crates/horizon-client-render/src/mesher.rs"
+name = "sunset_water"
+source = "water_flags.rs"
+visibility = "pub"
+
+[[module]]
 id = "particle_flags"
 file = "crates/horizon-client-render/src/particles.rs"
 name = "sunset_particles"
@@ -564,6 +571,18 @@ target = "horizon_client_render::particles::ParticleEngine::push"
 helper = "particle_push.rs"
 bindings = [
   { name = "particle", ty = "&Particle", value = "&particle" },
+]
+
+[[injection]]
+id = "water-sprites"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::sprites::Sprites::register"
+helper = "water_sprites.rs"
+bindings = [
+  { name = "this", ty = "&mut Sprites", value = "&mut *self" },
+  { name = "name", ty = "&str", value = "name" },
+  { name = "decoded", ty = "&crate::sprite_cache::Decoded", value = "&decoded" },
 ]
 
 [[injection]]
