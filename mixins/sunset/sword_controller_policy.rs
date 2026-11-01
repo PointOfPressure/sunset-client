@@ -1,5 +1,5 @@
-//! Original combat-intent controller. All observations and accepted deeds
-//! are supplied by the native adapter; this module never changes game state.
+// Original combat-intent controller. All observations and accepted deeds
+// are supplied by the native adapter; this module never changes game state.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Attack {
     pub minimum_charge: f32,

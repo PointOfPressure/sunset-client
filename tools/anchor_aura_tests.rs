@@ -2,50 +2,11 @@
 mod state;
 use state::{Step, Wait};
 
-#[test]
-fn health_aware_threshold_allows_a_finish_without_relaxing_invalid_settings() {
-    assert_eq!(state::target_min(6.0, 3.0), Some(3.0));
-    assert_eq!(state::target_min(6.0, 20.0), Some(6.0));
-    assert_eq!(state::target_min(0.0, 20.0), Some(0.0));
-    for (min, hp) in [
-        (f64::NAN, 20.0),
-        (-1.0, 20.0),
-        (6.0, 0.0),
-        (6.0, f64::INFINITY),
-    ] {
-        assert_eq!(state::target_min(min, hp), None);
-    }
-}
 
-#[test]
-fn hurt_immunity_prevents_sending_another_blast_to_that_target() {
-    assert!(state::target_available(20.0, false));
-    assert!(!state::target_available(20.0, true));
-    assert!(!state::target_available(0.0, false));
-    assert!(!state::target_available(f64::NAN, false));
-}
 
-#[test]
-fn opportunities_prefer_ready_attacks_then_finishes_and_self_cost() {
-    let rank = |d, h, s, a| state::opportunity(d, h, s, a).unwrap();
-    assert!(state::better(
-        rank(6.0, 20.0, 2.0, true),
-        rank(20.0, 20.0, 1.0, false)
-    ));
-    assert!(state::better(
-        rank(4.0, 4.0, 2.0, true),
-        rank(15.0, 20.0, 1.0, true)
-    ));
-    assert!(state::better(
-        rank(8.0, 20.0, 1.0, true),
-        rank(10.0, 20.0, 4.0, true)
-    ));
-    assert!(!state::better(
-        rank(8.0, 20.0, 1.0, true),
-        rank(8.0, 20.0, 1.0, true)
-    ));
-    assert!(state::opportunity(f64::NAN, 20.0, 0.0, true).is_none());
-}
+
+
+
 
 #[test]
 fn automated_supports_cannot_open_an_interactive_screen() {
@@ -95,7 +56,7 @@ fn each_clicked_face_ray_stops_outside_support() {
 }
 
 #[test]
-fn offhand_glowstone_requires_observed_full_charge_before_detonation() {
+fn native_ordering_rule_requires_full_charge_with_offhand_fuel() {
     assert_eq!(state::next(None, true), Step::Place);
     for charge in 0..4 {
         assert_eq!(state::next(Some(charge), true), Step::Charge);

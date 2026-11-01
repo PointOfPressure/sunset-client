@@ -6,7 +6,7 @@ check actual routing; those assertions are not represented as compiled tests.
 No native client, renderer, connection or fixture is started.
 """
 from pathlib import Path
-import subprocess,tempfile
+import re,subprocess,tempfile
 
 def function(text,signature):
     start=text.index(signature);opening=text.index('{',start);depth=1
@@ -20,17 +20,24 @@ def main():
     crystal=(root/'crystal_aura.rs').read_text(encoding='utf-8')
     shared=(root/'explosive_aura.rs').read_text(encoding='utf-8')
     prepare=function(crystal,'pub(super) fn prepare(')
-    assert prepare.index('!same_setup_scene(game, old)')<prepare.index('if !allowed(game)')
+    compact=lambda text:re.sub(r'\s+','',text)
+    assert compact(prepare).index('!same_setup_scene(game,old)')<compact(prepare).index('if!allowed(game)')
     disallowed=function(prepare,'if !allowed(game)')
-    timeout=function(prepare,'if st(|s| s.queued_at.is_some_and')
-    shared_pause=function(shared,'if !can_act(game)')
-    for branch in [disallowed,timeout]:assert 'suspend();' in branch and 'reset();' not in branch
-    assert 'sunset_crystal_aura::suspend();' in shared_pause and 'sunset_crystal_aura::reset();' not in shared_pause
-    assert 'if crystal.is_none() { super::sunset_crystal_aura::reset(); }' in shared
-    assert 'else { reset(); return None; }' in prepare
+    match=re.search(r'if\s+st\(\|s\|\s*s\.queued_at\.is_some_and',prepare)
+    assert match
+    timeout=function(prepare,match[0])
+    pause=re.search(r'if[^\n]*!can_act\(game\)',shared)
+    assert pause
+    shared_pause=function(shared,pause[0])
+    assert 'paused(game);' in disallowed and 'reset();' not in disallowed
+    assert 'suspend();' in timeout and 'reset();' not in timeout
+    assert 'sunset_crystal_aura::paused(game);' in shared_pause and 'sunset_crystal_aura::suspend();' in shared_pause and 'sunset_crystal_aura::reset();' not in shared_pause
+    assert 'crystal.and_then(|m|super::sunset_crystal_aura::prepare(game,Some(m),ticks))' in shared
+    assert 'CRYSTAL_ON.swap(crystal.is_some()' in shared and 'sunset_crystal_aura::disabled(game);' in shared
+    assert 'else{disabled(game);returnNone;}' in compact(prepare)
     packet=function(crystal,'pub(super) fn packet(')
-    assert 'C::Login(_) | C::Respawn(_) | C::Disconnect(_)' in packet and '{ reset(); return; }' in packet
-    assert 'attempts >= 3' in prepare, 'Production rejected-ID guard must still use the retained retry count'
+    assert 'C::Login(_) | C::Respawn(_) | C::Disconnect(_)' in packet and '{ discard_scene(); return; }' in packet
+    assert 'attempts>=3' in compact(prepare), 'Production rejected-ID guard must still use the retained retry count'
     print('source-route contract: 1 passed (shared contention, prepare, timeout, explicit boundaries; not compiled)',flush=True)
     state=crystal.split('// BEGIN PURE CRYSTAL STATE\n',1)[1].split('// END PURE CRYSTAL STATE',1)[0]
     suspend=function(crystal,'pub(super) fn suspend(');reset=function(crystal,'pub(super) fn reset(')
@@ -38,6 +45,7 @@ def main():
 #![allow(dead_code)]
 #[path="POLICY"]mod setup;
 mod game {
+ pub mod sunset_explosive_aura {pub fn clear_view(_:bool){}}
  pub mod sunset_combat_control {
   pub static RELEASES:std::sync::atomic::AtomicUsize=std::sync::atomic::AtomicUsize::new(0);
   pub fn release(owner:&str){assert_eq!(owner,"Crystal Aura");RELEASES.fetch_add(1,std::sync::atomic::Ordering::SeqCst);}
@@ -47,14 +55,15 @@ mod game {
   pub fn cancel_turns(owner:&str){assert_eq!(owner,"Crystal Aura");CANCELS.fetch_add(1,std::sync::atomic::Ordering::SeqCst);}
  }
  mod aura {
+ mod prediction {pub fn reset_receipts(){}}
  use super::sunset;use std::{sync::{Mutex,OnceLock},time::Instant};
  const NAME:&str="Crystal Aura";
  STATE
  use state::{Action,Clock};
  struct State { clock:Clock,queued_at:Option<Instant>,plan:Option<()>,attempts:Vec<(u32,u8)>,
-  setup:crate::setup::Ledger,setup_scene:Option<u32>,notes:usize }
+  setup:crate::setup::Ledger,setup_scene:Option<u32>,notes:usize,weapon:Option<()>,lookahead:Option<()>,opening:f64 }
  impl Default for State {fn default()->Self{Self{clock:Clock::default(),queued_at:None,plan:None,attempts:vec![],
-  setup:crate::setup::Ledger::new(),setup_scene:None,notes:0}}}
+  setup:crate::setup::Ledger::new(),setup_scene:None,notes:0,weapon:None,lookahead:None,opening:0.0}}}
  static STATE:OnceLock<Mutex<State>>=OnceLock::new();
  fn st<R>(f:impl FnOnce(&mut State)->R)->R{f(&mut STATE.get_or_init(||Mutex::new(State::default())).lock().unwrap())}
  fn note(_n:usize){st(|s|s.notes+=1);}

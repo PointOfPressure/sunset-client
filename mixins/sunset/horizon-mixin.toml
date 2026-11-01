@@ -955,11 +955,11 @@ bindings=[
 
 [[injection]]
 id="crystal-optimizer-target-filter"
-kind="RETURN"
+kind="HEAD"
+cancellable=true
 target="horizon_client::game::dragon::Game<'_>::special_targets"
 helper="optimizer_targets.rs"
 bindings=[
-  {name="targets",ty="Vec<(u32,horizon_core::geometry::Aabb)>",value="$value"},
   {name="game",ty="&crate::game::Game<'_>",value="&*self"},
 ]
 
@@ -1011,14 +1011,22 @@ file = "crates/horizon-client/src/game.rs"
 name = "sunset_prediction"
 source = "prediction.rs"
 
+[[module]]
+id="raw_mouse"
+file="crates/horizon-client-input/src/mouse.rs"
+name="sunset_mouse_input"
+source="raw_mouse.rs"
+visibility="pub"
+
 [[injection]]
-id = "combat-raw-mouse-input"
-kind = "HEAD"
-target = "horizon_client::game::<Game<'_> as ApplicationHandler>::device_event"
-helper = "combat_mouse_motion.rs"
-bindings = [
-  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
-  { name = "event", ty = "&winit::event::DeviceEvent", value = "&event" },
+id="combat-raw-mouse-input"
+kind="HEAD"
+target="horizon_client_input::mouse::MouseLook::handle_accumulated_movement"
+helper="combat_mouse_motion.rs"
+bindings=[
+  {name="this",ty="&MouseLook",value="&*self"},
+  {name="active",ty="bool",value="window_active"},
+  {name="grabbed",ty="bool",value="grabbed_with_player"},
 ]
 
 [[module]]
@@ -1074,3 +1082,9 @@ id = "bot_remote"
 file = "crates/horizon-client/src/game/remote.rs"
 name = "sunset_bot_remote"
 source = "bot_remote.rs"
+
+[[module]]
+id="explosive_tactics"
+file="crates/horizon-client/src/game.rs"
+name="sunset_explosive_tactics"
+source="explosive_tactics.rs"

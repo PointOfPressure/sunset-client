@@ -91,29 +91,9 @@ fn prototype()->durability_patch::Prototype{durability_patch::Prototype{
  assert_eq!(horizons(Use::Anchor,99),Horizons{others:5,local:0});
  assert_eq!(horizons(Use::CrystalPlace,u32::MAX),Horizons{others:5,local:5});
 }
-#[test]fn bot_flight_override_has_two_local_tick_identity_lease(){
- let mut lease=FlightLease::default();lease.offer(7,10);
- for now in 10..=12{assert_eq!(lease.offset(7,now,3,|n|Some(Vec3::new(n as f64,0.0,0.0))),Some(Vec3::new(3.0,0.0,0.0)));}
- assert!(lease.offset(7,13,3,|_|panic!("expired path must not run")).is_none());
- assert!(lease.offset(8,11,3,|_|panic!("wrong actor")).is_none());
- assert!(lease.offset(7,11,0,|_|panic!("zero lead")).is_none());
- lease.clear();assert!(lease.offset(7,11,3,|_|panic!("cleared")).is_none());
-}
-#[test]fn bot_override_shift_is_read_only_and_unknown_path_falls_back(){
- let mut lease=FlightLease::default();lease.offer(1,0);
- assert!(lease.offset(1,0,4,|_|None).is_none());
- assert!(lease.offset(1,0,4,|_|Some(Vec3::new(f64::NAN,0.0,0.0))).is_none());
- let s=snapshot(Vec3::new(3.0,0.0,0.0),false);
- let p=with_offset(s,Vec3::new(2.0,0.5,0.0)).unwrap();
- near(p.feet.x,2.5);near(p.feet.y,1.5);near(s.rendered_feet.x,0.5);
-}
-#[test]fn rtt_uses_observed_spawn_ema_before_tab_latency(){
- let mut r=Rtt::default();assert_eq!(r.ticks(None),1);assert_eq!(r.ticks(Some(-9)),1);
- assert_eq!(r.ticks(Some(149)),3);r.placement_observed(0);r.placement_observed(21);
- assert_eq!(r.ticks(Some(149)),3);r.placement_observed(4);assert_eq!(r.ticks(Some(900)),4);
- r.placement_observed(8);assert_eq!(r.ticks(None),5);r.reset();assert_eq!(r.ticks(None),1);
- assert_eq!(r.confirm_window(None),4);assert_eq!(r.confirm_window(Some(i32::MAX)),20);
-}
+
+
+
 #[test]fn tracker_uses_server_updates_not_rendered_or_native_velocity(){
  let mut tracks=Tracks::default();let p=Vec3::ZERO;
  assert_eq!(tracks.observe(1,10,p,2).unwrap().velocity,Vec3::ZERO);
@@ -130,7 +110,7 @@ fn prototype()->durability_patch::Prototype{durability_patch::Prototype{
  t.forget(1);assert_eq!(t.observe(1,2,Vec3::ZERO,2).unwrap().velocity,Vec3::ZERO);
  for id in 2..=32{t.observe(id,2,Vec3::ZERO,2).unwrap();}
  assert!(matches!(t.observe(33,2,Vec3::ZERO,2),Err(Error::Capacity)));
- t.reset();assert!(t.observe(33,2,Vec3::ZERO,2).is_ok());
+ t=Tracks::default();assert!(t.observe(33,2,Vec3::ZERO,2).is_ok());
 }
 #[derive(Default)]struct Scene{solid:Vec<BlockPos>,missing:bool,border:Option<Aabb>}
 impl BlockCollisionWorld for Scene {
@@ -200,10 +180,11 @@ fn near(a:f64,b:f64){assert!((a-b).abs()<1e-9,"{a} != {b}");}
  let mut steps=7;let p=forecast(Scene::default(),s,5,&mut steps,512).unwrap();
  assert_eq!(p.simulated_ticks,7);assert_eq!(steps,0);
 }
-#[test]fn anchor_placement_checks_current_and_predicted_other_player_box(){
- let s=snapshot(Vec3::new(0.4,0.0,0.0),true);
- let p=forecast(Scene::default(),s,3,&mut 10,512).unwrap();
- assert!(occupies(Aabb::block(BlockPos::new(0,1,0)),s.rendered_box,p));
- assert!(occupies(Aabb::block(BlockPos::new(1,1,0)),s.rendered_box,p));
- assert!(!occupies(Aabb::block(BlockPos::new(3,1,0)),s.rendered_box,p));
+
+
+#[test]fn bot_projection_override_shift_remains_read_only(){
+ let s=snapshot(Vec3::new(3.0,0.0,0.0),false);
+ let p=with_offset(s,Vec3::new(2.0,0.5,0.0)).unwrap();
+ near(p.feet.x,2.5);near(p.feet.y,1.5);near(s.rendered_feet.x,0.5);
+ assert!(with_offset(s,Vec3::new(f64::NAN,0.0,0.0)).is_err());
 }

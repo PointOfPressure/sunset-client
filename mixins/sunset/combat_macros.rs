@@ -55,6 +55,7 @@ enum Action {
         step: Step,
         click: Click,
         slot: usize,
+        select: Option<usize>,
         destination: [i32; 3],
         before: u32,
     },
@@ -232,6 +233,52 @@ fn stack(game: &Game<'_>, slot: usize, name: &str) -> bool {
 fn item_slot(game: &Game<'_>, name: &str) -> Option<usize> {
     util::find_held(game, |n| n == name).filter(|&slot| stack(game, slot, name))
 }
+
+// Unknown runtime components cannot establish that main-hand use passes.
+// Native item prototypes provide the ordinary component facts. Cosmetic and
+// durability wire additions do not alter use; removals are conservatively unknown.
+fn known_click_patch(stack:&horizon_client::items::ItemStack)->bool {
+    if stack.extra.as_ref().is_some_and(|extra|!extra.other.is_empty()){return false;}
+    let Some(patch)=stack.wire_patch() else{return true;};
+    use horizon_protocol::{buf::Reader,item::component as c};
+    let mut reader=Reader::new(&patch);
+    let Ok(added)=reader.count(64) else{return false;};
+    if reader.count(64).ok()!=Some(0){return false;}
+    for _ in 0..added {
+        let Ok(kind)=reader.varint() else{return false;};
+        if !matches!(kind,c::DAMAGE|c::ENCHANTMENTS|c::CUSTOM_NAME|c::ITEM_NAME
+            |c::LORE|c::REPAIR_COST|c::ITEM_MODEL|c::CUSTOM_MODEL_DATA
+            |c::TOOLTIP_DISPLAY|c::ENCHANTMENT_GLINT_OVERRIDE){return false;}
+        let Ok(length)=reader.count(reader.remaining()) else{return false;};
+        if reader.bytes(length).is_err(){return false;}
+    }
+    reader.remaining()==0
+}
+fn click_facts(game:&Game<'_>,slot:usize)->policy::ClickFacts {
+    let Some(stack)=game.inventory.get(slot).and_then(|stack|stack.as_ref()).filter(|s|s.count>0)
+        else{return policy::ClickFacts{empty:true,..Default::default()};};
+    let Some(info)=game.items().get(&stack.item) else{return policy::ClickFacts::default();};
+    let has=|name:&str|info.components.iter().any(|component|component==name);
+    let tag=|name:&str|game.items().item_tags.get(name).is_some_and(|items|items.contains(&*stack.item));
+    policy::ClickFacts{empty:false,known:known_click_patch(stack),
+        consuming:has("minecraft:consumable"),blocking:has("minecraft:blocks_attacks"),
+        kinetic:has("minecraft:kinetic_weapon"),equip_swap:info.equip_slot.is_some()&&info.swappable,
+        sword:tag("minecraft:swords"),axe:tag("minecraft:axes"),
+        mace:util::short(&stack.item)=="mace",totem:util::short(&stack.item)=="totem_of_undying"}
+}
+fn crystal_route(game:&Game<'_>,name:&str,base:bool,preferred:usize)->Option<policy::UseRoute> {
+    policy::placement_route(game.selected,preferred,std::array::from_fn(|slot|stack(game,slot,name)),
+        std::array::from_fn(|slot|policy::click_through(click_facts(game,slot),base)),stack(game,OFFHAND,name))
+}
+fn crystal_use_action(game:&Game<'_>,run:&Run,step:Step,click:Click,name:&str,
+    destination:[i32;3])->Option<Action> {
+    let base=matches!(util::short(&util::facts(game,click.pos).name),"obsidian"|"bedrock");
+    let route=crystal_route(game,name,base,run.previous)?;
+    let selected=route.select.unwrap_or(game.selected);
+    Some(Action::Use{step,click,select:route.select,slot:if route.offhand{OFFHAND}else{selected},
+        destination,before:game.world.block(destination[0],destination[1],destination[2]).0})
+}
+
 fn anchor_charge(game: &Game<'_>, p: [i32; 3]) -> Option<u8> {
     if !game.world.loaded(p[0], p[2]) {
         return None;
@@ -415,16 +462,17 @@ fn camera_click(game:&Game<'_>)->Option<Click> {
     let hit=game.pick()?;
     Some(Click{pos:hit.pos,face:policy::face(hit.face)?,hit:hit.point})
 }
-fn crystal_intent(game:&Game<'_>,settings:&Module,budget:&mut Budget)->Option<([i32;3],Step,Option<u32>)> {
+fn crystal_intent(game:&Game<'_>,settings:&Module,preferred:usize,budget:&mut Budget)->Option<([i32;3],Step,Option<u32>)> {
     if let Some((id,at,_))=crosshair_crystal(game,budget){
         return Some(([at[0].floor() as i32,at[1].floor() as i32-1,at[2].floor() as i32],Step::CrystalBreak,Some(id)));
     }
     let click=camera_click(game)?;
     if matches!(util::short(&util::facts(game,click.pos).name),"obsidian"|"bedrock"){
-        return crystal_room(game,click.pos).then_some((click.pos,Step::CrystalPlace,None));
+        return (crystal_room(game,click.pos) && crystal_route(game,"end_crystal",true,preferred).is_some()).then_some((click.pos,Step::CrystalPlace,None));
     }
     if !settings.b("Auto obsidian") || !inert(game,click.pos)
-        || item_slot(game,"obsidian").is_none() || item_slot(game,"end_crystal").is_none(){return None;}
+        || crystal_route(game,"obsidian",false,preferred).is_none()
+        || crystal_route(game,"end_crystal",true,preferred).is_none(){return None;}
     let normal=match click.face{0=>[0,-1,0],1=>[0,1,0],2=>[0,0,-1],3=>[0,0,1],4=>[-1,0,0],5=>[1,0,0],_=>return None};
     let target=std::array::from_fn(|i|click.pos[i]+normal[i]);
     (util::can_place(game,target,true) && crystal_space(game,target,false)
@@ -551,25 +599,24 @@ fn body_points(game:&Game<'_>)->Option<Vec<[f64;3]>> {
     let b=game.player.as_ref()?.bounds();let(lo,hi)=(b.min_position(),b.max_position());
     super::sunset_explosive_policy::samples(lo.components(),hi.components())
 }
-fn covered(game:&Game<'_>,anchor:[i32;3],_budget:&mut Budget)->bool {
-    let Some(points)=body_points(game) else{return false;};
-    let blast=center(anchor,false);let mut blocked=0usize;
-    for from in &points {
-        // Only positive intersections with a loaded inert full cube count as
-        // established cover. Missing chunks and ray errors never create cover.
-        for sample in 1..=32 {
-            let t=f64::from(sample)/33.0;
-            let at:[f64;3]=std::array::from_fn(|i|from[i]+(blast[i]-from[i])*t);
-            let cell=at.map(|n|n.floor() as i32);
-            if cell!=anchor && inert(game,cell) && (0..3).all(|i|
-                at[i]-f64::from(cell[i])>1e-5 && at[i]-f64::from(cell[i])<1.0-1e-5){
-                blocked+=1;break;
-            }
+fn guard_open_points(game:&Game<'_>,anchor:[i32;3],budget:&mut Budget)->Option<(usize,Vec<[f64;3]>)> {
+    let points=body_points(game)?;let total=points.len();let blast=center(anchor,false);
+    let mut open=Vec::with_capacity(total);
+    for point in points {
+        match super::sunset_explosive_damage::known_line(game,point,blast,Some(anchor),budget)? {
+            true=>open.push(point),false=>{},
         }
     }
-    points.len()-blocked < (points.len() as f64*0.15).ceil() as usize
+    Some((total,open))
+}
+fn covered(game:&Game<'_>,anchor:[i32;3],budget:&mut Budget)->bool {
+    guard_open_points(game,anchor,budget)
+        .is_some_and(|(total,open)|policy::guard_already_covered(total,open.len()))
 }
 fn guard_slot(game:&Game<'_>,run:&Run)->Option<usize> {
+    guard_slot_at(game,run.pos,run.settings.p("Mode")=="Double")
+}
+fn guard_slot_at(game:&Game<'_>,anchor:[i32;3],double:bool)->Option<usize> {
     let mut weaker=None;
     for slot in 0..9 {
         let Some(stack)=game.inventory[slot].as_ref().filter(|s|s.count>0) else{continue;};
@@ -583,15 +630,15 @@ fn guard_slot(game:&Game<'_>,run:&Run)->Option<usize> {
         weaker.get_or_insert(slot);
     }
     if weaker.is_some(){return weaker;}
-    let needed=u32::from(anchor_charge(game,run.pos).unwrap_or(0)==0)
-        +u32::from(run.settings.p("Mode")=="Double");
+    let needed=u32::from(anchor_charge(game,anchor).unwrap_or(0)==0)+u32::from(double);
     let count=game.inventory[..9].iter().flatten().filter(|s|util::short(&s.item)=="glowstone")
         .fold(0u32,|n,s|n.saturating_add(s.count));
     (count>needed).then(||util::find_hotbar(game,|n|n=="glowstone")).flatten()
 }
 fn guard_place(game:&Game<'_>,anchor:[i32;3],budget:&mut Budget)->Option<([i32;3],Click)> {
     let feet=util::block_pos(game)?;let eye=game.eye_position()?;
-    let player=game.player.as_ref()?.bounds();let points=body_points(game)?;
+    let player=game.player.as_ref()?.bounds();let (_,points)=guard_open_points(game,anchor,budget)?;
+    let needed=policy::guard_shade_needed(points.len())?;
     let blast=center(anchor,false);let mut cells=Vec::with_capacity(12);
     for dx in -1..=1 {for dz in -1..=1 {
         if dx!=0 || dz!=0 {cells.push([feet[0]+dx,feet[1],feet[2]+dz]);}
@@ -610,7 +657,7 @@ fn guard_place(game:&Game<'_>,anchor:[i32;3],budget:&mut Budget)->Option<([i32;3
             || policy::ray(eye,std::array::from_fn(|i|blast[i]-eye[i]),lo,hi,util::dist(eye,blast)).is_some(){continue;}
         let shade=points.iter().filter(|point|policy::ray(**point,
             std::array::from_fn(|i|blast[i]-point[i]),lo,hi,util::dist(**point,blast)).is_some()).count();
-        if shade<(points.len() as f64*0.15).ceil() as usize {continue;}
+        if shade<needed {continue;}
         ranked.push((cell,shade,util::dist(center(cell,false),blast)));
     }
     ranked.sort_by(|a,b|b.1.cmp(&a.1).then(a.2.total_cmp(&b.2)));
@@ -628,6 +675,7 @@ fn use_action(
         step,
         click,
         slot,
+        select: None,
         destination,
         before: game
             .world
@@ -723,9 +771,12 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
         }
         if !super::sunset_loot_guard::allows(game, Blast::anchor(target), m.b("Protect loot")) { return true; }
         if !recognized_hand(game, Kind::Anchor) || stack(game, OFFHAND, "glowstone") { return false; }
-        if anchor_charge(game, target) == Some(0) && item_slot(game, "glowstone").is_none() {
+        if !policy::anchor_supplied(anchor_charge(game,target).is_some_and(|charge|charge>0),
+            util::find_hotbar(game,|name|name=="glowstone").is_some(),detonator(game).is_some()) {
             return false;
         }
+        if m.b("Safe anchor") && m.p("If unguarded")=="Cancel"
+            && guard_slot_at(game,target,m.p("Mode")=="Double").is_none(){return false;}
         (
             m,
             Kind::Anchor,
@@ -773,6 +824,13 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
             }
         }
     };
+    if kind==Kind::Crystal && step!=Step::CrystalBreak {
+        let Some(click)=camera_click(game) else{return false;};
+        let base=matches!(util::short(&util::facts(game,click.pos).name),"obsidian"|"bedrock");
+        let item=if step==Step::Base{"obsidian"}else{"end_crystal"};
+        if crystal_route(game,item,base,game.selected).is_none()
+            || (step==Step::Base && crystal_route(game,"end_crystal",true,game.selected).is_none()) {return false;}
+    }
     if !super::sunset_loot_guard::allows(game, planned_blast(kind, pos), settings.b("Protect loot")) { return true; }
     let owner = if kind == Kind::Anchor {
         ANCHOR
@@ -863,21 +921,17 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             let destination = if step == Step::Guard { run.guard? } else { p };
             let click=if step==Step::Base {
                 let click=camera_click(game)?;
-                if crystal_intent(game,&run.settings,budget)?.0!=p || !visible(game,click,budget){return None;}
+                if crystal_intent(game,&run.settings,run.previous,budget)?.0!=p || !visible(game,click,budget){return None;}
                 let normal=match click.face{0=>[0,-1,0],1=>[0,1,0],2=>[0,0,-1],3=>[0,0,1],4=>[-1,0,0],5=>[1,0,0],_=>return None};
-                let slot=item_slot(game,"obsidian")?;
+                let route=crystal_route(game,"obsidian",false,run.previous)?;
+                let slot=if route.offhand{OFFHAND}else{route.select.unwrap_or(game.selected)};
                 let native=super::remote::sunset_aura_base::BaseClick{clicked:click.pos,normal,point:click.hit};
                 let range=game.reach();let mut rays=12;
                 if !super::remote::sunset_aura_base::valid(game,p,slot,native,range,&mut rays){return None;}
                 click
             }else{support(game,destination,budget)?};
-            Some(use_action(
-                game,
-                step,
-                click,
-                if step==Step::Guard{guard_slot(game,run)?}else{item_slot(game,"obsidian")?},
-                destination,
-            ))
+            if step==Step::Base {crystal_use_action(game,run,step,click,"obsidian",destination)}
+            else{Some(use_action(game,step,click,guard_slot(game,run)?,destination))}
         }
         Step::CrystalPlace => {
             if !crystal_room(game, p) {
@@ -895,13 +949,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             {
                 return None;
             }
-            Some(use_action(
-                game,
-                step,
-                click,
-                item_slot(game, "end_crystal")?,
-                p,
-            ))
+            crystal_use_action(game,run,step,click,"end_crystal",p)
         }
         Step::CrystalBreak => {
             let id = run.crystal.or_else(|| crystal_on(game, p))?;
@@ -1059,7 +1107,7 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], _ticks: u64) {
     }
     if run.sequence.kind==Kind::Crystal {
         let mut budget=Budget::new(8);
-        if let Some((pos,step,cid))=crystal_intent(game,&run.settings,&mut budget){
+        if let Some((pos,step,cid))=crystal_intent(game,&run.settings,run.previous,&mut budget){
             run.pos=pos;run.sequence=Sequence::new(Kind::Crystal,step,false);run.crystal=cid;
         }else{
             run.deadline=game.ticks.saturating_add(60);
@@ -1171,6 +1219,7 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
                     step,
                     click,
                     slot,
+                    select,
                     destination,
                     before,
                 },
@@ -1178,12 +1227,14 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
                     step: b,
                     click: c,
                     slot: d,
+                    select: selected,
                     destination: e,
                     before: f,
                 },
             ) => {
                 step == b
                     && slot == d
+                    && select == selected
                     && destination == e
                     && before == f
                     && click.pos == c.pos
@@ -1211,9 +1262,15 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
                 game.reset_attack_strength();
                 state(|s| s.retries.sent(id, game.ticks));
             }
-            Action::Use { click, slot, step, .. } => {
+            Action::Use { click, slot, select, step, .. } => {
+                // Reselecting a pass-through main hand is part of the accepted
+                // deed, not planning; preserve the existing session/slot lease.
+                if let Some(selected)=select {
+                    hold(game,selected);note_main(game);
+                    state(|s|if let Some(r)=s.run.as_mut().filter(|r|r.token==token){r.owned=selected;});
+                }
                 if slot != OFFHAND {
-                    hold(game, slot);
+                    hold(game, slot);note_main(game);
                     state(|s| {
                         if let Some(r) = s.run.as_mut().filter(|r| r.token == token) {
                             r.owned = slot;

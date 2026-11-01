@@ -283,7 +283,6 @@ impl Module {
     pub(super) fn info(&self) -> Option<String> {
         match self.name {
             "Flight" => Some(self.p("Mode").to_owned()),
-            "Kill Aura" => Some(num(self.n("Range"))),
             "Fast Place" => Some(num(self.n("Speed"))),
             "Speed" | "Criticals" => Some(self.p("Mode").to_owned()),
             _ => None,
@@ -1289,13 +1288,7 @@ pub(super) fn kind_of(mob: &horizon_client::mobs::Mob) -> Kind {
     }
 }
 
-pub(super) fn wanted(m: &Module, kind: Kind) -> bool {
-    match kind {
-        Kind::Player => m.b("Players"),
-        Kind::Hostile => m.b("Hostiles"),
-        Kind::Passive => m.b("Passive"),
-    }
-}
+
 
 pub(super) fn is_friend(friends: &[String], names: &[(u32, String)], id: u32) -> bool {
     names
@@ -1459,6 +1452,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
         (m.name, m.on)
     });
     super::sunset_combat_inventory::toggled(game, name, on);
+    if name == "Friend Guard" { super::sunset_melee_assist::reset_friend_feedback(); }
     if !on {
         super::sunset_packet_delay::disabled(game, name);
         match name {
@@ -1476,7 +1470,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
             "Crystal PvP Bot" => super::sunset_crystal_bot::disabled(game),
             "Crystal Aura" => super::sunset_crystal_aura::disabled(game),
             "Kill Aura" => super::sunset_aura::disabled(game),
-            "Anchor Aura" => super::sunset_anchor_aura::reset(),
+            "Anchor Aura" => super::sunset_anchor_aura::disabled(game),
             "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
             _ => {},
         }
@@ -1727,7 +1721,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         super::sunset_aura::disabled(game);
         super::sunset_combat_control::reset();
         super::sunset_crystal_aura::disabled(game);
-        super::sunset_anchor_aura::reset();
+        super::sunset_anchor_aura::disabled(game);
+        super::sunset_crystal_aura::cleanup_shared(game);
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
         horizon_client::motion::sunset_motion::set_safe_walk(false);
@@ -4344,7 +4339,13 @@ pub(super) fn panic_off(game: &mut Game<'_>) {
     super::sunset_city_trap::cancel(game);
     super::sunset_crystal_optimizer::reset();
     super::sunset_melee_assist::cancel(game);
+    super::sunset_crystal_aura::suspend();
+    super::sunset_anchor_aura::suspend();
+    super::sunset_aura::disabled(game);
     super::sunset_combat_control::reset();
+    super::sunset_crystal_aura::disabled(game);
+    super::sunset_anchor_aura::disabled(game);
+    super::sunset_crystal_aura::cleanup_shared(game);
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
         game.pitch = pitch;

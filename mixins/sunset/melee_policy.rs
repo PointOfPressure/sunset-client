@@ -86,15 +86,7 @@ pub(super) fn smash_bonus(fall: f64) -> Option<f64> {
     Some(first + middle + tail)
 }
 
-pub(super) fn smash_eligible(fall: f64, velocity_y: f64, gliding: bool, min_fall: f64) -> bool {
-    fall.is_finite()
-        && velocity_y.is_finite()
-        && min_fall.is_finite()
-        && !gliding
-        && velocity_y < 0.0
-        && fall > 1.5
-        && fall >= min_fall.max(1.5)
-}
+
 
 pub(super) fn should_tap(
     sprinting: bool,
@@ -111,19 +103,9 @@ pub(super) fn jump_knockback(velocity: [f64; 3]) -> bool {
         && velocity[0].hypot(velocity[2]) >= 0.1
 }
 
-// Smart/Wait permit a normal hit after a bounded wait. Only never converts a
-// grounded hit into a claimed critical. A genuine native critical wins now.
-pub(super) fn critical_ready(mode: &str, critical: bool, waited: u64, limit: u64) -> bool {
-    critical || mode == "Off" || (mode != "Only" && waited >= limit)
-}
 
-pub(super) fn assisted_axis(proposed: f64, user: f64) -> f64 {
-    if !proposed.is_finite() || !user.is_finite() || user == 0.0 || proposed * user < 0.0 {
-        0.0
-    } else {
-        proposed
-    }
-}
+
+
 
 // Mirrors the native attack-speed attribute kernel for a proposed hand item:
 // base4 plus the item's additive modifier, then active total multipliers.

@@ -2,7 +2,7 @@
 // Surround, Self Trap, Self Web, Auto Web, Hole Filler, Burrow,
 // Offhand and Auto EXP.
 
-use super::sunset::{Category, Module, gui_open, hold, is_friend, own_id, with};
+use super::sunset::{Category, Module, gui_open, hold, with};
 use super::sunset_util::*;
 use super::Game;
 use horizon_protocol::packets::play::{self, Serverbound as S};
@@ -755,7 +755,6 @@ fn aim_allowed(game: &Game<'_>, module: &Module) -> bool {
 }
 
 pub(super) fn aim_before(game: &Game<'_>) {
-    super::sunset_melee_assist::aim_before(game);
     cs(|state| state.aim_before=[game.yaw,game.pitch]);
 }
 
@@ -793,6 +792,10 @@ fn aim_turn(game: &Game<'_>, module: &Module, seconds: f64, user: [f64; 2]) -> [
 }
 
 pub(super) fn aim_after(game: &mut Game<'_>) {
+    let device=horizon_client::mouse::sunset_mouse_input::take();
+    if game.native_window() && game.native_on(super::sunset::ID) && game.native_playing() && !gui_open() {
+        super::sunset_crystal_bot::mouse_delta(game,device);
+    }
     let responsive=with(|s| {
         if !s.is_on("Auto Totem") || s.is_on("Auto Inventory Totem") {return None;}
         s.module("Auto Totem").cloned()

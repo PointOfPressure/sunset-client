@@ -9,6 +9,7 @@ parser.add_argument('engine',type=Path)
 ENGINE=parser.parse_args().engine.resolve()
 control=(ROOT/'mixins/sunset/combat_control.rs').read_text(encoding="utf-8")
 melee=(ROOT/'mixins/sunset/melee_assist.rs').read_text(encoding="utf-8")
+runtime=(ROOT/'mixins/sunset/runtime.rs').read_text(encoding="utf-8")
 net=(ENGINE/'crates/horizon-client/src/net.rs').read_text(encoding="utf-8")
 remote=(ENGINE/'crates/horizon-client/src/game/remote.rs').read_text(encoding="utf-8")
 
@@ -34,4 +35,16 @@ assert 'let sent=s.sent;'.replace(' ','') in cancel and 'let blocked=s.blocked;'
 assert '..State::default()' in cancel
 release=body(melee,'release_lease')
 assert 'end.current()' in release and 'lease.restore(' in release
+normal=re.sub(r'\s+','',runtime)
+assert '"AnchorAura"=>super::sunset_anchor_aura::disabled(game)' in normal
+assert 'sunset_anchor_aura::reset()' not in runtime, 'Runtime off/cleanup requires Game-aware owned hand return'
+pre_tick=body(runtime,'pre_tick')
+master=pre_tick[pre_tick.index('if !game.native_on(ID)'):]
+panic=body(runtime,'panic_off')
+for scope in [master,panic]:
+    assert scope.index('sunset_combat_control::prepare_cleanup(game)')<scope.index('sunset_melee_assist::cancel(game)')<scope.index('sunset_combat_control::reset()')
+    assert scope.index('sunset_crystal_aura::disabled(game)')<scope.index('sunset_crystal_aura::cleanup_shared(game)')
+    assert scope.index('sunset_anchor_aura::disabled(game)')<scope.index('sunset_crystal_aura::cleanup_shared(game)')
+assert panic.index('sunset_anchor_aura::suspend()')<panic.index('sunset_combat_control::reset()')
+assert panic.index('sunset_crystal_aura::suspend()')<panic.index('sunset_combat_control::reset()')
 print('combat cleanup native schema/cancellation audit passed')

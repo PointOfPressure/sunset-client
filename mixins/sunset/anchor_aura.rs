@@ -1,12 +1,13 @@
 // Original native Anchor Aura. Each use waits for an observed block-state
 // change; the client never predicts charge, removal, or explosion damage.
-use super::sunset::{Category, Module, cancel_turns, gui_open, hold, look_at, try_turn_then, with};
+use super::sunset::{Category, Module, cancel_turns, gui_open, look_at, try_turn_then, with};
 use super::sunset_anchor_state::{self as order, Step, Wait};
 use super::sunset_explosive_aura::Rating;
+use super::{sunset_explosive_tactics as tactics,sunset_explosive_choice::Kind};
 use super::sunset_explosive_damage::{
-    Blast, clear_line, local_damage, safety_damage, target_damage,
+    Blast, clear_line, local_damage,
 };
-use super::sunset_explosive_policy::{Budget, Limits, in_range, safe};
+use super::sunset_explosive_policy::{Budget, in_range};
 use super::sunset_util::{self as util, OFFHAND, Target};
 use super::{Dim, Game, Screen};
 use super::{sunset_prediction as prediction,sunset_faceplace_policy as face};
@@ -21,34 +22,15 @@ use std::time::{Duration, Instant};
 
 const NAME: &str = "Anchor Aura";
 const SCAN: usize = 128;
-const RADIUS: i32 = 5;
-const SIDE: i32 = RADIUS * 2 + 1;
-const VOLUME: usize = (SIDE * SIDE * SIDE) as usize;
 const MAX_EVALUATED: usize = 4;
 const MAX_FAILED: usize = 32;
 const ACK_TIMEOUT: u64 = 30;
 
-pub(super) fn defaults() -> Vec<Module> {
-    vec![Module::new(NAME, Category::Combat,
-        "Observed anchor sequence with target estimates and selected self-damage model. Hidden server rules remain unknown; friends use unmitigated damage. Protect loot pauses module-planned blasts near an observed player death for 30 seconds; it does not track dropped items.")
-        .bool("Place", true)
-        .text("Entities", "player")
-        .num("Target range", 10.0, 1.0, 16.0, 0.5)
-        .num("Range", 4.5, 1.0, 5.0, 0.1)
-        .num("Walls range", 0.0, 0.0, 5.0, 0.1)
-        .num("Min damage", 6.0, 0.0, 36.0, 0.5)
-        .num("Max self damage", 6.0, 0.0, 36.0, 0.5)
-        .pick("Damage model", &["Observed equipment", "Unmitigated"])
-        .bool("Protect loot", true)
-        .num("Max friend damage", 0.0, 0.0, 36.0, 0.5)
-        .bool("Anti suicide", true)
-        .num("Min health remaining", 4.0, 0.0, 36.0, 0.5)
-        .num("Action delay", 0.0, 0.0, 20.0, 1.0)
-        .num("Turn Speed",4.5,1.0,10.0,0.5).bool("Render",true).text("Render Color","#FFFF9A3C")
-        .bool("Pause on use", true)
-        .bool("Anti bot", true)
-        .bool("Ignore teams", true)
-        .bool("Swing", true)]
+pub(super) fn defaults()->Vec<Module> {
+    vec![Module::new(NAME,Category::Combat,"Anchor combat with observed place/charge/detonate ordering and staged hurt windows. Unknown server equipment and rules remain estimates.")
+        .num("Min Damage",6.0,0.0,20.0,0.5).num("Max Self Damage",6.0,0.0,20.0,0.5)
+        .bool("Render",true).text("Render Color","#FFFF9A3C").num("Turn Speed",4.5,1.0,10.0,0.5)
+        .bool("Protect Loot",true)]
 }
 
 #[derive(Clone, Copy)]
@@ -76,19 +58,26 @@ struct Plan {
     ticks: u64,
     module: Module,
 }
+
 #[derive(Default)]
 struct State {
     session: Option<(i32, Dim)>,
+    session_arc:Option<std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<horizon_protocol::connection::Counters>>>>>,
     last_tick: u64,
     cursor: usize,
     origin: Option<[i32; 3]>,
     anchors: Vec<[i32; 3]>,
     pending: Option<Pending>,
-    failed: Vec<([i32; 3], BlockStateId)>,
+    failed: Vec<([i32; 3], BlockStateId,u64)>,
+    aim_wait:Option<([i32;3],u64)>,
+    spent:Option<([i32;3],u64)>,
     token: u64,
     next_action: u64,
-    exhausted: bool,
     plan: Option<Plan>,
+    lookahead:Option<(Action,Rating)>,
+    rival:f64,
+    placed_turn:Option<f32>,
+    probe:usize,
     phase: &'static str,
     reason: &'static str,
     last_active_phase: &'static str,
@@ -122,7 +111,7 @@ pub(super) fn suspend() {
     super::sunset_combat_control::release(NAME);
     cancel_turns(NAME);
     state(|s| {
-        s.plan=None;
+        s.plan=None;s.lookahead=None;
         if s.pending.is_some_and(|p|p.sent.is_none()) {s.pending=None;}
     });
 }
@@ -193,10 +182,10 @@ fn ready(game: &Game<'_>, m: &Module) -> bool {
         && !game.spectator()
         && game.selected < 9
         && [
-            m.n("Range"),
-            m.n("Walls range"),
-            m.n("Target range"),
-            m.n("Action delay"),
+            tactics::anchor_range(game),
+            0.0,
+            10.0,
+            0.0,
         ]
         .iter()
         .all(|n| n.is_finite() && *n >= 0.0)
@@ -204,8 +193,9 @@ fn ready(game: &Game<'_>, m: &Module) -> bool {
             .player
             .as_ref()
             .is_some_and(|p| p.health.health() > 0.0)
-        && (!m.b("Pause on use") || (game.using.is_none() && game.mining.is_none() && !game.right))
-        && !game.keys.contains(&winit::keyboard::KeyCode::ShiftLeft)
+        && game.using.is_none() && game.mining.is_none()
+        && !game.player.as_ref().is_some_and(|p|p.shift_key_down)
+        && !fuel(game,OFFHAND) && !tactics::fixed_look(game)
         && super::sunset::CRIT_STAGE.load(Ordering::Relaxed) == 0
         && !with(|s| s.is_on("Blink"))
 }
@@ -244,170 +234,77 @@ fn item(game: &Game<'_>, slot: usize, name: &str) -> bool {
     }
     .is_some_and(|s| s.count > 0 && util::short(&s.item) == name)
 }
-fn slot_for(game: &Game<'_>, step: Step) -> Option<usize> {
+fn slot_for(game:&Game<'_>,step:Step)->Option<usize> {
+    let selected=game.selected.min(8);
     match step {
-        Step::Place => util::find_held(game, |n| n == "respawn_anchor")
-            .filter(|&s| item(game, s, "respawn_anchor")),
-        Step::Charge => util::find_held(game, |n| n == "glowstone").filter(|&s| fuel(game, s)),
-        Step::Detonate => {
-            let selected = game.selected.min(8);
-            if !fuel(game, selected) {
-                Some(selected)
-            } else {
-                (0..9).find(|&s| !fuel(game, s))
-            }
+        Step::Place=>if item(game,selected,"respawn_anchor"){Some(selected)}else{util::find_hotbar(game,|n|n=="respawn_anchor")},
+        Step::Charge=>if fuel(game,selected){Some(selected)}else{util::find_hotbar(game,|n|n=="glowstone")},
+        Step::Detonate=> {
+            if fuel(game,OFFHAND){return None;}
+            if tactics::combat_item(game,game.inventory.get(selected).and_then(|s|s.as_ref())){return Some(selected);}
+            util::find_hotbar(game,|n|n=="totem_of_undying").or_else(||(0..9).find(|&slot|
+                tactics::combat_item(game,game.inventory.get(slot).and_then(|s|s.as_ref()))))
         }
     }
 }
 
 // Bound population processing as well as explosion work. Overflow fails closed
 // so a crowded world cannot silently drop a protected player from safety checks.
-fn players(game: &Game<'_>, m: &Module) -> Option<(Vec<Target>, Vec<Target>)> {
-    let eye = game.eye_position()?;
-    let own = game.remote.as_ref()?.entity_id as u32;
-    let friends = with(|s| s.friends.clone());
-    let (mut targets, mut protected) = (Vec::new(), Vec::new());
-    for (i, mob) in game.mobs.iter().enumerate() {
-        if i >= 256 {
-            return None;
-        }
-        if mob.id == own || !mob.alive() || mob.removed {
-            continue;
-        }
-        let t = util::mob_target(mob);
-        if !t
-            .pos
-            .iter()
-            .chain(t.lo.iter())
-            .chain(t.hi.iter())
-            .all(|n| n.is_finite())
-        {
-            return None;
-        }
-        if !in_range(eye, t.pos, 26.0) {
-            continue;
-        }
-        let name = game.remote_player_name(mob.id);
-        let friend = name.is_some_and(|n| friends.iter().any(|f| f.eq_ignore_ascii_case(n)));
-        // Unknown names may hide a friend: protect rather than attack them.
-        if friend || (t.player && name.is_none()) || util::spared(game, m, mob.id, t.player) {
-            if protected.len() == 16 {
-                return None;
-            }
-            protected.push(t);
-        } else if in_range(eye, t.pos, m.n("Target range"))
-            && util::player_enemy(game,mob)
-            && super::sunset_aura::entity_listed(m.t("Entities"), &t)
-        {
-            targets.push(t);
-        }
-    }
-    util::sort_targets(game, &mut targets, "Lowest distance");
-    if let Some(steer)=super::sunset_crystal_bot::steer(game) {targets.sort_by_key(|t|t.id!=steer.target);}
-    targets.truncate(4);
-    Some((targets, protected))
+fn players(game:&Game<'_>,_m:&Module)->Option<(Vec<Target>,Vec<Target>)> {tactics::players(game)}
+fn optimistic(p:[i32;3],targets:&[Target])->f64 {
+    let at=p.map(|v|f64::from(v)+0.5);
+    targets.iter().map(|t| {let raw=super::sunset_explosive_policy::raw_damage(util::dist(at,t.pos),5.0,1.0).unwrap_or(0.0);
+        let hp=f64::from(t.health).max(0.01);let damage=f64::from(raw)*1.5;
+        damage.min(hp)+if damage>=hp{1000.0}else{0.0}}).fold(0.0,f64::max)
 }
-
-fn limits(game:&Game<'_>,m: &Module) -> Limits {
-    let steering=super::sunset_crystal_bot::steer(game);
-    Limits {
-        min_target: steering.map_or_else(||m.n("Min damage"),|s|s.anchor_min),
-        max_self: steering.map_or_else(||m.n("Max self damage"),|s|s.self_cap),
-        max_friend: m.n("Max friend damage"),
-        min_remaining: m.n("Min health remaining"),
-        anti_suicide: m.b("Anti suicide"),
-    }
+fn cap(game:&Game<'_>,m:&Module)->f64 {super::sunset_crystal_bot::steer(game).map_or_else(||m.n("Max Self Damage"),|s|s.self_cap)}
+fn damage_ok(game:&mut Game<'_>,m:&Module,p:[i32;3],targets:&[Target],friends:&[Target],step:Step,budget:&mut Budget)->Option<(u32,Rating)> {
+    let (now,opening)=damage_pair(game,m,p,targets,friends,step,budget)?;
+    if step==Step::Place {now.or(opening)} else {now}
 }
-fn damage_ok(
-    game: &mut Game<'_>,
-    m: &Module,
-    p: [i32; 3],
-    targets: &[Target],
-    friends: &[Target],
-    step: Step,
-    budget: &mut Budget,
-) -> Option<(u32, Rating)> {
-    let blast = Blast::anchor(p);
-    if !super::sunset_loot_guard::allows(game, blast, m.b("Protect loot")) {
-        reason("searching", "loot guard rejected blast");
-        return None;
-    }
-    let own = safety_damage(local_damage(game, blast, budget)?, m.p("Damage model"));
-    let health = game
-        .player
-        .as_ref()
-        .map(|p| f64::from(p.health.health() + p.health.absorption()))?;
-    let l = limits(game,m);
-    if own > l.max_self {
-        reason("searching", "self damage exceeds cap");
-        return None;
-    }
-    if l.anti_suicide && (health <= own || health - own < l.min_remaining) {
-        reason("searching", "anti suicide or health reserve");
-        return None;
-    }
-    let mut friend_upper: f64 = 0.0;
+fn damage_pair(game:&mut Game<'_>,m:&Module,p:[i32;3],targets:&[Target],friends:&[Target],step:Step,budget:&mut Budget)->Option<(Option<(u32,Rating)>,Option<(u32,Rating)>)> {
+    let blast=Blast::anchor(p);
+    if !super::sunset_loot_guard::allows(game,blast,m.b("Protect Loot")) {return None;}
+    let own=local_damage(game,blast,budget)?.estimate;
+    let player=game.player.as_ref()?;let health=f64::from(player.health.health()+player.health.absorption());let max=cap(game,m);
+    if own>max||tactics::endangered(own,health,game.creative){return None;}
+    let mut friend_peak:f64=0.0;
     for f in friends {
         let projected=prediction::target(game,f,prediction::rtt(game).min(5))?;
-        if !in_range(blast.center,f.pos,12.0) && !in_range(blast.center,projected.pos,12.0) {continue;}
-        friend_upper = friend_upper.max(target_damage(game, &projected, blast, budget)?.upper);
+        if !in_range(blast.center,f.pos,12.0)&&!in_range(blast.center,projected.pos,12.0){continue;}
+        let damage=tactics::friend_damage(game,&projected,blast,budget)?;
+        friend_peak=friend_peak.max(damage);
+        let creative=super::remote::sunset_combat_remote::player_mode(game,f.id)==Some(1);
+        if damage>max||tactics::endangered(damage,tactics::friend_health(game,f),creative){return None;}
     }
-    if friend_upper > l.max_friend {
-        reason("searching", "protected player damage exceeds cap");
-        return None;
-    }
-    let mut best: Option<(u32, Rating)> = None;
-    for target in targets {
-        let projected=prediction::target(game,target,prediction::rtt(game).min(5))?;
-        if step==Step::Charge && prediction::opens_in(target.id,prediction::rtt(game))>1 {continue;}
+    let mut best:[Option<(u32,Rating)>;2]=[None,None];
+    for t in targets {
+        let projected=prediction::target(game,t,prediction::rtt(game).min(5))?;
         let ahead=match step {Step::Detonate=>0,Step::Charge=>1,Step::Place=>2};
-        let Some((damage,_)) = prediction::estimate(game,&projected,blast,ahead,prediction::rtt(game),budget) else {
-            continue;
-        };
-        let mut l = limits(game,m);
-        state(|s| s.last_prediction = Some((own, damage, friend_upper)));
-        l.min_target = face::anchor(l.min_target,prediction::effective_health(game,target))?;
-        if !safe(l, damage, own, health, friend_upper) {
-            reason("searching", "target threshold or invalid damage policy");
-            continue;
-        }
-        let rating = Rating {
-            target_damage: damage,
-            target_health: prediction::effective_health(game,target).unwrap_or(f64::from(target.health)),
-            self_damage: own,
-            attack: step == Step::Detonate,
-        };
-        if best.as_ref().is_none_or(|(_, old)| prefer(rating, *old)) {
-            best = Some((target.id, rating));
+        let opens=prediction::opens_in(t.id,prediction::rtt(game));
+        let opening=super::sunset_explosive_choice::opening_horizon(ahead,opens);
+        let (damage,_)=prediction::estimate_pair(game,&projected,blast,ahead,opening,prediction::rtt(game),budget)?;
+        state(|s|s.last_prediction=Some((own,damage[0],friend_peak)));
+        let minimum=super::sunset_crystal_bot::steer(game).map_or_else(||m.n("Min Damage"),|s|s.anchor_min);
+        let needed=face::anchor(minimum,prediction::effective_health(game,t))?;
+        for i in 0..2 {
+            if damage[i]<needed||step==Step::Charge&&i==0&&opens>1 {continue;}
+            let kind=match step{Step::Detonate=>Kind::AnchorHit,Step::Charge=>Kind::Charge,Step::Place=>Kind::AnchorPlace};
+            let mut rating=Rating::new(kind,damage[i],prediction::effective_health(game,t).unwrap_or(f64::from(t.health)),own,prediction::held_totem(t.id),ahead as u16);
+            rating.full_damage=damage[2];
+            if best[i].as_ref().is_none_or(|(_,old)|prefer(rating,*old)){best[i]=Some((t.id,rating));}
         }
     }
-    best
+    Some((best[0],best[1]))
 }
 
-fn prefer(next: Rating, old: Rating) -> bool {
-    match (
-        order::opportunity(
-            next.target_damage,
-            next.target_health,
-            next.self_damage,
-            next.attack,
-        ),
-        order::opportunity(
-            old.target_damage,
-            old.target_health,
-            old.self_damage,
-            old.attack,
-        ),
-    ) {
-        (Some(n), Some(o)) => order::better(n, o),
-        (Some(_), None) => true,
-        _ => false,
-    }
+fn prefer(next:Rating,old:Rating)->bool {
+    super::sunset_explosive_choice::prefer_first(next,old,true)
 }
 
 fn reachable(
     game: &Game<'_>,
-    m: &Module,
+    _m: &Module,
     eye: [f64; 3],
     hit: [f64; 3],
     clicked: [i32; 3],
@@ -422,12 +319,8 @@ fn reachable(
     if !game.world.loaded(clicked[0], clicked[2]) {
         return false;
     }
-    in_range(eye, hit, m.n("Range").clamp(0.0, 5.0))
-        && (in_range(
-            eye,
-            hit,
-            m.n("Walls range").clamp(0.0, m.n("Range").clamp(0.0, 5.0)),
-        ) || clear_line(game, eye, ray_end, None, budget))
+    in_range(eye, hit, tactics::anchor_range(game).clamp(0.0,64.0))
+        && clear_line(game, eye, ray_end, None, budget)
 }
 // Click a full solid neighbor face; never air-place or click an anchor/container.
 fn placement(
@@ -505,6 +398,8 @@ fn proposal(
     }
     let step = order::next(charge, fuel(game, OFFHAND));
     if step==Step::Place {
+        if super::sunset_crystal_aura::reserved_cell(p){return None;}
+
         let bounds=horizon_core::geometry::Aabb::block(horizon_core::position::BlockPos::new(p[0],p[1],p[2]));
         for mob in game.mobs.iter().filter(|m|m.kind.id=="minecraft:player"&&!m.removed&&m.alive()) {
             if Some(mob.id)==super::sunset::own_id(game) || super::remote::sunset_combat_remote::player_mode(game,mob.id)==Some(3) {continue;}
@@ -515,7 +410,7 @@ fn proposal(
             if bounds.intersects(mob.bounds()) || bounds.intersects(future) {return None;}
         }
     }
-    if step == Step::Place && !m.b("Place") {
+    if step == Step::Place && tactics::fixed_look(game) {
         return None;
     }
     let slot = slot_for(game, step)?;
@@ -575,9 +470,9 @@ fn observe(game: &Game<'_>) -> bool {
                     if result == Wait::Expired {
                         s.status("blocked", "state confirmation timeout");
                         if s.failed.len() < MAX_FAILED {
-                            s.failed.push((p.action.pos, p.action.before));
+                            s.failed.push((p.action.pos, p.action.before,now+40));
                         } else {
-                            s.exhausted = true;
+                            s.status("blocked","bounded retry ledger full");
                         }
                     }
                 });
@@ -597,16 +492,20 @@ fn observe(game: &Game<'_>) -> bool {
     }
 }
 
+fn retry_blocked(game:&Game<'_>,p:[i32;3])->bool {
+    state(|s|s.failed.iter().any(|&(cell,b,until)|cell==p&&b==block(game,p)&&game.ticks<until))
+}
+
 // Returns true only when this aura owns a queued/new deed. ACK-only waiting
 // yields to the other aura. Call from
 // the shared aura dispatcher; inventory switches occur only inside its deed.
 pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rating> {
     state(|s| {
-        s.plan = None;
+        s.plan = None;s.lookahead=None;
         s.evaluated = 0;
     });
     if !ready(game, m) {
-        reset();
+        suspend();
         reason(
             "paused",
             if game.anchor_works() {
@@ -617,6 +516,7 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
         );
         return None;
     }
+    idle_hand(game);
     state(|s| s.last_prediction = None);
     let Some(origin) = util::block_pos(game) else {
         reset();
@@ -626,22 +526,21 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
     let session = (game.remote.as_ref().map_or(0, |r| r.entity_id), game.dim);
     let restart = state(|s| {
         s.session != Some(session)
+            || s.session_arc.as_ref().is_none_or(|arc|game.remote.as_ref().is_none_or(|r|!std::sync::Arc::ptr_eq(arc,&r.session.counters)))
             || ticks < s.last_tick
             || s.origin.is_some_and(|p| {
                 (0..3).any(|i| (i64::from(p[i]) - i64::from(origin[i])).abs() > 12)
             })
     });
     if restart {
-        reset();
+        let value=state(|s|s.rival);reset();rival(value);
     }
     state(|s| {
-        s.session = Some(session);
+        s.session = Some(session);s.session_arc=game.remote.as_ref().map(|r|r.session.counters.clone());
         s.last_tick = ticks;
     });
-    if observe(game) {
-        return None;
-    }
-    if state(|s| s.exhausted || game.ticks < s.next_action) {
+    let waiting=observe(game);
+    if state(|s| game.ticks < s.next_action) {
         reason("waiting", "action delay or failed-state limit");
         return None;
     }
@@ -654,6 +553,7 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
         return None;
     };
     // Incremental cube scan: at most 128 block reads each tick, 64 retained.
+    let radius=tactics::anchor_range(game).ceil().clamp(1.0,64.0) as i32;let side=(radius*2+1) as usize;let volume=side*side*side;
     let mut candidates = state(|s| {
         if s.origin != Some(origin) {
             s.origin = Some(origin);
@@ -662,11 +562,11 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
         }
         for _ in 0..SCAN {
             let i = s.cursor;
-            s.cursor = (i + 1) % VOLUME;
+            s.cursor = (i + 1) % volume;
             let p = [
-                origin[0] + (i % SIDE as usize) as i32 - RADIUS,
-                origin[1] + (i / SIDE as usize % SIDE as usize) as i32 - RADIUS,
-                origin[2] + (i / (SIDE * SIDE) as usize) as i32 - RADIUS,
+                origin[0] + (i % side) as i32 - radius,
+                origin[1] + (i / side % side) as i32 - radius,
+                origin[2] + (i / (side * side)) as i32 - radius,
             ];
             if game.world.loaded(p[0], p[2])
                 && game.is_anchor(block(game, p))
@@ -677,21 +577,36 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
             }
         }
         s.anchors.retain(|&p| game.is_anchor(block(game, p)));
-        s.failed.retain(|&(p, b)| block(game, p) == b);
+        s.failed.retain(|&(p, b,until)| game.ticks<until && block(game, p) == b);
+
         s.anchors.clone()
     });
     candidates.sort_by(|a, b| {
-        util::dist(util::center_of(*a), target.pos)
-            .total_cmp(&util::dist(util::center_of(*b), target.pos))
+        optimistic(*b,&targets).total_cmp(&optimistic(*a,&targets))
     });
-    if m.b("Place") {
+    let probe=state(|s|{let n=s.probe;s.probe=s.probe.wrapping_add(1);n});
+    if candidates.len()>2{let at=1+probe%(candidates.len()-1);candidates.swap(1,at);}
+    let mut stage=super::sunset_explosive_choice::Stage::default();
+    let mut checked=Vec::new();
+    let mut budget=Budget::new(48);
+    for &cell in candidates.iter().take(64) {
+        if retry_blocked(game,cell){continue;}
+        if state(|s|s.spent.is_some_and(|(p,until)|p==cell&&game.ticks<until)){continue;}
+        let Some(action)=proposal(game,m,cell,target.id,&mut budget) else {continue;};
+        if checked.len()>=MAX_EVALUATED-1 {break;}
+        let pair=damage_pair(game,m,cell,&targets,&friends,action.step,&mut budget);
+        stage.existing_anchor_now|=pair.as_ref().is_some_and(|p|p.0.is_some());
+        stage.existing_anchor_opening|=pair.as_ref().is_some_and(|p|p.1.is_some());
+        checked.push((cell,action,pair));
+    }
+    if stage.new_anchor() && !waiting {
         // A bounded neighborhood, not an entire range cube of damage queries.
-        let mut places = Vec::with_capacity(108);
+        let mut places = Vec::with_capacity(300);
         for target in &targets {
             let p = target.pos.map(|n| n.floor() as i32);
-            for y in 0..=2 {
-                for x in -1..=1 {
-                    for z in -1..=1 {
+            for y in -1..=2 {
+                for x in -2..=2 {
+                    for z in -2..=2 {
                         let at = [p[0] + x, p[1] + y, p[2] + z];
                         if !candidates.contains(&at)
                             && !places.contains(&at)
@@ -704,30 +619,38 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
             }
         }
         places.sort_by(|a, b| {
-            util::dist(util::center_of(*a), target.pos)
-                .total_cmp(&util::dist(util::center_of(*b), target.pos))
+            optimistic(*b,&targets).total_cmp(&optimistic(*a,&targets))
         });
+        if !places.is_empty(){let n=probe%places.len();places.rotate_left(n);}
         candidates.extend(places);
     }
-    let mut budget = Budget::new(48);
     reason("searching", "no candidate passed reach/material checks");
-    let mut evaluated = 0;
+    let mut evaluated = checked.len();
     let mut best: Option<(Action, Rating)> = None;
     for p in candidates {
-        if state(|s| s.failed.contains(&(p, block(game, p)))) {
+        if state(|s|s.spent.is_some_and(|(cell,until)|cell==p&&game.ticks<until)) {continue;}
+
+        if retry_blocked(game,p) {
             continue;
         }
-        let Some(mut a) = proposal(game, m, p, target.id, &mut budget) else {
-            continue;
+        let cached=checked.iter().find(|(cell,_,_)|*cell==p);
+        let (mut a,pair)=if let Some((_,action,pair))=cached {(*action,*pair)} else {
+            if game.is_anchor(block(game,p)){continue;}
+            if evaluated>=MAX_EVALUATED {break;}
+            let Some(action)=proposal(game,m,p,target.id,&mut budget) else {continue;};
+            evaluated+=1;
+            let pair=damage_pair(game,m,p,&targets,&friends,action.step,&mut budget);
+            (action,pair)
         };
-        if evaluated == MAX_EVALUATED {
-            break;
+        let Some((mut now,opening))=pair else {continue;};
+        if a.step==Step::Place {now=now.or(opening);}
+        if a.step==Step::Charge && now.is_some_and(|(_,r)|state(|s|s.rival>0.0&&r.value()<=s.rival+1.0)){continue;}
+        if waiting || now.is_none() {
+            if let Some((_,rating))=opening {preaim(game,m,a, rating);}
+            continue;
         }
-        evaluated += 1;
-        let Some((id, rating)) = damage_ok(game, m, p, &targets, &friends, a.step, &mut budget)
-        else {
-            continue;
-        };
+        let Some((id,rating))=now else {continue;};
+
         a.target = id;
         if best.as_ref().is_none_or(|(_, old)| prefer(rating, *old)) {
             best = Some((a, rating));
@@ -746,7 +669,7 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
         });
         s.status("prepared", "safe candidate available");
     });
-    super::sunset_explosive_aura::show(game,true,action.pos);
+    super::sunset_explosive_aura::show(game,true,action.pos,rating);
     Some(rating)
 }
 
@@ -761,10 +684,15 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
     }
     let mut action = plan.action;
     let Some(eye)=game.eye_position() else {return false;};
-    let turn=super::sunset_aura::next_look(game,look_at(eye,action.hit),m.n("Turn Speed"));
-    let Some(contact)=util::block_contact(game,turn,action.clicked,action.face,m.n("Range")) else {
-        super::sunset::turn(NAME,turn.0,turn.1);return false;
+    let turn=tactics::next_look(game,look_at(eye,action.hit),m.n("Turn Speed"));
+    let Some(contact)=util::block_contact(game,turn,action.clicked,action.face,tactics::anchor_range(game)) else {
+        let expired=state(|s| {let start=s.aim_wait.filter(|(cell,_)|*cell==action.pos).map_or(game.ticks,|(_,at)|at);
+            s.aim_wait=Some((action.pos,start));game.ticks.saturating_sub(start)>=12});
+        if expired {state(|s|{if s.failed.len()<MAX_FAILED{s.failed.push((action.pos,action.before,game.ticks+40));}s.aim_wait=None;});}
+        else if !tactics::fixed_look(game) {super::sunset::turn(NAME,turn.0,turn.1);}
+        return false;
     };
+    state(|s|s.aim_wait=None);
     action.hit=contact;
     let session = (game.remote.as_ref().map_or(0, |r| r.entity_id), game.dim);
     let token = state(|s| {
@@ -778,9 +706,10 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
         return false;
     };
     let expected = m.clone();
-    let Some(eye) = game.eye_position() else {
-        return false;
-    };
+    let from=super::sunset_combat_wire::sent_look(game).unwrap_or((game.yaw,game.pitch));
+    let turn_amount=(turn.0-from.0).abs();
+    if action.step==Step::Place && turn_amount>2.0&&state(|s|s.placed_turn.is_some_and(|old|(old-turn_amount).abs()<1.0e-4)){return false;}
+    let initial_slot=game.selected;
     let (yaw, pitch) = turn;
     // Revalidate after rotation, including current state, materials and damage.
     if !super::sunset_combat_control::claim(NAME) { return false; }
@@ -793,7 +722,8 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
             return;
         }
         let current = with(|s| s.find(NAME).map(|i| s.modules[i].clone()));
-        let valid = current
+        let ranges=tactics::refresh(game);
+        let valid = ranges && game.selected==initial_slot && current
             .as_ref()
             .is_some_and(|m| *m == expected && ready(game, m));
         let mut budget = Budget::new(48);
@@ -830,7 +760,7 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
                     &mut budget,
                 )?;
                 let sent=super::sunset_combat_wire::sent_look(game)?;
-                let contact=util::block_contact(game,sent,a.clicked,a.face,expected.n("Range"))?;
+                let contact=util::block_contact(game,sent,a.clicked,a.face,tactics::anchor_range(game))?;
                 Some(Action{hit:contact,..a})
             })
         } else {
@@ -846,10 +776,7 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
             if !prediction::arm_blast(game,super::sunset_hurt_policy::ShotSource::Anchor(a.pos.map(|v|f64::from(v)+0.5)),
                 Blast::anchor(a.pos),&targets,a.target,prediction::rtt(game).min(5),&mut budget) {return;}
         }
-        let before = game.selected;
-        if a.slot != OFFHAND {
-            hold(game, a.slot);
-        }
+        take_hand(game,a.slot);
         let sequence = util::sequence(game);
         let cursor = [
             (a.hit[0] - f64::from(a.clicked[0])) as f32,
@@ -865,19 +792,19 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
             world_border: false,
             sequence,
         }));
-        if expected.b("Swing") {
+        if true {
             game.swing_arm();
             game.send(S::Punch(Empty));
         }
-        if a.slot != OFFHAND && game.selected == a.slot {
-            hold(game, before);
-        }
+
         state(|s| {
             if let Some(p) = s.pending.as_mut().filter(|p| p.token == token) {
                 p.sent = Some(game.ticks);
             }
             s.sent_count = s.sent_count.saturating_add(1);
             s.last_sent = Some(game.ticks);
+            if a.step==Step::Place{s.placed_turn=Some(turn_amount);}
+            if a.step==Step::Detonate {s.spent=Some((a.pos,game.ticks+u64::from(prediction::rtt(game).saturating_add(2).clamp(4,20))));}
             let phase = match a.step {
                 Step::Place => "place sent",
                 Step::Charge => "charge sent",
@@ -886,7 +813,7 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
             s.status(phase, "awaiting observed server block change");
             s.next_action = game
                 .ticks
-                .saturating_add(expected.n("Action delay").clamp(0.0, 20.0) as u64);
+                .saturating_add(0);
         });
     });
     if accepted {
@@ -904,4 +831,29 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
         reason("waiting", "shared rotation claim busy");
     }
     accepted
+}
+
+pub(super) fn rival(value:f64) {state(|s|s.rival=if value.is_finite(){value.max(0.0)}else{0.0});}
+fn take_hand(game:&mut Game<'_>,slot:usize) {
+    super::sunset_crystal_aura::take_shared(game,slot,NAME);
+}
+fn restore_hand(game:&mut Game<'_>) {
+    super::sunset_crystal_aura::restore_shared(game,NAME,true);
+}
+fn idle_hand(game:&mut Game<'_>) {
+    super::sunset_crystal_aura::idle_shared(game,NAME,true);
+}
+pub(super) fn disabled(game:&mut Game<'_>) {restore_hand(game);reset();}
+pub(super) fn paused(game:&mut Game<'_>) {restore_hand(game);suspend();}
+pub(super) fn idle(game:&mut Game<'_>) {idle_hand(game);suspend();}
+fn preaim(_game:&Game<'_>,_m:&Module,action:Action,rating:Rating) {
+    state(|s|{if s.lookahead.as_ref().is_none_or(|(_,old)|prefer(rating,*old)){s.lookahead=Some((action,rating));}});
+}
+pub(super) fn lookahead()->Option<Rating>{state(|s|s.lookahead.map(|(_,r)|r))}
+pub(super) fn advance_look(game:&mut Game<'_>,m:&Module) {
+    if !ready(game,m)||tactics::fixed_look(game)||super::sunset_combat_control::owner().is_some(){return;}
+    let Some((action,_))=state(|s|s.lookahead) else{return;};
+    let Some(eye)=game.eye_position() else{return;};
+    let turn=tactics::next_look(game,look_at(eye,action.hit),m.n("Turn Speed"));
+    super::sunset::turn(NAME,turn.0,turn.1);
 }

@@ -171,11 +171,10 @@ def run(ctl, target_ctl, mod, shot, check, *, attacker="CodexAttacker",
             elif case == "aura-native-reach":
                 before = setup(distance=3.6)
                 setting("Kill Aura", "Crits", "Off")
-                setting("Kill Aura", "Range", 6.5)
                 toggle("Kill Aura")
                 after, trace = poll(lambda s: hp(s) < hp(before), ticks=50)
                 report(case, hp(after) == hp(before), {"before": before, "after": after, "trace": trace,
-                       "geometry": "Player boxes remain beyond native survival3 entity reach despite configured6.5"})
+                       "geometry": "Current four-setting Kill Aura has no custom range. Player boxes remain beyond native survival3 entity reach."})
             elif case in ("trigger-hit", "trigger-only-grounded"):
                 before = setup()
                 setting("Trigger Bot", "Reaction", 3)

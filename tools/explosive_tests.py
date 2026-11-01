@@ -45,6 +45,7 @@ def main():
             for label, script, extra in [
                 ('crystal state and geometry', 'crystal_aura_tests.py', []),
                 ('native damage equivalence', 'explosive_engine_equivalence.py', [args.engine.resolve()]),
+                ('cached temporal damage and exact aura schemas', 'explosive_tactical_tests.py', [args.engine.resolve()]),
                 ('rotation ownership', 'explosive_turn_tests.py', []),
             ]:
                 run(label, [sys.executable, root/'tools'/script, *extra], tests=True)

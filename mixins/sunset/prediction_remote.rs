@@ -1,16 +1,13 @@
-//! Register as a child of game/remote.rs, alongside the existing inventory bridge.
-//! Read-only snapshots. No packets, forced interpolation or world mutations.
+// Register as a child of game/remote.rs, alongside the existing inventory bridge.
+// Read-only snapshots. No packets, forced interpolation or world mutations.
 use crate::game::Game;
 use horizon_core::geometry::{Aabb,Vec3};
 #[derive(Clone,Copy,Debug)]
 pub(crate) struct RemoteMotion {
-    pub id:u32,pub age:u32,pub rendered:Vec3,pub server:Vec3,pub bounds:Aabb,
+    pub rendered:Vec3,pub server:Vec3,pub bounds:Aabb,
     pub update_interval:u32,pub floating:bool,
 }
-pub(crate) fn own_latency(game:&Game<'_>)->Option<i32> {
-    let remote=game.remote.as_ref()?;
-    Some(remote.tab_players.get(&remote.profile)?.latency)
-}
+
 pub(crate) fn is_player(game:&Game<'_>,kind:i32)->bool {
     game.remote.as_ref().and_then(|r|r.builtin.get("minecraft:entity_type"))
         .and_then(|registry|registry.name(kind))==Some("minecraft:player")
@@ -29,7 +26,7 @@ pub(crate) fn motion(game:&Game<'_>,id:u32)->Option<RemoteMotion> {
     let server=Vec3::new(x,y,z);
     let interval=horizon_client::lan::tracking::settings(&mob.kind.id).1;
     if interval==0 || !server.is_finite() {return None;}
-    Some(RemoteMotion {id,age:mob.age,rendered:mob.position,server,bounds:mob.bounds(),
+    Some(RemoteMotion {rendered:mob.position,server,bounds:mob.bounds(),
         update_interval:interval,
         floating:mob.extra.fall_flying || mob.fluids.in_water || mob.fluids.in_lava ||
             mob.climbing || mob.no_gravity || mob.extra.mount.is_some()})

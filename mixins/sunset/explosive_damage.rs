@@ -430,3 +430,11 @@ pub(super) fn reduce_target_hurt_raw(game:&Game<'_>,target:&Target,sample:Target
     reduced(Defenses{source:source(game,sample.blast)?,armor:f64::from(mob.kind.armor+armor),
         toughness:f64::from(mob.kind.armor_toughness+toughness),resistance,protection},raw)
 }
+
+// A caller that distinguishes open from covered must also distinguish unknown.
+// Reuse the existing strict loaded-chunk collider query and shared ray budget.
+pub(super) fn known_line(game:&Game<'_>,from:[f64;3],to:[f64;3],
+    ignored:Option<[i32;3]>,budget:&mut Budget)->Option<bool> {
+    if !budget.line(){return None;}
+    clear(&mut rays(game,from[1],ignored),from,to)
+}

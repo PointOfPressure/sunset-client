@@ -5,10 +5,10 @@ modules and deferred validation can each consume a budget in the same tick.
 The limits must not be added up as though they were one global scheduler cap.
 The native renderer, world size, other mods and the server still affect cost.
 
-- Crystal Aura advances at most 96 scan cells, considers four nearby targets
+- Crystal Aura advances at most 96 scan cells, considers three nearby targets
   and evaluates at most four candidate actions per planning pass. Its damage
   budget allows 24 predictions. Anchor Aura advances 128 cells of its bounded
-  radius-five scan, evaluates at most four candidates and allows 48 predictions.
+  native-reach scan, evaluates at most four candidates and allows 48 predictions.
   Both share one selected deferred hand action. Execution revalidates current
   geometry, target, equipment and damage rather than trusting the old plan.
 - Every damage budget reserves exposure rays before casting: at most 256 rays
@@ -19,8 +19,7 @@ The native renderer, world size, other mods and the server still affect cost.
   damage evaluations. It adds at most 48 support-ray checks per planning pass,
   with separate fresh validation for an accepted deed. Its 64-cell ledger
   waits 30 ticks, permits at most three sends per unchanged cell and requires
-  actual obsidian payload plus observed-world agreement. The optional setting
-  defaults off. Unrelated packets and empty setup history exit the observer
+  actual obsidian payload plus observed-world agreement. The reference Auto Obsidian control defaults on. Unrelated packets and empty setup history exit the observer
   before per-block work. Ordinary pauses and hand-action contention retain the
   retry/acknowledgement history; explicit module or scene reset clears it.
 - Melee/controller target scans stop above 512 observed entities. The Crystal
@@ -40,14 +39,14 @@ The native renderer, world size, other mods and the server still affect cost.
   placement records, with three attempts per unchanged cell and a 30-tick wait.
   Roof completion requests at most two real jumps per unchanged footprint,
   at least 20 ticks apart.
-- Fake Lag retains at most 64 original movement/tick-end packets, at most
+- Fake Lag retains at most 64 original non-action packets, at most
   4 KiB, and at most one second. Capacity pressure flushes existing packets in
   order. It does not manufacture tick-end packets. Knockback Delay retains at
   most 16 selected impulse packets, 256 KiB total, 32 KiB per packet and one
   second. Correction, world transition, menu and disable paths have separate
   ordering/cleanup rules covered by the focused and native tests.
 - Crystal Optimizer retains at most 64 visual masks and 128 rejected IDs.
-  Its confirmation window is clamped to 10–40 ticks. Rejection overflow
+  Its confirmation window is clamped to 10â€“40 ticks. Rejection overflow
   disables prediction for that scene. The authoritative crystal list remains
   untouched; the native geometry/beam cull skips only the masked body. With no
   masks, the render hook exits after an atomic read.
@@ -57,7 +56,14 @@ and entity identity. A late completion cannot release a newer action with the
 same owner name. Temporary movement and slot restoration are conditional on
 still owning the applied state. Configuration serialization operates on a
 detached copy and projects retained controller leases back to the user's
-baseline; it does not mutate gameplay while saving.
+baseline; it does not mutate gameplay while saving. The new Sword controller
+owns its attacks directly instead of rewriting Kill Aura configuration.
+
+The shared prediction adapter retains 32 tracks and allows 512 simulated motion
+steps per tick, with a 512-cell cap inside each collision step. Accepted incoming
+observations invalidate copies without replenishing the current tick budget.
+Repeated raw damage is sampled once and reduced separately for immediate and
+opening-window scoring; full self/friend safety stays independent of hurt relief.
 
 Diagnostics format text only when `.combatdebug` is requested. There is no new
 per-frame combat log, background network service or render-time attack loop.

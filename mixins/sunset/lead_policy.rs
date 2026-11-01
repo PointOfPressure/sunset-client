@@ -1,4 +1,4 @@
-//! Original bounded forecasting policy. No entity state is modified.
+// Original bounded forecasting policy. No entity state is modified.
 use horizon_core::geometry::{Aabb, Vec3};
 
 pub const TRACK_CAPACITY: usize = 32;
@@ -12,23 +12,6 @@ pub struct Horizons { pub others: u32, pub local: u32 }
 pub fn horizons(action: Use, rtt: u32) -> Horizons {
     Horizons { others: match action { Use::CrystalPlace => rtt.saturating_mul(2).min(5), _ => rtt.min(5) },
         local: if action == Use::CrystalPlace { rtt.min(5) } else { 0 } }
-}
-#[derive(Default, Debug)]
-pub struct Rtt { measured: Option<f64> }
-impl Rtt {
-    /// Matched observed crystal spawn minus this client's actual placement tick.
-    pub fn placement_observed(&mut self, ticks: u64) {
-        if (1..=20).contains(&ticks) {
-            self.measured = Some(self.measured.map_or(ticks as f64,
-                |old| old * 0.75 + ticks as f64 * 0.25));
-        }
-    }
-    pub fn ticks(&self, own_tab_latency_ms: Option<i32>) -> u32 {
-        self.measured.map_or_else(|| own_tab_latency_ms.unwrap_or(0).max(0) as u32 / 50 + 1,
-            |v| v.round() as u32)
-    }
-    pub fn confirm_window(&self, latency: Option<i32>) -> u32 { self.ticks(latency).saturating_add(2).clamp(4, 20) }
-    pub fn reset(&mut self) { self.measured = None; }
 }
 #[derive(Clone, Copy, Debug)]
 struct Track { id: u32, observed: u64, moved: u64, server: Vec3, velocity: Vec3 }
@@ -61,7 +44,7 @@ impl Tracks {
         Ok(Motion { velocity, extra_ticks: age.min(u64::from(interval)) as u32 })
     }
     pub fn forget(&mut self, id: u32) { for slot in &mut self.slots { if slot.is_some_and(|t|t.id==id) {*slot=None;} } }
-    pub fn reset(&mut self) { self.slots.fill(None); }
+
 }
 pub trait CollisionKernel {
     fn clip(&mut self, bounds: Aabb, attempted: Vec3) -> Result<Vec3, Error>;
@@ -75,22 +58,6 @@ pub struct Snapshot {
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Projection { pub offset: Vec3, pub feet: Vec3, pub bounds: Aabb, pub simulated_ticks: u32 }
-#[derive(Clone, Copy, Debug, Default)]
-pub struct FlightLease { target:Option<u32>, issued:u64 }
-impl FlightLease {
-    /// The bot owns its airborne-path model. This lease only gates access to it.
-    pub fn offer(&mut self,target:u32,local_tick:u64) {self.target=Some(target);self.issued=local_tick;}
-    pub fn clear(&mut self) {*self=Self::default();}
-    /// Resolve the bot's CURRENT path on demand; do not store offsets that become
-    /// stale as the actor moves. Called after observing the ordinary motion track
-    /// and before project()'s fast-motion guard. None means ordinary forecasting.
-    pub fn offset(&self,target:u32,local_tick:u64,requested:u32,
-                  mut path:impl FnMut(u32)->Option<Vec3>)->Option<Vec3> {
-        if requested==0 || self.target!=Some(target) || local_tick<self.issued ||
-           local_tick-self.issued>2 {return None;}
-        path(requested).filter(|p|p.is_finite())
-    }
-}
 pub fn with_offset(snapshot:Snapshot,offset:Vec3)->Result<Projection,Error> {
     let feet=snapshot.rendered_feet.add_vector(offset);
     let bounds=snapshot.rendered_box.move_by(offset);
@@ -127,8 +94,4 @@ pub fn project(snapshot: Snapshot, requested: u32, available_steps: &mut u32,
         feet = feet.add_vector(actual);
     }
     Ok(Projection { offset: s.rendered_feet.vector_to(feet), feet, bounds, simulated_ticks: count })
-}
-/// Anchor placement rejects either current or projected other-player occupancy.
-pub fn occupies(cell: Aabb, current: Aabb, projected: Projection) -> bool {
-    cell.intersects(current) || cell.intersects(projected.bounds)
 }

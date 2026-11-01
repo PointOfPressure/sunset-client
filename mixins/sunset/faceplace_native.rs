@@ -1,4 +1,4 @@
-//! Public native facts adapter; no target scan, item mutation or packet send.
+// Public native facts adapter; no target scan, item mutation or packet send.
 use horizon_client::{blocks::BlockFacts,items::ItemStack,world::World};
 use horizon_core::{geometry::Vec3,position::BlockPos};
 use super::{sunset_durability_patch::{self as durability_patch,Prototype},sunset_faceplace_policy::ArmorCondition};

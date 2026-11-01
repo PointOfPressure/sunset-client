@@ -1,5 +1,5 @@
-//! Original threshold policy, derived from observed behavior of the verified reference.
-//! Geometry, friend safety and HurtClock belong to separate layers.
+// Original threshold policy, derived from observed behavior of the verified reference.
+// Geometry, friend safety and HurtClock belong to separate layers.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ArmorCondition {
     /// Already resolved native components: unbreakable is false here.

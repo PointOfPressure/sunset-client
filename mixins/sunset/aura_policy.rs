@@ -1,4 +1,4 @@
-//! Original native rotation and critical-window policies.
+// Original native rotation and critical-window policies.
 pub fn rotation_step(
     base: [f32; 2],
     desired: [f32; 2],

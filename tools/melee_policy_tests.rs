@@ -40,14 +40,10 @@ fn shield_direction_uses_target_facing_and_native_angle() {
 }
 
 #[test]
-fn mace_threshold_and_tiers_follow_real_fall_without_airborne_spoofing() {
+fn mace_bonus_tiers_follow_real_fall() {
     assert_eq!(policy::smash_bonus(3.0), Some(12.0));
     assert_eq!(policy::smash_bonus(8.0), Some(22.0));
     assert_eq!(policy::smash_bonus(10.0), Some(24.0));
-    assert!(!policy::smash_eligible(1.5, -0.1, false, 1.5));
-    assert!(policy::smash_eligible(3.0, -0.5, false, 3.0));
-    assert!(!policy::smash_eligible(3.0, 0.5, false, 3.0));
-    assert!(!policy::smash_eligible(3.0, -0.5, true, 3.0));
     assert_eq!(policy::smash_bonus(f64::NAN), None);
 }
 
@@ -84,24 +80,9 @@ fn tap_and_jump_requests_only_follow_actual_sprint_hits_and_knockback() {
     assert_eq!(policy::POPULATION_LIMIT, 512);
 }
 
-#[test]
-fn real_critical_wait_is_bounded_but_only_mode_never_fakes_one() {
-    assert!(!policy::critical_ready("Wait", false, 7, 8));
-    assert!(policy::critical_ready("Wait", false, 8, 8));
-    assert!(policy::critical_ready("Jump", true, 0, 8));
-    assert!(!policy::critical_ready("Only", false, 100, 12));
-    assert!(policy::critical_ready("Only", true, 0, 12));
-    assert!(policy::critical_ready("Off", false, 0, 12));
-}
 
-#[test]
-fn aim_assistance_stops_on_idle_and_never_pulls_against_user_axis() {
-    assert_eq!(policy::assisted_axis(3.0, 1.0), 3.0);
-    assert_eq!(policy::assisted_axis(-3.0, 1.0), 0.0);
-    assert_eq!(policy::assisted_axis(3.0, 0.0), 0.0);
-    assert_eq!(policy::assisted_axis(f64::NAN, 1.0), 0.0);
-    assert_eq!(policy::assisted_axis(3.0, f64::INFINITY), 0.0);
-}
+
+
 
 #[test]
 fn candidate_attack_speed_uses_its_own_item_and_native_effect_order() {

@@ -31,6 +31,20 @@ pub(crate) fn use_main(game: &mut crate::game::Game<'_>) -> bool {
     game.remote_use_item(horizon_client::first_person::Hand::Main)
 }
 
+// The native UseItem packet and local prediction read Game's look, not the
+// rotation already carried by a movement packet. Scope that look to this
+// synchronous native call; no frame or camera interpolation is advanced.
+pub(crate) fn use_main_at(game:&mut crate::game::Game<'_>,yaw:f32,pitch:f32)->bool {
+    if !yaw.is_finite() || !pitch.is_finite() || !(-90.0..=90.0).contains(&pitch) {return false;}
+    let camera=(game.yaw,game.pitch);
+    game.yaw=(yaw+180.0).rem_euclid(360.0)-180.0;
+    game.pitch=pitch;
+    let used=game.remote_use_item(horizon_client::first_person::Hand::Main);
+    game.yaw=camera.0;
+    game.pitch=camera.1;
+    used
+}
+
 // Native unpredicted menu input: leave local slots untouched and report no
 // predicted changes. A matching predicted click is silently accepted by Java;
 // an unpredicted swap produces the real source/destination slot updates needed

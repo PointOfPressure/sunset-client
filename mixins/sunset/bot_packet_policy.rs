@@ -44,3 +44,47 @@ pub fn blast(packet: &C) -> Option<[f64; 3]> {
     };
     p.center.iter().all(|v| v.is_finite()).then_some(p.center)
 }
+
+// Native preserved component-patch format. Registry id38 is PiercingWeapon
+// in the exact pinned protocol's item/skip.rs. No component bytes are guessed.
+pub fn ordinary_component_hand(mut piercing: bool, patch: Option<&[u8]>) -> Option<bool> {
+    use horizon_protocol::buf::Reader;
+    if let Some(bytes) = patch {
+        if bytes.len() > 8192 {
+            return None;
+        }
+        let mut input = Reader::new(bytes);
+        let added = input.count(64).ok()?;
+        let removed = input.count(64).ok()?;
+        if added + removed > 64 {
+            return None;
+        }
+        let mut seen = Vec::with_capacity(added + removed);
+        for _ in 0..added {
+            let id = input.varint().ok()?;
+            if id < 0 || seen.contains(&id) {
+                return None;
+            }
+            seen.push(id);
+            let size = input.count(input.remaining()).ok()?;
+            input.bytes(size).ok()?;
+            if id == 38 {
+                piercing = true;
+            }
+        }
+        for _ in 0..removed {
+            let id = input.varint().ok()?;
+            if id < 0 || seen.contains(&id) {
+                return None;
+            }
+            seen.push(id);
+            if id == 38 {
+                piercing = false;
+            }
+        }
+        if input.remaining() != 0 {
+            return None;
+        }
+    }
+    Some(!piercing)
+}

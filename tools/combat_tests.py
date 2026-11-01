@@ -38,26 +38,36 @@ def main():
                                      args.engine.resolve(), '--out', foundation])
         foundation_count = json.loads(foundation.read_text(encoding='utf-8'))['passed_tests']
         for name in ['combat_lease', 'combat_cleanup', 'macro_policy', 'melee_policy', 'inventory_policy',
-                     'loot_policy', 'crystal_setup_policy', 'packet_policy', 'sword_policy', 'crystal_bot_policy', 'city_policy', 'roof_scaffold']:
+                     'loot_policy', 'crystal_setup_policy', 'packet_policy', 'crystal_bot_policy', 'city_policy', 'roof_scaffold', 'aim_policy', 'aura_policy', 'mace_policy', 'trigger_policy', 'hurt_policy', 'sword_controller_policy', 'bot_tactics_policy']:
             executable = temporary/(name+'.exe' if sys.platform == 'win32' else name)
             run(name+' compile', ['rustc', '--edition=2024', '--test',
                                   'tools/'+name+'_tests.rs', '-o', executable])
             run(name, [executable])
         run('native Aura base preview and ray', [sys.executable, 'tools/aura_base_engine_tests.py', args.engine.resolve()])
         run('Aura setup suspend and reset lifecycle', [sys.executable, 'tools/aura_setup_lifecycle_tests.py'])
+        run('Aura staged revalidation and scene boundary', [sys.executable, 'tools/aura_boundary_tests.py'])
+        run('Explosive friend selection', [sys.executable, 'tools/explosive_players_tests.py'])
         run('native menu SWAP', [sys.executable, 'tools/inventory_engine_tests.py', args.engine.resolve()])
         run('native packet predicates', [sys.executable, 'tools/packet_engine_tests.py', args.engine.resolve()])
         run('native City mining', [sys.executable, 'tools/city_engine_tests.py', args.engine.resolve()])
         run('native roof visibility', [sys.executable, 'tools/roof_engine_tests.py', args.engine.resolve()])
         run('native Trap placement visibility', [sys.executable, 'tools/trap_visibility_tests.py', args.engine.resolve()])
         run('exact City ownership', [sys.executable, 'tools/city_ownership_tests.py'])
+        run('Crystal weapon restoration', [sys.executable, 'tools/crystal_weapon_tests.py'])
+        run('Bot native mining and food adapters', [sys.executable, 'tools/bot_runtime_adapter_tests.py', args.engine.resolve()])
+        run('Bot tactical lifecycle', [sys.executable, 'tools/bot_lifecycle_tests.py'])
+        run('Friend Guard native feedback', [sys.executable, 'tools/friend_feedback_tests.py'])
         run('GUI controller edit intent', [sys.executable, 'tools/gui_intent_tests.py'])
         run('native cleanup schema', [sys.executable, 'tools/combat_cleanup_schema_tests.py', args.engine.resolve()])
         run('loot integration gates', [sys.executable, 'tools/loot_integration_tests.py'])
         run('macro protected quick press', [sys.executable, 'tools/loot_press_tests.py'])
         if args.dependency_dir:
+            run('Bot melee and native Stab adapters', [sys.executable, 'tools/bot_melee_adapter_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
+            run('native packet codec fields', [sys.executable, 'tools/packet_protocol_fields.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
+            run('native parity geometry and wire', [sys.executable, 'tools/parity_engine_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve(), '--out', temporary/'parity.json'])
             run('native loot identity and wire', [sys.executable, 'tools/loot_engine_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
             run('native inventory wire round-trip', [sys.executable, 'tools/inventory_protocol_fields.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
+            run('native macro carried-stack adapter', [sys.executable, 'tools/macro_protocol_fields.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
     source_hashes = {p.relative_to(repo).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in sorted((repo/'mixins/sunset').glob('*.rs'))}
     count = foundation_count + sum(int(n) for r in records if not r['name'].endswith('compile')

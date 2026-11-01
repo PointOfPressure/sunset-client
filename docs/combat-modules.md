@@ -1,62 +1,59 @@
 # Native combat development
 
-This branch implements the core jobs of the 25 inspected Combat capabilities.
-They remain experimental and disabled by default. Implementation is distinct
-from runtime coverage; consult [validation](combat-validation.md) for the exact
-checkpoint, observed outcomes, failures and remaining work.
-The [work limits](combat-budgets.md) document the caps and their scope.
+The `native-combat-parity` branch develops the 25 Combat capabilities inspected
+in the local 1.0 reference. Every module remains experimental and starts off.
+[Parity notes](combat-parity.md) identify the exact reference and remaining
+native adaptations. [Validation](combat-validation.md) retains historical core
+fixtures separately from the new parity work.
 
-- **Aim Assist, Trigger Bot and Kill Aura:** recent-input aim assistance,
-  crosshair attacks, or bounded visible-target selection. Weapon charge uses
-  the candidate item, and critical conditions use actual native movement.
-- **Shield Breaker, Mace and Spear Swap:** observed shield handling, native
-  mace/enchantment selection during real falls, and key-triggered Lunge or
-  optional crosshair reach poke. Borrowed slots return conditionally.
-- **W Tap and Jump Reset:** short native input changes after an actual charged
-  sprint hit or observed knockback. No upward velocity is invented.
-- **Crystal Aura and Anchor Aura:** shared bounded opportunity selection,
-  observed transactions, collider exposure and equipment-aware safety. A
-  hypothetical mined wall changes exposure without changing damage source.
-- **Crystal Macro and Anchor Macro:** user-directed crystal use or observed
-  place/charge/detonate transactions. Anchor Double means two acknowledged
-  cycles. Crystal Macro requires held use and a legal current crosshair ray.
-- **Auto Totem, Auto Inventory Totem and Hover Totem:** empty-offhand refill,
-  staged inventory/hotbar transactions, or an actual inventory-pointer target.
-  Native SWAP avoids carried-stack pickup, and both server slot updates are
-  required. The two automatic refill providers are mutually exclusive.
-- **FastXP and Key Throw:** native bottle-use pacing and one pearl/wind charge
-  per key edge. Wind jump uses the real jump input and a downward carried look;
-  it does not inject movement. Pearl/Wind keys and Wind jump are configurable.
-- **Friend Guard:** direct-hit, actual carried-look spear and actual-hand use
-  checks, including known friends along a piercing path. Teleport acceptance
-  updates that carried look before the next movement packet.
-- **Auto City and Auto Trap:** one native mining operation or acknowledged
-  obsidian placement around the full target footprint. City rechecks current
-  health/equipment before each mining step. Trap roof completion uses an
-  outside support and at most two real jump requests per unchanged footprint.
-- **Crystal Optimizer:** temporarily masks only native crystal geometry after
-  an accepted outgoing hit. Authoritative entities remain available to Aura
-  and collision checks. Missing confirmation unmasks the entity and suppresses
-  repeated predictions for that rejected ID.
-- **Sword PvP Bot and Crystal PvP Bot:** bounded movement/target controllers
-  coordinating the existing combat modules and real food use. They yield to
-  manual input and each other, retain per-field ownership, and serialize a
-  detached baseline so temporary settings do not overwrite user configuration.
-- **Fake Lag and Knockback Delay:** bounded outgoing movement delay retaining
-  original tick-end markers, and selected own-impulse delay. Network control
-  passes immediately; gameplay actions flush movement first. An explosion packet's visual/audio metadata
-  shares its delay. These are not general-purpose packet interception tools.
+- **Aim Assist:** five reference controls, recent physical mouse motion,
+  current player geometry, recent-hit retention and native sensitivity steps.
+- **Trigger Bot / Kill Aura:** crosshair reaction/charge and critical timing,
+  or native-range enemy selection with Distance/Health/Angle priorities. Kill
+  Aura has four controls; the removed configurable Range is not displayed.
+- **Shield Breaker / Mace / Spear Swap:** native shield disabling, falling Mace
+  and enchantment selection, buffered Lunge or optional crosshair reach poke.
+  Borrowed slots return only while the module still owns them.
+- **W Tap / Jump Reset:** temporary native input after a real forwarded sprint
+  hit/stab or accepted own knockback. No invented upward velocity.
+- **Friend Guard:** direct/manual hits and all native piercing-spear victims,
+  using the actual carried look. Optional named action-bar feedback is limited
+  to one message per 1500 ms.
+- **Crystal Aura / Anchor Aura:** native-range staged planning, RTT-led copied
+  geometry, hurt-window incremental offense and complete self/friend safety.
+  Their [16/6 controls and limits](explosive-auras.md) replace legacy selectors,
+  reach and selectable damage-model settings.
+- **Crystal Macro / Anchor Macro:** held/manual sequencing with actual contacts,
+  material routing, charge states and observed acknowledgements. Single/Double,
+  optional guard cover, offhand behavior and conditional slot return are separate
+  from Aura targeting. Pending native actions remain serialized.
+- **Auto Totem / Auto Inventory Totem / Hover Totem:** empty-offhand refill,
+  staged inventory/hotbar actions, or the actual hovered item. Real state IDs and
+  both server slot updates confirm swaps; local prediction is not an ACK.
+  The two automatic refill providers remain mutually exclusive.
+- **FastXP / Key Throw:** native bottle pacing and buffered one-shot pearl/wind
+  use. Wind jump uses actual native jump/use input and a scoped downward look.
+- **Auto City / Auto Trap:** native mining or bounded acknowledged obsidian
+  placement. City does not persist enabled state. Trap defaults to the reference
+  ring/roof ordering; its native roof-support/jump extension is optional and off.
+- **Crystal Optimizer:** next-tick visual/special-hitbox masking with a measured
+  4–20-tick confirmation window. Authoritative entities remain present; timeout
+  restores visuals and prevents repeated masking of a rejected ID.
+- **Sword PvP Bot:** owns its actual attacks and movement independently of Kill
+  Aura configuration. Patient/Aggressive timing, counters, spacing, critical
+  jumps and native eating retain explicit input/hand ownership.
+- **Crystal PvP Bot:** 13 controls cover melee launch/follow-up, anchor defense,
+  surround, hole/roof work, descent, XP Mending, acknowledged hotbar refill,
+  escape/chase pearls and rival history. Manual input and context pauses retain
+  or release the specific action being owned.
+- **Fake Lag / Knockback Delay:** bounded original-packet FIFO or selected
+  incoming-impulse delay, with explicit flush/replay/context rules. Timing
+  randomness does not establish server acceptance or detection avoidance.
 
-Open Combat in the menu, or use `.settings <module>` for controls and `.bind`
-for module toggles. Spear Lunge, pearl and wind keys are separate settings.
-`.combatdebug` formats decisions only on request; it adds no per-frame log.
-
-The controllers are local arena controllers, not pathfinding or full replicas
-of the reference's autonomous systems. Motion prediction, full incremental
-hurt clocks, face placement, repairs,
-pearl retreats and learned opponent history are outside the present scope.
-All damage bounds depend on observed world state and cannot guarantee survival
-after movement, latency, changed cover, other attacks or server modifications.
+The reference inspection informs observable behavior; this repository does not
+bundle its Java, JAR or assets. Native work budgets, unknown-data refusal and
+framework/UI choices remain documented differences. Implementation, focused
+adapter tests, full compilation and real-player outcomes are separate claims.
 
 ## Recent player-death protection (R10 source)
 
@@ -87,20 +84,20 @@ while leaving its other safety checks in place. The [R10 native proof](evidence/
 covers all four owners and 16 guard scenarios, including Anchor Macro's checkbox
 bypass. It does not claim four separate checkbox tests or a global item guard.
 
-## Optional Aura base setup (R11)
+## Aura base setup and historical core proof
 
-Crystal Aura exposes **Auto obsidian**, off by default, and **Obsidian delay**.
+Crystal Aura exposes **Auto Obsidian**, on by default. The parity control set
+has no separate Obsidian Delay.
 It is a fallback when no ready break or ordinary existing-base placement wins.
-Place must be enabled and both materials available. A real support ray and
+Both materials must be available. A real support ray and
 native dry placement preview must accept the destination; existing solid
 terrain is not mined or overwritten. Hotbar and actual offhand obsidian work
 through ordinary native use and conditional slot return.
 
 An attempted cell requires an actual obsidian block payload and matching
 observed world before Crystal Place can proceed. It then recomputes target,
-self, friend and loot checks using the now-observed terrain. The earlier
-current-air screening can overestimate the later target damage, so a placed
-base can remain unused. It is not cached permission to explode.
+self, friend and loot checks using the now-observed terrain. Future-base exposure uses a copied obsidian block; fresh authoritative scoring
+can still reject a setup after the world or actors change, leaving the base unused. It is not cached permission to explode.
 
 Setup uses the existing scan/action planner, with a 64-cell retry ledger,
 three sends per unchanged cell and a 30-tick wait. Ordinary repeated air

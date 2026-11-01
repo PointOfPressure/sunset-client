@@ -126,7 +126,6 @@ struct State {
     intent: policy::Intent,
     mouse_pending: bool,
     last_food: u64,
-    brain: policy::Brain,
     phase: Option<policy::Phase>,
     reason: &'static str,
     scan_origin: Option<[i32; 3]>,
@@ -139,7 +138,6 @@ struct State {
     threat_signature: u64,
     threat: Option<f64>,
     threat_complete: bool,
-    corrections: Vec<Instant>,
     pause_until: Option<Instant>,
 }
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -289,7 +287,6 @@ pub(super) fn note_totem(game: &Game<'_>, id: i32) {
     }
     state(|s| {
         if game.remote.as_ref().is_some_and(|r| r.entity_id == id) {
-            s.brain.pop(game.ticks);
             s.tactics.fight.own_pop(game.ticks);
         } else if s.target == Some(id as u32) {
             s.tactics.fight.their_pop = Some(game.ticks);
@@ -299,9 +296,7 @@ pub(super) fn note_totem(game: &Game<'_>, id: i32) {
         }
     });
 }
-// Compatibility hook: root replaces its old unqualified correction call with
-// packet(game,&packet) below, which resolves actual relative coordinates.
-pub(super) fn correction() {}
+
 fn count(game: &Game<'_>, item: &str) -> u32 {
     game.inventory
         .iter()
@@ -475,38 +470,7 @@ fn sampled_threat(game: &mut Game<'_>) -> (Option<f64>, bool) {
     (worst, complete)
 }
 
-fn target(game: &Game<'_>, m: &Module) -> (Option<util::Target>, usize) {
-    let Some(eye) = game.eye_position() else {
-        return (None, 0);
-    };
-    let old = state(|s| s.target);
-    let mut kept = None;
-    let mut best = None;
-    let mut near = 0usize;
-    for mob in &game.mobs {
-        if !enemy(game, mob) {
-            continue;
-        }
-        let t = util::mob_target(mob);
-        let Some(distance) = super::sunset_melee_policy::box_distance(eye, t.lo, t.hi) else {
-            return (None, 0);
-        };
-        if distance <= 8.0 {
-            near = near.saturating_add(1);
-        }
-        if Some(t.id) == old && distance <= m.n("Fight range").clamp(8.0, 32.0) + 4.0 {
-            kept = Some(t.clone());
-        }
-        if distance > m.n("Fight range").clamp(8.0, 32.0) {
-            continue;
-        }
-        let score = -distance + (20.0 - f64::from(t.health).min(20.0)) * 0.05;
-        if best.as_ref().is_none_or(|(_, old)| score > *old) {
-            best = Some((t, score));
-        }
-    }
-    (kept.or_else(|| best.map(|(t, _)| t)), near)
-}
+
 
 pub(super) fn pre_input(game: &mut Game<'_>) {
     post_input(game);
@@ -695,7 +659,6 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
         s.phase = Some(decision.phase);
         s.reason = match decision.phase {
             policy::Phase::Search => "waiting for enemy",
-            policy::Phase::Supply => "waiting for supplied native utilities",
             policy::Phase::Press => "closing for native explosive planners",
             policy::Phase::Guard => "guard spacing; bounded threat samples",
             policy::Phase::Retreat => "retreating from observed risk",
@@ -1049,7 +1012,6 @@ struct Tactics {
     box_until: u64,
     box_origin: Option<[i32; 3]>,
     skipped: Vec<([i32; 3], u64)>,
-    last_look: Option<[f64; 3]>,
 }
 pub(super) fn steer(game: &Game<'_>) -> Option<tactics::Steer> {
     if module().is_none() || !state(|s| s.session.as_ref().is_some_and(|old| same(game, old))) {
@@ -1174,12 +1136,11 @@ pub(super) fn attack_sent(game: &Game<'_>, id: u32) {
     let resistance = observed_knockback_resistance(game, mob);
     state(|s| {
         let t = &mut s.tactics;
-        let Some((wanted, tick, yaw, sprint)) = t.attack_wait.take() else {
+        let Some((_, _, yaw, sprint)) =
+            tactics::take_forwarded_attack(&mut t.attack_wait, id, game.ticks)
+        else {
             return;
         };
-        if wanted != id || game.ticks.saturating_sub(tick) > 1 {
-            return;
-        }
         t.fight.struck(game.ticks, at[1]);
         t.flight_tick = Some(game.ticks);
         if let (Some(own), Some(resistance)) = (own, resistance) {
@@ -1344,7 +1305,7 @@ pub(super) fn packet(game: &Game<'_>, packet: &horizon_protocol::packets::play::
                 state(|s| s.tactics.attacked_by = Some((id, game.ticks)));
             }
         }
-        C::PlayerPosition(p) => {
+        C::PlayerPosition(_p) => {
             if let Some(own) = game.player.as_ref() {
                 let from = [own.position.x, own.position.y, own.position.z];
                 let Some(to) = super::sunset_bot_packet_policy::correction(packet, from) else {
@@ -1726,6 +1687,9 @@ fn tactical_tick(game: &mut Game<'_>, m: &Module) -> Option<(policy::Decision, b
         t.flight_tick = Some(game.ticks);
         if let Some((_, r)) = t.rivals.iter_mut().find(|(u, _)| Some(*u) == t.rival) {
             t.fight.observe(view, r);
+        } else {
+            // Combat progress remains live when persistence/learning is off.
+            t.fight.observe_unlearned(view);
         }
     });
     let r = rival();
@@ -1746,13 +1710,30 @@ fn tactical_tick(game: &mut Game<'_>, m: &Module) -> Option<(policy::Decision, b
             s.flip_at = game.ticks.saturating_add(18);
         }
     });
+    // Food and critical retreat use the same entity-feet distance. Mixing
+    // eye-to-box reach here with feet distance can oscillate before use starts.
+    let food_distance = util::dist(own, target.pos);
     let needs_food = state(|s| s.tactics.fight.needs_food);
-    let eating = food_tick(
+    let mut eating = food_tick(
         game,
         (needs_food || life <= m.n("Gapple below HP") - 2.)
             && (!using || view.totems == 0 || life <= 8.)
-            && (distance >= 8. || state(|s| s.food.is_some())),
+            && (food_distance >= 8. || state(|s| s.food.is_some())),
     );
+    let critical_retreat = !eating && tactics::critical_food_retreat(tactics::CriticalFoodView {
+        life,
+        distance: food_distance,
+        needs_food,
+        eating: state(|s| s.food.is_some()),
+        using_food: game.using.is_some(),
+        gapple_hotbar: hand_has(game, "golden_apple", false)
+            || hand_has(game, "enchanted_golden_apple", false),
+        offhand_totem: view.offhand_totem,
+    });
+    if critical_retreat {
+        stop_food(game, true);
+        eating = false;
+    }
     if game.using.is_some() && !eating {
         pause(game, true);
         return None;
@@ -1783,7 +1764,7 @@ fn tactical_tick(game: &mut Game<'_>, m: &Module) -> Option<(policy::Decision, b
     if eating {
         decision = bot_decision(
             policy::Phase::Eat,
-            if distance < 8. { -1 } else { 0 },
+            if food_distance < 8. { -1 } else { 0 },
             0,
             false,
             false,
@@ -1802,7 +1783,23 @@ fn tactical_tick(game: &mut Game<'_>, m: &Module) -> Option<(policy::Decision, b
         decision.side = 0;
         decision.sprint = false;
     }
-    if !occupied && stance != tactics::Stance::Run && !eating {
+    if critical_retreat {
+        if !occupied && m.b("Escape pearl") {
+            occupied = plan_pearl(game, m, &target, true);
+        }
+        decision.phase = policy::Phase::Retreat;
+        decision.forward = -1;
+        decision.side = 0;
+        decision.sprint = false;
+        decision.auras = false;
+        state(|s| {
+            s.tactics.fight.last_retreat = game.ticks;
+            s.tactics.fight.regroup_until = game.ticks.saturating_add(300);
+            s.tactics.stand = None;
+            s.tactics.drop_y = None;
+        });
+    }
+    if !occupied && !critical_retreat && stance != tactics::Stance::Run && !eating {
         if own[1] - target.pos[1] >= 3. && tactics::horizontal(tactics::sub(own, target.pos)) <= 8.
         {
             occupied = lower_enemy(game, m, &target, steering.self_cap);
@@ -1853,7 +1850,7 @@ fn tactical_tick(game: &mut Game<'_>, m: &Module) -> Option<(policy::Decision, b
             occupied = lower_terrain(game, m, &target, stance);
         }
     }
-    if occupied && !eating {
+    if occupied && !eating && !critical_retreat {
         decision.forward = 0;
         decision.side = 0;
         decision.sprint = false;
@@ -2207,7 +2204,7 @@ fn queue_action(
                     && look.1 > 70.
                     && game.ticks.saturating_sub(state(|s| s.tactics.last_xp)) >= 1
                 {
-                    if super::remote::sunset_combat_remote::use_main(game) {
+                    if super::remote::sunset_combat_remote::use_main_at(game,look.0,look.1) {
                         state(|s| s.tactics.last_xp = game.ticks);
                     }
                 }
@@ -2222,7 +2219,7 @@ fn queue_action(
                     && game.ticks <= plan.until
                     && pearl_approved(game, plan)
                 {
-                    if super::remote::sunset_combat_remote::use_main(game) {
+                    if super::remote::sunset_combat_remote::use_main_at(game,look.0,look.1) {
                         state(|s| {
                             s.tactics.pearl = None;
                             s.tactics.pearl_at = Some(game.ticks);
@@ -2358,12 +2355,13 @@ fn mend(game: &mut Game<'_>, m: &Module, idle: bool) -> bool {
     };
     queue_action(game, m, slot, (game.yaw, 86.), BotAction::Xp)
 }
-fn kit_kind(name: &str) -> Option<usize> {
+fn kit_kind(game: &Game<'_>, stack: &horizon_client::items::ItemStack) -> Option<usize> {
+    let name = util::short(&stack.item);
     if name == "end_crystal" {
         Some(0)
     } else if name == "obsidian" {
         Some(1)
-    } else if (name.ends_with("_sword") || name.ends_with("_axe")) && name != "mace" {
+    } else if super::sunset_melee_assist::melee_item(game, Some(stack)) {
         Some(2)
     } else if matches!(name, "golden_apple" | "enchanted_golden_apple") {
         Some(3)
@@ -2400,7 +2398,7 @@ fn refill(game: &mut Game<'_>, m: &Module) -> bool {
         for slot in 0..9 {
             if let Some(s) = game.inventory[slot]
                 .as_ref()
-                .filter(|s| kit_kind(util::short(&s.item)) == Some(kind))
+                .filter(|s| kit_kind(game, s) == Some(kind))
             {
                 total += s.count;
                 if smallest.is_none_or(|(_, n)| s.count < n) {
@@ -2416,7 +2414,7 @@ fn refill(game: &mut Game<'_>, m: &Module) -> bool {
                 game.inventory
                     .get(slot)?
                     .as_ref()
-                    .filter(|s| kit_kind(util::short(&s.item)) == Some(kind))
+                    .filter(|s| kit_kind(game, s) == Some(kind))
                     .map(|s| (slot, s.count))
             })
             .max_by_key(|(_, n)| *n);
@@ -2436,12 +2434,12 @@ fn refill(game: &mut Game<'_>, m: &Module) -> bool {
                     game.inventory[*slot].as_ref().is_some_and(|s| {
                         let name = util::short(&s.item);
                         name != "totem_of_undying"
-                            && (kit_kind(name).is_none()
-                                || kit_kind(name).is_some_and(|k| {
+                            && (kit_kind(game, s).is_none()
+                                || kit_kind(game, s).is_some_and(|k| {
                                     (0..*slot).any(|other| {
-                                        game.inventory[other].as_ref().is_some_and(|x| {
-                                            kit_kind(util::short(&x.item)) == Some(k)
-                                        })
+                                        game.inventory[other]
+                                            .as_ref()
+                                            .is_some_and(|x| kit_kind(game, x) == Some(k))
                                     })
                                 }))
                     })
@@ -2759,7 +2757,7 @@ fn pearl_ready(game: &Game<'_>) -> bool {
     let group = horizon_client::cooldowns::group(stack, info.and_then(|i| i.use_cooldown.as_ref()));
     (state(|s| s.tactics.pearl.is_some()) || game.ticks >= state(|s| s.tactics.fight.next_pearl))
         && !game.cooldowns.is_on_cooldown(&group)
-        && (life > 6. || totem)
+        && tactics::pearl_health_ready(life, totem)
 }
 fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bool) -> bool {
     if !pearl_ready(game) {
@@ -2775,6 +2773,7 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
             .map_or(0., |p| p.health.health() + p.health.absorption());
         let d = tactics::horizontal(tactics::sub(spot, own));
         let actual = game
+            .creatures
             .projectiles
             .iter()
             .take(128)
@@ -2937,14 +2936,48 @@ fn continue_pearl(game: &mut Game<'_>, m: &Module, _target: &util::Target) -> bo
     true
 }
 
+// The reference's broad selector includes spears, but its actual ordinary
+// attack path rejects PIERCING_WEAPON. Select a hand the native path can use.
+fn ordinary_launch_hand(game: &Game<'_>, stack: &horizon_client::items::ItemStack) -> bool {
+    if stack.count == 0
+        || &*stack.item == "minecraft:mace"
+        || !super::sunset_melee_assist::melee_item(game, Some(stack))
+        || horizon_client::spear::Kinetic::of(&stack.item).is_some()
+    {
+        return false;
+    }
+    let Some(info) = game.items().get(&stack.item) else {
+        return false;
+    };
+    let patch = stack.wire_patch();
+    // A changed opaque stack loses its exact preserved component patch. The
+    // native engine cannot establish an ordinary attack for that unknown hand.
+    if patch.is_none() && stack.extra.is_some() {
+        return false;
+    }
+    let piercing = info
+        .components
+        .iter()
+        .any(|name| name == "minecraft:piercing_weapon")
+        || stack.extra.as_ref().is_some_and(|data| {
+            data.other
+                .iter()
+                .any(|(name, _)| name == "minecraft:piercing_weapon")
+        });
+    super::sunset_bot_packet_policy::ordinary_component_hand(piercing, patch.as_deref())
+        == Some(true)
+}
 fn weapon(game: &Game<'_>, shield: bool) -> Option<usize> {
     (0..9)
         .filter_map(|slot| {
             let s = game.inventory.get(slot)?.as_ref()?;
-            let name = util::short(&s.item);
-            if s.count == 0
-                || !(name.ends_with("_sword") || name.ends_with("_axe"))
-                || shield && !name.ends_with("_axe")
+            if !ordinary_launch_hand(game, s)
+                || shield
+                    && !game
+                        .items()
+                        .item_tags
+                        .get("minecraft:axes")
+                        .is_some_and(|axes| axes.contains(&*s.item))
             {
                 return None;
             }
@@ -3033,11 +3066,9 @@ fn start_launch(
     {
         return false;
     }
-    let armed = game.held().is_some_and(|s| {
-        let n = util::short(&s.item);
-        n.ends_with("_sword") || n.ends_with("_axe")
-    }) && super::sunset_melee_assist::slot_strength(game, game.selected, 0.5)
-        .is_some_and(|c| c >= 0.5);
+    let armed = game.held().is_some_and(|s| ordinary_launch_hand(game, s))
+        && super::sunset_melee_assist::slot_strength(game, game.selected, 0.5)
+            .is_some_and(|c| c >= 0.5);
     let arm = if armed { 0 } else { r.opener(reach, 0.) };
     if !armed && state(|s| s.tactics.fight.opener.is_none()) {
         state(|s| {
@@ -3219,6 +3250,25 @@ fn tool_for(game: &Game<'_>, cell: [i32; 3], max_ticks: u64) -> Option<usize> {
         })
         .max_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(s, _)| s)
+}
+// Keep native mining alive only for this exact live bot scene and owned cell.
+// Physical input, a different tool, pause, stale lease or scene keeps vanilla's abort.
+pub(super) fn suppress_idle_abort(game: &Game<'_>, down: bool) -> bool {
+    if down || !action_ready(game) {
+        return false;
+    }
+    state(|s| {
+        s.session.as_ref().is_some_and(|scene| same(game, scene))
+            && s.tactics.pause.state(game.ticks) == tactics::Pause::Go
+            && s.tactics.mine.as_ref().is_some_and(|mine| {
+                mine.done.current()
+                    && mine.applied
+                    && game.selected == mine.slot
+                    && game.ticks >= mine.began
+                    && game.ticks - mine.began <= 80
+                    && super::remote::sunset_city_mining::progress(game, mine.cell).is_some()
+            })
+    })
 }
 fn stop_mine(game: &mut Game<'_>) {
     sunset::cancel_turns(BOT_MINE);

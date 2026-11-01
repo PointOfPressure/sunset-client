@@ -5,12 +5,19 @@ Policy and real protocol behavior are tested by the separate loot harnesses.
 """
 from pathlib import Path
 import unittest
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'mixins/sunset'
 
 def read(name):
     return (SOURCE / name).read_text(encoding='utf-8')
+
+def function(text,signature):
+    start=text.index(signature);opening=text.index('{',start);depth=1;cursor=opening+1
+    while depth:
+        depth+=(text[cursor]=='{')-(text[cursor]=='}');cursor+=1
+    return text[start:cursor]
 
 class Integration(unittest.TestCase):
     def test_packet_observer_runs_after_delay_before_native_application(self):
@@ -34,15 +41,21 @@ class Integration(unittest.TestCase):
         for chunk in text.split('|| !loot_allowed(game, &run)')[1:]:
             self.assertIn('reset(game);', chunk[:900])
         safe = text.split('fn safe_blast(', 1)[1]
-        self.assertLess(safe.index('sunset_loot_guard::allows'), safe.index('local_damage('))
+        self.assertLess(safe.index('sunset_loot_guard::allows'), safe.index('local_damage'))
 
     def test_both_aura_shared_damage_helpers_gate_planned_and_fresh_actions(self):
-        for name, helper in [('crystal_aura.rs', 'valid_damage'), ('anchor_aura.rs', 'damage_ok')]:
+        for name, helper, deferred, hand in [
+            ('crystal_aura.rs','valid_damage','fn queue(','take_weapon(game,'),
+            ('anchor_aura.rs','damage_ok','pub(super) fn execute(','take_hand(game,')]:
             text = read(name)
-            self.assertGreaterEqual(text.count(helper+'('), 3)
-            body = text.split('fn '+helper+'(', 1)[1]
-            self.assertLess(body.index('sunset_loot_guard::allows'), body.index('local_damage('))
-            self.assertIn('.bool("Protect loot", true)', text)
+            shared=function(text,'fn damage_pair(')
+            planning=function(text,'pub(super) fn prepare(')
+            fresh=function(text,deferred)
+            self.assertIn('damage_pair(',planning)
+            self.assertIn('damage_pair(',function(text,'fn '+helper+'('))
+            self.assertLess(shared.index('sunset_loot_guard::allows'),shared.index('local_damage'))
+            self.assertLess(fresh.index(helper+'('),fresh.index(hand))
+            self.assertRegex(text,r'\.bool\("Protect Loot",\s*true\)')
 
 if __name__ == '__main__':
     result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(Integration))

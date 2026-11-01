@@ -1,5 +1,29 @@
 // Original bounded tactical policy. Geometry and actual actions remain native.
 pub type V = [f64; 3];
+#[derive(Clone, Copy, Debug)]
+pub struct CriticalFoodView {
+    pub life: f64,
+    pub distance: f64,
+    pub needs_food: bool,
+    pub eating: bool,
+    pub using_food: bool,
+    pub gapple_hotbar: bool,
+    pub offhand_totem: bool,
+}
+pub fn critical_food_retreat(v: CriticalFoodView) -> bool {
+    v.life.is_finite()
+        && v.distance.is_finite()
+        && v.life > 0.
+        && v.life <= 4.
+        && v.distance >= 0.
+        && v.distance < 8.
+        && !v.offhand_totem
+        && v.gapple_hotbar
+        && (v.needs_food || v.eating && v.using_food)
+}
+pub fn pearl_health_ready(life: f64, offhand_totem: bool) -> bool {
+    life.is_finite() && life > 0. && (life > 6. || offhand_totem)
+}
 pub fn finite(v: V) -> bool {
     v.iter().all(|x| x.is_finite())
 }
@@ -634,7 +658,8 @@ pub fn body_path(
 }
 #[derive(Default, Debug)]
 pub struct Air {
-    early:Option<V>,pub grip:f64,
+    early: Option<V>,
+    pub grip: f64,
     pub target: Option<u32>,
     samples: std::collections::VecDeque<Sample>,
     push_sum: V,
@@ -683,7 +708,11 @@ impl Air {
         }
         self.samples.push_back(Sample { tick, at });
         let n = self.samples.len();
-        if n==2&&!self.spoiled {if let Some((_,_,kick,_))=self.kick{self.early=infer_early(kick,self.grip,self.samples[0],self.samples[1]);}}
+        if n == 2 && !self.spoiled {
+            if let Some((_, _, kick, _)) = self.kick {
+                self.early = infer_early(kick, self.grip, self.samples[0], self.samples[1]);
+            }
+        }
         if n < 3 {
             return;
         }
@@ -709,7 +738,16 @@ impl Air {
             self.pushes = self.pushes.saturating_add(1);
         }
     }
-    pub fn kicked(&mut self, tick: u64, from: V, own: V, yaw: f64, sprint: bool, resistance: f64, grip:f64) {
+    pub fn kicked(
+        &mut self,
+        tick: u64,
+        from: V,
+        own: V,
+        yaw: f64,
+        sprint: bool,
+        resistance: f64,
+        grip: f64,
+    ) {
         if !finite(from) || !finite(own) || !yaw.is_finite() || !resistance.is_finite() {
             return;
         }
@@ -734,7 +772,8 @@ impl Air {
         };
         let way = unit([velocity[0], 0., velocity[2]]);
         self.kick = Some((tick, from, velocity, way));
-        self.grip=grip;self.early=None;
+        self.grip = grip;
+        self.early = None;
         self.kick_seen = None;
         self.spoiled = false;
         self.samples.clear();
@@ -777,7 +816,7 @@ impl Air {
                 return Some((from, v, limited(learned, 0.1), true, (ahead + gone).min(40)));
             }
         }
-        if (self.pushes < 2 && self.kick.is_none() && ahead!=40) || self.samples.len() < 2 {
+        if (self.pushes < 2 && self.kick.is_none() && ahead != 40) || self.samples.len() < 2 {
             return None;
         }
         let b = self.samples[self.samples.len() - 2];
@@ -790,8 +829,38 @@ impl Air {
         let half = (span - 1) as f64 * 0.5;
         let drag = 0.91f64.powf(half);
         let v = [mean[0] * drag, mean[1] - 0.0784 * half, mean[2] * drag];
-        let usual=if let Some((_,_,_,way))=self.kick {if r.flights>=2{limited(add(mul(way,r.push[0]),mul([-way[2],0.,way[0]],r.push[2])),0.026)}else{[0.;3]}}else{limited([v[0]*0.09,0.,v[2]*0.09],0.026)};
-        let push=if self.pushes>=2{limited(mul(self.push_sum,1./self.pushes as f64),0.045)}else if self.pushes==1{limited(self.early.map_or(self.push_sum,|early|mul(add(self.push_sum,early),0.5)),0.045)}else{self.early.map_or(usual,|early|limited(if r.flights>=2{mul(add(early,usual),0.5)}else{early},0.045))};
+        let usual = if let Some((_, _, _, way)) = self.kick {
+            if r.flights >= 2 {
+                limited(
+                    add(mul(way, r.push[0]), mul([-way[2], 0., way[0]], r.push[2])),
+                    0.026,
+                )
+            } else {
+                [0.; 3]
+            }
+        } else {
+            limited([v[0] * 0.09, 0., v[2] * 0.09], 0.026)
+        };
+        let push = if self.pushes >= 2 {
+            limited(mul(self.push_sum, 1. / self.pushes as f64), 0.045)
+        } else if self.pushes == 1 {
+            limited(
+                self.early
+                    .map_or(self.push_sum, |early| mul(add(self.push_sum, early), 0.5)),
+                0.045,
+            )
+        } else {
+            self.early.map_or(usual, |early| {
+                limited(
+                    if r.flights >= 2 {
+                        mul(add(early, usual), 0.5)
+                    } else {
+                        early
+                    },
+                    0.045,
+                )
+            })
+        };
         Some((
             c.at,
             v,
@@ -1015,11 +1084,66 @@ impl CampLedger {
     }
 }
 
-fn infer_early(kick:V,grip:f64,a:Sample,b:Sample)->Option<V>{
-    let span=b.tick.checked_sub(a.tick)? as usize;if span==0||span>4||!grip.is_finite()||grip<=0.{return None;}
-    let mean=mul(sub(b.at,a.at),1./span as f64);let mut y=[0.;21];let mut carry=[0.;21];let mut gain=[0.;21];let(mut vy,mut h,mut g)=(kick[1],1.,1.);
-    for i in 1..=20{if i>1{let drag=if i==2{grip}else{0.91};vy=(vy-0.08)*0.98;h*=drag;g=g*drag+1.;}y[i]=vy;carry[i]=h;gain[i]=g;}
-    let avg=|v:&[f64;21],end:usize|v[(end-span+1)..=end].iter().sum::<f64>()/span as f64;
-    let end=(span..=20).min_by(|a,b|(avg(&y,*a)-mean[1]).abs().total_cmp(&(avg(&y,*b)-mean[1]).abs()))?;
-    if(avg(&y,end)-mean[1]).abs()>0.04{return None;}let alone=avg(&carry,end);let g=avg(&gain,end);let push=[(mean[0]-kick[0]*alone)/g,0.,(mean[2]-kick[2]*alone)/g];(finite(push)&&horizontal(push)<=0.1).then_some(push)
+fn infer_early(kick: V, grip: f64, a: Sample, b: Sample) -> Option<V> {
+    let span = b.tick.checked_sub(a.tick)? as usize;
+    if span == 0 || span > 4 || !grip.is_finite() || grip <= 0. {
+        return None;
+    }
+    let mean = mul(sub(b.at, a.at), 1. / span as f64);
+    let mut y = [0.; 21];
+    let mut carry = [0.; 21];
+    let mut gain = [0.; 21];
+    let (mut vy, mut h, mut g) = (kick[1], 1., 1.);
+    for i in 1..=20 {
+        if i > 1 {
+            let drag = if i == 2 { grip } else { 0.91 };
+            vy = (vy - 0.08) * 0.98;
+            h *= drag;
+            g = g * drag + 1.;
+        }
+        y[i] = vy;
+        carry[i] = h;
+        gain[i] = g;
+    }
+    let avg =
+        |v: &[f64; 21], end: usize| v[(end - span + 1)..=end].iter().sum::<f64>() / span as f64;
+    let end = (span..=20).min_by(|a, b| {
+        (avg(&y, *a) - mean[1])
+            .abs()
+            .total_cmp(&(avg(&y, *b) - mean[1]).abs())
+    })?;
+    if (avg(&y, end) - mean[1]).abs() > 0.04 {
+        return None;
+    }
+    let alone = avg(&carry, end);
+    let g = avg(&gain, end);
+    let push = [
+        (mean[0] - kick[0] * alone) / g,
+        0.,
+        (mean[2] - kick[2] * alone) / g,
+    ];
+    (finite(push) && horizontal(push) <= 0.1).then_some(push)
+}
+
+impl Fight {
+    pub fn observe_unlearned(&mut self, view: FightView) {
+        let mut discarded = Rival::default();
+        self.observe(view, &mut discarded);
+    }
+}
+// Unrelated forwarded hits must leave this exact pending victim untouched.
+pub fn take_forwarded_attack(
+    pending: &mut Option<(u32, u64, f64, bool)>,
+    victim: u32,
+    tick: u64,
+) -> Option<(u32, u64, f64, bool)> {
+    let value = (*pending)?;
+    if value.0 != victim {
+        return None;
+    }
+    if tick < value.1 || tick - value.1 > 1 {
+        pending.take();
+        return None;
+    }
+    pending.take()
 }

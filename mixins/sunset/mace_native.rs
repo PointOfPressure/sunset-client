@@ -1,5 +1,5 @@
-//! Native geometry adapter draft; integration/build is owned by the parent.
-//! Uses Horizon geometry/collision, never a synthetic box-distance proxy.
+// Native geometry adapter draft; integration/build is owned by the parent.
+// Uses Horizon geometry/collision, never a synthetic box-distance proxy.
 use super::Game;
 use horizon_client::collisions::SceneCollisions;
 use horizon_core::geometry::Vec3;

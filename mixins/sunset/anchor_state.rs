@@ -6,16 +6,9 @@ pub(super) enum Step {
     Detonate,
 }
 
-// An observed low-health target may be finished below the configured normal
-// threshold. Missing/non-finite health cannot relax that threshold.
-pub(super) fn target_min(configured: f64, health: f64) -> Option<f64> {
-    (configured.is_finite() && configured >= 0.0 && health.is_finite() && health > 0.0)
-        .then_some(configured.min(health))
-}
 
-pub(super) fn target_available(health: f64, hurt_immunity: bool) -> bool {
-    health.is_finite() && health > 0.0 && !hurt_immunity
-}
+
+
 
 // A current detonation has priority over further setup. Among equally ready
 // opportunities, prefer a possible finish, then damage retained after self cost.

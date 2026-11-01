@@ -66,7 +66,10 @@ pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
             super::sunset_melee_assist::note_attack(game,p.id as u32);
             super::sunset_crystal_bot::attack_sent(game,p.id as u32);
         },
-        S::PlayerAction(p) if p.action==8=>super::sunset_melee_assist::note_stab(game),
+        S::PlayerAction(p) if p.action==8=>{
+            if let Some((yaw,pitch))=sent_look(game){let _=super::sunset_melee_assist::note_stab_at(game,yaw,pitch);}
+            else{super::sunset_melee_assist::note_action(game);}
+        },
         _=>{},
     }
 }

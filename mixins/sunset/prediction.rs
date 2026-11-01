@@ -55,7 +55,8 @@ pub(super) fn rtt(game:&Game<'_>)->u32 {
     state(|s|s.receipts.rtt_ticks(super::remote::sunset_combat_remote::latency(game).unwrap_or(0)))
 }
 pub(super) fn effective_health(game:&Game<'_>,target:&Target)->Option<f64> {
-    let extra=state(|s|s.absorption.iter().find(|p|p.0==target.id).map(|p|p.1))?;
+    let extra=state(|s|s.scene.as_ref().filter(|scene|same(game,scene))
+        .and_then(|_|s.absorption.iter().find(|p|p.0==target.id).map(|p|p.1)))?;
     let hp=f64::from(target.health+extra);
     (hp.is_finite()&&hp>0.0).then_some(hp)
 }
@@ -139,6 +140,17 @@ pub(super) fn estimate(game:&Game<'_>,victim:&Target,blast:Blast,ahead:u32,lead:
     let assessed=state(|s|s.clock.assess(victim.id,sample.raw_before_armor(),ahead,lead));
     Some((damage::reduce_target_hurt_raw(game,victim,sample,assessed.raw_for_reduction)?,sample.raw_before_armor()))
 }
+// Both temporal assessments reuse one native exposure/shield/difficulty sample.
+pub(super) fn estimate_pair(game:&Game<'_>,victim:&Target,blast:Blast,ahead:u32,opening:u32,lead:u32,budget:&mut Budget)->Option<([f64;3],f32)> {
+    let sample=damage::target_hurt_raw_at(game,victim,blast,budget)?;
+    let raw=sample.raw_before_armor();
+    let assessments=state(|s|[s.clock.assess(victim.id,raw,ahead,lead),s.clock.assess(victim.id,raw,opening,lead)]);
+    Some(([damage::reduce_target_hurt_raw(game,victim,sample,assessments[0].raw_for_reduction)?,
+        damage::reduce_target_hurt_raw(game,victim,sample,assessments[1].raw_for_reduction)?,
+        damage::reduce_target_hurt_raw(game,victim,sample,raw)?],raw))
+}
+pub(super) fn held_totem(id:u32)->bool {state(|s|s.hands.iter().find(|h|h.id==id)
+    .is_some_and(|h|h.stacks.iter().flatten().any(|stack|stack.count>0&&util::short(&stack.item)=="totem_of_undying")))}
 pub(super) fn opens_in(victim:u32,lead:u32)->u32 {state(|s|s.clock.opens_in(victim,lead))}
 pub(super) fn arm_blast(game:&Game<'_>,source:hurt::ShotSource,blast:Blast,
     targets:&[Target],selected:u32,horizon:u32,budget:&mut Budget)->bool {

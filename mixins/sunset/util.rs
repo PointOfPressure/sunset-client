@@ -441,7 +441,7 @@ pub(super) fn other_players(game: &Game<'_>) -> Vec<Target> {
 // name is insufficient: require the current player-list entry and its mode.
 pub(super) fn player_enemy(game: &Game<'_>, mob: &horizon_client::mobs::Mob) -> bool {
     if mob.kind.id != "minecraft:player" || !mob.health.is_finite() || !mob.alive()
-        || mob.removed || Some(mob.id) == own_id(game) || game.riding == Some(mob.id)
+        || mob.removed || Some(mob.id) == super::sunset::own_id(game) || game.riding == Some(mob.id)
         || !matches!(super::remote::sunset_combat_remote::player_mode(game, mob.id), Some(0 | 2)) {
         return false;
     }

@@ -101,7 +101,7 @@ fn clear(game: &Game<'_>, from: Vec3, to: Vec3) -> bool {
         512,
         |p: horizon_core::position::BlockPos| (!game.world.loaded(p.x, p.z)).then_some(()),
     );
-    if unknown.is_some() {
+    if !matches!(unknown,Ok(None)) {
         return false;
     }
     super::spear::sunset_combat_collision::clip(game, from, to)

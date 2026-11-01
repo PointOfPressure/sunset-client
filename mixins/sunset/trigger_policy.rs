@@ -1,5 +1,5 @@
-//! Original native Trigger timing state. Engine supplies actual crit stance,
-//! charge, physical inputs, first-contact ray and final accepted attack.
+// Original native Trigger timing state. Engine supplies actual crit stance,
+// charge, physical inputs, first-contact ray and final accepted attack.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Crits {

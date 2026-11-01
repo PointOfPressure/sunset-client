@@ -1,4 +1,4 @@
-//! Bounded native collision bridge; also usable with SceneCollisions supplied by Game.
+// Bounded native collision bridge; also usable with SceneCollisions supplied by Game.
 use std::io;
 use horizon_core::{geometry::{Aabb, Vec3, VoxelShape}, position::{BlockPos, ChunkPos}};
 use horizon_world::{

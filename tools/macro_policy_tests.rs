@@ -134,3 +134,88 @@ fn manual_ray_respects_first_hitbox_contact_and_rejects_objects_behind_camera() 
     assert!(policy::ray(eye, [0., 0., 0.], lo, hi, 3.).is_none());
     assert!(policy::ray([0., 0., 0.], [f64::INFINITY, 0., 0.], lo, hi, 3.).is_none());
 }
+
+// Production routing and open-ray guard subset contracts.
+use policy::{ClickFacts,UseRoute};
+fn facts()->ClickFacts {ClickFacts{known:true,..Default::default()}}
+fn flags(slots:&[usize])->[bool;9]{std::array::from_fn(|i|slots.contains(&i))}
+#[test]fn already_main_item_wins_over_every_offhand_route(){
+    assert_eq!(policy::placement_route(3,1,flags(&[3,0]),flags(&[1]),true),Some(UseRoute{select:None,offhand:false}));
+}
+#[test]fn permitted_current_main_keeps_offhand_and_does_not_reselect_matching_hotbar(){
+    assert_eq!(policy::placement_route(3,1,flags(&[0]),flags(&[3]),true),Some(UseRoute{select:None,offhand:true}));
+}
+#[test]fn blocked_main_prefers_first_actual_hotbar_supply_to_a_pass_through_slot(){
+    assert_eq!(policy::placement_route(7,1,flags(&[6,2]),flags(&[1]),true),Some(UseRoute{select:Some(2),offhand:false}));
+}
+#[test]fn offhand_only_supply_reselects_saved_original_before_other_empty_slots(){
+    assert_eq!(policy::placement_route(7,6,flags(&[]),flags(&[0,6]),true),Some(UseRoute{select:Some(6),offhand:true}));
+}
+#[test]fn unusable_saved_original_falls_back_to_first_permitted_main(){
+    assert_eq!(policy::placement_route(7,6,flags(&[]),flags(&[4,2]),true),Some(UseRoute{select:Some(2),offhand:true}));
+    assert_eq!(policy::placement_route(7,99,flags(&[]),flags(&[4]),true),Some(UseRoute{select:Some(4),offhand:true}));
+}
+#[test]fn absent_supply_or_permitted_main_does_not_create_route(){
+    assert!(policy::placement_route(0,0,flags(&[]),flags(&[1]),false).is_none());
+    assert!(policy::placement_route(0,0,flags(&[]),flags(&[]),true).is_none());
+    assert!(policy::placement_route(99,0,flags(&[0]),flags(&[0]),true).is_none());
+}
+#[test]fn axes_only_pass_on_obsidian_or_bedrock(){
+    let f=ClickFacts{axe:true,..facts()};
+    assert!(policy::click_through(f,true));assert!(!policy::click_through(f,false));
+}
+#[test]fn ordinary_sword_mace_totem_pass_on_both_support_types(){
+    for f in [ClickFacts{sword:true,..facts()},ClickFacts{mace:true,..facts()},ClickFacts{totem:true,..facts()}]{
+        assert!(policy::click_through(f,false));assert!(policy::click_through(f,true));
+    }
+}
+#[test]fn consumption_shield_lunge_or_swappable_equipment_overrides_combat_identity(){
+    let f=ClickFacts{sword:true,..facts()};
+    for bad in [ClickFacts{consuming:true,..f},ClickFacts{blocking:true,..f},ClickFacts{kinetic:true,..f},ClickFacts{equip_swap:true,..f}]{
+        assert!(!policy::click_through(bad,true));
+    }
+}
+#[test]fn empty_passes_unknown_custom_stack_and_unrelated_item_do_not(){
+    assert!(policy::click_through(ClickFacts{empty:true,..Default::default()},false));
+    assert!(!policy::click_through(ClickFacts{sword:true,..Default::default()},true));
+    assert!(!policy::click_through(facts(),true));
+}
+#[test]fn charged_anchor_still_requires_a_detonator_without_requiring_more_glowstone(){
+    assert!(policy::anchor_supplied(true,false,true));
+    assert!(!policy::anchor_supplied(true,true,false));
+    assert!(!policy::anchor_supplied(true,false,false));
+}
+#[test]fn new_and_uncharged_anchors_require_both_supplies_before_start(){
+    assert!(policy::anchor_supplied(false,true,true));
+    assert!(!policy::anchor_supplied(false,false,true));
+    assert!(!policy::anchor_supplied(false,true,false));
+}
+
+#[test]fn already_covered_cutoff_uses_strict_fifteen_percent(){
+    assert!(policy::guard_already_covered(72,10));assert!(!policy::guard_already_covered(72,11));
+    assert!(policy::guard_already_covered(20,2));assert!(!policy::guard_already_covered(20,3));
+}
+#[test]fn candidate_shade_counts_only_rays_currently_open(){
+    assert_eq!(policy::guard_shade_needed(11),Some(2));
+    assert_eq!(policy::guard_shade_needed(72),Some(11));
+    // A cube closing two of eleven open rays is useful despite the larger
+    // complete body sample count. This case rejected by the previous subset.
+    assert!(2>=policy::guard_shade_needed(11).unwrap());
+    assert!(2<policy::guard_shade_needed(72).unwrap());
+}
+#[test]fn empty_or_unbounded_sample_sets_cannot_establish_cover(){
+    assert!(!policy::guard_already_covered(0,0));assert!(!policy::guard_already_covered(257,0));
+    assert!(!policy::guard_already_covered(10,11));
+    assert!(policy::guard_shade_needed(0).is_none());assert!(policy::guard_shade_needed(257).is_none());
+}
+#[test]fn no_open_rays_means_existing_cover_without_any_candidate(){
+    assert!(policy::guard_already_covered(72,0));assert!(policy::guard_shade_needed(0).is_none());
+}
+#[test]fn sparse_boundary_still_requires_one_positive_intersection(){
+    assert_eq!(policy::guard_shade_needed(1),Some(1));assert_eq!(policy::guard_shade_needed(6),Some(1));
+    assert_eq!(policy::guard_shade_needed(7),Some(2));
+}
+#[test]fn maximum_native_grid_needs_thirty_nine_open_ray_intersections(){
+    assert_eq!(policy::guard_shade_needed(256),Some(39));
+    assert!(policy::guard_already_covered(256,38));assert!(!policy::guard_already_covered(256,39));
+}

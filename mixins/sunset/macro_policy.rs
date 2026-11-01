@@ -202,3 +202,45 @@ pub(super) fn ray(
     }
     Some(std::array::from_fn(|i| eye[i] + d[i] * a))
 }
+
+// An explicit-hand operation can still require borrowing another main slot.
+// Facts are copied from the native catalog/stack before this bounded decision.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(super) struct UseRoute {pub select:Option<usize>,pub offhand:bool}
+pub(super) fn placement_route(current:usize,preferred:usize,hotbar:[bool;9],
+    through:[bool;9],offhand:bool)->Option<UseRoute> {
+    if current>=9{return None;}
+    if hotbar[current]{return Some(UseRoute{select:None,offhand:false});}
+    if offhand && through[current]{return Some(UseRoute{select:None,offhand:true});}
+    if let Some(slot)=hotbar.iter().position(|present|*present){
+        return Some(UseRoute{select:Some(slot),offhand:false});
+    }
+    if !offhand{return None;}
+    let selected=if preferred<9 && through[preferred]{Some(preferred)}else{
+        through.iter().position(|allowed|*allowed)
+    }?;
+    Some(UseRoute{select:(selected!=current).then_some(selected),offhand:true})
+}
+#[derive(Clone,Copy,Debug,Default)]
+pub(super) struct ClickFacts {
+    pub empty:bool,pub known:bool,pub consuming:bool,pub blocking:bool,
+    pub kinetic:bool,pub equip_swap:bool,pub sword:bool,pub axe:bool,
+    pub mace:bool,pub totem:bool,
+}
+pub(super) fn click_through(f:ClickFacts,crystal_base:bool)->bool {
+    if f.empty{return true;}
+    f.known && !f.consuming && !f.blocking && !f.kinetic && !f.equip_swap
+        && (f.sword || f.mace || f.totem || (f.axe && crystal_base))
+}
+pub(super) fn anchor_supplied(charged:bool,glowstone:bool,detonator:bool)->bool {
+    detonator && (charged || glowstone)
+}
+
+// Counts are bounded by the native exposure sampler. Unknown geometry never
+// enters either count; callers must abort its guard decision instead.
+pub(super) fn guard_already_covered(total:usize,open:usize)->bool {
+    total>0 && total<=256 && open<=total && open*100<total*15
+}
+pub(super) fn guard_shade_needed(open:usize)->Option<usize> {
+    (open>0 && open<=256).then(||(open*15).div_ceil(100))
+}

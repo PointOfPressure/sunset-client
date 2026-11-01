@@ -1,5 +1,5 @@
-//! Original native combat policy. This file decides intentions only.
-//! Inventory, ray/collision queries and accepted attacks remain native deeds.
+// Original native combat policy. This file decides intentions only.
+// Inventory, ray/collision queries and accepted attacks remain native deeds.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Timing {

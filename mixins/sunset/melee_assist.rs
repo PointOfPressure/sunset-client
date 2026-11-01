@@ -52,7 +52,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new(TAP,Category::Combat,"Briefly releases forward input after a charged sprint hit. S Tap presses backward for the chosen number of ticks.")
             .pick("Mode",&["W Tap","S Tap"]).num("Hold",1.0,1.0,3.0,1.0),
         Module::new(JUMP,Category::Combat,"Requests the native grounded jump after an observed upward knockback packet while sprinting forward."),
-        Module::new(FRIEND,Category::Combat,"Blocks direct attacks and piercing spear paths that include a known friend."),
+        Module::new(FRIEND,Category::Combat,"Blocks direct attacks and piercing spear paths that include a known friend.").bool("Notifications",true),
     ]
 }
 
@@ -97,13 +97,12 @@ struct State {
     random: Option<LegacyRandom>,
     sent: u64,
     blocked: u64,
+    friend_hint_at: Option<Instant>,
+    friend_hint: Option<u32>,
     reason: &'static str,
     trigger: trigger_policy::Trigger,
     trigger_pending: Option<Instant>,
-    aim_before: [f32; 2],
-    aim_mouse: Option<Instant>,
     aim_mining: Option<Instant>,
-    aim_sign: [f64; 2],
     jump_owner: Option<&'static str>,
 }
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -326,9 +325,7 @@ pub(super) fn hits_target(
 
 // The caller owns and validates the deed. No queued critical packet hop is
 // introduced here: the actual fall/cooldown determines the native outcome.
-pub(super) fn send_hit(game: &mut Game<'_>, id: u32) -> bool {
-    send_hit_at(game, id, game.yaw, game.pitch)
-}
+
 pub(super) fn send_hit_at(game: &mut Game<'_>, id: u32, yaw: f32, pitch: f32) -> bool {
     if guard_attack(game, id) {
         return false;
@@ -359,9 +356,7 @@ pub(super) fn send_hit_at(game: &mut Game<'_>, id: u32, yaw: f32, pitch: f32) ->
     true
 }
 
-pub(super) fn aim_before(game: &Game<'_>) {
-    state(|s| s.aim_before = [game.yaw, game.pitch]);
-}
+
 pub(super) fn aim_gate(game: &Game<'_>) -> bool {
     if game.mining.is_some() {
         state(|s| s.aim_mining = Some(Instant::now()));
@@ -373,34 +368,7 @@ pub(super) fn aim_gate(game: &Game<'_>) -> bool {
                 .is_some_and(|t| t.elapsed() < Duration::from_millis(250))
         })
 }
-pub(super) fn aim_delta(game: &Game<'_>, turn: [f64; 2]) -> [f64; 2] {
-    let before = state(|s| s.aim_before);
-    let user = [
-        f64::from((game.yaw - before[0] + 180.0).rem_euclid(360.0) - 180.0),
-        f64::from(game.pitch - before[1]),
-    ];
-    state(|s| {
-        for i in 0..2 {
-            if user[i].is_finite() && user[i].abs() > 1.0e-4 {
-                s.aim_sign[i] = user[i].signum();
-                s.aim_mouse = Some(Instant::now());
-            }
-        }
-    });
-    if !aim_gate(game)
-        || !state(|s| {
-            s.aim_mouse
-                .is_some_and(|t| t.elapsed() <= Duration::from_millis(150))
-        })
-    {
-        return [0.0; 2];
-    }
-    let signs = state(|s| s.aim_sign);
-    [
-        policy::assisted_axis(turn[0], signs[0]),
-        policy::assisted_axis(turn[1], signs[1]),
-    ]
-}
+
 
 fn trigger_target(game: &Game<'_>, m: &Module) -> Option<u32> {
     if !alive(game) || !game.native_playing() || gui_open() {
@@ -647,6 +615,38 @@ fn enemy(game: &Game<'_>, mob: &Mob, mobs: bool) -> bool {
         && game.riding != Some(mob.id)
 }
 
+pub(super) fn reset_friend_feedback() {
+    state(|s| {s.friend_hint = None; s.friend_hint_at = None;});
+}
+// Keep feedback bounded and deferred: packet guards only have read access to
+// Game. The native action bar is updated on the next combat tick.
+fn hint_ready(last: Option<Instant>, now: Instant) -> bool {
+    last.is_none_or(|at| now.saturating_duration_since(at) >= Duration::from_millis(1500))
+}
+fn queue_friend_hint(game: &Game<'_>, id: u32) {
+    if !module(FRIEND).is_some_and(|m| m.b("Notifications")) { return; }
+    if game.remote_player_name(id).is_none() { return; }
+    let now = Instant::now();
+    state(|s| {
+        if hint_ready(s.friend_hint_at, now) {
+            s.friend_hint_at = Some(now);
+            s.friend_hint = Some(id);
+        }
+    });
+}
+fn flush_friend_hint(game: &mut Game<'_>) {
+    if !module(FRIEND).is_some_and(|m| m.b("Notifications")) || !alive(game) {
+        state(|s| {s.friend_hint = None; s.friend_hint_at = None;});
+        return;
+    }
+    let Some(id) = state(|s| s.friend_hint.take()) else { return; };
+    if !known_friend(game, id, false) { return; }
+    if let Some(name) = game.remote_player_name(id) {
+        let message = horizon_client::text::Text::literal(format!("Held back your hit on {name}"));
+        game.titles.set_overlay(message, false);
+    }
+}
+
 // TRUE means block. Root routes outgoing Attack through this as well as the
 // native attack entry, so direct/manual clicks receive the same protection.
 pub(super) fn guard_attack(game: &Game<'_>, id: u32) -> bool {
@@ -657,6 +657,7 @@ pub(super) fn guard_attack(game: &Game<'_>, id: u32) -> bool {
     if blocked {
         state(|s| s.blocked = s.blocked.saturating_add(1));
         note("friend attack blocked");
+        queue_friend_hint(game, id);
     }
     blocked
 }
@@ -722,10 +723,13 @@ pub(super) fn guard_stab_at(game: &Game<'_>, yaw: f32, pitch: f32) -> bool {
     if !alive(game) {
         return false;
     }
-    let blocked = spear_hits_at(game, yaw, pitch).is_none_or(|hits| {
-        hits.iter()
-            .any(|&i| known_friend(game, game.mobs[i].id, m.b("Teams")))
-    });
+    let hits = spear_hits_at(game, yaw, pitch);
+    let friend = hits.as_ref().and_then(|hits| hits.iter().find_map(|&i| {
+        let id = game.mobs[i].id;
+        known_friend(game, id, m.b("Teams")).then_some(id)
+    }));
+    let blocked = hits.is_none() || friend.is_some();
+    if let Some(id) = friend { queue_friend_hint(game, id); }
     if blocked {
         state(|s| s.blocked = s.blocked.saturating_add(1));
         note("friend in piercing spear path");
@@ -1103,7 +1107,6 @@ pub(super) fn cancel(game: &mut Game<'_>) {
             sent,
             blocked,
             tick: game.ticks,
-            aim_before: [game.yaw, game.pitch],
             reason: "cancelled transient melee state",
             ..State::default()
         };
@@ -1159,23 +1162,31 @@ pub(super) fn recent_hit() -> Option<u32> {
             .map(|(id, _)| id)
     })
 }
-pub(super) fn note_stab(game: &Game<'_>) {
+// This is a sent geometric contact observation, not a server damage ACK.
+// The caller supplies the same forwarded look used by native spear guards.
+pub(super) fn note_stab_at(game: &Game<'_>, yaw: f32, pitch: f32) -> Option<Vec<u32>> {
     note_action(game);
-    let Some(m) = module(TAP) else {
-        return;
-    };
-    let Some(p) = game.player.as_ref() else {
-        return;
-    };
-    if p.sprinting
-        && game.keys.contains(&KeyCode::KeyW)
-        && spear_hits(game).is_some_and(|hits| !hits.is_empty())
-    {
-        state(|s| {
-            s.last_attack = Some(game.ticks);
-            s.tap_until = game.ticks.saturating_add(m.n("Hold").clamp(1., 3.) as u64);
-        });
+    let indices = spear_hits_at(game, yaw, pitch)?;
+    let ids = indices
+        .into_iter()
+        .map(|i| game.mobs[i].id)
+        .collect::<Vec<_>>();
+    if let Some(id) = ids.first().copied() {
+        state(|s| s.recent_hit = Some((id, Instant::now())));
     }
+    if let Some(m) = module(TAP) {
+        if super::sunset_combat_wire::sent_sprinting(game)
+            && game.keys.contains(&KeyCode::KeyW)
+            && !ids.is_empty()
+            && state(|s| s.last_attack != Some(game.ticks))
+        {
+            state(|s| {
+                s.last_attack = Some(game.ticks);
+                s.tap_until = game.ticks.saturating_add(m.n("Hold").clamp(1., 3.) as u64);
+            });
+        }
+    }
+    Some(ids)
 }
 pub(super) fn note_velocity(game: &Game<'_>, entity: i32, velocity: [f64; 3]) {
     if module(JUMP).is_some()
@@ -1563,6 +1574,7 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
 
 pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], ticks: u64) {
     state(|s| s.tick = ticks);
+    flush_friend_hint(game);
     let _ = stop_guarded_use(game);
     let grounded = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
     state(|s| s.mace.observe_grounded(grounded));

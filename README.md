@@ -8,7 +8,7 @@
 <h1 align="center">Sunset</h1>
 
 <p align="center">A native utility client for <a href="https://github.com/horizon-rust/horizon">Horizon</a> on Minecraft 26.3.</p>
-<p align="center"><a href="https://github.com/PointOfPressure/sunset-client/releases/latest">Latest release</a> · <a href="#install">Install</a> · <a href="#features">Features</a> · <a href="CONTRIBUTING.md">Contribute</a></p>
+<p align="center"><a href="https://github.com/PointOfPressure/sunset-client/releases/latest">Latest release</a> آ· <a href="#install">Install</a> آ· <a href="#features">Features</a> آ· <a href="CONTRIBUTING.md">Contribute</a></p>
 
 Sunset brings 100+ modules for combat, movement, building and rendering to Horizon, with a configurable ClickGUI,
 key binds, chat commands and saved profiles. It takes inspiration from
@@ -104,14 +104,16 @@ and panel shape. Advanced controls appear only for relevant modes.
 
 </details>
 
-Kill Aura, Trigger Bot and Aim Assist can skip bots (**Anti bot**: players the server's player list doesn't show) and
-players on your own team (**Ignore teams**). **HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
+Combat enemy selection uses the current player list, valid game modes, native team damage rules and your friend list.
+**HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
+The [combat parity branch](docs/combat-parity.md) updates the 25 inspected Combat capabilities; its native behavior,
+[controls](docs/explosive-auras.md) and build-specific evidence are documented separately.
 
 Crystal Aura and Anchor Aura are experimental, disabled by default, and share
 bounded action planning. [Their controls and damage models](docs/explosive-auras.md)
 describe the tested scope and limits.
 
-This feature branch’s [native combat development batch](docs/combat-modules.md)
+This feature branchâ€™s [native combat development batch](docs/combat-modules.md)
 extends these with coordinated melee, manual, inventory and controller modules.
 Build this checkout to test it; the installers above follow published releases. See the
 [checkpoint validation and native screenshots](docs/combat-validation.md)

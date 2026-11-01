@@ -149,7 +149,7 @@ fn hand_base(game: &Game<'_>, slot: usize) -> Option<f32> {
 }
 
 pub(super) fn tick(game: &Game<'_>, tick: u64) {
-    let Some(m) = module() else {
+    let Some(_m) = module() else {
         reset();
         return;
     };
@@ -173,7 +173,7 @@ pub(super) fn tick(game: &Game<'_>, tick: u64) {
 // Call only after final packet filters accept the packet for forwarding. This
 // module never constructs an Attack and never replaces native attack input.
 pub(super) fn sent(game: &Game<'_>, packet: &S) {
-    let Some(m) = module() else {
+    let Some(_m) = module() else {
         return;
     };
     if !active(game) || game.crystals.len() > 512 {
@@ -296,6 +296,10 @@ pub(super) fn hidden_position(game: &Game<'_>, position: [f64; 3]) -> bool {
         return false;
     }
     crystal.id == id
+}
+pub(super) fn has_predictions(game:&Game<'_>)->bool {
+    HAS_MASKS.load(Ordering::Acquire) && active(game) && module().is_some()
+        && state(|s|s.session.as_ref().is_some_and(|session|same(game,session)))
 }
 pub(super) fn duplicate(game: &Game<'_>, packet: &S) -> bool {
     let S::Attack(p) = packet else {

@@ -1,6 +1,6 @@
-//! Original read-only resolution of the native 26.3 preserved component patch.
-//! The caller supplies PROVEN item-prototype facts; arbitrary custom defaults
-//! cannot be reconstructed from native ItemInfo.max_damage alone.
+// Original read-only resolution of the native 26.3 preserved component patch.
+// The caller supplies PROVEN item-prototype facts; arbitrary custom defaults
+// cannot be reconstructed from native ItemInfo.max_damage alone.
 use horizon_protocol::{buf::Reader,item::component};
 use super::sunset_faceplace_policy::ArmorCondition;
 #[derive(Clone,Copy,Debug)]
