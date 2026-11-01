@@ -5333,8 +5333,14 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
                 continue;
             }
             let inset = if name.ends_with("chest") { 0.0625 } else { 0.0 };
-            let lo = [f64::from(x) + inset, f64::from(y), f64::from(z) + inset];
-            let hi = [f64::from(x + 1) - inset, f64::from(y + 1) - inset * 2.0, f64::from(z + 1) - inset];
+            let (lo, hi) = match chest_pair(game, [x, y, z]) {
+                Some(Some(pair)) => pair,
+                Some(None) => continue,
+                None => (
+                    [f64::from(x) + inset, f64::from(y), f64::from(z) + inset],
+                    [f64::from(x + 1) - inset, f64::from(y + 1) - inset * 2.0, f64::from(z + 1) - inset],
+                ),
+            };
             if draw_box(cam, out, &look, lo, hi, faded(col, d, fade), lw) {
                 drawn += 1;
                 if drawn >= max {
@@ -5673,6 +5679,37 @@ pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, potato_only: bool, out: 
             break;
         }
     }
+}
+
+// A double chest (or trapped or copper one) is one box: each half's outline reaches the side its other half is on.
+// The half to the west or north draws the pair's box (Some(Some(box))), the other half nothing (Some(None)); a single
+// chest or any other block: None.
+fn chest_pair(game: &Game<'_>, p: [i32; 3]) -> Option<Option<([f64; 3], [f64; 3])>> {
+    use super::sunset_util::facts;
+    let here = facts(game, p);
+    if !here.name.ends_with("chest") {
+        return None;
+    }
+    let b = *here.outline.first()?;
+    let side = if b[0] <= 0.0 { [-1, 0] } else if b[3] >= 1.0 { [1, 0] } else if b[2] <= 0.0 { [0, -1] } else if b[5] >= 1.0 { [0, 1] } else { return None };
+    let at = [p[0] + side[0], p[1], p[2] + side[1]];
+    let there = facts(game, at);
+    let o = *there.outline.first()?;
+    // The other half reaches back.
+    let back = match side {
+        [-1, 0] => o[3] >= 1.0,
+        [1, 0] => o[0] <= 0.0,
+        [0, -1] => o[5] >= 1.0,
+        _ => o[2] <= 0.0,
+    };
+    if there.name != here.name || !back {
+        return None;
+    }
+    if side[0] < 0 || side[1] < 0 {
+        return Some(None);
+    }
+    let corner = |q: [i32; 3], f: [f64; 3]| [f64::from(q[0]) + f[0], f64::from(q[1]) + f[1], f64::from(q[2]) + f[2]];
+    Some(Some((corner(p, [b[0], b[1], b[2]]), corner(at, [o[3], o[4], o[5]]))))
 }
 
 pub(super) fn storage_colour(name: &str) -> Option<u32> {

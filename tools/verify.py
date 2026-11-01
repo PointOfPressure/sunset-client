@@ -3037,6 +3037,34 @@ def _():
         f"camera {behind}; camera inside it {inside} (of {screen})")
 
 
+@test("Storage ESP (double chests)")
+def _():
+    # A double chest (and a trapped one) is one box: from in front of the seam, the outline has no line down the
+    # middle (the screen's centre column holds only the top and bottom edges), as two single chests side by side do.
+    orange = lambda r, g, b: r > 220 and 130 < g < 190 and b < 100
+    setting("storageesp", "mode", "2D box")
+    setting("storageesp", "shape mode", "Lines")
+    setting("storageesp", "fade distance", "0")
+    only("storageesp")
+
+    def seam(kind, left, right, name):
+        cmd(f"fill {X0-3} {Y+1} {Z0-3} {X0+3} {Y+3} {Z0+5} minecraft:air", f"setblock {X0} {Y+1} {Z0+4} minecraft:{kind}[facing=north,type={left}]",
+            f"setblock {X0+1} {Y+1} {Z0+4} minecraft:{kind}[facing=north,type={right}]", f"tp @s {X0 + 1.0} {Y + 1} {Z0 + 0.5} 0 20")
+        wait(10)
+        shot_pixels(name, orange)
+        from PIL import Image
+        img = Image.open(f"/tmp/{name}.png").convert("RGB")
+        w, h = img.size
+        return sum(1 for x in range(w // 2 - 8, w // 2 + 8) for y in range(h) if orange(*img.getpixel((x, y))))
+    double = seam("chest", "left", "right", "dchest")
+    trapped = seam("trapped_chest", "left", "right", "dtrapped")
+    singles = seam("chest", "single", "single", "schests")
+    cmd(f"fill {X0-3} {Y+1} {Z0-3} {X0+3} {Y+3} {Z0+5} minecraft:air")
+    only()
+    return double < singles / 3 and trapped < singles / 3, (
+        f"outline pixels down the middle: double chest {double}, trapped double chest {trapped}, two single chests {singles}")
+
+
 @test("Freecam (F5)")
 def _():
     # F5 in Freecam changes nothing: the frame (the husk's ESP box with it) is the same before and after, and no hand
