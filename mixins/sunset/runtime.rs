@@ -641,7 +641,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Notifier", Player, "Says in chat when a player joins or leaves the server.")
             .bool("Join", true)
             .bool("Leave", true),
-        Module::new("Weather Changer", World, "Sets the weather you see.")
+        Module::new("Weather Changer", World, "Sets the weather you see. Lightning stays the server's.")
             .pick("Weather", &["Clear", "Rain", "Thunder"]),
         Module::new("Hole ESP", Render, "Marks holes walled with bedrock or obsidian, where explosions hurt less (Meteor's Hole ESP).")
             .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
@@ -1844,6 +1844,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     if !game.native_window() || !game.native_on(ID) {
         return;
     }
+    super::sunset_sky::keep_shown(game);
     turned(game);
     module_tick(game);
     end_turns(game);
@@ -2106,18 +2107,6 @@ fn module_tick(game: &mut Game<'_>) {
     } else {
         with(|s| s.notify = None);
     }
-    if let Some(m) = get("Weather Changer") {
-        let w = &mut game.world.weather;
-        let (rain, thunder) = match m.p("Weather") {
-            "Rain" => (true, false),
-            "Thunder" => (true, true),
-            _ => (false, false),
-        };
-        w.raining = rain;
-        w.thundering = thunder;
-        w.rain_level = if rain { (1.0, 1.0) } else { (0.0, 0.0) };
-        w.thunder_level = if thunder { (1.0, 1.0) } else { (0.0, 0.0) };
-    }
     if let Some(m) = get("Hole ESP") {
         scan_holes(game, m, ticks);
     } else {
@@ -2148,11 +2137,6 @@ fn module_tick(game: &mut Game<'_>) {
             s.spots.clear();
             s.last_pos.clear();
         });
-    }
-    // Time Changer: the sky the player sees; the server's own time comes back
-    // with its next update.
-    if let Some(m) = get("Time Changer") {
-        game.world.day_time = m.n("Time") as i64;
     }
     if let Some(m) = get("Auto Clicker") {
         auto_click(game, m);
