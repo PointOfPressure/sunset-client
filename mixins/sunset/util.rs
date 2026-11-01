@@ -471,6 +471,16 @@ pub(super) fn name_into(game: &Game<'_>, mob: &horizon_client::mobs::Mob, out: &
 // Who the targeting modules leave alone: with Anti bot, a player the server's player list does not show; with
 // Ignore teams, anyone on your own scoreboard team.
 pub(super) fn spared(game: &Game<'_>, m: &Module, id: u32, player: bool) -> bool {
+    // A name no account could have: 3 to 16 letters, digits or _, with the . or * Bedrock players get from Geyser.
+    if player
+        && m.b("Anti bot")
+        && game.remote_player_name(id).is_some_and(|n| {
+            let core = n.strip_prefix(['.', '*']).unwrap_or(n);
+            !(3..=16).contains(&core.len()) || !core.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+    {
+        return true;
+    }
     if player
         && m.b("Anti bot")
         && let Some(online) = game.remote_online_names()

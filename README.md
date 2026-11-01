@@ -106,6 +106,9 @@ and panel shape. Advanced controls appear only for relevant modes.
 
 Kill Aura, Trigger Bot and Aim Assist can skip bots (**Anti bot**: players the server's player list doesn't show) and
 players on your own team (**Ignore teams**). **HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
+Kill Aura hits one target (**Single**, with **Target lock** to stay on it), each in turn (**Switch**) or several (**Multi**).
+**Rotation mode** is Snap, Normal, Smooth or Custom (its own yaw and pitch speeds), told only to the server or also turning
+your view (**Rotation view**). **Ray cast** hits only when the look really meets the target's box.
 
 Not here (no clean way to do it in Horizon yet): Crystal Aura, Jesus, Click TP, and the Baritone-based
 Highway Builder and Infinity Miner.

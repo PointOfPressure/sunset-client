@@ -2,7 +2,8 @@
 // attacks with, how it rotates and switches, who it targets and how many at
 // once, and its timing.
 
-use super::sunset::{Canvas, Category, Module, health_colour, hold, look_at};
+use super::sunset::{Canvas, Category, Module, health_colour, hold, look_at, toggle_named};
+use super::sunset_rotation::{direction, track};
 use super::sunset_util::*;
 use super::Game;
 use std::sync::Mutex;
@@ -14,13 +15,26 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Attack when holding", &["Weapons", "All"])
             .text("Selected weapon types", "diamond_sword,diamond_axe,trident")
             .pick("Rotate", &["Always", "On hit", "None"])
+            .pick("Rotation mode", &["Snap", "Normal", "Smooth", "Custom"])
+            .pick("Rotation view", &["Silent", "Visible"])
+            .num("Yaw speed", 60.0, 5.0, 180.0, 5.0)
+            .num("Pitch speed", 60.0, 5.0, 180.0, 5.0)
+            .num("Smoothing", 0.0, 0.0, 0.9, 0.05)
+            .bool("Ray cast", false)
             .bool("Auto switch", false)
             .bool("Swap back", false)
             .bool("Only on click", false)
             .bool("Only on look", false)
+            .bool("Auto disable", false)
             .text("Entities", "player")
             .pick("Priority", PRIORITIES)
+            .bool("Hurt time priority", false)
+            .num("Target FOV", 360.0, 10.0, 360.0, 5.0)
+            // Loaded before Attack mode: a config older than it says Multi by a Max targets above 1 (see set_field).
             .num("Max targets", 1.0, 1.0, 5.0, 1.0)
+            .pick("Attack mode", &["Single", "Switch", "Multi"])
+            .bool("Target lock", false)
+            .num("Target switch delay", 0.0, 0.0, 40.0, 1.0)
             .num("Range", 4.5, 1.0, 6.0, 0.1)
             .num("Walls range", 3.5, 1.0, 6.0, 0.1)
             .pick("Passive mob age filter", &["Adult", "Baby", "Both"])
@@ -29,10 +43,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ignore passive", true)
             .bool("Anti bot", false)
             .bool("Ignore teams", false)
+            .bool("Ignore invisible", false)
+            .num("Health threshold", 0.0, 0.0, 100.0, 1.0)
             .bool("Pause on use", false)
-            .bool("Custom delay", false)
+            .pick("Attack timing", &["Vanilla cooldown", "Custom delay", "Hit select"])
             .num("Hit delay", 11.0, 0.0, 60.0, 1.0)
-            .num("Switch delay", 0.0, 0.0, 10.0, 1.0),
+            .num("Weapon switch delay", 0.0, 0.0, 10.0, 1.0),
     ]
 }
 
@@ -46,6 +62,17 @@ struct As {
     attacking: bool,
     // Who it is hitting this tick (the Target HUD's).
     target: Option<u32>,
+    // The target it stays on or is switching from, and the ticks before it may hit a new one.
+    current: Option<u32>,
+    target_timer: u32,
+    // Switch: the last hit landed, so the next target's turn.
+    switch_next: bool,
+    // The look the rotation has reached.
+    look: Option<(f32, f32)>,
+    // Who it aimed at last tick and the look that would have met them.
+    aimed: Option<(u32, (f32, f32))>,
+    // Your entity id, which changes with the world (Auto disable).
+    own_id: Option<u32>,
 }
 
 static AS: Mutex<Option<As>> = Mutex::new(None);
@@ -128,24 +155,65 @@ fn age_ok(filter: &str, baby: bool) -> bool {
     }
 }
 
-// How far the eyes are from the nearest point of the target's box: what Range measures.
+// How far the eyes are from the nearest point of the target's box: what Range and Walls range measure.
 fn reach(eye: [f64; 3], t: &Target) -> f64 {
     dist(eye, [eye[0].clamp(t.lo[0], t.hi[0]), eye[1].clamp(t.lo[1], t.hi[1]), eye[2].clamp(t.lo[2], t.hi[2])])
+}
+
+fn centre(t: &Target) -> [f64; 3] {
+    [(t.lo[0] + t.hi[0]) / 2.0, (t.lo[1] + t.hi[1]) / 2.0, (t.lo[2] + t.hi[2]) / 2.0]
+}
+
+// In plain sight: a clear line to its head, middle or feet, so someone half behind a block still counts.
+fn in_sight(game: &Game<'_>, t: &Target) -> bool {
+    let c = centre(t);
+    [c, [c[0], t.hi[1] - 0.1, c[2]], [c[0], t.lo[1] + 0.1, c[2]]].iter().any(|&p| clear_line(game, p, [i32::MIN; 3]))
+}
+
+// Within Target FOV of where you are really looking.
+fn in_fov(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool {
+    let fov = m.n("Target FOV");
+    if fov >= 360.0 {
+        return true;
+    }
+    let c = centre(t);
+    let to = [c[0] - eye[0], c[1] - eye[1], c[2] - eye[2]];
+    let d = dist(eye, c).max(1e-6);
+    let view = direction((game.yaw, game.pitch));
+    let cos = (view[0] * to[0] + view[1] * to[1] + view[2] * to[2]) / d;
+    cos.clamp(-1.0, 1.0).acos().to_degrees() <= fov / 2.0
+}
+
+// Does a ray along `look` meet the target's box within Range, with nothing solid before it beyond Walls range?
+fn ray_hits(game: &Game<'_>, m: &Module, eye: [f64; 3], look: (f32, f32), t: &Target) -> bool {
+    use horizon_core::geometry::{Aabb, Vec3};
+    let dir = direction(look);
+    let b = Aabb::new(Vec3::new(t.lo[0], t.lo[1], t.lo[2]), Vec3::new(t.hi[0], t.hi[1], t.hi[2]));
+    let Some(d) = super::ray_box(eye, dir, m.n("Range"), b) else {
+        return false;
+    };
+    d <= m.n("Walls range") || clear_line(game, [eye[0] + dir[0] * d, eye[1] + dir[1] * d, eye[2] + dir[2] * d], [i32::MIN; 3])
 }
 
 fn entity_check(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool {
     if t.health <= 0.0 || spared(game, m, t.id, t.player) {
         return false;
     }
-    if reach(eye, t) > m.n("Range") || !entity_listed(m.t("Entities"), t) {
+    if reach(eye, t) > m.n("Range") || !entity_listed(m.t("Entities"), t) || !in_fov(game, m, t, eye) {
+        return false;
+    }
+    let threshold = m.n("Health threshold");
+    if threshold > 0.0 && f64::from(t.health) > threshold {
         return false;
     }
     let mob = game.mobs.iter().find(|x| x.id == t.id);
     if m.b("Ignore named") && mob.is_some_and(|x| x.custom_name.is_some()) {
         return false;
     }
-    let centre = [(t.lo[0] + t.hi[0]) / 2.0, (t.lo[1] + t.hi[1]) / 2.0, (t.lo[2] + t.hi[2]) / 2.0];
-    if !clear_line(game, centre, [i32::MIN; 3]) && dist(eye, t.pos) > m.n("Walls range") {
+    if m.b("Ignore invisible") && mob.is_some_and(|x| x.invisible) {
+        return false;
+    }
+    if reach(eye, t) > m.n("Walls range") && !in_sight(game, t) {
         return false;
     }
     let k = short(&t.kind);
@@ -163,22 +231,66 @@ fn entity_check(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool 
 }
 
 fn stop(game: &mut Game<'_>, m: &Module) {
-    let (was, swapped, prev) = st(|s| (std::mem::take(&mut s.attacking), s.swapped, s.prev));
+    let (was, swapped, prev) = st(|s| {
+        s.current = None;
+        s.target_timer = 0;
+        s.switch_next = false;
+        s.look = None;
+        s.aimed = None;
+        (std::mem::take(&mut s.attacking), s.swapped, s.prev)
+    });
     if was && m.b("Swap back") && swapped {
         hold(game, prev);
         st(|s| s.swapped = false);
     }
 }
 
+// Turned off: back to the weapon it swapped from, and nothing kept for next time.
+pub(super) fn disabled(game: &mut Game<'_>, swap_back: bool) {
+    let (swapped, prev) = st(|s| {
+        let was = (s.swapped, s.prev);
+        *s = As::default();
+        was
+    });
+    if swap_back && swapped {
+        hold(game, prev);
+    }
+}
+
+// Who to hit this tick: Multi all it may, Switch each in turn, Single one (the same one with Target lock).
+fn choose(m: &Module, mut list: Vec<Target>) -> Vec<Target> {
+    let mode = m.p("Attack mode");
+    if mode == "Multi" {
+        list.truncate(m.n("Max targets") as usize);
+        return list;
+    }
+    let (current, next) = st(|s| (s.current, std::mem::take(&mut s.switch_next)));
+    let at = current.and_then(|id| list.iter().position(|t| t.id == id));
+    let pick = match (mode, at) {
+        ("Switch", Some(i)) if next => (i + 1) % list.len(),
+        ("Switch", Some(i)) => i,
+        ("Single", Some(i)) if m.b("Target lock") => i,
+        _ => 0,
+    };
+    vec![list.swap_remove(pick)]
+}
+
 pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     st(|s| s.target = None);
-    if !game.native_playing() || game.remote.is_none() || super::sunset::CRIT_STAGE.load(Ordering::Relaxed) != 0 {
+    if !game.native_playing() || game.remote.is_none() || super::sunset::CRIT_STAGE.load(Ordering::Relaxed) != 0 || super::sunset::strike_waiting() {
         return;
     }
-    // A change of hotbar slot starts the switch delay.
+    // Auto disable: after you die, or in a new world.
+    let own = game.remote.as_ref().map(|r| r.entity_id as u32);
+    let moved = st(|s| s.own_id.replace(own.unwrap_or(0))).is_some_and(|was| Some(was) != own);
+    if m.b("Auto disable") && (moved || game.player.as_ref().is_some_and(|p| p.health.health() <= 0.0)) {
+        toggle_named(game, "Kill Aura", false);
+        return;
+    }
+    // A change of hotbar slot starts the weapon switch delay.
     let sel = game.selected;
     if st(|s| s.last_selected.replace(sel)) != Some(sel) {
-        st(|s| s.switch_timer = m.n("Switch delay") as u32);
+        st(|s| s.switch_timer = m.n("Weapon switch delay") as u32);
     }
     if game.player.as_ref().is_none_or(|p| p.health.health() <= 0.0) || game.spectator() {
         stop(game, m);
@@ -195,7 +307,6 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     let Some(eye) = game.eye_position() else {
         return;
     };
-    let own = game.remote.as_ref().map(|r| r.entity_id as u32);
     let friends = super::sunset::with(|s| s.friends.clone());
     let names = game.remote_player_names();
     let mut list: Vec<Target> = if m.b("Only on look") {
@@ -209,7 +320,11 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             && entity_check(game, m, t, eye)
     });
     sort_targets(game, &mut list, m.p("Priority"));
-    list.truncate(if m.b("Only on look") { 1 } else { m.n("Max targets") as usize });
+    if m.b("Hurt time priority") {
+        // Who can take a hit soonest; the sort keeps Priority's order among equals.
+        let hurt = |t: &Target| game.mobs.iter().find(|x| x.id == t.id).map_or(0, |x| x.hurt_time);
+        list.sort_by_key(hurt);
+    }
     if list.is_empty() {
         stop(game, m);
         return;
@@ -234,18 +349,48 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         stop(game, m);
         return;
     }
-    let primary = &list[0];
-    st(|s| {
+    let list = choose(m, list);
+    let primary = list[0].clone();
+    let delay = m.n("Target switch delay") as u32;
+    let waiting = st(|s| {
         s.attacking = true;
         s.target = Some(primary.id);
+        if s.current.replace(primary.id).is_some_and(|was| was != primary.id) && m.p("Attack mode") != "Multi" {
+            s.target_timer = delay;
+        }
+        let wait = s.target_timer > 0;
+        s.target_timer = s.target_timer.saturating_sub(1);
+        wait
     });
-    let centre = [(primary.lo[0] + primary.hi[0]) / 2.0, (primary.lo[1] + primary.hi[1]) / 2.0, (primary.lo[2] + primary.hi[2]) / 2.0];
     let rotate_mode = m.p("Rotate");
+    // The look this tick: from where the last tick's got to (or your own), a step toward the target. Silent tells only
+    // the server; Visible turns your view. A hit made now goes out before that look does, so it counts the last one.
+    let sent = st(|s| s.look);
     if rotate_mode == "Always" {
-        let (yaw, pitch) = look_at(eye, centre);
-        super::sunset::turn("Kill Aura", yaw, pitch);
+        let from = sent.unwrap_or((game.yaw, game.pitch));
+        // The look is checked next tick: aim at where you and the target will be by then, each moving as this tick.
+        let yours = game.player.as_ref().filter(|_| game.riding.is_none()).map_or([0.0; 3], |p| {
+            [p.position.x - game.previous_position.x, p.position.y - game.previous_position.y, p.position.z - game.previous_position.z]
+        });
+        let c = centre(&primary);
+        let to = look_at(
+            [eye[0] + yours[0], eye[1] + yours[1], eye[2] + yours[2]],
+            [c[0] + primary.pos[0] - primary.prev[0], c[1] + primary.pos[1] - primary.prev[1], c[2] + primary.pos[2] - primary.prev[2]],
+        );
+        let was = st(|s| s.aimed.replace((primary.id, to))).filter(|a| a.0 == primary.id).map(|a| a.1);
+        let next = track(m.p("Rotation mode"), from, to, was, m.n("Yaw speed") as f32, m.n("Pitch speed") as f32, m.n("Smoothing") as f32);
+        if m.p("Rotation view") == "Visible" {
+            (game.yaw, game.pitch) = next;
+        } else {
+            super::sunset::turn("Kill Aura", next.0, next.1);
+        }
+        st(|s| s.look = Some(next));
     }
-    // The delay: the game's cooldown, or a fixed number of ticks.
+    // Just found a target: its look has not gone out yet.
+    if waiting || (rotate_mode == "Always" && sent.is_none()) {
+        return;
+    }
+    // The delay: the game's cooldown, or a fixed number of ticks. Hit select also waits out the target's hurt time.
     if st(|s| {
         if s.switch_timer > 0 {
             s.switch_timer -= 1;
@@ -256,7 +401,8 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     }) {
         return;
     }
-    let ready = if m.b("Custom delay") {
+    let timing = m.p("Attack timing");
+    let ready = if timing == "Custom delay" {
         st(|s| {
             if s.hit_timer < m.n("Hit delay") as u32 {
                 s.hit_timer += 1;
@@ -271,11 +417,27 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     if !ready {
         return;
     }
+    // With Always a hit waits until the look the server has meets the target, whether Ray cast is on or not.
+    let check = m.b("Ray cast") || rotate_mode == "Always";
+    let mut hit = false;
     for t in &list {
-        let on_hit = (rotate_mode == "On hit").then(|| look_at(eye, [(t.lo[0] + t.hi[0]) / 2.0, (t.lo[1] + t.hi[1]) / 2.0, (t.lo[2] + t.hi[2]) / 2.0]));
+        if timing == "Hit select" && game.mobs.iter().any(|x| x.id == t.id && x.hurt_time > 0) {
+            continue;
+        }
+        let on_hit = (rotate_mode == "On hit").then(|| look_at(eye, centre(t)));
+        let aim = on_hit.or(sent).unwrap_or((game.yaw, game.pitch));
+        if check && !ray_hits(game, m, eye, aim, t) {
+            continue;
+        }
         super::sunset::attack(game, t.id, crits, on_hit);
+        hit = true;
     }
-    st(|s| s.hit_timer = 0);
+    if hit {
+        st(|s| {
+            s.hit_timer = 0;
+            s.switch_next = true;
+        });
+    }
 }
 
 // The Target HUD: a box by the crosshair with the name, distance and health of who Kill Aura is hitting.

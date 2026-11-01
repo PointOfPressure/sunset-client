@@ -21,6 +21,12 @@ name = "sunset_movement"
 source = "movement.rs"
 
 [[module]]
+id = "rotation"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_rotation"
+source = "rotation.rs"
+
+[[module]]
 id = "util"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_util"
