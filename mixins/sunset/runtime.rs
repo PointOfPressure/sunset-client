@@ -1722,6 +1722,9 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     if !game.native_window() {
         return;
     }
+    if pressed {
+        super::agent::sunset_goto::key(game, key);
+    }
     super::sunset_melee::key(game, key, pressed);
     super::sunset_combat_inventory::key(game, key, pressed);
     super::sunset_duel::key(game, key, pressed);
@@ -4869,6 +4872,7 @@ const HELP: &[(&str, &str)] = &[
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
     (".vclip <blocks>", "move up or down"),
     (".hclip <blocks>", "move forward"),
+    (".goto <x> <y> <z>|stop", "walk there through loaded terrain, up to 128 blocks (by Rust); a movement key or a screen stops it"),
 ];
 
 // Every module off: the Panic module, or .panic.
@@ -4887,6 +4891,7 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
 }
 
 pub(super) fn panic_off(game: &mut Game<'_>) {
+    super::agent::sunset_goto::cancel(game, "stopped by Panic");
     combat_cleanup(game);
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
@@ -5022,6 +5027,10 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
     };
     match cmd.as_str() {
         "auradebug" => say(game, &super::sunset_aura::diagnostics()),
+        "goto" => {
+            let text = super::agent::sunset_goto::command(game, &args[1..]).unwrap_or_else(|e| e);
+            say(game, &text);
+        }
         "help" | "commands" => {
             say(game, "Commands:");
             for (c, d) in HELP {

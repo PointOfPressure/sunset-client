@@ -99,6 +99,13 @@ name = "sunset_remote"
 source = "remote_seq.rs"
 
 [[module]]
+id = "goto"
+file = "crates/horizon-client/src/game/agent.rs"
+name = "sunset_goto"
+source = "goto.rs"
+visibility = "pub(crate)"
+
+[[module]]
 id = "fishing_hook"
 file = "crates/horizon-client/src/game/fishing.rs"
 name = "sunset_fishing"

@@ -6107,6 +6107,104 @@ def _():
     return ok, ("(pig health lost to 3 R, snowballs thrown by 3 F, chat line 'rf' sent, no hit while typing): "
                 f"off {got['off']}, on {got['on']}")
 
+# ---- .goto (Rust's PR #24): Horizon's own A* path and walking task, started from chat
+
+def goto_walk(x, y, z, interrupt=None, limit=30):
+    """.goto the arena block (x, y, z), sampling where you are until the walk ends. `interrupt` runs once you have
+    walked 2 blocks. Gives what Sunset said, the end position, the distance walked, whether it stopped before the
+    end, and the probe's (ticks, most move packets in a tick, server teleports) on a server (else None)."""
+    mark = log_mark()
+    wire = probe_mark() if probe_path() and SERVER else None
+    say(f".goto {X0 + x} {y} {Z0 + z}")
+    trail, t0, cut = [pos()], time.time(), False
+    while time.time() - t0 < limit:
+        time.sleep(0.1)
+        st = state()
+        trail.append(st["player"]["position"])
+        if interrupt and not cut and flat(trail[0], trail[-1]) > 2:
+            interrupt()
+            cut = True
+        if not st.get("busy"):
+            break
+    still = pos()
+    wait(10)
+    walked = sum(flat(a, b) for a, b in zip(trail, trail[1:]))
+    return sunset_said(mark), still, walked, flat(still, pos()), wire_stats(wire) if wire is not None else None
+
+
+def goto_clear():
+    cmd(f"fill {X0-4} {Y+1} {Z0-5} {X0+16} {Y+4} {Z0+5} minecraft:air")
+
+
+@test(".goto (routes)")
+def _():
+    # Flat 10 blocks east; the same behind a 3-high wall; up onto a 1-block step; down 2 blocks; and too far.
+    got, wires = {}, []
+    reset()
+    route = {"flat": (10, Y + 1, 0, None)}
+    route["wall"] = (10, Y + 1, 0, f"fill {X0+5} {Y+1} {Z0-3} {X0+5} {Y+3} {Z0+3} minecraft:stone")
+    route["climb"] = (8, Y + 2, 0, f"fill {X0+3} {Y+1} {Z0-3} {X0+12} {Y+1} {Z0+3} minecraft:stone")
+    route["drop"] = (6, Y + 1, 0, f"fill {X0-1} {Y+1} {Z0-1} {X0+1} {Y+2} {Z0+1} minecraft:stone")
+    for name, (x, y, z, build) in route.items():
+        goto_clear()
+        reset(y=Y + 3 if name == "drop" else Y + 1)
+        if build:
+            cmd(build)
+        if name == "drop":
+            cmd(f"tp @s {X0 + 0.5} {Y + 3} {Z0 + 0.5} 0 0")
+            wait(10)
+        said, end, walked, _, wire = goto_walk(x, y, z)
+        off = math.hypot(end[0] - (X0 + x + 0.5), end[2] - (Z0 + z + 0.5))
+        got[name] = ("Arrived." in said, round(off, 2), round(end[1] - y, 2), round(walked, 1))
+        if wire:
+            wires.append(wire)
+    goto_clear()
+    reset()
+    said, _, walked, _, _ = goto_walk(200, Y + 1, 0, limit=2)
+    far = any("blocks away" in line for line in said) and walked < 0.5
+    ticks = sum(w[0] for w in wires)
+    most = max((w[1] for w in wires), default=0)
+    teleports = sum(w[2] for w in wires)
+    ok = (all(a and off < 0.7 and abs(dy) < 0.1 for a, off, dy, _ in got.values()) and got["wall"][3] > got["flat"][3] + 1
+          and far and most <= 1 and teleports == 0 and hp() == 20)
+    return ok, (f"(arrived, off target, height off, walked) {got}; 200 blocks refused: {far}; "
+                + (f"{ticks} ticks, at most {most} move packets in one, {teleports} server teleports" if wires else "no probe"))
+
+
+@test(".goto (stopping)")
+def _():
+    # 14 blocks east, stopped after 2 by: the inventory, the ClickGUI (a real ` press), Panic on a key, A held
+    # (you walk left instead, at once) and .goto stop. Each must leave you standing (no keys held by the walk).
+    window = x_window()
+    say(".bind panic k")
+    stops = {
+        "inventory": lambda: ctl("key", "e", "tap"),
+        "ClickGUI": (lambda: x_keys(window, "grave")) if window else None,
+        "Panic": lambda: ctl("key", "k", "tap"),
+        "A held": lambda: ctl("key", "a", "down"),
+        ".goto stop": lambda: say(".goto stop"),
+    }
+    got = {}
+    for name, stop in stops.items():
+        if stop is None:
+            continue
+        reset()
+        _, end, walked, drift, _ = goto_walk(14, Y + 1, 0, interrupt=stop)
+        if name == "A held":
+            ctl("key", "a", "up")
+        got[name] = (round(walked, 1), round(14.5 - (end[0] - X0), 1), round(drift, 2))
+        ctl("key", "esc", "tap")
+        wait(3)
+        if name == "Panic":
+            say(".panic")
+        if state().get("screen") not in ("playing", None):
+            ctl("close")
+    say(".bind panic none")
+    touched.discard("panic")
+    stopped = all(left > 3 and (drift > 0.5 if name == "A held" else drift < 0.2) for name, (_, left, drift) in got.items())
+    return stopped, f"(walked, blocks short, moved after: A held walks on by hand, the rest stand) {got}" + ("" if window else "; ClickGUI: no window")
+
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

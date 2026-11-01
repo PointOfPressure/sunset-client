@@ -77,6 +77,7 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 | `.friend add\|remove\|list <name>` | friends are left alone by Kill Aura, Aim Assist and the other targeting modules |
 | `.waypoint add\|remove\|list <name>` | places the Waypoints module shows on screen |
 | `.vclip <n>`, `.hclip <n>` | move up or down, forward |
+| `.goto <x> <y> <z>`, `.goto stop` | walk there through loaded terrain (up to 128 blocks); a movement key or a menu stops it |
 | `.profile save\|load\|delete <name>`, `.profile list` | keep every module's on/off, settings and keys under a name and bring them back (a PvP set-up, a building one); `.profile load before-load` undoes the last load |
 | `.profile export\|import <name>` | share a profile: export copies it to the mod's `exports` folder, import takes `<name>.profile` from its `imports` folder |
 | `.panic` | turn every module off and hide Sunset until `.panic` again or restart (or bind the **Panic** module to a key) |
@@ -157,7 +158,7 @@ See the [feature roadmap](docs/feature-roadmap.md) for what has landed, what is 
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and block counter, Kill Aura, Time and Weather Changer fixes, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro, Anchor Macro, Shield Breaker, Mace, Spear Swap, W Tap, Jump Reset, Friend Guard, Auto Inventory Totem, Hover Totem, FastXP, Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and block counter, Kill Aura, Time and Weather Changer fixes, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro, Anchor Macro, Shield Breaker, Mace, Spear Swap, W Tap, Jump Reset, Friend Guard, Auto Inventory Totem, Hover Totem, FastXP, Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
