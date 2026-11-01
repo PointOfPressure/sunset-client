@@ -1,0 +1,4217 @@
+{
+  "kind": "sanitized-r28-packet-native-proof",
+  "checkpoint": "R28",
+  "native_sha256": "edef37bd867bbbd1d34bf3058c99519a2f3e31e8cec497994d19e7c4c430716f",
+  "package_sha256": "846c01aa73cae335a5fd1f31c14df5ec48560b482f1d29ef8d7808e318e12e6f",
+  "behavioral_cases": 8,
+  "behavioral_passed": 8,
+  "behavioral_failed": 0,
+  "checks": [
+    {
+      "case": "lag-500",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/0/evidence",
+      "screenshot_file": "loot-lag-500-7f0a634b519b4917a38cc80222cef411-1793517046349063500.png",
+      "delay_ms": 500,
+      "first_server_displacement_seconds": 0.9258330000011483,
+      "delayed_samples": 1,
+      "server_before": [
+        0.5,
+        121.0,
+        0.5
+      ],
+      "before": {
+        "ticks": 28728,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "trace": [
+        {
+          "elapsed": 0.3042367000016384,
+          "query_interval_relative_seconds": [
+            0.03440960000443738,
+            0.3042367000016384
+          ],
+          "server_position": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 28729,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 28735,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              1.5424309281337472,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11473644494353707,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 0.6475670000072569,
+          "query_interval_relative_seconds": [
+            0.33866690000286326,
+            0.6475670000072569
+          ],
+          "server_position": [
+            0.5980000033676625,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 28735,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              1.5424309281337472,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11473644494353707,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 28741,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              2.830889549636968,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11777633270024772,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 0.9258330000011483,
+          "query_interval_relative_seconds": [
+            0.6774462000030326,
+            0.9258330000011483
+          ],
+          "server_position": [
+            1.5424309281337472,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 28742,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              3.0466658857048783,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11781389317747222,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 28747,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              4.125866558329662,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785687308632946,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 1.215774500000407,
+          "query_interval_relative_seconds": [
+            0.9467701999965357,
+            1.215774500000407
+          ],
+          "server_position": [
+            2.830889549636968,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 28747,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              4.125866558329662,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785687308632946,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 28753,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              5.4210162686031,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785900696570573,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 1.5035301000025356,
+          "query_interval_relative_seconds": [
+            1.2348198999970919,
+            1.5035301000025356
+          ],
+          "server_position": [
+            4.3417234347836535,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 28753,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              5.4210162686031,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785900696570573,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 28758,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              6.500311488933019,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785906222242735,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 1.7912008999992395,
+          "query_interval_relative_seconds": [
+            1.5223406000004616,
+            1.7912008999992395
+          ],
+          "server_position": [
+            5.636875278936468,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 28759,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              6.716170554523109,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785906350182895,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 28764,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              7.795465893339214,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785906496582962,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ],
+      "tail": [
+        {
+          "elapsed": 2.13706639999873,
+          "query_interval_relative_seconds": [
+            1.826601299995673,
+            2.13706639999873
+          ],
+          "server_position": [
+            6.716170554523109,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 28765,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              7.913324958305044,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.06435105694588733,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 28771,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.051311995589279,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.001704950769892329,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 2.4352569000038784,
+          "query_interval_relative_seconds": [
+            2.1655541000072844,
+            2.4352569000038784
+          ],
+          "server_position": [
+            7.913324958305044,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 28772,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.051311995589279,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 28777,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.051311995589279,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 2.7841196000081254,
+          "query_interval_relative_seconds": [
+            2.454321600002004,
+            2.7841196000081254
+          ],
+          "server_position": [
+            8.051311995589279,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 28777,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.051311995589279,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 28784,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.051311995589279,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 3.0612285999959568,
+          "query_interval_relative_seconds": [
+            2.811323000001721,
+            3.0612285999959568
+          ],
+          "server_position": [
+            8.051311995589279,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 28785,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.051311995589279,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 28790,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.051311995589279,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 3.3504976999975042,
+          "query_interval_relative_seconds": [
+            3.080856500004302,
+            3.3504976999975042
+          ],
+          "server_position": [
+            8.051311995589279,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 28790,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.051311995589279,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 28795,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.051311995589279,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ]
+    },
+    {
+      "case": "lag-1000",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/1/evidence",
+      "screenshot_file": "loot-lag-1000-7f0a634b519b4917a38cc80222cef411-1793517068432884800.png",
+      "delay_ms": 1000,
+      "first_server_displacement_seconds": 1.1856495999963954,
+      "delayed_samples": 3,
+      "server_before": [
+        0.5,
+        121.0,
+        0.5
+      ],
+      "before": {
+        "ticks": 29169,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "trace": [
+        {
+          "elapsed": 0.32404459999816027,
+          "query_interval_relative_seconds": [
+            0.03417649999028072,
+            0.32404459999816027
+          ],
+          "server_position": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29169,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29175,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              1.5424309281337472,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11473644494353707,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 0.6059421999962069,
+          "query_interval_relative_seconds": [
+            0.35624839999945834,
+            0.6059421999962069
+          ],
+          "server_position": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29176,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              1.7551673764449467,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11615411426952052,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29181,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              2.830889549636968,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11777633270024772,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 0.8968435999995563,
+          "query_interval_relative_seconds": [
+            0.626739200000884,
+            0.8968435999995563
+          ],
+          "server_position": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29181,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              2.830889549636968,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11777633270024772,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29187,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              4.125866558329662,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785687308632946,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 1.1856495999963954,
+          "query_interval_relative_seconds": [
+            0.9156975999940187,
+            1.1856495999963954
+          ],
+          "server_position": [
+            0.9302314020015052,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29187,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              4.125866558329662,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785687308632946,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29192,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              5.205157306559011,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785895867642616,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 1.535177699988708,
+          "query_interval_relative_seconds": [
+            1.2040056999976514,
+            1.535177699988708
+          ],
+          "server_position": [
+            2.1842496592612073,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29193,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              5.4210162686031,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785900696570573,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29199,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              6.716170554523109,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785906350182895,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 1.8132907999970485,
+          "query_interval_relative_seconds": [
+            1.5599749999964843,
+            1.8132907999970485
+          ],
+          "server_position": [
+            3.262479782250013,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29200,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              6.9320296213926005,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785906420038232,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29205,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.011324961672706,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11785906499972676,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ],
+      "tail": [
+        {
+          "elapsed": 2.138938499992946,
+          "query_interval_relative_seconds": [
+            1.8487324000016088,
+            2.138938499992946
+          ],
+          "server_position": [
+            4.989298432956816,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29206,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.129184026672434,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.06435105696439516,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29212,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.267171063996354,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.001704950770382685,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 2.522259999997914,
+          "query_interval_relative_seconds": [
+            2.1706431999919005,
+            2.522259999997914
+          ],
+          "server_position": [
+            6.500311488933019,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29212,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.267171063996354,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.001704950770382685,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29219,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.267171063996354,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 2.811709499990684,
+          "query_interval_relative_seconds": [
+            2.5426676999923075,
+            2.811709499990684
+          ],
+          "server_position": [
+            7.795465893339214,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29219,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.267171063996354,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29225,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.267171063996354,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 3.0950507999950787,
+          "query_interval_relative_seconds": [
+            2.8460637999960454,
+            3.0950507999950787
+          ],
+          "server_position": [
+            8.24785484897505,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29226,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.267171063996354,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29231,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.267171063996354,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 3.408227399995667,
+          "query_interval_relative_seconds": [
+            3.116656799989869,
+            3.408227399995667
+          ],
+          "server_position": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29231,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.267171063996354,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29237,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              8.267171063996354,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ]
+    },
+    {
+      "case": "lag-action-flush",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/2/evidence",
+      "screenshot_file": "loot-lag-action-flush-7f0a634b519b4917a38cc80222cef411-1793517088422317000.png",
+      "first_flush_observed_seconds": 0.33652470000379253,
+      "trigger": "actual native air swing; reference action class2879, not delayed selected-slot class2868",
+      "server_before": [
+        0.5,
+        121.0,
+        0.5
+      ],
+      "server_pre_trigger": [
+        0.5,
+        121.0,
+        0.5
+      ],
+      "before": {
+        "ticks": 29612,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "pre_trigger": {
+        "ticks": 29618,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          1.5424309281337472,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.11473644494353707,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "trace": [
+        {
+          "elapsed": 0.33652470000379253,
+          "query_interval_relative_seconds": [
+            0.045774800004437566,
+            0.33652470000379253
+          ],
+          "server_position": [
+            2.830889549636968,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29625,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              3.0466658857048783,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11781389317747222,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29631,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              3.299292506649907,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.00312142328984359,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 0.6371705999918049,
+          "query_interval_relative_seconds": [
+            0.3676470999926096,
+            0.6371705999918049
+          ],
+          "server_position": [
+            2.830889549636968,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29631,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              3.299292506649907,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.00312142328984359,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29637,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              3.3024139299397506,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ],
+      "prefix": [
+        {
+          "elapsed": 0.28105050000885967,
+          "query_interval_relative_seconds": [
+            0.03330860000278335,
+            0.28105050000885967
+          ],
+          "server_position": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 29612,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 29617,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              1.3322909434879642,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11213998127812054,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ]
+    },
+    {
+      "case": "lag-menu-flush",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/3/evidence",
+      "screenshot_file": "lag-menu-flush.png",
+      "first_flush_observed_seconds": 0.34816890000365674,
+      "trigger": "native menu",
+      "server_before": [
+        0.5,
+        121.0,
+        0.5
+      ],
+      "server_pre_trigger": [
+        0.5,
+        121.0,
+        0.5
+      ],
+      "before": {
+        "ticks": 30026,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "pre_trigger": {
+        "ticks": 30032,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          1.5424309281337472,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.11473644494353707,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "trace": [
+        {
+          "elapsed": 0.34816890000365674,
+          "query_interval_relative_seconds": [
+            0.03631229999882635,
+            0.34816890000365674
+          ],
+          "server_position": [
+            2.867580576355358,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30038,
+            "screen": "inventory",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              2.7328895462693055,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.06426832464640829,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30044,
+            "screen": "inventory",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              2.870699181884715,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0017027588168089418,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 0.6258487000013702,
+          "query_interval_relative_seconds": [
+            0.37590369999816176,
+            0.6258487000013702
+          ],
+          "server_position": [
+            2.870699181884715,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30045,
+            "screen": "inventory",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              2.870699181884715,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30050,
+            "screen": "inventory",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              2.870699181884715,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ],
+      "prefix": [
+        {
+          "elapsed": 0.2832968000002438,
+          "query_interval_relative_seconds": [
+            0.03373359999386594,
+            0.2832968000002438
+          ],
+          "server_position": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30026,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30031,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              1.3322909434879642,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11213998127812054,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ]
+    },
+    {
+      "case": "lag-disable-flush",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/4/evidence",
+      "screenshot_file": "loot-lag-disable-flush-7f0a634b519b4917a38cc80222cef411-1793517129527921300.png",
+      "first_flush_observed_seconds": 0.3958654000016395,
+      "trigger": "native disable",
+      "server_before": [
+        0.5,
+        121.0,
+        0.5
+      ],
+      "server_pre_trigger": [
+        0.5,
+        121.0,
+        0.5
+      ],
+      "before": {
+        "ticks": 30433,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "pre_trigger": {
+        "ticks": 30439,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          1.5424309281337472,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.11473644494353707,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "trace": [
+        {
+          "elapsed": 0.3958654000016395,
+          "query_interval_relative_seconds": [
+            0.04452789999777451,
+            0.3958654000016395
+          ],
+          "server_position": [
+            3.0865560583387066,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30446,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              2.948665882337216,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.06430588512363279,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30453,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              3.0865560583387066,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 0.6862771000014618,
+          "query_interval_relative_seconds": [
+            0.41662950000318233,
+            0.6862771000014618
+          ],
+          "server_position": [
+            3.0865560583387066,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30453,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              3.0865560583387066,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30459,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              3.0865560583387066,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ],
+      "prefix": [
+        {
+          "elapsed": 0.26370170000882354,
+          "query_interval_relative_seconds": [
+            0.03400549999787472,
+            0.26370170000882354
+          ],
+          "server_position": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30434,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5980000033676625,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.05350800805383944,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30438,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              1.3322909434879642,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11213998127812054,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ]
+    },
+    {
+      "case": "lag-correction-discard",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/5/evidence",
+      "screenshot_file": "loot-lag-correction-discard-7f0a634b519b4917a38cc80222cef411-1793517151590100100.png",
+      "proof": "Same-world authoritative tp; old queued x<5 coordinates must never reappear after x24.5 correction.",
+      "server_before": [
+        0.5,
+        121.0,
+        0.5
+      ],
+      "before": {
+        "ticks": 30850,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "pre_correction": {
+        "ticks": 30856,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          1.5424309281337472,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.11473644494353707,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "trace": [
+        {
+          "elapsed": 0.35332709999056533,
+          "query_interval_relative_seconds": [
+            0.0028682999982265756,
+            0.35332709999056533
+          ],
+          "server_position": [
+            24.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30867,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              24.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30874,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              24.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 0.7045717000000877,
+          "query_interval_relative_seconds": [
+            0.37422609998611733,
+            0.7045717000000877
+          ],
+          "server_position": [
+            24.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30875,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              24.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30882,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              24.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 1.0007956999907037,
+          "query_interval_relative_seconds": [
+            0.7317276999965543,
+            1.0007956999907037
+          ],
+          "server_position": [
+            24.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30882,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              24.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30887,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              24.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 1.2887242999859154,
+          "query_interval_relative_seconds": [
+            1.018655799998669,
+            1.2887242999859154
+          ],
+          "server_position": [
+            24.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30888,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              24.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30893,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              24.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 1.6388633999886224,
+          "query_interval_relative_seconds": [
+            1.3066691999993054,
+            1.6388633999886224
+          ],
+          "server_position": [
+            24.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30893,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              24.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30900,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              24.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ],
+      "prefix": [
+        {
+          "elapsed": 0.2825358999980381,
+          "query_interval_relative_seconds": [
+            0.03366630000527948,
+            0.2825358999980381
+          ],
+          "server_position": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 30851,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5980000033676625,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.05350800805383944,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 30856,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              1.5424309281337472,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11473644494353707,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ]
+    },
+    {
+      "case": "kb-800-ab",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/6/evidence",
+      "screenshot_file": "kb-800-ab.png",
+      "proof": "Real second-player sword hit, actual nonzero health loss, native upward velocity/displacement onset A/B; no injected impulses.",
+      "baseline_chance0": {
+        "chance": 0,
+        "actual_damage": 1.3999996185302734,
+        "hurt_onset": 0.13567559998773504,
+        "vertical_onset": 0.13567559998773504,
+        "max_state_gap": 0.05147890000080224,
+        "before": {
+          "ticks": 31308,
+          "screen": "playing",
+          "gamemode": "survival",
+          "selected": 1,
+          "dimension": "minecraft:overworld",
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "velocity": [
+            0.0,
+            -0.0784000015258789,
+            0.0
+          ],
+          "health": 20.0,
+          "absorption": 0.0,
+          "on_ground": true
+        },
+        "trace": [
+          {
+            "elapsed": 0.03406839999661315,
+            "ticks": 31309,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.08478949998971075,
+            "ticks": 31310,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.13567559998773504,
+            "ticks": 31311,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.10001220777635356,
+              121.3608008301288,
+              0.5
+            ],
+            "velocity": [
+              -0.21839335992107356,
+              0.27518481888206686,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 0.18654169999354053,
+            "ticks": 31312,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.11838115214472,
+              121.63598564901086,
+              0.5
+            ],
+            "velocity": [
+              -0.19873796325577073,
+              0.1912811262272805,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 0.23796020000008866,
+            "ticks": 31313,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.31711911540049076,
+              121.82726677523814,
+              0.5
+            ],
+            "velocity": [
+              -0.18085155177486187,
+              0.10905550582525392,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 0.28898019999905955,
+            "ticks": 31314,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.49797066717535265,
+              121.9363222810634,
+              0.5
+            ],
+            "velocity": [
+              -0.164574916858145,
+              0.02847439626293863,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 0.3397897999966517,
+            "ticks": 31315,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.6625455840334976,
+              121.96479667732632,
+              0.5
+            ],
+            "velocity": [
+              -0.1497631786570609,
+              -0.05049509264509305,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 0.3911661999882199,
+            "ticks": 31316,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.8123087626905585,
+              121.91430158468124,
+              0.5
+            ],
+            "velocity": [
+              -0.13628449650562108,
+              -0.12788519328118755,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 0.4413337000005413,
+            "ticks": 31317,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.9485932591961797,
+              121.78641639140004,
+              0.5
+            ],
+            "velocity": [
+              -0.12401889539431836,
+              -0.2037274933806592,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 0.4928110999899218,
+            "ticks": 31318,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.072612154590498,
+              121.5826888980194,
+              0.5
+            ],
+            "velocity": [
+              -0.11285719806135466,
+              -0.27805294892471843,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 0.5432732999906875,
+            "ticks": 31319,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.1854693526518527,
+              121.30463594909467,
+              0.5
+            ],
+            "velocity": [
+              -0.10270005319563057,
+              -0.3508918967755421,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 0.5771333000011509,
+            "ticks": 31320,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.2881694058474833,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.09345705110143988,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.6279531999898609,
+            "ticks": 31321,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.3816264569489232,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.05102755582837087,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.6792664999957196,
+            "ticks": 31322,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.432654012777294,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.02786104871842451,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.7298102999920957,
+            "ticks": 31323,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4605150614957183,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.01521213436718916,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.7812891999928979,
+            "ticks": 31324,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4757271958629077,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.008305826329228834,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.8319006999954581,
+            "ticks": 31325,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4840330221921365,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.004534981702508985,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.8825120999972569,
+            "ticks": 31326,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.0024761002971754615,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.9334626999916509,
+            "ticks": 31327,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.9842249999928754,
+            "ticks": 31328,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.0348240999883274,
+            "ticks": 31329,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.0853171999915503,
+            "ticks": 31330,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.1363773999910336,
+            "ticks": 31331,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.1871307999972487,
+            "ticks": 31332,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.2383344999980181,
+            "ticks": 31333,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.288492599996971,
+            "ticks": 31334,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.3391349999874365,
+            "ticks": 31335,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.3899456999934046,
+            "ticks": 31336,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.4401279000012437,
+            "ticks": 31337,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.4907021999970311,
+            "ticks": 31338,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.541327499988256,
+            "ticks": 31339,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.5916016999981366,
+            "ticks": 31340,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.6425064999930328,
+            "ticks": 31341,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4885680038946454,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        ]
+      },
+      "delayed_chance100": {
+        "chance": 100,
+        "actual_damage": 1.3999996185302734,
+        "hurt_onset": 0.12031140000908636,
+        "vertical_onset": 0.9347208000108367,
+        "max_state_gap": 0.051608499998110346,
+        "before": {
+          "ticks": 31709,
+          "screen": "playing",
+          "gamemode": "survival",
+          "selected": 1,
+          "dimension": "minecraft:overworld",
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "velocity": [
+            0.0,
+            -0.0784000015258789,
+            0.0
+          ],
+          "health": 20.0,
+          "absorption": 0.0,
+          "on_ground": true
+        },
+        "trace": [
+          {
+            "elapsed": 0.03406990000803489,
+            "ticks": 31710,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.08567840000614524,
+            "ticks": 31711,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.12031140000908636,
+            "ticks": 31712,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.17082420000224374,
+            "ticks": 31713,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.22201660000428092,
+            "ticks": 31714,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.27243120000639465,
+            "ticks": 31715,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.3237251000100514,
+            "ticks": 31716,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.3745030999998562,
+            "ticks": 31717,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.42557269999815617,
+            "ticks": 31718,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.4762959000072442,
+            "ticks": 31719,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.5276161000074353,
+            "ticks": 31720,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.5785089999990305,
+            "ticks": 31721,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.6293225000117673,
+            "ticks": 31722,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.680473800006439,
+            "ticks": 31723,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.7312788000126602,
+            "ticks": 31724,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.7816950999986148,
+            "ticks": 31725,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.8332047000003513,
+            "ticks": 31726,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.883630299998913,
+            "ticks": 31727,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 0.9347208000108367,
+            "ticks": 31728,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.10001220777635356,
+              121.3608008301288,
+              0.5
+            ],
+            "velocity": [
+              -0.21839335992107356,
+              0.27518481888206686,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 0.9854334999981802,
+            "ticks": 31729,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.11838115214472,
+              121.63598564901086,
+              0.5
+            ],
+            "velocity": [
+              -0.19873796325577073,
+              0.1912811262272805,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 1.019797600005404,
+            "ticks": 31730,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.31711911540049076,
+              121.82726677523814,
+              0.5
+            ],
+            "velocity": [
+              -0.18085155177486187,
+              0.10905550582525392,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 1.0699572000012267,
+            "ticks": 31731,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.49797066717535265,
+              121.9363222810634,
+              0.5
+            ],
+            "velocity": [
+              -0.164574916858145,
+              0.02847439626293863,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 1.1209664000052726,
+            "ticks": 31732,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.6625455840334976,
+              121.96479667732632,
+              0.5
+            ],
+            "velocity": [
+              -0.1497631786570609,
+              -0.05049509264509305,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 1.1715691999997944,
+            "ticks": 31733,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.8123087626905585,
+              121.91430158468124,
+              0.5
+            ],
+            "velocity": [
+              -0.13628449650562108,
+              -0.12788519328118755,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 1.2221776000078535,
+            "ticks": 31734,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -0.9485932591961797,
+              121.78641639140004,
+              0.5
+            ],
+            "velocity": [
+              -0.12401889539431836,
+              -0.2037274933806592,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 1.2730171000002883,
+            "ticks": 31735,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.072612154590498,
+              121.5826888980194,
+              0.5
+            ],
+            "velocity": [
+              -0.11285719806135466,
+              -0.27805294892471843,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 1.323941000009654,
+            "ticks": 31736,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.1854693526518527,
+              121.30463594909467,
+              0.5
+            ],
+            "velocity": [
+              -0.10270005319563057,
+              -0.3508918967755421,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": false
+          },
+          {
+            "elapsed": 1.3749853000044823,
+            "ticks": 31737,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.2881694058474833,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.09345705110143988,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.4262727000023006,
+            "ticks": 31738,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.3816264569489232,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.05102755582837087,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.4770181000058074,
+            "ticks": 31739,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.432654012777294,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.02786104871842451,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.5280575000069803,
+            "ticks": 31740,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4605150614957183,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.01521213436718916,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.578505600002245,
+            "ticks": 31741,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4757271958629077,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.008305826329228834,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          {
+            "elapsed": 1.629563100010273,
+            "ticks": 31742,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              -1.4840330221921365,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              -0.004534981702508985,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 18.600000381469727,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        ]
+      }
+    },
+    {
+      "case": "lag-world-switch",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/7/evidence",
+      "screenshot_file": "loot-lag-world-switch-7f0a634b519b4917a38cc80222cef411-1793517220483345800.png",
+      "proof": "Real same-connection dimension Respawn with movement backlog and return; no stale world coordinates or disconnect. Exact open-quota edge is covered separately by primary-contract sequence regression.",
+      "server_before": [
+        0.5,
+        121.0,
+        0.5
+      ],
+      "server_nether": [
+        6.5,
+        121.0,
+        6.5
+      ],
+      "server_return": [
+        24.5,
+        121.0,
+        0.5
+      ],
+      "before": {
+        "ticks": 32174,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "returned": {
+        "ticks": 32258,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 1,
+        "dimension": "minecraft:overworld",
+        "position": [
+          24.5,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "prefix": [
+        {
+          "elapsed": 0.2830316000035964,
+          "query_interval_relative_seconds": [
+            0.03422570000111591,
+            0.2830316000035964
+          ],
+          "server_position": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "native_before": {
+            "ticks": 32175,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              0.5980000033676625,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.05350800805383944,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 32180,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:overworld",
+            "position": [
+              1.5424309281337472,
+              121.0,
+              0.5
+            ],
+            "velocity": [
+              0.11473644494353707,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ],
+      "nether_trace": [],
+      "nether_settled": [
+        {
+          "elapsed": 0.2674341999954777,
+          "query_interval_relative_seconds": [
+            0.017363399994792417,
+            0.2674341999954777
+          ],
+          "server_position": [
+            6.5,
+            121.0,
+            6.5
+          ],
+          "native_before": {
+            "ticks": 32187,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:the_nether",
+            "position": [
+              6.5,
+              121.0,
+              6.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 32192,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:the_nether",
+            "position": [
+              6.5,
+              121.0,
+              6.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 0.5594106000062311,
+          "query_interval_relative_seconds": [
+            0.2892532999976538,
+            0.5594106000062311
+          ],
+          "server_position": [
+            6.5,
+            121.0,
+            6.5
+          ],
+          "native_before": {
+            "ticks": 32192,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:the_nether",
+            "position": [
+              6.5,
+              121.0,
+              6.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 32198,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:the_nether",
+            "position": [
+              6.5,
+              121.0,
+              6.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 0.8482797000033315,
+          "query_interval_relative_seconds": [
+            0.577691300000879,
+            0.8482797000033315
+          ],
+          "server_position": [
+            6.5,
+            121.0,
+            6.5
+          ],
+          "native_before": {
+            "ticks": 32198,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:the_nether",
+            "position": [
+              6.5,
+              121.0,
+              6.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 32204,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:the_nether",
+            "position": [
+              6.5,
+              121.0,
+              6.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 1.1507096999994246,
+          "query_interval_relative_seconds": [
+            0.8812436000007438,
+            1.1507096999994246
+          ],
+          "server_position": [
+            6.5,
+            121.0,
+            6.5
+          ],
+          "native_before": {
+            "ticks": 32204,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:the_nether",
+            "position": [
+              6.5,
+              121.0,
+              6.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 32210,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:the_nether",
+            "position": [
+              6.5,
+              121.0,
+              6.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        },
+        {
+          "elapsed": 1.5009067000064533,
+          "query_interval_relative_seconds": [
+            1.1699500999966403,
+            1.5009067000064533
+          ],
+          "server_position": [
+            6.5,
+            121.0,
+            6.5
+          ],
+          "native_before": {
+            "ticks": 32210,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:the_nether",
+            "position": [
+              6.5,
+              121.0,
+              6.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          },
+          "native_after": {
+            "ticks": 32217,
+            "screen": "playing",
+            "gamemode": "survival",
+            "selected": 1,
+            "dimension": "minecraft:the_nether",
+            "position": [
+              6.5,
+              121.0,
+              6.5
+            ],
+            "velocity": [
+              0.0,
+              -0.0784000015258789,
+              0.0
+            ],
+            "health": 20.0,
+            "absorption": 0.0,
+            "on_ground": true
+          }
+        }
+      ]
+    }
+  ],
+  "source_hashes": {
+    "sunset/bot_packet_policy.rs": "368f34fb71b96181552675143199d554af82cb4ac3c5a26889d8887d461d6e8e",
+    "sunset/combat_packet.rs": "4b4e4fe4b2ea574b365c156ea7b7a968c8477e78b3c5a16b365c43f3c2f6af8c",
+    "sunset/packet_delay.rs": "bdf453ff2cded8128dace0a43019cba12a8ccf8106aabd0fdeaf126a943f5e58",
+    "sunset/packet_policy.rs": "3839130c0bd724d6c908d471e1aa3ff6d10d4cc478afa8f9b4c91b34529e67ca",
+    "sunset/packet_replay.rs": "a68bf285073b7f838fe9a8ebad1e64419b840004fed0470a5e03a094a2ca6836",
+    "sunset/runtime.rs": "3e51b6c60b78c39fb7d5dbca7aea66d2bf07d073f5fc25fad4d5450dce31baef"
+  },
+  "recorded_runner_source_sha256_field": "e23ca8cc60202d81f545370a789bcf748d3199a23b172319e447b3f876fb5059",
+  "recorded_runner_hash_scope": "Inventory wrapper records its own source. Packet wrapper inherits player_loot.py source field; this field alone does not identify its execution-time wrapper.",
+  "receipts": [
+    {
+      "file": "packet-parity-r28-7f0a634b519b4917a38cc80222cef411.json",
+      "sha256": "f095a9c869236a13ad1e22e1669389f49abaaa5e9a97e86c55d2e26734e2981a",
+      "bytes": 2039857,
+      "scope": "unaltered original execution report"
+    },
+    {
+      "file": "source.json",
+      "sha256": "cdbe1927b38e784bc35c4891f4ac31de40efea7ce0284cdd0e7fdee517283838",
+      "bytes": 14201,
+      "scope": "frozen R28 source hashes"
+    },
+    {
+      "file": "launch.json",
+      "sha256": "1cb799ab6e74f369181fbcc7f2f2512b0896f8405ee2edb3f89e36e1dcb5c368",
+      "bytes": 1456,
+      "scope": "frozen launch recipe"
+    },
+    {
+      "file": "sunset-explosives-preview.hnmod",
+      "sha256": "846c01aa73cae335a5fd1f31c14df5ec48560b482f1d29ef8d7808e318e12e6f",
+      "bytes": 922994,
+      "scope": "tested frozen package"
+    },
+    {
+      "file": "packet-parity-r28-7f0a634b519b4917a38cc80222cef411.native-raw.jsonl",
+      "sha256": "86e9726c743910858f529ffe7d2f776e45a199e952d97eab398c4e25011b54e3",
+      "bytes": 786845,
+      "scope": "private raw official control/RPC receipt; contents not exported"
+    },
+    {
+      "file": "packet-parity-r28-7f0a634b519b4917a38cc80222cef411.manifest.json",
+      "sha256": "7b8753c5782386c123a6337e202588b210e6cdf6d0b9a727d5363914b86d3088",
+      "bytes": 4145,
+      "scope": "original report/raw/screenshot hash manifest"
+    },
+    {
+      "file": "player_packet_parity.py",
+      "sha256": "da71c679d69896884e3a848c241120125880c5d1b822bd606f44d8e53e673114",
+      "bytes": 6614,
+      "scope": "POST-RUN current private wrapper; profile postlude subsequently corrected"
+    },
+    {
+      "file": "player_packets.py",
+      "sha256": "f9f85f879d8c86b0d7f6baf3691d9a9d1db525c5558dd23294a9dc53b76fba00",
+      "bytes": 23451,
+      "scope": "POST-RUN current measurement-method source; methods unchanged per root postlude review"
+    },
+    {
+      "file": "packet-r28-profile-postlude-recovery.json",
+      "sha256": "20b27a04be6aab4e456810bdee5dc62fe3cd61909fcb797dd0fd321065c38cea",
+      "bytes": 63317,
+      "scope": "separate root postlude recovery; behavioral cases not rerun"
+    },
+    {
+      "file": "horizon-client.exe",
+      "sha256": "edef37bd867bbbd1d34bf3058c99519a2f3e31e8cec497994d19e7c4c430716f",
+      "bytes": 62910464,
+      "scope": "tested native binary, verified against report"
+    }
+  ],
+  "selected_images": [
+    {
+      "group": "packet",
+      "case": "lag-menu-flush",
+      "file": "lag-menu-flush.png",
+      "sha256": "78b6cc0dff094c81569a4b25b08ac96c2e3e38be563610c1d1c7b2c4b7388aee",
+      "bytes": 113609,
+      "scope": "Context after measurement; timing/ACK behavior established by actual state and server/callback observations, not screenshot alone.",
+      "size": [
+        1280,
+        720
+      ]
+    },
+    {
+      "group": "packet",
+      "case": "kb-800-ab",
+      "file": "kb-800-ab.png",
+      "sha256": "f3cc0c618a020e61fb90eb9c230aed4ce53b0845107ea85c66b7c004f26582f4",
+      "bytes": 110638,
+      "scope": "Context after measurement; timing/ACK behavior established by actual state and server/callback observations, not screenshot alone.",
+      "size": [
+        1280,
+        720
+      ]
+    }
+  ],
+  "limits": [
+    "Actual player movement and real second-player sword hits; no fabricated packets or velocity.",
+    "Wall-clock receipt intervals bound server observations; exact wire timestamps are not exposed.",
+    "Timing intervals use official persistent ctl without chat/GUI on the measured client.",
+    "A sampling gap is inconclusive, never silently accepted. Corrections and dimension changes use only the disposable backend.",
+    "No public-server, anti-cheat, Internet-latency or FPS claim."
+  ],
+  "original_run": {
+    "behavioral_passes": 8,
+    "cleanup_succeeded": false,
+    "cleanup_error": "AssertionError({'baseline_changed': {'fakelag.key': ['none', 'key.keyboard.h'], 'fakelag.mode': ['Dynamic', 'Always'], 'fakelag.delayms': ['100', '1000']}})",
+    "whole_run_clean_exit_claimed": false
+  },
+  "separate_postlude_recovery": {
+    "receipt_file": "packet-r28-profile-postlude-recovery.json",
+    "original_report_sha256": "f095a9c869236a13ad1e22e1669389f49abaaa5e9a97e86c55d2e26734e2981a",
+    "behavioral_cases_rerun": false,
+    "recovered": true,
+    "profile_smoke_confirmed": true,
+    "restored_fields": {
+      "fakelag.key": "none",
+      "fakelag.mode": "Dynamic",
+      "fakelag.delayms": "100"
+    },
+    "all_modules_off": true,
+    "facts_scope": "Separate root receipt verifies both20HP, empty inventories/effects/inputs plus actual Saved/Loaded/Deleted profile command smoke test and restored original3settings. Original failure is retained."
+  },
+  "timing_scope": "Console query intervals bound observations; they do not timestamp wire arrival. first_server_displacement_seconds uses >0.15m threshold and is the completed query observation, not the exact first movement packet. 500/1000ms cases establish holding and subsequent catch-up in this fixture; exact latency and Internet/anticheat behavior are not claimed."
+}

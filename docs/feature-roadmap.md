@@ -45,8 +45,10 @@ Horizon itself has auto reconnect, Discord presence and a minimap: reuse them wh
 - Shield-aware weapon selection and item-use binds need coordinated inventory ownership, cooldowns and reliable slot
   restoring; extend Auto Weapon and Middle Click Extra where possible. Sprint resets and knockback jumps need verified
   attack timing and multiplayer tests.
-- Crystal and Anchor Aura and coordinated mining need damage and exposure calculations, placement and action ordering,
-  and multiplayer tests.
+- [Experimental Crystal and Anchor Aura](explosive-auras.md) now have native damage/exposure calculations,
+  observed action ordering and shared planning. Multiplayer coverage, motion prediction, manual PvP macros,
+  automatic obsidian setup and coordinated mining remain follow-up work. The exact
+  [Anubis 1.0 behavior reference](explosive-reference.md) distinguishes implemented scope from parity gaps.
 - Vehicle flight and liquid walking need verified collision and vehicle hooks and server behaviour. Name protection
   needs consistent chat, tab and nametag coverage, rich text and an unchanged outgoing identity.
 - Activity and chunk finders need bounded scans and measured false positives. Model outlines, post-processing and

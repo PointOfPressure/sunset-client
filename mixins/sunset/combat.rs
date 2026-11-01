@@ -1,8 +1,8 @@
 // Sunset's combat modules beyond the core ones, ported from Meteor's source:
-// Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow,
+// Surround, Self Trap, Self Web, Auto Web, Hole Filler, Burrow,
 // Offhand and Auto EXP.
 
-use super::sunset::{Category, Module, gui_open, hold, is_friend, own_id, with};
+use super::sunset::{Category, Module, gui_open, hold, with};
 use super::sunset_util::*;
 use super::Game;
 use horizon_protocol::packets::play::{self, Serverbound as S};
@@ -14,7 +14,7 @@ const HORIZONTAL: [[i32; 3]; 4] = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]]
 
 pub(super) fn defaults() -> Vec<Module> {
     use Category::Combat;
-    vec![
+    let mut modules = vec![
         Module::new("Surround", Combat, "Surrounds you in blocks to prevent massive crystal damage.")
             .text("Blocks", TRAP_BLOCKS)
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0)
@@ -33,18 +33,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Place delay", 1.0, 0.0, 10.0, 1.0)
             .bool("Center", true)
             .bool("Turn off", true)
-            .bool("Rotate", true),
-        Module::new("Auto Trap", Combat, "Traps people in a box to prevent them from moving.")
-            .text("Blocks", "obsidian,crying_obsidian")
-            .num("Place range", 4.0, 1.0, 6.0, 0.5)
-            .num("Walls range", 4.0, 1.0, 6.0, 0.5)
-            .pick("Priority", PRIORITIES)
-            .num("Target range", 3.0, 1.0, 10.0, 0.5)
-            .num("Place delay", 1.0, 0.0, 10.0, 1.0)
-            .num("Blocks per tick", 1.0, 1.0, 8.0, 1.0)
-            .pick("Top blocks", &["Full", "Face", "Top", "None"])
-            .pick("Bottom blocks", &["Platform", "Full", "Single", "None"])
-            .bool("Self toggle", true)
             .bool("Rotate", true),
         Module::new("Self Web", Combat, "Automatically places webs on you.")
             .pick("Mode", &["Normal", "Smart"])
@@ -96,32 +84,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Elytra", false)
             .bool("Falling", false)
             .bool("Explosion", true),
-        Module::new("Aim Assist", Combat, "Adds to your own aim while you hold a weapon: never moves you on its own, never pulls against you, never attacks. Falling onto someone (mace dive) it pulls you onto them. Duelkit's.")
-            .bool("Players", true)
-            .bool("Hostiles", true)
-            .num("Pull", 0.4, 0.0, 2.0, 0.05)
-            .num("Stickiness", 0.25, 0.0, 0.9, 0.05)
-            .num("Tracking", 0.5, 0.0, 1.0, 0.05)
-            .num("Cone (degrees)", 30.0, 10.0, 120.0, 5.0)
-            .num("Range", 6.0, 2.0, 8.0, 0.5)
-            .pick("Range shape", &["Sphere", "Column"])
-            .num("Column height", 0.0, 0.0, 64.0, 1.0)
-            .bool("Mace dive", true)
-            .num("Dive magnet", 6.0, 0.0, 30.0, 0.5)
-            .num("Dive from fall of", 3.0, 1.0, 20.0, 0.5)
-            .num("Dive cone (degrees)", 90.0, 10.0, 180.0, 5.0)
-            .num("Dive range", 12.0, 3.0, 32.0, 1.0)
-            .num("Dive tracking", 1.0, 0.0, 1.0, 0.05)
-            .num("Aim inset", 0.15, 0.0, 0.3, 0.01)
-            .num("Track within (degrees)", 3.0, 0.0, 15.0, 0.5)
-            .num("Keep target", 1.5, 1.0, 3.0, 0.1)
-            .bool("Only with a weapon", true)
-            .bool("Anti bot", false)
-            .bool("Ignore teams", false),
-        Module::new("Crystal Optimizer", Combat, "Breaks the end crystal you hit on your screen at once, without waiting for the server (as Marlow's Crystal Optimizer).")
-            .bool("Instant break", true)
-            .num("Reach", 4.5, 3.0, 6.0, 0.5)
-            .bool("Swing", true),
+        Module::new("Aim Assist", Combat, "Eases your crosshair toward an enemy player while you move the mouse.")
+            .num("Range", 4.0, 3.0, 6.0, 0.1)
+            .num("FOV", 60.0, 10.0, 180.0, 5.0)
+            .num("Speed", 60.0, 10.0, 180.0, 5.0)
+            .bool("Weapons Only", true)
+            .bool("Vertical", true),
         Module::new("Auto EXP", Combat, "Automatically repairs your armor and tools in pvp.")
             .pick("Mode", &["Both", "Armor", "Hands"])
             .bool("Replenish", true)
@@ -129,7 +97,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("EXP slot", 6.0, 1.0, 9.0, 1.0)
             .num("Min threshold %", 30.0, 1.0, 100.0, 1.0)
             .num("Max threshold %", 80.0, 1.0, 100.0, 1.0),
-    ]
+    ];
+    modules.extend(super::sunset_city_trap::defaults());
+    modules.push(super::sunset_crystal_optimizer::defaults());
+    modules
 }
 
 #[derive(Default)]
@@ -139,22 +110,13 @@ struct Cs {
     trap_delay: u32,
     trap_placed: bool,
     trap_positions: Vec<[i32; 3]>,
-    auto_trap_target: Option<u32>,
-    auto_trap_timer: u32,
-    auto_trap_placed: bool,
     web_target: Option<u32>,
     hole_timer: i32,
     burrow: Option<([i32; 3], bool)>,
-    offhand_ticks: u32,
-    totem_ticks: u32,
-    // Auto Totem wants a totem in the offhand now (Meteor's isLocked); Offhand's warning was said.
-    totem_locked: bool,
-    offhand_warned: bool,
-    exp_repairing: Option<usize>,
     aim_before: [f32; 2],
     aim_frame: Option<Instant>,
     aim_target: Option<u32>,
-    aim_last: [f64; 2],
+    aim_easing: super::sunset_aim_policy::Easing,
 }
 
 static CS: Mutex<Option<Cs>> = Mutex::new(None);
@@ -178,13 +140,14 @@ fn activated(name: &str, on: bool) -> bool {
 
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     show_clear();
+    super::sunset_combat_inventory::tick(game, mods, game.ticks);
+    super::sunset_crystal_optimizer::tick(game, game.ticks);
+    super::sunset_city_trap::tick(game, mods, game.ticks);
+    if super::sunset_combat_control::owner().is_some() { return; }
     let get = |n: &str| mods.iter().find(|m| m.name == n);
-    for name in ["Surround", "Self Trap", "Auto Trap", "Self Web", "Auto Web", "Hole Filler", "Burrow", "Offhand", "Auto Totem", "Auto EXP"] {
+    for name in ["Surround", "Self Trap", "Self Web", "Auto Web", "Hole Filler", "Burrow"] {
         let Some(m) = get(name).filter(|m| m.on) else {
             activated(name, false);
-            if name == "Auto Totem" {
-                cs(|c| c.totem_locked = false);
-            }
             continue;
         };
         // Meteor's onActivate waits for the world: a module turned on from
@@ -196,14 +159,11 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         match name {
             "Surround" => surround(game, m, just),
             "Self Trap" => self_trap(game, m, just),
-            "Auto Trap" => auto_trap(game, m, just),
             "Self Web" => self_web(game, m),
             "Auto Web" => auto_web(game, m),
             "Hole Filler" => hole_filler(game, m, just),
             "Burrow" => burrow(game, m, just),
-            "Offhand" => offhand(game, m),
-            "Auto Totem" => auto_totem(game, m),
-            _ => auto_exp(game, m),
+            _ => {},
         }
     }
 }
@@ -381,116 +341,7 @@ fn bad_target(game: &Game<'_>, t: &Option<Target>, range: f64) -> bool {
     }
 }
 
-fn auto_trap(game: &mut Game<'_>, m: &Module, just: bool) {
-    if just {
-        cs(|c| {
-            c.auto_trap_target = None;
-            c.auto_trap_timer = 0;
-            c.auto_trap_placed = false;
-        });
-    }
-    let target_id = cs(|c| c.auto_trap_target);
-    let Some(slot) = blocks_slot(game, m.t("Blocks")) else {
-        return;
-    };
-    let range = m.n("Target range");
-    let mut target = target_id.and_then(|id| target_by_id(game, id));
-    if bad_target(game, &target, range) {
-        target = player_target(game, range, m.p("Priority"));
-        cs(|c| c.auto_trap_target = target.as_ref().map(|t| t.id));
-        if target.is_none() {
-            // Everything placed and nobody left to trap.
-            if m.b("Self toggle") && cs(|c| std::mem::take(&mut c.auto_trap_placed)) {
-                toggle_off(game, "Auto Trap");
-            }
-            return;
-        }
-    }
-    let Some(t) = target else {
-        return;
-    };
-    let (place_range, walls) = (m.n("Place range"), m.n("Walls range"));
-    let eps = 1e-5;
-    let y = t.lo[1].floor() as i32;
-    let mut corners: Vec<[i32; 2]> = vec![
-        [t.lo[0].floor() as i32, t.lo[2].floor() as i32],
-        [t.lo[0].floor() as i32, (t.hi[2] - eps).floor() as i32],
-        [(t.hi[0] - eps).floor() as i32, t.lo[2].floor() as i32],
-        [(t.hi[0] - eps).floor() as i32, (t.hi[2] - eps).floor() as i32],
-    ];
-    corners.dedup();
-    let mut positions: Vec<[i32; 3]> = Vec::new();
-    let mut add = |game: &Game<'_>, p: [i32; 3]| {
-        if !positions.contains(&p) && can_place(game, p, true) && in_reach(game, p, place_range, walls) {
-            positions.push(p);
-        }
-    };
-    for [x, z] in corners {
-        let at = |dx: i32, dy: i32, dz: i32| [x + dx, y + dy, z + dz];
-        match m.p("Top blocks") {
-            "Full" => {
-                for d in [at(0, 2, 0), at(1, 1, 0), at(-1, 1, 0), at(0, 1, 1), at(0, 1, -1)] {
-                    add(game, d);
-                }
-            }
-            "Face" => {
-                for d in [at(1, 1, 0), at(-1, 1, 0), at(0, 1, 1), at(0, 1, -1)] {
-                    add(game, d);
-                }
-            }
-            "Top" => add(game, at(0, 2, 0)),
-            _ => {}
-        }
-        match m.p("Bottom blocks") {
-            "Platform" => {
-                for d in [at(0, -1, 0), at(1, -1, 0), at(-1, -1, 0), at(0, -1, 1), at(0, -1, -1)] {
-                    add(game, d);
-                }
-            }
-            "Full" => {
-                for d in [at(0, -1, 0), at(1, 0, 0), at(-1, 0, 0), at(0, 0, -1), at(0, 0, 1)] {
-                    add(game, d);
-                }
-            }
-            "Single" => add(game, at(0, -1, 0)),
-            _ => {}
-        }
-    }
-    // The furthest first.
-    if let Some(me) = player_pos(game) {
-        positions.sort_by(|a, b| dist(me, center_of(*b)).total_cmp(&dist(me, center_of(*a))));
-    }
-    for &p in &positions {
-        show(p, 0x40FF_5050);
-    }
-    if m.b("Self toggle") && cs(|c| c.auto_trap_placed) && positions.is_empty() {
-        cs(|c| c.auto_trap_placed = false);
-        toggle_off(game, "Auto Trap");
-        return;
-    }
-    let delay = m.n("Place delay") as u32;
-    let ready = cs(|c| {
-        if c.auto_trap_timer >= delay && !positions.is_empty() {
-            c.auto_trap_timer = 0;
-            true
-        } else {
-            c.auto_trap_timer += 1;
-            false
-        }
-    });
-    if ready {
-        let mut count = 0;
-        for p in positions {
-            if count >= m.n("Blocks per tick") as u32 {
-                break;
-            }
-            if place_block(game, p, slot, m.b("Rotate"), true) {
-                cs(|c| c.auto_trap_placed = true);
-                count += 1;
-            }
-        }
-    }
-}
+
 
 // ---- Webs
 
@@ -764,211 +615,10 @@ fn burrow(game: &mut Game<'_>, m: &Module, just: bool) {
     toggle_off(game, "Burrow");
 }
 
-// ---- Offhand
+// Offhand, Auto Totem and Auto EXP now share the original acknowledged
+// inventory driver in combat_inventory.rs. Their existing module names remain.
 
-// Meteor's Offhand: a totem while your health (less what a blast or the fall could take) is at Min health or you
-// glide, else the chosen item, a golden apple or potion while you hold right click with Right gapple or Sword pot (or
-// always with a sword or axe in hand), every Item switch delay ticks.
-fn offhand(game: &mut Game<'_>, m: &Module) {
-    use horizon_client::menu::Input::Pickup;
-    use winit::event::MouseButton;
-    if !inventory_idle(game) {
-        return;
-    }
-    let Some(p) = game.player.as_ref() else {
-        return;
-    };
-    let has = |s: &Option<horizon_client::items::ItemStack>, want: &str| s.as_ref().is_some_and(|s| short(&s.item) == want);
-    // A move to the offhand at most every Item switch delay ticks.
-    let ready = cs(|c| {
-        c.offhand_ticks += 1;
-        c.offhand_ticks
-    }) > m.n("Item switch delay") as u32;
-    let totem = (0..36).find(|&i| game.inventory.get(i).is_some_and(|s| has(s, "totem_of_undying")));
-    let locked = totem.is_some() && {
-        let at = [p.position.x, p.position.y, p.position.z];
-        let mut loss = 0.0;
-        if m.b("Explosion") {
-            loss = f64::max(loss, crystal_damage(game, at));
-        }
-        if m.b("Falling") {
-            loss = f64::max(loss, fall_damage(game));
-        }
-        let low = f64::from(p.health.health() + p.health.absorption()) - loss <= m.n("Min health");
-        low || (m.b("Elytra") && p.fall_flying)
-    };
-    if locked {
-        if let Some(i) = totem.filter(|_| ready && !has(&game.offhand, "totem_of_undying") && !has(&game.inventory[game.selected], "totem_of_undying")) {
-            super::sunset::menu_click(game, &[(i, Pickup), (504, Pickup), (i, Pickup)]);
-            cs(|c| c.offhand_ticks = 0);
-        }
-        return;
-    }
-    let main = game.inventory.get(game.selected).and_then(|s| s.as_ref()).map(|s| short(&s.item).to_owned()).unwrap_or_default();
-    let (sword, axe) = (main.ends_with("_sword"), main.ends_with("_axe"));
-    // A right click that is not using what the main hand holds.
-    let usable = matches!(main.as_str(), "bow" | "trident" | "crossbow") || game.res.items().get(&format!("minecraft:{main}")).is_some_and(|i| i.food.is_some());
-    let clicking = (game.physical_buttons.contains(&MouseButton::Right) || game.right)
-        && game.native_playing()
-        && !cs(|c| c.totem_locked)
-        && !usable;
-    let item = if m.b("Right gapple") {
-        if clicking && (!m.b("Sword gapple") || sword) { "Enchanted gapple" } else { m.p("Item") }
-    } else if (sword || axe) && m.b("Always gap on sword") {
-        "Enchanted gapple"
-    } else if m.b("Sword pot") {
-        if sword && clicking { "Potion" } else { m.p("Item") }
-    } else if (sword || axe) && m.b("Always pot on sword") {
-        "Potion"
-    } else {
-        m.p("Item")
-    };
-    let want = match item {
-        "Totem" => "totem_of_undying",
-        "Gapple" => "golden_apple",
-        "Enchanted gapple" => "enchanted_golden_apple",
-        "Shield" => "shield",
-        "Potion" => "potion",
-        _ => "end_crystal",
-    };
-    if has(&game.offhand, want) || !ready {
-        return;
-    }
-    let from = if m.b("Hotbar") { 0 } else { 9 };
-    match (from..36).find(|&i| game.inventory.get(i).is_some_and(|s| has(s, want))) {
-        None => {
-            if !cs(|c| std::mem::replace(&mut c.offhand_warned, true)) {
-                super::sunset::say(game, "Offhand: chosen item not found.");
-            }
-        }
-        Some(i) if clicking || !cs(|c| c.totem_locked) => {
-            // Pick it up, put it in the offhand slot, put back what was there.
-            super::sunset::menu_click(game, &[(i, Pickup), (504, Pickup), (i, Pickup)]);
-            cs(|c| {
-                c.offhand_warned = false;
-                c.offhand_ticks = 0;
-            });
-        }
-        Some(_) => {}
-    }
-}
-
-// ---- Auto Totem (Meteor's AutoTotem: Smart holds a totem when low, gliding or about to take a lethal
-// fall or blast; Strict always does)
-
-fn auto_totem(game: &mut Game<'_>, m: &Module) {
-    use horizon_client::menu::Input::Pickup;
-    if !inventory_idle(game) {
-        return;
-    }
-    let is_totem = |s: &Option<horizon_client::items::ItemStack>| s.as_ref().is_some_and(|s| short(&s.item) == "totem_of_undying");
-    let Some(found) = (0..36).find(|&i| game.inventory.get(i).is_some_and(is_totem)) else {
-        return;
-    };
-    let Some(p) = game.player.as_ref() else {
-        return;
-    };
-    let ticks = cs(|c| {
-        c.totem_ticks += 1;
-        c.totem_ticks
-    });
-    if f64::from(ticks) <= m.n("Delay (ticks)") {
-        return;
-    }
-    let health = f64::from(p.health.health() + p.health.absorption());
-    let at = [p.position.x, p.position.y, p.position.z];
-    let mut loss = 0.0;
-    if m.b("Explosion") {
-        loss = f64::max(loss, crystal_damage(game, at));
-    }
-    if m.b("Fall") {
-        loss = f64::max(loss, fall_damage(game));
-    }
-    let low = health - loss <= m.n("Health");
-    let gliding = m.b("Elytra") && p.fall_flying;
-    let locked = m.p("Mode") == "Strict" || low || gliding;
-    cs(|c| c.totem_locked = locked);
-    if locked && !is_totem(&game.offhand) {
-        super::sunset::menu_click(game, &[(found, Pickup), (504, Pickup), (found, Pickup)]);
-        cs(|c| c.totem_ticks = 0);
-    }
-}
-
-// ---- Auto EXP
-
-fn needs_repair(game: &Game<'_>, stack: &Option<horizon_client::items::ItemStack>, threshold: f64) -> bool {
-    let Some(s) = stack else {
-        return false;
-    };
-    if s.enchantment_level("minecraft:mending") == 0 {
-        return false;
-    }
-    let max = game.res.items().get(&s.item).map_or(0, |i| i.max_damage);
-    max > 0 && f64::from(max.saturating_sub(s.damage)) / f64::from(max) * 100.0 <= threshold
-}
-
-fn auto_exp(game: &mut Game<'_>, m: &Module) {
-    if m.b("Only on ground") && !game.player.as_ref().is_some_and(|p| p.ground.on_ground) {
-        return;
-    }
-    // 0 to 3 armor, 10 the main hand, 11 the offhand.
-    let item_at = |game: &Game<'_>, i: usize| -> Option<horizon_client::items::ItemStack> {
-        match i {
-            0..=3 => game.armor[i].clone(),
-            10 => game.inventory.get(game.selected).cloned().flatten(),
-            _ => game.offhand.clone(),
-        }
-    };
-    let mut repairing = cs(|c| c.exp_repairing);
-    if repairing.is_none() {
-        if m.p("Mode") != "Hands" {
-            repairing = (0..4).find(|&i| needs_repair(game, &game.armor[i], m.n("Min threshold %")));
-        }
-        if m.p("Mode") != "Armor" && repairing.is_none() {
-            repairing = [10usize, 11].into_iter().find(|&i| needs_repair(game, &item_at(game, i), m.n("Min threshold %")));
-        }
-    }
-    cs(|c| c.exp_repairing = repairing);
-    let Some(i) = repairing else {
-        return;
-    };
-    if !needs_repair(game, &item_at(game, i), m.n("Max threshold %")) {
-        cs(|c| c.exp_repairing = None);
-        return;
-    }
-    let slot = match find_hotbar(game, |n| n == "experience_bottle") {
-        Some(s) => s,
-        None => {
-            if !m.b("Replenish") {
-                return;
-            }
-            let Some(src) = find_inventory(game, |n| n == "experience_bottle") else {
-                return;
-            };
-            // Into the chosen hotbar slot.
-            let to = m.n("EXP slot") as usize - 1;
-            super::sunset::menu_click(game, &[(src, horizon_client::menu::Input::Pickup), (to, horizon_client::menu::Input::Pickup), (src, horizon_client::menu::Input::Pickup)]);
-            return;
-        }
-    };
-    // Throw it at your feet.
-    let yaw = game.yaw;
-    super::sunset::turn_then("EXP Thrower", yaw, 90.0, move |game| {
-        let before = game.selected;
-        hold(game, slot);
-        let seq = sequence(game);
-        game.send(S::UseItem(play::UseItem { hand: 0, sequence: seq, yaw, pitch: 90.0 }));
-        hold(game, before);
-    });
-}
-
-// ---- Aim Assist (Duelkit's AimAssist, around your own mouse turn once a frame)
-//
-// Only ever adds to what your hand is doing. Pull: moving the mouse toward the target turns you a bit further toward
-// it. Stickiness: while the crosshair is on the target your own turning is slowed. Tracking: while on (or almost on)
-// the target, follows part of its movement across your screen. One target is kept until it leaves the cone, so it
-// does not flick between people. Mace dive: falling onto someone the cone and range widen, tracking is full, and it
-// also pulls on its own.
+// ---- Aim Assist: native mouse-count assistance and current player geometry.
 
 use horizon_client::collisions::SceneCollisions;
 use horizon_client::mobs::Mob;
@@ -997,11 +647,6 @@ fn view_vector(yaw: f32, pitch: f32) -> [f64; 3] {
     [-y.sin() * p.cos(), -p.sin(), y.cos() * p.cos()]
 }
 
-fn angle_between(a: [f64; 3], b: [f64; 3]) -> f64 {
-    let n = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt().max(1e-9);
-    ((a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / n).clamp(-1.0, 1.0).acos()
-}
-
 fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
@@ -1013,20 +658,14 @@ fn centre(b: &Box3) -> [f64; 3] {
     std::array::from_fn(|i| (b[0][i] + b[1][i]) / 2.0)
 }
 
-// The box where this frame draws a mob, shrunk by `inset` (AABB.deflate, which keeps low below high).
-fn drawn_box(mob: &Mob, alpha: f64, inset: f64) -> Box3 {
-    let b = mob.bounds();
-    let (lo, hi) = (b.min_position(), b.max_position());
-    let (lo, hi) = ([lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z]);
-    let (prev, now) = ([mob.previous.x, mob.previous.y, mob.previous.z], [mob.position.x, mob.position.y, mob.position.z]);
-    let mut out = [[0.0; 3]; 2];
-    for i in 0..3 {
-        let off = (prev[i] - now[i]) * (1.0 - alpha);
-        let (a, z) = (lo[i] + off + inset, hi[i] + off - inset);
-        out[0][i] = a.min(z);
-        out[1][i] = a.max(z);
-    }
-    out
+fn core_box(mob: &Mob) -> Box3 {
+    let bounds = mob.bounds();
+    let lo = bounds.min_position();
+    let hi = bounds.max_position();
+    let low = [lo.x, lo.y, lo.z];
+    let high = [hi.x, hi.y, hi.z];
+    let inset = [(hi.x-lo.x)*0.25, (hi.y-lo.y)*0.1, (hi.x-lo.x)*0.25];
+    [std::array::from_fn(|i| low[i]+inset[i]), std::array::from_fn(|i| high[i]-inset[i])]
 }
 
 // The point of the box closest to the look ray, at the box's distance.
@@ -1096,226 +735,86 @@ fn clip_clear(game: &Game<'_>, eye: [f64; 3], to: [f64; 3], d: f64) -> bool {
         .is_ok_and(|r| r.miss || r.hit.location.distance_squared(from).sqrt() >= d - 0.01)
 }
 
-// `Entity.isInvisibleTo`: invisible, unless on your team and the team sees friendly invisibles.
-fn invisible_to_you(game: &Game<'_>, e: &Mob) -> bool {
-    let own = game.score.board.players_team(&game.options.player_name());
-    e.invisible && !(horizon_client::scoreboard::teams_allied(own, game.mob_team(e.id)) && own.is_some_and(|t| t.see_friendly_invisibles))
+// Return no rotation when the look segment already enters the target's core.
+fn aim_error(game: &Game<'_>, eye: [f64; 3], look: [f64; 3], core: &Box3, reach: f64) -> Option<[f64; 2]> {
+    use horizon_core::geometry::Aabb;
+    let bounds = Aabb::new(Vec3::new(core[0][0], core[0][1], core[0][2]), Vec3::new(core[1][0], core[1][1], core[1][2]));
+    let start = Vec3::new(eye[0],eye[1],eye[2]);
+    let end = Vec3::new(eye[0]+look[0]*(reach+1.0),eye[1]+look[1]*(reach+1.0),eye[2]+look[2]*(reach+1.0));
+    if bounds.clip(start,end).is_some() { return None; }
+    let to = sub(closest_point(core,eye,look),eye);
+    Some([wrap(yaw_of(to)-f64::from(game.yaw)),pitch_of(to)-f64::from(game.pitch)])
 }
 
-// `Weapons.isWeapon`: a sword, axe or spear (by their item tags), a mace or a trident in the main hand.
-fn holds_weapon(game: &Game<'_>) -> bool {
-    let tags = &game.res.items().item_tags;
-    game.inventory.get(game.selected).and_then(|s| s.as_ref()).is_some_and(|s| {
-        let item = &*s.item;
-        item == "minecraft:mace"
-            || item == "minecraft:trident"
-            || ["minecraft:swords", "minecraft:axes", "minecraft:spears"].iter().any(|t| tags.get(*t).is_some_and(|t| t.contains(item)))
+fn aim_allowed(game: &Game<'_>, module: &Module) -> bool {
+    super::sunset_melee_assist::aim_gate(game) && in_world(game) && !gui_open()
+        && !game.spectator() && !super::sunset::turn_pending()
+        && !super::sunset_render::camera_takes_mouse()
+        && (!module.b("Weapons Only") || game.inventory.get(game.selected).and_then(Option::as_ref)
+            .is_some_and(|stack| super::sunset_melee_assist::melee_item(game,Some(stack))))
+}
+
+pub(super) fn aim_before(game: &Game<'_>) {
+    cs(|state| state.aim_before=[game.yaw,game.pitch]);
+}
+
+fn aim_turn(game: &Game<'_>, module: &Module, seconds: f64, user: [f64; 2]) -> [f64; 2] {
+    use super::sunset_aim_policy as policy;
+    let Some(eye)=game.eye_position() else { return [0.0;2]; };
+    let look=view_vector(game.yaw,game.pitch);
+    let range=module.n("Range");
+    let candidates:Vec<_>=game.mobs.iter().filter(|mob| player_enemy(game,mob))
+        .filter(|mob| !mob.invisible || mob.extra.armor.iter().any(Option::is_some))
+        .filter_map(|mob| {
+            let bounds=mob.bounds();
+            let low=bounds.min_position(); let high=bounds.max_position();
+            let near=[eye[0].clamp(low.x,high.x),eye[1].clamp(low.y,high.y),eye[2].clamp(low.z,high.z)];
+            let distance=dist(eye,near);
+            if distance>range+0.5 {return None;}
+            let core=core_box(mob);
+            let angle=aim_error(game,eye,look,&core,range).map_or(0.0,|e| e[0].hypot(e[1]));
+            if angle>module.n("FOV")*0.5*1.3 {return None;}
+            let middle=centre(&core);
+            if !clip_clear(game,eye,middle,dist(eye,middle)) { return None; }
+            Some(policy::Candidate{id:mob.id,distance,angle})
+        }).collect();
+    let previous=cs(|state| state.aim_target);
+    let target=policy::choose(&candidates,range,module.n("FOV"),super::sunset_melee_assist::recent_hit(),previous);
+    let error=target.and_then(|id| game.mobs.iter().find(|mob| mob.id==id))
+        .and_then(|mob| aim_error(game,eye,look,&core_box(mob),range));
+    let milliseconds=game.started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    let quantum=horizon_client::mouse::degrees_per_count(game.look_options());
+    cs(|state| {
+        state.aim_target=target;
+        state.aim_easing.follow(target,milliseconds);
+        state.aim_easing.nudge(milliseconds,user,error,seconds,module.n("Speed"),module.b("Vertical"),quantum)
     })
 }
 
-// One frame's view: the eyes and the look at the frame's partial tick, and the settings in force.
-struct Aim<'a, 'g> {
-    game: &'a Game<'g>,
-    m: &'a Module,
-    eye: [f64; 3],
-    look: [f64; 3],
-    alpha: f64,
-    range: f64,
-    own: Option<u32>,
-    names: Vec<(u32, String)>,
-    friends: Vec<String>,
-}
-
-impl<'a> Aim<'a, '_> {
-    fn boxed(&self, e: &Mob) -> Box3 {
-        drawn_box(e, self.alpha, self.m.n("Aim inset"))
-    }
-
-    // `Targets.matches`: alive and visible to you, never yourself or an armour stand (Horizon keeps those apart);
-    // players and hostile mobs as chosen. Friends, bots (Anti bot) and teammates (Ignore teams) are left alone.
-    fn matches(&self, e: &Mob) -> bool {
-        let player = e.kind.id == "minecraft:player";
-        let wanted = if player { self.m.b("Players") } else { e.hostile() && self.m.b("Hostiles") };
-        wanted
-            && Some(e.id) != self.own
-            && e.alive()
-            && !e.removed
-            && !invisible_to_you(self.game, e)
-            && !(player && is_friend(&self.friends, &self.names, e.id))
-            && !spared(self.game, self.m, e.id, player)
-    }
-
-    // A target, within `half_cone` degrees of the crosshair, in range and not behind a block.
-    fn valid(&self, e: &Mob, half_cone: f64) -> bool {
-        if !self.matches(e) {
-            return false;
-        }
-        let aim = closest_point(&self.boxed(e), self.eye, self.look);
-        let to = sub(aim, self.eye);
-        let d = dist(self.eye, aim);
-        if d < 1e-4 || angle_between(to, self.look).to_degrees() > half_cone {
-            return false;
-        }
-        if self.m.p("Range shape") == "Column" {
-            let height = self.m.n("Column height");
-            if to[0].hypot(to[2]) > self.range || (height > 0.0 && to[1].abs() > height) {
-                return false;
-            }
-        } else if d > self.range {
-            return false;
-        }
-        clip_clear(self.game, self.eye, aim, d)
-    }
-
-    // The target nearest the crosshair.
-    fn pick(&self, cone: f64) -> Option<&'a Mob> {
-        let game: &'a Game<'_> = self.game;
-        let angle = |e: &Mob| angle_between(sub(closest_point(&self.boxed(e), self.eye, self.look), self.eye), self.look);
-        game.mobs.iter().filter(|e| self.valid(e, cone / 2.0)).min_by(|a, b| angle(a).total_cmp(&angle(b)))
-    }
-}
-
-// In the world with no screen open, not a spectator, holding a weapon (with Only with a weapon), and the mouse
-// turning you rather than a free camera.
-fn aim_allowed(game: &Game<'_>, m: &Module) -> bool {
-    in_world(game)
-        && !gui_open()
-        && !game.spectator()
-        && !super::sunset_render::camera_takes_mouse()
-        && (!m.b("Only with a weapon") || holds_weapon(game))
-}
-
-// Before your own mouse turn this frame.
-pub(super) fn aim_before(game: &Game<'_>) {
-    let rot = [game.yaw, game.pitch];
-    cs(|c| c.aim_before = rot);
-}
-
-// After it: how far to turn you on top of it, in degrees.
-fn aim_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
-    let Some(p) = game.player.as_ref() else {
-        return [0.0; 2];
-    };
-    let dive = m.b("Mace dive") && !p.ground.on_ground && !p.fall_flying && p.velocity.y < 0.0 && p.fall_distance >= m.n("Dive from fall of");
-    let (cone, range, tracking) = if dive {
-        (m.n("Dive cone (degrees)"), m.n("Dive range"), m.n("Dive tracking"))
-    } else {
-        (m.n("Cone (degrees)"), m.n("Range"), m.n("Tracking"))
-    };
-    let alpha = game.clock.camera_fraction();
-    let lerp = |a: f64, b: f64| a + alpha * (b - a);
-    let was = game.previous_position;
-    let eye = [
-        lerp(was.x, p.position.x),
-        lerp(was.y, p.position.y) + f64::from(p.dimensions.eye_height),
-        lerp(was.z, p.position.z),
-    ];
-    let look = view_vector(game.yaw, game.pitch);
-    let aim = Aim { game, m, eye, look, alpha, range, own: own_id(game), names: game.remote_player_names(), friends: with(|s| s.friends.clone()) };
-    let (previous, last, before) = cs(|c| (c.aim_target, c.aim_last, c.aim_before));
-    let kept = previous
-        .and_then(|id| game.mobs.iter().find(|e| e.id == id))
-        .filter(|e| aim.valid(e, cone / 2.0 * m.n("Keep target")));
-    let Some(target) = kept.or_else(|| aim.pick(cone)) else {
-        cs(|c| c.aim_target = None);
-        return [0.0; 2];
-    };
-    let b = aim.boxed(target);
-    let middle = sub(centre(&b), eye);
-    let (yaw_to, pitch_to) = (yaw_of(middle), pitch_of(middle));
-    // The gap from the crosshair to the nearest point of the hitbox, zero when already on it.
-    let to = sub(closest_point(&b, eye, look), eye);
-    let (yaw, pitch) = (f64::from(game.yaw), f64::from(game.pitch));
-    let gap_yaw = wrap(yaw_of(to) - yaw);
-    let gap_pitch = pitch_of(to) - pitch;
-    let gap = gap_yaw.hypot(gap_pitch);
-    let on_target = gap < 0.05;
-    let mut turn = [0.0; 2];
-    // Tracking fades out as the crosshair drifts off the hitbox, instead of switching off at a hard edge.
-    let within = m.n("Track within (degrees)");
-    if previous == Some(target.id) && gap < within {
-        let t = tracking * (1.0 - gap / within);
-        turn[0] += wrap(yaw_to - last[0]) * t;
-        turn[1] += (pitch_to - last[1]) * t;
-    }
-    if dive && !on_target && dt > 0.0 {
-        let f = 1.0 - (-m.n("Dive magnet") * dt).exp();
-        turn[0] += gap_yaw * f;
-        turn[1] += gap_pitch * f;
-    }
-    let user = [wrap(yaw - f64::from(before[0])), pitch - f64::from(before[1])];
-    let moved = user[0].hypot(user[1]);
-    if moved > 1e-4 {
-        // Stickiness ramps in over the last degree, so there is no hard edge to stutter on.
-        let stick = m.n("Stickiness") * (1.0 - gap).clamp(0.0, 1.0);
-        turn[0] -= user[0] * stick;
-        turn[1] -= user[1] * stick;
-        if !on_target && gap_yaw * user[0] + gap_pitch * user[1] > 0.0 {
-            let extra = gap.min(m.n("Pull") * moved);
-            turn[0] += gap_yaw / gap * extra;
-            turn[1] += gap_pitch / gap * extra;
-        }
-    }
-    let id = target.id;
-    cs(|c| {
-        c.aim_target = Some(id);
-        c.aim_last = [yaw_to, pitch_to];
-    });
-    turn
-}
-
-// After your own mouse turn this frame.
 pub(super) fn aim_after(game: &mut Game<'_>) {
-    let now = Instant::now();
-    let dt = cs(|c| c.aim_frame.replace(now)).map_or(0.0, |t| now.duration_since(t).as_secs_f64().min(0.05));
-    let Some(m) = with(|s| s.module("Aim Assist").filter(|m| m.on).cloned()).filter(|m| aim_allowed(game, m)) else {
-        cs(|c| c.aim_target = None);
+    let device=horizon_client::mouse::sunset_mouse_input::take();
+    if game.native_window() && game.native_on(super::sunset::ID) && game.native_playing() && !gui_open() {
+        super::sunset_crystal_bot::mouse_delta(game,device);
+    }
+    let responsive=with(|s| {
+        if !s.is_on("Auto Totem") || s.is_on("Auto Inventory Totem") {return None;}
+        s.module("Auto Totem").cloned()
+    });
+    if let Some(module)=responsive {
+        super::sunset_combat_inventory::responsive(game,std::slice::from_ref(&module));
+    }
+    let before=cs(|state| state.aim_before);
+    let user=[wrap(f64::from(game.yaw-before[0])),f64::from(game.pitch-before[1])];
+    if user.iter().any(|v| v.is_finite() && v.abs()>0.0001) {
+        super::sunset_sword_bot::mouse_input();
+    }
+    let now=Instant::now();
+    let seconds=cs(|state| state.aim_frame.replace(now)).map_or(0.0,|old| now.saturating_duration_since(old).as_secs_f64());
+    let module=with(|s| s.module("Aim Assist").filter(|m| m.on).cloned()).filter(|m| aim_allowed(game,m));
+    let Some(module)=module else {
+        cs(|state| {state.aim_target=None;state.aim_easing.reset();});
         return;
     };
-    let turn = aim_turn(game, &m, dt);
-    // turn_player takes mouse units, 0.15 degrees each (Entity.turn), and keeps the interpolation in step.
-    if turn != [0.0; 2] {
-        game.turn_player(turn[0] / 0.15, turn[1] / 0.15);
-    }
-}
-
-// ---- Crystal Optimizer
-
-// Called when you attack: if an end crystal is on the crosshair, hit it now and
-// remove it from your screen, then the click is done. Some(instant) when it
-// took the click.
-pub(super) fn crystal_attack(game: &mut Game<'_>) -> Option<bool> {
-    let m = super::sunset::with(|s| s.module("Crystal Optimizer").filter(|m| m.on).cloned())?;
-    if !m.b("Instant break") || !in_world(game) {
-        return None;
-    }
-    let eye = game.eye_position()?;
-    let dir = view_vector(game.yaw, game.pitch);
-    let reach = m.n("Reach");
-    let mut best: Option<(f64, u32)> = None;
-    for c in &game.crystals {
-        if c.id == 0 || c.invulnerable {
-            continue;
-        }
-        let lo = horizon_core::geometry::Vec3::new(c.position.x - 1.0, c.position.y, c.position.z - 1.0);
-        let hi = horizon_core::geometry::Vec3::new(c.position.x + 1.0, c.position.y + 2.0, c.position.z + 1.0);
-        let b = horizon_core::geometry::Aabb::new(lo, hi);
-        if let Some(d) = super::ray_box(eye, dir, reach, b)
-            && best.is_none_or(|(bd, _)| d < bd)
-        {
-            let at = [eye[0] + dir[0] * d, eye[1] + dir[1] * d, eye[2] + dir[2] * d];
-            if clear_line(game, at, [i32::MIN; 3]) {
-                best = Some((d, c.id));
-            }
-        }
-    }
-    let (_, id) = best?;
-    game.send(S::Attack(play::Attack { id: id as i32 }));
-    if m.b("Swing") {
-        game.swing_arm();
-        game.send(S::Punch(horizon_protocol::packets::Empty));
-    }
-    game.reset_attack_strength();
-    game.crystals.retain(|c| c.id != id);
-    Some(false)
+    let turn=aim_turn(game,&module,seconds,user);
+    if turn != [0.0;2] { game.turn_player(turn[0]/0.15,turn[1]/0.15); }
 }

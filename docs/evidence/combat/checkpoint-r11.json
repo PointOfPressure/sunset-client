@@ -1,0 +1,147 @@
+{
+  "checkpoint": "R11",
+  "manifest": {
+    "schema": 1,
+    "id": "sunset",
+    "version": "0.8.1",
+    "game": "26.3",
+    "horizon": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+    "mixins": "cb1ad23022392d88f006cf94cbf6552a73f5df12"
+  },
+  "native_client_sha256": "cea1d258a07c498e7d46d805eeaa2f16d10738fe7f8d5b560e7fac478388ea4e",
+  "package_sha256": "2e81fd615e9915638562e83debc71f9bd168fbf9c90709b01a92b5551af55ce3",
+  "support_modules": 63,
+  "injections": 51,
+  "build_stages": {
+    "plan": {
+      "exit_code": 0,
+      "elapsed_seconds": 57.07635869999649,
+      "source_unchanged": true,
+      "record_sha256": "c25753314f7b198ce445e1539358ec239141816f76d2765a7259fd25ba6edbfb"
+    },
+    "apply": {
+      "exit_code": 0,
+      "elapsed_seconds": 96.95823669999663,
+      "source_unchanged": true,
+      "record_sha256": "4ed827fd47f00ec5a2e2947f6499b087dcac12234a2749402d19d70cc495e41e"
+    },
+    "check": {
+      "exit_code": 0,
+      "elapsed_seconds": 19.247283000004245,
+      "source_unchanged": true,
+      "record_sha256": "c1578a31c3f3f5385bec18dc142ec68755715e77be93a4deb4ac554828370418"
+    },
+    "build": {
+      "exit_code": 0,
+      "elapsed_seconds": 217.71357870000065,
+      "source_unchanged": true,
+      "record_sha256": "30be7b581394a747de1d70c89434b5e161a8463664013df19fce40fee643685f"
+    },
+    "freeze": {
+      "exit_code": 0,
+      "elapsed_seconds": 1.0899352000124054,
+      "source_unchanged": true,
+      "record_sha256": "70dc4a12ab64d360d356ef1f9106b089593dd1c8f3bdf9fae6a8875699df15cc"
+    }
+  },
+  "focused": {
+    "total": 204,
+    "compiled_native_adapted": 200,
+    "source_wiring": 4,
+    "report_sha256": "a34512910d13e6ab53ef28eaab6e6a8cede32fd6ecb1b23b0b75e7c311e8a5ba",
+    "foundation_count": 44
+  },
+  "native_warnings": [
+    "unused private Masks.clear/hidden helpers in city_policy.rs"
+  ],
+  "delta_from_r10": [
+    "Opt-in fallback-only automatic obsidian base setup using real native ray/dry placement preview.",
+    "Actual obsidian block payload plus observed-world agreement before ordinary fresh Crystal placement.",
+    "Three attempts per unchanged cell,30-tick wait,64-cell ledger; independent setup clock."
+  ],
+  "runtime_status": "All19 isolated native explosive cases pass with AutoObsidian defaultoff; paired-player optional setup tests pending.",
+  "isolated_native": {
+    "started_utc": "2026-10-31T22:42:50.381372+00:00",
+    "report_sha256": "717388afe55c7ba4b4747e4b5f26b4e31bd923ed689c43310ef6b206295e6cc5",
+    "exit_code": 0,
+    "frozen_unchanged": true,
+    "checks": [
+      {
+        "name": "Explosives: crystal-cycle",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-controls",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-default-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-no-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-no-items",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-self-zero",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-hidden-face",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-cycle",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-existing",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-offhand-fuel",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-disable",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-self-zero",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-no-items",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-default-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-place-off",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: both-enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-anti-suicide",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-anti-suicide",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: equipment-model",
+        "status": "pass"
+      }
+    ]
+  }
+}

@@ -1,0 +1,1424 @@
+{
+  "schema": "sunset-manual-macro-runtime-compact-v1",
+  "native_sha256": "1a5c773a64655d3546dd15b73b2f728985f096bd95a720d525808f4a84c67e7e",
+  "source_manifest": {
+    "file": "source-fingerprint.json",
+    "sha256": "7a0461210795433fc1e58029c90c15e1920b283fd2a7cd06834cc90d556720a2",
+    "identity": {
+      "fingerprinted_files": 140,
+      "selected_source_sha256": {
+        "sunset/combat_macros.rs": "60cd4a57fa6203279d6984921a3022b487e6449380c8e22f60c96bfd0496a73f",
+        "sunset/combat_remote.rs": "16c595828ec2a0f4f593415e8883bd46644ed1a37e26429eca4a93cb3b4e952d",
+        "sunset/explosive_damage.rs": "6ed1b75f34adc4d5b903c8ae1381b9a9b6009cd200d758ba7cfa00eb01925e78",
+        "sunset/explosive_tactics.rs": "2bf6373410a86205e348f4c314f929f91d2a60ac7f543429081af38123bfcaea",
+        "sunset/macro_policy.rs": "cffceb96718773b021851118c5c25d1f656e46ff03a990ed733ddbce41dd921e"
+      }
+    },
+    "commit": "33f089824c11d650ace264b87a18b2baf09c2267"
+  },
+  "handoff": {
+    "file": "macro-handoff-r27-25679f3.json",
+    "sha256": "868f3e5ced7749c712c8b115b67e4dcfef6da33a1542e094f7e673fb80fef2d2",
+    "all_modules_off": true,
+    "macro_schema_restored": true,
+    "players": {
+      "attacker": {
+        "mode": "survival",
+        "health": 20.0,
+        "effects": [],
+        "keys": [],
+        "physical_keys": [],
+        "inventory_empty": true
+      },
+      "target": {
+        "mode": "survival",
+        "health": 20.0,
+        "effects": [],
+        "keys": [],
+        "physical_keys": [],
+        "inventory_empty": true
+      }
+    }
+  },
+  "counts": {
+    "canonical_scenarios": 8,
+    "latest_pass": 8,
+    "attempt_records": 9,
+    "passed_attempt_records": 8,
+    "retained_failed_attempts": 1
+  },
+  "canonical_outcomes": [
+    {
+      "case": "anchor-successful-held-switchback-repeat",
+      "passed": true,
+      "status": "pass",
+      "input": 1
+    },
+    {
+      "case": "anchor-held-no-switchback-control",
+      "passed": true,
+      "status": "pass",
+      "input": 0
+    },
+    {
+      "case": "creative-crystal-place-not-break",
+      "passed": true,
+      "status": "pass",
+      "input": 0
+    },
+    {
+      "case": "creative-crystal-contact-between-three-and-five",
+      "passed": true,
+      "status": "pass",
+      "input": 0
+    },
+    {
+      "case": "creative-anchor-no-totem",
+      "passed": true,
+      "status": "pass",
+      "input": 0
+    },
+    {
+      "case": "survival-anchor-actual-totem-exemption",
+      "passed": true,
+      "status": "pass",
+      "input": 0
+    },
+    {
+      "case": "current-custom-block-and-entity-attribute",
+      "passed": true,
+      "status": "pass",
+      "input": 0
+    },
+    {
+      "case": "crystal-entity-inclusive-anchor-block-only-control",
+      "passed": true,
+      "status": "pass",
+      "input": 0
+    }
+  ],
+  "original_files": [
+    {
+      "report_file": "macro-parity-r27-973c3f8355dd419680a8e696682237ce.json",
+      "report_sha256": "b62186819061f1b1c7b5c60882ca2b71250e43d2c8519d04ced6335918916d4b",
+      "raw_file": "macro-parity-r27-973c3f8355dd419680a8e696682237ce.native-raw.jsonl",
+      "raw_sha256": "21724ccd3d45f98e207c8d9f273774ba8669146b0abcdc6988662cce0e22d7c7",
+      "runner_source_sha256": "5d4284cab6c299008bdc257bc840bae1bb2a6d6d4cd8f976149eabafc7bbf462",
+      "checks": 8,
+      "finished": true,
+      "cleanup_error": null,
+      "handoff_present": true
+    },
+    {
+      "report_file": "macro-parity-r27-25679f3eb7fd44369ab415df61105e78.json",
+      "report_sha256": "21d1fca4acb6118d331f4f6c26af62a5cc8a62f416b054b5b5e037a92bfb3a75",
+      "raw_file": "macro-parity-r27-25679f3eb7fd44369ab415df61105e78.native-raw.jsonl",
+      "raw_sha256": "f5c9826e8c3f0d6b0595d1ba1403f54b3df765a054e2f23bf41eb622c6db8fe0",
+      "runner_source_sha256": "a7a3611865c9aeddbe9726a2261a7c285acc652fbf714f1e08718570f26ed4ff",
+      "checks": 1,
+      "finished": true,
+      "cleanup_error": null,
+      "handoff_present": true
+    }
+  ],
+  "attempts": [
+    {
+      "case": "anchor-successful-held-switchback-repeat",
+      "passed": false,
+      "status": "fail",
+      "input": 0,
+      "proof": {
+        "observed_phases": [
+          -1,
+          0,
+          1,
+          -1,
+          0,
+          1
+        ],
+        "complete_phase_triples": 1,
+        "actual_anchor_consumption": 2,
+        "actual_glowstone_consumption": 2,
+        "before": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 3
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 3
+            },
+            "2": {
+              "item": "minecraft:totem_of_undying",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 3,
+            "minecraft:respawn_anchor": 3,
+            "minecraft:totem_of_undying": 1
+          },
+          "native_mode": "survival",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999837,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        },
+        "after": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 1
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 1
+            },
+            "2": {
+              "item": "minecraft:totem_of_undying",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": true,
+          "server_crystal": false,
+          "native_block": "minecraft:respawn_anchor[charges=1]",
+          "native_crystal_ids": [],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 1,
+            "minecraft:respawn_anchor": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "native_mode": "survival",
+          "native_position": [
+            -2.8458158378818017,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999520,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        },
+        "after_release_settled": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 1
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 1
+            },
+            "2": {
+              "item": "minecraft:totem_of_undying",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": true,
+          "server_crystal": false,
+          "native_block": "minecraft:respawn_anchor[charges=1]",
+          "native_crystal_ids": [],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 1,
+            "minecraft:respawn_anchor": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "native_mode": "survival",
+          "native_position": [
+            -2.8458158378818017,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999576,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        }
+      },
+      "screenshot": {
+        "file": "loot-macro-parity-anchor-successful-held-switchback-repeat-973c3f8355dd419680a8e696682237ce-1793512435333154200.png",
+        "sha256": "dd6bae26b8a16510abc073fcb61ac812e571dc791bad9d0a6be3b10d626d02ae",
+        "native_size": [
+          1280,
+          720
+        ],
+        "unchanged": true
+      }
+    },
+    {
+      "case": "anchor-held-no-switchback-control",
+      "passed": true,
+      "status": "pass",
+      "input": 0,
+      "proof": {
+        "observed_phases": [
+          -1,
+          0,
+          1,
+          -1
+        ],
+        "complete_phase_triples": 1,
+        "actual_anchor_consumption": 1,
+        "actual_glowstone_consumption": 1,
+        "before": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 3
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 3
+            },
+            "2": {
+              "item": "minecraft:totem_of_undying",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 3,
+            "minecraft:respawn_anchor": 3,
+            "minecraft:totem_of_undying": 1
+          },
+          "native_mode": "survival",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999835,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        },
+        "after": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 2
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 2
+            },
+            "2": {
+              "item": "minecraft:totem_of_undying",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [],
+          "native_selected": 3,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 2,
+            "minecraft:respawn_anchor": 2,
+            "minecraft:totem_of_undying": 1
+          },
+          "native_mode": "survival",
+          "native_position": [
+            -2.8458158378818017,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999661,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        },
+        "after_release_settled": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 2
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 2
+            },
+            "2": {
+              "item": "minecraft:totem_of_undying",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [],
+          "native_selected": 3,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 2,
+            "minecraft:respawn_anchor": 2,
+            "minecraft:totem_of_undying": 1
+          },
+          "native_mode": "survival",
+          "native_position": [
+            -2.8458158378818017,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999719,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        }
+      }
+    },
+    {
+      "case": "creative-crystal-place-not-break",
+      "passed": true,
+      "status": "pass",
+      "input": 0,
+      "proof": {
+        "cap": 0,
+        "no_damage_effect_masking_cap": true,
+        "before": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:end_crystal",
+              "count": 3
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:bedrock",
+          "native_crystal_ids": [],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 3
+          },
+          "native_mode": "creative",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [],
+          "native_target_health": 20.0
+        },
+        "after": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:end_crystal",
+              "count": 3
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": true,
+          "native_block": "minecraft:bedrock",
+          "native_crystal_ids": [
+            278
+          ],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 3
+          },
+          "native_mode": "creative",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [],
+          "native_target_health": 20.0
+        }
+      },
+      "screenshot": {
+        "file": "loot-macro-parity-creative-crystal-place-not-break-973c3f8355dd419680a8e696682237ce-1793512486884250200.png",
+        "sha256": "cfdda9cd255c4cda3f9ba1cdd3f0776e2d1ac0c673836d9c59cf7e585d649492",
+        "native_size": [
+          1280,
+          720
+        ],
+        "unchanged": true
+      }
+    },
+    {
+      "case": "creative-crystal-contact-between-three-and-five",
+      "passed": true,
+      "status": "pass",
+      "input": 0,
+      "proof": {
+        "initial_exact_native_ids": [
+          279
+        ],
+        "contact_intent": "nearest crystal face approximately3.6 from eye.x.6, strictly above old3",
+        "before": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:end_crystal",
+              "count": 3
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": true,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [
+            279
+          ],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 3
+          },
+          "native_mode": "creative",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999839,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        },
+        "after": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:end_crystal",
+              "count": 3
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 3
+          },
+          "native_mode": "creative",
+          "native_position": [
+            -0.8512199664613695,
+            121.02663758794525,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999791,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        },
+        "actual_server_entity_attribute": "[08:55:06] [Server thread/INFO]: System chat: The value of attribute Entity Interaction Range for entity CodexAttacker is 5.0\n[08:55:06] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n"
+      }
+    },
+    {
+      "case": "creative-anchor-no-totem",
+      "passed": true,
+      "status": "pass",
+      "input": 0,
+      "proof": {
+        "observed_phases": [
+          -1,
+          0,
+          1,
+          -1
+        ],
+        "complete_phase_triples": 1,
+        "before": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 1
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 1,
+            "minecraft:respawn_anchor": 1
+          },
+          "native_mode": "creative",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [],
+          "native_target_health": 20.0
+        },
+        "after": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 1
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [],
+          "native_selected": 3,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 1,
+            "minecraft:respawn_anchor": 1
+          },
+          "native_mode": "creative",
+          "native_position": [
+            -1.127081094607464,
+            121.81538095158687,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [],
+          "native_target_health": 20.0
+        }
+      }
+    },
+    {
+      "case": "survival-anchor-actual-totem-exemption",
+      "passed": true,
+      "status": "pass",
+      "input": 0,
+      "proof": {
+        "observed_phases": [
+          -1,
+          0,
+          1,
+          -1
+        ],
+        "complete_phase_triples": 1,
+        "event_scope": "Actual server used-totem stat/consumption/survival/effects; raw EntityEvent35 not exposed by official ctl.",
+        "before": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 1
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 1
+            },
+            "2": {
+              "item": "minecraft:totem_of_undying",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 1,
+            "minecraft:respawn_anchor": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "native_mode": "survival",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [],
+          "native_target_health": 20.0
+        },
+        "after": {
+          "server_slots": {
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 2.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:fire[age=0,east=false,north=false,south=false,up=false,west=false]",
+          "native_crystal_ids": [],
+          "native_selected": 3,
+          "native_counts": {
+            "minecraft:diamond_sword": 1
+          },
+          "native_mode": "survival",
+          "native_position": [
+            -0.8141535003444174,
+            121.73573262222628,
+            0.5
+          ],
+          "native_health": 2.0,
+          "native_absorption": 8.0,
+          "native_effects": [
+            {
+              "amplifier": 1,
+              "duration_ticks": 897,
+              "id": "regeneration"
+            },
+            {
+              "amplifier": 1,
+              "duration_ticks": 97,
+              "id": "absorption"
+            },
+            {
+              "amplifier": 0,
+              "duration_ticks": 797,
+              "id": "fire_resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        },
+        "server_used_totem_score": "[08:55:53] [Server thread/INFO]: System chat: CodexAttacker has 1 [mp973c3f8355]\n[08:55:53] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n"
+      },
+      "screenshot": {
+        "file": "loot-macro-parity-survival-anchor-actual-totem-exemption-973c3f8355dd419680a8e696682237ce-1793512553622490700.png",
+        "sha256": "488b2409403f004c5787a50a5f8fed95e317f95410f0e3afd7a05cb74adc4409",
+        "native_size": [
+          1280,
+          720
+        ],
+        "unchanged": true
+      }
+    },
+    {
+      "case": "current-custom-block-and-entity-attribute",
+      "passed": true,
+      "status": "pass",
+      "input": 0,
+      "proof": {
+        "entity": {
+          "passed": true,
+          "actual_server_attribute": "[08:56:16] [Server thread/INFO]: System chat: The value of attribute Entity Interaction Range for entity CodexAttacker is 4.0\n[08:56:16] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "before": {
+            "server_slots": {
+              "0": {
+                "item": "minecraft:end_crystal",
+                "count": 3
+              },
+              "8": {
+                "item": "minecraft:diamond_sword",
+                "count": 1
+              }
+            },
+            "server_health": 20.0,
+            "server_anchor": false,
+            "server_crystal": true,
+            "native_block": "minecraft:air",
+            "native_crystal_ids": [
+              280
+            ],
+            "native_selected": 1,
+            "native_counts": {
+              "minecraft:diamond_sword": 1,
+              "minecraft:end_crystal": 3
+            },
+            "native_mode": "survival",
+            "native_position": [
+              0.6,
+              121.0,
+              0.5
+            ],
+            "native_health": 20.0,
+            "native_absorption": 0.0,
+            "native_effects": [
+              {
+                "amplifier": 255,
+                "duration_ticks": 19999842,
+                "id": "resistance"
+              }
+            ],
+            "native_target_health": 20.0
+          },
+          "default_range_negative": {
+            "server_slots": {
+              "0": {
+                "item": "minecraft:end_crystal",
+                "count": 3
+              },
+              "8": {
+                "item": "minecraft:diamond_sword",
+                "count": 1
+              }
+            },
+            "server_health": 20.0,
+            "server_anchor": false,
+            "server_crystal": true,
+            "native_block": "minecraft:air",
+            "native_crystal_ids": [
+              280
+            ],
+            "native_selected": 1,
+            "native_counts": {
+              "minecraft:diamond_sword": 1,
+              "minecraft:end_crystal": 3
+            },
+            "native_mode": "survival",
+            "native_position": [
+              0.6,
+              121.0,
+              0.5
+            ],
+            "native_health": 20.0,
+            "native_absorption": 0.0,
+            "native_effects": [
+              {
+                "amplifier": 255,
+                "duration_ticks": 19999781,
+                "id": "resistance"
+              }
+            ],
+            "native_target_health": 20.0
+          },
+          "after": {
+            "server_slots": {
+              "0": {
+                "item": "minecraft:end_crystal",
+                "count": 3
+              },
+              "8": {
+                "item": "minecraft:diamond_sword",
+                "count": 1
+              }
+            },
+            "server_health": 20.0,
+            "server_anchor": false,
+            "server_crystal": false,
+            "native_block": "minecraft:air",
+            "native_crystal_ids": [],
+            "native_selected": 1,
+            "native_counts": {
+              "minecraft:diamond_sword": 1,
+              "minecraft:end_crystal": 3
+            },
+            "native_mode": "survival",
+            "native_position": [
+              -0.8511922001394683,
+              121.02675552798333,
+              0.5
+            ],
+            "native_health": 20.0,
+            "native_absorption": 0.0,
+            "native_effects": [
+              {
+                "amplifier": 255,
+                "duration_ticks": 19999730,
+                "id": "resistance"
+              }
+            ],
+            "native_target_health": 20.0
+          }
+        },
+        "block": {
+          "passed": true,
+          "actual_server_attribute": "[08:56:39] [Server thread/INFO]: System chat: The value of attribute Block Interaction Range for entity CodexAttacker is 6.0\n[08:56:39] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "default_range_negative": {
+            "server_slots": {
+              "0": {
+                "item": "minecraft:end_crystal",
+                "count": 3
+              },
+              "8": {
+                "item": "minecraft:diamond_sword",
+                "count": 1
+              }
+            },
+            "server_health": 20.0,
+            "server_anchor": false,
+            "server_crystal": false,
+            "native_block": "minecraft:bedrock",
+            "native_crystal_ids": [],
+            "native_selected": 1,
+            "native_counts": {
+              "minecraft:diamond_sword": 1,
+              "minecraft:end_crystal": 3
+            },
+            "native_mode": "survival",
+            "native_position": [
+              0.6,
+              121.0,
+              0.5
+            ],
+            "native_health": 20.0,
+            "native_absorption": 0.0,
+            "native_effects": [],
+            "native_target_health": 20.0
+          },
+          "after": {
+            "server_slots": {
+              "0": {
+                "item": "minecraft:end_crystal",
+                "count": 2
+              },
+              "8": {
+                "item": "minecraft:diamond_sword",
+                "count": 1
+              }
+            },
+            "server_health": 20.0,
+            "server_anchor": false,
+            "server_crystal": true,
+            "native_block": "minecraft:bedrock",
+            "native_crystal_ids": [
+              281
+            ],
+            "native_selected": 1,
+            "native_counts": {
+              "minecraft:diamond_sword": 1,
+              "minecraft:end_crystal": 2
+            },
+            "native_mode": "survival",
+            "native_position": [
+              0.6,
+              121.0,
+              0.5
+            ],
+            "native_health": 20.0,
+            "native_absorption": 0.0,
+            "native_effects": [],
+            "native_target_health": 20.0
+          }
+        }
+      }
+    },
+    {
+      "case": "crystal-entity-inclusive-anchor-block-only-control",
+      "passed": true,
+      "status": "pass",
+      "input": 0,
+      "proof": {
+        "scope": "Tests no Crystal attack through nearer living entity; initial vanilla-use fallback is not claimed globally suppressed.",
+        "after": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:end_crystal",
+              "count": 3
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:fire[age=0,east=false,north=false,south=false,up=false,west=false]",
+          "native_crystal_ids": [],
+          "native_selected": 2,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 3
+          },
+          "native_mode": "survival",
+          "native_position": [
+            -0.5914501980240636,
+            121.0284069417954,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999643,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 10.869344711303713
+        },
+        "before_crystal": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:end_crystal",
+              "count": 3
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": true,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [
+            282
+          ],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 3
+          },
+          "native_mode": "survival",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999807,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        },
+        "nearer_living_negative": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:end_crystal",
+              "count": 3
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": true,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [
+            282
+          ],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 3
+          },
+          "native_mode": "survival",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999742,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        },
+        "before_anchor": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:end_crystal",
+              "count": 3
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": true,
+          "server_crystal": false,
+          "native_block": "minecraft:respawn_anchor[charges=1]",
+          "native_crystal_ids": [],
+          "native_selected": 9,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 3
+          },
+          "native_mode": "survival",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999685,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        }
+      }
+    },
+    {
+      "case": "anchor-successful-held-switchback-repeat",
+      "passed": true,
+      "status": "pass",
+      "input": 1,
+      "proof": {
+        "observed_phases": [
+          -1,
+          0,
+          1,
+          -1,
+          0,
+          1,
+          -1
+        ],
+        "complete_phase_triples": 2,
+        "actual_anchor_consumption": 2,
+        "actual_glowstone_consumption": 2,
+        "stationary_knockback_fixture": {
+          "exit": 0,
+          "stdout": "[08:59:13] [Server thread/INFO]: System chat: The value of attribute Explosion Knockback Resistance for entity CodexAttacker is 1.0\n[08:59:13] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": "",
+          "barrier": "list"
+        },
+        "before": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 3
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 3
+            },
+            "2": {
+              "item": "minecraft:totem_of_undying",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:air",
+          "native_crystal_ids": [],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 3,
+            "minecraft:respawn_anchor": 3,
+            "minecraft:totem_of_undying": 1
+          },
+          "native_mode": "survival",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999830,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        },
+        "after": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 1
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 1
+            },
+            "2": {
+              "item": "minecraft:totem_of_undying",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:fire[age=0,east=false,north=false,south=false,up=false,west=false]",
+          "native_crystal_ids": [],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 1,
+            "minecraft:respawn_anchor": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "native_mode": "survival",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999668,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        },
+        "after_release_settled": {
+          "server_slots": {
+            "0": {
+              "item": "minecraft:respawn_anchor",
+              "count": 1
+            },
+            "1": {
+              "item": "minecraft:glowstone",
+              "count": 1
+            },
+            "2": {
+              "item": "minecraft:totem_of_undying",
+              "count": 1
+            },
+            "8": {
+              "item": "minecraft:diamond_sword",
+              "count": 1
+            }
+          },
+          "server_health": 20.0,
+          "server_anchor": false,
+          "server_crystal": false,
+          "native_block": "minecraft:fire[age=0,east=false,north=false,south=false,up=false,west=false]",
+          "native_crystal_ids": [],
+          "native_selected": 1,
+          "native_counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 1,
+            "minecraft:respawn_anchor": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "native_mode": "survival",
+          "native_position": [
+            0.6,
+            121.0,
+            0.5
+          ],
+          "native_health": 20.0,
+          "native_absorption": 0.0,
+          "native_effects": [
+            {
+              "amplifier": 255,
+              "duration_ticks": 19999723,
+              "id": "resistance"
+            }
+          ],
+          "native_target_health": 20.0
+        }
+      },
+      "screenshot": {
+        "file": "loot-macro-parity-anchor-successful-held-switchback-repeat-25679f3eb7fd44369ab415df61105e78-1793512760882620600.png",
+        "sha256": "7d14b8cc7158de44f3c8e98eb52db8cb0572d49b3a9c32c030ecbcd4b18a93c5",
+        "native_size": [
+          1280,
+          720
+        ],
+        "unchanged": true
+      }
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "loot-macro-parity-anchor-successful-held-switchback-repeat-973c3f8355dd419680a8e696682237ce-1793512435333154200.png",
+      "sha256": "dd6bae26b8a16510abc073fcb61ac812e571dc791bad9d0a6be3b10d626d02ae",
+      "native_size": [
+        1280,
+        720
+      ],
+      "unchanged": true
+    },
+    {
+      "file": "loot-macro-parity-creative-crystal-place-not-break-973c3f8355dd419680a8e696682237ce-1793512486884250200.png",
+      "sha256": "cfdda9cd255c4cda3f9ba1cdd3f0776e2d1ac0c673836d9c59cf7e585d649492",
+      "native_size": [
+        1280,
+        720
+      ],
+      "unchanged": true
+    },
+    {
+      "file": "loot-macro-parity-survival-anchor-actual-totem-exemption-973c3f8355dd419680a8e696682237ce-1793512553622490700.png",
+      "sha256": "488b2409403f004c5787a50a5f8fed95e317f95410f0e3afd7a05cb74adc4409",
+      "native_size": [
+        1280,
+        720
+      ],
+      "unchanged": true
+    },
+    {
+      "file": "loot-macro-parity-anchor-successful-held-switchback-repeat-25679f3eb7fd44369ab415df61105e78-1793512760882620600.png",
+      "sha256": "7d14b8cc7158de44f3c8e98eb52db8cb0572d49b3a9c32c030ecbcd4b18a93c5",
+      "native_size": [
+        1280,
+        720
+      ],
+      "unchanged": true
+    }
+  ],
+  "limits": [
+    "Compact facts only; full original closed reports/raw replies are retained by hash.",
+    "Latest attempt determines each canonical outcome; earlier failures remain separate records.",
+    "Sender observations are not exact wire timestamps or server ACK.",
+    "Totem activation uses real server used-totem score/consumption/effects; no raw EntityEvent35 exposure.",
+    "No broad parity, anticheat, public server or custom-component claim."
+  ]
+}

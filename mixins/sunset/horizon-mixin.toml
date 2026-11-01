@@ -57,6 +57,84 @@ name = "sunset_combat"
 source = "combat.rs"
 
 [[module]]
+id = "aim_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_aim_policy"
+source = "aim_policy.rs"
+
+[[module]]
+id = "explosive_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_policy"
+source = "explosive_policy.rs"
+
+[[module]]
+id = "crystal_setup_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crystal_setup_policy"
+source = "crystal_setup_policy.rs"
+
+[[module]]
+id = "aura_base"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_aura_base"
+source = "aura_base.rs"
+
+[[module]]
+id = "loot_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_loot_policy"
+source = "loot_policy.rs"
+
+[[module]]
+id = "loot_guard"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_loot_guard"
+source = "loot_guard.rs"
+
+[[module]]
+id = "loot_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_loot_remote"
+source = "loot_remote.rs"
+
+[[module]]
+id = "explosive_damage"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_damage"
+source = "explosive_damage.rs"
+
+[[module]]
+id = "explosive_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_aura"
+source = "explosive_aura.rs"
+
+[[module]]
+id = "explosive_choice"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_choice"
+source = "explosive_choice.rs"
+
+[[module]]
+id = "crystal_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crystal_aura"
+source = "crystal_aura.rs"
+
+[[module]]
+id = "anchor_state"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anchor_state"
+source = "anchor_state.rs"
+
+[[module]]
+id = "anchor_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anchor_aura"
+source = "anchor_aura.rs"
+
+[[module]]
 id = "player"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_player"
@@ -192,6 +270,105 @@ name = "sunset_flags"
 source = "input_flags.rs"
 visibility = "pub"
 
+[[module]]
+id = "combat_lease"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_lease"
+source = "combat_lease.rs"
+
+[[module]]
+id = "combat_control"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_control"
+source = "combat_control.rs"
+
+[[module]]
+id = "combat_macros"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_macros"
+source = "combat_macros.rs"
+
+[[module]]
+id = "macro_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_macro_policy"
+source = "macro_policy.rs"
+
+[[module]]
+id = "melee_assist"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_melee_assist"
+source = "melee_assist.rs"
+
+[[module]]
+id = "melee_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_melee_policy"
+source = "melee_policy.rs"
+
+[[module]]
+id = "combat_inventory"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_inventory"
+source = "combat_inventory.rs"
+
+[[module]]
+id = "inventory_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_inventory_policy"
+source = "inventory_policy.rs"
+
+[[module]]
+id = "packet_delay"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_packet_delay"
+source = "packet_delay.rs"
+
+[[module]]
+id = "packet_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_packet_policy"
+source = "packet_policy.rs"
+
+[[module]]
+id = "packet_replay"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_packet_replay"
+source = "packet_replay.rs"
+visibility = "pub(crate)"
+
+[[module]]
+id = "sword_bot"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sword_bot"
+source = "sword_bot.rs"
+
+[[module]]
+id = "sword_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sword_policy"
+source = "sword_policy.rs"
+
+[[module]]
+id = "combat_wire"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_wire"
+source = "combat_wire.rs"
+
+[[module]]
+id = "combat_collision"
+file = "crates/horizon-client/src/game/spear.rs"
+name = "sunset_combat_collision"
+source = "combat_collision.rs"
+visibility = "pub(crate)"
+
+[[module]]
+id = "combat_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_combat_remote"
+source = "combat_remote.rs"
+visibility = "pub(crate)"
+
 [[injection]]
 id = "list"
 kind = "HEAD"
@@ -303,12 +480,26 @@ helper = "input.rs"
 bindings = []
 
 [[injection]]
+id = "gui_control_key"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::Game<'_>::key_pressed"
+helper = "gui_key_capture.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[injection]]
 id = "buttons"
 kind = "HEAD"
 cancellable = true
 target = "horizon_client::game::Game<'_>::play_mouse"
 helper = "buttons.rs"
-bindings = []
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "button", ty = "winit::event::MouseButton", value = "button" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
 
 [[injection]]
 id = "press"
@@ -454,16 +645,6 @@ kind = "HEAD"
 cancellable = true
 target = "horizon_client::game::remote::Game<'_>::remote_start_attack"
 helper = "crit_hook.rs"
-bindings = [
-  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
-]
-
-[[injection]]
-id = "crystal"
-kind = "HEAD"
-cancellable = true
-target = "horizon_client::game::remote::Game<'_>::remote_start_attack"
-helper = "crystal.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
 ]
@@ -676,4 +857,277 @@ helper = "vanish_completions.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
   { name = "data", ty = "&[u8]", value = "data" },
+]
+
+[[injection]]
+id = "combat_use"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_use"
+helper = "combat_use.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "combat_packet"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::handle_packet"
+helper = "combat_packet.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "packet", ty = "&horizon_protocol::packets::play::Clientbound", value = "&packet" },
+]
+
+[[injection]]
+id = "combat_use_hand"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_use_item"
+helper = "combat_use_hand.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "hand", ty = "horizon_client::first_person::Hand", value = "hand" },
+]
+
+[[module]]
+id = "crystal_bot"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crystal_bot"
+source = "crystal_bot.rs"
+
+[[module]]
+id = "crystal_bot_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crystal_bot_policy"
+source = "crystal_bot_policy.rs"
+
+[[module]]
+id="city_policy"
+file="crates/horizon-client/src/game.rs"
+name="sunset_city_policy"
+source="city_policy.rs"
+
+[[module]]
+id="city_trap"
+file="crates/horizon-client/src/game.rs"
+name="sunset_city_trap"
+source="city_trap.rs"
+
+[[module]]
+id="city_mining"
+file="crates/horizon-client/src/game/remote.rs"
+name="sunset_city_mining"
+source="city_mining.rs"
+visibility="pub(crate)"
+
+[[module]]
+id="crystal_optimizer"
+file="crates/horizon-client/src/game.rs"
+name="sunset_crystal_optimizer"
+source="crystal_optimizer.rs"
+
+[[injection]]
+id="city-owned-idle-abort"
+kind="HEAD"
+cancellable=true
+target="horizon_client::game::remote::Game<'_>::remote_continue_attack"
+helper="city_continue_hook.rs"
+bindings=[
+  {name="game",ty="&mut crate::game::Game<'_>",value="&mut *self"},
+  {name="down",ty="bool",value="down"},
+]
+
+[[injection]]
+id="crystal-optimizer-visual-filter"
+kind="MODIFY_EXPRESSION_VALUE"
+target="horizon_client::game::end::Game<'_>::end_crystal_geometry"
+selector="rel.length_squared() > 256.0 * 256.0"
+require=1
+ordinal=0
+helper="optimizer_skip.rs"
+bindings=[
+  {name="culled",ty="bool",value="$value"},
+  {name="game",ty="&crate::game::Game<'_>",value="&*self"},
+  {name="feet",ty="&glam::DVec3",value="$local_ref:feet:0"},
+]
+
+[[injection]]
+id="crystal-optimizer-target-filter"
+kind="HEAD"
+cancellable=true
+target="horizon_client::game::dragon::Game<'_>::special_targets"
+helper="optimizer_targets.rs"
+bindings=[
+  {name="game",ty="&crate::game::Game<'_>",value="&*self"},
+]
+
+[[module]]
+id="sword_controller_policy"
+file="crates/horizon-client/src/game.rs"
+name="sunset_sword_controller_policy"
+source="sword_controller_policy.rs"
+
+[[module]]
+id="aura_policy"
+file="crates/horizon-client/src/game.rs"
+name="sunset_aura_policy"
+source="aura_policy.rs"
+
+[[module]]
+id = "lead_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_lead_policy"
+source = "lead_policy.rs"
+
+[[module]]
+id = "faceplace_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_faceplace_policy"
+source = "faceplace_policy.rs"
+
+[[module]]
+id = "durability_patch"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_durability_patch"
+source = "durability_patch.rs"
+
+[[module]]
+id = "faceplace_native"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_faceplace_native"
+source = "faceplace_native.rs"
+
+[[module]]
+id = "prediction_native"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_prediction_native"
+source = "prediction_native.rs"
+
+[[module]]
+id = "prediction"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_prediction"
+source = "prediction.rs"
+
+[[module]]
+id="raw_mouse"
+file="crates/horizon-client-input/src/mouse.rs"
+name="sunset_mouse_input"
+source="raw_mouse.rs"
+visibility="pub"
+
+[[injection]]
+id="combat-raw-mouse-input"
+kind="HEAD"
+target="horizon_client_input::mouse::MouseLook::handle_accumulated_movement"
+helper="combat_mouse_motion.rs"
+bindings=[
+  {name="this",ty="&MouseLook",value="&*self"},
+  {name="active",ty="bool",value="window_active"},
+  {name="grabbed",ty="bool",value="grabbed_with_player"},
+]
+
+[[module]]
+id = "hurt_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hurt_policy"
+source = "hurt_policy.rs"
+
+[[module]]
+id = "prediction_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_prediction_remote"
+source = "prediction_remote.rs"
+
+[[module]]
+id = "hurt_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_hurt_remote"
+source = "hurt_remote.rs"
+
+[[module]]
+id="mace_policy"
+file="crates/horizon-client/src/game.rs"
+name="sunset_mace_policy"
+source="mace_policy.rs"
+
+[[module]]
+id="mace_native"
+file="crates/horizon-client/src/game.rs"
+name="sunset_mace_native"
+source="mace_native.rs"
+
+[[module]]
+id="trigger_policy"
+file="crates/horizon-client/src/game.rs"
+name="sunset_trigger_policy"
+source="trigger_policy.rs"
+
+[[module]]
+id = "bot_tactics_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_bot_tactics_policy"
+source = "bot_tactics_policy.rs"
+
+[[module]]
+id = "bot_packet_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_bot_packet_policy"
+source = "bot_packet_policy.rs"
+
+[[module]]
+id = "bot_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_bot_remote"
+source = "bot_remote.rs"
+
+[[module]]
+id="explosive_tactics"
+file="crates/horizon-client/src/game.rs"
+name="sunset_explosive_tactics"
+source="explosive_tactics.rs"
+
+[[module]]
+id = "pearl_owner"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_pearl_owner"
+source = "pearl_owner.rs"
+
+[[injection]]
+id = "pearl-owner-spawn"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote_projectiles::Game<'_>::spawn_remote_projectile"
+helper = "pearl_owner_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "id", ty = "i32", value = "id" },
+  { name = "kind", ty = "&str", value = "kind" },
+  { name = "position", ty = "[f64; 3]", value = "position" },
+  { name = "rotation", ty = "(f32, f32)", value = "rotation" },
+  { name = "velocity", ty = "[f64; 3]", value = "velocity" },
+  { name = "data", ty = "i32", value = "data" },
+]
+
+# Append this single injection; copy optimizer_objects.rs beside the manifest.
+[[injection]]
+id="crystal-optimizer-remote-object-filter"
+kind="HEAD"
+cancellable=true
+target="horizon_client::game::remote_vehicles::Game<'_>::remote_object_hit"
+helper="optimizer_objects.rs"
+bindings=[
+  {name="game",ty="&crate::game::Game<'_>",value="&*self"},
+  {name="attacking",ty="bool",value="attacking"},
+]
+
+[[injection]]
+id = "crystal-optimizer-native-attack-refresh"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::remote_start_attack"
+helper = "optimizer_attack.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
 ]

@@ -437,6 +437,37 @@ pub(super) fn other_players(game: &Game<'_>) -> Vec<Target> {
         .collect()
 }
 
+// Shared enemy predicate for the native combat controllers. A retained profile
+// name is insufficient: require the current player-list entry and its mode.
+pub(super) fn player_enemy(game: &Game<'_>, mob: &horizon_client::mobs::Mob) -> bool {
+    if mob.kind.id != "minecraft:player" || !mob.health.is_finite() || !mob.alive()
+        || mob.removed || Some(mob.id) == super::sunset::own_id(game) || game.riding == Some(mob.id)
+        || !matches!(super::remote::sunset_combat_remote::player_mode(game, mob.id), Some(0 | 2)) {
+        return false;
+    }
+    let Some(name) = game.remote_player_name(mob.id) else { return false; };
+    if with(|s| s.friends.iter().any(|friend| friend.eq_ignore_ascii_case(name))) {
+        return false;
+    }
+    horizon_client::scoreboard::teams_allow_damage(
+        game.score.board.players_team(&game.options.player_name()), game.mob_team(mob.id),
+    )
+}
+pub(super) fn setting_key_down(game:&Game<'_>,module:&Module,setting:&str)->bool {
+    let Some(name)=super::sunset::key_from_text(module.t(setting)) else {return false;};
+    game.physical_keys.iter().chain(game.keys.iter())
+        .any(|key|horizon_client::keybinds::key_name(*key)==Some(name.as_str()))
+        || game.physical_buttons.iter().any(|button|horizon_client::keybinds::mouse_name(*button)==name)
+}
+pub(super) fn block_contact(game:&Game<'_>,look:(f32,f32),clicked:[i32;3],face:i32,range:f64)->Option<[f64;3]> {
+    if !look.0.is_finite() || !look.1.is_finite() || !range.is_finite(){return None;}
+    let yaw=f64::from(look.0).to_radians();let pitch=f64::from(look.1).to_radians();
+    let direction=[-yaw.sin()*pitch.cos(),-pitch.sin(),yaw.cos()*pitch.cos()];
+    let normal=match face {0=>[0,-1,0],1=>[0,1,0],2=>[0,0,-1],3=>[0,0,1],4=>[-1,0,0],5=>[1,0,0],_=>return None};
+    game.clip_ray(game.eye_position()?,direction,range.min(game.reach()))
+        .filter(|hit|hit.pos==clicked&&hit.face==normal).map(|hit|hit.point)
+}
+
 pub(super) fn every_living(game: &Game<'_>) -> Vec<Target> {
     game.mobs.iter().filter(|m| m.alive() && !m.removed).map(mob_target).collect()
 }

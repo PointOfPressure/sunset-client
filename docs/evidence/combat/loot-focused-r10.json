@@ -1,0 +1,63 @@
+{
+  "checkpoint": "R10 source; native build and live proof pending",
+  "passed": 185,
+  "previous_checks": 166,
+  "added": {
+    "production_policy": 7,
+    "real_protocol_and_identity_adapters": 6,
+    "source_wiring": 4,
+    "compiled_production_press_observer": 2
+  },
+  "native_host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "raw_aggregate_sha256": "f4bb2beb71cc39b8f2a05262159f9b89e00df0f2441262a4c743e88b0f5e5078",
+  "source_sha256": {
+    "mixins/sunset/loot_policy.rs": "31916183228e3c3b78c05f7cb3ac64fa7ef2889c998d3da4cb292abbcc93371a",
+    "mixins/sunset/loot_guard.rs": "c17eb7b171470d0d7c3b12f17c5da77abc53aca632fb571d605437a391699569",
+    "mixins/sunset/loot_remote.rs": "526626245585b1be023cde6762af8738df847e124a7108267b28f1c259401be9",
+    "mixins/sunset/combat_packet.rs": "2f09d9f27c4031f85f2648ca232b624f68ccec807ea3ac7b0ffac657db15365a",
+    "mixins/sunset/crystal_aura.rs": "d5ce9e178d73b4e674c47e71915a29919442b03249e089205ff13edcf8259036",
+    "mixins/sunset/anchor_aura.rs": "739deb82169bbb9d8d5934bc2e36030a5f36da03c5ce92b88d1a0e1778bb40dc",
+    "mixins/sunset/combat_macros.rs": "b7ef08588ed3be2adc74b605e875c4d1ff37b22389a1e914492ded1323ce43af",
+    "mixins/sunset/runtime.rs": "165cffd4c19fba6b8c262bb3545999ba91ea1835b48b76ed6cf3daeb7deb7aa4",
+    "mixins/sunset/horizon-mixin.toml": "d9e4a4069c58a3b54b86a3725912561ef63aca74392363f7e7b7340c94e9a076",
+    "tools/loot_policy_tests.rs": "9b4deb480bcba1af27c1d73104da8fd0a20f0fa2e87eefe00ae14e8f56a8b3aa",
+    "tools/loot_engine_tests.py": "1795769f0bdbbf6ebd933cee8a964719610f10809ae58930769210825ab1e97c",
+    "tools/loot_integration_tests.py": "d9f4667125aa10c50f5edb0b2adf1ae11179b87e25240f7b259da5ad2d9e79fe",
+    "tools/combat_tests.py": "bf2eeec4cedfe50f2825934b1db933a5c9322e63d9bea75f7e9917c3ecd7e421",
+    "tools/loot_press_tests.py": "0c485bf248a8bfceefa90be19a41ba66ff855fcd7015de623d3502d6f2e3aefb"
+  },
+  "checks": [
+    {
+      "name": "loot_policy",
+      "exit": 0,
+      "stdout": "\nrunning 7 tests\ntest expiry_and_explicit_clear_do_not_need_a_tick_hook ... ok\ntest cap_overflow_never_silently_evicts_an_unexpired_death ... ok\ntest full_dimension_keys_are_exact_bounded_and_do_not_alias_custom_dimensions ... ok\ntest missing_or_invalid_known_player_position_temporarily_refuses_all_blasts ... ok\ntest repeated_notification_updates_one_cell_without_losing_other_places ... ok\ntest invalid_blasts_clock_rewind_and_saturation_fail_closed ... ok\ntest recent_death_uses_full_blast_radius_and_disclosed_drop_margin ... ok\n\ntest result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "stderr": ""
+    },
+    {
+      "name": "loot integration gates",
+      "exit": 0,
+      "stdout": "test result: ok. 4 passed\n",
+      "stderr": "test_active_and_deferred_macro_rejection_use_owned_cleanup (__main__.Integration.test_active_and_deferred_macro_rejection_use_owned_cleanup) ... ok\ntest_both_aura_shared_damage_helpers_gate_planned_and_fresh_actions (__main__.Integration.test_both_aura_shared_damage_helpers_gate_planned_and_fresh_actions) ... ok\ntest_packet_observer_runs_after_delay_before_native_application (__main__.Integration.test_packet_observer_runs_after_delay_before_native_application) ... ok\ntest_protected_existing_anchor_consumes_before_inventory_and_lease_fallbacks (__main__.Integration.test_protected_existing_anchor_consumes_before_inventory_and_lease_fallbacks) ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 0.002s\n\nOK\n"
+    },
+    {
+      "name": "macro protected quick press",
+      "exit": 0,
+      "stdout": "\nrunning 2 tests\ntest macros::tests::eligible_edge_can_start_but_master_menu_world_and_focus_boundaries_do_not_latch ... ok\ntest macros::tests::paused_or_leased_quick_edge_can_guard_but_cannot_replay_as_start ... ok\n\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "stderr": ""
+    },
+    {
+      "name": "native loot identity and wire",
+      "exit": 0,
+      "stdout": "\nrunning 6 tests\ntest game::sunset_loot_guard::tests::actual_entity_event_payload_is_int_entity_id_and_one_byte_event ... ok\ntest game::sunset_loot_guard::tests::connection_replacement_cannot_inherit_a_previous_sessions_known_scene ... ok\ntest game::sunset_loot_guard::tests::local_player_identity_and_master_off_use_no_entity_list_scan ... ok\ntest game::sunset_loot_guard::tests::missing_known_player_position_is_conservative_without_treating_snowballs_as_deaths ... ok\ntest game::sunset_loot_guard::tests::only_current_native_player_identities_can_create_death_zones ... ok\ntest game::sunset_loot_guard::tests::same_dimension_respawn_keeps_zones_and_changed_dimension_or_login_clears ... ok\n\ntest result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\n",
+      "stderr": ""
+    }
+  ],
+  "limits": [
+    "Identity adapters expose verified native read-field shapes; only official native build proves full game linking.",
+    "Wiring tests assert source ordering and guards; they are not live action proof.",
+    "Recent death locations are protected, not actual item entities or every manual action.",
+    "No game, client fixture, full native build, commit or push was performed by this source-validation run."
+  ],
+  "non_wiring_checks": 181,
+  "source_wiring_checks": 4
+}

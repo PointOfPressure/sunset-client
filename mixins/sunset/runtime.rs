@@ -283,7 +283,6 @@ impl Module {
     pub(super) fn info(&self) -> Option<String> {
         match self.name {
             "Flight" => Some(self.p("Mode").to_owned()),
-            "Kill Aura" => Some(num(self.n("Range"))),
             "Fast Place" => Some(num(self.n("Speed"))),
             "Speed" | "Criticals" => Some(self.p("Mode").to_owned()),
             _ => None,
@@ -294,6 +293,9 @@ impl Module {
         let name = self.settings[j].name;
         let advanced = self.b("Advanced");
         match self.name {
+            "Auto Trap" if name=="Blocks per tick" => !self.b("Rotate"),
+            "Crystal Aura" if name=="Hold Key" => self.b("Require Hold"),
+            "Crystal Aura" | "Anchor Aura" if name=="Render Color" => self.b("Render"),
             "Speed" => match name {
                 "Vanilla speed" => self.p("Mode") != "Strafe",
                 "Strafe speed" | "Speed limit" => self.p("Mode") == "Strafe",
@@ -341,13 +343,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Mace smash", true)
             .bool("Only with a weapon", false)
             .bool("Only on ground", true),
-        Module::new("Auto Totem", Combat, "Moves a totem from your inventory to your offhand.")
-            .pick("Mode", &["Smart", "Strict"])
-            .num("Delay (ticks)", 0.0, 0.0, 20.0, 1.0)
-            .num("Health", 10.0, 0.0, 36.0, 1.0)
-            .bool("Elytra", true)
-            .bool("Fall", true)
-            .bool("Explosion", true),
+        super::sunset_combat_inventory::auto_totem_defaults(),
         // Movement
         Module::new("Sprint", Movement, "Sprints for you whenever you walk forward."),
         Module::new("Auto Walk", Movement, "Walks forward for you."),
@@ -694,6 +690,15 @@ pub(super) fn defaults() -> Vec<Module> {
     ];
     v.splice(0..0, super::sunset_aura::defaults());
     v.extend(super::sunset_combat::defaults());
+    v.extend(super::sunset_crystal_aura::defaults());
+    v.extend(super::sunset_anchor_aura::defaults());
+    v.extend(super::sunset_combat_macros::defaults());
+    v.extend(super::sunset_melee_assist::defaults());
+    v.extend(super::sunset_combat_inventory::defaults());
+    v.extend(super::sunset_packet_delay::defaults());
+    v.extend(super::sunset_sword_bot::defaults());
+    v.extend(super::sunset_crystal_bot::defaults());
+    super::sunset_melee_assist::augment_defaults(&mut v);
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_player::defaults());
@@ -729,7 +734,6 @@ pub(super) struct State {
     injected: Vec<KeyCode>,
     loaded: bool,
     ticks: u64,
-    trigger_wait: u32,
     respawn_wait: u32,
     // Flight's Abilities mode is holding the player up.
     flying: bool,
@@ -827,7 +831,6 @@ impl State {
             injected: Vec::new(),
             loaded: false,
             ticks: 0,
-                    trigger_wait: 0,
             respawn_wait: 0,
             flying: false,
             stepping: false,
@@ -885,11 +888,11 @@ impl State {
         let n = norm(name);
         self.modules.iter().position(|m| norm(m.name) == n)
     }
-    fn save_text(&self) -> String {
+    fn save_text(&self, modules: &[Module]) -> String {
         let mut out = String::new();
-        for (i, m) in self.modules.iter().enumerate() {
+        for (i, m) in modules.iter().enumerate() {
             let id = norm(m.name);
-            out.push_str(&format!("{id}.on={}\n", self.inputs.saved_on(i, m.on)));
+            out.push_str(&format!("{id}.on={}\n", m.name!="Auto City" && self.inputs.saved_on(i, m.on)));
             out.push_str(&format!("{id}.key={}\n", m.key.as_deref().unwrap_or("none")));
             for s in &m.settings {
                 out.push_str(&format!("{id}.{}={}\n", norm(s.name), s.stored()));
@@ -950,7 +953,7 @@ impl State {
             return;
         };
         match field {
-            "on" => m.on = v == "true",
+            "on" => m.on = m.name!="Auto City" && v == "true",
             "key" => m.key = key_from_text(v),
             _ => {
                 // Settings from the earlier local movement build used different names and percentage units.
@@ -982,8 +985,8 @@ impl State {
         }
     }
     // The modules' states, settings and keys: a profile.
-    fn profile_text(&self) -> String {
-        self.save_text().lines().filter(|l| !l.starts_with("panel.") && !l.starts_with("waypoint=") && !l.starts_with("friends=")).collect::<Vec<_>>().join("\n")
+    fn profile_text(&self, modules: &[Module]) -> String {
+        self.save_text(modules).lines().filter(|l| !l.starts_with("panel.") && !l.starts_with("waypoint=") && !l.starts_with("friends=")).collect::<Vec<_>>().join("\n")
     }
     fn load_profile(&mut self, text: &str) {
         for line in text.lines() {
@@ -1136,12 +1139,22 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
     });
 }
 
+// Serialize a detached baseline so temporary controller settings cannot leak
+// into config, profile files, exports or before-load recovery snapshots.
+fn persistent_modules() -> Vec<Module> {
+    let mut modules = with(|s| s.modules.clone());
+    super::sunset_sword_bot::baseline(&mut modules);
+    super::sunset_crystal_bot::baseline(&mut modules);
+    modules
+}
+fn persistent_profile_text() -> String {
+    let modules = persistent_modules();
+    with(|s| s.profile_text(&modules))
+}
 pub(super) fn save(game: &Game<'_>) {
-    let text = with(|s| {
-        release_changed_binds(s);
-        sync_flags(s);
-        s.save_text()
-    });
+    with(|s| { release_changed_binds(s); sync_flags(s); });
+    let modules = persistent_modules();
+    let text = with(|s| s.save_text(&modules));
     game.native_set_setting(ID, "config", &text);
 }
 
@@ -1275,13 +1288,7 @@ pub(super) fn kind_of(mob: &horizon_client::mobs::Mob) -> Kind {
     }
 }
 
-pub(super) fn wanted(m: &Module, kind: Kind) -> bool {
-    match kind {
-        Kind::Player => m.b("Players"),
-        Kind::Hostile => m.b("Hostiles"),
-        Kind::Passive => m.b("Passive"),
-    }
-}
+
 
 pub(super) fn is_friend(friends: &[String], names: &[(u32, String)], id: u32) -> bool {
     names
@@ -1415,15 +1422,17 @@ pub(super) fn click(game: &mut Game<'_>, button: usize) {
                 s.binding = if s.binding == Some(i) { None } else { Some(i) };
                 false
             }
-            b => match s.modules[i].settings.get_mut(b - 3) {
-                Some(setting) => {
+            b => match s.modules[i].settings.get(b - 3).cloned() {
+                Some(mut setting) => {
                     setting.click(shift);
+                    s.gui.pending_edits.push((i, b - 3, setting));
                     true
                 }
                 None => false,
             },
         },
     });
+    commit_edits(game);
     if let Some(i) = toggled {
         toggle(game, i, false);
     } else if changed {
@@ -1432,14 +1441,21 @@ pub(super) fn click(game: &mut Game<'_>, button: usize) {
 }
 
 pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
+    let (wanted_name, wanted_on) = with(|s| (s.modules[i].name, !s.modules[i].on));
+    super::sunset_sword_bot::editing(game, wanted_name);
+    super::sunset_crystal_bot::editing(game, wanted_name);
     let (name, on) = with(|s| {
         // Turned on or off by hand: a Hold bind no longer has it.
         s.inputs.take_where(|held| held.module == i);
         let m = &mut s.modules[i];
-        m.on = !m.on;
+        m.on = wanted_on;
         (m.name, m.on)
     });
+    super::sunset_combat_inventory::toggled(game, name, on);
+    super::sunset_combat_macros::toggled(game, name, on);
+    if name == "Friend Guard" { super::sunset_melee_assist::reset_friend_feedback(); }
     if !on {
+        super::sunset_packet_delay::disabled(game, name);
         match name {
             "Scaffold" => {
                 with(|s| { s.scaffold_wait = 0; s.scaffold_recent.clear(); });
@@ -1451,6 +1467,11 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 horizon_client::motion::sunset_motion::set_up(None);
             },
             "Velocity" => with(|s| { s.velocity = None; s.blast = [0.0; 3]; }),
+            "Sword PvP Bot" => super::sunset_sword_bot::disabled(game),
+            "Crystal PvP Bot" => super::sunset_crystal_bot::disabled(game),
+            "Crystal Aura" => super::sunset_crystal_aura::disabled(game),
+            "Kill Aura" => super::sunset_aura::disabled(game),
+            "Anchor Aura" => super::sunset_anchor_aura::disabled(game),
             "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
             _ => {},
         }
@@ -1582,6 +1603,8 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     if !game.native_window() {
         return;
     }
+    super::sunset_melee_assist::key(game, key, pressed);
+    super::sunset_combat_inventory::key(game, key, pressed);
     if !pressed {
         with(|s| {
             let held = s.inputs.release(key);
@@ -1685,7 +1708,22 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if !game.native_window() {
         return;
     }
+    commit_edits(game);
     if !game.native_on(ID) || game.player.is_none() {
+        super::sunset_combat_control::prepare_cleanup(game);
+        super::sunset_packet_delay::flush(game);
+        super::sunset_combat_macros::reset(game);
+        super::sunset_combat_inventory::cancel(game);
+        super::sunset_sword_bot::disabled(game);
+        super::sunset_crystal_bot::disabled(game);
+        super::sunset_city_trap::cancel(game);
+        super::sunset_crystal_optimizer::reset();
+        super::sunset_melee_assist::cancel(game);
+        super::sunset_aura::disabled(game);
+        super::sunset_combat_control::reset();
+        super::sunset_crystal_aura::disabled(game);
+        super::sunset_anchor_aura::disabled(game);
+        super::sunset_crystal_aura::cleanup_shared(game);
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
         horizon_client::motion::sunset_motion::set_safe_walk(false);
@@ -1694,9 +1732,15 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
         return;
     }
+    if super::sunset_combat_control::begin_tick(game) {
+        super::sunset_melee_assist::cancel(game);
+        super::sunset_aura::reset();
+    }
     ensure_loaded(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     let mods = snapshot();
+    if !mods.iter().any(|m|m.name=="Kill Aura"&&m.on) {super::sunset_aura::disabled(game);}
+    super::sunset_packet_delay::tick(game, &mods);
     super::sunset_render::pre_tick(game, &mods);
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
     super::sunset_player::no_break_reset(game, mods.iter().find(|m| m.name == "No Break Reset" && m.on));
@@ -1786,6 +1830,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         s.stepping = step.is_some();
         s.high_jumping = high_jump.is_some();
     });
+    super::sunset_crystal_bot::pre_input(game);
+    super::sunset_sword_bot::pre_input(game);
+    super::sunset_melee_assist::pre_input(game, &mods, game.ticks);
 }
 
 // How high Step lets you climb this tick: the setting, or vanilla's 0.6 when
@@ -1844,6 +1891,9 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     if !game.native_window() || !game.native_on(ID) {
         return;
     }
+    super::sunset_melee_assist::post_input(game);
+    super::sunset_sword_bot::post_input(game);
+    super::sunset_crystal_bot::post_input(game);
     turned(game);
     module_tick(game);
     end_turns(game);
@@ -2086,16 +2136,16 @@ fn module_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Scaffold").filter(|_| get("Kill Aura").is_none() && get("Blink").is_none()) {
         scaffold(game, m);
     }
-    if let Some(m) = get("Auto Armor") {
+    if let Some(m) = get("Auto Armor").filter(|_| super::sunset_combat_control::owner().is_none()) {
         auto_armor(game, m);
     }
-    if get("Chest Swap").is_some() {
+    if get("Chest Swap").is_some() && super::sunset_combat_control::owner().is_none() {
         chest_swap(game);
         if let Some(i) = with(|s| s.find("Chest Swap")) {
             toggle(game, i, false);
         }
     }
-    if let Some(m) = get("Auto Replenish") {
+    if let Some(m) = get("Auto Replenish").filter(|_| super::sunset_combat_control::owner().is_none()) {
         auto_replenish(game, m);
     }
     if let Some(m) = get("Bow Spam") {
@@ -2157,7 +2207,7 @@ fn module_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Auto Clicker") {
         auto_click(game, m);
     }
-    if let Some(m) = get("Auto Eat") {
+    if let Some(m) = get("Auto Eat").filter(|_| super::sunset_combat_control::available("Auto Eat")) {
         auto_eat(game, m);
     } else if with(|s| s.eating) {
         eat_stop(game);
@@ -2188,7 +2238,10 @@ fn module_tick(game: &mut Game<'_>) {
     } else {
         with(|s| s.blocks = Sweep::new());
     }
+    super::sunset_combat_macros::tick(game, &mods, game.ticks);
+    super::sunset_melee_assist::tick(game, &mods, game.ticks);
     super::sunset_combat::tick(game, &mods);
+    super::sunset_explosive_aura::tick(game, &mods, game.ticks);
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_player::tick(game, &mods);
     super::sunset_world::tick(game, &mods);
@@ -2508,6 +2561,7 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
         return;
     }
     if with(|s| s.eating) {
+        if !super::sunset_combat_control::claim("Auto Eat") { eat_stop(game); return; }
         if !eat_due(game, m) {
             eat_stop(game);
             return;
@@ -2535,7 +2589,9 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
         return;
     };
     let prev = game.selected;
+    if !super::sunset_combat_control::claim("Auto Eat") { return; }
     if !eat_from(game, slot) {
+        super::sunset_combat_control::release("Auto Eat");
         return;
     }
     let paused = m.b("Pause auras") && with(|s| s.is_on("Kill Aura"));
@@ -2621,6 +2677,7 @@ fn eat_from(game: &mut Game<'_>, slot: Option<usize>) -> bool {
 }
 
 fn eat_stop(game: &mut Game<'_>) {
+    super::sunset_combat_control::release("Auto Eat");
     use winit::event::MouseButton;
     let (prev, from_hand, aura) = with(|s| {
         s.eating = false;
@@ -3717,19 +3774,6 @@ fn entity_push(game: &Game<'_>) -> [f64; 2] {
     push
 }
 
-pub(super) fn cooldown_ready(game: &Game<'_>, m: &Module, wait: &mut u32) -> bool {
-    if m.b("Wait for cooldown") {
-        // The ticker the hand counts on a server (attack_ticks is the
-        // local world's).
-        game.hand_strength.scale(0.5, game.main_hand_attack_speed()) >= 1.0
-    } else if *wait > 0 {
-        *wait -= 1;
-        false
-    } else {
-        true
-    }
-}
-
 // How Criticals makes a hit critical, when it can: a hop of so many blocks over two ticks (Packet, the mace's
 // smash), or a wait for the fall (Jump, Mini jump, a hit while rising).
 #[derive(Clone, Copy)]
@@ -3912,33 +3956,8 @@ pub(super) fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
     super::sunset_aura::tick(game, m, crits);
 }
 
-pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
-    if !game.native_playing()
-        || game.remote.is_none()
-        || game.using.is_some()
-        || CRIT_STAGE.load(Ordering::Relaxed) != 0
-    {
-        return;
-    }
-    let Some((i, _)) = game.mob_hit() else {
-        return;
-    };
-    let mob = &game.mobs[i];
-    let (id, kind) = (mob.id, kind_of(mob));
-    let names = game.remote_player_names();
-    let friends = with(|s| s.friends.clone());
-    let player = kind == Kind::Player;
-    if !wanted(m, kind) || (player && is_friend(&friends, &names, id)) || super::sunset_util::spared(game, m, id, player) {
-        return;
-    }
-    let mut wait = with(|s| s.trigger_wait);
-    let ready = cooldown_ready(game, m, &mut wait);
-    with(|s| s.trigger_wait = wait);
-    if !ready {
-        return;
-    }
-    attack(game, id, crits, None);
-    with(|s| s.trigger_wait = m.n("Delay (ticks)") as u32);
+pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, _crits: bool) {
+    super::sunset_melee_assist::trigger_tick(game, m);
 }
 
 // A totem in the hotbar goes to the offhand by selecting it and pressing the
@@ -4116,8 +4135,36 @@ struct Turns {
 
 static TURNS: Mutex<Turns> = Mutex::new(Turns { queue: Vec::new(), carried: false, restore: false });
 
+pub(super) fn turn_pending() -> bool {
+    turns(|turns| turns.carried || !turns.queue.is_empty())
+}
+
 fn turns<R>(f: impl FnOnce(&mut Turns) -> R) -> R {
     f(&mut TURNS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+// Explosive actions require a vacant rotation queue. Their inventory switches
+// live inside the accepted deed, so a rejected claim has no side effects.
+pub(super) fn try_turn_then(who: &'static str, yaw: f32, pitch: f32,
+    then: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) -> bool {
+    if !yaw.is_finite() || !pitch.is_finite() || BLINK.load(Ordering::Relaxed) {
+        return false;
+    }
+    let look = ((yaw + 180.0).rem_euclid(360.0) - 180.0, pitch.clamp(-90.0, 90.0));
+    turns(|t| {
+        if t.carried || !t.queue.is_empty() { return false; }
+        t.queue.push(Ask { who, look, deeds: vec![Box::new(then)], fresh: true });
+        true
+    })
+}
+
+pub(super) fn cancel_turns(who: &str) {
+    turns(|t| {
+        if t.queue.first().is_some_and(|ask| ask.who == who) {
+            t.carried = false;
+        }
+        t.queue.retain(|ask| ask.who != who);
+    });
 }
 
 // Has the server see the player look at (yaw, pitch), then does `then`. `who` names the module: what it asks again in
@@ -4254,6 +4301,8 @@ const HELP: &[(&str, &str)] = &[
     (".modules", "list every module"),
     (".menu [search]", "open the click menu, searching for the text"),
     (".settings <module>", "list a module's settings"),
+    (".lootguard [status|clear]", "show or explicitly clear recent player-death blast zones"),
+    (".combatdebug", "show the last explosive-aura decisions and action counters"),
     (".set <module> <setting> <value>", "change a setting"),
     (".movementpreset <subtle|balanced|aggressive>", "apply explicit movement settings"),
     (".bind <module> <key|mouse4|none>", "bind a key or mouse button to a module"),
@@ -4282,6 +4331,22 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
 }
 
 pub(super) fn panic_off(game: &mut Game<'_>) {
+    super::sunset_combat_control::prepare_cleanup(game);
+    super::sunset_packet_delay::flush(game);
+    super::sunset_combat_macros::reset(game);
+    super::sunset_combat_inventory::cancel(game);
+    super::sunset_sword_bot::disabled(game);
+    super::sunset_crystal_bot::disabled(game);
+    super::sunset_city_trap::cancel(game);
+    super::sunset_crystal_optimizer::reset();
+    super::sunset_melee_assist::cancel(game);
+    super::sunset_crystal_aura::suspend();
+    super::sunset_anchor_aura::suspend();
+    super::sunset_aura::disabled(game);
+    super::sunset_combat_control::reset();
+    super::sunset_crystal_aura::disabled(game);
+    super::sunset_anchor_aura::disabled(game);
+    super::sunset_crystal_aura::cleanup_shared(game);
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
         game.pitch = pitch;
@@ -4330,15 +4395,17 @@ fn profile_command(game: &mut Game<'_>, args: &[&str]) {
         }
         match sub.as_str() {
             "save" => {
-                let text = with(|s| s.profile_text());
+                let text = persistent_profile_text();
                 store.write(&name, &format!("{HEADER}\n{text}\n"))?;
                 Ok(format!("Saved profile {name}."))
             }
             "load" => {
                 let text = store.read(&name)?;
                 let body = with(|s| s.check_profile(&text).map(str::to_owned))?;
-                let before = with(|s| s.profile_text());
+                let before = persistent_profile_text();
                 store.write(BACKUP, &format!("{HEADER}\n{before}\n"))?;
+                super::sunset_sword_bot::disabled(game);
+                super::sunset_crystal_bot::disabled(game);
                 with(|s| s.load_profile(&body));
                 save(game);
                 Ok(format!("Loaded profile {name}. .profile load {BACKUP} puts the settings back as they were."))
@@ -4418,6 +4485,38 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         found
     };
     match cmd.as_str() {
+        "lootguard" => {
+            match args.get(1).copied().unwrap_or("status") {
+                "clear" => { super::sunset_loot_guard::clear(); say(game, "Recent player-death blast zones cleared."); }
+                "status" => {},
+                _ => { say(game, "Use .lootguard status or .lootguard clear"); return; }
+            }
+            say(game, &super::sunset_loot_guard::diagnostics());
+        }
+        "combatdebug" => {
+            say(game, &super::sunset_loot_guard::diagnostics());
+            say(game, &super::sunset_crystal_aura::diagnostics());
+            if let Some(p)=super::sunset_pearl_owner::snapshot(game) {
+                say(game,&format!("Native pearl tick={} own={} id={} data={} owner={:?} reason={:?}",
+                    p.tick,p.own_id,p.spawn_id,p.raw_data,p.resolved,p.reason));
+            }
+            say(game, &super::sunset_anchor_aura::diagnostics());
+            say(game, &super::sunset_aura::diagnostics());
+            say(game, &super::sunset_melee_assist::diagnostics());
+            say(game, &super::sunset_sword_bot::diagnostics());
+            say(game, &super::sunset_crystal_bot::diagnostics());
+            say(game, &super::sunset_city_trap::debug().to_string());
+            say(game, &super::sunset_crystal_optimizer::debug().to_string());
+            say(game, &super::sunset_combat_inventory::debug().to_string());
+            say(game, &super::sunset_packet_delay::debug().to_string());
+            if let (Some(x),Some(y),Some(z)) = (args.get(1).and_then(|v|v.parse::<f64>().ok()),args.get(2).and_then(|v|v.parse::<f64>().ok()),args.get(3).and_then(|v|v.parse::<f64>().ok())) {
+                let power = args.get(4).and_then(|v|v.parse::<f32>().ok()).unwrap_or(6.0);
+                if [x,y,z,f64::from(power)].iter().all(|v|v.is_finite()) && (0.0..=6.0).contains(&power) {
+                    let line=super::sunset_explosive_damage::diagnostics(game,super::sunset_explosive_damage::Blast::explosion([x,y,z], power));
+                    say(game,&line);
+                }
+            }
+        }
         "help" | "commands" => {
             say(game, "Commands:");
             for (c, d) in HELP {
@@ -4493,11 +4592,15 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 (None, String::new())
             });
             let value = value.as_str();
-            let result = found.and_then(|at| {
-                with(|s| {
-                    let setting = &mut s.modules[i].settings[at];
-                    Some((setting.parse(value), setting.shown()))
-                })
+            let result = found.map(|at| {
+                let (name, mut candidate) = with(|s| (s.modules[i].name, s.modules[i].settings[at].clone()));
+                let accepted = candidate.parse(value);
+                if accepted {
+                    super::sunset_sword_bot::editing(game, name);
+                    super::sunset_crystal_bot::editing(game, name);
+                    with(|s| s.modules[i].settings[at] = candidate.clone());
+                }
+                (accepted, candidate.shown())
             });
             match result {
                 None => say(game, "No such setting. Try .settings <module>"),
@@ -4563,6 +4666,9 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         "profile" | "profiles" | "config" | "cfg" => profile_command(game, &args[1..]),
         "reset" => {
             if let Some(i) = module_arg(game, args.get(1)) {
+                let editing_name = with(|s| s.modules[i].name);
+                super::sunset_sword_bot::editing(game, editing_name);
+                super::sunset_crystal_bot::editing(game, editing_name);
                 let name = with(|s| {
                     s.inputs.take_where(|h| h.module == i);
                     let fresh = defaults().swap_remove(i);
@@ -5042,6 +5148,9 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
 }
 
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
+    super::sunset_packet_delay::draw(game, cam, out, lw);
+    super::sunset_city_trap::draw(game, cam, out, lw);
+    super::sunset_explosive_aura::draw(game,cam,mods,out,lw);
     super::sunset_util::draw_shown(cam, out, lw);
     super::sunset_render::overlay(game, cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
@@ -5578,6 +5687,20 @@ pub(super) struct Gui {
     typed: bool,
     // Ctrl or Cmd held, as the window last said.
     shortcut: bool,
+    // Desired values are captured before releasing a controller's temporary
+    // settings. Apply them outside the runtime mutex, even for a same-value edit.
+    pending_edits: Vec<(usize, usize, Setting)>,
+}
+
+fn commit_edits(game: &mut Game<'_>) {
+    let edits = with(|s| std::mem::take(&mut s.gui.pending_edits));
+    for (i, j, wanted) in edits {
+        let name = with(|s| s.modules.get(i).filter(|m| m.settings.get(j).is_some_and(|st| st.name == wanted.name)).map(|m| m.name));
+        let Some(name) = name else { continue; };
+        super::sunset_sword_bot::editing(game, name);
+        super::sunset_crystal_bot::editing(game, name);
+        with(|s| s.modules[i].settings[j] = wanted);
+    }
 }
 
 // A text setting being edited: the setting changes only when Apply is clicked (or Enter pressed).
@@ -5614,17 +5737,20 @@ fn apply_editor(s: &mut State) {
     let (Ok(draft), None) = (&mut edit.draft, &edit.list) else {
         return;
     };
-    match s.modules.get_mut(edit.module).and_then(|m| m.settings.get_mut(edit.setting)).map(|st| &mut st.value) {
-        Some(Value::Text(t)) => *t = draft.text().to_owned(),
-        Some(Value::Num { v, min, max, step }) => match draft.text().trim().parse::<f64>() {
+    let Some(mut wanted) = s.modules.get(edit.module).and_then(|m| m.settings.get(edit.setting)).cloned() else { return; };
+    match &mut wanted.value {
+        Value::Text(t) => *t = draft.text().to_owned(),
+        Value::Num { v, min, max, step } => match draft.text().trim().parse::<f64>() {
             Ok(n) if n.is_finite() => *v = round_to(n, *step).clamp(*min, *max),
             _ => {
                 draft.error = Some("not a number");
                 s.gui.editor = Some(edit);
+                return;
             }
         },
-        _ => {}
+        _ => return,
     }
+    s.gui.pending_edits.push((edit.module, edit.setting, wanted));
 }
 
 fn edit_key(name: &str) -> Option<EditKey> {
@@ -5700,6 +5826,7 @@ impl Default for Gui {
             view_w: 0.0,
             typed: false,
             shortcut: false,
+            pending_edits: Vec::new(),
             panels: (0..CATEGORIES.len())
                 .map(|_| Panel { x: -1.0, y: 32.0, collapsed: false, scroll: 0.0 })
                 .collect(),
@@ -6043,6 +6170,7 @@ pub(super) fn open_gui(game: &mut Game<'_>) {
 }
 
 pub(super) fn close_gui(game: &mut Game<'_>) {
+    commit_edits(game);
     with(|s| {
         s.gui.open = false;
         s.gui.closing = false;
@@ -6086,6 +6214,9 @@ pub(super) fn gui_open() -> bool {
 // A key while the GUI is open: a bind being chosen, or Esc and the menu key
 // closing it. Every key stops here.
 pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
+    // A real window Enter may have queued an editor value before the keymap
+    // forwards this key. Commit it even when the typed flag consumes the key.
+    commit_edits(game);
     // The editor takes every key: from the window's event already (text_event), or else here (a key without text of
     // its own, as horizon-ctl's are, types its letter).
     if with(|s| s.gui.editor.is_some() || std::mem::take(&mut s.gui.typed)) {
@@ -6116,6 +6247,7 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
                 picker.scroll = 0.0;
             }
         });
+        commit_edits(game);
         return;
     }
     if let Some(i) = with(|s| s.binding) {
@@ -6225,6 +6357,7 @@ pub(super) fn key_char(name: &str) -> Option<char> {
 // the held buttons each frame).
 pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) {
     use winit::event::MouseButton;
+    commit_edits(game);
     let at = gui_cursor(game);
     // A bind being chosen takes any button but the left one (which clicks as ever).
     let captured = with(|s| {
@@ -6259,7 +6392,9 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     && let Some((name, _)) = pick::rows(picker, t, draft.text()).get(row)
                 {
                     let list = pick::toggled(t, name);
-                    s.modules[i].settings[j].value = Value::Text(list);
+                    let mut wanted = s.modules[i].settings[j].clone();
+                    wanted.value = Value::Text(list);
+                    s.gui.pending_edits.push((i, j, wanted));
                     changed = true;
                 }
             }
@@ -6346,11 +6481,15 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     s.binding = None;
                 } else if number.is_some() && !right {
                     s.gui.drag = Some(Drag::Slider(i, j, r, gui_scale()));
-                    changed = slide(s, i, j, r, at.0);
+                    let before = s.modules[i].settings[j].clone();
+                    slide(s, i, j, r, at.0);
+                    let wanted = std::mem::replace(&mut s.modules[i].settings[j], before);
+                    s.gui.pending_edits.push((i, j, wanted));
+                    changed = true;
                 } else if number.is_some() {
                     // Right click on a slider: back to its default.
                     let fresh = defaults().swap_remove(i).settings.swap_remove(j);
-                    s.modules[i].settings[j] = fresh;
+                    s.gui.pending_edits.push((i, j, fresh));
                     changed = true;
                 } else if let (Value::Text(t), false) = (&s.modules[i].settings[j].value, right) {
                     // A list of blocks, items or entities opens the picker (the draft is its search), other text the
@@ -6362,12 +6501,15 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     s.gui.drag = None;
                     s.binding = None;
                 } else {
-                    s.modules[i].settings[j].click(right);
+                    let mut wanted = s.modules[i].settings[j].clone();
+                    wanted.click(right);
+                    s.gui.pending_edits.push((i, j, wanted));
                     changed = true;
                 }
             }
         }
     });
+    commit_edits(game);
     if let Some(i) = toggled {
         toggle(game, i, false);
     } else if changed {
@@ -6849,8 +6991,8 @@ mod movement_config_tests {
     fn presets_round_trip_through_config_and_profile() {
         let mut state = State::new();
         assert!(apply_movement_preset(&mut state, "aggressive"));
-        let config = state.save_text();
-        let profile = state.profile_text();
+        let config = state.save_text(&state.modules);
+        let profile = state.profile_text(&state.modules);
         let mut restored = State::new();
         restored.load_text(&config);
         assert_eq!(restored.module("Speed").unwrap().p("Mode"), "Custom");
@@ -6892,7 +7034,7 @@ mod movement_config_tests {
         assert_eq!(state.module("Fast Place").unwrap().n("Speed"), 3.0);
 
         let mut restored = State::new();
-        restored.load_text(&state.save_text());
+        restored.load_text(&state.save_text(&state.modules));
         assert_eq!(restored.module("Fast Place").unwrap().n("Speed"), 3.0);
     }
 

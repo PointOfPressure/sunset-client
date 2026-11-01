@@ -1,0 +1,178 @@
+{
+  "checkpoint": "R14",
+  "native_client_sha256": "7ec29509ed88ea6126a25f56147ea40c91a5823a3d3ef2671ead3affd2ebd0c1",
+  "native_source_git_commit": "376654ab057451f4a3db159e14ea0d42e7fd4a96",
+  "server": {
+    "type": "official stock Java26.3 private loopback",
+    "protocol": 777,
+    "jar_sha1": "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c"
+  },
+  "players": [
+    "CodexAttacker",
+    "CodexTarget"
+  ],
+  "counts": {
+    "checks_passed": 5,
+    "failed": 0,
+    "prerequisite_checks": 2,
+    "aura_behavior_checks": 3
+  },
+  "raw_report": {
+    "file": "player-proof-1793491561716645300.json",
+    "sha256": "77c5a58d2b14823f0afcaa144baeea167c835e04c148fe9e9dfb39f433a41d27"
+  },
+  "fixture": {
+    "both_survival": true,
+    "maximum_health": 20,
+    "target_resistance_amplifier": 3,
+    "actor_resistance_amplifier": 255,
+    "self_damage_model": "Unmitigated",
+    "max_self_damage": 16,
+    "anti_suicide": true,
+    "minimum_remaining_health": 4,
+    "fire_damage": false,
+    "natural_regeneration": false,
+    "recent_death_zones_explicitly_cleared_before_baseline": true
+  },
+  "checks": [
+    {
+      "name": "Official Java 26.3 protocol and loopback-only backend",
+      "passed": true
+    },
+    {
+      "name": "Two real survival clients and named-player discovery",
+      "passed": true
+    },
+    {
+      "name": "Crystal Aura damages the real test player and restores slot",
+      "passed": true
+    },
+    {
+      "name": "Friend protection prevents real-player targeting",
+      "passed": true
+    },
+    {
+      "name": "Anchor Aura charges and detonates against the real test player",
+      "passed": true
+    }
+  ],
+  "crystal": {
+    "target_health_before_after": [
+      20.0,
+      5.041667938232422
+    ],
+    "actor_health_after": 20.0,
+    "observed_ids": [
+      340
+    ],
+    "remaining_ids": [],
+    "selected_slot_before_after": [
+      9,
+      9
+    ],
+    "inventory_before_after": [
+      {
+        "minecraft:end_crystal": 8,
+        "minecraft:stick": 1
+      },
+      {
+        "minecraft:end_crystal": 7,
+        "minecraft:stick": 1
+      }
+    ]
+  },
+  "friend": {
+    "target_health_before_after": [
+      20.0,
+      20.0
+    ],
+    "crystal_ids": [],
+    "inventory_unchanged": true
+  },
+  "anchor": {
+    "observed_states": [
+      "minecraft:respawn_anchor[charges=0]",
+      "minecraft:respawn_anchor[charges=1]",
+      "minecraft:air"
+    ],
+    "observation_elapsed_seconds": [
+      0.263,
+      2.161,
+      2.365
+    ],
+    "target_health_before_after": [
+      20.0,
+      10.263781547546388
+    ],
+    "actor_health_after": 20.0,
+    "selected_slot_before_after": [
+      9,
+      9
+    ],
+    "inventory_before_after": [
+      {
+        "minecraft:glowstone": 1,
+        "minecraft:respawn_anchor": 1,
+        "minecraft:stick": 1
+      },
+      {
+        "minecraft:stick": 1
+      }
+    ]
+  },
+  "handoff": {
+    "file": "aura-handoff-r14.json",
+    "sha256": "b10582138be1ae50d8df2c440024ff24b0fbaddf10ce1f32ba76aee7428cd67e",
+    "verified_both_survival_hp20": true,
+    "inventory_carried_effects_inputs_empty": true,
+    "all_modules_off": true,
+    "native_master_on": true,
+    "playing_pointer_captured": true
+  },
+  "images": [
+    {
+      "file": "player-crystal-r14.png",
+      "sha256": "7f7bcc744153bbfea1d0952d50c4774eda7ff2a3cc9d635765b58f3389da550e",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_framebuffer": true
+    },
+    {
+      "file": "player-friend-r14.png",
+      "sha256": "e4f380df041632aed5afc67ede3751f3f2ae53d20fcc15a5a6716b13d1bd5e8d",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_framebuffer": true
+    },
+    {
+      "file": "player-anchor-r14.png",
+      "sha256": "9534412120970833b2d11d6d76f12183d9dbf8821f83772d0320bf3ec1e294ab",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_framebuffer": true
+    },
+    {
+      "file": "player-anchor-target-r14.png",
+      "sha256": "e3ce96af63b4243cd9a68da614c427da08c882bf8758313905f47e4ebb1f0e3a",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_framebuffer": true
+    }
+  ],
+  "limits": [
+    "Two actual native clients on the stock loopback backend; no public-server or native dedicated-server blast result inferred.",
+    "Health values are observed from the target native client receiving the server game state.",
+    "Anchor samples prove observed state ordering, not exact send/arrival latency or every intermediate packet.",
+    "Crystal placement is staged with Breakfalse until a real ID is observed; this case does not prove an uninterrupted automatic cycle.",
+    "Stationary fixture with explicit resistance/cover/self-limit settings; no general survival, moving-target, anticheat or FPS guarantee.",
+    "Recent-death zones are explicitly cleared before each baseline; dedicated Loot tests cover that separate policy."
+  ]
+}

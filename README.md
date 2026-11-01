@@ -8,7 +8,7 @@
 <h1 align="center">Sunset</h1>
 
 <p align="center">A native utility client for <a href="https://github.com/horizon-rust/horizon">Horizon</a> on Minecraft 26.3.</p>
-<p align="center"><a href="https://github.com/PointOfPressure/sunset-client/releases/latest">Latest release</a> · <a href="#install">Install</a> · <a href="#features">Features</a> · <a href="CONTRIBUTING.md">Contribute</a></p>
+<p align="center"><a href="https://github.com/PointOfPressure/sunset-client/releases/latest">Latest release</a> آ· <a href="#install">Install</a> آ· <a href="#features">Features</a> آ· <a href="CONTRIBUTING.md">Contribute</a></p>
 
 Sunset brings 100+ modules for combat, movement, building and rendering to Horizon, with a configurable ClickGUI,
 key binds, chat commands and saved profiles. It takes inspiration from
@@ -63,13 +63,14 @@ Everything is saved as you change it.
 
 ### Chat commands
 
-They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
+Commands start with `.` and are handled locally while Sunset is visible (type `..hi` to say `.hi`).
+When Panic hides Sunset, only `.panic` is handled; use it again before other commands.
 
 | Command | Does |
 | --- | --- |
 | `.help` | list the commands |
 | `.t <module>` | turn a module on or off (`.t killaura`) |
-| `.set <module> <setting> <value>` | change a setting: `.set killaura range 4`. The start of a name is enough, and a value can be several words |
+| `.set <module> <setting> <value>` | change a setting: `.set killaura Crits Off`. The start of a name is enough, and a value can be several words |
 | `.settings <module>` | show a module's settings |
 | `.bind <module> <key>` | bind a key or mouse button: `.bind flight r`, `.bind zoom mouse4`, or `none` |
 | `.reset <module>` | put a module back to its defaults |
@@ -82,7 +83,9 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 | `.panic` | turn every module off and hide Sunset until `.panic` again or restart (or bind the **Panic** module to a key) |
 | `.menu [text]` | open the menu, already searching for the text |
 
-List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the same way:
+Profile names use 1 to 32 letters, digits, `-` or `_`.
+
+List settings (for example the blocks Xray shows) are set the same way:
 `.set xray blocks diamond_ore,ancient_debris`.
 
 ## Features
@@ -96,7 +99,7 @@ and panel shape. Advanced controls appear only for relevant modes.
 
 | Category | Modules |
 | --- | --- |
-| **Combat** | Kill Aura, Trigger Bot, Aim Assist, Criticals, Crystal Optimizer, Auto Totem, Auto Weapon, Auto Armor, Offhand, Auto EXP, Auto Log, Bow Spam, Bow Aimbot, Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow |
+| **Combat** | Kill Aura, Trigger Bot, Aim Assist, Shield Breaker, Mace, Spear Swap, W Tap, Jump Reset, Friend Guard, Criticals, Crystal Aura, Anchor Aura, Crystal Macro, Anchor Macro, Crystal Optimizer, Auto City, Auto Totem, Auto Inventory Totem, Hover Totem, FastXP, Key Throw, Sword PvP Bot, Crystal PvP Bot, Fake Lag, Knockback Delay, Auto Weapon, Auto Armor, Offhand, Auto EXP, Auto Log, Bow Spam, Bow Aimbot, Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow |
 | **Movement** | Flight, Speed, Sprint, Sneak, Auto Walk, Auto Jump, Step, Spider, High Jump, Long Jump, Air Jump, Parkour, Reverse Step, Fast Climb, Safe Walk, Anchor, Anti Void, Elytra Boost, Chest Swap, Blink, Scaffold, No Fall, No Slow, Velocity, Glide, No Jump Delay, GUI Move (walk with the inventory or another menu open) |
 | **Player** | Fast Place (speed 1 to 5), Break Delay, Speed Mine, No Break Reset, Fast Use, Air Place, Reach, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam, Auto Steal, Inventory Cleaner, Anti Vanish, Panic |
 | **Render** | ClickGUI, HUD, Radar, ESP, Tracers, Nametags, Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories, Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, No Render (no fog, water fog, darkness, blindness, fire or other overlays) |
@@ -104,10 +107,23 @@ and panel shape. Advanced controls appear only for relevant modes.
 
 </details>
 
-Kill Aura, Trigger Bot and Aim Assist can skip bots (**Anti bot**: players the server's player list doesn't show) and
-players on your own team (**Ignore teams**). **HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
+Combat enemy selection uses the current player list, valid game modes, native team damage rules and your friend list.
+**HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
+The [combat parity work](docs/combat-parity.md) updates the 25 inspected Combat capabilities; its native behavior,
+[controls](docs/explosive-auras.md) and build-specific evidence are documented separately.
 
-Not here (no clean way to do it in Horizon yet): Crystal Aura, Jesus, Click TP, and the Baritone-based
+Crystal Aura and Anchor Aura are experimental, disabled by default, and share
+bounded action planning. [Their controls and damage estimation](docs/explosive-auras.md)
+describe the tested scope and limits.
+
+This development checkout adds the [25-capability combat batch](docs/combat-modules.md).
+Its pinned native build passes **682 focused checks**, with separate two-player receipts for
+Auras, macros, melee, inventory, packet timing, City/Trap, controllers and crystal prediction.
+Build this checkout to test it; the installers above follow published releases. See the
+[validation index and original native screenshots](docs/evidence/combat/parity-live.md)
+for exact tested builds, retained failures and native limits.
+
+Not here (no clean way to do it in Horizon yet): Jesus, Click TP, and the Baritone-based
 Highway Builder and Infinity Miner.
 
 ## Updating and removing

@@ -142,6 +142,7 @@ impl Look {
         Self { draw, sides, lines, fill }
     }
     // Lines and a light fill in 3D: the boxes modules show where they place or break, a throw's landing.
+    pub(super) const SHOT: Self = Self { draw: Draw::Box3d, sides: true, lines: true, fill: 0.22 };
     pub(super) const BOXED: Self = Self { draw: Draw::Box3d, sides: true, lines: true, fill: 40.0 / 255.0 };
 }
 

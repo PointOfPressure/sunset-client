@@ -1,0 +1,748 @@
+{
+  "checkpoint": "R10",
+  "client_sha256": "6b3c97809e5bb82699c217d48a1aaa2f6912dc8cced8b56f5654d8e574984f51",
+  "engine": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "server": {
+    "type": "stock Java26.3, private loopback fixture",
+    "protocol": 777,
+    "jar_sha1": "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c"
+  },
+  "counts": {
+    "packet_unique_scenarios": {
+      "pass": 8,
+      "fail": 0
+    },
+    "packet_first_run": {
+      "pass": 7,
+      "retained_sampling_fail": 1
+    },
+    "packet_warm_rerun": {
+      "pass": 1,
+      "fail": 0
+    },
+    "city_trap_optimizer": {
+      "pass": 13,
+      "fail": 0
+    }
+  },
+  "limits": [
+    "Server queries are timestamped observation intervals, not exact packet-arrival times or a network-latency/anti-cheat claim.",
+    "The first500ms report remains a failed sampling predicate: its query straddled the cutoff. A separate warm rerun passes using query-start-bounded desync observations.",
+    "No client/server launch, injected velocity/packets, proxy or fake ACK from these runners. Ordinary20HP players; actual nonzero sword damage with ResistanceIV.",
+    "Optimizer visual proof requires all4 original1280x720 captures inspected plus authoritative id/server survival and unchanged player HP.",
+    "The original R7 failures and screenshots remain unchanged; these R10 results are separate native reruns."
+  ],
+  "retained_initial_lag500": {
+    "passed": false,
+    "status": "fail",
+    "first_observed_server_displacement_seconds": 0.730354500003159,
+    "delayed_samples_under_initial_end_cutoff": 0,
+    "position_samples": [
+      {
+        "query_begin_elapsed": 0.034405600003083237,
+        "query_end_elapsed": 0.24272280000150204,
+        "server": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "client_before": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "client_after": [
+          1.126906386248464,
+          121.0,
+          0.5
+        ]
+      },
+      {
+        "query_begin_elapsed": 0.2712824000045657,
+        "query_end_elapsed": 0.5191191000049002,
+        "server": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "client_before": [
+          1.3322909434879642,
+          121.0,
+          0.5
+        ],
+        "client_after": [
+          2.399600454447249,
+          121.0,
+          0.5
+        ]
+      },
+      {
+        "query_begin_elapsed": 0.5422773000027519,
+        "query_end_elapsed": 0.730354500003159,
+        "server": [
+          0.9302314020015052,
+          121.0,
+          0.5
+        ],
+        "client_before": [
+          2.399600454447249,
+          121.0,
+          0.5
+        ],
+        "client_after": [
+          3.262479782250013,
+          121.0,
+          0.5
+        ]
+      },
+      {
+        "query_begin_elapsed": 0.7619624000071781,
+        "query_end_elapsed": 0.990354000008665,
+        "server": [
+          2.1842496592612073,
+          121.0,
+          0.5
+        ],
+        "client_before": [
+          3.4783141868180945,
+          121.0,
+          0.5
+        ],
+        "client_after": [
+          4.3417234347836535,
+          121.0,
+          0.5
+        ]
+      },
+      {
+        "query_begin_elapsed": 1.0154013999999734,
+        "query_end_elapsed": 1.264613500010455,
+        "server": [
+          3.0466658857048783,
+          121.0,
+          0.5
+        ],
+        "client_before": [
+          4.557581306384697,
+          121.0,
+          0.5
+        ],
+        "client_after": [
+          5.636875278936468,
+          121.0,
+          0.5
+        ]
+      },
+      {
+        "query_begin_elapsed": 1.2857680000015534,
+        "query_end_elapsed": 1.4738925999990897,
+        "server": [
+          4.125866558329662,
+          121.0,
+          0.5
+        ],
+        "client_before": [
+          5.636875278936468,
+          121.0,
+          0.5
+        ],
+        "client_after": [
+          6.500311488933019,
+          121.0,
+          0.5
+        ]
+      },
+      {
+        "query_begin_elapsed": 1.5044707000051858,
+        "query_end_elapsed": 1.7539148000068963,
+        "server": [
+          5.205157306559011,
+          121.0,
+          0.5
+        ],
+        "client_before": [
+          6.500311488933019,
+          121.0,
+          0.5
+        ],
+        "client_after": [
+          7.795465893339214,
+          121.0,
+          0.5
+        ]
+      }
+    ]
+  },
+  "reports": [
+    {
+      "file": "packet-proof-r10-1793485565677427000-c4e8e8727dca4bf984f5fe9a83b7defc.json",
+      "sha256": "f8741bb073706ceacc520a85f5d60f46906787bdce8170c6066055e63fa7179c"
+    },
+    {
+      "file": "packet-proof-r10-1793485771614634800-9b51552873294750a173a8cae24e0753.json",
+      "sha256": "65866e42f916b647a1e5c7bc3b050b23debb4553f4c6f6e528bb9d8b8db3b2ba"
+    },
+    {
+      "file": "city-proof-r10-1793485800545176800-6937c546a8ce4d3cafe7ea8976751d73.json",
+      "sha256": "294d379249ae57780614a795f2e93fb64da33c5e26507a6603eac86504681b1b"
+    },
+    {
+      "file": "packet-city-handoff.json",
+      "sha256": "6357402acbdeac50bdbb1e89206756518a8a3d6b8d19d2cd6ee4b3994ee80183"
+    }
+  ],
+  "packets": [
+    {
+      "case": "lag-500",
+      "passed": true,
+      "status": "pass",
+      "delay_setting_ms": 500,
+      "first_observed_server_displacement_seconds": 0.7599998999939999,
+      "delayed_samples": 1,
+      "position_samples": [
+        {
+          "query_begin_elapsed": 0.033279099996434525,
+          "query_end_elapsed": 0.20011659999727271,
+          "server": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            1.126906386248464,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 0.22045470000011846,
+          "query_end_elapsed": 0.4696003999997629,
+          "server": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            1.126906386248464,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            2.1842496592612073,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 0.4909903999941889,
+          "query_end_elapsed": 0.7599998999939999,
+          "server": [
+            0.9302314020015052,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            2.1842496592612073,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            3.4783141868180945,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 0.7788670000009006,
+          "query_end_elapsed": 0.9663453999964986,
+          "server": [
+            1.9693214940821298,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            3.4783141868180945,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            4.3417234347836535,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 0.9999850000021979,
+          "query_end_elapsed": 1.2495753999974113,
+          "server": [
+            3.0466658857048783,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            4.557581306384697,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            5.636875278936468,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 1.2709769000066444,
+          "query_end_elapsed": 1.4796755999996094,
+          "server": [
+            4.125866558329662,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            5.636875278936468,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            6.500311488933019,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 1.5068494000006467,
+          "query_end_elapsed": 1.7567392000055406,
+          "server": [
+            5.205157306559011,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            6.716170554523109,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            7.795465893339214,
+            121.0,
+            0.5
+          ]
+        }
+      ],
+      "final_sample": {
+        "query_begin_elapsed": 2.997848700004397,
+        "query_end_elapsed": 3.227278100006515,
+        "server": [
+          8.051311995589279,
+          121.0,
+          0.5
+        ],
+        "client_before": [
+          8.051311995589279,
+          121.0,
+          0.5
+        ],
+        "client_after": [
+          8.051311995589279,
+          121.0,
+          0.5
+        ]
+      }
+    },
+    {
+      "case": "lag-1000",
+      "passed": true,
+      "status": "pass",
+      "delay_setting_ms": 1000,
+      "first_observed_server_displacement_seconds": 1.265962400007993,
+      "delayed_samples": 2,
+      "position_samples": [
+        {
+          "query_begin_elapsed": 0.03384800000640098,
+          "query_end_elapsed": 0.26238260000536684,
+          "server": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            1.3322909434879642,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 0.28845530000398867,
+          "query_end_elapsed": 0.517355400006636,
+          "server": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            1.3322909434879642,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            2.399600454447249,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 0.5424176000087755,
+          "query_end_elapsed": 0.7303302000073018,
+          "server": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            2.399600454447249,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            3.262479782250013,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 0.7630341000040062,
+          "query_end_elapsed": 0.990944600009243,
+          "server": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            3.4783141868180945,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            4.3417234347836535,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 1.0165370000031544,
+          "query_end_elapsed": 1.265962400007993,
+          "server": [
+            0.9302314020015052,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            4.557581306384697,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            5.636875278936468,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 1.2882570000074338,
+          "query_end_elapsed": 1.476560100010829,
+          "server": [
+            1.7551673764449467,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            5.636875278936468,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            6.500311488933019,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "query_begin_elapsed": 1.5072281000029761,
+          "query_end_elapsed": 1.756863600006909,
+          "server": [
+            3.0466658857048783,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            6.716170554523109,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            7.795465893339214,
+            121.0,
+            0.5
+          ]
+        }
+      ],
+      "final_sample": {
+        "query_begin_elapsed": 2.962581100000534,
+        "query_end_elapsed": 3.212927000000491,
+        "server": [
+          8.051311995589279,
+          121.0,
+          0.5
+        ],
+        "client_before": [
+          8.051311995589279,
+          121.0,
+          0.5
+        ],
+        "client_after": [
+          8.051311995589279,
+          121.0,
+          0.5
+        ]
+      }
+    },
+    {
+      "case": "lag-action-flush",
+      "passed": true,
+      "status": "pass",
+      "first_observed_flush_seconds": 0.22940620000008494
+    },
+    {
+      "case": "lag-menu-flush",
+      "passed": true,
+      "status": "pass",
+      "first_observed_flush_seconds": 0.26814240000385325
+    },
+    {
+      "case": "lag-disable-flush",
+      "passed": true,
+      "status": "pass",
+      "first_observed_flush_seconds": 0.23084630000812467
+    },
+    {
+      "case": "lag-correction-discard",
+      "passed": true,
+      "status": "pass"
+    },
+    {
+      "case": "kb-800-ab",
+      "passed": true,
+      "status": "pass",
+      "baseline_chance0": {
+        "chance": 0,
+        "actual_damage": 1.3999996185302734,
+        "hurt_onset": 0.13502669999434147,
+        "vertical_onset": 0.13502669999434147,
+        "max_state_gap": 0.051710400002775714
+      },
+      "delayed_chance100": {
+        "chance": 100,
+        "actual_damage": 1.3999996185302734,
+        "hurt_onset": 0.11815880000358447,
+        "vertical_onset": 0.9333337999996729,
+        "max_state_gap": 0.05172180000226945
+      }
+    },
+    {
+      "case": "lag-world-switch",
+      "passed": true,
+      "status": "pass"
+    }
+  ],
+  "city_trap_optimizer": [
+    {
+      "case": "city-cycle",
+      "passed": true,
+      "status": "pass",
+      "opened_server_walls": [
+        [
+          3,
+          121,
+          0
+        ]
+      ],
+      "slot_before_after": [
+        9,
+        9
+      ]
+    },
+    {
+      "case": "city-off",
+      "passed": true,
+      "status": "pass",
+      "opened_server_walls": [],
+      "slot_before_after": [
+        9,
+        9
+      ]
+    },
+    {
+      "case": "city-friend",
+      "passed": true,
+      "status": "pass",
+      "opened_server_walls": [],
+      "slot_before_after": [
+        9,
+        9
+      ]
+    },
+    {
+      "case": "city-manual-cancel",
+      "passed": true,
+      "status": "pass",
+      "opened_server_walls": [],
+      "slot_before_after": [
+        9,
+        9
+      ]
+    },
+    {
+      "case": "city-disable",
+      "passed": true,
+      "status": "pass",
+      "opened_server_walls": [],
+      "slot_before_after": [
+        9,
+        9
+      ]
+    },
+    {
+      "case": "trap-complete",
+      "passed": true,
+      "status": "pass",
+      "spent_obsidian": 10,
+      "observed_jump": true,
+      "max_observed_feet_y": 122.1661092609382,
+      "slot_before_after": [
+        9,
+        9
+      ]
+    },
+    {
+      "case": "trap-off",
+      "passed": true,
+      "status": "pass",
+      "spent_obsidian": 0,
+      "observed_jump": null,
+      "slot_before_after": [
+        9,
+        9
+      ]
+    },
+    {
+      "case": "trap-friend",
+      "passed": true,
+      "status": "pass",
+      "spent_obsidian": 0,
+      "observed_jump": null,
+      "slot_before_after": [
+        9,
+        9
+      ]
+    },
+    {
+      "case": "trap-manual-yield",
+      "passed": true,
+      "status": "pass",
+      "spent_obsidian": 2,
+      "observed_jump": null,
+      "slot_before_after": [
+        9,
+        9
+      ]
+    },
+    {
+      "case": "optimizer-native-off",
+      "passed": true,
+      "status": "pass"
+    },
+    {
+      "case": "optimizer-native-on",
+      "passed": true,
+      "status": "pass"
+    },
+    {
+      "case": "optimizer-weakness",
+      "passed": true,
+      "status": "pass"
+    },
+    {
+      "case": "optimizer-rejected-visual",
+      "passed": true,
+      "status": "pass-after-native-image-review",
+      "entity_and_health_controls": true,
+      "native_prediction_and_timeout_counters": true
+    }
+  ],
+  "images": [
+    {
+      "file": "optimizer-before-r10.png",
+      "sha256": "cf8490e91d88d3a978b798c9d7e8081b3217d3aae59df249e13d561f398a3390",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_capture": true
+    },
+    {
+      "file": "optimizer-masked-r10.png",
+      "sha256": "d372373f4c556c747233faf485d387ee96e816296ef4cb720c02fc421d4ff80a",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_capture": true
+    },
+    {
+      "file": "optimizer-timeout-r10.png",
+      "sha256": "d578ebd80b414d344f11ed7879b1b12377c5eb1fa4f21a90808ab24e972edacd",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_capture": true
+    },
+    {
+      "file": "optimizer-repeat-r10.png",
+      "sha256": "f2a23fd9630c4905937fc5e7ac2ddfa1161c3c1e7008c8e9a2725efc2f9f348b",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_capture": true
+    },
+    {
+      "file": "trap-complete-r10.png",
+      "sha256": "761b6e2fbdfd9e113402b6329692ce346a93368e2e36de575fbed87d9808f8e5",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_capture": true
+    }
+  ],
+  "handoff": {
+    "both_survival_health": 20,
+    "absorption": 0,
+    "effects": [],
+    "inventory_empty": true,
+    "modules_off": true,
+    "logical_and_physical_inputs_empty": true,
+    "streams_closed": true
+  }
+}

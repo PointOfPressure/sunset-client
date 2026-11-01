@@ -1,0 +1,77 @@
+{
+  "scope": "Public path shortening only. Private raw reports and original image bytes are unchanged.",
+  "images": [
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-behind-False-after-second-click-1793519190223601800.png",
+      "published_file": "originals/behind-off-after.png",
+      "sha256": "464fc234b8ae78f2240a2d7be600e859994c6b15f54050ade88267862e41781e",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-behind-False-before-1793519189729271600.png",
+      "published_file": "originals/behind-off-before.png",
+      "sha256": "9b6a21c079c0ff84a8f18e5eaad6fc05186c2aa60023445af49199492720787f",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-behind-True-after-second-click-1793519208620665700.png",
+      "published_file": "originals/behind-on-after.png",
+      "sha256": "ed88ec90228a7758f88feb128203dee48261f6307db81462e6fd00562abf3d9c",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-behind-True-before-1793519208028249400.png",
+      "published_file": "originals/behind-on-before.png",
+      "sha256": "ec4ee2b3cf75f1b7c8b21db4e8b645567b4f3264972a99cb2fab7a32054ee294",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-optimizer-rejected-visual-after-two-control-ticks-1793519097276921800.png",
+      "published_file": "originals/ghost-hidden.png",
+      "sha256": "efd5b8101d4030765db0b0e88f6f9aa59e9ce4d4ed56afe811cb37eb8f1f34bc",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-optimizer-rejected-visual-before-1793519097127764500.png",
+      "published_file": "originals/ghost-before.png",
+      "sha256": "0e0fbfb8fa6b04bd50322685cd837b0fac2c2d672aa43194ad427e0f5d9827e7",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-optimizer-rejected-visual-repeat-1793519099014921300.png",
+      "published_file": "originals/ghost-repeat.png",
+      "sha256": "aeef44c74c0adb63c85bd9224bdc90994bd92766bb461f8061a986acc2f79ec6",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-optimizer-rejected-visual-timeout-1793519098866097300.png",
+      "published_file": "originals/ghost-timeout.png",
+      "sha256": "79100c0fa5c553357c5f24fbc1e43fc623da2b0a0f077a7d10c45e13b1455d24",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-optimizer-short-reach-after-two-control-ticks-1793519115476918200.png",
+      "published_file": "originals/reach-after.png",
+      "sha256": "648fa0e6912caf4ac833560aaace4bb3b0775f77031f44f4053c729f6c5bc3bf",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-optimizer-short-reach-before-1793519115328523300.png",
+      "published_file": "originals/reach-before.png",
+      "sha256": "8de1589f8fb1dc175ae356fbf6f71fd566c4c60932207828e20705f9164e6c3e",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-optimizer-short-reach-repeat-1793519117325242000.png",
+      "published_file": "originals/reach-repeat.png",
+      "sha256": "a0367c6fe70f9aa87f5c866234f687d9b1e8376449e3545771944f76ac394bae",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r30-450ee090ced044e688e61c966e278744-optimizer-short-reach-timeout-1793519117176369600.png",
+      "published_file": "originals/reach-timeout.png",
+      "sha256": "c5a83c594e3aa6a45d2187605b6d444c885581f146e83030ddcb1fe3a2310e00",
+      "pixels_unchanged": true
+    }
+  ]
+}

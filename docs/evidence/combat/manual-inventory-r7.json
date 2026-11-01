@@ -1,0 +1,1375 @@
+{
+  "checkpoint": "R7 manual macro and inventory paired-player outcomes",
+  "native_client_sha256": "f856c2fe3f634aefac465517d4ca7ebb8d4e620340421499e174f488939ba696",
+  "host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins_revision": "cb1ad23022392d88f006cf94cbf6552a73f5df12",
+  "native_package_sha256": "d233e3163ffd6d3bc7879b8a3c241475a7b937d3179a834fffc24a01faa63cdc",
+  "native_control_sha256": "840d64de53a7258fa441085465030eae3ab79511f59ed98866dd839d82d26b7f",
+  "pair_driver_sha256": "d3c90927f14f702c1310313f6322c635c48cfdd3cf6883b5552c611b28aeb6e6",
+  "backend": {
+    "version": "stock Java26.3",
+    "protocol": 777,
+    "listen": "127.0.0.1:25566",
+    "official_server_jar_sha1": "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c"
+  },
+  "fixture": {
+    "players": [
+      "CodexAttacker",
+      "CodexTarget"
+    ],
+    "attacker": "Survival20HP, Resistance255 separate fail-safe; macros explicitly use Unmitigated self cap16 and minimum remaining4.",
+    "target": "Moved to spectator outside the arena except the real-player friend control, where observed health stays20.",
+    "input": "Official native ctl, including actual camera aim, mouse buttons, keys and UI pointer; no OS input, injected velocity or fabricated server state."
+  },
+  "counts": {
+    "completed_check_attempts": 24,
+    "passing_attempts": 23,
+    "failed_attempts": 1,
+    "unique_canonical_scenarios": 23,
+    "canonical_scenarios_with_passing_outcomes": 23,
+    "aborted_harness_runs": 1,
+    "checks_in_aborted_harness_run": 0,
+    "identity_note": "Canonical scenarios use controller case names. Corrected basic Wind explicitly disables Wind Jump; enabled Wind Jump is tested separately against a real native jump baseline."
+  },
+  "canonical_outcomes": [
+    {
+      "case": "crystal-held",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json"
+    },
+    {
+      "case": "crystal-release",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json"
+    },
+    {
+      "case": "crystal-slot-cancel",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json"
+    },
+    {
+      "case": "crystal-self-zero",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json"
+    },
+    {
+      "case": "crystal-friend",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json"
+    },
+    {
+      "case": "anchor-single",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json"
+    },
+    {
+      "case": "anchor-double",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json"
+    },
+    {
+      "case": "anchor-unguarded-cancel",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json"
+    },
+    {
+      "case": "auto-totem-empty",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json"
+    },
+    {
+      "case": "auto-totem-occupied",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json"
+    },
+    {
+      "case": "auto-inventory-inventory",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json"
+    },
+    {
+      "case": "auto-inventory-hotbar-swap",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json"
+    },
+    {
+      "case": "auto-inventory-hotbar-refill",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json"
+    },
+    {
+      "case": "totem-exclusion",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json"
+    },
+    {
+      "case": "hover-real-pointer",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json"
+    },
+    {
+      "case": "fastxp-ab",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json"
+    },
+    {
+      "case": "key-throw-pearl",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json"
+    },
+    {
+      "case": "key-throw-wind",
+      "passed": true,
+      "report": "inventory-proof-1793481713619967200.json"
+    },
+    {
+      "case": "menu",
+      "passed": true,
+      "report": "macro-controls-1793481603110199200.json"
+    },
+    {
+      "case": "module-off",
+      "passed": true,
+      "report": "macro-controls-1793481603110199200.json"
+    },
+    {
+      "case": "master-off",
+      "passed": true,
+      "report": "macro-controls-1793481603110199200.json"
+    },
+    {
+      "case": "key-throw-wind-jump",
+      "passed": true,
+      "report": "inventory-proof-1793481713619967200.json"
+    },
+    {
+      "case": "anchor-double-high-delay",
+      "passed": true,
+      "report": "macro-proof-1793481814628027300.json"
+    }
+  ],
+  "completed_checks": [
+    {
+      "case": "crystal-held",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json",
+      "evidence": {
+        "input_mode": "down",
+        "before_inventory": {
+          "selected": 9,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_inventory": {
+          "selected": 9,
+          "counts": {
+            "minecraft:diamond_sword": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_crystals": [],
+        "after_anchor": {
+          "block": "minecraft:air",
+          "loaded": true,
+          "pos": [
+            4,
+            121,
+            0
+          ],
+          "state": "minecraft:air"
+        },
+        "observed_anchor_removals": 0,
+        "camera_aimed_at_observed_crystal": true
+      }
+    },
+    {
+      "case": "crystal-release",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json",
+      "evidence": {
+        "input_mode": "down",
+        "before_inventory": {
+          "selected": 9,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_inventory": {
+          "selected": 9,
+          "counts": {
+            "minecraft:diamond_sword": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_crystals": [
+          {
+            "id": 102,
+            "position": [
+              4.5,
+              121.0,
+              0.5
+            ]
+          }
+        ],
+        "after_anchor": {
+          "block": "minecraft:air",
+          "loaded": true,
+          "pos": [
+            4,
+            121,
+            0
+          ],
+          "state": "minecraft:air"
+        },
+        "observed_anchor_removals": 0,
+        "camera_aimed_at_observed_crystal": false
+      }
+    },
+    {
+      "case": "crystal-slot-cancel",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json",
+      "evidence": {
+        "input_mode": "down",
+        "before_inventory": {
+          "selected": 9,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_inventory": {
+          "selected": 8,
+          "counts": {
+            "minecraft:diamond_sword": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_crystals": [
+          {
+            "id": 103,
+            "position": [
+              4.5,
+              121.0,
+              0.5
+            ]
+          }
+        ],
+        "after_anchor": {
+          "block": "minecraft:air",
+          "loaded": true,
+          "pos": [
+            4,
+            121,
+            0
+          ],
+          "state": "minecraft:air"
+        },
+        "observed_anchor_removals": 0,
+        "camera_aimed_at_observed_crystal": false
+      }
+    },
+    {
+      "case": "crystal-self-zero",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json",
+      "evidence": {
+        "input_mode": "down",
+        "before_inventory": {
+          "selected": 9,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_inventory": {
+          "selected": 9,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_crystals": [],
+        "after_anchor": {
+          "block": "minecraft:air",
+          "loaded": true,
+          "pos": [
+            4,
+            121,
+            0
+          ],
+          "state": "minecraft:air"
+        },
+        "observed_anchor_removals": 0,
+        "camera_aimed_at_observed_crystal": false
+      }
+    },
+    {
+      "case": "crystal-friend",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json",
+      "evidence": {
+        "input_mode": "down",
+        "before_inventory": {
+          "selected": 9,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_inventory": {
+          "selected": 9,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:end_crystal": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_crystals": [],
+        "after_anchor": {
+          "block": "minecraft:air",
+          "loaded": true,
+          "pos": [
+            4,
+            121,
+            0
+          ],
+          "state": "minecraft:air"
+        },
+        "observed_anchor_removals": 0,
+        "camera_aimed_at_observed_crystal": false,
+        "target_health_before": 20.0,
+        "target_health_after": 20.0
+      }
+    },
+    {
+      "case": "anchor-single",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json",
+      "evidence": {
+        "input_mode": "click",
+        "before_inventory": {
+          "selected": 1,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 1,
+            "minecraft:respawn_anchor": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_inventory": {
+          "selected": 1,
+          "counts": {
+            "minecraft:diamond_sword": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_crystals": [],
+        "after_anchor": {
+          "block": "minecraft:air",
+          "loaded": true,
+          "pos": [
+            4,
+            121,
+            0
+          ],
+          "state": "minecraft:air"
+        },
+        "observed_anchor_removals": 1,
+        "camera_aimed_at_observed_crystal": false,
+        "observed_anchor_states": [
+          "minecraft:air",
+          "minecraft:respawn_anchor[charges=0]",
+          "minecraft:respawn_anchor[charges=1]",
+          "minecraft:air"
+        ]
+      }
+    },
+    {
+      "case": "anchor-double",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json",
+      "evidence": {
+        "input_mode": "click",
+        "before_inventory": {
+          "selected": 1,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 2,
+            "minecraft:respawn_anchor": 2
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_inventory": {
+          "selected": 1,
+          "counts": {
+            "minecraft:diamond_sword": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_crystals": [],
+        "after_anchor": {
+          "block": "minecraft:air",
+          "loaded": true,
+          "pos": [
+            4,
+            121,
+            0
+          ],
+          "state": "minecraft:air"
+        },
+        "observed_anchor_removals": 2,
+        "camera_aimed_at_observed_crystal": false,
+        "observed_anchor_states": [
+          "minecraft:air",
+          "minecraft:respawn_anchor[charges=0]",
+          "minecraft:respawn_anchor[charges=1]",
+          "minecraft:fire[age=0,east=false,north=false,south=false,up=false,west=false]",
+          "minecraft:respawn_anchor[charges=0]",
+          "minecraft:respawn_anchor[charges=1]",
+          "minecraft:air"
+        ]
+      }
+    },
+    {
+      "case": "anchor-unguarded-cancel",
+      "passed": true,
+      "report": "macro-proof-1793481148124233000.json",
+      "evidence": {
+        "input_mode": "click",
+        "before_inventory": {
+          "selected": 9,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 1,
+            "minecraft:respawn_anchor": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_inventory": {
+          "selected": 9,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 1,
+            "minecraft:respawn_anchor": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_crystals": [],
+        "after_anchor": {
+          "block": "minecraft:respawn_anchor",
+          "loaded": true,
+          "pos": [
+            4,
+            121,
+            0
+          ],
+          "state": "minecraft:respawn_anchor[charges=0]"
+        },
+        "observed_anchor_removals": 0,
+        "camera_aimed_at_observed_crystal": false,
+        "observed_anchor_states": [
+          "minecraft:respawn_anchor[charges=0]"
+        ]
+      }
+    },
+    {
+      "case": "auto-totem-empty",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json",
+      "evidence": {
+        "strict_two_slot_ack_confirmed": true,
+        "counters_before": {
+          "swap_requests": 0,
+          "swap_confirmed": 0,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 0
+        },
+        "counters_after": {
+          "swap_requests": 1,
+          "swap_confirmed": 1,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "native_before": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "native_after": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "offhand": {
+            "count": 1,
+            "item": "minecraft:totem_of_undying",
+            "slot": 504
+          },
+          "carried": null
+        },
+        "authoritative_java": {
+          "inventory_stdout": "[00:16:05] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 1, Slot: 8b, id: \"minecraft:stick\"}]\n[00:16:05] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n",
+          "equipment_stdout": "[00:16:05] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: {offhand: {count: 1, id: \"minecraft:totem_of_undying\"}}\n[00:16:05] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+        }
+      }
+    },
+    {
+      "case": "auto-totem-occupied",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json",
+      "evidence": {
+        "counters_before": {
+          "swap_requests": 1,
+          "swap_confirmed": 1,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "counters_after": {
+          "swap_requests": 1,
+          "swap_confirmed": 1,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "native_before": {
+          "selected": 9,
+          "counts": {
+            "minecraft:shield": 1,
+            "minecraft:stick": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "offhand": {
+            "count": 1,
+            "item": "minecraft:shield",
+            "slot": 504
+          },
+          "carried": null
+        },
+        "native_after": {
+          "selected": 9,
+          "counts": {
+            "minecraft:shield": 1,
+            "minecraft:stick": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "offhand": {
+            "count": 1,
+            "item": "minecraft:shield",
+            "slot": 504
+          },
+          "carried": null
+        },
+        "authoritative_java": {
+          "inventory_stdout": "[00:16:18] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 1, Slot: 8b, id: \"minecraft:stick\"}, {count: 1, Slot: 9b, id: \"minecraft:totem_of_undying\"}]\n[00:16:18] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n",
+          "equipment_stdout": "[00:16:19] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: {offhand: {count: 1, id: \"minecraft:shield\"}}\n[00:16:19] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+        }
+      }
+    },
+    {
+      "case": "auto-inventory-inventory",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json",
+      "evidence": {
+        "strict_two_slot_ack_confirmed": true,
+        "elapsed_ticks_to_close": 10,
+        "early_ack_witness": true,
+        "counters_before": {
+          "swap_requests": 1,
+          "swap_confirmed": 1,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "counters_after": {
+          "swap_requests": 2,
+          "swap_confirmed": 2,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "native_before": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "native_after": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "offhand": {
+            "count": 1,
+            "item": "minecraft:totem_of_undying",
+            "slot": 504
+          },
+          "carried": null
+        },
+        "authoritative_java": {
+          "inventory_stdout": "[00:16:30] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 1, Slot: 8b, id: \"minecraft:stick\"}]\n[00:16:30] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n",
+          "equipment_stdout": "[00:16:31] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: {offhand: {count: 1, id: \"minecraft:totem_of_undying\"}}\n[00:16:31] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+        }
+      }
+    },
+    {
+      "case": "auto-inventory-hotbar-swap",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json",
+      "evidence": {
+        "strict_two_slot_ack_confirmed": true,
+        "elapsed_ticks_to_close": 8,
+        "early_ack_witness": null,
+        "counters_before": {
+          "swap_requests": 2,
+          "swap_confirmed": 2,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "counters_after": {
+          "swap_requests": 3,
+          "swap_confirmed": 3,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "native_before": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "native_after": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "offhand": {
+            "count": 1,
+            "item": "minecraft:totem_of_undying",
+            "slot": 504
+          },
+          "carried": null
+        },
+        "authoritative_java": {
+          "inventory_stdout": "[00:16:42] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 1, Slot: 8b, id: \"minecraft:stick\"}]\n[00:16:42] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n",
+          "equipment_stdout": "[00:16:42] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: {offhand: {count: 1, id: \"minecraft:totem_of_undying\"}}\n[00:16:42] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+        }
+      }
+    },
+    {
+      "case": "auto-inventory-hotbar-refill",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json",
+      "evidence": {
+        "strict_two_slot_ack_confirmed": true,
+        "counters_before": {
+          "swap_requests": 3,
+          "swap_confirmed": 3,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "counters_after": {
+          "swap_requests": 4,
+          "swap_confirmed": 4,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "native_before": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:totem_of_undying": 2
+          },
+          "offhand": {
+            "count": 1,
+            "item": "minecraft:totem_of_undying",
+            "slot": 504
+          },
+          "carried": null
+        },
+        "native_after": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:totem_of_undying": 2
+          },
+          "offhand": {
+            "count": 1,
+            "item": "minecraft:totem_of_undying",
+            "slot": 504
+          },
+          "carried": null
+        },
+        "authoritative_java": {
+          "inventory_stdout": "[00:16:54] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 1, Slot: 1b, id: \"minecraft:totem_of_undying\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]\n[00:16:54] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n",
+          "equipment_stdout": "[00:16:55] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: {offhand: {count: 1, id: \"minecraft:totem_of_undying\"}}\n[00:16:55] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+        }
+      }
+    },
+    {
+      "case": "totem-exclusion",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json",
+      "evidence": {
+        "counters_before": {
+          "swap_requests": 4,
+          "swap_confirmed": 4,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "counters_after": {
+          "swap_requests": 4,
+          "swap_confirmed": 4,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "after_newer_auto_inventory": {
+          "autototem.on": "false",
+          "autoinventorytotem.on": "true"
+        },
+        "after_newer_auto_totem": {
+          "autototem.on": "true",
+          "autoinventorytotem.on": "false"
+        }
+      }
+    },
+    {
+      "case": "hover-real-pointer",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json",
+      "evidence": {
+        "strict_two_slot_ack_confirmed": true,
+        "counters_before": {
+          "swap_requests": 4,
+          "swap_confirmed": 4,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "counters_after": {
+          "swap_requests": 5,
+          "swap_confirmed": 5,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "native_after": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:totem_of_undying": 1
+          },
+          "offhand": {
+            "count": 1,
+            "item": "minecraft:totem_of_undying",
+            "slot": 504
+          },
+          "carried": null
+        },
+        "authoritative_java": {
+          "inventory_stdout": "[00:17:18] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 1, Slot: 8b, id: \"minecraft:stick\"}]\n[00:17:18] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n",
+          "equipment_stdout": "[00:17:18] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: {offhand: {count: 1, id: \"minecraft:totem_of_undying\"}}\n[00:17:18] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+        },
+        "pointer_method": "scroll-at slotcenter 0 sends real CursorMoved and zero wheel events",
+        "nonhovered_offhand": {
+          "item": null,
+          "slot": 504
+        }
+      }
+    },
+    {
+      "case": "fastxp-ab",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json",
+      "evidence": {
+        "counters_before": {
+          "swap_requests": 5,
+          "swap_confirmed": 5,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "counters_after": {
+          "swap_requests": 5,
+          "swap_confirmed": 5,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "arms": [
+          {
+            "fastxp": false,
+            "elapsed_native_ticks": 21,
+            "server_bottles_consumed": 6,
+            "consumption_per_tick": 0.2857142857142857,
+            "authoritative_inventory_stdout": "[00:17:30] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 58, Slot: 0b, id: \"minecraft:experience_bottle\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]\n[00:17:30] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+          },
+          {
+            "fastxp": true,
+            "elapsed_native_ticks": 20,
+            "server_bottles_consumed": 20,
+            "consumption_per_tick": 1.0,
+            "authoritative_inventory_stdout": "[00:17:33] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 44, Slot: 0b, id: \"minecraft:experience_bottle\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]\n[00:17:33] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+          }
+        ]
+      }
+    },
+    {
+      "case": "key-throw-pearl",
+      "passed": true,
+      "report": "inventory-proof-1793481355380985000.json",
+      "evidence": {
+        "held_server_count": 2,
+        "after_server_count": 1,
+        "native_projectile_observed": true,
+        "counters_before": {
+          "swap_requests": 5,
+          "swap_confirmed": 5,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "counters_after": {
+          "swap_requests": 5,
+          "swap_confirmed": 5,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "native_before": {
+          "selected": 9,
+          "counts": {
+            "minecraft:ender_pearl": 3,
+            "minecraft:stick": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "native_after": {
+          "selected": 9,
+          "counts": {
+            "minecraft:ender_pearl": 1,
+            "minecraft:stick": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "authoritative_java": {
+          "inventory_stdout": "[00:17:47] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 1, Slot: 0b, id: \"minecraft:ender_pearl\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]\n[00:17:47] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n",
+          "equipment_stdout": "[00:17:47] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: {}\n[00:17:47] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+        }
+      }
+    },
+    {
+      "case": "key-throw-wind",
+      "passed": false,
+      "report": "inventory-proof-1793481355380985000.json",
+      "evidence": {
+        "held_server_count": 2,
+        "after_server_count": 1,
+        "native_projectile_observed": false,
+        "counters_before": {
+          "swap_requests": 5,
+          "swap_confirmed": 5,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "counters_after": {
+          "swap_requests": 5,
+          "swap_confirmed": 5,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "native_before": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:wind_charge": 3
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "native_after": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:wind_charge": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "authoritative_java": {
+          "inventory_stdout": "[00:18:01] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 1, Slot: 0b, id: \"minecraft:wind_charge\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]\n[00:18:01] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n",
+          "equipment_stdout": "[00:18:01] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: {}\n[00:18:01] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+        }
+      }
+    },
+    {
+      "case": "menu",
+      "passed": true,
+      "report": "macro-controls-1793481603110199200.json",
+      "evidence": {
+        "observed_crystal_ids": [
+          189
+        ],
+        "remaining_crystals": [
+          {
+            "id": 189,
+            "position": [
+              4.5,
+              121.0,
+              0.5
+            ]
+          }
+        ],
+        "selected_after": 9
+      }
+    },
+    {
+      "case": "module-off",
+      "passed": true,
+      "report": "macro-controls-1793481603110199200.json",
+      "evidence": {
+        "observed_crystal_ids": [
+          190
+        ],
+        "remaining_crystals": [
+          {
+            "id": 190,
+            "position": [
+              4.5,
+              121.0,
+              0.5
+            ]
+          }
+        ],
+        "selected_after": 9
+      }
+    },
+    {
+      "case": "master-off",
+      "passed": true,
+      "report": "macro-controls-1793481603110199200.json",
+      "evidence": {
+        "observed_crystal_ids": [
+          191
+        ],
+        "remaining_crystals": [
+          {
+            "id": 191,
+            "position": [
+              4.5,
+              121.0,
+              0.5
+            ]
+          }
+        ],
+        "selected_after": 9,
+        "native_master_setting_while_disabled": "mod.sunset:false\n"
+      }
+    },
+    {
+      "case": "key-throw-wind",
+      "passed": true,
+      "report": "inventory-proof-1793481713619967200.json",
+      "evidence": {
+        "held_server_count": 2,
+        "after_server_count": 1,
+        "native_projectile_observed": true,
+        "wind_jump_setting": "false",
+        "counters_before": {
+          "swap_requests": 5,
+          "swap_confirmed": 5,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "counters_after": {
+          "swap_requests": 5,
+          "swap_confirmed": 5,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "native_before": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:wind_charge": 3
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "native_after": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:wind_charge": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "authoritative_java": {
+          "inventory_stdout": "[00:22:05] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 1, Slot: 0b, id: \"minecraft:wind_charge\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]\n[00:22:05] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n",
+          "equipment_stdout": "[00:22:05] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: {}\n[00:22:05] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+        }
+      }
+    },
+    {
+      "case": "key-throw-wind-jump",
+      "passed": true,
+      "report": "inventory-proof-1793481713619967200.json",
+      "evidence": {
+        "ordinary_peak": 122.25220334025371,
+        "wind_peak": 126.47455524863838,
+        "server_consumed": 1,
+        "native_airborne_upward": true,
+        "ordinary_native_airborne_upward": true,
+        "counters_before": {
+          "swap_requests": 5,
+          "swap_confirmed": 5,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "counters_after": {
+          "swap_requests": 5,
+          "swap_confirmed": 5,
+          "swap_failed": 0,
+          "swap_last_ack_bits": 3
+        },
+        "native_before": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:wind_charge": 3
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "native_after": {
+          "selected": 9,
+          "counts": {
+            "minecraft:stick": 1,
+            "minecraft:wind_charge": 2
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "authoritative_java": {
+          "inventory_stdout": "[00:22:27] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: [{count: 2, Slot: 0b, id: \"minecraft:wind_charge\"}, {count: 1, Slot: 8b, id: \"minecraft:stick\"}]\n[00:22:27] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n",
+          "equipment_stdout": "[00:22:28] [Server thread/INFO]: System chat: CodexAttacker has the following entity data: {}\n[00:22:28] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\n"
+        }
+      }
+    },
+    {
+      "case": "anchor-double-high-delay",
+      "passed": true,
+      "report": "macro-proof-1793481814628027300.json",
+      "evidence": {
+        "input_mode": "click",
+        "before_inventory": {
+          "selected": 1,
+          "counts": {
+            "minecraft:diamond_sword": 1,
+            "minecraft:glowstone": 2,
+            "minecraft:respawn_anchor": 2
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_inventory": {
+          "selected": 1,
+          "counts": {
+            "minecraft:diamond_sword": 1
+          },
+          "offhand": {
+            "item": null,
+            "slot": 504
+          },
+          "carried": null
+        },
+        "after_crystals": [],
+        "after_anchor": {
+          "block": "minecraft:air",
+          "loaded": true,
+          "pos": [
+            4,
+            121,
+            0
+          ],
+          "state": "minecraft:air"
+        },
+        "observed_anchor_removals": 2,
+        "camera_aimed_at_observed_crystal": false,
+        "observed_anchor_states": [
+          "minecraft:air",
+          "minecraft:respawn_anchor[charges=0]",
+          "minecraft:respawn_anchor[charges=1]",
+          "minecraft:fire[age=0,east=false,north=false,south=false,up=false,west=false]",
+          "minecraft:respawn_anchor[charges=0]",
+          "minecraft:respawn_anchor[charges=1]",
+          "minecraft:air"
+        ]
+      }
+    }
+  ],
+  "retained_failures": [
+    {
+      "report": "inventory-proof-1793481355380985000.json",
+      "case": "key-throw-wind",
+      "passed": false,
+      "reason": "Earlier test pearls hit later and teleported the attacker outside the prepared arena; the transient down-fired projectile was not observed.",
+      "observed_before_position": [
+        1.2374775159959108,
+        -60.0,
+        21.750383970671468
+      ],
+      "held_server_count": 2,
+      "after_fresh_press_server_count": 1,
+      "native_projectile_observed": false,
+      "correction": "Discard prior test pearls/wind charges before the fixture; test basic Wind with Wind Jump off and test enabled Wind Jump with native motion A/B. Original failed result remains unchanged."
+    },
+    {
+      "report": "macro-controls-1793481501869333900.json",
+      "kind": "harness error",
+      "recorded_checks": 0,
+      "reason": "The first menu control used mouse right up on the inventory screen; official ctl rejected that playing-only command. The corrected harness uses release and then passed all three UI controls."
+    }
+  ],
+  "limits": [
+    "Stationary private stock-server fixtures do not establish moving-target, arbitrary latency, server plugin or anticheat compatibility.",
+    "Crystal held-cycle proof moves the actual camera from the clicked floor face onto the observed crystal hitbox within native attack reach.",
+    "Module-off uses chat and master-off uses the real Mods UI; those screens already cancel pending work. No master-only live-lease cancellation claim is made.",
+    "Five positive inventory scenarios require a fresh request, a fresh confirmed transaction, both actual incoming slot acknowledgments (bits3), and matching authoritative Java inventory/equipment NBT. Client prediction alone is not counted.",
+    "Frames are unmodified1280x720 native captures from a1024x576 logical window at1.25 scaling. Selected Wind and extinguished frames are postcase images, not exact motion/cycle phases.",
+    "Complete private reports and raw control streams are retained and identified by SHA-256 below; this public file is a compact extract."
+  ],
+  "source_artifacts": [
+    {
+      "report": "macro-proof-1793481148124233000.json",
+      "sha256": "55e79d0652dba70278fc2beba8dda4db435854f0adf0f540c6039856023dfe39",
+      "recorded_checks": 8,
+      "passed_checks": 8,
+      "raw_ctl": {
+        "file": "macro-proof-1793481148124233000-native-ctl.jsonl",
+        "sha256": "2d58081e67a24311f45956c54a0b374dbb6bf5bb4409d5ba319e453d3eac8768"
+      }
+    },
+    {
+      "report": "inventory-proof-1793481355380985000.json",
+      "sha256": "d6bd2a1a82e8b0726853fd0246397a182df92b2f28e5c8d4a64b41ea78b15fc1",
+      "recorded_checks": 10,
+      "passed_checks": 9,
+      "raw_ctl": {
+        "file": "inventory-proof-1793481355380985000-native-ctl.jsonl",
+        "sha256": "8bd657e7cfe6f1bd691d006a2c024c5952aec026503b3f4a6efcfb838e177567"
+      }
+    },
+    {
+      "report": "macro-controls-1793481603110199200.json",
+      "sha256": "d314dd187eeb9d1e257522372be110974d138f808715c149c9a3ce55d1372c25",
+      "recorded_checks": 3,
+      "passed_checks": 3,
+      "raw_ctl": {
+        "file": "macro-controls-1793481603110199200-native-ctl.jsonl",
+        "sha256": "069f3924f2e3ccb15332844bf6abda3e249830556cc4b1ff99b19dee51c568f6"
+      }
+    },
+    {
+      "report": "inventory-proof-1793481713619967200.json",
+      "sha256": "8f7eceabfc7d99d16974aafe111b325d5b03f501f15211705ea0cc340844c7d2",
+      "recorded_checks": 2,
+      "passed_checks": 2,
+      "raw_ctl": {
+        "file": "inventory-proof-1793481713619967200-native-ctl.jsonl",
+        "sha256": "dfc22ee9d2c09d00ebbea3eaaaacd686bacf1262e3477c73089863f619a11e36"
+      }
+    },
+    {
+      "report": "macro-proof-1793481814628027300.json",
+      "sha256": "b6b879bbb7c24087359755f53c82ac3ee83cdec7e8b85964747fb978c156260d",
+      "recorded_checks": 1,
+      "passed_checks": 1,
+      "raw_ctl": {
+        "file": "macro-proof-1793481814628027300-native-ctl.jsonl",
+        "sha256": "c1a116cd4f5075a52ac1ad31f9c905a6613c43360725e11162e8ddc9c09820af"
+      }
+    },
+    {
+      "report": "macro-controls-1793481501869333900.json",
+      "sha256": "2bf5a088c6062cb803b942698c3aad5d244f68ed10060008d298d6763ca87d1f",
+      "recorded_checks": 0,
+      "passed_checks": 0,
+      "raw_ctl": {
+        "file": "macro-controls-1793481501869333900-native-ctl.jsonl",
+        "sha256": "e6e58c5a7d38cc9fbb4a7a688ca7196c9ab186a44bafe09bceabcbd756ee240b"
+      },
+      "error": "RuntimeError({'command': ['mouse', 'right', 'up'], 'reply': {'error': 'mouse needs the playing screen, not inventory', 'line': 24}})"
+    },
+    {
+      "report": "postcycle-extinguished-1793481930123182700.json",
+      "sha256": "c611d927be78758b420a62aa08d5530dcfea2d9137b321cd9e5eebf3e3f24916",
+      "recorded_checks": 0,
+      "passed_checks": 0
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "manual-clear-postcycle-r7.png",
+      "sha256": "d29c361d0e447d9d19ef9c6fa83ce35021649959e10017806666091cb27fc44d",
+      "size": [
+        1280,
+        720
+      ],
+      "unchanged_native_framebuffer": true,
+      "caption": "Supplementary postcycle frame after actual water extinguishing and fire cleanup; not exact cycle-phase evidence."
+    },
+    {
+      "file": "inventory-confirmed-r7.png",
+      "sha256": "32348a23bf1c24238bbf88bf2438227d2b5e7fefc5f09983c7c76462dab573f9",
+      "size": [
+        1280,
+        720
+      ],
+      "unchanged_native_framebuffer": true,
+      "caption": "Auto Inventory after a real server-confirmed swap and automatic inventory close; the JSON contains counters and Java NBT."
+    },
+    {
+      "file": "hover-confirmed-r7.png",
+      "sha256": "391609d4a523a977c650f198c0aef8181e64e6b9aa102a2aa22a3b306253016f",
+      "size": [
+        1280,
+        720
+      ],
+      "unchanged_native_framebuffer": true,
+      "caption": "Actual open player inventory after Hover moved the pointed totem to offhand and both server slots confirmed."
+    },
+    {
+      "file": "wind-jump-r7.png",
+      "sha256": "678b5b1d057aab7ee4665d17fbb1ddefd8e2cf73dc3b598e6ed2fa14a2c50ffa",
+      "size": [
+        1280,
+        720
+      ],
+      "unchanged_native_framebuffer": true,
+      "caption": "Postcase native frame after Wind Jump; heights are established by the retained native motion trace, not this image."
+    }
+  ],
+  "screenshot_retention": {
+    "audit": "screenshot-retention-audit-1793481937694914800.json",
+    "sha256": "6bb71c45ab9ef4ab2ae4e63b7fa1f6c9cb9d21a84714b47de6ba2030b2a398f3",
+    "matching_capture_hashes": 24,
+    "mismatched_capture_hashes": 0
+  }
+}

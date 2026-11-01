@@ -1,0 +1,23 @@
+{
+  "scope": "Public path shortening only. Private raw reports and original image bytes are unchanged.",
+  "images": [
+    {
+      "original_file": "parity-bots-crystal-chase-pearl-4464cd3f1f144f5e8679949a97a6f640-1793518486674784200.png",
+      "published_file": "chase-pearl.png",
+      "sha256": "713e8b291d6cc0dcc48485755d2fb77321ea24e8023a201f7de4a10506ad1e9d",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "parity-bots-crystal-escape-pearl-6f5788fc01044553a64c70b1c9b24887-1793518864678866700.png",
+      "published_file": "escape-pearl.png",
+      "sha256": "59da7aaf1410f92b57816dab646a6d245d5a6a3fb00f8a0d4acd6b9cae6ffc63",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "parity-bots-crystal-follow-peer-pearl-221e6677150d4211bf9f07cc744c9f44-1793518713026489400.png",
+      "published_file": "follow-peer-pearl.png",
+      "sha256": "5942b861fe7ec0de87503f47daca3d19a8b632213e98b363d9d48d63cfe2641a",
+      "pixels_unchanged": true
+    }
+  ]
+}

@@ -1,0 +1,360 @@
+{
+  "checkpoint": "R30",
+  "native_client_sha256": "82951c55e13be66a15ef345bb2384279575355da9e7b5b23dedefc29bbd131ab",
+  "native_modules": 84,
+  "native_injections": 57,
+  "focused_checks": {
+    "total": 682,
+    "compiled_native_adapters": 631,
+    "source_contracts": 51,
+    "scope": "Root-reported exact frozen build; separate from the six native runtime outcomes."
+  },
+  "selected_runtime_cases": 6,
+  "reviewed_pass": 6,
+  "reviewed_fail": 0,
+  "raw_case_attempts": 6,
+  "checks": [
+    {
+      "case": "optimizer-rejected-visual",
+      "raw_status": "pending-native-image-review",
+      "reviewed_status": "pass",
+      "review_index": 0
+    },
+    {
+      "case": "optimizer-short-reach",
+      "raw_status": "pending-native-image-review",
+      "reviewed_status": "pass",
+      "review_index": 1
+    },
+    {
+      "case": "optimizer-creative-native",
+      "raw_status": "pass",
+      "reviewed_status": "pass",
+      "before_health": 20.0,
+      "timeout_health": 20.0,
+      "server_entity_after": {
+        "exit": 0,
+        "stdout": "[10:45:35] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "authoritative_crystal_list_after": []
+    },
+    {
+      "case": "optimizer-native-on",
+      "raw_status": "pass",
+      "reviewed_status": "pass",
+      "before_health": 20.0,
+      "timeout_health": 9.036188125610352,
+      "server_entity_after": {
+        "exit": 0,
+        "stdout": "[10:45:53] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "authoritative_crystal_list_after": []
+    },
+    {
+      "case": "optimizer-weakness",
+      "raw_status": "pass",
+      "reviewed_status": "pass",
+      "before_health": 20.0,
+      "timeout_health": 20.0,
+      "server_entity_after": {
+        "exit": 0,
+        "stdout": "[10:46:12] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793519171929525400\n[10:46:12] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "authoritative_crystal_list_after": [
+        {
+          "id": 313,
+          "position": [
+            2.5,
+            121.0,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "case": "optimizer-block-behind-ghost-ab",
+      "raw_status": "pass",
+      "reviewed_status": "pass",
+      "branches": [
+        {
+          "optimizer_enabled": false,
+          "actual_server_dirt_is_air": false,
+          "native_block_receipt": {
+            "block": "minecraft:dirt",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:dirt"
+          },
+          "server_block_receipt": {
+            "exit": 0,
+            "stdout": "[10:46:31] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          },
+          "server_crystal_receipt": {
+            "exit": 0,
+            "stdout": "[10:46:31] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793519191127304900\n[10:46:31] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          },
+          "same_authoritative_id_within_branch": true,
+          "server_crystal_retained": true,
+          "first_wait": {
+            "ok": true,
+            "ticks": 17893
+          },
+          "second_wait": {
+            "ok": true,
+            "ticks": 17894
+          },
+          "frames": [
+            {
+              "file": "originals/behind-off-before.png",
+              "sha256": "9b6a21c079c0ff84a8f18e5eaad6fc05186c2aa60023445af49199492720787f",
+              "dimensions": [
+                1280,
+                720
+              ],
+              "label": "behind-False-before",
+              "unaltered_original": true
+            },
+            {
+              "file": "originals/behind-off-after.png",
+              "sha256": "464fc234b8ae78f2240a2d7be600e859994c6b15f54050ade88267862e41781e",
+              "dimensions": [
+                1280,
+                720
+              ],
+              "label": "behind-False-after",
+              "unaltered_original": true
+            }
+          ]
+        },
+        {
+          "optimizer_enabled": true,
+          "actual_server_dirt_is_air": true,
+          "native_block_receipt": {
+            "block": "minecraft:air",
+            "loaded": true,
+            "pos": [
+              4,
+              121,
+              0
+            ],
+            "state": "minecraft:air"
+          },
+          "server_block_receipt": {
+            "exit": 0,
+            "stdout": "[10:46:49] [Server thread/INFO]: [Not Secure] [Server] BEHIND_OPEN_1793519209181008700\n[10:46:49] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          },
+          "server_crystal_receipt": {
+            "exit": 0,
+            "stdout": "[10:46:49] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793519209470627800\n[10:46:49] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          },
+          "same_authoritative_id_within_branch": true,
+          "server_crystal_retained": true,
+          "first_wait": {
+            "ok": true,
+            "ticks": 18261
+          },
+          "second_wait": {
+            "ok": true,
+            "ticks": 18262
+          },
+          "frames": [
+            {
+              "file": "originals/behind-on-before.png",
+              "sha256": "ec4ee2b3cf75f1b7c8b21db4e8b645567b4f3264972a99cb2fab7a32054ee294",
+              "dimensions": [
+                1280,
+                720
+              ],
+              "label": "behind-True-before",
+              "unaltered_original": true
+            },
+            {
+              "file": "originals/behind-on-after.png",
+              "sha256": "ed88ec90228a7758f88feb128203dee48261f6307db81462e6fd00562abf3d9c",
+              "dimensions": [
+                1280,
+                720
+              ],
+              "label": "behind-True-after",
+              "unaltered_original": true
+            }
+          ]
+        }
+      ],
+      "original_review": "OFF still shows the crystal; ON after the second click shows neither crystal body nor dirt block, with dirt-break particles. Real server/native block receipts are the mining outcome, not pixels alone."
+    }
+  ],
+  "image_review_file": "original-image-review.json",
+  "image_review_sha256": "be38727c4c18f79674d5de2d9d8994e90ccf36114c7de010916ad78b0a529344",
+  "original_images": [
+    {
+      "file": "originals/ghost-before.png",
+      "sha256": "0e0fbfb8fa6b04bd50322685cd837b0fac2c2d672aa43194ad427e0f5d9827e7",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "optimizer-rejected-visual-before",
+      "unaltered_original": true
+    },
+    {
+      "file": "originals/ghost-hidden.png",
+      "sha256": "efd5b8101d4030765db0b0e88f6f9aa59e9ce4d4ed56afe811cb37eb8f1f34bc",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "optimizer-rejected-visual-transient",
+      "unaltered_original": true
+    },
+    {
+      "file": "originals/ghost-timeout.png",
+      "sha256": "79100c0fa5c553357c5f24fbc1e43fc623da2b0a0f077a7d10c45e13b1455d24",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "optimizer-rejected-visual-timeout",
+      "unaltered_original": true
+    },
+    {
+      "file": "originals/ghost-repeat.png",
+      "sha256": "aeef44c74c0adb63c85bd9224bdc90994bd92766bb461f8061a986acc2f79ec6",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "optimizer-rejected-visual-repeat",
+      "unaltered_original": true
+    },
+    {
+      "file": "originals/reach-before.png",
+      "sha256": "8de1589f8fb1dc175ae356fbf6f71fd566c4c60932207828e20705f9164e6c3e",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "optimizer-short-reach-before",
+      "unaltered_original": true
+    },
+    {
+      "file": "originals/reach-after.png",
+      "sha256": "648fa0e6912caf4ac833560aaace4bb3b0775f77031f44f4053c729f6c5bc3bf",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "optimizer-short-reach-transient",
+      "unaltered_original": true
+    },
+    {
+      "file": "originals/reach-timeout.png",
+      "sha256": "c5a83c594e3aa6a45d2187605b6d444c885581f146e83030ddcb1fe3a2310e00",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "optimizer-short-reach-timeout",
+      "unaltered_original": true
+    },
+    {
+      "file": "originals/reach-repeat.png",
+      "sha256": "a0367c6fe70f9aa87f5c866234f687d9b1e8376449e3545771944f76ac394bae",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "optimizer-short-reach-repeat",
+      "unaltered_original": true
+    },
+    {
+      "file": "originals/behind-off-before.png",
+      "sha256": "9b6a21c079c0ff84a8f18e5eaad6fc05186c2aa60023445af49199492720787f",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "behind-False-before",
+      "unaltered_original": true
+    },
+    {
+      "file": "originals/behind-off-after.png",
+      "sha256": "464fc234b8ae78f2240a2d7be600e859994c6b15f54050ade88267862e41781e",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "behind-False-after",
+      "unaltered_original": true
+    },
+    {
+      "file": "originals/behind-on-before.png",
+      "sha256": "ec4ee2b3cf75f1b7c8b21db4e8b645567b4f3264972a99cb2fab7a32054ee294",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "behind-True-before",
+      "unaltered_original": true
+    },
+    {
+      "file": "originals/behind-on-after.png",
+      "sha256": "ed88ec90228a7758f88feb128203dee48261f6307db81462e6fd00562abf3d9c",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "label": "behind-True-after",
+      "unaltered_original": true
+    }
+  ],
+  "raw_sha256": {
+    "trap-optimizer-r30-450ee090ced044e688e61c966e278744.json": "48b8b0c47f42392b1002a871495de1e73e85843ec9f1e24e1dfc9c8172feee48",
+    "trap-optimizer-r30-handoff-recovery.json": "3eab79db87e872923bbc46157b0ea7bc563fd0461db70dd9477040513950892f"
+  },
+  "retained_cleanup_failure": {
+    "raw_report": "trap-optimizer-r30-450ee090ced044e688e61c966e278744.json",
+    "error": "AssertionError()",
+    "reason": "Target picked up one real dirt item after the initial clear, from the actual behind-ghost mining outcome. Original failure unchanged; separate recovery scoped arena item removal and clear both players."
+  },
+  "cleanup": {
+    "both_native_server_survival_health20": true,
+    "inventories_carried_empty": true,
+    "effects_absorption_inputs_empty": true,
+    "all_modules_off": true,
+    "exact_profile_friends_restored": true,
+    "actual_profile_file_deleted": true,
+    "native_server_commands_available": true,
+    "default_reach_attributes": [
+      4.5,
+      3
+    ],
+    "streams_closed": true,
+    "clients_server_left_open": true,
+    "recovery_report": "trap-optimizer-r30-handoff-recovery.json"
+  },
+  "limits": [
+    "Private loopback two-player vanilla server and native official ctl path only.",
+    "Full original captures prove this observed rejected-hit mask, timeout and stubborn repeat; arbitrary latency or OS physical input equivalence is not claimed.",
+    "Behind-ghost A/B uses real Survival native clicks and EfficiencyV shovel; exact server dirt/air and retained authoritative crystal distinguish pass-through behavior.",
+    "No R28 failure is erased or relabeled by this R30 rerun; exact binary identity differs."
+  ]
+}

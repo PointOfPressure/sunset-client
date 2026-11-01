@@ -1,0 +1,396 @@
+{
+  "checkpoint": "R14",
+  "client_sha256": "7ec29509ed88ea6126a25f56147ea40c91a5823a3d3ef2671ead3affd2ebd0c1",
+  "engine": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "server": {
+    "type": "stock Java26.3 private loopback fixture",
+    "protocol": 777,
+    "jar_sha1": "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c"
+  },
+  "counts": {
+    "primary_scenarios": 9,
+    "primary_pass": 9,
+    "optional_post_ack_loot_unique_scenarios": 1,
+    "optional_post_ack_loot_clean_pass": 1,
+    "optional_retained_harness_failures": 2,
+    "total_recorded_attempts": 12
+  },
+  "fixture": {
+    "base_cell": [
+      3,
+      121,
+      0
+    ],
+    "only_inert_support": [
+      3,
+      120,
+      0
+    ],
+    "crystal_center": [
+      3.5,
+      122,
+      0.5
+    ],
+    "floor": "glass at120; no preexisting obsidian/bedrock in complete scan census",
+    "actor_start_health": 20,
+    "actor_resistance_amplifier": 255,
+    "target_start_health": 20,
+    "target_resistance_amplifier": 3,
+    "minimum_target_damage": 1,
+    "damage_model": "Observed equipment",
+    "anti_suicide": true
+  },
+  "limits": [
+    "One inert stone support in a glass-floor scan volume gives a single observable setup cell; all old obsidian/bedrock removed and native census checked.",
+    "Actor20HP/Resistance255 is a fixture fail-safe with Observed equipment; target20HP/ResistanceIV must take real nonzero damage in positive cycles.",
+    "Min target damage1 is explicit because adding the pedestal occludes lower target rays. Anti suicide/self bounds remain enabled.",
+    "Staged cycles hold Break off until the actual base and server crystal entity are observed, then enable Break on that real id. The separate unpaused case has Break on throughout; it does not require capturing a sub-tick id window.",
+    "Native client-world obsidian plus authoritative server predicate is phase evidence. Actual packet provenance is enforced in compiled production ledger/observer; no raw incoming bytes exposed by ctl.",
+    "Fresh setting/friend commands open chat and can cancel queued work. Those controls prove safe resumed behavior, not an isolated sub-tick accepted-deed race.",
+    "Unsupported case removes the sole inert support; glass is intentionally excluded by the conservative support whitelist. No claim of arbitrary block-support coverage.",
+    "Three-refusal retry bound is covered by production policy tests, not a forged/refused server packet fixture here.",
+    "Setup ledger retains at most64 distinct cells until explicit module/context reset, without eviction; new cells fail closed at capacity. No unlimited full-world setup claim.",
+    "The optional loot case deliberately kills/respawns the target. HP invariance refers to the post-respawn veto/control interval, not the death itself."
+  ],
+  "reports": [
+    {
+      "file": "auto-base-proof-r14-7e6f6188ab8440989c78e1b6d4f0e116.json",
+      "sha256": "700452cc0fad3e4e56ceed2840fabc6780aca6acc5d124bbd2c54e33061303e0"
+    },
+    {
+      "file": "auto-base-proof-r14-6493daab63b142959ce648bc77c2a800.json",
+      "sha256": "d397793ed15f2260f928cfb8e1d560ef25b54417e615cacb2e46bdcf160ea668"
+    },
+    {
+      "file": "auto-base-proof-r14-fb062a1201d74495ae15e1c3f5198bb6.json",
+      "sha256": "96eb83cc5febf25423b625cdfeaa7bc9dbeb40b8d5de2894dcb78aa909408355"
+    },
+    {
+      "file": "auto-base-proof-r14-8e03d1714e76430692fc7d56b940f263.json",
+      "sha256": "9f75212435891580715509290034eb7c7e49fec74b00b78de0844e56b51fdb32"
+    }
+  ],
+  "cases": [
+    {
+      "case": "auto-base-off",
+      "passed": true,
+      "status": "pass",
+      "material_or_support_controls": [
+        {
+          "missing": null,
+          "passed": true,
+          "counts_before": {
+            "minecraft:end_crystal": 1,
+            "minecraft:obsidian": 1,
+            "minecraft:stick": 1
+          },
+          "counts_after": {
+            "minecraft:end_crystal": 1,
+            "minecraft:obsidian": 1,
+            "minecraft:stick": 1
+          }
+        }
+      ]
+    },
+    {
+      "case": "auto-base-cycle",
+      "passed": true,
+      "status": "pass",
+      "target_health_before": 20.0,
+      "target_health_after": 16.176311492919922,
+      "actor_health_after": 20.0,
+      "slot_before_after": [
+        9,
+        9
+      ],
+      "inventory_before": {
+        "minecraft:end_crystal": 1,
+        "minecraft:obsidian": 1,
+        "minecraft:stick": 1
+      },
+      "inventory_after": {
+        "minecraft:stick": 1
+      },
+      "actual_observed_ids": [
+        330
+      ],
+      "staged_break": true,
+      "unpaused": false,
+      "observed_base_phase": {
+        "cell": [
+          3,
+          121,
+          0
+        ],
+        "block": "minecraft:obsidian",
+        "crystal_still_unspent": true
+      }
+    },
+    {
+      "case": "auto-base-offhand-cycle",
+      "passed": true,
+      "status": "pass",
+      "target_health_before": 20.0,
+      "target_health_after": 16.176311492919922,
+      "actor_health_after": 20.0,
+      "slot_before_after": [
+        9,
+        9
+      ],
+      "inventory_before": {
+        "minecraft:end_crystal": 1,
+        "minecraft:obsidian": 1,
+        "minecraft:stick": 1
+      },
+      "inventory_after": {
+        "minecraft:stick": 1
+      },
+      "actual_observed_ids": [
+        331
+      ],
+      "staged_break": true,
+      "unpaused": false,
+      "observed_base_phase": {
+        "cell": [
+          3,
+          121,
+          0
+        ],
+        "block": "minecraft:obsidian",
+        "crystal_still_unspent": true
+      },
+      "offhand_before_after_base": [
+        {
+          "count": 1,
+          "item": "minecraft:obsidian",
+          "slot": 504
+        },
+        {
+          "item": null,
+          "slot": 504
+        }
+      ]
+    },
+    {
+      "case": "auto-base-unpaused",
+      "passed": true,
+      "status": "pass",
+      "target_health_before": 20.0,
+      "target_health_after": 16.176311492919922,
+      "actor_health_after": 20.0,
+      "slot_before_after": [
+        9,
+        9
+      ],
+      "inventory_before": {
+        "minecraft:end_crystal": 1,
+        "minecraft:obsidian": 1,
+        "minecraft:stick": 1
+      },
+      "inventory_after": {
+        "minecraft:stick": 1
+      },
+      "actual_observed_ids": [],
+      "staged_break": false,
+      "unpaused": true
+    },
+    {
+      "case": "auto-base-materials",
+      "passed": true,
+      "status": "pass",
+      "material_or_support_controls": [
+        {
+          "missing": "obsidian",
+          "passed": true,
+          "counts_before": {
+            "minecraft:end_crystal": 1,
+            "minecraft:stick": 1
+          },
+          "counts_after": {
+            "minecraft:end_crystal": 1,
+            "minecraft:stick": 1
+          }
+        },
+        {
+          "missing": "end_crystal",
+          "passed": true,
+          "counts_before": {
+            "minecraft:obsidian": 1,
+            "minecraft:stick": 1
+          },
+          "counts_after": {
+            "minecraft:obsidian": 1,
+            "minecraft:stick": 1
+          }
+        }
+      ]
+    },
+    {
+      "case": "auto-base-unsupported",
+      "passed": true,
+      "status": "pass",
+      "material_or_support_controls": [
+        {
+          "missing": null,
+          "passed": true,
+          "counts_before": {
+            "minecraft:end_crystal": 1,
+            "minecraft:obsidian": 1,
+            "minecraft:stick": 1
+          },
+          "counts_after": {
+            "minecraft:end_crystal": 1,
+            "minecraft:obsidian": 1,
+            "minecraft:stick": 1
+          }
+        }
+      ]
+    },
+    {
+      "case": "auto-base-fresh-target",
+      "passed": true,
+      "status": "pass",
+      "base_remains": true,
+      "crystal_count_after": 1,
+      "target_health_after": 20.0,
+      "chat_context_cancellation_possible": true
+    },
+    {
+      "case": "auto-base-fresh-friend",
+      "passed": true,
+      "status": "pass",
+      "base_remains": true,
+      "crystal_count_after": 1,
+      "target_health_after": 20.0,
+      "chat_context_cancellation_possible": true
+    },
+    {
+      "case": "auto-base-disabled",
+      "passed": true,
+      "status": "pass",
+      "base_remains": true,
+      "crystal_count_after": 1,
+      "target_health_after": 20.0,
+      "chat_context_cancellation_possible": false
+    },
+    {
+      "case": "auto-base-post-ack-loot",
+      "passed": false,
+      "status": "fail",
+      "actual_target_death_observed": true,
+      "actual_diamond_drop_observed": true,
+      "target_post_respawn_health": 20.0,
+      "target_health_after_veto": 20.0,
+      "crystal_count_after_veto": 1,
+      "loot_zone": {
+        "reason": "clear",
+        "spots": 0,
+        "overflow": false,
+        "blocked": 0
+      },
+      "veto_passed": false,
+      "explicit_protect_loot_false_control_passed": true,
+      "actual_control_ids": [
+        336
+      ],
+      "control_break_disabled": true,
+      "retained_harness_failure": "Parser selected older cleared-zone text despite native messages declaring newest first. Raw styled[0] records recent-player-death/spot1/blocked7. Raw report remains a failure.",
+      "read_only_review_latest_native_zone": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 7
+      }
+    },
+    {
+      "case": "auto-base-post-ack-loot",
+      "passed": false,
+      "status": "fail",
+      "error": "AssertionError({'command': 'data get entity @e[type=minecraft:item,x=5.5,y=121,z=.5,distance=..3,sort=nearest,limit=1]', 'reply': {'exit': 1, 'stdout': '[03:03:55] [Server thread/INFO]: System chat: No entity was found\\n[03:03:55] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexAttacker, CodexTarget\\n', 'stderr': '', 'barrier': 'list'}})"
+    },
+    {
+      "case": "auto-base-post-ack-loot",
+      "passed": true,
+      "status": "pass",
+      "actual_target_death_observed": true,
+      "actual_diamond_drop_observed": true,
+      "target_post_respawn_health": 20.0,
+      "target_health_after_veto": 20.0,
+      "crystal_count_after_veto": 1,
+      "loot_zone": {
+        "reason": "recent-player-death",
+        "spots": 1,
+        "overflow": false,
+        "blocked": 15
+      },
+      "veto_passed": true,
+      "explicit_protect_loot_false_control_passed": true,
+      "actual_control_ids": [
+        348
+      ],
+      "control_break_disabled": true,
+      "new_drop_witness": {
+        "authoritative_empty_census_before_death": true,
+        "exactly_one_new_item_entity": true,
+        "tagged_typed_diamond_nbt_verified": true,
+        "scope": "global after known-empty census; exact-one new entity required",
+        "actual_drop": {
+          "id": "minecraft:diamond",
+          "count": 1,
+          "position": [
+            7.122319039094027,
+            121.0,
+            -4.2113282239515115
+          ]
+        },
+        "pre_kill_native_diamond_count": 1
+      }
+    }
+  ],
+  "images": [
+    {
+      "file": "auto-base-observed-base-r14.png",
+      "sha256": "2589f95a06c0c60cd107377b8652d34470296fba7df296c4cbffbb97325e594f",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_framebuffer": true
+    },
+    {
+      "file": "auto-base-observed-crystal-r14.png",
+      "sha256": "982f830ac8786fe200e1f645cd53f38eaeff915f35e63843178fdf3e90472709",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_framebuffer": true
+    },
+    {
+      "file": "auto-base-loot-veto-r14.png",
+      "sha256": "bdfbf1b8fca65837dc91f842bed7155193ccaf8cf88e80d631b4a10fc4089a9a",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_framebuffer": true
+    },
+    {
+      "file": "auto-base-loot-veto-clean-r14.png",
+      "sha256": "efa699bb25428eecd675d2cefc63b2495b5550fb2a85eaf9d1846f3ae4078e61",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unmodified_native_framebuffer": true
+    }
+  ],
+  "cleanup": {
+    "all_reports_cleaned": true,
+    "both_survival_health": 20,
+    "inventories_and_effects_empty": true,
+    "all_modules_off": true,
+    "logical_and_physical_inputs_empty": true,
+    "streams_closed": true
+  }
+}

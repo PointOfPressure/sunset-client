@@ -1,0 +1,510 @@
+{
+  "checkpoint": "R10 actual native GUI intent history",
+  "native_client_sha256": "6b3c97809e5bb82699c217d48a1aaa2f6912dc8cced8b56f5654d8e574984f51",
+  "native_package_sha256": "a4a036c55a0ab0a3e5f997b275f0a94d8b4725da916535d8d2b13ff5748d3f6f",
+  "host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins_revision": "cb1ad23022392d88f006cf94cbf6552a73f5df12",
+  "backend": "Two disposable native clients on private stock Java26.3 loopback server; no public servers/accounts.",
+  "counts": {
+    "recorded_attempts": 5,
+    "passing_attempts": 4,
+    "retained_strict_save_failures": 1,
+    "distinct_cases_with_passing_outcomes": 4
+  },
+  "scope": "These outcomes establish selected GUI user-intent persistence on R10. They do not establish full R10 keyboard capture or a later R12 fix.",
+  "completed_checks": [
+    {
+      "case": "native-options-bool",
+      "passed": true,
+      "status": "pass",
+      "report": "bot-gui-proof-1793486233043550800.json",
+      "saved_while_bot_active": "false",
+      "saved_after_bot_disable": "false",
+      "stationary_after_edit": true,
+      "target_health_after_settle": [
+        992.0,
+        992.0
+      ],
+      "screenshots": [
+        {
+          "field": "before_screenshot",
+          "original_basename": "gui-native-bool-before-1793486233043550800.png",
+          "recorded_sha256": "35151b5ccd8cffc5e6f6cc18eee42faf6f5b20a89e611326104a70c9355f2da4",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "after_screenshot",
+          "original_basename": "gui-native-bool-after-1793486233043550800.png",
+          "recorded_sha256": "10663f7ffdd394ee32f09bbac6aeb3a480f0a3d7f3d62ae480ae2a98e2c462a9",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "screenshot",
+          "original_basename": "bots-native-options-bool-1793486233043550800.png",
+          "recorded_sha256": "7fb1bd5309e7bbdd3f61dc6f9702c6d88e549e254c71946e40a1cbe9b2a6eb9f",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        }
+      ],
+      "variant": "actual-native-widget-or-mouse-edit",
+      "native_checkbox_labels": {
+        "before_widget": [
+          "Auto switch: ON"
+        ],
+        "after_widget": [
+          "Auto switch: OFF"
+        ]
+      }
+    },
+    {
+      "case": "overlay-number-enter",
+      "passed": false,
+      "status": "fail",
+      "report": "bot-gui-proof-1793486336206359200.json",
+      "saved_while_bot_active": "6",
+      "saved_after_bot_disable": "3",
+      "stationary_after_edit": true,
+      "target_health_after_settle": [
+        992.0,
+        992.0
+      ],
+      "screenshots": [
+        {
+          "field": "closed_module_screenshot",
+          "original_basename": "gui-layout-collapsed-1793486336206359200.png",
+          "recorded_sha256": "7732d26b149043c3baca524141398fb25ba5916e5703609286e1bd717f57bc10",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "expanded_screenshot",
+          "original_basename": "gui-layout-expanded-1793486336206359200.png",
+          "recorded_sha256": "9e65e6987c8a79f16399ee01ccf6dcbdb851dc4bf9500a7c9d49b5c65962b56a",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "draft_screenshot",
+          "original_basename": "gui-number-same-draft-1793486336206359200.png",
+          "recorded_sha256": "6004f7c1efd1c84903c5eb714b9b45231c9fc4ef4b7c1fe1d9d4dd3c36193ece",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "after_edit_screenshot",
+          "original_basename": "gui-number-same-applied-1793486336206359200.png",
+          "recorded_sha256": "9e7bb5cd00642ed321393e849bf0c57fbff2ff12e62baa0429b3b7406bc18460",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "screenshot",
+          "original_basename": "bots-overlay-number-enter-1793486336206359200.png",
+          "recorded_sha256": "7770ea8bae148fcea265d8738bb1c9ebbd66d07a04e02cdef1700f3c57c44286",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": false,
+          "availability": "overwritten generic postcase frame; do not present as retained",
+          "current_file_belongs_to": "corrected passing NumberEnter attempt",
+          "current_file_sha256": "469f96573da0ba4ed9ce6cc4dd7c36ae2929bc90f6855f95f3d5d677893d8e46"
+        }
+      ],
+      "variant": "strict-active-file-before-later-save",
+      "config_before_apply": "6",
+      "config_immediately_after_apply": "6",
+      "selected_after_digit": 3
+    },
+    {
+      "case": "overlay-number-reset",
+      "passed": true,
+      "status": "pass",
+      "report": "bot-gui-proof-1793486336206359200.json",
+      "saved_while_bot_active": "3",
+      "saved_after_bot_disable": "3",
+      "stationary_after_edit": true,
+      "target_health_after_settle": [
+        992.0,
+        992.0
+      ],
+      "screenshots": [
+        {
+          "field": "closed_module_screenshot",
+          "original_basename": "gui-overlay-number-reset-module-1793486336206359200.png",
+          "recorded_sha256": "c197e9bfe8b602ffd459d3c02bd94b3cfeb0fe49e250b4697429fd914ec7db8b",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "expanded_screenshot",
+          "original_basename": "gui-overlay-number-reset-expanded-1793486336206359200.png",
+          "recorded_sha256": "561c3cd54c704b028f8c9379ae31ae2c2559f58aaa67d88169b982668038b144",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "after_edit_screenshot",
+          "original_basename": "gui-overlay-number-reset-edited-1793486336206359200.png",
+          "recorded_sha256": "5e8540d0926c13730681e04ca884ee99048ebf46e68b2a625ff0a6c288772f29",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "screenshot",
+          "original_basename": "bots-overlay-number-reset-1793486336206359200.png",
+          "recorded_sha256": "6ce77370c6f94a50fad15b8052fb789188e3d8c58657e77a54445e9ba0e3f6bc",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        }
+      ],
+      "variant": "actual-native-widget-or-mouse-edit"
+    },
+    {
+      "case": "overlay-picker-intent",
+      "passed": true,
+      "status": "pass",
+      "report": "bot-gui-proof-1793486336206359200.json",
+      "saved_while_bot_active": "player",
+      "saved_after_bot_disable": "player",
+      "stationary_after_edit": true,
+      "target_health_after_settle": [
+        992.0,
+        992.0
+      ],
+      "screenshots": [
+        {
+          "field": "expanded_screenshot",
+          "original_basename": "gui-picker-expanded-1793486336206359200.png",
+          "recorded_sha256": "24a5867cc59c10163c2a2c037cc137d65cd67782db487b87ff8d43ca8cfbc38c",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "picker_before",
+          "original_basename": "gui-picker-before-1793486336206359200.png",
+          "recorded_sha256": "022727d48a67462b8db8537bedb24f7ae1e7f3eafac721b261a6d2de5851ffe4",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "picker_removed",
+          "original_basename": "gui-picker-removed-1793486336206359200.png",
+          "recorded_sha256": "adf1446c8dfb7008e44669b6050719b222dcaf5918d46e325ec92b80f27d8973",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "picker_scrolled",
+          "original_basename": "gui-picker-scrolled-1793486336206359200.png",
+          "recorded_sha256": "9c6651f5fdf8cba22a5c72fb5020091fbdd62aa95620ff7c3220714265c96329",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "picker_added",
+          "original_basename": "gui-picker-added-1793486336206359200.png",
+          "recorded_sha256": "9b9b329db9375a3b1990809b16dfe9fb8c7f6394a124c9ede415cd89cc76c032",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "after_edit_screenshot",
+          "original_basename": "gui-picker-final-1793486336206359200.png",
+          "recorded_sha256": "2fdcfb4b18efa2fec00950e9c3364b178a93b87f720635271f144b5b17c2e01a",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "screenshot",
+          "original_basename": "bots-overlay-picker-intent-1793486336206359200.png",
+          "recorded_sha256": "dc777cb3a2e367db2162d18fc96ce6baab7ba6a604f6e06eb199a53d7ce44fb4",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        }
+      ],
+      "variant": "actual-native-widget-or-mouse-edit"
+    },
+    {
+      "case": "overlay-number-enter",
+      "passed": true,
+      "status": "pass",
+      "report": "bot-gui-proof-1793486336206359200.json",
+      "saved_while_bot_active": "3",
+      "saved_after_bot_disable": "3",
+      "stationary_after_edit": true,
+      "target_health_after_settle": [
+        992.0,
+        992.0
+      ],
+      "screenshots": [
+        {
+          "field": "before_edit_screenshot",
+          "original_basename": "gui-number-save-before-1793486336206359200.png",
+          "recorded_sha256": "bd023bf38cfece263d3c647f8c0c0107ae1f96662508a96ac797c41c273d8449",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "draft_screenshot",
+          "original_basename": "gui-number-save-draft-1793486336206359200.png",
+          "recorded_sha256": "0f46b27c0c9f0a04254fd48e6b4460e1a6e4762f3400ac8fb41c77dffabc6583",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "after_save_screenshot",
+          "original_basename": "gui-number-save-after-1793486336206359200.png",
+          "recorded_sha256": "115c84fda55e9ee2d4c73515d2efe5846e38aac2709acb9f533b68c3e32c7f07",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        },
+        {
+          "field": "screenshot",
+          "original_basename": "bots-overlay-number-enter-1793486336206359200.png",
+          "recorded_sha256": "469f96573da0ba4ed9ce6cc4dd7c36ae2929bc90f6855f95f3d5d677893d8e46",
+          "size": [
+            1280,
+            720
+          ],
+          "retained_byte_verified": true
+        }
+      ],
+      "variant": "explicit-unrelated-native-save",
+      "save_trigger": "unrelated native .set wtap Hold 2 after actual editor Enter; not immediate auto-save proof",
+      "config_before_trigger": "6",
+      "config_after_trigger": "3"
+    }
+  ],
+  "raw_reports": [
+    {
+      "basename": "bot-gui-proof-1793486233043550800.json",
+      "sha256": "57b311fcc9c3aac89e28f84fbfd43e5c27e67a97289c236fef6eb68438754bb1",
+      "bytes": 185634,
+      "raw_fast_canonical_json_sha256": "ebfff3d77ac58a582c40bcd2523628aad3dff866eb1ae6f94298c3a8634bb481"
+    },
+    {
+      "basename": "bot-gui-proof-1793486336206359200.json",
+      "sha256": "2df168866b96fab6d35a5fd5795b371bf974eab75c8a05b9063cf1f4f7372820",
+      "bytes": 552879,
+      "raw_fast_canonical_json_sha256": "dd8e362053a5a1f93457d9925677a3d544b4cc5c8d96e22ed62386011e328043"
+    }
+  ],
+  "hash_encoding": "raw_fast hash uses sorted object keys, compact separators, ASCII-escaped UTF-8 JSON without trailing newline.",
+  "layout": {
+    "raw_basename": "gui-layout-r10.json",
+    "raw_sha256": "c57ecf93ef246e46870ff0b5a34ae970ee0b505acc8e064ba859a9bc6c458045",
+    "renderer_size": [
+      1280,
+      720
+    ],
+    "coordinate_space": "Actual official click-at GUI pixels, visually checked at full native frame resolution; no game-memory access.",
+    "points": {
+      "module": [
+        30,
+        55
+      ],
+      "range_value": [
+        92,
+        208
+      ],
+      "range_reset": [
+        42,
+        216
+      ],
+      "entities": [
+        70,
+        181
+      ],
+      "player_selected": [
+        530,
+        268
+      ],
+      "done": [
+        756,
+        488
+      ],
+      "picker_scroll_center": [
+        640,
+        360
+      ],
+      "player_unselected": [
+        530,
+        376
+      ]
+    },
+    "picker_scroll_steps": -16,
+    "picker_search": false
+  },
+  "retention": {
+    "addendum_basename": "gui-retention-r10.json",
+    "addendum_sha256": "069f0d01d9684b71cb9e2122735e1d25a7420942e2f39b04ba32e017894cd1e8",
+    "issue": "Generic postcase screenshot label repeated within this same interactive proof; corrected attempt overwrote that one generic postcase image. The raw failed check and four distinct original failure captures remain unchanged.",
+    "unavailable_generic_original_sha256": "7770ea8bae148fcea265d8738bb1c9ebbd66d07a04e02cdef1700f3c57c44286",
+    "verified_failure_frames": [
+      {
+        "field": "closed_module_screenshot",
+        "original_basename": "gui-layout-collapsed-1793486336206359200.png",
+        "sha256": "7732d26b149043c3baca524141398fb25ba5916e5703609286e1bd717f57bc10"
+      },
+      {
+        "field": "expanded_screenshot",
+        "original_basename": "gui-layout-expanded-1793486336206359200.png",
+        "sha256": "9e65e6987c8a79f16399ee01ccf6dcbdb851dc4bf9500a7c9d49b5c65962b56a"
+      },
+      {
+        "field": "draft_screenshot",
+        "original_basename": "gui-number-same-draft-1793486336206359200.png",
+        "sha256": "6004f7c1efd1c84903c5eb714b9b45231c9fc4ef4b7c1fe1d9d4dd3c36193ece"
+      },
+      {
+        "field": "after_edit_screenshot",
+        "original_basename": "gui-number-same-applied-1793486336206359200.png",
+        "sha256": "9e7bb5cd00642ed321393e849bf0c57fbff2ff12e62baa0429b3b7406bc18460"
+      }
+    ],
+    "prevention": "Private screenshot helper now appends both proof-run timestamp and per-capture sequence; same-case repeats in one proof receive different paths.",
+    "raw_reports_unchanged": true,
+    "scope": "No R7 public images are affected. Do not use the overwritten generic path as evidence of the failed R10 attempt."
+  },
+  "native_screenshots": [
+    {
+      "file": "gui-bool-before-r10.png",
+      "sha256": "35151b5ccd8cffc5e6f6cc18eee42faf6f5b20a89e611326104a70c9355f2da4",
+      "size": [
+        1280,
+        720
+      ],
+      "bytes": 187311,
+      "caption": "Actual native Options shows the temporary Auto switch ON before the user click.",
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "gui-bool-after-r10.png",
+      "sha256": "10663f7ffdd394ee32f09bbac6aeb3a480f0a3d7f3d62ae480ae2a98e2c462a9",
+      "size": [
+        1280,
+        720
+      ],
+      "bytes": 187170,
+      "caption": "Actual native Options after that click shows Auto switch OFF; final config also stays false.",
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "gui-number-reset-r10.png",
+      "sha256": "5e8540d0926c13730681e04ca884ee99048ebf46e68b2a625ff0a6c288772f29",
+      "size": [
+        1280,
+        720
+      ],
+      "bytes": 141014,
+      "caption": "Mouse-only Range reset3 survives release of the baseline6 lease; other temporary fields restore.",
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "gui-picker-selected-r10.png",
+      "sha256": "9b9b329db9375a3b1990809b16dfe9fb8c7f6394a124c9ede415cd89cc76c032",
+      "size": [
+        1280,
+        720
+      ],
+      "bytes": 123746,
+      "caption": "Actual mouse-only picker returns to selected Player after removal, native list scrolling and reselection.",
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "gui-enter-original-after-r10.png",
+      "sha256": "9e7bb5cd00642ed321393e849bf0c57fbff2ff12e62baa0429b3b7406bc18460",
+      "size": [
+        1280,
+        720
+      ],
+      "bytes": 118088,
+      "caption": "Original strict-save failed attempt after Enter: this distinct failure frame is intact; its generic final frame was overwritten and is not used.",
+      "transformation": "none; byte-for-byte copy"
+    }
+  ],
+  "handoff": {
+    "raw_basename": "gui-handoff-r10.json",
+    "raw_sha256": "b47eeac2648efc2fe83ee0943326d8ef9d83f9bee5abd28d94397647bdcda358",
+    "both_survival_health": 20,
+    "effects_inventory_carried_keys_physical_keys": "empty",
+    "native_master_on": true,
+    "modules_on": [],
+    "screen": "playing",
+    "pointer_grabbed": true
+  },
+  "limits": [
+    "Original NumberEnter strict check expected active on-disk3 before a subsequent save; observed6 there but3 after normal bot disable. The failure remains a failure.",
+    "Corrected NumberEnter uses an explicit unrelated native .set wtap Hold2 save: observed config6 before trigger and3 afterward, then3 after bot disable. This does not claim immediate automatic saving while editor remains open.",
+    "R10 official ctl key3 also selected hotbar3; Enter exposed native chat because control_key_down reaches key_pressed directly rather than the mapped-key guard. This result does not prove keyboard capture.",
+    "One generic failure postcase image was reused within the same interactive proof and overwritten. Four distinct authentic failure images remain byte-verified; the overwritten generic image is excluded from the gallery.",
+    "Native Options, Number Reset and Picker used actual widget/mouse events. Picker used visual scrolling and actual Player selection, without keyboard search.",
+    "The R12 Game::key_pressed capture change requires a separate native runtime report. No R12 pass is implied by the R10 outcomes."
+  ]
+}

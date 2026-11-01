@@ -1,0 +1,858 @@
+{
+  "checkpoint": "R7",
+  "client_sha256": "f856c2fe3f634aefac465517d4ca7ebb8d4e620340421499e174f488939ba696",
+  "engine": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "server": {
+    "type": "stock Java26.3, private loopback fixture",
+    "protocol": 777,
+    "jar_sha1": "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c"
+  },
+  "counts": {
+    "packet": {
+      "pass": 7,
+      "fail": 1
+    },
+    "city_trap_optimizer": {
+      "pass": 11,
+      "fail": 2
+    },
+    "separate_hotbar_cancel": {
+      "pass": 1,
+      "fail": 0
+    }
+  },
+  "limits": [
+    "Two actual native clients, named fixture players; all outcomes are on exact R7 binary, before R9 fixes.",
+    "Both players ordinary max health20; packet/City/Optimizer actor ResistanceIV and no absorption; knockback requires real nonzero sword damage.",
+    "Server position is sampled through console data queries bracketed by native state; query intervals are retained and are not exact wire-arrival timestamps.",
+    "No client/server launches, injected packets/velocity, proxy, fake ACKs or anticheat claims from these runners.",
+    "The three retained R7 failures must be rerun on R9; renderer-free order/boundary fixes do not replace live verification."
+  ],
+  "reports": [
+    {
+      "name": "packet-proof-1793482011603984300.json",
+      "sha256": "ccfeecf3d8cad0f4cf81cd78f11932c248149cf86229def206a9041eaba7f659"
+    },
+    {
+      "name": "city-proof-1793482242082474900.json",
+      "sha256": "d95e3af091786d8599752be445d1e77a962636f9ca09ed40908813994c3ae995"
+    },
+    {
+      "name": "city-proof-1793482814033732800.json",
+      "sha256": "73da02031677ee05bb389220207094b905078b4f6d33b7cceb0793599b161b13"
+    }
+  ],
+  "packets": [
+    {
+      "case": "lag-500",
+      "passed": true,
+      "status": "pass",
+      "delay_setting_ms": 500,
+      "first_observed_server_displacement_above_0_15_seconds": 0.8796581999995396,
+      "delayed_samples": 1,
+      "position_samples": [
+        {
+          "elapsed": 0.2013775000013993,
+          "query_duration": 0.16769229999772506,
+          "server": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            1.126906386248464,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 0.42797630000131903,
+          "query_duration": 0.20844660000147996,
+          "server": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            1.126906386248464,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            1.9693214940821295,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 0.6634684000018751,
+          "query_duration": 0.20754370000213385,
+          "server": [
+            0.5980000033676625,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            2.1842496592612073,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            3.0466658857048783,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 0.8796581999995396,
+          "query_duration": 0.1863186999980826,
+          "server": [
+            1.7551673764449467,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            3.0466658857048783,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            3.910011504489105,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 1.1234388000011677,
+          "query_duration": 0.20901050000247778,
+          "server": [
+            2.399600454447249,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            4.125866558329662,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            4.989298432956816,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 1.3590865000005579,
+          "query_duration": 0.20781519999582088,
+          "server": [
+            3.4783141868180945,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            5.205157306559011,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            6.068593366730914,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 1.5745357999985572,
+          "query_duration": 0.1870240999996895,
+          "server": [
+            4.557581306384697,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            6.068593366730914,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            6.9320296213926005,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 1.8164562000019941,
+          "query_duration": 0.20822349999798462,
+          "server": [
+            5.636875278936468,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            7.147888688960645,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.011324961672706,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 2.051763600000413,
+          "query_duration": 0.1891061999995145,
+          "server": [
+            6.716170554523109,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.129184026672434,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.258329360140083,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 2.291833100003714,
+          "query_duration": 0.20821920000162208,
+          "server": [
+            7.579606825067805,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.258329360140083,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 2.5071520999990753,
+          "query_duration": 0.1870377999948687,
+          "server": [
+            8.193535083636828,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 2.7507415000000037,
+          "query_duration": 0.20916779999970458,
+          "server": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 2.9662099000051967,
+          "query_duration": 0.18751040000643115,
+          "server": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 3.2071059000008972,
+          "query_duration": 0.2082241999960388,
+          "server": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "case": "lag-1000",
+      "passed": false,
+      "status": "fail",
+      "delay_setting_ms": 1000,
+      "first_observed_server_displacement_above_0_15_seconds": 0.44253200000093784,
+      "delayed_samples": 2,
+      "position_samples": [
+        {
+          "elapsed": 0.22132359999523032,
+          "query_duration": 0.18696749999799067,
+          "server": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            0.5,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            1.126906386248464,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 0.44253200000093784,
+          "query_duration": 0.1873388000021805,
+          "server": [
+            1.126906386248464,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            1.126906386248464,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            1.9693214940821295,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 0.6836390999960713,
+          "query_duration": 0.2081121999945026,
+          "server": [
+            1.126906386248464,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            2.1842496592612073,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            3.0466658857048783,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 0.9002618000013172,
+          "query_duration": 0.1871547000046121,
+          "server": [
+            1.126906386248464,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            3.0466658857048783,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            3.910011504489105,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 1.1416251999980886,
+          "query_duration": 0.20895520000340184,
+          "server": [
+            1.126906386248464,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            4.125866558329662,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            4.989298432956816,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 1.400579299996025,
+          "query_duration": 0.2288856000013766,
+          "server": [
+            5.4210162686031,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            5.205157306559011,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            6.068593366730914,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 1.5722658000013325,
+          "query_duration": 0.14638850000483217,
+          "server": [
+            5.4210162686031,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            6.284452425686156,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            6.9320296213926005,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 1.8245963000008487,
+          "query_duration": 0.22917270000471035,
+          "server": [
+            5.4210162686031,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            6.9320296213926005,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.011324961672706,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 2.0347035999948275,
+          "query_duration": 0.16803660000005038,
+          "server": [
+            5.4210162686031,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.129184026672434,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.24785484897505,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 2.2605579999944894,
+          "query_duration": 0.2076258999950369,
+          "server": [
+            5.4210162686031,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.24785484897505,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 2.498700199997984,
+          "query_duration": 0.20838050000020303,
+          "server": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 2.7358509999976377,
+          "query_duration": 0.20778969999810215,
+          "server": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 2.973287499997241,
+          "query_duration": 0.20893059999798425,
+          "server": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ]
+        },
+        {
+          "elapsed": 3.1889188999994076,
+          "query_duration": 0.18677190000016708,
+          "server": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_before": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ],
+          "client_after": [
+            8.267171063996354,
+            121.0,
+            0.5
+          ]
+        }
+      ],
+      "retained_failure": "Aged idle tick marker flushed younger movement early; observed first displacement0.443s despite1000ms setting. Root scheduled per-entry expiry and due-prefix fix for R9."
+    },
+    {
+      "case": "lag-action-flush",
+      "passed": true,
+      "status": "pass",
+      "first_observed_flush_seconds": 0.23576499999762746
+    },
+    {
+      "case": "lag-menu-flush",
+      "passed": true,
+      "status": "pass",
+      "first_observed_flush_seconds": 0.22858589999668766
+    },
+    {
+      "case": "lag-disable-flush",
+      "passed": true,
+      "status": "pass",
+      "first_observed_flush_seconds": 0.23461110000062035
+    },
+    {
+      "case": "lag-correction-discard",
+      "passed": true,
+      "status": "pass"
+    },
+    {
+      "case": "kb-800-ab",
+      "passed": true,
+      "status": "pass",
+      "baseline_chance0": {
+        "actual_damage": 1.3999996185302734,
+        "hurt_onset": 0.13598540000384673,
+        "vertical_onset": 0.13598540000384673,
+        "max_state_gap": 0.05175320000125794
+      },
+      "delayed_chance100": {
+        "actual_damage": 1.3999996185302734,
+        "hurt_onset": 0.11855300000024727,
+        "vertical_onset": 0.9320568999974057,
+        "max_state_gap": 0.051535899998270907
+      }
+    },
+    {
+      "case": "lag-world-switch",
+      "passed": true,
+      "status": "pass",
+      "nether_server_position": [
+        6.5,
+        121.0,
+        6.5
+      ],
+      "return_server_position": [
+        24.5,
+        121.0,
+        0.5
+      ],
+      "new_world": "minecraft:the_nether",
+      "returned": "minecraft:overworld"
+    }
+  ],
+  "city_trap_optimizer": [
+    {
+      "case": "city-cycle",
+      "passed": true,
+      "status": "pass",
+      "opened_server_walls": [
+        [
+          3,
+          121,
+          0
+        ]
+      ],
+      "selected_before": 9,
+      "selected_after": 9,
+      "module_on_after": "false"
+    },
+    {
+      "case": "city-off",
+      "passed": true,
+      "status": "pass",
+      "opened_server_walls": [],
+      "selected_before": 9,
+      "selected_after": 9,
+      "module_on_after": "false"
+    },
+    {
+      "case": "city-friend",
+      "passed": true,
+      "status": "pass",
+      "opened_server_walls": [],
+      "selected_before": 9,
+      "selected_after": 9,
+      "module_on_after": "false"
+    },
+    {
+      "case": "city-manual-cancel",
+      "passed": false,
+      "status": "fail",
+      "opened_server_walls": [],
+      "selected_before": 9,
+      "selected_after": 1,
+      "module_on_after": "true",
+      "retained_failure": "Native synchronous mouse down/up was missed by level-only tick polling; module remained enabled/selected pickaxe. R9 adds actual button-edge cancellation."
+    },
+    {
+      "case": "city-disable",
+      "passed": true,
+      "status": "pass",
+      "opened_server_walls": [],
+      "selected_before": 9,
+      "selected_after": 9,
+      "module_on_after": "false"
+    },
+    {
+      "case": "trap-complete",
+      "passed": false,
+      "status": "fail",
+      "spent_obsidian": 4,
+      "observed_jump": false,
+      "selected_before": 9,
+      "selected_after": 9,
+      "retained_failure": "Only4 blocks placed; near column occluded far faces and no jump occurred. R9 changes to farthest-first/no rotating cursor; actual native-clip probe reproduces4 legacy cells and reaches10 with new ordering/elevated geometry seam."
+    },
+    {
+      "case": "trap-off",
+      "passed": true,
+      "status": "pass",
+      "spent_obsidian": 0,
+      "observed_jump": null,
+      "selected_before": 9,
+      "selected_after": 9
+    },
+    {
+      "case": "trap-friend",
+      "passed": true,
+      "status": "pass",
+      "spent_obsidian": 0,
+      "observed_jump": null,
+      "selected_before": 9,
+      "selected_after": 9
+    },
+    {
+      "case": "trap-manual-yield",
+      "passed": true,
+      "status": "pass",
+      "spent_obsidian": 4,
+      "observed_jump": null,
+      "selected_before": 9,
+      "selected_after": 9
+    },
+    {
+      "case": "optimizer-native-off",
+      "passed": true,
+      "status": "pass",
+      "health_before": 20.0,
+      "health_after": 6.966667175292969,
+      "server_entity_survived": false
+    },
+    {
+      "case": "optimizer-native-on",
+      "passed": true,
+      "status": "pass",
+      "health_before": 20.0,
+      "health_after": 6.966667175292969,
+      "server_entity_survived": false
+    },
+    {
+      "case": "optimizer-weakness",
+      "passed": true,
+      "status": "pass",
+      "health_before": 20.0,
+      "health_after": 20.0,
+      "server_entity_survived": true
+    },
+    {
+      "case": "optimizer-rejected-visual",
+      "passed": true,
+      "status": "pass",
+      "server_entity_and_health_controls": true,
+      "diagnostics": {
+        "hidden": 0,
+        "server_remove_events": 0,
+        "stubborn": 1,
+        "total_hidden": 1,
+        "visual_only": true
+      },
+      "same_authoritative_crystal_id": [
+        199
+      ],
+      "image_review": {
+        "utc": "2026-10-31T21:40:13.701928+00:00",
+        "reviewer": "Codex direct inspection of four original native PNGs",
+        "observed": {
+          "before": "crystal body and base visible",
+          "masked": "crystal body and base absent; underlying floor/pedestal visible",
+          "timeout": "crystal body and base visible again",
+          "repeat": "crystal remains visible after repeated real attack"
+        },
+        "image_pixels_modified": false
+      }
+    }
+  ],
+  "native_images": [
+    {
+      "phase": "before",
+      "file": "optimizer-before-r7.png",
+      "sha256": "1431fac48a27ffaa2e363a3245aa7d6f74a93a5b7f7fa00fc11e63c7a987bbe9",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "pixels_modified": false
+    },
+    {
+      "phase": "masked",
+      "file": "optimizer-masked-r7.png",
+      "sha256": "66a399971ff4b0f9753edb046852e723087f0139460ae3a754eb5a19eb0e26de",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "pixels_modified": false
+    },
+    {
+      "phase": "timeout",
+      "file": "optimizer-timeout-r7.png",
+      "sha256": "bf289f73fa5fe80160a7e5b5bcc2e023f60956eb041b9494b9b7aa43ad0804f9",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "pixels_modified": false
+    },
+    {
+      "phase": "repeat",
+      "file": "optimizer-repeat-r7.png",
+      "sha256": "6c2acc443176a549efbd098c0b8ab54ec930f258d96c1349bf2c57d68e176256",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "pixels_modified": false
+    },
+    {
+      "phase": "retained Trap failure",
+      "file": "trap-stalled-r7.png",
+      "sha256": "941b7dda4622b02b94260a97f03bf950d39cc12312b7f2971ffbe8711f21ef9b",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "pixels_modified": false
+    }
+  ],
+  "separate_hotbar_cancel": {
+    "passed": true,
+    "borrow_observed": true,
+    "selected_after_user_override": 2,
+    "city_on_after": "false",
+    "server_opened_walls": []
+  }
+}

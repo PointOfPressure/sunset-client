@@ -1,0 +1,61 @@
+{
+  "checkpoint": "R12",
+  "manifest": {
+    "schema": 1,
+    "id": "sunset",
+    "version": "0.8.1",
+    "game": "26.3",
+    "horizon": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+    "mixins": "cb1ad23022392d88f006cf94cbf6552a73f5df12"
+  },
+  "native_client_sha256": "993e9c2803629203c5897708fc157c5e2fe4b1d5e4da1b20a06269b8893a26cb",
+  "package_sha256": "cf0c1a35091e7acf8d65d945e755122c931e537049c15e89f6d483ec2bd2b5d2",
+  "support_modules": 63,
+  "injections": 52,
+  "build_stages": {
+    "plan": {
+      "exit_code": 0,
+      "elapsed_seconds": 57.013802600005874,
+      "source_unchanged": true,
+      "record_sha256": "47a40e8f611e90ad23df9676bc90a4f4ab36bed38fd72acc2838256666e307fc"
+    },
+    "apply": {
+      "exit_code": 0,
+      "elapsed_seconds": 94.90214200000628,
+      "source_unchanged": true,
+      "record_sha256": "8f0fadf5bd1fb383212701cb2f5728d75f96114db593ca2885a0d1f8a109b86a"
+    },
+    "check": {
+      "exit_code": 0,
+      "elapsed_seconds": 14.418898400006583,
+      "source_unchanged": true,
+      "record_sha256": "6cae17d634eb945d6071c3d176509ce2f4572315754c99fba3a6d9c5d132c9e2"
+    },
+    "build": {
+      "exit_code": 0,
+      "elapsed_seconds": 197.84227409999585,
+      "source_unchanged": true,
+      "record_sha256": "4491d6e261570f2be7e9c82cd4f21770dc499bc8134e905dad1a86784aa4e050"
+    },
+    "freeze": {
+      "exit_code": 0,
+      "elapsed_seconds": 1.0757774000085192,
+      "source_unchanged": true,
+      "record_sha256": "6a3edf556bc9aaea98aede34969913e6a3918295a1cb985fc6afe319ae10aeb9"
+    }
+  },
+  "focused": {
+    "total": 204,
+    "compiled_native_adapted": 200,
+    "source_wiring": 4,
+    "report_sha256": "df9f24abd94f9727ecfb33e3820975ec8b0adea8ae921b938a78057c8e2c2d2b",
+    "foundation_count": 44
+  },
+  "native_warnings": [
+    "unused private Masks.clear/hidden helpers in city_policy.rs"
+  ],
+  "runtime_status": "Build and 204 focused checks pass. Fresh paired GUI capture, optional Aura setup, and current-Aura player outcomes pending. R11 isolated19, R10 packet8/City13, and R7 manual23/controllers36 keep their own exact checkpoint identities.",
+  "delta_from_r11": [
+    "Modal overlay also consumes the control-socket route at native Game::key_pressed, after the existing editor event; avoids duplicate edits and base hotbar/chat actions."
+  ]
+}

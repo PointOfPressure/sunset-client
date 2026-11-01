@@ -1,0 +1,25 @@
+{
+  "r28": {
+    "phase": "closed",
+    "state_sha256": "f420f6f5a63b9824d88a6da98aa14c7ed22c0092c1f5dff35f36db7208e86bcf",
+    "client_exits": {
+      "attacker": 0,
+      "target": 0
+    }
+  },
+  "r30": {
+    "phase": "closed",
+    "state_sha256": "f38ac24c4861694f0e0de66f3e7ba391bddeddd30c5db2e0b77569ef8497801c",
+    "client_exits": {
+      "attacker": 0,
+      "target": 0
+    }
+  },
+  "backend": {
+    "phase": "stopped",
+    "state_sha256": "2f887f3604b5e7af45835c4fc3f9d62846c9384d127662d01aff87af8e62848a",
+    "exit": 0,
+    "listen": "127.0.0.1:25566"
+  },
+  "scope": "Two disposable native player clients per checkpoint and a dedicated generated loopback Java backend. Client processes quit normally; backend saved/stopped normally."
+}

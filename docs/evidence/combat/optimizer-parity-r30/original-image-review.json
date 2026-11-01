@@ -1,0 +1,154 @@
+{
+  "checkpoint": "R30",
+  "native_client_sha256": "82951c55e13be66a15ef345bb2384279575355da9e7b5b23dedefc29bbd131ab",
+  "raw_report": "trap-optimizer-r30-450ee090ced044e688e61c966e278744.json",
+  "raw_sha256": "48b8b0c47f42392b1002a871495de1e73e85843ec9f1e24e1dfc9c8172feee48",
+  "raw_pending_statuses_preserved": true,
+  "reviews": [
+    {
+      "case": "optimizer-rejected-visual",
+      "method": "Direct inspection of the four unchanged full-resolution originals",
+      "observations": {
+        "before": "present",
+        "transient": "absent; obsidian base only",
+        "timeout": "restored",
+        "repeat": "stays restored"
+      },
+      "frames": {
+        "before": {
+          "file": "originals/ghost-before.png",
+          "sha256": "0e0fbfb8fa6b04bd50322685cd837b0fac2c2d672aa43194ad427e0f5d9827e7",
+          "dimensions": [
+            1280,
+            720
+          ],
+          "label": "optimizer-rejected-visual-before",
+          "unaltered_original": true
+        },
+        "transient": {
+          "file": "originals/ghost-hidden.png",
+          "sha256": "efd5b8101d4030765db0b0e88f6f9aa59e9ce4d4ed56afe811cb37eb8f1f34bc",
+          "dimensions": [
+            1280,
+            720
+          ],
+          "label": "optimizer-rejected-visual-transient",
+          "unaltered_original": true
+        },
+        "timeout": {
+          "file": "originals/ghost-timeout.png",
+          "sha256": "79100c0fa5c553357c5f24fbc1e43fc623da2b0a0f077a7d10c45e13b1455d24",
+          "dimensions": [
+            1280,
+            720
+          ],
+          "label": "optimizer-rejected-visual-timeout",
+          "unaltered_original": true
+        },
+        "repeat": {
+          "file": "originals/ghost-repeat.png",
+          "sha256": "aeef44c74c0adb63c85bd9224bdc90994bd92766bb461f8061a986acc2f79ec6",
+          "dimensions": [
+            1280,
+            720
+          ],
+          "label": "optimizer-rejected-visual-repeat",
+          "unaltered_original": true
+        }
+      },
+      "same_authoritative_id": true,
+      "health_unchanged": true,
+      "server_entity_during": {
+        "exit": 0,
+        "stdout": "[10:44:57] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793519097372754400\n[10:44:57] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "server_entity_after": {
+        "exit": 0,
+        "stdout": "[10:44:59] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793519099112298900\n[10:44:59] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "wait_reply": {
+        "ok": true,
+        "ticks": 16035
+      },
+      "actual_pre_input_observed_tick": 16031,
+      "verdict": "pass"
+    },
+    {
+      "case": "optimizer-short-reach",
+      "method": "Direct inspection of the four unchanged full-resolution originals",
+      "observations": {
+        "before": "present",
+        "transient": "present",
+        "timeout": "present",
+        "repeat": "present"
+      },
+      "frames": {
+        "before": {
+          "file": "originals/reach-before.png",
+          "sha256": "8de1589f8fb1dc175ae356fbf6f71fd566c4c60932207828e20705f9164e6c3e",
+          "dimensions": [
+            1280,
+            720
+          ],
+          "label": "optimizer-short-reach-before",
+          "unaltered_original": true
+        },
+        "transient": {
+          "file": "originals/reach-after.png",
+          "sha256": "648fa0e6912caf4ac833560aaace4bb3b0775f77031f44f4053c729f6c5bc3bf",
+          "dimensions": [
+            1280,
+            720
+          ],
+          "label": "optimizer-short-reach-transient",
+          "unaltered_original": true
+        },
+        "timeout": {
+          "file": "originals/reach-timeout.png",
+          "sha256": "c5a83c594e3aa6a45d2187605b6d444c885581f146e83030ddcb1fe3a2310e00",
+          "dimensions": [
+            1280,
+            720
+          ],
+          "label": "optimizer-short-reach-timeout",
+          "unaltered_original": true
+        },
+        "repeat": {
+          "file": "originals/reach-repeat.png",
+          "sha256": "a0367c6fe70f9aa87f5c866234f687d9b1e8376449e3545771944f76ac394bae",
+          "dimensions": [
+            1280,
+            720
+          ],
+          "label": "optimizer-short-reach-repeat",
+          "unaltered_original": true
+        }
+      },
+      "same_authoritative_id": true,
+      "health_unchanged": true,
+      "server_entity_during": {
+        "exit": 0,
+        "stdout": "[10:45:15] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793519115571126300\n[10:45:15] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "server_entity_after": {
+        "exit": 0,
+        "stdout": "[10:45:17] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793519117428228700\n[10:45:17] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "wait_reply": {
+        "ok": true,
+        "ticks": 16399
+      },
+      "actual_pre_input_observed_tick": 16395,
+      "verdict": "pass",
+      "positive_control": "Same exact R30 build Survival rejected-hit ghost now directly observed; negative is no longer paired with a failed positive."
+    }
+  ]
+}

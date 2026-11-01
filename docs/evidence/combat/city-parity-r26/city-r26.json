@@ -1,0 +1,1177 @@
+{
+  "checkpoint": "R26",
+  "native_client_sha256": "5704cc88b03c30ba39fe7aae4717905da7c11f19cc527359279f0fb952df400f",
+  "kind": "actual-two-player-Auto-City-parity",
+  "distinct_cases_passed": 10,
+  "total_attempts": 21,
+  "retained_nonpassing_attempts": 11,
+  "raw_reports": {
+    "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json": {
+      "sha256": "b945b3d56f4c5657975c5fa3ceb7b3d46067d1ed7a7e8e63873960fc1bb6ae38",
+      "bytes": 978699,
+      "finished": true
+    },
+    "city-parity-r26-fa4d33c0eac744af975097374c870aa7.json": {
+      "sha256": "d36328ecf8f31b6486e67855b7402bbceb6b88fac73a47993971296607d1161e",
+      "bytes": 2450375,
+      "finished": true
+    },
+    "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json": {
+      "sha256": "1ff5c2c71f4a1a88ec928a9a57e49b6edec6cea363fc14452b6e10599d1676f7",
+      "bytes": 13089822,
+      "finished": true
+    },
+    "city-parity-r26-acec2443f93e4e8bbbeb983f032b9e17.json": {
+      "sha256": "37219654eb036e131f6d06028b547eb8bbc67f7b29d8f1dc1faf042109fd3a73",
+      "bytes": 3204258,
+      "finished": true
+    }
+  },
+  "cases": [
+    {
+      "case": "city-cycle",
+      "result": "pass",
+      "raw_report": "city-parity-r26-fa4d33c0eac744af975097374c870aa7.json",
+      "native_reach_attribute": 4.5,
+      "selected_before": 9,
+      "selected_after": 9,
+      "observed_other_client_server_crack_cells": [
+        [
+          4,
+          121,
+          -1
+        ]
+      ],
+      "actual_server_air_cells": [
+        [
+          4,
+          121,
+          -1
+        ]
+      ],
+      "server_cell_receipts": [
+        {
+          "cell": [
+            3,
+            121,
+            0
+          ],
+          "command": "execute if block 3 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:39:46] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            5,
+            121,
+            0
+          ],
+          "command": "execute if block 5 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:39:46] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            -1
+          ],
+          "command": "execute if block 4 121 -1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:39:46] [Server thread/INFO]: [Not Secure] [Server] SUNSET_CURRENT_CITY_OPEN_1793511586595960800\n[08:39:46] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            1
+          ],
+          "command": "execute if block 4 121 1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:39:47] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        }
+      ],
+      "live_native_widget_label": "Auto City: OFF",
+      "saved_on_value": "false",
+      "native_progress_samples": [
+        {
+          "tick": 21919,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.024000000208616257,
+            "ticks": 4
+          }
+        },
+        {
+          "tick": 22006,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.5160003900527954,
+            "ticks": 86
+          }
+        },
+        {
+          "tick": 22089,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.989998996257782,
+            "ticks": 165
+          }
+        }
+      ],
+      "native_ticks_before": 21908,
+      "native_ticks_after": 22111
+    },
+    {
+      "case": "city-off",
+      "result": "pass",
+      "raw_report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "native_reach_attribute": 4.5,
+      "selected_before": 9,
+      "selected_after": 9,
+      "observed_other_client_server_crack_cells": [],
+      "actual_server_air_cells": [],
+      "server_cell_receipts": [
+        {
+          "cell": [
+            3,
+            121,
+            0
+          ],
+          "command": "execute if block 3 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:40:22] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            5,
+            121,
+            0
+          ],
+          "command": "execute if block 5 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:40:22] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            -1
+          ],
+          "command": "execute if block 4 121 -1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:40:22] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            1
+          ],
+          "command": "execute if block 4 121 1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:40:22] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        }
+      ],
+      "live_native_widget_label": "Auto City: OFF",
+      "saved_on_value": "false",
+      "native_progress_samples": [],
+      "native_ticks_before": 22780,
+      "native_ticks_after": 22831
+    },
+    {
+      "case": "city-friend",
+      "result": "pass",
+      "raw_report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "native_reach_attribute": 4.5,
+      "selected_before": 9,
+      "selected_after": 9,
+      "observed_other_client_server_crack_cells": [],
+      "actual_server_air_cells": [],
+      "server_cell_receipts": [
+        {
+          "cell": [
+            3,
+            121,
+            0
+          ],
+          "command": "execute if block 3 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:40:40] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            5,
+            121,
+            0
+          ],
+          "command": "execute if block 5 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:40:41] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            -1
+          ],
+          "command": "execute if block 4 121 -1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:40:41] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            1
+          ],
+          "command": "execute if block 4 121 1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:40:41] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        }
+      ],
+      "live_native_widget_label": "Auto City: OFF",
+      "saved_on_value": "false",
+      "native_progress_samples": [],
+      "native_ticks_before": 23142,
+      "native_ticks_after": 23203
+    },
+    {
+      "case": "city-manual-cancel",
+      "result": "pass",
+      "raw_report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "native_reach_attribute": 4.5,
+      "selected_before": 9,
+      "selected_after": 9,
+      "observed_other_client_server_crack_cells": [
+        [
+          4,
+          121,
+          -1
+        ]
+      ],
+      "actual_server_air_cells": [],
+      "server_cell_receipts": [
+        {
+          "cell": [
+            3,
+            121,
+            0
+          ],
+          "command": "execute if block 3 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:40:59] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            5,
+            121,
+            0
+          ],
+          "command": "execute if block 5 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:40:59] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            -1
+          ],
+          "command": "execute if block 4 121 -1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:40:59] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            1
+          ],
+          "command": "execute if block 4 121 1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:41:00] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        }
+      ],
+      "live_native_widget_label": "Auto City: OFF",
+      "saved_on_value": "false",
+      "native_progress_samples": [
+        {
+          "tick": 23521,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.0,
+            "ticks": 0
+          }
+        }
+      ],
+      "native_ticks_before": 23510,
+      "native_ticks_after": 23576
+    },
+    {
+      "case": "city-disable",
+      "result": "pass",
+      "raw_report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "native_reach_attribute": 4.5,
+      "selected_before": 9,
+      "selected_after": 9,
+      "observed_other_client_server_crack_cells": [
+        [
+          4,
+          121,
+          -1
+        ]
+      ],
+      "actual_server_air_cells": [],
+      "server_cell_receipts": [
+        {
+          "cell": [
+            3,
+            121,
+            0
+          ],
+          "command": "execute if block 3 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:41:20] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            5,
+            121,
+            0
+          ],
+          "command": "execute if block 5 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:41:20] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            -1
+          ],
+          "command": "execute if block 4 121 -1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:41:20] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            1
+          ],
+          "command": "execute if block 4 121 1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:41:20] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        }
+      ],
+      "live_native_widget_label": "Auto City: OFF",
+      "saved_on_value": "false",
+      "native_progress_samples": [
+        {
+          "tick": 23937,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.006000000052154064,
+            "ticks": 1
+          }
+        }
+      ],
+      "native_ticks_before": 23925,
+      "native_ticks_after": 23988
+    },
+    {
+      "case": "city-reach-six",
+      "result": "pass",
+      "raw_report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "native_reach_attribute": 6,
+      "selected_before": 9,
+      "selected_after": 9,
+      "observed_other_client_server_crack_cells": [
+        [
+          3,
+          121,
+          0
+        ]
+      ],
+      "actual_server_air_cells": [
+        [
+          3,
+          121,
+          0
+        ]
+      ],
+      "server_cell_receipts": [
+        {
+          "cell": [
+            3,
+            121,
+            0
+          ],
+          "command": "execute if block 3 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:41:45] [Server thread/INFO]: [Not Secure] [Server] SUNSET_CURRENT_CITY_OPEN_1793511705697414000\n[08:41:45] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            5,
+            121,
+            0
+          ],
+          "command": "execute if block 5 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:41:46] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            -1
+          ],
+          "command": "execute if block 4 121 -1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:41:46] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            1
+          ],
+          "command": "execute if block 4 121 1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:41:46] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        }
+      ],
+      "live_native_widget_label": "Auto City: OFF",
+      "saved_on_value": "false",
+      "native_progress_samples": [
+        {
+          "tick": 24308,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              3,
+              121,
+              0
+            ],
+            "progress": 0.017999999225139618,
+            "ticks": 3
+          }
+        },
+        {
+          "tick": 24396,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              3,
+              121,
+              0
+            ],
+            "progress": 0.5160003900527954,
+            "ticks": 86
+          }
+        },
+        {
+          "tick": 24480,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              3,
+              121,
+              0
+            ],
+            "progress": 0.9959989786148072,
+            "ticks": 166
+          }
+        }
+      ],
+      "native_ticks_before": 24298,
+      "native_ticks_after": 24505
+    },
+    {
+      "case": "city-reach-one",
+      "result": "pass",
+      "raw_report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "native_reach_attribute": 1,
+      "selected_before": 9,
+      "selected_after": 9,
+      "observed_other_client_server_crack_cells": [],
+      "actual_server_air_cells": [],
+      "server_cell_receipts": [
+        {
+          "cell": [
+            3,
+            121,
+            0
+          ],
+          "command": "execute if block 3 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:42:04] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            5,
+            121,
+            0
+          ],
+          "command": "execute if block 5 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:42:04] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            -1
+          ],
+          "command": "execute if block 4 121 -1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:42:05] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            1
+          ],
+          "command": "execute if block 4 121 1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:42:05] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        }
+      ],
+      "live_native_widget_label": "Auto City: OFF",
+      "saved_on_value": "false",
+      "native_progress_samples": [],
+      "native_ticks_before": 24812,
+      "native_ticks_after": 24879
+    },
+    {
+      "case": "city-menu-pause",
+      "result": "pass",
+      "raw_report": "city-parity-r26-acec2443f93e4e8bbbeb983f032b9e17.json",
+      "native_reach_attribute": 4.5,
+      "selected_before": 9,
+      "selected_after": 9,
+      "observed_other_client_server_crack_cells": [
+        [
+          4,
+          121,
+          -1
+        ]
+      ],
+      "actual_server_air_cells": [],
+      "server_cell_receipts": [
+        {
+          "cell": [
+            3,
+            121,
+            0
+          ],
+          "command": "execute if block 3 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:45:37] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            5,
+            121,
+            0
+          ],
+          "command": "execute if block 5 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:45:37] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            -1
+          ],
+          "command": "execute if block 4 121 -1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:45:38] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            1
+          ],
+          "command": "execute if block 4 121 1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:45:38] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        }
+      ],
+      "live_native_widget_label": "Auto City: OFF",
+      "saved_on_value": "false",
+      "native_progress_samples": [
+        {
+          "tick": 28922,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.017999999225139618,
+            "ticks": 3
+          }
+        },
+        {
+          "tick": 29043,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.4020002484321594,
+            "ticks": 67
+          }
+        },
+        {
+          "tick": 29115,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.8159995079040527,
+            "ticks": 136
+          }
+        }
+      ],
+      "native_ticks_before": 28910,
+      "native_ticks_after": 29141,
+      "menu": {
+        "paused_screen": "inventory",
+        "paused_selected": 9,
+        "live_city_remained_on": true,
+        "air_cells_while_paused": [],
+        "same_actual_native_mining_cell": true,
+        "increasing_native_progress": true,
+        "observed_return_tick_minus_pre_enable_tick": 208,
+        "completed_actual_server_opening": false,
+        "global_deadline_expired_with_wall_intact": true
+      }
+    },
+    {
+      "case": "city-emergency-totem",
+      "result": "pass",
+      "raw_report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "native_reach_attribute": 4.5,
+      "selected_before": 9,
+      "selected_after": 9,
+      "observed_other_client_server_crack_cells": [
+        [
+          4,
+          121,
+          -1
+        ]
+      ],
+      "actual_server_air_cells": [
+        [
+          4,
+          121,
+          -1
+        ]
+      ],
+      "server_cell_receipts": [
+        {
+          "cell": [
+            3,
+            121,
+            0
+          ],
+          "command": "execute if block 3 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:43:00] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            5,
+            121,
+            0
+          ],
+          "command": "execute if block 5 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:43:00] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            -1
+          ],
+          "command": "execute if block 4 121 -1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:43:00] [Server thread/INFO]: [Not Secure] [Server] SUNSET_CURRENT_CITY_OPEN_1793511780573193400\n[08:43:00] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            1
+          ],
+          "command": "execute if block 4 121 1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:43:01] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        }
+      ],
+      "live_native_widget_label": "Auto City: OFF",
+      "saved_on_value": "false",
+      "native_progress_samples": [
+        {
+          "tick": 25788,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.036000002175569534,
+            "ticks": 6
+          }
+        },
+        {
+          "tick": 25884,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.49800044298172,
+            "ticks": 83
+          }
+        },
+        {
+          "tick": 25969,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.9839990139007568,
+            "ticks": 164
+          }
+        }
+      ],
+      "native_ticks_before": 25776,
+      "native_ticks_after": 25991,
+      "observed_native_offhand_totem": true
+    },
+    {
+      "case": "city-timeout",
+      "result": "pass",
+      "raw_report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "native_reach_attribute": 4.5,
+      "selected_before": 9,
+      "selected_after": 9,
+      "observed_other_client_server_crack_cells": [
+        [
+          4,
+          121,
+          -1
+        ]
+      ],
+      "actual_server_air_cells": [],
+      "server_cell_receipts": [
+        {
+          "cell": [
+            3,
+            121,
+            0
+          ],
+          "command": "execute if block 3 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:43:28] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            5,
+            121,
+            0
+          ],
+          "command": "execute if block 5 121 0 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:43:29] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            -1
+          ],
+          "command": "execute if block 4 121 -1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:43:29] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        },
+        {
+          "cell": [
+            4,
+            121,
+            1
+          ],
+          "command": "execute if block 4 121 1 minecraft:air run say <unique-proof-marker>",
+          "exit": 0,
+          "stdout": "[08:43:29] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "stderr": ""
+        }
+      ],
+      "live_native_widget_label": "Auto City: OFF",
+      "saved_on_value": "false",
+      "native_progress_samples": [
+        {
+          "tick": 26339,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.0,
+            "ticks": 0
+          }
+        },
+        {
+          "tick": 26435,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.004325397778302431,
+            "ticks": 89
+          }
+        },
+        {
+          "tick": 26535,
+          "selected": 1,
+          "mining": {
+            "pos": [
+              4,
+              121,
+              -1
+            ],
+            "progress": 0.008942410349845886,
+            "ticks": 184
+          }
+        }
+      ],
+      "native_ticks_before": 26326,
+      "native_ticks_after": 26564
+    }
+  ],
+  "attempts": [
+    {
+      "report": "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json",
+      "case": "city-cycle",
+      "status": "fixture-or-test-error",
+      "passed": false
+    },
+    {
+      "report": "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json",
+      "case": "city-off",
+      "status": "fixture-or-test-error",
+      "passed": false
+    },
+    {
+      "report": "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json",
+      "case": "city-friend",
+      "status": "fixture-or-test-error",
+      "passed": false
+    },
+    {
+      "report": "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json",
+      "case": "city-manual-cancel",
+      "status": "fixture-or-test-error",
+      "passed": false
+    },
+    {
+      "report": "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json",
+      "case": "city-disable",
+      "status": "fixture-or-test-error",
+      "passed": false
+    },
+    {
+      "report": "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json",
+      "case": "city-reach-six",
+      "status": "fixture-or-test-error",
+      "passed": false
+    },
+    {
+      "report": "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json",
+      "case": "city-reach-one",
+      "status": "fixture-or-test-error",
+      "passed": false
+    },
+    {
+      "report": "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json",
+      "case": "city-menu-pause",
+      "status": "fixture-or-test-error",
+      "passed": false
+    },
+    {
+      "report": "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json",
+      "case": "city-emergency-totem",
+      "status": "fixture-or-test-error",
+      "passed": false
+    },
+    {
+      "report": "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json",
+      "case": "city-timeout",
+      "status": "fixture-or-test-error",
+      "passed": false
+    },
+    {
+      "report": "city-parity-r26-fa4d33c0eac744af975097374c870aa7.json",
+      "case": "city-cycle",
+      "status": "pass",
+      "passed": true
+    },
+    {
+      "report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "case": "city-off",
+      "status": "pass",
+      "passed": true
+    },
+    {
+      "report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "case": "city-friend",
+      "status": "pass",
+      "passed": true
+    },
+    {
+      "report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "case": "city-manual-cancel",
+      "status": "pass",
+      "passed": true
+    },
+    {
+      "report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "case": "city-disable",
+      "status": "pass",
+      "passed": true
+    },
+    {
+      "report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "case": "city-reach-six",
+      "status": "pass",
+      "passed": true
+    },
+    {
+      "report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "case": "city-reach-one",
+      "status": "pass",
+      "passed": true
+    },
+    {
+      "report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "case": "city-menu-pause",
+      "status": "fail",
+      "passed": false
+    },
+    {
+      "report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "case": "city-emergency-totem",
+      "status": "pass",
+      "passed": true
+    },
+    {
+      "report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "case": "city-timeout",
+      "status": "pass",
+      "passed": true
+    },
+    {
+      "report": "city-parity-r26-acec2443f93e4e8bbbeb983f032b9e17.json",
+      "case": "city-menu-pause",
+      "status": "pass",
+      "passed": true
+    }
+  ],
+  "images": [
+    {
+      "purpose": "cycle-live-off",
+      "case": "city-cycle",
+      "file": "originals/aura-r26-fa4d33c0eac744af975097374c870aa7-city-live-widget-1793511587630396400.png",
+      "sha256": "6937245e9ccd007e8eab2177238eafa6467b2670a7c1f080d6a5a1b7926628fd",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "bytes": 181909,
+      "unmodified": true
+    },
+    {
+      "purpose": "range-six-live-off",
+      "case": "city-reach-six",
+      "file": "originals/aura-r26-f17cd4c3d88447f680bcf648c7fb8734-city-live-widget-1793511707326103200.png",
+      "sha256": "ded64c2ae053c6bc2311aeeecd19dcacdd69d6808ae60b9d84740288231f3b60",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "bytes": 183755,
+      "unmodified": true
+    },
+    {
+      "purpose": "menu-paused-inventory",
+      "case": "city-menu-pause",
+      "file": "originals/aura-r26-acec2443f93e4e8bbbeb983f032b9e17-city-menu-pause-1793511928038363000.png",
+      "sha256": "46e66599a509c55820f2126434672c3548cbc633a54289e9980dbc7f93db0387",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "bytes": 109365,
+      "unmodified": true
+    },
+    {
+      "purpose": "menu-paused-live-on",
+      "case": "city-menu-pause",
+      "file": "originals/aura-r26-acec2443f93e4e8bbbeb983f032b9e17-city-live-widget-1793511929885446200.png",
+      "sha256": "bcb5e4dea1c656e8aedbb28207a921a6c7fc828c56854808b6c9f685935efd89",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "bytes": 181502,
+      "unmodified": true
+    },
+    {
+      "purpose": "emergency-offhand",
+      "case": "city-emergency-totem",
+      "file": "originals/aura-r26-f17cd4c3d88447f680bcf648c7fb8734-city-emergency-totem-1793511783554475000.png",
+      "sha256": "68e9823e0f88e94b513cd26494e50c9b5eff300bf25176fc693cebc8b5f0ebf5",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "bytes": 113819,
+      "unmodified": true
+    }
+  ],
+  "corrections": [
+    {
+      "report": "city-parity-r26-9e6396a92121423c9d1e2bb50476afce.json",
+      "attempts": 10,
+      "kind": "fixture precondition",
+      "detail": "Runner initially expected zero-based selected8. Official inventory reports one-based9. These assertions fired before City activation; all failures are retained."
+    },
+    {
+      "report": "city-parity-r26-f17cd4c3d88447f680bcf648c7fb8734.json",
+      "case": "city-menu-pause",
+      "kind": "overstrict oracle",
+      "detail": "Pause, liveON, returnedslot9 and rising same-cell resumed mining all worked. Native/UI inspection consumed the200tick task budget before an unenchanted obsidian break could finish. New report asserts actual pause/resume/global deadline with intactwall; no opening is claimed."
+    }
+  ],
+  "final_cleanup": {
+    "players": {
+      "attacker": {
+        "gamemode": "survival",
+        "health": 20.0,
+        "screen": "playing",
+        "effects": [],
+        "inventory_counts": {}
+      },
+      "target": {
+        "gamemode": "survival",
+        "health": 20.0,
+        "screen": "playing",
+        "effects": [],
+        "inventory_counts": {}
+      }
+    },
+    "all_modules_off": true,
+    "inputs_released": true,
+    "official_control_streams_closed": true,
+    "clients_and_server_left_running": true,
+    "rpc_ownership_released_to_root": true
+  },
+  "limits": [
+    "Saved autocity.on is alwaysfalse by reference persistence policy. Live state is read from actual Native Options.",
+    "Three positive completed openings require actual serverair at a cell observed in the other native client server crack stream.",
+    "Menu case proves pause/resume and globaltimeout with intactwall; it does not claim a completed opening.",
+    "Actor requested Resistance255 and HasteIII. Haste speed contribution is not claimed. Timeout requested MiningFatigueIV.",
+    "Official ctl inputs only; no physical OS route, anticheat, arbitrary multiplayer, moving-target or hidden-defense guarantee.",
+    "Native world textures include placeholder blocks in these captured frames; no texture/color/rendering parity is inferred."
+  ]
+}
