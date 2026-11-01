@@ -5,7 +5,8 @@
 # player opens its world to LAN for it). Servers that are down are started first and stopped at the end; servers
 # already up are left running. Logs in <dir>/<target>.log (and <dir>/<target>/ for the session's files), the table in
 # <dir>/summary. On the test machine, in ~/hzmeteor; VERIFY names the test script (default verify.py), SEQ=1 runs the
-# targets one after another instead (same setup, for comparing).
+# targets one after another instead (same setup, for comparing). RETRY=1 then runs each target's failed tests again,
+# one target at a time (a few timing-bound tests can fail under the load of four at once): <target>.retry.log.
 H=~/hzmeteor; R=$H/$1; shift
 IFS='|' read -ra TESTS <<< "$1"; shift
 TARGETS=("$@")
@@ -40,9 +41,9 @@ launch() {
 		--resources $RES >/dev/null 2>&1)
 }
 
-# target <name> <display>: one target from join to quit.
+# target <name> <display> [log]: one target from join to quit, the tests in TESTS, the log in <dir>/<log>.log.
 target() {
-	local name=$1 disp=$2 d=$R/$1 srv= at= two= t0=$SECONDS
+	local name=$1 disp=$2 log=${3:-$1} d=$R/$1 srv= at= two= t0=$SECONDS
 	mkdir -p $d
 	for f in session session2; do
 		printf '#!/bin/sh\nexec %s/horizon-ctl --socket $(cat %s/%s)/c.sock --timeout 60 "$@"\n' $R $d $f > $d/ctl${f#session}
@@ -69,7 +70,7 @@ target() {
 		$d/ctl2 wait-ready 120 >/dev/null; $d/ctl2 wait 40 >/dev/null; two=$d/ctl2
 	fi
 	local w=; [ $name != sp ] && w=$(world $name)
-	CTL2=$two SERVER=$srv WORLD=$w SHOTS=$d timeout 14400 python3 $R/verify.py $d/ctl "${TESTS[@]}" > $R/$name.log 2>&1
+	CTL2=$two SERVER=$srv WORLD=$w SHOTS=$d timeout 14400 python3 $R/verify.py $d/ctl "${TESTS[@]}" > $R/$log.log 2>&1
 	[ -n "$two" ] && $d/ctl2 quit >/dev/null 2>&1
 	$d/ctl quit >/dev/null 2>&1
 	sleep 3
@@ -81,7 +82,7 @@ target() {
 		rm -rf $s
 	done
 	kill $xvfb 2>/dev/null
-	echo "$name $((SECONDS - t0))s $(tail -1 $R/$name.log)" > $d/result
+	echo "$log $((SECONDS - t0))s $(tail -1 $R/$log.log)" >> $d/result
 }
 
 # The servers first, all at once: a cold Spigot or Folia takes a minute or two.
@@ -107,6 +108,12 @@ for name in "${TARGETS[@]}"; do
 	sleep 2
 done
 wait
+if [ "$RETRY" = 1 ]; then
+	for name in "${TARGETS[@]}"; do
+		mapfile -t TESTS < <(grep '^FAIL ' $R/$name.log | cut -c6- | awk -F' - ' '{print $1}')
+		[ ${#TESTS[@]} -gt 0 ] && target $name 101 $name.retry
+	done
+fi
 for name in "${started[@]}"; do $H/servers.sh stop $name >/dev/null; done
 {
 	for name in "${TARGETS[@]}"; do cat $R/$name/result 2>/dev/null || echo "$name no result"; done

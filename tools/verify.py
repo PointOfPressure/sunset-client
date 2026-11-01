@@ -3056,13 +3056,16 @@ def _():
     ctl("key", "1", "tap")
     wait(40)
     gap = check("execute if items entity @s weapon.offhand minecraft:enchanted_golden_apple")
-    # At Health 19 with less health, the totem comes whatever the Item.
+    # At Health 19 with less health, the totem comes whatever the Item: looked for each tick, before the regeneration
+    # of a full food bar heals it back past 19 and the gapple returns.
     setting("offhand", "health", "19")
     cmd("damage @s 6 minecraft:generic")
-    # Before the regeneration of a full food bar heals it back past 19 and the gapple returns.
-    wait(4)
-    health = hp()
-    low = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
+    health, low = hp(), False
+    for _ in range(8):
+        low = "totem" in offhand()
+        if low or hp() > 19:
+            break
+        wait(1)
     only()
     return crystal and totem and gap and low, (f"offhand holds the crystal with Item Crystal: {crystal}, the totem with Item Totem: {totem}, "
                                               f"the gapple with a sword and Always gap on sword: {gap}, the totem at {health} health: {low}")
@@ -6095,12 +6098,17 @@ def x_window():
         if env.get("SUNSET_PROBE") != want:
             continue
         XDISPLAY = env.get("DISPLAY", XDISPLAY)
+        env = {**os.environ, "DISPLAY": XDISPLAY}
         try:
-            found = subprocess.run(["xdotool", "search", "--pid", pid], capture_output=True, text=True,
-                                   env={**os.environ, "DISPLAY": XDISPLAY}).stdout.split()
+            found = subprocess.run(["xdotool", "search", "--pid", pid], capture_output=True, text=True, env=env).stdout.split()
         except FileNotFoundError:
             return None
-        return found[-1] if found else None
+        if not found:
+            return None
+        # Focused once ahead: the first press after the focus moves can be lost.
+        subprocess.run(["xdotool", "windowfocus", "--sync", found[-1]], env=env, capture_output=True)
+        time.sleep(0.5)
+        return found[-1]
     return None
 
 
@@ -6240,12 +6248,13 @@ def _():
         if name == "A held":
             ctl("key", "a", "up")
         got[name] = (round(walked, 1), round(14.5 - (end[0] - X0), 1), round(drift, 2))
-        ctl("key", "esc", "tap")
-        wait(3)
-        if name == "Panic":
-            say(".panic")
+        if name in ("inventory", "ClickGUI"):
+            ctl("key", "esc", "tap")
+            wait(3)
         if state().get("screen") not in ("playing", None):
             ctl("close")
+        if name == "Panic":
+            say(".panic")
     say(".bind panic none")
     touched.discard("panic")
     stopped = all(left > 3 and (drift > 0.5 if name == "A held" else drift < 0.2) for name, (_, left, drift) in got.items())

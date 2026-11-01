@@ -5,7 +5,8 @@
 // can be added up. Packets are known by their ids, read off packets of each kind made here. And "order <kind>" lines
 // for the client's own hits (attack, a spear's stab), move packets (move) and tick ends, in the order they go, for the
 // check that a hit goes before its tick's move packet as vanilla sends it: those skip the single player server's
-// packets (its threads are named horizon-lan-... and horizon-local-...), so they hold in single player too.
+// packets (its threads are named horizon-lan-... and horizon-local-...), so they hold in single player too. And a
+// "pkt <id>" line for every packet the client sends (the same threads skipped), to count all of them in a tick.
 
 use std::io::Write as _;
 use std::sync::{Mutex, OnceLock};
@@ -46,10 +47,14 @@ pub fn sent(body: &[u8]) {
     let (Some((file, ids)), Some((got, start))) = (out, id(body)) else {
         return;
     };
-    let Some(i) = ids.iter().position(|x| *x == got) else {
+    let Ok(mut f) = file.lock() else {
         return;
     };
-    let Ok(mut f) = file.lock() else {
+    let own = !std::thread::current().name().is_some_and(|n| n.starts_with("horizon-lan") || n.starts_with("horizon-local"));
+    if own {
+        let _ = f.write_all(format!("pkt {got}\n").as_bytes());
+    }
+    let Some(i) = ids.iter().position(|x| *x == got) else {
         return;
     };
     if i < KINDS.len() {
@@ -63,7 +68,7 @@ pub fn sent(body: &[u8]) {
         7 if body.get(start) == Some(&8) => "stab",
         _ => return,
     };
-    if !std::thread::current().name().is_some_and(|n| n.starts_with("horizon-lan") || n.starts_with("horizon-local")) {
+    if own {
         let _ = f.write_all(format!("order {order}\n").as_bytes());
     }
 }
