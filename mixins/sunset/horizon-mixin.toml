@@ -342,6 +342,15 @@ bindings = [
   { name = "zoom", ty = "&mut Option<crate::game::native_hooks::NativeZoom>", value = "&mut *zoom" },
 ]
 
+# Freecam keeps the view it set: F5 does nothing while it flies.
+[[injection]]
+id = "perspective"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::perspective::Game<'_>::cycle_camera"
+helper = "perspective.rs"
+bindings = []
+
 [[injection]]
 id = "camera"
 kind = "HEAD"

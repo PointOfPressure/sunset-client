@@ -2969,6 +2969,36 @@ def _():
         f"camera {behind}; camera inside it {inside} (of {screen})")
 
 
+@test("Freecam (F5)")
+def _():
+    # F5 in Freecam changes nothing: the frame (the husk's ESP box with it) is the same before and after, and no hand
+    # comes into view.
+    reset()
+    cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 6.5} {HUSK}")
+    only("esp", "freecam")
+    ctl("key", "space", "down")
+    wait(10)
+    ctl("key", "space", "up")
+    ctl("look", "0", "20")
+    # The chat lines fade first.
+    wait(220)
+    from PIL import Image, ImageChops
+
+    def frame(name):
+        ctl("screenshot", f"/tmp/{name}.png")
+        time.sleep(2)
+        return Image.open(f"/tmp/{name}.png").convert("L")
+    before = frame("fc_before")
+    changed = []
+    for i in range(3):
+        ctl("key", "f5", "tap")
+        wait(10)
+        after = frame(f"fc_f5_{i}")
+        changed.append(sum(1 for v in ImageChops.difference(before, after).getdata() if v > 40))
+    only()
+    return max(changed) < 0.01 * 1280 * 720, f"pixels changed by each of three F5 presses: {changed} (of {1280 * 720})"
+
+
 @test("ESP (item names, tracers, filter)")
 def _():
     # A stack of 5 diamonds off to the side ahead: its box, then its name, then a line to it, then none of it with

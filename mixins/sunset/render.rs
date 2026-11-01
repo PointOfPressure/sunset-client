@@ -151,6 +151,12 @@ fn free_look_player() -> bool {
     super::sunset::with(|s| s.module("Free Look").is_some_and(|m| m.on && m.p("Mode") == "Player"))
 }
 
+// Freecam is flying the camera: the view stays third person behind the body (no hand, and the boxes and lines drawn
+// over the world project from the camera the frame is drawn from), whatever F5 would make it.
+pub(super) fn freecam_flying() -> bool {
+    rs(|r| r.fc.is_some())
+}
+
 // Whether the mouse turns a free camera (Freecam, or Free Look in Player mode) instead of the player.
 pub(super) fn camera_takes_mouse() -> bool {
     let free_look_player = free_look_player();
@@ -214,10 +220,11 @@ pub(super) fn pre_tick(game: &mut Game<'_>, mods: &[Module]) {
         }
         _ => {}
     }
-    if rs(|r| r.fc.is_some()) {
+    if freecam_flying() {
         for k in MOVE_KEYS {
             game.keys.remove(&k);
         }
+        game.camera_type = CameraType::ThirdPersonBack;
     }
     // Free Look.
     match (freelook.clone(), rs(|r| r.fl.is_some())) {
