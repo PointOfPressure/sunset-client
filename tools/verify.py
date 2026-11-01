@@ -3418,7 +3418,8 @@ def _():
     friend = bot_hurt(3)
     only()
     say(".friend remove Bot1")
-    cmd("team add sunsettest", "team join sunsettest Tester", "team join sunsettest Bot1")
+    # Friendly fire on: Kill Aura leaves a teammate it could not hurt anyway.
+    cmd("team add sunsettest", "team modify sunsettest friendlyFire true", "team join sunsettest Tester", "team join sunsettest Bot1")
     setting("killaura", "ignore teams", "true")
     only("killaura")
     spared = bot_hurt(3)
