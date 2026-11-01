@@ -41,6 +41,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Show placed blocks", false)
             .num("Placed blocks kept", 2000.0, 100.0, 10000.0, 100.0),
         hand_view(),
+        Module::new("Shulker Peek", Render, "Hovering a shulker box shows what is in it, in a grid the colour of the box (a middle click keeps it open); hovering an ender chest shows what was in yours when you last opened it.")
+            .bool("Ender chest", true),
         Module::new("Tunnel ESP", Render, "Highlights one-block tunnels.")
             .pick("Mode", &["Box", "Outline", "Potato"])
             .num("Range", 24.0, 8.0, 48.0, 4.0)
@@ -102,6 +104,12 @@ struct Rs {
     fc: Option<Fc>,
     fl: Option<Fl>,
     xray: Option<(bool, String, bool, bool)>,
+    // Shulker Peek: the ender chest's slots when it was last open, and whether the menu open now is one.
+    ender: Option<Vec<(u8, horizon_client::items::ItemStack)>>,
+    ender_open: bool,
+    // The grid shown with the last tooltip (its slots, tint, the pointer and when), and the one a middle click pinned.
+    peeked: Option<(Vec<(u8, horizon_client::items::ItemStack)>, u32, (f32, f32), std::time::Instant)>,
+    pinned: Option<(Vec<(u8, horizon_client::items::ItemStack)>, u32)>,
     placed: Placed,
     tunnels: Sweep<()>,
     voids: Sweep<()>,
@@ -435,6 +443,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
     horizon_client::font::sunset_font::STYLE.store(font, Ordering::Relaxed);
     no_render(game, mods);
     xray(game, mods);
+    ender_seen(game);
     match on(mods, "Tunnel ESP") {
         Some(m) => scan_tunnels(game, &m, ticks),
         None => rs(|r| r.tunnels = Sweep::new()),
@@ -611,10 +620,13 @@ pub(super) fn sent(game: &Game<'_>, packet: &horizon_protocol::packets::play::Se
     let S::UseItemOn(p) = packet else {
         return;
     };
+    let [x, y, z] = p.pos;
+    if short(&game.res.facts().get(game.world.block(x, y, z)).name) == "ender_chest" {
+        rs(|r| r.ender_open = true);
+    }
     if !rs(|r| !r.placed.key.is_empty()) {
         return;
     }
-    let [x, y, z] = p.pos;
     let n = FACES[p.face.clamp(0, 5) as usize];
     let until = game.ticks + 10;
     rs(|r| {
@@ -622,6 +634,116 @@ pub(super) fn sent(game: &Game<'_>, packet: &horizon_protocol::packets::play::Se
             r.placed.pending.push((at, game.world.block(at[0], at[1], at[2]).0, until));
         }
     });
+}
+
+// Shulker Peek: an ender chest's slots while its menu is open (the one opened by a use on an ender chest).
+fn ender_seen(game: &mut Game<'_>) {
+    if game.screen != super::Screen::Inventory {
+        rs(|r| {
+            r.ender_open = false;
+            r.pinned = None;
+        });
+        return;
+    }
+    if !rs(|r| r.ender_open) {
+        return;
+    }
+    let slots: Vec<(u8, horizon_client::items::ItemStack)> =
+        (0..27u8).filter_map(|i| game.slot_mut(300 + usize::from(i)).clone().map(|s| (i, s))).collect();
+    rs(|r| r.ender = Some(slots));
+}
+
+// Shulker Peek, drawn before a stack's tooltip: a shulker box's (or the ender chest's last seen) slots in a 9 by 3
+// grid above the pointer, tinted the box's colour. Remembered as hovered, for a middle click to pin it.
+pub(super) fn peek(game: &Game<'_>, batch: &mut horizon_client::hud::HudBatch, stack: &horizon_client::items::ItemStack, x: f32, y: f32) {
+    if !game.native_window() || !game.native_on(super::sunset::ID) {
+        return;
+    }
+    let Some(m) = super::sunset::with(|s| s.module("Shulker Peek").filter(|m| m.on).cloned()) else {
+        return;
+    };
+    let id = short(&stack.item);
+    let (slots, tint) = if let Some(colour) = id.strip_suffix("shulker_box") {
+        (stack.extra.as_ref().map(|d| d.container.clone()).unwrap_or_default(), box_colour(colour.trim_end_matches('_')))
+    } else if id == "ender_chest" && m.b("Ender chest") {
+        match rs(|r| r.ender.clone()) {
+            Some(slots) => (slots, 0x0F_4040),
+            None => return,
+        }
+    } else {
+        return;
+    };
+    let top = (y - 14.0 - GRID[1]).max(0.0);
+    let left = (x + 12.0).min(batch.width - GRID[0]).max(0.0);
+    draw_grid(game, batch, &slots, tint, left, top);
+    rs(|r| r.peeked = Some((slots, tint, (x, y), std::time::Instant::now())));
+}
+
+// The grid's size: nine by three slots of 18 and a border of 4.
+const GRID: [f32; 2] = [9.0 * 18.0 + 8.0, 3.0 * 18.0 + 8.0];
+
+fn draw_grid(game: &Game<'_>, batch: &mut horizon_client::hud::HudBatch, slots: &[(u8, horizon_client::items::ItemStack)], tint: u32, left: f32, top: f32) {
+    let [w, h] = GRID;
+    game.native_fill(batch, [left, top, w, h], 0xF000_0000 | tint);
+    game.native_fill(batch, [left + 2.0, top + 2.0, w - 4.0, h - 4.0], 0xE018_1818);
+    for i in 0..27u8 {
+        let at = [left + 4.0 + f32::from(i % 9) * 18.0, top + 4.0 + f32::from(i / 9) * 18.0];
+        game.native_fill(batch, [at[0], at[1], 18.0, 18.0], 0x6000_0000 | tint);
+        game.native_fill(batch, [at[0] + 1.0, at[1] + 1.0, 16.0, 16.0], 0xFF8B_8B8B);
+    }
+    for (slot, item) in slots.iter().filter(|(i, _)| *i < 27) {
+        game.draw_item(batch, item, left + 5.0 + f32::from(slot % 9) * 18.0, top + 5.0 + f32::from(slot / 9) * 18.0);
+    }
+}
+
+// Shulker Peek's read-only view: a middle click on a peeked box pins its grid in the middle of the screen, in place
+// of the tooltips, until the next click or the screen closes. True when the click was Shulker Peek's.
+pub(super) fn peek_press(game: &Game<'_>, middle: bool) -> bool {
+    if rs(|r| r.pinned.take()).is_some() {
+        return true;
+    }
+    // Shown just now, for the slot the pointer is on now.
+    let fresh = rs(|r| r.peeked.take()).filter(|p| p.2 == game.cursor && p.3.elapsed() < std::time::Duration::from_millis(150));
+    match fresh {
+        Some((slots, tint, ..)) if middle && game.screen == super::Screen::Inventory => {
+            rs(|r| r.pinned = Some((slots, tint)));
+            true
+        }
+        _ => false,
+    }
+}
+
+// The pinned view, drawn where the hovered slot's tooltip would go. True when it was drawn (no tooltip then).
+pub(super) fn pinned(game: &Game<'_>, batch: &mut horizon_client::hud::HudBatch) -> bool {
+    let Some((slots, tint)) = rs(|r| r.pinned.clone()) else {
+        return false;
+    };
+    let (left, top) = (((batch.width - GRID[0]) / 2.0).floor(), ((batch.height - GRID[1]) / 2.0).floor());
+    game.native_fill(batch, [0.0, 0.0, batch.width, batch.height], 0x8000_0000);
+    draw_grid(game, batch, &slots, tint, left, top);
+    true
+}
+
+// A shulker box's colour, by its dye ("" is the plain purple one).
+fn box_colour(dye: &str) -> u32 {
+    match dye {
+        "white" => 0xE9ECEC,
+        "orange" => 0xF07613,
+        "magenta" => 0xBD44B3,
+        "light_blue" => 0x3AAFD9,
+        "yellow" => 0xF8C627,
+        "lime" => 0x70B919,
+        "pink" => 0xED8DAC,
+        "gray" => 0x3E4447,
+        "light_gray" => 0x8E8E86,
+        "cyan" => 0x158991,
+        "blue" => 0x35399D,
+        "brown" => 0x724728,
+        "green" => 0x546D1B,
+        "red" => 0xA12722,
+        "black" => 0x141519,
+        _ => 0x976997,
+    }
 }
 
 // The six faces' directions, in the protocol's order: down, up, north, south, west, east.

@@ -14,25 +14,19 @@ thread_local! {
     static LIQUID: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
     // Flight's Velocity mode: the air's pull on your input (Player.getFlyingSpeed).
     static FLYING: Cell<Option<f32>> = const { Cell::new(None) };
-    // GUI Move walking you forward behind a screen: whether sprinting should start too (Ctrl or the Sprint module).
-    static SCREEN_SPRINT: Cell<Option<bool>> = const { Cell::new(None) };
+    // GUI Move: the move keys held behind a screen, which the game would not take.
+    static SCREEN_KEYS: Cell<Option<crate::sprint::Keys>> = const { Cell::new(None) };
 }
 
-pub fn set_screen_sprint(start: Option<bool>) {
-    SCREEN_SPRINT.with(|c| c.set(start));
+pub fn set_screen_keys(keys: Option<crate::sprint::Keys>) {
+    SCREEN_KEYS.with(|c| c.set(keys));
 }
 
-// The keys the sprint phase sees behind a screen while GUI Move walks you forward: the forward key it holds (a screen
-// gives the game none, which stops a sprint), and the sprint key when sprinting should start. None: the keys as they are.
-pub fn screen_sprint_keys(keys: crate::sprint::Keys) -> Option<crate::sprint::Keys> {
-    let start = SCREEN_SPRINT.with(Cell::get)?;
-    (keys.direction()[1] <= 1.0e-5).then_some(crate::sprint::Keys {
-        forward: true,
-        backward: false,
-        analog: None,
-        sprint: keys.sprint || start,
-        ..keys
-    })
+// The keys a tick's movement takes behind a screen while GUI Move walks you: the ones held, when the game gave it none
+// (a screen keeps them from it) and some are held. None: the keys as they are.
+pub fn screen_keys(keys: crate::sprint::Keys) -> Option<crate::sprint::Keys> {
+    let pressed = |k: crate::sprint::Keys| k.direction() != [0.0, 0.0] || k.jump || k.shift;
+    SCREEN_KEYS.with(Cell::get).filter(|held| !pressed(keys) && pressed(*held))
 }
 
 pub fn set_flying_speed(speed: Option<f32>) {

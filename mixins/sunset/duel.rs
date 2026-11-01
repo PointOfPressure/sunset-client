@@ -1,6 +1,6 @@
 // Ported from Sayer's Duelkit (MIT, github.com/PointOfPressure/duelkit): Wind Jump, Hold to Eat, Pearl Catch and
 // Loadouts.
-use super::sunset::{Canvas, Category, Module, hold, say, with};
+use super::sunset::{Canvas, Category, Module, Shape, hold, say, with};
 use super::sunset_util as util;
 use super::{Game, Screen};
 use horizon_client::menu::Input;
@@ -374,30 +374,36 @@ fn loadout_key(game: &mut Game<'_>, key: &str, pressed: bool) {
 }
 
 // The list while the Menu key is held: number, name, and what each hotbar slot gets.
-pub(super) fn draw_loadouts(game: &Game<'_>, w: f32, h: f32, out: &mut impl Canvas) {
+pub(super) fn draw_loadouts(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     if !duel(|d| d.listing) || module("Loadouts").is_none() {
         return;
     }
     let list = loadouts();
-    let short = |s: &Option<String>| s.as_deref().map_or("-", util::short).replace('_', " ");
-    let lines: Vec<String> = if list.is_empty() {
-        vec!["No loadouts yet: .loadout save <name>".into()]
-    } else {
-        list.iter()
-            .enumerate()
-            .map(|(i, l)| {
-                let items: Vec<String> = l.hotbar.iter().map(short).collect();
-                format!("{}  {}: {} | {}", i + 1, l.name, items.join(", "), short(&l.offhand))
-            })
-            .collect()
-    };
-    let width = lines.iter().map(|l| game.native_text_width(l)).fold(0.0f32, f32::max) + 12.0;
-    let height = lines.len() as f32 * 12.0 + 18.0;
+    if list.is_empty() {
+        let line = "No loadouts yet: .loadout save <name>";
+        let width = game.native_text_width(line) + 12.0;
+        let (x, y) = ((w - width) / 2.0, (h - 30.0) / 2.0);
+        out.fill([x, y, width, 30.0], 0xA000_0000);
+        out.text(line, [x + 6.0, y + 11.0], 0xFFFFFF);
+        return;
+    }
+    // Each row: its number and name, then the hotbar's nine items and the off hand's, as icons.
+    let names: Vec<String> = list.iter().enumerate().map(|(i, l)| format!("{}  {}", i + 1, l.name)).collect();
+    let name_w = names.iter().map(|n| game.native_text_width(n)).fold(game.native_text_width("Loadouts: press a number"), f32::max);
+    let width = name_w + 12.0 + 10.0 * 18.0 + 6.0;
+    let height = list.len() as f32 * 20.0 + 20.0;
     let (x, y) = ((w - width) / 2.0, (h - height) / 2.0);
     out.fill([x, y, width, height], 0xA000_0000);
-    out.text("Loadouts: press a number", [x + 6.0, y + 4.0], 0xFFFFFF);
-    for (i, l) in lines.iter().enumerate() {
-        out.text(l, [x + 6.0, y + 18.0 + i as f32 * 12.0], 0xE0E0E0);
+    out.text("Loadouts: press a number", [x + 6.0, y + 5.0], 0xFFFFFF);
+    for (row, (l, name)) in list.iter().zip(names).enumerate() {
+        let ry = y + 18.0 + row as f32 * 20.0;
+        out.text(&name, [x + 6.0, ry + 6.0], 0xE0E0E0);
+        for (i, item) in l.hotbar.iter().chain([&l.offhand]).enumerate() {
+            let ix = x + name_w + 12.0 + i as f32 * 18.0 + if i == 9 { 4.0 } else { 0.0 };
+            if let Some(item) = item {
+                out.push(Shape::Item(item.as_str().into(), [ix, ry + 1.0], 16.0));
+            }
+        }
     }
 }
 

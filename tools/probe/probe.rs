@@ -52,6 +52,23 @@ pub(super) fn frame(game: &Game<'_>) {
         );
     }
     line.push('\n');
+    // How walking looks in this frame: whether a screen is open, the view bob and walk distance the camera and hand
+    // move by, the own model's limb swing speed and position, and each other player's limb swing as seen here.
+    let _ = write!(
+        line,
+        "walk {} {} {:.5} {:.5}",
+        game.ticks,
+        u8::from(game.screen != super::Screen::Playing),
+        game.avatar.interpolated_bob(a as f32),
+        game.avatar.backwards_interpolated_walk_distance(a as f32),
+    );
+    if let Some(m) = game.player_model.as_ref() {
+        let _ = write!(line, " {:.5} {:.5} {:.3}", m.limb_speed, m.limb_position, m.body_yaw);
+    }
+    for m in game.mobs.iter().filter(|m| m.kind.id.ends_with("player")) {
+        let _ = write!(line, " p{} {:.5} {:.5}", m.id, m.limb_speed, m.limb_position);
+    }
+    line.push('\n');
     if let Ok(mut f) = out.lock() {
         let _ = f.write_all(line.as_bytes());
     }

@@ -137,6 +137,17 @@ pub(super) fn listed(list: &str, name: &str) -> bool {
     list.split(',').any(|x| short(x.trim()) == name)
 }
 
+// A name passes a module's list: on it in List mode Whitelist, not on it in Blacklist.
+pub(super) fn passes(m: &Module, list: &str, name: &str) -> bool {
+    listed(m.t(list), name) != (m.p("List mode") == "Blacklist")
+}
+
+// A mob a module with kind switches wants: its kind switched on, with the Entities list adding mob types to that
+// (List mode Whitelist) or taking them out of it (Blacklist).
+pub(super) fn kind_wanted(of_kind: bool, list: &str, blacklist: bool, id: &str) -> bool {
+    if blacklist { of_kind && !listed(list, id) } else { of_kind || listed(list, id) }
+}
+
 pub(super) fn toggle_off(game: &mut Game<'_>, name: &str) {
     if let Some(i) = with(|s| s.find(name)) {
         if with(|s| s.modules[i].on) {

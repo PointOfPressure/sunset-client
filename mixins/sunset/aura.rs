@@ -29,6 +29,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only on click", false)
             .bool("Only on look", false)
             .bool("Auto disable", false)
+            .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "player")
             .pick("Priority", PRIORITIES)
             .bool("Hurt time priority", false)
@@ -250,7 +251,7 @@ fn entity_check(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool 
     if t.health <= 0.0 || spared(game, m, t.id, t.player) {
         return false;
     }
-    if reach(eye, t) > m.n("Range") || !entity_listed(m.t("Entities"), t) || !in_fov(game, m, t, eye) {
+    if reach(eye, t) > m.n("Range") || entity_listed(m.t("Entities"), t) == (m.p("List mode") == "Blacklist") || !in_fov(game, m, t, eye) {
         return false;
     }
     let threshold = m.n("Health threshold");

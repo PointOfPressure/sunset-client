@@ -18,6 +18,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Anti break", false)
             .bool("Rotate", true),
         Module::new("Auto Nametag", World, "Uses name tags on every named-less mob in range. It WILL tag all of them.")
+            .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "")
             .num("Range", 5.0, 1.0, 6.0, 0.5)
             .bool("Renametag", true)
@@ -25,6 +26,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Auto Mount", World, "Mounts rideable mobs next to you.")
             .bool("Check saddle", false)
             .bool("Rotate", true)
+            .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "horse,donkey,mule,pig,strider,llama,camel,skeleton_horse,zombie_horse"),
         Module::new("Flamethrower", World, "Sets alive food animals on fire, so they drop cooked food.")
             .num("Distance", 5.0, 1.0, 6.0, 0.5)
@@ -32,6 +34,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Target babies", false)
             .num("Tick interval", 5.0, 1.0, 20.0, 1.0)
             .bool("Rotate", true)
+            .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "pig,cow,sheep,chicken,rabbit"),
         Module::new("Liquid Filler", World, "Places blocks inside water and lava within range of you.")
             .pick("Place in", &["Both", "Water", "Lava"])
@@ -59,6 +62,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Priority", PRIORITIES)
             .bool("Babies", true)
             .bool("Nametagged", false)
+            .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "player"),
         Module::new("Spawner Alerts", World, "Says in chat where each spawner and trial spawner within range is, and what it spawns, once each; Labels names them where they are.")
             .num("Range", 64.0, 8.0, 256.0, 8.0)
@@ -359,12 +363,12 @@ fn auto_nametag(game: &mut Game<'_>, m: &Module) {
         return;
     };
     let range = m.n("Range");
-    let list = m.t("Entities").to_owned();
+    let (list, blacklist) = (m.t("Entities").to_owned(), m.p("List mode") == "Blacklist");
     let eye = game.eye_position().unwrap_or([0.0; 3]);
     let mut candidates: Vec<Target> = every_living(game)
         .into_iter()
         .filter(|t| !t.player && dist(eye, t.pos) <= range && !cooling(t.id))
-        .filter(|t| listed(&list, &t.kind))
+        .filter(|t| listed(&list, &t.kind) != blacklist)
         .filter(|t| {
             let named = game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.custom_name.is_some());
             !named || m.b("Renametag")
@@ -384,11 +388,11 @@ fn auto_mount(game: &mut Game<'_>, m: &Module) {
     if game.held().is_some_and(|s| short(&s.item).ends_with("_spawn_egg")) {
         return;
     }
-    let list = m.t("Entities").to_owned();
+    let (list, blacklist) = (m.t("Entities").to_owned(), m.p("List mode") == "Blacklist");
     let eye = game.eye_position().unwrap_or([0.0; 3]);
     let saddled = |t: &Target| game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.extra.saddled);
     let pick = every_living(game).into_iter().find(|t| {
-        if t.player || dist(eye, t.pos) > 4.0 || cooling(t.id) || !listed(&list, &t.kind) {
+        if t.player || dist(eye, t.pos) > 4.0 || cooling(t.id) || listed(&list, &t.kind) == blacklist {
             return false;
         }
         // Saddled-only rides.
@@ -410,7 +414,7 @@ fn auto_mount(game: &mut Game<'_>, m: &Module) {
 
 fn flamethrower(game: &mut Game<'_>, m: &Module) {
     let range = m.n("Distance");
-    let list = m.t("Entities").to_owned();
+    let (list, blacklist) = (m.t("Entities").to_owned(), m.p("List mode") == "Blacklist");
     let anti = m.b("Anti break");
     let eye = game.eye_position().unwrap_or([0.0; 3]);
     let ticks = ws(|w| w.flame_ticks);
@@ -420,7 +424,7 @@ fn flamethrower(game: &mut Game<'_>, m: &Module) {
     let target = every_living(game).into_iter().find(|t| {
         !t.player
             && dist(eye, t.pos) <= range
-            && listed(&list, &t.kind)
+            && listed(&list, &t.kind) != blacklist
             && (m.b("Target babies") || !game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.is_baby()))
             && !game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.is_on_fire())
     });
@@ -527,13 +531,13 @@ fn bow_aimbot(game: &mut Game<'_>, m: &Module) {
         None => return,
     };
     let range = m.n("Range");
-    let list = m.t("Entities").to_owned();
+    let (list, blacklist) = (m.t("Entities").to_owned(), m.p("List mode") == "Blacklist");
     let own = game.remote.as_ref().map(|r| r.entity_id as u32);
     let friends = super::sunset::with(|s| s.friends.clone());
     let names = game.remote_player_names();
     let mut cands: Vec<Target> = every_living(game)
         .into_iter()
-        .filter(|t| Some(t.id) != own && dist(eye, t.pos) <= range && listed(&list, &t.kind))
+        .filter(|t| Some(t.id) != own && dist(eye, t.pos) <= range && listed(&list, &t.kind) != blacklist)
         .filter(|t| clear_line(game, centre(t), [i32::MIN; 3]))
         .filter(|t| m.b("Nametagged") || !game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.custom_name.is_some()))
         .filter(|t| m.b("Babies") || !game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.is_baby()))

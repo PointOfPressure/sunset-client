@@ -1393,6 +1393,58 @@ def _():
     return moved < 0.05, f"walked {moved:.2f} blocks with the chat open"
 
 
+def walk_look(menu):
+    """Walking forward from standing (a second, then a second jumping), with the inventory open (menu) or not: per
+    frame, the view bob, the own model's limb swing speed, and the walk distance a tick (the camera's and hand's bob
+    follow it); and Bot1's view of Tester's limb swing speed. The probe's "walk" lines."""
+    cmd(f"fill {X0-2} {Y} {Z0-15} {X0+2} {Y} {Z0+15} minecraft:stone", f"fill {X0-2} {Y+1} {Z0-15} {X0+2} {Y+3} {Z0+15} minecraft:air")
+    reset(z=-14.5)
+    wait(20)
+    if menu:
+        ctl("open-inventory")
+        wait(6)
+    paths = [probe_path()] + ([os.path.join(os.path.dirname(CTL2), "session2")] if CTL2 else [])
+    if CTL2:
+        with open(paths[1]) as f:
+            paths[1] = os.path.join(f.read().strip(), "probe.log")
+    marks = [os.path.getsize(p) if os.path.exists(p) else 0 for p in paths]
+    ctl("key", "w", "down")
+    wait(20)
+    ctl("key", "space", "down")
+    wait(20)
+    ctl("key", "space", "up")
+    ctl("key", "w", "up")
+    wait(5)
+    if menu:
+        ctl("close")
+    rows = []
+    for path, mark in zip(paths, marks):
+        with open(path) as f:
+            f.seek(mark)
+            rows.append([line.split() for line in f.read().split("\n")[:-1] if line.startswith("walk ")])
+    own = rows[0]
+    mean = lambda xs: sum(xs) / max(len(xs), 1)
+    ticks = max(int(own[-1][1]) - int(own[0][1]), 1)
+    seen = [float(w[w.index(p) + 1]) for w in (rows[1] if CTL2 else []) for p in w if p.startswith("p")]
+    return {"bob": mean([float(w[3]) for w in own]), "walk": abs(float(own[-1][4]) - float(own[0][4])) / ticks,
+            "limbs": mean([float(w[5]) for w in own if len(w) > 5]), "seen": mean(seen) if seen else None}
+
+
+@test("GUI Move walks like walking")
+def _():
+    # Walking with the inventory open looks as walking without it, from the first step and through jumps: the same
+    # view bob and walk distance (first person), the same limb swing (third person), and the same as Bot1 sees it.
+    if not probe_path():
+        return None, "needs the probe"
+    only("guimove")
+    plain, menu = walk_look(False), walk_look(True)
+    only()
+    near = lambda a, b: a is None or b is None or abs(a - b) <= 0.03 * max(abs(a), abs(b), 1e-6)
+    ok = all(near(plain[k], menu[k]) for k in plain)
+    show = lambda d: ", ".join(f"{k} {v:.4f}" if v is not None else f"{k} -" for k, v in d.items())
+    return ok, f"without the menu: {show(plain)}; with it: {show(menu)}"
+
+
 @test("GUI Move (with Flight)")
 def _():
     reset(z=-14.5, y=Y + 3)
@@ -2238,7 +2290,17 @@ def _():
     wait(30)
     ctl("close")
     bread = "minecraft:bread" not in ctl("inventory").get("counts", {})
-    return gone and kept and bread, f"rotten flesh dropped: {gone}, bread kept: {kept}; bread dropped once listed: {bread}"
+    # List mode Blacklist: everything but the listed items goes (the clean() after the test empties the rest).
+    cmd("clear @s", "item replace entity @s inventory.3 with minecraft:rotten_flesh 12", "item replace entity @s inventory.4 with minecraft:bread 4")
+    setting("inventorycleaner", "list mode", "Blacklist")
+    ctl("open-inventory")
+    wait(30)
+    ctl("close")
+    counts = ctl("inventory").get("counts", {})
+    black = counts.get("minecraft:bread") == 4 and "minecraft:rotten_flesh" not in counts
+    cmd("kill @e[type=item]")
+    return gone and kept and bread and black, (f"rotten flesh dropped: {gone}, bread kept: {kept}; bread dropped once listed: {bread}; "
+                                               f"Blacklist of bread: only the bread kept: {black}")
 
 
 @test("Auto Respawn")
@@ -2309,6 +2371,96 @@ def _():
     return low == 64 and high == 12 and high16 == 64, f"a stack of 3 goes to {low}, of 12 stays {high} (Threshold 8); at Threshold 16 the 12 goes to {high16}"
 
 
+@test("Client Sort")
+def _():
+    # Five stacks in the inventory's first row, sorted with Horizon's sort button: Order Alphabet puts them by name,
+    # Quantity by how many of each there are (the two dirt stacks merged first).
+    def sort(order):
+        cmd("clear @s", "item replace entity @s inventory.0 with minecraft:dirt 3", "item replace entity @s inventory.1 with minecraft:diamond 1",
+            "item replace entity @s inventory.2 with minecraft:dirt 60", "item replace entity @s inventory.3 with minecraft:apple 5",
+            "item replace entity @s inventory.4 with minecraft:stone 10")
+        setting("clientsort", "order", order)
+        ctl("open-inventory")
+        wait(4)
+        w, h = gui_size()
+        ctl("click-at", str((w - 176) / 2 + 164), str((h - 166) / 2 + 75))
+        wait(20)
+        main = ctl("inventory")["main"]
+        ctl("close")
+        return [(s["item"].split(":")[1], s["count"]) for s in main if s.get("item")]
+
+    reset()
+    only("clientsort")
+    alphabet, quantity = sort("Alphabet"), sort("Quantity")
+    only()
+    cmd("clear @s")
+    ok = alphabet == [("apple", 5), ("diamond", 1), ("dirt", 63), ("stone", 10)] and quantity == [("dirt", 63), ("stone", 10), ("apple", 5), ("diamond", 1)]
+    return ok, f"Alphabet: {alphabet}; Quantity: {quantity}"
+
+
+@test("Shulker Peek")
+def _():
+    # A red shulker box holding diamonds and gold in the hotbar, hovered in the inventory: with Shulker Peek its grid
+    # shows above the tooltip (red frame, the diamonds' and gold's icons); a middle click pins it in the middle of
+    # the screen; another click lets it go.
+    red = lambda r, g, b: 140 < r < 185 and 25 < g < 55 and 20 < b < 50
+    diamond = lambda r, g, b: r < 120 and g > 170 and b > 170
+    gold = lambda r, g, b: r > 220 and 170 < g < 235 and b < 90
+    reset()
+    cmd("time set 6000", "item replace entity @s hotbar.0 with minecraft:red_shulker_box[container=[{slot:0,item:{id:\"minecraft:diamond\",count:5}},"
+        "{slot:13,item:{id:\"minecraft:gold_block\",count:64}}]]")
+
+    def look(name):
+        # Counted where the grid goes: above and right of the hovered slot (hotbar slot 0 of the inventory).
+        from PIL import Image
+        ctl("open-inventory")
+        wait(4)
+        # The pointer onto an empty slot first, so the click on the box hovers it rather than pinning a grid shown
+        # for it before.
+        ctl("click", "slot-9", "middle")
+        wait(3)
+        ctl("click", "slot-0", "middle")
+        wait(5)
+        ctl("screenshot", f"/tmp/{name}.png")
+        time.sleep(2)
+        img = Image.open(f"/tmp/{name}.png").convert("RGB")
+        w, h = gui_size()
+        k = img.width / w
+        cx, cy = (w - 176) / 2 + 16, (h - 166) / 2 + 150
+        part = list(img.crop((int((cx + 8) * k), int((cy - 80) * k), int((cx + 200) * k), int((cy - 8) * k))).getdata())
+        return [sum(1 for px in part if f(*px)) for f in (red, diamond, gold)]
+
+    def lit(name):
+        # How bright the world is round the inventory (its left side, below the HUD's text): the pinned view dims it.
+        from PIL import Image
+        ctl("screenshot", f"/tmp/{name}.png")
+        time.sleep(2)
+        img = Image.open(f"/tmp/{name}.png").convert("L")
+        part = list(img.crop((0, img.height // 4, img.width // 8, img.height * 3 // 4)).getdata())
+        return sum(part) / len(part)
+
+    off = look("peek_off")
+    ctl("close")
+    only("shulkerpeek")
+    on_ = look("peek_on")
+    shown = lit("peek_shown")
+    ctl("click", "slot-0", "middle")
+    wait(5)
+    pinned = lit("peek_pin")
+    ctl("click", "slot-0", "middle")
+    wait(5)
+    let_go = lit("peek_free")
+    ctl("close")
+    only()
+    cmd("item replace entity @s hotbar.0 with minecraft:air")
+    items = on_[1] > off[1] + 30 and on_[2] > off[2] + 30
+    # Horizon's own server (single player's too) sends a shulker box without its contents, so there is nothing to show.
+    horizon = not SERVER or SERVER.endswith(":25599")
+    ok = on_[0] > off[0] + 200 and (items or horizon) and pinned < shown * 0.7 and let_go > pinned * 1.4
+    return ok, (f"red, diamond and gold pixels hovering the box: off {off}, on {on_}; brightness round it {shown:.0f}, "
+                f"pinned {pinned:.0f}, let go {let_go:.0f}" + ("" if items else " (no item icons: Horizon's server sends no contents)"))
+
+
 @test("Auto Tool")
 def _():
     slot(0, "diamond_sword")
@@ -2346,6 +2498,40 @@ def _():
     return ("shovel" in dirt and "pickaxe" in stone and "shovel" in kept and "sword" in after and "sword" in listed and "sword" in worn), (
         f"mining dirt: {dirt}, stone: {stone}; let go: {kept} kept, {after} with Switch back; dirt with the shovel blacklisted: {listed}; "
         f"stone with Anti break and a worn pickaxe: {worn}")
+
+
+@test("Auto Tool (cobweb)")
+def _():
+    # A cobweb, the pickaxe held and a sword beside it: Auto Tool takes the sword (the game breaks a cobweb fastest
+    # with it) and the web goes in a few ticks; without it, the pickaxe has not broken it after 60 ticks.
+    reset()
+    slot(0, "diamond_sword")
+    slot(1, "diamond_pickaxe")
+
+    def mining():
+        ctl("key", "2", "tap")
+        cmd(f"setblock {X0} {Y+1} {Z0+2} minecraft:cobweb")
+        ctl("look-at-block", str(X0), str(Y + 1), str(Z0 + 2))
+        wait(2)
+        ctl("mouse", "left", "down")
+        wait(3)
+        item = held().get("item", "")
+        ticks = 3
+        while ticks < 60 and "cobweb" in json.dumps(ctl("block", str(X0), str(Y + 1), str(Z0 + 2))):
+            wait(1)
+            ticks += 1
+        ctl("mouse", "left", "up")
+        wait(5)
+        return item, ticks
+
+    only("autotool")
+    tool, fast = mining()
+    only()
+    plain, slow = mining()
+    cmd(f"setblock {X0} {Y+1} {Z0+2} minecraft:air")
+    return "sword" in tool and fast < 20 and slow >= 60, (
+        f"Auto Tool took {tool} and broke the cobweb in {fast} ticks; the {plain} alone: "
+        + (f"{slow} ticks" if slow < 60 else "not broken in 60 ticks"))
 
 
 @test("Auto Eat")
@@ -3341,13 +3527,27 @@ def _():
 
 @test("Zoom (hold V, wheel, sensitivity)")
 def _():
-    # A gold block 12 ahead: V held covers about 3 x 3 = 9 times its pixels; the wheel up while held zooms further
-    # in; the mouse turns a third as far at 3x; V let go, back to 1x.
+    # A gold block 12 ahead: V held covers about 11 times its pixels (a third of the field of view: tan 35 over tan 11.7,
+    # squared); the wheel up while held zooms further in; the mouse turns a third as far at 3x; V let go, back to 1x.
     gold = lambda r, g, b: r > 200 and g > 170 and b < 90
     reset("creative")
-    cmd(f"setblock {X0} {Y+3} {Z0+12} minecraft:gold_block")
+    # A clear line to the block at eye height (a world where the arena sits in terrain), the block really there, and
+    # the chat faded with no toggle lines after it (the count is of the middle of the frame only, where the chat and
+    # the HUD's own gold would be counted too), and lit (Paper's test world has the arena under ground).
+    setting("clickgui", "toggle messages", "false")
+    cmd("time set 6000", "effect give @s minecraft:night_vision 60 0 true", f"fill {X0-2} {Y+1} {Z0+1} {X0+2} {Y+6} {Z0+13} minecraft:air", f"setblock {X0} {Y+2} {Z0+12} minecraft:gold_block")
     ctl("look", "0", "0")
-    wait(40)
+    wait(210)
+    if "gold_block" not in json.dumps(ctl("block", str(X0), str(Y + 2), str(Z0 + 12))):
+        return False, "the gold block was not placed"
+
+    def shot_pixels(name, want):
+        from PIL import Image
+        ctl("screenshot", f"/tmp/{name}.png")
+        time.sleep(2)
+        img = Image.open(f"/tmp/{name}.png").convert("RGB")
+        w, h = img.size
+        return sum(1 for px in img.crop((w // 4, h // 4, w * 3 // 4, h * 3 // 4)).getdata() if want(*px))
 
     def turned():
         y0 = ctl("status")["yaw"]
@@ -3369,9 +3569,9 @@ def _():
     ctl("key", "v", "up")
     wait(10)
     after = shot_pixels("zoom_after", gold)
-    cmd(f"setblock {X0} {Y+3} {Z0+12} minecraft:air")
+    cmd(f"setblock {X0} {Y+2} {Z0+12} minecraft:air")
     r3, r8, back, slow = z3 / max(base, 1), z8 / max(base, 1), after / max(base, 1), turn3 / max(turn1, 1e-6)
-    ok = base > 20 and 6 < r3 < 12 and r8 > 2 * r3 and 0.8 < back < 1.25 and 0.25 < slow < 0.42
+    ok = base > 20 and 8 < r3 < 16 and r8 > 2 * r3 and 0.8 < back < 1.25 and 0.25 < slow < 0.42
     return ok, (f"gold pixels: 1x {base}, held x{r3:.1f}, after 10 notches x{r8:.1f}, let go x{back:.2f}; "
                 f"mouse turn held/unheld {slow:.2f} ({turn3:.2f} / {turn1:.2f} degrees)")
 
@@ -3423,12 +3623,20 @@ def _():
         return sum(1 for d in ImageChops.difference(a, b).getdata() if d > 30) / (a.width * a.height)
 
     def swayed():
+        # The share of the hand's corner where the held stone (grey, against the blue sky) is in one frame and not the
+        # other: the frame just after a turn and the settled one. Clouds and the sky's own shading are not grey.
+        stone = lambda r, g, b: abs(r - g) < 14 and abs(g - b) < 14 and 50 < r < 175
         ctl("look", "0", "-40")
         wait(10)
         ctl("mouse-move", "800", "0")
-        moving = corner("hv_moving")
-        wait(15)
-        return changed(moving, corner("hv_settled"))
+        frames = []
+        for name in ("hv_moving", "hv_settled"):
+            ctl("screenshot", f"/tmp/{name}.png")
+            time.sleep(2)
+            img = Image.open(f"/tmp/{name}.png").convert("RGB")
+            frames.append([stone(*px) for px in img.crop((img.width * 55 // 100, img.height // 2, img.width, img.height)).getdata()])
+            wait(15)
+        return sum(a != b for a, b in zip(*frames)) / len(frames[0])
 
     reset("creative")
     cmd("item replace entity @s hotbar.0 with minecraft:stone")
@@ -3645,6 +3853,7 @@ def _():
     # A stack of 5 diamonds off to the side ahead: its box, then its name, then a line to it, then none of it with
     # diamonds blacklisted. In pink, which nothing else on screen is (Sunset's chat lines are orange).
     pink = lambda r, g, b: r > 230 and 80 < g < 150 and b > 160
+    cmd("kill @e[type=item]")
     cmd(f"summon item {X0+3.5} {Y+1} {Z0+5.5} {{Item:{{id:\"minecraft:diamond\",count:5}},PickupDelay:32767,Age:-32768}}")
     setting("esp", "items", "true")
     setting("esp", "players", "false")

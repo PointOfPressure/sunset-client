@@ -48,8 +48,9 @@ pub(super) struct Kinds {
     want: [bool; 3],
     colour: [u32; 3],
     friend_colours: bool,
-    // Mob types drawn whatever their kind (the Entities list).
+    // Mob types drawn whatever their kind (the Entities list), or left out (List mode Blacklist).
     extra: String,
+    blacklist: bool,
 }
 
 impl Kinds {
@@ -59,10 +60,11 @@ impl Kinds {
             colour: [m.c("Players color"), m.c("Hostiles color"), m.c("Passive color")],
             friend_colours: m.b("Show friend colors"),
             extra: m.t("Entities").to_owned(),
+            blacklist: m.p("List mode") == "Blacklist",
         }
     }
     pub(super) fn wants(&self, kind: Kind, id: &str) -> bool {
-        self.want[kind as usize] || super::sunset_util::listed(&self.extra, id)
+        super::sunset_util::kind_wanted(self.want[kind as usize], &self.extra, self.blacklist, id)
     }
     pub(super) fn colour(&self, kind: Kind, friend: bool) -> u32 {
         if friend && self.friend_colours { 0xFF55_FFFF } else { self.colour[kind as usize] }

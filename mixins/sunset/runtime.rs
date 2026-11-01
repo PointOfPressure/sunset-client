@@ -95,14 +95,17 @@ pub(super) enum Category {
     Player,
     Render,
     World,
+    // Not cheats: quality of life.
+    Extras,
 }
 
-const CATEGORIES: [Category; 5] = [
+const CATEGORIES: [Category; 6] = [
     Category::Combat,
     Category::Movement,
     Category::Player,
     Category::Render,
     Category::World,
+    Category::Extras,
 ];
 
 impl Category {
@@ -113,6 +116,7 @@ impl Category {
             Category::Player => "Player",
             Category::Render => "Render",
             Category::World => "World",
+            Category::Extras => "Extras",
         }
     }
 }
@@ -344,6 +348,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Players", true)
             .bool("Hostiles", true)
             .bool("Passive", false)
+            .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "")
             .bool("Anti bot", false)
             .bool("Ignore teams", false)
@@ -433,9 +438,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Jump", true)
             .bool("Sneak", true)
             .bool("Arrows", true)
-            .bool("Sprint", true)
-            .num("Ground speed %", 100.0, 20.0, 150.0, 5.0)
-            .num("Air speed %", 100.0, 20.0, 150.0, 5.0),
+            .bool("Sprint", true),
         Module::new("Glide", Movement, "Falls slowly, and never takes fall damage while it does.")
             .num("Fall speed", 2.5, 0.5, 8.0, 0.5),
         Module::new("No Jump Delay", Movement, "Jumps again the moment you land when you hold the jump key."),
@@ -491,6 +494,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Players", true)
             .bool("Hostiles", true)
             .bool("Passive", true)
+            .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "")
             .bool("Items", false)
             .bool("Item names", false)
@@ -512,6 +516,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Players", true)
             .bool("Hostiles", false)
             .bool("Passive", false)
+            .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "")
             .bool("Show friend colors", true)
             .colour("Players color", "White")
@@ -523,6 +528,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Mode", &["Full", "Potato"])
             .bool("Players", true)
             .bool("Mobs", false)
+            .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "")
             .bool("Ignore friends", false)
             .bool("Health", true)
@@ -611,7 +617,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Right", false)
             .num("Delay (ticks)", 4.0, 1.0, 20.0, 1.0),
         Module::new("Auto Eat", Player, "Eats food when your hunger or health gets low (Meteor's Auto Eat). Food mode says what counts as hungry: the hunger bar at Hunger threshold, saturation at Saturation threshold (a server tells it as it reaches 0, or with a change to your health or hunger), or either.")
+            .pick("List mode", &["Blacklist", "Whitelist"])
             .text("Blacklist", "enchanted_golden_apple,golden_apple,chorus_fruit,poisonous_potato,pufferfish,chicken,rotten_flesh,spider_eye,suspicious_stew")
+            .text("Whitelist", "")
             .bool("Pause auras", true)
             .bool("Search inventory", false)
             .pick("Food priority", &["Saturation", "Combined", "Hunger"])
@@ -746,6 +754,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
     v.extend(super::sunset_vanish::defaults());
+    v.extend(super::sunset_extras::defaults());
     // Modules that only draw can be held on with their bind instead of toggled.
     for m in v.iter_mut().filter(|m| holds(m.name)) {
         let hold = usize::from(m.name == "Zoom");
@@ -1400,7 +1409,7 @@ pub(super) fn wanted(m: &Module, kind: Kind, id: &str) -> bool {
         Kind::Hostile => m.b("Hostiles"),
         Kind::Passive => m.b("Passive"),
     };
-    of_kind || super::sunset_util::listed(m.t("Entities"), id)
+    super::sunset_util::kind_wanted(of_kind, m.t("Entities"), m.p("List mode") == "Blacklist", id)
 }
 
 pub(super) fn is_friend(friends: &[String], names: &[(u32, String)], id: u32) -> bool {
@@ -1828,7 +1837,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
         horizon_client::motion::sunset_motion::set_safe_walk(false);
-        horizon_client::motion::sunset_motion::set_screen_sprint(None);
+        horizon_client::motion::sunset_motion::set_screen_keys(None);
         restore_scaffold_rotation(game);
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
         return;
@@ -1886,13 +1895,21 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.b("Safe walk"));
     horizon_client::motion::sunset_motion::set_safe_walk((on("Safe Walk") || scaffold_walk) && playing);
-    // GUI Move walking you forward behind a screen: a sprint goes on (the game would stop it, a screen gives it no
-    // forward key), and starts with Ctrl held or the Sprint module.
+    // GUI Move: behind a screen the game takes no move keys, so its movement is given the ones held and walks you as
+    // it would without the screen (its own speeds, sprint, jumps, and the walk's look in first and third person).
     let held = |k: KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
-    let screen_sprint = get("GUI Move")
-        .filter(|m| m.on && m.b("Sprint") && !gui_open() && gui_move_screen(game, m) && held(KeyCode::KeyW) && !held(KeyCode::KeyS))
-        .map(|_| on("Sprint") || held(KeyCode::ControlLeft));
-    horizon_client::motion::sunset_motion::set_screen_sprint(screen_sprint);
+    // Flight flies you behind a screen by itself.
+    let screen_keys = get("GUI Move").filter(|m| m.on && !on("Flight") && !gui_open() && gui_move_screen(game, m)).map(|m| horizon_client::sprint::Keys {
+        forward: held(KeyCode::KeyW),
+        backward: held(KeyCode::KeyS),
+        left: held(KeyCode::KeyA),
+        right: held(KeyCode::KeyD),
+        jump: m.b("Jump") && held(KeyCode::Space),
+        shift: m.b("Sneak") && held(KeyCode::ShiftLeft),
+        sprint: m.b("Sprint") && (on("Sprint") || held(KeyCode::ControlLeft)),
+        analog: None,
+    });
+    horizon_client::motion::sunset_motion::set_screen_keys(screen_keys);
     let mut injected = Vec::new();
     for k in want {
         if game.keys.insert(k) {
@@ -2099,36 +2116,22 @@ fn module_tick(game: &mut Game<'_>) {
     let sneak = game.native_playing() && game.keys.contains(&KeyCode::ShiftLeft) || screen_keys.is_some_and(|k| k.3);
     let forward = move_input(game).0 > 0.0 || screen_keys.is_some_and(|k| k.0 > 0.0);
     let dim = game.dim.id();
-    let flight_velocity = get("Flight").is_some_and(|f| f.p("Mode") == "Velocity");
+    let flight_abilities = get("Flight").is_some_and(|f| f.p("Mode") == "Abilities");
     flight_post(game, get("Flight"), jump, sneak, screen_keys.and(dir));
-    let speed_hack = get("Speed").is_some();
 
     if let Some(p) = game.player.as_mut() {
-        // Without Flight or Speed to move you, the inventory screen walks you at the game's own speeds.
-        if let Some((.., sneaking, _, _)) = screen_keys
-            && !flight_velocity
-            && !speed_hack
-        {
-            if p.flying {
-                // Creative flight: about 11 blocks a second at the default flying speed.
+        // Behind a screen, Flight's Abilities mode flies by hand at its speed, as creative flight does (about 11 blocks
+        // a second at the default flying speed); and GUI Move's Sprint off stops a sprint.
+        if let Some((.., sneaking, _, _)) = screen_keys {
+            if flight_abilities && p.flying {
                 let fly = f64::from(p.flying_speed) / 0.05 * 10.9 / 20.0;
                 if let Some([x, z]) = dir {
-                    p.velocity.x = x * fly;
-                    p.velocity.z = z * fly;
+                    (p.velocity.x, p.velocity.z) = (x * fly, z * fly);
                 }
-                p.velocity.y = if jump { fly * 0.6 } else if sneak { -fly * 0.6 } else { 0.0 };
-            } else {
-                if let Some([x, z]) = dir {
-                    let factor = screen_move.as_ref().map_or(1.0, |m| {
-                        m.n(if p.ground.on_ground { "Ground speed %" } else { "Air speed %" }) / 100.0
-                    });
-                    let speed = (if sneaking { 0.0655 } else if p.sprinting { 0.2806 } else { 0.2159 }) * factor;
-                    p.velocity.x = x * speed;
-                    p.velocity.z = z * speed;
-                }
-                if jump && p.ground.on_ground {
-                    p.velocity.y = 0.42;
-                }
+                p.velocity.y = if jump { fly * 0.6 } else if sneaking { -fly * 0.6 } else { 0.0 };
+            }
+            if p.sprinting && screen_move.as_ref().is_some_and(|m| !m.b("Sprint")) {
+                let _ = p.set_sprinting(false);
             }
         }
         if get("No Jump Delay").is_some() {
@@ -2351,6 +2354,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_player::tick(game, &mods);
     super::sunset_world::tick(game, &mods);
+    super::sunset_extras::tick(game, &mods);
     super::sunset_vanish::tick(game, mods.iter().find(|m| m.name == "Anti Vanish" && m.on));
     crit_tick(game);
     if let Some(m) = get("Kill Aura") {
@@ -2784,7 +2788,7 @@ fn eat_due(game: &Game<'_>, m: &Module) -> bool {
     }
 }
 
-// Food that is not on the blacklist and that you can eat now (hungry, or food you can always eat).
+// Food that passes the list (off the Blacklist, or on the Whitelist) and that you can eat now (hungry, or food you can always eat).
 fn edible(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items::ItemStack>) -> bool {
     let Some(stack) = stack else {
         return false;
@@ -2793,7 +2797,7 @@ fn edible(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items::Ite
         return false;
     };
     let hungry = game.player.as_ref().is_some_and(|p| p.health.food.food < 20);
-    info.food.is_some() && !super::sunset_util::listed(m.t("Blacklist"), &stack.item) && (hungry || info.can_always_eat)
+    info.food.is_some() && super::sunset_util::passes(m, if m.p("List mode") == "Whitelist" { "Whitelist" } else { "Blacklist" }, &stack.item) && (hungry || info.can_always_eat)
 }
 
 // A right click with this in the main hand does nothing, so the off hand eats: an empty hand, a sword, pickaxe or
@@ -3103,7 +3107,8 @@ pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
     let Some(hit) = game.pick() else {
         return;
     };
-    let name = game.res.facts().get(game.world.block(hit.pos[0], hit.pos[1], hit.pos[2])).name.clone();
+    let facts = game.res.facts().get(game.world.block(hit.pos[0], hit.pos[1], hit.pos[2]));
+    let block = (facts.name.clone(), facts.requires_tool);
     let list = if m.p("List mode") == "Whitelist" { m.t("Whitelist") } else { m.t("Blacklist") };
     let allowed = |stack: Option<&horizon_client::items::ItemStack>| {
         let listed = stack.is_some_and(|s| super::sunset_util::listed(list, &s.item));
@@ -3112,12 +3117,12 @@ pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
     let stack = |i: usize| game.inventory.get(i).and_then(|s| s.as_ref());
     let best = (0..9)
         .filter(|&i| allowed(stack(i)))
-        .map(|i| (i, tool_score(game, m, stack(i), &name)))
+        .map(|i| (i, tool_score(game, m, stack(i), &block)))
         .filter(|(_, score)| *score >= 0.0)
         .fold(None, |b: Option<(usize, f64)>, (i, v)| if b.is_none_or(|b| v > b.1) { Some((i, v)) } else { b });
     let current = stack(game.selected);
     let switch = best
-        .filter(|&(slot, score)| slot != game.selected && (score > tool_score(game, m, current, &name) || tool_spent(game, m, current) || !is_tool(current)))
+        .filter(|&(slot, score)| slot != game.selected && (score > tool_score(game, m, current, &block) || tool_spent(game, m, current)))
         .map(|(slot, _)| slot);
     if let Some(slot) = switch {
         let selected = game.selected;
@@ -3130,13 +3135,9 @@ pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
         }
     }
     let held = game.inventory.get(game.selected).and_then(|s| s.as_ref());
-    if tool_spent(game, m, held) && is_tool(held) {
+    if tool_spent(game, m, held) {
         let _ = game.play_mouse(MouseButton::Left, false);
     }
-}
-
-fn is_tool(stack: Option<&horizon_client::items::ItemStack>) -> bool {
-    stack.is_some_and(|s| ["_axe", "_hoe", "_pickaxe", "_shovel", ":shears"].iter().any(|t| s.item.ends_with(t)))
 }
 
 // Anti break: a tool worn down to its last Anti break percentage.
@@ -3148,15 +3149,19 @@ fn tool_spent(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items:
     m.b("Anti break") && max > 0 && f64::from(max - s.damage.min(max)) < f64::from(max) * m.n("Anti break percentage") / 100.0
 }
 
-// Meteor's AutoTool.getScore: -1 for what is no tool for this block.
-fn tool_score(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items::ItemStack>, block: &str) -> f64 {
-    let Some(s) = stack.filter(|s| is_tool(Some(s)) && !tool_spent(game, m, Some(s))) else {
+// Meteor's AutoTool.getScore, on the game's own destroy speed: any item (a sword or shears on a cobweb, a sword on
+// bamboo, a pickaxe on stone) scores by how fast it breaks the block (its name, and whether it needs the right tool to
+// drop: a wrong tool then breaks it at a third of its speed), the right tool first on a tie; -1 for one no faster
+// than the bare hand.
+fn tool_score(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items::ItemStack>, (block, requires_tool): &(std::sync::Arc<str>, bool)) -> f64 {
+    let Some(s) = stack.filter(|s| !tool_spent(game, m, Some(s))) else {
         return -1.0;
     };
     let items = game.res.items();
     let short = super::sunset_util::short(block);
-    let shears = s.item.ends_with(":shears") && short.ends_with("_leaves");
-    if !items.correct_for_drops(stack, block) && !shears && !short.ends_with("_wool") {
+    let correct = items.correct_for_drops(stack, block);
+    let speed = f64::from(items.mining_speed(stack, block)) * if *requires_tool && !correct { 0.3 } else { 1.0 };
+    if speed <= 1.0 && !correct {
         return -1.0;
     }
     let level = |e: &str| f64::from(s.enchantment_level(e));
@@ -3172,7 +3177,7 @@ fn tool_score(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items:
         "Silk touch" => level("minecraft:silk_touch"),
         _ => 0.0,
     };
-    f64::from(items.mining_speed(stack, block)) * 1000.0 + level("minecraft:unbreaking") + level("minecraft:efficiency") + level("minecraft:mending") + preferred
+    speed * 1000.0 + f64::from(u8::from(correct)) * 100.0 + level("minecraft:unbreaking") + level("minecraft:efficiency") + level("minecraft:mending") + preferred
 }
 
 // Middle click: throws or uses the chosen item from the hotbar, and switches
@@ -4972,7 +4977,6 @@ fn apply_movement_preset(state: &mut State, style: &str) -> bool {
             ("Velocity", "Explosions vertical", "1"),
             ("Scaffold", "Delay (ticks)", "2"), ("Scaffold", "Rotate", "true"),
             ("No Slow", "Ground %", "20"), ("No Slow", "Air %", "20"),
-            ("GUI Move", "Ground speed %", "100"), ("GUI Move", "Air speed %", "100"),
         ],
         "balanced" => &[
             ("Speed", "Mode", "Strafe"), ("Speed", "Strafe speed", "1.3"),
@@ -4981,7 +4985,6 @@ fn apply_movement_preset(state: &mut State, style: &str) -> bool {
             ("Velocity", "Knockback vertical", "0.85"),
             ("Scaffold", "Delay (ticks)", "1"), ("Scaffold", "Rotate", "true"),
             ("No Slow", "Ground %", "70"), ("No Slow", "Air %", "70"),
-            ("GUI Move", "Ground speed %", "100"), ("GUI Move", "Air speed %", "100"),
         ],
         "aggressive" => &[
             ("Speed", "Mode", "Custom"), ("Speed", "Vanilla speed", "10"),
@@ -4992,7 +4995,6 @@ fn apply_movement_preset(state: &mut State, style: &str) -> bool {
             ("Velocity", "Knockback vertical", "0"),
             ("Scaffold", "Delay (ticks)", "0"), ("Scaffold", "Rotation speed", "180"),
             ("No Slow", "Ground %", "100"), ("No Slow", "Air %", "100"),
-            ("GUI Move", "Ground speed %", "125"), ("GUI Move", "Air speed %", "125"),
         ],
         _ => return false,
     };
@@ -5985,7 +5987,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
         mods[1].map_or(("Body", false, false), |m| (m.p("Target"), m.p("Start") == "Bottom", m.b("Distance colors")));
     let (tag_players, tag_mobs, tag_friends) =
         tags_module.map_or((false, false, false), |m| (m.b("Players"), m.b("Mobs"), !m.b("Ignore friends")));
-    let tag_extra = tags_module.map_or("", |m| m.t("Entities"));
+    let tag_extra = tags_module.map_or(("", false), |m| (m.t("Entities"), m.p("List mode") == "Blacklist"));
     let (show_health, show_distance, tag_back, tag_colour) =
         tags_module.map_or((false, false, false, 0), |m| (m.b("Health"), m.b("Distance"), m.b("Background"), m.c("Name color") & 0x00FF_FFFF));
     let looks = [&esp, &tracers, &tags];
@@ -6064,7 +6066,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
         if let Some(l) = &tags
             && drawn[2] < l.max
             && d <= l.range
-            && ((if kind == Kind::Player { tag_players } else { tag_mobs }) || super::sunset_util::listed(tag_extra, &mob.kind.id))
+            && super::sunset_util::kind_wanted(if kind == Kind::Player { tag_players } else { tag_mobs }, tag_extra.0, tag_extra.1, &mob.kind.id)
         {
             let top = [mid[0], hi[1] + 0.6, mid[2]];
             if !cam.sees(top, 1.0) {

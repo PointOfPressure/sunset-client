@@ -29,11 +29,13 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Auto Steal", Player, "Takes everything out of a chest, barrel, shulker box or hopper as you open it.")
             .num("Items per tick", 3.0, 1.0, 27.0, 1.0)
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0),
-        Module::new("Inventory Cleaner", Player, "Drops the listed items from your inventory while it is open.")
+        Module::new("Inventory Cleaner", Player, "Drops the listed items from your inventory while it is open (with List mode Blacklist, every item not listed).")
+            .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Items", "rotten_flesh,spider_eye,poisonous_potato,gravel,cobblestone,netherrack,cobbled_deepslate,andesite,diorite,granite,tuff")
             .num("Delay (ticks)", 1.0, 0.0, 10.0, 1.0),
         Module::new("Fast Use", Player, "Lets you use items at very high speeds.")
             .pick("Mode", &["All", "Some"])
+            .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Items", "ender_pearl,experience_bottle,snowball,egg")
             .bool("Blocks", false)
             .num("Cooldown (ticks)", 0.0, 0.0, 4.0, 1.0),
@@ -512,7 +514,7 @@ fn fast_use(game: &mut Game<'_>, m: &Module) {
     let item = game.held().map(|s| short(&s.item).to_owned());
     let applies = m.p("Mode") == "All"
         || item.as_ref().is_some_and(|i| {
-            listed(m.t("Items"), i)
+            passes(m, "Items", i)
                 || m.b("Blocks") && game.res.items().get(&format!("minecraft:{i}")).is_some_and(|inf| inf.block.is_some())
         });
     if applies && game.use_delay > m.n("Cooldown (ticks)") as u32 {
@@ -613,7 +615,7 @@ fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
     }) {
         return;
     }
-    let junk = (0..36).find(|&i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| listed(m.t("Items"), short(&s.item))));
+    let junk = (0..36).find(|&i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| passes(m, "Items", short(&s.item))));
     if let Some(i) = junk {
         game.menu_ops(&[(Some(i), 1, Throw)]);
         ps(|p| p.clean_wait = m.n("Delay (ticks)") as u32 + 1);
