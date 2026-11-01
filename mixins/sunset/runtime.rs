@@ -58,12 +58,17 @@ pub(super) fn accent() -> u32 {
     LOOK[0].load(Ordering::Relaxed)
 }
 
+// ClickGUI's Panel width as set, before any screen limits it.
+pub(super) fn wanted_panel_w() -> f32 {
+    f32::from_bits(LOOK[1].load(Ordering::Relaxed))
+}
+
 fn panel_w() -> f32 {
     f32::from_bits(LOOK[4].load(Ordering::Relaxed))
 }
 
 // How far a module's name sits in from its row's edge; its settings sit 4 further in.
-fn indent() -> f32 {
+pub(super) fn indent() -> f32 {
     f32::from_bits(LOOK[5].load(Ordering::Relaxed))
 }
 
@@ -71,16 +76,16 @@ fn gui_scale() -> f32 {
     f32::from_bits(LOOK[7].load(Ordering::Relaxed))
 }
 
-fn panel_radius() -> f32 {
+pub(super) fn panel_radius() -> f32 {
     f32::from_bits(LOOK[8].load(Ordering::Relaxed))
 }
 
-fn control_radius() -> f32 {
+pub(super) fn control_radius() -> f32 {
     f32::from_bits(LOOK[9].load(Ordering::Relaxed))
 }
 
 // A menu background colour with the ClickGUI's opacity (the colours are written at 0.75).
-fn bg(argb: u32) -> u32 {
+pub(super) fn bg(argb: u32) -> u32 {
     let k = f32::from_bits(LOOK[2].load(Ordering::Relaxed)) / 0.75;
     let a = ((argb >> 24) as f32 * k).round().clamp(0.0, 255.0) as u32;
     (a << 24) | (argb & 0x00FF_FFFF)
@@ -99,7 +104,7 @@ pub(super) enum Category {
     Extras,
 }
 
-const CATEGORIES: [Category; 6] = [
+pub(super) const CATEGORIES: [Category; 6] = [
     Category::Combat,
     Category::Movement,
     Category::Player,
@@ -109,7 +114,7 @@ const CATEGORIES: [Category; 6] = [
 ];
 
 impl Category {
-    fn label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
             Category::Combat => "Combat",
             Category::Movement => "Movement",
@@ -294,7 +299,7 @@ impl Module {
         }
     }
 
-    fn setting_visible(&self, j: usize) -> bool {
+    pub(super) fn setting_visible(&self, j: usize) -> bool {
         let name = self.settings[j].name;
         let advanced = self.b("Advanced");
         match self.name {
@@ -475,7 +480,9 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Panic", Player, "Turns every module off and hides Sunset on screen: no HUD, menu, chat lines or keys, until you type .panic again or restart the game. Bind it to a key."),
         // Render
         Module::new("ClickGUI", Render, "How this menu looks: accent colour, size, panel width, corner radius, text indent, background opacity and a dim behind it. Menu dim is the game's own dim and blur behind every menu. Toggle messages and Module messages: the chat lines when a key or the menu turns a module on or off, and the ones modules write (replies to . commands always show). Friends: the players Kill Aura, Trigger Bot, Aim Assist and the rest leave alone, picked from the players online or typed (also .friend, and Middle Click Extra's Friend).")
-            .colour("Accent color", "Gold")
+            .pick("Style", &["Dropdown", "Dashboard"])
+            .pick("Animations", &["Minimal", "Off"])
+            .colour("Accent color", "Sunset Orange")
             .num("GUI scale", 1.0, 0.75, 2.0, 0.05)
             .num("Panel width", 100.0, 60.0, 140.0, 2.0)
             .num("Panel radius", 6.0, 0.0, 12.0, 1.0)
@@ -1323,6 +1330,8 @@ pub(super) fn sync_flags(s: &mut State) {
         s.friends = list;
     }
     let g = s.module("ClickGUI");
+    super::sunset_dashboard::set_on(g.is_some_and(|m| m.p("Style") == "Dashboard"));
+    super::sunset_smooth::set_enabled(g.is_none_or(|m| m.p("Animations") != "Off"));
     LOOK[0].store(g.map_or(0xFFB020, |m| m.c("Accent color") & 0x00FF_FFFF), Ordering::Relaxed);
     LOOK[1].store(g.map_or(100.0, |m| m.n("Panel width") as f32).to_bits(), Ordering::Relaxed);
     LOOK[2].store(g.map_or(0.9, |m| m.n("Background opacity") as f32).to_bits(), Ordering::Relaxed);
@@ -5570,6 +5579,11 @@ pub(super) enum Shape {
     Item(std::sync::Arc<str>, [f32; 2], f32),
     // A player's face from a skin texture (and its hat layer), and its size.
     Face(String, [f32; 2], f32),
+    // A panel with squircle corners, and their radius.
+    Squircle([f32; 4], f32, u32),
+    // What is drawn from ClipStart on is cut to the rectangle ClipEnd gives: x0, y0, x1, y1.
+    ClipStart,
+    ClipEnd([f32; 4]),
 }
 
 // Where shapes go: a list drawn after the frame's other work (the menu, plugins), or straight into the frame's
@@ -5678,8 +5692,12 @@ fn round_fill(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f32; 4], rad
 
 // Draws a list of shapes (and empties it, keeping its room).
 fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32) {
+    let mut clip = 0;
     for s in shapes.drain(..) {
         match s {
+            Shape::Squircle(r, radius, argb) => super::sunset_dashboard::squircle(game, batch, r, radius, argb, px),
+            Shape::ClipStart => clip = batch.vertices.len(),
+            Shape::ClipEnd([x0, y0, x1, y1]) => batch.clip_since(clip, x0, y0, x1, y1),
             Shape::Fill(r, argb) => game.native_fill(batch, r, argb),
             Shape::Round(r, radius, argb) => round_fill(game, batch, r, radius, [true; 4], argb, px),
             Shape::Corners(r, radius, which, argb) => round_fill(game, batch, r, radius, which, argb, px),
@@ -5859,7 +5877,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             if dim > 0 {
                 shapes.push(Shape::Fill([0.0, 0.0, w, h], dim << 24));
             }
-            draw_gui(game, w / scale, h / scale, 1.0 / (batch.scale * scale), &mut gui_shapes);
+            draw_gui(game, &mods, w / scale, h / scale, 1.0 / (batch.scale * scale), &mut gui_shapes);
         } else {
             with(|s| {
                 s.gui.open = false;
@@ -5878,14 +5896,37 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     }
     paint(game, batch, &mut shapes, 1.0 / batch.scale);
     *SHAPES.lock().unwrap_or_else(|e| e.into_inner()) = shapes;
-    // The GUI goes on top, scaled about the corner its coordinates start from.
-    let start = batch.vertices.len();
-    paint(game, batch, &mut gui_shapes, 1.0 / batch.scale);
-    batch.scale_since(start, 0.0, 0.0, scale, scale);
+    // The GUI goes on top of the rest of the frame too: gui_top paints it last.
+    *GUI_TOP.lock().unwrap_or_else(|e| e.into_inner()) = (gui_shapes, scale);
     batch.scale = real;
     if !with(|s| s.gui.open) {
         super::sunset_radar::draw(game, batch, corners, &mods);
     }
+}
+
+// The open GUI's shapes this frame and its scale, from hud for gui_top.
+static GUI_TOP: Mutex<(Vec<Shape>, f32)> = Mutex::new((Vec::new(), 1.0));
+
+// After all of the frame's HUD (chat, titles, the tab list, toasts) and before its prompts (a server's pack, a dialog, a
+// link), which stay on top and take the clicks, as ever: the GUI, scaled about the corner its coordinates start from.
+pub(super) fn gui_top(game: &Game<'_>, batch: &mut HudBatch) {
+    let (mut shapes, scale) = std::mem::replace(&mut *GUI_TOP.lock().unwrap_or_else(|e| e.into_inner()), (Vec::new(), 1.0));
+    if shapes.is_empty() {
+        return;
+    }
+    let real = batch.scale;
+    batch.scale = real * scale;
+    let start = batch.vertices.len();
+    paint(game, batch, &mut shapes, 1.0 / batch.scale);
+    // Opening, it rises into place as it fades in.
+    if let Some((opacity, below)) = super::sunset_dashboard::open_motion() {
+        for v in &mut batch.vertices[start..] {
+            v.pos[1] += below;
+            v.color = (v.color & 0x00FF_FFFF) | (((v.color >> 24) as f32 * opacity) as u32) << 24;
+        }
+    }
+    batch.scale_since(start, 0.0, 0.0, scale, scale);
+    batch.scale = real;
 }
 
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
@@ -6609,20 +6650,20 @@ fn spaced(comfortable: f32, compact: f32) -> f32 {
 fn head_h() -> f32 {
     spaced(16.0, 13.0)
 }
-fn row_hh() -> f32 {
+pub(super) fn row_hh() -> f32 {
     spaced(14.0, 11.0)
 }
 fn slider_h() -> f32 {
     spaced(19.0, 15.0)
 }
 // To the right of what the rows draw (the scroll marker sits there).
-const RIGHT_PAD: f32 = 7.0;
+pub(super) const RIGHT_PAD: f32 = 7.0;
 // The panel's own space under its last row: the last row's text is as far from the bottom as the header's from the top.
 fn body_pad() -> f32 {
     (head_h() - row_hh()) / 2.0
 }
 // Text is this far down a row of its height.
-const fn text_y(h: f32) -> f32 {
+pub(super) const fn text_y(h: f32) -> f32 {
     (h - 8.0) / 2.0
 }
 // A row of panels still narrow enough to read, in GUI pixels at scale 1: GUI scale stops where this fills the window.
@@ -6638,13 +6679,33 @@ pub(super) enum Hit {
     WinBody,
     WinTitle,
     WinClose,
+    // The Dashboard style's own parts.
+    Dash(super::sunset_dashboard::Part),
 }
 
+// What the Dashboard style reads of the menu.
+pub(super) struct DashMenu<'a> {
+    pub(super) search: &'a str,
+    pub(super) select_all: bool,
+    pub(super) view_w: f32,
+    pub(super) view_h: f32,
+}
+
+pub(super) fn dash_menu(s: &State) -> DashMenu<'_> {
+    DashMenu { search: &s.gui.search, select_all: s.gui.select_all, view_w: s.gui.view_w, view_h: s.gui.view_h }
+}
+
+pub(super) fn dash_search_clear(s: &mut State) {
+    s.gui.search.clear();
+    s.gui.select_all = false;
+}
+
+
 // Other names a module is known by, so the search finds it under either.
-fn aliases(name: &str) -> &'static str {
+pub(super) fn aliases(name: &str) -> &'static str {
     match name {
         "Step" => "step up stepup stairs",
-        "ClickGUI" => "gui menu color colour theme accent opacity width dim blur background indent scale size zoom bigger radius corner round",
+        "ClickGUI" => "dropdown dashboard style gui menu color colour theme accent opacity width dim blur background indent scale size zoom bigger radius corner round",
         "Glide" => "slow fall slowfall",
         "Hand View" => "small hands hand sway viewmodel item position",
         "Zoom" => "wi zoom spyglass",
@@ -6667,7 +6728,7 @@ fn aliases(name: &str) -> &'static str {
     }
 }
 
-fn row_h(s: &State, hit: Hit) -> f32 {
+pub(super) fn row_h(s: &State, hit: Hit) -> f32 {
     match hit {
         Hit::Setting(i, j) if matches!(s.modules[i].settings[j].value, Value::Num { .. }) => slider_h(),
         _ => row_hh(),
@@ -6708,9 +6769,11 @@ pub(super) fn body_room(s: &State, c: usize) -> f32 {
     (s.gui.view_h - s.gui.panels[c].y - head_h() - 14.0).max(row_hh() * 3.0)
 }
 
-// Each row of every panel, top to bottom: its rectangle and what it is. A
-// row only part way in view is left out.
+// Each row of every panel in view, top to bottom: its rectangle and what it is. One part way in view is drawn cut.
 fn panel_rows(s: &State) -> Vec<([f32; 4], Hit)> {
+    if super::sunset_dashboard::on() {
+        return super::sunset_dashboard::rows(s);
+    }
     let mut out = Vec::new();
     for c in 0..CATEGORIES.len() {
         let p = s.gui.panels[c];
@@ -6725,9 +6788,9 @@ fn panel_rows(s: &State) -> Vec<([f32; 4], Hit)> {
         }
         let room = body_room(s, c);
         for (off, hit) in rows {
-            let top = off - p.scroll;
+            let top = off - super::sunset_smooth::shown(c, p.scroll);
             let rh = row_h(s, hit);
-            if top < -0.01 || top + rh > room + 0.01 {
+            if top + rh <= 0.0 || top >= room {
                 continue;
             }
             out.push(([p.x, p.y + head_h() + top, panel_w(), rh], hit));
@@ -6736,9 +6799,31 @@ fn panel_rows(s: &State) -> Vec<([f32; 4], Hit)> {
     out
 }
 
+// A row of a scrolling list, cut to the part of it in view.
+pub(super) fn in_view([x, y, w, h]: [f32; 4], [top, bottom]: [f32; 2]) -> Option<[f32; 4]> {
+    let (y0, y1) = (y.max(top), (y + h).min(bottom));
+    (y1 > y0).then_some([x, y0, w, y1 - y0])
+}
+
+// The rows the pointer can hit: only what shows of each.
+fn panel_hits(s: &State) -> Vec<([f32; 4], Hit)> {
+    let mut body = super::sunset_dashboard::list_y(s).unwrap_or([f32::MIN, f32::MAX]);
+    panel_rows(s)
+        .into_iter()
+        .filter_map(|(r, hit)| {
+            if let Hit::Header(c) = hit {
+                body = [r[1] + r[3], r[1] + r[3] + body_room(s, c)];
+                return Some((r, hit));
+            }
+            in_view(r, body).map(|r| (r, hit))
+        })
+        .collect()
+}
+
 // What the pointer can hit: the panels' rows, then the settings window over them.
 pub(super) fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
-    let mut rows = panel_rows(s);
+    let mut rows = super::sunset_dashboard::hits(s);
+    rows.extend(panel_hits(s));
     rows.extend(window_hits(s));
     rows
 }
@@ -6810,8 +6895,8 @@ fn win_rows(s: &State) -> Vec<([f32; 4], WinRow)> {
                 WinRow::Row(hit) => row_h(s, hit),
                 WinRow::Group(_) => row_hh(),
             };
-            let at = off - w.scroll;
-            (at >= -0.01 && at + rh <= w.room + 0.01).then_some(([x, top + at, ww, rh], row))
+            let at = off - super::sunset_smooth::shown(super::sunset_smooth::WINDOW, w.scroll);
+            (at + rh > 0.0 && at < w.room).then_some(([x, top + at, ww, rh], row))
         })
         .collect()
 }
@@ -6823,8 +6908,9 @@ fn window_hits(s: &State) -> Vec<([f32; 4], Hit)> {
     };
     let frame = win_frame(s, &w);
     let mut out = vec![(frame, Hit::WinBody), ([frame[0], frame[1], frame[2], head_h()], Hit::WinTitle), (win_close(frame), Hit::WinClose)];
+    let top = frame[1] + head_h() + w.about_h;
     out.extend(win_rows(s).into_iter().filter_map(|(r, row)| match row {
-        WinRow::Row(hit) => Some((r, hit)),
+        WinRow::Row(hit) => in_view(r, [top, top + w.room]).map(|r| (r, hit)),
         WinRow::Group(_) => None,
     }));
     out
@@ -6857,7 +6943,7 @@ fn gui_cursor(game: &Game<'_>) -> (f32, f32) {
 }
 
 // A panel's scroll moved by some rows: it always starts on a row, and stops at the first that shows the panel's end.
-fn snap_scroll(rows: &[(f32, Hit)], content: f32, room: f32, scroll: f32, by: i32) -> f32 {
+pub(super) fn snap_scroll(rows: &[(f32, Hit)], content: f32, room: f32, scroll: f32, by: i32) -> f32 {
     let max = (content - room).max(0.0);
     let stops = rows.iter().position(|(off, _)| *off >= max - 0.01).map_or(rows.len(), |i| i + 1);
     let Some(last) = stops.checked_sub(1) else {
@@ -6889,6 +6975,10 @@ pub(super) fn gui_wheel(game: &Game<'_>, steps: f32) {
         {
             let max = (w.content - w.room).max(0.0);
             s.gui.window = Some(Win { scroll: (w.scroll - steps * row_hh() * 2.0).clamp(0.0, max), ..w });
+            return;
+        }
+        if super::sunset_dashboard::on() {
+            super::sunset_dashboard::wheel(s, steps, at);
             return;
         }
         for c in (0..CATEGORIES.len()).rev() {
@@ -6934,6 +7024,7 @@ pub(super) fn open_gui(game: &mut Game<'_>) {
         s.gui.drag = None;
         s.binding = None;
     });
+    super::sunset_dashboard::opened();
 }
 
 pub(super) fn close_gui(game: &mut Game<'_>) {
@@ -7148,7 +7239,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                 s.gui.editor = None;
             } else if !right && inside(area, at) {
                 let (i, j) = (*module, *setting);
-                let row = ((at.1 - area[1] + picker.scroll) / pick::ROW) as usize;
+                let row = ((at.1 - area[1] + super::sunset_smooth::shown(super::sunset_smooth::PICKER, picker.scroll)) / pick::ROW) as usize;
                 if let Value::Text(t) = &s.modules[i].settings[j].value
                     && let Some((name, _)) = pick::rows(picker, t, draft.text()).get(row)
                 {
@@ -7191,6 +7282,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             }
             (Hit::WinClose, false) => s.gui.window = None,
             (Hit::WinBody | Hit::WinTitle | Hit::WinClose, _) => {}
+            (Hit::Dash(part), right) => super::sunset_dashboard::press(s, part, right),
             (Hit::Header(c), false) => {
                 let p = s.gui.panels[c];
                 s.gui.drag = Some(Drag::Panel(c, at.0 - p.x, at.1 - p.y));
@@ -7200,6 +7292,10 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                 changed = true;
             }
             (Hit::Module(i), false) => toggled = Some(i),
+            (Hit::Module(i), true) if super::sunset_dashboard::on() => {
+                super::sunset_dashboard::choose(i);
+                s.binding = None;
+            }
             (Hit::Module(i), true) if s.module("ClickGUI").is_some_and(|m| m.p("Settings") == "Inline") => {
                 if let Some(k) = s.gui.expanded.iter().position(|&e| e == i) {
                     s.gui.expanded.remove(k);
@@ -7306,16 +7402,66 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
     }
 }
 
+// What the menu's text measured: its rows measure the same words every frame. Each entry is by the text and, for a cut,
+// the room it was cut to. Kept until the font changes, or there are too many (numbers being dragged).
+#[derive(Default)]
+struct Measured {
+    font: f32,
+    widths: std::collections::HashMap<u64, f32>,
+    cuts: std::collections::HashMap<(u64, u32), String>,
+}
+
+static MEASURED: Mutex<Option<Measured>> = Mutex::new(None);
+
+fn measured<R>(f: impl FnOnce(&mut Measured) -> R) -> R {
+    f(MEASURED.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Measured::default))
+}
+
+// Once a frame, while the menu draws.
+fn check_measured(game: &Game<'_>) {
+    let font = game.native_text_width("Mm");
+    measured(|m| {
+        if m.font != font || m.widths.len() + m.cuts.len() > 4096 {
+            *m = Measured { font, ..Measured::default() };
+        }
+    });
+}
+
+fn text_key(text: &str) -> u64 {
+    use std::hash::{Hash as _, Hasher as _};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
+}
+
+// A menu row's text width.
+fn width_of(game: &Game<'_>, text: &str) -> f32 {
+    let key = text_key(text);
+    if let Some(width) = measured(|m| m.widths.get(&key).copied()) {
+        return width;
+    }
+    let width = game.native_text_width(text);
+    measured(|m| m.widths.insert(key, width));
+    width
+}
+
 // The text, cut to `max` wide with "..." when it is wider.
-fn fit_to(game: &Game<'_>, text: &str, max: f32) -> String {
-    if game.native_text_width(text) <= max {
-        return text.to_owned();
+pub(super) fn fit_to(game: &Game<'_>, text: &str, max: f32) -> String {
+    let key = (text_key(text), max.to_bits());
+    if let Some(cut) = measured(|m| m.cuts.get(&key).cloned()) {
+        return cut;
     }
-    let mut t = text.to_owned();
-    while !t.is_empty() && game.native_text_width(&format!("{t}...")) > max {
-        t.pop();
-    }
-    format!("{t}...")
+    let cut = if game.native_text_width(text) <= max {
+        text.to_owned()
+    } else {
+        let mut t = text.to_owned();
+        while !t.is_empty() && game.native_text_width(&format!("{t}...")) > max {
+            t.pop();
+        }
+        format!("{t}...")
+    };
+    measured(|m| m.cuts.insert(key, cut.clone()));
+    cut
 }
 
 // The list picker over the panels: its title, the search box, the rows (a lit mark on the chosen ones, which come
@@ -7342,11 +7488,13 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
     };
     let rows = pick::rows(picker, text, search);
     let area = pick::list_area(r);
-    let scroll = picker.scroll.min(pick::max_scroll(rows.len(), r));
+    let mut icons = Vec::new();
+    let scroll = super::sunset_smooth::shown(super::sunset_smooth::PICKER, picker.scroll).min(pick::max_scroll(rows.len(), r));
     let first = (scroll / pick::ROW) as usize;
+    out.push(Shape::ClipStart);
     for (n, (name, have)) in rows.iter().enumerate().skip(first) {
         let ry = area[1] + n as f32 * pick::ROW - scroll;
-        if ry + pick::ROW > area[1] + area[3] {
+        if ry >= area[1] + area[3] {
             break;
         }
         let row = [area[0], ry, area[2], pick::ROW];
@@ -7357,10 +7505,13 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
         // The block's, item's or mob's icon (only the rows on screen are drawn), then its name.
         let icon = pick::icon(game, picker, name, [area[0] + 13.0, ry + 1.0], pick::ROW - 2.0);
         let left = if icon.is_some() { 26.0 } else { 14.0 };
-        out.extend(icon);
+        // An icon can't be cut, so it waits outside the cut part until its row is all in view.
+        icons.extend(icon.filter(|_| ry >= area[1] && ry + pick::ROW <= area[1] + area[3]));
         let label = if picker.kind == pick::ListKind::Players { (*name).to_owned() } else { pick::readable(name) };
         out.push(Shape::Text(fit(&label, area[2] - left - 4.0), [area[0] + left, ry + text_y(pick::ROW)], 0xFFFFFF));
     }
+    out.push(Shape::ClipEnd([area[0], area[1], area[0] + area[2], area[1] + area[3]]));
+    out.extend(icons);
     let chosen = rows.iter().filter(|(_, have)| *have).count();
     let note = format!("{chosen} chosen, {} more. Click to add or take away; Esc closes.", rows.len() - chosen);
     let done = pick::done_button(r);
@@ -7370,8 +7521,22 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
     out.push(Shape::Text("Done".to_owned(), [done[0] + (done[2] - tw) / 2.0, done[1] + text_y(done[3])], 0xFFFFFF));
 }
 
-pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<Shape>) {
+pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: f32, out: &mut Vec<Shape>) {
+    check_measured(game);
     follow_drag(game, w, h);
+    with(|s| {
+        use super::sunset_smooth as smooth;
+        super::sunset_dashboard::prepare(s);
+        let mut targets = [None; smooth::SLOTS];
+        for (target, p) in targets.iter_mut().zip(&s.gui.panels) {
+            *target = Some(p.scroll);
+        }
+        targets[smooth::WINDOW] = s.gui.window.map(|w| w.scroll);
+        targets[smooth::DASHBOARD] = Some(super::sunset_dashboard::list_scroll());
+        targets[smooth::PANE] = Some(super::sunset_dashboard::pane_scroll());
+        targets[smooth::PICKER] = s.gui.editor.as_ref().and_then(|e| e.list.as_ref()).map(|p| p.scroll);
+        smooth::frame(targets);
+    });
     // The panels are as wide as asked, or as wide as lets all of them sit in a row.
     let fits = ((w - 4.0 - 3.0 * (CATEGORIES.len() as f32 - 1.0)) / CATEGORIES.len() as f32).floor();
     let width = f32::from_bits(LOOK[1].load(Ordering::Relaxed)).min(fits).max(50.0);
@@ -7403,6 +7568,10 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
             p.x = p.x.clamp(0.0, (w - panel_w()).max(0.0));
             p.y = p.y.clamp(0.0, (h - head_h()).max(0.0));
         }
+        // The Dashboard has no panels to keep in order.
+        if super::sunset_dashboard::on() {
+            return;
+        }
         // A scroll past the end (a shorter body, a taller window) comes back.
         for c in 0..CATEGORIES.len() {
             let (rows, content) = panel_body(s, c);
@@ -7427,19 +7596,21 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
         Some((win, win_frame(s, &win), win_rows(s), about))
     });
     let at = gui_cursor(game);
-    let (rows, modules, binding, hover, editing) =
-        with(|s| (panel_rows(s), s.modules.clone(), s.binding, hit_at(s, at).map(|(_, h)| h), s.gui.editor.clone()));
+    let (rows, binding, hover, editing) =
+        with(|s| (panel_rows(s), s.binding, hit_at(s, at).map(|(_, h)| h), s.gui.editor.clone()));
     // Modules whose settings are open (inline or in the window): a mark by the name.
     let open: Vec<usize> = with(|s| s.gui.expanded.iter().copied().chain(s.gui.window.map(|w| w.module)).collect());
     // Each panel's height of rows, room, scroll and whether it is folded.
     let bodies: Vec<(f32, f32, f32, bool)> = with(|s| {
         (0..CATEGORIES.len())
-            .map(|c| (panel_body(s, c).1, body_room(s, c), s.gui.panels[c].scroll, s.gui.panels[c].collapsed))
+            .filter(|_| !super::sunset_dashboard::on())
+            .map(|c| (panel_body(s, c).1, body_room(s, c), super::sunset_smooth::shown(c, s.gui.panels[c].scroll), s.gui.panels[c].collapsed))
             .collect()
     });
     let fit = |text: &str, max: f32| fit_to(game, text, max);
     let solid = |rgb: u32| 0xFF00_0000 | rgb;
     let control = control_radius();
+    let dash = super::sunset_dashboard::on();
     // The label on the left of a row, cut short of what sits to its right: whether it had to be.
     let label = |out: &mut Vec<Shape>, text: &str, r: [f32; 4], x: f32, right: f32, colour: u32| -> bool {
         let room = r[0] + r[2] - RIGHT_PAD - right - x - 3.0;
@@ -7451,7 +7622,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
     // A value in its rounded box at the right of a row; how wide it is.
     let value_box = |out: &mut Vec<Shape>, text: &str, r: [f32; 4], colour: u32| -> f32 {
         let text = fit(text, r[2] * 0.5);
-        let tw = game.native_text_width(&text);
+        let tw = width_of(game, &text);
         let bw = tw + 8.0;
         let bx = r[0] + r[2] - RIGHT_PAD - bw;
         out.push(Shape::Round([bx, r[1] + 2.0, bw, row_hh() - 4.0], control, 0xFF1E_1E1E));
@@ -7469,10 +7640,10 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
                 let m = &modules[i];
                 // A bound key shows at the row's end.
                 let tag = m.key.as_deref().map(|k| fit(&key_label(Some(k)), 30.0)).unwrap_or_default();
-                let tag_w = if tag.is_empty() { 0.0 } else { game.native_text_width(&tag) };
+                let tag_w = if tag.is_empty() { 0.0 } else { width_of(game, &tag) };
                 // The name clears the mark of open settings at any Text indent.
                 let name_x = x + indent().max(6.0);
-                if open.contains(&i) {
+                if open.contains(&i) && !dash {
                     out.push(Shape::Round([name_x - 5.0, y + 3.0, 2.0, rh - 6.0], 1.0, 0xFFE4_E4E4));
                 }
                 if !tag.is_empty() {
@@ -7518,7 +7689,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
                             }
                             None => {
                                 let value = num(v);
-                                let vw = game.native_text_width(&value);
+                                let vw = width_of(game, &value);
                                 out.push(Shape::Text(value, [x + rw - RIGHT_PAD - vw, y + text_y(row_hh())], 0xE4E4E4));
                                 vw
                             }
@@ -7534,9 +7705,9 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
                     Value::Pick { .. } => value_box(out, &st.value_text(), r, 0xE4E4E4),
                     Value::Text(_) => {
                         // The text itself: the name keeps its width, the text gets what is left (a quarter at least).
-                        let room = x + rw - RIGHT_PAD - setting_x - game.native_text_width(st.name) - 6.0;
+                        let room = x + rw - RIGHT_PAD - setting_x - width_of(game, st.name) - 6.0;
                         let value = fit(&st.value_text(), room.max(rw * 0.25));
-                        let vw = game.native_text_width(&value);
+                        let vw = width_of(game, &value);
                         out.push(Shape::Text(value, [x + rw - RIGHT_PAD - vw, y + text_y(row_hh())], 0x808080));
                         vw
                     }
@@ -7552,16 +7723,28 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
         let r = [x, y + top, rw, rh - top + if last { body_pad() } else { 0.0 }];
         out.push(Shape::Corners(r, panel_radius(), [false, false, last, last], 0x14FF_FFFF));
     };
+    if dash {
+        with(|s| super::sunset_dashboard::back(s, game, hover, px, out));
+    }
     let mut whole: Option<&str> = None;
     let mut first_row = false;
+    // The list the rows scroll in, top and bottom: a row part way out of it is cut.
+    let mut body = with(|s| super::sunset_dashboard::list_y(s)).unwrap_or([f32::MIN, f32::MAX]);
     for (k, (r, hit)) in rows.iter().enumerate() {
         let [x, y, rw, rh] = *r;
         let hovered = hover == Some(*hit);
+        let cut = !matches!(hit, Hit::Header(_)) && (y < body[0] || y + rh > body[1]);
+        if cut {
+            out.push(Shape::ClipStart);
+        }
         let line = if let Hit::Header(_) = hit {
             first_row = true;
             false
         } else if std::mem::take(&mut first_row) {
             // The header's line is under it already.
+            false
+        } else if dash && y <= body[0] + 0.01 {
+            // The first row of a Dashboard column.
             false
         } else {
             out.push(Shape::Fill([x, y, rw, px], 0x12FF_FFFF));
@@ -7569,6 +7752,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
         };
         if let Hit::Header(c) = *hit {
             let (content, room, scroll, folded) = bodies[c];
+            body = [y + rh, y + rh + room];
             let body = if folded || content <= 0.0 { 0.0 } else { content.min(room) + body_pad() };
             out.push(Shape::Round([x, y, rw, rh + body], panel_radius(), bg(0xC00E_0E0E)));
             if body > 0.0 {
@@ -7588,12 +7772,22 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
             }
             continue;
         }
-        if hovered {
+        if dash {
+            // A Dashboard row fades as the pointer comes and goes.
+            let glow = super::sunset_dashboard::glow(*hit);
+            if glow > 0 {
+                out.push(Shape::Fill(*r, glow << 24 | 0x00FF_FFFF));
+            }
+        } else if hovered {
             let last = rows.get(k + 1).is_none_or(|(_, next)| matches!(next, Hit::Header(_)));
             lit(out, *r, line, last);
         }
-        if let Some(name) = draw_row(out, *r, *hit, hovered) {
+        let text = if dash && matches!(hit, Hit::Module(_)) { super::sunset_dashboard::module_text(*r) } else { *r };
+        if let Some(name) = draw_row(out, text, *hit, hovered) {
             whole = Some(name);
+        }
+        if cut {
+            out.push(Shape::ClipEnd([x, body[0], x + rw, body[1]]));
         }
     }
     // The settings window, over the panels: its title, close button, description, groups and rows.
@@ -7616,7 +7810,12 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
             out.push(Shape::Text(l.clone(), [x + indent(), y + hh + 3.0 + n as f32 * 10.0], 0xA8A8A8));
         }
         let mut line = false;
+        let view = [y + hh + win.about_h, y + hh + win.about_h + win.room];
         for (n, (r, row)) in list.iter().enumerate() {
+            let cut = r[1] < view[0] || r[1] + r[3] > view[1];
+            if cut {
+                out.push(Shape::ClipStart);
+            }
             match row {
                 WinRow::Group(name) => {
                     out.push(Shape::Text((*name).to_owned(), [r[0] + indent(), r[1] + text_y(r[3])], accent()));
@@ -7636,22 +7835,27 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
                     line = true;
                 }
             }
+            if cut {
+                out.push(Shape::ClipEnd([r[0], view[0], r[0] + r[2], view[1]]));
+            }
         }
         // Its scroll marker.
         let (content, room) = (win.content, win.room);
         if content > room {
             let thumb = (room * room / content).max(10.0);
-            let t = (win.scroll / (content - room)).min(1.0);
+            let t = (super::sunset_smooth::shown(super::sunset_smooth::WINDOW, win.scroll) / (content - room)).min(1.0);
             out.push(Shape::Round([x + ww - 4.0, y + hh + win.about_h + 1.0 + (room - 2.0 - thumb) * t, 2.0, thumb], 1.0, 0x70FF_FFFF));
         }
     }
     // The hovered module's description, under the pointer.
     if let Some(Hit::Module(i)) = hover
         && with(|s| s.gui.drag.is_none())
+        && super::sunset_dashboard::wants_tip(i)
     {
+        let text = if dash { super::sunset_dashboard::short(&modules[i]) } else { modules[i].about };
         let about = match whole {
-            Some(name) => format!("{name}: {}", modules[i].about),
-            None => modules[i].about.to_owned(),
+            Some(name) => format!("{name}: {text}"),
+            None => text.to_owned(),
         };
         let about = about.as_str();
         let tw = game.native_text_width(about);
@@ -7707,6 +7911,10 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
             let tw = game.native_text_width(label);
             out.push(Shape::Text(label.to_owned(), [b[0] + (b[2] - tw) / 2.0, b[1] + text_y(b[3])], 0xFFFFFF));
         }
+    }
+    // The Dashboard has its own search box and reminder.
+    if dash {
+        return;
     }
     // The search box, and over it a reminder of the clicks.
     let search = with(|s| s.gui.search.clone());

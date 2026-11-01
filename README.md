@@ -89,7 +89,7 @@ List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the sa
 ## Features
 
 Speed has Vanilla, Strafe, Smooth, Low Hop and Custom modes. Velocity can scale or blend knockback; Scaffold counts
-your blocks over the hotbar; Fast Place has five speed levels. ClickGUI settings cover scale, spacing, colors
+your blocks over the hotbar; Fast Place has five speed levels. ClickGUI has Dropdown and Dashboard styles; its settings cover scale, spacing, colors
 and panel shape. Advanced controls appear only for relevant modes.
 
 <details>

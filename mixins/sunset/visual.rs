@@ -6,12 +6,13 @@ use super::sunset::{Camera, Canvas, Kind, Module, Setting, Value, line, outline}
 use super::sunset_util::dist;
 
 pub(super) const PALETTE: &[&str] = &[
-    "White", "Gold", "Red", "Orange", "Yellow", "Lime", "Green", "Cyan", "Blue", "Purple", "Pink", "Gray", "Black",
+    "White", "Gold", "Red", "Orange", "Yellow", "Lime", "Green", "Cyan", "Blue", "Purple", "Pink", "Gray", "Black", "Sunset Orange",
 ];
 
 pub(super) fn palette(name: &str) -> u32 {
     match name {
         "Gold" => 0xFFFF_B020,
+        "Sunset Orange" => 0xFFDB_5000,
         "Red" => 0xFFFF_4040,
         "Orange" => 0xFFFF_A030,
         "Yellow" => 0xFFFF_FF50,
