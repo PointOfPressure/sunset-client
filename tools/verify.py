@@ -2253,6 +2253,74 @@ def _():
     return low <= 16 and food > 16 and bread < 8 and apples == 2, f"food {low} -> {food} with it on; {8 - bread} bread eaten, golden apples left {apples}"
 
 
+def hungry(seconds=6, level=255):
+    """The hunger effect drains saturation, then the food bar; easy, as peaceful fills the bar back up (clean() puts
+    peaceful back)."""
+    cmd("difficulty easy", f"effect give @s minecraft:hunger {seconds} {level} true")
+    wait(seconds * 20 + 10)
+    p = state()["player"]
+    return p["food"], p.get("saturation", 0)
+
+
+@test("Auto Eat (blocks in hand)")
+def _():
+    # Blocks in the hand, looking at the floor: Auto Eat eats the bread and never places a block, though the hand is
+    # put back on the blocks every two seconds while it eats (as your keys, Auto Tool or Scaffold do); then it eats
+    # again the next time you are hungry. From the off hand with blocks in the main hand too.
+    slot(0, "cobblestone", 64)
+    slot(2, "bread", 8)
+    ctl("key", "1", "tap")
+    ctl("look", "0", "60")
+    low = hungry()[0]
+    only("autoeat")
+    for _ in range(8):
+        wait(40)
+        ctl("key", "1", "tap")
+    first = state()["player"]["food"]
+    again = hungry()[0]
+    wait(200)
+    second = state()["player"]["food"]
+    only()
+    counts = ctl("inventory").get("counts", {})
+    placed = 64 - counts.get("minecraft:cobblestone", 0)
+    bread = 8 - counts.get("minecraft:bread", 0)
+    reset()
+    slot(0, "cobblestone", 64)
+    cmd("item replace entity @s weapon.offhand with minecraft:bread 8")
+    ctl("key", "1", "tap")
+    ctl("look", "0", "60")
+    off_low = hungry()[0]
+    only("autoeat")
+    wait(200)
+    off_food = state()["player"]["food"]
+    only()
+    held_after = held().get("item")
+    counts = ctl("inventory").get("counts", {})
+    off_placed = 64 - counts.get("minecraft:cobblestone", 0)
+    ok = (low <= 16 and first > 16 and again <= 16 and second > 16 and placed == 0 and off_low <= 16 and off_food > 16
+          and off_placed == 0 and held_after == "minecraft:cobblestone")
+    return ok, (f"food {low} -> {first}, then {again} -> {second}; {bread} bread eaten, {placed} blocks placed; from the off "
+                f"hand: food {off_low} -> {off_food}, {off_placed} blocks placed, holding {held_after} after")
+
+
+@test("Auto Eat (saturation)")
+def _():
+    # Saturation drained to 0, the food bar still above Hunger threshold (16): Food mode Hunger waits, Saturation eats.
+    # (A server tells saturation only as it reaches 0 or as health or food change.)
+    slot(2, "bread", 8)
+    food, sat = hungry(4, 209)
+    only("autoeat")
+    wait(60)
+    waited = state()["player"]["food"]
+    setting("autoeat", "food mode", "Saturation")
+    wait(80)
+    p = state()["player"]
+    only()
+    return food > 16 and sat <= 5 and waited == food and p.get("saturation", 0) > sat, (
+        f"food {food}, saturation {sat:.1f}: Food mode Hunger left food at {waited}, Saturation ate to {p['food']} "
+        f"(saturation {p.get('saturation', 0):.1f})")
+
+
 def break_ticks(pick, block, tries=3):
     """Ticks to break `block` by hand with `pick` (the game's own mining; the least of `tries`), and whether the
     server had it gone every time."""

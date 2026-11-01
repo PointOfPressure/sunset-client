@@ -584,14 +584,16 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Left", true)
             .bool("Right", false)
             .num("Delay (ticks)", 4.0, 1.0, 20.0, 1.0),
-        Module::new("Auto Eat", Player, "Eats food when your hunger or health gets low (Meteor's Auto Eat).")
+        Module::new("Auto Eat", Player, "Eats food when your hunger or health gets low (Meteor's Auto Eat). Food mode says what counts as hungry: the hunger bar at Hunger threshold, saturation at Saturation threshold (a server tells it as it reaches 0, or with a change to your health or hunger), or either.")
             .text("Blacklist", "enchanted_golden_apple,golden_apple,chorus_fruit,poisonous_potato,pufferfish,chicken,rotten_flesh,spider_eye,suspicious_stew")
             .bool("Pause auras", true)
             .bool("Search inventory", false)
             .pick("Food priority", &["Saturation", "Combined", "Hunger"])
             .pick("Threshold mode", &["Any", "Health", "Hunger", "Both"])
+            .pick("Food mode", &["Hunger", "Saturation", "Either"])
             .num("Health threshold", 10.0, 0.0, 19.0, 1.0)
-            .num("Hunger threshold", 16.0, 1.0, 19.0, 1.0),
+            .num("Hunger threshold", 16.0, 1.0, 19.0, 1.0)
+            .num("Saturation threshold", 5.0, 0.0, 20.0, 1.0),
         Module::new("Zoom", Render, "Zooms in.")
             .num("Factor", 4.0, 1.5, 10.0, 0.5)
             .bool("Smooth", true),
@@ -2514,9 +2516,16 @@ pub(super) fn auto_click(game: &mut Game<'_>, m: &Module) {
 
 // Auto Eat (Meteor's): once health or hunger is at its threshold, holds use on the best food (the off hand's first,
 // then the hotbar's, then the inventory's moved into the hotbar), with Kill Aura off meanwhile, until neither is.
+// Each tick it eats from the food it chose: held again if something else took the hand (your keys, Auto Tool,
+// Scaffold), and use is only pressed with food in that hand, so it never uses or places what took its place. A
+// menu, death or Auto Gap stops it, and it starts afresh after.
 pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
-    if !game.native_playing() || super::sunset_player::gap_eating() {
+    let alive = game.player.as_ref().is_some_and(|p| p.health.health() > 0.0);
+    if !game.native_playing() || !alive || super::sunset_player::gap_eating() {
+        if with(|s| s.eating) {
+            eat_stop(game);
+        }
         return;
     }
     if with(|s| s.eating) {
@@ -2529,11 +2538,26 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
             Some(i) => edible(game, m, game.inventory.get(i).and_then(|s| s.as_ref())),
             None => edible(game, m, game.offhand.as_ref()),
         };
-        if !edible {
-            if !food_slot(game, m).is_some_and(|next| eat_from(game, next)) {
-                eat_stop(game);
-                return;
-            }
+        if !edible && !food_slot(game, m).is_some_and(|next| eat_from(game, next)) {
+            eat_stop(game);
+            return;
+        }
+        // The hand went to something else: let go, take the food back (or, eating from the off hand, an empty
+        // hand), and press again next tick.
+        let want = match with(|s| s.eat_slot) {
+            Some(i) => Some(i),
+            None => (!hand_inert(game)).then(|| empty_hotbar(game)).flatten(),
+        };
+        if let Some(i) = want
+            && game.selected != i
+        {
+            let _ = game.play_mouse(MouseButton::Right, false);
+            hold(game, i);
+            return;
+        }
+        if with(|s| s.eat_slot).is_none() && !hand_inert(game) {
+            eat_stop(game);
+            return;
         }
         if game.using.is_none() {
             let _ = game.play_mouse(MouseButton::Right, true);
@@ -2568,7 +2592,13 @@ fn eat_due(game: &Game<'_>, m: &Module) -> bool {
         return false;
     };
     let health = f64::from(p.health.health()) <= m.n("Health threshold");
-    let hunger = f64::from(p.health.food.food) <= m.n("Hunger threshold");
+    let bar = f64::from(p.health.food.food) <= m.n("Hunger threshold");
+    let saturation = f64::from(p.health.food.saturation) <= m.n("Saturation threshold");
+    let hunger = match m.p("Food mode") {
+        "Saturation" => saturation,
+        "Either" => bar || saturation,
+        _ => bar,
+    };
     match m.p("Threshold mode") {
         "Health" => health,
         "Hunger" => hunger,
@@ -2589,9 +2619,20 @@ fn edible(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items::Ite
     info.food.is_some() && !super::sunset_util::listed(m.t("Blacklist"), &stack.item) && (hungry || info.can_always_eat)
 }
 
-// Where to eat from: None for the off hand, else the inventory slot (0 to 8 the hotbar) of the best food.
+// A right click with this in the main hand does nothing, so the off hand eats: an empty hand, a sword, pickaxe or
+// mace. (A block would be placed, and axes, hoes, shovels, spears, pearls and the like have uses of their own.)
+fn hand_inert(game: &Game<'_>) -> bool {
+    game.held().is_none_or(|s| ["_sword", "_pickaxe", ":mace"].iter().any(|t| s.item.ends_with(t)))
+}
+
+fn empty_hotbar(game: &Game<'_>) -> Option<usize> {
+    (0..9).find(|&h| game.inventory.get(h).is_some_and(Option::is_none))
+}
+
+// Where to eat from: None for the off hand (while the main hand does nothing, or an empty hotbar slot can take it),
+// else the inventory slot (0 to 8 the hotbar) of the best food.
 fn food_slot(game: &Game<'_>, m: &Module) -> Option<Option<usize>> {
-    if edible(game, m, game.offhand.as_ref()) {
+    if edible(game, m, game.offhand.as_ref()) && (hand_inert(game) || empty_hotbar(game).is_some()) {
         return Some(None);
     }
     let value = |i: usize| -> Option<f32> {
@@ -2610,17 +2651,23 @@ fn food_slot(game: &Game<'_>, m: &Module) -> Option<Option<usize>> {
     found.map(|(i, _)| Some(i))
 }
 
-// Holds the food: the off hand as it is, a hotbar slot selected, or food from the inventory moved to an empty
-// hotbar slot first. False when there is no room for it.
+// Holds the food: the off hand (with an empty main hand if what it holds would act first), a hotbar slot selected,
+// or food from the inventory moved to an empty hotbar slot first. False when there is no room for it.
 fn eat_from(game: &mut Game<'_>, slot: Option<usize>) -> bool {
     let at = match slot {
         None => {
+            if !hand_inert(game) {
+                let Some(empty) = empty_hotbar(game) else {
+                    return false;
+                };
+                hold(game, empty);
+            }
             with(|s| s.eat_slot = None);
             return true;
         }
         Some(i) if i < 9 => i,
         Some(i) => {
-            let Some(empty) = (0..9).find(|&h| game.inventory.get(h).is_some_and(Option::is_none)) else {
+            let Some(empty) = empty_hotbar(game) else {
                 return false;
             };
             menu_click(game, &[(i, horizon_client::menu::Input::Pickup), (empty, horizon_client::menu::Input::Pickup)]);
@@ -2634,14 +2681,12 @@ fn eat_from(game: &mut Game<'_>, slot: Option<usize>) -> bool {
 
 fn eat_stop(game: &mut Game<'_>) {
     use winit::event::MouseButton;
-    let (prev, from_hand, aura) = with(|s| {
+    let (prev, aura) = with(|s| {
         s.eating = false;
-        (s.eat_prev, s.eat_slot.is_none(), std::mem::take(&mut s.eat_paused_aura))
+        (s.eat_prev, std::mem::take(&mut s.eat_paused_aura))
     });
-    if !from_hand {
-        hold(game, prev);
-    }
     let _ = game.play_mouse(MouseButton::Right, false);
+    hold(game, prev);
     if aura {
         toggle_named(game, "Kill Aura", true);
     }
