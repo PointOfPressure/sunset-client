@@ -106,6 +106,10 @@ and panel shape. Advanced controls appear only for relevant modes.
 
 Kill Aura, Trigger Bot and Aim Assist can skip bots (**Anti bot**: players the server's player list doesn't show) and
 players on your own team (**Ignore teams**). **HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
+Kill Aura hits one target (**Single**, with **Target lock** to stay on it), each in turn (**Switch**) or several (**Multi**).
+**Rotation mode** is Snap, Normal, Smooth or Custom (its own yaw and pitch speeds), told only to the server or also turning
+your view (**Rotation view**). **Ray cast** hits only when the look really meets the target's box.
+It waits while another module has the hand, skips broken weapons, and stabs with spears; a stab never goes through a friend.
 
 Not here (no clean way to do it in Horizon yet): Jesus, Click TP, and the Baritone-based
 Highway Builder and Infinity Miner.
@@ -153,7 +157,7 @@ See the [feature roadmap](docs/feature-roadmap.md) for what has landed, what is 
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and Legit mode, Time and Weather Changer fixes, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro, Anchor Macro, Kill Aura, Shield Breaker, Mace, Spear Swap, W Tap, Jump Reset, Friend Guard, Auto Inventory Totem, Hover Totem, FastXP, Key Throw). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and Legit mode, Kill Aura, Time and Weather Changer fixes, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro, Anchor Macro, Shield Breaker, Mace, Spear Swap, W Tap, Jump Reset, Friend Guard, Auto Inventory Totem, Hover Totem, FastXP, Key Throw). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 

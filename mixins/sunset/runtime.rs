@@ -313,6 +313,18 @@ impl Module {
                 "Blend %" => self.p("Mode") == "Blend",
                 _ => true,
             },
+            "Kill Aura" => {
+                let always = self.p("Rotate") == "Always";
+                match name {
+                    "Rotation mode" | "Rotation view" => always,
+                    "Yaw speed" | "Pitch speed" | "Smoothing" => always && self.p("Rotation mode") == "Custom",
+                    "Max targets" => self.p("Attack mode") == "Multi",
+                    "Target lock" => self.p("Attack mode") == "Single",
+                    "Target switch delay" => self.p("Attack mode") != "Multi",
+                    "Hit delay" => self.p("Attack timing") == "Custom delay",
+                    _ => true,
+                }
+            }
             "Scaffold" => {
                 let legit = self.p("Mode") == "Legit";
                 match name {
@@ -994,8 +1006,18 @@ impl State {
                         .map(|n| ("airknockbackvertical", (n / 100.0).to_string())),
                     ("scaffold", "rotation") => Some(("rotate", (norm(v) != "none").to_string())),
                     ("scaffold", "maxdistance") => Some(("maxplacementdistance", v.to_owned())),
+                    // Kill Aura before its Attack timing, and when Switch delay was its only one.
+                    ("killaura", "customdelay") => Some(("attacktiming", if v == "true" { "Custom delay" } else { "Vanilla cooldown" }.to_owned())),
+                    ("killaura", "switchdelay") => Some(("weaponswitchdelay", v.to_owned())),
                     _ => None,
                 };
+                // Before Attack mode, more than one target meant hitting them all. A newer config's own Attack mode
+                // comes after this line and has the last word.
+                if id == "killaura" && field == "maxtargets" && v.parse::<f64>().is_ok_and(|n| n > 1.0)
+                    && let Some(s) = m.settings.iter_mut().find(|s| norm(s.name) == "attackmode")
+                {
+                    s.parse("Multi");
+                }
                 if let Some((target, value)) = migrated {
                     if let Some(s) = m.settings.iter_mut().find(|s| norm(s.name) == target) { s.parse(&value); }
                     return;
@@ -1496,7 +1518,10 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
             },
             "Velocity" => with(|s| { s.velocity = None; s.blast = [0.0; 3]; }),
             "Crystal Aura" => super::sunset_crystal_aura::disabled(game),
-            "Kill Aura" => super::sunset_aura::disabled(game),
+            "Kill Aura" => {
+                let swap_back = with(|s| s.module("Kill Aura").is_some_and(|m| m.b("Swap back")));
+                super::sunset_aura::disabled(game, swap_back);
+            }
             "Anchor Aura" => super::sunset_anchor_aura::disabled(game),
             "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
             _ => {},
@@ -1749,13 +1774,15 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         return;
     }
     if super::sunset_combat_control::begin_tick(game) {
+        strikes(Vec::clear);
         super::sunset_melee::cancel(game);
-        super::sunset_aura::reset();
     }
     combat_packets(game, &packets);
     ensure_loaded(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     crit_sprint_back(game);
+    send_strikes(game);
+    super::sunset_melee::due(game);
     let mods = snapshot();
     super::sunset_render::pre_tick(game, &mods);
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
@@ -2853,7 +2880,7 @@ fn eat_stop(game: &mut Game<'_>) {
     }
 }
 
-fn toggle_named(game: &mut Game<'_>, name: &str, on: bool) {
+pub(super) fn toggle_named(game: &mut Game<'_>, name: &str, on: bool) {
     if let Some(i) = with(|s| s.find(name)) {
         toggle(game, i, on);
     }
@@ -4064,16 +4091,64 @@ pub(super) fn crit_click(game: &mut Game<'_>) -> Option<bool> {
     Some(false)
 }
 
-pub(super) fn strike(game: &mut Game<'_>, id: u32) {
+// Hits wait for the start of the next tick: the game's own attack goes out with the input, before the tick's move
+// packet, and modules run after it. By then the server also has the look the last move packet carried. A critical
+// hit is marked: the sprint it stopped comes back the tick after it goes.
+static STRIKES: Mutex<Vec<(u32, bool)>> = Mutex::new(Vec::new());
+
+fn strikes<R>(f: impl FnOnce(&mut Vec<(u32, bool)>) -> R) -> R {
+    f(&mut STRIKES.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+pub(super) fn strike(_game: &mut Game<'_>, id: u32) {
+    strikes(|q| q.push((id, false)));
+}
+
+// A hit is on its way: the attack cooldown has not restarted yet, so nothing else may hit this tick.
+pub(super) fn strike_waiting() -> bool {
+    strikes(|q| !q.is_empty())
+}
+
+fn send_strikes(game: &mut Game<'_>) {
+    for (id, critical) in strikes(std::mem::take) {
+        if game.remote.is_some() {
+            strike_now(game, id);
+        }
+        if critical {
+            crit_done();
+        }
+    }
+}
+
+fn strike_now(game: &mut Game<'_>, id: u32) {
+    // Gone since the hit was decided: the id may be someone else's by now.
+    if !game.mobs.iter().any(|m| m.id == id && m.alive() && !m.removed) {
+        return;
+    }
     if let Some(m) = with(|s| s.module("Auto Weapon").filter(|m| m.on).cloned())
         && let Some(slot) = best_weapon(game, m.b("Prefer axes"))
     {
         hold(game, slot);
     }
-    game.send(S::Attack(play::Attack { id: id as i32 }));
-    game.swing_arm();
-    game.send(S::Punch(Empty));
-    game.reset_attack_strength();
+    // Shield Breaker's axe or Mace's mace for this hit, and the slot it goes back to after.
+    let back = super::sunset_melee::strike_weapon(game, id);
+    // A spear stabs along the look instead, as the game's own left click does.
+    if let Some(kinetic) = game.held().and_then(|s| horizon_client::spear::Kinetic::of(&s.item)) {
+        if !game.cannot_attack_with_item(game.hand_strength.ticker, 0) {
+            game.send(S::PlayerAction(play::PlayerAction { action: 8, pos: [0; 3], direction: 0, sequence: 0 }));
+            game.hand_strength.reset_attack();
+            game.swing_hand(horizon_client::first_person::Hand::Main, kinetic.attack_animation());
+            game.play_at_feet(kinetic.attack_sound);
+        }
+    } else {
+        game.send(S::Attack(play::Attack { id: id as i32 }));
+        game.swing_arm();
+        game.send(S::Punch(Empty));
+        game.reset_attack_strength();
+    }
+    if let Some(slot) = back {
+        hold(game, slot);
+    }
 }
 
 // The Criticals hop, a tick at a time. The regular position packet of a tick
@@ -4104,7 +4179,7 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
             match with(|s| s.crit_target.take().map(|id| (id, s.crit_look.take()))) {
                 Some((id, Some((yaw, pitch)))) => turn_then("Attack", yaw, pitch, move |game| crit_strike(game, id)),
                 Some((id, None)) => crit_strike(game, id),
-                None => crit_given_up(),
+                None => crit_done(),
             }
         }
         return;
@@ -4112,7 +4187,7 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
     if ticks > 6 {
         CRIT_STAGE.store(0, Ordering::Relaxed);
         with(|s| s.crit_target = None);
-        crit_given_up();
+        crit_done();
         return;
     }
     if stage < CRIT_HIT && !MOVED_THIS_TICK.load(Ordering::Relaxed) {
@@ -4127,20 +4202,19 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
         CRIT_STAGE.store(0, Ordering::Relaxed);
         match with(|s| s.crit_target.take()) {
             Some(id) => crit_strike(game, id),
-            None => crit_given_up(),
+            None => crit_done(),
         }
     }
 }
 
 // A critical hit, with the sprint stopped since it was planned (CRIT_SPRINT): it gives up sprinting's extra
 // knockback, as a critical one does in vanilla.
-fn crit_strike(game: &mut Game<'_>, id: u32) {
-    strike(game, id);
-    let _ = CRIT_SPRINT.compare_exchange(CRIT_SPRINT_STOPPED, CRIT_SPRINT_DUE, Ordering::Relaxed, Ordering::Relaxed);
+fn crit_strike(_game: &mut Game<'_>, id: u32) {
+    strikes(|q| q.push((id, true)));
 }
 
-// No hit after all: the sprint goes back on next tick all the same.
-fn crit_given_up() {
+// The critical hit went, or none will: the sprint Criticals stopped goes back on next tick.
+fn crit_done() {
     let _ = CRIT_SPRINT.compare_exchange(CRIT_SPRINT_STOPPED, CRIT_SPRINT_DUE, Ordering::Relaxed, Ordering::Relaxed);
 }
 
@@ -4170,6 +4244,7 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
         || game.remote.is_none()
         || game.using.is_some()
         || CRIT_STAGE.load(Ordering::Relaxed) != 0
+        || strike_waiting()
     {
         return;
     }
@@ -4509,8 +4584,9 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
 fn combat_cleanup(game: &mut Game<'_>) {
     super::sunset_combat_control::prepare_cleanup(game);
     super::sunset_combat_macros::reset(game);
+    strikes(Vec::clear);
     super::sunset_melee::cancel(game);
-    super::sunset_aura::disabled(game);
+    super::sunset_aura::disabled(game, false);
     super::sunset_combat_inventory::cancel(game);
     super::sunset_combat_control::reset();
     super::sunset_crystal_aura::disabled(game);
@@ -4690,6 +4766,7 @@ const HELP: &[(&str, &str)] = &[
     (".reset <module>", "put a module back to its defaults"),
     (".panic", "turn every module off and hide Sunset (.panic again brings it back)"),
     (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
+    (".auradebug", "why Kill Aura did what it did last, and who has the hand"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
     (".vclip <blocks>", "move up or down"),
@@ -4849,6 +4926,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         found
     };
     match cmd.as_str() {
+        "auradebug" => say(game, &super::sunset_aura::diagnostics()),
         "help" | "commands" => {
             say(game, "Commands:");
             for (c, d) in HELP {

@@ -1,6 +1,6 @@
 # A test probe for tools/verify.py, staged next to Sunset on the test machine only (never packed or shipped):
 # once a frame, just before the frame is drawn, it appends what the frame is drawn from to the file named by
-# the SUNSET_PROBE environment variable; and each move packet and end of a client tick as it goes on the wire.
+# the SUNSET_PROBE environment variable; and each move packet, hit and end of a client tick as it goes on the wire.
 [mod]
 id = "probe"
 version = "0.1.0"

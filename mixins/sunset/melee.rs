@@ -1,6 +1,6 @@
 // The melee helpers from Rust's PR #16: Shield Breaker, Mace, Spear Swap, W Tap, Jump Reset and Friend Guard, and
-// what Kill Aura takes from them (the weapon for a hit, a slot borrowed for one hit, the hit itself). Hits use the
-// game's own inventory, movement, item components, packets and spear ray.
+// the weapon they pick for Kill Aura's and Trigger Bot's hits. Hits use the game's own inventory, movement, item
+// components, packets and spear ray.
 use super::sunset::{Category, Module, gui_open, hold, try_turn_then, with};
 use super::sunset_combat_control as control;
 use super::sunset_mace_policy as mace_policy;
@@ -84,6 +84,9 @@ struct State {
     friend_hint_at: Option<Instant>,
     friend_hint: Option<u32>,
     jump_owner: Option<&'static str>,
+    // A hit whose look the server has: it goes at the start of the next tick, before that tick's move packet, as the
+    // game's own attack does.
+    due: Option<Box<dyn for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send>>,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -117,16 +120,6 @@ fn allowed(game: &Game<'_>) -> bool {
         && !game.right
         && !with(|s| s.is_on("Blink"))
         && game.mobs.len() <= policy::POPULATION_LIMIT
-}
-
-// A module may hit this tick: nothing else hit or used an item in it, no Criticals hop is going, and `owner` may
-// have the hand.
-pub(super) fn attack_allowed(game: &Game<'_>, owner: &str) -> bool {
-    allowed(game)
-        && !acted(game)
-        && game.clicks.miss_time <= 0
-        && control::available(owner)
-        && super::sunset::CRIT_STAGE.load(std::sync::atomic::Ordering::Relaxed) == 0
 }
 
 pub(super) fn note_action(game: &Game<'_>) {
@@ -182,26 +175,6 @@ pub(super) fn slot_strength(game: &Game<'_>, slot: usize, partial: f32) -> Optio
         game.potions.effects.modifiers().into_iter().filter(|m| m.0 == "minecraft:attack_speed").map(|m| m.2);
     let speed = policy::attack_speed(modifier, modifiers)?;
     (speed > 0.0).then(|| game.hand_strength.scale(partial, speed))
-}
-
-// Hits `id` (a spear stabs along the look instead), as the game's own attack does. False: Friend Guard stopped it.
-pub(super) fn send_hit_at(game: &mut Game<'_>, id: u32, yaw: f32, pitch: f32) -> bool {
-    if guard_attack(game, id) {
-        return false;
-    }
-    if let Some(kinetic) = game.held().and_then(|s| Kinetic::of(&s.item)) {
-        if guard_stab_at(game, yaw, pitch) {
-            return false;
-        }
-        stab(game, kinetic);
-    } else {
-        game.send(S::Attack(play::Attack { id: id as i32 }));
-        game.swing_arm();
-        game.send(S::Punch(Empty));
-        game.reset_attack_strength();
-    }
-    claim_tick(game);
-    true
 }
 
 // A spear's stab: the game's PlayerAction 8, the swing and the sound.
@@ -498,7 +471,7 @@ fn best_mace(game: &Game<'_>, target: &Mob, m: &Module) -> Option<usize> {
 
 // A slot to hit `id` with, and whether to go back after.
 #[derive(Clone, Copy)]
-pub(super) struct WeaponPlan {
+struct WeaponPlan {
     pub slot: usize,
     pub owner: &'static str,
     pub restore: bool,
@@ -506,7 +479,7 @@ pub(super) struct WeaponPlan {
 
 // The weapon Shield Breaker (an axe at a raised shield) or Mace (a smash, or Breach doing 15% more) wants for a hit
 // on `id`. It only chooses: whoever hits switches and goes back.
-pub(super) fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
+fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
     if !allowed(game) {
         return None;
     }
@@ -533,11 +506,6 @@ pub(super) fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
         }
     }
     Some(WeaponPlan { slot, owner: MACE, restore: m.b("Swap back") })
-}
-
-// Kill Aura borrows hotbar `slot` for a hit: `done` is its hold on the hand, kept until the slot goes back.
-pub(super) fn borrow_slot(game: &mut Game<'_>, owner: &'static str, slot: usize, restore: bool, done: control::Finish) -> bool {
-    take_slot(game, WeaponPlan { slot, owner, restore }, 1, Some(done))
 }
 
 // `owner` turned off: its look waiting and its borrowed slot go.
@@ -624,7 +592,7 @@ pub(super) fn cancel(game: &mut Game<'_>) {
     });
 }
 
-// Kill Aura's Crits: Jump and Key Throw's wind charge jump press the jump key for the next tick, while `owner` is on.
+// Key Throw's wind charge jump presses the jump key for the next tick, while `owner` is on.
 pub(super) fn request_jump(owner: &'static str) {
     state(|s| s.jump_owner = Some(owner));
 }
@@ -866,8 +834,15 @@ enum Automatic {
     Jab { slot: usize, lunge: bool },
 }
 
-// A hit of the melee modules' own: after the server has your look, checked again (the same world, slot, item and
-// settings, under 200 ms), the slot switched for one hit and the hit sent.
+// The start of a tick: the hit queue_action has ready goes.
+pub(super) fn due(game: &mut Game<'_>) {
+    if let Some(hit) = state(|s| s.due.take()) {
+        hit(game);
+    }
+}
+
+// A hit of the melee modules' own: once the server has your look, at the start of the next tick, checked again (the
+// same world, slot, item and settings, under 200 ms), the slot switched for one hit and the hit sent.
 fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
     let owner = m.name;
     if state(|s| s.lease.is_some() || s.queued.is_some()) || !control::claim(owner) {
@@ -886,7 +861,7 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
         s.queued = Some(owner);
         s.queued_since = Some(queued);
     });
-    let accepted = try_turn_then(owner, yaw, pitch, move |game| {
+    let accepted = try_turn_then(owner, yaw, pitch, move |_| state(|s| s.due = Some(Box::new(move |game: &mut Game<'_>| {
         let done = done;
         if state(|s| s.queued_since) == Some(queued) {
             state(|s| s.queued = None);
@@ -963,7 +938,7 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
             }
         }
         claim_tick(game);
-    });
+    }))));
     if !accepted && state(|s| s.queued_since) == Some(queued) {
         state(|s| s.queued = None);
     }
@@ -1056,16 +1031,8 @@ fn broken_shield(game: &Game<'_>, id: u32) -> bool {
     state(|s| s.broken_shield.is_some_and(|(target, until)| target == id && game.ticks < until) || s.mace.shield_attempted(id, game.ticks))
 }
 
-// A hit on `id` would only land on a raised shield (and Shield Breaker has no axe for it): Kill Aura leaves them.
-pub(super) fn wasted_on_shield(game: &Game<'_>, id: u32) -> bool {
-    observed_shield(game, id)
-        && !broken_shield(game, id)
-        && !game.held().and_then(|s| game.res.items().get(&s.item)).is_some_and(|info| info.disable_blocking_seconds > 0.0)
-        && !(module(SHIELD).is_some() && best_axe(game).is_some())
-}
-
 // Falling far enough onto `id` for Mace's smash, with a mace in hand or to swap to.
-pub(super) fn smash_ready(game: &Game<'_>, id: u32) -> bool {
+fn smash_ready(game: &Game<'_>, id: u32) -> bool {
     let (Some(m), Some(p)) = (module(MACE), game.player.as_ref()) else {
         return false;
     };
@@ -1081,26 +1048,16 @@ fn can_hold_smash(game: &mut Game<'_>, id: u32) -> bool {
     super::sunset_mace_native::continuation(game, id, yaw, pitch).unwrap_or(false)
 }
 
-// Kill Aura's smash waits a tick (Smash timing Delayed, the cooldown nearly back, the target still hurt, sprinting)
-// while the target stays in reach.
-pub(super) fn holds_smash(game: &mut Game<'_>, id: u32) -> bool {
-    let Some(m) = module(MACE) else {
-        return false;
-    };
-    if !smash_ready(game, id) || !can_hold_smash(game, id) {
-        return false;
+// A hit from Kill Aura or Trigger Bot on `id`, about to go: Shield Breaker's axe at a raised shield or Mace's mace
+// goes in hand for it (a smash uses up the fall). The slot to go back to after, if it is to.
+pub(super) fn strike_weapon(game: &mut Game<'_>, id: u32) -> Option<usize> {
+    let plan = preferred_weapon(game, id)?;
+    let previous = game.selected;
+    if plan.owner == MACE && game.player.as_ref().is_some_and(|p| p.fall_distance > 1.5 && !p.fall_flying) {
+        state(|s| s.mace.accepted(mace_policy::Intent::Smash, 0, 0));
     }
-    let charge = slot_strength(game, game.selected, 0.5).unwrap_or(0.0);
-    let future = slot_strength(game, game.selected, 1.5).unwrap_or(0.0);
-    m.p("Smash timing") == "Delayed"
-        || (charge <= 0.9 && future > 0.9)
-        || game.mobs.iter().any(|t| t.id == id && t.hurt_time > 0)
-        || game.player.as_ref().is_some_and(|p| p.sprinting)
-}
-
-// Kill Aura smashed: that fall is used.
-pub(super) fn note_smash() {
-    state(|s| s.mace.accepted(mace_policy::Intent::Smash, 0, 0));
+    hold(game, plan.slot);
+    (plan.restore && plan.slot != previous).then_some(previous)
 }
 
 fn smash_intent(game: &mut Game<'_>, m: &Module, id: u32) -> mace_policy::Intent {
