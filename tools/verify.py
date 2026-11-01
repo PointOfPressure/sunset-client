@@ -3000,12 +3000,22 @@ def _():
     ctl("key", "1", "tap")
     setting("killaura", "range", "3")
 
+    # The test's own teleports back to the start are not the server putting you back.
+    back = {"n": 0}
+
     def run_past():
         if pos()[0] > X0 + 5:
+            back["n"] += 1
             ctl("chat", f"/tp @s {X0 - 4.5} {Y + 1} {Z0 + 0.5} -90 0")
     ctl("chat", f"/tp @s {X0 - 4.5} {Y + 1} {Z0 + 0.5} -90 0")
     only("criticals", "killaura", "sprint")
-    rates["Packet, Kill Aura sprinting"] = crit_run(50, run_past, keys=("w",), look=False)
+    n, c, t = crit_run(50, run_past, keys=("w",), look=False)
+    rates["Packet, Kill Aura sprinting"] = (n, c, t if t is None else t - back["n"])
+    # Jumping in place in front of it, at Kill Aura's usual range.
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    setting("killaura", "range", "4.5")
     only("criticals", "killaura")
     rates["Packet, Kill Aura jumping"] = crit_run(50, keys=("space",))
     only()

@@ -1064,6 +1064,13 @@ const CRIT_HIT: u8 = 4;
 const CRIT_FALL: u8 = 5;
 static CRIT_HOP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static CRIT_JUMP: AtomicBool = AtomicBool::new(false);
+// A server takes no critical hit from a sprinting player, and Horizon's applies all the sprint commands of a tick
+// before its hits: so a critical hit's sprint stop goes out when the hit is planned, ticks before it, and the sprint
+// comes back the tick after it. CRIT_SPRINT_STOPPED: the server was told the sprint stopped; CRIT_SPRINT_DUE: the hit
+// went, the sprint goes back on next tick.
+static CRIT_SPRINT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+const CRIT_SPRINT_STOPPED: u8 = 1;
+const CRIT_SPRINT_DUE: u8 = 2;
 // A move packet went out this tick (the game's or Sunset's): Sunset never sends a second.
 static MOVED_THIS_TICK: AtomicBool = AtomicBool::new(false);
 // Blink held at least one move packet.
@@ -1711,6 +1718,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     ensure_loaded(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
+    crit_sprint_back(game);
     let mods = snapshot();
     super::sunset_render::pre_tick(game, &mods);
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
@@ -3845,6 +3853,9 @@ pub(super) fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(
         s.crit_falls = 0;
         s.crit_look = rotate;
     });
+    if game.player.as_ref().is_some_and(|p| p.sprinting) && CRIT_SPRINT.swap(CRIT_SPRINT_STOPPED, Ordering::Relaxed) == 0 {
+        sprint_command(game, 2);
+    }
     match plan {
         Crit::Hop(height) => {
             CRIT_HOP.store(height.to_bits(), Ordering::Relaxed);
@@ -3929,11 +3940,10 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
         });
         if falls >= 2 || (ground && ticks > 3) || ticks > 20 {
             CRIT_STAGE.store(0, Ordering::Relaxed);
-            if let Some((id, look)) = with(|s| s.crit_target.take().map(|id| (id, s.crit_look.take()))) {
-                match look {
-                    Some((yaw, pitch)) => turn_then("Attack", yaw, pitch, move |game| crit_strike(game, id)),
-                    None => crit_strike(game, id),
-                }
+            match with(|s| s.crit_target.take().map(|id| (id, s.crit_look.take()))) {
+                Some((id, Some((yaw, pitch)))) => turn_then("Attack", yaw, pitch, move |game| crit_strike(game, id)),
+                Some((id, None)) => crit_strike(game, id),
+                None => crit_given_up(),
             }
         }
         return;
@@ -3941,6 +3951,7 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
     if ticks > 6 {
         CRIT_STAGE.store(0, Ordering::Relaxed);
         with(|s| s.crit_target = None);
+        crit_given_up();
         return;
     }
     if stage < CRIT_HIT && !MOVED_THIS_TICK.load(Ordering::Relaxed) {
@@ -3953,24 +3964,40 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
     }
     if CRIT_STAGE.load(Ordering::Relaxed) == CRIT_HIT {
         CRIT_STAGE.store(0, Ordering::Relaxed);
-        if let Some(id) = with(|s| s.crit_target.take()) {
-            crit_strike(game, id);
+        match with(|s| s.crit_target.take()) {
+            Some(id) => crit_strike(game, id),
+            None => crit_given_up(),
         }
     }
 }
 
-// A critical hit: a server takes none from a sprinting player, so the sprint stops for the hit and goes on after it
-// (the hit gives up sprinting's extra knockback, as a critical one does in vanilla).
+// A critical hit, with the sprint stopped since it was planned (CRIT_SPRINT): it gives up sprinting's extra
+// knockback, as a critical one does in vanilla.
 fn crit_strike(game: &mut Game<'_>, id: u32) {
-    let sprinting = game.player.as_ref().is_some_and(|p| p.sprinting);
-    let me = game.remote.as_ref().map_or(0, |r| r.entity_id);
-    if sprinting {
-        game.send(S::PlayerCommand(play::PlayerCommand { id: me, action: 2, data: 0 }));
-    }
     strike(game, id);
-    if sprinting {
-        game.send(S::PlayerCommand(play::PlayerCommand { id: me, action: 1, data: 0 }));
+    let _ = CRIT_SPRINT.compare_exchange(CRIT_SPRINT_STOPPED, CRIT_SPRINT_DUE, Ordering::Relaxed, Ordering::Relaxed);
+}
+
+// No hit after all: the sprint goes back on next tick all the same.
+fn crit_given_up() {
+    let _ = CRIT_SPRINT.compare_exchange(CRIT_SPRINT_STOPPED, CRIT_SPRINT_DUE, Ordering::Relaxed, Ordering::Relaxed);
+}
+
+// Before the tick after the hit (its own tick's packets have gone): the sprint Criticals stopped goes back on, if you
+// still sprint (else the server already has it right).
+fn crit_sprint_back(game: &mut Game<'_>) {
+    if CRIT_SPRINT.load(Ordering::Relaxed) == CRIT_SPRINT_DUE {
+        CRIT_SPRINT.store(0, Ordering::Relaxed);
+        if game.player.as_ref().is_some_and(|p| p.sprinting) {
+            sprint_command(game, 1);
+        }
     }
+}
+
+// START_SPRINTING (1) or STOP_SPRINTING (2) for the player.
+fn sprint_command(game: &mut Game<'_>, action: i32) {
+    let me = game.remote.as_ref().map_or(0, |r| r.entity_id);
+    game.send(S::PlayerCommand(play::PlayerCommand { id: me, action, data: 0 }));
 }
 
 pub(super) fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
