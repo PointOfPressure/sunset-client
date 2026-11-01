@@ -1,0 +1,315 @@
+{
+  "baseline": "380b403d58de8da4475c37e3773aaba93ab47959",
+  "host": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "mixins_tool": "cb1ad23022392d88f006cf94cbf6552a73f5df12",
+  "cpu": "AMD Ryzen 5 4600H",
+  "gpu": "NVIDIA GeForce GTX1650 Ti",
+  "backend": "Vulkan, NVIDIA581.80",
+  "framebuffer": [
+    1600,
+    900
+  ],
+  "method": "Entire native game frame counter delta / native uptime delta, cross-checked with native bench. Fresh generated singleplayer world per launch, offscreen rendering, simulation and terrain active, no Cargo during timing. Three10s samples per side per pair. No microbenchmark FPS claim.",
+  "scene": {
+    "seed": 1,
+    "terrain": "test terrain; stone plane y119, player0.5,120,0.5, yaw0/pitch0",
+    "render_distance": 2,
+    "vsync": false,
+    "fps": "unlimited (native maxFps260)",
+    "mobs": "96 NoAI/NoGravity/Invulnerable sheep in12x8 grid; x=(column-5.5)*1.7,z=4+row*2,y120",
+    "active": [
+      "ESP",
+      "Nametags (Mobs=true,Max128)",
+      "HUD"
+    ],
+    "gui": "search esp, scale2, Background dim0",
+    "frozen": "time6000, weather clear, advance_time=false, spawn_mobs=false, random_tick_speed0"
+  },
+  "pairs": [
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "fps_change_percent": 17.48503597009865,
+      "low1_change_percent": -3.1503172717304184,
+      "runs": {
+        "after": {
+          "client_sha256": "111d9cacc80c313fe87d000321a4d9f5cc251fb64cf15a64a4989467f63d1ef2",
+          "package_sha256": "96fe839170d621cb5ba3b9fee5ff6cfeab78901397ff83e17eebc83388d7bd83",
+          "runtime_sha256": "a5bf11d020514a172b709f4ce8a1f44ce2819b7b92a07c15b7a8fba80fa54703",
+          "median_fps": 243.0717400547445,
+          "median_1pct_low_fps": 102.42094308245132,
+          "normal_exit": 0,
+          "samples": [
+            {
+              "frames": 2461,
+              "uptime_seconds": 10.114126900000002,
+              "whole_game_fps": 243.32302969226137,
+              "native_bench_fps": 243.59496243333612,
+              "native_1pct_low_fps": 102.42094308245132,
+              "simulation_ticks": 202
+            },
+            {
+              "frames": 2455,
+              "uptime_seconds": 10.0998989,
+              "whole_game_fps": 243.0717400547445,
+              "native_bench_fps": 243.2559513438858,
+              "native_1pct_low_fps": 116.77391957068444,
+              "simulation_ticks": 202
+            },
+            {
+              "frames": 2327,
+              "uptime_seconds": 10.114383099999998,
+              "whole_game_fps": 230.068406248128,
+              "native_bench_fps": 230.32632375369144,
+              "native_1pct_low_fps": 87.84522290926584,
+              "simulation_ticks": 202
+            }
+          ],
+          "control_fps": 2060.829442483585,
+          "fixed_camera": [
+            0,
+            0
+          ],
+          "camera_verified_all_samples": true
+        },
+        "before": {
+          "client_sha256": "11c0deed10d893c49ee435256de5f43d3a2f99d0a8370cad0e7eeb2288442267",
+          "package_sha256": "3c77bc050937d2735bda98a2430574d58efe780efaaa014e861b27dc5c3c7bec",
+          "runtime_sha256": "53a6c173e826ea94311580ca4c4842efbde970bff021141ca8d324afc8dde070",
+          "median_fps": 206.89591491175878,
+          "median_1pct_low_fps": 105.75248178129088,
+          "normal_exit": 0,
+          "samples": [
+            {
+              "frames": 2083,
+              "uptime_seconds": 10.104924499999996,
+              "whole_game_fps": 206.13711661081692,
+              "native_bench_fps": 206.25457235451285,
+              "native_1pct_low_fps": 105.75248178129088,
+              "simulation_ticks": 202
+            },
+            {
+              "frames": 2121,
+              "uptime_seconds": 10.110926399999997,
+              "whole_game_fps": 209.77306293120685,
+              "native_bench_fps": 210.01924756366017,
+              "native_1pct_low_fps": 143.92565112785232,
+              "simulation_ticks": 202
+            },
+            {
+              "frames": 2095,
+              "uptime_seconds": 10.125864500000006,
+              "whole_game_fps": 206.89591491175878,
+              "native_bench_fps": 207.24264734805917,
+              "native_1pct_low_fps": 104.28144797938384,
+              "simulation_ticks": 203
+            }
+          ],
+          "control_fps": 2146.186449108832,
+          "fixed_camera": [
+            0,
+            0
+          ],
+          "camera_verified_all_samples": true
+        }
+      },
+      "same_settings": true
+    },
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "fps_change_percent": 21.27730045270313,
+      "low1_change_percent": 32.096644818182774,
+      "runs": {
+        "before": {
+          "client_sha256": "11c0deed10d893c49ee435256de5f43d3a2f99d0a8370cad0e7eeb2288442267",
+          "package_sha256": "3c77bc050937d2735bda98a2430574d58efe780efaaa014e861b27dc5c3c7bec",
+          "runtime_sha256": "53a6c173e826ea94311580ca4c4842efbde970bff021141ca8d324afc8dde070",
+          "median_fps": 200.7320317863124,
+          "median_1pct_low_fps": 106.07967779435548,
+          "normal_exit": 0,
+          "samples": [
+            {
+              "frames": 2032,
+              "uptime_seconds": 10.122948399999999,
+              "whole_game_fps": 200.7320317863124,
+              "native_bench_fps": 201.0042652850679,
+              "native_1pct_low_fps": 106.07967779435548,
+              "simulation_ticks": 202
+            },
+            {
+              "frames": 2028,
+              "uptime_seconds": 10.10483450000001,
+              "whole_game_fps": 200.6960133785465,
+              "native_bench_fps": 200.79517292560456,
+              "native_1pct_low_fps": 98.54297110416738,
+              "simulation_ticks": 202
+            },
+            {
+              "frames": 2052,
+              "uptime_seconds": 10.1161551,
+              "whole_game_fps": 202.84386505699186,
+              "native_bench_fps": 203.0364048258886,
+              "native_1pct_low_fps": 110.23720582842392,
+              "simulation_ticks": 203
+            }
+          ],
+          "control_fps": 1999.5044207106203,
+          "fixed_camera": [
+            0,
+            0
+          ],
+          "camera_verified_all_samples": true
+        },
+        "after": {
+          "client_sha256": "111d9cacc80c313fe87d000321a4d9f5cc251fb64cf15a64a4989467f63d1ef2",
+          "package_sha256": "96fe839170d621cb5ba3b9fee5ff6cfeab78901397ff83e17eebc83388d7bd83",
+          "runtime_sha256": "a5bf11d020514a172b709f4ce8a1f44ce2819b7b92a07c15b7a8fba80fa54703",
+          "median_fps": 243.44238929430165,
+          "median_1pct_low_fps": 140.12769520028246,
+          "normal_exit": 0,
+          "samples": [
+            {
+              "frames": 2455,
+              "uptime_seconds": 10.119239300000004,
+              "whole_game_fps": 242.6071690981751,
+              "native_bench_fps": 242.9114297112054,
+              "native_1pct_low_fps": 140.12769520028246,
+              "simulation_ticks": 202
+            },
+            {
+              "frames": 2462,
+              "uptime_seconds": 10.113275699999996,
+              "whole_game_fps": 243.44238929430165,
+              "native_bench_fps": 243.80318153460937,
+              "native_1pct_low_fps": 143.98831483501155,
+              "simulation_ticks": 203
+            },
+            {
+              "frames": 2466,
+              "uptime_seconds": 10.124228000000002,
+              "whole_game_fps": 243.5741273309925,
+              "native_bench_fps": 244.02760429966168,
+              "native_1pct_low_fps": 135.6096946436646,
+              "simulation_ticks": 203
+            }
+          ],
+          "control_fps": 2106.455980295329,
+          "fixed_camera": [
+            0,
+            0
+          ],
+          "camera_verified_all_samples": true
+        }
+      },
+      "same_settings": true
+    },
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "fps_change_percent": 18.74003740131085,
+      "low1_change_percent": 5.879376811168613,
+      "runs": {
+        "after": {
+          "client_sha256": "111d9cacc80c313fe87d000321a4d9f5cc251fb64cf15a64a4989467f63d1ef2",
+          "package_sha256": "96fe839170d621cb5ba3b9fee5ff6cfeab78901397ff83e17eebc83388d7bd83",
+          "runtime_sha256": "a5bf11d020514a172b709f4ce8a1f44ce2819b7b92a07c15b7a8fba80fa54703",
+          "median_fps": 240.80220552291394,
+          "median_1pct_low_fps": 122.61423441324824,
+          "normal_exit": 0,
+          "samples": [
+            {
+              "frames": 2459,
+              "uptime_seconds": 10.118330399999998,
+              "whole_game_fps": 243.02428392731676,
+              "native_bench_fps": 243.33058495651815,
+              "native_1pct_low_fps": 148.95360002229214,
+              "simulation_ticks": 203
+            },
+            {
+              "frames": 2378,
+              "uptime_seconds": 10.122610699999996,
+              "whole_game_fps": 234.91963392408255,
+              "native_bench_fps": 235.15343482029752,
+              "native_1pct_low_fps": 111.28762755149988,
+              "simulation_ticks": 202
+            },
+            {
+              "frames": 2437,
+              "uptime_seconds": 10.12033919999999,
+              "whole_game_fps": 240.80220552291394,
+              "native_bench_fps": 241.18277484074736,
+              "native_1pct_low_fps": 122.61423441324824,
+              "simulation_ticks": 202
+            }
+          ],
+          "control_fps": 2201.563978694698,
+          "fixed_camera": [
+            0,
+            0
+          ],
+          "camera_verified_all_samples": true
+        },
+        "before": {
+          "client_sha256": "11c0deed10d893c49ee435256de5f43d3a2f99d0a8370cad0e7eeb2288442267",
+          "package_sha256": "3c77bc050937d2735bda98a2430574d58efe780efaaa014e861b27dc5c3c7bec",
+          "runtime_sha256": "53a6c173e826ea94311580ca4c4842efbde970bff021141ca8d324afc8dde070",
+          "median_fps": 202.79781848902766,
+          "median_1pct_low_fps": 115.80558755264072,
+          "normal_exit": 0,
+          "samples": [
+            {
+              "frames": 2066,
+              "uptime_seconds": 10.113852000000001,
+              "whole_game_fps": 204.2742962819705,
+              "native_bench_fps": 204.6934498646538,
+              "native_1pct_low_fps": 116.49787241662034,
+              "simulation_ticks": 203
+            },
+            {
+              "frames": 2050,
+              "uptime_seconds": 10.10859,
+              "whole_game_fps": 202.79781848902766,
+              "native_bench_fps": 202.99797885862492,
+              "native_1pct_low_fps": 115.80558755264072,
+              "simulation_ticks": 202
+            },
+            {
+              "frames": 2013,
+              "uptime_seconds": 10.129243899999992,
+              "whole_game_fps": 198.73151637705178,
+              "native_bench_fps": 199.12984854357524,
+              "native_1pct_low_fps": 76.96442921358934,
+              "simulation_ticks": 203
+            }
+          ],
+          "control_fps": 2029.7686001447996,
+          "fixed_camera": [
+            0,
+            0
+          ],
+          "camera_verified_all_samples": true
+        }
+      },
+      "same_settings": true
+    }
+  ],
+  "median_paired_fps_change_percent": 18.74003740131085,
+  "median_paired_low1_change_percent": 5.879376811168613,
+  "gui_scale_checks": {
+    "scales": [
+      1,
+      1.5,
+      2,
+      1
+    ],
+    "completed": true,
+    "exit": 0
+  }
+}
