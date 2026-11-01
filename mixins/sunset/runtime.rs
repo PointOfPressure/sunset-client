@@ -379,10 +379,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Knockback pause", 3.0, 0.0, 10.0, 1.0)
             .num("Sprint multiplier", 1.0, 0.5, 1.5, 0.05)
             .bool("Stop at wall", false),
-        Module::new("No Fall", Movement, "Stops fall damage (Meteor's No Fall). Packet tells the server you are on the ground as you fall; No ground never does; Air place puts a block under you; Place puts water (or the Placed item) where you land and picks it back up.")
+        Module::new("No Fall", Movement, "Stops fall damage (Meteor's No Fall). Packet tells the server you are on the ground as you fall; No ground never does; Air place puts a block under you; Place puts water (or the Placed item) where you land and picks it back up. Clutch: Packet and No ground place it too, in case a server doesn't take their word.")
             .pick("Mode", &["Packet", "No ground", "Air place", "Place"])
             .pick("Placed item", &["Bucket", "Powder snow", "Hay bale", "Cobweb", "Slime block"])
             .pick("Air place mode", &["Before death", "Before damage"])
+            .bool("Clutch", false)
             .bool("Rotate", true)
             .bool("Anchor", true)
             .bool("Pause on mace", true),
@@ -1685,6 +1686,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if !game.native_window() {
         return;
     }
+    if game.player.is_none() {
+        fall_died();
+    }
     if !game.native_on(ID) || game.player.is_none() {
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
@@ -2025,6 +2029,9 @@ fn module_tick(game: &mut Game<'_>) {
 
     remember_velocity(game);
     let alive = game.player.as_ref().is_some_and(|p| p.health.health() > 0.0);
+    if !alive {
+        fall_died();
+    }
     // Blink: let go of what it held when it turns off, or at its limit.
     {
         let max = get("Blink").map_or(0.0, |m| m.n("Max ticks")) as u32;
@@ -3351,6 +3358,7 @@ pub(super) fn remember_velocity(game: &Game<'_>) {
 // A correction replaces the player's position: Speed's strafe and Scaffold's waits start again. (Velocity's baseline
 // stays: Horizon's server can bring a hit's knockback with a position packet, which Velocity has to see.)
 pub(super) fn server_correction(game: &mut Game<'_>) {
+    fall_teleported();
     if !game.native_on(ID) { return; }
     with(|s| {
         s.knockback_ticks = 0;
@@ -3986,8 +3994,9 @@ impl Move {
 }
 
 // Outgoing packets: Blink holds moves, Anti Hunger hides sprinting and the ground, No Fall claims the ground as you
-// fall (or, in No ground, never), Criticals hops, Flight's anti kick sinks, and the look modules asked for (turn_then)
-// rides along. Each is a change to the tick's own move packet, never another one.
+// fall (or, in No ground, never), Criticals hops, Flight's anti kick sinks, no move claims the ground with a fall that
+// is not yours to pay (settle_fall), and the look modules asked for (turn_then) rides along. Each is a change to the
+// tick's own move packet, never another one.
 pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     if ANTI_SPRINT.load(Ordering::Relaxed)
         && let S::PlayerCommand(c) = packet
@@ -4008,13 +4017,16 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     };
     let mut m = sent;
     let here = [p.position.x, p.position.y, p.position.z];
+    // What a module tells the server of the ground, if it changes it; and whether No Fall is on to spare you the fall.
+    let ground;
+    let mut spared = false;
     // Criticals: this tick's move is the hop (stage 1: up, stage 2: back down), both off the ground.
     let stage = CRIT_STAGE.load(Ordering::Relaxed);
     if stage == 1 || stage == 2 {
         let [x, y, z] = m.at.unwrap_or(here);
         m.at = Some([x, if stage == 1 { y + f64::from_bits(CRIT_HOP.load(Ordering::Relaxed)) } else { y }, z]);
         m.flags = 0;
-        horizon_client::player_sync::sunset_sync::told_ground(false);
+        ground = Some(false);
         CRIT_STAGE.store(stage + 1, Ordering::Relaxed);
     } else {
         // Flight's Packet anti kick: the move carries the position, sunk 0.0313 below the last height sent while it
@@ -4025,22 +4037,26 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         // The server adds each move's drop to the fall, and a move that says you are on the ground costs what has
         // added up beyond three blocks. No Fall's Packet mode claims the ground on every move down, so the count
         // never passes one move's drop (Meteor's waits for 0.5 blocks a tick, which leaves a fall the server counted
-        // before to hurt); past three blocks a tick (a fall of about 130 blocks) even that costs a little. No ground
-        // never claims it. Flying that way claims it all the time.
+        // before to hurt), and one move drops 3.92 at most, which costs nothing. No ground never claims it. Flying that
+        // way claims it all the time. settle_fall has the last word.
         // Anti Hunger hides the ground, but not while you break a block: off the ground the server mines five times
-        // slower and refuses the break, so the block comes back (Meteor's skips it then too).
-        let grounded = !p.ground.on_ground && !p.flying && !p.fall_flying;
+        // slower and refuses the break, so the block comes back (Meteor's skips it then too). Nor once the server
+        // has counted a fall, or this move adds one: hidden, every jump and step down would add up to one fall that
+        // the first move you are on the ground for makes you pay.
+        let falling = !p.ground.on_ground && !p.flying && !p.fall_flying;
         let no_fall = NO_FALL.load(Ordering::Relaxed);
         let paused = game.creative || (NO_FALL_MACE.load(Ordering::Relaxed) && game.held().is_some_and(|s| s.item.ends_with(":mace")));
-        let ground = if FLIGHT_GROUND.load(Ordering::Relaxed) || (GLIDE_GROUND.load(Ordering::Relaxed) && !p.flying) {
+        spared = no_fall != 0 && !paused;
+        ground = if FLIGHT_GROUND.load(Ordering::Relaxed) || (GLIDE_GROUND.load(Ordering::Relaxed) && !p.flying) {
             Some(true)
-        } else if no_fall == 1 && !paused && grounded && p.velocity.y < 0.0 {
+        } else if no_fall == 1 && !paused && falling && p.velocity.y < 0.0 {
             Some(true)
         } else if no_fall == 2 && !paused {
             Some(false)
         } else if ANTI_GROUND.load(Ordering::Relaxed)
             && (p.fall_distance <= 0.0 || p.flying)
             && super::remote::sunset_remote::breaking(game).is_none()
+            && fall_counted(&m) == 0.0
         {
             Some(false)
         } else {
@@ -4048,8 +4064,12 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         };
         if let Some(g) = ground {
             m.flags = (m.flags & !1) | u8::from(g);
-            horizon_client::player_sync::sunset_sync::told_ground(g);
         }
+    }
+    let told = settle_fall(game, &m, sent.flags & 1 != 0, ground == Some(true) || spared);
+    m.flags = (m.flags & !1) | u8::from(told);
+    if ground.is_some() {
+        horizon_client::player_sync::sunset_sync::told_ground(told);
     }
     // The look a module asked for, else the player's own back after one (not during the Criticals hop, whose hit
     // follows it).
@@ -4071,6 +4091,95 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         m.look = Some(look);
     }
     if m == sent { Out::Pass } else { Out::Replace(m.packet()) }
+}
+
+// ---- the fall the server counts
+//
+// A server adds up the drop of each move told off the ground, and a move told on it costs what that comes to beyond
+// three blocks (a point of health for each whole block past that) and starts it again; water, a ladder or creative
+// flight start it again too (Entity.checkFallDamage, LivingEntity.handleOnClimbable). Sunset keeps the same count
+// of the moves it lets go, so that no move claims the ground with a fall the server would make you pay for that was
+// not yours to pay: one it hid the ground you landed on through (No Fall's No ground, the Criticals hop), or one
+// Flight, Glide or No Fall would claim the ground on. That fall is kept: every move goes off the ground until
+// something starts the count again, or you die.
+
+struct Fall {
+    // The server's count, in blocks.
+    counted: f64,
+    // The height the last move told; None at first and after a teleport (the server goes on from where it put you).
+    last: Option<f64>,
+    // Part of the count is not yours to pay.
+    kept: bool,
+}
+
+static FALL: Mutex<Fall> = Mutex::new(Fall { counted: 0.0, last: None, kept: false });
+
+// The most the server lets you land with for nothing: four blocks costs a point (LivingEntity.calculateFallPower adds
+// 1.0E-6 to the fall). A move at full falling speed drops 3.92.
+const FREE_FALL: f64 = 3.99;
+
+fn fall<R>(f: impl FnOnce(&mut Fall) -> R) -> R {
+    f(&mut FALL.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+// What the server will have counted after this move, if it goes off the ground.
+fn fall_counted(m: &Move) -> f64 {
+    fall(|f| f.counted + drop_of(f, m))
+}
+
+fn drop_of(f: &Fall, m: &Move) -> f64 {
+    match (f.last, m.at) {
+        (Some(last), Some([_, y, _])) => (last - y).max(0.0),
+        _ => 0.0,
+    }
+}
+
+// The count after a move that tells the server `told` of the ground (`real` is what the game would tell it, and
+// `claimed` a module claiming it, or No Fall on): the ground the move should tell. Gliding, a move that drops less
+// than half a block brings the count down to one (LivingEntity.travelFallFlying), but a steep dive adds up: No Fall
+// can't claim the ground in the glide (the server would end it), so the landing is kept.
+fn settle_fall(game: &Game<'_>, m: &Move, real: bool, claimed: bool) -> bool {
+    let (Some(p), Some(_)) = (game.player.as_ref(), game.remote.as_ref()) else {
+        return m.flags & 1 != 0;
+    };
+    let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
+    let cleared = p.fluids.was_touching_water
+        || (game.creative && p.flying)
+        || game.spectator()
+        || game.block_in_tag("minecraft:climbable", &game.block_name(feet));
+    fall(|f| {
+        let drop = drop_of(f, m);
+        let counted = if p.fall_flying && drop < 0.5 { (f.counted + drop).min(1.0) } else { f.counted + drop };
+        if let Some([_, y, _]) = m.at {
+            f.last = Some(y);
+        }
+        let mut told = m.flags & 1 != 0;
+        if cleared {
+            (f.counted, f.kept) = (0.0, false);
+            return told;
+        }
+        if told && counted >= FREE_FALL && (f.kept || claimed) {
+            told = false;
+            f.kept = true;
+        } else if !told && real && counted > 0.0 {
+            f.kept = true;
+        }
+        if told {
+            (f.counted, f.kept) = (0.0, false);
+        } else {
+            f.counted = counted;
+        }
+        told
+    })
+}
+
+// A teleport: the server goes on from where it puts you. Death: the next body has fallen nowhere.
+fn fall_teleported() {
+    fall(|f| f.last = None);
+}
+
+fn fall_died() {
+    fall(|f| *f = Fall { counted: 0.0, last: None, kept: false });
 }
 
 // Flight's Packet anti kick on the move: while it is due and you are in the air, the height sinks 0.0313 below the

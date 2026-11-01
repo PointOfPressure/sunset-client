@@ -195,6 +195,10 @@ def clean():
         f"fill {X0-16} {Y} {Z0-16} {X0+16} {Y} {Z0+16} minecraft:stone",
         f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0",
         "effect give @s minecraft:instant_health 1 10 true", "effect give @s minecraft:saturation 1 10 true")
+    # A moment in water: any fall the server still counts (one Sunset kept from it) is gone.
+    cmd(f"setblock {X0} {Y+1} {Z0} minecraft:water")
+    wait(3)
+    cmd(f"setblock {X0} {Y+1} {Z0} minecraft:air")
     if CTL2:
         # The second player waits out of the way, where nothing targets it.
         ctl2("release")
@@ -486,6 +490,312 @@ def _():
     landed = pos()[1] - (Y + 1)
     only()
     return top > 10 and abs(landed) < 0.01 and health >= 20, f"health {health} after Flight went off {top:.0f} blocks up"
+
+
+# ---- No Fall, rock solid: nothing from any height, onto anything, after anything, at any ping; and with No Fall off,
+# Sunset never leaves the server a fall you did not take (the fall count tests).
+
+def fall_ticks(height):
+    """Ticks a fall of `height` blocks takes (gravity 0.08 and drag 0.98 a tick), and a second more to land."""
+    v = y = t = 0
+    while y < height:
+        v = (v + 0.08) * 0.98
+        y += v
+        t += 1
+    return t + 20
+
+
+def server_fall():
+    """The server's count of your fall, from /data (None where it doesn't say)."""
+    cmd("data get entity @s fall_distance")
+    for line in ctl("chat-log", "4").get("chat", []):
+        if "entity data: " in line:
+            try:
+                return float(line.split("entity data: ")[1].rstrip("df"))
+            except ValueError:
+                return None
+    return None
+
+
+def heal():
+    if hp() < 20:
+        cmd("effect give @s minecraft:instant_health 1 10 true")
+        wait(5)
+
+
+def dropped(height, dx=0.5, dz=0.5, during=None, settle=0):
+    """Health lost dropping `height` blocks onto the platform at (dx, dz), regeneration off (reset() first);
+    `during` runs as the fall starts."""
+    cmd("gamerule natural_health_regeneration false")
+    heal()
+    before = hp()
+    ctl("chat", f"/tp @s {X0 + dx} {Y + 1 + height} {Z0 + dz}")
+    if during:
+        during()
+    wait(fall_ticks(height) + settle)
+    lost = before - hp()
+    cmd("gamerule natural_health_regeneration true")
+    return lost
+
+
+def worst(lost):
+    return ", ".join(f"{k}: {v:.0f}" for k, v in lost.items())
+
+
+@test("No Fall (heights)")
+def _():
+    reset()
+    only("nofall")
+    lost = {h: dropped(h) for h in (4, 8, 16, 32, 64, 128, 200, 300)}
+    only()
+    return max(lost.values()) == 0, f"health lost from each height: {worst(lost)}"
+
+
+@test("No Fall (surfaces)")
+def _():
+    reset()
+    only("nofall")
+    lost = {}
+    cmd(f"setblock {X0} {Y+1} {Z0} minecraft:smooth_stone_slab")
+    lost["slab"] = dropped(40)
+    cmd(f"setblock {X0} {Y+1} {Z0} minecraft:air", f"setblock {X0+1} {Y+1} {Z0} minecraft:water")
+    lost["beside water"] = dropped(40, dx=0.75)
+    lost["shallow water"] = dropped(40, dx=1.5)
+    cmd(f"setblock {X0+1} {Y+1} {Z0} minecraft:air", f"fill {X0} {Y+1} {Z0+1} {X0} {Y+3} {Z0+1} minecraft:stone",
+        f"fill {X0} {Y+1} {Z0} {X0} {Y+2} {Z0} minecraft:ladder[facing=north]")
+    lost["ladder"] = dropped(40)
+    cmd(f"fill {X0} {Y+1} {Z0} {X0} {Y+3} {Z0+1} minecraft:air", f"setblock {X0} {Y+1} {Z0} minecraft:stone")
+    lost["block edge"] = dropped(40, dx=1.25)
+    cmd(f"setblock {X0} {Y+1} {Z0} minecraft:air")
+    only()
+    return max(lost.values()) == 0, f"health lost landing from 40 blocks: {worst(lost)}"
+
+
+def hurt(act, settle=20):
+    """Health lost while `act` runs and `settle` ticks after, regeneration off, from full health."""
+    cmd("gamerule natural_health_regeneration false")
+    heal()
+    before = hp()
+    act()
+    wait(settle)
+    lost = before - hp()
+    cmd("gamerule natural_health_regeneration true")
+    return lost
+
+
+@test("No Fall (after other modules)")
+def _():
+    lost = {}
+    reset()
+    only("flight", "nofall")
+    lost["Flight off 30 blocks up"] = hurt(lambda: (held_keys(("space",), 50), only("nofall"), wait(fall_ticks(30))))
+    # Each on through a fall (Blink holds the whole fall and lets it go in one move as you land).
+    setting("blink", "max ticks", "0")
+    for mod in ("speed", "velocity", "blink", "antihunger", "criticals", "step"):
+        only("nofall", mod)
+        lost[mod] = dropped(40, during=lambda: held_keys(("w",), 10))
+    only("nofall")
+    # A teleport in mid-fall (as a server's correction is one): the fall goes on from where it puts you.
+    lost["teleport mid-fall"] = dropped(30, during=lambda: (wait(15), ctl("chat", f"/tp @s {X0 + 0.5} {Y + 41} {Z0 + 0.5}")), settle=40)
+    # Elytra: glide down across the platform from 60 blocks up, and land.
+    reset()
+    only("nofall")
+    cmd("item replace entity @s armor.chest with minecraft:elytra")
+
+    def glide():
+        ctl("chat", f"/tp @s {X0 + 0.5} {Y + 61} {Z0 - 12.5} 0 50")
+        wait(8)
+        held_keys(("space",), 2)
+        wait(fall_ticks(60))
+    lost["elytra"] = hurt(glide, settle=40)
+    flew = state()["player"].get("fall_flying")
+    only()
+    return max(lost.values()) == 0 and not flew, f"health lost: {worst(lost)}"
+
+
+@test("No Fall (respawn and other worlds)")
+def _():
+    reset()
+    only("nofall")
+    lost = {}
+    cmd("kill @s")
+    wait(20)
+    ensure_alive()
+    wait(20)
+    lost["right after respawn"] = dropped(40)
+    # The Nether's roof (bedrock at 127) from 160, then back.
+
+    def nether():
+        ctl("chat", "/execute in minecraft:the_nether run tp @s 0.5 160 0.5")
+        wait(fall_ticks(33) + 40)
+    lost["the Nether"] = hurt(nether)
+    where = state().get("dimension")
+    cmd(f"execute in minecraft:overworld run tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}")
+    wait(60)
+    lost["back, at once"] = dropped(40)
+    only()
+    return max(lost.values()) == 0 and where == "minecraft:the_nether", f"health lost: {worst(lost)} (was in {where})"
+
+
+class Lag:
+    """A relay between the game and SERVER that holds everything `ms` milliseconds each way, and all of it while
+    stalled: high ping and lag spikes for this one connection."""
+
+    def __init__(self, ms):
+        import socket, threading
+        self.delay, self.stalled_until = ms / 1000, 0.0
+        self.listener = socket.create_server(("127.0.0.1", 0))
+        self.port = self.listener.getsockname()[1]
+        host, port = SERVER.rsplit(":", 1)
+
+        def pipe(src, dst):
+            import queue
+            q = queue.Queue()
+
+            def read():
+                try:
+                    while chunk := src.recv(65536):
+                        q.put((time.time() + self.delay, chunk))
+                except OSError:
+                    pass
+                q.put(None)
+
+            def write():
+                try:
+                    while (item := q.get()) is not None:
+                        while (left := max(item[0], self.stalled_until) - time.time()) > 0:
+                            time.sleep(left)
+                        dst.sendall(item[1])
+                    dst.shutdown(socket.SHUT_WR)
+                except OSError:
+                    pass
+            for f in (read, write):
+                threading.Thread(target=f, daemon=True).start()
+
+        def serve():
+            while True:
+                try:
+                    game, _ = self.listener.accept()
+                    server = socket.create_connection((host, int(port)))
+                except OSError:
+                    return
+                pipe(game, server)
+                pipe(server, game)
+        threading.Thread(target=serve, daemon=True).start()
+
+    def stall(self, seconds):
+        self.stalled_until = time.time() + seconds
+
+
+def join(address):
+    ctl("disconnect")
+    time.sleep(2)
+    ctl("connect", address, "Tester", timeout=120)
+    ctl("wait-ready", "90", timeout=120)
+    wait(40)
+
+
+@test("No Fall (high ping and lag spikes)")
+def _():
+    if not SERVER:
+        return None, "servers only"
+    lag = Lag(150)
+    join(f"127.0.0.1:{lag.port}")
+    lost = {}
+    try:
+        reset()
+        only("nofall")
+        for h in (16, 64, 128):
+            lost[f"{h} at 300 ms"] = dropped(h)
+        # A second and a half with nothing through, once in mid-fall and once just before landing.
+        lost["spike mid-fall"] = dropped(64, during=lambda: (wait(10), lag.stall(1.5)), settle=40)
+        lost["spike at landing"] = dropped(32, during=lambda: (wait(fall_ticks(32) - 24), lag.stall(1.5)), settle=40)
+        only()
+    finally:
+        join(SERVER)
+    return max(lost.values()) == 0, f"health lost (300 ms there and back): {worst(lost)}"
+
+
+@test("No Fall (200 drops)")
+def _():
+    # Heights from 4 to 300 blocks, some with Flight, Speed or Blink just before, a teleport or a jump in the fall.
+    import random
+    rng = random.Random(7)
+    reset()
+    only("nofall")
+    worst_drop, hurt, total = (0, ""), 0, 0
+    befores = ["", "", "flight", "speed", "blink", "teleport", "jump"]
+    for i in range(200):
+        h = round(4 * (75 ** rng.random()))
+        how = rng.choice(befores)
+        if how in ("flight", "speed", "blink"):
+            toggle(how, True)
+        during = {"speed": lambda: held_keys(("w",), 10), "flight": lambda: held_keys(("space",), 5),
+                  "teleport": lambda: (wait(5), ctl("chat", f"/tp @s {X0 + 0.5} {Y + 1 + h} {Z0 + 0.5}")),
+                  "jump": lambda: held_keys(("space",), 3)}.get(how)
+        if how == "flight":
+            # Flight goes off as the fall begins.
+            during = lambda: (held_keys(("space",), 5), toggle("flight", False))
+        lost = dropped(h, during=during, settle=30 if how == "teleport" else 0)
+        for m in ("flight", "speed", "blink"):
+            toggle(m, False)
+        total += 1
+        if lost > 0:
+            hurt += 1
+        if lost > worst_drop[0]:
+            worst_drop = (lost, f"{h} blocks {how or 'plain'}")
+        ensure_alive()
+    only()
+    return hurt == 0, f"{total} drops, {hurt} hurt; worst: {worst_drop[0]:.0f} health ({worst_drop[1] or 'none'})"
+
+
+@test("Fall count (No Fall off)")
+def _():
+    # With No Fall off, a module that hid the ground or claimed it in the air must not leave the server a fall to
+    # make you pay later: the jumps Anti Hunger hid, a fall No ground hid, a fall Flight or No Fall caught in the
+    # air. A plain 12-block fall still costs what it costs.
+    lost = {}
+    reset()
+    lost["plain 12 blocks"] = dropped(12)
+
+    def hunger():
+        slot(0, "diamond_pickaxe")
+        cmd(f"setblock {X0} {Y+1} {Z0+2} minecraft:stone")
+        only("antihunger")
+        for _ in range(8):
+            held_keys(("space",), 3)
+            wait(12)
+        ctl("look", "0", "30")
+        ctl("mouse", "left", "down")
+        wait(30)
+        ctl("mouse", "left", "up")
+        only()
+        held_keys(("space",), 3)
+    reset()
+    lost["Anti Hunger: 8 jumps, a block broken, off"] = hurt(hunger, settle=30)
+
+    def no_ground(then):
+        def act():
+            setting("nofall", "mode", "No ground")
+            only("nofall")
+            ctl("chat", f"/tp @s {X0 + 0.5} {Y + 13} {Z0 + 0.5}")
+            wait(fall_ticks(12))
+            then()
+            walk(20)
+            held_keys(("space",), 3)
+        return act
+    reset()
+    lost["No ground: 12 blocks, then off"] = hurt(no_ground(lambda: only()), settle=30)
+    reset()
+    lost["No ground: 12 blocks, then Flight"] = hurt(no_ground(lambda: (only("flight"), held_keys(("space",), 10), only())), settle=60)
+    reset()
+    lost["Flight on 20 blocks into a fall"] = dropped(40, during=lambda: (wait(fall_ticks(20) - 20), only("flight"), wait(20), only()), settle=40)
+    setting("nofall", "mode", "Packet")
+    lost["No Fall on 20 blocks into a fall"] = dropped(40, during=lambda: (wait(fall_ticks(20) - 20), only("nofall")))
+    only()
+    count = server_fall()
+    ok = lost["plain 12 blocks"] == 9 and all(v == 0 for k, v in lost.items() if k != "plain 12 blocks")
+    return ok, f"health lost: {worst(lost)}; the server's count after: {count}"
 
 
 def wall(height, at=3):

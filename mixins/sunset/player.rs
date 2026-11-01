@@ -712,8 +712,9 @@ fn anchor(game: &mut Game<'_>, m: &Module) {
 #[allow(dead_code)]
 fn unused(_: Screen) {}
 
-// ---- No Fall (Meteor's NoFall): Air place and Place. Packet and No ground change the move packets (runtime.rs's
-// outgoing). This runs after the tick, once its move packet has gone, where Meteor uses the item.
+// ---- No Fall (Meteor's NoFall): Air place and Place, and Clutch's place under Packet and No ground. Those two change
+// the move packets (runtime.rs's outgoing). This runs after the tick, once its move packet has gone, where Meteor uses
+// the item.
 
 // Place's choices: the item, and whether it is a bucket (used, and picked back up) or a block (placed).
 const FALL_ITEMS: [(&str, &str, bool); 5] = [
@@ -734,6 +735,7 @@ fn no_fall(game: &mut Game<'_>, m: &Module) {
     match m.p("Mode") {
         "Air place" => fall_air_place(game, m),
         "Place" => fall_place(game, m),
+        _ if m.b("Clutch") => fall_place(game, m),
         _ => {}
     }
 }
