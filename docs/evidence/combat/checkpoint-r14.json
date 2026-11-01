@@ -54,7 +54,7 @@
   "native_warnings": [
     "unused private Masks.clear/hidden helpers in city_policy.rs"
   ],
-  "runtime_status": "216 focused checks, native compile check and optimized build pass. Isolated19 and fresh R14 paired AutoBase9+postACKLoot/Aura5 are running/pending. R13 GUI5, R10 Loot16+4 and older suites keep their checkpoint identities.",
+  "runtime_status": "R14 passes all19 isolated native cases,9 primary Auto Obsidian scenarios plus1 post-ACK loot case,5 player checks (2 prerequisites+3 behaviors), and2 core rejected-crystal pause scenarios. The separate optional native delay-window attempt remains inconclusive. Clients/backend saved and closed normally. R13 GUI5 and earlier suites retain exact checkpoint identities.",
   "source_fingerprints": {
     "tested_raw": "source-r14.json",
     "lf_normalized_for_git": "source-r14-lf.json",
@@ -64,5 +64,135 @@
   "delta_from_r13": [
     "Ordinary Crystal suspension retains rejected-ID attack counts, actual pending acknowledgements, scan cursors and all independent action deadlines. Queued generations still invalidate. Explicit module/scene reset clears the retained state.",
     "Six additional compiled tests exercise actual production Clock/State; aggregation explicitly distinguishes211 compiled/native-adapter checks and5 source contracts."
-  ]
+  ],
+  "isolated_native": {
+    "report_sha256": "e712863e9127a1d9eae98ef9784bd224802395bed8a82213158f3d97693befb3",
+    "wrapper_sha256": "bcdc7f34a17a525a75cfdebeac3913858790896958316eab2f16bea696991ba3",
+    "native_exit_code": 0,
+    "driver_exit_code": 0,
+    "frozen_unchanged": true,
+    "public_recipe_sha256": "299b4d1d76a582575feb9a639ed25e4776c0a09bcd45effddcbe374faa01361b",
+    "checks": [
+      {
+        "name": "Explosives: crystal-cycle",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-controls",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-default-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-no-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-no-items",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-self-zero",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-hidden-face",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-cycle",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-existing",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-offhand-fuel",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-disable",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-self-zero",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-no-items",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-default-target",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-place-off",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: both-enabled",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: crystal-anti-suicide",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: anchor-anti-suicide",
+        "status": "pass"
+      },
+      {
+        "name": "Explosives: equipment-model",
+        "status": "pass"
+      }
+    ],
+    "scope": "Auto Obsidian defaultoff, generated integrated singleplayer fixtures and final GUI captures; optional setup/player proof separate."
+  },
+  "changed_native_inputs_from_r13": [
+    "sunset/crystal_aura.rs"
+  ],
+  "paired_native": {
+    "auto_obsidian": {
+      "file": "auto-base-r14.json",
+      "sha256": "8e60ec9fc0b06d0d584516b70bd7bce7fd4dbe8d2c8f0608f2a362e326747be6",
+      "primary_pass": 9,
+      "post_ack_loot_pass": 1,
+      "retained_harness_failures": 2
+    },
+    "real_players": {
+      "file": "players-r14.json",
+      "sha256": "f7e7635c8599e0a210d956f7442b6c701eed484a601acce5842bc1d24030be9e",
+      "passed_checks": 5,
+      "prerequisites": 2,
+      "behavior_checks": 3
+    },
+    "crystal_pause": {
+      "file": "crystal-pause-r14.json",
+      "sha256": "836e7c9f0a4a7ffd4e28a498f9221770457e2eaad3499c1417d25b4f78bd4972",
+      "core_pass": 2,
+      "optional_inconclusive": 1
+    }
+  },
+  "earlier_gui": {
+    "checkpoint": "R13",
+    "file": "gui-intent-r13.json",
+    "passed": 5,
+    "native_inputs_changed_r13_to_r14": [
+      "sunset/crystal_aura.rs"
+    ],
+    "scope": "GUI helpers and manifest remain byte-identical; the R13 outcomes are still labelled R13, not a rerun on R14."
+  },
+  "final_cleanup": {
+    "record_sha256": "5b51ab7e1067e847d86e82ed92963f680bd7b33367259c435577d834637c90c1",
+    "attacker_exit": 0,
+    "target_exit": 0,
+    "private_backend_exit": 0,
+    "private_backend_players_before_stop": 0,
+    "normal_save_and_quit": true,
+    "user_server": "Original Horizon test server remains stopped with pre-test backup; personal instances/accounts/worlds were not used for fixtures."
+  }
 }

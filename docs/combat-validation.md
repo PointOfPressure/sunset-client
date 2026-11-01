@@ -10,9 +10,12 @@ Latest build: **R14**, with **216 focused checks** (211 compiled/native-adapter
 checks and five source-wiring checks), official native compile check and
 optimized build passing. The [R14 checkpoint](evidence/combat/checkpoint-r14.json)
 and [exact tested source fingerprints](evidence/combat/source-r14.json) identify
-that binary. Its isolated explosive, optional setup and final player checks
-are running/pending. R13 passes all 19 isolated cases and all five paired GUI
-checks. Earlier native evidence below retains its original checkpoint identity.
+that binary. All **19 isolated native explosive cases pass** on R14 with
+driver/game exit0 and unchanged frozen inputs. R14 also passes nine optional
+setup scenarios, one post-base loot-veto case, five real-player checks and two
+core pause regressions. The separate delay-window attempt remains inconclusive.
+R13 passes all five paired GUI checks. Evidence retains each original
+checkpoint identity; these counts are not one all-current-binary aggregate.
 
 The first R13 run passed all 19 gameplay checks, then its driver failed while
 trying to open chat behind the newly modal overlay for a second GUI screenshot.
@@ -29,6 +32,10 @@ scan cursors and all action deadlines during suspension. A menu or brief hand
 conflict cannot rearm an unchanged rejected crystal or bypass its configured
 delay. Six additional compiled tests exercise the actual Clock/State functions.
 Queued generations still invalidate; explicit module/scene reset clears state.
+The [real rejected-crystal regression](evidence/combat/crystal-pause-r14.md)
+confirms no extra sender increments after ordinary pauses and a fresh retry
+after explicit off/on. Those are sender observations, not server ACKs. The
+optional early-delay sampling window was missed and is not called a pass.
 
 R13 preserves setup retries, real block acknowledgement and cell delay across
 ordinary pause/contention and queued-work expiry. Explicit module or scene
@@ -56,7 +63,34 @@ Aura obsidian setup. Its [checkpoint](evidence/combat/checkpoint-r11.json) and
 There are 63 support modules, 51 injections and one unused-helper warning.
 All 19 isolated native explosive cases pass on R11, with exit0 and unchanged
 frozen inputs, while Auto obsidian remains at its default off. Optional live
-setup checks are pending; those regression cases do not test setup.
+setup is tested separately on R14 below; those R11 regression cases do not test setup.
+
+## Current R14 player and setup outcomes
+
+[Two-real-player Aura proof](evidence/combat/players-r14.md) passes five checks:
+two backend/player prerequisites and three behavior checks. Crystal target
+health changes from 20 to **5.041667938232422**; Anchor changes from 20 to
+**10.263781547546388**, with
+observed charges **0 → 1 → air**. Friend protection and original-slot return pass.
+Both clients have ordinary maximum health 20 HP; Resistance IV for the target and
+Resistance 255 for the actor are explicit fixture conditions. Unmitigated
+self cap 16, Anti suicide and minimum remaining health 4 remain enabled.
+
+[Auto Obsidian proof](evidence/combat/auto-base-r14.md) passes all nine primary
+scenarios: off, observed full cycle, actual offhand, uninterrupted auto cycle,
+missing materials, unsupported support and fresh target/friend/disable gates.
+It consumes one obsidian and one crystal, restores slot 9, and changes actual
+target health from 20 to 16.1763. A distinct post-base death/drop/respawn case also
+passes: the acknowledged base remains and Crystal stays unspent until an
+explicit loot-guard bypass permits placement. Two earlier harness failures
+remain separate from that clean third attempt.
+
+The exact R14 client is
+`7ec29509ed88ea6126a25f56147ea40c91a5823a3d3ef2671ead3affd2ebd0c1`.
+Final cleanup verifies 20 HP, empty inventories/effects/inputs and all modules
+off. Both clients and the private loopback server then saved and closed with
+exit0; no background test game/server remains. The original user Horizon test
+server remains stopped with its pre-test backup.
 
 ## Confirmed R4 player outcomes
 
@@ -73,8 +107,8 @@ server JAR SHA-1 is `33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c`.
   as a friend prevented a new attack in the corresponding negative control.
 - The target had ordinary maximum health 20 and Resistance IV to survive one
   blast. The attacker had Resistance 255 as a separate fixture fail-safe.
-  Both modules explicitly used Unmitigated self cap16, Anti suicide and minimum
-  remaining health4. Fire damage and natural regeneration were disabled.
+  Both modules explicitly used Unmitigated self cap 16, Anti suicide and minimum
+  remaining health 4. Fire damage and natural regeneration were disabled.
 
 These are stationary, controlled fixtures. They establish actual player blast
 damage and observed ordering, not moving-target performance or anticheat results.

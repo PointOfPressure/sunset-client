@@ -107,5 +107,8 @@ three sends per unchanged cell and a 30-tick wait. Ordinary repeated air
 rejections, pauses and action contention cannot replenish retries. Module/context
 reset clears that ledger. Once 64 distinct cells are retained, new setup cells
 are refused until reset; existing ready breaks and placements still work.
-No extra renderer, fake block or predicted crystal ID is introduced. R11
-passes focused/native build checks; paired-player setup proof is pending.
+No extra renderer, fake block or predicted crystal ID is introduced.
+[R14 paired-player setup proof](evidence/combat/auto-base-r14.md) passes nine
+primary scenarios and a distinct post-base loot-veto case, while retaining two
+earlier harness failures. The uninterrupted cycle is separate from staged
+cases that pause Break to capture an actual crystal ID.

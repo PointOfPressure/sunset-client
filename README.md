@@ -111,8 +111,9 @@ Crystal Aura and Anchor Aura are experimental, disabled by default, and share
 bounded action planning. [Their controls and damage models](docs/explosive-auras.md)
 describe the tested scope and limits.
 
-The [native combat development batch](docs/combat-modules.md) extends these
-with coordinated melee, manual, inventory and controller modules. See the
+This feature branch’s [native combat development batch](docs/combat-modules.md)
+extends these with coordinated melee, manual, inventory and controller modules.
+Build this checkout to test it; the installers above follow published releases. See the
 [checkpoint validation and native screenshots](docs/combat-validation.md)
 for verified behavior and outstanding tests.
 

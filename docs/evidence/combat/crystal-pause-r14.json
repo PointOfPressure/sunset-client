@@ -1,0 +1,177 @@
+{
+  "checkpoint": "R14",
+  "native_client_sha256": "7ec29509ed88ea6126a25f56147ea40c91a5823a3d3ef2671ead3affd2ebd0c1",
+  "backend": "Private official stock Java26.3/protocol777 loopback pair",
+  "native_scenarios": {
+    "core": 2,
+    "core_passed": 2,
+    "optional": 1,
+    "optional_inconclusive": 1,
+    "proven_native_failures": 0
+  },
+  "attempts": [
+    {
+      "file": "crystal-pause-r14-0c63c5c7761b4da8b007b1b0c1248d12.json",
+      "sha256": "1e189c0f23339eb8e40efb5cdacaef4152fc50b7d044d8a7e12b7ae5e03aa563",
+      "raw_ctl_file": "crystal-pause-r14-0c63c5c7761b4da8b007b1b0c1248d12.native-raw.jsonl",
+      "raw_ctl_sha256": "f98d21a2aa700a2b0d233c765db2da36d793835bfd49c2e7a848e305d7b5ce49",
+      "records": 2,
+      "passed": 2,
+      "inconclusive": 0,
+      "finished": true
+    },
+    {
+      "file": "crystal-pause-r14-2f96a5d90cf8424097ab2473aba0126c.json",
+      "sha256": "92784e578d49af6520492e4271690b0a3b4a3573c29e236b543e62cf14a5f8db",
+      "raw_ctl_file": "crystal-pause-r14-2f96a5d90cf8424097ab2473aba0126c.native-raw.jsonl",
+      "raw_ctl_sha256": "66de4f4a7f5362617bfc6fc4d96ff4f0ec034f4fdca0acc527a2c284757f599c",
+      "records": 1,
+      "passed": 0,
+      "inconclusive": 1,
+      "finished": true
+    }
+  ],
+  "sender_counter_semantics": "Native diagnostic counters[10] is a monotonically retained sender-path observation. It is not a server ACK, packet capture, per-ID counter or exact wire time. A sole eligible native crystal plus unchanged tagged server UUID binds the core scenarios to one entity.",
+  "rejected_id_pause": {
+    "passed": true,
+    "native_ids_before": [
+      341
+    ],
+    "native_ids_after": [
+      341
+    ],
+    "tagged_server_uuid_before": "[I; 1165796876, -260814057, -1650469369, -202043038]",
+    "tagged_server_uuid_after": "[I; 1165796876, -260814057, -1650469369, -202043038]",
+    "server_invulnerable_before": true,
+    "server_invulnerable_after": true,
+    "native_actor_health_before": 20.0,
+    "native_actor_health_after": 20.0,
+    "native_target_health_before": 20.0,
+    "native_target_health_after": 20.0,
+    "counter_baseline": 4,
+    "counter_after_three_sends": 7,
+    "counter_after_final_pending_wait_expired": 7,
+    "pending_wait_expiry_control_ticks": 40,
+    "ordinary_pauses": [
+      {
+        "kind": "inventory",
+        "module_continuously_on": true,
+        "screen_during": "inventory",
+        "screen_after": "playing",
+        "pointer_grabbed_after": true,
+        "counter_after_pause": 7
+      },
+      {
+        "kind": "chat",
+        "module_continuously_on": true,
+        "screen_during": "chat",
+        "screen_after": "playing",
+        "pointer_grabbed_after": true,
+        "counter_after_pause": 7
+      },
+      {
+        "kind": "inventory",
+        "module_continuously_on": true,
+        "screen_during": "inventory",
+        "screen_after": "playing",
+        "pointer_grabbed_after": true,
+        "counter_after_pause": 7
+      },
+      {
+        "kind": "chat",
+        "module_continuously_on": true,
+        "screen_during": "chat",
+        "screen_after": "playing",
+        "pointer_grabbed_after": true,
+        "counter_after_pause": 7
+      }
+    ]
+  },
+  "explicit_reset_control": {
+    "passed": true,
+    "native_ids_before": [
+      342
+    ],
+    "native_ids_after": [
+      342
+    ],
+    "tagged_server_uuid_before": "[I; -234041400, 1286162958, -1370000482, 1725210559]",
+    "tagged_server_uuid_after": "[I; -234041400, 1286162958, -1370000482, 1725210559]",
+    "server_invulnerable_before": true,
+    "server_invulnerable_after": true,
+    "native_actor_health_before": 20.0,
+    "native_actor_health_after": 20.0,
+    "native_target_health_before": 20.0,
+    "native_target_health_after": 20.0,
+    "counter_baseline": 7,
+    "counter_after_three_sends": 10,
+    "counter_while_module_off": 10,
+    "first_counter_after_reenable": 11,
+    "first_observed_reenable_delta": 1,
+    "scope": "The first post-reset observation rose by one; a fresh enabled context may legitimately make further bounded retries later. This is not an exactly-one-packet-for-the-entire-case claim."
+  },
+  "optional_delay": {
+    "status": "inconclusive-sampling-window",
+    "configured_break_delay_ticks": 30,
+    "first_send_tick_observation_bracket": [
+      21392,
+      21411
+    ],
+    "counter_baseline": 12,
+    "first_send_counter": 13,
+    "observation_after_tick": 21445,
+    "counter_at_that_observation": 14,
+    "lower_possible_deadline": 21422,
+    "upper_possible_deadline": 21441,
+    "reason": "Fixture/control RPC finished after even the upper possible deadline, so the observation cannot establish whether a send was early. Original report and driver exit1 retained.",
+    "passed": false,
+    "native_bug_inferred": false
+  },
+  "final_handoff": {
+    "both_survival20": true,
+    "both_playing_pointer_grabbed": true,
+    "both_inventory_and_carried_empty": true,
+    "both_effects_empty": true,
+    "no_using_or_mining": true,
+    "attacker_modules_all_off": true,
+    "native_master_enabled": {
+      "attacker": true,
+      "target": false
+    },
+    "input_releases_accepted": true,
+    "recent_death_spots": 0,
+    "arena_test_item_remainder": false,
+    "cleanup_scope": "This disposable arena item entities tagged before removal; unique test diamonds also removed by nonce tag.",
+    "raw_key_mask_exposed_by_ctl": false
+  },
+  "original_handoff_sha256": "194f9fcd1f2dbc1513f9ecf28fe3a16a2d29a6bd77ee21cccc05edc99c2d287a",
+  "screenshots": [
+    {
+      "file": "crystal-pause-suppressed-r14.png",
+      "sha256": "bc0eef264f06af2f37e005209801f94a74b9acaa85f789ee5a2ba6113f99ef1d",
+      "size": [
+        1280,
+        720
+      ],
+      "byte_identical_native_capture": true,
+      "case": "rejected-id-pauses"
+    },
+    {
+      "file": "crystal-pause-reset-r14.png",
+      "sha256": "1f527e030a79b3b6b7b0d7d850c63bc824291dd6668552f44dcae11592266fab",
+      "size": [
+        1280,
+        720
+      ],
+      "byte_identical_native_capture": true,
+      "case": "explicit-reset-retry"
+    }
+  ],
+  "limits": [
+    "Repeated debug reads were ordinary chat pauses with the module enabled, not invisible internal memory access. Newest-first parsing uses the first matching styled native diagnostic and ignores server-chat text.",
+    "The crystal stayed server-invulnerable and its native ID and server UUID remained unchanged throughout each core case; its survival is not a packet acknowledgement.",
+    "The optional live delay window was not proven; production Clock/lifecycle behavior has separate216 focused checks, including211 compiled/native-adapter checks and5 explicit source checks.",
+    "Both core native screenshots are unchanged1280x720 framebuffer captures; captions describe post-measurement scenes, not exact send instants.",
+    "No native source changed between these pause attempts."
+  ]
+}
