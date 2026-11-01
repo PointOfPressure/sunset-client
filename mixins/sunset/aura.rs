@@ -278,6 +278,11 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     st(|s| s.hit_timer = 0);
 }
 
+// Who Kill Aura is hitting (Target ESP marks them).
+pub(super) fn target_id() -> Option<u32> {
+    st(|s| s.target)
+}
+
 // The Target HUD: a box by the crosshair with the name, distance and health of who Kill Aura is hitting.
 // Potato: the health bar alone, no text.
 pub(super) fn draw_target(game: &Game<'_>, w: f32, h: f32, potato: bool, out: &mut impl Canvas) {

@@ -3067,6 +3067,59 @@ def _():
         f"rain back at once after Weather Changer off: {rain_back}; time after Time Changer off: {time_back}")
 
 
+def frame(name):
+    """The next frame, greyscale (the PNG stays in /tmp to look at)."""
+    from PIL import Image
+    ctl("screenshot", f"/tmp/{name}.png")
+    time.sleep(2)
+    return Image.open(f"/tmp/{name}.png").convert("L")
+
+
+def changed(a, b, box=None):
+    """Pixels that differ between two frames (in `box`, (left, top, right, bottom), if given)."""
+    from PIL import ImageChops
+    d = ImageChops.difference(a, b)
+    if box:
+        d = d.crop(box)
+    return sum(1 for v in d.getdata() if v > 40)
+
+
+@test("Crosshair, Block Overlay, Target ESP")
+def _():
+    # Each changes the frame where it should: the crosshair in the middle (Cross and Dot differ), Block Overlay on the
+    # fence looked at, Target ESP round Kill Aura's husk. Looking down (no moving clouds), and every frame taken once
+    # the chat lines a toggle prints have faded.
+    reset()
+    cmd("difficulty easy", f"setblock {X0} {Y+1} {Z0+1} minecraft:oak_fence", f"summon husk {X0 + 1.5} {Y + 1} {Z0 + 2.5} {HUSK}")
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    ctl("look-at-block", str(X0), str(Y + 1), str(Z0 + 1))
+    w, h = 1280, 720
+    middle = (w // 2 - 40, h // 2 - 40, w // 2 + 40, h // 2 + 40)
+
+    def shot(name, *mods):
+        only(*mods)
+        wait(225)
+        return frame(name)
+    plain = shot("vis_off")
+    cross = shot("vis_cross", "crosshair")
+    setting("crosshair", "mode", "Dot")
+    dot = shot("vis_dot", "crosshair")
+    block = shot("vis_block", "blockoverlay")
+    setting("killaura", "entities", "husk")
+    setting("targetesp", "target", "Combat")
+    aura = shot("vis_aura", "killaura")
+    target = shot("vis_target", "killaura", "targetesp")
+    only()
+    cmd(f"setblock {X0} {Y+1} {Z0+1} minecraft:air")
+    cross_mid, cross_out = changed(plain, cross, middle), changed(plain, cross) - changed(plain, cross, middle)
+    dot_vs_cross = changed(cross, dot, middle)
+    block_px, target_px = changed(plain, block), changed(aura, target)
+    ok = cross_mid > 20 and cross_out < 0.005 * w * h and dot_vs_cross > 10 and block_px > 200 and target_px > 50
+    return ok, (f"pixels changed: Crosshair {cross_mid} in the middle ({cross_out} elsewhere), Dot against Cross {dot_vs_cross}; "
+                f"Block Overlay on a fence {block_px}; Target ESP on Kill Aura's husk {target_px} (frames in /tmp/vis_*.png)")
+
+
 @test("Storage ESP (double chests)")
 def _():
     # A double chest (and a trapped one) is one box: from in front of the seam, the outline has no line down the

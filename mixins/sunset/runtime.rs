@@ -699,6 +699,9 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_combat::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
+    v.extend(super::sunset_crosshair::defaults());
+    v.push(super::sunset_block_overlay::defaults());
+    v.extend(super::sunset_target_esp::defaults());
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
     v.extend(super::sunset_vanish::defaults());
@@ -2198,6 +2201,8 @@ fn module_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Trigger Bot") {
         trigger_bot(game, m, get("Criticals").is_some_and(|c| !c.b("Only Kill Aura")));
     }
+    let combat_target = get("Kill Aura").and_then(|_| super::sunset_aura::target_id());
+    super::sunset_target_esp::tick(game, &mods, combat_target);
 }
 
 pub(super) fn solid_at(game: &Game<'_>, x: i32, y: i32, z: i32) -> bool {
@@ -5070,6 +5075,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         return;
     }
     ensure_loaded(game);
+    super::sunset_crosshair::draw(game, batch);
     let mods = snapshot();
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     let (w, h) = (batch.width, batch.height);
@@ -5205,6 +5211,10 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
 }
 
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
+    super::sunset_block_overlay::overlay(game, cam, mods, out, lw);
+    if let Some(m) = mods.iter().find(|m| m.name == "Target ESP" && m.on) {
+        super::sunset_target_esp::draw(game, cam, m, [cam.w as f32, cam.h as f32], lw, out);
+    }
     super::sunset_util::draw_shown(cam, out, lw);
     super::sunset_render::overlay(game, cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
