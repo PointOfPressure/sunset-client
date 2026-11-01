@@ -329,6 +329,16 @@ impl Module {
                     _ => true,
                 }
             }
+            "Offhand" => {
+                let (refill, hover) = (self.p("Refill") != "Off", self.b("Hover"));
+                match name {
+                    "Sword gapple" => self.b("Right gapple"),
+                    "Reaction delay" | "Swap delay" | "Close delay" | "Switch back delay" => refill,
+                    "Hotbar refill" => refill || hover,
+                    "Hotbar slot" => (refill || hover) && self.b("Hotbar refill"),
+                    _ => true,
+                }
+            }
             "Scaffold" => match name {
                 "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => advanced,
                 "Rotation speed" => advanced && self.b("Rotate"),
@@ -361,13 +371,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Mace smash", true)
             .bool("Only with a weapon", false)
             .bool("Only on ground", false),
-        Module::new("Auto Totem", Combat, "Moves a totem from your inventory to your offhand.")
-            .pick("Mode", &["Smart", "Strict"])
-            .num("Delay (ticks)", 0.0, 0.0, 20.0, 1.0)
-            .num("Health", 10.0, 0.0, 36.0, 1.0)
-            .bool("Elytra", true)
-            .bool("Fall", true)
-            .bool("Explosion", true),
         // Movement
         Module::new("Sprint", Movement, "Sprints for you whenever you walk forward."),
         Module::new("Auto Walk", Movement, "Walks forward for you."),
@@ -799,7 +802,6 @@ pub(super) struct State {
     // The Step modifier is on the player.
     stepping: bool,
     high_jumping: bool,
-    // Auto Totem moved a totem from this hotbar slot and should swap back.
     // The player's velocity when the last tick ended: what changes it before
     // the next one is the server's push (Velocity).
     velocity: Option<[f64; 3]>,
@@ -1000,7 +1002,7 @@ impl State {
     fn load_text(&mut self, text: &str) {
         self.waypoints.clear();
         self.loadouts.clear();
-        for line in text.lines() {
+        for line in merged_modules(text).lines() {
             let Some((k, v)) = line.split_once('=') else {
                 continue;
             };
@@ -1090,7 +1092,7 @@ impl State {
         self.save_text().lines().filter(|l| !l.starts_with("panel.") && !l.starts_with("waypoint=") && !l.starts_with("friends=")).collect::<Vec<_>>().join("\n")
     }
     fn load_profile(&mut self, text: &str) {
-        for line in text.lines() {
+        for line in merged_modules(text).lines() {
             if let Some((k, v)) = line.split_once('=') {
                 self.set_field(k, v.trim());
             }
@@ -1100,7 +1102,7 @@ impl State {
     // fit them. The lines, without the header.
     fn check_profile<'a>(&self, text: &'a str) -> Result<&'a str, String> {
         let body = text.strip_prefix(super::sunset_profiles::HEADER).and_then(|t| t.strip_prefix('\n')).ok_or("not a Sunset profile")?;
-        for (n, line) in body.lines().enumerate().filter(|(_, l)| !l.trim().is_empty()) {
+        for (n, line) in merged_modules(body).lines().enumerate().filter(|(_, l)| !l.trim().is_empty()) {
             let bad = |what: &str| format!("line {}: {what}", n + 2);
             let (k, v) = line.split_once('=').ok_or_else(|| bad("no ="))?;
             let (id, field) = k.split_once('.').ok_or_else(|| bad("no module"))?;
@@ -1122,6 +1124,78 @@ impl State {
     pub(super) fn is_on(&self, name: &str) -> bool {
         self.module(name).is_some_and(|m| m.on)
     }
+}
+
+// Offhand took in Auto Totem, Auto Inventory Totem and Hover Totem (0.9): a config or profile from before has their
+// lines turned into Offhand's. It is on if any of them was, with the first key bound; the old Offhand's Item when it
+// was on, else a totem always (Auto Totem Strict) or only when needed (None), else the new default; Refill is Auto
+// Inventory Totem's Mode.
+fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
+    let lines: Vec<(&str, &str, &str)> = text
+        .lines()
+        .filter_map(|l| {
+            let (k, v) = l.split_once('=')?;
+            let (id, field) = k.split_once('.')?;
+            Some((id, field, v.trim()))
+        })
+        .collect();
+    let get = |id: &str, field: &str| lines.iter().rev().find(|l| l.0 == id && l.1 == field).map(|l| l.2);
+    let had = |id: &str| lines.iter().any(|l| l.0 == id);
+    let on = |id: &str| get(id, "on") == Some("true");
+    // The old Offhand had Min health where the new one has Health.
+    let old_offhand = get("offhand", "minhealth").is_some();
+    let gone = ["autototem", "autoinventorytotem", "hovertotem"];
+    if !old_offhand && !gone.iter().any(|id| had(id)) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut out: Vec<String> = text
+        .lines()
+        .filter(|l| {
+            let id = l.split_once('=').map_or("", |(k, _)| k).split('.').next().unwrap_or("");
+            !gone.contains(&id) && !(old_offhand && id == "offhand")
+        })
+        .map(str::to_owned)
+        .collect();
+    let mut set = |field: &str, value: Option<&str>| {
+        if let Some(v) = value {
+            out.push(format!("offhand.{field}={v}"));
+        }
+    };
+    let (offhand, totem, inv, hover) = (on("offhand"), on("autototem"), on("autoinventorytotem"), on("hovertotem"));
+    set("on", Some(if offhand || totem || inv || hover { "true" } else { "false" }));
+    set("key", ["offhand", "autototem", "autoinventorytotem", "hovertotem"].iter().filter_map(|id| get(id, "key")).find(|k| *k != "none"));
+    let item = if offhand {
+        get("offhand", "item")
+    } else if totem && get("autototem", "mode") == Some("Strict") {
+        Some("Totem")
+    } else if totem || inv || hover {
+        Some("None")
+    } else {
+        None
+    };
+    set("item", item);
+    let (when, delay) = if offhand || !had("autototem") {
+        ("offhand", get("offhand", "itemswitchdelay"))
+    } else {
+        ("autototem", get("autototem", "delayticks"))
+    };
+    set("health", get(when, if when == "offhand" { "minhealth" } else { "health" }));
+    set("fall", get(when, if when == "offhand" { "falling" } else { "fall" }));
+    set("elytra", get(when, "elytra"));
+    set("explosion", get(when, "explosion"));
+    set("delayticks", delay);
+    for field in ["hotbar", "rightgapple", "swordgapple", "alwaysgaponsword", "alwayspotonsword", "swordpot"] {
+        set(field, get("offhand", field));
+    }
+    set("refill", Some(if inv { get("autoinventorytotem", "mode").unwrap_or("Inventory") } else { "Off" }));
+    let slots = if hover && !inv { "hovertotem" } else { "autoinventorytotem" };
+    set("hotbarrefill", get(slots, "hotbarrefill"));
+    set("hotbarslot", get(slots, "hotbarslot"));
+    for field in ["reactiondelay", "swapdelay", "closedelay", "switchbackdelay", "doublehand"] {
+        set(field, get("autoinventorytotem", field));
+    }
+    set("hover", Some(if hover { "true" } else { "false" }));
+    std::borrow::Cow::Owned(out.join("\n"))
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -6486,7 +6560,7 @@ fn aliases(name: &str) -> &'static str {
         "Fast Place" => "fastplace place speed delay",
         "Fullbright" => "gamma night vision",
         "Criticals" => "crits",
-        "Auto Totem" => "totem",
+        "Offhand" => "totem auto totem inventory totem hover totem crystal gapple",
         "Xray" => "x-ray",
         "No Render" => "no hide fog fog water darkness blindness overlay particles particle",
         _ => "",

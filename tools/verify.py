@@ -2812,22 +2812,63 @@ def _():
     return left == 3 and selected == 3, f"{left} pearls left after a middle click from slot 3, slot {selected} selected after"
 
 
-@test("Auto Totem")
+@test("Offhand (totem when needed)")
 def _():
+    # Auto Totem's modes, now Offhand's Item None (a totem only at Health or below) and Item Totem (always one).
     cmd("item replace entity @s inventory.4 with minecraft:totem_of_undying 1")
-    only("autototem")
+    setting("offhand", "item", "None")
+    only("offhand")
     wait(30)
     smart = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
-    setting("autototem", "health", "36")
+    setting("offhand", "health", "36")
     wait(30)
     low = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
     cmd("item replace entity @s weapon.offhand with minecraft:air", "item replace entity @s inventory.4 with minecraft:totem_of_undying 1")
-    setting("autototem", "health", "10")
-    setting("autototem", "mode", "Strict")
+    setting("offhand", "health", "10")
+    setting("offhand", "item", "Totem")
     wait(40)
     strict = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
-    return strict and low and not smart, (f"at full health: offhand {'filled' if smart else 'empty'} in Smart; Smart with Health 36: "
-                                         f"{'filled' if low else 'empty'}; Strict: {'filled' if strict else 'empty'}")
+    return strict and low and not smart, (f"at full health: offhand {'filled' if smart else 'empty'} with Item None; at Health 36: "
+                                         f"{'filled' if low else 'empty'}; Item Totem: {'filled' if strict else 'empty'}")
+
+
+def old_profile(name, lines, mod):
+    """Loads a profile with these lines (as an older Sunset saved them): what .modules, .binds and .settings of `mod`
+    say after; the settings before come back after."""
+    def said(line):
+        mark = log_mark()
+        say(line)
+        wait(4)
+        return sunset_said(mark)
+
+    say(f".profile save {name}")
+    found = [os.path.join(r, f) for r, _, fs in os.walk(os.path.join(session_dir(), "home")) for f in fs if f == f"{name}.profile"]
+    if not found:
+        return None
+    with open(found[0], "w") as f:
+        f.write("sunset-profile=1\n" + "\n".join(lines) + "\n")
+    loaded = said(f".profile load {name}")
+    shown = said(".modules") + said(".binds") + said(f".settings {mod}")
+    say(".profile load before-load")
+    say(f".profile delete {name}")
+    return loaded + shown
+
+
+@test("Offhand (settings from before 0.9)")
+def _():
+    # A profile from before Offhand took in Auto Totem, Auto Inventory Totem and Hover Totem: Auto Totem on (Smart,
+    # Health 14, bound to G), Auto Inventory Totem on (Hotbar Swap), the old Offhand off.
+    shown = old_profile("verifyold", ["autototem.on=true", "autototem.key=key.keyboard.g", "autototem.mode=Smart", "autototem.health=14",
+                                      "offhand.on=false", "offhand.key=none", "offhand.item=Crystal", "offhand.minhealth=10",
+                                      "autoinventorytotem.on=true", "autoinventorytotem.key=none", "autoinventorytotem.mode=Hotbar Swap",
+                                      "hovertotem.on=false", "hovertotem.key=none"], "offhand")
+    if shown is None:
+        return False, "no profile file written"
+    want = ["Item: None", "Health: 14", "Refill: Hotbar Swap", "Hover: OFF"]
+    on = any("Offhand*" in line for line in shown)
+    bound = any(line.startswith("Offhand: G") for line in shown)
+    got = [w for w in want if any(line.startswith(w) for line in shown)]
+    return on and bound and got == want, f"Offhand on: {on}, bound to G: {bound}, settings {got} of {want}; said {shown[:2]}"
 
 
 @test("Auto Shearer")
@@ -2995,11 +3036,12 @@ def _():
                 f"Air place, Radius 1.5: {wide_placed} placed; jumping 2 s: {climb:.1f} blocks up, {tower:.1f} with Fast tower")
 
 
-@test("Offhand")
+@test("Offhand (item)")
 def _():
     slot(3, "end_crystal", 2)
     cmd("item replace entity @s inventory.5 with minecraft:totem_of_undying 1")
     setting("offhand", "hotbar", "true")
+    setting("offhand", "item", "Crystal")
     only("offhand")
     wait(40)
     crystal = check("execute if items entity @s weapon.offhand minecraft:end_crystal")
@@ -3014,8 +3056,8 @@ def _():
     ctl("key", "1", "tap")
     wait(40)
     gap = check("execute if items entity @s weapon.offhand minecraft:enchanted_golden_apple")
-    # At Min health 19 with less health, the totem comes whatever the Item.
-    setting("offhand", "min health", "19")
+    # At Health 19 with less health, the totem comes whatever the Item.
+    setting("offhand", "health", "19")
     cmd("damage @s 6 minecraft:generic")
     # Before the regeneration of a full food bar heals it back past 19 and the gapple returns.
     wait(4)
@@ -4765,11 +4807,11 @@ SWEEPS = [
 ] + [
     (("burrow",), [("burrow", "block", m)]) for m in ("Obsidian", "Held")
 ] + [
-    (("offhand",), [("offhand", "item", m)]) for m in ("Crystal", "Totem", "Gapple", "Enchanted gapple")
+    (("offhand",), [("offhand", "item", m)]) for m in ("Crystal", "Totem", "Gapple", "Enchanted gapple", "None")
+] + [
+    (("offhand",), [("offhand", "refill", m)]) for m in ("Inventory", "Hotbar Swap")
 ] + [
     (("autoexp",), [("autoexp", "mode", m)]) for m in ("Both", "Armor", "Hands")
-] + [
-    (("autototem",), [("autototem", "mode", m)]) for m in ("Smart", "Strict")
 ] + [
     (("fastuse",), [("fastuse", "mode", m)]) for m in ("All", "Some")
 ] + [
@@ -5326,14 +5368,16 @@ def _():
     return lost["off"] > 0 and lost["on"] == 0, f"10 clicks on friend Bot1: {lost['off']} health lost without Friend Guard, {lost['on']} with it"
 
 
-@test("Auto Inventory Totem")
+@test("Offhand (Refill)")
 def _():
-    # 20 totem pops: ticks until the offhand holds a totem again, with totems in the main inventory only.
+    # 20 totem pops: ticks until the offhand holds a totem again, with totems in the main inventory only (Refill
+    # Inventory: Rust's Auto Inventory Totem).
     reset()
     cmd("item replace entity @s weapon.offhand with minecraft:totem_of_undying")
     for i in range(9, 30):
         cmd(f"item replace entity @s inventory.{i - 9} with minecraft:totem_of_undying")
-    only("autoinventorytotem")
+    setting("offhand", "refill", "Inventory")
+    only("offhand")
     wait(10)
     times = []
     for _ in range(20):
@@ -5378,15 +5422,18 @@ def slot_centre(slot):
     return None
 
 
-@test("Hover Totem")
+@test("Offhand (Hover)")
 def _():
     # A totem in the main inventory (slot 14) and the offhand empty: with the inventory open, the pointer is moved over
-    # the totem (a mouse wheel turn of 0 steps there, so nothing is clicked). Off it stays put; on it goes to the offhand.
+    # the totem (a mouse wheel turn of 0 steps there, so nothing is clicked). Offhand with Item None, without and with
+    # Hover (Rust's Hover Totem): off it stays put; on it goes to the offhand.
+    setting("offhand", "item", "None")
     got = {}
-    for name, mods in (("off", ()), ("on", ("hovertotem",))):
+    for name, value in (("off", "false"), ("on", "true")):
+        setting("offhand", "hover", value)
         reset()
         cmd("item replace entity @s inventory.5 with minecraft:totem_of_undying")
-        only(*mods)
+        only("offhand")
         ctl("open-inventory")
         wait(5)
         at = slot_centre(14)

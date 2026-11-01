@@ -89,19 +89,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Rubberband height", 12.0, 3.0, 20.0, 1.0)
             .bool("Center", true)
             .bool("Rotate", true),
-        Module::new("Offhand", Combat, "Holds the chosen item in your offhand, and a totem when your health is low (Meteor's Offhand). Right gapple and Sword pot swap in a gapple or a potion while you hold right click.")
-            .num("Item switch delay", 0.0, 0.0, 20.0, 1.0)
-            .pick("Item", &["Crystal", "Totem", "Gapple", "Enchanted gapple", "Shield", "Potion"])
-            .bool("Hotbar", false)
-            .bool("Right gapple", false)
-            .bool("Sword gapple", false)
-            .bool("Always gap on sword", false)
-            .bool("Always pot on sword", false)
-            .bool("Sword pot", false)
-            .num("Min health", 10.0, 0.0, 36.0, 1.0)
-            .bool("Elytra", false)
-            .bool("Falling", false)
-            .bool("Explosion", true),
         Module::new("Aim Assist", Combat, "Adds to your own aim while you hold a weapon: never moves you on its own, never pulls against you, never attacks. Falling onto someone (mace dive) it pulls you onto them. Duelkit's.")
             .bool("Players", true)
             .bool("Hostiles", true)
@@ -151,10 +138,8 @@ struct Cs {
     web_target: Option<u32>,
     hole_timer: i32,
     burrow: Option<([i32; 3], bool)>,
+    // Offhand: ticks since its last move, and whether its warning was said.
     offhand_ticks: u32,
-    totem_ticks: u32,
-    // Auto Totem wants a totem in the offhand now (Meteor's isLocked); Offhand's warning was said.
-    totem_locked: bool,
     offhand_warned: bool,
     exp_repairing: Option<usize>,
     aim_before: [f32; 2],
@@ -197,12 +182,9 @@ fn activated(name: &str, on: bool) -> bool {
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     show_clear();
     let get = |n: &str| mods.iter().find(|m| m.name == n);
-    for name in ["Surround", "Self Trap", "Auto City", "Auto Trap", "Self Web", "Auto Web", "Hole Filler", "Burrow", "Offhand", "Auto Totem", "Auto EXP"] {
+    for name in ["Surround", "Self Trap", "Auto City", "Auto Trap", "Self Web", "Auto Web", "Hole Filler", "Burrow", "Auto EXP"] {
         let Some(m) = get(name).filter(|m| m.on) else {
             activated(name, false);
-            if name == "Auto Totem" {
-                cs(|c| c.totem_locked = false);
-            }
             continue;
         };
         // Meteor's onActivate waits for the world: a module turned on from
@@ -220,8 +202,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
             "Auto Web" => auto_web(game, m),
             "Hole Filler" => hole_filler(game, m, just),
             "Burrow" => burrow(game, m, just),
-            "Offhand" => offhand(game, m),
-            "Auto Totem" => auto_totem(game, m),
             _ => auto_exp(game, m),
         }
     }
@@ -886,54 +866,43 @@ fn burrow(game: &mut Game<'_>, m: &Module, just: bool) {
     toggle_off(game, "Burrow");
 }
 
-// ---- Offhand
+// ---- Offhand (its module is in combat_inventory.rs, with the careful totem moves)
 
-// Meteor's Offhand: a totem while your health (less what a blast or the fall could take) is at Min health or you
-// glide, else the chosen item, a golden apple or potion while you hold right click with Right gapple or Sword pot (or
-// always with a sword or axe in hand), every Item switch delay ticks.
-fn offhand(game: &mut Game<'_>, m: &Module) {
-    use horizon_client::menu::Input::Pickup;
+// What the offhand should hold this tick.
+pub(super) enum Want {
+    Nothing,
+    Totem,
+    Item(&'static str),
+}
+
+// Meteor's Offhand and AutoTotem: a totem while your health (less what a blast or the fall could take) is at Health
+// or you glide, else the chosen Item, a golden apple or potion while you hold right click with Right gapple or Sword
+// pot (or always with a sword or axe in hand).
+pub(super) fn offhand_want(game: &Game<'_>, m: &Module) -> Want {
     use winit::event::MouseButton;
-    if !inventory_idle(game) {
-        return;
-    }
     let Some(p) = game.player.as_ref() else {
-        return;
+        return Want::Nothing;
     };
-    let has = |s: &Option<horizon_client::items::ItemStack>, want: &str| s.as_ref().is_some_and(|s| short(&s.item) == want);
-    // A move to the offhand at most every Item switch delay ticks.
-    let ready = cs(|c| {
-        c.offhand_ticks += 1;
-        c.offhand_ticks
-    }) > m.n("Item switch delay") as u32;
-    let totem = (0..36).find(|&i| game.inventory.get(i).is_some_and(|s| has(s, "totem_of_undying")));
-    let locked = totem.is_some() && {
+    let is_totem = |s: &Option<horizon_client::items::ItemStack>| s.as_ref().is_some_and(|s| short(&s.item) == "totem_of_undying");
+    let locked = (0..36).any(|i| game.inventory.get(i).is_some_and(is_totem)) && {
         let at = [p.position.x, p.position.y, p.position.z];
         let mut loss = 0.0;
         if m.b("Explosion") {
             loss = f64::max(loss, crystal_damage(game, at));
         }
-        if m.b("Falling") {
+        if m.b("Fall") {
             loss = f64::max(loss, fall_damage(game));
         }
-        let low = f64::from(p.health.health() + p.health.absorption()) - loss <= m.n("Min health");
-        low || (m.b("Elytra") && p.fall_flying)
+        f64::from(p.health.health() + p.health.absorption()) - loss <= m.n("Health") || (m.b("Elytra") && p.fall_flying)
     };
     if locked {
-        if let Some(i) = totem.filter(|_| ready && !has(&game.offhand, "totem_of_undying") && !has(&game.inventory[game.selected], "totem_of_undying")) {
-            super::sunset::menu_click(game, &[(i, Pickup), (504, Pickup), (i, Pickup)]);
-            cs(|c| c.offhand_ticks = 0);
-        }
-        return;
+        return Want::Totem;
     }
     let main = game.inventory.get(game.selected).and_then(|s| s.as_ref()).map(|s| short(&s.item).to_owned()).unwrap_or_default();
     let (sword, axe) = (main.ends_with("_sword"), main.ends_with("_axe"));
     // A right click that is not using what the main hand holds.
     let usable = matches!(main.as_str(), "bow" | "trident" | "crossbow") || game.res.items().get(&format!("minecraft:{main}")).is_some_and(|i| i.food.is_some());
-    let clicking = (game.physical_buttons.contains(&MouseButton::Right) || game.right)
-        && game.native_playing()
-        && !cs(|c| c.totem_locked)
-        && !usable;
+    let clicking = (game.physical_buttons.contains(&MouseButton::Right) || game.right) && game.native_playing() && !usable;
     let item = if m.b("Right gapple") {
         if clicking && (!m.b("Sword gapple") || sword) { "Enchanted gapple" } else { m.p("Item") }
     } else if (sword || axe) && m.b("Always gap on sword") {
@@ -945,74 +914,50 @@ fn offhand(game: &mut Game<'_>, m: &Module) {
     } else {
         m.p("Item")
     };
-    let want = match item {
-        "Totem" => "totem_of_undying",
-        "Gapple" => "golden_apple",
-        "Enchanted gapple" => "enchanted_golden_apple",
-        "Shield" => "shield",
-        "Potion" => "potion",
-        _ => "end_crystal",
-    };
-    if has(&game.offhand, want) || !ready {
+    match item {
+        "Totem" => Want::Totem,
+        "Gapple" => Want::Item("golden_apple"),
+        "Enchanted gapple" => Want::Item("enchanted_golden_apple"),
+        "Shield" => Want::Item("shield"),
+        "Potion" => Want::Item("potion"),
+        "Crystal" => Want::Item("end_crystal"),
+        _ => Want::Nothing,
+    }
+}
+
+// The quick way: pick the item up, put it in the offhand slot, put back what was there; at most every Delay ticks,
+// from the main inventory (and the hotbar with Hotbar; a totem from anywhere).
+pub(super) fn offhand_click(game: &mut Game<'_>, m: &Module, want: &str) {
+    use horizon_client::menu::Input::Pickup;
+    if !inventory_idle(game) {
         return;
     }
-    let from = if m.b("Hotbar") { 0 } else { 9 };
-    match (from..36).find(|&i| game.inventory.get(i).is_some_and(|s| has(s, want))) {
+    let has = |s: &Option<horizon_client::items::ItemStack>| s.as_ref().is_some_and(|s| short(&s.item) == want);
+    let ready = cs(|c| {
+        c.offhand_ticks += 1;
+        c.offhand_ticks
+    }) > m.n("Delay (ticks)") as u32;
+    if has(&game.offhand) || !ready {
+        return;
+    }
+    let totem = want == "totem_of_undying";
+    if totem && has(&game.inventory[game.selected]) {
+        return;
+    }
+    let from = if m.b("Hotbar") || totem { 0 } else { 9 };
+    match (from..36).find(|&i| game.inventory.get(i).is_some_and(has)) {
         None => {
-            if !cs(|c| std::mem::replace(&mut c.offhand_warned, true)) {
+            if !totem && !cs(|c| std::mem::replace(&mut c.offhand_warned, true)) {
                 super::sunset_util::report(game, "Offhand: chosen item not found.");
             }
         }
-        Some(i) if clicking || !cs(|c| c.totem_locked) => {
-            // Pick it up, put it in the offhand slot, put back what was there.
+        Some(i) => {
             super::sunset::menu_click(game, &[(i, Pickup), (504, Pickup), (i, Pickup)]);
             cs(|c| {
                 c.offhand_warned = false;
                 c.offhand_ticks = 0;
             });
         }
-        Some(_) => {}
-    }
-}
-
-// ---- Auto Totem (Meteor's AutoTotem: Smart holds a totem when low, gliding or about to take a lethal
-// fall or blast; Strict always does)
-
-fn auto_totem(game: &mut Game<'_>, m: &Module) {
-    use horizon_client::menu::Input::Pickup;
-    if !inventory_idle(game) {
-        return;
-    }
-    let is_totem = |s: &Option<horizon_client::items::ItemStack>| s.as_ref().is_some_and(|s| short(&s.item) == "totem_of_undying");
-    let Some(found) = (0..36).find(|&i| game.inventory.get(i).is_some_and(is_totem)) else {
-        return;
-    };
-    let Some(p) = game.player.as_ref() else {
-        return;
-    };
-    let ticks = cs(|c| {
-        c.totem_ticks += 1;
-        c.totem_ticks
-    });
-    if f64::from(ticks) <= m.n("Delay (ticks)") {
-        return;
-    }
-    let health = f64::from(p.health.health() + p.health.absorption());
-    let at = [p.position.x, p.position.y, p.position.z];
-    let mut loss = 0.0;
-    if m.b("Explosion") {
-        loss = f64::max(loss, crystal_damage(game, at));
-    }
-    if m.b("Fall") {
-        loss = f64::max(loss, fall_damage(game));
-    }
-    let low = health - loss <= m.n("Health");
-    let gliding = m.b("Elytra") && p.fall_flying;
-    let locked = m.p("Mode") == "Strict" || low || gliding;
-    cs(|c| c.totem_locked = locked);
-    if locked && !is_totem(&game.offhand) {
-        super::sunset::menu_click(game, &[(found, Pickup), (504, Pickup), (found, Pickup)]);
-        cs(|c| c.totem_ticks = 0);
     }
 }
 

@@ -1,6 +1,7 @@
-// The inventory modules from Rust's PR #16: Auto Inventory Totem, Hover Totem, FastXP and Key Throw. A totem moves
-// by one swap click (or the offhand swap key from the hotbar), never by picking stacks up, and counts as moved once
-// the server's own slot packets say both slots changed.
+// The inventory modules: Offhand (Meteor's Offhand and Auto Totem, with Rust's Auto Inventory Totem and Hover Totem
+// from PR #16 as its Refill and Hover) and Key Throw (#16). A Refill or Hover totem moves by one swap click (or the
+// offhand swap key from the hotbar), never by picking stacks up, and counts as moved once the server's own slot
+// packets say both slots changed.
 use super::sunset::{self, Category, Module, hold, with};
 use super::sunset_combat_control as control;
 use super::sunset_inventory_policy::{self as policy, Failure, OFFHAND, Status, Swap};
@@ -12,26 +13,36 @@ use std::any::Any;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const INV: &str = "Auto Inventory Totem";
-const HOVER: &str = "Hover Totem";
+const INV: &str = "Offhand";
+const HOVER: &str = "Offhand (hover)";
 const XP: &str = "FastXP";
 const THROW: &str = "Key Throw";
 const OWNERS: [&str; 4] = [INV, HOVER, XP, THROW];
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(INV, Category::Combat, "Moves a totem to your offhand as soon as it is empty: Inventory opens your inventory for the swap, Hotbar Swap takes one from the hotbar with the swap key. Hotbar refill keeps a totem in a hotbar slot; Double Hand holds one in your hand too while health is low or a crystal near you could kill. Turns Auto Totem off.")
-            .pick("Mode", &["Inventory", "Hotbar Swap"])
+        Module::new(INV, Category::Combat, "Keeps the right item in your offhand (Meteor's Offhand and Auto Totem). Item: what it holds; None: nothing of its own. A totem comes instead while your health, less what a blast or the fall could take, is at Health or below, or while you glide. Right gapple and Sword pot bring a gapple or a potion while you hold right click. Refill moves totems the careful way, and fills an empty offhand with one: Inventory opens your inventory for the swap, Hotbar Swap takes one from the hotbar with the swap key; Off moves them with quick clicks. Hotbar refill keeps a totem in a hotbar slot; Double Hand holds one in your hand too while health is low or a crystal near you could kill. Hover: in your inventory, the totem under the pointer goes to your offhand.")
+            .pick("Item", &["Totem", "Crystal", "Gapple", "Enchanted gapple", "Shield", "Potion", "None"])
+            .num("Health", 10.0, 0.0, 36.0, 1.0)
+            .bool("Elytra", true)
+            .bool("Fall", true)
+            .bool("Explosion", true)
+            .num("Delay (ticks)", 0.0, 0.0, 20.0, 1.0)
+            .bool("Hotbar", false)
+            .bool("Right gapple", false)
+            .bool("Sword gapple", false)
+            .bool("Always gap on sword", false)
+            .bool("Always pot on sword", false)
+            .bool("Sword pot", false)
+            .pick("Refill", &["Off", "Inventory", "Hotbar Swap"])
             .bool("Hotbar refill", false)
             .num("Hotbar slot", 1.0, 1.0, 9.0, 1.0)
             .num("Reaction delay", 0.0, 0.0, 10.0, 1.0)
             .num("Swap delay", 1.0, 0.0, 10.0, 1.0)
             .num("Close delay", 0.0, 0.0, 10.0, 1.0)
             .num("Switch back delay", 2.0, 0.0, 10.0, 1.0)
-            .bool("Double Hand", false),
-        Module::new(HOVER, Category::Combat, "In your inventory, moves the totem under the pointer into your offhand (or the Hotbar slot, with Hotbar refill).")
-            .bool("Hotbar refill", false)
-            .num("Hotbar slot", 1.0, 1.0, 9.0, 1.0),
+            .bool("Double Hand", false)
+            .bool("Hover", false),
         Module::new(XP, Category::Combat, "Throws experience bottles faster while you hold use with one: the game's use delay becomes Delay. Also pearls, wind charges and the rest as ticked (Duelkit's Fast throw): thrown the tick their cooldown ends. Off hand: from the offhand while your hand is empty or holds a weapon.")
             .num("Delay", 0.0, 0.0, 3.0, 1.0)
             .bool("Experience bottles", true)
@@ -117,8 +128,7 @@ fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(guard.get_or_insert_with(State::default))
 }
 
-// A module turned on or off: its move in progress stops (the slot goes back, the inventory it opened closes). Auto
-// Totem and Auto Inventory Totem never run together.
+// A module turned on or off: its move in progress stops (the slot goes back, the inventory it opened closes).
 pub(super) fn toggled(game: &mut Game<'_>, name: &str, on: bool) {
     if name == THROW {
         super::sunset_melee::cancel_owner(game, THROW);
@@ -135,12 +145,6 @@ pub(super) fn toggled(game: &mut Game<'_>, name: &str, on: bool) {
     }
     if let Some(job) = state(|s| s.job.take_if(|j| j.settings.name == name)) {
         restore(game, &job);
-    }
-    if on && name == "Auto Totem" {
-        util::toggle_off(game, INV);
-    }
-    if on && name == INV {
-        util::toggle_off(game, "Auto Totem");
     }
 }
 
@@ -515,7 +519,9 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
     });
 }
 
-fn auto_inventory(game: &mut Game<'_>, m: &Module) -> bool {
+// Refill: `totem` when a totem should go to the offhand now (through the inventory, or the swap key when the
+// inventory cannot open), then Hotbar refill.
+fn auto_inventory(game: &mut Game<'_>, m: &Module, totem: bool) -> bool {
     let inventory = alive(game)
         && game.screen == Screen::Inventory
         && Game::menu_slot_index(&game.remote_menu().1, 0).is_some()
@@ -523,15 +529,15 @@ fn auto_inventory(game: &mut Game<'_>, m: &Module) -> bool {
         && game.inv_drag.is_none();
     if !plain(game) && !inventory {
         // The inventory cannot open now (mining, using): a hotbar totem can still go by the swap key.
-        if alive(game) && game.screen == Screen::Playing && game.carried.is_none() && game.using.is_none() && game.offhand.is_none()
+        if totem && alive(game) && game.screen == Screen::Playing && game.carried.is_none() && game.using.is_none()
             && let Some(from) = (0..9).find(|i| is_totem(&game.inventory[*i]))
         {
             return schedule(game, m, INV, from, OFFHAND, true);
         }
         return false;
     }
-    if game.offhand.is_none() {
-        let by_key = !inventory && m.p("Mode") == "Hotbar Swap";
+    if totem {
+        let by_key = !inventory && m.p("Refill") == "Hotbar Swap";
         let from = if by_key {
             (0..9).find(|&i| is_totem(&game.inventory[i])).or_else(|| find_totem(game, 9))
         } else {
@@ -546,6 +552,20 @@ fn auto_inventory(game: &mut Game<'_>, m: &Module) -> bool {
         return schedule(game, m, INV, from, hotbar, false);
     }
     false
+}
+
+// Offhand: the item it wants by quick clicks, or a totem by Refill; Double Hand; Hover.
+fn offhand(game: &mut Game<'_>, m: &Module) -> bool {
+    use super::sunset_combat::Want;
+    let want = super::sunset_combat::offhand_want(game, m);
+    let refill = m.p("Refill") != "Off";
+    match want {
+        Want::Item(item) => super::sunset_combat::offhand_click(game, m, item),
+        Want::Totem if !refill => super::sunset_combat::offhand_click(game, m, "totem_of_undying"),
+        _ => {}
+    }
+    let totem = !is_totem(&game.offhand) && (matches!(want, Want::Totem) || (matches!(want, Want::Nothing) && game.offhand.is_none()));
+    (refill && auto_inventory(game, m, totem)) || double_hand(game, m) || (m.b("Hover") && hover(game, m))
 }
 
 // Health and absorption at 6 or less, or a crystal within 6 blocks that could take all of it (each checked, at most
@@ -851,7 +871,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         return;
     }
     if let Some(m) = get(INV) {
-        if auto_inventory(game, m) || double_hand(game, m) {
+        if offhand(game, m) {
             return;
         }
     } else {
@@ -859,11 +879,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
             hold(game, slot);
         }
         control::release(INV);
-    }
-    if let Some(m) = get(HOVER)
-        && hover(game, m)
-    {
-        return;
     }
     match get(THROW) {
         Some(m) => {
