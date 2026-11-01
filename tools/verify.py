@@ -274,6 +274,11 @@ def slot(i, item, n=1):
     cmd(f"item replace entity @s hotbar.{i} with minecraft:{item} {n}")
 
 
+def offhand():
+    """The item id in the offhand ("" for none)."""
+    return (ctl("inventory").get("offhand") or {}).get("item") or ""
+
+
 def held():
     return state().get("held") or {}
 
@@ -3418,8 +3423,9 @@ def _():
     friend = bot_hurt(3)
     only()
     say(".friend remove Bot1")
-    # Friendly fire on: Kill Aura leaves a teammate it could not hurt anyway.
-    cmd("team add sunsettest", "team modify sunsettest friendlyFire true", "team join sunsettest Tester", "team join sunsettest Bot1")
+    # Friendly fire on: Kill Aura leaves a teammate it could not hurt anyway. You join as @s: single player names you
+    # by its own player name, not Tester.
+    cmd("team add sunsettest", "team modify sunsettest friendlyFire true", "team join sunsettest @s", "team join sunsettest Bot1")
     setting("killaura", "ignore teams", "true")
     only("killaura")
     spared = bot_hurt(3)
@@ -3981,6 +3987,88 @@ def _():
                                                 f"Scaffold placed {placed} past the edge; still in the game: {alive}")
 
 
+def order_stats(mark):
+    """From the probe's order lines since `mark`: hits (attacks and spear stabs), the hits that went after their tick's
+    move packet, the ticks, and the most move packets in a tick."""
+    with open(probe_path(), errors="replace") as f:
+        f.seek(mark)
+        sent = [line.split()[1] for line in f if line.startswith("order ")]
+    hits = late = ticks = most = moves = 0
+    for kind in sent:
+        if kind == "tickend":
+            ticks, most, moves = ticks + 1, max(most, moves), 0
+        elif kind == "move":
+            moves += 1
+        else:
+            hits += 1
+            late += moves > 0
+    return hits, late, ticks, most
+
+
+@test("Hits before the move packet (vanilla order)")
+def _():
+    # Vanilla sends a hit with the tick's input, before that tick's move packet. Against Bot1 (else a pig with 1000
+    # health), put back in place every 2 ticks (Horizon's server ignores knockback resistance and knocks it out of
+    # reach), strafing left and right so every tick has a move packet: Kill Aura, Trigger Bot and your own clicks, each
+    # without and with Criticals (Packet). The probe logs the client's own hits, move packets and tick ends in the
+    # order they go: no hit may follow its tick's move packet, and no tick has two move packets.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    if CTL2:
+        bot_ready(2.5, 180)
+        target = next(e["id"] for e in ctl("entities").get("entities", []) if e.get("type") == "minecraft:player")
+        kind, health = "Bot1", bot_health
+        setting("killaura", "entities", "player")
+    else:
+        target = pig(2.5, tag=TOUGH_PIG)
+        kind, health = "a pig", lambda: mobs("pig")[0]["health"]
+        setting("killaura", "entities", "pig")
+        setting("triggerbot", "passive", "true")
+    setting("criticals", "mode", "Packet")
+
+    def run(mods, clicks):
+        back = f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 3.0} 180 0"
+        if CTL2:
+            # Healed for each run: Horizon's server takes no max health attribute, so Bot1 has 20.
+            bot_respawned()
+            cmd("effect give Bot1 minecraft:instant_health 1 28 true", "effect give Bot1 minecraft:resistance 600 3 true")
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}", *((back,) if CTL2 else ()))
+        wait(5)
+        only(*mods)
+        before, mark = health(), probe_mark()
+        for step in range(40):
+            if step % 5 == 0:
+                ctl("key", "ad"[step // 5 % 2], "down")
+                ctl("key", "da"[step // 5 % 2], "up")
+            if clicks or "triggerbot" in mods:
+                ctl("look-at-entity", str(target))
+            if clicks and step % 7 == 0:
+                ctl("mouse", "left", "click")
+            # The command takes the 2 ticks of the step.
+            if CTL2:
+                cmd(back)
+            else:
+                wait(2)
+        ctl("key", "a", "up")
+        ctl("key", "d", "up")
+        only()
+        wait(5)
+        return (*order_stats(mark), round(before - health(), 1))
+
+    runs = {}
+    for name, mods, clicks in (("Kill Aura", ("killaura",), False), ("Trigger Bot", ("triggerbot",), False), ("click", (), True)):
+        runs[name] = run(mods, clicks)
+        runs[name + " + Criticals"] = run(mods + ("criticals",), clicks)
+    if CTL2:
+        bot_done()
+    ok = all(hits > 0 and late == 0 and most <= 1 and ticks > 60 for hits, late, ticks, most, _ in runs.values())
+    return ok, f"against {kind}: " + "; ".join(
+        f"{name} {hits} hits, {late} after the move packet, {lost} health lost, at most {most} moves a tick"
+        for name, (hits, late, ticks, most, lost) in runs.items())
+
 # ---- sweeps: every mode of every module that talks to the server, through the same short stretch of play, and every
 # render mode once in single player. On a server each one counts, from the probe's wire log, the move packets in a
 # tick (never two) and the times the server put the player back (a teleport accepted); a kick fails it with the
@@ -4251,7 +4339,7 @@ def blast_run(module, items, ticks, health=None, totem=False):
     wait(10)
     after_inv = ctl("inventory").get("counts", {})
     used = {item: before_inv.get(f"minecraft:{item}", 0) - after_inv.get(f"minecraft:{item}", 0) for item, _ in items}
-    pops = int(totem and "minecraft:totem_of_undying" not in after_inv and (state().get("offhand") or {}).get("item") != "minecraft:totem_of_undying")
+    pops = int(totem and "minecraft:totem_of_undying" not in after_inv and offhand() != "minecraft:totem_of_undying")
     st = state()
     alive = st.get("screen") != "dead" and bool(st.get("player"))
     taken = own0 - (own_health() if alive else 0)
@@ -4432,8 +4520,8 @@ def poll(ticks, every=2, fn=None):
 
 @test("Shield Breaker")
 def _():
-    # Bot1 holds a shield up at you; Kill Aura with a sword, an axe in slot 3. Off, Kill Aura leaves a raised shield
-    # alone (its hits would do nothing); on, the axe disables it and the sword's hits land. 10 s each.
+    # Bot1 holds a shield up at you, put back in front every 2 ticks; Kill Aura with a sword, an axe in slot 3. Off,
+    # Kill Aura's hits land on the shield and do nothing; on, the axe disables it and the sword's hits land. 10 s each.
     if not CTL2:
         return None, "needs a second player"
     reset()
@@ -4443,12 +4531,16 @@ def _():
     setting("killaura", "entities", "player")
     runs = {}
     for name, mods in (("off", ("killaura",)), ("on", ("killaura", "shieldbreaker"))):
-        bot_ready(2.5, 180, "item replace entity Bot1 weapon.offhand with minecraft:shield")
+        # In Bot1's hand: Horizon's server does not take /item replace for another player's offhand.
+        bot_ready(2.5, 180, "give Bot1 minecraft:shield")
+        ctl2("select", "1")
         ctl2("mouse", "right", "down")
         wait(10)
         before = bot_health()
         only(*mods)
-        held_items = poll(200, 2, lambda: (state().get("held") or {}).get("item", ""))
+        back = f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5} 180 0"
+        # Each poll's command takes 2 ticks more: 200 ticks in all.
+        held_items = poll(100, 2, lambda: (cmd(back), (state().get("held") or {}).get("item", ""))[1])
         only()
         axe_hits = sum(1 for a, b in zip(held_items, held_items[1:]) if "axe" in b and "axe" not in a)
         runs[name] = (round(before - bot_health(), 1), axe_hits, (state().get("held") or {}).get("item", ""))
@@ -4519,65 +4611,104 @@ def _():
         f"poke; hand after: {lost['on'][1]}")
 
 
-def bot_pushed(mods, ticks=80):
-    """You sprint at Bot1 with Kill Aura and a sword for `ticks`: how far Bot1 went (blocks along z)."""
-    reset()
-    slot(0, "diamond_sword")
-    ctl("key", "1", "tap")
-    bot_ready(3.0, 180)
-    start = ctl2("state")["player"]["position"]
-    only("killaura", *mods)
+def after_hits(mods, ticks, sample, hurt, act=None, ticks_after=6):
+    """Runs `mods` for `ticks` while you sprint forward (W and Ctrl held), sampling `sample()` (a position along z)
+    and `hurt()` (the health of whoever is hit) every tick, `act` first if given: for each hit (a drop in that health)
+    with the sample still over the platform, how far along z it moved in the `ticks_after` ticks after it."""
+    only(*mods)
     ctl("key", "ctrl", "down")
     ctl("key", "w", "down")
-    wait(ticks)
+    zs, hs = [], []
+    for t in range(ticks):
+        if act:
+            act(t)
+        wait(1)
+        zs.append(sample())
+        hs.append(hurt())
     ctl("key", "w", "up")
     ctl("key", "ctrl", "up")
     only()
-    end = ctl2("state")["player"]["position"]
-    return round(end[2] - start[2], 2)
+    hits = [i for i in range(1, len(hs) - ticks_after) if hs[i] < hs[i - 1] - 0.01 and zs[i + ticks_after] < Z0 + 16]
+    return [round(zs[i + ticks_after] - zs[i - 1], 2) for i in hits]
+
+
+def mean(xs):
+    return round(sum(xs) / len(xs), 2) if xs else 0.0
+
+
+def heard(sound):
+    """How many times the game has played `sound` (minecraft:...) so far."""
+    return ctl("status").get("heard", {}).get(sound, 0)
 
 
 @test("W Tap")
 def _():
+    # Bot1 stands still 3 blocks in front; you sprint at it with Kill Aura and a sword for 3 s. A hit the server takes
+    # as a sprint hit plays the knockback sound and knocks further; it also stops your sprint on the server, so without
+    # W Tap only the first hit is one. Counted: sprint hits (that sound), and how far Bot1 went along z in the 3 ticks
+    # after each hit while still on the platform.
     if not CTL2:
         return None, "needs a second player"
     setting("killaura", "entities", "player")
-    off, on = bot_pushed(()), bot_pushed(("wtap",))
-    setting("wtap", "mode", "S Tap")
-    s_tap = bot_pushed(("wtap",))
+    runs = {}
+    for name, mods in (("off", ()), ("on", ("wtap",)), ("S Tap", ("wtap",))):
+        if name == "S Tap":
+            setting("wtap", "mode", "S Tap")
+        reset(z=-13.5)
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        bot_ready(-10.5, 180)
+        sound = heard("minecraft:entity.player.attack.knockback")
+        pushes = after_hits(("killaura",) + mods, 60, lambda: ctl2("state")["player"]["position"][2], bot_health, ticks_after=3)
+        runs[name] = (heard("minecraft:entity.player.attack.knockback") - sound, len(pushes), pushes)
     bot_done()
-    return on > off + 0.5, f"Bot1 knocked {off} blocks in 4 s of sprinting hits without W Tap, {on} with it, {s_tap} with S Tap"
+    note = "sprint hits / hits, and Bot1's push per hit (blocks in 3 ticks): " + "; ".join(
+        f"{k} {sprints}/{hits} {pushes}" for k, (sprints, hits, pushes) in runs.items())
+    # Horizon's server (single player's too) gives no sprint hit after the first, whatever the sprint commands say.
+    if runs["off"][1] >= 3 and runs["on"][1] >= 3 and runs["off"][0] <= 1 and runs["on"][0] <= 1:
+        return None, "this server gives no sprint hit after the first, with W Tap or without: " + note
+    ok = runs["off"][1] >= 3 and runs["on"][1] >= 3 and runs["on"][0] > runs["off"][0]
+    return ok, note
 
 
 @test("Jump Reset")
 def _():
-    # Bot1 hits you 6 times as you sprint at it; how far back the knockback put you, without and with Jump Reset.
+    # Six times each, off and on: you sprint (W and Ctrl) from 2.5 blocks at Bot1, who stands still, and after 8 ticks
+    # it hits you once with a Knockback I stick. How far back the hit put you: the most your z fell below where you
+    # were as it landed, over the next 10 ticks. Jump Reset jumps as the knockback comes, and a sprint jump pushes you
+    # forward, so you go back less.
     if not CTL2:
         return None, "needs a second player"
-    back = {}
+    back, ups = {}, {}
     for name, mods in (("off", ()), ("on", ("jumpreset",))):
-        reset()
-        cmd("effect give @s minecraft:resistance 600 4 true")
-        bot_ready(2.0, 180, "item replace entity Bot1 weapon.mainhand with minecraft:stick[enchantments={knockback:1}]")
-        only(*mods)
-        me = state()["player"]["position"][2]
+        reset(z=-13.5)
+        cmd("effect give @s minecraft:resistance 600 3 true")
+        bot_ready(-11.0, 180, "give Bot1 minecraft:stick[enchantments={knockback:1}]")
+        ctl2("select", "1")
         tester = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
-        ctl("key", "ctrl", "down")
-        ctl("key", "w", "down")
-        ups = 0
+        only(*mods)
+        back[name], ups[name] = [], 0
         for _ in range(6):
+            cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 - 13.5} 0 0", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 - 11.0} 180 0")
+            wait(10)
+            ctl("key", "ctrl", "down")
+            ctl("key", "w", "down")
+            wait(8)
+            health = own_health()
             ctl2("look-at-entity", str(tester))
             ctl2("mouse", "left", "click")
-            ys = poll(12, 1, lambda: state()["player"]["position"][1])
-            ups += any(y > Y + 1.1 for y in ys)
-        ctl("key", "w", "up")
-        ctl("key", "ctrl", "up")
+            at = state()["player"]["position"]
+            samples = poll(10, 1, lambda: state()["player"]["position"])
+            ctl("key", "w", "up")
+            ctl("key", "ctrl", "up")
+            if own_health() < health - 0.01:
+                back[name].append(round(at[2] - min(p[2] for p in samples), 2))
+                ups[name] += any(p[1] > at[1] + 0.3 for p in samples)
         only()
-        back[name] = (round(me + 6 * 12 * 0.28 - state()["player"]["position"][2], 2), ups)
     bot_done()
-    return back["on"][1] >= 4 and back["on"][0] < back["off"][0], (
-        f"knocked back (short of a free sprint) {back['off'][0]} blocks without Jump Reset, {back['on'][0]} with it; "
-        f"jumped on {back['on'][1]} of 6 hits")
+    ok = len(back["off"]) >= 4 and len(back["on"]) >= 4 and mean(back["on"]) < mean(back["off"]) - 0.15
+    return ok, (f"knocked back (blocks) by each hit: off {mean(back['off'])} {back['off']}, on {mean(back['on'])} {back['on']}; "
+                f"rose 0.3 blocks or more after {ups['off']}/{ups['on']} hits off/on")
 
 
 @test("Friend Guard")
@@ -4621,8 +4752,7 @@ def _():
         while n < 100:
             wait(1)
             n += 1
-            off = state().get("offhand") or {}
-            if "totem" in off.get("item", "") and n > 2:
+            if "totem" in offhand() and n > 2:
                 break
         times.append(n)
         cmd("effect give @s minecraft:instant_health 1 10 true")
@@ -4631,6 +4761,59 @@ def _():
     alive = state()["player"]["health"] > 0
     ok = alive and max(times) < 100
     return ok, f"re-totem after a pop: {sorted(times)} ticks (median {sorted(times)[10]}); alive after 20 pops: {alive}"
+
+
+def slot_centre(slot):
+    """The GUI point at the middle of inventory `slot` (9-35 main, 0-8 hotbar) with the inventory open, found by
+    picking up the dirt this puts in slot 35 at each GUI scale until one takes it, then putting it back."""
+    d = ctl("status")["display"]
+    cmd("item replace entity @s inventory.26 with minecraft:dirt")
+    wait(5)
+    pos = lambda i, w, h: ((w - 176) // 2 + 8 + (i - 9) % 9 * 18 + 8, (h - 166) // 2 + 84 + (i - 9) // 9 * 18 + 8) if i >= 9 \
+        else ((w - 176) // 2 + 8 + i * 18 + 8, (h - 166) // 2 + 142 + 8)
+    for scale in (3, 2, 4, 1):
+        w, h = d["width"] / scale, d["height"] / scale
+        x, y = pos(35, w, h)
+        ctl("click-at", str(x), str(y))
+        wait(2)
+        if (ctl("inventory").get("carried") or {}).get("item") == "minecraft:dirt":
+            # Half a second first: a second click on the slot sooner is a double click, which keeps the stack carried.
+            wait(10)
+            ctl("click-at", str(x), str(y))
+            for _ in range(10):
+                wait(2)
+                if not ctl("inventory").get("carried"):
+                    return pos(slot, w, h)
+            return None
+    return None
+
+
+@test("Hover Totem")
+def _():
+    # A totem in the main inventory (slot 14) and the offhand empty: with the inventory open, the pointer is moved over
+    # the totem (a mouse wheel turn of 0 steps there, so nothing is clicked). Off it stays put; on it goes to the offhand.
+    got = {}
+    for name, mods in (("off", ()), ("on", ("hovertotem",))):
+        reset()
+        cmd("item replace entity @s inventory.5 with minecraft:totem_of_undying")
+        only(*mods)
+        ctl("open-inventory")
+        wait(5)
+        at = slot_centre(14)
+        if at is None:
+            only()
+            ctl("close")
+            return False, "found no GUI scale where a click picks up and puts back the dirt in the inventory's slot 35"
+        ctl("scroll-at", str(at[0]), str(at[1]), "0")
+        n = 0
+        while n < 40 and "totem" not in offhand():
+            wait(2)
+            n += 2
+        got[name] = (offhand(), n)
+        ctl("close")
+        only()
+    ok = "totem" not in got["off"][0] and "totem" in got["on"][0]
+    return ok, f"offhand after the pointer rests on the totem: off {got['off'][0] or 'empty'}, on {got['on'][0] or 'empty'} (in {got['on'][1]} ticks)"
 
 
 @test("FastXP and Key Throw")
@@ -4666,24 +4849,6 @@ def _():
         f"bottles in 2 s: {used['off']} without FastXP, {used['on']} with it; Key Throw: {16 - left} pearls for 5 presses, hand "
         f"back on {back}")
 
-
-@test("Scaffold Legit")
-def _():
-    # vs.'s Legit mode: facing back along the platform and looking steeply down, you walk backwards off its edge (z 17)
-    # with cobblestone; it sneaks at the edge and places where you look. Where you got to, and your lowest height.
-    reset(z=15.5)
-    slot(0, "cobblestone", 64)
-    ctl("key", "1", "tap")
-    setting("scaffold", "mode", "Legit")
-    only("scaffold")
-    ctl("look", "180", "78")
-    ctl("key", "s", "down")
-    ys = poll(160, 4, lambda: pos()[1])
-    ctl("key", "s", "up")
-    only()
-    p = pos()
-    placed = 64 - ((state().get("held") or {}).get("count", 64))
-    return p[2] > 19 and min(ys) > Y + 0.5, f"walked back to z {p[2]:.1f} (edge 17), lowest height {min(ys) - Y:.2f} over the platform, {placed} blocks placed"
 
 if __name__ == "__main__":
     import signal
