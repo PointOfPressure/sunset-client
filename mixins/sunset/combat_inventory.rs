@@ -32,11 +32,18 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new(HOVER, Category::Combat, "In your inventory, moves the totem under the pointer into your offhand (or the Hotbar slot, with Hotbar refill).")
             .bool("Hotbar refill", false)
             .num("Hotbar slot", 1.0, 1.0, 9.0, 1.0),
-        Module::new(XP, Category::Combat, "Throws experience bottles faster while you hold use with one: the game's use delay becomes Delay.")
-            .num("Delay", 0.0, 0.0, 3.0, 1.0),
-        Module::new(THROW, Category::Combat, "A key throws one ender pearl or wind charge from your hotbar (a wind charge straight down, jumping) and goes back to your slot.")
+        Module::new(XP, Category::Combat, "Throws experience bottles faster while you hold use with one: the game's use delay becomes Delay. Also pearls, wind charges and the rest as ticked (Duelkit's Fast throw): thrown the tick their cooldown ends. Off hand: from the offhand while your hand is empty or holds a weapon.")
+            .num("Delay", 0.0, 0.0, 3.0, 1.0)
+            .bool("Experience bottles", true)
+            .bool("Ender pearls", true)
+            .bool("Wind charges", true)
+            .bool("Snowballs and eggs", false)
+            .bool("Splash potions", false)
+            .bool("Off hand", true),
+        Module::new(THROW, Category::Combat, "A key throws one ender pearl or wind charge from your hotbar (a wind charge straight down, jumping) and goes back to your slot. Hotbar keys: the hotbar key of a pearl or wind charge throws it where you look and keeps your weapon in hand.")
             .text("Pearl key", "None")
-            .text("Wind charge key", "None"),
+            .text("Wind charge key", "None")
+            .bool("Hotbar keys", false),
     ]
 }
 
@@ -81,6 +88,8 @@ struct Press {
     kind: Throw,
     slot: usize,
     tick: u64,
+    // Hotbar keys: the slot whose key was pressed, thrown with your own look.
+    from: Option<usize>,
 }
 
 type Session = (i32, super::Dim, Arc<dyn Any + Send + Sync>);
@@ -626,10 +635,30 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
         let b = wind && s.wind.update(pressed);
         a || b
     });
+    if pressed && m.on && m.b("Hotbar keys") {
+        hotbar_key(game, key);
+    }
     if !edge || !m.on || !alive(game) || game.screen != Screen::Playing {
         return;
     }
-    state(|s| s.press = Some(Press { kind: if pearl { Throw::Pearl } else { Throw::Wind }, slot: game.selected, tick: game.ticks }));
+    state(|s| s.press = Some(Press { kind: if pearl { Throw::Pearl } else { Throw::Wind }, slot: game.selected, tick: game.ticks, from: None }));
+}
+
+// Hotbar keys (Duelkit's Quick use): the hotbar key of a slot with an ender pearl or wind charge throws it, and the
+// slot you held stays (the game selects the slot on the key; the throw puts it back first).
+fn hotbar_key(game: &Game<'_>, key: &str) {
+    let Some(from) = (0..9).find(|i| game.settings.keys.get(&format!("key.hotbar.{}", i + 1)) == key) else {
+        return;
+    };
+    if from == game.selected || game.screen != Screen::Playing || !alive(game) {
+        return;
+    }
+    let kind = match game.inventory[from].as_ref().map(|s| util::short(&s.item)) {
+        Some("ender_pearl") => Throw::Pearl,
+        Some("wind_charge") => Throw::Wind,
+        _ => return,
+    };
+    state(|s| s.press = Some(Press { kind, slot: game.selected, tick: game.ticks, from: Some(from) }));
 }
 
 fn can_use(game: &Game<'_>, item: &ItemStack) -> bool {
@@ -645,6 +674,9 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
     let Some(press) = state(|s| s.press) else {
         return false;
     };
+    if press.from == Some(game.selected) {
+        game.selected = press.slot;
+    }
     if game.selected != press.slot || !policy::press_alive(press.tick, game.ticks) {
         state(|s| s.press = None);
         return false;
@@ -656,7 +688,9 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
         Throw::Pearl => "ender_pearl",
         Throw::Wind => "wind_charge",
     };
-    let slot = if game.offhand.as_ref().is_some_and(|s| util::short(&s.item) == want && s.count > 0) {
+    let slot = if press.from.is_some() {
+        press.from
+    } else if game.offhand.as_ref().is_some_and(|s| util::short(&s.item) == want && s.count > 0) {
         Some(util::OFFHAND)
     } else {
         util::find_held(game, |s| s == want)
@@ -670,7 +704,8 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
         return false;
     }
     let done = control::finish(THROW);
-    if matches!(press.kind, Throw::Wind) && game.player.as_ref().is_some_and(|p| p.ground.on_ground) {
+    let down = press.from.is_none() && matches!(press.kind, Throw::Wind);
+    if down && game.player.as_ref().is_some_and(|p| p.ground.on_ground) {
         super::sunset_melee::request_jump(THROW);
         return true;
     }
@@ -678,7 +713,7 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
         return false;
     };
     let expected = m.clone();
-    let (yaw, pitch) = (game.yaw, if matches!(press.kind, Throw::Wind) { 90.0 } else { game.pitch });
+    let (yaw, pitch) = (game.yaw, if down { 90.0 } else { game.pitch });
     let queued = Instant::now();
     state(|s| s.queued_use = Some((THROW, queued)));
     let accepted = sunset::try_turn_then(THROW, yaw, pitch, move |game| {
@@ -719,13 +754,24 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
     accepted
 }
 
-// An experience bottle in hand (or in the offhand, with no block in hand) while you hold use.
-fn xp_in_hand(game: &Game<'_>) -> bool {
+// What FastXP throws faster: an experience bottle, ender pearl, wind charge, snowball or egg, or splash or lingering
+// potion in hand as its settings say, off cooldown (a use on cooldown still sends its packet); with Off hand, one in
+// the offhand while the hand is empty or holds a weapon (the game tries the main hand first).
+fn thrown_in_hand(game: &Game<'_>, m: &Module) -> bool {
+    let wanted = |s: &ItemStack| {
+        let ticked = match util::short(&s.item) {
+            "experience_bottle" => m.b("Experience bottles"),
+            "ender_pearl" => m.b("Ender pearls"),
+            "wind_charge" => m.b("Wind charges"),
+            "snowball" | "egg" | "blue_egg" | "brown_egg" => m.b("Snowballs and eggs"),
+            "splash_potion" | "lingering_potion" => m.b("Splash potions"),
+            _ => false,
+        };
+        ticked && can_use(game, s)
+    };
     let main = game.inventory[game.selected].as_ref();
-    let main_xp = main.is_some_and(|s| util::short(&s.item) == "experience_bottle");
-    let main_block = main.is_some_and(|s| game.items().get(&s.item).is_some_and(|i| i.block.is_some()));
-    let off_xp = game.offhand.as_ref().is_some_and(|s| util::short(&s.item) == "experience_bottle");
-    main_xp || (off_xp && !main_block)
+    let weapon = main.is_none_or(|s| ["_sword", "_axe", "_spear", ":mace", ":trident"].iter().any(|w| s.item.ends_with(w)));
+    main.is_some_and(wanted) || (m.b("Off hand") && weapon && game.offhand.as_ref().is_some_and(wanted))
 }
 
 fn holding_use(game: &Game<'_>) -> bool {
@@ -735,7 +781,7 @@ fn holding_use(game: &Game<'_>) -> bool {
 // FastXP: the game's own use, with its use delay cut to Delay; it waits while a look is on its way, another module
 // has the hand, or something went out this tick.
 fn fast_xp(game: &mut Game<'_>, m: &Module) {
-    if !plain(game) || game.left || !holding_use(game) || !xp_in_hand(game) {
+    if !plain(game) || game.left || !holding_use(game) || !thrown_in_hand(game, m) {
         return;
     }
     if sunset::turn_pending() || !control::available(XP) || state(|s| s.last_action == Some(game.ticks)) {
@@ -747,7 +793,7 @@ fn fast_xp(game: &mut Game<'_>, m: &Module) {
 
 // The use hook: FastXP holds back a use the tick it must wait.
 pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
-    if !plain(game) || !holding_use(game) || !with(|s| s.module(XP).is_some_and(|m| m.on)) || !xp_in_hand(game) {
+    if !plain(game) || !holding_use(game) || !with(|s| s.module(XP).is_some_and(|m| m.on && thrown_in_hand(game, m))) {
         return false;
     }
     let blocked = sunset::turn_pending() || !control::available(XP) || state(|s| s.last_action == Some(game.ticks));

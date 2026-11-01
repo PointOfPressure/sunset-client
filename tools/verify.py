@@ -5049,6 +5049,58 @@ def _():
     return wins >= 5 and stuck == 0, (f"Bot1 killed {wins}/6 times; seconds per fight (None: alive after 20 s): still {won['still']}, "
                                       f"strafing {won['strafing']}; still moving after it turned off: {stuck}")
 
+
+@test("Key Throw (Hotbar keys)")
+def _():
+    # Duelkit's Quick use: holding a sword, 3 presses each of the pearls' hotbar key (5) and the wind charges' (6) with
+    # Hotbar keys on: each throws one and the sword stays in hand. Off, the key selects the slot as usual.
+    reset()
+    slot(0, "diamond_sword")
+    slot(4, "ender_pearl", 16)
+    slot(5, "wind_charge", 16)
+    ctl("key", "1", "tap")
+    ctl("look", "0", "-80")
+    setting("keythrow", "hotbar keys", "true")
+    only("keythrow")
+    kept = 0
+    for key in "555666":
+        ctl("key", key, "tap")
+        wait(25)
+        kept += "sword" in held().get("item", "")
+    only()
+    hotbar = ctl("inventory").get("hotbar") or []
+    left = {k: sum(s.get("count", 0) for s in hotbar if s and k in (s.get("item") or "")) for k in ("ender_pearl", "wind_charge")}
+    ctl("key", "5", "tap")
+    wait(2)
+    off = held().get("item", "")
+    setting("keythrow", "hotbar keys", "false")
+    return left == {"ender_pearl": 13, "wind_charge": 13} and kept == 6 and "pearl" in off, (
+        f"after 3 presses of each key: {left} left (13 each wanted), sword in hand after {kept}/6; Key Throw off, key 5 "
+        f"selects {off}")
+
+
+@test("FastXP (Fast throw)")
+def _():
+    # Duelkit's Fast throw through FastXP: wind charges (10-tick cooldown, the game retries use every 4 ticks) held on
+    # use for 3 s, and a stack of 16 snowballs for 1.5 s, without and with FastXP (Snowballs and eggs ticked).
+    setting("fastxp", "snowballs and eggs", "true")
+    used = {}
+    for item, n, ticks in (("wind_charge", 64, 60), ("snowball", 16, 30)):
+        for name, mods in (("off", ()), ("on", ("fastxp",))):
+            reset()
+            slot(0, item, n)
+            ctl("key", "1", "tap")
+            ctl("look", "0", "-60")
+            only(*mods)
+            ctl("mouse", "right", "down")
+            wait(ticks)
+            ctl("mouse", "right", "up")
+            only()
+            used[item, name] = n - ((state().get("held") or {}).get("count", 0))
+    setting("fastxp", "snowballs and eggs", "false")
+    ok = used["wind_charge", "on"] > used["wind_charge", "off"] and used["snowball", "on"] > used["snowball", "off"]
+    return ok, "thrown in 3 s, off/on: " + ", ".join(f"{i} {used[i, 'off']}/{used[i, 'on']}" for i in ("wind_charge", "snowball"))
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)
