@@ -20,7 +20,7 @@ use horizon_protocol::packets::{
     Empty,
     play::{self, Serverbound as S},
 };
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use winit::keyboard::KeyCode;
 
@@ -808,6 +808,8 @@ pub(super) enum Page {
 
 pub(super) struct State {
     pub(crate) modules: Vec<Module>,
+    // The modules as last handed out by snapshot(): shared again while nothing changed.
+    shared: Arc<Vec<Module>>,
     page: Page,
     // A module waiting for its key bind (its index).
     binding: Option<usize>,
@@ -917,6 +919,7 @@ impl State {
     pub(super) fn new() -> Self {
         Self {
             modules: defaults(),
+            shared: Arc::default(),
             page: Page::Main,
             binding: None,
             inputs: Inputs::default(),
@@ -1328,8 +1331,14 @@ pub(super) fn register_module(m: Module) {
     });
 }
 
-pub(super) fn snapshot() -> Vec<Module> {
-    with(|s| s.modules.clone())
+// The modules for one tick or frame. Comparing costs no allocation, so they are copied only when they changed.
+pub(super) fn snapshot() -> Arc<Vec<Module>> {
+    with(|s| {
+        if *s.shared != s.modules {
+            s.shared = Arc::new(s.modules.clone());
+        }
+        s.shared.clone()
+    })
 }
 
 pub(super) fn sync_flags(s: &mut State) {
@@ -1996,7 +2005,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
     super::sunset_player::no_break_reset(game, mods.iter().find(|m| m.name == "No Break Reset" && m.on));
     let on = |n: &str| mods.iter().any(|m| m.name == n && m.on);
-    let get = |n: &str| mods.iter().find(|m| m.name == n).cloned();
+    let get = |n: &str| mods.iter().find(|m| m.name == n);
     let playing = game.native_playing();
     // The click GUI holds no movement keys, as a screen would.
     if gui_open() {
@@ -2054,17 +2063,17 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
             injected.push(k);
         }
     }
-    velocity(game, get("Velocity").filter(|m| m.on).as_ref());
+    velocity(game, get("Velocity").filter(|m| m.on));
     let across = get("Speed").filter(|m| m.on).and_then(|m| speed(game, &m));
     horizon_client::motion::sunset_motion::set_across(across.map(|(xz, _)| xz));
     horizon_client::motion::sunset_motion::set_up(across.and_then(|(_, y)| y));
     let flight = get("Flight").filter(|m| m.on);
-    flight_pre(game, flight.as_ref());
+    flight_pre(game, flight);
     let step = get("Step").filter(|m| m.on);
     let high_jump = get("High Jump").filter(|m| m.on);
     let (was_flying, was_stepping, was_high_jumping) = with(|s| (s.flying, s.stepping, s.high_jumping));
     let (creative, spectator_mode) = (game.creative, game.spectator());
-    let step_to = step.as_ref().map_or(0.6, |st| step_height(game, st));
+    let step_to = step.map_or(0.6, |st| step_height(game, st));
     if let Some(p) = game.player.as_mut() {
         if flight.is_none() && was_flying {
             p.flying = creative && p.flying || spectator_mode;
@@ -2085,7 +2094,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     with(|s| {
         s.injected.extend(injected);
-        s.flying = flight.as_ref().is_some_and(|m| m.p("Mode") == "Abilities");
+        s.flying = flight.is_some_and(|m| m.p("Mode") == "Abilities");
         s.stepping = step.is_some();
         s.high_jumping = high_jump.is_some();
     });
@@ -5787,23 +5796,12 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], accent()));
         }
         if hud.b("Module list") && game.native_corner_shown(Corner::TopRight) {
-            let mut lines: Vec<String> = mods
-                .iter()
-                .filter(|m| m.on && m.name != "HUD")
-                .map(|m| match m.info() {
-                    Some(i) => format!("{} [{i}]", m.name),
-                    None => m.name.to_owned(),
-                })
-                .collect();
-            let widths: Vec<f32> = lines.iter().map(|l| game.native_text_width(l)).collect();
-            let mut order: Vec<usize> = (0..lines.len()).collect();
-            order.sort_by(|&a, &b| widths[b].total_cmp(&widths[a]));
-            let max = widths.iter().copied().fold(0.0, f32::max);
-            if !lines.is_empty() {
-                let (x, y) = corners.place(Corner::TopRight, max + 4.0, lines.len() as f32 * 10.0 + 2.0);
-                for (row, &i) in order.iter().enumerate() {
-                    let text = std::mem::take(&mut lines[i]);
-                    shapes.push(Shape::Text(text, [x + max + 2.0 - widths[i], y + 2.0 + row as f32 * 10.0], 0xFFFFFF));
+            let mut list = MODULE_LIST.lock().unwrap_or_else(|e| e.into_inner());
+            list.update(game, &mods);
+            if let Some(&(_, widest)) = list.lines.first() {
+                let (x, y) = corners.place(Corner::TopRight, widest + 4.0, list.lines.len() as f32 * 10.0 + 2.0);
+                for (row, (text, tw)) in list.lines.iter().enumerate() {
+                    shapes.push(Shape::Text(text.clone(), [x + widest + 2.0 - tw, y + 2.0 + row as f32 * 10.0], 0xFFFFFF));
                 }
             }
         }
@@ -5912,6 +5910,41 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     batch.scale = real;
     if !with(|s| s.gui.open) {
         super::sunset_radar::draw(game, batch, corners, &mods);
+    }
+}
+
+// The HUD's module list, widest line first: made again (text, measuring, order) only when the modules on, their info
+// or the font changed.
+struct ModuleList {
+    key: Vec<(&'static str, Option<String>)>,
+    font: u32,
+    lines: Vec<(String, f32)>,
+}
+
+static MODULE_LIST: Mutex<ModuleList> = Mutex::new(ModuleList { key: Vec::new(), font: u32::MAX, lines: Vec::new() });
+
+impl ModuleList {
+    fn update(&mut self, game: &Game<'_>, mods: &[Module]) {
+        let font = u32::from(horizon_client::font::sunset_font::STYLE.load(Ordering::Relaxed));
+        let on = mods.iter().filter(|m| m.on && m.name != "HUD");
+        if font == self.font && self.key.len() == on.clone().count() && on.zip(&self.key).all(|(m, (n, i))| m.name == *n && m.info() == *i) {
+            return;
+        }
+        self.font = font;
+        self.key = mods.iter().filter(|m| m.on && m.name != "HUD").map(|m| (m.name, m.info())).collect();
+        self.lines = self
+            .key
+            .iter()
+            .map(|(name, info)| {
+                let text = match info {
+                    Some(i) => format!("{name} [{i}]"),
+                    None => (*name).to_owned(),
+                };
+                let tw = game.native_text_width(&text);
+                (text, tw)
+            })
+            .collect();
+        self.lines.sort_by(|a, b| b.1.total_cmp(&a.1));
     }
 }
 
@@ -6310,11 +6343,16 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             }
             hp.clear();
             tail.clear();
+            // Whole numbers written as integers: float formatting was a good part of a frame of 200 tags.
             if show_health {
-                let _ = write!(hp, "{}", (mob.health * 10.0).round() / 10.0);
+                let tenths = (mob.health * 10.0).round() as i32;
+                let _ = write!(hp, "{}", tenths / 10);
+                if tenths % 10 != 0 {
+                    let _ = write!(hp, ".{}", (tenths % 10).abs());
+                }
             }
             if show_distance {
-                let _ = write!(tail, " {}m", d.round());
+                let _ = write!(tail, " {}m", d.round() as i64);
             }
             let (hw, tw) = (game.native_text_width(&hp), game.native_text_width(&tail));
             let gap = if hp.is_empty() { 0.0 } else { 4.0 };

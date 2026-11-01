@@ -3,7 +3,8 @@
 # its default mode, its outline mode and Potato: frames a second and the game's main thread's CPU time a frame (the
 # median of four 2 s samples, and in brackets what it adds to the "off" sample just before). Runs on the test
 # machine, next to verify.py, whose helpers it uses.
-# Usage: bench.py CTL_PATH [module names...]
+# Usage: bench.py CTL_PATH [module names...]; bench.py CTL_PATH --all: the same scene with every module that leaves the
+# world and the player alone on at once (EVERYTHING), against all off, ROUNDS times each.
 import json, os, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -26,6 +27,13 @@ RUNS = [
     ("Radar", "radar", ["Round", "Potato"]),
 ]
 ROUNDS = 4
+# Every module that neither moves the player, changes the world nor talks: the "everything on" scene.
+EVERYTHING = ["esp", "tracers", "nametags", "storageesp", "blockesp", "holeesp", "tunnelesp", "voidesp", "lightoverlay",
+              "breadcrumbs", "waypoints", "trajectories", "radar", "logoutspots", "blockoverlay", "targetesp", "handview",
+              "norender", "fullbright", "atmosphere", "clearwater", "shulkerpeek", "spawneralerts", "basefinder",
+              "antivanish", "deathlocation", "killaura", "triggerbot", "criticals", "offhand", "autoarmor", "autoweapon",
+              "autoeat", "autoreplenish", "autotool", "fastplace", "autorespawn", "antihunger", "sprint", "nofall",
+              "noslow", "velocity", "safewalk", "step", "nojumpdelay"]
 # Settings that make the scene show everything: every kind of mob, mobs' name tags.
 EXTRA = {"tracers": [("hostiles", "true"), ("passive", "true")], "nametags": [("mobs", "true")]}
 
@@ -105,12 +113,42 @@ def unscene():
     v.cmd("function sunset_bench:clear", "difficulty peaceful")
 
 
+def everything(path):
+    """All of EVERYTHING on against all off: frames a second and the main thread's ms a frame, ROUNDS samples each."""
+    v.setting("nametags", "mobs", "true")
+    v.setting("tracers", "hostiles", "true")
+    v.setting("tracers", "passive", "true")
+    got = {"off": [], "on": []}
+    for _ in range(ROUNDS):
+        for state in got:
+            for key in EVERYTHING:
+                v.toggle(key, state == "on")
+            settle()
+            got[state].append(sample(path, 4.0))
+    for key in EVERYTHING:
+        v.toggle(key, False)
+    for state, xs in got.items():
+        print(f"everything {state}: {med([f for f, _ in xs]):.0f} fps {med([m for _, m in xs]):.3f} ms", flush=True)
+
+
 if __name__ == "__main__":
     only = sys.argv[2:]
     v.arena()
     v.ctl("options-set", "maxFps", "260")
     v.ctl("options-set", "enableVsync", "false")
     scene()
+    if only == ["--all"]:
+        if os.environ.get("HOLD"):
+            for key in EVERYTHING:
+                v.toggle(key, True)
+            print("held on", flush=True)
+            time.sleep(float(os.environ["HOLD"]))
+            for key in EVERYTHING:
+                v.toggle(key, False)
+        else:
+            everything(game_thread())
+        unscene()
+        sys.exit(0)
     # The HUD's own text off, so only the module timed draws.
     v.say(".t hud")
     path = game_thread()

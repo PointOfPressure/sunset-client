@@ -138,8 +138,8 @@ fn rs<R>(f: impl FnOnce(&mut Rs) -> R) -> R {
     f(g.get_or_insert_with(Rs::default))
 }
 
-fn on(mods: &[Module], name: &str) -> Option<Module> {
-    mods.iter().find(|m| m.name == name && m.on).cloned()
+fn on<'a>(mods: &'a [Module], name: &str) -> Option<&'a Module> {
+    mods.iter().find(|m| m.name == name && m.on)
 }
 
 static IN_CAMERA: AtomicBool = AtomicBool::new(false);
