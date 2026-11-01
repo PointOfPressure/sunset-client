@@ -9,6 +9,7 @@ use super::sunset_explosive_damage::{
 use super::sunset_explosive_policy::{Budget, Limits, in_range, safe};
 use super::sunset_util::{self as util, OFFHAND, Target};
 use super::{Dim, Game, Screen};
+use super::{sunset_prediction as prediction,sunset_faceplace_policy as face};
 use horizon_protocol::packets::{
     Empty,
     play::{self, Serverbound as S},
@@ -42,7 +43,8 @@ pub(super) fn defaults() -> Vec<Module> {
         .num("Max friend damage", 0.0, 0.0, 36.0, 0.5)
         .bool("Anti suicide", true)
         .num("Min health remaining", 4.0, 0.0, 36.0, 0.5)
-        .num("Action delay", 2.0, 1.0, 20.0, 1.0)
+        .num("Action delay", 0.0, 0.0, 20.0, 1.0)
+        .num("Turn Speed",4.5,1.0,10.0,0.5).bool("Render",true).text("Render Color","#FFFF9A3C")
         .bool("Pause on use", true)
         .bool("Anti bot", true)
         .bool("Ignore teams", true)
@@ -114,7 +116,19 @@ fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(s.get_or_insert_with(State::default))
 }
 
+// Input contention cancels work that has not been sent. A real pending use and
+// its acknowledgement/retry history survive until observation or scene reset.
+pub(super) fn suspend() {
+    super::sunset_combat_control::release(NAME);
+    cancel_turns(NAME);
+    state(|s| {
+        s.plan=None;
+        if s.pending.is_some_and(|p|p.sent.is_none()) {s.pending=None;}
+    });
+}
+
 pub(super) fn reset() {
+    super::sunset_explosive_aura::clear_view(true);
     super::sunset_combat_control::release(NAME);
     cancel_turns(NAME);
     state(|s| {
@@ -282,21 +296,23 @@ fn players(game: &Game<'_>, m: &Module) -> Option<(Vec<Target>, Vec<Target>)> {
             }
             protected.push(t);
         } else if in_range(eye, t.pos, m.n("Target range"))
-            && order::target_available(f64::from(t.health), mob.hurt_time > 0)
+            && util::player_enemy(game,mob)
             && super::sunset_aura::entity_listed(m.t("Entities"), &t)
         {
             targets.push(t);
         }
     }
     util::sort_targets(game, &mut targets, "Lowest distance");
+    if let Some(steer)=super::sunset_crystal_bot::steer(game) {targets.sort_by_key(|t|t.id!=steer.target);}
     targets.truncate(4);
     Some((targets, protected))
 }
 
-fn limits(m: &Module) -> Limits {
+fn limits(game:&Game<'_>,m: &Module) -> Limits {
+    let steering=super::sunset_crystal_bot::steer(game);
     Limits {
-        min_target: m.n("Min damage"),
-        max_self: m.n("Max self damage"),
+        min_target: steering.map_or_else(||m.n("Min damage"),|s|s.anchor_min),
+        max_self: steering.map_or_else(||m.n("Max self damage"),|s|s.self_cap),
         max_friend: m.n("Max friend damage"),
         min_remaining: m.n("Min health remaining"),
         anti_suicide: m.b("Anti suicide"),
@@ -321,7 +337,7 @@ fn damage_ok(
         .player
         .as_ref()
         .map(|p| f64::from(p.health.health() + p.health.absorption()))?;
-    let l = limits(m);
+    let l = limits(game,m);
     if own > l.max_self {
         reason("searching", "self damage exceeds cap");
         return None;
@@ -332,10 +348,9 @@ fn damage_ok(
     }
     let mut friend_upper: f64 = 0.0;
     for f in friends {
-        if !in_range(blast.center, f.pos, 12.0) {
-            continue;
-        }
-        friend_upper = friend_upper.max(target_damage(game, f, blast, budget)?.upper);
+        let projected=prediction::target(game,f,prediction::rtt(game).min(5))?;
+        if !in_range(blast.center,f.pos,12.0) && !in_range(blast.center,projected.pos,12.0) {continue;}
+        friend_upper = friend_upper.max(target_damage(game, &projected, blast, budget)?.upper);
     }
     if friend_upper > l.max_friend {
         reason("searching", "protected player damage exceeds cap");
@@ -343,19 +358,22 @@ fn damage_ok(
     }
     let mut best: Option<(u32, Rating)> = None;
     for target in targets {
-        let Some(damage) = target_damage(game, target, blast, budget).map(|p| p.estimate) else {
+        let projected=prediction::target(game,target,prediction::rtt(game).min(5))?;
+        if step==Step::Charge && prediction::opens_in(target.id,prediction::rtt(game))>1 {continue;}
+        let ahead=match step {Step::Detonate=>0,Step::Charge=>1,Step::Place=>2};
+        let Some((damage,_)) = prediction::estimate(game,&projected,blast,ahead,prediction::rtt(game),budget) else {
             continue;
         };
-        let mut l = limits(m);
+        let mut l = limits(game,m);
         state(|s| s.last_prediction = Some((own, damage, friend_upper)));
-        l.min_target = order::target_min(l.min_target, f64::from(target.health))?;
+        l.min_target = face::anchor(l.min_target,prediction::effective_health(game,target))?;
         if !safe(l, damage, own, health, friend_upper) {
             reason("searching", "target threshold or invalid damage policy");
             continue;
         }
         let rating = Rating {
             target_damage: damage,
-            target_health: f64::from(target.health),
+            target_health: prediction::effective_health(game,target).unwrap_or(f64::from(target.health)),
             self_damage: own,
             attack: step == Step::Detonate,
         };
@@ -486,6 +504,17 @@ fn proposal(
         return None;
     }
     let step = order::next(charge, fuel(game, OFFHAND));
+    if step==Step::Place {
+        let bounds=horizon_core::geometry::Aabb::block(horizon_core::position::BlockPos::new(p[0],p[1],p[2]));
+        for mob in game.mobs.iter().filter(|m|m.kind.id=="minecraft:player"&&!m.removed&&m.alive()) {
+            if Some(mob.id)==super::sunset::own_id(game) || super::remote::sunset_combat_remote::player_mode(game,mob.id)==Some(3) {continue;}
+            let projected=prediction::target(game,&util::mob_target(mob),prediction::rtt(game).min(5))?;
+            let future=horizon_core::geometry::Aabb::new(
+                horizon_core::geometry::Vec3::new(projected.lo[0],projected.lo[1],projected.lo[2]),
+                horizon_core::geometry::Vec3::new(projected.hi[0],projected.hi[1],projected.hi[2]));
+            if bounds.intersects(mob.bounds()) || bounds.intersects(future) {return None;}
+        }
+    }
     if step == Step::Place && !m.b("Place") {
         return None;
     }
@@ -717,6 +746,7 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
         });
         s.status("prepared", "safe candidate available");
     });
+    super::sunset_explosive_aura::show(game,true,action.pos);
     Some(rating)
 }
 
@@ -729,7 +759,13 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
         reason("idle", "prepared plan expired or settings changed");
         return false;
     }
-    let action = plan.action;
+    let mut action = plan.action;
+    let Some(eye)=game.eye_position() else {return false;};
+    let turn=super::sunset_aura::next_look(game,look_at(eye,action.hit),m.n("Turn Speed"));
+    let Some(contact)=util::block_contact(game,turn,action.clicked,action.face,m.n("Range")) else {
+        super::sunset::turn(NAME,turn.0,turn.1);return false;
+    };
+    action.hit=contact;
     let session = (game.remote.as_ref().map_or(0, |r| r.entity_id), game.dim);
     let token = state(|s| {
         s.token = s.token.wrapping_add(1);
@@ -745,7 +781,7 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
     let Some(eye) = game.eye_position() else {
         return false;
     };
-    let (yaw, pitch) = look_at(eye, action.hit);
+    let (yaw, pitch) = turn;
     // Revalidate after rotation, including current state, materials and damage.
     if !super::sunset_combat_control::claim(NAME) { return false; }
     let finish = super::sunset_combat_control::finish(NAME);
@@ -780,7 +816,7 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
                     || a.slot != action.slot
                     || a.clicked != action.clicked
                     || a.face != action.face
-                    || a.hit != action.hit
+
                 {
                     return None;
                 }
@@ -793,7 +829,9 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
                     a.step,
                     &mut budget,
                 )?;
-                Some(a)
+                let sent=super::sunset_combat_wire::sent_look(game)?;
+                let contact=util::block_contact(game,sent,a.clicked,a.face,expected.n("Range"))?;
+                Some(Action{hit:contact,..a})
             })
         } else {
             None
@@ -803,6 +841,11 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
             reason("idle", "deferred revalidation rejected stale/unsafe action");
             return;
         };
+        if a.step==Step::Detonate {
+            let Some((targets,_))=players(game,&expected) else {return;};
+            if !prediction::arm_blast(game,super::sunset_hurt_policy::ShotSource::Anchor(a.pos.map(|v|f64::from(v)+0.5)),
+                Blast::anchor(a.pos),&targets,a.target,prediction::rtt(game).min(5),&mut budget) {return;}
+        }
         let before = game.selected;
         if a.slot != OFFHAND {
             hold(game, a.slot);
@@ -843,7 +886,7 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
             s.status(phase, "awaiting observed server block change");
             s.next_action = game
                 .ticks
-                .saturating_add(expected.n("Action delay").clamp(1.0, 20.0) as u64);
+                .saturating_add(expected.n("Action delay").clamp(0.0, 20.0) as u64);
         });
     });
     if accepted {

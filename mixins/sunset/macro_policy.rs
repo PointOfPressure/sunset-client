@@ -21,6 +21,7 @@ pub(super) struct Sequence {
     pub kind: Kind,
     pub step: Step,
     pub remaining: u8,
+    pub refilled: bool,
 }
 impl Sequence {
     pub(super) fn new(kind: Kind, first: Step, double: bool) -> Self {
@@ -28,6 +29,7 @@ impl Sequence {
             kind,
             step: first,
             remaining: if kind == Kind::Anchor && double { 2 } else { 1 },
+            refilled:false,
         }
     }
     pub(super) fn acknowledged(&mut self, sent: Step) -> bool {
@@ -38,11 +40,13 @@ impl Sequence {
             Step::Base => Step::CrystalPlace,
             Step::CrystalPlace => Step::CrystalBreak,
             Step::CrystalBreak => Step::Done,
+            Step::AnchorPlace if self.refilled => Step::Charge,
             Step::AnchorPlace => Step::Guard,
             Step::Guard => Step::Charge,
             Step::Charge => Step::Detonate,
             Step::Detonate if self.remaining > 1 => {
                 self.remaining -= 1;
+                self.refilled=true;
                 Step::AnchorPlace
             }
             Step::Detonate | Step::Done => Step::Done,
@@ -56,12 +60,12 @@ pub(super) enum Wait {
     Acknowledged,
     Expired,
 }
-pub(super) fn wait(sent: u64, now: u64, observed: bool) -> Wait {
+pub(super) fn wait(sent: u64, now: u64, observed: bool, timeout:u64) -> Wait {
     if now < sent {
         Wait::Expired
     } else if observed {
         Wait::Acknowledged
-    } else if now - sent >= 30 {
+    } else if now - sent >= timeout {
         Wait::Expired
     } else {
         Wait::Pending
@@ -75,6 +79,17 @@ pub(super) fn restore(
 ) -> Option<usize> {
     (requested && previous < 9 && owned < 9 && current == owned && previous != owned)
         .then_some(previous)
+}
+pub(super) fn human_gap(sample:u64)->u64 {
+    match sample%100 {0..=69=>2,70..=94=>3,_=>4}
+}
+pub(super) fn action_due(last:Option<u64>,now:u64,delay:f64,gap:u64)->bool {
+    if !delay.is_finite() || !(0.0..=10.0).contains(&delay){return false;}
+    last.is_none_or(|at|now>=at && now-at>delay as u64 && now-at>=gap)
+}
+pub(super) fn double_eligible(requested:bool,face:i32,anchor_y:i32,feet_floor:i32,
+    replacement:bool,glowstone:bool)->bool {
+    requested && face==1 && anchor_y>=feet_floor && replacement && glowstone
 }
 
 #[derive(Default)]

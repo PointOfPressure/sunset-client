@@ -63,3 +63,11 @@ pub fn unpack_section(section: [i32; 3], change: i64) -> Option<([i32; 3], u32)>
         section[1].checked_mul(16)?.checked_add((change & 15) as i32)?,
         section[2].checked_mul(16)?.checked_add(((change >> 4) & 15) as i32)?], id))
 }
+// Compare an extra obsidian setup against an already usable crystal base.
+// Eager building lowers the improvement required; a ready strong base wins.
+pub(super) fn upgrade(existing:f64,future:f64,eager:bool)->bool {
+    if !existing.is_finite() || !future.is_finite() || existing<0.0 || future<0.0 {return false;}
+    existing < if eager {11.0}else{8.0}
+        && future>=existing+if eager {3.0}else{5.0}
+        && future>=existing*if eager {1.4}else{2.0}
+}

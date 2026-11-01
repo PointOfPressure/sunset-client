@@ -162,3 +162,22 @@ fn section_updates_decode_negative_sections_and_reject_overflow() {
     assert!(unpack_section([i32::MAX, 0, 0], wire).is_none());
     assert!(unpack_section([0; 3], -1).is_none());
 }
+
+#[test]
+fn unmodified_empty_hand_allows_a_short_sample_history_but_weakness_does_not() {
+    let mut history=History::default();history.sample(100,Some(7.0));
+    assert!(history.positive_with_empty(100,4,0.0));
+    assert!(!history.positive_with_empty(100,4,-4.0));
+    for tick in 101..=104 {history.sample(tick,Some(7.0));}
+    assert!(history.positive_with_empty(104,4,-4.0));
+    history.sample(104,None);assert!(!history.positive_with_empty(104,4,0.0));
+}
+#[test]
+fn a_ghost_starts_next_tick_and_a_rejected_id_stays_visible_after_the_window() {
+    let mut masks=Masks::default();let pos=[0.5,64.0,0.5];
+    assert!(masks.add(10,pos,100));assert!(masks.visible_at(pos,100).is_none());
+    assert_eq!(masks.visible_at(pos,101),Some(10));
+    masks.expire_after_window(104,4);assert_eq!(masks.visible_at(pos,104),Some(10));
+    masks.expire_after_window(105,4);assert!(masks.visible_at(pos,105).is_none());
+    assert!(!masks.add(10,pos,106));masks.confirm(10);assert!(masks.add(10,pos,107));
+}

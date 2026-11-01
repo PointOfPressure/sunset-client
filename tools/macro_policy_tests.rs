@@ -47,7 +47,6 @@ fn double_anchor_is_two_detonations_with_a_new_observed_anchor_between() {
         Step::Charge,
         Step::Detonate,
         Step::AnchorPlace,
-        Step::Guard,
         Step::Charge,
         Step::Detonate,
     ] {
@@ -56,6 +55,24 @@ fn double_anchor_is_two_detonations_with_a_new_observed_anchor_between() {
     }
     assert_eq!(s.remaining, 1);
     assert_eq!(s.step, Step::Done);
+}
+#[test]fn double_refill_requires_top_face_and_feet_height_not_eye_height(){
+    assert!(policy::double_eligible(true,1,121,121,true,true));
+    for face in [0,2,3,4,5]{assert!(!policy::double_eligible(true,face,121,121,true,true));}
+    assert!(!policy::double_eligible(true,1,120,121,true,true));
+    assert!(!policy::double_eligible(true,1,121,121,false,true));
+    assert!(!policy::double_eligible(true,1,121,121,true,false));
+}
+#[test]fn human_pace_has_the_observed_distribution_and_never_changes_configured_delay(){
+    let mut histogram=[0;3];
+    for sample in 0..100{histogram[(policy::human_gap(sample)-2) as usize]+=1;}
+    assert_eq!(histogram,[70,25,5]);
+    assert!(!policy::action_due(Some(10),13,4.,2));assert!(policy::action_due(Some(10),15,4.,2));
+}
+#[test]fn crystal_next_action_uses_its_own_delay_and_retains_age_across_replans(){
+    assert!(!policy::action_due(Some(10),10,0.,0));assert!(policy::action_due(Some(10),11,0.,0));
+    assert!(!policy::action_due(Some(10),11,0.,3));assert!(policy::action_due(Some(10),13,0.,3));
+    assert!(!policy::action_due(Some(10),9,0.,0));assert!(!policy::action_due(None,10,f64::NAN,0));
 }
 #[test]
 fn crystal_cycle_never_inherits_double_anchor_semantics() {
@@ -70,14 +87,14 @@ fn crystal_cycle_never_inherits_double_anchor_semantics() {
 fn no_ack_means_no_progress_and_timeout_is_bounded() {
     let mut s = Sequence::new(Kind::Anchor, Step::Charge, false);
     for now in 10..40 {
-        assert_eq!(policy::wait(10, now, false), Wait::Pending);
+        assert_eq!(policy::wait(10, now, false,30), Wait::Pending);
         assert_eq!(s.step, Step::Charge);
     }
-    assert_eq!(policy::wait(10, 40, false), Wait::Expired);
-    assert_eq!(policy::wait(10, 11, true), Wait::Acknowledged);
+    assert_eq!(policy::wait(10, 40, false,30), Wait::Expired);
+    assert_eq!(policy::wait(10, 11, true,30), Wait::Acknowledged);
     assert!(s.acknowledged(Step::Charge));
     assert_eq!(s.step, Step::Detonate);
-    assert_eq!(policy::wait(10, 9, true), Wait::Expired);
+    assert_eq!(policy::wait(10, 9, true,30), Wait::Expired);
 }
 #[test]
 fn restoration_never_overwrites_the_users_new_slot() {

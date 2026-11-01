@@ -25,19 +25,21 @@ type Session = Arc<Mutex<Option<Arc<Counters>>>>;
 
 pub(super) fn defaults() -> Vec<Module> {
     let common = |m: Module| {
-        m.bool("Protect loot", true).bool("Switch back", true)
-            .num("Max self damage", 8., 0., 36., 0.5)
+        m.bool("Protect loot", true)
+            .num("Max self damage", 8., 0., 20., 0.5)
             .pick("Damage model", &["Observed equipment", "Unmitigated"])
             .num("Max friend damage", 0., 0., 36., 0.5)
             .num("Min remaining health", 4., 1., 20., 0.5)
     };
     vec![
         common(Module::new(CRYSTAL, Category::Combat, "Manual right-click crystal cycle. Waits for observed base, crystal and removal; checks self and friend safety before exploding. Protect loot pauses module-planned blasts near an observed player death for 30 seconds; it does not track dropped items.")
-            .num("Place delay", 2., 0., 20., 1.).num("Break delay", 2., 0., 20., 1.)
-            .bool("Auto obsidian", true).num("Obsidian delay", 2., 0., 20., 1.)),
-        common(Module::new(ANCHOR, Category::Combat, "Manual anchor sequence outside anchor-compatible dimensions. Double performs two observed cycles at the clicked position. Guard fallback defaults to cancel. Protect loot pauses module-planned blasts near an observed player death for 30 seconds; it does not track dropped items.")
-            .pick("Mode", &["Single", "Double"]).num("Delay", 2., 0., 20., 1.)
-            .bool("Safe anchor", true).pick("If unguarded", &["Cancel", "Detonate"])),
+            .num("Place delay", 0., 0., 10., 1.).num("Break delay", 0., 0., 10., 1.)
+            .bool("Auto obsidian", true).num("Obsidian delay", 2., 0., 10., 1.)
+            .bool("Switch back",true).bool("Human pace",true)),
+        common(Module::new(ANCHOR, Category::Combat, "Manual anchor sequence outside anchor-compatible dimensions. Double refills only a top-face anchor at or above your feet block with replacement supplies. Detonate fallback still checks native self/friend safety. Protect loot pauses planned blasts near an observed player death for 30 seconds, without tracking dropped items.")
+            .pick("Mode", &["Single", "Double"]).num("Delay", 0., 0., 5., 1.)
+            .bool("Safe anchor", true).pick("If unguarded", &["Detonate", "Cancel"])
+            .bool("Switch back",false)),
     ]
 }
 
@@ -60,6 +62,7 @@ enum Action {
         id: u32,
         at: [f64; 3],
         aim: [f64; 3],
+        slot:usize,
     },
 }
 impl Action {
@@ -94,6 +97,10 @@ struct Run {
     token: u64,
     queued_at: Option<Instant>,
     deadline: u64,
+    replace_click: Option<Click>,
+    guard_block:Option<u32>,
+    guard_tries:u8,
+    guard_confirmed:bool,
 }
 struct AnchorPress { tick: u64, session: Session, entity: i32, dimension: Dim, start_allowed: bool }
 struct State {
@@ -103,6 +110,10 @@ struct State {
     anchor_latched: bool,
     retries: policy::Retries,
     last_session: Option<Session>,
+    last_deed: Option<u64>,
+    pace_gap: u64,
+    random:u64,
+    main:Option<(usize,Option<horizon_client::items::ItemStack>,u64)>,
 }
 static STATE: Mutex<State> = Mutex::new(State {
     run: None,
@@ -111,6 +122,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     anchor_latched: false,
     retries: policy::Retries::new(),
     last_session: None,
+    last_deed:None,pace_gap:0,random:0,main:None,
 });
 fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(&mut STATE.lock().unwrap_or_else(|e| e.into_inner()))
@@ -320,14 +332,15 @@ fn anchor_click(game: &Game<'_>, p: [i32; 3], budget: &mut Budget) -> Option<Cli
     let click = Click { pos: p, face, hit };
     visible(game, click, budget).then_some(click)
 }
-fn crystal_room(game: &Game<'_>, p: [i32; 3]) -> bool {
+fn crystal_room(game: &Game<'_>, p: [i32; 3]) -> bool {crystal_space(game,p,true)}
+fn crystal_space(game: &Game<'_>, p: [i32; 3], require_base:bool) -> bool {
     if p[1] < -64
         || p[1] >= 318
         || !game.world.loaded(p[0], p[2])
-        || !matches!(
+        || (require_base && !matches!(
             util::short(&util::facts(game, p).name),
             "obsidian" | "bedrock"
-        )
+        ))
         || !util::is_air(game, [p[0], p[1] + 1, p[2]])
     {
         return false;
@@ -398,6 +411,75 @@ fn crosshair_crystal(game: &Game<'_>, budget: &mut Budget) -> Option<(u32, [f64;
     }
     best.map(|(_, id, at, aim)| (id, at, aim))
 }
+fn camera_click(game:&Game<'_>)->Option<Click> {
+    let hit=game.pick()?;
+    Some(Click{pos:hit.pos,face:policy::face(hit.face)?,hit:hit.point})
+}
+fn crystal_intent(game:&Game<'_>,settings:&Module,budget:&mut Budget)->Option<([i32;3],Step,Option<u32>)> {
+    if let Some((id,at,_))=crosshair_crystal(game,budget){
+        return Some(([at[0].floor() as i32,at[1].floor() as i32-1,at[2].floor() as i32],Step::CrystalBreak,Some(id)));
+    }
+    let click=camera_click(game)?;
+    if matches!(util::short(&util::facts(game,click.pos).name),"obsidian"|"bedrock"){
+        return crystal_room(game,click.pos).then_some((click.pos,Step::CrystalPlace,None));
+    }
+    if !settings.b("Auto obsidian") || !inert(game,click.pos)
+        || item_slot(game,"obsidian").is_none() || item_slot(game,"end_crystal").is_none(){return None;}
+    let normal=match click.face{0=>[0,-1,0],1=>[0,1,0],2=>[0,0,-1],3=>[0,0,1],4=>[-1,0,0],5=>[1,0,0],_=>return None};
+    let target=std::array::from_fn(|i|click.pos[i]+normal[i]);
+    (util::can_place(game,target,true) && crystal_space(game,target,false)
+        && visible(game,click,budget)).then_some((target,Step::Base,None))
+}
+fn random(s:&mut State)->u64 {
+    s.random=s.random.wrapping_add(0x9e3779b97f4a7c15);
+    let mut n=s.random;n=(n^(n>>30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    n=(n^(n>>27)).wrapping_mul(0x94d049bb133111eb);n^(n>>31)
+}
+fn delay_for(run:&Run,step:Step)->f64 {
+    match step{Step::Base=>run.settings.n("Obsidian delay"),Step::CrystalPlace=>run.settings.n("Place delay"),
+        Step::CrystalBreak=>run.settings.n("Break delay"),_=>run.settings.n("Delay")}
+}
+pub(super) fn note_main(game:&Game<'_>) {
+    let current=&game.inventory[game.selected];
+    state(|s|{
+        if s.main.as_ref().is_none_or(|(slot,stack,tick)|*slot!=game.selected || stack!=current || game.ticks<*tick){
+            s.main=Some((game.selected,current.clone(),game.ticks));
+        }
+    });
+}
+fn enchant_damage(game:&Game<'_>,stack:&horizon_client::items::ItemStack)->bool {
+    let mut sum=0.0f32;
+    for (id,level) in stack.enchantments(){
+        let Some(enchantment)=game.items().enchantments.get(id) else{return false;};
+        for effect in enchantment.effects["minecraft:damage"].as_array().into_iter().flatten(){
+            if effect.get("requirements").is_some_and(|v|!v.is_null())
+                || effect["effect"]["type"]!="minecraft:add"{return false;}
+            sum+=horizon_client::enchant::level_value(&effect["effect"]["value"],*level);
+        }
+    }
+    sum.is_finite() && sum>0.0
+}
+pub(super) fn weapon_route(game:&Game<'_>)->Option<usize> {
+    let bare=1.0+game.effect_attack_bonus();let mut fallback=None;
+    for slot in std::iter::once(game.selected).chain((0..9).filter(|slot|*slot!=game.selected)){
+        let Some(stack)=game.inventory[slot].as_ref() else {
+            if bare>0.0 {if slot==game.selected{return Some(slot);}fallback.get_or_insert(slot);}continue;
+        };
+        let Some(info)=game.items().get(&stack.item) else{continue;};
+        if stack.count==0 || horizon_client::spear::Kinetic::of(&stack.item).is_some()
+            || game.cooldowns.is_on_cooldown(&horizon_client::cooldowns::group(stack,info.use_cooldown.as_ref())){continue;}
+        if enchant_damage(game,stack){return Some(slot);}
+        if (bare+info.attack_damage).is_finite() && bare+info.attack_damage>0.0 {
+            if slot==game.selected{return Some(slot);}fallback.get_or_insert(slot);
+        }
+    }
+    fallback
+}
+pub(super) fn weak_settling(game:&Game<'_>)->bool {
+    let bare=1.0+game.effect_attack_bonus();
+    bare<=0.0 && !game.inventory[game.selected].as_ref().is_some_and(|s|enchant_damage(game,s))
+        && state(|s|s.main.as_ref().is_none_or(|(_,_,since)|game.ticks<*since || game.ticks-*since<2))
+}
 fn planned_blast(kind: Kind, pos: [i32; 3]) -> Blast {
     match kind {
         Kind::Anchor => Blast::anchor(pos),
@@ -465,66 +547,74 @@ fn safe_blast(game: &mut Game<'_>, settings: &Module, blast: Blast, budget: &mut
     )
 }
 
-fn covered(game: &Game<'_>, anchor: [i32; 3], _budget: &mut Budget) -> bool {
-    let Some(p) = game.player.as_ref() else {
-        return false;
-    };
-    let bounds = p.bounds();
-    let (lo, hi) = (bounds.min_position(), bounds.max_position());
-    let mut blocked = 0;
-    let blast = center(anchor, false);
-    for y in [lo.y + 0.2, (lo.y + hi.y) * 0.5, hi.y - 0.2] {
-        let from = [(lo.x + hi.x) * 0.5, y, (lo.z + hi.z) * 0.5];
-        // Only strict intersection with a known inert full cube proves cover.
-        // Missed thin cover gives a conservative false negative.
-        for sample in 1..16 {
-            let t = f64::from(sample) / 16.;
-            let at: [f64; 3] = std::array::from_fn(|i| from[i] + (blast[i] - from[i]) * t);
-            let cell = at.map(|n| n.floor() as i32);
-            if cell != anchor
-                && inert(game, cell)
-                && (0..3).all(|i| {
-                    at[i] - f64::from(cell[i]) > 1.0e-5 && at[i] - f64::from(cell[i]) < 1. - 1.0e-5
-                })
-            {
-                blocked += 1;
-                break;
+fn body_points(game:&Game<'_>)->Option<Vec<[f64;3]>> {
+    let b=game.player.as_ref()?.bounds();let(lo,hi)=(b.min_position(),b.max_position());
+    super::sunset_explosive_policy::samples(lo.components(),hi.components())
+}
+fn covered(game:&Game<'_>,anchor:[i32;3],_budget:&mut Budget)->bool {
+    let Some(points)=body_points(game) else{return false;};
+    let blast=center(anchor,false);let mut blocked=0usize;
+    for from in &points {
+        // Only positive intersections with a loaded inert full cube count as
+        // established cover. Missing chunks and ray errors never create cover.
+        for sample in 1..=32 {
+            let t=f64::from(sample)/33.0;
+            let at:[f64;3]=std::array::from_fn(|i|from[i]+(blast[i]-from[i])*t);
+            let cell=at.map(|n|n.floor() as i32);
+            if cell!=anchor && inert(game,cell) && (0..3).all(|i|
+                at[i]-f64::from(cell[i])>1e-5 && at[i]-f64::from(cell[i])<1.0-1e-5){
+                blocked+=1;break;
             }
         }
     }
-    blocked >= 2
+    points.len()-blocked < (points.len() as f64*0.15).ceil() as usize
 }
-fn guard_place(
-    game: &Game<'_>,
-    anchor: [i32; 3],
-    budget: &mut Budget,
-) -> Option<([i32; 3], Click)> {
-    let at = util::block_pos(game)?;
-    let dx = anchor[0] - at[0];
-    let dz = anchor[2] - at[2];
-    let d = if dx.abs() >= dz.abs() {
-        [dx.signum(), 0, 0]
-    } else {
-        [0, 0, dz.signum()]
-    };
-    if d == [0, 0, 0] {
-        return None;
+fn guard_slot(game:&Game<'_>,run:&Run)->Option<usize> {
+    let mut weaker=None;
+    for slot in 0..9 {
+        let Some(stack)=game.inventory[slot].as_ref().filter(|s|s.count>0) else{continue;};
+        if util::short(&stack.item)=="glowstone"{continue;}
+        let Some(state)=game.items().get(&stack.item).and_then(|i|i.block) else{continue;};
+        let facts=game.res.facts().get(state);
+        if !facts.full_collision || facts.block_entity
+            || matches!(util::short(&facts.name),"tnt"|"respawn_anchor")
+            || facts.classes.iter().any(|c|c.ends_with("FallingBlock")){continue;}
+        if facts.explosion_resistance>=600.0{return Some(slot);}
+        weaker.get_or_insert(slot);
     }
-    let near = [at[0] + d[0], at[1], at[2] + d[2]];
-    let far = [anchor[0] - d[0], anchor[1], anchor[2] - d[2]];
-    for p in [
-        near,
-        far,
-        [near[0], near[1] + 1, near[2]],
-        [far[0], far[1] + 1, far[2]],
-    ] {
-        if p == anchor {
-            continue;
-        }
-        if let Some(click) = support(game, p, budget) {
-            return Some((p, click));
-        }
+    if weaker.is_some(){return weaker;}
+    let needed=u32::from(anchor_charge(game,run.pos).unwrap_or(0)==0)
+        +u32::from(run.settings.p("Mode")=="Double");
+    let count=game.inventory[..9].iter().flatten().filter(|s|util::short(&s.item)=="glowstone")
+        .fold(0u32,|n,s|n.saturating_add(s.count));
+    (count>needed).then(||util::find_hotbar(game,|n|n=="glowstone")).flatten()
+}
+fn guard_place(game:&Game<'_>,anchor:[i32;3],budget:&mut Budget)->Option<([i32;3],Click)> {
+    let feet=util::block_pos(game)?;let eye=game.eye_position()?;
+    let player=game.player.as_ref()?.bounds();let points=body_points(game)?;
+    let blast=center(anchor,false);let mut cells=Vec::with_capacity(12);
+    for dx in -1..=1 {for dz in -1..=1 {
+        if dx!=0 || dz!=0 {cells.push([feet[0]+dx,feet[1],feet[2]+dz]);}
+    }}
+    for d in [[1,0],[-1,0],[0,1],[0,-1]]{
+        let p=[anchor[0]+d[0],anchor[1],anchor[2]+d[1]];
+        if !cells.contains(&p){cells.push(p);}
     }
+    let mut ranked=Vec::with_capacity(12);
+    for cell in cells {
+        let lo=cell.map(f64::from);let hi=lo.map(|n|n+1.0);
+        let box_=horizon_core::geometry::Aabb::new(
+            horizon_core::geometry::Vec3::new(lo[0],lo[1],lo[2]),
+            horizon_core::geometry::Vec3::new(hi[0],hi[1],hi[2]));
+        if cell==anchor || box_.intersects(player)
+            || policy::ray(eye,std::array::from_fn(|i|blast[i]-eye[i]),lo,hi,util::dist(eye,blast)).is_some(){continue;}
+        let shade=points.iter().filter(|point|policy::ray(**point,
+            std::array::from_fn(|i|blast[i]-point[i]),lo,hi,util::dist(**point,blast)).is_some()).count();
+        if shade<(points.len() as f64*0.15).ceil() as usize {continue;}
+        ranked.push((cell,shade,util::dist(center(cell,false),blast)));
+    }
+    ranked.sort_by(|a,b|b.1.cmp(&a.1).then(a.2.total_cmp(&b.2)));
+    for(cell,_,_)in ranked {if let Some(click)=support(game,cell,budget){return Some((cell,click));}}
     None
 }
 fn use_action(
@@ -551,40 +641,27 @@ fn detonator(game: &Game<'_>) -> Option<usize> {
     if stack(game, OFFHAND, "glowstone") {
         return None;
     }
-    std::iter::once(game.selected).chain(0..9).find(|&slot| {
-        game.inventory
-            .get(slot)
-            .and_then(|s| s.as_ref())
-            .is_none_or(|s| {
-                s.count == 0
-                    || matches!(util::short(&s.item), "totem_of_undying" | "stick")
-                    || s.item.ends_with("_sword")
-                    || s.item.ends_with("_axe")
-                    || matches!(util::short(&s.item), "mace" | "trident")
-            })
-    })
+    util::find_hotbar(game,|n|n=="totem_of_undying").or_else(||(0..9)
+        .find(|&slot|combat_item(game,game.inventory[slot].as_ref())))
+}
+fn melee_item(game:&Game<'_>,stack:&horizon_client::items::ItemStack)->bool {
+    util::short(&stack.item)=="mace" || ["minecraft:swords","minecraft:axes"].iter().any(|tag|
+        game.items().item_tags.get(*tag).is_some_and(|items|items.contains(&*stack.item)))
+}
+fn combat_item(game:&Game<'_>,stack:Option<&horizon_client::items::ItemStack>)->bool {
+    stack.is_none_or(|stack|stack.count==0 || util::short(&stack.item)=="totem_of_undying" || melee_item(game,stack))
 }
 fn recognized_hand(game: &Game<'_>, kind: Kind) -> bool {
     let held = game.inventory.get(game.selected).and_then(|s| s.as_ref());
-    let combat = held.is_none_or(|s| {
-        s.item.ends_with("_sword")
-            || s.item.ends_with("_axe")
-            || s.item.ends_with("_pickaxe")
-            || matches!(
-                util::short(&s.item),
-                "mace" | "trident" | "totem_of_undying"
-            )
-    });
     match kind {
         Kind::Crystal => {
             stack(game, game.selected, "end_crystal")
-                || (combat && item_slot(game, "end_crystal").is_some())
+                || (stack(game,OFFHAND,"end_crystal") && combat_item(game,held))
+                || (held.is_some_and(|s|melee_item(game,s))
+                    && (game.offhand.is_none() || stack(game,OFFHAND,"totem_of_undying"))
+                    && util::find_hotbar(game,|n|n=="end_crystal").is_some())
         }
-        Kind::Anchor => {
-            combat
-                || stack(game, game.selected, "respawn_anchor")
-                || stack(game, game.selected, "glowstone")
-        }
+        Kind::Anchor => true, // Actual ray intent and detonator preflight decide.
     }
 }
 
@@ -715,6 +792,7 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
             .is_none_or(|old| !Arc::ptr_eq(old, &remote.session.counters))
         {
             s.retries.clear();
+            s.last_deed=None;s.pace_gap=0;s.main=None;
             s.last_session = Some(remote.session.counters.clone());
         }
         s.token = s.token.wrapping_add(1);
@@ -737,14 +815,16 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
             guard: None,
             token: s.token,
             queued_at: None,
-            deadline: game.ticks.saturating_add(60),
+            deadline: game.ticks.saturating_add(if kind==Kind::Anchor{5}else{60}),
+            replace_click:None,
+            guard_block:None,guard_tries:0,guard_confirmed:false,
         });
     });
     // Ownership starts before the intercepted vanilla packet could be sent.
     true
 }
 
-fn observed(game: &Game<'_>, action: Action) -> bool {
+fn observed(game: &Game<'_>, action: Action, run:&Run) -> bool {
     match action {
         Action::Attack { id, .. } => !game.crystals.iter().any(|c| c.id == id),
         Action::Use {
@@ -753,7 +833,10 @@ fn observed(game: &Game<'_>, action: Action) -> bool {
             before,
             ..
         } => match step {
-            Step::Base | Step::Guard => name_is(game, destination, "obsidian"),
+            Step::Base => name_is(game, destination, "obsidian"),
+            Step::Guard => run.guard_block.is_some_and(|expected|
+                game.res.facts().get(horizon_world::registry::BlockStateId(expected)).name
+                    ==util::facts(game,destination).name),
             Step::CrystalPlace => crystal_on(game, destination).is_some(),
             Step::AnchorPlace => anchor_charge(game, destination).is_some(),
             Step::Charge => {
@@ -778,11 +861,21 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
     match step {
         Step::Base | Step::Guard => {
             let destination = if step == Step::Guard { run.guard? } else { p };
+            let click=if step==Step::Base {
+                let click=camera_click(game)?;
+                if crystal_intent(game,&run.settings,budget)?.0!=p || !visible(game,click,budget){return None;}
+                let normal=match click.face{0=>[0,-1,0],1=>[0,1,0],2=>[0,0,-1],3=>[0,0,1],4=>[-1,0,0],5=>[1,0,0],_=>return None};
+                let slot=item_slot(game,"obsidian")?;
+                let native=super::remote::sunset_aura_base::BaseClick{clicked:click.pos,normal,point:click.hit};
+                let range=game.reach();let mut rays=12;
+                if !super::remote::sunset_aura_base::valid(game,p,slot,native,range,&mut rays){return None;}
+                click
+            }else{support(game,destination,budget)?};
             Some(use_action(
                 game,
                 step,
-                support(game, destination, budget)?,
-                item_slot(game, "obsidian")?,
+                click,
+                if step==Step::Guard{guard_slot(game,run)?}else{item_slot(game,"obsidian")?},
                 destination,
             ))
         }
@@ -790,11 +883,8 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             if !crystal_room(game, p) {
                 return None;
             }
-            let click = Click {
-                pos: p,
-                face: 1,
-                hit: center(p, true),
-            };
+            let click=camera_click(game)?;
+            if click.pos!=p{return None;}
             if !visible(game, click, budget)
                 || !safe_blast(
                     game,
@@ -831,16 +921,27 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             {
                 return None;
             }
-            Some(Action::Attack { id, at, aim })
+            let slot=weapon_route(game)?;
+            if slot==game.selected && weak_settling(game){return None;}
+            Some(Action::Attack { id, at, aim,slot })
         }
         Step::AnchorPlace => {
             if game.anchor_works() {
                 return None;
             }
+            let click=if let Some(click)=run.replace_click.filter(|_|run.sequence.refilled){
+                let eye=game.eye_position()?;
+                let (yaw,pitch)=super::sunset_combat_wire::sent_look(game)?;
+                let (yaw,pitch)=(f64::from(yaw).to_radians(),f64::from(pitch).to_radians());
+                let direction=[-yaw.sin()*pitch.cos(),-pitch.sin(),yaw.cos()*pitch.cos()];
+                let lo=p.map(f64::from);let hi=lo.map(|n|n+1.0);
+                policy::ray(eye,direction,lo,hi,game.reach())?;
+                if !visible(game,click,budget){return None;}click
+            }else{support(game,p,budget)?};
             Some(use_action(
                 game,
                 step,
-                support(game, p, budget)?,
+                click,
                 item_slot(game, "respawn_anchor")?,
                 p,
             ))
@@ -863,7 +964,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             }
             if run.settings.b("Safe anchor")
                 && run.settings.p("If unguarded") == "Cancel"
-                && !covered(game, p, budget)
+                && !run.guard_confirmed && !covered(game, p, budget)
             {
                 return None;
             }
@@ -879,7 +980,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
                 game,
                 step,
                 anchor_click(game, p, budget)?,
-                detonator(game)?,
+                if run.sequence.remaining>1{util::find_hotbar(game,|n|n=="respawn_anchor")?}else{detonator(game)?},
                 p,
             ))
         }
@@ -887,7 +988,9 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
     }
 }
 
-pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], _ticks: u64) {
+pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], _ticks: u64) {
+    if !active() && !modules.iter().any(|m|m.on && (m.name==CRYSTAL || m.name==ANCHOR)){return;}
+    if game.selected<9 {note_main(game);}
     if !game.native_playing() || gui_open() { focus_lost(); }
     if game.ticks % 20 == 0 {
         state(|s| {
@@ -923,13 +1026,24 @@ pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], _ticks: u64) {
             }
             return;
         };
-        match policy::wait(sent, game.ticks, observed(game, action)) {
+        let observation=observed(game,action,&run);
+        let timeout=if action.step()==Step::Guard{run.ready.saturating_sub(sent).max(1)}
+            else if run.sequence.kind==Kind::Crystal{
+                u64::from(super::sunset_prediction::rtt(game).saturating_add(2).clamp(4,20))
+            }else{run.deadline.saturating_sub(sent)};
+        let wait=policy::wait(sent,game.ticks,observation,timeout);
+        match wait {
             Wait::Pending => return,
             Wait::Expired => {
+                if action.step()==Step::Guard && run.guard_tries<2 {
+                    run.pending=None;run.guard=None;
+                    state(|s|s.run=Some(run));return;
+                }
                 reset(game);
                 return;
             }
             Wait::Acknowledged => {
+                if action.step()==Step::Guard{run.guard_confirmed=true;}
                 if action.step() == Step::CrystalPlace {
                     run.crystal = crystal_on(game, run.pos);
                 }
@@ -943,6 +1057,19 @@ pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], _ticks: u64) {
             }
         }
     }
+    if run.sequence.kind==Kind::Crystal {
+        let mut budget=Budget::new(8);
+        if let Some((pos,step,cid))=crystal_intent(game,&run.settings,&mut budget){
+            run.pos=pos;run.sequence=Sequence::new(Kind::Crystal,step,false);run.crystal=cid;
+        }else{
+            run.deadline=game.ticks.saturating_add(60);
+            state(|s|s.run=Some(run));return;
+        }
+        // The held ray is replanned only after any real prior transaction was
+        // observed; it never continues a pinned old base after the camera moved.
+        run.deadline=game.ticks.saturating_add(60);
+        state(|s|s.run=Some(run.clone()));
+    }
     if run.sequence.step == Step::Done {
         reset(game);
         return;
@@ -950,13 +1077,15 @@ pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], _ticks: u64) {
     if game.ticks < run.ready {
         return;
     }
+    if run.sequence.kind==Kind::Crystal && !state(|s|policy::action_due(s.last_deed,game.ticks,
+        delay_for(&run,run.sequence.step),s.pace_gap)){return;}
     let mut budget = Budget::new(24);
     if run.sequence.step == Step::Guard {
         if !run.settings.b("Safe anchor") || covered(game, run.pos, &mut budget) {
             run.sequence.acknowledged(Step::Guard);
         } else if run.guard.is_none() {
             run.guard = guard_place(game, run.pos, &mut budget).map(|(p, _)| p);
-            if run.guard.is_none() || item_slot(game, "obsidian").is_none() {
+            if run.guard.is_none() || guard_slot(game,&run).is_none() {
                 if run.settings.p("If unguarded") == "Cancel" {
                     reset(game);
                     return;
@@ -968,15 +1097,26 @@ pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], _ticks: u64) {
     if run.sequence.step == Step::Charge && anchor_charge(game, run.pos).is_some_and(|n| n > 0) {
         run.sequence.acknowledged(Step::Charge);
     }
+    if run.sequence.step==Step::Detonate && run.sequence.remaining>1 {
+        let eligible=anchor_click(game,run.pos,&mut budget).is_some_and(|click|
+            policy::double_eligible(run.settings.p("Mode")=="Double",click.face,run.pos[1],
+                game.player.as_ref().map_or(i32::MAX,|p|p.position.y.floor() as i32),
+                util::find_hotbar(game,|n|n=="respawn_anchor").is_some(),
+                util::find_hotbar(game,|n|n=="glowstone").is_some()));
+        if !eligible{run.sequence.remaining=1;}
+    }
     state(|s| {
         if s.run.as_ref().is_some_and(|r| r.token == run.token) {
             s.run = Some(run.clone());
         }
     });
     let Some(action) = next_action(game, &run, &mut budget) else {
+        if run.sequence.kind==Kind::Crystal{return;}
         reset(game);
         return;
     };
+    if run.sequence.kind==Kind::Crystal && !state(|s|policy::action_due(s.last_deed,game.ticks,
+        delay_for(&run,action.step()),s.pace_gap)){return;}
     queue(game, &run, action);
 }
 
@@ -1023,8 +1163,8 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
         };
         // A stale look must never be reused for a changed hand, face or entity.
         let same = match (action, fresh) {
-            (Action::Attack { id, at, .. }, Action::Attack { id: b, at: c, .. }) => {
-                id == b && in_range(at, c, 0.01)
+            (Action::Attack { id, at,slot, .. }, Action::Attack { id: b, at: c,slot:d, .. }) => {
+                id == b && slot==d && in_range(at, c, 0.01)
             }
             (
                 Action::Use {
@@ -1057,12 +1197,21 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
             return;
         }
         match action {
-            Action::Attack { id, .. } => {
+            Action::Attack { id,slot, .. } => {
+                if slot!=game.selected {
+                    hold(game,slot);state(|s|if let Some(r)=s.run.as_mut().filter(|r|r.token==token){r.owned=slot;});
+                    note_main(game);
+                }
+                if weak_settling(game){
+                    state(|s|if let Some(r)=s.run.as_mut().filter(|r|r.token==token){
+                        r.pending=None;r.queued_at=None;r.ready=game.ticks.saturating_add(1);
+                    });return;
+                }
                 game.send(S::Attack(play::Attack { id: id as i32 }));
                 game.reset_attack_strength();
                 state(|s| s.retries.sent(id, game.ticks));
             }
-            Action::Use { click, slot, .. } => {
+            Action::Use { click, slot, step, .. } => {
                 if slot != OFFHAND {
                     hold(game, slot);
                     state(|s| {
@@ -1083,22 +1232,35 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
                     world_border: false,
                     sequence,
                 }));
+                state(|s|if let Some(r)=s.run.as_mut().filter(|r|r.token==token){
+                    if step==Step::Guard {
+                        r.guard_tries=r.guard_tries.saturating_add(1);
+                        r.guard_block=game.stack_in(slot).and_then(|stack|game.items().get(&stack.item)).and_then(|i|i.block).map(|id|id.0);
+                    }
+                    if step==Step::Detonate && r.sequence.remaining>1 {r.replace_click=Some(click);}
+                });
             }
         }
         game.swing_arm();
         game.send(S::Punch(Empty));
-        let delay = match action.step() {
-            Step::Base => run.settings.n("Obsidian delay"),
-            Step::CrystalPlace => run.settings.n("Place delay"),
-            Step::CrystalBreak => run.settings.n("Break delay"),
-            _ => run.settings.n("Delay"),
-        };
+        let delay=delay_for(&run,action.step());
         state(|s| {
+            if run.sequence.kind==Kind::Crystal {
+                s.last_deed=Some(game.ticks);
+                s.pace_gap=if run.settings.b("Human pace"){policy::human_gap(random(s))}else{0};
+            }
             if let Some(r) = s.run.as_mut().filter(|r| r.token == token) {
                 r.pending = Some((action, Some(game.ticks)));
+                if action.step()==Step::Guard && r.settings.p("If unguarded")=="Detonate" {
+                    r.pending=None;r.sequence.acknowledged(Step::Guard);
+                }
                 r.queued_at = None;
-                r.ready = game.ticks.saturating_add(delay.clamp(0., 20.) as u64 + 1);
-                r.deadline = r.ready.saturating_add(60);
+                r.ready = game.ticks.saturating_add(if run.sequence.kind==Kind::Crystal{1}else{delay.clamp(0.,5.) as u64+1});
+                let window=if run.sequence.kind==Kind::Crystal{60}
+                    else if action.step()==Step::Guard && run.settings.p("If unguarded")=="Cancel"{
+                        u64::from(super::sunset_prediction::rtt(game).saturating_add(2).clamp(4,20))
+                    }else{5};
+                r.deadline = r.ready.saturating_add(window);
             }
         });
     });

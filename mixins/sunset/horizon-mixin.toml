@@ -57,6 +57,12 @@ name = "sunset_combat"
 source = "combat.rs"
 
 [[module]]
+id = "aim_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_aim_policy"
+source = "aim_policy.rs"
+
+[[module]]
 id = "explosive_policy"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_explosive_policy"
@@ -946,3 +952,125 @@ bindings=[
   {name="game",ty="&crate::game::Game<'_>",value="&*self"},
   {name="feet",ty="&glam::DVec3",value="$local_ref:feet:0"},
 ]
+
+[[injection]]
+id="crystal-optimizer-target-filter"
+kind="RETURN"
+target="horizon_client::game::dragon::Game<'_>::special_targets"
+helper="optimizer_targets.rs"
+bindings=[
+  {name="targets",ty="Vec<(u32,horizon_core::geometry::Aabb)>",value="$value"},
+  {name="game",ty="&crate::game::Game<'_>",value="&*self"},
+]
+
+[[module]]
+id="sword_controller_policy"
+file="crates/horizon-client/src/game.rs"
+name="sunset_sword_controller_policy"
+source="sword_controller_policy.rs"
+
+[[module]]
+id="aura_policy"
+file="crates/horizon-client/src/game.rs"
+name="sunset_aura_policy"
+source="aura_policy.rs"
+
+[[module]]
+id = "lead_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_lead_policy"
+source = "lead_policy.rs"
+
+[[module]]
+id = "faceplace_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_faceplace_policy"
+source = "faceplace_policy.rs"
+
+[[module]]
+id = "durability_patch"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_durability_patch"
+source = "durability_patch.rs"
+
+[[module]]
+id = "faceplace_native"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_faceplace_native"
+source = "faceplace_native.rs"
+
+[[module]]
+id = "prediction_native"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_prediction_native"
+source = "prediction_native.rs"
+
+[[module]]
+id = "prediction"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_prediction"
+source = "prediction.rs"
+
+[[injection]]
+id = "combat-raw-mouse-input"
+kind = "HEAD"
+target = "horizon_client::game::<Game<'_> as ApplicationHandler>::device_event"
+helper = "combat_mouse_motion.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "event", ty = "&winit::event::DeviceEvent", value = "&event" },
+]
+
+[[module]]
+id = "hurt_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hurt_policy"
+source = "hurt_policy.rs"
+
+[[module]]
+id = "prediction_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_prediction_remote"
+source = "prediction_remote.rs"
+
+[[module]]
+id = "hurt_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_hurt_remote"
+source = "hurt_remote.rs"
+
+[[module]]
+id="mace_policy"
+file="crates/horizon-client/src/game.rs"
+name="sunset_mace_policy"
+source="mace_policy.rs"
+
+[[module]]
+id="mace_native"
+file="crates/horizon-client/src/game.rs"
+name="sunset_mace_native"
+source="mace_native.rs"
+
+[[module]]
+id="trigger_policy"
+file="crates/horizon-client/src/game.rs"
+name="sunset_trigger_policy"
+source="trigger_policy.rs"
+
+[[module]]
+id = "bot_tactics_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_bot_tactics_policy"
+source = "bot_tactics_policy.rs"
+
+[[module]]
+id = "bot_packet_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_bot_packet_policy"
+source = "bot_packet_policy.rs"
+
+[[module]]
+id = "bot_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_bot_remote"
+source = "bot_remote.rs"

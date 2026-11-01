@@ -27,9 +27,9 @@ pub(super) fn defaults() -> Vec<Module> {
         .num("Min remaining health",4.0,1.0,20.0,0.5)
         .num("Max self damage",12.0,0.0,36.0,0.5)
         .bool("Anti bot",true).bool("Ignore teams",true),
-    Module::new(TRAP,Category::Combat,"Places obsidian around an enemy's feet and head. Top block adds one outside support and the roof; Finish roof jump may make two native jumps to reach their faces.")
-        .num("Range",4.0,1.0,4.5,0.1).bool("Rotate",true)
-        .num("Blocks per tick",4.0,1.0,8.0,1.0).bool("Top block",true).bool("Finish roof jump",true).bool("Show target",true)
+    Module::new(TRAP,Category::Combat,"Places obsidian around an enemy's feet and head. Top block includes the roof. Optional Finish roof jump adds an outside support and may make two native jumps.")
+        .num("Range",4.0,1.0,6.0,0.5).bool("Rotate",true)
+        .num("Blocks per tick",4.0,1.0,8.0,1.0).bool("Top block",true).bool("Finish roof jump",false).bool("Show target",true)
         .bool("Anti bot",true).bool("Ignore teams",true),
 ]
 }
@@ -780,7 +780,7 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
     let feet = target.pos.map(|n| n.floor() as i32);
     let key = (target.id, feet);
     let eye = game.eye_position().unwrap_or([f64::NAN; 3]);
-    let Some(mut plan) = policy::trap_cells_from(target.lo, target.hi, m.b("Top block"), eye)
+    let Some(mut plan) = (if m.b("Finish roof jump") {policy::trap_cells_from(target.lo,target.hi,m.b("Top block"),eye)}else{policy::trap_cells(target.lo,target.hi,m.b("Top block"))})
     else {
         return;
     };
@@ -791,7 +791,10 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         let facts = util::facts(game, *p);
         game.world.loaded(p[0], p[2]) && !facts.replaceable && facts.full_collision
     });
-    policy::order_trap(&mut plan, eye);
+    if m.b("Finish roof jump") {policy::order_trap(&mut plan,eye);} else {
+        plan.sort_by(|a,b|a[1].cmp(&b[1]).then_with(||util::dist(eye,a.map(|v|f64::from(v)+0.5))
+            .total_cmp(&util::dist(eye,b.map(|v|f64::from(v)+0.5)))));
+    }
     plan.retain(|p| game.world.loaded(p[0], p[2]) && can_fill(game, *p));
     state(|s| {
         if s.trap_key != Some(key) {

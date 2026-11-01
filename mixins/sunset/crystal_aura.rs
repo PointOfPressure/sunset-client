@@ -1,7 +1,7 @@
 // Original Crystal Aura. Only observed entity ids are attacked; a placement
 // remains pending until its crystal arrives or a bounded server timeout expires.
-use super::sunset::{self, Category, Module, gui_open, hold, own_id, with};
-use super::sunset_explosive_damage::{Blast, clear_line, local_damage, safety_damage, target_damage};
+use super::sunset::{self, Category, Module, gui_open, own_id, with};
+use super::sunset_explosive_damage::{Blast, clear_line, local_damage_at, safety_damage, target_damage};
 use super::sunset_explosive_policy::{Budget, Limits, in_range, safe};
 use super::sunset_explosive_aura::Rating;
 use super::sunset_crystal_setup_policy as setup;
@@ -10,6 +10,7 @@ use horizon_world::registry::BlockStateId;
 use std::{any::Any, sync::Arc};
 type SetupScene = (i32, super::Dim, Arc<dyn Any + Send + Sync>);
 use super::sunset_util::{self as util, Target};
+use super::{sunset_prediction as prediction,sunset_lead_policy as lead,sunset_faceplace_policy as face};
 use super::Game;
 use horizon_protocol::packets::{Empty, play::{self, Clientbound as C, Serverbound as S}};
 use std::sync::Mutex;
@@ -121,15 +122,16 @@ mod state {
 use state::{Action, Clock};
 
 struct Plan { action: Action, target: u32, aim: [f64; 3], rating: Rating, click: Option<BaseClick> }
+struct WeaponLease { scene:SetupScene, original:usize, owned:usize }
 #[derive(Default)]
 struct Diagnostics { stage: usize, reason: u8, paused: bool, counters: [u64; 18], crystals: usize, cid: u32,
     invulnerable: bool, own: f64, target: f64, health: f64 }
 struct State { clock: Clock, queued_at: Option<Instant>, tick: u64, diagnostics: Diagnostics,
-    plan: Option<Plan>, attempts: Vec<(u32, u8)>, setup: setup::Ledger, setup_scene: Option<SetupScene> }
+    plan: Option<Plan>, attempts: Vec<(u32, u8)>, setup: setup::Ledger, setup_scene: Option<SetupScene>, weapon:Option<WeaponLease> }
 static STATE: Mutex<State> = Mutex::new(State { clock: Clock { cursor: 0, crystals: 0, queued: false,
     waiting: None, next: 0, next_base: 0, next_place: 0, next_break: 0, generation: 0 }, queued_at: None, tick: 0,
     diagnostics: Diagnostics { stage: 0, reason: 0, paused: false, counters: [0;18], crystals: 0, cid: 0,
-        invulnerable: false, own: 0.0, target: 0.0, health: 0.0 }, plan: None, attempts: Vec::new(), setup: setup::Ledger::new(), setup_scene: None });
+        invulnerable: false, own: 0.0, target: 0.0, health: 0.0 }, plan: None, attempts: Vec::new(), setup: setup::Ledger::new(), setup_scene: None,weapon:None });
 fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(&mut STATE.lock().unwrap_or_else(|e| e.into_inner()))
 }
@@ -152,20 +154,26 @@ pub(super) fn defaults() -> Vec<Module> {
         "Places and breaks observed crystals with bounded damage checks. Target damage is estimated; self checks use the selected damage model, friends use unmitigated damage. Protect loot pauses module-planned blasts near an observed player death for 30 seconds; it does not track dropped items.")
         .text("Entities", "player")
         .bool("Place", true).bool("Break", true)
-        .bool("Auto obsidian", false).num("Obsidian delay", 2.0, 0.0, 30.0, 1.0)
+        .bool("Auto obsidian", true).num("Obsidian delay", 0.0, 0.0, 30.0, 1.0)
         .num("Target range", 8.0, 1.0, 12.0, 0.5)
-        .num("Place range", 4.0, 1.0, 4.5, 0.1)
-        .num("Break range", 4.0, 1.0, 4.5, 0.1)
+        .num("Place range", 4.5, 1.0, 4.5, 0.1)
+        .num("Break range", 3.0, 1.0, 3.0, 0.1)
         .num("Walls range", 0.0, 0.0, 4.5, 0.1)
-        .num("Min target damage", 6.0, 0.0, 36.0, 0.5)
-        .num("Max self damage", 6.0, 0.0, 36.0, 0.5)
+        .num("Min target damage", 4.0, 0.0, 20.0, 0.5)
+        .bool("Face Place", true).text("Force Face Place", "None")
+        .bool("Require Hold", false).text("Hold Key", "mouse4")
+        .bool("Switch Back", true)
+        .num("Turn Speed", 4.5, 1.0, 10.0, 0.5)
+        .num("View Angle", 90.0, 30.0, 180.0, 5.0)
+        .bool("Human Pace", true).bool("Render",true).text("Render Color","#FFD65CFF")
+        .num("Max self damage", 8.0, 0.0, 20.0, 0.5)
         .pick("Damage model", &["Observed equipment", "Unmitigated"])
         .bool("Protect loot", true)
         .num("Max friend damage", 0.0, 0.0, 36.0, 0.5)
         .bool("Anti suicide", true)
         .num("Min remaining health", 4.0, 1.0, 20.0, 0.5)
-        .num("Place delay", 2.0, 0.0, 30.0, 1.0)
-        .num("Break delay", 2.0, 0.0, 30.0, 1.0)
+        .num("Place delay", 0.0, 0.0, 10.0, 1.0)
+        .num("Break delay", 0.0, 0.0, 10.0, 1.0)
         .bool("Anti bot", true).bool("Ignore teams", true)
         .bool("Auto switch", true).bool("Rotate", true).bool("Swing", true)]
 }
@@ -180,8 +188,30 @@ pub(super) fn suspend() {
     note(1);
 }
 pub(super) fn reset() {
+    super::sunset_explosive_aura::clear_view(false);
+    prediction::reset_receipts();
     suspend();
-    st(|s| { s.clock.reset(); s.attempts.clear(); s.setup.clear(); s.setup_scene = None; });
+    st(|s| { s.clock.reset(); s.attempts.clear(); s.setup.clear(); s.setup_scene = None;s.weapon=None; });
+}
+fn restore_weapon(game:&mut Game<'_>,requested:bool) {
+    let Some(lease)=st(|s|s.weapon.take()) else{return;};
+    if requested && same_setup_scene(game,&lease.scene) && game.using.is_none()
+        && !super::sunset_player::gap_eating()
+        && game.player.as_ref().is_some_and(|p|p.health.health().is_finite() && p.health.health()>0.0)
+        && super::sunset_combat_control::owner().is_none_or(|owner|owner==NAME) {
+        if let Some(slot)=super::sunset_macro_policy::restore(lease.original,lease.owned,game.selected,true){weapon_hold(game,slot);}
+    }
+}
+fn weapon_hold(game:&mut Game<'_>,slot:usize) {
+    sunset::hold(game,slot);super::sunset_combat_macros::note_main(game);
+}
+pub(super) fn paused(game:&mut Game<'_>) {
+    let requested=with(|s|s.module(NAME).is_none_or(|m|m.b("Switch Back")));
+    restore_weapon(game,requested);suspend();
+}
+pub(super) fn disabled(game:&mut Game<'_>) {
+    let requested=with(|s|s.module(NAME).is_none_or(|m|m.b("Switch Back")));
+    restore_weapon(game,requested);reset();
 }
 
 fn allowed(game: &Game<'_>) -> bool {
@@ -211,18 +241,20 @@ fn players(game: &Game<'_>, m: &Module) -> Option<(Vec<Target>, Vec<Target>)> {
         } else { false };
         if friend || util::spared(game, m, target.id, target.player) {
             protected.push(target);
-        } else if super::sunset_aura::entity_listed(m.t("Entities"), &target)
+        } else if util::player_enemy(game,mob)
             && in_range(eye, target.pos, m.n("Target range").clamp(1.0, 12.0)) {
             targets.push(target);
         }
     }
     targets.sort_unstable_by(|a, b| util::dist(eye, a.pos).total_cmp(&util::dist(eye, b.pos)));
+    if let Some(steer)=super::sunset_crystal_bot::steer(game) {targets.sort_by_key(|t|t.id!=steer.target);}
     targets.truncate(MAX_TARGETS);
     Some((targets, protected))
 }
 
-fn limits(m: &Module) -> Limits {
-    Limits { min_target: m.n("Min target damage"), max_self: m.n("Max self damage"),
+fn limits(game:&Game<'_>,m: &Module) -> Limits {
+    let steering=super::sunset_crystal_bot::steer(game);
+    Limits { min_target: steering.map_or_else(||m.n("Min target damage"),|s|s.min), max_self: steering.map_or_else(||m.n("Max self damage"),|s|s.self_cap),
         max_friend: m.n("Max friend damage"), min_remaining: m.n("Min remaining health"),
         anti_suicide: m.b("Anti suicide") }
 }
@@ -232,35 +264,44 @@ fn valid_damage(game: &mut Game<'_>, m: &Module, at: [f64; 3], targets: &[Target
 {
     // Horizon destroys explosion-damaged neighboring crystals without a
     // second blast (destroy_crystal(..., CrystalDamage::Explosion)).
-    let blast = Blast::explosion(at, 6.0);
+    let blast = match action {
+        Action::Base(base)=>Blast::explosion(at,6.0).with_block(base,game.items().get("minecraft:obsidian")?.block?),
+        _=>Blast::explosion(at,6.0),
+    };
+    let breaking=matches!(action,Action::Break(_, _));
+    let horizon=lead::horizons(if breaking {lead::Use::CrystalBreak}else{lead::Use::CrystalPlace},prediction::rtt(game));
     if !super::sunset_loot_guard::allows(game, blast, m.b("Protect loot")) { policy_failed(8); return None; }
-    let Some(prediction) = local_damage(game, blast, budget) else { policy_failed(1); return None; };
+    let local_offset=prediction::local_offset(game,horizon.local)?;
+    let Some(prediction) = local_damage_at(game, blast, local_offset, budget) else { policy_failed(1); return None; };
     let own = safety_damage(prediction, m.p("Damage model"));
     let p = game.player.as_ref()?;
     let health = f64::from(p.health.health() + p.health.absorption());
     st(|s| { s.diagnostics.own = own; s.diagnostics.health = health; });
-    let l = limits(m);
+    let l = limits(game,m);
     if own > l.max_self { policy_failed(2); return None; }
     if l.anti_suicide && (health <= own || health - own < l.min_remaining) { policy_failed(3); return None; }
     let mut friend: f64 = 0.0;
     for target in friends {
         // The engine rejects entities by feet distance before exposure. Keep
         // distant friends from exhausting the prediction budget with zeros.
-        if !in_range(at, target.pos, 12.0) { continue; }
-        let Some(prediction) = target_damage(game, target, blast, budget) else { policy_failed(4); return None; };
+        let projected=prediction::target(game,target,horizon.others)?;
+        if !in_range(at, target.pos, 12.0) && !in_range(at,projected.pos,12.0) { continue; }
+        let Some(prediction) = target_damage(game, &projected, blast, budget) else { policy_failed(4); return None; };
         friend = friend.max(prediction.upper);
         if friend > l.max_friend { policy_failed(5); return None; }
     }
     let mut best: Option<(Rating, u32)> = None;
     for target in targets {
-        // A hurt animation is evidence of a recent hit, not its raw damage.
-        // Defer instead of pretending another full explosion will apply.
-        if matches!(action, Action::Break(_, _)) && game.mobs.iter()
-            .find(|mob| mob.id == target.id).is_some_and(|mob| mob.hurt_time > 0) { note(13); continue; }
-        let Some(prediction) = target_damage(game, target, blast, budget) else { policy_failed(6); return None; };
-        let damage = prediction.estimate;
+        let projected=prediction::target(game,target,horizon.others)?;
+        let Some((damage,_))=prediction::estimate(game,&projected,blast,
+            if breaking {0}else{prediction::rtt(game)},prediction::rtt(game),budget) else {policy_failed(6);return None;};
+        let facts=prediction::face_facts(game,target);
+        let forced=util::setting_key_down(game,m,"Force Face Place");
+        let threshold=face::crystal(l.min_target,m.b("Face Place"),forced,breaking,&facts)?.minimum;
+        if !face::sufficient(damage,threshold,facts.effective_health){continue;}
+        let mut l=l;l.min_target=0.0;
         st(|s| s.diagnostics.target = damage);
-        let rating = Rating { target_damage: damage, target_health: f64::from(target.health),
+        let rating = Rating { target_damage: damage, target_health: prediction::effective_health(game,target).unwrap_or(f64::from(target.health)),
             self_damage: own, attack: matches!(action, Action::Break(_, _)) };
         if safe(l, damage, own, health, friend) && best.as_ref().is_none_or(|(old, _)| rank(&rating) > rank(old)) {
             best = Some((rating, target.id));
@@ -386,9 +427,13 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
 }
 
 pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Option<Rating> {
-    let Some(m) = m.filter(|m| m.on) else { reset(); return None; };
+    let Some(m) = m.filter(|m| m.on) else { disabled(game); return None; };
     if st(|s| s.setup_scene.as_ref().is_some_and(|old| !same_setup_scene(game, old))) { reset(); }
-    if !allowed(game) { suspend(); return None; }
+    if !allowed(game) || m.b("Require Hold") && !util::setting_key_down(game,m,"Hold Key") { paused(game); return None; }
+    if st(|s|s.weapon.as_ref().is_some_and(|lease|!same_setup_scene(game,&lease.scene) || lease.owned!=game.selected)) {
+        st(|s|s.weapon=None);suspend();return None;
+    }
+    super::sunset_combat_macros::note_main(game);
     st(|s| { s.setup_scene = game.remote.as_ref().map(|r|
         (r.entity_id, game.dim, r.session.counters.clone() as Arc<dyn Any + Send + Sync>)); });
     st(|s| { s.tick = ticks; s.plan = None; s.diagnostics.crystals = game.crystals.len();
@@ -397,11 +442,13 @@ pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Op
     if st(|s| s.queued_at.is_some_and(|t| t.elapsed() > Duration::from_millis(200))) { suspend(); }
     let waiting = st(|s| s.clock.waiting);
     if let Some(waiting) = waiting {
-        let ack = observed(game, waiting.action);
+        let ack = observed(game, waiting.action) || ticks.saturating_sub(waiting.sent)>=u64::from(prediction::rtt(game).saturating_add(2).clamp(4,20));
         st(|s| s.clock.observe(ticks, ack));
     }
     if !st(|s| s.clock.available()) { note(2); return None; }
-    let Some((targets, friends)) = players(game, m).filter(|(t, _)| !t.is_empty()) else { note(11); return None; };
+    let Some((targets, friends)) = players(game, m).filter(|(t, _)| !t.is_empty()) else {
+        restore_weapon(game,m.b("Switch Back"));note(11);return None;
+    };
     let mut budget = Budget::new(PREDICTIONS);
     let mut best: Option<Plan> = None;
     let mut evaluated = 0;
@@ -417,6 +464,8 @@ pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Op
             if c.id == 0 || c.invulnerable { note(4); continue; }
             if st(|s| s.attempts.iter().any(|&(id, attempts)| id == c.id && attempts >= 3)) { note(14); continue; }
             let at = [c.position.x, c.position.y, c.position.z];
+            if super::sunset_crystal_bot::steer(game).is_some_and(|s|at[1]<f64::from(s.floor)-0.01) {continue;}
+            if super::sunset_crystal_optimizer::hidden_position(game,at) {continue;}
             let action = Action::Break(c.id, at);
             if !st(|s| s.clock.due(action, ticks)) { note(12); continue; }
             let Some(aim) = reachable(game, m, action, &mut budget) else { note(5); continue; };
@@ -444,6 +493,7 @@ pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Op
         for _ in 0..SCAN_CELLS {
             let d = st(|s| s.clock.cell(5));
             let base = [origin[0].saturating_add(d[0]), origin[1].saturating_add(d[1]), origin[2].saturating_add(d[2])];
+            if super::sunset_crystal_bot::steer(game).is_some_and(|s|base[1]+1<s.floor) {continue;}
             let action = Action::Place(base);
             if !st(|s| s.clock.due(action, ticks)) { note(12); break; }
             if !place_valid(game, base) {
@@ -464,7 +514,10 @@ pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Op
     }
     // Optional fallback only: never compete with a ready break/existing base.
     // Reuse the same four prediction evaluations and bounded scan allowance.
-    if best.is_none() && evaluated < MAX_CANDIDATES && m.b("Place") && m.b("Auto obsidian")
+    let eager=super::sunset_crystal_bot::steer(game).is_some_and(|s|s.eager);
+    let may_setup=best.as_ref().is_none_or(|plan|matches!(plan.action,Action::Place(_))
+        && plan.rating.target_damage<if eager {11.0}else{8.0});
+    if may_setup && evaluated < MAX_CANDIDATES && m.b("Place") && m.b("Auto obsidian")
         && crystal_slot(game, m).is_some() {
         let slot = obsidian_slot(game, m)?;
         let mut rays = 48usize;
@@ -477,15 +530,17 @@ pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Op
             };
             evaluated += 1;
             if let Some((rating, target)) = valid_damage(game, m, center(base), &targets, &friends, action, &mut budget) {
-                if best.as_ref().is_none_or(|old| rank(&rating) > rank(&old.rating)) {
+                if best.as_ref().is_none_or(|old| setup::upgrade(old.rating.target_damage,rating.target_damage,eager)) {
                     best = Some(Plan { rating, target, action, aim: click.point, click: Some(click) });
                 }
             }
             if evaluated >= MAX_CANDIDATES || rays == 0 { break; }
         }
     }
-    let best = best?;
+    let Some(best)=best else {restore_weapon(game,m.b("Switch Back"));return None;};
     let rating = best.rating;
+    let cell=match best.action {Action::Place(p)|Action::Base(p)=>p,Action::Break(_,p)=>[p[0].floor() as i32,p[1].floor() as i32-1,p[2].floor() as i32]};
+    super::sunset_explosive_aura::show(game,false,cell);
     st(|s| s.plan = Some(best));
     note(16);
     Some(rating)
@@ -499,7 +554,31 @@ pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
 
 fn queue(game: &mut Game<'_>, m: &Module, action: Action, target: u32, aim: [f64; 3], click: Option<BaseClick>, ticks: u64) -> bool {
     let Some(eye) = game.eye_position() else { return false; };
+    let desired=sunset::look_at(eye,aim);
+    let turn=if m.b("Rotate") {super::sunset_aura::next_look(game,desired,if super::sunset_crystal_bot::steer(game).is_some_and(|s|s.full_speed){10.0}else{m.n("Turn Speed")})} else {(game.yaw,game.pitch)};
+    let angle=f64::from((desired.0-game.yaw+180.0).rem_euclid(360.0)-180.0).abs();
+    let held=super::sunset_combat_wire::sent_look(game).is_some_and(|look| match action {
+        Action::Break(_,at)=>{
+            let y=f64::from(look.0).to_radians();let p=f64::from(look.1).to_radians();
+            break_contact(game,m,at,[eye[0]-y.sin()*p.cos()*5.0,eye[1]-p.sin()*5.0,eye[2]+y.cos()*p.cos()*5.0],&mut Budget::new(0)).is_some()
+        },
+        Action::Base(_)=>click.is_some_and(|c|util::block_contact(game,look,c.clicked,base_native::face(c),m.n("Place range")).is_some()),
+        Action::Place(base)=>util::block_contact(game,look,base,1,m.n("Place range")).is_some(),
+    });
+    if m.n("View Angle")<180.0 && angle>m.n("View Angle")+if held {20.0}else{0.0} {return false;}
+    let mut click=click;
+    let contact=match action {
+        Action::Base(_)=>click.and_then(|mut c| {c.point=util::block_contact(game,turn,c.clicked,base_native::face(c),m.n("Place range"))?;click=Some(c);Some(c.point)}),
+        Action::Place(base)=>util::block_contact(game,turn,base,1,m.n("Place range")),
+        Action::Break(_,at)=>{
+            let y=f64::from(turn.0).to_radians();let p=f64::from(turn.1).to_radians();
+            let along=[eye[0]-y.sin()*p.cos()*5.0,eye[1]-p.sin()*5.0,eye[2]+y.cos()*p.cos()*5.0];
+            break_contact(game,m,at,along,&mut Budget::new(0))
+        },
+    };
+    let Some(aim)=contact else {if m.b("Rotate"){sunset::turn(NAME,turn.0,turn.1);}return false;};
     let own = own_id(game);
+    let selected_slot=game.selected;
     let dimension = game.dim;
     // Retain a unique session allocation: an in-place Remote address can be
     // reused by a reconnect, while this live Arc cannot be recycled.
@@ -520,18 +599,33 @@ fn queue(game: &mut Game<'_>, m: &Module, action: Action, target: u32, aim: [f64
         if deadline.elapsed() > Duration::from_millis(200) { execution_failed(1); return; }
         if !allowed(game) { execution_failed(2); return; }
         if own_id(game) != own { execution_failed(3); return; }
+        if game.selected!=selected_slot {st(|s|s.weapon=None);execution_failed(17);return;}
         if game.dim != dimension { execution_failed(4); return; }
         if !game.remote.as_ref().is_some_and(|r| std::sync::Arc::ptr_eq(&session, &r.session.counters)) { execution_failed(5); return; }
         if !game.eye_position().is_some_and(|now| in_range(now, eye, 0.5)) { execution_failed(6); return; }
         if !with(|s| s.module(NAME).is_some_and(|current| current == &snapshot && current.on)) { execution_failed(7); return; }
         let Some((targets, friends)) = players(game, &snapshot) else { execution_failed(8); return; };
-        let Some(selected) = targets.into_iter().find(|t| t.id == target) else { execution_failed(9); return; };
+        let Some(selected) = targets.iter().find(|t| t.id == target).cloned() else { execution_failed(9); return; };
         let mut budget = Budget::new(PREDICTIONS);
-        let reached = match action {
-            Action::Base(base) => click.zip(obsidian_slot(game, &snapshot)).is_some_and(|(click, slot)|
-                base_native::valid(game, base, slot, click, snapshot.n("Place range").clamp(1.0,4.5), &mut 48)),
-            Action::Break(_, position) => break_contact(game, &snapshot, position, aim, &mut budget).is_some(),
-            Action::Place(_) => reachable(game, &snapshot, action, &mut budget).is_some() };
+        let Some(sent_look)=super::sunset_combat_wire::sent_look(game) else {execution_failed(10);return;};
+        let Some(now_eye)=game.eye_position() else {execution_failed(10);return;};
+        let mut click=click;
+        let current_contact=match action {
+            Action::Base(base)=>click.and_then(|mut current| {
+                current.point=util::block_contact(game,sent_look,current.clicked,base_native::face(current),snapshot.n("Place range"))?;
+                let slot=obsidian_slot(game,&snapshot)?;
+                if !base_native::valid(game,base,slot,current,snapshot.n("Place range"),&mut 48) {return None;}
+                click=Some(current);Some(current.point)
+            }),
+            Action::Place(base)=>util::block_contact(game,sent_look,base,1,snapshot.n("Place range")),
+            Action::Break(_,position)=>{
+                let y=f64::from(sent_look.0).to_radians();let p=f64::from(sent_look.1).to_radians();
+                let along=[now_eye[0]-y.sin()*p.cos()*5.0,now_eye[1]-p.sin()*5.0,now_eye[2]+y.cos()*p.cos()*5.0];
+                break_contact(game,&snapshot,position,along,&mut budget)
+            },
+        };
+        let reached=current_contact.is_some();
+        let aim=current_contact.unwrap_or(aim);
         if !reached { execution_failed(10); return; }
         let slot = match action {
             Action::Base(base) => {
@@ -551,10 +645,12 @@ fn queue(game: &mut Game<'_>, m: &Module, action: Action, target: u32, aim: [f64
             Action::Break(id, position) => {
                 if !snapshot.b("Break") || !game.crystals.iter().any(|c| c.id == id && !c.invulnerable
                     && in_range(position, [c.position.x, c.position.y, c.position.z], 0.01)) { execution_failed(13); return; }
-                None
+                let Some(weapon)=super::sunset_combat_macros::weapon_route(game) else {execution_failed(18);return;};
+                if weapon!=game.selected && !snapshot.b("Auto switch"){execution_failed(18);return;}
+                Some(weapon)
             }
         };
-        if valid_damage(game, &snapshot, at, &[selected], &friends, action, &mut budget).is_none() { execution_failed(14); return; }
+        if valid_damage(game, &snapshot, at, &[selected.clone()], &friends, action, &mut budget).is_none() { execution_failed(14); return; }
         // Slot changes are inside the accepted action. No inventory rewrite,
         // offhand swap or client entity removal is performed.
         let before = game.selected;
@@ -564,25 +660,42 @@ fn queue(game: &mut Game<'_>, m: &Module, action: Action, target: u32, aim: [f64
                 let tick = st(|s| s.tick.max(ticks));
                 let before_state = game.world.block(base[0], base[1], base[2]).0;
                 if !st(|s| s.setup.sent(base, before_state, tick, snapshot.n("Obsidian delay").clamp(0.0,30.0) as u64)) { execution_failed(11); return; }
-                if slot != util::OFFHAND { hold(game, slot); }
+                if slot != util::OFFHAND { weapon_hold(game, slot); }
                 let sequence = util::sequence(game);
                 game.send(S::UseItemOn(play::UseItemOn { hand: i32::from(slot == util::OFFHAND),
                     pos: click.clicked, face: base_native::face(click),
                     cursor: std::array::from_fn(|i| (click.point[i] - f64::from(click.clicked[i])) as f32),
                     inside: false, world_border: false, sequence }));
-                if slot != util::OFFHAND && game.selected == slot { hold(game, before); }
+                if slot != util::OFFHAND && game.selected == slot { weapon_hold(game, before); }
                 note(15);
             }
             Action::Place(base) => {
                 let slot = slot.unwrap_or(util::OFFHAND);
-                if slot != util::OFFHAND { hold(game, slot); }
+                if slot != util::OFFHAND { weapon_hold(game, slot); }
                 let sequence = util::sequence(game);
                 game.send(S::UseItemOn(play::UseItemOn { hand: i32::from(slot == util::OFFHAND), pos: base,
-                    face: 1, cursor: [0.5, 1.0, 0.5], inside: false, world_border: false, sequence }));
-                if slot != util::OFFHAND { hold(game, before); }
+                    face: 1, cursor: std::array::from_fn(|i|(aim[i]-f64::from(base[i])) as f32), inside: false, world_border: false, sequence }));
+                if snapshot.b("Switch Back") && slot != util::OFFHAND { weapon_hold(game, before); }
+                else if slot!=util::OFFHAND {st(|s|s.weapon=None);}
                 note(15);
             }
             Action::Break(id, _) => {
+                let Some(weapon)=slot else {execution_failed(18);return;};
+                if weapon!=game.selected {
+                    let Some(remote)=game.remote.as_ref() else{return;};
+                    let scene=(remote.entity_id,game.dim,remote.session.counters.clone() as Arc<dyn Any+Send+Sync>);
+                    let before=game.selected;
+                    st(|s| {
+                        if let Some(lease)=s.weapon.as_mut(){lease.owned=weapon;}
+                        else{s.weapon=Some(WeaponLease{scene,original:before,owned:weapon});}
+                    });
+                    weapon_hold(game,weapon);
+                }
+                if super::sunset_combat_macros::weak_settling(game){note(2);return;}
+                if !prediction::arm_blast(game,super::sunset_hurt_policy::ShotSource::Crystal(id),
+                    Blast::explosion(at,6.0),&targets,selected.id,prediction::rtt(game).min(5),&mut budget) {
+                    restore_weapon(game,snapshot.b("Switch Back"));execution_failed(14);return;
+                }
                 game.send(S::Attack(play::Attack { id: id as i32 }));
                 game.reset_attack_strength();
                 st(|s| {
@@ -590,14 +703,16 @@ fn queue(game: &mut Game<'_>, m: &Module, action: Action, target: u32, aim: [f64
                     else if s.attempts.len() < MAX_ENTITIES { s.attempts.push((id, 1)); }
                 });
                 note(10);
+                restore_weapon(game,snapshot.b("Switch Back"));
             }
         }
         if snapshot.b("Swing") { game.swing_arm(); game.send(S::Punch(Empty)); }
         let tick = st(|s| s.tick.max(ticks));
         let delay = match action { Action::Base(_) => snapshot.n("Obsidian delay"), Action::Place(_) => snapshot.n("Place delay"), Action::Break(_, _) => snapshot.n("Break delay") };
-        st(|s| s.clock.sent(action, tick, delay.clamp(0.0, 30.0) as u64));
+        let gap=if snapshot.b("Human Pace") && !super::sunset_crystal_bot::steer(game).is_some_and(|s|s.full_speed) {match ((tick^u64::from(target)).wrapping_mul(6364136223846793005)>>32)%100 {0..=69=>2,70..=94=>3,_=>4}} else {0};
+        st(|s| s.clock.sent(action, tick, (delay.clamp(0.0,30.0) as u64).saturating_add(1).max(gap)));
     };
-    let (yaw, pitch) = if m.b("Rotate") { sunset::look_at(eye, aim) } else { (game.yaw, game.pitch) };
+    let (yaw, pitch) = turn;
     if !sunset::try_turn_then(NAME, yaw, pitch, deed) {
         st(|s| { s.clock.queued = false; s.queued_at = None; });
         note(7);

@@ -30,24 +30,22 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new(INV, Category::Combat, "Refills totems with confirmed inventory or hotbar swaps. Double Hand also refills the selected hand while health is low. Auto Totem and this module are exclusive.")
             .pick("Mode", &["Inventory", "Hotbar Swap"])
             .bool("Hotbar refill", false).num("Hotbar slot", 1.0, 1.0, 9.0, 1.0)
-            .num("Reaction delay", 0.0, 0.0, 20.0, 1.0)
+            .num("Reaction delay", 0.0, 0.0, 10.0, 1.0)
             .num("Swap delay", 1.0, 0.0, 10.0, 1.0)
             .num("Close delay", 0.0, 0.0, 10.0, 1.0)
             .num("Switch back delay", 2.0, 0.0, 10.0, 1.0)
-            .bool("Double Hand", false).num("Double hand health", 6.0, 1.0, 36.0, 1.0),
+            .bool("Double Hand", false),
         Module::new(HOVER, Category::Combat, "Moves only the totem under your inventory pointer into the offhand or configured hotbar slot. Waits for both server slot updates.")
-            .bool("Hotbar refill", false).num("Hotbar slot", 1.0, 1.0, 9.0, 1.0)
-            .num("Delay (ticks)", 2.0, 0.0, 20.0, 1.0),
+            .bool("Hotbar refill", false).num("Hotbar slot", 1.0, 1.0, 9.0, 1.0),
         Module::new(XP, Category::Combat, "Shortens the native item-use delay only while you hold use with an experience bottle. Yields to other combat actions.")
-            .num("Delay (ticks)", 0.0, 0.0, 3.0, 1.0),
+            .num("Delay", 0.0, 0.0, 3.0, 1.0),
         Module::new(THROW, Category::Combat, "Throws one pearl or wind charge per key press and returns the selected slot. Never repeats a held key.")
-            .text("Pearl key", "key.keyboard.g").text("Wind charge key", "key.keyboard.v")
-            .bool("Wind jump", true),
+            .text("Pearl key", "None").text("Wind charge key", "None"),
     ]
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Phase { Reaction, SwapDelay, Await, Finish }
+enum Phase { Reaction, SwapDelay, Await, Close, Return }
 
 struct Job {
     owner: &'static str,
@@ -63,12 +61,15 @@ struct Job {
     hotbar: bool,
     opened: bool,
     restore: Option<(usize, usize)>,
+    pass_swaps: u8,
+    unsafe_ticks: u8,
+    revision:Option<i32>,
 }
 
 #[derive(Clone, Copy)]
 enum Throw { Pearl, Wind }
 #[derive(Clone, Copy)]
-struct Press { kind: Throw, slot: usize, at: Instant, jump: bool }
+struct Press { kind: Throw, slot: usize, tick: u64 }
 
 #[derive(Default)]
 struct State {
@@ -85,6 +86,12 @@ struct State {
     queued_use: Option<(&'static str, Instant)>,
     repairing: bool,
     hand: policy::Hand,
+    pace: policy::RefillPace,
+    epoch: Option<Instant>,
+    random: u64,
+    previous_source: Option<usize>,
+    last_action:Option<u64>,
+    auto_retry:policy::RefillRetry,
 }
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 static SWAP_REQUESTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -99,13 +106,14 @@ fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
 pub(super) fn debug() -> serde_json::Value {
     state(|s| serde_json::json!({
         "owner":s.job.as_ref().map(|j|j.owner),
-        "phase":s.job.as_ref().map(|j|match j.phase { Phase::Reaction=>"reaction",Phase::SwapDelay=>"swap-delay",Phase::Await=>"server-ack",Phase::Finish=>"finish" }),
+        "phase":s.job.as_ref().map(|j|match j.phase { Phase::Reaction=>"reaction",Phase::SwapDelay=>"swap-delay",Phase::Await=>"server-ack",Phase::Close=>"inventory-close",Phase::Return=>"hotbar-return" }),
         "slots":s.job.as_ref().map(|j|j.slots),
         "ack_bits":s.job.as_ref().and_then(|j|j.swap.as_ref()).map(|p|p.confirmations()),
         "failed_owners":s.failures.len(),
         "double_hand":s.hand.held,
         "queued_throw":s.press.is_some(),
         "queued_use":s.queued_use.map(|p|p.0),
+        "refill_attempts":s.auto_retry.attempts,
         "swap_requests":SWAP_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
         "swap_confirmed":SWAP_CONFIRMED.load(std::sync::atomic::Ordering::Relaxed),
         "swap_failed":SWAP_FAILED.load(std::sync::atomic::Ordering::Relaxed),
@@ -119,6 +127,7 @@ pub(super) fn toggled(game: &mut Game<'_>, name: &str, on: bool) {
 }
 
 pub(super) fn reset() {
+    if let Some(owner)=state(|s|s.job.as_ref().map(|j|j.owner)){control::release(owner);}
     for owner in OWNERS { sunset::cancel_turns(owner); control::release(owner); }
     state(|s| *s = State::default());
 }
@@ -159,6 +168,14 @@ fn is_totem(stack: &Option<ItemStack>) -> bool {
 fn find_totem(game: &Game<'_>, from: usize) -> Option<usize> {
     (from..36).find(|&i| is_totem(&game.inventory[i]))
 }
+fn random(s:&mut State)->u64 {
+    s.random=s.random.wrapping_add(0x9e3779b97f4a7c15);
+    let mut n=s.random;n=(n^(n>>30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    n=(n^(n>>27)).wrapping_mul(0x94d049bb133111eb);n^(n>>31)
+}
+fn micros(s:&mut State)->u64 {
+    s.epoch.get_or_insert_with(Instant::now).elapsed().as_micros().min(u128::from(u64::MAX)) as u64
+}
 fn slot_setting(m: &Module) -> usize { policy::delay(m.n("Hotbar slot"), 9).clamp(1, 9) as usize - 1 }
 
 fn restore(game: &mut Game<'_>, job: &Job) {
@@ -179,7 +196,9 @@ fn fail(game: &mut Game<'_>, job: Job) {
     restore(game, &job);
     state(|s| {
         s.failures.retain(|(owner, _)| *owner != job.owner);
-        s.failures.push((job.owner, Failure { slots: job.slots, before: job.before }));
+        if job.owner==AUTO {
+            let now=micros(s);s.auto_retry.failed(now,super::remote::sunset_combat_remote::latency(game));
+        }else{s.failures.push((job.owner, Failure { slots: job.slots, before: job.before }));}
         s.next = game.ticks.saturating_add(4);
     });
     control::release(job.owner);
@@ -195,23 +214,26 @@ fn schedule(game: &mut Game<'_>, m: &Module, owner: &'static str, from: usize, t
     let menu = game.remote_menu();
     let wire = [Game::menu_slot_index(&menu.1, from), Game::menu_slot_index(&menu.1, to)];
     if wire[0].is_none() || (!hotbar && to != OFFHAND && wire[1].is_none()) || !control::claim(owner) { return false; }
-    let reaction = if owner == INV { policy::delay(m.n("Reaction delay"), 20) }
-        else if owner == AUTO { policy::delay(m.n("Refill delay"), 10) }
-        else if owner == HOVER { policy::delay(m.n("Delay (ticks)"), 20) }
+    let reaction = if owner == INV { policy::delay(m.n("Reaction delay"), 10) }
+        else if owner == AUTO || owner == HOVER { 0 }
         else { policy::delay(m.n("Item switch delay"), 20) };
     state(|s| s.job = Some(Job { owner, settings: m.clone(), slots: [from, to], before, menu, wire,
         phase: Phase::Reaction, due: game.ticks.saturating_add(reaction), began: Instant::now(),
-        swap: None, hotbar, opened: false, restore: None }));
+        swap: None, hotbar, opened: false, restore: None, pass_swaps:0, unsafe_ticks:0,revision:None }));
+    run_job(game,std::slice::from_ref(m));
     true
 }
 
-fn run_job(game: &mut Game<'_>, mods: &[Module]) -> bool {
+fn run_job_step(game: &mut Game<'_>, mods: &[Module]) -> bool {
     let Some(mut job) = state(|s| s.job.take()) else { return false; };
     if !alive(game) || !mods.iter().any(|m| m.on && m == &job.settings)
         || game.remote_menu() != job.menu || game.carried.is_some()
+        || job.restore.is_some_and(|(_,ours)|game.selected!=ours)
         || (job.owner == HOVER && matches!(job.phase, Phase::Reaction | Phase::SwapDelay)
             && game.inventory_target().0 != Some(job.slots[0]))
-        || job.began.elapsed() > Duration::from_secs(4) || !control::claim(job.owner) {
+        // Five-second maximum server confirmation plus a one-second local
+        // reaction/close margin. Reset at each actual bounded pass operation.
+        || job.began.elapsed() > Duration::from_secs(6) || !control::claim(job.owner) {
         fail(game, job);
         return true;
     }
@@ -224,11 +246,25 @@ fn run_job(game: &mut Game<'_>, mods: &[Module]) -> bool {
                 game.capture(false);
                 job.opened = true;
             }
+            if job.hotbar {
+                let from=job.slots[0];
+                if from>=9 {fail(game,job);return true;}
+                job.restore=Some((game.selected,from));hold(game,from);
+            }
             job.phase = Phase::SwapDelay;
-            job.due = game.ticks.saturating_add(if job.owner == INV { policy::delay(job.settings.n("Swap delay"), 10) } else { 0 });
+            let wait=if job.owner == INV { policy::delay(job.settings.n("Swap delay"), 10).max(u64::from(job.opened)) } else { 0 };
+            job.due = game.ticks.saturating_add(wait);
             state(|s| s.job = Some(job));
         }
         Phase::SwapDelay => {
+            if (job.owner==INV || job.owner==HOVER) && !job.hotbar
+                && !super::remote::sunset_combat_remote::quiet(game) {
+                job.unsafe_ticks=job.unsafe_ticks.saturating_add(1);
+                if job.unsafe_ticks>10 {fail(game,job);}else{
+                    job.due=game.ticks.saturating_add(1);state(|s|s.job=Some(job));
+                }
+                return true;
+            }
             if [stack(game, job.slots[0]), stack(game, job.slots[1])] != job.before {
                 fail(game, job); return true;
             }
@@ -236,12 +272,11 @@ fn run_job(game: &mut Game<'_>, mods: &[Module]) -> bool {
             if job.swap.is_none() { fail(game, job); return true; }
             SWAP_LAST_ACK.store(0, std::sync::atomic::Ordering::Relaxed);
             job.phase = Phase::Await;
+            job.began=Instant::now();
+            job.revision=super::remote::sunset_combat_remote::container_state(game);
             if job.hotbar {
-                let before = game.selected;
                 let from = job.slots[0];
                 if from >= 9 || job.slots[1] != OFFHAND { fail(game, job); return true; }
-                hold(game, from);
-                job.restore = Some((before, from));
                 state(|s| s.job = Some(job));
                 game.send(S::PlayerAction(play::PlayerAction { action: 7, pos: [0; 3], direction: 0, sequence: 0 }));
                 SWAP_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -252,33 +287,75 @@ fn run_job(game: &mut Game<'_>, mods: &[Module]) -> bool {
                 state(|s| s.job = Some(job));
                 if super::remote::sunset_combat_remote::swap_unpredicted(game, &menu, from, to) {
                     SWAP_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if state(|s|s.job.as_ref().is_some_and(|j|j.owner==AUTO)){state(|s|s.auto_retry.sent());}
                 } else {
                     if let Some(job) = state(|s| s.job.take()) { fail(game, job); }
                 }
             }
         }
         Phase::Await => {
-            match job.swap.as_ref().map_or(Status::Rejected, |s| s.status(game.ticks, 30)) {
+            let timeout=policy::confirmation_ticks(super::remote::sunset_combat_remote::latency(game));
+            match job.swap.as_ref().map_or(Status::Rejected, |s| s.status(game.ticks, timeout)) {
                 Status::Waiting => state(|s| s.job = Some(job)),
                 Status::Confirmed => {
                     SWAP_CONFIRMED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    job.phase = Phase::Finish;
-                    let close = if job.owner == INV { policy::delay(job.settings.n("Close delay"), 10)
-                        .max(policy::delay(job.settings.n("Switch back delay"), 10)) } else { 0 };
-                    job.due = game.ticks.saturating_add(close);
+                    job.pass_swaps=job.pass_swaps.saturating_add(1);
+                    // Each operation waits for both genuine server slot values;
+                    // the pass may then refill the configured hotbar once.
+                    let to=slot_setting(&job.settings);
+                    let follow=if job.owner==INV && !job.hotbar && job.pass_swaps<2
+                        && job.settings.b("Hotbar refill") && !is_totem(&game.inventory[to]) {
+                        find_totem(game,9).map(|from|(from,to))
+                    }else{None};
+                    if let Some((from,to))=follow {
+                        job.slots=[from,to];job.before=[stack(game,from),stack(game,to)];
+                        job.wire=[Game::menu_slot_index(&job.menu.1,from),Game::menu_slot_index(&job.menu.1,to)];
+                        job.swap=None;job.phase=Phase::SwapDelay;
+                        job.due=game.ticks.saturating_add(policy::delay(job.settings.n("Swap delay"),10).max(1));
+                    }else{
+                        job.phase=if job.hotbar{Phase::Return}else{Phase::Close};
+                        let wait=if job.owner==INV{policy::finish_delay(job.hotbar,job.settings.n("Close delay"),job.settings.n("Switch back delay"))}else{0};
+                        job.due=game.ticks.saturating_add(wait);
+                    }
                     state(|s| s.job = Some(job));
                 }
                 _ => fail(game, job),
             }
         }
-        Phase::Finish => {
+        Phase::Close | Phase::Return => {
             restore(game, &job);
-            state(|s| s.next = game.ticks.saturating_add(1));
+            state(|s| s.next = game.ticks.saturating_add(if job.owner==INV && !job.hotbar{4}else{1}));
             control::release(job.owner);
         }
     }
     true
 }
+
+// Resolve only already-due local stage transitions; ACK waiting never spins.
+fn run_job(game:&mut Game<'_>,mods:&[Module])->bool {
+    let mut used=false;
+    for _ in 0..4 {
+        let before=state(|s|s.job.as_ref().map(|j|j.phase));
+        if !run_job_step(game,mods){break;}
+        used=true;
+        let next=state(|s|s.job.as_ref().map(|j|(j.phase,j.due)));
+        if next.is_none_or(|(phase,due)|phase==Phase::Await || Some(phase)==before || due>game.ticks){break;}
+    }
+    used
+}
+
+/// Shared refill submission for a bot's current, enabled module snapshot.
+/// No stack prediction: completion still needs both authoritative payload ACKs.
+pub(super) fn submit_refill(game:&mut Game<'_>,module:&Module,owner:&'static str,from:usize,to_hotbar:usize)->bool {
+    if !module.on || !(9..36).contains(&from) || to_hotbar>=9 || !plain(game)
+        || !super::remote::sunset_combat_remote::quiet(game)
+        || state(|s|s.job.is_some() || s.queued_use.is_some()) {return false;}
+    if state(|s|s.connection.as_ref().is_none_or(|old|!same_session(game,old))) {
+        reset();state(|s|s.connection=session(game));
+    }
+    schedule(game,module,owner,from,to_hotbar,false)
+}
+pub(super) fn busy_for(_owner:&str)->bool {state(|s|s.job.is_some() || s.queued_use.is_some())}
 
 // Called at HEAD of the native packet handler. Values come from server packet
 // payloads, not the optimistically predicted inventory already on the client.
@@ -286,6 +363,15 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
     state(|s| {
         if !s.connection.as_ref().is_some_and(|old| same_session(game, old)) { return; }
         let Some(job) = s.job.as_mut().filter(|j| j.phase == Phase::Await) else { return; };
+        let revision=match packet {
+            C::ContainerSetSlot(p) if p.container==job.menu.0=>Some(p.state),
+            C::ContainerSetContent(p) if p.container==job.menu.0=>Some(p.state),
+            _=>None,
+        };
+        if let Some(revision)=revision {
+            if job.revision.is_some_and(|previous|!policy::revision_current(previous,revision)){return;}
+            job.revision=Some(revision);
+        }
         let Some(swap) = job.swap.as_mut() else { return; };
         let before = swap.confirmations();
         let mut at_wire = |container: i32, wire: usize, item: &Option<horizon_protocol::item::Stack>| {
@@ -321,20 +407,49 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
 }
 
 fn auto_totem(game: &mut Game<'_>, m: &Module) -> bool {
-    if !plain(game) || game.offhand.is_some() { return false; }
-    let first = if m.b("Use hotbar totems") { 0 } else { 9 };
-    find_totem(game, first).is_some_and(|from| schedule(game, m, AUTO, from, OFFHAND, false))
+    if game.offhand.is_some(){state(|s|{s.pace.clear();s.auto_retry.reset();});return false;}
+    if !plain(game) || !state(|s|{let now=micros(s);s.auto_retry.ready(now)}){state(|s|s.pace.clear());return false;}
+    let mut hotbar:Vec<_>=(0..9).filter(|i|is_totem(&game.inventory[*i])).collect();
+    let mut stored:Vec<_>=(9..36).filter(|i|is_totem(&game.inventory[*i])).collect();
+    let candidate=state(|s|{
+        let sample=random(s);
+        if m.b("Use hotbar totems") && !hotbar.is_empty(){Some(hotbar.swap_remove(sample as usize%hotbar.len()))}
+        else{policy::nearby_source(&mut stored,s.previous_source,sample)}
+    });
+    let source=state(|s|{
+        let now=micros(s);
+        let samples=[random(s),random(s),random(s)];
+        s.pace.step(now,policy::delay(m.n("Refill delay"),10),candidate,
+            |i|i<36 && (i>=9 || m.b("Use hotbar totems")) && is_totem(&game.inventory[i]),samples)
+    });
+    source.is_some_and(|from|{
+        let accepted=schedule(game,m,AUTO,from,OFFHAND,false);
+        if accepted{state(|s|s.previous_source=Some(from));}accepted
+    })
 }
 
 fn auto_inventory(game: &mut Game<'_>, m: &Module) -> bool {
-    if !plain(game) && !(alive(game) && game.screen == Screen::Inventory
-        && game.remote_storage_open() && game.carried.is_none() && game.inv_drag.is_none()) { return false; }
+    let inventory=alive(game) && game.screen == Screen::Inventory
+        && Game::menu_slot_index(&game.remote_menu().1,0).is_some()
+        && game.carried.is_none() && game.inv_drag.is_none();
+    let can_open=plain(game);
+    if !can_open && !inventory {
+        // Native handled-screen opening can be unavailable while mining/sneaking.
+        // An empty offhand may still use an existing hotbar totem.
+        if alive(game) && game.screen==Screen::Playing && game.carried.is_none()
+            && game.using.is_none() && game.offhand.is_none() {
+            if let Some(from)=(0..9).find(|i|is_totem(&game.inventory[*i])){
+                return schedule(game,m,INV,from,OFFHAND,true);
+            }
+        }
+        return false;
+    }
     let hotbar = slot_setting(m);
     if game.offhand.is_none() {
-        let from = if m.p("Mode") == "Hotbar Swap" {
+        let from = if !inventory && m.p("Mode") == "Hotbar Swap" {
             (0..9).find(|&i| is_totem(&game.inventory[i])).or_else(|| find_totem(game, 9))
         } else { find_totem(game, 9).or_else(|| find_totem(game, 0)) };
-        if let Some(from) = from { return schedule(game, m, INV, from, OFFHAND, m.p("Mode") == "Hotbar Swap" && from < 9); }
+        if let Some(from) = from { return schedule(game, m, INV, from, OFFHAND, !inventory && m.p("Mode") == "Hotbar Swap" && from < 9); }
     }
     let to = if m.b("Hotbar refill") && !is_totem(&game.inventory[hotbar]) { Some(hotbar) } else { None };
     if let (Some(to), Some(from)) = (to, find_totem(game, 9)) { return schedule(game, m, INV, from, to, false); }
@@ -348,15 +463,19 @@ fn double_hand(game: &mut Game<'_>, m: &Module) -> bool {
         return false;
     }
     let mut danger = m.b("Double Hand") && game.player.as_ref().is_some_and(|p|
-        f64::from(p.health.health() + p.health.absorption()) <= m.n("Double hand health"));
+        f64::from(p.health.health() + p.health.absorption()) <= 6.0);
     if m.b("Double Hand") && !danger {
         // Never inspect only a prefix and call an omitted blast safe. Every
         // observed crystal is checked, or the bounded overflow is dangerous.
-        if game.crystals.len() > 16 { danger = true; }
+        if game.crystals.len() > 512 || game.crystals.iter().any(|c|
+            ![c.position.x,c.position.y,c.position.z].iter().all(|v|v.is_finite())) { danger = true; }
         else {
-            let centers: Vec<_> = game.crystals.iter().map(|c| [c.position.x, c.position.y, c.position.z]).collect();
+            let feet=game.player.as_ref().map(|p|[p.position.x,p.position.y,p.position.z]);
+            let centers: Vec<_> = game.crystals.iter().map(|c| [c.position.x, c.position.y, c.position.z])
+                .filter(|at|feet.is_some_and(|feet|super::sunset_explosive_policy::in_range(feet,*at,6.0))).take(17).collect();
+            if centers.len()>16 {danger=true;}
             let mut budget = super::sunset_explosive_policy::Budget::new(16);
-            for center in centers {
+            for center in centers.into_iter().take(16) {
                 let blast = super::sunset_explosive_damage::Blast::explosion(center, 6.0);
                 let health = game.player.as_ref().map_or(0.0, |p| f64::from(p.health.health() + p.health.absorption()));
                 if super::sunset_explosive_damage::local_damage(game, blast, &mut budget)
@@ -377,7 +496,9 @@ fn double_hand(game: &mut Game<'_>, m: &Module) -> bool {
 
 fn hover(game: &mut Game<'_>, m: &Module) -> bool {
     if game.screen != Screen::Inventory || game.carried.is_some() { return false; }
-    let Some(from) = game.inventory_target().0.filter(|s| *s < 36 || (100..109).contains(s) || (300..354).contains(s)) else { return false; };
+    let menu=game.remote_menu();
+    let Some(from) = game.inventory_target().0.filter(|s| *s!=OFFHAND && *s!=200
+        && Game::menu_slot_index(&menu.1,*s).is_some()) else { return false; };
     if !is_totem(&stack(game, from)) { return false; }
     let to = if !is_totem(&game.offhand) { OFFHAND }
         else if m.b("Hotbar refill") { slot_setting(m) } else { return false; };
@@ -426,13 +547,11 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     let Some(m) = module else { return; };
     let pearl = sunset::key_from_text(m.t("Pearl key")).as_deref() == Some(key);
     let wind = sunset::key_from_text(m.t("Wind charge key")).as_deref() == Some(key);
-    let edge = state(|s| (pearl && s.pearl.update(pressed)) || (wind && s.wind.update(pressed)));
-    if !edge || !m.on || !plain(game) || game.left || game.right || !control::available(THROW) { return; }
-    if !pearl && wind && !util::find_held(game, |s| s == "wind_charge")
-        .is_some_and(|slot| game.stack_in(slot).is_some_and(|item| can_use(game, item))) { return; }
-    let jump = !pearl && wind && m.b("Wind jump") && game.player.as_ref().is_some_and(|p| p.ground.on_ground);
-    state(|s| s.press = Some(Press { kind: if pearl { Throw::Pearl } else { Throw::Wind }, slot: game.selected, at: Instant::now(), jump }));
-    if jump { super::sunset_melee_assist::request_jump(THROW); }
+    let edge = state(|s| {
+        let a=pearl && s.pearl.update(pressed);let b=wind && s.wind.update(pressed);a||b
+    });
+    if !edge || !m.on || !alive(game) || game.screen!=Screen::Playing { return; }
+    state(|s| s.press = Some(Press { kind: if pearl { Throw::Pearl } else { Throw::Wind }, slot: game.selected, tick:game.ticks }));
 }
 
 fn can_use(game: &Game<'_>, item: &ItemStack) -> bool {
@@ -441,23 +560,28 @@ fn can_use(game: &Game<'_>, item: &ItemStack) -> bool {
 }
 
 fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
-    let Some(press) = state(|s| s.press.take()) else { return false; };
-    if !plain(game) || game.left || game.right || game.selected != press.slot || press.at.elapsed() > Duration::from_millis(250) { return false; }
+    let Some(press) = state(|s| s.press) else { return false; };
+    if game.selected!=press.slot || !policy::press_alive(press.tick,game.ticks) {
+        state(|s|s.press=None);return false;
+    }
+    if !plain(game) || game.left || game.right {return false;}
     let want = match press.kind { Throw::Pearl => "ender_pearl", Throw::Wind => "wind_charge" };
-    let Some(slot) = util::find_held(game, |s| s == want) else { return false; };
+    let slot=if game.offhand.as_ref().is_some_and(|s|util::short(&s.item)==want && s.count>0){Some(util::OFFHAND)}
+        else{util::find_held(game, |s| s == want)};
+    let Some(slot)=slot else{state(|s|s.press=None);return false;};
     let original = if slot == util::OFFHAND { game.offhand.clone() } else { game.inventory[slot].clone() };
     if !original.as_ref().is_some_and(|item| can_use(game, item)) || !control::claim(THROW) { return false; }
     let done = control::finish(THROW);
     // The actual native jump key is consumed by the next input tick. Never
     // invent an upward velocity or throw early from an unconsumed request.
-    if press.jump && game.player.as_ref().is_some_and(|p| p.ground.on_ground) {
+    if matches!(press.kind,Throw::Wind) && game.player.as_ref().is_some_and(|p| p.ground.on_ground) {
         super::sunset_melee_assist::request_jump(THROW);
         state(|s| s.press = Some(press));
         return true;
     }
     let Some(connection) = session(game) else { return false; };
     let expected = m.clone();
-    let (yaw, pitch) = (game.yaw, if matches!(press.kind, Throw::Wind) && m.b("Wind jump") { 90.0 } else { game.pitch });
+    let (yaw, pitch) = (game.yaw, if matches!(press.kind, Throw::Wind) { 90.0 } else { game.pitch });
     let queued = Instant::now();
     state(|s| s.queued_use = Some((THROW, queued)));
     let accepted = sunset::try_turn_then(THROW, yaw, pitch, move |game| {
@@ -467,12 +591,14 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
         let actual = if slot == util::OFFHAND { game.offhand.as_ref() } else { game.inventory[slot].as_ref() };
         if queued.elapsed() > Duration::from_millis(200) || !same_session(game, &connection)
             || !plain(game) || game.left || game.right || game.selected != press.slot
+            || !policy::press_alive(press.tick,game.ticks)
             || actual != original.as_ref() || !actual.is_some_and(|item| can_use(game,item))
             || !with(|s| s.module(THROW).is_some_and(|m| m.on && m == &expected)) { return; }
         let previous = game.selected;
         if slot != util::OFFHAND { hold(game, slot); }
         let sequence = util::sequence(game);
         game.send(S::UseItem(play::UseItem { hand: i32::from(slot == util::OFFHAND), sequence, yaw, pitch }));
+        state(|s|s.press=None);
         if slot != util::OFFHAND && game.selected == slot { hold(game, previous); }
         state(|s| s.next = game.ticks.saturating_add(2));
     });
@@ -482,12 +608,53 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
 
 fn fast_xp(game: &mut Game<'_>, m: &Module) {
     if !plain(game) || game.left || !(game.right || game.physical_buttons.contains(&winit::event::MouseButton::Right))
-        || !control::available(XP) { return; }
-    if util::find_held(game, |s| s == "experience_bottle").is_some_and(|slot| slot == game.selected || slot == util::OFFHAND) {
+        { return; }
+    let main=game.inventory[game.selected].as_ref();
+    let main_xp=main.is_some_and(|s|util::short(&s.item)=="experience_bottle");
+    let main_block=main.is_some_and(|s|game.items().get(&s.item).is_some_and(|i|i.block.is_some()));
+    let off_xp=game.offhand.as_ref().is_some_and(|s|util::short(&s.item)=="experience_bottle");
+    if main_xp || (off_xp && !main_block) {
+        if sunset::turn_pending() || !control::available(XP) || state(|s|s.last_action==Some(game.ticks)) {
+            game.use_delay=game.use_delay.max(2);return;
+        }
         // The actual native use path does cooldowns, hand choice and stack
         // prediction. Do not add a second UseItem beside the user's click.
-        game.use_delay = game.use_delay.min(policy::delay(m.n("Delay (ticks)"), 3) as u32 + 1);
+        game.use_delay = game.use_delay.min(policy::delay(m.n("Delay"), 3) as u32 + 1);
     }
+}
+
+/// Root's existing before-native-use hook calls this after manual macro intent.
+/// It consumes conflicting queued use operations without clearing attack/pick.
+pub(super) fn intercept_use(game:&mut Game<'_>)->bool {
+    if !plain(game) || !(game.right || game.physical_buttons.contains(&winit::event::MouseButton::Right))
+        || !with(|s|s.module(XP).is_some_and(|m|m.on)){return false;}
+    let main=game.inventory[game.selected].as_ref();
+    let main_xp=main.is_some_and(|s|util::short(&s.item)=="experience_bottle");
+    let main_block=main.is_some_and(|s|game.items().get(&s.item).is_some_and(|i|i.block.is_some()));
+    let off_xp=game.offhand.as_ref().is_some_and(|s|util::short(&s.item)=="experience_bottle");
+    let blocked=(main_xp || (off_xp && !main_block)) && (sunset::turn_pending()
+        || !control::available(XP) || state(|s|s.last_action==Some(game.ticks)));
+    if blocked {game.use_delay=game.use_delay.max(2);}blocked
+}
+/// Observe the actual final forwarding path, including replayed packets.
+pub(super) fn forwarded(game:&Game<'_>,packet:&S) {
+    if matches!(packet,S::Attack(_) | S::UseItem(_) | S::UseItemOn(_))
+        && game.native_window() && game.native_on(sunset::ID) {
+        state(|s|if s.connection.as_ref().is_some_and(|old|same_session(game,old)){s.last_action=Some(game.ticks);});
+    }
+}
+/// Optional render/post-packet responsiveness, isolated from DoubleHand's
+/// once-per-native-tick safe counter. Never drive another owner's job here.
+pub(super) fn responsive(game:&mut Game<'_>,mods:&[Module]) {
+    let Some(module)=mods.iter().find(|m|m.name==AUTO && m.on) else{return;};
+    if !alive(game) || mods.iter().any(|m|m.name==INV && m.on){return;}
+    let owner=state(|s|s.job.as_ref().map(|j|j.owner));
+    if owner==Some(AUTO){run_job(game,mods);return;}
+    if owner.is_some() || state(|s|s.queued_use.is_some()){return;}
+    if state(|s|s.connection.as_ref().is_none_or(|old|!same_session(game,old))){
+        reset();state(|s|s.connection=session(game));
+    }
+    auto_totem(game,module);
 }
 
 fn needs_repair(game: &Game<'_>, item: &Option<ItemStack>, threshold: f64) -> bool {
@@ -548,6 +715,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
     let get = |name: &str| mods.iter().find(|m| m.name == name && m.on);
     let auto = get(AUTO);
     let inv = get(INV);
+    if auto.is_none(){state(|s|{s.pace.clear();s.auto_retry.reset();});}
     // Last enabled wins, with deterministic Auto Totem precedence if both
     // arrive together from a saved profile. Never run two refill drivers.
     let disable = state(|s| {

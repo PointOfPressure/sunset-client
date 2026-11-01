@@ -224,6 +224,18 @@ pub(super) struct History {
     started: Option<u64>,
 }
 impl History {
+    pub(super) fn positive_with_empty(&self,tick:u64,window:u64,effect:f32)->bool {
+        let window=window.clamp(4,20);
+        if !effect.is_finite() || self.samples.back().is_none_or(|sample|sample.tick!=tick) {return false;}
+        let mut walked=0;
+        for sample in self.samples.iter().rev().take_while(|sample|tick>=sample.tick&&tick-sample.tick<=window) {
+            walked+=1;
+            if sample.base.is_none_or(|base|!base.is_finite()||base+effect<=0.0){return false;}
+        }
+        let complete=walked<64 && self.started.is_some_and(|start|tick>=start&&tick-start>=window)
+            && self.samples.front().is_some_and(|sample|sample.tick<=tick.saturating_sub(window));
+        complete || 1.0+effect>0.0
+    }
     pub(super) fn clear(&mut self) {
         self.samples.clear();
         self.started = None;
@@ -303,6 +315,9 @@ impl Masks {
     pub(super) fn at(&self, pos: [f64; 3]) -> Option<u32> {
         self.hidden.iter().find(|m| m.pos == pos).map(|m| m.id)
     }
+    pub(super) fn visible_at(&self,pos:[f64;3],tick:u64)->Option<u32> {
+        self.hidden.iter().find(|mask|mask.pos==pos&&tick>mask.sent).map(|mask|mask.id)
+    }
     pub(super) fn confirm(&mut self, id: u32) -> bool {
         let found = self.hidden.iter().any(|m| m.id == id);
         self.hidden.retain(|m| m.id != id);
@@ -310,9 +325,12 @@ impl Masks {
         found
     }
     pub(super) fn expire(&mut self, tick: u64, window: u64) {
+        self.expire_before(tick,window.clamp(10,40));
+    }
+    fn expire_before(&mut self,tick:u64,lifetime:u64) {
         let mut expired = Vec::with_capacity(self.hidden.len());
         self.hidden.retain(|m| {
-            let old = tick < m.sent || tick.saturating_sub(m.sent) >= window.clamp(10, 40);
+            let old = tick < m.sent || tick.saturating_sub(m.sent) >= lifetime;
             if old {
                 expired.push(m.id);
             }
@@ -328,6 +346,11 @@ impl Masks {
                 self.stubborn.push(id);
             }
         }
+    }
+    pub(super) fn expire_after_window(&mut self,tick:u64,window:u64) {
+        // The ghost begins on the following tick and survives the inclusive
+        // receipt window. Reuse the bounded stubborn-ID recovery policy.
+        self.expire_before(tick,window.clamp(4,20).saturating_add(1));
     }
     pub(super) fn count(&self) -> usize {
         self.hidden.len()

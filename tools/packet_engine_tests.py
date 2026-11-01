@@ -65,10 +65,12 @@ def main():
     assert "reset()" in login and "respawn(game)" not in login
     respawn=block(production,production.index("fn respawn("))
     assert respawn.index("same_connection")<respawn.index("discard_except")<respawn.index("remote.session.send")<respawn.index("reset()")
-    assert "S::ClientTickEnd" in respawn and "apply(game" not in respawn
+    assert "!stale_motion(packet)" in respawn and "apply(game" not in respawn
     connection=block(production,production.index("fn same_connection("))
     assert "counters" in connection and "game.dim" not in connection and "entity_id" not in connection
     native = (engine / "crates/horizon-protocol/src/packets/play.rs").read_text(encoding="utf-8")
+    ids=(engine / "crates/horizon-protocol/src/ids.rs").read_text(encoding="utf-8")
+    assert "pub const COMMAND_SUGGESTION: i32 = 15;" in ids
     primitives = []
     for name in ["MovePlayerPos", "MovePlayerPosRot", "MovePlayerRot", "MovePlayerStatus", "SetEntityMotion"]:
         match = re.search(r"\b" + name + r"\s*\{(.*?)\}\s*\);", native, re.S)
@@ -86,9 +88,10 @@ def main():
     particle = "#[derive(Clone,Debug,PartialEq)] struct Particle { payload:Vec<u8> }"
     explosion_particle = block(native, native.index("pub struct ExplosionParticle")).replace("pub struct", "struct")
     helpers = "\n".join(block(production, production.index("fn " + name + "("))
-                        for name in ["movement", "barrier", "position", "valid_movement", "pushes_self", "self_motion_event"])
+                        for name in ["movement", "barrier", "stale_motion", "position", "valid_movement", "pushes_self", "self_motion_event"])
     policy = str(here / "packet_policy.rs").replace("\\", "/")
     code = f'#![allow(dead_code)]\n#[path="{policy}"]mod policy;\n'
+    code += "mod horizon_protocol {pub mod ids {pub mod play {pub mod serverbound {pub const COMMAND_SUGGESTION:i32=15;}}}}\n"
     code += "\n".join(primitives) + "\n" + enum + "\n" + particle
     code += "\n#[derive(Clone,Debug,PartialEq)]\n" + explosion_particle
     code += "\n#[derive(Clone,Debug,PartialEq)]\n" + explode
@@ -106,12 +109,12 @@ struct Game<'a> {remote:Option<Remote>,_life:std::marker::PhantomData<&'a ()>}
     assert_eq!(queue.drain(1000,true),packets);
     for p in [S::MoveVehicle(()),S::Attack(()),S::UseItem(()),S::Unknown(999,vec![1,2,3])]{assert!(!movement(&p));}
 }
-#[test]fn gameplay_actions_flush_but_tickend_queues_and_network_control_bypasses(){
-    for p in [S::Attack(()),S::UseItem(()),S::UseItemOn(()),S::PlayerAction(()),S::SetCarriedItem(()),S::ContainerClick(()),S::Unknown(999,vec![])] {
+#[test]fn exact_actions_flush_and_non_actions_share_the_fifo(){
+    for p in [S::Attack(()),S::UseItem(()),S::UseItemOn(()),S::PlayerAction(()),S::ContainerClick(()),S::Chat(()),S::ChatCommand(()),S::ConfigurationAcknowledged(()),S::Unknown(15,vec![])] {
         assert!(barrier(&p));assert!(!movement(&p));
     }
     assert!(movement(&S::ClientTickEnd(())));assert!(!barrier(&S::ClientTickEnd(())));
-    for p in [S::KeepAlive(()),S::Pong(()),S::PingRequest(()),S::PlayerInput(()),S::Chat(()),S::ChatCommand(()),S::CookieResponse(()),S::ConfigurationAcknowledged(())] {
+    for p in [S::KeepAlive(()),S::Pong(()),S::PingRequest(()),S::PlayerInput(()),S::SetCarriedItem(()),S::CookieResponse(()),S::Unknown(999,vec![])] {
         assert!(!barrier(&p));assert!(!movement(&p));
     }
 }

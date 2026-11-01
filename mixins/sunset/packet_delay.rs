@@ -1,5 +1,5 @@
-// Original bounded packet timing. Four ordinary movement variants and their
-// ORIGINAL client tick boundaries share FIFO. Session::send handles framing.
+// Original bounded packet timing. Non-action packets and their ORIGINAL client
+// tick boundaries share FIFO. Session::send handles framing.
 use super::sunset::{self, Canvas, Category, Module};
 use super::sunset_packet_policy::{self as policy, Queue};
 use super::{Game, Screen};
@@ -15,26 +15,24 @@ use std::{
 
 const LAG: &str = "Fake Lag";
 const KB: &str = "Knockback Delay";
-const MOVEMENT_BYTES: usize = 40;
+const MAX_OUTGOING_BYTES: usize = 32_768;
 const MAX_IMPULSE_BYTES: usize = 32_768;
 static REPLAYING: AtomicBool = AtomicBool::new(false);
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(LAG,Category::Combat,"Delays ordinary outgoing movement with its original client tick boundaries. Actions flush them in order; chat, keepalive and ping pass immediately. Dynamic follows your aim and approach.")
+        Module::new(LAG,Category::Combat,"Delays outgoing non-action packets in a bounded FIFO, including keepalive and input. Actions and chat flush earlier packets first; correction discards stale movement. Dynamic follows your aim and approach.")
             .pick("Mode",&["Dynamic","Always"])
             .num("Delay (ms)",100.0,10.0,1000.0,10.0)
             .num("Range",6.0,3.0,12.0,0.5)
-            .bool("Show server position",true)
-            .bool("Anti bot",true).bool("Ignore teams",true),
+            .bool("Show server position",true),
         Module::new(KB,Category::Combat,"Applies selected self velocity and explosion packets after a short bounded delay. Explosion visuals and sound share their packet's delay. Other entities and network control pass immediately.")
             .num("Chance (%)",40.0,0.0,100.0,5.0)
             .num("Air delay min (ms)",50.0,0.0,500.0,10.0)
             .num("Air delay max (ms)",100.0,0.0,500.0,10.0)
             .num("Ground delay min (ms)",200.0,0.0,1000.0,10.0)
             .num("Ground delay max (ms)",250.0,0.0,1000.0,10.0)
-            .bool("Not in water",false).bool("Only near enemies",true)
-            .bool("Explosion packets",true).bool("Anti bot",true).bool("Ignore teams",true),
+            .bool("Not in water",false).bool("Only near enemies",true),
     ]
 }
 
@@ -68,7 +66,7 @@ impl Default for State {
             session: None,
             epoch: Instant::now(),
             config: Config::default(),
-            moves: Queue::new(64, 4096, 1000),
+            moves: Queue::new(64, 65_536, 1000),
             impulses: Queue::new(16, 262_144, 1000),
             server_position: None,
             rng: 0x9e3779b97f4a7c15,
@@ -145,26 +143,21 @@ fn movement(packet: &S) -> bool {
     )
 }
 fn barrier(packet: &S) -> bool {
-    !movement(packet)
-        && !matches!(
-            packet,
-            S::KeepAlive(_)
-                | S::Pong(_)
-                | S::PingRequest(_)
-                | S::Chat(_)
-                | S::ChatAck(_)
-                | S::ChatCommand(_)
-                | S::ChatCommandSigned(_)
-                | S::ChatSessionUpdate(_)
-                | S::ChunkBatchReceived(_)
-                | S::ClientInformation(_)
-                | S::ClientTickEnd(_)
-                | S::PlayerInput(_)
-                | S::ConfigurationAcknowledged(_)
-                | S::ResourcePack(_)
-                | S::CookieResponse(_)
-                | S::PlayerLoaded(_)
-        )
+    matches!(packet,
+        S::Attack(_) | S::Interact(_) | S::UseItemOn(_) | S::UseItem(_)
+        | S::PlayerAction(_) | S::Punch(_) | S::ContainerClick(_)
+        | S::ContainerButtonClick(_) | S::ContainerClose(_) | S::Chat(_)
+        | S::ChatCommand(_) | S::ChatCommandSigned(_) | S::SignUpdate(_)
+        | S::EditBook(_) | S::PlaceRecipe(_) | S::SelectTrade(_)
+        | S::SetCreativeModeSlot(_) | S::PickItemFromBlock(_) | S::PickItemFromEntity(_)
+        | S::AcceptTeleportation(_)
+        // A native protocol-state transition cannot wait in the old play queue.
+        | S::ConfigurationAcknowledged(_))
+        || matches!(packet,S::Unknown(id,_) if *id==horizon_protocol::ids::play::serverbound::COMMAND_SUGGESTION)
+}
+fn stale_motion(packet:&S)->bool {
+    matches!(packet,S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_)
+        | S::MovePlayerStatus(_) | S::MoveVehicle(_))
 }
 fn position(packet: &S) -> Option<[f64; 3]> {
     match packet {
@@ -282,7 +275,7 @@ pub(super) fn correction(game: &mut Game<'_>) {
     // before native AcceptTeleportation/new position. Never invent a tick.
     let boundaries = state(|s| {
         s.moves
-            .discard_except(|packet| matches!(packet, S::ClientTickEnd(_)))
+            .discard_except(|packet| !stale_motion(packet))
     });
     send_moves(game, boundaries);
     let packets = state(|s| {
@@ -296,15 +289,15 @@ pub(super) fn correction(game: &mut Game<'_>) {
 
 fn respawn(game: &Game<'_>) {
     // Vanilla respawn replaces ServerPlayer but retains its listener/quota.
-    // End markers are connection frames, not world coordinates. Preserve only
-    // already-queued originals on this exact connection, before native respawn.
+    // End markers and queued non-motion controls belong to this connection.
+    // Preserve originals before native respawn, discarding stale coordinates.
     let boundaries = state(|s| {
         if s.session
             .as_ref()
             .is_some_and(|old| same_connection(game, old))
         {
             s.moves
-                .discard_except(|packet| matches!(packet, S::ClientTickEnd(_)))
+                .discard_except(|packet| !stale_motion(packet))
         } else {
             s.moves.clear();
             Vec::new()
@@ -326,17 +319,12 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> bool {
     if !ensure_session(game) {
         return false;
     }
-    if !movement(packet) {
-        // Gameplay actions flush complete old frames and any current partial
-        // frame. Original ClientTickEnd packets are queued, never a barrier;
-        // network control and chat bypass both the queue and the barrier.
-        if barrier(packet) {
-            flush_moves(game);
-        }
+    if barrier(packet) {
+        flush_moves(game);
         return false;
     }
     let capture = live(game)
-        && valid_movement(packet)
+        && (!movement(packet) || valid_movement(packet))
         && super::sunset_combat_control::owner().is_none()
         && !sunset::with(|s| s.is_on("Blink"));
     let config = state(|s| s.config);
@@ -347,14 +335,17 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> bool {
     }
     // An old idle tick-end reaching its deadline must not flush newer movement
     // early. Release the due prefix before checking capacity/age pressure.
+    if matches!(packet,S::Unknown(_,bytes) if bytes.len()>MAX_OUTGOING_BYTES){flush_moves(game);return false;}
+    let bytes=packet.encode().len();
+    if bytes>MAX_OUTGOING_BYTES {flush_moves(game);return false;}
     let (due, captured) = state(|s| {
         let now = millis(s);
         let mut due = s.moves.drain(now, false);
-        if s.moves.needs_flush(now, MOVEMENT_BYTES) {
+        if s.moves.needs_flush(now, bytes) {
             due.extend(s.moves.drain(now, true));
         }
         let captured = s.moves
-            .push(packet.clone(), now, config.lag_ms, MOVEMENT_BYTES)
+            .push(packet.clone(), now, config.lag_ms, bytes)
             .is_ok();
         (due, captured)
     });
@@ -558,7 +549,7 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module]) {
         }),
         water: kb.is_some_and(|m| m.b("Not in water")),
         fights: kb.is_some_and(|m| !m.b("Only near enemies") || enemy(game, m, false, 6.0)),
-        explosions: kb.is_some_and(|m| m.b("Explosion packets")),
+        explosions: kb.is_some(),
     };
     state(|s| s.config = config);
     let moves = state(|s| {
@@ -608,7 +599,7 @@ pub(super) fn draw(
 pub(super) fn debug() -> serde_json::Value {
     state(|s| {
         let now = millis(s);
-        serde_json::json!({"replaying":replaying(),"movement_only":true,"preserves_tick_boundaries":true,"movement_queued":s.moves.len(),
+        serde_json::json!({"replaying":replaying(),"movement_only":false,"scope":"all-non-action","preserves_tick_boundaries":true,"movement_queued":s.moves.len(),
         "movement_bytes":s.moves.bytes(),"movement_oldest_ms":s.moves.oldest_age(now),
         "impulses_queued":s.impulses.len(),"impulse_bytes":s.impulses.bytes(),"impulse_oldest_ms":s.impulses.oldest_age(now),
         "movement_held":s.moves.accepted,"movement_released":s.moves.released,"movement_discarded":s.moves.dropped,

@@ -1,5 +1,5 @@
-// Original visual-only prediction. Authoritative crystal entities remain in
-// Game.crystals, preserving collision checks and aura server acknowledgements.
+// Original local crystal ghost prediction. Renderer and native special hitboxes
+// omit a ghost; server entities and aura acknowledgements stay authoritative.
 use super::sunset::{self, Category, Module};
 use super::sunset_city_policy::{self as policy, History, Masks};
 use super::{Game, Screen};
@@ -31,13 +31,12 @@ fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
 }
 
 pub(super) fn defaults() -> Module {
-    Module::new(NAME,Category::Combat,"Hides an attacked crystal immediately after a forwarded hit. Server entities stay authoritative. Rejected predictions reappear after a bounded confirmation window.")
-        .bool("Instant break",true).num("Confirmation ticks",20.0,10.0,40.0,1.0)
+    Module::new(NAME,Category::Combat,"Predicts a broken crystal after a forwarded hit. A rejected prediction restores its rendering and hitbox after the measured confirmation window.")
 }
 fn module() -> Option<Module> {
     sunset::with(|s| {
         s.module(NAME)
-            .filter(|m| m.on && m.b("Instant break"))
+            .filter(|m| m.on)
             .cloned()
     })
 }
@@ -52,14 +51,7 @@ fn session(game: &Game<'_>) -> Option<Session> {
     let r = game.remote.as_ref()?;
     Some((r.entity_id, game.dim, r.session.counters.clone()))
 }
-fn window(m: &Module) -> u64 {
-    let n = m.n("Confirmation ticks");
-    if n.is_finite() {
-        (n as u64).clamp(10, 40)
-    } else {
-        40
-    }
-}
+fn window(game:&Game<'_>)->u64 {u64::from(super::sunset_prediction::rtt(game).saturating_add(2).clamp(4,20))}
 fn active(game: &Game<'_>) -> bool {
     game.native_window()
         && game.native_on(sunset::ID)
@@ -173,7 +165,7 @@ pub(super) fn tick(game: &Game<'_>, tick: u64) {
         }
         s.tick = tick;
         s.history.sample(tick, base);
-        s.masks.expire(tick, window(&m));
+        s.masks.expire_after_window(tick, window(game));
         HAS_MASKS.store(s.masks.count() > 0, Ordering::Release);
     });
 }
@@ -248,7 +240,7 @@ pub(super) fn sent(game: &Game<'_>, packet: &S) {
     let effect = game.effect_attack_bonus();
     state(|s| {
         s.history.sample(game.ticks, current);
-        if s.history.positive(game.ticks, window(&m), effect)
+        if s.history.positive_with_empty(game.ticks, window(game), effect)
             && s.masks.add(id, position, game.ticks)
         {
             s.hidden_total = s.hidden_total.saturating_add(1);
@@ -286,11 +278,11 @@ pub(super) fn hidden_position(game: &Game<'_>, position: [f64; 3]) -> bool {
         s.session
             .as_ref()
             .filter(|old| same(game, old))
-            .and_then(|_| s.masks.at(position))
+            .and_then(|_| s.masks.visible_at(position,game.ticks))
     }) else {
         return false;
     };
-    if !sunset::with(|s| s.module(NAME).is_some_and(|m| m.on && m.b("Instant break"))) {
+    if !sunset::with(|s| s.module(NAME).is_some_and(|m| m.on)) {
         return false;
     }
     let mut matches = game
@@ -325,7 +317,7 @@ pub(super) fn duplicate(game: &Game<'_>, packet: &S) -> bool {
 }
 pub(super) fn debug() -> serde_json::Value {
     state(|s| {
-        serde_json::json!({"visual_only":true,
+        serde_json::json!({"authoritative_entities_retained":true,"native_hitboxes_filtered":true,
     "hidden":s.masks.count(),"stubborn":s.masks.stubborn(),"total_hidden":s.hidden_total,"server_remove_events":s.confirmed})
     })
 }

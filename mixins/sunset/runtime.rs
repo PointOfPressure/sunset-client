@@ -294,6 +294,9 @@ impl Module {
         let name = self.settings[j].name;
         let advanced = self.b("Advanced");
         match self.name {
+            "Auto Trap" if name=="Blocks per tick" => !self.b("Rotate"),
+            "Crystal Aura" if name=="Hold Key" => self.b("Require Hold"),
+            "Crystal Aura" | "Anchor Aura" if name=="Render Color" => self.b("Render"),
             "Speed" => match name {
                 "Vanilla speed" => self.p("Mode") != "Strafe",
                 "Strafe speed" | "Speed limit" => self.p("Mode") == "Strafe",
@@ -890,7 +893,7 @@ impl State {
         let mut out = String::new();
         for (i, m) in modules.iter().enumerate() {
             let id = norm(m.name);
-            out.push_str(&format!("{id}.on={}\n", self.inputs.saved_on(i, m.on)));
+            out.push_str(&format!("{id}.on={}\n", m.name!="Auto City" && self.inputs.saved_on(i, m.on)));
             out.push_str(&format!("{id}.key={}\n", m.key.as_deref().unwrap_or("none")));
             for s in &m.settings {
                 out.push_str(&format!("{id}.{}={}\n", norm(s.name), s.stored()));
@@ -951,7 +954,7 @@ impl State {
             return;
         };
         match field {
-            "on" => m.on = v == "true",
+            "on" => m.on = m.name!="Auto City" && v == "true",
             "key" => m.key = key_from_text(v),
             _ => {
                 // Settings from the earlier local movement build used different names and percentage units.
@@ -1471,7 +1474,8 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
             "Velocity" => with(|s| { s.velocity = None; s.blast = [0.0; 3]; }),
             "Sword PvP Bot" => super::sunset_sword_bot::disabled(game),
             "Crystal PvP Bot" => super::sunset_crystal_bot::disabled(game),
-            "Crystal Aura" => super::sunset_crystal_aura::reset(),
+            "Crystal Aura" => super::sunset_crystal_aura::disabled(game),
+            "Kill Aura" => super::sunset_aura::disabled(game),
             "Anchor Aura" => super::sunset_anchor_aura::reset(),
             "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
             _ => {},
@@ -1720,8 +1724,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         super::sunset_city_trap::cancel(game);
         super::sunset_crystal_optimizer::reset();
         super::sunset_melee_assist::cancel(game);
+        super::sunset_aura::disabled(game);
         super::sunset_combat_control::reset();
-        super::sunset_crystal_aura::reset();
+        super::sunset_crystal_aura::disabled(game);
         super::sunset_anchor_aura::reset();
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
@@ -1733,10 +1738,12 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     if super::sunset_combat_control::begin_tick(game) {
         super::sunset_melee_assist::cancel(game);
+        super::sunset_aura::reset();
     }
     ensure_loaded(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     let mods = snapshot();
+    if !mods.iter().any(|m|m.name=="Kill Aura"&&m.on) {super::sunset_aura::disabled(game);}
     super::sunset_packet_delay::tick(game, &mods);
     super::sunset_render::pre_tick(game, &mods);
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
@@ -4132,6 +4139,10 @@ struct Turns {
 
 static TURNS: Mutex<Turns> = Mutex::new(Turns { queue: Vec::new(), carried: false, restore: false });
 
+pub(super) fn turn_pending() -> bool {
+    turns(|turns| turns.carried || !turns.queue.is_empty())
+}
+
 fn turns<R>(f: impl FnOnce(&mut Turns) -> R) -> R {
     f(&mut TURNS.lock().unwrap_or_else(|e| e.into_inner()))
 }
@@ -5133,6 +5144,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
     super::sunset_packet_delay::draw(game, cam, out, lw);
     super::sunset_city_trap::draw(game, cam, out, lw);
+    super::sunset_explosive_aura::draw(game,cam,mods,out,lw);
     super::sunset_util::draw_shown(cam, out, lw);
     super::sunset_render::overlay(game, cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);

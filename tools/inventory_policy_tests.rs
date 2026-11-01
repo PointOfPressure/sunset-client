@@ -86,3 +86,58 @@ fn swap()->Swap<Item>{Swap::new([17,OFFHAND],[totem(),sword()],100).unwrap()}
     for bad in [f64::NAN,f64::INFINITY,f64::NEG_INFINITY,-1.0] {assert_eq!(delay(bad,20),20);}
     assert_eq!(delay(2.9,20),2);assert_eq!(delay(200.0,20),20);
 }
+#[test] fn a_key_request_survives_temporary_blocking_for_ten_real_ticks(){
+    for now in 100..110 {assert!(press_alive(100,now));}
+    assert!(!press_alive(100,110));assert!(!press_alive(100,99));
+}
+#[test] fn inventory_close_and_hotbar_return_use_independent_settings(){
+    assert_eq!(finish_delay(false,1.,9.),1);
+    assert_eq!(finish_delay(true,1.,9.),9);
+    assert_eq!(finish_delay(false,0.,9.),0);
+}
+#[test] fn authoritative_wait_scales_with_latency_and_is_bounded(){
+    assert_eq!(confirmation_ticks(None),15);assert_eq!(confirmation_ticks(Some(-1)),15);
+    assert_eq!(confirmation_ticks(Some(500)),35);assert_eq!(confirmation_ticks(Some(i32::MAX)),100);
+}
+#[test] fn stale_menu_revisions_are_ignored_but_vanilla_wrap_is_new(){
+    assert!(revision_current(100,100));assert!(revision_current(100,101));assert!(!revision_current(100,99));
+    assert!(revision_current(32767,0));assert!(!revision_current(0,32767));
+    assert!(revision_current(912345,912346));assert!(!revision_current(912345,912344));
+}
+#[test] fn totem_retry_requires_three_actual_sends_and_latency_backoff(){
+    let mut retry=RefillRetry::default();
+    for n in 0..3 {
+        assert!(retry.ready(n*100_000));retry.sent();retry.failed(n*100_000,None);
+        assert!(!retry.ready(n*100_000+99_999));
+    }
+    assert_eq!(retry.attempts,3);assert!(!retry.ready(u64::MAX));
+    retry.reset();assert!(retry.ready(0));
+}
+#[test] fn totem_setting_one_has_no_notice_or_target_sleep(){
+    let mut pace=RefillPace::default();
+    assert_eq!(pace.step(0,1,Some(17),|s|s==17,[0;3]),Some(17));
+    assert_eq!(pace.step(0,1,Some(17),|_|false,[0;3]),None);
+}
+#[test] fn totem_notice_and_target_pacing_are_elapsed_microseconds(){
+    let mut pace=RefillPace::default();
+    assert_eq!(pace.step(0,3,Some(17),|_|true,[500_000;3]),None);
+    // speed3 central notice36ms, then central target16ms. Native tick count
+    // is deliberately absent: a render callback can observe each deadline.
+    assert_eq!(pace.step(35_999,3,Some(18),|_|true,[500_000;3]),None);
+    assert_eq!(pace.step(36_000,3,Some(18),|_|true,[500_000;3]),None);
+    assert_eq!(pace.step(51_999,3,Some(19),|_|true,[500_000;3]),None);
+    assert_eq!(pace.step(52_000,3,Some(19),|s|s==18,[500_000;3]),Some(18));
+}
+#[test] fn disappeared_source_retargets_without_an_inventory_request(){
+    let mut pace=RefillPace::default();
+    pace.step(0,2,Some(17),|_|true,[500_000;3]);
+    pace.step(100_000,2,Some(17),|_|true,[500_000;3]);
+    assert_eq!(pace.step(200_000,2,Some(18),|_|false,[500_000;3]),None);
+    assert_eq!(pace.step(210_000,2,Some(18),|_|true,[500_000;3]),None);
+    assert_eq!(pace.step(230_000,2,Some(18),|s|s==18,[500_000;3]),Some(18));
+}
+#[test] fn stored_totems_choose_only_the_nearest_three_to_previous_source(){
+    let mut candidates=[9,10,11,35];
+    for seed in 0..100 {let picked=nearby_source(&mut candidates,Some(9),seed).unwrap();assert_ne!(picked,35);}
+    assert_eq!(nearby_source(&mut [],Some(9),0),None);
+}

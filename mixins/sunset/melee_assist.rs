@@ -2,7 +2,9 @@
 // Horizon's actual inventory, movement, item components, packets and spear ray.
 use super::sunset::{Category, Module, gui_open, hold, try_turn_then, with};
 use super::sunset_combat_control as control;
+use super::sunset_mace_policy as mace_policy;
 use super::sunset_melee_policy::{self as policy, SlotLease};
+use super::sunset_trigger_policy as trigger_policy;
 use super::sunset_util as util;
 use super::{Game, Screen};
 use horizon_client::{
@@ -18,7 +20,8 @@ use horizon_protocol::packets::{
 };
 use horizon_world::combat_rules::{self, ArmorWorld};
 use std::{
-    sync::Mutex,
+    any::Any,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use winit::keyboard::KeyCode;
@@ -39,33 +42,30 @@ const INPUT_KEYS: [KeyCode; 4] = [
 pub(super) fn defaults() -> Vec<Module> {
     vec![
         Module::new(SHIELD,Category::Combat,"Selects a working shield-disabling weapon for a hit into an observed raised shield. Auto also attacks the shield under your crosshair.")
-            .pick("Mode",&["Passive","Auto"]).bool("Switch back",true).bool("Mobs",false),
+            .pick("Mode",&["Passive","Auto"]).bool("Switch back",true),
         Module::new(MACE,Category::Combat,"Selects a mace using observed equipment and native enchantment effects. Optional assist attacks a target under your crosshair during a real fall.")
             .bool("Auto swap",true).pick("Pick",&["Damage","Wind Burst"]).bool("Breach swap",false)
             .bool("Swap back",true).bool("Smash assist",false).pick("Smash timing",&["Delayed","Direct"])
             .num("Min fall",3.0,1.5,30.0,0.5).bool("Mobs",false),
         Module::new(SPEAR,Category::Combat,"Buffers a Lunge key and selects a usable enchanted spear. Reach poke optionally jabs an enemy along your view beyond ordinary melee reach.")
-            .text("Lunge key","None").bool("Reach poke",false).bool("Switch back",true).bool("Mobs",false),
+            .text("Lunge key","None").bool("Reach poke",false).bool("Switch back",true),
         Module::new(TAP,Category::Combat,"Briefly releases forward input after a charged sprint hit. S Tap presses backward for the chosen number of ticks.")
             .pick("Mode",&["W Tap","S Tap"]).num("Hold",1.0,1.0,3.0,1.0),
         Module::new(JUMP,Category::Combat,"Requests the native grounded jump after an observed upward knockback packet while sprinting forward."),
-        Module::new(FRIEND,Category::Combat,"Blocks direct attacks and piercing spear paths that include a known friend.").bool("Teams",false),
+        Module::new(FRIEND,Category::Combat,"Blocks direct attacks and piercing spear paths that include a known friend."),
     ]
 }
 
 pub(super) fn augment_defaults(modules: &mut Vec<Module>) {
     if let Some(m) = modules.iter_mut().find(|m| m.name == "Trigger Bot") {
-        *m = m
-            .clone()
-            .num("Reaction", 3.0, 0.0, 10.0, 1.0)
-            .pick("Crits", &["Smart", "Off", "Only"])
-            .bool("Hold attack", false)
-            .bool("Weapons only", true)
-            .bool("Invisible", false);
+        *m=Module::new("Trigger Bot",Category::Combat,"Attacks eligible enemies under your actual crosshair after reaction and charge timing. Smart waits only for an actionable critical stance; Only requires a real critical.")
+            .num("Reaction",3.,0.,10.,1.).pick("Crits",&["Smart","Off","Only"])
+            .bool("Hold attack",false).bool("Players",true).bool("Hostiles",false)
+            .bool("Invisible",false).bool("Weapons only",true);
     }
-    for module in defaults() {
-        if !modules.iter().any(|m| m.name == module.name) {
-            modules.push(module);
+    for m in defaults() {
+        if !modules.iter().any(|old| old.name == m.name) {
+            modules.push(m);
         }
     }
 }
@@ -78,6 +78,8 @@ struct InputSave {
 }
 #[derive(Default)]
 struct State {
+    action_tick: Option<u64>,
+    action_scene: Option<(Arc<dyn Any + Send + Sync>, super::Dim, i32)>,
     lease: Option<SlotLease>,
     lease_end: Option<control::Finish>,
     queued: Option<&'static str>,
@@ -88,15 +90,15 @@ struct State {
     jump_pending: bool,
     input: Option<InputSave>,
     last_attack: Option<u64>,
+    recent_hit: Option<(u32, Instant)>,
     shield_ready: u64,
-    smash_sent: bool,
-    smash_delayed: bool,
+    mace: mace_policy::Smash,
+    broken_shield: Option<(u32, u64)>,
+    random: Option<LegacyRandom>,
     sent: u64,
     blocked: u64,
     reason: &'static str,
-    trigger_target: Option<u32>,
-    trigger_seen: u64,
-    trigger_next: u64,
+    trigger: trigger_policy::Trigger,
     trigger_pending: Option<Instant>,
     aim_before: [f32; 2],
     aim_mouse: Option<Instant>,
@@ -127,7 +129,7 @@ pub(super) fn diagnostics() -> String {
             s.queued,
             s.tap_until,
             s.jump_pending,
-            s.smash_sent
+            s.mace.spent()
         )
     })
 }
@@ -158,8 +160,50 @@ fn allowed(game: &Game<'_>) -> bool {
 
 pub(super) fn attack_allowed(game: &Game<'_>, owner: &str) -> bool {
     allowed(game)
+        && !acted(game)
+        && game.clicks.miss_time <= 0
         && control::available(owner)
         && super::sunset::CRIT_STAGE.load(std::sync::atomic::Ordering::Relaxed) == 0
+}
+pub(super) fn note_action(game: &Game<'_>) {
+    let Some(r) = game.remote.as_ref() else {
+        return;
+    };
+    state(|s| {
+        s.action_tick = Some(game.ticks);
+        s.action_scene = Some((
+            r.session.counters.clone() as Arc<dyn Any + Send + Sync>,
+            game.dim,
+            r.entity_id,
+        ));
+    });
+}
+pub(super) fn acted(game: &Game<'_>) -> bool {
+    state(|s| {
+        s.action_tick == Some(game.ticks)
+            && s.action_scene.as_ref().is_some_and(|old| {
+                old.1 == game.dim
+                    && game.remote.as_ref().is_some_and(|r| {
+                        r.entity_id == old.2
+                            && Arc::as_ptr(&old.0) as *const ()
+                                == Arc::as_ptr(&r.session.counters) as *const ()
+                    })
+            })
+    })
+}
+pub(super) fn drop_sprint(game: &mut Game<'_>) {
+    if let Some(player) = game.player.as_mut() {
+        let _ = player.set_sprinting(false);
+    }
+    if super::sunset_combat_wire::sent_sprinting(game)
+        && let Some(id) = game.remote.as_ref().map(|remote| remote.entity_id)
+    {
+        game.send(S::PlayerCommand(play::PlayerCommand {
+            id,
+            action: 2,
+            data: 0,
+        }));
+    }
 }
 
 pub(super) fn slot_strength(game: &Game<'_>, slot: usize, partial: f32) -> Option<f32> {
@@ -247,7 +291,7 @@ pub(super) fn hits_target(
         return hits.iter().any(|(i, _)| game.mobs[*i].id == id)
             && !hits
                 .iter()
-                .any(|(i, _)| known_friend(game, game.mobs[*i].id, true));
+                .any(|(i, _)| known_friend(game, game.mobs[*i].id, false));
     }
     let range = range.min(if game.creative { 5.0 } else { 3.0 });
     let mut nearest = None;
@@ -293,7 +337,6 @@ pub(super) fn send_hit_at(game: &mut Game<'_>, id: u32, yaw: f32, pitch: f32) ->
         if guard_stab_at(game, yaw, pitch) {
             return false;
         }
-        note_attack(game, id);
         game.send(S::PlayerAction(play::PlayerAction {
             action: 8,
             pos: [0; 3],
@@ -307,12 +350,12 @@ pub(super) fn send_hit_at(game: &mut Game<'_>, id: u32, yaw: f32, pitch: f32) ->
         );
         game.play_at_feet(kinetic.attack_sound);
     } else {
-        note_attack(game, id);
         game.send(S::Attack(play::Attack { id: id as i32 }));
         game.swing_arm();
         game.send(S::Punch(Empty));
         game.reset_attack_strength();
     }
+    claim_tick(game);
     true
 }
 
@@ -360,14 +403,7 @@ pub(super) fn aim_delta(game: &Game<'_>, turn: [f64; 2]) -> [f64; 2] {
 }
 
 fn trigger_target(game: &Game<'_>, m: &Module) -> Option<u32> {
-    if !attack_allowed(game, "Trigger Bot")
-        || (m.b("Hold attack")
-            && !game.left
-            && !game
-                .physical_buttons
-                .contains(&winit::event::MouseButton::Left))
-        || (m.b("Weapons only") && (game.held().is_none() || !melee_item(game, game.held())))
-    {
+    if !alive(game) || !game.native_playing() || gui_open() {
         return None;
     }
     let spear = game.held().is_some_and(|s| Kinetic::of(&s.item).is_some());
@@ -378,25 +414,65 @@ fn trigger_target(game: &Game<'_>, m: &Module) -> Option<u32> {
         if !game.before_block(d) {
             return None;
         }
+        let other = [
+            game.armor_stand_hit().map(|h| h.1),
+            game.boat_hit().map(|h| h.1),
+            game.cart_hit().map(|h| h.1),
+            game.painting_hit().map(|h| h.1),
+            game.frame_hit().map(|h| h.1),
+        ];
+        if other.iter().flatten().any(|other| *other <= d) {
+            return None;
+        }
         game.mobs[i].id
     };
-    let target = game.mobs.iter().find(|t| t.id == id)?;
-    if !target.alive()
-        || target.removed
-        || (!m.b("Invisible") && target.invisible)
-        || known_friend(game, id, true)
-        || !super::sunset::wanted(m, super::sunset::kind_of(target))
-        || util::spared(game, m, id, target.kind.id == "minecraft:player")
-        || observed_shield(game, id) && best_axe(game).is_none()
-    {
+    let target = game
+        .mobs
+        .iter()
+        .find(|t| t.id == id && t.alive() && !t.removed)?;
+    if !m.b("Invisible") && target.invisible {
         return None;
     }
-    Some(id)
+    let wanted = if target.kind.id == "minecraft:player" {
+        m.b("Players") && util::player_enemy(game, target)
+    } else {
+        m.b("Hostiles") && super::sunset_aura::hostile_mob(target)
+    };
+    wanted.then_some(id)
 }
 
 pub(super) fn trigger_tick(game: &mut Game<'_>, m: &Module) {
+    if !alive(game) || !game.native_playing() || gui_open() {
+        super::sunset::cancel_turns("Trigger Bot");
+        state(|s| {
+            s.trigger_pending = None;
+            s.trigger.no_context();
+        });
+        return;
+    }
+    let charge = f64::from(slot_strength(game, game.selected, 0.5).unwrap_or(0.));
+    let charge_spread = if charge >= 1. && !state(|s| s.trigger.fully_charged_seen()) {
+        random_spread(game, 1)
+    } else {
+        0
+    };
+    state(|s| s.trigger.observe_charge(game.ticks, charge, charge_spread));
+    let id = trigger_target(game, m);
+    let spread = if id.is_some_and(|id| state(|s| s.trigger.needs_acquisition(id))) {
+        random_spread(game, 2)
+    } else {
+        0
+    };
+    state(|s| {
+        s.trigger
+            .observe_target(game.ticks, id, m.n("Reaction").clamp(0., 10.) as u8, spread)
+    });
+    let miss = game.mob_hit().is_none() && game.pick().is_none();
+    if state(|s| s.trigger.swallow_air_clicks(m.b("Hold attack"), miss)) {
+        game.attack_clicks = 0;
+    }
     if let Some(queued) = state(|s| s.trigger_pending) {
-        if queued.elapsed() > Duration::from_millis(200) || !attack_allowed(game, "Trigger Bot") {
+        if queued.elapsed() > Duration::from_millis(200) || !allowed(game) {
             super::sunset::cancel_turns("Trigger Bot");
             state(|s| s.trigger_pending = None);
         } else {
@@ -404,109 +480,120 @@ pub(super) fn trigger_tick(game: &mut Game<'_>, m: &Module) {
         }
         return;
     }
-    let Some(id) = trigger_target(game, m) else {
-        state(|s| s.trigger_target = None);
+    let Some(id) = id else {
         return;
     };
-    state(|s| {
-        if s.trigger_target != Some(id) {
-            s.trigger_target = Some(id);
-            s.trigger_seen = game.ticks;
-        }
-    });
-    let seen = state(|s| s.trigger_seen);
-    if game.ticks < state(|s| s.trigger_next)
-        || game.ticks.saturating_sub(seen) < m.n("Reaction").clamp(0.0, 10.0) as u64
+    let smash = smash_ready(game, id);
+    if !state(|s| s.trigger.timing_allows(game.ticks, id, smash))
+        || !attack_allowed(game, "Trigger Bot")
+        || game.attack_clicks > 0
+        || game.clicks.miss_time > 0
+        || m.b("Hold attack")
+            && !game.left
+            && !game
+                .physical_buttons
+                .contains(&winit::event::MouseButton::Left)
+        || m.b("Weapons only") && !game.held().is_some_and(|s| melee_item(game, Some(s)))
+        || wasted_on_shield(game, id)
     {
         return;
     }
-    let planned_slot = preferred_weapon(game, id).map_or(game.selected, |p| p.slot);
-    let Some(scale) = slot_strength(game, planned_slot, 0.5) else {
+    let held_spear = game.held().is_some_and(|s| Kinetic::of(&s.item).is_some());
+    let plan = if held_spear {
+        None
+    } else {
+        preferred_weapon(game, id)
+    };
+    let slot = plan.map_or(game.selected, |p| p.slot);
+    let Some(scale) = slot_strength(game, slot, 0.5) else {
         return;
     };
-    if m.b("Wait for cooldown") && scale < 1.0 {
+    let spear = available_item(game, slot).is_some_and(|s| Kinetic::of(&s.item).is_some());
+    if !smash && (!spear && scale < 1. || !spear && !trigger_crit(game, m, id, scale)) {
         return;
     }
-    if !policy::critical_ready(
-        m.p("Crits"),
-        game.critical_attack(scale),
-        game.ticks.saturating_sub(seen),
-        12,
-    ) {
+    if spear
+        && (game.cannot_attack_with_item(game.hand_strength.ticker, 0)
+            || !trigger_spear_safe(game, m, id))
+    {
         return;
     }
     if !control::claim("Trigger Bot") {
         return;
     }
     let done = control::finish("Trigger Bot");
-    let snapshot = m.clone();
-    let Some(session) = game.remote.as_ref().map(|r| r.session.counters.clone()) else {
+    let expected = m.clone();
+    let original = game.selected;
+    let original_item = game.held().cloned();
+    let dimension = game.dim;
+    let Some(connection) = game.remote.as_ref().map(|r| r.session.counters.clone()) else {
         return;
     };
-    let dim = game.dim;
     let queued = Instant::now();
-    let slot = game.selected;
+    let (yaw, pitch) = (game.yaw, game.pitch);
     state(|s| s.trigger_pending = Some(queued));
-    let accepted = try_turn_then("Trigger Bot", game.yaw, game.pitch, move |game| {
+    let accepted = try_turn_then("Trigger Bot", yaw, pitch, move |game| {
         let _done = done;
-        state(|s| s.trigger_pending = None);
+        if state(|s| s.trigger_pending) == Some(queued) {
+            state(|s| s.trigger_pending = None);
+        }
         if !_done.current()
-            || game.selected != slot
-            || game.dim != dim
             || queued.elapsed() > Duration::from_millis(200)
+            || dimension != game.dim
             || !game
                 .remote
                 .as_ref()
-                .is_some_and(|r| std::sync::Arc::ptr_eq(&session, &r.session.counters))
-            || !module("Trigger Bot").is_some_and(|now| now == snapshot)
-            || trigger_target(game, &snapshot) != Some(id)
+                .is_some_and(|r| std::sync::Arc::ptr_eq(&connection, &r.session.counters))
+            || !module("Trigger Bot").is_some_and(|now| now == expected)
+            || !attack_allowed(game, "Trigger Bot")
+            || game.selected != original
+            || game.held() != original_item.as_ref()
+            || trigger_target(game, &expected) != Some(id)
+            || wasted_on_shield(game, id)
+            || !super::remote::sunset_combat_remote::sprint_synced(game)
         {
             return;
         }
-        let plan = preferred_weapon(game, id);
-        if plan.map_or(game.selected, |p| p.slot) != planned_slot {
+        let now = if held_spear {
+            None
+        } else {
+            preferred_weapon(game, id)
+        };
+        if now.map_or(game.selected, |p| p.slot) != slot {
             return;
         }
-        let Some(scale) = slot_strength(game, planned_slot, 0.5) else {
+        let Some(strength) = slot_strength(game, slot, 0.5) else {
             return;
         };
-        if snapshot.b("Wait for cooldown") && scale < 1.0
-            || !policy::critical_ready(
-                snapshot.p("Crits"),
-                game.critical_attack(scale),
-                game.ticks.saturating_sub(seen),
-                12,
-            )
+        if !smash_ready(game, id)
+            && (!spear && strength < 1. || !spear && !trigger_crit(game, &expected, id, strength))
         {
             return;
         }
-        let original = game.selected;
-        if let Some(plan) = plan {
+        if spear
+            && (game.cannot_attack_with_item(game.hand_strength.ticker, 0)
+                || !trigger_spear_safe(game, &expected, id))
+        {
+            return;
+        }
+        if let Some(plan) = now {
             hold(game, plan.slot);
         }
-        let sent = send_hit(game, id);
-        if let Some(plan) = plan {
-            if plan.restore && game.selected == plan.slot {
-                hold(game, original);
-            }
+        let sent = send_hit_at(game, id, yaw, pitch);
+        if now.is_some_and(|p| p.restore) && game.selected == slot {
+            hold(game, original);
         }
         if sent {
+            if smash_ready(game, id) {
+                note_smash();
+            }
             state(|s| {
-                s.trigger_next = game
-                    .ticks
-                    .saturating_add(if snapshot.b("Wait for cooldown") {
-                        1
-                    } else {
-                        snapshot.n("Delay (ticks)").clamp(0.0, 20.0) as u64
-                    });
-                s.trigger_seen = game.ticks;
+                s.trigger.accepted();
                 s.sent = s.sent.saturating_add(1);
             });
         }
     });
-    if accepted {
-        note("trigger action queued");
-    } else {
+    if !accepted {
         state(|s| s.trigger_pending = None);
     }
 }
@@ -515,9 +602,9 @@ fn available_item<'a>(game: &'a Game<'_>, slot: usize) -> Option<&'a ItemStack> 
     let info = game.res.items().get(&stack.item)?;
     policy::usable(stack.count, stack.damage, info.max_damage).then_some(stack)
 }
-fn melee_item(game: &Game<'_>, stack: Option<&ItemStack>) -> bool {
+pub(super) fn melee_item(game: &Game<'_>, stack: Option<&ItemStack>) -> bool {
     let Some(stack) = stack else {
-        return true;
+        return false;
     };
     let name = &*stack.item;
     name == "minecraft:mace"
@@ -550,14 +637,14 @@ fn known_friend(game: &Game<'_>, id: u32, teams: bool) -> bool {
             ))
 }
 fn enemy(game: &Game<'_>, mob: &Mob, mobs: bool) -> bool {
-    mob.alive()
+    if mob.kind.id == "minecraft:player" {
+        return util::player_enemy(game, mob);
+    }
+    mobs && mob.alive()
         && !mob.removed
-        && (mob.kind.id == "minecraft:player" || mobs)
-        && !known_friend(game, mob.id, true)
-        && game
-            .remote
-            .as_ref()
-            .is_none_or(|r| mob.id != r.entity_id as u32)
+        && mob.health.is_finite()
+        && mob.kind.id != "minecraft:armor_stand"
+        && game.riding != Some(mob.id)
 }
 
 // TRUE means block. Root routes outgoing Attack through this as well as the
@@ -688,7 +775,9 @@ fn observed_shield(game: &Game<'_>, id: u32) -> bool {
     else {
         return false;
     };
-    if (mob.extra.using_item as f32) < (component.delay_seconds * 20.0).round() {
+    let lead = super::remote::sunset_combat_remote::latency(game)
+        .map_or(0., |ms| (f64::from(ms) / 50.).round().clamp(0., 4.)) as f32;
+    if (mob.extra.using_item as f32) + lead < (component.delay_seconds * 20.0).round() {
         return false;
     }
     let Some(p) = game.player.as_ref() else {
@@ -839,19 +928,18 @@ pub(super) struct WeaponPlan {
 // Pure inventory selection for attacks already owned by another combat
 // module. Its caller applies and restores the slot inside that accepted deed.
 pub(super) fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
-    if !allowed(game) || !melee_item(game, game.held()) {
+    if !allowed(game) {
         return None;
     }
     let target = game
         .mobs
         .iter()
         .find(|m| m.id == id && m.alive() && !m.removed)?;
-    if known_friend(game, id, true) {
-        return None;
-    }
     if let Some(m) = module(SHIELD) {
         if (target.kind.id == "minecraft:player" || m.b("Mobs"))
+            && (game.held().is_none() || melee_item(game, game.held()))
             && observed_shield(game, id)
+            && !broken_shield(game, id)
             && !game
                 .held()
                 .and_then(|s| game.res.items().get(&s.item))
@@ -865,10 +953,7 @@ pub(super) fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
         }
     }
     let m = module(MACE)?;
-    if !m.b("Auto swap")
-        || observed_shield(game, id)
-        || (target.kind.id != "minecraft:player" && !m.b("Mobs"))
-    {
+    if !m.b("Auto swap") || observed_shield(game, id) && !broken_shield(game, id) {
         return None;
     }
     let smash = game
@@ -898,6 +983,31 @@ pub(super) fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
 
 fn take_slot(game: &mut Game<'_>, plan: WeaponPlan, hold_ticks: u64) -> bool {
     take_slot_inner(game, plan, hold_ticks, None)
+}
+pub(super) fn borrow_slot(
+    game: &mut Game<'_>,
+    owner: &'static str,
+    slot: usize,
+    restore: bool,
+    ticks: u64,
+    done: control::Finish,
+) -> bool {
+    take_slot_inner(
+        game,
+        WeaponPlan {
+            slot,
+            owner,
+            restore,
+        },
+        ticks,
+        Some(done),
+    )
+}
+pub(super) fn cancel_owner(game: &mut Game<'_>, owner: &str) {
+    super::sunset::cancel_turns(owner);
+    if state(|s| s.lease.is_some_and(|lease| lease.owner == owner)) {
+        release_lease(game, true);
+    }
 }
 fn take_slot_inner(
     game: &mut Game<'_>,
@@ -983,9 +1093,13 @@ pub(super) fn cancel(game: &mut Game<'_>) {
         super::sunset::cancel_turns(owner);
     }
     state(|s| {
+        let action_tick = s.action_tick;
+        let action_scene = s.action_scene.take();
         let sent = s.sent;
         let blocked = s.blocked;
         *s = State {
+            action_tick,
+            action_scene,
             sent,
             blocked,
             tick: game.ticks,
@@ -1003,6 +1117,16 @@ pub(super) fn request_jump(owner: &'static str) {
 }
 
 pub(super) fn note_attack(game: &Game<'_>, id: u32) {
+    note_action(game);
+    state(|s| s.recent_hit = Some((id, Instant::now())));
+    if observed_shield(game, id)
+        && game
+            .held()
+            .and_then(|s| game.res.items().get(&s.item))
+            .is_some_and(|i| i.disable_blocking_seconds > 0.)
+    {
+        state(|s| s.broken_shield = Some((id, game.ticks.saturating_add(20))));
+    }
     let Some(m) = module(TAP) else {
         return;
     };
@@ -1028,9 +1152,29 @@ pub(super) fn note_attack(game: &Game<'_>, id: u32) {
         });
     }
 }
+pub(super) fn recent_hit() -> Option<u32> {
+    state(|s| {
+        s.recent_hit
+            .filter(|(_, at)| at.elapsed() <= Duration::from_millis(1500))
+            .map(|(id, _)| id)
+    })
+}
 pub(super) fn note_stab(game: &Game<'_>) {
-    if let Some(id) = spear_hits(game).and_then(|v| v.first().map(|&i| game.mobs[i].id)) {
-        note_attack(game, id);
+    note_action(game);
+    let Some(m) = module(TAP) else {
+        return;
+    };
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    if p.sprinting
+        && game.keys.contains(&KeyCode::KeyW)
+        && spear_hits(game).is_some_and(|hits| !hits.is_empty())
+    {
+        state(|s| {
+            s.last_attack = Some(game.ticks);
+            s.tap_until = game.ticks.saturating_add(m.n("Hold").clamp(1., 3.) as u64);
+        });
     }
 }
 pub(super) fn note_velocity(game: &Game<'_>, entity: i32, velocity: [f64; 3]) {
@@ -1158,13 +1302,19 @@ fn best_spear(game: &Game<'_>, lunge: bool) -> Option<usize> {
         })
         .max_by(|a, b| {
             (if lunge { a.1.cmp(&b.1) } else { b.1.cmp(&a.1) })
-                .then_with(|| (a.0 == game.selected).cmp(&(b.0 == game.selected)))
-                .then_with(|| a.2.total_cmp(&b.2))
+                .then_with(|| {
+                    if lunge {
+                        (a.0 == game.selected).cmp(&(b.0 == game.selected))
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                })
+                .then_with(|| b.0.cmp(&a.0))
         })
         .map(|v| v.0)
 }
 
-fn poke_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
+fn poke_slot(game: &mut Game<'_>, m: &Module) -> Option<usize> {
     if !m.b("Reach poke")
         || game.held().is_some_and(|s| Kinetic::of(&s.item).is_some())
         || game.mob_hit().is_some()
@@ -1173,16 +1323,27 @@ fn poke_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
     }
     let eye = game.eye_position()?;
     let hits = spear_hits(game)?;
+    let look = super::view_vector(game.yaw, game.pitch);
+    let start = Vec3::new(eye[0], eye[1], eye[2]);
+    let end = start.add_vector(Vec3::new(look[0], look[1], look[2]).scale(4.4));
+    let ordinary = game
+        .player
+        .as_mut()?
+        .attribute("minecraft:entity_interaction_range")
+        .ok()?;
     if hits
         .iter()
-        .any(|&i| known_friend(game, game.mobs[i].id, true))
+        .any(|&i| known_friend(game, game.mobs[i].id, false))
     {
         return None;
     }
     let past = hits.iter().any(|&i| {
-        let target = util::mob_target(&game.mobs[i]);
-        enemy(game, &game.mobs[i], m.b("Mobs"))
-            && policy::box_distance(eye, target.lo, target.hi).is_some_and(|d| d > 3.0 && d <= 4.4)
+        enemy(game, &game.mobs[i], true)
+            && game.mobs[i]
+                .bounds()
+                .inflate(Vec3::new(0.125, 0.125, 0.125))
+                .clip(start, end)
+                .is_some_and(|at| start.distance_squared(at).sqrt() > ordinary)
     });
     if !past {
         return None;
@@ -1214,13 +1375,16 @@ pub(super) fn before_click(game: &mut Game<'_>) -> Option<bool> {
 }
 fn jab_ready(game: &Game<'_>, slot: usize) -> bool {
     available_item(game, slot).is_some()
-        && slot_strength(game, slot, 0.0).is_some_and(|scale| scale >= 1.0)
+        && slot_strength(game, slot, 0.).is_some_and(|s| s >= 1.)
+        && game.clicks.miss_time <= 0
+        && game.mining.is_none()
 }
 
 #[derive(Clone, Copy)]
 enum Automatic {
     Shield(u32),
     Smash(u32),
+    SmashShield(u32),
     Jab { slot: usize, lunge: bool },
 }
 fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
@@ -1232,6 +1396,8 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
     let Some(connection) = game.remote.as_ref().map(|r| r.session.counters.clone()) else {
         return false;
     };
+    let original = game.selected;
+    let original_item = game.held().cloned();
     let dimension = game.dim;
     let queued = Instant::now();
     let (yaw, pitch) = (game.yaw, game.pitch);
@@ -1241,13 +1407,19 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
     });
     let accepted = try_turn_then(owner, yaw, pitch, move |game| {
         let done = done;
-        state(|s| s.queued = None);
+        if state(|s| s.queued_since) == Some(queued) {
+            state(|s| s.queued = None);
+        }
         if !done.current() {
             return;
         }
         let valid = allowed(game)
             && queued.elapsed() <= Duration::from_millis(200)
             && game.dim == dimension
+            && game.selected == original
+            && game.held() == original_item.as_ref()
+            && !acted(game)
+            && super::remote::sunset_combat_remote::sprint_synced(game)
             && game
                 .remote
                 .as_ref()
@@ -1273,19 +1445,24 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
                     })
                 }
             }
-            Automatic::Smash(id) => {
-                let hit = game.mob_hit().map(|(i, d)| (game.mobs[i].id, d));
-                if !hit.is_some_and(|(hit, d)| hit == id && game.before_block(d))
-                    || observed_shield(game, id)
-                    || guard_attack(game, id)
-                    || !game.player.as_ref().is_some_and(|p| {
-                        policy::smash_eligible(
-                            p.fall_distance,
-                            p.velocity.y,
-                            p.fall_flying,
-                            m.n("Min fall"),
-                        )
+            Automatic::SmashShield(id) => {
+                if let mace_policy::Intent::BreakShield { slot } = smash_intent(game, &m, id) {
+                    Some(WeaponPlan {
+                        slot,
+                        owner,
+                        restore: m.b("Swap back"),
                     })
+                } else {
+                    None
+                }
+            }
+            Automatic::Smash(id) => {
+                let hit = game
+                    .mob_hit()
+                    .is_some_and(|(i, d)| game.mobs[i].id == id && game.before_block(d));
+                if !hit
+                    || smash_intent(game, &m, id) != mace_policy::Intent::Smash
+                    || guard_attack(game, id)
                 {
                     None
                 } else {
@@ -1326,20 +1503,31 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
             note("fresh melee target/material check failed");
             return;
         };
-        if !take_slot_inner(game, plan, 2, Some(done)) {
+        let hold_ticks = if matches!(action, Automatic::Shield(_)) {
+            2
+        } else {
+            1
+        };
+        if !take_slot_inner(game, plan, hold_ticks, Some(done)) {
             return;
         }
         match action {
-            Automatic::Shield(id) | Automatic::Smash(id) => {
+            Automatic::Shield(id) | Automatic::Smash(id) | Automatic::SmashShield(id) => {
                 game.send(S::Attack(play::Attack { id: id as i32 }));
                 game.swing_arm();
                 game.send(S::Punch(Empty));
                 game.reset_attack_strength();
-                state(|s| {
-                    s.shield_ready = game.ticks.saturating_add(10);
-                    if matches!(action, Automatic::Smash(_)) {
-                        s.smash_sent = true;
+                state(|s| match action {
+                    Automatic::Shield(_) => s.shield_ready = game.ticks.saturating_add(10),
+                    Automatic::Smash(_) => {
+                        s.mace.accepted(mace_policy::Intent::Smash, id, game.ticks)
                     }
+                    Automatic::SmashShield(_) => s.mace.accepted(
+                        mace_policy::Intent::BreakShield { slot: plan.slot },
+                        id,
+                        game.ticks,
+                    ),
+                    Automatic::Jab { .. } => {}
                 });
             }
             Automatic::Jab { slot, .. } => {
@@ -1361,11 +1549,14 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
                 state(|s| s.lunge.clear());
             }
         }
+        claim_tick(game);
         state(|s| s.sent = s.sent.saturating_add(1));
         note("native melee action sent; slot lease active");
     });
     if !accepted {
-        state(|s| s.queued = None);
+        if state(|s| s.queued_since) == Some(queued) {
+            state(|s| s.queued = None);
+        }
     }
     accepted
 }
@@ -1373,6 +1564,8 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
 pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], ticks: u64) {
     state(|s| s.tick = ticks);
     let _ = stop_guarded_use(game);
+    let grounded = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
+    state(|s| s.mace.observe_grounded(grounded));
     if state(|s| s.trigger_pending.is_some()) && (module("Trigger Bot").is_none() || !allowed(game))
     {
         super::sunset::cancel_turns("Trigger Bot");
@@ -1387,8 +1580,7 @@ pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], ticks: u64) {
         });
         return;
     }
-    let lease = state(|s| s.lease);
-    let disabled = lease.is_some_and(|l| module(l.owner).is_none());
+    let disabled = state(|s| s.lease).is_some_and(|l| module(l.owner).is_none());
     release_lease(game, disabled || !game.native_playing() || gui_open());
     if let Some(owner) = state(|s| s.queued) {
         if !allowed(game)
@@ -1403,30 +1595,23 @@ pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], ticks: u64) {
         }
         return;
     }
-    if !allowed(game) || game.left || state(|s| s.lease.is_some()) {
+    if !allowed(game)
+        || acted(game)
+        || game.attack_clicks > 0
+        || game.clicks.miss_time > 0
+        || state(|s| s.lease.is_some())
+    {
         return;
     }
-    if game
-        .player
-        .as_ref()
-        .is_some_and(|p| p.ground.on_ground || p.velocity.y >= 0.0)
-    {
-        state(|s| {
-            s.smash_sent = false;
-            s.smash_delayed = false;
-        });
-    }
     if let Some(m) = module(SPEAR) {
-        let requested = state(|s| s.lunge.active(game.ticks));
-        if requested {
+        if state(|s| s.lunge.active(game.ticks)) {
             let can_lunge = game.player.as_ref().is_some_and(|p| {
                 !p.fall_flying
                     && !p.fluids.was_touching_water
-                    && !p.is_in_lava()
                     && (game.creative || p.health.food.food >= 7)
             }) && game.riding.is_none();
             if can_lunge {
-                if let Some(slot) = best_spear(game, true).filter(|&slot| jab_ready(game, slot)) {
+                if let Some(slot) = best_spear(game, true).filter(|&i| jab_ready(game, i)) {
                     if !block_stab(game)
                         && queue_action(game, m.clone(), Automatic::Jab { slot, lunge: true })
                     {
@@ -1445,9 +1630,10 @@ pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], ticks: u64) {
     let id = game.mobs[index].id;
     if let Some(m) = module(SHIELD).filter(|m| m.p("Mode") == "Auto") {
         if game.ticks >= state(|s| s.shield_ready)
-            && enemy(game, &game.mobs[index], m.b("Mobs"))
+            && enemy(game, &game.mobs[index], false)
             && observed_shield(game, id)
-            && melee_item(game, game.held())
+            && !broken_shield(game, id)
+            && (game.held().is_none() || melee_item(game, game.held()))
             && best_axe(game).is_some()
             && queue_action(game, m, Automatic::Shield(id))
         {
@@ -1455,37 +1641,208 @@ pub(super) fn tick(game: &mut Game<'_>, _modules: &[Module], ticks: u64) {
         }
     }
     if let Some(m) = module(MACE).filter(|m| m.b("Smash assist")) {
-        if state(|s| s.smash_sent)
-            || !enemy(game, &game.mobs[index], m.b("Mobs"))
-            || observed_shield(game, id)
-        {
-            return;
-        }
-        let falling = game.player.as_ref().is_some_and(|p| {
-            policy::smash_eligible(
-                p.fall_distance,
-                p.velocity.y,
-                p.fall_flying,
-                m.n("Min fall"),
-            )
-        });
-        if !falling {
-            return;
-        }
-        if m.p("Smash timing") == "Delayed" && !state(|s| s.smash_delayed) {
-            // Delay once only while the next downward eye still reaches this
-            // same target; otherwise make the current real falling hit.
-            let p = game.player.as_ref().unwrap();
-            let mut eye = game.eye_position().unwrap_or_default();
-            eye[1] += p.velocity.y;
-            let target = util::mob_target(&game.mobs[index]);
-            let next = policy::box_distance(eye, target.lo, target.hi).is_some_and(|d| d < 2.65);
-            if next {
-                state(|s| s.smash_delayed = true);
-                note("one-tick smash timing hold");
-                return;
+        match smash_intent(game, &m, id) {
+            mace_policy::Intent::BreakShield { .. } => {
+                let _ = queue_action(game, m, Automatic::SmashShield(id));
             }
+            mace_policy::Intent::Hold(_) => {
+                drop_sprint(game);
+                game.clicks.miss_time = game.clicks.miss_time.max(1);
+            }
+            mace_policy::Intent::Smash => {
+                let _ = queue_action(game, m, Automatic::Smash(id));
+            }
+            mace_policy::Intent::Idle => {}
         }
-        let _ = queue_action(game, m, Automatic::Smash(id));
     }
+}
+
+fn claim_tick(game: &mut Game<'_>) {
+    game.attack_clicks = 0;
+    game.clicks.miss_time = game.clicks.miss_time.max(1);
+    game.clicks.right_click_delay = game.clicks.right_click_delay.max(2);
+    game.use_delay = game.use_delay.max(2);
+}
+
+fn broken_shield(game: &Game<'_>, id: u32) -> bool {
+    state(|s| {
+        s.broken_shield
+            .is_some_and(|(target, until)| target == id && game.ticks < until)
+            || s.mace.shield_attempted(id, game.ticks)
+    })
+}
+
+pub(super) fn wasted_on_shield(game: &Game<'_>, id: u32) -> bool {
+    if !observed_shield(game, id) || broken_shield(game, id) {
+        return false;
+    }
+    if game
+        .held()
+        .and_then(|s| game.res.items().get(&s.item))
+        .is_some_and(|info| info.disable_blocking_seconds > 0.)
+    {
+        return false;
+    }
+    !(module(SHIELD).is_some() && best_axe(game).is_some())
+}
+
+pub(super) fn smash_ready(game: &Game<'_>, id: u32) -> bool {
+    let Some(m) = module(MACE) else {
+        return false;
+    };
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    if state(|s| s.mace.spent())
+        || !p.fall_distance.is_finite()
+        || p.fall_distance <= 1.5
+        || p.fall_distance < m.n("Min fall")
+        || p.fall_flying
+    {
+        return false;
+    }
+    available_item(game, game.selected).is_some_and(|s| &*s.item == "minecraft:mace")
+        || m.b("Auto swap")
+            && game
+                .mobs
+                .iter()
+                .find(|t| t.id == id)
+                .is_some_and(|target| best_mace(game, target, &m).is_some())
+}
+
+fn can_hold_smash(game: &mut Game<'_>, id: u32) -> bool {
+    let (yaw, pitch) = super::sunset_combat_wire::sent_look(game).unwrap_or((game.yaw, game.pitch));
+    super::sunset_mace_native::continuation(game, id, yaw, pitch, 0.).unwrap_or(false)
+}
+
+pub(super) fn holds_smash(game: &mut Game<'_>, id: u32) -> bool {
+    let Some(m) = module(MACE) else {
+        return false;
+    };
+    if !smash_ready(game, id) || !can_hold_smash(game, id) {
+        return false;
+    }
+    let charge = slot_strength(game, game.selected, 0.5).unwrap_or(0.);
+    let future = slot_strength(game, game.selected, 1.5).unwrap_or(0.);
+    m.p("Smash timing") == "Delayed"
+        || charge <= 0.9 && future > 0.9
+        || game.mobs.iter().any(|t| t.id == id && t.hurt_time > 0)
+        || game.player.as_ref().is_some_and(|p| p.sprinting)
+}
+
+pub(super) fn note_smash() {
+    state(|s| s.mace.accepted(mace_policy::Intent::Smash, 0, 0));
+}
+
+fn smash_intent(game: &mut Game<'_>, m: &Module, id: u32) -> mace_policy::Intent {
+    let Some(target) = game.mobs.iter().find(|t| t.id == id) else {
+        return mace_policy::Intent::Idle;
+    };
+    let target_allowed = enemy(game, target, m.b("Mobs"));
+    let shield_blocks = observed_shield(game, id) && !broken_shield(game, id);
+    let immune = target.hurt_time > 0;
+    let mace_available = smash_ready(game, id);
+    let can_continue = can_hold_smash(game, id);
+    let Some(p) = game.player.as_ref() else {
+        return mace_policy::Intent::Idle;
+    };
+    let frame = mace_policy::Frame {
+        tick: game.ticks,
+        target: id,
+        grounded: p.ground.on_ground,
+        descending: p.velocity.y < 0.,
+        native_smash: p.fall_distance > 1.5 && !p.fall_flying,
+        fall: p.fall_distance,
+        min_fall: m.n("Min fall"),
+        target_allowed,
+        mace_available,
+        shield_blocks,
+        axe: best_axe(game),
+        auto_swap: m.b("Auto swap"),
+        swap_back: m.b("Swap back"),
+        can_continue,
+        timing: if m.p("Smash timing") == "Delayed" {
+            mace_policy::Timing::Delayed
+        } else {
+            mace_policy::Timing::Direct
+        },
+        charge: f64::from(slot_strength(game, game.selected, 0.5).unwrap_or(0.)),
+        charge_next: f64::from(slot_strength(game, game.selected, 1.5).unwrap_or(0.)),
+        target_immune: immune,
+        sprinting: p.sprinting,
+    };
+    state(|s| s.mace.plan(frame))
+}
+
+fn trigger_crit(game: &mut Game<'_>, m: &Module, id: u32, scale: f32) -> bool {
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    let blind = game.potions.effects.get("blindness").is_some();
+    let stance = !p.ground.on_ground
+        && p.last_climbable.is_none()
+        && !p.fluids.was_touching_water
+        && !blind
+        && game.riding.is_none()
+        && !p.sprinting;
+    let f = trigger_policy::CritFrame {
+        mode: match m.p("Crits") {
+            "Only" => trigger_policy::Crits::Only,
+            "Off" => trigger_policy::Crits::Off,
+            _ => trigger_policy::Crits::Smart,
+        },
+        tick: game.ticks,
+        would_crit: scale > 0.9 && p.fall_distance > 0. && stance,
+        crit_stance: stance,
+        grounded_jumping_without_sprint: p.ground.on_ground
+            && game.keys.contains(&KeyCode::Space)
+            && !p.sprinting,
+        airborne: !p.ground.on_ground
+            && p.last_climbable.is_none()
+            && !p.fluids.was_touching_water
+            && !blind
+            && game.riding.is_none()
+            && !p.flying
+            && !p.fall_flying,
+        sprinting: p.sprinting,
+        fall_positive: p.fall_distance > 0.,
+    };
+    let decision = state(|s| s.trigger.critical(f));
+    if decision.drop_sprint {
+        drop_sprint(game);
+    }
+    let _ = id;
+    decision.allow
+}
+
+fn trigger_spear_safe(game: &Game<'_>, m: &Module, id: u32) -> bool {
+    let Some(hits) = spear_hits(game) else {
+        return false;
+    };
+    hits.iter().any(|&i| game.mobs[i].id == id)
+        && hits.iter().all(|&i| {
+            let target = &game.mobs[i];
+            if target.kind.id == "minecraft:player" {
+                m.b("Players") && util::player_enemy(game, target)
+            } else {
+                m.b("Hostiles") && super::sunset_aura::hostile_mob(target)
+            }
+        })
+}
+
+fn random_spread(game: &Game<'_>, max: u8) -> u8 {
+    use horizon_core::random::RandomSource;
+    state(|s| {
+        s.random
+            .get_or_insert_with(|| {
+                LegacyRandom::new(
+                    game.ticks as i64
+                        ^ std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map_or(0, |d| d.as_nanos() as i64),
+                )
+            })
+            .next_int_bound(i32::from(max) + 1)
+            .unwrap_or(0) as u8
+    })
 }

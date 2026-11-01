@@ -23,6 +23,7 @@ pub(super) struct Blast {
     pub power: f32,
     // Ignore exactly one destroyed block without changing the damage source.
     pub ignored_block: Option<[i32; 3]>,
+    virtual_block: Option<([i32;3],BlockStateId)>,
     kind: BlastKind,
 }
 
@@ -30,15 +31,18 @@ pub(super) struct Blast {
 enum BlastKind { Explosion, BadRespawnPoint }
 impl Blast {
     pub(super) fn explosion(center: [f64; 3], power: f32) -> Self {
-        Self { center, power, ignored_block: None, kind: BlastKind::Explosion }
+        Self { center, power, ignored_block: None, virtual_block:None, kind: BlastKind::Explosion }
     }
     pub(super) fn anchor(block: [i32; 3]) -> Self {
         Self { center: block.map(|v| f64::from(v)+0.5), power: 5.0,
-            ignored_block: Some(block), kind: BlastKind::BadRespawnPoint }
+            ignored_block: Some(block), virtual_block:None, kind: BlastKind::BadRespawnPoint }
     }
     pub(super) fn ignoring(mut self, block: [i32; 3]) -> Self {
         self.ignored_block = Some(block);
         self
+    }
+    pub(super) fn with_block(mut self,pos:[i32;3],state:BlockStateId)->Self {
+        self.virtual_block=Some((pos,state));self
     }
     fn source(self) -> &'static str {
         match self.kind { BlastKind::Explosion => "minecraft:explosion", BlastKind::BadRespawnPoint => "minecraft:bad_respawn_point" }
@@ -68,6 +72,7 @@ struct Rays<'a, 'r> {
     scene: SceneCollisions<'a, 'r>,
     context: CollisionContext<'static>,
     ignored: Option<[i32; 3]>,
+    virtual_block:Option<([i32;3],BlockStateId)>,
 }
 impl RayWorld for Rays<'_, '_> {
     type Error = io::Error;
@@ -75,6 +80,7 @@ impl RayWorld for Rays<'_, '_> {
     type Fluid = ();
     fn block_state(&mut self, p: BlockPos) -> io::Result<BlockStateId> {
         if !self.scene.world.loaded(p.x, p.z) { return Err(io::Error::other("unloaded explosive ray")); }
+        if let Some((pos,state))=self.virtual_block && pos==[p.x,p.y,p.z] {return Ok(state);}
         Ok(self.scene.world.block(p.x, p.y, p.z))
     }
     fn fluid_state(&mut self, _: BlockPos) -> io::Result<()> { Ok(()) }
@@ -98,6 +104,7 @@ fn rays<'a, 'r>(game: &'a Game<'r>, y: f64, ignored: Option<[i32; 3]>) -> Rays<'
             identity: EntityIdentity(0), y, descending: false, main_hand: Some(CollisionItem::EMPTY),
         }, false),
         ignored,
+        virtual_block:None,
     }
 }
 
@@ -126,6 +133,7 @@ fn raw(game: &Game<'_>, feet: [f64; 3], min: [f64; 3], max: [f64; 3],
     let points = samples(min, max)?;
     if !budget.prediction(points.len()) { return None; }
     let mut ray = rays(game, min[1], blast.ignored_block);
+    ray.virtual_block=blast.virtual_block;
     let mut seen = 0;
     for point in &points {
         if clear(&mut ray, *point, blast.center)? { seen += 1; }
@@ -319,13 +327,17 @@ fn reduced(mut defenses: Defenses<'_>, damage: f32) -> Option<f64> {
 }
 
 pub(super) fn local_damage(game: &mut Game<'_>, blast: Blast, budget: &mut Budget) -> Option<Prediction> {
+    local_damage_at(game,blast,[0.0;3],budget)
+}
+pub(super) fn local_damage_at(game: &mut Game<'_>, blast: Blast, offset: [f64;3], budget: &mut Budget) -> Option<Prediction> {
+    if !offset.iter().all(|v|v.is_finite()) {return None;}
     let p = game.player.as_mut()?;
     let armor = p.attribute("minecraft:armor").ok()?;
     let toughness = p.attribute("minecraft:armor_toughness").ok()?;
     let resistance = p.status.resistance;
     let protection = p.status.protection(blast.source());
-    let feet = [p.position.x, p.position.y, p.position.z];
-    let bounds = p.bounds();
+    let feet = [p.position.x+offset[0], p.position.y+offset[1], p.position.z+offset[2]];
+    let bounds = p.bounds().move_by(Vec3::new(offset[0],offset[1],offset[2]));
     let (min, max) = (bounds.min_position(), bounds.max_position());
     let damage = raw(game, feet, [min.x, min.y, min.z], [max.x, max.y, max.z], blast, budget)?;
     let source = source(game, blast)?;
@@ -360,4 +372,61 @@ pub(super) fn target_damage(game: &Game<'_>, target: &Target, blast: Blast, budg
     // Remote attributes/hidden effect amplifiers are not authoritative. Do not
     // call this exact or use estimate as a friend damage/survival upper bound.
     Some(Prediction { estimate, upper: f64::from(upper), equipped_upper: f64::from(upper) })
+}
+
+// Offensive target pipeline: difficulty -> native shield -> hurt window ->
+// native armor/magic. Self and friend bounds continue to use the full blast.
+#[derive(Clone,Copy)]
+pub(super) struct TargetHurtRaw {victim:u32,blast:Blast,raw:f32}
+impl TargetHurtRaw {pub(super) fn raw_before_armor(self)->f32 {self.raw}}
+
+fn target_blocked(game:&Game<'_>,target:&Target,blast:Blast,scaled:f32)->Option<f32> {
+    use horizon_world::blocking_rules::{DamageReduction,TypeMatchWorld};
+    let Some((stack,elapsed))=super::sunset_prediction::blocking_hand(target.id,game.ticks)? else {return Some(0.0);};
+    let Some(component)=game.blocks_attacks(&stack) else {return Some(0.0);};
+    // Native protocol cannot decode a customized blocks_attacks patch. Never
+    // manufacture custom component facts from an ordinary shield prototype.
+    if stack.extra.as_ref().is_some_and(|e|!e.other.is_empty()){return None;}
+    if elapsed<(component.delay_seconds*20.0).round().max(0.0) as u64 {return Some(0.0);}
+    let damage_type=blast.source();
+    let tags=&game.stations().enchantments.damage_tags;
+    let matches=|spec:&str|match spec.strip_prefix('#') {
+        Some(tag)=>tags.get(tag).is_some_and(|set|set.contains(damage_type)),None=>spec==damage_type,
+    };
+    if component.bypassed_by.as_deref().is_some_and(matches){return Some(0.0);}
+    let mob=game.mobs.iter().find(|m|m.id==target.id)?;
+    let yaw=f64::from(mob.head_yaw).to_radians();
+    let delta=[blast.center[0]-target.pos[0],blast.center[2]-target.pos[2]];
+    let length=delta[0].hypot(delta[1]);
+    let cosine=if length<1e-4 {0.0}else{(-yaw.sin()*delta[0]+yaw.cos()*delta[1])/length};
+    let angle=cosine.clamp(-1.0,1.0).acos();
+    struct Known;
+    impl TypeMatchWorld for Known {type Error=();type Set=bool;
+        fn source_in_set(&mut self,value:bool)->Result<bool,()> {Ok(value)}}
+    let mut blocked=0.0;
+    for reduction in &component.reductions {
+        let native=DamageReduction{horizontal_angle:reduction.horizontal_angle,
+            types:reduction.types.as_ref().map(|set|set.iter().any(|spec|matches(spec))),
+            base:reduction.base,factor:reduction.factor};
+        blocked+=native.resolve(&mut Known,scaled,angle).ok()?;
+    }
+    (blocked.is_finite()&&blocked>=0.0).then_some(blocked.min(scaled))
+}
+pub(super) fn target_hurt_raw_at(game:&Game<'_>,target:&Target,blast:Blast,budget:&mut Budget)->Option<TargetHurtRaw> {
+    game.mobs.iter().find(|m|m.id==target.id&&!m.removed&&m.alive())?;
+    let raw=raw(game,target.pos,target.lo,target.hi,blast,budget)?;
+    let source=source(game,blast)?;
+    let scaled=if target.player {difficulty(raw,observed_difficulty(game),source.definition().scaling)} else {raw};
+    let blocked=if target.player {target_blocked(game,target,blast,scaled)?} else {0.0};
+    let raw=scaled-blocked;
+    (raw.is_finite()&&raw>=0.0).then_some(TargetHurtRaw{victim:target.id,blast,raw})
+}
+pub(super) fn reduce_target_hurt_raw(game:&Game<'_>,target:&Target,sample:TargetHurtRaw,raw:f32)->Option<f64> {
+    if sample.victim!=target.id || !raw.is_finite() || raw<0.0 || raw>sample.raw {return None;}
+    let mob=game.mobs.iter().find(|m|m.id==target.id&&!m.removed&&m.alive())?;
+    let (armor,toughness)=mob.worn_armor();
+    let resistance=mob.extra.effects.iter().find(|e|e.0=="resistance"&&e.1!=0).map(|e|e.2);
+    let protection=horizon_client::mobs::gear::protection(mob,horizon_client::mobs::DamageKind::Explosion);
+    reduced(Defenses{source:source(game,sample.blast)?,armor:f64::from(mob.kind.armor+armor),
+        toughness:f64::from(mob.kind.armor_toughness+toughness),resistance,protection},raw)
 }

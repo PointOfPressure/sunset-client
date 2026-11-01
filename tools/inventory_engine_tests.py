@@ -31,7 +31,7 @@ def main():
     remote = (engine / "crates/horizon-client/src/game/remote.rs").read_text(encoding="utf-8")
     native_hands = block(remote, remote.index("pub(super) fn remote_swap_hands"))
     production = (repo / "mixins/sunset/combat_inventory.rs").read_text(encoding="utf-8")
-    hotbar = block(production, production.index("if job.hotbar {"))
+    hotbar = block(production, production.index("if job.hotbar {",production.index("Phase::SwapDelay =>")))
     native_action = re.search(r"action:\s*(\d+)", native_hands)
     actual_action = re.search(r"action:\s*(\d+)", hotbar)
     assert native_action and actual_action and native_action[1] == actual_action[1], "Hotbar refill must use native SWAP_HANDS, not RELEASE_USE_ITEM"
