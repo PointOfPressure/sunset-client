@@ -4496,6 +4496,10 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         "combatdebug" => {
             say(game, &super::sunset_loot_guard::diagnostics());
             say(game, &super::sunset_crystal_aura::diagnostics());
+            if let Some(p)=super::sunset_pearl_owner::snapshot(game) {
+                say(game,&format!("Native pearl tick={} own={} id={} data={} owner={:?} reason={:?}",
+                    p.tick,p.own_id,p.spawn_id,p.raw_data,p.resolved,p.reason));
+            }
             say(game, &super::sunset_anchor_aura::diagnostics());
             say(game, &super::sunset_aura::diagnostics());
             say(game, &super::sunset_melee_assist::diagnostics());

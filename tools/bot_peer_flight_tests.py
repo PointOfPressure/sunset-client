@@ -17,7 +17,7 @@ def main():
  start=baseline.index(' else if let Some(search) = retained_flight')
  end=baseline.index(' else {',start)
  baseline=baseline[:start]+baseline[end:]
- methods='\n'.join(function(s,marker)for marker in['fn plan_pearl(','fn continue_pearl(','fn pearl_approved('])
+ methods='\n'.join(function(s,marker)for marker in['fn pearl_note(','fn plan_pearl(','fn continue_pearl(','fn pearl_approved('])
  accepted=function(s,'BotAction::Pearl(plan) => {');body=accepted[accepted.index('{')+1:-1]
  accept='fn accept_plan(game:&mut Game,plan:PearlPlan){let look=plan.look;'+body+'}'
  code=r"""
@@ -35,11 +35,12 @@ mod tactics{#[derive(PartialEq)]pub enum Pause{Go,Hold}#[derive(Clone,Copy)]pub 
 struct PauseClock(bool);impl PauseClock{fn state(&self,_:u64)->tactics::Pause{if self.0{tactics::Pause::Go}else{tactics::Pause::Hold}}}
 struct Fight{closing_at:u64,next_pearl:u64,low_since:Option<(u64,bool)>}
 struct Tactics{pause:PauseClock,pearl_search:Option<PearlSearch>,last_pearl:Option<u32>,fight:Fight,pearl:Option<PearlPlan>,pearl_at:Option<u64>}
-struct State{session:Option<u64>,target:Option<u32>,tactics:Tactics}
+struct State{pearl_counts:[u32;9],session:Option<u64>,target:Option<u32>,tactics:Tactics}
 thread_local!{static STATE:RefCell<State>=RefCell::new(fresh());}
 fn state<R>(f:impl FnOnce(&mut State)->R)->R{STATE.with(|s|f(&mut s.borrow_mut()))}
-fn fresh()->State{State{session:Some(9),target:Some(7),tactics:Tactics{pause:PauseClock(true),pearl_search:None,last_pearl:None,fight:Fight{closing_at:100,next_pearl:0,low_since:None},pearl:None,pearl_at:None}}}
+fn fresh()->State{State{pearl_counts:[0;9],session:Some(9),target:Some(7),tactics:Tactics{pause:PauseClock(true),pearl_search:None,last_pearl:None,fight:Fight{closing_at:100,next_pearl:0,low_since:None},pearl:None,pearl_at:None}}}
 fn same(g:&Game,scene:&u64)->bool{g.scene==*scene}fn pearl_ready(g:&Game)->bool{g.ready}fn rival()->Rival{Rival}fn count(_: &Game,_:&str)->u32{2}fn enemy(_: &Game,m:&Mob)->bool{m.id==7}
+mod sunset_prediction{pub fn effective_health(_: &super::Game,t:&super::util::Target)->Option<f64>{Some(f64::from(t.health))}}
 mod util{#[derive(Clone,Copy)]pub struct Target{pub id:u32,pub pos:[f64;3],pub prev:[f64;3],pub health:f32}pub fn dist(a:[f64;3],b:[f64;3])->f64{a.iter().zip(b).map(|(a,b)|(a-b).powi(2)).sum::<f64>().sqrt()}pub fn player_pos(_: &super::Game)->Option<[f64;3]>{Some([0.,121.,0.])}pub fn find_hotbar(_: &super::Game,_:impl FnMut(&str)->bool)->Option<usize>{Some(0)}}
 fn pearl_from(g:&Game,_:[f64;3],_:[f64;3])->Option<tactics::PearlLanding>{Some(tactics::PearlLanding{at:g.landing,ticks:10})}
 fn pearl_land(g:&Game,look:(f32,f32))->Option<tactics::PearlLanding>{g.calls.borrow_mut().push((g.ticks,look.0,look.1));Some(tactics::PearlLanding{at:g.landing,ticks:10})}
@@ -59,6 +60,9 @@ fn start(g:&mut Game,t:&util::Target){assert!(!plan_pearl(g,&Module,t,false));as
 #[test]fn only_target_owned_young_observed_projectile_can_start_retention(){for mode in 0..2{let(mut g,t)=fixture();if mode==0{g.creatures.projectiles[0].owner=Some(horizon_client::mobs::Who::Mob(8));}else{g.creatures.projectiles[0].age=3;}assert!(!plan_pearl(&mut g,&Module,&t,false));assert!(g.calls.borrow().is_empty());assert!(state(|s|s.tactics.pearl_search.is_none()));}}
 #[test]fn existing_generic_runaway_search_keeps_no_observed_flight_ticket(){let(mut g,mut t)=fixture();g.creatures.projectiles.clear();t.pos=[20.,121.,0.];t.prev=[19.,121.,0.];g.landing=[32.,121.,0.];for tick in 100..102{g.ticks=tick;assert!(!plan_pearl(&mut g,&Module,&t,false));assert!(state(|s|s.tactics.pearl_search.unwrap().observed_flight.is_none()));}assert_eq!(g.calls.borrow().len(),16);}
 #[test]fn actual_deferred_acceptance_rechecks_readiness_clock_ground_and_landing(){for mode in 0..5{let(mut g,t)=fixture();for tick in 100..108{g.ticks=tick;plan_pearl(&mut g,&Module,&t,false);}let plan=g.queued.pop().unwrap();match mode{0=>g.ready=false,1=>g.safe_land=false,2=>g.player.as_mut().unwrap().ground.on_ground=false,3=>g.ticks=plan.until+1,_=>{}}accept_plan(&mut g,plan);assert_eq!(g.sends,if mode==4{1}else{0});}}
+#[test]fn diagnostic_actual_stationary_follow_counts_each_gate_slice_and_native_use_once(){let(mut g,t)=fixture();for tick in 100..108{g.ticks=tick;g.creatures.projectiles[0].age=tick-100;plan_pearl(&mut g,&Module,&t,false);}let plan=g.queued.pop().unwrap();accept_plan(&mut g,plan);assert_eq!(state(|s|s.pearl_counts),[8,0,1,1,7,60,1,1,0]);}
+#[test]fn diagnostic_not_ready_no_trigger_and_saturation_are_observational_only(){let(mut g,t)=fixture();g.ready=false;assert!(!plan_pearl(&mut g,&Module,&t,false));g.ready=true;g.creatures.projectiles.clear();assert!(!plan_pearl(&mut g,&Module,&t,false));assert_eq!(state(|s|s.pearl_counts),[2,1,0,0,0,0,0,0,1]);state(|s|s.pearl_counts[0]=u32::MAX);pearl_note(0,1);assert_eq!(state(|s|s.pearl_counts[0]),u32::MAX);}
+
 }
 """
  code=code.replace('STRUCTURES',structs).replace('METHODS',methods).replace('BASELINE',baseline).replace('ACCEPT',accept)
@@ -69,6 +73,7 @@ fn start(g:&mut Game,t:&util::Target){assert!(!plan_pearl(g,&Module,t,false));as
  assert '!same(game,&connection)' in normal and '!module().is_some_and(|now|now==snapshot)' in normal and 'action_ready(game)' in normal
  suspend=function(s,'fn tactical_suspend(');assert 't.pearl_search = None;' in suspend and 'if state(|s| s.target != id)' in s
  actual=function(s,'fn plan_pearl(');assert actual.index('else if let Some(search) = retained_flight')<actual.index('if !running && !elevation && !stuck')
- print('source-route contract: 3 passed')
+ assert 'pearl_counts'not in function(s,'fn tactical_suspend(') and '*s = State::default()' in function(s,'pub(super) fn pre_input(')
+ print('source-route contract: 4 passed')
 
 if __name__=='__main__':main()

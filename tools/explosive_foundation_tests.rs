@@ -2,35 +2,6 @@
 mod policy;
 use policy::*;
 
-fn limits() -> Limits {
-    Limits { min_target: 4.0, max_self: 6.0, max_friend: 2.0, min_remaining: 2.0, anti_suicide: true }
-}
-
-#[test]
-fn thresholds_include_caps_but_never_allow_a_lethal_hit() {
-    assert!(safe(limits(), 4.0, 6.0, 8.0, 2.0));
-    assert!(!safe(limits(), 3.99, 6.0, 8.0, 2.0));
-    assert!(!safe(limits(), 4.0, 6.01, 8.0, 2.0));
-    assert!(!safe(limits(), 4.0, 6.0, 7.99, 2.0));
-    assert!(!safe(limits(), 4.0, 6.0, 8.0, 2.01));
-    let no_reserve = Limits { min_remaining: 0.0, ..limits() };
-    assert!(!safe(no_reserve, 4.0, 6.0, 6.0, 0.0));
-    assert!(safe(Limits { anti_suicide: false, ..limits() }, 4.0, 6.0, 1.0, 0.0));
-}
-
-#[test]
-fn nonfinite_or_negative_inputs_fail_closed_in_every_policy_position() {
-    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.01] {
-        for position in 0..8 {
-            let mut values = [4.0, 6.0, 2.0, 2.0, 4.0, 6.0, 8.0, 2.0];
-            values[position] = bad;
-            let l = Limits { min_target:values[0], max_self:values[1], max_friend:values[2],
-                min_remaining:values[3], anti_suicide:true };
-            assert!(!safe(l, values[4], values[5], values[6], values[7]), "position={position} bad={bad}");
-        }
-    }
-}
-
 #[test]
 fn range_has_an_inclusive_boundary_and_rejects_bad_positions() {
     assert!(in_range([0.0;3], [3.0,4.0,0.0], 5.0));

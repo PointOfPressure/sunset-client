@@ -10,32 +10,6 @@ pub(super) enum Step {
 
 
 
-// A current detonation has priority over further setup. Among equally ready
-// opportunities, prefer a possible finish, then damage retained after self cost.
-// This ranks observed health only; it makes no claim about hidden totems.
-pub(super) fn opportunity(
-    damage: f64,
-    health: f64,
-    own: f64,
-    attack: bool,
-) -> Option<(bool, bool, f64)> {
-    if ![damage, health, own]
-        .iter()
-        .all(|n| n.is_finite() && *n >= 0.0)
-        || health == 0.0
-    {
-        return None;
-    }
-    Some((attack, damage >= health, damage.min(health) - own))
-}
-
-pub(super) fn better(next: (bool, bool, f64), old: (bool, bool, f64)) -> bool {
-    (next.0, next.1)
-        .cmp(&(old.0, old.1))
-        .then_with(|| next.2.total_cmp(&old.2))
-        .is_gt()
-}
-
 // Restrict automation to inert, full solid supports. Some interactive blocks
 // (crafting tables, anvils) have no block entity; clicking them opens a screen.
 pub(super) fn inert_support(name: &str) -> bool {

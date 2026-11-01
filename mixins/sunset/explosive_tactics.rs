@@ -22,6 +22,13 @@ fn range(game:&Game<'_>,entity:bool)->f64 {
     CONTEXT.lock().unwrap_or_else(|e|e.into_inner()).as_ref().filter(|c|same(game,c)&&c.tick==game.ticks)
         .map_or(0.0,|c|if entity {c.entity}else{c.block})
 }
+// Exact current interaction attributes for manual cursor picking. Autonomous
+// planners retain their own small placement/rotation margins below.
+pub(super) fn interaction_ranges(game:&Game<'_>)->Option<(f64,f64)> {
+    let guard=CONTEXT.lock().unwrap_or_else(|e|e.into_inner());
+    let c=guard.as_ref().filter(|c|same(game,c)&&c.tick==game.ticks)?;
+    Some((c.block,c.entity))
+}
 pub(super) fn block_range(game:&Game<'_>)->f64 {(range(game,false)-0.1).max(0.0)}
 pub(super) fn anchor_range(game:&Game<'_>)->f64 {(range(game,false)-0.01).max(0.0)}
 pub(super) fn entity_range(game:&Game<'_>)->f64 {(range(game,true)-0.1).max(0.0)}

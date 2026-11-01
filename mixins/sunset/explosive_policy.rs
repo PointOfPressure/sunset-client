@@ -1,24 +1,5 @@
 // Original shared, fail-closed policy for explosive modules. No world mutation.
 
-#[derive(Clone, Copy, Debug)]
-pub(super) struct Limits {
-    pub min_target: f64,
-    pub max_self: f64,
-    pub max_friend: f64,
-    pub min_remaining: f64,
-    pub anti_suicide: bool,
-}
-
-pub(super) fn safe(l: Limits, target: f64, own: f64, health: f64, friend: f64) -> bool {
-    if ![l.min_target, l.max_self, l.max_friend, l.min_remaining, target, own, health, friend]
-        .iter().all(|n| n.is_finite() && *n >= 0.0)
-    {
-        return false;
-    }
-    target >= l.min_target && own <= l.max_self && friend <= l.max_friend
-        && (!l.anti_suicide || (health > own && health - own >= l.min_remaining))
-}
-
 pub(super) fn in_range(from: [f64; 3], to: [f64; 3], range: f64) -> bool {
     if !range.is_finite() || range < 0.0 || !from.iter().chain(to.iter()).all(|x| x.is_finite()) {
         return false;

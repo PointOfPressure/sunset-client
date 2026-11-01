@@ -57,6 +57,20 @@ restores it when the confirmation window expires.
 
 ## Verification boundaries
 
+The current [R27 build record](evidence/combat/parity-build-r27.json) pins the
+optimized native client and package to unchanged source. All **592 focused
+checks pass**: 556 compiled/native adapter checks and 36 source contracts.
+Official Mixins plans 84 support modules and 55 injections. The build retains
+13 unused-helper/API warnings. Live validation records identify their own
+binary; an R26 result is not relabeled as an R27 test.
+
+R27 adds creative-mode manual macros, current attribute reach, entity-occluded
+Crystal crosshair selection, success-only held Anchor repetition, immediate
+inventory-scene retirement and conditional pearl reserves. Explicit debug
+output exposes pearl owner resolution and bounded planner counters; it does
+not run per-frame formatting or claim that a successful native use call is
+server acceptance.
+
 Focused policy and native-kernel tests are separate from full client compilation
 and actual player fixtures. Test counts alone do not prove behavior parity,
 server acceptance or performance gains. Evidence must identify the exact source,

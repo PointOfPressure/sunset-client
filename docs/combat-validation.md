@@ -6,7 +6,16 @@ host source. The incoming packet hook requires the newer official Mixins
 `cb1ad23022392d88f006cf94cbf6552a73f5df12`; the earlier `0d6b103` planner rejects
 opaque macros in that native handler. No Horizon source patch is required.
 
-Latest build: **R14**, with **216 focused checks** (211 compiled/native-adapter
+Current parity work is documented in [combat-parity.md](combat-parity.md).
+The [R27 checkpoint](evidence/combat/parity-build-r27.json) passes the official
+native compile check, optimized build and **592 focused checks** (556 compiled
+or native adapters; 36 source contracts). Its two-player validation is tracked
+separately. The records below preserve the earlier core implementation and its
+original controls; they are not current parity evidence.
+
+## Historical core batch
+
+The historical R14 build passes **216 focused checks** (211 compiled/native-adapter
 checks and five source-wiring checks), official native compile check and
 optimized build passing. The [R14 checkpoint](evidence/combat/checkpoint-r14.json)
 and [exact tested source fingerprints](evidence/combat/source-r14.json) identify

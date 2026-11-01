@@ -7,8 +7,8 @@ def main():
  code=r"""
 #![allow(dead_code)]
 use horizon_client::{projectiles::{Projectile,ProjectileKind},mobs::Who};use horizon_core::geometry::Vec3;
-mod game{use super::*;pub mod sunset{pub const ID:&str="sunset";}pub struct Remote{pub entity_id:i32}pub struct Mob{pub id:u32,pub removed:bool}pub struct Creatures{pub projectiles:Vec<Projectile>}
-pub struct Game<'a>{pub window:bool,pub master:bool,pub remote:Option<Remote>,pub player:Option<()>,pub mobs:Vec<Mob>,pub creatures:Creatures,pub calls:u32,pub args:Option<(i32,String,[f64;3],(f32,f32),[f64;3],i32)>,pub reject:bool,pub panic_once:bool,pub life:std::marker::PhantomData<&'a()>}
+mod game{use super::*;pub mod sunset{pub const ID:&str="sunset";}pub struct Session{pub counters:std::sync::Arc<std::sync::Mutex<Option<u8>>>}pub struct Remote{pub entity_id:i32,pub session:Session}#[derive(Clone,Copy,PartialEq)]pub enum Dim{Overworld,Nether}pub struct Mob{pub id:u32,pub removed:bool}pub struct Creatures{pub projectiles:Vec<Projectile>}
+pub struct Game<'a>{pub dim:Dim,pub ticks:u64,pub window:bool,pub master:bool,pub remote:Option<Remote>,pub player:Option<()>,pub mobs:Vec<Mob>,pub creatures:Creatures,pub calls:u32,pub args:Option<(i32,String,[f64;3],(f32,f32),[f64;3],i32)>,pub reject:bool,pub panic_once:bool,pub life:std::marker::PhantomData<&'a()>}
 #[path="OWNER"]pub mod sunset_pearl_owner;
 HEAD
 impl Game<'_>{pub fn native_window(&self)->bool{self.window}pub fn native_on(&self,_:&str)->bool{self.master}
@@ -19,7 +19,7 @@ pub fn spawn_remote_projectile(&mut self,id:i32,kind:&str,position:[f64;3],rotat
  let k=match kind{"minecraft:ender_pearl"=>ProjectileKind::EnderPearl,"minecraft:egg"=>ProjectileKind::Egg,_=>return false};
  self.creatures.projectiles.retain(|p|p.id!=id as u32);let mut pearl=Projectile::new(k,Vec3::new(position[0],position[1],position[2]),None);pearl.id=id as u32;pearl.velocity=Vec3::new(velocity[0],velocity[1],velocity[2]);pearl.yaw=rotation.0;pearl.pitch=rotation.1;self.creatures.projectiles.push(pearl);true
 }}}
-fn fixture()->game::Game<'static>{game::Game{window:true,master:true,remote:Some(game::Remote{entity_id:0}),player:Some(()),mobs:vec![game::Mob{id:42,removed:false}],creatures:game::Creatures{projectiles:vec![]},calls:0,args:None,reject:false,panic_once:false,life:std::marker::PhantomData}}
+fn fixture()->game::Game<'static>{game::Game{dim:game::Dim::Overworld,ticks:100,window:true,master:true,remote:Some(game::Remote{entity_id:0,session:game::Session{counters:std::sync::Arc::new(std::sync::Mutex::new(Some(0)))}}),player:Some(()),mobs:vec![game::Mob{id:42,removed:false}],creatures:game::Creatures{projectiles:vec![]},calls:0,args:None,reject:false,panic_once:false,life:std::marker::PhantomData}}
 fn spawn(g:&mut game::Game)->bool{g.spawn_remote_projectile(111,"minecraft:ender_pearl",[1.,122.,3.],(-90.,-10.),[1.5,0.2,0.],42)}
 #[test]fn original_runs_once_and_exact_original_arguments_are_preserved(){let mut g=fixture();assert!(spawn(&mut g));assert_eq!(g.calls,1);assert_eq!(g.args,Some((111,"minecraft:ender_pearl".into(),[1.,122.,3.],(-90.,-10.),[1.5,0.2,0.],42)));assert_eq!(g.creatures.projectiles.len(),1);assert_eq!(g.creatures.projectiles[0].owner,Some(Who::Mob(42)));}
 #[test]fn unrelated_kind_master_off_and_nonwindow_bypass_original_once(){for mode in 0..3{let mut g=fixture();let kind=if mode==0{"minecraft:egg"}else{"minecraft:ender_pearl"};if mode==1{g.master=false;}if mode==2{g.window=false;}assert!(g.spawn_remote_projectile(111,kind,[0.;3],(0.,0.),[0.;3],42));assert_eq!(g.calls,1);assert_eq!(g.creatures.projectiles[0].owner,None);}}

@@ -186,6 +186,15 @@ pub(super) fn toggled(game: &mut Game<'_>, name: &str, on: bool) {
     if on && name == INV { util::toggle_off(game, AUTO); }
 }
 
+// A protocol life/world boundary can preserve connection, dimension and id.
+// Discard old receipts without returning a slot or closing a new life's menu.
+// Drop original Finish guards outside the state mutex; never release by name.
+fn discard_scene() {
+    let abandoned=state(std::mem::take);
+    if let Some((owner,_))=abandoned.queued_use {sunset::cancel_turns(owner);}
+    drop(abandoned);
+}
+
 pub(super) fn reset() {
     if let Some(owner)=state(|s|s.job.as_ref().map(|j|j.owner)){control::release(owner);}
     for owner in OWNERS { sunset::cancel_turns(owner); control::release(owner); }
@@ -427,6 +436,7 @@ pub(super) fn busy_for(_owner:&str)->bool {state(|s|s.job.is_some() || s.retirin
 // Called at HEAD of the native packet handler. Values come from server packet
 // payloads, not the optimistically predicted inventory already on the client.
 pub(super) fn packet(game: &Game<'_>, packet: &C) {
+    if matches!(packet,C::Login(_) | C::Respawn(_) | C::Disconnect(_)){discard_scene();return;}
     state(|s| {
         if !s.connection.as_ref().is_some_and(|old| same_session(game, old)) { return; }
         let job=if let Some(retiring)=s.retiring.as_mut(){Some(retiring)}else{s.job.as_mut().filter(|j|j.phase==Phase::Await)};

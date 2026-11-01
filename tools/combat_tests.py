@@ -64,6 +64,7 @@ def main():
         run('Bot native mining and food adapters', [sys.executable, 'tools/bot_runtime_adapter_tests.py', args.engine.resolve()])
         run('Bot observed damage and friend adapters', [sys.executable, 'tools/bot_damage_adapter_tests.py'])
         run('Bot retained peer pearl intent', [sys.executable, 'tools/bot_peer_flight_tests.py'])
+        run('Bot pearl reserve invocation', [sys.executable, 'tools/bot_reserve_tests.py'])
         run('Bot tactical lifecycle', [sys.executable, 'tools/bot_lifecycle_tests.py'])
         run('Friend Guard native feedback', [sys.executable, 'tools/friend_feedback_tests.py'])
         run('GUI controller edit intent', [sys.executable, 'tools/gui_intent_tests.py'])
@@ -74,6 +75,8 @@ def main():
         run('retired inventory acknowledgements', [sys.executable, 'tools/inventory_retirement_tests.py'])
         run('manual macro reference defaults', [sys.executable, 'tools/macro_defaults_tests.py'])
         if args.dependency_dir:
+            run('native macro cursor and repeat', [sys.executable, 'tools/macro_cursor_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
+            run('inventory scene boundary', [sys.executable, 'tools/inventory_scene_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
             run('Bot melee and native Stab adapters', [sys.executable, 'tools/bot_melee_adapter_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
             run('native packet codec fields', [sys.executable, 'tools/packet_protocol_fields.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
             run('native pearl owner and remote flight', [sys.executable, 'tools/pearl_owner_engine_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])

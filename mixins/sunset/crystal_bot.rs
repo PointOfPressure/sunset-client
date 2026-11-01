@@ -126,6 +126,7 @@ struct State {
     intent: policy::Intent,
     mouse_pending: bool,
     last_food: u64,
+    pearl_counts: [u32; 9],
     phase: Option<policy::Phase>,
     reason: &'static str,
     scan_origin: Option<[i32; 3]>,
@@ -268,7 +269,7 @@ fn pause(game: &mut Game<'_>, keep_totem: bool) {
 pub(super) fn diagnostics() -> String {
     state(|s| {
         format!(
-            "CrystalBot reason={} phase={:?} target={:?} food={} contexts={} sampled_threat={:?} threat_complete={} anchor_cursor={} yielded={}",
+            "CrystalBot reason={} phase={:?} target={:?} food={} contexts={} sampled_threat={:?} threat_complete={} anchor_cursor={} yielded={} pearl_counts={:?}",
             s.reason,
             s.phase,
             s.target,
@@ -277,7 +278,8 @@ pub(super) fn diagnostics() -> String {
             s.threat,
             s.threat_complete,
             s.cursor,
-            s.intent.yielded
+            s.intent.yielded,
+            s.pearl_counts
         )
     })
 }
@@ -2212,6 +2214,7 @@ fn queue_action(
                     && pearl_approved(game, plan)
                 {
                     if super::remote::sunset_combat_remote::use_main_at(game,look.0,look.1) {
+                        pearl_note(7, 1);
                         state(|s| {
                             s.tactics.pearl = None;
                             s.tactics.pearl_at = Some(game.ticks);
@@ -2751,7 +2754,18 @@ fn pearl_ready(game: &Game<'_>) -> bool {
         && !game.cooldowns.is_on_cooldown(&group)
         && tactics::pearl_health_ready(life, totem)
 }
+// Diagnostic only: [entered, not_ready, peer_match, peer_forecast,
+// retained_resume, candidates, plans, native_use_true, no_generic_trigger].
+// No formatting or I/O until the explicit existing diagnostics() call.
+fn pearl_note(index: usize, amount: u32) {
+    state(|s| {
+        if let Some(counter) = s.pearl_counts.get_mut(index) {
+            *counter = counter.saturating_add(amount);
+        }
+    });
+}
 fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bool) -> bool {
+    pearl_note(0, 1);
     // An incremental search is meaningful only in its exact current bot scene.
     if !state(|s| {
         s.target == Some(target.id)
@@ -2778,6 +2792,7 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
         }
     });
     if !pearl_ready(game) {
+        pearl_note(1, 1);
         return false;
     }
     let own = util::player_pos(game).unwrap_or([0.; 3]);
@@ -2785,10 +2800,10 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
     let mut observed_flight = None;
     let r = rival();
     if !escape {
-        let life = game
+        let health = game
             .player
             .as_ref()
-            .map_or(0., |p| p.health.health() + p.health.absorption());
+            .map_or(0., |p| p.health.health());
         let d = tactics::horizontal(tactics::sub(spot, own));
         let actual = game
             .creatures
@@ -2806,8 +2821,19 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
             .find_map(|p| {
                 let pos = [p.position.x, p.position.y, p.position.z];
                 let vel = [p.velocity.x, p.velocity.y, p.velocity.z];
-                pearl_from(game, pos, vel).map(|landing| (p.id, landing))
+                pearl_note(2, 1);
+                let landing = pearl_from(game, pos, vel)?;
+                pearl_note(3, 1);
+                Some((p.id, landing))
             });
+        let following = actual.is_some() || retained_flight.is_some();
+        let keep_one = count(game, "totem_of_undying") == 0 && health <= 12.
+            || !following && r.pearl_low()
+                && super::sunset_prediction::effective_health(game, target)
+                    .is_none_or(|health| health <= 8.);
+        if count(game, "ender_pearl") <= if keep_one { 1 } else { 0 } {
+            return false;
+        }
         if let Some((id, landing)) = actual {
             state(|s| {
                 s.tactics.last_pearl = Some(id);
@@ -2824,16 +2850,12 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
                 });
             }
         } else if let Some(search) = retained_flight {
+            pearl_note(4, 1);
             // The observed peer flight was consumed once. Finish its bounded
             // 8-candidate slices without requiring another physical trigger.
             spot = search.spot;
             observed_flight = search.observed_flight;
         } else {
-            if count(game, "totem_of_undying") == 0 && life <= 12.
-                || r.pearl_low() && target.health <= 8.
-            {
-                return false;
-            }
             let motion = tactics::sub(target.pos, target.prev);
             let away = tactics::sub(target.pos, own);
             let running = d >= 12. && motion[0] * away[0] + motion[2] * away[2] > 0.12;
@@ -2844,6 +2866,7 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
                     .saturating_sub(state(|s| s.tactics.fight.closing_at))
                     >= 60;
             if !running && !elevation && !stuck {
+                pearl_note(8, 1);
                 return false;
             }
             let ticks = (5. + ((d - 6.).max(0.) * 0.8)).min(40.);
@@ -2880,6 +2903,7 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
     };
     let yaw = (-direction[0]).atan2(direction[2]).to_degrees();
     let max = if escape { 72 } else { 60 };
+    let before_cursor = search.cursor;
     for _ in 0..8 {
         if search.cursor >= max {
             break;
@@ -2932,6 +2956,7 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
             search.best = Some((score, plan));
         }
     }
+    pearl_note(5, search.cursor.saturating_sub(before_cursor));
     if search.cursor >= max || search.best.is_some_and(|(_, p)| p.away >= 20.) {
         state(|s| {
             s.tactics.pearl_search = None;
@@ -2942,6 +2967,7 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
             });
         });
         if state(|s| s.tactics.pearl.is_some()) {
+            pearl_note(6, 1);
             return continue_pearl(game, m, target);
         }
     } else {

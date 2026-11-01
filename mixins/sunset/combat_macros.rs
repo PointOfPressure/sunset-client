@@ -151,7 +151,6 @@ fn allowed(game: &Game<'_>) -> bool {
         && game.native_on(sunset::ID)
         && util::in_world(game)
         && !gui_open()
-        && !game.creative
         && !game.spectator()
         && game.selected < 9
         && game.using.is_none()
@@ -220,6 +219,12 @@ pub(super) fn reset(game: &mut Game<'_>) {
         }
         super::sunset_combat_control::release(run.owner);
     }
+}
+fn complete(game:&mut Game<'_>) {
+    let anchor=state(|s|s.run.as_ref().is_some_and(|r|
+        r.sequence.kind==Kind::Anchor&&r.sequence.step==Step::Done&&same_session(game,r)));
+    reset(game);
+    if anchor{state(|s|s.anchor_latched=false);}
 }
 pub(super) fn active() -> bool {
     state(|s| s.run.is_some())
@@ -336,8 +341,9 @@ fn visible(game: &Game<'_>, click: Click, budget: &mut Budget) -> bool {
     let Some(end) = policy::outside(click.hit, click.face) else {
         return false;
     };
+    let Some((range,_))=super::sunset_explosive_tactics::interaction_ranges(game) else{return false;};
     game.world.loaded(click.pos[0], click.pos[2])
-        && in_range(eye, click.hit, 4.5)
+        && in_range(eye, click.hit, range)
         && clear_line(game, eye, end, None, budget)
 }
 fn support(game: &Game<'_>, p: [i32; 3], budget: &mut Budget) -> Option<Click> {
@@ -432,44 +438,102 @@ fn direction(game: &Game<'_>) -> [f64; 3] {
     );
     [-y.sin() * p.cos(), -p.sin(), y.cos() * p.cos()]
 }
-fn crosshair_crystal(game: &Game<'_>, budget: &mut Budget) -> Option<(u32, [f64; 3], [f64; 3])> {
-    let eye = game.eye_position()?;
-    let dir = direction(game);
-    let mut best = None;
-    for e in &game.crystals {
-        if e.id == 0 || e.invulnerable {
-            continue;
-        }
-        let at = [e.position.x, e.position.y, e.position.z];
-        let Some(hit) = policy::ray(
-            eye,
-            dir,
-            [at[0] - 1., at[1], at[2] - 1.],
-            [at[0] + 1., at[1] + 2., at[2] + 1.],
-            3.,
-        ) else {
-            continue;
-        };
-        let d = util::dist(eye, hit);
-        if best.as_ref().is_some_and(|(old, _, _, _)| *old <= d) {
-            continue;
-        }
-        let end = std::array::from_fn(|i| hit[i] + (eye[i] - hit[i]) * 1.0e-5);
-        if clear_line(game, eye, end, None, budget) {
-            best = Some((d, e.id, at, hit));
+fn crosshair_crystal(game:&Game<'_>,budget:&mut Budget)->Option<(u32,[f64;3],[f64;3])> {
+    match cursor_entity(game).ok()?? {
+        CursorEntity::Crystal{id,at,aim}=>{
+            let eye=game.eye_position()?;
+            let end=std::array::from_fn(|i|aim[i]+(eye[i]-aim[i])*1.0e-5);
+            clear_line(game,eye,end,None,budget).then_some((id,at,aim))
+        },CursorEntity::Other=>None,
+    }
+}
+// Anchor intent deliberately uses a block-only outline ray. Crystal intent
+// additionally refuses a nearer observed pickable entity through crystal_click.
+fn camera_click(game:&Game<'_>)->Option<Click> {
+    let (range,_)=super::sunset_explosive_tactics::interaction_ranges(game)?;
+    let hit=game.clip_ray(game.eye_position()?,direction(game),range)?;
+    Some(Click{pos:hit.pos,face:policy::face(hit.face)?,hit:hit.point})
+}
+#[derive(Clone,Copy,Debug)]
+enum CursorEntity {Crystal{ id:u32, at:[f64;3], aim:[f64;3] },Other}
+// No allocation: one bounded pass over the native pickable collections. An
+// invalid observed box or overfull scene refuses the macro's crystal plan.
+fn cursor_entity(game:&Game<'_>)->Result<Option<CursorEntity>,()> {
+    let (blocks,entities)=super::sunset_explosive_tactics::interaction_ranges(game).ok_or(())?;
+    let eye=game.eye_position().ok_or(())?;let dir=direction(game);
+    if !eye.iter().chain(dir.iter()).all(|v|v.is_finite()){return Err(());}
+    let count=game.mobs.len().saturating_add(game.crystals.len()).saturating_add(game.boats.len())
+        .saturating_add(game.carts.len()).saturating_add(game.armor_stands.len()).saturating_add(game.cushions.len())
+        .saturating_add(game.item_frames.len()).saturating_add(game.paintings.len()).saturating_add(game.creatures.projectiles.len());
+    if count>768{return Err(());}
+    // A wall beyond the block interaction range still occludes an entity
+    // when a server grants a larger entity interaction range.
+    let wall=game.clip_ray(eye,dir,blocks.max(entities)).map(|hit|util::dist(eye,hit.point));
+    let mut best:Option<(f64,CursorEntity)>=None;
+    let mut offer=|lo:[f64;3],hi:[f64;3],what:CursorEntity|->Result<(),()>{
+        if !(0..3).all(|i|lo[i].is_finite()&&hi[i].is_finite()&&lo[i]<=hi[i]){return Err(());}
+        if let Some(hit)=policy::ray(eye,dir,lo,hi,entities){
+            let distance=util::dist(eye,hit);
+            if wall.is_none_or(|d|distance<d) && best.as_ref().is_none_or(|(d,_)|distance<*d){
+                let what=match what{CursorEntity::Crystal{id,at,..}=>CursorEntity::Crystal{id,at,aim:hit},other=>other};
+                best=Some((distance,what));
+            }
+        }Ok(())
+    };
+    let corners=|b:horizon_core::geometry::Aabb|{let(lo,hi)=(b.min_position(),b.max_position());
+        ([lo.x,lo.y,lo.z],[hi.x,hi.y,hi.z])};
+    // Offer non-crystals first so an exact tie cannot click through one.
+    for mob in &game.mobs {
+        if mob.removed || !mob.alive() || Some(mob.id)==game.riding
+            || super::remote::sunset_combat_remote::player_mode(game,mob.id)==Some(3){continue;}
+        let(lo,hi)=corners(mob.bounds());offer(lo,hi,CursorEntity::Other)?;
+    }
+    for stand in &game.armor_stands {if !stand.marker&&stand.health>0.0{
+        let(lo,hi)=corners(stand.bounds());offer(lo,hi,CursorEntity::Other)?;}}
+    for boat in &game.boats {if Some(boat.id)!=game.riding{
+        let(lo,hi)=corners(boat.bounds());offer(lo,hi,CursorEntity::Other)?;}}
+    for cart in &game.carts {if Some(cart.id)!=game.riding{
+        let(lo,hi)=corners(cart.bounds());offer(lo,hi,CursorEntity::Other)?;}}
+    for cushion in &game.cushions {if Some(cushion.id)!=game.riding{
+        let(lo,hi)=cushion.bounds();offer(lo,hi,CursorEntity::Other)?;}}
+    for frame in &game.item_frames {let(lo,hi)=frame.bounds();offer(lo,hi,CursorEntity::Other)?;}
+    for painting in &game.paintings {let(lo,hi)=painting.bounds();offer(lo,hi,CursorEntity::Other)?;}
+    for projectile in &game.creatures.projectiles {
+        if super::deflect::redirectable(projectile) {
+            let(lo,hi)=corners(projectile.aabb());
+            offer(lo.map(|n|n-1.0),hi.map(|n|n+1.0),CursorEntity::Other)?;
         }
     }
-    best.map(|(_, id, at, aim)| (id, at, aim))
+    // Native dragon helper already accepts the caller's actual reach.
+    let dragon=game.remote_dragon_part_hit(eye,dir,entities).map(|(_,distance,_)|distance);
+    drop(offer);
+    if let Some(distance)=dragon {
+        if distance.is_finite()&&wall.is_none_or(|d|distance<d)&&best.as_ref().is_none_or(|(d,_)|distance<=*d){
+            best=Some((distance,CursorEntity::Other));
+        }
+    }
+    for crystal in &game.crystals {
+        if crystal.id==0{continue;}
+        let at=[crystal.position.x,crystal.position.y,crystal.position.z];
+        if !at.iter().all(|v|v.is_finite()){return Err(());}
+        if let Some(aim)=policy::ray(eye,dir,[at[0]-1.,at[1],at[2]-1.],[at[0]+1.,at[1]+2.,at[2]+1.],entities){
+            let distance=util::dist(eye,aim);
+            if wall.is_none_or(|d|distance<d)&&best.as_ref().is_none_or(|(d,_)|distance<*d){
+                best=Some((distance,if crystal.invulnerable{CursorEntity::Other}else{CursorEntity::Crystal{id:crystal.id,at,aim}}));
+            }
+        }
+    }
+    Ok(best.map(|(_,entity)|entity))
 }
-fn camera_click(game:&Game<'_>)->Option<Click> {
-    let hit=game.pick()?;
-    Some(Click{pos:hit.pos,face:policy::face(hit.face)?,hit:hit.point})
+fn crystal_click(game:&Game<'_>)->Option<Click> {
+    if cursor_entity(game).ok()?.is_some(){return None;}
+    camera_click(game)
 }
 fn crystal_intent(game:&Game<'_>,settings:&Module,preferred:usize,budget:&mut Budget)->Option<([i32;3],Step,Option<u32>)> {
     if let Some((id,at,_))=crosshair_crystal(game,budget){
         return Some(([at[0].floor() as i32,at[1].floor() as i32-1,at[2].floor() as i32],Step::CrystalBreak,Some(id)));
     }
-    let click=camera_click(game)?;
+    let click=crystal_click(game)?;
     if matches!(util::short(&util::facts(game,click.pos).name),"obsidian"|"bedrock"){
         return (crystal_room(game,click.pos) && crystal_route(game,"end_crystal",true,preferred).is_some()).then_some((click.pos,Step::CrystalPlace,None));
     }
@@ -708,6 +772,10 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
         return false;
     }
     let crystal = with(|s| s.module(CRYSTAL).filter(|m| m.on).cloned());
+    if anchor.is_none()&&crystal.is_none(){return false;}
+    if !super::sunset_explosive_tactics::refresh(game){return false;}
+    let pick=camera_click(game).map(|click|(click.pos,match click.face{
+        0=>[0,-1,0],1=>[0,1,0],2=>[0,0,-1],3=>[0,0,1],4=>[-1,0,0],_=>[1,0,0]}));
     let mut budget = Budget::new(16);
     let on_anchor = pick.is_some_and(|(p, _)| anchor_charge(game, p).is_some());
     let anchor_intent = on_anchor || stack(game, game.selected, "respawn_anchor");
@@ -760,9 +828,9 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
             ];
             (m, Kind::Crystal, p, Step::CrystalBreak, Some(cid))
         } else {
-            let Some((p, face)) = pick else {
-                return false;
-            };
+            let Some(click)=crystal_click(game) else{return false;};
+            let p=click.pos;let face=match click.face{0=>[0,-1,0],1=>[0,1,0],2=>[0,0,-1],
+                3=>[0,0,1],4=>[-1,0,0],_=>[1,0,0]};
             if matches!(
                 util::short(&util::facts(game, p).name),
                 "obsidian" | "bedrock"
@@ -785,7 +853,7 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
         }
     };
     if kind==Kind::Crystal && step!=Step::CrystalBreak {
-        let Some(click)=camera_click(game) else{return false;};
+        let Some(click)=crystal_click(game) else{return false;};
         let base=matches!(util::short(&util::facts(game,click.pos).name),"obsidian"|"bedrock");
         let item=if step==Step::Base{"obsidian"}else{"end_crystal"};
         if crystal_route(game,item,base,game.selected).is_none()
@@ -880,13 +948,13 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
         Step::Base | Step::Guard => {
             let destination = if step == Step::Guard { run.guard? } else { p };
             let click=if step==Step::Base {
-                let click=camera_click(game)?;
+                let click=crystal_click(game)?;
                 if crystal_intent(game,&run.settings,run.previous,budget)?.0!=p || !visible(game,click,budget){return None;}
                 let normal=match click.face{0=>[0,-1,0],1=>[0,1,0],2=>[0,0,-1],3=>[0,0,1],4=>[-1,0,0],5=>[1,0,0],_=>return None};
                 let route=crystal_route(game,"obsidian",false,run.previous)?;
                 let slot=if route.offhand{OFFHAND}else{route.select.unwrap_or(game.selected)};
                 let native=super::remote::sunset_aura_base::BaseClick{clicked:click.pos,normal,point:click.hit};
-                let range=game.reach();let mut rays=12;
+                let range=super::sunset_explosive_tactics::interaction_ranges(game)?.0;let mut rays=12;
                 if !super::remote::sunset_aura_base::valid(game,p,slot,native,range,&mut rays){return None;}
                 click
             }else{support(game,destination,budget)?};
@@ -897,7 +965,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             if !crystal_room(game, p) {
                 return None;
             }
-            let click=camera_click(game)?;
+            let click=crystal_click(game)?;
             if click.pos!=p{return None;}
             // Placement is not a detonation. Its geometry and native loot
             // veto remain required; a later break reevaluates actual damage.
@@ -938,7 +1006,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
                 let (yaw,pitch)=(f64::from(yaw).to_radians(),f64::from(pitch).to_radians());
                 let direction=[-yaw.sin()*pitch.cos(),-pitch.sin(),yaw.cos()*pitch.cos()];
                 let lo=p.map(f64::from);let hi=lo.map(|n|n+1.0);
-                policy::ray(eye,direction,lo,hi,game.reach())?;
+                policy::ray(eye,direction,lo,hi,super::sunset_explosive_tactics::interaction_ranges(game)?.0)?;
                 if !visible(game,click,budget){return None;}click
             }else{support(game,p,budget)?};
             Some(use_action(
@@ -1048,6 +1116,7 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], _ticks: u64) {
             }
         }
     }
+    if !super::sunset_explosive_tactics::refresh(game){reset(game);return;}
     if run.sequence.kind==Kind::Crystal {
         let mut budget=Budget::new(8);
         if let Some((pos,step,cid))=crystal_intent(game,&run.settings,run.previous,&mut budget){
@@ -1062,7 +1131,7 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], _ticks: u64) {
         state(|s|s.run=Some(run.clone()));
     }
     if run.sequence.step == Step::Done {
-        reset(game);
+        complete(game);
         return;
     }
     if game.ticks < run.ready {
@@ -1147,6 +1216,7 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
             reset(game);
             return;
         }
+        if !super::sunset_explosive_tactics::refresh(game){reset(game);return;}
         let mut budget = Budget::new(24);
         let Some(fresh) = next_action(game, &run, &mut budget) else {
             reset(game);
