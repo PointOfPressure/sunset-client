@@ -3036,6 +3036,38 @@ def _():
                 f"Air place, Radius 1.5: {wide_placed} placed; jumping 2 s: {climb:.1f} blocks up, {tower:.1f} with Fast tower")
 
 
+@test("Scaffold (Legit, backwards)")
+def _():
+    # Bridging backwards off the platform's edge: facing the platform, stone in hand, S held for 6 s with Scaffold
+    # Legit. Blocks past the edge as the server has them, how far you got, the lowest your feet went (a block the
+    # server takes back drops you a level), whether you sneaked, and moves a tick (probe, on a server).
+    reset(z=15.5)
+    cmd(f"fill {X0-2} {Y-1} {Z0+17} {X0+2} {Y} {Z0+30} minecraft:air")
+    slot(0, "stone", 64)
+    ctl("key", "1", "tap")
+    ctl("look", "180", "60")
+    setting("scaffold", "mode", "Legit")
+    only("scaffold")
+    kicked = len(kicks)
+    mark = probe_mark() if probe_path() and SERVER else None
+    low, sneaked = pos()[1], False
+    ctl("key", "s", "down")
+    for _ in range(40):
+        wait(3)
+        st = state().get("player") or {}
+        low = min(low, (st.get("position") or [0, low, 0])[1])
+        sneaked = sneaked or bool(st.get("sneaking"))
+    ctl("key", "s", "up")
+    far = pos()[2] - Z0
+    only()
+    wait(20)
+    kept = sum(check(f"execute if block {X0} {Y} {Z0 + z} minecraft:stone") for z in range(17, 31))
+    most = wire_stats(mark)[1] if mark is not None else None
+    ok = kept >= 4 and low > Y + 0.99 and sneaked and len(kicks) == kicked and (most or 0) <= 1
+    return ok, (f"{kept} blocks past the edge kept by the server, walked out to z {far:.1f} (edge 17), lowest feet {low - Y - 1:+.2f}, "
+                f"sneaked: {sneaked}, most moves a tick: {most}")
+
+
 @test("Offhand (item)")
 def _():
     slot(3, "end_crystal", 2)

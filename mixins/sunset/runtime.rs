@@ -346,6 +346,8 @@ impl Module {
                     _ => true,
                 }
             }
+            "Scaffold" if self.p("Mode") == "Legit"
+                && matches!(name, "Air place" | "Ahead distance" | "Closest block range" | "Radius" | "Blocks per tick" | "Fast tower" | "Tower speed" | "While moving") => false,
             "Scaffold" => match name {
                 "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => advanced,
                 "Rotation speed" => advanced && self.b("Rotate"),
@@ -578,7 +580,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ignore sneaking", false),
         Module::new("Blink", Movement, "Holds back your movement packets, then sends them all at once when off.")
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
-        Module::new("Scaffold", Movement, "Automatically places blocks under you.")
+        Module::new("Scaffold", Movement, "Automatically places blocks under you. Legit bridges as you would by hand: as your next step is about to leave the block you stand on, it sneaks (so the game keeps you on the edge), places the next block against that block's side, and lets go of sneak once it is there.")
+            .pick("Mode", &["Normal", "Legit"])
             .bool("Disable with Kill Aura", true)
             .bool("Block counter", true)
             .text("Blocks", "")
@@ -837,6 +840,8 @@ pub(super) struct State {
     scaffold_stack: Option<usize>,
     // Scaffold's placed blocks, drawn for 8 ticks as they fade.
     scaffold_placed: Vec<([i32; 3], u8)>,
+    // Legit Scaffold holds sneak (not you).
+    scaffold_sneak: bool,
     click_wait: u32,
     blink_ticks: u32,
     eating: bool,
@@ -929,6 +934,7 @@ impl State {
             scaffold_rotation: None,
             scaffold_stack: None,
                     scaffold_placed: Vec::new(),
+            scaffold_sneak: false,
             click_wait: 0,
             blink_ticks: 0,
             eating: false,
@@ -1688,6 +1694,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
             "Scaffold" => {
                 with(|s| { s.scaffold_wait = 0; s.scaffold_recent.clear(); s.scaffold_stack = None; });
                 restore_scaffold_rotation(game);
+                legit_sneak(game, false);
             }
             "Speed" => {
                 with(|s| { s.strafe = Strafe::default(); s.knockback_ticks = 0; });
@@ -2649,6 +2656,48 @@ fn scaffold_place(game: &mut Game<'_>, m: &Module, at: [i32; 3]) -> bool {
     placed
 }
 
+// Legit Scaffold's sneak: held (the game's movement then keeps you on the edge, and tells the server you sneak) or let
+// go, if it was Scaffold's.
+fn legit_sneak(game: &mut Game<'_>, down: bool) {
+    let ours = with(|s| s.scaffold_sneak);
+    if down && !game.keys.contains(&KeyCode::ShiftLeft) {
+        game.keys.insert(KeyCode::ShiftLeft);
+        with(|s| s.scaffold_sneak = true);
+    } else if !down && ours {
+        game.keys.remove(&KeyCode::ShiftLeft);
+        with(|s| s.scaffold_sneak = false);
+    }
+}
+
+// Legit Scaffold, bridging as by hand: half a block ahead of you, the way you walk, is the block your next steps
+// stand on. While it is air: sneak, which the next tick's movement obeys (so you stop on the edge, still on the
+// block under you), and place it against the side of that block, looking at that side; the look rides the next
+// move packet and the block goes right after it, while you still stand on the edge. Once the server has it there,
+// sneak goes.
+fn scaffold_legit(game: &mut Game<'_>, m: &Module) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let (pos, ground) = ([p.position.x, p.position.y, p.position.z], p.ground.on_ground);
+    let Some(dir) = move_direction(game).filter(|_| ground && scaffold_slot(game, m).is_some()) else {
+        legit_sneak(game, false);
+        return;
+    };
+    let under = [(pos[0] + dir[0] * 0.5).floor() as i32, pos[1].floor() as i32 - 1, (pos[2] + dir[1] * 0.5).floor() as i32];
+    if !super::sunset_util::replaceable(game, under) {
+        legit_sneak(game, false);
+        return;
+    }
+    legit_sneak(game, true);
+    // Asked for already: the server's answer is on its way (half a second at most).
+    if with(|s| s.scaffold_recent.iter().any(|(b, _)| *b == under)) {
+        return;
+    }
+    if scaffold_place(game, m, under) {
+        with(|s| s.scaffold_recent.push((under, s.ticks + 10)));
+    }
+}
+
 // Scaffold (Meteor's): the block under where you will be next tick (or a step ahead, Ahead distance), down one more
 // while you sneak; without a side to place it against, the nearest spot within Closest block range that has one.
 // Air place puts it where you will be, and a Radius of blocks round it. Fast tower lifts you while you hold jump.
@@ -2678,6 +2727,11 @@ pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
     }) {
         return;
     }
+    if m.p("Mode") == "Legit" {
+        scaffold_legit(game, m);
+        return;
+    }
+    legit_sneak(game, false);
     let Some(p) = game.player.as_ref() else {
         return;
     };
