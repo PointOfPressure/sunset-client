@@ -64,6 +64,10 @@ Official Mixins plans 84 support modules and 55 injections. The build retains
 13 unused-helper/API warnings. Live validation records identify their own
 binary; an R26 result is not relabeled as an R27 test.
 
+[Live player evidence](evidence/combat/parity-live.md) separates the passing
+Aura, City and controller scenarios from retained failures and fixture errors.
+Original PNGs and authoritative outcome receipts accompany those records.
+
 R27 adds creative-mode manual macros, current attribute reach, entity-occluded
 Crystal crosshair selection, success-only held Anchor repetition, immediate
 inventory-scene retirement and conditional pearl reserves. Explicit debug
