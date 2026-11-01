@@ -603,14 +603,15 @@ def _():
     cmd("item replace entity @s armor.chest with minecraft:elytra")
 
     def glide():
-        ctl("chat", f"/tp @s {X0 + 0.5} {Y + 61} {Z0 - 12.5} 0 50")
+        ctl("chat", f"/tp @s {X0 + 0.5} {Y + 61} {Z0 - 12.5} 0 70")
         wait(8)
         held_keys(("space",), 2)
-        wait(fall_ticks(60))
+        wait(2 * fall_ticks(60))
     lost["elytra"] = hurt(glide, settle=40)
-    flew = state()["player"].get("fall_flying")
+    p = state()["player"]
+    landed = not p.get("fall_flying") and p.get("on_ground")
     only()
-    return max(lost.values()) == 0 and not flew, f"health lost: {worst(lost)}"
+    return max(lost.values()) == 0 and landed, f"health lost: {worst(lost)}; the glide landed {p['position'][1] - Y - 1:+.1f} blocks from the platform's top"
 
 
 @test("No Fall (respawn and other worlds)")
@@ -3035,6 +3036,35 @@ def _():
     return 5000 < near3d < near2d and behind < 0.3 * screen and inside < 0.02 * screen, (
         f"orange pixels: chest close beside the view {near3d} with 3D sides, {near2d} as a 2D box; partly behind the "
         f"camera {behind}; camera inside it {inside} (of {screen})")
+
+
+@test("Time Changer and Weather Changer")
+def _():
+    # The time and weather you see, sampled every few ticks for 5 s: always the ones asked for, though the server's
+    # own come in between; Time Changer keeps the server's day (so the moon's phase), and turning Weather Changer off
+    # brings the server's rain straight back.
+    cmd("time set 100000", "weather rain")
+    wait(40)
+    setting("timechanger", "time", "18000")
+    setting("weatherchanger", "weather", "Clear")
+    only("timechanger", "weatherchanger")
+    seen = []
+    for _ in range(25):
+        wait(4)
+        st = state()
+        seen.append((st["time"]["day_time"], st["weather"]["raining"]))
+    only("timechanger")
+    wait(2)
+    rain_back = state()["weather"]["raining"]
+    only()
+    wait(2)
+    time_back = state()["time"]["day_time"]
+    cmd("weather clear", "time set 6000")
+    times = {t for t, _ in seen}
+    steady = times == {4 * 24000 + 18000} and not any(r for _, r in seen)
+    return steady and rain_back and 100000 <= time_back < 101000, (
+        f"times seen {sorted(times)} (want {4 * 24000 + 18000}), raining in {sum(r for _, r in seen)} of {len(seen)} samples; "
+        f"rain back at once after Weather Changer off: {rain_back}; time after Time Changer off: {time_back}")
 
 
 @test("Storage ESP (double chests)")
