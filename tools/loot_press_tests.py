@@ -15,11 +15,12 @@ def function(start):
 
 code = r'''
 #![allow(dead_code)]
-use std::sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}};
+use std::{collections::HashSet,sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}}};
+mod winit{pub mod keyboard{#[derive(PartialEq,Eq,Hash)]pub enum KeyCode{ShiftLeft}}}
 #[derive(PartialEq)]enum MouseButton{Right,Left}
 struct Session{counters:Arc<Mutex<Option<()>>>}
 struct Remote{session:Session,entity_id:i32}
-struct Game<'a>{ticks:u64,dim:u8,remote:Option<Remote>,playing:bool,on:bool,allowed:bool,marker:std::marker::PhantomData<&'a ()>}
+struct Game<'a>{ticks:u64,dim:u8,remote:Option<Remote>,playing:bool,on:bool,allowed:bool,keys:HashSet<winit::keyboard::KeyCode>,marker:std::marker::PhantomData<&'a ()>}
 impl Game<'_>{fn native_playing(&self)->bool{self.playing}fn native_on(&self,_:&str)->bool{self.on}}
 mod sunset{pub const ID:&str="sunset";}
 mod sunset_combat_control{
@@ -39,11 +40,11 @@ fn state<R>(f:impl FnOnce(&mut State)->R)->R{f(&mut STATE.lock().unwrap())}
 fn gui_open()->bool{GUI.load(Ordering::Relaxed)}
 fn allowed(g:&Game<'_>)->bool{g.allowed}
 '''
-code += function('pub(super) fn user_mouse(')+function('pub(super) fn focus_lost()')
+code += function('fn anchor_can_click(')+function('pub(super) fn user_mouse(')+function('pub(super) fn focus_lost()')
 code += r'''
 #[cfg(test)]mod tests{
 use super::*;
-fn game()->Game<'static>{Game{ticks:4,dim:1,remote:Some(Remote{session:super::super::Session{counters:Arc::new(Mutex::new(None))},entity_id:7}),playing:true,on:true,allowed:true,marker:std::marker::PhantomData}}
+fn game()->Game<'static>{Game{ticks:4,dim:1,remote:Some(Remote{session:super::super::Session{counters:Arc::new(Mutex::new(None))},entity_id:7}),playing:true,on:true,allowed:true,keys:HashSet::new(),marker:std::marker::PhantomData}}
 #[test]fn paused_or_leased_quick_edge_can_guard_but_cannot_replay_as_start(){
  let mut g=game();focus_lost();g.allowed=false;
  user_mouse(&g,MouseButton::Right,true);user_mouse(&g,MouseButton::Right,false);

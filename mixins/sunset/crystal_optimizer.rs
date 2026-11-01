@@ -2,7 +2,7 @@
 // omit a ghost; server entities and aura acknowledgements stay authoritative.
 use super::sunset::{self, Category, Module};
 use super::sunset_city_policy::{self as policy, History, Masks};
-use super::{Game, Screen};
+use super::Game;
 use horizon_protocol::packets::play::{Clientbound as C, Serverbound as S};
 use std::{
     any::Any,
@@ -22,6 +22,7 @@ struct State {
     tick: u64,
     hidden_total: u64,
     confirmed: u64,
+    entity_range:Option<f64>,
 }
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 static HAS_MASKS: AtomicBool = AtomicBool::new(false);
@@ -57,11 +58,10 @@ fn active(game: &Game<'_>) -> bool {
         && game.native_on(sunset::ID)
         && game.remote.is_some()
         && !game.spectator()
-        && !game.creative
         && game
             .player
             .as_ref()
-            .is_some_and(|p| p.health.health() > 0.0)
+            .is_some_and(|p| p.health.health().is_finite() && p.health.health() > 0.0)
 }
 
 pub(super) fn reset() {
@@ -148,7 +148,7 @@ fn hand_base(game: &Game<'_>, slot: usize) -> Option<f32> {
     (base.is_finite() && base >= 1.0).then_some(base)
 }
 
-pub(super) fn tick(game: &Game<'_>, tick: u64) {
+pub(super) fn tick(game: &mut Game<'_>, tick: u64) {
     let Some(_m) = module() else {
         reset();
         return;
@@ -157,13 +157,15 @@ pub(super) fn tick(game: &Game<'_>, tick: u64) {
         reset();
         return;
     }
+    let entity_range=game.player.as_mut().and_then(|player|player.attribute("minecraft:entity_interaction_range").ok())
+        .filter(|range|range.is_finite()&&*range>0.0&&*range<=64.0);
     let base = hand_base(game, game.selected);
     state(|s| {
         if s.session.as_ref().is_none_or(|old| !same(game, old)) || tick < s.tick {
             *s = State::default();
             s.session = session(game);
         }
-        s.tick = tick;
+        s.tick = tick;s.entity_range=entity_range;
         s.history.sample(tick, base);
         s.masks.expire_after_window(tick, window(game));
         HAS_MASKS.store(s.masks.count() > 0, Ordering::Release);
@@ -172,6 +174,16 @@ pub(super) fn tick(game: &Game<'_>, tick: u64) {
 
 // Call only after final packet filters accept the packet for forwarding. This
 // module never constructs an Attack and never replaces native attack input.
+// Mirrors the native swing/cooldown prerequisites for an observed hit.
+// A ghost is a bounded local visual prediction; it never removes Game entities.
+fn swinging_hand(game:&Game<'_>)->bool {
+    let Some(stack)=game.held() else{return true;};
+    let Some(info)=game.items().get(&stack.item) else{return false;};
+    stack.count>0 && horizon_client::spear::Kinetic::of(&stack.item).is_none()
+        && !stack.extra.as_ref().is_some_and(|extra|!extra.other.is_empty())
+        && !game.cooldowns.is_on_cooldown(&horizon_client::cooldowns::group(stack,info.use_cooldown.as_ref()))
+}
+
 pub(super) fn sent(game: &Game<'_>, packet: &S) {
     let Some(_m) = module() else {
         return;
@@ -197,13 +209,13 @@ pub(super) fn sent(game: &Game<'_>, packet: &S) {
     let Ok(id) = u32::try_from(attack.id) else {
         return;
     };
-    if game.screen != Screen::Playing || game.using.is_some() || game.riding.is_some() {
+    if game.selected>=9 || game.player.as_ref().is_none_or(|p|p.auto_spin_attack_ticks>0) || !swinging_hand(game) {
         return;
     }
     let Some(crystal) = game
         .crystals
         .iter()
-        .find(|c| c.id == id && id != 0 && !c.invulnerable)
+        .find(|c| c.id == id && id != 0)
     else {
         return;
     };
@@ -224,24 +236,18 @@ pub(super) fn sent(game: &Game<'_>, packet: &S) {
     };
     let lo = [position[0] - 1.0, position[1], position[2] - 1.0];
     let hi = [position[0] + 1.0, position[1] + 2.0, position[2] + 1.0];
-    if policy::box_distance(eye, lo, hi).is_none_or(|d| d > 3.0) {
-        return;
-    }
-    let center = [position[0], position[1] + 1.0, position[2]];
-    if super::spear::sunset_combat_collision::clip(game,
-            horizon_core::geometry::Vec3::new(eye[0], eye[1], eye[2]),
-            horizon_core::geometry::Vec3::new(center[0], center[1], center[2]),
-        )
-        .is_some()
-    {
-        return;
-    }
+    let Some(range)=state(|s|s.entity_range.filter(|_|s.tick==game.ticks&&s.session.as_ref().is_some_and(|old|same(game,old)))) else{return;};
+    if policy::box_distance(eye,lo,hi).is_none_or(|distance|distance>range)
+        || !game.border.contains(position[0],position[2]) {return;}
+    // Only the final forwarded Attack reaches this observer. Re-aiming at
+    // the crystal center would reject a legitimate first-box-contact hit.
+    let enchanted=game.held().is_some_and(|stack|super::sunset_combat_macros::enchant_damage(game,stack));
     let current = hand_base(game, game.selected);
     let effect = game.effect_attack_bonus();
     state(|s| {
         s.history.sample(game.ticks, current);
-        if s.history.positive_with_empty(game.ticks, window(game), effect)
-            && s.masks.add(id, position, game.ticks)
+        if (enchanted || s.history.positive_with_empty(game.ticks, window(game), effect))
+            && s.masks.pending(id, position, game.ticks)
         {
             s.hidden_total = s.hidden_total.saturating_add(1);
             HAS_MASKS.store(true, Ordering::Release);
@@ -250,6 +256,7 @@ pub(super) fn sent(game: &Game<'_>, packet: &S) {
 }
 
 pub(super) fn packet(game: &Game<'_>, packet: &C) {
+    if matches!(packet,C::Login(_)|C::Respawn(_)|C::Disconnect(_)){reset();return;}
     if !state(|s| s.session.as_ref().is_some_and(|old| same(game, old))) {
         return;
     }
@@ -270,6 +277,14 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
 // Used by a single MODIFY_EXPRESSION_VALUE on native crystal distance culling.
 // The original renderer's continue skips only this body and its beam. No
 // authoritative entity is deleted and no native renderer is reimplemented.
+// Object picking has the actual entity ID. Position-only rendering cannot
+// distinguish a later co-located crystal from its already predicted neighbor.
+pub(super) fn hidden_id(game:&Game<'_>,id:u32,position:[f64;3])->bool {
+    if !HAS_MASKS.load(Ordering::Acquire)||!active(game)||game.crystals.len()>512
+        || !sunset::with(|s|s.module(NAME).is_some_and(|m|m.on)){return false;}
+    state(|s|s.session.as_ref().is_some_and(|session|same(game,session))
+        && s.masks.visible_id(id,position,game.ticks))
+}
 pub(super) fn hidden_position(game: &Game<'_>, position: [f64; 3]) -> bool {
     if !HAS_MASKS.load(Ordering::Acquire) || !active(game) || game.crystals.len() > 512 {
         return false;

@@ -1110,3 +1110,15 @@ bindings = [
   { name = "velocity", ty = "[f64; 3]", value = "velocity" },
   { name = "data", ty = "i32", value = "data" },
 ]
+
+# Append this single injection; copy optimizer_objects.rs beside the manifest.
+[[injection]]
+id="crystal-optimizer-remote-object-filter"
+kind="HEAD"
+cancellable=true
+target="horizon_client::game::remote_vehicles::Game<'_>::remote_object_hit"
+helper="optimizer_objects.rs"
+bindings=[
+  {name="game",ty="&crate::game::Game<'_>",value="&*self"},
+  {name="attacking",ty="bool",value="attacking"},
+]

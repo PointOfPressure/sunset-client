@@ -99,3 +99,15 @@ pub(crate) fn preview(
     game.remote_can_place(&hit, &stack)
         .is_some_and(|(pos, _)| [pos.x, pos.y, pos.z] == desired)
 }
+
+// Native validated block use with its own prediction, sequence, components,
+// creative count behavior and local swing. Never write a guessed world state.
+pub(crate) fn place(game:&mut Game<'_>,desired:[i32;3],clicked:[i32;3],face:[i32;3],point:[f64;3])->bool {
+    if !preview(game,desired,clicked,face,point,game.selected){return false;}
+    let before=game.world.block(desired[0],desired[1],desired[2]);
+    let previous=game.forced_hit;game.forced_hit=Some(Hit{pos:clicked,face,point});
+    let guard=ScopedHit{game,previous};
+    let done=guard.game.remote_use_block(horizon_client::first_person::Hand::Main);
+    done && guard.game.world.block(desired[0],desired[1],desired[2])!=before
+        && guard.game.remote.as_ref().is_some_and(|remote|remote.predictions.contains_key(&desired))
+}

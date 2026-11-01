@@ -64,6 +64,22 @@ fixture resource set has placeholder textures for some blocks.
 
 ## R27 investigation checkpoint
 
+[Manual macros](macros-parity-r27/manual-macros.md) have passing outcomes for
+eight canonical cases across nine retained attempts: held repetition and its
+Switch Back control, creative Crystal placement and breaking, creative Anchor,
+the actual survival totem exemption, custom interaction ranges and entity-versus-
+block cursor selection. The first repeat attempt's blast-knockback fixture
+failure remains separate. These cases use Single mode; they do not prove Double.
+
+[Melee outcomes](melee-parity-r27/README.md) pass all 13 scenarios: actual Aura
+and Trigger attacks, a native reach-limit control, friends on direct and piercing
+paths, Shield Breaker, Lunge selection, real-fall Mace damage, W Tap and Jump
+Reset A/B, recent-input Aim Assist and a raised-shield/axe/sword server control.
+These use explicit 1000-HP fixtures. The last five cases read native state health;
+they do not claim separate per-hit console samples. The original single-panic
+postlude mistake and separate command-path recovery remain qualified in the
+receipt; the behavior cases completed before that postlude.
+
 [Original outcomes](parity-bots-r27.json) identify client
 `1a5c773a64655d3546dd15b73b2f728985f096bd95a720d525808f4a84c67e7e`.
 Anchor defense now passes its off/on control: the charged anchor disappears

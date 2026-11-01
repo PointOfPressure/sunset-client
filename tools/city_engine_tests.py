@@ -36,6 +36,8 @@ helper=(DRAFT/"city_mining.rs").as_posix()
 
 PRELUDE=r'''
 #![allow(dead_code,private_interfaces)]
+extern crate self as horizon_client;
+pub mod first_person{pub enum Hand{Main}}
 mod game {
     use std::{collections::BTreeMap,marker::PhantomData};
     #[derive(Clone,Copy,Debug,PartialEq)] pub struct BlockStateId(pub u32);
@@ -77,6 +79,11 @@ mod game {
         fn send(&mut self,s:S){let S::PlayerAction(p)=s;self.actions.push(p);}
         fn tutorial_destroy(&mut self,_:BlockStateId,_:f32){}
         fn reset_attack_strength(&mut self){}
+        // This mining-only harness includes the whole scoped bridge file for
+        // type checking. Trap's native-use path has its own production adapter.
+        fn remote_use_block(&mut self,_:crate::first_person::Hand)->bool{
+            panic!("native block use is outside this mining-only harness")
+        }
         fn breaking_block_effects(&mut self,_:[i32;3],_:[i32;3],_:bool){}
         fn remote_can_place(&mut self,h:&Hit,_:&Stack)->Option<(Pos,())>{
             Some((Pos{x:h.pos[0]+h.face[0],y:h.pos[1]+h.face[1],z:h.pos[2]+h.face[2]},()))}

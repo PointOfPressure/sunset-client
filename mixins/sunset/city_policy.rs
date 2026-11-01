@@ -292,6 +292,16 @@ impl Masks {
         self.stubborn.clear();
         self.disabled = false;
     }
+    // Before the next tick only the last eligible crystal is pending. This
+    // leaves existing older ghosts alone and never replaces a valid pending
+    // prediction with an invalid/stubborn/duplicate older entity.
+    pub(super) fn pending(&mut self,id:u32,pos:[f64;3],tick:u64)->bool {
+        if id==0||!valid(pos)||self.disabled||self.stubborn.contains(&id)
+            || self.hidden.iter().any(|mask|mask.id==id&&mask.sent!=tick)
+            || self.hidden.iter().filter(|mask|mask.sent!=tick).count()>=64 {return false;}
+        self.hidden.retain(|mask|mask.sent!=tick);
+        self.add(id,pos,tick)
+    }
     pub(super) fn add(&mut self, id: u32, pos: [f64; 3], tick: u64) -> bool {
         if id == 0
             || !valid(pos)
@@ -314,6 +324,9 @@ impl Masks {
     }
     pub(super) fn at(&self, pos: [f64; 3]) -> Option<u32> {
         self.hidden.iter().find(|m| m.pos == pos).map(|m| m.id)
+    }
+    pub(super) fn visible_id(&self,id:u32,pos:[f64;3],tick:u64)->bool {
+        self.hidden.iter().any(|mask|mask.id==id&&mask.pos==pos&&tick>mask.sent)
     }
     pub(super) fn visible_at(&self,pos:[f64;3],tick:u64)->Option<u32> {
         self.hidden.iter().find(|mask|mask.pos==pos&&tick>mask.sent).map(|mask|mask.id)

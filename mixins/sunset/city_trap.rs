@@ -25,7 +25,7 @@ pub(super) fn defaults() -> Vec<Module> {
     Module::new(TRAP,Category::Combat,"Places obsidian around an enemy's feet and head. Top block includes the roof. Optional Finish roof jump adds an outside support and may make two native jumps.")
         .num("Range",4.0,1.0,6.0,0.5).bool("Rotate",true)
         .num("Blocks per tick",4.0,1.0,8.0,1.0).bool("Top block",true).bool("Finish roof jump",false).bool("Show target",true)
-        .bool("Anti bot",true).bool("Ignore teams",true),
+
 ]
 }
 
@@ -55,6 +55,7 @@ struct State {
     city_finish: Option<control::Finish>,
     city_queued: Option<Instant>,
     trap_queued: Option<Instant>,
+    trap_empty_warned:bool,
     trap_key: Option<(u32, [i32; 3])>,
     trap_target: Option<Target>,
     trap_plan: Vec<[i32; 3]>,
@@ -82,22 +83,7 @@ fn session(game: &Game<'_>) -> Option<Session> {
     let r = game.remote.as_ref()?;
     Some((r.entity_id, game.dim, r.session.counters.clone()))
 }
-fn basic(game: &Game<'_>) -> bool {
-    game.native_window()
-        && game.native_on(sunset::ID)
-        && game.remote.is_some()
-        && game.screen == Screen::Playing
-        && !sunset::gui_open()
-        && !game.spectator()
-        && !game.creative
-        && game.selected < 9
-        && game
-            .player
-            .as_ref()
-            .is_some_and(|p| p.health.health().is_finite() && p.health.health() > 0.0)
-        && game.mobs.len() <= 512
-        && game.crystals.len() <= 512
-}
+
 fn city_basic(game: &Game<'_>) -> bool {
     game.native_window()
         && game.native_on(sunset::ID)
@@ -263,8 +249,8 @@ pub(super) fn cancel(game: &mut Game<'_>) {
     }
 }
 
-fn opponents_with(game: &Game<'_>, m: &Module, range: f64, only: Option<u32>) -> Vec<Target> {
-    let Some(eye) = game.eye_position() else {
+fn opponents_with(game: &Game<'_>, _m: &Module, range: f64, only: Option<u32>) -> Vec<Target> {
+    let Some(eye) = util::player_pos(game) else {
         return Vec::new();
     };
     let friends = sunset::with(|s| s.friends.clone());
@@ -280,7 +266,7 @@ fn opponents_with(game: &Game<'_>, m: &Module, range: f64, only: Option<u32>) ->
                 .remote
                 .as_ref()
                 .is_some_and(|r| r.entity_id as u32 == mob.id)
-            || util::spared(game, m, mob.id, true)
+            || !util::player_enemy(game,mob)
         {
             continue;
         }
@@ -346,80 +332,7 @@ fn city_face(game:&Game<'_>,block:[i32;3],range:f64)->Option<Face> {
     best
 }
 
-fn face_aim_with(
-    game: &Game<'_>,
-    block: [i32; 3],
-    range: f64,
-    desired: Option<[i32; 3]>,
-    budget: &mut usize,
-) -> Option<Face> {
-    if !game.world.loaded(block[0], block[2]) {
-        return None;
-    }
-    let eye = game.eye_position()?;
-    let mut best = None;
-    let faces = [
-        [0, -1, 0],
-        [0, 1, 0],
-        [0, 0, -1],
-        [0, 0, 1],
-        [-1, 0, 0],
-        [1, 0, 0],
-    ];
-    // Native outline boxes include stairs and context-sensitive outlines.
-    for bounds in game.outline_boxes(block).into_iter().take(8) {
-        for normal in faces {
-            if desired.is_some_and(|wanted| wanted != normal) {
-                continue;
-            }
-            let mut point = [
-                (bounds[0] + bounds[3]) / 2.0,
-                (bounds[1] + bounds[4]) / 2.0,
-                (bounds[2] + bounds[5]) / 2.0,
-            ];
-            for i in 0..3 {
-                if normal[i] != 0 {
-                    point[i] = if normal[i] > 0 {
-                        bounds[i + 3]
-                    } else {
-                        bounds[i]
-                    };
-                }
-            }
-            if !policy::near(eye, point, range.min(game.reach())) {
-                continue;
-            }
-            let inside: [f64; 3] = std::array::from_fn(|i| point[i] - f64::from(normal[i]) * 0.025);
-            let delta: [f64; 3] = std::array::from_fn(|i| inside[i] - eye[i]);
-            let distance = delta.iter().map(|v| v * v).sum::<f64>().sqrt();
-            if !distance.is_finite() || distance <= 1e-8 {
-                continue;
-            }
-            if *budget == 0 {
-                return best.map(|(_, face)| face);
-            }
-            *budget -= 1;
-            let Some(hit) = game.clip_ray(eye, delta.map(|v| v / distance), distance) else {
-                continue;
-            };
-            if hit.pos != block || hit.face != normal {
-                continue;
-            }
-            let d = util::dist(eye, hit.point);
-            if best.is_none_or(|(old, _)| d < old) {
-                best = Some((
-                    d,
-                    Face {
-                        block,
-                        normal,
-                        point: hit.point,
-                    },
-                ));
-            }
-        }
-    }
-    best.map(|(_, face)| face)
-}
+
 fn safe_support(game: &Game<'_>, block: [i32; 3]) -> bool {
     let f = util::facts(game, block);
     if f.replaceable || f.block_entity || f.fluid_level > 0 {
@@ -445,31 +358,11 @@ fn safe_support(game: &Game<'_>, block: [i32; 3]) -> bool {
     .iter()
     .any(|name| f.has_class(name))
 }
-fn support(game: &Game<'_>, cell: [i32; 3], range: f64, budget: &mut usize) -> Option<Face> {
-    for d in [
-        [0, -1, 0],
-        [0, 1, 0],
-        [0, 0, -1],
-        [0, 0, 1],
-        [-1, 0, 0],
-        [1, 0, 0],
-    ] {
-        let block = std::array::from_fn(|i| cell[i] + d[i]);
-        if !game.world.loaded(block[0], block[2]) || !safe_support(game, block) {
-            continue;
-        }
-        let normal = d.map(|n| -n);
-        let Some(face) = face_aim_with(game, block, range, Some(normal), budget) else {
-            continue;
-        };
-        if face.normal == normal {
-            return Some(face);
-        }
-    }
-    None
-}
+
 fn can_fill(game: &Game<'_>, cell: [i32; 3]) -> bool {
-    util::can_place(game, cell, true)
+    let facts=util::facts(game,cell);
+    (facts.fluid==super::Fluid::None || facts.fluid_level==8&&!facts.fluid_falling)
+        && util::can_place(game, cell, true)
         && !game.crystals.iter().any(|c| {
             let p = c.position;
             p.x - 1.0 < f64::from(cell[0]) + 1.0
@@ -779,9 +672,53 @@ fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
     }
 }
 
+// Hold input alone is not a consumed action. Respect the actual native
+// mining/use state and the final forwarded-action tick instead.
+fn trap_hands_free(game:&Game<'_>)->bool {
+    hands_free(game) && game.mining.is_none() && !super::remote::sunset_city_mining::busy(game)
+        && !super::sunset_player::gap_eating() && !super::sunset_render::camera_takes_mouse()
+        && !game.keys.contains(&winit::keyboard::KeyCode::KeyQ)
+        && !game.keys.contains(&winit::keyboard::KeyCode::KeyF)
+}
+fn face_aim_with(game:&Game<'_>,block:[i32;3],range:f64,desired:Option<[i32;3]>,budget:&mut usize)->Option<Face> {
+    if !game.world.loaded(block[0],block[2]){return None;}
+    let eye=game.eye_position()?;let mut best=None;
+    for normal in [[0,-1,0],[0,1,0],[0,0,-1],[0,0,1],[-1,0,0],[1,0,0]] {
+        if desired.is_some_and(|face|face!=normal){continue;}
+        let point=std::array::from_fn(|i|f64::from(block[i])+0.5+0.5*f64::from(normal[i]));
+        if !policy::near(eye,point,range){continue;}
+        if *budget==0{break;}*budget-=1;
+        let inside=std::array::from_fn::<_,3,_>(|i|point[i]-0.05*f64::from(normal[i]));
+        let delta=std::array::from_fn::<_,3,_>(|i|inside[i]-eye[i]);
+        let length=delta.iter().map(|v|v*v).sum::<f64>().sqrt();
+        if !length.is_finite()||length<=1e-8{continue;}
+        let Some(hit)=game.clip_ray(eye,delta.map(|v|v/length),length) else{continue;};
+        if hit.pos!=block||hit.face!=normal{continue;}
+        let distance=util::dist(eye,point);
+        if best.as_ref().is_none_or(|(old,_)|distance<*old){best=Some((distance,Face{block,normal,point}));}
+    }
+    best.map(|(_,face)|face)
+}
+fn support(game:&Game<'_>,cell:[i32;3],range:f64,budget:&mut usize)->Option<Face> {
+    // Down, North, South, East, West, Up: the exact reference preference.
+    for toward in [[0,-1,0],[0,0,-1],[0,0,1],[1,0,0],[-1,0,0],[0,1,0]] {
+        let block=std::array::from_fn(|i|cell[i]+toward[i]);
+        if !game.world.loaded(block[0],block[2])||!safe_support(game,block){continue;}
+        let normal=toward.map(|v|-v);
+        if let Some(face)=face_aim_with(game,block,range,Some(normal),budget){return Some(face);}
+        if *budget==0{return None;}
+    }
+    None
+}
+fn trap_contact(game:&Game<'_>,face:Face,range:f64)->Option<[f64;3]> {
+    let eye=game.eye_position()?;let (yaw,pitch)=super::sunset_combat_wire::sent_look(game)?;
+    let hit=game.clip_ray(eye,super::view_vector(yaw,pitch),range)?;
+    (hit.pos==face.block&&hit.face==face.normal).then_some(hit.point)
+}
+
 fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
     state(|s| s.ledger.expire(tick));
-    if clicks(game) || !hands_free(game) || totem_due(game) || !control::available(TRAP) {
+    if !trap_hands_free(game) || super::sunset_melee_assist::acted(game) || totem_due(game) || !control::available(TRAP) {
         sunset::cancel_turns(TRAP);
         state(|s| s.trap_queued = None);
         control::release(TRAP);
@@ -803,6 +740,7 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         });
         return;
     };
+    let Some(range)=city_range(game) else{return;};
     let feet = target.pos.map(|n| n.floor() as i32);
     let key = (target.id, feet);
     let eye = game.eye_position().unwrap_or([f64::NAN; 3]);
@@ -821,7 +759,7 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         plan.sort_by(|a,b|a[1].cmp(&b[1]).then_with(||util::dist(eye,a.map(|v|f64::from(v)+0.5))
             .total_cmp(&util::dist(eye,b.map(|v|f64::from(v)+0.5)))));
     }
-    plan.retain(|p| game.world.loaded(p[0], p[2]) && can_fill(game, *p));
+    plan.retain(|p| game.world.loaded(p[0], p[2]) && policy::near(eye,util::center_of(*p),range) && can_fill(game, *p));
     state(|s| {
         if s.trap_key != Some(key) {
             s.ledger.clear();
@@ -832,8 +770,10 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         s.trap_plan = plan.clone();
     });
     let Some(slot) = util::find_hotbar(game, |n| n == "obsidian") else {
-        return;
+        let warn=state(|s|{let warn=!s.trap_empty_warned;s.trap_empty_warned=true;warn});
+        if warn{sunset::say(game,"Auto Trap: No obsidian in the hotbar");}return;
     };
+    state(|s|s.trap_empty_warned=false);
     let mut selected = Vec::with_capacity(8);
     let count = game.inventory[slot]
         .as_ref()
@@ -843,7 +783,7 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
     } else {
         m.n("Blocks per tick").clamp(1.0, 8.0) as usize
     })
-    .min(count);
+    .min(if game.creative{8}else{count});
     if plan.is_empty() || limit == 0 {
         return;
     }
@@ -851,14 +791,14 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
     // A rotating start can erect the near column before farther faces are
     // reachable. Preserve far-to-near order at each height across ACK waits.
     for cell in plan.iter().take(36).copied() {
-        if selected.len() == limit {
+        if !selected.is_empty() {
             break;
         }
         let before = game.world.block(cell[0], cell[1], cell[2]).0;
         if !state(|s| s.ledger.can_try(cell, before)) {
             continue;
         }
-        let Some(face) = support(game, cell, m.n("Range"), &mut budget) else {
+        let Some(face) = support(game, cell, range, &mut budget) else {
             if budget == 0 {
                 break;
             }
@@ -901,6 +841,12 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         }
         return;
     }
+    if m.b("Rotate") && trap_contact(game,selected[0].2,range).is_none() {
+        if !super::sunset_explosive_tactics::fixed_look(game) {
+            let desired=sunset::look_at(eye,selected[0].2.point);
+            let look=super::sunset_aura::next_look(game,desired,0.0);sunset::turn(TRAP,look.0,look.1);
+        }return;
+    }
     if !control::claim(TRAP) {
         return;
     }
@@ -919,11 +865,7 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         s.trap_queued = Some(queued);
         s.generation
     });
-    let look = if m.b("Rotate") {
-        sunset::look_at(eye, selected[0].2.point)
-    } else {
-        (game.yaw, game.pitch)
-    };
+    let look=super::sunset_combat_wire::sent_look(game).unwrap_or((game.yaw,game.pitch));
     if !sunset::try_turn_then(TRAP, look.0, look.1, move |game| {
         let _finish = finish;
         if !_finish.current() || state(|s| s.generation != generation) {
@@ -932,9 +874,9 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         state(|s| s.trap_queued = None);
         if queued.elapsed() > Duration::from_millis(200)
             || !same(game, &connection)
-            || !basic(game)
-            || !hands_free(game)
-            || clicks(game)
+            || !city_basic(game)
+            || !trap_hands_free(game)
+            || super::sunset_melee_assist::acted(game)
             || !_finish.current()
             || state(|s| s.generation != generation)
             || game.inventory[slot] != original
@@ -946,62 +888,31 @@ fn trap_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         if fresh.is_none_or(|t| !policy::near(t.pos, target.pos, 0.75)) {
             return;
         }
+        let Some(range)=city_range(game) else{return;};
         let before_slot = game.selected;
         hold(game, slot);
-        let mut budget = 64;
-        for (cell, before, face) in selected {
-            if !can_fill(game, cell)
-                || game.world.block(cell[0], cell[1], cell[2]).0 != before
-                || !face_aim_with(
-                    game,
-                    face.block,
-                    snapshot.n("Range"),
-                    Some(face.normal),
-                    &mut budget,
-                )
-                .is_some_and(|f| {
-                    f.block == face.block
-                        && f.normal == face.normal
-                        && policy::near(f.point, face.point, 0.05)
-                })
-                || !super::remote::sunset_city_mining::preview(
-                    game,
-                    cell,
-                    face.block,
-                    face.normal,
-                    face.point,
-                    slot,
-                )
-            {
-                continue;
-            }
+        let mut budget=96;let mut placed=0;
+        // Native use predicts each accepted block. Later cells in this same
+        // bounded plan can therefore use the newly placed support naturally.
+        for cell in plan.into_iter().take(36) {
+            if placed>=limit{break;}
+            let Some(eye)=game.eye_position() else{break;};
+            if !policy::near(eye,util::center_of(cell),range)||!can_fill(game,cell){continue;}
+            let before=game.world.block(cell[0],cell[1],cell[2]).0;
+            if !state(|s|s.ledger.can_try(cell,before)){continue;}
+            let Some(mut face)=support(game,cell,range,&mut budget) else{if budget==0{break;}continue;};
             if snapshot.b("Rotate") {
-                let Some(eye) = game.eye_position() else {
-                    continue;
-                };
-                if !game
-                    .clip_ray(eye, super::view_vector(look.0, look.1), snapshot.n("Range"))
-                    .is_some_and(|hit| hit.pos == face.block && hit.face == face.normal)
-                {
-                    continue;
-                }
+                let Some(point)=trap_contact(game,face,range) else{continue;};face.point=point;
             }
-            if !state(|s| s.ledger.sent(cell, before, game.ticks)) {
-                continue;
+            if !super::remote::sunset_city_mining::preview(game,cell,face.block,face.normal,face.point,slot){continue;}
+            if placed==0&&super::sunset_melee_assist::acted(game){break;}
+            if !state(|s|s.ledger.sent(cell,before,game.ticks)){continue;}
+            if super::remote::sunset_city_mining::place(game,cell,face.block,face.normal,face.point) {
+                // Final accepted UseItemOn is recorded by combat_wire::accepted.
+                // Native use already performed the local arm animation.
+                game.send(S::Punch(Empty));placed+=1;
+                state(|s|s.placements=s.placements.saturating_add(1));
             }
-            let sequence = util::sequence(game);
-            game.send(S::UseItemOn(play::UseItemOn {
-                hand: 0,
-                pos: face.block,
-                face: super::remote::sunset_city_mining::face_index(face.normal),
-                cursor: std::array::from_fn(|i| (face.point[i] - f64::from(face.block[i])) as f32),
-                inside: false,
-                world_border: false,
-                sequence,
-            }));
-            game.swing_arm();
-            game.send(S::Punch(Empty));
-            state(|s| s.placements = s.placements.saturating_add(1));
         }
         if game.selected == slot {
             hold(game, before_slot);
@@ -1084,17 +995,18 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], tick: u64) {
     } else if state(|s| s.mine.is_some() || s.city_queued.is_some()) {
         stop_city(game, "Disabled", false);
     }
-    if let Some(m) = modules.iter().find(|m| m.name == TRAP && m.on).filter(|_|basic(game)) {
+    let trap_enabled=modules.iter().any(|m|m.name==TRAP&&m.on);
+    if let Some(m) = modules.iter().find(|m| m.name == TRAP && m.on).filter(|_|city_basic(game)) {
         trap_tick(game, m, tick);
     } else {
         sunset::cancel_turns(TRAP);
         control::release(TRAP);
         state(|s| {
             s.trap_queued = None;
-            s.trap_plan.clear();
-            s.trap_target = None;
-            s.ledger.clear();
-            s.roof_jumps.clear();
+            if !trap_enabled {
+                s.trap_empty_warned=false;
+                s.trap_plan.clear();s.trap_target=None;s.ledger.clear();s.roof_jumps.clear();
+            }
         });
     }
 }

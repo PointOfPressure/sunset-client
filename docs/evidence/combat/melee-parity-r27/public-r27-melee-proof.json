@@ -1,0 +1,1575 @@
+{
+  "kind": "sanitized-native-melee-r27-evidence",
+  "checkpoint": "R27",
+  "native_sha256": "1a5c773a64655d3546dd15b73b2f728985f096bd95a720d525808f4a84c67e7e",
+  "package_sha256": "cfb62a33b90ed754fa43f99faa4dfd9376a40432c86ec113cd6271f8999d3041",
+  "behavioral_summary": {
+    "passed": 13,
+    "failed": 0,
+    "cases": 13
+  },
+  "fixture": {
+    "server": "dedicated loopback vanilla 26.3 protocol777",
+    "actors": "two actual native Survival players",
+    "health": "Requested maxhealth1000; comparisons use observed actual HP, including999 starts. Attacker resistance255 except real-KB A/B; target no armor/resistance.",
+    "control": "Official native ctl keyboard/mouse-move and state, actual server attacks; no injected velocity or forged packets."
+  },
+  "health_provenance": {
+    "first_eight": "Native player.health and native packet-fed server.health agree in before/after snapshots. These are synchronized client observations, not independent console /data samples.",
+    "last_five": "Fast native state.player.health observations. Independent console /data Health is present for cleanup, not for each behavioral hit.",
+    "claims": "No independent per-hit server-console HP oracle is claimed."
+  },
+  "cases": [
+    {
+      "case": "aura-hit",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/0/evidence",
+      "before": {
+        "attacker": {
+          "ticks": 14873,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 14878,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "after": {
+        "attacker": {
+          "ticks": 14904,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 14907,
+          "selected": 1,
+          "using": null,
+          "health": 993.0,
+          "server_health": 993.0,
+          "position": [
+            4.7881694058474835,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "native_screenshot": {
+        "sha256": "1e6cead63b058071ff5fe75ef21dfda09350948ce4623459d5b11b6c86c9aa5d",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-aura-hit-1793512877646398900-001.png"
+      }
+    },
+    {
+      "case": "aura-native-reach",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/1/evidence",
+      "before": {
+        "attacker": {
+          "ticks": 15244,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 15249,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            4.1,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "after": {
+        "attacker": {
+          "ticks": 15770,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 15773,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            4.1,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "geometry": "Current four-setting Kill Aura has no custom range. Player boxes remain beyond native survival3 entity reach.",
+      "native_screenshot": {
+        "sha256": "02b14d13b9e97e413cc7cd412bc59949008a76855b5b120b81f08ee430d9ab15",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-aura-native-reach-1793512877646398900-002.png"
+      }
+    },
+    {
+      "case": "trigger-hit",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/2/evidence",
+      "before": {
+        "attacker": {
+          "ticks": 16116,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 16119,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "after": {
+        "attacker": {
+          "ticks": 16157,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 16160,
+          "selected": 1,
+          "using": null,
+          "health": 993.0,
+          "server_health": 993.0,
+          "position": [
+            4.572612154590498,
+            121.5826888980194,
+            0.5
+          ]
+        }
+      },
+      "native_screenshot": {
+        "sha256": "2025829be6b96a65d98c35fc70f19bb26dfe45aa15b3b962b79e78fac9b4f4bf",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-trigger-hit-1793512877646398900-003.png"
+      }
+    },
+    {
+      "case": "trigger-only-grounded",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/3/evidence",
+      "before": {
+        "attacker": {
+          "ticks": 16503,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 16506,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "after": {
+        "attacker": {
+          "ticks": 17045,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 17050,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "native_screenshot": {
+        "sha256": "9b43a6ba716e2d0552a231f4c7402970d5e71289396d275e1672a78ee243620b",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-trigger-only-grounded-1793512877646398900-004.png"
+      }
+    },
+    {
+      "case": "friend-direct",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/4/evidence",
+      "before": {
+        "attacker": {
+          "ticks": 17404,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 17408,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "after": {
+        "attacker": {
+          "ticks": 17459,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 17462,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "action": "Real native manual left click at known friend",
+      "native_screenshot": {
+        "sha256": "7df85b4202524eeb5bb28a083d0c325191f20f2744a9accbc67525563f0e935f",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-friend-direct-1793512877646398900-005.png"
+      }
+    },
+    {
+      "case": "friend-piercing",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/5/evidence",
+      "before": {
+        "attacker": {
+          "ticks": 17840,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 17845,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            4.3,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "after": {
+        "attacker": {
+          "ticks": 17895,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 17899,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            4.3,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "geometry": "Known friend behind first nonfriend husk on the native piercing ray",
+      "native_screenshot": {
+        "sha256": "91f6c0bb7e98b7dc0265687122f8358dec52d8b56e352737c2554e707f997533",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-friend-piercing-1793512877646398900-006.png"
+      }
+    },
+    {
+      "case": "shield-auto",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/6/evidence",
+      "before": {
+        "attacker": {
+          "ticks": 18251,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 18254,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "after": {
+        "attacker": {
+          "ticks": 18484,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 18488,
+          "selected": 1,
+          "using": [
+            40,
+            214
+          ],
+          "health": 993.0,
+          "server_health": 993.0,
+          "position": [
+            4.988568003894647,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "blocked_sword": {
+        "attacker": {
+          "ticks": 18329,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 18332,
+          "selected": 1,
+          "using": [
+            40,
+            58
+          ],
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "follow_before": {
+        "attacker": {
+          "ticks": 18453,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 18456,
+          "selected": 1,
+          "using": [
+            40,
+            182
+          ],
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "raised": {
+        "attacker": {
+          "ticks": 18297,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 18300,
+          "selected": 1,
+          "using": [
+            40,
+            26
+          ],
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "lowered": {
+        "attacker": {
+          "ticks": 18399,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 18403,
+          "selected": 1,
+          "using": [
+            40,
+            129
+          ],
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "action": "Held shield first blocks a real sword hit; observer metadata clears after axe; charged restored sword then damages while use remains held",
+      "oracle": "Defender own using UI is retained as evidence and may stay stale; it does not establish authoritative shield blocking",
+      "native_screenshot": {
+        "sha256": "886abf978d5a14de0b67e26b0c8b66bf23cd3565b89467c88d7c6717964ed1f7",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-shield-auto-1793512877646398900-007.png"
+      }
+    },
+    {
+      "case": "spear-lunge",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/7/evidence",
+      "before": {
+        "attacker": {
+          "ticks": 18967,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 18970,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            8.5,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "after": {
+        "attacker": {
+          "ticks": 18986,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            2.6241812505383253,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 18992,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            8.5,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "restored": {
+        "attacker": {
+          "ticks": 19011,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            3.52250874206178,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 19014,
+          "selected": 1,
+          "using": null,
+          "health": 1000.0,
+          "server_health": 1000.0,
+          "position": [
+            8.5,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "action": "Actual enchanted-spear native lunge displacement from one key press; no injected velocity",
+      "native_screenshot": {
+        "sha256": "530ff32d017133109b9264a785a6ac0452afc38cacb4150009d2a5cbeabeefd6",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-spear-lunge-1793512877646398900-008.png"
+      }
+    },
+    {
+      "case": "mace-real-fall",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/8/evidence",
+      "before": {
+        "attacker": {
+          "ticks": 19759,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 19762,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "after": {
+        "attacker": {
+          "ticks": 19899,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            2.68541653935778,
+            121.0,
+            0.8947205416979539
+          ]
+        },
+        "target": {
+          "ticks": 19905,
+          "selected": 1,
+          "using": null,
+          "health": 967.3099365234376,
+          "server_health": null,
+          "position": [
+            4.432251946737214,
+            121.0,
+            -1.2973288998599957
+          ]
+        }
+      },
+      "restored": {
+        "attacker": {
+          "ticks": 19933,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            2.68541653935778,
+            121.0,
+            0.8947205416979539
+          ]
+        },
+        "target": {
+          "ticks": 19937,
+          "selected": 1,
+          "using": null,
+          "health": 967.3099365234376,
+          "server_health": null,
+          "position": [
+            4.432251946737214,
+            121.0,
+            -1.2973288998599957
+          ]
+        }
+      },
+      "proof": "Actual server HP loss above a real grounded-sword baseline during observed native downward motion, then slot restoration.",
+      "grounded_sword_damage": 7.0,
+      "fall_damage_to_target": 31.690063476562386,
+      "observed_mace_slot": true,
+      "native_screenshot": {
+        "sha256": "a9340c3e285023dac4181cb554d8affd082569140bceacb4ca1fb1cb45be582e",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-mace-real-fall-1793512877646398900-009.png"
+      }
+    },
+    {
+      "case": "wtap-ab",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/9/evidence",
+      "proof": "Matched real sprint hits with physical W/Ctrl held; native forward velocity taper must be stronger with WTap3.",
+      "off_early_horizontal_speeds": [
+        0.1531847312178261,
+        0.15319928781512213,
+        0.1532072357181689,
+        0.1532115752737365,
+        0.15321394467135163
+      ],
+      "on_early_horizontal_speeds": [
+        0.15317857880926136,
+        0.08363551374434139,
+        0.045664995808519654,
+        0.02493309060749572,
+        0.08317388390824705
+      ],
+      "off": {
+        "before": {
+          "attacker": {
+            "ticks": 20313,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ]
+          },
+          "target": {
+            "ticks": 20316,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              6.5,
+              121.0,
+              0.5
+            ]
+          }
+        },
+        "after": {
+          "attacker": {
+            "ticks": 20379,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              13.68063179969071,
+              121.0,
+              0.5
+            ]
+          },
+          "target": {
+            "ticks": 20385,
+            "selected": 1,
+            "using": null,
+            "health": 992.0,
+            "server_health": null,
+            "position": [
+              10.101379345260176,
+              121.0,
+              0.5
+            ]
+          }
+        },
+        "pre": {
+          "ticks": 20344,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            3.810665860131872,
+            121.0,
+            0.5
+          ]
+        },
+        "trace_samples": 31,
+        "trace_y_range": [
+          121.0,
+          121.0
+        ]
+      },
+      "on": {
+        "before": {
+          "attacker": {
+            "ticks": 20689,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ]
+          },
+          "target": {
+            "ticks": 20692,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              6.5,
+              121.0,
+              0.5
+            ]
+          }
+        },
+        "after": {
+          "attacker": {
+            "ticks": 20763,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              12.413209201157407,
+              121.0,
+              0.5
+            ]
+          },
+          "target": {
+            "ticks": 20769,
+            "selected": 1,
+            "using": null,
+            "health": 992.0,
+            "server_health": null,
+            "position": [
+              10.167810711422616,
+              121.0,
+              0.5
+            ]
+          }
+        },
+        "pre": {
+          "ticks": 20729,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            3.74593294162725,
+            121.0,
+            0.5
+          ]
+        },
+        "trace_samples": 31,
+        "trace_y_range": [
+          121.0,
+          121.0
+        ]
+      },
+      "native_screenshot": {
+        "sha256": "6ee0e8294c8f5bc212929b7600f6e70e1be76d639bc4ff0908bee4faf286a074",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-wtap-ab-1793512877646398900-010.png"
+      }
+    },
+    {
+      "case": "jump-reset-ab",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/10/evidence",
+      "proof": "Both arms require verified defender native contact, an accepted real-player hit and actual upward KB; enabled native jump must add excursion beyond the off KB baseline. Positive Y alone is insufficient.",
+      "off_peak_y_delta": 0.9647966773263192,
+      "on_peak_y_delta": 1.2522033402537147,
+      "off": {
+        "before": {
+          "attacker": {
+            "ticks": 21149,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ]
+          },
+          "target": {
+            "ticks": 21153,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              6.5,
+              121.0,
+              0.5
+            ]
+          }
+        },
+        "after": {
+          "attacker": {
+            "ticks": 21244,
+            "selected": 1,
+            "using": null,
+            "health": 992.0,
+            "server_health": null,
+            "position": [
+              10.653694241533255,
+              121.0,
+              0.5
+            ]
+          },
+          "target": {
+            "ticks": 21250,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              6.509422664596066,
+              121.0,
+              0.5
+            ]
+          }
+        },
+        "pre": {
+          "ticks": 21210,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            4.371808686955387,
+            121.0,
+            0.5
+          ]
+        },
+        "trace_samples": 31,
+        "trace_y_range": [
+          121.0,
+          121.96479667732632
+        ]
+      },
+      "on": {
+        "before": {
+          "attacker": {
+            "ticks": 21557,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              0.5,
+              121.0,
+              0.5
+            ]
+          },
+          "target": {
+            "ticks": 21560,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              6.5,
+              121.0,
+              0.5
+            ]
+          }
+        },
+        "after": {
+          "attacker": {
+            "ticks": 21659,
+            "selected": 1,
+            "using": null,
+            "health": 992.0,
+            "server_health": null,
+            "position": [
+              11.43998365157939,
+              121.0,
+              0.5
+            ]
+          },
+          "target": {
+            "ticks": 21665,
+            "selected": 1,
+            "using": null,
+            "health": 999.0,
+            "server_health": null,
+            "position": [
+              6.531774917597722,
+              121.0,
+              0.5
+            ]
+          }
+        },
+        "pre": {
+          "ticks": 21625,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            4.371808686955387,
+            121.0,
+            0.5
+          ]
+        },
+        "trace_samples": 31,
+        "trace_y_range": [
+          121.0,
+          122.25220334025371
+        ]
+      },
+      "native_screenshot": {
+        "sha256": "4c893f49feaa52db0383075320af37488fdb6e301d72036352decabc267ca3e0",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-jump-reset-ab-1793512877646398900-011.png"
+      }
+    },
+    {
+      "case": "aim-recent-idle",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/11/evidence",
+      "proof": "Current five-setting Aim controller: official mouse-move A/B starts outside its core dead zone and must add recent pull, then no idle following while the actual player moves. Historical legacy-setting reports are unchanged.",
+      "extra_toward_enemy_degrees": 7.5,
+      "idle_yaw_change": 0.0,
+      "recent_input": {
+        "off": {
+          "input": {
+            "motion": [
+              20.0,
+              0.0
+            ],
+            "ok": true,
+            "pitch": 0.0,
+            "yaw": -107.0
+          },
+          "yaw_before": -110.0,
+          "yaw_after": -107.0
+        },
+        "on": {
+          "input": {
+            "motion": [
+              20.0,
+              0.0
+            ],
+            "ok": true,
+            "pitch": 0.0,
+            "yaw": -104.75
+          },
+          "yaw_before": -110.0,
+          "yaw_after": -99.5
+        }
+      },
+      "idle_yaw": [
+        -90.5,
+        -90.5
+      ],
+      "moving_target_position": [
+        3.0,
+        121.0,
+        2.948665882337216
+      ],
+      "native_screenshot": {
+        "sha256": "62d3a24199a53694f8b90c001e578bfa8973a8c5e4aea5707efeb4dbf3249a02",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-aim-recent-idle-1793512877646398900-012.png"
+      }
+    },
+    {
+      "case": "shield-server-control",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/12/evidence",
+      "after": {
+        "attacker": {
+          "ticks": 23111,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 23114,
+          "selected": 1,
+          "using": {
+            "slot": 40,
+            "ticks": 185
+          },
+          "health": 992.0,
+          "server_health": null,
+          "position": [
+            4.984033022192138,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "blocked_sword": {
+        "attacker": {
+          "ticks": 22969,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 22972,
+          "selected": 1,
+          "using": {
+            "slot": 40,
+            "ticks": 43
+          },
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "follow_before": {
+        "attacker": {
+          "ticks": 23085,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 23092,
+          "selected": 1,
+          "using": {
+            "slot": 40,
+            "ticks": 163
+          },
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "raised": {
+        "attacker": {
+          "ticks": 22944,
+          "selected": 1,
+          "using": null,
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "ticks": 22947,
+          "selected": 1,
+          "using": {
+            "slot": 40,
+            "ticks": 18
+          },
+          "health": 999.0,
+          "server_health": null,
+          "position": [
+            3.0,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "proof": "Raised shield blocks sword control; manual native left click with Passive selects axe, exact-player observer flag clears, then restored charged sword damages while target keeps RMB held. Historical strict local-use failures remain unchanged.",
+      "follow_sword_damage": 7.0,
+      "mode": "Passive",
+      "remote_shield_flags_raised": [
+        28
+      ],
+      "remote_shield_flags_after_attack": [
+        [
+          119
+        ],
+        [
+          119
+        ],
+        [
+          120
+        ],
+        [
+          120
+        ],
+        [
+          120
+        ],
+        [
+          0
+        ]
+      ],
+      "native_screenshot": {
+        "sha256": "83a8ab1ea075cbdc8947d216577cca34163a62bb5c7e2fcf0d3805eb05b72bae",
+        "size": [
+          1280,
+          720
+        ],
+        "logical_launch_size": [
+          1024,
+          576
+        ],
+        "renderer_framebuffer_size": [
+          1280,
+          720
+        ],
+        "observed_display_scale": 1.25,
+        "file": "melee-shield-server-control-1793512877646398900-013.png"
+      }
+    }
+  ],
+  "selected_images": [
+    {
+      "case": "friend-piercing",
+      "file": "melee-friend-piercing-1793512877646398900-006.png",
+      "sha256": "91f6c0bb7e98b7dc0265687122f8358dec52d8b56e352737c2554e707f997533",
+      "bytes": 113278,
+      "scope": "original native PNG copied byte-for-byte; visually inspected",
+      "size": [
+        1280,
+        720
+      ],
+      "caption": "Friend stands behind a husk on the native piercing ray; HP exclusion is established by the accompanying state samples."
+    },
+    {
+      "case": "aim-recent-idle",
+      "file": "melee-aim-recent-idle-1793512877646398900-012.png",
+      "sha256": "62d3a24199a53694f8b90c001e578bfa8973a8c5e4aea5707efeb4dbf3249a02",
+      "bytes": 108427,
+      "scope": "original native PNG copied byte-for-byte; visually inspected",
+      "size": [
+        1280,
+        720
+      ],
+      "caption": "Moved target appears at the edge of the unchanged idle camera; the equal-input and idle-yaw measurements are in JSON."
+    },
+    {
+      "case": "shield-server-control",
+      "file": "melee-shield-server-control-1793512877646398900-013.png",
+      "sha256": "83a8ab1ea075cbdc8947d216577cca34163a62bb5c7e2fcf0d3805eb05b72bae",
+      "bytes": 115655,
+      "scope": "original native PNG copied byte-for-byte; visually inspected",
+      "size": [
+        1280,
+        720
+      ],
+      "caption": "Target visibly carries the shield and attacker has returned to sword; packet-fed shield flags and actual follow-up HP loss establish the control."
+    }
+  ],
+  "receipts": [
+    {
+      "file": "melee-proof-1793512877646398900.json",
+      "sha256": "a88a0fd028710a48f290c77f3aaf047a17c3e165b08988d457f916e874606489",
+      "bytes": 5780991,
+      "scope": "unaltered completed execution report, including native commands/replies"
+    },
+    {
+      "file": "parity-melee-handoff-1793512877646398900.json",
+      "sha256": "1d67264bf9f1f6ba64d0a6650989828ea933a6dabb85b1ae204e018d566e222b",
+      "bytes": 12384,
+      "scope": "original handoff; profile execution claim superseded by separate recovery"
+    },
+    {
+      "file": "parity-melee-hidden-postlude-recovery.json",
+      "sha256": "4af3ae0272f55b83d082b097c1176fd1f6c737e6284eed943ac73e2c8a94f5d1",
+      "bytes": 10350,
+      "scope": "separate root postlude recovery; does not rerun behavioral cases"
+    },
+    {
+      "file": "source.json",
+      "sha256": "ad0d1c0a02057947ca3d4b953266641a6df87ed100c6c47ae6d1b4e557b20cb0",
+      "bytes": 14097,
+      "scope": "frozen R27 source-hash manifest"
+    },
+    {
+      "file": "launch.json",
+      "sha256": "cd1cf709e06dffb10e9b60ea4b58e6f40f164f06c40bd3cd184dd6c9c40b4d22",
+      "bytes": 1456,
+      "scope": "frozen R27 launch recipe"
+    },
+    {
+      "file": "sunset-explosives-preview.hnmod",
+      "sha256": "cfb62a33b90ed754fa43f99faa4dfd9376a40432c86ec113cd6271f8999d3041",
+      "bytes": 919747,
+      "scope": "frozen R27 package"
+    },
+    {
+      "file": "horizon-client.exe",
+      "sha256": "1a5c773a64655d3546dd15b73b2f728985f096bd95a720d525808f4a84c67e7e",
+      "bytes": 62883328,
+      "scope": "binary verified against execution report"
+    },
+    {
+      "file": "player_melee.py",
+      "sha256": "c2352052b2cc02d776f39fd01e7a8f200b3a78f818b08b12baacad1f57d5e6c1",
+      "bytes": 32706,
+      "scope": "POST-RUN current runner receipt only; execution-time runner hash was not captured; cleanup has since been corrected"
+    },
+    {
+      "file": "melee_runtime_cases.py",
+      "sha256": "a45264f94ef38194f96d08e5e1b32c903fe0953acea1d454e61c67ba6d303537",
+      "bytes": 15048,
+      "scope": "POST-RUN current runner receipt only; execution-time runner hash was not captured; cleanup has since been corrected"
+    }
+  ],
+  "frozen_source_hashes": {
+    "sunset/aim_policy.rs": "b3c69c1a9aa2796b6ee4d9dbfe7b8d6680af9b20509a8484e12ecd2ae079ecba",
+    "sunset/melee_assist.rs": "d3701e536e5b2842f49602730d2af16fa3b537ead3dddf95bf14477e3fd09ba8",
+    "sunset/melee_policy.rs": "be4fcccdea6ca14c61b339ca48f79533629fa5bad13721ec167db289df009b25",
+    "sunset/trigger_policy.rs": "3af16aa5754bff45ea4a264e36be1e0e8c405f42ac36de54ab7057b2a96a9de2"
+  },
+  "raw_fast_entries": 712,
+  "postlude": {
+    "original_profile_command_execution": "incomplete: single panic hid subsequent profile commands; original config equality did not prove load/delete execution",
+    "separate_recovery_file": "parity-melee-hidden-postlude-recovery.json",
+    "recovered": true,
+    "command_probe_Always": "Always",
+    "command_probe_restored_Dynamic": "Dynamic",
+    "behavior_cases_rerun": false,
+    "note": "Original report and handoff preserved without relabeling. Separate root recovery verifies the command path."
+  },
+  "limits": [
+    "No anticheat, network-latency or arbitrary moving-player compatibility claim.",
+    "Both players receive requested maxhealth1000; comparisons use observed actual health.",
+    "Attacker resistance255 is a separate fixture fail-safe except real-knockback A/B which clears it.",
+    "Timing tests use the official native ctl input/state path, without injected velocity or forged server packets.",
+    "Screenshots are context after each case, not a motion sequence or standalone proof of timing.",
+    "Only the 13 listed cases are established; no exhaustive settings/mode parity, anticheat, latency or arbitrary-player claim.",
+    "Execution-time runner/source binding is limited to the frozen source/package manifest and binary SHA; runner current hashes are explicitly post-run."
+  ]
+}

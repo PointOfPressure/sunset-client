@@ -52,16 +52,33 @@ with bounded FIFO recovery and actual protocol codecs.
 Auto City is transient across saved configuration. Auto Trap defaults to the
 reference ring/roof plan; its optional native roof-support/jump extension is
 off by default. Crystal Optimizer preserves authoritative entities while
-filtering a predicted ghost from rendering and native special hitboxes, then
+filtering a predicted ghost from rendering and native picking, then
 restores it when the confirmation window expires.
+
+R28 also uses actual sent-ray Anchor contact for Double
+eligibility and deferred clicks, the configured physical Use binding, synchronized
+sprint for Crystal breaking, crouched Crystal actions and a mounted-action veto.
+A pending Bot pearl plan owns its stationary window instead of allowing an old
+positioning task to restart movement. Trap uses native item/block prediction
+sequentially, so later cells can use an earlier block in the same bounded batch.
+Its target Range is separate from the current block-interaction attribute.
+
+Optimizer picking delegates the original native result unless its nearest
+crystal is a predicted ghost. In that case native non-crystal picking and
+dragon-part geometry remain in use, with unmasked crystals ranked normally.
+ID-based picking distinguishes co-located entities. The position-only render
+hook keeps co-located crystals visible instead of hiding the wrong entity.
+Its immutable native checkpoint is recorded below; live receipts remain
+separate from the compiled adapters.
 
 ## Verification boundaries
 
-The current [R27 build record](evidence/combat/parity-build-r27.json) pins the
-optimized native client and package to unchanged source. All **592 focused
-checks pass**: 556 compiled/native adapter checks and 36 source contracts.
-Official Mixins plans 84 support modules and 55 injections. The build retains
-13 unused-helper/API warnings. Live validation records identify their own
+The current [R28 build record](evidence/combat/parity-build-r28.json) pins the
+optimized native client and package to unchanged source. All **671 focused
+checks pass**: 624 compiled/native adapter checks and 47 source contracts.
+Official Mixins plans 84 support modules and 56 injections. The build retains
+16 warnings for unused APIs/imports and one Option-loop style issue.
+Live validation records identify their own
 binary; an R26 result is not relabeled as an R27 test.
 
 [Live player evidence](evidence/combat/parity-live.md) separates the passing

@@ -133,7 +133,7 @@ pub(super) fn user_mouse(game: &Game<'_>, button: MouseButton, pressed: bool) {
             if let Some(remote) = game.remote.as_ref() {
                 state(|s| s.anchor_press = Some(AnchorPress { tick: game.ticks,
                     session: remote.session.counters.clone(), entity: remote.entity_id,
-                    dimension: game.dim, start_allowed: user && allowed(game) }));
+                    dimension: game.dim, start_allowed: user && allowed(game) && anchor_can_click(game) }));
             }
         }
     }
@@ -142,24 +142,37 @@ pub(super) fn focus_lost() {
     USER_RIGHT.store(false, std::sync::atomic::Ordering::Relaxed);
     state(|s| s.anchor_press = None);
 }
+fn physical_use(game:&Game<'_>)->bool {
+    let bound=game.settings.keys.get("key.use");
+    if let Some(button)=horizon_client::keybinds::mouse_button(bound){
+        return game.physical_buttons.contains(&button);
+    }
+    horizon_client::keybinds::key_code(bound).is_some_and(|key|game.physical_keys.contains(&key))
+}
 fn down(game: &Game<'_>) -> bool {
-    game.physical_buttons.contains(&MouseButton::Right) || USER_RIGHT.load(std::sync::atomic::Ordering::Relaxed)
+    // play_mouse receives canonical Right after native rebinding for keyboard,
+    // mouse and ctl. Its shadow preserves quick edges without another key hook.
+    physical_use(game) || USER_RIGHT.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+// The native use path reads canonical Sneak, which includes rebound keys and
+// ToggleKeyMapping state. Raw physical Shift is a screen modifier, not this.
+fn anchor_can_click(game:&Game<'_>)->bool {
+    !game.keys.contains(&winit::keyboard::KeyCode::ShiftLeft)
+}
 fn allowed(game: &Game<'_>) -> bool {
     game.native_window()
         && game.native_on(sunset::ID)
         && util::in_world(game)
         && !gui_open()
         && !game.spectator()
+        && game.riding.is_none()
         && game.selected < 9
         && game.using.is_none()
         && game.mining.is_none()
         && !game.left
         && !super::sunset_player::gap_eating()
         && util::inventory_idle(game)
-        && !game.keys.contains(&winit::keyboard::KeyCode::ShiftLeft)
-        && !game.keys.contains(&winit::keyboard::KeyCode::ShiftRight)
         && !with(|s| ["Blink", "Auto EXP"].iter().any(|n| s.is_on(n)))
         && game
             .player
@@ -370,7 +383,25 @@ fn support(game: &Game<'_>, p: [i32; 3], budget: &mut Budget) -> Option<Click> {
     }
     None
 }
-fn anchor_click(game: &Game<'_>, p: [i32; 3], budget: &mut Budget) -> Option<Click> {
+fn sent_anchor_click(game:&Game<'_>,p:[i32;3],budget:&mut Budget)->Option<Click> {
+    let eye=game.eye_position()?;
+    let (yaw,pitch)=super::sunset_combat_wire::sent_look(game)?;
+    if !yaw.is_finite() || !pitch.is_finite(){return None;}
+    let (yaw,pitch)=(f64::from(yaw).to_radians(),f64::from(pitch).to_radians());
+    let direction=[-yaw.sin()*pitch.cos(),-pitch.sin(),yaw.cos()*pitch.cos()];
+    let (range,_)=super::sunset_explosive_tactics::interaction_ranges(game)?;
+    let hit=game.clip_ray(eye,direction,range)?;
+    if hit.pos!=p{return None;}
+    let click=Click{pos:hit.pos,face:policy::face(hit.face)?,hit:hit.point};
+    visible(game,click,budget).then_some(click)
+}
+fn anchor_click(game:&Game<'_>,p:[i32;3],budget:&mut Budget)->Option<Click> {
+    sent_anchor_click(game,p,budget).or_else(||fallback_anchor_click(game,p,budget))
+}
+fn anchor_deed_click(game:&Game<'_>,p:[i32;3],budget:&mut Budget,actual:bool)->Option<Click> {
+    if actual{sent_anchor_click(game,p,budget)}else{anchor_click(game,p,budget)}
+}
+fn fallback_anchor_click(game: &Game<'_>, p: [i32; 3], budget: &mut Budget) -> Option<Click> {
     let eye = game.eye_position()?;
     let c = center(p, false);
     let axis = (0..3).max_by(|&a, &b| (eye[a] - c[a]).abs().total_cmp(&(eye[b] - c[b]).abs()))?;
@@ -562,7 +593,7 @@ pub(super) fn note_main(game:&Game<'_>) {
         }
     });
 }
-fn enchant_damage(game:&Game<'_>,stack:&horizon_client::items::ItemStack)->bool {
+pub(super) fn enchant_damage(game:&Game<'_>,stack:&horizon_client::items::ItemStack)->bool {
     let mut sum=0.0f32;
     for (id,level) in stack.enchantments(){
         let Some(enchantment)=game.items().enchantments.get(id) else{return false;};
@@ -782,7 +813,7 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
     if !held && !anchor_intent { return false; }
     let (settings, kind, pos, step, cid) = if anchor_intent {
         let Some(m) = anchor else { return false; };
-        if game.anchor_works() { return false; }
+        if game.anchor_works() || !anchor_can_click(game) { return false; }
         let Some((p, face)) = pick else {
             return false;
         };
@@ -941,7 +972,8 @@ fn observed(game: &Game<'_>, action: Action, run:&Run) -> bool {
         },
     }
 }
-fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Action> {
+fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget, actual:bool) -> Option<Action> {
+    if run.sequence.kind==Kind::Anchor && !anchor_can_click(game){return None;}
     let p = run.pos;
     let step = run.sequence.step;
     match step {
@@ -973,6 +1005,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             crystal_use_action(game,run,step,click,"end_crystal",p)
         }
         Step::CrystalBreak => {
+            if !super::remote::sunset_combat_remote::sprint_synced(game){return None;}
             let id = run.crystal.or_else(|| crystal_on(game, p))?;
             if !state(|s| s.retries.allows(id, game.ticks)) {
                 return None;
@@ -1024,7 +1057,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             Some(use_action(
                 game,
                 step,
-                anchor_click(game, p, budget)?,
+                anchor_deed_click(game,p,budget,actual)?,
                 item_slot(game, "glowstone")?,
                 p,
             ))
@@ -1041,7 +1074,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             }
             let slot=if run.sequence.remaining>1{util::find_hotbar(game,|n|n=="respawn_anchor")?}else{detonator(game)?};
             if !safe_blast(game,&run.settings,Kind::Anchor,Blast::anchor(p),Some(slot),budget){return None;}
-            Some(use_action(game,step,anchor_click(game,p,budget)?,slot,p))
+            Some(use_action(game,step,anchor_deed_click(game,p,budget,actual)?,slot,p))
         }
         Step::Done => None,
     }
@@ -1064,6 +1097,7 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], _ticks: u64) {
         return;
     };
     if !allowed(game)
+        || (run.sequence.kind==Kind::Anchor && !anchor_can_click(game))
         || !same_session(game, &run)
         || !enabled(&run)
         || !loot_allowed(game, &run)
@@ -1158,7 +1192,7 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], _ticks: u64) {
         run.sequence.acknowledged(Step::Charge);
     }
     if run.sequence.step==Step::Detonate && run.sequence.remaining>1 {
-        let eligible=anchor_click(game,run.pos,&mut budget).is_some_and(|click|
+        let eligible=sent_anchor_click(game,run.pos,&mut budget).is_some_and(|click|
             policy::double_eligible(run.settings.p("Mode")=="Double",click.face,run.pos[1],
                 game.player.as_ref().map_or(i32::MAX,|p|p.position.y.floor() as i32),
                 util::find_hotbar(game,|n|n=="respawn_anchor").is_some(),
@@ -1170,7 +1204,7 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], _ticks: u64) {
             s.run = Some(run.clone());
         }
     });
-    let Some(action) = next_action(game, &run, &mut budget) else {
+    let Some(action) = next_action(game, &run, &mut budget,false) else {
         if run.sequence.kind==Kind::Crystal{return;}
         reset(game);
         return;
@@ -1203,6 +1237,7 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
         };
         if queued.elapsed() > Duration::from_millis(200)
             || !allowed(game)
+            || (run.sequence.kind==Kind::Anchor && !anchor_can_click(game))
             || !same_session(game, &run)
             || !enabled(&run)
             || !loot_allowed(game, &run)
@@ -1218,7 +1253,7 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
         }
         if !super::sunset_explosive_tactics::refresh(game){reset(game);return;}
         let mut budget = Budget::new(24);
-        let Some(fresh) = next_action(game, &run, &mut budget) else {
+        let Some(fresh) = next_action(game, &run, &mut budget,true) else {
             reset(game);
             return;
         };
@@ -1252,7 +1287,7 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
                     && before == f
                     && click.pos == c.pos
                     && click.face == c.face
-                    && click.hit == c.hit
+                    && in_range(click.hit,c.hit,1.0e-4)
             }
             _ => false,
         };
@@ -1260,6 +1295,9 @@ fn queue(game: &mut Game<'_>, run: &Run, action: Action) {
             reset(game);
             return;
         }
+        // Native f32 sent angles can shift a same-face contact by tiny roundoff.
+        // Send the newly clipped cursor, never the queued old point.
+        let action=fresh;
         match action {
             Action::Attack { id,slot, .. } => {
                 if slot!=game.selected {

@@ -1855,8 +1855,19 @@ fn tactical_tick(game: &mut Game<'_>, m: &Module) -> Option<(policy::Decision, b
         decision.sprint = false;
         decision.auras = false;
     }
-    // Movement tasks can override that hold without bypassing safe_step.
-    if let Some(spot) = state(|s| s.tactics.stand) {
+    // A pending native throw owns the stationary window. A prior stand must
+    // not restart movement and consume its bounded approval deadline.
+    if let Some(plan) = state(|s| s.tactics.pearl) {
+        decision.forward = 0;
+        decision.side = 0;
+        decision.sprint = false;
+        decision.auras = false;
+        if let Some(step) = policy::camera_step(
+            [game.yaw, game.pitch], [plan.look.0, plan.look.1], 1.5,
+        ) {
+            game.turn_player(step[0] / 0.15, step[1] / 0.15);
+        }
+    } else if let Some(spot) = state(|s| s.tactics.stand) {
         let d = tactics::horizontal(tactics::sub(spot, own));
         if d > 0.35 {
             face_spot(game, spot, 1.);
