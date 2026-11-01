@@ -2964,7 +2964,10 @@ def crit_run(hits, act=None, keys=(), look=True):
 @test("Criticals (200 hits)")
 def _():
     # Every hit at full cooldown is critical: 200 by Kill Aura in each mode, and 50 each by your own clicks, Trigger
-    # Bot, Kill Aura while you sprint past it, and Kill Aura while you jump. The server never puts you back.
+    # Bot, Kill Aura while you sprint past it, and Kill Aura while you jump. The server never puts you back. About
+    # 20 minutes: past the usual ten a test gets.
+    import signal
+    signal.alarm(3600)
     reset()
     slot(0, "diamond_sword")
     ctl("key", "1", "tap")
