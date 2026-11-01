@@ -392,7 +392,7 @@ fn self_trap(game: &mut Game<'_>, m: &Module, just: bool) {
 fn auto_city(game: &mut Game<'_>, m: &Module, just: bool) {
     let note = |game: &mut Game<'_>, msg: &str| {
         if m.b("Notifications") {
-            super::sunset::say(game, msg);
+            super::sunset_util::report(game, msg);
         }
     };
     if just {
@@ -960,7 +960,7 @@ fn offhand(game: &mut Game<'_>, m: &Module) {
     match (from..36).find(|&i| game.inventory.get(i).is_some_and(|s| has(s, want))) {
         None => {
             if !cs(|c| std::mem::replace(&mut c.offhand_warned, true)) {
-                super::sunset::say(game, "Offhand: chosen item not found.");
+                super::sunset_util::report(game, "Offhand: chosen item not found.");
             }
         }
         Some(i) if clicking || !cs(|c| c.totem_locked) => {

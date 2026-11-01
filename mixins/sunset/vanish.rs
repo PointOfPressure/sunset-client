@@ -4,7 +4,7 @@
 // Watched players narrows all of it to some names; Server watchlists gives a server its own.
 
 use super::Game;
-use super::sunset::{Category, Module, say, with};
+use super::sunset::{Category, Module, with};
 use horizon_protocol::buf::{Reader, Writer};
 use horizon_protocol::packets::play::Serverbound as S;
 use std::sync::Mutex;
@@ -113,7 +113,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
         game.send(S::Unknown(horizon_protocol::ids::play::serverbound::COMMAND_SUGGESTION, w.data));
     }
     for line in lines {
-        say(game, &line);
+        super::sunset_util::report(game, &line);
     }
 }
 
@@ -153,7 +153,7 @@ pub(super) fn completions(game: &mut Game<'_>, data: &[u8]) -> bool {
         (v.server.clone(), new)
     });
     for name in new.iter().filter(|n| watched(&m, &server, n)) {
-        say(game, &format!("{name} is online but not in the tab list: in vanish?"));
+        super::sunset_util::report(game, &format!("{name} is online but not in the tab list: in vanish?"));
     }
     true
 }

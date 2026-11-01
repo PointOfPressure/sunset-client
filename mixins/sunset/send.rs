@@ -23,6 +23,7 @@ fn sunset_send(
         return std::ops::ControlFlow::Break(());
     }
     crate::game::sunset_combat_wire::forwarded(game, last);
+    crate::game::sunset_render::sent(game, last);
     match changed {
         None => std::ops::ControlFlow::Continue(()),
         Some(changed) => {

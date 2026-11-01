@@ -340,10 +340,11 @@ pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
     let mut v = vec![
         // Combat
-        Module::new("Trigger Bot", Combat, "Attacks what your crosshair is on.")
+        Module::new("Trigger Bot", Combat, "Attacks what your crosshair is on: the kinds switched on, and the mobs in Entities.")
             .bool("Players", true)
             .bool("Hostiles", true)
             .bool("Passive", false)
+            .text("Entities", "")
             .bool("Anti bot", false)
             .bool("Ignore teams", false)
             .bool("Wait for cooldown", true)
@@ -454,7 +455,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Clear on reach", true),
         Module::new("Panic", Player, "Turns every module off and hides Sunset on screen: no HUD, menu, chat lines or keys, until you type .panic again or restart the game. Bind it to a key."),
         // Render
-        Module::new("ClickGUI", Render, "How this menu looks: accent colour, size, panel width, corner radius, text indent, background opacity and a dim behind it. Menu dim is the game's own dim and blur behind the inventory and the Esc menu.")
+        Module::new("ClickGUI", Render, "How this menu looks: accent colour, size, panel width, corner radius, text indent, background opacity and a dim behind it. Menu dim is the game's own dim and blur behind every menu. Toggle messages and Module messages: the chat lines when a key or the menu turns a module on or off, and the ones modules write (replies to . commands always show). Friends: the players Kill Aura, Trigger Bot, Aim Assist and the rest leave alone, picked from the players online or typed (also .friend, and Middle Click Extra's Friend).")
             .colour("Accent color", "Gold")
             .num("GUI scale", 1.0, 0.75, 2.0, 0.05)
             .num("Panel width", 100.0, 60.0, 140.0, 2.0)
@@ -465,7 +466,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Settings", &["Window", "Inline"])
             .num("Background opacity", 0.9, 0.2, 1.0, 0.05)
             .num("Background dim", 20.0, 0.0, 100.0, 5.0)
-            .bool("Menu dim", false),
+            .bool("Menu dim", false)
+            .bool("Toggle messages", true)
+            .bool("Module messages", true)
+            .text("Friends", ""),
         Module::new("HUD", Render, "The watermark, the active modules, your coordinates and more.")
             .on()
             .pick("Font", &horizon_client::font::sunset_fontdata::LABELS)
@@ -487,6 +491,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Players", true)
             .bool("Hostiles", true)
             .bool("Passive", true)
+            .text("Entities", "")
             .bool("Items", false)
             .bool("Item names", false)
             .bool("Item tracers", false)
@@ -507,6 +512,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Players", true)
             .bool("Hostiles", false)
             .bool("Passive", false)
+            .text("Entities", "")
             .bool("Show friend colors", true)
             .colour("Players color", "White")
             .colour("Hostiles color", "Red")
@@ -517,6 +523,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Mode", &["Full", "Potato"])
             .bool("Players", true)
             .bool("Mobs", false)
+            .text("Entities", "")
             .bool("Ignore friends", false)
             .bool("Health", true)
             .bool("Distance", true)
@@ -613,9 +620,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Health threshold", 10.0, 0.0, 19.0, 1.0)
             .num("Hunger threshold", 16.0, 1.0, 19.0, 1.0)
             .num("Saturation threshold", 5.0, 0.0, 20.0, 1.0),
-        Module::new("Zoom", Render, "Zooms in.")
-            .num("Factor", 4.0, 1.5, 10.0, 0.5)
-            .bool("Smooth", true),
+        Module::new("Zoom", Render, "Hold V to zoom in; the wheel zooms further in or out while you hold it, 1x to 50x.")
+            .num("Zoom", 3.0, 1.0, 50.0, 0.5)
+            .bool("Scroll", true)
+            .bool("Smooth", true)
+            .bool("Scale sensitivity", true)
+            .bool("Remember zoom", false),
         Module::new("Breadcrumbs", Render, "Draws a line along where you have been. Potato: a dot on each point.")
             .pick("Mode", &["Line", "Potato"])
             .num("Length", 300.0, 20.0, 1000.0, 20.0),
@@ -651,8 +661,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("List mode", &["Blacklist", "Whitelist"])
             .text("Whitelist", "")
             .text("Blacklist", ""),
-        Module::new("Middle Click Extra", Player, "Middle click uses an item from your hotbar, then switches back.")
-            .pick("Item", &["Pearl", "Rocket", "XP bottle"]),
+        Module::new("Middle Click Extra", Player, "Middle click uses an item from your hotbar, then switches back. Friend: middle click a player to make them a friend, or not.")
+            .pick("Item", &["Pearl", "Rocket", "XP bottle", "Friend"]),
         Module::new("Trajectories", Render, "Draws where a bow shot or a throw will land. Potato: a dot where it lands.")
             .pick("Mode", &["Line", "Potato"]),
         Module::new("Logout Spots", Render, "Marks where players were when they logged out. Potato: a dot, no name.")
@@ -738,7 +748,12 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_vanish::defaults());
     // Modules that only draw can be held on with their bind instead of toggled.
     for m in v.iter_mut().filter(|m| holds(m.name)) {
-        m.settings.push(Setting { name: "Bind mode", value: Value::Pick { i: 0, of: &["Toggle", "Hold"] } });
+        let hold = usize::from(m.name == "Zoom");
+        m.settings.push(Setting { name: "Bind mode", value: Value::Pick { i: hold, of: &["Toggle", "Hold"] } });
+    }
+    // Zoom is held on V, as Wurst's WI Zoom.
+    if let Some(m) = v.iter_mut().find(|m| m.name == "Zoom") {
+        m.key = Some("key.keyboard.v".into());
     }
     v
 }
@@ -927,6 +942,26 @@ impl State {
             spots: Vec::new(),
         }
     }
+    // The friends list, kept in ClickGUI's Friends setting too (where the menu's picker edits it).
+    pub(super) fn set_friends(&mut self, list: Vec<String>) {
+        if let Some(i) = self.find("ClickGUI")
+            && let Some(set) = self.modules[i].settings.iter_mut().find(|s| s.name == "Friends")
+        {
+            set.value = Value::Text(list.join(","));
+        }
+        self.friends = list;
+    }
+    // A player in or out of the friends list; whether they are a friend now.
+    pub(super) fn flip_friend(&mut self, name: &str) -> bool {
+        let mut list = self.friends.clone();
+        let was = list.iter().any(|f| f.eq_ignore_ascii_case(name));
+        list.retain(|f| !f.eq_ignore_ascii_case(name));
+        if !was {
+            list.push(name.to_owned());
+        }
+        self.set_friends(list);
+        !was
+    }
     pub(super) fn find(&self, name: &str) -> Option<usize> {
         let n = norm(name);
         self.modules.iter().position(|m| norm(m.name) == n)
@@ -984,12 +1019,8 @@ impl State {
                 continue;
             }
             if k == "friends" {
-                self.friends = v
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|f| !f.is_empty())
-                    .map(str::to_owned)
-                    .collect();
+                let list = v.split(',').map(str::trim).filter(|f| !f.is_empty()).map(str::to_owned).collect();
+                self.set_friends(list);
                 continue;
             }
             self.set_field(k, v);
@@ -1159,7 +1190,10 @@ pub(super) fn snapshot() -> Vec<Module> {
     with(|s| s.modules.clone())
 }
 
-pub(super) fn sync_flags(s: &State) {
+pub(super) fn sync_flags(s: &mut State) {
+    if let Some(list) = s.module("ClickGUI").map(|m| super::sunset_picker::chosen(m.t("Friends")).into_iter().map(str::to_owned).collect()) {
+        s.friends = list;
+    }
     let g = s.module("ClickGUI");
     LOOK[0].store(g.map_or(0xFFB020, |m| m.c("Accent color") & 0x00FF_FFFF), Ordering::Relaxed);
     LOOK[1].store(g.map_or(100.0, |m| m.n("Panel width") as f32).to_bits(), Ordering::Relaxed);
@@ -1287,6 +1321,11 @@ pub(super) fn key_label(key: Option<&str>) -> String {
     }
 }
 
+// ClickGUI's switch for a kind of chat line ("Toggle messages", "Module messages").
+pub(super) fn chat_lines(kind: &str) -> bool {
+    with(|s| s.module("ClickGUI").is_none_or(|m| m.b(kind)))
+}
+
 // A line in chat: Sunset's tag, then the message.
 pub(super) fn say(game: &mut Game<'_>, msg: &str) {
     if HIDDEN.load(Ordering::Relaxed) {
@@ -1354,12 +1393,14 @@ pub(super) fn kind_of(mob: &horizon_client::mobs::Mob) -> Kind {
     }
 }
 
-pub(super) fn wanted(m: &Module, kind: Kind) -> bool {
-    match kind {
+// A mob of a kind switched on, or of a type in the module's Entities list.
+pub(super) fn wanted(m: &Module, kind: Kind, id: &str) -> bool {
+    let of_kind = match kind {
         Kind::Player => m.b("Players"),
         Kind::Hostile => m.b("Hostiles"),
         Kind::Passive => m.b("Passive"),
-    }
+    };
+    of_kind || super::sunset_util::listed(m.t("Entities"), id)
 }
 
 pub(super) fn is_friend(friends: &[String], names: &[(u32, String)], id: u32) -> bool {
@@ -1752,7 +1793,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
                 sync_flags(s);
             });
         } else {
-            toggle(game, i, true);
+            toggle(game, i, chat_lines("Toggle messages"));
         }
     }
     // Air Jump: the jump key in mid-air jumps again.
@@ -3141,6 +3182,15 @@ pub(super) fn middle_click(game: &mut Game<'_>) {
     let Some(m) = with(|s| s.module("Middle Click Extra").filter(|m| m.on).cloned()) else {
         return;
     };
+    if m.p("Item") == "Friend" {
+        let player = game.mob_hit().map(|(i, _)| &game.mobs[i]).filter(|mob| kind_of(mob) == Kind::Player).map(|mob| mob.id);
+        if let Some(name) = player.and_then(|id| game.remote_player_name(id)).map(str::to_owned) {
+            let now = with(|s| s.flip_friend(&name));
+            save(game);
+            super::sunset_util::report(game, &format!("{name} {}", if now { "is a friend." } else { "is no longer a friend." }));
+        }
+        return;
+    }
     let want = match m.p("Item") {
         "Pearl" => "ender_pearl",
         "Rocket" => "firework_rocket",
@@ -3434,7 +3484,7 @@ fn death_location(game: &mut Game<'_>, m: &Module) {
         return;
     };
     let here = Waypoint { name: "Death".into(), pos: [p.x.floor() + 0.5, p.y.floor(), p.z.floor() + 0.5], dim: p.dimension.to_owned() };
-    say(game, &format!("You died at {} {} {} in {}", here.pos[0].floor(), here.pos[1], here.pos[2].floor(), here.dim.trim_start_matches("minecraft:")));
+    super::sunset_util::report(game, &format!("You died at {} {} {} in {}", here.pos[0].floor(), here.pos[1], here.pos[2].floor(), here.dim.trim_start_matches("minecraft:")));
     let keep = m.n("Keep").max(1.0) as usize;
     with(|s| {
         let mut deaths: Vec<Waypoint> = s.waypoints.iter().filter(|w| death_point(w)).cloned().collect();
@@ -3470,7 +3520,7 @@ fn reach_deaths(game: &mut Game<'_>) {
     });
     if !gone.is_empty() {
         save(game);
-        say(game, &format!("Reached {}", gone.join(", ")));
+        super::sunset_util::report(game, &format!("Reached {}", gone.join(", ")));
     }
 }
 
@@ -3511,12 +3561,12 @@ pub(super) fn notify(game: &mut Game<'_>, m: &Module) {
     };
     for name in now.iter().filter(|n| !before.contains(n)) {
         if m.b("Join") {
-            say(game, &format!("{name} joined"));
+            super::sunset_util::report(game, &format!("{name} joined"));
         }
     }
     for name in before.iter().filter(|n| !now.contains(n)) {
         if m.b("Leave") {
-            say(game, &format!("{name} left"));
+            super::sunset_util::report(game, &format!("{name} left"));
         }
     }
 }
@@ -4307,10 +4357,11 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     };
     let mob = &game.mobs[i];
     let (id, kind) = (mob.id, kind_of(mob));
+    let want = wanted(m, kind, &mob.kind.id);
     let names = game.remote_player_names();
     let friends = with(|s| s.friends.clone());
     let player = kind == Kind::Player;
-    if !wanted(m, kind) || (player && is_friend(&friends, &names, id)) || super::sunset_util::spared(game, m, id, player) {
+    if !want || (player && is_friend(&friends, &names, id)) || super::sunset_util::spared(game, m, id, player) {
         return;
     }
     let mut wait = with(|s| s.trigger_wait);
@@ -4765,21 +4816,6 @@ pub(super) fn flush_blink(game: &mut Game<'_>) {
     game.send(S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags }));
 }
 
-// Zoom, through the zoom hook point.
-pub(super) fn zoom(game: &Game<'_>, zoom: &mut Option<super::native_hooks::NativeZoom>) {
-    if zoom.is_some() || !game.native_window() || !game.native_on(ID) {
-        return;
-    }
-    let Some(m) = with(|s| s.module("Zoom").filter(|m| m.on).cloned()) else {
-        return;
-    };
-    *zoom = Some(super::native_hooks::NativeZoom {
-        factor: m.n("Factor") as f32,
-        smooth: m.b("Smooth"),
-        turn: 0.3,
-    });
-}
-
 // ---------------------------------------------------------------- commands
 
 pub(super) fn chat(game: &mut Game<'_>, message: &str) -> bool {
@@ -5145,14 +5181,18 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 (Some("add"), Some(name)) => {
                     with(|s| {
                         if !s.friends.iter().any(|f| f.eq_ignore_ascii_case(name)) {
-                            s.friends.push((*name).to_owned());
+                            s.flip_friend(name);
                         }
                     });
                     save(game);
                     say(game, &format!("{name} is a friend."));
                 }
                 (Some("remove" | "del" | "rm"), Some(name)) => {
-                    with(|s| s.friends.retain(|f| !f.eq_ignore_ascii_case(name)));
+                    with(|s| {
+                        if s.friends.iter().any(|f| f.eq_ignore_ascii_case(name)) {
+                            s.flip_friend(name);
+                        }
+                    });
                     save(game);
                     say(game, &format!("{name} is no longer a friend."));
                 }
@@ -5236,8 +5276,8 @@ pub(super) struct Camera {
     right: [f64; 3],
     focal: f64,
     aspect: f64,
-    w: f64,
-    h: f64,
+    pub(super) w: f64,
+    pub(super) h: f64,
     // The sine and cosine of half the view's width and of half its height: the sides of what it sees.
     cone: [f64; 4],
 }
@@ -5342,6 +5382,10 @@ pub(super) enum Shape {
     Text(String, [f32; 2], u32),
     // A line of text in the font's bolder weight: a panel's header.
     Head(String, [f32; 2], u32),
+    // An item's icon as the game draws it in its own menus (by id), and its size.
+    Item(std::sync::Arc<str>, [f32; 2], f32),
+    // A player's face from a skin texture (and its hat layer), and its size.
+    Face(String, [f32; 2], f32),
 }
 
 // Where shapes go: a list drawn after the frame's other work (the menu, plugins), or straight into the frame's
@@ -5464,6 +5508,29 @@ fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32
                 horizon_client::font::sunset_font::BOLD.store(true, Ordering::Relaxed);
                 game.native_text(batch, &t, at, rgb, true);
                 horizon_client::font::sunset_font::BOLD.store(false, Ordering::Relaxed);
+            }
+            Shape::Item(item, [x, y], size) => {
+                let start = batch.vertices.len();
+                let stack = horizon_client::items::ItemStack { item, count: 1, damage: 0, extra: None };
+                game.draw_item_model(batch, &stack, x, y);
+                batch.scale_since(start, x, y, size / 16.0, size / 16.0);
+            }
+            Shape::Face(skin, [x, y], size) => {
+                // The face is 8 by 8 at (8, 8) of the 64 by 64 skin, its hat beside it at (40, 8).
+                let Some(r) = game.gui.atlas.sprites.get(skin.as_str()).copied() else {
+                    continue;
+                };
+                let (du, dv) = (r.u1 - r.u0, r.v1 - r.v0);
+                for u in [8.0, 40.0] {
+                    let part = horizon_client::hud::Rect {
+                        u0: r.u0 + du * u / 64.0,
+                        v0: r.v0 + dv * 8.0 / 64.0,
+                        u1: r.u0 + du * (u + 8.0) / 64.0,
+                        v1: r.v0 + dv * 16.0 / 64.0,
+                        ..r
+                    };
+                    batch.rect_uv(x, y, size, size, part, horizon_client::hud::rgba(255, 255, 255, 255));
+                }
             }
         }
     }
@@ -5593,6 +5660,14 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         close_gui(game);
     }
     let mut gui_shapes = Vec::new();
+    // A player picker follows the players online, with their faces.
+    let mut picker = with(|s| s.gui.editor.as_mut().and_then(|e| e.list.take()));
+    super::sunset_picker::see_players(game, &mut picker);
+    with(|s| {
+        if let Some(e) = s.gui.editor.as_mut() {
+            e.list = picker;
+        }
+    });
     if with(|s| s.gui.open) {
         if game.screen == Screen::Playing && game.player.is_some() {
             // The world dims behind the panels by Background dim (percent), the one fill behind them.
@@ -5910,6 +5985,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
         mods[1].map_or(("Body", false, false), |m| (m.p("Target"), m.p("Start") == "Bottom", m.b("Distance colors")));
     let (tag_players, tag_mobs, tag_friends) =
         tags_module.map_or((false, false, false), |m| (m.b("Players"), m.b("Mobs"), !m.b("Ignore friends")));
+    let tag_extra = tags_module.map_or("", |m| m.t("Entities"));
     let (show_health, show_distance, tag_back, tag_colour) =
         tags_module.map_or((false, false, false, 0), |m| (m.b("Health"), m.b("Distance"), m.b("Background"), m.c("Name color") & 0x00FF_FFFF));
     let looks = [&esp, &tracers, &tags];
@@ -5957,7 +6033,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
         if let Some(l) = &esp
             && drawn[0] < l.max
             && d <= l.range
-            && l.kinds.wants(kind)
+            && l.kinds.wants(kind, &mob.kind.id)
         {
             let col = if l.potato { l.kinds.colour(kind, false) } else { faded(l.kinds.colour(kind, friend()), d, l.fade) };
             if draw_box(cam, out, &l.look, lo, hi, col, lw) {
@@ -5967,7 +6043,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
         if let Some(l) = &tracers
             && drawn[1] < l.max
             && d <= l.range
-            && l.kinds.wants(kind)
+            && l.kinds.wants(kind, &mob.kind.id)
         {
             // Potato: the line alone, to the middle, in the kind's colour.
             let (aim, col) = if l.potato {
@@ -5988,7 +6064,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
         if let Some(l) = &tags
             && drawn[2] < l.max
             && d <= l.range
-            && (if kind == Kind::Player { tag_players } else { tag_mobs })
+            && ((if kind == Kind::Player { tag_players } else { tag_mobs }) || super::sunset_util::listed(tag_extra, &mob.kind.id))
         {
             let top = [mid[0], hi[1] + 0.6, mid[2]];
             if !cam.sees(top, 1.0) {
@@ -6386,6 +6462,8 @@ fn aliases(name: &str) -> &'static str {
         "Step" => "step up stepup stairs",
         "ClickGUI" => "gui menu color colour theme accent opacity width dim blur background indent scale size zoom bigger radius corner round",
         "Glide" => "slow fall slowfall",
+        "Hand View" => "small hands hand sway viewmodel item position",
+        "Zoom" => "wi zoom spyglass",
         "Panic" => "disable all off hide",
         "Auto Steal" => "chest stealer loot",
         "Inventory Cleaner" => "inventory cleaner junk drop clean",
@@ -6399,7 +6477,7 @@ fn aliases(name: &str) -> &'static str {
         "Criticals" => "crits",
         "Auto Totem" => "totem",
         "Xray" => "x-ray",
-        "No Render" => "no hide fog fog water darkness blindness overlay",
+        "No Render" => "no hide fog fog water darkness blindness overlay particles particle",
         _ => "",
     }
 }
@@ -6785,7 +6863,7 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
     if name.ends_with("enter") {
         // Enter in the search turns on (or off) the module it found.
         if let Some(i) = with(|s| first_match(s)) {
-            toggle(game, i, true);
+            toggle(game, i, chat_lines("Toggle messages"));
         }
     } else if control && name == "key.keyboard.a" {
         with(|s| s.gui.select_all = !s.gui.search.is_empty());
@@ -6889,7 +6967,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                 if let Value::Text(t) = &s.modules[i].settings[j].value
                     && let Some((name, _)) = pick::rows(picker, t, draft.text()).get(row)
                 {
-                    let list = pick::toggled(t, name);
+                    let list = pick::clicked(picker, t, name);
                     s.modules[i].settings[j].value = Value::Text(list);
                     changed = true;
                 }
@@ -6987,7 +7065,13 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     // A list of blocks, items or entities opens the picker (the draft is its search), other text the
                     // editor.
                     let m = &s.modules[i];
-                    let list = super::sunset_picker::list_kind(m.name, m.settings[j].name).map(|k| super::sunset_picker::open(game, k));
+                    let list = super::sunset_picker::list_kind(m.name, m.settings[j].name).map(|k| {
+                        if m.name == "Xray" && m.p("List") == "Simple" {
+                            super::sunset_picker::short_list(super::sunset_picker::VALUABLES)
+                        } else {
+                            super::sunset_picker::open(game, k)
+                        }
+                    });
                     let draft = if list.is_some() { Draft::new("") } else { Draft::new(t) };
                     s.gui.editor = Some(Editor { module: i, setting: j, draft, inline: false, list });
                     s.gui.drag = None;
@@ -7085,7 +7169,12 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
             out.push(Shape::Round(row, control, 0x40FF_FFFF));
         }
         out.push(Shape::Round([area[0] + 3.0, ry + 3.0, 6.0, 6.0], 3.0, if *have { solid(accent()) } else { 0xFF3A_3A3A }));
-        out.push(Shape::Text(fit(&pick::readable(name), area[2] - 18.0), [area[0] + 14.0, ry + text_y(pick::ROW)], 0xFFFFFF));
+        // The block's, item's or mob's icon (only the rows on screen are drawn), then its name.
+        let icon = pick::icon(game, picker, name, [area[0] + 13.0, ry + 1.0], pick::ROW - 2.0);
+        let left = if icon.is_some() { 26.0 } else { 14.0 };
+        out.extend(icon);
+        let label = if picker.kind == pick::ListKind::Players { (*name).to_owned() } else { pick::readable(name) };
+        out.push(Shape::Text(fit(&label, area[2] - left - 4.0), [area[0] + left, ry + text_y(pick::ROW)], 0xFFFFFF));
     }
     let chosen = rows.iter().filter(|(_, have)| *have).count();
     let note = format!("{chosen} chosen, {} more. Click to add or take away; Esc closes.", rows.len() - chosen);

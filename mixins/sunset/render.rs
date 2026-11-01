@@ -17,8 +17,13 @@ const ORES: &str = "coal_ore,deepslate_coal_ore,iron_ore,deepslate_iron_ore,gold
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
     vec![
-        Module::new("Freecam", Render, "Moves the camera away from the player: fly around while you stand still.")
-            .num("Speed", 1.0, 0.1, 5.0, 0.1)
+        Module::new("Freecam", Render, "Moves the camera away from your body, which stays where it is: fly with W, A, S, D, Space and Shift, through walls (the wheel changes the speed).")
+            .num("Horizontal speed", 1.0, 0.05, 5.0, 0.05)
+            .num("Vertical speed", 1.0, 0.05, 5.0, 0.05)
+            .bool("Scroll speed", true)
+            .pick("Start", &["Inside", "In front", "Above"])
+            .bool("Tracer", true)
+            .bool("Move player", false)
             .bool("Toggle on damage", false)
             .bool("Toggle on death", false)
             .bool("Toggle on log", true),
@@ -28,8 +33,14 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Camera sensitivity", 8.0, 1.0, 20.0, 1.0)
             .bool("Arrows", true)
             .num("Arrow speed", 4.0, 1.0, 10.0, 1.0),
-        Module::new("Xray", Render, "Only draws the listed blocks. Good for mining. Turning it on or off redraws the world.")
-            .text("Blocks", ORES),
+        Module::new("Xray", Render, "Only draws the listed blocks. Good for mining. Turning it on or off redraws the world. List: Simple ticks ores and valuables, Advanced picks from every block.")
+            .pick("List", &["Simple", "Advanced"])
+            .text("Blocks", ORES)
+            .bool("Show water", false)
+            .bool("Show lava", false)
+            .bool("Show placed blocks", false)
+            .num("Placed blocks kept", 2000.0, 100.0, 10000.0, 100.0),
+        hand_view(),
         Module::new("Tunnel ESP", Render, "Highlights one-block tunnels.")
             .pick("Mode", &["Box", "Outline", "Potato"])
             .num("Range", 24.0, 8.0, 48.0, 4.0)
@@ -48,7 +59,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Vertical range", 4.0, 1.0, 8.0, 1.0)
             .num("Light level", 0.0, 0.0, 15.0, 1.0)
             .num("Max", 1000.0, 50.0, 4000.0, 50.0),
-        Module::new("No Render", Render, "Hides fog, darkness, blindness, nausea and screen overlays (fire, water, in a wall, pumpkin, powder snow). A switch that is on hides it.")
+        Module::new("No Render", Render, "Hides fog, darkness, blindness, nausea, screen overlays (fire, water, in a wall, pumpkin, powder snow) and particles (all, or the types in Particles). A switch that is on hides it.")
             .bool("Hide fog", true)
             .bool("Hide water fog", true)
             .bool("Hide lava and powder snow fog", false)
@@ -58,7 +69,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Hide fire overlay", true)
             .bool("Hide liquid overlay", true)
             .bool("Hide in-wall overlay", true)
-            .bool("Hide pumpkin, spyglass and powder snow overlays", false),
+            .bool("Hide pumpkin, spyglass and powder snow overlays", false)
+            .bool("Hide all particles", false)
+            .text("Particles", ""),
         Module::new("Timer", World, "Changes the speed the game runs at.")
             .num("Multiplier", 2.0, 0.1, 10.0, 0.1),
         Module::new("No Slow", Movement, "Controls item-use movement slowdown.")
@@ -74,6 +87,8 @@ struct Fc {
     pitch: f32,
     camera: CameraType,
     health: f32,
+    // The wheel's change to both speeds.
+    speed: f64,
 }
 
 struct Fl {
@@ -86,7 +101,8 @@ struct Fl {
 struct Rs {
     fc: Option<Fc>,
     fl: Option<Fl>,
-    xray: Option<(bool, String)>,
+    xray: Option<(bool, String, bool, bool)>,
+    placed: Placed,
     tunnels: Sweep<()>,
     voids: Sweep<()>,
     // Where mobs can spawn, and whether only at night (lit by the sky).
@@ -99,7 +115,7 @@ struct Rs {
 
 impl Default for Fc {
     fn default() -> Self {
-        Self { pos: [0.0; 3], prev: [0.0; 3], yaw: 0.0, pitch: 0.0, camera: CameraType::FirstPerson, health: 20.0 }
+        Self { pos: [0.0; 3], prev: [0.0; 3], yaw: 0.0, pitch: 0.0, camera: CameraType::FirstPerson, health: 20.0, speed: 1.0 }
     }
 }
 
@@ -115,6 +131,82 @@ fn on(mods: &[Module], name: &str) -> Option<Module> {
 }
 
 static IN_CAMERA: AtomicBool = AtomicBool::new(false);
+
+// ---- Zoom (as Wurst's WI Zoom)
+
+// The zoom the key holds (the wheel changes it), the zoom the view is at as it eases there, when it last moved, and
+// whether the key was down.
+struct Zoom {
+    level: f32,
+    now: f32,
+    at: Option<std::time::Instant>,
+    held: bool,
+}
+
+static ZOOM: Mutex<Zoom> = Mutex::new(Zoom { level: 0.0, now: 1.0, at: None, held: false });
+
+fn zoom_state<R>(f: impl FnOnce(&mut Zoom) -> R) -> R {
+    f(&mut ZOOM.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+// The zoom the view is at this frame, if zoomed: it eases to the held level and back out to 1 in about a tenth of a
+// second (at once with Smooth off).
+pub(super) fn zoom_now(game: &Game<'_>) -> Option<f32> {
+    if !game.native_window() || !game.native_on(super::sunset::ID) || !game.native_playing() {
+        return None;
+    }
+    let m = super::sunset::with(|s| s.module("Zoom").map(|m| (m.on, m.n("Zoom") as f32, m.b("Smooth"), m.b("Remember zoom"))));
+    let (on, start, smooth, remember) = m?;
+    zoom_state(|z| {
+        if on && !z.held && (!remember || z.level < 1.0) {
+            z.level = start;
+        }
+        z.held = on;
+        let want = if on { z.level } else { 1.0 };
+        let now = std::time::Instant::now();
+        let dt = z.at.map_or(0.0, |t| now.duration_since(t).as_secs_f32()).min(0.25);
+        z.at = Some(now);
+        // Eased in steps of the zoom's logarithm, so 2x to 4x looks like 20x to 40x.
+        z.now = if smooth { (z.now.ln() + (want.ln() - z.now.ln()) * (1.0 - (-dt * 25.0).exp())).exp() } else { want };
+        if (z.now - want).abs() < 0.001 * want {
+            z.now = want;
+        }
+        (z.now > 1.0).then_some(z.now)
+    })
+}
+
+// How much slower the mouse turns while zoomed (Scale sensitivity).
+pub(super) fn zoom_turn(game: &Game<'_>) -> Option<f64> {
+    let scaled = super::sunset::with(|s| s.module("Zoom").is_some_and(|m| m.b("Scale sensitivity")));
+    let now = zoom_state(|z| z.now);
+    (scaled && game.native_on(super::sunset::ID) && now > 1.0).then(|| 1.0 / f64::from(now))
+}
+
+// The wheel while Zoom is held changes the zoom (each notch by a tenth), while Freecam flies its speed.
+pub(super) fn camera_wheel(game: &Game<'_>, steps: f32) -> bool {
+    if !game.native_window() || !game.native_on(super::sunset::ID) || steps == 0.0 {
+        return false;
+    }
+    let (zoom, scroll, fly) = super::sunset::with(|s| {
+        let zoom = s.module("Zoom").filter(|m| m.on);
+        (zoom.is_some(), zoom.is_some_and(|m| m.b("Scroll")), s.module("Freecam").filter(|m| m.on && m.b("Scroll speed")).is_some())
+    });
+    if zoom {
+        if scroll {
+            zoom_state(|z| z.level = (z.level * 1.1_f32.powf(steps)).clamp(1.0, 50.0));
+        }
+        return scroll;
+    }
+    if fly && freecam_flying() {
+        rs(|r| {
+            if let Some(f) = r.fc.as_mut() {
+                f.speed = (f.speed * 1.1_f64.powf(f64::from(steps))).clamp(0.05, 10.0);
+            }
+        });
+        return true;
+    }
+    false
+}
 
 // ---- the camera hooks
 
@@ -203,26 +295,36 @@ pub(super) fn pre_tick(game: &mut Game<'_>, mods: &[Module]) {
     let eye = game.eye_position();
     let health = game.player.as_ref().map_or(20.0, |p| p.health.health());
     // Freecam.
-    match (freecam.is_some(), rs(|r| r.fc.is_some())) {
-        (true, false) => {
+    match (freecam.as_ref(), rs(|r| r.fc.is_some())) {
+        (Some(m), false) => {
             if let Some(e) = eye {
                 let camera = game.camera_type;
+                // Where the camera starts: at the eyes, 3 blocks in front of them, or 3 above.
+                let yaw = f64::from(game.yaw).to_radians();
+                let e = match m.p("Start") {
+                    "In front" => [e[0] - yaw.sin() * 3.0, e[1], e[2] + yaw.cos() * 3.0],
+                    "Above" => [e[0], e[1] + 3.0, e[2]],
+                    _ => e,
+                };
                 rs(|r| {
-                    r.fc = Some(Fc { pos: e, prev: e, yaw: game.yaw, pitch: game.pitch, camera, health });
+                    r.fc = Some(Fc { pos: e, prev: e, yaw: game.yaw, pitch: game.pitch, camera, health, speed: 1.0 });
                 });
                 game.camera_type = CameraType::ThirdPersonBack;
             }
         }
-        (false, true) => {
+        (None, true) => {
             if let Some(f) = rs(|r| r.fc.take()) {
                 game.camera_type = f.camera;
             }
         }
         _ => {}
     }
+    // The keys fly the camera, the body stands still; with Move player they move the body and the camera stays.
     if freecam_flying() {
-        for k in MOVE_KEYS {
-            game.keys.remove(&k);
+        if !freecam.as_ref().is_some_and(|m| m.b("Move player")) {
+            for k in MOVE_KEYS {
+                game.keys.remove(&k);
+            }
         }
         game.camera_type = CameraType::ThirdPersonBack;
     }
@@ -267,11 +369,12 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
             }
             f.health = health;
             f.prev = f.pos;
-            if !playing {
+            if !playing || m.b("Move player") {
                 return;
             }
             let down = |k: KeyCode| keys.contains(&k);
-            let s = if down(KeyCode::ControlLeft) { 1.0 } else { 0.5 } * m.n("Speed");
+            let sprint = if down(KeyCode::ControlLeft) { 1.0 } else { 0.5 } * f.speed;
+            let (s, up) = (sprint * m.n("Horizontal speed"), sprint * m.n("Vertical speed"));
             let yaw = f64::from(f.yaw).to_radians();
             let forward = [-yaw.sin(), yaw.cos()];
             let right = [-yaw.cos(), -yaw.sin()];
@@ -299,10 +402,10 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
                 vz *= std::f64::consts::FRAC_1_SQRT_2;
             }
             if down(KeyCode::Space) {
-                vy += s;
+                vy += up;
             }
             if down(KeyCode::ShiftLeft) {
-                vy -= s;
+                vy -= up;
             }
             f.pos = [f.pos[0] + vx, f.pos[1] + vy, f.pos[2] + vz];
         });
@@ -348,7 +451,42 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
 
 // Timer and No Slow: the flags the engine hooks read. While you move, Speed's own Timer stands in for Timer's
 // (Meteor's override).
+// Hand View (Meteor's): each arm and what it holds moved (in blocks), turned (degrees) and sized, and the sway the
+// hands have when the view turns taken away.
+fn hand_view() -> Module {
+    let mut m = Module::new("Hand View", Category::Render, "Moves, turns and sizes your hands and what they hold in first person, each hand on its own (small hands: Scale under 1). No sway keeps them still when you turn.")
+        .bool("No sway", false);
+    for (scale, x, y, z, rx, ry, rz) in [
+        ("Right scale", "Right X", "Right Y", "Right Z", "Right turn X", "Right turn Y", "Right turn Z"),
+        ("Left scale", "Left X", "Left Y", "Left Z", "Left turn X", "Left turn Y", "Left turn Z"),
+    ] {
+        m = m.num(scale, 1.0, 0.1, 2.0, 0.05);
+        for axis in [x, y, z] {
+            m = m.num(axis, 0.0, -1.0, 1.0, 0.02);
+        }
+        for axis in [rx, ry, rz] {
+            m = m.num(axis, 0.0, -180.0, 180.0, 5.0);
+        }
+    }
+    m
+}
+
+fn hand_transform(m: &Module, side: &str) -> glam::Mat4 {
+    let n = |name: &str| m.n(&format!("{side} {name}")) as f32;
+    glam::Mat4::from_translation(glam::Vec3::new(n("X"), n("Y"), n("Z")))
+        * glam::Mat4::from_rotation_x(n("turn X").to_radians())
+        * glam::Mat4::from_rotation_y(n("turn Y").to_radians())
+        * glam::Mat4::from_rotation_z(n("turn Z").to_radians())
+        * glam::Mat4::from_scale(glam::Vec3::splat(n("scale")))
+}
+
 fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
+    let hands = on(mods, "Hand View");
+    let view = hands.as_ref().map(|m| [hand_transform(m, "Right"), hand_transform(m, "Left")]);
+    if let Ok(mut v) = horizon_client::first_person::sunset_hand_view::VIEW.write() {
+        *v = view;
+    }
+    horizon_client::first_person::sunset_hand_view::NO_SWAY.store(hands.is_some_and(|m| m.b("No sway")), Ordering::Relaxed);
     let moving = super::sunset::move_input(game) != (0.0, 0.0);
     let speed_timer = if on(mods, "Flight").is_none() {
         on(mods, "Speed").map(|m| m.n("Timer")).filter(|t| (*t - 1.0).abs() > 1e-9 && moving)
@@ -379,6 +517,8 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     } else if let Some(before) = rs(|r| r.fog_before.take()) {
         game.settings.horizon.fog = before;
     }
+    // Particles: all of them, or the listed types, never made.
+    horizon_client::particles::sunset_particles::set(flag("Hide all particles"), m.as_ref().map_or("", |m| m.t("Particles")));
     fog::NO_WATER.store(flag("Hide water fog"), Ordering::Relaxed);
     fog::NO_LAVA.store(flag("Hide lava and powder snow fog"), Ordering::Relaxed);
     overlay::NO_FIRE.store(flag("Hide fire overlay"), Ordering::Relaxed);
@@ -410,15 +550,19 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     }
 }
 
-// Xray: the mesher draws only the listed blocks; the world is rebuilt when
-// that changes.
+// Xray: the mesher draws only the listed blocks (and water, lava and the blocks you placed, if asked); the world is
+// rebuilt when that changes.
 fn xray(game: &mut Game<'_>, mods: &[Module]) {
+    // Placed blocks are remembered while the switch is on, Xray on or off.
+    placed_blocks(game, mods.iter().find(|m| m.name == "Xray"));
     let m = on(mods, "Xray");
     let want = m.as_ref().map(|m| m.t("Blocks").to_owned());
-    let key = (want.is_some(), want.clone().unwrap_or_default());
+    let (water, lava) = m.as_ref().map_or((false, false), |m| (m.b("Show water"), m.b("Show lava")));
+    let key = (want.is_some(), want.clone().unwrap_or_default(), water, lava);
     if rs(|r| r.xray.as_ref() == Some(&key)) {
         return;
     }
+    let shown = |name: &str| (water && short(name) == "water") || (lava && short(name) == "lava");
     let ids: HashSet<u32> = match &want {
         Some(list) => game
             .res
@@ -426,7 +570,7 @@ fn xray(game: &mut Game<'_>, mods: &[Module]) {
             .states
             .iter()
             .enumerate()
-            .filter(|(_, s)| listed(list, &s.name))
+            .filter(|(_, s)| listed(list, &s.name) || shown(&s.name))
             .map(|(i, _)| i as u32)
             .collect(),
         None => HashSet::new(),
@@ -437,6 +581,143 @@ fn xray(game: &mut Game<'_>, mods: &[Module]) {
     horizon_client::mesher::sunset_xray::ON.store(want.is_some(), Ordering::Relaxed);
     game.all_sections_changed();
     rs(|r| r.xray = Some(key));
+}
+
+// Show placed blocks: where your own placing put a block, oldest first, for the world or server they are in (kept
+// in the mod's data folder), and the places a block was just placed on, with what was there and until which tick
+// to look for the new block.
+#[derive(Default)]
+struct Placed {
+    key: String,
+    at: Vec<[i32; 3]>,
+    pending: Vec<([i32; 3], u32, u64)>,
+    changed: bool,
+    saved_tick: u64,
+}
+
+// The world or server, as the name of its file: the world's folder in single player, the address on a server.
+fn place_file(game: &Game<'_>) -> Option<String> {
+    let r = game.remote.as_ref()?;
+    let address = horizon_client::net::shown_address(&r.session.address);
+    let name = if address == "local" { game.world_root.display().to_string() } else { address };
+    // FNV-1a: a file name from any text.
+    let hash = name.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
+    Some(format!("xray-placed-{hash:016x}"))
+}
+
+// A use on a block: the block itself (when it can be replaced) or the one beside the face is where a block may go.
+pub(super) fn sent(game: &Game<'_>, packet: &horizon_protocol::packets::play::Serverbound) {
+    use horizon_protocol::packets::play::Serverbound as S;
+    let S::UseItemOn(p) = packet else {
+        return;
+    };
+    if !rs(|r| !r.placed.key.is_empty()) {
+        return;
+    }
+    let [x, y, z] = p.pos;
+    let n = FACES[p.face.clamp(0, 5) as usize];
+    let until = game.ticks + 10;
+    rs(|r| {
+        for at in [[x, y, z], [x + n[0], y + n[1], z + n[2]]] {
+            r.placed.pending.push((at, game.world.block(at[0], at[1], at[2]).0, until));
+        }
+    });
+}
+
+// The six faces' directions, in the protocol's order: down, up, north, south, west, east.
+const FACES: [[i32; 3]; 6] = [[0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1], [-1, 0, 0], [1, 0, 0]];
+
+fn placed_blocks(game: &mut Game<'_>, xray: Option<&Module>) {
+    let want = xray.filter(|m| m.b("Show placed blocks"));
+    let file = want.and_then(|_| place_file(game)).unwrap_or_default();
+    if rs(|r| r.placed.key != file) {
+        // The last world's changes are kept before the next world's are read.
+        if let Some((key, at)) = rs(|r| r.placed.changed.then(|| (r.placed.key.clone(), r.placed.at.clone()))) {
+            save_placed(game, &key, &at);
+        }
+        let at = if file.is_empty() { Vec::new() } else { load_placed(game, &file) };
+        mark(game, &at, &[]);
+        rs(|r| r.placed = Placed { key: file, at, ..Placed::default() });
+        if horizon_client::mesher::sunset_xray::ON.load(Ordering::Relaxed) {
+            game.all_sections_changed();
+        }
+    }
+    let Some(m) = want else {
+        return;
+    };
+    let keep = m.n("Placed blocks kept") as usize;
+    let tick = game.ticks;
+    // A block that turned up where one was placed is remembered; one that is air now (broken) is forgotten.
+    let air = |game: &Game<'_>, at: [i32; 3]| game.res.facts().is_air(game.world.block(at[0], at[1], at[2]));
+    let pending = rs(|r| std::mem::take(&mut r.placed.pending));
+    let (mut new, mut later) = (Vec::new(), Vec::new());
+    for (at, before, until) in pending {
+        let now = game.world.block(at[0], at[1], at[2]);
+        if now.0 != before && !air(game, at) {
+            new.push(at);
+        } else if until > tick {
+            later.push((at, before, until));
+        }
+    }
+    let gone: Vec<[i32; 3]> = if tick % 10 == 0 {
+        rs(|r| r.placed.at.clone()).into_iter().filter(|&at| game.world.chunks.contains_key(&(at[0] >> 4, at[2] >> 4)) && air(game, at)).collect()
+    } else {
+        Vec::new()
+    };
+    let changed = rs(|r| {
+        let p = &mut r.placed;
+        p.pending.extend(later);
+        p.at.retain(|at| !gone.contains(at));
+        for at in &new {
+            p.at.retain(|a| a != at);
+            p.at.push(*at);
+        }
+        let over = p.at.len().saturating_sub(keep);
+        p.at.drain(..over);
+        p.changed |= !new.is_empty() || !gone.is_empty() || over > 0;
+        let save = p.changed && tick >= p.saved_tick + 100;
+        if save {
+            p.changed = false;
+            p.saved_tick = tick;
+        }
+        (!new.is_empty() || !gone.is_empty(), save.then(|| (p.key.clone(), p.at.clone())))
+    });
+    if changed.0 {
+        mark(game, &rs(|r| r.placed.at.clone()), &new);
+    }
+    if let Some((key, at)) = changed.1 {
+        save_placed(game, &key, &at);
+    }
+}
+
+fn save_placed(game: &Game<'_>, file: &str, at: &[[i32; 3]]) {
+    let text: Vec<String> = at.iter().map(|[x, y, z]| format!("{x},{y},{z}")).collect();
+    game.native_set_setting(super::sunset::ID, file, &text.join(";"));
+}
+
+fn load_placed(game: &Game<'_>, file: &str) -> Vec<[i32; 3]> {
+    let text = game.native_setting(super::sunset::ID, file).unwrap_or_default();
+    text.split(';')
+        .filter_map(|p| {
+            let mut n = p.split(',').map(|v| v.trim().parse::<i32>().ok());
+            Some([n.next()??, n.next()??, n.next()??])
+        })
+        .collect()
+}
+
+// The places Xray's mesher shows whatever they hold, and the sections of `redraw` drawn again with them.
+fn mark(game: &mut Game<'_>, all: &[[i32; 3]], redraw: &[[i32; 3]]) {
+    horizon_client::mesher::sunset_xray::set_placed(all.iter().copied().collect());
+    if !horizon_client::mesher::sunset_xray::ON.load(Ordering::Relaxed) {
+        return;
+    }
+    for &[x, y, z] in redraw {
+        if let Some(sy) = game.world.chunks.get(&(x >> 4, z >> 4)).map(|c| (y - c.min_y()) >> 4)
+            && sy >= 0
+        {
+            game.world.dirty_sections.insert((x >> 4, sy, z >> 4));
+        }
+    }
 }
 
 // ---- Tunnel ESP
@@ -599,6 +880,13 @@ fn scan_lights(game: &Game<'_>, m: &Module, ticks: u64) {
 pub(super) fn overlay(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut impl Canvas, lw: f32) {
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     let me = player_pos(game).unwrap_or([0.0; 3]);
+    // Freecam's tracer: a line from the middle of the view to your body.
+    if get("Freecam").is_some_and(|m| m.b("Tracer"))
+        && freecam_flying()
+        && let Some(body) = cam.project([me[0], me[1] + 0.9, me[2]])
+    {
+        line(out, [cam.w as f32 / 2.0, cam.h as f32 / 2.0], body, 0xFF00_0000 | accent(), lw);
+    }
     if let Some(m) = get("Tunnel ESP") {
         rs(|r| flat_boxes(cam, out, m, r.tunnels.found.iter().map(|f| f.0), m.n("Height"), 0xFF00_0000 | accent(), lw));
     }

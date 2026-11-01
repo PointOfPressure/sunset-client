@@ -581,8 +581,11 @@ pub(super) fn sort_targets(game: &Game<'_>, list: &mut [Target], priority: &str)
 // A comma list's choices as Pick values need 'static: these are the shared ones.
 pub(super) const TRAP_BLOCKS: &str = "obsidian,crying_obsidian,netherite_block";
 
+// A module's own chat line, unless ClickGUI's Module messages is off.
 pub(super) fn report(game: &mut Game<'_>, msg: &str) {
-    say(game, msg);
+    if super::sunset::chat_lines("Module messages") {
+        say(game, msg);
+    }
 }
 
 pub(super) fn inventory_idle(game: &Game<'_>) -> bool {

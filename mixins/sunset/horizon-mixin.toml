@@ -155,6 +155,20 @@ source = "xray_flags.rs"
 visibility = "pub"
 
 [[module]]
+id = "hand_view_flags"
+file = "crates/horizon-client/src/first_person.rs"
+name = "sunset_hand_view"
+source = "hand_view_flags.rs"
+visibility = "pub"
+
+[[module]]
+id = "particle_flags"
+file = "crates/horizon-client-render/src/particles.rs"
+name = "sunset_particles"
+source = "particle_flags.rs"
+visibility = "pub"
+
+[[module]]
 id = "timer_flags"
 file = "crates/horizon-client/src/clock.rs"
 name = "sunset_timer"
@@ -384,13 +398,24 @@ bindings = [
 ]
 
 [[injection]]
-id = "zoom"
+id = "zoom-fov"
 kind = "HEAD"
-target = "horizon_client::game::native_hooks::Game<'_>::native_zoom"
+cancellable = true
+target = "horizon_client::game::extras::Game<'_>::zoomed_fov_degrees"
 helper = "zoom.rs"
 bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
-  { name = "zoom", ty = "&mut Option<crate::game::native_hooks::NativeZoom>", value = "&mut *zoom" },
+  { name = "fov", ty = "f32", value = "fov" },
+]
+
+[[injection]]
+id = "zoom-turn"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::extras::Game<'_>::zoom_turn_scale"
+helper = "zoom_turn.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
 ]
 
 # Freecam keeps the view it set: F5 does nothing while it flies.
@@ -438,11 +463,71 @@ bindings = [
 ]
 
 [[injection]]
+id = "hand-item"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::item_draw::Game<'_>::submit_item_world"
+helper = "hand_item.rs"
+bindings = [
+  { name = "this", ty = "&Game<'_>", value = "&*self" },
+  { name = "state", ty = "&ItemRenderState", value = "state" },
+  { name = "pose", ty = "glam::Mat4", value = "pose" },
+  { name = "light", ty = "u32", value = "light" },
+  { name = "out", ty = "&mut Vec<Vertex>", value = "&mut *out" },
+]
+
+[[injection]]
+id = "arm-pose"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::Game<'_>::first_person_arm"
+helper = "arm_pose.rs"
+bindings = [
+  { name = "this", ty = "&Game<'_>", value = "&*self" },
+  { name = "left", ty = "bool", value = "left" },
+  { name = "m", ty = "glam::Mat4", value = "m" },
+  { name = "light", ty = "u32", value = "light" },
+  { name = "out", ty = "&mut Vec<Vertex>", value = "&mut *out" },
+]
+
+[[injection]]
+id = "sway"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::first_person::HandSway::rotation"
+helper = "sway.rs"
+bindings = []
+
+[[injection]]
+id = "particle-add"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::particles::ParticleEngine::add_with"
+helper = "particle_add.rs"
+bindings = [
+  { name = "options", ty = "&ParticleOptions", value = "options" },
+]
+
+[[injection]]
+id = "particle-push"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::particles::ParticleEngine::push"
+helper = "particle_push.rs"
+bindings = [
+  { name = "particle", ty = "&Particle", value = "&particle" },
+]
+
+[[injection]]
 id = "xray-get"
 kind = "RETURN"
 target = "horizon_client_render::chunk::Chunk::get"
 helper = "xray_get.rs"
 bindings = [
+  { name = "chunk", ty = "&Chunk", value = "&*self" },
+  { name = "x", ty = "i32", value = "x" },
+  { name = "y", ty = "i32", value = "y" },
+  { name = "z", ty = "i32", value = "z" },
   { name = "value", ty = "u32", value = "$value" },
 ]
 

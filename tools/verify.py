@@ -1589,7 +1589,7 @@ def open_picker(search, shot=None):
     wait(5)
     ctl("click-at", *map(str, menu_row(3, 1)), "right")
     wait(3)
-    ctl("click-at", *map(str, menu_row(3, 3)))
+    ctl("click-at", *map(str, menu_row(3, 4)))
     wait(3)
     for k in search:
         ctl("key", k, "tap")
@@ -1641,6 +1641,7 @@ def _():
         return next((c for c in sunset_said(mark) if c.startswith("Blocks:")), "")
 
     setting("clickgui", "settings", "Inline")
+    setting("xray", "list", "Advanced")
     setting("xray", "blocks", "coal_ore")
     open_picker("diamond", "/tmp/picker.png")
     ctl("click-at", *map(str, picker_row(1)))
@@ -1653,6 +1654,92 @@ def _():
     typed = blocks()
     ok = picked.startswith("Blocks: ") and "diamond" in picked and "coal" not in picked and "," not in picked and typed == "Blocks: iron_ore,gold_ore"
     return ok, f"after clicking a diamond block in and coal ore out: {picked!r}; after .set: {typed!r}"
+
+
+@test("Xray Simple list")
+def _():
+    # Simple: the short list of ores and valuables, a row standing for all its blocks. A click on Diamond (row 0, both
+    # chosen) takes both away, on Coal (row 9, half chosen) completes it, on Spawner (row 11) adds both spawners.
+    def blocks():
+        mark = log_mark()
+        say(".settings xray")
+        wait(4)
+        return next((c for c in sunset_said(mark) if c.startswith("Blocks:")), "")
+
+    setting("clickgui", "settings", "Inline")
+    setting("xray", "list", "Simple")
+    start = "diamond_ore,deepslate_diamond_ore,coal_ore"
+    setting("xray", "blocks", start)
+    # A right click on Xray opens or closes its settings in the panel: a second try if the first found them open.
+    for _ in range(2):
+        open_picker("", "/tmp/picker_simple.png")
+        for row in (0, 9, 11):
+            ctl("click-at", *map(str, picker_row(row)))
+            wait(2)
+        close_menu()
+        got = blocks()
+        if got != f"Blocks: {start}":
+            break
+    ok = set(got.removeprefix("Blocks: ").split(",")) == {"coal_ore", "deepslate_coal_ore", "spawner", "trial_spawner"}
+    return ok, f"Diamond (all chosen), Coal (half) and Spawner (none) clicked: {got!r}"
+
+
+@test("Xray water, lava and placed blocks")
+def _():
+    # Xray listing only diamond ore, looking at a stone box: water inside it shows only with Show water, lava only
+    # with Show lava. A stone block you place (ctl place) shows with Show placed blocks; one set by a command beside
+    # it stays hidden. Counted as the pixels that change between two screenshots with the switch off and on.
+    from PIL import Image, ImageChops
+
+    def shot(name):
+        # Long enough for the whole view to be meshed again.
+        wait(80)
+        path = f"/tmp/{name}.png"
+        ctl("screenshot", path)
+        time.sleep(2)
+        return Image.open(path).convert("L")
+
+    def changed(a, b):
+        return sum(1 for d in ImageChops.difference(a, b).getdata() if d > 30) / (a.width * a.height)
+
+    reset("creative")
+    cmd(f"fill {X0-3} {Y+1} {Z0+3} {X0+3} {Y+5} {Z0+5} minecraft:stone", f"fill {X0-2} {Y+2} {Z0+4} {X0+2} {Y+4} {Z0+4} minecraft:water")
+    ctl("look", "0", "0")
+    setting("xray", "blocks", "diamond_ore")
+    toggle("xray", True)
+    dry = shot("xray_water_off")
+    setting("xray", "show water", "true")
+    wet = shot("xray_water_on")
+    cmd(f"fill {X0-2} {Y+2} {Z0+4} {X0+2} {Y+4} {Z0+4} minecraft:lava")
+    setting("xray", "show water", "false")
+    no_lava = shot("xray_lava_off")
+    setting("xray", "show lava", "true")
+    lava = shot("xray_lava_on")
+    toggle("xray", False)
+    cmd(f"fill {X0-3} {Y+1} {Z0+3} {X0+3} {Y+5} {Z0+5} minecraft:air", "item replace entity @s hotbar.0 with minecraft:stone 64")
+    setting("xray", "show placed blocks", "true")
+    ctl("select", "1")
+    for dx in (-1, 0, 1):
+        for dy in (1, 2):
+            ctl("place", str(X0 + dx), str(Y + dy), str(Z0 + 3))
+            wait(2)
+    cmd(f"fill {X0+3} {Y+3} {Z0+6} {X0+5} {Y+4} {Z0+6} minecraft:stone")
+    wait(20)
+    stone = lambda x, y, z: ctl("block", str(x), str(y), str(z)).get("block") == "minecraft:stone"
+    blocks = sum(stone(X0 + dx, Y + dy, Z0 + 3) + stone(X0 + 4 + dx, Y + 2 + dy, Z0 + 6) for dx in (-1, 0, 1) for dy in (1, 2))
+    toggle("xray", True)
+    shown = shot("xray_placed_on")
+    setting("xray", "show placed blocks", "false")
+    hidden = shot("xray_placed_off")
+    w, l, p = changed(dry, wet), changed(no_lava, lava), changed(hidden, shown)
+    # The command's blocks are east and up, on the left of a view south above the chat: that part must not change.
+    box = (0, hidden.height * 15 // 100, hidden.width // 3, hidden.height * 55 // 100)
+    left = changed(hidden.crop(box), shown.crop(box))
+    toggle("xray", False)
+    cmd(f"fill {X0-3} {Y+1} {Z0+3} {X0+5} {Y+5} {Z0+6} minecraft:air")
+    ok = w > 0.03 and l > 0.03 and p > 0.01 and left < 0.02 and blocks == 12
+    return ok, (f"screen changed by Show water {w:.1%}, Show lava {l:.1%}, Show placed blocks {p:.1%} "
+                f"(where the command's blocks are: {left:.2%}); {blocks}/12 stone blocks there")
 
 
 @test("Text setting editor")
@@ -2833,6 +2920,27 @@ def _():
     return hurt < 10 and spared == 10, f"pig on the crosshair: health {hurt} with Passive on, {spared} with it off"
 
 
+@test("Entities list on top of the kinds")
+def _():
+    # Trigger Bot with Passive off: the pig on the crosshair is hit when Entities lists pig, not when it lists cow.
+    def hit(entities):
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        pid = pig()
+        ctl("look-at-entity", str(pid))
+        setting("triggerbot", "passive", "false")
+        setting("triggerbot", "entities", entities)
+        only("triggerbot")
+        wait(40)
+        m = mobs("pig")
+        only()
+        return m[0]["health"] if m else 0
+
+    listed, other = hit("pig"), hit("cow")
+    return listed < 10 and other == 10, f"pig on the crosshair, Passive off: health {listed} with Entities pig, {other} with cow"
+
+
 @test("Kill Aura")
 def _():
     def attacked(dz, walled=False):
@@ -3229,6 +3337,277 @@ def _():
     only()
     return double < singles / 3 and trapped < singles / 3, (
         f"outline pixels down the middle: double chest {double}, trapped double chest {trapped}, two single chests {singles}")
+
+
+@test("Zoom (hold V, wheel, sensitivity)")
+def _():
+    # A gold block 12 ahead: V held covers about 3 x 3 = 9 times its pixels; the wheel up while held zooms further
+    # in; the mouse turns a third as far at 3x; V let go, back to 1x.
+    gold = lambda r, g, b: r > 200 and g > 170 and b < 90
+    reset("creative")
+    cmd(f"setblock {X0} {Y+3} {Z0+12} minecraft:gold_block")
+    ctl("look", "0", "0")
+    wait(40)
+
+    def turned():
+        y0 = ctl("status")["yaw"]
+        ctl("mouse-move", "200", "0")
+        wait(3)
+        y1 = ctl("status")["yaw"]
+        ctl("look", "0", "0")
+        wait(3)
+        return abs(y1 - y0)
+
+    base, turn1 = shot_pixels("zoom_off", gold), turned()
+    ctl("key", "v", "down")
+    wait(10)
+    z3, turn3 = shot_pixels("zoom_3", gold), turned()
+    w, h = gui_size()
+    ctl("scroll-at", str(w // 2), str(h // 2), "10")
+    wait(10)
+    z8 = shot_pixels("zoom_8", gold)
+    ctl("key", "v", "up")
+    wait(10)
+    after = shot_pixels("zoom_after", gold)
+    cmd(f"setblock {X0} {Y+3} {Z0+12} minecraft:air")
+    r3, r8, back, slow = z3 / max(base, 1), z8 / max(base, 1), after / max(base, 1), turn3 / max(turn1, 1e-6)
+    ok = base > 20 and 6 < r3 < 12 and r8 > 2 * r3 and 0.8 < back < 1.25 and 0.25 < slow < 0.42
+    return ok, (f"gold pixels: 1x {base}, held x{r3:.1f}, after 10 notches x{r8:.1f}, let go x{back:.2f}; "
+                f"mouse turn held/unheld {slow:.2f} ({turn3:.2f} / {turn1:.2f} degrees)")
+
+
+@test("Freecam (start, tracer, move player)")
+def _():
+    # Start Above with the view tipped down: W held 20 ticks leaves the body where it was; the tracer draws a line to
+    # the body (accent pixels with it on, none off); with Move player W walks the body instead.
+    accent = lambda r, g, b: r > 230 and 140 < g < 200 and b < 80
+    reset("creative")
+    ctl("look", "0", "75")
+    setting("freecam", "start", "Above")
+    setting("freecam", "tracer", "false")
+    toggle("freecam", True)
+    wait(10)
+    off = shot_pixels("fc_tracer_off", accent)
+    setting("freecam", "tracer", "true")
+    wait(5)
+    on_ = shot_pixels("fc_tracer_on", accent)
+    p0 = pos()
+    ctl("key", "w", "down")
+    wait(20)
+    ctl("key", "w", "up")
+    still = math.dist(p0, pos())
+    setting("freecam", "move player", "true")
+    ctl("key", "w", "down")
+    wait(20)
+    ctl("key", "w", "up")
+    walked = math.dist(p0, pos())
+    toggle("freecam", False)
+    ok = on_ > off + 30 and still < 0.01 and walked > 1.5
+    return ok, f"tracer pixels off {off}, on {on_}; body moved {still:.3f} flying, {walked:.2f} with Move player"
+
+
+@test("Hand View (size, no sway)")
+def _():
+    # Looking at the sky so only the hand is in the lower right: Right scale 0.4 changes that corner with stone in
+    # the hand and with the bare arm; turning makes the hand lag for a moment (the frame just after a turn and the
+    # settled one differ), not with No sway.
+    from PIL import Image, ImageChops
+
+    def corner(name):
+        ctl("screenshot", f"/tmp/{name}.png")
+        time.sleep(2)
+        img = Image.open(f"/tmp/{name}.png").convert("L")
+        return img.crop((img.width * 55 // 100, img.height // 2, img.width, img.height))
+
+    def changed(a, b):
+        return sum(1 for d in ImageChops.difference(a, b).getdata() if d > 30) / (a.width * a.height)
+
+    def swayed():
+        ctl("look", "0", "-40")
+        wait(10)
+        ctl("mouse-move", "800", "0")
+        moving = corner("hv_moving")
+        wait(15)
+        return changed(moving, corner("hv_settled"))
+
+    reset("creative")
+    cmd("item replace entity @s hotbar.0 with minecraft:stone")
+    ctl("look", "0", "-40")
+    wait(15)
+    held_off = corner("hv_held_off")
+    setting("handview", "right scale", "0.4")
+    toggle("handview", True)
+    wait(5)
+    held_on = corner("hv_held_on")
+    sway_on_off = swayed()
+    setting("handview", "right scale", "1")
+    setting("handview", "no sway", "true")
+    sway_still = swayed()
+    cmd("item replace entity @s hotbar.0 with minecraft:air")
+    setting("handview", "right scale", "0.4")
+    ctl("look", "0", "-40")
+    wait(10)
+    arm_on = corner("hv_arm_on")
+    toggle("handview", False)
+    wait(5)
+    arm_off = corner("hv_arm_off")
+    held, arm = changed(held_off, held_on), changed(arm_off, arm_on)
+    ok = held > 0.02 and arm > 0.02 and sway_on_off > 0.005 and sway_still < sway_on_off / 3
+    return ok, (f"lower right changed by Right scale 0.4: stone held {held:.1%}, bare arm {arm:.1%}; "
+                f"just after a turn vs settled: swaying {sway_on_off:.2%}, No sway {sway_still:.2%}")
+
+
+@test("No Render particles")
+def _():
+    # 2000 flame and 2000 happy villager particles forced in view, counted by the game: No Render off, all made; Hide
+    # all particles, none; Particles = flame, no flame and the villager ones still made.
+    def counts():
+        p = ctl("status").get("particles", {})
+        return p.get("flame", 0), p.get("happy_villager", 0)
+
+    def made():
+        """The particles of each the game made (its counts are since the start) for the two commands."""
+        before = counts()
+        cmd(f"particle minecraft:flame {X0} {Y+2} {Z0+4} 1 1 1 0 2000 force",
+            f"particle minecraft:happy_villager {X0} {Y+2} {Z0+4} 1 1 1 0 2000 force")
+        wait(5)
+        return tuple(a - b for a, b in zip(counts(), before))
+
+    reset("creative")
+    shown = made()
+    setting("norender", "hide all particles", "true")
+    toggle("norender", True)
+    none = made()
+    setting("norender", "hide all particles", "false")
+    setting("norender", "particles", "flame")
+    listed = made()
+    toggle("norender", False)
+    ok = min(shown) > 500 and none == (0, 0) and listed[0] == 0 and listed[1] > 500
+    return ok, f"(flame, villager) made: off {shown}, Hide all {none}, Particles = flame {listed}"
+
+
+@test("Chat feedback switches")
+def _():
+    # ClickGUI's Toggle messages off: Fullbright turned on and off by its key writes no line, .t still answers; Module
+    # messages off: Self Web with no cobwebs writes no "No cobwebs" line (on, it does).
+    reset()
+    say(".bind fullbright k")
+
+    def lines(action):
+        mark = log_mark()
+        action()
+        wait(5)
+        return sunset_said(mark)
+
+    key = lambda: ctl("key", "k", "tap")
+    keyed_on = lines(key)
+    setting("clickgui", "toggle messages", "false")
+    keyed_off = lines(lambda: (key(), wait(3), key()))
+    typed = lines(lambda: say(".t fullbright"))
+    say(".bind fullbright none")
+    web_on = lines(lambda: toggle("selfweb", True))
+    toggle("selfweb", False)
+    setting("clickgui", "module messages", "false")
+    web_off = lines(lambda: toggle("selfweb", True))
+    toggle("selfweb", False)
+    cobwebs = lambda got: any("cobweb" in l for l in got)
+    ok = keyed_on == ["Fullbright on"] and keyed_off == [] and len(typed) == 1 and typed[0].startswith("Fullbright") \
+        and cobwebs(web_on) and not cobwebs(web_off)
+    return ok, (f"key with Toggle messages on {keyed_on}, off {keyed_off}; .t {typed}; Self Web with Module messages on "
+                f"{cobwebs(web_on)}, off {cobwebs(web_off)}")
+
+
+@test("Friends list in the menu")
+def _():
+    # .friend and ClickGUI's Friends (the menu's player picker edits it) are one list: .friend add shows in the
+    # setting, .set of the setting shows in .friend.
+    def friends_setting():
+        mark = log_mark()
+        say(".settings clickgui")
+        wait(4)
+        return next((c for c in sunset_said(mark) if c.startswith("Friends:")), "")
+
+    def friend_list():
+        mark = log_mark()
+        say(".friend")
+        wait(4)
+        return next((c for c in sunset_said(mark) if c.startswith("Friends:")), "")
+
+    touched.add("clickgui")
+    say(".friend add Steve123")
+    added = friends_setting()
+    setting("clickgui", "friends", "Alex_9,Steve123")
+    listed = friend_list()
+    say(".friend remove Alex_9")
+    say(".friend remove Steve123")
+    gone = friends_setting()
+    ok = added == "Friends: Steve123" and listed == "Friends: Alex_9, Steve123" and gone == "Friends: (empty)"
+    return ok, f".friend add -> setting {added!r}; .set -> .friend {listed!r}; both removed -> {gone!r}"
+
+
+@test("Middle click Friend")
+def _():
+    # Middle Click Extra's Friend: a middle click on Bot1 makes it a friend, a second one takes it away.
+    if not CTL2:
+        return None, "needs a second player"
+    reset("creative")
+    cmd("gamemode survival Bot1", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5}")
+    setting("middleclickextra", "item", "Friend")
+    toggle("middleclickextra", True)
+    ctl("look", "0", "10")
+    wait(10)
+
+    def click():
+        mark = log_mark()
+        ctl("mouse", "middle", "down")
+        wait(2)
+        ctl("mouse", "middle", "up")
+        wait(4)
+        return sunset_said(mark)
+
+    first, second = click(), click()
+    toggle("middleclickextra", False)
+    cmd("gamemode spectator Bot1", f"tp Bot1 {X0 + 0.5} {Y + 30} {Z0 + 60}")
+    ok = first == ["Bot1 is a friend."] and second == ["Bot1 is no longer a friend."]
+    return ok, f"first middle click {first}, second {second}"
+
+
+@test("Menu dim on every screen")
+def _():
+    # ClickGUI's Menu dim off: the world behind the pause menu, the options screens (the game's and Horizon's), the
+    # inventory and the chat box is as bright as with no screen; on, it is dimmed. Looking at the sky.
+    def screen_shot(name, open_):
+        open_()
+        wait(10)
+        b = brightness(name)
+        ctl("close")
+        wait(3)
+        if state().get("screen") == "paused":
+            ctl("resume")
+            wait(3)
+        return b
+
+    screens = {
+        "pause": lambda: ctl("pause"),
+        "options": lambda: ctl("options"),
+        "video": lambda: ctl("options", "video"),
+        "horizon": lambda: ctl("options", "horizon"),
+        "inventory": lambda: ctl("open-inventory"),
+    }
+    reset("creative")
+    ctl("look", "0", "-60")
+    wait(10)
+    plain = brightness("dim_none")
+    got = {}
+    for dim in ("false", "true"):
+        setting("clickgui", "menu dim", dim)
+        for name, open_ in screens.items():
+            got[(name, dim)] = screen_shot(f"dim_{name}_{dim}", open_)
+    # Dimmed: a screen's mean brightness drops well below the plain view; undimmed it stays nearer it than dimmed.
+    bad = [n for n in screens if not got[(n, "true")] < got[(n, "false")] - 0.03]
+    return not bad, (f"mean brightness with no screen {plain:.3f}; " + ", ".join(
+        f"{n} {got[(n, 'false')]:.3f}/{got[(n, 'true')]:.3f}" for n in screens) + " (Menu dim off/on)"
+        + (f"; not dimmed less with it off: {bad}" if bad else ""))
 
 
 @test("Freecam (F5)")

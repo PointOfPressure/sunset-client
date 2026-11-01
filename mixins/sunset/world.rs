@@ -1,7 +1,7 @@
 // World modules ported from Meteor's source: Auto Shearer, Auto Nametag,
 // Auto Mount, Flamethrower; and Bow Aimbot and Spawner Alerts.
 
-use super::sunset::{Camera, Canvas, Category, Module, hold, say};
+use super::sunset::{Camera, Canvas, Category, Module, hold};
 use super::sunset_util::*;
 use super::{Game, Screen};
 use horizon_protocol::packets::play::{self, Serverbound as S};
@@ -601,7 +601,7 @@ fn spawner_alerts(game: &mut Game<'_>, m: &Module) {
         }
     });
     for line in found {
-        say(game, &line);
+        report(game, &line);
     }
 }
 

@@ -48,6 +48,8 @@ pub(super) struct Kinds {
     want: [bool; 3],
     colour: [u32; 3],
     friend_colours: bool,
+    // Mob types drawn whatever their kind (the Entities list).
+    extra: String,
 }
 
 impl Kinds {
@@ -56,10 +58,11 @@ impl Kinds {
             want: [m.b("Players"), m.b("Hostiles"), m.b("Passive")],
             colour: [m.c("Players color"), m.c("Hostiles color"), m.c("Passive color")],
             friend_colours: m.b("Show friend colors"),
+            extra: m.t("Entities").to_owned(),
         }
     }
-    pub(super) fn wants(&self, kind: Kind) -> bool {
-        self.want[kind as usize]
+    pub(super) fn wants(&self, kind: Kind, id: &str) -> bool {
+        self.want[kind as usize] || super::sunset_util::listed(&self.extra, id)
     }
     pub(super) fn colour(&self, kind: Kind, friend: bool) -> u32 {
         if friend && self.friend_colours { 0xFF55_FFFF } else { self.colour[kind as usize] }

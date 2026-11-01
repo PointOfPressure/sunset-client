@@ -369,7 +369,7 @@ fn loadout_key(game: &mut Game<'_>, key: &str, pressed: bool) {
         let back = game.selected;
         duel(|d| d.undo = Some((n, back)));
         equip(game, l);
-        say(game, &format!("Equipped {}", l.name));
+        util::report(game, &format!("Equipped {}", l.name));
     }
 }
 
