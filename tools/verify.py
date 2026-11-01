@@ -5146,6 +5146,370 @@ def _():
     ok = got["off"][0] == 8 and got["on"][0] == 7 and "sword" in got["on"][1]
     return ok, f"apples left and the item in hand after: off {got['off']}, on {got['on']}"
 
+
+# Horizon's own server (a dedicated one on 25599, or single player's) runs the hit again along your look with 3
+# blocks of reach and blocks in the way: hits past that or through walls are its to refuse.
+HORIZON_SERVER = SERVER is None or SERVER.endswith(":25599")
+REFUSED = "Horizon's server refuses hits past 3 blocks or through walls (it hits along your look itself)"
+
+
+def pig_clicks(mods, z, settings=(), wall=None, n=5):
+    """A pig with 1000 health `z` blocks in front, a sword in hand (an iron spear in slot 3): health it lost to `n`
+    clicks at it with `mods` on (`settings` set first), and the item in hand after. `wall`: a stone wall that far
+    in front, between you and it."""
+    reset()
+    slot(0, "diamond_sword")
+    slot(2, "iron_spear")
+    ctl("key", "1", "tap")
+    for mod, name, value in settings:
+        setting(mod, name, value)
+    if wall:
+        cmd(f"fill {X0 - 2} {Y + 1} {Z0 + wall} {X0 + 2} {Y + 3} {Z0 + wall} minecraft:stone")
+    cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + z} {TOUGH_PIG}")
+    wait(10)
+    ctl("look-at-entity", str(mobs("pig")[0]["id"]))
+    only(*mods)
+    for _ in range(n):
+        ctl("mouse", "left", "click")
+        wait(25)
+    only()
+    m = mobs("pig")
+    if wall:
+        cmd(f"fill {X0 - 2} {Y + 1} {Z0 + wall} {X0 + 2} {Y + 3} {Z0 + wall} minecraft:air")
+    return (round(1000 - m[0]["health"], 1) if m else None), held().get("item", "")
+
+
+@test("Reach (Entity reach)")
+def _():
+    # A pig 4.5 blocks off (its box 4.05 from you, past the 3 blocks of reach): 5 clicks, without and with Reach.
+    off = pig_clicks((), 5.0)
+    on = pig_clicks(("reach",), 5.0)
+    if HORIZON_SERVER and on[0] == 0:
+        return None, f"{REFUSED}: off {off[0]}, on {on[0]}"
+    return off[0] == 0 and (on[0] or 0) > 0, f"5 clicks at a pig 4.5 blocks off: {off[0]} health lost without Reach, {on[0]} with Entity reach 4.5"
+
+
+@test("Spear Swap (Spear reach)")
+def _():
+    # The same pig, a sword in hand and an iron spear in slot 3: Spear reach (When out of reach) reaches it with the
+    # sword, passing through the spear's slot; the sword stays in hand.
+    off = pig_clicks((), 5.0)
+    on = pig_clicks(("spearswap",), 5.0, (("spearswap", "spear reach", "when out of reach"),))
+    if HORIZON_SERVER and on[0] == 0:
+        return None, f"{REFUSED}: off {off[0]}, on {on[0]}"
+    return off[0] == 0 and (on[0] or 0) > 0 and "sword" in on[1], (
+        f"5 clicks at a pig 4.5 blocks off: {off[0]} health lost without Spear reach, {on[0]} with it; hand after: {on[1]}")
+
+
+@test("Ghost Hand (Hits)")
+def _():
+    # A pig 2.5 blocks off behind a stone wall 1.5 blocks off: 5 clicks, without and with Ghost Hand's Hits.
+    off = pig_clicks((), 3.0, wall=1)
+    on = pig_clicks(("ghosthand",), 3.0, (("ghosthand", "hits", "true"),), wall=1)
+    if HORIZON_SERVER and on[0] == 0:
+        return None, f"{REFUSED}: off {off[0]}, on {on[0]}"
+    return off[0] == 0 and (on[0] or 0) > 0, f"5 clicks at a pig behind a wall: {off[0]} health lost without Ghost Hand, {on[0]} with Hits"
+
+
+@test("Ghost Hand (Blocks)")
+def _():
+    # A chest 2.5 blocks off behind a stone wall: a right click at it, without and with Ghost Hand.
+    opened = {}
+    for name, mods in (("off", ()), ("on", ("ghosthand",))):
+        reset()
+        cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 1} {Y + 3} {Z0 + 2} minecraft:stone", f"setblock {X0} {Y + 1} {Z0 + 3} minecraft:chest")
+        wait(5)
+        ctl("look-at", str(X0 + 0.5), str(Y + 1.5), str(Z0 + 3.5))
+        only(*mods)
+        ctl("mouse", "right", "click")
+        wait(10)
+        opened[name] = state().get("screen")
+        if opened[name] != "playing":
+            ctl("key", "esc", "tap")
+            wait(5)
+        only()
+        cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 1} {Y + 3} {Z0 + 3} minecraft:air")
+    return opened["off"] == "playing" and opened["on"] not in ("playing", None), (
+        f"right click at a chest behind a wall: screen {opened['off']} without Ghost Hand, {opened['on']} with it")
+
+
+@test("Key Throw (Lunge spears)")
+def _():
+    # A sword held, an iron spear with Lunge III in slot 5: key 5 with Hotbar keys on jabs with it (the lunge dashes
+    # you forward) and the sword stays; off, the key selects the spear.
+    got = {}
+    for name, mods in (("off", ()), ("on", ("keythrow",))):
+        reset()
+        slot(0, "diamond_sword")
+        slot(4, "iron_spear[enchantments={lunge:3}]")
+        ctl("key", "1", "tap")
+        if mods:
+            setting("keythrow", "hotbar keys", "true")
+        only(*mods)
+        wait(5)
+        a = pos()
+        ctl("key", "5", "tap")
+        wait(15)
+        got[name] = (round(flat(a, pos()), 2), held().get("item", ""))
+        only()
+    return got["on"][0] > got["off"][0] + 0.5 and "sword" in got["on"][1] and "spear" in got["off"][1], (
+        f"moved and the item in hand after key 5: off {got['off']}, on {got['on']}")
+
+
+@test("Pearl Catch")
+def _():
+    # A pearl thrown looking 80 degrees up, wind charges in slot 3: the tick the pearl takes you (you move more than
+    # 3 blocks in a tick: a blast's push is less), the highest you are in the 100 ticks after the throw, and wind
+    # charges used, without and with Pearl Catch (Auto).
+    got = {}
+    for name, mods in (("off", ()), ("on", ("pearlcatch",))):
+        reset()
+        slot(0, "ender_pearl", 4)
+        slot(2, "wind_charge", 16)
+        ctl("key", "1", "tap")
+        ctl("look", "0", "-80")
+        only(*mods)
+        wait(5)
+        a = pos()
+        ground = a[1]
+        ctl("mouse", "right", "click")
+        flight, top = None, ground
+        for t in range(100):
+            wait(1)
+            b = pos()
+            if flight is None and math.dist(a, b) > 3:
+                flight = t
+            top, a = max(top, b[1]), b
+        only()
+        hotbar = ctl("inventory").get("hotbar") or []
+        got[name] = (flight, round(top - ground, 1), 16 - sum(s.get("count", 0) for s in hotbar if s and "wind_charge" in (s.get("item") or "")))
+        cmd("effect give @s minecraft:instant_health 1 10 true")
+    ok = got["on"][2] == 1 and got["off"][2] == 0 and got["on"][1] > got["off"][1] + 5
+    return ok, f"(tick the pearl took you, highest you got, wind charges used): off {got['off']}, on {got['on']}"
+
+
+@test("Loadouts")
+def _():
+    # A sword in slot 1 and pearls in slot 2 saved as a loadout; then the sword and pearls moved into the inventory and
+    # dirt put in their slots: .loadout test, and the Menu key (K) held with 1 pressed, each put them back (the slot
+    # you hold stays).
+    reset()
+    slot(0, "diamond_sword")
+    slot(1, "ender_pearl", 8)
+    only("loadouts")
+    say(".loadout delete test")
+    say(".loadout save test")
+    got = []
+    for how in ("command", "key"):
+        cmd("clear @s", "item replace entity @s inventory.4 with minecraft:diamond_sword",
+            "item replace entity @s inventory.9 with minecraft:ender_pearl 8", "item replace entity @s hotbar.0 with minecraft:dirt 3",
+            "item replace entity @s hotbar.4 with minecraft:cobblestone 3")
+        ctl("key", "5", "tap")
+        wait(5)
+        if how == "command":
+            say(".loadout test")
+        else:
+            ctl("key", "k", "down")
+            ctl("key", "1", "tap")
+            ctl("key", "k", "up")
+        wait(10)
+        hotbar = ctl("inventory").get("hotbar") or []
+        item = lambda i: ((hotbar[i] or {}).get("item") or "") if i < len(hotbar) else ""
+        got.append((how, item(0), item(1), held().get("item", "")))
+    say(".loadout delete test")
+    only()
+    ok = all("diamond_sword" in g[1] and "ender_pearl" in g[2] and "cobblestone" in g[3] for g in got)
+    return ok, "after equipping (how, slot 1, slot 2, held): " + ", ".join(map(str, got))
+
+
+@test("Auto Shield")
+def _():
+    # A sword in hand and a shield in the offhand. First Bot1 hits you with a sword every 15 ticks, 10 times: health
+    # you lost without and with Auto Shield. Then your Kill Aura hits Bot1 for 10 s: health it lost, its hits, and the
+    # ticks your shield was down per hit, without and with Auto Shield.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("killaura", "entities", "player")
+    took, gave = {}, {}
+    for name, mods in (("off", ()), ("on", ("autoshield",))):
+        reset()
+        slot(0, "diamond_sword")
+        cmd("item replace entity @s weapon.offhand with minecraft:shield", "effect give @s minecraft:health_boost 600 9 true",
+            "effect give @s minecraft:instant_health 1 28 true", "effect give @s minecraft:resistance 600 1 true")
+        ctl("key", "1", "tap")
+        bot_ready(2.5, 180, "give Bot1 minecraft:diamond_sword")
+        ctl2("select", "1")
+        only(*mods)
+        wait(20)
+        mine = own_health()
+        for _ in range(10):
+            cmd(f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5} 180 0")
+            ctl2("look-at", str(X0 + 0.5), str(Y + 1.6), str(Z0 + 0.5))
+            wait(1)
+            ctl2("mouse", "left", "click")
+            wait(12)
+        took[name] = round(mine - own_health(), 1)
+        only(*mods, "killaura")
+        bot, down, hits, last = bot_health(), 0, 0, bot_health()
+        for t in range(200):
+            if t % 10 == 0:
+                cmd(f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5} 180 0")
+            wait(1)
+            u = state().get("using") or {}
+            down += u.get("slot") != 40
+            h = bot_health()
+            hits += h < last - 0.01
+            last = h
+        only()
+        gave[name] = (round(bot - bot_health(), 1), hits, round(down / max(hits, 1), 1))
+    bot_done()
+    ok = took["on"] < took["off"] and gave["on"][0] > 0
+    return ok, (f"health you lost to 10 hits: off {took['off']}, on {took['on']}; Kill Aura for 10 s (Bot1 lost, hits, "
+                f"ticks unshielded per hit): off {gave['off']}, on {gave['on']}")
+
+
+@test("Bow Spam (Crossbows)")
+def _():
+    # A crossbow and 64 arrows, use held for 5 s looking up: arrows shot without and with Bow Spam.
+    shot = {}
+    for name, mods in (("off", ()), ("on", ("bowspam",))):
+        reset()
+        slot(0, "crossbow")
+        slot(8, "arrow", 64)
+        ctl("key", "1", "tap")
+        ctl("look", "0", "-45")
+        only(*mods)
+        ctl("mouse", "right", "down")
+        wait(100)
+        ctl("mouse", "right", "up")
+        only()
+        hotbar = ctl("inventory").get("hotbar") or []
+        shot[name] = 64 - sum(s.get("count", 0) for s in hotbar if s and "arrow" in (s.get("item") or ""))
+    return shot["on"] >= shot["off"] + 2, f"arrows shot holding use for 5 s: off {shot['off']}, on {shot['on']}"
+
+
+@test("Death Location")
+def _():
+    # Killed with Death Location on: its chat line and Death waypoint; back at the spot, it clears.
+    reset()
+    only("deathlocation")
+    mark = log_mark()
+    cmd(f"tp @s {X0 + 4.5} {Y + 1} {Z0 + 4.5}")
+    wait(5)
+    cmd("kill @s")
+    wait(10)
+    died = [l for l in sunset_said(mark) if l.startswith("You died at")]
+    ensure_alive()
+    mark = log_mark()
+    say(".waypoint list")
+    listed = [l for l in sunset_said(mark) if "Death" in l]
+    cmd(f"tp @s {X0 + 4.5} {Y + 1} {Z0 + 4.5}")
+    wait(10)
+    reached = [l for l in sunset_said(mark) if l.startswith("Reached")]
+    only()
+    return bool(died) and bool(listed) and bool(reached), f"said {died}, waypoints {listed}, back there: {reached}"
+
+
+@test("Shield Breaker (Stun slam)")
+def _():
+    # Falling 7 blocks onto Bot1, who holds a shield up at you, with Kill Aura (a sword), an axe in slot 3 and a mace
+    # in slot 4, Shield Breaker and Mace on: Bot1's health lost by the time you land, Stun slam off and on.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("killaura", "entities", "player")
+    lost = {}
+    for name in ("false", "true"):
+        reset()
+        slot(0, "diamond_sword")
+        slot(2, "diamond_axe")
+        slot(3, "mace")
+        ctl("key", "1", "tap")
+        setting("shieldbreaker", "stun slam", name)
+        bot_ready(2.0, 180, "give Bot1 minecraft:shield")
+        ctl2("select", "1")
+        ctl2("mouse", "right", "down")
+        wait(10)
+        before = bot_health()
+        only("killaura", "shieldbreaker", "mace")
+        cmd(f"tp @s {X0 + 0.5} {Y + 8} {Z0 + 0.5} 0 60")
+        for _ in range(40):
+            wait(1)
+            if state()["player"].get("on_ground"):
+                break
+        wait(5)
+        only()
+        lost[name] = round(before - bot_health(), 1)
+        ctl2("mouse", "right", "up")
+    bot_done()
+    return lost["true"] > lost["false"], f"Bot1's health lost to the fall: Stun slam off {lost['false']}, on {lost['true']}"
+
+
+def x_window():
+    """The X window of this session's game (its process has the session's probe path), for real key presses with
+    xdotool on the test display; None without xdotool or a window."""
+    want = f"SUNSET_PROBE={session_dir()}/probe.log".encode()
+    for pid in subprocess.run(["pgrep", "horizon-client"], capture_output=True, text=True).stdout.split():
+        try:
+            with open(f"/proc/{pid}/environ", "rb") as f:
+                if want not in f.read().split(b"\0"):
+                    continue
+        except OSError:
+            continue
+        try:
+            found = subprocess.run(["xdotool", "search", "--pid", pid], capture_output=True, text=True,
+                                   env={**os.environ, "DISPLAY": ":97"}).stdout.split()
+        except FileNotFoundError:
+            return None
+        return found[-1] if found else None
+    return None
+
+
+def x_keys(window, *keys):
+    """Real presses (XTEST) of `keys` with the game's window focused, a few ticks apart; "type:<text>" types text."""
+    env = {**os.environ, "DISPLAY": ":97"}
+    subprocess.run(["xdotool", "windowfocus", "--sync", window], env=env, capture_output=True)
+    for k in keys:
+        if k.startswith("type:"):
+            subprocess.run(["xdotool", "type", "--delay", "80", k[5:]], env=env, capture_output=True)
+        else:
+            subprocess.run(["xdotool", "key", k], env=env, capture_output=True)
+        wait(8)
+
+
+@test("RF Click")
+def _():
+    # Real R and F presses (xdotool on the test display): R three times at a pig 2 blocks off, F three times holding
+    # snowballs, then R and F typed into the chat box. Without RF Click, R does nothing and F swaps hands; with it, R
+    # hits the pig and F throws a snowball, and the chat line still reads "rf".
+    window = x_window()
+    if not window:
+        return None, "needs xdotool and the game's window"
+    got = {}
+    for name, mods in (("off", ()), ("on", ("rfclick",))):
+        reset()
+        slot(0, "snowball", 16)
+        ctl("key", "1", "tap")
+        cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 2.5} {TOUGH_PIG}")
+        wait(10)
+        ctl("look-at-entity", str(mobs("pig")[0]["id"]))
+        only(*mods)
+        x_keys(window, "r", "r", "r")
+        hit = round(1000 - mobs("pig")[0]["health"], 1)
+        x_keys(window, "f", "f", "f")
+        inv = ctl("inventory")
+        snow = sum(s.get("count", 0) for s in (inv.get("hotbar") or []) + [inv.get("offhand")] if s and "snowball" in (s.get("item") or ""))
+        ctl("key", "t", "tap")
+        wait(2)
+        x_keys(window, "type:rf")
+        ctl("key", "enter", "tap")
+        wait(10)
+        typed = any(line.endswith("rf") for line in ctl("chat-log", "3").get("chat", []))
+        got[name] = (hit, 16 - snow, typed, round(1000 - mobs("pig")[0]["health"], 1) == hit)
+        only()
+    ok = got["off"][0] == 0 and got["off"][1] == 0 and got["on"][0] > 0 and got["on"][1] >= 2 and got["on"][2] and got["on"][3]
+    return ok, ("(pig health lost to 3 R, snowballs thrown by 3 F, chat line 'rf' sent, no hit while typing): "
+                f"off {got['off']}, on {got['on']}")
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)
