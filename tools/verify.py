@@ -4850,6 +4850,163 @@ def _():
         f"back on {back}")
 
 
+
+def bot_probe_frames(mark):
+    """Bot1's probe frames since `mark` (its own SUNSET_PROBE file, in its session)."""
+    with open(os.path.join(os.path.dirname(CTL2), "session2")) as f:
+        path = os.path.join(f.read().strip(), "probe.log")
+    with open(path) as f:
+        f.seek(mark)
+        lines = f.read().split("\n")[:-1]
+    return [Frame(line.split()) for line in lines if line[:1].isdigit()]
+
+
+def bot_probe_mark():
+    with open(os.path.join(os.path.dirname(CTL2), "session2")) as f:
+        return os.path.getsize(os.path.join(f.read().strip(), "probe.log"))
+
+
+def seen_late(own, seen):
+    """How late (ms) the x positions in `seen` [(t, x)] follow `own` [(t, x)]: the shift that fits them best."""
+    def at(t):
+        for (t0, x0), (t1, x1) in zip(own, own[1:]):
+            if t0 <= t <= t1:
+                return x0 + (x1 - x0) * (t - t0) / max(t1 - t0, 1e-9)
+        return None
+    best = None
+    for ms in range(0, 1500, 10):
+        gaps = [abs(x - y) for t, x in seen if (y := at(t - ms / 1000)) is not None]
+        if len(gaps) > len(seen) // 2 and (best is None or sum(gaps) / len(gaps) < best[1]):
+            best = (ms, sum(gaps) / len(gaps))
+    return best[0] if best else None
+
+
+@test("Fake Lag")
+def _():
+    # You strafe left and right in front of Bot1 for 3 s, without and with Fake Lag (Always, 300 ms). From both
+    # clients' probes: your x as you see it and as Bot1 sees you, and the shift in time that fits them best (how late
+    # the server and Bot1 have you). The wire probe: never two move packets in a client tick, no kick.
+    if not CTL2:
+        return None, "needs a second player"
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    reset()
+    bot_ready(4.5, 180)
+    me = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
+    setting("fakelag", "mode", "Always")
+    setting("fakelag", "delay", "300")
+    late, wire = {}, {}
+    for name, mods in (("off", ()), ("on", ("fakelag",))):
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
+        wait(10)
+        only(*mods)
+        wait(10)
+        mark, bmark = probe_mark(), bot_probe_mark()
+        for step in range(6):
+            ctl("key", "ad"[step % 2], "down")
+            wait(10)
+            ctl("key", "ad"[step % 2], "up")
+        wait(20)
+        only()
+        own = [(f.t, f.eye[0]) for f in probe_frames(mark)]
+        seen = [(f.t, f.mobs[me][0][0]) for f in bot_probe_frames(bmark) if me in f.mobs]
+        late[name] = seen_late(own, seen)
+        wire[name] = order_stats(mark)
+    bot_done()
+    if late["off"] is None or late["on"] is None:
+        return False, f"no fit: {late}"
+    extra = late["on"] - late["off"]
+    note = (f"Bot1 sees you {late['off']} ms late without Fake Lag, {late['on']} ms with it (+{extra} ms for 300 ms); most "
+            f"move packets in a client tick: {wire['off'][3]} off, {wire['on'][3]} on, over {wire['on'][2]} ticks")
+    return 220 <= extra <= 420 and wire["on"][3] <= 1 and wire["on"][2] > 40, note
+
+
+@test("Knockback Delay")
+def _():
+    # Bot1 hits you 5 times off and 5 times on (Chance 100%, ground delay 400 ms); from your probe, the time from its
+    # click to the first frame you move: how late the knockback lands.
+    if not CTL2:
+        return None, "needs a second player"
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    setting("knockbackdelay", "chance", "100")
+    setting("knockbackdelay", "ground delay min", "400")
+    setting("knockbackdelay", "ground delay max", "400")
+    reset()
+    cmd("effect give @s minecraft:resistance 600 4 true")
+    bot_ready(2.5, 180)
+    tester = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
+    late = {}
+    for name, mods in (("off", ()), ("on", ("knockbackdelay",))):
+        only(*mods)
+        late[name] = []
+        for _ in range(5):
+            cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5} 180 0", "effect give @s minecraft:instant_health 1 3 true")
+            wait(20)
+            ctl2("look-at-entity", str(tester))
+            mark, t0 = probe_mark(), time.time()
+            ctl2("mouse", "left", "click")
+            wait(30)
+            frames = probe_frames(mark)
+            still = frames[0].eye if frames else None
+            moved = next((f.t for f in frames if still and f.t > t0 and math.dist(f.eye[::2], still[::2]) > 0.05), None)
+            if moved:
+                late[name].append(round((moved - t0) * 1000))
+        only()
+    bot_done()
+    if len(late["off"]) < 4 or len(late["on"]) < 4:
+        return False, f"knocked back too seldom: {late}"
+    off, on = sorted(late["off"])[len(late["off"]) // 2], sorted(late["on"])[len(late["on"]) // 2]
+    return 300 <= on - off <= 550, f"knockback lands (ms after Bot1's click, median): off {off} {late['off']}, on {on} {late['on']}"
+
+
+@test("Auto City and Auto Trap (rates)")
+def _():
+    # Auto City, 5 times: Bot1 stands in a ring of obsidian 3 blocks in front, you hold an Efficiency V netherite
+    # pickaxe; it has to mine the ring block nearest you and turn off. Auto Trap, 5 times with Bot1 still and 3 times
+    # with it walking sideways: obsidian placed round it in 3 s.
+    if not CTL2:
+        return None, "needs a second player"
+    reset()
+    cmd("give @s minecraft:netherite_pickaxe[enchantments={efficiency:5}]", "give @s minecraft:obsidian 64")
+    wait(5)
+    mined, ticks = 0, []
+    for _ in range(5):
+        cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 1} {Y + 1} {Z0 + 4} minecraft:obsidian", f"setblock {X0} {Y + 1} {Z0 + 3} minecraft:air")
+        bot_ready(3.5, 180)
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
+        wait(5)
+        only("autocity")
+        for t in range(0, 120, 5):
+            wait(5)
+            if not is_on("Auto City"):
+                break
+        turned_itself_off("autocity", "Auto City")
+        only()
+        if not check(f"execute if block {X0} {Y + 1} {Z0 + 2} minecraft:obsidian"):
+            mined += 1
+            ticks.append(t + 5)
+    cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 1} {Y + 1} {Z0 + 4} minecraft:air")
+    placed = {"still": [], "walking": []}
+    for name, runs in (("still", 5), ("walking", 3)):
+        for _ in range(runs):
+            cmd(f"fill {X0 - 3} {Y + 1} {Z0 + 1} {X0 + 3} {Y + 3} {Z0 + 4} minecraft:air", "give @s minecraft:obsidian 64")
+            bot_ready(2.5, 180)
+            ctl("key", "2", "tap")
+            if name == "walking":
+                ctl2("key", "a", "down")
+            only("autotrap")
+            wait(60)
+            ctl2("key", "a", "up")
+            turned_itself_off("autotrap", "Auto Trap")
+            only()
+            placed[name].append(count(X0 - 3, Y + 1, Z0 + 1, X0 + 3, Y + 3, Z0 + 4, "obsidian"))
+    bot_done()
+    cmd(f"fill {X0 - 3} {Y + 1} {Z0 + 1} {X0 + 3} {Y + 3} {Z0 + 4} minecraft:air")
+    trapped = sum(n >= 5 for n in placed["still"])
+    return mined >= 4 and trapped >= 4, (f"Auto City mined the wall {mined}/5 times, in {ticks} ticks; Auto Trap boxed Bot1 (5+ "
+                                         f"obsidian) {trapped}/5 times standing {placed['still']}, walking it placed {placed['walking']}")
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

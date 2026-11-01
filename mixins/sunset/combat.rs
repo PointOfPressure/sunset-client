@@ -1,6 +1,6 @@
 // Sunset's combat modules beyond the core ones, ported from Meteor's source:
 // Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow,
-// Offhand and Auto EXP.
+// Offhand and Auto EXP; and Auto City (Meteor's, as Rust's PR #16 has it).
 
 use super::sunset::{Category, Module, gui_open, hold, is_friend, own_id, with};
 use super::sunset_util::*;
@@ -34,6 +34,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Center", true)
             .bool("Turn off", true)
             .bool("Rotate", true),
+        Module::new("Auto City", Combat, "Mines a block of the wall round the nearest player's feet with your best pickaxe, then turns off. Support puts obsidian under it first, so a crystal can go there.")
+            .num("Target range", 5.5, 0.0, 6.0, 0.5)
+            .num("Break range", 4.5, 0.0, 6.0, 0.5)
+            .bool("Support", true)
+            .bool("Rotate", true)
+            .bool("Notifications", true),
         Module::new("Auto Trap", Combat, "Traps people in a box to prevent them from moving.")
             .text("Blocks", "obsidian,crying_obsidian")
             .num("Place range", 4.0, 1.0, 6.0, 0.5)
@@ -155,6 +161,18 @@ struct Cs {
     aim_frame: Option<Instant>,
     aim_target: Option<u32>,
     aim_last: [f64; 2],
+    city: Option<City>,
+}
+
+// Auto City's block: its target, the slot to go back to, the progress so far, and once the stop went the ticks
+// left to wait for the server's answer.
+#[derive(Clone, Copy)]
+struct City {
+    pos: [i32; 3],
+    target: u32,
+    back: usize,
+    done: f32,
+    waiting: Option<u32>,
 }
 
 static CS: Mutex<Option<Cs>> = Mutex::new(None);
@@ -179,7 +197,7 @@ fn activated(name: &str, on: bool) -> bool {
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     show_clear();
     let get = |n: &str| mods.iter().find(|m| m.name == n);
-    for name in ["Surround", "Self Trap", "Auto Trap", "Self Web", "Auto Web", "Hole Filler", "Burrow", "Offhand", "Auto Totem", "Auto EXP"] {
+    for name in ["Surround", "Self Trap", "Auto City", "Auto Trap", "Self Web", "Auto Web", "Hole Filler", "Burrow", "Offhand", "Auto Totem", "Auto EXP"] {
         let Some(m) = get(name).filter(|m| m.on) else {
             activated(name, false);
             if name == "Auto Totem" {
@@ -196,6 +214,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         match name {
             "Surround" => surround(game, m, just),
             "Self Trap" => self_trap(game, m, just),
+            "Auto City" => auto_city(game, m, just),
             "Auto Trap" => auto_trap(game, m, just),
             "Self Web" => self_web(game, m),
             "Auto Web" => auto_web(game, m),
@@ -365,6 +384,109 @@ fn self_trap(game: &mut Game<'_>, m: &Module, just: bool) {
             });
         }
         cs(|c| c.trap_delay = 0);
+    }
+}
+
+// ---- Auto City
+
+fn auto_city(game: &mut Game<'_>, m: &Module, just: bool) {
+    let note = |game: &mut Game<'_>, msg: &str| {
+        if m.b("Notifications") {
+            super::sunset::say(game, msg);
+        }
+    };
+    if just {
+        let found = city_block(game, m);
+        let Some((t, pos)) = found else {
+            note(game, "Auto City: no player next to a block to mine.");
+            cs(|c| c.city = None);
+            return toggle_off(game, "Auto City");
+        };
+        let Some(pick) = find_held(game, |n| n.ends_with("_pickaxe")) else {
+            note(game, "Auto City: no pickaxe in the hotbar.");
+            return toggle_off(game, "Auto City");
+        };
+        // Support: obsidian under the block, for the crystal that goes where it was.
+        let below = [pos[0], pos[1] - 1, pos[2]];
+        if m.b("Support")
+            && let Some(slot) = blocks_slot(game, "obsidian")
+            && let Some(eye) = game.eye_position()
+            && dist(eye, center_of(below)) <= m.n("Break range")
+        {
+            place_block(game, below, slot, m.b("Rotate"), true);
+        }
+        let back = game.selected;
+        hold(game, pick);
+        cs(|c| c.city = Some(City { pos, target: t, back, done: 0.0, waiting: None }));
+        start_city(game, pos, m.b("Rotate"), 0);
+        return;
+    }
+    let Some(mut city) = cs(|c| c.city) else {
+        return;
+    };
+    show(city.pos, 0x40FF_2020);
+    let gone = game.res.facts().is_air(game.world.block(city.pos[0], city.pos[1], city.pos[2]));
+    let target = target_by_id(game, city.target);
+    let eye = game.eye_position();
+    let (msg, over) = if gone {
+        (format!("Auto City: mined {} {} {}.", city.pos[0], city.pos[1], city.pos[2]), true)
+    } else if bad_target(game, &target, m.n("Target range")) || eye.is_none_or(|e| dist(e, center_of(city.pos)) > m.n("Break range")) {
+        ("Auto City: the target or the block went out of range.".to_owned(), true)
+    } else if city.waiting == Some(0) {
+        ("Auto City: the server kept the block.".to_owned(), true)
+    } else {
+        (String::new(), false)
+    };
+    if over {
+        note(game, &msg);
+        hold(game, city.back);
+        cs(|c| c.city = None);
+        return toggle_off(game, "Auto City");
+    }
+    if let Some(left) = city.waiting {
+        city.waiting = Some(left - 1);
+    } else {
+        // The game's own progress a tick with what is held (the pickaxe, its enchantments, haste, off the ground...).
+        city.done += game.destroy_progress(city.pos);
+        // The server lets a stop through once the progress reaches 0.7, counting the tick it started in.
+        if city.done >= 0.7 {
+            start_city(game, city.pos, m.b("Rotate"), 3);
+            city.waiting = Some(10);
+        }
+    }
+    cs(|c| c.city = Some(city));
+}
+
+// The nearest player in Target range, and the block of the wall round their feet that is closest to your eyes in
+// Break range (not air, not unbreakable).
+fn city_block(game: &Game<'_>, m: &Module) -> Option<(u32, [i32; 3])> {
+    let eye = game.eye_position()?;
+    let t = player_target(game, m.n("Target range"), "Lowest distance")?;
+    let feet = [t.pos[0].floor() as i32, t.pos[1].floor() as i32, t.pos[2].floor() as i32];
+    HORIZONTAL
+        .iter()
+        .map(|d| [feet[0] + d[0], feet[1], feet[2] + d[2]])
+        .filter(|&p| {
+            let f = facts(game, p);
+            !game.res.facts().is_air(game.world.block(p[0], p[1], p[2])) && f.hardness >= 0.0 && dist(eye, center_of(p)) <= m.n("Break range")
+        })
+        .min_by(|a, b| dist(eye, center_of(*a)).total_cmp(&dist(eye, center_of(*b))))
+        .map(|p| (t.id, p))
+}
+
+// START (0) or STOP (3) breaking the block, facing it first when Rotate is on.
+fn start_city(game: &mut Game<'_>, pos: [i32; 3], rotate: bool, action: i32) {
+    let send = move |game: &mut Game<'_>| {
+        let sequence = sequence(game);
+        game.send(S::PlayerAction(play::PlayerAction { action, pos, direction: 1, sequence }));
+        game.swing_arm();
+    };
+    match game.eye_position() {
+        Some(eye) if rotate => {
+            let (yaw, pitch) = super::sunset::look_at(eye, center_of(pos));
+            super::sunset::turn_then("Auto City", yaw, pitch, send);
+        }
+        _ => send(game),
     }
 }
 

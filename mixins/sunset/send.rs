@@ -1,5 +1,6 @@
-// Outgoing packets: Friend Guard drops hits on friends, Blink holds moves, Anti Hunger and No Fall change them; what goes on the wire is noted (the look
-// and the sprint the server has, for Crystal Aura and Anchor Aura).
+// Outgoing packets: Friend Guard drops hits on friends, Blink holds moves, Anti Hunger and No Fall change them, Fake Lag
+// holds what goes out for a while; what goes on the wire is noted (the look and the sprint the server has, for Crystal
+// Aura and Anchor Aura).
 fn sunset_send(
     game: &crate::game::Game<'_>,
     packet: &horizon_protocol::packets::play::Serverbound,
@@ -12,15 +13,20 @@ fn sunset_send(
     {
         return std::ops::ControlFlow::Break(());
     }
-    match crate::game::sunset::outgoing(game, packet) {
-        Out::Pass => {
-            crate::game::sunset_combat_wire::forwarded(game, packet);
-            std::ops::ControlFlow::Continue(())
-        }
-        Out::Drop => std::ops::ControlFlow::Break(()),
-        Out::Replace(changed) => {
+    let changed = match crate::game::sunset::outgoing(game, packet) {
+        Out::Pass => None,
+        Out::Drop => return std::ops::ControlFlow::Break(()),
+        Out::Replace(changed) => Some(changed),
+    };
+    let last = changed.as_ref().unwrap_or(packet);
+    if crate::game::sunset_lag::held(game, last) {
+        return std::ops::ControlFlow::Break(());
+    }
+    crate::game::sunset_combat_wire::forwarded(game, last);
+    match changed {
+        None => std::ops::ControlFlow::Continue(()),
+        Some(changed) => {
             if let Some(r) = &game.remote {
-                crate::game::sunset_combat_wire::forwarded(game, &changed);
                 r.session.send(changed);
             }
             std::ops::ControlFlow::Break(())

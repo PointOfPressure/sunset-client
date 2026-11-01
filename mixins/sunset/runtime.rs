@@ -718,6 +718,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_combat_macros::defaults());
     v.extend(super::sunset_melee::defaults());
     v.extend(super::sunset_combat_inventory::defaults());
+    v.extend(super::sunset_lag::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_crosshair::defaults());
@@ -2267,6 +2268,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_combat_macros::tick(game, &mods, game.ticks);
     super::sunset_melee::tick(game);
     super::sunset_combat_inventory::tick(game, &mods);
+    super::sunset_lag::tick(game, &mods);
     super::sunset_combat::tick(game, &mods);
     super::sunset_explosive_aura::tick(game, &mods, game.ticks);
     super::sunset_render::tick(game, &mods, ticks);
@@ -3507,6 +3509,7 @@ pub(super) fn remember_velocity(game: &Game<'_>) {
 // A correction replaces the player's position: Speed's strafe and Scaffold's waits start again. (Velocity's baseline
 // stays: Horizon's server can bring a hit's knockback with a position packet, which Velocity has to see.)
 pub(super) fn server_correction(game: &mut Game<'_>) {
+    super::sunset_lag::correction(game);
     if !game.native_on(ID) { return; }
     with(|s| {
         s.knockback_ticks = 0;
@@ -5510,6 +5513,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
 
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
     super::sunset_explosive_aura::draw(game, cam, mods, out, lw);
+    super::sunset_lag::draw(game, cam, mods, out, lw);
     super::sunset_block_overlay::overlay(game, cam, mods, out, lw);
     if let Some(m) = mods.iter().find(|m| m.name == "Target ESP" && m.on) {
         super::sunset_target_esp::draw(game, cam, m, [cam.w as f32, cam.h as f32], lw, out);
