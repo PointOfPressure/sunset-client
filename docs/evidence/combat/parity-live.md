@@ -11,6 +11,8 @@ The passing cases below are not one all-current-binary aggregate.
 The final [R30 build](parity-build-r30.json) passes official native checking,
 the optimized build and **682 focused checks** (631 compiled/native adapters,
 51 source contracts). Its 142 source fingerprints identify the exact input.
+The [source binding](parity-source-binding-r30.json) verifies every committed
+native input and every packaged source file against that frozen checkpoint.
 
 - **R30 pearls: three cases pass.** [Peer follow, sprint chase and Escape](pearls-parity-r30/README.md)
   use real projectiles, item consumption and actual player displacement. The

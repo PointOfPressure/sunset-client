@@ -1,0 +1,24 @@
+{
+  "checkpoint": "R30",
+  "source_commit": "b071411c4330d24dadc662a816c70f55bc73b8f4",
+  "files_verified": 142,
+  "git_blob_mismatches": [],
+  "package_files_verified": 142,
+  "comparison": "All 142 committed mixins inputs match the frozen native source map after explicit CRLF/LF normalization. The normal source .hnmod contains all 142 original raw input bytes. No source edits occur between the tested checkpoint and this commit.",
+  "build_record": "parity-build-r30.json",
+  "build_record_sha256": "db15c242f46db2882e8ae48e6aec714f75c54063c258fcf4ffa09ccc1337ac35",
+  "native_inputs_git_lf_map_sha256": "30188dbed48a1c29d65033620d42c018c10ce8428e4e51832398e2421df894be",
+  "native_client_sha256": "82951c55e13be66a15ef345bb2384279575355da9e7b5b23dedefc29bbd131ab",
+  "package_sha256": "c421d8f52c719cee3516788d69cb93dbf90a0cb58a271af8d7837d15dd8694a5",
+  "native_host_revision": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+  "official_mixins_revision": "cb1ad23022392d88f006cf94cbf6552a73f5df12",
+  "packaged_manifest": {
+    "schema": 1,
+    "id": "sunset",
+    "version": "0.8.1",
+    "game": "26.3",
+    "horizon": "ba6344a59cb9e755b730dcf02285fc0d33b97d3c",
+    "mixins": "cb1ad23022392d88f006cf94cbf6552a73f5df12"
+  },
+  "scope": "This source binding does not relabel earlier runtime checkpoints as R30 or claim all 25 capabilities were runtime-tested on one binary."
+}
