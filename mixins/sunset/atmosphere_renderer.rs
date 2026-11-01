@@ -12,7 +12,7 @@ const DEBOUNCE: Duration = Duration::from_millis(250);
 const ENTRY: &str = "
 @fragment fn fs_sunset_atmosphere(in: SkyOut) -> @location(0) vec4<f32> {
     let ray = view_ray(in.ndc);
-    return vec4(sunset_atmosphere(ray, sky_along_ray(ray)), 1.0);
+    return vec4(sunset_atmosphere(ray), 1.0);
 }
 ";
 
