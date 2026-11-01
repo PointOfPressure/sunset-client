@@ -3408,7 +3408,6 @@ pub(super) fn remember_velocity(game: &Game<'_>) {
 // A correction replaces the player's position: Speed's strafe and Scaffold's waits start again. (Velocity's baseline
 // stays: Horizon's server can bring a hit's knockback with a position packet, which Velocity has to see.)
 pub(super) fn server_correction(game: &mut Game<'_>) {
-    fall_teleported();
     if !game.native_on(ID) { return; }
     with(|s| {
         s.knockback_ticks = 0;
@@ -4088,6 +4087,11 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     {
         return Out::Drop;
     }
+    // A teleport: the server goes on counting from where it put you, though the moves after it are held (Blink) or
+    // the next one is far away.
+    if let S::AcceptTeleportation(t) = packet {
+        fall(|f| f.last = Some(t.y));
+    }
     let Some(sent) = Move::of(packet) else {
         return Out::Pass;
     };
@@ -4195,7 +4199,7 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
 struct Fall {
     // The server's count, in blocks.
     counted: f64,
-    // The height the last move told; None at first and after a teleport (the server goes on from where it put you).
+    // The height the last move told, or the last teleport put you at; None at first.
     last: Option<f64>,
     // Part of the count is not yours to pay.
     kept: bool,
@@ -4270,11 +4274,7 @@ fn fall_cleared(game: &Game<'_>) -> bool {
         || game.block_in_tag("minecraft:climbable", &game.block_name(feet))
 }
 
-// A teleport: the server goes on from where it puts you. Death: the next body has fallen nowhere.
-fn fall_teleported() {
-    fall(|f| f.last = None);
-}
-
+// Death: the next body has fallen nowhere.
 fn fall_died() {
     fall(|f| *f = Fall { counted: 0.0, last: None, kept: false });
 }

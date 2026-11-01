@@ -523,6 +523,16 @@ def heal():
         wait(5)
 
 
+def health_lost(before):
+    """Health lost since `before`: all of it on a death (a dead player's health reads as anything), and back alive
+    after, so the next step's toggles are not typed into the death screen."""
+    st = state()
+    if st.get("screen") == "dead" or not st.get("player"):
+        ensure_alive()
+        return before
+    return before - st["player"]["health"]
+
+
 def dropped(height, dx=0.5, dz=0.5, during=None, settle=0):
     """Health lost dropping `height` blocks onto the platform at (dx, dz), regeneration off (reset() first);
     `during` runs as the fall starts."""
@@ -533,7 +543,7 @@ def dropped(height, dx=0.5, dz=0.5, during=None, settle=0):
     if during:
         during()
     wait(fall_ticks(height) + settle)
-    lost = before - hp()
+    lost = health_lost(before)
     cmd("gamerule natural_health_regeneration true")
     return lost
 
@@ -578,7 +588,7 @@ def hurt(act, settle=20):
     before = hp()
     act()
     wait(settle)
-    lost = before - hp()
+    lost = health_lost(before)
     cmd("gamerule natural_health_regeneration true")
     return lost
 
@@ -601,6 +611,9 @@ def _():
     reset()
     only("nofall")
     cmd("item replace entity @s armor.chest with minecraft:elytra")
+
+    # The glide's path clear of what earlier runs left above the arena (a server's world keeps it).
+    cmd(f"fill {X0-3} {Y+5} {Z0-15} {X0+3} {Y+63} {Z0+3} minecraft:air")
 
     def glide():
         ctl("chat", f"/tp @s {X0 + 0.5} {Y + 61} {Z0 - 12.5} 0 70")
