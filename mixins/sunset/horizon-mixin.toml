@@ -45,6 +45,18 @@ name = "sunset_text_edit"
 source = "text_edit.rs"
 
 [[module]]
+id = "dashboard"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_dashboard"
+source = "dashboard.rs"
+
+[[module]]
+id = "smooth"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_smooth"
+source = "smooth.rs"
+
+[[module]]
 id = "picker"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_picker"
@@ -893,6 +905,17 @@ cancellable = true
 target = "horizon_client::game::chat::Game<'_>::toggle_hide_gui"
 helper = "hide_hud.rs"
 bindings = []
+
+# The open click GUI over the chat, titles, tab list and toasts, which draw after the HUD hook; but under a prompt.
+[[injection]]
+id = "gui_top"
+kind = "HEAD"
+target = "horizon_client::game::dialogs::Game<'_>::draw_dialog"
+helper = "gui_top.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+]
 
 [[injection]]
 id = "vanish_connect"
