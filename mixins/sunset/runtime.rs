@@ -340,7 +340,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Additional height", 0.0, 0.0, 1.0, 0.05)
             .bool("Mace smash", true)
             .bool("Only with a weapon", false)
-            .bool("Only on ground", true),
+            .bool("Only on ground", false),
         Module::new("Auto Totem", Combat, "Moves a totem from your inventory to your offhand.")
             .pick("Mode", &["Smart", "Strict"])
             .num("Delay (ticks)", 0.0, 0.0, 20.0, 1.0)
@@ -1045,12 +1045,17 @@ static WELCOMED: AtomicBool = AtomicBool::new(false);
 // (it brings Sunset back). Not saved: a restart brings it back too.
 static HIDDEN: AtomicBool = AtomicBool::new(false);
 // The server takes one position packet per tick and disconnects a client that
-// sends more ("Invalid move player packet received"). Criticals hops over two
-// ticks instead: stage 1 and 2 turn the next position packets into the hop up
-// (CRIT_HOP blocks, f64 bits) and the hop back (both off the ground), stage 3
-// lets the hit follow. Stage 4 waits for you to fall (Jump, Mini jump, a hit in
-// the air), and CRIT_JUMP presses jump for the next tick.
+// sends more ("Invalid move player packet received"). Criticals hops over three
+// ticks instead: stages 1 to 3 turn the next position packets into the hop up
+// (CRIT_HOP blocks, f64 bits), half way down and back down (all off the ground),
+// stage 4 lets the hit follow. Vanilla servers take each packet as it comes, so
+// two would do; Horizon's counts a tick's moves only after its packets, the hit
+// included, so the hit needs a move down counted in an earlier tick. Stage
+// CRIT_FALL waits for you to fall (Jump, Mini jump, a hit in the air), and
+// CRIT_JUMP presses jump for the next tick.
 pub(super) static CRIT_STAGE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+const CRIT_HIT: u8 = 4;
+const CRIT_FALL: u8 = 5;
 static CRIT_HOP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static CRIT_JUMP: AtomicBool = AtomicBool::new(false);
 // A move packet went out this tick (the game's or Sunset's): Sunset never sends a second.
@@ -3750,8 +3755,7 @@ enum Crit {
 
 // Criticals (Meteor's) for a hit now: never flying, gliding, riding, in water or lava or on a ladder. A mace (Mace
 // smash) hops 1.501 blocks plus Additional height so the server counts a smash; on the ground the Mode; in the air,
-// with Only on ground off, a hit while rising waits for the fall (one already falling is critical as it is). A hop
-// needs the room above you, else Packet's goes back to 0.0625.
+// with Only on ground off, a hit waits for the fall. A hop needs the room above you, else Packet's goes back to 0.0625.
 fn crit_plan(game: &Game<'_>, m: &Module) -> Option<Crit> {
     use horizon_core::geometry::Vec3;
     let p = game.player.as_ref()?;
@@ -3777,8 +3781,10 @@ fn crit_plan(game: &Game<'_>, m: &Module) -> Option<Crit> {
     if m.b("Mace smash") && item.ends_with(":mace") && room(1.501 + extra) {
         return Some(Crit::Hop(1.501 + extra));
     }
+    // In the air, a hit waits until you have fallen for two ticks (a server counts no fall on the first after a jump's
+    // top, and Horizon's only after the tick it came in); after that it is critical as it is.
     if !p.ground.on_ground {
-        return (!m.b("Only on ground") && p.velocity.y > 0.0).then_some(Crit::Fall);
+        return (!m.b("Only on ground") && p.velocity.y > -0.15).then_some(Crit::Fall);
     }
     Some(match m.p("Mode") {
         "Jump" => Crit::Jump,
@@ -3820,7 +3826,7 @@ pub(super) fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(
         }
         Crit::Fall => {}
     }
-    CRIT_STAGE.store(4, Ordering::Relaxed);
+    CRIT_STAGE.store(CRIT_FALL, Ordering::Relaxed);
 }
 
 // Criticals on your own clicks (the attack hook): the hit the game would make on a mob, nearer than a block, a
@@ -3875,7 +3881,7 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
         s.crit_ticks += 1;
         s.crit_ticks
     });
-    if stage == 4 {
+    if stage == CRIT_FALL {
         let Some(p) = game.player.as_ref() else {
             return;
         };
@@ -3888,8 +3894,8 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
             CRIT_STAGE.store(0, Ordering::Relaxed);
             if let Some((id, look)) = with(|s| s.crit_target.take().map(|id| (id, s.crit_look.take()))) {
                 match look {
-                    Some((yaw, pitch)) => turn_then("Attack", yaw, pitch, move |game| strike(game, id)),
-                    None => strike(game, id),
+                    Some((yaw, pitch)) => turn_then("Attack", yaw, pitch, move |game| crit_strike(game, id)),
+                    None => crit_strike(game, id),
                 }
             }
         }
@@ -3900,7 +3906,7 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
         with(|s| s.crit_target = None);
         return;
     }
-    if (stage == 1 || stage == 2) && !MOVED_THIS_TICK.load(Ordering::Relaxed) {
+    if stage < CRIT_HIT && !MOVED_THIS_TICK.load(Ordering::Relaxed) {
         let Some(p) = game.player.as_ref() else {
             return;
         };
@@ -3908,11 +3914,25 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
         // outgoing makes it the hop and moves the stage on.
         game.send(S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags: 0 }));
     }
-    if CRIT_STAGE.load(Ordering::Relaxed) == 3 {
+    if CRIT_STAGE.load(Ordering::Relaxed) == CRIT_HIT {
         CRIT_STAGE.store(0, Ordering::Relaxed);
         if let Some(id) = with(|s| s.crit_target.take()) {
-            strike(game, id);
+            crit_strike(game, id);
         }
+    }
+}
+
+// A critical hit: a server takes none from a sprinting player, so the sprint stops for the hit and goes on after it
+// (the hit gives up sprinting's extra knockback, as a critical one does in vanilla).
+fn crit_strike(game: &mut Game<'_>, id: u32) {
+    let sprinting = game.player.as_ref().is_some_and(|p| p.sprinting);
+    let me = game.remote.as_ref().map_or(0, |r| r.entity_id);
+    if sprinting {
+        game.send(S::PlayerCommand(play::PlayerCommand { id: me, action: 2, data: 0 }));
+    }
+    strike(game, id);
+    if sprinting {
+        game.send(S::PlayerCommand(play::PlayerCommand { id: me, action: 1, data: 0 }));
     }
 }
 
@@ -4020,11 +4040,17 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     // What a module tells the server of the ground, if it changes it; and whether No Fall is on to spare you the fall.
     let ground;
     let mut spared = false;
-    // Criticals: this tick's move is the hop (stage 1: up, stage 2: back down), both off the ground.
+    // Criticals: this tick's move is the hop (stage 1: up, 2: half way down, 3: back down), all off the ground. A jump
+    // this tick (your key, Auto Jump) would carry it up with you: the hit waits for the jump's fall instead.
+    if (1..CRIT_HIT).contains(&CRIT_STAGE.load(Ordering::Relaxed)) && !p.ground.on_ground && p.velocity.y > 0.0 {
+        CRIT_STAGE.store(CRIT_FALL, Ordering::Relaxed);
+    }
     let stage = CRIT_STAGE.load(Ordering::Relaxed);
-    if stage == 1 || stage == 2 {
+    let hopping = stage > 0 && stage < CRIT_HIT;
+    if hopping {
         let [x, y, z] = m.at.unwrap_or(here);
-        m.at = Some([x, if stage == 1 { y + f64::from_bits(CRIT_HOP.load(Ordering::Relaxed)) } else { y }, z]);
+        let hop = f64::from_bits(CRIT_HOP.load(Ordering::Relaxed));
+        m.at = Some([x, y + hop * f64::from(3 - stage) / 2.0, z]);
         m.flags = 0;
         ground = Some(false);
         CRIT_STAGE.store(stage + 1, Ordering::Relaxed);
@@ -4074,7 +4100,6 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     // The look a module asked for, else the player's own back after one (not during the Criticals hop, whose hit
     // follows it).
     let own = (game.yaw, game.pitch);
-    let hopping = stage == 1 || stage == 2;
     let look = turns(|t| {
         if let Some(head) = t.queue.first().filter(|_| !t.carried) {
             t.carried = true;

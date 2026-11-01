@@ -2845,6 +2845,95 @@ def _():
                 f"most move packets in a tick: {most}")
 
 
+def crit_pig():
+    """A pig with 1000 health, no AI and no knockback 2 blocks in front, in reach at a jump's top too."""
+    tough = ("{NoAI:1b,PersistenceRequired:1b,Silent:1b,Health:1000f,attributes:[{id:'minecraft:max_health',base:1000.0},"
+             "{id:'minecraft:knockback_resistance',base:1.0}]}")
+    cmd("kill @e[type=pig]", f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 2.5} {tough}")
+    wait(10)
+    return mobs("pig")[0]["id"]
+
+
+def crit_run(hits, act=None, keys=(), look=True):
+    """Hits on the pig until `hits` have landed (Kill Aura or Trigger Bot make them, or `act`, run every 3 ticks,
+    does), looking at it first if `look`: how many were critical (a diamond sword's 7 made 10.5), and how many times
+    the server put you back."""
+    pid = crit_pig()
+    if look:
+        ctl("look-at-entity", str(pid))
+    for k in keys:
+        ctl("key", k, "down")
+    mark = probe_mark() if SERVER and probe_path() else None
+    landed = crits = idle = 0
+    last = mobs("pig")[0]["health"]
+    while landed < hits and idle < 200:
+        if act:
+            act()
+        wait(3)
+        idle += 3
+        m = mobs("pig")
+        if not m:
+            pid = crit_pig()
+            last = mobs("pig")[0]["health"]
+            continue
+        drop = last - m[0]["health"]
+        last = m[0]["health"]
+        if drop > 0.5:
+            landed, idle = landed + 1, 0
+            crits += drop > 8.5
+        if last < 100:
+            pid = crit_pig()
+            last = mobs("pig")[0]["health"]
+    for k in keys:
+        ctl("key", k, "up")
+    teleports = wire_stats(mark)[2] if mark is not None else None
+    return landed, crits, teleports
+
+
+@test("Criticals (200 hits)")
+def _():
+    # Every hit at full cooldown is critical: 200 by Kill Aura in each mode, and 50 each by your own clicks, Trigger
+    # Bot, Kill Aura while you sprint past it, and Kill Aura while you jump. The server never puts you back.
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    setting("killaura", "entities", "pig")
+    setting("triggerbot", "passive", "true")
+    rates = {}
+    for mode in ("Packet", "Jump", "Mini jump"):
+        setting("criticals", "mode", mode)
+        only("criticals", "killaura")
+        rates[f"{mode}, Kill Aura"] = crit_run(200)
+    setting("criticals", "mode", "Packet")
+    only("criticals")
+    tick = {"n": 0}
+
+    def click():
+        tick["n"] += 1
+        if tick["n"] % 5 == 0:
+            ctl("mouse", "left", "click")
+    rates["Packet, clicks"] = crit_run(50, click)
+    only("criticals", "triggerbot")
+    rates["Packet, Trigger Bot"] = crit_run(50)
+    # Sprinting past it, east along the line 2 blocks short of it, back to the start each time.
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    setting("killaura", "range", "3")
+
+    def run_past():
+        if pos()[0] > X0 + 5:
+            ctl("chat", f"/tp @s {X0 - 4.5} {Y + 1} {Z0 + 0.5} -90 0")
+    ctl("chat", f"/tp @s {X0 - 4.5} {Y + 1} {Z0 + 0.5} -90 0")
+    only("criticals", "killaura", "sprint")
+    rates["Packet, Kill Aura sprinting"] = crit_run(50, run_past, keys=("w",), look=False)
+    only("criticals", "killaura")
+    rates["Packet, Kill Aura jumping"] = crit_run(50, keys=("space",))
+    only()
+    ok = all(n > 0 and c == n and t in (None, 0) for n, c, t in rates.values())
+    return ok, "; ".join(f"{k}: {c}/{n} critical" + (f", {t} put back" if t else "") for k, (n, c, t) in rates.items())
+
+
 def shot_pixels(name, want):
     """Pixels of a screenshot that `want` (r, g, b) accepts."""
     from PIL import Image
