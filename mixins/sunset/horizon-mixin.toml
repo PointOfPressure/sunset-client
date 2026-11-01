@@ -1290,6 +1290,24 @@ name = "sunset_pvp_bot"
 source = "pvp_bot.rs"
 
 [[module]]
+id = "recipes"
+file = "crates/horizon-client/src/game/recipe_book.rs"
+name = "sunset_recipes"
+source = "recipes.rs"
+visibility = "pub(crate)"
+
+[[injection]]
+id = "place_recipe"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::recipe_book::Game<'_>::place_recipe"
+helper = "recipes_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "entry_index", ty = "usize", value = "entry_index" },
+]
+
+[[module]]
 id = "packet_mine"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_packet_mine"

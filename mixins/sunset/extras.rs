@@ -1,6 +1,6 @@
-// Extras: the things that are not cheats. Client Sort sorts with Horizon's own sort (its button, key or mouse
-// button) in the order ClientSort's modifiers pick: plain, Shift, Ctrl and Alt each choose one, with items pinned
-// to the start or the end, the hotbar sorted too, and the clicks paced over ticks.
+// Extras: the things that are not cheats (Unlock All Recipes works in recipes.rs). Client Sort sorts with Horizon's
+// own sort (its button, key or mouse button) in the order ClientSort's modifiers pick: plain, Shift, Ctrl and Alt
+// each choose one, with items pinned to the start or the end, the hotbar sorted too, and the clicks paced over ticks.
 
 use super::sunset::{Category, Module};
 use super::sunset_util::{listed, short};
@@ -14,16 +14,20 @@ const LAST: usize = 1 << 40;
 const ORDERS: &[&str] = &["Creative", "Quantity", "Alphabet", "Raw id"];
 
 pub(super) fn defaults() -> Vec<Module> {
-    vec![Module::new("Client Sort", Category::Extras,
-        "Horizon's sort buttons, key and mouse button (it turns the buttons on) sort in the order you pick: plain, with Shift, Ctrl or Alt held. Start and End items always go first and last.")
-        .pick("Order", ORDERS)
-        .pick("Shift order", &["Quantity", "Creative", "Alphabet", "Raw id"])
-        .pick("Ctrl order", &["Alphabet", "Creative", "Quantity", "Raw id"])
-        .pick("Alt order", &["Raw id", "Creative", "Quantity", "Alphabet"])
-        .bool("Hotbar", true)
-        .text("Start items", "")
-        .text("End items", "")
-        .num("Clicks per tick", 8.0, 1.0, 64.0, 1.0)]
+    vec![
+        Module::new("Unlock All Recipes", Category::Extras,
+            "The recipe book shows every recipe as unlocked (from Horizon's own recipe data; on servers, which send only yours). A recipe the server has given you is placed as usual; any other one is laid in the crafting grid with ordinary clicks from your inventory. A server with doLimitedCrafting on still gives no result for those."),
+        Module::new("Client Sort", Category::Extras,
+            "Horizon's sort buttons, key and mouse button (it turns the buttons on) sort in the order you pick: plain, with Shift, Ctrl or Alt held. Start and End items always go first and last.")
+            .pick("Order", ORDERS)
+            .pick("Shift order", &["Quantity", "Creative", "Alphabet", "Raw id"])
+            .pick("Ctrl order", &["Alphabet", "Creative", "Quantity", "Raw id"])
+            .pick("Alt order", &["Raw id", "Creative", "Quantity", "Alphabet"])
+            .bool("Hotbar", true)
+            .text("Start items", "")
+            .text("End items", "")
+            .num("Clicks per tick", 8.0, 1.0, 64.0, 1.0),
+    ]
 }
 
 // The clicks still to send (slot ids), so a sort is spread over ticks.
@@ -95,6 +99,7 @@ fn plan(game: &mut Game<'_>, m: &Module, order: &str, slots: &[usize]) -> Vec<us
 // Each tick: Horizon's sort buttons on while Client Sort is, and the next clicks of a sort; none once the screen it
 // was for has closed.
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
+    super::recipe_book::sunset_recipes::sync(game, mods.iter().any(|m| m.name == "Unlock All Recipes" && m.on));
     let on = mods.iter().find(|m| m.name == "Client Sort" && m.on);
     if on.is_some() {
         game.settings.extras.sort = true;

@@ -4861,6 +4861,7 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
             super::sunset_combat_wire::reset_look();
         }
         super::sunset_combat_inventory::packet(game, packet);
+        super::recipe_book::sunset_recipes::packet(packet);
         if let C::SetEntityMotion(p) = packet {
             super::sunset_melee::note_velocity(game, p.id, p.velocity);
         }

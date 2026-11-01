@@ -5953,6 +5953,61 @@ def _():
                 f"{got}; two clicks queued, broken: {queued}")
 
 
+@test("Unlock All Recipes")
+def _():
+    # Four oak planks, every recipe taken away (/recipe take): how many recipes the inventory's book shows without and
+    # with Unlock All Recipes; then "crafting table" typed in its search, the recipe clicked (the server did not give
+    # it: laid in the grid with slot clicks) and the result shift-clicked out. The book's layout is vanilla's: the
+    # search box 54 right of the first recipe button and 11 up, the result slot 299 right and 5 down.
+    reset()
+    cmd("item replace entity @s inventory.0 with minecraft:oak_planks 4")
+    wait(10)
+    cmd("recipe take @s *")
+    wait(10)
+
+    def book():
+        return ctl("screen").get("recipe_book") or {}
+
+    def centre(r):
+        return str(r[0] + r[2] / 2), str(r[1] + r[3] / 2)
+
+    def opened():
+        ctl("open-inventory")
+        wait(5)
+        b = book()
+        if b and not b.get("open"):
+            ctl("click-at", *centre(b["targets"][0]))
+            wait(5)
+        return book().get("known", 0)
+
+    before = opened()
+    ctl("close")
+    wait(3)
+    only("unlockallrecipes")
+    after = opened()
+    targets = book().get("targets") or []
+    made = laid = 0
+    if len(targets) > 1:
+        first = targets[1]
+        ctl("click-at", str(first[0] + 54), str(first[1] - 11))
+        wait(2)
+        ctl("type", "crafting table")
+        wait(5)
+        ctl("click-at", *centre(book()["targets"][1]))
+        wait(10)
+        laid = sum(1 for slot in ctl("screen").get("slots") or [] if 100 <= slot.get("slot", 0) < 104 and "oak_planks" in (slot.get("item") or ""))
+        ctl("key", "shift", "down")
+        ctl("click-at", str(first[0] + 299), str(first[1] + 5))
+        ctl("key", "shift", "up")
+        wait(5)
+    ctl("close")
+    wait(5)
+    made = ctl("inventory").get("counts", {}).get("minecraft:crafting_table", 0)
+    only()
+    ok = after > before + 100 and laid == 4 and made == 1
+    return ok, f"recipes shown: {before} without, {after} with it; the crafting table from the book: planks laid {laid}, tables made {made}"
+
+
 @test("Wind Jump")
 def _():
     # 3 wind charges thrown straight down from the ground, without and with Wind Jump: the highest your feet rise
