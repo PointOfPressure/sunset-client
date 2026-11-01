@@ -4664,6 +4664,25 @@ def _():
         f"bottles in 2 s: {used['off']} without FastXP, {used['on']} with it; Key Throw: {16 - left} pearls for 5 presses, hand "
         f"back on {back}")
 
+
+@test("Scaffold Legit")
+def _():
+    # vs.'s Legit mode: facing back along the platform and looking steeply down, you walk backwards off its edge (z 17)
+    # with cobblestone; it sneaks at the edge and places where you look. Where you got to, and your lowest height.
+    reset(z=15.5)
+    slot(0, "cobblestone", 64)
+    ctl("key", "1", "tap")
+    setting("scaffold", "mode", "Legit")
+    only("scaffold")
+    ctl("look", "180", "78")
+    ctl("key", "s", "down")
+    ys = poll(160, 4, lambda: pos()[1])
+    ctl("key", "s", "up")
+    only()
+    p = pos()
+    placed = 64 - ((state().get("held") or {}).get("count", 64))
+    return p[2] > 19 and min(ys) > Y + 0.5, f"walked back to z {p[2]:.1f} (edge 17), lowest height {min(ys) - Y:.2f} over the platform, {placed} blocks placed"
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)
