@@ -719,6 +719,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_melee::defaults());
     v.extend(super::sunset_combat_inventory::defaults());
     v.extend(super::sunset_lag::defaults());
+    v.extend(super::sunset_pvp_bot::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_crosshair::defaults());
@@ -2269,6 +2270,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_melee::tick(game);
     super::sunset_combat_inventory::tick(game, &mods);
     super::sunset_lag::tick(game, &mods);
+    super::sunset_pvp_bot::tick(game, &mods);
     super::sunset_combat::tick(game, &mods);
     super::sunset_explosive_aura::tick(game, &mods, game.ticks);
     super::sunset_render::tick(game, &mods, ticks);
@@ -4532,6 +4534,7 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
 fn combat_cleanup(game: &mut Game<'_>) {
     super::sunset_combat_control::prepare_cleanup(game);
     super::sunset_combat_macros::reset(game);
+    super::sunset_pvp_bot::release(game);
     drop_strikes();
     super::sunset_melee::cancel(game);
     super::sunset_aura::disabled(game, false);

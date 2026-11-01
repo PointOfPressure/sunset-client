@@ -5007,6 +5007,48 @@ def _():
     return mined >= 4 and trapped >= 4, (f"Auto City mined the wall {mined}/5 times, in {ticks} ticks; Auto Trap boxed Bot1 (5+ "
                                          f"obsidian) {trapped}/5 times standing {placed['still']}, walking it placed {placed['walking']}")
 
+
+@test("Sword PvP Bot")
+def _():
+    # Bot1 (20 health, no armour) 8 blocks away, 3 times standing still and 3 times strafing left and right; you have
+    # a diamond sword and Sword PvP Bot on: it has to kill Bot1 within 20 s. After each fight, once it is off, you must
+    # stand still (no key left held).
+    if not CTL2:
+        return None, "needs a second player"
+    won, stuck = {"still": [], "strafing": []}, 0
+    for name in ("still", "still", "still", "strafing", "strafing", "strafing"):
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        bot_respawned()
+        cmd("gamemode survival Bot1", "clear Bot1", "effect clear Bot1", "effect give Bot1 minecraft:instant_health 1 10 true",
+            f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 8.5} 180 0")
+        wait(10)
+        only("swordpvpbot")
+        start, dead = time.time(), False
+        for step in range(100):
+            if name == "strafing" and step % 5 == 0:
+                ctl2("key", "ad"[step // 5 % 2], "down")
+                ctl2("key", "da"[step // 5 % 2], "up")
+            wait(4)
+            if ctl2("state").get("screen") == "dead" or bot_health() <= 0:
+                dead = True
+                break
+        ctl2("key", "a", "up")
+        ctl2("key", "d", "up")
+        took = round(time.time() - start, 1)
+        only()
+        wait(20)
+        a = pos()
+        wait(20)
+        stuck += math.dist(a, pos()) > 0.1
+        won[name].append(took if dead else None)
+    bot_respawned()
+    bot_done()
+    wins = sum(t is not None for ts in won.values() for t in ts)
+    return wins >= 5 and stuck == 0, (f"Bot1 killed {wins}/6 times; seconds per fight (None: alive after 20 s): still {won['still']}, "
+                                      f"strafing {won['strafing']}; still moving after it turned off: {stuck}")
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

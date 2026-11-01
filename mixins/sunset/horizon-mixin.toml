@@ -1110,6 +1110,12 @@ name = "sunset_lag"
 source = "lag.rs"
 
 [[module]]
+id = "pvp_bot"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_pvp_bot"
+source = "pvp_bot.rs"
+
+[[module]]
 id = "melee_policy"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_melee_policy"
