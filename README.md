@@ -157,7 +157,7 @@ See the [feature roadmap](docs/feature-roadmap.md) for what has landed, what is 
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and block counter, Kill Aura, Time and Weather Changer fixes, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro, Anchor Macro, Shield Breaker, Mace, Spear Swap, W Tap, Jump Reset, Friend Guard, Auto Inventory Totem, Hover Totem, FastXP, Key Throw, world labels sharing the menu's glyph scale). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and block counter, Kill Aura, Time and Weather Changer fixes, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro, Anchor Macro, Shield Breaker, Mace, Spear Swap, W Tap, Jump Reset, Friend Guard, Auto Inventory Totem, Hover Totem, FastXP, Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
