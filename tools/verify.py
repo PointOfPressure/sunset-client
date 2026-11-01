@@ -5101,6 +5101,51 @@ def _():
     ok = used["wind_charge", "on"] > used["wind_charge", "off"] and used["snowball", "on"] > used["snowball", "off"]
     return ok, "thrown in 3 s, off/on: " + ", ".join(f"{i} {used[i, 'off']}/{used[i, 'on']}" for i in ("wind_charge", "snowball"))
 
+
+@test("Wind Jump")
+def _():
+    # 3 wind charges thrown straight down from the ground, without and with Wind Jump: the highest your feet rise
+    # above the ground in the next 40 ticks.
+    peaks = {}
+    for name, mods in (("off", ()), ("on", ("windjump",))):
+        peaks[name] = []
+        for _ in range(3):
+            reset()
+            slot(0, "wind_charge", 16)
+            ctl("key", "1", "tap")
+            ctl("look", "0", "90")
+            only(*mods)
+            wait(5)
+            ground = pos()[1]
+            ctl("mouse", "right", "click")
+            peaks[name].append(round(max(poll(40, 1, lambda: pos()[1])) - ground, 2))
+            only()
+    ok = mean(peaks["on"]) > mean(peaks["off"]) + 0.5
+    return ok, f"rise from a wind charge thrown down (blocks): off {mean(peaks['off'])} {peaks['off']}, on {mean(peaks['on'])} {peaks['on']}"
+
+
+@test("Hold to Eat")
+def _():
+    # A sword held, golden apples in slot 4: with Hold to Eat, key 4 held for 40 ticks eats one and the sword comes
+    # back; off, the key only selects the apples.
+    got = {}
+    for name, mods in (("off", ()), ("on", ("holdtoeat",))):
+        reset()
+        slot(0, "diamond_sword")
+        slot(3, "golden_apple", 8)
+        ctl("key", "1", "tap")
+        only(*mods)
+        ctl("key", "4", "down")
+        wait(40)
+        ctl("key", "4", "up")
+        wait(5)
+        only()
+        hotbar = ctl("inventory").get("hotbar") or []
+        apples = sum(s.get("count", 0) for s in hotbar if s and "golden_apple" in (s.get("item") or ""))
+        got[name] = (apples, held().get("item", ""))
+    ok = got["off"][0] == 8 and got["on"][0] == 7 and "sword" in got["on"][1]
+    return ok, f"apples left and the item in hand after: off {got['off']}, on {got['on']}"
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

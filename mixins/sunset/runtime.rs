@@ -720,6 +720,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_combat_inventory::defaults());
     v.extend(super::sunset_lag::defaults());
     v.extend(super::sunset_pvp_bot::defaults());
+    v.extend(super::sunset_duel::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_crosshair::defaults());
@@ -1653,6 +1654,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     }
     super::sunset_melee::key(game, key, pressed);
     super::sunset_combat_inventory::key(game, key, pressed);
+    super::sunset_duel::key(game, key, pressed);
     if !pressed {
         with(|s| {
             let held = s.inputs.release(key);
@@ -2271,6 +2273,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_combat_inventory::tick(game, &mods);
     super::sunset_lag::tick(game, &mods);
     super::sunset_pvp_bot::tick(game, &mods);
+    super::sunset_duel::tick(game);
     super::sunset_combat::tick(game, &mods);
     super::sunset_explosive_aura::tick(game, &mods, game.ticks);
     super::sunset_render::tick(game, &mods, ticks);

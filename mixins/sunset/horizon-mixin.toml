@@ -1116,6 +1116,12 @@ name = "sunset_pvp_bot"
 source = "pvp_bot.rs"
 
 [[module]]
+id = "duel"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_duel"
+source = "duel.rs"
+
+[[module]]
 id = "melee_policy"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_melee_policy"
