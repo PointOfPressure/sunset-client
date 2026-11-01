@@ -702,6 +702,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_crosshair::defaults());
     v.push(super::sunset_block_overlay::defaults());
     v.extend(super::sunset_target_esp::defaults());
+    v.extend(super::sunset_atmosphere::defaults());
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
     v.extend(super::sunset_vanish::defaults());

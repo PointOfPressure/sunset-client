@@ -820,3 +820,67 @@ cancellable = true
 target = "horizon_client_render::gfx::Renderer::draw_outline"
 helper = "block_overlay_draw_hook.rs"
 bindings = []
+[[module]]
+id = "atmosphere"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_atmosphere"
+source = "atmosphere.rs"
+
+[[module]]
+id = "atmosphere_flags"
+file = "crates/horizon-client-render/src/gfx.rs"
+name = "sunset_atmosphere_flags"
+source = "atmosphere_flags.rs"
+visibility = "pub"
+
+[[module]]
+id = "atmosphere_renderer"
+file = "crates/horizon-client-render/src/gfx.rs"
+name = "sunset_atmosphere_renderer"
+source = "atmosphere_renderer.rs"
+visibility = "pub"
+
+[[module]]
+id = "atmosphere_shader"
+file = "crates/horizon-client-render/src/gfx.rs"
+name = "sunset_atmosphere_shader"
+source = "atmosphere_shader.rs"
+
+[[injection]]
+id = "atmosphere_sync"
+kind = "HEAD"
+target = "horizon_client::game::Game<'_>::hud_layers"
+helper = "atmosphere_sync_hook.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[injection]]
+id = "atmosphere_render"
+kind = "HEAD"
+target = "horizon_client_render::gfx::Renderer::render"
+helper = "atmosphere_render_hook.rs"
+bindings = [
+  { name = "renderer", ty = "&mut Renderer", value = "&mut *self" },
+  { name = "frame", ty = "&Frame<'_>", value = "frame" },
+]
+
+[[injection]]
+id = "atmosphere_release"
+kind = "HEAD"
+target = "horizon_client_render::gfx::Renderer::release_surface"
+helper = "atmosphere_release_hook.rs"
+bindings = [{ name = "renderer", ty = "&mut Renderer", value = "&mut *self" }]
+
+[[injection]]
+id = "atmosphere_stars"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::gfx::stars::Stars::draw"
+helper = "atmosphere_stars_hook.rs"
+bindings = []
+
+[[injection]]
+id = "atmosphere_finish"
+kind = "HEAD"
+target = "horizon_client::game::Game<'_>::finish_perf"
+helper = "atmosphere_finish_hook.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]

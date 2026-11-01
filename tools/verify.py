@@ -3122,6 +3122,34 @@ def _():
                 f"Block Overlay on a fence {block_px}; Target ESP on Kill Aura's husk {target_px} (frames in /tmp/vis_*.png)")
 
 
+@test("Atmosphere")
+def _():
+    # At night, looking up: each sky changes the frame from the game's own sky (the aurora only low down), and the
+    # frame rate holds.
+    reset()
+    cmd("time set 18000")
+    ctl("look", "0", "-60")
+
+    def sky(name, mode=None):
+        if mode:
+            setting("atmosphere", "mode", mode)
+            only("atmosphere")
+        wait(225)
+        a = ctl("status")
+        wait(40)
+        b = ctl("status")
+        fps = (b["frames"] - a["frames"]) / max(b["uptime_seconds"] - a["uptime_seconds"], 1e-6)
+        return frame(name), fps
+    plain, fps0 = sky("atmo_off")
+    seen = {m: sky(f"atmo_{m.split()[0].lower()}", m) for m in ("Space", "Aurora", "Ringed Planet")}
+    only()
+    cmd("time set 6000")
+    share = {m: changed(plain, f) / (1280 * 720) for m, (f, _) in seen.items()}
+    ok = all(v > 0.005 for v in share.values()) and all(fps > 0.5 * fps0 for _, fps in seen.values())
+    return ok, (f"share of the frame changed: " + ", ".join(f"{m} {v:.0%} at {seen[m][1]:.0f} fps" for m, v in share.items())
+                + f"; the game's sky {fps0:.0f} fps (frames in /tmp/atmo_*.png)")
+
+
 @test("Storage ESP (double chests)")
 def _():
     # A double chest (and a trapped one) is one box: from in front of the seam, the outline has no line down the
