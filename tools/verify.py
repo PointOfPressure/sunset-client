@@ -723,6 +723,7 @@ def _():
     # About half an hour: past the usual ten minutes a test gets.
     import random, signal
     signal.alarm(3600)
+    started = time.time()
     rng = random.Random(7)
     reset()
     only("nofall")
@@ -736,9 +737,12 @@ def _():
         during = {"speed": lambda: held_keys(("w",), 10), "flight": lambda: held_keys(("space",), 5),
                   "teleport": lambda: (wait(5), ctl("chat", f"/tp @s {X0 + 0.5} {Y + 1 + h} {Z0 + 0.5}")),
                   "jump": lambda: held_keys(("space",), 3)}.get(how)
-        if how == "flight":
-            # Flight goes off as the fall begins.
-            during = lambda: (held_keys(("space",), 5), toggle("flight", False))
+        if how in ("flight", "blink"):
+            # Flight and Blink go off as the fall begins. Blink held through the whole fall would show a vanilla
+            # server no move for longer than its 80 ticks of hovering (it kicks: "Flying is not enabled"), and let it
+            # go as one move of more than 10 blocks, which it refuses as moving too quickly.
+            key = "space" if how == "flight" else "w"
+            during = lambda: (held_keys((key,), 5), toggle(how, False))
         lost = dropped(h, during=during, settle=30 if how == "teleport" else 0)
         for m in ("flight", "speed", "blink"):
             toggle(m, False)
@@ -749,7 +753,8 @@ def _():
             worst_drop = (lost, f"{h} blocks {how or 'plain'}")
         ensure_alive()
     only()
-    return hurt == 0, f"{total} drops, {hurt} hurt; worst: {worst_drop[0]:.0f} health ({worst_drop[1] or 'none'})"
+    return hurt == 0, (f"{total} drops in {(time.time() - started) / 60:.0f} min, {hurt} hurt; worst: {worst_drop[0]:.0f} "
+                       f"health ({worst_drop[1] or 'none'})")
 
 
 @test("Fall count (No Fall off)")
