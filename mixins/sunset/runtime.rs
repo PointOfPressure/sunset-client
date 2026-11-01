@@ -325,17 +325,11 @@ impl Module {
                     _ => true,
                 }
             }
-            "Scaffold" => {
-                let legit = self.p("Mode") == "Legit";
-                match name {
-                    "Edge distance" => legit,
-                    "Fast tower" | "Tower speed" | "While moving" | "Only on click" | "Rotate" | "Air place" | "Ahead distance"
-                    | "Closest block range" | "Radius" | "Blocks per tick" | "Delay (ticks)" | "Advanced" => !legit,
-                    "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => !legit && advanced,
-                    "Rotation speed" => !legit && advanced && self.b("Rotate"),
-                    _ => true,
-                }
-            }
+            "Scaffold" => match name {
+                "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => advanced,
+                "Rotation speed" => advanced && self.b("Rotate"),
+                _ => true,
+            },
             _ => true,
         }
     }
@@ -558,11 +552,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ignore sneaking", false),
         Module::new("Blink", Movement, "Holds back your movement packets, then sends them all at once when off.")
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
-        Module::new("Scaffold", Movement, "Automatically places blocks under you. Legit only places where you are looking, with the game's own use delay, and sneaks at the edge of a block.")
-            .pick("Mode", &["Custom", "Legit"])
+        Module::new("Scaffold", Movement, "Automatically places blocks under you.")
             .bool("Disable with Kill Aura", true)
             .bool("Block counter", true)
-            .num("Edge distance", 0.3, 0.05, 0.6, 0.05)
             .text("Blocks", "")
             .pick("Blocks filter", &["Blacklist", "Whitelist"])
             .bool("Fast tower", false)
@@ -1098,12 +1090,15 @@ static HIDDEN: AtomicBool = AtomicBool::new(false);
 // (CRIT_HOP blocks, f64 bits), half way down and back down (all off the ground),
 // stage 4 lets the hit follow. Vanilla servers take each packet as it comes, so
 // two would do; Horizon's counts a tick's moves only after its packets, the hit
-// included, so the hit needs a move down counted in an earlier tick. Stage
-// CRIT_FALL waits for you to fall (Jump, Mini jump, a hit in the air), and
-// CRIT_JUMP presses jump for the next tick.
+// included, so the hit needs a move down counted in an earlier tick. The hit
+// goes at the start of the next tick, and that tick's move (CRIT_LAND) stays off
+// the ground where the hop ended: Horizon's server judges a tick's hit with the
+// ground its move says. Stage CRIT_FALL waits for you to fall (Jump, Mini jump,
+// a hit in the air), and CRIT_JUMP presses jump for the next tick.
 pub(super) static CRIT_STAGE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 const CRIT_HIT: u8 = 4;
 const CRIT_FALL: u8 = 5;
+const CRIT_LAND: u8 = 6;
 static CRIT_HOP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static CRIT_JUMP: AtomicBool = AtomicBool::new(false);
 // A server takes no critical hit from a sprinting player, and Horizon's applies all the sprint commands of a tick
@@ -1774,7 +1769,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         return;
     }
     if super::sunset_combat_control::begin_tick(game) {
-        strikes(Vec::clear);
+        drop_strikes();
         super::sunset_melee::cancel(game);
     }
     combat_packets(game, &packets);
@@ -1823,15 +1818,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     {
         want.extend(super::sunset_player::afk_keys(&m));
     }
-    // Scaffold's Legit mode sneaks at the edge of a block: the game's own sneak, which also stops you walking off.
-    if let Some(m) = get("Scaffold").filter(|m| m.on && m.p("Mode") == "Legit")
-        && playing
-        && !scaffold_paused(&m, on("Kill Aura"), on("Blink"))
-        && legit_at_edge(game, &m)
-    {
-        want.push(KeyCode::ShiftLeft);
-    }
-    let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.p("Mode") == "Custom" && m.b("Safe walk"));
+    let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.b("Safe walk"));
     horizon_client::motion::sunset_motion::set_safe_walk((on("Safe Walk") || scaffold_walk) && playing);
     // GUI Move walking you forward behind a screen: a sprint goes on (the game would stop it, a screen gives it no
     // forward key), and starts with Ctrl held or the Sprint module.
@@ -1942,6 +1929,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     }
     super::sunset_sky::keep_shown(game);
     super::sunset_melee::post_input(game);
+    strike_weapon_back(game);
     turned(game);
     module_tick(game);
     end_turns(game);
@@ -2422,79 +2410,6 @@ fn scaffold_blocks(game: &Game<'_>, m: &Module) -> u32 {
     (0..9).filter(|&i| scaffold_item(game, m, i)).map(count).sum()
 }
 
-// How far ahead Legit looks: Edge distance along the move keys, or along the way you are still sliding.
-fn legit_step(game: &Game<'_>, m: &Module) -> Option<[f64; 2]> {
-    let p = game.player.as_ref()?;
-    let edge = m.n("Edge distance");
-    if let Some([x, z]) = move_direction(game) {
-        return Some([x * edge, z * edge]);
-    }
-    let speed = p.velocity.x.hypot(p.velocity.z);
-    (speed > 0.02).then(|| [p.velocity.x / speed * edge, p.velocity.z / speed * edge])
-}
-
-// On the ground, with blocks to place, and that step ahead would leave nothing under your feet.
-fn legit_at_edge(game: &Game<'_>, m: &Module) -> bool {
-    use horizon_core::geometry::{Aabb, Vec3};
-    let Some(p) = game.player.as_ref() else {
-        return false;
-    };
-    if !p.ground.on_ground || p.flying || game.keys.contains(&KeyCode::Space) || scaffold_slot(game, m).is_none() {
-        return false;
-    }
-    let Some([x, z]) = legit_step(game, m) else {
-        return false;
-    };
-    let b = p.bounds();
-    let (lo, hi) = (b.min_position(), b.max_position());
-    let under = Aabb::new(Vec3::new(lo.x + x, lo.y - 0.1, lo.z + z), Vec3::new(hi.x + x, lo.y, hi.z + z));
-    horizon_client::collisions::SceneCollisions { world: &game.world, binding: game.collision, subject: None }
-        .unobstructed(under)
-        .unwrap_or(false)
-}
-
-// Scaffold's Legit mode: uses the block where your crosshair really is, once that spot is the one under your feet or
-// your next step. The game's own click, so its use delay, reach and look all hold, and your view is never turned.
-fn scaffold_legit(game: &mut Game<'_>, m: &Module) {
-    // Holding use, the game is placing already.
-    if !game.native_playing() || game.remote.is_none() || game.right || game.use_delay > 0 || game.using.is_some() || game.mob_hit().is_some() {
-        return;
-    }
-    let (Some(hit), Some(p)) = (game.pick(), game.player.as_ref()) else {
-        return;
-    };
-    let at = [hit.pos[0] + hit.face[0], hit.pos[1] + hit.face[1], hit.pos[2] + hit.face[2]];
-    let drop = p.position.y.floor() as i32 - at[1];
-    if drop != 1 && (p.ground.on_ground || drop != 2) {
-        return;
-    }
-    let [x, z] = legit_step(game, m).unwrap_or([0.0; 2]);
-    let b = p.bounds();
-    let (lo, hi) = (b.min_position(), b.max_position());
-    let over = lo.x + x.min(0.0) < f64::from(at[0] + 1)
-        && hi.x + x.max(0.0) > f64::from(at[0])
-        && lo.z + z.min(0.0) < f64::from(at[2] + 1)
-        && hi.z + z.max(0.0) > f64::from(at[2]);
-    if !over {
-        return;
-    }
-    // A block that would open, or grass the new block would replace, is not a side to place on.
-    let on = super::sunset_util::facts(game, hit.pos);
-    if on.block_entity || on.fluid_level > 0 || super::sunset_util::can_place(game, hit.pos, false) || !super::sunset_util::can_place(game, at, true) {
-        return;
-    }
-    let Some(slot) = scaffold_slot(game, m) else {
-        return;
-    };
-    hold(game, slot);
-    // What a right click does, without being one: anything watching your mouse is not to take it for yours.
-    let _ = game.use_with_hand();
-    game.use_delay = 4;
-    if m.b("Render") {
-        with(|s| s.scaffold_placed.push((at, 8)));
-    }
-}
-
 fn scaffold_place(game: &mut Game<'_>, m: &Module, at: [i32; 3]) -> bool {
     let duplicate_cooldown = m.n("Duplicate cooldown") as u64;
     if duplicate_cooldown > 0 && with(|s| s.scaffold_recent.iter().any(|(pos, _)| *pos == at)) { return false; }
@@ -2552,10 +2467,6 @@ pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
     });
     // Another module has the hand (Kill Aura's hit on its way, with Disable with Kill Aura off): not this tick.
     if !super::sunset_combat_control::available("Scaffold") {
-        return;
-    }
-    if m.p("Mode") == "Legit" {
-        scaffold_legit(game, m);
         return;
     }
     if !game.native_playing() || game.remote.is_none() {
@@ -4093,24 +4004,56 @@ pub(super) fn crit_click(game: &mut Game<'_>) -> Option<bool> {
 
 // Hits wait for the start of the next tick: the game's own attack goes out with the input, before the tick's move
 // packet, and modules run after it. By then the server also has the look the last move packet carried. A critical
-// hit is marked: the sprint it stopped comes back the tick after it goes.
-static STRIKES: Mutex<Vec<(u32, bool)>> = Mutex::new(Vec::new());
+// hit is marked: the sprint it stopped comes back the tick after it goes. The weapon Shield Breaker or Mace wants
+// goes in hand when the hit is planned, a tick before it (Horizon's server hits with what was held as its tick
+// began), and back after the hit's tick (`back`: the slot, and the weapon's slot it replaces if still held).
+struct Strikes {
+    queue: Vec<(u32, bool)>,
+    back: Option<(usize, usize)>,
+}
 
-fn strikes<R>(f: impl FnOnce(&mut Vec<(u32, bool)>) -> R) -> R {
+static STRIKES: Mutex<Strikes> = Mutex::new(Strikes { queue: Vec::new(), back: None });
+
+fn strikes<R>(f: impl FnOnce(&mut Strikes) -> R) -> R {
     f(&mut STRIKES.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
-pub(super) fn strike(_game: &mut Game<'_>, id: u32) {
-    strikes(|q| q.push((id, false)));
+// A new world or life, Sunset off: nothing waiting goes out, no slot goes back.
+fn drop_strikes() {
+    strikes(|s| {
+        s.queue.clear();
+        s.back = None;
+    });
+}
+
+pub(super) fn strike(game: &mut Game<'_>, id: u32) {
+    queue_strike(game, id, false);
+}
+
+fn queue_strike(game: &mut Game<'_>, id: u32, critical: bool) {
+    let back = super::sunset_melee::strike_weapon(game, id).map(|slot| (slot, game.selected));
+    strikes(|s| {
+        s.queue.push((id, critical));
+        s.back = s.back.or(back);
+    });
 }
 
 // A hit is on its way: the attack cooldown has not restarted yet, so nothing else may hit this tick.
 pub(super) fn strike_waiting() -> bool {
-    strikes(|q| !q.is_empty())
+    strikes(|s| !s.queue.is_empty())
+}
+
+// The tick after a hit, before the modules: the hotbar slot the hit's weapon replaced comes back.
+fn strike_weapon_back(game: &mut Game<'_>) {
+    if let Some((slot, weapon)) = strikes(|s| s.queue.is_empty().then(|| s.back.take()).flatten())
+        && game.selected == weapon
+    {
+        hold(game, slot);
+    }
 }
 
 fn send_strikes(game: &mut Game<'_>) {
-    for (id, critical) in strikes(std::mem::take) {
+    for (id, critical) in strikes(|s| std::mem::take(&mut s.queue)) {
         if game.remote.is_some() {
             strike_now(game, id);
         }
@@ -4130,8 +4073,6 @@ fn strike_now(game: &mut Game<'_>, id: u32) {
     {
         hold(game, slot);
     }
-    // Shield Breaker's axe or Mace's mace for this hit, and the slot it goes back to after.
-    let back = super::sunset_melee::strike_weapon(game, id);
     // A spear stabs along the look instead, as the game's own left click does.
     if let Some(kinetic) = game.held().and_then(|s| horizon_client::spear::Kinetic::of(&s.item)) {
         if !game.cannot_attack_with_item(game.hand_strength.ticker, 0) {
@@ -4146,9 +4087,6 @@ fn strike_now(game: &mut Game<'_>, id: u32) {
         game.send(S::Punch(Empty));
         game.reset_attack_strength();
     }
-    if let Some(slot) = back {
-        hold(game, slot);
-    }
 }
 
 // The Criticals hop, a tick at a time. The regular position packet of a tick
@@ -4159,6 +4097,11 @@ fn strike_now(game: &mut Game<'_>, id: u32) {
 pub(super) fn crit_tick(game: &mut Game<'_>) {
     let stage = CRIT_STAGE.load(Ordering::Relaxed);
     if stage == 0 {
+        return;
+    }
+    // The tick of the hit had no move packet to keep off the ground: nothing to do.
+    if stage == CRIT_LAND {
+        CRIT_STAGE.store(0, Ordering::Relaxed);
         return;
     }
     let ticks = with(|s| {
@@ -4199,7 +4142,7 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
         game.send(S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags: 0 }));
     }
     if CRIT_STAGE.load(Ordering::Relaxed) == CRIT_HIT {
-        CRIT_STAGE.store(0, Ordering::Relaxed);
+        CRIT_STAGE.store(CRIT_LAND, Ordering::Relaxed);
         match with(|s| s.crit_target.take()) {
             Some(id) => crit_strike(game, id),
             None => crit_done(),
@@ -4209,8 +4152,8 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
 
 // A critical hit, with the sprint stopped since it was planned (CRIT_SPRINT): it gives up sprinting's extra
 // knockback, as a critical one does in vanilla.
-fn crit_strike(_game: &mut Game<'_>, id: u32) {
-    strikes(|q| q.push((id, true)));
+fn crit_strike(game: &mut Game<'_>, id: u32) {
+    queue_strike(game, id, true);
 }
 
 // The critical hit went, or none will: the sprint Criticals stopped goes back on next tick.
@@ -4345,20 +4288,22 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     // What a module tells the server of the ground, if it changes it; and whether No Fall is on to spare you the fall.
     let ground;
     let mut spared = false;
-    // Criticals: this tick's move is the hop (stage 1: up, 2: half way down, 3: back down), all off the ground. A jump
-    // this tick (your key, Auto Jump) would carry it up with you: the hit waits for the jump's fall instead.
+    // Criticals: this tick's move is the hop (stage 1: up, 2: half way down, 3: back down, then the hit's tick where
+    // it ended), all off the ground. A jump this tick (your key, Auto Jump) would carry it up with you: the hit waits
+    // for the jump's fall instead.
     if (1..CRIT_HIT).contains(&CRIT_STAGE.load(Ordering::Relaxed)) && !p.ground.on_ground && p.velocity.y > 0.0 {
         CRIT_STAGE.store(CRIT_FALL, Ordering::Relaxed);
     }
     let stage = CRIT_STAGE.load(Ordering::Relaxed);
-    let hopping = stage > 0 && stage < CRIT_HIT;
+    let hopping = (stage > 0 && stage < CRIT_HIT) || stage == CRIT_LAND;
     if hopping {
         let [x, y, z] = m.at.unwrap_or(here);
         let hop = f64::from_bits(CRIT_HOP.load(Ordering::Relaxed));
-        m.at = Some([x, y + hop * f64::from(3 - stage) / 2.0, z]);
+        let lift = if stage == CRIT_LAND { 0.0 } else { hop * f64::from(3 - stage) / 2.0 };
+        m.at = Some([x, y + lift, z]);
         m.flags = 0;
         ground = Some(false);
-        CRIT_STAGE.store(stage + 1, Ordering::Relaxed);
+        CRIT_STAGE.store(if stage == CRIT_LAND { 0 } else { stage + 1 }, Ordering::Relaxed);
     } else {
         // Flight's Packet anti kick: the move carries the position, sunk 0.0313 below the last height sent while it
         // is due and you are in the air (Meteor's antiKickPacket).
@@ -4584,7 +4529,7 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
 fn combat_cleanup(game: &mut Game<'_>) {
     super::sunset_combat_control::prepare_cleanup(game);
     super::sunset_combat_macros::reset(game);
-    strikes(Vec::clear);
+    drop_strikes();
     super::sunset_melee::cancel(game);
     super::sunset_aura::disabled(game, false);
     super::sunset_combat_inventory::cancel(game);

@@ -1048,8 +1048,8 @@ fn can_hold_smash(game: &mut Game<'_>, id: u32) -> bool {
     super::sunset_mace_native::continuation(game, id, yaw, pitch).unwrap_or(false)
 }
 
-// A hit from Kill Aura or Trigger Bot on `id`, about to go: Shield Breaker's axe at a raised shield or Mace's mace
-// goes in hand for it (a smash uses up the fall). The slot to go back to after, if it is to.
+// A hit from Kill Aura or Trigger Bot on `id`, planned for the next tick: Shield Breaker's axe at a raised shield or
+// Mace's mace goes in hand for it (a smash uses up the fall). The slot to go back to after, if it is to.
 pub(super) fn strike_weapon(game: &mut Game<'_>, id: u32) -> Option<usize> {
     let plan = preferred_weapon(game, id)?;
     let previous = game.selected;
