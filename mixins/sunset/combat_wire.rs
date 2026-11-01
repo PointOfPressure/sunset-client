@@ -47,6 +47,8 @@ pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
         return;
     }
     super::sunset_prediction::forwarded(game, packet);
+    super::sunset_melee::forwarded(game, packet);
+    super::sunset_combat_inventory::forwarded(game, packet);
 }
 
 pub(super) fn reset_look() {

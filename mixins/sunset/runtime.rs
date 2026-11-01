@@ -712,6 +712,8 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_crystal_aura::defaults());
     v.extend(super::sunset_anchor_aura::defaults());
     v.extend(super::sunset_combat_macros::defaults());
+    v.extend(super::sunset_melee::defaults());
+    v.extend(super::sunset_combat_inventory::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_crosshair::defaults());
@@ -1477,6 +1479,10 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
         (m.name, m.on)
     });
     super::sunset_combat_macros::toggled(game, name, on);
+    super::sunset_combat_inventory::toggled(game, name, on);
+    if name == "Friend Guard" {
+        super::sunset_melee::reset_friend_feedback();
+    }
     if !on {
         match name {
             "Scaffold" => {
@@ -1490,6 +1496,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
             },
             "Velocity" => with(|s| { s.velocity = None; s.blast = [0.0; 3]; }),
             "Crystal Aura" => super::sunset_crystal_aura::disabled(game),
+            "Kill Aura" => super::sunset_aura::disabled(game),
             "Anchor Aura" => super::sunset_anchor_aura::disabled(game),
             "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
             _ => {},
@@ -1622,6 +1629,8 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     if !game.native_window() {
         return;
     }
+    super::sunset_melee::key(game, key, pressed);
+    super::sunset_combat_inventory::key(game, key, pressed);
     if !pressed {
         with(|s| {
             let held = s.inputs.release(key);
@@ -1739,7 +1748,10 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
         return;
     }
-    super::sunset_combat_control::begin_tick(game);
+    if super::sunset_combat_control::begin_tick(game) {
+        super::sunset_melee::cancel(game);
+        super::sunset_aura::reset();
+    }
     combat_packets(game, &packets);
     ensure_loaded(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
@@ -1842,6 +1854,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         s.stepping = step.is_some();
         s.high_jumping = high_jump.is_some();
     });
+    super::sunset_melee::pre_input(game);
 }
 
 // How high Step lets you climb this tick: the setting, or vanilla's 0.6 when
@@ -1901,6 +1914,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
         return;
     }
     super::sunset_sky::keep_shown(game);
+    super::sunset_melee::post_input(game);
     turned(game);
     module_tick(game);
     end_turns(game);
@@ -2236,6 +2250,8 @@ fn module_tick(game: &mut Game<'_>) {
         with(|s| s.blocks = Sweep::new());
     }
     super::sunset_combat_macros::tick(game, &mods, game.ticks);
+    super::sunset_melee::tick(game);
+    super::sunset_combat_inventory::tick(game, &mods);
     super::sunset_combat::tick(game, &mods);
     super::sunset_explosive_aura::tick(game, &mods, game.ticks);
     super::sunset_render::tick(game, &mods, ticks);
@@ -4482,6 +4498,10 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
         if matches!(packet, C::Login(_) | C::Respawn(_) | C::PlayerPosition(_)) {
             super::sunset_combat_wire::reset_look();
         }
+        super::sunset_combat_inventory::packet(game, packet);
+        if let C::SetEntityMotion(p) = packet {
+            super::sunset_melee::note_velocity(game, p.id, p.velocity);
+        }
     }
 }
 
@@ -4489,6 +4509,9 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
 fn combat_cleanup(game: &mut Game<'_>) {
     super::sunset_combat_control::prepare_cleanup(game);
     super::sunset_combat_macros::reset(game);
+    super::sunset_melee::cancel(game);
+    super::sunset_aura::disabled(game);
+    super::sunset_combat_inventory::cancel(game);
     super::sunset_combat_control::reset();
     super::sunset_crystal_aura::disabled(game);
     super::sunset_anchor_aura::disabled(game);
@@ -4509,6 +4532,11 @@ pub(super) fn try_turn_then(who: &'static str, yaw: f32, pitch: f32,
         t.queue.push(Ask { who, look, deeds: vec![Box::new(then)], fresh: true });
         true
     })
+}
+
+// A look is waiting to go out, or on its way.
+pub(super) fn turn_pending() -> bool {
+    turns(|t| t.carried || !t.queue.is_empty())
 }
 
 // What `who` asked to look at, and do, is dropped.

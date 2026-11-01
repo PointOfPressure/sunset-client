@@ -3399,7 +3399,9 @@ def _():
     cmd("gamemode survival Bot1")
 
     def bot_hurt(seconds):
-        cmd("effect give Bot1 minecraft:instant_health 1 10 true", f"tp Bot1 {X0+0.5} {Y+1} {Z0+2.0}")
+        # Resistance IV takes 80% off, so Bot1 lives through 3 s of sword hits and its health says what they did.
+        cmd("effect give Bot1 minecraft:instant_health 1 10 true", "effect give Bot1 minecraft:resistance 10 3 true",
+            f"tp Bot1 {X0+0.5} {Y+1} {Z0+2.0}")
         wait(seconds * 20)
         return 20 - ctl2("state")["player"]["health"]
 
@@ -4386,6 +4388,269 @@ def light_clean():
 def overran(*_):
     raise TimeoutError("the test ran over 10 minutes")
 
+
+
+# Rust's PR #16, melee and inventory: measured against Bot1 (or a tough pig), each module off and then on.
+TOUGH_PIG = ("{NoAI:1b,PersistenceRequired:1b,Silent:1b,Health:1000f,attributes:[{id:'minecraft:max_health',base:1000.0},"
+             "{id:'minecraft:knockback_resistance',base:1.0}]}")
+
+
+def bot_ready(z=2.5, yaw=180, *extra):
+    """Bot1 in survival with 100 health and Resistance IV, `z` blocks in front of you, facing `yaw`."""
+    cmd("gamemode survival Bot1", "clear Bot1", "effect clear Bot1", "attribute Bot1 minecraft:max_health base set 100",
+        "effect give Bot1 minecraft:resistance 600 3 true", "effect give Bot1 minecraft:instant_health 1 28 true",
+        f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + z} {yaw} 0", *extra)
+    wait(10)
+
+
+def bot_done():
+    ctl2("release")
+    cmd("attribute Bot1 minecraft:max_health base set 20", "effect clear Bot1", "clear Bot1", "gamemode spectator Bot1")
+
+
+def poll(ticks, every=2, fn=None):
+    """Calls `fn` every `every` ticks for `ticks` ticks; the values it returned."""
+    out = []
+    for _ in range(ticks // every):
+        wait(every)
+        out.append(fn())
+    return out
+
+
+@test("Shield Breaker")
+def _():
+    # Bot1 holds a shield up at you; Kill Aura with a sword, an axe in slot 3. Off, Kill Aura leaves a raised shield
+    # alone (its hits would do nothing); on, the axe disables it and the sword's hits land. 10 s each.
+    if not CTL2:
+        return None, "needs a second player"
+    reset()
+    slot(0, "diamond_sword")
+    slot(2, "diamond_axe")
+    ctl("key", "1", "tap")
+    setting("killaura", "entities", "player")
+    runs = {}
+    for name, mods in (("off", ("killaura",)), ("on", ("killaura", "shieldbreaker"))):
+        bot_ready(2.5, 180, "item replace entity Bot1 weapon.offhand with minecraft:shield")
+        ctl2("mouse", "right", "down")
+        wait(10)
+        before = bot_health()
+        only(*mods)
+        held_items = poll(200, 2, lambda: (state().get("held") or {}).get("item", ""))
+        only()
+        axe_hits = sum(1 for a, b in zip(held_items, held_items[1:]) if "axe" in b and "axe" not in a)
+        runs[name] = (round(before - bot_health(), 1), axe_hits, (state().get("held") or {}).get("item", ""))
+        ctl2("mouse", "right", "up")
+    bot_done()
+    off, on = runs["off"], runs["on"]
+    return off[0] == 0 and on[0] > 0 and on[1] >= 1 and "sword" in on[2], (
+        f"Bot1 behind a raised shield lost {off[0]} health in 10 s without Shield Breaker, {on[0]} with it; the axe "
+        f"came out {on[1]} times (shield disables) and the hand went back to {on[2] or 'nothing'}")
+
+
+@test("Mace")
+def _():
+    # Falling 7 blocks past a pig with 1000 health, Kill Aura holding a sword, a mace in slot 3: the first hit's
+    # damage without and with Mace (a smash adds 4 a block for the first 3 fallen, 2 for the next 5).
+    reset()
+    setting("killaura", "entities", "pig")
+    lost = {}
+    for name, mods in (("off", ("killaura",)), ("on", ("killaura", "mace"))):
+        reset()
+        slot(0, "diamond_sword")
+        slot(2, "mace")
+        ctl("key", "1", "tap")
+        cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 1.5} {TOUGH_PIG}")
+        wait(10)
+        only(*mods)
+        cmd(f"tp @s {X0 + 0.5} {Y + 8} {Z0 + 0.5} 0 60")
+        hit = 0
+        for _ in range(60):
+            wait(1)
+            m = mobs("pig")
+            if m and m[0]["health"] < 1000:
+                hit = 1000 - m[0]["health"]
+                break
+        only()
+        lost[name] = (round(hit, 1), (state().get("held") or {}).get("item", ""))
+    return lost["on"][0] > lost["off"][0] * 1.5 and "sword" in lost["on"][1], (
+        f"first hit falling past the pig: {lost['off'][0]} with the sword alone, {lost['on'][0]} with Mace; hand after: "
+        f"{lost['on'][1]}")
+
+
+@test("Spear Swap (Reach poke)")
+def _():
+    # A pig 4.5 blocks off (past the 3 blocks of reach), a sword in hand and an iron spear in slot 3: your clicks.
+    lost = {}
+    for name, mods in (("off", ()), ("on", ("spearswap",))):
+        reset()
+        slot(0, "diamond_sword")
+        slot(2, "iron_spear")
+        ctl("key", "1", "tap")
+        if mods:
+            setting("spearswap", "reach poke", "true")
+        pid = None
+        cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 5.0} {TOUGH_PIG}")
+        wait(10)
+        pid = mobs("pig")[0]["id"]
+        ctl("look-at-entity", str(pid))
+        only(*mods)
+        for _ in range(5):
+            ctl("mouse", "left", "click")
+            wait(25)
+        only()
+        m = mobs("pig")
+        lost[name] = (round(1000 - m[0]["health"], 1) if m else None, (state().get("held") or {}).get("item", ""))
+    return lost["off"][0] == 0 and (lost["on"][0] or 0) > 0 and "sword" in lost["on"][1], (
+        f"5 clicks at a pig 4.5 blocks off: {lost['off'][0]} health lost without Spear Swap, {lost['on'][0]} with Reach "
+        f"poke; hand after: {lost['on'][1]}")
+
+
+def bot_pushed(mods, ticks=80):
+    """You sprint at Bot1 with Kill Aura and a sword for `ticks`: how far Bot1 went (blocks along z)."""
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    bot_ready(3.0, 180)
+    start = ctl2("state")["player"]["position"]
+    only("killaura", *mods)
+    ctl("key", "ctrl", "down")
+    ctl("key", "w", "down")
+    wait(ticks)
+    ctl("key", "w", "up")
+    ctl("key", "ctrl", "up")
+    only()
+    end = ctl2("state")["player"]["position"]
+    return round(end[2] - start[2], 2)
+
+
+@test("W Tap")
+def _():
+    if not CTL2:
+        return None, "needs a second player"
+    setting("killaura", "entities", "player")
+    off, on = bot_pushed(()), bot_pushed(("wtap",))
+    setting("wtap", "mode", "S Tap")
+    s_tap = bot_pushed(("wtap",))
+    bot_done()
+    return on > off + 0.5, f"Bot1 knocked {off} blocks in 4 s of sprinting hits without W Tap, {on} with it, {s_tap} with S Tap"
+
+
+@test("Jump Reset")
+def _():
+    # Bot1 hits you 6 times as you sprint at it; how far back the knockback put you, without and with Jump Reset.
+    if not CTL2:
+        return None, "needs a second player"
+    back = {}
+    for name, mods in (("off", ()), ("on", ("jumpreset",))):
+        reset()
+        cmd("effect give @s minecraft:resistance 600 4 true")
+        bot_ready(2.0, 180, "item replace entity Bot1 weapon.mainhand with minecraft:stick[enchantments={knockback:1}]")
+        only(*mods)
+        me = state()["player"]["position"][2]
+        tester = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
+        ctl("key", "ctrl", "down")
+        ctl("key", "w", "down")
+        ups = 0
+        for _ in range(6):
+            ctl2("look-at-entity", str(tester))
+            ctl2("mouse", "left", "click")
+            ys = poll(12, 1, lambda: state()["player"]["position"][1])
+            ups += any(y > Y + 1.1 for y in ys)
+        ctl("key", "w", "up")
+        ctl("key", "ctrl", "up")
+        only()
+        back[name] = (round(me + 6 * 12 * 0.28 - state()["player"]["position"][2], 2), ups)
+    bot_done()
+    return back["on"][1] >= 4 and back["on"][0] < back["off"][0], (
+        f"knocked back (short of a free sprint) {back['off'][0]} blocks without Jump Reset, {back['on'][0]} with it; "
+        f"jumped on {back['on'][1]} of 6 hits")
+
+
+@test("Friend Guard")
+def _():
+    # Bot1 is a friend; 10 clicks on it with a sword, without and with Friend Guard.
+    if not CTL2:
+        return None, "needs a second player"
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    say(".friend add Bot1")
+    lost = {}
+    for name, mods in (("off", ()), ("on", ("friendguard",))):
+        bot_ready(2.0, 180)
+        before = bot_health()
+        only(*mods)
+        for _ in range(10):
+            ctl("look", "0", "10")
+            ctl("mouse", "left", "click")
+            wait(13)
+        only()
+        lost[name] = round(before - bot_health(), 1)
+    say(".friend remove Bot1")
+    bot_done()
+    return lost["off"] > 0 and lost["on"] == 0, f"10 clicks on friend Bot1: {lost['off']} health lost without Friend Guard, {lost['on']} with it"
+
+
+@test("Auto Inventory Totem")
+def _():
+    # 20 totem pops: ticks until the offhand holds a totem again, with totems in the main inventory only.
+    reset()
+    cmd("item replace entity @s weapon.offhand with minecraft:totem_of_undying")
+    for i in range(9, 30):
+        cmd(f"item replace entity @s inventory.{i - 9} with minecraft:totem_of_undying")
+    only("autoinventorytotem")
+    wait(10)
+    times = []
+    for _ in range(20):
+        cmd("damage @s 1000 minecraft:generic")
+        n = 0
+        while n < 100:
+            wait(1)
+            n += 1
+            off = state().get("offhand") or {}
+            if "totem" in off.get("item", "") and n > 2:
+                break
+        times.append(n)
+        cmd("effect give @s minecraft:instant_health 1 10 true")
+        wait(5)
+    only()
+    alive = state()["player"]["health"] > 0
+    ok = alive and max(times) < 100
+    return ok, f"re-totem after a pop: {sorted(times)} ticks (median {sorted(times)[10]}); alive after 20 pops: {alive}"
+
+
+@test("FastXP and Key Throw")
+def _():
+    # Bottles thrown in 2 s of holding use, without and with FastXP; pearls thrown by 5 presses of Key Throw's key,
+    # the hand back on its slot after.
+    used = {}
+    for name, mods in (("off", ()), ("on", ("fastxp",))):
+        reset()
+        slot(0, "experience_bottle", 64)
+        ctl("key", "1", "tap")
+        only(*mods)
+        ctl("look", "0", "-60")
+        ctl("mouse", "right", "down")
+        wait(40)
+        ctl("mouse", "right", "up")
+        only()
+        used[name] = 64 - ((state().get("held") or {}).get("count", 0))
+    reset()
+    slot(0, "diamond_sword")
+    slot(4, "ender_pearl", 16)
+    ctl("key", "1", "tap")
+    setting("keythrow", "pearl key", "G")
+    only("keythrow")
+    for _ in range(5):
+        ctl("key", "g", "tap")
+        wait(30)
+    only()
+    inv = ctl("inventory")
+    left = sum(s.get("count", 0) for s in inv.get("hotbar", []) if s and "ender_pearl" in s.get("item", ""))
+    back = (state().get("held") or {}).get("item", "")
+    return used["on"] > used["off"] and left == 11 and "sword" in back, (
+        f"bottles in 2 s: {used['off']} without FastXP, {used['on']} with it; Key Throw: {16 - left} pearls for 5 presses, hand "
+        f"back on {back}")
 
 if __name__ == "__main__":
     import signal

@@ -1,5 +1,5 @@
 // The packets Crystal Aura and Anchor Aura learn from (blocks placed, players seen, hurt, equipped, gone; a new world
-// or life), copied as they arrive. The game handles them in the same frame; Sunset reads the copies at its next tick
+// or life), Jump Reset's knockback and the inventory modules' slot updates, copied as they arrive. The game handles them in the same frame; Sunset reads the copies at its next tick
 // (crate::game::sunset::combat_packets). Kept to the last 4096, should no tick come to read them.
 
 use horizon_protocol::packets::play::Clientbound as C;
@@ -25,6 +25,12 @@ pub fn seen(events: &[super::Event]) {
                     | C::SetEquipment(_)
                     | C::DamageEvent(_)
                     | C::EntityEvent(_)
+                    | C::SetEntityMotion(_)
+                    | C::ContainerSetSlot(_)
+                    | C::ContainerSetContent(_)
+                    | C::SetPlayerInventory(_)
+                    | C::SetCursorItem(_)
+                    | C::OpenScreen(_)
             )
             && seen.len() < 4096
         {
