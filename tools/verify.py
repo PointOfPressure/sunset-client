@@ -720,7 +720,9 @@ def _():
 @test("No Fall (200 drops)")
 def _():
     # Heights from 4 to 300 blocks, some with Flight, Speed or Blink just before, a teleport or a jump in the fall.
-    import random
+    # About half an hour: past the usual ten minutes a test gets.
+    import random, signal
+    signal.alarm(3600)
     rng = random.Random(7)
     reset()
     only("nofall")

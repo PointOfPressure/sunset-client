@@ -2042,6 +2042,8 @@ fn module_tick(game: &mut Game<'_>) {
     let alive = game.player.as_ref().is_some_and(|p| p.health.health() > 0.0);
     if !alive {
         fall_died();
+    } else if fall_cleared(game) {
+        fall(|f| (f.counted, f.kept) = (0.0, false));
     }
     // Blink: let go of what it held when it turns off, or at its limit.
     {
@@ -4201,11 +4203,7 @@ fn settle_fall(game: &Game<'_>, m: &Move, real: bool, claimed: bool) -> bool {
     let (Some(p), Some(_)) = (game.player.as_ref(), game.remote.as_ref()) else {
         return m.flags & 1 != 0;
     };
-    let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
-    let cleared = p.fluids.was_touching_water
-        || (game.creative && p.flying)
-        || game.spectator()
-        || game.block_in_tag("minecraft:climbable", &game.block_name(feet));
+    let cleared = fall_cleared(game);
     fall(|f| {
         let drop = drop_of(f, m);
         let counted = if p.fall_flying && drop < 0.5 { (f.counted + drop).min(1.0) } else { f.counted + drop };
@@ -4230,6 +4228,18 @@ fn settle_fall(game: &Game<'_>, m: &Move, real: bool, claimed: bool) -> bool {
         }
         told
     })
+}
+
+// Water, a ladder or creative flight: the server starts the count again each tick there, moves or no moves.
+fn fall_cleared(game: &Game<'_>) -> bool {
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
+    p.fluids.was_touching_water
+        || (game.creative && p.flying)
+        || game.spectator()
+        || game.block_in_tag("minecraft:climbable", &game.block_name(feet))
 }
 
 // A teleport: the server goes on from where it puts you. Death: the next body has fallen nowhere.
