@@ -43,8 +43,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Randomise", false)
             .bool("Bypass", false)
             .num("Bypass length", 16.0, 4.0, 32.0, 1.0),
-        Module::new("Reach", Player, "Longer arms for blocks (on a vanilla server only about 4 blocks more, and only for chests and vehicles).")
-            .num("Extra block reach", 1.0, 0.0, 6.0, 0.5),
+        Module::new("Reach", Player, "Longer arms for blocks (on a vanilla server only about 4 blocks more, and only for chests and vehicles). Entity reach: the crosshair picks players and mobs this far out (vanilla and Paper take hits to about 6 blocks; Horizon's own server only to 3).")
+            .num("Extra block reach", 1.0, 0.0, 6.0, 0.5)
+            .num("Entity reach", 4.5, 3.0, 6.0, 0.1),
+        Module::new("Ghost Hand", Player, "Blocks: a right click opens or uses the first container, door, button or lever along your look within reach, through walls. Hits: your click hits the player or mob behind the block you aim at, within reach (not on Horizon's own server, which hits along your look itself).")
+            .bool("Blocks", true)
+            .bool("Hits", false),
         Module::new("Air Place", Player, "Right click places the block you hold where the crosshair points, with nothing to place it against.")
             .num("Range", 5.0, 2.0, 6.0, 0.5),
         Module::new("Speed Mine", Player, "Mines faster (Meteor's Speed Mine). Damage finishes a block as soon as the server takes it (70% of the way), and with Instamine a block you would break in two ticks the tick after you start it; Normal mines Modifier times faster; Haste gives you Haste (only you see it).")
@@ -119,8 +123,83 @@ pub(super) fn reach_extra() -> Option<f64> {
     (bits != u64::MAX).then(|| f64::from_bits(bits))
 }
 
-// Right mouse button down while playing: Air Place.
+// How far the crosshair picks mobs (f64 bits; u64::MAX: the game's own), and Ghost Hand's Hits, read by the
+// mob_hit and before_block hooks.
+static ENTITY_REACH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+static WALL_HITS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+// The mob under the crosshair with Reach's Entity reach or Spear Swap's Spear reach, as the game's own pick finds it
+// (the nearest box along the look). None: the game's own.
+pub(super) fn mob_hit(game: &Game<'_>) -> Option<Option<(usize, f64)>> {
+    let bits = ENTITY_REACH.load(std::sync::atomic::Ordering::Relaxed);
+    if bits == u64::MAX {
+        return None;
+    }
+    let reach = f64::from_bits(bits).max(if game.creative { 5.0 } else { 3.0 });
+    let Some((eye, dir)) = game.aim() else {
+        return Some(None);
+    };
+    Some(
+        game.mobs
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.alive() && Some(m.id) != game.riding)
+            .filter_map(|(i, m)| Some((i, super::ray_box(eye, dir, reach, m.bounds())?)))
+            .min_by(|a, b| a.1.total_cmp(&b.1)),
+    )
+}
+
+// Ghost Hand's Hits: the mob under the crosshair counts as before any block.
+pub(super) fn hit_through_walls(game: &Game<'_>, distance: f64) -> bool {
+    WALL_HITS.load(std::sync::atomic::Ordering::Relaxed) && game.mob_hit().is_some_and(|(_, d)| d == distance)
+}
+
+// What Ghost Hand opens or uses: containers, doors, trapdoors, gates, buttons, levers and work blocks.
+fn usable(game: &Game<'_>, p: [i32; 3]) -> bool {
+    let name = short(&facts(game, p).name);
+    name != "iron_door"
+        && name != "iron_trapdoor"
+        && ["chest", "barrel", "shulker_box", "hopper", "dispenser", "dropper", "furnace", "smoker", "brewing_stand", "crafting_table",
+            "crafter", "anvil", "enchanting_table", "beacon", "smithing_table", "loom", "stonecutter", "cartography_table",
+            "grindstone", "button", "lever", "door", "trapdoor", "fence_gate"]
+            .iter()
+            .any(|k| name == *k || name.ends_with(&format!("_{k}")))
+}
+
+// Ghost Hand (Meteor's): your right click is not on a usable block, so the first one along the look within reach is
+// used instead, through whatever is in between (servers check the distance only).
+fn ghost_hand(game: &mut Game<'_>) {
+    if !super::sunset::with(|s| s.module("Ghost Hand").is_some_and(|m| m.on && m.b("Blocks"))) {
+        return;
+    }
+    let Some(eye) = game.eye_position() else {
+        return;
+    };
+    if game.pick().is_some_and(|h| usable(game, h.pos)) || game.mob_hit().is_some() {
+        return;
+    }
+    let look = super::view_vector(game.yaw, game.pitch);
+    let reach = game.reach();
+    let mut last = None;
+    for i in 1..(reach * 10.0) as i32 {
+        let t = f64::from(i) / 10.0;
+        let p = [0, 1, 2].map(|a| (eye[a] + look[a] * t).floor() as i32);
+        if last == Some(p) {
+            continue;
+        }
+        last = Some(p);
+        if usable(game, p) {
+            let sequence = sequence(game);
+            game.send(S::UseItemOn(play::UseItemOn { hand: 0, pos: p, face: 1, cursor: [0.5, 1.0, 0.5], inside: true, world_border: false, sequence }));
+            game.swing_arm();
+            return;
+        }
+    }
+}
+
+// Right mouse button down while playing: Ghost Hand, Air Place.
 pub(super) fn right_click(game: &mut Game<'_>) {
+    ghost_hand(game);
     let Some(m) = super::sunset::with(|s| s.module("Air Place").filter(|m| m.on).cloned()) else {
         return;
     };
@@ -151,6 +230,16 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         get("Reach").map_or(u64::MAX, |m| m.n("Extra block reach").to_bits()),
         std::sync::atomic::Ordering::Relaxed,
     );
+    let spear = super::sunset_melee::spear_reach_slot(game).map(|_| {
+        let reach = horizon_client::spear::REACH;
+        f64::from(if game.creative { reach.max_creative } else { reach.max })
+    });
+    let entity = match (get("Reach").map(|m| m.n("Entity reach")), spear) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    };
+    ENTITY_REACH.store(entity.map_or(u64::MAX, f64::to_bits), std::sync::atomic::Ordering::Relaxed);
+    WALL_HITS.store(get("Ghost Hand").is_some_and(|m| m.b("Hits")), std::sync::atomic::Ordering::Relaxed);
     // These work on the inventory screen, which in_world leaves out.
     if game.remote.is_some() && game.player.is_some() {
         if let Some(m) = get("Auto Steal") {

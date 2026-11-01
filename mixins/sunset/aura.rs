@@ -367,7 +367,8 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         stop(game, m);
         return;
     }
-    if m.b("Pause on use") && (game.using.is_some() || game.mining.is_some()) {
+    let using = game.using.is_some() && !super::sunset_hands::shielding(game);
+    if m.b("Pause on use") && (using || game.mining.is_some()) {
         stop(game, m);
         return;
     }
@@ -408,7 +409,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         return;
     };
     if slot != game.selected {
-        if game.using.is_some() || game.mining.is_some() || !control::claim(HAND) {
+        if using || game.mining.is_some() || !control::claim(HAND) {
             st(|s| s.reason = "the hand is busy");
             return;
         }

@@ -40,10 +40,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Snowballs and eggs", false)
             .bool("Splash potions", false)
             .bool("Off hand", true),
-        Module::new(THROW, Category::Combat, "A key throws one ender pearl or wind charge from your hotbar (a wind charge straight down, jumping) and goes back to your slot. Hotbar keys: the hotbar key of a pearl or wind charge throws it where you look and keeps your weapon in hand.")
+        Module::new(THROW, Category::Combat, "A key throws one ender pearl or wind charge from your hotbar (a wind charge straight down, jumping) and goes back to your slot. Hotbar keys: the hotbar key of a pearl or wind charge throws it where you look and keeps your weapon in hand; with Lunge spears, a spear with Lunge jabs (the jab dashes you) and your weapon comes back the same tick.")
             .text("Pearl key", "None")
             .text("Wind charge key", "None")
-            .bool("Hotbar keys", false),
+            .bool("Hotbar keys", false)
+            .bool("Lunge spears", true),
     ]
 }
 
@@ -646,7 +647,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
 
 // Hotbar keys (Duelkit's Quick use): the hotbar key of a slot with an ender pearl or wind charge throws it, and the
 // slot you held stays (the game selects the slot on the key; the throw puts it back first).
-fn hotbar_key(game: &Game<'_>, key: &str) {
+fn hotbar_key(game: &mut Game<'_>, key: &str) {
     let Some(from) = (0..9).find(|i| game.settings.keys.get(&format!("key.hotbar.{}", i + 1)) == key) else {
         return;
     };
@@ -656,7 +657,14 @@ fn hotbar_key(game: &Game<'_>, key: &str) {
     let kind = match game.inventory[from].as_ref().map(|s| util::short(&s.item)) {
         Some("ender_pearl") => Throw::Pearl,
         Some("wind_charge") => Throw::Wind,
-        _ => return,
+        _ => {
+            if with(|s| s.module(THROW).is_some_and(|m| m.b("Lunge spears")))
+                && game.inventory[from].as_ref().is_some_and(|s| s.enchantment_level("minecraft:lunge") > 0)
+            {
+                super::sunset_melee::quick_lunge(game, from);
+            }
+            return;
+        }
     };
     state(|s| s.press = Some(Press { kind, slot: game.selected, tick: game.ticks, from: Some(from) }));
 }

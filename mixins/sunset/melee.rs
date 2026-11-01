@@ -32,9 +32,11 @@ const INPUT_KEYS: [KeyCode; 4] = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::Control
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(SHIELD, Category::Combat, "Hits a player's raised shield with an axe from your hotbar, which disables it. Passive: only when you or Kill Aura hit them; Auto also hits the shield under your crosshair.")
+        Module::new(SHIELD, Category::Combat, "Hits a player's raised shield with an axe from your hotbar, which disables it. Passive: only when you or Kill Aura hit them; Auto also hits the shield under your crosshair. Shield held: the axe as soon as they hold a shield, not only once it is up (good players raise it as your hit arrives). Stun slam: falling onto the shield, Kill Aura's axe hit is followed by Mace's mace in the same tick.")
             .pick("Mode", &["Passive", "Auto"])
-            .bool("Switch back", true),
+            .bool("Switch back", true)
+            .bool("Shield held", false)
+            .bool("Stun slam", true),
         Module::new(MACE, Category::Combat, "Takes the mace that hits hardest (its enchantments and the target's armour counted) as you fall onto a target, or for Breach. Smash assist hits the target under your crosshair during a real fall.")
             .bool("Auto swap", true)
             .pick("Pick", &["Damage", "Wind Burst"])
@@ -44,9 +46,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Smash timing", &["Delayed", "Direct"])
             .num("Min fall", 3.0, 1.5, 30.0, 0.5)
             .bool("Mobs", false),
-        Module::new(SPEAR, Category::Combat, "The Lunge key lunges with the spear from your hotbar with the most Lunge. Reach poke jabs an enemy along your look past ordinary reach when you click.")
+        Module::new(SPEAR, Category::Combat, "The Lunge key lunges with the spear from your hotbar with the most Lunge. Reach poke jabs an enemy along your look past ordinary reach when you click. Spear reach (Duelkit's): holding a sword or axe, the crosshair reaches as far as the spear in your hotbar, and the spear is selected and put back right before the hit.")
             .text("Lunge key", "None")
             .bool("Reach poke", false)
+            .pick("Spear reach", &["Off", "When out of reach", "Every hit"])
             .bool("Switch back", true),
         Module::new(TAP, Category::Combat, "Lets go of forward for a tick or more after a charged sprint hit, so the next hit knocks back as a sprint hit again. S Tap presses back instead.")
             .pick("Mode", &["W Tap", "S Tap"])
@@ -114,10 +117,9 @@ fn allowed(game: &Game<'_>) -> bool {
         && game.native_playing()
         && game.screen == Screen::Playing
         && !gui_open()
-        && game.using.is_none()
+        && (super::sunset_hands::shielding(game) || (game.using.is_none() && !game.right))
         && game.mining.is_none()
         && util::inventory_idle(game)
-        && !game.right
         && !with(|s| s.is_on("Blink"))
         && game.mobs.len() <= policy::POPULATION_LIMIT
 }
@@ -369,6 +371,21 @@ fn observed_shield(game: &Game<'_>, id: u32) -> bool {
     })
 }
 
+// A shield in either of `id`'s hands, raised or not.
+fn holds_shield(game: &Game<'_>, id: u32) -> bool {
+    game.mobs.iter().find(|m| m.id == id).is_some_and(|mob| {
+        [mob.extra.main_hand.as_ref(), mob.extra.off_hand.as_ref()]
+            .into_iter()
+            .flatten()
+            .any(|item| game.res.items().get(item).is_some_and(|i| i.blocks_attacks.is_some()))
+    })
+}
+
+// A shield Shield Breaker takes the axe to: raised at you, or with Shield held only held.
+fn shield_counts(game: &Game<'_>, id: u32) -> bool {
+    observed_shield(game, id) || (module(SHIELD).is_some_and(|m| m.b("Shield held")) && holds_shield(game, id))
+}
+
 // The hardest-hitting hotbar item that disables shields (an axe).
 fn best_axe(game: &Game<'_>) -> Option<usize> {
     (0..9)
@@ -484,7 +501,7 @@ fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
         return None;
     }
     let target = game.mobs.iter().find(|m| m.id == id && m.alive() && !m.removed)?;
-    let shield_up = observed_shield(game, id) && !broken_shield(game, id);
+    let shield_up = shield_counts(game, id) && !broken_shield(game, id);
     if let Some(m) = module(SHIELD)
         && target.kind.id == "minecraft:player"
         && (game.held().is_none() || melee_item(game, game.held()))
@@ -809,9 +826,11 @@ pub(super) fn before_click(game: &mut Game<'_>) -> Option<bool> {
         return block_stab(game).then_some(false);
     }
     if let Some((index, distance)) = game.mob_hit() {
-        if game.before_block(distance) && !before_attack(game, game.mobs[index].id) {
+        let id = game.mobs[index].id;
+        if game.before_block(distance) && !before_attack(game, id) {
             return Some(false);
         }
+        spear_pass(game, id);
         return None;
     }
     let m = module(SPEAR)?;
@@ -832,6 +851,11 @@ enum Automatic {
     Smash(u32),
     SmashShield(u32),
     Jab { slot: usize, lunge: bool },
+}
+
+// A hit of queue_action's waits for the start of the next tick.
+pub(super) fn due_waiting() -> bool {
+    state(|s| s.due.is_some())
 }
 
 // The start of a tick: the hit queue_action has ready goes.
@@ -882,7 +906,7 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
         let under = |game: &Game<'_>, id: u32| game.mob_hit().is_some_and(|(i, d)| game.mobs[i].id == id && game.before_block(d));
         let slot = match action {
             Automatic::Shield(id) => {
-                if !under(game, id) || !observed_shield(game, id) || guard_attack(game, id) {
+                if !under(game, id) || !shield_counts(game, id) || guard_attack(game, id) {
                     None
                 } else {
                     best_axe(game)
@@ -994,7 +1018,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
     if let Some(m) = module(SHIELD).filter(|m| m.p("Mode") == "Auto")
         && game.ticks >= state(|s| s.shield_ready)
         && enemy(game, &game.mobs[index], false)
-        && observed_shield(game, id)
+        && shield_counts(game, id)
         && !broken_shield(game, id)
         && (game.held().is_none() || melee_item(game, game.held()))
         && best_axe(game).is_some()
@@ -1094,4 +1118,89 @@ fn smash_intent(game: &mut Game<'_>, m: &Module, id: u32) -> mace_policy::Intent
         sprinting: p.sprinting,
     };
     state(|s| s.mace.plan(frame))
+}
+
+// Spear reach (Duelkit's): the hotbar spear the crosshair reaches as far as, while a sword or axe is held. None: off.
+pub(super) fn spear_reach_slot(game: &Game<'_>) -> Option<usize> {
+    module(SPEAR).filter(|m| m.p("Spear reach") != "Off")?;
+    let held = game.held().map(|s| util::short(&s.item))?;
+    if !(held.ends_with("_sword") || held.ends_with("_axe")) {
+        return None;
+    }
+    best_spear(game, false)
+}
+
+// Before a hit on `id` with a sword or axe: Spear reach selects the spear and the weapon again (both told to the
+// server), as a manual reach swap does; When out of reach only past the reach you have without it.
+pub(super) fn spear_pass(game: &mut Game<'_>, id: u32) {
+    let Some(spear) = spear_reach_slot(game) else {
+        return;
+    };
+    let every = module(SPEAR).is_some_and(|m| m.p("Spear reach") == "Every hit");
+    let (Some(eye), Some(target)) = (game.eye_position(), game.mobs.iter().find(|m| m.id == id)) else {
+        return;
+    };
+    let b = target.bounds();
+    let (lo, hi) = (b.min_position(), b.max_position());
+    let distance = policy::box_distance(eye, [lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z]);
+    let ordinary = game.player.as_mut().and_then(|p| p.attribute("minecraft:entity_interaction_range").ok()).unwrap_or(3.0);
+    if every || distance.is_none_or(|d| d > ordinary) {
+        let weapon = game.selected;
+        hold(game, spear);
+        hold(game, weapon);
+    }
+}
+
+// Shield Breaker's Stun slam, before Kill Aura's axe hit on `id`: falling far enough onto their raised shield, the
+// mace to hit with straight after it.
+pub(super) fn stun_slam(game: &Game<'_>, id: u32) -> Option<usize> {
+    module(SHIELD).filter(|m| m.b("Stun slam"))?;
+    let mace = module(MACE)?;
+    let p = game.player.as_ref()?;
+    let axe = game.held().and_then(|s| game.res.items().get(&s.item)).is_some_and(|i| i.disable_blocking_seconds > 0.0);
+    if !axe || !observed_shield(game, id) || p.fall_flying || p.fall_distance <= 1.5 || p.fall_distance < mace.n("Min fall") {
+        return None;
+    }
+    let target = game.mobs.iter().find(|t| t.id == id)?;
+    best_mace(game, target, &mace)
+}
+
+// Key Throw's Hotbar keys on a Lunge spear (Duelkit's Quick use): a jab with it at the start of the next tick, before
+// its move packet (the lunge is the jab's), and the slot you held back in the same tick.
+pub(super) fn quick_lunge(game: &mut Game<'_>, slot: usize) -> bool {
+    // No charge check: the game's key selected the spear, which restarted this client's charge, while the server's
+    // is still the weapon's when the jab arrives.
+    let fit = move |game: &Game<'_>| {
+        allowed(game)
+            && game.clicks.miss_time <= 0
+            && game.mining.is_none()
+            && !block_stab(game)
+            && game.riding.is_none()
+            && available_item(game, slot).is_some_and(|s| Kinetic::of(&s.item).is_some() && s.enchantment_level("minecraft:lunge") > 0)
+            && game.player.as_ref().is_some_and(|p| !p.fall_flying && !p.fluids.was_touching_water && (game.creative || p.health.food.food >= 7))
+    };
+    if !fit(game) || state(|s| s.due.is_some()) {
+        return false;
+    }
+    let back = game.selected;
+    state(|s| {
+        s.due = Some(Box::new(move |game: &mut Game<'_>| {
+            let Some(kinetic) = available_item(game, slot).and_then(|s| Kinetic::of(&s.item)) else {
+                return;
+            };
+            // The game's own hotbar key selected the spear meanwhile: that is undone first.
+            if ![back, slot].contains(&game.selected) {
+                return;
+            }
+            game.selected = back;
+            if !fit(game) || acted(game) {
+                return;
+            }
+            hold(game, slot);
+            stab(game, kinetic);
+            hold(game, back);
+            claim_tick(game);
+        }))
+    });
+    true
 }

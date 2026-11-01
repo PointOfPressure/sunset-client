@@ -449,6 +449,9 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Break Delay", Player, "Changes the delay between breaking one block and the next (Meteor's Break Delay): 0 means none.")
             .num("Cooldown (ticks)", 0.0, 0.0, 5.0, 1.0),
         Module::new("Auto Respawn", Player, "Respawns as soon as you die."),
+        Module::new("Death Location", Player, "When you die: your coordinates and dimension in chat, and a waypoint Death that Waypoints shows (older deaths: Death 2, Death 3... up to Keep). Clear on reach: a death waypoint goes once you get back to it.")
+            .num("Keep", 3.0, 1.0, 10.0, 1.0)
+            .bool("Clear on reach", true),
         Module::new("Panic", Player, "Turns every module off and hides Sunset on screen: no HUD, menu, chat lines or keys, until you type .panic again or restart the game. Bind it to a key."),
         // Render
         Module::new("ClickGUI", Render, "How this menu looks: accent colour, size, panel width, corner radius, text indent, background opacity and a dim behind it. Menu dim is the game's own dim and blur behind the inventory and the Esc menu.")
@@ -655,8 +658,10 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Logout Spots", Render, "Marks where players were when they logged out. Potato: a dot, no name.")
             .pick("Mode", &["Box", "Outline", "Potato"])
             .num("Minutes", 10.0, 1.0, 60.0, 1.0),
-        Module::new("Bow Spam", Combat, "Fires arrows as fast as you can draw them while you hold use.")
-            .num("Charge (ticks)", 5.0, 3.0, 20.0, 1.0),
+        Module::new("Bow Spam", Combat, "Fires arrows as fast as you can draw them while you hold use. Crossbows: a crossbow is loaded, let go and fired over and over, Crossbow delay ticks between shots.")
+            .num("Charge (ticks)", 5.0, 3.0, 20.0, 1.0)
+            .bool("Crossbows", true)
+            .num("Crossbow delay", 2.0, 0.0, 20.0, 1.0),
         Module::new("Notifier", Player, "Says in chat when a player joins or leaves the server.")
             .bool("Join", true)
             .bool("Leave", true),
@@ -721,6 +726,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_lag::defaults());
     v.extend(super::sunset_pvp_bot::defaults());
     v.extend(super::sunset_duel::defaults());
+    v.extend(super::sunset_hands::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_crosshair::defaults());
@@ -762,6 +768,8 @@ pub(super) struct State {
     ticks: u64,
     trigger_wait: u32,
     respawn_wait: u32,
+    // Death Location: the death screen was up last tick.
+    dead: bool,
     // Flight's Abilities mode is holding the player up.
     flying: bool,
     // The Step modifier is on the player.
@@ -784,6 +792,8 @@ pub(super) struct State {
     gui: Gui,
     crumbs: Vec<[f64; 3]>,
     waypoints: Vec<Waypoint>,
+    // Loadouts, as saved (sunset_duel reads them).
+    pub(super) loadouts: Vec<String>,
     // Block ESP's finds: where, and which colour.
     blocks: Sweep<u32>,
     scaffold_wait: u32,
@@ -862,6 +872,7 @@ impl State {
             ticks: 0,
                     trigger_wait: 0,
             respawn_wait: 0,
+            dead: false,
             flying: false,
             stepping: false,
             high_jumping: false,
@@ -877,6 +888,7 @@ impl State {
             gui: Gui::default(),
             crumbs: Vec::new(),
             waypoints: Vec::new(),
+            loadouts: Vec::new(),
             blocks: Sweep::new(),
                     scaffold_wait: 0,
             scaffold_recent: Vec::new(),
@@ -933,6 +945,9 @@ impl State {
         for w in &self.waypoints {
             out.push_str(&format!("waypoint={}|{}|{}|{}|{}\n", w.name, w.pos[0], w.pos[1], w.pos[2], w.dim));
         }
+        for l in &self.loadouts {
+            out.push_str(&format!("loadout={l}\n"));
+        }
         for (c, p) in CATEGORIES.iter().zip(&self.gui.panels) {
             out.push_str(&format!("panel.{}={},{},{}\n", norm(c.label()), p.x, p.y, p.collapsed));
         }
@@ -940,6 +955,7 @@ impl State {
     }
     fn load_text(&mut self, text: &str) {
         self.waypoints.clear();
+        self.loadouts.clear();
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else {
                 continue;
@@ -952,6 +968,10 @@ impl State {
                 {
                     self.gui.panels[i] = Panel { x, y, collapsed: *c == "true", scroll: 0.0 };
                 }
+                continue;
+            }
+            if k == "loadout" {
+                self.loadouts.push(v.to_owned());
                 continue;
             }
             if k == "waypoint" {
@@ -1780,6 +1800,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     ensure_loaded(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     crit_sprint_back(game);
+    super::sunset_hands::before_hits(game, strike_waiting() || super::sunset_melee::due_waiting());
     send_strikes(game);
     super::sunset_melee::due(game);
     let mods = snapshot();
@@ -1969,6 +1990,15 @@ fn module_tick(game: &mut Game<'_>) {
         return;
     }
 
+    let dead = game.screen == Screen::Dead;
+    if let Some(m) = get("Death Location") {
+        if dead && !with(|s| s.dead) {
+            death_location(game, m);
+        } else if !dead && m.b("Clear on reach") {
+            reach_deaths(game);
+        }
+    }
+    with(|s| s.dead = dead);
     if get("Auto Respawn").is_some() && game.screen == Screen::Dead {
         let wait = with(|s| {
             s.respawn_wait = s.respawn_wait.saturating_sub(1);
@@ -2274,6 +2304,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_lag::tick(game, &mods);
     super::sunset_pvp_bot::tick(game, &mods);
     super::sunset_duel::tick(game);
+    super::sunset_hands::tick(game);
     super::sunset_combat::tick(game, &mods);
     super::sunset_explosive_aura::tick(game, &mods, game.ticks);
     super::sunset_render::tick(game, &mods, ticks);
@@ -3393,12 +3424,72 @@ pub(super) fn track_logouts(game: &Game<'_>, m: &Module) {
     });
 }
 
+// Death Location's waypoints: "Death", then "Death 2", "Death 3"... from the newest.
+fn death_point(w: &Waypoint) -> bool {
+    w.name == "Death" || w.name.strip_prefix("Death ").is_some_and(|n| n.parse::<u32>().is_ok())
+}
+
+fn death_location(game: &mut Game<'_>, m: &Module) {
+    let Some(p) = game.native_player() else {
+        return;
+    };
+    let here = Waypoint { name: "Death".into(), pos: [p.x.floor() + 0.5, p.y.floor(), p.z.floor() + 0.5], dim: p.dimension.to_owned() };
+    say(game, &format!("You died at {} {} {} in {}", here.pos[0].floor(), here.pos[1], here.pos[2].floor(), here.dim.trim_start_matches("minecraft:")));
+    let keep = m.n("Keep").max(1.0) as usize;
+    with(|s| {
+        let mut deaths: Vec<Waypoint> = s.waypoints.iter().filter(|w| death_point(w)).cloned().collect();
+        // Oldest first: Death n ... Death 2, Death.
+        deaths.sort_by_key(|w| std::cmp::Reverse(w.name.strip_prefix("Death ").and_then(|n| n.parse::<u32>().ok()).unwrap_or(1)));
+        deaths.push(here);
+        let start = deaths.len().saturating_sub(keep);
+        let total = deaths.len() - start;
+        s.waypoints.retain(|w| !death_point(w));
+        for (i, mut w) in deaths.into_iter().skip(start).enumerate() {
+            let age = total - i;
+            w.name = if age == 1 { "Death".into() } else { format!("Death {age}") };
+            s.waypoints.push(w);
+        }
+        if let Some(i) = s.find("Waypoints") {
+            s.modules[i].on = true;
+        }
+    });
+    save(game);
+}
+
+// Clear on reach: a death waypoint within 3 blocks of you, in its dimension, is done with.
+fn reach_deaths(game: &mut Game<'_>) {
+    let Some(p) = game.native_player() else {
+        return;
+    };
+    let (at, dim) = ([p.x, p.y, p.z], p.dimension.to_owned());
+    let gone: Vec<String> = with(|s| {
+        let near = |w: &Waypoint| death_point(w) && w.dim == dim && (0..3).map(|a| (w.pos[a] - at[a]).powi(2)).sum::<f64>() <= 9.0;
+        let gone = s.waypoints.iter().filter(|w| near(w)).map(|w| w.name.clone()).collect();
+        s.waypoints.retain(|w| !near(w));
+        gone
+    });
+    if !gone.is_empty() {
+        save(game);
+        say(game, &format!("Reached {}", gone.join(", ")));
+    }
+}
+
 pub(super) fn bow_spam(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
-    if !game.native_playing()
-        || !(game.physical_buttons.contains(&MouseButton::Right) || game.right)
-        || !game.held().is_some_and(|s| &*s.item == "minecraft:bow")
-    {
+    if !game.native_playing() || !(game.physical_buttons.contains(&MouseButton::Right) || game.right) {
+        return;
+    }
+    // Crossbows: once it is loaded the charge is let go (the release packet: the server loads it then), and the use
+    // still held fires it after Crossbow delay ticks, then charges the next.
+    if m.b("Crossbows") && let Some(stack) = game.held().filter(|s| &*s.item == "minecraft:crossbow") {
+        if stack.data().is_some_and(|d| !d.charged.is_empty()) && game.using.is_some() {
+            game.send(S::PlayerAction(play::PlayerAction { action: 6, pos: [0; 3], direction: 0, sequence: 0 }));
+            game.using = None;
+            game.use_delay = game.use_delay.max(m.n("Crossbow delay") as _);
+        }
+        return;
+    }
+    if !game.held().is_some_and(|s| &*s.item == "minecraft:bow") {
         return;
     }
     if let Some((_, ticks)) = game.using
@@ -4090,10 +4181,22 @@ fn strike_now(game: &mut Game<'_>, id: u32) {
             game.play_at_feet(kinetic.attack_sound);
         }
     } else {
+        super::sunset_melee::spear_pass(game, id);
+        let slam = super::sunset_melee::stun_slam(game, id);
         game.send(S::Attack(play::Attack { id: id as i32 }));
         game.swing_arm();
         game.send(S::Punch(Empty));
         game.reset_attack_strength();
+        // Stun slam: the mace follows the axe in the same tick; the slot from before the axe comes back after.
+        if let Some(mace) = slam {
+            let axe = game.selected;
+            hold(game, mace);
+            game.send(S::Attack(play::Attack { id: id as i32 }));
+            game.swing_arm();
+            game.send(S::Punch(Empty));
+            game.reset_attack_strength();
+            strikes(|s| s.back = Some(s.back.map_or((axe, mace), |(slot, _)| (slot, mace))));
+        }
     }
 }
 
@@ -4193,7 +4296,7 @@ pub(super) fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
 pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     if !game.native_playing()
         || game.remote.is_none()
-        || game.using.is_some()
+        || (game.using.is_some() && !super::sunset_hands::shielding(game))
         || CRIT_STAGE.load(Ordering::Relaxed) != 0
         || strike_waiting()
     {
@@ -5059,6 +5162,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 }
             }
         }
+        "loadout" | "loadouts" => super::sunset_duel::loadout_command(game, args),
         "waypoint" | "waypoints" | "wp" => {
             let sub = args.get(1).map(|a| a.to_ascii_lowercase());
             match (sub.as_deref(), args.get(2)) {
@@ -5383,6 +5487,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         world_overlays(game, &cam, &mods, lw, &mut Painter { game, batch: &mut *batch });
     }
 
+    super::sunset_duel::draw_loadouts(game, w, h, &mut shapes);
     if let Some(hud) = get("HUD") {
         if hud.b("Target HUD") && get("Kill Aura").is_some() {
             super::sunset_aura::draw_target(game, w, h, hud.p("Target HUD mode") == "Potato", &mut shapes);

@@ -509,6 +509,27 @@ bindings = [
 ]
 
 [[injection]]
+id = "mob_hit"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::Game<'_>::mob_hit"
+helper = "mob_hit_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[injection]]
+id = "wall_hit"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::frames::Game<'_>::before_block"
+helper = "wall_hit_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "distance", ty = "f64", value = "distance" },
+]
+
+[[injection]]
 id = "crit_click"
 kind = "HEAD"
 cancellable = true
@@ -703,6 +724,15 @@ bindings = [
 
 # The GUI's text editor types the text the keyboard layout makes (the named keys Sunset gets have none), and the binds
 # see releases a screen swallowed and lost focus; it only looks.
+[[injection]]
+id = "rf_click"
+kind = "HEAD"
+target = "horizon_client::game::follow_keymap"
+helper = "rf_hook.rs"
+bindings = [
+  { name = "event", ty = "&mut winit::event::WindowEvent", value = "&mut *event" },
+]
+
 [[injection]]
 id = "window_event"
 kind = "HEAD"
@@ -1114,6 +1144,12 @@ id = "pvp_bot"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_pvp_bot"
 source = "pvp_bot.rs"
+
+[[module]]
+id = "hands"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hands"
+source = "hands.rs"
 
 [[module]]
 id = "duel"
