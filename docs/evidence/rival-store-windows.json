@@ -1,0 +1,39 @@
+{
+  "platform": "Windows",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "source_sha256": {
+    "mixins/sunset/rival_store.rs": "5ba44f27b1646665613aa6b14e470ffe4b9191da95ff71e8277070c387b8b70b",
+    "tools/rival_store_tests.rs": "2908d0047e8cf4980bb9965c59231bd7635c9672760c37e2e6daa2ca0e671279"
+  },
+  "checks": [
+    {
+      "command": [
+        "rustc",
+        "--edition=2024",
+        "-D",
+        "warnings",
+        "--test",
+        "tools/rival_store_tests.rs",
+        "-o",
+        "<temporary>\\rival-tests.exe"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "<temporary>\\rival-tests.exe",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "stdout": "\nrunning 20 tests\ntest batch_and_payload_limits_apply_before_disk_changes ... ok\ntest checked_windows_directories_cannot_be_swapped_while_in_use ... ok\ntest delayed_worker_rejects_directory_link_inserted_after_snapshot ... ok\ntest directory_in_file_position_is_rejected ... ok\ntest empty_snapshot_does_not_create_folders ... ok\ntest failed_replace_preserves_record_and_removes_only_its_own_temporary ... ok\ntest file_in_directory_position_is_rejected ... ok\ntest hard_link_target_is_replaced_without_modifying_external_file ... ok\ntest linked_ancestor_is_rejected_before_creating_descendants ... ok\ntest linked_data_directory_does_not_create_outside_rivals ... ok\ntest linked_rivals_directory_cannot_be_written_read_or_pruned ... ok\ntest missing_read_does_not_create_folders ... ok\ntest occupied_temporary_names_are_not_truncated_or_removed ... ok\ntest oversized_or_invalid_utf8_read_is_rejected ... ok\ntest parent_traversal_is_rejected ... ok\ntest pruning_skips_link_entries_instead_of_removing_them ... ok\ntest reparse_or_symlink_in_json_position_is_rejected ... ok\ntest retention_only_removes_plain_uuid_json_files ... ok\ntest round_trip_and_atomic_replacement ... ok\ntest worker_checks_paths_when_it_runs_not_when_snapshot_is_taken ... ok\n\ntest result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s\n\n",
+      "stderr": ""
+    }
+  ],
+  "scope": "Production filesystem code, actual temporary folders, Windows junctions and hard links; no game, personal files or GPU.",
+  "passed": 20,
+  "source_unchanged": true,
+  "fixtures_removed": true
+}

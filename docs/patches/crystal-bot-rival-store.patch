@@ -1,0 +1,81 @@
+--- a/mixins/sunset/crystal_bot.rs
++++ b/mixins/sunset/crystal_bot.rs
+@@ -1369,14 +1369,8 @@
+     })
+ }
+ fn read_rival(game: &Game<'_>, uuid: u128) -> Option<tactics::Rival> {
+-    let path = game
+-        .native_data_dir("sunset")
+-        .join("rivals")
+-        .join(format!("{uuid:032x}.json"));
+-    if std::fs::metadata(&path).ok()?.len() > 16384 {
+-        return None;
+-    }
+-    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
++    let text = super::sunset_rival_store::read(&game.native_data_dir("sunset"), uuid).ok()?;
++    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+     if v["version"].as_u64() != Some(1) {
+         return None;
+     }
+@@ -1460,7 +1454,7 @@
+         BOOK_BUSY.store(false, std::sync::atomic::Ordering::Release);
+         return;
+     }
+-    let folder = game.native_data_dir("sunset").join("rivals");
++    let data = game.native_data_dir("sunset");
+     // Filesystem work stays off the render/input tick. A bounded snapshot owns
+     // only its serialized values; no Game/reference reaches the worker.
+     std::thread::spawn(move || {
+@@ -1471,33 +1465,11 @@
+             }
+         }
+         let _reset = Reset;
+-        if std::fs::create_dir_all(&folder).is_err() {
+-            return;
+-        }
+-        for (u, r) in changed {
++        let entries = changed.into_iter().map(|(u, r)| {
+             let value = serde_json::json!({"version":1,"fights":r.fights,"launches":r.launches,"launch_rate":r.launch_rate,"flights":r.flights,"push":r.push,"retotems":r.retotems,"retotem":r.retotem,"holes":r.holes,"hole_ticks":r.hole_ticks,"low_spells":r.low_spells,"pearl_rate":r.pearl_rate,"rewards":r.rewards,"tries":r.tries});
+-            let file = folder.join(format!("{u:032x}.json"));
+-            let temp = file.with_extension("tmp");
+-            if std::fs::write(&temp, value.to_string()).is_ok() {
+-                let _ = std::fs::rename(temp, file);
+-            }
+-        }
+-        let mut files = std::fs::read_dir(&folder)
+-            .into_iter()
+-            .flatten()
+-            .flatten()
+-            .filter(|e| {
+-                e.path().extension().is_some_and(|x| x == "json")
+-                    && e.file_name().to_str().is_some_and(|n| {
+-                        n.len() == 37 && n[..32].bytes().all(|b| b.is_ascii_hexdigit())
+-                    })
+-            })
+-            .take(256)
+-            .collect::<Vec<_>>();
+-        files.sort_by_key(|e| std::cmp::Reverse(e.metadata().and_then(|m| m.modified()).ok()));
+-        for old in files.into_iter().skip(64) {
+-            let _ = std::fs::remove_file(old.path());
+-        }
++            (u, value.to_string())
++        }).collect::<Vec<_>>();
++        let _ = super::sunset_rival_store::save(&data, &entries);
+     });
+ }
+ fn tactical_pick(game: &Game<'_>, m: &Module) -> (Option<util::Target>, usize) {
+--- a/mixins/sunset/horizon-mixin.toml
++++ b/mixins/sunset/horizon-mixin.toml
+@@ -890,6 +890,12 @@
+   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+   { name = "hand", ty = "horizon_client::first_person::Hand", value = "hand" },
+ ]
++
++[[module]]
++id = "rival_store"
++file = "crates/horizon-client/src/game.rs"
++name = "sunset_rival_store"
++source = "rival_store.rs"
+ 
+ [[module]]
+ id = "crystal_bot"
