@@ -143,11 +143,16 @@ impl Setting {
     fn value_text(&self) -> String {
         match &self.value {
             Value::Bool(b) => on_off(*b).to_owned(),
+            Value::Num { v, .. } if self.all_loaded(*v) => "All".to_owned(),
             Value::Num { v, .. } => num(*v),
             Value::Pick { i, of } => of[*i].to_owned(),
             Value::Text(t) if t.is_empty() => "(empty)".to_owned(),
             Value::Text(t) => t.chars().map(|c| if c.is_control() { '?' } else { c }).collect(),
         }
+    }
+    // ESP's, Tracers' and Nametags' Range at 0: everything the server sent, however far.
+    fn all_loaded(&self, v: f64) -> bool {
+        self.name == "Range" && v == 0.0 && matches!(self.value, Value::Num { min, max, .. } if min == 0.0 && max == ALL_RANGE_MAX)
     }
     fn stored(&self) -> String {
         match &self.value {
@@ -528,7 +533,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .colour("Hostiles color", "Red")
             .colour("Passive color", "Green")
             .colour("Items color", "Orange")
-            .num("Range", 64.0, 8.0, 256.0, 8.0)
+            .num("Range", 0.0, 0.0, ALL_RANGE_MAX, 8.0)
             .num("Max", 256.0, 8.0, 1024.0, 8.0),
         Module::new("Tracers", Render, "Draws lines from your crosshair to entities. Potato draws the lines alone, to the middle.")
             .pick("Mode", &["Lines", "Potato"])
@@ -544,7 +549,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .colour("Players color", "White")
             .colour("Hostiles color", "Red")
             .colour("Passive color", "Green")
-            .num("Range", 64.0, 8.0, 256.0, 8.0)
+            .num("Range", 0.0, 0.0, ALL_RANGE_MAX, 8.0)
             .num("Max", 256.0, 8.0, 1024.0, 8.0),
         Module::new("Nametags", Render, "Big name tags with health and distance, through walls. Potato shows the name alone.")
             .pick("Mode", &["Full", "Potato"])
@@ -557,7 +562,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Distance", true)
             .bool("Background", true)
             .colour("Name color", "White")
-            .num("Range", 64.0, 8.0, 256.0, 8.0)
+            .num("Range", 0.0, 0.0, ALL_RANGE_MAX, 8.0)
             .num("Max", 64.0, 1.0, 512.0, 1.0),
         Module::new("Storage ESP", Render, "Draws boxes around chests and other storage. Outline and Potato (a dot on each) are the cheapest.")
             .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
@@ -1091,6 +1096,8 @@ impl State {
                     // Kill Aura before its Attack timing, and when Switch delay was its only one.
                     ("killaura", "customdelay") => Some(("attacktiming", if v == "true" { "Custom delay" } else { "Vanilla cooldown" }.to_owned())),
                     ("killaura", "switchdelay") => Some(("weaponswitchdelay", v.to_owned())),
+                    // Range was 64 by default before All (0): an unchanged one becomes All.
+                    ("esp" | "tracers" | "nametags", "range") if v == "64" => Some(("range", "0".to_owned())),
                     _ => None,
                 };
                 // Before Attack mode, more than one target meant hitting them all. A newer config's own Attack mode
@@ -5955,7 +5962,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     let mut text = String::new();
 
     if let Some(m) = esp.filter(|m| m.b("Items")) {
-        let (look, colour, range, fade) = (Look::of(m), m.c("Items color"), m.n("Range"), m.n("Fade distance"));
+        let (look, colour, range, fade) = (Look::of(m), m.c("Items color"), range_of(m), m.n("Fade distance"));
         let (names, lines, filter, list) = (m.b("Item names"), m.b("Item tracers"), m.p("Item filter"), m.t("Item list"));
         let middle = [cam.w as f32 / 2.0, cam.h as f32 / 2.0];
         for item in &game.dropped {
@@ -6156,6 +6163,17 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     }
 }
 
+// ESP's, Tracers' and Nametags' Range: 0 (shown "All") draws everything loaded, else a limit up to this.
+const ALL_RANGE_MAX: f64 = 512.0;
+
+// A Range setting as a distance: 0 is no limit.
+fn range_of(m: &Module) -> f64 {
+    match m.n("Range") {
+        r if r <= 0.0 => f64::INFINITY,
+        r => r,
+    }
+}
+
 // The settings ESP, Tracers and Nametags draw with, read once a frame.
 struct EntityLook {
     kinds: Kinds,
@@ -6173,7 +6191,7 @@ impl EntityLook {
             kinds: Kinds::of(m),
             potato: look.draw == Draw::Potato,
             look,
-            range: m.n("Range"),
+            range: range_of(m),
             max: m.n("Max") as usize,
             fade: m.n("Fade distance"),
         }
@@ -7539,7 +7557,7 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
                                 fw
                             }
                             None => {
-                                let value = num(v);
+                                let value = st.value_text();
                                 let vw = game.native_text_width(&value);
                                 out.push(Shape::Text(value, [x + rw - RIGHT_PAD - vw, y + text_y(row_hh())], 0xE4E4E4));
                                 vw

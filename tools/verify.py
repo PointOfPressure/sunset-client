@@ -4066,6 +4066,81 @@ def _():
     return max(changed) < 0.01 * 1280 * 720, f"pixels changed by each of three F5 presses: {changed} (of {1280 * 720})"
 
 
+@test("ESP, Tracers, Nametags (Range All)")
+def _():
+    # A ghast 150 blocks south and 40 up (120 on a server, whose view distance is 8 chunks; a ghast's tracking range
+    # is 10): ESP and Tracers at their default Range (All) draw it in pink above the chat, at Range 64 they don't
+    # (pink counted in the top 45% of the frame: tracers to cave mobs below go down). Then 300 husks around the arena:
+    # the frame rate (uncapped) with ESP, Tracers and Nametags all on at All against all off.
+    from PIL import Image
+    pink = lambda r, g, b: r > 230 and 80 < g < 150 and b > 160
+
+    def top_pink(name):
+        path = f"{SHOTS}/{name}.png"
+        ctl("screenshot", path)
+        time.sleep(2)
+        im = Image.open(path).convert("RGB")
+        return sum(1 for px in im.crop((0, 0, im.width, im.height * 45 // 100)).getdata() if pink(*px))
+
+    far = 120 if SERVER else 150
+    reset("creative")
+    cmd("kill @e[type=!player]", "difficulty easy")
+    wait(5)
+    cmd(f"summon ghast {X0+0.5} {Y+40} {Z0+far+0.5} {HUSK}")
+    wait(60)
+    seen = ctl("entities", "200", "ghast").get("entities", [])
+    if not seen:
+        cmd("kill @e[type=!player]")
+        return None, f"the server did not send a ghast {far} blocks away"
+    for mod in ("esp", "tracers"):
+        setting(mod, "hostiles", "true")
+        setting(mod, "players", "false")
+        setting(mod, "passive", "false")
+        setting(mod, "hostiles color", "Pink")
+    ctl("look", "0", "0")
+    only("esp")
+    wait(10)
+    esp_all = top_pink("range_esp_all")
+    setting("esp", "range", "64")
+    wait(5)
+    esp_64 = top_pink("range_esp_64")
+    only("tracers")
+    wait(5)
+    tracer_all = top_pink("range_tracer_all")
+    setting("tracers", "range", "64")
+    wait(5)
+    tracer_64 = top_pink("range_tracer_64")
+    setting("esp", "range", "0")
+    setting("tracers", "range", "0")
+    only()
+    cap = ctl("options-get", "maxFps")["options"]["maxFps"]["value"]
+    ctl("options-set", "maxFps", "260")
+    cmd("kill @e[type=!player]")
+    wait(5)
+    for dx in range(-15, 15):
+        cmd(f"summon husk {X0 + dx + 0.5} {Y+1} {Z0 + 8.5} {HUSK}", *[f"summon husk {X0 + dx + 0.5} {Y+1} {Z0 + 8.5 + 2 * k} {HUSK}" for k in range(1, 10)])
+    wait(60)
+    count = len(ctl("entities", "64", "husk").get("entities", []))
+    ctl("look", "0", "10")
+
+    def fps():
+        wait(20)
+        a = ctl("status")
+        wait(100)
+        b = ctl("status")
+        return (b["frames"] - a["frames"]) / max(b["uptime_seconds"] - a["uptime_seconds"], 1e-6)
+    off = fps()
+    setting("nametags", "mobs", "true")
+    only("esp", "tracers", "nametags")
+    on_all = fps()
+    only()
+    ctl("options-set", "maxFps", str(cap))
+    cmd("kill @e[type=!player]")
+    ok = esp_all > 10 and esp_64 < esp_all / 4 and tracer_all > 20 and tracer_64 < tracer_all / 4 and count >= 300 and on_all > off * 0.5
+    return ok, (f"ghast {far} blocks away, pink pixels: ESP {esp_all} at All, {esp_64} at 64; Tracers {tracer_all} at All, "
+                f"{tracer_64} at 64; {count} husks: {off:.0f} fps with none on, {on_all:.0f} with ESP + Tracers + Nametags at All")
+
+
 @test("ESP (item names, tracers, filter)")
 def _():
     # A stack of 5 diamonds off to the side ahead: its box, then its name, then a line to it, then none of it with
