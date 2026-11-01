@@ -60,10 +60,11 @@ state, including a same-dimension respawn on the same connection.
 
 ## Damage and prediction
 
-Exposure uses native collider sampling. Armor, toughness, resistance, protection,
-durability and source scaling use the native kernels. Local equipment that is
-unknown or could break does not receive unjustified safety credit. Hidden
-remote effects and attributes remain unknown; all damage is an estimate.
+Exposure and armor/toughness/resistance/protection reduction use native kernels.
+Current Auras use the ordinary observed-state estimate, not the historical
+selectable Unmitigated/equipped-upper safety mode. Face Place separately reads
+observed armor durability. Hidden attributes/effects, equipment changes or
+breakage and stale difficulty snapshots remain limits; this is an estimate.
 
 RTT comes from actual placement-to-matching-spawn receipts, with local tab ping
 as fallback. Read-only projections use native contextual collisions, chunk

@@ -76,9 +76,9 @@ mod game {
   const NAME:&str="Crystal Aura";
   CLOCK
   use state::{Action,Clock};
-  struct State{clock:Clock,queued_at:Option<Instant>,plan:Option<()>,lookahead:Option<()>,opening:f64,weapon:Option<usize>,attempts:Vec<(u32,u8)>,setup:crate::setup::Ledger,setup_scene:Option<u32>}
+  struct State{clock:Clock,queued_at:Option<Instant>,plan:Option<()>,retained:Option<Action>,lookahead:Option<()>,opening:f64,weapon:Option<usize>,attempts:Vec<(u32,u8)>,setup:crate::setup::Ledger,setup_scene:Option<u32>}
   static STATE:Mutex<Option<State>>=Mutex::new(None);
-  fn st<R>(f:impl FnOnce(&mut State)->R)->R{let mut s=STATE.lock().unwrap();f(s.get_or_insert_with(||State{clock:Clock::default(),queued_at:None,plan:None,lookahead:None,opening:0.0,weapon:None,attempts:Vec::new(),setup:crate::setup::Ledger::new(),setup_scene:None}))}
+  fn st<R>(f:impl FnOnce(&mut State)->R)->R{let mut s=STATE.lock().unwrap();f(s.get_or_insert_with(||State{clock:Clock::default(),queued_at:None,plan:None,retained:None,lookahead:None,opening:0.0,weapon:None,attempts:Vec::new(),setup:crate::setup::Ledger::new(),setup_scene:None}))}
   fn note(_:usize){}
   SUSPEND
   CRYSTAL_RESET
@@ -86,8 +86,8 @@ mod game {
   #[cfg(test)]mod tests {
    use super::*;use super::super::{sunset_combat_control as control,sunset_anchor_aura as anchor};
    static SERIAL:Mutex<()>=Mutex::new(());
-   fn fixture()->control::Finish{control::reset();control::claim();st(|s|{s.weapon=Some(8);s.clock.queued=true;s.clock.sent(Action::Break(77,[0.0;3]),1,2);s.clock.queued=true;s.plan=Some(());s.lookahead=Some(());s.opening=3.0;});anchor::state(|s|{s.pending=Some(());s.token=4;s.sent_count=10;s.ack_count=9;s.last_active_phase="charge sent";});control::finish("Anchor Aura")}
-   #[test]fn same_connection_same_dimension_same_id_boundary_clears_old_deeds_and_hand(){let _s=SERIAL.lock().unwrap();let old=fixture();assert!(old.current());discard_scene();assert!(!old.current());st(|s|{assert!(s.weapon.is_none());assert!(!s.clock.queued);assert!(s.clock.waiting.is_none());assert!(s.plan.is_none());assert!(s.lookahead.is_none());});anchor::state(|s|{assert!(s.pending.is_none());assert_ne!(s.token,4);});}
+   fn fixture()->control::Finish{control::reset();control::claim();st(|s|{s.weapon=Some(8);s.clock.queued=true;s.clock.sent(Action::Break(77,[0.0;3]),1,2);s.clock.queued=true;s.plan=Some(());s.retained=Some(Action::Place([3,121,0]));s.lookahead=Some(());s.opening=3.0;});anchor::state(|s|{s.pending=Some(());s.token=4;s.sent_count=10;s.ack_count=9;s.last_active_phase="charge sent";});control::finish("Anchor Aura")}
+   #[test]fn same_connection_same_dimension_same_id_boundary_clears_old_deeds_and_hand(){let _s=SERIAL.lock().unwrap();let old=fixture();assert!(old.current());discard_scene();assert!(!old.current());st(|s|{assert!(s.weapon.is_none());assert!(!s.clock.queued);assert!(s.clock.waiting.is_none());assert!(s.plan.is_none());assert!(s.retained.is_none());assert!(s.lookahead.is_none());});anchor::state(|s|{assert!(s.pending.is_none());assert_ne!(s.token,4);});}
    #[test]fn dropped_old_deed_cannot_release_new_same_owner_lease(){let _s=SERIAL.lock().unwrap();let old=fixture();discard_scene();control::claim();let new=control::finish("Anchor Aura");assert!(new.current());drop(old);assert!(new.current());}
    #[test]fn numeric_diagnostics_survive_context_discard(){let _s=SERIAL.lock().unwrap();let old=fixture();discard_scene();anchor::state(|s|{assert_eq!(s.sent_count,10);assert_eq!(s.ack_count,9);assert_eq!(s.last_active_phase,"charge sent");assert_eq!(s.phase,"idle");});drop(old);}
   }

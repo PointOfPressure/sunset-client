@@ -60,9 +60,9 @@ mod game {
  const NAME:&str="Crystal Aura";
  STATE
  use state::{Action,Clock};
- struct State { clock:Clock,queued_at:Option<Instant>,plan:Option<()>,attempts:Vec<(u32,u8)>,
+ struct State { clock:Clock,queued_at:Option<Instant>,plan:Option<()>,retained:Option<Action>,attempts:Vec<(u32,u8)>,
   setup:crate::setup::Ledger,setup_scene:Option<u32>,notes:usize,weapon:Option<()>,lookahead:Option<()>,opening:f64 }
- impl Default for State {fn default()->Self{Self{clock:Clock::default(),queued_at:None,plan:None,attempts:vec![],
+ impl Default for State {fn default()->Self{Self{clock:Clock::default(),queued_at:None,plan:None,retained:None,attempts:vec![],
   setup:crate::setup::Ledger::new(),setup_scene:None,notes:0,weapon:None,lookahead:None,opening:0.0}}}
  static STATE:OnceLock<Mutex<State>>=OnceLock::new();
  fn st<R>(f:impl FnOnce(&mut State)->R)->R{f(&mut STATE.get_or_init(||Mutex::new(State::default())).lock().unwrap())}
@@ -90,9 +90,9 @@ mod game {
  }
  #[test]fn suspend_invalidates_queued_generation_but_prediction_still_is_not_ack(){
   let _serial=SERIAL.lock().unwrap();fresh();st(|s|{s.setup.sent(P,0,10,20);s.setup_scene=Some(17);
-   s.clock.queued=true;s.queued_at=Some(Instant::now());s.plan=Some(());s.attempts.push((7,3));});
+   s.clock.queued=true;s.queued_at=Some(Instant::now());s.plan=Some(());s.retained=Some(Action::Place(P));s.attempts.push((7,3));});
   let before=st(|s|s.clock.generation);suspend();
-  st(|s|{assert_ne!(s.clock.generation,before);assert!(!s.clock.queued);assert!(s.queued_at.is_none());assert!(s.plan.is_none());
+  st(|s|{assert_ne!(s.clock.generation,before);assert!(!s.clock.queued);assert!(s.queued_at.is_none());assert!(s.plan.is_none());assert!(s.retained.is_none());
    assert_eq!(s.attempts,vec![(7,3)]);assert!(!s.setup.crystal_allowed(P,50,true));assert!(!s.setup.can_send(P,39));
    s.setup.payload(P,49,true);assert!(s.setup.acknowledged(P,true));assert!(s.setup.crystal_allowed(P,50,true));});
  }

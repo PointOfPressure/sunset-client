@@ -436,20 +436,10 @@ fn sampled_threat(game: &mut Game<'_>) -> (Option<f64>, bool) {
         return state(|s| (s.threat, s.threat_complete));
     }
     let complete = sources.len() <= policy::THREAT_PREDICTIONS && state(|s| s.scan_complete);
-    let mode = with(|s| {
-        if ["Crystal Aura", "Anchor Aura"].iter().any(|name| {
-            s.module(name)
-                .is_some_and(|m| m.p("Damage model") == "Unmitigated")
-        }) {
-            "Unmitigated"
-        } else {
-            "Observed equipment"
-        }
-    });
     let mut worst = Some(0.0f64);
     let mut budget = Budget::new(policy::THREAT_PREDICTIONS);
     for blast in sources.into_iter().take(policy::THREAT_PREDICTIONS) {
-        let damage = local_damage(game, blast, &mut budget).map(|p| safety_damage(p, mode));
+        let damage = local_damage(game, blast, &mut budget).map(|p| p.estimate);
         match damage {
             Some(d) if d.is_finite() && d >= 0.0 => {
                 worst = worst.map(|old| old.max(d));
@@ -951,9 +941,16 @@ struct PearlPlan {
     away: f64,
     until: u64,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ObservedPearlFlight {
+    target: u32,
+    peer: u32,
+    began: u64,
+}
 #[derive(Clone, Copy)]
 struct PearlSearch {
     escape: bool,
+    observed_flight: Option<ObservedPearlFlight>,
     spot: [f64; 3],
     began: u64,
     cursor: u32,
@@ -1985,17 +1982,12 @@ fn safe_blast(game: &mut Game<'_>, blast: Blast, target: u32, min: f64, cap: f64
     let Some(local) = local_damage(game, blast, &mut budget) else {
         return false;
     };
-    let model = with(|s| {
-        s.module("Crystal Aura")
-            .map(|m| m.p("Damage model").to_owned())
-            .unwrap_or_else(|| "Unmitigated".to_owned())
-    });
-    let own = safety_damage(local, &model);
+    let own = local.estimate;
     let life = game
         .player
         .as_ref()
         .map_or(0., |p| f64::from(p.health.health() + p.health.absorption()));
-    if !own.is_finite() || own > cap || own + 1. >= life {
+    if own > cap || super::sunset_explosive_tactics::endangered(own, life, game.creative) {
         return false;
     }
     let Some(victim) = game
@@ -2760,11 +2752,37 @@ fn pearl_ready(game: &Game<'_>) -> bool {
         && tactics::pearl_health_ready(life, totem)
 }
 fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bool) -> bool {
+    // An incremental search is meaningful only in its exact current bot scene.
+    if !state(|s| {
+        s.target == Some(target.id)
+            && s.session.as_ref().is_some_and(|scene| same(game, scene))
+            && s.tactics.pause.state(game.ticks) == tactics::Pause::Go
+    }) {
+        state(|s| s.tactics.pearl_search = None);
+        return false;
+    }
+    let retained_flight = state(|s| {
+        let search = s.tactics.pearl_search?;
+        let flight = search.observed_flight?;
+        if !search.escape
+            && flight.target == target.id
+            && game.ticks >= flight.began
+            && game.ticks - flight.began <= 10
+            && game.ticks >= search.began
+            && game.ticks - search.began <= 10
+        {
+            Some(search)
+        } else {
+            s.tactics.pearl_search = None;
+            None
+        }
+    });
     if !pearl_ready(game) {
         return false;
     }
     let own = util::player_pos(game).unwrap_or([0.; 3]);
     let mut spot = target.pos;
+    let mut observed_flight = None;
     let r = rival();
     if !escape {
         let life = game
@@ -2799,7 +2817,17 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
             });
             if util::dist(own, landing.at) > 8. {
                 spot = landing.at;
+                observed_flight = Some(ObservedPearlFlight {
+                    target: target.id,
+                    peer: id,
+                    began: game.ticks,
+                });
             }
+        } else if let Some(search) = retained_flight {
+            // The observed peer flight was consumed once. Finish its bounded
+            // 8-candidate slices without requiring another physical trigger.
+            spot = search.spot;
+            observed_flight = search.observed_flight;
         } else {
             if count(game, "totem_of_undying") == 0 && life <= 12.
                 || r.pearl_low() && target.health <= 8.
@@ -2825,11 +2853,14 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
     let mut search = state(|s| s.tactics.pearl_search)
         .filter(|s| {
             s.escape == escape
-                && game.ticks.saturating_sub(s.began) <= 10
+                && s.observed_flight == observed_flight
+                && game.ticks >= s.began
+                && game.ticks - s.began <= 10
                 && util::dist(s.spot, spot) <= 3.
         })
         .unwrap_or(PearlSearch {
             escape,
+            observed_flight,
             spot,
             began: game.ticks,
             cursor: 0,

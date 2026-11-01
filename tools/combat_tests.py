@@ -17,6 +17,10 @@ def main():
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     records = []
+    def source_fingerprint():
+        return {p.relative_to(repo).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in sorted((repo/'mixins').rglob('*')) if p.is_file()}
+    before = source_fingerprint()
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
     def run(name, command):
@@ -46,30 +50,40 @@ def main():
         run('native Aura base preview and ray', [sys.executable, 'tools/aura_base_engine_tests.py', args.engine.resolve()])
         run('Aura setup suspend and reset lifecycle', [sys.executable, 'tools/aura_setup_lifecycle_tests.py'])
         run('Aura staged revalidation and scene boundary', [sys.executable, 'tools/aura_boundary_tests.py'])
+        run('Crystal retained scan candidate', [sys.executable, 'tools/crystal_retained_tests.py'])
         run('Explosive friend selection', [sys.executable, 'tools/explosive_players_tests.py'])
         run('native menu SWAP', [sys.executable, 'tools/inventory_engine_tests.py', args.engine.resolve()])
         run('native packet predicates', [sys.executable, 'tools/packet_engine_tests.py', args.engine.resolve()])
         run('native City mining', [sys.executable, 'tools/city_engine_tests.py', args.engine.resolve()])
+        run('native City attribute reach', [sys.executable, 'tools/city_engine_tests.py', args.engine.resolve(), '--range-only'])
+        run('City selection and lifecycle parity', [sys.executable, 'tools/city_parity_tests.py', args.engine.resolve()])
         run('native roof visibility', [sys.executable, 'tools/roof_engine_tests.py', args.engine.resolve()])
         run('native Trap placement visibility', [sys.executable, 'tools/trap_visibility_tests.py', args.engine.resolve()])
         run('exact City ownership', [sys.executable, 'tools/city_ownership_tests.py'])
         run('Crystal weapon restoration', [sys.executable, 'tools/crystal_weapon_tests.py'])
         run('Bot native mining and food adapters', [sys.executable, 'tools/bot_runtime_adapter_tests.py', args.engine.resolve()])
+        run('Bot observed damage and friend adapters', [sys.executable, 'tools/bot_damage_adapter_tests.py'])
+        run('Bot retained peer pearl intent', [sys.executable, 'tools/bot_peer_flight_tests.py'])
         run('Bot tactical lifecycle', [sys.executable, 'tools/bot_lifecycle_tests.py'])
         run('Friend Guard native feedback', [sys.executable, 'tools/friend_feedback_tests.py'])
         run('GUI controller edit intent', [sys.executable, 'tools/gui_intent_tests.py'])
         run('native cleanup schema', [sys.executable, 'tools/combat_cleanup_schema_tests.py', args.engine.resolve()])
         run('loot integration gates', [sys.executable, 'tools/loot_integration_tests.py'])
         run('macro protected quick press', [sys.executable, 'tools/loot_press_tests.py'])
+        run('manual toggle lifecycle', [sys.executable, 'tools/manual_toggle_tests.py'])
+        run('retired inventory acknowledgements', [sys.executable, 'tools/inventory_retirement_tests.py'])
+        run('manual macro reference defaults', [sys.executable, 'tools/macro_defaults_tests.py'])
         if args.dependency_dir:
             run('Bot melee and native Stab adapters', [sys.executable, 'tools/bot_melee_adapter_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
             run('native packet codec fields', [sys.executable, 'tools/packet_protocol_fields.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
+            run('native pearl owner and remote flight', [sys.executable, 'tools/pearl_owner_engine_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
+            run('native pearl owner original-body wrapper', [sys.executable, 'tools/pearl_owner_head_tests.py', '--dependency-dir', args.dependency_dir.resolve()])
             run('native parity geometry and wire', [sys.executable, 'tools/parity_engine_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve(), '--out', temporary/'parity.json'])
             run('native loot identity and wire', [sys.executable, 'tools/loot_engine_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
             run('native inventory wire round-trip', [sys.executable, 'tools/inventory_protocol_fields.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
             run('native macro carried-stack adapter', [sys.executable, 'tools/macro_protocol_fields.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
-    source_hashes = {p.relative_to(repo).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-                     for p in sorted((repo/'mixins/sunset').glob('*.rs'))}
+    source_hashes = source_fingerprint()
+    assert source_hashes == before, 'Native mod source changed during focused validation'
     count = foundation_count + sum(int(n) for r in records if not r['name'].endswith('compile')
                      for n in re.findall(r'test result: ok\. (\d+) passed', r['stdout']))
     # The foundation runner summarizes its six harnesses rather than exposing
@@ -84,7 +98,7 @@ def main():
     args.out.write_text(json.dumps({'passed': count, 'compiled_native_adapter_checks': count - source_wiring,
         'source_wiring_checks': source_wiring, 'source_route_contract_checks': source_routes, 'checks': records,
         'native_host_revision': 'ba6344a59cb9e755b730dcf02285fc0d33b97d3c',
-        'source_sha256': source_hashes,
+        'source_sha256': source_hashes, 'source_unchanged': True,
         'scope': 'Renderer-free production policies and pinned native kernels; no game launched.'},
         indent=2)+'\n', encoding='utf-8')
     print(f'{count} renderer-free checks passed', flush=True)

@@ -21,12 +21,7 @@ type Session = (i32, super::Dim, Arc<dyn Any + Send + Sync>);
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-    Module::new(CITY,Category::Combat,"Mines one reachable surround block of an enemy in a hole using native break progress. Stops on server-confirmed opening, manual input, or a bounded timeout.")
-        .num("Target range",6.0,1.0,10.0,0.5).num("Range",4.5,1.0,4.5,0.1)
-        .pick("Damage model",&["Observed equipment","Unmitigated"])
-        .num("Min remaining health",4.0,1.0,20.0,0.5)
-        .num("Max self damage",12.0,0.0,36.0,0.5)
-        .bool("Anti bot",true).bool("Ignore teams",true),
+    Module::new(CITY,Category::Combat,"Mines one visible surround wall of the best enemy in a hole with native tool progress, then turns off. Pauses for menus or emergency inventory; current server state confirms the opening.").bool("Notifications",true),
     Module::new(TRAP,Category::Combat,"Places obsidian around an enemy's feet and head. Top block includes the roof. Optional Finish roof jump adds an outside support and may make two native jumps.")
         .num("Range",4.0,1.0,6.0,0.5).bool("Rotate",true)
         .num("Blocks per tick",4.0,1.0,8.0,1.0).bool("Top block",true).bool("Finish roof jump",false).bool("Show target",true)
@@ -51,7 +46,6 @@ struct Mining {
     waiting: Option<u64>,
     server_air: bool,
     restore: Option<usize>,
-    settings: Module,
 }
 #[derive(Default)]
 struct State {
@@ -104,6 +98,45 @@ fn basic(game: &Game<'_>) -> bool {
         && game.mobs.len() <= 512
         && game.crystals.len() <= 512
 }
+fn city_basic(game: &Game<'_>) -> bool {
+    game.native_window()
+        && game.native_on(sunset::ID)
+        && game.native_playing()
+        && game.remote.is_some()
+        && game.screen == Screen::Playing
+        && !sunset::gui_open()
+        && !game.spectator()
+        && game.selected < 9
+        && game
+            .player
+            .as_ref()
+            .is_some_and(|p| p.health.health().is_finite() && p.health.health() > 0.0)
+        && game.mobs.len() <= 512
+        && game.crystals.len() <= 512
+}
+fn city_live(game:&Game<'_>)->bool {
+    game.native_window()&&game.native_on(sunset::ID)&&game.title.is_none()&&game.remote.is_some()
+        && !game.spectator()&&game.selected<9&&game.mobs.len()<=512&&game.crystals.len()<=512
+        && game.player.as_ref().is_some_and(|p|p.health.health().is_finite()&&p.health.health()>0.0)
+}
+fn city_range(game:&mut Game<'_>)->Option<f64> {
+    game.player.as_mut()?.attribute("minecraft:block_interaction_range").ok()
+        .filter(|range|range.is_finite()&&*range>0.0&&*range<=64.0)
+}
+fn city_clicks(game:&Game<'_>)->bool {
+    game.screen==Screen::Playing&&!sunset::gui_open()&&(clicks(game)||game.attack_clicks>0)
+}
+fn city_target(game:&Game<'_>,id:u32)->Option<Target> {
+    let mob=game.mobs.iter().find(|mob|mob.id==id&&util::player_enemy(game,mob))?;
+    let target=util::mob_target(mob);
+    (policy::valid(target.pos)&&policy::valid(target.lo)&&policy::valid(target.hi)).then_some(target)
+}
+fn city_note(game:&mut Game<'_>,reason:&str) {
+    if sunset::with(|s|s.module(CITY).is_some_and(|m|m.b("Notifications"))) {
+        game.titles.set_overlay(horizon_client::text::Text::literal(reason),false);
+    }
+}
+
 fn clicks(game: &Game<'_>) -> bool {
     game.left
         || game.right
@@ -212,7 +245,7 @@ fn stop_city(game: &mut Game<'_>, reason: &'static str, disable: bool) {
     drop(guard);
     if disable {
         util::toggle_off(game, CITY);
-        sunset::say(game, &format!("Auto City: {reason}"));
+        city_note(game,reason);
     }
 }
 pub(super) fn cancel(game: &mut Game<'_>) {
@@ -284,9 +317,35 @@ fn same_hole(target: &Target, feet: [i32; 3]) -> bool {
         && (i64::from(current[1]) - i64::from(feet[1])).abs() <= 1
 }
 
-fn face_aim(game: &Game<'_>, block: [i32; 3], range: f64) -> Option<Face> {
-    face_aim_with(game, block, range, None, &mut 48)
+fn city_reachable(game:&Game<'_>,block:[i32;3],range:f64)->bool {
+    let Some(eye)=game.eye_position() else{return false;};
+    let lo=block.map(f64::from);let hi=lo.map(|v|v+1.0);
+    policy::box_distance(eye,lo,hi).is_some_and(|distance|distance<=range)
 }
+fn city_face(game:&Game<'_>,block:[i32;3],range:f64)->Option<Face> {
+    if !range.is_finite()||range<=0.0||range>64.0||!game.world.loaded(block[0],block[2]){return None;}
+    let eye=game.eye_position()?;
+    let mut nearest=range*range;let mut best=None;
+    for normal in [[0,-1,0],[0,1,0],[0,0,-1],[0,0,1],[-1,0,0],[1,0,0]] {
+        let point=std::array::from_fn::<_,3,_>(|i|f64::from(block[i])+0.5+0.5*f64::from(normal[i]));
+        let squared=(0..3).map(|i|(point[i]-eye[i]).powi(2)).sum::<f64>();
+        if !squared.is_finite()||squared>nearest{continue;}
+        let inside=std::array::from_fn::<_,3,_>(|i|point[i]-0.05*f64::from(normal[i]));
+        let from=horizon_core::geometry::Vec3::new(eye[0],eye[1],eye[2]);
+        let to=horizon_core::geometry::Vec3::new(inside[0],inside[1],inside[2]);
+        let loaded=horizon_core::geometry::traverse_blocks(from,to,512,|p:horizon_core::position::BlockPos|
+            (!game.world.loaded(p.x,p.z)).then_some(()));
+        if !matches!(loaded,Ok(None)){continue;}
+        let delta=std::array::from_fn::<_,3,_>(|i|inside[i]-eye[i]);
+        let distance=delta.iter().map(|v|v*v).sum::<f64>().sqrt();
+        if !distance.is_finite()||distance<=1e-8{continue;}
+        let Some(hit)=game.clip_ray(eye,delta.map(|v|v/distance),distance) else{continue;};
+        if hit.pos!=block||hit.face!=normal{continue;}
+        nearest=squared;best=Some(Face{block,normal,point:hit.point});
+    }
+    best
+}
+
 fn face_aim_with(
     game: &Game<'_>,
     block: [i32; 3],
@@ -449,15 +508,7 @@ fn tool(game: &Game<'_>, block: [i32; 3]) -> Option<usize> {
         {
             continue;
         }
-        let mut speed = game.items().mining_speed(Some(item), &facts.name);
-        if speed > 1.0 {
-            speed += game
-                .stations()
-                .enchantments
-                .attribute_add(Some(item), "minecraft:mining_efficiency")
-                as f32;
-        }
-        speed *= game.potions.effects.mining_speed_factor();
+        let speed = game.items().mining_speed(Some(item), &facts.name);
         if speed.is_finite() && speed > 0.0 && best.is_none_or(|(_, old)| speed > old) {
             best = Some((slot, speed));
         }
@@ -471,47 +522,21 @@ fn in_hole(game: &Game<'_>, feet: [i32; 3]) -> bool {
     })
 }
 
-fn city_score(
-    game: &mut Game<'_>,
-    m: &Module,
-    target: &Target,
-    block: [i32; 3],
-    budget: &mut super::sunset_explosive_policy::Budget,
-) -> Option<f64> {
-    let blast = super::sunset_explosive_damage::Blast::explosion(
-        [
-            f64::from(block[0]) + 0.5,
-            f64::from(block[1]),
-            f64::from(block[2]) + 0.5,
-        ],
-        6.0,
-    )
-    .ignoring(block);
-    let own = super::sunset_explosive_damage::safety_damage(
-        super::sunset_explosive_damage::local_damage(game, blast, budget)?,
-        m.p("Damage model"),
-    );
-    let damage =
-        super::sunset_explosive_damage::target_damage(game, target, blast, budget)?.estimate;
-    let health = game
-        .player
-        .as_ref()
-        .map(|p| f64::from(p.health.health() + p.health.absorption()))?;
-    if ![own, damage, health]
-        .iter()
-        .all(|n| n.is_finite() && *n >= 0.0)
-        || own > m.n("Max self damage")
-        || health <= own
-        || health - own < m.n("Min remaining health")
-    {
-        return None;
-    }
-    let score = damage - own * 0.5;
-    (score > 0.0).then_some(score)
+fn city_score(game:&mut Game<'_>,_m:&Module,target:&Target,block:[i32;3],budget:&mut super::sunset_explosive_policy::Budget)->Option<f64> {
+    let blast=super::sunset_explosive_damage::Blast::explosion([
+        f64::from(block[0])+0.5,f64::from(block[1]),f64::from(block[2])+0.5],6.0).ignoring(block);
+    let own=super::sunset_explosive_damage::local_damage(game,blast,budget)?.estimate;
+    let damage=super::sunset_explosive_tactics::friend_damage(game,target,blast,budget)?;
+    let player=game.player.as_ref()?;let health=f64::from(player.health.health()+player.health.absorption());
+    if super::sunset_explosive_tactics::endangered(own,health,game.creative)||!damage.is_finite()||damage<0.0{return None;}
+    let value=damage-0.5*own;
+    (value>0.0).then_some(value)
 }
 
 fn select_city(game: &mut Game<'_>, m: &Module, tick: u64) -> Option<Mining> {
-    let targets = opponents(game, m, m.n("Target range").clamp(1.0, 10.0));
+    if !super::sunset_explosive_tactics::refresh(game){return None;}
+    let range=city_range(game)?;
+    let (targets,_)=super::sunset_explosive_tactics::players(game)?;
     let mut budget = super::sunset_explosive_policy::Budget::new(24);
     let mut best = None;
     for target in targets {
@@ -531,7 +556,7 @@ fn select_city(game: &mut Game<'_>, m: &Module, tick: u64) -> Option<Mining> {
             let Some(slot) = tool(game, block) else {
                 continue;
             };
-            if face_aim(game, block, m.n("Range")).is_none() {
+            if city_face(game, block, range).is_none() {
                 continue;
             }
             let Some(score) = city_score(game, m, &target, block, &mut budget) else {
@@ -550,7 +575,6 @@ fn select_city(game: &mut Game<'_>, m: &Module, tick: u64) -> Option<Mining> {
                         waiting: None,
                         server_air: false,
                         restore: None,
-                        settings: m.clone(),
                     },
                 ));
             }
@@ -560,7 +584,7 @@ fn select_city(game: &mut Game<'_>, m: &Module, tick: u64) -> Option<Mining> {
 }
 
 fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
-    if clicks(game) || state(|s| s.manual_cancel) {
+    if city_clicks(game) || state(|s| s.manual_cancel) {
         stop_city(game, "Stopped for manual input", true);
         return;
     }
@@ -582,15 +606,13 @@ fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         return;
     };
     if mine.server_air {
-        stop_city(game, "Surround opening confirmed", true);
+        let named=game.remote_player_name(mine.target).map(|name|format!("Opened {name}'s surround"));
+        stop_city(game,"Surround opening confirmed",true);
+        if let Some(message)=named{city_note(game,&message);}
         return;
     }
     if tick < mine.started || tick.saturating_sub(mine.started) >= 200 {
         stop_city(game, "Mining timeout", true);
-        return;
-    }
-    if mine.settings != *m {
-        stop_city(game, "Settings changed", true);
         return;
     }
     if city_current()
@@ -600,7 +622,7 @@ fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         stop_city(game, "Stopped for hotbar input", true);
         return;
     }
-    let target = opponent(game, m, m.n("Target range").clamp(1.0, 10.0), mine.target);
+    let target = city_target(game,mine.target);
     let Some(target) = target else {
         stop_city(game, "Target unavailable", true);
         return;
@@ -627,10 +649,6 @@ fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         }
         return;
     }
-    if !hands_free(game) || totem_due(game) || !control::available(CITY) {
-        pause_city(game);
-        return;
-    }
     let Some(slot) = tool(game, mine.block) else {
         stop_city(game, "No usable pickaxe", true);
         return;
@@ -639,7 +657,13 @@ fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         stop_city(game, "Mining tool changed", true);
         return;
     }
-    let Some(face) = face_aim(game, mine.block, m.n("Range")) else {
+    let Some(range)=city_range(game) else {stop_city(game,"Unknown native interaction reach",true);return;};
+    if !city_reachable(game,mine.block,range){stop_city(game,"Block went out of reach",true);return;}
+    if game.riding.is_some()||game.player.as_ref().is_some_and(|p|p.fall_flying||p.auto_spin_attack_ticks>0||p.swimming){stop_city(game,"Cannot aim while flying, swimming or riding",true);return;}
+    if !city_basic(game)||!hands_free(game)||totem_due(game)||!control::available(CITY)||super::sunset_render::camera_takes_mouse() {
+        pause_city(game);return;
+    }
+    let Some(face) = city_face(game,mine.block,range) else {
         stop_city(game, "Lost block sight or reach", true);
         return;
     };
@@ -652,6 +676,11 @@ fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         control::claim(CITY);
         return;
     }
+    let eye=game.eye_position().unwrap_or([f64::NAN;3]);
+    let desired=sunset::look_at(eye,face.point);
+    let (yaw,pitch)=super::sunset_aura::next_look(game,desired,0.0);
+    let held=game.clip_ray(eye,super::view_vector(yaw,pitch),range).is_some_and(|hit|hit.pos==mine.block);
+    if !held {sunset::turn(CITY,yaw,pitch);return;}
     sunset::cancel_turns(CITY);
     let continuing = city_current();
     if !control::claim(CITY) {
@@ -683,8 +712,6 @@ fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         s.city_queued = Some(queued);
         s.generation
     });
-    let eye = game.eye_position().unwrap_or([f64::NAN; 3]);
-    let (yaw, pitch) = sunset::look_at(eye, face.point);
     if !sunset::try_turn_then(CITY, yaw, pitch, move |game| {
         if !city_generation_current(generation) {
             return;
@@ -696,13 +723,13 @@ fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         }
         if queued.elapsed() > Duration::from_millis(200)
             || !same(game, &connection)
-            || !basic(game)
+            || !city_basic(game)
             || !hands_free(game)
-            || clicks(game)
+            || city_clicks(game)
             || totem_due(game)
             || !city_generation_current(generation)
             || game.inventory[mine.tool] != original_tool
-            || !sunset::with(|s| s.module(CITY).is_some_and(|m| m.on && *m == snapshot))
+            || !sunset::with(|s| s.module(CITY).is_some_and(|m| m.on))
             || game
                 .world
                 .block(face.block[0], face.block[1], face.block[2])
@@ -710,18 +737,12 @@ fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         {
             return;
         }
-        let Some(target) = opponent(
-            game,
-            &snapshot,
-            snapshot.n("Target range").clamp(1.0, 10.0),
-            mine.target,
-        ) else {
-            return;
-        };
+        let Some(target)=city_target(game,mine.target) else{return;};
         if !same_hole(&target, mine.feet) {
             return;
         }
-        let Some(fresh) = face_aim(game, face.block, snapshot.n("Range")) else {
+        let Some(range)=city_range(game) else{return;};
+        let Some(fresh)=city_face(game,face.block,range) else {
             return;
         };
         if fresh.normal != face.normal || !policy::near(fresh.point, face.point, 0.1) {
@@ -736,7 +757,12 @@ fn city_tick(game: &mut Game<'_>, m: &Module, tick: u64) {
         if !city_generation_current(generation) {
             return;
         }
-        if super::remote::sunset_city_mining::step(game, face.block, face.normal, yaw, pitch) {
+        if super::sunset_melee_assist::acted(game){return;}
+        let Some((sent_yaw,sent_pitch))=super::sunset_combat_wire::sent_look(game) else{return;};
+        let Some(now_eye)=game.eye_position() else{return;};
+        let Some(actual)=game.clip_ray(now_eye,super::view_vector(sent_yaw,sent_pitch),range).filter(|hit|hit.pos==mine.block) else{return;};
+        if super::remote::sunset_city_mining::step_with_range(game,mine.block,actual.face,sent_yaw,sent_pitch,range) {
+            super::sunset_melee_assist::note_action(game);
             game.swing_arm();
             game.send(S::Punch(Empty));
             state(|s| s.mining_steps = s.mining_steps.saturating_add(1));
@@ -1000,6 +1026,7 @@ fn observed(game: &Game<'_>, pos: [i32; 3], id: u32) {
     });
 }
 pub(super) fn packet(game: &Game<'_>, packet: &C) {
+    if matches!(packet,C::Login(_)|C::Respawn(_)|C::Disconnect(_)){reset();return;}
     if !state(|s| s.session.as_ref().is_some_and(|old| same(game, old))) {
         return;
     }
@@ -1023,9 +1050,9 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
 // the physical attack button is up. Suppress only that owned idle abort.
 pub(super) fn suppress_idle_abort(game: &Game<'_>, down: bool) -> bool {
     !down
-        && basic(game)
+        && city_basic(game)
         && hands_free(game)
-        && !clicks(game)
+        && !city_clicks(game)
         && !totem_due(game)
         && city_current()
         && state(|s| {
@@ -1047,7 +1074,7 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], tick: u64) {
         return;
     }
     state(|s| s.tick = tick);
-    if !basic(game) {
+    if !city_live(game) {
         cancel(game);
         return;
     }
@@ -1057,7 +1084,7 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], tick: u64) {
     } else if state(|s| s.mine.is_some() || s.city_queued.is_some()) {
         stop_city(game, "Disabled", false);
     }
-    if let Some(m) = modules.iter().find(|m| m.name == TRAP && m.on) {
+    if let Some(m) = modules.iter().find(|m| m.name == TRAP && m.on).filter(|_|basic(game)) {
         trap_tick(game, m, tick);
     } else {
         sunset::cancel_turns(TRAP);

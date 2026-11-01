@@ -1008,6 +1008,7 @@ pub(super) fn borrow_slot(
     )
 }
 pub(super) fn cancel_owner(game: &mut Game<'_>, owner: &str) {
+    state(|s|if s.jump_owner==Some(owner){s.jump_owner=None;});
     super::sunset::cancel_turns(owner);
     if state(|s| s.lease.is_some_and(|lease| lease.owner == owner)) {
         release_lease(game, true);
@@ -1222,8 +1223,9 @@ pub(super) fn pre_input(game: &mut Game<'_>, _modules: &[Module], ticks: u64) {
                 && !p.fall_flying
                 && !p.fluids.was_touching_water
                 && !p.is_in_lava()
-                && p.last_climbable.is_none()
         })
+        && super::remote::sunset_prediction_remote::local_motion(game)
+            .is_some_and(|motion| !motion.floating)
         && game.using.is_none()
         && game.riding.is_none();
     if tap.is_none() && !jump {

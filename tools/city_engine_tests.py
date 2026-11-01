@@ -12,6 +12,7 @@ import tempfile
 import argparse
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('engine',type=Path)
+parser.add_argument('--range-only',action='store_true',help='Run only the three native reach regressions; default keeps the original five tests.')
 args=parser.parse_args()
 DRAFT=Path(__file__).resolve().parents[1]/'mixins/sunset'
 ENGINE=args.engine.resolve()/'crates/horizon-client/src'
@@ -63,7 +64,9 @@ mod game {
         fn held(&self)->Option<&Stack>{self.inventory[self.selected].as_ref()}
         fn pick(&self)->Option<Hit>{self.forced_hit.or(self.hit)}
         fn eye_position(&self)->Option<[f64;3]>{Some([0.5,65.62,0.5])}
-        fn clip_ray(&self,_:[f64;3],_:[f64;3],_:f64)->Option<Hit>{self.hit}
+        fn clip_ray(&self,eye:[f64;3],_:[f64;3],range:f64)->Option<Hit>{
+            self.hit.filter(|hit|(0..3).map(|i|(hit.point[i]-eye[i]).powi(2)).sum::<f64>()<=range*range)
+        }
         fn reach(&self)->f64{4.5}
         fn remote_break_restricted(&self)->bool{self.restricted}
         fn destroy_progress(&self,_:[i32;3])->f32{self.progress}
@@ -91,6 +94,27 @@ TESTS=r'''
         inventory:vec![Some(Stack{item:"pickaxe".into(),count:1});9],selected:0,
         hit:Some(Hit{pos:[2,64,0],face:[-1,0,0],point:[2.0,64.5,0.5]}),progress:0.25,restricted:false,
         actions:vec![],sequence:0,marker:PhantomData}}
+    #[test]fn native_reach_can_exceed_old_fixed_survival_limit(){
+        let mut g=fixture();let p=[5,65,0];
+        g.hit=Some(Hit{pos:p,face:[-1,0,0],point:[5.6,65.5,0.5]});
+        assert!(!remote::helper::step(&mut g,p,[-1,0,0],0.0,0.0));
+        assert!(g.actions.is_empty());
+        assert!(remote::helper::step_with_range(&mut g,p,[-1,0,0],0.0,0.0,6.0));
+        assert_eq!(g.actions.len(),1);assert_eq!(g.actions[0].action,0);
+    }
+    #[test]fn native_reach_reduction_cannot_be_bypassed_by_fixed_default(){
+        let mut g=fixture();let p=[2,64,0];
+        assert!(!remote::helper::step_with_range(&mut g,p,[-1,0,0],0.0,0.0,1.0));
+        assert!(g.actions.is_empty());
+        assert!(remote::helper::step_with_range(&mut g,p,[-1,0,0],0.0,0.0,3.0));
+    }
+    #[test]fn native_reach_invalid_values_preserve_packets_and_forced_hit(){
+        let mut g=fixture();let old=Hit{pos:[7,64,0],face:[1,0,0],point:[7.5,64.5,0.5]};g.forced_hit=Some(old);
+        for reach in [0.0,-1.0,65.0,f64::NAN,f64::INFINITY]{
+            assert!(!remote::helper::step_with_range(&mut g,[2,64,0],[-1,0,0],0.0,0.0,reach));
+            assert_eq!(g.forced_hit,Some(old));assert!(g.actions.is_empty());
+        }
+    }
     #[test]fn native_mining_starts_once_accumulates_and_stops_at_threshold(){
         let mut g=fixture();let p=[2,64,0];
         for _ in 0..4{assert!(remote::helper::step(&mut g,p,[-1,0,0],0.0,0.0));}
@@ -141,15 +165,15 @@ with tempfile.TemporaryDirectory(prefix="sunset-city-native-") as tmp:
     source.write_text(PRELUDE+native+TESTS[TESTS.index("    fn fixture"):])
     binary=Path(tmp)/("native.exe" if os.name=="nt" else "native")
     subprocess.run(["rustc","--edition=2024","--test",str(source),"-o",str(binary)],check=True)
-    subprocess.run([str(binary)],check=True)
+    subprocess.run([str(binary)]+(['native_reach_'] if args.range_only else ['--skip','native_reach_']),check=True)
 
 assert "self.stop_remote_mining();" in function(remote,"fn remote_continue_attack(&mut self, down: bool)")
 city=(DRAFT/"city_trap.rs").read_text(encoding="utf-8")
 compact=lambda text:"".join(text.split())
 idle=compact(function(city,"pub(super) fn suppress_idle_abort"))
-assert "city_current()" in idle and "!clicks(game)" in idle
+assert "city_current()" in idle and "!city_clicks(game)" in idle
 observed=compact(function(city,"fn observed"))
 assert "mine.server_air=true" in observed and "game.res.facts().is_air(state_id)" in observed
 assert "BlockChangedAck" not in function(city,"pub(super) fn packet")
 assert "Blast::explosion" in city and ".ignoring(block)" in city
-print("Native mining body + production scoped helper: 5 tests; source contracts: PASS")
+print(f'Native mining body + production scoped helper: {3 if args.range_only else 5} tests; source contracts: PASS')

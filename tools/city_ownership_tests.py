@@ -40,6 +40,8 @@ mod sunset{pub const ID:&str="sunset";pub fn gui_open()->bool{false}pub fn cance
 mod remote{pub mod sunset_city_mining{pub fn stop(g:&mut crate::Game<'_>,p:[i32;3]){g.stops.push(p);}}}
 mod util{pub fn toggle_off(g:&mut crate::Game<'_>,_:&str){g.disabled=true;}}
 fn hold(g:&mut Game<'_>,slot:usize){g.selected=slot;g.holds.push(slot);}
+// Notification rendering is outside these lease/cancellation assertions.
+fn city_note(_:&mut Game<'_>,_:&str){}
 mod actual{use super::*;
 '''
 tests=r'''
@@ -82,7 +84,7 @@ with tempfile.TemporaryDirectory(prefix='sunset-city-owner-') as tmp:
 tick=body(city,'fn city_tick(')
 callback=tick[tick.index('move |game|'):]
 assert callback.index('city_generation_current(generation)')<callback.index('s.city_queued = None')
-assert callback.index('Budget::new(2)')<callback.index('city_score(')<callback.index('sunset_city_mining::step(')
+assert callback.index('Budget::new(2)')<callback.index('city_score(')<callback.index('sunset_city_mining::step_with_range(')
 assert 'stop_city(game, "Current health or equipment safety changed", true)' in callback
 assert tick.index('control::claim(CITY)')<tick.index('if let Some(waiting)')
 trap=body(city,'fn trap_tick(');callback=trap[trap.index('move |game|'):]

@@ -40,8 +40,9 @@ class Integration(unittest.TestCase):
         self.assertEqual(text.count('|| !loot_allowed(game, &run)'), 2)
         for chunk in text.split('|| !loot_allowed(game, &run)')[1:]:
             self.assertIn('reset(game);', chunk[:900])
-        safe = text.split('fn safe_blast(', 1)[1]
-        self.assertLess(safe.index('sunset_loot_guard::allows'), safe.index('local_damage'))
+        safe = function(text,'fn safe_blast(')
+        self.assertLess(safe.index('sunset_loot_guard::allows'), safe.index('observed_local_damage'))
+        self.assertLess(safe.index('sunset_loot_guard::allows'), safe.index('kind==Kind::Anchor'))
 
     def test_both_aura_shared_damage_helpers_gate_planned_and_fresh_actions(self):
         for name, helper, deferred, hand in [

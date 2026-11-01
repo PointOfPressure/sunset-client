@@ -438,3 +438,10 @@ pub(super) fn known_line(game:&Game<'_>,from:[f64;3],to:[f64;3],
     if !budget.line(){return None;}
     clear(&mut rays(game,from[1],ignored),from,to)
 }
+
+// Ordinary observed local estimate for explicitly requested manual actions.
+// Unknown equipment components cannot silently borrow prototype defenses.
+pub(super) fn observed_local_damage(game:&mut Game<'_>,blast:Blast,budget:&mut Budget)->Option<f64> {
+    if !equipment_proof(game,0.0).known{return None;}
+    local_damage(game,blast,budget).map(|p|p.estimate).filter(|damage|damage.is_finite()&&*damage>=0.0)
+}

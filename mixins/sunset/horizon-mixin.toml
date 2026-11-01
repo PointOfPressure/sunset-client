@@ -1088,3 +1088,25 @@ id="explosive_tactics"
 file="crates/horizon-client/src/game.rs"
 name="sunset_explosive_tactics"
 source="explosive_tactics.rs"
+
+[[module]]
+id = "pearl_owner"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_pearl_owner"
+source = "pearl_owner.rs"
+
+[[injection]]
+id = "pearl-owner-spawn"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote_projectiles::Game<'_>::spawn_remote_projectile"
+helper = "pearl_owner_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "id", ty = "i32", value = "id" },
+  { name = "kind", ty = "&str", value = "kind" },
+  { name = "position", ty = "[f64; 3]", value = "position" },
+  { name = "rotation", ty = "(f32, f32)", value = "rotation" },
+  { name = "velocity", ty = "[f64; 3]", value = "velocity" },
+  { name = "data", ty = "i32", value = "data" },
+]

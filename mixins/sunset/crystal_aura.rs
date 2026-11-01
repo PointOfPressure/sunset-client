@@ -56,11 +56,7 @@ mod state {
         if length <= 1.0e-5 { return eye; }
         std::array::from_fn(|i| hit[i] + (eye[i] - hit[i]) / length * 1.0e-5)
     }
-    #[cfg(test)]
-    pub(super) fn candidate_score(damage: f64, health: f64, own: f64) -> f64 {
-        if ![damage, health, own].iter().all(|v| v.is_finite() && *v >= 0.0) || health <= 0.0 { return f64::NEG_INFINITY; }
-        damage.min(health) + (if damage >= health { 1000.0 } else { 0.0 }) - own * 0.5
-    }
+
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub(super) enum Action {
         Place([i32; 3]),
@@ -102,10 +98,7 @@ mod state {
                 self.waiting = None;
             }
         }
-        #[cfg(test)]
-        pub fn ready(&self, tick: u64) -> bool {
-            !self.queued && self.waiting.is_none() && tick >= self.next
-        }
+
         pub fn available(&self) -> bool { !self.queued && self.waiting.is_none() }
         pub fn due(&self, action: Action, tick: u64) -> bool {
             self.available() && tick >= match action { Action::Base(_) => self.next_base, Action::Place(_) => self.next_place, Action::Break(_, _) => self.next_break }
@@ -128,11 +121,11 @@ struct WeaponLease { scene:SetupScene, original:usize, owned:usize, owner:&'stat
 struct Diagnostics { stage: usize, reason: u8, paused: bool, counters: [u64; 18], crystals: usize, cid: u32,
     invulnerable: bool, own: f64, target: f64, health: f64 }
 struct State { clock: Clock, queued_at: Option<Instant>, tick: u64, diagnostics: Diagnostics,
-    plan: Option<Plan>, lookahead:Option<Plan>, opening:f64, probe:usize, attempts: Vec<(u32, u8)>, setup: setup::Ledger, setup_scene: Option<SetupScene>, weapon:Option<WeaponLease> }
+    plan: Option<Plan>, retained:Option<Action>, lookahead:Option<Plan>, opening:f64, probe:usize, attempts: Vec<(u32, u8)>, setup: setup::Ledger, setup_scene: Option<SetupScene>, weapon:Option<WeaponLease> }
 static STATE: Mutex<State> = Mutex::new(State { clock: Clock { cursor: 0, crystals: 0, queued: false,
     waiting: None, next: 0, next_base: 0, next_place: 0, next_break: 0, generation: 0 }, queued_at: None, tick: 0,
     diagnostics: Diagnostics { stage: 0, reason: 0, paused: false, counters: [0;18], crystals: 0, cid: 0,
-        invulnerable: false, own: 0.0, target: 0.0, health: 0.0 }, plan: None, lookahead:None, opening:0.0, probe:0, attempts: Vec::new(), setup: setup::Ledger::new(), setup_scene: None,weapon:None });
+        invulnerable: false, own: 0.0, target: 0.0, health: 0.0 }, plan: None, retained:None, lookahead:None, opening:0.0, probe:0, attempts: Vec::new(), setup: setup::Ledger::new(), setup_scene: None,weapon:None });
 fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(&mut STATE.lock().unwrap_or_else(|e| e.into_inner()))
 }
@@ -166,7 +159,7 @@ pub(super) fn defaults() -> Vec<Module> {
 pub(super) fn suspend() {
     super::sunset_combat_control::release(NAME);
     sunset::cancel_turns(NAME);
-    st(|s| { s.clock.suspend(); s.queued_at = None; s.plan = None;s.lookahead=None;s.opening=0.0; });
+    st(|s| { s.clock.suspend(); s.queued_at = None; s.plan = None;s.retained=None;s.lookahead=None;s.opening=0.0; });
     note(1);
 }
 pub(super) fn reset() {
@@ -292,6 +285,17 @@ fn setup_valid(game: &Game<'_>, base: [i32; 3]) -> bool {
     let f = util::facts(game, base);
     f.replaceable && f.fluid == super::Fluid::None && f.fluid_level == 0 && !f.waterlogged && util::can_place(game, base, true)
         && crystal_column(game, base)
+}
+// Keep only a cell identity between scan slices. The current world, ledger,
+// bot floor and setting choose its action again; no hit, damage or slot survives.
+fn setup_action(game:&Game<'_>,m:&Module,base:[i32;3],ticks:u64)->Option<Action> {
+    if super::sunset_crystal_bot::steer(game).is_some_and(|s|base[1]+1<s.floor){return None;}
+    if place_valid(game,base){Some(Action::Place(base))}
+    else if m.b("Auto Obsidian")&&setup_valid(game,base)&&st(|s|s.setup.can_send(base,ticks)){Some(Action::Base(base))}
+    else{None}
+}
+fn setup_cell(action:Action)->Option<[i32;3]> {
+    match action {Action::Place(base)|Action::Base(base)=>Some(base),Action::Break(_,_)=>None}
 }
 fn crystal_column(game: &Game<'_>, base: [i32; 3]) -> bool {
     if !game.world.loaded(base[0], base[2]) || base[1] < -64 || base[1] >= 318 { return false; }
@@ -482,7 +486,7 @@ pub(super) fn prepare(game:&mut Game<'_>,m:Option<&Module>,ticks:u64)->Option<Ra
         st(|s|s.clock.observe(ticks,ack));
     }
     if st(|s|s.clock.queued){return None;}
-    let Some((targets,friends))=players(game,m).filter(|(t,_)|!t.is_empty()) else {restore_weapon(game,m.b("Switch Back"));note(11);return None;};
+    let Some((targets,friends))=players(game,m).filter(|(t,_)|!t.is_empty()) else {st(|s|s.retained=None);restore_weapon(game,m.b("Switch Back"));note(11);return None;};
     let mut budget=Budget::new(PREDICTIONS);
     let mut best=None;let mut opening=None;let mut evaluated=0;
     let mut stage=super::sunset_explosive_choice::Stage{crystal_receipt_pending:st(|s|s.clock.waiting.is_some_and(|w|matches!(w.action,Action::Place(_)))),..Default::default()};
@@ -521,15 +525,19 @@ pub(super) fn prepare(game:&mut Game<'_>,m:Option<&Module>,ticks:u64)->Option<Ra
     st(|s|s.clock.crystals=if count==0{0}else{(start+64)%count});
     if best.is_none()&&stage.new_crystal()&&evaluated<MAX_CANDIDATES&&crystal_slot(game,m).is_some() {
         let Some(origin)=util::block_pos(game) else{return None;};
+        let retained=st(|s|s.retained).and_then(setup_cell).and_then(|base|setup_action(game,m,base,ticks));
         let mut cells=Vec::new();
         for _ in 0..SCAN_CELLS {
             let radius=tactics::block_range(game).ceil().clamp(1.0,64.0) as i32;
             let d=st(|s|s.clock.cell(radius));let base=std::array::from_fn(|i|origin[i].saturating_add(d[i]));
-            if super::sunset_crystal_bot::steer(game).is_some_and(|s|base[1]+1<s.floor){continue;}
-            if place_valid(game,base) {cells.push((optimistic(center(base),&targets),Action::Place(base)));}
-            else if m.b("Auto Obsidian")&&setup_valid(game,base)&&st(|s|s.setup.can_send(base,ticks)){cells.push((optimistic(center(base),&targets),Action::Base(base)));}
+            if retained.and_then(setup_cell)==Some(base){continue;}
+            if let Some(action)=setup_action(game,m,base,ticks){cells.push((optimistic(center(base),&targets),action));}
         }
         cells.sort_by(|a,b|b.0.total_cmp(&a.0));
+        // The retained cell gets the reserved fourth evaluation before newly
+        // scanned cells. It still uses every fresh geometry/material/damage
+        // check below and shares the same MAX_CANDIDATES and ray budgets.
+        if let Some(action)=retained {cells.insert(0,(0.0,action));}
         let eager=super::sunset_crystal_bot::steer(game).is_some_and(|s|s.eager);
         let mut base_best=None;let mut crystal_best=None;let mut rays=48;
         for (_,action) in cells {
@@ -550,6 +558,7 @@ pub(super) fn prepare(game:&mut Game<'_>,m:Option<&Module>,ticks:u64)->Option<Ra
             (c,b)=>c.or(b),
         };
     }
+    st(|s|s.retained=best.as_ref().and_then(|p|setup_cell(p.action).map(|_|p.action)));
     if let Some(plan)=best {
         let due=st(|s|s.clock.due(plan.action,ticks));
         let rating=plan.rating;

@@ -1,8 +1,8 @@
 """Compile production local motion with the pinned native climbing registry.
 
-Five environmental bridge checks; no Game/client/network. The proof explicitly
-records whether JumpReset currently calls this bridge, without turning these
-kernel checks into a claim of actual jump behavior.
+Five environmental bridge checks; no Game/client/network. A separate source
+contract checks that JumpReset calls this bridge. These checks do not establish
+an actual native jump outcome.
 """
 from pathlib import Path
 import argparse,hashlib,json,subprocess,tempfile
@@ -107,15 +107,17 @@ fn game(registry:&BlockRegistry,at:u32,below:u32)->Game<'_>{
     melee=repo/'mixins/sunset/melee_assist.rs'
     pre_input=function(melee.read_text(encoding='utf-8'),'pub(super) fn pre_input(')
     wired='sunset_prediction_remote::local_motion(game)' in pre_input and 'p.last_climbable' not in pre_input
-    if not wired:print('Integration note: JumpReset still uses historical climbing state; these five tests verify the native bridge only.')
+    if wired:print('source-route contract: 1 passed (JumpReset uses current native climbing instead of historical landing state; not compiled)')
+    else:print('Source contract failed: JumpReset must use current climbing rather than historical landing state.')
     if args.out:
         args.out.parent.mkdir(parents=True,exist_ok=True)
         args.out.write_text(json.dumps({'checks':records,'native_host_revision':revision,
             'jump_reset_uses_current_climbing_bridge':wired,
+            'separate_source_route_contracts':int(wired),
             'source_sha256':{p.relative_to(repo).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
                              for p in [repo/'mixins/sunset/prediction_remote.rs',melee]},
             'scope':'Five compiled production local_motion adapter checks with actual native registry/climbing kernel. No actual jump/client/network.'},indent=2)+'\n',encoding='utf-8')
-    raise SystemExit(result.returncode)
+    raise SystemExit(result.returncode or int(not wired))
 
 
 if __name__=='__main__':main()

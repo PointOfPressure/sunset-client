@@ -48,6 +48,7 @@ pub(super) fn defaults() -> Vec<Module> {
 enum Phase { Reaction, SwapDelay, Await, Close, Return }
 
 struct Job {
+    lease: control::Finish,
     owner: &'static str,
     settings: Module,
     slots: [usize; 2],
@@ -76,6 +77,7 @@ struct State {
     connection: Option<(i32, super::Dim, Arc<dyn Any + Send + Sync>)>,
     tick: u64,
     job: Option<Job>,
+    retiring: Option<Job>,
     failures: Vec<(&'static str, Failure<ItemStack>)>,
     auto_on: bool,
     inv_on: bool,
@@ -106,6 +108,8 @@ fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
 pub(super) fn debug() -> serde_json::Value {
     state(|s| serde_json::json!({
         "owner":s.job.as_ref().map(|j|j.owner),
+        "retiring_owner":s.retiring.as_ref().map(|j|j.owner),
+        "retiring_ack_bits":s.retiring.as_ref().and_then(|j|j.swap.as_ref()).map(|swap|swap.confirmations()),
         "phase":s.job.as_ref().map(|j|match j.phase { Phase::Reaction=>"reaction",Phase::SwapDelay=>"swap-delay",Phase::Await=>"server-ack",Phase::Close=>"inventory-close",Phase::Return=>"hotbar-return" }),
         "slots":s.job.as_ref().map(|j|j.slots),
         "ack_bits":s.job.as_ref().and_then(|j|j.swap.as_ref()).map(|p|p.confirmations()),
@@ -121,7 +125,63 @@ pub(super) fn debug() -> serde_json::Value {
     }))
 }
 
+
+// A sent swap is observation-only after its module changes or is toggled.
+// The original ticket remains attached; no replacement owner is released.
+fn retire_job(game:&mut Game<'_>,mut job:Job) {
+    let same=state(|s|s.connection.as_ref().is_some_and(|old|same_session(game,old)));
+    if !same{return;}
+    if job.lease.current() && game.using.is_none() && !super::sunset_player::gap_eating() {
+        if let Some((before,ours))=job.restore {
+            if game.selected==ours && before<9 {hold(game,before);}
+        }
+    }
+    // Never close an old screen after an explicit transition. An automatically
+    // opened inventory may remain open for the user to close normally.
+    job.restore=None;job.opened=false;
+    if job.phase==Phase::Await && job.swap.is_some() {
+        state(|s|{debug_assert!(s.retiring.is_none());s.retiring=Some(job);});
+    }
+}
+fn poll_retiring(game:&Game<'_>)->bool {
+    let Some(job)=state(|s|s.retiring.take()) else{return false;};
+    if !state(|s|s.connection.as_ref().is_some_and(|old|same_session(game,old)) && game.ticks>=s.tick){return true;}
+    let timeout=policy::confirmation_ticks(super::remote::sunset_combat_remote::latency(game));
+    let status=job.swap.as_ref().map_or(Status::Rejected,|swap|swap.status(game.ticks,timeout));
+    if status==Status::Waiting && job.began.elapsed()<=Duration::from_secs(6) {
+        if job.lease.current(){control::claim(job.owner);}
+        state(|s|s.retiring=Some(job));return true;
+    }
+    if status==Status::Confirmed {
+        SWAP_CONFIRMED.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+    }else{
+        SWAP_FAILED.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+        // Unlike an unsent cancellation, an unconfirmed operation must not be
+        // resubmitted unchanged merely because OFF->ON reset a pacing timer.
+        state(|s|{
+            s.failures.retain(|(owner,_)|*owner!=job.owner);
+            s.failures.push((job.owner,Failure{slots:job.slots,before:job.before}));
+        });
+    }
+    state(|s|s.next=game.ticks.saturating_add(4));
+    // Dropping the original Finish releases only its exact ticket.
+    true
+}
+fn retire_matching(game:&mut Game<'_>,name:&str) {
+    let job=state(|s|if s.job.as_ref().is_some_and(|j|j.settings.name==name){s.job.take()}else{None});
+    if let Some(job)=job{retire_job(game,job);}
+}
+
 pub(super) fn toggled(game: &mut Game<'_>, name: &str, on: bool) {
+    if name==THROW {
+        super::sunset_melee_assist::cancel_owner(game,THROW);
+        state(|s|{s.press=None;s.pearl=policy::Edge::default();s.wind=policy::Edge::default();});
+        if state(|s|s.queued_use.is_some_and(|(owner,_)|owner==THROW)) {
+            sunset::cancel_turns(THROW);control::release(THROW);
+            state(|s|s.queued_use=None);
+        }
+    }
+    retire_matching(game,name);
     if on && name == AUTO { util::toggle_off(game, INV); }
     if on && name == INV { util::toggle_off(game, AUTO); }
 }
@@ -179,6 +239,7 @@ fn micros(s:&mut State)->u64 {
 fn slot_setting(m: &Module) -> usize { policy::delay(m.n("Hotbar slot"), 9).clamp(1, 9) as usize - 1 }
 
 fn restore(game: &mut Game<'_>, job: &Job) {
+    if !job.lease.current(){return;}
     if let Some((before, ours)) = job.restore {
         if game.selected == ours && before < 9 { hold(game, before); }
     }
@@ -201,11 +262,11 @@ fn fail(game: &mut Game<'_>, job: Job) {
         }else{s.failures.push((job.owner, Failure { slots: job.slots, before: job.before }));}
         s.next = game.ticks.saturating_add(4);
     });
-    control::release(job.owner);
+    // The Job drops its original ticket; it cannot release a replacement.
 }
 
 fn schedule(game: &mut Game<'_>, m: &Module, owner: &'static str, from: usize, to: usize, hotbar: bool) -> bool {
-    if from == to || !(to < 9 || to == OFFHAND) || game.carried.is_some() { return false; }
+    if state(|s|s.retiring.is_some()) || from == to || !(to < 9 || to == OFFHAND) || game.carried.is_some() { return false; }
     let before = [stack(game, from), stack(game, to)];
     if !before.iter().flatten().all(|s| game.res.items().get(&s.item)
         .is_some_and(|info| s.count > 0 && s.count <= info.max_stack)) { return false; }
@@ -214,10 +275,12 @@ fn schedule(game: &mut Game<'_>, m: &Module, owner: &'static str, from: usize, t
     let menu = game.remote_menu();
     let wire = [Game::menu_slot_index(&menu.1, from), Game::menu_slot_index(&menu.1, to)];
     if wire[0].is_none() || (!hotbar && to != OFFHAND && wire[1].is_none()) || !control::claim(owner) { return false; }
+    let lease=control::finish(owner);
+    if !lease.current(){return false;}
     let reaction = if owner == INV { policy::delay(m.n("Reaction delay"), 10) }
         else if owner == AUTO || owner == HOVER { 0 }
         else { policy::delay(m.n("Item switch delay"), 20) };
-    state(|s| s.job = Some(Job { owner, settings: m.clone(), slots: [from, to], before, menu, wire,
+    state(|s| s.job = Some(Job { lease, owner, settings: m.clone(), slots: [from, to], before, menu, wire,
         phase: Phase::Reaction, due: game.ticks.saturating_add(reaction), began: Instant::now(),
         swap: None, hotbar, opened: false, restore: None, pass_swaps:0, unsafe_ticks:0,revision:None }));
     run_job(game,std::slice::from_ref(m));
@@ -226,7 +289,10 @@ fn schedule(game: &mut Game<'_>, m: &Module, owner: &'static str, from: usize, t
 
 fn run_job_step(game: &mut Game<'_>, mods: &[Module]) -> bool {
     let Some(mut job) = state(|s| s.job.take()) else { return false; };
-    if !alive(game) || !mods.iter().any(|m| m.on && m == &job.settings)
+    if !mods.iter().any(|m|m.on && m==&job.settings) {
+        retire_job(game,job);return true;
+    }
+    if !job.lease.current() || !alive(game)
         || game.remote_menu() != job.menu || game.carried.is_some()
         || job.restore.is_some_and(|(_,ours)|game.selected!=ours)
         || (job.owner == HOVER && matches!(job.phase, Phase::Reaction | Phase::SwapDelay)
@@ -325,7 +391,7 @@ fn run_job_step(game: &mut Game<'_>, mods: &[Module]) -> bool {
         Phase::Close | Phase::Return => {
             restore(game, &job);
             state(|s| s.next = game.ticks.saturating_add(if job.owner==INV && !job.hotbar{4}else{1}));
-            control::release(job.owner);
+            // Job's original Finish performs exact-ticket cleanup.
         }
     }
     true
@@ -333,6 +399,7 @@ fn run_job_step(game: &mut Game<'_>, mods: &[Module]) -> bool {
 
 // Resolve only already-due local stage transitions; ACK waiting never spins.
 fn run_job(game:&mut Game<'_>,mods:&[Module])->bool {
+    if poll_retiring(game){return true;}
     let mut used=false;
     for _ in 0..4 {
         let before=state(|s|s.job.as_ref().map(|j|j.phase));
@@ -349,20 +416,21 @@ fn run_job(game:&mut Game<'_>,mods:&[Module])->bool {
 pub(super) fn submit_refill(game:&mut Game<'_>,module:&Module,owner:&'static str,from:usize,to_hotbar:usize)->bool {
     if !module.on || !(9..36).contains(&from) || to_hotbar>=9 || !plain(game)
         || !super::remote::sunset_combat_remote::quiet(game)
-        || state(|s|s.job.is_some() || s.queued_use.is_some()) {return false;}
+        || state(|s|s.job.is_some() || s.retiring.is_some() || s.queued_use.is_some()) {return false;}
     if state(|s|s.connection.as_ref().is_none_or(|old|!same_session(game,old))) {
         reset();state(|s|s.connection=session(game));
     }
     schedule(game,module,owner,from,to_hotbar,false)
 }
-pub(super) fn busy_for(_owner:&str)->bool {state(|s|s.job.is_some() || s.queued_use.is_some())}
+pub(super) fn busy_for(_owner:&str)->bool {state(|s|s.job.is_some() || s.retiring.is_some() || s.queued_use.is_some())}
 
 // Called at HEAD of the native packet handler. Values come from server packet
 // payloads, not the optimistically predicted inventory already on the client.
 pub(super) fn packet(game: &Game<'_>, packet: &C) {
     state(|s| {
         if !s.connection.as_ref().is_some_and(|old| same_session(game, old)) { return; }
-        let Some(job) = s.job.as_mut().filter(|j| j.phase == Phase::Await) else { return; };
+        let job=if let Some(retiring)=s.retiring.as_mut(){Some(retiring)}else{s.job.as_mut().filter(|j|j.phase==Phase::Await)};
+        let Some(job)=job else{return;};
         let revision=match packet {
             C::ContainerSetSlot(p) if p.container==job.menu.0=>Some(p.state),
             C::ContainerSetContent(p) if p.container==job.menu.0=>Some(p.state),
@@ -646,6 +714,7 @@ pub(super) fn forwarded(game:&Game<'_>,packet:&S) {
 /// Optional render/post-packet responsiveness, isolated from DoubleHand's
 /// once-per-native-tick safe counter. Never drive another owner's job here.
 pub(super) fn responsive(game:&mut Game<'_>,mods:&[Module]) {
+    if poll_retiring(game){return;}
     let Some(module)=mods.iter().find(|m|m.name==AUTO && m.on) else{return;};
     if !alive(game) || mods.iter().any(|m|m.name==INV && m.on){return;}
     let owner=state(|s|s.job.as_ref().map(|j|j.owner));
@@ -708,7 +777,14 @@ fn auto_exp(game: &mut Game<'_>, m: &Module) -> bool {
 }
 
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
-    if !alive(game) { cancel(game); return; }
+    if poll_retiring(game){return;}
+    if !alive(game) {
+        let pending=state(|s|if s.job.as_ref().is_some_and(|j|j.phase==Phase::Await){s.job.take()}else{None});
+        if let Some(job)=pending {
+            if game.native_on(sunset::ID){retire_job(game,job);return;}
+        }
+        cancel(game);return;
+    }
     let changed = state(|s| s.connection.as_ref().is_none_or(|old| !same_session(game, old)) || ticks < s.tick);
     if changed { reset(); state(|s| s.connection = session(game)); }
     state(|s| s.tick = ticks);

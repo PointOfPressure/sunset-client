@@ -1,10 +1,8 @@
 // Original manual explosive transactions. Every sequence originates at a real
 // right-click ray; no enemy search, guessed entity id or predicted world edit.
 use super::sunset::{self, Category, Module, gui_open, hold, with};
-use super::sunset_explosive_damage::{
-    Blast, clear_line, local_damage, safety_damage, target_damage,
-};
-use super::sunset_explosive_policy::{Budget, Limits, in_range, safe};
+use super::sunset_explosive_damage::{Blast,clear_line,observed_local_damage};
+use super::sunset_explosive_policy::{Budget,in_range};
 use super::sunset_macro_policy::{self as policy, Kind, Sequence, Step, Wait};
 use super::sunset_util::{self as util, OFFHAND};
 use super::{Dim, Game};
@@ -24,22 +22,16 @@ const ANCHOR: &str = "Anchor Macro";
 type Session = Arc<Mutex<Option<Arc<Counters>>>>;
 
 pub(super) fn defaults() -> Vec<Module> {
-    let common = |m: Module| {
-        m.bool("Protect loot", true)
-            .num("Max self damage", 8., 0., 20., 0.5)
-            .pick("Damage model", &["Observed equipment", "Unmitigated"])
-            .num("Max friend damage", 0., 0., 36., 0.5)
-            .num("Min remaining health", 4., 1., 20., 0.5)
-    };
     vec![
-        common(Module::new(CRYSTAL, Category::Combat, "Manual right-click crystal cycle. Waits for observed base, crystal and removal; checks self and friend safety before exploding. Protect loot pauses module-planned blasts near an observed player death for 30 seconds; it does not track dropped items.")
-            .num("Place delay", 0., 0., 10., 1.).num("Break delay", 0., 0., 10., 1.)
-            .bool("Auto obsidian", true).num("Obsidian delay", 2., 0., 10., 1.)
-            .bool("Switch back",true).bool("Human pace",true)),
-        common(Module::new(ANCHOR, Category::Combat, "Manual anchor sequence outside anchor-compatible dimensions. Double refills only a top-face anchor at or above your feet block with replacement supplies. Detonate fallback still checks native self/friend safety. Protect loot pauses planned blasts near an observed player death for 30 seconds, without tracking dropped items.")
-            .pick("Mode", &["Single", "Double"]).num("Delay", 0., 0., 5., 1.)
-            .bool("Safe anchor", true).pick("If unguarded", &["Detonate", "Cancel"])
-            .bool("Switch back",false)),
+        Module::new(CRYSTAL,Category::Combat,"Breaks and places crystals along your real ray while use is held. Actual breaks check the self-damage cap and health margin. Protect loot pauses module-planned blasts near an observed player death for30 seconds; dropped items are not tracked.")
+            .num("Break delay",0.,0.,10.,1.).num("Place delay",0.,0.,10.,1.)
+            .bool("Auto obsidian",true).num("Obsidian delay",2.,0.,10.,1.)
+            .bool("Switch back",true).num("Max self damage",8.,0.,20.,0.5)
+            .bool("Human pace",true).bool("Protect loot",true),
+        Module::new(ANCHOR,Category::Combat,"Manual anchor placement, guard, charge and detonation. Ordinary detonations check the self health margin; a totem in the actual detonation hand or offhand permits that risk. Protect loot pauses planned blasts near an observed player death for30 seconds without tracking drops.")
+            .pick("Mode",&["Single","Double"]).num("Delay",0.,0.,5.,1.)
+            .bool("Safe anchor",true).pick("If unguarded",&["Detonate","Cancel"])
+            .bool("Switch back",false).bool("Protect loot",true),
     ]
 }
 
@@ -188,6 +180,17 @@ fn enabled(run: &Run) -> bool {
         s.module(run.owner)
             .is_some_and(|m| m.on && m == run.settings.as_ref())
     })
+}
+
+// Explicit OFF/ON transitions invalidate the previous accepted manual intent.
+// Another macro's current sequence is independent and must retain its lease.
+pub(super) fn toggled(game:&mut Game<'_>,name:&str,_on:bool) {
+    if name!=CRYSTAL && name!=ANCHOR{return;}
+    if state(|s|s.run.as_ref().is_some_and(|run|run.owner==name)){reset(game);}
+    state(|s|{
+        if name==ANCHOR{s.anchor_press=None;s.anchor_latched=false;}
+        if name==CRYSTAL{s.retries.clear();s.last_deed=None;s.pace_gap=0;s.main=None;}
+    });
 }
 
 // GUI/death/world transitions cancel the transaction; restoration is allowed
@@ -537,62 +540,19 @@ fn planned_blast(kind: Kind, pos: [i32; 3]) -> Blast {
 fn loot_allowed(game: &Game<'_>, run: &Run) -> bool {
     super::sunset_loot_guard::allows(game, planned_blast(run.sequence.kind, run.pos), run.settings.b("Protect loot"))
 }
-fn safe_blast(game: &mut Game<'_>, settings: &Module, blast: Blast, budget: &mut Budget) -> bool {
-    if !super::sunset_loot_guard::allows(game, blast, settings.b("Protect loot")) { return false; }
-    let Some(own) =
-        local_damage(game, blast, budget).map(|p| safety_damage(p, settings.p("Damage model")))
-    else {
-        return false;
-    };
-    let Some(p) = game.player.as_ref() else {
-        return false;
-    };
-    let health = f64::from(p.health.health() + p.health.absorption());
-    let names = with(|s| s.friends.clone());
-    let own_id = sunset::own_id(game);
-    let mut friends = Vec::new();
-    for m in &game.mobs {
-        if m.removed || !m.alive() || m.kind.id != "minecraft:player" || Some(m.id) == own_id {
-            continue;
-        }
-        let Some(name) = game.remote_player_name(m.id) else {
-            return false;
-        };
-        let t = util::mob_target(m);
-        if !t
-            .pos
-            .iter()
-            .chain(t.lo.iter())
-            .chain(t.hi.iter())
-            .all(|n| n.is_finite())
-        {
-            return false;
-        }
-        if names.iter().any(|f| f.eq_ignore_ascii_case(name)) && in_range(blast.center, t.pos, 12.)
-        {
-            friends.push(t);
-        }
-    }
-    let mut friend: f64 = 0.;
-    for t in friends {
-        let Some(p) = target_damage(game, &t, blast, budget) else {
-            return false;
-        };
-        friend = friend.max(p.upper);
-    }
-    safe(
-        Limits {
-            min_target: 0.,
-            max_self: settings.n("Max self damage"),
-            max_friend: settings.n("Max friend damage"),
-            min_remaining: settings.n("Min remaining health"),
-            anti_suicide: true,
-        },
-        0.,
-        own,
-        health,
-        friend,
-    )
+fn safe_blast(game:&mut Game<'_>,settings:&Module,kind:Kind,blast:Blast,
+    detonation_slot:Option<usize>,budget:&mut Budget)->bool {
+    if !super::sunset_loot_guard::allows(game,blast,settings.b("Protect loot")){return false;}
+    let Some(player)=game.player.as_ref() else{return false;};
+    let health=f64::from(player.health.health()+player.health.absorption());
+    if !health.is_finite() || health<=0.0{return false;}
+    // Use the hand that this accepted deed will actually select, rather than
+    // a different currently-held item before a Double replacement selection.
+    if kind==Kind::Anchor && (detonation_slot.is_some_and(|slot|stack(game,slot,"totem_of_undying"))
+        || stack(game,OFFHAND,"totem_of_undying")){return true;}
+    let Some(own)=observed_local_damage(game,blast,budget) else{return false;};
+    if super::sunset_explosive_tactics::endangered(own,health,game.creative){return false;}
+    kind!=Kind::Crystal || own<=settings.n("Max self damage")
 }
 
 fn body_points(game:&Game<'_>)->Option<Vec<[f64;3]>> {
@@ -939,16 +899,9 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             }
             let click=camera_click(game)?;
             if click.pos!=p{return None;}
-            if !visible(game, click, budget)
-                || !safe_blast(
-                    game,
-                    &run.settings,
-                    Blast::explosion(center(p, true), 6.0),
-                    budget,
-                )
-            {
-                return None;
-            }
+            // Placement is not a detonation. Its geometry and native loot
+            // veto remain required; a later break reevaluates actual damage.
+            if !visible(game,click,budget){return None;}
             crystal_use_action(game,run,step,click,"end_crystal",p)
         }
         Step::CrystalBreak => {
@@ -963,7 +916,9 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
                 || !safe_blast(
                     game,
                     &run.settings,
+                    Kind::Crystal,
                     Blast::explosion(at, 6.0),
+                    None,
                     budget,
                 )
             {
@@ -1016,21 +971,9 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget) -> Option<Ac
             {
                 return None;
             }
-            if !safe_blast(
-                game,
-                &run.settings,
-                Blast::anchor(p),
-                budget,
-            ) {
-                return None;
-            }
-            Some(use_action(
-                game,
-                step,
-                anchor_click(game, p, budget)?,
-                if run.sequence.remaining>1{util::find_hotbar(game,|n|n=="respawn_anchor")?}else{detonator(game)?},
-                p,
-            ))
+            let slot=if run.sequence.remaining>1{util::find_hotbar(game,|n|n=="respawn_anchor")?}else{detonator(game)?};
+            if !safe_blast(game,&run.settings,Kind::Anchor,Blast::anchor(p),Some(slot),budget){return None;}
+            Some(use_action(game,step,anchor_click(game,p,budget)?,slot,p))
         }
         Step::Done => None,
     }

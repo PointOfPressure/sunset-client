@@ -1452,6 +1452,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
         (m.name, m.on)
     });
     super::sunset_combat_inventory::toggled(game, name, on);
+    super::sunset_combat_macros::toggled(game, name, on);
     if name == "Friend Guard" { super::sunset_melee_assist::reset_friend_feedback(); }
     if !on {
         super::sunset_packet_delay::disabled(game, name);

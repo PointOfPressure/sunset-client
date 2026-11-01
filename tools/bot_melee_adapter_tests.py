@@ -50,6 +50,10 @@ mod game {
  impl Game<'_>{fn native_playing(&self)->bool{self.screen==Screen::Playing}fn held(&self)->Option<&ItemStack>{self.inventory[self.selected].as_ref()}fn items(&self)->&Items{&self.res.items}fn eye_position(&self)->Option<[f64;3]>{Some(self.eye)}fn known_player_movement(&self)->Vec3{Vec3::ZERO}
  fn input_packet(&self)->S{let held=|k|self.keys.contains(&k);let keys=Keys{forward:held(KeyCode::KeyW),backward:held(KeyCode::KeyS),left:held(KeyCode::KeyA),right:held(KeyCode::KeyD),jump:held(KeyCode::Space),shift:held(KeyCode::ShiftLeft),sprint:held(KeyCode::ControlLeft),analog:None};FLAGS S::PlayerInput(play::PlayerInput{flags:input})}}
  VIEW
+ // WTap/Stab input fixture is fixed ordinary ground. This seam supplies only
+ // the current production type; it does not validate jump/climbing detection.
+ // The separate five native jump_environment_tests own that kernel proof.
+ mod remote{pub mod sunset_prediction_remote{pub struct LocalMotion{pub floating:bool}pub fn local_motion(_: &super::super::Game<'_>)->Option<LocalMotion>{Some(LocalMotion{floating:false})}}}
  mod sunset_util{pub fn short(value:&str)->&str{value.strip_prefix("minecraft:").unwrap_or(value)}}
  mod sunset_bot_packet_policy{pub use crate::packets::*;}
  mod sunset_combat_wire{pub fn sent_sprinting(_: &super::Game<'_>)->bool{true}}

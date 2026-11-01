@@ -12,13 +12,18 @@ impl Drop for ScopedHit<'_, '_> {
     }
 }
 
-pub(crate) fn step(
+pub(crate) fn step(game:&mut Game<'_>,position:[i32;3],face:[i32;3],yaw:f32,pitch:f32)->bool {
+    let range=game.reach();step_with_range(game,position,face,yaw,pitch,range)
+}
+pub(crate) fn step_with_range(
     game: &mut Game<'_>,
     position: [i32; 3],
     face: [i32; 3],
     yaw: f32,
     pitch: f32,
+    range:f64,
 ) -> bool {
+    if !range.is_finite()||range<=0.0||range>64.0{return false;}
     let Some(eye) = game.eye_position() else {
         return false;
     };
@@ -26,7 +31,7 @@ pub(crate) fn step(
         return false;
     }
     let direction = crate::game::view_vector(yaw, pitch);
-    let Some(hit) = game.clip_ray(eye, direction, game.reach()) else {
+    let Some(hit) = game.clip_ray(eye, direction, range) else {
         return false;
     };
     if hit.pos != position || hit.face != face {

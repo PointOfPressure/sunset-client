@@ -75,6 +75,13 @@ Known native differences remain explicit:
 - Optional native controls and rendering use Horizon's own UI and renderer.
   They do not reuse reference graphics or promise pixel-identical presentation.
 
-Follow-up validation records will distinguish implemented behavior, passing
-isolated player checks and remaining gaps; the earlier core-batch evidence is
-not relabeled as proof of these new changes.
+The [R25 immutable build record](evidence/combat/parity-build-r25.json) identifies
+83 support modules, 54 official injections and 443 passing focused checks
+(427 compiled/native adapters and 16 source contracts). Its optimized client
+SHA-256 begins `915a82b01688`. It has 15 remaining unused-helper/API warnings.
+This checkpoint is separate from subsequent lifecycle/behavior corrections.
+
+Follow-up validation records distinguish implemented behavior, passing isolated
+player checks and remaining gaps. Earlier core-batch evidence is not relabeled
+as proof of the new controls, forecasts or staged actions. Raw failures and
+inconclusive observation windows remain associated with their original build.
