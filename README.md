@@ -109,6 +109,7 @@ players on your own team (**Ignore teams**). **HUD > Target HUD** shows who Kill
 Kill Aura hits one target (**Single**, with **Target lock** to stay on it), each in turn (**Switch**) or several (**Multi**).
 **Rotation mode** is Snap, Normal, Smooth or Custom (its own yaw and pitch speeds), told only to the server or also turning
 your view (**Rotation view**). **Ray cast** hits only when the look really meets the target's box.
+It waits while another module has the hand, skips broken weapons, and stabs with spears; a stab never goes through a friend.
 
 Not here (no clean way to do it in Horizon yet): Crystal Aura, Jesus, Click TP, and the Baritone-based
 Highway Builder and Infinity Miner.

@@ -198,6 +198,25 @@ name = "sunset_flags"
 source = "input_flags.rs"
 visibility = "pub"
 
+[[module]]
+id = "combat_lease"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_lease"
+source = "combat_lease.rs"
+
+[[module]]
+id = "combat_control"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_control"
+source = "combat_control.rs"
+
+[[module]]
+id = "combat_collision"
+file = "crates/horizon-client/src/game/spear.rs"
+name = "sunset_combat_collision"
+source = "combat_collision.rs"
+visibility = "pub(crate)"
+
 [[injection]]
 id = "list"
 kind = "HEAD"

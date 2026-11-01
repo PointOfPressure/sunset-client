@@ -1725,6 +1725,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         return;
     }
     if !game.native_on(ID) || game.player.is_none() {
+        super::sunset_combat_control::prepare_cleanup(game);
+        super::sunset_combat_control::reset();
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
         horizon_client::motion::sunset_motion::set_safe_walk(false);
@@ -1733,6 +1735,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         strikes(Vec::clear);
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
         return;
+    }
+    if super::sunset_combat_control::begin_tick(game) {
+        strikes(Vec::clear);
     }
     ensure_loaded(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
@@ -2135,16 +2140,16 @@ fn module_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Scaffold").filter(|m| !scaffold_paused(m, get("Kill Aura").is_some(), get("Blink").is_some())) {
         scaffold(game, m);
     }
-    if let Some(m) = get("Auto Armor") {
+    if let Some(m) = get("Auto Armor").filter(|_| super::sunset_combat_control::owner().is_none()) {
         auto_armor(game, m);
     }
-    if get("Chest Swap").is_some() {
+    if get("Chest Swap").is_some() && super::sunset_combat_control::owner().is_none() {
         chest_swap(game);
         if let Some(i) = with(|s| s.find("Chest Swap")) {
             toggle(game, i, false);
         }
     }
-    if let Some(m) = get("Auto Replenish") {
+    if let Some(m) = get("Auto Replenish").filter(|_| super::sunset_combat_control::owner().is_none()) {
         auto_replenish(game, m);
     }
     if let Some(m) = get("Bow Spam") {
@@ -2206,7 +2211,7 @@ fn module_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Auto Clicker") {
         auto_click(game, m);
     }
-    if let Some(m) = get("Auto Eat") {
+    if let Some(m) = get("Auto Eat").filter(|_| super::sunset_combat_control::available("Auto Eat")) {
         auto_eat(game, m);
     } else if with(|s| s.eating) {
         eat_stop(game);
@@ -2411,7 +2416,6 @@ fn legit_at_edge(game: &Game<'_>, m: &Module) -> bool {
 // Scaffold's Legit mode: uses the block where your crosshair really is, once that spot is the one under your feet or
 // your next step. The game's own click, so its use delay, reach and look all hold, and your view is never turned.
 fn scaffold_legit(game: &mut Game<'_>, m: &Module) {
-    use winit::event::MouseButton;
     // Holding use, the game is placing already.
     if !game.native_playing() || game.remote.is_none() || game.right || game.use_delay > 0 || game.using.is_some() || game.mob_hit().is_some() {
         return;
@@ -2443,13 +2447,9 @@ fn scaffold_legit(game: &mut Game<'_>, m: &Module) {
         return;
     };
     hold(game, slot);
-    let _ = game.play_mouse(MouseButton::Right, true);
-    let _ = game.play_mouse(MouseButton::Right, false);
-    // With Toggle use on, that press left use held.
-    if game.right {
-        game.toggles.button(3, true, false, true);
-        game.right = game.toggles.is_down(3);
-    }
+    // What a right click does, without being one: anything watching your mouse is not to take it for yours.
+    let _ = game.use_with_hand();
+    game.use_delay = 4;
     if m.b("Render") {
         with(|s| s.scaffold_placed.push((at, 8)));
     }
@@ -2510,6 +2510,10 @@ pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
             *t > 0
         });
     });
+    // Another module has the hand (Kill Aura's hit on its way, with Disable with Kill Aura off): not this tick.
+    if !super::sunset_combat_control::available("Scaffold") {
+        return;
+    }
     if m.p("Mode") == "Legit" {
         scaffold_legit(game, m);
         return;
@@ -2661,6 +2665,7 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
         return;
     }
     if with(|s| s.eating) {
+        if !super::sunset_combat_control::claim("Auto Eat") { eat_stop(game); return; }
         if !eat_due(game, m) {
             eat_stop(game);
             return;
@@ -2688,7 +2693,9 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
         return;
     };
     let prev = game.selected;
+    if !super::sunset_combat_control::claim("Auto Eat") { return; }
     if !eat_from(game, slot) {
+        super::sunset_combat_control::release("Auto Eat");
         return;
     }
     let paused = m.b("Pause auras") && with(|s| s.is_on("Kill Aura"));
@@ -2774,6 +2781,7 @@ fn eat_from(game: &mut Game<'_>, slot: Option<usize>) -> bool {
 }
 
 fn eat_stop(game: &mut Game<'_>) {
+    super::sunset_combat_control::release("Auto Eat");
     use winit::event::MouseButton;
     let (prev, from_hand, aura) = with(|s| {
         s.eating = false;
@@ -4021,10 +4029,24 @@ fn send_strikes(game: &mut Game<'_>) {
 }
 
 fn strike_now(game: &mut Game<'_>, id: u32) {
+    // Gone since the hit was decided: the id may be someone else's by now.
+    if !game.mobs.iter().any(|m| m.id == id && m.alive() && !m.removed) {
+        return;
+    }
     if let Some(m) = with(|s| s.module("Auto Weapon").filter(|m| m.on).cloned())
         && let Some(slot) = best_weapon(game, m.b("Prefer axes"))
     {
         hold(game, slot);
+    }
+    // A spear stabs along the look instead, as the game's own left click does.
+    if let Some(kinetic) = game.held().and_then(|s| horizon_client::spear::Kinetic::of(&s.item)) {
+        if !game.cannot_attack_with_item(game.hand_strength.ticker, 0) {
+            game.send(S::PlayerAction(play::PlayerAction { action: 8, pos: [0; 3], direction: 0, sequence: 0 }));
+            game.hand_strength.reset_attack();
+            game.swing_hand(horizon_client::first_person::Hand::Main, kinetic.attack_animation());
+            game.play_at_feet(kinetic.attack_sound);
+        }
+        return;
     }
     game.send(S::Attack(play::Attack { id: id as i32 }));
     game.swing_arm();
@@ -4441,6 +4463,7 @@ const HELP: &[(&str, &str)] = &[
     (".reset <module>", "put a module back to its defaults"),
     (".panic", "turn every module off and hide Sunset (.panic again brings it back)"),
     (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
+    (".auradebug", "why Kill Aura did what it did last, and who has the hand"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
     (".vclip <blocks>", "move up or down"),
@@ -4463,6 +4486,9 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
 }
 
 pub(super) fn panic_off(game: &mut Game<'_>) {
+    super::sunset_combat_control::prepare_cleanup(game);
+    strikes(Vec::clear);
+    super::sunset_combat_control::reset();
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
         game.pitch = pitch;
@@ -4599,6 +4625,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         found
     };
     match cmd.as_str() {
+        "auradebug" => say(game, &super::sunset_aura::diagnostics()),
         "help" | "commands" => {
             say(game, "Commands:");
             for (c, d) in HELP {

@@ -3,9 +3,12 @@
 // once, and its timing.
 
 use super::sunset::{Canvas, Category, Module, health_colour, hold, look_at, toggle_named};
+use super::sunset_combat_control as control;
 use super::sunset_rotation::{direction, track};
 use super::sunset_util::*;
 use super::Game;
+use horizon_client::spear::{Kinetic, REACH, hits_in_reach};
+use horizon_core::geometry::Vec3;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 
@@ -13,7 +16,7 @@ pub(super) fn defaults() -> Vec<Module> {
     vec![
         Module::new("Kill Aura", Category::Combat, "Attacks the entities you choose around you.")
             .pick("Attack when holding", &["Weapons", "All"])
-            .text("Selected weapon types", "diamond_sword,diamond_axe,trident")
+            .text("Selected weapon types", "diamond_sword,diamond_axe,trident,mace,diamond_spear")
             .pick("Rotate", &["Always", "On hit", "None"])
             .pick("Rotation mode", &["Snap", "Normal", "Smooth", "Custom"])
             .pick("Rotation view", &["Silent", "Visible"])
@@ -52,13 +55,22 @@ pub(super) fn defaults() -> Vec<Module> {
     ]
 }
 
+// Who the shared hand ownership knows it by.
+const HAND: &str = "Kill Aura";
+
 #[derive(Default)]
 struct As {
     hit_timer: u32,
     switch_timer: u32,
     last_selected: Option<usize>,
+    // Swap back: the slot it switched from, and the one it switched to. You changing slot since makes it yours.
     swapped: bool,
     prev: usize,
+    given: usize,
+    // The hand, for the hit just made: it goes back with the hit.
+    hit: Option<control::Finish>,
+    // Why it did what it did last tick (.auradebug).
+    reason: &'static str,
     attacking: bool,
     // Who it is hitting this tick (the Target HUD's).
     target: Option<u32>,
@@ -117,6 +129,27 @@ fn acceptable(m: &Module, item: Option<&str>) -> bool {
         return false;
     };
     m.t("Selected weapon types").split(',').any(|w| weapon_type(w.trim()) == Some(t))
+}
+
+// A hotbar slot it may hit with: not an item about to break for nothing, nor one that is broken.
+fn fit_slot(game: &Game<'_>, m: &Module, slot: usize) -> bool {
+    match game.inventory.get(slot).and_then(Option::as_ref) {
+        Some(s) => {
+            acceptable(m, Some(&s.item))
+                && s.count > 0
+                && game.res.items().get(&s.item).is_some_and(|i| i.max_damage == 0 || s.damage < i.max_damage)
+        }
+        None => acceptable(m, None),
+    }
+}
+
+// What to hit with: what you hold if it will do, else with Auto switch the first in the hotbar that will.
+fn weapon_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
+    if fit_slot(game, m, game.selected) {
+        return Some(game.selected);
+    }
+    let held = |slot: usize| game.inventory.get(slot).is_some_and(Option::is_some);
+    m.b("Auto switch").then(|| (0..9).find(|&slot| held(slot) && fit_slot(game, m, slot))).flatten()
 }
 
 pub(super) fn is_hostile(kind: &str) -> bool {
@@ -195,6 +228,24 @@ fn ray_hits(game: &Game<'_>, m: &Module, eye: [f64; 3], look: (f32, f32), t: &Ta
     d <= m.n("Walls range") || clear_line(game, [eye[0] + dir[0] * d, eye[1] + dir[1] * d, eye[2] + dir[2] * d], [i32::MIN; 3])
 }
 
+// A spear stabs along the look the server has, and through everyone on it: does that reach the target, within its own
+// reach and Range, without going through a friend too?
+fn stab_hits(game: &Game<'_>, m: &Module, eye: [f64; 3], look: (f32, f32), t: &Target) -> bool {
+    let dir = direction(look);
+    let (min, max) = if game.creative { (REACH.min_creative, REACH.max_creative) } else { (REACH.min, REACH.max) };
+    let hits = hits_in_reach(
+        &game.hittable_mob_boxes(),
+        Vec3::new(eye[0], eye[1], eye[2]),
+        Vec3::new(dir[0], dir[1], dir[2]),
+        game.known_player_movement(),
+        (min, max.min(m.n("Range") as f32), REACH.hitbox_margin),
+        |from, to| super::spear::sunset_combat_collision::clip(game, from, to),
+    );
+    let friends = super::sunset::with(|s| s.friends.clone());
+    let friend = |id: u32| game.remote_player_name(id).is_some_and(|n| friends.iter().any(|f| f.eq_ignore_ascii_case(n)));
+    hits.iter().any(|(i, _)| game.mobs[*i].id == t.id) && !hits.iter().any(|(i, _)| friend(game.mobs[*i].id))
+}
+
 fn entity_check(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool {
     if t.health <= 0.0 || spared(game, m, t.id, t.player) {
         return false;
@@ -231,30 +282,31 @@ fn entity_check(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool 
 }
 
 fn stop(game: &mut Game<'_>, m: &Module) {
-    let (was, swapped, prev) = st(|s| {
+    let (was, swapped, prev, given) = st(|s| {
         s.current = None;
         s.target_timer = 0;
         s.switch_next = false;
         s.look = None;
         s.aimed = None;
-        (std::mem::take(&mut s.attacking), s.swapped, s.prev)
+        (std::mem::take(&mut s.attacking), std::mem::take(&mut s.swapped), s.prev, s.given)
     });
-    if was && m.b("Swap back") && swapped {
+    if was && swapped && m.b("Swap back") && game.selected == given && control::owns(HAND) {
         hold(game, prev);
-        st(|s| s.swapped = false);
     }
+    control::release(HAND);
 }
 
 // Turned off: back to the weapon it swapped from, and nothing kept for next time.
 pub(super) fn disabled(game: &mut Game<'_>, swap_back: bool) {
-    let (swapped, prev) = st(|s| {
-        let was = (s.swapped, s.prev);
+    let (swapped, prev, given) = st(|s| {
+        let was = (s.swapped, s.prev, s.given);
         *s = As::default();
         was
     });
-    if swap_back && swapped {
+    if swap_back && swapped && game.selected == given {
         hold(game, prev);
     }
+    control::release(HAND);
 }
 
 // Who to hit this tick: Multi all it may, Switch each in turn, Single one (the same one with Target lock).
@@ -277,7 +329,13 @@ fn choose(m: &Module, mut list: Vec<Target>) -> Vec<Target> {
 
 pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     st(|s| s.target = None);
-    if !game.native_playing() || game.remote.is_none() || super::sunset::CRIT_STAGE.load(Ordering::Relaxed) != 0 || super::sunset::strike_waiting() {
+    if !game.native_playing() || game.remote.is_none() {
+        return;
+    }
+    // A hit on its way: nothing else may take the hand before it goes.
+    if super::sunset::CRIT_STAGE.load(Ordering::Relaxed) != 0 || super::sunset::strike_waiting() {
+        let _ = control::claim(HAND);
+        st(|s| s.reason = "a hit is on its way");
         return;
     }
     // Auto disable: after you die, or in a new world.
@@ -291,6 +349,19 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     let sel = game.selected;
     if st(|s| s.last_selected.replace(sel)) != Some(sel) {
         st(|s| s.switch_timer = m.n("Weapon switch delay") as u32);
+    }
+    // The hit has gone, and the hand with it, unless it was lost on the way (a new world, say).
+    if st(|s| s.hit.take()).is_some_and(|hit| !hit.current()) {
+        st(|s| s.reason = "lost the hand before the hit went");
+    }
+    // The hand: kept only for a weapon to swap back from, and left alone while another module has it.
+    if !st(|s| s.swapped) {
+        control::release(HAND);
+    }
+    if !control::available(HAND) || !super::sunset::inventory_idle(game) {
+        stop(game, m);
+        st(|s| s.reason = "another module has the hand, or a menu is open");
+        return;
     }
     if game.player.as_ref().is_none_or(|p| p.health.health() <= 0.0) || game.spectator() {
         stop(game, m);
@@ -327,26 +398,33 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     }
     if list.is_empty() {
         stop(game, m);
+        st(|s| s.reason = "no target");
         return;
     }
-    // Pick the weapon.
-    if m.b("Auto switch") {
-        let want = find_hotbar(game, |n| acceptable(m, Some(n)));
-        if let Some(slot) = want {
-            if !st(|s| s.swapped) {
-                st(|s| {
+    // Pick the weapon: never out of a hand eating, blocking or mining.
+    let Some(slot) = weapon_slot(game, m) else {
+        stop(game, m);
+        st(|s| s.reason = "no usable weapon");
+        return;
+    };
+    if slot != game.selected {
+        if game.using.is_some() || game.mining.is_some() || !control::claim(HAND) {
+            st(|s| s.reason = "the hand is busy");
+            return;
+        }
+        if m.b("Swap back") {
+            st(|s| {
+                if !s.swapped {
                     s.prev = game.selected;
                     s.swapped = true;
-                });
-            }
-            if slot != game.selected {
-                hold(game, slot);
-            }
+                }
+                s.given = slot;
+            });
         }
+        hold(game, slot);
     }
-    let held = game.held().map(|s| short(&s.item).to_owned());
-    if !acceptable(m, held.as_deref()) {
-        stop(game, m);
+    if st(|s| s.swapped) && !control::claim(HAND) {
+        st(|s| s.reason = "the hand is busy");
         return;
     }
     let list = choose(m, list);
@@ -388,6 +466,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     }
     // Just found a target: its look has not gone out yet.
     if waiting || (rotate_mode == "Always" && sent.is_none()) {
+        st(|s| s.reason = "turning to a new target");
         return;
     }
     // The delay: the game's cooldown, or a fixed number of ticks. Hit select also waits out the target's hurt time.
@@ -399,6 +478,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             false
         }
     }) {
+        st(|s| s.reason = "weapon switch delay");
         return;
     }
     let timing = m.p("Attack timing");
@@ -414,19 +494,27 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     } else {
         game.hand_strength.scale(0.5, game.main_hand_attack_speed()) >= 1.0
     };
-    if !ready {
+    let spear = game.held().is_some_and(|s| Kinetic::of(&s.item).is_some());
+    if !ready || (spear && game.cannot_attack_with_item(game.hand_strength.ticker, 0)) {
+        st(|s| s.reason = "cooling down");
+        return;
+    }
+    if !control::claim(HAND) {
+        st(|s| s.reason = "the hand is busy");
         return;
     }
     // With Always a hit waits until the look the server has meets the target, whether Ray cast is on or not.
     let check = m.b("Ray cast") || rotate_mode == "Always";
     let mut hit = false;
-    for t in &list {
+    st(|s| s.reason = "the look does not meet the target");
+    // A stab is one action, whoever it goes through.
+    for t in list.iter().take(if spear { 1 } else { usize::MAX }) {
         if timing == "Hit select" && game.mobs.iter().any(|x| x.id == t.id && x.hurt_time > 0) {
             continue;
         }
         let on_hit = (rotate_mode == "On hit").then(|| look_at(eye, centre(t)));
         let aim = on_hit.or(sent).unwrap_or((game.yaw, game.pitch));
-        if check && !ray_hits(game, m, eye, aim, t) {
+        if if spear { !stab_hits(game, m, eye, aim, t) } else { check && !ray_hits(game, m, eye, aim, t) } {
             continue;
         }
         super::sunset::attack(game, t.id, crits, on_hit);
@@ -436,8 +524,14 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         st(|s| {
             s.hit_timer = 0;
             s.switch_next = true;
+            s.reason = "hit sent";
+            s.hit = Some(control::finish(HAND));
         });
     }
+}
+
+pub(super) fn diagnostics() -> String {
+    st(|s| format!("KillAura reason={} target={:?} hand={:?}", s.reason, s.target, control::owner()))
 }
 
 // The Target HUD: a box by the crosshair with the name, distance and health of who Kill Aura is hitting.
