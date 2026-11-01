@@ -1,0 +1,23 @@
+{
+  "scope": "Public path shortening only. Private raw reports and original image bytes are unchanged.",
+  "images": [
+    {
+      "original_file": "loot-kb-800-ab-7f0a634b519b4917a38cc80222cef411-1793517193718908300.png",
+      "published_file": "kb-800-ab.png",
+      "sha256": "f3cc0c618a020e61fb90eb9c230aed4ce53b0845107ea85c66b7c004f26582f4",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "loot-lag-menu-flush-7f0a634b519b4917a38cc80222cef411-1793517109082677700.png",
+      "published_file": "lag-menu-flush.png",
+      "sha256": "78b6cc0dff094c81569a4b25b08ac96c2e3e38be563610c1d1c7b2c4b7388aee",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "loot-macro-parity-hotbar-totem-real-acks-bac669f546df45bcb542d671a537e4c3-1793517802135551600.png",
+      "published_file": "hotbar-totem-real-acks.png",
+      "sha256": "ffdf9ea097eb59e898d2f828118f49db5cb8ebe5ef171235f0a6bf989daab973",
+      "pixels_unchanged": true
+    }
+  ]
+}

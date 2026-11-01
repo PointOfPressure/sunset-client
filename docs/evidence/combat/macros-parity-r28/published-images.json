@@ -1,0 +1,23 @@
+{
+  "scope": "Public path shortening only. Private raw reports and original image bytes are unchanged.",
+  "images": [
+    {
+      "original_file": "loot-macro-parity-anchor-double-top-contact-e81bd6fa13bb4cabb75bff0a3b099fb2-1793516247589096100.png",
+      "published_file": "anchor-double-top-contact.png",
+      "sha256": "22a8ead022ce29486fa8dcc8185f98085d9d9880da02765ef1b900b3386eb3bf",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "loot-macro-parity-creative-crystal-place-not-break-e81bd6fa13bb4cabb75bff0a3b099fb2-1793516060914342700.png",
+      "published_file": "creative-crystal-place-not-break.png",
+      "sha256": "1b5bed39ecb1ff2f8ec5d0b556bff1de2818dab9de4dde6735346e35734c34b3",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "loot-macro-parity-crystal-crouched-break-e81bd6fa13bb4cabb75bff0a3b099fb2-1793516301264100900.png",
+      "published_file": "crystal-crouched-break.png",
+      "sha256": "79503ec135cd422eeecfa0437128c70e8a7e3a909df41a7f39f0aa3e8775ad18",
+      "pixels_unchanged": true
+    }
+  ]
+}

@@ -78,6 +78,8 @@ def main():
         run('manual macro reference defaults', [sys.executable, 'tools/macro_defaults_tests.py'])
         run('native sent Anchor contact and Double', [sys.executable, 'tools/macro_anchor_contact_tests.py', args.engine.resolve()])
         if args.dependency_dir:
+            run('native crystal prediction input phase', [sys.executable, 'tools/optimizer_attack_phase_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
+            run('Bot native stationary pearl forecast', [sys.executable, 'tools/bot_pearl_forecast_tests.py', '--dependency-dir', args.dependency_dir.resolve()])
             run('Crystal Optimizer native behavior parity', [sys.executable, 'tools/crystal_optimizer_behavior_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
             run('native macro crouch and mount eligibility', [sys.executable, 'tools/macro_eligibility_tests.py', args.engine.resolve(), '--dependency-dir', args.dependency_dir.resolve()])
             run('Bot native pearl stationary hold', [sys.executable, 'tools/bot_pearl_hold_tests.py', '--dependency-dir', args.dependency_dir.resolve()])

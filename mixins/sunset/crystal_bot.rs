@@ -2728,6 +2728,14 @@ fn safe_pearl_landing(game: &Game<'_>, land: tactics::PearlLanding) -> bool {
     }
     true
 }
+// Candidate geometry targets the grounded still throw enforced at execution.
+// Real current motion remains authoritative in pearl_approved immediately before use.
+fn pearl_candidate(game: &Game<'_>, look: (f32, f32)) -> Option<tactics::PearlLanding> {
+    let eye = game.eye_position()?;
+    let p = game.player.as_ref()?;
+    let velocity = tactics::pearl_velocity(f64::from(look.0), f64::from(look.1), [0., p.velocity.y, 0.], p.ground.on_ground);
+    pearl_from(game, [eye[0], eye[1] - 0.1, eye[2]], velocity)
+}
 fn pearl_approved(game: &Game<'_>, plan: PearlPlan) -> bool {
     let Some(land) = pearl_land(game, plan.look) else {
         return false;
@@ -2930,7 +2938,7 @@ fn plan_pearl(game: &mut Game<'_>, m: &Module, target: &util::Target, escape: bo
             )
         };
         let look = ((yaw + off) as f32, pitch as f32);
-        let Some(land) = pearl_land(game, look) else {
+        let Some(land) = pearl_candidate(game, look) else {
             continue;
         };
         if !safe_pearl_landing(game, land) {

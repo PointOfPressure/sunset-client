@@ -1,0 +1,65 @@
+{
+  "scope": "Public path shortening only. Private raw reports and original image bytes are unchanged.",
+  "images": [
+    {
+      "original_file": "originals/aura-r28-a47347ebaac0448ea5220b8fc8115b8d-optimizer-rejected-visual-before-1793516664595831200.png",
+      "published_file": "originals/ghost-before.png",
+      "sha256": "7c2dbd130a9ac06d599fffeb933fa243f27d402d9b6907ecde9388eb1cb2ca63",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r28-a47347ebaac0448ea5220b8fc8115b8d-optimizer-rejected-visual-next-tick-1793516664693608200.png",
+      "published_file": "originals/ghost-next-tick.png",
+      "sha256": "fee4d0523a4b63c30c98aad126bb4e5deab592e94f44a664736bd94aed40ed03",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r28-a47347ebaac0448ea5220b8fc8115b8d-optimizer-rejected-visual-repeat-1793516666494494500.png",
+      "published_file": "originals/ghost-repeat.png",
+      "sha256": "faccad692f4215c4d1b16ec4806c589b15211fe88ad6b03199d75b7b32009c29",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r28-a47347ebaac0448ea5220b8fc8115b8d-optimizer-rejected-visual-timeout-1793516666397817300.png",
+      "published_file": "originals/ghost-timeout.png",
+      "sha256": "c51f651b5be83389fad11d64c45765fd4ae22929cfe58e525056e12ec62a3ec9",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r28-a47347ebaac0448ea5220b8fc8115b8d-optimizer-short-reach-before-1793516699894495500.png",
+      "published_file": "originals/reach-before.png",
+      "sha256": "99c8c545f7414be00eb113ced475b2868e4ca3c604467b58c7da866afd0e7429",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r28-a47347ebaac0448ea5220b8fc8115b8d-optimizer-short-reach-next-tick-1793516700004779100.png",
+      "published_file": "originals/reach-next-tick.png",
+      "sha256": "1e3015bde8700a8963cf0fcda1d4c7863518751acac7d9e1af22d3d189a06f5f",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r28-a47347ebaac0448ea5220b8fc8115b8d-optimizer-short-reach-repeat-1793516701700605000.png",
+      "published_file": "originals/reach-repeat.png",
+      "sha256": "22d7b3aa5478ca930245ba8cac04cf29ff0321d5c96ee8a7c91f21fc3c9e80cf",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r28-a47347ebaac0448ea5220b8fc8115b8d-optimizer-short-reach-timeout-1793516701605177000.png",
+      "published_file": "originals/reach-timeout.png",
+      "sha256": "054e5774b353ed1684c7397e30700a9e5bcaae68d495e596def7b6f5b86b0ba8",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r28-a47347ebaac0448ea5220b8fc8115b8d-trap-ring-1793516472542792600.png",
+      "published_file": "originals/trap-ring.png",
+      "sha256": "0608d98c5dd9113d272b52cf04fa19f77d5c0fbd48a2186b747d1f432de93193",
+      "pixels_unchanged": true
+    },
+    {
+      "original_file": "originals/aura-r28-a47347ebaac0448ea5220b8fc8115b8d-trap-roof-extension-1793516499490162500.png",
+      "published_file": "originals/trap-roof-extension.png",
+      "sha256": "92e05ecb461588e73642b64315dacbfa62a5b97d9356c6c890fb97b5d4909e01",
+      "pixels_unchanged": true
+    }
+  ]
+}

@@ -34,6 +34,6 @@ fn sunset_optimizer_objects(game:&crate::game::Game<'_>,attacking:bool)
     }
     // Native dragon-part rays remain authoritative; their order follows the
     // crystal order exactly as in the original attacking-only enumeration.
-    for (id,distance,origin) in game.remote_dragon_part_hit(eye,direction,reach){consider(id,distance,origin);}
+    if let Some((id,distance,origin))=game.remote_dragon_part_hit(eye,direction,reach){consider(id,distance,origin);}
     std::ops::ControlFlow::Break(best)
 }

@@ -73,11 +73,11 @@ separate from the compiled adapters.
 
 ## Verification boundaries
 
-The current [R28 build record](evidence/combat/parity-build-r28.json) pins the
-optimized native client and package to unchanged source. All **671 focused
-checks pass**: 624 compiled/native adapter checks and 47 source contracts.
-Official Mixins plans 84 support modules and 56 injections. The build retains
-16 warnings for unused APIs/imports and one Option-loop style issue.
+The current [R30 build record](evidence/combat/parity-build-r30.json) pins the
+optimized native client and package to unchanged source. All **682 focused
+checks pass**: 631 compiled/native adapter checks and 51 source contracts.
+Official Mixins plans 84 support modules and 57 injections. The build retains
+14 unused-API warnings, without warning suppression.
 Live validation records identify their own
 binary; an R26 result is not relabeled as an R27 test.
 
@@ -91,6 +91,12 @@ inventory-scene retirement and conditional pearl reserves. Explicit debug
 output exposes pearl owner resolution and bounded planner counters; it does
 not run per-frame formatting or claim that a successful native use call is
 server acceptance.
+
+R30 refreshes Optimizer's actual current attribute/session cache immediately
+before native queued attacks, after the native tick increments. The existing
+post-tick history/expiry path remains. There is no prior-tick freshness grace.
+Pearl candidate sampling now forecasts the stationary throw that execution
+requires; the final check still uses actual motion and fresh landing geometry.
 
 Focused policy and native-kernel tests are separate from full client compilation
 and actual player fixtures. Test counts alone do not prove behavior parity,

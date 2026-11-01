@@ -7,9 +7,9 @@ host source. The incoming packet hook requires the newer official Mixins
 opaque macros in that native handler. No Horizon source patch is required.
 
 Current parity work is documented in [combat-parity.md](combat-parity.md).
-The [R28 checkpoint](evidence/combat/parity-build-r28.json) passes the official
-native compile check, optimized build and **671 focused checks** (624 compiled
-or native adapters; 47 source contracts). Its two-player validation is tracked
+The [R30 checkpoint](evidence/combat/parity-build-r30.json) passes the official
+native compile check, optimized build and **682 focused checks** (631 compiled
+or native adapters; 51 source contracts). Its two-player validation is tracked
 separately. The records below preserve the earlier core implementation and its
 original controls; they are not current parity evidence.
 

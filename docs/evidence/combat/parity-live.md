@@ -6,6 +6,49 @@ native state; the server console supplies block, entity, inventory and health
 receipts. Each result keeps its original client identity and report hash.
 The passing cases below are not one all-current-binary aggregate.
 
+## Completed parity validation
+
+The final [R30 build](parity-build-r30.json) passes official native checking,
+the optimized build and **682 focused checks** (631 compiled/native adapters,
+51 source contracts). Its 142 source fingerprints identify the exact input.
+
+- **R30 pearls: three cases pass.** [Peer follow, sprint chase and Escape](pearls-parity-r30/README.md)
+  use real projectiles, item consumption and actual player displacement. The
+  strict peer marker confirms the actor throws while the target remains at its
+  launch position and the target-owned pearl still exists. Escape uses three
+  real totem rescues in each off/on arm, with actual server-used statistics.
+- **R30 Optimizer: six reviewed cases pass.** [Original frames and receipts](optimizer-parity-r30/optimizer-r30.md)
+  show the body disappear, restore on timeout and stay restored after rejection.
+  The authoritative entity survives. An off/on control mines actual server dirt
+  behind the predicted ghost only when enabled, with that entity still present.
+- **R28 macros: 11/11 pass.** [Full macro proof](macros-parity-r28/manual-macros.md)
+  includes the eight baseline cases, Double top/side controls and crouched Crystal
+  breaking. A quick top click completes two removals and consumes exactly one
+  replacement anchor and glowstone; side contact keeps the Single sequence.
+- **R28 inventory and packets: four and eight behavior cases pass.**
+  [Two-slot ACKs and timing receipts](packet-inventory-parity-r28/README.md)
+  distinguish inventory source slot 9 from actual hotbar source slot 0. The
+  occupied-offhand control sends no swap. Packet tests use real movement and
+  sword knockback, action/menu/disable flushing, correction and a Nether return.
+- **R28 Trap cases pass.** [The original 15-case batch](trap-optimizer-parity-r28/trap-optimizer-r28.md)
+  retains its Optimizer failure separately; R30's reviewed rerun resolves it.
+  Ring/head placement, target versus placement range, native prediction,
+  input/use controls and the optional native roof extension have actual receipts.
+- **R27 melee: 13/13 pass.** [Melee proof](melee-parity-r27/README.md) covers
+  attacks, native reach limits, friends, shield/axe behavior, Lunge selection,
+  real-fall Mace, W Tap/Jump Reset A/B and recent-input Aim Assist.
+- **R26 Auras and City: 13 and 10 cases pass.** The exact outcomes and source
+  identities remain below. R25's controller checkpoint remains separately labeled.
+
+Tests used generated data only. Both final client pairs quit with exit 0 and
+the private backend saved and stopped with exit 0; see the
+[shutdown receipt](parity-final-shutdown.json). The packet profile-name postlude
+failure and the dirt-pickup cleanup race remain recorded alongside their verified
+recoveries. Failed or inconclusive measurements are never rewritten as passes.
+
+Native bounds and framework differences remain in [the scope document](../../combat-parity.md).
+These fixtures are not a public-server, anti-cheat or measured FPS claim.
+
 ## R26 Auras and City
 
 [Aura outcomes](parity-auras-r26.json): **13/13 cases pass** on client
@@ -91,6 +134,9 @@ mob. The planner observes that flight, forecasts its landing and creates a
 throw plan, but never reaches a successful native use. This is a retained
 failure, not a positive test. Later fixes need a new immutable native build
 and a distinct real-player run.
+
+The R30 peer proof above is that distinct successful follow-up; this earlier
+failure is retained unchanged.
 
 Historical R7/R10/R14 core receipts remain in [combat-validation.md](../../combat-validation.md).
 Their removed controls and older timing are not evidence of new parity behavior.

@@ -1,0 +1,29 @@
+{
+  "files": {
+    "anchor-double-top-contact.png": "22a8ead022ce29486fa8dcc8185f98085d9d9880da02765ef1b900b3386eb3bf",
+    "creative-crystal-place-not-break.png": "1b5bed39ecb1ff2f8ec5d0b556bff1de2818dab9de4dde6735346e35734c34b3",
+    "crystal-crouched-break.png": "79503ec135cd422eeecfa0437128c70e8a7e3a909df41a7f39f0aa3e8775ad18",
+    "manual-macros.json": "00536f8812d3fc7a729372430ba2ed7254dba481ec6708c84032eb6ac2b40686",
+    "manual-macros.md": "3b75d160016b10e13605dc274e26b1c74f3788495ba394492c76be63d246915c",
+    "published-images.json": "dd26ea6877f47d3e608c0fa5c6606dd2ab47b4b9fe075ae9b2acf88bf92bb180"
+  },
+  "verified_original_report": {
+    "report_file": "macro-parity-r28-e81bd6fa13bb4cabb75bff0a3b099fb2.json",
+    "report_sha256": "531c5729f3a39ae14426712455c6f5bdbc0eacb719ca35ce434ca2432076dfb7",
+    "raw_file": "macro-parity-r28-e81bd6fa13bb4cabb75bff0a3b099fb2.native-raw.jsonl",
+    "raw_sha256": "126820f2dbff25bdd60ebf59d8e2635c8d0297cfb10154bf748ced29db686aad",
+    "runner_source_sha256": "1d60afdf26398414f56877838c04f389770b509da838c899f5f70121687de190",
+    "checks": 11,
+    "finished": true,
+    "cleanup_error": null,
+    "handoff_present": true
+  },
+  "source_verification": {
+    "files_checked": 141,
+    "exact_bytes": 27,
+    "line_endings_only": 114,
+    "mismatches": 0,
+    "scope": "Every frozen mixin fingerprint matches the named Git commit exactly or with LF/CRLF conversion only."
+  },
+  "no_rpc": true
+}

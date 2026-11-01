@@ -6,7 +6,7 @@ use super::sunset_util::{self as util, Target};
 use super::{Game, Screen};
 use horizon_protocol::packets::{
     Empty,
-    play::{self, Clientbound as C, Serverbound as S},
+    play::{Clientbound as C, Serverbound as S},
 };
 use horizon_world::registry::BlockStateId;
 use std::{

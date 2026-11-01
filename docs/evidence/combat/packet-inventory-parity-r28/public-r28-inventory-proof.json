@@ -1,0 +1,1758 @@
+{
+  "kind": "sanitized-r28-inventory-native-proof",
+  "checkpoint": "R28",
+  "native_sha256": "edef37bd867bbbd1d34bf3058c99519a2f3e31e8cec497994d19e7c4c430716f",
+  "package_sha256": "846c01aa73cae335a5fd1f31c14df5ec48560b482f1d29ef8d7808e318e12e6f",
+  "behavioral_cases": 4,
+  "behavioral_passed": 4,
+  "behavioral_failed": 0,
+  "checks": [
+    {
+      "case": "auto-totem-real-acks",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/0/evidence",
+      "screenshot_file": "loot-macro-parity-auto-totem-real-acks-bac669f546df45bcb542d671a537e4c3-1793517709195042900.png",
+      "plan": {
+        "module": "autototem",
+        "source_command": "inventory.0",
+        "source_slot": 9,
+        "mode": "Inventory",
+        "occupied": false
+      },
+      "saved_mode": null,
+      "before_native_inventory": {
+        "selected": 9,
+        "carried": null,
+        "offhand": {
+          "item": null,
+          "slot": 504
+        },
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:totem_of_undying": 1
+        },
+        "hotbar": [
+          {
+            "item": null,
+            "slot": 0
+          },
+          {
+            "item": null,
+            "slot": 1
+          },
+          {
+            "item": null,
+            "slot": 2
+          },
+          {
+            "item": null,
+            "slot": 3
+          },
+          {
+            "item": null,
+            "slot": 4
+          },
+          {
+            "item": null,
+            "slot": 5
+          },
+          {
+            "item": null,
+            "slot": 6
+          },
+          {
+            "item": null,
+            "slot": 7
+          },
+          {
+            "count": 1,
+            "item": "minecraft:diamond_sword",
+            "slot": 8
+          }
+        ],
+        "main": [
+          {
+            "count": 1,
+            "item": "minecraft:totem_of_undying",
+            "slot": 9
+          },
+          {
+            "item": null,
+            "slot": 10
+          },
+          {
+            "item": null,
+            "slot": 11
+          },
+          {
+            "item": null,
+            "slot": 12
+          },
+          {
+            "item": null,
+            "slot": 13
+          },
+          {
+            "item": null,
+            "slot": 14
+          },
+          {
+            "item": null,
+            "slot": 15
+          },
+          {
+            "item": null,
+            "slot": 16
+          },
+          {
+            "item": null,
+            "slot": 17
+          },
+          {
+            "item": null,
+            "slot": 18
+          },
+          {
+            "item": null,
+            "slot": 19
+          },
+          {
+            "item": null,
+            "slot": 20
+          },
+          {
+            "item": null,
+            "slot": 21
+          },
+          {
+            "item": null,
+            "slot": 22
+          },
+          {
+            "item": null,
+            "slot": 23
+          },
+          {
+            "item": null,
+            "slot": 24
+          },
+          {
+            "item": null,
+            "slot": 25
+          },
+          {
+            "item": null,
+            "slot": 26
+          },
+          {
+            "item": null,
+            "slot": 27
+          },
+          {
+            "item": null,
+            "slot": 28
+          },
+          {
+            "item": null,
+            "slot": 29
+          },
+          {
+            "item": null,
+            "slot": 30
+          },
+          {
+            "item": null,
+            "slot": 31
+          },
+          {
+            "item": null,
+            "slot": 32
+          },
+          {
+            "item": null,
+            "slot": 33
+          },
+          {
+            "item": null,
+            "slot": 34
+          },
+          {
+            "item": null,
+            "slot": 35
+          }
+        ]
+      },
+      "after_native_inventory": {
+        "selected": 9,
+        "carried": null,
+        "offhand": {
+          "count": 1,
+          "item": "minecraft:totem_of_undying",
+          "slot": 504
+        },
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:totem_of_undying": 1
+        },
+        "hotbar": [
+          {
+            "item": null,
+            "slot": 0
+          },
+          {
+            "item": null,
+            "slot": 1
+          },
+          {
+            "item": null,
+            "slot": 2
+          },
+          {
+            "item": null,
+            "slot": 3
+          },
+          {
+            "item": null,
+            "slot": 4
+          },
+          {
+            "item": null,
+            "slot": 5
+          },
+          {
+            "item": null,
+            "slot": 6
+          },
+          {
+            "item": null,
+            "slot": 7
+          },
+          {
+            "count": 1,
+            "item": "minecraft:diamond_sword",
+            "slot": 8
+          }
+        ],
+        "main": [
+          {
+            "item": null,
+            "slot": 9
+          },
+          {
+            "item": null,
+            "slot": 10
+          },
+          {
+            "item": null,
+            "slot": 11
+          },
+          {
+            "item": null,
+            "slot": 12
+          },
+          {
+            "item": null,
+            "slot": 13
+          },
+          {
+            "item": null,
+            "slot": 14
+          },
+          {
+            "item": null,
+            "slot": 15
+          },
+          {
+            "item": null,
+            "slot": 16
+          },
+          {
+            "item": null,
+            "slot": 17
+          },
+          {
+            "item": null,
+            "slot": 18
+          },
+          {
+            "item": null,
+            "slot": 19
+          },
+          {
+            "item": null,
+            "slot": 20
+          },
+          {
+            "item": null,
+            "slot": 21
+          },
+          {
+            "item": null,
+            "slot": 22
+          },
+          {
+            "item": null,
+            "slot": 23
+          },
+          {
+            "item": null,
+            "slot": 24
+          },
+          {
+            "item": null,
+            "slot": 25
+          },
+          {
+            "item": null,
+            "slot": 26
+          },
+          {
+            "item": null,
+            "slot": 27
+          },
+          {
+            "item": null,
+            "slot": 28
+          },
+          {
+            "item": null,
+            "slot": 29
+          },
+          {
+            "item": null,
+            "slot": 30
+          },
+          {
+            "item": null,
+            "slot": 31
+          },
+          {
+            "item": null,
+            "slot": 32
+          },
+          {
+            "item": null,
+            "slot": 33
+          },
+          {
+            "item": null,
+            "slot": 34
+          },
+          {
+            "item": null,
+            "slot": 35
+          }
+        ]
+      },
+      "before_server_slots": {
+        "8": {
+          "item": "minecraft:diamond_sword",
+          "count": 1
+        },
+        "9": {
+          "item": "minecraft:totem_of_undying",
+          "count": 1
+        }
+      },
+      "after_server_slots": {
+        "8": {
+          "item": "minecraft:diamond_sword",
+          "count": 1
+        }
+      },
+      "server_health": 20.0,
+      "native_ack_before": {
+        "ack_bits": null,
+        "double_hand": null,
+        "failed_owners": 0,
+        "owner": null,
+        "phase": null,
+        "queued_throw": false,
+        "queued_use": null,
+        "refill_attempts": 0,
+        "retiring_ack_bits": null,
+        "retiring_owner": null,
+        "slots": null,
+        "swap_confirmed": 0,
+        "swap_failed": 0,
+        "swap_last_ack_bits": 0,
+        "swap_requests": 0
+      },
+      "native_ack_after": {
+        "ack_bits": null,
+        "double_hand": null,
+        "failed_owners": 0,
+        "owner": null,
+        "phase": null,
+        "queued_throw": false,
+        "queued_use": null,
+        "refill_attempts": 0,
+        "retiring_ack_bits": null,
+        "retiring_owner": null,
+        "slots": null,
+        "swap_confirmed": 1,
+        "swap_failed": 0,
+        "swap_last_ack_bits": 3,
+        "swap_requests": 1
+      },
+      "authoritative_offhand_matched": true,
+      "authoritative_offhand_stdout": "[10:21:48] [Server thread/INFO]: [Not Secure] [Server] INVENTORY_ACTUAL_OFFHAND_1793517708126754300\n[10:21:48] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+      "native_after": {
+        "ticks": 41994,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 9,
+        "dimension": "minecraft:overworld",
+        "position": [
+          0.6,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "proof": "Actual source slot before and native+server source removal after, authoritative weapon.offhand predicate, original selectedslot9, exactly one confirmed swap with two native ACK bits3. Occupied control requires zero additional swap requests or confirmations."
+    },
+    {
+      "case": "auto-totem-occupied-control",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/1/evidence",
+      "screenshot_file": "loot-macro-parity-auto-totem-occupied-control-bac669f546df45bcb542d671a537e4c3-1793517738480330500.png",
+      "plan": {
+        "module": "autototem",
+        "source_command": "inventory.0",
+        "source_slot": 9,
+        "mode": "Inventory",
+        "occupied": true
+      },
+      "saved_mode": null,
+      "before_native_inventory": {
+        "selected": 9,
+        "carried": null,
+        "offhand": {
+          "count": 1,
+          "item": "minecraft:shield",
+          "slot": 504
+        },
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:shield": 1,
+          "minecraft:totem_of_undying": 1
+        },
+        "hotbar": [
+          {
+            "item": null,
+            "slot": 0
+          },
+          {
+            "item": null,
+            "slot": 1
+          },
+          {
+            "item": null,
+            "slot": 2
+          },
+          {
+            "item": null,
+            "slot": 3
+          },
+          {
+            "item": null,
+            "slot": 4
+          },
+          {
+            "item": null,
+            "slot": 5
+          },
+          {
+            "item": null,
+            "slot": 6
+          },
+          {
+            "item": null,
+            "slot": 7
+          },
+          {
+            "count": 1,
+            "item": "minecraft:diamond_sword",
+            "slot": 8
+          }
+        ],
+        "main": [
+          {
+            "count": 1,
+            "item": "minecraft:totem_of_undying",
+            "slot": 9
+          },
+          {
+            "item": null,
+            "slot": 10
+          },
+          {
+            "item": null,
+            "slot": 11
+          },
+          {
+            "item": null,
+            "slot": 12
+          },
+          {
+            "item": null,
+            "slot": 13
+          },
+          {
+            "item": null,
+            "slot": 14
+          },
+          {
+            "item": null,
+            "slot": 15
+          },
+          {
+            "item": null,
+            "slot": 16
+          },
+          {
+            "item": null,
+            "slot": 17
+          },
+          {
+            "item": null,
+            "slot": 18
+          },
+          {
+            "item": null,
+            "slot": 19
+          },
+          {
+            "item": null,
+            "slot": 20
+          },
+          {
+            "item": null,
+            "slot": 21
+          },
+          {
+            "item": null,
+            "slot": 22
+          },
+          {
+            "item": null,
+            "slot": 23
+          },
+          {
+            "item": null,
+            "slot": 24
+          },
+          {
+            "item": null,
+            "slot": 25
+          },
+          {
+            "item": null,
+            "slot": 26
+          },
+          {
+            "item": null,
+            "slot": 27
+          },
+          {
+            "item": null,
+            "slot": 28
+          },
+          {
+            "item": null,
+            "slot": 29
+          },
+          {
+            "item": null,
+            "slot": 30
+          },
+          {
+            "item": null,
+            "slot": 31
+          },
+          {
+            "item": null,
+            "slot": 32
+          },
+          {
+            "item": null,
+            "slot": 33
+          },
+          {
+            "item": null,
+            "slot": 34
+          },
+          {
+            "item": null,
+            "slot": 35
+          }
+        ]
+      },
+      "after_native_inventory": {
+        "selected": 9,
+        "carried": null,
+        "offhand": {
+          "count": 1,
+          "item": "minecraft:shield",
+          "slot": 504
+        },
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:shield": 1,
+          "minecraft:totem_of_undying": 1
+        },
+        "hotbar": [
+          {
+            "item": null,
+            "slot": 0
+          },
+          {
+            "item": null,
+            "slot": 1
+          },
+          {
+            "item": null,
+            "slot": 2
+          },
+          {
+            "item": null,
+            "slot": 3
+          },
+          {
+            "item": null,
+            "slot": 4
+          },
+          {
+            "item": null,
+            "slot": 5
+          },
+          {
+            "item": null,
+            "slot": 6
+          },
+          {
+            "item": null,
+            "slot": 7
+          },
+          {
+            "count": 1,
+            "item": "minecraft:diamond_sword",
+            "slot": 8
+          }
+        ],
+        "main": [
+          {
+            "count": 1,
+            "item": "minecraft:totem_of_undying",
+            "slot": 9
+          },
+          {
+            "item": null,
+            "slot": 10
+          },
+          {
+            "item": null,
+            "slot": 11
+          },
+          {
+            "item": null,
+            "slot": 12
+          },
+          {
+            "item": null,
+            "slot": 13
+          },
+          {
+            "item": null,
+            "slot": 14
+          },
+          {
+            "item": null,
+            "slot": 15
+          },
+          {
+            "item": null,
+            "slot": 16
+          },
+          {
+            "item": null,
+            "slot": 17
+          },
+          {
+            "item": null,
+            "slot": 18
+          },
+          {
+            "item": null,
+            "slot": 19
+          },
+          {
+            "item": null,
+            "slot": 20
+          },
+          {
+            "item": null,
+            "slot": 21
+          },
+          {
+            "item": null,
+            "slot": 22
+          },
+          {
+            "item": null,
+            "slot": 23
+          },
+          {
+            "item": null,
+            "slot": 24
+          },
+          {
+            "item": null,
+            "slot": 25
+          },
+          {
+            "item": null,
+            "slot": 26
+          },
+          {
+            "item": null,
+            "slot": 27
+          },
+          {
+            "item": null,
+            "slot": 28
+          },
+          {
+            "item": null,
+            "slot": 29
+          },
+          {
+            "item": null,
+            "slot": 30
+          },
+          {
+            "item": null,
+            "slot": 31
+          },
+          {
+            "item": null,
+            "slot": 32
+          },
+          {
+            "item": null,
+            "slot": 33
+          },
+          {
+            "item": null,
+            "slot": 34
+          },
+          {
+            "item": null,
+            "slot": 35
+          }
+        ]
+      },
+      "before_server_slots": {
+        "8": {
+          "item": "minecraft:diamond_sword",
+          "count": 1
+        },
+        "9": {
+          "item": "minecraft:totem_of_undying",
+          "count": 1
+        }
+      },
+      "after_server_slots": {
+        "8": {
+          "item": "minecraft:diamond_sword",
+          "count": 1
+        },
+        "9": {
+          "item": "minecraft:totem_of_undying",
+          "count": 1
+        }
+      },
+      "server_health": 20.0,
+      "native_ack_before": {
+        "ack_bits": null,
+        "double_hand": null,
+        "failed_owners": 0,
+        "owner": null,
+        "phase": null,
+        "queued_throw": false,
+        "queued_use": null,
+        "refill_attempts": 0,
+        "retiring_ack_bits": null,
+        "retiring_owner": null,
+        "slots": null,
+        "swap_confirmed": 1,
+        "swap_failed": 0,
+        "swap_last_ack_bits": 3,
+        "swap_requests": 1
+      },
+      "native_ack_after": {
+        "ack_bits": null,
+        "double_hand": null,
+        "failed_owners": 0,
+        "owner": null,
+        "phase": null,
+        "queued_throw": false,
+        "queued_use": null,
+        "refill_attempts": 0,
+        "retiring_ack_bits": null,
+        "retiring_owner": null,
+        "slots": null,
+        "swap_confirmed": 1,
+        "swap_failed": 0,
+        "swap_last_ack_bits": 3,
+        "swap_requests": 1
+      },
+      "authoritative_offhand_matched": true,
+      "authoritative_offhand_stdout": "[10:22:17] [Server thread/INFO]: [Not Secure] [Server] INVENTORY_ACTUAL_OFFHAND_1793517737460575300\n[10:22:17] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+      "native_after": {
+        "ticks": 42581,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 9,
+        "dimension": "minecraft:overworld",
+        "position": [
+          0.6,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "proof": "Actual source slot before and native+server source removal after, authoritative weapon.offhand predicate, original selectedslot9, exactly one confirmed swap with two native ACK bits3. Occupied control requires zero additional swap requests or confirmations."
+    },
+    {
+      "case": "inventory-totem-real-acks",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/2/evidence",
+      "screenshot_file": "loot-macro-parity-inventory-totem-real-acks-bac669f546df45bcb542d671a537e4c3-1793517770343738300.png",
+      "plan": {
+        "module": "autoinventorytotem",
+        "source_command": "inventory.0",
+        "source_slot": 9,
+        "mode": "Inventory",
+        "occupied": false
+      },
+      "saved_mode": "Inventory",
+      "before_native_inventory": {
+        "selected": 9,
+        "carried": null,
+        "offhand": {
+          "item": null,
+          "slot": 504
+        },
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:totem_of_undying": 1
+        },
+        "hotbar": [
+          {
+            "item": null,
+            "slot": 0
+          },
+          {
+            "item": null,
+            "slot": 1
+          },
+          {
+            "item": null,
+            "slot": 2
+          },
+          {
+            "item": null,
+            "slot": 3
+          },
+          {
+            "item": null,
+            "slot": 4
+          },
+          {
+            "item": null,
+            "slot": 5
+          },
+          {
+            "item": null,
+            "slot": 6
+          },
+          {
+            "item": null,
+            "slot": 7
+          },
+          {
+            "count": 1,
+            "item": "minecraft:diamond_sword",
+            "slot": 8
+          }
+        ],
+        "main": [
+          {
+            "count": 1,
+            "item": "minecraft:totem_of_undying",
+            "slot": 9
+          },
+          {
+            "item": null,
+            "slot": 10
+          },
+          {
+            "item": null,
+            "slot": 11
+          },
+          {
+            "item": null,
+            "slot": 12
+          },
+          {
+            "item": null,
+            "slot": 13
+          },
+          {
+            "item": null,
+            "slot": 14
+          },
+          {
+            "item": null,
+            "slot": 15
+          },
+          {
+            "item": null,
+            "slot": 16
+          },
+          {
+            "item": null,
+            "slot": 17
+          },
+          {
+            "item": null,
+            "slot": 18
+          },
+          {
+            "item": null,
+            "slot": 19
+          },
+          {
+            "item": null,
+            "slot": 20
+          },
+          {
+            "item": null,
+            "slot": 21
+          },
+          {
+            "item": null,
+            "slot": 22
+          },
+          {
+            "item": null,
+            "slot": 23
+          },
+          {
+            "item": null,
+            "slot": 24
+          },
+          {
+            "item": null,
+            "slot": 25
+          },
+          {
+            "item": null,
+            "slot": 26
+          },
+          {
+            "item": null,
+            "slot": 27
+          },
+          {
+            "item": null,
+            "slot": 28
+          },
+          {
+            "item": null,
+            "slot": 29
+          },
+          {
+            "item": null,
+            "slot": 30
+          },
+          {
+            "item": null,
+            "slot": 31
+          },
+          {
+            "item": null,
+            "slot": 32
+          },
+          {
+            "item": null,
+            "slot": 33
+          },
+          {
+            "item": null,
+            "slot": 34
+          },
+          {
+            "item": null,
+            "slot": 35
+          }
+        ]
+      },
+      "after_native_inventory": {
+        "selected": 9,
+        "carried": null,
+        "offhand": {
+          "count": 1,
+          "item": "minecraft:totem_of_undying",
+          "slot": 504
+        },
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:totem_of_undying": 1
+        },
+        "hotbar": [
+          {
+            "item": null,
+            "slot": 0
+          },
+          {
+            "item": null,
+            "slot": 1
+          },
+          {
+            "item": null,
+            "slot": 2
+          },
+          {
+            "item": null,
+            "slot": 3
+          },
+          {
+            "item": null,
+            "slot": 4
+          },
+          {
+            "item": null,
+            "slot": 5
+          },
+          {
+            "item": null,
+            "slot": 6
+          },
+          {
+            "item": null,
+            "slot": 7
+          },
+          {
+            "count": 1,
+            "item": "minecraft:diamond_sword",
+            "slot": 8
+          }
+        ],
+        "main": [
+          {
+            "item": null,
+            "slot": 9
+          },
+          {
+            "item": null,
+            "slot": 10
+          },
+          {
+            "item": null,
+            "slot": 11
+          },
+          {
+            "item": null,
+            "slot": 12
+          },
+          {
+            "item": null,
+            "slot": 13
+          },
+          {
+            "item": null,
+            "slot": 14
+          },
+          {
+            "item": null,
+            "slot": 15
+          },
+          {
+            "item": null,
+            "slot": 16
+          },
+          {
+            "item": null,
+            "slot": 17
+          },
+          {
+            "item": null,
+            "slot": 18
+          },
+          {
+            "item": null,
+            "slot": 19
+          },
+          {
+            "item": null,
+            "slot": 20
+          },
+          {
+            "item": null,
+            "slot": 21
+          },
+          {
+            "item": null,
+            "slot": 22
+          },
+          {
+            "item": null,
+            "slot": 23
+          },
+          {
+            "item": null,
+            "slot": 24
+          },
+          {
+            "item": null,
+            "slot": 25
+          },
+          {
+            "item": null,
+            "slot": 26
+          },
+          {
+            "item": null,
+            "slot": 27
+          },
+          {
+            "item": null,
+            "slot": 28
+          },
+          {
+            "item": null,
+            "slot": 29
+          },
+          {
+            "item": null,
+            "slot": 30
+          },
+          {
+            "item": null,
+            "slot": 31
+          },
+          {
+            "item": null,
+            "slot": 32
+          },
+          {
+            "item": null,
+            "slot": 33
+          },
+          {
+            "item": null,
+            "slot": 34
+          },
+          {
+            "item": null,
+            "slot": 35
+          }
+        ]
+      },
+      "before_server_slots": {
+        "8": {
+          "item": "minecraft:diamond_sword",
+          "count": 1
+        },
+        "9": {
+          "item": "minecraft:totem_of_undying",
+          "count": 1
+        }
+      },
+      "after_server_slots": {
+        "8": {
+          "item": "minecraft:diamond_sword",
+          "count": 1
+        }
+      },
+      "server_health": 20.0,
+      "native_ack_before": {
+        "ack_bits": null,
+        "double_hand": null,
+        "failed_owners": 0,
+        "owner": null,
+        "phase": null,
+        "queued_throw": false,
+        "queued_use": null,
+        "refill_attempts": 0,
+        "retiring_ack_bits": null,
+        "retiring_owner": null,
+        "slots": null,
+        "swap_confirmed": 1,
+        "swap_failed": 0,
+        "swap_last_ack_bits": 3,
+        "swap_requests": 1
+      },
+      "native_ack_after": {
+        "ack_bits": null,
+        "double_hand": null,
+        "failed_owners": 0,
+        "owner": null,
+        "phase": null,
+        "queued_throw": false,
+        "queued_use": null,
+        "refill_attempts": 0,
+        "retiring_ack_bits": null,
+        "retiring_owner": null,
+        "slots": null,
+        "swap_confirmed": 2,
+        "swap_failed": 0,
+        "swap_last_ack_bits": 3,
+        "swap_requests": 2
+      },
+      "authoritative_offhand_matched": true,
+      "authoritative_offhand_stdout": "[10:22:49] [Server thread/INFO]: [Not Secure] [Server] INVENTORY_ACTUAL_OFFHAND_1793517769173836300\n[10:22:49] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+      "native_after": {
+        "ticks": 43215,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 9,
+        "dimension": "minecraft:overworld",
+        "position": [
+          0.6,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "proof": "Actual source slot before and native+server source removal after, authoritative weapon.offhand predicate, original selectedslot9, exactly one confirmed swap with two native ACK bits3. Occupied control requires zero additional swap requests or confirmations."
+    },
+    {
+      "case": "hotbar-totem-real-acks",
+      "passed": true,
+      "status": "pass",
+      "raw_pointer": "/checks/3/evidence",
+      "screenshot_file": "hotbar-totem-real-acks.png",
+      "plan": {
+        "module": "autoinventorytotem",
+        "source_command": "hotbar.0",
+        "source_slot": 0,
+        "mode": "Hotbar Swap",
+        "occupied": false
+      },
+      "saved_mode": "Hotbar Swap",
+      "before_native_inventory": {
+        "selected": 9,
+        "carried": null,
+        "offhand": {
+          "item": null,
+          "slot": 504
+        },
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:totem_of_undying": 1
+        },
+        "hotbar": [
+          {
+            "count": 1,
+            "item": "minecraft:totem_of_undying",
+            "slot": 0
+          },
+          {
+            "item": null,
+            "slot": 1
+          },
+          {
+            "item": null,
+            "slot": 2
+          },
+          {
+            "item": null,
+            "slot": 3
+          },
+          {
+            "item": null,
+            "slot": 4
+          },
+          {
+            "item": null,
+            "slot": 5
+          },
+          {
+            "item": null,
+            "slot": 6
+          },
+          {
+            "item": null,
+            "slot": 7
+          },
+          {
+            "count": 1,
+            "item": "minecraft:diamond_sword",
+            "slot": 8
+          }
+        ],
+        "main": [
+          {
+            "item": null,
+            "slot": 9
+          },
+          {
+            "item": null,
+            "slot": 10
+          },
+          {
+            "item": null,
+            "slot": 11
+          },
+          {
+            "item": null,
+            "slot": 12
+          },
+          {
+            "item": null,
+            "slot": 13
+          },
+          {
+            "item": null,
+            "slot": 14
+          },
+          {
+            "item": null,
+            "slot": 15
+          },
+          {
+            "item": null,
+            "slot": 16
+          },
+          {
+            "item": null,
+            "slot": 17
+          },
+          {
+            "item": null,
+            "slot": 18
+          },
+          {
+            "item": null,
+            "slot": 19
+          },
+          {
+            "item": null,
+            "slot": 20
+          },
+          {
+            "item": null,
+            "slot": 21
+          },
+          {
+            "item": null,
+            "slot": 22
+          },
+          {
+            "item": null,
+            "slot": 23
+          },
+          {
+            "item": null,
+            "slot": 24
+          },
+          {
+            "item": null,
+            "slot": 25
+          },
+          {
+            "item": null,
+            "slot": 26
+          },
+          {
+            "item": null,
+            "slot": 27
+          },
+          {
+            "item": null,
+            "slot": 28
+          },
+          {
+            "item": null,
+            "slot": 29
+          },
+          {
+            "item": null,
+            "slot": 30
+          },
+          {
+            "item": null,
+            "slot": 31
+          },
+          {
+            "item": null,
+            "slot": 32
+          },
+          {
+            "item": null,
+            "slot": 33
+          },
+          {
+            "item": null,
+            "slot": 34
+          },
+          {
+            "item": null,
+            "slot": 35
+          }
+        ]
+      },
+      "after_native_inventory": {
+        "selected": 9,
+        "carried": null,
+        "offhand": {
+          "count": 1,
+          "item": "minecraft:totem_of_undying",
+          "slot": 504
+        },
+        "counts": {
+          "minecraft:diamond_sword": 1,
+          "minecraft:totem_of_undying": 1
+        },
+        "hotbar": [
+          {
+            "item": null,
+            "slot": 0
+          },
+          {
+            "item": null,
+            "slot": 1
+          },
+          {
+            "item": null,
+            "slot": 2
+          },
+          {
+            "item": null,
+            "slot": 3
+          },
+          {
+            "item": null,
+            "slot": 4
+          },
+          {
+            "item": null,
+            "slot": 5
+          },
+          {
+            "item": null,
+            "slot": 6
+          },
+          {
+            "item": null,
+            "slot": 7
+          },
+          {
+            "count": 1,
+            "item": "minecraft:diamond_sword",
+            "slot": 8
+          }
+        ],
+        "main": [
+          {
+            "item": null,
+            "slot": 9
+          },
+          {
+            "item": null,
+            "slot": 10
+          },
+          {
+            "item": null,
+            "slot": 11
+          },
+          {
+            "item": null,
+            "slot": 12
+          },
+          {
+            "item": null,
+            "slot": 13
+          },
+          {
+            "item": null,
+            "slot": 14
+          },
+          {
+            "item": null,
+            "slot": 15
+          },
+          {
+            "item": null,
+            "slot": 16
+          },
+          {
+            "item": null,
+            "slot": 17
+          },
+          {
+            "item": null,
+            "slot": 18
+          },
+          {
+            "item": null,
+            "slot": 19
+          },
+          {
+            "item": null,
+            "slot": 20
+          },
+          {
+            "item": null,
+            "slot": 21
+          },
+          {
+            "item": null,
+            "slot": 22
+          },
+          {
+            "item": null,
+            "slot": 23
+          },
+          {
+            "item": null,
+            "slot": 24
+          },
+          {
+            "item": null,
+            "slot": 25
+          },
+          {
+            "item": null,
+            "slot": 26
+          },
+          {
+            "item": null,
+            "slot": 27
+          },
+          {
+            "item": null,
+            "slot": 28
+          },
+          {
+            "item": null,
+            "slot": 29
+          },
+          {
+            "item": null,
+            "slot": 30
+          },
+          {
+            "item": null,
+            "slot": 31
+          },
+          {
+            "item": null,
+            "slot": 32
+          },
+          {
+            "item": null,
+            "slot": 33
+          },
+          {
+            "item": null,
+            "slot": 34
+          },
+          {
+            "item": null,
+            "slot": 35
+          }
+        ]
+      },
+      "before_server_slots": {
+        "0": {
+          "item": "minecraft:totem_of_undying",
+          "count": 1
+        },
+        "8": {
+          "item": "minecraft:diamond_sword",
+          "count": 1
+        }
+      },
+      "after_server_slots": {
+        "8": {
+          "item": "minecraft:diamond_sword",
+          "count": 1
+        }
+      },
+      "server_health": 20.0,
+      "native_ack_before": {
+        "ack_bits": null,
+        "double_hand": null,
+        "failed_owners": 0,
+        "owner": null,
+        "phase": null,
+        "queued_throw": false,
+        "queued_use": null,
+        "refill_attempts": 0,
+        "retiring_ack_bits": null,
+        "retiring_owner": null,
+        "slots": null,
+        "swap_confirmed": 2,
+        "swap_failed": 0,
+        "swap_last_ack_bits": 3,
+        "swap_requests": 2
+      },
+      "native_ack_after": {
+        "ack_bits": null,
+        "double_hand": null,
+        "failed_owners": 0,
+        "owner": null,
+        "phase": null,
+        "queued_throw": false,
+        "queued_use": null,
+        "refill_attempts": 0,
+        "retiring_ack_bits": null,
+        "retiring_owner": null,
+        "slots": null,
+        "swap_confirmed": 3,
+        "swap_failed": 0,
+        "swap_last_ack_bits": 3,
+        "swap_requests": 3
+      },
+      "authoritative_offhand_matched": true,
+      "authoritative_offhand_stdout": "[10:23:21] [Server thread/INFO]: [Not Secure] [Server] INVENTORY_ACTUAL_OFFHAND_1793517801092514700\n[10:23:21] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+      "native_after": {
+        "ticks": 43852,
+        "screen": "playing",
+        "gamemode": "survival",
+        "selected": 9,
+        "dimension": "minecraft:overworld",
+        "position": [
+          0.6,
+          121.0,
+          0.5
+        ],
+        "velocity": [
+          0.0,
+          -0.0784000015258789,
+          0.0
+        ],
+        "health": 20.0,
+        "absorption": 0.0,
+        "on_ground": true
+      },
+      "proof": "Actual source slot before and native+server source removal after, authoritative weapon.offhand predicate, original selectedslot9, exactly one confirmed swap with two native ACK bits3. Occupied control requires zero additional swap requests or confirmations."
+    }
+  ],
+  "source_hashes": {
+    "sunset/combat_inventory.rs": "0f1533d7c36eef6eceab43a4984d90c7892db8690bfd1a97ff2c181bddfae51b",
+    "sunset/inventory_policy.rs": "f43fd3b6a873a1cb3b999817e2b0542edc936a35b43d2a169553af04349aa0ea",
+    "sunset/runtime.rs": "3e51b6c60b78c39fb7d5dbca7aea66d2bf07d073f5fc25fad4d5450dce31baef"
+  },
+  "recorded_runner_source_sha256_field": "4601bc1e76dbb64e66f8deb9b4560dd734fda4f9de50d256936b50f4520617d6",
+  "recorded_runner_hash_scope": "Own inventory wrapper hash recorded at execution. Additional current-runner receipt is post-run.",
+  "receipts": [
+    {
+      "file": "inventory-parity-r28-bac669f546df45bcb542d671a537e4c3.json",
+      "sha256": "6aee352b135e9ead8ca47cc6df564a56c7222687fb1a6e401da1968b8309ccc3",
+      "bytes": 1332463,
+      "scope": "unaltered original execution report"
+    },
+    {
+      "file": "source.json",
+      "sha256": "cdbe1927b38e784bc35c4891f4ac31de40efea7ce0284cdd0e7fdee517283838",
+      "bytes": 14201,
+      "scope": "frozen R28 source hashes"
+    },
+    {
+      "file": "launch.json",
+      "sha256": "1cb799ab6e74f369181fbcc7f2f2512b0896f8405ee2edb3f89e36e1dcb5c368",
+      "bytes": 1456,
+      "scope": "frozen launch recipe"
+    },
+    {
+      "file": "sunset-explosives-preview.hnmod",
+      "sha256": "846c01aa73cae335a5fd1f31c14df5ec48560b482f1d29ef8d7808e318e12e6f",
+      "bytes": 922994,
+      "scope": "tested frozen package"
+    },
+    {
+      "file": "inventory-parity-r28-bac669f546df45bcb542d671a537e4c3.native-raw.jsonl",
+      "sha256": "676b9e9276d3da222811a4e9046174135ae8aa65ae56de730420d7a43f268c2c",
+      "bytes": 472605,
+      "scope": "private raw official control/RPC receipt; contents not exported"
+    },
+    {
+      "file": "inventory-parity-r28-bac669f546df45bcb542d671a537e4c3.manifest.json",
+      "sha256": "275f65355edaf1d5c153d827be0ba3942ee76e3789f5b458d920c3492417024e",
+      "bytes": 2500,
+      "scope": "original report/raw/screenshot hash manifest"
+    },
+    {
+      "file": "player_inventory_parity.py",
+      "sha256": "4601bc1e76dbb64e66f8deb9b4560dd734fda4f9de50d256936b50f4520617d6",
+      "bytes": 8084,
+      "scope": "POST-RUN current private wrapper; profile postlude subsequently corrected"
+    },
+    {
+      "file": "horizon-client.exe",
+      "sha256": "edef37bd867bbbd1d34bf3058c99519a2f3e31e8cec497994d19e7c4c430716f",
+      "bytes": 62910464,
+      "scope": "tested native binary, verified against report"
+    }
+  ],
+  "selected_images": [
+    {
+      "group": "inventory",
+      "case": "hotbar-totem-real-acks",
+      "file": "hotbar-totem-real-acks.png",
+      "sha256": "ffdf9ea097eb59e898d2f828118f49db5cb8ebe5ef171235f0a6bf989daab973",
+      "bytes": 109069,
+      "scope": "Context after measurement; timing/ACK behavior established by actual state and server/callback observations, not screenshot alone.",
+      "size": [
+        1280,
+        720
+      ]
+    }
+  ],
+  "limits": [
+    "Actual local slots plus Java Inventory/equipment and two native server-update ACK bits.",
+    "Debug is read only before start and after live observations; chat is not part of the active swap.",
+    "No synthetic slot packets, delayed-ACK injection, public server or anti-cheat claim."
+  ],
+  "postlude": {
+    "cleanup_error": null,
+    "finished": true,
+    "config_baseline_restored": true,
+    "profile_native_success_events": [
+      "save",
+      "load",
+      "delete"
+    ],
+    "all_modules_off": true
+  }
+}

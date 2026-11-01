@@ -1,0 +1,1675 @@
+{
+  "kind": "sanitized-r30-real-native-pearl-behavior",
+  "checkpoint": "R30",
+  "native_sha256": "82951c55e13be66a15ef345bb2384279575355da9e7b5b23dedefc29bbd131ab",
+  "package_sha256": "c421d8f52c719cee3516788d69cb93dbf90a0cb58a271af8d7837d15dd8694a5",
+  "source_file_count": 142,
+  "source_LF_map_sha256": "30188dbed48a1c29d65033620d42c018c10ce8428e4e51832398e2421df894be",
+  "git_commit_at_measurement": null,
+  "source_binding": "Frozen R30 source/package tuple and142-file LF map identify native code. Git commit may be bound only after matching the exact map.",
+  "selected_behavior_cases": 3,
+  "selected_behavior_passed": 3,
+  "cases": [
+    {
+      "case": "crystal-follow-peer-pearl",
+      "passed": true,
+      "status": "pass",
+      "proof": "Only a real stationary target native right-click pearl creates the observed flight. Require initial unique peer ID+server Owner UUID marker, distinct native player-owned actor pearl before target teleport/stuck trigger, exact authoritative stacks4->3 and8->7, subsequent real server displacements, survival and slot return. Sampling misses stay inconclusive; no fake packets or injected motion.",
+      "actual_peer_id": 306,
+      "native_actor_owned_entities": [
+        {
+          "id": 307,
+          "kind": "EnderPearl",
+          "player_owned": true,
+          "position": [
+            4.144217519308732,
+            123.30134554750092,
+            0.5584428126716717
+          ],
+          "velocity": [
+            1.4009633034242812,
+            0.3737849692364035,
+            0.02907456509796732
+          ]
+        }
+      ],
+      "actual_peer_observed_tick": 8237,
+      "owned_throw_ticks_before_target_teleport": [
+        8243
+      ],
+      "native_before": {
+        "tick": 8203,
+        "actor": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "target": [
+          10.5,
+          121.0,
+          0.5
+        ],
+        "actor_health": 20.0,
+        "target_health": 20.0,
+        "native_pearl_count": 8,
+        "selected": 9,
+        "native_projectiles": []
+      },
+      "native_after": {
+        "tick": 8336,
+        "actor": [
+          36.03910291926566,
+          121.0,
+          1.2207074974689265
+        ],
+        "target": [
+          37.11741846056544,
+          121.0,
+          0.783867726914979
+        ],
+        "actor_health": 20.0,
+        "target_health": 19.0,
+        "native_pearl_count": 7,
+        "selected": 9,
+        "native_projectiles": []
+      },
+      "trace": [
+        {
+          "tick": 8237,
+          "actor": [
+            1.1875783410922975,
+            121.0,
+            0.5
+          ],
+          "target": [
+            10.5,
+            121.0,
+            0.5
+          ],
+          "actor_health": 20.0,
+          "target_health": 20.0,
+          "native_pearl_count": 8,
+          "selected": 9,
+          "native_projectiles": [
+            {
+              "id": 306,
+              "kind": "EnderPearl",
+              "player_owned": false,
+              "position": [
+                11.961765244460722,
+                122.7419242479221,
+                0.5155905511811023
+              ],
+              "velocity": [
+                1.4617652444607214,
+                0.2219242446438381,
+                0.015590551181102334
+              ]
+            }
+          ]
+        },
+        {
+          "tick": 8243,
+          "actor": [
+            1.5872692815249332,
+            121.0,
+            0.5008381631131107
+          ],
+          "target": [
+            10.5,
+            121.0,
+            0.5
+          ],
+          "actor_health": 20.0,
+          "target_health": 20.0,
+          "native_pearl_count": 7,
+          "selected": 9,
+          "native_projectiles": [
+            {
+              "id": 306,
+              "kind": "EnderPearl",
+              "player_owned": false,
+              "position": [
+                20.43045133240928,
+                123.41422630999055,
+                0.6059138670426453
+              ],
+              "velocity": [
+                1.3762229607440692,
+                0.035133314723954735,
+                0.01467819445522816
+              ]
+            },
+            {
+              "id": 307,
+              "kind": "EnderPearl",
+              "player_owned": true,
+              "position": [
+                4.144217519308732,
+                123.30134554750092,
+                0.5584428126716717
+              ],
+              "velocity": [
+                1.4009633034242812,
+                0.3737849692364035,
+                0.02907456509796732
+              ]
+            }
+          ]
+        }
+      ],
+      "server_before": {
+        "attacker": {
+          "health": 20.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "health": 20.0,
+          "position": [
+            10.5,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "server_after": {
+        "attacker": {
+          "health": 20.0,
+          "position": [
+            36.03910291926566,
+            121.0,
+            1.2207074974689263
+          ]
+        },
+        "target": {
+          "health": 19.0,
+          "position": [
+            37.11741846056544,
+            121.0,
+            0.783867726914979
+          ]
+        }
+      },
+      "actual_target_owner_marker": {
+        "exit": 0,
+        "stdout": "[10:38:26] [Server thread/INFO]: [Not Secure] [Thrown Ender Pearl] PARITY_FOLLOW_REAL_PEER_OWNER_221e6677150d4211bf9f07cc744c9f44_1793518706100985000\n[10:38:26] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+      },
+      "early_exact_server_stack_stationary_target_and_peer": {
+        "matched": true,
+        "receipt": {
+          "exit": 0,
+          "stdout": "[10:38:26] [Server thread/INFO]: [Not Secure] [Server] PARITY_FOLLOW_EARLY_EXACT_221e6677150d4211bf9f07cc744c9f44_1793518706405324300\n[10:38:26] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+          "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+        }
+      },
+      "actor_exact7": {
+        "exit": 0,
+        "stdout": "[10:38:32] [Server thread/INFO]: [Not Secure] [Server] PARITY_FOLLOW_OWN_ONE_221e6677150d4211bf9f07cc744c9f44_1793518712084141000\n[10:38:32] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+      },
+      "target_exact3": {
+        "exit": 0,
+        "stdout": "[10:38:32] [Server thread/INFO]: [Not Secure] [Server] PARITY_FOLLOW_PEER_ONE_221e6677150d4211bf9f07cc744c9f44_1793518712293196700\n[10:38:32] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+      },
+      "isolation": "Actual peer-ID observation is timing origin; same peer remains in native sample with distinct owned actor projectile, target remains stationary, and simultaneous server predicate confirms exact actor7 + stationary target + actual target-owned pearl still exists. No generic60tick-stuck inference.",
+      "image_file": "follow-peer-pearl.png"
+    },
+    {
+      "case": "crystal-chase-pearl",
+      "passed": true,
+      "status": "pass",
+      "proof": "Actual native projectile ID, consumed pearl and subsequent authoritative displacement are all required; movement alone cannot prove a throw.",
+      "native_before": {
+        "tick": 3705,
+        "actor": [
+          0.5,
+          121.0,
+          0.5
+        ],
+        "target": [
+          14.5,
+          121.0,
+          0.5
+        ],
+        "actor_health": 20.0,
+        "target_health": 20.0,
+        "native_pearl_count": 8,
+        "selected": 9,
+        "native_projectiles": []
+      },
+      "native_after": {
+        "tick": 3817,
+        "actor": [
+          9.10239108427266,
+          121.0,
+          0.5487233226382655
+        ],
+        "target": [
+          21.51053814823836,
+          121.0,
+          0.5
+        ],
+        "actor_health": 20.0,
+        "target_health": 20.0,
+        "native_pearl_count": 7,
+        "selected": 9,
+        "native_projectiles": []
+      },
+      "trace": [
+        {
+          "tick": 3740,
+          "actor": [
+            1.581978294745911,
+            121.0,
+            0.5
+          ],
+          "target": [
+            16.689524695074585,
+            121.0,
+            0.5
+          ],
+          "actor_health": 20.0,
+          "target_health": 20.0,
+          "native_pearl_count": 8,
+          "selected": 9,
+          "native_projectiles": []
+        },
+        {
+          "tick": 3742,
+          "actor": [
+            2.131717692247412,
+            121.0,
+            0.5
+          ],
+          "target": [
+            17.53015660555934,
+            121.0,
+            0.5
+          ],
+          "actor_health": 20.0,
+          "target_health": 20.0,
+          "native_pearl_count": 8,
+          "selected": 9,
+          "native_projectiles": []
+        },
+        {
+          "tick": 3744,
+          "actor": [
+            2.6895246950745837,
+            121.0,
+            0.5
+          ],
+          "target": [
+            18.091223943327876,
+            121.0,
+            0.5
+          ],
+          "actor_health": 20.0,
+          "target_health": 20.0,
+          "native_pearl_count": 8,
+          "selected": 9,
+          "native_projectiles": []
+        },
+        {
+          "tick": 3747,
+          "actor": [
+            3.5301566055593403,
+            121.0,
+            0.5
+          ],
+          "target": [
+            18.6524079871802,
+            121.0,
+            0.5
+          ],
+          "actor_health": 20.0,
+          "target_health": 20.0,
+          "native_pearl_count": 8,
+          "selected": 9,
+          "native_projectiles": []
+        },
+        {
+          "tick": 3749,
+          "actor": [
+            4.091223943327874,
+            121.0,
+            0.5
+          ],
+          "target": [
+            19.213626822991483,
+            121.0,
+            0.5
+          ],
+          "actor_health": 20.0,
+          "target_health": 20.0,
+          "native_pearl_count": 8,
+          "selected": 9,
+          "native_projectiles": []
+        },
+        {
+          "tick": 3751,
+          "actor": [
+            4.525007974770509,
+            121.0,
+            0.5
+          ],
+          "target": [
+            19.77485603084481,
+            121.0,
+            0.5
+          ],
+          "actor_health": 20.0,
+          "target_health": 20.0,
+          "native_pearl_count": 8,
+          "selected": 9,
+          "native_projectiles": []
+        },
+        {
+          "tick": 3753,
+          "actor": [
+            4.654325965129309,
+            121.0,
+            0.5
+          ],
+          "target": [
+            20.336088330770536,
+            121.0,
+            0.5
+          ],
+          "actor_health": 20.0,
+          "target_health": 20.0,
+          "native_pearl_count": 8,
+          "selected": 9,
+          "native_projectiles": []
+        },
+        {
+          "tick": 3755,
+          "actor": [
+            4.692877736098891,
+            121.0,
+            0.5
+          ],
+          "target": [
+            20.89732155249274,
+            121.0,
+            0.5
+          ],
+          "actor_health": 20.0,
+          "target_health": 20.0,
+          "native_pearl_count": 7,
+          "selected": 9,
+          "native_projectiles": [
+            {
+              "id": 304,
+              "kind": "EnderPearl",
+              "player_owned": true,
+              "position": [
+                6.206490627510721,
+                122.52909509575215,
+                0.4289360922907891
+              ],
+              "velocity": [
+                1.5136128914118294,
+                0.009095092473905853,
+                -0.07106390770921088
+              ]
+            }
+          ]
+        }
+      ],
+      "server_before": {
+        "attacker": {
+          "health": 20.0,
+          "position": [
+            0.5,
+            121.0,
+            0.5
+          ]
+        },
+        "target": {
+          "health": 20.0,
+          "position": [
+            14.5,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "server_after": {
+        "attacker": {
+          "health": 20.0,
+          "position": [
+            8.235288743370324,
+            121.0,
+            -1.2409076197242137
+          ]
+        },
+        "target": {
+          "health": 20.0,
+          "position": [
+            21.51053814823836,
+            121.0,
+            0.5
+          ]
+        }
+      },
+      "actual_native_entities": [
+        {
+          "id": 304,
+          "kind": "EnderPearl",
+          "player_owned": true,
+          "position": [
+            6.206490627510721,
+            122.52909509575215,
+            0.4289360922907891
+          ],
+          "velocity": [
+            1.5136128914118294,
+            0.009095092473905853,
+            -0.07106390770921088
+          ]
+        }
+      ],
+      "used": 1,
+      "sprint_samples": 8,
+      "count_scope": "Actor8->7 is actual native inventory state, retained after travel; this existing case did not query a separate console Inventory-NBT count. Own-owned projectile304 and authoritative console HP/positions establish real use and displacement. No extra console-count claim.",
+      "image_file": "chase-pearl.png"
+    },
+    {
+      "case": "crystal-escape-pearl",
+      "passed": true,
+      "status": "pass",
+      "proof": "Actual three vanilla totem rescues (used-totem statistic3) create the existing200tick Run state in each arm; actual health is then healed above6. Escape OFF preserves8pearls/noownedentity. ON requires owned native ID, exact server8->7, real server displacement beyond8m and at least12m from the same real enemy, survival and slot9. No fabricated player or injected event/velocity.",
+      "arms": [
+        {
+          "enabled": false,
+          "passed": true,
+          "server_before": {
+            "attacker": {
+              "health": 20.0,
+              "position": [
+                0.7030985790172553,
+                121.0,
+                0.5
+              ]
+            },
+            "target": {
+              "health": 20.0,
+              "position": [
+                5.5,
+                121.0,
+                0.5
+              ]
+            }
+          },
+          "server": {
+            "attacker": {
+              "health": 20.0,
+              "position": [
+                1.6133730849519168,
+                121.0,
+                -0.3029810975974702
+              ]
+            },
+            "target": {
+              "health": 20.0,
+              "position": [
+                5.5,
+                121.0,
+                0.5
+              ]
+            }
+          },
+          "authoritative_displacement": 1.2138279611433533,
+          "authoritative_final_enemy_distance": 3.968708532995969,
+          "before": {
+            "tick": 10377,
+            "actor": [
+              0.7030985790172553,
+              121.0,
+              0.5
+            ],
+            "target": [
+              5.5,
+              121.0,
+              0.5
+            ],
+            "actor_health": 20.0,
+            "target_health": 20.0,
+            "native_pearl_count": 8,
+            "selected": 9,
+            "native_projectiles": []
+          },
+          "after": {
+            "tick": 10581,
+            "actor": [
+              1.6133730849519168,
+              121.0,
+              -0.3029810975974702
+            ],
+            "target": [
+              5.5,
+              121.0,
+              0.5
+            ],
+            "actor_health": 20.0,
+            "target_health": 20.0,
+            "native_pearl_count": 8,
+            "selected": 9,
+            "native_projectiles": []
+          },
+          "actual_owned_entities": [],
+          "trace": [
+            {
+              "tick": 10404,
+              "actor": [
+                0.6050985756495928,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10407,
+              "actor": [
+                0.9366549967718016,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10409,
+              "actor": [
+                1.3252495378594364,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10411,
+              "actor": [
+                1.7441118378250189,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10413,
+              "actor": [
+                2.1719974430924207,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10415,
+              "actor": [
+                2.1035570110897504,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10417,
+              "actor": [
+                1.78013779568007,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10419,
+              "actor": [
+                1.3807053076179436,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10421,
+              "actor": [
+                0.9586120415015432,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10424,
+              "actor": [
+                0.3144574591627632,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10426,
+              "actor": [
+                0.07556057751159909,
+                121.0,
+                0.4735182218392161
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10428,
+              "actor": [
+                0.2615073781091637,
+                121.0,
+                0.31084569096262177
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10430,
+              "actor": [
+                0.5525361684317602,
+                121.0,
+                0.07178901030797308
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10432,
+              "actor": [
+                0.8751096622759194,
+                121.0,
+                -0.18976917038211513
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10434,
+              "actor": [
+                1.2071670829509702,
+                121.0,
+                -0.45793630434857113
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10436,
+              "actor": [
+                1.5420856074932132,
+                121.0,
+                -0.7280317563329264
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10438,
+              "actor": [
+                1.8778753090068423,
+                121.0,
+                -0.9986794524884656
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10440,
+              "actor": [
+                2.2139370522609827,
+                121.0,
+                -1.2694764699620975
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10443,
+              "actor": [
+                2.3178840351981034,
+                121.0,
+                -1.38103567233981
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10445,
+              "actor": [
+                2.00539410795454,
+                121.0,
+                -1.3131968334855906
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10447,
+              "actor": [
+                1.619211768634134,
+                121.0,
+                -1.357481986435087
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10449,
+              "actor": [
+                1.2292492836292448,
+                121.0,
+                -1.4980983502832217
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10451,
+              "actor": [
+                0.8385459685061385,
+                121.0,
+                -1.668429321189901
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10453,
+              "actor": [
+                0.44733497460831606,
+                121.0,
+                -1.8470046704893048
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10455,
+              "actor": [
+                0.4667935296820688,
+                121.0,
+                -1.7563832491366351
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10457,
+              "actor": [
+                0.675439280567107,
+                121.0,
+                -1.5042827185573897
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10459,
+              "actor": [
+                0.9416205062769942,
+                121.0,
+                -1.2050699910257492
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10461,
+              "actor": [
+                1.2253947645154897,
+                121.0,
+                -0.8922142521417553
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10463,
+              "actor": [
+                1.5146010706457462,
+                121.0,
+                -0.5754626094301377
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10466,
+              "actor": [
+                1.9512082329682303,
+                121.0,
+                -0.09858558476158846
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10468,
+              "actor": [
+                2.2428011697217576,
+                121.0,
+                0.2195651670236592
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10470,
+              "actor": [
+                2.4020559936026697,
+                121.0,
+                0.3932795312867832
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10472,
+              "actor": [
+                2.20647860177633,
+                121.0,
+                0.2677341786314412
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 10474,
+              "actor": [
+                1.860428566085626,
+                121.0,
+                0.14126242701301472
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            }
+          ],
+          "exact_server_stack": {
+            "exit": 0,
+            "stdout": "[10:40:24] [Server thread/INFO]: [Not Secure] [Server] ESCAPE_EXACT_STACK_6f5788fc01044553a64c70b1c9b24887_1793518824541744000\n[10:40:24] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+          },
+          "initial_empty_server_census": {
+            "exit": 0,
+            "stdout": "[10:40:13] [Server thread/INFO]: [Not Secure] [Server] ESCAPE_INITIAL_EMPTY_6f5788fc01044553a64c70b1c9b24887_1793518812765390100\n[10:40:13] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+          },
+          "gui_staging": {
+            "screen": "inventory",
+            "tick": 10345,
+            "measurement_start_screen": "playing",
+            "measurement_start_tick": 10404,
+            "using": null
+          },
+          "actual_totem_rescues": [
+            {
+              "index": 1,
+              "used_totem_score": 1,
+              "server_score_receipt": {
+                "exit": 0,
+                "stdout": "[10:40:08] [Server thread/INFO]: System chat: CodexAttacker has 1 [be6f5788fc010]\n[10:40:08] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+                "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+              },
+              "native_health": 2.0,
+              "native_tick": 10278,
+              "native_offhand": {
+                "item": null,
+                "slot": 504
+              }
+            },
+            {
+              "index": 2,
+              "used_totem_score": 2,
+              "server_score_receipt": {
+                "exit": 0,
+                "stdout": "[10:40:09] [Server thread/INFO]: System chat: CodexAttacker has 2 [be6f5788fc010]\n[10:40:09] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+                "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+              },
+              "native_health": 2.0,
+              "native_tick": 10308,
+              "native_offhand": {
+                "item": null,
+                "slot": 504
+              }
+            },
+            {
+              "index": 3,
+              "used_totem_score": 3,
+              "server_score_receipt": {
+                "exit": 0,
+                "stdout": "[10:40:11] [Server thread/INFO]: System chat: CodexAttacker has 3 [be6f5788fc010]\n[10:40:11] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+                "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+              },
+              "native_health": 2.0,
+              "native_tick": 10339,
+              "native_offhand": {
+                "item": null,
+                "slot": 504
+              }
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "passed": true,
+          "server_before": {
+            "attacker": {
+              "health": 20.0,
+              "position": [
+                0.7030985790172553,
+                121.0,
+                0.5
+              ]
+            },
+            "target": {
+              "health": 20.0,
+              "position": [
+                5.5,
+                121.0,
+                0.5
+              ]
+            }
+          },
+          "server": {
+            "attacker": {
+              "health": 20.0,
+              "position": [
+                -18.14230937870741,
+                121.0,
+                19.521193429820297
+              ]
+            },
+            "target": {
+              "health": 20.0,
+              "position": [
+                5.5,
+                121.0,
+                0.5
+              ]
+            }
+          },
+          "authoritative_displacement": 26.776019132569182,
+          "authoritative_final_enemy_distance": 30.34410308862589,
+          "before": {
+            "tick": 11235,
+            "actor": [
+              0.7030985790172553,
+              121.0,
+              0.5
+            ],
+            "target": [
+              5.5,
+              121.0,
+              0.5
+            ],
+            "actor_health": 20.0,
+            "target_health": 20.0,
+            "native_pearl_count": 8,
+            "selected": 9,
+            "native_projectiles": []
+          },
+          "after": {
+            "tick": 11373,
+            "actor": [
+              -18.14230937870741,
+              121.0,
+              19.521193429820297
+            ],
+            "target": [
+              5.5,
+              121.0,
+              0.5
+            ],
+            "actor_health": 20.0,
+            "target_health": 20.0,
+            "native_pearl_count": 7,
+            "selected": 9,
+            "native_projectiles": []
+          },
+          "actual_owned_entities": [
+            {
+              "id": 308,
+              "kind": "EnderPearl",
+              "player_owned": true,
+              "position": [
+                -1.3706172370248706,
+                122.9196634746205,
+                2.5786881889763777
+              ],
+              "velocity": [
+                -1.0237118476469511,
+                0.18390293297930785,
+                1.0341212598425196
+              ]
+            }
+          ],
+          "trace": [
+            {
+              "tick": 11261,
+              "actor": [
+                0.6050985756495928,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 11263,
+              "actor": [
+                0.6738832032264163,
+                121.0,
+                0.5
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 8,
+              "selected": 9,
+              "native_projectiles": []
+            },
+            {
+              "tick": 11265,
+              "actor": [
+                0.7961619667781366,
+                121.0,
+                0.5766259253873726
+              ],
+              "target": [
+                5.5,
+                121.0,
+                0.5
+              ],
+              "actor_health": 20.0,
+              "target_health": 20.0,
+              "native_pearl_count": 7,
+              "selected": 9,
+              "native_projectiles": [
+                {
+                  "id": 308,
+                  "kind": "EnderPearl",
+                  "player_owned": true,
+                  "position": [
+                    -1.3706172370248706,
+                    122.9196634746205,
+                    2.5786881889763777
+                  ],
+                  "velocity": [
+                    -1.0237118476469511,
+                    0.18390293297930785,
+                    1.0341212598425196
+                  ]
+                }
+              ]
+            }
+          ],
+          "exact_server_stack": {
+            "exit": 0,
+            "stdout": "[10:41:04] [Server thread/INFO]: [Not Secure] [Server] ESCAPE_EXACT_STACK_6f5788fc01044553a64c70b1c9b24887_1793518864033827400\n[10:41:04] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+          },
+          "initial_empty_server_census": {
+            "exit": 0,
+            "stdout": "[10:40:55] [Server thread/INFO]: [Not Secure] [Server] ESCAPE_INITIAL_EMPTY_6f5788fc01044553a64c70b1c9b24887_1793518855657611500\n[10:40:55] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+          },
+          "gui_staging": {
+            "screen": "inventory",
+            "tick": 11201,
+            "measurement_start_screen": "playing",
+            "measurement_start_tick": 11260,
+            "using": null
+          },
+          "actual_totem_rescues": [
+            {
+              "index": 1,
+              "used_totem_score": 1,
+              "server_score_receipt": {
+                "exit": 0,
+                "stdout": "[10:40:50] [Server thread/INFO]: System chat: CodexAttacker has 1 [be6f5788fc011]\n[10:40:50] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+                "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+              },
+              "native_health": 2.0,
+              "native_tick": 11131,
+              "native_offhand": {
+                "item": null,
+                "slot": 504
+              }
+            },
+            {
+              "index": 2,
+              "used_totem_score": 2,
+              "server_score_receipt": {
+                "exit": 0,
+                "stdout": "[10:40:52] [Server thread/INFO]: System chat: CodexAttacker has 2 [be6f5788fc011]\n[10:40:52] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+                "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+              },
+              "native_health": 2.0,
+              "native_tick": 11162,
+              "native_offhand": {
+                "item": null,
+                "slot": 504
+              }
+            },
+            {
+              "index": 3,
+              "used_totem_score": 3,
+              "server_score_receipt": {
+                "exit": 0,
+                "stdout": "[10:40:54] [Server thread/INFO]: System chat: CodexAttacker has 3 [be6f5788fc011]\n[10:40:54] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+                "scope": "actual stock-server emitted marker; raw console receipt retained privately"
+              },
+              "native_health": 2.0,
+              "native_tick": 11195,
+              "native_offhand": {
+                "item": null,
+                "slot": 504
+              }
+            }
+          ]
+        }
+      ],
+      "trigger_scope": "Only two real players exist. Each arm uses three actual vanilla totem rescues and authoritative used-totem statistic1/2/3 to create existing200tick Run history. Ordinary Inventory GUI is open only during final heal/give/empty-census/baseline staging; measurement begins after native Playing/notusing, at actual20HP above readiness threshold. No simulated player, state counter injection, packet or velocity injection.",
+      "image_file": "escape-pearl.png"
+    }
+  ],
+  "selected_images": [
+    {
+      "case": "crystal-follow-peer-pearl",
+      "file": "follow-peer-pearl.png",
+      "sha256": "5942b861fe7ec0de87503f47daca3d19a8b632213e98b363d9d48d63cfe2641a",
+      "bytes": 59962,
+      "scope": "After-case world/HUD context, not standalone projectile-timing proof.",
+      "size": [
+        1280,
+        720
+      ]
+    },
+    {
+      "case": "crystal-chase-pearl",
+      "file": "chase-pearl.png",
+      "sha256": "713e8b291d6cc0dcc48485755d2fb77321ea24e8023a201f7de4a10506ad1e9d",
+      "bytes": 127321,
+      "scope": "After-case world/HUD context, not standalone projectile-timing proof.",
+      "size": [
+        1280,
+        720
+      ]
+    },
+    {
+      "case": "crystal-escape-pearl",
+      "file": "escape-pearl.png",
+      "sha256": "59da7aaf1410f92b57816dab646a6d245d5a6a3fb00f8a0d4acd6b9cae6ffc63",
+      "bytes": 116430,
+      "scope": "After-case world/HUD context, not standalone projectile-timing proof.",
+      "size": [
+        1280,
+        720
+      ]
+    }
+  ],
+  "preserved_attempts": [
+    {
+      "report": "parity-bots-proof-1793518422447970400-4464cd3f1f144f5e8679949a97a6f640.json",
+      "case": "crystal-follow-peer-pearl",
+      "status": "inconclusive-follow-trigger-isolation",
+      "reason": "Old40tick clock started before baseline console work: observed own ID/count response at exactly40ticks fromoldbefore, but6ticks from actual initial peer. Original report remains byte-identical.",
+      "later_correction": "Separate peer-only report uses actual initial peer tick and adds simultaneous authoritative exact7+stationary-target+peer-exists marker."
+    },
+    {
+      "report": "parity-bots-proof-1793518422447970400-4464cd3f1f144f5e8679949a97a6f640.json",
+      "case": "crystal-escape-pearl",
+      "status": "fixture-or-test-error",
+      "reason": "ON actually launched before initial empty-census/baseline. Both real3Totem histories existed, but the baseline raced automatic behavior. Original error remains untouched.",
+      "later_correction": "Separate escape-only report uses ordinary Inventory GUI solely for final setup; starts live measurement from Playing/notusing."
+    },
+    {
+      "report": "parity-bots-proof-1793515641473641600-437940ef365b4d779139a8a62c2473e4.json",
+      "checkpoint": "R28",
+      "case": "crystal-follow-peer-pearl",
+      "status": "no-follow-observed",
+      "reason": "Genuine no-follow failure with own8 unchanged; moving-velocity candidate versus stationary-send mismatch diagnosed and fixed prospectively in R30; earlier report not relabeled."
+    }
+  ],
+  "cleanup": {
+    "final_handoff": "parity-bots-handoff-6f5788fc01044553a64c70b1c9b24887.json",
+    "native_and_console_health": {
+      "attacker": {
+        "native": 20.0,
+        "server": 20.0
+      },
+      "target": {
+        "native": 20.0,
+        "server": 20.0
+      }
+    },
+    "all_modules_off": true,
+    "inputs_released": true,
+    "configuration_baseline_restored": true,
+    "effects": {
+      "attacker": [],
+      "target": []
+    },
+    "inventory_counts": {
+      "attacker": {},
+      "target": {}
+    },
+    "cleanup_error": null,
+    "close_errors": null,
+    "normal_shutdown": "Parent-owned; agent never closes games/server.",
+    "native_profile_load_and_delete_confirmed": true,
+    "streams_closed": true,
+    "fixture_lock_absent": true
+  },
+  "receipts": [
+    {
+      "file": "parity-bots-proof-1793518422447970400-4464cd3f1f144f5e8679949a97a6f640.json",
+      "sha256": "e66c8b892090a30a8b9e39c87f0a5e5e6d52d311ed6603ee6d09a50948ae2970",
+      "bytes": 1942881,
+      "scope": "unaltered original execution report with raw official ctl/RPC receipts"
+    },
+    {
+      "file": "parity-bots-proof-1793518679533996600-221e6677150d4211bf9f07cc744c9f44.json",
+      "sha256": "dd8115faccb6d8e4fdeb326ac38a7eceb3f460b63faba33a8f8a21fae6a7e9b7",
+      "bytes": 459014,
+      "scope": "unaltered original execution report with raw official ctl/RPC receipts"
+    },
+    {
+      "file": "parity-bots-proof-1793518782177407000-6f5788fc01044553a64c70b1c9b24887.json",
+      "sha256": "95fdb9768f76299901d89f15dbf8119cc434d68cad2e4873bb7e2a99494ca477",
+      "bytes": 2216275,
+      "scope": "unaltered original execution report with raw official ctl/RPC receipts"
+    },
+    {
+      "file": "source.json",
+      "sha256": "067853fe9364260e0237ba2af5eb4eef1555a83c1582d66fa20ed310615397bb",
+      "bytes": 14304,
+      "scope": "frozen R30 source/launch/package receipt"
+    },
+    {
+      "file": "launch.json",
+      "sha256": "edad5c4abfd687119e822e092e4bd022f9bb100a38bc91d1cff938ecf31b56c7",
+      "bytes": 1456,
+      "scope": "frozen R30 source/launch/package receipt"
+    },
+    {
+      "file": "sunset-explosives-preview.hnmod",
+      "sha256": "c421d8f52c719cee3516788d69cb93dbf90a0cb58a271af8d7837d15dd8694a5",
+      "bytes": 923596,
+      "scope": "frozen R30 source/launch/package receipt"
+    },
+    {
+      "file": "parity-bots-handoff-221e6677150d4211bf9f07cc744c9f44.json",
+      "sha256": "09e6e630de8f4d8e5b0c9a00bac6e99d5ea564e9b60d8570e99b602911a749c4",
+      "bytes": 10309,
+      "scope": "unaltered verified native/console cleanup handoff"
+    },
+    {
+      "file": "parity-bots-handoff-6f5788fc01044553a64c70b1c9b24887.json",
+      "sha256": "58399c6240051fc1bedf24c4fe7a92d12114d3419f6b8925835f233f5c17ccd7",
+      "bytes": 10311,
+      "scope": "unaltered verified native/console cleanup handoff"
+    },
+    {
+      "file": "parity-bots-r30-command-handoff.json",
+      "sha256": "7d43279324dc6a9d2f51011e83ca6f1dd79c0c5b2b6746e18da1d9aa1ab47e82",
+      "bytes": 34449,
+      "scope": "final read-only native Loaded/Deleted profile-success and closed-stream/no-lock receipt"
+    },
+    {
+      "file": "horizon-client.exe",
+      "sha256": "82951c55e13be66a15ef345bb2384279575355da9e7b5b23dedefc29bbd131ab",
+      "bytes": 62922240,
+      "scope": "actual tested native binary hash verified"
+    },
+    {
+      "file": "player_parity_bots.py",
+      "sha256": "879234d0c964fc9c42310eab457b64cdabfbf5cc8012c6b4c120fec2a8cf3e6c",
+      "bytes": 52538,
+      "scope": "POST-RUN current private runner, including the documented timing-origin and GUI-staging corrections; execution reports retain all raw outcomes"
+    },
+    {
+      "file": "parity-bots-proof-1793515641473641600-437940ef365b4d779139a8a62c2473e4.json",
+      "sha256": "31269ca3fec1cdc7d96b65ef78ec68bea4ad2cd1874eb94bb3c78e08cdc4decd",
+      "bytes": 2585826,
+      "scope": "earlier R28 true no-follow failure retained; not relabeled by R30 pass"
+    }
+  ],
+  "limits": [
+    "Exactly3listed behaviors under stationary/controlled loopback fixtures; no exhaustive PvP parity, arbitrary-player, latency, anticheat or performance/FPS claim.",
+    "Actor Resistance255 is disclosed death fail-safe during throw; real Totem rescues temporarily remove it and occur through actual vanilla damage/statistics.",
+    "Native projectile IDs/ownership are actual exposed state; no raw packet capture claim.",
+    "Chase stack count is native state; peer and Escape additionally have explicit authoritative console stack predicates.",
+    "Prospective stationary horizontal forecast is an explicitly original native improvement over the reference moving-forecast/still-send mismatch. Actual final safety/vertical/health/expiry gates remain in force."
+  ],
+  "original_report_scopes": [
+    {
+      "file": "parity-bots-proof-1793518422447970400-4464cd3f1f144f5e8679949a97a6f640.json",
+      "canonical_cases": 3,
+      "reported_failed": 2,
+      "selected_passing_case": "crystal-chase-pearl",
+      "whole_run_clean_exit_claimed": false
+    },
+    {
+      "file": "parity-bots-proof-1793518679533996600-221e6677150d4211bf9f07cc744c9f44.json",
+      "canonical_cases": 1,
+      "reported_failed": 0,
+      "cleanup_errors": null,
+      "selected_passing_case": "crystal-follow-peer-pearl"
+    },
+    {
+      "file": "parity-bots-proof-1793518782177407000-6f5788fc01044553a64c70b1c9b24887.json",
+      "canonical_cases": 1,
+      "reported_failed": 0,
+      "cleanup_errors": null,
+      "selected_passing_case": "crystal-escape-pearl"
+    }
+  ]
+}

@@ -1,0 +1,1550 @@
+{
+  "checkpoint": "R28",
+  "native_client_sha256": "edef37bd867bbbd1d34bf3058c99519a2f3e31e8cec497994d19e7c4c430716f",
+  "scope": "Real two-player loopback native Trap/Optimizer; original reports and images retained. No native source edits/builds by runner.",
+  "selected_distinct_cases": 15,
+  "selected_pass": 14,
+  "selected_fail": 1,
+  "raw_attempts": 17,
+  "retained_replaced_fixture_failures": [
+    {
+      "report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "case": "trap-using-pause",
+      "reason": "All measured samples use-active and obsidian64; postlude released RMB before disabling, allowing legitimate resumption. Corrected native-key disable before release passes."
+    },
+    {
+      "report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "case": "optimizer-creative-visual",
+      "reason": "Vanilla Creative bypasses entity invulnerability and removed the crystal, invalidating a rejected-ghost expectation. Corrected Creative actual-removal case passes."
+    }
+  ],
+  "checks": [
+    {
+      "case": "trap-ring",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": 2,
+      "actual_server_cells": [
+        {
+          "cell": [
+            2,
+            121,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:10] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516469852811800\n[10:01:10] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:10] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:10] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:10] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            2,
+            122,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:11] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516471053218800\n[10:01:11] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:11] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:11] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:12] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            123,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:12] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        }
+      ],
+      "original_authoritative_ids_retained": null,
+      "health_unchanged": null,
+      "server_entity_while_measured": null,
+      "server_entity_after": null
+    },
+    {
+      "case": "trap-roof-extension",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": 10,
+      "actual_server_cells": [
+        {
+          "cell": [
+            2,
+            121,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:36] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516496513631900\n[10:01:36] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            121,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:37] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516496802701700\n[10:01:37] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            -1
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:37] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516497153539800\n[10:01:37] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            1
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:37] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516497442530200\n[10:01:37] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            2,
+            122,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:38] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516497753595300\n[10:01:38] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            122,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:38] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516498083897100\n[10:01:38] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            -1
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:38] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516498436001400\n[10:01:38] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            1
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:39] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516498786417000\n[10:01:39] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            123,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:39] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516499136774400\n[10:01:39] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        }
+      ],
+      "original_authoritative_ids_retained": null,
+      "health_unchanged": null,
+      "server_entity_while_measured": null,
+      "server_entity_after": null
+    },
+    {
+      "case": "trap-off",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": 0,
+      "actual_server_cells": [
+        {
+          "cell": [
+            2,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:58] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:58] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:58] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:59] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            2,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:01:59] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:00] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:00] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:00] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            123,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:01] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        }
+      ],
+      "original_authoritative_ids_retained": null,
+      "health_unchanged": null,
+      "server_entity_while_measured": null,
+      "server_entity_after": null
+    },
+    {
+      "case": "trap-friend",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": 0,
+      "actual_server_cells": [
+        {
+          "cell": [
+            2,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:20] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:20] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:21] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:21] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            2,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:21] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:22] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:22] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:22] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            123,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:22] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        }
+      ],
+      "original_authoritative_ids_retained": null,
+      "health_unchanged": null,
+      "server_entity_while_measured": null,
+      "server_entity_after": null
+    },
+    {
+      "case": "trap-range-feet",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": 2,
+      "actual_server_cells": [
+        {
+          "cell": [
+            2,
+            121,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:41] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516561258341000\n[10:02:41] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:41] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:42] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:42] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            2,
+            122,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:42] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516562539209700\n[10:02:42] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:43] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:43] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:43] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            123,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:02:44] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        }
+      ],
+      "original_authoritative_ids_retained": null,
+      "health_unchanged": null,
+      "server_entity_while_measured": null,
+      "server_entity_after": null
+    },
+    {
+      "case": "trap-reach-one",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": 0,
+      "actual_server_cells": [
+        {
+          "cell": [
+            2,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:03] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:03] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:03] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:04] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            2,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:04] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:04] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:05] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:05] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            123,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:05] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        }
+      ],
+      "original_authoritative_ids_retained": null,
+      "health_unchanged": null,
+      "server_entity_while_measured": null,
+      "server_entity_after": null
+    },
+    {
+      "case": "trap-held-use",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": 2,
+      "actual_server_cells": [
+        {
+          "cell": [
+            2,
+            121,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:25] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516605517616800\n[10:03:25] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:26] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:26] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:26] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            2,
+            122,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:27] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516606737411200\n[10:03:27] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:27] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:27] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:28] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            123,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:03:28] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        }
+      ],
+      "original_authoritative_ids_retained": null,
+      "health_unchanged": null,
+      "server_entity_while_measured": null,
+      "server_entity_after": null
+    },
+    {
+      "case": "trap-using-pause",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a778e393864e45979c454d36aac06520.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": 0,
+      "actual_server_cells": [
+        {
+          "cell": [
+            2,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:07:50] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:07:50] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:07:50] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:07:51] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            2,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:07:51] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:07:51] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:07:52] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:07:52] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            123,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:07:52] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        }
+      ],
+      "original_authoritative_ids_retained": null,
+      "health_unchanged": null,
+      "server_entity_while_measured": null,
+      "server_entity_after": null
+    },
+    {
+      "case": "trap-disable",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": 2,
+      "actual_server_cells": [
+        {
+          "cell": [
+            2,
+            121,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:04:07] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516646969452700\n[10:04:07] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            121,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:04:07] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:04:07] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            121,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:04:08] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            2,
+            122,
+            0
+          ],
+          "obsidian": true,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:04:08] [Server thread/INFO]: [Not Secure] [Server] TRAP_CELL_1793516648209809800\n[10:04:08] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            4,
+            122,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:04:08] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            -1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:04:09] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            122,
+            1
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:04:09] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        },
+        {
+          "cell": [
+            3,
+            123,
+            0
+          ],
+          "obsidian": false,
+          "reply": {
+            "exit": 0,
+            "stdout": "[10:04:09] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+            "stderr": "",
+            "barrier": "list"
+          }
+        }
+      ],
+      "original_authoritative_ids_retained": null,
+      "health_unchanged": null,
+      "server_entity_while_measured": null,
+      "server_entity_after": null
+    },
+    {
+      "case": "optimizer-rejected-visual",
+      "status": "fail",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pending-native-image-review",
+      "original_image_review": "Direct review of four original full-resolution PNGs: crystal body present in before, next-tick, timeout and repeat. total_hidden=0; actual ordinary native attack controls removed real crystals. Source shows queued attack before post-tick range-cache refresh. No ghost behavior passed.",
+      "spent_obsidian": null,
+      "actual_server_cells": null,
+      "original_authoritative_ids_retained": true,
+      "health_unchanged": true,
+      "server_entity_while_measured": {
+        "exit": 0,
+        "stdout": "[10:04:25] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793516664789672700\n[10:04:25] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "server_entity_after": {
+        "exit": 0,
+        "stdout": "[10:04:26] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793516666587915300\n[10:04:26] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      }
+    },
+    {
+      "case": "optimizer-short-reach",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pending-native-image-review",
+      "original_image_review": "Direct review of four originals: body stays visible; authoritative same-ID crystal and HP retained. This observes the negative result, but the failed positive control prevents independent attribution to the range guard until the cache-phase fix is retested.",
+      "spent_obsidian": null,
+      "actual_server_cells": null,
+      "original_authoritative_ids_retained": true,
+      "health_unchanged": true,
+      "server_entity_while_measured": {
+        "exit": 0,
+        "stdout": "[10:05:00] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793516700098638900\n[10:05:00] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "server_entity_after": {
+        "exit": 0,
+        "stdout": "[10:05:01] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793516701795051600\n[10:05:01] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      }
+    },
+    {
+      "case": "optimizer-native-off",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": null,
+      "actual_server_cells": null,
+      "original_authoritative_ids_retained": false,
+      "health_unchanged": false,
+      "server_entity_while_measured": {
+        "exit": 0,
+        "stdout": "[10:05:17] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "server_entity_after": {
+        "exit": 0,
+        "stdout": "[10:05:19] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      }
+    },
+    {
+      "case": "optimizer-native-on",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": null,
+      "actual_server_cells": null,
+      "original_authoritative_ids_retained": false,
+      "health_unchanged": false,
+      "server_entity_while_measured": {
+        "exit": 0,
+        "stdout": "[10:05:34] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "server_entity_after": {
+        "exit": 0,
+        "stdout": "[10:05:35] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      }
+    },
+    {
+      "case": "optimizer-weakness",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": null,
+      "actual_server_cells": null,
+      "original_authoritative_ids_retained": true,
+      "health_unchanged": true,
+      "server_entity_while_measured": {
+        "exit": 0,
+        "stdout": "[10:05:52] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793516751962549200\n[10:05:52] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "server_entity_after": {
+        "exit": 0,
+        "stdout": "[10:05:54] [Server thread/INFO]: [Not Secure] [Server] OPTIMIZER_REMAINS_1793516753755272900\n[10:05:54] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      }
+    },
+    {
+      "case": "optimizer-creative-native",
+      "status": "pass",
+      "raw_report": "trap-optimizer-r28-a778e393864e45979c454d36aac06520.json",
+      "raw_status": "pass",
+      "original_image_review": null,
+      "spent_obsidian": null,
+      "actual_server_cells": null,
+      "original_authoritative_ids_retained": false,
+      "health_unchanged": true,
+      "server_entity_while_measured": {
+        "exit": 0,
+        "stdout": "[10:08:07] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      },
+      "server_entity_after": {
+        "exit": 0,
+        "stdout": "[10:08:09] [Server thread/INFO]: System chat: There are 2 of a max of 4 players online: CodexTarget, CodexAttacker\n",
+        "stderr": "",
+        "barrier": "list"
+      }
+    }
+  ],
+  "original_images": [
+    {
+      "case_label": "trap-ring",
+      "file": "originals/trap-ring.png",
+      "sha256": "0608d98c5dd9113d272b52cf04fa19f77d5c0fbd48a2186b747d1f432de93193",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unaltered_original": true
+    },
+    {
+      "case_label": "trap-roof-extension",
+      "file": "originals/trap-roof-extension.png",
+      "sha256": "92e05ecb461588e73642b64315dacbfa62a5b97d9356c6c890fb97b5d4909e01",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unaltered_original": true
+    },
+    {
+      "case_label": "optimizer-rejected-visual-before",
+      "file": "originals/ghost-before.png",
+      "sha256": "7c2dbd130a9ac06d599fffeb933fa243f27d402d9b6907ecde9388eb1cb2ca63",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unaltered_original": true
+    },
+    {
+      "case_label": "optimizer-rejected-visual-transient",
+      "file": "originals/ghost-next-tick.png",
+      "sha256": "fee4d0523a4b63c30c98aad126bb4e5deab592e94f44a664736bd94aed40ed03",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unaltered_original": true
+    },
+    {
+      "case_label": "optimizer-rejected-visual-timeout",
+      "file": "originals/ghost-timeout.png",
+      "sha256": "c51f651b5be83389fad11d64c45765fd4ae22929cfe58e525056e12ec62a3ec9",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unaltered_original": true
+    },
+    {
+      "case_label": "optimizer-rejected-visual-repeat",
+      "file": "originals/ghost-repeat.png",
+      "sha256": "faccad692f4215c4d1b16ec4806c589b15211fe88ad6b03199d75b7b32009c29",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unaltered_original": true
+    },
+    {
+      "case_label": "optimizer-short-reach-before",
+      "file": "originals/reach-before.png",
+      "sha256": "99c8c545f7414be00eb113ced475b2868e4ca3c604467b58c7da866afd0e7429",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unaltered_original": true
+    },
+    {
+      "case_label": "optimizer-short-reach-transient",
+      "file": "originals/reach-next-tick.png",
+      "sha256": "1e3015bde8700a8963cf0fcda1d4c7863518751acac7d9e1af22d3d189a06f5f",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unaltered_original": true
+    },
+    {
+      "case_label": "optimizer-short-reach-timeout",
+      "file": "originals/reach-timeout.png",
+      "sha256": "054e5774b353ed1684c7397e30700a9e5bcaae68d495e596def7b6f5b86b0ba8",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unaltered_original": true
+    },
+    {
+      "case_label": "optimizer-short-reach-repeat",
+      "file": "originals/reach-repeat.png",
+      "sha256": "22d7b3aa5478ca930245ba8cac04cf29ff0321d5c96ee8a7c91f21fc3c9e80cf",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "unaltered_original": true
+    }
+  ],
+  "raw_sha256": {
+    "trap-optimizer-r28-a47347ebaac0448ea5220b8fc8115b8d.json": "e51753431bb6fa7a843afc7fc92bef1a8140e3c5476691897e30dfaac8085d8d",
+    "trap-optimizer-r28-a778e393864e45979c454d36aac06520.json": "92edea0afac505d37a821cf4bcf9b3fada8f4522e681df0def6b798dbb1d0dbd",
+    "trap-optimizer-r28-handoff.json": "ccbab877f7dea76862cca295c1fb10dc15572d08017ea4d630b445f4ea153b5b"
+  },
+  "cleanup": {
+    "both_survival_health20": true,
+    "server_health20": true,
+    "effects_absorption_inventory_carried_empty": true,
+    "actual_inputs_empty": true,
+    "all_modules_off": true,
+    "profile_friends_restored": true,
+    "native_commands_available": true,
+    "default_reach_attributes": [
+      4.5,
+      3
+    ],
+    "streams_closed": true,
+    "clients_server_left_open": true
+  },
+  "limitations": [
+    "Survival ghost positive failed; it is not marked as timeout success.",
+    "Short-reach negative needs a passing positive on the fixed build to isolate range behavior.",
+    "Default Trap ring can self-occlude after its nearest feet/head column; no default complete enclosure claim.",
+    "Full roof uses the explicit optional native extension and spends10 obsidian.",
+    "Official ctl input route only, no OS physical event equivalence or anti-cheat claim."
+  ]
+}

@@ -1122,3 +1122,12 @@ bindings=[
   {name="game",ty="&crate::game::Game<'_>",value="&*self"},
   {name="attacking",ty="bool",value="attacking"},
 ]
+
+[[injection]]
+id = "crystal-optimizer-native-attack-refresh"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::remote_start_attack"
+helper = "optimizer_attack.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]

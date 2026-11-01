@@ -1,4 +1,4 @@
-"""Compile actual original Bot search and deferred acceptance against explicit effects."""
+"""Production reserve/search invocation with explicit landing seam and real candidate launch math."""
 from pathlib import Path
 import argparse,json,subprocess,tempfile,re
 
@@ -18,12 +18,14 @@ def main():
  baseline=baseline[:start]+baseline[end:]
  old_veto='            if count(game, "totem_of_undying") == 0 && game.player.as_ref().map_or(0.,|p|p.health.health()+p.health.absorption()) <= 12. || r.pearl_low() && target.health <= 8. { return false; }\n'
  at=baseline.index('            let motion =');baseline=baseline[:at]+old_veto+baseline[at:]
- methods='\n'.join(function(s,marker)for marker in['fn pearl_note(','fn plan_pearl(','fn continue_pearl(','fn pearl_approved('])
+ methods='\n'.join(function(s,marker)for marker in['fn pearl_note(','fn plan_pearl(','fn continue_pearl(','fn pearl_candidate(','fn pearl_approved('])
+ methods=methods.replace('fn pearl_candidate(', 'fn native_pearl_candidate(',1)
  accepted=function(s,'BotAction::Pearl(plan) => {');body=accepted[accepted.index('{')+1:-1]
  accept='fn accept_plan(game:&mut Game,plan:PearlPlan){let look=plan.look;'+body+'}'
  code=r"""
 #![allow(dead_code)]
 use std::cell::RefCell;
+#[path="TRAJECTORY"]mod trajectory;
 #[derive(Clone,Copy)]struct V{x:f64,y:f64,z:f64}impl From<[f64;3]>for V{fn from(p:[f64;3])->Self{Self{x:p[0],y:p[1],z:p[2]}}}
 mod horizon_client{pub mod projectiles{#[derive(Clone,Copy)]pub enum ProjectileKind{EnderPearl,Other}}pub mod mobs{#[derive(Clone,Copy,PartialEq)]pub enum Who{Mob(u32)}}}
 struct Projectile{id:u32,kind:horizon_client::projectiles::ProjectileKind,owner:Option<horizon_client::mobs::Who>,age:u64,position:V,velocity:V}
@@ -33,7 +35,7 @@ struct Game<'a>{pearls:u32,totems:u32,offhand:bool,target_abs:Option<f64>,ticks:
 impl Game<'_>{fn eye_position(&self)->Option<[f64;3]>{Some([0.,122.62,0.])}}
 struct Module;struct Rival(bool);impl Rival{fn pearl_low(&self)->bool{self.0}}
 mod sunset_prediction{pub fn effective_health(g:&super::Game,t:&super::util::Target)->Option<f64>{let hp=f64::from(t.health)+g.target_abs?;(hp.is_finite()&&hp>0.).then_some(hp)}}
-mod tactics{READY_POLICY #[derive(PartialEq)]pub enum Pause{Go,Hold}#[derive(Clone,Copy)]pub struct PearlLanding{pub at:[f64;3],pub ticks:u32}pub fn sub(a:[f64;3],b:[f64;3])->[f64;3]{std::array::from_fn(|i|a[i]-b[i])}pub fn add(a:[f64;3],b:[f64;3])->[f64;3]{std::array::from_fn(|i|a[i]+b[i])}pub fn mul(a:[f64;3],b:f64)->[f64;3]{a.map(|x|x*b)}pub fn horizontal(a:[f64;3])->f64{a[0].hypot(a[2])}}
+mod tactics{pub use super::trajectory::pearl_velocity;READY_POLICY #[derive(PartialEq)]pub enum Pause{Go,Hold}#[derive(Clone,Copy)]pub struct PearlLanding{pub at:[f64;3],pub ticks:u32}pub fn sub(a:[f64;3],b:[f64;3])->[f64;3]{std::array::from_fn(|i|a[i]-b[i])}pub fn add(a:[f64;3],b:[f64;3])->[f64;3]{std::array::from_fn(|i|a[i]+b[i])}pub fn mul(a:[f64;3],b:f64)->[f64;3]{a.map(|x|x*b)}pub fn horizontal(a:[f64;3])->f64{a[0].hypot(a[2])}}
 struct PauseClock(bool);impl PauseClock{fn state(&self,_:u64)->tactics::Pause{if self.0{tactics::Pause::Go}else{tactics::Pause::Hold}}}
 struct Fight{closing_at:u64,next_pearl:u64,low_since:Option<(u64,bool)>}
 struct Tactics{pause:PauseClock,pearl_search:Option<PearlSearch>,last_pearl:Option<u32>,fight:Fight,pearl:Option<PearlPlan>,pearl_at:Option<u64>}
@@ -44,12 +46,13 @@ fn fresh()->State{State{pearl_counts:[0;9],rival_low:false,session:Some(9),targe
 fn same(g:&Game,scene:&u64)->bool{g.scene==*scene}fn pearl_ready(g:&Game)->bool{g.ready&&g.pearls>0&&g.player.as_ref().is_some_and(|p|tactics::pearl_health_ready(f64::from(p.health.raw+p.health.abs),g.offhand))}fn rival()->Rival{Rival(state(|s|s.rival_low))}fn count(g:&Game,item:&str)->u32{match item{"ender_pearl"=>g.pearls,"totem_of_undying"=>g.totems,_=>0}}fn enemy(_: &Game,m:&Mob)->bool{m.id==7}
 mod util{#[derive(Clone,Copy)]pub struct Target{pub id:u32,pub pos:[f64;3],pub prev:[f64;3],pub health:f32}pub fn dist(a:[f64;3],b:[f64;3])->f64{a.iter().zip(b).map(|(a,b)|(a-b).powi(2)).sum::<f64>().sqrt()}pub fn player_pos(_: &super::Game)->Option<[f64;3]>{Some([0.,121.,0.])}pub fn find_hotbar(_: &super::Game,_:impl FnMut(&str)->bool)->Option<usize>{Some(0)}}
 fn pearl_from(g:&Game,_:[f64;3],_:[f64;3])->Option<tactics::PearlLanding>{Some(tactics::PearlLanding{at:g.landing,ticks:10})}
-fn pearl_land(g:&Game,look:(f32,f32))->Option<tactics::PearlLanding>{g.calls.borrow_mut().push((g.ticks,look.0,look.1));Some(tactics::PearlLanding{at:g.landing,ticks:10})}
+fn pearl_land(g:&Game,_:(f32,f32))->Option<tactics::PearlLanding>{Some(tactics::PearlLanding{at:g.landing,ticks:10})}
 fn safe_pearl_landing(g:&Game,_:tactics::PearlLanding)->bool{g.safe_land}
 enum BotAction{Pearl(PearlPlan)}fn queue_action(g:&mut Game,_:&Module,_:usize,_:(f32,f32),action:BotAction)->bool{let BotAction::Pearl(p)=action;g.queued.push(p);true}
 mod remote{pub mod sunset_combat_remote{pub fn use_main_at(g:&mut super::super::Game,_:f32,_:f32)->bool{g.sends+=1;true}}}
 STRUCTURES
 mod bot{use super::*;METHODS BASELINE ACCEPT
+fn pearl_candidate(g:&Game,look:(f32,f32))->Option<tactics::PearlLanding>{g.calls.borrow_mut().push((g.ticks,look.0,look.1));native_pearl_candidate(g,look)}
 fn fixture()->(Game<'static>,util::Target){state(|s|*s=fresh());(Game{pearls:8,totems:2,offhand:false,target_abs:Some(0.),ticks:100,scene:9,ready:true,safe_land:true,player:Some(Player{health:Health{raw:20.,abs:0.},ground:Ground{on_ground:true},velocity:[0.;3].into()}),creatures:Creatures{projectiles:vec![Projectile{id:42,kind:horizon_client::projectiles::ProjectileKind::EnderPearl,owner:Some(horizon_client::mobs::Who::Mob(7)),age:0,position:[10.,122.,0.].into(),velocity:[1.5,0.,0.].into()}]},mobs:vec![Mob{id:7,position:[10.,121.,0.].into()}],calls:RefCell::new(vec![]),queued:vec![],sends:0,landing:[20.,121.,0.],_life:std::marker::PhantomData},util::Target{id:7,pos:[10.,121.,0.],prev:[10.,121.,0.],health:20.})}
 fn start(g:&mut Game,t:&util::Target){assert!(!plan_pearl(g,&Module,t,false));assert_eq!(g.calls.borrow().len(),8);assert_eq!(state(|s|s.tactics.pearl_search.unwrap().cursor),8);}
 #[test]fn stationary_observed_peer_flight_finishes_exact_eight_candidate_slices(){let(mut g,t)=fixture();for step in 0..8{g.ticks=100+step;g.creatures.projectiles[0].age=step;let queued=plan_pearl(&mut g,&Module,&t,false);assert_eq!(queued,step==7);let calls=g.calls.borrow().iter().filter(|(tick,_,_)|*tick==g.ticks).count();assert_eq!(calls,if step==7{4}else{8});}assert_eq!(g.calls.borrow().len(),60);assert_eq!(g.queued.len(),1);assert!(state(|s|s.tactics.pearl_search.is_none()));}
@@ -74,7 +77,7 @@ fn searched(g:&Game)->bool{g.calls.borrow().len()==8}
 
 }
 """
- code=code.replace('STRUCTURES',structs).replace('METHODS',methods).replace('BASELINE',baseline).replace('ACCEPT',accept)
+ code=code.replace('TRAJECTORY',(production/'bot_tactics_policy.rs').resolve().as_posix()).replace('STRUCTURES',structs).replace('METHODS',methods).replace('BASELINE',baseline).replace('ACCEPT',accept)
  ready_policy=function((production/'bot_tactics_policy.rs').read_text(encoding='utf-8'),'pub fn pearl_health_ready(')
  code=code.replace('READY_POLICY',ready_policy)
  for match in reversed(list(re.finditer(r'#\[test\]fn (?!reserve_)\w+\(',code))):
