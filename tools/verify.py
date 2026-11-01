@@ -5908,6 +5908,92 @@ def packets_a_tick(mark):
     return most
 
 
+def vehicle_moves_a_tick(mark):
+    """From the probe since `mark`: the most MoveVehicle packets (serverbound id 34) the client sent in one tick."""
+    with open(probe_path(), errors="replace") as f:
+        f.seek(mark)
+        lines = [line.split() for line in f if line.startswith(("pkt 34", "order tickend"))]
+    most = now = 0
+    for w in lines:
+        if w[0] == "order":
+            most, now = max(most, now), 0
+        else:
+            now += 1
+    return max(most, now)
+
+
+@test("Entity Control (boat)")
+def _():
+    # An oak boat on the platform, ridden with a right click, driven with W for 1 s: blocks a second without Entity
+    # Control, with Speed 10 and 20 (where you look, east; each from the middle so it stays on the platform). Fly: Jump for 1 s lifts it (Vertical speed 6 = 0.3 a
+    # tick), then 6 s with no key holds the height (Anti fly kick sinks 0.0313 every 40 ticks; vanilla kicks a vehicle
+    # floating for 80), Sprint brings it down,
+    # and landing costs no health. A rubber band (the server putting the boat back) shows as lost distance or height.
+    # The probe: one MoveVehicle a tick at most; no kick.
+    kicked = len(kicks)
+    mark = probe_mark()
+
+    def boat():
+        reset("survival")
+        cmd("gamerule naturalRegeneration false", f"summon oak_boat {X0+0.5} {Y+1} {Z0+0.5}")
+        wait(10)
+        b = next(o for o in ctl("status")["objects"] if o["kind"].endswith("boat"))
+        x, y, z = b["position"]
+        ctl("look-at", str(x), str(y + 0.3), str(z))
+        ctl("mouse", "right", "click")
+        wait(10)
+        ctl("look", "-90", "0")
+        wait(2)
+        return ctl("status").get("riding") is not None
+
+    def speed(ticks=20):
+        a = pos()
+        held_keys(["w"], ticks)
+        b = pos()
+        return flat(a, b) * 20 / ticks
+
+    def leave():
+        ctl("key", "shift", "down")
+        wait(5)
+        ctl("key", "shift", "up")
+        cmd("kill @e[type=!player]")
+        wait(5)
+
+    rode = boat()
+    plain = speed()
+    leave()
+    setting("entitycontrol", "horizontal speed", "10")
+    toggle("entity control", True)
+    rode = boat() and rode
+    ten = speed()
+    leave()
+    setting("entitycontrol", "horizontal speed", "20")
+    rode = boat() and rode
+    twenty = speed()
+    leave()
+    setting("entitycontrol", "fly", "true")
+    rode = boat() and rode
+    y0 = pos()[1]
+    held_keys(["space"], 20)
+    y1 = pos()[1]
+    wait(120)
+    y2 = pos()[1]
+    before = hp()
+    held_keys(["ctrl"], int((y2 - y0) / 0.3) + 20)
+    wait(20)
+    y3 = pos()[1]
+    lost = health_lost(before)
+    most = vehicle_moves_a_tick(mark)
+    leave()
+    only()
+    cmd("gamerule naturalRegeneration true")
+    ok = (rode and plain < 4 and 8 < ten < 11 and 16 < twenty < 21 and y1 - y0 > 4.5 and -0.2 < y2 - y1 <= 0.01
+          and y3 - y0 < 0.6 and lost == 0 and most == 1 and len(kicks) == kicked)
+    return ok, (f"blocks a second {plain:.1f} off, {ten:.1f} at Speed 10, {twenty:.1f} at 20; Fly: up {y1 - y0:.2f} in 1 s, "
+                f"held {y2 - y1:+.3f} over 6 s, down to {y3 - y0:+.2f}, {lost:g} health lost landing; most MoveVehicle in "
+                f"a tick {most}; kicks {len(kicks) - kicked}")
+
+
 @test("Fast Use (Throw modes)")
 def _():
     # 64 experience bottles held on use for 1 s looking down: thrown, and experience gained 3 s later, without Fast

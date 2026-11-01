@@ -329,6 +329,12 @@ impl Module {
                     _ => true,
                 }
             }
+            "Entity Control" => match name {
+                "Horizontal speed" | "Only on ground" | "In water" => self.b("Speed"),
+                "Vertical speed" | "Fall speed" | "Anti fly kick" => self.b("Fly"),
+                "Delay" => self.b("Fly") && self.b("Anti fly kick"),
+                _ => true,
+            },
             "Fast Use" => match name {
                 "Throw mode" | "Experience bottles" | "Ender pearls" | "Wind charges" | "Snowballs and eggs" | "Splash potions"
                 | "Off hand" => self.b("Throwables"),
@@ -771,6 +777,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_atmosphere::defaults());
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
+    v.extend(super::sunset_vehicle::defaults());
     v.extend(super::sunset_vanish::defaults());
     v.extend(super::sunset_extras::defaults());
     // Modules that only draw can be held on with their bind instead of toggled.
@@ -6662,6 +6669,7 @@ fn aliases(name: &str) -> &'static str {
         "Criticals" => "crits",
         "Offhand" => "totem auto totem inventory totem hover totem crystal gapple",
         "Xray" => "x-ray",
+        "Entity Control" => "boat fly boatfly entity speed entity fly horse ride vehicle",
         "Clear Water" => "water opacity see through transparent",
         "No Render" => "no hide fog fog water darkness blindness overlay particles particle",
         _ => "",

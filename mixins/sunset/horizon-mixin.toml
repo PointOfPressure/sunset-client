@@ -69,6 +69,12 @@ name = "sunset_player"
 source = "player.rs"
 
 [[module]]
+id = "vehicle"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_vehicle"
+source = "vehicle.rs"
+
+[[module]]
 id = "world"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_world"
@@ -583,6 +589,17 @@ bindings = [
   { name = "this", ty = "&mut Sprites", value = "&mut *self" },
   { name = "name", ty = "&str", value = "name" },
   { name = "decoded", ty = "&crate::sprite_cache::Decoded", value = "&decoded" },
+]
+
+[[injection]]
+id = "boat-ride"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote_vehicles::Game<'_>::remote_ride"
+helper = "boat_hook.rs"
+bindings = [
+  { name = "this", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "keys", ty = "Keys", value = "keys" },
 ]
 
 [[injection]]
