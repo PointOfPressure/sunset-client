@@ -4455,9 +4455,10 @@ def _():
         ctl2("mouse", "right", "up")
     bot_done()
     off, on = runs["off"], runs["on"]
-    return off[0] == 0 and on[0] > 0 and on[1] >= 1 and "sword" in on[2], (
+    # The axe is in hand a tick at a time, so polling every 2 ticks may miss it: the damage is the measure.
+    return off[0] == 0 and on[0] > 0 and "sword" in on[2], (
         f"Bot1 behind a raised shield lost {off[0]} health in 10 s without Shield Breaker, {on[0]} with it; the axe "
-        f"came out {on[1]} times (shield disables) and the hand went back to {on[2] or 'nothing'}")
+        f"was seen in hand {on[1]} times and the hand went back to {on[2] or 'nothing'}")
 
 
 @test("Mace")
