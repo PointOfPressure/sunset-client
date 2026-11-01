@@ -4818,6 +4818,8 @@ SWEEPS = [
 ] + [
     (("fastuse",), [("fastuse", "mode", m)]) for m in ("All", "Some")
 ] + [
+    (("fastuse",), [("fastuse", "throwables", "true"), ("fastuse", "throw mode", m)]) for m in ("Delay", "Every tick", "Burst")
+] + [
     (("speedmine",), [("speedmine", "mode", m)]) for m in ("Damage", "Normal", "Haste")
 ] + [
     (("antiafk",), [("antiafk", "spin mode", m)]) for m in ("Server", "Client")
@@ -5456,12 +5458,13 @@ def _():
     return ok, f"offhand after the pointer rests on the totem: off {got['off'][0] or 'empty'}, on {got['on'][0] or 'empty'} (in {got['on'][1]} ticks)"
 
 
-@test("FastXP and Key Throw")
+@test("Fast Use (Throwables) and Key Throw")
 def _():
-    # Bottles thrown in 2 s of holding use, without and with FastXP; pearls thrown by 5 presses of Key Throw's key,
-    # the hand back on its slot after.
+    # Bottles thrown in 2 s of holding use, without and with Fast Use's Throwables (FastXP); pearls thrown by 5 presses
+    # of Key Throw's key, the hand back on its slot after.
+    setting("fastuse", "throwables", "true")
     used = {}
-    for name, mods in (("off", ()), ("on", ("fastxp",))):
+    for name, mods in (("off", ()), ("on", ("fastuse",))):
         reset()
         slot(0, "experience_bottle", 64)
         ctl("key", "1", "tap")
@@ -5486,7 +5489,7 @@ def _():
     left = sum(s.get("count", 0) for s in inv.get("hotbar") or [] if s and "ender_pearl" in (s.get("item") or ""))
     back = (state().get("held") or {}).get("item", "")
     return used["on"] > used["off"] and left == 11 and "sword" in back, (
-        f"bottles in 2 s: {used['off']} without FastXP, {used['on']} with it; Key Throw: {16 - left} pearls for 5 presses, hand "
+        f"bottles in 2 s: {used['off']} without Throwables, {used['on']} with it; Key Throw: {16 - left} pearls for 5 presses, hand "
         f"back on {back}")
 
 
@@ -5719,14 +5722,15 @@ def _():
         f"selects {off}")
 
 
-@test("FastXP (Fast throw)")
+@test("Fast Use (Fast throw)")
 def _():
-    # Duelkit's Fast throw through FastXP: wind charges (10-tick cooldown, the game retries use every 4 ticks) held on
-    # use for 3 s, and a stack of 16 snowballs for 1.5 s, without and with FastXP (Snowballs and eggs ticked).
-    setting("fastxp", "snowballs and eggs", "true")
+    # Duelkit's Fast throw through Fast Use's Throwables: wind charges (10-tick cooldown, the game retries use every 4
+    # ticks) held on use for 3 s, and a stack of 16 snowballs for 1.5 s, without and with it (Snowballs and eggs ticked).
+    setting("fastuse", "throwables", "true")
+    setting("fastuse", "snowballs and eggs", "true")
     used = {}
     for item, n, ticks in (("wind_charge", 64, 60), ("snowball", 16, 30)):
-        for name, mods in (("off", ()), ("on", ("fastxp",))):
+        for name, mods in (("off", ()), ("on", ("fastuse",))):
             reset()
             slot(0, item, n)
             ctl("key", "1", "tap")
@@ -5737,9 +5741,76 @@ def _():
             ctl("mouse", "right", "up")
             only()
             used[item, name] = n - ((state().get("held") or {}).get("count", 0))
-    setting("fastxp", "snowballs and eggs", "false")
     ok = used["wind_charge", "on"] > used["wind_charge", "off"] and used["snowball", "on"] > used["snowball", "off"]
     return ok, "thrown in 3 s, off/on: " + ", ".join(f"{i} {used[i, 'off']}/{used[i, 'on']}" for i in ("wind_charge", "snowball"))
+
+
+def xp_total():
+    p = state().get("player") or {}
+    return (p.get("xp") or state().get("xp") or {}).get("total", 0)
+
+
+def packets_a_tick(mark):
+    """From the probe since `mark`: the most packets the client sent in one tick (its own, not single player's server)."""
+    with open(probe_path(), errors="replace") as f:
+        f.seek(mark)
+        lines = [line.split() for line in f if line.startswith(("pkt ", "order tickend"))]
+    most = now = 0
+    for w in lines:
+        if w[0] == "order":
+            most, now = max(most, now), 0
+        else:
+            now += 1
+    return most
+
+
+@test("Fast Use (Throw modes)")
+def _():
+    # 64 experience bottles held on use for 1 s looking down: thrown, and experience gained 3 s later, without Fast
+    # Use and with Throwables in each Throw mode (Burst 3 and 10). The probe: the most packets sent in a tick (Burst
+    # keeps a tick to 15); no kick.
+    setting("fastuse", "throwables", "true")
+    kicked = len(kicks)
+    runs = [("off", None, None), ("Delay 2", "Delay", None), ("Every tick", "Every tick", None), ("Burst 3", "Burst", "3"), ("Burst 10", "Burst", "10")]
+    got = {}
+    for name, mode, burst in runs:
+        reset()
+        cmd("xp set @s 0 levels", "xp set @s 0 points")
+        slot(0, "experience_bottle", 64)
+        ctl("key", "1", "tap")
+        ctl("look", "0", "70")
+        if mode:
+            setting("fastuse", "throw mode", mode)
+        if burst:
+            setting("fastuse", "burst", burst)
+        only(*(("fastuse",) if mode else ()))
+        mark = probe_mark() if probe_path() else None
+        ctl("mouse", "right", "down")
+        wait(20)
+        ctl("mouse", "right", "up")
+        only()
+        thrown = 64 - held().get("count", 0)
+        wait(60)
+        got[name] = (thrown, xp_total(), packets_a_tick(mark) if mark is not None else None)
+    rates = [got[n][0] for n, _, _ in runs]
+    most = max((g[2] or 0) for g in got.values())
+    ok = (rates[0] < rates[1] < rates[2] < rates[3] <= rates[4] and got["Every tick"][0] >= 17 and most <= 16
+          and len(kicks) == kicked and got["Burst 10"][1] > got["off"][1])
+    return ok, "(bottles thrown in 1 s, experience 3 s later, most packets in a tick) " + ", ".join(f"{n} {got[n]}" for n, _, _ in runs)
+
+
+@test("Fast Use (settings from before 0.9)")
+def _():
+    # A profile from before Fast Use took in FastXP: FastXP on (Delay 1, Off hand off, bound to J), Fast Use off.
+    shown = old_profile("verifyxp", ["fastxp.on=true", "fastxp.key=key.keyboard.j", "fastxp.delay=1", "fastxp.offhand=false",
+                                     "fastuse.on=false", "fastuse.key=none", "fastuse.mode=All"], "fastuse")
+    if shown is None:
+        return False, "no profile file written"
+    want = ["Mode: Some", "Items: (empty)", "Throwables: ON", "Throw delay: 3", "Off hand: OFF"]
+    on = any("Fast Use*" in line for line in shown)
+    bound = any(line.startswith("Fast Use: J") for line in shown)
+    got = [w for w in want if any(line.startswith(w) for line in shown)]
+    return on and bound and got == want, f"Fast Use on: {on}, bound to J: {bound}, settings {got} of {want}"
 
 
 @test("Wind Jump")

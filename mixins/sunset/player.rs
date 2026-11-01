@@ -33,12 +33,22 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Items", "rotten_flesh,spider_eye,poisonous_potato,gravel,cobblestone,netherrack,cobbled_deepslate,andesite,diorite,granite,tuff")
             .num("Delay (ticks)", 1.0, 0.0, 10.0, 1.0),
-        Module::new("Fast Use", Player, "Lets you use items at very high speeds.")
+        Module::new("Fast Use", Player, "Lets you use items at very high speeds: the game's use delay becomes Cooldown, for every item (Mode All) or the listed ones and blocks (Some). Throwables (FastXP): experience bottles, pearls, wind charges and the rest as ticked are thrown the tick their cooldown ends while you hold use (Duelkit's Fast throw); Throw mode Delay throws one every Throw delay ticks, Every tick one a tick, Burst throws up to Burst a tick (bottles, snowballs, eggs and splash potions; never more than 15 packets a tick, well under Paper's limit). Off hand: from the offhand while your hand is empty or holds a weapon.")
             .pick("Mode", &["All", "Some"])
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Items", "ender_pearl,experience_bottle,snowball,egg")
             .bool("Blocks", false)
-            .num("Cooldown (ticks)", 0.0, 0.0, 4.0, 1.0),
+            .num("Cooldown (ticks)", 0.0, 0.0, 4.0, 1.0)
+            .bool("Throwables", false)
+            .pick("Throw mode", &["Delay", "Every tick", "Burst"])
+            .num("Throw delay", 2.0, 2.0, 5.0, 1.0)
+            .num("Burst", 3.0, 1.0, 10.0, 1.0)
+            .bool("Experience bottles", true)
+            .bool("Ender pearls", true)
+            .bool("Wind charges", true)
+            .bool("Snowballs and eggs", false)
+            .bool("Splash potions", false)
+            .bool("Off hand", true),
         Module::new("Spam", Player, "Spams chat messages. Separate several messages with |.")
             .text("Messages", "Sunset on top!")
             .num("Delay (ticks)", 20.0, 1.0, 400.0, 1.0)
@@ -507,8 +517,8 @@ fn fast_place(game: &mut Game<'_>, m: &Module) {
 // ---- Fast Use
 
 fn fast_use(game: &mut Game<'_>, m: &Module) {
-    // Blocks are Fast Place's while it is on, or its speed would not hold.
-    if holds_block(game) && super::sunset::with(|s| s.is_on("Fast Place")) {
+    // Blocks are Fast Place's while it is on, or its speed would not hold; throwables are Throwables' when it is on.
+    if holds_block(game) && super::sunset::with(|s| s.is_on("Fast Place")) || super::sunset_combat_inventory::thrown_in_hand(game, m) {
         return;
     }
     let item = game.held().map(|s| short(&s.item).to_owned());

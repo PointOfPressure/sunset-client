@@ -1,7 +1,7 @@
 // The inventory modules: Offhand (Meteor's Offhand and Auto Totem, with Rust's Auto Inventory Totem and Hover Totem
-// from PR #16 as its Refill and Hover) and Key Throw (#16). A Refill or Hover totem moves by one swap click (or the
-// offhand swap key from the hotbar), never by picking stacks up, and counts as moved once the server's own slot
-// packets say both slots changed.
+// from PR #16 as its Refill and Hover), Key Throw (#16) and Fast Use's Throwables (#16's FastXP). A Refill or Hover
+// totem moves by one swap click (or the offhand swap key from the hotbar), never by picking stacks up, and counts as
+// moved once the server's own slot packets say both slots changed.
 use super::sunset::{self, Category, Module, hold, with};
 use super::sunset_combat_control as control;
 use super::sunset_inventory_policy::{self as policy, Failure, OFFHAND, Status, Swap};
@@ -10,12 +10,13 @@ use super::{Game, Screen};
 use horizon_client::items::ItemStack;
 use horizon_protocol::packets::play::{self, Clientbound as C, Serverbound as S};
 use std::any::Any;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const INV: &str = "Offhand";
 const HOVER: &str = "Offhand (hover)";
-const XP: &str = "FastXP";
+const XP: &str = "Fast Use";
 const THROW: &str = "Key Throw";
 const OWNERS: [&str; 4] = [INV, HOVER, XP, THROW];
 
@@ -43,14 +44,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Switch back delay", 2.0, 0.0, 10.0, 1.0)
             .bool("Double Hand", false)
             .bool("Hover", false),
-        Module::new(XP, Category::Combat, "Throws experience bottles faster while you hold use with one: the game's use delay becomes Delay. Also pearls, wind charges and the rest as ticked (Duelkit's Fast throw): thrown the tick their cooldown ends. Off hand: from the offhand while your hand is empty or holds a weapon.")
-            .num("Delay", 0.0, 0.0, 3.0, 1.0)
-            .bool("Experience bottles", true)
-            .bool("Ender pearls", true)
-            .bool("Wind charges", true)
-            .bool("Snowballs and eggs", false)
-            .bool("Splash potions", false)
-            .bool("Off hand", true),
         Module::new(THROW, Category::Combat, "A key throws one ender pearl or wind charge from your hotbar (a wind charge straight down, jumping) and goes back to your slot. Hotbar keys: the hotbar key of a pearl or wind charge throws it where you look and keeps your weapon in hand; with Lunge spears, a spear with Lunge jabs (the jab dashes you) and your weapon comes back the same tick.")
             .text("Pearl key", "None")
             .text("Wind charge key", "None")
@@ -118,7 +111,12 @@ struct State {
     next: u64,
     queued_use: Option<(&'static str, Instant)>,
     hand: policy::Hand,
-    last_action: Option<u64>,
+    // The tick a hit went out: a throw waits for the next one. (A use does not: the packets of a tick's use can go
+    // on the wire as the next tick starts, and Throwables' next use is due then.)
+    last_hit: Option<u64>,
+    // Packets sent in a tick: (tick, count), for Burst's cap.
+    sent: (u64, u32),
+    burst: u32,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -129,7 +127,7 @@ fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
 }
 
 // A module turned on or off: its move in progress stops (the slot goes back, the inventory it opened closes).
-pub(super) fn toggled(game: &mut Game<'_>, name: &str, on: bool) {
+pub(super) fn toggled(game: &mut Game<'_>, name: &str) {
     if name == THROW {
         super::sunset_melee::cancel_owner(game, THROW);
         state(|s| {
@@ -782,10 +780,13 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
     accepted
 }
 
-// What FastXP throws faster: an experience bottle, ender pearl, wind charge, snowball or egg, or splash or lingering
-// potion in hand as its settings say, off cooldown (a use on cooldown still sends its packet); with Off hand, one in
-// the offhand while the hand is empty or holds a weapon (the game tries the main hand first).
-fn thrown_in_hand(game: &Game<'_>, m: &Module) -> bool {
+// What Fast Use's Throwables throw faster: an experience bottle, ender pearl, wind charge, snowball or egg, or splash
+// or lingering potion in hand as its settings say, off cooldown (a use on cooldown still sends its packet); with Off
+// hand, one in the offhand while the hand is empty or holds a weapon (the game tries the main hand first).
+pub(super) fn thrown_in_hand(game: &Game<'_>, m: &Module) -> bool {
+    if !m.b("Throwables") {
+        return false;
+    }
     let wanted = |s: &ItemStack| {
         let ticked = match util::short(&s.item) {
             "experience_bottle" => m.b("Experience bottles"),
@@ -806,40 +807,79 @@ fn holding_use(game: &Game<'_>) -> bool {
     game.right || game.physical_buttons.contains(&winit::event::MouseButton::Right)
 }
 
-// FastXP: the game's own use, with its use delay cut to Delay; it waits while a look is on its way, another module
-// has the hand, or something went out this tick.
+// Throwables: the game's own use, with its use delay cut to Throw delay (Delay) or one tick (Every tick, Burst); it
+// waits while a look is on its way or another module has the hand. (A use this tick was the game's own: the next one
+// is a tick away, and the use hook holds it back if something else goes out first.)
 fn fast_xp(game: &mut Game<'_>, m: &Module) {
     if !plain(game) || game.left || !holding_use(game) || !thrown_in_hand(game, m) {
         return;
     }
-    if sunset::turn_pending() || !control::available(XP) || state(|s| s.last_action == Some(game.ticks)) {
+    if sunset::turn_pending() || !control::available(XP) {
         game.use_delay = game.use_delay.max(2);
         return;
     }
-    game.use_delay = game.use_delay.min(policy::delay(m.n("Delay"), 3) as u32 + 1);
+    game.use_delay = match m.p("Throw mode") {
+        "Delay" => game.use_delay.min(m.n("Throw delay") as u32),
+        _ => 1,
+    };
 }
 
-// The use hook: FastXP holds back a use the tick it must wait.
+// The use hook: Throwables hold back a use the tick it must wait.
 pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
     if !plain(game) || !holding_use(game) || !with(|s| s.module(XP).is_some_and(|m| m.on && thrown_in_hand(game, m))) {
         return false;
     }
-    let blocked = sunset::turn_pending() || !control::available(XP) || state(|s| s.last_action == Some(game.ticks));
+    let blocked = sunset::turn_pending() || !control::available(XP) || state(|s| s.last_hit == Some(game.ticks));
     if blocked {
         game.use_delay = game.use_delay.max(2);
     }
     blocked
 }
 
-// What went on the wire: a hit or a use counts as the tick's action.
-pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
-    if matches!(packet, S::Attack(_) | S::UseItem(_) | S::UseItemOn(_)) {
-        state(|s| {
-            if s.connection.as_ref().is_some_and(|old| same_session(game, old)) {
-                s.last_action = Some(game.ticks);
+// Burst: the uses the game's own one brings with it this tick, each as one more click would be (so before the
+// tick's move packet), while the tick has sent fewer than BURST_CAP packets. A use aimed at a block is three (the use
+// on it, the use, the swing), so a tick sends at most 7 + 3 + the game's own 3 + its move and end: 15, 300 a second,
+// well under the 500 a second Paper allows. Only throwables without a cooldown.
+static BURSTING: AtomicBool = AtomicBool::new(false);
+const BURST_CAP: u32 = 8;
+
+pub(super) fn bursting() -> bool {
+    BURSTING.load(Ordering::Relaxed)
+}
+
+pub(super) fn burst_more(game: &Game<'_>) -> bool {
+    let Some(m) = with(|s| s.module(XP).filter(|m| m.on && m.p("Throw mode") == "Burst").cloned()) else {
+        return false;
+    };
+    let item = game.held().filter(|s| s.count > 1).map(|s| util::short(&s.item).to_owned());
+    let free = item.is_some_and(|i| matches!(i.as_str(), "experience_bottle" | "snowball" | "egg" | "blue_egg" | "brown_egg" | "splash_potion" | "lingering_potion"));
+    let more = free
+        && plain(game)
+        && thrown_in_hand(game, &m)
+        && state(|s| {
+            let sent = if s.sent.0 == game.ticks { s.sent.1 } else { 0 };
+            if !bursting() {
+                s.burst = 0;
             }
+            s.burst += 1;
+            s.burst < m.n("Burst") as u32 && sent < BURST_CAP
         });
-    }
+    BURSTING.store(more, Ordering::Relaxed);
+    more
+}
+
+// What went on the wire: hits, and every packet for Burst's count.
+pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
+    let hit = matches!(packet, S::Attack(_));
+    state(|s| {
+        if !s.connection.as_ref().is_some_and(|old| same_session(game, old)) {
+            return;
+        }
+        if hit {
+            s.last_hit = Some(game.ticks);
+        }
+        s.sent = if s.sent.0 == game.ticks { (game.ticks, s.sent.1 + 1) } else { (game.ticks, 1) };
+    });
 }
 
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
@@ -888,7 +928,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         }
         None => state(|s| s.press = None),
     }
-    if let Some(m) = get(XP) {
+    if let Some(m) = get(XP).filter(|m| m.b("Throwables")) {
         fast_xp(game, m);
     }
 }

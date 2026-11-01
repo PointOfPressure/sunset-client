@@ -329,6 +329,13 @@ impl Module {
                     _ => true,
                 }
             }
+            "Fast Use" => match name {
+                "Throw mode" | "Experience bottles" | "Ender pearls" | "Wind charges" | "Snowballs and eggs" | "Splash potions"
+                | "Off hand" => self.b("Throwables"),
+                "Throw delay" => self.b("Throwables") && self.p("Throw mode") == "Delay",
+                "Burst" => self.b("Throwables") && self.p("Throw mode") == "Burst",
+                _ => true,
+            },
             "Offhand" => {
                 let (refill, hover) = (self.p("Refill") != "Off", self.b("Hover"));
                 match name {
@@ -1126,8 +1133,9 @@ impl State {
     }
 }
 
-// Offhand took in Auto Totem, Auto Inventory Totem and Hover Totem (0.9): a config or profile from before has their
-// lines turned into Offhand's. It is on if any of them was, with the first key bound; the old Offhand's Item when it
+// Offhand took in Auto Totem, Auto Inventory Totem and Hover Totem, and Fast Use took in FastXP (0.9): a config or
+// profile from before has their lines turned into Offhand's and Fast Use's. FastXP's are Throwables; Fast Use is on
+// if either was (only for throwables, with an empty list, when Fast Use itself was off). It is on if any of them was, with the first key bound; the old Offhand's Item when it
 // was on, else a totem always (Auto Totem Strict) or only when needed (None), else the new default; Refill is Auto
 // Inventory Totem's Mode.
 fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
@@ -1144,7 +1152,7 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let on = |id: &str| get(id, "on") == Some("true");
     // The old Offhand had Min health where the new one has Health.
     let old_offhand = get("offhand", "minhealth").is_some();
-    let gone = ["autototem", "autoinventorytotem", "hovertotem"];
+    let gone = ["autototem", "autoinventorytotem", "hovertotem", "fastxp"];
     if !old_offhand && !gone.iter().any(|id| had(id)) {
         return std::borrow::Cow::Borrowed(text);
     }
@@ -1156,6 +1164,32 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
         })
         .map(str::to_owned)
         .collect();
+    if had("fastxp") {
+        let (fast, xp) = (on("fastuse"), on("fastxp"));
+        out.push(format!("fastuse.on={}", fast || xp));
+        if let Some(key) = ["fastuse", "fastxp"].iter().filter_map(|id| get(id, "key")).find(|k| *k != "none") {
+            out.push(format!("fastuse.key={key}"));
+        }
+        if xp && !fast {
+            out.push("fastuse.mode=Some".into());
+            out.push("fastuse.listmode=Whitelist".into());
+            out.push("fastuse.items=".into());
+            out.push("fastuse.blocks=false".into());
+        }
+        out.push(format!("fastuse.throwables={xp}"));
+        // FastXP's Delay 0 threw every 2 ticks; Throw delay counts the ticks from one throw to the next.
+        if let Some(delay) = get("fastxp", "delay").and_then(|d| d.parse::<f64>().ok()) {
+            out.push(format!("fastuse.throwdelay={}", delay + 2.0));
+        }
+        for field in ["experiencebottles", "enderpearls", "windcharges", "snowballsandeggs", "splashpotions", "offhand"] {
+            if let Some(v) = get("fastxp", field) {
+                out.push(format!("fastuse.{field}={v}"));
+            }
+        }
+    }
+    if !old_offhand && !gone[..3].iter().any(|id| had(id)) {
+        return std::borrow::Cow::Owned(out.join("\n"));
+    }
     let mut set = |field: &str, value: Option<&str>| {
         if let Some(v) = value {
             out.push(format!("offhand.{field}={v}"));
@@ -1643,7 +1677,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
         (m.name, m.on)
     });
     super::sunset_combat_macros::toggled(game, name, on);
-    super::sunset_combat_inventory::toggled(game, name, on);
+    super::sunset_combat_inventory::toggled(game, name);
     if name == "Friend Guard" {
         super::sunset_melee::reset_friend_feedback();
     }
@@ -6558,6 +6592,7 @@ fn aliases(name: &str) -> &'static str {
         "Kill Aura" => "aura killaura",
         "Break Delay" => "fast break nuker delay",
         "Fast Place" => "fastplace place speed delay",
+        "Fast Use" => "fastuse fastxp fast xp exp bottles throw throwables",
         "Fullbright" => "gamma night vision",
         "Criticals" => "crits",
         "Offhand" => "totem auto totem inventory totem hover totem crystal gapple",
