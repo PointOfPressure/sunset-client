@@ -3396,6 +3396,7 @@ def _():
 def _():
     if not CTL2:
         return None, "needs a second player"
+    bot_respawned()
     cmd("gamemode survival Bot1")
 
     def bot_hurt(seconds):
@@ -3424,7 +3425,7 @@ def _():
     setting("killaura", "ignore teams", "false")
     hit = bot_hurt(3)
     only()
-    cmd("team remove sunsettest", "gamemode spectator Bot1")
+    cmd("team remove sunsettest", "gamemode spectator Bot1", "gamerule natural_health_regeneration true")
     return real > 0 and friend == 0 and spared == 0 and hit > 0, f"player in the list hurt {real}, as a friend {friend}, as a teammate {spared}, teammate without Ignore teams {hit}"
 
 
@@ -4178,6 +4179,15 @@ def blast_done():
         "kill @e[type=minecraft:end_crystal]")
 
 
+def bot_respawned():
+    """Bot1 back from the death screen (a server keeps a player who died in an earlier run dead when they join), with
+    PvP on (a single player world opened to LAN may have it off)."""
+    if CTL2 and ctl2("state").get("screen") == "dead":
+        ctl2("click-button", "Respawn")
+        wait(20)
+    cmd("gamerule pvp true", "gamerule natural_health_regeneration false")
+
+
 def bot_health():
     p = ctl2("state").get("player") or {}
     return p.get("health", 0) + p.get("absorption", 0)
@@ -4397,6 +4407,7 @@ TOUGH_PIG = ("{NoAI:1b,PersistenceRequired:1b,Silent:1b,Health:1000f,attributes:
 
 def bot_ready(z=2.5, yaw=180, *extra):
     """Bot1 in survival with 100 health and Resistance IV, `z` blocks in front of you, facing `yaw`."""
+    bot_respawned()
     cmd("gamemode survival Bot1", "clear Bot1", "effect clear Bot1", "attribute Bot1 minecraft:max_health base set 100",
         "effect give Bot1 minecraft:resistance 600 3 true", "effect give Bot1 minecraft:instant_health 1 28 true",
         f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + z} {yaw} 0", *extra)
@@ -4405,7 +4416,8 @@ def bot_ready(z=2.5, yaw=180, *extra):
 
 def bot_done():
     ctl2("release")
-    cmd("attribute Bot1 minecraft:max_health base set 20", "effect clear Bot1", "clear Bot1", "gamemode spectator Bot1")
+    cmd("attribute Bot1 minecraft:max_health base set 20", "effect clear Bot1", "clear Bot1", "gamemode spectator Bot1",
+        "gamerule natural_health_regeneration true")
 
 
 def poll(ticks, every=2, fn=None):
@@ -4646,7 +4658,7 @@ def _():
         wait(30)
     only()
     inv = ctl("inventory")
-    left = sum(s.get("count", 0) for s in inv.get("hotbar", []) if s and "ender_pearl" in s.get("item", ""))
+    left = sum(s.get("count", 0) for s in inv.get("hotbar") or [] if s and "ender_pearl" in (s.get("item") or ""))
     back = (state().get("held") or {}).get("item", "")
     return used["on"] > used["off"] and left == 11 and "sword" in back, (
         f"bottles in 2 s: {used['off']} without FastXP, {used['on']} with it; Key Throw: {16 - left} pearls for 5 presses, hand "
