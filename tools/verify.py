@@ -3108,6 +3108,20 @@ def frame(name):
     return Image.open(f"/tmp/{name}.png").convert("L")
 
 
+def colour_frame(name):
+    """The next frame in colour (the PNG stays in /tmp to look at)."""
+    from PIL import Image
+    ctl("screenshot", f"/tmp/{name}.png")
+    time.sleep(2)
+    return Image.open(f"/tmp/{name}.png").convert("RGB")
+
+
+def recoloured(a, b):
+    """Pixels whose colour differs between two colour frames by more than 12 in any channel."""
+    from PIL import ImageChops
+    return sum(1 for px in ImageChops.difference(a, b).getdata() if max(px) > 12)
+
+
 def changed(a, b, box=None):
     """Pixels that differ between two frames (in `box`, (left, top, right, bottom), if given)."""
     from PIL import ImageChops
@@ -3155,11 +3169,12 @@ def _():
 
 @test("Atmosphere")
 def _():
-    # At night, looking up: each sky changes the frame from the game's own sky (the aurora only low down), and the
-    # frame rate holds.
+    # At night, looking a little up (the aurora hangs low over the horizon): each sky changes the colour of the frame
+    # from the game's own sky, and the frame rate holds. The aurora is faint, so a pixel counts as changed by any
+    # visible shift of its colour, not only a jump in brightness.
     reset()
     cmd("time set 18000")
-    ctl("look", "0", "-60")
+    ctl("look", "0", "-15")
 
     def sky(name, mode=None):
         if mode:
@@ -3170,15 +3185,17 @@ def _():
         wait(40)
         b = ctl("status")
         fps = (b["frames"] - a["frames"]) / max(b["uptime_seconds"] - a["uptime_seconds"], 1e-6)
-        return frame(name), fps
+        return colour_frame(name), fps
     plain, fps0 = sky("atmo_off")
+    # What the game's own sky changes by itself in that time (stars, clouds): each sky must change more than that.
+    noise = recoloured(plain, sky("atmo_off2")[0]) / (1280 * 720)
     seen = {m: sky(f"atmo_{m.split()[0].lower()}", m) for m in ("Space", "Aurora", "Ringed Planet")}
     only()
     cmd("time set 6000")
-    share = {m: changed(plain, f) / (1280 * 720) for m, (f, _) in seen.items()}
-    ok = all(v > 0.005 for v in share.values()) and all(fps > 0.5 * fps0 for _, fps in seen.values())
-    return ok, (f"share of the frame changed: " + ", ".join(f"{m} {v:.0%} at {seen[m][1]:.0f} fps" for m, v in share.items())
-                + f"; the game's sky {fps0:.0f} fps (frames in /tmp/atmo_*.png)")
+    share = {m: recoloured(plain, f) / (1280 * 720) for m, (f, _) in seen.items()}
+    ok = all(v > noise + 0.005 for v in share.values()) and all(fps > 0.5 * fps0 for _, fps in seen.values())
+    return ok, (f"share of the frame recoloured: " + ", ".join(f"{m} {v:.1%} at {seen[m][1]:.0f} fps" for m, v in share.items())
+                + f"; the game's sky {fps0:.0f} fps, {noise:.1%} by itself (frames in /tmp/atmo_*.png)")
 
 
 @test("Storage ESP (double chests)")
