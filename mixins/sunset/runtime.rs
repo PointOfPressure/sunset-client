@@ -346,6 +346,10 @@ impl Module {
                     _ => true,
                 }
             }
+            "Shield Breaker" | "Mace" if matches!(name, "Back after" | "Shortest delay" | "Longest delay") => {
+                self.b(if self.name == "Mace" { "Swap back" } else { "Switch back" })
+                    && (name == "Back after" || self.p("Back after") == "A delay")
+            }
             "Scaffold" if self.p("Mode") == "Legit"
                 && matches!(name, "Air place" | "Ahead distance" | "Closest block range" | "Radius" | "Blocks per tick" | "Fast tower" | "Tower speed" | "While moving") => false,
             "Scaffold" => match name {
@@ -4328,10 +4332,11 @@ pub(super) fn crit_click(game: &mut Game<'_>) -> Option<bool> {
 // packet, and modules run after it. By then the server also has the look the last move packet carried. A critical
 // hit is marked: the sprint it stopped comes back the tick after it goes. The weapon Shield Breaker or Mace wants
 // goes in hand when the hit is planned, a tick before it (Horizon's server hits with what was held as its tick
-// began), and back after the hit's tick (`back`: the slot, and the weapon's slot it replaces if still held).
+// began), and back after the hit's tick, or that many ticks later with Back after A delay (`back`: the slot, the
+// weapon's slot it replaces if still held, and the tick it may go back).
 struct Strikes {
     queue: Vec<(u32, bool)>,
-    back: Option<(usize, usize)>,
+    back: Option<(usize, usize, u64)>,
 }
 
 static STRIKES: Mutex<Strikes> = Mutex::new(Strikes { queue: Vec::new(), back: None });
@@ -4353,7 +4358,7 @@ pub(super) fn strike(game: &mut Game<'_>, id: u32) {
 }
 
 fn queue_strike(game: &mut Game<'_>, id: u32, critical: bool) {
-    let back = super::sunset_melee::strike_weapon(game, id).map(|slot| (slot, game.selected));
+    let back = super::sunset_melee::strike_weapon(game, id).map(|(slot, delay)| (slot, game.selected, game.ticks + 1 + delay));
     strikes(|s| {
         s.queue.push((id, critical));
         s.back = s.back.or(back);
@@ -4367,7 +4372,8 @@ pub(super) fn strike_waiting() -> bool {
 
 // The tick after a hit, before the modules: the hotbar slot the hit's weapon replaced comes back.
 fn strike_weapon_back(game: &mut Game<'_>) {
-    if let Some((slot, weapon)) = strikes(|s| s.queue.is_empty().then(|| s.back.take()).flatten())
+    let ticks = game.ticks;
+    if let Some((slot, weapon, _)) = strikes(|s| (s.queue.is_empty() && s.back.is_some_and(|b| ticks >= b.2)).then(|| s.back.take()).flatten())
         && game.selected == weapon
     {
         hold(game, slot);
@@ -4418,7 +4424,8 @@ fn strike_now(game: &mut Game<'_>, id: u32) {
             game.swing_arm();
             game.send(S::Punch(Empty));
             game.reset_attack_strength();
-            strikes(|s| s.back = Some(s.back.map_or((axe, mace), |(slot, _)| (slot, mace))));
+            let due = game.ticks;
+            strikes(|s| s.back = Some(s.back.map_or((axe, mace, due), |(slot, _, due)| (slot, mace, due))));
         }
     }
 }

@@ -5252,6 +5252,47 @@ def _():
         f"{lost['on'][1]}")
 
 
+@test("Mace (Holding, Back after a delay)")
+def _():
+    # Mace's smash as above, Kill Aura holding the item: a sword (Holding lists it: the mace swaps in) and a stick
+    # (Holding sword,axe: no swap, a weak hit); then with Back after A delay (Shortest 5, Longest 5), the ticks the mace
+    # stays in hand after the hit (Same tick: 1).
+    setting("killaura", "entities", "pig")
+    setting("killaura", "attack when holding", "All")
+    setting("mace", "holding", "sword,axe")
+
+    def fall(item):
+        reset()
+        slot(0, item)
+        slot(2, "mace")
+        ctl("key", "1", "tap")
+        cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 1.5} {TOUGH_PIG}")
+        wait(10)
+        only("killaura", "mace")
+        cmd(f"tp @s {X0 + 0.5} {Y + 8} {Z0 + 0.5} 0 60")
+        hit, held_for = 0, 0
+        for _ in range(60):
+            wait(1)
+            m = mobs("pig")
+            if m and m[0]["health"] < 1000:
+                hit = 1000 - m[0]["health"]
+                break
+        while held_for < 20 and "mace" in held().get("item", ""):
+            wait(1)
+            held_for += 1
+        only()
+        return round(hit, 1), held_for, held().get("item", "").replace("minecraft:", "")
+
+    sword, stick = fall("diamond_sword"), fall("stick")
+    setting("mace", "back after", "A delay")
+    setting("mace", "shortest delay", "5")
+    setting("mace", "longest delay", "5")
+    delayed = fall("diamond_sword")
+    ok = sword[0] > stick[0] * 1.5 and delayed[0] > stick[0] * 1.5 and delayed[1] >= sword[1] + 2 and "sword" in delayed[2]
+    return ok, (f"(first hit, ticks the mace stayed after it, hand after) holding a sword: {sword}; a stick: {stick}; "
+                f"a sword, Back after a 5-tick delay: {delayed}")
+
+
 @test("Spear Swap (Reach poke)")
 def _():
     # A pig 4.5 blocks off (past the 3 blocks of reach), a sword in hand and an iron spear in slot 3: your clicks.

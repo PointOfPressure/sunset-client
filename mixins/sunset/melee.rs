@@ -32,24 +32,33 @@ const INPUT_KEYS: [KeyCode; 4] = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::Control
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(SHIELD, Category::Combat, "Hits a player's raised shield with an axe from your hotbar, which disables it. Passive: only when you or Kill Aura hit them; Auto also hits the shield under your crosshair. Shield held: the axe as soon as they hold a shield, not only once it is up (good players raise it as your hit arrives). Stun slam: falling onto the shield, Kill Aura's axe hit is followed by Mace's mace in the same tick.")
+        Module::new(SHIELD, Category::Combat, "Hits a player's raised shield with an axe from your hotbar, which disables it. Passive: only when you or Kill Aura hit them; Auto also hits the shield under your crosshair. Shield held: the axe as soon as they hold a shield, not only once it is up (good players raise it as your hit arrives). Stun slam: falling onto the shield, Kill Aura's axe hit is followed by Mace's mace in the same tick. Holding (Duelkit's): what you must hold for it to swap (sword, axe, spear, mace, trident, empty, other). Back after A delay keeps the axe in hand a random Shortest to Longest delay ticks before your slot comes back.")
             .pick("Mode", &["Passive", "Auto"])
+            .text("Holding", "sword,axe,spear,mace,trident,empty")
             .bool("Switch back", true)
+            .pick("Back after", &["Same tick", "A delay"])
+            .num("Shortest delay", 2.0, 1.0, 20.0, 1.0)
+            .num("Longest delay", 4.0, 1.0, 20.0, 1.0)
             .bool("Shield held", false)
             .bool("Stun slam", true),
-        Module::new(MACE, Category::Combat, "Takes the mace that hits hardest (its enchantments and the target's armour counted) as you fall onto a target, or for Breach. Smash assist hits the target under your crosshair during a real fall.")
+        Module::new(MACE, Category::Combat, "Takes the mace that hits hardest (its enchantments and the target's armour counted) as you fall onto a target, or for Breach. Smash assist hits the target under your crosshair during a real fall. Holding (Duelkit's): what you must hold for it to swap (sword, axe, spear, mace, trident, empty, other). Back after A delay keeps the mace in hand a random Shortest to Longest delay ticks before your slot comes back.")
             .bool("Auto swap", true)
             .pick("Pick", &["Damage", "Wind Burst"])
             .bool("Breach swap", false)
+            .text("Holding", "sword,axe,spear,mace,trident,empty,other")
             .bool("Swap back", true)
+            .pick("Back after", &["Same tick", "A delay"])
+            .num("Shortest delay", 2.0, 1.0, 20.0, 1.0)
+            .num("Longest delay", 4.0, 1.0, 20.0, 1.0)
             .bool("Smash assist", false)
             .pick("Smash timing", &["Delayed", "Direct"])
             .num("Min fall", 3.0, 1.5, 30.0, 0.5)
             .bool("Mobs", false),
-        Module::new(SPEAR, Category::Combat, "The Lunge key lunges with the spear from your hotbar with the most Lunge. Reach poke jabs an enemy along your look past ordinary reach when you click. Spear reach (Duelkit's): holding a sword or axe, the crosshair reaches as far as the spear in your hotbar, and the spear is selected and put back right before the hit.")
+        Module::new(SPEAR, Category::Combat, "The Lunge key lunges with the spear from your hotbar with the most Lunge. Reach poke jabs an enemy along your look past ordinary reach when you click. Spear reach (Duelkit's): holding what Holding lists (a sword or axe), the crosshair reaches as far as the spear in your hotbar, and the spear is selected and put back right before the hit.")
             .text("Lunge key", "None")
             .bool("Reach poke", false)
             .pick("Spear reach", &["Off", "When out of reach", "Every hit"])
+            .text("Holding", "sword,axe")
             .bool("Switch back", true),
         Module::new(TAP, Category::Combat, "Lets go of forward for a tick or more after a charged sprint hit, so the next hit knocks back as a sprint hit again. S Tap presses back instead.")
             .pick("Mode", &["W Tap", "S Tap"])
@@ -191,19 +200,6 @@ fn available_item<'a>(game: &'a Game<'_>, slot: usize) -> Option<&'a ItemStack> 
     let stack = game.inventory.get(slot)?.as_ref()?;
     let info = game.res.items().get(&stack.item)?;
     policy::usable(stack.count, stack.damage, info.max_damage).then_some(stack)
-}
-
-fn melee_item(game: &Game<'_>, stack: Option<&ItemStack>) -> bool {
-    let Some(stack) = stack else {
-        return false;
-    };
-    let name = &*stack.item;
-    name == "minecraft:mace"
-        || name == "minecraft:trident"
-        || Kinetic::of(name).is_some()
-        || ["minecraft:swords", "minecraft:axes"]
-            .iter()
-            .any(|tag| game.res.items().item_tags.get(*tag).is_some_and(|items| items.contains(name)))
 }
 
 fn known_friend(game: &Game<'_>, id: u32) -> bool {
@@ -492,6 +488,40 @@ struct WeaponPlan {
     pub slot: usize,
     pub owner: &'static str,
     pub restore: bool,
+    // Ticks more before the slot goes back (Back after A delay).
+    pub delay: u64,
+}
+
+// What the hand holds, as Duelkit's Holding lists name it.
+fn held_kind(game: &Game<'_>) -> &'static str {
+    let Some(stack) = game.held() else {
+        return "empty";
+    };
+    let tagged = |tag: &str| game.res.items().item_tags.get(tag).is_some_and(|items| items.contains(&*stack.item));
+    match &*stack.item {
+        "minecraft:mace" => "mace",
+        "minecraft:trident" => "trident",
+        name if Kinetic::of(name).is_some() => "spear",
+        _ if tagged("minecraft:swords") => "sword",
+        _ if tagged("minecraft:axes") => "axe",
+        _ => "other",
+    }
+}
+
+// The swap modules start only from what their Holding lists.
+fn holding(game: &Game<'_>, m: &Module) -> bool {
+    util::listed(m.t("Holding"), held_kind(game))
+}
+
+// Duelkit's After a delay: the swapped weapon stays in hand a few ticks, from Shortest to Longest delay (picked by the
+// tick it starts, so it varies), before the slot goes back; 0 with Same tick.
+pub(super) fn back_delay(game: &Game<'_>, m: &Module) -> u64 {
+    if m.p("Back after") != "A delay" {
+        return 0;
+    }
+    let lo = m.n("Shortest delay") as u64;
+    let hi = (m.n("Longest delay") as u64).max(lo);
+    lo + game.ticks.wrapping_mul(0x9E37_79B9) % (hi - lo + 1)
 }
 
 // The weapon Shield Breaker (an axe at a raised shield) or Mace (a smash, or Breach doing 15% more) wants for a hit
@@ -504,13 +534,13 @@ fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
     let shield_up = shield_counts(game, id) && !broken_shield(game, id);
     if let Some(m) = module(SHIELD)
         && target.kind.id == "minecraft:player"
-        && (game.held().is_none() || melee_item(game, game.held()))
+        && holding(game, &m)
         && shield_up
         && !game.held().and_then(|s| game.res.items().get(&s.item)).is_some_and(|i| i.disable_blocking_seconds > 0.0)
     {
-        return best_axe(game).map(|slot| WeaponPlan { slot, owner: SHIELD, restore: m.b("Switch back") });
+        return best_axe(game).map(|slot| WeaponPlan { slot, owner: SHIELD, restore: m.b("Switch back"), delay: back_delay(game, &m) });
     }
-    let m = module(MACE)?;
+    let m = module(MACE).filter(|m| holding(game, m))?;
     let smash = game.player.as_ref().is_some_and(|p| p.fall_distance > 1.5 && !p.fall_flying);
     if !m.b("Auto swap") || shield_up || (!smash && !m.b("Breach swap")) {
         return None;
@@ -522,7 +552,7 @@ fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
             return None;
         }
     }
-    Some(WeaponPlan { slot, owner: MACE, restore: m.b("Swap back") })
+    Some(WeaponPlan { slot, owner: MACE, restore: m.b("Swap back"), delay: back_delay(game, &m) })
 }
 
 // `owner` turned off: its look waiting and its borrowed slot go.
@@ -560,7 +590,7 @@ fn take_slot(game: &mut Game<'_>, plan: WeaponPlan, hold_ticks: u64, queued_end:
             owner: plan.owner,
             previous,
             selected: plan.slot,
-            until: game.ticks.saturating_add(hold_ticks),
+            until: game.ticks.saturating_add(hold_ticks + plan.delay),
             return_enabled: plan.restore,
         })
     });
@@ -939,7 +969,8 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
         };
         let restore = m.b(if m.name == MACE { "Swap back" } else { "Switch back" });
         let hold_ticks = if matches!(action, Automatic::Shield(_)) { 2 } else { 1 };
-        if !take_slot(game, WeaponPlan { slot, owner, restore }, hold_ticks, Some(done)) {
+        let delay = back_delay(game, &m);
+        if !take_slot(game, WeaponPlan { slot, owner, restore, delay }, hold_ticks, Some(done)) {
             return;
         }
         match action {
@@ -1020,7 +1051,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
         && enemy(game, &game.mobs[index], false)
         && shield_counts(game, id)
         && !broken_shield(game, id)
-        && (game.held().is_none() || melee_item(game, game.held()))
+        && holding(game, &m)
         && best_axe(game).is_some()
         && queue_action(game, m, Automatic::Shield(id))
     {
@@ -1074,14 +1105,14 @@ fn can_hold_smash(game: &mut Game<'_>, id: u32) -> bool {
 
 // A hit from Kill Aura or Trigger Bot on `id`, planned for the next tick: Shield Breaker's axe at a raised shield or
 // Mace's mace goes in hand for it (a smash uses up the fall). The slot to go back to after, if it is to.
-pub(super) fn strike_weapon(game: &mut Game<'_>, id: u32) -> Option<usize> {
+pub(super) fn strike_weapon(game: &mut Game<'_>, id: u32) -> Option<(usize, u64)> {
     let plan = preferred_weapon(game, id)?;
     let previous = game.selected;
     if plan.owner == MACE && game.player.as_ref().is_some_and(|p| p.fall_distance > 1.5 && !p.fall_flying) {
         state(|s| s.mace.accepted(mace_policy::Intent::Smash, 0, 0));
     }
     hold(game, plan.slot);
-    (plan.restore && plan.slot != previous).then_some(previous)
+    (plan.restore && plan.slot != previous).then_some((previous, plan.delay))
 }
 
 fn smash_intent(game: &mut Game<'_>, m: &Module, id: u32) -> mace_policy::Intent {
@@ -1120,13 +1151,10 @@ fn smash_intent(game: &mut Game<'_>, m: &Module, id: u32) -> mace_policy::Intent
     state(|s| s.mace.plan(frame))
 }
 
-// Spear reach (Duelkit's): the hotbar spear the crosshair reaches as far as, while a sword or axe is held. None: off.
+// Spear reach (Duelkit's): the hotbar spear the crosshair reaches as far as, while what Holding lists is held (a
+// sword or axe). None: off.
 pub(super) fn spear_reach_slot(game: &Game<'_>) -> Option<usize> {
-    module(SPEAR).filter(|m| m.p("Spear reach") != "Off")?;
-    let held = game.held().map(|s| util::short(&s.item))?;
-    if !(held.ends_with("_sword") || held.ends_with("_axe")) {
-        return None;
-    }
+    module(SPEAR).filter(|m| m.p("Spear reach") != "Off" && holding(game, m))?;
     best_spear(game, false)
 }
 
