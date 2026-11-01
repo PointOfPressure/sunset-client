@@ -1867,6 +1867,74 @@ def _():
                 f"(frames in {SHOTS}/cw_*.png)")
 
 
+@test("Base Finder")
+def _():
+    # A "base" (5 chests, 4 beds, 3 signs, a crafting table and a furnace: 14 listed blocks) is built east, in a
+    # chunk the client has not loaded. Base
+    # Finder on, the player goes there: the chunk is looked at on its own thread as it loads, and said in chat with
+    # its place, what is in it and a waypoint. Then a second base built in a loaded chunk is found when Base Finder
+    # goes on again. The arena's chunks (none of the base blocks in numbers) are not said.
+    # The client sees 4 chunks while it runs, so on a server a chunk 120 blocks east is loaded there (where /fill
+    # works) and not on the client; single player's server follows the client's distance: 400 east, kept loaded with
+    # /forceload while the commands run.
+    bx, by, bz = X0 + (120 if SERVER else 400), Y + 1, Z0 + 8
+    view = ctl("options-get", "renderDistance")["options"]["renderDistance"]["value"]
+
+    def build(x, y, z, block="minecraft:air"):
+        if block == "minecraft:air":
+            return [f"fill {x} {y} {z} {x+4} {y+2} {z} minecraft:air"]
+        return [f"fill {x} {y} {z} {x+4} {y} {z} minecraft:chest", f"fill {x} {y+1} {z} {x+3} {y+1} {z} minecraft:red_bed[part=foot]",
+                f"fill {x} {y+2} {z} {x+2} {y+2} {z} minecraft:oak_sign", f"setblock {x+3} {y+2} {z} minecraft:crafting_table",
+                f"setblock {x+4} {y+2} {z} minecraft:furnace"]
+
+    def said_base(mark, x, z):
+        return [line for line in sunset_said(mark) if line.startswith("Base?") and f"chunk {x >> 4} {z >> 4} " in line]
+
+    reset("creative")
+    ctl("options-set", "renderDistance", "4")
+    wait(60)
+    cmd(f"forceload add {bx} {bz}")
+    wait(20)
+    cmd(*build(bx, by, bz, "base"))
+    wait(5)
+    cmd(f"forceload remove {bx} {bz}")
+    wait(5)
+    mark = log_mark()
+    toggle("base finder", True)
+    wait(40)
+    ax, az = X0 >> 4, Z0 >> 4
+    near = [line for line in sunset_said(mark) if line.startswith("Base?")
+            and any(f"chunk {ax + dx} {az + dz} " in line for dx in range(-2, 3) for dz in range(-2, 3))]
+    far_before = said_base(mark, bx, bz)
+    cmd(f"tp @s {bx + 0.5} {by + 4} {bz - 4.5}")
+    t0 = time.time()
+    far = []
+    for _ in range(30):
+        wait(10)
+        far = said_base(mark, bx, bz)
+        if far:
+            break
+    took = time.time() - t0
+    cmd(*build(bx, by, bz))
+    cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}")
+    ctl("options-set", "renderDistance", str(view))
+    wait(60)
+    # A base in a chunk already loaded: found when Base Finder goes on again.
+    cmd(*build(X0 + 3, Y + 1, Z0 + 6, "base"))
+    wait(10)
+    mark2 = log_mark()
+    toggle("base finder", False)
+    toggle("base finder", True)
+    wait(40)
+    again = said_base(mark2, X0 + 3, Z0 + 6)
+    toggle("base finder", False)
+    cmd(*build(X0 + 3, Y + 1, Z0 + 6))
+    line = far[0] if far else ""
+    ok = bool(far) and not far_before and bool(again) and not near and all(k in line for k in ("5 chest", "4 bed", "3 sign"))
+    return ok, (f"fresh chunk said {took:.1f} s after the teleport: {line!r}; before loading: {len(far_before)}; "
+                f"loaded chunk on turning on: {len(again)}; arena chunks said: {len(near)}")
+
+
 @test("Text setting editor")
 def _():
     def messages():

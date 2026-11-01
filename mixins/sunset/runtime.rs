@@ -3658,6 +3658,19 @@ pub(super) fn track_logouts(game: &Game<'_>, m: &Module) {
     });
 }
 
+// A waypoint another module makes (Base Finder): replaces one of the same name, and Waypoints goes on to show it.
+pub(super) fn add_waypoint(game: &Game<'_>, name: String, pos: [f64; 3]) {
+    let dim = game.dim.id().to_owned();
+    with(|s| {
+        s.waypoints.retain(|w| w.name != name || w.dim != dim);
+        s.waypoints.push(Waypoint { name, pos, dim });
+        if let Some(i) = s.find("Waypoints") {
+            s.modules[i].on = true;
+        }
+    });
+    save(game);
+}
+
 // Death Location's waypoints: "Death", then "Death 2", "Death 3"... from the newest.
 fn death_point(w: &Waypoint) -> bool {
     w.name == "Death" || w.name.strip_prefix("Death ").is_some_and(|n| n.parse::<u32>().is_ok())
