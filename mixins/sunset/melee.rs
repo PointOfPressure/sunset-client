@@ -1,6 +1,6 @@
-// The melee helpers from Rust's PR #16: Shield Breaker, Mace, Spear Swap, W Tap, Jump Reset and Friend Guard, and
-// the weapon they pick for Kill Aura's and Trigger Bot's hits. Hits use the game's own inventory, movement, item
-// components, packets and spear ray.
+// The melee helpers from Rust's PR #16: Auto Weapon (its sections Best weapon, Axe on shields (Shield Breaker before),
+// Mace and Spear (Spear Swap)), W Tap, Jump Reset and Friend Guard, and the weapon they pick for Kill Aura's and
+// Trigger Bot's hits. Hits use the game's own inventory, movement, item components, packets and spear ray.
 use super::sunset::{Category, Module, gui_open, hold, try_turn_then, with};
 use super::sunset_combat_control as control;
 use super::sunset_mace_policy as mace_policy;
@@ -21,9 +21,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use winit::keyboard::KeyCode;
 
-const SHIELD: &str = "Shield Breaker";
+const WEAPON: &str = "Auto Weapon";
+// Auto Weapon's sections: each its switch's name, and the owner of what it does (the hand, its look).
+const BEST: &str = "Best weapon";
+const SHIELD: &str = "Axe on shields";
 const MACE: &str = "Mace";
-const SPEAR: &str = "Spear Swap";
+const SPEAR: &str = "Spear";
 const TAP: &str = "W Tap";
 const JUMP: &str = "Jump Reset";
 const FRIEND: &str = "Friend Guard";
@@ -32,34 +35,32 @@ const INPUT_KEYS: [KeyCode; 4] = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::Control
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(SHIELD, Category::Combat, "Disables shields with an axe.")
-            .pick("Mode", &["Passive", "Auto"])
-            .text("Holding", "sword,axe,spear,mace,trident,empty")
-            .bool("Switch back", true)
-            .pick("Back after", &["Same tick", "A delay"])
-            .num("Shortest delay", 2.0, 1.0, 20.0, 1.0)
-            .num("Longest delay", 4.0, 1.0, 20.0, 1.0)
+        // One weapon module for every hit: each section on its own switch, all of them with the Holding filter and the
+        // slot back after the hit (Duelkit's).
+        Module::new(WEAPON, Category::Combat, "Picks the weapon for each hit.")
+            .bool(BEST, true)
+            .bool("Prefer axes", false)
+            .bool(SHIELD, true)
+            .pick("Shield mode", &["Passive", "Auto"])
             .bool("Shield held", false)
-            .bool("Stun slam", true),
-        Module::new(MACE, Category::Combat, "Picks the best mace for a fall.")
-            .bool("Auto swap", true)
-            .pick("Pick", &["Damage", "Wind Burst"])
+            .bool("Stun slam", true)
+            .bool(MACE, true)
+            .bool("Mace swap", true)
+            .pick("Mace pick", &["Damage", "Wind Burst"])
             .bool("Breach swap", false)
-            .text("Holding", "sword,axe,spear,mace,trident,empty,other")
-            .bool("Swap back", true)
-            .pick("Back after", &["Same tick", "A delay"])
-            .num("Shortest delay", 2.0, 1.0, 20.0, 1.0)
-            .num("Longest delay", 4.0, 1.0, 20.0, 1.0)
             .bool("Smash assist", false)
             .pick("Smash timing", &["Delayed", "Direct"])
             .num("Min fall", 3.0, 1.5, 30.0, 0.5)
-            .bool("Mobs", false),
-        Module::new(SPEAR, Category::Combat, "Lunges with your best spear.")
+            .bool("Smash mobs", false)
+            .bool(SPEAR, false)
             .text("Lunge key", "None")
             .bool("Reach poke", false)
             .pick("Spear reach", &["Off", "When out of reach", "Every hit"])
-            .text("Holding", "sword,axe")
-            .bool("Switch back", true),
+            .text("Holding", "sword,axe,spear,mace,trident,empty")
+            .bool("Swap back", true)
+            .pick("Back after", &["Same tick", "A delay"])
+            .num("Shortest delay", 2.0, 1.0, 20.0, 1.0)
+            .num("Longest delay", 4.0, 1.0, 20.0, 1.0),
         Module::new(TAP, Category::Combat, "Resets sprint between hits.")
             .pick("Mode", &["W Tap", "S Tap"])
             .num("Hold", 1.0, 1.0, 3.0, 1.0),
@@ -110,6 +111,14 @@ fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
 
 fn module(name: &str) -> Option<Module> {
     with(|s| s.module(name).filter(|m| m.on).cloned())
+}
+
+// Auto Weapon, on with the section `owner` names on; any other owner's module of that name.
+fn section(owner: &str) -> Option<Module> {
+    match owner {
+        BEST | SHIELD | MACE | SPEAR => module(WEAPON).filter(|m| m.b(owner)),
+        _ => module(owner),
+    }
 }
 
 fn alive(game: &Game<'_>) -> bool {
@@ -377,9 +386,9 @@ fn holds_shield(game: &Game<'_>, id: u32) -> bool {
     })
 }
 
-// A shield Shield Breaker takes the axe to: raised at you, or with Shield held only held.
+// A shield Axe on shields takes the axe to: raised at you, or with Shield held only held.
 fn shield_counts(game: &Game<'_>, id: u32) -> bool {
-    observed_shield(game, id) || (module(SHIELD).is_some_and(|m| m.b("Shield held")) && holds_shield(game, id))
+    observed_shield(game, id) || (section(SHIELD).is_some_and(|m| m.b("Shield held")) && holds_shield(game, id))
 }
 
 // The hardest-hitting hotbar item that disables shields (an axe).
@@ -469,7 +478,7 @@ fn estimate_weapon(game: &Game<'_>, stack: &ItemStack, target: &Mob) -> Option<f
 // The mace that does most to `target` (Wind Burst first with Pick on it); outside a smash only one with Breach.
 fn best_mace(game: &Game<'_>, target: &Mob, m: &Module) -> Option<usize> {
     let smash = game.player.as_ref().is_some_and(|p| p.fall_distance > 1.5 && !p.fall_flying);
-    let wind = smash && m.p("Pick") == "Wind Burst";
+    let wind = smash && m.p("Mace pick") == "Wind Burst";
     (0..9)
         .filter_map(|slot| {
             let stack = available_item(game, slot)?;
@@ -524,35 +533,40 @@ pub(super) fn back_delay(game: &Game<'_>, m: &Module) -> u64 {
     lo + game.ticks.wrapping_mul(0x9E37_79B9) % (hi - lo + 1)
 }
 
-// The weapon Shield Breaker (an axe at a raised shield) or Mace (a smash, or Breach doing 15% more) wants for a hit
-// on `id`. It only chooses: whoever hits switches and goes back.
+// The weapon Auto Weapon wants for a hit on `id`, while what Holding lists is held: an axe at a raised shield (Axe on
+// shields), a mace for a smash or for Breach doing 15% more (Mace), else the best weapon (Best weapon). It only
+// chooses: whoever hits switches and goes back.
 fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
     if !allowed(game) {
         return None;
     }
+    let m = module(WEAPON).filter(|m| holding(game, m))?;
     let target = game.mobs.iter().find(|m| m.id == id && m.alive() && !m.removed)?;
+    let plan = |slot, owner| WeaponPlan { slot, owner, restore: m.b("Swap back"), delay: back_delay(game, &m) };
     let shield_up = shield_counts(game, id) && !broken_shield(game, id);
-    if let Some(m) = module(SHIELD)
+    if m.b(SHIELD)
         && target.kind.id == "minecraft:player"
-        && holding(game, &m)
         && shield_up
         && !game.held().and_then(|s| game.res.items().get(&s.item)).is_some_and(|i| i.disable_blocking_seconds > 0.0)
     {
-        return best_axe(game).map(|slot| WeaponPlan { slot, owner: SHIELD, restore: m.b("Switch back"), delay: back_delay(game, &m) });
+        return best_axe(game).map(|slot| plan(slot, SHIELD));
     }
-    let m = module(MACE).filter(|m| holding(game, m))?;
     let smash = game.player.as_ref().is_some_and(|p| p.fall_distance > 1.5 && !p.fall_flying);
-    if !m.b("Auto swap") || shield_up || (!smash && !m.b("Breach swap")) {
-        return None;
-    }
-    let slot = best_mace(game, target, &m)?;
-    if !smash {
+    if m.b(MACE)
+        && m.b("Mace swap")
+        && !shield_up
+        && (smash || m.b("Breach swap"))
+        && let Some(slot) = best_mace(game, target, &m)
+    {
         let old = game.held().and_then(|s| estimate_weapon(game, s, target)).unwrap_or(1.0);
-        if estimate_weapon(game, available_item(game, slot)?, target)? < old * 1.15 {
-            return None;
+        if smash || available_item(game, slot).and_then(|s| estimate_weapon(game, s, target)).is_some_and(|new| new >= old * 1.15) {
+            return Some(plan(slot, MACE));
         }
     }
-    Some(WeaponPlan { slot, owner: MACE, restore: m.b("Swap back"), delay: back_delay(game, &m) })
+    if m.b(BEST) {
+        return super::sunset::best_weapon(game, m.b("Prefer axes")).filter(|&slot| slot != game.selected).map(|slot| plan(slot, BEST));
+    }
+    None
 }
 
 // `owner` turned off: its look waiting and its borrowed slot go.
@@ -597,7 +611,7 @@ fn take_slot(game: &mut Game<'_>, plan: WeaponPlan, hold_ticks: u64, queued_end:
     true
 }
 
-// Your own click on `id`: false stops it (a friend); Shield Breaker or Mace switch the weapon for it.
+// Your own click on `id`: false stops it (a friend); Auto Weapon switches the weapon for it.
 fn before_attack(game: &mut Game<'_>, id: u32) -> bool {
     if guard_attack(game, id) {
         return false;
@@ -630,7 +644,7 @@ fn release_lease(game: &mut Game<'_>, force: bool) {
 pub(super) fn cancel(game: &mut Game<'_>) {
     post_input(game);
     release_lease(game, true);
-    for owner in [SHIELD, MACE, SPEAR] {
+    for owner in [BEST, SHIELD, MACE, SPEAR] {
         super::sunset::cancel_turns(owner);
     }
     state(|s| {
@@ -644,7 +658,7 @@ pub(super) fn request_jump(owner: &'static str) {
     state(|s| s.jump_owner = Some(owner));
 }
 
-// An Attack packet went out: Shield Breaker's hit counts for a second, W Tap starts.
+// An Attack packet went out: an Axe on shields hit counts for a second, W Tap starts.
 fn note_attack(game: &Game<'_>, id: u32) {
     note_action(game);
     if observed_shield(game, id)
@@ -740,7 +754,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
         return;
     }
     let tap = module(TAP).filter(|_| state(|s| game.ticks < s.tap_until));
-    let asked = state(|s| s.jump_owner.take()).is_some_and(|owner| module(owner).is_some() && control::available(owner));
+    let asked = state(|s| s.jump_owner.take()).is_some_and(|owner| section(owner).is_some() && control::available(owner));
     let knocked = state(|s| std::mem::take(&mut s.jump_pending))
         && module(JUMP).is_some()
         && game.keys.contains(&KeyCode::KeyW)
@@ -785,12 +799,12 @@ pub(super) fn post_input(game: &mut Game<'_>) {
     }
 }
 
-// Spear Swap's Lunge key, pressed: a lunge waits up to 10 ticks for its moment.
+// Auto Weapon's Spear Lunge key, pressed: a lunge waits up to 10 ticks for its moment.
 pub(super) fn key(game: &Game<'_>, key: &str, pressed: bool) {
     if !pressed || !game.native_playing() || gui_open() || !alive(game) {
         return;
     }
-    let Some(m) = module(SPEAR) else {
+    let Some(m) = section(SPEAR) else {
         return;
     };
     if super::sunset::key_from_text(m.t("Lunge key")).is_some_and(|wanted| super::sunset::key_from_text(key) == Some(wanted)) {
@@ -863,9 +877,9 @@ pub(super) fn before_click(game: &mut Game<'_>) -> Option<bool> {
         spear_pass(game, id);
         return None;
     }
-    let m = module(SPEAR)?;
+    let m = section(SPEAR)?;
     let slot = poke_slot(game, &m)?;
-    queue_action(game, m, Automatic::Jab { slot, lunge: false }).then_some(false)
+    queue_action(game, SPEAR, m, Automatic::Jab { slot, lunge: false }).then_some(false)
 }
 
 fn jab_ready(game: &Game<'_>, slot: usize) -> bool {
@@ -897,8 +911,7 @@ pub(super) fn due(game: &mut Game<'_>) {
 
 // A hit of the melee modules' own: once the server has your look, at the start of the next tick, checked again (the
 // same world, slot, item and settings, under 200 ms), the slot switched for one hit and the hit sent.
-fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
-    let owner = m.name;
+fn queue_action(game: &mut Game<'_>, owner: &'static str, m: Module, action: Automatic) -> bool {
     if state(|s| s.lease.is_some() || s.queued.is_some()) || !control::claim(owner) {
         return false;
     }
@@ -929,7 +942,7 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
             && !acted(game)
             && super::remote::sunset_combat_remote::sprint_synced(game)
             && game.remote.as_ref().is_some_and(|r| Arc::ptr_eq(&connection, &r.session.counters))
-            && module(owner).is_some_and(|now| now == m);
+            && section(owner).is_some_and(|now| now == m);
         if !valid {
             return;
         }
@@ -949,7 +962,7 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
             Automatic::Smash(id) => {
                 if !under(game, id) || smash_intent(game, &m, id) != mace_policy::Intent::Smash || guard_attack(game, id) {
                     None
-                } else if m.b("Auto swap") {
+                } else if m.b("Mace swap") {
                     game.mobs.iter().find(|t| t.id == id).and_then(|target| best_mace(game, target, &m))
                 } else {
                     available_item(game, game.selected).filter(|s| &*s.item == "minecraft:mace").map(|_| game.selected)
@@ -967,7 +980,7 @@ fn queue_action(game: &mut Game<'_>, m: Module, action: Automatic) -> bool {
         let Some(slot) = slot else {
             return;
         };
-        let restore = m.b(if m.name == MACE { "Swap back" } else { "Switch back" });
+        let restore = m.b("Swap back");
         let hold_ticks = if matches!(action, Automatic::Shield(_)) { 2 } else { 1 };
         let delay = back_delay(game, &m);
         if !take_slot(game, WeaponPlan { slot, owner, restore, delay }, hold_ticks, Some(done)) {
@@ -1014,11 +1027,11 @@ pub(super) fn tick(game: &mut Game<'_>) {
         });
         return;
     }
-    let disabled = state(|s| s.lease).is_some_and(|l| module(l.owner).is_none());
+    let disabled = state(|s| s.lease).is_some_and(|l| section(l.owner).is_none());
     release_lease(game, disabled || !game.native_playing() || gui_open());
     if let Some(owner) = state(|s| s.queued) {
         if !allowed(game)
-            || module(owner).is_none()
+            || section(owner).is_none()
             || state(|s| s.queued_since.is_none_or(|t| t.elapsed() > Duration::from_millis(200)))
         {
             super::sunset::cancel_turns(owner);
@@ -1029,13 +1042,13 @@ pub(super) fn tick(game: &mut Game<'_>) {
     if !allowed(game) || acted(game) || game.attack_clicks > 0 || game.clicks.miss_time > 0 || state(|s| s.lease.is_some()) {
         return;
     }
-    if let Some(m) = module(SPEAR)
+    if let Some(m) = section(SPEAR)
         && state(|s| s.lunge.active(game.ticks))
         && game.riding.is_none()
         && game.player.as_ref().is_some_and(|p| !p.fall_flying && !p.fluids.was_touching_water && (game.creative || p.health.food.food >= 7))
         && let Some(slot) = best_spear(game, true).filter(|&i| jab_ready(game, i))
         && !block_stab(game)
-        && queue_action(game, m, Automatic::Jab { slot, lunge: true })
+        && queue_action(game, SPEAR, m, Automatic::Jab { slot, lunge: true })
     {
         return;
     }
@@ -1046,28 +1059,28 @@ pub(super) fn tick(game: &mut Game<'_>) {
         return;
     }
     let id = game.mobs[index].id;
-    if let Some(m) = module(SHIELD).filter(|m| m.p("Mode") == "Auto")
+    if let Some(m) = section(SHIELD).filter(|m| m.p("Shield mode") == "Auto")
         && game.ticks >= state(|s| s.shield_ready)
         && enemy(game, &game.mobs[index], false)
         && shield_counts(game, id)
         && !broken_shield(game, id)
         && holding(game, &m)
         && best_axe(game).is_some()
-        && queue_action(game, m, Automatic::Shield(id))
+        && queue_action(game, SHIELD, m, Automatic::Shield(id))
     {
         return;
     }
-    if let Some(m) = module(MACE).filter(|m| m.b("Smash assist")) {
+    if let Some(m) = section(MACE).filter(|m| m.b("Smash assist")) {
         match smash_intent(game, &m, id) {
             mace_policy::Intent::BreakShield { .. } => {
-                queue_action(game, m, Automatic::SmashShield(id));
+                queue_action(game, MACE, m, Automatic::SmashShield(id));
             }
             mace_policy::Intent::Hold => {
                 drop_sprint(game);
                 game.clicks.miss_time = game.clicks.miss_time.max(1);
             }
             mace_policy::Intent::Smash => {
-                queue_action(game, m, Automatic::Smash(id));
+                queue_action(game, MACE, m, Automatic::Smash(id));
             }
             mace_policy::Intent::Idle => {}
         }
@@ -1088,14 +1101,14 @@ fn broken_shield(game: &Game<'_>, id: u32) -> bool {
 
 // Falling far enough onto `id` for Mace's smash, with a mace in hand or to swap to.
 fn smash_ready(game: &Game<'_>, id: u32) -> bool {
-    let (Some(m), Some(p)) = (module(MACE), game.player.as_ref()) else {
+    let (Some(m), Some(p)) = (section(MACE), game.player.as_ref()) else {
         return false;
     };
     if state(|s| s.mace.spent()) || !p.fall_distance.is_finite() || p.fall_distance <= 1.5 || p.fall_distance < m.n("Min fall") || p.fall_flying {
         return false;
     }
     available_item(game, game.selected).is_some_and(|s| &*s.item == "minecraft:mace")
-        || (m.b("Auto swap") && game.mobs.iter().find(|t| t.id == id).is_some_and(|target| best_mace(game, target, &m).is_some()))
+        || (m.b("Mace swap") && game.mobs.iter().find(|t| t.id == id).is_some_and(|target| best_mace(game, target, &m).is_some()))
 }
 
 fn can_hold_smash(game: &mut Game<'_>, id: u32) -> bool {
@@ -1103,8 +1116,8 @@ fn can_hold_smash(game: &mut Game<'_>, id: u32) -> bool {
     super::sunset_mace_native::continuation(game, id, yaw, pitch).unwrap_or(false)
 }
 
-// A hit from Kill Aura or Trigger Bot on `id`, planned for the next tick: Shield Breaker's axe at a raised shield or
-// Mace's mace goes in hand for it (a smash uses up the fall). The slot to go back to after, if it is to.
+// A hit from Kill Aura or Trigger Bot on `id`, planned for the next tick: Auto Weapon's axe at a raised shield,
+// mace or best weapon goes in hand for it (a smash uses up the fall). The slot to go back to after, if it is to.
 pub(super) fn strike_weapon(game: &mut Game<'_>, id: u32) -> Option<(usize, u64)> {
     let plan = preferred_weapon(game, id)?;
     let previous = game.selected;
@@ -1119,7 +1132,7 @@ fn smash_intent(game: &mut Game<'_>, m: &Module, id: u32) -> mace_policy::Intent
     let Some(target) = game.mobs.iter().find(|t| t.id == id) else {
         return mace_policy::Intent::Idle;
     };
-    let target_allowed = enemy(game, target, m.b("Mobs"));
+    let target_allowed = enemy(game, target, m.b("Smash mobs"));
     let target_immune = target.hurt_time > 0;
     let shield_blocks = observed_shield(game, id) && !broken_shield(game, id);
     let mace_available = smash_ready(game, id);
@@ -1139,7 +1152,7 @@ fn smash_intent(game: &mut Game<'_>, m: &Module, id: u32) -> mace_policy::Intent
         mace_available,
         shield_blocks,
         axe: best_axe(game),
-        auto_swap: m.b("Auto swap"),
+        auto_swap: m.b("Mace swap"),
         swap_back: m.b("Swap back"),
         can_continue,
         timing: if m.p("Smash timing") == "Delayed" { mace_policy::Timing::Delayed } else { mace_policy::Timing::Direct },
@@ -1154,7 +1167,7 @@ fn smash_intent(game: &mut Game<'_>, m: &Module, id: u32) -> mace_policy::Intent
 // Spear reach (Duelkit's): the hotbar spear the crosshair reaches as far as, while what Holding lists is held (a
 // sword or axe). None: off.
 pub(super) fn spear_reach_slot(game: &Game<'_>) -> Option<usize> {
-    module(SPEAR).filter(|m| m.p("Spear reach") != "Off" && holding(game, m))?;
+    section(SPEAR).filter(|m| m.p("Spear reach") != "Off" && holding(game, m))?;
     best_spear(game, false)
 }
 
@@ -1164,7 +1177,7 @@ pub(super) fn spear_pass(game: &mut Game<'_>, id: u32) {
     let Some(spear) = spear_reach_slot(game) else {
         return;
     };
-    let every = module(SPEAR).is_some_and(|m| m.p("Spear reach") == "Every hit");
+    let every = section(SPEAR).is_some_and(|m| m.p("Spear reach") == "Every hit");
     let (Some(eye), Some(target)) = (game.eye_position(), game.mobs.iter().find(|m| m.id == id)) else {
         return;
     };
@@ -1179,11 +1192,11 @@ pub(super) fn spear_pass(game: &mut Game<'_>, id: u32) {
     }
 }
 
-// Shield Breaker's Stun slam, before Kill Aura's axe hit on `id`: falling far enough onto their raised shield, the
+// Axe on shields' Stun slam, before Kill Aura's axe hit on `id`: falling far enough onto their raised shield, the
 // mace to hit with straight after it.
 pub(super) fn stun_slam(game: &Game<'_>, id: u32) -> Option<usize> {
-    module(SHIELD).filter(|m| m.b("Stun slam"))?;
-    let mace = module(MACE)?;
+    section(SHIELD).filter(|m| m.b("Stun slam"))?;
+    let mace = section(MACE)?;
     let p = game.player.as_ref()?;
     let axe = game.held().and_then(|s| game.res.items().get(&s.item)).is_some_and(|i| i.disable_blocking_seconds > 0.0);
     if !axe || !observed_shield(game, id) || p.fall_flying || p.fall_distance <= 1.5 || p.fall_distance < mace.n("Min fall") {

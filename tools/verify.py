@@ -5578,7 +5578,13 @@ def poll(ticks, every=2, fn=None):
     return out
 
 
-@test("Shield Breaker")
+def weapon(*sections):
+    """Auto Weapon with only these of its sections on (best weapon, axe on shields, mace, spear)."""
+    for section in ("best weapon", "axe on shields", "mace", "spear"):
+        setting("autoweapon", section, "true" if section in sections else "false")
+
+
+@test("Auto Weapon (Axe on shields)")
 def _():
     # Bot1 holds a shield up at you, put back in front every 2 ticks; Kill Aura with a sword, an axe in slot 3. Off,
     # Kill Aura's hits land on the shield and do nothing; on, the axe disables it and the sword's hits land. 10 s each.
@@ -5589,8 +5595,9 @@ def _():
     slot(2, "diamond_axe")
     ctl("key", "1", "tap")
     setting("killaura", "entities", "player")
+    weapon("axe on shields")
     runs = {}
-    for name, mods in (("off", ("killaura",)), ("on", ("killaura", "shieldbreaker"))):
+    for name, mods in (("off", ("killaura",)), ("on", ("killaura", "autoweapon"))):
         # In Bot1's hand: Horizon's server does not take /item replace for another player's offhand.
         bot_ready(2.5, 180, "give Bot1 minecraft:shield")
         ctl2("select", "1")
@@ -5609,18 +5616,19 @@ def _():
     off, on = runs["off"], runs["on"]
     # The axe is in hand a tick at a time, so polling every 2 ticks may miss it: the damage is the measure.
     return off[0] == 0 and on[0] > 0 and "sword" in on[2], (
-        f"Bot1 behind a raised shield lost {off[0]} health in 10 s without Shield Breaker, {on[0]} with it; the axe "
+        f"Bot1 behind a raised shield lost {off[0]} health in 10 s without Axe on shields, {on[0]} with it; the axe "
         f"was seen in hand {on[1]} times and the hand went back to {on[2] or 'nothing'}")
 
 
-@test("Mace")
+@test("Auto Weapon (Mace)")
 def _():
     # Falling 7 blocks past a pig with 1000 health, Kill Aura holding a sword, a mace in slot 3: the first hit's
-    # damage without and with Mace (a smash adds 4 a block for the first 3 fallen, 2 for the next 5).
+    # damage without and with Auto Weapon's Mace (a smash adds 4 a block for the first 3 fallen, 2 for the next 5).
     reset()
     setting("killaura", "entities", "pig")
+    weapon("mace")
     lost = {}
-    for name, mods in (("off", ("killaura",)), ("on", ("killaura", "mace"))):
+    for name, mods in (("off", ("killaura",)), ("on", ("killaura", "autoweapon"))):
         reset()
         slot(0, "diamond_sword")
         slot(2, "mace")
@@ -5643,14 +5651,15 @@ def _():
         f"{lost['on'][1]}")
 
 
-@test("Mace (Holding, Back after a delay)")
+@test("Auto Weapon (Holding, Back after a delay)")
 def _():
     # Mace's smash as above, Kill Aura holding the item: a sword (Holding lists it: the mace swaps in) and a stick
     # (Holding sword,axe: no swap, a weak hit); then with Back after A delay (Shortest 5, Longest 5), the ticks the mace
     # stays in hand after the hit (Same tick: 1).
     setting("killaura", "entities", "pig")
     setting("killaura", "attack when holding", "All")
-    setting("mace", "holding", "sword,axe")
+    setting("autoweapon", "holding", "sword,axe")
+    weapon("mace")
 
     def fall(item):
         reset()
@@ -5659,7 +5668,7 @@ def _():
         ctl("key", "1", "tap")
         cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 1.5} {TOUGH_PIG}")
         wait(10)
-        only("killaura", "mace")
+        only("killaura", "autoweapon")
         cmd(f"tp @s {X0 + 0.5} {Y + 8} {Z0 + 0.5} 0 60")
         hit, held_for = 0, 0
         for _ in range(60):
@@ -5675,26 +5684,27 @@ def _():
         return round(hit, 1), held_for, held().get("item", "").replace("minecraft:", "")
 
     sword, stick = fall("diamond_sword"), fall("stick")
-    setting("mace", "back after", "A delay")
-    setting("mace", "shortest delay", "5")
-    setting("mace", "longest delay", "5")
+    setting("autoweapon", "back after", "A delay")
+    setting("autoweapon", "shortest delay", "5")
+    setting("autoweapon", "longest delay", "5")
     delayed = fall("diamond_sword")
     ok = sword[0] > stick[0] * 1.5 and delayed[0] > stick[0] * 1.5 and delayed[1] >= sword[1] + 2 and "sword" in delayed[2]
     return ok, (f"(first hit, ticks the mace stayed after it, hand after) holding a sword: {sword}; a stick: {stick}; "
                 f"a sword, Back after a 5-tick delay: {delayed}")
 
 
-@test("Spear Swap (Reach poke)")
+@test("Auto Weapon (Reach poke)")
 def _():
     # A pig 4.5 blocks off (past the 3 blocks of reach), a sword in hand and an iron spear in slot 3: your clicks.
+    weapon("spear")
     lost = {}
-    for name, mods in (("off", ()), ("on", ("spearswap",))):
+    for name, mods in (("off", ()), ("on", ("autoweapon",))):
         reset()
         slot(0, "diamond_sword")
         slot(2, "iron_spear")
         ctl("key", "1", "tap")
         if mods:
-            setting("spearswap", "reach poke", "true")
+            setting("autoweapon", "reach poke", "true")
         pid = None
         cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 5.0} {TOUGH_PIG}")
         wait(10)
@@ -5708,7 +5718,7 @@ def _():
         m = mobs("pig")
         lost[name] = (round(1000 - m[0]["health"], 1) if m else None, (state().get("held") or {}).get("item", ""))
     return lost["off"][0] == 0 and (lost["on"][0] or 0) > 0 and "sword" in lost["on"][1], (
-        f"5 clicks at a pig 4.5 blocks off: {lost['off'][0]} health lost without Spear Swap, {lost['on'][0]} with Reach "
+        f"5 clicks at a pig 4.5 blocks off: {lost['off'][0]} health lost without Reach poke, {lost['on'][0]} with Reach "
         f"poke; hand after: {lost['on'][1]}")
 
 
@@ -6615,12 +6625,13 @@ def _():
     return off[0] == 0 and (on[0] or 0) > 0, f"5 clicks at a pig 4.5 blocks off: {off[0]} health lost without Reach, {on[0]} with Entity reach 4.5"
 
 
-@test("Spear Swap (Spear reach)")
+@test("Auto Weapon (Spear reach)")
 def _():
     # The same pig, a sword in hand and an iron spear in slot 3: Spear reach (When out of reach) reaches it with the
     # sword, passing through the spear's slot; the sword stays in hand.
+    weapon("spear")
     off = pig_clicks((), 5.0)
-    on = pig_clicks(("spearswap",), 5.0, (("spearswap", "spear reach", "when out of reach"),))
+    on = pig_clicks(("autoweapon",), 5.0, (("autoweapon", "spear reach", "when out of reach"),))
     if HORIZON_SERVER and on[0] == 0:
         return None, f"{REFUSED}: off {off[0]}, on {on[0]}"
     return off[0] == 0 and (on[0] or 0) > 0 and "sword" in on[1], (
@@ -6962,6 +6973,24 @@ def _():
     return got == want, f"Kill Aura settings {got} of {want}; said {shown[:2]}"
 
 
+@test("Auto Weapon (settings from before 0.9)")
+def _():
+    # A profile from before Auto Weapon took in Shield Breaker, Mace and Spear Swap: Shield Breaker on (Auto, Holding
+    # sword, bound to G, Switch back off), Mace on (Breach swap), Spear Swap and Auto Weapon off.
+    shown = old_profile("verifyweapon", ["shieldbreaker.on=true", "shieldbreaker.key=key.keyboard.g", "shieldbreaker.mode=Auto",
+                                         "shieldbreaker.holding=sword", "shieldbreaker.switchback=false", "mace.on=true", "mace.key=none",
+                                         "mace.breachswap=true", "spearswap.on=false", "spearswap.key=none", "autoweapon.on=false",
+                                         "autoweapon.key=none"], "autoweapon")
+    if shown is None:
+        return False, "no profile file written"
+    want = ["Best weapon: OFF", "Axe on shields: ON", "Shield mode: Auto", "Mace: ON", "Breach swap: ON", "Spear: OFF",
+            "Holding: sword", "Swap back: OFF"]
+    on = any("Auto Weapon*" in line for line in shown)
+    bound = any(line.startswith("Auto Weapon: G") for line in shown)
+    got = [w for w in want if any(line.startswith(w) for line in shown)]
+    return on and bound and got == want, f"Auto Weapon on: {on}, bound to G: {bound}, settings {got} of {want}; said {shown[:2]}"
+
+
 @test("Bow Spam (Crossbows)")
 def _():
     # A crossbow and 64 arrows, use held for 5 s looking up: arrows shot without and with Bow Spam.
@@ -7004,10 +7033,10 @@ def _():
     return bool(died) and bool(listed) and bool(reached), f"said {died}, waypoints {listed}, back there: {reached}"
 
 
-@test("Shield Breaker (Stun slam)")
+@test("Auto Weapon (Stun slam)")
 def _():
     # Falling 7 blocks onto Bot1, who holds a shield up at you, with Kill Aura (a sword), an axe in slot 3 and a mace
-    # in slot 4, Shield Breaker and Mace on: Bot1's health lost by the time you land, Stun slam off and on.
+    # in slot 4, Auto Weapon's Axe on shields and Mace on: Bot1's health lost by the time you land, Stun slam off and on.
     if not CTL2:
         return None, "needs a second player"
     setting("killaura", "entities", "player")
@@ -7018,13 +7047,14 @@ def _():
         slot(2, "diamond_axe")
         slot(3, "mace")
         ctl("key", "1", "tap")
-        setting("shieldbreaker", "stun slam", name)
+        setting("autoweapon", "stun slam", name)
+        weapon("axe on shields", "mace")
         bot_ready(2.0, 180, "give Bot1 minecraft:shield")
         ctl2("select", "1")
         ctl2("mouse", "right", "down")
         wait(10)
         before = bot_health()
-        only("killaura", "shieldbreaker", "mace")
+        only("killaura", "autoweapon")
         cmd(f"tp @s {X0 + 0.5} {Y + 8} {Z0 + 0.5} 0 60")
         for _ in range(40):
             wait(1)

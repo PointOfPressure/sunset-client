@@ -379,10 +379,16 @@ impl Module {
                     _ => true,
                 }
             }
-            "Shield Breaker" | "Mace" if matches!(name, "Back after" | "Shortest delay" | "Longest delay") => {
-                self.b(if self.name == "Mace" { "Swap back" } else { "Switch back" })
-                    && (name == "Back after" || self.p("Back after") == "A delay")
-            }
+            "Auto Weapon" => match name {
+                "Prefer axes" => self.b("Best weapon"),
+                "Shield mode" | "Shield held" | "Stun slam" => self.b("Axe on shields"),
+                "Mace swap" | "Mace pick" | "Breach swap" | "Smash assist" | "Min fall" | "Smash mobs" => self.b("Mace"),
+                "Smash timing" => self.b("Mace") && self.b("Smash assist"),
+                "Lunge key" | "Reach poke" | "Spear reach" => self.b("Spear"),
+                "Back after" => self.b("Swap back"),
+                "Shortest delay" | "Longest delay" => self.b("Swap back") && self.p("Back after") == "A delay",
+                _ => true,
+            },
             "Scaffold" if self.p("Mode") == "Legit"
                 && matches!(name, "Air place" | "Ahead distance" | "Closest block range" | "Radius" | "Blocks per tick" | "Fast tower" | "Tower speed" | "While moving") => false,
             "Scaffold" => match name {
@@ -615,8 +621,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Range", 64.0, 8.0, 128.0, 8.0)
             .num("Max", 256.0, 8.0, 1024.0, 8.0),
         // Added in 0.3
-        Module::new("Auto Weapon", Combat, "Switches to your best weapon.")
-            .bool("Prefer axes", false),
         Module::new("Auto Log", Player, "Leaves at low health.")
             .num("Health", 6.0, 1.0, 19.0, 1.0),
         Module::new("Sneak", Movement, "Sneaks for you."),
@@ -1250,7 +1254,8 @@ const DROPPED: [(&str, &str); 8] = [
 ];
 
 // Offhand took in Auto Totem, Auto Inventory Totem and Hover Totem, Fast Use took in FastXP, Velocity took in
-// Knockback Delay and Kill Aura and Trigger Bot took in Auto Shield (0.9): a config or profile from before has their
+// Knockback Delay, Kill Aura and Trigger Bot took in Auto Shield and Auto Weapon took in Shield Breaker, Mace and
+// Spear Swap (0.9): a config or profile from before has their
 // lines turned into the new module's. FastXP's are Throwables; Fast Use is on if either was (only for throwables, with
 // an empty list, when Fast Use itself was off).
 // Offhand is on if any of its three was, with the first key bound; the old Offhand's Item when it was on, else a totem
@@ -1269,7 +1274,7 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let on = |id: &str| get(id, "on") == Some("true");
     // The old Offhand had Min health where the new one has Health.
     let old_offhand = get("offhand", "minhealth").is_some();
-    let gone = ["autototem", "autoinventorytotem", "hovertotem", "fastxp", "knockbackdelay", "autoshield"];
+    let gone = ["autototem", "autoinventorytotem", "hovertotem", "fastxp", "knockbackdelay", "autoshield", "shieldbreaker", "mace", "spearswap"];
     let dropped = lines.iter().any(|&(id, field, _)| DROPPED.contains(&(id, field)));
     if !old_offhand && !dropped && !gone.iter().any(|id| had(id)) {
         return std::borrow::Cow::Borrowed(text);
@@ -1317,6 +1322,45 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
                     out.push(format!("{id}.shield{field}={v}"));
                 }
             }
+        }
+    }
+    // Shield Breaker, Mace and Spear Swap are Auto Weapon's sections (Best weapon the old Auto Weapon): Auto Weapon on
+    // if any of the four was, then with only their sections on, and the first key bound; the shared Holding and slot
+    // back from the first of them that was on.
+    if ["shieldbreaker", "mace", "spearswap"].iter().any(|id| had(id)) {
+        let old = ["autoweapon", "shieldbreaker", "mace", "spearswap"];
+        let weapon = get("autoweapon", "bestweapon").is_none() && on("autoweapon");
+        out.push(format!("autoweapon.on={}", old.iter().any(|id| on(id))));
+        if let Some(key) = old.iter().filter_map(|id| get(id, "key")).find(|k| *k != "none") {
+            out.push(format!("autoweapon.key={key}"));
+        }
+        if old.iter().any(|id| on(id)) {
+            for (id, section) in [("autoweapon", "bestweapon"), ("shieldbreaker", "axeonshields"), ("mace", "mace"), ("spearswap", "spear")] {
+                out.push(format!("autoweapon.{section}={}", if id == "autoweapon" { weapon } else { on(id) }));
+            }
+        }
+        for (id, old_field, field) in [
+            ("shieldbreaker", "mode", "shieldmode"), ("shieldbreaker", "shieldheld", "shieldheld"), ("shieldbreaker", "stunslam", "stunslam"),
+            ("mace", "autoswap", "maceswap"), ("mace", "pick", "macepick"), ("mace", "breachswap", "breachswap"),
+            ("mace", "smashassist", "smashassist"), ("mace", "smashtiming", "smashtiming"), ("mace", "minfall", "minfall"),
+            ("mace", "mobs", "smashmobs"), ("spearswap", "lungekey", "lungekey"), ("spearswap", "reachpoke", "reachpoke"),
+            ("spearswap", "spearreach", "spearreach"),
+        ] {
+            if let Some(v) = get(id, old_field) {
+                out.push(format!("autoweapon.{field}={v}"));
+            }
+        }
+        if let Some(first) = ["shieldbreaker", "mace", "spearswap"].into_iter().find(|id| on(id)) {
+            let back = if first == "mace" { "swapback" } else { "switchback" };
+            for (old_field, field) in [("holding", "holding"), (back, "swapback"), ("backafter", "backafter"), ("shortestdelay", "shortestdelay"), ("longestdelay", "longestdelay")] {
+                if let Some(v) = get(first, old_field) {
+                    out.push(format!("autoweapon.{field}={v}"));
+                }
+            }
+        } else if weapon {
+            // Auto Weapon alone switched from anything and stayed.
+            out.push("autoweapon.holding=sword,axe,spear,mace,trident,empty,other".into());
+            out.push("autoweapon.swapback=false".into());
         }
     }
     if had("fastxp") {
@@ -4549,8 +4593,8 @@ pub(super) fn crit_click(game: &mut Game<'_>) -> Option<bool> {
 
 // Hits wait for the start of the next tick: the game's own attack goes out with the input, before the tick's move
 // packet, and modules run after it. By then the server also has the look the last move packet carried. A critical
-// hit is marked: the sprint it stopped comes back the tick after it goes. The weapon Shield Breaker or Mace wants
-// goes in hand when the hit is planned, a tick before it (Horizon's server hits with what was held as its tick
+// hit is marked: the sprint it stopped comes back the tick after it goes. The weapon Auto Weapon wants goes in
+// hand when the hit is planned, a tick before it (Horizon's server hits with what was held as its tick
 // began), and back after the hit's tick, or that many ticks later with Back after A delay (`back`: the slot, the
 // weapon's slot it replaces if still held, and the tick it may go back).
 struct Strikes {
@@ -4614,11 +4658,6 @@ fn strike_now(game: &mut Game<'_>, id: u32) {
     // Gone since the hit was decided: the id may be someone else's by now.
     if !game.mobs.iter().any(|m| m.id == id && m.alive() && !m.removed) {
         return;
-    }
-    if let Some(m) = with(|s| s.module("Auto Weapon").filter(|m| m.on).cloned())
-        && let Some(slot) = best_weapon(game, m.b("Prefer axes"))
-    {
-        hold(game, slot);
     }
     // A spear stabs along the look instead, as the game's own left click does.
     if let Some(kinetic) = game.held().and_then(|s| horizon_client::spear::Kinetic::of(&s.item)) {
@@ -7014,6 +7053,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Fullbright" => "gamma night vision",
         "Criticals" => "crits",
         "Offhand" => "totem auto totem inventory totem hover totem crystal gapple",
+        "Auto Weapon" => "shield breaker axe mace spear swap lunge best weapon",
         "Xray" => "x-ray",
         "Entity Control" => "boat fly boatfly entity speed entity fly horse ride vehicle",
         "Clear Water" => "water opacity see through transparent",

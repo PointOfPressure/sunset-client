@@ -87,7 +87,7 @@ pub(super) fn attack_speed(item_modifier: f64, total_modifiers: impl IntoIterato
     Some(value.clamp(0.0, 1024.0))
 }
 
-// A key press kept for a few ticks (Spear Swap's Lunge key).
+// A key press kept for a few ticks (Auto Weapon's Lunge key).
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct Request {
     deadline: Option<u64>,
