@@ -1,7 +1,7 @@
 // Meteor's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil,
-// Anti Bed, Rotation, No Rotate, No Status Effects (render.rs keeps the effects aside), Potion Saver and No Mining
-// Trace (player.rs's crosshair pick reads it).
-use super::Game;
+// Anti Bed, Rotation, No Rotate, No Status Effects (render.rs keeps the effects aside), Potion Saver, No Mining
+// Trace (player.rs's crosshair pick reads it), Portals and Multitask.
+use super::{Game, Screen};
 use super::sunset::{Category, Module, with};
 use super::sunset_util::{self as util, facts, feet_block, find_held, is_air, listed, place_block, short, toggle_off};
 use horizon_protocol::packets::Empty;
@@ -35,6 +35,8 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("No Mining Trace", Player, "Mines through mobs in the way.")
             .text("Entities", "")
             .bool("Only with a pickaxe", true),
+        Module::new("Portals", Player, "Keeps menus open in nether portals."),
+        Module::new("Multitask", Player, "Hits while you eat or use items."),
     ]
 }
 
@@ -46,6 +48,10 @@ struct Parity {
     breaking: Option<[i32; 3]>,
     // Potion Saver: each effect's time last tick.
     timers: HashMap<String, i32>,
+    // Portals: the screen a portal's effect would have closed.
+    screen: Option<Screen>,
+    // Multitask: left clicks while you used an item, since the last tick.
+    clicks: u32,
 }
 
 static PARITY: Mutex<Option<Parity>> = Mutex::new(None);
@@ -66,10 +72,43 @@ pub(super) fn correction(game: &Game<'_>) {
 }
 
 // Before the tick's packets: the look a teleport took comes back (a hair off, so the tick's move packet carries it).
+// Multitask (Meteor's): your clicks at a mob while you use an item (the game takes none then) become hits, through
+// the strikes queue, in this tick before its move packet.
 pub(super) fn pre_tick(game: &mut Game<'_>) {
     if let Some((yaw, pitch)) = parity(|p| p.look.take()) {
         game.yaw = yaw + 0.000_001;
         game.pitch = pitch;
+    }
+    if parity(|p| std::mem::take(&mut p.clicks)) > 0
+        && game.using.is_some()
+        && game.screen == Screen::Playing
+        && let Some((i, distance)) = game.mob_hit()
+        && game.before_block(distance)
+    {
+        let id = game.mobs[i].id;
+        super::sunset::strike(game, id);
+    }
+}
+
+// The mouse hook: a left press while an item is in use, with Multitask on.
+pub(super) fn clicked(game: &Game<'_>, left: bool) {
+    if left && game.using.is_some() && module("Multitask").is_some() {
+        parity(|p| p.clicks += 1);
+    }
+}
+
+// Portals (Meteor's): in a nether portal the game closes every screen but the chat; with Portals on it sees the chat
+// while its portal effect runs, and the screen comes back after.
+pub(super) fn portal_before(game: &mut Game<'_>) {
+    if !matches!(game.screen, Screen::Playing | Screen::Chat | Screen::Dead) && module("Portals").is_some() {
+        let open = std::mem::replace(&mut game.screen, Screen::Chat);
+        parity(|p| p.screen = Some(open));
+    }
+}
+
+pub(super) fn portal_after(game: &mut Game<'_>) {
+    if let Some(open) = parity(|p| p.screen.take()) {
+        game.screen = open;
     }
 }
 

@@ -7145,6 +7145,53 @@ def _():
     return ok, f"Self Anvil (anvil in the hole, still on): {self_anvil}; Anti Anvil obsidian over your head, the anvil on it: {anti_anvil}; Anti Bed string: {anti_bed}"
 
 
+@test("Portals and Multitask")
+def _():
+    # Portals: the inventory open, you step into a nether portal (survival: it takes 4 s to go through): after 1 s the
+    # inventory is still open with Portals, closed without. Multitask: eating a golden apple, 3 clicks at a pig in front
+    # hit it with Multitask (and the eating goes on), not without.
+    kept = {}
+    for name, mods in (("off", ()), ("on", ("portals",))):
+        reset()
+        cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 2} {Y + 5} {Z0 + 2} minecraft:obsidian",
+            f"fill {X0} {Y + 2} {Z0 + 2} {X0 + 1} {Y + 4} {Z0 + 2} minecraft:nether_portal[axis=x]")
+        wait(5)
+        only(*mods)
+        ctl("open-inventory")
+        wait(5)
+        cmd(f"tp @s {X0 + 1.0} {Y + 2} {Z0 + 2.5} 0 0")
+        wait(20)
+        kept[name] = state().get("screen")
+        ctl("close")
+        only()
+        cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 2} {Y + 5} {Z0 + 2} minecraft:air", f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
+        wait(5)
+    hit = {}
+    for name, mods in (("off", ()), ("on", ("multitask",))):
+        reset()
+        slot(0, "golden_apple", 8)
+        ctl("key", "1", "tap")
+        cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 2.0} {TOUGH_PIG}")
+        wait(10)
+        pid = mobs("pig")[0]["id"]
+        ctl("look-at-entity", str(pid))
+        only(*mods)
+        ctl("mouse", "right", "down")
+        wait(5)
+        using = []
+        for _ in range(3):
+            ctl("mouse", "left", "click")
+            wait(5)
+            using.append(bool(state().get("using")))
+        ctl("mouse", "right", "up")
+        only()
+        m = mobs("pig")
+        hit[name] = (round(1000 - m[0]["health"], 1) if m else None, all(using))
+    cmd("kill @e[type=pig]")
+    ok = kept["off"] != "inventory" and kept["on"] == "inventory" and hit["off"][0] == 0 and hit["on"][0] > 0 and hit["on"][1]
+    return ok, f"screen 1 s into a portal: off {kept['off']}, Portals {kept['on']}; (pig's health lost, still eating) to 3 clicks while eating: off {hit['off']}, Multitask {hit['on']}"
+
+
 @test("Bow Spam (Crossbows)")
 def _():
     # A crossbow and 64 arrows, use held for 5 s looking up: arrows shot without and with Bow Spam.

@@ -733,6 +733,36 @@ bindings = [
 ]
 
 [[injection]]
+id = "multitask_click"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::remote_mouse"
+helper = "multitask_click.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "button", ty = "winit::event::MouseButton", value = "button" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
+
+[[injection]]
+id = "portal_before"
+kind = "HEAD"
+target = "horizon_client::game::nether_portal::Game<'_>::client_portal_effect"
+helper = "portal_before.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "portal_after"
+kind = "RETURN"
+target = "horizon_client::game::nether_portal::Game<'_>::client_portal_effect"
+helper = "portal_after.rs"
+bindings = [
+  { name = "value", ty = "bool", value = "$value" },
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
 id = "mouse_after"
 kind = "RETURN"
 target = "horizon_client::game::Game<'_>::apply_mouse_look"
