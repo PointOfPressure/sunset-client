@@ -318,6 +318,11 @@ impl Module {
         match self.name {
             // Kill Aura's and Trigger Bot's Shield: its settings with it on.
             "Kill Aura" | "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
+            "Inventory Cleaner" => match name {
+                "List mode" | "Items" => self.p("Preset") == "Custom",
+                "Blocks" | "Food" | "Arrows" | "Pearls" | "Junk" => self.p("Preset") != "Custom",
+                _ => true,
+            },
             "Crystal Aura" if name == "Hold key" => self.b("Require hold"),
             "Crystal Aura" | "Anchor Aura" if name == "Render color" => self.b("Render"),
             "Speed" => match name {
@@ -1534,6 +1539,12 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
         }
         save(game);
     }
+}
+
+// A setting set from code (a preset filling in its values), as .set would, and saved.
+pub(super) fn set_setting(game: &Game<'_>, key: &str, value: &str) {
+    with(|s| s.set_field(key, value));
+    save(game);
 }
 
 pub(super) fn save(game: &Game<'_>) {

@@ -2462,6 +2462,40 @@ def _():
     return slow[1] == 27 and fast[1] == 27 and slow[0] > fast[0] * 2, f"27 stacks taken in {slow[0]} ticks at 1 a tick, {fast[0]} at 9"
 
 
+@test("Inventory Cleaner (presets)")
+def _():
+    # Preset PvP: of two swords, two pickaxes and a helmet like the one worn only the best of each kind stays; 3
+    # stacks of 64 stone keep 128 (Blocks); 3 stacks of 64 arrows keep 64; dirt (Junk) goes; a torch and bread stay.
+    # Then Blocks set to 64: one more stone stack goes.
+    def clean():
+        ctl("open-inventory")
+        wait(60)
+        ctl("close")
+        return ctl("inventory").get("counts", {})
+
+    reset()
+    setting("inventorycleaner", "preset", "Custom")
+    only("inventorycleaner")
+    cmd("clear @s", "item replace entity @s armor.head with minecraft:iron_helmet")
+    wait(5)
+    setting("inventorycleaner", "preset", "PvP")
+    wait(5)
+    give = {0: "diamond_sword", 1: "iron_sword", 2: "stone_pickaxe", 3: "netherite_pickaxe", 4: "iron_helmet", 5: "stone 64",
+            6: "stone 64", 7: "stone 64", 8: "arrow 64", 9: "arrow 64", 10: "arrow 64", 11: "dirt 32", 12: "torch 16", 13: "bread 8"}
+    cmd(*[f"item replace entity @s inventory.{i} with minecraft:{v}" for i, v in give.items()])
+    got = clean()
+    setting("inventorycleaner", "blocks", "64")
+    fewer = clean().get("minecraft:stone")
+    only()
+    setting("inventorycleaner", "preset", "Custom")
+    cmd("clear @s", "kill @e[type=item]")
+    want = {"minecraft:diamond_sword": 1, "minecraft:netherite_pickaxe": 1, "minecraft:stone": 128, "minecraft:arrow": 64,
+            "minecraft:torch": 16, "minecraft:bread": 8}
+    wrong = {k: got.get(k) for k in set(want) | set(got) if k != "minecraft:iron_helmet" and got.get(k) != want.get(k)}
+    ok = not wrong and got.get("minecraft:iron_helmet", 0) <= 1 and fewer == 64
+    return ok, f"PvP kept {got}; not as wanted: {wrong}; stone with Blocks 64: {fewer}"
+
+
 @test("Inventory Cleaner")
 def _():
     cmd("item replace entity @s inventory.3 with minecraft:rotten_flesh 12", "item replace entity @s inventory.4 with minecraft:bread 4")

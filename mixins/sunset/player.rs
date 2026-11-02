@@ -29,9 +29,15 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Auto Steal", Player, "Takes everything out of a chest, barrel, shulker box or hopper as you open it.")
             .num("Items per tick", 3.0, 1.0, 27.0, 1.0)
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0),
-        Module::new("Inventory Cleaner", Player, "Drops the listed items from your inventory while it is open (with List mode Blacklist, every item not listed).")
+        Module::new("Inventory Cleaner", Player, "Drops junk from your inventory while it is open. Custom: the listed items (with List mode Blacklist, every item not listed). A preset (PvP, Building, Mining, Survival) keeps the best tool, weapon and armour piece of each kind, building blocks, food, arrows and pearls up to its limits, and drops its Junk; picking one fills in its limits and Junk, which you can then change.")
+            .pick("Preset", &["Custom", "PvP", "Building", "Mining", "Survival"])
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Items", "rotten_flesh,spider_eye,poisonous_potato,gravel,cobblestone,netherrack,cobbled_deepslate,andesite,diorite,granite,tuff")
+            .num("Blocks", 128.0, 0.0, 2304.0, 64.0)
+            .num("Food", 64.0, 0.0, 576.0, 16.0)
+            .num("Arrows", 64.0, 0.0, 576.0, 16.0)
+            .num("Pearls", 16.0, 0.0, 64.0, 1.0)
+            .text("Junk", PRESETS[0].5)
             .num("Delay (ticks)", 1.0, 0.0, 10.0, 1.0),
         Module::new("Fast Use", Player, "Lets you use items at very high speeds: the game's use delay becomes Cooldown, for every item (Mode All) or the listed ones and blocks (Some). Throwables (FastXP): experience bottles, pearls, wind charges and the rest as ticked are thrown the tick their cooldown ends while you hold use (Duelkit's Fast throw); Throw mode Delay throws one every Throw delay ticks, Every tick one a tick, Burst throws up to Burst a tick (bottles, snowballs, eggs and splash potions; never more than 15 packets a tick, well under Paper's limit). Off hand: from the offhand while your hand is empty or holds a weapon.")
             .pick("Mode", &["All", "Some"])
@@ -104,6 +110,8 @@ struct Ps {
     steal_same: u32,
     steal_done: i32,
     clean_wait: u32,
+    // Inventory Cleaner's Preset as last seen.
+    clean_preset: String,
     // No Break Reset: the step the block's break took last tick, with the item held then.
     break_step: f32,
     // No Fall's Place: what it put down to land in, the item, the ticks since, the ticks you have stood still, and
@@ -614,7 +622,104 @@ fn auto_steal(game: &mut Game<'_>, m: &Module) {
     ps(|p| p.steal_wait = m.n("Delay (ticks)") as u32);
 }
 
+// Inventory Cleaner's presets: name, then the blocks, food, arrows and pearls kept, and the junk.
+const PRESETS: [(&str, f64, f64, f64, f64, &str); 4] = [
+    ("PvP", 128.0, 64.0, 64.0, 16.0, "dirt,gravel,sand,rotten_flesh,spider_eye,poisonous_potato,wheat_seeds,bone,string,feather,flint,stick,egg"),
+    ("Building", 1728.0, 32.0, 0.0, 16.0, "rotten_flesh,spider_eye,poisonous_potato,wheat_seeds,bone,string,feather,flint,egg"),
+    ("Mining", 64.0, 64.0, 0.0, 0.0, "dirt,gravel,cobblestone,cobbled_deepslate,netherrack,andesite,diorite,granite,tuff,rotten_flesh,spider_eye,poisonous_potato,wheat_seeds"),
+    ("Survival", 256.0, 128.0, 128.0, 16.0, "rotten_flesh,spider_eye,poisonous_potato"),
+];
+
+// A tool, weapon or armour piece: its kind (the word after the material) and how good its material is.
+fn gear(item: &str) -> Option<(&str, u32)> {
+    const KINDS: [&str; 13] = ["sword", "axe", "pickaxe", "shovel", "hoe", "spear", "helmet", "chestplate", "leggings", "boots", "bow", "crossbow", "mace"];
+    let (material, kind) = item.rsplit_once('_').unwrap_or(("", item));
+    if !KINDS.contains(&kind) || (material.is_empty() && !matches!(kind, "bow" | "crossbow" | "mace")) {
+        return None;
+    }
+    let tier = match material {
+        "netherite" => 7,
+        "diamond" => 6,
+        "iron" => 5,
+        "copper" => 4,
+        "stone" | "chainmail" | "turtle" => 3,
+        "golden" => 2,
+        _ => 1,
+    };
+    Some((kind, tier))
+}
+
+// The inventory slots (0-35) a preset drops: its junk; a tool, weapon or armour piece when a better one or the same
+// one is kept (worn armour counts); building blocks, food, arrows and pearls past its limits.
+fn junk_slots(game: &Game<'_>, m: &Module) -> Vec<usize> {
+    let item = |i: usize| game.inventory.get(i).and_then(|s| s.as_ref());
+    let mut out = Vec::new();
+    let mut best: Vec<(&str, u32, usize)> = Vec::new();
+    for i in (0..36).chain(36..40) {
+        let Some((kind, tier)) = item(i).and_then(|s| gear(short(&s.item))) else {
+            continue;
+        };
+        match best.iter_mut().find(|b| b.0 == kind) {
+            Some(b) if tier > b.1 || (tier == b.1 && i >= 36) => {
+                if b.2 < 36 {
+                    out.push(b.2);
+                }
+                *b = (kind, tier, i);
+            }
+            Some(_) if i < 36 => out.push(i),
+            Some(_) => {}
+            None => best.push((kind, tier, i)),
+        }
+    }
+    let mut kept = [0.0; 4];
+    for i in 0..36 {
+        let Some(stack) = item(i) else {
+            continue;
+        };
+        let name = short(&stack.item);
+        if listed(m.t("Junk"), name) {
+            out.push(i);
+            continue;
+        }
+        let info = game.res.items().get(&stack.item);
+        let class = if info.as_ref().and_then(|i| i.block).is_some_and(|b| game.res.facts().get(b).full_collision) {
+            0
+        } else if info.as_ref().is_some_and(|i| i.food.is_some()) {
+            1
+        } else if name.ends_with("arrow") {
+            2
+        } else if name == "ender_pearl" {
+            3
+        } else {
+            continue;
+        };
+        let limit = m.n(["Blocks", "Food", "Arrows", "Pearls"][class]);
+        if kept[class] + stack.count as f64 > limit {
+            out.push(i);
+        } else {
+            kept[class] += stack.count as f64;
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
+    // A preset just picked fills in its limits and junk (not on the first look, so a change you made stays).
+    let preset = m.p("Preset");
+    let before = ps(|p| std::mem::replace(&mut p.clean_preset, preset.to_owned()));
+    if !before.is_empty() && before != preset
+        && let Some(&(_, blocks, food, arrows, pearls, junk)) = PRESETS.iter().find(|p| p.0 == preset)
+    {
+        for (field, value) in [("blocks", blocks.to_string()), ("food", food.to_string()), ("arrows", arrows.to_string()),
+            ("pearls", pearls.to_string()), ("junk", junk.to_owned())]
+        {
+            super::sunset::set_setting(game, &format!("inventorycleaner.{field}"), &value);
+        }
+        return;
+    }
+
     use horizon_client::menu::Input::Throw;
     if game.screen != Screen::Inventory || game.remote_menu().1 != "inventory" {
         return;
@@ -625,7 +730,11 @@ fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
     }) {
         return;
     }
-    let junk = (0..36).find(|&i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| passes(m, "Items", short(&s.item))));
+    let junk = if preset == "Custom" {
+        (0..36).find(|&i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| passes(m, "Items", short(&s.item))))
+    } else {
+        junk_slots(game, m).first().copied()
+    };
     if let Some(i) = junk {
         game.menu_ops(&[(Some(i), 1, Throw)]);
         ps(|p| p.clean_wait = m.n("Delay (ticks)") as u32 + 1);
