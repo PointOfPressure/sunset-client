@@ -928,6 +928,9 @@ fn run(game: &mut Game<'_>, module: &Module) -> Vec<String> {
         let query = if !module.b("Query") {
             skipped.push("Query: off in settings".to_owned());
             None
+        } else if s.address == "local" {
+            skipped.push("Query: single player has no Query".to_owned());
+            None
         } else if s.query.rx.is_some() || QUERY_RUNNING.load(Ordering::Relaxed) {
             skipped.push("Query: the previous one is still running".to_owned());
             None
