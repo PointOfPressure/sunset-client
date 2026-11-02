@@ -6612,16 +6612,13 @@ def _():
     return ok, "after equipping (how, slot 1, slot 2, held): " + ", ".join(map(str, got))
 
 
-@test("Auto Shield")
-def _():
-    # A sword in hand and a shield in the offhand. First Bot1 hits you with a sword every 15 ticks, 10 times: health
-    # you lost without and with Auto Shield. Then your Kill Aura hits Bot1 for 10 s: health it lost, its hits, and the
-    # ticks your shield was down per hit, without and with Auto Shield.
-    if not CTL2:
-        return None, "needs a second player"
-    setting("killaura", "entities", "player")
+def shield_run(module):
+    """A sword in hand, a shield in the offhand, `module` (killaura or triggerbot) on, with its Shield off then on:
+    health you lost to 10 sword hits from Bot1 (every 15 ticks), then for 10 s with Bot1 in front: health Bot1 lost,
+    your hits, and the ticks your shield was down per hit."""
     took, gave = {}, {}
-    for name, mods in (("off", ()), ("on", ("autoshield",))):
+    setting(module, "entities", "player")
+    for name in ("off", "on"):
         reset()
         slot(0, "diamond_sword")
         cmd("item replace entity @s weapon.offhand with minecraft:shield", "effect give @s minecraft:health_boost 600 9 true",
@@ -6629,7 +6626,9 @@ def _():
         ctl("key", "1", "tap")
         bot_ready(2.5, 180, "give Bot1 minecraft:diamond_sword")
         ctl2("select", "1")
-        only(*mods)
+        setting(module, "shield", "true" if name == "on" else "false")
+        ctl("look-at", str(X0 + 0.5), str(Y + 1.6), str(Z0 + 2.5))
+        only(module)
         wait(20)
         mine = own_health()
         for _ in range(10):
@@ -6639,11 +6638,11 @@ def _():
             ctl2("mouse", "left", "click")
             wait(12)
         took[name] = round(mine - own_health(), 1)
-        only(*mods, "killaura")
         bot, down, hits, last = bot_health(), 0, 0, bot_health()
         for t in range(200):
             if t % 10 == 0:
                 cmd(f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5} 180 0")
+                ctl("look-at", str(X0 + 0.5), str(Y + 1.6), str(Z0 + 2.5))
             wait(1)
             u = state().get("using") or {}
             down += u.get("slot") != 40
@@ -6652,10 +6651,37 @@ def _():
             last = h
         only()
         gave[name] = (round(bot - bot_health(), 1), hits, round(down / max(hits, 1), 1))
+    setting(module, "shield", "false")
     bot_done()
     ok = took["on"] < took["off"] and gave["on"][0] > 0
-    return ok, (f"health you lost to 10 hits: off {took['off']}, on {took['on']}; Kill Aura for 10 s (Bot1 lost, hits, "
+    return ok, (f"health you lost to 10 hits: Shield off {took['off']}, on {took['on']}; for 10 s (Bot1 lost, hits, "
                 f"ticks unshielded per hit): off {gave['off']}, on {gave['on']}")
+
+
+@test("Shield (Kill Aura)")
+def _():
+    if not CTL2:
+        return None, "needs a second player"
+    return shield_run("killaura")
+
+
+@test("Shield (Trigger Bot)")
+def _():
+    if not CTL2:
+        return None, "needs a second player"
+    return shield_run("triggerbot")
+
+
+@test("Shield (settings from before 0.9)")
+def _():
+    # A profile from before Kill Aura and Trigger Bot took in Auto Shield: Auto Shield on, Range 9, Re-raise delay 2.
+    shown = old_profile("verifyshield", ["autoshield.on=true", "autoshield.key=none", "autoshield.range=9",
+                                         "autoshield.reraisedelay=2", "autoshield.onlywithaweapon=false"], "killaura")
+    if shown is None:
+        return False, "no profile file written"
+    want = ["Shield: ON", "Shield only with a weapon: OFF", "Shield range: 9", "Shield re-raise delay: 2"]
+    got = [w for w in want if any(line.startswith(w) for line in shown)]
+    return got == want, f"Kill Aura settings {got} of {want}; said {shown[:2]}"
 
 
 @test("Bow Spam (Crossbows)")

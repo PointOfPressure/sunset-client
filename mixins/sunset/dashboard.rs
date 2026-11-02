@@ -588,7 +588,6 @@ pub(super) fn short(m: &Module) -> &'static str {
         "Friend Guard" => "Stops hits on friends.",
         "Key Throw" => "Throws a pearl or wind charge on a key.",
         "RF Click" => "R and F act as mouse buttons.",
-        "Auto Shield" => "Keeps your shield raised.",
         "Fake Lag" => "Delays what you send.",
         "Sword PvP Bot" => "Fights the nearest player.",
         "Unlock All Recipes" => "Shows every recipe as unlocked.",

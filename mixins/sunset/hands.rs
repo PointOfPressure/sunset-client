@@ -1,4 +1,5 @@
-// RF Click (R and F as the mouse buttons) and Auto Shield (a shield kept up, lowered for each of your hits).
+// RF Click (R and F as the mouse buttons) and Kill Aura's and Trigger Bot's Shield (a shield kept up, lowered for each
+// of your hits).
 use super::sunset::{Category, Module, gui_open, with};
 use super::sunset_util as util;
 use super::{Game, Screen};
@@ -8,18 +9,12 @@ use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::keyboard::PhysicalKey;
 
 const RF: &str = "RF Click";
-const SHIELD: &str = "Auto Shield";
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
         Module::new(RF, Category::Player, "R is the left mouse button and F the right one, pressed and held for real (break, attack, use, drag), in the world and in inventories and menus. Never while you type: chat, signs, books, search and name boxes, a bind being chosen.")
             .text("Left key", "R")
             .text("Right key", "F"),
-        Module::new(SHIELD, Category::Combat, "Keeps the shield in your offhand raised. Your hits (your click, Kill Aura, Trigger Bot) lower it just for the hit, and it goes back up as soon as it can. Only with a weapon: a sword, axe or mace in hand. Only near a target: a player or hostile mob within Range.")
-            .bool("Only with a weapon", true)
-            .bool("Only near a target", true)
-            .num("Range", 6.0, 2.0, 16.0, 0.5)
-            .num("Re-raise delay", 0.0, 0.0, 10.0, 1.0),
     ]
 }
 
@@ -30,7 +25,7 @@ struct Hands {
     keys: [Option<String>; 2],
     typing: bool,
     down: [bool; 2],
-    // Auto Shield: it holds use, and the tick it last lowered the shield for a hit.
+    // Shield: it holds use, and the tick it last lowered the shield for a hit.
     raised: bool,
     lowered: Option<u64>,
 }
@@ -114,7 +109,7 @@ pub(super) fn rf_event(event: &mut WindowEvent) {
     };
 }
 
-// Auto Shield has the shield up (Kill Aura and Trigger Bot hit through it: it comes down for the hit).
+// Shield has the shield up (Kill Aura and Trigger Bot hit through it: it comes down for the hit).
 pub(super) fn shielding(game: &Game<'_>) -> bool {
     hands(|h| h.raised) && game.using.is_some_and(|(slot, _)| slot == util::OFFHAND)
 }
@@ -138,7 +133,7 @@ fn wanted(game: &Game<'_>, m: &Module) -> bool {
                 && !mob.removed
                 && Some(mob.id) != own
                 && (mob.kind.id == "minecraft:player" || mob.hostile() || mob.kind.category == "monster")
-                && util::dist(eye, [mob.position.x, mob.position.y + 1.0, mob.position.z]) <= m.n("Range")
+                && util::dist(eye, [mob.position.x, mob.position.y + 1.0, mob.position.z]) <= m.n("Shield range")
         })
     };
     game.native_playing()
@@ -146,8 +141,8 @@ fn wanted(game: &Game<'_>, m: &Module) -> bool {
         && !gui_open()
         && offhand_shield(game)
         && free
-        && (weapon || !m.b("Only with a weapon"))
-        && (!m.b("Only near a target") || near())
+        && (weapon || !m.b("Shield only with a weapon"))
+        && (!m.b("Shield only near a target") || near())
 }
 
 // Before the tick's hits (Kill Aura's and Trigger Bot's queued ones, your click): the shield comes down, so the hit
@@ -166,7 +161,11 @@ pub(super) fn before_hits(game: &mut Game<'_>, hits: bool) {
 }
 
 pub(super) fn tick(game: &mut Game<'_>) {
-    let m = module(SHIELD).filter(|_| game.native_on(super::sunset::ID));
+    // Kill Aura's Shield, else Trigger Bot's: the first of them on with it.
+    let m = ["Kill Aura", "Trigger Bot"]
+        .into_iter()
+        .find_map(|name| module(name).filter(|m| m.b("Shield")))
+        .filter(|_| game.native_on(super::sunset::ID));
     let want = m.as_ref().is_some_and(|m| wanted(game, m));
     let raised = hands(|h| h.raised);
     if !want {
@@ -178,7 +177,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
         }
         return;
     }
-    let delay = m.as_ref().map_or(0, |m| m.n("Re-raise delay") as u64);
+    let delay = m.as_ref().map_or(0, |m| m.n("Shield re-raise delay") as u64);
     let rested = hands(|h| h.lowered.is_none_or(|t| game.ticks >= t.saturating_add(delay)));
     if !raised && rested && game.using.is_none() && !super::sunset::strike_waiting() {
         let _ = game.play_mouse(MouseButton::Right, true);

@@ -240,6 +240,14 @@ impl Module {
         self.on = true;
         self
     }
+    // Kill Aura's and Trigger Bot's Shield: the offhand shield kept up, lowered for each hit (sunset_hands).
+    pub(super) fn shield(self) -> Self {
+        self.bool("Shield", false)
+            .bool("Shield only with a weapon", true)
+            .bool("Shield only near a target", true)
+            .num("Shield range", 6.0, 2.0, 16.0, 0.5)
+            .num("Shield re-raise delay", 0.0, 0.0, 10.0, 1.0)
+    }
     pub(super) fn bool(mut self, name: &'static str, v: bool) -> Self {
         self.settings.push(Setting {
             name,
@@ -308,6 +316,8 @@ impl Module {
         let name = self.settings[j].name;
         let advanced = self.b("Advanced");
         match self.name {
+            // Kill Aura's and Trigger Bot's Shield: its settings with it on.
+            "Kill Aura" | "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
             "Crystal Aura" if name == "Hold key" => self.b("Require hold"),
             "Crystal Aura" | "Anchor Aura" if name == "Render color" => self.b("Render"),
             "Speed" => match name {
@@ -398,7 +408,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Anti bot", false)
             .bool("Ignore teams", false)
             .bool("Wait for cooldown", true)
-            .num("Delay (ticks)", 10.0, 0.0, 20.0, 1.0),
+            .num("Delay (ticks)", 10.0, 0.0, 20.0, 1.0)
+            .shield(),
         Module::new("Criticals", Combat, "Makes your hits critical hits. Packet hops off the ground over two ticks before the hit; Jump really jumps and Mini jump hops, and the hit comes on the way down.")
             .pick("Mode", &["Packet", "Jump", "Mini jump"])
             .bool("Only Kill Aura", false)
@@ -1226,9 +1237,10 @@ impl State {
     }
 }
 
-// Offhand took in Auto Totem, Auto Inventory Totem and Hover Totem, Fast Use took in FastXP and Velocity took in
-// Knockback Delay (0.9): a config or profile from before has their lines turned into the new module's. FastXP's are
-// Throwables; Fast Use is on if either was (only for throwables, with an empty list, when Fast Use itself was off).
+// Offhand took in Auto Totem, Auto Inventory Totem and Hover Totem, Fast Use took in FastXP, Velocity took in
+// Knockback Delay and Kill Aura and Trigger Bot took in Auto Shield (0.9): a config or profile from before has their
+// lines turned into the new module's. FastXP's are Throwables; Fast Use is on if either was (only for throwables, with
+// an empty list, when Fast Use itself was off).
 // Offhand is on if any of its three was, with the first key bound; the old Offhand's Item when it was on, else a totem
 // always (Auto Totem Strict) or only when needed (None), else the new default; Refill is Auto Inventory Totem's Mode.
 fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
@@ -1245,7 +1257,7 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let on = |id: &str| get(id, "on") == Some("true");
     // The old Offhand had Min health where the new one has Health.
     let old_offhand = get("offhand", "minhealth").is_some();
-    let gone = ["autototem", "autoinventorytotem", "hovertotem", "fastxp", "knockbackdelay"];
+    let gone = ["autototem", "autoinventorytotem", "hovertotem", "fastxp", "knockbackdelay", "autoshield"];
     if !old_offhand && !gone.iter().any(|id| had(id)) {
         return std::borrow::Cow::Borrowed(text);
     }
@@ -1279,6 +1291,17 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
         ] {
             if let Some(value) = get("knockbackdelay", old) {
                 out.push(format!("velocity.{new}={value}"));
+            }
+        }
+    }
+    // Auto Shield is Kill Aura's and Trigger Bot's Shield: on in both if it was on, with its settings.
+    if had("autoshield") {
+        for id in ["killaura", "triggerbot"].into_iter().filter(|id| get(id, "shield").is_none()) {
+            out.push(format!("{id}.shield={}", on("autoshield")));
+            for field in ["onlywithaweapon", "onlynearatarget", "range", "reraisedelay"] {
+                if let Some(v) = get("autoshield", field) {
+                    out.push(format!("{id}.shield{field}={v}"));
+                }
             }
         }
     }

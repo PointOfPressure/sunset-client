@@ -52,7 +52,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Pause on use", false)
             .pick("Attack timing", &["Vanilla cooldown", "Custom delay", "Hit select"])
             .num("Hit delay", 11.0, 0.0, 60.0, 1.0)
-            .num("Weapon switch delay", 0.0, 0.0, 10.0, 1.0),
+            .num("Weapon switch delay", 0.0, 0.0, 10.0, 1.0)
+            .shield(),
     ]
 }
 
