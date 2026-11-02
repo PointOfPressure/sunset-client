@@ -4,7 +4,8 @@
 # median of four 2 s samples, and in brackets what it adds to the "off" sample just before). Runs on the test
 # machine, next to verify.py, whose helpers it uses.
 # Usage: bench.py CTL_PATH [module names...]; bench.py CTL_PATH --all: the same scene with every module that leaves the
-# world and the player alone on at once (EVERYTHING), against all off, ROUNDS times each.
+# world and the player alone on at once (EVERYTHING), against all off, ROUNDS times each; bench.py CTL_PATH --menu: the
+# menu shut, open in the Dropdown style and open in the Dashboard style.
 import json, os, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -131,12 +132,34 @@ def everything(path):
         print(f"everything {state}: {med([f for f, _ in xs]):.0f} fps {med([m for _, m in xs]):.3f} ms", flush=True)
 
 
+def menu(path):
+    """The menu shut and open in each ClickGUI Style: the main thread's ms a frame, ROUNDS samples each."""
+    got = {"shut": [], "Dropdown": [], "Dashboard": []}
+    for _ in range(ROUNDS):
+        for state in got:
+            if state != "shut":
+                v.setting("clickgui", "style", state)
+                v.say(".menu")
+            settle()
+            got[state].append(sample(path))
+            if state != "shut":
+                v.close_menu()
+    v.say(".reset clickgui")
+    for state, xs in got.items():
+        extra = med([xs[i][1] - got["shut"][i][1] for i in range(ROUNDS)])
+        print(f"menu {state}: {med([f for f, _ in xs]):.0f} fps {med([m for _, m in xs]):.3f} ms ({extra:+.3f})", flush=True)
+
+
 if __name__ == "__main__":
     only = sys.argv[2:]
     v.arena()
     v.ctl("options-set", "maxFps", "260")
     v.ctl("options-set", "enableVsync", "false")
     scene()
+    if only == ["--menu"]:
+        menu(game_thread())
+        unscene()
+        sys.exit(0)
     if only == ["--all"]:
         if os.environ.get("HOLD"):
             for key in EVERYTHING:

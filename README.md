@@ -89,8 +89,8 @@ List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the sa
 ## Features
 
 Speed has Vanilla, Strafe, Smooth, Low Hop and Custom modes. Velocity can scale, blend or delay knockback; Scaffold
-counts your blocks over the hotbar; Fast Place has five speed levels. ClickGUI settings cover scale, spacing, colors
-and panel shape. Advanced controls appear only for relevant modes.
+counts your blocks over the hotbar; Fast Place has five speed levels. ClickGUI has Dropdown and Dashboard styles; its
+settings cover scale, spacing, colors and panel shape. Advanced controls appear only for relevant modes.
 
 <details>
 <summary>Browse the built-in modules</summary>
@@ -159,7 +159,7 @@ See the [feature roadmap](docs/feature-roadmap.md) for what has landed, what is 
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and block counter, Kill Aura, Time and Weather Changer fixes, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro, Anchor Macro, Shield Breaker, Mace, Spear Swap, W Tap, Jump Reset, Friend Guard, Auto Inventory Totem and Hover Totem (Offhand's Refill and Hover), FastXP (Fast Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback Delay in Velocity). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and block counter, Kill Aura, Time and Weather Changer fixes, the Dashboard menu style and smooth scrolling, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro, Anchor Macro, Shield Breaker, Mace, Spear Swap, W Tap, Jump Reset, Friend Guard, Auto Inventory Totem and Hover Totem (Offhand's Refill and Hover), FastXP (Fast Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback Delay in Velocity). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
