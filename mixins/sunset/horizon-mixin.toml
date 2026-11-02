@@ -456,6 +456,37 @@ file = "crates/horizon-client/src/game.rs"
 name = "sunset_extras"
 source = "extras.rs"
 
+[[module]]
+id = "sort_buttons"
+file = "crates/horizon-client/src/game/tweaks.rs"
+name = "sunset_sort_buttons"
+source = "sort_buttons.rs"
+visibility = "pub(crate)"
+
+# Client Sort's three buttons in place of Horizon's sort button: drawn, and pressed.
+[[injection]]
+id = "sort_draw"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::tweaks::Game<'_>::draw_sort_buttons"
+helper = "sort_draw.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+  { name = "ox", ty = "f32", value = "ox" },
+  { name = "oy", ty = "f32", value = "oy" },
+]
+
+[[injection]]
+id = "sort_press"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::tweaks::Game<'_>::sort_press"
+helper = "sort_press.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
 [[injection]]
 id = "sort"
 kind = "HEAD"

@@ -1237,6 +1237,12 @@ impl State {
     }
 }
 
+// Settings that are gone: Client Sort's orders, lists and pace (0.9, it works as ClientSort does). Their lines go.
+const DROPPED: [(&str, &str); 8] = [
+    ("clientsort", "order"), ("clientsort", "shiftorder"), ("clientsort", "ctrlorder"), ("clientsort", "altorder"),
+    ("clientsort", "hotbar"), ("clientsort", "startitems"), ("clientsort", "enditems"), ("clientsort", "clickspertick"),
+];
+
 // Offhand took in Auto Totem, Auto Inventory Totem and Hover Totem, Fast Use took in FastXP, Velocity took in
 // Knockback Delay and Kill Aura and Trigger Bot took in Auto Shield (0.9): a config or profile from before has their
 // lines turned into the new module's. FastXP's are Throwables; Fast Use is on if either was (only for throwables, with
@@ -1258,14 +1264,16 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     // The old Offhand had Min health where the new one has Health.
     let old_offhand = get("offhand", "minhealth").is_some();
     let gone = ["autototem", "autoinventorytotem", "hovertotem", "fastxp", "knockbackdelay", "autoshield"];
-    if !old_offhand && !gone.iter().any(|id| had(id)) {
+    let dropped = lines.iter().any(|&(id, field, _)| DROPPED.contains(&(id, field)));
+    if !old_offhand && !dropped && !gone.iter().any(|id| had(id)) {
         return std::borrow::Cow::Borrowed(text);
     }
     let mut out: Vec<String> = text
         .lines()
         .filter(|l| {
-            let id = l.split_once('=').map_or("", |(k, _)| k).split('.').next().unwrap_or("");
-            !gone.contains(&id) && !(old_offhand && id == "offhand")
+            let key = l.split_once('=').map_or("", |(k, _)| k);
+            let (id, field) = key.split_once('.').unwrap_or((key, ""));
+            !gone.contains(&id) && !(old_offhand && id == "offhand") && !DROPPED.contains(&(id, field))
         })
         .map(str::to_owned)
         .collect();

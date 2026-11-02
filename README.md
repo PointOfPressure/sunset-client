@@ -105,7 +105,7 @@ settings cover scale, spacing, colors and panel shape. Advanced controls appear 
 | **Player** | Fast Place (speed 1 to 5), Break Delay, Speed Mine, No Break Reset, Fast Use (with FastXP's throwables: every tick or in bursts), Air Place, Reach, Auto Armor, Auto Log, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam, Auto Steal, Inventory Cleaner, Anti Vanish, Server Scan (the software, plugins and channels the server shows), Panic |
 | **Render** | ClickGUI, HUD, Radar, ESP, Tracers, Nametags, Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories, Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, No Render (no fog, water fog, darkness, blindness, fire or other overlays) |
 | **World** | Nuker, Packet Mine, Timer, Time Changer, Weather Changer, Liquid Filler, Spawn Proofer, Flamethrower, Auto Shearer, Auto Nametag, Auto Mount, Spawner Alerts |
-| **Extras** | Unlock All Recipes (every recipe in the book, on any server), Client Sort |
+| **Extras** | Unlock All Recipes (every recipe in the book, on any server), Client Sort (Sort, Fill Stacks and Restock buttons, as ClientSort) |
 
 </details>
 

@@ -2559,29 +2559,53 @@ def _():
 
 @test("Client Sort")
 def _():
-    # Five stacks in the inventory's first row, sorted with Horizon's sort button: Order Alphabet puts them by name,
-    # Quantity by how many of each there are (the two dirt stacks merged first).
-    def sort(order):
-        cmd("clear @s", "item replace entity @s inventory.0 with minecraft:dirt 3", "item replace entity @s inventory.1 with minecraft:diamond 1",
-            "item replace entity @s inventory.2 with minecraft:dirt 60", "item replace entity @s inventory.3 with minecraft:apple 5",
-            "item replace entity @s inventory.4 with minecraft:stone 10")
-        setting("clientsort", "order", order)
+    # The inventory's buttons (three down its right edge by the main inventory: Sort, Fill Stacks, Restock). Sort with
+    # Ctrl puts five stacks by name, with Shift by count (the dirt merged first); Fill Stacks tops up a dirt stack from
+    # the hotbar's; Restock moves the stone the hotbar already has into it and leaves the apples.
+    def press(op, key=None, setup=()):
+        cmd("clear @s", *setup)
         ctl("open-inventory")
         wait(4)
         w, h = gui_size()
-        ctl("click-at", str((w - 176) / 2 + 164), str((h - 166) / 2 + 75))
-        wait(20)
-        main = ctl("inventory")["main"]
+        if key:
+            ctl("key", key, "down")
+        ctl("click-at", str((w - 176) / 2 + 176.5), str((h - 166) / 2 + 75.5 + 10 * op))
+        if key:
+            ctl("key", key, "up")
+        wait(30)
+        inv = ctl("inventory")
         ctl("close")
-        return [(s["item"].split(":")[1], s["count"]) for s in main if s.get("item")]
+        return ([(s["item"].split(":")[1], s["count"]) for s in inv["main"] if s.get("item")],
+                [(s["item"].split(":")[1], s["count"]) for s in inv["hotbar"] if s and s.get("item")])
 
+    five = ["item replace entity @s inventory.0 with minecraft:dirt 3", "item replace entity @s inventory.1 with minecraft:diamond 1",
+            "item replace entity @s inventory.2 with minecraft:dirt 60", "item replace entity @s inventory.3 with minecraft:apple 5",
+            "item replace entity @s inventory.4 with minecraft:stone 10"]
     reset()
     only("clientsort")
-    alphabet, quantity = sort("Alphabet"), sort("Quantity")
+    alphabet, _ = press(0, "ctrl", five)
+    quantity, _ = press(0, "shift", five)
+    filled = press(1, None, ["item replace entity @s inventory.0 with minecraft:dirt 10", "item replace entity @s hotbar.4 with minecraft:dirt 30"])
+    restocked = press(2, None, ["item replace entity @s inventory.0 with minecraft:stone 10", "item replace entity @s inventory.1 with minecraft:apple 5",
+                                "item replace entity @s hotbar.4 with minecraft:stone 1"])
     only()
     cmd("clear @s")
-    ok = alphabet == [("apple", 5), ("diamond", 1), ("dirt", 63), ("stone", 10)] and quantity == [("dirt", 63), ("stone", 10), ("apple", 5), ("diamond", 1)]
-    return ok, f"Alphabet: {alphabet}; Quantity: {quantity}"
+    ok = (alphabet == [("apple", 5), ("diamond", 1), ("dirt", 63), ("stone", 10)]
+          and quantity == [("dirt", 63), ("stone", 10), ("apple", 5), ("diamond", 1)]
+          and filled == ([("dirt", 40)], []) and restocked == ([("apple", 5)], [("stone", 11)]))
+    return ok, f"Ctrl: {alphabet}; Shift: {quantity}; Fill Stacks (main, hotbar): {filled}; Restock: {restocked}"
+
+
+@test("Client Sort (settings from before 0.9)")
+def _():
+    # A profile with the orders and lists Client Sort had before: it loads, and Client Sort is on.
+    shown = old_profile("verifysort", ["clientsort.on=true", "clientsort.key=none", "clientsort.order=Alphabet",
+                                       "clientsort.startitems=diamond", "clientsort.clickspertick=8"], "clientsort")
+    if shown is None:
+        return False, "no profile file written"
+    loaded = any(line.startswith("Loaded profile verifysort") for line in shown)
+    on = any("Client Sort*" in line for line in shown)
+    return loaded and on, f"loaded: {loaded}, Client Sort on: {on}; said {shown[:2]}"
 
 
 @test("Shulker Peek")
