@@ -1577,11 +1577,16 @@ def _():
         return next((c for c in sunset_said(mark) if c.startswith("Range:")), "")
 
     setting("killaura", "range", "3")
+    mark = log_mark()
     say(".profile save picked")
+    wait(4)
+    said = sunset_said(mark)
     saved = listed()
     setting("killaura", "range", "5")
     modified = listed()
     names = saved.removeprefix("Profiles: ").split(". In use")[0].split(", ")
+    if "picked" not in names:
+        return False, f"not saved: {said} then {saved!r}"
     w, h = gui_size()
     ww, hh = min(w - 16, 300), min(min(max(len(names), 1), 10) * 18 + 47, h - 16)
     x, y = (w - ww) / 2, (h - hh) / 2
@@ -1595,8 +1600,9 @@ def _():
     loaded, after = range_shown(), listed()
     say(".profile delete picked")
     gone = listed()
+    # With it gone and no other profile, the list has no "Profiles:" line.
     ok = (saved.endswith("In use: picked") and modified.endswith("In use: picked (modified)") and loaded == "Range: 3"
-          and after.endswith("In use: picked") and "picked" not in gone.split(". In use")[0] and gone.endswith("In use: Custom"))
+          and after.endswith("In use: picked") and "picked" not in gone.split(". In use")[0] and (not gone or gone.endswith("In use: Custom")))
     return ok, f"saved: {saved!r}; changed: {modified!r}; picked in the menu: {loaded!r}, {after!r}; deleted: {gone!r}"
 
 
@@ -1705,6 +1711,66 @@ def close_menu():
         if state().get("screen") == "paused":
             ctl("resume")
             wait(3)
+
+
+@test("ClickGUI Dashboard (look and frame cost)")
+def _():
+    # Style Dashboard at GUI scale 2 and 4: screenshots (dash2.png, dash4.png), and its #121214 surface fills the
+    # middle of the screen. Then the game thread's CPU ms a frame with the menu shut, open as panels and open as the
+    # Dashboard (the median of 4 samples of 2 s): the Dashboard should cost under 0.3 ms over the panels.
+    from PIL import Image
+    sock = os.path.join(session_dir(), "c.sock").encode()
+    stat = None
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                args = f.read().split(b"\0")
+        except OSError:
+            continue
+        if args[0].endswith(b"horizon-client") and sock in args:
+            stat = f"/proc/{pid}/task/{pid}/schedstat"
+
+    def cpu():
+        with open(stat) as f:
+            return int(f.read().split()[0])
+
+    def sample():
+        a, ca = ctl("status"), cpu()
+        time.sleep(2)
+        b, cb = ctl("status"), cpu()
+        return (cb - ca) / 1e6 / max(b["frames"] - a["frames"], 1)
+
+    setting("clickgui", "style", "Dashboard")
+    surface = {}
+    for scale in (2, 4):
+        ctl("options-set", "guiScale", str(scale))
+        wait(5)
+        say(".menu")
+        wait(10)
+        ctl("screenshot", f"{SHOTS}/dash{scale}.png")
+        time.sleep(2)
+        img = Image.open(f"{SHOTS}/dash{scale}.png").convert("RGB")
+        middle = img.crop((img.width // 2 - 40, img.height * 3 // 4, img.width // 2 + 40, img.height * 3 // 4 + 20))
+        surface[scale] = sum(1 for px in middle.getdata() if px == (0x12, 0x12, 0x14)) / (80 * 20)
+        close_menu()
+    ctl("options-set", "guiScale", "0")
+    ms = {"shut": [], "Dropdown": [], "Dashboard": []}
+    if stat:
+        for _ in range(4):
+            for state in ms:
+                if state != "shut":
+                    setting("clickgui", "style", state)
+                    say(".menu")
+                wait(20)
+                ms[state].append(sample())
+                if state != "shut":
+                    close_menu()
+    setting("clickgui", "style", "Dropdown")
+    med = {k: sorted(v)[len(v) // 2] if v else None for k, v in ms.items()}
+    extra = med["Dashboard"] - med["Dropdown"] if stat else None
+    ok = all(v > 0.5 for v in surface.values()) and extra is not None and extra < 0.3
+    return ok, (f"surface share in the middle: {surface}; game thread ms a frame: shut {med['shut']:.3f}, panels "
+                f"{med['Dropdown']:.3f}, Dashboard {med['Dashboard']:.3f} (Dashboard over panels {extra:+.3f})" if stat else "no game thread found")
 
 
 @test("F1 with the menu open")
@@ -5956,9 +6022,9 @@ def _():
 
 @test("Server Scan (Passive sends nothing)")
 def _():
-    # Passive only reads what the server sends: over the same time, with .scan and .scan run typed, no kind of packet
-    # the client doesn't send with the module off, and no command suggestion request (15). Extended's .scan run asks
-    # the server at most once and sends Query only to the address joined.
+    # Passive only reads what the server sends: with .scan and .scan run typed, no command suggestion request (15, the
+    # only packet Server Scan sends) and no Query. Extended's .scan run asks the server at most once and sends Query only
+    # to the address joined (none in single player).
     if not probe_path():
         return None, "needs the probe (tools/probe)"
 
@@ -5981,10 +6047,12 @@ def _():
     setting("serverscan", "mode", "Extended")
     extended, ran = window(".scan run")
     only()
+    # Server Scan's only packet is a command suggestion request (15); the rest (movement, keep-alives) come and go.
     extra = sorted(set(passive) - set(off))
     target = next((line for line in ran if "Query to" in line), "")
-    ok = not extra and 15 not in passive and extended.count(15) <= 1 and (not SERVER or SERVER in target)
-    return ok, (f"Passive: packet kinds beyond the module off {extra}, suggestion requests {passive.count(15)}, "
+    queried = any("Query to" in line for line in found)
+    ok = 15 not in passive and not queried and extended.count(15) <= 1 and (not SERVER or SERVER in target)
+    return ok, (f"Passive: Query sent {queried}, packet kinds beyond the module off {extra}, suggestion requests {passive.count(15)}, "
                 f"{len(found)} lines ({found[1] if len(found) > 1 else ''!r}); Extended run: suggestion requests "
                 f"{extended.count(15)}, {target!r}")
 
@@ -6670,6 +6738,54 @@ def _():
     return ok, "after equipping (how, slot 1, slot 2, held): " + ", ".join(map(str, got))
 
 
+@test("Loadouts (panel)")
+def _():
+    # Duelkit's panel, K held: a sword named Duel saved in slot 1; then a plain sword and the named one in the
+    # inventory and dirt in slot 1: a click on the row takes the named one (the item and its name matched first); a
+    # right click deletes the row; Save current keeps what you hold as "Loadout 1". A screenshot of the panel.
+    def listed():
+        mark = log_mark()
+        say(".loadout list")
+        wait(4)
+        return sunset_said(mark)
+
+    reset()
+    only("loadouts")
+    cmd("clear @s", 'item replace entity @s hotbar.0 with minecraft:diamond_sword[custom_name="Duel"]')
+    say(".loadout save named")
+    cmd("clear @s", "item replace entity @s inventory.4 with minecraft:diamond_sword",
+        'item replace entity @s inventory.9 with minecraft:diamond_sword[custom_name="Duel"]', "item replace entity @s hotbar.0 with minecraft:dirt 3")
+    wait(5)
+    w, h = gui_size()
+    top = max(20, h / 2 - 40 / 2 - 10)
+    row = (w / 2 - 91 + 12 + 40, top + 20)
+    ctl("key", "k", "down")
+    wait(5)
+    ctl("screenshot", f"{SHOTS}/loadouts.png")
+    time.sleep(2)
+    ctl("click-at", *map(str, row))
+    wait(10)
+    main = ctl("inventory").get("main") or []
+    item = lambda i: ((main[i] or {}).get("item") or "") if i < len(main) else ""
+    picked = (item(4), item(9))
+    ctl("click-at", *map(str, row), "right")
+    wait(5)
+    ctl("key", "k", "up")
+    wait(5)
+    after_delete = listed()
+    ctl("key", "k", "down")
+    wait(5)
+    top = max(20, h / 2 - 10)
+    ctl("click-at", str(w / 2), str(top + 2 + 7))
+    wait(5)
+    ctl("key", "k", "up")
+    saved = listed()
+    say(".loadout delete 1")
+    only()
+    ok = "diamond_sword" in picked[0] and "dirt" in picked[1] and any("No loadouts" in l for l in after_delete) and any("Loadout 1" in l for l in saved)
+    return ok, f"after the click (inventory 5, inventory 10): {picked}; after the right click: {after_delete[:1]}; Save current: {saved[:1]}"
+
+
 def shield_run(module):
     """A sword in hand, a shield in the offhand, `module` (killaura or triggerbot) on, with its Shield off then on:
     health you lost to 10 sword hits from Bot1 (every 15 ticks), then for 10 s with Bot1 in front: health Bot1 lost,
@@ -6686,6 +6802,8 @@ def shield_run(module):
         ctl2("select", "1")
         setting(module, "shield", "true" if name == "on" else "false")
         ctl("look-at", str(X0 + 0.5), str(Y + 1.6), str(Z0 + 2.5))
+        # Bot1 a friend while it hits you: the module leaves it alone and the shield stays up.
+        say(".friend add Bot1")
         only(module)
         wait(20)
         mine = own_health()
@@ -6696,6 +6814,10 @@ def shield_run(module):
             ctl2("mouse", "left", "click")
             wait(12)
         took[name] = round(mine - own_health(), 1)
+        only()
+        say(".friend remove Bot1")
+        bot_ready(2.5, 180)
+        only(module)
         bot, down, hits, last = bot_health(), 0, 0, bot_health()
         for t in range(200):
             if t % 10 == 0:

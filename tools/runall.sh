@@ -7,6 +7,7 @@
 # <dir>/summary. On the test machine, in ~/hzmeteor; VERIFY names the test script (default verify.py), SEQ=1 runs the
 # targets one after another instead (same setup, for comparing). RETRY=1 then runs each target's failed tests again,
 # one target at a time (a few timing-bound tests can fail under the load of four at once): <target>.retry.log.
+# DISPLAY0 is the first Xvfb display (default 101), so a second run can go beside one already going.
 H=~/hzmeteor; R=$H/$1; shift
 IFS='|' read -ra TESTS <<< "$1"; shift
 TARGETS=("$@")
@@ -100,7 +101,7 @@ done
 [ ${#started[@]} -gt 0 ] && sleep 5
 
 t0=$SECONDS
-disp=101
+disp=${DISPLAY0:-101}
 for name in "${TARGETS[@]}"; do
 	rm -f $R/$name/result
 	if [ "$SEQ" = 1 ]; then target $name $disp; else target $name $disp & fi
@@ -111,7 +112,7 @@ wait
 if [ "$RETRY" = 1 ]; then
 	for name in "${TARGETS[@]}"; do
 		mapfile -t TESTS < <(grep '^FAIL ' $R/$name.log | cut -c6- | awk -F' - ' '{print $1}')
-		[ ${#TESTS[@]} -gt 0 ] && target $name 101 $name.retry
+		[ ${#TESTS[@]} -gt 0 ] && target $name ${DISPLAY0:-101} $name.retry
 	done
 fi
 for name in "${started[@]}"; do $H/servers.sh stop $name >/dev/null; done
