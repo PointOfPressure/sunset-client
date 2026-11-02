@@ -73,9 +73,10 @@ fi
 echo "$homes" | while IFS= read -r h; do
     [ -n "$h" ] || continue
     mkdir -p "$h/horizon-native-mods"
+    # Older copies of the same mod (old names and versioned files), or they get built in next to it.
+    rm -f "$h"/horizon-native-mods/solstice*.hnmod "$h"/horizon-native-mods/sunset-*.hnmod \
+        "$h"/horizon-native-mods/meteor*.hnmod "$h"/horizon-native-mods/delta*.hnmod
     cp "$tmp" "$h/horizon-native-mods/sunset.hnmod"
-    # Older names of the same mod.
-    rm -f "$h/horizon-native-mods/solstice.hnmod" "$h/horizon-native-mods/meteor.hnmod" "$h/horizon-native-mods/delta.hnmod"
     list="$h/horizon-mods.txt"
     touch "$list"
     grep -v -e '^mod\.sunset:' -e '^mod\.solstice:' -e '^mod\.meteor:' -e '^mod\.delta:' "$list" > "$list.tmp" || true

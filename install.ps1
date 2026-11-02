@@ -31,11 +31,11 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 foreach ($h in $homes) {
     $mods = Join-Path $h "horizon-native-mods"
     New-Item -ItemType Directory -Force -Path $mods | Out-Null
-    Copy-Item -LiteralPath $tmp -Destination (Join-Path $mods "sunset.hnmod") -Force
-    # Older names of the same mod.
-    foreach ($old in @("solstice.hnmod", "meteor.hnmod", "delta.hnmod")) {
-        Remove-Item -LiteralPath (Join-Path $mods $old) -ErrorAction SilentlyContinue
+    # Older copies of the same mod (old names and versioned files), or they get built in next to it.
+    foreach ($pat in @("solstice*.hnmod", "sunset-*.hnmod", "meteor*.hnmod", "delta*.hnmod")) {
+        Get-ChildItem -LiteralPath $mods -Filter $pat -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     }
+    Copy-Item -LiteralPath $tmp -Destination (Join-Path $mods "sunset.hnmod") -Force
     $list = Join-Path $h "horizon-mods.txt"
     $lines = @()
     if (Test-Path $list) {
