@@ -350,11 +350,12 @@ impl Module {
                 self.b(if self.name == "Mace" { "Swap back" } else { "Switch back" })
                     && (name == "Back after" || self.p("Back after") == "A delay")
             }
-            "Scaffold" if self.p("Mode") == "Legit"
-                && matches!(name, "Air place" | "Ahead distance" | "Closest block range" | "Radius" | "Blocks per tick" | "Fast tower" | "Tower speed" | "While moving") => false,
             "Scaffold" => match name {
-                "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => advanced,
-                "Rotation speed" => advanced && self.b("Rotate"),
+                "Edge distance" => self.p("Mode") == "Legit",
+                "Air place" | "Ahead distance" | "Closest block range" | "Radius" | "Blocks per tick"
+                | "Fast tower" | "Tower speed" | "While moving" | "Rotate" | "Delay (ticks)" | "Advanced" => self.p("Mode") != "Legit",
+                "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => self.p("Mode") != "Legit" && advanced,
+                "Rotation speed" => self.p("Mode") != "Legit" && advanced && self.b("Rotate"),
                 _ => true,
             },
             _ => true,
@@ -584,10 +585,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ignore sneaking", false),
         Module::new("Blink", Movement, "Holds back your movement packets, then sends them all at once when off.")
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
-        Module::new("Scaffold", Movement, "Automatically places blocks under you. Legit bridges as you would by hand: as your next step is about to leave the block you stand on, it sneaks (so the game keeps you on the edge), places the next block against that block's side, and lets go of sneak once it is there.")
+        Module::new("Scaffold", Movement, "Automatically places blocks under you. Legit sneaks near an edge and uses the block face under your crosshair, without turning your view.")
             .pick("Mode", &["Normal", "Legit"])
             .bool("Disable with Kill Aura", true)
             .bool("Block counter", true)
+            .num("Edge distance", 0.15, 0.05, 0.6, 0.05)
             .text("Blocks", "")
             .pick("Blocks filter", &["Blacklist", "Whitelist"])
             .bool("Fast tower", false)
@@ -842,6 +844,10 @@ pub(super) struct State {
     scaffold_rotation: Option<(f32, f32)>,
     // The hotbar slot Scaffold took as the biggest stack, kept until it runs out.
     scaffold_stack: Option<usize>,
+    // Original hotbar slot and the slot Legit last selected automatically.
+    scaffold_restore_slot: Option<(usize, usize)>,
+    // A one-tick use input for Horizon's own multiplayer interaction pipeline.
+    scaffold_use: Option<([i32; 3], bool)>,
     // Scaffold's placed blocks, drawn for 8 ticks as they fade.
     scaffold_placed: Vec<([i32; 3], u8)>,
     // Legit Scaffold holds sneak (not you).
@@ -937,6 +943,8 @@ impl State {
             scaffold_recent: Vec::new(),
             scaffold_rotation: None,
             scaffold_stack: None,
+            scaffold_restore_slot: None,
+            scaffold_use: None,
                     scaffold_placed: Vec::new(),
             scaffold_sneak: false,
             click_wait: 0,
@@ -1699,6 +1707,8 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 with(|s| { s.scaffold_wait = 0; s.scaffold_recent.clear(); s.scaffold_stack = None; });
                 restore_scaffold_rotation(game);
                 legit_sneak(game, false);
+                release_scaffold_use(game);
+                restore_scaffold_slot(game);
             }
             "Speed" => {
                 with(|s| { s.strafe = Strafe::default(); s.knockback_ticks = 0; });
@@ -1963,6 +1973,10 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         horizon_client::motion::sunset_motion::set_safe_walk(false);
         horizon_client::motion::sunset_motion::set_screen_keys(None);
         restore_scaffold_rotation(game);
+        legit_sneak(game, false);
+        release_scaffold_use(game);
+        if game.player.is_some() { restore_scaffold_slot(game); }
+        else { with(|s| s.scaffold_restore_slot = None); }
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
         return;
     }
@@ -1972,6 +1986,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     combat_packets(game, &packets);
     ensure_loaded(game);
+    // The preceding tick kept Scaffold's sneak through placement. Release it before other modules
+    // inject this tick's keys, then decide again before Horizon simulates and sends movement.
+    legit_sneak(game, false);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     crit_sprint_back(game);
     super::sunset_hands::before_hits(game, strike_waiting() || super::sunset_melee::due_waiting());
@@ -2017,7 +2034,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     {
         want.extend(super::sunset_player::afk_keys(&m));
     }
-    let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.b("Safe walk"));
+    let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.p("Mode") != "Legit" && m.b("Safe walk"));
     horizon_client::motion::sunset_motion::set_safe_walk((on("Safe Walk") || scaffold_walk) && playing);
     // GUI Move: behind a screen the game takes no move keys, so its movement is given the ones held and walks you as
     // it would without the screen (its own speeds, sprint, jumps, and the walk's look in first and third person).
@@ -2039,6 +2056,15 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         if game.keys.insert(k) {
             injected.push(k);
         }
+    }
+    if let Some(m) = get("Scaffold").filter(|m| m.on && m.p("Mode") == "Legit"
+        && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
+        && playing && game.remote.is_some() && super::sunset_combat_control::available("Scaffold")
+        && (!m.b("Only on click") || game.right || game.physical_buttons.contains(&winit::event::MouseButton::Right))
+    {
+        let edge = legit_at_edge(game, &m);
+        legit_sneak(game, edge);
+        scaffold_legit(game, &m);
     }
     velocity(game, get("Velocity").filter(|m| m.on).as_ref());
     let across = get("Speed").filter(|m| m.on).and_then(|m| speed(game, &m));
@@ -2131,6 +2157,7 @@ fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
 // After the tick: first what waited for the look its move packet carried, then the modules, then (in a tick that
 // sent no move packet) the one that carries the next look.
 pub(super) fn post_tick(game: &mut Game<'_>) {
+    release_scaffold_use(game);
     if !game.native_window() || !game.native_on(ID) {
         return;
     }
@@ -2618,6 +2645,74 @@ fn scaffold_blocks(game: &Game<'_>, m: &Module) -> u32 {
     (0..9).filter(|&i| scaffold_item(game, m, i)).map(count).sum()
 }
 
+fn restore_scaffold_slot(game: &mut Game<'_>) {
+    if let Some((original, selected)) = with(|s| s.scaffold_restore_slot.take())
+        && game.selected == selected
+    {
+        game.selected = original;
+    }
+}
+
+fn release_scaffold_use(game: &mut Game<'_>) {
+    if let Some((at, render)) = with(|s| s.scaffold_use.take()) {
+        if !game.physical_buttons.contains(&winit::event::MouseButton::Right) {
+            game.right = false;
+        }
+        if render && game.player.is_some() && !super::sunset_util::replaceable(game, at) {
+            with(|s| s.scaffold_placed.push((at, 8)));
+        }
+    }
+}
+
+// The leading strip of the feet checks whether the next step needs sneak. The whole shifted
+// footprint can still touch the old block after its front edge has passed over air.
+fn legit_edge_probe(bounds: horizon_core::geometry::Aabb, step: [f64; 2]) -> horizon_core::geometry::Aabb {
+    use horizon_core::geometry::{Aabb, Vec3};
+    let (lo, hi) = (bounds.min_position(), bounds.max_position());
+    let (min_x, max_x) = if step[0] > 0.0 {
+        (hi.x + step[0] - 0.05, hi.x + step[0])
+    } else if step[0] < 0.0 {
+        (lo.x + step[0], lo.x + step[0] + 0.05)
+    } else { (lo.x, hi.x) };
+    let (min_z, max_z) = if step[1] > 0.0 {
+        (hi.z + step[1] - 0.05, hi.z + step[1])
+    } else if step[1] < 0.0 {
+        (lo.z + step[1], lo.z + step[1] + 0.05)
+    } else { (lo.z, hi.z) };
+    Aabb::new(Vec3::new(min_x, lo.y - 0.1, min_z), Vec3::new(max_x, lo.y, max_z))
+}
+
+fn legit_step(game: &Game<'_>, m: &Module) -> Option<[f64; 2]> {
+    let player = game.player.as_ref()?;
+    let distance = m.n("Edge distance");
+    if let Some([x, z]) = move_direction(game) {
+        return Some([x * distance, z * distance]);
+    }
+    let speed = player.velocity.x.hypot(player.velocity.z);
+    (speed > 0.02).then(|| [player.velocity.x / speed * distance, player.velocity.z / speed * distance])
+}
+
+fn legit_at_edge(game: &Game<'_>, m: &Module) -> bool {
+    let Some(player) = game.player.as_ref() else { return false; };
+    if !player.ground.on_ground || player.flying || player.fall_flying
+        || game.keys.contains(&KeyCode::Space) || scaffold_slot(game, m).is_none()
+    {
+        return false;
+    }
+    let Some(step) = legit_step(game, m) else { return false; };
+    horizon_client::collisions::SceneCollisions { world: &game.world, binding: game.collision, subject: None }
+        .unobstructed(legit_edge_probe(player.bounds(), step))
+        .unwrap_or(false)
+}
+
+fn legit_over_next_step(bounds: horizon_core::geometry::Aabb, step: [f64; 2], at: [i32; 3]) -> bool {
+    let (lo, hi) = (bounds.min_position(), bounds.max_position());
+    lo.x + step[0].min(0.0) < f64::from(at[0] + 1)
+        && hi.x + step[0].max(0.0) > f64::from(at[0])
+        && lo.z + step[1].min(0.0) < f64::from(at[2] + 1)
+        && hi.z + step[1].max(0.0) > f64::from(at[2])
+}
+
 fn scaffold_place(game: &mut Game<'_>, m: &Module, at: [i32; 3]) -> bool {
     let duplicate_cooldown = m.n("Duplicate cooldown") as u64;
     if duplicate_cooldown > 0 && with(|s| s.scaffold_recent.iter().any(|(pos, _)| *pos == at)) { return false; }
@@ -2668,38 +2763,52 @@ fn legit_sneak(game: &mut Game<'_>, down: bool) {
         game.keys.insert(KeyCode::ShiftLeft);
         with(|s| s.scaffold_sneak = true);
     } else if !down && ours {
-        game.keys.remove(&KeyCode::ShiftLeft);
+        if !game.physical_keys.contains(&KeyCode::ShiftLeft) && !game.toggles.is_down(0) {
+            game.keys.remove(&KeyCode::ShiftLeft);
+        }
         with(|s| s.scaffold_sneak = false);
     }
 }
 
-// Legit Scaffold, bridging as by hand: half a block ahead of you, the way you walk, is the block your next steps
-// stand on. While it is air: sneak, which the next tick's movement obeys (so you stop on the edge, still on the
-// block under you), and place it against the side of that block, looking at that side; the look rides the next
-// move packet and the block goes right after it, while you still stand on the edge. Once the server has it there,
-// sneak goes.
+// Use only the face under the crosshair. Horizon sends the placement with its usual sequence and
+// predicts the block locally, before this tick's movement is simulated and sent.
 fn scaffold_legit(game: &mut Game<'_>, m: &Module) {
-    let Some(p) = game.player.as_ref() else {
-        return;
-    };
-    let (pos, ground) = ([p.position.x, p.position.y, p.position.z], p.ground.on_ground);
-    let Some(dir) = move_direction(game).filter(|_| ground && scaffold_slot(game, m).is_some()) else {
-        legit_sneak(game, false);
-        return;
-    };
-    let under = [(pos[0] + dir[0] * 0.5).floor() as i32, pos[1].floor() as i32 - 1, (pos[2] + dir[1] * 0.5).floor() as i32];
-    if !super::sunset_util::replaceable(game, under) {
-        legit_sneak(game, false);
+    if game.right || game.use_delay > 0 || game.using.is_some() || game.mob_hit().is_some() {
         return;
     }
-    legit_sneak(game, true);
-    // Asked for already: the server's answer is on its way (half a second at most).
-    if with(|s| s.scaffold_recent.iter().any(|(b, _)| *b == under)) {
+    let (Some(hit), Some(player)) = (game.pick(), game.player.as_ref()) else { return; };
+    if !player.ground.on_ground || player.flying || player.fall_flying { return; }
+    let at = [hit.pos[0] + hit.face[0], hit.pos[1] + hit.face[1], hit.pos[2] + hit.face[2]];
+    if at[1] != player.position.y.floor() as i32 - 1
+        || !legit_over_next_step(player.bounds(), legit_step(game, m).unwrap_or([0.0; 2]), at)
+    {
         return;
     }
-    if scaffold_place(game, m, under) {
-        with(|s| s.scaffold_recent.push((under, s.ticks + 10)));
+    let support = super::sunset_util::facts(game, hit.pos);
+    if support.block_entity || support.fluid_level > 0 || super::sunset_util::can_place(game, hit.pos, false)
+        || !super::sunset_util::can_place(game, at, true)
+    {
+        return;
     }
+    let Some(slot) = scaffold_slot(game, m) else { return; };
+    if game.selected != slot {
+        with(|s| {
+            match &mut s.scaffold_restore_slot {
+                Some((original, last)) => {
+                    if game.selected != *last { *original = game.selected; }
+                    *last = slot;
+                }
+                None => s.scaffold_restore_slot = Some((game.selected, slot)),
+            }
+        });
+        // Horizon sends the selected slot before movement on the next tick. Place after that.
+        game.selected = slot;
+        return;
+    }
+    // remote_handle_input synchronizes the selected slot, resolves the hit once, sends UseItemOn,
+    // and predicts the block before movement. This key lasts only for this game tick.
+    game.right = true;
+    with(|s| s.scaffold_use = Some((at, m.b("Render"))));
 }
 
 // Scaffold (Meteor's): the block under where you will be next tick (or a step ahead, Ahead distance), down one more
@@ -2725,17 +2834,16 @@ pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
     if m.b("Only on click") && !(game.physical_buttons.contains(&MouseButton::Right) || game.right) {
         return;
     }
+    if m.p("Mode") == "Legit" {
+        return;
+    }
+    legit_sneak(game, false);
     if with(|s| {
         s.scaffold_wait = s.scaffold_wait.saturating_sub(1);
         s.scaffold_wait > 0
     }) {
         return;
     }
-    if m.p("Mode") == "Legit" {
-        scaffold_legit(game, m);
-        return;
-    }
-    legit_sneak(game, false);
     let Some(p) = game.player.as_ref() else {
         return;
     };
@@ -5060,12 +5168,18 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
     s.scaffold_recent.clear();
     s.scaffold_wait = 0;
     s.scaffold_stack = None;
+    s.scaffold_sneak = false;
+    s.scaffold_restore_slot = None;
+    s.scaffold_use = None;
     take_scaffold_rotation(&mut s.scaffold_rotation)
 }
 
 pub(super) fn panic_off(game: &mut Game<'_>) {
     super::agent::sunset_goto::cancel(game, "stopped by Panic");
     combat_cleanup(game);
+    legit_sneak(game, false);
+    release_scaffold_use(game);
+    restore_scaffold_slot(game);
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
         game.pitch = pitch;
@@ -7728,6 +7842,41 @@ mod movement_config_tests {
     use super::*;
 
     #[test]
+    fn legit_scaffold_shows_only_controls_it_uses() {
+        let mut state = State::new();
+        let scaffold = state.modules.iter_mut().find(|m| m.name == "Scaffold").unwrap();
+        scaffold.settings.iter_mut().find(|s| s.name == "Mode").unwrap().parse("Legit");
+        scaffold.settings.iter_mut().find(|s| s.name == "Advanced").unwrap().parse("true");
+        for name in ["Rotate", "Rotation speed", "Safe walk", "Delay (ticks)", "Duplicate cooldown", "Validate ray", "Max placement distance"] {
+            let index = scaffold.settings.iter().position(|s| s.name == name).unwrap();
+            assert!(!scaffold.setting_visible(index), "Legit does not use {name}");
+        }
+        for name in ["Auto switch", "Blocks", "Render"] {
+            let index = scaffold.settings.iter().position(|s| s.name == name).unwrap();
+            assert!(scaffold.setting_visible(index), "Legit uses {name}");
+        }
+        let edge = scaffold.settings.iter().position(|s| s.name == "Edge distance").unwrap();
+        assert!(scaffold.setting_visible(edge));
+        let mut restored = State::new();
+        restored.load_text(&state.save_text());
+        assert_eq!(restored.module("Scaffold").unwrap().p("Mode"), "Legit");
+        assert_eq!(restored.module("Scaffold").unwrap().n("Edge distance"), 0.15);
+    }
+
+    #[test]
+    fn legit_scaffold_checks_the_leading_edge_and_only_nearby_targets() {
+        use horizon_core::geometry::{Aabb, Vec3};
+        let feet = Aabb::new(Vec3::new(0.2, 1.0, 0.2), Vec3::new(0.8, 2.8, 0.8));
+        let forward = legit_edge_probe(feet, [0.3, 0.0]);
+        assert!(forward.min_position().x > 1.0);
+        assert_eq!(forward.min_position().z, 0.2);
+        let backward = legit_edge_probe(feet, [-0.3, 0.0]);
+        assert!(backward.max_position().x < 0.0);
+        assert!(legit_over_next_step(feet, [0.3, 0.0], [1, 0, 0]));
+        assert!(!legit_over_next_step(feet, [0.3, 0.0], [3, 0, 0]));
+    }
+
+    #[test]
     fn existing_movement_settings_still_load() {
         let mut state = State::new();
         state.load_text("speed.mode=Strafe\nspeed.vanillaspeed=7.2\nvelocity.knockbackhorizontal=0.4\nscaffold.delayticks=2\n");
@@ -7813,7 +7962,13 @@ mod movement_config_tests {
         let mut state = State::new();
         state.modules.iter_mut().find(|m| m.name == "Scaffold").unwrap().on = true;
         state.scaffold_rotation = Some((135.0, -20.0));
+        state.scaffold_sneak = true;
+        state.scaffold_restore_slot = Some((1, 4));
+        state.scaffold_use = Some(([2, 3, 4], true));
         assert_eq!(panic_off_state(&mut state), Some((135.0, -20.0)));
         assert!(!state.module("Scaffold").unwrap().on);
+        assert!(!state.scaffold_sneak);
+        assert_eq!(state.scaffold_restore_slot, None);
+        assert_eq!(state.scaffold_use, None);
     }
 }
