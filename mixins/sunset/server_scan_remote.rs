@@ -6,20 +6,16 @@ use std::collections::VecDeque;
 pub(crate) struct View {
     pub address: String,
     pub brand: String,
-    pub roots: Vec<String>,
-    pub literals: Vec<String>,
-    pub suggestion: Option<String>,
+    // None until the server has sent its command tree.
+    pub commands: Option<(Vec<String>, Vec<String>, Option<String>)>,
 }
 
 pub(crate) fn view(game: &Game<'_>) -> Option<View> {
     let remote = game.remote.as_ref()?;
-    let (roots, literals, suggestion) = remote.commands.as_ref().map(extract).unwrap_or_default();
     Some(View {
         address: remote.session.address.clone(),
         brand: remote.brand.chars().take(128).collect(),
-        roots,
-        literals,
-        suggestion,
+        commands: remote.commands.as_ref().map(extract),
     })
 }
 
@@ -44,9 +40,10 @@ fn extract(tree: &Dispatcher) -> (Vec<String>, Vec<String>, Option<String>) {
                 queue.push_back((i, root.clone(), 0u8));
             }
             // Only one low-rate request, on a visible version command whose argument explicitly
-            // asks the server for suggestions. Never guess hidden command names.
+            // asks the server for suggestions (Bukkit's /version, aliases /ver and /about, completes
+            // plugin names). Never guess hidden command names.
             if suggestion.is_none()
-                && matches!(root.as_str(), "version" | "ver" | "bukkit:version")
+                && matches!(root.as_str(), "version" | "ver" | "about" | "bukkit:version" | "bukkit:ver" | "bukkit:about")
                 && node
                     .children
                     .iter()

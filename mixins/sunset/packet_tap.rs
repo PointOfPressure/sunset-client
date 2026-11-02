@@ -6,19 +6,45 @@ use horizon_protocol::packets::play::Clientbound as C;
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+// Server Scan's evidence, each piece tagged with the configuration it belongs to: 1 for the first, one more for
+// each proxy backend switch. This tap counts configurations as the game takes them in (Joined, then each
+// Reconfigured), so play packets still queued from the old backend keep its number. A configuration payload
+// arrives before its Reconfigured, so the network thread tags it with the number after the game's.
 #[derive(Debug)]
-pub enum ScanEvent { Brand(String), ConfigBrand(String), Channel(String), ConfigChannel(String), Commands, Reconfigured, Overflow }
+pub enum ScanEvent {
+    ConfigChannel(u32, String),
+    Brand(u32, String),
+    Channel(u32, String),
+    Commands(u32),
+    Generation(u32),
+    Overflow,
+}
 static SCAN_ACTIVE: AtomicBool = AtomicBool::new(false);
 static SCAN: Mutex<VecDeque<ScanEvent>> = Mutex::new(VecDeque::new());
+static PLAY_GEN: AtomicU32 = AtomicU32::new(0);
+// A brand event waits for the next event to tell its configuration: a switch means the new backend sent it
+// while configuring, a play packet means the current backend sent it in play.
+static BRAND_WAITING: AtomicBool = AtomicBool::new(false);
+static BRAND: Mutex<Option<String>> = Mutex::new(None);
 
 pub fn scan_enable(on: bool) {
     SCAN_ACTIVE.store(on, Ordering::Relaxed);
     if !on { SCAN.lock().unwrap_or_else(|e| e.into_inner()).clear(); }
 }
 
-pub fn scan_clear() { SCAN.lock().unwrap_or_else(|e| e.into_inner()).clear(); }
+// A new connection: its first configuration is number 1.
+pub fn scan_clear() {
+    PLAY_GEN.store(0, Ordering::Relaxed);
+    BRAND_WAITING.store(false, Ordering::Relaxed);
+    SCAN.lock().unwrap_or_else(|e| e.into_inner()).clear();
+}
+
+pub fn scan_generation() -> u32 { PLAY_GEN.load(Ordering::Relaxed) }
+
+// The connection is in a configuration after the first (a proxy switching backends) right now.
+pub fn scan_configuring(session: &super::Session) -> bool { session.configuring.load(Ordering::Relaxed) }
 
 fn scan_push(event: ScanEvent) {
     let mut queue = SCAN.lock().unwrap_or_else(|e| e.into_inner());
@@ -33,20 +59,71 @@ fn scan_push_to(queue: &mut VecDeque<ScanEvent>, event: ScanEvent) {
     queue.push_back(event);
 }
 
+fn channel_id(id: &str) -> bool { !id.is_empty() && id.len() <= 128 && id.is_ascii() }
+
+// minecraft:register lists the channels the server listens on, NUL separated.
+fn registered(data: &[u8], mut push: impl FnMut(String)) {
+    for id in data.split(|&b| b == 0).take(64) {
+        if let Ok(id) = std::str::from_utf8(id) && channel_id(id) {
+            push(id.to_owned());
+        }
+    }
+}
+
+// Configuration payloads (network thread). Play's minecraft:brand comes here too; the brand is read from its
+// game event instead. A game a whole configuration behind would tag these one too low.
 pub fn scan_config(payload: &horizon_protocol::packets::configuration::CustomPayload) {
     if !SCAN_ACTIVE.load(Ordering::Relaxed) { return; }
-    let id = &payload.channel;
-    if id.len() > 128 || !id.is_ascii() { return; }
-    scan_push(ScanEvent::ConfigChannel(id.clone()));
-    if id == "minecraft:brand" {
-        if let Ok(brand) = horizon_protocol::buf::Reader::new(&payload.data).string(128) {
-            scan_push(ScanEvent::ConfigBrand(brand));
-        }
+    let generation = PLAY_GEN.load(Ordering::Relaxed) + 1;
+    match payload.channel.as_str() {
+        "minecraft:brand" | "minecraft:unregister" => {}
+        "minecraft:register" => registered(&payload.data, |id| scan_push(ScanEvent::ConfigChannel(generation, id))),
+        id if channel_id(id) => scan_push(ScanEvent::ConfigChannel(generation, id.to_owned())),
+        _ => {}
     }
 }
 
 pub fn scan_take() -> VecDeque<ScanEvent> {
     std::mem::take(&mut *SCAN.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+fn brand_to(generation: u32) {
+    if BRAND_WAITING.swap(false, Ordering::Relaxed)
+        && let Some(brand) = BRAND.lock().unwrap_or_else(|e| e.into_inner()).take()
+    {
+        scan_push(ScanEvent::Brand(generation, brand));
+    }
+}
+
+fn scan_seen(event: &super::Event, active: bool) {
+    let generation = match event {
+        super::Event::Joined { .. } | super::Event::Reconfigured(_) => PLAY_GEN.fetch_add(1, Ordering::Relaxed) + 1,
+        _ => PLAY_GEN.load(Ordering::Relaxed),
+    };
+    if !active { return; }
+    match event {
+        super::Event::Brand(brand) => {
+            *BRAND.lock().unwrap_or_else(|e| e.into_inner()) = Some(brand.chars().take(128).collect());
+            BRAND_WAITING.store(true, Ordering::Relaxed);
+        }
+        super::Event::Joined { .. } | super::Event::Reconfigured(_) => {
+            brand_to(generation);
+            scan_push(ScanEvent::Generation(generation));
+        }
+        super::Event::Packet(packet) => match &**packet {
+            _ if BRAND_WAITING.load(Ordering::Relaxed) => {
+                brand_to(generation);
+                scan_seen(event, active);
+            }
+            C::Commands(_) => scan_push(ScanEvent::Commands(generation)),
+            C::CustomPayload(payload) if payload.channel == "minecraft:register" =>
+                registered(&payload.data, |id| scan_push(ScanEvent::Channel(generation, id))),
+            C::CustomPayload(payload) if payload.channel != "minecraft:unregister" && channel_id(&payload.channel) =>
+                scan_push(ScanEvent::Channel(generation, payload.channel.clone())),
+            _ => {}
+        },
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -56,9 +133,19 @@ mod scan_tests {
     #[test]
     fn scan_queue_is_bounded_and_marks_lost_evidence() {
         let mut queue = VecDeque::new();
-        for _ in 0..1024 { scan_push_to(&mut queue, ScanEvent::Commands); }
+        for _ in 0..1024 { scan_push_to(&mut queue, ScanEvent::Commands(1)); }
         assert!(queue.len() <= 256);
         assert!(queue.iter().any(|event| matches!(event, ScanEvent::Overflow)));
+    }
+
+    #[test]
+    fn register_payload_is_split_and_bounded() {
+        let mut out = Vec::new();
+        registered(b"worldedit:cui\0bungeecord:main\0\0\xff\xfe", |id| out.push(id));
+        assert_eq!(out, ["worldedit:cui", "bungeecord:main"]);
+        let mut many = 0;
+        registered(&b"a:b\0".repeat(500), |_| many += 1);
+        assert_eq!(many, 64);
     }
 }
 
@@ -68,19 +155,7 @@ pub fn seen(events: &[super::Event]) {
     let scan_active = SCAN_ACTIVE.load(Ordering::Relaxed);
     let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
     for event in events {
-        if scan_active {
-            match event {
-                super::Event::Brand(brand) => scan_push(ScanEvent::Brand(brand.chars().take(128).collect())),
-                super::Event::Reconfigured(_) => scan_push(ScanEvent::Reconfigured),
-                super::Event::Packet(packet) => match &**packet {
-                    C::Commands(_) => scan_push(ScanEvent::Commands),
-                    C::CustomPayload(payload) if payload.channel.len() <= 128 && payload.channel.is_ascii() =>
-                        scan_push(ScanEvent::Channel(payload.channel.clone())),
-                    _ => {}
-                },
-                _ => {}
-            }
-        }
+        scan_seen(event, scan_active);
         if let super::Event::Packet(p) = event
             && matches!(
                 **p,

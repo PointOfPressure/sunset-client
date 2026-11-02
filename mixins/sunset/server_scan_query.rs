@@ -1,5 +1,6 @@
 // Bounded GameSpy4 Query client. Called only by Server Scan's manual worker.
 use std::{
+    io::ErrorKind,
     net::{SocketAddr, ToSocketAddrs, UdpSocket},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -14,113 +15,104 @@ pub(crate) struct QueryInfo {
     pub map: Option<String>,
     pub players: Option<u16>,
     pub max_players: Option<u16>,
+    // Entries as listed, such as "LuckPerms 5.4.102".
     pub plugins: Vec<String>,
 }
 
 fn parse_challenge(packet: &[u8], session: [u8; 4]) -> Result<i32, String> {
     if packet.len() > 64 || packet.len() < 7 || packet[0] != 9 || packet[1..5] != session {
-        return Err("invalid Query challenge".into());
+        return Err("the Query port answered with something that is not a Query handshake".into());
     }
     let end = packet[5..]
         .iter()
         .position(|&b| b == 0)
-        .ok_or("unterminated Query challenge")?
+        .ok_or("the Query handshake was cut short")?
         + 5;
     std::str::from_utf8(&packet[5..end])
-        .map_err(|_| "non-ASCII Query challenge".to_owned())?
-        .parse()
-        .map_err(|_| "invalid Query challenge number".into())
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .ok_or_else(|| "the Query handshake had no valid token".into())
+}
+
+// Section color codes in a MOTD read badly in a plain chat line.
+fn plain(value: &str, max: usize) -> String {
+    let mut out = String::new();
+    let mut chars = value.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{a7}' {
+            chars.next();
+        } else if !c.is_control() {
+            out.push(c);
+        }
+    }
+    out.trim().chars().take(max).collect()
+}
+
+// "Paper on 26.3: LuckPerms 5.4; WorldEdit 7.3" (Bukkit's form), or only the software when
+// the server hides its plugins.
+fn parse_plugins(value: &str) -> (Option<String>, Vec<String>) {
+    let (head, list) = match value.split_once(": ") {
+        Some((head, list)) => (head, list),
+        None => match value.split_once(':') {
+            Some((head, list)) if !head.contains(' ') || head.contains(" on ") => (head, list),
+            _ => (value, ""),
+        },
+    };
+    let software = Some(plain(head, 96)).filter(|s| !s.is_empty());
+    let plugins = list
+        .split([';', ','])
+        .map(|item| plain(item, 96))
+        .filter(|item| !item.is_empty())
+        .take(128)
+        .collect();
+    (software, plugins)
 }
 
 fn parse_full(packet: &[u8], session: [u8; 4]) -> Result<QueryInfo, String> {
-    const PREFIX: &[u8] = b"splitnum\0\x80\0";
-    const PLAYERS: &[u8] = b"\0\x01player_\0\0";
-    if packet.len() > MAX_PACKET
-        || packet.len() < 5 + PREFIX.len() + PLAYERS.len()
-        || packet[0] != 0
-        || packet[1..5] != session
-        || !packet[5..].starts_with(PREFIX)
-    {
-        return Err("invalid Query Full Stat header".into());
+    // The 11 bytes after the session are padding ("splitnum\0\x80\0"); only the word is checked.
+    if packet.len() > MAX_PACKET || packet.len() < 16 || packet[0] != 0 || packet[1..5] != session || !packet[5..].starts_with(b"splitnum\0") {
+        return Err("the Query reply was not a Full Stat".into());
     }
-    let body = &packet[5 + PREFIX.len()..];
-    let end = body
-        .windows(PLAYERS.len())
-        .position(|w| w == PLAYERS)
-        .ok_or("truncated Query Full Stat")?;
-    let mut fields = &body[..end];
-    let mut software = None;
-    let mut version = None;
-    let mut hostname = None;
-    let mut map = None;
-    let mut players = None;
-    let mut max_players = None;
-    let mut plugins = Vec::new();
-    let mut count = 0;
-    while !fields.is_empty() {
-        count += 1;
-        if count > 64 {
-            return Err("too many Query fields".into());
-        }
-        let key_end = fields
-            .iter()
-            .position(|&b| b == 0)
-            .ok_or("truncated Query field")?;
+    let mut fields = &packet[16..];
+    let mut info = QueryInfo {
+        software: None,
+        version: None,
+        hostname: None,
+        map: None,
+        players: None,
+        max_players: None,
+        plugins: Vec::new(),
+    };
+    let mut ended = false;
+    for _ in 0..64 {
+        let key_end = fields.iter().position(|&b| b == 0).ok_or("the Query reply was cut short")?;
+        // An empty key ends the key and value section; the player list follows.
         if key_end == 0 {
-            return Err("empty Query field".into());
+            ended = true;
+            break;
         }
-        let key = std::str::from_utf8(&fields[..key_end]).map_err(|_| "invalid Query key")?;
+        let key = String::from_utf8_lossy(&fields[..key_end]).into_owned();
         fields = &fields[key_end + 1..];
-        let value_end = fields
-            .iter()
-            .position(|&b| b == 0)
-            .ok_or("truncated Query value")?;
-        if value_end > 2048 {
-            return Err("oversized Query value".into());
+        let value_end = fields.iter().position(|&b| b == 0).ok_or("the Query reply was cut short")?;
+        if value_end > 4096 {
+            return Err("the Query reply had an oversized field".into());
         }
-        let value = std::str::from_utf8(&fields[..value_end]).map_err(|_| "invalid Query value")?;
-        match key {
-            "version" => version = Some(value.chars().take(96).collect()),
-            "hostname" => hostname = Some(value.chars().take(128).collect()),
-            "map" => map = Some(value.chars().take(96).collect()),
-            "numplayers" => players = value.parse().ok(),
-            "maxplayers" => max_players = value.parse().ok(),
-            "plugins" => {
-                let list = if let Some((head, list)) = value.split_once(':') {
-                    software = Some(
-                        head.split_whitespace()
-                            .next()
-                            .unwrap_or(head)
-                            .chars()
-                            .take(64)
-                            .collect(),
-                    );
-                    list
-                } else {
-                    value
-                };
-                for item in list
-                    .split([',', ';'])
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .take(64)
-                {
-                    plugins.push(item.chars().take(96).collect());
-                }
-            }
+        let value = String::from_utf8_lossy(&fields[..value_end]);
+        fields = &fields[value_end + 1..];
+        match key.as_str() {
+            "version" => info.version = Some(plain(&value, 96)),
+            "hostname" => info.hostname = Some(plain(&value, 128)),
+            "map" => info.map = Some(plain(&value, 96)),
+            "numplayers" => info.players = value.trim().parse().ok(),
+            "maxplayers" => info.max_players = value.trim().parse().ok(),
+            "plugins" => (info.software, info.plugins) = parse_plugins(&value),
             _ => {}
         }
-        fields = &fields[value_end + 1..];
     }
-    Ok(QueryInfo {
-        software,
-        version,
-        hostname,
-        map,
-        players,
-        max_players,
-        plugins,
-    })
+    if !ended {
+        return Err("the Query reply had too many fields".into());
+    }
+    Ok(info)
 }
 
 pub(crate) fn query(host: &str, port: u16) -> Result<QueryInfo, String> {
@@ -129,59 +121,59 @@ pub(crate) fn query(host: &str, port: u16) -> Result<QueryInfo, String> {
 
 fn query_with_timeout(host: &str, port: u16, timeout: Duration) -> Result<QueryInfo, String> {
     if port == 0 {
-        return Err("invalid Query port".into());
+        return Err("the Query port is not valid".into());
     }
     let endpoint = (host, port)
         .to_socket_addrs()
-        .map_err(|e| e.to_string())?
+        .map_err(|_| format!("could not resolve {host}"))?
         .next()
-        .ok_or("Query host has no address")?;
+        .ok_or_else(|| format!("{host} has no address"))?;
     let bind = if endpoint.is_ipv6() {
         SocketAddr::from(([0u16; 8], 0))
     } else {
         SocketAddr::from(([0, 0, 0, 0], 0))
     };
-    let socket = UdpSocket::bind(bind).map_err(|e| e.to_string())?;
-    socket.connect(endpoint).map_err(|e| e.to_string())?;
-    socket
-        .set_read_timeout(Some(timeout))
-        .map_err(|e| e.to_string())?;
-    socket
-        .set_write_timeout(Some(timeout))
-        .map_err(|e| e.to_string())?;
-    let session = (SystemTime::now()
+    let io = |e: std::io::Error| format!("could not open a UDP socket ({e})");
+    let socket = UdpSocket::bind(bind).map_err(io)?;
+    socket.connect(endpoint).map_err(io)?;
+    socket.set_read_timeout(Some(timeout)).map_err(io)?;
+    socket.set_write_timeout(Some(timeout)).map_err(io)?;
+    let session = ((SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .subsec_nanos() as i32)
+        .subsec_nanos()
+        & 0x0F0F_0F0F) as i32)
         .to_be_bytes();
     let mut challenge_request = [0u8; 7];
     challenge_request[..3].copy_from_slice(&[0xfe, 0xfd, 9]);
     challenge_request[3..].copy_from_slice(&session);
-    let challenge_reply = exchange(&socket, &challenge_request)?;
+    let challenge_reply = exchange(&socket, &challenge_request, port)?;
     let challenge = parse_challenge(&challenge_reply, session)?;
     let mut full_request = [0u8; 15];
     full_request[..3].copy_from_slice(&[0xfe, 0xfd, 0]);
     full_request[3..7].copy_from_slice(&session);
     full_request[7..11].copy_from_slice(&challenge.to_be_bytes());
-    let full_reply = exchange(&socket, &full_request)?;
+    let full_reply = exchange(&socket, &full_request, port)?;
     parse_full(&full_reply, session)
 }
 
-fn exchange(socket: &UdpSocket, request: &[u8]) -> Result<Vec<u8>, String> {
+fn exchange(socket: &UdpSocket, request: &[u8], port: u16) -> Result<Vec<u8>, String> {
     let mut buffer = [0; MAX_PACKET + 1];
     for attempt in 0..2 {
-        socket.send(request).map_err(|e| e.to_string())?;
+        socket.send(request).map_err(|e| format!("could not send to UDP {port} ({e})"))?;
         match socket.recv(&mut buffer) {
             Ok(n) if n <= MAX_PACKET => return Ok(buffer[..n].to_vec()),
-            Ok(_) => return Err("oversized Query reply".into()),
-            Err(e)
-                if (e.kind() == std::io::ErrorKind::TimedOut
-                    || e.kind() == std::io::ErrorKind::WouldBlock)
-                    && attempt == 0 => {}
-            Err(e) => return Err(format!("Query unavailable: {e}")),
+            Ok(_) => return Err("the Query reply was too large".into()),
+            Err(e) if matches!(e.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) && attempt == 0 => {}
+            Err(e) if matches!(e.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) => break,
+            // Windows reports an ICMP port unreachable as a reset.
+            Err(e) if matches!(e.kind(), ErrorKind::ConnectionRefused | ErrorKind::ConnectionReset) => {
+                return Err(format!("UDP {port} is closed (Query is off, or on another port)"));
+            }
+            Err(e) => return Err(format!("UDP {port} failed ({e})")),
         }
     }
-    Err("Query timed out".into())
+    Err(format!("no reply on UDP {port} (Query is off, firewalled, or on another port)"))
 }
 
 #[cfg(test)]
@@ -190,25 +182,31 @@ mod tests {
 
     #[test]
     fn challenge_checks_session_and_decimal_value() {
-        assert_eq!(
-            parse_challenge(b"\x09\x01\x02\x03\x04-123\0", [1, 2, 3, 4]),
-            Ok(-123)
-        );
+        assert_eq!(parse_challenge(b"\x09\x01\x02\x03\x04-123\0", [1, 2, 3, 4]), Ok(-123));
         assert!(parse_challenge(b"\x09\x01\x02\x03\x05-123\0", [1, 2, 3, 4]).is_err());
         assert!(parse_challenge(b"\x09\x01\x02\x03\x04abc\0", [1, 2, 3, 4]).is_err());
     }
 
     #[test]
     fn full_stat_reads_reported_plugins_and_rejects_truncation() {
-        let mut packet = b"\0\x01\x02\x03\x04splitnum\0\x80\0hostname\0Test\0map\0world\0numplayers\03\0maxplayers\020\0version\026.3\0plugins\0Paper on 26.3: LuckPerms, WorldEdit\0\0\x01player_\0\0".to_vec();
+        let mut packet = b"\0\x01\x02\x03\x04splitnum\0\x80\0hostname\0\xc2\xa7aTest\0map\0world\0numplayers\03\0maxplayers\020\0version\026.3\0plugins\0Paper on 26.3: LuckPerms 5.4.102; WorldEdit 7.3\0\0\x01player_\0\0Steve\0\0".to_vec();
         let info = parse_full(&packet, [1, 2, 3, 4]).unwrap();
-        assert_eq!(info.software.as_deref(), Some("Paper"));
-        assert_eq!(info.plugins, ["LuckPerms", "WorldEdit"]);
+        assert_eq!(info.software.as_deref(), Some("Paper on 26.3"));
+        assert_eq!(info.plugins, ["LuckPerms 5.4.102", "WorldEdit 7.3"]);
         assert_eq!(info.hostname.as_deref(), Some("Test"));
         assert_eq!(info.map.as_deref(), Some("world"));
         assert_eq!((info.players, info.max_players), (Some(3), Some(20)));
-        packet.truncate(20);
+        packet.truncate(40);
         assert!(parse_full(&packet, [1, 2, 3, 4]).is_err());
+    }
+
+    #[test]
+    fn full_stat_without_a_player_section_or_plugin_list_still_parses() {
+        let info = parse_full(b"\0\x01\x02\x03\x04splitnum\0\x80\0version\026.3\0plugins\0Paper on 26.3\0\0", [1, 2, 3, 4]).unwrap();
+        assert_eq!(info.software.as_deref(), Some("Paper on 26.3"));
+        assert!(info.plugins.is_empty(), "a software name without a list is not a plugin");
+        assert_eq!(parse_plugins("CraftBukkit on Bukkit 1.21: A 1.0, B"), (Some("CraftBukkit on Bukkit 1.21".into()), vec!["A 1.0".into(), "B".into()]));
+        assert_eq!(parse_plugins(""), (None, vec![]));
     }
 
     #[test]
@@ -216,6 +214,12 @@ mod tests {
         assert!(parse_full(&vec![0; MAX_PACKET + 1], [0; 4]).is_err());
         assert!(parse_challenge(&vec![0; 128], [0; 4]).is_err());
         assert!(query("127.0.0.1", 0).is_err());
+        let mut endless = b"\0\0\0\0\0splitnum\0\x80\0".to_vec();
+        for _ in 0..70 {
+            endless.extend_from_slice(b"k\0v\0");
+        }
+        endless.push(0);
+        assert!(parse_full(&endless, [0; 4]).is_err());
     }
 
     #[test]

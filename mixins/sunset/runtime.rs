@@ -5049,7 +5049,7 @@ const HELP: &[(&str, &str)] = &[
     (".reset <module>", "put a module back to its defaults"),
     (".panic", "turn every module off and hide Sunset (.panic again brings it back)"),
     (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
-    (".scan [plugins|commands|details|run]", "show server-reported findings; run optional Extended checks manually"),
+    (".scan [plugins|details|channels|commands|status|run] [page]", "show server-reported findings; run optional Extended checks manually"),
     (".auradebug", "why Kill Aura did what it did last, and who has the hand"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
