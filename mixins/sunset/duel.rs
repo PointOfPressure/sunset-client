@@ -24,7 +24,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Max delay", 10.0, 1.0, 20.0, 1.0)
             .num("Delay", 2.0, 1.0, 20.0, 1.0)
             .bool("At feet", false),
-        Module::new("Loadouts", Category::Player, "Saved hotbar and offhand layouts. Hold the Menu key for the list and press a loadout's number to equip it (items are moved around your inventory with the same clicks as number keys in the inventory screen). .loadout save [name], .loadout <number or name>, .loadout delete <number or name>.")
+        Module::new("Loadouts", Category::Player, "Saved hotbar and offhand layouts, as Duelkit's. Hold the Menu key: let go over a loadout, click it or press its number to equip it (items are moved with the same clicks as number keys in the inventory, matched by item and name); right-click deletes one; Save current keeps what you hold. Also .loadout save [name], .loadout <number or name>, .loadout delete <number or name>.")
             .text("Menu key", "K"),
     ]
 }
@@ -289,24 +289,82 @@ pub(super) fn tick(game: &mut Game<'_>) {
     duel(|d| d.eating = None);
 }
 
-// Loadouts: each saved as "name|item,item,...(nine)|offhand", "-" for a slot left alone.
+// Loadouts, as Duelkit's: each "name|slot,...(nine)|offhand", a slot "-" (left alone) or an item id with its custom
+// name after a "~" when it had one (names %-escaped). Kept in loadouts.txt in the mod's data folder.
+struct Slot {
+    item: String,
+    name: Option<String>,
+}
+
 struct Loadout {
     name: String,
-    hotbar: Vec<Option<String>>,
-    offhand: Option<String>,
+    hotbar: Vec<Option<Slot>>,
+    offhand: Option<Slot>,
+}
+
+fn escape(s: &str) -> String {
+    s.replace('%', "%25").replace('|', "%7C").replace(',', "%2C").replace('~', "%7E").replace('\n', " ")
+}
+
+fn unescape(s: &str) -> String {
+    s.replace("%7E", "~").replace("%2C", ",").replace("%7C", "|").replace("%25", "%")
 }
 
 fn parse(line: &str) -> Option<Loadout> {
     let mut parts = line.split('|');
-    let name = parts.next()?.to_owned();
-    let slot = |s: &str| (s != "-" && !s.is_empty()).then(|| s.to_owned());
+    let name = unescape(parts.next()?);
+    let slot = |s: &str| {
+        (s != "-" && !s.is_empty()).then(|| match s.split_once('~') {
+            Some((item, name)) => Slot { item: item.to_owned(), name: Some(unescape(name)) },
+            None => Slot { item: s.to_owned(), name: None },
+        })
+    };
     let hotbar = parts.next()?.split(',').map(slot).collect();
     let offhand = slot(parts.next()?);
     Some(Loadout { name, hotbar, offhand })
 }
 
+// A loadout of what you hold now: the hotbar and the off hand, named.
+fn capture(game: &Game<'_>, name: &str) -> String {
+    let slot = |s: Option<&horizon_client::items::ItemStack>| match s {
+        None => "-".to_owned(),
+        Some(s) => match s.custom_name() {
+            Some(n) => format!("{}~{}", s.item, escape(&n)),
+            None => s.item.to_string(),
+        },
+    };
+    let hotbar: Vec<String> = (0..9).map(|i| slot(game.inventory[i].as_ref())).collect();
+    format!("{}|{}|{}", escape(name), hotbar.join(","), slot(game.offhand.as_ref()))
+}
+
 fn loadouts() -> Vec<Loadout> {
     with(|s| s.loadouts.iter().filter_map(|l| parse(l)).collect())
+}
+
+fn file(game: &Game<'_>) -> std::path::PathBuf {
+    game.native_data_dir(super::sunset::ID).join("loadouts.txt")
+}
+
+// Read once with the config: the file's loadouts, or (the first time) the ones the config kept, written to it.
+pub(super) fn load_loadouts(game: &Game<'_>) {
+    match std::fs::read_to_string(file(game)) {
+        Ok(text) => with(|s| s.loadouts = text.lines().filter(|l| parse(l).is_some()).map(str::to_owned).collect()),
+        Err(_) if with(|s| !s.loadouts.is_empty()) => store(game),
+        Err(_) => {}
+    }
+}
+
+// The loadouts written to their file (never through a link).
+fn store(game: &Game<'_>) {
+    let path = file(game);
+    if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return;
+    }
+    let text: String = with(|s| s.loadouts.iter().map(|l| format!("{l}\n")).collect());
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(&path, text);
 }
 
 fn find_loadout(list: &[Loadout], what: &str) -> Option<usize> {
@@ -317,45 +375,126 @@ fn find_loadout(list: &[Loadout], what: &str) -> Option<usize> {
         .or_else(|| list.iter().position(|l| l.name.eq_ignore_ascii_case(what)))
 }
 
-// Puts each saved item in its hotbar slot (and the offhand) with swap clicks from wherever it is in your inventory,
-// leaving slots that already hold theirs.
+// 0: not it; 1: the same item; 2: the same item and name (or a slot saved without a name).
+fn score(want: &Slot, have: Option<&horizon_client::items::ItemStack>) -> u8 {
+    match have {
+        Some(h) if *h.item == *want.item => {
+            if want.name.is_none() || h.custom_name().as_deref() == want.name.as_deref() { 2 } else { 1 }
+        }
+        _ => 0,
+    }
+}
+
+// Puts each saved item in its hotbar slot (and the offhand) with the clicks of a number key pressed over it in the
+// inventory, from the slot that matches it best (the name too, before just the item); slots that already hold theirs
+// stay.
 fn equip(game: &mut Game<'_>, l: &Loadout) {
     if !util::inventory_idle(game) {
         return;
     }
-    let item = |game: &Game<'_>, k: usize| game.inventory[k].as_ref().map(|s| s.item.to_string());
     let mut done = [false; 36];
+    let best = |game: &Game<'_>, want: &Slot, done: &[bool; 36]| {
+        (0..36)
+            .filter(|&k| !done[k])
+            .filter(|&k| !(k < 9 && l.hotbar.get(k).and_then(|w| w.as_ref()).is_some_and(|w| score(w, game.inventory[k].as_ref()) == 2)))
+            .map(|k| (score(want, game.inventory[k].as_ref()), k))
+            .filter(|&(s, _)| s > 0)
+            .max_by_key(|&(s, k)| (s, std::cmp::Reverse(k)))
+            .map(|(_, k)| k)
+    };
     for (i, want) in l.hotbar.iter().enumerate().take(9) {
         let Some(want) = want else {
             continue;
         };
-        if item(game, i).as_deref() == Some(want.as_str()) {
+        if score(want, game.inventory[i].as_ref()) == 2 {
             done[i] = true;
             continue;
         }
-        let keeps = |game: &Game<'_>, k: usize| k < 9 && l.hotbar.get(k).cloned().flatten() == item(game, k) && item(game, k).is_some();
-        let Some(from) = (0..36).find(|&k| !done[k] && !keeps(game, k) && item(game, k).as_deref() == Some(want.as_str())) else {
+        let Some(from) = best(game, want, &done) else {
             continue;
         };
         game.remote_menu_ops(&[(Some(from), i as i32, Input::Swap)]);
         done[i] = true;
     }
     if let Some(want) = &l.offhand
-        && game.offhand.as_ref().is_none_or(|s| *s.item != **want)
-        && let Some(from) = (0..36).find(|&k| !done[k] && item(game, k).as_deref() == Some(want.as_str()))
+        && score(want, game.offhand.as_ref()) < 2
+        && let Some(from) = best(game, want, &done)
     {
         game.remote_menu_ops(&[(Some(from), 40, Input::Swap)]);
     }
 }
 
-// Loadouts' keys: the Menu key held shows the list; a hotbar number key then equips that loadout instead.
+fn equip_row(game: &mut Game<'_>, row: usize) {
+    let list = loadouts();
+    if let Some(l) = list.get(row) {
+        equip(game, l);
+        game.titles.set_overlay(format!("Equipped {}", l.name).into(), false);
+    }
+}
+
+// The panel's measures, as Duelkit's: rows 40 apart, each a name over a hotbar strip 182 by 22 with the off hand's
+// slot to its left.
+const ROW: f32 = 40.0;
+const BAR_W: f32 = 182.0;
+
+fn top(h: f32, count: usize) -> f32 {
+    (h / 2.0 - count as f32 * ROW / 2.0 - 10.0).max(20.0)
+}
+
+fn bar_x(w: f32) -> f32 {
+    w / 2.0 - BAR_W / 2.0 + 12.0
+}
+
+fn row_at(w: f32, h: f32, count: usize, (mx, my): (f32, f32)) -> Option<usize> {
+    let (top, x) = (top(h, count), bar_x(w));
+    (0..count).find(|&i| {
+        let y = top + i as f32 * ROW;
+        mx >= x - 26.0 && mx <= x + BAR_W && my >= y && my <= y + ROW - 4.0
+    })
+}
+
+// The Save current button, under the rows.
+fn save_button(w: f32, h: f32, count: usize) -> [f32; 4] {
+    [w / 2.0 - 40.0, top(h, count) + count as f32 * ROW + 2.0, 80.0, 14.0]
+}
+
+fn inside(r: [f32; 4], (x, y): (f32, f32)) -> bool {
+    x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]
+}
+
+// The screen's size in the HUD's pixels, as the panel was last drawn.
+static VIEW: Mutex<(f32, f32)> = Mutex::new((0.0, 0.0));
+
+fn view() -> (f32, f32) {
+    *VIEW.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+// Loadouts' keys: the Menu key held opens the panel (the pointer free); let go over a row, it equips that one. A
+// hotbar number key equips that loadout instead.
 fn loadout_key(game: &mut Game<'_>, key: &str, pressed: bool) {
     let Some(m) = module("Loadouts") else {
         duel(|d| d.listing = false);
         return;
     };
     if super::sunset::key_from_text(m.t("Menu key")).as_deref() == Some(key) {
-        duel(|d| d.listing = pressed && game.screen == Screen::Playing);
+        let was = duel(|d| d.listing);
+        let now = pressed && game.screen == Screen::Playing && !super::sunset::gui_open();
+        if now == was {
+            return;
+        }
+        duel(|d| d.listing = now);
+        if now {
+            game.keys.clear();
+            game.capture(false);
+            return;
+        }
+        let (w, h) = view();
+        if let Some(row) = row_at(w, h, loadouts().len(), game.cursor) {
+            equip_row(game, row);
+        }
+        if game.screen == Screen::Playing {
+            game.capture(true);
+        }
         return;
     }
     if !pressed || !duel(|d| d.listing) {
@@ -364,47 +503,83 @@ fn loadout_key(game: &mut Game<'_>, key: &str, pressed: bool) {
     let Some(n) = (0..9).find(|i| game.settings.keys.get(&format!("key.hotbar.{}", i + 1)) == key) else {
         return;
     };
-    let list = loadouts();
-    if let Some(l) = list.get(n) {
+    if n < loadouts().len() {
         let back = game.selected;
         duel(|d| d.undo = Some((n, back)));
-        equip(game, l);
-        util::report(game, &format!("Equipped {}", l.name));
+        equip_row(game, n);
     }
 }
 
-// The list while the Menu key is held: number, name, and what each hotbar slot gets.
+// A mouse press while the panel is open: a row clicked equips it, right-clicked deletes it; Save current keeps what
+// you hold as "Loadout N". Every press stops here while it is open.
+pub(super) fn loadout_press(game: &mut Game<'_>, right: bool) -> bool {
+    if !duel(|d| d.listing) {
+        return false;
+    }
+    let (w, h) = view();
+    let count = loadouts().len();
+    if !right && inside(save_button(w, h, count), game.cursor) {
+        let line = capture(game, &format!("Loadout {}", count + 1));
+        with(|s| s.loadouts.push(line));
+        store(game);
+    } else if let Some(row) = row_at(w, h, count, game.cursor) {
+        if right {
+            with(|s| {
+                s.loadouts.remove(row);
+            });
+            store(game);
+        } else {
+            equip_row(game, row);
+        }
+    }
+    true
+}
+
+// The panel while the Menu key is held: a title, each loadout's number and name over a hotbar of its items with the
+// off hand's to the left (the row under the pointer lit), Save current, and how to use it.
 pub(super) fn draw_loadouts(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     if !duel(|d| d.listing) || module("Loadouts").is_none() {
         return;
     }
+    *VIEW.lock().unwrap_or_else(|e| e.into_inner()) = (w, h);
     let list = loadouts();
-    if list.is_empty() {
-        let line = "No loadouts yet: .loadout save <name>";
-        let width = game.native_text_width(line) + 12.0;
-        let (x, y) = ((w - width) / 2.0, (h - 30.0) / 2.0);
-        out.fill([x, y, width, 30.0], 0xA000_0000);
-        out.text(line, [x + 6.0, y + 11.0], 0xFFFFFF);
-        return;
-    }
-    // Each row: its number and name, then the hotbar's nine items and the off hand's, as icons.
-    let names: Vec<String> = list.iter().enumerate().map(|(i, l)| format!("{}  {}", i + 1, l.name)).collect();
-    let name_w = names.iter().map(|n| game.native_text_width(n)).fold(game.native_text_width("Loadouts: press a number"), f32::max);
-    let width = name_w + 12.0 + 10.0 * 18.0 + 6.0;
-    let height = list.len() as f32 * 20.0 + 20.0;
-    let (x, y) = ((w - width) / 2.0, (h - height) / 2.0);
-    out.fill([x, y, width, height], 0xA000_0000);
-    out.text("Loadouts: press a number", [x + 6.0, y + 5.0], 0xFFFFFF);
-    for (row, (l, name)) in list.iter().zip(names).enumerate() {
-        let ry = y + 18.0 + row as f32 * 20.0;
-        out.text(&name, [x + 6.0, ry + 6.0], 0xE0E0E0);
-        for (i, item) in l.hotbar.iter().chain([&l.offhand]).enumerate() {
-            let ix = x + name_w + 12.0 + i as f32 * 18.0 + if i == 9 { 4.0 } else { 0.0 };
+    let (top, x) = (top(h, list.len()), bar_x(w));
+    let centred = |out: &mut Vec<Shape>, text: &str, y: f32, colour: u32| {
+        out.text(text, [(w - game.native_text_width(text)) / 2.0, y], colour);
+    };
+    centred(out, if list.is_empty() { "No loadouts yet" } else { "Loadouts" }, top - 14.0, 0xFFFFFF);
+    let hover = row_at(w, h, list.len(), game.cursor);
+    // A vanilla-like slot: dark edge, grey face.
+    let slot = |out: &mut Vec<Shape>, x: f32, y: f32| {
+        out.fill([x, y, 22.0, 22.0], 0xFF1E_1E1E);
+        out.fill([x + 1.0, y + 1.0, 20.0, 20.0], 0xFF8B_8B8B);
+        out.fill([x + 2.0, y + 2.0, 18.0, 18.0], 0xFF37_3737);
+    };
+    for (i, l) in list.iter().enumerate() {
+        let y = top + i as f32 * ROW;
+        if hover == Some(i) {
+            out.fill([x - 28.0, y - 2.0, BAR_W + 30.0, ROW - 2.0], 0x40FF_FFFF);
+        }
+        let name = if i < 9 { format!("{}  {}", i + 1, l.name) } else { l.name.clone() };
+        out.text(&name, [x, y], if hover == Some(i) { 0xFFFF55 } else { 0xE0E0E0 });
+        out.fill([x, y + 10.0, BAR_W, 22.0], 0xFF1E_1E1E);
+        for k in 0..9 {
+            slot(out, x + k as f32 * 20.0, y + 10.0);
+        }
+        for (k, item) in l.hotbar.iter().take(9).enumerate() {
             if let Some(item) = item {
-                out.push(Shape::Item(item.as_str().into(), [ix, ry + 1.0], 16.0));
+                out.push(Shape::Item(item.item.as_str().into(), [x + 3.0 + k as f32 * 20.0, y + 13.0], 16.0));
             }
         }
+        slot(out, x - 26.0, y + 10.0);
+        if let Some(item) = &l.offhand {
+            out.push(Shape::Item(item.item.as_str().into(), [x - 23.0, y + 13.0], 16.0));
+        }
     }
+    let b = save_button(w, h, list.len());
+    out.push(Shape::Round(b, 3.0, if inside(b, game.cursor) { 0xC050_5050 } else { 0xC030_3030 }));
+    centred(out, "Save current", b[1] + 3.0, 0xFFFFFF);
+    centred(out, "Release K over one to equip  \u{b7}  right-click deletes", h - 46.0, 0xA0A0A0);
 }
 
 // .loadout save [name] | delete <n|name> | list | <n|name>
@@ -412,22 +587,20 @@ pub(super) fn loadout_command(game: &mut Game<'_>, args: &[&str]) {
     let list = loadouts();
     match (args.get(1).map(|a| a.to_ascii_lowercase()).as_deref(), args.get(2..).map(|a| a.join(" "))) {
         (Some("save" | "add"), name) => {
-            let name = name.filter(|n| !n.is_empty()).unwrap_or_else(|| format!("Loadout {}", list.len() + 1)).replace(['|', '=', ','], "");
-            let slot = |s: Option<&horizon_client::items::ItemStack>| s.map_or("-".to_owned(), |s| s.item.to_string());
-            let hotbar: Vec<String> = (0..9).map(|i| slot(game.inventory[i].as_ref())).collect();
-            let line = format!("{name}|{}|{}", hotbar.join(","), slot(game.offhand.as_ref()));
+            let name = name.filter(|n| !n.is_empty()).unwrap_or_else(|| format!("Loadout {}", list.len() + 1));
+            let line = capture(game, &name);
             with(|s| {
                 s.loadouts.retain(|l| parse(l).is_none_or(|l| !l.name.eq_ignore_ascii_case(&name)));
                 s.loadouts.push(line);
             });
-            super::sunset::save(game);
+            store(game);
             say(game, &format!("Saved loadout {name}"));
         }
         (Some("delete" | "del" | "remove" | "rm"), Some(what)) => match find_loadout(&list, &what) {
             Some(i) => {
                 let name = list[i].name.clone();
                 with(|s| s.loadouts.retain(|l| parse(l).is_none_or(|l| l.name != name)));
-                super::sunset::save(game);
+                store(game);
                 say(game, &format!("Deleted loadout {name}"));
             }
             None => say(game, &format!("No loadout {what}")),
@@ -443,10 +616,7 @@ pub(super) fn loadout_command(game: &mut Game<'_>, args: &[&str]) {
         (Some(_), _) => {
             let what = args[1..].join(" ");
             match find_loadout(&list, &what) {
-                Some(i) => {
-                    equip(game, &list[i]);
-                    say(game, &format!("Equipped {}", list[i].name));
-                }
+                Some(i) => equip_row(game, i),
                 None => say(game, &format!("No loadout {what}")),
             }
         }

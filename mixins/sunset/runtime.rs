@@ -1058,9 +1058,6 @@ impl State {
         for w in &self.waypoints {
             out.push_str(&format!("waypoint={}|{}|{}|{}|{}\n", w.name, w.pos[0], w.pos[1], w.pos[2], w.dim));
         }
-        for l in &self.loadouts {
-            out.push_str(&format!("loadout={l}\n"));
-        }
         for (c, p) in CATEGORIES.iter().zip(&self.gui.panels) {
             out.push_str(&format!("panel.{}={},{},{}\n", norm(c.label()), p.x, p.y, p.collapsed));
         }
@@ -1526,6 +1523,8 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
         s.loaded = true;
         sync_flags(s);
     });
+    // Loadouts live in their own file now (the config kept them before).
+    super::sunset_duel::load_loadouts(game);
     if !text.lines().any(|l| l.starts_with("profile-selection=")) {
         if let Ok(store) = super::sunset_profiles::Store::new(game.native_data_dir(ID))
             && let Ok(names) = store.list()
