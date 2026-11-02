@@ -11,7 +11,6 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const LAG: &str = "Fake Lag";
-const KB: &str = "Knockback Delay";
 // Held for a second at most, 128 packets at most: past either, all of it goes.
 const MOST: usize = 128;
 const OLDEST: Duration = Duration::from_secs(1);
@@ -23,14 +22,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Delay (ms)", 100.0, 10.0, 1000.0, 10.0)
             .num("Range", 6.0, 3.0, 12.0, 0.5)
             .bool("Show server position", true),
-        Module::new(KB, Category::Combat, "Takes the server's pushes on you (hits, explosions) a little late, by chance: in the air after Air delay, on the ground after Ground delay. Other players' movement comes in on time.")
-            .num("Chance (%)", 40.0, 0.0, 100.0, 5.0)
-            .num("Air delay min (ms)", 50.0, 0.0, 500.0, 10.0)
-            .num("Air delay max (ms)", 100.0, 0.0, 500.0, 10.0)
-            .num("Ground delay min (ms)", 200.0, 0.0, 1000.0, 10.0)
-            .num("Ground delay max (ms)", 250.0, 0.0, 1000.0, 10.0)
-            .bool("Not in water", false)
-            .bool("Only near enemies", true),
     ]
 }
 
@@ -194,9 +185,9 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     lag(|l| l.on = on.map(|m| (Duration::from_millis(m.n("Delay (ms)").clamp(10.0, 1000.0) as u64), Instant::now())));
     release(game, on.is_none());
     // Knockback Delay: what the network module holds by for the next pushes.
-    let kb = get(KB).filter(|m| {
-        live && (!m.b("Only near enemies") || enemy(game, 6.0, false))
-            && !(m.b("Not in water") && game.player.as_ref().is_some_and(|p| p.fluids.was_touching_water))
+    let kb = get("Velocity").filter(|m| {
+        m.b("Knockback delay") && live && (!m.b("Delay only near enemies") || enemy(game, 6.0, false))
+            && !(m.b("Delay not in water") && game.player.as_ref().is_some_and(|p| p.fluids.was_touching_water))
     });
     match (kb, game.remote.as_ref()) {
         (Some(m), Some(r)) => {
@@ -206,7 +197,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
             } else {
                 (m.n("Air delay min (ms)"), m.n("Air delay max (ms)"))
             };
-            net::delay(r.entity_id, m.n("Chance (%)"), [a.min(b) as u64, a.max(b) as u64]);
+            net::delay(r.entity_id, m.n("Delay chance (%)"), [a.min(b) as u64, a.max(b) as u64]);
         }
         _ => net::delay_off(),
     }

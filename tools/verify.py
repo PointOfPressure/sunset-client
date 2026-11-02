@@ -5637,7 +5637,7 @@ def _():
     return 220 <= extra <= 420 and wire["on"][3] <= 1 and wire["on"][2] > 40, note
 
 
-@test("Knockback Delay")
+@test("Velocity (knockback delay)")
 def _():
     # Bot1 hits you 5 times off and 5 times on (Chance 100%, ground delay 400 ms); from your probe, the time from its
     # click to the first frame you move: how late the knockback lands.
@@ -5645,15 +5645,18 @@ def _():
         return None, "needs a second player"
     if not probe_path():
         return None, "needs the probe (tools/probe)"
-    setting("knockbackdelay", "chance", "100")
-    setting("knockbackdelay", "ground delay min", "400")
-    setting("knockbackdelay", "ground delay max", "400")
+    setting("velocity", "knockback delay", "true")
+    setting("velocity", "delay chance", "100")
+    setting("velocity", "ground delay min", "400")
+    setting("velocity", "ground delay max", "400")
+    for name in ("knockback", "explosions", "liquids", "entity push", "sinking"):
+        setting("velocity", name, "false")
     reset()
     cmd("effect give @s minecraft:resistance 600 4 true")
     bot_ready(2.5, 180)
     tester = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
     late = {}
-    for name, mods in (("off", ()), ("on", ("knockbackdelay",))):
+    for name, mods in (("off", ()), ("on", ("velocity",))):
         only(*mods)
         late[name] = []
         for _ in range(5):

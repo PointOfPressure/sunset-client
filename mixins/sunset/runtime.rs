@@ -312,6 +312,8 @@ impl Module {
                 _ => true,
             },
             "Velocity" => match name {
+                "Delay chance (%)" | "Air delay min (ms)" | "Air delay max (ms)" | "Ground delay min (ms)"
+                | "Ground delay max (ms)" | "Delay not in water" | "Delay only near enemies" => self.b("Knockback delay"),
                 "Use air values" => advanced,
                 "Air knockback horizontal" | "Air knockback vertical" => advanced && self.b("Use air values"),
                 "Blend %" => self.p("Mode") == "Blend",
@@ -423,7 +425,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Rotate", true)
             .bool("Anchor", true)
             .bool("Pause on mace", true),
-        Module::new("Velocity", Movement, "Prevents you from being moved by external forces.")
+        Module::new("Velocity", Movement, "Controls knockback and other pushes.")
             .pick("Mode", &["Scale", "Blend"])
             .bool("Knockback", true)
             .num("Knockback horizontal", 0.0, 0.0, 1.0, 0.05)
@@ -441,7 +443,15 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Use air values", false)
             .num("Air knockback horizontal", 1.0, 0.0, 1.0, 0.05)
             .num("Air knockback vertical", 1.0, 0.0, 1.0, 0.05)
-            .num("Blend %", 50.0, 0.0, 100.0, 5.0),
+            .num("Blend %", 50.0, 0.0, 100.0, 5.0)
+            .bool("Knockback delay", false)
+            .num("Delay chance (%)", 40.0, 0.0, 100.0, 5.0)
+            .num("Air delay min (ms)", 50.0, 0.0, 500.0, 10.0)
+            .num("Air delay max (ms)", 100.0, 0.0, 500.0, 10.0)
+            .num("Ground delay min (ms)", 200.0, 0.0, 1000.0, 10.0)
+            .num("Ground delay max (ms)", 250.0, 0.0, 1000.0, 10.0)
+            .bool("Delay not in water", false)
+            .bool("Delay only near enemies", true),
         Module::new("Spider", Movement, "Climbs walls.")
             .num("Climb speed", 0.2, 0.1, 1.0, 0.1),
         Module::new("Step", Movement, "Walks up full blocks and more without jumping (step up).")
@@ -568,7 +578,7 @@ pub(super) fn defaults() -> Vec<Module> {
         // Added in 0.3
         Module::new("Auto Weapon", Combat, "Switches to your best weapon before Kill Aura or Trigger Bot hits.")
             .bool("Prefer axes", false),
-        Module::new("Auto Log", Combat, "Leaves the server when your health is low.")
+        Module::new("Auto Log", Player, "Leaves the server when your health is low.")
             .num("Health", 6.0, 1.0, 19.0, 1.0),
         Module::new("Sneak", Movement, "Sneaks for you."),
         Module::new("Safe Walk", Movement, "Sneaks at the edge of a drop, so you don't walk off it."),
@@ -664,7 +674,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Mode", &["Full", "Potato"])
             .num("Range", 1000.0, 50.0, 10000.0, 50.0),
         // Added in 0.4
-        Module::new("Auto Armor", Combat, "Wears the best armor in your inventory.")
+        Module::new("Auto Armor", Player, "Wears the best armor in your inventory.")
             .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0),
         Module::new("Reverse Step", Movement, "Falls fast when you step off a block.")
             .num("Speed", 1.0, 0.5, 3.0, 0.5),
@@ -1148,7 +1158,8 @@ impl State {
 // profile from before has their lines turned into Offhand's and Fast Use's. FastXP's are Throwables; Fast Use is on
 // if either was (only for throwables, with an empty list, when Fast Use itself was off). It is on if any of them was, with the first key bound; the old Offhand's Item when it
 // was on, else a totem always (Auto Totem Strict) or only when needed (None), else the new default; Refill is Auto
-// Inventory Totem's Mode.
+// Inventory Totem's Mode. Knockback Delay is now Velocity's optional delay; a
+// delay-only setup enables its parent with the other force controls disabled.
 fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let lines: Vec<(&str, &str, &str)> = text
         .lines()
@@ -1163,7 +1174,7 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let on = |id: &str| get(id, "on") == Some("true");
     // The old Offhand had Min health where the new one has Health.
     let old_offhand = get("offhand", "minhealth").is_some();
-    let gone = ["autototem", "autoinventorytotem", "hovertotem", "fastxp"];
+    let gone = ["autototem", "autoinventorytotem", "hovertotem", "fastxp", "knockbackdelay"];
     if !old_offhand && !gone.iter().any(|id| had(id)) {
         return std::borrow::Cow::Borrowed(text);
     }
@@ -1175,6 +1186,38 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
         })
         .map(str::to_owned)
         .collect();
+    if had("knockbackdelay") {
+        // A new-format delay switch has the last word, regardless of line order.
+        if get("velocity", "knockbackdelay").is_none() {
+            if get("knockbackdelay", "on").is_some() {
+                out.push(format!("velocity.knockbackdelay={}", on("knockbackdelay")));
+                if on("knockbackdelay") {
+                    out.push("velocity.on=true".into());
+                    if !on("velocity") {
+                        // Enabling the parent for an old delay-only setup must not
+                        // also turn on Velocity's default zero-push settings.
+                        for field in ["knockback", "explosions", "liquids", "entitypush", "sinking"] {
+                            out.push(format!("velocity.{field}=false"));
+                        }
+                    }
+                }
+            }
+            if get("velocity", "key").is_none_or(|k| k == "none")
+                && let Some(key) = get("knockbackdelay", "key")
+            {
+                out.push(format!("velocity.key={key}"));
+            }
+        }
+        for (old, new) in [
+            ("chance", "delaychance"), ("airdelayminms", "airdelayminms"), ("airdelaymaxms", "airdelaymaxms"),
+            ("grounddelayminms", "grounddelayminms"), ("grounddelaymaxms", "grounddelaymaxms"),
+            ("notinwater", "delaynotinwater"), ("onlynearenemies", "delayonlynearenemies"),
+        ] {
+            if get("velocity", new).is_none() && let Some(value) = get("knockbackdelay", old) {
+                out.push(format!("velocity.{new}={value}"));
+            }
+        }
+    }
     if had("fastxp") {
         let (fast, xp) = (on("fastuse"), on("fastxp"));
         out.push(format!("fastuse.on={}", fast || xp));
@@ -6643,6 +6686,7 @@ pub(super) enum Hit {
 // Other names a module is known by, so the search finds it under either.
 fn aliases(name: &str) -> &'static str {
     match name {
+        "Velocity" => "velocity knockbackdelay knockback delay",
         "Step" => "step up stepup stairs",
         "ClickGUI" => "gui menu color colour theme accent opacity width dim blur background indent scale size zoom bigger radius corner round",
         "Glide" => "slow fall slowfall",
@@ -7815,5 +7859,100 @@ mod movement_config_tests {
         state.scaffold_rotation = Some((135.0, -20.0));
         assert_eq!(panic_off_state(&mut state), Some((135.0, -20.0)));
         assert!(!state.module("Scaffold").unwrap().on);
+    }
+}
+
+#[cfg(test)]
+mod velocity_merge_tests {
+    use super::merged_modules;
+    use std::collections::BTreeMap;
+
+    fn fields(text: &str) -> BTreeMap<String, String> {
+        text.lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.into(), v.into())).collect()
+    }
+
+    #[test]
+    fn current_config_is_unchanged() {
+        let text = "velocity.on=true\nvelocity.knockbackdelay=false\nvelocity.knockbackhorizontal=0.4\n";
+        assert!(matches!(merged_modules(text), std::borrow::Cow::Borrowed(_)));
+        assert_eq!(merged_modules(text), text);
+    }
+
+    #[test]
+    fn delay_only_keeps_force_controls_inactive_and_transfers_settings() {
+        let text = "velocity.on=false\nvelocity.key=none\nvelocity.knockback=true\nvelocity.knockbackhorizontal=0\nknockbackdelay.on=true\nknockbackdelay.key=key.keyboard.k\nknockbackdelay.chance=80\nknockbackdelay.airdelayminms=60\nknockbackdelay.airdelaymaxms=110\nknockbackdelay.grounddelayminms=300\nknockbackdelay.grounddelaymaxms=450\nknockbackdelay.notinwater=true\nknockbackdelay.onlynearenemies=false\n";
+        let out = fields(&merged_modules(text));
+        for (field, expected) in [("on", "true"), ("knockbackdelay", "true"), ("key", "key.keyboard.k"),
+            ("delaychance", "80"), ("airdelayminms", "60"), ("airdelaymaxms", "110"),
+            ("grounddelayminms", "300"), ("grounddelaymaxms", "450"),
+            ("delaynotinwater", "true"), ("delayonlynearenemies", "false")] {
+            assert_eq!(out[&format!("velocity.{field}")], expected, "{field}");
+        }
+        for field in ["knockback", "explosions", "liquids", "entitypush", "sinking"] {
+            assert_eq!(out[&format!("velocity.{field}")], "false", "{field}");
+        }
+        assert!(!out.keys().any(|k| k.starts_with("knockbackdelay.")));
+    }
+
+    #[test]
+    fn combined_setup_preserves_existing_velocity_and_its_bind() {
+        let out = fields(&merged_modules("velocity.on=true\nvelocity.key=key.keyboard.v\nvelocity.mode=Blend\nvelocity.knockback=true\nvelocity.knockbackhorizontal=0.3\nknockbackdelay.on=true\nknockbackdelay.key=key.keyboard.k\n"));
+        assert_eq!(out["velocity.on"], "true");
+        assert_eq!(out["velocity.knockbackdelay"], "true");
+        assert_eq!(out["velocity.mode"], "Blend");
+        assert_eq!(out["velocity.knockback"], "true");
+        assert_eq!(out["velocity.knockbackhorizontal"], "0.3");
+        assert_eq!(out["velocity.key"], "key.keyboard.v");
+        assert!(!out.contains_key("velocity.explosions"));
+    }
+
+    #[test]
+    fn disabled_delay_does_not_change_velocity_or_enable_either() {
+        for on in ["true", "false"] {
+            let out = fields(&merged_modules(&format!("velocity.on={on}\nvelocity.knockbackhorizontal=0.2\nknockbackdelay.on=false\n")));
+            assert_eq!(out["velocity.on"], on);
+            assert_eq!(out["velocity.knockbackhorizontal"], "0.2");
+            assert_eq!(out["velocity.knockbackdelay"], "false");
+            assert!(!out.contains_key("velocity.knockback"));
+        }
+    }
+
+    #[test]
+    fn new_settings_win_regardless_of_legacy_line_order() {
+        let old = "knockbackdelay.on=true\nknockbackdelay.key=key.keyboard.k\nknockbackdelay.chance=99\nknockbackdelay.airdelayminms=50\n";
+        let new = "velocity.on=false\nvelocity.key=none\nvelocity.knockbackdelay=false\nvelocity.delaychance=10\nvelocity.airdelayminms=90\n";
+        for text in [format!("{old}{new}"), format!("{new}{old}")] {
+            let out = fields(&merged_modules(&text));
+            for (field, expected) in [("on", "false"), ("key", "none"), ("knockbackdelay", "false"), ("delaychance", "10"), ("airdelayminms", "90")] {
+                assert_eq!(out[&format!("velocity.{field}")], expected);
+            }
+        }
+    }
+
+    #[test]
+    fn partial_old_profile_does_not_disable_the_parent() {
+        let out = fields(&merged_modules("knockbackdelay.on=false\nknockbackdelay.chance=65\n"));
+        assert!(!out.contains_key("velocity.on"));
+        assert_eq!(out["velocity.knockbackdelay"], "false");
+        assert_eq!(out["velocity.delaychance"], "65");
+    }
+
+    #[test]
+    fn migration_coexists_with_other_merges_and_is_idempotent() {
+        let out = merged_modules("offhand.minhealth=10\nautototem.on=true\nfastxp.on=true\nvelocity.on=false\nknockbackdelay.on=true\n").into_owned();
+        let values = fields(&out);
+        assert_eq!(values["offhand.on"], "true");
+        assert_eq!(values["fastuse.throwables"], "true");
+        assert_eq!(values["velocity.knockbackdelay"], "true");
+        assert_eq!(merged_modules(&out), out);
+        assert!(matches!(merged_modules(&out), std::borrow::Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn duplicate_legacy_values_keep_last_value_and_invalid_numbers_are_not_hidden() {
+        let out = fields(&merged_modules("knockbackdelay.chance=10\nknockbackdelay.chance=75\nknockbackdelay.grounddelayminms=bad\n"));
+        assert_eq!(out["velocity.delaychance"], "75");
+        // Profile validation still sees the invalid value under its new name.
+        assert_eq!(out["velocity.grounddelayminms"], "bad");
     }
 }
