@@ -7925,15 +7925,22 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
             s.gui.panels[c].scroll = snap_scroll(&rows, content, room, s.gui.panels[c].scroll, 0);
         }
     });
-    // The settings window: its description in lines, sized to what it holds (scrolling past the screen's height),
-    // kept on the screen.
-    let about = with(|s| s.gui.window.map(|w| (s.modules[w.module].about, win_w(s))))
-        .map_or_else(Vec::new, |(text, ww)| wrap(game, text, ww - 2.0 * indent()));
+    // The settings window: its description in lines, sized to what it holds and kept on the screen where it is, 4
+    // short of the bottom: a taller one scrolls (three rows at least, moved up if need be). The description takes
+    // three lines at most, the last cut short (its module's tooltip has it all).
+    let about = with(|s| s.gui.window.map(|w| (s.modules[w.module].about, win_w(s)))).map_or_else(Vec::new, |(text, ww)| {
+        let mut lines = wrap(game, text, ww - 2.0 * indent());
+        if lines.len() > 3 {
+            let rest = lines.split_off(2).join(" ");
+            lines.push(fit_to(game, &rest, ww - 2.0 * indent()));
+        }
+        lines
+    });
     let window = with(|s| {
         let mut win = s.gui.window?;
         win.about_h = if about.is_empty() { 0.0 } else { about.len() as f32 * 10.0 + 4.0 };
         win.content = win_body(s, win.module).1;
-        win.room = (h - 8.0 - head_h() - win.about_h - body_pad()).max(row_hh() * 3.0);
+        win.room = (h - 4.0 - win.y.max(0.0) - head_h() - win.about_h - body_pad()).max(row_hh() * 3.0);
         win.scroll = win.scroll.clamp(0.0, (win.content - win.room).max(0.0));
         let [_, _, ww, wh] = win_frame(s, &win);
         win.x = win.x.clamp(0.0, (w - ww).max(0.0));
