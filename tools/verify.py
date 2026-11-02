@@ -3352,36 +3352,59 @@ def _():
                 f"Air place, Radius 1.5: {wide_placed} placed; jumping 2 s: {climb:.1f} blocks up, {tower:.1f} with Fast tower")
 
 
-@test("Scaffold (Legit, backwards)")
-def _():
-    # Bridging backwards off the platform's edge: facing the platform, stone in hand, S held for 6 s with Scaffold
-    # Legit. Blocks past the edge as the server has them, how far you got, the lowest your feet went (a block the
-    # server takes back drops you a level), whether you sneaked, and moves a tick (probe, on a server).
+def bridge_backwards(mode, keys, look):
+    """Bridging backwards off the platform's edge for 6 s: facing the platform, stone in hand, `keys` held, Scaffold in
+    `mode`. The blocks past the edge as the server has them (and whether they run on without a gap), how far you got,
+    the lowest your feet went (a block the server takes back drops you a level), whether you sneaked, the most move
+    packets in a tick (probe, on a server) and kicks."""
     reset(z=15.5)
-    cmd(f"fill {X0-2} {Y-1} {Z0+17} {X0+2} {Y} {Z0+30} minecraft:air")
+    cmd(f"fill {X0-2} {Y-1} {Z0+17} {X0+2} {Y} {Z0+40} minecraft:air")
     slot(0, "stone", 64)
     ctl("key", "1", "tap")
-    ctl("look", "180", "60")
-    setting("scaffold", "mode", "Legit")
+    ctl("look", "180", str(look))
+    setting("scaffold", "mode", mode)
+    setting("scaffold", "activation blocks", "0")
     only("scaffold")
     kicked = len(kicks)
     mark = probe_mark() if probe_path() and SERVER else None
     low, sneaked = pos()[1], False
-    ctl("key", "s", "down")
+    for k in keys:
+        ctl(*k, "down")
     for _ in range(40):
         wait(3)
         st = state().get("player") or {}
         low = min(low, (st.get("position") or [0, low, 0])[1])
         sneaked = sneaked or bool(st.get("sneaking"))
-    ctl("key", "s", "up")
+    for k in keys:
+        ctl(*k, "up")
     far = pos()[2] - Z0
     only()
+    setting("scaffold", "mode", "Normal")
     wait(20)
-    kept = sum(check(f"execute if block {X0} {Y} {Z0 + z} minecraft:stone") for z in range(17, 31))
+    stone = [check(f"execute if block {X0} {Y} {Z0 + z} minecraft:stone") for z in range(17, 41)]
+    kept = sum(stone)
+    gapless = all(stone[:kept])
     most = wire_stats(mark)[1] if mark is not None else None
-    ok = kept >= 4 and low > Y + 0.99 and sneaked and len(kicks) == kicked and (most or 0) <= 1
-    return ok, (f"{kept} blocks past the edge kept by the server, walked out to z {far:.1f} (edge 17), lowest feet {low - Y - 1:+.2f}, "
-                f"sneaked: {sneaked}, most moves a tick: {most}")
+    return kept, gapless, far, low, sneaked, most, len(kicks) - kicked
+
+
+def bridged(kept, gapless, far, low, sneaked, most, kicked, sneak):
+    ok = (kept >= 4 and gapless and far > 16 + kept and low > Y + 0.99 and sneaked == sneak and kicked == 0
+          and (most or 0) <= 1)
+    return ok, (f"{kept} blocks past the edge kept by the server, without a gap: {gapless}, walked out to z {far:.1f} "
+                f"(edge 17), lowest feet {low - Y - 1:+.2f}, sneaked: {sneaked}, most moves a tick: {most}, kicks: {kicked}")
+
+
+@test("Scaffold (Legit, backwards)")
+def _():
+    # Legit only sneaks: the test holds use with the crosshair low enough to meet the edge block's side.
+    return bridged(*bridge_backwards("Legit", [("key", "s"), ("mouse", "right")], 80), sneak=True)
+
+
+@test("Scaffold (Godbridge, backwards)")
+def _():
+    # Godbridge turns the look and clicks by itself, without sneaking: the test only holds S.
+    return bridged(*bridge_backwards("Godbridge", [("key", "s")], 60), sneak=False)
 
 
 @test("Offhand (item)")

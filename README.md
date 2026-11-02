@@ -166,7 +166,7 @@ Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs.
 
 ## Licence
 
-Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine: the plugin docs and `examples/` may be copied to make them. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine: the plugin docs and `examples/` may be copied to make them. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon. Scaffold's Legit and Godbridge modes follow [vape-rs](https://github.com/rdbtCVS/vape-rs) (MIT, notice in [LICENSE](LICENSE)). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <details>
 <summary>Font credits</summary>
