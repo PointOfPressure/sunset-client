@@ -3824,17 +3824,22 @@ pub(super) fn track_logouts(game: &Game<'_>, m: &Module) {
     });
 }
 
-// A waypoint another module makes (Base Finder): replaces one of the same name, and Waypoints goes on to show it.
+// A waypoint another module makes (Base Finder): replaces one of the same name. Waypoints shows it only if you have it on.
 pub(super) fn add_waypoint(game: &Game<'_>, name: String, pos: [f64; 3]) {
     let dim = game.dim.id().to_owned();
     with(|s| {
         s.waypoints.retain(|w| w.name != name || w.dim != dim);
         s.waypoints.push(Waypoint { name, pos, dim });
-        if let Some(i) = s.find("Waypoints") {
-            s.modules[i].on = true;
-        }
     });
     save(game);
+}
+
+// Drops every waypoint a module made under `prefix` (Base Finder's "Base x z" when it turns off).
+pub(super) fn remove_waypoints(game: &Game<'_>, prefix: &str) {
+    if with(|s| s.waypoints.iter().any(|w| w.name.starts_with(prefix))) {
+        with(|s| s.waypoints.retain(|w| !w.name.starts_with(prefix)));
+        save(game);
+    }
 }
 
 // Death Location's waypoints: "Death", then "Death 2", "Death 3"... from the newest.
@@ -7295,6 +7300,12 @@ pub(super) fn close_gui(game: &mut Game<'_>) {
     }
 }
 
+// The number's own line above a slider: clicks lower than this go to the slider, so the end of the track (and its knob,
+// which reaches a little above it) slides instead of opening the number for typing.
+fn number_band(r: [f32; 4]) -> f32 {
+    r[1] + row_hh() - 4.0
+}
+
 // Where a slider's track starts in its row, and how long it is.
 fn slider_track(r: [f32; 4]) -> (f32, f32) {
     let x0 = r[0] + indent() + 4.0;
@@ -7564,7 +7575,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
         // A number being typed: a click in its field leaves it be; anywhere else, it is left as it was.
         if let Some(Editor { module, setting, draft: Ok(draft), inline: true, .. }) = &s.gui.editor {
             let in_field = found.is_some_and(|(r, hit)| {
-                hit == Hit::Setting(*module, *setting) && at.0 >= r[0] + r[2] - RIGHT_PAD - field_width(game, draft.text()) && at.1 < r[1] + row_hh()
+                hit == Hit::Setting(*module, *setting) && at.0 >= r[0] + r[2] - RIGHT_PAD - field_width(game, draft.text()) && at.1 < number_band(r)
             });
             if in_field {
                 return;
@@ -7625,7 +7636,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                 // A click on the number: it is typed instead (all of it selected, so typing replaces it).
                 if let (Some(v), false) = (number, right)
                     && at.0 >= r[0] + r[2] - RIGHT_PAD - game.native_text_width(&num(v)) - 3.0
-                    && at.1 < r[1] + row_hh()
+                    && at.1 < number_band(r)
                 {
                     let mut draft = Draft::new(&num(v));
                     if let Ok(d) = &mut draft {

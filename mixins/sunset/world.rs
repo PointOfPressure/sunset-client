@@ -3,7 +3,7 @@
 
 use super::sunset::{Camera, Canvas, Category, Module, hold};
 use super::sunset_util::*;
-use super::{Game, Screen};
+use super::Game;
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use horizon_client::containers::BlockEntity;
 use horizon_client::mobs::spawner::SpawnerExt;
@@ -144,7 +144,11 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
     match get("Base Finder") {
         Some(m) => base_finder(game, m),
-        None => ws(|w| w.base = None),
+        None => {
+            // Off: stop scanning and take its waypoints away, saved ones from earlier sessions included.
+            ws(|w| w.base = None);
+            super::sunset::remove_waypoints(game, "Base ");
+        }
     }
 }
 
@@ -769,5 +773,3 @@ fn base_finder(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-#[allow(dead_code)]
-fn unused(_: Screen) {}
