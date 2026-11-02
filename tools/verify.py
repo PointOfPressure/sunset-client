@@ -6625,6 +6625,33 @@ def _():
     return off[0] == 0 and (on[0] or 0) > 0, f"5 clicks at a pig 4.5 blocks off: {off[0]} health lost without Reach, {on[0]} with Entity reach 4.5"
 
 
+@test("Hitboxes")
+def _():
+    # A pig with 1000 health 2.5 blocks in front, your look passing 0.75 beside its middle (0.3 past its box): health
+    # it lost to 5 clicks without Hitboxes, with it (Entities pig, Expand 0.5) and with it listing only players.
+    lost = {}
+    for name, entities in (("off", None), ("on", "pig"), ("players", "@player")):
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        cmd("kill @e[type=pig]", f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 3.0} {TOUGH_PIG}")
+        wait(10)
+        if entities:
+            setting("hitboxes", "entities", entities)
+            only("hitboxes")
+        ctl("look-at", str(X0 + 0.5 + 0.75), str(Y + 1.45), str(Z0 + 3.0))
+        wait(2)
+        for _ in range(5):
+            ctl("mouse", "left", "click")
+            wait(14)
+        only()
+        m = mobs("pig")
+        lost[name] = round(1000 - m[0]["health"], 1) if m else None
+    cmd("kill @e[type=pig]")
+    ok = lost["off"] == 0 and (lost["on"] or 0) > 0 and lost["players"] == 0
+    return ok, f"health the pig lost to 5 clicks 0.3 beside its box: off {lost['off']}, on {lost['on']}, on for players only {lost['players']}"
+
+
 @test("Auto Weapon (Spear reach)")
 def _():
     # The same pig, a sword in hand and an iron spear in slot 3: Spear reach (When out of reach) reaches it with the

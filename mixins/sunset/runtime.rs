@@ -379,6 +379,7 @@ impl Module {
                     _ => true,
                 }
             }
+            "Hitboxes" if name == "Weapons" => self.b("Only on weapon"),
             "Auto Weapon" => match name {
                 "Prefer axes" => self.b("Best weapon"),
                 "Shield mode" | "Shield held" | "Stun slam" => self.b("Axe on shields"),

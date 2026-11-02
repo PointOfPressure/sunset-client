@@ -64,6 +64,12 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Reach", Player, "Longer reach.")
             .num("Extra block reach", 1.0, 0.0, 6.0, 0.5)
             .num("Entity reach", 4.5, 3.0, 6.0, 0.1),
+        Module::new("Hitboxes", Combat, "Makes mobs' boxes bigger to aim at.")
+            .text("Entities", "@player")
+            .num("Expand", 0.5, 0.0, 2.0, 0.05)
+            .bool("Ignore friends", true)
+            .bool("Only on weapon", false)
+            .text("Weapons", "sword,axe,pickaxe,shovel,hoe,mace,spear,trident"),
         Module::new("Ghost Hand", Player, "Uses containers through blocks.")
             .bool("Blocks", true)
             .bool("Hits", false),
@@ -148,25 +154,76 @@ pub(super) fn reach_extra() -> Option<f64> {
 static ENTITY_REACH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
 static WALL_HITS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-// The mob under the crosshair with Reach's Entity reach or Spear Swap's Spear reach, as the game's own pick finds it
-// (the nearest box along the look). None: the game's own.
+// Hitboxes: how far the boxes of the mobs it picked this tick grow each way, and their ids (read by the mob_hit hook).
+static HITBOXES: Mutex<(f64, Vec<u32>)> = Mutex::new((0.0, Vec::new()));
+
+// The mob under the crosshair with Reach's Entity reach or Auto Weapon's Spear reach, as the game's own pick finds it
+// (the nearest box along the look), the boxes Hitboxes grows grown. None: the game's own.
 pub(super) fn mob_hit(game: &Game<'_>) -> Option<Option<(usize, f64)>> {
     let bits = ENTITY_REACH.load(std::sync::atomic::Ordering::Relaxed);
-    if bits == u64::MAX {
+    let (grow, grown) = HITBOXES.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if bits == u64::MAX && grown.is_empty() {
         return None;
     }
-    let reach = f64::from_bits(bits).max(if game.creative { 5.0 } else { 3.0 });
+    let ordinary = if game.creative { 5.0 } else { 3.0 };
+    let reach = if bits == u64::MAX { ordinary } else { f64::from_bits(bits).max(ordinary) };
     let Some((eye, dir)) = game.aim() else {
         return Some(None);
+    };
+    let boxed = |m: &horizon_client::mobs::Mob| {
+        let b = m.bounds();
+        if grown.contains(&m.id) { b.inflate(horizon_core::geometry::Vec3::new(grow, grow, grow)) } else { b }
     };
     Some(
         game.mobs
             .iter()
             .enumerate()
             .filter(|(_, m)| m.alive() && Some(m.id) != game.riding)
-            .filter_map(|(i, m)| Some((i, super::ray_box(eye, dir, reach, m.bounds())?)))
+            .filter_map(|(i, m)| Some((i, super::ray_box(eye, dir, reach, boxed(m))?)))
             .min_by(|a, b| a.1.total_cmp(&b.1)),
     )
+}
+
+// Hitboxes (Meteor's), for the crosshair's pick: the mobs whose boxes grow by Expand, those the Entities list names
+// (with @all, @player, @hostile, @passive), not friends with Ignore friends, and none unless what Weapons lists is
+// in hand with Only on weapon.
+fn hitboxes(game: &Game<'_>, m: Option<&Module>) -> (f64, Vec<u32>) {
+    let Some(m) = m.filter(|m| m.n("Expand") > 0.0) else {
+        return (0.0, Vec::new());
+    };
+    if m.b("Only on weapon") {
+        let held = game.held().map_or("", |s| &*s.item);
+        let tagged = |tag: &str| game.res.items().item_tags.get(tag).is_some_and(|items| items.contains(held));
+        let kind = match short(held) {
+            "mace" => "mace",
+            "trident" => "trident",
+            _ if horizon_client::spear::Kinetic::of(held).is_some() => "spear",
+            _ => ["sword", "axe", "pickaxe", "shovel", "hoe"].into_iter().find(|k| tagged(&format!("minecraft:{k}s"))).unwrap_or(""),
+        };
+        if kind.is_empty() || !listed(m.t("Weapons"), kind) {
+            return (0.0, Vec::new());
+        }
+    }
+    let own = game.remote.as_ref().map(|r| r.entity_id as u32);
+    let (friends, names) = (super::sunset::with(|s| s.friends.clone()), game.remote_player_names());
+    let ids = game
+        .mobs
+        .iter()
+        .filter(|mob| Some(mob.id) != own)
+        .filter(|mob| {
+            let player = mob.kind.id == "minecraft:player";
+            let hostile = super::sunset_aura::is_hostile(&mob.kind.id);
+            m.t("Entities").split(',').map(str::trim).any(|tok| match tok {
+                "@all" => true,
+                "@player" => player,
+                "@hostile" => hostile,
+                "@passive" => !player && !hostile,
+                _ => !tok.is_empty() && short(tok) == short(&mob.kind.id),
+            }) && !(player && m.b("Ignore friends") && super::sunset::is_friend(&friends, &names, mob.id))
+        })
+        .map(|mob| mob.id)
+        .collect();
+    (m.n("Expand"), ids)
 }
 
 // Ghost Hand's Hits: the mob under the crosshair counts as before any block.
@@ -259,6 +316,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         (a, b) => a.or(b),
     };
     ENTITY_REACH.store(entity.map_or(u64::MAX, f64::to_bits), std::sync::atomic::Ordering::Relaxed);
+    *HITBOXES.lock().unwrap_or_else(|e| e.into_inner()) = hitboxes(game, get("Hitboxes"));
     WALL_HITS.store(get("Ghost Hand").is_some_and(|m| m.b("Hits")), std::sync::atomic::Ordering::Relaxed);
     // These work on the inventory screen, which in_world leaves out.
     if game.remote.is_some() && game.player.is_some() {
