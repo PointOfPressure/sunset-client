@@ -5,7 +5,7 @@ fn sunset_press(game: &mut crate::game::Game<'_>, button: winit::event::MouseBut
         crate::game::sunset::gui_press(game, button);
         return std::ops::ControlFlow::Break(true);
     }
-    if crate::game::sunset_duel::loadout_press(game, button == winit::event::MouseButton::Right) {
+    if crate::game::sunset_loadouts::press(game, button == winit::event::MouseButton::Right) {
         return std::ops::ControlFlow::Break(true);
     }
     if crate::game::sunset_render::peek_press(game, button == winit::event::MouseButton::Middle) {

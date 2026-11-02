@@ -64,6 +64,9 @@ pub(super) fn operate(game: &mut Game<'_>, op: usize, slots: &[usize]) {
     if game.carried.is_some() {
         return;
     }
+    // Slots Loadouts locks take no part.
+    let slots: Vec<usize> = slots.iter().copied().filter(|&s| !super::sunset_loadouts::locked(s)).collect();
+    let slots = &slots[..];
     let clicks: VecDeque<(usize, bool)> = match op {
         0 => sort_clicks(game, slots).into_iter().map(|s| (s, false)).collect(),
         1 => fill_clicks(game, slots).into(),
@@ -76,7 +79,7 @@ pub(super) fn operate(game: &mut Game<'_>, op: usize, slots: &[usize]) {
 // the hotbar).
 fn other_side(game: &Game<'_>, slots: &[usize]) -> Vec<usize> {
     if slots.first().is_some_and(|&s| s >= 300) {
-        return (0..36).collect();
+        return (0..36).filter(|&s| !super::sunset_loadouts::locked(s)).collect();
     }
     let container: Vec<usize> = game.slots().into_iter().filter(|s| (300..500).contains(s)).collect();
     if container.is_empty() { (0..9).collect() } else { container }

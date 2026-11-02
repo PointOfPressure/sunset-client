@@ -368,7 +368,7 @@ fn run_job_step(game: &mut Game<'_>, mods: &[Module]) -> bool {
             job.began = Instant::now();
             job.revision = super::remote::sunset_combat_remote::container_state(game);
             let ([from, to], hotbar, menu) = (job.slots, job.hotbar, job.menu.clone());
-            if hotbar && (from >= 9 || to != OFFHAND) {
+            if hotbar && (from >= 9 || to != OFFHAND || super::sunset_loadouts::locked(from)) {
                 fail(game, job);
                 return true;
             }

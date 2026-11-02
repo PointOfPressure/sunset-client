@@ -235,6 +235,18 @@ impl Store {
         read(&self.imports.join(format!("{name}.profile")))
     }
 
+    // Another kind of file (a loadout) to share: written to the exports folder as `file`, where it went.
+    pub(super) fn share(&self, file: &str, text: &str) -> Result<PathBuf, String> {
+        let to = self.exports.join(file);
+        write(&to, text)?;
+        Ok(to)
+    }
+
+    // Such a file someone put in the imports folder.
+    pub(super) fn shared(&self, file: &str) -> Result<String, String> {
+        read(&self.imports.join(file))
+    }
+
     pub(super) fn imports(&self) -> &Path {
         &self.imports
     }

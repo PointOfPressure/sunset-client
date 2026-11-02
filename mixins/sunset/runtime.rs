@@ -810,6 +810,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_lag::defaults());
     v.extend(super::sunset_pvp_bot::defaults());
     v.extend(super::sunset_duel::defaults());
+    v.extend(super::sunset_loadouts::defaults());
     v.extend(super::sunset_hands::defaults());
     v.extend(super::sunset_packet_mine::defaults());
     v.extend(super::sunset_render::defaults());
@@ -887,7 +888,7 @@ pub(super) struct State {
     gui: Gui,
     crumbs: Vec<[f64; 3]>,
     waypoints: Vec<Waypoint>,
-    // Loadouts, as saved (sunset_duel reads them).
+    // Loadouts, as saved (sunset_loadouts reads them).
     pub(super) loadouts: Vec<String>,
     // Block ESP's finds: where, and which colour.
     blocks: Sweep<u32>,
@@ -1527,7 +1528,7 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
         sync_flags(s);
     });
     // Loadouts live in their own file now (the config kept them before).
-    super::sunset_duel::load_loadouts(game);
+    super::sunset_loadouts::load(game);
     if !text.lines().any(|l| l.starts_with("profile-selection=")) {
         if let Ok(store) = super::sunset_profiles::Store::new(game.native_data_dir(ID))
             && let Ok(names) = store.list()
@@ -2647,6 +2648,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_lag::tick(game, &mods);
     super::sunset_pvp_bot::tick(game, &mods);
     super::sunset_duel::tick(game);
+    super::sunset_loadouts::tick(game);
     super::sunset_hands::tick(game);
     super::sunset_combat::tick(game, &mods);
     super::sunset_explosive_aura::tick(game, &mods, game.ticks);
@@ -3288,7 +3290,11 @@ pub(super) fn scan_blocks(game: &Game<'_>, m: &Module, ticks: u64) {
 // A click or several in the player's own inventory (the menu with no
 // container open), by the menu's slot numbers: 0 to 8 the hotbar, 9 to 35
 // the rest, 500 to 503 the armor.
+// Clicks on inventory slots; none at all when one is a slot Loadouts locks.
 pub(super) fn menu_click(game: &mut Game<'_>, ops: &[(usize, horizon_client::menu::Input)]) {
+    if ops.iter().any(|&(slot, _)| super::sunset_loadouts::locked(slot)) {
+        return;
+    }
     let ops: Vec<(Option<usize>, i32, horizon_client::menu::Input)> =
         ops.iter().map(|&(slot, input)| (Some(slot), 0, input)).collect();
     game.remote_menu_ops(&ops);
@@ -3404,7 +3410,8 @@ pub(super) fn auto_replenish(game: &mut Game<'_>, m: &Module) {
     }) {
         return;
     }
-    for h in 0..9 {
+    let locked = super::sunset_loadouts::locked_slots();
+    for h in (0..9).filter(|&h| !locked[h]) {
         let Some(st) = game.inventory.get(h).and_then(|s| s.as_ref()) else {
             continue;
         };
@@ -4422,7 +4429,6 @@ enum Crit {
 // smash) hops 1.501 blocks plus Additional height so the server counts a smash; on the ground the Mode; in the air,
 // with Only on ground off, a hit waits for the fall. A hop needs the room above you, else Packet's goes back to 0.0625.
 fn crit_plan(game: &Game<'_>, m: &Module) -> Option<Crit> {
-    use horizon_core::geometry::Vec3;
     let p = game.player.as_ref()?;
     let item = game.held().map_or("", |s| &*s.item);
     let weapon = ["_sword", "_axe", "_spear", ":mace", ":trident"].iter().any(|w| item.ends_with(w));
@@ -5632,7 +5638,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 }
             }
         }
-        "loadout" | "loadouts" => super::sunset_duel::loadout_command(game, args),
+        "loadout" | "loadouts" => super::sunset_loadouts::command(game, args),
         "waypoint" | "waypoints" | "wp" => {
             let sub = args.get(1).map(|a| a.to_ascii_lowercase());
             match (sub.as_deref(), args.get(2)) {
@@ -6003,7 +6009,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         batch.scale = real;
     }
 
-    super::sunset_duel::draw_loadouts(game, w, h, &mut shapes);
+    super::sunset_loadouts::draw(game, w, h, &mut shapes);
     if let Some(hud) = get("HUD") {
         if hud.b("Target HUD") && get("Kill Aura").is_some() {
             super::sunset_aura::draw_target(game, w, h, hud.p("Target HUD mode") == "Potato", &mut shapes);

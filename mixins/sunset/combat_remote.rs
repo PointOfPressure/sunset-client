@@ -30,7 +30,8 @@ pub(crate) fn quiet(game: &crate::game::Game<'_>) -> bool {
 // A swap click (inventory slot `from` with hotbar slot `to`, or the offhand as 504) in `menu`, sent without changing
 // the slots here first: the server's slot packets then say what really happened.
 pub(crate) fn swap_unpredicted(game: &mut crate::game::Game<'_>, menu: &(i32, String), from: usize, to: usize) -> bool {
-    if game.carried.is_some() || from == to || &game.remote_menu() != menu || !(to < 9 || to == 504) {
+    let locked = |slot: usize| crate::game::sunset_loadouts::locked(slot);
+    if game.carried.is_some() || from == to || &game.remote_menu() != menu || !(to < 9 || to == 504) || locked(from) || locked(to) {
         return false;
     }
     let Some(state) = game.remote.as_ref().map(|r| r.state_id) else {

@@ -6796,6 +6796,92 @@ def _():
     return ok, f"after the click (inventory 5, inventory 10): {picked}; after the right click: {after_delete[:1]}; Save current: {saved[:1]}"
 
 
+@test("Loadouts (inventory profiles)")
+def _():
+    # A kit with Armour and Full layout and slots 1 and 10 locked: a sword and a bow in slots 1 and 2, stone and apples
+    # in the main inventory's first and sixth, a totem in the off hand, an iron helmet and a diamond chestplate worn.
+    # Everything moved elsewhere: .loadout kit puts it all back. Then the locked slots: Inventory Cleaner throws the
+    # dirt of slot 11 but not of 1 and 10. Refill broken tools: the sword of slot 1 breaks on a pig, the spare from
+    # the inventory takes its place. Export, then import the file under another name.
+    def said(command):
+        mark = log_mark()
+        say(command)
+        wait(4)
+        return sunset_said(mark)
+
+    reset()
+    only("loadouts")
+    setting("loadouts", "armour", "true")
+    setting("loadouts", "full layout", "true")
+    setting("loadouts", "locked slots", "1 10")
+    say(".loadout delete kit")
+    say(".loadout delete shared")
+    cmd("clear @s", "item replace entity @s hotbar.0 with minecraft:diamond_sword", "item replace entity @s hotbar.1 with minecraft:bow",
+        "item replace entity @s inventory.0 with minecraft:stone 10", "item replace entity @s inventory.5 with minecraft:apple 3",
+        "item replace entity @s weapon.offhand with minecraft:totem_of_undying", "item replace entity @s armor.head with minecraft:iron_helmet",
+        "item replace entity @s armor.chest with minecraft:diamond_chestplate")
+    wait(5)
+    say(".loadout save kit")
+    setting("loadouts", "locked slots", "")
+    cmd("clear @s", "item replace entity @s inventory.20 with minecraft:diamond_sword", "item replace entity @s hotbar.5 with minecraft:bow",
+        "item replace entity @s inventory.3 with minecraft:iron_helmet", "item replace entity @s inventory.11 with minecraft:diamond_chestplate",
+        "item replace entity @s hotbar.3 with minecraft:stone 10", "item replace entity @s inventory.25 with minecraft:apple 3",
+        "item replace entity @s inventory.7 with minecraft:totem_of_undying", "item replace entity @s hotbar.0 with minecraft:dirt 2")
+    wait(5)
+    say(".loadout kit")
+    wait(10)
+    inv = ctl("inventory")
+    name = lambda part, i: (((inv.get(part) or [])[i] or {}).get("item") or "").replace("minecraft:", "")
+    layout = (name("hotbar", 0), name("hotbar", 1), name("main", 0), name("main", 5), offhand().replace("minecraft:", ""),
+              check("execute if items entity @s armor.head minecraft:iron_helmet"),
+              check("execute if items entity @s armor.chest minecraft:diamond_chestplate"))
+    locked = next((c for c in said(".settings loadouts") if c.startswith("Locked slots:")), "")
+    # The locked slots (the kit's 1 and 10) keep their dirt.
+    setting("inventorycleaner", "preset", "Custom")
+    setting("inventorycleaner", "items", "dirt")
+    cmd("clear @s", "item replace entity @s hotbar.0 with minecraft:dirt 2", "item replace entity @s inventory.0 with minecraft:dirt 3",
+        "item replace entity @s inventory.1 with minecraft:dirt 4")
+    only("loadouts", "inventorycleaner")
+    ctl("open-inventory")
+    wait(30)
+    ctl("close")
+    only("loadouts")
+    inv = ctl("inventory")
+    cleaned = (name("hotbar", 0), name("main", 0), name("main", 1))
+    cmd("kill @e[type=item]")
+    # Refill broken tools: one hit left in the sword.
+    setting("loadouts", "locked slots", "")
+    cmd("clear @s", "item replace entity @s hotbar.0 with minecraft:diamond_sword[damage=1560]",
+        "item replace entity @s inventory.4 with minecraft:diamond_sword")
+    ctl("key", "1", "tap")
+    pid = crit_pig()
+    ctl("look-at-entity", str(pid))
+    wait(25)
+    ctl("mouse", "left", "click")
+    wait(10)
+    inv = ctl("inventory")
+    refilled = (name("hotbar", 0), name("main", 4))
+    cmd("kill @e[type=pig]")
+    # Export and import.
+    exported = said(".loadout export kit")
+    found = [os.path.join(r, f) for r, _, fs in os.walk(os.path.join(session_dir(), "home")) for f in fs if f == "kit.loadout" and "exports" in r]
+    imported = listed = []
+    if found:
+        imports = os.path.join(os.path.dirname(os.path.dirname(found[0])), "imports")
+        with open(found[0]) as f, open(os.path.join(imports, "shared.loadout"), "w") as g:
+            g.write("shared" + f.read()[3:])
+        imported = said(".loadout import shared")
+        listed = said(".loadout list")
+    say(".loadout delete kit")
+    say(".loadout delete shared")
+    only()
+    ok = (layout == ("diamond_sword", "bow", "stone", "apple", "totem_of_undying", True, True) and locked == "Locked slots: 1 10"
+          and cleaned == ("dirt", "dirt", "") and refilled == ("diamond_sword", "") and any("2: shared" in l for l in listed))
+    return ok, (f"after .loadout kit (slot 1, 2, 10, 15, off hand, helmet, chestplate): {layout}, {locked!r}; Inventory Cleaner "
+                f"on dirt in slots 1, 10 (locked) and 11: {cleaned}; after the sword broke (slot 1, spare's slot): {refilled}; "
+                f"export {exported[:1]}, import {imported[:1]}, list {listed}")
+
+
 def shield_run(module):
     """A sword in hand, a shield in the offhand, `module` (killaura or triggerbot) on, with its Shield off then on:
     health you lost to 10 sword hits from Bot1 (every 15 ticks), then for 10 s with Bot1 in front: health Bot1 lost,

@@ -732,10 +732,12 @@ fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
     }) {
         return;
     }
+    // Never from a slot Loadouts locks.
+    let locked = super::sunset_loadouts::locked_slots();
     let junk = if preset == "Custom" {
-        (0..36).find(|&i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| passes(m, "Items", short(&s.item))))
+        (0..36).find(|&i| !locked[i] && game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| passes(m, "Items", short(&s.item))))
     } else {
-        junk_slots(game, m).first().copied()
+        junk_slots(game, m).into_iter().find(|&i| !locked[i])
     };
     if let Some(i) = junk {
         game.menu_ops(&[(Some(i), 1, Throw)]);
