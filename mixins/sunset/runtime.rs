@@ -916,6 +916,8 @@ pub(super) struct State {
     crit_target: Option<u32>,
     crit_ticks: u32,
     crit_falls: u32,
+    // The hit started again from the ground once already (it does so once).
+    crit_again: bool,
     crit_look: Option<(f32, f32)>,
     notify: Option<Vec<String>>,
     // Hole ESP's finds: where, and what walls them (0 bedrock, 1 obsidian, 2 both).
@@ -1007,6 +1009,7 @@ impl State {
             crit_target: None,
             crit_ticks: 0,
             crit_falls: 0,
+            crit_again: false,
             crit_look: None,
             notify: None,
             holes: Sweep::new(),
@@ -3731,10 +3734,11 @@ pub(super) fn nuker(game: &mut Game<'_>, m: &Module) {
     if wait {
         return;
     }
-    // No more blocks awaiting the server's answer than two ticks' worth: a server that falls behind is not flooded
-    // with blocks sent again and again (Horizon's dropped a client 8000 packets behind).
+    // No more blocks awaiting the server's answer than four ticks' worth: a server that falls behind is not flooded
+    // with blocks sent again and again (Horizon's dropped a client 8000 packets behind), and one that answers a few
+    // ticks late (Horizon's, single player's under load) still gets a full tick's worth each tick.
     let (max, packet) = (m.n("Max blocks per tick") as usize, m.b("Packet mine"));
-    let max = max.min((2 * max).saturating_sub(skip.len()));
+    let max = max.min((4 * max).saturating_sub(skip.len()));
     let mut done = 0;
     let mut sent: Vec<([i32; 3], u64)> = Vec::new();
     // What goes to the server, after the look when Rotate is on.
@@ -4434,24 +4438,36 @@ fn crit_plan(game: &Game<'_>, m: &Module) -> Option<Crit> {
         return None;
     }
     let extra = m.n("Additional height");
-    let room = |h: f64| {
-        horizon_client::collisions::SceneCollisions { world: &game.world, binding: game.collision, subject: None }
-            .unobstructed(p.bounds().expand_towards(Vec3::new(0.0, h, 0.0)))
-            .unwrap_or(false)
-    };
+    let room = |h: f64| room_above(game, h);
     if m.b("Mace smash") && item.ends_with(":mace") && room(1.501 + extra) {
         return Some(Crit::Hop(1.501 + extra));
     }
     // In the air, a hit waits until you have fallen for two ticks (a server counts no fall on the first after a jump's
-    // top, and Horizon's only after the tick it came in); after that it is critical as it is.
+    // top, and Horizon's only after the tick it came in); after that it is critical as it is, unless the next move
+    // lands: a hit is judged with the ground of its tick's move, so that one waits too.
     if !p.ground.on_ground {
-        return (!m.b("Only on ground") && p.velocity.y > -0.15).then_some(Crit::Fall);
+        return (!m.b("Only on ground") && (p.velocity.y > -0.15 || lands_next(game))).then_some(Crit::Fall);
     }
     Some(match m.p("Mode") {
         "Jump" => Crit::Jump,
         "Mini jump" => Crit::MiniJump,
         _ => Crit::Hop(if room(0.0625 + extra) { 0.0625 + extra } else { 0.0625 }),
     })
+}
+
+// Nothing in the way of your box moved `h` blocks up (down if negative).
+fn room_above(game: &Game<'_>, h: f64) -> bool {
+    use horizon_core::geometry::Vec3;
+    game.player.as_ref().is_some_and(|p| {
+        horizon_client::collisions::SceneCollisions { world: &game.world, binding: game.collision, subject: None }
+            .unobstructed(p.bounds().expand_towards(Vec3::new(0.0, h, 0.0)))
+            .unwrap_or(false)
+    })
+}
+
+// Falling, the next tick's move (the velocity the tick left you) puts you on the ground.
+fn lands_next(game: &Game<'_>) -> bool {
+    game.player.as_ref().is_some_and(|p| !p.ground.on_ground && p.velocity.y < 0.0) && !room_above(game, game.player.as_ref().map_or(0.0, |p| p.velocity.y))
 }
 
 pub(super) fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(f32, f32)>) {
@@ -4467,16 +4483,22 @@ pub(super) fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(
         s.crit_target = Some(id);
         s.crit_ticks = 0;
         s.crit_falls = 0;
+        s.crit_again = false;
         s.crit_look = rotate;
     });
     if game.player.as_ref().is_some_and(|p| p.sprinting) && CRIT_SPRINT.swap(CRIT_SPRINT_STOPPED, Ordering::Relaxed) == 0 {
         sprint_command(game, 2);
     }
+    start_crit(game, plan);
+}
+
+// The hop starts, or the jump, or the wait for the fall.
+fn start_crit(game: &mut Game<'_>, plan: Crit) {
     match plan {
         Crit::Hop(height) => {
             CRIT_HOP.store(height.to_bits(), Ordering::Relaxed);
             // The look rides on the hop's packets, and the hit follows them.
-            if let Some((yaw, pitch)) = rotate {
+            if let Some((yaw, pitch)) = with(|s| s.crit_look.take()) {
                 turn("Attack", yaw, pitch);
             }
             CRIT_STAGE.store(1, Ordering::Relaxed);
@@ -4649,7 +4671,20 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
             s.crit_falls = if falling && !ground { s.crit_falls + 1 } else { 0 };
             s.crit_falls
         });
-        if falls >= 2 || (ground && ticks > 3) || ticks > 20 {
+        // Landed first (the fall's last move would have had the hit judged on the ground): it starts again from the
+        // ground, the way Mode makes it critical there.
+        if ground && ticks > 3 && !with(|s| s.crit_again) {
+            let plan = with(|s| s.module("Criticals").filter(|m| m.on).cloned()).and_then(|m| crit_plan(game, &m));
+            if let Some(plan @ (Crit::Hop(_) | Crit::Jump | Crit::MiniJump)) = plan {
+                with(|s| {
+                    s.crit_again = true;
+                    s.crit_ticks = 0;
+                });
+                start_crit(game, plan);
+                return;
+            }
+        }
+        if (falls >= 2 && !lands_next(game)) || (ground && ticks > 3) || ticks > 20 {
             CRIT_STAGE.store(0, Ordering::Relaxed);
             match with(|s| s.crit_target.take().map(|id| (id, s.crit_look.take()))) {
                 Some((id, Some((yaw, pitch)))) => turn_then("Attack", yaw, pitch, move |game| crit_strike(game, id)),

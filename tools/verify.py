@@ -5868,12 +5868,14 @@ def _():
 
 def slot_centre(slot):
     """The GUI point at the middle of inventory `slot` (9-35 main, 0-8 hotbar) with the inventory open, found by
-    picking up the dirt this puts in slot 35 at each GUI scale until one takes it, then putting it back."""
+    picking up the dirt this puts in slot 35 at each GUI scale until one takes it, then putting it back. An open recipe
+    book (a server can keep it open) moves the inventory 77 to the right."""
     d = ctl("status")["display"]
     cmd("item replace entity @s inventory.26 with minecraft:dirt")
     wait(5)
-    pos = lambda i, w, h: ((w - 176) // 2 + 8 + (i - 9) % 9 * 18 + 8, (h - 166) // 2 + 84 + (i - 9) // 9 * 18 + 8) if i >= 9 \
-        else ((w - 176) // 2 + 8 + i * 18 + 8, (h - 166) // 2 + 142 + 8)
+    book = 77 if (ctl("screen").get("recipe_book") or {}).get("open") else 0
+    pos = lambda i, w, h: ((w - 176) // 2 + book + 8 + (i - 9) % 9 * 18 + 8, (h - 166) // 2 + 84 + (i - 9) // 9 * 18 + 8) if i >= 9 \
+        else ((w - 176) // 2 + book + 8 + i * 18 + 8, (h - 166) // 2 + 142 + 8)
     for scale in (3, 2, 4, 1):
         w, h = d["width"] / scale, d["height"] / scale
         x, y = pos(35, w, h)
@@ -6833,15 +6835,17 @@ def shield_run(module):
                 ctl("look-at", str(X0 + 0.5), str(Y + 1.6), str(Z0 + 2.5))
             wait(1)
             u = state().get("using") or {}
-            down += u.get("slot") != 40
             h = bot_health()
+            # Once Bot1 is dead (Horizon's server keeps it at 20 health) there is no one to shield from.
+            down += u.get("slot") != 40 and h > 0
             hits += h < last - 0.01
             last = h
         only()
         gave[name] = (round(bot - bot_health(), 1), hits, round(down / max(hits, 1), 1))
     setting(module, "shield", "false")
     bot_done()
-    ok = took["on"] < took["off"] and gave["on"][0] > 0
+    # The shield comes down for a hit's own tick and no longer.
+    ok = took["on"] < took["off"] and gave["on"][0] > 0 and gave["on"][2] <= 1.5
     return ok, (f"health you lost to 10 hits: Shield off {took['off']}, on {took['on']}; for 10 s (Bot1 lost, hits, "
                 f"ticks unshielded per hit): off {gave['off']}, on {gave['on']}")
 
