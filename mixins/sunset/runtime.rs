@@ -8005,7 +8005,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                         let room = x + rw - RIGHT_PAD - setting_x - width_of(game, st.name) - 6.0;
                         let value = fit(&st.value_text(), room.max(rw * 0.25));
                         let vw = width_of(game, &value);
-                        out.push(Shape::Text(value, [x + rw - RIGHT_PAD - vw, y + text_y(row_hh())], 0x808080));
+                        out.push(Shape::Text(value, [x + rw - RIGHT_PAD - vw, y + text_y(row_hh())], 0xE4E4E4));
                         vw
                     }
                 };
