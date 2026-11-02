@@ -11,7 +11,7 @@ use winit::keyboard::KeyCode;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new("Entity Control", Category::Movement, "Drives the boat you sit in where you look: Speed sets how fast (blocks a second), Fly lifts it with Jump and lowers it with Sprint (Sneak gets you out), and it holds its height in the air. Anti fly kick lets it sink a little every Delay ticks so a server that does not allow flying keeps you on.")
+        Module::new("Entity Control", Category::Movement, "Drives and flies boats.")
             .bool("Lock yaw", true)
             .bool("Speed", true)
             .num("Horizontal speed", 10.0, 1.0, 50.0, 0.5)

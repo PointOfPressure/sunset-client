@@ -21,9 +21,10 @@ const GAP_TICKS: u32 = 2;
 pub(super) fn defaults() -> Vec<Module> {
     vec![
         Module::new("Unlock All Recipes", Category::Extras,
-            "The recipe book shows every recipe as unlocked (from Horizon's own recipe data; on servers, which send only yours). A recipe the server has given you is placed as usual; any other one is laid in the crafting grid with ordinary clicks from your inventory. A server with doLimitedCrafting on still gives no result for those."),
+            "Shows every recipe as unlocked."),
+        Module::new("Profiles", Category::Extras, "Saved settings to load."),
         Module::new("Client Sort", Category::Extras,
-            "Three buttons by each part of an inventory screen. Sort: creative order, by count with Shift, by name with Ctrl, by id with Alt (the sort key too; the hotbar only when the pointer is on it). Fill Stacks: tops up stacks here from the other side. Restock: moves what the other side already has there."),
+            "Sorts inventories in your order."),
     ]
 }
 

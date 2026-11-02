@@ -11,7 +11,7 @@ pub(super) fn defaults() -> Vec<Module> {
     vec![Module::new(
         "Crosshair",
         Category::Render,
-        "Replaces the crosshair with a crisp cross or dot. Sizes are physical pixels, independent of GUI scale.",
+        "Custom crosshair.",
     )
     .pick("Mode", &["Cross", "Dot"])
     .num("Length", 6.0, 1.0, 32.0, 1.0)

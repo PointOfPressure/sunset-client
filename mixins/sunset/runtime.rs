@@ -404,7 +404,7 @@ pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
     let mut v = vec![
         // Combat
-        Module::new("Trigger Bot", Combat, "Attacks what your crosshair is on: the kinds switched on, and the mobs in Entities.")
+        Module::new("Trigger Bot", Combat, "Attacks what you aim at.")
             .bool("Players", true)
             .bool("Hostiles", true)
             .bool("Passive", false)
@@ -415,7 +415,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Wait for cooldown", true)
             .num("Delay (ticks)", 10.0, 0.0, 20.0, 1.0)
             .shield(),
-        Module::new("Criticals", Combat, "Makes your hits critical hits. Packet hops off the ground over two ticks before the hit; Jump really jumps and Mini jump hops, and the hit comes on the way down.")
+        Module::new("Criticals", Combat, "Makes hits critical.")
             .pick("Mode", &["Packet", "Jump", "Mini jump"])
             .bool("Only Kill Aura", false)
             .num("Additional height", 0.0, 0.0, 1.0, 0.05)
@@ -423,9 +423,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only with a weapon", false)
             .bool("Only on ground", false),
         // Movement
-        Module::new("Sprint", Movement, "Sprints for you whenever you walk forward."),
+        Module::new("Sprint", Movement, "Sprints for you."),
         Module::new("Auto Walk", Movement, "Walks forward for you."),
-        Module::new("Flight", Movement, "Lets you fly. Your packets claim the ground while it is on, so landing never hurts.")
+        Module::new("Flight", Movement, "Lets you fly.")
             .pick("Mode", &["Abilities", "Velocity"])
             .num("Speed", 0.1, 0.0, 5.0, 0.01)
             .bool("Vertical speed match", false)
@@ -433,7 +433,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Anti kick mode", &["Packet", "Normal", "None"])
             .num("Delay", 20.0, 1.0, 200.0, 1.0)
             .num("Off time", 1.0, 1.0, 20.0, 1.0),
-        Module::new("Speed", Movement, "Modifies your movement speed when moving on the ground.")
+        Module::new("Speed", Movement, "Moves faster on the ground.")
             .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom"])
             .num("Vanilla speed", 5.6, 0.0, 20.0, 0.1)
             .num("Strafe speed", 1.6, 0.0, 3.0, 0.05)
@@ -453,7 +453,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Knockback pause", 3.0, 0.0, 10.0, 1.0)
             .num("Sprint multiplier", 1.0, 0.5, 1.5, 0.05)
             .bool("Stop at wall", false),
-        Module::new("No Fall", Movement, "Stops fall damage (Meteor's No Fall). Packet tells the server you are on the ground as you fall; No ground never does; Air place puts a block under you; Place puts water (or the Placed item) where you land and picks it back up. Clutch: Packet and No ground place it too, in case a server doesn't take their word.")
+        Module::new("No Fall", Movement, "No fall damage.")
             .pick("Mode", &["Packet", "No ground", "Air place", "Place"])
             .pick("Placed item", &["Bucket", "Powder snow", "Hay bale", "Cobweb", "Slime block"])
             .pick("Air place mode", &["Before death", "Before damage"])
@@ -461,7 +461,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Rotate", true)
             .bool("Anchor", true)
             .bool("Pause on mace", true),
-        Module::new("Velocity", Movement, "Controls knockback and other pushes.")
+        Module::new("Velocity", Movement, "Reduces knockback.")
             .pick("Mode", &["Scale", "Blend"])
             .bool("Knockback", true)
             .num("Knockback horizontal", 0.0, 0.0, 1.0, 0.05)
@@ -490,37 +490,37 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Delay only near enemies", true),
         Module::new("Spider", Movement, "Climbs walls.")
             .num("Climb speed", 0.2, 0.1, 1.0, 0.1),
-        Module::new("Step", Movement, "Walks up full blocks and more without jumping (step up).")
+        Module::new("Step", Movement, "Walks up blocks.")
             .num("Height", 1.25, 0.5, 5.0, 0.25)
             .pick("Active when", &["Always", "Sneaking", "Not sneaking"])
             .bool("Safe step", false)
             .num("Step health", 5.0, 1.0, 36.0, 1.0),
-        Module::new("GUI Move", Movement, "Lets you walk, jump and look around while a menu is open.")
+        Module::new("GUI Move", Movement, "Moves while a menu is open.")
             .pick("Screens", &["All menus", "Inventory"])
             .bool("Jump", true)
             .bool("Sneak", true)
             .bool("Arrows", true)
             .bool("Sprint", true),
-        Module::new("Glide", Movement, "Falls slowly, and never takes fall damage while it does.")
+        Module::new("Glide", Movement, "Falls slowly.")
             .num("Fall speed", 2.5, 0.5, 8.0, 0.5),
-        Module::new("No Jump Delay", Movement, "Jumps again the moment you land when you hold the jump key."),
-        Module::new("Air Jump", Movement, "Jumps again in mid-air."),
-        Module::new("Elytra Boost", Movement, "Speeds up gliding while you hold forward.")
+        Module::new("No Jump Delay", Movement, "Jumps again on landing."),
+        Module::new("Air Jump", Movement, "Jumps in mid-air."),
+        Module::new("Elytra Boost", Movement, "Speeds up gliding.")
             .num("Boost", 0.05, 0.01, 0.2, 0.01)
             .num("Max speed", 2.0, 0.5, 5.0, 0.5),
         Module::new("Anti Void", Movement, "Bounces you out of the void."),
         // Player
-        Module::new("Fast Place", Player, "Places blocks faster while you hold use. Speed 1 is 6 blocks a second, 2 is 8, 3 is 10, 4 is 14 and 5 is 20 (the game's own is 5).")
+        Module::new("Fast Place", Player, "Places blocks faster.")
             .num("Speed", 5.0, 1.0, 5.0, 1.0),
-        Module::new("Break Delay", Player, "Changes the delay between breaking one block and the next (Meteor's Break Delay): 0 means none.")
+        Module::new("Break Delay", Player, "Changes the delay between breaks.")
             .num("Cooldown (ticks)", 0.0, 0.0, 5.0, 1.0),
-        Module::new("Auto Respawn", Player, "Respawns as soon as you die."),
-        Module::new("Death Location", Player, "When you die: your coordinates and dimension in chat, and a waypoint Death that Waypoints shows (older deaths: Death 2, Death 3... up to Keep). Clear on reach: a death waypoint goes once you get back to it.")
+        Module::new("Auto Respawn", Player, "Respawns when you die."),
+        Module::new("Death Location", Player, "Saves where you died.")
             .num("Keep", 3.0, 1.0, 10.0, 1.0)
             .bool("Clear on reach", true),
-        Module::new("Panic", Player, "Turns every module off and hides Sunset on screen: no HUD, menu, chat lines or keys, until you type .panic again or restart the game. Bind it to a key."),
+        Module::new("Panic", Player, "Turns everything off and hides Sunset."),
         // Render
-        Module::new("ClickGUI", Render, "How this menu looks: accent colour, size, panel width, corner radius, text indent, background opacity and a dim behind it. Menu dim is the game's own dim and blur behind every menu. Toggle messages and Module messages: the chat lines when a key or the menu turns a module on or off, and the ones modules write (replies to . commands always show). Friends: the players Kill Aura, Trigger Bot, Aim Assist and the rest leave alone, picked from the players online or typed (also .friend, and Middle Click Extra's Friend).")
+        Module::new("ClickGUI", Render, "How this menu looks.")
             .pick("Style", &["Dropdown", "Dashboard"])
             .pick("Animations", &["Minimal", "Off"])
             .colour("Accent color", "Sunset Orange")
@@ -537,7 +537,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Toggle messages", true)
             .bool("Module messages", true)
             .text("Friends", ""),
-        Module::new("HUD", Render, "The watermark, the active modules, your coordinates and more.")
+        Module::new("HUD", Render, "On-screen info.")
             .on()
             .pick("Font", &horizon_client::font::sunset_fontdata::LABELS)
             .bool("Watermark", true)
@@ -551,7 +551,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Target HUD", true)
             .pick("Target HUD mode", &["Full", "Potato"]),
         Module::new("Fullbright", Render, "Lights everything up."),
-        Module::new("ESP", Render, "Draws boxes around entities, through walls, and dropped items with their names and counts if you like. Outline and Potato (a dot on each) are the cheapest.")
+        Module::new("ESP", Render, "Boxes around entities.")
             .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
             .pick("Shape mode", &["Lines", "Sides", "Both"])
             .num("Fill opacity", 0.3, 0.0, 1.0, 0.05)
@@ -573,7 +573,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .colour("Items color", "Orange")
             .num("Range", 0.0, 0.0, ALL_RANGE_MAX, 8.0)
             .num("Max", 256.0, 8.0, 1024.0, 8.0),
-        Module::new("Tracers", Render, "Draws lines from your crosshair to entities. Potato draws the lines alone, to the middle.")
+        Module::new("Tracers", Render, "Lines to entities.")
             .pick("Mode", &["Lines", "Potato"])
             .pick("Target", &["Body", "Head", "Feet"])
             .pick("Start", &["Crosshair", "Bottom"])
@@ -589,7 +589,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .colour("Passive color", "Green")
             .num("Range", 0.0, 0.0, ALL_RANGE_MAX, 8.0)
             .num("Max", 256.0, 8.0, 1024.0, 8.0),
-        Module::new("Nametags", Render, "Big name tags with health and distance, through walls. Potato shows the name alone.")
+        Module::new("Nametags", Render, "Bigger name tags.")
             .pick("Mode", &["Full", "Potato"])
             .bool("Players", true)
             .bool("Mobs", false)
@@ -602,7 +602,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .colour("Name color", "White")
             .num("Range", 0.0, 0.0, ALL_RANGE_MAX, 8.0)
             .num("Max", 64.0, 1.0, 512.0, 1.0),
-        Module::new("Storage ESP", Render, "Draws boxes around chests and other storage. Outline and Potato (a dot on each) are the cheapest.")
+        Module::new("Storage ESP", Render, "Boxes around storage.")
             .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
             .pick("Shape mode", &["Both", "Lines", "Sides"])
             .num("Fill opacity", 0.16, 0.0, 1.0, 0.02)
@@ -615,23 +615,23 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Range", 64.0, 8.0, 128.0, 8.0)
             .num("Max", 256.0, 8.0, 1024.0, 8.0),
         // Added in 0.3
-        Module::new("Auto Weapon", Combat, "Switches to your best weapon before Kill Aura or Trigger Bot hits.")
+        Module::new("Auto Weapon", Combat, "Switches to your best weapon.")
             .bool("Prefer axes", false),
-        Module::new("Auto Log", Player, "Leaves the server when your health is low.")
+        Module::new("Auto Log", Player, "Leaves at low health.")
             .num("Health", 6.0, 1.0, 19.0, 1.0),
         Module::new("Sneak", Movement, "Sneaks for you."),
-        Module::new("Safe Walk", Movement, "Sneaks at the edge of a drop, so you don't walk off it."),
-        Module::new("Fast Climb", Movement, "Climbs ladders and vines faster.")
+        Module::new("Safe Walk", Movement, "Stops you walking off edges."),
+        Module::new("Fast Climb", Movement, "Climbs faster.")
             .num("Speed", 0.3, 0.1, 1.0, 0.05),
         Module::new("High Jump", Movement, "Jumps higher.")
             .num("Multiplier", 2.0, 1.0, 5.0, 0.5),
-        Module::new("Parkour", Movement, "Jumps for you at the edge of a block, on the last tick you still stand on it.")
+        Module::new("Parkour", Movement, "Jumps at block edges.")
             .num("Edge distance", 0.001, 0.001, 0.1, 0.001)
             .pick("Jump when", &["Last tick", "Early"])
             .bool("Only while sprinting", false)
             .bool("Only when moving forward", false)
             .bool("Ignore sneaking", false),
-        Module::new("Blink", Movement, "Holds back your movement packets, then sends them all at once when off.")
+        Module::new("Blink", Movement, "Holds back your movement, then sends it.")
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
         Module::new("Scaffold", Movement, "Automatically places blocks under you. Legit bridges as you would by hand: as your next step is about to leave the block you stand on, it sneaks (so the game keeps you on the edge), places the next block against that block's side, and lets go of sneak once it is there.")
             .pick("Mode", &["Normal", "Legit"])
@@ -661,10 +661,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Max placement distance", 6.0, 2.0, 6.0, 0.25)
             .num("Duplicate cooldown", 0.0, 0.0, 8.0, 1.0)
             .num("Rotation speed", 180.0, 5.0, 180.0, 5.0),
-        Module::new("Anti Hunger", Player, "Spends less food by hiding that you are sprinting and on the ground.")
+        Module::new("Anti Hunger", Player, "Uses less food.")
             .bool("Sprint", true)
             .bool("Ground", true),
-        Module::new("Anti AFK", Player, "Performs different actions to prevent getting kicked while AFK.")
+        Module::new("Anti AFK", Player, "Stops AFK kicks.")
             .bool("Jump", true)
             .bool("Swing", false)
             .bool("Sneak", false)
@@ -678,11 +678,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Random", false)
             .num("Delay (seconds)", 15.0, 1.0, 120.0, 1.0)
             .text("Messages", "Sunset on top!|Sunset on crack!"),
-        Module::new("Auto Clicker", Player, "Clicks for you while you hold a mouse button.")
+        Module::new("Auto Clicker", Player, "Clicks for you.")
             .bool("Left", true)
             .bool("Right", false)
             .num("Delay (ticks)", 4.0, 1.0, 20.0, 1.0),
-        Module::new("Auto Eat", Player, "Eats food when your hunger or health gets low (Meteor's Auto Eat). Food mode says what counts as hungry: the hunger bar at Hunger threshold, saturation at Saturation threshold (a server tells it as it reaches 0, or with a change to your health or hunger), or either.")
+        Module::new("Auto Eat", Player, "Eats when hungry.")
             .pick("List mode", &["Blacklist", "Whitelist"])
             .text("Blacklist", "enchanted_golden_apple,golden_apple,chorus_fruit,poisonous_potato,pufferfish,chicken,rotten_flesh,spider_eye,suspicious_stew")
             .text("Whitelist", "")
@@ -694,37 +694,37 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Health threshold", 10.0, 0.0, 19.0, 1.0)
             .num("Hunger threshold", 16.0, 1.0, 19.0, 1.0)
             .num("Saturation threshold", 5.0, 0.0, 20.0, 1.0),
-        Module::new("Zoom", Render, "Hold V to zoom in; the wheel zooms further in or out while you hold it, 1x to 50x.")
+        Module::new("Zoom", Render, "Zooms in.")
             .num("Zoom", 3.0, 1.0, 50.0, 0.5)
             .bool("Scroll", true)
             .bool("Smooth", true)
             .bool("Scale sensitivity", true)
             .bool("Remember zoom", false),
-        Module::new("Breadcrumbs", Render, "Draws a line along where you have been. Potato: a dot on each point.")
+        Module::new("Breadcrumbs", Render, "Draws your path.")
             .pick("Mode", &["Line", "Potato"])
             .num("Length", 300.0, 20.0, 1000.0, 20.0),
-        Module::new("Block ESP", Render, "Draws boxes around ores and other blocks, through walls. Outline and Potato (a dot on each) are the cheapest.")
+        Module::new("Block ESP", Render, "Boxes around chosen blocks.")
             .pick("Mode", &["Box", "Outline", "Potato"])
             .pick("Blocks", &["Ores", "Diamond", "Ancient Debris", "Spawners", "Portals"])
             .num("Range", 32.0, 8.0, 48.0, 4.0)
             .bool("Fill", true)
             .num("Max", 1000.0, 50.0, 4000.0, 50.0),
-        Module::new("Waypoints", Render, "Shows the places saved with .waypoint, on screen. Potato: a dot, no name.")
+        Module::new("Waypoints", Render, "Shows saved places.")
             .pick("Mode", &["Full", "Potato"])
             .num("Range", 1000.0, 50.0, 10000.0, 50.0),
         // Added in 0.4
-        Module::new("Auto Armor", Player, "Wears the best armor in your inventory.")
+        Module::new("Auto Armor", Player, "Wears your best armor.")
             .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0),
-        Module::new("Reverse Step", Movement, "Falls fast when you step off a block.")
+        Module::new("Reverse Step", Movement, "Falls fast off blocks.")
             .num("Speed", 1.0, 0.5, 3.0, 0.5),
         Module::new("Long Jump", Movement, "Jumps further.")
             .num("Multiplier", 2.0, 1.5, 5.0, 0.5),
-        Module::new("Auto Jump", Movement, "Jumps for you whenever you walk."),
-        Module::new("Chest Swap", Movement, "Swaps your chestplate and elytra, once, then turns itself off."),
-        Module::new("Auto Replenish", Player, "Refills hotbar stacks from your inventory when they run low.")
+        Module::new("Auto Jump", Movement, "Jumps as you walk."),
+        Module::new("Chest Swap", Movement, "Swaps chestplate and elytra."),
+        Module::new("Auto Replenish", Player, "Refills hotbar stacks.")
             .num("Threshold", 8.0, 1.0, 32.0, 1.0)
             .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0),
-        Module::new("Auto Tool", Player, "Switches to the hotbar tool that breaks the block you mine best (Meteor's Auto Tool).")
+        Module::new("Auto Tool", Player, "Switches to the best tool.")
             .pick("Prefer", &["Fortune", "None", "Silk touch"])
             .bool("Silk touch for ender chest", true)
             .bool("Fortune for ores and crops", false)
@@ -735,23 +735,23 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("List mode", &["Blacklist", "Whitelist"])
             .text("Whitelist", "")
             .text("Blacklist", ""),
-        Module::new("Middle Click Extra", Player, "Middle click uses an item from your hotbar, then switches back. Friend: middle click a player to make them a friend, or not.")
+        Module::new("Middle Click Extra", Player, "Uses a hotbar item on middle click.")
             .pick("Item", &["Pearl", "Rocket", "XP bottle", "Friend"]),
-        Module::new("Trajectories", Render, "Draws where a bow shot or a throw will land. Potato: a dot where it lands.")
+        Module::new("Trajectories", Render, "Shows where throws land.")
             .pick("Mode", &["Line", "Potato"]),
-        Module::new("Logout Spots", Render, "Marks where players were when they logged out. Potato: a dot, no name.")
+        Module::new("Logout Spots", Render, "Marks where players logged out.")
             .pick("Mode", &["Box", "Outline", "Potato"])
             .num("Minutes", 10.0, 1.0, 60.0, 1.0),
-        Module::new("Bow Spam", Combat, "Fires arrows as fast as you can draw them while you hold use. Crossbows: a crossbow is loaded, let go and fired over and over, Crossbow delay ticks between shots.")
+        Module::new("Bow Spam", Combat, "Fires arrows quickly.")
             .num("Charge (ticks)", 5.0, 3.0, 20.0, 1.0)
             .bool("Crossbows", true)
             .num("Crossbow delay", 2.0, 0.0, 20.0, 1.0),
-        Module::new("Notifier", Player, "Says in chat when a player joins or leaves the server.")
+        Module::new("Notifier", Player, "Reports joins and leaves.")
             .bool("Join", true)
             .bool("Leave", true),
-        Module::new("Weather Changer", World, "Sets the weather you see. Lightning stays the server's.")
+        Module::new("Weather Changer", World, "Sets the weather you see.")
             .pick("Weather", &["Clear", "Rain", "Thunder"]),
-        Module::new("Hole ESP", Render, "Marks holes walled with bedrock or obsidian, where explosions hurt less (Meteor's Hole ESP).")
+        Module::new("Hole ESP", Render, "Marks safe holes.")
             .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
             .num("Horizontal radius", 10.0, 1.0, 32.0, 1.0)
             .num("Vertical radius", 5.0, 1.0, 16.0, 1.0)
@@ -797,7 +797,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Fill opacity", 0.3, 0.0, 1.0, 0.05)
             .colour("Box color", "Cyan")
             .colour("Broken color", "Red"),
-        Module::new("Time Changer", World, "Sets the time of day you see.")
+        Module::new("Time Changer", World, "Sets the time you see.")
             .num("Time", 6000.0, 0.0, 24000.0, 1000.0),
     ];
     v.splice(0..0, super::sunset_aura::defaults());
@@ -7495,9 +7495,12 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
         }
         return;
     }
-    if button == MouseButton::Left && with(|s| s.gui.editor.is_none() && s.binding.is_none()
-        && inside(super::sunset_profile_menu::button(s.gui.view_w, s.gui.view_h), at))
-    {
+    // The Profiles module's row, either button: the list of saved profiles instead of a toggle or settings.
+    if with(|s| {
+        s.gui.editor.is_none()
+            && s.binding.is_none()
+            && hit_at(s, at).is_some_and(|(_, hit)| matches!(hit, Hit::Module(i) if s.modules[i].name == "Profiles"))
+    }) {
         let result = super::sunset_profiles::Store::new(game.native_data_dir(ID)).and_then(|store| store.list());
         with(|s| {
             let names = result.as_ref().cloned().unwrap_or_default();
@@ -7776,7 +7779,7 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
     let m = &modules[edit.module];
     out.push(Shape::Head(fit(&format!("{} / {}", m.name, m.settings[edit.setting].name), room), [x + 8.0, y + 6.0], accent()));
     let search = edit.draft.as_ref().map_or("", Draft::text);
-    out.push(Shape::Round([x + 6.0, y + 22.0, rw - 12.0, 16.0], control, 0xFF08_0808));
+    out.push(Shape::Round([x + 6.0, y + 22.0, rw - 12.0, 16.0], panel_radius(), 0xFF08_0808));
     let (shown, colour) = if search.is_empty() { ("Type to search", 0x909090) } else { (search, 0xFFFFFF) };
     out.push(Shape::Text(fit(shown, room - 4.0), [x + 10.0, y + 22.0 + text_y(16.0)], colour));
     let text = match &m.settings[edit.setting].value {
@@ -7813,7 +7816,7 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
     let note = format!("{chosen} chosen, {} more. Click to add or take away; Esc closes.", rows.len() - chosen);
     let done = pick::done_button(r);
     out.push(Shape::Text(fit(&note, done[0] - x - 12.0), [x + 8.0, done[1] + text_y(done[3])], 0x909090));
-    out.push(Shape::Round(done, control, solid(accent())));
+    out.push(Shape::Round(done, panel_radius(), solid(accent())));
     let tw = game.native_text_width("Done");
     out.push(Shape::Text("Done".to_owned(), [done[0] + (done[2] - tw) / 2.0, done[1] + text_y(done[3])], 0xFFFFFF));
 }
@@ -8149,24 +8152,28 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         && with(|s| s.gui.drag.is_none())
         && super::sunset_dashboard::wants_tip(i)
     {
-        let text = if dash { super::sunset_dashboard::short(&modules[i]) } else { modules[i].about };
+        let text = modules[i].about;
         let about = match whole {
             Some(name) => format!("{name}: {text}"),
             None => text.to_owned(),
         };
-        let about = about.as_str();
-        let tw = game.native_text_width(about);
+        // Wrapped to half the screen and kept on it.
+        let lines = wrap(game, &about, (w * 0.5).max(120.0).min(w - 16.0));
+        let tw = lines.iter().map(|l| game.native_text_width(l)).fold(0.0, f32::max);
+        let th = lines.len() as f32 * 10.0 + 4.0;
         let bx = (at.0 + 8.0).min(w - tw - 8.0).max(0.0);
-        let by = (at.1 + 10.0).min(h - 14.0);
-        out.push(Shape::Round([bx, by, tw + 8.0, 14.0], control, 0xF80A_0A0A));
-        out.push(Shape::Text(about.to_owned(), [bx + 4.0, by + text_y(14.0)], 0xE4E4E4));
+        let by = (at.1 + 10.0).min(h - th).max(0.0);
+        out.push(Shape::Round([bx, by, tw + 8.0, th], panel_radius(), 0xF80A_0A0A));
+        for (n, line) in lines.into_iter().enumerate() {
+            out.push(Shape::Text(line, [bx + 4.0, by + 3.0 + n as f32 * 10.0], 0xE4E4E4));
+        }
     }
     // A setting's name cut short, whole under the pointer.
     if let (Some(Hit::Setting(..)), Some(name)) = (hover, whole) {
         let tw = game.native_text_width(name);
         let bx = (at.0 + 8.0).min(w - tw - 8.0).max(0.0);
         let by = (at.1 + 10.0).min(h - 14.0);
-        out.push(Shape::Round([bx, by, tw + 8.0, 14.0], control, 0xF80A_0A0A));
+        out.push(Shape::Round([bx, by, tw + 8.0, 14.0], panel_radius(), 0xF80A_0A0A));
         out.push(Shape::Text(name.to_owned(), [bx + 4.0, by + text_y(14.0)], 0xE4E4E4));
     }
     // The list picker, over everything.
@@ -8184,7 +8191,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         let m = &modules[edit.module];
         out.push(Shape::Head(fit(&format!("{} / {}", m.name, m.settings[edit.setting].name), room), [x + 8.0, y + 6.0], accent()));
         let selected = edit.draft.as_ref().is_ok_and(Draft::selected);
-        out.push(Shape::Round([x + 6.0, y + 22.0, rw - 12.0, 16.0], control, if selected { 0xFF30_60B0 } else { 0xFF08_0808 }));
+        out.push(Shape::Round([x + 6.0, y + 22.0, rw - 12.0, 16.0], panel_radius(), if selected { 0xFF30_60B0 } else { 0xFF08_0808 }));
         let note = match &edit.draft {
             Ok(draft) => {
                 // The end of the text near the caret shows, with the caret at its place.
@@ -8204,13 +8211,13 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         out.push(Shape::Text(fit(note, room), [x + 8.0, y + 41.0], if matches!(&edit.draft, Ok(d) if d.error.is_none()) { 0x909090 } else { 0xFF7070 }));
         let (apply, cancel) = editor_buttons(r);
         for (b, label, colour) in [(apply, "Apply", solid(accent())), (cancel, "Cancel", 0xFF3A_3A3A)] {
-            out.push(Shape::Round(b, control, colour));
+            out.push(Shape::Round(b, panel_radius(), colour));
             let tw = game.native_text_width(label);
             out.push(Shape::Text(label.to_owned(), [b[0] + (b[2] - tw) / 2.0, b[1] + text_y(b[3])], 0xFFFFFF));
         }
     }
-    // The Profile button, and the profiles when it was clicked.
-    with(|s| super::sunset_profile_menu::draw(game, w, h, at, &s.selection.label(), s.selection.selected(), s.gui.profile_menu.as_ref(), out));
+    // The saved profiles, when the Profiles module's row was clicked.
+    with(|s| super::sunset_profile_menu::draw(game, w, h, at, s.selection.selected(), s.gui.profile_menu.as_ref(), out));
     // The Dashboard has its own search box.
     if dash {
         return;
@@ -8224,7 +8231,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     };
     let selected = with(|s| s.gui.select_all) && !search.is_empty();
     let lw_ = game.native_text_width(&text);
-    out.push(Shape::Round([(w - lw_) / 2.0 - 6.0, 14.0, lw_ + 12.0, 14.0], control, if selected { 0xFF30_60B0 } else { bg(0xC00E_0E0E) }));
+    out.push(Shape::Round([(w - lw_) / 2.0 - 6.0, 14.0, lw_ + 12.0, 14.0], panel_radius(), if selected { 0xFF30_60B0 } else { bg(0xC00E_0E0E) }));
     out.push(Shape::Text(text, [(w - lw_) / 2.0, 14.0 + text_y(14.0)], if selected { 0xFFFFFF } else { colour }));
     let hint = "Right click: settings   Enter: toggle search result   Esc: close";
     let hw = game.native_text_width(hint);

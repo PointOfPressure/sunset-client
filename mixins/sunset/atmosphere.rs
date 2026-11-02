@@ -5,7 +5,7 @@ use horizon_client::gfx::sunset_atmosphere_flags::{Config, configure};
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![Module::new("Atmosphere", Category::Render,
-        "World-anchored nebula and aurora skies. Overworld only; shader packs keep control.")
+        "Custom skies.")
         .pick("Mode", &["Space", "Aurora", "Ringed Planet"])
         .pick("Quality", &["Balanced", "Performance", "Detailed"])
         .num("Brightness", 1.0, 0.2, 2.0, 0.1)

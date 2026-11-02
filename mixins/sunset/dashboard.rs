@@ -3,7 +3,7 @@
 // and draws around them. A left click on a module turns it on or off, a right click shows its settings.
 
 use super::Game;
-use super::sunset::{CATEGORIES, Hit, Module, Shape, State, accent, aliases, dash_menu, dash_search_clear, fit_to, norm, panel_radius, row_h, row_hh, snap_scroll, text_y, wanted_panel_w};
+use super::sunset::{CATEGORIES, Hit, Shape, State, accent, aliases, dash_menu, dash_search_clear, fit_to, norm, panel_radius, row_h, row_hh, snap_scroll, text_y, wanted_panel_w};
 use super::sunset_smooth as smooth;
 use horizon_client::hud::HudBatch;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -90,7 +90,6 @@ const TOGGLE_W: f32 = 14.0;
 const TOGGLE_H: f32 = 8.0;
 // To the right of a row's toggle.
 const TOGGLE_PAD: f32 = 7.0;
-const CORNER: f32 = 10.0;
 
 const SURFACE: u32 = 0xFF12_1214;
 const HAIRLINE: u32 = 0xFF26_262B;
@@ -112,14 +111,6 @@ fn frame_in(view_w: f32, view_h: f32) -> [f32; 4] {
     let wanted = WIDTH_BASE + wanted_panel_w() * WIDTH_PER_PANEL;
     let (w, h) = ((view_w - 16.0).clamp(0.0, wanted).floor(), (view_h - 16.0).clamp(0.0, HEIGHT).floor());
     [((view_w - w) / 2.0).floor(), ((view_h - h) / 2.0).floor(), w, h]
-}
-
-// The Profile button, at the foot of the side column.
-pub(super) fn profile_button(view_w: f32, view_h: f32) -> Option<[f32; 4]> {
-    on().then(|| {
-        let [x, y, _, h] = frame_in(view_w, view_h);
-        [x + 8.0, y + h - 8.0 - TAB_H, SIDE - 16.0, TAB_H]
-    })
 }
 
 // The list and the settings beside it.
@@ -389,7 +380,7 @@ pub(super) fn squircle(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f32
 pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out: &mut Vec<Shape>) {
     follow_hover(hover);
     let solid = 0xFF00_0000 | accent();
-    let radius = panel_radius().max(CORNER);
+    let radius = panel_radius();
     let f = frame(s);
     let (list, pane) = columns(s);
     let menu = dash_menu(s);
@@ -403,7 +394,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     // The search box: typing anywhere goes to it.
     let r = [f[0] + 8.0, f[1] + 8.0, SIDE - 16.0, SEARCH_H];
     let selected = menu.select_all && !menu.search.is_empty();
-    out.push(Shape::Round(r, SEARCH_H / 2.0, if selected { 0xFF30_60B0 } else { CONTROL }));
+    out.push(Shape::Round(r, radius, if selected { 0xFF30_60B0 } else { CONTROL }));
     let text = if menu.search.is_empty() { "Search".to_owned() } else { format!("{}_", menu.search) };
     let colour = if menu.search.is_empty() { 0xD4D4D8 } else { 0xFFFFFF };
     out.push(Shape::Text(fit_to(game, &text, r[2] - 16.0), [r[0] + 8.0, r[1] + text_y(r[3])], colour));
@@ -458,144 +449,3 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     }
 }
 
-// A module's one dry line under the pointer; one not listed here says the first sentence of its own.
-pub(super) fn short(m: &Module) -> &'static str {
-    match m.name {
-        "Atmosphere" => "Custom skies.",
-        "Kill Aura" => "Attacks nearby entities.",
-        "Block Overlay" => "Colors the targeted block.",
-        "Surround" => "Surrounds you in blocks.",
-        "Self Trap" => "Places blocks above your head.",
-        "Auto City" => "Mines into a player's surround.",
-        "Auto Trap" => "Traps players in blocks.",
-        "Self Web" => "Places webs on you.",
-        "Auto Web" => "Places webs on players.",
-        "Hole Filler" => "Fills holes with blocks.",
-        "Burrow" => "Places a block inside you.",
-        "Offhand" => "Keeps an item or totem in your offhand.",
-        "Aim Assist" => "Helps your aim.",
-        "Crystal Optimizer" => "Breaks hit crystals at once.",
-        "Auto EXP" => "Repairs gear with XP bottles.",
-        "Crosshair" => "Custom crosshair.",
-        "Wind Jump" => "Jumps with wind charges.",
-        "Hold to Eat" => "Eats from a held hotbar key.",
-        "Pearl Catch" => "Catches pearls with wind charges.",
-        "Loadouts" => "Saved hotbar layouts.",
-        "Auto Fish" => "Fishes for you.",
-        "Auto Gap" => "Eats golden apples.",
-        "Auto Steal" => "Empties containers you open.",
-        "Inventory Cleaner" => "Drops listed items.",
-        "Fast Use" => "Uses items faster.",
-        "Spam" => "Spams chat messages.",
-        "Reach" => "Longer reach.",
-        "Ghost Hand" => "Uses containers through blocks.",
-        "Air Place" => "Places blocks in the air.",
-        "Speed Mine" => "Mines faster.",
-        "Packet Mine" => "Mines blocks in the background.",
-        "No Break Reset" => "Keeps break progress on item swap.",
-        "Anchor" => "Pulls you into holes.",
-        "Radar" => "Shows nearby players.",
-        "Freecam" => "Moves the camera off your body.",
-        "Free Look" => "Looks around without turning.",
-        "Xray" => "Shows only listed blocks.",
-        "Tunnel ESP" => "Highlights tunnels.",
-        "Void ESP" => "Marks holes to the void.",
-        "Light Overlay" => "Shows mob spawn spots.",
-        "No Render" => "Hides fog and overlays.",
-        "Timer" => "Changes game speed.",
-        "No Slow" => "No item-use slowdown.",
-        "Hand View" => "Moves and sizes your hands.",
-        "Trigger Bot" => "Attacks what you aim at.",
-        "Criticals" => "Makes hits critical.",
-        "Sprint" => "Sprints for you.",
-        "Auto Walk" => "Walks forward for you.",
-        "Flight" => "Lets you fly.",
-        "Speed" => "Moves faster on the ground.",
-        "No Fall" => "No fall damage.",
-        "Velocity" => "Reduces knockback.",
-        "Spider" => "Climbs walls.",
-        "Step" => "Walks up blocks.",
-        "GUI Move" => "Moves while a menu is open.",
-        "Glide" => "Falls slowly.",
-        "No Jump Delay" => "Jumps again on landing.",
-        "Air Jump" => "Jumps in mid-air.",
-        "Elytra Boost" => "Speeds up gliding.",
-        "Anti Void" => "Bounces you out of the void.",
-        "Fast Place" => "Places blocks faster.",
-        "Break Delay" => "Changes the delay between breaks.",
-        "Auto Respawn" => "Respawns when you die.",
-        "Death Location" => "Saves where you died.",
-        "Panic" => "Turns everything off and hides Sunset.",
-        "ClickGUI" => "How this menu looks.",
-        "HUD" => "On-screen info.",
-        "Fullbright" => "Lights everything up.",
-        "ESP" => "Boxes around entities.",
-        "Tracers" => "Lines to entities.",
-        "Nametags" => "Bigger name tags.",
-        "Storage ESP" => "Boxes around storage.",
-        "Auto Weapon" => "Switches to your best weapon.",
-        "Auto Log" => "Leaves at low health.",
-        "Sneak" => "Sneaks for you.",
-        "Safe Walk" => "Stops you walking off edges.",
-        "Fast Climb" => "Climbs faster.",
-        "High Jump" => "Jumps higher.",
-        "Parkour" => "Jumps at block edges.",
-        "Blink" => "Holds back your movement, then sends it.",
-        "Scaffold" => "Places blocks under you.",
-        "Anti Hunger" => "Uses less food.",
-        "Anti AFK" => "Stops AFK kicks.",
-        "Auto Clicker" => "Clicks for you.",
-        "Auto Eat" => "Eats when hungry.",
-        "Zoom" => "Zooms in.",
-        "Breadcrumbs" => "Draws your path.",
-        "Block ESP" => "Boxes around chosen blocks.",
-        "Waypoints" => "Shows saved places.",
-        "Auto Armor" => "Wears your best armor.",
-        "Reverse Step" => "Falls fast off blocks.",
-        "Long Jump" => "Jumps further.",
-        "Auto Jump" => "Jumps as you walk.",
-        "Chest Swap" => "Swaps chestplate and elytra.",
-        "Auto Replenish" => "Refills hotbar stacks.",
-        "Auto Tool" => "Switches to the best tool.",
-        "Middle Click Extra" => "Uses a hotbar item on middle click.",
-        "Trajectories" => "Shows where throws land.",
-        "Logout Spots" => "Marks where players logged out.",
-        "Bow Spam" => "Fires arrows quickly.",
-        "Notifier" => "Reports joins and leaves.",
-        "Weather Changer" => "Sets the weather you see.",
-        "Hole ESP" => "Marks safe holes.",
-        "Nuker" => "Breaks blocks around you.",
-        "Time Changer" => "Sets the time you see.",
-        "Target ESP" => "Marks your target.",
-        "Anti Vanish" => "Reports vanished players.",
-        "Auto Shearer" => "Shears sheep.",
-        "Auto Nametag" => "Name tags nearby mobs.",
-        "Auto Mount" => "Mounts nearby mobs.",
-        "Flamethrower" => "Sets food animals on fire.",
-        "Liquid Filler" => "Fills water and lava with blocks.",
-        "Spawn Proofer" => "Blocks mob spawn spots.",
-        "Bow Aimbot" => "Aims your bow.",
-        "Spawner Alerts" => "Reports nearby spawners.",
-        "Crystal Aura" => "Places and breaks crystals on enemies.",
-        "Anchor Aura" => "Sets off anchors on enemies.",
-        "Crystal Macro" => "Places and breaks crystals while held.",
-        "Anchor Macro" => "Places and sets off an anchor.",
-        "Shield Breaker" => "Disables shields with an axe.",
-        "Mace" => "Picks the best mace for a fall.",
-        "Spear Swap" => "Lunges with your best spear.",
-        "W Tap" => "Resets sprint between hits.",
-        "Jump Reset" => "Jumps to take less knockback.",
-        "Friend Guard" => "Stops hits on friends.",
-        "Key Throw" => "Throws a pearl or wind charge on a key.",
-        "RF Click" => "R and F act as mouse buttons.",
-        "Fake Lag" => "Delays what you send.",
-        "Sword PvP Bot" => "Fights the nearest player.",
-        "Unlock All Recipes" => "Shows every recipe as unlocked.",
-        "Client Sort" => "Sorts inventories in your order.",
-        "Shulker Peek" => "Shows what is in a shulker box.",
-        "Clear Water" => "See-through water.",
-        "Entity Control" => "Drives and flies boats.",
-        "Base Finder" => "Finds player bases.",
-        _ => m.about.split(". ").next().unwrap_or(m.about),
-    }
-}

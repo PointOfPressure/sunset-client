@@ -17,7 +17,7 @@ const OLDEST: Duration = Duration::from_secs(1);
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(LAG, Category::Combat, "Holds back what you send for a while, then sends it in order: the server sees you late. Hits, using items and chat go at once (with what was held before them). Dynamic: only while you look at and walk towards a player in Range.")
+        Module::new(LAG, Category::Combat, "Delays what you send.")
             .pick("Mode", &["Dynamic", "Always"])
             .num("Delay (ms)", 100.0, 10.0, 1000.0, 10.0)
             .num("Range", 6.0, 3.0, 12.0, 0.5)

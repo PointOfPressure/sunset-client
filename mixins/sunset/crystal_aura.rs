@@ -218,7 +218,7 @@ fn rank(rating: &Rating) -> f64 {
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(NAME, Category::Combat, "Places and breaks end crystals on enemy players, for the damage it can see they take, never more than Max self damage to you or a friend.")
+        Module::new(NAME, Category::Combat, "Places and breaks crystals on enemies.")
             .bool("Require hold", false)
             .text("Hold key", "mouse4")
             .num("Place delay", 0.0, 0.0, 10.0, 1.0)

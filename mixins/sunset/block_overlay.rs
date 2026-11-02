@@ -6,7 +6,7 @@ use super::sunset::{Camera, Canvas, Category, Module, gui_open, line};
 use super::sunset_block_overlay_math::{EDGES, FACES, bounded, box_edge, colour, translated, valid_box, visible};
 
 pub(super) fn defaults() -> Module {
-    Module::new("Block Overlay", Category::Render, "Colors the targeted block's actual selection shape. Hides with F1 and in menus. Projected overlay without terrain depth testing.")
+    Module::new("Block Overlay", Category::Render, "Colors the targeted block.")
         .colour("Color", "Gold")
         .bool("Outline", true)
         .num("Outline opacity", 0.9, 0.0, 1.0, 0.05)

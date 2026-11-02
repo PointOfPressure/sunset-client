@@ -17,7 +17,7 @@ const REACH: f64 = 2.9;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(NAME, Category::Combat, "Fights the nearest enemy player with your sword by itself: turns to them, walks in, strafes, jumps for critical hits and eats a golden apple when low. Patient keeps its distance between hits, Aggressive presses on. Your own movement keys take over.")
+        Module::new(NAME, Category::Combat, "Fights the nearest player.")
             .pick("Style", &["Patient", "Aggressive"])
             .num("Fight range", 16.0, 6.0, 32.0, 1.0)
             .num("Turn speed", 1.0, 0.5, 1.5, 0.05)

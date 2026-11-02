@@ -14,7 +14,7 @@ use std::sync::atomic::Ordering;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new("Kill Aura", Category::Combat, "Attacks the entities you choose around you.")
+        Module::new("Kill Aura", Category::Combat, "Attacks nearby entities.")
             .pick("Attack when holding", &["Weapons", "All"])
             .text("Selected weapon types", "diamond_sword,diamond_axe,trident,mace,diamond_spear")
             .pick("Rotate", &["Always", "On hit", "None"])

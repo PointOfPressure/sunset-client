@@ -15,7 +15,7 @@ const HORIZONTAL: [[i32; 3]; 4] = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]]
 pub(super) fn defaults() -> Vec<Module> {
     use Category::Combat;
     vec![
-        Module::new("Surround", Combat, "Surrounds you in blocks to prevent massive crystal damage.")
+        Module::new("Surround", Combat, "Surrounds you in blocks.")
             .text("Blocks", TRAP_BLOCKS)
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0)
             .num("Blocks per tick", 1.0, 1.0, 8.0, 1.0)
@@ -34,13 +34,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Center", true)
             .bool("Turn off", true)
             .bool("Rotate", true),
-        Module::new("Auto City", Combat, "Mines a block of the wall round the nearest player's feet with your best pickaxe, then turns off. Support puts obsidian under it first, so a crystal can go there.")
+        Module::new("Auto City", Combat, "Mines into a player's surround.")
             .num("Target range", 5.5, 0.0, 6.0, 0.5)
             .num("Break range", 4.5, 0.0, 6.0, 0.5)
             .bool("Support", true)
             .bool("Rotate", true)
             .bool("Notifications", true),
-        Module::new("Auto Trap", Combat, "Traps people in a box to prevent them from moving.")
+        Module::new("Auto Trap", Combat, "Traps players in blocks.")
             .text("Blocks", "obsidian,crying_obsidian")
             .num("Place range", 4.0, 1.0, 6.0, 0.5)
             .num("Walls range", 4.0, 1.0, 6.0, 0.5)
@@ -52,13 +52,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Bottom blocks", &["Platform", "Full", "Single", "None"])
             .bool("Self toggle", true)
             .bool("Rotate", true),
-        Module::new("Self Web", Combat, "Automatically places webs on you.")
+        Module::new("Self Web", Combat, "Places webs on you.")
             .pick("Mode", &["Normal", "Smart"])
             .num("Range", 3.0, 1.0, 7.0, 0.5)
             .bool("Double place", false)
             .bool("Auto toggle", true)
             .bool("Rotate", true),
-        Module::new("Auto Web", Combat, "Automatically places webs on other players.")
+        Module::new("Auto Web", Combat, "Places webs on players.")
             .num("Place range", 4.0, 1.0, 6.0, 0.5)
             .num("Walls range", 4.0, 1.0, 6.0, 0.5)
             .pick("Priority", PRIORITIES)
@@ -67,7 +67,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Ticks to predict", 10.0, 1.0, 30.0, 1.0)
             .bool("Doubles", false)
             .bool("Rotate", true),
-        Module::new("Hole Filler", Combat, "Fills holes with specified blocks.")
+        Module::new("Hole Filler", Combat, "Fills holes with blocks.")
             .text("Blocks", "obsidian,crying_obsidian,netherite_block,respawn_anchor,cobweb")
             .num("Search radius", 5.0, 1.0, 8.0, 1.0)
             .num("Place range", 4.5, 1.0, 6.0, 0.5)
@@ -83,13 +83,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only moving", true)
             .num("Target range", 7.0, 1.0, 20.0, 1.0)
             .num("Feet range", 1.5, 0.5, 4.0, 0.5),
-        Module::new("Burrow", Combat, "Jumps and places a block in the space you stood in, so you end up inside it.")
+        Module::new("Burrow", Combat, "Places a block inside you.")
             .pick("Block", &["E-Chest", "Obsidian", "Anvil", "Held"])
             .num("Trigger height", 1.12, 0.5, 1.5, 0.01)
             .num("Rubberband height", 12.0, 3.0, 20.0, 1.0)
             .bool("Center", true)
             .bool("Rotate", true),
-        Module::new("Aim Assist", Combat, "Adds to your own aim while you hold a weapon: never moves you on its own, never pulls against you, never attacks. Falling onto someone (mace dive) it pulls you onto them. Duelkit's.")
+        Module::new("Aim Assist", Combat, "Helps your aim.")
             .bool("Players", true)
             .bool("Hostiles", true)
             .num("Pull", 0.4, 0.0, 2.0, 0.05)
@@ -111,11 +111,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only with a weapon", true)
             .bool("Anti bot", false)
             .bool("Ignore teams", false),
-        Module::new("Crystal Optimizer", Combat, "Breaks the end crystal you hit on your screen at once, without waiting for the server (as Marlow's Crystal Optimizer).")
+        Module::new("Crystal Optimizer", Combat, "Breaks hit crystals at once.")
             .bool("Instant break", true)
             .num("Reach", 4.5, 3.0, 6.0, 0.5)
             .bool("Swing", true),
-        Module::new("Auto EXP", Combat, "Automatically repairs your armor and tools in pvp.")
+        Module::new("Auto EXP", Combat, "Repairs gear with XP bottles.")
             .pick("Mode", &["Both", "Armor", "Hands"])
             .bool("Replenish", true)
             .bool("Only on ground", false)

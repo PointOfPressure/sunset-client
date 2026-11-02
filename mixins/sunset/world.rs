@@ -15,22 +15,22 @@ use std::sync::{Arc, Mutex};
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
     vec![
-        Module::new("Auto Shearer", World, "Shears sheep that haven't been.")
+        Module::new("Auto Shearer", World, "Shears sheep.")
             .num("Distance", 5.0, 1.0, 6.0, 0.5)
             .bool("Anti break", false)
             .bool("Rotate", true),
-        Module::new("Auto Nametag", World, "Uses name tags on every named-less mob in range. It WILL tag all of them.")
+        Module::new("Auto Nametag", World, "Name tags nearby mobs.")
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "")
             .num("Range", 5.0, 1.0, 6.0, 0.5)
             .bool("Renametag", true)
             .bool("Rotate", true),
-        Module::new("Auto Mount", World, "Mounts rideable mobs next to you.")
+        Module::new("Auto Mount", World, "Mounts nearby mobs.")
             .bool("Check saddle", false)
             .bool("Rotate", true)
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "horse,donkey,mule,pig,strider,llama,camel,skeleton_horse,zombie_horse"),
-        Module::new("Flamethrower", World, "Sets alive food animals on fire, so they drop cooked food.")
+        Module::new("Flamethrower", World, "Sets food animals on fire.")
             .num("Distance", 5.0, 1.0, 6.0, 0.5)
             .bool("Anti break", false)
             .bool("Target babies", false)
@@ -38,7 +38,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Rotate", true)
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "pig,cow,sheep,chicken,rabbit"),
-        Module::new("Liquid Filler", World, "Places blocks inside water and lava within range of you.")
+        Module::new("Liquid Filler", World, "Fills water and lava with blocks.")
             .pick("Place in", &["Both", "Water", "Lava"])
             .pick("Shape", &["Sphere", "Uniform cube"])
             .num("Place range", 4.5, 1.0, 6.0, 0.5)
@@ -50,7 +50,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Whitelist", "dirt,cobblestone,stone,netherrack,diorite,granite,andesite")
             .text("Blacklist", ""),
-        Module::new("Spawn Proofer", World, "Places torches or slabs on the spots where mobs could spawn.")
+        Module::new("Spawn Proofer", World, "Blocks mob spawn spots.")
             .num("Place delay", 1.0, 0.0, 10.0, 1.0)
             .num("Place range", 4.5, 1.0, 6.0, 0.5)
             .num("Walls range", 4.5, 1.0, 6.0, 0.5)
@@ -59,17 +59,17 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Blocks", "torch,stone_button,stone_slab")
             .pick("Mode", &["Both", "Always", "Potential"])
             .bool("Rotate", true),
-        Module::new("Bow Aimbot", Category::Combat, "Aims your bow at the nearest target while you draw it.")
+        Module::new("Bow Aimbot", Category::Combat, "Aims your bow.")
             .num("Range", 20.0, 5.0, 60.0, 1.0)
             .pick("Priority", PRIORITIES)
             .bool("Babies", true)
             .bool("Nametagged", false)
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "player"),
-        Module::new("Spawner Alerts", World, "Says in chat where each spawner and trial spawner within range is, and what it spawns, once each; Labels names them where they are.")
+        Module::new("Spawner Alerts", World, "Reports nearby spawners.")
             .num("Range", 64.0, 8.0, 256.0, 8.0)
             .bool("Labels", true),
-        Module::new("Base Finder", World, "Looks through every chunk as it loads, on its own thread, for blocks players place: storage, beds, signs, workstations, concrete, portals (Blocks; *_bed means every bed; wool and carpets are left out as ancient cities and lush caves have them). A chunk with Threshold or more of them is said in chat once, with where and what, and gets a waypoint. Chunks loaded before it was on are looked at when it goes on.")
+        Module::new("Base Finder", World, "Finds player bases.")
             .text("Blocks", BASE_BLOCKS)
             .num("Threshold", 12.0, 2.0, 200.0, 1.0)
             .num("Ignore near spawn", 0.0, 0.0, 10000.0, 100.0)

@@ -1,6 +1,6 @@
-// The Profile button in the menu and the list of saved profiles it opens: a click, or the arrows and Enter, loads one.
-// The files are read when it opens and when one loads, never while drawing.
-use super::{Game, sunset::{Shape, accent}};
+// The list of saved profiles the Profiles module's row opens: a click, or the arrows and Enter, loads one. The files
+// are read when it opens and when one loads, never while drawing.
+use super::{Game, sunset::{Shape, accent, panel_radius}};
 
 const ROW: f32 = 18.0;
 // The list's title above it and the room under it.
@@ -13,11 +13,6 @@ pub(super) struct Menu {
     pub(super) error: Option<String>,
     focus: usize,
     start: usize,
-}
-
-// The button: top left over the panels, or at the foot of the Dashboard's side column.
-pub(super) fn button(w: f32, h: f32) -> [f32; 4] {
-    super::sunset_dashboard::profile_button(w, h).unwrap_or([4.0, 14.0, (w * 0.3).clamp(90.0, 200.0), 14.0])
 }
 
 fn frame(w: f32, h: f32, count: usize) -> [f32; 4] {
@@ -83,16 +78,13 @@ fn fit(game: &Game<'_>, text: &str, width: f32) -> String {
     super::sunset::fit_to(game, text, width)
 }
 
-pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), label: &str, selected: Option<&str>, menu: Option<&Menu>, out: &mut Vec<Shape>) {
-    let b = button(w, h);
-    out.push(Shape::Round(b, b[3] / 2.0, if inside(b, at) { 0xF830_3030 } else { 0xF818_1818 }));
-    out.push(Shape::Text(fit(game, &format!("Profile: {label}"), b[2] - 12.0), [b[0] + 6.0, b[1] + (b[3] - 8.0) / 2.0], accent()));
+pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Option<&str>, menu: Option<&Menu>, out: &mut Vec<Shape>) {
     let Some(menu) = menu else {
         return;
     };
     let r = frame(w, h, menu.names.len());
     out.push(Shape::Fill([0.0, 0.0, w, h], 0x8000_0000));
-    out.push(Shape::Round(r, 5.0, 0xFF12_1214));
+    out.push(Shape::Round(r, panel_radius(), 0xFF12_1214));
     out.push(Shape::Head("Profiles".into(), [r[0] + 8.0, r[1] + 7.0], 0xFFFFFF));
     out.push(Shape::Text("x".into(), [r[0] + r[2] - 15.0, r[1] + 7.0], 0xFFFFFF));
     if menu.names.is_empty() {
@@ -102,7 +94,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), label: &str,
         let row = [r[0] + 4.0, r[1] + TOP + (i - menu.start) as f32 * ROW, r[2] - 8.0, ROW];
         let chosen = selected == Some(name.as_str());
         if inside(row, at) || i == menu.focus {
-            out.push(Shape::Round(row, 3.0, 0xFF28_282C));
+            out.push(Shape::Round(row, panel_radius(), 0xFF28_282C));
         }
         out.push(Shape::Text(fit(game, name, row[2] - 10.0), [row[0] + 5.0, row[1] + 5.0], if chosen { accent() } else { 0xFFFFFF }));
     }

@@ -22,7 +22,7 @@ const OWNERS: [&str; 4] = [INV, HOVER, XP, THROW];
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(INV, Category::Combat, "Keeps the right item in your offhand (Meteor's Offhand and Auto Totem). Item: what it holds; None: nothing of its own. A totem comes instead while your health, less what a blast or the fall could take, is at Health or below, or while you glide. Right gapple and Sword pot bring a gapple or a potion while you hold right click. Refill moves totems the careful way, and fills an empty offhand with one: Inventory opens your inventory for the swap, Hotbar Swap takes one from the hotbar with the swap key; Off moves them with quick clicks. Hotbar refill keeps a totem in a hotbar slot; Double Hand holds one in your hand too while health is low or a crystal near you could kill. Hover: in your inventory, the totem under the pointer goes to your offhand.")
+        Module::new(INV, Category::Combat, "Keeps an item or totem in your offhand.")
             .pick("Item", &["Totem", "Crystal", "Gapple", "Enchanted gapple", "Shield", "Potion", "None"])
             .num("Health", 10.0, 0.0, 36.0, 1.0)
             .bool("Elytra", true)
@@ -44,7 +44,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Switch back delay", 2.0, 0.0, 10.0, 1.0)
             .bool("Double Hand", false)
             .bool("Hover", false),
-        Module::new(THROW, Category::Combat, "A key throws one ender pearl or wind charge from your hotbar (a wind charge straight down, jumping) and goes back to your slot. Hotbar keys: the hotbar key of a pearl or wind charge throws it where you look and keeps your weapon in hand; with Lunge spears, a spear with Lunge jabs (the jab dashes you) and your weapon comes back the same tick.")
+        Module::new(THROW, Category::Combat, "Throws a pearl or wind charge on a key.")
             .text("Pearl key", "None")
             .text("Wind charge key", "None")
             .bool("Hotbar keys", false)

@@ -1560,10 +1560,10 @@ def _():
                 f"after .panic again it says {back_said}, HUD {back}")
 
 
-@test("Profile button")
+@test("Profiles (module)")
 def _():
-    # A profile picked in the menu's Profile list loads; the HUD's label (.profile list's "In use") follows: the name,
-    # "(modified)" after a change, Custom once it is deleted.
+    # A profile picked in the list the Profiles module's row opens loads; the HUD's label (.profile list's "In use")
+    # follows: the name, "(modified)" after a change, Custom once it is deleted.
     def listed():
         mark = log_mark()
         say(".profile list")
@@ -1590,9 +1590,9 @@ def _():
     w, h = gui_size()
     ww, hh = min(w - 16, 300), min(min(max(len(names), 1), 10) * 18 + 47, h - 16)
     x, y = (w - ww) / 2, (h - hh) / 2
-    say(".menu")
+    say(".menu profiles")
     wait(5)
-    ctl("click-at", str(4 + min(max(w * 0.3, 90), 200) / 2), "21")
+    ctl("click-at", *map(str, menu_row(5, 1)))
     wait(3)
     ctl("click-at", str(x + 30), str(y + 25 + 18 * names.index("picked") + 9))
     wait(3)
@@ -2106,13 +2106,13 @@ def _():
 
 
 def watermark():
-    """Gold pixels where the HUD writes its name, top left: whether the HUD is on."""
+    """Accent (orange or gold) pixels where the HUD writes its name, top left: whether the HUD is on."""
     from PIL import Image
     path = f"{SHOTS}/sunset-watermark.png"
     ctl("screenshot", path)
     time.sleep(1)
     im = Image.open(path).convert("RGB")
-    return sum(1 for r, g, b in im.crop((0, 0, im.width // 5, im.height // 14)).getdata() if r > 220 and 130 < g < 210 and b < 90) > 20
+    return sum(1 for r, g, b in im.crop((0, 0, im.width // 5, im.height // 14)).getdata() if r > 200 and 60 < g < 210 and b < 90) > 20
 
 
 @test("Binds (mouse buttons, Hold)")
@@ -2666,10 +2666,18 @@ def _():
         cmd("clear @s", *setup)
         ctl("open-inventory")
         wait(4)
+        ctl("screenshot", f"{SHOTS}/client_sort{op}.png")
+        time.sleep(2)
         w, h = gui_size()
+        # A server can have the recipe book open, which moves the inventory 77 to the right: its dark list is then
+        # where the inventory's left side would be.
+        from PIL import Image
+        img = Image.open(f"{SHOTS}/client_sort{op}.png").convert("L")
+        k = img.width / w
+        shift = 77 if img.getpixel((int(((w - 176) / 2 + 10) * k), int(((h - 166) / 2 + 60) * k))) < 90 else 0
         if key:
             ctl("key", key, "down")
-        ctl("click-at", str((w - 176) / 2 + 176.5), str((h - 166) / 2 + 75.5 + 10 * op))
+        ctl("click-at", str((w - 176) / 2 + shift + 176.5), str((h - 166) / 2 + 75.5 + 10 * op))
         if key:
             ctl("key", key, "up")
         wait(30)

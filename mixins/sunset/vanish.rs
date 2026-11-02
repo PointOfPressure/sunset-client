@@ -11,7 +11,7 @@ use std::sync::Mutex;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new("Anti Vanish", Category::Player, "Says when a player leaves the tab list with no leave message (gone into vanish) or comes back with no join message. Completion check also asks the server whom its /msg completes: one the tab list hides shows up. Watched players: only these (everyone when empty); Server watchlists: a server's own (play.example.net = Steve, Alex; other.net = Bob).")
+        Module::new("Anti Vanish", Category::Player, "Reports vanished players.")
             .num("Interval", 100.0, 20.0, 600.0, 10.0)
             .text("Watched players", "")
             .text("Server watchlists", "")

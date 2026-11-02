@@ -26,7 +26,7 @@ const ACK_TIMEOUT: u64 = 30;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(NAME, Category::Combat, "Places, charges and sets off respawn anchors on enemy players (not in the Nether), never more than Max self damage to you or a friend.")
+        Module::new(NAME, Category::Combat, "Sets off anchors on enemies.")
             .num("Min damage", 6.0, 0.0, 20.0, 0.5)
             .num("Max self damage", 6.0, 0.0, 20.0, 0.5)
             .bool("Render", true)

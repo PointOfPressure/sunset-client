@@ -12,7 +12,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new(
             "Target ESP",
             Category::Render,
-            "Marks your current combat target or the living entity under your crosshair.",
+            "Marks your target.",
         )
         .pick("Target", &["Combat or crosshair", "Combat", "Crosshair"])
         .bool("Players only", false)

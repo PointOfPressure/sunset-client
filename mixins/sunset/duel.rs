@@ -12,19 +12,19 @@ use winit::event::MouseButton;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new("Wind Jump", Category::Movement, "A wind charge you throw on the ground, looking down at least Min pitch: as its blast reaches you, you jump first, so the knockback adds to the jump instead of replacing it. Aiming is up to you.")
+        Module::new("Wind Jump", Category::Movement, "Jumps with wind charges.")
             .num("Min pitch", 60.0, 0.0, 90.0, 5.0)
             .num("Window (ms)", 1500.0, 200.0, 5000.0, 100.0),
-        Module::new("Hold to Eat", Category::Player, "Hold the hotbar key of your golden apples: it switches to them and eats; let go and your slot comes back. Any food: every food's key does it.")
+        Module::new("Hold to Eat", Category::Player, "Eats from a held hotbar key.")
             .bool("Golden apples", true)
             .bool("Any food", false),
-        Module::new("Pearl Catch", Category::Movement, "Throw a pearl upward and a wind charge from your hotbar or offhand follows it: the charge catches the slowing pearl and its blast kicks the pearl higher. Auto works out the delay that sends the pearl highest (up to Max delay) and aims the charge at your pearl; otherwise it waits Delay ticks and throws along your look. At feet: the charge goes straight down instead.")
+        Module::new("Pearl Catch", Category::Movement, "Catches pearls with wind charges.")
             .num("Min look up", 45.0, 0.0, 90.0, 5.0)
             .bool("Auto", true)
             .num("Max delay", 10.0, 1.0, 20.0, 1.0)
             .num("Delay", 2.0, 1.0, 20.0, 1.0)
             .bool("At feet", false),
-        Module::new("Loadouts", Category::Player, "Saved hotbar and offhand layouts, as Duelkit's. Hold the Menu key: let go over a loadout, click it or press its number to equip it (items are moved with the same clicks as number keys in the inventory, matched by item and name); right-click deletes one; Save current keeps what you hold. Also .loadout save [name], .loadout <number or name>, .loadout delete <number or name>.")
+        Module::new("Loadouts", Category::Player, "Hold K for your saved hotbar layouts.")
             .text("Menu key", "K"),
     ]
 }

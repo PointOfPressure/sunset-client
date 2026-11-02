@@ -12,7 +12,7 @@ const NAME: &str = "Packet Mine";
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(NAME, Category::World, "Click a block and it is mined in the background by packets: started at once, finished when the server's break time is up, with the fastest tool in your hotbar held only for that tick (Best tool). Click more blocks to queue them; walk or look away meanwhile. Not on use: no tool swap while you eat or block. A box shows each block, red to green as it gets there.")
+        Module::new(NAME, Category::World, "Mines blocks in the background.")
             .num("Delay (ticks)", 1.0, 0.0, 10.0, 1.0)
             .bool("Rotate", true)
             .bool("Best tool", true)

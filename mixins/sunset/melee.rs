@@ -32,7 +32,7 @@ const INPUT_KEYS: [KeyCode; 4] = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::Control
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(SHIELD, Category::Combat, "Hits a player's raised shield with an axe from your hotbar, which disables it. Passive: only when you or Kill Aura hit them; Auto also hits the shield under your crosshair. Shield held: the axe as soon as they hold a shield, not only once it is up (good players raise it as your hit arrives). Stun slam: falling onto the shield, Kill Aura's axe hit is followed by Mace's mace in the same tick. Holding (Duelkit's): what you must hold for it to swap (sword, axe, spear, mace, trident, empty, other). Back after A delay keeps the axe in hand a random Shortest to Longest delay ticks before your slot comes back.")
+        Module::new(SHIELD, Category::Combat, "Disables shields with an axe.")
             .pick("Mode", &["Passive", "Auto"])
             .text("Holding", "sword,axe,spear,mace,trident,empty")
             .bool("Switch back", true)
@@ -41,7 +41,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Longest delay", 4.0, 1.0, 20.0, 1.0)
             .bool("Shield held", false)
             .bool("Stun slam", true),
-        Module::new(MACE, Category::Combat, "Takes the mace that hits hardest (its enchantments and the target's armour counted) as you fall onto a target, or for Breach. Smash assist hits the target under your crosshair during a real fall. Holding (Duelkit's): what you must hold for it to swap (sword, axe, spear, mace, trident, empty, other). Back after A delay keeps the mace in hand a random Shortest to Longest delay ticks before your slot comes back.")
+        Module::new(MACE, Category::Combat, "Picks the best mace for a fall.")
             .bool("Auto swap", true)
             .pick("Pick", &["Damage", "Wind Burst"])
             .bool("Breach swap", false)
@@ -54,17 +54,17 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Smash timing", &["Delayed", "Direct"])
             .num("Min fall", 3.0, 1.5, 30.0, 0.5)
             .bool("Mobs", false),
-        Module::new(SPEAR, Category::Combat, "The Lunge key lunges with the spear from your hotbar with the most Lunge. Reach poke jabs an enemy along your look past ordinary reach when you click. Spear reach (Duelkit's): holding what Holding lists (a sword or axe), the crosshair reaches as far as the spear in your hotbar, and the spear is selected and put back right before the hit.")
+        Module::new(SPEAR, Category::Combat, "Lunges with your best spear.")
             .text("Lunge key", "None")
             .bool("Reach poke", false)
             .pick("Spear reach", &["Off", "When out of reach", "Every hit"])
             .text("Holding", "sword,axe")
             .bool("Switch back", true),
-        Module::new(TAP, Category::Combat, "Lets go of forward for a tick or more after a charged sprint hit, so the next hit knocks back as a sprint hit again. S Tap presses back instead.")
+        Module::new(TAP, Category::Combat, "Resets sprint between hits.")
             .pick("Mode", &["W Tap", "S Tap"])
             .num("Hold", 1.0, 1.0, 3.0, 1.0),
-        Module::new(JUMP, Category::Combat, "Jumps as knockback hits you while you sprint forward, which takes some of it off."),
-        Module::new(FRIEND, Category::Combat, "Stops your hits (and spear stabs passing through them) on friends.")
+        Module::new(JUMP, Category::Combat, "Jumps to take less knockback."),
+        Module::new(FRIEND, Category::Combat, "Stops hits on friends.")
             .bool("Notifications", true),
     ]
 }

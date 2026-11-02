@@ -23,7 +23,7 @@ type Session = Arc<Mutex<Option<Arc<Counters>>>>;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(CRYSTAL, Category::Combat, "Hold right click with crystals: places and breaks them where you look, as fast as the server takes it, never past Max self damage.")
+        Module::new(CRYSTAL, Category::Combat, "Places and breaks crystals while held.")
             .num("Break delay", 0.0, 0.0, 10.0, 1.0)
             .num("Place delay", 0.0, 0.0, 10.0, 1.0)
             .bool("Auto obsidian", true)
@@ -32,7 +32,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Max self damage", 8.0, 0.0, 20.0, 0.5)
             .bool("Human pace", true)
             .bool("Protect loot", true),
-        Module::new(ANCHOR, Category::Combat, "Right click with an anchor: places it, charges it and sets it off, with a block guarding you first (Safe anchor). Not past your health unless you hold a totem.")
+        Module::new(ANCHOR, Category::Combat, "Places and sets off an anchor.")
             .pick("Mode", &["Single", "Double"])
             .num("Delay", 0.0, 0.0, 5.0, 1.0)
             .bool("Safe anchor", true)

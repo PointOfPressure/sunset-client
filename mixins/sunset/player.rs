@@ -12,13 +12,13 @@ use winit::keyboard::KeyCode;
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
     vec![
-        Module::new("Auto Fish", Player, "Casts and reels in for you.")
+        Module::new("Auto Fish", Player, "Fishes for you.")
             .bool("Auto switch", true)
             .bool("Anti break", true)
             .bool("Auto cast", true)
             .num("Cast delay (ticks)", 14.0, 0.0, 60.0, 1.0)
             .num("Catch delay (ticks)", 6.0, 0.0, 60.0, 1.0),
-        Module::new("Auto Gap", Player, "Eats golden apples when your health is low or an effect is missing.")
+        Module::new("Auto Gap", Player, "Eats golden apples.")
             .bool("Allow egap", true)
             .bool("Always", false)
             .bool("Potions regeneration", false)
@@ -26,10 +26,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Potions absorption", false)
             .bool("Health enabled", true)
             .num("Health threshold", 20.0, 1.0, 40.0, 1.0),
-        Module::new("Auto Steal", Player, "Takes everything out of a chest, barrel, shulker box or hopper as you open it.")
+        Module::new("Auto Steal", Player, "Empties containers you open.")
             .num("Items per tick", 3.0, 1.0, 27.0, 1.0)
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0),
-        Module::new("Inventory Cleaner", Player, "Drops junk from your inventory while it is open. Custom: the listed items (with List mode Blacklist, every item not listed). A preset (PvP, Building, Mining, Survival) keeps the best tool, weapon and armour piece of each kind, building blocks, food, arrows and pearls up to its limits, and drops its Junk; picking one fills in its limits and Junk, which you can then change.")
+        Module::new("Inventory Cleaner", Player, "Drops junk from your inventory.")
             .pick("Preset", &["Custom", "PvP", "Building", "Mining", "Survival"])
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Items", "rotten_flesh,spider_eye,poisonous_potato,gravel,cobblestone,netherrack,cobbled_deepslate,andesite,diorite,granite,tuff")
@@ -39,7 +39,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Pearls", 16.0, 0.0, 64.0, 1.0)
             .text("Junk", PRESETS[0].5)
             .num("Delay (ticks)", 1.0, 0.0, 10.0, 1.0),
-        Module::new("Fast Use", Player, "Lets you use items at very high speeds: the game's use delay becomes Cooldown, for every item (Mode All) or the listed ones and blocks (Some). Throwables (FastXP): experience bottles, pearls, wind charges and the rest as ticked are thrown the tick their cooldown ends while you hold use (Duelkit's Fast throw); Throw mode Delay throws one every Throw delay ticks, Every tick one a tick, Burst throws up to Burst a tick (bottles, snowballs, eggs and splash potions; never more than 15 packets a tick, well under Paper's limit). Off hand: from the offhand while your hand is empty or holds a weapon.")
+        Module::new("Fast Use", Player, "Uses items faster.")
             .pick("Mode", &["All", "Some"])
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Items", "ender_pearl,experience_bottle,snowball,egg")
@@ -55,30 +55,30 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Snowballs and eggs", false)
             .bool("Splash potions", false)
             .bool("Off hand", true),
-        Module::new("Spam", Player, "Spams chat messages. Separate several messages with |.")
+        Module::new("Spam", Player, "Spams chat messages.")
             .text("Messages", "Sunset on top!")
             .num("Delay (ticks)", 20.0, 1.0, 400.0, 1.0)
             .bool("Randomise", false)
             .bool("Bypass", false)
             .num("Bypass length", 16.0, 4.0, 32.0, 1.0),
-        Module::new("Reach", Player, "Longer arms for blocks (on a vanilla server only about 4 blocks more, and only for chests and vehicles). Entity reach: the crosshair picks players and mobs this far out (vanilla and Paper take hits to about 6 blocks; Horizon's own server only to 3).")
+        Module::new("Reach", Player, "Longer reach.")
             .num("Extra block reach", 1.0, 0.0, 6.0, 0.5)
             .num("Entity reach", 4.5, 3.0, 6.0, 0.1),
-        Module::new("Ghost Hand", Player, "Blocks: a right click opens or uses the first container, door, button or lever along your look within reach, through walls. Hits: your click hits the player or mob behind the block you aim at, within reach (not on Horizon's own server, which hits along your look itself).")
+        Module::new("Ghost Hand", Player, "Uses containers through blocks.")
             .bool("Blocks", true)
             .bool("Hits", false),
-        Module::new("Air Place", Player, "Right click places the block you hold where the crosshair points, with nothing to place it against.")
+        Module::new("Air Place", Player, "Places blocks in the air.")
             .num("Range", 5.0, 2.0, 6.0, 0.5),
-        Module::new("Speed Mine", Player, "Mines faster (Meteor's Speed Mine). Damage finishes a block as soon as the server takes it (70% of the way), and with Instamine a block you would break in two ticks the tick after you start it; Normal mines Modifier times faster; Haste gives you Haste (only you see it).")
+        Module::new("Speed Mine", Player, "Mines faster.")
             .pick("Mode", &["Damage", "Normal", "Haste"])
             .text("Blocks", "")
             .pick("Blocks filter", &["Blacklist", "Whitelist"])
             .num("Modifier", 1.4, 0.0, 10.0, 0.1)
             .num("Haste amplifier", 2.0, 1.0, 10.0, 1.0)
             .bool("Instamine", true),
-        Module::new("No Break Reset", Player, "Keeps a block's break progress when you switch the item in your hand while breaking it (the game would start again); the server judges the break with what you hold when it ends. Only to better tools: only when the new one breaks it faster.")
+        Module::new("No Break Reset", Player, "Keeps break progress on item swap.")
             .bool("Only to better tools", false),
-        Module::new("Anchor", Category::Movement, "Stops your movement over a hole so you drop into it.")
+        Module::new("Anchor", Category::Movement, "Pulls you into holes.")
             .num("Max height", 10.0, 1.0, 20.0, 1.0)
             .num("Min pitch", 0.0, -90.0, 90.0, 5.0)
             .bool("Pull", false)

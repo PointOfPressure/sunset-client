@@ -15,7 +15,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new(
             "Radar",
             Category::Render,
-            "Shows nearby players on a round radar. Potato: a plain square with a dot for each player.",
+            "Shows nearby players.",
         )
         .pick("Mode", &["Round", "Potato"])
         .num("Range", 64.0, 8.0, 256.0, 1.0)

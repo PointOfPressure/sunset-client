@@ -17,7 +17,7 @@ const ORES: &str = "coal_ore,deepslate_coal_ore,iron_ore,deepslate_iron_ore,gold
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
     vec![
-        Module::new("Freecam", Render, "Moves the camera away from your body, which stays where it is: fly with W, A, S, D, Space and Shift, through walls (the wheel changes the speed).")
+        Module::new("Freecam", Render, "Moves the camera off your body.")
             .num("Horizontal speed", 1.0, 0.05, 5.0, 0.05)
             .num("Vertical speed", 1.0, 0.05, 5.0, 0.05)
             .bool("Scroll speed", true)
@@ -27,45 +27,45 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Toggle on damage", false)
             .bool("Toggle on death", false)
             .bool("Toggle on log", true),
-        Module::new("Free Look", Render, "Looks around in third person without turning the player, or the other way round.")
+        Module::new("Free Look", Render, "Looks around without turning.")
             .pick("Mode", &["Player", "Camera"])
             .bool("Toggle perspective", true)
             .num("Camera sensitivity", 8.0, 1.0, 20.0, 1.0)
             .bool("Arrows", true)
             .num("Arrow speed", 4.0, 1.0, 10.0, 1.0),
-        Module::new("Xray", Render, "Only draws the listed blocks. Good for mining. Turning it on or off redraws the world. List: Simple ticks ores and valuables, Advanced picks from every block.")
+        Module::new("Xray", Render, "Shows only listed blocks.")
             .pick("List", &["Simple", "Advanced"])
             .text("Blocks", ORES)
             .bool("Show water", false)
             .bool("Show lava", false)
             .bool("Show placed blocks", false)
             .num("Placed blocks kept", 2000.0, 100.0, 10000.0, 100.0),
-        Module::new("Clear Water", Render, "See-through water, from above and from inside it: the water's opacity (100% = as it is), a lighter, less blue tint, and no fog under water. Changes redraw the world.")
+        Module::new("Clear Water", Render, "See-through water.")
             .num("Opacity", 30.0, 0.0, 100.0, 5.0)
             .num("Lighter tint", 50.0, 0.0, 100.0, 5.0)
             .bool("Hide fog", true),
         hand_view(),
-        Module::new("Shulker Peek", Render, "Hovering a shulker box shows what is in it, in a grid the colour of the box (a middle click keeps it open); hovering an ender chest shows what was in yours when you last opened it.")
+        Module::new("Shulker Peek", Render, "Shows what is in a shulker box.")
             .bool("Ender chest", true),
-        Module::new("Tunnel ESP", Render, "Highlights one-block tunnels.")
+        Module::new("Tunnel ESP", Render, "Highlights tunnels.")
             .pick("Mode", &["Box", "Outline", "Potato"])
             .num("Range", 24.0, 8.0, 48.0, 4.0)
             .num("Height", 0.1, 0.02, 1.0, 0.02)
             .num("Max", 1000.0, 50.0, 4000.0, 50.0),
-        Module::new("Void ESP", Render, "Marks holes in the bedrock that lead to the void.")
+        Module::new("Void ESP", Render, "Marks holes to the void.")
             .pick("Mode", &["Box", "Outline", "Potato"])
             .bool("Air only", false)
             .num("Horizontal radius", 32.0, 8.0, 64.0, 4.0)
             .num("Hole height", 1.0, 1.0, 5.0, 1.0)
             .bool("Nether roof", true)
             .num("Max", 1000.0, 50.0, 4000.0, 50.0),
-        Module::new("Light Overlay", Render, "Shows the blocks where mobs can spawn: red always, yellow in the day. Potato: a dot on each.")
+        Module::new("Light Overlay", Render, "Shows mob spawn spots.")
             .pick("Mode", &["Cross", "Potato"])
             .num("Horizontal range", 8.0, 2.0, 16.0, 1.0)
             .num("Vertical range", 4.0, 1.0, 8.0, 1.0)
             .num("Light level", 0.0, 0.0, 15.0, 1.0)
             .num("Max", 1000.0, 50.0, 4000.0, 50.0),
-        Module::new("No Render", Render, "Hides fog, darkness, blindness, nausea, screen overlays (fire, water, in a wall, pumpkin, powder snow) and particles (all, or the types in Particles). A switch that is on hides it.")
+        Module::new("No Render", Render, "Hides fog and overlays.")
             .bool("Hide fog", true)
             .bool("Hide water fog", true)
             .bool("Hide lava and powder snow fog", false)
@@ -78,9 +78,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Hide pumpkin, spyglass and powder snow overlays", false)
             .bool("Hide all particles", false)
             .text("Particles", ""),
-        Module::new("Timer", World, "Changes the speed the game runs at.")
+        Module::new("Timer", World, "Changes game speed.")
             .num("Multiplier", 2.0, 0.1, 10.0, 0.1),
-        Module::new("No Slow", Movement, "Controls item-use movement slowdown.")
+        Module::new("No Slow", Movement, "No item-use slowdown.")
             .num("Ground %", 100.0, 20.0, 100.0, 5.0)
             .num("Air %", 100.0, 20.0, 100.0, 5.0),
     ]
@@ -468,7 +468,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
 // Hand View (Meteor's): each arm and what it holds moved (in blocks), turned (degrees) and sized, and the sway the
 // hands have when the view turns taken away.
 fn hand_view() -> Module {
-    let mut m = Module::new("Hand View", Category::Render, "Moves, turns and sizes your hands and what they hold in first person, each hand on its own (small hands: Scale under 1). No sway keeps them still when you turn.")
+    let mut m = Module::new("Hand View", Category::Render, "Moves and sizes your hands.")
         .bool("No sway", false);
     for (scale, x, y, z, rx, ry, rz) in [
         ("Right scale", "Right X", "Right Y", "Right Z", "Right turn X", "Right turn Y", "Right turn Z"),

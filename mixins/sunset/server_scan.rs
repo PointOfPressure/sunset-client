@@ -30,7 +30,7 @@ static QUERY_RUNNING: AtomicBool = AtomicBool::new(false);
 static STATE: Mutex<Option<Session>> = Mutex::new(None);
 
 pub(super) fn defaults() -> Vec<Module> {
-    vec![Module::new("Server Scan", Category::Player, "Shows server-reported software, visible plugin commands and channels. Extended checks run only with .scan run.")
+    vec![Module::new("Server Scan", Category::Player, "Shows what the server reports about itself.")
         .pick("Mode", &["Passive", "Extended"])
         .bool("Query", true)
         .bool("Command suggestions", true)

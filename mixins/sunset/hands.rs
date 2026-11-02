@@ -12,7 +12,7 @@ const RF: &str = "RF Click";
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(RF, Category::Player, "R is the left mouse button and F the right one, pressed and held for real (break, attack, use, drag), in the world and in inventories and menus. Never while you type: chat, signs, books, search and name boxes, a bind being chosen.")
+        Module::new(RF, Category::Player, "R and F act as mouse buttons.")
             .text("Left key", "R")
             .text("Right key", "F"),
     ]
