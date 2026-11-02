@@ -654,20 +654,22 @@ fn gear(item: &str) -> Option<(&str, u32)> {
 fn junk_slots(game: &Game<'_>, m: &Module) -> Vec<usize> {
     let item = |i: usize| game.inventory.get(i).and_then(|s| s.as_ref());
     let mut out = Vec::new();
-    let mut best: Vec<(&str, u32, usize)> = Vec::new();
-    for i in (0..36).chain(36..40) {
+    // What you wear is the best so far of its kind, and never dropped.
+    const WORN: usize = usize::MAX;
+    let mut best: Vec<(&str, u32, usize)> =
+        game.armor.iter().flatten().filter_map(|s| gear(short(&s.item)).map(|(kind, tier)| (kind, tier, WORN))).collect();
+    for i in 0..36 {
         let Some((kind, tier)) = item(i).and_then(|s| gear(short(&s.item))) else {
             continue;
         };
         match best.iter_mut().find(|b| b.0 == kind) {
-            Some(b) if tier > b.1 || (tier == b.1 && i >= 36) => {
-                if b.2 < 36 {
+            Some(b) if tier > b.1 => {
+                if b.2 != WORN {
                     out.push(b.2);
                 }
                 *b = (kind, tier, i);
             }
-            Some(_) if i < 36 => out.push(i),
-            Some(_) => {}
+            Some(_) => out.push(i),
             None => best.push((kind, tier, i)),
         }
     }
