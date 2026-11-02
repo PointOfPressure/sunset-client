@@ -6,12 +6,81 @@ use horizon_protocol::packets::play::Clientbound as C;
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[derive(Debug)]
+pub enum ScanEvent { Brand(String), ConfigBrand(String), Channel(String), ConfigChannel(String), Commands, Reconfigured, Overflow }
+static SCAN_ACTIVE: AtomicBool = AtomicBool::new(false);
+static SCAN: Mutex<VecDeque<ScanEvent>> = Mutex::new(VecDeque::new());
+
+pub fn scan_enable(on: bool) {
+    SCAN_ACTIVE.store(on, Ordering::Relaxed);
+    if !on { SCAN.lock().unwrap_or_else(|e| e.into_inner()).clear(); }
+}
+
+pub fn scan_clear() { SCAN.lock().unwrap_or_else(|e| e.into_inner()).clear(); }
+
+fn scan_push(event: ScanEvent) {
+    let mut queue = SCAN.lock().unwrap_or_else(|e| e.into_inner());
+    scan_push_to(&mut queue, event);
+}
+
+fn scan_push_to(queue: &mut VecDeque<ScanEvent>, event: ScanEvent) {
+    if queue.len() == 256 {
+        queue.clear();
+        queue.push_back(ScanEvent::Overflow);
+    }
+    queue.push_back(event);
+}
+
+pub fn scan_config(payload: &horizon_protocol::packets::configuration::CustomPayload) {
+    if !SCAN_ACTIVE.load(Ordering::Relaxed) { return; }
+    let id = &payload.channel;
+    if id.len() > 128 || !id.is_ascii() { return; }
+    scan_push(ScanEvent::ConfigChannel(id.clone()));
+    if id == "minecraft:brand" {
+        if let Ok(brand) = horizon_protocol::buf::Reader::new(&payload.data).string(128) {
+            scan_push(ScanEvent::ConfigBrand(brand));
+        }
+    }
+}
+
+pub fn scan_take() -> VecDeque<ScanEvent> {
+    std::mem::take(&mut *SCAN.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::*;
+
+    #[test]
+    fn scan_queue_is_bounded_and_marks_lost_evidence() {
+        let mut queue = VecDeque::new();
+        for _ in 0..1024 { scan_push_to(&mut queue, ScanEvent::Commands); }
+        assert!(queue.len() <= 256);
+        assert!(queue.iter().any(|event| matches!(event, ScanEvent::Overflow)));
+    }
+}
 
 static SEEN: Mutex<Vec<C>> = Mutex::new(Vec::new());
 
 pub fn seen(events: &[super::Event]) {
+    let scan_active = SCAN_ACTIVE.load(Ordering::Relaxed);
     let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
     for event in events {
+        if scan_active {
+            match event {
+                super::Event::Brand(brand) => scan_push(ScanEvent::Brand(brand.chars().take(128).collect())),
+                super::Event::Reconfigured(_) => scan_push(ScanEvent::Reconfigured),
+                super::Event::Packet(packet) => match &**packet {
+                    C::Commands(_) => scan_push(ScanEvent::Commands),
+                    C::CustomPayload(payload) if payload.channel.len() <= 128 && payload.channel.is_ascii() =>
+                        scan_push(ScanEvent::Channel(payload.channel.clone())),
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
         if let super::Event::Packet(p) = event
             && matches!(
                 **p,

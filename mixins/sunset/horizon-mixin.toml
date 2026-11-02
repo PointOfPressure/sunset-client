@@ -81,6 +81,32 @@ name = "sunset_vanish"
 source = "vanish.rs"
 
 [[module]]
+id = "server_scan"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_server_scan"
+source = "server_scan.rs"
+visibility = "pub(crate)"
+
+[[module]]
+id = "server_scan_signatures"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_server_scan_signatures"
+source = "server_scan_signatures.rs"
+
+[[module]]
+id = "server_scan_query"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_server_scan_query"
+source = "server_scan_query.rs"
+
+[[module]]
+id = "server_scan_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_server_scan_remote"
+source = "server_scan_remote.rs"
+visibility = "pub(crate)"
+
+[[module]]
 id = "sky"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_sky"
@@ -911,6 +937,13 @@ bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
   { name = "data", ty = "&[u8]", value = "data" },
 ]
+
+[[injection]]
+id = "server_scan_config_channel"
+kind = "HEAD"
+target = "horizon_client::net::receive_brand"
+helper = "server_scan_channel.rs"
+bindings = [{ name = "payload", ty = "&horizon_protocol::packets::configuration::CustomPayload", value = "payload" }]
 
 [[module]]
 id = "crosshair"

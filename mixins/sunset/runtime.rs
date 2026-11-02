@@ -357,6 +357,12 @@ impl Module {
                 "Rotation speed" => advanced && self.b("Rotate"),
                 _ => true,
             },
+            "Server Scan" => match name {
+                "Query" | "Command suggestions" => self.p("Mode") == "Extended",
+                "Query port" => self.p("Mode") == "Extended" && self.b("Query"),
+                "Custom port" => self.p("Mode") == "Extended" && self.b("Query") && self.p("Query port") == "Custom",
+                _ => true,
+            },
             _ => true,
         }
     }
@@ -772,6 +778,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
     v.extend(super::sunset_vanish::defaults());
+    v.extend(super::sunset_server_scan::defaults());
     v.extend(super::sunset_extras::defaults());
     // Modules that only draw can be held on with their bind instead of toggled.
     for m in v.iter_mut().filter(|m| holds(m.name)) {
@@ -1713,6 +1720,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
             }
             "Anchor Aura" => super::sunset_anchor_aura::disabled(game),
             "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
+            "Server Scan" => super::sunset_server_scan::disabled(),
             _ => {},
         }
     }
@@ -2481,6 +2489,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_packet_mine::tick(game);
     super::sunset_extras::tick(game, &mods);
     super::sunset_vanish::tick(game, mods.iter().find(|m| m.name == "Anti Vanish" && m.on));
+    super::sunset_server_scan::tick(game, mods.iter().find(|m| m.name == "Server Scan" && m.on));
     crit_tick(game);
     if let Some(m) = get("Kill Aura") {
         kill_aura(game, m, get("Criticals").is_some());
@@ -5040,6 +5049,7 @@ const HELP: &[(&str, &str)] = &[
     (".reset <module>", "put a module back to its defaults"),
     (".panic", "turn every module off and hide Sunset (.panic again brings it back)"),
     (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
+    (".scan [plugins|commands|details|run]", "show server-reported findings; run optional Extended checks manually"),
     (".auradebug", "why Kill Aura did what it did last, and who has the hand"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
@@ -5064,6 +5074,7 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
 }
 
 pub(super) fn panic_off(game: &mut Game<'_>) {
+    super::sunset_server_scan::disabled();
     super::agent::sunset_goto::cancel(game, "stopped by Panic");
     combat_cleanup(game);
     if let Some((yaw, pitch)) = with(panic_off_state) {
@@ -5200,6 +5211,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
     };
     match cmd.as_str() {
         "auradebug" => say(game, &super::sunset_aura::diagnostics()),
+        "scan" => super::sunset_server_scan::command(game, &args[1..]),
         "goto" => {
             let text = super::agent::sunset_goto::command(game, &args[1..]).unwrap_or_else(|e| e);
             say(game, &text);
@@ -5355,6 +5367,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                     s.modules[i] = fresh;
                     s.modules[i].name
                 });
+                if name == "Server Scan" { super::sunset_server_scan::disabled(); }
                 save(game);
                 say(game, &format!("{name} reset."));
             }
@@ -7799,6 +7812,25 @@ mod movement_config_tests {
         let mut restored = State::new();
         restored.load_text(&state.save_text());
         assert_eq!(restored.module("Fast Place").unwrap().n("Speed"), 3.0);
+    }
+
+    #[test]
+    fn server_scan_settings_round_trip_and_extended_controls_are_conditional() {
+        let mut state = State::new();
+        let scan = state.modules.iter_mut().find(|m| m.name == "Server Scan").unwrap();
+        let port = scan.settings.iter().position(|s| s.name == "Custom port").unwrap();
+        assert!(!scan.setting_visible(port));
+        for (name, value) in [("Mode", "Extended"), ("Query port", "Custom"), ("Custom port", "25575")] {
+            scan.settings.iter_mut().find(|s| s.name == name).unwrap().parse(value);
+        }
+        assert!(scan.setting_visible(port));
+        let saved = state.save_text();
+        let mut loaded = State::new();
+        loaded.load_text(&saved);
+        let scan = loaded.module("Server Scan").unwrap();
+        assert_eq!(scan.p("Mode"), "Extended");
+        assert_eq!(scan.p("Query port"), "Custom");
+        assert_eq!(scan.n("Custom port"), 25575.0);
     }
 
     #[test]
