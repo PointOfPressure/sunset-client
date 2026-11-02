@@ -9,9 +9,18 @@ const STEP: f32 = 10.0;
 // Their left edge: 4 in from the screen's right one (176), as ClientSort's offset puts them.
 const X: f32 = 172.0;
 
-// Each button: its corner, which of the three it is, and the slots of its part.
+// Each button: its corner, which of the three it is, and the slots of its part. Horizon's parts, and your main
+// inventory's always (on a server Horizon gives your own inventory none).
 fn buttons(game: &Game<'_>) -> Vec<((f32, f32), usize, Vec<usize>)> {
-    game.sort_buttons()
+    let mut parts = game.sort_buttons();
+    if game.screen == super::Screen::Inventory
+        && game.station.is_none()
+        && !game.mount_active()
+        && !parts.iter().any(|(_, slots)| slots.first() == Some(&9))
+    {
+        parts.push(((160.0, game.screen_height() - 95.0), (9..36).collect()));
+    }
+    parts
         .into_iter()
         .flat_map(|((_, y), slots)| (0..3).map(move |op| ((X, y + op as f32 * STEP), op, slots.clone())))
         .collect()
