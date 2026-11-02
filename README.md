@@ -8,7 +8,7 @@
 <h1 align="center">Sunset</h1>
 
 <p align="center">A native utility client for <a href="https://github.com/horizon-rust/horizon">Horizon</a> on Minecraft 26.3.</p>
-<p align="center"><a href="https://github.com/PointOfPressure/sunset-client/releases/latest">Latest release</a> · <a href="#install">Install</a> · <a href="#features">Features</a> · <a href="CONTRIBUTING.md">Contribute</a></p>
+<p align="center"><a href="https://github.com/PointOfPressure/sunset-client/releases/latest">Latest release</a> · <a href="#install">Install</a> · <a href="#features">Features</a> · <a href="https://discord.gg/fhD2frFdzm">Discord</a> · <a href="CONTRIBUTING.md">Contribute</a></p>
 
 Sunset brings 100+ modules for combat, movement, building and rendering to Horizon, with a configurable ClickGUI,
 key binds, chat commands and saved profiles. It takes inspiration from
@@ -137,8 +137,8 @@ update Sunset with the installer again.
 - **The command did nothing on Windows**: run it in *PowerShell*, not Command Prompt.
 - **No Sunset in game**: you played the plain **Horizon** instance. Pick **Native mods**.
 - **The first build is slow**: yes. It compiles the whole game once.
-- **Installer or launch still fails**: open an [issue](https://github.com/PointOfPressure/sunset-client/issues)
-  with the installer output, your OS and the Horizon version.
+- **Installer or launch still fails**: open a ticket on the [Discord](https://discord.gg/fhD2frFdzm) or an
+  [issue](https://github.com/PointOfPressure/sunset-client/issues) with the installer output, your OS and the Horizon version.
 
 ## Plugins
 
