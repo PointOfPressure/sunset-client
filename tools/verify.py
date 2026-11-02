@@ -1611,11 +1611,16 @@ def gui_size():
     return w / scale, h / scale
 
 
+def panel_width():
+    """A panel's width at the defaults: 100, or less so that the six (Combat to Extras) fit in a row."""
+    w, _ = gui_size()
+    return min(100, (w - 4 - 3 * 5) // 6)
+
+
 def menu_row(panel, row):
     """The middle of a row of a panel (Combat 0, Movement 1, Player 2...) as the menu first lays them out at the
     defaults (Comfortable spacing): row 0 is the header, then rows of 14."""
-    w, _ = gui_size()
-    width = min(100, (w - 4 - 3 * 4) // 5)
+    width = panel_width()
     return 2 + panel * (width + 3) + 30, 32 + 16 + 14 * (row - 1) + 7 if row else 32 + 8
 
 
@@ -2087,7 +2092,7 @@ def _():
     # A module with no settings (Auto Walk) gets a window too, centred 40 down, holding its bind: title, one line of
     # description, the Bind group's name, the Bind row.
     w, _ = gui_size()
-    panel = min(100, (w - 4 - 3 * 4) // 5)
+    panel = panel_width()
     ww = min(max(panel * 1.6, 150), w - 8)
     x = (w - ww) / 2
     bind_row = (x + ww / 2, 40 + 16 + 14 + 14 + 7)
