@@ -2,6 +2,7 @@
 use super::{Game, sunset::{Shape, accent}};
 
 const ROW: f32 = 18.0;
+#[derive(Clone, Debug)]
 pub(super) struct Menu {
     pub names: Vec<String>,
     pub error: Option<String>,

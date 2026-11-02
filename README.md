@@ -86,6 +86,12 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the same way:
 `.set xray blocks diamond_ore,ancient_debris`.
 
+The HUD shows the selected profile below the watermark. The **Profile** button at the top left of ClickGUI
+opens the saved-profile chooser; click a row, or use the arrow keys and Enter, to load it. The selected row is
+marked **Selected**. Manual setting changes add **(modified)** to the label, and the selection survives a
+restart. **Custom** means there is no named selection. Importing alone does not select a profile, and
+`.profile load before-load` restores the previous settings and selection.
+
 ## Features
 
 Speed has Vanilla, Strafe, Smooth, Low Hop and Custom modes. Velocity can scale or blend knockback; Scaffold counts
