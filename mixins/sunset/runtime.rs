@@ -804,6 +804,7 @@ pub(super) struct State {
     pub(super) friends: Vec<String>,
     // The config file as read: modules a plugin registers later take their saved settings from it.
     raw: String,
+    selection: super::sunset_profiles::Selection,
     // Keys this mod held down for the tick (Auto Walk, Sprint).
     injected: Vec<KeyCode>,
     loaded: bool,
@@ -910,6 +911,7 @@ impl State {
             inputs: Inputs::default(),
             friends: Vec::new(),
             raw: String::new(),
+            selection: super::sunset_profiles::Selection::default(),
             injected: Vec::new(),
             loaded: false,
             ticks: 0,
@@ -996,15 +998,8 @@ impl State {
         self.modules.iter().position(|m| norm(m.name) == n)
     }
     fn save_text(&self) -> String {
-        let mut out = String::new();
-        for (i, m) in self.modules.iter().enumerate() {
-            let id = norm(m.name);
-            out.push_str(&format!("{id}.on={}\n", self.inputs.saved_on(i, m.on)));
-            out.push_str(&format!("{id}.key={}\n", m.key.as_deref().unwrap_or("none")));
-            for s in &m.settings {
-                out.push_str(&format!("{id}.{}={}\n", norm(s.name), s.stored()));
-            }
-        }
+        let mut out = self.module_text();
+        out.push_str(&format!("profile-selection={}\n", self.selection.stored()));
         out.push_str(&format!("friends={}\n", self.friends.join(",")));
         for w in &self.waypoints {
             out.push_str(&format!("waypoint={}|{}|{}|{}|{}\n", w.name, w.pos[0], w.pos[1], w.pos[2], w.dim));
@@ -1017,14 +1012,31 @@ impl State {
         }
         out
     }
+    fn module_text(&self) -> String {
+        let mut out = String::new();
+        for (i, m) in self.modules.iter().enumerate() {
+            let id = norm(m.name);
+            out.push_str(&format!("{id}.on={}\n", self.inputs.saved_on(i, m.on)));
+            out.push_str(&format!("{id}.key={}\n", m.key.as_deref().unwrap_or("none")));
+            for s in &m.settings {
+                out.push_str(&format!("{id}.{}={}\n", norm(s.name), s.stored()));
+            }
+        }
+        out
+    }
     fn load_text(&mut self, text: &str) {
         self.waypoints.clear();
         self.loadouts.clear();
+        self.selection = super::sunset_profiles::Selection::default();
         for line in merged_modules(text).lines() {
             let Some((k, v)) = line.split_once('=') else {
                 continue;
             };
             let v = v.trim();
+            if k == "profile-selection" {
+                self.selection.restore(v);
+                continue;
+            }
             if let Some(cat) = k.strip_prefix("panel.") {
                 let parts: Vec<&str> = v.split(',').collect();
                 if let (Some(i), [x, y, c]) = (CATEGORIES.iter().position(|c| norm(c.label()) == cat), parts.as_slice())
@@ -1054,6 +1066,8 @@ impl State {
             }
             self.set_field(k, v);
         }
+        let snapshot = self.module_text();
+        self.selection.refresh(&snapshot);
     }
     // One "module.field=value" line of a config or a profile.
     fn set_field(&mut self, k: &str, v: &str) {
@@ -1107,7 +1121,24 @@ impl State {
     }
     // The modules' states, settings and keys: a profile.
     fn profile_text(&self) -> String {
-        self.save_text().lines().filter(|l| !l.starts_with("panel.") && !l.starts_with("waypoint=") && !l.starts_with("friends=")).collect::<Vec<_>>().join("\n")
+        self.module_text().trim_end().to_owned()
+    }
+    // Migration for configs saved before selection metadata existed. Only a
+    // unique, valid match may claim a name; a partial profile compares its fields.
+    fn matches_profile(&self, body: &str) -> bool {
+        !body.trim().is_empty() && merged_modules(body).lines().filter(|l| !l.trim().is_empty()).all(|line| {
+            let Some((key, value)) = line.split_once('=') else { return false; };
+            let Some((id, field)) = key.split_once('.') else { return false; };
+            let Some((i, module)) = self.modules.iter().enumerate().find(|(_, m)| norm(m.name) == id) else { return false; };
+            match field {
+                "on" => self.inputs.saved_on(i, module.on) == (value.trim() == "true"),
+                "key" => module.key == key_from_text(value.trim()),
+                _ => module.settings.iter().find(|s| norm(s.name) == field).is_some_and(|s| {
+                    let mut parsed = s.clone();
+                    parsed.parse(value.trim()) && parsed.stored() == s.stored()
+                }),
+            }
+        })
     }
     fn load_profile(&mut self, text: &str) {
         for line in merged_modules(text).lines() {
@@ -1375,12 +1406,27 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
         s.loaded = true;
         sync_flags(s);
     });
+    if !text.lines().any(|l| l.starts_with("profile-selection=")) {
+        if let Ok(store) = super::sunset_profiles::Store::new(game.native_data_dir(ID))
+            && let Ok(names) = store.list()
+        {
+            let matches: Vec<String> = names.into_iter().filter(|n| n != super::sunset_profiles::BACKUP).filter(|n| {
+                store.read(n).is_ok_and(|text| with(|s| s.check_profile(&text).is_ok_and(|body| s.matches_profile(body))))
+            }).collect();
+            if let [name] = matches.as_slice() {
+                with(|s| { let snapshot = s.module_text(); s.selection.choose(name, &snapshot); });
+            }
+        }
+        save(game);
+    }
 }
 
 pub(super) fn save(game: &Game<'_>) {
     let text = with(|s| {
         release_changed_binds(s);
         sync_flags(s);
+        let snapshot = s.module_text();
+        s.selection.refresh(&snapshot);
         s.save_text()
     });
     game.native_set_setting(ID, "config", &text);
@@ -5085,8 +5131,12 @@ pub(super) fn panic_off(game: &mut Game<'_>) {
 // Profiles (`.profile`): files in the mod's data folder (sunset_profiles), with a backup of the settings before every
 // load. Profiles from before 0.9 (kept in the mod's settings) move into files the first time.
 fn profile_command(game: &mut Game<'_>, args: &[&str]) {
+    let result = profile_action(game, args);
+    say(game, &result.unwrap_or_else(|e| format!("Profile: {e}.")));
+}
+
+fn profile_action(game: &mut Game<'_>, args: &[&str]) -> Result<String, String> {
     use super::sunset_profiles::{self as profiles, BACKUP, HEADER};
-    let result = (|| -> Result<String, String> {
         let store = profiles::Store::new(game.native_data_dir(ID))?;
         let old: Vec<String> = game.native_setting(ID, "profiles").unwrap_or_default().split(',').filter(|n| !n.is_empty()).map(str::to_owned).collect();
         for n in &old {
@@ -5116,6 +5166,8 @@ fn profile_command(game: &mut Game<'_>, args: &[&str]) {
             "save" => {
                 let text = with(|s| s.profile_text());
                 store.write(&name, &format!("{HEADER}\n{text}\n"))?;
+                with(|s| { let snapshot = s.module_text(); s.selection.choose(&name, &snapshot); });
+                save(game);
                 Ok(format!("Saved profile {name}."))
             }
             "load" => {
@@ -5123,12 +5175,19 @@ fn profile_command(game: &mut Game<'_>, args: &[&str]) {
                 let body = with(|s| s.check_profile(&text).map(str::to_owned))?;
                 let before = with(|s| s.profile_text());
                 store.write(BACKUP, &format!("{HEADER}\n{before}\n"))?;
-                with(|s| s.load_profile(&body));
+                with(|s| {
+                    s.load_profile(&body);
+                    release_changed_binds(s);
+                    let snapshot = s.module_text();
+                    s.selection.loaded(&name, &snapshot);
+                });
                 save(game);
                 Ok(format!("Loaded profile {name}. .profile load {BACKUP} puts the settings back as they were."))
             }
             "delete" => {
                 store.delete(&name)?;
+                with(|s| s.selection.deleted(&name));
+                save(game);
                 Ok(format!("Deleted profile {name}."))
             }
             "export" => Ok(format!("Profile {name} is in {}", store.export(&name)?.display())),
@@ -5140,8 +5199,6 @@ fn profile_command(game: &mut Game<'_>, args: &[&str]) {
             }
             _ => Err("use .profile save|load|delete|export|import <name>, or .profile list".into()),
         }
-    })();
-    say(game, &result.unwrap_or_else(|e| format!("Profile: {e}.")));
 }
 
 fn apply_movement_preset(state: &mut State, style: &str) -> bool {
@@ -5758,6 +5815,9 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             let tw = game.native_text_width(&text);
             let (x, y) = corners.place(Corner::TopLeft, tw + 4.0, 12.0);
             shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], accent()));
+            let text = with(|s| format!("Profile: {}", s.selection.label()));
+            let (x, y) = corners.place(Corner::TopLeft, game.native_text_width(&text) + 4.0, 12.0);
+            shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], 0xE4E4E4));
         }
         if hud.b("Module list") && game.native_corner_shown(Corner::TopRight) {
             let mut lines: Vec<String> = mods
@@ -6447,6 +6507,7 @@ pub(super) enum Drag {
 
 #[derive(Clone, Debug)]
 pub(super) struct Gui {
+    profile_menu: Option<super::sunset_profile_menu::Menu>,
     open: bool,
     // Esc or the menu key closes it at the next frame, so the same key
     // press can't also reach the game (Esc would open the pause menu).
@@ -6583,6 +6644,7 @@ pub(super) fn text_event(event: &winit::event::WindowEvent) {
 impl Default for Gui {
     fn default() -> Self {
         Self {
+            profile_menu: None,
             open: false,
             closing: false,
             select_all: false,
@@ -6873,6 +6935,10 @@ pub(super) fn gui_wheel(game: &Game<'_>, steps: f32) {
     with(|s| {
         // An open picker's list scrolls, wherever the pointer is.
         let (view_w, view_h) = (s.gui.view_w, s.gui.view_h);
+        if let Some(menu) = &mut s.gui.profile_menu {
+            menu.scroll((-steps * 3.0) as i32, view_w, view_h);
+            return;
+        }
         if let Some(Editor { module, setting, draft: Ok(draft), list: Some(picker), .. }) = &mut s.gui.editor {
             use super::sunset_picker as pick;
             let count = match &s.modules[*module].settings[*setting].value {
@@ -6938,6 +7004,7 @@ pub(super) fn open_gui(game: &mut Game<'_>) {
 
 pub(super) fn close_gui(game: &mut Game<'_>) {
     with(|s| {
+        s.gui.profile_menu = None;
         s.gui.open = false;
         s.gui.closing = false;
         s.gui.drag = None;
@@ -6980,6 +7047,18 @@ pub(super) fn gui_open() -> bool {
 // A key while the GUI is open: a bind being chosen, or Esc and the menu key
 // closing it. Every key stops here.
 pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
+    if with(|s| s.gui.profile_menu.is_some()) {
+        let choice = with(|s| {
+            if name == "key.keyboard.escape" {
+                s.gui.profile_menu = None;
+                return None;
+            }
+            let (w, h) = (s.gui.view_w, s.gui.view_h);
+            s.gui.profile_menu.as_mut().and_then(|m| m.key(name, w, h))
+        });
+        if let Some(name) = choice { load_profile_from_menu(game, &name); }
+        return;
+    }
     // The editor takes every key: from the window's event already (text_event), or else here (a key without text of
     // its own, as horizon-ctl's are, types its letter).
     if with(|s| s.gui.editor.is_some() || std::mem::take(&mut s.gui.typed)) {
@@ -7120,6 +7199,31 @@ pub(super) fn key_char(name: &str) -> Option<char> {
 pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) {
     use winit::event::MouseButton;
     let at = gui_cursor(game);
+    if with(|s| s.gui.profile_menu.is_some()) {
+        if button == MouseButton::Left {
+            let choice = with(|s| {
+                let (w, h) = (s.gui.view_w, s.gui.view_h);
+                let menu = s.gui.profile_menu.as_ref()?;
+                if menu.closes(at, w, h) { s.gui.profile_menu = None; return None; }
+                menu.click(at, w, h)
+            });
+            if let Some(name) = choice { load_profile_from_menu(game, &name); }
+        }
+        return;
+    }
+    if button == MouseButton::Left && with(|s| s.gui.editor.is_none() && s.binding.is_none()
+        && inside(super::sunset_profile_menu::button(s.gui.view_w), at))
+    {
+        let result = super::sunset_profiles::Store::new(game.native_data_dir(ID)).and_then(|store| store.list());
+        with(|s| {
+            let mut menu = super::sunset_profile_menu::Menu::new(result.as_ref().cloned().unwrap_or_default(), s.selection.selected());
+            menu.reveal(s.gui.view_w, s.gui.view_h);
+            menu.error = result.err();
+            s.gui.profile_menu = Some(menu);
+            s.gui.drag = None;
+        });
+        return;
+    }
     // A bind being chosen takes any button but the left one (which clicks as ever).
     let captured = with(|s| {
         let i = s.binding.filter(|_| button != MouseButton::Left && s.gui.editor.is_none())?;
@@ -7722,6 +7826,17 @@ pub(super) fn draw_gui(game: &Game<'_>, w: f32, h: f32, px: f32, out: &mut Vec<S
     let hint = "Right click: settings   Enter: toggle search result   Esc: close";
     let hw = game.native_text_width(hint);
     out.push(Shape::Text(hint.to_owned(), [(w - hw) / 2.0, 3.0], 0xA0A0A0));
+    with(|s| super::sunset_profile_menu::draw(game, w, h, at, &s.selection.label(), s.selection.selected(), s.gui.profile_menu.as_ref(), out));
+}
+
+fn load_profile_from_menu(game: &mut Game<'_>, name: &str) {
+    match profile_action(game, &["load", name]) {
+        Ok(message) => {
+            with(|s| { s.gui.profile_menu = None; s.binding = None; s.gui.drag = None; });
+            say(game, &message);
+        }
+        Err(message) => with(|s| { if let Some(menu) = &mut s.gui.profile_menu { menu.error = Some(message); } }),
+    }
 }
 #[cfg(test)]
 mod movement_config_tests {
