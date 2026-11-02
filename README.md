@@ -92,6 +92,9 @@ marked **Selected**. Manual setting changes add **(modified)** to the label, and
 restart. **Custom** means there is no named selection. Importing alone does not select a profile, and
 `.profile load before-load` restores the previous settings and selection.
 
+**HUD > Module list** displays the modules currently enabled and updates as they toggle.
+**Module list side** places that list on the Left or Right; left-side entries align below the watermark.
+
 ## Features
 
 Speed has Vanilla, Strafe, Smooth, Low Hop and Custom modes. Velocity can scale or blend knockback; Scaffold counts

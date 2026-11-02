@@ -494,6 +494,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Font", &horizon_client::font::sunset_fontdata::LABELS)
             .bool("Watermark", true)
             .bool("Module list", true)
+            .pick("Module list side", &["Right", "Left"])
             .bool("Coordinates", true)
             .bool("FPS", true)
             .bool("Speed", false)
@@ -5819,7 +5820,8 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             let (x, y) = corners.place(Corner::TopLeft, game.native_text_width(&text) + 4.0, 12.0);
             shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], 0xE4E4E4));
         }
-        if hud.b("Module list") && game.native_corner_shown(Corner::TopRight) {
+        let list_corner = if hud.p("Module list side") == "Left" { Corner::TopLeft } else { Corner::TopRight };
+        if hud.b("Module list") && game.native_corner_shown(list_corner) {
             let mut lines: Vec<String> = mods
                 .iter()
                 .filter(|m| m.on && m.name != "HUD")
@@ -5833,10 +5835,11 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             order.sort_by(|&a, &b| widths[b].total_cmp(&widths[a]));
             let max = widths.iter().copied().fold(0.0, f32::max);
             if !lines.is_empty() {
-                let (x, y) = corners.place(Corner::TopRight, max + 4.0, lines.len() as f32 * 10.0 + 2.0);
+                let (x, y) = corners.place(list_corner, max + 4.0, lines.len() as f32 * 10.0 + 2.0);
                 for (row, &i) in order.iter().enumerate() {
                     let text = std::mem::take(&mut lines[i]);
-                    shapes.push(Shape::Text(text, [x + max + 2.0 - widths[i], y + 2.0 + row as f32 * 10.0], 0xFFFFFF));
+                    let tx = if hud.p("Module list side") == "Left" { x + 2.0 } else { x + max + 2.0 - widths[i] };
+                    shapes.push(Shape::Text(text, [tx, y + 2.0 + row as f32 * 10.0], 0xFFFFFF));
                 }
             }
         }
