@@ -1560,6 +1560,46 @@ def _():
                 f"after .panic again it says {back_said}, HUD {back}")
 
 
+@test("Profile button")
+def _():
+    # A profile picked in the menu's Profile list loads; the HUD's label (.profile list's "In use") follows: the name,
+    # "(modified)" after a change, Custom once it is deleted.
+    def listed():
+        mark = log_mark()
+        say(".profile list")
+        wait(4)
+        return next((c for c in sunset_said(mark) if c.startswith("Profiles:")), "")
+
+    def range_shown():
+        mark = log_mark()
+        say(".settings killaura")
+        wait(4)
+        return next((c for c in sunset_said(mark) if c.startswith("Range:")), "")
+
+    setting("killaura", "range", "3")
+    say(".profile save picked")
+    saved = listed()
+    setting("killaura", "range", "5")
+    modified = listed()
+    names = saved.removeprefix("Profiles: ").split(". In use")[0].split(", ")
+    w, h = gui_size()
+    ww, hh = min(w - 16, 300), min(min(max(len(names), 1), 10) * 18 + 47, h - 16)
+    x, y = (w - ww) / 2, (h - hh) / 2
+    say(".menu")
+    wait(5)
+    ctl("click-at", str(4 + min(max(w * 0.3, 90), 200) / 2), "21")
+    wait(3)
+    ctl("click-at", str(x + 30), str(y + 25 + 18 * names.index("picked") + 9))
+    wait(3)
+    close_menu()
+    loaded, after = range_shown(), listed()
+    say(".profile delete picked")
+    gone = listed()
+    ok = (saved.endswith("In use: picked") and modified.endswith("In use: picked (modified)") and loaded == "Range: 3"
+          and after.endswith("In use: picked") and "picked" not in gone.split(". In use")[0] and gone.endswith("In use: Custom"))
+    return ok, f"saved: {saved!r}; changed: {modified!r}; picked in the menu: {loaded!r}, {after!r}; deleted: {gone!r}"
+
+
 @test("Profiles")
 def _():
     def said(line):

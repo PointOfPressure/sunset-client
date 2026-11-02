@@ -105,9 +105,21 @@ const OPEN_RISE: f32 = 6.0;
 
 fn frame(s: &State) -> [f32; 4] {
     let menu = dash_menu(s);
+    frame_in(menu.view_w, menu.view_h)
+}
+
+fn frame_in(view_w: f32, view_h: f32) -> [f32; 4] {
     let wanted = WIDTH_BASE + wanted_panel_w() * WIDTH_PER_PANEL;
-    let (w, h) = ((menu.view_w - 16.0).clamp(0.0, wanted).floor(), (menu.view_h - 16.0).clamp(0.0, HEIGHT).floor());
-    [((menu.view_w - w) / 2.0).floor(), ((menu.view_h - h) / 2.0).floor(), w, h]
+    let (w, h) = ((view_w - 16.0).clamp(0.0, wanted).floor(), (view_h - 16.0).clamp(0.0, HEIGHT).floor());
+    [((view_w - w) / 2.0).floor(), ((view_h - h) / 2.0).floor(), w, h]
+}
+
+// The Profile button, at the foot of the side column.
+pub(super) fn profile_button(view_w: f32, view_h: f32) -> Option<[f32; 4]> {
+    on().then(|| {
+        let [x, y, _, h] = frame_in(view_w, view_h);
+        [x + 8.0, y + h - 8.0 - TAB_H, SIDE - 16.0, TAB_H]
+    })
 }
 
 // The list and the settings beside it.

@@ -69,6 +69,12 @@ name = "sunset_profiles"
 source = "profiles.rs"
 
 [[module]]
+id = "profile_menu"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_profile_menu"
+source = "profile_menu.rs"
+
+[[module]]
 id = "combat"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_combat"

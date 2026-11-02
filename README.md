@@ -86,6 +86,9 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the same way:
 `.set xray blocks diamond_ore,ancient_debris`.
 
+The HUD shows the profile in use under the watermark ("(modified)" once you change a setting); the **Profile** button
+in the menu loads another. HUD > Module list side puts the list of modules on the left or the right.
+
 ## Features
 
 Speed has Vanilla, Strafe, Smooth, Low Hop and Custom modes. Velocity can scale, blend or delay knockback; Scaffold
