@@ -542,10 +542,12 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     overlay::NO_GUI.store(flag("Hide pumpkin, spyglass and powder snow overlays"), Ordering::Relaxed);
     // The dim and blur behind menus: ClickGUI's Menu dim switch (off hides them).
     overlay::NO_MENU.store(!mods.iter().find(|m| m.name == "ClickGUI").is_some_and(|m| m.b("Menu dim")), Ordering::Relaxed);
-    // Effects the server put on the player that only change what it sees: kept aside while hidden, counted down
-    // as the game would, and put back when No Render (or its switch) goes off.
+    // Effects the server put on the player that only change what it sees, and those No Status Effects lists: kept
+    // aside while hidden, counted down as the game would, and put back when No Render (or its switch) goes off.
     let (blind, dark, nausea) = (flag("Hide blindness"), flag("Hide darkness"), flag("Hide nausea"));
-    let hide = |id: &str| (blind && id == "blindness") || (dark && id == "darkness") || (nausea && id == "nausea");
+    let hide = |id: &str| {
+        (blind && id == "blindness") || (dark && id == "darkness") || (nausea && id == "nausea") || super::sunset_parity::ignored_effect(id)
+    };
     let taken: Vec<_> = game.potions.effects.list.extract_if(.., |e| hide(e.id)).collect();
     let back: Vec<_> = rs(|r| {
         for e in &mut r.hidden_effects {

@@ -816,6 +816,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_pvp_bot::defaults());
     v.extend(super::sunset_duel::defaults());
     v.extend(super::sunset_loadouts::defaults());
+    v.extend(super::sunset_parity::defaults());
     v.extend(super::sunset_hands::defaults());
     v.extend(super::sunset_packet_mine::defaults());
     v.extend(super::sunset_render::defaults());
@@ -2193,6 +2194,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     combat_packets(game, &packets);
     ensure_loaded(game);
+    super::sunset_parity::pre_tick(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     crit_sprint_back(game);
     super::sunset_hands::before_hits(game, strike_waiting() || super::sunset_melee::due_waiting());
@@ -2694,6 +2696,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_pvp_bot::tick(game, &mods);
     super::sunset_duel::tick(game);
     super::sunset_loadouts::tick(game);
+    super::sunset_parity::tick(game, &mods);
     super::sunset_hands::tick(game);
     super::sunset_combat::tick(game, &mods);
     super::sunset_explosive_aura::tick(game, &mods, game.ticks);
@@ -4081,6 +4084,7 @@ pub(super) fn remember_velocity(game: &Game<'_>) {
 pub(super) fn server_correction(game: &mut Game<'_>) {
     super::sunset_lag::correction(game);
     if !game.native_on(ID) { return; }
+    super::sunset_parity::correction(game);
     with(|s| {
         s.knockback_ticks = 0;
         s.strafe = Strafe::default();

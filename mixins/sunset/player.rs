@@ -156,32 +156,40 @@ static WALL_HITS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 
 // Hitboxes: how far the boxes of the mobs it picked this tick grow each way, and their ids (read by the mob_hit hook).
 static HITBOXES: Mutex<(f64, Vec<u32>)> = Mutex::new((0.0, Vec::new()));
+// No Mining Trace, at work this tick: the mobs it leaves to be hit as usual.
+static NO_TRACE: Mutex<Option<String>> = Mutex::new(None);
 
 // The mob under the crosshair with Reach's Entity reach or Auto Weapon's Spear reach, as the game's own pick finds it
-// (the nearest box along the look), the boxes Hitboxes grows grown. None: the game's own.
+// (the nearest box along the look), the boxes Hitboxes grows grown; none with No Mining Trace while a block is in
+// reach (but for the mobs it lists). None: the game's own.
 pub(super) fn mob_hit(game: &Game<'_>) -> Option<Option<(usize, f64)>> {
     let bits = ENTITY_REACH.load(std::sync::atomic::Ordering::Relaxed);
     let (grow, grown) = HITBOXES.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    if bits == u64::MAX && grown.is_empty() {
+    let trace = NO_TRACE.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if bits == u64::MAX && grown.is_empty() && trace.is_none() {
         return None;
     }
+    let hit = pick_mob(game, bits, grow, &grown);
+    match (hit, trace) {
+        (Some((i, _)), Some(kept)) if game.pick().is_some() && !listed(&kept, &game.mobs[i].kind.id) => Some(None),
+        _ => Some(hit),
+    }
+}
+
+fn pick_mob(game: &Game<'_>, bits: u64, grow: f64, grown: &[u32]) -> Option<(usize, f64)> {
     let ordinary = if game.creative { 5.0 } else { 3.0 };
     let reach = if bits == u64::MAX { ordinary } else { f64::from_bits(bits).max(ordinary) };
-    let Some((eye, dir)) = game.aim() else {
-        return Some(None);
-    };
+    let (eye, dir) = game.aim()?;
     let boxed = |m: &horizon_client::mobs::Mob| {
         let b = m.bounds();
         if grown.contains(&m.id) { b.inflate(horizon_core::geometry::Vec3::new(grow, grow, grow)) } else { b }
     };
-    Some(
-        game.mobs
-            .iter()
-            .enumerate()
-            .filter(|(_, m)| m.alive() && Some(m.id) != game.riding)
-            .filter_map(|(i, m)| Some((i, super::ray_box(eye, dir, reach, boxed(m))?)))
-            .min_by(|a, b| a.1.total_cmp(&b.1)),
-    )
+    game.mobs
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.alive() && Some(m.id) != game.riding)
+        .filter_map(|(i, m)| Some((i, super::ray_box(eye, dir, reach, boxed(m))?)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
 }
 
 // Hitboxes (Meteor's), for the crosshair's pick: the mobs whose boxes grow by Expand, those the Entities list names
@@ -317,6 +325,10 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     };
     ENTITY_REACH.store(entity.map_or(u64::MAX, f64::to_bits), std::sync::atomic::Ordering::Relaxed);
     *HITBOXES.lock().unwrap_or_else(|e| e.into_inner()) = hitboxes(game, get("Hitboxes"));
+    // No Mining Trace (Meteor's): with a pickaxe in either hand (or anything, with Only with a pickaxe off).
+    let pickaxe = [game.held(), game.offhand.as_ref()].into_iter().flatten().any(|s| s.item.ends_with("_pickaxe"));
+    *NO_TRACE.lock().unwrap_or_else(|e| e.into_inner()) =
+        get("No Mining Trace").filter(|m| pickaxe || !m.b("Only with a pickaxe")).map(|m| m.t("Entities").to_owned());
     WALL_HITS.store(get("Ghost Hand").is_some_and(|m| m.b("Hits")), std::sync::atomic::Ordering::Relaxed);
     // These work on the inventory screen, which in_world leaves out.
     if game.remote.is_some() && game.player.is_some() {

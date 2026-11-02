@@ -7018,6 +7018,133 @@ def _():
     return on and bound and got == want, f"Auto Weapon on: {on}, bound to G: {bound}, settings {got} of {want}; said {shown[:2]}"
 
 
+@test("Rotation and No Rotate")
+def _():
+    # Rotation Simple (yaw 90, pitch 30) holds the look while you turn; Smart snaps it to the nearest 45 and 30
+    # degrees. No Rotate: a /tp that sets yaw 180 and pitch 45 leaves your look as it was (off: it takes it).
+    reset()
+    setting("rotation", "yaw angle", "90")
+    setting("rotation", "pitch angle", "30")
+    only("rotation")
+    ctl("look", "10", "-20")
+    wait(5)
+    simple = tuple(round(v) for v in aim_view())
+    setting("rotation", "yaw lock", "Smart")
+    setting("rotation", "pitch lock", "Smart")
+    ctl("look", "50", "-20")
+    wait(5)
+    smart = tuple(round(v) % 360 if i == 0 else round(v) for i, v in enumerate(aim_view()))
+    only()
+    turned = {}
+    for name, mods in (("off", ()), ("on", ("norotate",))):
+        ctl("look", "0", "0")
+        only(*mods)
+        wait(3)
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 180 45")
+        wait(10)
+        turned[name] = tuple(round(v) % 360 if i == 0 else round(v) for i, v in enumerate(aim_view()))
+        only()
+    ok = simple == (90, 30) and smart == (45, -30) and turned["off"] == (180, 45) and turned["on"] == (0, 0)
+    return ok, f"Rotation Simple {simple}, Smart from (50, -20) {smart}; look after a /tp to (180, 45): off {turned['off']}, No Rotate {turned['on']}"
+
+
+def active_effects():
+    d = ctl("effects")
+    return (d.get("effects") or d).get("active", [])
+
+
+@test("No Status Effects and Potion Saver")
+def _():
+    # Levitation for 3 s: you rise without No Status Effects and stay on the floor with it. Speed for 20 s: its time
+    # left after 3 s, without and with Potion Saver (the timer here stands still).
+    risen = {}
+    for name, mods in (("off", ()), ("on", ("nostatuseffects",))):
+        reset()
+        only(*mods)
+        cmd("effect give @s minecraft:levitation 3 1")
+        wait(40)
+        risen[name] = round(pos()[1] - (Y + 1), 2)
+        only()
+    left = {}
+    for name, mods in (("off", ()), ("on", ("potionsaver",))):
+        reset()
+        only(*mods)
+        cmd("effect give @s minecraft:speed 20 0")
+        wait(5)
+        speed = lambda: next((e.get("duration") for e in active_effects() if "speed" in e.get("id", "")), None)
+        first = speed()
+        wait(60)
+        later = speed()
+        left[name] = (first, later)
+        only()
+    saved = left["on"][0] is not None and left["on"][1] is not None and left["on"][1] >= left["on"][0] - 2
+    ran = left["off"][0] is not None and left["off"][1] is not None and left["off"][1] <= left["off"][0] - 50
+    ok = risen["off"] > 1 and abs(risen["on"]) < 0.1 and saved and ran
+    return ok, f"risen with levitation: off {risen['off']}, on {risen['on']}; speed's ticks left (5 ticks in, 65 ticks in): off {left['off']}, Potion Saver {left['on']}"
+
+
+@test("No Mining Trace")
+def _():
+    # A pig with 1000 health 1.5 blocks in front of a stone block, a pickaxe in hand, survival: the left button held
+    # 2 s at the stone through the pig hits the pig without No Mining Trace and mines the stone with it.
+    got = {}
+    for name, mods in (("off", ()), ("on", ("nominingtrace",))):
+        reset()
+        slot(0, "netherite_pickaxe")
+        ctl("key", "1", "tap")
+        cmd(f"setblock {X0} {Y + 1} {Z0 + 3} minecraft:stone", f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 1.7} {TOUGH_PIG}")
+        wait(10)
+        only(*mods)
+        ctl("look-at", str(X0 + 0.5), str(Y + 1.5), str(Z0 + 3.0))
+        ctl("mouse", "left", "down")
+        wait(40)
+        ctl("mouse", "left", "up")
+        only()
+        m = mobs("pig")
+        got[name] = (round(1000 - m[0]["health"], 1) if m else None, count(X0, Y + 1, Z0 + 3, X0, Y + 1, Z0 + 3, "stone"))
+    cmd("kill @e[type=pig]", f"setblock {X0} {Y + 1} {Z0 + 3} minecraft:air")
+    ok = got["off"][0] > 0 and got["off"][1] == 1 and got["on"][0] == 0 and got["on"][1] == 0
+    return ok, f"(pig's health lost, stone left) off {got['off']}, No Mining Trace {got['on']}"
+
+
+@test("Self Anvil, Anti Anvil, Anti Bed")
+def _():
+    # In an obsidian hole with walls 3 high: Self Anvil puts an anvil 2 over your feet (it falls into the hole) and
+    # turns off; Anti Anvil puts obsidian over your head against an anvil falling from 7 over your feet; Anti Bed puts
+    # string in your head's block.
+    def hole():
+        reset()
+        cmd(f"fill {X0 - 1} {Y} {Z0 - 1} {X0 + 1} {Y + 3} {Z0 + 1} minecraft:obsidian", f"fill {X0} {Y + 1} {Z0} {X0} {Y + 8} {Z0} minecraft:air",
+            f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
+        wait(10)
+
+    def at(dy):
+        return (ctl("blocks", str(X0), str(Y + 1 + dy), str(Z0), str(X0), str(Y + 1 + dy), str(Z0)).get("counts") or {})
+
+    hole()
+    slot(0, "anvil")
+    only("selfanvil")
+    wait(30)
+    self_anvil = (any("minecraft:anvil" in at(dy) for dy in (0, 1, 2)), is_on("Self Anvil"))
+    only()
+    hole()
+    slot(0, "obsidian", 8)
+    only("antianvil")
+    cmd(f"setblock {X0} {Y + 8} {Z0} minecraft:anvil")
+    wait(30)
+    anti_anvil = "minecraft:obsidian" in at(2) and "minecraft:anvil" in at(3)
+    only()
+    hole()
+    slot(0, "string", 8)
+    only("antibed")
+    wait(10)
+    anti_bed = "minecraft:tripwire" in at(1)
+    only()
+    cmd(f"fill {X0 - 1} {Y + 1} {Z0 - 1} {X0 + 1} {Y + 8} {Z0 + 1} minecraft:air", f"fill {X0 - 1} {Y} {Z0 - 1} {X0 + 1} {Y} {Z0 + 1} minecraft:stone")
+    ok = self_anvil == (True, False) and anti_anvil and anti_bed
+    return ok, f"Self Anvil (anvil in the hole, still on): {self_anvil}; Anti Anvil obsidian over your head, the anvil on it: {anti_anvil}; Anti Bed string: {anti_bed}"
+
+
 @test("Bow Spam (Crossbows)")
 def _():
     # A crossbow and 64 arrows, use held for 5 s looking up: arrows shot without and with Bow Spam.
