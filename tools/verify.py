@@ -5856,6 +5856,41 @@ def _():
     return 220 <= extra <= 420 and wire["on"][3] <= 1 and wire["on"][2] > 40, note
 
 
+@test("Server Scan (Passive sends nothing)")
+def _():
+    # Passive only reads what the server sends: over the same time, with .scan and .scan run typed, no kind of packet
+    # the client doesn't send with the module off, and no command suggestion request (15). Extended's .scan run asks
+    # the server at most once and sends Query only to the address joined.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+
+    def window(*commands):
+        mark, said = probe_mark(), log_mark()
+        for c in commands:
+            say(c)
+            wait(10)
+        wait(40)
+        with open(probe_path(), errors="replace") as f:
+            f.seek(mark)
+            ids = [int(line.split()[1]) for line in f if line.startswith("pkt ")]
+        return ids, sunset_said(said)
+
+    only()
+    off, _ = window(".scan")
+    only("serverscan")
+    setting("serverscan", "mode", "Passive")
+    passive, found = window(".scan", ".scan run")
+    setting("serverscan", "mode", "Extended")
+    extended, ran = window(".scan run")
+    only()
+    extra = sorted(set(passive) - set(off))
+    target = next((line for line in ran if "Query to" in line), "")
+    ok = not extra and 15 not in passive and extended.count(15) <= 1 and (not SERVER or SERVER in target)
+    return ok, (f"Passive: packet kinds beyond the module off {extra}, suggestion requests {passive.count(15)}, "
+                f"{len(found)} lines ({found[1] if len(found) > 1 else ''!r}); Extended run: suggestion requests "
+                f"{extended.count(15)}, {target!r}")
+
+
 @test("Velocity (knockback delay)")
 def _():
     # Bot1 hits you 5 times off and 5 times on (Chance 100%, ground delay 400 ms); from your probe, the time from its
