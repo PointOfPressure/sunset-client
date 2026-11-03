@@ -104,8 +104,13 @@ struct Duel {
     blast_after: Option<(usize, Vec<u64>)>,
     // Hold to Eat: the slot eaten from, its key, and the slot to go back to.
     eating: Option<(usize, String, usize)>,
-    // Pearl Catch: the tick the wind charge goes.
+    // Pearl Catch: the tick of the catch (as Duelkit counts it), the pearl as thrown (start, speed, tick), the throw
+    // waiting for the look the server has (charge slot, yaw, pitch, retried), and the slot to come back (slot, charge
+    // slot) at the start of the tick after a hotbar charge went.
     catch_at: Option<u64>,
+    pearl: Option<([f64; 3], [f64; 3], u64)>,
+    catch_ready: Option<(usize, f32, f32, bool)>,
+    catch_back: Option<(usize, usize)>,
 }
 
 static DUEL: Mutex<Option<Duel>> = Mutex::new(None);
@@ -135,7 +140,11 @@ pub(super) fn used(game: &Game<'_>, slot: usize) {
         && -f64::from(game.pitch) >= m.n("Min look up")
     {
         let delay = if m.b("Auto") { best_delay(game, m.n("Max delay") as u32) } else { Some(m.n("Delay") as u32) };
-        duel(|d| d.catch_at = delay.map(|t| game.ticks + u64::from(t)));
+        let pearl = throw_start(game).map(|(eye, speed, _, _)| (add(eye, [0.0, -0.1, 0.0]), speed, game.ticks));
+        duel(|d| {
+            d.catch_at = delay.map(|t| game.ticks + u64::from(t));
+            d.pearl = pearl;
+        });
     }
     if stack.item.ends_with(":wind_charge")
         && !cooling
@@ -235,60 +244,119 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     }
 }
 
-// Pearl Catch's wind charge: from the offhand or the hotbar (off cooldown), aimed at your pearl (Auto), straight
-// down (At feet) or along your look. The use packet carries the aim; your view does not move.
-fn catch(game: &mut Game<'_>, m: &Module) {
-    let ready = |game: &Game<'_>, slot: usize| {
-        game.stack_in(slot).is_some_and(|s| {
-            s.item.ends_with(":wind_charge")
-                && !game.res.items().get(&s.item).is_some_and(|i| {
-                    game.cooldowns.is_on_cooldown(&horizon_client::cooldowns::group(s, i.use_cooldown.as_ref()))
-                })
-        })
-    };
-    let Some(slot) = std::iter::once(util::OFFHAND).chain(0..9).find(|&s| ready(game, s)) else {
-        return;
-    };
-    let (mut yaw, mut pitch) = (game.yaw, game.pitch);
+// A wind charge Pearl Catch can throw from `slot`: there, and off cooldown.
+fn charge_ready(game: &Game<'_>, slot: usize) -> bool {
+    game.stack_in(slot).is_some_and(|s| {
+        s.item.ends_with(":wind_charge")
+            && !game.res.items().get(&s.item).is_some_and(|i| {
+                game.cooldowns.is_on_cooldown(&horizon_client::cooldowns::group(s, i.use_cooldown.as_ref()))
+            })
+    })
+}
+
+// Pearl Catch's aim, as the server takes the throw a tick from now (its look goes out first): straight down (At feet),
+// at your pearl (Auto: Duelkit's intercept from where you will be, the pearl as thrown flown that far, else the one
+// you see a tick on), or along your look.
+fn catch_aim(game: &Game<'_>, m: &Module) -> (f32, f32) {
+    let own = (game.yaw, game.pitch);
     if m.b("At feet") {
-        pitch = 90.0;
-    } else if m.b("Auto")
-        && let Some((eye, _, move_, _)) = throw_start(game)
-        && let Some(pearl) = game
+        return (game.yaw, 90.0);
+    }
+    let Some((eye, _, move_, _)) = throw_start(game).filter(|_| m.b("Auto")) else {
+        return own;
+    };
+    let pearl = match duel(|d| d.pearl) {
+        Some((mut pos, mut vel, thrown)) => {
+            for _ in 0..(game.ticks + 1).saturating_sub(thrown) {
+                (pos, vel) = pearl_step(pos, vel);
+            }
+            Some((pos, vel))
+        }
+        None => game
             .creatures
             .projectiles
             .iter()
             .filter(|p| p.kind == ProjectileKind::EnderPearl && util::dist(eye, [p.position.x, p.position.y, p.position.z]) < 48.0)
             .max_by_key(|p| p.id)
-        && let Some((dir, _)) = intercept(
-            add(eye, [0.0, -0.1, 0.0]),
-            move_,
-            [pearl.position.x, pearl.position.y, pearl.position.z],
-            [pearl.velocity.x, pearl.velocity.y, pearl.velocity.z],
-        )
-    {
-        yaw = (-dir[0]).atan2(dir[2]).to_degrees() as f32;
-        pitch = -dir[1].asin().to_degrees() as f32;
+            .map(|p| pearl_step([p.position.x, p.position.y, p.position.z], [p.velocity.x, p.velocity.y, p.velocity.z])),
+    };
+    match pearl.and_then(|(pos, vel)| intercept(add(add(eye, move_), [0.0, -0.1, 0.0]), move_, pos, vel)) {
+        Some((dir, _)) => ((-dir[0]).atan2(dir[2]).to_degrees() as f32, (-dir[1].asin().to_degrees()) as f32),
+        None => own,
     }
-    let back = game.selected;
-    if slot != util::OFFHAND {
-        hold(game, slot);
+}
+
+// The start of a tick after a hotbar charge went, before any hit or use in it: the slot from before comes back. Whether
+// the slot changed.
+pub(super) fn catch_back(game: &mut Game<'_>) -> bool {
+    let Some((back, charge)) = duel(|d| d.catch_back.take()) else {
+        return false;
+    };
+    if game.selected != charge || back >= 9 {
+        return false;
     }
-    let sequence = util::sequence(game);
-    game.send(S::UseItem(play::UseItem { hand: i32::from(slot == util::OFFHAND), sequence, yaw, pitch }));
-    game.swing_arm();
     hold(game, back);
+    true
+}
+
+// Pearl Catch's wind charge, at the start of the tick once the server has its look (Grim: nothing of it after the
+// tick's move packet, and the use packet's look is the move packet's): the charge's hotbar slot (the offhand needs
+// none), the use packet with that look, the look kept for this tick's move packet (BadPacketsJ), and nothing else; a
+// hotbar slot comes back at the start of the next tick (catch_back), never after the use in this one (PacketOrderE).
+// A tick that already has a hit or a slot change waits one more, the look kept.
+pub(super) fn catch_throw(game: &mut Game<'_>, busy: bool) {
+    let Some((slot, yaw, pitch, retried)) = duel(|d| d.catch_ready.take()) else {
+        return;
+    };
+    let alive = game.player.as_ref().is_some_and(|p| p.health.health() > 0.0);
+    if module("Pearl Catch").is_none() || game.screen != Screen::Playing || !alive || !charge_ready(game, slot) {
+        return;
+    }
+    // Another module's look waits: this tick's move packet would carry that one.
+    if super::sunset::turn_pending() {
+        return;
+    }
+    if busy {
+        if !retried {
+            super::sunset::turn("Pearl Catch", yaw, pitch);
+            duel(|d| d.catch_ready = Some((slot, yaw, pitch, true)));
+        }
+        return;
+    }
+    if slot != util::OFFHAND && game.selected != slot {
+        let back = game.selected;
+        hold(game, slot);
+        duel(|d| d.catch_back = Some((back, slot)));
+    }
+    super::sunset::turn("Pearl Catch", yaw, pitch);
+    let sequence = util::sequence(game);
+    let wire = super::sunset::wire_yaw(game, yaw);
+    game.send(S::UseItem(play::UseItem { hand: i32::from(slot == util::OFFHAND), sequence, yaw: wire, pitch: pitch.clamp(-90.0, 90.0) }));
+    game.swing_arm();
+    // Your own use waits: the charge's slot is in hand until the next tick.
+    game.use_delay = game.use_delay.max(2);
+    game.clicks.right_click_delay = game.clicks.right_click_delay.max(2);
 }
 
 pub(super) fn tick(game: &mut Game<'_>) {
+    // Pearl Catch: a tick before Duelkit's catch tick, the look goes out with the next move packet and the throw
+    // follows at the start of the tick after it (catch_throw): to the server the same moment as Duelkit's throw after
+    // the catch tick's move packet, in the order Grim wants. Another module's look in the way: up to two ticks more.
     if let Some(at) = duel(|d| d.catch_at)
-        && game.ticks >= at
+        && game.ticks + 1 >= at
     {
-        duel(|d| d.catch_at = None);
-        if let Some(m) = module("Pearl Catch")
-            && game.screen == Screen::Playing
-        {
-            catch(game, &m);
+        let slot = std::iter::once(util::OFFHAND).chain(0..9).find(|&s| charge_ready(game, s));
+        match (module("Pearl Catch").filter(|_| game.screen == Screen::Playing), slot) {
+            (Some(m), Some(slot)) => {
+                let (yaw, pitch) = catch_aim(game, &m);
+                let asked = super::sunset::try_turn_then("Pearl Catch", yaw, pitch, move |_| {
+                    duel(|d| d.catch_ready = Some((slot, yaw, pitch, false)));
+                });
+                if asked || game.ticks + 1 > at + 2 {
+                    duel(|d| d.catch_at = None);
+                }
+            }
+            _ => duel(|d| d.catch_at = None),
         }
     }
     let Some((slot, key, back)) = duel(|d| d.eating.clone()) else {

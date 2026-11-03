@@ -20,6 +20,9 @@ thread_local! {
     static SCREEN_MOVED: Cell<Option<crate::sprint::Keys>> = const { Cell::new(None) };
     // No Slow's Skip: the item-use slowdown left out of this tick's move.
     static NO_SLOW_SKIP: Cell<bool> = const { Cell::new(false) };
+    // Knockback hits since the last movement, and the game tick of the last: each cuts the speed across to 0.6 and
+    // stops the sprint.
+    static ATTACK_SLOW: Cell<(u32, u64)> = const { Cell::new((0, 0)) };
 }
 
 pub fn set_no_slow_skip(on: bool) {
@@ -28,6 +31,24 @@ pub fn set_no_slow_skip(on: bool) {
 
 pub fn no_slow_skip() -> bool {
     NO_SLOW_SKIP.with(Cell::get)
+}
+
+pub fn add_attack_slow(tick: u64) {
+    ATTACK_SLOW.with(|c| c.set((c.get().0.saturating_add(1), tick)));
+}
+
+// The start of a tick: hits from before the last tick's movement that no movement took (riding, dead) are gone.
+pub fn expire_attack_slow(tick: u64) {
+    ATTACK_SLOW.with(|c| {
+        if c.get().1 < tick {
+            c.set((0, 0));
+        }
+    });
+}
+
+// The knockback hits the next movement starts with (then none).
+pub fn take_attack_slow() -> u32 {
+    ATTACK_SLOW.with(|c| c.replace((0, 0)).0)
 }
 
 pub fn set_screen_keys(keys: Option<crate::sprint::Keys>) {

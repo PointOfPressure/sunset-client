@@ -46,6 +46,9 @@ pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
     if !game.native_window() || !game.native_on(super::sunset::ID) {
         return;
     }
+    if let S::Attack(p) = packet {
+        attack_slow(game, p.id);
+    }
     super::sunset_prediction::forwarded(game, packet);
     super::sunset_melee::forwarded(game, packet);
     super::sunset_combat_inventory::forwarded(game, packet);
@@ -54,4 +57,23 @@ pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
 pub(super) fn reset_look() {
     *LOOK.lock().unwrap_or_else(|e| e.into_inner()) = None;
     *SPRINT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+// Player.attack's own side, on the attacking client: a hit on a player with a sprint and over 0.9 of the charge
+// knocks back, and the attacker's speed across is cut to 0.6 and the sprint stops. The game's remote attack (and every
+// Sunset hit) sends the packet only, but Grim counts the cut as certain then (PacketPlayerAttack: minAttackSlow) and
+// keeps no uncut move, so the next movement takes it, before it runs (motion_flags' attack slow).
+// The charge is the game's own (getAttackStrengthScale): the attack speed of the item the last tick held
+// (`attack_item`), not of one switched in for this hit. Its modifiers come with the player's tick, on the server too,
+// so a sword charged long ago swapped for a mace still hits charged, and the cut is due.
+fn attack_slow(game: &Game<'_>, id: i32) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let charge = game.hand_strength.scale(0.5, game.main_hand_attack_speed());
+    let player = super::remote::sunset_combat_remote::is_player(game, id);
+    let cut = p.sprinting && charge > 0.9 && player;
+    if cut {
+        horizon_client::motion::sunset_motion::add_attack_slow(game.ticks);
+    }
 }

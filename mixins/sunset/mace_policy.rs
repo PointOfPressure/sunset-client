@@ -40,34 +40,48 @@ pub(super) struct Frame {
     pub sprinting: bool,
 }
 
-// One smash a fall, and the axe hit sent at a shield (not a confirmed break) for a second.
+// The fall the server counts after a smash, and the axe hit sent at a shield (not a confirmed break) for a second. A
+// smash resets the server's fall (vanilla's mace does), and the client is never told: from then the fall is what you
+// drop below the smash's height, or below the top of a rise after it (a Wind Burst bounce), so the next smash of a
+// chain waits for Min fall again, and nothing takes a mace for a fall the server no longer has.
 #[derive(Default, Debug)]
 pub(super) struct Smash {
-    spent: bool,
+    top: Option<f64>,
     shield_attempt: Option<(u32, u64)>,
 }
 
 impl Smash {
-    pub(super) fn observe_grounded(&mut self, grounded: bool) {
-        if grounded {
-            self.spent = false;
+    // Each tick: the ground ends the count, a rise moves its top up.
+    pub(super) fn observe(&mut self, grounded: bool, y: f64) {
+        if grounded || !y.is_finite() {
+            self.top = None;
+        } else if let Some(top) = &mut self.top {
+            *top = top.max(y);
         }
     }
-    pub(super) fn spent(&self) -> bool {
-        self.spent
+    // A smash went out at height `y`.
+    pub(super) fn smashed(&mut self, y: f64) {
+        if y.is_finite() {
+            self.top = Some(y);
+        }
+    }
+    // The fall the server has: the game's own `native`, or no more than what you dropped since the last smash.
+    pub(super) fn fall(&self, native: f64, y: f64) -> f64 {
+        let native = if native.is_finite() { native.max(0.0) } else { 0.0 };
+        match self.top {
+            Some(top) if y.is_finite() => (top - y).clamp(0.0, native),
+            Some(_) => 0.0,
+            None => native,
+        }
     }
     pub(super) fn shield_attempted(&self, id: u32, tick: u64) -> bool {
         self.shield_attempt.is_some_and(|(target, until)| target == id && tick < until)
     }
     pub(super) fn plan(&mut self, f: Frame) -> Intent {
-        if f.grounded {
-            self.spent = false;
-        }
         self.shield_attempt = self.shield_attempt.filter(|(_, until)| f.tick < *until);
         if f.grounded
             || !f.descending
             || !f.native_smash
-            || self.spent
             || !f.target_allowed
             || !f.mace_available
             || !f.fall.is_finite()
@@ -94,12 +108,10 @@ impl Smash {
             || f.sprinting;
         if f.can_continue && hold { Intent::Hold } else { Intent::Smash }
     }
-    // After the hit went out: planning, refused turns and failed hits never use up a fall.
+    // After the axe hit at a shield went out. (A smash counts from its own packet: see `smashed`.)
     pub(super) fn accepted(&mut self, intent: Intent, target: u32, tick: u64) {
-        match intent {
-            Intent::BreakShield { .. } => self.shield_attempt = Some((target, tick.saturating_add(20))),
-            Intent::Smash => self.spent = true,
-            Intent::Idle | Intent::Hold => {}
+        if let Intent::BreakShield { .. } = intent {
+            self.shield_attempt = Some((target, tick.saturating_add(20)));
         }
     }
 }

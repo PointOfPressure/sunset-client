@@ -415,8 +415,10 @@ impl Module {
             "Auto Weapon" => match name {
                 "Prefer axes" => self.b("Best weapon"),
                 "Shield mode" | "Shield held" | "Stun slam" => self.b("Axe on shields"),
-                "Mace swap" | "Mace pick" | "Breach swap" | "Smash assist" | "Min fall" | "Smash mobs" => self.b("Mace"),
+                "Mace swap" | "Mace pick" | "Breach swap" | "Smash assist" | "Min fall" | "Smash mobs" | "Relaunch" => self.b("Mace"),
+                "Min charge" => self.b("Mace") && self.b("Breach swap"),
                 "Smash timing" => self.b("Mace") && self.b("Smash assist"),
+                "Relaunch range" | "Air steer" => self.b("Mace") && self.p("Relaunch") != "Off",
                 "Lunge key" | "Reach poke" | "Spear reach" => self.b("Spear"),
                 "Back after" => self.b("Swap back"),
                 "Shortest delay" | "Longest delay" => self.b("Swap back") && self.p("Back after") == "A delay",
@@ -2456,6 +2458,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if game.player.is_none() {
         fall_died();
     }
+    horizon_client::motion::sunset_motion::expire_attack_slow(game.ticks);
     let packets = horizon_client::net::sunset_packets::take();
     if !game.native_on(ID) || game.player.is_none() {
         combat_cleanup(game);
@@ -2477,10 +2480,18 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_parity::pre_tick(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     crit_sprint_back(game);
-    strike_weapon_back(game);
+    // Slots borrowed for earlier hits come back first, before this tick's move packet and any hit or use in it, one
+    // slot change at most, and not while a hit or its weapon waits (send_strikes changes the slot itself).
+    let (hits, selected) = (strike_waiting() || super::sunset_melee::due_waiting(), game.selected);
+    if !hits && !super::sunset_melee::lease_back(game) && !super::sunset_duel::catch_back(game) {
+        strike_weapon_back(game);
+    }
     super::sunset_hands::before_hits(game, strike_due() || super::sunset_melee::due_waiting());
     send_strikes(game);
+    send_slam(game);
     super::sunset_melee::due(game);
+    // Pearl Catch's wind charge: in a tick with no hit and no slot change before it.
+    super::sunset_duel::catch_throw(game, hits || game.selected != selected);
     let mods = snapshot();
     super::sunset_render::pre_tick(game, &mods);
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
@@ -4919,11 +4930,14 @@ pub(super) fn crit_click(game: &mut Game<'_>) -> Option<bool> {
 // in hand at the start of the next tick, before its move packet as a hotbar key does, and the hit a tick after that
 // (Horizon's server hits with what was held as its tick began); it goes back at the start of the tick after the hit,
 // or that many ticks later with Back after A delay (`back`: the slot, the weapon's slot it replaces if still held,
-// and the tick it may go back). No slot changes after a tick's move packet: Grim's Post check flags that.
+// and the tick it may go back). Nothing changes slot after a tick's move packet (Grim's Post) or after a hit in the
+// same tick (Grim's PacketOrderE).
 struct Strikes {
     queue: Vec<(u32, bool)>,
     weapon: Option<StrikeWeapon>,
     back: Option<(usize, usize, u64)>,
+    // Stun slam's mace hit (target, mace slot, the axe hit's tick): it goes at the start of the tick after the axe's.
+    slam: Option<(u32, usize, u64)>,
 }
 
 // The weapon for the hits waiting: its slot, the delay before it goes back (None: it stays), and the slot it replaced
@@ -4935,7 +4949,7 @@ struct StrikeWeapon {
     replaced: Option<usize>,
 }
 
-static STRIKES: Mutex<Strikes> = Mutex::new(Strikes { queue: Vec::new(), weapon: None, back: None });
+static STRIKES: Mutex<Strikes> = Mutex::new(Strikes { queue: Vec::new(), weapon: None, back: None, slam: None });
 
 fn strikes<R>(f: impl FnOnce(&mut Strikes) -> R) -> R {
     f(&mut STRIKES.lock().unwrap_or_else(|e| e.into_inner()))
@@ -4947,6 +4961,7 @@ fn drop_strikes() {
         s.queue.clear();
         s.weapon = None;
         s.back = None;
+        s.slam = None;
     });
 }
 
@@ -4954,6 +4969,8 @@ pub(super) fn strike(game: &mut Game<'_>, id: u32) {
     queue_strike(game, id, false);
 }
 
+// Decided after the tick's move packet: the hit and its weapon both go at the start of the next tick, the slot first,
+// as a hotbar key before a click (a slot change after the move packet is what Grim's Post check flags).
 fn queue_strike(game: &mut Game<'_>, id: u32, critical: bool) {
     let first = strikes(|s| s.queue.is_empty() && s.weapon.is_none());
     let weapon = first
@@ -4968,18 +4985,19 @@ fn queue_strike(game: &mut Game<'_>, id: u32, critical: bool) {
 
 // A hit is on its way: the attack cooldown has not restarted yet, so nothing else may hit this tick.
 pub(super) fn strike_waiting() -> bool {
-    strikes(|s| !s.queue.is_empty())
+    strikes(|s| !s.queue.is_empty() || s.slam.is_some())
 }
 
-// Hits go out this tick (not only their weapon).
+// Hits go out this tick (not only their weapon), Stun slam's mace hit among them.
 fn strike_due() -> bool {
-    strikes(|s| !s.queue.is_empty() && s.weapon.is_none_or(|w| w.replaced.is_some()))
+    strikes(|s| (!s.queue.is_empty() && s.weapon.is_none_or(|w| w.replaced.is_some())) || s.slam.is_some())
 }
 
-// The start of the tick after a hit: the hotbar slot the hit's weapon replaced comes back.
+// The start of a tick after a hit, before any hit or use in it: the hotbar slot the hit's weapon replaced comes back.
 fn strike_weapon_back(game: &mut Game<'_>) {
     let ticks = game.ticks;
-    if let Some((slot, weapon, _)) = strikes(|s| (s.queue.is_empty() && s.back.is_some_and(|b| ticks >= b.2)).then(|| s.back.take()).flatten())
+    if let Some((slot, weapon, _)) =
+        strikes(|s| (s.queue.is_empty() && s.slam.is_none() && s.back.is_some_and(|b| ticks >= b.2)).then(|| s.back.take()).flatten())
         && game.selected == weapon
     {
         hold(game, slot);
@@ -5011,6 +5029,29 @@ fn send_strikes(game: &mut Game<'_>) {
     }
 }
 
+// Stun slam's second hit, at the start of the tick after the axe's: the mace selected, then its hit. Its slot goes back
+// at the start of the next tick.
+fn send_slam(game: &mut Game<'_>) {
+    let ticks = game.ticks;
+    let Some((id, mace, _)) = strikes(|s| s.slam.take_if(|(_, _, at)| ticks > *at)) else {
+        return;
+    };
+    if game.remote.is_none()
+        || !game.mobs.iter().any(|m| m.id == id && m.alive() && !m.removed)
+        || super::sunset_parity::fake(id)
+        || !super::sunset_melee::slam_ready(game, id, mace)
+    {
+        return;
+    }
+    let axe = game.selected;
+    hold(game, mace);
+    game.send(S::Attack(play::Attack { id: id as i32 }));
+    game.swing_arm();
+    game.send(S::Punch(Empty));
+    game.reset_attack_strength();
+    strikes(|s| s.back = Some(s.back.map_or((axe, mace, ticks + 1), |(slot, _, _)| (slot, mace, ticks + 1))));
+}
+
 fn strike_now(game: &mut Game<'_>, id: u32) {
     // Gone since the hit was decided: the id may be someone else's by now. Fake Player's is no one's on the server.
     if !game.mobs.iter().any(|m| m.id == id && m.alive() && !m.removed) || super::sunset_parity::fake(id) {
@@ -5031,16 +5072,11 @@ fn strike_now(game: &mut Game<'_>, id: u32) {
         game.swing_arm();
         game.send(S::Punch(Empty));
         game.reset_attack_strength();
-        // Stun slam: the mace follows the axe in the same tick; the slot from before the axe comes back after.
+        // Stun slam: the mace's hit follows at the start of the next tick (send_slam). A slot change after a hit in
+        // the same tick is what Grim's PacketOrderE flags, and the axe keeps the shield down for seconds.
         if let Some(mace) = slam {
-            let axe = game.selected;
-            hold(game, mace);
-            game.send(S::Attack(play::Attack { id: id as i32 }));
-            game.swing_arm();
-            game.send(S::Punch(Empty));
-            game.reset_attack_strength();
             let due = game.ticks;
-            strikes(|s| s.back = Some(s.back.map_or((axe, mace, due), |(slot, _, due)| (slot, mace, due))));
+            strikes(|s| s.slam = Some((id, mace, due)));
         }
     }
 }
@@ -5325,11 +5361,13 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     // The look a module asked for, else the player's own back after one (not during the Criticals hop, whose hit
     // follows it).
     let own = (game.yaw, game.pitch);
+    let last = last_look();
     let look = turns(|t| {
         if let Some(head) = t.queue.first().filter(|_| !t.carried) {
             t.carried = true;
-            t.restore = head.look != own;
-            Some(head.look)
+            let look = wire_look(last, own, head.look);
+            t.restore = look != own;
+            Some(look)
         } else if t.restore && !hopping {
             t.restore = false;
             Some(own)
@@ -5360,6 +5398,25 @@ fn last_look() -> Option<(f32, f32)> {
 
 fn set_last_look(look: Option<(f32, f32)>) {
     *LAST_LOOK.lock().unwrap_or_else(|e| e.into_inner()) = look;
+}
+
+// The yaw a look asked for goes out as the game's own does: unbounded and continuous, never folded into ±180 (a fold
+// is a 360-degree turn to the server, Grim's AimModulo360). It is taken nearest your own yaw (your own exactly when
+// that is what was asked), then nearest the last one sent.
+fn wire_look(last: Option<(f32, f32)>, own: (f32, f32), asked: (f32, f32)) -> (f32, f32) {
+    let wrap = |d: f32| (d + 180.0).rem_euclid(360.0) - 180.0;
+    let mut yaw = if asked.0 == own.0 { own.0 } else { own.0 + wrap(asked.0 - own.0) };
+    if let Some((sent, _)) = last
+        && (yaw - sent).abs() > 180.0
+    {
+        yaw = sent + wrap(yaw - sent);
+    }
+    (yaw, asked.1.clamp(-90.0, 90.0))
+}
+
+// The yaw the next move packet will carry for a look asked now with `yaw`: what a use packet sent with it says.
+pub(super) fn wire_yaw(game: &Game<'_>, yaw: f32) -> f32 {
+    wire_look(last_look(), (game.yaw, game.pitch), (yaw, 0.0)).0
 }
 
 // ---- the fall the server counts
@@ -5544,7 +5601,7 @@ pub(super) fn try_turn_then(who: &'static str, yaw: f32, pitch: f32,
     if !yaw.is_finite() || !pitch.is_finite() || BLINK.load(Ordering::Relaxed) {
         return false;
     }
-    let look = ((yaw + 180.0).rem_euclid(360.0) - 180.0, pitch.clamp(-90.0, 90.0));
+    let look = (yaw, pitch.clamp(-90.0, 90.0));
     turns(|t| {
         if t.carried || !t.queue.is_empty() {
             return false;
@@ -5575,7 +5632,7 @@ pub(super) fn turn_then(who: &'static str, yaw: f32, pitch: f32, then: impl for<
     if !yaw.is_finite() || !pitch.is_finite() {
         return;
     }
-    let look = ((yaw + 180.0).rem_euclid(360.0) - 180.0, pitch.clamp(-90.0, 90.0));
+    let look = (yaw, pitch.clamp(-90.0, 90.0));
     turns(|t| match t.queue.iter_mut().position(|a| a.who == who) {
         Some(i) if t.queue[i].fresh => t.queue[i].deeds.push(Box::new(then)),
         Some(i) => {
@@ -5614,10 +5671,10 @@ fn end_turns(game: &mut Game<'_>) {
     let quiet = !MOVED_THIS_TICK.load(Ordering::Relaxed) && !BLINK.load(Ordering::Relaxed);
     let already = quiet
         && have.is_some()
-        && turns(|t| match t.queue.first().filter(|_| !t.carried) {
-            Some(head) if Some(head.look) == have => {
+        && turns(|t| match t.queue.first().filter(|_| !t.carried).map(|head| wire_look(have, own, head.look)) {
+            Some(look) if Some(look) == have => {
                 t.carried = true;
-                t.restore = head.look != own;
+                t.restore = look != own;
                 true
             }
             None if t.restore && Some(own) == have => {

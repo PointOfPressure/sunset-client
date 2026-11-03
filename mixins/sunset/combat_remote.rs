@@ -9,6 +9,11 @@ pub(crate) fn sprint_synced(game: &crate::game::Game<'_>) -> bool {
     game.player.as_ref().is_some_and(|player| player.sprinting == crate::game::sunset_combat_wire::sent_sprinting(game))
 }
 
+// The entity is a player the server told of (not you).
+pub(crate) fn is_player(game: &crate::game::Game<'_>, id: i32) -> bool {
+    game.remote.as_ref().is_some_and(|remote| id != remote.entity_id && remote.level_players.contains_key(&id))
+}
+
 // Kept profile names outlive tab-list removal, so they cannot establish that
 // a player is still listed or that their current mode permits targeting.
 pub(crate) fn player_mode(game: &crate::game::Game<'_>, id: u32) -> Option<i32> {
