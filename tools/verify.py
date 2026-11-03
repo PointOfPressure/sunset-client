@@ -3128,24 +3128,55 @@ def _():
     return left == 3 and selected == 3, f"{left} pearls left after a middle click from slot 3, slot {selected} selected after"
 
 
-@test("Offhand (totem when needed)")
+@test("Offhand (Auto Totem)")
 def _():
-    # Auto Totem's modes, now Offhand's Item None (a totem only at Health or below) and Item Totem (always one).
-    cmd("item replace entity @s inventory.4 with minecraft:totem_of_undying 1")
+    # vape-rs's AutoTotem as Offhand's Item Totem: no totem with Item None; with Item Totem one always, by a swap click in
+    # the inventory it opens and closes again (the screen after: playing); the first totem, not a random one, with
+    # Random slot off (slot 9 taken, 29 left); with Inventory only none until you open the inventory; with Silent open
+    # one with no screen ever shown.
+    def totem():
+        return check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
+
+    def fresh(*slots):
+        cmd("item replace entity @s weapon.offhand with minecraft:air")
+        for i in slots:
+            cmd(f"item replace entity @s inventory.{i} with minecraft:totem_of_undying 1")
+
+    fresh(4)
     setting("offhand", "item", "None")
     only("offhand")
     wait(30)
-    smart = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
-    setting("offhand", "health", "36")
-    wait(30)
-    low = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
-    cmd("item replace entity @s weapon.offhand with minecraft:air", "item replace entity @s inventory.4 with minecraft:totem_of_undying 1")
-    setting("offhand", "health", "10")
+    none = totem()
     setting("offhand", "item", "Totem")
+    setting("offhand", "random slot", "false")
+    fresh(0, 20)
     wait(40)
-    strict = check("execute if items entity @s weapon.offhand minecraft:totem_of_undying")
-    return strict and low and not smart, (f"at full health: offhand {'filled' if smart else 'empty'} with Item None; at Health 36: "
-                                         f"{'filled' if low else 'empty'}; Item Totem: {'filled' if strict else 'empty'}")
+    first = totem() and not check("execute if items entity @s inventory.0 minecraft:totem_of_undying") \
+        and check("execute if items entity @s inventory.20 minecraft:totem_of_undying")
+    closed = state().get("screen") == "playing"
+    setting("offhand", "inventory only", "true")
+    fresh(4)
+    wait(30)
+    waited = not totem()
+    ctl("open-inventory")
+    wait(20)
+    opened = totem()
+    ctl("close")
+    setting("offhand", "inventory only", "false")
+    setting("offhand", "silent open", "true")
+    fresh(4)
+    screens = set()
+    for _ in range(20):
+        wait(2)
+        screens.add(state().get("screen"))
+    silent = totem() and screens <= {"playing"}
+    setting("offhand", "silent open", "false")
+    setting("offhand", "random slot", "true")
+    only()
+    ok = not none and first and closed and waited and opened and silent
+    return ok, (f"Item None: offhand {'filled' if none else 'empty'}; Item Totem: first slot's totem {first}, inventory closed after "
+                f"{closed}; Inventory only: waited {waited}, then filled in the open inventory {opened}; Silent open: filled with "
+                f"no screen {silent} (screens {sorted(str(x) for x in screens)})")
 
 
 def old_profile(name, lines, mod):
@@ -3180,7 +3211,8 @@ def _():
                                       "hovertotem.on=false", "hovertotem.key=none"], "offhand")
     if shown is None:
         return False, "no profile file written"
-    want = ["Item: None", "Health: 14", "Refill: Hotbar Swap", "Hover: OFF"]
+    # Item None was a totem at Health or below, now Item Totem; Hotbar Swap moved it with no screen, now Silent open.
+    want = ["Item: Totem", "Silent open: ON", "Hover: OFF"]
     on = any("Offhand*" in line for line in shown)
     bound = any(line.startswith("Offhand: G") for line in shown)
     got = [w for w in want if any(line.startswith(w) for line in shown)]
@@ -3404,19 +3436,10 @@ def _():
     ctl("key", "1", "tap")
     wait(40)
     gap = check("execute if items entity @s weapon.offhand minecraft:enchanted_golden_apple")
-    # At Health 19 with less health, the totem comes whatever the Item: looked for each tick, before the regeneration
-    # of a full food bar heals it back past 19 and the gapple returns.
-    setting("offhand", "health", "19")
-    cmd("damage @s 6 minecraft:generic")
-    health, low = hp(), False
-    for _ in range(8):
-        low = "totem" in offhand()
-        if low or hp() > 19:
-            break
-        wait(1)
     only()
-    return crystal and totem and gap and low, (f"offhand holds the crystal with Item Crystal: {crystal}, the totem with Item Totem: {totem}, "
-                                              f"the gapple with a sword and Always gap on sword: {gap}, the totem at {health} health: {low}")
+    setting("offhand", "always gap on sword", "false")
+    return crystal and totem and gap, (f"offhand holds the crystal with Item Crystal: {crystal}, the totem with Item Totem: {totem}, "
+                                       f"the gapple with a sword and Always gap on sword: {gap}")
 
 
 @test("Auto Armor")
@@ -5235,7 +5258,7 @@ SWEEPS = [
 ] + [
     (("offhand",), [("offhand", "item", m)]) for m in ("Crystal", "Totem", "Gapple", "Enchanted gapple", "None")
 ] + [
-    (("offhand",), [("offhand", "refill", m)]) for m in ("Inventory", "Hotbar Swap")
+    (("offhand",), [("offhand", "silent open", m)]) for m in ("false", "true")
 ] + [
     (("autoexp",), [("autoexp", "mode", m)]) for m in ("Both", "Armor", "Hands")
 ] + [
@@ -5849,13 +5872,13 @@ def _():
 
 @test("Offhand (Refill)")
 def _():
-    # 20 totem pops: ticks until the offhand holds a totem again, with totems in the main inventory only (Refill
-    # Inventory: Rust's Auto Inventory Totem).
+    # 20 totem pops: ticks until the offhand holds a totem again, with totems in the main inventory only (Item Totem:
+    # vape-rs's AutoTotem opens the inventory, clicks and closes it, a Totem delay apart).
     reset()
     cmd("item replace entity @s weapon.offhand with minecraft:totem_of_undying")
     for i in range(9, 30):
         cmd(f"item replace entity @s inventory.{i - 9} with minecraft:totem_of_undying")
-    setting("offhand", "refill", "Inventory")
+    setting("offhand", "item", "Totem")
     only("offhand")
     wait(10)
     times = []
