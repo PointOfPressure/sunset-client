@@ -1,6 +1,7 @@
-// Crystal Macro and Anchor Macro (Rust's, PR #16): a right click with a crystal or anchor does the whole place and
-// break (or place, charge, set off) as fast as the server takes it. Each starts from your own click, at what you look at.
-use super::sunset::{self, Category, Module, gui_open, hold, with};
+// Crystal Aura's and Anchor Aura's Macro (Rust's Crystal Macro and Anchor Macro, PR #16): a right click with a crystal
+// or anchor does the whole place and break (or place, charge, set off) as fast as the server takes it. Each starts from
+// your own click, at what you look at. Its settings are the aura module's, while that module's Macro section is on.
+use super::sunset::{self, Module, gui_open, hold, with};
 use super::sunset_explosive_damage::{Blast, clear_line, observed_local_damage};
 use super::sunset_explosive_policy::{Budget, in_range};
 use super::sunset_macro_policy::{self as policy, Kind, Sequence, Step, Wait};
@@ -17,29 +18,18 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use winit::event::MouseButton;
 
+// The owners of the hotbar and look while a macro runs (sunset_combat_control), and the modules they are sections of.
 const CRYSTAL: &str = "Crystal Macro";
 const ANCHOR: &str = "Anchor Macro";
+const CRYSTAL_MODULE: &str = "Crystal Aura";
+const ANCHOR_MODULE: &str = "Anchor Aura";
+const MACRO: &str = "Macro";
 type Session = Arc<Mutex<Option<Arc<Counters>>>>;
 
-pub(super) fn defaults() -> Vec<Module> {
-    vec![
-        Module::new(CRYSTAL, Category::Combat, "Places and breaks crystals while held.")
-            .num("Break delay", 0.0, 0.0, 10.0, 1.0)
-            .num("Place delay", 0.0, 0.0, 10.0, 1.0)
-            .bool("Auto obsidian", true)
-            .num("Obsidian delay", 2.0, 0.0, 10.0, 1.0)
-            .bool("Switch back", true)
-            .num("Max self damage", 8.0, 0.0, 20.0, 0.5)
-            .bool("Human pace", true)
-            .bool("Protect loot", true),
-        Module::new(ANCHOR, Category::Combat, "Places and sets off an anchor.")
-            .pick("Mode", &["Single", "Double"])
-            .num("Delay", 0.0, 0.0, 5.0, 1.0)
-            .bool("Safe anchor", true)
-            .pick("If unguarded", &["Detonate", "Cancel"])
-            .bool("Switch back", false)
-            .bool("Protect loot", true),
-    ]
+// The settings of `owner`'s macro: its module, while on with the Macro section on.
+fn macro_module(owner: &str) -> Option<Module> {
+    let name = if owner == ANCHOR { ANCHOR_MODULE } else { CRYSTAL_MODULE };
+    with(|s| s.module(name).filter(|m| m.on && m.b(MACRO)).cloned())
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -200,15 +190,17 @@ fn same_session(game: &Game<'_>, run: &Run) -> bool {
             .is_some_and(|r| r.entity_id == run.entity && Arc::ptr_eq(&r.session.counters, &run.session))
 }
 fn enabled(run: &Run) -> bool {
-    with(|s| s.module(run.owner).is_some_and(|m| m.on && m == run.settings.as_ref()))
+    macro_module(run.owner).is_some_and(|m| &m == run.settings.as_ref())
 }
 
 // Explicit OFF/ON transitions invalidate the previous accepted manual intent.
 // Another macro's current sequence is independent and must retain its lease.
 pub(super) fn toggled(game: &mut Game<'_>, name: &str, _on: bool) {
-    if name != CRYSTAL && name != ANCHOR {
-        return;
-    }
+    let name = match name {
+        CRYSTAL_MODULE => CRYSTAL,
+        ANCHOR_MODULE => ANCHOR,
+        _ => return,
+    };
     if state(|s| s.run.as_ref().is_some_and(|run| run.owner == name)) {
         reset(game);
     }
@@ -1025,7 +1017,7 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
     if let Some(kind) = state(|s| s.run.as_ref().map(|r| r.sequence.kind)) {
         return held || kind == Kind::Anchor;
     }
-    let anchor = with(|s| s.module(ANCHOR).filter(|m| m.on).cloned());
+    let anchor = macro_module(ANCHOR);
     if state(|s| s.anchor_latched) && anchor.is_some() {
         return true;
     }
@@ -1045,7 +1037,7 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
     if !allowed(game) {
         return false;
     }
-    let crystal = with(|s| s.module(CRYSTAL).filter(|m| m.on).cloned());
+    let crystal = macro_module(CRYSTAL);
     if anchor.is_none() && crystal.is_none() {
         return false;
     }
@@ -1362,7 +1354,7 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget, actual: bool
 }
 
 pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], _ticks: u64) {
-    if !active() && !modules.iter().any(|m| m.on && (m.name == CRYSTAL || m.name == ANCHOR)) {
+    if !active() && !modules.iter().any(|m| m.on && (m.name == CRYSTAL_MODULE || m.name == ANCHOR_MODULE) && m.b(MACRO)) {
         return;
     }
     if game.selected < 9 {

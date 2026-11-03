@@ -15,11 +15,11 @@ use winit::event::MouseButton;
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
     vec![
-        Module::new("Anti Anvil", Combat, "Blocks falling anvils above you.")
-            .bool("Rotate", true),
-        Module::new("Self Anvil", Combat, "Drops an anvil into your hole.")
-            .bool("Rotate", true),
-        Module::new("Auto Anvil", Combat, "Drops anvils on players near you.")
+        // Anti Anvil, Self Anvil and Auto Anvil (Meteor's three modules) as sections; Rotate is all three's.
+        Module::new("Anvil", Combat, "Blocks anvils over you, drops them on players.")
+            .bool("Anti Anvil", true)
+            .bool("Self Anvil", false)
+            .bool("Auto Anvil", false)
             .num("Target range", 4.0, 0.0, 6.0, 0.5)
             .num("Height", 2.0, 2.0, 5.0, 1.0)
             .num("Delay", 10.0, 0.0, 50.0, 1.0)
@@ -93,6 +93,9 @@ struct Parity {
     clicks: u32,
     // Auto Anvil: ticks since its last anvils.
     anvil_timer: u32,
+    // Self Anvil: on last tick, and its anvil not yet placed since it came on.
+    self_anvil_was: bool,
+    self_anvil_due: bool,
     // Fake Player: it is in the world.
     fake: bool,
     // Quiver: where its shot is, the slot you held before the bow, and the effects shot since it came on.
@@ -217,21 +220,34 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     } else {
         parity(|p| p.timers.clear());
     }
+    // Anvil's Self Anvil drops one anvil each time it comes on (the module, or the section while the module is on).
+    let anvil = get("Anvil");
+    let self_on = anvil.is_some_and(|m| m.b("Self Anvil"));
+    parity(|p| {
+        p.self_anvil_due = self_on && (p.self_anvil_due || !p.self_anvil_was);
+        p.self_anvil_was = self_on;
+    });
     let Some(feet) = feet_block(game) else {
         return;
     };
     let above = |n: i32| [feet[0], feet[1] + n, feet[2]];
-    if let Some(m) = get("Anti Anvil") {
-        anti_anvil(game, m, feet);
-    }
-    if let Some(m) = get("Self Anvil")
-        && let Some(slot) = find_held(game, |n| matches!(n, "anvil" | "chipped_anvil" | "damaged_anvil"))
-        && place_block(game, above(2), slot, m.b("Rotate"), true)
-    {
-        toggle_off(game, "Self Anvil");
-    }
-    if let Some(m) = get("Auto Anvil") {
-        auto_anvil(game, m);
+    if let Some(m) = anvil {
+        if m.b("Anti Anvil") {
+            anti_anvil(game, m, feet);
+        }
+        // Placed: with no other section on, Anvil goes off, as Self Anvil alone did.
+        if parity(|p| p.self_anvil_due)
+            && let Some(slot) = find_held(game, |n| matches!(n, "anvil" | "chipped_anvil" | "damaged_anvil"))
+            && place_block(game, above(2), slot, m.b("Rotate"), true)
+        {
+            parity(|p| p.self_anvil_due = false);
+            if !m.b("Anti Anvil") && !m.b("Auto Anvil") {
+                toggle_off(game, "Anvil");
+            }
+        }
+        if m.b("Auto Anvil") {
+            auto_anvil(game, m);
+        }
     }
     if let Some(m) = get("Anti Bed") {
         anti_bed(game, m, feet);

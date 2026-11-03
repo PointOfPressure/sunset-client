@@ -84,11 +84,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Instamine", true),
         Module::new("No Break Reset", Player, "Keeps break progress on item swap.")
             .bool("Only to better tools", false),
-        Module::new("Anchor", Category::Movement, "Pulls you into holes.")
-            .num("Max height", 10.0, 1.0, 20.0, 1.0)
-            .num("Min pitch", 0.0, -90.0, 90.0, 5.0)
-            .bool("Pull", false)
-            .num("Pull speed", 0.3, 0.05, 1.0, 0.05),
     ]
 }
 
@@ -375,9 +370,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         spam(game, m);
     } else {
         ps(|p| p.spam_timer = 0);
-    }
-    if let Some(m) = get("Anchor") {
-        anchor(game, m);
     }
     match get("No Fall") {
         Some(m) => no_fall(game, m),
@@ -1070,54 +1062,6 @@ fn spam(game: &mut Game<'_>, m: &Module) {
     text.truncate(256);
     game.send_chat(&text);
     ps(|p| p.spam_timer = m.n("Delay (ticks)") as u32);
-}
-
-// ---- Anchor
-
-fn hole_block(game: &Game<'_>, p: [i32; 3]) -> bool {
-    let n = facts(game, p).name.clone();
-    matches!(short(&n), "bedrock" | "obsidian" | "crying_obsidian")
-}
-
-fn is_hole(game: &Game<'_>, x: i32, y: i32, z: i32) -> bool {
-    hole_block(game, [x, y - 1, z])
-        && hole_block(game, [x + 1, y, z])
-        && hole_block(game, [x - 1, y, z])
-        && hole_block(game, [x, y, z + 1])
-        && hole_block(game, [x, y, z - 1])
-}
-
-fn anchor(game: &mut Game<'_>, m: &Module) {
-    let Some(p) = game.player.as_ref() else {
-        return;
-    };
-    if game.pitch < m.n("Min pitch") as f32 {
-        return;
-    }
-    let (px, py, pz) = (p.position.x, p.position.y, p.position.z);
-    let (x, mut y, z) = (px.floor() as i32, py.floor() as i32, pz.floor() as i32);
-    if is_hole(game, x, y, z) {
-        return;
-    }
-    let mut found = None;
-    for _ in 0..m.n("Max height") as i32 {
-        y -= 1;
-        if y <= -64 || !(is_air(game, [x, y, z]) || !facts(game, [x, y, z]).full_collision) {
-            break;
-        }
-        if is_hole(game, x, y, z) {
-            found = Some([f64::from(x) + 0.5, f64::from(z) + 0.5]);
-            break;
-        }
-    }
-    if let Some([hx, hz]) = found {
-        let pull = if m.b("Pull") { m.n("Pull speed") } else { 0.0 };
-        if let Some(p) = game.player.as_mut() {
-            p.velocity.x = (hx - px).clamp(-0.05, 0.05);
-            p.velocity.z = (hz - pz).clamp(-0.05, 0.05);
-            p.velocity.y -= pull;
-        }
-    }
 }
 
 // ---- No Fall (Meteor's NoFall): Air place and Place, and Clutch's place under Packet and No ground. Those two change

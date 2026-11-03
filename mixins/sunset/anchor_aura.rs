@@ -26,12 +26,21 @@ const ACK_TIMEOUT: u64 = 30;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(NAME, Category::Combat, "Sets off anchors on enemies.")
+        // Aura sets off anchors on enemies by itself; Macro (the old Anchor Macro, combat_macros.rs) places, charges and
+        // sets one off on your right click. Protect loot is both sections'.
+        Module::new(NAME, Category::Combat, "Sets off anchors on enemies, or on your right click.")
+            .bool("Aura", true)
             .num("Min damage", 6.0, 0.0, 20.0, 0.5)
             .num("Max self damage", 6.0, 0.0, 20.0, 0.5)
             .bool("Render", true)
             .text("Render color", "#FFFF9A3C")
             .num("Turn speed", 4.5, 1.0, 10.0, 0.5)
+            .bool("Macro", false)
+            .pick("Mode", &["Single", "Double"])
+            .num("Delay", 0.0, 0.0, 5.0, 1.0)
+            .bool("Safe anchor", true)
+            .pick("If unguarded", &["Detonate", "Cancel"])
+            .bool("Switch back", false)
             .bool("Protect loot", true),
     ]
 }

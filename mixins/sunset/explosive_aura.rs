@@ -79,7 +79,7 @@ pub(super) fn draw(
             })
     });
     for (index, name) in ["Crystal Aura", "Anchor Aura"].iter().enumerate() {
-        let Some(module) = modules.iter().find(|m| m.name == *name && m.on && m.b("Render")) else {
+        let Some(module) = modules.iter().find(|m| m.name == *name && m.on && m.b("Aura") && m.b("Render")) else {
             continue;
         };
         let Some((lo, damage, own, alpha)) = views[index] else {
@@ -138,8 +138,9 @@ pub(super) fn can_act(game: &Game<'_>) -> bool {
 
 pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], ticks: u64) {
     super::sunset_prediction::tick(game);
-    let crystal = modules.iter().find(|m| m.name == "Crystal Aura" && m.on);
-    let anchor = modules.iter().find(|m| m.name == "Anchor Aura" && m.on);
+    // Each module's Aura section (its Macro section is combat_macros.rs's).
+    let crystal = modules.iter().find(|m| m.name == "Crystal Aura" && m.on && m.b("Aura"));
+    let anchor = modules.iter().find(|m| m.name == "Anchor Aura" && m.on && m.b("Aura"));
     if CRYSTAL_ON.swap(crystal.is_some(), Ordering::Relaxed) && crystal.is_none() {
         super::sunset_crystal_aura::disabled(game);
     }
