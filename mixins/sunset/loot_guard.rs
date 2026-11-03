@@ -1,7 +1,7 @@
 // Protect Loot: no explosion near where a player just died, so their drops aren't blown up.
 use super::remote::sunset_loot_remote::{self, Death};
 use super::sunset_explosive_damage::Blast;
-use super::sunset_loot_policy::{Dimension, Guard, Reason};
+use super::sunset_loot_policy::{Dimension, Guard, LOOT_BOX, Reason};
 use super::{Game, sunset};
 use horizon_protocol::{connection::Counters, packets::play::Clientbound as C};
 use std::{
@@ -79,7 +79,17 @@ pub(super) fn allows(game: &Game<'_>, blast: Blast, protect: bool) -> bool {
     if !protect {
         return true;
     }
+    let feet = game.player.as_ref().map(|p| [p.position.x, p.position.y, p.position.z]);
+    // Loot more than 32 blocks off may not be loaded yet: that spot is kept.
+    let loot = |at: [f64; 3]| {
+        feet.is_none_or(|f| (0..3).map(|i| (f[i] - at[i]).powi(2)).sum::<f64>() > 32.0 * 32.0)
+            || game.dropped.iter().any(|item| {
+                let p = [item.position.x, item.position.y, item.position.z];
+                (0..3).all(|i| (p[i] - at[i]).abs() <= LOOT_BOX[i])
+            })
+    };
     state(|s| {
+        s.guard.release_empty(now(), loot);
         s.last = if !same_session(game, s) || s.dimension.is_none() {
             Reason::UnknownScene
         } else {

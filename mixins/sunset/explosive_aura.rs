@@ -163,7 +163,7 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], ticks: u64) {
     }
     if crystal.is_some()
         && !super::sunset_crystal_aura::owns_selection(game)
-        && !super::sunset_explosive_tactics::may_take_hand(game, anchor.is_some())
+        && !super::sunset_explosive_tactics::may_take_hand(game)
     {
         super::sunset_crystal_aura::idle(game);
         super::sunset_anchor_aura::idle(game);

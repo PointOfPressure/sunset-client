@@ -1,5 +1,6 @@
-// Anchor Aura (Rust's, PR #16): places, charges and sets off respawn anchors on enemy players outside the Nether.
-// Each step waits for the server to show the block changed; the client never predicts it.
+// Anchor Aura (Rust's, PR #16, after Anubis 1.0's AnchorAuraModule by 4ldenz/Horus, MIT): places, charges and sets off
+// respawn anchors on enemy players outside the Nether. Each step waits for the server to show the block changed; the
+// client never predicts it.
 use super::sunset::{Category, Module, cancel_turns, gui_open, look_at, try_turn_then, with};
 use super::sunset_anchor_state::{self as order, Step, Wait};
 use super::sunset_explosive_aura::Rating;
@@ -19,7 +20,6 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 const NAME: &str = "Anchor Aura";
-const SCAN: usize = 128;
 const MAX_EVALUATED: usize = 4;
 const MAX_FAILED: usize = 32;
 const ACK_TIMEOUT: u64 = 30;
@@ -67,9 +67,7 @@ struct State {
     session_arc:
         Option<std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<horizon_protocol::connection::Counters>>>>>,
     last_tick: u64,
-    cursor: usize,
     origin: Option<[i32; 3]>,
-    anchors: Vec<[i32; 3]>,
     pending: Option<Pending>,
     failed: Vec<([i32; 3], BlockStateId, u64)>,
     aim_wait: Option<([i32; 3], u64)>,
@@ -480,36 +478,30 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
     let Some(target) = targets.first() else {
         return None;
     };
-    // Incremental cube scan: at most 128 block reads each tick, 64 retained.
-    let radius = tactics::anchor_range(game).ceil().clamp(1.0, 64.0) as i32;
-    let side = (radius * 2 + 1) as usize;
-    let volume = side * side * side;
-    let mut candidates = state(|s| {
-        if s.origin != Some(origin) {
-            s.origin = Some(origin);
-            s.cursor = 0;
-            s.anchors.clear();
-        }
-        for _ in 0..SCAN {
-            let i = s.cursor;
-            s.cursor = (i + 1) % volume;
-            let p = [
-                origin[0] + (i % side) as i32 - radius,
-                origin[1] + (i / side % side) as i32 - radius,
-                origin[2] + (i / (side * side)) as i32 - radius,
-            ];
-            if game.world.loaded(p[0], p[2])
-                && game.is_anchor(block(game, p))
-                && !s.anchors.contains(&p)
-                && s.anchors.len() < 64
-            {
-                s.anchors.push(p);
+    // Every anchor round each target, each tick, as Anubis looks (4 across, 3 down and 4 up from its feet). It read
+    // 128 blocks of the range a tick in turn, so an anchor it had just placed went unseen for up to 10 ticks and it
+    // placed more beside it.
+    let mut candidates = Vec::new();
+    for t in &targets {
+        let feet = t.pos.map(|v| v.floor() as i32);
+        for x in -4..=4 {
+            for y in -3..=4 {
+                for z in -4..=4 {
+                    let p = [feet[0] + x, feet[1] + y, feet[2] + z];
+                    if candidates.len() < 64
+                        && !candidates.contains(&p)
+                        && game.world.loaded(p[0], p[2])
+                        && game.is_anchor(block(game, p))
+                    {
+                        candidates.push(p);
+                    }
+                }
             }
         }
-        s.anchors.retain(|&p| game.is_anchor(block(game, p)));
+    }
+    state(|s| {
+        s.origin = Some(origin);
         s.failed.retain(|&(p, b, until)| game.ticks < until && block(game, p) == b);
-
-        s.anchors.clone()
     });
     candidates.sort_by(|a, b| optimistic(*b, &targets).total_cmp(&optimistic(*a, &targets)));
     let probe = state(|s| {
@@ -558,11 +550,9 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
                 }
             }
         }
+        // Best first, as Anubis tries them (they were turned round by a counter, so the four tried each tick were
+        // seldom the best four).
         places.sort_by(|a, b| optimistic(*b, &targets).total_cmp(&optimistic(*a, &targets)));
-        if !places.is_empty() {
-            let n = probe % places.len();
-            places.rotate_left(n);
-        }
         candidates.extend(places);
     }
     let mut evaluated = checked.len();

@@ -485,23 +485,28 @@ pub(super) fn setting_key_down(game: &Game<'_>, module: &Module, setting: &str) 
 // Where a look (yaw, pitch) meets the face (0 down, 1 up, 2 north, 3 south, 4 west, 5 east) of block `clicked`, within
 // `range` and reach; None if it meets anything else first.
 pub(super) fn block_contact(game: &Game<'_>, look: (f32, f32), clicked: [i32; 3], face: i32, range: f64) -> Option<[f64; 3]> {
+    block_hit(game, look, clicked, range).filter(|hit| hit.0 == face).map(|hit| hit.1)
+}
+
+// The face (0 down .. 5 east) and point where the look from your eyes first meets the block at `clicked`, within
+// `range`: for a click that any face of the block takes (an end crystal on obsidian).
+pub(super) fn block_hit(game: &Game<'_>, look: (f32, f32), clicked: [i32; 3], range: f64) -> Option<(i32, [f64; 3])> {
     if !look.0.is_finite() || !look.1.is_finite() || !range.is_finite() {
         return None;
     }
     let (yaw, pitch) = (f64::from(look.0).to_radians(), f64::from(look.1).to_radians());
     let direction = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
-    let normal = match face {
-        0 => [0, -1, 0],
-        1 => [0, 1, 0],
-        2 => [0, 0, -1],
-        3 => [0, 0, 1],
-        4 => [-1, 0, 0],
-        5 => [1, 0, 0],
+    let hit = game.clip_ray(game.eye_position()?, direction, range.min(game.reach())).filter(|hit| hit.pos == clicked)?;
+    let face = match hit.face {
+        [0, -1, 0] => 0,
+        [0, 1, 0] => 1,
+        [0, 0, -1] => 2,
+        [0, 0, 1] => 3,
+        [-1, 0, 0] => 4,
+        [1, 0, 0] => 5,
         _ => return None,
     };
-    game.clip_ray(game.eye_position()?, direction, range.min(game.reach()))
-        .filter(|hit| hit.pos == clicked && hit.face == normal)
-        .map(|hit| hit.point)
+    Some((face, hit.point))
 }
 
 pub(super) fn every_living(game: &Game<'_>) -> Vec<Target> {

@@ -1,6 +1,7 @@
-// Crystal Aura (Rust's, PR #16): places end crystals (and the obsidian under them, Auto Obsidian) and breaks them
-// on enemy players, for the damage it can see they take and never more than Max Self Damage to you or a friend. Only
-// crystals the server has shown are hit; a placement waits for its crystal or a timeout.
+// Crystal Aura (Rust's, PR #16, after Anubis 1.0's CrystalAuraModule by 4ldenz/Horus, MIT): places end crystals (and
+// the obsidian under them, Auto Obsidian) and breaks them on enemy players, for the damage it can see they take and
+// never more than Max Self Damage to you or a friend. Only crystals the server has shown are hit; a placement waits for
+// its crystal or a timeout.
 use super::remote::sunset_aura_base::{self as base_native, BaseClick};
 use super::sunset::{self, Category, Module, gui_open, own_id, with};
 use super::sunset_crystal_setup_policy as setup;
@@ -23,16 +24,17 @@ use std::time::{Duration, Instant};
 
 const NAME: &str = "Crystal Aura";
 const MAX_ENTITIES: usize = 512;
-const SCAN_CELLS: usize = 96;
 const MAX_CANDIDATES: usize = 4;
+// Crystal and obsidian spots weighed a tick, best first, until none left could beat the best (Anubis's): only the
+// first four were, so when those four failed (too close to you, say) it stood idle with better ones untried.
+const MAX_SETUPS: usize = 8;
+// A crystal or obsidian spot it has turned toward this long without reaching it is left alone for SKIP_TICKS
+// (Anubis's Anchor Aura does the same).
+const AIM_TICKS: u64 = 12;
+const SKIP_TICKS: u64 = 40;
 const PREDICTIONS: usize = 24;
 
 mod state {
-    // Stop just outside the clicked top face. Ignoring the whole base would
-    // incorrectly allow a ray from below to pass through the obsidian itself.
-    pub(super) fn place_ray_end(top: [f64; 3]) -> [f64; 3] {
-        [top[0], top[1] + 1.0e-5, top[2]]
-    }
     // Unit direction, slab intersection with the actual entity bounds. Return
     // the first contact, including the eye when it is already inside the box.
     pub(super) fn ray_box(
@@ -98,7 +100,6 @@ mod state {
     }
     #[derive(Default)]
     pub(super) struct Clock {
-        pub cursor: usize,
         pub crystals: usize,
         pub queued: bool,
         pub waiting: Option<Waiting>,
@@ -147,12 +148,6 @@ mod state {
                         Action::Break(_, _) => self.next_break,
                     }
         }
-        pub fn cell(&mut self, radius: i32) -> [i32; 3] {
-            let side = (radius * 2 + 1) as usize;
-            let n = self.cursor % (side * side * side);
-            self.cursor = (n + 1) % (side * side * side);
-            [(n % side) as i32 - radius, ((n / side) % side) as i32 - radius, (n / (side * side)) as i32 - radius]
-        }
     }
 }
 use state::{Action, Clock};
@@ -184,10 +179,12 @@ struct State {
     setup: setup::Ledger,
     setup_scene: Option<SetupScene>,
     weapon: Option<WeaponLease>,
+    // The spot being turned toward: since when, and the last tick it was.
+    aim_wait: Option<([i32; 3], u64, u64)>,
+    skipped: Vec<([i32; 3], u64)>,
 }
 static STATE: Mutex<State> = Mutex::new(State {
     clock: Clock {
-        cursor: 0,
         crystals: 0,
         queued: false,
         waiting: None,
@@ -208,6 +205,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     setup: setup::Ledger::new(),
     setup_scene: None,
     weapon: None,
+    aim_wait: None,
+    skipped: Vec::new(),
 });
 fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(&mut STATE.lock().unwrap_or_else(|e| e.into_inner()))
@@ -262,6 +261,8 @@ pub(super) fn reset() {
         s.attempts.clear();
         s.setup.clear();
         s.setup_scene = None;
+        s.aim_wait = None;
+        s.skipped.clear();
         s.lookahead = None;
         s.opening = 0.0;
     });
@@ -497,14 +498,14 @@ fn place_valid(game: &Game<'_>, base: [i32; 3]) -> bool {
         && crystal_column(game, base)
 }
 fn setup_valid(game: &Game<'_>, base: [i32; 3]) -> bool {
-    if !tactics::breakable(game, base) {
+    let f = util::facts(game, base);
+    if !f.replaceable || f.fluid != super::Fluid::None || f.fluid_level != 0 || f.waterlogged {
         return false;
     }
-    let f = util::facts(game, base);
-    f.replaceable
-        && f.fluid == super::Fluid::None
-        && f.fluid_level == 0
-        && !f.waterlogged
+    // On something solid, as Anubis lays it: the whole range is scanned each tick, and obsidian hung off a wall
+    // or a ceiling is not where a fight is.
+    util::facts(game, [base[0], base[1] - 1, base[2]]).full_collision
+        && tactics::breakable(game, base)
         && util::can_place(game, base, true)
         && crystal_column(game, base)
 }
@@ -539,8 +540,10 @@ fn crystal_column(game: &Game<'_>, base: [i32; 3]) -> bool {
         let (a, b) = (a.min_position(), a.max_position());
         a.x < hi[0] && b.x > lo[0] && a.y < hi[1] && b.y > lo[1] && a.z < hi[2] && b.z > lo[2]
     };
+    // An enemy standing in the spot now doesn't rule it out if it will have moved out by the time the click arrives
+    // (the predicted boxes below; Anubis's canHostSoon). Anyone else in the way does.
     if game.player.as_ref().is_some_and(|p| hits(p.bounds()))
-        || game.mobs.iter().any(|mob| !mob.removed && hits(mob.bounds()))
+        || game.mobs.iter().any(|mob| !mob.removed && hits(mob.bounds()) && !util::player_enemy(game, mob))
     {
         return false;
     }
@@ -594,8 +597,11 @@ fn reachable(game: &Game<'_>, m: &Module, action: Action, budget: &mut Budget) -
     match action {
         Action::Base(_) => None,
         Action::Place(base) => {
-            let top = center(base);
-            hit_visible(game, m, eye, top, state::place_ray_end(top), tactics::block_range(game), budget).then_some(top)
+            let from = tactics::aim_eye(game).unwrap_or(eye);
+            let range = tactics::block_range(game);
+            place_aims(game, base).into_iter().find(|aim| {
+                in_range(eye, *aim, range) && util::block_hit(game, sunset::look_at(from, *aim), base, range).is_some()
+            })
         }
         Action::Break(_, at) => {
             let (yaw, pitch) = (f64::from(game.yaw).to_radians(), f64::from(game.pitch).to_radians());
@@ -620,6 +626,37 @@ fn reachable(game: &Game<'_>, m: &Module, action: Action, budget: &mut Budget) -
             None
         }
     }
+}
+
+// Where to look to click the obsidian under a crystal spot, best first (Anubis's): the point of its top your look
+// already crosses, the middle of its top, then the middle of each side facing you. The points are 0.1 inside the
+// block, so a look a little off still lands on it; any face of it takes the crystal.
+fn place_aims(game: &Game<'_>, base: [i32; 3]) -> Vec<[f64; 3]> {
+    let [x, y, z] = base.map(f64::from);
+    let top = y + 0.9;
+    let mut aims = Vec::with_capacity(6);
+    let Some(eye) = tactics::aim_eye(game) else {
+        return aims;
+    };
+    let look = super::sunset_combat_wire::sent_look(game).unwrap_or((game.yaw, game.pitch));
+    let (yaw, pitch) = (f64::from(look.0).to_radians(), f64::from(look.1).to_radians());
+    let dir = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
+    if dir[1] < -1.0e-6 && eye[1] > top {
+        let along = (top - eye[1]) / dir[1];
+        aims.push([
+            (eye[0] + dir[0] * along).clamp(x + 0.1, x + 0.9),
+            top,
+            (eye[2] + dir[2] * along).clamp(z + 0.1, z + 0.9),
+        ]);
+    }
+    aims.push([x + 0.5, top, z + 0.5]);
+    for (dx, dz) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+        let side = [x + 0.5 + dx * 0.4, y + 0.5, z + 0.5 + dz * 0.4];
+        if (eye[0] - side[0]) * dx + (eye[2] - side[2]) * dz > 0.0 {
+            aims.push(side);
+        }
+    }
+    aims
 }
 
 fn crystal_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
@@ -768,7 +805,7 @@ fn held(game: &Game<'_>, m: &Module, action: Action) -> bool {
             )
             .is_some()
         }
-        Action::Place(base) => util::block_contact(game, look, base, 1, tactics::block_range(game)).is_some(),
+        Action::Place(base) => util::block_hit(game, look, base, tactics::block_range(game)).is_some(),
         Action::Base(_) => false,
     }
 }
@@ -942,20 +979,32 @@ pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Op
     }
     st(|s| s.clock.crystals = if count == 0 { 0 } else { (start + 64) % count });
     if best.is_none() && stage.new_crystal() && evaluated < MAX_CANDIDATES && crystal_slot(game, m).is_some() {
-        let Some(origin) = util::block_pos(game) else {
+        // Every spot in reach each tick, round your eyes, best first by the most it could deal, as Anubis scans
+        // (it was 96 spots a tick in turn, so the best one for a moving target could take 14 ticks to come round).
+        let Some(origin) = game.eye_position().map(|eye| eye.map(|v| v.floor() as i32)) else {
             return None;
         };
-        let retained = st(|s| s.retained).and_then(setup_cell).and_then(|base| setup_action(game, m, base, ticks));
+        let skipped = st(|s| {
+            s.skipped.retain(|&(_, until)| ticks < until);
+            s.skipped.iter().map(|&(cell, _)| cell).collect::<Vec<_>>()
+        });
+        let retained = st(|s| s.retained)
+            .and_then(setup_cell)
+            .filter(|base| !skipped.contains(base))
+            .and_then(|base| setup_action(game, m, base, ticks));
+        let radius = tactics::block_range(game).ceil().clamp(1.0, 8.0) as i32;
         let mut cells = Vec::new();
-        for _ in 0..SCAN_CELLS {
-            let radius = tactics::block_range(game).ceil().clamp(1.0, 64.0) as i32;
-            let d = st(|s| s.clock.cell(radius));
-            let base = std::array::from_fn(|i| origin[i].saturating_add(d[i]));
-            if retained.and_then(setup_cell) == Some(base) {
-                continue;
-            }
-            if let Some(action) = setup_action(game, m, base, ticks) {
-                cells.push((optimistic(center(base), &targets), action));
+        for dx in -radius..=radius {
+            for dy in -radius..=radius {
+                for dz in -radius..=radius {
+                    let base = [origin[0] + dx, origin[1] + dy, origin[2] + dz];
+                    if retained.and_then(setup_cell) == Some(base) || skipped.contains(&base) {
+                        continue;
+                    }
+                    if let Some(action) = setup_action(game, m, base, ticks) {
+                        cells.push((optimistic(center(base), &targets), action));
+                    }
+                }
             }
         }
         cells.sort_by(|a, b| b.0.total_cmp(&a.0));
@@ -968,9 +1017,15 @@ pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Op
         let mut base_best = None;
         let mut crystal_best = None;
         let mut rays = 48;
-        for (_, action) in cells {
-            if evaluated >= MAX_CANDIDATES {
+        let mut weighed = 0;
+        for (bound, action) in cells {
+            // The most a spot's look can add: held (2) and one look for the crystal too (2).
+            let kind_best = if matches!(action, Action::Base(_)) { &base_best } else { &crystal_best };
+            if weighed >= MAX_SETUPS {
                 break;
+            }
+            if kind_best.as_ref().is_some_and(|b: &Plan| rank(&b.rating) >= bound + 4.0) {
+                continue;
             }
             let (aim, click) = match action {
                 Action::Place(_) => {
@@ -993,7 +1048,7 @@ pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Op
             if !view_allowed(game, m, action, aim) {
                 continue;
             }
-            evaluated += 1;
+            weighed += 1;
             let at = match action {
                 Action::Place(base) | Action::Base(base) => center(base),
                 _ => continue,
@@ -1078,7 +1133,7 @@ fn queue(
         Action::Base(_) => click.is_some_and(|c| {
             util::block_contact(game, look, c.clicked, base_native::face(c), tactics::block_range(game)).is_some()
         }),
-        Action::Place(base) => util::block_contact(game, look, base, 1, tactics::block_range(game)).is_some(),
+        Action::Place(base) => util::block_hit(game, look, base, tactics::block_range(game)).is_some(),
     });
     if !tactics::fixed_look(game)
         && m.n("View angle") < 180.0
@@ -1093,7 +1148,7 @@ fn queue(
             click = Some(c);
             Some(c.point)
         }),
-        Action::Place(base) => util::block_contact(game, turn, base, 1, tactics::block_range(game)),
+        Action::Place(base) => util::block_hit(game, turn, base, tactics::block_range(game)).map(|hit| hit.1),
         Action::Break(_, at) => {
             let y = f64::from(turn.0).to_radians();
             let p = f64::from(turn.1).to_radians();
@@ -1102,11 +1157,33 @@ fn queue(
         }
     };
     let Some(aim) = contact else {
+        // Turned toward a spot this long and still not on it (reach or a block cuts the look short): leave it.
+        if let Some(cell) = setup_cell(action) {
+            let stuck = st(|s| {
+                let since = s
+                    .aim_wait
+                    .filter(|&(c, _, last)| c == cell && ticks.saturating_sub(last) <= 2)
+                    .map_or(ticks, |(_, since, _)| since);
+                s.aim_wait = Some((cell, since, ticks));
+                ticks.saturating_sub(since) >= AIM_TICKS
+            });
+            if stuck {
+                st(|s| {
+                    s.aim_wait = None;
+                    s.retained = None;
+                    if s.skipped.len() < 32 {
+                        s.skipped.push((cell, ticks + SKIP_TICKS));
+                    }
+                });
+                return false;
+            }
+        }
         if !tactics::fixed_look(game) {
             sunset::turn(NAME, turn.0, turn.1);
         }
         return false;
     };
+    st(|s| s.aim_wait = None);
     let own = own_id(game);
     let selected_slot = game.selected;
     let dimension = game.dim;
@@ -1185,6 +1262,7 @@ fn queue(
             return;
         };
         let mut click = click;
+        let mut place_face = 1;
         let current_contact = match action {
             Action::Base(base) => click.and_then(|mut current| {
                 current.point = util::block_contact(
@@ -1201,7 +1279,12 @@ fn queue(
                 click = Some(current);
                 Some(current.point)
             }),
-            Action::Place(base) => util::block_contact(game, sent_look, base, 1, tactics::block_range(game)),
+            Action::Place(base) => {
+                util::block_hit(game, sent_look, base, tactics::block_range(game)).map(|(face, point)| {
+                    place_face = face;
+                    point
+                })
+            }
             Action::Break(_, position) => {
                 let y = f64::from(sent_look.0).to_radians();
                 let p = f64::from(sent_look.1).to_radians();
@@ -1295,7 +1378,7 @@ fn queue(
                 game.send(S::UseItemOn(play::UseItemOn {
                     hand: i32::from(slot == util::OFFHAND),
                     pos: base,
-                    face: 1,
+                    face: place_face,
                     cursor: std::array::from_fn(|i| (aim[i] - f64::from(base[i])) as f32),
                     inside: false,
                     world_border: false,

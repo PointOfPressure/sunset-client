@@ -226,8 +226,19 @@ fn difficulty_id(id: u8) -> Difficulty {
 }
 
 fn observed_difficulty(game: &Game<'_>) -> Difficulty {
-    // Remote ChangeDifficulty updates the UI snapshot, not World.health_rules.
-    if game.remote.is_some() { difficulty_id(game.ui.difficulty) } else { game.world.health_rules.difficulty }
+    // Remote ChangeDifficulty updates the UI snapshot, not World.health_rules. Horizon's own server never sends it
+    // when /difficulty changes, so a Peaceful seen at join can be stale; read as such it made every player's damage 0
+    // and Crystal Aura and Anchor Aura did nothing at all. Peaceful counts as Normal: where the world really is
+    // peaceful no player takes explosion damage, so that costs a few crystals there, and your own damage is never
+    // counted short.
+    if game.remote.is_some() {
+        match difficulty_id(game.ui.difficulty) {
+            Difficulty::Peaceful => Difficulty::Normal,
+            seen => seen,
+        }
+    } else {
+        game.world.health_rules.difficulty
+    }
 }
 
 // The armour worn is all known: no unknown item, stack, component or enchantment that changes how it wears.

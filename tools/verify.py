@@ -5992,17 +5992,23 @@ ARMOR = [("head", "netherite_helmet"), ("chest", "netherite_chestplate"), ("legs
          ("feet", "netherite_boots")]
 
 
-def blast_arena(bot=True):
-    cmd(f"fill {X0-5} {Y-1} {Z0-4} {X0+5} {Y} {Z0+8} minecraft:obsidian", "difficulty normal",
+def blast_arena(bot=True, floor="obsidian", enchant="blast_protection", depth=1):
+    cmd(f"fill {X0-5} {Y-depth} {Z0-4} {X0+5} {Y} {Z0+8} minecraft:{floor}", "difficulty normal",
         "gamerule natural_health_regeneration false", "gamerule fire_damage false")
     for part, item in ARMOR:
-        cmd(f"item replace entity @s armor.{part} with minecraft:{item}[enchantments={{blast_protection:4}}]")
+        cmd(f"item replace entity @s armor.{part} with minecraft:{item}[enchantments={{{enchant}:4}}]")
     if bot:
-        cmd("gamemode survival Bot1", "attribute Bot1 minecraft:max_health base set 1000",
-            "attribute Bot1 minecraft:knockback_resistance base set 1", "attribute Bot1 minecraft:explosion_knockback_resistance base set 1",
-            f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 3.5}", "effect give Bot1 minecraft:instant_health 1 28 true")
-        ctl2("release")
+        blast_bot()
     wait(20)
+
+
+def blast_bot():
+    """Bot1 back from the death screen (a run can take all of its thousand health), 3 blocks south, healed."""
+    bot_respawned()
+    cmd("gamemode survival Bot1", "attribute Bot1 minecraft:max_health base set 1000",
+        "attribute Bot1 minecraft:knockback_resistance base set 1", "attribute Bot1 minecraft:explosion_knockback_resistance base set 1",
+        f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 3.5}", "effect give Bot1 minecraft:instant_health 1 28 true")
+    ctl2("release")
 
 
 def blast_done():
@@ -6037,7 +6043,9 @@ def crystals_left():
     cmd("kill @e[type=minecraft:end_crystal]")
     for line in ctl("chat-log", "3").get("chat", []):
         if line.startswith("Killed "):
-            return int(line.split()[1])
+            # "Killed 3 entities", or for one: "Killed End Crystal".
+            n = line.split()[1]
+            return int(n) if n.isdigit() else 1
         if "No entity was found" in line:
             return 0
     return None
@@ -6107,7 +6115,7 @@ def _():
     ensure_alive()
     # At 20 health with a totem and the usual limit (8): it never pops you or kills you.
     setting("crystalaura", "max self damage", "8")
-    cmd("effect give Bot1 minecraft:instant_health 1 28 true")
+    blast_bot()
     safe = blast_run("crystalaura", [("end_crystal", 64), ("obsidian", 64)], 200, health=20, totem=True)
     ensure_alive()
     blast_done()
@@ -6137,7 +6145,8 @@ def _():
     fast = blast_run("anchoraura", [("respawn_anchor", 64), ("glowstone", 64)], 200, health=200)
     ensure_alive()
     setting("anchoraura", "max self damage", "6")
-    cmd("effect give Bot1 minecraft:instant_health 1 28 true", "effect give @s minecraft:fire_resistance 120 0 true")
+    blast_bot()
+    cmd("effect give @s minecraft:fire_resistance 120 0 true")
     safe = blast_run("anchoraura", [("respawn_anchor", 64), ("glowstone", 64)], 200, health=20, totem=True)
     ensure_alive()
     blast_done()
@@ -6150,6 +6159,53 @@ def _():
                 f"with a totem and limit 6: {safe['used']['respawn_anchor']} anchors, you {safe['taken']:.0f}, "
                 f"{safe['pops']} totems popped, alive {safe['alive']}; most move packets in a tick {fast['most']}; "
                 f"{fast['fps']:.0f} fps; holding {fast['held']} after")
+
+
+@test("Crystal Aura from any hand")
+def _():
+    """vs.'s report (3 Nov 2026): walking up to a player, Crystal Aura at its defaults did nothing. Holding a pickaxe,
+    food or blocks it never took the hand; holding a sword on plain ground it put down obsidian and one crystal, then
+    turned toward a spot by its feet for good (aimed from eyes that fell with gravity while standing). Here: plain
+    stone ground (obsidian goes down first), you in Protection IV netherite, Bot1 3 blocks south, defaults, 5 s with
+    each item held: crystals placed, damage dealt, the item back in hand after. On Horizon's server it also covers the
+    third cause: clean() sets Peaceful and blast_arena() Normal, and that server never tells you the change, so the
+    damage maths saw Peaceful (no damage to anyone) and nothing was placed at all."""
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    reset()
+    ground = f"fill {X0-5} {Y-5} {Z0-4} {X0+5} {Y} {Z0+8} minecraft:stone"
+    blast_arena(floor="stone", enchant="protection", depth=5)
+    control = hand_crystal()
+    runs = {}
+    for item in ("diamond_pickaxe", "cooked_beef", "cobblestone"):
+        ensure_alive()
+        cmd("kill @e[type=minecraft:end_crystal]", f"fill {X0-5} {Y+1} {Z0-4} {X0+5} {Y+4} {Z0+8} minecraft:air", ground,
+            f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0", "effect give @s minecraft:instant_health 1 28 true")
+        blast_bot()
+        slot(0, item, 1 if item == "diamond_pickaxe" else 32)
+        slot(1, "end_crystal", 64)
+        slot(2, "obsidian", 64)
+        ctl("key", "1", "tap")
+        wait(20)
+        mark = probe_mark() if SERVER and probe_path() else None
+        before = ctl("inventory").get("counts", {})
+        bot0 = bot_health()
+        only("crystalaura")
+        wait(100)
+        only()
+        wait(10)
+        after = ctl("inventory").get("counts", {})
+        runs[item] = {"crystals": before.get("minecraft:end_crystal", 0) - after.get("minecraft:end_crystal", 0),
+                      "obsidian": before.get("minecraft:obsidian", 0) - after.get("minecraft:obsidian", 0),
+                      "dealt": bot0 - bot_health(), "held": (held().get("item") or "").removeprefix("minecraft:"),
+                      "most": wire_stats(mark)[1] if mark is not None else None}
+    blast_done()
+    cmd(f"fill {X0-5} {Y-5} {Z0-4} {X0+5} {Y-2} {Z0+8} minecraft:air")
+    ok = all(r["crystals"] >= 3 and r["obsidian"] >= 1 and (r["dealt"] > 0 or control == 0) and r["held"] == item
+             and r["most"] in (None, 0, 1) for item, r in runs.items())
+    return ok, (f"a crystal broken by hand beside Bot1 costs it {control}; " + "; ".join(
+        f"{item}: {r['crystals']} crystals, {r['obsidian']} obsidian, Bot1 took {r['dealt']:.0f}, holding {r['held']} "
+        f"after, most move packets in a tick {r['most']}" for item, r in runs.items()))
 
 
 def macro_run(module, items, look_at, hold_ticks, health=200):

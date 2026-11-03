@@ -155,16 +155,21 @@ pub(super) fn aim_eye(game: &Game<'_>) -> Option<[f64; 3]> {
         return Some(eye);
     }
     let p = game.player.as_ref()?;
-    let velocity = [p.velocity.x, p.velocity.y, p.velocity.z];
+    // Standing on the ground the game still adds gravity to the velocity, but the eyes don't go down: aiming from
+    // there flattened the look at a crystal spot near your feet until it fell short or ran past reach.
+    let fall = if p.ground.on_ground { p.velocity.y.max(0.0) } else { p.velocity.y };
+    let velocity = [p.velocity.x, fall, p.velocity.z];
     velocity.iter().all(|v| v.is_finite()).then(|| std::array::from_fn(|i| eye[i] + velocity[i]))
 }
-pub(super) fn may_take_hand(game: &Game<'_>, anchors: bool) -> bool {
-    let main = game.inventory.get(game.selected).and_then(|s| s.as_ref());
-    combat_item(game, main)
-        || main.is_some_and(|s| {
-            matches!(util::short(&s.item), "end_crystal" | "obsidian")
-                || anchors && matches!(util::short(&s.item), "respawn_anchor" | "glowstone")
-        })
+// The auras take the hotbar from whatever you hold (a pickaxe, food, blocks: walking up to someone, you rarely hold
+// a sword) and give it back after, except a golden apple you keep ready to eat. While you use the item (right click,
+// eating, mining) they wait.
+pub(super) fn may_take_hand(game: &Game<'_>) -> bool {
+    !game
+        .inventory
+        .get(game.selected)
+        .and_then(|s| s.as_ref())
+        .is_some_and(|s| matches!(util::short(&s.item), "golden_apple" | "enchanted_golden_apple"))
 }
 pub(super) fn use_conflicts(game: &Game<'_>) -> bool {
     if !game.right {
@@ -175,6 +180,10 @@ pub(super) fn use_conflicts(game: &Game<'_>) -> bool {
     }
     let main = game.inventory.get(game.selected).and_then(|s| s.as_ref());
     if matches!(name(main), Some("respawn_anchor" | "glowstone")) {
+        return true;
+    }
+    // Right click held with a block, food or anything else of your own in hand: you are using it.
+    if !matches!(name(main), Some("end_crystal" | "obsidian")) && !combat_item(game, main) {
         return true;
     }
     let off = game.offhand.as_ref();

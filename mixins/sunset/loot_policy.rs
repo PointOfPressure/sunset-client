@@ -2,6 +2,10 @@
 pub const CAPACITY: usize = 16;
 pub const TTL_MS: u64 = 30_000;
 pub const DROP_MARGIN: f64 = 2.0;
+// Anubis's: a death spot with no dropped item left round it (8 blocks across, 4 up or down) is let go this long
+// after the death, so one kill doesn't hold every crystal back for the whole TTL.
+pub const EMPTY_GRACE_MS: u64 = 3_000;
+pub const LOOT_BOX: [f64; 3] = [8.0, 4.0, 8.0];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reason {
@@ -16,6 +20,7 @@ pub enum Reason {
 struct Spot {
     entity: i32,
     at: [f64; 3],
+    since: u64,
     until: u64,
 }
 pub struct Guard {
@@ -61,10 +66,18 @@ impl Guard {
             return;
         }
         if let Some(cell) = self.spots.iter_mut().find(|s| s.is_none()) {
-            *cell = Some(Spot { entity, at, until });
+            *cell = Some(Spot { entity, at, since: now, until });
         } else {
             // Dropping an unexpired location would silently unprotect it.
             self.overflow_until = self.overflow_until.max(until);
+        }
+    }
+    // `loot(at)`: a dropped item is (or may be: out of sight) round the death spot `at`.
+    pub fn release_empty(&mut self, now: u64, loot: impl Fn([f64; 3]) -> bool) {
+        for spot in &mut self.spots {
+            if spot.is_some_and(|s| now.saturating_sub(s.since) > EMPTY_GRACE_MS && !loot(s.at)) {
+                *spot = None;
+            }
         }
     }
     pub fn check(&mut self, now: u64, center: [f64; 3], power: f32) -> Reason {
