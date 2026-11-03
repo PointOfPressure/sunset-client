@@ -1,6 +1,6 @@
 // Meteor's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil,
 // Anti Bed, Rotation, No Rotate, No Status Effects (render.rs keeps the effects aside), Potion Saver, No Mining
-// Trace (player.rs's crosshair pick reads it), Portals, Multitask and Fake Player.
+// Trace (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player and Quiver.
 use super::{Game, Screen};
 use super::sunset::{Category, Module, with};
 use super::sunset_util::{self as util, facts, feet_block, find_held, is_air, listed, place_block, short, toggle_off};
@@ -8,6 +8,7 @@ use horizon_protocol::packets::Empty;
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use std::collections::HashMap;
 use std::sync::Mutex;
+use winit::event::MouseButton;
 
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
@@ -37,6 +38,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only with a pickaxe", true),
         Module::new("Portals", Player, "Keeps menus open in nether portals."),
         Module::new("Multitask", Player, "Hits while you eat or use items."),
+        Module::new("Quiver", Combat, "Shoots tipped arrows at yourself.")
+            .text("Potions", "strength")
+            .num("Cooldown", 10.0, 0.0, 40.0, 1.0)
+            .bool("Check effects", true)
+            .bool("Only in hole", true)
+            .bool("Only on ground", true)
+            .num("Min health", 10.0, 0.0, 36.0, 1.0),
         Module::new("Fake Player", Player, "A copy of you to test modules on.")
             .num("Health", 20.0, 1.0, 100.0, 1.0)
             .bool("Copy inventory", true),
@@ -57,6 +65,24 @@ struct Parity {
     clicks: u32,
     // Fake Player: it is in the world.
     fake: bool,
+    // Quiver: where its shot is, the slot you held before the bow, and the effects shot since it came on.
+    quiver: Quiver,
+    quiver_back: Option<usize>,
+    quiver_shot: Vec<String>,
+}
+
+#[derive(Default, Clone, Copy, PartialEq)]
+enum Quiver {
+    #[default]
+    Idle,
+    // The bow drawn for so many ticks.
+    Drawing(u32),
+    // The look up goes out with this tick's move packet.
+    Aim,
+    // The server has the look up, and the next move packet keeps it: the bow is let go.
+    Loose,
+    // Ticks to wait before the next arrow.
+    Rest(u32),
 }
 
 // Fake Player's entity id, far above any a server gives out.
@@ -91,6 +117,12 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if let Some((yaw, pitch)) = parity(|p| p.look.take()) {
         game.yaw = yaw + 0.000_001;
         game.pitch = pitch;
+    }
+    // Quiver: the bow is let go while the server has the look up.
+    if parity(|p| p.quiver) == Quiver::Loose {
+        let _ = game.play_mouse(MouseButton::Right, false);
+        let rest = with(|s| s.module("Quiver").map_or(0, |m| m.n("Cooldown") as u32));
+        parity(|p| p.quiver = Quiver::Rest(rest));
     }
     if parity(|p| std::mem::take(&mut p.clicks)) > 0
         && game.using.is_some()
@@ -136,6 +168,10 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     fake_player(game, get("Fake Player"));
+    match get("Quiver") {
+        Some(m) => quiver(game, m),
+        None => quiver_done(game),
+    }
     if let Some(m) = get("Rotation") {
         rotation(game, m);
     }
@@ -187,6 +223,107 @@ fn fake_player(game: &mut Game<'_>, m: Option<&Module>) {
         }
         None if here && parity(|p| std::mem::take(&mut p.fake)) => game.mobs.retain(|mob| mob.id != FAKE),
         _ => {}
+    }
+}
+
+// The effect a tipped arrow's potion gives ("long_swiftness": speed).
+fn potion_effect(potion: &str) -> &str {
+    match short(potion).trim_start_matches("long_").trim_start_matches("strong_") {
+        "swiftness" => "speed",
+        "leaping" => "jump_boost",
+        "healing" => "instant_health",
+        "harming" => "instant_damage",
+        "slowness" => "slowness",
+        other => other,
+    }
+}
+
+// Quiver (Meteor's): in a hole (Only in hole), on the ground, above Min health and with room over your head, each
+// effect a tipped arrow's potion gives (Potions lists it; with Check effects one you lack) is shot once straight up
+// to fall on you: the arrow moved to where the bow takes its arrow from first, the bow drawn 4 ticks, the look turned
+// up in two move packets and the bow let go between them. Off when none is left.
+fn quiver(game: &mut Game<'_>, m: &Module) {
+    let state = parity(|p| p.quiver);
+    match state {
+        Quiver::Rest(t) if t > 0 => return parity(|p| p.quiver = Quiver::Rest(t - 1)),
+        Quiver::Loose => return,
+        Quiver::Aim => {
+            // Up for one more move packet: the let-go lands between two that look up.
+            super::sunset::turn("Quiver", game.yaw, -90.0);
+            return parity(|p| p.quiver = Quiver::Loose);
+        }
+        Quiver::Drawing(t) => {
+            if game.using.is_none() {
+                parity(|p| p.quiver = Quiver::Idle);
+            } else if t + 1 >= 4 {
+                super::sunset::turn("Quiver", game.yaw, -90.0);
+                parity(|p| p.quiver = Quiver::Aim);
+            } else {
+                parity(|p| p.quiver = Quiver::Drawing(t + 1));
+            }
+            return;
+        }
+        _ => {}
+    }
+    let Some(feet) = feet_block(game) else {
+        return;
+    };
+    let p = game.player.as_ref();
+    let health = p.map_or(0.0, |p| p.health.health());
+    let open = (1..=2).all(|y| !facts(game, [feet[0], feet[1] + y, feet[2]]).full_collision || is_air(game, [feet[0], feet[1] + y, feet[2]]));
+    let arrow = |s: &horizon_client::items::ItemStack| s.item.ends_with("arrow");
+    let shot = parity(|p| p.quiver_shot.clone());
+    let wanted = |s: &horizon_client::items::ItemStack| {
+        short(&s.item) == "tipped_arrow"
+            && s.potion().is_some_and(|potion| {
+                let effect = potion_effect(potion);
+                listed(m.t("Potions"), short(potion).trim_start_matches("long_").trim_start_matches("strong_"))
+                    && !shot.iter().any(|e| e == effect)
+                    && !(m.b("Check effects") && game.potions.effects.get(effect).is_some())
+            })
+    };
+    let bow = util::find_hotbar(game, |n| n == "bow");
+    let next = (0..36).find(|&i| game.inventory[i].as_ref().is_some_and(wanted));
+    let safe = (!m.b("Only in hole") || in_hole(game, feet))
+        && (!m.b("Only on ground") || p.is_some_and(|p| p.ground.on_ground))
+        && f64::from(health) >= m.n("Min health")
+        && open
+        && !game.offhand.as_ref().is_some_and(arrow);
+    let (Some(bow), Some(next), true) = (bow, next, safe) else {
+        toggle_off(game, "Quiver");
+        return;
+    };
+    if !util::inventory_idle(game) {
+        return;
+    }
+    let effect = game.inventory[next].as_ref().and_then(|s| s.potion()).map(|potion| potion_effect(potion).to_owned());
+    // The bow takes the first arrow of the inventory: this one goes there.
+    if let Some(first) = (0..36).find(|&i| game.inventory[i].as_ref().is_some_and(arrow))
+        && first != next
+    {
+        use horizon_client::menu::Input::Pickup;
+        super::sunset::menu_click(game, &[(next, Pickup), (first, Pickup), (next, Pickup)]);
+    }
+    parity(|p| {
+        p.quiver_back = p.quiver_back.or(Some(game.selected));
+        p.quiver_shot.extend(effect);
+    });
+    super::sunset::hold(game, bow);
+    let _ = game.play_mouse(MouseButton::Right, true);
+    parity(|p| p.quiver = Quiver::Drawing(0));
+}
+
+// Quiver off: the bow let go if it is drawn, and the slot from before back in hand.
+fn quiver_done(game: &mut Game<'_>) {
+    let (state, back) = parity(|p| {
+        p.quiver_shot.clear();
+        (std::mem::take(&mut p.quiver), p.quiver_back.take())
+    });
+    if matches!(state, Quiver::Drawing(_) | Quiver::Aim | Quiver::Loose) {
+        let _ = game.play_mouse(MouseButton::Right, false);
+    }
+    if let Some(slot) = back {
+        super::sunset::hold(game, slot);
     }
 }
 

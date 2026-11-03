@@ -7192,6 +7192,29 @@ def _():
     return ok, f"screen 1 s into a portal: off {kept['off']}, Portals {kept['on']}; (pig's health lost, still eating) to 3 clicks while eating: off {hit['off']}, Multitask {hit['on']}"
 
 
+@test("Quiver")
+def _():
+    # In an obsidian hole, a bow in slot 1, a stack of arrows in slot 2 and two tipped arrows of strength in the
+    # inventory: Quiver shoots one straight up at you (Check effects: only one), so you have strength, and turns off.
+    reset()
+    cmd(f"fill {X0 - 1} {Y} {Z0 - 1} {X0 + 1} {Y + 1} {Z0 + 1} minecraft:obsidian", f"setblock {X0} {Y + 1} {Z0} minecraft:air",
+        f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0", "item replace entity @s hotbar.0 with minecraft:bow",
+        "item replace entity @s hotbar.1 with minecraft:arrow 16",
+        'item replace entity @s inventory.5 with minecraft:tipped_arrow[potion_contents={potion:"minecraft:strength"}] 2')
+    wait(10)
+    only("quiver")
+    wait(60)
+    strong = any("strength" in e.get("id", "") for e in active_effects())
+    still = is_on("Quiver")
+    only()
+    counts = ctl("inventory").get("counts", {})
+    cmd(f"fill {X0 - 1} {Y + 1} {Z0 - 1} {X0 + 1} {Y + 1} {Z0 + 1} minecraft:air", f"fill {X0 - 1} {Y} {Z0 - 1} {X0 + 1} {Y} {Z0 + 1} minecraft:stone",
+        "kill @e[type=arrow]")
+    left = counts.get("minecraft:tipped_arrow", 0)
+    ok = strong and not still and left == 1 and counts.get("minecraft:arrow") == 16
+    return ok, f"strength after Quiver: {strong}; still on: {still}; tipped arrows left {left} of 2, plain arrows {counts.get('minecraft:arrow')}"
+
+
 @test("Fake Player")
 def _():
     # Fake Player on where you stand, then you step 3 blocks back: a player is there in your world (a screenshot of
