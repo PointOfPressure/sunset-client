@@ -4693,6 +4693,95 @@ def _():
                 f"just after a turn vs settled: swaying {sway_on_off:.2%}, No sway {sway_still:.2%}")
 
 
+@test("Hand View totem pop")
+def _():
+    # A totem popped while looking at the sky: the totem's brown in the screen 12 ticks in (about a block out, facing
+    # you), leaving out the HUD's corner, the hotbar and the arm (the pop's particles are green and yellow, the sky
+    # blue). Totem pop scale 0.4 leaves well under half of it; Totem pop X 0.5 and Y 0.4 move it up and right of the
+    # middle; Totem pop speed 4 has the pop gone by 14 ticks (its 40 ticks in 10).
+    from PIL import Image
+
+    def brown(name, wait_ticks=12):
+        cmd("item replace entity @s weapon.offhand with minecraft:totem_of_undying", "effect give @s minecraft:instant_health 1 10 true")
+        wait(5)
+        ctl("chat", "/damage @s 1000 minecraft:generic")
+        wait(wait_ticks)
+        ctl("screenshot", f"{SHOTS}/{name}.png")
+        time.sleep(2)
+        img = Image.open(f"{SHOTS}/{name}.png").convert("RGB")
+        w, h = img.size
+        x0, y0 = w // 5, h // 20
+        box = img.crop((x0, y0, w * 19 // 20, h * 4 // 5))
+        at = []
+        for i, (r, g, b) in enumerate(box.getdata()):
+            x, y = x0 + i % box.width, y0 + i // box.width
+            if not (x > w * 3 // 5 and y > h // 2) and 45 <= r <= 150 and g <= 0.8 * r and b <= 0.55 * r:
+                at.append((x, y))
+        up_right = sum(1 for x, y in at if x >= w * 0.55 and y < h // 2)
+        return len(at) / (box.width * box.height), up_right / max(1, len(at))
+
+    reset("survival")
+    ctl("look", "0", "-70")
+    wait(10)
+    full, _ = brown("totem_pop_off")
+    wait(40)
+    toggle("handview", True)
+    setting("handview", "totem pop scale", "0.4")
+    small, _ = brown("totem_pop_small")
+    wait(40)
+    setting("handview", "totem pop scale", "1")
+    setting("handview", "totem pop x", "0.5")
+    setting("handview", "totem pop y", "0.4")
+    moved, up_right = brown("totem_pop_moved")
+    wait(40)
+    setting("handview", "totem pop x", "0")
+    setting("handview", "totem pop y", "0")
+    setting("handview", "totem pop speed", "4")
+    fast, _ = brown("totem_pop_fast", 14)
+    toggle("handview", False)
+    ok = full > 0.03 and 0.003 < small < full * 0.35 and moved > 0.02 and up_right > 0.8 and fast < full * 0.15
+    return ok, (f"totem brown mid-pop: normal {full:.2%}, scale 0.4 {small:.2%}, X 0.5 Y 0.4 {moved:.2%} "
+                f"({up_right:.0%} up and right), speed 4 after 14 ticks {fast:.2%}")
+
+
+@test("Hand View no shadow")
+def _():
+    # Shut in a stone room (no light reaches the eye block): the held stone and the bare arm in the lower right are
+    # dark; No hand shadow draws them at full light (block 15, sky 15), so much more of that corner is bright.
+    from PIL import Image
+
+    def corner(name):
+        ctl("screenshot", f"{SHOTS}/{name}.png")
+        time.sleep(2)
+        img = Image.open(f"{SHOTS}/{name}.png").convert("L")
+        box = img.crop((img.width * 60 // 100, img.height * 55 // 100, img.width, img.height))
+        return sum(1 for v in box.getdata() if v > 60) / (box.width * box.height)
+
+    reset("creative")
+    cmd(f"fill {X0-4} {Y} {Z0-4} {X0+4} {Y+5} {Z0+4} minecraft:stone hollow",
+        f"setblock {X0+2} {Y+1} {Z0+3} minecraft:cobblestone", f"setblock {X0-3} {Y+1} {Z0+2} minecraft:andesite")
+    wait(40)
+    eye = ctl("light", *[str(v) for v in (X0, Y + 2, Z0) * 2])
+    ctl("look", "0", "10")
+    cmd("item replace entity @s hotbar.0 with minecraft:stone")
+    wait(10)
+    held_off = corner("hv_dark_held_off")
+    toggle("handview", True)
+    setting("handview", "no hand shadow", "true")
+    wait(5)
+    held_on = corner("hv_dark_held_on")
+    cmd("item replace entity @s hotbar.0 with minecraft:air")
+    # The bare arm rises into view for a moment after the stone goes.
+    wait(25)
+    arm_on = corner("hv_dark_arm_on")
+    toggle("handview", False)
+    wait(5)
+    arm_off = corner("hv_dark_arm_off")
+    ok = held_on > 0.05 and held_off < held_on / 3 and arm_on > 0.05 and arm_off < arm_on / 3
+    return ok, (f"bright share of the lower right in the dark room: stone held {held_off:.1%} -> {held_on:.1%}, "
+                f"bare arm {arm_off:.1%} -> {arm_on:.1%} with No hand shadow; eye block sky {eye.get('sky')} block {eye.get('block')}")
+
+
 @test("No Render particles")
 def _():
     # 2000 flame and 2000 happy villager particles forced in view, counted by the game: No Render off, all made; Hide

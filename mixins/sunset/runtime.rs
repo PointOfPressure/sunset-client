@@ -7336,7 +7336,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Step" => "step up stepup stairs",
         "ClickGUI" => "dropdown dashboard style gui menu color colour theme accent opacity width dim blur background indent scale size zoom bigger radius corner round",
         "Glide" => "slow fall slowfall",
-        "Hand View" => "small hands hand sway viewmodel item position",
+        "Hand View" => "small hands hand sway viewmodel item position totem pop totem size hand shadow hand light",
         "Zoom" => "wi zoom spyglass",
         "Panic" => "disable all off hide",
         "Auto Steal" => "chest stealer loot",

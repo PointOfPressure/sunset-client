@@ -667,6 +667,25 @@ helper = "sway.rs"
 bindings = []
 
 [[injection]]
+id = "totem-pose"
+kind = "RETURN"
+target = "horizon_client::item_activation::animation_pose"
+helper = "totem_pose.rs"
+bindings = [
+  { name = "value", ty = "Mat4", value = "$value" },
+  { name = "aspect", ty = "f32", value = "aspect" },
+]
+
+[[injection]]
+id = "totem-tick"
+kind = "HEAD"
+target = "horizon_client::item_activation::ItemActivation::tick"
+helper = "totem_tick.rs"
+bindings = [
+  { name = "this", ty = "&mut ItemActivation", value = "&mut *self" },
+]
+
+[[injection]]
 id = "particle-add"
 kind = "HEAD"
 cancellable = true

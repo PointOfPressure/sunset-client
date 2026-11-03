@@ -469,10 +469,16 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
 // Timer and No Slow: the flags the engine hooks read. While you move, Speed's own Timer stands in for Timer's
 // (Meteor's override).
 // Hand View (Meteor's): each arm and what it holds moved (in blocks), turned (degrees) and sized, and the sway the
-// hands have when the view turns taken away.
+// hands have when the view turns taken away. No hand shadow lights the hands at full brightness under blocks and in
+// caves; the totem pop is sized, moved on the screen and sped up (extra ticks of its 40).
 fn hand_view() -> Module {
-    let mut m = Module::new("Hand View", Category::Render, "Moves and sizes your hands.")
-        .bool("No sway", false);
+    let mut m = Module::new("Hand View", Category::Render, "Moves and sizes your hands and the totem pop.")
+        .bool("No sway", false)
+        .bool("No hand shadow", false)
+        .num("Totem pop scale", 1.0, 0.1, 3.0, 0.05)
+        .num("Totem pop X", 0.0, -1.0, 1.0, 0.05)
+        .num("Totem pop Y", 0.0, -1.0, 1.0, 0.05)
+        .num("Totem pop speed", 1.0, 1.0, 6.0, 1.0);
     for (scale, x, y, z, rx, ry, rz) in [
         ("Right scale", "Right X", "Right Y", "Right Z", "Right turn X", "Right turn Y", "Right turn Z"),
         ("Left scale", "Left X", "Left Y", "Left Z", "Left turn X", "Left turn Y", "Left turn Z"),
@@ -498,12 +504,23 @@ fn hand_transform(m: &Module, side: &str) -> glam::Mat4 {
 }
 
 fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
+    use horizon_client::first_person::sunset_hand_view as hv;
     let hands = on(mods, "Hand View");
     let view = hands.as_ref().map(|m| [hand_transform(m, "Right"), hand_transform(m, "Left")]);
-    if let Ok(mut v) = horizon_client::first_person::sunset_hand_view::VIEW.write() {
+    if let Ok(mut v) = hv::VIEW.write() {
         *v = view;
     }
-    horizon_client::first_person::sunset_hand_view::NO_SWAY.store(hands.is_some_and(|m| m.b("No sway")), Ordering::Relaxed);
+    hv::NO_SWAY.store(hands.is_some_and(|m| m.b("No sway")), Ordering::Relaxed);
+    hv::NO_SHADOW.store(hands.is_some_and(|m| m.b("No hand shadow")), Ordering::Relaxed);
+    let pop = hands.as_ref().map(|m| hv::TotemPop {
+        scale: m.n("Totem pop scale") as f32,
+        x: m.n("Totem pop X") as f32,
+        y: m.n("Totem pop Y") as f32,
+    });
+    if let Ok(mut t) = hv::TOTEM.write() {
+        *t = pop.filter(|p| *p != hv::TotemPop { scale: 1.0, x: 0.0, y: 0.0 });
+    }
+    hv::TOTEM_EXTRA_TICKS.store(hands.as_ref().map_or(0, |m| (m.n("Totem pop speed").round() as u32).saturating_sub(1)), Ordering::Relaxed);
     let moving = super::sunset::move_input(game) != (0.0, 0.0);
     let speed_timer = if on(mods, "Flight").is_none() {
         on(mods, "Speed").map(|m| m.n("Timer")).filter(|t| (*t - 1.0).abs() > 1e-9 && moving)
