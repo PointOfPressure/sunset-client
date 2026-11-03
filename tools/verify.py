@@ -1732,6 +1732,158 @@ def _():
                 f"broken file: {refused[:1]}; bad name: {bad_name[:1]}; list: {listed[:1]}")
 
 
+def said_after(line, wait_ticks=4):
+    """What Sunset says in the chat after `line` is typed."""
+    mark = log_mark()
+    say(line)
+    wait(wait_ticks)
+    return sunset_said(mark)
+
+
+def modules_on():
+    """The modules .modules marks as on."""
+    names = []
+    for line in said_after(".modules"):
+        if ": " in line:
+            names += [n[:-1] for n in line.split(": ", 1)[1].split(", ") if n.endswith("*")]
+    return names
+
+
+@test("Extra Modules")
+def _():
+    # Jesus is an extra: the menu's search leaves it out (Enter on "jesus" turns nothing on) until its switch in Extra
+    # Modules is on; .t reaches it either way. A left click on Extra Modules' row opens its switches (a screenshot)
+    # instead of turning it on.
+    say(".reset extramodules")
+    say(".menu")
+    wait(6)
+    ctl("screenshot", f"{SHOTS}/menu.png")
+    time.sleep(2)
+    close_menu()
+    say(".menu jesus")
+    wait(6)
+    ctl("key", "enter", "tap")
+    wait(3)
+    close_menu()
+    hidden = "Jesus" in modules_on()
+    say(".t jesus")
+    by_command = "Jesus" in modules_on()
+    say(".t jesus")
+    setting("extramodules", "jesus", "true")
+    say(".menu jesus")
+    wait(6)
+    ctl("key", "enter", "tap")
+    wait(3)
+    close_menu()
+    listed = "Jesus" in modules_on()
+    if listed:
+        say(".t jesus")
+    say(".menu extra modules")
+    wait(6)
+    ctl("click-at", *map(str, menu_row(5, 1)))
+    wait(5)
+    ctl("screenshot", f"{SHOTS}/extra_modules.png")
+    time.sleep(2)
+    close_menu()
+    switch = "Extra Modules" in modules_on()
+    say(".reset extramodules")
+    ok = not hidden and by_command and listed and not switch
+    return ok, (f"Enter on 'jesus' while hidden turned it on: {hidden}; .t jesus while hidden: {by_command}; Enter once listed: "
+                f"{listed}; a click on Extra Modules turned it on: {switch} (shot {SHOTS}/extra_modules.png)")
+
+
+@test("Old profile converts")
+def _():
+    # A profile from before 0.9: Auto Steal and No Mining Trace by their old names, Reverse Step on its own, Potion
+    # Saver. Imported and loaded: Chest Stealer and Mine Through Mobs have their settings, Step is on with only its
+    # Reverse step section, Potion Saver's lines are gone, and Extra Modules lists the extras it used.
+    found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
+    if not found:
+        say(".profile list")
+        found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
+    if not found:
+        return False, "no imports folder"
+    with open(os.path.join(found[0], "oldcfg.profile"), "w") as f:
+        f.write("sunset-profile=1\nautosteal.on=true\nautosteal.itemspertick=3\nreversestep.on=true\nreversestep.speed=2\n"
+                "step.on=false\npotionsaver.on=true\nnominingtrace.on=true\nnominingtrace.onlywithapickaxe=false\n")
+    imported = said_after(".profile import oldcfg")
+    loaded = said_after(".profile load oldcfg")
+    stealer = said_after(".settings cheststealer")
+    step = said_after(".settings step")
+    mine = said_after(".settings minethroughmobs")
+    extras = said_after(".settings extramodules")
+    now_on = modules_on()
+    say(".menu")
+    wait(6)
+    ctl("screenshot", f"{SHOTS}/old_profile_loaded.png")
+    time.sleep(2)
+    close_menu()
+    say(".profile load before-load")
+    say(".profile delete oldcfg")
+    for m in ("cheststealer", "step", "minethroughmobs", "extramodules"):
+        touched.add(m)
+    ok = (any("Imported" in l for l in imported) and any("Loaded" in l for l in loaded) and "Items per tick: 3" in stealer
+          and "Step up: OFF" in step and "Reverse step: ON" in step and "Fall speed: 2" in step
+          and "Only with a pickaxe: OFF" in mine and "Step: ON" in extras and "Mine Through Mobs: ON" in extras
+          and {"Chest Stealer", "Step", "Mine Through Mobs"} <= set(now_on))
+    return ok, (f"import {imported[:1]}, load {loaded[:1]}; Chest Stealer {[l for l in stealer if 'tick' in l]}; Step "
+                f"{[l for l in step if 'step' in l.lower() or 'Fall' in l]}; Mine Through Mobs {mine[-1:]}; Extra Modules on: "
+                f"{[l for l in extras if l.endswith(': ON')]}; on: {[n for n in now_on if n in ('Chest Stealer', 'Step', 'Mine Through Mobs')]}")
+
+
+@test("Presets")
+def _():
+    # .preset pvp-crystal says what it turns on and off and changes nothing; .preset pvp-crystal apply turns Crystal
+    # Aura and Fullbright on and Kill Aura off (HUD stays); .profile load before-load undoes it. Then in the menu: the
+    # Profiles row, the Presets tab, the first preset's preview (a screenshot), Enter applies it.
+    say(".reset killaura")
+    toggle("killaura", True)
+    listing = said_after(".preset")
+    preview = said_after(".preset pvp-crystal")
+    unchanged = "Crystal Aura" not in modules_on()
+    taken = said_after(".preset pvp-crystal apply")
+    after = modules_on()
+    applied = {"Crystal Aura", "Fullbright", "HUD"} <= set(after) and "Kill Aura" not in after
+    say(".profile load before-load")
+    undone = "Kill Aura" in modules_on() and "Crystal Aura" not in modules_on()
+    # The menu: with no profile saved it opens on Presets; with one, the tab is clicked.
+    w, h = gui_size()
+    ww = min(w - 16, 300)
+    saved = said_after(".profile list")
+    say(".menu profiles")
+    wait(5)
+    ctl("click-at", *map(str, menu_row(5, 1)))
+    wait(3)
+    count = len(next((l for l in listing if l.startswith("Presets:")), "Presets: x.").split(". ")[0].split(", "))
+    hh = min(count * 18 + 47, h - 16)
+    x, y = (w - ww) / 2, (h - hh) / 2
+    if saved and saved[0].startswith("Profiles:"):
+        names = saved[0].removeprefix("Profiles: ").split(". In use")[0].split(", ")
+        sh = min(min(max(len(names), 1), 10) * 18 + 47, h - 16)
+        ctl("click-at", str(x + ww - 58), str((h - sh) / 2 + 11))
+        wait(3)
+    ctl("screenshot", f"{SHOTS}/presets_list.png")
+    time.sleep(2)
+    ctl("click-at", str(x + 30), str(y + 25 + 9))
+    wait(4)
+    ctl("screenshot", f"{SHOTS}/preset_preview.png")
+    time.sleep(2)
+    ctl("key", "enter", "tap")
+    wait(4)
+    ctl("screenshot", f"{SHOTS}/preset_applied.png")
+    time.sleep(2)
+    close_menu()
+    by_menu = modules_on()
+    menu_applied = "Crystal Aura" in by_menu and "Kill Aura" not in by_menu
+    say(".profile load before-load")
+    toggle("killaura", False)
+    ok = (any("pvp-crystal" in l for l in listing) and any(l.startswith("Turns on:") and "Crystal Aura" in l for l in preview)
+          and any(l.startswith("Turns off:") and "Kill Aura" in l for l in preview) and unchanged and applied and undone
+          and menu_applied and any("Took preset" in l for l in taken))
+    return ok, (f"list {listing[:1]}; preview {preview[:3]}; unchanged before apply: {unchanged}; applied: {applied} ({taken[:1]}); "
+                f"undone: {undone}; from the menu: {menu_applied} (shot {SHOTS}/preset_preview.png)")
+
+
 def gui_size():
     """The GUI's size in its own pixels: the window over the game's GUI scale (auto: the largest that keeps 320x240)."""
     d = ctl("status")["display"]
@@ -1743,7 +1895,7 @@ def gui_size():
 
 
 def panel_width():
-    """A panel's width at the defaults: 100, or less so that the six (Combat to Extras) fit in a row."""
+    """A panel's width at the defaults: 100, or less so that the six (Combat to Client) fit in a row."""
     w, _ = gui_size()
     return min(100, (w - 4 - 3 * 5) // 6)
 
@@ -3051,7 +3203,7 @@ def _():
                 f"{every[1]} floor blocks too in mode All, {dirt_only[0]} (all dirt: {dirt_only[2]}) with only dirt whitelisted, {cube[0]} in the 3x4x3 Cube")
 
 
-@test("Auto Steal")
+@test("Chest Stealer")
 def _():
     def chest():
         cmd(f"setblock {X0+1} {Y+1} {Z0} minecraft:chest[facing=west]",
@@ -3062,8 +3214,8 @@ def _():
 
     def taken(per_tick):
         """Ticks from the first item taken to the last, and how many were taken."""
-        setting("autosteal", "items per tick", per_tick)
-        only("autosteal")
+        setting("cheststealer", "items per tick", per_tick)
+        only("cheststealer")
         ctl("interact", str(X0 + 1), str(Y + 1), str(Z0))
         first = last = None
         got = 0
@@ -6018,6 +6170,8 @@ SWEEPS = [
 ] + [
     (("step",), [("step", "active when", m)]) for m in ("Always", "Sneaking", "Not sneaking")
 ] + [
+    (("step",), [("step", "step up", "false"), ("step", "reverse step", "true")]),
+] + [
     (("guimove",), [("guimove", "screens", m)]) for m in ("All menus", "Inventory")
 ] + [
     (("killaura",), [("killaura", "rotate", m)]) for m in ("Always", "On hit", "None")
@@ -6067,11 +6221,11 @@ SWEEPS = [
     (("anti" + k,), [("anti" + k, "sprint" if k == "hunger" else "jump", "true")]) for k in ("hunger",)
 ] + [
     ((k,), []) for k in ("velocity", "blink", "glide", "longjump", "highjump", "airjump", "spider", "parkour", "safewalk", "sprint",
-                         "autowalk", "reversestep", "fastclimb", "autojump", "sneak", "noslow", "nojumpdelay", "antivoid",
+                         "autowalk", "fastclimb", "autojump", "sneak", "noslow", "nojumpdelay", "antivoid",
                          "elytraboost", "chestswap", "scaffold", "timer", "fastplace", "breakdelay", "autoclicker", "autoweapon",
                          "triggerbot", "autoarmor", "autoreplenish", "autogap", "airplace", "reach", "autotrap", "autoweb",
                          "holefiller", "aimassist", "bowspam", "crystaloptimizer", "flamethrower", "autoshearer", "automount",
-                         "autosteal", "inventorycleaner", "middleclickextra", "autofish")
+                         "cheststealer", "inventorycleaner", "middleclickextra", "autofish")
 ]
 
 for _keys, _sets in SWEEPS:
@@ -8045,10 +8199,9 @@ def active_effects():
     return (d.get("effects") or d).get("active", [])
 
 
-@test("No Status Effects and Potion Saver")
+@test("No Status Effects")
 def _():
-    # Levitation for 3 s: you rise without No Status Effects and stay on the floor with it. Speed for 20 s: its time
-    # left after 3 s, without and with Potion Saver (the timer here stands still).
+    # Levitation for 3 s: you rise without No Status Effects and stay on the floor with it.
     risen = {}
     for name, mods in (("off", ()), ("on", ("nostatuseffects",))):
         reset()
@@ -8057,30 +8210,16 @@ def _():
         wait(40)
         risen[name] = round(pos()[1] - (Y + 1), 2)
         only()
-    left = {}
-    for name, mods in (("off", ()), ("on", ("potionsaver",))):
-        reset()
-        only(*mods)
-        cmd("effect give @s minecraft:speed 20 0")
-        wait(5)
-        speed = lambda: next((e.get("duration") for e in active_effects() if "speed" in e.get("id", "")), None)
-        first = speed()
-        wait(60)
-        later = speed()
-        left[name] = (first, later)
-        only()
-    saved = left["on"][0] is not None and left["on"][1] is not None and left["on"][1] >= left["on"][0] - 2
-    ran = left["off"][0] is not None and left["off"][1] is not None and left["off"][1] <= left["off"][0] - 50
-    ok = risen["off"] > 1 and abs(risen["on"]) < 0.1 and saved and ran
-    return ok, f"risen with levitation: off {risen['off']}, on {risen['on']}; speed's ticks left (5 ticks in, 65 ticks in): off {left['off']}, Potion Saver {left['on']}"
+    ok = risen["off"] > 1 and abs(risen["on"]) < 0.1
+    return ok, f"risen with levitation: off {risen['off']}, on {risen['on']}"
 
 
-@test("No Mining Trace")
+@test("Mine Through Mobs")
 def _():
     # A pig with 1000 health 1.5 blocks in front of a stone block, a pickaxe in hand, survival: the left button held
-    # 2 s at the stone through the pig hits the pig without No Mining Trace and mines the stone with it.
+    # 2 s at the stone through the pig hits the pig without Mine Through Mobs and mines the stone with it.
     got = {}
-    for name, mods in (("off", ()), ("on", ("nominingtrace",))):
+    for name, mods in (("off", ()), ("on", ("minethroughmobs",))):
         reset()
         slot(0, "netherite_pickaxe")
         ctl("key", "1", "tap")
@@ -8096,7 +8235,7 @@ def _():
         got[name] = (round(1000 - m[0]["health"], 1) if m else None, count(X0, Y + 1, Z0 + 3, X0, Y + 1, Z0 + 3, "stone"))
     cmd("kill @e[type=pig]", f"setblock {X0} {Y + 1} {Z0 + 3} minecraft:air")
     ok = got["off"][0] > 0 and got["off"][1] == 1 and got["on"][0] == 0 and got["on"][1] == 0
-    return ok, f"(pig's health lost, stone left) off {got['off']}, No Mining Trace {got['on']}"
+    return ok, f"(pig's health lost, stone left) off {got['off']}, Mine Through Mobs {got['on']}"
 
 
 @test("Anvil (Self Anvil, Anti Anvil), Anti Bed")
@@ -8319,8 +8458,17 @@ def _():
 @test("Fake Player")
 def _():
     # Fake Player on where you stand, then you step 3 blocks back: a player is there in your world (a screenshot of
-    # it), Kill Aura (players) sends no hit at it for 2 s, and it is gone once Fake Player goes off.
+    # it), Kill Aura (players) sends no hit at it for 2 s, and it is gone once Fake Player goes off. On a server it
+    # goes straight off, saying why, and no player appears.
     reset()
+    if SERVER:
+        mark = log_mark()
+        say(".t fakeplayer")
+        wait(10)
+        said = sunset_said(mark)
+        fakes = [e for e in ctl("entities").get("entities", []) if e.get("type") == "minecraft:player" and e.get("id") == 0x7FFFFFF0]
+        refused = any("single player only" in line for line in said)
+        return refused and not fakes, f"on a server: said {said[-2:]}; fake players in the world: {len(fakes)}"
     only("fakeplayer")
     wait(5)
     cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 - 2.5} 0 0")

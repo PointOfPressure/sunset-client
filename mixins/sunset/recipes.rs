@@ -1,4 +1,4 @@
-// Unlock All Recipes (Extras): the recipe book shows every recipe of Horizon's own recipe data as unlocked; it lives
+// Unlock All Recipes (World): the recipe book shows every recipe of Horizon's own recipe data as unlocked; it lives
 // next to the book in recipe_book.rs. A server takes the book's place-recipe click only for recipes it put in your
 // book, so a click on any other one lays it in the grid with ordinary slot clicks from your inventory instead.
 use super::super::Game;

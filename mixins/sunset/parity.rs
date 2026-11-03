@@ -1,13 +1,12 @@
 // Meteor's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil, Auto Anvil,
-// Anti Bed, Rotation, No Rotate, No Status Effects (render.rs keeps the effects aside), Potion Saver, No Mining
-// Trace (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player, Quiver, Arrow Dodge, Liquid
-// Interact and No Interact.
+// Anti Bed, Rotation, No Rotate, No Status Effects (render.rs keeps the effects aside), Mine Through Mobs
+// (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player (single player only), Quiver, Arrow Dodge,
+// Liquid Interact and No Interact.
 use super::{Game, Screen};
 use super::sunset::{Category, Module, with};
 use super::sunset_util::{self as util, facts, feet_block, find_held, is_air, listed, place_block, short, toggle_off};
 use horizon_protocol::packets::Empty;
 use horizon_protocol::packets::play::{self, Serverbound as S};
-use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use winit::event::MouseButton;
@@ -39,10 +38,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("No Rotate", Player, "Keeps your look when the server turns you."),
         Module::new("No Status Effects", Player, "Ignores the effects you list.")
             .text("Effects", "levitation,jump_boost,slow_falling,dolphins_grace"),
-        Module::new("Potion Saver", Player, "Your effects' timers pause here.")
-            .text("Effects", "strength,absorption,resistance,fire_resistance,speed,haste,regeneration,water_breathing,saturation,luck,slow_falling,dolphins_grace,conduit_power,hero_of_the_village")
-            .bool("Only when still", false),
-        Module::new("No Mining Trace", Player, "Mines through mobs in the way.")
+        Module::new("Mine Through Mobs", Player, "Mines through mobs in the way.")
             .text("Entities", "")
             .bool("Only with a pickaxe", true),
         Module::new("Portals", Player, "Keeps menus open in nether portals."),
@@ -85,8 +81,6 @@ struct Parity {
     look: Option<(f32, f32)>,
     // Anti Bed: a bed over your head was broken last tick (the stop goes this tick).
     breaking: Option<[i32; 3]>,
-    // Potion Saver: each effect's time last tick.
-    timers: HashMap<String, i32>,
     // Portals: the screen a portal's effect would have closed.
     screen: Option<Screen>,
     // Multitask: left clicks while you used an item, since the last tick.
@@ -215,11 +209,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     if let Some(m) = get("Rotation") {
         rotation(game, m);
     }
-    if let Some(m) = get("Potion Saver") {
-        potion_saver(game, m);
-    } else {
-        parity(|p| p.timers.clear());
-    }
     // Anvil's Self Anvil drops one anvil each time it comes on (the module, or the section while the module is on).
     let anvil = get("Anvil");
     let self_on = anvil.is_some_and(|m| m.b("Self Anvil"));
@@ -257,8 +246,14 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
 }
 
 // Fake Player (Meteor's): while on, a player where you stood when it came on, with Health and (Copy inventory) what
-// you hold and wear; gone when it goes off.
+// you hold and wear; gone when it goes off. Single player only: a server never sent it, so a hit at it is an
+// interaction with nothing, which anticheats flag. On a server it goes straight off with one line saying so.
 fn fake_player(game: &mut Game<'_>, m: Option<&Module>) {
+    if m.is_some() && game.integrated.is_none() {
+        toggle_off(game, "Fake Player");
+        super::sunset::say(game, "Fake Player works in single player only: servers flag hits on a player they never sent.");
+        return;
+    }
     let here = game.mobs.iter().any(|mob| mob.id == FAKE);
     match m {
         Some(m) if !here => {
@@ -638,20 +633,3 @@ fn in_hole(game: &Game<'_>, feet: [i32; 3]) -> bool {
     [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]].iter().all(|d| hard([feet[0] + d[0], feet[1] + d[1], feet[2] + d[2]]))
 }
 
-// Potion Saver (Meteor's): the listed effects' timers here do not run down (with Only when still, while you stand
-// still); what the server sends still counts.
-fn potion_saver(game: &mut Game<'_>, m: &Module) {
-    let moving = game.player.as_ref().is_some_and(|p| {
-        (p.position.x - game.previous_position.x).abs() > 1e-4 || (p.position.z - game.previous_position.z).abs() > 1e-4
-    });
-    let hold = !m.b("Only when still") || !moving;
-    let list = m.t("Effects");
-    parity(|p| {
-        for e in game.potions.effects.list.iter_mut().filter(|e| listed(list, e.id)) {
-            if hold && p.timers.get(e.id).is_some_and(|&was| e.duration == was - 1) {
-                e.duration += 1;
-            }
-            p.timers.insert(e.id.to_owned(), e.duration);
-        }
-    });
-}

@@ -80,6 +80,7 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 | `.goto <x> <y> <z>`, `.goto stop` | walk there through loaded terrain (up to 128 blocks); a movement key or a menu stops it |
 | `.profile save\|load\|delete <name>`, `.profile list` | keep every module's on/off, settings and keys under a name and bring them back (a PvP set-up, a building one); `.profile load before-load` undoes the last load |
 | `.profile export\|import <name>` | share a profile: export copies it to the mod's `exports` folder, import takes `<name>.profile` from its `imports` folder |
+| `.preset [name] [apply]` | the pre-made profiles (PvP: crystal, PvP: sword and mace, PvP: carts, Anarchy and base hunting, Building, Legit (Grim-safe), Survival QoL): a name says what it turns on and off, `apply` takes it |
 | `.panic` | turn every module off and hide Sunset until `.panic` again or restart (or bind the **Panic** module to a key) |
 | `.menu [text]` | open the menu, already searching for the text |
 
@@ -87,7 +88,12 @@ List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the sa
 `.set xray blocks diamond_ore,ancient_debris`.
 
 The HUD shows the profile in use under the watermark ("(modified)" once you change a setting); the **Profiles** module
-(Extras) lists the saved ones to load. HUD > Module list side puts the list of modules on the left or the right.
+(Client) lists the saved ones to load, and its Presets tab the pre-made ones: each shows what it turns on and off
+before you apply it. HUD > Module list side puts the list of modules on the left or the right.
+
+Some modules are extras the menu leaves out until you switch them on in **Extra Modules** (Client): Slippy, Auto City,
+Self Web, Hole Filler, Burrow, Key Throw, Arrow Dodge, Jesus, Trident Boost, Step, Pearl Catch, Wind Jump, Hold to
+Eat, Mine Through Mobs, RF Click and Fake Player. Their binds and `.t` work while they are hidden.
 
 ## Features
 
@@ -100,12 +106,12 @@ settings cover scale, spacing, colors and panel shape. Advanced controls appear 
 
 | Category | Modules |
 | --- | --- |
-| **Combat** | Kill Aura, Trigger Bot (both with Shield: your shield kept up between hits), Aim Assist, Criticals, Crystal Aura and Anchor Aura (each with a Macro section: the whole place and break, or place, charge and set off, on your right click), Crystal Optimizer, Offhand (totems included), Auto Weapon, Hitboxes, Auto EXP, Bow Spam, Bow Aimbot, Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow, Anvil (Anti Anvil, Self Anvil and Auto Anvil), Anti Bed, Quiver, Arrow Dodge |
-| **Movement** | Flight, Speed, Sprint, Sneak, Auto Walk, Auto Jump, Step, Spider, High Jump, Long Jump, Air Jump, Parkour, Reverse Step, Fast Climb, Safe Walk, Anti Void, Elytra Boost, Chest Swap, Blink, Scaffold (Legit sneaks at the edge, Godbridge bridges backwards without sneaking), No Fall, No Slow, Velocity, Glide, No Jump Delay, GUI Move (walk with the inventory or another menu open), Snap Tap (of A and D, or W and S, the last pressed wins), Click TP, Trident Boost, Elytra Fly, Jesus, Slippy |
-| **Player** | Fast Place (speed 1 to 5), Break Delay, Speed Mine, No Break Reset, Fast Use (with FastXP's throwables: every tick or in bursts), Air Place, Reach, Auto Armor, Auto Log, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam, Auto Steal, Inventory Cleaner (PvP, Building, Mining and Survival presets), Anti Vanish, Server Scan (the software, plugins and channels the server shows), Panic, Rotation, No Rotate, No Status Effects, Potion Saver, No Mining Trace, Portals, Multitask, Fake Player, Liquid Interact, No Interact |
+| **Combat** | Kill Aura, Trigger Bot (both with Shield: your shield kept up between hits), Aim Assist, Reach, Criticals, Crystal Aura and Anchor Aura (each with a Macro section: the whole place and break, or place, charge and set off, on your right click), Crystal Optimizer, Offhand (totems included), Auto Weapon, Hitboxes, Auto EXP, Bow Spam, Bow Aimbot, Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow, Anvil (Anti Anvil, Self Anvil and Auto Anvil), Anti Bed, Quiver, Arrow Dodge |
+| **Movement** | Flight, Speed, Sprint, Sneak, Auto Walk, Auto Jump, Step (with Reverse step), Spider, High Jump, Long Jump, Air Jump, Parkour, Fast Climb, Safe Walk, Anti Void, Elytra Boost, Chest Swap, Blink, Scaffold (Legit sneaks at the edge, Godbridge bridges backwards without sneaking), No Fall, No Slow, Velocity, Glide, No Jump Delay, GUI Move (walk with the inventory or another menu open), Snap Tap (of A and D, or W and S, the last pressed wins), Click TP, Trident Boost, Elytra Fly, Jesus, Slippy |
+| **Player** | Fast Place (speed 1 to 5), Break Delay, Speed Mine, No Break Reset, Fast Use (with FastXP's throwables: every tick or in bursts), Air Place, Auto Armor, Auto Log, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam, Chest Stealer, Inventory Cleaner (PvP, Building, Mining and Survival presets), Anti Vanish, Server Scan (the software, plugins and channels the server shows), Panic, Rotation, No Rotate, No Status Effects, Mine Through Mobs, Portals, Multitask, Fake Player (single player only), Liquid Interact, No Interact |
 | **Render** | ClickGUI, HUD, Radar, ESP, Tracers, Nametags, Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories, Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, Mob Gear ESP, No Render (no fog, water fog, darkness, blindness, fire or other overlays) |
-| **World** | Nuker, Packet Mine, Timer, Time Changer, Weather Changer, Liquid Filler, Spawn Proofer, Flamethrower, Auto Shearer, Auto Nametag, Auto Mount, Auto Breed, Auto Sign, Build Height, Enderman Look, Spawner Alerts, Base Finder (block tiers, written signs, open portals, bubble columns, sky builds, lone spawners, name tags, traded villagers...), New Chunks (new and old chunks from the server's palettes and liquid flow, kept per server), Player Activity Detector, Stash Finder, Cave Disturbance Detector, Portal Pattern Finder, Activated Spawner Detector |
-| **Extras** | Unlock All Recipes (every recipe in the book, on any server), Client Sort (Sort, Fill Stacks and Restock buttons, as ClientSort) |
+| **World** | Nuker, Packet Mine, Timer, Time Changer, Weather Changer, Liquid Filler, Spawn Proofer, Flamethrower, Auto Shearer, Auto Nametag, Auto Mount, Auto Breed, Auto Sign, Build Height, Enderman Look, Spawner Alerts, Base Finder (block tiers, written signs, open portals, bubble columns, sky builds, lone spawners, name tags, traded villagers...), New Chunks (new and old chunks from the server's palettes and liquid flow, kept per server), Player Activity Detector, Stash Finder, Cave Disturbance Detector, Portal Pattern Finder, Activated Spawner Detector, Unlock All Recipes (every recipe in the book, on any server) |
+| **Client** | Profiles (saved and pre-made), Client Sort (Sort, Fill Stacks and Restock buttons, as ClientSort), Extra Modules |
 
 </details>
 

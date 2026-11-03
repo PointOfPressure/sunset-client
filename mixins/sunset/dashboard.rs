@@ -22,6 +22,8 @@ struct Listed {
     page: usize,
     query: String,
     count: usize,
+    // The extras Extra Modules left out.
+    hidden: Vec<&'static str>,
     ids: Vec<usize>,
 }
 
@@ -49,7 +51,7 @@ struct View {
 static VIEW: Mutex<View> = Mutex::new(View {
     page: 1,
     chosen: None,
-    listed: Listed { page: usize::MAX, query: String::new(), count: 0, ids: Vec::new() },
+    listed: Listed { page: usize::MAX, query: String::new(), count: 0, hidden: Vec::new(), ids: Vec::new() },
     list: Column { scroll: 0.0, rows: Vec::new(), content: 0.0 },
     pane: Column { scroll: 0.0, rows: Vec::new(), content: 0.0 },
     hover: None,
@@ -152,17 +154,21 @@ pub(super) fn prepare(s: &State) {
     let room = columns(s).0[3];
     view(|v| {
         let page = if menu.search.is_empty() { v.page } else { 0 };
-        if v.listed.page != page || v.listed.query != menu.search || v.listed.count != s.modules.len() {
+        let hidden = super::sunset_extra_modules::hidden(&s.modules);
+        if v.listed.page != page || v.listed.query != menu.search || v.listed.count != s.modules.len() || v.listed.hidden != hidden {
             let query = norm(menu.search);
             v.listed.ids.clear();
             v.listed.ids.extend(s.modules.iter().enumerate().filter_map(|(i, m)| {
-                let shown = (page == 0 || m.category == CATEGORIES[page - 1]) && (norm(m.name).contains(&query) || norm(aliases(m.name)).contains(&query));
+                let shown = (page == 0 || m.category == CATEGORIES[page - 1])
+                    && !hidden.contains(&m.name)
+                    && (norm(m.name).contains(&query) || norm(aliases(m.name)).contains(&query));
                 shown.then_some(i)
             }));
             v.listed.page = page;
             v.listed.query.clear();
             v.listed.query.push_str(menu.search);
             v.listed.count = s.modules.len();
+            v.listed.hidden = hidden;
         }
         // The first module listed, until another is chosen.
         if !v.chosen.is_some_and(|i| v.listed.ids.contains(&i)) {

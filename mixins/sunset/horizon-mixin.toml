@@ -489,6 +489,18 @@ name = "sunset_extras"
 source = "extras.rs"
 
 [[module]]
+id = "extra_modules"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_extra_modules"
+source = "extra_modules.rs"
+
+[[module]]
+id = "presets"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_presets"
+source = "presets.rs"
+
+[[module]]
 id = "sort_buttons"
 file = "crates/horizon-client/src/game/tweaks.rs"
 name = "sunset_sort_buttons"

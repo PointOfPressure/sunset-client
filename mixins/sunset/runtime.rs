@@ -100,8 +100,8 @@ pub(super) enum Category {
     Player,
     Render,
     World,
-    // Not cheats: quality of life.
-    Extras,
+    // Not cheats: the client's own (profiles, sorting, which extra modules the menu lists).
+    Client,
 }
 
 pub(super) const CATEGORIES: [Category; 6] = [
@@ -110,7 +110,7 @@ pub(super) const CATEGORIES: [Category; 6] = [
     Category::Player,
     Category::Render,
     Category::World,
-    Category::Extras,
+    Category::Client,
 ];
 
 impl Category {
@@ -121,7 +121,7 @@ impl Category {
             Category::Player => "Player",
             Category::Render => "Render",
             Category::World => "World",
-            Category::Extras => "Extras",
+            Category::Client => "Client",
         }
     }
 }
@@ -405,6 +405,12 @@ impl Module {
                 }
             }
             "Hitboxes" if name == "Weapons" => self.b("Only on weapon"),
+            "Step" => match name {
+                "Height" | "Active when" | "Safe step" => self.b("Step up"),
+                "Step health" => self.b("Step up") && self.b("Safe step"),
+                "Fall speed" => self.b("Reverse step"),
+                _ => true,
+            },
             "Base Finder" => super::sunset_base_finder::visible(self, name),
             "Auto Weapon" => match name {
                 "Prefer axes" => self.b("Best weapon"),
@@ -530,11 +536,15 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Delay only near enemies", true),
         Module::new("Spider", Movement, "Climbs walls.")
             .num("Climb speed", 0.2, 0.1, 1.0, 0.1),
-        Module::new("Step", Movement, "Walks up blocks.")
+        // Reverse Step is its section since 0.9: off ledges you fall fast.
+        Module::new("Step", Movement, "Walks up blocks, or falls fast off them.")
+            .bool("Step up", true)
             .num("Height", 1.25, 0.5, 5.0, 0.25)
             .pick("Active when", &["Always", "Sneaking", "Not sneaking"])
             .bool("Safe step", false)
-            .num("Step health", 5.0, 1.0, 36.0, 1.0),
+            .num("Step health", 5.0, 1.0, 36.0, 1.0)
+            .bool("Reverse step", false)
+            .num("Fall speed", 1.0, 0.5, 3.0, 0.5),
         Module::new("GUI Move", Movement, "Moves while a menu is open.")
             .pick("Screens", &["All menus", "Inventory"])
             .bool("Jump", true)
@@ -778,8 +788,6 @@ pub(super) fn defaults() -> Vec<Module> {
         // Added in 0.4
         Module::new("Auto Armor", Player, "Wears your best armor.")
             .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0),
-        Module::new("Reverse Step", Movement, "Falls fast off blocks.")
-            .num("Speed", 1.0, 0.5, 3.0, 0.5),
         Module::new("Long Jump", Movement, "Jumps further.")
             .num("Multiplier", 2.0, 1.5, 5.0, 0.5),
         Module::new("Auto Jump", Movement, "Jumps as you walk."),
@@ -893,6 +901,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_vanish::defaults());
     v.extend(super::sunset_server_scan::defaults());
     v.extend(super::sunset_extras::defaults());
+    v.extend(super::sunset_extra_modules::defaults());
     // Modules that only draw can be held on with their bind instead of toggled.
     for m in v.iter_mut().filter(|m| holds(m.name)) {
         let hold = usize::from(m.name == "Zoom");
@@ -1119,8 +1128,10 @@ impl State {
         self.set_friends(list);
         !was
     }
+    // A module by its name, or by a name it had before (`.t autosteal` is Chest Stealer).
     pub(super) fn find(&self, name: &str) -> Option<usize> {
         let n = norm(name);
+        let n = RENAMED.iter().find(|(from, _)| *from == n).map_or(n.as_str(), |(_, to)| to);
         self.modules.iter().position(|m| norm(m.name) == n)
     }
     fn save_text(&self) -> String {
@@ -1161,6 +1172,8 @@ impl State {
                 continue;
             }
             if let Some(cat) = k.strip_prefix("panel.") {
+                // The Client panel was Extras before 0.9.
+                let cat = if cat == "extras" { "client" } else { cat };
                 let parts: Vec<&str> = v.split(',').collect();
                 if let (Some(i), [x, y, c]) = (CATEGORIES.iter().position(|c| norm(c.label()) == cat), parts.as_slice())
                     && let (Ok(x), Ok(y)) = (x.parse(), y.parse())
@@ -1187,17 +1200,17 @@ impl State {
                 self.set_friends(list);
                 continue;
             }
-            self.set_field(k, v);
+            Self::set_field(&mut self.modules, k, v);
         }
         let snapshot = self.module_text();
         self.selection.refresh(&snapshot);
     }
-    // One "module.field=value" line of a config or a profile.
-    fn set_field(&mut self, k: &str, v: &str) {
+    // One "module.field=value" line of a config or a profile, on `modules`.
+    fn set_field(modules: &mut [Module], k: &str, v: &str) {
         let Some((id, field)) = k.split_once('.') else {
             return;
         };
-        let Some(m) = self.modules.iter_mut().find(|m| norm(m.name) == id) else {
+        let Some(m) = modules.iter_mut().find(|m| norm(m.name) == id) else {
             return;
         };
         match field {
@@ -1299,9 +1312,39 @@ impl State {
     fn load_profile(&mut self, text: &str) {
         for line in merged_modules(text).lines() {
             if let Some((k, v)) = line.split_once('=') {
-                self.set_field(k, v.trim());
+                Self::set_field(&mut self.modules, k, v.trim());
             }
         }
+    }
+    // A preset's lines as it is taken: every module it neither turns on nor leaves alone goes off first.
+    fn preset_text(&self, preset: &super::sunset_presets::Preset) -> Result<String, String> {
+        let body = self.check_profile(preset.text)?;
+        let mut out = String::new();
+        for m in self.modules.iter().filter(|m| m.on && !super::sunset_presets::untouched(m)) {
+            out.push_str(&format!("{}.on=false\n", norm(m.name)));
+        }
+        out.push_str(body);
+        Ok(out)
+    }
+    // What taking a preset does: the modules it turns on, those it turns off, and how many settings it changes.
+    pub(super) fn preview(&self, preset: &super::sunset_presets::Preset) -> Result<Preview, String> {
+        let text = self.preset_text(preset)?;
+        let mut after = self.modules.clone();
+        for line in merged_modules(&text).lines() {
+            if let Some((k, v)) = line.split_once('=') {
+                Self::set_field(&mut after, k, v.trim());
+            }
+        }
+        let mut preview = Preview::default();
+        for (was, now) in self.modules.iter().zip(&after) {
+            match (was.on, now.on) {
+                (false, true) => preview.on.push(now.name),
+                (true, false) => preview.off.push(now.name),
+                _ => {}
+            }
+            preview.settings += was.settings.iter().zip(&now.settings).filter(|(a, b)| a.stored() != b.stored()).count();
+        }
+        Ok(preview)
     }
     // A profile file read whole before anything changes: its header, then lines this version knows, with values that
     // fit them. The lines, without the header.
@@ -1327,9 +1370,22 @@ impl State {
     pub(super) fn module(&self, name: &str) -> Option<&Module> {
         self.modules.iter().find(|m| m.name == name)
     }
+    // The menus' modules: all but the extras Extra Modules leaves out.
+    pub(super) fn listed(&self) -> impl Fn(&Module) -> bool + use<> {
+        let hidden = super::sunset_extra_modules::hidden(&self.modules);
+        move |m| !hidden.contains(&m.name)
+    }
     pub(super) fn is_on(&self, name: &str) -> bool {
         self.module(name).is_some_and(|m| m.on)
     }
+}
+
+// What a preset turns on and off, and the number of settings it changes.
+#[derive(Clone, Debug, Default)]
+pub(super) struct Preview {
+    pub(super) on: Vec<&'static str>,
+    pub(super) off: Vec<&'static str>,
+    pub(super) settings: usize,
 }
 
 // Offhand's settings from before vape-rs's Auto Totem (0.9): set_field turns Health, Refill and Swap delay into the new
@@ -1350,7 +1406,60 @@ const DROPPED: [(&str, &str); 8] = [
 // an empty list, when Fast Use itself was off).
 // Offhand is on if any of its three was, with the first key bound; the old Offhand's Item when it was on, else a totem
 // always (Auto Totem Strict) or only when needed (None), else the new default; Refill is Auto Inventory Totem's Mode.
+// Modules renamed since go by their new names first, and a config from before Extra Modules lists the extras it uses.
 fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
+    let renamed = renamed_modules(text);
+    let owned = match merge_lines(&renamed) {
+        std::borrow::Cow::Owned(out) => Some(out),
+        std::borrow::Cow::Borrowed(_) => None,
+    };
+    listed_extras(owned.map_or(renamed, std::borrow::Cow::Owned))
+}
+
+// Modules with new names (0.9): Auto Steal is Chest Stealer, No Mining Trace is Mine Through Mobs.
+const RENAMED: [(&str, &str); 2] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs")];
+
+fn renamed_modules(text: &str) -> std::borrow::Cow<'_, str> {
+    let old = |l: &str| RENAMED.iter().find(|(from, _)| l.split_once('.').is_some_and(|(id, _)| id == *from));
+    if !text.lines().any(|l| old(l).is_some()) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let lines: Vec<String> = text
+        .lines()
+        .map(|l| match old(l) {
+            Some((from, to)) => format!("{to}{}", &l[from.len()..]),
+            None => l.to_owned(),
+        })
+        .collect();
+    std::borrow::Cow::Owned(lines.join("\n"))
+}
+
+// A config or profile with no Extra Modules lines (from before it) has the extras it turns on or binds listed.
+fn listed_extras(text: std::borrow::Cow<'_, str>) -> std::borrow::Cow<'_, str> {
+    if text.lines().any(|l| l.starts_with("extramodules.")) {
+        return text;
+    }
+    let used: Vec<String> = super::sunset_extra_modules::EXTRAS
+        .iter()
+        .map(|name| norm(name))
+        .filter(|extra| {
+            let last = |field: &str| {
+                text.lines().rev().find_map(|l| l.strip_prefix(&format!("{extra}.{field}=")).map(str::trim))
+            };
+            last("on") == Some("true") || last("key").is_some_and(|k| k != "none")
+        })
+        .collect();
+    if used.is_empty() {
+        return text;
+    }
+    let mut out = text.into_owned();
+    for extra in used {
+        out.push_str(&format!("\nextramodules.{extra}=true"));
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
     let lines: Vec<(&str, &str, &str)> = text
         .lines()
         .filter_map(|l| {
@@ -1366,7 +1475,9 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let old_offhand = get("offhand", "minhealth").is_some();
     let gone = [
         "autototem", "autoinventorytotem", "hovertotem", "fastxp", "knockbackdelay", "autoshield", "shieldbreaker", "mace",
-        "spearswap", "crystalmacro", "anchormacro", "antianvil", "selfanvil", "autoanvil", "anchor",
+        "spearswap", "crystalmacro", "anchormacro", "antianvil", "selfanvil", "autoanvil", "anchor", "reversestep",
+        // Potion Saver (gone in 0.9) only held the timer you see; the server's ran down all the same.
+        "potionsaver",
     ];
     let dropped = lines.iter().any(|&(id, field, _)| DROPPED.contains(&(id, field)));
     if !old_offhand && !dropped && !gone.iter().any(|id| had(id)) {
@@ -1479,12 +1590,13 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
             }
         }
     }
-    // Crystal Aura and Anchor Aura took in Crystal Macro and Anchor Macro as their Macro sections, and Anvil took in
-    // Anti Anvil, Self Anvil and Auto Anvil as sections; Anchor (Movement) is gone, its lines with it. `id` took in
-    // `parts` (each old module with its section; Crystal Aura is its own Aura): it is on if any was, with only those
-    // sections on. With none on, the sections keep their defaults, unless the one key bound was another module's: that
-    // module's section alone then. The first key bound goes over; each `shared` setting is the first module's that
-    // was on (else the first with one), and `fields` (old module, old setting, new setting) are copied.
+    // Crystal Aura and Anchor Aura took in Crystal Macro and Anchor Macro as their Macro sections, Step took in Reverse
+    // Step, and Anvil took in Anti Anvil, Self Anvil and Auto Anvil as sections; Anchor (Movement) is gone, its lines
+    // with it. `id` took in `parts` (each old module with its section; Crystal Aura is its own Aura): it is on if any
+    // was, with only those sections on. With none on, the sections keep their defaults, unless the one key bound was
+    // another module's: that module's section alone then. The first key bound goes over; each `shared` setting is the
+    // first module's that was on (else the first with one), and `fields` (old module, old setting, new setting) are
+    // copied.
     {
         let mut merge = |id: &str, parts: &[(&str, &str)], shared: &[&str], fields: &[(&str, &str, &str)]| {
             if !parts.iter().any(|(old, _)| *old != id && had(old)) {
@@ -1539,6 +1651,8 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
                 ("anchormacro", "ifunguarded", "ifunguarded"), ("anchormacro", "switchback", "switchback"),
             ],
         );
+        // Step took in Reverse Step as its Reverse step section (0.9).
+        merge("step", &[("step", "stepup"), ("reversestep", "reversestep")], &[], &[("reversestep", "speed", "fallspeed")]);
         merge(
             "anvil",
             &[("antianvil", "antianvil"), ("selfanvil", "selfanvil"), ("autoanvil", "autoanvil")],
@@ -1753,7 +1867,7 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
 
 // A setting set from code (a preset filling in its values), as .set would, and saved.
 pub(super) fn set_setting(game: &Game<'_>, key: &str, value: &str) {
-    with(|s| s.set_field(key, value));
+    with(|s| State::set_field(&mut s.modules, key, value));
     save(game);
 }
 
@@ -1974,8 +2088,9 @@ pub(super) fn buttons(game: &Game<'_>, out: &mut Vec<String>) {
     ensure_loaded(game);
     with(|s| match s.page {
         Page::Main => {
+            let listed = s.listed();
             for c in CATEGORIES {
-                let all: Vec<&Module> = s.modules.iter().filter(|m| m.category == c).collect();
+                let all: Vec<&Module> = s.modules.iter().filter(|m| m.category == c && listed(m)).collect();
                 let on = all.iter().filter(|m| m.on).count();
                 out.push(format!("{} ({on} of {} on)", c.label(), all.len()));
             }
@@ -1984,7 +2099,8 @@ pub(super) fn buttons(game: &Game<'_>, out: &mut Vec<String>) {
         }
         Page::Category(c) => {
             out.push("< Back".into());
-            for m in s.modules.iter().filter(|m| m.category == c) {
+            let listed = s.listed();
+            for m in s.modules.iter().filter(|m| m.category == c && listed(m)) {
                 out.push(format!("{}: {}", m.name, on_off(m.on)));
             }
         }
@@ -2025,7 +2141,8 @@ pub(super) fn click(game: &mut Game<'_>, button: usize) {
                 s.page = Page::Main;
                 return false;
             }
-            let idx: Vec<usize> = (0..s.modules.len()).filter(|&i| s.modules[i].category == c).collect();
+            let listed = s.listed();
+            let idx: Vec<usize> = (0..s.modules.len()).filter(|&i| s.modules[i].category == c && listed(&s.modules[i])).collect();
             if let Some(&i) = idx.get(button - 1) {
                 s.page = Page::Module(i);
             }
@@ -2442,7 +2559,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     horizon_client::motion::sunset_motion::set_up(across.and_then(|(_, y)| y));
     let flight = get("Flight").filter(|m| m.on);
     flight_pre(game, flight);
-    let step = get("Step").filter(|m| m.on);
+    let step = get("Step").filter(|m| m.on && m.b("Step up"));
     let high_jump = get("High Jump").filter(|m| m.on);
     let (was_flying, was_stepping, was_high_jumping) = with(|s| (s.flying, s.stepping, s.high_jumping));
     let (creative, spectator_mode) = (game.creative, game.spectator());
@@ -2799,14 +2916,14 @@ fn module_tick(game: &mut Game<'_>) {
             p.velocity.x *= m.n("Multiplier");
             p.velocity.z *= m.n("Multiplier");
         }
-        if let Some(m) = get("Reverse Step")
+        if let Some(m) = get("Step").filter(|m| m.b("Reverse step"))
             && was_ground
             && !ground_now
             && !jump_now
             && p.velocity.y <= 0.0
             && !p.flying
         {
-            p.velocity.y = -m.n("Speed");
+            p.velocity.y = -m.n("Fall speed");
         }
         if let Some(m) = get("Fast Climb")
             && p.last_climbable.is_some()
@@ -5600,6 +5717,7 @@ const HELP: &[(&str, &str)] = &[
     (".reset <module>", "put a module back to its defaults"),
     (".panic", "turn every module off and hide Sunset (.panic again brings it back)"),
     (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
+    (".preset [name] [apply]", "the pre-made profiles: a name says what it turns on and off, apply takes it (.profile load before-load undoes it)"),
     (".scan [plugins|details|channels|commands|status|run] [page]", "show server-reported findings; run optional Extended checks manually"),
     (".auradebug", "why Kill Aura did what it did last, and who has the hand"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
@@ -5722,6 +5840,65 @@ fn profile_action(game: &mut Game<'_>, args: &[&str]) -> Result<String, String> 
             }
             _ => Err("use .profile save|load|delete|export|import <name>, or .profile list".into()),
         }
+}
+
+// .preset [name] [apply]: the pre-made profiles. A name alone says what taking it turns on and off; apply takes it.
+fn preset_command(game: &mut Game<'_>, args: &[&str]) {
+    use super::sunset_presets::{self as presets, PRESETS};
+    let apply = args.len() > 1 && args.last().is_some_and(|a| a.eq_ignore_ascii_case("apply"));
+    let name = args[..args.len() - usize::from(apply)].join(" ");
+    if name.is_empty() {
+        let list: Vec<&str> = PRESETS.iter().map(|p| p.id).collect();
+        return say(game, &format!("Presets: {}. .preset <name> says what it turns on and off.", list.join(", ")));
+    }
+    let Some(i) = presets::find(&name) else {
+        return say(game, &format!("Preset: there is none called {name}."));
+    };
+    if apply {
+        let message = take_preset(game, i).unwrap_or_else(|e| format!("Preset: {e}."));
+        return say(game, &message);
+    }
+    match with(|s| s.preview(&PRESETS[i])) {
+        Ok(preview) => {
+            for line in preview_lines(&PRESETS[i], &preview) {
+                say(game, &line);
+            }
+            say(game, &format!(".preset {} apply takes it.", PRESETS[i].id));
+        }
+        Err(e) => say(game, &format!("Preset: {e}.")),
+    }
+}
+
+// A preview as lines: the preset, then what it turns on and off and how many settings it changes.
+pub(super) fn preview_lines(preset: &super::sunset_presets::Preset, preview: &Preview) -> Vec<String> {
+    let names = |list: &[&str]| if list.is_empty() { "nothing".to_owned() } else { list.join(", ") };
+    let mut lines = vec![
+        format!("{} - {}", preset.title, preset.about),
+        format!("Turns on: {}", names(&preview.on)),
+        format!("Turns off: {}", names(&preview.off)),
+    ];
+    if preview.settings > 0 {
+        lines.push(format!("Changes {} setting{}", preview.settings, if preview.settings == 1 { "" } else { "s" }));
+    }
+    lines
+}
+
+// Takes preset `i`, after a backup of the settings as they are (.profile load before-load brings them back).
+fn take_preset(game: &mut Game<'_>, i: usize) -> Result<String, String> {
+    use super::sunset_profiles::{self as profiles, BACKUP, HEADER};
+    let preset = &super::sunset_presets::PRESETS[i];
+    let store = profiles::Store::new(game.native_data_dir(ID))?;
+    let text = with(|s| s.preset_text(preset))?;
+    let before = with(|s| s.profile_text());
+    store.write(BACKUP, &format!("{HEADER}\n{before}\n"))?;
+    with(|s| {
+        s.load_profile(&text);
+        release_changed_binds(s);
+        let snapshot = s.module_text();
+        s.selection.loaded(preset.id, &snapshot);
+    });
+    save(game);
+    Ok(format!("Took preset {}. .profile load {BACKUP} puts the settings back as they were.", preset.title))
 }
 
 fn apply_movement_preset(state: &mut State, style: &str) -> bool {
@@ -5928,6 +6105,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         }
         "panic" => panic_off(game),
         "profile" | "profiles" | "config" | "cfg" => profile_command(game, &args[1..]),
+        "preset" | "presets" => preset_command(game, &args[1..]),
         "reset" => {
             if let Some(i) = module_arg(game, args.get(1)) {
                 let name = with(|s| {
@@ -7333,16 +7511,16 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Base Finder" => "trouser stash base hunting",
         "Stash Finder" => "stash chests base hunting",
         "Mob Gear ESP" => "mob gear player gear",
-        "Step" => "step up stepup stairs",
+        "Step" => "step up stepup stairs reverse step step down stepdown",
         "ClickGUI" => "dropdown dashboard style gui menu color colour theme accent opacity width dim blur background indent scale size zoom bigger radius corner round",
         "Glide" => "slow fall slowfall",
         "Hand View" => "small hands hand sway viewmodel item position totem pop totem size hand shadow hand light",
         "Zoom" => "wi zoom spyglass",
         "Panic" => "disable all off hide",
-        "Auto Steal" => "chest stealer loot",
+        "Chest Stealer" => "auto steal autosteal loot",
+        "Mine Through Mobs" => "no mining trace nominingtrace",
         "Inventory Cleaner" => "inventory cleaner junk drop clean",
         "GUI Move" => "inventory move invmove gui walk",
-        "Reverse Step" => "step down stepdown",
         "Flight" => "fly",
         "Kill Aura" => "aura killaura",
         "Break Delay" => "fast break nuker delay",
@@ -7376,11 +7554,12 @@ pub(super) fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
     let mut rows = Vec::new();
     let mut y = 0.0;
     let query = norm(&s.gui.search);
+    let listed = s.listed();
     for (i, m) in s
         .modules
         .iter()
         .enumerate()
-        .filter(|(_, m)| m.category == CATEGORIES[c] && (norm(m.name).contains(&query) || norm(aliases(m.name)).contains(&query)))
+        .filter(|(_, m)| m.category == CATEGORIES[c] && listed(m) && (norm(m.name).contains(&query) || norm(aliases(m.name)).contains(&query)))
     {
         rows.push((y, Hit::Module(i)));
         y += row_hh();
@@ -7557,7 +7736,7 @@ fn field_width(game: &Game<'_>, text: &str) -> f32 {
 }
 
 // A description in lines that fit `width`.
-fn wrap(game: &Game<'_>, text: &str, width: f32) -> Vec<String> {
+pub(super) fn wrap(game: &Game<'_>, text: &str, width: f32) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     for word in text.split_whitespace() {
         match lines.last_mut() {
@@ -7720,14 +7899,17 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
     if with(|s| s.gui.profile_menu.is_some()) {
         let choice = with(|s| {
             if name == "key.keyboard.escape" {
-                s.gui.profile_menu = None;
+                // Out of a preview first, then the menu closes.
+                if !s.gui.profile_menu.as_mut().is_some_and(super::sunset_profile_menu::Menu::back) {
+                    s.gui.profile_menu = None;
+                }
                 return None;
             }
             let (w, h) = (s.gui.view_w, s.gui.view_h);
             s.gui.profile_menu.as_mut().and_then(|m| m.key(name, w, h))
         });
-        if let Some(name) = choice {
-            load_profile_from_menu(game, &name);
+        if let Some(choice) = choice {
+            profile_menu_choice(game, choice);
         }
         return;
     }
@@ -7833,9 +8015,11 @@ fn first_match(s: &State) -> Option<usize> {
     if query.is_empty() {
         return None;
     }
+    let listed = s.listed();
     s.modules
         .iter()
         .enumerate()
+        .filter(|(_, m)| listed(m))
         .filter_map(|(i, m)| {
             let name = norm(m.name);
             let rank = if name == query {
@@ -7875,15 +8059,15 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
         if button == MouseButton::Left {
             let choice = with(|s| {
                 let (w, h) = (s.gui.view_w, s.gui.view_h);
-                let menu = s.gui.profile_menu.as_ref()?;
+                let menu = s.gui.profile_menu.as_mut()?;
                 if menu.closes(at, w, h) {
                     s.gui.profile_menu = None;
                     return None;
                 }
                 menu.click(at, w, h)
             });
-            if let Some(name) = choice {
-                load_profile_from_menu(game, &name);
+            if let Some(choice) = choice {
+                profile_menu_choice(game, choice);
             }
         }
         return;
@@ -7967,6 +8151,8 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
         let Some((r, hit)) = found else {
             return;
         };
+        // Extra Modules is its switches: either button opens them.
+        let right = right || matches!(hit, Hit::Module(i) if s.modules[i].name == super::sunset_extra_modules::NAME);
         match (hit, right) {
             (Hit::WinTitle, false) => {
                 if let Some(w) = s.gui.window {
@@ -8639,8 +8825,38 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
 }
 
 // A profile picked in the Profile list: loaded and the list closed, or the error shown in it.
+// A saved profile loaded, a preset's preview shown, or the preset taken, from the Profiles row's menu.
+fn profile_menu_choice(game: &mut Game<'_>, choice: super::sunset_profile_menu::Choice) {
+    use super::sunset_profile_menu::{self as menu, Choice};
+    let preset = match choice {
+        Choice::Load(name) => return load_profile_from_menu(game, &name),
+        Choice::Apply(i) => {
+            let result = take_preset(game, i);
+            return menu_result(game, result);
+        }
+        Choice::Preview(i) => i,
+    };
+    let preview = with(|s| s.preview(&super::sunset_presets::PRESETS[preset]));
+    let w = with(|s| s.gui.view_w);
+    let preview = preview.map(|p| menu::preview_lines(game, w, preset, &preview_lines(&super::sunset_presets::PRESETS[preset], &p)[1..]));
+    with(|s| {
+        if let Some(m) = &mut s.gui.profile_menu {
+            match preview {
+                Ok(lines) => m.preview = Some(menu::Preview { preset, lines }),
+                Err(e) => m.error = Some(e),
+            }
+        }
+    });
+}
+
 fn load_profile_from_menu(game: &mut Game<'_>, name: &str) {
-    match profile_action(game, &["load", name]) {
+    let result = profile_action(game, &["load", name]);
+    menu_result(game, result);
+}
+
+// A load from the Profiles menu: done, the menu closes and the chat says so; else the menu shows why not.
+fn menu_result(game: &mut Game<'_>, result: Result<String, String>) {
+    match result {
         Ok(message) => {
             with(|s| {
                 s.gui.profile_menu = None;
@@ -8916,5 +9132,77 @@ mod section_merge_tests {
         assert_eq!(out["anchoraura.on"], "true");
         assert_eq!(out["anchoraura.mindamage"], "6");
         assert!(!out.contains_key("anchoraura.macro"));
+    }
+}
+
+#[cfg(test)]
+mod cleanup_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn fields(text: &str) -> BTreeMap<String, String> {
+        merged_modules(text).lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.into(), v.into())).collect()
+    }
+
+    #[test]
+    fn renamed_modules_keep_their_settings() {
+        let out = fields("autosteal.on=true\nautosteal.key=key.keyboard.j\nnominingtrace.on=false\nnominingtrace.onlywithapickaxe=false\n");
+        assert_eq!(out["cheststealer.on"], "true");
+        assert_eq!(out["cheststealer.key"], "key.keyboard.j");
+        assert_eq!(out["minethroughmobs.onlywithapickaxe"], "false");
+        assert!(!out.keys().any(|k| k.starts_with("autosteal.") || k.starts_with("nominingtrace.")));
+        // Mine Through Mobs is an extra; it was off and unbound, so it stays out of the menu.
+        assert!(!out.contains_key("extramodules.minethroughmobs"));
+    }
+
+    #[test]
+    fn reverse_step_is_steps_section_and_potion_saver_is_gone() {
+        let out = fields("step.on=false\nstep.key=none\nreversestep.on=true\nreversestep.key=key.keyboard.r\nreversestep.speed=2\npotionsaver.on=true\n");
+        for (field, value) in [("on", "true"), ("key", "key.keyboard.r"), ("stepup", "false"), ("reversestep", "true"), ("fallspeed", "2")] {
+            assert_eq!(out[&format!("step.{field}")], value, "{field}");
+        }
+        assert_eq!(out["extramodules.step"], "true");
+        assert!(!out.keys().any(|k| k.starts_with("reversestep.") || k.starts_with("potionsaver.")));
+    }
+
+    #[test]
+    fn extras_in_use_are_listed_and_current_configs_are_left_alone() {
+        let out = fields("jesus.on=true\njesus.key=none\nslippy.on=false\nslippy.key=key.keyboard.p\nburrow.on=false\nburrow.key=none\n");
+        assert_eq!(out["extramodules.jesus"], "true");
+        assert_eq!(out["extramodules.slippy"], "true");
+        assert!(!out.contains_key("extramodules.burrow"));
+        let current = "jesus.on=true\nextramodules.jesus=false\n";
+        assert!(matches!(merged_modules(current), std::borrow::Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn extras_are_modules_and_hidden_until_listed() {
+        let mut state = State::new();
+        for name in super::super::sunset_extra_modules::EXTRAS {
+            assert!(state.find(name).is_some(), "{name} is a module");
+        }
+        let jesus = state.find("Jesus").unwrap();
+        assert!(!state.listed()(&state.modules[jesus]));
+        State::set_field(&mut state.modules, "extramodules.jesus", "true");
+        assert!(state.listed()(&state.modules[jesus]));
+        let gone = ["Potion Saver", "Reverse Step", "Auto Steal", "No Mining Trace"];
+        assert!(gone.iter().all(|name| state.module(name).is_none()));
+        assert_eq!(state.module("Reach").map(|m| m.category), Some(Category::Combat));
+        assert_eq!(state.module("Unlock All Recipes").map(|m| m.category), Some(Category::World));
+    }
+
+    #[test]
+    fn presets_are_valid_profiles_that_cut_down() {
+        use super::super::sunset_presets::{PRESETS, find};
+        let mut state = State::new();
+        State::set_field(&mut state.modules, "killaura.on", "true");
+        for (i, preset) in PRESETS.iter().enumerate() {
+            assert_eq!(find(preset.id), Some(i));
+            let preview = state.preview(preset).unwrap_or_else(|e| panic!("{}: {e}", preset.id));
+            assert!(!preview.on.is_empty(), "{} turns something on", preset.id);
+            assert!(!preview.off.contains(&"HUD") && !preview.on.contains(&"HUD"));
+            assert_eq!(preview.off.contains(&"Kill Aura"), !preset.text.contains("killaura.on=true"), "{}", preset.id);
+        }
+        assert!(find("pvp-cart").is_some());
     }
 }

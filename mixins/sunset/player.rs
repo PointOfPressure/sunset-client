@@ -26,7 +26,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Potions absorption", false)
             .bool("Health enabled", true)
             .num("Health threshold", 20.0, 1.0, 40.0, 1.0),
-        Module::new("Auto Steal", Player, "Empties containers you open.")
+        Module::new("Chest Stealer", Player, "Empties containers you open.")
             .num("Items per tick", 3.0, 1.0, 27.0, 1.0)
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0),
         Module::new("Inventory Cleaner", Player, "Drops junk from your inventory.")
@@ -61,7 +61,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Randomise", false)
             .bool("Bypass", false)
             .num("Bypass length", 16.0, 4.0, 32.0, 1.0),
-        Module::new("Reach", Player, "Longer reach.")
+        Module::new("Reach", Combat, "Longer reach.")
             .num("Extra block reach", 1.0, 0.0, 6.0, 0.5)
             .num("Entity reach", 4.5, 3.0, 6.0, 0.1),
         Module::new("Hitboxes", Combat, "Makes mobs' boxes bigger to aim at.")
@@ -152,11 +152,11 @@ static WALL_HITS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 
 // Hitboxes: how far the boxes of the mobs it picked this tick grow each way, and their ids (read by the mob_hit hook).
 static HITBOXES: Mutex<(f64, Vec<u32>)> = Mutex::new((0.0, Vec::new()));
-// No Mining Trace, at work this tick: the mobs it leaves to be hit as usual.
+// Mine Through Mobs, at work this tick: the mobs it leaves to be hit as usual.
 static NO_TRACE: Mutex<Option<String>> = Mutex::new(None);
 
 // The mob under the crosshair with Reach's Entity reach or Auto Weapon's Spear reach, as the game's own pick finds it
-// (the nearest box along the look), the boxes Hitboxes grows grown; none with No Mining Trace while a block is in
+// (the nearest box along the look), the boxes Hitboxes grows grown; none with Mine Through Mobs while a block is in
 // reach (but for the mobs it lists). None: the game's own.
 pub(super) fn mob_hit(game: &Game<'_>) -> Option<Option<(usize, f64)>> {
     let bits = ENTITY_REACH.load(std::sync::atomic::Ordering::Relaxed);
@@ -321,14 +321,14 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     };
     ENTITY_REACH.store(entity.map_or(u64::MAX, f64::to_bits), std::sync::atomic::Ordering::Relaxed);
     *HITBOXES.lock().unwrap_or_else(|e| e.into_inner()) = hitboxes(game, get("Hitboxes"));
-    // No Mining Trace (Meteor's): with a pickaxe in either hand (or anything, with Only with a pickaxe off).
+    // Mine Through Mobs (Meteor's): with a pickaxe in either hand (or anything, with Only with a pickaxe off).
     let pickaxe = [game.held(), game.offhand.as_ref()].into_iter().flatten().any(|s| s.item.ends_with("_pickaxe"));
     *NO_TRACE.lock().unwrap_or_else(|e| e.into_inner()) =
-        get("No Mining Trace").filter(|m| pickaxe || !m.b("Only with a pickaxe")).map(|m| m.t("Entities").to_owned());
+        get("Mine Through Mobs").filter(|m| pickaxe || !m.b("Only with a pickaxe")).map(|m| m.t("Entities").to_owned());
     WALL_HITS.store(get("Ghost Hand").is_some_and(|m| m.b("Hits")), std::sync::atomic::Ordering::Relaxed);
     // These work on the inventory screen, which in_world leaves out.
     if game.remote.is_some() && game.player.is_some() {
-        if let Some(m) = get("Auto Steal") {
+        if let Some(m) = get("Chest Stealer") {
             auto_steal(game, m);
         }
         if let Some(m) = get("Inventory Cleaner") {
@@ -630,7 +630,7 @@ mod fast_place_tests {
     }
 }
 
-// ---- Auto Steal and Inventory Cleaner
+// ---- Chest Stealer and Inventory Cleaner
 
 // How many slots a server's container menu has, for the ones that are just a grid of items.
 fn container_size(menu: &str) -> Option<usize> {

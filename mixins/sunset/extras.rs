@@ -1,6 +1,6 @@
-// Extras: the things that are not cheats (Unlock All Recipes works in recipes.rs). Client Sort, like ClientSort as
-// Sayer uses it: three small buttons down the right of each part of an inventory screen (sort_buttons.rs), Sort, Fill
-// Stacks and Restock. Sort goes in creative order, by count with Shift, by name with Ctrl and by id with Alt; Horizon's
+// Client: the things that are not cheats (Unlock All Recipes, in World, works in recipes.rs). Client Sort, like
+// ClientSort as Sayer uses it: three small buttons down the right of each part of an inventory screen (sort_buttons.rs),
+// Sort, Fill Stacks and Restock. Sort goes in creative order, by count with Shift, by name with Ctrl and by id with Alt; Horizon's
 // sort key does the same, on the hotbar only while the pointer is on it. The clicks go out a few a tick, an operation
 // at least two ticks after the one before.
 
@@ -20,10 +20,10 @@ const GAP_TICKS: u32 = 2;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new("Unlock All Recipes", Category::Extras,
+        Module::new("Unlock All Recipes", Category::World,
             "Shows every recipe as unlocked."),
-        Module::new("Profiles", Category::Extras, "Saved settings to load."),
-        Module::new("Client Sort", Category::Extras,
+        Module::new("Profiles", Category::Client, "Saved settings to load."),
+        Module::new("Client Sort", Category::Client,
             "Sorts inventories in your order."),
     ]
 }
