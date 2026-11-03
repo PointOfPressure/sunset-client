@@ -99,6 +99,12 @@ name = "sunset_world"
 source = "world.rs"
 
 [[module]]
+id = "base_finder"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_base_finder"
+source = "base_finder.rs"
+
+[[module]]
 id = "vanish"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_vanish"

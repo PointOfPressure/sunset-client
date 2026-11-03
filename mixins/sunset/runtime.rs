@@ -385,6 +385,7 @@ impl Module {
                 }
             }
             "Hitboxes" if name == "Weapons" => self.b("Only on weapon"),
+            "Base Finder" => super::sunset_base_finder::visible(self, name),
             "Auto Weapon" => match name {
                 "Prefer axes" => self.b("Best weapon"),
                 "Shield mode" | "Shield held" | "Stun slam" => self.b("Axe on shields"),
@@ -414,6 +415,9 @@ impl Module {
         }
     }
 }
+
+// Base Finder's block list before its tiers (0.8.1), told apart from a list of your own.
+const OLD_BASE_BLOCKS: &str = "chest,trapped_chest,barrel,ender_chest,shulker_box,*_shulker_box,crafting_table,furnace,blast_furnace,smoker,*_bed,*_sign,anvil,enchanting_table,brewing_stand,hopper,dropper,dispenser,beacon,respawn_anchor,lodestone,*_concrete,nether_portal";
 
 // Every module with its defaults, in menu order.
 pub(super) fn defaults() -> Vec<Module> {
@@ -840,6 +844,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_atmosphere::defaults());
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
+    v.extend(super::sunset_base_finder::defaults());
     v.extend(super::sunset_vehicle::defaults());
     v.extend(super::sunset_vanish::defaults());
     v.extend(super::sunset_server_scan::defaults());
@@ -1177,6 +1182,9 @@ impl State {
                     // Offhand before vape-rs's Auto Totem: Refill Inventory opened the inventory for the totem; Off and
                     // Hotbar Swap moved it with no screen.
                     ("offhand", "refill") => Some(("silentopen", (v != "Inventory").to_string())),
+                    // Base Finder's one list before its tiers: a list of your own becomes List 7.
+                    ("basefinder", "blocks") if v != OLD_BASE_BLOCKS => Some(("list7", v.to_owned())),
+                    ("basefinder", "threshold") => Some(("list7count", v.to_owned())),
                     _ => None,
                 };
                 // ...its Swap delay (ticks) is the Totem delay, and Item None (a totem only at Health or below) a totem

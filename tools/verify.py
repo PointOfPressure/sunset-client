@@ -2069,6 +2069,8 @@ def _():
     cmd(f"forceload remove {bx} {bz}")
     wait(5)
     mark = log_mark()
+    # Every line at once: the world's own builds (a server's test world has some) don't hold this one back.
+    setting("basefinder", "message cooldown", "0")
     toggle("base finder", True)
     wait(40)
     ax, az = X0 >> 4, Z0 >> 4
@@ -2121,6 +2123,54 @@ def _():
     return ok, (f"fresh chunk said {took:.1f} s after the teleport: {line!r}; before loading: {len(far_before)}; "
                 f"loaded chunk on turning on: {len(again)}; arena chunks said: {len(near)}; waypoints on: {points_on}, "
                 f"after off: {points_off}; said after off: {said_off}")
+
+
+@test("Base Finder signs")
+def _():
+    # Base Finder v2's single signs, each alone in its own loaded chunk near the arena: one shulker box (List 1 takes
+    # one), a written sign, a soul sand bubble column, bedrock above the floor, a spawner with nothing of a dungeon
+    # around it, a block above the terrain (y 300), a name-tagged cow and a boat. Turned on, Base Finder says each
+    # chunk with its reason (cooldown 0 here so they come at once).
+    ax, az = X0 >> 4, Z0 >> 4
+
+    def at(dx, dz):
+        return (ax + dx) * 16 + 8, Y + 1, (az + dz) * 16 + 8
+
+    spots = {
+        "shulker box": ((3, -3), lambda x, y, z: [f"setblock {x} {y} {z} minecraft:shulker_box"]),
+        "a written sign": ((3, -1), lambda x, y, z: [f"setblock {x} {y} {z} minecraft:oak_sign{{front_text:{{messages:['\"hi\"','\"\"','\"\"','\"\"']}}}}"]),
+        "a soul sand bubble column": ((3, 1), lambda x, y, z: [f"setblock {x} {y} {z} minecraft:soul_sand",
+                                                               f"fill {x} {y+1} {z} {x} {y+3} {z} minecraft:bubble_column[drag=false]"]),
+        "bedrock where none grows": ((3, 3), lambda x, y, z: [f"setblock {x} {y} {z} minecraft:bedrock"]),
+        "a spawner with none of its structure": ((-3, -3), lambda x, y, z: [f"setblock {x} {y} {z} minecraft:spawner"]),
+        "a build above the terrain": ((-3, -1), lambda x, y, z: [f"setblock {x} 300 {z} minecraft:stone"]),
+        "a name-tagged mob": ((1, 1), lambda x, y, z: [f"summon minecraft:cow {x} {y} {z} {{NoAI:1b,PersistenceRequired:1b,CustomName:'\"Bessie\"'}}"]),
+        "a boat": ((-1, -1), lambda x, y, z: [f"summon minecraft:oak_boat {x} {y} {z}"]),
+    }
+    reset("creative")
+    toggle("base finder", False)
+    setting("basefinder", "message cooldown", "0")
+    for (d, place) in spots.values():
+        x, y, z = at(*d)
+        cmd(f"fill {x-1} {y} {z-1} {x+1} {y+4} {z+1} minecraft:air", f"setblock {x} 300 {z} minecraft:air")
+        cmd(*place(x, y, z))
+    wait(20)
+    mark = log_mark()
+    toggle("base finder", True)
+    wait(60)
+    said = [line for line in sunset_said(mark) if line.startswith("Base?")]
+    toggle("base finder", False)
+    for (d, _) in spots.values():
+        x, y, z = at(*d)
+        cmd(f"fill {x-1} {y} {z-1} {x+1} {y+4} {z+1} minecraft:air", f"setblock {x} 300 {z} minecraft:air")
+    cmd("kill @e[type=minecraft:cow,name=Bessie]", "kill @e[type=minecraft:oak_boat]")
+    missing = []
+    for why, (d, _) in spots.items():
+        x, _, z = at(*d)
+        line = next((l for l in said if f"chunk {x >> 4} {z >> 4} " in l), None)
+        if line is None or why not in line:
+            missing.append(f"{why}: {line!r}")
+    return not missing, f"{len(said)} chunks said; wrong or missing: {missing}"
 
 
 @test("Text setting editor")

@@ -1,5 +1,5 @@
 // World modules ported from Meteor's source: Auto Shearer, Auto Nametag,
-// Auto Mount, Flamethrower; and Bow Aimbot, Spawner Alerts and Base Finder.
+// Auto Mount, Flamethrower; and Bow Aimbot and Spawner Alerts.
 
 use super::sunset::{Camera, Canvas, Category, Module, hold};
 use super::sunset_util::*;
@@ -8,9 +8,7 @@ use horizon_protocol::packets::play::{self, Serverbound as S};
 use horizon_client::containers::BlockEntity;
 use horizon_client::mobs::spawner::SpawnerExt;
 use horizon_world::nbt::{JavaString, Tag};
-use std::collections::HashSet;
-use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
@@ -69,15 +67,8 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Spawner Alerts", World, "Reports nearby spawners.")
             .num("Range", 64.0, 8.0, 256.0, 8.0)
             .bool("Labels", true),
-        Module::new("Base Finder", World, "Finds player bases.")
-            .text("Blocks", BASE_BLOCKS)
-            .num("Threshold", 12.0, 2.0, 200.0, 1.0)
-            .num("Ignore near spawn", 0.0, 0.0, 10000.0, 100.0)
-            .bool("Waypoints", true),
     ]
 }
-
-const BASE_BLOCKS: &str = "chest,trapped_chest,barrel,ender_chest,shulker_box,*_shulker_box,crafting_table,furnace,blast_furnace,smoker,*_bed,*_sign,anvil,enchanting_table,brewing_stand,hopper,dropper,dispenser,beacon,respawn_anchor,lodestone,*_concrete,nether_portal";
 
 #[derive(Default)]
 struct Ws {
@@ -88,7 +79,6 @@ struct Ws {
     // Spawner Alerts: the dimension, and each spawner found in it with its label.
     spawner_dim: &'static str,
     spawners: Vec<([i32; 3], String)>,
-    base: Option<BaseScan>,
 }
 
 static WS: Mutex<Option<Ws>> = Mutex::new(None);
@@ -142,14 +132,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     if let Some(m) = get("Spawner Alerts") {
         spawner_alerts(game, m);
     }
-    match get("Base Finder") {
-        Some(m) => base_finder(game, m),
-        None => {
-            // Off: stop scanning and take its waypoints away, saved ones from earlier sessions included.
-            ws(|w| w.base = None);
-            super::sunset::remove_waypoints(game, base_point);
-        }
-    }
+    super::sunset_base_finder::tick(game, get("Base Finder"));
 }
 
 // Within `range` of the player as the shape says: a ball, or a cube.
@@ -646,148 +629,4 @@ pub(super) fn spawner_labels(game: &Game<'_>, cam: &Camera, range: f64, out: &mu
             out.text(&text, [x - tw / 2.0, y], 0xFFAA00);
         }
     });
-}
-
-// ---- Base Finder
-
-// A scan for one dimension and one list: the chunks sent to the scan thread (the loaded ones), the ones said in
-// chat, and the thread's way in and out. Dropping it ends the thread.
-struct BaseScan {
-    key: (&'static str, String, u32),
-    revision: u64,
-    sent: HashSet<(i32, i32)>,
-    said: HashSet<(i32, i32)>,
-    jobs: Sender<Arc<horizon_client::chunk::Chunk>>,
-    found: Receiver<BaseFound>,
-}
-
-// A chunk over the threshold: where, how many blocks, the middle of them, and the most common kinds with counts.
-struct BaseFound {
-    chunk: (i32, i32),
-    total: u32,
-    at: [i32; 3],
-    kinds: Vec<(String, u32)>,
-}
-
-// The scan thread: every block state of each chunk sent, counted by the listed kind it is (`kinds[state]`, u16::MAX
-// for none), and the chunks with `threshold` or more sent back.
-fn base_thread(kinds: Vec<u16>, names: Vec<String>, threshold: u32, jobs: Receiver<Arc<horizon_client::chunk::Chunk>>, found: Sender<BaseFound>) {
-    let mut states = [0u32; 4096];
-    for chunk in jobs {
-        let mut counts = vec![0u32; names.len()];
-        let (mut total, mut sum) = (0u32, [0i64; 3]);
-        for (i, section) in chunk.sections.iter().enumerate() {
-            section.unpack(&mut states);
-            let y0 = chunk.min_y() + i as i32 * 16;
-            for (j, &v) in states.iter().enumerate() {
-                let Some(&k) = kinds.get(v as usize).filter(|k| **k != u16::MAX) else {
-                    continue;
-                };
-                counts[usize::from(k)] += 1;
-                total += 1;
-                let (x, y, z) = (j as i64 & 15, j as i64 >> 8, j as i64 >> 4 & 15);
-                sum = [sum[0] + x, sum[1] + y + i64::from(y0), sum[2] + z];
-            }
-        }
-        if total < threshold {
-            continue;
-        }
-        let n = i64::from(total);
-        let mut kinds: Vec<(String, u32)> = names.iter().cloned().zip(counts).filter(|(_, c)| *c > 0).collect();
-        kinds.sort_by(|a, b| b.1.cmp(&a.1));
-        kinds.truncate(4);
-        let at = [chunk.x * 16 + (sum[0] / n) as i32, (sum[1] / n) as i32, chunk.z * 16 + (sum[2] / n) as i32];
-        if found.send(BaseFound { chunk: (chunk.x, chunk.z), total, at, kinds }).is_err() {
-            return;
-        }
-    }
-}
-
-// Base Finder's own waypoints, "Base x z": a waypoint of yours called "Base" or "Base camp" is not one.
-fn base_point(name: &str) -> bool {
-    name.strip_prefix("Base ")
-        .and_then(|xz| xz.split_once(' '))
-        .is_some_and(|(x, z)| x.parse::<i32>().is_ok() && z.parse::<i32>().is_ok())
-}
-
-// A block's short name on the list: by name, or a "*_bed" entry by its end (so wall and hanging signs are signs).
-fn base_kind(list: &[&str], name: &str) -> Option<usize> {
-    let name = short(name);
-    list.iter().position(|x| x.strip_prefix('*').map_or(*x == name, |end| name.ends_with(end)))
-}
-
-// Each tick: newly loaded chunks go to the scan thread, unloaded ones are forgotten (seen again if they load again,
-// but said only once), and what the thread found is said in chat with a waypoint.
-fn base_finder(game: &mut Game<'_>, m: &Module) {
-    let key = (game.dim.id(), m.t("Blocks").to_owned(), m.n("Threshold") as u32);
-    if ws(|w| w.base.as_ref().is_none_or(|b| b.key != key)) {
-        let list: Vec<&str> = key.1.split(',').map(str::trim).filter(|x| !x.is_empty()).collect();
-        let states = &game.res.facts().states;
-        let mut names: Vec<String> = Vec::new();
-        let kinds = states
-            .iter()
-            .map(|s| {
-                let Some(k) = base_kind(&list, &s.name) else {
-                    return u16::MAX;
-                };
-                let label = list[k].trim_start_matches("*_").to_owned();
-                let i = names.iter().position(|n| *n == label).unwrap_or_else(|| {
-                    names.push(label);
-                    names.len() - 1
-                });
-                i as u16
-            })
-            .collect();
-        let (jobs, rx) = channel();
-        let (tx, found) = channel();
-        let threshold = key.2;
-        let spawned = std::thread::Builder::new().name("sunset-base-finder".into()).spawn(move || base_thread(kinds, names, threshold, rx, tx));
-        if spawned.is_err() {
-            return;
-        }
-        ws(|w| w.base = Some(BaseScan { key, revision: 0, sent: HashSet::new(), said: HashSet::new(), jobs, found }));
-    }
-    let revision = game.world.chunks.membership_revision();
-    let found: Vec<BaseFound> = ws(|w| {
-        let Some(b) = w.base.as_mut() else {
-            return Vec::new();
-        };
-        if b.revision != revision {
-            b.revision = revision;
-            b.sent.retain(|c| game.world.chunks.contains_key(c));
-            for (c, chunk) in game.world.chunks.iter() {
-                if b.sent.insert(*c) {
-                    let _ = b.jobs.send(chunk.clone());
-                }
-            }
-        }
-        b.found.try_iter().filter(|f| b.said.insert(f.chunk)).collect()
-    });
-    let near = m.n("Ignore near spawn");
-    for f in found {
-        let far = game.spawn.filter(|_| game.dim.id() == "minecraft:overworld").is_none_or(|s| {
-            (f64::from(f.at[0]) - s.x).hypot(f64::from(f.at[2]) - s.z) >= near
-        });
-        if !far {
-            continue;
-        }
-        let what: Vec<String> = f.kinds.iter().map(|(n, c)| format!("{c} {}", n.replace('_', " "))).collect();
-        let [x, y, z] = f.at;
-        report(game, &format!("Base? {} placed blocks in chunk {} {} around {x} {y} {z}: {}", f.total, f.chunk.0, f.chunk.1, what.join(", ")));
-        if m.b("Waypoints") {
-            super::sunset::add_waypoint(game, format!("Base {x} {z}"), [f64::from(x) + 0.5, f64::from(y), f64::from(z) + 0.5]);
-        }
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::base_point;
-
-    #[test]
-    fn base_finder_claims_only_its_own_waypoints() {
-        assert!(base_point("Base 376 15") && base_point("Base -21 -13"));
-        assert!(!base_point("Base") && !base_point("Base camp") && !base_point("Base 1 2 3") && !base_point("Home 1 2"));
-    }
 }
