@@ -66,7 +66,7 @@ The **licensor** is the individual or entity offering these terms, and the **sof
 
 # Third-party notices
 
-Scaffold's Legit and Godbridge modes (mixins/sunset/scaffold_bridge.rs) follow the behaviour of vape-rs (https://github.com/rdbtCVS/vape-rs), written again for Sunset. vape-rs is under the MIT License:
+Scaffold's Legit and Godbridge modes (mixins/sunset/scaffold_bridge.rs) and Offhand's Auto Totem (its Item Totem, in mixins/sunset/combat_inventory.rs) follow the behaviour of vape-rs (https://github.com/rdbtCVS/vape-rs), written again for Sunset. vape-rs is under the MIT License:
 
 MIT License
 

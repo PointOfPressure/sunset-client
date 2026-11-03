@@ -308,6 +308,7 @@ impl Module {
             "Kill Aura" => Some(num(self.n("Range"))),
             "Fast Place" => Some(num(self.n("Speed"))),
             "Speed" | "Criticals" => Some(self.p("Mode").to_owned()),
+            "Offhand" if self.b("Show totem count") => Some(super::sunset_combat_inventory::totem_count().to_string()),
             _ => None,
         }
     }
@@ -370,12 +371,16 @@ impl Module {
                 _ => true,
             },
             "Offhand" => {
-                let (refill, hover) = (self.p("Refill") != "Off", self.b("Hover"));
+                let (totem, open, silent) = (self.p("Item") == "Totem", self.b("Open inventory"), self.b("Silent open"));
                 match name {
                     "Sword gapple" => self.b("Right gapple"),
-                    "Reaction delay" | "Swap delay" | "Close delay" | "Switch back delay" => refill,
-                    "Hotbar refill" => refill || hover,
-                    "Hotbar slot" => (refill || hover) && self.b("Hotbar refill"),
+                    "Open inventory" | "Inventory only" | "Random slot" | "Shortest totem delay (ms)" | "Longest totem delay (ms)"
+                    | "Extra randomization" | "Show totem count" => totem,
+                    "Silent open" => totem && open,
+                    "Shortest silent move delay (ms)" | "Longest silent move delay (ms)" => totem && open && silent,
+                    "Close inventory" => totem && open && !silent,
+                    "Hotbar refill" => self.b("Hover"),
+                    "Hotbar slot" => self.b("Hover") && self.b("Hotbar refill"),
                     _ => true,
                 }
             }
@@ -1168,8 +1173,25 @@ impl State {
                     ("killaura", "switchdelay") => Some(("weaponswitchdelay", v.to_owned())),
                     // Range was 64 by default before All (0): an unchanged one becomes All.
                     ("esp" | "tracers" | "nametags", "range") if v == "64" => Some(("range", "0".to_owned())),
+                    // Offhand before vape-rs's Auto Totem: Refill Inventory opened the inventory for the totem; Off and
+                    // Hotbar Swap moved it with no screen.
+                    ("offhand", "refill") => Some(("silentopen", (v != "Inventory").to_string())),
                     _ => None,
                 };
+                // ...its Swap delay (ticks) is the Totem delay, and Item None (a totem only at Health or below) a totem
+                // always: Health is gone, and Item comes before it in a saved config.
+                if id == "offhand" && field == "swapdelay" && let Ok(ticks) = v.parse::<f64>() {
+                    let ms = (ticks * 50.0).clamp(50.0, 200.0).to_string();
+                    for target in ["shortesttotemdelayms", "longesttotemdelayms"] {
+                        if let Some(s) = m.settings.iter_mut().find(|s| norm(s.name) == target) { s.parse(&ms); }
+                    }
+                    return;
+                }
+                if id == "offhand" && field == "health" && m.p("Item") == "None"
+                    && let Some(s) = m.settings.iter_mut().find(|s| s.name == "Item")
+                {
+                    s.parse("Totem");
+                }
                 // Before Attack mode, more than one target meant hitting them all. A newer config's own Attack mode
                 // comes after this line and has the last word.
                 if id == "killaura" && field == "maxtargets" && v.parse::<f64>().is_ok_and(|n| n > 1.0)
@@ -1240,7 +1262,8 @@ impl State {
             let fits = match field {
                 "on" => matches!(v.trim(), "true" | "false"),
                 "key" => !v.chars().any(char::is_control),
-                _ => m.settings.iter().find(|s| norm(s.name) == field).is_some_and(|s| s.clone().parse(v)),
+                _ => (id == "offhand" && OFFHAND_RETIRED.contains(&field))
+                    || m.settings.iter().find(|s| norm(s.name) == field).is_some_and(|s| s.clone().parse(v)),
             };
             if !fits {
                 return Err(bad(&format!("{k} can't be {}", v.chars().take(40).collect::<String>())));
@@ -1255,6 +1278,11 @@ impl State {
         self.module(name).is_some_and(|m| m.on)
     }
 }
+
+// Offhand's settings from before vape-rs's Auto Totem (0.9): set_field turns Health, Refill and Swap delay into the new
+// ones, and the rest are gone.
+const OFFHAND_RETIRED: [&str; 10] =
+    ["health", "elytra", "fall", "explosion", "refill", "reactiondelay", "swapdelay", "closedelay", "switchbackdelay", "doublehand"];
 
 // Settings that are gone: Client Sort's orders, lists and pace (0.9, it works as ClientSort does). Their lines go.
 const DROPPED: [(&str, &str); 8] = [
@@ -2277,6 +2305,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         .filter(|m| m.on && m.p("Mode") != "Normal" && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
         .filter(|_| playing && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
     super::sunset_scaffold_bridge::pre_tick(game, bridging);
+    // Offhand's Silent open holds your move keys and clicks while its totem moves.
+    super::sunset_combat_inventory::pre_tick(game, get("Offhand").filter(|m| m.on && playing));
     velocity(game, get("Velocity").filter(|m| m.on));
     let across = get("Speed").filter(|m| m.on).and_then(|m| speed(game, &m));
     horizon_client::motion::sunset_motion::set_across(across.map(|(xz, _)| xz));
@@ -2369,6 +2399,7 @@ fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
 // sent no move packet) the one that carries the next look.
 pub(super) fn post_tick(game: &mut Game<'_>) {
     super::sunset_scaffold_bridge::post_tick(game);
+    super::sunset_combat_inventory::post_tick(game);
     if !game.native_window() || !game.native_on(ID) {
         return;
     }
@@ -8378,6 +8409,51 @@ mod movement_config_tests {
         restored.load_text(&state.save_text());
         assert_eq!(restored.module("Scaffold").unwrap().p("Mode"), "Godbridge");
         assert_eq!(restored.module("Scaffold").unwrap().n("Longest sneak delay (ms)"), 200.0);
+    }
+
+    #[test]
+    fn offhand_totem_settings_from_before_auto_totem_load() {
+        let mut state = State::new();
+        state.load_text("offhand.item=None
+offhand.health=14
+offhand.refill=Hotbar Swap
+offhand.swapdelay=3
+offhand.doublehand=true
+");
+        let m = state.module("Offhand").unwrap();
+        assert_eq!(m.p("Item"), "Totem");
+        assert!(m.b("Silent open") && m.b("Open inventory"));
+        assert_eq!((m.n("Shortest totem delay (ms)"), m.n("Longest totem delay (ms)")), (150.0, 150.0));
+        let mut state = State::new();
+        state.load_text("offhand.item=Crystal
+offhand.health=10
+offhand.refill=Inventory
+");
+        let m = state.module("Offhand").unwrap();
+        assert_eq!(m.p("Item"), "Crystal");
+        assert!(!m.b("Silent open"));
+        // A new config's Item None stays None.
+        let mut state = State::new();
+        state.load_text("offhand.item=None
+");
+        assert_eq!(state.module("Offhand").unwrap().p("Item"), "None");
+    }
+
+    #[test]
+    fn offhand_shows_auto_totem_settings_with_item_totem() {
+        let mut state = State::new();
+        let m = state.modules.iter_mut().find(|m| m.name == "Offhand").unwrap();
+        let shown = |m: &Module, name: &str| m.setting_visible(m.settings.iter().position(|s| s.name == name).unwrap());
+        assert!(shown(m, "Random slot") && shown(m, "Close inventory") && !shown(m, "Shortest silent move delay (ms)"));
+        m.settings.iter_mut().find(|s| s.name == "Silent open").unwrap().parse("true");
+        assert!(shown(m, "Longest silent move delay (ms)") && !shown(m, "Close inventory"));
+        m.settings.iter_mut().find(|s| s.name == "Item").unwrap().parse("Crystal");
+        assert!(!shown(m, "Random slot") && !shown(m, "Silent open") && shown(m, "Delay (ticks)"));
+        assert!(!shown(m, "Hotbar slot"));
+        // Show totem count: the count beside Offhand in the module list.
+        assert_eq!(m.info(), None);
+        m.settings.iter_mut().find(|s| s.name == "Show totem count").unwrap().parse("true");
+        assert!(m.info().is_some_and(|count| count.parse::<u32>().is_ok()));
     }
 
     #[test]

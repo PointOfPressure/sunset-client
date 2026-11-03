@@ -1,7 +1,7 @@
-// The inventory modules: Offhand (Meteor's Offhand and Auto Totem, with Rust's Auto Inventory Totem and Hover Totem
-// from PR #16 as its Refill and Hover), Key Throw (#16) and Fast Use's Throwables (#16's FastXP). A Refill or Hover
-// totem moves by one swap click (or the offhand swap key from the hotbar), never by picking stacks up, and counts as
-// moved once the server's own slot packets say both slots changed.
+// The inventory modules: Offhand (Meteor's Offhand for its items, vape-rs's Auto Totem for its totem, and Rust's Hover
+// Totem from PR #16 as its Hover), Key Throw (#16) and Fast Use's Throwables (#16's FastXP). A Hover totem moves by one
+// swap click, never by picking stacks up, and counts as moved once the server's own slot packets say both slots
+// changed.
 use super::sunset::{self, Category, Module, hold, with};
 use super::sunset_combat_control as control;
 use super::sunset_inventory_policy::{self as policy, Failure, OFFHAND, Status, Swap};
@@ -22,12 +22,19 @@ const OWNERS: [&str; 4] = [INV, HOVER, XP, THROW];
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(INV, Category::Combat, "Keeps an item or totem in your offhand.")
+        Module::new(INV, Category::Combat, "Keeps a totem or another item in your offhand.")
             .pick("Item", &["Totem", "Crystal", "Gapple", "Enchanted gapple", "Shield", "Potion", "None"])
-            .num("Health", 10.0, 0.0, 36.0, 1.0)
-            .bool("Elytra", true)
-            .bool("Fall", true)
-            .bool("Explosion", true)
+            .bool("Open inventory", true)
+            .bool("Silent open", false)
+            .num("Shortest silent move delay (ms)", 100.0, 50.0, 200.0, 1.0)
+            .num("Longest silent move delay (ms)", 120.0, 50.0, 200.0, 1.0)
+            .bool("Close inventory", true)
+            .bool("Inventory only", false)
+            .bool("Random slot", true)
+            .num("Shortest totem delay (ms)", 100.0, 50.0, 200.0, 1.0)
+            .num("Longest totem delay (ms)", 120.0, 50.0, 200.0, 1.0)
+            .bool("Extra randomization", true)
+            .bool("Show totem count", false)
             .num("Delay (ticks)", 0.0, 0.0, 20.0, 1.0)
             .bool("Hotbar", false)
             .bool("Right gapple", false)
@@ -35,15 +42,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Always gap on sword", false)
             .bool("Always pot on sword", false)
             .bool("Sword pot", false)
-            .pick("Refill", &["Off", "Inventory", "Hotbar Swap"])
+            .bool("Hover", false)
             .bool("Hotbar refill", false)
-            .num("Hotbar slot", 1.0, 1.0, 9.0, 1.0)
-            .num("Reaction delay", 0.0, 0.0, 10.0, 1.0)
-            .num("Swap delay", 1.0, 0.0, 10.0, 1.0)
-            .num("Close delay", 0.0, 0.0, 10.0, 1.0)
-            .num("Switch back delay", 2.0, 0.0, 10.0, 1.0)
-            .bool("Double Hand", false)
-            .bool("Hover", false),
+            .num("Hotbar slot", 1.0, 1.0, 9.0, 1.0),
         Module::new(THROW, Category::Combat, "Throws a pearl or wind charge on a key.")
             .text("Pearl key", "None")
             .text("Wind charge key", "None")
@@ -54,14 +55,11 @@ pub(super) fn defaults() -> Vec<Module> {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
-    Reaction,
-    SwapDelay,
+    Swap,
     Await,
-    Close,
-    Return,
 }
 
-// One totem move: from the reaction delay to the server's confirmation and the inventory closed again.
+// One Hover move: from the swap click to the server's confirmation.
 struct Job {
     lease: control::Finish,
     owner: &'static str,
@@ -71,15 +69,95 @@ struct Job {
     menu: (i32, String),
     wire: [Option<usize>; 2],
     phase: Phase,
-    due: u64,
     began: Instant,
     swap: Option<Swap<ItemStack>>,
-    hotbar: bool,
-    opened: bool,
-    restore: Option<(usize, usize)>,
-    pass_swaps: u8,
     unsafe_ticks: u8,
     revision: Option<i32>,
+}
+
+// Auto Totem, as vape-rs's AutoTotem (Offhand's Item Totem): while the offhand holds no totem and the main inventory or
+// hotbar has one, one swap-with-offhand click on it (the first, or a random one with Random slot) in your inventory:
+// the one open, else one opened for it (Open inventory; closed again with Close inventory), or with Silent open the
+// inventory clicked with no screen, the look the server has held and your move keys and clicks held until a Silent
+// move delay after it ends. Inventory only waits for you to open it. Each step waits a Totem delay, and a click waits
+// to be seen (the slot changes, or 1.5 s) before the next; one that changed nothing is not tried again on the same
+// slots.
+#[derive(Default)]
+struct Totem {
+    due: Option<Instant>,
+    pending: Option<Pending>,
+    stall: Option<Vec<Option<ItemStack>>>,
+    opened: bool,
+    silent: bool,
+    suppress: bool,
+    action_at: Option<Instant>,
+    look: Option<(f32, f32)>,
+    took: bool,
+    seed: u64,
+}
+
+struct Pending {
+    slot: usize,
+    expected: Option<ItemStack>,
+    revision: Option<i32>,
+    menu: i32,
+    deadline: Instant,
+}
+
+impl Totem {
+    fn active(&self) -> bool {
+        self.opened || self.silent || self.pending.is_some()
+    }
+
+    fn next(&mut self) -> u64 {
+        if self.seed == 0 {
+            self.seed = 0x70e7_d1ce;
+        }
+        self.seed ^= self.seed << 13;
+        self.seed ^= self.seed >> 7;
+        self.seed ^= self.seed << 17;
+        self.seed
+    }
+
+    fn unit(&mut self) -> f64 {
+        (self.next() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    // The next step's wait in ms: even across the range, or with Extra randomization a normal spread round its middle
+    // (a quarter of the range each way), kept in the range, and an 18 % chance of a longer pause on top.
+    fn delay(&mut self, (min, max): (u64, u64), extra: bool) -> u64 {
+        let (min, max) = (min.min(max) as f64, min.max(max) as f64);
+        if !extra {
+            return (min + (max - min) * self.unit()).round() as u64;
+        }
+        let range = (max - min).max(1.0);
+        let sd = (range / 4.0).max(1.0);
+        let (u1, u2) = (self.unit().max(f64::MIN_POSITIVE), self.unit());
+        let gaussian = (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos();
+        let mut wait = (min + range * 0.5 + gaussian * sd).clamp(min, max);
+        if self.unit() < 0.18 {
+            let (low, high) = ((range * 1.25).max(120.0), (range * 3.25).max(350.0));
+            wait += low + (high - low) * self.unit();
+        }
+        wait.max(1.0).round() as u64
+    }
+
+    // Your keys stay held from the silent open until a Silent move delay (picked again each tick) after its last
+    // click or tick.
+    fn suppress_tick(&mut self, now: Instant, (min, max): (u64, u64)) -> bool {
+        if self.suppress {
+            let (low, high) = (min.min(max) as f64, min.max(max) as f64);
+            let sample = (low + (high - low) * self.unit()) as u64;
+            let elapsed = self.action_at.map_or(u64::MAX, |at| now.saturating_duration_since(at).as_millis() as u64);
+            if elapsed >= sample {
+                self.suppress = false;
+            }
+        }
+        if self.silent {
+            self.action_at = Some(now);
+        }
+        self.suppress
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -110,7 +188,7 @@ struct State {
     press: Option<Press>,
     next: u64,
     queued_use: Option<(&'static str, Instant)>,
-    hand: policy::Hand,
+    totem: Totem,
     // The tick a hit went out: a throw waits for the next one. (A use does not: the packets of a tick's use can go
     // on the wire as the next tick starts, and Throwables' next use is due then.)
     last_hit: Option<u64>,
@@ -141,8 +219,9 @@ pub(super) fn toggled(game: &mut Game<'_>, name: &str) {
             state(|s| s.queued_use = None);
         }
     }
-    if let Some(job) = state(|s| s.job.take_if(|j| j.settings.name == name)) {
-        restore(game, &job);
+    state(|s| s.job.take_if(|j| j.settings.name == name));
+    if name == INV {
+        totem_stop(game);
     }
 }
 
@@ -157,13 +236,9 @@ fn reset() {
 // Sunset off or gone: what is in progress is undone in this world, then everything dropped.
 pub(super) fn cancel(game: &mut Game<'_>) {
     if state(|s| s.connection.as_ref().is_some_and(|old| same_session(game, old))) {
-        if let Some(job) = state(|s| s.job.take()) {
-            restore(game, &job);
-        }
-        if let Some(slot) = state(|s| s.hand.restore(game.selected)) {
-            hold(game, slot);
-        }
+        totem_stop(game);
     }
+    post_tick(game);
     reset();
 }
 
@@ -209,35 +284,11 @@ fn is_totem(stack: &Option<ItemStack>) -> bool {
     stack.as_ref().is_some_and(|s| &*s.item == "minecraft:totem_of_undying" && s.count == 1)
 }
 
-fn find_totem(game: &Game<'_>, from: usize) -> Option<usize> {
-    (from..36).find(|&i| is_totem(&game.inventory[i]))
-}
-
 fn slot_setting(m: &Module) -> usize {
     policy::delay(m.n("Hotbar slot"), 9).clamp(1, 9) as usize - 1
 }
 
-// The slot a hotbar move took goes back, and the inventory the job opened closes (never a container, never with
-// something carried).
-fn restore(game: &mut Game<'_>, job: &Job) {
-    if !job.lease.current() {
-        return;
-    }
-    if let Some((before, ours)) = job.restore
-        && game.selected == ours
-        && before < 9
-    {
-        hold(game, before);
-    }
-    if job.opened && game.screen == Screen::Inventory && game.remote_menu().0 == 0 && game.carried.is_none() {
-        game.close_container();
-        game.screen = Screen::Playing;
-        game.capture(true);
-    }
-}
-
 fn fail(game: &mut Game<'_>, job: Job) {
-    restore(game, &job);
     state(|s| {
         s.failures.retain(|(owner, _)| *owner != job.owner);
         s.failures.push((job.owner, Failure { slots: job.slots, before: job.before }));
@@ -245,8 +296,8 @@ fn fail(game: &mut Game<'_>, job: Job) {
     });
 }
 
-// Starts moving `from` to `to` (the offhand or a hotbar slot); `hotbar`: by the swap key from the hotbar.
-fn schedule(game: &mut Game<'_>, m: &Module, owner: &'static str, from: usize, to: usize, hotbar: bool) -> bool {
+// Starts moving `from` to `to` (the offhand or a hotbar slot) by one swap click.
+fn schedule(game: &mut Game<'_>, m: &Module, owner: &'static str, from: usize, to: usize) -> bool {
     if from == to || !(to < 9 || to == OFFHAND) || game.carried.is_some() {
         return false;
     }
@@ -262,14 +313,13 @@ fn schedule(game: &mut Game<'_>, m: &Module, owner: &'static str, from: usize, t
     }
     let menu = game.remote_menu();
     let wire = [Game::menu_slot_index(&menu.1, from), Game::menu_slot_index(&menu.1, to)];
-    if wire[0].is_none() || (!hotbar && to != OFFHAND && wire[1].is_none()) || !control::claim(owner) {
+    if wire[0].is_none() || (to != OFFHAND && wire[1].is_none()) || !control::claim(owner) {
         return false;
     }
     let lease = control::finish(owner);
     if !lease.current() {
         return false;
     }
-    let reaction = if owner == INV { policy::delay(m.n("Reaction delay"), 10) } else { 0 };
     state(|s| {
         s.job = Some(Job {
             lease,
@@ -279,14 +329,9 @@ fn schedule(game: &mut Game<'_>, m: &Module, owner: &'static str, from: usize, t
             before,
             menu,
             wire,
-            phase: Phase::Reaction,
-            due: game.ticks.saturating_add(reaction),
+            phase: Phase::Swap,
             began: Instant::now(),
             swap: None,
-            hotbar,
-            opened: false,
-            restore: None,
-            pass_swaps: 0,
             unsafe_ticks: 0,
             revision: None,
         })
@@ -301,56 +346,28 @@ fn run_job_step(game: &mut Game<'_>, mods: &[Module]) -> bool {
         return false;
     };
     if !mods.iter().any(|m| m.on && m == &job.settings) {
-        restore(game, &job);
         return true;
     }
     if !job.lease.current()
         || !alive(game)
         || game.remote_menu() != job.menu
         || game.carried.is_some()
-        || job.restore.is_some_and(|(_, ours)| game.selected != ours)
-        || (job.owner == HOVER && matches!(job.phase, Phase::Reaction | Phase::SwapDelay) && game.inventory_target().0 != Some(job.slots[0]))
-        // The server's 5 s at most to confirm, and a second for the delays.
+        || (job.phase == Phase::Swap && game.inventory_target().0 != Some(job.slots[0]))
+        // The server's 5 s at most to confirm, and a second more.
         || job.began.elapsed() > Duration::from_secs(6)
         || !control::claim(job.owner)
     {
         fail(game, job);
         return true;
     }
-    if game.ticks < job.due {
-        state(|s| s.job = Some(job));
-        return true;
-    }
     match job.phase {
-        Phase::Reaction => {
-            if job.owner == INV && !job.hotbar && game.screen == Screen::Playing {
-                game.reset_inventory_clicks();
-                game.screen = Screen::Inventory;
-                game.capture(false);
-                job.opened = true;
-            }
-            if job.hotbar {
-                let from = job.slots[0];
-                if from >= 9 {
-                    fail(game, job);
-                    return true;
-                }
-                job.restore = Some((game.selected, from));
-                hold(game, from);
-            }
-            job.phase = Phase::SwapDelay;
-            let wait = if job.owner == INV { policy::delay(job.settings.n("Swap delay"), 10).max(u64::from(job.opened)) } else { 0 };
-            job.due = game.ticks.saturating_add(wait);
-            state(|s| s.job = Some(job));
-        }
-        Phase::SwapDelay => {
+        Phase::Swap => {
             // A click in a menu while you move or sprint: a server may take it for cheating; wait up to 10 ticks.
-            if !job.hotbar && !super::remote::sunset_combat_remote::quiet(game) {
+            if !super::remote::sunset_combat_remote::quiet(game) {
                 job.unsafe_ticks = job.unsafe_ticks.saturating_add(1);
                 if job.unsafe_ticks > 10 {
                     fail(game, job);
                 } else {
-                    job.due = game.ticks.saturating_add(1);
                     state(|s| s.job = Some(job));
                 }
                 return true;
@@ -367,20 +384,11 @@ fn run_job_step(game: &mut Game<'_>, mods: &[Module]) -> bool {
             job.phase = Phase::Await;
             job.began = Instant::now();
             job.revision = super::remote::sunset_combat_remote::container_state(game);
-            let ([from, to], hotbar, menu) = (job.slots, job.hotbar, job.menu.clone());
-            if hotbar && (from >= 9 || to != OFFHAND || super::sunset_loadouts::locked(from)) {
-                fail(game, job);
-                return true;
-            }
+            let ([from, to], menu) = (job.slots, job.menu.clone());
             state(|s| s.job = Some(job));
-            let sent = if hotbar {
-                // The swap-with-offhand key (PlayerAction 7) for the slot in hand.
-                game.send(S::PlayerAction(play::PlayerAction { action: 7, pos: [0; 3], direction: 0, sequence: 0 }));
-                true
-            } else {
-                super::remote::sunset_combat_remote::swap_unpredicted(game, &menu, from, to)
-            };
-            if !sent && let Some(job) = state(|s| s.job.take()) {
+            if !super::remote::sunset_combat_remote::swap_unpredicted(game, &menu, from, to)
+                && let Some(job) = state(|s| s.job.take())
+            {
                 fail(game, job);
             }
         }
@@ -388,44 +396,9 @@ fn run_job_step(game: &mut Game<'_>, mods: &[Module]) -> bool {
             let timeout = policy::confirmation_ticks(super::remote::sunset_combat_remote::latency(game));
             match job.swap.as_ref().map_or(Status::Rejected, |s| s.status(game.ticks, timeout)) {
                 Status::Waiting => state(|s| s.job = Some(job)),
-                Status::Confirmed => {
-                    job.pass_swaps = job.pass_swaps.saturating_add(1);
-                    // Then Hotbar refill, once in the same pass.
-                    let to = slot_setting(&job.settings);
-                    let follow = if job.owner == INV
-                        && !job.hotbar
-                        && job.pass_swaps < 2
-                        && job.settings.b("Hotbar refill")
-                        && !is_totem(&game.inventory[to])
-                    {
-                        find_totem(game, 9).map(|from| (from, to))
-                    } else {
-                        None
-                    };
-                    if let Some((from, to)) = follow {
-                        job.slots = [from, to];
-                        job.before = [stack(game, from), stack(game, to)];
-                        job.wire = [Game::menu_slot_index(&job.menu.1, from), Game::menu_slot_index(&job.menu.1, to)];
-                        job.swap = None;
-                        job.phase = Phase::SwapDelay;
-                        job.due = game.ticks.saturating_add(policy::delay(job.settings.n("Swap delay"), 10).max(1));
-                    } else {
-                        job.phase = if job.hotbar { Phase::Return } else { Phase::Close };
-                        let wait = if job.owner == INV {
-                            policy::delay(job.settings.n(if job.hotbar { "Switch back delay" } else { "Close delay" }), 10)
-                        } else {
-                            0
-                        };
-                        job.due = game.ticks.saturating_add(wait);
-                    }
-                    state(|s| s.job = Some(job));
-                }
+                Status::Confirmed => state(|s| s.next = game.ticks.saturating_add(1)),
                 _ => fail(game, job),
             }
-        }
-        Phase::Close | Phase::Return => {
-            restore(game, &job);
-            state(|s| s.next = game.ticks.saturating_add(if job.owner == INV && !job.hotbar { 4 } else { 1 }));
         }
     }
     true
@@ -440,8 +413,8 @@ fn run_job(game: &mut Game<'_>, mods: &[Module]) -> bool {
             break;
         }
         used = true;
-        let next = state(|s| s.job.as_ref().map(|j| (j.phase, j.due)));
-        if next.is_none_or(|(phase, due)| phase == Phase::Await || Some(phase) == before || due > game.ticks) {
+        let next = state(|s| s.job.as_ref().map(|j| j.phase));
+        if next.is_none_or(|phase| phase == Phase::Await || Some(phase) == before) {
             break;
         }
     }
@@ -517,107 +490,236 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
     });
 }
 
-// Refill: `totem` when a totem should go to the offhand now (through the inventory, or the swap key when the
-// inventory cannot open), then Hotbar refill.
-fn auto_inventory(game: &mut Game<'_>, m: &Module, totem: bool) -> bool {
-    let inventory = alive(game)
-        && game.screen == Screen::Inventory
-        && Game::menu_slot_index(&game.remote_menu().1, 0).is_some()
-        && game.carried.is_none()
-        && game.inv_drag.is_none();
-    if !plain(game) && !inventory {
-        // The inventory cannot open now (mining, using): a hotbar totem can still go by the swap key.
-        if totem && alive(game) && game.screen == Screen::Playing && game.carried.is_none() && game.using.is_none()
-            && let Some(from) = (0..9).find(|i| is_totem(&game.inventory[*i]))
-        {
-            return schedule(game, m, INV, from, OFFHAND, true);
-        }
-        return false;
+// Offhand: the item it wants by quick clicks, a totem by Auto Totem, and Hover.
+fn offhand(game: &mut Game<'_>, m: &Module) -> bool {
+    use super::sunset_combat::Want;
+    let want = super::sunset_combat::offhand_want(game, m);
+    let totem = matches!(want, Want::Totem);
+    if !totem {
+        totem_wind_down(game, m);
     }
-    if totem {
-        let by_key = !inventory && m.p("Refill") == "Hotbar Swap";
-        let from = if by_key {
-            (0..9).find(|&i| is_totem(&game.inventory[i])).or_else(|| find_totem(game, 9))
-        } else {
-            find_totem(game, 9).or_else(|| find_totem(game, 0))
-        };
-        if let Some(from) = from {
-            return schedule(game, m, INV, from, OFFHAND, by_key && from < 9);
-        }
+    if let Want::Item(item) = want {
+        super::sunset_combat::offhand_click(game, m, item);
     }
-    let hotbar = slot_setting(m);
-    if m.b("Hotbar refill") && !is_totem(&game.inventory[hotbar]) && let Some(from) = find_totem(game, 9) {
-        return schedule(game, m, INV, from, hotbar, false);
+    (totem && auto_totem(game, m)) || (m.b("Hover") && hover(game, m))
+}
+
+// The totems Show totem count puts beside Offhand in the module list: the main inventory's, the hotbar's and the
+// offhand's.
+static TOTEMS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+pub(super) fn totem_count() -> u32 {
+    TOTEMS.load(Ordering::Relaxed)
+}
+
+fn count_totems(game: &Game<'_>) -> u32 {
+    let totems = |s: &Option<ItemStack>| s.as_ref().filter(|s| &*s.item == "minecraft:totem_of_undying").map_or(0, |s| s.count);
+    game.inventory.iter().take(36).map(totems).sum::<u32>() + totems(&game.offhand)
+}
+
+// The player's own inventory, shown: Auto Totem opens it as the game does.
+fn open_inventory(game: &mut Game<'_>) {
+    game.reset_inventory_clicks();
+    game.screen = Screen::Inventory;
+    game.capture(false);
+}
+
+fn close_inventory(game: &mut Game<'_>) {
+    game.close_container();
+    game.screen = Screen::Playing;
+    game.capture(true);
+}
+
+// The slots and the carried stack: a click that changed nothing is not tried again while they stay so.
+fn contents(game: &Game<'_>) -> Vec<Option<ItemStack>> {
+    game.inventory.iter().take(36).cloned().chain([game.offhand.clone(), game.carried.clone()]).collect()
+}
+
+// The swap-with-offhand click (SWAP, button 40) on `slot`: the game's own click, predicted here and numbered with its
+// menu state. Never on a locked slot.
+fn swap_to_offhand(game: &mut Game<'_>, slot: usize) -> bool {
+    !super::sunset_loadouts::locked(slot)
+        && game.remote_menu_ops(&[(Some(slot), 40, horizon_client::menu::Input::Swap)])
+}
+
+// A silent session ends: the server's look goes back to yours, and the inventory it used is closed on the server
+// (not when a container took its place: that container's close does it).
+fn end_silent(game: &mut Game<'_>, t: &mut Totem, now: Instant, close: bool) {
+    t.silent = false;
+    t.look = None;
+    t.action_at = Some(now);
+    sunset::cancel_turns(INV);
+    control::release(INV);
+    if close && game.remote_menu().0 == 0 {
+        game.close_container();
+    }
+}
+
+// Equipped, no totems, or stalled: the inventory Auto Totem opened closes, a silent session ends.
+fn wind_down(game: &mut Game<'_>, m: &Module, t: &mut Totem, now: Instant) -> bool {
+    if t.silent {
+        end_silent(game, t, now, true);
+        return true;
+    }
+    let opened = std::mem::take(&mut t.opened);
+    if opened && m.b("Close inventory") && game.screen == Screen::Inventory && game.remote_menu().0 == 0 {
+        close_inventory(game);
+        return true;
     }
     false
 }
 
-// Offhand: the item it wants by quick clicks, or a totem by Refill; Double Hand; Hover.
-fn offhand(game: &mut Game<'_>, m: &Module) -> bool {
-    use super::sunset_combat::Want;
-    let want = super::sunset_combat::offhand_want(game, m);
-    let refill = m.p("Refill") != "Off";
-    match want {
-        Want::Item(item) => super::sunset_combat::offhand_click(game, m, item),
-        Want::Totem if !refill => super::sunset_combat::offhand_click(game, m, "totem_of_undying"),
-        _ => {}
+// One step; true when it did something (opened, clicked, closed).
+fn totem_step(game: &mut Game<'_>, m: &Module, t: &mut Totem, now: Instant) -> bool {
+    let container = game.remote_menu().0;
+    let screen = game.screen == Screen::Inventory;
+    // Another window: Auto Totem waits; a silent session ends there.
+    if t.silent && container != 0 {
+        t.pending = None;
+        end_silent(game, t, now, false);
+        return true;
     }
-    let totem = !is_totem(&game.offhand) && (matches!(want, Want::Totem) || (matches!(want, Want::Nothing) && game.offhand.is_none()));
-    (refill && auto_inventory(game, m, totem)) || double_hand(game, m) || (m.b("Hover") && hover(game, m))
-}
-
-// Health and absorption at 6 or less, or a crystal within 6 blocks that could take all of it (each checked, at most
-// 16; more counts as danger).
-fn in_danger(game: &mut Game<'_>) -> bool {
-    let Some(p) = game.player.as_ref() else {
+    if t.pending.as_ref().is_some_and(|p| p.menu != container) || (t.opened && !t.silent && !screen && t.pending.is_some()) {
+        totem_cancel(game, t, now);
         return false;
-    };
-    let health = f64::from(p.health.health() + p.health.absorption());
-    let feet = [p.position.x, p.position.y, p.position.z];
-    if health <= 6.0 || game.crystals.len() > 512 {
-        return true;
     }
-    let centers: Vec<_> = game
-        .crystals
-        .iter()
-        .map(|c| [c.position.x, c.position.y, c.position.z])
-        .filter(|at| !at.iter().all(|v| v.is_finite()) || super::sunset_explosive_policy::in_range(feet, *at, 6.0))
-        .take(17)
-        .collect();
-    if centers.len() > 16 || centers.iter().any(|at| !at.iter().all(|v| v.is_finite())) {
-        return true;
-    }
-    let mut budget = super::sunset_explosive_policy::Budget::new(16);
-    centers.into_iter().any(|center| {
-        let blast = super::sunset_explosive_damage::Blast::explosion(center, 6.0);
-        super::sunset_explosive_damage::local_damage(game, blast, &mut budget).is_none_or(|p| p.estimate >= health)
-    })
-}
-
-fn double_hand(game: &mut Game<'_>, m: &Module) -> bool {
-    if !m.b("Double Hand") {
-        if let Some(slot) = state(|s| s.hand.restore(game.selected)) {
-            hold(game, slot);
+    if let Some(p) = &t.pending {
+        if stack(game, p.slot) != p.expected || game.carried.is_some() {
+            t.pending = None;
+        } else if super::remote::sunset_combat_remote::container_state(game) != p.revision || now >= p.deadline {
+            t.pending = None;
+            t.stall = Some(contents(game));
+        } else {
+            return false;
         }
-        control::release(INV);
+    }
+    if container != 0 {
         return false;
     }
-    let danger = in_danger(game);
-    let main = is_totem(&game.inventory[game.selected]);
-    let candidate = (0..9).find(|&i| i != game.selected && is_totem(&game.inventory[i]));
-    let clean = plain(game) && !game.left && !game.right && is_totem(&game.offhand) && control::available(INV);
-    if let Some(slot) = state(|s| s.hand.tick(danger, game.selected, main, candidate, clean))
-        && control::claim(INV)
-    {
-        hold(game, slot);
+    if t.stall.as_ref().is_some_and(|c| *c == contents(game)) || is_totem(&game.offhand) {
+        return wind_down(game, m, t, now);
     }
-    let holding = state(|s| s.hand.held.is_some());
-    if holding {
-        control::claim(INV);
-    } else {
-        control::release(INV);
+    let sources: Vec<usize> = (9..36).chain(0..9).filter(|&i| is_totem(&game.inventory[i]) && !super::sunset_loadouts::locked(i)).collect();
+    if sources.is_empty() {
+        return wind_down(game, m, t, now);
     }
-    holding
+    if !(screen || t.silent) {
+        if m.b("Inventory only") || !m.b("Open inventory") {
+            return false;
+        }
+        if m.b("Silent open") {
+            // Another module has the hand or the look: not now.
+            if !control::claim(INV) {
+                return false;
+            }
+            (t.silent, t.suppress, t.action_at, t.look) = (true, true, Some(now), Some((game.yaw, game.pitch)));
+            return true;
+        }
+        t.opened = true;
+        open_inventory(game);
+        return true;
+    }
+    if game.carried.is_some() {
+        return false;
+    }
+    let source = if m.b("Random slot") { sources[(t.next() % sources.len() as u64) as usize] } else { sources[0] };
+    let (expected, revision) = (stack(game, source), super::remote::sunset_combat_remote::container_state(game));
+    if !swap_to_offhand(game, source) {
+        return false;
+    }
+    t.pending = Some(Pending { slot: source, expected, revision, menu: container, deadline: now + Duration::from_millis(1500) });
+    if t.silent {
+        t.action_at = Some(now);
+    }
+    true
+}
+
+fn totem_cancel(game: &mut Game<'_>, t: &mut Totem, now: Instant) {
+    t.pending = None;
+    t.opened = false;
+    if t.silent {
+        end_silent(game, t, now, true);
+    }
+}
+
+// Each tick with Item Totem: a step once its Totem delay is over. True while a step is under way.
+fn auto_totem(game: &mut Game<'_>, m: &Module) -> bool {
+    TOTEMS.store(count_totems(game), Ordering::Relaxed);
+    let now = Instant::now();
+    let mut t = state(|s| std::mem::take(&mut s.totem));
+    if t.due.is_none_or(|due| now >= due) {
+        let acted = totem_step(game, m, &mut t, now);
+        let range = (m.n("Shortest totem delay (ms)") as u64, m.n("Longest totem delay (ms)") as u64);
+        let wait = t.delay(range, m.b("Extra randomization"));
+        t.due = (acted || t.active()).then(|| now + Duration::from_millis(wait));
+    }
+    if let Some((yaw, pitch)) = t.look {
+        sunset::turn(INV, yaw, pitch);
+    }
+    let active = t.active();
+    state(|s| s.totem = t);
+    active
+}
+
+// Another Item, or Offhand off: what Auto Totem opened closes.
+fn totem_wind_down(game: &mut Game<'_>, m: &Module) {
+    let mut t = state(|s| std::mem::take(&mut s.totem));
+    if t.active() {
+        t.pending = None;
+        wind_down(game, m, &mut t, Instant::now());
+    }
+    t.due = None;
+    state(|s| s.totem = t);
+}
+
+fn totem_stop(game: &mut Game<'_>) {
+    let mut t = state(|s| std::mem::take(&mut s.totem));
+    if t.opened && game.screen == Screen::Inventory && game.remote_menu().0 == 0 && game.carried.is_none() {
+        close_inventory(game);
+    }
+    totem_cancel(game, &mut t, Instant::now());
+    state(|s| s.totem = Totem { seed: t.seed, took: t.took, ..Totem::default() });
+}
+
+// Before the game's tick: Silent open's hold on your move keys and clicks.
+pub(super) fn pre_tick(game: &mut Game<'_>, m: Option<&Module>) {
+    let held = state(|s| match m {
+        Some(m) => {
+            let range = (m.n("Shortest silent move delay (ms)") as u64, m.n("Longest silent move delay (ms)") as u64);
+            s.totem.suppress_tick(Instant::now(), range)
+        }
+        None => std::mem::take(&mut s.totem.suppress),
+    });
+    if held && m.is_some() {
+        for k in HELD_KEYS {
+            game.keys.remove(&k);
+        }
+        (game.left, game.right) = (false, false);
+        state(|s| s.totem.took = true);
+    }
+}
+
+const HELD_KEYS: [winit::keyboard::KeyCode; 6] = {
+    use winit::keyboard::KeyCode::*;
+    [KeyW, KeyA, KeyS, KeyD, Space, ControlLeft]
+};
+
+// After the game's tick: the keys and clicks held go back to what you hold.
+pub(super) fn post_tick(game: &mut Game<'_>) {
+    if state(|s| std::mem::take(&mut s.totem.took)) {
+        give_back(game);
+    }
+}
+
+fn give_back(game: &mut Game<'_>) {
+    use winit::event::MouseButton;
+    for k in HELD_KEYS {
+        if game.physical_keys.contains(&k) {
+            game.keys.insert(k);
+        }
+    }
+    game.left = game.physical_buttons.contains(&MouseButton::Left);
+    game.right = game.physical_buttons.contains(&MouseButton::Right);
 }
 
 fn hover(game: &mut Game<'_>, m: &Module) -> bool {
@@ -639,7 +741,7 @@ fn hover(game: &mut Game<'_>, m: &Module) -> bool {
     } else {
         return false;
     };
-    !is_totem(&stack(game, to)) && schedule(game, m, HOVER, from, to, false)
+    !is_totem(&stack(game, to)) && schedule(game, m, HOVER, from, to)
 }
 
 // Key Throw's keys: a press (not a held key) asks for one throw.
@@ -914,11 +1016,8 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         if offhand(game, m) {
             return;
         }
-    } else {
-        if let Some(slot) = state(|s| s.hand.restore(game.selected)) {
-            hold(game, slot);
-        }
-        control::release(INV);
+    } else if state(|s| s.totem.active()) {
+        totem_stop(game);
     }
     match get(THROW) {
         Some(m) => {
@@ -930,5 +1029,40 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
     if let Some(m) = get(XP).filter(|m| m.b("Throwables")) {
         fast_xp(game, m);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn totem_delays_stay_in_range_with_an_occasional_long_pause() {
+        let mut t = Totem::default();
+        let even: Vec<_> = (0..200).map(|_| t.delay((100, 120), false)).collect();
+        assert!(even.iter().all(|d| (100..=120).contains(d)));
+        let spread: Vec<_> = (0..400).map(|_| t.delay((100, 120), true)).collect();
+        assert!(spread.iter().all(|d| *d >= 100 && *d <= 120 + 350));
+        assert!(spread.iter().any(|d| *d > 200), "occasional long pause");
+        assert!(spread.iter().filter(|d| **d <= 120).count() > 250);
+        // A random slot reaches every one of them.
+        let picked: std::collections::BTreeSet<_> = (0..32).map(|_| t.next() % 2).collect();
+        assert_eq!(picked.len(), 2);
+    }
+
+    #[test]
+    fn silent_open_holds_keys_until_a_move_delay_after_the_session() {
+        let start = Instant::now();
+        let mut t = Totem { silent: true, suppress: true, action_at: Some(start), ..Totem::default() };
+        // A session renews its time each tick (50 ms apart): held all through it.
+        for tick in 0..=8 {
+            assert!(t.suppress_tick(start + Duration::from_millis(tick * 50), (150, 150)), "held all session");
+        }
+        let end = start + Duration::from_millis(400);
+        t.silent = false;
+        t.action_at = Some(end);
+        assert!(t.suppress_tick(end + Duration::from_millis(140), (150, 150)));
+        assert!(!t.suppress_tick(end + Duration::from_millis(150), (150, 150)));
+        assert!(!t.suppress_tick(end + Duration::from_millis(160), (150, 150)), "released for good");
     }
 }

@@ -1,5 +1,5 @@
 // The inventory modules' rules that need no world (Rust's PR #16): which slots a swap touches on the wire, when the
-// server has confirmed a swap, a key's press edge, Double Hand's hold on the hand.
+// server has confirmed a swap, a key's press edge.
 
 // The offhand's slot number in Sunset's hotbar/inventory numbering (util::OFFHAND).
 pub(super) const OFFHAND: usize = 504;
@@ -125,47 +125,5 @@ pub(super) fn revision_current(previous: i32, incoming: i32) -> bool {
         (incoming - previous).rem_euclid(32768) < 16384
     } else {
         incoming >= previous
-    }
-}
-
-// Double Hand: a hotbar totem held in the main hand while in danger, and the slot it came from, given back after 10
-// safe ticks. Changing slot yourself ends it.
-#[derive(Default)]
-pub(super) struct Hand {
-    pub held: Option<(usize, usize)>,
-    safe: u8,
-    overridden: bool,
-}
-
-impl Hand {
-    pub(super) fn tick(&mut self, danger: bool, selected: usize, main_totem: bool, candidate: Option<usize>, can_change: bool) -> Option<usize> {
-        self.safe = if danger { 0 } else { self.safe.saturating_add(1).min(10) };
-        if self.held.is_some_and(|(_, ours)| selected != ours && !main_totem) {
-            self.held = None;
-            self.overridden = true;
-        }
-        if self.safe == 10 {
-            self.overridden = false;
-            if can_change {
-                return self.restore(selected);
-            }
-        }
-        if !danger || !can_change || self.overridden {
-            return None;
-        }
-        if let Some((before, ours)) = self.held {
-            if main_totem {
-                return None;
-            }
-            let next = candidate.filter(|s| *s < 9)?;
-            self.held = Some((before, next));
-            return (ours != next).then_some(next);
-        }
-        let next = if main_totem { Some(selected) } else { candidate }.filter(|s| *s < 9)?;
-        self.held = Some((selected, next));
-        (next != selected).then_some(next)
-    }
-    pub(super) fn restore(&mut self, selected: usize) -> Option<usize> {
-        self.held.take().and_then(|(before, ours)| (selected == ours && before != selected).then_some(before))
     }
 }

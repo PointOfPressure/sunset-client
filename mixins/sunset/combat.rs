@@ -875,28 +875,12 @@ pub(super) enum Want {
     Item(&'static str),
 }
 
-// Meteor's Offhand and AutoTotem: a totem while your health (less what a blast or the fall could take) is at Health
-// or you glide, else the chosen Item, a golden apple or potion while you hold right click with Right gapple or Sword
-// pot (or always with a sword or axe in hand).
+// Meteor's Offhand: the chosen Item (a totem by Auto Totem), a golden apple or potion while you hold right click with
+// Right gapple or Sword pot (or always with a sword or axe in hand).
 pub(super) fn offhand_want(game: &Game<'_>, m: &Module) -> Want {
     use winit::event::MouseButton;
-    let Some(p) = game.player.as_ref() else {
+    if game.player.is_none() {
         return Want::Nothing;
-    };
-    let is_totem = |s: &Option<horizon_client::items::ItemStack>| s.as_ref().is_some_and(|s| short(&s.item) == "totem_of_undying");
-    let locked = (0..36).any(|i| game.inventory.get(i).is_some_and(is_totem)) && {
-        let at = [p.position.x, p.position.y, p.position.z];
-        let mut loss = 0.0;
-        if m.b("Explosion") {
-            loss = f64::max(loss, crystal_damage(game, at));
-        }
-        if m.b("Fall") {
-            loss = f64::max(loss, fall_damage(game));
-        }
-        f64::from(p.health.health() + p.health.absorption()) - loss <= m.n("Health") || (m.b("Elytra") && p.fall_flying)
-    };
-    if locked {
-        return Want::Totem;
     }
     let main = game.inventory.get(game.selected).and_then(|s| s.as_ref()).map(|s| short(&s.item).to_owned()).unwrap_or_default();
     let (sword, axe) = (main.ends_with("_sword"), main.ends_with("_axe"));
@@ -926,7 +910,7 @@ pub(super) fn offhand_want(game: &Game<'_>, m: &Module) -> Want {
 }
 
 // The quick way: pick the item up, put it in the offhand slot, put back what was there; at most every Delay ticks,
-// from the main inventory (and the hotbar with Hotbar; a totem from anywhere).
+// from the main inventory (and the hotbar with Hotbar).
 pub(super) fn offhand_click(game: &mut Game<'_>, m: &Module, want: &str) {
     use horizon_client::menu::Input::Pickup;
     if !inventory_idle(game) {
@@ -940,14 +924,10 @@ pub(super) fn offhand_click(game: &mut Game<'_>, m: &Module, want: &str) {
     if has(&game.offhand) || !ready {
         return;
     }
-    let totem = want == "totem_of_undying";
-    if totem && has(&game.inventory[game.selected]) {
-        return;
-    }
-    let from = if m.b("Hotbar") || totem { 0 } else { 9 };
+    let from = if m.b("Hotbar") { 0 } else { 9 };
     match (from..36).find(|&i| game.inventory.get(i).is_some_and(has)) {
         None => {
-            if !totem && !cs(|c| std::mem::replace(&mut c.offhand_warned, true)) {
+            if !cs(|c| std::mem::replace(&mut c.offhand_warned, true)) {
                 super::sunset_util::report(game, "Offhand: chosen item not found.");
             }
         }
