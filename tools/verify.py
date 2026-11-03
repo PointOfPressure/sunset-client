@@ -3352,11 +3352,12 @@ def _():
                 f"Air place, Radius 1.5: {wide_placed} placed; jumping 2 s: {climb:.1f} blocks up, {tower:.1f} with Fast tower")
 
 
-def bridge_backwards(mode, keys, look):
+def bridge_backwards(mode, keys, look, jump=None):
     """Bridging backwards off the platform's edge for 6 s: facing the platform, stone in hand, `keys` held, Scaffold in
     `mode`. The blocks past the edge as the server has them (and whether they run on without a gap), how far you got,
     the lowest your feet went (a block the server takes back drops you a level), whether you sneaked, the most move
-    packets in a tick (probe, on a server) and kicks."""
+    packets in a tick (probe, on a server) and kicks. `jump`: the 0.15 s step at which jump is tapped once; then the
+    highest the feet stood after it comes last."""
     reset(z=15.5)
     cmd(f"fill {X0-2} {Y-1} {Z0+17} {X0+2} {Y} {Z0+40} minecraft:air")
     slot(0, "stone", 64)
@@ -3370,10 +3371,16 @@ def bridge_backwards(mode, keys, look):
     low, sneaked = pos()[1], False
     for k in keys:
         ctl(*k, "down")
-    for _ in range(40):
+    top = low
+    for step in range(40):
+        if step == jump:
+            ctl("key", "space", "tap")
         wait(3)
         st = state().get("player") or {}
-        low = min(low, (st.get("position") or [0, low, 0])[1])
+        at = (st.get("position") or [0, low, 0])[1]
+        low = min(low, at)
+        if jump is not None and step > jump and st.get("on_ground", True):
+            top = max(top, at)
         sneaked = sneaked or bool(st.get("sneaking"))
     for k in keys:
         ctl(*k, "up")
@@ -3385,10 +3392,10 @@ def bridge_backwards(mode, keys, look):
     kept = sum(stone)
     gapless = all(stone[:kept])
     most = wire_stats(mark)[1] if mark is not None else None
-    return kept, gapless, far, low, sneaked, most, len(kicks) - kicked
+    return kept, gapless, far, low, sneaked, most, len(kicks) - kicked, top
 
 
-def bridged(kept, gapless, far, low, sneaked, most, kicked, sneak):
+def bridged(kept, gapless, far, low, sneaked, most, kicked, top, sneak):
     ok = (kept >= 4 and gapless and far > 16 + kept and low > Y + 0.99 and sneaked == sneak and kicked == 0
           and (most or 0) <= 1)
     return ok, (f"{kept} blocks past the edge kept by the server, without a gap: {gapless}, walked out to z {far:.1f} "
@@ -3405,6 +3412,16 @@ def _():
 def _():
     # Godbridge turns the look and clicks by itself, without sneaking: the test only holds S.
     return bridged(*bridge_backwards("Godbridge", [("key", "s")], 60), sneak=False)
+
+
+@test("Scaffold (Godbridge, jump)")
+def _():
+    # A jump 3 s into a Godbridge: the bridge's look clicks the top of the block under you as you clear it, so you
+    # land a block up and bridge on from there, never a level down.
+    kept, gapless, far, low, sneaked, most, kicked, top = bridge_backwards("Godbridge", [("key", "s")], 60, jump=20)
+    ok = top > Y + 1.99 and low > Y + 0.99 and kept >= 4 and kicked == 0 and (most or 0) <= 1
+    return ok, (f"highest feet stood after the jump {top - Y - 1:+.2f}, lowest {low - Y - 1:+.2f}, {kept} blocks past the edge on the "
+                f"first level, most moves a tick: {most}, kicks: {kicked}")
 
 
 @test("Offhand (item)")

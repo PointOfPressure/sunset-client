@@ -233,7 +233,7 @@ fn godbridge(game: &mut Game<'_>, m: &Module, b: &mut Bridge) {
         end(game, b);
         return;
     }
-    let (pos, vel) = ([p.position.x, p.position.y, p.position.z], [p.velocity.x, p.velocity.z]);
+    let (pos, vel, rising) = ([p.position.x, p.position.y, p.position.z], [p.velocity.x, p.velocity.z], p.velocity.y);
     let step = line.step;
     let (along, across) = if step[0] != 0 { (0, 2) } else { (2, 0) };
     let dir = f64::from(step[0] + step[1]);
@@ -244,6 +244,18 @@ fn godbridge(game: &mut Game<'_>, m: &Module, b: &mut Bridge) {
     let rate = (2.0 + angle_between(game.yaw, yaw) / 15.0).min(12.0);
     game.yaw = super::sunset_movement::turn_toward(game.yaw, yaw, rate);
     let turning = angle_between(game.yaw, yaw) > 4.0;
+    let ticks = game.ticks;
+    // Jumping (vape-rs's GodBridge): while you go up or down, the crosshair on a block's top counts as well as on its
+    // side, so the bridge's own look puts a block under you as you clear it, and you land one up.
+    let jumped = !(-0.1..=0.1).contains(&rising) && !turning && game.pick().is_some_and(|hit| {
+        let at = std::array::from_fn(|i| hit.pos[i] + hit.face[i]);
+        let fresh = b.clicked.is_none_or(|(was, tick)| was != at || ticks >= tick + 10);
+        hit.face[1] >= 0 && fresh && util::can_place(game, at, true)
+    });
+    if jumped && let Some(hit) = game.pick() {
+        super::remote::sunset_remote::press_use(game);
+        b.clicked = Some((std::array::from_fn(|i| hit.pos[i] + hit.face[i]), ticks));
+    }
     let y = under_y(pos[1]);
     let cell = |n: i32| {
         let mut at = [pos[0].floor() as i32, y, pos[2].floor() as i32];
@@ -256,6 +268,7 @@ fn godbridge(game: &mut Game<'_>, m: &Module, b: &mut Bridge) {
     let mut walk = !turning;
     let mut pitch = if b.stalled.is_some_and(|at| at.elapsed() >= Duration::from_millis(300)) { 80.0 } else { 78.0 };
     match last {
+        _ if jumped => {}
         Some(last) if !solid(cell_after(last, step, along)) => {
             b.stalled.get_or_insert_with(Instant::now);
             // How far your middle is past the last block's leading side.
@@ -268,7 +281,6 @@ fn godbridge(game: &mut Game<'_>, m: &Module, b: &mut Bridge) {
                 game.pitch = pitch;
                 let next = cell_after(last, step, along);
                 let face = [step[0], 0, step[1]];
-                let ticks = game.ticks;
                 let fresh = b.clicked.is_none_or(|(at, tick)| at != next || ticks >= tick + 10);
                 walk = game.pick().is_some_and(|hit| hit.pos == last && hit.face == face) && fresh && util::can_place(game, next, true);
                 if walk {
