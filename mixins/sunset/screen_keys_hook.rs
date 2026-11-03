@@ -3,6 +3,10 @@
 // No Slow's Skip (vape-rs's NoSlowdown): the move goes without the item-use slowdown.
 // A knockback hit since the last movement (Player.attack): the speed across cut to 0.6 for each, the sprint stopped.
 fn sunset_screen_keys(world: &mut MotionWorld<'_, '_, '_>, keys: crate::sprint::Keys, window: i32) -> std::ops::ControlFlow<Result<()>> {
+    if world.player.item_use_speed.is_some() && crate::motion::sunset_motion::no_slow_grim() {
+        crate::motion::sunset_motion::set_across(None);
+        crate::motion::sunset_motion::set_up(None);
+    }
     if crate::motion::sunset_motion::no_slow_skip() {
         world.player.item_use_speed = None;
     }

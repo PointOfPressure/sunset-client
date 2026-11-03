@@ -2214,7 +2214,11 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 super::sunset_aura::disabled(game, swap_back);
             }
             "Anchor Aura" => super::sunset_anchor_aura::disabled(game),
-            "No Slow" => horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed),
+            "No Slow" => {
+                horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed);
+                horizon_client::motion::sunset_motion::set_no_slow_skip(false);
+                horizon_client::motion::sunset_motion::set_no_slow_grim(false);
+            },
             "Server Scan" => super::sunset_server_scan::disabled(),
             _ => {},
         }
@@ -4411,6 +4415,7 @@ pub(super) fn remember_velocity(game: &Game<'_>) {
 pub(super) fn server_correction(game: &mut Game<'_>) {
     super::sunset_lag::correction(game);
     if !game.native_on(ID) { return; }
+    super::sunset_render::no_slow_reset();
     super::sunset_parity::correction(game);
     with(|s| {
         s.knockback_ticks = 0;

@@ -3802,6 +3802,28 @@ def _():
         f"{half:.2f} at Ground 50%")
 
 
+@test("No Slow (GrimAC cycle)")
+def _():
+    def eating_rate():
+        reset(z=-14.5)
+        slot(0, "golden_apple", 64)
+        ctl("key", "1", "tap")
+        ctl("mouse", "right", "down")
+        speed = rate(ticks=18, warm=8)
+        ctl("mouse", "right", "up")
+        return speed
+
+    slow = eating_rate()
+    only("noslow")
+    setting("noslow", "mode", "GrimAC")
+    grim = eating_rate()
+    setting("noslow", "mode", "Skip")
+    skip = eating_rate()
+    only()
+    return slow + 0.2 < grim < skip - 0.2, (
+        f"walking while eating: {slow:.2f} blocks/s vanilla, {grim:.2f} GrimAC, {skip:.2f} Skip")
+
+
 @test("Fast Place (speeds)")
 def _():
     # A stone at eye height 5 blocks ahead: holding use builds a row of 4 back towards you. Ticks until all 4 are in.

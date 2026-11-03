@@ -4,6 +4,9 @@ fn sunset_combat_use_hand(
     game: &crate::game::Game<'_>,
     hand: horizon_client::first_person::Hand,
 ) -> std::ops::ControlFlow<bool> {
+    if game.using.is_none() && horizon_client::motion::sunset_motion::no_slow_grim() {
+        crate::game::sunset_render::no_slow_reset();
+    }
     let slot = if hand == horizon_client::first_person::Hand::Off { crate::game::sunset_util::OFFHAND } else { game.selected };
     crate::game::sunset_duel::used(game, slot);
     if game.stack_in(slot).is_some_and(|s| horizon_client::spear::Kinetic::of(&s.item).is_some())

@@ -83,7 +83,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("No Slow", Movement, "No item-use slowdown.")
             // Skip is vape-rs's NoSlowdown: the game's own slowdown left out of the move, except in water and from a
             // knockback until you land. Scale walks at Ground % / Air % of your speed instead.
-            .pick("Mode", &["Skip", "Scale"])
+            .pick("Mode", &["Skip", "Scale", "GrimAC"])
             .num("Ground %", 100.0, 20.0, 100.0, 5.0)
             .num("Air %", 100.0, 20.0, 100.0, 5.0),
     ]
@@ -107,9 +107,31 @@ struct Fl {
 }
 
 #[derive(Default)]
+struct GrimCycle {
+    last_use: Option<(usize, u32)>,
+    fast_next: bool,
+}
+
+impl GrimCycle {
+    fn next(&mut self, using: Option<(usize, u32)>, eligible: bool) -> bool {
+        let Some((slot, ticks)) = using.filter(|_| eligible) else {
+            *self = Self::default();
+            return false;
+        };
+        let continued = self.last_use.is_some_and(|(last_slot, last_ticks)| {
+            last_slot == slot && last_ticks.checked_add(1) == Some(ticks)
+        });
+        self.fast_next = continued && !self.fast_next;
+        self.last_use = Some((slot, ticks));
+        self.fast_next
+    }
+}
+
+#[derive(Default)]
 struct Rs {
     fc: Option<Fc>,
     fl: Option<Fl>,
+    grim_cycle: GrimCycle,
     xray: Option<(bool, String, bool, bool)>,
     // Shulker Peek: the ender chest's slots when it was last open, and whether the menu open now is one.
     ender: Option<Vec<(u8, horizon_client::items::ItemStack)>>,
@@ -528,6 +550,7 @@ fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
     let mult = speed_timer.or_else(|| on(mods, "Timer").map(|m| m.n("Multiplier"))).unwrap_or(1.0) as f32;
     horizon_client::clock::sunset_timer::MULT.store(mult.to_bits(), Ordering::Relaxed);
     let no_slow = on(mods, "No Slow");
+    let grim_mode = no_slow.as_ref().is_some_and(|m| m.p("Mode") == "GrimAC");
     let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
     let factor = no_slow.as_ref().map_or(0.2, |m| (m.n(if ground { "Ground %" } else { "Air %" }) / 100.0) as f32);
     let skip_mode = no_slow.as_ref().is_some_and(|m| m.p("Mode") == "Skip");
@@ -537,9 +560,15 @@ fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
         NO_SLOW_KNOCKED.store(false, Ordering::Relaxed);
     }
     let in_water = game.player.as_ref().is_some_and(|p| p.fluids.was_touching_water);
-    horizon_client::motion::sunset_motion::set_no_slow_skip(skip_mode && game.using.is_some() && !in_water && !knocked);
+    let eligible = grim_mode && !in_water && !knocked && game.riding.is_none()
+        && game.player.as_ref().is_some_and(|p| !p.flying && !p.fall_flying);
+    let grim_fast = rs(|r| r.grim_cycle.next(game.using, eligible));
+    horizon_client::motion::sunset_motion::set_no_slow_grim(grim_mode);
+    horizon_client::motion::sunset_motion::set_no_slow_skip(
+        (skip_mode && game.using.is_some() && !in_water && !knocked) || grim_fast,
+    );
     horizon_client::input::sunset_flags::NO_SLOW_FACTOR.store(factor.to_bits(), Ordering::Relaxed);
-    horizon_client::input::sunset_flags::NO_SLOW.store(no_slow.is_some() && !skip_mode, Ordering::Relaxed);
+    horizon_client::input::sunset_flags::NO_SLOW.store(no_slow.is_some() && !skip_mode && !grim_mode, Ordering::Relaxed);
 }
 
 // No Slow's Skip: a knockback (a push for you, or an explosion's) pauses it until you land.
@@ -547,6 +576,15 @@ static NO_SLOW_KNOCKED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 
 pub(super) fn no_slow_knocked() {
     NO_SLOW_KNOCKED.store(true, Ordering::Relaxed);
+    no_slow_reset();
+}
+
+pub(super) fn no_slow_reset() {
+    if !horizon_client::motion::sunset_motion::no_slow_grim() {
+        return;
+    }
+    rs(|r| r.grim_cycle = GrimCycle::default());
+    horizon_client::motion::sunset_motion::set_no_slow_skip(false);
 }
 
 // No Render: fog through Horizon's own Fog option, the effects the player does

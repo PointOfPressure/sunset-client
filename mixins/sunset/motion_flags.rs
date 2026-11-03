@@ -20,9 +20,19 @@ thread_local! {
     static SCREEN_MOVED: Cell<Option<crate::sprint::Keys>> = const { Cell::new(None) };
     // No Slow's Skip: the item-use slowdown left out of this tick's move.
     static NO_SLOW_SKIP: Cell<bool> = const { Cell::new(false) };
+    // No Slow's GrimAC mode keeps Speed's movement override out of item-use ticks.
+    static NO_SLOW_GRIM: Cell<bool> = const { Cell::new(false) };
     // Knockback hits since the last movement, and the game tick of the last: each cuts the speed across to 0.6 and
     // stops the sprint.
     static ATTACK_SLOW: Cell<(u32, u64)> = const { Cell::new((0, 0)) };
+}
+
+pub fn set_no_slow_grim(on: bool) {
+    NO_SLOW_GRIM.with(|c| c.set(on));
+}
+
+pub fn no_slow_grim() -> bool {
+    NO_SLOW_GRIM.with(Cell::get)
 }
 
 pub fn set_no_slow_skip(on: bool) {
