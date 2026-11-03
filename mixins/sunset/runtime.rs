@@ -528,6 +528,19 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Elytra Boost", Movement, "Speeds up gliding.")
             .num("Boost", 0.05, 0.01, 0.2, 0.01)
             .num("Max speed", 2.0, 0.5, 5.0, 0.5),
+        Module::new("Elytra Fly", Movement, "Flies freely with an elytra.")
+            .num("Horizontal speed", 1.0, 0.1, 5.0, 0.1)
+            .num("Vertical speed", 1.0, 0.1, 5.0, 0.1)
+            .num("Fall multiplier", 0.01, 0.0, 1.0, 0.01)
+            .bool("Auto take off", false)
+            .bool("Stop in water", true),
+        Module::new("Slippy", Movement, "Makes every block slippery.")
+            .num("Friction", 1.0, 0.1, 1.1, 0.01),
+        Module::new("Jesus", Movement, "Walks on water and lava.")
+            .bool("Water", true)
+            .bool("Lava", true)
+            .bool("Dip on sneak", true)
+            .bool("Dip if burning", true),
         Module::new("Anti Void", Movement, "Bounces you out of the void."),
         // Player
         Module::new("Fast Place", Player, "Places blocks faster.")
@@ -2575,6 +2588,57 @@ fn module_tick(game: &mut Game<'_>) {
             if len > max {
                 let k = max / len;
                 (v.x, v.y, v.z) = (v.x * k, v.y * k, v.z * k);
+            }
+        }
+        // Elytra Fly (Meteor's Vanilla mode): gliding, the keys set the move outright: Horizontal speed (blocks a tick)
+        // the way they point, up or down at Vertical speed with jump or sneak, else a slow sink (Fall multiplier).
+        // Auto take off opens the elytra as soon as a jump starts to fall; Stop in water lets water end the glide.
+        if let Some(e) = get("Elytra Fly")
+            && game.armor[1].as_ref().is_some_and(|s| s.item.ends_with("elytra"))
+            && !(e.b("Stop in water") && p.fluids.was_touching_water)
+        {
+            if e.b("Auto take off") && !p.fall_flying && !p.ground.on_ground && p.velocity.y < 0.0 && jump {
+                p.fall_flying = true;
+            }
+            if p.fall_flying {
+                let h = e.n("Horizontal speed");
+                let [x, z] = dir.map_or([0.0, 0.0], |[x, z]| [x * h, z * h]);
+                let y = if jump {
+                    e.n("Vertical speed")
+                } else if sneak {
+                    -e.n("Vertical speed")
+                } else {
+                    -e.n("Fall multiplier")
+                };
+                p.velocity = horizon_core::geometry::Vec3::new(x, y, z);
+            }
+        }
+        // Slippy: on the ground with no move key held, the last tick's slowing was the block's friction; it becomes
+        // Friction's (a walk keeps its own pace: the game's push on a slippery block is smaller than this would make).
+        if let Some(m) = get("Slippy").filter(|_| p.ground.on_ground && dir.is_none()) {
+            let under = game.world.block(p.position.x.floor() as i32, (p.position.y - 0.5).floor() as i32, p.position.z.floor() as i32);
+            let was = f64::from(game.res.facts().get(under).friction);
+            if was > 0.0 {
+                let k = m.n("Friction") / was;
+                p.velocity.x *= k;
+                p.velocity.z *= k;
+            }
+        }
+        // Jesus (Meteor's Solid mode): on the top of water or lava you stand as on a block, at the liquid's top, unless
+        // you sneak (Dip on sneak), are burning in lava's place (Dip if burning) or are already under it.
+        if let Some(j) = get("Jesus") {
+            let feet = [p.position.x.floor() as i32, (p.position.y - 0.05).floor() as i32, p.position.z.floor() as i32];
+            let below = game.world.block(feet[0], feet[1], feet[2]);
+            let f = game.res.facts().get(below);
+            let name = super::sunset_util::short(&f.name);
+            let liquid = (j.b("Water") && name == "water") || (j.b("Lava") && name == "lava");
+            let top = f64::from(feet[1] + 1);
+            let dip = (j.b("Dip on sneak") && sneak) || (j.b("Dip if burning") && p.fire_ticks > 0 && name == "water");
+            if liquid && !dip && p.position.y >= top - 0.4 && p.velocity.y <= 0.0 && !jump {
+                p.position.y = top;
+                p.velocity.y = 0.0;
+                p.ground.on_ground = true;
+                p.fall_distance = 0.0;
             }
         }
         // Velocity's Sinking: in water or lava you stay level unless you jump or sneak.

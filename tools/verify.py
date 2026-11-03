@@ -2511,6 +2511,72 @@ def _():
     return ok, f"first and second sign: {texts}; screen after {screen}"
 
 
+@test("Jesus")
+def _():
+    # Dropped onto a pool: with Jesus you stand on the water's top, without you go in.
+    def height(on):
+        reset("creative")
+        cmd(f"fill {X0-3} {Y-2} {Z0+2} {X0+3} {Y} {Z0+8} minecraft:water", "gamemode survival")
+        only("jesus") if on else only()
+        cmd(f"tp @s {X0 + 0.5} {Y + 2} {Z0 + 5.5}")
+        wait(40)
+        y = pos()[1]
+        cmd(f"fill {X0-3} {Y-2} {Z0+2} {X0+3} {Y} {Z0+8} minecraft:stone", f"fill {X0-3} {Y-2} {Z0+2} {X0+3} {Y-1} {Z0+8} minecraft:air")
+        return y
+
+    plain, on = height(False), height(True)
+    only()
+    reset("creative")
+    return abs(on - (Y + 1)) < 0.1 and plain < Y + 0.8, f"height after the drop: off {plain:.2f}, on {on:.2f} (water's top {Y + 1})"
+
+
+@test("Slippy")
+def _():
+    # A run forward, then the key let go: with Slippy (Friction 0.98, ice's) you slide on much further.
+    def slid(on):
+        reset("creative")
+        cmd("gamemode survival")
+        setting("slippy", "friction", "0.98")
+        only("slippy") if on else only()
+        walk(15)
+        a = pos()
+        wait(20)
+        return math.dist(a, pos())
+
+    plain, on = slid(False), slid(True)
+    only()
+    reset("creative")
+    return on > plain * 3 and on > 0.4, f"slid after letting go: off {plain:.2f}, on {on:.2f} blocks"
+
+
+@test("Elytra Fly")
+def _():
+    # An elytra on, a jump into a glide high up: with Elytra Fly and no key held you hang there (a slow sink), with
+    # W held you go Horizontal speed (1 block a tick); without it the glide drops.
+    def glide(on, key=None):
+        reset("creative")
+        cmd("gamemode survival", "item replace entity @s armor.chest with minecraft:elytra", f"tp @s {X0 + 0.5} {Y + 40} {Z0 + 0.5} 0 0")
+        only("elytrafly") if on else only()
+        wait(5)
+        held_keys(("space",), 3)
+        wait(5)
+        a = pos()
+        if key:
+            held_keys((key,), 20)
+        else:
+            wait(20)
+        b = pos()
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}", "clear @s")
+        wait(10)
+        return a[1] - b[1], math.dist((a[0], a[2]), (b[0], b[2]))
+
+    (drop_off, _), (drop_on, _), (_, ahead) = glide(False), glide(True), glide(True, "w")
+    only()
+    reset("creative")
+    return drop_on < 1.0 and drop_off > 3.0 and ahead > 12.0, (
+        f"drop in 20 ticks: off {drop_off:.2f}, on {drop_on:.2f}; with W held {ahead:.1f} blocks")
+
+
 @test("Text setting editor")
 def _():
     def messages():

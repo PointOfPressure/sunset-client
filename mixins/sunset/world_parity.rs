@@ -113,7 +113,7 @@ fn stared(eye: [f64; 3], look: [f64; 3], at: [f64; 3]) -> bool {
 
 fn enderman_look(game: &mut Game<'_>, m: &Module) {
     // A carved pumpkin (or creative) and nothing happens.
-    if game.creative || game.armor[3].as_ref().is_some_and(|s| short(&s.item) == "carved_pumpkin") {
+    if game.creative || game.armor[0].as_ref().is_some_and(|s| short(&s.item) == "carved_pumpkin") {
         return;
     }
     let Some(eye) = game.eye_position() else {
