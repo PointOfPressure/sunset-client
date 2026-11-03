@@ -2202,9 +2202,10 @@ def _():
     cx, cy, cz = chunk_spot(3, 0, Y + 12)
     px, py, pz = chunk_spot(-3, 0, Y + 12)
     reset("creative")
-    cmd(f"fill {cx-3} {cy-3} {cz-3} {cx+3} {cy+3} {cz+3} minecraft:cave_air", f"setblock {cx} {cy} {cz} minecraft:air")
-    # Paper's /fill won't turn cave air into plain air (nothing changes): by way of stone.
-    cmd(f"fill {px-3} {py-1} {pz-1} {px+2} {py+5} {pz+1} minecraft:cave_air")
+    # A server's /fill can take air and cave air for the same block ("No blocks were filled"): by way of stone.
+    cmd(f"fill {cx-3} {cy-3} {cz-3} {cx+3} {cy+3} {cz+3} minecraft:stone", f"fill {cx-3} {cy-3} {cz-3} {cx+3} {cy+3} {cz+3} minecraft:cave_air",
+        f"setblock {cx} {cy} {cz} minecraft:air")
+    cmd(f"fill {px-3} {py-1} {pz-1} {px+2} {py+5} {pz+1} minecraft:stone", f"fill {px-3} {py-1} {pz-1} {px+2} {py+5} {pz+1} minecraft:cave_air")
     cmd(f"fill {px-2} {py} {pz} {px+1} {py+4} {pz} minecraft:stone")
     cmd(f"fill {px-2} {py} {pz} {px+1} {py+4} {pz} minecraft:air")
     wait(10)
