@@ -94,6 +94,16 @@ struct Totem {
     look: Option<(f32, f32)>,
     took: bool,
     seed: u64,
+    work: Option<Work>,
+}
+
+// What a tick asks of Auto Totem. Its clicks and closes go out in the next frame, after the tick's end packet, as a
+// click on a screen does (vape-rs's are sent there too); Grim's PacketOrderO flags one sent between the tick's move
+// and its end, where the tick's modules run.
+enum Work {
+    Step(Module),
+    WindDown(Module),
+    Stop,
 }
 
 struct Pending {
@@ -496,7 +506,7 @@ fn offhand(game: &mut Game<'_>, m: &Module) -> bool {
     let want = super::sunset_combat::offhand_want(game, m);
     let totem = matches!(want, Want::Totem);
     if !totem {
-        totem_wind_down(game, m);
+        state(|s| s.totem.work = Some(Work::WindDown(m.clone())));
     }
     if let Want::Item(item) = want {
         super::sunset_combat::offhand_click(game, m, item);
@@ -642,9 +652,22 @@ fn totem_cancel(game: &mut Game<'_>, t: &mut Totem, now: Instant) {
     }
 }
 
-// Each tick with Item Totem: a step once its Totem delay is over. True while a step is under way.
+// Each tick with Item Totem: the next frame's step, and the look a silent session holds. True while a step is under
+// way.
 fn auto_totem(game: &mut Game<'_>, m: &Module) -> bool {
     TOTEMS.store(count_totems(game), Ordering::Relaxed);
+    let (look, active) = state(|s| {
+        s.totem.work = Some(Work::Step(m.clone()));
+        (s.totem.look, s.totem.active())
+    });
+    if let Some((yaw, pitch)) = look {
+        sunset::turn(INV, yaw, pitch);
+    }
+    active
+}
+
+// A step once its Totem delay is over.
+fn totem_frame(game: &mut Game<'_>, m: &Module) {
     let now = Instant::now();
     let mut t = state(|s| std::mem::take(&mut s.totem));
     if t.due.is_none_or(|due| now >= due) {
@@ -653,12 +676,22 @@ fn auto_totem(game: &mut Game<'_>, m: &Module) -> bool {
         let wait = t.delay(range, m.b("Extra randomization"));
         t.due = (acted || t.active()).then(|| now + Duration::from_millis(wait));
     }
-    if let Some((yaw, pitch)) = t.look {
-        sunset::turn(INV, yaw, pitch);
-    }
-    let active = t.active();
     state(|s| s.totem = t);
-    active
+}
+
+// Each frame: what the last tick asked of Auto Totem, in the world it was asked in.
+pub(super) fn frame(game: &mut Game<'_>) {
+    let Some(work) = state(|s| s.totem.work.take()) else {
+        return;
+    };
+    if !alive(game) || !state(|s| s.connection.as_ref().is_some_and(|old| same_session(game, old))) {
+        return;
+    }
+    match work {
+        Work::Step(m) => totem_frame(game, &m),
+        Work::WindDown(m) => totem_wind_down(game, &m),
+        Work::Stop => totem_stop(game),
+    }
 }
 
 // Another Item, or Offhand off: what Auto Totem opened closes.
@@ -1017,7 +1050,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
             return;
         }
     } else if state(|s| s.totem.active()) {
-        totem_stop(game);
+        state(|s| s.totem.work = Some(Work::Stop));
     }
     match get(THROW) {
         Some(m) => {
