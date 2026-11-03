@@ -7215,6 +7215,25 @@ def _():
     return ok, f"strength after Quiver: {strong}; still on: {still}; tipped arrows left {left} of 2, plain arrows {counts.get('minecraft:arrow')}"
 
 
+@test("Arrow Dodge")
+def _():
+    # Three arrows shot at you from 10 blocks south, one a second: health lost and where you are after, without and
+    # with Arrow Dodge.
+    got = {}
+    for name, mods in (("off", ()), ("on", ("arrowdodge",))):
+        reset()
+        only(*mods)
+        start = own_health()
+        for _ in range(3):
+            cmd(f"summon arrow {X0 + 0.5} {Y + 2.3} {Z0 + 10.5} {{Motion:[0.0d,0.0d,-2.0d]}}")
+            wait(20)
+        got[name] = (round(start - own_health(), 1), round(flat(pos(), (X0 + 0.5, 0, Z0 + 0.5)), 1))
+        only()
+        cmd("kill @e[type=arrow]")
+    ok = got["off"][0] > 0 and got["on"][0] == 0
+    return ok, f"(health lost, blocks moved) to 3 arrows: off {got['off']}, Arrow Dodge {got['on']}"
+
+
 @test("Fake Player")
 def _():
     # Fake Player on where you stand, then you step 3 blocks back: a player is there in your world (a screenshot of

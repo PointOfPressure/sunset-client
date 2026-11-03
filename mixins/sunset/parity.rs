@@ -1,6 +1,6 @@
 // Meteor's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil,
 // Anti Bed, Rotation, No Rotate, No Status Effects (render.rs keeps the effects aside), Potion Saver, No Mining
-// Trace (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player and Quiver.
+// Trace (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player, Quiver and Arrow Dodge.
 use super::{Game, Screen};
 use super::sunset::{Category, Module, with};
 use super::sunset_util::{self as util, facts, feet_block, find_held, is_air, listed, place_block, short, toggle_off};
@@ -45,6 +45,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only in hole", true)
             .bool("Only on ground", true)
             .num("Min health", 10.0, 0.0, 36.0, 1.0),
+        Module::new("Arrow Dodge", Combat, "Steps out of arrows' way.")
+            .num("Move speed", 1.0, 0.05, 5.0, 0.05)
+            .num("Distance check", 1.0, 0.1, 5.0, 0.1)
+            .bool("Ground check", true)
+            .bool("All projectiles", false)
+            .bool("Ignore own", true),
         Module::new("Fake Player", Player, "A copy of you to test modules on.")
             .num("Health", 20.0, 1.0, 100.0, 1.0)
             .bool("Copy inventory", true),
@@ -171,6 +177,9 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     match get("Quiver") {
         Some(m) => quiver(game, m),
         None => quiver_done(game),
+    }
+    if let Some(m) = get("Arrow Dodge") {
+        arrow_dodge(game, m);
     }
     if let Some(m) = get("Rotation") {
         rotation(game, m);
@@ -324,6 +333,67 @@ fn quiver_done(game: &mut Game<'_>) {
     }
     if let Some(slot) = back {
         super::sunset::hold(game, slot);
+    }
+}
+
+// Arrow Dodge (Meteor's, Velocity mode): each arrow in flight (any projectile with All projectiles; not yours with
+// Ignore own) is followed for up to 200 ticks, falling as an arrow does, until it meets a block. When a point of a
+// path comes within Distance check of your feet or head, you are pushed (your velocity, no packets of its own) the
+// first of eight ways that keeps you clear, onto free blocks with ground under them (Ground check), Move speed
+// blocks a tick, further if none is.
+fn arrow_dodge(game: &mut Game<'_>, m: &Module) {
+    use horizon_client_core::who::Who;
+    use horizon_client::projectiles::ProjectileKind;
+    let own = game.remote.as_ref().map(|r| r.entity_id as u32);
+    let mut points: Vec<[f64; 3]> = Vec::new();
+    for p in game.creatures.projectiles.iter().filter(|p| !p.stuck) {
+        let arrow = matches!(p.kind, ProjectileKind::Arrow { .. });
+        let mine = matches!(p.owner, Some(Who::Player)) || own.is_some_and(|id| p.owner == Some(Who::Mob(id)));
+        if (!arrow && !m.b("All projectiles")) || (mine && m.b("Ignore own")) {
+            continue;
+        }
+        let (mut at, mut v) = ([p.position.x, p.position.y, p.position.z], [p.velocity.x, p.velocity.y, p.velocity.z]);
+        for _ in 0..200 {
+            points.push(at);
+            at = [at[0] + v[0], at[1] + v[1], at[2] + v[2]];
+            v = [v[0] * 0.99, v[1] * 0.99 - 0.05, v[2] * 0.99];
+            let block = at.map(|c| c.floor() as i32);
+            if !is_air(game, block) && facts(game, block).full_collision {
+                break;
+            }
+        }
+    }
+    let Some(me) = game.player.as_ref().map(|p| [p.position.x, p.position.y, p.position.z]) else {
+        return;
+    };
+    let reach = m.n("Distance check");
+    let clear = |at: [f64; 3]| {
+        points.iter().all(|q| {
+            let d = |dy: f64| ((q[0] - at[0]).powi(2) + (q[1] - at[1] - dy).powi(2) + (q[2] - at[2]).powi(2)).sqrt();
+            d(0.0) >= reach && d(1.0) >= reach
+        })
+    };
+    if points.is_empty() || clear(me) {
+        return;
+    }
+    let free = |b: [i32; 3]| is_air(game, b) || !facts(game, b).full_collision;
+    const WAYS: [[f64; 2]; 8] = [[1.0, 1.0], [0.0, 1.0], [-1.0, 1.0], [1.0, 0.0], [-1.0, 0.0], [1.0, -1.0], [0.0, -1.0], [-1.0, -1.0]];
+    let start = (game.ticks % 8) as usize;
+    for step in 1..=10 {
+        let speed = m.n("Move speed") * f64::from(step);
+        for k in 0..8 {
+            let [dx, dz] = WAYS[(start + k) % 8];
+            let at = [me[0] + dx * speed, me[1], me[2] + dz * speed];
+            let b = at.map(|c| c.floor() as i32);
+            let ground = !free([b[0], b[1] - 1, b[2]]);
+            if clear(at) && free(b) && free([b[0], b[1] + 1, b[2]]) && (ground || !m.b("Ground check")) {
+                if let Some(p) = game.player.as_mut() {
+                    p.velocity.x = dx * speed;
+                    p.velocity.z = dz * speed;
+                }
+                return;
+            }
+        }
     }
 }
 
