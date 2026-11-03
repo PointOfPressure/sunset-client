@@ -6392,6 +6392,72 @@ def _():
         f"was seen in hand {on[1]} times and the hand went back to {on[2] or 'nothing'}")
 
 
+@test("Auto Weapon swaps before the move")
+def _():
+    # Kill Aura with a sword at Bot1 behind a raised shield, an axe in slot 3, Auto Weapon's Axe on shields: every
+    # slot change (SetCarriedItem) goes before its tick's move packet, as a hotbar key does (one after flags Grim's
+    # Post), one a tick, never one hit's swap twice; the axe goes in a tick before its hit (Horizon's server hits
+    # with what was held as its tick began) and the sword comes back; one move packet a tick (no extra look).
+    if not CTL2:
+        return None, "needs a second player"
+    reset()
+    slot(0, "diamond_sword")
+    slot(2, "diamond_axe")
+    ctl("key", "1", "tap")
+    setting("killaura", "entities", "player")
+    weapon("axe on shields")
+    bot_ready(2.5, 180, "give Bot1 minecraft:shield")
+    ctl2("select", "1")
+    ctl2("mouse", "right", "down")
+    wait(10)
+    before, mark = bot_health(), probe_mark()
+    only("killaura", "autoweapon")
+    back = f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5} 180 0"
+    poll(60, 2, lambda: cmd(back))
+    only()
+    wait(10)
+    lost = round(before - bot_health(), 1)
+    ctl2("mouse", "right", "up")
+    bot_done()
+    ticks = probe_ticks(mark)
+    swaps = late = doubled = crowded = 0
+    for t in ticks:
+        n = t.count(f"pkt {SET_CARRIED_ITEM}")
+        swaps += n
+        doubled += n > 1
+        moves = [i for i, line in enumerate(t) if line == "order move"]
+        crowded += len(moves) > 1
+        late += any(line == f"pkt {SET_CARRIED_ITEM}" and moves and i > moves[0] for i, line in enumerate(t))
+    # The axe's tick has no hit; the hit's tick is the next one.
+    ahead = [i for i, t in enumerate(ticks) if f"pkt {SET_CARRIED_ITEM}" in t and "order attack" not in t
+             and i + 1 < len(ticks) and "order attack" in ticks[i + 1]]
+    hand = (state().get("held") or {}).get("item", "")
+    ok = swaps >= 2 and not late and not doubled and not crowded and ahead and lost > 0 and "sword" in hand
+    return ok, (f"{swaps} slot changes in {len(ticks)} ticks: after the move packet {late}, two in a tick {doubled}, "
+                f"ticks with two moves {crowded}, axe a tick before its hit {len(ahead)}; Bot1 lost {lost}, the hand "
+                f"went back to {hand or 'nothing'}")
+
+
+@test("Search finds Auto Weapon as shield breaker")
+def _():
+    # Shield Breaker is Auto Weapon's Axe on shields now: searching its old name and pressing Enter turns Auto Weapon on.
+    only()
+    say(".menu shield breaker")
+    wait(6)
+    ctl("key", "enter", "tap")
+    wait(4)
+    for _ in range(2):
+        ctl("key", "esc", "tap")
+        time.sleep(1)
+    if state().get("screen") == "paused":
+        ctl("key", "esc", "tap")
+    found = is_on("Auto Weapon")
+    if found:
+        on.add("autoweapon")
+    only()
+    return found, f"Auto Weapon on after searching \"shield breaker\" and Enter: {found}"
+
+
 @test("Auto Weapon (Mace)")
 def _():
     # Falling 7 blocks past a pig with 1000 health, Kill Aura holding a sword, a mace in slot 3: the first hit's
@@ -7341,6 +7407,60 @@ def _():
             only()
     ok = mean(peaks["on"]) > mean(peaks["off"]) + 0.5
     return ok, f"rise from a wind charge thrown down (blocks): off {mean(peaks['off'])} {peaks['off']}, on {mean(peaks['on'])} {peaks['on']}"
+
+
+def probe_ticks(mark):
+    """The wire probe's lines since mark, a client tick at a time (each ends with its "order tickend")."""
+    with open(probe_path(), errors="replace") as f:
+        f.seek(mark)
+        lines = [line.strip() for line in f if not line[:1].isdigit()]
+    ticks, tick = [], []
+    for line in lines:
+        tick.append(line)
+        if line == "order tickend":
+            ticks.append(tick)
+            tick = []
+    return ticks
+
+
+USE_ITEM, SET_CARRIED_ITEM = 67, 54
+
+
+@test("Wind Jump jumps before the blast")
+def _():
+    # A wind charge thrown straight down from the ground: with Wind Jump, the first move off the ground after the
+    # throw is a jump's 0.42, in a tick whose PlayerInput says jump (a jump the server (Grim) predicts, no velocity
+    # written), and the blast then adds in the air: a rise above the throw without it. Off: no jump bit at all. The
+    # throws measured are Wind Jump's second and third (the first shows it how long this server's blast takes); a
+    # blast a tick sooner than any before it comes before the jump (no jump, the plain blast's rise), so one of two.
+    def run(mods):
+        reset()
+        slot(0, "wind_charge", 16)
+        ctl("key", "1", "tap")
+        ctl("look", "0", "90")
+        only(*mods)
+        wait(5)
+        ground, mark = pos()[1], probe_mark()
+        ctl("mouse", "right", "click")
+        rise = round(max(poll(40, 1, lambda: pos()[1])) - ground, 2)
+        only()
+        ticks = probe_ticks(mark)
+        throw = next((i for i, t in enumerate(ticks) if f"pkt {USE_ITEM}" in t), len(ticks))
+        jump = up = None
+        for i, t in enumerate(ticks[throw:]):
+            moves = [line.split() for line in t if line.startswith("send pos") and len(line.split()) == 4]
+            if moves and moves[0][3] == "0":
+                jump = any(int(line.split()[1]) & 16 for line in t if line.startswith("input "))
+                up = (i, round(float(moves[0][2]) - ground, 3))
+                break
+        return jump, up, rise
+
+    off, _ = run(()), run(("windjump",))
+    on = [run(("windjump",)) for _ in range(2)]
+    jumped = [r for r in on if r[0] and r[1] is not None and abs(r[1][1] - 0.42) < 0.01 and r[2] > off[2] + 0.5]
+    ok = not off[0] and bool(jumped) and all(r[0] or r[1] is None or r[1][1] > 1.0 for r in on)
+    return ok, (f"the first move off the ground after the throw: jump in its PlayerInput, (ticks after the throw, "
+                f"rise); then the highest rise: off {off}, on {on}")
 
 
 @test("Hold to Eat")

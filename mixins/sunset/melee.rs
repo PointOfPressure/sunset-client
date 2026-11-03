@@ -785,6 +785,19 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     state(|s| s.input = Some(InputSave { before, physical, changed }));
 }
 
+// Wind Jump: jump held for this tick (after pre_input, before the tick's move and PlayerInput); post_input lets it
+// go.
+pub(super) fn press_jump(game: &mut Game<'_>) {
+    const SPACE: usize = 3;
+    if game.keys.contains(&INPUT_KEYS[SPACE]) {
+        return;
+    }
+    let before = INPUT_KEYS.map(|key| game.keys.contains(&key));
+    let physical = INPUT_KEYS.map(|key| game.physical_keys.contains(&key));
+    state(|s| s.input.get_or_insert(InputSave { before, physical, changed: [false; 4] }).changed[SPACE] = true);
+    game.keys.insert(INPUT_KEYS[SPACE]);
+}
+
 // The keys pre_input changed go back to what you hold.
 pub(super) fn post_input(game: &mut Game<'_>) {
     let Some(saved) = state(|s| s.input.take()) else {
@@ -902,8 +915,11 @@ pub(super) fn due_waiting() -> bool {
     state(|s| s.due.is_some())
 }
 
-// The start of a tick: the hit queue_action has ready goes.
+// The start of a tick, before its move packet (a slot change after it flags Grim's Post): a borrowed slot whose time
+// is up goes back, then the hit queue_action has ready goes.
 pub(super) fn due(game: &mut Game<'_>) {
+    let disabled = state(|s| s.lease).is_some_and(|l| section(l.owner).is_none());
+    release_lease(game, disabled || !game.native_playing() || gui_open());
     if let Some(hit) = state(|s| s.due.take()) {
         hit(game);
     }
@@ -1027,8 +1043,6 @@ pub(super) fn tick(game: &mut Game<'_>) {
         });
         return;
     }
-    let disabled = state(|s| s.lease).is_some_and(|l| section(l.owner).is_none());
-    release_lease(game, disabled || !game.native_playing() || gui_open());
     if let Some(owner) = state(|s| s.queued) {
         if !allowed(game)
             || section(owner).is_none()
@@ -1116,16 +1130,15 @@ fn can_hold_smash(game: &mut Game<'_>, id: u32) -> bool {
     super::sunset_mace_native::continuation(game, id, yaw, pitch).unwrap_or(false)
 }
 
-// A hit from Kill Aura or Trigger Bot on `id`, planned for the next tick: Auto Weapon's axe at a raised shield,
-// mace or best weapon goes in hand for it (a smash uses up the fall). The slot to go back to after, if it is to.
-pub(super) fn strike_weapon(game: &mut Game<'_>, id: u32) -> Option<(usize, u64)> {
+// A hit from Kill Aura or Trigger Bot on `id`, planned: the slot of Auto Weapon's axe at a raised shield, mace or
+// best weapon for it, when it is not the one in hand (a smash uses up the fall), and the ticks after the hit it goes
+// back (None: it stays). The caller holds it.
+pub(super) fn strike_weapon(game: &mut Game<'_>, id: u32) -> Option<(usize, Option<u64>)> {
     let plan = preferred_weapon(game, id)?;
-    let previous = game.selected;
     if plan.owner == MACE && game.player.as_ref().is_some_and(|p| p.fall_distance > 1.5 && !p.fall_flying) {
         state(|s| s.mace.accepted(mace_policy::Intent::Smash, 0, 0));
     }
-    hold(game, plan.slot);
-    (plan.restore && plan.slot != previous).then_some((previous, plan.delay))
+    (plan.slot != game.selected).then_some((plan.slot, plan.restore.then_some(plan.delay)))
 }
 
 fn smash_intent(game: &mut Game<'_>, m: &Module, id: u32) -> mace_policy::Intent {

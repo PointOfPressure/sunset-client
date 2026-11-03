@@ -2360,7 +2360,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_parity::pre_tick(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     crit_sprint_back(game);
-    super::sunset_hands::before_hits(game, strike_waiting() || super::sunset_melee::due_waiting());
+    strike_weapon_back(game);
+    super::sunset_hands::before_hits(game, strike_due() || super::sunset_melee::due_waiting());
     send_strikes(game);
     super::sunset_melee::due(game);
     let mods = snapshot();
@@ -2471,6 +2472,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         s.high_jumping = high_jump.is_some();
     });
     super::sunset_melee::pre_input(game);
+    super::sunset_duel::pre_input(game);
 }
 
 // How high Step lets you climb this tick: the setting, or vanilla's 0.6 when
@@ -2534,7 +2536,6 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     }
     super::sunset_sky::keep_shown(game);
     super::sunset_melee::post_input(game);
-    strike_weapon_back(game);
     turned(game);
     module_tick(game);
     end_turns(game);
@@ -4797,16 +4798,27 @@ pub(super) fn crit_click(game: &mut Game<'_>) -> Option<bool> {
 
 // Hits wait for the start of the next tick: the game's own attack goes out with the input, before the tick's move
 // packet, and modules run after it. By then the server also has the look the last move packet carried. A critical
-// hit is marked: the sprint it stopped comes back the tick after it goes. The weapon Auto Weapon wants goes in
-// hand when the hit is planned, a tick before it (Horizon's server hits with what was held as its tick
-// began), and back after the hit's tick, or that many ticks later with Back after A delay (`back`: the slot, the
-// weapon's slot it replaces if still held, and the tick it may go back).
+// hit is marked: the sprint it stopped comes back the tick after it goes. The weapon Auto Weapon wants for a hit goes
+// in hand at the start of the next tick, before its move packet as a hotbar key does, and the hit a tick after that
+// (Horizon's server hits with what was held as its tick began); it goes back at the start of the tick after the hit,
+// or that many ticks later with Back after A delay (`back`: the slot, the weapon's slot it replaces if still held,
+// and the tick it may go back). No slot changes after a tick's move packet: Grim's Post check flags that.
 struct Strikes {
     queue: Vec<(u32, bool)>,
+    weapon: Option<StrikeWeapon>,
     back: Option<(usize, usize, u64)>,
 }
 
-static STRIKES: Mutex<Strikes> = Mutex::new(Strikes { queue: Vec::new(), back: None });
+// The weapon for the hits waiting: its slot, the delay before it goes back (None: it stays), and the slot it replaced
+// once it is in hand.
+#[derive(Clone, Copy)]
+struct StrikeWeapon {
+    slot: usize,
+    back_after: Option<u64>,
+    replaced: Option<usize>,
+}
+
+static STRIKES: Mutex<Strikes> = Mutex::new(Strikes { queue: Vec::new(), weapon: None, back: None });
 
 fn strikes<R>(f: impl FnOnce(&mut Strikes) -> R) -> R {
     f(&mut STRIKES.lock().unwrap_or_else(|e| e.into_inner()))
@@ -4816,6 +4828,7 @@ fn strikes<R>(f: impl FnOnce(&mut Strikes) -> R) -> R {
 fn drop_strikes() {
     strikes(|s| {
         s.queue.clear();
+        s.weapon = None;
         s.back = None;
     });
 }
@@ -4825,10 +4838,14 @@ pub(super) fn strike(game: &mut Game<'_>, id: u32) {
 }
 
 fn queue_strike(game: &mut Game<'_>, id: u32, critical: bool) {
-    let back = super::sunset_melee::strike_weapon(game, id).map(|(slot, delay)| (slot, game.selected, game.ticks + 1 + delay));
+    let first = strikes(|s| s.queue.is_empty() && s.weapon.is_none());
+    let weapon = first
+        .then(|| super::sunset_melee::strike_weapon(game, id))
+        .flatten()
+        .map(|(slot, back_after)| StrikeWeapon { slot, back_after, replaced: None });
     strikes(|s| {
         s.queue.push((id, critical));
-        s.back = s.back.or(back);
+        s.weapon = s.weapon.or(weapon);
     });
 }
 
@@ -4837,7 +4854,12 @@ pub(super) fn strike_waiting() -> bool {
     strikes(|s| !s.queue.is_empty())
 }
 
-// The tick after a hit, before the modules: the hotbar slot the hit's weapon replaced comes back.
+// Hits go out this tick (not only their weapon).
+fn strike_due() -> bool {
+    strikes(|s| !s.queue.is_empty() && s.weapon.is_none_or(|w| w.replaced.is_some()))
+}
+
+// The start of the tick after a hit: the hotbar slot the hit's weapon replaced comes back.
 fn strike_weapon_back(game: &mut Game<'_>) {
     let ticks = game.ticks;
     if let Some((slot, weapon, _)) = strikes(|s| (s.queue.is_empty() && s.back.is_some_and(|b| ticks >= b.2)).then(|| s.back.take()).flatten())
@@ -4848,6 +4870,20 @@ fn strike_weapon_back(game: &mut Game<'_>) {
 }
 
 fn send_strikes(game: &mut Game<'_>) {
+    if strikes(|s| s.queue.is_empty()) {
+        return;
+    }
+    if let Some(slot) = strikes(|s| s.weapon.filter(|w| w.replaced.is_none()).map(|w| w.slot)) {
+        let replaced = game.selected;
+        hold(game, slot);
+        strikes(|s| s.weapon = s.weapon.map(|w| StrikeWeapon { replaced: Some(replaced), ..w }));
+        return;
+    }
+    if let Some(StrikeWeapon { slot, back_after: Some(delay), replaced: Some(replaced) }) = strikes(|s| s.weapon.take())
+        && game.selected == slot
+    {
+        strikes(|s| s.back = s.back.or(Some((replaced, slot, game.ticks + 1 + delay))));
+    }
     for (id, critical) in strikes(|s| std::mem::take(&mut s.queue)) {
         if game.remote.is_some() {
             strike_now(game, id);

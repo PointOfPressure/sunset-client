@@ -6,14 +6,11 @@ use super::{Game, Screen};
 use horizon_client::projectiles::ProjectileKind;
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use std::sync::Mutex;
-use std::time::Instant;
 use winit::event::MouseButton;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new("Wind Jump", Category::Movement, "Jumps with wind charges.")
-            .num("Min pitch", 60.0, 0.0, 90.0, 5.0)
-            .num("Window (ms)", 1500.0, 200.0, 5000.0, 100.0),
+        Module::new("Wind Jump", Category::Movement, "Jumps with wind charges.").num("Min pitch", 60.0, 0.0, 90.0, 5.0),
         Module::new("Hold to Eat", Category::Player, "Eats from a held hotbar key.")
             .bool("Golden apples", true)
             .bool("Any food", false),
@@ -101,8 +98,10 @@ fn best_delay(game: &Game<'_>, max: u32) -> Option<u32> {
 
 #[derive(Default)]
 struct Duel {
-    // Wind Jump: when the wind charge went.
-    thrown: Option<Instant>,
+    // Wind Jump: the tick a wind charge went down from the ground and whether it has jumped for it, till its blast.
+    thrown: Option<(u64, bool)>,
+    // Wind Jump: the ticks from a throw to its blast, the last three on this connection.
+    blast_after: Option<(usize, Vec<u64>)>,
     // Hold to Eat: the slot eaten from, its key, and the slot to go back to.
     eating: Option<(usize, String, usize)>,
     // Pearl Catch: the tick the wind charge goes.
@@ -119,7 +118,7 @@ fn module(name: &str) -> Option<Module> {
     with(|s| s.module(name).filter(|m| m.on).cloned())
 }
 
-// The use hook: a wind charge thrown from the ground looking down far enough.
+// The use hook: a wind charge thrown from the ground looking down far enough (Wind Jump waits for its blast).
 pub(super) fn used(game: &Game<'_>, slot: usize) {
     if !game.native_window() || !game.native_on(super::sunset::ID) {
         return;
@@ -140,37 +139,69 @@ pub(super) fn used(game: &Game<'_>, slot: usize) {
     }
     if stack.item.ends_with(":wind_charge")
         && !cooling
-        && game.player.as_ref().is_some_and(|p| p.ground.on_ground)
+        && game.player.as_ref().is_some_and(|p| p.ground.on_ground && !p.flying)
+        && game.riding.is_none()
         && module("Wind Jump").is_some_and(|m| f64::from(game.pitch) >= m.n("Min pitch"))
     {
-        duel(|d| d.thrown = Some(Instant::now()));
+        duel(|d| d.thrown = Some((game.ticks, false)));
     }
 }
 
-// The explosion hook, before the game adds the push: the jump (velocity up 0.42, and a sprint jump's 0.2 forward)
-// goes first.
-pub(super) fn blast(game: &mut Game<'_>, push: Option<[f64; 3]>) {
-    let Some(thrown) = duel(|d| d.thrown) else {
+// The connection a learned blast delay holds for.
+fn connection(game: &Game<'_>) -> Option<usize> {
+    game.remote.as_ref().map(|r| std::sync::Arc::as_ptr(&r.session.counters) as usize)
+}
+
+// Before the tick's move: Wind Jump jumps, a real jump the server sees in the tick's PlayerInput, on the tick before
+// its charge's blast, so the blast pushes you in the air and adds to the rise (a jump keeps the faster of its own speed
+// and the push, so a late one is never less than the blast alone; an early one is, as you are higher when it comes).
+// The tick is the shortest of the last three blasts' delays on this connection (one that came late does not make the
+// next jump late), or before one is known, the tick the charge is a step from the ground. Not standing, no jump; 20
+// ticks on, it waits no more.
+pub(super) fn pre_input(game: &mut Game<'_>) {
+    let Some((thrown, jumped)) = duel(|d| d.thrown) else {
         return;
     };
-    let window = module("Wind Jump").map_or(0.0, |m| m.n("Window (ms)"));
-    if thrown.elapsed().as_secs_f64() * 1000.0 > window {
+    if module("Wind Jump").is_none() || game.ticks > thrown + 20 {
         duel(|d| d.thrown = None);
         return;
     }
-    let yaw = f64::from(game.yaw).to_radians();
+    let Some(p) = game.player.as_ref().filter(|p| !jumped && p.ground.on_ground && !p.flying && game.riding.is_none()) else {
+        return;
+    };
+    let feet = p.position;
+    let here = connection(game);
+    let learned = duel(|d| d.blast_after.as_ref().filter(|(at, _)| Some(*at) == here).and_then(|(_, after)| after.iter().min().copied()));
+    let due = match learned {
+        Some(after) => game.ticks + 1 >= thrown + after,
+        None => game.creatures.projectiles.iter().any(|c| {
+            c.kind == ProjectileKind::WindCharge
+                && (c.position.x - feet.x).hypot(c.position.z - feet.z) < 1.5
+                && c.position.y + c.velocity.y <= feet.y + 0.1
+        }),
+    };
+    if due {
+        duel(|d| d.thrown = Some((thrown, true)));
+        super::sunset_melee::press_jump(game);
+    }
+}
+
+// The explosion hook: the blast of a charge Wind Jump waits for pushed you up; the ticks it took are kept.
+pub(super) fn blast(game: &Game<'_>, push: Option<[f64; 3]>) {
     if push.is_none_or(|p| p[1] <= 0.0) {
         return;
     }
-    let Some(p) = game.player.as_mut().filter(|p| p.ground.on_ground) else {
-        return;
-    };
-    duel(|d| d.thrown = None);
-    p.velocity.y = p.velocity.y.max(0.42);
-    if p.sprinting {
-        p.velocity.x -= yaw.sin() * 0.2;
-        p.velocity.z += yaw.cos() * 0.2;
-    }
+    let at = connection(game);
+    duel(|d| {
+        if let (Some((thrown, _)), Some(at)) = (d.thrown.take(), at) {
+            let mut after = d.blast_after.take().filter(|(was, _)| *was == at).map_or_else(Vec::new, |(_, after)| after);
+            if after.len() == 3 {
+                after.remove(0);
+            }
+            after.push(game.ticks.saturating_sub(thrown));
+            d.blast_after = Some((at, after));
+        }
+    });
 }
 
 fn edible(game: &Game<'_>, m: &Module, slot: usize) -> bool {
