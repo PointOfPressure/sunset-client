@@ -155,8 +155,8 @@ update Sunset with the installer again.
 
 ## Plugins
 
-Other native mods can add modules to Sunset: see [docs/plugin-api.md](docs/plugin-api.md) and
-[examples/hello-plugin](examples/hello-plugin).
+Other native mods can add modules to Sunset. The API docs, an example plugin and a pack script are in
+[sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) (MIT).
 
 ## Building from source
 
@@ -176,7 +176,7 @@ Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs.
 
 ## Licence
 
-Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine: the plugin docs and `examples/` may be copied to make them. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon. Scaffold's Legit and Godbridge modes, Offhand's Auto Totem, Kill Aura's Silent aura mode, Aim Assist's Simple mode, Anti AFK's Wander mode and No Slow's Skip mode follow [vape-rs](https://github.com/rdbtCVS/vape-rs) by rdbtCVS (MIT, notice in [LICENSE](LICENSE)). Crystal Aura, Anchor Aura and Protect loot follow Anubis 1.0 by 4ldenz (Horus) (MIT, notice in [LICENSE](LICENSE)), ported by Rust. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine, and the plugin docs and example in [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) are MIT. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon. Scaffold's Legit and Godbridge modes, Offhand's Auto Totem, Kill Aura's Silent aura mode, Aim Assist's Simple mode, Anti AFK's Wander mode and No Slow's Skip mode follow [vape-rs](https://github.com/rdbtCVS/vape-rs) by rdbtCVS (MIT, notice in [LICENSE](LICENSE)). Crystal Aura, Anchor Aura and Protect loot follow Anubis 1.0 by 4ldenz (Horus) (MIT, notice in [LICENSE](LICENSE)), ported by Rust. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <details>
 <summary>Font credits</summary>

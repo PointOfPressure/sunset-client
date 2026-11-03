@@ -46,10 +46,16 @@ horizon-mixins native mod. Mod id `sunset`; all code is in `mixins/sunset/`. The
 
 ## Notes from earlier runs
 
-- `docs/notes/anticheat-sweep.md`: every module against Grim, Intave, Spartan, NCP and Horizon's anticheat
+Kept in the private repo PointOfPressure/sunset-notes (clone: `~/dev/sunset-notes`), not here. Write new run notes
+there, never in this repo.
+
+- `anticheat-sweep.md`: every module against Grim, Intave, Spartan, NCP and Horizon's anticheat
   (Grim status list).
-- `docs/notes/vape-ab.md`: vape-rs against Sunset on the same anticheats, verdict per module.
-- `docs/notes/baritone-coinstall.md`: horizon-baritone installed beside Sunset (works; Auto Walk and `#goto`
+- `vape-ab.md`: vape-rs against Sunset on the same anticheats, verdict per module.
+- `baritone-coinstall.md`: horizon-baritone installed beside Sunset (works; Auto Walk and `#goto`
   both hold W).
+
+Plugin API docs and the example plugin live in the public PointOfPressure/sunset-plugins (MIT); keep it in step
+when `mixins/sunset/api.rs` changes.
 
 Paths like `~/hzmeteor` in those notes are the maintainer's test rig, not part of this repo.

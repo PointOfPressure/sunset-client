@@ -4,8 +4,8 @@
 // a [[module]] of its own to crates/horizon-client/src/game.rs and hooks
 // Horizon's own native hook points (native_tick, native_hud, native_key); from
 // there it uses this module to add modules to the click GUI and to read what
-// the player chose. See docs/plugin-api.md in the repository, and
-// examples/hello-plugin for a whole one.
+// the player chose. Docs and a whole example plugin are in
+// github.com/PointOfPressure/sunset-plugins.
 
 #[allow(dead_code)]
 pub(super) const API_VERSION: u32 = 1;
