@@ -81,6 +81,9 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Timer", World, "Changes game speed.")
             .num("Multiplier", 2.0, 0.1, 10.0, 0.1),
         Module::new("No Slow", Movement, "No item-use slowdown.")
+            // Skip is vape-rs's NoSlowdown: the game's own slowdown left out of the move, except in water and from a
+            // knockback until you land. Scale walks at Ground % / Air % of your speed instead.
+            .pick("Mode", &["Skip", "Scale"])
             .num("Ground %", 100.0, 20.0, 100.0, 5.0)
             .num("Air %", 100.0, 20.0, 100.0, 5.0),
     ]
@@ -508,12 +511,25 @@ fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
     let mult = speed_timer.or_else(|| on(mods, "Timer").map(|m| m.n("Multiplier"))).unwrap_or(1.0) as f32;
     horizon_client::clock::sunset_timer::MULT.store(mult.to_bits(), Ordering::Relaxed);
     let no_slow = on(mods, "No Slow");
-    let factor = no_slow.as_ref().map_or(0.2, |m| {
-        let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
-        (m.n(if ground { "Ground %" } else { "Air %" }) / 100.0) as f32
-    });
+    let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
+    let factor = no_slow.as_ref().map_or(0.2, |m| (m.n(if ground { "Ground %" } else { "Air %" }) / 100.0) as f32);
+    let skip_mode = no_slow.as_ref().is_some_and(|m| m.p("Mode") == "Skip");
+    // Skip (vape-rs's): after a knockback, not until you are on the ground again (this tick still not).
+    let knocked = NO_SLOW_KNOCKED.load(Ordering::Relaxed);
+    if knocked && ground {
+        NO_SLOW_KNOCKED.store(false, Ordering::Relaxed);
+    }
+    let in_water = game.player.as_ref().is_some_and(|p| p.fluids.was_touching_water);
+    horizon_client::motion::sunset_motion::set_no_slow_skip(skip_mode && game.using.is_some() && !in_water && !knocked);
     horizon_client::input::sunset_flags::NO_SLOW_FACTOR.store(factor.to_bits(), Ordering::Relaxed);
-    horizon_client::input::sunset_flags::NO_SLOW.store(no_slow.is_some(), Ordering::Relaxed);
+    horizon_client::input::sunset_flags::NO_SLOW.store(no_slow.is_some() && !skip_mode, Ordering::Relaxed);
+}
+
+// No Slow's Skip: a knockback (a push for you, or an explosion's) pauses it until you land.
+static NO_SLOW_KNOCKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(super) fn no_slow_knocked() {
+    NO_SLOW_KNOCKED.store(true, Ordering::Relaxed);
 }
 
 // No Render: fog through Horizon's own Fog option, the effects the player does

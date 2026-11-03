@@ -112,8 +112,14 @@ settings cover scale, spacing, colors and panel shape. Advanced controls appear 
 Kill Aura, Trigger Bot and Aim Assist can skip bots (**Anti bot**: players the server's player list doesn't show) and
 players on your own team (**Ignore teams**). **HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
 Kill Aura hits one target (**Single**, with **Target lock** to stay on it), each in turn (**Switch**) or several (**Multi**).
-**Rotation mode** is Snap, Normal, Smooth or Custom (its own yaw and pitch speeds), told only to the server or also turning
-your view (**Rotation view**). **Ray cast** hits only when the look really meets the target's box.
+**Rotation mode** is Silent aura (the default, after vape-rs's SilentAura: a look the server alone sees, turned in whole
+mouse steps at **Aim speed** and sent in the game's own move packets, hitting only within vanilla reach), Snap, Normal,
+Smooth or Custom (its own yaw and pitch speeds), told only to the server or also turning your view (**Rotation view**).
+**Ray cast** hits only when the look really meets the target's box.
+Aim Assist's **Simple** mode (the default, vape-rs's) turns you toward the target on its own while you hold attack;
+**Duelkit** only adds to your own mouse movement. Anti AFK's **Wander** (the default, vape-rs's) makes small turns and steps
+once you have been idle a while; **Meteor** spins, jumps and strafes. No Slow's **Skip** (the default, vape-rs's)
+leaves the game's item-use slowdown out except in water and after a knockback; **Scale** walks at Ground % / Air %.
 It waits while another module has the hand, skips broken weapons, and stabs with spears; a stab never goes through a friend.
 
 Not here (no clean way to do it in Horizon yet): Jesus, Click TP, and the Baritone-based
@@ -166,7 +172,7 @@ Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs.
 
 ## Licence
 
-Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine: the plugin docs and `examples/` may be copied to make them. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon. Scaffold's Legit and Godbridge modes and Offhand's Auto Totem follow [vape-rs](https://github.com/rdbtCVS/vape-rs) (MIT, notice in [LICENSE](LICENSE)). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine: the plugin docs and `examples/` may be copied to make them. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon. Scaffold's Legit and Godbridge modes, Offhand's Auto Totem, Kill Aura's Silent aura mode, Aim Assist's Simple mode, Anti AFK's Wander mode and No Slow's Skip mode follow [vape-rs](https://github.com/rdbtCVS/vape-rs) by rdbtCVS (MIT, notice in [LICENSE](LICENSE)). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <details>
 <summary>Font credits</summary>

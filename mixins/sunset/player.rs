@@ -110,6 +110,7 @@ struct Ps {
     afk_yaw: Option<f32>,
     afk_message: i32,
     afk_index: usize,
+    afk_wander: Wander,
     steal_wait: u32,
     steal_id: i32,
     steal_last: usize,
@@ -367,6 +368,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         ps(|p| {
             p.afk_yaw = None;
             p.afk_message = 0;
+            p.afk_wander = Wander::default();
         });
     }
     if let Some(m) = get("Spam") {
@@ -817,8 +819,132 @@ fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
 
 // ---- Anti AFK (Meteor's AntiAFK)
 
-// The keys it holds this tick: a jump now and then, sneaking, and strafing left and right.
-pub(super) fn afk_keys(m: &Module) -> Vec<KeyCode> {
+// Wander, vape-rs's Anti-AFK (github.com/rdbtCVS/vape-rs, MIT): once none of your move keys has been held for a
+// random Start delay, every few seconds at random (Frequency) a small visible turn at a random speed (at most Max yaw
+// and Max pitch change) and a short walk, a tenth to a fifth of a second, toward a point within a block. Keep close
+// walks back and turns back once it has drifted from where it started. Times in ticks.
+#[derive(Default)]
+struct Wander {
+    idle_since: Option<u64>,
+    delay: u64,
+    next_walk: u64,
+    next_turn: u64,
+    walked_at: u64,
+    turned_at: u64,
+    // Where you were and how you looked when it began.
+    origin: Option<([f64; 2], f32, f32)>,
+    // The point it walks to, from when, for how long.
+    walk: Option<([f64; 2], u64, u64)>,
+    // The look it turns to and its speed, degrees a tick.
+    turn: Option<(f32, f32, f32)>,
+}
+
+fn unit() -> f64 {
+    rand(1_000_000) as f64 / 1e6
+}
+
+fn wrap180(a: f32) -> f32 {
+    (a + 180.0).rem_euclid(360.0) - 180.0
+}
+
+// The move keys from `at` toward `to` with this yaw (vape-rs's keys_towards).
+fn keys_towards(at: [f64; 2], yaw: f32, to: [f64; 2]) -> Vec<KeyCode> {
+    let (dx, dz) = (to[0] - at[0], to[1] - at[1]);
+    if dx.hypot(dz) < 0.1 {
+        return Vec::new();
+    }
+    let rad = f64::from(yaw).to_radians();
+    let forward = -rad.sin() * dx + rad.cos() * dz;
+    let left = rad.cos() * dx + rad.sin() * dz;
+    let edge = 0.3 * dx.hypot(dz);
+    [(forward > edge, KeyCode::KeyW), (forward < -edge, KeyCode::KeyS), (left > edge, KeyCode::KeyA), (left < -edge, KeyCode::KeyD)]
+        .into_iter()
+        .filter_map(|(held, k)| held.then_some(k))
+        .collect()
+}
+
+// One tick of Wander: the keys to hold, and the view turned a step.
+fn wander(game: &mut Game<'_>, m: &Module) -> Vec<KeyCode> {
+    let Some(p) = game.player.as_ref() else {
+        return Vec::new();
+    };
+    let at = [p.position.x, p.position.z];
+    let now = game.ticks;
+    let yours = [KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD].iter().any(|k| game.physical_keys.contains(k));
+    let mut w = ps(|p| std::mem::take(&mut p.afk_wander));
+    if yours || w.idle_since.is_none() {
+        let (lo, hi) = (m.n("Shortest start delay (s)"), m.n("Longest start delay (s)"));
+        let delay = ((lo + unit() * (hi - lo).max(0.0)) * 20.0) as u64;
+        w = Wander { idle_since: Some(now), delay, next_walk: delay, next_turn: delay, walked_at: now, turned_at: now, ..Wander::default() };
+        ps(|p| p.afk_wander = w);
+        return Vec::new();
+    }
+    let mut keys = Vec::new();
+    if now.saturating_sub(w.idle_since.unwrap_or(now)) >= w.delay {
+        // Up to a second plus the Frequency's interval between one and the next.
+        let interval = 20 + (20.0 / m.n("Frequency").max(0.1)) as usize;
+        let (yaw, pitch) = (game.yaw, game.pitch);
+        if m.b("Turn") && in_world(game) && now.saturating_sub(w.turned_at) >= w.next_turn {
+            w.origin.get_or_insert((at, yaw, pitch));
+            w.next_turn = rand(interval) as u64;
+            w.turned_at = now;
+            let (most_yaw, most_pitch) = (m.n("Max yaw change"), m.n("Max pitch change"));
+            let drifted = match (m.b("Keep close"), w.origin) {
+                (true, Some((_, y, p))) => f64::from(wrap180(yaw - y).hypot(wrap180(pitch - p))) >= most_yaw.hypot(most_pitch),
+                _ => false,
+            };
+            let mut dy = unit() * most_yaw;
+            let mut dp = unit() * most_pitch;
+            if unit() > 0.6 {
+                dy = -dy;
+            }
+            if unit() > 0.5 {
+                dp = -dp;
+            }
+            let to = match w.origin {
+                Some((_, y, p)) if drifted => (y, p),
+                _ => (yaw + dy as f32, (pitch + dp as f32).clamp(-90.0, 90.0)),
+            };
+            w.turn = Some((to.0, to.1, (unit() * 10.0).max(1.0) as f32));
+        }
+        if let Some((ty, tp, speed)) = w.turn {
+            let (dy, dp) = (wrap180(ty - yaw), tp - pitch);
+            game.yaw += dy.clamp(-speed, speed);
+            game.pitch = (game.pitch + dp.clamp(-speed, speed)).clamp(-90.0, 90.0);
+            if dy.abs() <= speed && dp.abs() <= speed {
+                w.turn = None;
+            }
+        }
+        match w.walk {
+            None if now.saturating_sub(w.walked_at) >= w.next_walk => {
+                w.origin.get_or_insert((at, yaw, pitch));
+                w.next_walk = rand(interval) as u64;
+                let mut to = [at[0] + unit() * 2.0 - 1.0, at[1] + unit() * 2.0 - 1.0];
+                if let (true, Some((origin, _, _))) = (m.b("Keep close"), w.origin)
+                    && (origin[0] - at[0]).hypot(origin[1] - at[1]) >= 0.75
+                {
+                    to = origin;
+                }
+                w.walk = Some((to, now, 2 + rand(3) as u64));
+                w.walked_at = now;
+            }
+            Some((_, since, ticks)) if now.saturating_sub(since) >= ticks => w.walk = None,
+            _ => {}
+        }
+        if let Some((to, _, _)) = w.walk {
+            keys = keys_towards(at, game.yaw, to);
+        }
+    }
+    ps(|p| p.afk_wander = w);
+    keys
+}
+
+// The keys it holds this tick: Wander's walk; or, in Meteor mode, a jump now and then, sneaking, and strafing left
+// and right.
+pub(super) fn afk_keys(game: &mut Game<'_>, m: &Module) -> Vec<KeyCode> {
+    if m.p("Mode") == "Wander" {
+        return wander(game, m);
+    }
     let mut keys = Vec::new();
     if m.b("Jump") {
         // rand takes the same lock as ps: roll first, or the game freezes.
@@ -862,11 +988,12 @@ fn anti_afk(game: &mut Game<'_>, m: &Module) {
     if !in_world(game) {
         return;
     }
-    if m.b("Swing") && rand(99) == 0 {
+    let meteor = m.p("Mode") == "Meteor";
+    if meteor && m.b("Swing") && rand(99) == 0 {
         game.swing_arm();
         game.send(S::Punch(Empty));
     }
-    if m.b("Spin") {
+    if meteor && m.b("Spin") {
         let yaw = ps(|p| {
             let y = p.afk_yaw.unwrap_or(game.yaw) + m.n("Speed") as f32;
             p.afk_yaw = Some(y);

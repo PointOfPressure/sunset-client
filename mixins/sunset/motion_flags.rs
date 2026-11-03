@@ -16,6 +16,16 @@ thread_local! {
     static FLYING: Cell<Option<f32>> = const { Cell::new(None) };
     // GUI Move: the move keys held behind a screen, which the game would not take.
     static SCREEN_KEYS: Cell<Option<crate::sprint::Keys>> = const { Cell::new(None) };
+    // No Slow's Skip: the item-use slowdown left out of this tick's move.
+    static NO_SLOW_SKIP: Cell<bool> = const { Cell::new(false) };
+}
+
+pub fn set_no_slow_skip(on: bool) {
+    NO_SLOW_SKIP.with(|c| c.set(on));
+}
+
+pub fn no_slow_skip() -> bool {
+    NO_SLOW_SKIP.with(Cell::get)
 }
 
 pub fn set_screen_keys(keys: Option<crate::sprint::Keys>) {

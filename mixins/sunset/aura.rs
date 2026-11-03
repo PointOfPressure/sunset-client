@@ -1,10 +1,13 @@
 // Kill Aura, ported from Meteor's source with its settings: which weapons it
 // attacks with, how it rotates and switches, who it targets and how many at
-// once, and its timing.
+// once, and its timing. Its default Rotation mode, Silent aura, is vape-rs's
+// SilentAura (github.com/rdbtCVS/vape-rs, MIT): a silent look turned in whole
+// mouse counts that the game's own move packet carries, and hits only where
+// that look meets the target within vanilla reach (see sunset_rotation).
 
 use super::sunset::{Canvas, Category, Module, health_colour, hold, look_at, toggle_named};
 use super::sunset_combat_control as control;
-use super::sunset_rotation::{direction, track};
+use super::sunset_rotation::{Managed, direction, track};
 use super::sunset_util::*;
 use super::Game;
 use horizon_client::spear::{Kinetic, REACH, hits_in_reach};
@@ -18,11 +21,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Attack when holding", &["Weapons", "All"])
             .text("Selected weapon types", "diamond_sword,diamond_axe,trident,mace,diamond_spear")
             .pick("Rotate", &["Always", "On hit", "None"])
-            .pick("Rotation mode", &["Snap", "Normal", "Smooth", "Custom"])
+            .pick("Rotation mode", &["Silent aura", "Snap", "Normal", "Smooth", "Custom"])
             .pick("Rotation view", &["Silent", "Visible"])
             .num("Yaw speed", 60.0, 5.0, 180.0, 5.0)
             .num("Pitch speed", 60.0, 5.0, 180.0, 5.0)
             .num("Smoothing", 0.0, 0.0, 0.9, 0.05)
+            // Silent aura's turning speed (vape-rs's SilentAura Aim speed).
+            .num("Aim speed", 7.0, 1.0, 10.0, 0.1)
             .bool("Ray cast", false)
             .bool("Auto switch", false)
             .bool("Swap back", false)
@@ -87,6 +92,9 @@ struct As {
     aimed: Option<(u32, (f32, f32))>,
     // Your entity id, which changes with the world (Auto disable).
     own_id: Option<u32>,
+    // Silent aura: the managed look, and who it is aiming at.
+    managed: Option<Managed>,
+    silent_target: Option<u32>,
 }
 
 static AS: Mutex<Option<As>> = Mutex::new(None);
@@ -219,12 +227,12 @@ fn in_fov(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool {
     cos.clamp(-1.0, 1.0).acos().to_degrees() <= fov / 2.0
 }
 
-// Does a ray along `look` meet the target's box within Range, with nothing solid before it beyond Walls range?
-fn ray_hits(game: &Game<'_>, m: &Module, eye: [f64; 3], look: (f32, f32), t: &Target) -> bool {
+// Does a ray along `look` meet the target's box within `range`, with nothing solid before it beyond Walls range?
+fn ray_hits(game: &Game<'_>, m: &Module, eye: [f64; 3], look: (f32, f32), t: &Target, range: f64) -> bool {
     use horizon_core::geometry::{Aabb, Vec3};
     let dir = direction(look);
     let b = Aabb::new(Vec3::new(t.lo[0], t.lo[1], t.lo[2]), Vec3::new(t.hi[0], t.hi[1], t.hi[2]));
-    let Some(d) = super::ray_box(eye, dir, m.n("Range"), b) else {
+    let Some(d) = super::ray_box(eye, dir, range, b) else {
         return false;
     };
     d <= m.n("Walls range") || clear_line(game, [eye[0] + dir[0] * d, eye[1] + dir[1] * d, eye[2] + dir[2] * d], [i32::MIN; 3])
@@ -284,6 +292,7 @@ fn entity_check(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool 
 }
 
 fn stop(game: &mut Game<'_>, m: &Module) {
+    silent_return(game, m);
     let (was, swapped, prev, given) = st(|s| {
         s.current = None;
         s.target_timer = 0;
@@ -298,13 +307,14 @@ fn stop(game: &mut Game<'_>, m: &Module) {
     control::release(HAND);
 }
 
-// Turned off: back to the weapon it swapped from, and nothing kept for next time.
+// Turned off: back to the weapon it swapped from, and nothing kept for next time (the game sends your own look again).
 pub(super) fn disabled(game: &mut Game<'_>, swap_back: bool) {
     let (swapped, prev, given) = st(|s| {
         let was = (s.swapped, s.prev, s.given);
         *s = As::default();
         was
     });
+    super::sunset_rotation::let_go();
     if swap_back && swapped && game.selected == given {
         hold(game, prev);
     }
@@ -329,9 +339,65 @@ fn choose(m: &Module, mut list: Vec<Target>) -> Vec<Target> {
     vec![list.swap_remove(pick)]
 }
 
+// What a hit reaches in vanilla (the entity interaction range; creative adds 2).
+fn vanilla_reach(game: &Game<'_>) -> f64 {
+    if game.creative { 5.0 } else { 3.0 }
+}
+
+// Silent aura: the managed look a tick nearer the target's aim point, for the game's next move packet. SilentAura
+// aims at the middle of the box level with your eyes (its feet when you are below them), with a drifting jitter.
+fn silent_aim(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> (f32, f32) {
+    let view = (game.yaw, game.pitch);
+    let motion = game.player.as_ref().filter(|_| game.riding.is_none()).map_or([0.0; 3], |p| {
+        [p.position.x - game.previous_position.x, p.position.y - game.previous_position.y, p.position.z - game.previous_position.z]
+    });
+    let feet = game.player.as_ref().map_or(eye, |p| [p.position.x, p.position.y, p.position.z]);
+    let point = [(t.lo[0] + t.hi[0]) / 2.0, t.lo[1], (t.lo[2] + t.hi[2]) / 2.0];
+    let moved = (t.pos[0] - t.prev[0]).hypot(t.pos[2] - t.prev[2]);
+    let distance = dist(feet, point);
+    let sensitivity = f64::from(game.settings.sensitivity);
+    let ticks = game.ticks as u32;
+    st(|s| {
+        let seed = u64::from(t.id) << 20 ^ u64::from(ticks) ^ 0x5a_5a17;
+        let mm = s.managed.get_or_insert_with(|| Managed::start(view, seed));
+        if mm.returning() || s.silent_target != Some(t.id) {
+            mm.new_target();
+            s.silent_target = Some(t.id);
+        }
+        mm.aim(eye, point, t.hi[1] - t.lo[1], motion, moved, distance, ticks);
+        mm.tick(view, sensitivity, m.n("Aim speed"), distance);
+        mm.send();
+        mm.look
+    })
+}
+
+// Silent aura with nothing to aim at: the look goes back to yours at the same speed, then the game sends yours.
+fn silent_return(game: &Game<'_>, m: &Module) {
+    let view = (game.yaw, game.pitch);
+    let sensitivity = f64::from(game.settings.sensitivity);
+    st(|s| {
+        s.silent_target = None;
+        let Some(mm) = s.managed.as_mut() else {
+            return;
+        };
+        mm.release();
+        if mm.tick(view, sensitivity, m.n("Aim speed"), f64::MAX) {
+            s.managed = None;
+            super::sunset_rotation::let_go();
+        } else {
+            mm.send();
+        }
+    });
+}
+
 pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     st(|s| s.target = None);
-    if !game.native_playing() || game.remote.is_none() {
+    if game.remote.is_none() {
+        st(|s| s.managed = None);
+        super::sunset_rotation::let_go();
+        return;
+    }
+    if !game.native_playing() {
         return;
     }
     // A hit on its way: nothing else may take the hand before it goes.
@@ -444,6 +510,10 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         wait
     });
     let rotate_mode = m.p("Rotate");
+    let silent = rotate_mode == "Always" && m.p("Rotation mode") == "Silent aura";
+    if !silent {
+        silent_return(game, m);
+    }
     // The look this tick: from where the last tick's got to (or your own), a step toward the target. Silent tells only
     // the server; Visible turns your view. A hit made now goes out before that look does, so it counts the last one.
     let sent = st(|s| s.look);
@@ -459,12 +529,18 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             [c[0] + primary.pos[0] - primary.prev[0], c[1] + primary.pos[1] - primary.prev[1], c[2] + primary.pos[2] - primary.prev[2]],
         );
         let was = st(|s| s.aimed.replace((primary.id, to))).filter(|a| a.0 == primary.id).map(|a| a.1);
-        let next = track(m.p("Rotation mode"), from, to, was, m.n("Yaw speed") as f32, m.n("Pitch speed") as f32, m.n("Smoothing") as f32);
-        if m.p("Rotation view") == "Visible" {
-            (game.yaw, game.pitch) = next;
+        let next = if silent {
+            // Silent aura: the game's own move packet carries it (only when it changed), whatever Rotation view says.
+            silent_aim(game, m, &primary, eye)
         } else {
-            super::sunset::turn("Kill Aura", next.0, next.1);
-        }
+            let next = track(m.p("Rotation mode"), from, to, was, m.n("Yaw speed") as f32, m.n("Pitch speed") as f32, m.n("Smoothing") as f32);
+            if m.p("Rotation view") == "Visible" {
+                (game.yaw, game.pitch) = next;
+            } else {
+                super::sunset::turn("Kill Aura", next.0, next.1);
+            }
+            next
+        };
         st(|s| s.look = Some(next));
     }
     // Just found a target: its look has not gone out yet.
@@ -517,7 +593,9 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         }
         let on_hit = (rotate_mode == "On hit").then(|| look_at(eye, centre(t)));
         let aim = on_hit.or(sent).unwrap_or((game.yaw, game.pitch));
-        if if spear { !stab_hits(game, m, eye, aim, t) } else { check && !ray_hits(game, m, eye, aim, t) } {
+        // Silent aura hits only within vanilla reach of the look the server has (Range only picks who it aims at).
+        let range = if silent { m.n("Range").min(vanilla_reach(game)) } else { m.n("Range") };
+        if if spear { !stab_hits(game, m, eye, aim, t) } else { check && !ray_hits(game, m, eye, aim, t, range) } {
             continue;
         }
         super::sunset::attack(game, t.id, crits, on_hit);

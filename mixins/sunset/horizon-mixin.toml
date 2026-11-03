@@ -988,6 +988,19 @@ bindings = [
 ]
 
 [[injection]]
+id = "sent_look"
+kind = "MODIFY_ARG"
+target = "horizon_client::game::remote::Game<'_>::remote_send_state"
+selector = "r.position_sender.update"
+require = 1
+ordinal = 0
+argument = 1
+helper = "look_hook.rs"
+bindings = [
+  { name = "value", ty = "(f32, f32)", value = "$value" },
+]
+
+[[injection]]
 id = "speed_move"
 kind = "MODIFY_ARG"
 target = "horizon_client::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::move_self"

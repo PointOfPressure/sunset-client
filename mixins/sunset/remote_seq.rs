@@ -15,6 +15,13 @@ pub(crate) fn press_use(game: &mut Game<'_>) {
     }
 }
 
+// The held slot as the server knows it: true when `slot` is news to it (the caller sends the SetCarriedItem). The
+// game's tick sends one whenever the selection differs from what it last told, so this keeps it from sending the same
+// slot a second time (Grim BadPacketsA, Intave "sent slot twice"). False without a connection.
+pub(crate) fn tell_carried(game: &mut Game<'_>, slot: usize) -> bool {
+    game.remote.as_mut().is_some_and(|r| r.carried.replace(slot) != Some(slot))
+}
+
 // The wait the game puts between one block's breaking and the next (5 ticks).
 pub(crate) fn clear_destroy_delay(game: &mut Game<'_>, wait: u32) {
     if let Some(r) = game.remote.as_mut() {

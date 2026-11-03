@@ -90,6 +90,15 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Center", true)
             .bool("Rotate", true),
         Module::new("Aim Assist", Combat, "Helps your aim.")
+            // Simple is vape-rs's AimAssist (turns you toward the target on its own); Duelkit only adds to your mouse.
+            .pick("Mode", &["Simple", "Duelkit"])
+            .bool("Require mouse down", true)
+            .num("Horizontal speed", 5.0, 1.0, 10.0, 0.1)
+            .bool("Aim vertically", false)
+            .num("Vertical speed", 5.0, 1.0, 10.0, 0.1)
+            .num("Max angle", 180.0, 1.0, 360.0, 1.0)
+            .num("Distance", 5.0, 1.0, 8.0, 0.1)
+            .bool("Strafe increase", false)
             .bool("Players", true)
             .bool("Hostiles", true)
             .num("Pull", 0.4, 0.0, 2.0, 0.05)
@@ -1319,11 +1328,316 @@ pub(super) fn aim_after(game: &mut Game<'_>) {
         cs(|c| c.aim_target = None);
         return;
     };
-    let turn = aim_turn(game, &m, dt);
+    let turn = if m.p("Mode") == "Simple" { simple_turn(game, &m, dt) } else { aim_turn(game, &m, dt) };
     // turn_player takes mouse units, 0.15 degrees each (Entity.turn), and keeps the interpolation in step.
     if turn != [0.0; 2] {
         game.turn_player(turn[0] / 0.15, turn[1] / 0.15);
     }
+}
+
+
+// ---- Aim Assist's Simple mode: vape-rs's AimAssist (github.com/rdbtCVS/vape-rs, MIT, commit d6e48b1, its Simple
+// submodule). A worker step for each millisecond since the last frame (at most 100) eases a velocity toward the
+// target's side, a little faster the further off, the nearer, and when it jumps about; a slow random drift is added;
+// the frame turns you by the whole mouse counts that adds up to at your sensitivity. Horizontal only unless Aim
+// vertically. With Require mouse down it aims only while you hold attack, at the target it took when you pressed.
+
+#[derive(Default)]
+struct Simple {
+    target: Option<u32>,
+    retarget: i32,
+    swap: i32,
+    sample: i32,
+    offset: (i32, i32),
+    drift: (i32, i32),
+    drift_timer: f64,
+    counts: (f32, f32),
+    h_velocity: f32,
+    h_buffer: f32,
+    v_velocity: f32,
+    v_buffer: f32,
+    yaw_boost: f32,
+    pitch_boost: f32,
+    prev_target: (f64, f64),
+    prev_left: bool,
+    prev_above: bool,
+    last_angle: f64,
+    rng: u64,
+    shared: u64,
+}
+
+static SIMPLE: Mutex<Option<Simple>> = Mutex::new(None);
+
+fn xorshift(state: &mut u64) -> u64 {
+    if *state == 0 {
+        *state = 0x9e37_79b9_7f4a_7c15;
+    }
+    *state ^= *state << 13;
+    *state ^= *state >> 7;
+    *state ^= *state << 17;
+    *state
+}
+
+fn below(state: &mut u64, bound: i32) -> i32 {
+    (xorshift(state) % bound.max(1) as u64) as i32
+}
+
+fn between(state: &mut u64, lo: i32, hi: i32) -> i32 {
+    lo + below(state, hi - lo)
+}
+
+fn uniform(state: &mut u64, lo: f64, hi: f64) -> f64 {
+    lo + (xorshift(state) >> 11) as f64 / (1u64 << 53) as f64 * (hi - lo)
+}
+
+// The degrees from your yaw to the point (0 to 180), and whether it is on your left.
+fn yaw_off(from: [f64; 3], yaw: f32, to: [f64; 3]) -> (f64, bool) {
+    let want = (-(to[0] - from[0])).atan2(to[2] - from[2]).to_degrees();
+    let d = wrap(want - f64::from(yaw));
+    (d.abs(), d < 0.0)
+}
+
+impl Simple {
+    fn reset_turn(&mut self) {
+        self.counts = (0.0, 0.0);
+        self.offset = (0, 0);
+        self.drift = (0, 0);
+    }
+
+    // `updateDrift`: now and then a count of drift one way or the other.
+    fn update_drift(&mut self) {
+        self.drift_timer += 1.0;
+        if self.drift_timer >= f64::from(250 + below(&mut self.rng, 50)) {
+            self.drift_timer = f64::from(between(&mut self.rng, -100, -50));
+            self.offset = (between(&mut self.rng, -1, 2), between(&mut self.rng, -1, 2));
+        }
+        let (mut h, mut v) = self.offset;
+        below(&mut self.rng, 10);
+        below(&mut self.rng, 10);
+        if below(&mut self.rng, 10) < 2 {
+            h = 0;
+        }
+        if below(&mut self.rng, 10) < 2 {
+            v = 0;
+        }
+        if self.drift_timer < 0.0 {
+            (h, v) = (0, 0);
+        }
+        if below(&mut self.rng, 20) == 1 {
+            self.drift.0 += h;
+            self.drift.1 += v;
+        }
+        if (self.counts.0 > 0.0 && self.drift.0 < 0) || (self.counts.0 < 0.0 && self.drift.0 > 0) {
+            self.drift.0 = 0;
+        }
+    }
+
+    // `applyRotation`: one step's counts toward the target. `feet` and `look` are yours; `strafe` your strafe key
+    // (left positive).
+    fn step(&mut self, m: &Module, feet: [f64; 3], look: (f32, f32), strafe: f32, aim: [f64; 3], tick_pos: [f64; 3]) {
+        self.update_drift();
+        let motion = (aim[0] - self.prev_target.0, aim[2] - self.prev_target.1);
+        self.prev_target = (aim[0], aim[2]);
+        let predicted = [aim[0] + motion.0 * 1.7, aim[1], aim[2] + motion.1 * 1.7];
+        let (angle, left) = yaw_off(feet, look.0, predicted);
+        let horizontal = (aim[0] - feet[0]).hypot(aim[2] - feet[2]);
+        let pitch_to = -(aim[1] - feet[1]).atan2(horizontal).to_degrees();
+        let vertical = wrap(f64::from(look.1) - pitch_to) as i32;
+        let above = vertical < 0;
+        let dead_zone = vertical.abs() - 10;
+        let distance = dist(feet, tick_pos) as f32;
+        let mut h_force = 1.0 + uniform(&mut self.shared, 0.0, 2.0) as f32 + (angle / 50.0) as f32;
+        let v_force = 1.0 + uniform(&mut self.shared, 0.0, 2.0) as f32 + dead_zone.abs() as f32 / 50.0;
+        if (angle - self.last_angle).abs() > 6.0 {
+            h_force += (angle / 35.0) as f32;
+        }
+        h_force += ((9.0 - distance) / 2.5 - 2.0).max(0.0);
+        let away = if left { strafe < 0.0 } else { strafe > 0.0 };
+        if m.b("Strafe increase") && away {
+            h_force *= 1.6;
+        }
+        if distance < 0.5 {
+            h_force /= 5.0;
+        }
+        let mut h_acc = h_force / 90.0 * if left { -1.0 } else { 1.0 };
+        let mut v_acc = v_force / 90.0 * if above { 1.0 } else { -1.0 };
+        if angle < 5.0 {
+            h_acc = 0.0;
+            self.h_velocity *= 0.7;
+            if if left { strafe > 0.0 } else { strafe < 0.0 } {
+                self.h_velocity *= 0.5;
+            }
+        }
+        if left != self.prev_left {
+            self.h_velocity = -self.h_velocity;
+            self.h_buffer = -self.h_buffer;
+            self.counts.0 = 0.0;
+        }
+        if above != self.prev_above {
+            self.v_buffer = -self.v_buffer;
+            self.v_velocity = -self.v_velocity;
+            self.counts.1 = 0.0;
+        }
+        if dead_zone < 5 {
+            v_acc = 0.0;
+            self.v_buffer *= 0.7;
+        }
+        self.h_buffer += h_acc;
+        self.v_velocity += v_acc;
+        if self.h_velocity.abs() > 10.0 {
+            self.h_buffer = 0.0;
+            self.h_velocity = 0.0;
+            return;
+        }
+        let mut h_adjust = self.h_velocity * 0.15;
+        if angle <= 9.0 {
+            h_adjust = (f64::from(h_adjust) / (10.0 - angle)) as f32;
+        }
+        if h_adjust.is_nan() {
+            self.h_buffer = 0.0;
+            self.h_velocity = 0.0;
+            return;
+        }
+        // queueHorizontal: the speed eases off once within 10 degrees.
+        if h_adjust == 0.0 {
+            self.counts.0 = 0.0;
+        } else {
+            let mut speed = m.n("Horizontal speed") as f32;
+            let int_angle = yaw_off(feet, look.0, tick_pos).0 as i32 as f32;
+            if int_angle <= 10.0 {
+                self.pitch_boost = speed;
+            }
+            if self.pitch_boost > 0.0 {
+                speed -= self.pitch_boost / 3.0;
+                self.pitch_boost -= int_angle / 200.0;
+            }
+            self.counts.0 += speed * h_adjust * 5.0;
+        }
+        if m.b("Aim vertically") {
+            let v_adjust = self.v_buffer * 0.15;
+            if v_adjust.is_nan() {
+                self.v_velocity = 0.0;
+                self.v_buffer = 0.0;
+                return;
+            }
+            if v_adjust == 0.0 {
+                self.counts.1 = 0.0;
+            } else {
+                let mut speed = m.n("Vertical speed") as f32;
+                let a = vertical.abs() as f32;
+                if a <= 10.0 {
+                    self.yaw_boost = speed;
+                }
+                if self.yaw_boost > 0.0 {
+                    speed -= self.yaw_boost / 3.0;
+                    self.yaw_boost -= a / 200.0;
+                }
+                self.counts.1 += speed * v_adjust * 5.0;
+            }
+        }
+        self.prev_above = above;
+        self.prev_left = left;
+        self.sample += 1;
+        if self.sample > 10 {
+            self.last_angle = angle;
+            self.sample = 0;
+        }
+    }
+}
+
+// This frame's turn in degrees (yaw, pitch).
+fn simple_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
+    let Some(p) = game.player.as_ref() else {
+        return [0.0; 2];
+    };
+    let alpha = game.clock.camera_fraction();
+    let lerp = |a: f64, b: f64| a + alpha * (b - a);
+    let was = game.previous_position;
+    let feet = [lerp(was.x, p.position.x), lerp(was.y, p.position.y), lerp(was.z, p.position.z)];
+    let tick_feet = [p.position.x, p.position.y, p.position.z];
+    let eye = [feet[0], feet[1] + f64::from(p.dimensions.eye_height), feet[2]];
+    let look = (game.yaw, game.pitch);
+    let aim = Aim {
+        game,
+        m,
+        eye,
+        look: view_vector(game.yaw, game.pitch),
+        alpha,
+        range: m.n("Distance"),
+        own: own_id(game),
+        names: game.remote_player_names(),
+        friends: with(|s| s.friends.clone()),
+    };
+    let held = |k: winit::keyboard::KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
+    let strafe = f32::from(u8::from(held(winit::keyboard::KeyCode::KeyA))) - f32::from(u8::from(held(winit::keyboard::KeyCode::KeyD)));
+    let down = game.left || game.physical_buttons.contains(&winit::event::MouseButton::Left);
+    let require = m.b("Require mouse down");
+    let (distance, half) = (m.n("Distance"), m.n("Max angle") / 2.0);
+    // isValidTarget: alive, nearer than Distance (whole blocks), within half Max angle (whole degrees).
+    let valid = |e: &Mob| {
+        let at = [e.position.x, e.position.y, e.position.z];
+        aim.matches(e) && dist(tick_feet, at) < f64::from(distance as i32) && yaw_off(tick_feet, look.0, at).0 as i32 <= half as i32
+    };
+    let best = || {
+        game.mobs
+            .iter()
+            .filter(|e| valid(e))
+            .min_by_key(|e| yaw_off(tick_feet, look.0, [e.position.x, e.position.y, e.position.z]).0 as i32)
+            .map(|e| e.id)
+    };
+    let steps = (dt * 1000.0).round().min(100.0) as u32;
+    let mut g = SIMPLE.lock().unwrap_or_else(|e| e.into_inner());
+    let s = g.get_or_insert_with(Simple::default);
+    for _ in 0..steps {
+        if require && !down {
+            s.target = None;
+            s.reset_turn();
+            continue;
+        }
+        let current = s.target.and_then(|id| game.mobs.iter().find(|e| e.id == id));
+        if current.is_some_and(|e| !e.alive() || dist(tick_feet, [e.position.x, e.position.y, e.position.z]) > distance) || current.is_none() {
+            if s.target.is_some() {
+                s.reset_turn();
+            }
+            s.target = None;
+        }
+        if !require {
+            s.retarget += 1;
+            let invalid = s.target.and_then(|id| game.mobs.iter().find(|e| e.id == id)).is_none_or(|e| !valid(e));
+            if s.retarget > 700 || invalid {
+                s.target = best();
+                s.retarget = 0;
+            }
+        } else if s.target.is_none() {
+            s.target = best();
+        }
+        let Some(e) = s.target.and_then(|id| game.mobs.iter().find(|e| e.id == id)) else {
+            s.reset_turn();
+            continue;
+        };
+        // The velocity buffers swap every ten steps.
+        s.swap += 1;
+        if s.swap > 10 {
+            s.v_buffer = s.v_velocity;
+            s.h_velocity = s.h_buffer;
+            s.h_buffer = 0.0;
+            s.v_velocity = 0.0;
+            s.swap = 0;
+        }
+        let at = [lerp(e.previous.x, e.position.x), lerp(e.previous.y, e.position.y), lerp(e.previous.z, e.position.z)];
+        s.step(m, feet, look, strafe, at, [e.position.x, e.position.y, e.position.z]);
+    }
+    if s.target.is_none() {
+        return [0.0; 2];
+    }
+    // onPreRenderTick: the drift, then whole counts at your sensitivity's degrees per count.
+    s.counts.0 += s.drift.0 as f32;
+    s.counts.1 += s.drift.1 as f32;
+    let whole = (s.counts.0.trunc(), s.counts.1.trunc());
+    s.counts = (s.counts.0 - whole.0, s.counts.1 - whole.1);
+    s.drift = (0, 0);
+    let per = f64::from(super::sunset_rotation::degrees_per_count(f64::from(game.settings.sensitivity)));
+    [f64::from(whole.0) * per, f64::from(whole.1) * per]
 }
 
 // ---- Crystal Optimizer

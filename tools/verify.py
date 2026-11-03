@@ -3138,6 +3138,7 @@ def _():
 
 @test("Anti AFK")
 def _():
+    setting("antiafk", "mode", "Meteor")
     setting("antiafk", "jump", "false")
     setting("antiafk", "spin mode", "Client")
 
@@ -3159,6 +3160,7 @@ def _():
 @test("Anti AFK (defaults: Jump on)")
 def _():
     # Jump on froze the game once (issue #3): it has to keep ticking, and jump now and then (1 in 100 ticks).
+    setting("antiafk", "mode", "Meteor")
     only("antiafk")
     t0, c0 = state()["ticks"], time.time()
     time.sleep(5)
@@ -3609,12 +3611,16 @@ def _():
 
     slow = eating_rate()
     only("noslow")
+    # Skip (the default, vape-rs's) and Scale at 100% walk as fast; Scale at Ground 50% half as fast.
+    skip = eating_rate()
+    setting("noslow", "mode", "Scale")
     full = eating_rate()
     setting("noslow", "ground %", "50")
     half = eating_rate()
     only()
-    return slow < 2.0 and full > 3.8 and full * 0.35 < half < full * 0.75, (
-        f"walking while eating: {slow:.2f} blocks/s off, {full:.2f} with No Slow, {half:.2f} at Ground 50%")
+    return slow < 2.0 and skip > 3.8 and full > 3.8 and full * 0.35 < half < full * 0.75, (
+        f"walking while eating: {slow:.2f} blocks/s off, {skip:.2f} with No Slow (Skip), {full:.2f} Scale 100%, "
+        f"{half:.2f} at Ground 50%")
 
 
 @test("Fast Place (speeds)")
@@ -4120,6 +4126,9 @@ def _():
 
 @test("Kill Aura")
 def _():
+    # The Range and Walls range rules, in Snap mode (Silent aura also keeps to vanilla reach: its own test).
+    setting("killaura", "rotation mode", "Snap")
+
     def attacked(dz, walled=False):
         """Health the pig lost, and the swings Kill Aura made at it."""
         reset()
@@ -5052,6 +5061,83 @@ def _():
     return green > 150, f"{green} health-bar pixels beside the crosshair"
 
 
+@test("Kill Aura (Silent aura)")
+def _():
+    # The default mode (vape-rs's SilentAura): it hits a pig within vanilla reach without turning your view, and
+    # one within Range but beyond vanilla reach (3 blocks from the eyes) not at all.
+    def attacked(dz):
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        pig(dz)
+        setting("killaura", "entities", "pig")
+        look0 = aim_view()
+        swings = state()["swings"]
+        only("killaura")
+        wait(60)
+        swings = state()["swings"] - swings
+        m = mobs("pig")
+        turned = abs(wrap(aim_view()[0] - look0[0]))
+        only()
+        return 10 - (m[0]["health"] if m else 0), swings, turned
+
+    near = attacked(2.5)
+    far = attacked(4.2)
+    return near[0] > 0 and near[2] < 0.01 and far[1] == 0, (
+        f"pig 2.5 blocks away lost {near[0]} health, your view turned {near[2]:.2f} deg; 4.2 blocks away (Range 4.5): "
+        f"{far[1]} swings")
+
+
+@test("Anti AFK (Wander)")
+def _():
+    # The default mode (vape-rs's): after the start delay with no move key held, small turns (Max yaw change 10) and
+    # short steps; holding a move key starts the delay again.
+    reset()
+    setting("antiafk", "shortest start delay (s)", "1")
+    setting("antiafk", "longest start delay (s)", "1")
+    setting("antiafk", "frequency", "5")
+    p0, last = pos(), aim_view()[0]
+    only("antiafk")
+    turned, most_step, moved = 0.0, 0.0, 0.0
+    for _ in range(40):
+        wait(5)
+        yaw = aim_view()[0]
+        step = abs(wrap(yaw - last))
+        turned, most_step, last = turned + step, max(most_step, step), yaw
+        moved = max(moved, flat(p0, pos()))
+    only()
+    # Each turn is at most Max yaw change (10), at up to 10 degrees a tick; one sample is 5 ticks, so up to two turns.
+    return turned > 0.0 and most_step <= 20.0 and moved > 0.05, (
+        f"turned {turned:.1f} deg in all, at most {most_step:.1f} in 5 ticks; stepped up to {moved:.2f} blocks in 10 s")
+
+
+@test("Aim Assist (Simple)")
+def _():
+    # The default mode (vape-rs's): with attack held it turns you toward a husk 25 degrees off on its own; with
+    # attack let go (Require mouse down) it does nothing.
+    eid = aim_setup()
+    say(".reset aimassist")
+
+    def gap_after(hold):
+        face(eid, -25)
+        only("aimassist")
+        if hold:
+            ctl("mouse", "left", "down")
+        wait(40)
+        if hold:
+            ctl("mouse", "left", "up")
+        only()
+        yaw = aim_view()[0]
+        ctl("look-at-entity", str(eid))
+        wait(2)
+        return abs(wrap(aim_view()[0] - yaw))
+
+    held = gap_after(True)
+    free = gap_after(False)
+    aim_done()
+    return held < 15.0 and free > 20.0, f"25 deg off: {held:.1f} deg off after 2 s holding attack, {free:.1f} without"
+
+
 @test("Kill Aura (Anti bot, Ignore teams, friends)")
 def _():
     if not CTL2:
@@ -5233,7 +5319,9 @@ def aim_gap(f, eid, inset=0.15):
 
 
 def aim_defaults():
+    """Aim Assist at its defaults in Duelkit mode (the tests below are Duelkit's; Simple has its own)."""
     say(".reset aimassist")
+    say(".set aimassist mode Duelkit")
     on.discard("aimassist")
 
 
@@ -5323,8 +5411,8 @@ def first_turn(eid, yaw_off, units=10, mods=("aimassist",)):
 
 
 def aim_done():
-    aim_defaults()
     only()
+    say(".reset aimassist")
     cmd("difficulty peaceful")
 
 

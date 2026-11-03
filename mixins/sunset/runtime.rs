@@ -699,6 +699,15 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Sprint", true)
             .bool("Ground", true),
         Module::new("Anti AFK", Player, "Stops AFK kicks.")
+            // Wander is vape-rs's Anti-AFK (small turns and steps once you have been idle); Meteor is Meteor's.
+            .pick("Mode", &["Wander", "Meteor"])
+            .num("Shortest start delay (s)", 30.0, 1.0, 200.0, 1.0)
+            .num("Longest start delay (s)", 40.0, 1.0, 200.0, 1.0)
+            .num("Frequency", 0.2, 0.1, 20.0, 0.1)
+            .bool("Keep close", false)
+            .bool("Turn", true)
+            .num("Max yaw change", 10.0, 1.0, 180.0, 1.0)
+            .num("Max pitch change", 5.0, 1.0, 90.0, 1.0)
             .bool("Jump", true)
             .bool("Swing", false)
             .bool("Sneak", false)
@@ -2300,7 +2309,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Anti AFK").filter(|m| m.on)
         && playing
     {
-        want.extend(super::sunset_player::afk_keys(&m));
+        want.extend(super::sunset_player::afk_keys(game, &m));
     }
     let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.p("Mode") == "Normal" && m.b("Safe walk"));
     horizon_client::motion::sunset_motion::set_safe_walk((on("Safe Walk") || scaffold_walk) && playing);
@@ -2891,10 +2900,10 @@ pub(super) fn ahead(game: &Game<'_>) -> Option<(i32, i32, i32)> {
 }
 
 // Switches the held slot now: the server is told before anything is sent
-// that depends on it.
+// that depends on it, once (the tick sees it was told and doesn't send it again).
 pub(super) fn hold(game: &mut Game<'_>, slot: usize) {
-    if game.selected != slot {
-        game.selected = slot;
+    game.selected = slot;
+    if super::remote::sunset_remote::tell_carried(game, slot) {
         game.send(S::SetCarriedItem(play::SetCarriedItem { slot: slot as i16 }));
     }
 }
@@ -4455,6 +4464,7 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
 // An explosion packet's push on the player, as it arrives (before the game adds it).
 pub(super) fn explosion_push(game: &mut Game<'_>, push: Option<[f64; 3]>) {
     if let Some(push) = push {
+        super::sunset_render::no_slow_knocked();
         let shares = with(|s| {
             s.knockback_ticks = s.module("Speed").filter(|m| m.on).map_or(0, |m| m.n("Knockback pause") as u32);
             s.module("Velocity").filter(|m| m.on && m.b("Explosions"))
@@ -4989,6 +4999,8 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     // the next one is far away.
     if let S::AcceptTeleportation(t) = packet {
         fall(|f| f.last = Some(t.y));
+        // The server set your look: what it has now is not the last one sent.
+        set_last_look(None);
     }
     let Some(sent) = Move::of(packet) else {
         return Out::Pass;
@@ -5083,7 +5095,26 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     if let Some(look) = look {
         m.look = Some(look);
     }
+    // A look the server already has is left out (as vape-rs's look through the game's own sender never repeats one):
+    // the same look twice in a row is what Grim's AimDuplicateLook catches.
+    if m.look.is_some() && m.look == last_look() {
+        m.look = None;
+    }
+    if m.look.is_some() {
+        set_last_look(m.look);
+    }
     if m == sent { Out::Pass } else { Out::Replace(m.packet()) }
+}
+
+// The last look a move packet carried to the server (None after a teleport, which sets it).
+static LAST_LOOK: Mutex<Option<(f32, f32)>> = Mutex::new(None);
+
+fn last_look() -> Option<(f32, f32)> {
+    *LAST_LOOK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn set_last_look(look: Option<(f32, f32)>) {
+    *LAST_LOOK.lock().unwrap_or_else(|e| e.into_inner()) = look;
 }
 
 // ---- the fall the server counts
@@ -5240,6 +5271,9 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
         super::recipe_book::sunset_recipes::packet(packet);
         if let C::SetEntityMotion(p) = packet {
             super::sunset_melee::note_velocity(game, p.id, p.velocity);
+            if game.remote.as_ref().is_some_and(|r| r.entity_id == p.id) {
+                super::sunset_render::no_slow_knocked();
+            }
         }
     }
 }
@@ -5327,7 +5361,29 @@ fn turned(game: &mut Game<'_>) {
 // The end of the tick: with no move packet in it, one to carry the first look asked for (or the player's own back),
 // and what waited for it.
 fn end_turns(game: &mut Game<'_>) {
-    if !MOVED_THIS_TICK.load(Ordering::Relaxed) && !BLINK.load(Ordering::Relaxed) && turns(|t| !t.queue.is_empty() || t.restore) {
+    // The look that packet would carry is the one the server has already: nothing to send, and what waited for it goes.
+    // Your own look back waits for the next tick, as it would after a packet (Quiver keeps the look up across its
+    // let-go).
+    let own = (game.yaw, game.pitch);
+    let have = last_look();
+    let quiet = !MOVED_THIS_TICK.load(Ordering::Relaxed) && !BLINK.load(Ordering::Relaxed);
+    let already = quiet
+        && have.is_some()
+        && turns(|t| match t.queue.first().filter(|_| !t.carried) {
+            Some(head) if Some(head.look) == have => {
+                t.carried = true;
+                t.restore = head.look != own;
+                true
+            }
+            None if t.restore && Some(own) == have => {
+                t.restore = false;
+                true
+            }
+            _ => false,
+        });
+    if already {
+        turned(game);
+    } else if quiet && turns(|t| !t.queue.is_empty() || t.restore) {
         let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
         // outgoing puts the look in.
         game.send(S::MovePlayerRot(play::MovePlayerRot { yaw: game.yaw, pitch: game.pitch, flags: u8::from(ground) }));
@@ -5550,7 +5606,7 @@ fn apply_movement_preset(state: &mut State, style: &str) -> bool {
             ("Velocity", "Knockback vertical", "1"), ("Velocity", "Explosions horizontal", "1"),
             ("Velocity", "Explosions vertical", "1"),
             ("Scaffold", "Delay (ticks)", "2"), ("Scaffold", "Rotate", "true"),
-            ("No Slow", "Ground %", "20"), ("No Slow", "Air %", "20"),
+            ("No Slow", "Mode", "Scale"), ("No Slow", "Ground %", "20"), ("No Slow", "Air %", "20"),
         ],
         "balanced" => &[
             ("Speed", "Mode", "Strafe"), ("Speed", "Strafe speed", "1.3"),
@@ -5558,7 +5614,7 @@ fn apply_movement_preset(state: &mut State, style: &str) -> bool {
             ("Velocity", "Mode", "Scale"), ("Velocity", "Knockback horizontal", "0.7"),
             ("Velocity", "Knockback vertical", "0.85"),
             ("Scaffold", "Delay (ticks)", "1"), ("Scaffold", "Rotate", "true"),
-            ("No Slow", "Ground %", "70"), ("No Slow", "Air %", "70"),
+            ("No Slow", "Mode", "Scale"), ("No Slow", "Ground %", "70"), ("No Slow", "Air %", "70"),
         ],
         "aggressive" => &[
             ("Speed", "Mode", "Custom"), ("Speed", "Vanilla speed", "10"),
@@ -5568,7 +5624,7 @@ fn apply_movement_preset(state: &mut State, style: &str) -> bool {
             ("Velocity", "Mode", "Scale"), ("Velocity", "Knockback horizontal", "0"),
             ("Velocity", "Knockback vertical", "0"),
             ("Scaffold", "Delay (ticks)", "0"), ("Scaffold", "Rotation speed", "180"),
-            ("No Slow", "Ground %", "100"), ("No Slow", "Air %", "100"),
+            ("No Slow", "Mode", "Scale"), ("No Slow", "Ground %", "100"), ("No Slow", "Air %", "100"),
         ],
         _ => return false,
     };
