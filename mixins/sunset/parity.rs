@@ -1,6 +1,6 @@
 // Meteor's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil,
 // Anti Bed, Rotation, No Rotate, No Status Effects (render.rs keeps the effects aside), Potion Saver, No Mining
-// Trace (player.rs's crosshair pick reads it), Portals and Multitask.
+// Trace (player.rs's crosshair pick reads it), Portals, Multitask and Fake Player.
 use super::{Game, Screen};
 use super::sunset::{Category, Module, with};
 use super::sunset_util::{self as util, facts, feet_block, find_held, is_air, listed, place_block, short, toggle_off};
@@ -37,6 +37,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only with a pickaxe", true),
         Module::new("Portals", Player, "Keeps menus open in nether portals."),
         Module::new("Multitask", Player, "Hits while you eat or use items."),
+        Module::new("Fake Player", Player, "A copy of you to test modules on.")
+            .num("Health", 20.0, 1.0, 100.0, 1.0)
+            .bool("Copy inventory", true),
     ]
 }
 
@@ -52,6 +55,16 @@ struct Parity {
     screen: Option<Screen>,
     // Multitask: left clicks while you used an item, since the last tick.
     clicks: u32,
+    // Fake Player: it is in the world.
+    fake: bool,
+}
+
+// Fake Player's entity id, far above any a server gives out.
+const FAKE: u32 = 0x7FFF_FFF0;
+
+// A hit on Fake Player stays here: the server knows no such entity.
+pub(super) fn fake(id: u32) -> bool {
+    id == FAKE
 }
 
 static PARITY: Mutex<Option<Parity>> = Mutex::new(None);
@@ -122,6 +135,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         return;
     }
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
+    fake_player(game, get("Fake Player"));
     if let Some(m) = get("Rotation") {
         rotation(game, m);
     }
@@ -147,6 +161,32 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         anti_bed(game, m, feet);
     } else {
         parity(|p| p.breaking = None);
+    }
+}
+
+// Fake Player (Meteor's): while on, a player where you stood when it came on, with Health and (Copy inventory) what
+// you hold and wear; gone when it goes off.
+fn fake_player(game: &mut Game<'_>, m: Option<&Module>) {
+    let here = game.mobs.iter().any(|mob| mob.id == FAKE);
+    match m {
+        Some(m) if !here => {
+            let (Some(kind), Some(p)) = (game.res.player_type().clone(), game.player.as_ref()) else {
+                return;
+            };
+            let mut mob = horizon_client::mobs::Mob::new(FAKE, kind, p.position, game.yaw);
+            mob.health = m.n("Health") as f32;
+            if m.b("Copy inventory") {
+                let e = &mut mob.extra;
+                e.set_main_hand_stack(game.held().cloned());
+                e.off_hand = game.offhand.as_ref().map(|s| s.item.clone());
+                e.armor = game.armor.clone();
+                [e.head, e.chest, e.legs, e.feet] = std::array::from_fn(|i| game.armor[i].as_ref().map(|s| s.item.clone()));
+            }
+            game.mobs.push(mob);
+            parity(|p| p.fake = true);
+        }
+        None if here && parity(|p| std::mem::take(&mut p.fake)) => game.mobs.retain(|mob| mob.id != FAKE),
+        _ => {}
     }
 }
 

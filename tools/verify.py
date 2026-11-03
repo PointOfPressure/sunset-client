@@ -7192,6 +7192,36 @@ def _():
     return ok, f"screen 1 s into a portal: off {kept['off']}, Portals {kept['on']}; (pig's health lost, still eating) to 3 clicks while eating: off {hit['off']}, Multitask {hit['on']}"
 
 
+@test("Fake Player")
+def _():
+    # Fake Player on where you stand, then you step 3 blocks back: a player is there in your world (a screenshot of
+    # it), Kill Aura (players) sends no hit at it for 2 s, and it is gone once Fake Player goes off.
+    reset()
+    only("fakeplayer")
+    wait(5)
+    cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 - 2.5} 0 0")
+    wait(10)
+    ctl("look-at", str(X0 + 0.5), str(Y + 1.6), str(Z0 + 0.5))
+    wait(5)
+    fakes = lambda: [e for e in ctl("entities").get("entities", []) if e.get("type") == "minecraft:player" and e.get("id") == 0x7FFFFFF0]
+    there = len(fakes())
+    ctl("screenshot", f"{SHOTS}/fake_player.png")
+    time.sleep(2)
+    setting("killaura", "entities", "player")
+    mark = probe_mark() if probe_path() else None
+    only("fakeplayer", "killaura")
+    wait(40)
+    hits = None
+    if mark is not None:
+        with open(probe_path(), errors="replace") as f:
+            f.seek(mark)
+            hits = sum(1 for line in f if line.startswith("order attack"))
+    only()
+    wait(5)
+    gone = len(fakes()) == 0
+    return there == 1 and hits in (0, None) and gone, f"fake players in the world: {there}; hits sent at it by Kill Aura in 2 s: {hits}; gone when off: {gone} (shot {SHOTS}/fake_player.png)"
+
+
 @test("Bow Spam (Crossbows)")
 def _():
     # A crossbow and 64 arrows, use held for 5 s looking up: arrows shot without and with Bow Spam.

@@ -4660,8 +4660,8 @@ fn send_strikes(game: &mut Game<'_>) {
 }
 
 fn strike_now(game: &mut Game<'_>, id: u32) {
-    // Gone since the hit was decided: the id may be someone else's by now.
-    if !game.mobs.iter().any(|m| m.id == id && m.alive() && !m.removed) {
+    // Gone since the hit was decided: the id may be someone else's by now. Fake Player's is no one's on the server.
+    if !game.mobs.iter().any(|m| m.id == id && m.alive() && !m.removed) || super::sunset_parity::fake(id) {
         return;
     }
     // A spear stabs along the look instead, as the game's own left click does.
