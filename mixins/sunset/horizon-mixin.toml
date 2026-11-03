@@ -1443,6 +1443,12 @@ name = "sunset_aura_policy"
 source = "aura_policy.rs"
 
 [[module]]
+id = "snap_tap"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_snap_tap"
+source = "snap_tap.rs"
+
+[[module]]
 id = "scaffold_bridge"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_scaffold_bridge"

@@ -827,6 +827,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_lag::defaults());
     v.extend(super::sunset_pvp_bot::defaults());
     v.extend(super::sunset_duel::defaults());
+    v.extend(super::sunset_snap_tap::defaults());
     v.extend(super::sunset_loadouts::defaults());
     v.extend(super::sunset_parity::defaults());
     v.extend(super::sunset_hands::defaults());
@@ -2279,9 +2280,11 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.p("Mode") == "Normal" && m.b("Safe walk"));
     horizon_client::motion::sunset_motion::set_safe_walk((on("Safe Walk") || scaffold_walk) && playing);
+    // Snap Tap: of two opposite move keys held, the one pressed last (GUI Move's keys too).
+    let snapped = super::sunset_snap_tap::pre_tick(game, get("Snap Tap").filter(|m| m.on));
     // GUI Move: behind a screen the game takes no move keys, so its movement is given the ones held and walks you as
     // it would without the screen (its own speeds, sprint, jumps, and the walk's look in first and third person).
-    let held = |k: KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
+    let held = |k: KeyCode| !snapped.contains(&k) && (game.keys.contains(&k) || game.physical_keys.contains(&k));
     // Flight flies you behind a screen by itself.
     let screen_keys = get("GUI Move").filter(|m| m.on && !on("Flight") && !gui_open() && gui_move_screen(game, m)).map(|m| horizon_client::sprint::Keys {
         forward: held(KeyCode::KeyW),
@@ -2398,6 +2401,7 @@ fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
 // After the tick: first what waited for the look its move packet carried, then the modules, then (in a tick that
 // sent no move packet) the one that carries the next look.
 pub(super) fn post_tick(game: &mut Game<'_>) {
+    super::sunset_snap_tap::post_tick(game);
     super::sunset_scaffold_bridge::post_tick(game);
     super::sunset_combat_inventory::post_tick(game);
     if !game.native_window() || !game.native_on(ID) {

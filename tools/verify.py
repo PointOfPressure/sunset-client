@@ -1356,6 +1356,62 @@ def walked_in(screen_open, screen_close, key="w", ticks=30):
     return flat(start, end)
 
 
+@test("Snap Tap")
+def _():
+    # Facing south: A held, then D as well, then D let go; then W held and S as well. With Snap Tap the key pressed
+    # last moves you (right, then left again; back), without it A and D cancel out. Blocks moved in 10 ticks each
+    # (x: + is left), the most move packets in a tick (probe, on a server) and kicks.
+    def run(mods):
+        reset()
+        only(*mods)
+        kicked = len(kicks)
+        mark = probe_mark() if probe_path() and SERVER else None
+
+        def moved(axis):
+            wait(4)
+            at = pos()[axis]
+            wait(10)
+            return round(pos()[axis] - at, 2)
+
+        ctl("key", "a", "down")
+        a = moved(0)
+        ctl("key", "d", "down")
+        both = moved(0)
+        ctl("key", "d", "up")
+        back = moved(0)
+        ctl("key", "a", "up")
+        ctl("key", "w", "down")
+        wait(10)
+        ctl("key", "s", "down")
+        ws = moved(2)
+        ctl("key", "s", "up")
+        ctl("key", "w", "up")
+        only()
+        return a, both, back, ws, wire_stats(mark)[1] if mark is not None else None, len(kicks) - kicked
+
+    off, on = run(()), run(("snaptap",))
+    # Behind the inventory with GUI Move: A, then D as well.
+    reset()
+    only("snaptap", "guimove")
+    ctl("open-inventory")
+    wait(5)
+    ctl("key", "a", "down")
+    wait(10)
+    ctl("key", "d", "down")
+    wait(4)
+    at = pos()[0]
+    wait(10)
+    screen = round(pos()[0] - at, 2)
+    ctl("key", "d", "up")
+    ctl("key", "a", "up")
+    ctl("close")
+    only()
+    ok = (on[0] > 0.5 and on[1] < -0.5 and on[2] > 0.5 and on[3] < -0.5 and abs(off[1]) < 0.1 and abs(off[3]) < 0.1
+          and screen < -0.5 and all((r[4] or 0) <= 1 and r[5] == 0 for r in (off, on)))
+    return ok, (f"(A, then A+D, then D let go, then W+S; blocks moved, most moves a tick, kicks): off {off}, on {on}; "
+                f"A+D behind the inventory with GUI Move: {screen}")
+
+
 @test("GUI Move")
 def _():
     reset(z=-14.5)
