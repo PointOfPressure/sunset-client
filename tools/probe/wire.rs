@@ -6,14 +6,15 @@
 // for the client's own hits (attack, a spear's stab), move packets (move) and tick ends, in the order they go, for the
 // check that a hit goes before its tick's move packet as vanilla sends it: those skip the single player server's
 // packets (its threads are named horizon-lan-... and horizon-local-...), so they hold in single player too. And a
-// "pkt <id>" line for every packet the client sends (the same threads skipped), to count all of them in a tick.
+// "pkt <id>" line for every packet the client sends (the same threads skipped), to count all of them in a tick. And an
+// "input <flags>" line for each PlayerInput (the move keys the server predicts the move from; the same threads skipped).
 
 use std::io::Write as _;
 use std::sync::{Mutex, OnceLock};
 
 const KINDS: [&str; 6] = ["pos", "posrot", "rot", "status", "tickend", "teleport"];
 
-static OUT: OnceLock<Option<(Mutex<std::fs::File>, [i32; 8])>> = OnceLock::new();
+static OUT: OnceLock<Option<(Mutex<std::fs::File>, [i32; 9])>> = OnceLock::new();
 
 // The packet id at the start of an encoded packet (a VarInt), and its length.
 fn id(body: &[u8]) -> Option<(i32, usize)> {
@@ -41,6 +42,7 @@ pub fn sent(body: &[u8]) {
             S::AcceptTeleportation(play::AcceptTeleportation { id: 0, x: 0.0, y: 0.0, z: 0.0, yaw: 0.0, pitch: 0.0 }),
             S::Attack(play::Attack { id: 0 }),
             S::PlayerAction(play::PlayerAction { action: 8, pos: [0; 3], direction: 0, sequence: 0 }),
+            S::PlayerInput(play::PlayerInput { flags: 0 }),
         ];
         Some((Mutex::new(file), made.map(|p| id(&p.encode()).map_or(-1, |(id, _)| id))))
     });
@@ -59,6 +61,12 @@ pub fn sent(body: &[u8]) {
     };
     if i < KINDS.len() {
         let _ = f.write_all(format!("send {}{}\n", KINDS[i], moved(i, &body[start..])).as_bytes());
+    }
+    if i == 8 {
+        if own && let Some(flags) = body.get(start) {
+            let _ = f.write_all(format!("input {flags}\n").as_bytes());
+        }
+        return;
     }
     let order = match i {
         0..=3 => "move",

@@ -1434,6 +1434,52 @@ def _():
     return moved < 0.05, f"walked {moved:.2f} blocks with the chat open"
 
 
+def inputs_sent(mark):
+    """The PlayerInput flags the client sent since mark (the probe's "input" lines): forward 1, backward 2, left 4,
+    right 8, jump 16, sneak 32, sprint 64."""
+    with open(probe_path(), errors="replace") as f:
+        f.seek(mark)
+        return [int(line.split()[1]) for line in f if line.startswith("input ")]
+
+
+@test("GUI Move tells the server its keys")
+def _():
+    # Behind a screen the game sends no keys in PlayerInput; the server (Grim) predicts the move from those, so GUI
+    # Move's must be there: forward and jump while jumping in the inventory, forward and sneak while sneaking, none
+    # once let go; with its Jump setting off it neither jumps nor says it does.
+    def run(jump=True):
+        reset(z=-14.5)
+        wait(10)
+        ctl("open-inventory")
+        wait(6)
+        y0, mark = pos()[1], os.path.getsize(probe_path())
+        ctl("key", "w", "down")
+        wait(5)
+        ctl("key", "space", "down")
+        rise = 0.0
+        for _ in range(5):
+            wait(2)
+            rise = max(rise, pos()[1] - y0)
+        ctl("key", "space", "up")
+        wait(15)
+        if jump:
+            ctl("key", "shift", "down")
+            wait(10)
+            ctl("key", "shift", "up")
+        ctl("key", "w", "up")
+        wait(5)
+        ctl("close")
+        return inputs_sent(mark), rise
+
+    only("guimove")
+    sent, rise = run()
+    setting("guimove", "jump", "false")
+    unjumped, flat_rise = run(jump=False)
+    ok = {1, 17, 33} <= set(sent) and sent[-1:] == [0] and rise > 0.3
+    ok = ok and 17 not in unjumped and 1 in unjumped and flat_rise < 0.05
+    return ok, f"PlayerInput {sent} (rose {rise:.2f}); Jump off: {unjumped} (rose {flat_rise:.2f})"
+
+
 def walk_look(menu):
     """Walking forward from standing (a second, then a second jumping), with the inventory open (menu) or not: per
     frame, the view bob, the own model's limb swing speed, and the walk distance a tick (the camera's and hand's bob

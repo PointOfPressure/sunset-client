@@ -988,6 +988,17 @@ bindings = [
 ]
 
 [[injection]]
+id = "screen_input"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_send_state"
+helper = "screen_input_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "input", ty = "u8", value = "input" },
+]
+
+[[injection]]
 id = "sent_look"
 kind = "MODIFY_ARG"
 target = "horizon_client::game::remote::Game<'_>::remote_send_state"

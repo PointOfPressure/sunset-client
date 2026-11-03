@@ -16,6 +16,8 @@ thread_local! {
     static FLYING: Cell<Option<f32>> = const { Cell::new(None) };
     // GUI Move: the move keys held behind a screen, which the game would not take.
     static SCREEN_KEYS: Cell<Option<crate::sprint::Keys>> = const { Cell::new(None) };
+    // GUI Move: the keys this tick's movement took behind a screen, for the tick's PlayerInput.
+    static SCREEN_MOVED: Cell<Option<crate::sprint::Keys>> = const { Cell::new(None) };
     // No Slow's Skip: the item-use slowdown left out of this tick's move.
     static NO_SLOW_SKIP: Cell<bool> = const { Cell::new(false) };
 }
@@ -30,13 +32,34 @@ pub fn no_slow_skip() -> bool {
 
 pub fn set_screen_keys(keys: Option<crate::sprint::Keys>) {
     SCREEN_KEYS.with(|c| c.set(keys));
+    SCREEN_MOVED.with(|c| c.set(None));
 }
 
 // The keys a tick's movement takes behind a screen while GUI Move walks you: the ones held, when the game gave it none
 // (a screen keeps them from it) and some are held. None: the keys as they are.
 pub fn screen_keys(keys: crate::sprint::Keys) -> Option<crate::sprint::Keys> {
     let pressed = |k: crate::sprint::Keys| k.direction() != [0.0, 0.0] || k.jump || k.shift;
-    SCREEN_KEYS.with(Cell::get).filter(|held| !pressed(keys) && pressed(*held))
+    let moved = SCREEN_KEYS.with(Cell::get).filter(|held| !pressed(keys) && pressed(*held));
+    // Kept till the next tick: the move's call again with these keys passes through here too.
+    if moved.is_some() {
+        SCREEN_MOVED.with(|c| c.set(moved));
+    }
+    moved
+}
+
+// The PlayerInput flags a tick sends with the keys GUI Move moved with behind a screen added (the game's have none
+// there, and the server predicts the move from them); None when that adds nothing.
+pub fn screen_input(input: u8) -> Option<u8> {
+    let k = SCREEN_MOVED.with(Cell::get)?;
+    let with = input
+        | u8::from(k.forward)
+        | u8::from(k.backward) << 1
+        | u8::from(k.left) << 2
+        | u8::from(k.right) << 3
+        | u8::from(k.jump) << 4
+        | u8::from(k.shift) << 5
+        | u8::from(k.sprint) << 6;
+    (with != input).then_some(with)
 }
 
 pub fn set_flying_speed(speed: Option<f32>) {

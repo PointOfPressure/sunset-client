@@ -61,16 +61,16 @@ Nothing was removed or disabled. Grim's default punishments never kick; Simulati
 20. **Auto Weapon** (Axe on shields Test): AimDuplicateLook x360.
 21. **No Slow** (Test): NoSlow x40, Simulation x11.
 22. **Fake Player**: Simulation x24 (you collide with the client-only player, Grim doesn't know it).
-23. Test-only (non-default settings, may include harness teleports): Step x8, GUI Move x12, Snap Tap x10, Parkour x147, Anchor x31, Wind Jump x6 + GroundSpoof x3, Arrow Dodge x8, Entity Control (boat) x3, W Tap x71: all Simulation.
+23. Test-only (non-default settings, may include harness teleports): Step x8, Snap Tap x10, Parkour x147, Anchor x31, Wind Jump x6 + GroundSpoof x3, Arrow Dodge x8, Entity Control (boat) x3, W Tap x71: all Simulation.
 
-Pass on Grim (defaults/main modes, module acting): Step (sweeps), GUI Move (sweeps), No Fall Air place/Place, Self Web, Burrow (x1 only), Trigger Bot, Auto Clicker, Aim Assist, Hitboxes (fight and Test), Jump Reset, Fake Lag, Blink (x1), Auto Weapon (default fight), Fast Use (all modes), Speed Mine (all modes), Fast Place, Auto Eat, Liquid Filler, Spawn Proofer, Long Jump, Air Jump, Sprint, Auto Walk, Safe Walk, Reverse Step, Fast Climb, Sneak, No Jump Delay, Scaffold Legit/Godbridge, Ghost Hand, Fast Use (Throw modes), Aim Assist (players) Test, all render modules together.
+Pass on Grim (defaults/main modes, module acting): Step (sweeps), GUI Move (sweeps and Tests, since the 3 Nov fix below), No Fall Air place/Place, Self Web, Burrow (x1 only), Trigger Bot, Auto Clicker, Aim Assist, Hitboxes (fight and Test), Jump Reset, Fake Lag, Blink (x1), Auto Weapon (default fight), Fast Use (all modes), Speed Mine (all modes), Fast Place, Auto Eat, Liquid Filler, Spawn Proofer, Long Jump, Air Jump, Sprint, Auto Walk, Safe Walk, Reverse Step, Fast Climb, Sneak, No Jump Delay, Scaffold Legit/Godbridge, Ghost Hand, Fast Use (Throw modes), Aim Assist (players) Test, all render modules together.
 
 ## The other anticheats in short
 
 - **Horizon anticheat** (upstream): kicks only Flight (Abilities x3 anti-kick modes, Velocity/Normal: prediction ~60 + ground ~45, "Kicked by the server's anticheat"). Logs without acting: Speed Vanilla (prediction x8), Timer (timer x12), Anti AFK Server spin (prediction x12), Velocity-mode Flight (ground x30), No Fall Test (ground x17, claim dropped). Its combat check (attacks without swing / two targets a tick) never fired: Kill Aura in every mode passes. Everything else passes.
 - **Intave**: kicks (it bans by default; here a kick): Flight Velocity/Packet, Speed Vanilla, Offhand Crystal, Auto Tool Silk touch (protocolscanner "sent slot twice", VL 100 = ban), Velocity Knockback delay (physics VL 1000; physics VL builds up across windows, so the Offhand Crystal kick came mostly from earlier ones), and in Tests Speed, Step, Parkour, No Slow, Crystal Aura, Anchor Aura, Auto Weapon, W Tap, Packet Mine, Sword PvP Bot. Flags physics on Flight/Speed/Surround/Self Trap/Burrow/Offhand/Anti AFK Server/High Jump/Spider/Timer, breakspeedlimiter on Nuker packet mine, interactionraytrace/placementanalysis on Scaffold Normal and Nuker, attackraytrace on Kill Aura (mostly 0-weight; Snap +60), heuristics "rotation exact"/"follows entity movement too precisely" on Kill Aura. Intave got noisier as the run went on (Baseline (2): physics +360 after many setbacks).
 - **Spartan** (limited free): kicks Flight Velocity/Normal, No Fall No ground (gravity-simulation), Tests Flight and Spider. Flags flight/speed/no fall/criticals jump modes (gravity-simulation, speed-simulation, exploits/ground_spoof, criticals/packet x2). Kill Aura, Reach and Hitboxes barely register (hit-reach x1).
-- **NoCheatPlus-Updated**: kicks Flight (4 of 6), Speed Vanilla/Strafe ("Moved unexpectedly", SurvivalFly), Self Trap Anti face place ("Invalid block placements", Against), and in Tests Flight, Air Jump, Parkour, Anchor, GUI Move, Scaffold, W Tap, Packet Mine, Burrow, Auto City/Auto Trap. Flags Kill Aura Visible/Direction x1-2.
+- **NoCheatPlus-Updated**: kicks Flight (4 of 6), Speed Vanilla/Strafe ("Moved unexpectedly", SurvivalFly), Self Trap Anti face place ("Invalid block placements", Against), and in Tests Flight, Air Jump, Parkour, Anchor, Scaffold, W Tap, Packet Mine, Burrow, Auto City/Auto Trap. Flags Kill Aura Visible/Direction x1-2.
 
 ## Baseline findings (no Sunset module)
 
@@ -336,7 +336,8 @@ Rows where every anticheat passes are kept for Sweeps/Fights/Defaults and droppe
 | Test: Anchor | Simulation x31, AntiKB x1 | pass | pass | SurvivalFly x5 **KICK** | prediction x5 |
 | Test: Velocity (knockback) | AntiKB x2, Simulation x2, GroundSpoof x1 | physics x2 +20 | pass | invalid (module never on: kicked or desync) | pass |
 | Test: Timer | Timer x196, TimerLimit x9 | pass | pass | pass | timer x29 |
-| Test: GUI Move | Simulation x12 | physics x29 +270 | pass | SurvivalFly x1 **KICK** | prediction x34 |
+| Test: GUI Move | pass (was Simulation x12) | pass (was physics x29 +270) | pass | pass (was SurvivalFly x1 **KICK**) | pass (was prediction x34) |
+| Test: GUI Move tells the server its keys | pass (was Simulation x22) | pass (was physics x34 +340) | pass | pass | pass (was prediction x74) |
 | Test: Snap Tap | Simulation x10 | physics x18 +170 | pass | SurvivalFly x1 | prediction x26 |
 | Test: Scaffold | Post x55, PositionPlace x38, Simulation x37, AimDuplicateLook x6 | physics x68 +371, interactionraytrace x68 +140, placementanalysis x13 +0 | gravity-simulation x31, fast-place x15, impossible-actions/scaffold_direction x6, impossible-actions/tower x2, impossible-actions/scaffold_analysis x1 | Scaffold x2, Against x2, SurvivalFly x1 **KICK** | prediction x8, timer x2 |
 | Test: Scaffold (Legit, backwards) | pass | pass | pass | invalid (module never on: kicked or desync) | pass |
@@ -375,3 +376,8 @@ Rows where every anticheat passes are kept for Sweeps/Fights/Defaults and droppe
 ## Rerun
 
 `cd ~/hzmeteor; TWO=1 DISPLAY0=111 VERIFY=ac/acsweep.py ./ac/runall-ac.sh <dir> "" grim` (any of grim horizon-ac intave spartan ncp; ACFIGHTS=1 for baselines and fights only), then `python3 ac/acreport.py <dir>` and `python3 ac/gentable.py` (edit its LONG/FIGHTS run names). Servers: ~/hzmeteor/servers/{grim,horizon-ac,intave,spartan,ncp}, ports 25610-25614, rcon port+100 (password sunset).
+
+## GUI Move fix (3 Nov 2026, 18:40)
+
+Sayer saw Grim flag "Simulation .420000" + "GroundSpoof claimed false" every tick when jumping with a screen open. Cause: behind a screen Horizon's remote tick sends PlayerInput with no keys (it reads them only while playing), while GUI Move's movement walks, jumps and sneaks with the held keys; Grim and the others predict the move from PlayerInput, so every GUI Move step was off (.097 walking, .42 jumping) and set back. Fix: a HEAD hook on `remote_send_state` adds the keys the tick's movement took behind a screen (forward/back/left/right, jump, sneak, sprint, after Snap Tap and GUI Move's Jump/Sneak/Sprint settings). Rerun of "Test: GUI Move" and the new "Test: GUI Move tells the server its keys" (W, then W+Space, then W+Shift in the inventory; then Jump off) on all five: before Grim Simulation x11/x22 (walked 0.10 blocks/s under setbacks), Horizon prediction x35/x74, Intave physics x22/x34, NCP SurvivalFly x1, Spartan clean; after: all clean (Intave timer x1 at +0). Raw: ~/hzmeteor/gmb1, gmb2 (before), gma4 (after).
+
