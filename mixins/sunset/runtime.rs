@@ -847,6 +847,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_base_finder::defaults());
     v.extend(super::sunset_hunting::defaults());
     v.extend(super::sunset_new_chunks::defaults());
+    v.extend(super::sunset_world_parity::defaults());
     v.extend(super::sunset_vehicle::defaults());
     v.extend(super::sunset_vanish::defaults());
     v.extend(super::sunset_server_scan::defaults());
@@ -2765,6 +2766,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_world::tick(game, &mods);
     super::sunset_hunting::tick(game, &mods);
     super::sunset_new_chunks::tick(game, &mods);
+    super::sunset_world_parity::tick(game, &mods);
     super::sunset_packet_mine::tick(game);
     super::sunset_extras::tick(game, &mods);
     super::sunset_vanish::tick(game, mods.iter().find(|m| m.name == "Anti Vanish" && m.on));
@@ -4910,6 +4912,9 @@ impl Move {
 // is not yours to pay (settle_fall), and the look modules asked for (turn_then) rides along. Each is a change to the
 // tick's own move packet, never another one.
 pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
+    if let Some(changed) = super::sunset_world_parity::outgoing(game, packet) {
+        return Out::Replace(changed);
+    }
     if ANTI_SPRINT.load(Ordering::Relaxed)
         && let S::PlayerCommand(c) = packet
         && (c.action == 1 || c.action == 2)

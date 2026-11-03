@@ -1,5 +1,5 @@
 // World modules ported from Meteor's source: Auto Shearer, Auto Nametag,
-// Auto Mount, Flamethrower; and Bow Aimbot and Spawner Alerts.
+// Auto Mount, Auto Breed, Flamethrower; and Bow Aimbot and Spawner Alerts.
 
 use super::sunset::{Camera, Canvas, Category, Module, hold};
 use super::sunset_util::*;
@@ -23,6 +23,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Range", 5.0, 1.0, 6.0, 0.5)
             .bool("Renametag", true)
             .bool("Rotate", true),
+        Module::new("Auto Breed", World, "Feeds animals to breed them.")
+            .text("Entities", "horse,donkey,cow,mooshroom,sheep,pig,chicken,wolf,cat,ocelot,rabbit,llama,turtle,panda,fox,bee,strider,hoglin,frog,axolotl,goat,camel,sniffer,armadillo")
+            .num("Range", 4.5, 1.0, 6.0, 0.5)
+            .pick("Hand", &["Main hand", "Off hand"])
+            .pick("Age", &["Adult", "Baby", "Both"])
+            .bool("Continuous breeding", false)
+            .num("Breeding interval", 6600.0, 20.0, 12000.0, 20.0),
         Module::new("Auto Mount", World, "Mounts nearby mobs.")
             .bool("Check saddle", false)
             .bool("Rotate", true)
@@ -113,6 +120,9 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
     if let Some(m) = get("Auto Nametag") {
         auto_nametag(game, m);
+    }
+    if let Some(m) = get("Auto Breed") {
+        auto_breed(game, m);
     }
     if let Some(m) = get("Auto Mount") {
         auto_mount(game, m);
@@ -321,6 +331,49 @@ fn cool(id: u32, ticks: u32) {
 
 fn centre(t: &Target) -> [f64; 3] {
     [(t.lo[0] + t.hi[0]) / 2.0, (t.lo[1] + t.hi[1]) / 2.0, (t.lo[2] + t.hi[2]) / 2.0]
+}
+
+// Auto Breed: the nearest listed animal of the age wanted, not fed before (or not within Breeding interval), fed the
+// food its kind takes from the hotbar (or the off hand's, with Hand Off hand).
+fn auto_breed(game: &mut Game<'_>, m: &Module) {
+    let Some(eye) = game.eye_position() else {
+        return;
+    };
+    let (age, list) = (m.p("Age"), m.t("Entities"));
+    let off = m.p("Hand") == "Off hand";
+    let mut near: Vec<(f64, u32, [f64; 3], usize)> = Vec::new();
+    for mob in game.mobs.iter().filter(|x| x.alive() && !x.removed && !cooling(x.id) && listed(list, &x.kind.id)) {
+        let baby = mob.is_baby();
+        if (age == "Adult" && baby) || (age == "Baby" && !baby) {
+            continue;
+        }
+        let b = mob.bounds();
+        let (lo, hi) = (b.min_position(), b.max_position());
+        let at = [(lo.x + hi.x) / 2.0, (lo.y + hi.y) / 2.0, (lo.z + hi.z) / 2.0];
+        let d = dist(eye, at);
+        let food = |n: &str| mob.kind.food.iter().any(|f| f.as_str() == n || short(f) == short(n));
+        let slot = if off {
+            game.offhand.as_ref().filter(|s| food(&s.item)).map(|_| game.selected)
+        } else {
+            find_hotbar(game, food)
+        };
+        if let Some(slot) = slot.filter(|_| d <= m.n("Range")) {
+            near.push((d, mob.id, at, slot));
+        }
+    }
+    let Some(&(_, id, at, slot)) = near.iter().min_by(|a, b| a.0.total_cmp(&b.0)) else {
+        return;
+    };
+    let wait = if m.b("Continuous breeding") { m.n("Breeding interval") as u32 } else { u32::MAX };
+    cool(id, wait);
+    if off {
+        turned_to(game, "Auto Breed", true, at, move |game| {
+            game.send(S::Interact(play::Interact { id: id as i32, hand: 1, location: [0.0, 1.0, 0.0], secondary: false }));
+            game.swing_arm();
+        });
+    } else {
+        use_on(game, slot, id, at, true);
+    }
 }
 
 fn auto_shearer(game: &mut Game<'_>, m: &Module) {

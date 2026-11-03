@@ -2344,6 +2344,173 @@ def _():
     return ok, f"said: {said}"
 
 
+def chat_since(mark):
+    """Every chat line the game logged since `mark` (the server's feedback included)."""
+    with open(os.path.join(session_dir(), "home", "logs", "latest.log"), errors="replace") as f:
+        f.seek(mark)
+        return [line.split("[CHAT] ", 1)[1].strip() for line in f if "[CHAT] " in line]
+
+
+@test("Auto Breed")
+def _():
+    # Two adult cows and a calf near, wheat in the hotbar: the two adults are fed once each (two wheat used), the calf
+    # not (Age Adult), and nobody again (Continuous breeding off).
+    reset("survival")
+    slot(0, "wheat", 10)
+    for dx, extra in ((2, ""), (-2, ""), (0, ",Age:-24000")):
+        cmd(f"summon minecraft:cow {X0 + dx + 0.5} {Y + 1} {Z0 + 2.5} {{NoAI:1b,PersistenceRequired:1b,Tags:[\"breed\"]{extra}}}")
+    wait(10)
+    only("autobreed")
+    wait(40)
+    first = ctl("inventory").get("counts", {}).get("minecraft:wheat", 0)
+    wait(60)
+    later = ctl("inventory").get("counts", {}).get("minecraft:wheat", 0)
+    only()
+    cmd("kill @e[tag=breed]")
+    return first == 8 and later == 8, f"wheat 10 -> {first}, then {later}"
+
+
+@test("Click TP")
+def _():
+    # A right click with an empty hand on the floor 6 blocks ahead: you stand there. One 6 blocks further (over Max
+    # distance 8) is left alone.
+    reset("creative")
+    eye = Y + 1 + 1.62
+    only("clicktp")
+
+    def click_at(dz):
+        pitch = math.degrees(math.atan2(eye - (Y + 1), dz))
+        ctl("look", "0", f"{pitch:.3f}")
+        wait(2)
+        ctl("mouse", "right", "down")
+        wait(2)
+        ctl("mouse", "right", "up")
+        wait(10)
+        return pos()
+
+    near = click_at(6.0)
+    reset("creative")
+    far = click_at(12.0)
+    only()
+    ok = abs(near[2] - (Z0 + 6.5)) < 0.6 and abs(near[1] - (Y + 1)) < 0.1 and abs(far[2] - (Z0 + 0.5)) < 0.6
+    return ok, f"after a click 6 ahead: {near}; 12 ahead: {far}"
+
+
+@test("Build Height")
+def _():
+    # Stone at the build limit (y 319), you on top of it, stone in hand: a click on its top places nothing without
+    # Build Height (the server refuses a block above the limit) and the block under it with (the click is turned into
+    # one on its underside).
+    def placed(on):
+        reset("creative")
+        cmd(f"setblock {X0} 319 {Z0} minecraft:stone", f"setblock {X0} 318 {Z0} minecraft:air", f"tp @s {X0 + 0.5} 320 {Z0 + 0.5} 0 90")
+        cmd("gamemode survival")
+        slot(0, "cobblestone", 8)
+        wait(20)
+        only("buildheight") if on else only()
+        ctl("look", "0", "90")
+        ctl("mouse", "right", "down")
+        wait(2)
+        ctl("mouse", "right", "up")
+        wait(15)
+        under = count(X0, 318, Z0, X0, 318, Z0, "cobblestone")
+        cmd(f"setblock {X0} 319 {Z0} minecraft:air", f"setblock {X0} 318 {Z0} minecraft:air")
+        return under
+
+    plain, built = placed(False), placed(True)
+    only()
+    reset("creative")
+    return plain == 0 and built == 1, f"cobblestone under the top block: off {plain}, on {built}"
+
+
+@test("Enderman Look")
+def _():
+    # An enderman 8 blocks ahead, looked in the eyes: with Look mode Away, the server is told you look at your feet.
+    reset("survival")
+    cmd("difficulty easy", f"summon minecraft:enderman {X0 + 0.5} {Y + 1} {Z0 + 8.5} {{NoAI:1b,PersistenceRequired:1b,Tags:[\"ender\"]}}")
+    eye = Y + 1 + 1.62
+    pitch = -math.degrees(math.atan2(Y + 1 + 2.55 - eye, 8.0))
+    ctl("look", "0", f"{pitch:.3f}")
+    wait(10)
+    only("endermanlook")
+    wait(10)
+    mark = log_mark()
+    cmd("data get entity @s Rotation[1]")
+    wait(5)
+    said = [l for l in chat_since(mark) if "entity data" in l]
+    only()
+    cmd("kill @e[tag=ender]", "difficulty peaceful")
+    looked = said[0].rsplit(":", 1)[-1].strip().rstrip("f") if said else ""
+    try:
+        down = abs(float(looked) - 90.0) < 0.5
+    except ValueError:
+        down = False
+    return down, f"server's pitch for you: {said}"
+
+
+@test("Trident Boost")
+def _():
+    # Standing in water with a Riptide III trident, a throw's spin: how far you go in the 10 ticks after, with Boost 2
+    # much further than without (the push is given more of it from the tick after the throw).
+    def flown(on):
+        reset("creative")
+        cmd(f"fill {X0-2} {Y+1} {Z0-2} {X0+2} {Y+3} {Z0+2} minecraft:water")
+        cmd("gamemode survival", "item replace entity @s hotbar.0 with minecraft:trident[enchantments={riptide:3}]")
+        only("tridentboost") if on else only()
+        ctl("look", "0", "-30")
+        wait(10)
+        ctl("mouse", "right", "down")
+        wait(15)
+        start = pos()
+        ctl("mouse", "right", "up")
+        steps, last = [], start
+        for _ in range(10):
+            wait(1)
+            p = pos()
+            steps.append(round(math.dist(p, last), 2))
+            last = p
+        cmd("gamemode creative", f"fill {X0-2} {Y+1} {Z0-2} {X0+2} {Y+3} {Z0+2} minecraft:air")
+        wait(20)
+        return math.dist(last, start), steps
+
+    (plain, a), (boosted, b) = flown(False), flown(True)
+    only()
+    reset("creative")
+    return boosted > plain * 1.4, f"flown in 10 ticks: {plain:.1f} off {a}, {boosted:.1f} on {b}"
+
+
+@test("Auto Sign")
+def _():
+    # The first sign written by hand ("hello"), then a second put down: its editor closes by itself and the second
+    # sign says the same once Delay has passed.
+    reset("creative")
+    slot(0, "oak_sign", 4)
+    only("autosign")
+    texts = []
+    for yaw, dz in ((0, 2), (180, -2)):
+        pitch = math.degrees(math.atan2(1.62, abs(dz)))
+        ctl("look", str(yaw), f"{pitch:.3f}")
+        wait(2)
+        ctl("mouse", "right", "down")
+        wait(2)
+        ctl("mouse", "right", "up")
+        wait(10)
+        if yaw == 0:
+            ctl("type", "hello")
+            wait(2)
+            ctl("key", "esc", "tap")
+        wait(30)
+        mark = log_mark()
+        cmd(f"data get block {X0} {Y + 1} {Z0 + dz} front_text.messages[0]")
+        wait(5)
+        texts.append([l for l in chat_since(mark) if "block data" in l or "found" in l.lower()])
+    screen = state().get("screen")
+    only()
+    cmd(f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:air", f"setblock {X0} {Y + 1} {Z0 - 2} minecraft:air")
+    ok = all(t and "hello" in t[0] for t in texts) and screen == "playing"
+    return ok, f"first and second sign: {texts}; screen after {screen}"
+
+
 @test("Text setting editor")
 def _():
     def messages():

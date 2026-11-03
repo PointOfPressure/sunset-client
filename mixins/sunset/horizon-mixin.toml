@@ -123,6 +123,12 @@ name = "sunset_new_chunks"
 source = "new_chunks.rs"
 
 [[module]]
+id = "world_parity"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_world_parity"
+source = "world_parity.rs"
+
+[[module]]
 id = "vanish"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_vanish"
