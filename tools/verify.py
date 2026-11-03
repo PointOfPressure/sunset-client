@@ -210,7 +210,9 @@ def clean():
 
 def reset(mode="survival", x=0.5, z=0.5, y=Y + 1):
     ensure_alive()
-    cmd(f"gamemode {mode}", "clear @s", "effect clear @s", "effect give @s minecraft:instant_health 1 10 true",
+    # Max health back too: a run stopped in a test that raised it (the explosive auras') leaves it raised in the world.
+    cmd(f"gamemode {mode}", "clear @s", "effect clear @s", "attribute @s minecraft:max_health base reset",
+        "effect give @s minecraft:instant_health 1 10 true",
         "effect give @s minecraft:saturation 1 10 true", "kill @e[type=!player]", f"tp @s {X0 + x} {y} {Z0 + z} 0 0")
     wait(20)
     ctl("look", "0", "0")
@@ -3975,7 +3977,8 @@ def _():
 def _():
     # Start Above with the view tipped down: W held 20 ticks leaves the body where it was; the tracer draws a line to
     # the body (accent pixels with it on, none off); with Move player W walks the body instead.
-    accent = lambda r, g, b: r > 230 and 140 < g < 200 and b < 80
+    # The menu's accent (#DB5000), as the tracer and the chat's [Sunset] draw it.
+    accent = lambda r, g, b: r > 170 and 30 < g < 120 and b < 60
     reset("creative")
     ctl("look", "0", "75")
     setting("freecam", "start", "Above")
@@ -7212,6 +7215,10 @@ def _():
         "kill @e[type=arrow]")
     left = counts.get("minecraft:tipped_arrow", 0)
     ok = strong and not still and left == 1 and counts.get("minecraft:arrow") == 16
+    # Horizon's server (single player's too) hits you with your own tipped arrow but gives no effect from it (a
+    # summoned one's it does).
+    if HORIZON_SERVER and not strong and left == 1:
+        return None, f"Horizon's server gives no effect from your own tipped arrow: shot 1 of 2, still on {still}"
     return ok, f"strength after Quiver: {strong}; still on: {still}; tipped arrows left {left} of 2, plain arrows {counts.get('minecraft:arrow')}"
 
 
@@ -7232,6 +7239,88 @@ def _():
         cmd("kill @e[type=arrow]")
     ok = got["off"][0] > 0 and got["on"][0] == 0
     return ok, f"(health lost, blocks moved) to 3 arrows: off {got['off']}, Arrow Dodge {got['on']}"
+
+
+@test("Liquid Interact")
+def _():
+    # A pool 5 wide and 6 deep in front (its floor and sides out of reach), stone in hand, the crosshair on the
+    # water: a right click places nothing without Liquid Interact and puts the stone on the water with it.
+    got = {}
+    for name, mods in (("off", ()), ("on", ("liquidinteract",))):
+        reset()
+        cmd(f"fill {X0 - 3} {Y - 7} {Z0 + 1} {X0 + 3} {Y - 1} {Z0 + 7} minecraft:stone",
+            f"fill {X0 - 2} {Y - 6} {Z0 + 1} {X0 + 2} {Y} {Z0 + 6} minecraft:water")
+        slot(0, "stone", 8)
+        ctl("key", "1", "tap")
+        wait(10)
+        only(*mods)
+        ctl("look-at", str(X0 + 0.5), str(Y + 1.0), str(Z0 + 3.5))
+        wait(3)
+        ctl("mouse", "right", "click")
+        wait(10)
+        only()
+        got[name] = count(X0 - 2, Y - 6, Z0 + 1, X0 + 2, Y, Z0 + 6, "stone")
+        cmd(f"fill {X0 - 3} {Y - 7} {Z0 + 1} {X0 + 3} {Y - 1} {Z0 + 7} minecraft:air", f"fill {X0 - 3} {Y} {Z0 + 1} {X0 + 3} {Y} {Z0 + 7} minecraft:stone")
+    return got["off"] == 0 and got["on"] == 1, f"stone in the pool after a right click on it: off {got['off']}, Liquid Interact {got['on']}"
+
+
+@test("No Interact")
+def _():
+    # A chest and a pig in front: a right click on the chest opens it, and 3 clicks on the pig hurt it, without No
+    # Interact; with it listing the chest (Use blocks) and pigs (Hit entities), neither.
+    got = {}
+    for name, mods in (("off", ()), ("on", ("nointeract",))):
+        reset()
+        setting("nointeract", "use blocks", "chest")
+        setting("nointeract", "hit entities", "pig")
+        cmd(f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:chest", f"summon pig {X0 + 2.5} {Y + 1} {Z0 + 2.0} {TOUGH_PIG}")
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        wait(10)
+        only(*mods)
+        ctl("look-at", str(X0 + 0.5), str(Y + 1.5), str(Z0 + 2.5))
+        wait(3)
+        ctl("mouse", "right", "click")
+        wait(10)
+        opened = state().get("screen") not in ("playing", None)
+        ctl("close")
+        wait(3)
+        ctl("look-at-entity", str(mobs("pig")[0]["id"]))
+        wait(3)
+        for _ in range(3):
+            ctl("mouse", "left", "click")
+            wait(14)
+        only()
+        m = mobs("pig")
+        got[name] = (opened, round(1000 - m[0]["health"], 1) if m else None)
+        cmd("kill @e[type=pig]", f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:air")
+    ok = got["off"][0] and got["off"][1] > 0 and not got["on"][0] and got["on"][1] == 0
+    return ok, f"(chest opened, pig's health lost) off {got['off']}, No Interact {got['on']}"
+
+
+@test("Auto Anvil")
+def _():
+    # Bot1 3 blocks in front, anvils and stone buttons in your hotbar: in 3 s Auto Anvil drops anvils on Bot1 (how many
+    # left your hotbar, and the health it lost); without it, none.
+    if not CTL2:
+        return None, "needs a second player"
+    got = {}
+    for name, mods in (("off", ()), ("on", ("autoanvil",))):
+        reset()
+        slot(0, "diamond_sword")
+        slot(1, "anvil", 16)
+        slot(2, "stone_button", 16)
+        ctl("key", "1", "tap")
+        bot_ready(3.0, 180)
+        before = bot_health()
+        only(*mods)
+        wait(60)
+        only()
+        got[name] = (16 - ctl("inventory").get("counts", {}).get("minecraft:anvil", 0), round(before - bot_health(), 1))
+        cmd(f"fill {X0 - 2} {Y + 1} {Z0 + 1} {X0 + 2} {Y + 8} {Z0 + 5} minecraft:air", "kill @e[type=item]")
+    bot_done()
+    ok = got["off"][0] == 0 and got["on"][0] > 0
+    return ok, f"(anvils placed, Bot1's health lost) in 3 s: off {got['off']}, Auto Anvil {got['on']}"
 
 
 @test("Fake Player")

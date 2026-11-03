@@ -1,6 +1,7 @@
-// Meteor's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil,
+// Meteor's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil, Auto Anvil,
 // Anti Bed, Rotation, No Rotate, No Status Effects (render.rs keeps the effects aside), Potion Saver, No Mining
-// Trace (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player, Quiver and Arrow Dodge.
+// Trace (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player, Quiver, Arrow Dodge, Liquid
+// Interact and No Interact.
 use super::{Game, Screen};
 use super::sunset::{Category, Module, with};
 use super::sunset_util::{self as util, facts, feet_block, find_held, is_air, listed, place_block, short, toggle_off};
@@ -8,6 +9,7 @@ use horizon_protocol::packets::Empty;
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use winit::event::MouseButton;
 
 pub(super) fn defaults() -> Vec<Module> {
@@ -16,6 +18,13 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Anti Anvil", Combat, "Blocks falling anvils above you.")
             .bool("Rotate", true),
         Module::new("Self Anvil", Combat, "Drops an anvil into your hole.")
+            .bool("Rotate", true),
+        Module::new("Auto Anvil", Combat, "Drops anvils on players near you.")
+            .num("Target range", 4.0, 0.0, 6.0, 0.5)
+            .num("Height", 2.0, 2.0, 5.0, 1.0)
+            .num("Delay", 10.0, 0.0, 50.0, 1.0)
+            .bool("Place at feet", true)
+            .bool("Multi place", true)
             .bool("Rotate", true),
         Module::new("Anti Bed", Combat, "String in your hole against beds.")
             .bool("String top", false)
@@ -51,6 +60,19 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ground check", true)
             .bool("All projectiles", false)
             .bool("Ignore own", true),
+        Module::new("Liquid Interact", Player, "Lets you place on water and lava."),
+        Module::new("No Interact", Player, "Stops clicks on what you list.")
+            .text("Mine blocks", "")
+            .pick("Mine mode", &["Blacklist", "Whitelist"])
+            .text("Use blocks", "")
+            .pick("Use mode", &["Blacklist", "Whitelist"])
+            .text("Hit entities", "")
+            .pick("Hit mode", &["Blacklist", "Whitelist"])
+            .text("Use entities", "")
+            .pick("Use entity mode", &["Blacklist", "Whitelist"])
+            .pick("Friends", &["None", "Hit", "Use", "Both"])
+            .pick("Babies", &["None", "Hit", "Use", "Both"])
+            .pick("Nametagged", &["None", "Hit", "Use", "Both"]),
         Module::new("Fake Player", Player, "A copy of you to test modules on.")
             .num("Health", 20.0, 1.0, 100.0, 1.0)
             .bool("Copy inventory", true),
@@ -69,6 +91,8 @@ struct Parity {
     screen: Option<Screen>,
     // Multitask: left clicks while you used an item, since the last tick.
     clicks: u32,
+    // Auto Anvil: ticks since its last anvils.
+    anvil_timer: u32,
     // Fake Player: it is in the world.
     fake: bool,
     // Quiver: where its shot is, the slot you held before the bow, and the effects shot since it came on.
@@ -90,6 +114,9 @@ enum Quiver {
     // Ticks to wait before the next arrow.
     Rest(u32),
 }
+
+// Liquid Interact is on (read by the crosshair's pick, which runs inside the game's frames).
+static LIQUID: AtomicBool = AtomicBool::new(false);
 
 // Fake Player's entity id, far above any a server gives out.
 const FAKE: u32 = 0x7FFF_FFF0;
@@ -173,6 +200,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         return;
     }
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
+    LIQUID.store(get("Liquid Interact").is_some(), Ordering::Relaxed);
     fake_player(game, get("Fake Player"));
     match get("Quiver") {
         Some(m) => quiver(game, m),
@@ -201,6 +229,9 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         && place_block(game, above(2), slot, m.b("Rotate"), true)
     {
         toggle_off(game, "Self Anvil");
+    }
+    if let Some(m) = get("Auto Anvil") {
+        auto_anvil(game, m);
     }
     if let Some(m) = get("Anti Bed") {
         anti_bed(game, m, feet);
@@ -397,6 +428,83 @@ fn arrow_dodge(game: &mut Game<'_>, m: &Module) {
     }
 }
 
+// No Interact (Meteor's): whether your click may go to what the crosshair is on: a mob (Hit or Use entities, and
+// friends, babies and named mobs when their switch covers the click) before the block behind it (Mine or Use blocks),
+// each list a blacklist or a whitelist.
+fn allowed(m: &Module, list: &str, mode: &str, name: &str) -> bool {
+    listed(m.t(list), name) == (m.p(mode) == "Whitelist")
+}
+
+fn interact_ok(game: &Game<'_>, hit: bool) -> bool {
+    let Some(m) = module("No Interact") else {
+        return true;
+    };
+    if let Some((i, distance)) = game.mob_hit()
+        && game.before_block(distance)
+    {
+        let mob = &game.mobs[i];
+        let covers = |switch: &str| matches!(m.p(switch), "Both") || m.p(switch) == if hit { "Hit" } else { "Use" };
+        let friend = mob.kind.id == "minecraft:player"
+            && super::sunset::is_friend(&with(|s| s.friends.clone()), &game.remote_player_names(), mob.id);
+        if (covers("Friends") && friend) || (covers("Babies") && mob.is_baby()) || (covers("Nametagged") && mob.custom_name.is_some()) {
+            return false;
+        }
+        let (list, mode) = if hit { ("Hit entities", "Hit mode") } else { ("Use entities", "Use entity mode") };
+        return allowed(&m, list, mode, &mob.kind.id);
+    }
+    let Some(block) = game.pick() else {
+        return true;
+    };
+    let (list, mode) = if hit { ("Mine blocks", "Mine mode") } else { ("Use blocks", "Use mode") };
+    allowed(&m, list, mode, &facts(game, block.pos).name)
+}
+
+// The attack hooks: a hit or a mining start No Interact stops.
+pub(super) fn hit_blocked(game: &Game<'_>) -> bool {
+    !interact_ok(game, true)
+}
+
+// The use hook: a right click No Interact stops.
+pub(super) fn use_blocked(game: &Game<'_>) -> bool {
+    !interact_ok(game, false)
+}
+
+// Liquid Interact (Meteor's): the crosshair's pick (the pick hook, in its place: None leaves it to the game), as
+// the game makes it, or when that meets no block, the first water or lava along the look within reach as the block it
+// hits (its face the one the look comes in by).
+pub(super) fn liquid_pick(game: &Game<'_>) -> Option<Option<super::Hit>> {
+    if !LIQUID.load(Ordering::Relaxed) || game.forced_hit.is_some() || game.tick_hit.is_some() {
+        return None;
+    }
+    let Some((eye, dir)) = game.aim() else {
+        return Some(None);
+    };
+    let reach = game.reach();
+    Some(game.clip_ray(eye, dir, reach).or_else(|| liquid_ray(game, eye, dir, reach)))
+}
+
+fn liquid_ray(game: &Game<'_>, eye: [f64; 3], dir: [f64; 3], reach: f64) -> Option<super::Hit> {
+    let mut last = eye.map(|v| v.floor() as i32);
+    let mut t = 0.0;
+    while t <= reach {
+        let point = [eye[0] + dir[0] * t, eye[1] + dir[1] * t, eye[2] + dir[2] * t];
+        let pos = point.map(|v| v.floor() as i32);
+        if pos != last {
+            let f = facts(game, pos);
+            if f.fluid_level > 0 || matches!(short(&f.name), "water" | "lava") {
+                // The way in: one axis, the first that changed.
+                let axis = (0..3).find(|&a| last[a] != pos[a]).unwrap_or(1);
+                let mut face = [0; 3];
+                face[axis] = (last[axis] - pos[axis]).signum();
+                return Some(super::Hit { pos, face, point });
+            }
+            last = pos;
+        }
+        t += 0.02;
+    }
+    None
+}
+
 // Rotation (Meteor's): the yaw and pitch set to their angles (Simple) or to the nearest 45 and 30 degrees (Smart).
 fn rotation(game: &mut Game<'_>, m: &Module) {
     match m.p("Yaw lock") {
@@ -432,6 +540,50 @@ fn anti_anvil(game: &mut Game<'_>, m: &Module, feet: [i32; 3]) {
     });
     if falling && is_air(game, head) {
         place_block(game, head, slot, m.b("Rotate"), true);
+    }
+}
+
+// Auto Anvil (Meteor's): the player in Target range with the least health (not you, not a friend) gets a button or
+// pressure plate at their feet (Place at feet: the anvil lands on it and breaks, and the next one falls too) and, every
+// Delay ticks, anvils from Height down to 2 over their head (only the highest with Multi place off).
+fn auto_anvil(game: &mut Game<'_>, m: &Module) {
+    let Some(eye) = game.eye_position() else {
+        return;
+    };
+    let own = game.remote.as_ref().map(|r| r.entity_id as u32);
+    let (friends, names) = (with(|s| s.friends.clone()), game.remote_player_names());
+    let target = game
+        .mobs
+        .iter()
+        .filter(|mob| mob.kind.id == "minecraft:player" && mob.alive() && !mob.removed && Some(mob.id) != own && !fake(mob.id))
+        .filter(|mob| !super::sunset::is_friend(&friends, &names, mob.id))
+        .filter(|mob| util::dist(eye, [mob.position.x, mob.position.y, mob.position.z]) <= m.n("Target range"))
+        .min_by(|a, b| a.health.total_cmp(&b.health))
+        .map(|mob| [mob.position.x.floor() as i32, mob.position.y.floor() as i32, mob.position.z.floor() as i32]);
+    let Some(feet) = target else {
+        return;
+    };
+    if m.b("Place at feet")
+        && let Some(slot) = find_held(game, |n| n.ends_with("_button") || n.ends_with("_pressure_plate"))
+    {
+        place_block(game, feet, slot, m.b("Rotate"), false);
+    }
+    let due = parity(|p| {
+        p.anvil_timer += 1;
+        let due = p.anvil_timer > m.n("Delay") as u32;
+        if due {
+            p.anvil_timer = 0;
+        }
+        due
+    });
+    let Some(slot) = find_held(game, |n| matches!(n, "anvil" | "chipped_anvil" | "damaged_anvil")).filter(|_| due) else {
+        return;
+    };
+    for i in (2..=m.n("Height") as i32).rev() {
+        let at = [feet[0], feet[1] + 1 + i, feet[2]];
+        if place_block(game, at, slot, m.b("Rotate"), true) && !m.b("Multi place") {
+            return;
+        }
     }
 }
 

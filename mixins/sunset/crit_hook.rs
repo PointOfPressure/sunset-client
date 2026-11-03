@@ -1,8 +1,8 @@
 // Criticals: your own hit on a mob waits for the hop or the fall that makes it critical. While a combat macro runs,
-// clicks do nothing; Packet Mine takes a click on a block; Friend Guard and Auto Weapon's Reach
-// poke see the click first.
+// clicks do nothing, nor those No Interact stops; Packet Mine takes a click on a block; Friend Guard and Auto Weapon's
+// Reach poke see the click first.
 fn sunset_crit_click(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<bool> {
-    if crate::game::sunset_combat_macros::active() {
+    if crate::game::sunset_combat_macros::active() || crate::game::sunset_parity::hit_blocked(game) {
         return std::ops::ControlFlow::Break(false);
     }
     if crate::game::sunset_packet_mine::click(game, true) {

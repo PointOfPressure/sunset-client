@@ -19,8 +19,8 @@ pub(super) enum ListKind {
 // What a text setting lists, by its name (and module, for the white and black lists); None: free text.
 pub(super) fn list_kind(module: &str, setting: &str) -> Option<ListKind> {
     match setting {
-        "Blocks" => Some(ListKind::Blocks),
-        "Entities" => Some(ListKind::Entities),
+        "Blocks" | "Mine blocks" | "Use blocks" => Some(ListKind::Blocks),
+        "Entities" | "Hit entities" | "Use entities" => Some(ListKind::Entities),
         "Particles" => Some(ListKind::Particles),
         "Friends" => Some(ListKind::Players),
         "Items" | "Item list" | "Selected weapon types" => Some(ListKind::Items),

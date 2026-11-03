@@ -733,6 +733,16 @@ bindings = [
 ]
 
 [[injection]]
+id = "liquid_pick"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::Game<'_>::pick"
+helper = "liquid_pick.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[injection]]
 id = "multitask_click"
 kind = "HEAD"
 target = "horizon_client::game::remote::Game<'_>::remote_mouse"
