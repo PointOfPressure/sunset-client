@@ -603,6 +603,15 @@ pub(super) fn inventory_idle(game: &Game<'_>) -> bool {
     super::sunset::inventory_idle(game)
 }
 
+// The world or server played, as a number for file names: the world's folder in single player, the address on a server.
+pub(super) fn world_hash(game: &Game<'_>) -> Option<u64> {
+    let r = game.remote.as_ref()?;
+    let address = horizon_client::net::shown_address(&r.session.address);
+    let name = if address == "local" { game.world_root.display().to_string() } else { address };
+    // FNV-1a.
+    Some(name.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)))
+}
+
 pub(super) fn in_world(game: &Game<'_>) -> bool {
     game.native_playing() && game.remote.is_some() && game.player.is_some() && game.screen == Screen::Playing
 }

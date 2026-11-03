@@ -845,6 +845,8 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
     v.extend(super::sunset_base_finder::defaults());
+    v.extend(super::sunset_hunting::defaults());
+    v.extend(super::sunset_new_chunks::defaults());
     v.extend(super::sunset_vehicle::defaults());
     v.extend(super::sunset_vanish::defaults());
     v.extend(super::sunset_server_scan::defaults());
@@ -2761,6 +2763,8 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_player::tick(game, &mods);
     super::sunset_world::tick(game, &mods);
+    super::sunset_hunting::tick(game, &mods);
+    super::sunset_new_chunks::tick(game, &mods);
     super::sunset_packet_mine::tick(game);
     super::sunset_extras::tick(game, &mods);
     super::sunset_vanish::tick(game, mods.iter().find(|m| m.name == "Anti Vanish" && m.on));
@@ -6284,6 +6288,8 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     }
     super::sunset_util::draw_shown(cam, out, lw);
     super::sunset_render::overlay(game, cam, mods, out, lw);
+    super::sunset_new_chunks::draw(cam, mods, out);
+    super::sunset_hunting::draw(game, cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     if let Some(m) = get("Nuker") {
         let (look, argb) = (Look::of(m), m.c("Broken color"));
@@ -7069,6 +7075,11 @@ pub(super) fn dash_search_clear(s: &mut State) {
 pub(super) fn aliases(name: &str) -> &'static str {
     match name {
         "Velocity" => "knockback delay knockbackdelay",
+        "New Chunks" => "newer new chunks chunk trail trouser palette",
+        "Player Activity Detector" => "online player activity detector",
+        "Base Finder" => "trouser stash base hunting",
+        "Stash Finder" => "stash chests base hunting",
+        "Mob Gear ESP" => "mob gear player gear",
         "Step" => "step up stepup stairs",
         "ClickGUI" => "dropdown dashboard style gui menu color colour theme accent opacity width dim blur background indent scale size zoom bigger radius corner round",
         "Glide" => "slow fall slowfall",

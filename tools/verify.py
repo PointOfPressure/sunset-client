@@ -2173,6 +2173,177 @@ def _():
     return not missing, f"{len(said)} chunks said; wrong or missing: {missing}"
 
 
+def chunk_spot(dx, dz, y=None):
+    """The middle of the chunk `dx`, `dz` chunks from the arena's."""
+    return ((X0 >> 4) + dx) * 16 + 8, Y + 1 if y is None else y, ((Z0 >> 4) + dz) * 16 + 8
+
+
+@test("Stash Finder")
+def _():
+    # Five chests in a chunk beside the arena: found when Stash Finder turns on, once, with what they are.
+    x, y, z = chunk_spot(0, 3)
+    reset("creative")
+    cmd(f"fill {x-2} {y} {z} {x+2} {y} {z} minecraft:chest")
+    wait(10)
+    mark = log_mark()
+    only("stashfinder")
+    wait(40)
+    said = [l for l in sunset_said(mark) if l.startswith("Stash?")]
+    only()
+    cmd(f"fill {x-2} {y} {z} {x+2} {y} {z} minecraft:air")
+    line = next((l for l in said if f"chunk {x >> 4} {z >> 4} " in l), "")
+    return "5 chest" in line, f"said: {said}"
+
+
+@test("Cave Disturbance and Portal Pattern")
+def _():
+    # Two pockets of cave air up in the sky beside the arena: one with a single plain air block in the middle (a
+    # disturbance), one with a portal's shape of plain air across it (an imprint). Each detector finds its own.
+    cx, cy, cz = chunk_spot(3, 0, Y + 12)
+    px, py, pz = chunk_spot(-3, 0, Y + 12)
+    reset("creative")
+    cmd(f"fill {cx-3} {cy-3} {cz-3} {cx+3} {cy+3} {cz+3} minecraft:cave_air", f"setblock {cx} {cy} {cz} minecraft:air")
+    # Paper's /fill won't turn cave air into plain air (nothing changes): by way of stone.
+    cmd(f"fill {px-3} {py-1} {pz-1} {px+2} {py+5} {pz+1} minecraft:cave_air")
+    cmd(f"fill {px-2} {py} {pz} {px+1} {py+4} {pz} minecraft:stone")
+    cmd(f"fill {px-2} {py} {pz} {px+1} {py+4} {pz} minecraft:air")
+    wait(10)
+    mark = log_mark()
+    only("cavedisturbancedetector", "portalpatternfinder")
+    wait(40)
+    said = sunset_said(mark)
+    only()
+    for x1, y1, z1, x2, y2, z2 in ((cx-3, cy-3, cz-3, cx+3, cy+3, cz+3), (px-3, py-1, pz-1, px+2, py+5, pz+1)):
+        cmd(f"fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:stone", f"fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air")
+    cave = [l for l in said if l.startswith("Cave disturbance at")]
+    portal = [l for l in said if l.startswith("Portal imprint at")]
+    ok = f"Cave disturbance at {cx} {cy} {cz}" in cave and f"Portal imprint at {px-2} {py} {pz}" in portal
+    return ok, f"disturbances: {cave}; imprints: {portal}"
+
+
+@test("Activated Spawner Detector")
+def _():
+    # Two spawners far enough off that the server does not run them: one whose countdown has moved (Delay 150,
+    # as one a player came near), one as generated (Delay 20). Only the first is said.
+    ax, ay, az = chunk_spot(-3, 2)
+    bx, by, bz = chunk_spot(3, 2)
+    reset("creative")
+    cmd(f"setblock {ax} {ay} {az} minecraft:spawner{{Delay:150s}}", f"setblock {bx} {by} {bz} minecraft:spawner{{Delay:20s}}")
+    wait(10)
+    mark = log_mark()
+    only("activatedspawnerdetector")
+    wait(40)
+    said = [l for l in sunset_said(mark) if l.startswith("Activated")]
+    only()
+    cmd(f"setblock {ax} {ay} {az} minecraft:air", f"setblock {bx} {by} {bz} minecraft:air")
+    ok = any(f"at {ax} {ay} {az}" in l for l in said) and not any(f"at {bx} {by} {bz}" in l for l in said)
+    return ok, f"said: {said}"
+
+
+@test("Mob Gear ESP")
+def _():
+    # A husk in a netherite chestplate and a plain one: the first is said and boxed.
+    reset("creative")
+    cmd("difficulty easy")
+    cmd(f"summon minecraft:husk {X0+3} {Y+1} {Z0+5} {{NoAI:1b,PersistenceRequired:1b,Silent:1b,Tags:[\"gear\"],"
+        f"equipment:{{chest:{{id:\"minecraft:netherite_chestplate\",count:1}}}}}}")
+    cmd(f"summon minecraft:husk {X0-3} {Y+1} {Z0+5} {{NoAI:1b,PersistenceRequired:1b,Silent:1b,Tags:[\"gear\"]}}")
+    ctl("look", "0", "10")
+    wait(10)
+    pink = lambda r, g, b: r > 230 and 90 < g < 140 and b > 170
+    before = shot_pixels("gear0", pink)
+    mark = log_mark()
+    only("mobgearesp")
+    wait(30)
+    boxed = shot_pixels("gear1", pink)
+    said = [l for l in sunset_said(mark) if l.startswith("A husk")]
+    only()
+    cmd("kill @e[tag=gear]")
+    ok = len(said) == 1 and "netherite chestplate" in said[0] and boxed > before + 50
+    return ok, f"said: {said}; pink pixels {before} -> {boxed}"
+
+
+def new_chunks_file():
+    """New Chunks' saved chunks for this world and dimension: {(x, z): 'n' or 'o'}."""
+    out = {}
+    for root, _, files in os.walk(session_dir()):
+        for name in files:
+            if os.path.basename(root) == "newchunks" and name.endswith("overworld.txt"):
+                with open(os.path.join(root, name)) as f:
+                    for line in f:
+                        x, z, v = line.split()
+                        out[(int(x), int(z))] = v
+    return out
+
+
+@test("New Chunks")
+def _():
+    # New Chunks on where the world has been played (the arena: old chunks, read from its save), then far off where
+    # nobody has been: the chunks generated for the visit are new. What it judged is in its saved file.
+    # The arena's chunks are sent again (the view made smaller and back) with New Chunks on. Horizon's server packs
+    # palettes in block order and sends new chunks with liquid already flowing, so there (single player too) only
+    # liquid starting to flow answers: some new chunks, no old ones.
+    reset("creative")
+    only("newchunks")
+    view = ctl("options-get", "renderDistance")["options"]["renderDistance"]["value"]
+    ctl("options-set", "renderDistance", "2")
+    wait(60)
+    ctl("options-set", "renderDistance", str(view))
+    wait(100)
+    here = new_chunks_file()
+    far = X0 + 30000 + (int(time.time()) % 100000) * 16
+    cmd(f"tp @s {far} 200 {Z0}")
+    wait(200)
+    there = {k: v for k, v in new_chunks_file().items() if abs(k[0] - (far >> 4)) <= 3 and abs(k[1] - (Z0 >> 4)) <= 3}
+    ctl("look", "0", "60")
+    wait(20)
+    red = lambda r, g, b: r > 120 and g < 80 and b < 80
+    tinted = shot_pixels("newchunks", red)
+    cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}")
+    only()
+    wait(40)
+    old_here = sum(1 for v in here.values() if v == "o")
+    new_there = sum(1 for v in there.values() if v == "n")
+    if not SERVER or SERVER.endswith(":25599"):
+        # Horizon's server: only liquid starting to flow tells, and only of new chunks.
+        ok = old_here == 0 and new_there >= 1 and new_there == len(there) and tinted > 0
+    else:
+        ok = old_here >= len(here) * 0.8 and len(here) > 20 and new_there >= len(there) * 0.8 and len(there) >= 20 and tinted > 2000
+    return ok, (f"arena: {old_here} old of {len(here)} judged; far off: {new_there} new of {len(there)} judged "
+                f"(chunks within 3); red pixels looking down there {tinted}")
+
+
+@test("Player Activity Detector")
+def _():
+    # Bot1 keeps the arena loaded on the server while Tester is far off; a block put down and taken away there
+    # leaves its state in the chunk's palette. When Tester comes back the chunk is said (Recent visit 5 s, so
+    # Tester's own earlier visit doesn't count). Horizon's server packs its palettes: not there.
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    if not SERVER or SERVER.endswith(":25599"):
+        return None, "Horizon's server packs its palettes"
+    reset("creative")
+    cmd("gamemode spectator Bot1", f"tp Bot1 {X0 + 0.5} {Y + 30} {Z0 + 0.5}")
+    setting("playeractivitydetector", "recent visit (s)", "5")
+    only("playeractivitydetector")
+    far = X0 + 20000 + (int(time.time()) % 1000) * 16
+    cmd(f"tp @s {far} 200 {Z0}")
+    wait(200)
+    bx, by, bz = X0 + 3, Y + 1, Z0 + 3
+    cmd(f"setblock {bx} {by} {bz} minecraft:diamond_block")
+    wait(5)
+    cmd(f"setblock {bx} {by} {bz} minecraft:air")
+    wait(5)
+    mark = log_mark()
+    cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}")
+    wait(100)
+    said = [l for l in sunset_said(mark) if l.startswith("Player activity?")]
+    only()
+    cmd("gamemode spectator Bot1", f"tp Bot1 {X0 + 0.5} {Y + 30} {Z0 + 60}")
+    ok = any(l.startswith(f"Player activity? chunk {bx >> 4} {bz >> 4} ") for l in said)
+    return ok, f"said: {said}"
+
+
 @test("Text setting editor")
 def _():
     def messages():

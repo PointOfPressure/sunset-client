@@ -12,9 +12,9 @@ use super::Game;
 use horizon_client::chunk::Chunk;
 use horizon_client::containers::BlockEntity;
 use horizon_world::registry::BlockStateId;
+use super::sunset_chunk_feed::Feed;
 use std::collections::{HashSet, VecDeque};
-use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 const NAME: &str = "Base Finder";
 
@@ -114,20 +114,15 @@ struct Found {
     kinds: Vec<(String, u32)>,
 }
 
-// A scan for one dimension and one set of settings: the chunks sent to the thread (the loaded ones), the ones found,
-// those just found, the chat lines waiting for the cooldown, and the thread's way in and out. Dropping it ends the
-// thread.
+// A scan for one dimension and one set of settings: its chunk feed, the chunks found, those just found, and the chat
+// lines waiting for the cooldown.
 struct Scan {
-    key: String,
-    revision: u64,
-    sent: HashSet<(i32, i32)>,
+    feed: Feed<Found>,
     said: HashSet<(i32, i32)>,
     fresh: Vec<Found>,
     lines: VecDeque<String>,
     cooldown: u32,
     entity_timer: u32,
-    jobs: Sender<Arc<Chunk>>,
-    found: Receiver<Found>,
 }
 
 static SCAN: Mutex<Option<Scan>> = Mutex::new(None);
@@ -136,100 +131,95 @@ fn scan<R>(f: impl FnOnce(&mut Option<Scan>) -> R) -> R {
     f(&mut SCAN.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
-// The scan thread: each chunk's blocks counted by list and kind, and the signs looked for; a chunk with any sent back.
-fn thread(plan: Plan, jobs: Receiver<Arc<Chunk>>, found: Sender<Found>) {
-    let mut states = [0u32; 4096];
+// On the scan thread: a chunk's blocks counted by list and kind, and the signs looked for; a chunk with any is found.
+fn look(plan: &Plan, states: &mut [u32; 4096], chunk: &Chunk) -> Option<Found> {
     let nether = plan.dim == "minecraft:the_nether";
     let overworld = plan.dim == "minecraft:overworld";
-    for chunk in jobs {
-        let mut per_list = [0u32; 7];
-        let mut per_kind = vec![0u32; plan.names.len()];
-        let mut sums = [[0i64; 3]; 7];
-        let mut sign: Option<(&str, [i32; 3])> = None;
-        let mut spawner: Option<[i32; 3]> = None;
-        let mut companion = false;
-        for (i, section) in chunk.sections.iter().enumerate() {
-            let y0 = chunk.min_y() + i as i32 * 16;
-            // A section all of one state: air, stone, water... only its first block needs looking at.
-            let first = section.get(0);
-            if section.is_uniform(first) && plan.looks.get(first as usize).is_none_or(|l| l.list == 0 && l.sign <= AIR) {
-                if overworld && plan.sky.is_some_and(|y| y0 + 15 > y) && plan.looks.get(first as usize).is_none_or(|l| l.sign != AIR) {
-                    sign = sign.or(Some(("a build above the terrain", [chunk.x * 16, y0, chunk.z * 16])));
-                }
-                if nether && plan.roof && y0 >= 128 && plan.looks.get(first as usize).is_none_or(|l| l.sign != AIR) {
-                    sign = sign.or(Some(("a build on the nether roof", [chunk.x * 16, y0, chunk.z * 16])));
-                }
+    let mut per_list = [0u32; 7];
+    let mut per_kind = vec![0u32; plan.names.len()];
+    let mut sums = [[0i64; 3]; 7];
+    let mut sign: Option<(&str, [i32; 3])> = None;
+    let mut spawner: Option<[i32; 3]> = None;
+    let mut companion = false;
+    for (i, section) in chunk.sections.iter().enumerate() {
+        let y0 = chunk.min_y() + i as i32 * 16;
+        // A section all of one state: air, stone, water... only its first block needs looking at.
+        let first = section.get(0);
+        if section.is_uniform(first) && plan.looks.get(first as usize).is_none_or(|l| l.list == 0 && l.sign <= AIR) {
+            if overworld && plan.sky.is_some_and(|y| y0 + 15 > y) && plan.looks.get(first as usize).is_none_or(|l| l.sign != AIR) {
+                sign = sign.or(Some(("a build above the terrain", [chunk.x * 16, y0, chunk.z * 16])));
+            }
+            if nether && plan.roof && y0 >= 128 && plan.looks.get(first as usize).is_none_or(|l| l.sign != AIR) {
+                sign = sign.or(Some(("a build on the nether roof", [chunk.x * 16, y0, chunk.z * 16])));
+            }
+            continue;
+        }
+        section.unpack(states);
+        for (j, &v) in states.iter().enumerate() {
+            let look = plan.looks.get(v as usize).copied().unwrap_or_default();
+            let (x, y, z) = (chunk.x * 16 + (j as i32 & 15), y0 + (j as i32 >> 8), chunk.z * 16 + (j as i32 >> 4 & 15));
+            if look.list > 0 {
+                let l = usize::from(look.list - 1);
+                per_list[l] += 1;
+                per_kind[usize::from(look.kind)] += 1;
+                sums[l] = [sums[l][0] + i64::from(x), sums[l][1] + i64::from(y), sums[l][2] + i64::from(z)];
+            }
+            if sign.is_some() && look.sign != SPAWNER && look.sign != COMPANION {
                 continue;
             }
-            section.unpack(&mut states);
-            for (j, &v) in states.iter().enumerate() {
-                let look = plan.looks.get(v as usize).copied().unwrap_or_default();
-                let (x, y, z) = (chunk.x * 16 + (j as i32 & 15), y0 + (j as i32 >> 8), chunk.z * 16 + (j as i32 >> 4 & 15));
-                if look.list > 0 {
-                    let l = usize::from(look.list - 1);
-                    per_list[l] += 1;
-                    per_kind[usize::from(look.kind)] += 1;
-                    sums[l] = [sums[l][0] + i64::from(x), sums[l][1] + i64::from(y), sums[l][2] + i64::from(z)];
+            let why = match look.sign {
+                PORTAL if plan.portals => Some("an open nether portal"),
+                END_PORTAL if plan.portals && overworld => Some("an open end portal"),
+                BUBBLE if plan.bubbles => Some("a soul sand bubble column"),
+                BEDROCK if plan.bedrock.is_some_and(|n| {
+                    if overworld {
+                        y >= chunk.min_y() + n
+                    } else {
+                        nether && (n..128 - n).contains(&y)
+                    }
+                }) => Some("bedrock where none grows"),
+                SPAWNER => {
+                    spawner = spawner.or(Some([x, y, z]));
+                    None
                 }
-                if sign.is_some() && look.sign != SPAWNER && look.sign != COMPANION {
-                    continue;
+                COMPANION => {
+                    companion = true;
+                    None
                 }
-                let why = match look.sign {
-                    PORTAL if plan.portals => Some("an open nether portal"),
-                    END_PORTAL if plan.portals && overworld => Some("an open end portal"),
-                    BUBBLE if plan.bubbles => Some("a soul sand bubble column"),
-                    BEDROCK if plan.bedrock.is_some_and(|n| {
-                        if overworld {
-                            y >= chunk.min_y() + n
-                        } else {
-                            nether && (n..128 - n).contains(&y)
-                        }
-                    }) => Some("bedrock where none grows"),
-                    SPAWNER => {
-                        spawner = spawner.or(Some([x, y, z]));
+                AIR => None,
+                // Anything else up high: a build over the terrain in the overworld, on the nether's roof.
+                s => {
+                    if overworld && plan.sky.is_some_and(|top| y > top) {
+                        Some("a build above the terrain")
+                    } else if nether && plan.roof && y >= 128 && s != MUSHROOM {
+                        Some("a build on the nether roof")
+                    } else {
                         None
                     }
-                    COMPANION => {
-                        companion = true;
-                        None
-                    }
-                    AIR => None,
-                    // Anything else up high: a build over the terrain in the overworld, on the nether's roof.
-                    s => {
-                        if overworld && plan.sky.is_some_and(|top| y > top) {
-                            Some("a build above the terrain")
-                        } else if nether && plan.roof && y >= 128 && s != MUSHROOM {
-                            Some("a build on the nether roof")
-                        } else {
-                            None
-                        }
-                    }
-                };
-                if let Some(why) = why {
-                    sign = Some((why, [x, y, z]));
                 }
+            };
+            if let Some(why) = why {
+                sign = Some((why, [x, y, z]));
             }
-        }
-        if plan.spawners && !companion && sign.is_none() && let Some(at) = spawner {
-            sign = Some(("a spawner with none of its structure", at));
-        }
-        let tier = (0..7).find(|&l| plan.counts[l] > 0 && per_list[l] >= plan.counts[l]);
-        let (why, at) = match (tier, sign) {
-            (Some(l), _) => {
-                let n = i64::from(per_list[l]);
-                let total: u32 = per_list.iter().sum();
-                (format!("{total} placed block{}", if total == 1 { "" } else { "s" }), [(sums[l][0] / n) as i32, (sums[l][1] / n) as i32, (sums[l][2] / n) as i32])
-            }
-            (None, Some((why, at))) => (why.to_owned(), at),
-            (None, None) => continue,
-        };
-        let mut kinds: Vec<(String, u32)> = plan.names.iter().cloned().zip(per_kind).filter(|(_, c)| *c > 0).collect();
-        kinds.sort_by(|a, b| b.1.cmp(&a.1));
-        kinds.truncate(4);
-        if found.send(Found { chunk: (chunk.x, chunk.z), why, at, kinds }).is_err() {
-            return;
         }
     }
+    if plan.spawners && !companion && sign.is_none() && let Some(at) = spawner {
+        sign = Some(("a spawner with none of its structure", at));
+    }
+    let tier = (0..7).find(|&l| plan.counts[l] > 0 && per_list[l] >= plan.counts[l]);
+    let (why, at) = match (tier, sign) {
+        (Some(l), _) => {
+            let n = i64::from(per_list[l]);
+            let total: u32 = per_list.iter().sum();
+            (format!("{total} placed block{}", if total == 1 { "" } else { "s" }), [(sums[l][0] / n) as i32, (sums[l][1] / n) as i32, (sums[l][2] / n) as i32])
+        }
+        (None, Some((why, at))) => (why.to_owned(), at),
+        (None, None) => return None,
+    };
+    let mut kinds: Vec<(String, u32)> = plan.names.iter().cloned().zip(per_kind).filter(|(_, c)| *c > 0).collect();
+    kinds.sort_by(|a, b| b.1.cmp(&a.1));
+    kinds.truncate(4);
+    Some(Found { chunk: (chunk.x, chunk.z), why, at, kinds })
 }
 
 // Base Finder's own waypoints, "Base x z": a waypoint of yours called "Base" or "Base camp" is not one.
@@ -326,33 +316,19 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
         return;
     };
     let key = key(game, m);
-    if scan(|s| s.as_ref().is_none_or(|s| s.key != key)) {
+    if scan(|s| s.as_ref().is_none_or(|s| s.feed.key != key)) {
         let plan = plan(game, m);
-        let (jobs, rx) = channel();
-        let (tx, found) = channel();
-        if std::thread::Builder::new().name("sunset-base-finder".into()).spawn(move || thread(plan, rx, tx)).is_err() {
+        let mut states = [0u32; 4096];
+        let Some(feed) = Feed::start("base-finder", key, move |chunk, out| out.extend(look(&plan, &mut states, chunk))) else {
             return;
-        }
-        scan(|s| {
-            *s = Some(Scan { key, revision: 0, sent: HashSet::new(), said: HashSet::new(), fresh: Vec::new(), lines: VecDeque::new(), cooldown: 0, entity_timer: 0, jobs, found })
-        });
+        };
+        scan(|s| *s = Some(Scan { feed, said: HashSet::new(), fresh: Vec::new(), lines: VecDeque::new(), cooldown: 0, entity_timer: 0 }));
     }
-    let revision = game.world.chunks.membership_revision();
     let entity_scan = scan(|s| {
         let Some(s) = s.as_mut() else {
             return false;
         };
-        if s.revision != revision {
-            s.revision = revision;
-            s.sent.retain(|c| game.world.chunks.contains_key(c));
-            for (c, chunk) in game.world.chunks.iter() {
-                if s.sent.insert(*c) {
-                    let _ = s.jobs.send(chunk.clone());
-                }
-            }
-        }
-        let found: Vec<Found> = s.found.try_iter().collect();
-        for f in found {
+        for f in s.feed.pump(game) {
             if s.said.insert(f.chunk) {
                 s.fresh.push(f);
             }

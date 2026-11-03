@@ -625,14 +625,9 @@ struct Placed {
     saved_tick: u64,
 }
 
-// The world or server, as the name of its file: the world's folder in single player, the address on a server.
+// The world or server, as the name of its file.
 fn place_file(game: &Game<'_>) -> Option<String> {
-    let r = game.remote.as_ref()?;
-    let address = horizon_client::net::shown_address(&r.session.address);
-    let name = if address == "local" { game.world_root.display().to_string() } else { address };
-    // FNV-1a: a file name from any text.
-    let hash = name.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
-    Some(format!("xray-placed-{hash:016x}"))
+    Some(format!("xray-placed-{:016x}", super::sunset_util::world_hash(game)?))
 }
 
 // A use on a block: the block itself (when it can be replaced) or the one beside the face is where a block may go.

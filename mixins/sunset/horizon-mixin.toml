@@ -105,6 +105,24 @@ name = "sunset_base_finder"
 source = "base_finder.rs"
 
 [[module]]
+id = "chunk_feed"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_chunk_feed"
+source = "chunk_feed.rs"
+
+[[module]]
+id = "hunting"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hunting"
+source = "hunting.rs"
+
+[[module]]
+id = "new_chunks"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_new_chunks"
+source = "new_chunks.rs"
+
+[[module]]
 id = "vanish"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_vanish"
@@ -1573,3 +1591,24 @@ id = "inventory_policy"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_inventory_policy"
 source = "inventory_policy.rs"
+
+[[injection]]
+id = "chunk_packet"
+kind = "HEAD"
+target = "horizon_client::game::remote_chunks::ChunkFormat::column"
+helper = "chunk_packet_hook.rs"
+bindings = [
+  { name = "format", ty = "&ChunkFormat", value = "&*self" },
+  { name = "p", ty = "&play::LevelChunkWithLight", value = "p" },
+]
+
+[[injection]]
+id = "block_update"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::server_block"
+helper = "block_update_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "pos", ty = "[i32; 3]", value = "pos" },
+  { name = "state", ty = "i32", value = "state" },
+]
