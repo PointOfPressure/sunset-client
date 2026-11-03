@@ -993,9 +993,6 @@ fn anchor(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-#[allow(dead_code)]
-fn unused(_: Screen) {}
-
 // ---- No Fall (Meteor's NoFall): Air place and Place, and Clutch's place under Packet and No ground. Those two change
 // the move packets (runtime.rs's outgoing). This runs after the tick, once its move packet has gone, where Meteor uses
 // the item.

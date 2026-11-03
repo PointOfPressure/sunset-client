@@ -3908,10 +3908,10 @@ pub(super) fn add_waypoint(game: &Game<'_>, name: String, pos: [f64; 3]) {
     save(game);
 }
 
-// Drops every waypoint a module made under `prefix` (Base Finder's "Base x z" when it turns off).
-pub(super) fn remove_waypoints(game: &Game<'_>, prefix: &str) {
-    if with(|s| s.waypoints.iter().any(|w| w.name.starts_with(prefix))) {
-        with(|s| s.waypoints.retain(|w| !w.name.starts_with(prefix)));
+// Drops every waypoint a module made, those whose name `made` claims (Base Finder's "Base x z" when it turns off).
+pub(super) fn remove_waypoints(game: &Game<'_>, made: impl Fn(&str) -> bool) {
+    if with(|s| s.waypoints.iter().any(|w| made(&w.name))) {
+        with(|s| s.waypoints.retain(|w| !made(&w.name)));
         save(game);
     }
 }

@@ -2040,12 +2040,31 @@ def _():
     toggle("base finder", True)
     wait(40)
     again = said_base(mark2, X0 + 3, Z0 + 6)
+
+    def base_points():
+        mark = log_mark()
+        say(".waypoint list")
+        wait(4)
+        return [line for line in sunset_said(mark) if line.startswith(("Base ", "Base:"))]
+
+    # Off: its waypoints go (a waypoint of your own called Base stays), nothing more is said, and it stays off.
+    say(".waypoint add Base")
+    wait(4)
+    points_on = base_points()
+    mark3 = log_mark()
     toggle("base finder", False)
+    cmd(*build(X0 + 3, Y + 1, Z0 + 6, "base"))
+    wait(40)
+    points_off = base_points()
+    said_off = [line for line in sunset_said(mark3) if line.startswith("Base?")]
+    say(".waypoint remove Base")
     cmd(*build(X0 + 3, Y + 1, Z0 + 6))
     line = far[0] if far else ""
-    ok = bool(far) and not far_before and bool(again) and not near and all(k in line for k in ("5 chest", "4 bed", "3 sign"))
+    off_ok = len(points_on) >= 2 and [p.split(":")[0] for p in points_off] == ["Base"] and not said_off
+    ok = bool(far) and not far_before and bool(again) and not near and all(k in line for k in ("5 chest", "4 bed", "3 sign")) and off_ok
     return ok, (f"fresh chunk said {took:.1f} s after the teleport: {line!r}; before loading: {len(far_before)}; "
-                f"loaded chunk on turning on: {len(again)}; arena chunks said: {len(near)}")
+                f"loaded chunk on turning on: {len(again)}; arena chunks said: {len(near)}; waypoints on: {points_on}, "
+                f"after off: {points_off}; said after off: {said_off}")
 
 
 @test("Text setting editor")

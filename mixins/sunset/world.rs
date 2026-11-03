@@ -147,7 +147,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         None => {
             // Off: stop scanning and take its waypoints away, saved ones from earlier sessions included.
             ws(|w| w.base = None);
-            super::sunset::remove_waypoints(game, "Base ");
+            super::sunset::remove_waypoints(game, base_point);
         }
     }
 }
@@ -703,6 +703,13 @@ fn base_thread(kinds: Vec<u16>, names: Vec<String>, threshold: u32, jobs: Receiv
     }
 }
 
+// Base Finder's own waypoints, "Base x z": a waypoint of yours called "Base" or "Base camp" is not one.
+fn base_point(name: &str) -> bool {
+    name.strip_prefix("Base ")
+        .and_then(|xz| xz.split_once(' '))
+        .is_some_and(|(x, z)| x.parse::<i32>().is_ok() && z.parse::<i32>().is_ok())
+}
+
 // A block's short name on the list: by name, or a "*_bed" entry by its end (so wall and hanging signs are signs).
 fn base_kind(list: &[&str], name: &str) -> Option<usize> {
     let name = short(name);
@@ -773,3 +780,14 @@ fn base_finder(game: &mut Game<'_>, m: &Module) {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::base_point;
+
+    #[test]
+    fn base_finder_claims_only_its_own_waypoints() {
+        assert!(base_point("Base 376 15") && base_point("Base -21 -13"));
+        assert!(!base_point("Base") && !base_point("Base camp") && !base_point("Base 1 2 3") && !base_point("Home 1 2"));
+    }
+}
