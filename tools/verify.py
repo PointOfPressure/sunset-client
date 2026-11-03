@@ -7676,7 +7676,9 @@ def _():
 
     def behind(hold, screen, close, measure):
         x("windowfocus", "--sync", window)
-        # A click first: after a screen the cursor is free, and the first press only takes it back.
+        # The pointer on the window (a real button goes where it is), and a click: after a screen the cursor is free,
+        # and the first press only takes it back.
+        x("mousemove", "--window", window, "200", "150")
         x("click", "3")
         before = measure()
         x(*(("mousedown", hold) if hold.isdigit() else ("keydown", hold)))
