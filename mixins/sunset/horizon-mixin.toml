@@ -1441,6 +1441,12 @@ name = "sunset_aura_policy"
 source = "aura_policy.rs"
 
 [[module]]
+id = "scaffold_bridge"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scaffold_bridge"
+source = "scaffold_bridge.rs"
+
+[[module]]
 id = "melee"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_melee"

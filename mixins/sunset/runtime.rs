@@ -390,11 +390,15 @@ impl Module {
                 "Shortest delay" | "Longest delay" => self.b("Swap back") && self.p("Back after") == "A delay",
                 _ => true,
             },
-            "Scaffold" if self.p("Mode") == "Legit"
-                && matches!(name, "Air place" | "Ahead distance" | "Closest block range" | "Radius" | "Blocks per tick" | "Fast tower" | "Tower speed" | "While moving") => false,
             "Scaffold" => match name {
-                "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => advanced,
-                "Rotation speed" => advanced && self.b("Rotate"),
+                "Shortest sneak delay (ms)" | "Longest sneak delay (ms)" => self.p("Mode") == "Legit",
+                "Activation blocks" => self.p("Mode") == "Godbridge",
+                "Auto switch" => self.p("Mode") != "Legit",
+                "Fast tower" | "Tower speed" | "While moving" | "Only on click" | "Rotate" | "Air place" | "Ahead distance"
+                | "Closest block range" | "Radius" | "Blocks per tick" | "Render" | "Shape mode" | "Fill opacity" | "Color"
+                | "Delay (ticks)" | "Advanced" => self.p("Mode") == "Normal",
+                "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => self.p("Mode") == "Normal" && advanced,
+                "Rotation speed" => self.p("Mode") == "Normal" && advanced && self.b("Rotate"),
                 _ => true,
             },
             "Server Scan" => match name {
@@ -638,8 +642,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ignore sneaking", false),
         Module::new("Blink", Movement, "Holds back your movement, then sends it.")
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
-        Module::new("Scaffold", Movement, "Automatically places blocks under you. Legit bridges as you would by hand: as your next step is about to leave the block you stand on, it sneaks (so the game keeps you on the edge), places the next block against that block's side, and lets go of sneak once it is there.")
-            .pick("Mode", &["Normal", "Legit"])
+        Module::new("Scaffold", Movement, "Places blocks under you. Legit sneaks at edges while you place; Godbridge bridges backwards without sneaking.")
+            .pick("Mode", &["Normal", "Legit", "Godbridge"])
+            .num("Shortest sneak delay (ms)", 100.0, 0.0, 500.0, 10.0)
+            .num("Longest sneak delay (ms)", 200.0, 0.0, 500.0, 10.0)
+            .num("Activation blocks", 2.0, 0.0, 4.0, 1.0)
             .bool("Disable with Kill Aura", true)
             .bool("Block counter", true)
             .text("Blocks", "")
@@ -1920,6 +1927,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 with(|s| { s.scaffold_wait = 0; s.scaffold_recent.clear(); s.scaffold_stack = None; });
                 restore_scaffold_rotation(game);
                 legit_sneak(game, false);
+                super::sunset_scaffold_bridge::stop(game);
             }
             "Speed" => {
                 with(|s| { s.strafe = Strafe::default(); s.knockback_ticks = 0; });
@@ -2185,6 +2193,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         horizon_client::motion::sunset_motion::set_safe_walk(false);
         horizon_client::motion::sunset_motion::set_screen_keys(None);
         restore_scaffold_rotation(game);
+        super::sunset_scaffold_bridge::stop(game);
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
         return;
     }
@@ -2240,7 +2249,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     {
         want.extend(super::sunset_player::afk_keys(&m));
     }
-    let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.b("Safe walk"));
+    let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.p("Mode") == "Normal" && m.b("Safe walk"));
     horizon_client::motion::sunset_motion::set_safe_walk((on("Safe Walk") || scaffold_walk) && playing);
     // GUI Move: behind a screen the game takes no move keys, so its movement is given the ones held and walks you as
     // it would without the screen (its own speeds, sprint, jumps, and the walk's look in first and third person).
@@ -2263,6 +2272,11 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
             injected.push(k);
         }
     }
+    // Scaffold's Legit and Godbridge sneak, turn and click before the game's tick moves you.
+    let bridging = get("Scaffold")
+        .filter(|m| m.on && m.p("Mode") != "Normal" && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
+        .filter(|_| playing && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
+    super::sunset_scaffold_bridge::pre_tick(game, bridging);
     velocity(game, get("Velocity").filter(|m| m.on));
     let across = get("Speed").filter(|m| m.on).and_then(|m| speed(game, &m));
     horizon_client::motion::sunset_motion::set_across(across.map(|(xz, _)| xz));
@@ -2354,6 +2368,7 @@ fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
 // After the tick: first what waited for the look its move packet carried, then the modules, then (in a tick that
 // sent no move packet) the one that carries the next look.
 pub(super) fn post_tick(game: &mut Game<'_>) {
+    super::sunset_scaffold_bridge::post_tick(game);
     if !game.native_window() || !game.native_on(ID) {
         return;
     }
@@ -2804,7 +2819,7 @@ pub(super) fn best_weapon(game: &Game<'_>, prefer_axes: bool) -> Option<usize> {
 }
 
 // Scaffold's blocks: a block item in the list (or not in it, as a blacklist) that is a full block and does not fall.
-fn scaffold_item(game: &Game<'_>, m: &Module, slot: usize) -> bool {
+pub(super) fn scaffold_item(game: &Game<'_>, m: &Module, slot: usize) -> bool {
     let Some(state) = item_info(game, slot).and_then(|i| i.block) else {
         return false;
     };
@@ -2822,7 +2837,7 @@ fn scaffold_paused(m: &Module, kill_aura: bool, blink: bool) -> bool {
 
 // The biggest stack in the hotbar (the one in hand if two are level), kept until it runs out: taking the biggest
 // again each time would swap between two like stacks at every block. Auto switch off: only what is in hand.
-fn scaffold_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
+pub(super) fn scaffold_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
     if !m.b("Auto switch") {
         return Some(game.selected).filter(|&i| scaffold_item(game, m, i));
     }
@@ -2887,44 +2902,17 @@ fn scaffold_place(game: &mut Game<'_>, m: &Module, at: [i32; 3]) -> bool {
 }
 
 // Legit Scaffold's sneak: held (the game's movement then keeps you on the edge, and tells the server you sneak) or let
-// go, if it was Scaffold's.
-fn legit_sneak(game: &mut Game<'_>, down: bool) {
+// go, if it was Scaffold's and you are not holding it yourself.
+pub(super) fn legit_sneak(game: &mut Game<'_>, down: bool) {
     let ours = with(|s| s.scaffold_sneak);
     if down && !game.keys.contains(&KeyCode::ShiftLeft) {
         game.keys.insert(KeyCode::ShiftLeft);
         with(|s| s.scaffold_sneak = true);
     } else if !down && ours {
-        game.keys.remove(&KeyCode::ShiftLeft);
+        if !game.physical_keys.contains(&KeyCode::ShiftLeft) {
+            game.keys.remove(&KeyCode::ShiftLeft);
+        }
         with(|s| s.scaffold_sneak = false);
-    }
-}
-
-// Legit Scaffold, bridging as by hand: half a block ahead of you, the way you walk, is the block your next steps
-// stand on. While it is air: sneak, which the next tick's movement obeys (so you stop on the edge, still on the
-// block under you), and place it against the side of that block, looking at that side; the look rides the next
-// move packet and the block goes right after it, while you still stand on the edge. Once the server has it there,
-// sneak goes.
-fn scaffold_legit(game: &mut Game<'_>, m: &Module) {
-    let Some(p) = game.player.as_ref() else {
-        return;
-    };
-    let (pos, ground) = ([p.position.x, p.position.y, p.position.z], p.ground.on_ground);
-    let Some(dir) = move_direction(game).filter(|_| ground && scaffold_slot(game, m).is_some()) else {
-        legit_sneak(game, false);
-        return;
-    };
-    let under = [(pos[0] + dir[0] * 0.5).floor() as i32, pos[1].floor() as i32 - 1, (pos[2] + dir[1] * 0.5).floor() as i32];
-    if !super::sunset_util::replaceable(game, under) {
-        legit_sneak(game, false);
-        return;
-    }
-    legit_sneak(game, true);
-    // Asked for already: the server's answer is on its way (half a second at most).
-    if with(|s| s.scaffold_recent.iter().any(|(b, _)| *b == under)) {
-        return;
-    }
-    if scaffold_place(game, m, under) {
-        with(|s| s.scaffold_recent.push((under, s.ticks + 10)));
     }
 }
 
@@ -2945,7 +2933,7 @@ pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
     if !super::sunset_combat_control::available("Scaffold") {
         return;
     }
-    if !game.native_playing() || game.remote.is_none() {
+    if !game.native_playing() || game.remote.is_none() || m.p("Mode") != "Normal" {
         return;
     }
     if m.b("Only on click") && !(game.physical_buttons.contains(&MouseButton::Right) || game.right) {
@@ -2955,10 +2943,6 @@ pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
         s.scaffold_wait = s.scaffold_wait.saturating_sub(1);
         s.scaffold_wait > 0
     }) {
-        return;
-    }
-    if m.p("Mode") == "Legit" {
-        scaffold_legit(game, m);
         return;
     }
     legit_sneak(game, false);
@@ -5344,6 +5328,8 @@ pub(super) fn panic_off(game: &mut Game<'_>) {
     super::sunset_server_scan::disabled();
     super::agent::sunset_goto::cancel(game, "stopped by Panic");
     combat_cleanup(game);
+    legit_sneak(game, false);
+    super::sunset_scaffold_bridge::stop(game);
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
         game.pitch = pitch;
@@ -8364,6 +8350,35 @@ fn load_profile_from_menu(game: &mut Game<'_>, name: &str) {
 #[cfg(test)]
 mod movement_config_tests {
     use super::*;
+
+    #[test]
+    fn scaffold_modes_show_only_their_own_controls() {
+        let mut state = State::new();
+        let scaffold = state.modules.iter_mut().find(|m| m.name == "Scaffold").unwrap();
+        scaffold.settings.iter_mut().find(|s| s.name == "Advanced").unwrap().parse("true");
+        let shown = |m: &Module, name: &str| m.setting_visible(m.settings.iter().position(|s| s.name == name).unwrap());
+        for (mode, on, off) in [
+            ("Legit", &["Shortest sneak delay (ms)", "Longest sneak delay (ms)", "Blocks", "Block counter"][..],
+             &["Activation blocks", "Auto switch", "Rotate", "Delay (ticks)", "Air place", "Safe walk", "Render", "Fast tower"][..]),
+            ("Godbridge", &["Activation blocks", "Auto switch", "Blocks"][..],
+             &["Shortest sneak delay (ms)", "Rotate", "Rotation speed", "Delay (ticks)", "Radius", "Duplicate cooldown", "Render"][..]),
+            ("Normal", &["Rotate", "Delay (ticks)", "Air place", "Safe walk", "Render", "Auto switch"][..],
+             &["Shortest sneak delay (ms)", "Activation blocks"][..]),
+        ] {
+            scaffold.settings.iter_mut().find(|s| s.name == "Mode").unwrap().parse(mode);
+            for name in on {
+                assert!(shown(scaffold, name), "{mode} uses {name}");
+            }
+            for name in off {
+                assert!(!shown(scaffold, name), "{mode} does not use {name}");
+            }
+        }
+        scaffold.settings.iter_mut().find(|s| s.name == "Mode").unwrap().parse("Godbridge");
+        let mut restored = State::new();
+        restored.load_text(&state.save_text());
+        assert_eq!(restored.module("Scaffold").unwrap().p("Mode"), "Godbridge");
+        assert_eq!(restored.module("Scaffold").unwrap().n("Longest sneak delay (ms)"), 200.0);
+    }
 
     #[test]
     fn existing_movement_settings_still_load() {

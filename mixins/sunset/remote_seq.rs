@@ -7,6 +7,14 @@ pub(crate) fn next(game: &mut Game<'_>) -> i32 {
     game.next_sequence()
 }
 
+// A right click for the tick's keybind pass (Minecraft's keyUse.consumeClick): it waits for no use delay, and the
+// game places with its own sequence number and prediction, before the tick's movement. Scaffold's Godbridge.
+pub(crate) fn press_use(game: &mut Game<'_>) {
+    if let Some(r) = game.remote.as_mut() {
+        r.input.press(horizon_client::interaction_input::Button::Use);
+    }
+}
+
 // The wait the game puts between one block's breaking and the next (5 ticks).
 pub(crate) fn clear_destroy_delay(game: &mut Game<'_>, wait: u32) {
     if let Some(r) = game.remote.as_mut() {
