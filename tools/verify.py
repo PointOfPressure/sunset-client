@@ -1109,25 +1109,6 @@ def _():
                 f"sprinting {sprinted[1]}")
 
 
-@test("Anchor")
-def _():
-    hx, hz = X0 + 5, Z0
-    cmd(f"setblock {hx} {Y} {hz} minecraft:air", f"setblock {hx} {Y-1} {hz} minecraft:obsidian")
-    cmd(*(f"setblock {hx+dx} {Y} {hz+dz} minecraft:obsidian" for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1))))
-
-    def over_hole():
-        cmd(f"tp @s {X0+5.1} {Y+6} {Z0+0.15}")
-        wait(60)
-        return pos()
-
-    only("anchor")
-    p = over_hole()
-    only()
-    q = over_hole()
-    into = abs(p[0] - (hx + 0.5)) < 0.3 and abs(p[2] - (hz + 0.5)) < 0.3 and p[1] < Y + 0.1
-    return into and q[1] > Y + 0.9, f"from above a hole's edge: landed {p[0]-hx-0.5:+.2f},{p[2]-hz-0.5:+.2f} from its middle, {p[1]-Y:+.2f} high; off: landed beside it at {q[1]-Y:+.2f}"
-
-
 def knocked():
     """Blocks a husk's hit (/damage ... by it) pushes you across, and how high."""
     reset()
@@ -5951,7 +5932,7 @@ SWEEPS = [
     (("anti" + k,), [("anti" + k, "sprint" if k == "hunger" else "jump", "true")]) for k in ("hunger",)
 ] + [
     ((k,), []) for k in ("velocity", "blink", "glide", "longjump", "highjump", "airjump", "spider", "parkour", "safewalk", "sprint",
-                         "autowalk", "reversestep", "anchor", "fastclimb", "autojump", "sneak", "noslow", "nojumpdelay", "antivoid",
+                         "autowalk", "reversestep", "fastclimb", "autojump", "sneak", "noslow", "nojumpdelay", "antivoid",
                          "elytraboost", "chestswap", "scaffold", "timer", "fastplace", "breakdelay", "autoclicker", "autoweapon",
                          "triggerbot", "autoarmor", "autoreplenish", "autogap", "airplace", "reach", "autotrap", "autoweb",
                          "holefiller", "aimassist", "bowspam", "crystaloptimizer", "flamethrower", "autoshearer", "automount",
@@ -5984,7 +5965,8 @@ def render_mode(key, mode):
     return b["ticks"] - a["ticks"] >= 38 and fps > 5, f"drawn for 2 s at {fps:.0f} fps"
 
 
-# ---- Crystal Aura, Anchor Aura, Crystal Macro and Anchor Macro (Rust's PR #16), against Bot1 (CTL2) on a server.
+# ---- Crystal Aura and Anchor Aura, and their Macro sections (Rust's Crystal Macro and Anchor Macro, PR #16), against Bot1
+# (CTL2) on a server.
 # The arena is obsidian (a crystal needs it under, and nothing round it blows away), Bot1 stands 3 blocks south with a
 # thousand health and no knockback, so every hit can be counted; you wear netherite with Blast Protection IV.
 
@@ -6235,22 +6217,25 @@ def macro_run(module, items, look_at, hold_ticks, health=200):
     return used, own0 - (own_health() if alive else 0), alive, most
 
 
-@test("Crystal Macro and Anchor Macro")
+@test("Crystal Aura and Anchor Aura: Macro")
 def _():
     reset()
     blast_arena(bot=False)
     # A crystal held on the obsidian 3 blocks ahead: placed and broken over and over for 5 s.
     cmd(f"setblock {X0} {Y+1} {Z0+3} minecraft:obsidian")
-    setting("crystalmacro", "max self damage", "20")
-    crystals, taken, alive, most = macro_run("crystalmacro", [("end_crystal", 64)], (X0 + 0.5, Y + 2.0, Z0 + 3.5), 100)
+    for name, value in (("aura", "false"), ("macro", "true"), ("max self damage", "20")):
+        setting("crystalaura", name, value)
+    crystals, taken, alive, most = macro_run("crystalaura", [("end_crystal", 64)], (X0 + 0.5, Y + 2.0, Z0 + 3.5), 100)
     left = crystals_left()
     per = 100 / max(crystals["end_crystal"], 1)
     # An anchor held at the floor 3 blocks ahead: placed, charged, set off, once a click (the block in between guards).
     cmd(f"fill {X0-1} {Y+1} {Z0+1} {X0+1} {Y+4} {Z0+5} minecraft:air", "kill @e[type=minecraft:end_crystal]")
     anchors, anchor_taken, anchor_alive, anchor_most = 0, 0, True, None
     times = []
+    setting("anchoraura", "aura", "false")
+    setting("anchoraura", "macro", "true")
     for _ in range(5):
-        used, t, a, m = macro_run("anchormacro", [("respawn_anchor", 16), ("glowstone", 16)], (X0 + 0.5, Y + 1.0, Z0 + 3.5), 3)
+        used, t, a, m = macro_run("anchoraura", [("respawn_anchor", 16), ("glowstone", 16)], (X0 + 0.5, Y + 1.0, Z0 + 3.5), 3)
         anchors += used["respawn_anchor"]
         anchor_taken += t
         anchor_alive &= a
@@ -6259,8 +6244,8 @@ def _():
     blast_done()
     ok = (crystals["end_crystal"] >= 5 and left in (0, 1) and alive and most in (None, 0, 1) and anchors >= 4 and anchor_alive
           and anchor_most in (None, 0, 1))
-    return ok, (f"Crystal Macro: {crystals['end_crystal']} crystals in 5 s ({per:.1f} ticks each), {left} left standing, "
-                f"you took {taken:.0f} of 200; Anchor Macro: {anchors} of 5 clicks set an anchor off, you took "
+    return ok, (f"Crystal Aura's Macro: {crystals['end_crystal']} crystals in 5 s ({per:.1f} ticks each), {left} left standing, "
+                f"you took {taken:.0f} of 200; Anchor Aura's Macro: {anchors} of 5 clicks set an anchor off, you took "
                 f"{anchor_taken:.0f}; most move packets in a tick {most}/{anchor_most}")
 
 
@@ -7859,10 +7844,10 @@ def _():
     return ok, f"(pig's health lost, stone left) off {got['off']}, No Mining Trace {got['on']}"
 
 
-@test("Self Anvil, Anti Anvil, Anti Bed")
+@test("Anvil (Self Anvil, Anti Anvil), Anti Bed")
 def _():
-    # In an obsidian hole with walls 3 high: Self Anvil puts an anvil 2 over your feet (it falls into the hole) and
-    # turns off; Anti Anvil puts obsidian over your head against an anvil falling from 7 over your feet; Anti Bed puts
+    # In an obsidian hole with walls 3 high: Anvil's Self Anvil alone puts an anvil 2 over your feet (it falls into the
+    # hole) and Anvil turns off; its Anti Anvil puts obsidian over your head against an anvil falling from 7 over your feet; Anti Bed puts
     # string in your head's block.
     def hole():
         reset()
@@ -7875,13 +7860,15 @@ def _():
 
     hole()
     slot(0, "anvil")
-    only("selfanvil")
+    setting("anvil", "anti anvil", "false")
+    setting("anvil", "self anvil", "true")
+    only("anvil")
     wait(30)
-    self_anvil = (any("minecraft:anvil" in at(dy) for dy in (0, 1, 2)), is_on("Self Anvil"))
+    self_anvil = (any("minecraft:anvil" in at(dy) for dy in (0, 1, 2)), not turned_itself_off("anvil", "Anvil"))
     only()
     hole()
     slot(0, "obsidian", 8)
-    only("antianvil")
+    only("anvil")
     cmd(f"setblock {X0} {Y + 8} {Z0} minecraft:anvil")
     wait(30)
     anti_anvil = "minecraft:obsidian" in at(2) and "minecraft:anvil" in at(3)
@@ -8047,15 +8034,17 @@ def _():
     return ok, f"(chest opened, pig's health lost) off {got['off']}, No Interact {got['on']}"
 
 
-@test("Auto Anvil")
+@test("Anvil: Auto Anvil")
 def _():
-    # Bot1 3 blocks in front, anvils and stone buttons in your hotbar: in 3 s Auto Anvil drops anvils on Bot1 (how many
+    # Bot1 3 blocks in front, anvils and stone buttons in your hotbar: in 3 s Anvil's Auto Anvil drops anvils on Bot1 (how many
     # left your hotbar, and the health it lost); without it, none.
     if not CTL2:
         return None, "needs a second player"
     got = {}
-    for name, mods in (("off", ()), ("on", ("autoanvil",))):
+    for name, mods in (("off", ()), ("on", ("anvil",))):
         reset()
+        setting("anvil", "anti anvil", "false")
+        setting("anvil", "auto anvil", "true")
         slot(0, "diamond_sword")
         slot(1, "anvil", 16)
         slot(2, "stone_button", 16)

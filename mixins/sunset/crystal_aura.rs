@@ -217,23 +217,28 @@ fn rank(rating: &Rating) -> f64 {
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(NAME, Category::Combat, "Places and breaks crystals on enemies.")
+        // Aura places and breaks on enemies by itself; Macro (the old Crystal Macro, combat_macros.rs) does it on your
+        // right click with a crystal. The settings from Place delay on are both sections'.
+        Module::new(NAME, Category::Combat, "Places and breaks crystals on enemies, or on your right click.")
+            .bool("Aura", true)
             .bool("Require hold", false)
             .text("Hold key", "mouse4")
-            .num("Place delay", 0.0, 0.0, 10.0, 1.0)
-            .num("Break delay", 0.0, 0.0, 10.0, 1.0)
             .num("Min damage", 4.0, 0.0, 20.0, 0.5)
-            .num("Max self damage", 8.0, 0.0, 20.0, 0.5)
             .bool("Face place", true)
             .text("Force face place", "None")
-            .bool("Auto obsidian", true)
-            .bool("Switch back", true)
             .num("Turn speed", 4.5, 1.0, 10.0, 0.5)
             .num("View angle", 90.0, 30.0, 180.0, 5.0)
-            .bool("Human pace", true)
-            .bool("Protect loot", true)
             .bool("Render", true)
-            .text("Render color", "#FFD65CFF"),
+            .text("Render color", "#FFD65CFF")
+            .bool("Macro", false)
+            .num("Obsidian delay", 2.0, 0.0, 10.0, 1.0)
+            .num("Place delay", 0.0, 0.0, 10.0, 1.0)
+            .num("Break delay", 0.0, 0.0, 10.0, 1.0)
+            .num("Max self damage", 8.0, 0.0, 20.0, 0.5)
+            .bool("Auto obsidian", true)
+            .bool("Switch back", true)
+            .bool("Human pace", true)
+            .bool("Protect loot", true),
     ]
 }
 

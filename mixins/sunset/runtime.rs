@@ -324,8 +324,28 @@ impl Module {
                 "Blocks" | "Food" | "Arrows" | "Pearls" | "Junk" => self.p("Preset") != "Custom",
                 _ => true,
             },
-            "Crystal Aura" if name == "Hold key" => self.b("Require hold"),
-            "Crystal Aura" | "Anchor Aura" if name == "Render color" => self.b("Render"),
+            // Crystal Aura and Anchor Aura: each section's settings with it on, the shared ones with either.
+            "Crystal Aura" => match name {
+                "Aura" | "Macro" => true,
+                "Hold key" => self.b("Aura") && self.b("Require hold"),
+                "Render color" => self.b("Aura") && self.b("Render"),
+                "Require hold" | "Min damage" | "Face place" | "Force face place" | "Turn speed" | "View angle" | "Render" => self.b("Aura"),
+                "Obsidian delay" => self.b("Macro") && self.b("Auto obsidian"),
+                _ => self.b("Aura") || self.b("Macro"),
+            },
+            "Anchor Aura" => match name {
+                "Aura" | "Macro" => true,
+                "Render color" => self.b("Aura") && self.b("Render"),
+                "Min damage" | "Max self damage" | "Render" | "Turn speed" => self.b("Aura"),
+                "Mode" | "Delay" | "Safe anchor" | "Switch back" => self.b("Macro"),
+                "If unguarded" => self.b("Macro") && self.b("Safe anchor"),
+                _ => self.b("Aura") || self.b("Macro"),
+            },
+            "Anvil" => match name {
+                "Target range" | "Height" | "Delay" | "Place at feet" | "Multi place" => self.b("Auto Anvil"),
+                "Rotate" => self.b("Anti Anvil") || self.b("Self Anvil") || self.b("Auto Anvil"),
+                _ => true,
+            },
             "Speed" => match name {
                 "Vanilla speed" => self.p("Mode") != "Strafe",
                 "Strafe speed" | "Speed limit" => self.p("Mode") == "Strafe",
@@ -847,7 +867,6 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_combat::defaults());
     v.extend(super::sunset_crystal_aura::defaults());
     v.extend(super::sunset_anchor_aura::defaults());
-    v.extend(super::sunset_combat_macros::defaults());
     v.extend(super::sunset_melee::defaults());
     v.extend(super::sunset_combat_inventory::defaults());
     v.extend(super::sunset_lag::defaults());
@@ -1345,7 +1364,10 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let on = |id: &str| get(id, "on") == Some("true");
     // The old Offhand had Min health where the new one has Health.
     let old_offhand = get("offhand", "minhealth").is_some();
-    let gone = ["autototem", "autoinventorytotem", "hovertotem", "fastxp", "knockbackdelay", "autoshield", "shieldbreaker", "mace", "spearswap"];
+    let gone = [
+        "autototem", "autoinventorytotem", "hovertotem", "fastxp", "knockbackdelay", "autoshield", "shieldbreaker", "mace",
+        "spearswap", "crystalmacro", "anchormacro", "antianvil", "selfanvil", "autoanvil", "anchor",
+    ];
     let dropped = lines.iter().any(|&(id, field, _)| DROPPED.contains(&(id, field)));
     if !old_offhand && !dropped && !gone.iter().any(|id| had(id)) {
         return std::borrow::Cow::Borrowed(text);
@@ -1456,6 +1478,76 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
                 out.push(format!("fastuse.{field}={v}"));
             }
         }
+    }
+    // Crystal Aura and Anchor Aura took in Crystal Macro and Anchor Macro as their Macro sections, and Anvil took in
+    // Anti Anvil, Self Anvil and Auto Anvil as sections; Anchor (Movement) is gone, its lines with it. `id` took in
+    // `parts` (each old module with its section; Crystal Aura is its own Aura): it is on if any was, with only those
+    // sections on. With none on, the sections keep their defaults, unless the one key bound was another module's: that
+    // module's section alone then. The first key bound goes over; each `shared` setting is the first module's that
+    // was on (else the first with one), and `fields` (old module, old setting, new setting) are copied.
+    {
+        let mut merge = |id: &str, parts: &[(&str, &str)], shared: &[&str], fields: &[(&str, &str, &str)]| {
+            if !parts.iter().any(|(old, _)| *old != id && had(old)) {
+                return;
+            }
+            let any_on = parts.iter().any(|(old, _)| on(old));
+            out.push(format!("{id}.on={any_on}"));
+            let keyed: Vec<&str> =
+                parts.iter().map(|(old, _)| *old).filter(|old| get(old, "key").is_some_and(|k| k != "none")).collect();
+            if let Some(key) = keyed.first().and_then(|old| get(old, "key")) {
+                out.push(format!("{id}.key={key}"));
+            }
+            let sections: Option<Vec<&str>> = if any_on {
+                Some(parts.iter().map(|(old, _)| *old).filter(|old| on(old)).collect())
+            } else if let [only] = keyed.as_slice()
+                && *only != id
+            {
+                Some(vec![*only])
+            } else {
+                None
+            };
+            if let Some(sections) = sections {
+                for (old, section) in parts {
+                    out.push(format!("{id}.{section}={}", sections.contains(old)));
+                }
+            }
+            for field in shared {
+                let from = parts.iter().map(|(old, _)| *old).find(|old| on(old) && get(old, field).is_some())
+                    .or_else(|| parts.iter().map(|(old, _)| *old).find(|old| get(old, field).is_some()));
+                if let Some(v) = from.and_then(|old| get(old, field)) {
+                    out.push(format!("{id}.{field}={v}"));
+                }
+            }
+            for (old, old_field, field) in fields {
+                if let Some(v) = get(old, old_field) {
+                    out.push(format!("{id}.{field}={v}"));
+                }
+            }
+        };
+        merge(
+            "crystalaura",
+            &[("crystalaura", "aura"), ("crystalmacro", "macro")],
+            &["placedelay", "breakdelay", "maxselfdamage", "autoobsidian", "switchback", "humanpace", "protectloot"],
+            &[("crystalmacro", "obsidiandelay", "obsidiandelay")],
+        );
+        merge(
+            "anchoraura",
+            &[("anchoraura", "aura"), ("anchormacro", "macro")],
+            &["protectloot"],
+            &[
+                ("anchormacro", "mode", "mode"), ("anchormacro", "delay", "delay"), ("anchormacro", "safeanchor", "safeanchor"),
+                ("anchormacro", "ifunguarded", "ifunguarded"), ("anchormacro", "switchback", "switchback"),
+            ],
+        );
+        merge(
+            "anvil",
+            &[("antianvil", "antianvil"), ("selfanvil", "selfanvil"), ("autoanvil", "autoanvil")],
+            &["rotate"],
+            &[
+                ("autoanvil", "targetrange", "targetrange"), ("autoanvil", "height", "height"), ("autoanvil", "delay", "delay"),
+                ("autoanvil", "placeatfeet", "placeatfeet"), ("autoanvil", "multiplace", "multiplace"),
+            ],
+        );
     }
     if !old_offhand && !gone[..3].iter().any(|id| had(id)) {
         return std::borrow::Cow::Owned(out.join("\n"));
@@ -7224,6 +7316,9 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Criticals" => "crits",
         "Offhand" => "totem auto totem inventory totem hover totem crystal gapple",
         "Auto Weapon" => "shield breaker axe mace spear swap lunge best weapon",
+        "Crystal Aura" => "crystal macro",
+        "Anchor Aura" => "anchor macro",
+        "Anvil" => "anti anvil self anvil auto anvil",
         "Xray" => "x-ray",
         "Entity Control" => "boat fly boatfly entity speed entity fly horse ride vehicle",
         "Clear Water" => "water opacity see through transparent",
@@ -8722,5 +8817,68 @@ mod velocity_merge_tests {
         assert_eq!(out["velocity.key"], "key.keyboard.v");
         let current = "velocity.on=true\nvelocity.knockbackdelay=false\n";
         assert!(matches!(merged_modules(current), std::borrow::Cow::Borrowed(_)));
+    }
+}
+
+#[cfg(test)]
+mod section_merge_tests {
+    use super::merged_modules;
+    use std::collections::BTreeMap;
+
+    fn fields(text: &str) -> BTreeMap<String, String> {
+        merged_modules(text).lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.into(), v.into())).collect()
+    }
+
+    #[test]
+    fn crystal_macro_alone_is_crystal_auras_macro_with_its_settings() {
+        let out = fields("crystalaura.on=false\ncrystalaura.key=none\ncrystalaura.placedelay=0\ncrystalaura.switchback=true\n\
+            crystalmacro.on=true\ncrystalmacro.key=key.mouse.4\ncrystalmacro.placedelay=3\ncrystalmacro.switchback=false\n\
+            crystalmacro.obsidiandelay=5\n");
+        for (field, value) in [("on", "true"), ("key", "key.mouse.4"), ("aura", "false"), ("macro", "true"), ("placedelay", "3"),
+            ("switchback", "false"), ("obsidiandelay", "5")] {
+            assert_eq!(out[&format!("crystalaura.{field}")], value, "{field}");
+        }
+        assert!(!out.keys().any(|k| k.starts_with("crystalmacro.")));
+    }
+
+    #[test]
+    fn crystal_aura_on_keeps_its_shared_settings_and_key() {
+        let out = fields("crystalaura.on=true\ncrystalaura.key=key.keyboard.c\ncrystalaura.placedelay=1\n\
+            crystalmacro.on=true\ncrystalmacro.key=key.mouse.4\ncrystalmacro.placedelay=3\n");
+        for (field, value) in [("on", "true"), ("key", "key.keyboard.c"), ("aura", "true"), ("macro", "true"), ("placedelay", "1")] {
+            assert_eq!(out[&format!("crystalaura.{field}")], value, "{field}");
+        }
+    }
+
+    #[test]
+    fn off_modules_keep_default_sections_unless_only_a_macro_was_bound() {
+        let both_off = fields("anchoraura.on=false\nanchoraura.key=none\nanchormacro.on=false\nanchormacro.key=none\nanchormacro.mode=Double\n");
+        assert_eq!(both_off["anchoraura.on"], "false");
+        assert_eq!(both_off["anchoraura.mode"], "Double");
+        assert!(!both_off.contains_key("anchoraura.aura") && !both_off.contains_key("anchoraura.macro"));
+        let bound = fields("anchoraura.on=false\nanchoraura.key=none\nanchormacro.on=false\nanchormacro.key=key.keyboard.r\n");
+        for (field, value) in [("key", "key.keyboard.r"), ("aura", "false"), ("macro", "true")] {
+            assert_eq!(bound[&format!("anchoraura.{field}")], value, "{field}");
+        }
+    }
+
+    #[test]
+    fn anvil_modules_become_its_sections() {
+        let out = fields("antianvil.on=true\nantianvil.key=none\nantianvil.rotate=false\nselfanvil.on=false\nselfanvil.key=key.keyboard.v\n\
+            autoanvil.on=true\nautoanvil.key=none\nautoanvil.height=4\nautoanvil.rotate=true\n");
+        for (field, value) in [("on", "true"), ("key", "key.keyboard.v"), ("antianvil", "true"), ("selfanvil", "false"),
+            ("autoanvil", "true"), ("rotate", "false"), ("height", "4")] {
+            assert_eq!(out[&format!("anvil.{field}")], value, "{field}");
+        }
+        assert!(!out.keys().any(|k| ["antianvil.", "selfanvil.", "autoanvil."].iter().any(|p| k.starts_with(p))));
+    }
+
+    #[test]
+    fn anchor_lines_go_and_anchor_aura_stays() {
+        let out = fields("anchor.on=true\nanchor.key=none\nanchor.maxheight=10\nanchoraura.on=true\nanchoraura.mindamage=6\n");
+        assert!(!out.keys().any(|k| k.starts_with("anchor.")));
+        assert_eq!(out["anchoraura.on"], "true");
+        assert_eq!(out["anchoraura.mindamage"], "6");
+        assert!(!out.contains_key("anchoraura.macro"));
     }
 }
