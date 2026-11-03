@@ -7602,6 +7602,82 @@ def _():
     return ok, ("(pig health lost to 3 R, snowballs thrown by 3 F, chat line 'rf' sent, no hit while typing): "
                 f"off {got['off']}, on {got['on']}")
 
+@test("Sticky keys (real input)")
+def _():
+    # Real presses (xdotool): a key or button held (it works: you walk, place, break), a screen opened over it, let go
+    # behind the screen, the screen closed. Vanilla re-reads the keyboard and mouse as a screen closes, so nothing goes
+    # on after: W walks no further (inventory, inventory with GUI Move, Sunset's menu, chat), right click holds no
+    # shield up, left click breaks no more of a wall (creative), behind the inventory and Sunset's menu. And the game
+    # holds no keys after.
+    window = x_window()
+    if not window:
+        return None, "needs xdotool and the game's window"
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+
+    def x(*args):
+        subprocess.run(["xdotool", *args], env=env, capture_output=True)
+        wait(6)
+
+    def behind(hold, screen, close, measure):
+        x("windowfocus", "--sync", window)
+        # A click first: after a screen the cursor is free, and the first press only takes it back.
+        x("click", "3")
+        before = measure()
+        x(*(("mousedown", hold) if hold.isdigit() else ("keydown", hold)))
+        wait(10)
+        worked = measure() != before
+        for k in screen:
+            x("key", k)
+        seen = state().get("screen") != "playing" or bool(ctl("status").get("sunset_menu"))
+        x(*(("mouseup", hold) if hold.isdigit() else ("keyup", hold)))
+        x("key", close)
+        wait(4)
+        return worked, seen
+
+    def keys():
+        return ctl("status").get("keys") or []
+
+    got = {}
+    for name, mods, screen, close in (("inventory", (), ("e",), "Escape"), ("inventory, GUI Move", ("guimove",), ("e",), "Escape"),
+                                      ("Sunset menu", (), ("grave",), "grave"), ("chat", (), ("t",), "Escape")):
+        reset()
+        only(*mods)
+        worked, seen = behind("w", screen, close, lambda: round(pos()[2], 2))
+        at = pos()
+        wait(20)
+        got[name] = (worked, round(flat(at, pos()), 2), keys())
+        only()
+    for name, screen, close in (("inventory", ("e",), "Escape"), ("Sunset menu", ("grave",), "grave")):
+        reset()
+        slot(0, "shield")
+        ctl("key", "1", "tap")
+        using = lambda: bool(ctl("status").get("using"))
+        worked, _ = behind("3", screen, close, using)
+        wait(10)
+        got[f"right click, {name}"] = (worked, int(using()), keys())
+        if name == "Sunset menu":
+            # RF Click's F is the right button: its release behind the menu lets go too.
+            only("rfclick")
+            worked, _ = behind("f", screen, close, using)
+            wait(10)
+            got["RF Click F, Sunset menu"] = (worked, int(using()), keys())
+            only()
+        reset("creative")
+        cmd(f"fill {X0-1} {Y+1} {Z0+2} {X0+1} {Y+3} {Z0+6} minecraft:stone")
+        ctl("look", "0", "10")
+        wait(5)
+        wall = lambda: count(X0 - 1, Y + 1, Z0 + 2, X0 + 1, Y + 3, Z0 + 6, "stone")
+        worked, _ = behind("1", screen, close, wall)
+        left = wall()
+        wait(30)
+        got[f"left click, {name}"] = (worked, left - wall(), keys())
+        cmd(f"fill {X0-1} {Y+1} {Z0+2} {X0+1} {Y+3} {Z0+6} minecraft:air")
+    stuck = [k for k, (_, n, held) in got.items() if n > 0.05 or held]
+    idle = [k for k, (worked, _, _) in got.items() if not worked]
+    return not stuck and not idle, (f"(held input worked, then after the screen closed: blocks walked / shield still up / blocks broken, "
+                                    f"held keys): {got}; stuck: {stuck}; did nothing while held: {idle}")
+
+
 # ---- .goto (Rust's PR #24): Horizon's own A* path and walking task, started from chat
 
 def goto_walk(x, y, z, interrupt=None, limit=30):

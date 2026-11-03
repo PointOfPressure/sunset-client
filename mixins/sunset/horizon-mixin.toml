@@ -425,7 +425,9 @@ kind = "HEAD"
 cancellable = true
 target = "horizon_client::game::Game<'_>::mapped_key"
 helper = "input.rs"
-bindings = []
+bindings = [
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
 
 [[injection]]
 id = "buttons"

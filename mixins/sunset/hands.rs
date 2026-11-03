@@ -67,6 +67,11 @@ pub(super) fn frame(game: &Game<'_>) {
     });
 }
 
+// Focus lost: the window sends no releases for what was down, and the game lets go of its buttons by itself.
+pub(super) fn rf_focus_lost() {
+    hands(|h| h.down = [false; 2]);
+}
+
 // The window's key events, before anything sees them: RF Click's keys become mouse button presses and releases (a key
 // repeat becomes nothing). A key let go is always the button let go, even if typing started meanwhile.
 pub(super) fn rf_event(event: &mut WindowEvent) {

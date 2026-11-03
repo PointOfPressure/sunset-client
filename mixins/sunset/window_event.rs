@@ -6,5 +6,6 @@ fn sunset_window_event(event: &winit::event::WindowEvent) {
     crate::game::sunset::bind_event(event);
     if let winit::event::WindowEvent::Focused(false) = event {
         crate::game::sunset_combat_macros::focus_lost();
+        crate::game::sunset_hands::rf_focus_lost();
     }
 }
