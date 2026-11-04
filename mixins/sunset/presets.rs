@@ -53,12 +53,13 @@ sprint.on=true
 autorespawn.on=true
 ",
     },
-    // Cart PvP holds the general fight set until the minecart modules come; they go in its text.
+    // Cart PvP: the general fight set and Cart.
     Preset {
         id: "pvp-cart",
         title: "PvP: carts",
         about: "Minecart fights.",
         text: "sunset-profile=1
+cart.on=true
 offhand.on=true
 autoarmor.on=true
 autoreplenish.on=true

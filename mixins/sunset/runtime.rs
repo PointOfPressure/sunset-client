@@ -412,6 +412,7 @@ impl Module {
                 _ => true,
             },
             "Base Finder" => super::sunset_base_finder::visible(self, name),
+            "Cart" => super::sunset_cart::visible(self, name),
             "Auto Weapon" => match name {
                 "Prefer axes" => self.b("Best weapon"),
                 "Shield mode" | "Shield held" | "Stun slam" => self.b("Axe on shields"),
@@ -876,6 +877,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.splice(0..0, super::sunset_aura::defaults());
     v.extend(super::sunset_combat::defaults());
     v.extend(super::sunset_crystal_aura::defaults());
+    v.extend(super::sunset_cart::defaults());
     v.extend(super::sunset_anchor_aura::defaults());
     v.extend(super::sunset_melee::defaults());
     v.extend(super::sunset_combat_inventory::defaults());
@@ -2210,6 +2212,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
             },
             "Velocity" => with(|s| { s.velocity = None; s.blast = [0.0; 3]; }),
             "Crystal Aura" => super::sunset_crystal_aura::disabled(game),
+            "Cart" => super::sunset_cart::reset(game),
             "Kill Aura" => {
                 let swap_back = with(|s| s.module("Kill Aura").is_some_and(|m| m.b("Swap back")));
                 super::sunset_aura::disabled(game, swap_back);
@@ -2357,6 +2360,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     super::sunset_melee::key(game, key, pressed);
     super::sunset_combat_inventory::key(game, key, pressed);
     super::sunset_duel::key(game, key, pressed);
+    super::sunset_cart::key(game, key, pressed);
     if !pressed {
         with(|s| {
             let held = s.inputs.release(key);
@@ -2497,6 +2501,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_melee::due(game);
     // Pearl Catch's wind charge: in a tick with no hit and no slot change before it.
     super::sunset_duel::catch_throw(game, hits || game.selected != selected);
+    // Cart's steps: in a tick with no hit and no slot change before them.
+    super::sunset_cart::pre_tick(game, hits || game.selected != selected);
     let mods = snapshot();
     super::sunset_render::pre_tick(game, &mods);
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
@@ -3066,6 +3072,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_parity::tick(game, &mods);
     super::sunset_hands::tick(game);
     super::sunset_combat::tick(game, &mods);
+    super::sunset_cart::post_tick(game);
     super::sunset_explosive_aura::tick(game, &mods, game.ticks);
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_player::tick(game, &mods);
@@ -5635,6 +5642,7 @@ fn combat_cleanup(game: &mut Game<'_>) {
     super::sunset_combat_control::reset();
     super::sunset_crystal_aura::disabled(game);
     super::sunset_anchor_aura::disabled(game);
+    super::sunset_cart::reset(game);
 }
 
 // turn_then only when no look waits: Crystal Aura, Anchor Aura and the macros switch the hand in `then`, so an ask
@@ -7637,6 +7645,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Offhand" => "totem auto totem inventory totem hover totem crystal gapple",
         "Auto Weapon" => "shield breaker axe mace spear swap lunge best weapon",
         "Crystal Aura" => "crystal macro",
+        "Cart" => "tnt minecart cart pvp auto cart cart aura xbow cart crossbow safe cart cover refill cart refill pearl catch",
         "Anchor Aura" => "anchor macro",
         "Anvil" => "anti anvil self anvil auto anvil",
         "Xray" => "x-ray",
