@@ -1645,6 +1645,25 @@ name = "sunset_effects"
 source = "effects.rs"
 
 [[module]]
+id = "ore_sim"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_ore_sim"
+source = "ore_sim.rs"
+
+[[module]]
+id = "ore_sim_source"
+file = "crates/horizon-world/src/worldgen/generator.rs"
+name = "sunset_ore_sim"
+source = "ore_sim_source.rs"
+visibility = "pub"
+
+[[module]]
+id = "ore_sim_replay"
+file = "crates/horizon-world/src/worldgen/generator_decoration.rs"
+name = "sunset_ore_sim_replay"
+source = "ore_sim_replay.rs"
+
+[[module]]
 id = "esp2d"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_esp2d"

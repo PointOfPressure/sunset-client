@@ -15,7 +15,7 @@
 # SUNSET_PROBE): PROBE names it, else <session>/probe.log. They move mobs with
 # a small data pack written into the world folder: WORLD names it, else the
 # single player world of the session or ~/hzmeteor/srv/world on a server.
-import json, math, os, subprocess, sys, time
+import json, math, os, re, subprocess, sys, time
 
 CTL = sys.argv[1]
 CTL2 = os.environ.get("CTL2")
@@ -2213,6 +2213,50 @@ def _():
     return ok, (f"colour off the drained lake: plain water {plain:.1f}, 0% {gone:.1f}, 30% {faint:.1f}, 100% no tint {full:.1f}, "
                 f"off again {back:.1f}; under water {under:.1f} on, {under_plain:.1f} off; {fps_off:.0f} fps off, {fps_on:.0f} on "
                 f"(frames in {SHOTS}/cw_*.png)")
+
+
+@test("Ore Sim")
+def _():
+    # The world's seed from /seed, then Ore Sim on with it: when the chunks round you are done it says how many ores
+    # it worked out and how many of those the server already shows as ore. No test server hides ores (no
+    # anti-xray), so with the right seed most must show (deep ores all of them; coal and copper near the surface
+    # less, where the arena's builds and trees change the floor the generator measured); with the seed one off,
+    # hardly any.
+    reset("creative")
+    mark = log_mark()
+    cmd("seed")
+    wait(5)
+    found = [re.search(r"Seed: \[(-?\d+)\]", line) for line in chat_since(mark)]
+    seed = next((int(f.group(1)) for f in found if f), None)
+    if seed is None:
+        return False, f"no seed in chat: {chat_since(mark)[-3:]}"
+    setting("oresim", "chunks", "2")
+
+    def run(value):
+        setting("oresim", "seed", str(value))
+        mark = log_mark()
+        toggle("ore sim", True)
+        line = ""
+        for _ in range(60):
+            wait(10)
+            line = next((l for l in sunset_said(mark) if l.startswith("Ore Sim:")), "")
+            if line:
+                break
+        if value == seed:
+            # The boxes through the ground below the arena, for the record.
+            ctl("look", "0", "70")
+            wait(20)
+            ctl("screenshot", f"{SHOTS}/ore_sim.png")
+            time.sleep(2)
+        toggle("ore sim", False)
+        m = re.search(r"(\d+) ores in (\d+) chunks, (\d+) of them", line)
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None, line
+
+    right, line = run(seed)
+    wrong, line2 = run(seed + 1)
+    ok = (right is not None and wrong is not None and right[0] >= 100 and right[2] >= 0.6 * right[0]
+          and wrong[2] <= 0.1 * max(wrong[0], 1))
+    return ok, f"seed {seed}: {line!r}; seed {seed + 1}: {line2!r}"
 
 
 @test("Base Finder")
