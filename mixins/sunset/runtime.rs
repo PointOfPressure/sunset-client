@@ -320,6 +320,7 @@ impl Module {
             // Kill Aura's and Trigger Bot's Shield: its settings with it on.
             "Kill Aura" | "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
             "Auto Armor" => name != "Armor key" || self.p("Mode") == "Key",
+            "Ghost Hand" => name != "Cut through" || !self.b("Hits"),
             "Auto Clicker" => match name {
                 "Delay (ticks)" => self.p("Mode") == "Delay",
                 "Min CPS" | "Max CPS" => self.p("Mode") == "CPS",

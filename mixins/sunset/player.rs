@@ -83,7 +83,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Weapons", "sword,axe,pickaxe,shovel,hoe,mace,spear,trident"),
         Module::new("Ghost Hand", Player, "Uses containers through blocks.")
             .bool("Blocks", true)
-            .bool("Hits", false),
+            .bool("Hits", false)
+            .bool("Cut through", false),
         Module::new("Air Place", Player, "Places blocks in the air.")
             .num("Range", 5.0, 2.0, 6.0, 0.5),
         Module::new("Speed Mine", Player, "Mines faster.")
@@ -156,10 +157,10 @@ pub(super) fn reach_extra() -> Option<f64> {
     (bits != u64::MAX).then(|| f64::from_bits(bits))
 }
 
-// How far the crosshair picks mobs (f64 bits; u64::MAX: the game's own), and Ghost Hand's Hits, read by the
-// mob_hit and before_block hooks.
+// How far the crosshair picks mobs (f64 bits; u64::MAX: the game's own), and Ghost Hand's Hits (1: through anything,
+// 2: Cut through, only through blocks with nothing to collide with), read by the mob_hit and before_block hooks.
 static ENTITY_REACH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
-static WALL_HITS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static WALL_HITS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 // Hitboxes: how far the boxes of the mobs it picked this tick grow each way, and their ids (read by the mob_hit hook).
 static HITBOXES: Mutex<(f64, Vec<u32>)> = Mutex::new((0.0, Vec::new()));
@@ -241,9 +242,18 @@ fn hitboxes(game: &Game<'_>, m: Option<&Module>) -> (f64, Vec<u32>) {
     (m.n("Expand"), ids)
 }
 
-// Ghost Hand's Hits: the mob under the crosshair counts as before any block.
+// Ghost Hand's Hits: the mob under the crosshair counts as before any block. Cut through: only when no block between
+// you and it has a collision box (grass, flowers, torches, cobwebs and the like are passed).
 pub(super) fn hit_through_walls(game: &Game<'_>, distance: f64) -> bool {
-    WALL_HITS.load(std::sync::atomic::Ordering::Relaxed) && game.mob_hit().is_some_and(|(_, d)| d == distance)
+    let mode = WALL_HITS.load(std::sync::atomic::Ordering::Relaxed);
+    if mode == 0 || !game.mob_hit().is_some_and(|(_, d)| d == distance) {
+        return false;
+    }
+    mode == 1
+        || game.aim().is_some_and(|(eye, dir)| {
+            let to = std::array::from_fn(|i| eye[i] + dir[i] * distance);
+            super::sunset_combat::clip_clear(game, eye, to, distance)
+        })
 }
 
 // What Ghost Hand opens or uses: containers, doors, trapdoors, gates, buttons, levers and work blocks.
@@ -336,7 +346,8 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     let pickaxe = [game.held(), game.offhand.as_ref()].into_iter().flatten().any(|s| s.item.ends_with("_pickaxe"));
     *NO_TRACE.lock().unwrap_or_else(|e| e.into_inner()) =
         get("Mine Through Mobs").filter(|m| pickaxe || !m.b("Only with a pickaxe")).map(|m| m.t("Entities").to_owned());
-    WALL_HITS.store(get("Ghost Hand").is_some_and(|m| m.b("Hits")), std::sync::atomic::Ordering::Relaxed);
+    let hits = get("Ghost Hand").map_or(0, |m| if m.b("Hits") { 1 } else { 2 * u8::from(m.b("Cut through")) });
+    WALL_HITS.store(hits, std::sync::atomic::Ordering::Relaxed);
     // These work on the inventory screen, which in_world leaves out.
     if game.remote.is_some() && game.player.is_some() {
         if let Some(m) = get("Chest Stealer") {

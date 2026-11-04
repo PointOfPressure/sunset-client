@@ -11947,6 +11947,49 @@ def _():
     return ok, f"friend near: {friend}; not a friend: {stranger}"
 
 
+
+def cut_pig(block, *settings, mods=("ghosthand",)):
+    """A tough pig 3 blocks ahead behind `block` (in the block before it, on a grass floor), one click at it with
+    `mods` on: health it lost, and whether the block is still there."""
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    cmd(f"setblock {X0} {Y} {Z0 + 2} minecraft:grass_block", f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:{block}",
+        f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 3.0} {TOUGH_PIG}")
+    for name, value in (("blocks", "false"), ("hits", "false"), ("cut through", "false"), *settings):
+        setting("ghosthand", name, value)
+    wait(10)
+    ctl("look", "0", "27.8")
+    only(*mods)
+    wait(5)
+    ctl("mouse", "left", "click")
+    wait(25)
+    only()
+    m = mobs("pig")
+    there = check(f"execute if block {X0} {Y + 1} {Z0 + 2} minecraft:{block}")
+    cmd(f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:air", f"setblock {X0} {Y} {Z0 + 2} minecraft:stone")
+    return (round(1000 - m[0]["health"], 1) if m else None), there
+
+
+@test("Ghost Hand (Cut through)")
+def _():
+    # Through short grass and a cobweb to the pig behind with Cut through; off, the click breaks the grass and the
+    # pig is not hit; glass stops Cut through but not Hits (through anything).
+    off = cut_pig("short_grass", mods=())
+    grass = cut_pig("short_grass", ("cut through", "true"))
+    web = cut_pig("cobweb", ("cut through", "true"))
+    glass = cut_pig("glass", ("cut through", "true"))
+    walls = cut_pig("glass", ("hits", "true"))
+    note = (f"pig health lost (block kept): off {off}, grass {grass}, cobweb {web}, glass {glass}, glass with Hits "
+            f"{walls}")
+    # Horizon's server (single player's too) hits along your look itself and stops at the grass: the click still
+    # goes to the pig (the grass is kept), and nothing is hit.
+    horizon = HORIZON_SERVER or not SERVER
+    hit = (lambda r: r[0] == 0) if horizon else (lambda r: (r[0] or 0) > 0)
+    ok = off[0] == 0 and not off[1] and hit(grass) and grass[1] and hit(web) and web[1] and glass[0] == 0
+    return ok and (horizon or (walls[0] or 0) > 0), ("Horizon's server: " if horizon else "") + note
+
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

@@ -1227,7 +1227,7 @@ impl RayWorld for ColliderRays<'_, '_> {
 }
 
 // Nothing solid between the eyes and `to` (`d` away): the ray misses, or stops no nearer than 0.01 short of it.
-fn clip_clear(game: &Game<'_>, eye: [f64; 3], to: [f64; 3], d: f64) -> bool {
+pub(super) fn clip_clear(game: &Game<'_>, eye: [f64; 3], to: [f64; 3], d: f64) -> bool {
     let Some(p) = game.player.as_ref() else {
         return false;
     };
