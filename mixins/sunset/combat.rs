@@ -91,7 +91,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Rotate", true),
         Module::new("Aim Assist", Combat, "Helps your aim.")
             // Simple is vape-rs's AimAssist (turns you toward the target on its own); Duelkit only adds to your mouse.
-            .pick("Mode", &["Simple", "Duelkit"])
+            .pick("Mode", &["Simple", "Duelkit", "Clicks only"])
             .bool("Require mouse down", true)
             .num("Horizontal speed", 5.0, 1.0, 10.0, 0.1)
             .bool("Aim vertically", false)
@@ -119,7 +119,19 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Keep target", 1.5, 1.0, 3.0, 0.1)
             .bool("Only with a weapon", true)
             .bool("Anti bot", false)
-            .bool("Ignore teams", false),
+            .bool("Ignore teams", false)
+            .bool("Silent aim", false)
+            .bool("Silent players only", true)
+            .bool("Silent weapon only", false)
+            .num("Silent max yaw", 180.0, 0.0, 180.0, 5.0)
+            .num("Silent max pitch", 90.0, 0.0, 90.0, 5.0)
+            .text("Aim points", "head,body")
+            .bool("Hit flick", false)
+            .bool("Flick players only", true)
+            .bool("Flick needs sprint", true)
+            .num("Flick min angle", 60.0, 10.0, 180.0, 5.0)
+            .num("Flick max angle", 75.0, 10.0, 180.0, 5.0)
+            .pick("Flick direction", &["Right", "Left", "Random"]),
         Module::new("Crystal Optimizer", Combat, "Breaks hit crystals at once.")
             .bool("Instant break", true)
             .num("Reach", 4.5, 3.0, 6.0, 0.5)
@@ -1328,7 +1340,11 @@ pub(super) fn aim_after(game: &mut Game<'_>) {
         cs(|c| c.aim_target = None);
         return;
     };
-    let turn = if m.p("Mode") == "Simple" { simple_turn(game, &m, dt) } else { aim_turn(game, &m, dt) };
+    let turn = match m.p("Mode") {
+        "Simple" => simple_turn(game, &m, dt),
+        "Duelkit" => aim_turn(game, &m, dt),
+        _ => return,
+    };
     // turn_player takes mouse units, 0.15 degrees each (Entity.turn), and keeps the interpolation in step.
     if turn != [0.0; 2] {
         game.turn_player(turn[0] / 0.15, turn[1] / 0.15);

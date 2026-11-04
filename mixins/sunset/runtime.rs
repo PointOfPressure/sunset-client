@@ -414,6 +414,19 @@ impl Module {
                 _ => true,
             },
             "Sprint" if name.ends_with("restore delay") => self.b("Keep sprint"),
+            "Aim Assist" => match name {
+                "Silent players only" | "Silent weapon only" | "Silent max yaw" | "Silent max pitch" => self.b("Silent aim"),
+                "Aim points" => self.b("Silent aim") || self.b("Hit flick"),
+                "Flick players only" | "Flick needs sprint" | "Flick min angle" | "Flick max angle" | "Flick direction" => self.b("Hit flick"),
+                _ => true,
+            },
+            "No Interact" => match name {
+                "Hit fix weapons only" | "Hit fix hurt time" | "Hit fix on ground" => self.b("Hit fix"),
+                "Humanize (%)" | "In combat only" => self.b("No miss delay"),
+                "Combat range" => self.b("No miss delay") && self.b("In combat only"),
+                "Double glowstone" | "Open ender chest" | "Place glowstone" | "Ground firework" => self.b("Anti action"),
+                _ => true,
+            },
             "Step" => match name {
                 "Height" | "Active when" | "Safe step" => self.b("Step up"),
                 "Step health" => self.b("Step up") && self.b("Safe step"),
@@ -3076,6 +3089,7 @@ fn module_tick(game: &mut Game<'_>) {
     }
     super::sunset_combat_macros::tick(game, &mods, game.ticks);
     super::sunset_melee::tick(game);
+    super::sunset_click_fix::tick(game);
     super::sunset_combat_inventory::tick(game, &mods);
     super::sunset_lag::tick(game, &mods);
     super::sunset_pvp_bot::tick(game, &mods);
@@ -7634,6 +7648,8 @@ pub(super) fn aliases(name: &str) -> &'static str {
     match name {
         "Velocity" => "knockback delay knockbackdelay",
         "Fake Lag" => "fakelag backtrack back track choke lag",
+        "Aim Assist" => "silent aim silentaim hit flick hitflick",
+        "No Interact" => "hit fix hitfix no miss delay nomissdelay anti action antiaction",
         "Sprint" => "keep sprint keepsprint",
         "W Tap" => "wtap w-tap s tap",
         "Jump Reset" => "auto jump reset jumpreset",

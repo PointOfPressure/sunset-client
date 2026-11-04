@@ -9395,6 +9395,150 @@ def _():
     return 150 <= extra <= 450, f"you see Bot1 walk away {late['off']} ms late without Backtrack, {late['on']} ms with it (+{extra} ms for 300 ms)"
 
 
+@test("Aim Assist (Silent aim)")
+def _():
+    # Bot1 2.5 blocks in front, you look 25 degrees to its side (a miss): 3 clicks with a sword. Without Silent aim
+    # they hit nothing; with it (Aim Assist on Clicks only) each goes to Bot1, under a look the server gets first.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("aimassist", "mode", "Clicks only")
+    setting("aimassist", "silent aim", "true")
+    lost = {}
+    for name, mods in (("off", ()), ("on", ("aimassist",))):
+        reset()
+        slot(0, "wooden_sword")
+        ctl("key", "1", "tap")
+        bot_ready(2.5, 180)
+        before = bot_health()
+        only(*mods)
+        for _ in range(3):
+            cmd(f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 3.0} 180 0")
+            wait(2)
+            ctl("look", "25", "5")
+            wait(2)
+            ctl("mouse", "left", "click")
+            wait(14)
+        only()
+        lost[name] = round(before - bot_health(), 1)
+    bot_done()
+    say(".reset aimassist")
+    return lost["off"] == 0 and lost["on"] > 0, f"Bot1's health lost to 3 clicks 25 degrees off: {lost['off']} without, {lost['on']} with Silent aim"
+
+
+@test("Aim Assist (Hit flick)")
+def _():
+    # A click on Bot1 with Hit flick (60-75 degrees, not only sprinting): the looks the move packets carry after the
+    # click turn at least 55 degrees away from Bot1 and then back within 15, before the hit, which lands; never two
+    # move packets in a tick.
+    if not CTL2:
+        return None, "needs a second player"
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    setting("aimassist", "mode", "Clicks only")
+    setting("aimassist", "hit flick", "true")
+    setting("aimassist", "flick needs sprint", "false")
+    reset()
+    slot(0, "wooden_sword")
+    ctl("key", "1", "tap")
+    bot_ready(2.5, 180)
+    before = bot_health()
+    only("aimassist")
+    ctl("look", "0", "5")
+    wait(3)
+    mark = probe_mark()
+    ctl("mouse", "left", "click")
+    wait(15)
+    only()
+    lost = round(before - bot_health(), 1)
+    bot_done()
+    say(".reset aimassist")
+    with open(probe_path(), errors="replace") as f:
+        f.seek(mark)
+        lines = [line.split() for line in f if line.startswith(("look ", "order attack"))]
+    hit = next((i for i, w in enumerate(lines) if w[0] == "order"), None)
+    looks = [abs(wrap(float(w[1]))) for w in lines[:hit] if w[0] == "look"] if hit is not None else []
+    away = max(looks, default=0.0)
+    back = looks[-1] if looks else None
+    most = order_stats(mark)[3]
+    ok = lost > 0 and away >= 55 and back is not None and back <= 15 and most <= 1
+    return ok, f"looks before the hit (degrees off Bot1) {[round(a) for a in looks]}, Bot1 lost {lost}, most moves in a tick {most}"
+
+
+@test("No Interact (No miss delay)")
+def _():
+    # 5 sword swings at the sky: each sends a swing packet without No miss delay, none with it.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    setting("nointeract", "no miss delay", "true")
+    got = {}
+    for name, mods in (("off", ()), ("on", ("nointeract",))):
+        reset()
+        slot(0, "wooden_sword")
+        ctl("key", "1", "tap")
+        only(*mods)
+        ctl("look", "0", "-80")
+        wait(3)
+        mark = probe_mark()
+        for _ in range(5):
+            ctl("mouse", "left", "click")
+            wait(4)
+        only()
+        with open(probe_path(), errors="replace") as f:
+            f.seek(mark)
+            got[name] = sum(1 for line in f if line.strip() == f"pkt {PUNCH}")
+    return got["off"] >= 5 and got["on"] == 0, f"swing packets for 5 swings at nothing: {got['off']} without, {got['on']} with No miss delay"
+
+
+@test("No Interact (Hit fix)")
+def _():
+    # Two clicks on Bot1 (2 blocks away, so the first hit's knockback leaves it in reach) 3 ticks apart with a sword:
+    # the second lands in its hurt time and does nothing without Hit fix; with it, it waits until the hurt time is over
+    # and lands then.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("nointeract", "hit fix", "true")
+    lost = {}
+    for name, mods in (("off", ()), ("on", ("nointeract",))):
+        reset()
+        slot(0, "stone_sword")
+        ctl("key", "1", "tap")
+        bot_ready(2.0, 180)
+        bot = next(e["id"] for e in ctl("entities").get("entities", []) if e.get("type") == "minecraft:player")
+        before = bot_health()
+        only(*mods)
+        ctl("look-at-entity", str(bot))
+        wait(15)
+        ctl("mouse", "left", "click")
+        wait(3)
+        ctl("look-at-entity", str(bot))
+        ctl("mouse", "left", "click")
+        wait(30)
+        only()
+        lost[name] = round(before - bot_health(), 1)
+    bot_done()
+    return lost["on"] > lost["off"] + 0.5, f"Bot1's health lost to two clicks 3 ticks apart: {lost['off']} without, {lost['on']} with Hit fix"
+
+
+@test("No Interact (Anti action)")
+def _():
+    # Glowstone in hand, a right click on the floor in front: it is put down without Anti action, not with it.
+    setting("nointeract", "anti action", "true")
+    got = {}
+    for name, mods in (("off", ()), ("on", ("nointeract",))):
+        reset()
+        slot(0, "glowstone", 8)
+        ctl("key", "1", "tap")
+        only(*mods)
+        ctl("look-at", str(X0 + 0.5), str(Y + 1.0), str(Z0 + 2.5))
+        wait(3)
+        ctl("mouse", "right", "click")
+        wait(10)
+        only()
+        got[name] = check(f"execute if block {X0} {Y + 1} {Z0 + 2} minecraft:glowstone")
+        cmd(f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:air")
+    return got["off"] and not got["on"], f"glowstone put on the floor: {got['off']} without, {got['on']} with Anti action"
+
+
 @test("Auto Weapon (Totem hit)")
 def _():
     # A totem in hand and a Knockback II sword in slot 1: one click on Bot1, without and with Totem hit. With it Auto

@@ -1553,6 +1553,12 @@ name = "sunset_melee"
 source = "melee.rs"
 
 [[module]]
+id = "click_fix"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_click_fix"
+source = "click_fix.rs"
+
+[[module]]
 id = "lag"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_lag"

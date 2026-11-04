@@ -372,7 +372,7 @@ fn stop_guarded_use(game: &mut Game<'_>) {
 
 // A raised shield `id` holds up toward you: its blocks_attacks component, raised long enough (its delay, less your
 // ping) and facing you within its angle.
-fn observed_shield(game: &Game<'_>, id: u32) -> bool {
+pub(super) fn observed_shield(game: &Game<'_>, id: u32) -> bool {
     let Some(mob) = game.mobs.iter().find(|m| m.id == id && m.alive() && !m.removed) else {
         return false;
     };

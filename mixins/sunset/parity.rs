@@ -68,7 +68,21 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Use entity mode", &["Blacklist", "Whitelist"])
             .pick("Friends", &["None", "Hit", "Use", "Both"])
             .pick("Babies", &["None", "Hit", "Use", "Both"])
-            .pick("Nametagged", &["None", "Hit", "Use", "Both"]),
+            .pick("Nametagged", &["None", "Hit", "Use", "Both"])
+            .bool("Hit fix", false)
+            .bool("Hit fix weapons only", true)
+            .bool("Hit fix hurt time", true)
+            .bool("Hit fix on ground", true)
+            .bool("No miss delay", false)
+            .num("Humanize (%)", 0.0, 0.0, 100.0, 1.0)
+            .bool("In combat only", false)
+            .num("Combat range", 5.0, 3.0, 8.0, 0.5)
+            .bool("Anti action", false)
+            .bool("Double glowstone", true)
+            .bool("Open ender chest", true)
+            .bool("Place glowstone", true)
+            .bool("Ground firework", true)
+            .bool("Sword on shield", true),
         Module::new("Fake Player", Player, "A copy of you to test modules on.")
             .num("Health", 20.0, 1.0, 100.0, 1.0)
             .bool("Copy inventory", true),

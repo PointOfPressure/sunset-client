@@ -1,4 +1,4 @@
-// A right click: No Interact stops it on what it lists; a combat macro takes it when you click with a crystal or an
+// A right click: No Interact stops it on what it lists and by Anti action; a combat macro takes it when you click with a crystal or an
 // anchor; Fast Use's Throwables hold one back, and with Burst add more of the same use before it (each re-enters here
 // and goes through).
 fn sunset_combat_use(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<()> {
@@ -6,7 +6,11 @@ fn sunset_combat_use(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<
     if inventory::bursting() {
         return std::ops::ControlFlow::Continue(());
     }
-    if crate::game::sunset_parity::use_blocked(game) || crate::game::sunset_combat_macros::intercept_use(game) || inventory::intercept_use(game) {
+    if crate::game::sunset_parity::use_blocked(game)
+        || crate::game::sunset_click_fix::use_blocked(game)
+        || crate::game::sunset_combat_macros::intercept_use(game)
+        || inventory::intercept_use(game)
+    {
         return std::ops::ControlFlow::Break(());
     }
     while inventory::burst_more(game) {
