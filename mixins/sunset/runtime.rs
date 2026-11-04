@@ -331,6 +331,7 @@ impl Module {
                 "Render color" => self.b("Aura") && self.b("Render"),
                 "Require hold" | "Min damage" | "Face place" | "Force face place" | "Turn speed" | "View angle" | "Render" => self.b("Aura"),
                 "Obsidian delay" => self.b("Macro") && self.b("Auto obsidian"),
+                "Perfect timing" => self.b("Macro"),
                 _ => self.b("Aura") || self.b("Macro"),
             },
             "Anchor Aura" => match name {
@@ -338,6 +339,7 @@ impl Module {
                 "Render color" => self.b("Aura") && self.b("Render"),
                 "Min damage" | "Max self damage" | "Render" | "Turn speed" => self.b("Aura"),
                 "Mode" | "Delay" | "Safe anchor" | "Switch back" => self.b("Macro"),
+                "Wait for hurt time" => self.b("Macro") && self.p("Mode") == "Double",
                 "If unguarded" => self.b("Macro") && self.b("Safe anchor"),
                 _ => self.b("Aura") || self.b("Macro"),
             },
@@ -406,6 +408,11 @@ impl Module {
                 }
             }
             "Hitboxes" if name == "Weapons" => self.b("Only on weapon"),
+            "Auto Web" => match name {
+                "Max webs per fall" => self.b("Only when falling"),
+                "Ticks to predict" => self.b("Predict movement") && !self.b("Only when falling"),
+                _ => true,
+            },
             "Shield" => match name {
                 "Target distance" | "FOV" | "Movement threshold" | "Sword cooldown correction (%)" | "Disable tracker" => self.b("Auto block"),
                 "Swap to sword" => self.b("Auto block") && self.b("Disable tracker"),
@@ -2391,6 +2398,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     }
     super::sunset_melee::key(game, key, pressed);
     super::sunset_swap_keys::key(game, key, pressed);
+    super::sunset_combat::web_key(game, key, pressed);
     super::sunset_combat_inventory::key(game, key, pressed);
     super::sunset_duel::key(game, key, pressed);
     super::sunset_cart::key(game, key, pressed);
@@ -7657,6 +7665,7 @@ pub(super) fn dash_search_clear(s: &mut State) {
 pub(super) fn aliases(name: &str) -> &'static str {
     match name {
         "Velocity" => "knockback delay knockbackdelay",
+        "Auto Web" => "cobweb placer cobwebplacer web key",
         "Shield" => "auto shield autoshield instant shield instantshield block",
         "Key Throw" => "instant crossbow instantcrossbow",
         "Fake Lag" => "fakelag backtrack back track choke lag",
@@ -7690,9 +7699,9 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Criticals" => "crits",
         "Offhand" => "totem auto totem inventory totem hover totem crystal gapple double hand predict double hand mainhand totem",
         "Auto Weapon" => "shield breaker axe mace spear swap lunge best weapon swap hit totem hit instant lunge spear damage",
-        "Crystal Aura" => "crystal macro",
+        "Crystal Aura" => "crystal macro auto hit crystal autohitcrystal auto obby crystal perfect timing",
         "Cart" => "tnt minecart cart pvp auto cart cart aura xbow cart crossbow safe cart cover refill cart refill pearl catch",
-        "Anchor Aura" => "anchor macro",
+        "Anchor Aura" => "anchor macro double anchor anchor placer anchor exploder safe anchor",
         "Anvil" => "anti anvil self anvil auto anvil",
         "Xray" => "x-ray",
         "Entity Control" => "boat fly boatfly entity speed entity fly horse ride vehicle",

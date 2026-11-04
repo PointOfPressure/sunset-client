@@ -66,7 +66,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Predict movement", true)
             .num("Ticks to predict", 10.0, 1.0, 30.0, 1.0)
             .bool("Doubles", false)
-            .bool("Rotate", true),
+            .bool("Rotate", true)
+            .bool("Only when falling", false)
+            .num("Max webs per fall", 1.0, 1.0, 10.0, 1.0)
+            .text("Web key", "None"),
         Module::new("Hole Filler", Combat, "Fills holes with blocks.")
             .text("Blocks", "obsidian,crying_obsidian,netherite_block,respawn_anchor,cobweb")
             .num("Search radius", 5.0, 1.0, 8.0, 1.0)
@@ -157,6 +160,8 @@ struct Cs {
     auto_trap_timer: u32,
     auto_trap_placed: bool,
     web_target: Option<u32>,
+    // Only when falling: the player falling, and the webs put under them in this fall.
+    web_fall: Option<(u32, u32)>,
     hole_timer: i32,
     burrow: Option<([i32; 3], bool)>,
     // Offhand: ticks since its last move, and whether its warning was said.
@@ -658,7 +663,24 @@ fn auto_web(game: &mut Game<'_>, m: &Module) {
         return;
     };
     let mut pos = t.pos;
-    if m.b("Predict movement") {
+    if m.b("Only when falling") {
+        // A web where they will land, at most Max webs per fall; a fall ends on the ground or with a new target.
+        let landed = game.mobs.iter().find(|x| x.id == t.id).is_none_or(|x| x.on_ground);
+        let placed = cs(|c| match c.web_fall {
+            Some((id, n)) if id == t.id && !landed => n,
+            _ => {
+                c.web_fall = Some((t.id, 0));
+                0
+            }
+        });
+        if landed || f64::from(placed) >= m.n("Max webs per fall") {
+            return;
+        }
+        let Some(landing) = landing(game, &t).filter(|l| l[1] < t.pos[1] - 0.5) else {
+            return;
+        };
+        pos = landing;
+    } else if m.b("Predict movement") {
         let k = m.n("Ticks to predict");
         for i in 0..3 {
             pos[i] += (t.pos[i] - t.prev[i]) * k;
@@ -670,11 +692,63 @@ fn auto_web(game: &mut Game<'_>, m: &Module) {
     if ok(game, at) {
         place_block(game, at, slot, m.b("Rotate"), false);
         show(at, 0x40FF_FFFF);
+        cs(|c| {
+            if let Some((_, n)) = c.web_fall.as_mut() {
+                *n += 1;
+            }
+        });
     }
     let up = [at[0], at[1] + 1, at[2]];
     if m.b("Doubles") && ok(game, up) {
         place_block(game, up, slot, m.b("Rotate"), false);
         show(up, 0x40FF_FFFF);
+    }
+}
+
+// Where a falling player comes down: their last tick's motion carried on (gravity 0.08, drag 0.98 up and down and
+// 0.91 across, in quarter steps, up to 80 ticks) until a solid block is under their box.
+fn landing(game: &Game<'_>, t: &Target) -> Option<[f64; 3]> {
+    let mut v = [t.pos[0] - t.prev[0], t.pos[1] - t.prev[1], t.pos[2] - t.prev[2]];
+    let half = ((t.hi[0] - t.lo[0]) / 2.0).max(0.15);
+    let mut at = t.pos;
+    for _ in 0..80 {
+        for _ in 0..4 {
+            let next = [at[0] + v[0] / 4.0, at[1] + v[1] / 4.0, at[2] + v[2] / 4.0];
+            if v[1] <= 0.0 && solid_under(game, next, half) {
+                return Some([next[0], (next[1] - 1.0e-4).floor() + 1.0, next[2]]);
+            }
+            at = next;
+        }
+        if at[1] <= -64.0 {
+            return None;
+        }
+        v = [v[0] * 0.91, (v[1] - 0.08) * 0.98, v[2] * 0.91];
+    }
+    None
+}
+
+fn solid_under(game: &Game<'_>, at: [f64; 3], half: f64) -> bool {
+    let y = (at[1] - 0.001).floor() as i32;
+    let f = |v: f64| v.floor() as i32;
+    (f(at[0] - half + 0.001)..=f(at[0] + half - 0.001))
+        .any(|x| (f(at[2] - half + 0.001)..=f(at[2] + half - 0.001)).any(|z| !is_air(game, [x, y, z]) && facts(game, [x, y, z]).full_collision))
+}
+
+// Auto Web's Web key: a web on the face you look at, from the hotbar, with the slot back after.
+pub(super) fn web_key(game: &mut Game<'_>, key: &str, pressed: bool) {
+    let Some(m) = with(|s| s.module("Auto Web").filter(|m| m.on).cloned()) else {
+        return;
+    };
+    if !pressed || gui_open() || !game.native_playing() || super::sunset::key_from_text(m.t("Web key")).is_none_or(|k| super::sunset::key_from_text(key) != Some(k)) {
+        return;
+    }
+    let (Some(hit), Some(slot)) = (game.pick(), find_held(game, |n| n == "cobweb")) else {
+        return;
+    };
+    let at = if replaceable(game, hit.pos) { hit.pos } else { [hit.pos[0] + hit.face[0], hit.pos[1] + hit.face[1], hit.pos[2] + hit.face[2]] };
+    if in_reach(game, at, m.n("Place range"), m.n("Walls range")) {
+        place_block(game, at, slot, false, true);
+        show(at, 0x40FF_FFFF);
     }
 }
 

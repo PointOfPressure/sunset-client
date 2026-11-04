@@ -38,6 +38,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Macro", false)
             .pick("Mode", &["Single", "Double"])
             .num("Delay", 0.0, 0.0, 5.0, 1.0)
+            .bool("Wait for hurt time", false)
             .bool("Safe anchor", true)
             .pick("If unguarded", &["Detonate", "Cancel"])
             .bool("Switch back", false)

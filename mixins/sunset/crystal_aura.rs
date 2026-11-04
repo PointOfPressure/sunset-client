@@ -232,6 +232,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Render color", "#FFD65CFF")
             .bool("Macro", false)
             .num("Obsidian delay", 2.0, 0.0, 10.0, 1.0)
+            .bool("Perfect timing", false)
             .num("Place delay", 0.0, 0.0, 10.0, 1.0)
             .num("Break delay", 0.0, 0.0, 10.0, 1.0)
             .num("Max self damage", 8.0, 0.0, 20.0, 0.5)

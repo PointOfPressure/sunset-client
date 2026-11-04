@@ -98,6 +98,8 @@ struct State {
     pace_gap: u64,
     random: u64,
     main: Option<(usize, Option<horizon_client::items::ItemStack>, u64)>,
+    // Wait for hurt time: the run whose second anchor waits, and since when.
+    hurt_wait: Option<(u64, u64)>,
 }
 static STATE: Mutex<State> = Mutex::new(State {
     run: None,
@@ -110,6 +112,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     pace_gap: 0,
     random: 0,
     main: None,
+    hurt_wait: None,
 });
 fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(&mut STATE.lock().unwrap_or_else(|e| e.into_inner()))
@@ -715,6 +718,19 @@ fn random(s: &mut State) -> u64 {
     n = (n ^ (n >> 27)).wrapping_mul(0x94d049bb133111eb);
     n ^ (n >> 31)
 }
+// The nearest enemy player within 10 blocks is still in hurt time.
+fn enemy_hurt(game: &Game<'_>) -> bool {
+    let Some(me) = util::player_pos(game) else {
+        return false;
+    };
+    game.mobs
+        .iter()
+        .filter(|t| util::player_enemy(game, t))
+        .map(|t| (t.hurt_time, util::dist(me, [t.position.x, t.position.y, t.position.z])))
+        .filter(|(_, d)| *d <= 10.0)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .is_some_and(|(hurt, _)| hurt > 0)
+}
 fn delay_for(run: &Run, step: Step) -> f64 {
     match step {
         Step::Base => run.settings.n("Obsidian delay"),
@@ -1284,6 +1300,10 @@ fn next_action(game: &mut Game<'_>, run: &Run, budget: &mut Budget, actual: bool
             if !super::remote::sunset_combat_remote::sprint_synced(game) {
                 return None;
             }
+            // Perfect timing: the break waits for the nearest enemy's hurt time to run out, so the blast counts.
+            if run.settings.b("Perfect timing") && enemy_hurt(game) {
+                return None;
+            }
             let id = run.crystal.or_else(|| crystal_on(game, p))?;
             if !state(|s| s.retries.allows(id, game.ticks)) {
                 return None;
@@ -1461,6 +1481,17 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], _ticks: u64) {
         && !state(|s| policy::action_due(s.last_deed, game.ticks, delay_for(&run, run.sequence.step), s.pace_gap))
     {
         return;
+    }
+    // Wait for hurt time: the second anchor of a Double waits (half a second at most) for the nearest enemy's hurt
+    // time to run out, so its blast counts.
+    if run.sequence.kind == Kind::Anchor && run.sequence.step == Step::AnchorPlace && run.sequence.refilled && run.settings.b("Wait for hurt time") {
+        let since = state(|s| match s.hurt_wait {
+            Some((token, tick)) if token == run.token => tick,
+            _ => s.hurt_wait.insert((run.token, game.ticks)).1,
+        });
+        if enemy_hurt(game) && game.ticks < since + 10 {
+            return;
+        }
     }
     let mut budget = Budget::new(24);
     if run.sequence.step == Step::Guard {

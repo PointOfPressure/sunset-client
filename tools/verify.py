@@ -9750,6 +9750,30 @@ def _():
     return runs["on"][1] >= 2 and runs["on"][2] >= runs["off"][2] + 2 * (runs["on"][1] - 1), note
 
 
+@test("Auto Web (Only when falling)")
+def _():
+    # Bot1 drops from 6 blocks up 3 blocks in front: with Only when falling, Auto Web puts a web where it will land
+    # before it gets there; without, none goes down while it falls.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("autoweb", "only when falling", "true")
+    setting("autoweb", "rotate", "false")
+    got = {}
+    for name, mods in (("off", ()), ("on", ("autoweb",))):
+        reset()
+        slot(0, "cobweb", 8)
+        bot_ready(3.0, 180)
+        only(*mods)
+        cmd(f"tp Bot1 {X0 + 0.5} {Y + 7} {Z0 + 3.5} 180 0")
+        wait(30)
+        only()
+        got[name] = check(f"execute if block {X0} {Y + 1} {Z0 + 3} minecraft:cobweb")
+        cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 1} {Y + 3} {Z0 + 4} minecraft:air")
+    bot_done()
+    say(".reset autoweb")
+    return got["on"] and not got["off"], f"web where Bot1 lands: {got['off']} without, {got['on']} with Only when falling"
+
+
 @test("Auto Weapon (Spear damage indicator)")
 def _():
     # A visual: charging a spear with the Damage indicator on draws its box under the crosshair (a screenshot).
