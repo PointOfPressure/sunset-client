@@ -10492,6 +10492,224 @@ def _():
     return ok, f"elytra worn {elytra}, ticks gliding {glided}, rockets {used}, chest after {'iron' if 'iron_chestplate' in armor else armor}, off {off}, late {late}"
 
 
+
+def clear_chat():
+    """F3 + D: the chat lines on screen go (so a toggle's line can't show in a frame)."""
+    ctl("key", "f3", "down")
+    ctl("key", "d", "tap")
+    ctl("key", "f3", "up")
+    wait(2)
+
+
+WALL = (-3, 1, 6, 3, 6, 6)
+
+
+def wall(block="stone"):
+    """A wall 6 blocks ahead, behind what a frame looks at, so nothing moves behind it."""
+    x1, y1, z1, x2, y2, z2 = WALL
+    cmd(f"fill {X0 + x1} {Y + y1} {Z0 + z1} {X0 + x2} {Y + y2} {Z0 + z2} minecraft:{block}")
+
+
+def on_off(name, mods, setup=None, settle=10, box=(240, 60, 1040, 560)):
+    """A frame with `mods` off and one with them on (same scene, chat cleared): how many pixels in `box` changed
+    colour. The frames stay in SHOTS as <name>-off.png and <name>-on.png."""
+    frames = {}
+    for state, turn in (("off", ()), ("on", mods)):
+        only(*turn)
+        if setup:
+            setup()
+        clear_chat()
+        wait(settle)
+        frames[state] = colour_frame(f"{name}-{state}").crop(box)
+    only()
+    return recoloured(frames["off"], frames["on"])
+
+
+@test("Target ESP (Ghost, Square)")
+def _():
+    # A husk 3 blocks ahead under the crosshair, a wall behind: Target ESP's Ghost (trails circling it) and Square (a
+    # turning square on it) each draw round it, as Brackets do. Screenshots target-esp-<style>-on.png.
+    reset()
+    wall()
+    cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 3.5} {HUSK}")
+    ctl("look-at", str(X0 + 0.5), str(Y + 1.6), str(Z0 + 3.5))
+    setting("targetesp", "target", "Crosshair")
+    got = {}
+    for style in ("Brackets", "Ghost", "Square"):
+        setting("targetesp", "style", style)
+        got[style] = on_off(f"target-esp-{style.lower()}", ("targetesp",), settle=30)
+    wall("air")
+    say(".reset targetesp")
+    return all(v > 200 for v in got.values()), f"pixels changed with each style on: {got}"
+
+
+@test("Effects (circles, trails, hit particles, weather)")
+def _():
+    # Jump circles: a jump draws a ring at your feet (looking down). Trails: footsteps behind you after a walk (looking
+    # back down). Hit particles: sparks off a husk you hit (a wall behind it). Weather: snow round you (looking down at
+    # the floor). Each changes the frame against Effects off.
+    reset()
+    setting("effects", "trails", "true")
+    setting("effects", "hit particles", "true")
+    got = {}
+    ctl("look", "0", "80")
+    got["circle"] = on_off("effects-circle", ("effects",), setup=lambda: (clear_chat(), ctl("jump")), settle=4)
+
+    def walked():
+        reset()
+        ctl("look", "0", "0")
+        walk(15)
+        ctl("look", "180", "60")
+
+    got["trail"] = on_off("effects-trail", ("effects",), setup=walked, settle=2)
+    reset()
+    wall()
+    cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 2.5} {HUSK}")
+    slot(0, "stick")
+    ctl("key", "1", "tap")
+    ctl("look-at", str(X0 + 0.5), str(Y + 1.9), str(Z0 + 2.5))
+
+    def hit():
+        wait(5)
+        ctl("mouse", "left", "click")
+
+    got["hit"] = on_off("effects-hit", ("effects",), setup=hit, settle=4)
+    wall("air")
+    # Snow falling in front of a big wall 9 blocks ahead, looking straight at it.
+    big = f"{X0 - 9} {Y + 1} {Z0 + 9} {X0 + 9} {Y + 14} {Z0 + 9}"
+    cmd(f"fill {big} minecraft:stone")
+    setting("effects", "weather", "true")
+    setting("effects", "weather mode", "Snow")
+    setting("effects", "trails", "false")
+    setting("effects", "jump circles", "false")
+    ctl("look", "0", "0")
+    got["weather"] = on_off("effects-weather", ("effects",), settle=60)
+    cmd(f"fill {big} minecraft:air")
+    say(".reset effects")
+    return all(v > 150 for v in got.values()), f"pixels changed with Effects on: {got}"
+
+
+@test("ESP (2D style, health bar, shield colors)")
+def _():
+    # A husk ahead of a wall: ESP's 2D box with Corners, a health bar, its name and a glow draws differently from the
+    # plain 2D box, and the health bar's green shows. With Bot1 holding a shield, Shield colors turns their box Lime.
+    reset()
+    wall()
+    cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 4.5} {HUSK}")
+    ctl("look-at", str(X0 + 0.5), str(Y + 1.5), str(Z0 + 4.5))
+    setting("esp", "mode", "2D box")
+    only("esp")
+    clear_chat()
+    wait(10)
+    plain = colour_frame("esp-2d-plain")
+    for k, v in (("2d style", "Corners"), ("health bar", "true"), ("2d names", "true"), ("glow", "true")):
+        setting("esp", k, v)
+    clear_chat()
+    wait(10)
+    styled = colour_frame("esp-2d-styled")
+    only()
+    bar = sum(1 for px in styled.getdata() if 100 < px[0] < 140 and px[1] > 225 and 120 < px[2] < 160)
+    lime = None
+    if CTL2:
+        bot_ready(4.5, 180, "give Bot1 minecraft:shield", "kill @e[type=husk]")
+        ctl2("select", "1")
+        setting("esp", "shield colors", "true")
+        only("esp")
+        clear_chat()
+        wait(15)
+        lime = sum(1 for px in colour_frame("esp-shield").getdata() if 130 < px[0] < 160 and px[1] > 240 and 50 < px[2] < 80)
+        only()
+        bot_done()
+    wall("air")
+    say(".reset esp")
+    diff = recoloured(plain.crop((240, 60, 1040, 560)), styled.crop((240, 60, 1040, 560)))
+    ok = diff > 100 and bar > 0 and (lime is None or lime > 20)
+    return ok, f"pixels changed by the 2D extras {diff}, health bar green pixels {bar}, Lime shield-box pixels {lime}"
+
+
+@test("Nametags (Health colors)")
+def _():
+    # Bot1 at 8 of 20 health: with Health colors Bands its tag's health shows gold (to 10); Gradient shows yellow.
+    if not CTL2:
+        return None, "needs a second player"
+    reset()
+    wall()
+    bot_ready(4.5, 180)
+    cmd("effect clear Bot1", "attribute Bot1 minecraft:max_health base set 20", "damage Bot1 12 minecraft:generic")
+    wait(10)
+    ctl("look", "0", "-5")
+    got = {}
+    for mode in ("Gradient", "Bands"):
+        setting("nametags", "health colors", mode)
+        only("nametags")
+        clear_chat()
+        wait(10)
+        got[mode] = sum(1 for px in colour_frame(f"nametags-{mode.lower()}").getdata() if px[0] > 235 and 150 < px[1] < 190 and px[2] < 40)
+        only()
+    bot_done()
+    wall("air")
+    say(".reset nametags")
+    return got["Bands"] > 5 and got["Gradient"] < got["Bands"], f"gold tag pixels: {got}"
+
+
+@test("Hand View (Swing animation)")
+def _():
+    # A sword held, looking at the floor: Swing animation 3 holds it across the view (blocking) even still, so the hand
+    # area differs from the game's own; 1 differs from the game's mid-swing (a swing caught a few frames in).
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    ctl("look", "0", "60")
+    hand = (640, 300, 1280, 720)
+    setting("handview", "swing animation", "3")
+    still = on_off("hand-view-swing3", ("handview",), settle=10, box=hand)
+    setting("handview", "swing animation", "1")
+    setting("handview", "slow swing", "true")
+    swung = on_off("hand-view-swing1", ("handview",), setup=lambda: (clear_chat(), ctl("mouse", "left", "click")), settle=2, box=hand)
+    say(".reset handview")
+    return still > 500 and swung > 200, f"pixels changed: sword held with style 3 {still}, mid-swing with style 1 {swung}"
+
+
+@test("No Render (scoreboard, titles)")
+def _():
+    # A sidebar scoreboard and a title on screen, looking at the floor: Hide scoreboard and Hide titles take them away.
+    reset()
+    cmd("scoreboard objectives add sunsettest dummy", "scoreboard objectives setdisplay sidebar sunsettest",
+        "scoreboard players set Sunset sunsettest 7")
+    for k in ("hide scoreboard", "hide titles"):
+        setting("norender", k, "true")
+    ctl("look", "0", "80")
+    got = on_off("no-render-hud", ("norender",), setup=lambda: cmd("title @s times 0 200 0", 'title @s title "SUNSET"'), settle=10,
+                 box=(0, 0, 1280, 600))
+    cmd("scoreboard objectives remove sunsettest", "title @s clear")
+    say(".reset norender")
+    return got > 500, f"pixels changed with the scoreboard and title hidden: {got}"
+
+
+@test("Atmosphere (Custom fog)")
+def _():
+    # Atmosphere with Mode None (the game's sky) and Custom fog from 0 to 10 blocks in Red: the view turns red.
+    reset()
+    setting("atmosphere", "mode", "None")
+    setting("atmosphere", "custom fog", "true")
+    setting("atmosphere", "fog start", "0")
+    setting("atmosphere", "fog end", "10")
+    setting("atmosphere", "fog color", "Red")
+    ctl("look", "0", "0")
+    only("atmosphere")
+    clear_chat()
+    wait(20)
+    img = colour_frame("atmosphere-fog")
+    only()
+    clear_chat()
+    wait(10)
+    red_of = lambda im: sum(1 for px in im.getdata() if px[0] > 150 and px[1] < 110 and px[2] < 110)
+    red, plain = red_of(img), red_of(colour_frame("atmosphere-fog-off"))
+    say(".reset atmosphere")
+    share = red / (img.size[0] * img.size[1])
+    return share > 0.3 and plain < red / 4, f"red share with Custom fog {share:.2f}; red pixels without {plain}"
+
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

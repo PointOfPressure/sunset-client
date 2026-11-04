@@ -7,6 +7,8 @@ pub static NO_LIQUID: AtomicBool = AtomicBool::new(false);
 pub static NO_WALL: AtomicBool = AtomicBool::new(false);
 pub static NO_GUI: AtomicBool = AtomicBool::new(false);
 pub static NO_MENU: AtomicBool = AtomicBool::new(false);
+// No Render's Hide hurt cam: the view doesn't tilt when you are hurt (or die).
+pub static NO_HURT: AtomicBool = AtomicBool::new(false);
 thread_local! {
     pub static BUSY: Cell<bool> = const { Cell::new(false) };
 }

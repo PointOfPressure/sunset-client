@@ -77,7 +77,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Hide in-wall overlay", true)
             .bool("Hide pumpkin, spyglass and powder snow overlays", false)
             .bool("Hide all particles", false)
-            .text("Particles", ""),
+            .text("Particles", "")
+            .bool("Hide hurt cam", false)
+            .bool("Hide scoreboard", false)
+            .bool("Hide titles", false)
+            .bool("Hide held item name", false),
         Module::new("Timer", World, "Changes game speed.")
             .num("Multiplier", 2.0, 0.1, 10.0, 0.1),
         Module::new("No Slow", Movement, "No item-use slowdown.")
@@ -500,7 +504,10 @@ fn hand_view() -> Module {
         .num("Totem pop scale", 1.0, 0.1, 3.0, 0.05)
         .num("Totem pop X", 0.0, -1.0, 1.0, 0.05)
         .num("Totem pop Y", 0.0, -1.0, 1.0, 0.05)
-        .num("Totem pop speed", 1.0, 1.0, 6.0, 1.0);
+        .num("Totem pop speed", 1.0, 1.0, 6.0, 1.0)
+        .pick("Swing animation", &["Vanilla", "1", "2", "3"])
+        .bool("Slow swing", false)
+        .bool("No equip drop", false);
     for (scale, x, y, z, rx, ry, rz) in [
         ("Right scale", "Right X", "Right Y", "Right Z", "Right turn X", "Right turn Y", "Right turn Z"),
         ("Left scale", "Left X", "Left Y", "Left Z", "Left turn X", "Left turn Y", "Left turn Z"),
@@ -542,6 +549,10 @@ fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
     if let Ok(mut t) = hv::TOTEM.write() {
         *t = pop.filter(|p| *p != hv::TotemPop { scale: 1.0, x: 0.0, y: 0.0 });
     }
+    let style = hands.as_ref().map_or(0, |m| m.p("Swing animation").parse::<u32>().unwrap_or(0));
+    hv::SWING.store(style, Ordering::Relaxed);
+    hv::SLOW_SWING.store(hands.is_some_and(|m| m.b("Slow swing")), Ordering::Relaxed);
+    hv::NO_EQUIP_DROP.store(hands.is_some_and(|m| m.b("No equip drop")), Ordering::Relaxed);
     hv::TOTEM_EXTRA_TICKS.store(hands.as_ref().map_or(0, |m| (m.n("Totem pop speed").round() as u32).saturating_sub(1)), Ordering::Relaxed);
     let moving = super::sunset::move_input(game) != (0.0, 0.0);
     let speed_timer = if on(mods, "Flight").is_none() {
@@ -589,12 +600,16 @@ pub(super) fn no_slow_reset() {
 
 // No Render: fog through Horizon's own Fog option, the effects the player does
 // not want to see taken off its list, and the overlay switches.
+// No Render's Hide scoreboard, read where the sidebar is drawn.
+pub(super) static NO_SCOREBOARD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     use horizon_client::{fog::sunset_fog as fog, screen_effects::sunset_overlay as overlay};
     let m = on(mods, "No Render");
     let flag = |name: &str| m.as_ref().is_some_and(|m| m.b(name));
-    // Fog: Horizon's Fog option, remembered and put back.
-    if flag("Hide fog") {
+    // Fog: Horizon's Fog option, remembered and put back (Atmosphere's Custom fog sets the fog where the game would
+    // clear it with the option off).
+    if flag("Hide fog") || super::sunset_atmosphere::custom_fog() {
         if rs(|r| r.fog_before.is_none()) {
             rs(|r| r.fog_before = Some(game.settings.horizon.fog));
         }
@@ -611,6 +626,14 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     overlay::NO_LIQUID.store(flag("Hide liquid overlay"), Ordering::Relaxed);
     overlay::NO_WALL.store(flag("Hide in-wall overlay"), Ordering::Relaxed);
     overlay::NO_GUI.store(flag("Hide pumpkin, spyglass and powder snow overlays"), Ordering::Relaxed);
+    overlay::NO_HURT.store(flag("Hide hurt cam"), Ordering::Relaxed);
+    NO_SCOREBOARD.store(flag("Hide scoreboard"), Ordering::Relaxed);
+    if flag("Hide titles") {
+        game.titles.clear();
+    }
+    if flag("Hide held item name") {
+        game.tool_highlight.timer = 0;
+    }
     // The dim and blur behind menus: ClickGUI's Menu dim switch (off hides them).
     overlay::NO_MENU.store(!mods.iter().find(|m| m.name == "ClickGUI").is_some_and(|m| m.b("Menu dim")), Ordering::Relaxed);
     // Effects the server put on the player that only change what it sees, and those No Status Effects lists: kept

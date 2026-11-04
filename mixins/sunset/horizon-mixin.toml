@@ -658,6 +658,56 @@ bindings = [
 ]
 
 [[injection]]
+id = "swing-hand"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::hand::Game<'_>::swing_hand"
+helper = "swing_hand.rs"
+bindings = [
+  { name = "this", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "hand", ty = "Hand", value = "hand" },
+  { name = "animation", ty = "SwingAnimation", value = "animation" },
+]
+
+[[injection]]
+id = "equip-hold"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::first_person::HandHeights::tick"
+helper = "equip_hold.rs"
+bindings = [
+  { name = "this", ty = "&mut HandHeights", value = "&mut *self" },
+  { name = "changed", ty = "[bool; 2]", value = "changed" },
+]
+
+[[injection]]
+id = "ambience-fog"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::fog::clear_distance_fog"
+helper = "ambience_fog.rs"
+bindings = [
+  { name = "fog", ty = "&mut FogData", value = "&mut *fog" },
+  { name = "input", ty = "&FogInputs", value = "input" },
+]
+
+[[injection]]
+id = "hurt-cam"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::camera::bob_hurt"
+helper = "hurt_cam.rs"
+bindings = []
+
+[[injection]]
+id = "scoreboard"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::scoreboard::Game<'_>::draw_scoreboard"
+helper = "scoreboard_hook.rs"
+bindings = []
+
+[[injection]]
 id = "arm-pose"
 kind = "HEAD"
 cancellable = true
@@ -1587,6 +1637,18 @@ id = "takeoff"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_takeoff"
 source = "takeoff.rs"
+
+[[module]]
+id = "effects"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_effects"
+source = "effects.rs"
+
+[[module]]
+id = "esp2d"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_esp2d"
+source = "esp2d.rs"
 
 [[module]]
 id = "refill"

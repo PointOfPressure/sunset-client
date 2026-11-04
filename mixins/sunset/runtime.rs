@@ -504,6 +504,23 @@ impl Module {
                 _ => true,
             },
             "Base Finder" => super::sunset_base_finder::visible(self, name),
+            "Effects" => super::sunset_effects::visible(self, name),
+            "Atmosphere" => super::sunset_atmosphere::visible(self, name),
+            "ESP" => match name {
+                "2D style" | "Health bar" | "2D names" | "2D distance" | "Glow" => self.p("Mode") == "2D box",
+                "Health side" | "Health text" => self.p("Mode") == "2D box" && self.b("Health bar"),
+                "Shield mode" | "Shield color" | "Broken shield color" => self.b("Shield colors"),
+                _ => true,
+            },
+            "Nametags" => match name {
+                "Health colors" => self.b("Health"),
+                _ => true,
+            },
+            "Target ESP" => match name {
+                "Corner length" | "Padding" | "Thickness" | "Outline" => self.p("Style") == "Brackets",
+                "Custom color" => self.p("Color") == "Custom",
+                _ => true,
+            },
             "Cart" => super::sunset_cart::visible(self, name),
             "Auto Weapon" => match name {
                 "Prefer axes" | "Totem hit" => self.b("Best weapon"),
@@ -717,6 +734,17 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Shape mode", &["Lines", "Sides", "Both"])
             .num("Fill opacity", 0.3, 0.0, 1.0, 0.05)
             .num("Fade distance", 3.0, 0.0, 12.0, 0.5)
+            .pick("2D style", &["Box", "Corners", "Brackets"])
+            .bool("Health bar", false)
+            .pick("Health side", &["Left", "Right", "Bottom", "Top"])
+            .bool("Health text", true)
+            .bool("2D names", false)
+            .bool("2D distance", false)
+            .bool("Glow", false)
+            .bool("Shield colors", false)
+            .pick("Shield mode", &["Always", "Raised", "Broken"])
+            .colour("Shield color", "Lime")
+            .colour("Broken shield color", "Red")
             .bool("Players", true)
             .bool("Hostiles", true)
             .bool("Passive", true)
@@ -758,6 +786,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Entities", "")
             .bool("Ignore friends", false)
             .bool("Health", true)
+            .pick("Health colors", &["Gradient", "Bands"])
             .bool("Distance", true)
             .bool("Background", true)
             .colour("Name color", "White")
@@ -1014,6 +1043,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_hands::defaults());
     v.extend(super::sunset_packet_mine::defaults());
     v.extend(super::sunset_render::defaults());
+    v.extend(super::sunset_effects::defaults());
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_crosshair::defaults());
     v.push(super::sunset_block_overlay::defaults());
@@ -3231,6 +3261,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_anchor_catch::post_tick();
     super::sunset_explosive_aura::tick(game, &mods, game.ticks);
     super::sunset_render::tick(game, &mods, ticks);
+    super::sunset_effects::tick(game);
     super::sunset_player::tick(game, &mods);
     super::sunset_world::tick(game, &mods);
     super::sunset_hunting::tick(game, &mods);
@@ -5818,6 +5849,7 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
         }
         super::sunset_combat_inventory::packet(game, packet);
         super::sunset_throws::packet(game, packet);
+        super::sunset_effects::packet(game, packet);
         super::recipe_book::sunset_recipes::packet(packet);
         if let C::SetEntityMotion(p) = packet {
             super::sunset_melee::note_velocity(game, p.id, p.velocity);
@@ -6601,6 +6633,12 @@ impl Camera {
         let y = dot(self.up) * self.focal / depth;
         Some([((1.0 + x) / 2.0 * self.w) as f32, ((1.0 - y) / 2.0 * self.h) as f32])
     }
+    // Screen pixels a block across makes at `at` (None behind the camera): how big to draw a thing of a set size.
+    pub(super) fn pixels_per_block(&self, at: [f64; 3]) -> Option<f32> {
+        let o = [at[0] - self.pos[0], at[1] - self.pos[1], at[2] - self.pos[2]];
+        let depth = o[0] * self.fwd[0] + o[1] * self.fwd[1] + o[2] * self.fwd[2];
+        (depth >= 0.05).then(|| (self.focal / depth * self.h / 2.0) as f32)
+    }
     // Where the view is from.
     pub(super) fn eye(&self) -> [f64; 3] {
         self.pos
@@ -7033,6 +7071,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
         super::sunset_target_esp::draw(game, cam, m, [cam.w as f32, cam.h as f32], lw, out);
     }
     super::sunset_util::draw_shown(cam, out, lw);
+    super::sunset_effects::draw(game, cam, mods, out);
     super::sunset_render::overlay(game, cam, mods, out, lw);
     super::sunset_new_chunks::draw(cam, mods, out);
     super::sunset_hunting::draw(game, cam, mods, out, lw);
@@ -7314,7 +7353,9 @@ impl EntityLook {
 // leaves some out.
 fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw: f32, out: &mut impl Canvas) {
     let [esp, tracers, tags] = mods.map(|m| m.map(EntityLook::of));
+    let two = mods[0].map(super::sunset_esp2d::TwoD::of);
     let tags_module = mods[2];
+    let banded = tags_module.is_some_and(|m| m.p("Health colors") == "Bands");
     let (tracer_target, tracer_bottom, tracer_by_distance) =
         mods[1].map_or(("Body", false, false), |m| (m.p("Target"), m.p("Start") == "Bottom", m.b("Distance colors")));
     let (tag_players, tag_mobs, tag_friends) =
@@ -7370,7 +7411,13 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             && l.kinds.wants(kind, &mob.kind.id)
         {
             let col = if l.potato { l.kinds.colour(kind, false) } else { faded(l.kinds.colour(kind, friend()), d, l.fade) };
-            if draw_box(cam, out, &l.look, lo, hi, col, lw) {
+            let shield = two.as_ref().filter(|_| !l.potato).and_then(|t| super::sunset_esp2d::shield_colour(game, t, mob));
+            let col = shield.map_or(col, |c| faded(c, d, l.fade));
+            let shown = match two.as_ref().filter(|t| l.look.draw == Draw::Box2d && t.extras()) {
+                Some(t) => super::sunset_esp2d::draw(game, cam, out, t, mob, lo, hi, d, col, lw),
+                None => draw_box(cam, out, &l.look, lo, hi, col, lw),
+            };
+            if shown {
                 drawn[0] += 1;
             }
         }
@@ -7423,7 +7470,10 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             hp.clear();
             tail.clear();
             // Whole numbers written as integers: float formatting was a good part of a frame of 200 tags.
-            if show_health {
+            // Bands: the health rounded up, red to 5, gold to 10, yellow to 15, green to 20, dark green over.
+            if show_health && banded {
+                let _ = write!(hp, "{}", mob.health.max(0.0).ceil() as i32);
+            } else if show_health {
                 let tenths = (mob.health * 10.0).round() as i32;
                 let _ = write!(hp, "{}", tenths / 10);
                 if tenths % 10 != 0 {
@@ -7442,7 +7492,18 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             }
             out.text(&name, [x0, y], name_colour);
             if !hp.is_empty() {
-                out.text(&hp, [x0 + nw + gap, y], health_colour(mob.health / mob.kind.max_health.max(1.0)));
+                let colour = if banded {
+                    match mob.health.ceil() {
+                        h if h <= 5.0 => 0xFF5555,
+                        h if h <= 10.0 => 0xFFAA00,
+                        h if h <= 15.0 => 0xFFFF55,
+                        h if h <= 20.0 => 0x55FF55,
+                        _ => 0x00AA00,
+                    }
+                } else {
+                    health_colour(mob.health / mob.kind.max_health.max(1.0))
+                };
+                out.text(&hp, [x0 + nw + gap, y], colour);
             }
             if !tail.is_empty() {
                 out.text(&tail, [x0 + nw + gap + hw, y], 0xAAAAAA);
@@ -7888,13 +7949,18 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Step" => "step up stepup stairs reverse step step down stepdown",
         "ClickGUI" => "dropdown dashboard style gui menu color colour theme accent opacity width dim blur background indent scale size zoom bigger radius corner round",
         "Glide" => "slow fall slowfall",
-        "Hand View" => "small hands hand sway viewmodel item position totem pop totem size hand shadow hand light",
+        "Hand View" => "small hands hand sway viewmodel item position totem pop totem size hand shadow hand light animations swing animation slow swing old animations equip totem animation",
         "Zoom" => "wi zoom spyglass",
         "Panic" => "disable all off hide",
         "Debug Report" => "debug report bug report clipboard copy log flags anticheat alerts packets",
         "Chest Stealer" => "auto steal autosteal loot",
         "Liquid Filler" => "auto drain autodrain drain bucket scoop water lava cobweb",
         "Auto Tool" => "auto pickaxe autopickaxe tool swap pickaxe below",
+        "ESP" => "2d esp twodesp 2d box corners brackets health bar glow shield renderer shieldrenderer shield colors",
+        "Nametags" => "health indicators healthindicators health colors bands",
+        "Target ESP" => "target renderer targetrenderer ghost square target hud marker",
+        "Atmosphere" => "ambience fog color fog distance custom fog sky horizon",
+        "Effects" => "jump circles jumpcircles trails footsteps hit effect hiteffect hit particles totem pop particles weather rain snow fireflies embers ambience",
         "Auto Gap" => "auto pot autopot splash potion healing pot",
         "Auto Replenish" => "refill potion refill potionrefill hotbar refill",
         "Inventory Cleaner" => "inventory cleaner junk drop clean auto loot autoloot loot key",
@@ -7916,7 +7982,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Xray" => "x-ray",
         "Entity Control" => "boat fly boatfly entity speed entity fly horse ride vehicle",
         "Clear Water" => "water opacity see through transparent",
-        "No Render" => "no hide fog fog water darkness blindness overlay particles particle",
+        "No Render" => "no hide fog fog water darkness blindness overlay particles particle render optimizer renderoptimizer hurt cam hurtcam scoreboard titles title hotbar text held item name",
         _ => "",
     }
 }

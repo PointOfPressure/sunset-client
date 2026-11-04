@@ -9,6 +9,12 @@ pub static NO_SHADOW: AtomicBool = AtomicBool::new(false);
 pub static VIEW: RwLock<Option<[glam::Mat4; 2]>> = RwLock::new(None);
 pub static TOTEM: RwLock<Option<TotemPop>> = RwLock::new(None);
 pub static TOTEM_EXTRA_TICKS: AtomicU32 = AtomicU32::new(0);
+// Swing animation (0 the game's own, else 1 to 3), Slow swing, No equip drop.
+pub static SWING: AtomicU32 = AtomicU32::new(0);
+pub static SLOW_SWING: AtomicBool = AtomicBool::new(false);
+pub static NO_EQUIP_DROP: AtomicBool = AtomicBool::new(false);
+// A slow swing lasts this many ticks (the game's lasts 6).
+pub const SLOW_SWING_TICKS: i32 = 10;
 
 // Block light 15 and sky light 15, packed as the hands' vertices take it.
 pub const FULL_LIGHT: u32 = 0xF0F0;
@@ -52,6 +58,51 @@ pub fn posed(left: bool, pose: glam::Mat4) -> glam::Mat4 {
         Ok(view) => view.map_or(pose, |v| pose * v[usize::from(left)]),
         Err(_) => pose,
     }
+}
+
+// The game's swing of a held item at progress `attack` (0 to 1), after its place in the hand: across, up and in,
+// turned about y, z, x and back about y.
+fn game_swing(side: f32, attack: f32) -> glam::Mat4 {
+    use glam::{Mat4, Vec3};
+    let (pi, root) = (std::f32::consts::PI, attack.sqrt());
+    Mat4::from_translation(Vec3::new(side * -0.4 * (root * pi).sin(), 0.2 * (root * std::f32::consts::TAU).sin(), -0.2 * (attack * pi).sin()))
+        * Mat4::from_rotation_y((side * (45.0 - (attack * attack * pi).sin() * 20.0)).to_radians())
+        * Mat4::from_rotation_z((side * (root * pi).sin() * -20.0).to_radians())
+        * Mat4::from_rotation_x(((root * pi).sin() * -80.0).to_radians())
+        * Mat4::from_rotation_y((side * -45.0f32).to_radians())
+}
+
+// Swing animation's swings in its place. 1: no slide across, half the roll. 2: a short chop (half the drop, no
+// turn). 3: a sword in the right hand held across, blocking, and swung with a roll; anything else as in 1 with the
+// full roll.
+fn styled_swing(style: u32, side: f32, attack: f32, sword: bool) -> glam::Mat4 {
+    use glam::{Mat4, Vec3};
+    let (pi, root) = (std::f32::consts::PI, attack.sqrt());
+    let (lift, wave) = ((attack * attack * pi).sin(), (root * pi).sin());
+    let r = |axis: Vec3, deg: f32| Mat4::from_axis_angle(axis, deg.to_radians());
+    let back = r(Vec3::Y, side * -45.0);
+    match style {
+        2 => r(Vec3::Y, side * 45.0) * r(Vec3::Z, side * wave * -10.0) * r(Vec3::X, wave * -40.0) * back,
+        3 if sword && side > 0.0 => {
+            Mat4::from_translation(Vec3::new(0.0, 0.1, -0.2))
+                * r(Vec3::Y, side * 65.0)
+                * r(Vec3::X, side * -100.0)
+                * r(Vec3::Z, side * 20.0)
+                * r(Vec3::Y, side * -220.0)
+                * r(Vec3::Z, side * wave * -40.0)
+                * back
+        }
+        3 => r(Vec3::Y, side * (45.0 - lift * 20.0)) * r(Vec3::Z, side * wave * -20.0) * r(Vec3::X, wave * -80.0) * back,
+        _ => r(Vec3::Y, side * (45.0 - lift * 20.0)) * r(Vec3::Z, side * wave * -10.0) * r(Vec3::X, wave * -80.0) * back,
+    }
+}
+
+// What turns a held item's pose from the game's swing into Swing animation's (None with the game's own): the game's
+// swing undone, the chosen one after.
+pub fn swing_swap(left: bool, attack: f32, sword: bool) -> Option<glam::Mat4> {
+    let style = SWING.load(Ordering::Relaxed);
+    let side = if left { -1.0 } else { 1.0 };
+    (style != 0).then(|| game_swing(side, attack).inverse() * styled_swing(style, side, attack, sword))
 }
 
 thread_local! {
