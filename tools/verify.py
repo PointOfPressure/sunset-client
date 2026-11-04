@@ -15,7 +15,7 @@
 # SUNSET_PROBE): PROBE names it, else <session>/probe.log. They move mobs with
 # a small data pack written into the world folder: WORLD names it, else the
 # single player world of the session or ~/hzmeteor/srv/world on a server.
-import json, math, os, re, subprocess, sys, time
+import json, math, os, re, subprocess, sys, time, traceback
 
 CTL = sys.argv[1]
 CTL2 = os.environ.get("CTL2")
@@ -135,6 +135,8 @@ def arena():
     X0, Z0 = int(p[0] // 1), int(p[2] // 1)
     # Unattended, the game drops to 30 frames a second after a minute ("afk"): keep the full rate.
     ctl("options-set", "inactivityFpsLimit", "minimized")
+    # check() reads the command's answer: a server world a run left without command feedback answers nothing.
+    cmd("gamerule send_command_feedback true")
     clean()
 
 
@@ -11512,7 +11514,7 @@ def _():
 # ---- the plugin API (version 2), through the example plugins (sunset-plugins: hello, afk) and the test plugin
 # (tools/plugcheck), all three staged next to Sunset on the test machine. They answer in chat: the log has it.
 
-def said_after(mark, *lines, settle=4):
+def said_since(mark, *lines, settle=4):
     """Types each line, waits, and gives what Sunset said since mark."""
     for line in lines:
         say(line)
@@ -11523,7 +11525,7 @@ def said_after(mark, *lines, settle=4):
 def plugcheck_events():
     """The test plugin's event counts (name: count), the priority order string and its last event line."""
     mark = log_mark()
-    line = next((l for l in said_after(mark, ".plugcheck events") if l.startswith("plugcheck events")), "")
+    line = next((l for l in said_since(mark, ".plugcheck events") if l.startswith("plugcheck events")), "")
     counts = dict((k, int(v)) for k, v in re.findall(r"(\w+)=(\d+)", line))
     order = re.search(r" order (\S*) last", line)
     last = line.split(" last ", 1)[1] if " last " in line else ""
@@ -11536,7 +11538,7 @@ def _():
     # can't have (a module Sunset has, a built-in command, a bad command name, a bad plugin id) were each refused with a
     # chat line when it loaded; .help lists the plugins' commands.
     mark = log_mark()
-    said = said_after(mark, ".plugins", ".help")
+    said = said_since(mark, ".plugins", ".help")
     text = " | ".join(said)
     listed = all(x in text for x in ("hello 0.2.0 - modules: Hello - commands: .hello",
                                      "afk 0.1.0 - modules: AFK Fisher - commands: .afk",
@@ -11549,7 +11551,7 @@ def _():
                "the command .bad name can't be added: use letters" in start, "Plugin Bad Id is off" in start]
     # The clash didn't replace Sunset's Kill Aura (still Combat, with its Range).
     mark = log_mark()
-    ka = said_after(mark, ".settings killaura")
+    ka = said_since(mark, ".settings killaura")
     kept = any("Range" in l for l in ka)
     ok = listed and bad_id and helped and all(refused) and kept
     return ok, f"listed {listed}, bad id shown {bad_id}, .help {helped}, refused at load {refused}, Kill Aura kept {kept}"
@@ -11575,7 +11577,7 @@ def _():
     disabled = "Hello is off." in sunset_said(mark)
     # .reset puts a plugin's module back to what the plugin registered (it once crashed the game).
     mark = log_mark()
-    shown = " | ".join(said_after(mark, ".reset hello", ".settings hello"))
+    shown = " | ".join(said_since(mark, ".reset hello", ".settings hello"))
     reset_ok = "Hello reset." in shown and "Every (seconds): 10" in shown and "Message: Hello from a plugin" in shown
     alive = bool(state().get("player"))
     ok = enabled and disabled and 2 <= lines <= 5 and not any("Plugin test" in l for l in off_said) and reset_ok and alive
@@ -11596,7 +11598,7 @@ def _():
     first_three = next((i for i, n in enumerate(got) if n >= 3), None)
     three = got[-1]
     mark = log_mark()
-    bad = said_after(mark, ".hello lots")
+    bad = said_since(mark, ".hello lots")
     mark = log_mark()
     say(".hello 9")
     wait(120)
@@ -11608,7 +11610,7 @@ def _():
     wait(120)
     panicked = sum(1 for l in sunset_said(mark) if l == "Timer line")
     mark = log_mark()
-    tot = said_after(mark, ".hello total", ".hello total")
+    tot = said_since(mark, ".hello total", ".hello total")
     nums = [int(n) for l in tot for n in re.findall(r"ran (\d+) times", l)]
     data = [os.path.join(r, f) for r, _, fs in os.walk(session_dir()) for f in fs if r.endswith(os.path.join(".horizon-mod-data", "hello")) and f == "total"]
     kept = open(data[0]).read().strip() if data else None
@@ -11644,7 +11646,7 @@ def _():
 
     def stats():
         mark = log_mark()
-        line = next((l for l in said_after(mark, ".hello stats") if l.startswith("hud ")), "")
+        line = next((l for l in said_since(mark, ".hello stats") if l.startswith("hud ")), "")
         return dict((k, int(v)) for k, v in re.findall(r"(\w+) (\d+)", line))
 
     s0 = stats()
@@ -11681,7 +11683,7 @@ def _():
     # flip back), off by another spelling, and an unknown module.
     touched.update(("killaura", "plugcheck"))
     mark = log_mark()
-    said = said_after(mark, ".plugcheck set", ".plugcheck toggle")
+    said = said_since(mark, ".plugcheck set", ".plugcheck toggle")
     text = " | ".join(said)
     ranges = re.findall(r"plugcheck ok: Range: ([\d.]+)", text)
     checks = {
@@ -11708,15 +11710,15 @@ def _():
     # characters and sends a short line; a packet turned into a move packet is refused (one move packet a tick). Then
     # plugcrash's command panics: the game goes on, plugcrash is off (.plugins says why) and its command says so.
     mark = log_mark()
-    said = said_after(mark, ".plugcheck send", settle=10)
+    said = said_since(mark, ".plugcheck send", settle=10)
     text = " | ".join(said)
     sends = ["plugcheck err: Move packets can't be sent" in text, "plugcheck err: Change the held slot with api::hold" in text,
              "256 characters at most" in text, "plugcheck ok: said" in text,
              "a packet can't be replaced by a move packet" in text]
     mark = log_mark()
-    said = said_after(mark, ".crash", settle=6)
+    said = said_since(mark, ".crash", settle=6)
     alive = bool(state().get("player"))
-    said += said_after(log_mark(), ".plugins", ".crash")
+    said += said_since(log_mark(), ".plugins", ".crash")
     text = " | ".join(said)
     crashed = "Plugin plugcrash is off: its command code panicked: boom from plugcrash" in text or "plugcrash failed" in text
     listed = "plugcrash 0.1.0 - modules: none - commands: .crash - OFF: its command code panicked: boom from plugcrash" in text
@@ -11784,7 +11786,7 @@ def _():
     wait(60)
     tasks = sunset_said(mark)
     mark = log_mark()
-    store = said_after(mark, ".plugcheck store", ".plugcheck store")
+    store = said_since(mark, ".plugcheck store", ".plugcheck store")
     runs = [int(n) for l in store for n in re.findall(r"plugcheck ok: runs (\d+)", l)]
     data = [os.path.join(r, f) for r, _, fs in os.walk(session_dir()) for f in fs if r.endswith(os.path.join(".horizon-mod-data", "plugcheck")) and f == "runs"]
     on_disk = open(data[0]).read().strip() if data else None
@@ -11801,7 +11803,7 @@ def _():
     pig(3.0)
     wait(5)
     mark = log_mark()
-    reads = " ".join(said_after(mark, ".plugcheck reads", ".plugcheck friends"))
+    reads = " ".join(said_since(mark, ".plugcheck reads", ".plugcheck friends"))
     st = state()["player"]
     m = re.search(r"plugcheck me (\S+) (\S+) (\S+) hp (\d+)", reads)
     near = re.search(r"near minecraft:pig ([\d.]+)", reads)
@@ -11823,7 +11825,7 @@ def _():
 
 def afk_status():
     mark = log_mark()
-    return " | ".join(said_after(mark, ".afk"))
+    return " | ".join(said_since(mark, ".afk"))
 
 
 @test("AFK Fisher: starts Auto Fish, stops on danger")
@@ -11947,6 +11949,395 @@ def _():
     return ok, f"friend near: {friend}; not a friend: {stranger}"
 
 
+def hud_window():
+    """The window's size: runall.sh's SIZE, or the display's."""
+    if os.environ.get("SIZE"):
+        return tuple(map(int, os.environ["SIZE"].split("x")))
+    d = ctl("status")["display"]
+    return d["width"], d["height"]
+
+
+def hud_scale():
+    """Screen pixels to a GUI pixel: the GUI scale set (as the game clamps it: no larger than keeps 320x240), or auto."""
+    w, h = hud_window()
+    value = ctl("options-get", "guiScale")["options"]["guiScale"]["value"]
+    largest = max(1, min(w // 320, h // 240))
+    scale = int(value or 0)
+    return largest if scale <= 0 else min(scale, largest)
+
+
+def hud_size():
+    """The GUI's size in GUI pixels."""
+    w, h = hud_window()
+    k = hud_scale()
+    return w / k, h / k
+
+
+def hud_box(x0, y0, x1, y1):
+    """A box in GUI pixels, in screen pixels for crop()."""
+    k = hud_scale()
+    return tuple(int(v * k) for v in (x0, y0, x1, y1))
+
+
+def coloured(img, box, test):
+    return sum(1 for px in img.crop(box).getdata() if test(*px))
+
+
+def reds(r, g, b):
+    return r > 190 and g < 110 and b < 110
+
+
+def greens(r, g, b):
+    return g > 170 and r < 140 and b < 110
+
+
+# Armour with damage at about a tenth worn (or 9 tenths with worn=True): helmet 363, chestplate 240, leggings 105,
+# boots 481 at most.
+ARMOUR = (("head", "diamond_helmet", 363), ("chest", "iron_chestplate", 240), ("legs", "golden_leggings", 105),
+          ("feet", "netherite_boots", 481))
+
+
+def wear(worn=False, parts=("head", "chest", "legs", "feet")):
+    for part, item, top in ARMOUR:
+        if part in parts:
+            cmd(f"item replace entity @s armor.{part} with minecraft:{item}[damage={int(top * (0.9 if worn else 0.1))}]")
+
+
+def hud_scene():
+    """You on your own, looking straight down at the floor (nothing in view moves), chat faded."""
+    reset()
+    ctl("look", "0", "90")
+    for name, value in (("armor hud", "false"), ("armor hud style", "Boxes"), ("armor hud layout", "Horizontal"),
+                        ("armor hud durability", "Bar"), ("armor hud hands", "false"), ("armor hud hide empty", "true"),
+                        ("armor hud position", "Hotbar"), ("item durability", "false"), ("durability format", "Number"),
+                        ("durability tooltip", "true"), ("food preview", "false"), ("saturation", "false"),
+                        ("exhaustion", "false"), ("mount hud", "false"), ("shield status", "false")):
+        setting("hud", name, value)
+
+
+def hud_frame(name, *settings, colour=False):
+    for k, v in settings:
+        setting("hud", k, v)
+    wait(225)
+    return colour_frame(name) if colour else frame(name)
+
+
+@test("Armor HUD")
+def _():
+    # Beside the hotbar on the right: nothing with no armour on (empty slots hidden), four boxes in a row with it,
+    # none above the row; a fresh set's bars green, a worn set's red; the hands add a box for the sword held.
+    hud_scene()
+    w, h = hud_size()
+    row = hud_box(w / 2 + 95, h - 23, w / 2 + 95 + 84, h)
+    above = hud_box(w / 2 + 95, h - 100, w / 2 + 95 + 84, h - 26)
+    hand = hud_box(w / 2 + 95 + 84, h - 23, w / 2 + 95 + 130, h)
+    off = hud_frame("ah_off", colour=True)
+    empty = hud_frame("ah_empty", ("armor hud", "true"), colour=True)
+    wear()
+    fresh = hud_frame("ah_fresh", colour=True)
+    bare = hud_frame("ah_fresh_off", ("armor hud", "false"), colour=True)
+    wear(worn=True)
+    worn = hud_frame("ah_worn", ("armor hud", "true"), colour=True)
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    hands = hud_frame("ah_hands", ("armor hud hands", "true"), colour=True)
+    nothing = recoloured(off.crop(row), empty.crop(row))
+    boxes, over = recoloured(bare.crop(row), fresh.crop(row)), recoloured(bare.crop(above), fresh.crop(above))
+    green, red = coloured(fresh, row, greens), coloured(worn, row, reds)
+    worn_green = coloured(worn, row, greens)
+    sword = recoloured(worn.crop(hand), hands.crop(hand))
+    ok = nothing < 20 and boxes > 400 and over < 20 and green > 10 and red > 10 and worn_green < green and sword > 100
+    return ok, (f"no armour {nothing} px changed; armour on {boxes} px in the row, {over} above it; green bar px "
+                f"fresh {green}, worn {worn_green}; red worn {red}; a sword with Hands {sword} px further right")
+
+
+@test("Armor HUD layouts")
+def _():
+    # Vertical: a column going up from the hotbar's foot instead of the row; Compact (Armor Status's look) with
+    # Percent at the top left; Custom at the middle of the screen; Hide empty off with only a helmet: four boxes.
+    hud_scene()
+    w, h = hud_size()
+    wear()
+    off = hud_frame("al_off")
+    column = hud_box(w / 2 + 95, h - 90, w / 2 + 95 + 22, h - 24)
+    row_end = hud_box(w / 2 + 95 + 24, h - 23, w / 2 + 95 + 84, h)
+    vertical = hud_frame("al_vertical", ("armor hud", "true"), ("armor hud layout", "Vertical"))
+    corner = hud_box(0, 50, 80, 140)
+    compact = hud_frame("al_compact", ("armor hud style", "Compact"), ("armor hud durability", "Percent"),
+                        ("armor hud position", "Top left"))
+    middle = hud_box(w / 2 + 20, h / 2 - 20, w / 2 + 120, h / 2 + 40)
+    custom = hud_frame("al_custom", ("armor hud style", "Boxes"), ("armor hud layout", "Horizontal"),
+                       ("armor hud position", "Custom"), ("armor hud x", "0.55"), ("armor hud y", "0.47"))
+    cmd("clear @s")
+    wear(parts=("head",))
+    helmet_off = hud_frame("al_helmet_off", ("armor hud position", "Hotbar"), ("armor hud", "false"))
+    helmet = hud_frame("al_helmet", ("armor hud", "true"))
+    four = hud_frame("al_four", ("armor hud hide empty", "false"))
+    up, along = changed(off, vertical, column), changed(off, vertical, row_end)
+    top_left, mid = changed(off, compact, corner), changed(off, custom, middle)
+    one, all4 = changed(helmet_off, helmet, row_end), changed(helmet_off, four, row_end)
+    ok = up > 300 and along < 20 and top_left > 150 and mid > 300 and one < 20 and all4 > 300
+    return ok, (f"Vertical: {up} px in the column, {along} along the row; Compact top left {top_left} px; Custom "
+                f"{mid} px mid-screen; a helmet alone {one} px past its box, with Hide empty off {all4}")
+
+
+@test("Armor HUD drag")
+def _():
+    # With the menu open, the Armor HUD in the bottom right corner is dragged to the middle left: it draws there
+    # afterwards (Position becomes Custom), no longer in the corner.
+    hud_scene()
+    w, h = hud_size()
+    wear()
+    setting("hud", "armor hud position", "Bottom right")
+    off = hud_frame("ad_off")
+    corner = hud_box(w - 90, h - 30, w, h)
+    target = hud_box(40, h / 2 - 15, 140, h / 2 + 15)
+    setting("hud", "armor hud", "true")
+    before = hud_frame("ad_before")
+    say(".menu")
+    wait(8)
+    ctl("drag-at", str(w - 40), str(h - 12), str(w - 200), str(h / 2 - 20), str(80), str(h / 2))
+    wait(4)
+    close_menu()
+    after = hud_frame("ad_after")
+    was, left, moved = changed(off, before, corner), changed(off, after, corner), changed(off, after, target)
+    return was > 300 and left < 20 and moved > 300, f"in the corner {was} px; after the drag {left} there, {moved} mid-left"
+
+
+@test("Armor HUD (GUI scales)")
+def _():
+    # The row beside the hotbar at GUI scale 2 and 4 (screenshots ah_scale2, ah_scale4 to look at).
+    scale = ctl("options-get", "guiScale")["options"]["guiScale"]["value"]
+    notes, ok = [], True
+    for n in (2, 4):
+        ctl("options-set", "guiScale", str(n))
+        hud_scene()
+        w, h = hud_size()
+        wear(worn=True)
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        row = hud_box(w / 2 + 95, h - 23, w / 2 + 95 + 130, h)
+        off = hud_frame(f"ah_scale{n}_off")
+        on = hud_frame(f"ah_scale{n}", ("armor hud", "true"), ("armor hud hands", "true"),
+                       ("armor hud durability", "Bar and percent"))
+        px = changed(off, on, row)
+        ok = ok and px > 200 * n * n / 4
+        notes.append(f"scale {n} (drawn at {hud_scale():.0f}): {px} px")
+    ctl("options-set", "guiScale", str(scale))
+    return ok, ", ".join(notes)
+
+
+def hotbar_corner(i):
+    """The top left quarter of hotbar slot i's icon (where Item durability writes), in screen pixels."""
+    w, h = hud_size()
+    x, y = w / 2 - 91 + 3 + 20 * i, h - 19
+    return hud_box(x, y, x + 9, y + 5)
+
+
+@test("Item durability")
+def _():
+    # On the hotbar: a worn sword gets its number (and a different one as a percent), a fresh pickaxe too, a stack
+    # of stone nothing; off, nothing; and in the inventory screen the same items change too.
+    hud_scene()
+    cmd("item replace entity @s hotbar.0 with minecraft:diamond_sword[damage=1200]",
+        "item replace entity @s hotbar.1 with minecraft:iron_pickaxe", "item replace entity @s hotbar.2 with minecraft:stone 32")
+    off = hud_frame("id_off", colour=True)
+    number = hud_frame("id_number", ("item durability", "true"), colour=True)
+    percent = hud_frame("id_percent", ("durability format", "Percent"), colour=True)
+    sword, pick, stone = (recoloured(off.crop(hotbar_corner(i)), number.crop(hotbar_corner(i))) for i in range(3))
+    as_percent = recoloured(number.crop(hotbar_corner(0)), percent.crop(hotbar_corner(0)))
+    reds_on = coloured(number, hotbar_corner(0), lambda r, g, b: r > 150 and g < 200 and b < 90)
+    ctl("key", "e", "tap")
+    wait(10)
+    inv_on = frame("id_inventory")
+    setting("hud", "item durability", "false")
+    wait(5)
+    inv_off = frame("id_inventory_off")
+    ctl("key", "escape", "tap")
+    wait(5)
+    inventory = changed(inv_off, inv_on)
+    ok = sword > 4 and pick > 4 and stone == 0 and as_percent > 4 and reds_on > 0 and inventory > 20
+    return ok, (f"px changed: worn sword {sword} ({reds_on} orange-red), fresh pickaxe {pick}, stone {stone}; "
+                f"Percent against Number {as_percent}; inventory screen {inventory}")
+
+
+@test("Item durability (GUI scales)")
+def _():
+    # Screenshots id_scale2 and id_scale4 of the hotbar with numbers, and each one's sword corner changed.
+    scale = ctl("options-get", "guiScale")["options"]["guiScale"]["value"]
+    notes, ok = [], True
+    for n in (2, 4):
+        ctl("options-set", "guiScale", str(n))
+        hud_scene()
+        cmd("item replace entity @s hotbar.0 with minecraft:diamond_sword[damage=1200]",
+            "item replace entity @s hotbar.1 with minecraft:bow[damage=300]")
+        off = hud_frame(f"id_scale{n}_off")
+        on = hud_frame(f"id_scale{n}", ("item durability", "true"))
+        px = changed(off, on, hotbar_corner(0)) + changed(off, on, hotbar_corner(1))
+        ok = ok and px > 4
+        notes.append(f"scale {n} (drawn at {hud_scale():.0f}): {px} px")
+    ctl("options-set", "guiScale", str(scale))
+    return ok, ", ".join(notes)
+
+
+@test("Item durability tooltip")
+def _():
+    # In the inventory, the pointer on a worn sword: its tooltip is a line taller with Durability tooltip on.
+    hud_scene()
+    cmd("item replace entity @s hotbar.0 with minecraft:diamond_sword[damage=1200]")
+    setting("hud", "item durability", "true")
+    w, h = hud_size()
+    shots = {}
+    for name, value in (("off", "false"), ("on", "true")):
+        setting("hud", "durability tooltip", value)
+        wait(5)
+        ctl("key", "e", "tap")
+        wait(10)
+        # A server can keep the recipe book open: it moves the inventory 77 to the right.
+        book = 77 if (ctl("screen").get("recipe_book") or {}).get("open") else 0
+        x, y = (w - 176) / 2 + book + 8 + 8, (h - 166) / 2 + 142 + 8
+        ctl("drag-at", "4", "4", str(x), str(y))
+        wait(10)
+        shots[name] = frame(f"idt_{name}")
+        ctl("key", "escape", "tap")
+        wait(5)
+    tip = hud_box(x, y - 40, x + 200, y + 40)
+    px = changed(shots["off"], shots["on"], tip)
+    return px > 40, f"{px} px of the tooltip changed with the line"
+
+
+def hungry(to=12):
+    """Food down to `to` or less (Hunger until then; not in Peaceful, which feeds you), no saturation left: the food
+    the server last sent. The test puts Peaceful back."""
+    cmd("difficulty easy", "effect give @s minecraft:hunger 20 100 true")
+    for _ in range(60):
+        wait(5)
+        if (state()["player"].get("food") or 20) <= to:
+            break
+    cmd("effect clear @s minecraft:hunger")
+    wait(10)
+
+
+def food_row():
+    w, h = hud_size()
+    return hud_box(w / 2 + 10, h - 40, w / 2 + 92, h - 29)
+
+
+@test("Food preview, Saturation, Exhaustion")
+def _():
+    # Full and fed (Saturation from reset): the gold frames show, a bread's preview adds nothing; hungry: the bread
+    # adds flashing shanks, Saturation shows nothing (none left); jumps put an exhaustion bar under the row.
+    hud_scene()
+    slot(0, "bread", 8)
+    ctl("key", "1", "tap")
+    off = hud_frame("fp_full_off")
+    sat = hud_frame("fp_full_sat", ("saturation", "true"))
+    full_preview = hud_frame("fp_full_preview", ("saturation", "false"), ("food preview", "true"))
+    setting("hud", "food preview", "false")
+    hungry()
+    food = state()["player"].get("food")
+    low = hud_frame("fp_low_off")
+    preview = hud_frame("fp_low_preview", ("food preview", "true"))
+    no_sat = hud_frame("fp_low_sat", ("food preview", "false"), ("saturation", "true"))
+    setting("hud", "saturation", "false")
+    for _ in range(6):
+        held_keys(("space",), 3)
+        wait(10)
+    plain = frame("fp_ex_off")
+    ex = hud_frame("fp_ex", ("exhaustion", "true"))
+    cmd("difficulty peaceful")
+    r = food_row()
+    a, b, c = changed(off, sat, r), changed(off, full_preview, r), changed(low, preview, r)
+    d, e = changed(low, no_sat, r), changed(plain, ex, r)
+    ok = a > 60 and b < 20 and c > 40 and d < 20 and e > 10
+    return ok, (f"fed: Saturation {a} px, bread preview {b}; hungry (food {food}): preview {c}, Saturation {d}; "
+                f"exhaustion bar {e}")
+
+
+def ride_horse():
+    cmd(f"summon horse {X0 + 0.5} {Y + 1} {Z0 + 2.5} {{Tame:1b,NoAI:1b,PersistenceRequired:1b,"
+        f"equipment:{{saddle:{{id:\"minecraft:saddle\",count:1}}}}}}")
+    wait(10)
+    cmd("ride @s mount @e[type=horse,limit=1,sort=nearest]")
+    wait(10)
+    if not ctl("status").get("riding"):
+        only("automount")
+        wait(40)
+        only()
+    return ctl("status").get("riding")
+
+
+@test("Mount HUD")
+def _():
+    # On a horse with some XP: off, the horse's hearts take the food row and the jump bar the XP bar; on, the food
+    # row is back, the hearts a row up and the XP bar (green) shows; off the horse it changes nothing there.
+    hud_scene()
+    cmd("xp set @s 5 levels", "xp add @s 9 points")
+    w, h = hud_size()
+    bar = hud_box(w / 2 - 91, h - 29, w / 2 + 91, h - 24)
+    # A horse's 15 hearts take two rows: off, the food row and the one over it; on, the two over the food row.
+    above = hud_box(w / 2 + 10, h - 60, w / 2 + 92, h - 51)
+    walk_off = hud_frame("mh_walk_off", colour=True)
+    walk_on = hud_frame("mh_walk_on", ("mount hud", "true"), colour=True)
+    setting("hud", "mount hud", "false")
+    riding = ride_horse()
+    off = hud_frame("mh_off", colour=True)
+    on = hud_frame("mh_on", ("mount hud", "true"), colour=True)
+    ctl("key", "shift", "down")
+    wait(5)
+    ctl("key", "shift", "up")
+    cmd("kill @e[type=horse]", "xp set @s 0 levels", "xp set @s 0 points")
+    walking = recoloured(walk_off.crop(food_row()), walk_on.crop(food_row())) + recoloured(walk_off.crop(bar), walk_on.crop(bar))
+    food, up = recoloured(off.crop(food_row()), on.crop(food_row())), recoloured(off.crop(above), on.crop(above))
+    xp_off, xp_on = coloured(off, bar, greens), coloured(on, bar, greens)
+    ok = riding is not None and walking < 20 and food > 40 and up > 40 and xp_on > xp_off + 20
+    return ok, (f"riding {riding}; on foot {walking} px changed; riding: food row {food} px, the row above {up}, "
+                f"green XP bar px {xp_off} -> {xp_on}")
+
+
+@test("Shield status")
+def _():
+    # Bot1 hits you with an axe behind a raised shield: once it is disabled the box left of the crosshair shows (its
+    # #FF5555 bar; a skin's red is not that); with Shield status off, or with no hit, nothing. Each phase waits for
+    # the chat to fade first: its lines and dark backing reach the box.
+    if not CTL2:
+        return None, "needs a second player"
+    hud_scene()
+    w, h = hud_size()
+    box = hud_box(w / 2 - 80, h / 2 + 10, w / 2 - 10, h / 2 + 40)
+
+    def bar(r, g, b):
+        return r > 235 and 60 < g < 110 and 60 < b < 110 and abs(g - b) < 12
+
+    def phase(name, on, hits):
+        setting("hud", "shield status", "true" if on else "false")
+        bot_ready(2.5, 180, "give Bot1 minecraft:diamond_axe", "effect give @s minecraft:resistance 60 4 true",
+                  f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0", "item replace entity @s hotbar.0 with minecraft:shield")
+        ctl2("select", "1")
+        ctl("key", "1", "tap")
+        ctl("look", "0", "0")
+        ctl("mouse", "right", "down")
+        wait(225)
+        best = 0
+        for i in range(max(hits, 1)):
+            if hits:
+                ctl2("mouse", "left", "click")
+                wait(4)
+            best = max(best, coloured(colour_frame(f"ss_{name}_{i}"), box, bar))
+            if best > 40:
+                break
+            wait(20)
+        ctl("mouse", "right", "up")
+        wait(110)
+        return best
+
+    shown, off, idle = phase("on", True, 6), phase("off", False, 3), phase("idle", True, 0)
+    bot_done()
+    cmd("effect clear @s")
+    if shown == 0 and (HORIZON_SERVER or not SERVER):
+        return None, f"Horizon's server disabled no shield in 6 axe hits (off {off}, no hit {idle})"
+    return shown > 40 and off < 10 and idle < 10, f"#FF5555 px left of the crosshair: disabled {shown}, off {off}, no hit {idle}"
+
 
 def cut_pig(block, *settings, mods=("ghosthand",)):
     """A tough pig 3 blocks ahead behind `block` (in the block before it, on a grass floor), one click at it with
@@ -12002,6 +12393,7 @@ if __name__ == "__main__":
             ok, note = fn()
         except Exception as e:  # noqa: BLE001
             ok, note = False, f"error: {e!r}"
+            traceback.print_exc()
         signal.alarm(0)
         rejoin(fn.test_name)
         if ok is not None:

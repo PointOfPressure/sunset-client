@@ -321,6 +321,13 @@ impl Module {
             "Kill Aura" | "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
             "Auto Armor" => name != "Armor key" || self.p("Mode") == "Key",
             "Ghost Hand" => name != "Cut through" || !self.b("Hits"),
+            "HUD" => match name {
+                "Armor HUD x" | "Armor HUD y" => self.b("Armor HUD") && self.p("Armor HUD position") == "Custom",
+                _ if name.starts_with("Armor HUD ") => self.b("Armor HUD"),
+                "Durability format" | "Durability tooltip" => self.b("Item durability"),
+                "Target HUD mode" => self.b("Target HUD"),
+                _ => true,
+            },
             "Auto Clicker" => match name {
                 "Delay (ticks)" => self.p("Mode") == "Delay",
                 "Min CPS" | "Max CPS" => self.p("Mode") == "CPS",
@@ -758,7 +765,24 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Facing", true)
             .bool("Totems", false)
             .bool("Target HUD", true)
-            .pick("Target HUD mode", &["Full", "Potato"]),
+            .pick("Target HUD mode", &["Full", "Potato"])
+            .bool("Armor HUD", false)
+            .pick("Armor HUD style", &["Boxes", "Compact"])
+            .pick("Armor HUD layout", &["Horizontal", "Vertical"])
+            .pick("Armor HUD durability", &["Bar", "Percent", "Number", "Bar and percent"])
+            .bool("Armor HUD hands", false)
+            .bool("Armor HUD hide empty", true)
+            .pick("Armor HUD position", &["Hotbar", "Top left", "Top right", "Bottom left", "Bottom right", "Custom"])
+            .num("Armor HUD x", 0.5, 0.0, 1.0, 0.001)
+            .num("Armor HUD y", 0.5, 0.0, 1.0, 0.001)
+            .bool("Item durability", false)
+            .pick("Durability format", &["Number", "Percent"])
+            .bool("Durability tooltip", true)
+            .bool("Food preview", false)
+            .bool("Saturation", false)
+            .bool("Exhaustion", false)
+            .bool("Mount HUD", false)
+            .bool("Shield status", false),
         Module::new("Fullbright", Render, "Lights everything up."),
         Module::new("ESP", Render, "Boxes around entities.")
             .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
@@ -3350,6 +3374,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_effects::tick(game);
     super::sunset_player::tick(game, &mods);
+    super::sunset_hud_bars::tick(game, &mods, game.native_on(ID) && !HIDDEN.load(Ordering::Relaxed));
     super::sunset_world::tick(game, &mods);
     super::sunset_hunting::tick(game, &mods);
     super::sunset_new_chunks::tick(game, &mods);
@@ -6723,6 +6748,10 @@ pub(super) enum Shape {
     Head(String, [f32; 2], u32),
     // An item's icon as the game draws it in its own menus (by id), and its size.
     Item(std::sync::Arc<str>, [f32; 2], f32),
+    // A GUI sprite (by its atlas name) stretched over a rectangle, from the part of it given as fractions u0, v0, u1, v1.
+    Sprite(&'static str, [f32; 4], [f32; 4]),
+    // A line of text at a size (1: the usual).
+    Scaled(String, [f32; 2], u32, f32),
     // A player's face from a skin texture (and its hat layer), and its size.
     Face(String, [f32; 2], f32),
     // A panel with squircle corners, and their radius.
@@ -6860,8 +6889,20 @@ fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32
             Shape::Item(item, [x, y], size) => {
                 let start = batch.vertices.len();
                 let stack = horizon_client::items::ItemStack { item, count: 1, damage: 0, extra: None };
-                game.draw_item_model(batch, &stack, x, y);
+                super::sunset_hud_bars::plain(|| game.draw_item_model(batch, &stack, x, y));
                 batch.scale_since(start, x, y, size / 16.0, size / 16.0);
+            }
+            Shape::Sprite(name, [x, y, w, h], [a, b, c, d]) => {
+                if let Some(r) = game.gui.atlas.sprites.get(name).copied() {
+                    let (du, dv) = (r.u1 - r.u0, r.v1 - r.v0);
+                    let part = horizon_client::hud::Rect { u0: r.u0 + du * a, v0: r.v0 + dv * b, u1: r.u0 + du * c, v1: r.v0 + dv * d, ..r };
+                    batch.rect_uv(x, y, w, h, part, u32::MAX);
+                }
+            }
+            Shape::Scaled(t, [x, y], rgb, size) => {
+                let start = batch.vertices.len();
+                game.native_text(batch, &t, [x, y], rgb, true);
+                batch.scale_since(start, x, y, size, size);
             }
             Shape::Face(skin, [x, y], size) => {
                 // The face is 8 by 8 at (8, 8) of the 64 by 64 skin, its hat beside it at (40, 8).
@@ -6986,6 +7027,10 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
                     shapes.push(Shape::Text(line, [bx + 2.0, by + 2.0 + i as f32 * 10.0], 0xFFFFFF));
                 }
             }
+        }
+        // After the corners' text, so a corner keeps that at its edge.
+        if game.native_playing() {
+            super::sunset_hud_bars::draw(game, hud, w, h, corners, &mut shapes);
         }
     }
 
@@ -7755,6 +7800,8 @@ pub(super) enum Drag {
     Slider(usize, usize, [f32; 4], f32),
     // The settings window by its title, where in it the pointer took it.
     Window(f32, f32),
+    // The Armor HUD, where in it the pointer took it (in the HUD's own units).
+    Armor(f32, f32),
 }
 
 #[derive(Clone, Debug)]
@@ -8648,6 +8695,10 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             s.gui.editor = None;
         }
         let Some((r, hit)) = found else {
+            // Off the menu: the Armor HUD can be taken and moved.
+            if let Some((dx, dy)) = super::sunset_hud_bars::armor_grab(game.cursor).filter(|_| !right) {
+                s.gui.drag = Some(Drag::Armor(dx, dy));
+            }
             return;
         };
         // Extra Modules is its switches: either button opens them.
@@ -8768,6 +8819,20 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
         Some(Drag::Window(dx, dy)) => {
             if let Some(win) = &mut s.gui.window {
                 (win.x, win.y) = (at.0 - dx, at.1 - dy);
+            }
+        }
+        Some(Drag::Armor(dx, dy)) => {
+            if let Some((fx, fy)) = super::sunset_hud_bars::armor_drag(game.cursor.0 - dx, game.cursor.1 - dy)
+                && let Some(m) = s.modules.iter_mut().find(|m| m.name == "HUD")
+            {
+                for st in &mut m.settings {
+                    match (st.name, &mut st.value) {
+                        ("Armor HUD position", Value::Pick { i, of }) => *i = of.iter().position(|o| *o == "Custom").unwrap_or(*i),
+                        ("Armor HUD x", Value::Num { v, .. }) => *v = fx,
+                        ("Armor HUD y", Value::Num { v, .. }) => *v = fy,
+                        _ => {}
+                    }
+                }
             }
         }
         None => {}

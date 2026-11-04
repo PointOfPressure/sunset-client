@@ -32,13 +32,16 @@ world() {
 }
 
 # launch <dir> <session file> <display> <game args...>
+# SIZE=WxH: the window (and Xvfb screen) size, 1280x720 by default; 1920x1080 allows GUI scale 4.
+WINDOW=
+[ -n "$SIZE" ] && WINDOW="--width ${SIZE%x*} --height ${SIZE#*x}"
 launch() {
 	local d=$1 f=$2 disp=$3; shift 3
 	local s; s=$(mktemp -d /tmp/hzrunx-XXXX); mkdir -p $s/home $s/data $s/config; echo $s > $d/$f
 	(cd $s/home && HORIZON_HOME=$s/home XDG_DATA_HOME=$s/data XDG_CONFIG_HOME=$s/config HORIZON_NO_AUDIO=1 \
 		HORIZON_NO_HEARTBEAT=1 HORIZON_NO_DISCORD=1 HORIZON_TELEMETRY_URL=off HORIZON_LAUNCHER_NO_SELF_UPDATE=1 \
 		DISPLAY=:$disp SUNSET_PROBE=$s/probe.log \
-		$R/horizon-ctl --socket $s/c.sock --timeout 300 launch --game $R/horizon-client "$@" --offscreen --wait \
+		$R/horizon-ctl --socket $s/c.sock --timeout 300 launch --game $R/horizon-client "$@" --offscreen --wait $WINDOW \
 		--resources $RES >/dev/null 2>&1)
 }
 
@@ -50,7 +53,7 @@ target() {
 		printf '#!/bin/sh\nexec %s/horizon-ctl --socket $(cat %s/%s)/c.sock --timeout 60 "$@"\n' $R $d $f > $d/ctl${f#session}
 	done
 	chmod +x $d/ctl $d/ctl2
-	Xvfb :$disp -screen 0 1280x720x24 -nolisten tcp >/dev/null 2>&1 &
+	Xvfb :$disp -screen 0 ${SIZE:-1280x720}x24 -nolisten tcp >/dev/null 2>&1 &
 	local xvfb=$!
 	sleep 1
 	if [ $name = sp ]; then

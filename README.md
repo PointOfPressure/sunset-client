@@ -119,6 +119,15 @@ settings cover scale, spacing, colors and panel shape. Advanced controls appear 
 
 Kill Aura, Trigger Bot and Aim Assist can skip bots (**Anti bot**: players the server's player list doesn't show) and
 players on your own team (**Ignore teams**). **HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
+**HUD > Armor HUD** puts your armour (and with **Hands** what you hold) in slot boxes beside the hotbar, or a corner,
+or wherever you drag it with the menu open: real icons, a durability bar, percent or number, green to red as it wears,
+in a row or a column; **Compact** is vape-rs's Armor Status look. **HUD > Item durability** writes what is left (a
+number or a percent) on every damageable item in the hotbar and inventories, and **Durability tooltip** adds
+remaining / max to its tooltip. **Food preview**, **Saturation** and **Exhaustion** show on the food row what the
+held food gives, your saturation as gold frames and the exhaustion under it (as AppleSkin does). **Mount HUD** keeps
+the food row and the XP bar while riding, the mount's hearts above (the jump bar shows while a jump charges).
+**Shield status** shows the seconds left while an axe has your shield down. **Ghost Hand > Cut through** hits the mob
+behind grass, flowers, cobwebs and other blocks with nothing to collide with (as CutThrough does).
 Kill Aura hits one target (**Single**, with **Target lock** to stay on it), each in turn (**Switch**) or several (**Multi**).
 **Rotation mode** is Silent aura (the default, after vape-rs's SilentAura: a look the server alone sees, turned in whole
 mouse steps at **Aim speed** and sent in the game's own move packets, hitting only within vanilla reach), Snap, Normal,
@@ -188,7 +197,7 @@ Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs.
 
 ## Licence
 
-Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine, and the plugin docs and example in [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) are MIT. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon. Scaffold's Legit and Godbridge modes, Offhand's Auto Totem, Kill Aura's Silent aura mode, Aim Assist's Simple mode, Anti AFK's Wander mode and No Slow's Skip mode follow [vape-rs](https://github.com/rdbtCVS/vape-rs) by rdbtCVS (MIT, notice in [LICENSE](LICENSE)). Crystal Aura, Anchor Aura and Protect loot follow Anubis 1.0 by 4ldenz (Horus) (MIT, notice in [LICENSE](LICENSE)), ported by Rust. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine, and the plugin docs and example in [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) are MIT. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon. Scaffold's Legit and Godbridge modes, Offhand's Auto Totem, Kill Aura's Silent aura mode, Aim Assist's Simple mode, Anti AFK's Wander mode and No Slow's Skip mode follow [vape-rs](https://github.com/rdbtCVS/vape-rs) by rdbtCVS (MIT, notice in [LICENSE](LICENSE)). HUD's Armor HUD looks like uku3lig's Armor HUD, and its food overlays, Mount HUD, Shield status and Ghost Hand's Cut through do what AppleSkin, Better Mount HUD, Shield Status and CutThrough do (Fabric mods; behaviour only, written fresh). Crystal Aura, Anchor Aura and Protect loot follow Anubis 1.0 by 4ldenz (Horus) (MIT, notice in [LICENSE](LICENSE)), ported by Rust. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <details>
 <summary>Font credits</summary>

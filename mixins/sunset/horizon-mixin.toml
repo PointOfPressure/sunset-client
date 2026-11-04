@@ -1860,3 +1860,83 @@ bindings = [
   { name = "content", ty = "&crate::text::Text", value = "&content" },
   { name = "source", ty = "crate::chat::ChatSource", value = "source" },
 ]
+
+[[module]]
+id = "hud_bars"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hud_bars"
+source = "hud_bars.rs"
+
+[[module]]
+id = "hunger_flags"
+file = "crates/horizon-client-render/src/hud_layout.rs"
+name = "sunset_hunger"
+source = "hunger_flags.rs"
+visibility = "pub"
+
+[[injection]]
+id = "hunger_bars"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::hud_layout::HealthHud::layout"
+helper = "hunger_hook.rs"
+bindings = [
+  { name = "hud", ty = "&mut HealthHud", value = "&mut *self" },
+  { name = "i", ty = "&HealthInputs", value = "i" },
+  { name = "w", ty = "i32", value = "w" },
+  { name = "h", ty = "i32", value = "h" },
+]
+
+[[injection]]
+id = "mount_hearts"
+kind = "RETURN"
+target = "horizon_client_render::hud_layout::vehicle_health"
+helper = "mount_hearts_hook.rs"
+bindings = [
+  { name = "value", ty = "Vec<GuiDraw>", value = "$value" },
+]
+
+[[injection]]
+id = "mount_xp"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::hud_layout::experience"
+helper = "mount_xp_hook.rs"
+bindings = [
+  { name = "w", ty = "i32", value = "w" },
+  { name = "h", ty = "i32", value = "h" },
+  { name = "progress", ty = "f32", value = "progress" },
+  { name = "level", ty = "i32", value = "level" },
+  { name = "bar", ty = "bool", value = "bar" },
+  { name = "width", ty = "&dyn Fn(&str) -> i32", value = "width" },
+]
+
+[[injection]]
+id = "item_durability"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::item_draw::Game<'_>::draw_item_model"
+helper = "durability_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *batch" },
+  { name = "stack", ty = "&ItemStack", value = "stack" },
+  { name = "x", ty = "f32", value = "x" },
+  { name = "y", ty = "f32", value = "y" },
+]
+
+[[injection]]
+id = "durability_line"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::stations::Game<'_>::draw_stack_tooltip_with"
+helper = "durability_line_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *batch" },
+  { name = "stack", ty = "&ItemStack", value = "stack" },
+  { name = "creative", ty = "bool", value = "creative" },
+  { name = "x", ty = "f32", value = "x" },
+  { name = "y", ty = "f32", value = "y" },
+  { name = "after_name", ty = "&Vec<(horizon_client::text::Text, u32)>", value = "&after_name" },
+]
