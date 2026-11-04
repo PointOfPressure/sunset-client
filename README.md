@@ -81,6 +81,7 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 | `.profile save\|load\|delete <name>`, `.profile list` | keep every module's on/off, settings and keys under a name and bring them back (a PvP set-up, a building one); `.profile load before-load` undoes the last load |
 | `.profile export\|import <name>` | share a profile: export copies it to the mod's `exports` folder, import takes `<name>.profile` from its `imports` folder |
 | `.preset [name] [apply]` | the pre-made profiles (PvP: crystal, PvP: sword and mace, PvP: carts, Anarchy and base hunting, Building, Legit (Grim-safe), Survival QoL): a name says what it turns on and off, `apply` takes it |
+| `.debug [chat lines]` | copy a debug report to the clipboard (and save it in the mod's `debug` folder): versions and server, your state, the input and packets sent tick by tick, the modules on with their changed settings, anticheat alerts from chat counted per check, setbacks, kicks and the chat (100 lines by default). Paste it into a bug report or an AI. **Debug Report** (Client) does the same from its row or a key |
 | `.panic` | turn every module off and hide Sunset until `.panic` again or restart (or bind the **Panic** module to a key) |
 | `.menu [text]` | open the menu, already searching for the text |
 
@@ -111,7 +112,7 @@ settings cover scale, spacing, colors and panel shape. Advanced controls appear 
 | **Player** | Fast Place (speed 1 to 5), Break Delay, Speed Mine, No Break Reset, Fast Use (with FastXP's throwables: every tick or in bursts), Air Place, Auto Armor, Auto Log, Auto Eat, Auto Gap, Auto Fish, Auto Tool, Auto Replenish, Auto Clicker, Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam, Chest Stealer, Inventory Cleaner (PvP, Building, Mining and Survival presets), Anti Vanish, Server Scan (the software, plugins and channels the server shows), Panic, Rotation, No Rotate, No Status Effects, Mine Through Mobs, Portals, Multitask, Fake Player (single player only), Liquid Interact, No Interact |
 | **Render** | ClickGUI, HUD, Radar, ESP, Tracers, Nametags, Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories, Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, Mob Gear ESP, No Render (no fog, water fog, darkness, blindness, fire or other overlays) |
 | **World** | Nuker, Packet Mine, Timer, Time Changer, Weather Changer, Liquid Filler, Spawn Proofer, Flamethrower, Auto Shearer, Auto Nametag, Auto Mount, Auto Breed, Auto Sign, Build Height, Enderman Look, Spawner Alerts, Base Finder (block tiers, written signs, open portals, bubble columns, sky builds, lone spawners, name tags, traded villagers...), New Chunks (new and old chunks from the server's palettes and liquid flow, kept per server), Player Activity Detector, Stash Finder, Cave Disturbance Detector, Portal Pattern Finder, Activated Spawner Detector, Unlock All Recipes (every recipe in the book, on any server) |
-| **Client** | Profiles (saved and pre-made), Client Sort (Sort, Fill Stacks and Restock buttons, as ClientSort), Extra Modules |
+| **Client** | Profiles (saved and pre-made), Client Sort (Sort, Fill Stacks and Restock buttons, as ClientSort), Extra Modules, Debug Report |
 
 </details>
 
@@ -156,6 +157,7 @@ update Sunset with the installer again.
 - **The command did nothing on Windows**: run it in *PowerShell*, not Command Prompt.
 - **No Sunset in game**: you played the plain **Horizon** instance. Pick **Native mods**.
 - **The first build is slow**: yes. It compiles the whole game once.
+- **A module misbehaves or a server flags you**: type `.debug` right after and paste the report (it's on your clipboard) into the ticket.
 - **Installer or launch still fails**: open a ticket on the [Discord](https://discord.gg/fhD2frFdzm) or an
   [issue](https://github.com/PointOfPressure/sunset-client/issues) with the installer output, your OS and the Horizon version.
 

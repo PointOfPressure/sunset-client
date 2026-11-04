@@ -1,5 +1,5 @@
 // The packets Crystal Aura and Anchor Aura learn from (blocks placed, players seen, hurt, equipped, gone; a new world
-// or life), Jump Reset's knockback and the inventory modules' slot updates, copied as they arrive. The game handles them in the same frame; Sunset reads the copies at its next tick
+// or life), Debug Report's server clock and disconnects, Jump Reset's knockback and the inventory modules' slot updates, copied as they arrive. The game handles them in the same frame; Sunset reads the copies at its next tick
 // (crate::game::sunset::combat_packets). Kept to the last 4096, should no tick come to read them.
 
 use horizon_protocol::packets::play::Clientbound as C;
@@ -151,11 +151,54 @@ mod scan_tests {
 
 static SEEN: Mutex<Vec<C>> = Mutex::new(Vec::new());
 
+// Debug Report: the server's clock as it came (when, and its game time), for a TPS estimate, and the connections'
+// ends with their reasons.
+static CLOCK: Mutex<VecDeque<(Instant, i64)>> = Mutex::new(VecDeque::new());
+static ENDS: Mutex<VecDeque<(std::time::SystemTime, String, bool)>> = Mutex::new(VecDeque::new());
+
+fn debug_seen(event: &super::Event) {
+    match event {
+        super::Event::Joined { .. } => CLOCK.lock().unwrap_or_else(|e| e.into_inner()).clear(),
+        super::Event::Disconnected { reason, from_server } => {
+            let mut ends = ENDS.lock().unwrap_or_else(|e| e.into_inner());
+            if ends.len() == 20 {
+                ends.pop_front();
+            }
+            ends.push_back((std::time::SystemTime::now(), reason.chars().take(512).collect(), *from_server));
+        }
+        super::Event::Packet(p) => {
+            if let C::SetTime(t) = &**p {
+                let mut clock = CLOCK.lock().unwrap_or_else(|e| e.into_inner());
+                if clock.len() == 30 {
+                    clock.pop_front();
+                }
+                clock.push_back((Instant::now(), t.game_time));
+            }
+        }
+        _ => {}
+    }
+}
+
+// The server's ticks a second over the clock updates kept (about the last 30 seconds), once they span 3 seconds, and
+// the seconds they span.
+pub fn tps() -> Option<(f64, f64)> {
+    let clock = CLOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let (first, last) = (clock.front()?, clock.back()?);
+    let seconds = last.0.duration_since(first.0).as_secs_f64();
+    (seconds >= 3.0).then(|| ((last.1 - first.1) as f64 / seconds, seconds))
+}
+
+// The connections' ends kept (when, the reason, whether the server gave it), oldest first.
+pub fn ends() -> Vec<(std::time::SystemTime, String, bool)> {
+    ENDS.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect()
+}
+
 pub fn seen(events: &[super::Event]) {
     let scan_active = SCAN_ACTIVE.load(Ordering::Relaxed);
     let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
     for event in events {
         scan_seen(event, scan_active);
+        debug_seen(event);
         if let super::Event::Packet(p) = event
             && matches!(
                 **p,

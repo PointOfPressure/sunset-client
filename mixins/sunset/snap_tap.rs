@@ -25,6 +25,8 @@ struct Snap {
     presses: u64,
     // The keys taken out for this tick, each with the one that won over it.
     took: Vec<(KeyCode, KeyCode)>,
+    // The keys that lost last tick, each with the one that won (Debug Report).
+    last: Vec<(KeyCode, KeyCode)>,
 }
 
 static SNAP: Mutex<Option<Snap>> = Mutex::new(None);
@@ -61,12 +63,21 @@ pub(super) fn pre_tick(game: &mut Game<'_>, m: Option<&Module>) -> Vec<KeyCode> 
         s.pressed
     });
     let Some(m) = m.filter(|m| m.p("Mode") == "Last input") else {
+        snap(|s| s.last.clear());
         return Vec::new();
     };
     let lost: Vec<(KeyCode, KeyCode)> = losers(held, order, m.b("Forward and back")).into_iter().map(|(l, w)| (KEYS[l], KEYS[w])).collect();
     let took = lost.iter().filter(|(k, _)| game.keys.remove(k)).copied().collect();
-    snap(|s| s.took = took);
+    snap(|s| {
+        s.took = took;
+        s.last.clone_from(&lost);
+    });
     lost.into_iter().map(|(k, _)| k).collect()
+}
+
+// The keys that lost last tick, each with the one that won over it.
+pub(super) fn last() -> Vec<(KeyCode, KeyCode)> {
+    snap(|s| s.last.clone())
 }
 
 // After the tick: a key taken out goes back while the one that won over it is still held (a tick that let go of every

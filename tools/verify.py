@@ -8848,6 +8848,154 @@ def _():
     return stopped, f"(walked, blocks short, moved after: A held walks on by hand, the rest stand) {got}" + ("" if window else "; ClickGUI: no window")
 
 
+
+# The Grim alerts of Sayer's two screenshots (3 Nov), the earlier one first: what the report's table must count.
+GRIM_LINES = [
+    *[l for v in range(102, 108) for l in (f"Simulation (x{v}.0) .420000", f"GroundSpoof (x{v - 73}.0) claimed false")],
+    "Simulation (x108.0) .420000",
+    "Post (x4.0) entity action v26.3", "Simulation (x166.0) .005880", "Simulation (x167.0) .005872",
+    "Hitboxes (x3.0) type=player", "PacketOrderO (x22.0) type=ENTITY_ACTION", "Simulation (x168.0) .005880",
+    "Simulation (x169.0) .005880", "Simulation (x170.0) .005880", "GroundSpoof (x45.0) claimed false",
+    "Simulation (x171.0) .062500", "PacketOrderO (x23.0) type=ENTITY_ACTION", "Post (x5.0) entity action v26.3",
+    "Simulation (x172.0) .005880", "BadPacketsX (x0.0)", "Simulation (x173.0) .003138",
+]
+GRIM_COUNTS = {"Simulation": (15, "173.0"), "GroundSpoof": (7, "45.0"), "Post": (2, "5.0"), "PacketOrderO": (2, "23.0"),
+               "Hitboxes": (1, "3.0"), "BadPacketsX": (1, "0.0")}
+REPORT_SECTIONS = ["# Sunset debug report", "## Versions and server", "## Player", "## Input", "## Modules",
+                   "## Anticheat flags", "### Server position packets", "### Disconnects and kicks", "## Packets sent",
+                   "## Chat"]
+
+
+def game_display():
+    """The X display the session's game draws on (runall gives each target its own), read from its environment."""
+    home = f"HORIZON_HOME={session_dir()}/home".encode()
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            with open(f"/proc/{pid}/environ", "rb") as f:
+                env = f.read().split(b"\0")
+        except OSError:
+            continue
+        if home in env:
+            return next((e[8:].decode() for e in env if e.startswith(b"DISPLAY=")), None)
+    return None
+
+
+def debug_report(trigger):
+    """Runs a debug report (trigger: a callable) and returns (the chat line, the saved file's text or None)."""
+    mark = log_mark()
+    trigger()
+    wait(10)
+    said = [l for l in sunset_said(mark) if l.startswith("Debug report copied")]
+    if not said or " saved to " not in said[-1]:
+        return (said[-1] if said else None), None
+    with open(said[-1].split(" saved to ", 1)[1]) as f:
+        return said[-1], f.read()
+
+
+def alert_table(text):
+    rows = {}
+    for line in text.split("## Anticheat flags", 1)[-1].split("\n### ", 1)[0].splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) == 8 and cells[1] == "pointofpressure":
+            rows[cells[2]] = (int(cells[3]), cells[4])
+    return rows
+
+
+@test("Debug report")
+def _():
+    # The Grim lines come in as the server's chat (one coloured like Grim's own), a player's line as player chat;
+    # ESP on with one setting changed, W held a few ticks. .debug writes the report: every section, the per-check counts, the changed
+    # setting only, the player line not an alert, no colour codes, under 20k characters; the module's row (.t) does
+    # the same once and goes off again; the clipboard holds the report where the display can be read.
+    reset()
+    toggle("ESP", True)
+    setting("esp", "fill opacity", "0.5")
+    cmd('tellraw @s ["",{"text":"Grim ","color":"aqua"},{"text":"» ","color":"dark_gray"},{"text":"pointofpressure '
+        'failed ","color":"white"},{"text":"Simulation (x102.0) ","color":"white"},{"text":".420000","color":"gray"}]')
+    cmd(*[f'tellraw @s "Grim » pointofpressure failed {l}"' for l in GRIM_LINES[1:]])
+    ctl("chat", "sgudpi")
+    wait(5)
+    ctl("key", "w", "down")
+    wait(4)
+    ctl("key", "w", "up")
+    wait(3)
+    line, text = debug_report(lambda: say(".debug 60"))
+    if text is None:
+        return False, f"no report file: {line}"
+    with open(os.path.join(SHOTS, "debug-report.md"), "w") as f:
+        f.write(text)
+    missing = [s for s in REPORT_SECTIONS if s not in text]
+    counts = alert_table(text)
+    counted = all(counts.get(k) == v for k, v in GRIM_COUNTS.items()) and len(counts) == len(GRIM_COUNTS)
+    esp = next((l for l in text.splitlines() if l.startswith("- ESP")), "")
+    esp_ok = "Fill opacity = 0.5 (default 0.3)" in esp and "Mode =" not in esp
+    packets = text.split("## Packets sent", 1)[-1].split("## Chat", 1)[0]
+    wire = ("PlayerInput 0x01 (forward)" in packets and "ChatCommand (x" in packets and "MovePos" in packets
+            and "Last PlayerInput sent: 0x00 (none) at tick" in text)
+    chat = text.split("## Chat", 1)[-1]
+    chat_ok = "[player] <" in chat and "sgudpi" in chat and "[server] Grim » pointofpressure failed Simulation" in chat
+    clean = "§" not in text and len(text) <= 20500
+    say(".menu debug report")
+    wait(6)
+    ctl("screenshot", f"{SHOTS}/debug_report_menu.png")
+    time.sleep(2)
+    close_menu()
+    _, again = debug_report(lambda: say(".t debugreport"))
+    mark = log_mark()
+    wait(20)
+    once = again is not None and not [l for l in sunset_said(mark) if l.startswith("Debug report copied")]
+    display, clip = game_display(), None
+    if display and subprocess.run(["which", "xclip"], capture_output=True).returncode == 0:
+        r = subprocess.run(["xclip", "-o", "-selection", "clipboard"], capture_output=True, text=True, timeout=10,
+                           env={**os.environ, "DISPLAY": display})
+        clip = r.stdout.startswith("# Sunset debug report") and "## Anticheat flags" in r.stdout
+    ok = not missing and counted and esp_ok and wire and chat_ok and clean and once and clip is not False
+    return ok, (f"missing sections {missing}; Grim table {counts}; ESP line {esp!r}; packet log has W's input, the "
+                f"commands and moves {wire}; chat lines {chat_ok}; {len(text)} chars, no colour codes {clean}; module row copies once "
+                f"and goes off {once}; clipboard {'unchecked' if clip is None else clip}")
+
+
+@test("Debug report (Grim alerts)")
+def _():
+    # On the anticheat rig's Grim server (25610) only: Flight held up for 30 s piles up Simulation flags past Grim's
+    # alert line (VL 100 here, then every 40) and gets set back. The report's table must count each Grim alert line
+    # its chat section holds for Tester, and list the setbacks.
+    if not SERVER or not SERVER.endswith(":25610"):
+        return None, "needs the anticheat rig's Grim server (127.0.0.1:25610)"
+    reset()
+    mark = len(ctl("chat-log", "50").get("chat", []))
+    cmd("grim alerts")
+    wait(5)
+    if any("Alerts disabled" in l for l in ctl("chat-log", "5").get("chat", [])[:3]):
+        cmd("grim alerts")
+    toggle("Flight", True)
+    ctl("key", "space", "down")
+    ctl("key", "w", "down")
+    wait(600)
+    ctl("key", "w", "up")
+    ctl("key", "space", "up")
+    toggle("Flight", False)
+    wait(60)
+    _, text = debug_report(lambda: say(".debug 300"))
+    if text is None:
+        return False, f"no report file (chat before: {mark})"
+    with open(os.path.join(SHOTS, "debug-report-grim.md"), "w") as f:
+        f.write(text)
+    rows = {}
+    for line in text.split("## Anticheat flags", 1)[-1].split("\n### ", 1)[0].splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) == 8 and cells[0] == "Grim" and cells[1] == "Tester":
+            rows[cells[2]] = int(cells[3])
+    chat = text.split("## Chat", 1)[-1]
+    lines = [l for l in chat.splitlines() if "[server] Grim » Tester failed " in l]
+    per_check = {}
+    for l in lines:
+        check = l.split(" failed ", 1)[1].split(" ")[0]
+        per_check[check] = per_check.get(check, 0) + 1
+    setbacks = text.split("### Server position packets", 1)[-1].split("###", 1)[0].count("\n| ") - 2
+    ok = bool(rows) and rows == per_check and setbacks > 0
+    return ok, f"table {rows}; alert lines in chat {per_check}; setbacks listed {setbacks}"
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

@@ -447,6 +447,7 @@ target = "horizon_client::game::remote::Game<'_>::remote_teleport"
 helper = "correction_hook.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "position", ty = "&horizon_protocol::packets::play::PlayerPosition", value = "p" },
 ]
 
 [[injection]]
@@ -1672,4 +1673,43 @@ bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
   { name = "pos", ty = "[i32; 3]", value = "pos" },
   { name = "state", ty = "i32", value = "state" },
+]
+
+[[module]]
+id = "debug"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_debug"
+source = "debug.rs"
+
+[[module]]
+id = "debug_wire_log"
+file = "crates/horizon-protocol/src/connection.rs"
+name = "sunset_wire"
+source = "debug_wire.rs"
+visibility = "pub"
+
+[[injection]]
+id = "debug_wire"
+kind = "HEAD"
+target = "horizon_protocol::connection::ConnWriter::send"
+helper = "debug_wire_hook.rs"
+bindings = [
+  { name = "body", ty = "&[u8]", value = "body" },
+]
+
+[[module]]
+id = "debug_chat_log"
+file = "crates/horizon-client-render/src/chat.rs"
+name = "sunset_chat_log"
+source = "debug_chat.rs"
+visibility = "pub"
+
+[[injection]]
+id = "debug_chat"
+kind = "HEAD"
+target = "horizon_client_render::chat::Chat::add"
+helper = "debug_chat_hook.rs"
+bindings = [
+  { name = "content", ty = "&crate::text::Text", value = "&content" },
+  { name = "source", ty = "crate::chat::ChatSource", value = "source" },
 ]

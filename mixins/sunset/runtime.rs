@@ -904,6 +904,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_server_scan::defaults());
     v.extend(super::sunset_extras::defaults());
     v.extend(super::sunset_extra_modules::defaults());
+    v.extend(super::sunset_debug::defaults());
     // Modules that only draw can be held on with their bind instead of toggled.
     for m in v.iter_mut().filter(|m| holds(m.name)) {
         let hold = usize::from(m.name == "Zoom");
@@ -2224,7 +2225,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
         }
     }
     save(game);
-    if announce {
+    if announce && name != super::sunset_debug::NAME {
         say(game, &format!("{name} {}", if on { "on" } else { "off" }));
     }
 }
@@ -2701,6 +2702,13 @@ fn module_tick(game: &mut Game<'_>) {
 
     if game.player.is_none() {
         return;
+    }
+    // Debug Report: on for one tick (its button or bind), it copies the report.
+    if get(super::sunset_debug::NAME).is_some() {
+        if let Some(i) = with(|s| s.find(super::sunset_debug::NAME)) {
+            toggle(game, i, false);
+        }
+        super::sunset_debug::copy(game, None);
     }
 
     let dead = game.screen == Screen::Dead;
@@ -3601,6 +3609,36 @@ fn eat_stop(game: &mut Game<'_>) {
     if aura {
         toggle_named(game, "Kill Aura", true);
     }
+}
+
+// Debug Report: each module on but Debug Report, with its bind and the settings that differ from their defaults
+// (name, value, default; a plugin's module lists all of them), and the profile in use.
+pub(super) type ModuleState = (&'static str, Option<String>, Vec<(&'static str, String, String)>);
+
+pub(super) fn debug_modules() -> (String, Vec<ModuleState>) {
+    let defaults = defaults();
+    with(|s| {
+        let list = s
+            .modules
+            .iter()
+            .filter(|m| m.on && m.name != super::sunset_debug::NAME)
+            .map(|m| {
+                let base = defaults.iter().find(|d| d.name == m.name);
+                let changed = m
+                    .settings
+                    .iter()
+                    .filter_map(|x| {
+                        let default = base.and_then(|d| d.setting(x.name));
+                        default
+                            .is_none_or(|d| d.value != x.value)
+                            .then(|| (x.name, x.value_text(), default.map_or_else(|| "-".to_owned(), Setting::value_text)))
+                    })
+                    .collect();
+                (m.name, m.key.clone(), changed)
+            })
+            .collect();
+        (s.selection.label(), list)
+    })
 }
 
 pub(super) fn toggle_named(game: &mut Game<'_>, name: &str, on: bool) {
@@ -5780,6 +5818,7 @@ const HELP: &[(&str, &str)] = &[
     (".panic", "turn every module off and hide Sunset (.panic again brings it back)"),
     (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
     (".preset [name] [apply]", "the pre-made profiles: a name says what it turns on and off, apply takes it (.profile load before-load undoes it)"),
+    (".debug [chat lines]", "copy a debug report (chat, anticheat flags, the client's state, the last packets sent) to the clipboard, saved in the mod's data folder too"),
     (".scan [plugins|details|channels|commands|status|run] [page]", "show server-reported findings; run optional Extended checks manually"),
     (".auradebug", "why Kill Aura did what it did last, and who has the hand"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
@@ -6166,6 +6205,10 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
             }
         }
         "panic" => panic_off(game),
+        "debug" => match args.get(1).map(|n| n.parse::<usize>()) {
+            Some(Err(_)) => say(game, "Usage: .debug [chat lines]"),
+            lines => super::sunset_debug::copy(game, lines.and_then(Result::ok)),
+        },
         "profile" | "profiles" | "config" | "cfg" => profile_command(game, &args[1..]),
         "preset" | "presets" => preset_command(game, &args[1..]),
         "reset" => {
@@ -7579,6 +7622,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Hand View" => "small hands hand sway viewmodel item position totem pop totem size hand shadow hand light",
         "Zoom" => "wi zoom spyglass",
         "Panic" => "disable all off hide",
+        "Debug Report" => "debug report bug report clipboard copy log flags anticheat alerts packets",
         "Chest Stealer" => "auto steal autosteal loot",
         "Mine Through Mobs" => "no mining trace nominingtrace",
         "Inventory Cleaner" => "inventory cleaner junk drop clean",
