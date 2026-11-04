@@ -32,7 +32,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Pot pitch", 70.0, 50.0, 90.0, 1.0),
         Module::new("Chest Stealer", Player, "Empties containers you open.")
             .num("Items per tick", 3.0, 1.0, 27.0, 1.0)
-            .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0),
+            .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0)
+            .pick("Take", &["All", "Carts from shulkers"])
+            .bool("Close when done", false)
+            .text("Steal key", "None"),
         Module::new("Inventory Cleaner", Player, "Drops junk from your inventory.")
             .pick("Preset", &["Custom", "PvP", "Building", "Mining", "Survival"])
             .pick("List mode", &["Whitelist", "Blacklist"])
@@ -657,6 +660,15 @@ fn auto_steal(game: &mut Game<'_>, m: &Module) {
         ps(|p| p.steal_done = i32::MIN);
         return;
     }
+    // Carts from shulkers (a cart PvP restock): only TNT minecarts, only out of shulker boxes.
+    let carts = m.p("Take") == "Carts from shulkers";
+    let shulker = match game.container {
+        Some(key) => super::sunset_util::facts(game, [key.0, key.1, key.2]).name.ends_with("shulker_box"),
+        None => game.remote_menu().1.strip_prefix("minecraft:") == Some("shulker_box"),
+    };
+    if carts && !shulker {
+        return;
+    }
     // A chest of your own world, or the menu a server opened.
     let (id, size) = match game.container {
         Some(key) if matches!(game.container_kind(), Some(super::BlockEntity::Chest(_))) => {
@@ -671,14 +683,18 @@ fn auto_steal(game: &mut Game<'_>, m: &Module) {
             }
         }
     };
-    if ps(|p| p.steal_done == id) || ps(|p| {
+    // With a Steal key, only while it is held.
+    let key = m.t("Steal key") != "None";
+    if ps(|p| p.steal_done == id) || (key && !super::sunset_util::setting_key_down(game, m, "Steal key")) || ps(|p| {
         p.steal_wait = p.steal_wait.saturating_sub(1);
         p.steal_wait > 0
     }) {
         return;
     }
-    let items: Vec<usize> = (0..size).filter(|&i| game.slot_mut(300 + i).is_some()).collect();
-    // Done when it is empty, or when taking stopped changing it (your inventory is full).
+    let items: Vec<usize> =
+        (0..size).filter(|&i| game.slot_mut(300 + i).as_ref().is_some_and(|s| !carts || &*s.item == "minecraft:tnt_minecart")).collect();
+    // Done when there is nothing to take, or when taking stopped changing it (your inventory is full). Close when
+    // done shuts the container then.
     let stuck = ps(|p| {
         p.steal_same = if p.steal_id == id && p.steal_last == items.len() { p.steal_same + 1 } else { 0 };
         (p.steal_id, p.steal_last) = (id, items.len());
@@ -686,6 +702,9 @@ fn auto_steal(game: &mut Game<'_>, m: &Module) {
     });
     if items.is_empty() || stuck {
         ps(|p| p.steal_done = id);
+        if m.b("Close when done") {
+            super::sunset_combat_inventory::close_inventory(game);
+        }
         return;
     }
     let ops: Vec<_> = items.iter().take(m.n("Items per tick") as usize).map(|&i| (Some(300 + i), 0, QuickMove)).collect();

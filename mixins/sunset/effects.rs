@@ -202,6 +202,8 @@ struct Fx {
     epoch: Option<Instant>,
     // A player's shield put out by an axe: until when (tick).
     broken: Vec<(u32, u64)>,
+    // Each player's or mob's totem pops (event 35) since they appeared: Nametags' Totem pops.
+    pops: Vec<(u32, u32)>,
     roll: u64,
 }
 
@@ -272,6 +274,12 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
             fx.broken.push((id, until));
         });
     }
+    if e.event == 35 {
+        st(|fx| match fx.pops.iter_mut().find(|(i, _)| *i == id) {
+            Some((_, n)) => *n += 1,
+            None => fx.pops.push((id, 1)),
+        });
+    }
     if e.event == 35
         && player
         && let Some(m) = module().filter(|m| m.b("Hit particles") && m.b("On totem pops"))
@@ -293,8 +301,16 @@ fn solid(game: &Game<'_>, p: [f64; 3]) -> bool {
     !super::sunset_util::replaceable(game, b)
 }
 
+// How many totems a player or mob has popped since they appeared (a respawn or rejoin starts again).
+pub(super) fn pops(id: u32) -> u32 {
+    st(|fx| fx.pops.iter().find(|(i, _)| *i == id).map_or(0, |(_, n)| *n))
+}
+
 pub(super) fn tick(game: &Game<'_>) {
-    st(|fx| fx.broken.retain(|&(_, until)| game.ticks < until));
+    st(|fx| {
+        fx.broken.retain(|&(_, until)| game.ticks < until);
+        fx.pops.retain(|(id, _)| game.mobs.iter().any(|mob| mob.id == *id && mob.alive()));
+    });
     let Some(m) = module().filter(|_| game.player.is_some()) else {
         st(|fx| {
             let broken = std::mem::take(&mut fx.broken);

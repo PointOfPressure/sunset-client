@@ -121,6 +121,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Track within (degrees)", 3.0, 0.0, 15.0, 0.5)
             .num("Keep target", 1.5, 1.0, 3.0, 0.1)
             .bool("Only with a weapon", true)
+            .bool("Pause while mining", false)
+            .bool("Only while turning", false)
             .bool("Anti bot", false)
             .bool("Ignore teams", false)
             .bool("Silent aim", false)
@@ -138,7 +140,8 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Crystal Optimizer", Combat, "Breaks hit crystals at once.")
             .bool("Instant break", true)
             .num("Reach", 4.5, 3.0, 6.0, 0.5)
-            .bool("Swing", true),
+            .bool("Swing", true)
+            .bool("Skip with weakness", false),
         Module::new("Auto EXP", Combat, "Repairs gear with XP bottles.")
             .pick("Mode", &["Both", "Armor", "Hands"])
             .bool("Replenish", true)
@@ -982,7 +985,14 @@ pub(super) fn offhand_want(game: &Game<'_>, m: &Module) -> Want {
     // A right click that is not using what the main hand holds.
     let usable = matches!(main.as_str(), "bow" | "trident" | "crossbow") || game.res.items().get(&format!("minecraft:{main}")).is_some_and(|i| i.food.is_some());
     let clicking = (game.physical_buttons.contains(&MouseButton::Right) || game.right) && game.native_playing() && !usable;
-    let item = if m.b("Right gapple") {
+    // Totem on low health (an SMP offhand): at Totem health or under, a totem whatever Item says, unless your
+    // shield is up (Wait while shielding).
+    let low = m.b("Totem on low health")
+        && game.player.as_ref().is_some_and(|p| p.health.health() <= m.n("Totem health") as f32)
+        && !(m.b("Wait while shielding") && super::sunset_hands::shielding(game));
+    let item = if low {
+        "Totem"
+    } else if m.b("Right gapple") {
         if clicking && (!m.b("Sword gapple") || sword) { "Enchanted gapple" } else { m.p("Item") }
     } else if (sword || axe) && m.b("Always gap on sword") {
         "Enchanted gapple"
@@ -1245,7 +1255,7 @@ fn invisible_to_you(game: &Game<'_>, e: &Mob) -> bool {
 }
 
 // `Weapons.isWeapon`: a sword, axe or spear (by their item tags), a mace or a trident in the main hand.
-fn holds_weapon(game: &Game<'_>) -> bool {
+pub(super) fn holds_weapon(game: &Game<'_>) -> bool {
     let tags = &game.res.items().item_tags;
     game.inventory.get(game.selected).and_then(|s| s.as_ref()).is_some_and(|s| {
         let item = &*s.item;
@@ -1325,6 +1335,9 @@ fn aim_allowed(game: &Game<'_>, m: &Module) -> bool {
         && !game.spectator()
         && !super::sunset_render::camera_takes_mouse()
         && (!m.b("Only with a weapon") || holds_weapon(game))
+        // Pause while mining: not while you break a block. Only while turning: only in a frame your mouse turned you.
+        && !(m.b("Pause while mining") && game.mining.is_some())
+        && !(m.b("Only while turning") && cs(|c| c.aim_before) == [game.yaw, game.pitch])
 }
 
 // Before your own mouse turn this frame.
@@ -1737,7 +1750,8 @@ fn simple_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
 // took the click.
 pub(super) fn crystal_attack(game: &mut Game<'_>) -> Option<bool> {
     let m = super::sunset::with(|s| s.module("Crystal Optimizer").filter(|m| m.on).cloned())?;
-    if !m.b("Instant break") || !in_world(game) {
+    // Skip with weakness: a hit under Weakness may not break it, so it stays shown until the server says.
+    if !m.b("Instant break") || !in_world(game) || (m.b("Skip with weakness") && game.potions.effects.get("weakness").is_some()) {
         return None;
     }
     let eye = game.eye_position()?;

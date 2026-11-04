@@ -319,6 +319,17 @@ impl Module {
         match self.name {
             // Kill Aura's and Trigger Bot's Shield: its settings with it on.
             "Kill Aura" | "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
+            "Auto Armor" => name != "Armor key" || self.p("Mode") == "Key",
+            "Auto Clicker" => match name {
+                "Delay (ticks)" => self.p("Mode") == "Delay",
+                "Min CPS" | "Max CPS" => self.p("Mode") == "CPS",
+                _ => true,
+            },
+            "Trigger Bot" => match name {
+                "Shortest cooldown (%)" | "Longest cooldown (%)" => self.b("Wait for cooldown"),
+                "Sticky range" => self.b("Sticky target"),
+                _ => true,
+            },
             "Auto Gap" => match name {
                 "Pot mode" | "Pot pitch" => self.b("Auto pot"),
                 "Pot health" => self.b("Auto pot") && self.p("Pot mode") == "Auto",
@@ -429,8 +440,10 @@ impl Module {
                 _ => true,
             },
             "Offhand" => {
-                let (totem, open, silent) = (self.p("Item") == "Totem", self.b("Open inventory"), self.b("Silent open"));
+                let totem = self.p("Item") == "Totem" || self.b("Totem on low health");
+                let (open, silent) = (self.b("Open inventory"), self.b("Silent open"));
                 match name {
+                    "Totem health" | "Wait while shielding" => self.b("Totem on low health"),
                     "Sword gapple" => self.b("Right gapple"),
                     "Open inventory" | "Inventory only" | "Random slot" | "Shortest totem delay (ms)" | "Longest totem delay (ms)"
                     | "Extra randomization" | "Show totem count" => totem,
@@ -571,7 +584,15 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Anti bot", false)
             .bool("Ignore teams", false)
             .bool("Wait for cooldown", true)
+            .num("Shortest cooldown (%)", 100.0, 50.0, 100.0, 1.0)
+            .num("Longest cooldown (%)", 100.0, 50.0, 100.0, 1.0)
             .num("Delay (ticks)", 10.0, 0.0, 20.0, 1.0)
+            .bool("Crit timing", false)
+            .bool("Crits only", false)
+            .num("Miss chance (%)", 0.0, 0.0, 25.0, 1.0)
+            .bool("Sticky target", false)
+            .num("Sticky range", 5.0, 3.0, 8.0, 0.5)
+            .bool("Only on left click", false)
             .shield(),
         Module::new("Criticals", Combat, "Makes hits critical.")
             .pick("Mode", &["Packet", "Jump", "Mini jump"])
@@ -625,6 +646,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Velocity", Movement, "Reduces knockback.")
             .pick("Mode", &["Scale", "Blend"])
             .bool("Knockback", true)
+            .num("Knockback chance (%)", 100.0, 0.0, 100.0, 5.0)
             .num("Knockback horizontal", 0.0, 0.0, 1.0, 0.05)
             .num("Knockback vertical", 0.0, 0.0, 1.0, 0.05)
             .bool("Explosions", true)
@@ -788,6 +810,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Health", true)
             .pick("Health colors", &["Gradient", "Bands"])
             .bool("Distance", true)
+            .bool("Totem pops", false)
             .bool("Background", true)
             .colour("Name color", "White")
             .num("Range", 0.0, 0.0, ALL_RANGE_MAX, 8.0)
@@ -886,7 +909,12 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Auto Clicker", Player, "Clicks for you.")
             .bool("Left", true)
             .bool("Right", false)
-            .num("Delay (ticks)", 4.0, 1.0, 20.0, 1.0),
+            .pick("Mode", &["Delay", "CPS"])
+            .num("Delay (ticks)", 4.0, 1.0, 20.0, 1.0)
+            .num("Min CPS", 5.0, 1.0, 20.0, 1.0)
+            .num("Max CPS", 15.0, 1.0, 20.0, 1.0)
+            .bool("Only with a weapon", false)
+            .bool("Stop on blocks", false),
         Module::new("Auto Eat", Player, "Eats when hungry.")
             .pick("List mode", &["Blacklist", "Whitelist"])
             .text("Blacklist", "enchanted_golden_apple,golden_apple,chorus_fruit,poisonous_potato,pufferfish,chicken,rotten_flesh,spider_eye,suspicious_stew")
@@ -919,7 +947,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Range", 1000.0, 50.0, 10000.0, 50.0),
         // Added in 0.4
         Module::new("Auto Armor", Player, "Wears your best armor.")
-            .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0),
+            .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0)
+            .pick("Mode", &["Always", "Inventory open", "Key"])
+            .text("Armor key", "None")
+            .bool("Avoid cursed", false),
         Module::new("Long Jump", Movement, "Jumps further.")
             .num("Multiplier", 2.0, 1.5, 5.0, 0.5),
         Module::new("Auto Jump", Movement, "Jumps as you walk."),
@@ -1101,6 +1132,12 @@ pub(super) struct State {
     loaded: bool,
     ticks: u64,
     trigger_wait: u32,
+    // Trigger Bot: the share of the attack cooldown the next hit waits for (rolled between Shortest and Longest
+    // cooldown after each), the target Miss chance passed over until the crosshair leaves it, and the Sticky
+    // target.
+    trigger_need: f32,
+    trigger_missed: Option<u32>,
+    trigger_sticky: Option<u32>,
     respawn_wait: u32,
     // Death Location: the death screen was up last tick.
     dead: bool,
@@ -1139,6 +1176,8 @@ pub(super) struct State {
     // Legit Scaffold holds sneak (not you).
     scaffold_sneak: bool,
     click_wait: u32,
+    // Auto Clicker's CPS mode: when the next click is due.
+    click_due: Option<std::time::Instant>,
     blink_ticks: u32,
     eating: bool,
     // Auto Eat: the slot it eats from (None: the off hand), the one held before, and Kill Aura turned off meanwhile.
@@ -1212,6 +1251,9 @@ impl State {
             loaded: false,
             ticks: 0,
                     trigger_wait: 0,
+                    trigger_need: 1.0,
+                    trigger_missed: None,
+                    trigger_sticky: None,
             respawn_wait: 0,
             dead: false,
             flying: false,
@@ -1238,6 +1280,7 @@ impl State {
                     scaffold_placed: Vec::new(),
             scaffold_sneak: false,
             click_wait: 0,
+            click_due: None,
             blink_ticks: 0,
             eating: false,
             eat_slot: None,
@@ -3615,26 +3658,47 @@ pub(super) fn auto_click(game: &mut Game<'_>, m: &Module) {
     if !game.native_playing() {
         return;
     }
+    // Only with a weapon: a sword, axe, spear, mace or trident in hand. Stop on blocks: no left click while the
+    // crosshair is on a block (so it never mines).
+    let weapon = !m.b("Only with a weapon") || super::sunset_combat::holds_weapon(game);
+    let on_block = m.b("Stop on blocks") && game.mob_hit().is_none() && game.pick().is_some();
     let (left, right) = (
-        m.b("Left") && (game.physical_buttons.contains(&MouseButton::Left) || game.left),
-        m.b("Right") && (game.physical_buttons.contains(&MouseButton::Right) || game.right),
+        m.b("Left") && weapon && !on_block && (game.physical_buttons.contains(&MouseButton::Left) || game.left),
+        m.b("Right") && weapon && (game.physical_buttons.contains(&MouseButton::Right) || game.right),
     );
     if !left && !right {
+        with(|s| s.click_due = None);
         return;
     }
-    if with(|s| {
+    let cps = m.p("Mode") == "CPS";
+    let now = std::time::Instant::now();
+    if cps {
+        if with(|s| s.click_due.is_some_and(|due| now < due)) {
+            return;
+        }
+    } else if with(|s| {
         s.click_wait = s.click_wait.saturating_sub(1);
         s.click_wait > 0
     }) {
         return;
     }
+    // The click's release lets go of a button you still hold: it stays held after (mining goes on).
+    let held = (game.left, game.right);
     for (down, button) in [(left, MouseButton::Left), (right, MouseButton::Right)] {
         if down {
             let _ = game.play_mouse(button, true);
             let _ = game.play_mouse(button, false);
         }
     }
-    with(|s| s.click_wait = m.n("Delay (ticks)") as u32);
+    (game.left, game.right) = (game.left || held.0, game.right || held.1);
+    if cps {
+        // CPS: the next click after 1 / (a rate rolled between Min and Max CPS) seconds.
+        let (lo, hi) = (m.n("Min CPS"), m.n("Max CPS").max(m.n("Min CPS")));
+        let rate = lo + super::sunset_rotation::Rng::new(game.ticks.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xC11C).next() * (hi - lo);
+        with(|s| s.click_due = Some(now + std::time::Duration::from_secs_f64(1.0 / rate.max(1.0))));
+    } else {
+        with(|s| s.click_wait = m.n("Delay (ticks)") as u32);
+    }
 }
 
 // Auto Eat (Meteor's): once health or hunger is at its threshold, holds use on the best food (the off hand's first,
@@ -3965,9 +4029,19 @@ pub(super) fn wear(game: &mut Game<'_>, i: usize, a: usize) {
 }
 
 pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
-    if !inventory_idle(game) {
+    // Inventory open: only with your inventory screen up; Key: only while Armor key is held.
+    let allowed = match m.p("Mode") {
+        "Inventory open" => game.screen == Screen::Inventory,
+        "Key" => super::sunset_util::setting_key_down(game, m, "Armor key"),
+        _ => true,
+    };
+    if !allowed || !inventory_idle(game) {
         return;
     }
+    // Avoid cursed: never a piece with Curse of Binding or Vanishing.
+    let cursed = |st: &horizon_client::items::ItemStack| {
+        m.b("Avoid cursed") && st.enchantments().iter().any(|(id, _)| id.ends_with("binding_curse") || id.ends_with("vanishing_curse"))
+    };
     if with(|s| {
         s.armor_wait = s.armor_wait.saturating_sub(1);
         s.armor_wait > 0
@@ -3982,7 +4056,7 @@ pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
             let Some(st) = game.inventory.get(i).and_then(|s| s.as_ref()) else {
                 continue;
             };
-            if st.item.ends_with("elytra") {
+            if st.item.ends_with("elytra") || cursed(st) {
                 continue;
             }
             let fits = game
@@ -5006,7 +5080,10 @@ fn velocity(game: &mut Game<'_>, m: Option<&Module>) {
     };
     let pushed = if m.b("Entity push") { entity_push(game) } else { [0.0; 2] };
     let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
-    let knock = if m.b("Knockback") { knockback_shares(m, ground) } else { [1.0; 2] };
+    // Knockback chance: each knockback is cut with that chance, else taken whole.
+    let roll = super::sunset_rotation::Rng::new(game.ticks.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x7E10).next() * 100.0;
+    let knock =
+        if m.b("Knockback") && roll < m.n("Knockback chance (%)") { knockback_shares(m, ground) } else { [1.0; 2] };
     let blasts = share("Explosions", "Explosions horizontal", "Explosions vertical");
     let Some(p) = game.player.as_mut() else {
         return;
@@ -5059,11 +5136,11 @@ fn entity_push(game: &Game<'_>) -> [f64; 2] {
     push
 }
 
-pub(super) fn cooldown_ready(game: &Game<'_>, m: &Module, wait: &mut u32) -> bool {
+pub(super) fn cooldown_ready(game: &Game<'_>, m: &Module, wait: &mut u32, need: f32) -> bool {
     if m.b("Wait for cooldown") {
         // The ticker the hand counts on a server (attack_ticks is the
         // local world's).
-        game.hand_strength.scale(0.5, game.main_hand_attack_speed()) >= 1.0
+        game.hand_strength.scale(0.5, game.main_hand_attack_speed()) >= need
     } else if *wait > 0 {
         *wait -= 1;
         false
@@ -5468,15 +5545,18 @@ pub(super) fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
 }
 
 pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
+    use winit::event::MouseButton;
     if !game.native_playing()
         || game.remote.is_none()
         || (game.using.is_some() && !super::sunset_hands::shielding(game))
         || CRIT_STAGE.load(Ordering::Relaxed) != 0
         || strike_waiting()
+        || (m.b("Only on left click") && !(game.physical_buttons.contains(&MouseButton::Left) || game.left))
     {
         return;
     }
     let Some((i, _)) = game.mob_hit() else {
+        with(|s| s.trigger_missed = None);
         return;
     };
     let mob = &game.mobs[i];
@@ -5485,17 +5565,61 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     let names = game.remote_player_names();
     let friends = with(|s| s.friends.clone());
     let player = kind == Kind::Player;
+    if with(|s| s.trigger_missed.is_some_and(|t| t != id)) {
+        with(|s| s.trigger_missed = None);
+    }
     if !want || (player && is_friend(&friends, &names, id)) || super::sunset_util::spared(game, m, id, player) {
         return;
     }
+    if m.b("Sticky target") && trigger_sticky_elsewhere(game, m, id) {
+        return;
+    }
+    // Crit timing waits out the rise of a jump to hit as you fall; Crits only hits only then (with a sword, axe,
+    // spear, mace or trident in hand).
+    if super::sunset_combat::holds_weapon(game) && let Some(p) = game.player.as_ref() {
+        let falling = !p.ground.on_ground && p.fall_distance > 0.0 && p.velocity.y < 0.0;
+        if (m.b("Crit timing") && !p.ground.on_ground && !falling) || (m.b("Crits only") && !falling) {
+            return;
+        }
+    }
     let mut wait = with(|s| s.trigger_wait);
-    let ready = cooldown_ready(game, m, &mut wait);
+    let ready = cooldown_ready(game, m, &mut wait, with(|s| s.trigger_need));
     with(|s| s.trigger_wait = wait);
-    if !ready {
+    if !ready || with(|s| s.trigger_missed == Some(id)) {
+        return;
+    }
+    let mut rng = super::sunset_rotation::Rng::new(game.ticks.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ u64::from(id));
+    // Miss chance: a target rolled as missed is let go until the crosshair leaves it or another is under it.
+    if rng.next() * 100.0 < m.n("Miss chance (%)") {
+        with(|s| s.trigger_missed = Some(id));
         return;
     }
     attack(game, id, crits, None);
-    with(|s| s.trigger_wait = m.n("Delay (ticks)") as u32);
+    let (lo, hi) = (m.n("Shortest cooldown (%)"), m.n("Longest cooldown (%)").max(m.n("Shortest cooldown (%)")));
+    let need = ((lo + rng.next() * (hi - lo)) / 100.0) as f32;
+    with(|s| {
+        s.trigger_wait = m.n("Delay (ticks)") as u32;
+        s.trigger_need = need;
+        if m.b("Sticky target") {
+            s.trigger_sticky = Some(id);
+        }
+    });
+}
+
+// Sticky target: another target is locked (the first one hit), still alive and within Sticky range of you.
+fn trigger_sticky_elsewhere(game: &Game<'_>, m: &Module, id: u32) -> bool {
+    let Some(locked) = with(|s| s.trigger_sticky).filter(|&t| t != id) else {
+        return false;
+    };
+    let here = game.player.as_ref().map(|p| [p.position.x, p.position.y, p.position.z]);
+    let held = game.mobs.iter().find(|mob| mob.id == locked).is_some_and(|mob| {
+        mob.health > 0.0
+            && here.is_some_and(|h| super::sunset_util::dist(h, [mob.position.x, mob.position.y, mob.position.z]) <= m.n("Sticky range"))
+    });
+    if !held {
+        with(|s| s.trigger_sticky = None);
+    }
+    held
 }
 
 // A totem in the hotbar goes to the offhand by selecting it and pressing the
@@ -7366,6 +7490,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
     let tag_extra = tags_module.map_or(("", false), |m| (m.t("Entities"), m.p("List mode") == "Blacklist"));
     let (show_health, show_distance, tag_back, tag_colour) =
         tags_module.map_or((false, false, false, 0), |m| (m.b("Health"), m.b("Distance"), m.b("Background"), m.c("Name color") & 0x00FF_FFFF));
+    let show_pops = tags_module.is_some_and(|m| m.b("Totem pops"));
     let looks = [&esp, &tracers, &tags];
     let range = looks.iter().filter_map(|l| l.as_ref().map(|l| l.range)).fold(0.0, f64::max);
     let alpha = game.clock.camera_fraction();
@@ -7482,6 +7607,10 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
                 if tenths % 10 != 0 {
                     let _ = write!(hp, ".{}", (tenths % 10).abs());
                 }
+            }
+            let popped = if show_pops { super::sunset_effects::pops(mob.id) } else { 0 };
+            if popped > 0 {
+                let _ = write!(tail, " -{popped}");
             }
             if show_distance {
                 let _ = write!(tail, " {}m", d.round() as i64);

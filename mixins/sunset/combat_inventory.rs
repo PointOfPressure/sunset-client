@@ -48,7 +48,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Double hand", false)
             .text("Double hand on", "anchors,crystals,obsidian,sword,mace")
             .num("Double hand sensitivity", 1.0, 0.5, 1.5, 0.05)
-            .num("Reswap delay (ticks)", 1.0, 1.0, 10.0, 1.0),
+            .num("Reswap delay (ticks)", 1.0, 1.0, 10.0, 1.0)
+            .bool("Totem on low health", false)
+            .num("Totem health", 5.0, 1.0, 20.0, 0.5)
+            .bool("Wait while shielding", true),
         Module::new(THROW, Category::Combat, "Throws pearls and wind charges on keys, when hit, or after an enemy's pearl.")
             .text("Pearl key", "None")
             .text("Wind charge key", "None")
@@ -560,7 +563,7 @@ fn open_inventory(game: &mut Game<'_>) {
     game.capture(false);
 }
 
-fn close_inventory(game: &mut Game<'_>) {
+pub(super) fn close_inventory(game: &mut Game<'_>) {
     game.close_container();
     game.screen = Screen::Playing;
     game.capture(true);

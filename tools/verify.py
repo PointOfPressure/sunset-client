@@ -3283,6 +3283,39 @@ def _():
     return slow[1] == 27 and fast[1] == 27 and slow[0] > fast[0] * 2, f"27 stacks taken in {slow[0]} ticks at 1 a tick, {fast[0]} at 9"
 
 
+@test("Chest Stealer (carts from shulkers, close when done)")
+def _():
+    # Take Carts from shulkers: of a shulker box's TNT minecarts and stone only the carts come out, and with Close
+    # when done the box shuts after; a chest beside it is left alone in that mode.
+    box = (X0 + 1, Y + 1, Z0)
+    cmd(f"setblock {box[0]} {box[1]} {box[2]} minecraft:shulker_box",
+        *(f"item replace block {box[0]} {box[1]} {box[2]} container.{i} with minecraft:{'tnt_minecart' if i < 3 else 'stone'}"
+          for i in range(6)))
+    wait(6)
+    setting("cheststealer", "take", "Carts from shulkers")
+    setting("cheststealer", "close when done", "true")
+    only("cheststealer")
+    ctl("interact", str(box[0]), str(box[1]), str(box[2]))
+    wait(30)
+    counts = ctl("inventory").get("counts", {})
+    shut = state().get("screen") in (None, "", "playing", "Playing")
+    only()
+    cmd("clear @s", f"setblock {box[0]} {box[1]} {box[2]} minecraft:air", f"setblock {X0-1} {Y+1} {Z0} minecraft:chest",
+        f"item replace block {X0-1} {Y+1} {Z0} container.0 with minecraft:tnt_minecart")
+    wait(6)
+    only("cheststealer")
+    ctl("interact", str(X0 - 1), str(Y + 1), str(Z0))
+    wait(20)
+    chest_carts = ctl("inventory").get("counts", {}).get("minecraft:tnt_minecart", 0)
+    ctl("close")
+    only()
+    cmd("clear @s", f"setblock {X0-1} {Y+1} {Z0} minecraft:air")
+    say(".reset cheststealer")
+    carts, stone = counts.get("minecraft:tnt_minecart", 0), counts.get("minecraft:stone", 0)
+    ok = carts == 3 and stone == 0 and shut and chest_carts == 0
+    return ok, f"from the shulker box: {carts} carts, {stone} stone, closed after: {shut}; from a chest: {chest_carts} carts"
+
+
 @test("Inventory Cleaner (presets)")
 def _():
     # Preset PvP: of two swords, two pickaxes and a helmet like the one worn only the best of each kind stays; 3
@@ -4266,6 +4299,33 @@ def _():
                                        f"the gapple with a sword and Always gap on sword: {gap}")
 
 
+@test("Offhand (totem on low health)")
+def _():
+    # Item Shield with Totem on low health: the shield in the offhand, a totem once health falls to Totem health (5),
+    # and the shield again once it is back up.
+    reset("survival")
+    cmd("item replace entity @s inventory.5 with minecraft:totem_of_undying 1", "item replace entity @s inventory.6 with minecraft:shield 1")
+    setting("offhand", "item", "Shield")
+    setting("offhand", "totem on low health", "true")
+    only("offhand")
+    wait(40)
+    first = offhand()
+    # Health comes back quickly (full food): what the offhand held at any time in the 2 s after the hit.
+    cmd("damage @s 17")
+    seen = set()
+    for _ in range(20):
+        wait(2)
+        seen.add(offhand())
+    low = "minecraft:totem_of_undying" if "minecraft:totem_of_undying" in seen else ",".join(sorted(seen))
+    cmd("effect give @s minecraft:instant_health 1 3 true")
+    wait(40)
+    healed = offhand()
+    only()
+    say(".reset offhand")
+    ok = first.endswith("shield") and low.endswith("totem_of_undying") and healed.endswith("shield")
+    return ok, f"offhand: {first} at full health, {low} at 4, {healed} healed"
+
+
 @test("Auto Armor")
 def _():
     cmd("give @s minecraft:iron_chestplate", "give @s minecraft:diamond_chestplate", "give @s minecraft:leather_boots")
@@ -4274,6 +4334,32 @@ def _():
     chest = check("execute if items entity @s armor.chest minecraft:diamond_chestplate")
     boots = check("execute if items entity @s armor.feet minecraft:leather_boots")
     return chest and boots, f"wears the diamond chestplate over the iron one: {chest}, and the boots: {boots}"
+
+
+@test("Auto Armor (modes, avoid cursed)")
+def _():
+    # Mode Key: nothing is worn until Armor key is held. Avoid cursed: an iron helmet goes on over a diamond one with
+    # Curse of Binding.
+    cmd("give @s minecraft:diamond_chestplate")
+    setting("autoarmor", "mode", "Key")
+    setting("autoarmor", "armor key", "G")
+    only("autoarmor")
+    wait(40)
+    early = check("execute if items entity @s armor.chest minecraft:diamond_chestplate")
+    ctl("key", "g", "down")
+    wait(40)
+    ctl("key", "g", "up")
+    keyed = check("execute if items entity @s armor.chest minecraft:diamond_chestplate")
+    only()
+    setting("autoarmor", "mode", "Always")
+    setting("autoarmor", "avoid cursed", "true")
+    cmd('give @s minecraft:diamond_helmet[enchantments={"minecraft:binding_curse":1}]', "give @s minecraft:iron_helmet")
+    only("autoarmor")
+    wait(60)
+    iron = check("execute if items entity @s armor.head minecraft:iron_helmet")
+    only()
+    say(".reset autoarmor")
+    return not early and keyed and iron, f"chestplate worn before the key: {early}, with it held: {keyed}; iron helmet over the cursed diamond: {iron}"
 
 
 @test("Fast Use")
@@ -4346,6 +4432,153 @@ def _():
 
     hurt, spared = hit("true"), hit("false")
     return hurt < 10 and spared == 10, f"pig on the crosshair: health {hurt} with Passive on, {spared} with it off"
+
+
+@test("Trigger Bot (crits only, sticky target)")
+def _():
+    # Crits only: a pig on the crosshair is never hit while you stand, and is once you jump (as you fall). Sticky
+    # target: after hitting one pig, a second under the crosshair is left alone while the first lives, and hit once
+    # it is gone.
+    def ready():
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        setting("triggerbot", "passive", "true")
+
+    ready()
+    pid = pig(1.5)
+    ctl("look-at-entity", str(pid))
+    setting("triggerbot", "crits only", "true")
+    only("triggerbot")
+    wait(40)
+    standing = mobs("pig")[0]["health"] if mobs("pig") else 0
+    for _ in range(4):
+        ctl("jump")
+        wait(15)
+    jumped = mobs("pig")[0]["health"] if mobs("pig") else 0
+    only()
+    setting("triggerbot", "crits only", "false")
+
+    ready()
+    tagged = "{NoAI:1b,PersistenceRequired:1b,Tags:[\"sticky_a\"]}"
+    cmd(f"summon pig {X0 - 0.5} {Y + 1} {Z0 + 2.5} {tagged}", f"summon pig {X0 + 1.5} {Y + 1} {Z0 + 2.5} {NOAI}")
+    wait(10)
+    pigs = sorted(mobs("pig"), key=lambda e: e["pos"][0])
+    first, second = pigs[0]["id"], pigs[1]["id"]
+    health = lambda eid: next((e["health"] for e in mobs("pig") if e["id"] == eid), 0)
+    setting("triggerbot", "sticky target", "true")
+    only("triggerbot")
+    ctl("look-at-entity", str(first))
+    wait(8)
+    first_hit = health(first)
+    ctl("look-at-entity", str(second))
+    wait(30)
+    held_off = health(second)
+    cmd("kill @e[tag=sticky_a]")
+    wait(30)
+    after = health(second)
+    only()
+    setting("triggerbot", "sticky target", "false")
+    ok = standing == 10 and jumped < 10 and first_hit < 10 and held_off == 10 and after < 10
+    return ok, (f"Crits only: pig at {standing} standing, {jumped} after jumps; Sticky target: first pig {first_hit}, "
+                f"second {held_off} while the first lived, {after} after it went")
+
+
+@test("Trigger Bot (cooldown, miss chance)")
+def _():
+    # Hits on an unhurt husk: Shortest and Longest cooldown 50% hit about twice as often as the full cooldown. Miss
+    # chance 25: of 16 times the husk comes under the crosshair, some are let go with no hit at all (and most not).
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 2.5} {HUSK}")
+    wait(10)
+    eid = next(e["id"] for e in ctl("entities")["entities"] if e.get("type") == "minecraft:husk")
+    setting("triggerbot", "hostiles", "true")
+
+    def hits(ticks):
+        mark = probe_mark()
+        wait(ticks)
+        return sum(t.count("order attack") for t in probe_ticks(mark))
+
+    ctl("look-at-entity", str(eid))
+    only("triggerbot")
+    full = hits(60)
+    setting("triggerbot", "shortest cooldown (%)", "50")
+    setting("triggerbot", "longest cooldown (%)", "50")
+    wait(5)
+    half = hits(60)
+    only()
+    say(".reset triggerbot")
+    setting("triggerbot", "hostiles", "true")
+    setting("triggerbot", "miss chance (%)", "25")
+    only("triggerbot")
+    windows = []
+    for _ in range(16):
+        ctl("look", "180", "0")
+        wait(3)
+        ctl("look-at-entity", str(eid))
+        windows.append(hits(16))
+    only()
+    say(".reset triggerbot")
+    missed = sum(1 for w in windows if w == 0)
+    ok = full >= 3 and half >= full * 1.5 and 1 <= missed <= 12
+    return ok, f"hits in 3 s: {full} at the full cooldown, {half} at 50%; Miss chance 25: {missed} of 16 looks let go ({windows})"
+
+
+@test("Velocity (knockback chance)")
+def _():
+    # Knockback chance 0: every knockback is taken whole, as with Velocity off.
+    plain = knocked()
+    setting("velocity", "knockback chance (%)", "0")
+    only("velocity")
+    whole = knocked()
+    setting("velocity", "knockback chance (%)", "100")
+    cut = knocked()
+    only()
+    ok = plain[0] > 0.5 and abs(whole[0] - plain[0]) < 0.2 and cut[0] < 0.05
+    return ok, f"pushed {plain[0]:.2f} blocks plain, {whole[0]:.2f} at chance 0, {cut[0]:.2f} at chance 100"
+
+
+@test("Auto Clicker (CPS, only with a weapon)")
+def _():
+    # Left held on an unhurt husk: CPS mode at 10 clicks about twice as often as Delay mode's 4 ticks (5 a second);
+    # Only with a weapon: no clicks with an empty hand.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    reset()
+    cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 2.5} {HUSK}")
+    wait(10)
+    eid = next(e["id"] for e in ctl("entities")["entities"] if e.get("type") == "minecraft:husk")
+    ctl("look-at-entity", str(eid))
+
+    def clicks(item):
+        if item:
+            slot(0, item)
+        else:
+            cmd("item replace entity @s hotbar.0 with minecraft:air")
+        ctl("key", "1", "tap")
+        only("autoclicker")
+        wait(5)
+        mark = probe_mark()
+        ctl("mouse", "left", "down")
+        wait(40)
+        ctl("mouse", "left", "up")
+        only()
+        return sum(t.count("order attack") for t in probe_ticks(mark))
+
+    delay = clicks("diamond_sword")
+    setting("autoclicker", "mode", "CPS")
+    setting("autoclicker", "min cps", "10")
+    setting("autoclicker", "max cps", "10")
+    cps = clicks("diamond_sword")
+    setting("autoclicker", "only with a weapon", "true")
+    bare = clicks(None)
+    say(".reset autoclicker")
+    ok = delay >= 6 and cps >= delay * 1.5 and bare <= 1
+    return ok, f"clicks in 2 s: {delay} at Delay 4 ticks, {cps} at 10 CPS, {bare} bare-handed with Only with a weapon"
 
 
 @test("Entities list on top of the kinds")
@@ -5568,6 +5801,43 @@ def _():
     return done, "crystal hit and gone" if done else "crystal still there"
 
 
+@test("Crystal Optimizer (skip with weakness)")
+def _():
+    # Weak (Weakness) and bare-handed a hit does not break a crystal. With Skip with weakness it stays on your screen,
+    # so a second click hits it again (two attacks); without, the first click takes it off your screen though the
+    # server kept it, and the second hits nothing (one attack).
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+
+    def hits(skip):
+        reset()
+        cmd("item replace entity @s hotbar.0 with minecraft:air", "effect give @s minecraft:weakness 60 0 true")
+        ctl("key", "1", "tap")
+        cmd(f"summon end_crystal {X0+0.5} {Y+1} {Z0+4.0} {{ShowBottom:0b}}")
+        wait(20)
+        setting("crystaloptimizer", "skip with weakness", skip)
+        only("crystaloptimizer")
+        ctl("look", "0", "10")
+        wait(3)
+        mark = probe_mark()
+        ctl("mouse", "left", "click")
+        wait(15)
+        kept = check("execute if entity @e[type=end_crystal]")
+        ctl("mouse", "left", "click")
+        wait(10)
+        attacks = sum(t.count("order attack") for t in probe_ticks(mark))
+        only()
+        cmd("kill @e[type=end_crystal]", "effect clear @s")
+        return attacks, kept
+
+    skipped, plain = hits("true"), hits("false")
+    say(".reset crystaloptimizer")
+    if not plain[1]:
+        return None, "this server breaks a crystal hit under Weakness (Horizon's own server does)"
+    ok = skipped[0] == 2 and plain[0] == 1
+    return ok, f"attacks from two weak clicks: {skipped[0]} with Skip with weakness, {plain[0]} without"
+
+
 # ---- Aim Assist (Duelkit's): real mouse motion (mouse-move), and for moving targets the probe's frames
 
 def session_dir():
@@ -5748,6 +6018,44 @@ def aim_done():
     only()
     say(".reset aimassist")
     cmd("difficulty peaceful")
+
+
+@test("Aim Assist (pause while mining, only while turning)")
+def _():
+    # Simple mode, no mouse button needed, a husk 30 degrees to your right: it turns you toward it; Only while
+    # turning: not while the mouse is still; Pause while mining: not while you dig the stone in front of you.
+    eid = aim_setup()
+    say(".set aimassist mode Simple")
+    setting("aimassist", "require mouse down", "false")
+    # Facing south the husk on your right, you look east of it: at this stone.
+    cmd(f"fill {X0+1} {Y+1} {Z0+2} {X0+1} {Y+3} {Z0+2} minecraft:stone")
+
+    def turned(dig=False):
+        face(eid, -30)
+        yaw = aim_view()[0]
+        only("aimassist")
+        if dig:
+            # Pressed after the toggle: typing it opens the chat, which lets go of the mouse.
+            ctl("mouse", "left", "down")
+            wait(1)
+            yaw = aim_view()[0]
+        wait(30)
+        moved = abs(aim_view()[0] - yaw)
+        only()
+        if dig:
+            ctl("mouse", "left", "up")
+        return moved
+
+    plain = turned()
+    setting("aimassist", "only while turning", "true")
+    still = turned()
+    setting("aimassist", "only while turning", "false")
+    setting("aimassist", "pause while mining", "true")
+    digging = turned(dig=True)
+    cmd(f"fill {X0+1} {Y+1} {Z0+2} {X0+1} {Y+3} {Z0+2} minecraft:air")
+    aim_done()
+    ok = plain > 2.0 and still < 0.5 and digging < 0.5
+    return ok, f"degrees turned in 1.5 s: {plain:.2f} plain, {still:.2f} with Only while turning, {digging:.2f} digging with Pause while mining"
 
 
 @test("Aim Assist (pull)")
@@ -10696,6 +11004,34 @@ def _():
     wall("air")
     say(".reset nametags")
     return got["Bands"] > 5 and got["Gradient"] < got["Bands"], f"gold tag pixels: {got}"
+
+
+@test("Nametags (Totem pops)")
+def _():
+    # A husk holding a totem pops it (/damage past its health): with Totem pops its tag gains a grey " -1".
+    reset()
+    wall()
+    cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 4.5} {{NoAI:1b,PersistenceRequired:1b,Silent:1b,Health:4f,"
+        'equipment:{mainhand:{id:"minecraft:totem_of_undying",count:1}},drop_chances:{mainhand:0f}}')
+    setting("nametags", "mobs", "true")
+    setting("nametags", "distance", "false")
+    ctl("look", "0", "-5")
+    wait(10)
+    cmd("damage @e[type=husk,limit=1] 10")
+    wait(10)
+    grey = {}
+    for pops in ("false", "true"):
+        setting("nametags", "totem pops", pops)
+        only("nametags")
+        clear_chat()
+        wait(10)
+        grey[pops] = sum(1 for px in colour_frame(f"nametags-pops-{pops}").getdata()
+                         if 160 <= px[0] <= 180 and 160 <= px[1] <= 180 and 160 <= px[2] <= 180)
+        only()
+    wall("air")
+    cmd("kill @e[type=husk]")
+    say(".reset nametags")
+    return grey["true"] > grey["false"] + 5, f"grey tag pixels with Totem pops off and on: {grey}"
 
 
 @test("Hand View (Swing animation)")
