@@ -10114,6 +10114,44 @@ def _():
                 f"{late}, two slot changes {doubled}, two moves {crowded}")
 
 
+@test("Trajectories (crossbow, pearls in flight)")
+def _():
+    # A loaded multishot crossbow held: Trajectories draws three arrow paths (more accent pixels than one plain
+    # arrow's); with Pearls in flight, a pearl Bot1 throws gets its path and landing time drawn while it flies.
+    # Screenshots in the shots folder.
+    setting("trajectories", "pearls in flight", "true")
+    reset()
+    ctl("look", "0", "-10")
+    accent = lambda r, g, b: r > 200 and 60 < g < 140 and b < 60
+    got = {}
+    for name, item in (("single", "crossbow[charged_projectiles=[{id:arrow}]]"),
+                       ("multishot", "crossbow[charged_projectiles=[{id:arrow},{id:arrow},{id:arrow}],enchantments={multishot:1}]")):
+        slot(0, item)
+        ctl("key", "1", "tap")
+        only("trajectories")
+        wait(10)
+        got[name] = shot_pixels(f"trajectories-{name}", accent)
+        only()
+    pearl = None
+    if CTL2:
+        slot(0, "diamond_sword")
+        bot_ready(20.5, 180, "give Bot1 minecraft:ender_pearl 4")
+        ctl2("select", "1")
+        only("trajectories")
+        ctl2("look", "180", "-30")
+        wait(5)
+        ctl2("mouse", "right", "down")
+        wait(2)
+        ctl2("mouse", "right", "up")
+        wait(4)
+        pearl = shot_pixels("trajectories-pearl", accent)
+        only()
+        bot_done()
+    setting("trajectories", "pearls in flight", "false")
+    ok = got["single"] > 0 and got["multishot"] > got["single"] * 1.5 and (pearl is None or pearl > 0)
+    return ok, f"accent pixels: one arrow {got['single']}, multishot {got['multishot']}, a flying pearl {pearl}"
+
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

@@ -283,7 +283,7 @@ fn find(game: &mut Game<'_>, m: &Module) -> Option<Job> {
         let Some(thrower) = super::sunset_throws::enemy_thrower(game, id) else {
             continue;
         };
-        let Some(flight) = super::sunset_throws::pearl_landing(game, id, 200).filter(|f| f.ticks <= 100) else {
+        let Some(flight) = super::sunset_throws::pearl_landing(game, id, 200, false).filter(|f| f.ticks <= 100) else {
             continue;
         };
         let Some((anchor, cover)) = plan(game, m, flight.land) else {
@@ -314,7 +314,7 @@ fn eta(game: &Game<'_>, job: &Job) -> Option<(u32, Option<[f64; 3]>)> {
     if !game.creatures.projectiles.iter().any(|p| p.id == job.pearl && !p.stuck) {
         return Some((0, None));
     }
-    super::sunset_throws::pearl_landing(game, job.pearl, 200).map(|f| (f.ticks, Some(f.land)))
+    super::sunset_throws::pearl_landing(game, job.pearl, 200, false).map(|f| (f.ticks, Some(f.land)))
 }
 
 fn thrower_at(game: &Game<'_>, job: &Job) -> Option<[f64; 3]> {

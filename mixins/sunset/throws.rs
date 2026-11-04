@@ -431,25 +431,34 @@ fn own_pearl_since(game: &Game<'_>, tick: u64) -> bool {
     seen.iter().any(|s| s.item == Item::Pearl && s.tick + 1 >= tick && own(game, s))
 }
 
-// A pearl's flight from `pos` at `vel` until it meets a block: where, after how many ticks, and its highest point.
+// A pearl's flight from `pos` at `vel` until it meets a block: where, after how many ticks, its highest point, and
+// (with `keep`) the points it passes.
 pub(super) struct Flight {
     pub(super) land: [f64; 3],
     pub(super) ticks: u32,
     pub(super) apex: f64,
+    pub(super) path: Vec<[f64; 3]>,
 }
 
-pub(super) fn pearl_flight(game: &Game<'_>, mut pos: [f64; 3], mut vel: [f64; 3], max: u32) -> Option<Flight> {
+pub(super) fn pearl_flight(game: &Game<'_>, mut pos: [f64; 3], mut vel: [f64; 3], max: u32, keep: bool) -> Option<Flight> {
     let mut apex = pos[1];
+    let mut path = if keep { vec![pos] } else { Vec::new() };
     for tick in 1..=max {
         let next = add(pos, vel);
         let d = util::dist(pos, next);
         if d > 1e-9
             && let Some(hit) = game.clip_ray(pos, scale([next[0] - pos[0], next[1] - pos[1], next[2] - pos[2]], 1.0 / d), d)
         {
-            return Some(Flight { land: hit.point, ticks: tick, apex });
+            if keep {
+                path.push(hit.point);
+            }
+            return Some(Flight { land: hit.point, ticks: tick, apex, path });
         }
         pos = next;
         apex = apex.max(pos[1]);
+        if keep {
+            path.push(pos);
+        }
         vel = [vel[0] * PEARL_DRAG, vel[1] * PEARL_DRAG - PEARL_GRAVITY, vel[2] * PEARL_DRAG];
         if pos[1] < -128.0 {
             break;
@@ -458,10 +467,10 @@ pub(super) fn pearl_flight(game: &Game<'_>, mut pos: [f64; 3], mut vel: [f64; 3]
     None
 }
 
-// A flying pearl's landing (Cart's Pearls, Pearl follow, Anchor Aura's Pearl catch).
-pub(super) fn pearl_landing(game: &Game<'_>, id: u32, max: u32) -> Option<Flight> {
+// A flying pearl's landing (Cart's Pearls, Pearl follow, Trajectories).
+pub(super) fn pearl_landing(game: &Game<'_>, id: u32, max: u32, keep: bool) -> Option<Flight> {
     let p = game.creatures.projectiles.iter().find(|p| p.id == id && !p.stuck)?;
-    pearl_flight(game, [p.position.x, p.position.y, p.position.z], [p.velocity.x, p.velocity.y, p.velocity.z], max)
+    pearl_flight(game, [p.position.x, p.position.y, p.position.z], [p.velocity.x, p.velocity.y, p.velocity.z], max, keep)
 }
 
 // ---- hooks
@@ -1023,7 +1032,7 @@ fn follow(game: &mut Game<'_>, m: &Module) {
             if util::dist(eye, [by.position.x, by.position.y, by.position.z]) > m.n("Thrower range") {
                 continue;
             }
-            let Some(flight) = pearl_landing(game, s.id, 400) else {
+            let Some(flight) = pearl_landing(game, s.id, 400, false) else {
                 continue;
             };
             let d = util::dist(eye, flight.land);
@@ -1078,7 +1087,7 @@ fn follow_look(game: &Game<'_>, eye: [f64; 3], to: [f64; 3], max_error: f64) -> 
     let yaw = look_to(eye, to).0;
     let start = [eye[0], eye[1] - 0.1, eye[2]];
     let shot = |pitch: f32| -> Option<Shot> {
-        let f = pearl_flight(game, start, scale(super::view_vector(yaw, pitch), THROW_SPEED), 400)?;
+        let f = pearl_flight(game, start, scale(super::view_vector(yaw, pitch), THROW_SPEED), 400, false)?;
         Some(Shot { pitch, error: util::dist(f.land, to), ticks: f.ticks, apex: f.apex })
     };
     let coarse: Vec<Option<Shot>> = (0..=85).map(|i| shot(-85.0 + i as f32 * 2.0)).collect();

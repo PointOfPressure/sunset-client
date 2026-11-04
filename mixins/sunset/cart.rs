@@ -1324,7 +1324,7 @@ fn auto_hit(game: &mut Game<'_>, m: &Module) -> bool {
 
 // An enemy pearl's flight: where it first meets a block and in how many ticks.
 fn pearl_path(game: &Game<'_>, id: u32) -> Option<([f64; 3], u32)> {
-    super::sunset_throws::pearl_landing(game, id, 200).map(|f| (f.land, f.ticks))
+    super::sunset_throws::pearl_landing(game, id, 200, false).map(|f| (f.land, f.ticks))
 }
 
 fn pearl_eta(game: &Game<'_>, id: u32) -> Option<u32> {

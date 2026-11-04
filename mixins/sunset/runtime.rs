@@ -875,7 +875,10 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Middle Click Extra", Player, "Uses a hotbar item on middle click.")
             .pick("Item", &["Pearl", "Rocket", "XP bottle", "Friend"]),
         Module::new("Trajectories", Render, "Shows where throws land.")
-            .pick("Mode", &["Line", "Potato"]),
+            .pick("Mode", &["Line", "Potato"])
+            .pick("Show", &["All", "Bows", "Bow", "Crossbow", "Pearl"])
+            .bool("Pearls in flight", false)
+            .bool("Landing time", true),
         Module::new("Logout Spots", Render, "Marks where players logged out.")
             .pick("Mode", &["Box", "Outline", "Potato"])
             .num("Minutes", 10.0, 1.0, 60.0, 1.0),
@@ -7107,7 +7110,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     }
 
     if let Some(m) = get("Trajectories") {
-        trajectory(game, cam, m.p("Mode") == "Potato", out, lw);
+        trajectory(game, cam, m, out, lw);
     }
 
     if let Some(m) = get("Hole ESP") {
@@ -7330,64 +7333,109 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
     }
 }
 
-// Where what the player holds would land: a bow being drawn, or a throwable. Potato: only a square where it lands.
-pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, potato_only: bool, out: &mut impl Canvas, lw: f32) {
+// Where what the player holds would land: a bow being drawn, a loaded crossbow (each of a multishot's three arrows),
+// or a throwable, as Show lets through; with Pearls in flight, every pearl in the air too, and with Landing time how
+// long each has left. Potato: only a square where it lands.
+pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, m: &Module, out: &mut impl Canvas, lw: f32) {
+    let potato_only = m.p("Mode") == "Potato";
+    let colour = 0xFF00_0000 | accent();
+    if m.b("Pearls in flight") {
+        let ids: Vec<u32> = game
+            .creatures
+            .projectiles
+            .iter()
+            .filter(|p| p.kind == horizon_client::projectiles::ProjectileKind::EnderPearl && !p.stuck)
+            .map(|p| p.id)
+            .collect();
+        for id in ids {
+            let Some(f) = super::sunset_throws::pearl_landing(game, id, 400, true) else {
+                continue;
+            };
+            draw_path(cam, out, &f.path, potato_only, colour, lw);
+            if m.b("Landing time")
+                && let Some([x, y]) = cam.project(f.land).filter(|p| cam.on_screen(*p, 50.0))
+            {
+                let tag = format!("{:.1}s", f64::from(f.ticks) / 20.0);
+                let tw = game.native_text_width(&tag);
+                out.fill([x - tw / 2.0 - 2.0, y - 14.0, tw + 4.0, 12.0], 0x7800_0000);
+                out.text(&tag, [x - tw / 2.0, y - 12.0], colour);
+            }
+        }
+    }
     let Some(stack) = game.held() else {
         return;
     };
     let name = stack.item.strip_prefix("minecraft:").unwrap_or(&stack.item);
-    let (speed, gravity) = match name {
+    let show = m.p("Show");
+    let wanted = match name {
+        "bow" => matches!(show, "All" | "Bows" | "Bow"),
+        "crossbow" => matches!(show, "All" | "Bows" | "Crossbow"),
+        "ender_pearl" => matches!(show, "All" | "Pearl"),
+        _ => show == "All",
+    };
+    if !wanted {
+        return;
+    }
+    let charged = || stack.data().map_or(0, |d| d.charged.len());
+    let (speed, gravity, drag, spread): (f64, f64, f64, &[f32]) = match name {
         "bow" => match game.using {
             Some((_, ticks)) => {
                 let t = f64::from(ticks) / 20.0;
-                (((t * t + t * 2.0) / 3.0).min(1.0) * 3.0, 0.05)
+                (((t * t + t * 2.0) / 3.0).min(1.0) * 3.0, 0.05, 0.99, &[0.0])
             }
             None => return,
         },
-        "trident" => (2.5, 0.05),
-        "ender_pearl" | "snowball" | "egg" => (1.5, 0.03),
-        "splash_potion" | "lingering_potion" => (0.5, 0.05),
-        "experience_bottle" => (0.7, 0.07),
+        "crossbow" if charged() > 0 => {
+            let rocket = stack.data().is_some_and(|d| d.charged.iter().any(|a| a.item.ends_with("firework_rocket")));
+            let fan: &[f32] = if charged() > 1 { &[-10.0, 0.0, 10.0] } else { &[0.0] };
+            if rocket { (1.6, 0.0, 1.0, fan) } else { (3.15, 0.05, 0.99, fan) }
+        }
+        "trident" => (2.5, 0.05, 0.99, &[0.0]),
+        "ender_pearl" | "snowball" | "egg" => (1.5, 0.03, 0.99, &[0.0]),
+        "wind_charge" => (1.5, 0.0, 1.0, &[0.0]),
+        "splash_potion" | "lingering_potion" => (0.5, 0.05, 0.99, &[0.0]),
+        "experience_bottle" => (0.7, 0.07, 0.99, &[0.0]),
         _ => return,
     };
     let Some(eye) = game.eye_position() else {
         return;
     };
-    let colour = 0xFF00_0000 | accent();
-    let (yaw, pitch) = (f64::from(game.yaw).to_radians(), f64::from(game.pitch).to_radians());
-    let dir = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
-    let mut pos = [eye[0], eye[1] - 0.1, eye[2]];
-    let mut vel = [dir[0] * speed, dir[1] * speed, dir[2] * speed];
-    let mut last = if potato_only { None } else { cam.project(pos) };
-    for _ in 0..200 {
-        for i in 0..3 {
-            pos[i] += vel[i];
-            vel[i] *= 0.99;
-        }
-        vel[1] -= gravity;
-        let (x, y, z) = (pos[0].floor() as i32, pos[1].floor() as i32, pos[2].floor() as i32);
-        let hit = solid_at(game, x, y, z);
-        if !potato_only {
-            let now = cam.project(pos);
-            if let (Some(a), Some(b)) = (last, now) {
-                line(out, a, b, colour, lw);
+    for turn in spread {
+        let (yaw, pitch) = (f64::from(game.yaw + turn).to_radians(), f64::from(game.pitch).to_radians());
+        let dir = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
+        let mut pos = [eye[0], eye[1] - 0.1, eye[2]];
+        let mut vel = [dir[0] * speed, dir[1] * speed, dir[2] * speed];
+        let mut path = vec![pos];
+        for _ in 0..200 {
+            for i in 0..3 {
+                pos[i] += vel[i];
+                vel[i] *= drag;
             }
-            last = now;
-        }
-        if hit {
-            if potato_only {
-                potato(cam, out, pos, colour, lw);
+            vel[1] -= gravity;
+            path.push(pos);
+            if solid_at(game, pos[0].floor() as i32, pos[1].floor() as i32, pos[2].floor() as i32) || pos[1] < -80.0 {
                 break;
             }
-            let lo = [pos[0] - 0.25, pos[1] - 0.25, pos[2] - 0.25];
-            let hi = [pos[0] + 0.25, pos[1] + 0.25, pos[2] + 0.25];
-            draw_box(cam, out, &Look::BOXED, lo, hi, colour, lw);
-            break;
         }
-        if pos[1] < -80.0 {
-            break;
+        draw_path(cam, out, &path, potato_only, colour, lw);
+    }
+}
+
+// A flight drawn as a line ending in a small box where it lands, or (Potato) a square there alone.
+fn draw_path(cam: &Camera, out: &mut impl Canvas, path: &[[f64; 3]], potato_only: bool, colour: u32, lw: f32) {
+    let Some(&end) = path.last() else {
+        return;
+    };
+    if potato_only {
+        potato(cam, out, end, colour, lw);
+        return;
+    }
+    for pair in path.windows(2) {
+        if let (Some(a), Some(b)) = (cam.project(pair[0]), cam.project(pair[1])) {
+            line(out, a, b, colour, lw);
         }
     }
+    draw_box(cam, out, &Look::BOXED, [end[0] - 0.25, end[1] - 0.25, end[2] - 0.25], [end[0] + 0.25, end[1] + 0.25, end[2] + 0.25], colour, lw);
 }
 
 // A double chest (or trapped or copper one) is one box: each half's outline reaches the side its other half is on.
