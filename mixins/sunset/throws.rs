@@ -1231,5 +1231,7 @@ fn hit_charges(game: &mut Game<'_>, m: &Module) {
     }
     game.send(S::Attack(play::Attack { id: id as i32 }));
     game.swing_arm();
+    game.send(S::Punch(horizon_protocol::packets::Empty));
+    game.reset_attack_strength();
     st(|s| s.hit_at = now);
 }

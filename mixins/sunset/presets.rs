@@ -17,9 +17,12 @@ pub(super) const PRESETS: &[Preset] = &[
     Preset {
         id: "pvp-crystal",
         title: "PvP: crystal",
-        about: "Crystal Aura, a totem in hand and a surround.",
+        about: "Crystal Aura, a totem in hand, a surround, and an anchor where an enemy's pearl lands.",
         text: "sunset-profile=1
 crystalaura.on=true
+anchoraura.on=true
+anchoraura.aura=false
+anchoraura.pearlcatch=true
 offhand.on=true
 surround.on=true
 autoarmor.on=true
