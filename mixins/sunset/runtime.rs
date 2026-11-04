@@ -551,11 +551,18 @@ impl Module {
                 "Shortest sneak delay (ms)" | "Longest sneak delay (ms)" => self.p("Mode") == "Legit",
                 "Activation blocks" => self.p("Mode") == "Godbridge",
                 "Auto switch" => self.p("Mode") != "Legit",
-                "Fast tower" | "Tower speed" | "While moving" | "Only on click" | "Rotate" | "Air place" | "Ahead distance"
-                | "Closest block range" | "Radius" | "Blocks per tick" | "Render" | "Shape mode" | "Fill opacity" | "Color"
+                "Swap back" => self.p("Mode") == "Normal" && self.b("Auto switch"),
+                "Rotations" | "Look" | "Rotation speed" | "Min rotation speed" | "Ray cast" => self.p("Mode") == "Normal" && self.b("Rotate"),
+                "Telly ticks" => self.p("Mode") == "Normal" && self.b("Rotate") && self.p("Rotations") == "Telly",
+                "Movement correction" => self.p("Mode") == "Normal" && self.b("Rotate") && self.p("Look") == "Silent",
+                "Air place" => self.p("Mode") == "Normal" && (!self.b("Rotate") || self.p("Ray cast") == "Off"),
+                "Fast tower" | "Only on click" | "Rotate" | "Sprint" | "Same Y" | "Expand" | "Ledge sneak" | "Render"
                 | "Delay (ticks)" | "Advanced" => self.p("Mode") == "Normal",
-                "Safe walk" | "Validate ray" | "Max placement distance" | "Duplicate cooldown" => self.p("Mode") == "Normal" && advanced,
-                "Rotation speed" => self.p("Mode") == "Normal" && advanced && self.b("Rotate"),
+                "Tower speed" | "While moving" => self.p("Mode") == "Normal" && self.b("Fast tower"),
+                "Shape mode" | "Fill opacity" | "Color" => self.p("Mode") == "Normal" && self.b("Render"),
+                "Safe walk" | "Max placement distance" | "Closest block range" | "Max per second" => {
+                    self.p("Mode") == "Normal" && advanced
+                }
                 _ => true,
             },
             "Server Scan" => match name {
@@ -849,7 +856,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ignore sneaking", false),
         Module::new("Blink", Movement, "Holds back your movement, then sends it.")
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
-        Module::new("Scaffold", Movement, "Places blocks under you. Legit sneaks at edges while you place; Godbridge bridges backwards without sneaking.")
+        Module::new("Scaffold", Movement, "Places blocks under you. Normal places them for you from a silent look; Legit sneaks at edges while you place; Godbridge bridges backwards without sneaking.")
             .pick("Mode", &["Normal", "Legit", "Godbridge"])
             .num("Shortest sneak delay (ms)", 100.0, 0.0, 500.0, 10.0)
             .num("Longest sneak delay (ms)", 200.0, 0.0, 500.0, 10.0)
@@ -858,17 +865,25 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Block counter", true)
             .text("Blocks", "")
             .pick("Blocks filter", &["Blacklist", "Whitelist"])
+            .bool("Rotate", true)
+            .pick("Rotations", &["Normal", "Backwards", "Snap", "Telly"])
+            .num("Telly ticks", 3.0, 1.0, 8.0, 1.0)
+            .pick("Look", &["Silent", "Visible"])
+            .num("Min rotation speed", 45.0, 5.0, 180.0, 5.0)
+            .num("Rotation speed", 75.0, 5.0, 180.0, 5.0)
+            .pick("Ray cast", &["Strict", "Normal", "Off"])
+            .pick("Movement correction", &["Silent", "Strict", "Off"])
+            .pick("Sprint", &["Keep", "Off"])
+            .pick("Same Y", &["Off", "On", "Auto jump"])
+            .num("Expand", 0.0, 0.0, 4.0, 1.0)
+            .bool("Ledge sneak", true)
             .bool("Fast tower", false)
             .num("Tower speed", 0.5, 0.0, 1.0, 0.05)
             .bool("While moving", false)
             .bool("Only on click", false)
             .bool("Auto switch", true)
-            .bool("Rotate", true)
+            .bool("Swap back", true)
             .bool("Air place", false)
-            .num("Ahead distance", 0.0, 0.0, 1.0, 0.05)
-            .num("Closest block range", 4.0, 0.0, 8.0, 0.5)
-            .num("Radius", 0.0, 0.0, 6.0, 0.5)
-            .num("Blocks per tick", 3.0, 1.0, 10.0, 1.0)
             .bool("Render", true)
             .pick("Shape mode", &["Both", "Lines", "Sides"])
             .num("Fill opacity", 0.04, 0.0, 1.0, 0.02)
@@ -876,10 +891,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0)
             .bool("Advanced", false)
             .bool("Safe walk", false)
-            .bool("Validate ray", false)
-            .num("Max placement distance", 6.0, 2.0, 6.0, 0.25)
-            .num("Duplicate cooldown", 0.0, 0.0, 8.0, 1.0)
-            .num("Rotation speed", 180.0, 5.0, 180.0, 5.0),
+            .num("Max placement distance", 4.5, 2.0, 6.0, 0.25)
+            .num("Closest block range", 4.0, 0.0, 8.0, 0.5)
+            .num("Max per second", 20.0, 1.0, 20.0, 1.0),
         Module::new("Anti Hunger", Player, "Uses less food.")
             .bool("Sprint", true)
             .bool("Ground", true),
@@ -1166,8 +1180,7 @@ pub(super) struct State {
     pub(super) loadouts: Vec<String>,
     // Block ESP's finds: where, and which colour.
     blocks: Sweep<u32>,
-    scaffold_wait: u32,
-    scaffold_recent: Vec<([i32; 3], u64)>,
+    // Your view before Scaffold turned it (Normal's Look Visible), put back when Scaffold goes off.
     scaffold_rotation: Option<(f32, f32)>,
     // The hotbar slot Scaffold took as the biggest stack, kept until it runs out.
     scaffold_stack: Option<usize>,
@@ -1273,8 +1286,6 @@ impl State {
             waypoints: Vec::new(),
             loadouts: Vec::new(),
             blocks: Sweep::new(),
-                    scaffold_wait: 0,
-            scaffold_recent: Vec::new(),
             scaffold_rotation: None,
             scaffold_stack: None,
                     scaffold_placed: Vec::new(),
@@ -2401,7 +2412,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
     if !on {
         match name {
             "Scaffold" => {
-                with(|s| { s.scaffold_wait = 0; s.scaffold_recent.clear(); s.scaffold_stack = None; });
+                with(|s| s.scaffold_stack = None);
                 restore_scaffold_rotation(game);
                 legit_sneak(game, false);
                 super::sunset_scaffold_bridge::stop(game);
@@ -2683,7 +2694,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         horizon_client::motion::sunset_motion::set_screen_keys(None);
         restore_scaffold_rotation(game);
         super::sunset_scaffold_bridge::stop(game);
-        with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.scaffold_recent.clear(); });
+        super::sunset_scaffold_normal::stop(game);
+        with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; });
         return;
     }
     if super::sunset_combat_control::begin_tick(game) {
@@ -2795,6 +2807,11 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         .filter(|m| m.on && m.p("Mode") != "Normal" && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
         .filter(|_| playing && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
     super::sunset_scaffold_bridge::pre_tick(game, bridging);
+    // Scaffold's Normal clicks, looks and turns the keys before the game's tick moves you (its look rides the move).
+    let normal = get("Scaffold")
+        .filter(|m| m.on && m.p("Mode") == "Normal" && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
+        .filter(|_| playing && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
+    super::sunset_scaffold_normal::pre_tick(game, normal);
     // Offhand's Silent open holds your move keys and clicks while its totem moves.
     super::sunset_combat_inventory::pre_tick(game, get("Offhand").filter(|m| m.on && playing));
     velocity(game, get("Velocity").filter(|m| m.on));
@@ -2891,6 +2908,7 @@ fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
 // After the tick: first what waited for the look its move packet carried, then the modules, then (in a tick that
 // sent no move packet) the one that carries the next look.
 pub(super) fn post_tick(game: &mut Game<'_>) {
+    super::sunset_scaffold_normal::post_tick(game);
     super::sunset_snap_tap::post_tick(game);
     super::sunset_scaffold_bridge::post_tick(game);
     super::sunset_combat_inventory::post_tick(game);
@@ -3196,9 +3214,7 @@ fn module_tick(game: &mut Game<'_>) {
         let _ = game.leave_server(Some(format!("Sunset Auto Log: health was {health}")));
         return;
     }
-    if let Some(m) = get("Scaffold").filter(|m| !scaffold_paused(m, get("Kill Aura").is_some(), get("Blink").is_some())) {
-        scaffold(game, m);
-    }
+    scaffold_fade();
     // A combat macro or Crystal/Anchor Aura has the hotbar: the inventory modules wait.
     let combat_hand = super::sunset_combat_control::owner().is_some();
     if let Some(m) = get("Auto Armor").filter(|_| !combat_hand) {
@@ -3466,46 +3482,27 @@ fn scaffold_blocks(game: &Game<'_>, m: &Module) -> u32 {
     (0..9).filter(|&i| scaffold_item(game, m, i)).map(count).sum()
 }
 
-fn scaffold_place(game: &mut Game<'_>, m: &Module, at: [i32; 3]) -> bool {
-    let duplicate_cooldown = m.n("Duplicate cooldown") as u64;
-    if duplicate_cooldown > 0 && with(|s| s.scaffold_recent.iter().any(|(pos, _)| *pos == at)) { return false; }
-    let Some(eye) = game.eye_position() else { return false; };
-    let side = super::sunset_util::place_side(game, at);
-    if side.is_none() && !m.b("Air place") { return false; }
-    let neighbor = side.map_or(at, |(pos, _)| pos);
-    let cursor = super::sunset_movement::face_cursor(at, neighbor);
-    let hit = if neighbor == at {
-        [f64::from(at[0]) + 0.5, f64::from(at[1]) + 1.0, f64::from(at[2]) + 0.5]
-    } else {
-        [f64::from(neighbor[0]) + f64::from(cursor[0]), f64::from(neighbor[1]) + f64::from(cursor[1]), f64::from(neighbor[2]) + f64::from(cursor[2])]
-    };
-    if super::sunset_util::dist(eye, hit) > m.n("Max placement distance") { return false; }
-    if m.b("Validate ray") && !super::sunset_movement::clear_voxel_ray(eye, hit, |cell| {
-        super::sunset_util::facts(game, cell).full_collision
-    }) { return false; }
-    if m.b("Rotate") && m.n("Rotation speed") < 180.0 {
-        let (yaw, pitch) = look_at(eye, hit);
-        let rate = m.n("Rotation speed") as f32;
-    let initial = (game.yaw, game.pitch);
-    with(|s| { s.scaffold_rotation.get_or_insert(initial); });
-        game.yaw = super::sunset_movement::turn_toward(game.yaw, yaw, rate);
-        game.pitch = super::sunset_movement::turn_toward(game.pitch, pitch, rate).clamp(-90.0, 90.0);
-        let turn = (yaw - game.yaw + 180.0).rem_euclid(360.0) - 180.0;
-        if turn.abs() > 2.0 || (pitch - game.pitch).abs() > 2.0 { return false; }
-    }
-    let Some(slot) = scaffold_slot(game, m) else {
-        return false;
-    };
-    let placed = super::sunset_util::place_block(game, at, slot, m.b("Rotate"), true);
-    if placed {
-        with(|s| {
-            if duplicate_cooldown > 0 {
-                s.scaffold_recent.push((at, s.ticks + duplicate_cooldown));
-            }
-            if m.b("Render") { s.scaffold_placed.push((at, 8)); }
+// A block Scaffold placed, drawn for 8 ticks as it fades (Render).
+pub(super) fn scaffold_drawn(at: [i32; 3]) {
+    with(|s| s.scaffold_placed.push((at, 8)));
+}
+
+// Normal's Look Visible is about to turn your view: the view before it is kept, to be put back when Scaffold goes off.
+pub(super) fn scaffold_view(game: &Game<'_>) {
+    let view = (game.yaw, game.pitch);
+    with(|s| {
+        s.scaffold_rotation.get_or_insert(view);
+    });
+}
+
+// Scaffold's placed blocks fade (its Normal mode works before the tick, in sunset_scaffold_normal).
+fn scaffold_fade() {
+    with(|s| {
+        s.scaffold_placed.retain_mut(|(_, t)| {
+            *t = t.saturating_sub(1);
+            *t > 0
         });
-    }
-    placed
+    });
 }
 
 // Legit Scaffold's sneak: held (the game's movement then keeps you on the edge, and tells the server you sneak) or let
@@ -3520,136 +3517,6 @@ pub(super) fn legit_sneak(game: &mut Game<'_>, down: bool) {
             game.keys.remove(&KeyCode::ShiftLeft);
         }
         with(|s| s.scaffold_sneak = false);
-    }
-}
-
-// Scaffold (Meteor's): the block under where you will be next tick (or a step ahead, Ahead distance), down one more
-// while you sneak; without a side to place it against, the nearest spot within Closest block range that has one.
-// Air place puts it where you will be, and a Radius of blocks round it. Fast tower lifts you while you hold jump.
-pub(super) fn scaffold(game: &mut Game<'_>, m: &Module) {
-    use winit::event::MouseButton;
-    with(|s| {
-        let ticks = s.ticks;
-        s.scaffold_recent.retain(|(_, until)| *until > ticks);
-        s.scaffold_placed.retain_mut(|(_, t)| {
-            *t = t.saturating_sub(1);
-            *t > 0
-        });
-    });
-    // Another module has the hand (Kill Aura's hit on its way, with Disable with Kill Aura off): not this tick.
-    if !super::sunset_combat_control::available("Scaffold") {
-        return;
-    }
-    if !game.native_playing() || game.remote.is_none() || m.p("Mode") != "Normal" {
-        return;
-    }
-    if m.b("Only on click") && !(game.physical_buttons.contains(&MouseButton::Right) || game.right) {
-        return;
-    }
-    if with(|s| {
-        s.scaffold_wait = s.scaffold_wait.saturating_sub(1);
-        s.scaffold_wait > 0
-    }) {
-        return;
-    }
-    legit_sneak(game, false);
-    let Some(p) = game.player.as_ref() else {
-        return;
-    };
-    let held = |k: KeyCode| game.keys.contains(&k);
-    let (pos, vel) = ([p.position.x, p.position.y, p.position.z], [p.velocity.x, p.velocity.y, p.velocity.z]);
-    let next = [pos[0] + vel[0], pos[1] + vel[1] - 0.75, pos[2] + vel[2]];
-    let feet = [pos[0].floor() as i32, pos[1].floor() as i32, pos[2].floor() as i32];
-    let (jump, sneak) = (held(KeyCode::Space), held(KeyCode::ShiftLeft));
-    let moving = move_input(game) != (0.0, 0.0);
-    let item = scaffold_slot(game, m).is_some();
-    let towering = m.b("Fast tower") && jump && !sneak && (m.b("While moving") || !moving) && item;
-    let air = m.b("Air place");
-    let mut at = if air {
-        next
-    } else {
-        let mut here = [pos[0], pos[2]];
-        let ahead = m.n("Ahead distance");
-        let below = [feet[0], feet[1] - 1, feet[2]];
-        if ahead != 0.0 && !towering && !super::sunset_util::is_air(game, below) {
-            let yaw = f64::from(game.yaw).to_radians();
-            let d = [-yaw.sin() * ahead, yaw.cos() * ahead];
-            for (key, [x, z]) in [(KeyCode::KeyW, [d[0], d[1]]), (KeyCode::KeyS, [-d[0], -d[1]]), (KeyCode::KeyA, [d[1], -d[0]]), (KeyCode::KeyD, [-d[1], d[0]])] {
-                if held(key) {
-                    here = [here[0] + x, here[1] + z];
-                }
-            }
-        }
-        [here[0], next[1], here[1]]
-    }
-    .map(|v| v.floor() as i32);
-    if sneak && !jump && pos[1] + next[1] > -1.0 {
-        at[1] -= 1;
-    }
-    if at[1] >= feet[1] {
-        at[1] = feet[1] - 1;
-    }
-    let target = at;
-    if !air && super::sunset_util::place_side(game, at).is_none() {
-        let Some(eye) = game.eye_position() else {
-            return;
-        };
-        let r = m.n("Closest block range");
-        let mut spots = Vec::new();
-        for x in (pos[0] - r) as i32..(pos[0] + r).ceil() as i32 {
-            for z in (pos[2] - r) as i32..(pos[2] + r).ceil() as i32 {
-                for y in (pos[1] - r).max(-64.0) as i32..(pos[1] + r).min(320.0).ceil() as i32 {
-                    let b = [x, y, z];
-                    let Some((side, _)) = super::sunset_util::place_side(game, b) else {
-                        continue;
-                    };
-                    if super::sunset_util::can_place(game, b, true) && super::sunset_util::dist(eye, super::sunset_util::center_of(side)) <= 6.0 {
-                        spots.push(b);
-                    }
-                }
-            }
-        }
-        let far = |b: &[i32; 3]| (0..3).map(|i| (b[i] - target[i]).pow(2)).sum::<i32>();
-        let Some(best) = spots.into_iter().min_by_key(far) else {
-            return;
-        };
-        at = best;
-    }
-    if air {
-        let radius = m.n("Radius");
-        let r = radius.floor() as i32;
-        let mut blocks: Vec<[i32; 3]> = (at[0] - r..=at[0] + r)
-            .flat_map(|x| (at[2] - r..=at[2] + r).map(move |z| [x, at[1], z]))
-            .filter(|b| super::sunset_util::dist(pos, super::sunset_util::center_of(*b)) <= radius || (b[0] == at[0] && b[2] == at[2]))
-            .collect();
-        let near = |b: &[i32; 3]| super::sunset_util::dist(pos, super::sunset_util::center_of(*b));
-        blocks.sort_by(|a, b| near(a).total_cmp(&near(b)));
-        let mut placed = 0;
-        for b in blocks {
-            if placed >= m.n("Blocks per tick") as u32 {
-                break;
-            }
-            if scaffold_place(game, m, b) {
-                placed += 1;
-            }
-        }
-    } else {
-        scaffold_place(game, m, at);
-    }
-    with(|s| s.scaffold_wait = m.n("Delay (ticks)") as u32 + 1);
-    if m.b("Fast tower") && jump && !sneak && item {
-        let room = (0..2).all(|dy| super::sunset_util::is_air(game, [feet[0], feet[1] + 2 + dy, feet[2]]));
-        let Some(p) = game.player.as_mut() else {
-            return;
-        };
-        if room {
-            if m.b("While moving") || !moving {
-                p.velocity.y = m.n("Tower speed");
-            }
-        } else {
-            p.velocity.y = p.position.y.ceil() - p.position.y;
-            p.ground.on_ground = true;
-        }
     }
 }
 
@@ -4769,10 +4636,9 @@ pub(super) fn server_correction(game: &mut Game<'_>) {
     with(|s| {
         s.knockback_ticks = 0;
         s.strafe = Strafe::default();
-        s.scaffold_recent.clear();
-        s.scaffold_wait = 0;
         s.scaffold_stack = None;
     });
+    super::sunset_scaffold_normal::correction();
     horizon_client::motion::sunset_motion::set_across(None);
     horizon_client::motion::sunset_motion::set_up(None);
 }
@@ -6204,8 +6070,6 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
     s.knockback_ticks = 0;
     s.velocity = None;
     s.blast = [0.0; 3];
-    s.scaffold_recent.clear();
-    s.scaffold_wait = 0;
     s.scaffold_stack = None;
     take_scaffold_rotation(&mut s.scaffold_rotation)
 }
@@ -6216,6 +6080,7 @@ pub(super) fn panic_off(game: &mut Game<'_>) {
     combat_cleanup(game);
     legit_sneak(game, false);
     super::sunset_scaffold_bridge::stop(game);
+    super::sunset_scaffold_normal::stop(game);
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
         game.pitch = pitch;
@@ -9466,9 +9331,12 @@ mod movement_config_tests {
             ("Legit", &["Shortest sneak delay (ms)", "Longest sneak delay (ms)", "Blocks", "Block counter"][..],
              &["Activation blocks", "Auto switch", "Rotate", "Delay (ticks)", "Air place", "Safe walk", "Render", "Fast tower"][..]),
             ("Godbridge", &["Activation blocks", "Auto switch", "Blocks"][..],
-             &["Shortest sneak delay (ms)", "Rotate", "Rotation speed", "Delay (ticks)", "Radius", "Duplicate cooldown", "Render"][..]),
-            ("Normal", &["Rotate", "Delay (ticks)", "Air place", "Safe walk", "Render", "Auto switch"][..],
-             &["Shortest sneak delay (ms)", "Activation blocks"][..]),
+             &["Shortest sneak delay (ms)", "Rotate", "Rotation speed", "Delay (ticks)", "Ray cast", "Same Y", "Swap back",
+               "Ledge sneak", "Render"][..]),
+            ("Normal", &["Rotate", "Rotations", "Look", "Rotation speed", "Min rotation speed", "Ray cast", "Movement correction",
+                         "Sprint", "Same Y", "Expand", "Ledge sneak", "Delay (ticks)", "Safe walk", "Max per second", "Render",
+                         "Auto switch", "Swap back"][..],
+             &["Shortest sneak delay (ms)", "Activation blocks", "Telly ticks", "Tower speed", "Air place"][..]),
         ] {
             scaffold.settings.iter_mut().find(|s| s.name == "Mode").unwrap().parse(mode);
             for name in on {
@@ -9478,11 +9346,62 @@ mod movement_config_tests {
                 assert!(!shown(scaffold, name), "{mode} does not use {name}");
             }
         }
+        // Normal's controls that hang on others.
+        let set = |m: &mut Module, name: &str, value: &str| m.settings.iter_mut().find(|s| s.name == name).unwrap().parse(value);
+        set(scaffold, "Rotations", "Telly");
+        set(scaffold, "Ray cast", "Off");
+        set(scaffold, "Look", "Visible");
+        set(scaffold, "Fast tower", "true");
+        for name in ["Telly ticks", "Air place", "Tower speed", "While moving"] {
+            assert!(shown(scaffold, name), "Normal uses {name} here");
+        }
+        assert!(!shown(scaffold, "Movement correction"), "a visible look needs no correction");
+        set(scaffold, "Rotate", "false");
+        for name in ["Rotations", "Ray cast", "Rotation speed", "Movement correction"] {
+            assert!(!shown(scaffold, name), "no look, no {name}");
+        }
+        assert!(shown(scaffold, "Air place"));
         scaffold.settings.iter_mut().find(|s| s.name == "Mode").unwrap().parse("Godbridge");
         let mut restored = State::new();
         restored.load_text(&state.save_text());
         assert_eq!(restored.module("Scaffold").unwrap().p("Mode"), "Godbridge");
         assert_eq!(restored.module("Scaffold").unwrap().n("Longest sneak delay (ms)"), 200.0);
+    }
+
+    #[test]
+    fn scaffold_settings_from_before_normal_s_rework_load() {
+        // Settings Normal no longer has are passed over; the ones it kept load as they were.
+        let mut state = State::new();
+        state.load_text(concat!(
+            "scaffold.mode=Normal\n",
+            "scaffold.aheaddistance=0.5\n",
+            "scaffold.radius=2\n",
+            "scaffold.blockspertick=4\n",
+            "scaffold.validateray=true\n",
+            "scaffold.duplicatecooldown=3\n",
+            "scaffold.rotationspeed=120\n",
+            "scaffold.delayticks=1\n",
+            "scaffold.airplace=true\n",
+            "scaffold.closestblockrange=8\n",
+            "scaffold.maxplacementdistance=5\n",
+        ));
+        let m = state.module("Scaffold").unwrap();
+        assert_eq!(m.p("Mode"), "Normal");
+        assert_eq!(m.n("Rotation speed"), 120.0);
+        assert_eq!(m.n("Delay (ticks)"), 1.0);
+        assert!(m.b("Air place"));
+        assert_eq!(m.n("Closest block range"), 8.0);
+        assert_eq!(m.n("Max placement distance"), 5.0);
+        // The movement presets still name settings Scaffold has.
+        for style in ["subtle", "balanced", "aggressive"] {
+            let mut s = State::new();
+            assert!(apply_movement_preset(&mut s, style));
+        }
+        let scaffold = State::new();
+        let names: Vec<&str> = scaffold.module("Scaffold").unwrap().settings.iter().map(|s| s.name).collect();
+        for name in ["Delay (ticks)", "Rotate", "Rotation speed"] {
+            assert!(names.contains(&name), "{name}");
+        }
     }
 
     #[test]

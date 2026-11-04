@@ -4186,15 +4186,19 @@ def _():
         only()
         return p, placed
 
+    # Normal: its silent look turns to the side of the last block and the game's own click places there.
     on_, placed = walk_off()
     listed, kept = walk_off(blocks_filter="Whitelist", blocks="dirt")
     setting("scaffold", "blocks filter", "Blacklist")
     setting("scaffold", "blocks", "")
-    wide, wide_placed = walk_off(air_place="true", radius="1.5")
+    # Same Y's Auto jump with Backwards rotations: jumping all the way, every block still goes in the row walked off.
+    hopped, hopped_placed = walk_off(same_y="Auto jump", rotations="Backwards")
+    above = count(X0 - 2, Y + 1, Z0 + 17, X0 + 2, Y + 3, Z0 + 26, "stone")
+    setting("scaffold", "same y", "Off")
+    setting("scaffold", "rotations", "Normal")
     # Fast tower: jump held in place, a stack of blocks under you.
     reset()
     slot(0, "stone", 32)
-    setting("scaffold", "air place", "false")
     setting("scaffold", "fast tower", "true")
     only("scaffold")
     held_keys(("space",), 40)
@@ -4208,10 +4212,11 @@ def _():
     held_keys(("space",), 40)
     climb = pos()[1] - (Y + 1)
     only()
-    ok = (on_[2] - Z0 > 19 and on_[1] > Y + 0.99 and placed >= 3 and listed[1] < Y and kept == 0 and wide[1] > Y + 0.99
-          and wide_placed > placed and tower > climb * 1.5 and climb > 1)
+    ok = (on_[2] - Z0 > 19 and on_[1] > Y + 0.99 and placed >= 3 and listed[1] < Y and kept == 0 and hopped[1] > Y + 0.99
+          and hopped_placed >= 3 and above == 0 and tower > climb * 1.5 and climb > 1)
     return ok, (f"walked out to z {on_[2]-Z0:.1f} past the edge (17) on {placed} blocks; with only dirt allowed: fell, {kept} placed; "
-                f"Air place, Radius 1.5: {wide_placed} placed; jumping 2 s: {climb:.1f} blocks up, {tower:.1f} with Fast tower")
+                f"Same Y Auto jump (Backwards): {hopped_placed} in the row, {above} above it; "
+                f"jumping 2 s: {climb:.1f} blocks up, {tower:.1f} with Fast tower")
 
 
 def bridge_backwards(mode, keys, look, jump=None):
@@ -4258,8 +4263,9 @@ def bridge_backwards(mode, keys, look, jump=None):
 
 
 def bridged(kept, gapless, far, low, sneaked, most, kicked, top, sneak):
-    ok = (kept >= 4 and gapless and far > 16 + kept and low > Y + 0.99 and sneaked == sneak and kicked == 0
-          and (most or 0) <= 1)
+    """`sneak`: whether the mode must sneak (None: either, as Normal's Ledge sneak does when its look is late)."""
+    ok = (kept >= 4 and gapless and far > 16 + kept and low > Y + 0.99 and (sneak is None or sneaked == sneak)
+          and kicked == 0 and (most or 0) <= 1)
     return ok, (f"{kept} blocks past the edge kept by the server, without a gap: {gapless}, walked out to z {far:.1f} "
                 f"(edge 17), lowest feet {low - Y - 1:+.2f}, sneaked: {sneaked}, most moves a tick: {most}, kicks: {kicked}")
 
@@ -4268,6 +4274,47 @@ def bridged(kept, gapless, far, low, sneaked, most, kicked, top, sneak):
 def _():
     # Legit only sneaks: the test holds use with the crosshair low enough to meet the edge block's side.
     return bridged(*bridge_backwards("Legit", [("key", "s"), ("mouse", "right")], 80), sneak=True)
+
+
+@test("Scaffold (Normal, backwards)")
+def _():
+    # Normal places by itself from its own silent look: the test only holds S, the camera stays on the platform.
+    return bridged(*bridge_backwards("Normal", [("key", "s")], 30), sneak=None)
+
+
+@test("Scaffold (Normal, ray cast)")
+def _():
+    # Each Ray cast mode bridges backwards: Strict clicks with the look the server already has, Normal with the look the
+    # tick's move packet carries, Off with the planned side. All keep one move packet a tick and stay up.
+    runs = []
+    for ray in ("Strict", "Normal", "Off"):
+        setting("scaffold", "ray cast", ray)
+        kept, gapless, far, low, sneaked, most, kicked, _top = bridge_backwards("Normal", [("key", "s")], 30)
+        runs.append((ray, kept, gapless, low, most, kicked))
+    setting("scaffold", "ray cast", "Strict")
+    ok = all(k >= 4 and g and lo > Y + 0.99 and (mo or 0) <= 1 and ki == 0 for _r, k, g, lo, mo, ki in runs)
+    return ok, "; ".join(f"{r}: {k} kept, gapless {g}, lowest feet {lo - Y - 1:+.2f}, moves a tick {mo}, kicks {ki}"
+                         for r, k, g, lo, mo, ki in runs)
+
+
+@test("Scaffold (Normal, diagonal)")
+def _():
+    # Off the platform's side at 45 degrees with W held: the cells go in as a staircase, each beside the one before, so
+    # every block had a side to go against, and you stay up.
+    reset(z=15.0)
+    cmd(f"fill {X0-2} {Y-1} {Z0+17} {X0+14} {Y} {Z0+32} minecraft:air")
+    slot(0, "stone", 64)
+    ctl("key", "1", "tap")
+    ctl("look", "-45", "0")
+    only("scaffold")
+    walk(50)
+    p = pos()
+    placed = count(X0 - 2, Y, Z0 + 17, X0 + 14, Y, Z0 + 32, "stone")
+    lower = count(X0 - 2, Y - 1, Z0 + 17, X0 + 14, Y - 1, Z0 + 32, "stone")
+    only()
+    ok = p[1] > Y + 0.99 and p[2] - Z0 > 19 and p[0] - X0 > 3 and placed >= 4 and lower == 0
+    return ok, (f"walked to x {p[0]-X0:.1f}, z {p[2]-Z0:.1f} (edge at z 17), feet {p[1] - Y - 1:+.2f}; {placed} blocks in the row, "
+                f"{lower} below it")
 
 
 @test("Scaffold (Godbridge, backwards)")

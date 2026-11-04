@@ -25,6 +25,27 @@ thread_local! {
     // Knockback hits since the last movement, and the game tick of the last: each cuts the speed across to 0.6 and
     // stops the sprint.
     static ATTACK_SLOW: Cell<(u32, u64)> = const { Cell::new((0, 0)) };
+    // Scaffold's movement correction: the yaw the next movement goes by (the look the server is told), so the move
+    // matches the keys it is told at that yaw. Taken by that movement.
+    static MOVE_YAW: Cell<Option<f32>> = const { Cell::new(None) };
+    // Scaffold's Sprint Off: the next movement goes without a sprint. Taken by that movement.
+    static NO_SPRINT: Cell<bool> = const { Cell::new(false) };
+}
+
+pub fn set_move_yaw(yaw: Option<f32>) {
+    MOVE_YAW.with(|c| c.set(yaw));
+}
+
+pub fn take_move_yaw() -> Option<f32> {
+    MOVE_YAW.with(Cell::take)
+}
+
+pub fn set_no_sprint(on: bool) {
+    NO_SPRINT.with(|c| c.set(on));
+}
+
+pub fn take_no_sprint() -> bool {
+    NO_SPRINT.with(Cell::take)
 }
 
 pub fn set_no_slow_grim(on: bool) {

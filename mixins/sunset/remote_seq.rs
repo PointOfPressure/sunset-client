@@ -15,6 +15,15 @@ pub(crate) fn press_use(game: &mut Game<'_>) {
     }
 }
 
+// Where the game's own right click on `hit` with the stack in hotbar `slot` would put a block, as the game predicts it
+// (the block item's placement context: the clicked block itself when it can be replaced, else the one past the face,
+// and nothing when the block would not go in), or None. Dry: the world is not changed. Scaffold's Normal checks each
+// click with it before pressing.
+pub(crate) fn places_into(game: &mut Game<'_>, hit: &crate::game::Hit, slot: usize) -> Option<[i32; 3]> {
+    let stack = game.stack_in(slot)?.clone();
+    game.remote_can_place(hit, &stack).map(|(pos, _)| [pos.x, pos.y, pos.z])
+}
+
 // The held slot as the server knows it: true when `slot` is news to it (the caller sends the SetCarriedItem). The
 // game's tick sends one whenever the selection differs from what it last told, so this keeps it from sending the same
 // slot a second time (Grim BadPacketsA, Intave "sent slot twice"). False without a connection.

@@ -62,20 +62,35 @@ use std::sync::Mutex;
 
 // The look the position sender is given instead of yours, while a module holds one.
 static SENT: Mutex<Option<(f32, f32)>> = Mutex::new(None);
+// Scaffold's Normal look: while it holds one it goes before Kill Aura's (Scaffold places, the aura waits).
+static SCAFFOLD: Mutex<Option<(f32, f32)>> = Mutex::new(None);
 
 // The hook on the position sender's rotation.
 pub(crate) fn sent(value: (f32, f32)) -> (f32, f32) {
-    SENT.lock().unwrap_or_else(|e| e.into_inner()).unwrap_or(value)
+    let scaffold = *SCAFFOLD.lock().unwrap_or_else(|e| e.into_inner());
+    scaffold.or(*SENT.lock().unwrap_or_else(|e| e.into_inner())).unwrap_or(value)
 }
 
 fn set_sent(look: Option<(f32, f32)>) {
     *SENT.lock().unwrap_or_else(|e| e.into_inner()) = look;
 }
 
+// Scaffold's look for the next move packets (None: back to Kill Aura's or yours).
+pub(super) fn scaffold_look(look: Option<(f32, f32)>) {
+    *SCAFFOLD.lock().unwrap_or_else(|e| e.into_inner()) = look;
+}
+
 // Degrees one mouse count turns the view at this sensitivity (Minecraft's `(s * 0.6 + 0.2)^3 * 8 * 0.15`).
 pub(super) fn degrees_per_count(sensitivity: f64) -> f32 {
     let base = sensitivity as f32 * 0.6 + 0.2;
     (base * base * base * 8.0 * 0.15).max(1e-4)
+}
+
+// The turn from `from` to `to` cut to whole mouse counts of `degrees`, as a mouse turns the view: what is left over is
+// less than half a count each way. Yaw stays continuous with `from` (no fold into ±180).
+pub(super) fn whole_counts(from: (f32, f32), to: (f32, f32), degrees: f32) -> (f32, f32) {
+    let counts = |d: f32| (d / degrees).round() * degrees;
+    (from.0 + counts(wrap(to.0 - from.0)), (from.1 + counts(to.1 - from.1)).clamp(-90.0, 90.0))
 }
 
 fn wrap(a: f32) -> f32 {
@@ -258,6 +273,21 @@ pub(super) fn let_go() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whole_counts_turn_by_mouse_steps_the_short_way() {
+        let degrees = degrees_per_count(0.5);
+        let from = (712.3, 45.6);
+        let next = whole_counts(from, (-10.0, 70.0), degrees);
+        for d in [next.0 - from.0, next.1 - from.1] {
+            let counts = d / degrees;
+            assert!((counts - counts.round()).abs() < 1e-3, "{counts}");
+        }
+        // 712.3 is -7.7 on the circle: the turn to -10 is 2.3 back, not a full spin.
+        assert!((next.0 - from.0 + 2.3).abs() <= degrees, "{next:?}");
+        assert!((next.1 - 70.0).abs() <= degrees);
+        assert_eq!(whole_counts((0.0, 89.0), (0.0, 120.0), degrees).1, 90.0);
+    }
 
     #[test]
     fn snap_arrives_at_once() {

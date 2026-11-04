@@ -112,18 +112,6 @@ pub(super) fn turn_toward(from: f32, to: f32, max_degrees: f32) -> f32 {
     from + delta.clamp(-max_degrees.max(0.0), max_degrees.max(0.0))
 }
 
-pub(super) fn face_cursor(target: [i32; 3], neighbor: [i32; 3]) -> [f32; 3] {
-    let mut cursor = [0.5; 3];
-    for axis in 0..3 {
-        cursor[axis] = match target[axis] - neighbor[axis] {
-            1 => 1.0,
-            -1 => 0.0,
-            _ => 0.5,
-        };
-    }
-    cursor
-}
-
 pub(super) fn speed_can_write(
     flight: bool,
     fall_flying: bool,
@@ -138,51 +126,6 @@ pub(super) fn speed_can_write(
         && (!using_item || no_slow)
         && knockback_ticks == 0
         && (!wall || !stop_at_wall)
-}
-
-// Walk the exact voxel cells crossed by a placement ray, excluding the endpoint face.
-pub(super) fn clear_voxel_ray(
-    start: [f64; 3],
-    end: [f64; 3],
-    mut blocked: impl FnMut([i32; 3]) -> bool,
-) -> bool {
-    if !start.iter().chain(end.iter()).all(|v| v.is_finite()) {
-        return false;
-    }
-    let mut cell = start.map(|v| v.floor() as i32);
-    let delta = [end[0] - start[0], end[1] - start[1], end[2] - start[2]];
-    let mut step = [0; 3];
-    let mut next = [f64::INFINITY; 3];
-    let mut stride = [f64::INFINITY; 3];
-    for axis in 0..3 {
-        if delta[axis] > 0.0 {
-            step[axis] = 1;
-            next[axis] = (f64::from(cell[axis] + 1) - start[axis]) / delta[axis];
-            stride[axis] = 1.0 / delta[axis];
-        } else if delta[axis] < 0.0 {
-            step[axis] = -1;
-            next[axis] = (f64::from(cell[axis]) - start[axis]) / delta[axis];
-            stride[axis] = -1.0 / delta[axis];
-        }
-    }
-    for _ in 0..32 {
-        let axis = if next[0] <= next[1] && next[0] <= next[2] {
-            0
-        } else if next[1] <= next[2] {
-            1
-        } else {
-            2
-        };
-        if next[axis] >= 1.0 - 1e-9 {
-            return true;
-        }
-        cell[axis] += step[axis];
-        if blocked(cell) {
-            return false;
-        }
-        next[axis] += stride[axis];
-    }
-    false
 }
 
 #[cfg(test)]
@@ -229,12 +172,6 @@ mod tests {
     }
 
     #[test]
-    fn placement_cursor_is_on_the_selected_face() {
-        assert_eq!(face_cursor([4, 10, 6], [4, 9, 6]), [0.5, 1.0, 0.5]);
-        assert_eq!(face_cursor([4, 10, 6], [3, 10, 6]), [1.0, 0.5, 0.5]);
-    }
-
-    #[test]
     fn speed_yields_to_flight_item_use_knockback_and_walls() {
         assert!(speed_can_write(false, false, false, false, 0, false, true));
         assert!(!speed_can_write(true, false, false, false, 0, false, true));
@@ -242,14 +179,6 @@ mod tests {
         assert!(!speed_can_write(false, false, false, false, 2, false, true));
         assert!(!speed_can_write(false, false, false, false, 0, true, true));
         assert!(speed_can_write(false, false, true, true, 0, false, true));
-    }
-
-    #[test]
-    fn placement_ray_rejects_obstruction_without_blocking_the_hit_face() {
-        let eye = [0.5, 2.5, 0.5];
-        let hit = [3.0, 2.5, 0.5];
-        assert!(!clear_voxel_ray(eye, hit, |p| p == [1, 2, 0]));
-        assert!(clear_voxel_ray(eye, hit, |p| p == [3, 2, 0]));
     }
 
     #[test]
