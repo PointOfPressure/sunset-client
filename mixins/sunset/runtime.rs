@@ -405,6 +405,14 @@ impl Module {
                 }
             }
             "Hitboxes" if name == "Weapons" => self.b("Only on weapon"),
+            "Fake Lag" => match name {
+                "Delay (ms)" => matches!(self.p("Mode"), "Dynamic" | "Always"),
+                "Range" => matches!(self.p("Mode"), "Dynamic" | "Ranged"),
+                "Shortest choke (ms)" | "Longest choke (ms)" => matches!(self.p("Mode"), "Timed" | "Knockback"),
+                "Range choke (ms)" => self.p("Mode") == "Ranged",
+                "Backtrack min range" | "Backtrack max range" | "Shortest latency (ms)" | "Longest latency (ms)" | "Backtrack weapon only" => self.b("Backtrack"),
+                _ => true,
+            },
             "Step" => match name {
                 "Height" | "Active when" | "Safe step" => self.b("Step up"),
                 "Step health" => self.b("Step up") && self.b("Safe step"),
@@ -5624,6 +5632,7 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
         if let C::SetEntityMotion(p) = packet {
             super::sunset_melee::note_velocity(game, p.id, p.velocity);
             if game.remote.as_ref().is_some_and(|r| r.entity_id == p.id) {
+                super::sunset_lag::knocked();
                 super::sunset_render::no_slow_knocked();
             }
         }
@@ -7619,6 +7628,7 @@ pub(super) fn dash_search_clear(s: &mut State) {
 pub(super) fn aliases(name: &str) -> &'static str {
     match name {
         "Velocity" => "knockback delay knockbackdelay",
+        "Fake Lag" => "fakelag backtrack back track choke lag",
         "New Chunks" => "newer new chunks chunk trail trouser palette",
         "Player Activity Detector" => "online player activity detector",
         "Base Finder" => "trouser stash base hunting",

@@ -9302,6 +9302,99 @@ def _():
     ok = bool(rows) and rows == per_check and setbacks > 0
     return ok, f"table {rows}; alert lines in chat {per_check}; setbacks listed {setbacks}"
 
+
+# ---- combat ports, batch 2 (Fake Lag modes and Backtrack, Aim Assist's Silent aim and Hit flick, No Interact's Hit
+# fix, No miss delay and Anti action, Shield, Key Throw's Crossbow key, Offhand's Double hand, Auto Weapon's Totem hit,
+# W Tap and Jump Reset chances, Sprint's Keep sprint, Auto Web's falling webs, the macros' hurt-time waits)
+
+PUNCH = 46
+
+
+def move_ticks(mark):
+    """Client ticks since mark, and how many of them sent a move packet."""
+    ticks = probe_ticks(mark)
+    return len(ticks), sum(any(line == "order move" for line in t) for t in ticks)
+
+
+def strafe(steps=6, each=10):
+    for step in range(steps):
+        ctl("key", "ad"[step % 2], "down")
+        wait(each)
+        ctl("key", "ad"[step % 2], "up")
+
+
+@test("Fake Lag (Timed)")
+def _():
+    # You strafe for 3 s, without and with Fake Lag on Timed (choke 300 ms): what you send waits and goes at the end of
+    # each choke as one move, so most client ticks send no move packet, and none sends more than one; no kick.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    reset()
+    setting("fakelag", "mode", "Timed")
+    setting("fakelag", "shortest choke", "300")
+    setting("fakelag", "longest choke", "300")
+    got = {}
+    for name, mods in (("off", ()), ("on", ("fakelag",))):
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
+        wait(10)
+        only(*mods)
+        wait(5)
+        mark = probe_mark()
+        strafe()
+        wait(10)
+        only()
+        ticks, moved = move_ticks(mark)
+        got[name] = (moved, ticks, order_stats(mark)[3])
+    wait(10)
+    playing = state().get("screen") == "playing"
+    note = f"(ticks with a move packet, ticks, most in a tick) off {got['off']}, Timed {got['on']}; still playing {playing}"
+    ok = playing and got["on"][2] <= 1 and got["off"][2] <= 1 and got["on"][0] * 2 < got["on"][1] and got["off"][0] * 2 > got["off"][1]
+    return ok, note
+
+
+@test("Fake Lag (Backtrack)")
+def _():
+    # You hit Bot1 once, then it walks away from you for a second. From both clients' probes: Bot1's z as it has it and
+    # as you see it, and how late you see it (the best fitting shift), without and with Backtrack (latency 300 ms):
+    # Backtrack holds what the server sends while Bot1 moves away, so you see it later.
+    if not CTL2:
+        return None, "needs a second player"
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    setting("fakelag", "mode", "Off")
+    setting("fakelag", "backtrack", "true")
+    setting("fakelag", "backtrack max range", "10")
+    setting("fakelag", "shortest latency", "300")
+    setting("fakelag", "longest latency", "300")
+    late = {}
+    for name, mods in (("off", ()), ("on", ("fakelag",))):
+        reset()
+        cmd("effect give @s minecraft:resistance 600 4 true")
+        slot(0, "wooden_sword")
+        ctl("key", "1", "tap")
+        bot_ready(2.5, 180)
+        bot = next(e["id"] for e in ctl("entities").get("entities", []) if e.get("type") == "minecraft:player")
+        only(*mods)
+        ctl("look-at-entity", str(bot))
+        wait(3)
+        ctl("mouse", "left", "click")
+        wait(5)
+        mark, bmark = probe_mark(), bot_probe_mark()
+        ctl2("key", "s", "down")
+        wait(20)
+        ctl2("key", "s", "up")
+        wait(20)
+        only()
+        own = [(f.t, f.eye[2]) for f in bot_probe_frames(bmark)]
+        seen = [(f.t, f.mobs[bot][0][2]) for f in probe_frames(mark) if bot in f.mobs]
+        late[name] = seen_late(own, seen)
+    bot_done()
+    if late["off"] is None or late["on"] is None:
+        return False, f"no fit: {late}"
+    extra = late["on"] - late["off"]
+    return 150 <= extra <= 450, f"you see Bot1 walk away {late['off']} ms late without Backtrack, {late['on']} ms with it (+{extra} ms for 300 ms)"
+
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

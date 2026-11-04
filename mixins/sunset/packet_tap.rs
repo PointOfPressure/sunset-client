@@ -308,3 +308,127 @@ pub fn hold(events: Vec<super::Event>) -> Vec<super::Event> {
     }
     out
 }
+
+// Backtrack (Fake Lag's): while the player you last hit moves away from you, everything the server sends waits a
+// little (each packet Shortest to Longest latency, in order), so the world, them included, reaches you that much later
+// and stays in reach a moment longer; when they stop moving away, all of it comes at once. A teleport, your own
+// velocity, a new world or their removal lets it all through first. Sunset's tick says each tick whom, from where
+// (your eyes) and how long; a tick that stops coming lets go of it all.
+struct Backtrack {
+    me: i32,
+    target: i32,
+    eye: [f64; 3],
+    latency: [u64; 2],
+    told: Instant,
+    // Where the server has them, from what it sent (their position as the game had it when they became the target).
+    server: Option<[f64; 3]>,
+    away: bool,
+    last_due: Option<Instant>,
+    held: VecDeque<(Instant, super::Event)>,
+    roll: u64,
+}
+
+static BACKTRACK: Mutex<Option<Backtrack>> = Mutex::new(None);
+
+pub fn backtrack(me: i32, target: i32, at: [f64; 3], eye: [f64; 3], latency: [u64; 2]) {
+    let mut b = BACKTRACK.lock().unwrap_or_else(|e| e.into_inner());
+    let b = b.get_or_insert_with(|| Backtrack {
+        me,
+        target,
+        eye,
+        latency,
+        told: Instant::now(),
+        server: None,
+        away: false,
+        last_due: None,
+        held: VecDeque::new(),
+        roll: 0x2545_f491_4f6c_dd1d,
+    });
+    if b.target != target || b.server.is_none() {
+        b.server = Some(at);
+        b.away = false;
+    }
+    (b.me, b.target, b.eye, b.latency, b.told) = (me, target, eye, latency, Instant::now());
+}
+
+pub fn backtrack_off() {
+    if let Some(b) = BACKTRACK.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        b.told -= Duration::from_secs(1);
+    }
+}
+
+// Where Backtrack's player really is, while it holds what came in.
+pub fn backtrack_shown() -> Option<[f64; 3]> {
+    BACKTRACK.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|b| !b.held.is_empty()).and_then(|b| b.server)
+}
+
+fn far(eye: [f64; 3], at: [f64; 3]) -> f64 {
+    let centre = [at[0], at[1] + 0.9, at[2]];
+    (0..3).map(|i| (centre[i] - eye[i]).powi(2)).sum::<f64>().sqrt()
+}
+
+pub fn backtrack_hold(events: Vec<super::Event>) -> Vec<super::Event> {
+    let mut guard = BACKTRACK.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(b) = guard.as_mut() else {
+        return events;
+    };
+    let now = Instant::now();
+    let on = now - b.told < Duration::from_millis(250);
+    if b.held.is_empty() && !on {
+        b.server = None;
+        return events;
+    }
+    let mut out = Vec::with_capacity(events.len() + b.held.len());
+    let due = b.held.iter().take_while(|(at, _)| on && *at <= now).count();
+    let due = if on && b.held.len() < 4096 { due } else { b.held.len() };
+    out.extend(b.held.drain(..due).map(|(_, e)| e));
+    for event in events {
+        let super::Event::Packet(p) = &event else {
+            out.extend(b.held.drain(..).map(|(_, e)| e));
+            out.push(event);
+            continue;
+        };
+        let flush = match &**p {
+            C::Login(_) | C::Respawn(_) | C::Disconnect(_) | C::PlayerPosition(_) => true,
+            C::SetEntityMotion(m) => m.id == b.me,
+            C::RemoveEntities(r) => r.ids.contains(&b.target),
+            _ => false,
+        };
+        if flush || !on {
+            out.extend(b.held.drain(..).map(|(_, e)| e));
+            b.away = false;
+            if flush {
+                b.server = None;
+            }
+            out.push(event);
+            continue;
+        }
+        let moved = match &**p {
+            C::MoveEntityPos(m) if m.0.id == b.target => b.server.zip(m.0.delta.as_ref()).map(|(at, d)| d.end(at)),
+            C::MoveEntityPosRot(m) if m.0.id == b.target => b.server.zip(m.0.delta.as_ref()).map(|(at, d)| d.end(at)),
+            C::TeleportEntity(t) if t.id == b.target && t.relatives == 0 => Some(t.position),
+            C::EntityPositionSync(s) if s.id == b.target => Some(s.path.end()),
+            _ => None,
+        };
+        if let Some(at) = moved {
+            b.away = b.server.is_some_and(|was| far(b.eye, at) > far(b.eye, was) + 0.001);
+            b.server = Some(at);
+        }
+        if !b.away {
+            out.extend(b.held.drain(..).map(|(_, e)| e));
+            out.push(event);
+            continue;
+        }
+        b.roll ^= b.roll << 13;
+        b.roll ^= b.roll >> 7;
+        b.roll ^= b.roll << 17;
+        let [lo, hi] = b.latency;
+        let mut at = now + Duration::from_millis(lo + b.roll % (hi - lo + 1));
+        if let Some(last) = b.last_due.filter(|last| at <= *last) {
+            at = last + Duration::from_micros(1);
+        }
+        b.last_due = Some(at);
+        b.held.push_back((at, event));
+    }
+    out
+}
