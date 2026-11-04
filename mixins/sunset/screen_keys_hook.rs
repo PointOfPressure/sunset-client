@@ -1,6 +1,6 @@
 // GUI Move: behind a screen the tick's movement takes the move keys held (the call again has them, so it passes
 // through here).
-// No Slow's Skip (vape-rs's NoSlowdown): the move goes without the item-use slowdown.
+// No Slow's Skip: the move goes without the item-use slowdown.
 // A knockback hit since the last movement (Player.attack): the speed across cut to 0.6 for each, the sprint stopped.
 // Scaffold's Normal: the move goes by the yaw the server is told (movement correction; Silent already turned the keys
 // before the tick, so the PlayerInput sent says the same keys), and without a sprint when its Sprint is Off. Both are

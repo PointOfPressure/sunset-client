@@ -1,5 +1,4 @@
-// Base Finder: chunks that show players were there, looked at the way Trouser-Streak's BaseFinder does (behaviour
-// only, written fresh): block lists in tiers, each with the count it takes (one shulker box is enough, glass takes
+// Base Finder: chunks that show players were there. Block lists are grouped in tiers by the count required (one shulker box is enough, glass takes
 // twenty), and single signs no world makes: written signs, open portals, soul sand bubble columns, builds above the
 // highest terrain, bedrock away from the floor and roof, spawners with none of their structure around them, anything
 // but mushrooms on the nether roof; and entities: item frames without an elytra, resting ender pearls, name-tagged

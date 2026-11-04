@@ -1,4 +1,4 @@
-// Camera and engine-level modules, ported from Meteor's source: Freecam, Free
+// Camera and engine-level modules, implemented for Sunset: Freecam, Free
 // Look, Xray, Tunnel ESP, Void ESP, Light Overlay, and the two that sit on
 // engine hooks, Timer and No Slow.
 
@@ -72,7 +72,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Hide blindness", true)
             .bool("Hide darkness", true)
             .bool("Hide nausea", true)
-            // vape-rs's AntiDebuff (Remove Slowness): slowness and its speed modifier off your own client. The server
+            // Sunset's AntiDebuff (Remove Slowness): slowness and its speed modifier off your own client. The server
             // still slows you, so its anticheat sees you outrun what it expects.
             .bool("Remove slowness", false)
             .bool("Hide fire overlay", true)
@@ -88,7 +88,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Timer", World, "Changes game speed.")
             .num("Multiplier", 2.0, 0.1, 10.0, 0.1),
         Module::new("No Slow", Movement, "No item-use slowdown.")
-            // Skip is vape-rs's NoSlowdown: the game's own slowdown left out of the move, except in water and from a
+            // Skip is No Slow: the game's own slowdown left out of the move, except in water and from a
             // knockback until you land. Scale walks at Ground % / Air % of your speed instead.
             .pick("Mode", &["Skip", "Scale", "GrimAC"])
             .num("Ground %", 100.0, 20.0, 100.0, 5.0)
@@ -395,7 +395,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>, mods: &[Module]) {
 }
 
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
-    // Freecam moves a camera each tick; Meteor's speed is blocks a tick, half
+    // Freecam moves a camera each tick; Sunset's speed is blocks a tick, half
     // of it, the whole of it while sprinting.
     if let Some(m) = on(mods, "Freecam") {
         let playing = game.native_playing();
@@ -498,8 +498,8 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
 }
 
 // Timer and No Slow: the flags the engine hooks read. While you move, Speed's own Timer stands in for Timer's
-// (Meteor's override).
-// Hand View (Meteor's): each arm and what it holds moved (in blocks), turned (degrees) and sized, and the sway the
+// (Sunset's override).
+// Hand View (Sunset's): each arm and what it holds moved (in blocks), turned (degrees) and sized, and the sway the
 // hands have when the view turns taken away. No hand shadow lights the hands at full brightness under blocks and in
 // caves; the totem pop is sized, moved on the screen and sped up (extra ticks of its 40).
 fn hand_view() -> Module {
@@ -570,7 +570,7 @@ fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
     let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
     let factor = no_slow.as_ref().map_or(0.2, |m| (m.n(if ground { "Ground %" } else { "Air %" }) / 100.0) as f32);
     let skip_mode = no_slow.as_ref().is_some_and(|m| m.p("Mode") == "Skip");
-    // Skip (vape-rs's): after a knockback, not until you are on the ground again (this tick still not).
+    // Skip (Sunset's): after a knockback, not until you are on the ground again (this tick still not).
     let knocked = NO_SLOW_KNOCKED.load(Ordering::Relaxed);
     if knocked && ground {
         NO_SLOW_KNOCKED.store(false, Ordering::Relaxed);
@@ -981,7 +981,7 @@ fn mark(game: &mut Game<'_>, all: &[[i32; 3]], redraw: &[[i32; 3]]) {
 
 // ---- Tunnel ESP
 
-// Meteor's TunnelESP: a block you can walk through (air, or no collision and no fluid) or stand on (collision and no
+// Sunset's TunnelESP: a block you can walk through (air, or no collision and no fluid) or stand on (collision and no
 // fluid), each from one lookup.
 fn through(game: &Game<'_>, p: [i32; 3]) -> bool {
     let (facts, state) = (game.res.facts(), game.world.block(p[0], p[1], p[2]));

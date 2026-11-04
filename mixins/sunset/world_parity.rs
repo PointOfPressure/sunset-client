@@ -1,4 +1,4 @@
-// Meteor's movement and world modules (batch F), written fresh from what they do: Enderman Look, Click TP, Auto
+// Sunset's movement and world modules (batch F), written fresh from what they do: Enderman Look, Click TP, Auto
 // Sign, Build Height and Trident Boost.
 
 use super::sunset::{Category, Module, look_at, turn};
@@ -187,7 +187,7 @@ fn click_tp(game: &mut Game<'_>, m: &Module) {
     if f.block_entity || ["door", "button", "lever", "gate", "anvil", "table", "bed"].iter().any(|k| name.contains(k)) {
         return;
     }
-    // On top of it; a side clicked: on top of the block beside it, Meteor's way.
+    // On top of it; a side clicked: on top of the block beside it, Sunset's way.
     let to = [f64::from(block[0]) + 0.5 - f64::from(step[0].signum()), f64::from(block[1]) + 1.0, f64::from(block[2]) + 0.5 - f64::from(step[2].signum())];
     let to = if step[1] != 0 { [f64::from(block[0]) + 0.5, f64::from(block[1]) + 1.0, f64::from(block[2]) + 0.5] } else { to };
     let Some(p) = game.player.as_mut() else {

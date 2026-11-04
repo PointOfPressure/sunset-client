@@ -1,4 +1,4 @@
-// Scaffold's Legit and Godbridge modes, after vape-rs's (github.com/rdbtCVS/vape-rs, MIT). Both work before the game's
+// Scaffold's Legit and Godbridge modes. Both work before the game's
 // tick: the sneak, the look and the right click they give are the game's own for that tick, so a block goes with the
 // game's sequence number and prediction, before the tick's one move packet.
 use super::Game;
@@ -126,7 +126,7 @@ fn climbing(game: &Game<'_>) -> bool {
     ["ladder", "vine", "scaffolding"].iter().any(|e| name.ends_with(e))
 }
 
-// Legit (vape-rs's eagle): sneak while not walking forward, on the ground, at the edge of the block under you; once past
+// Legit (Sunset's eagle): sneak while not walking forward, on the ground, at the edge of the block under you; once past
 // it, sneak stays a moment longer (from Shortest to Longest sneak delay, picked anew as sneak starts). You place.
 fn edge_sneak(game: &mut Game<'_>, b: &mut Bridge, delay: (f64, f64)) {
     let Some(p) = game.player.as_ref() else { return; };
@@ -210,7 +210,7 @@ fn step_at(step: [i32; 2], axis: usize) -> i32 {
     }
 }
 
-// Godbridge (vape-rs's GodBridge, straight bridges): no sneak. The look turns to face back along the bridge, 45 degrees
+// Godbridge (Sunset's GodBridge, straight bridges): no sneak. The look turns to face back along the bridge, 45 degrees
 // to one side; S and that side's strafe key walk you along it. At the edge it lets go and slides up to it, and once
 // you are past the last block's edge (still on it) the look lowers until the crosshair is on that block's side, and
 // a right click puts the next one there. Lasts while S is held and there are blocks.
@@ -245,7 +245,7 @@ fn godbridge(game: &mut Game<'_>, m: &Module, b: &mut Bridge) {
     game.yaw = super::sunset_movement::turn_toward(game.yaw, yaw, rate);
     let turning = angle_between(game.yaw, yaw) > 4.0;
     let ticks = game.ticks;
-    // Jumping (vape-rs's GodBridge): while you go up or down, the crosshair on a block's top counts as well as on its
+    // Jumping (Sunset's GodBridge): while you go up or down, the crosshair on a block's top counts as well as on its
     // side, so the bridge's own look puts a block under you as you clear it, and you land one up.
     let jumped = !(-0.1..=0.1).contains(&rising) && !turning && game.pick().is_some_and(|hit| {
         let at = std::array::from_fn(|i| hit.pos[i] + hit.face[i]);

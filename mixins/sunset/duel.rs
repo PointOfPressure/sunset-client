@@ -1,4 +1,4 @@
-// Ported from Sayer's Duelkit (MIT, github.com/PointOfPressure/duelkit): Wind Jump, Hold to Eat and Pearl Catch
+// Sunset modules: Wind Jump, Hold to Eat and Pearl Catch
 // (Loadouts are in loadouts.rs).
 use super::sunset::{Category, Module, hold, with};
 use super::sunset_util as util;
@@ -40,7 +40,7 @@ pub(super) fn defaults() -> Vec<Module> {
     ]
 }
 
-// Duelkit's numbers: a pearl leaves at 1.5 blocks a tick and slows by 0.99 with 0.03 gravity; a wind charge flies
+// Projectile numbers: a pearl leaves at 1.5 blocks a tick and slows by 0.99 with 0.03 gravity; a wind charge flies
 // straight at 1.5 with neither; its blast (radius 1.2) pushes with 1.22.
 const THROW: f64 = 1.5;
 const RADIUS: f64 = 1.2;
@@ -121,7 +121,7 @@ struct Duel {
     blast_after: Option<(usize, Vec<u64>)>,
     // Hold to Eat: the slot eaten from, its key, and the slot to go back to.
     eating: Option<(usize, String, usize)>,
-    // Pearl Catch: the tick of the catch (as Duelkit counts it), the pearl as thrown (start, speed, tick), the throw
+    // Pearl Catch: the tick of the catch, the pearl as thrown (start, speed, tick), the throw
     // waiting for the look the server has (charge slot, yaw, pitch, retried), and the slot to come back (slot, charge
     // slot) at the start of the tick after a hotbar charge went.
     catch_at: Option<u64>,
@@ -272,7 +272,7 @@ fn charge_ready(game: &Game<'_>, slot: usize) -> bool {
 }
 
 // Pearl Catch's aim, as the server takes the throw a tick from now (its look goes out first): straight down (At feet),
-// at your pearl (Auto: Duelkit's intercept from where you will be, the pearl as thrown flown that far, else the one
+// at your pearl (Auto: an intercept from where you will be, the pearl as thrown flown that far, else the one
 // you see a tick on), or along your look.
 fn catch_aim(game: &Game<'_>, m: &Module) -> (f32, f32) {
     let own = (game.yaw, game.pitch);
@@ -356,8 +356,8 @@ pub(super) fn catch_throw(game: &mut Game<'_>, busy: bool) {
 }
 
 pub(super) fn tick(game: &mut Game<'_>) {
-    // Pearl Catch: a tick before Duelkit's catch tick, the look goes out with the next move packet and the throw
-    // follows at the start of the tick after it (catch_throw): to the server the same moment as Duelkit's throw after
+    // Pearl Catch: a tick before the catch tick, the look goes out with the next move packet and the throw
+    // follows at the start of the tick after it (catch_throw): to the server the same moment as the throw after
     // the catch tick's move packet, in the order Grim wants. Another module's look in the way: up to two ticks more.
     if let Some(at) = duel(|d| d.catch_at)
         && game.ticks + 1 >= at

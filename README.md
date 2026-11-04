@@ -11,14 +11,13 @@
 <p align="center"><a href="https://sunset-client.pages.dev">Website</a> · <a href="https://github.com/PointOfPressure/sunset-client/releases/latest">Latest release</a> · <a href="#install">Install</a> · <a href="#features">Features</a> · <a href="https://discord.gg/fhD2frFdzm">Discord</a> · <a href="CONTRIBUTING.md">Contribute</a></p>
 
 Sunset brings 100+ modules for combat, movement, building and rendering to Horizon, with a configurable ClickGUI,
-key binds, chat commands and saved profiles. It takes inspiration from
-[Meteor Client](https://github.com/MeteorDevelopment/meteor-client) and is written in Rust for Horizon.
+key binds, chat commands and saved profiles. It is written in Rust for Horizon.
 
 ![Sunset 0.8.1 ClickGUI showing the five module categories](docs/images/gui-overview.png)
 
 *Sunset 0.8.1 in game: Combat, Movement, Player, Render and World panels.*
 
-> Not made by, or affiliated with, the Horizon or Meteor projects. Use it where it's allowed: many servers ban
+> Not made by, or affiliated with, the Horizon project. Use it where it's allowed: many servers ban
 > modules like these.
 
 ## Install
@@ -113,7 +112,7 @@ settings cover scale, spacing, colors and panel shape. Advanced controls appear 
 | **Player** | Fast Place (speed 1 to 5), Break Delay, Speed Mine, No Break Reset, Fast Use (with FastXP's throwables: every tick or in bursts), Air Place, Auto Armor (always, with your inventory open or on a key; can skip cursed pieces; Switch key swaps between armour sets), Auto Log, Auto Eat, Auto Gap (Auto pot throws healing potions at your feet; Soup eats soup), Auto Fish, Auto Tool (a tool from the main inventory, or only for the block under you), Auto Replenish (with your inventory open or on a key; potions into an empty hotbar), Auto Clicker (a fixed delay or a rolled clicks-per-second; the right button with its own items, start delay and CPS), Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam (Once: one line or command as it turns on), Chest Stealer (TNT minecarts out of shulker boxes, closes when done, on a key), Inventory Cleaner (PvP, Building, Mining and Survival presets; a Loot key drops spare totems and pearls), Anti Vanish, Server Scan (the software, plugins and channels the server shows), Panic, Rotations (No rotate keeps your look when the server turns you; Lock holds your yaw and pitch), No Status Effects, Mine Through Mobs, Portals, Multitask, Fake Player (single player only), Liquid Interact, No Interact (also Hit fix, Hit select, No miss delay, Anti action, Ghost place: a web behind the player you click, and Anti trap: trap entities and sign editors dropped) |
 | **Render** | ClickGUI, HUD, Radar, ESP (2D corners or brackets with a health bar, boxes coloured by shields, Murderer finder for Murder Mystery: players seen with a murderer item are coloured, listed and, with Callout, named in chat), Tracers, Nametags (banded health colours), Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories (crossbows with multishot, wind charges, pearls in flight with their landing time), Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, Mob Gear ESP, No Render (no fog, water fog, darkness, blindness, fire or other overlays, hurt cam, scoreboard, titles or held item name; Remove slowness takes slowness off your own client, which the server's anticheat sees), Effects (jump circles, footstep and ring trails, hit sparks, rain, snow, fireflies or embers), Target ESP (Brackets, Ghost or Square), Hand View (swing styles, slow swing, no equip drop), Atmosphere (custom fog) |
 | **World** | Nuker, Packet Mine, Timer, Time Changer, Weather Changer, Liquid Filler (Drain scoops an enemy's water or lava), Spawn Proofer, Flamethrower, Auto Shearer, Auto Nametag, Auto Mount, Auto Breed, Auto Sign, Build Height, Enderman Look, Spawner Alerts, Base Finder (block tiers, written signs, open portals, bubble columns, sky builds, lone spawners, name tags, traded villagers...), New Chunks (new and old chunks from the server's palettes and liquid flow, kept per server), Player Activity Detector, Stash Finder, Cave Disturbance Detector, Portal Pattern Finder, Activated Spawner Detector, Unlock All Recipes (every recipe in the book, on any server), Ore Sim (ores worked out from the world seed with the game's own ore generation, for servers that hide them) |
-| **Client** | Profiles (saved and pre-made), Client Sort (Sort, Fill Stacks and Restock buttons, as ClientSort; Shift fill), Friend Guard (no hits on your friends), Modules, Debug Report |
+| **Client** | Profiles (saved and pre-made), Client Sort (Sort, Fill Stacks and Restock buttons; Shift fill), Friend Guard (no hits on your friends), Modules, Debug Report |
 
 </details>
 
@@ -121,25 +120,25 @@ Kill Aura, Trigger Bot and Aim Assist can skip bots (**Anti bot**: players the s
 players on your own team (**Ignore teams**). **HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
 **HUD > Armor HUD** puts your armour (and with **Hands** what you hold) in slot boxes beside the hotbar, or a corner,
 or wherever you drag it with the chat or the menu open: real icons, a durability bar, percent or number, green to red as
-it wears, in a row or a column; **Compact** is vape-rs's Armor Status look. **Coordinates** and **Compass** (vape-rs's
-heading strip) move the same way: open the chat, and drag them by their frames. **HUD > Item durability** writes what is left (a
+it wears, in a row or a column; **Compact** uses a smaller layout. **Coordinates** and **Compass**
+move the same way: open the chat, and drag them by their frames. **HUD > Item durability** writes what is left (a
 number or a percent) on every damageable item in the hotbar and inventories, and **Durability tooltip** adds
 remaining / max to its tooltip. **Food preview**, **Saturation** and **Exhaustion** show on the food row what the
-held food gives, your saturation as gold frames and the exhaustion under it (as AppleSkin does). **Mount HUD** keeps
+held food gives, your saturation as gold frames and the exhaustion under it. **Mount HUD** keeps
 the food row and the XP bar while riding, the mount's hearts above (the jump bar shows while a jump charges).
 **Shield status** shows the seconds left while an axe has your shield down. **Ghost Hand > Cut through** hits the mob
-behind grass, flowers, cobwebs and other blocks with nothing to collide with (as CutThrough does).
+behind grass, flowers, cobwebs and other blocks with nothing to collide with.
 Kill Aura hits one target (**Single**, with **Target lock** to stay on it), each in turn (**Switch**) or several (**Multi**).
-**Rotation mode** is Silent aura (the default, after vape-rs's SilentAura: a look the server alone sees, turned in whole
+**Rotation mode** is Silent aura (the default: a look the server alone sees, turned in whole
 mouse steps at **Aim speed** and sent in the game's own move packets, hitting only within vanilla reach), Snap, Normal,
 Smooth or Custom (its own yaw and pitch speeds), told only to the server or also turning your view (**Rotation view**).
 **Ray cast** hits only when the look really meets the target's box.
-Aim Assist's **Simple** mode (the default, vape-rs's) turns you toward the target on its own while you hold attack;
-**Duelkit** only adds to your own mouse movement. Anti AFK's **Wander** (the default, vape-rs's) makes small turns and steps
-once you have been idle a while; **Meteor** spins, jumps and strafes. No Slow's **Skip** (the default, vape-rs's)
+Aim Assist's **Simple** mode (the default) turns you toward the target on its own while you hold attack;
+**Duelkit** only adds to your own mouse movement. Anti AFK's **Wander** (the default) makes small turns and steps
+once you have been idle a while; **Meteor** spins, jumps and strafes. No Slow's **Skip** (the default)
 leaves the game's item-use slowdown out except in water and after a knockback; **Scale** walks at Ground % / Air %;
 **No item release** never tells the server you let go of what **Release items** lists, so it goes on using it.
-From vape-rs too: Auto Clicker's right button gets **Right items** (`blocks` or item names), **Right sneak only**, a
+Auto Clicker's right button gets **Right items** (`blocks` or item names), **Right sneak only**, a
 **Right start delay** and **Right own CPS**; Shield's **Block hit** puts the shield up after a share of your hits
 (**Manual**) or just before the next hit on you is due (**Predict**); No Interact's **Hit select** holds clicks while
 the player you aim at is still hurt (**Cancel**) or lets through only those that land as their hurt time ends
@@ -149,13 +148,12 @@ Arrow Dodge's **Hit fireballs** knocks a ghast's fireball back; Auto Armor's **S
 sets **Switch sets** lists; Loadouts' **Auto hotbar** keeps hotbar slots filled by **Hotbar rules** (`1:sword,9:ender_pearl`);
 Client Sort's **Shift fill** shift-clicks the slot under the pointer while you hold Shift and the left button.
 It waits while another module has the hand, skips broken weapons, and stabs with spears; a stab never goes through a friend.
-Crystal Aura and Anchor Aura (Rust's, after Anubis's) take the hotbar from whatever you hold (a sword, pickaxe, food or
+Crystal Aura and Anchor Aura take the hotbar from whatever you hold (a sword, pickaxe, food or
 blocks; not a golden apple) and give it back after; they wait while you use the item. They put obsidian down on plain
 ground first. They never set off a crystal or anchor that would deal you more than **Max self damage** or leave you near
 death: without armour with Protection every spot in reach would, so they wait.
 
-Not here (no clean way to do it in Horizon yet): Jesus, Click TP, and the Baritone-based
-Highway Builder and Infinity Miner.
+Not here (no clean way to do it in Horizon yet): Jesus, Click TP, Highway Builder and Infinity Miner.
 
 ## Updating and removing
 
@@ -196,7 +194,7 @@ template, one-command build scripts and two example plugins (Hello, and AFK Fish
 pins, stage it with [horizon-mixins](https://github.com/horizon-rust/horizon-mixins)
 (`horizon-mixins apply --workspace <horizon at that commit> --mods mixins --out stage`) and run
 `cargo check -p horizon-client` in the stage. `tools/verify.py` runs the modules in a test arena in a headless
-game; `tools/audit.py` lists which of Meteor's settings are still missing.
+game.
 
 ## Feature planning
 
@@ -204,11 +202,11 @@ See the [feature roadmap](docs/feature-roadmap.md) for what has landed, what is 
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and block counter, Scaffold Legit and Godbridge modes, Offhand's Auto Totem and its clicks between ticks, Chest Swap packet timing, Auto Weapon's modes, Auto Spear with Lunge on hit and Extended reach, Auto Mace, the HUD layout editor, Kill Aura, Time and Weather Changer fixes, the Dashboard menu style and smooth scrolling, Server Scan, the Crystal Aura and Anchor Aura Macro sections and Anvil merge, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura (from Anubis), Crystal Macro and Anchor Macro (their Macro sections), Shield Breaker, Mace and Spear Swap (Auto Weapon's Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smash fall count Auto Mace goes by), W Tap, Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and block counter, Scaffold Legit and Godbridge modes, Offhand's Auto Totem and its clicks between ticks, Chest Swap packet timing, Auto Weapon's modes, Auto Spear with Lunge on hit and Extended reach, Auto Mace, the HUD layout editor, Kill Aura, Time and Weather Changer fixes, the Dashboard menu style and smooth scrolling, Server Scan, the Crystal Aura and Anchor Aura Macro sections and Anvil merge, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro and Anchor Macro (their Macro sections), Shield Breaker, Mace and Spear Swap (Auto Weapon's Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smash fall count Auto Mace goes by), W Tap, Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
-Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine, and the plugin docs and example in [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) are MIT. Versions up to 0.8.0 stay under the MIT licence they were released with. Many modules follow the behaviour and settings of [Meteor Client](https://github.com/MeteorDevelopment/meteor-client) (GPL-3.0), written again in Rust for Horizon. Scaffold's Legit and Godbridge modes, Offhand's Auto Totem, Kill Aura's Silent aura mode, Aim Assist's Simple mode, Anti AFK's Wander mode, No Slow's Skip mode and No item release, Auto Clicker's right button settings, Shield's Block hit, No Interact's Hit select, Key Throw's Pot and Debuff keys, Auto Gap's Soup, Arrow Dodge's Hit fireballs, Auto Armor's Switch key, Loadouts' Auto hotbar, Client Sort's Shift fill, No Render's Remove slowness, ClickGUI's Inventory blur, ESP's Murderer finder and HUD's Compass follow [vape-rs](https://github.com/rdbtCVS/vape-rs) by rdbtCVS (MIT, notice in [LICENSE](LICENSE)). HUD's Armor HUD looks like uku3lig's Armor HUD, and its food overlays, Mount HUD, Shield status and Ghost Hand's Cut through do what AppleSkin, Better Mount HUD, Shield Status and CutThrough do (Fabric mods; behaviour only, written fresh). Crystal Aura, Anchor Aura and Protect loot follow Anubis 1.0 by 4ldenz (Horus) (MIT, notice in [LICENSE](LICENSE)), ported by Rust. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine, and the plugin docs and example in [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) are MIT. Versions up to 0.8.0 stay under the MIT licence they were released with. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <details>
 <summary>Font credits</summary>

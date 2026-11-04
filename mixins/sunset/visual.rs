@@ -1,4 +1,4 @@
-// How things are drawn, the way Meteor's ESP, Tracers and Nametags let you choose: a colour palette, 3D or 2D
+// How things are drawn, the way Sunset's ESP, Tracers and Nametags let you choose: a colour palette, 3D or 2D
 // boxes, lines, sides or both, a fill opacity and a fade near you; and the cheap ways every drawing module offers
 // (an outline, Potato).
 
@@ -81,7 +81,7 @@ pub(super) fn faded(argb: u32, distance: f64, fade: f64) -> u32 {
     (a << 24) | (argb & 0x00FF_FFFF)
 }
 
-// Green when far, red when close (Meteor's tracers by distance).
+// Green when far, red when close (Sunset's tracers by distance).
 pub(super) fn distance_colour(distance: f64) -> u32 {
     let t = (distance / 60.0).clamp(0.0, 1.0);
     let (r, g) = (((1.0 - t) * 255.0) as u32, (t * 255.0) as u32);

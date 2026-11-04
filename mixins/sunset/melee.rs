@@ -33,7 +33,7 @@ const INPUT_KEYS: [KeyCode; 4] = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::Control
 pub(super) fn defaults() -> Vec<Module> {
     vec![
         // One weapon module for every hit: each section on its own switch, all of them with the Holding filter and the
-        // slot back after the hit (Duelkit's).
+        // slot back after the hit.
         Module::new(WEAPON, Category::Combat, "Picks the weapon for each hit.")
             .pick("Mode", &["Custom", "Sword", "Axe"])
             .bool(BEST, true)
@@ -441,7 +441,7 @@ struct WeaponPlan {
     pub delay: u64,
 }
 
-// What the hand holds, as Duelkit's Holding lists name it.
+// Match what the hand holds against the Holding list.
 fn held_kind(game: &Game<'_>) -> &'static str {
     game.held().map_or("empty", |stack| stack_kind(game, stack))
 }
@@ -484,7 +484,7 @@ fn between(game: &Game<'_>, lo: f64, hi: f64, salt: u64) -> u64 {
     lo + roll(game, salt) % (hi - lo + 1)
 }
 
-// Duelkit's After a delay: the swapped weapon stays in hand a few ticks, from Shortest to Longest delay (picked by the
+// After a delay: the swapped weapon stays in hand a few ticks, from Shortest to Longest delay (picked by the
 // tick it starts, so it varies), before the slot goes back; 0 with Same tick.
 pub(super) fn back_delay(game: &Game<'_>, m: &Module) -> u64 {
     if m.p("Back after") != "A delay" {
@@ -1253,7 +1253,7 @@ pub(super) fn lease_back(game: &mut Game<'_>) -> bool {
     game.selected != before
 }
 
-// Spear reach (Duelkit's): the hotbar spear the crosshair reaches as far as, while what Holding lists is held (a
+// Spear reach (Sunset's): the hotbar spear the crosshair reaches as far as, while what Holding lists is held (a
 // sword or axe). None: off.
 pub(super) fn spear_reach_slot(game: &Game<'_>) -> Option<usize> {
     section(SPEAR).filter(|m| m.p("Spear reach") != "Off" && holding(game, m))?;
@@ -1283,7 +1283,7 @@ pub(super) fn spear_pass(game: &mut Game<'_>, id: u32) {
     }
 }
 
-// Key Throw's Hotbar keys on a Lunge spear (Duelkit's Quick use): a jab with it at the start of the next tick, before
+// Key Throw's Hotbar keys on a Lunge spear (Sunset's Quick use): a jab with it at the start of the next tick, before
 // its move packet (the lunge is the jab's), and the slot you held back in the same tick.
 pub(super) fn quick_lunge(game: &mut Game<'_>, slot: usize) -> bool {
     // No charge check: the game's key selected the spear, which restarted this client's charge, while the server's

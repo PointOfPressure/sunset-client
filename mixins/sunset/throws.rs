@@ -609,7 +609,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     }
 }
 
-// Throwpot (vape-rs's), on the Pot key: the hotbar's healing splash potions and soups (Pot type), in hotbar order or
+// Throwpot (Sunset's), on the Pot key: the hotbar's healing splash potions and soups (Pot type), in hotbar order or
 // with Random order shuffled; Dynamic takes as many as the health you miss needs (a potion 4, a strong one 8, a soup
 // 7), Single one. With Throw bowls each soup's bowl is dropped after it.
 fn pot_run(game: &Game<'_>, m: &Module) -> std::collections::VecDeque<Step> {
@@ -647,7 +647,7 @@ fn pot_run(game: &Game<'_>, m: &Module) -> std::collections::VecDeque<Step> {
     run
 }
 
-// ThrowDebuff (vape-rs's), on the Debuff key: the hotbar's splash potions of what Debuffs lists, thrown along your
+// ThrowDebuff (Sunset's), on the Debuff key: the hotbar's splash potions of what Debuffs lists, thrown along your
 // look: One of each kind, All of them, or the First.
 fn debuff_run(game: &Game<'_>, m: &Module) -> std::collections::VecDeque<Step> {
     let mut seen: Vec<&str> = Vec::new();
@@ -678,7 +678,7 @@ fn start_run(game: &Game<'_>, owner: &'static str, run: std::collections::VecDeq
     });
 }
 
-// Auto Gap's Soup (vape-rs's AutoHeal, Legit): at or under Soup health, the first hotbar soup is used, and with Drop
+// Auto Gap's Soup (Sunset's AutoHeal, Legit): at or under Soup health, the first hotbar soup is used, and with Drop
 // bowls its bowl dropped, Soup delay after the last.
 fn auto_soup(game: &Game<'_>, m: &Module) {
     let health = game.player.as_ref().map_or(20.0, |p| f64::from(p.health.health()));

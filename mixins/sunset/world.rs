@@ -1,4 +1,4 @@
-// World modules ported from Meteor's source: Auto Shearer, Auto Nametag,
+// World modules implemented for Sunset: Auto Shearer, Auto Nametag,
 // Auto Mount, Auto Breed, Flamethrower; and Bow Aimbot and Spawner Alerts.
 
 use super::sunset::{Camera, Canvas, Category, Module, hold};
@@ -43,7 +43,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Rotate", true)
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "pig,cow,sheep,chicken,rabbit"),
-        // Fill (Meteor's) puts blocks in liquids; Drain (sunset_drain) takes away an enemy's with a bucket or a web.
+        // Fill (Sunset's) puts blocks in liquids; Drain (sunset_drain) takes away an enemy's with a bucket or a web.
         Module::new("Liquid Filler", World, "Fills water and lava with blocks, or drains an enemy's.")
             .pick("Mode", &["Fill", "Drain"])
             .pick("Place in", &["Both", "Water", "Lava"])
@@ -617,7 +617,7 @@ fn bow_aimbot(game: &mut Game<'_>, m: &Module) {
     let (rx, rz) = (t.pos[0] - eye[0], t.pos[2] - eye[2]);
     let ry = t.pos[1] + (t.hi[1] - t.lo[1]) / 2.0 - eye[1];
     let h = (rx * rx + rz * rz).sqrt();
-    // Meteor's ballistic pitch: g = 0.006 per tick per tick squared, speed in blocks.
+    // Sunset's ballistic pitch: g = 0.006 per tick per tick squared, speed in blocks.
     let g = 0.006;
     let v = f64::from(power);
     let v2 = v * v;

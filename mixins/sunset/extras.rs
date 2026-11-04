@@ -1,8 +1,8 @@
 // Client: the things that are not cheats (Unlock All Recipes, in World, works in recipes.rs). Client Sort, like
-// ClientSort as Sayer uses it: three small buttons down the right of each part of an inventory screen (sort_buttons.rs),
+// Client Sort: three small buttons down the right of each part of an inventory screen (sort_buttons.rs),
 // Sort, Fill Stacks and Restock. Sort goes in creative order, by count with Shift, by name with Ctrl and by id with Alt; Horizon's
 // sort key does the same, on the hotbar only while the pointer is on it. The clicks go out a few a tick, an operation
-// at least two ticks after the one before. Shift fill (vape-rs's InventoryFill) shift-clicks the slot under the pointer
+// at least two ticks after the one before. Shift fill shift-clicks the slot under the pointer
 // while you hold Shift and the left button.
 
 use super::sunset::{Category, Module};
@@ -34,7 +34,7 @@ pub(super) fn defaults() -> Vec<Module> {
 // Client Sort is on (read by the buttons' hooks each frame).
 static ON: AtomicBool = AtomicBool::new(false);
 
-// Shift fill (vape-rs's InventoryFill): the slot under the pointer this frame, the last slot it clicked, and when the
+// Shift fill: the slot under the pointer this frame, the last slot it clicked, and when the
 // next click may go.
 struct Fill {
     hovered: Option<usize>,

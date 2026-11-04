@@ -1,4 +1,4 @@
-// Anti Vanish (Meteor's AntiVanish): a player who leaves the tab list with no chat line about them has likely gone
+// Anti Vanish (Sunset's AntiVanish): a player who leaves the tab list with no chat line about them has likely gone
 // into vanish, and one who comes back with none has come out of it. Completion check also asks the server which
 // names a command (/msg) completes: a name it completes that the tab list doesn't show is online but hidden.
 // Watched players narrows all of it to some names; Server watchlists gives a server its own.

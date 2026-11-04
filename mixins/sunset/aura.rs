@@ -1,7 +1,6 @@
-// Kill Aura, ported from Meteor's source with its settings: which weapons it
+// Kill Aura, implemented for Sunset with its settings: which weapons it
 // attacks with, how it rotates and switches, who it targets and how many at
-// once, and its timing. Its default Rotation mode, Silent aura, is vape-rs's
-// SilentAura (github.com/rdbtCVS/vape-rs, MIT): a silent look turned in whole
+// once, and its timing. Its default Rotation mode, Silent aura, uses a silent look turned in whole
 // mouse counts that the game's own move packet carries, and hits only where
 // that look meets the target within vanilla reach (see sunset_rotation).
 
@@ -26,7 +25,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Yaw speed", 60.0, 5.0, 180.0, 5.0)
             .num("Pitch speed", 60.0, 5.0, 180.0, 5.0)
             .num("Smoothing", 0.0, 0.0, 0.9, 0.05)
-            // Silent aura's turning speed (vape-rs's SilentAura Aim speed).
+            // Silent aura's turning speed.
             .num("Aim speed", 7.0, 1.0, 10.0, 0.1)
             .bool("Ray cast", false)
             .bool("Auto switch", false)

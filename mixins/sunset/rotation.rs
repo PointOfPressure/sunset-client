@@ -52,7 +52,7 @@ pub(super) fn direction(look: (f32, f32)) -> [f64; 3] {
 
 // ---- the silent look the game's own move packet carries (Kill Aura's Silent aura mode)
 //
-// Ported from vape-rs (github.com/rdbtCVS/vape-rs, MIT, commit d6e48b1): its SilentAura's managed rotation
+// Sunset rotation: its SilentAura's managed rotation
 // (`modules/combat/rotation.rs` Managed, `silent_aura.rs` updateAim and getSpeed). The look moves in whole mouse
 // counts of your sensitivity, as a mouse would turn it, 50 small steps a tick toward a target that a PID controller
 // with a little jitter keeps on the aim point. It goes to the server as the rotation the game's position sender is

@@ -1,4 +1,4 @@
-// Crystal Aura (Rust's, PR #16, after Anubis 1.0's CrystalAuraModule by 4ldenz/Horus, MIT): places end crystals (and
+// Crystal Aura (Rust's, PR #16): places end crystals (and
 // the obsidian under them, Auto Obsidian) and breaks them on enemy players, for the damage it can see they take and
 // never more than Max Self Damage to you or a friend. Only crystals the server has shown are hit; a placement waits for
 // its crystal or a timeout.
@@ -25,11 +25,10 @@ use std::time::{Duration, Instant};
 const NAME: &str = "Crystal Aura";
 const MAX_ENTITIES: usize = 512;
 const MAX_CANDIDATES: usize = 4;
-// Crystal and obsidian spots weighed a tick, best first, until none left could beat the best (Anubis's): only the
-// first four were, so when those four failed (too close to you, say) it stood idle with better ones untried.
+// Evaluate up to eight crystal and obsidian setups after ranking them by potential damage.
 const MAX_SETUPS: usize = 8;
 // A crystal or obsidian spot it has turned toward this long without reaching it is left alone for SKIP_TICKS
-// (Anubis's Anchor Aura does the same).
+// (Anchor Aura does the same).
 const AIM_TICKS: u64 = 12;
 const SKIP_TICKS: u64 = 40;
 const PREDICTIONS: usize = 24;
@@ -508,8 +507,7 @@ fn setup_valid(game: &Game<'_>, base: [i32; 3]) -> bool {
     if !f.replaceable || f.fluid != super::Fluid::None || f.fluid_level != 0 || f.waterlogged {
         return false;
     }
-    // On something solid, as Anubis lays it: the whole range is scanned each tick, and obsidian hung off a wall
-    // or a ceiling is not where a fight is.
+    // Require solid ground under the obsidian.
     util::facts(game, [base[0], base[1] - 1, base[2]]).full_collision
         && tactics::breakable(game, base)
         && util::can_place(game, base, true)
@@ -547,7 +545,7 @@ fn crystal_column(game: &Game<'_>, base: [i32; 3]) -> bool {
         a.x < hi[0] && b.x > lo[0] && a.y < hi[1] && b.y > lo[1] && a.z < hi[2] && b.z > lo[2]
     };
     // An enemy standing in the spot now doesn't rule it out if it will have moved out by the time the click arrives
-    // (the predicted boxes below; Anubis's canHostSoon). Anyone else in the way does.
+    // (using the predicted boxes below). Anyone else in the way does.
     if game.player.as_ref().is_some_and(|p| hits(p.bounds()))
         || game.mobs.iter().any(|mob| !mob.removed && hits(mob.bounds()) && !util::player_enemy(game, mob))
     {
@@ -634,7 +632,7 @@ fn reachable(game: &Game<'_>, m: &Module, action: Action, budget: &mut Budget) -
     }
 }
 
-// Where to look to click the obsidian under a crystal spot, best first (Anubis's): the point of its top your look
+// Where to look to click the obsidian under a crystal spot, best first: the point of its top your look
 // already crosses, the middle of its top, then the middle of each side facing you. The points are 0.1 inside the
 // block, so a look a little off still lands on it; any face of it takes the crystal.
 fn place_aims(game: &Game<'_>, base: [i32; 3]) -> Vec<[f64; 3]> {
@@ -985,8 +983,7 @@ pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Op
     }
     st(|s| s.clock.crystals = if count == 0 { 0 } else { (start + 64) % count });
     if best.is_none() && stage.new_crystal() && evaluated < MAX_CANDIDATES && crystal_slot(game, m).is_some() {
-        // Every spot in reach each tick, round your eyes, best first by the most it could deal, as Anubis scans
-        // (it was 96 spots a tick in turn, so the best one for a moving target could take 14 ticks to come round).
+        // Consider crystal spots around the player's eyes in damage order.
         let Some(origin) = game.eye_position().map(|eye| eye.map(|v| v.floor() as i32)) else {
             return None;
         };

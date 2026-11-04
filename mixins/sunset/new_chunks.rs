@@ -1,5 +1,4 @@
-// New Chunks: which chunks the server has just generated and which were there before, the way Trouser-Streak's
-// NewerNewChunks tells them apart (behaviour only, written fresh). The palette method reads the order of each section's
+// New Chunks: which chunks the server has just generated and which were there before. The palette method reads the order of each section's
 // palette as the server sent it: a section just generated starts as all air and gains its blocks one by one, so its
 // palette begins with air whatever its first block is; a section read from a save was packed in the order its blocks
 // come, so its palette begins with its first block. The liquid method: liquid already flowing when a chunk comes was
@@ -7,7 +6,7 @@
 // and old ones green on a flat overlay, kept in the mod's data folder per world or server and per dimension. Horizon's
 // own server (single player too) packs every palette in block order, so there only the liquid method can tell.
 //
-// Player Activity Detector (Trouser-Streak's OnlinePlayerActivityDetector): an old chunk whose palette still names
+// Player Activity Detector (Sunset's OnlinePlayerActivityDetector): an old chunk whose palette still names
 // blocks none of its blocks are any more has changed since the server loaded it, so it was kept loaded: a player is
 // (or was just) near it. Chunks you had yourself within Recent visit don't count (you may have kept those loaded).
 

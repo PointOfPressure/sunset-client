@@ -1,6 +1,6 @@
-// Sunset's combat modules beyond the core ones, ported from Meteor's source:
+// Sunset's combat modules beyond the core ones, implemented for Sunset:
 // Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow,
-// Offhand and Auto EXP; and Auto City (Meteor's, as Rust's PR #16 has it).
+// Offhand and Auto EXP; and Auto City (Rust's PR #16).
 
 use super::sunset::{Category, Module, gui_open, hold, is_friend, own_id, with};
 use super::sunset_util::*;
@@ -93,7 +93,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Center", true)
             .bool("Rotate", true),
         Module::new("Aim Assist", Combat, "Helps your aim.")
-            // Simple is vape-rs's AimAssist (turns you toward the target on its own); Duelkit only adds to your mouse.
+            // Simple turns you toward the target on its own; the Duelkit mode only adds to your mouse.
             .pick("Mode", &["Simple", "Duelkit", "Clicks only"])
             .bool("Require mouse down", true)
             .num("Horizontal speed", 5.0, 1.0, 10.0, 0.1)
@@ -196,7 +196,7 @@ fn cs<R>(f: impl FnOnce(&mut Cs) -> R) -> R {
     f(g.get_or_insert_with(Cs::default))
 }
 
-// True on the tick a module turns on: Meteor's onActivate.
+// True on the tick a module turns on.
 fn activated(name: &str, on: bool) -> bool {
     cs(|c| {
         if on {
@@ -216,7 +216,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
             activated(name, false);
             continue;
         };
-        // Meteor's onActivate waits for the world: a module turned on from
+        // Activation waits for the world: a module turned on from
         // the chat box starts the tick after.
         if !in_world(game) {
             continue;
@@ -896,7 +896,7 @@ fn burrow(game: &mut Game<'_>, m: &Module, just: bool) {
         return;
     };
     if just {
-        // The checks of Meteor's onActivate.
+        // Check the state at activation.
         if !replaceable(game, at) {
             report(game, "Already burrowed.");
             toggle_off(game, "Burrow");
@@ -973,7 +973,7 @@ pub(super) enum Want {
     Item(&'static str),
 }
 
-// Meteor's Offhand: the chosen Item (a totem by Auto Totem), a golden apple or potion while you hold right click with
+// Sunset's Offhand: the chosen Item (a totem by Auto Totem), a golden apple or potion while you hold right click with
 // Right gapple or Sword pot (or always with a sword or axe in hand).
 pub(super) fn offhand_want(game: &Game<'_>, m: &Module) -> Want {
     use winit::event::MouseButton;
@@ -1114,7 +1114,7 @@ fn auto_exp(game: &mut Game<'_>, m: &Module) {
     });
 }
 
-// ---- Aim Assist (Duelkit's AimAssist, around your own mouse turn once a frame)
+// ---- Aim Assist around your own mouse turn once a frame
 //
 // Only ever adds to what your hand is doing. Pull: moving the mouse toward the target turns you a bit further toward
 // it. Stickiness: while the crosshair is on the target your own turning is slowed. Tracking: while on (or almost on)
@@ -1439,7 +1439,7 @@ pub(super) fn aim_after(game: &mut Game<'_>) {
 }
 
 
-// ---- Aim Assist's Simple mode: vape-rs's AimAssist (github.com/rdbtCVS/vape-rs, MIT, commit d6e48b1, its Simple
+// ---- Aim Assist's Simple mode:
 // submodule). A worker step for each millisecond since the last frame (at most 100) eases a velocity toward the
 // target's side, a little faster the further off, the nearer, and when it jumps about; a slow random drift is added;
 // the frame turns you by the whole mouse counts that adds up to at your sensitivity. Horizontal only unless Aim

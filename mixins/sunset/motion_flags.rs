@@ -1,6 +1,6 @@
 // What Sunset asks of the player's own movement, set once a tick by the game and read by the hooks on the
-// movement code (the window's thread only, never a server's): Safe Walk keeps to edges as sneaking does (Meteor's
-// ClipAtLedgeEvent), Speed sets the move across the ground (Meteor's PlayerMoveEvent), Velocity scales how
+// movement code (the window's thread only, never a server's): Safe Walk keeps to edges as sneaking does (Sunset's
+// ClipAtLedgeEvent), Speed sets the move across the ground (Sunset's PlayerMoveEvent), Velocity scales how
 // flowing liquids push (the flow each fluid block gives, across and up), Flight sets the air's pull, GUI Move
 // keeps a sprint going behind a screen, and Kill Aura's Target strafe turns the move across the ground.
 

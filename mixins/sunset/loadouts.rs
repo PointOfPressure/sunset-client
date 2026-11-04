@@ -1,8 +1,8 @@
-// Loadouts, ported from Sayer's Duelkit (MIT, github.com/PointOfPressure/duelkit) and grown into inventory profiles: a
+// Loadouts, implemented for Sunset and grown into inventory profiles: a
 // loadout keeps the hotbar and the off hand, with Armour what you wear, with Full layout the main inventory too, and
 // the Locked slots of the time. Equipping puts every saved item back where it was; Locked slots are left alone by every
 // Sunset module that moves items; Refill broken tools puts the same tool from the inventory in the hotbar slot whose
-// tool just broke; Auto hotbar (vape-rs's AutoHotbar) keeps hotbar slots filled by rules. Loadouts are shared as files
+// tool just broke; Auto hotbar keeps hotbar slots filled by rules. Loadouts are shared as files
 // through the exports and imports folders, as profiles are.
 use super::sunset::{Canvas, Category, Module, Shape, say, with};
 use super::sunset_util as util;
@@ -74,7 +74,7 @@ pub(super) fn locked(slot: usize) -> bool {
 
 // Each loadout a line "name|hotbar|offhand|armour|main|locked": nine hotbar slots, then four armour slots (head to
 // feet) and the 27 of the main inventory (both empty when not kept), comma separated, each "-" (left alone) or an
-// item id with its custom name after a "~" when it had one (names %-escaped); then the locked slot numbers. Duelkit's
+// item id with its custom name after a "~" when it had one (names %-escaped); then the locked slot numbers. The profile's
 // lines have the first three fields only. Kept in loadouts.txt in the mod's data folder.
 struct Slot {
     item: String,
@@ -87,7 +87,7 @@ struct Loadout {
     offhand: Option<Slot>,
     armour: Vec<Option<Slot>>,
     main: Vec<Option<Slot>>,
-    // None in Duelkit's lines: equipping one leaves the locked slots as they are.
+    // None in older profile lines: equipping one leaves the locked slots as they are.
     locked: Option<String>,
 }
 
@@ -190,8 +190,8 @@ fn wanted(l: &Loadout, k: usize) -> Option<&Slot> {
 
 // Puts each saved item in its slot from the inventory slot that matches it best (the name too, before just the item),
 // slots that already hold theirs staying: the hotbar and the off hand with the clicks of a number key pressed over it
-// in the inventory, as Duelkit's; armour and the main inventory picked up, put down and the stack it met put back.
-// Then the loadout's locked slots are the ones locked (a Duelkit loadout leaves them).
+// in the inventory, using slot swaps; armour and the main inventory picked up, put down and the stack it met put back.
+// Then the loadout's locked slots are the ones locked (a loadout with no lock list leaves them).
 fn equip(game: &mut Game<'_>, l: &Loadout) {
     if !util::inventory_idle(game) {
         return;
@@ -310,7 +310,7 @@ fn rule_score(game: &Game<'_>, rule: &str, s: &ItemStack) -> Option<f64> {
     Some(f64::from(info.attack_damage) * 10_000.0 + f64::from(info.max_damage) - f64::from(s.damage))
 }
 
-// Auto hotbar (vape-rs's AutoHotbar): each rule `slot:what` (slots 1 to 9) gets the best match from the inventory
+// Auto hotbar: each rule `slot:what` (slots 1 to 9) gets the best match from the inventory
 // (another hotbar slot no rule wants it for, or the main inventory) swapped in, one swap each Hotbar delay, with
 // your inventory open (Inventory open) or with no screen (Always). Locked slots are left alone.
 fn auto_hotbar(game: &mut Game<'_>, m: &Module) {
@@ -354,7 +354,7 @@ fn auto_hotbar(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// The panel's measures, as Duelkit's: rows 40 apart, each a name over a hotbar strip 182 by 22 with the off hand's
+// The panel's measures, as follows: rows 40 apart, each a name over a hotbar strip 182 by 22 with the off hand's
 // slot to its left.
 const ROW: f32 = 40.0;
 const BAR_W: f32 = 182.0;

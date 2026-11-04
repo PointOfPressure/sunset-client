@@ -1,5 +1,4 @@
-// HUD's Armor HUD (the look of uku3lig's Armor HUD, with vape-rs's Armor Status as its Compact style), Compass
-// (vape-rs's), Shield status, Item durability (on every damageable item's icon, and remaining/max in its tooltip), the
+// HUD's Armor HUD (with Compact style), Compass, Shield status, Item durability (on every damageable item's icon, and remaining/max in its tooltip), the
 // settings that change the game's own bars (Mount HUD, Food preview, Saturation, Exhaustion; drawn by hunger_flags.rs),
 // and the layout editor: with the chat (or the menu) open, Coordinates, Compass and the Armor HUD move by dragging.
 use super::Game;
@@ -80,7 +79,7 @@ fn wear_rgb(fraction: f32) -> u32 {
     horizon_client::hud_layout::hsv_to_argb(fraction / 3.0, 1.0, 1.0, 0) & 0x00FF_FFFF
 }
 
-// Percent left, as vape-rs's Armor Status rounds it: 1 for the last point, never 0 while it holds.
+// Percent left rounds as follows: 1 for the last point, never 0 while it holds.
 fn percent(damage: u32, max: u32) -> u32 {
     let left = max.saturating_sub(damage);
     if left == 0 { 0 } else { ((left * 100).div_ceil(max)).max(1) }
@@ -217,7 +216,7 @@ pub(super) fn chat_closed() {
     CHAT_PRESSED.store(false, Relaxed);
 }
 
-// Compass (vape-rs's CompassStrip): 140 degrees of headings round the one you face, a tick every 5 degrees, a label
+// Compass: 140 degrees of headings round the one you face, a tick every 5 degrees, a label
 // every 15 (N, NE, E... at the eighths), and your heading over the middle.
 fn compass(game: &Game<'_>, hud: &Module, w: f32, h: f32, out: &mut Vec<Shape>) {
     const WIDTH: f32 = 180.0;

@@ -30,7 +30,7 @@ struct State {
     select: Select,
 }
 
-// Hit select (vape-rs's HitSelect): Cancel's verdict for this tick and its rest after a failed chance; Sprint reset's
+// Hit select: Cancel's verdict for this tick and its rest after a failed chance; Sprint reset's
 // ticks since you were knocked, your hurt time last tick, the last reset stamped and one waiting to be, the last hit
 // that went (at whom, when), and the measured hit-to-hurt delays (ms).
 #[derive(Default)]

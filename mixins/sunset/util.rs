@@ -1,5 +1,4 @@
-// Shared helpers for Sunset's modules, ported from Meteor's BlockUtils,
-// InvUtils, PlayerUtils and TargetUtils: placing blocks, finding items in the
+// Shared helpers for Sunset's modules: placing blocks, finding items in the
 // hotbar, picking targets, seeing a block through the world.
 
 use super::sunset::{Camera, Canvas, Module, hold, look_at, say, toggle, turn_then, with};
@@ -196,7 +195,7 @@ pub(super) fn feet_block(game: &Game<'_>) -> Option<[i32; 3]> {
     Some(if replaceable(game, p) { p } else { [p[0], p[1] + 1, p[2]] })
 }
 
-// `PlayerUtils.centerPlayer`: on the middle of its block. The move packet of
+// Center the player on the middle of its block. The move packet of
 // the tick carries it (the server takes one a tick).
 pub(super) fn center_player(game: &mut Game<'_>) {
     if let Some(p) = game.player.as_mut() {
@@ -226,7 +225,7 @@ pub(super) fn clear_line(game: &Game<'_>, to: [f64; 3], except: [i32; 3]) -> boo
     true
 }
 
-// Meteor's `isOutOfRange`, the other way round: within `range` of the eyes,
+// Sunset's `isOutOfRange`, the other way round: within `range` of the eyes,
 // and either in plain sight or within `walls`.
 pub(super) fn in_reach(game: &Game<'_>, p: [i32; 3], range: f64, walls: f64) -> bool {
     let Some(eye) = game.eye_position() else {
@@ -253,7 +252,7 @@ const SIDES: [([i32; 3], i32); 6] = [
     ([1, 0, 0], 4),
 ];
 
-// `BlockUtils.getPlaceSide`: a neighbour to click, the one the eyes face most.
+// Find a neighbour to click, preferring the face toward the eyes.
 pub(super) fn place_side(game: &Game<'_>, p: [i32; 3]) -> Option<([i32; 3], i32)> {
     let eye = game.eye_position()?;
     let c = center_of(p);
@@ -298,12 +297,12 @@ fn obstructed(game: &Game<'_>, p: [i32; 3]) -> bool {
     game.mobs.iter().any(|m| m.alive() && !m.removed && hits(m.bounds()))
 }
 
-// `BlockUtils.canPlaceBlock`.
+// Check whether a block can be placed here.
 pub(super) fn can_place(game: &Game<'_>, p: [i32; 3], check_entities: bool) -> bool {
     p[1] >= -64 && p[1] < 320 && replaceable(game, p) && (!check_entities || !obstructed(game, p))
 }
 
-// `BlockUtils.place`: puts the block in hotbar `slot` (or the offhand's, slot OFFHAND) at `p`, clicking a
+// Put the block in hotbar `slot` (or the offhand's, slot OFFHAND) at `p`, clicking a
 // neighbour (or the position itself when there is none, an air place).
 pub(super) fn place_block(game: &mut Game<'_>, p: [i32; 3], slot: usize, rotate: bool, check_entities: bool) -> bool {
     if (slot > 8 && slot != OFFHAND) || game.remote.is_none() || !can_place(game, p, check_entities) {
@@ -383,7 +382,7 @@ pub(super) fn find_hotbar(game: &Game<'_>, want: impl Fn(&str) -> bool) -> Optio
 // The offhand, as a slot place_block takes.
 pub(super) const OFFHAND: usize = 40;
 
-// `InvUtils.findInHotbar`: the offhand first, then the hand, then the rest of the hotbar.
+// Find a matching item in the offhand first, then the hand, then the rest of the hotbar.
 pub(super) fn find_held(game: &Game<'_>, want: impl Fn(&str) -> bool) -> Option<usize> {
     if game.offhand.as_ref().is_some_and(|s| want(short(&s.item))) {
         return Some(OFFHAND);
@@ -566,7 +565,7 @@ pub(super) fn spared(game: &Game<'_>, m: &Module, id: u32, player: bool) -> bool
 
 pub(super) const PRIORITIES: &[&str] = &["Lowest distance", "Highest distance", "Lowest health", "Closest angle"];
 
-// `TargetUtils.getPlayerTarget`: the best player within `range` by priority.
+// Find the best player within `range` by priority.
 pub(super) fn player_target(game: &Game<'_>, range: f64, priority: &str) -> Option<Target> {
     let eye = game.eye_position()?;
     let mut list: Vec<Target> = other_players(game)
@@ -622,8 +621,7 @@ pub(super) fn in_world(game: &Game<'_>) -> bool {
 }
 
 // The most damage the nearest end crystal would do to something standing at `at`
-// (a power 6 blast with nothing in the way and no armour: Meteor's DamageUtils
-// without the raycast).
+// (a power 6 blast with nothing in the way and no armour, without a raycast).
 pub(super) fn crystal_damage(game: &Game<'_>, at: [f64; 3]) -> f64 {
     let mut worst: f64 = 0.0;
     for c in &game.crystals {

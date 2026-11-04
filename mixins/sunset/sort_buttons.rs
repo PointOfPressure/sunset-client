@@ -6,7 +6,7 @@ use horizon_client::hud::{HudBatch, rgba};
 const SIDE: f32 = 9.0;
 // From the top of one button to the next.
 const STEP: f32 = 10.0;
-// Their left edge: 4 in from the screen's right one (176), as ClientSort's offset puts them.
+// Their left edge: 4 in from the screen's right one (176), as the sort buttons' offset puts them.
 const X: f32 = 172.0;
 
 // Each button: its corner, which of the three it is, and the slots of its part. Horizon's parts, and your main

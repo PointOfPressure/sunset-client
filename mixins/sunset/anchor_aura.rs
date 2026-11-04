@@ -1,4 +1,4 @@
-// Anchor Aura (Rust's, PR #16, after Anubis 1.0's AnchorAuraModule by 4ldenz/Horus, MIT): places, charges and sets off
+// Anchor Aura (Rust's, PR #16): places, charges and sets off
 // respawn anchors on enemy players outside the Nether. Each step waits for the server to show the block changed; the
 // client never predicts it.
 use super::sunset::{Category, Module, cancel_turns, gui_open, look_at, try_turn_then, with};
@@ -504,9 +504,7 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
     let Some(target) = targets.first() else {
         return None;
     };
-    // Every anchor round each target, each tick, as Anubis looks (4 across, 3 down and 4 up from its feet). It read
-    // 128 blocks of the range a tick in turn, so an anchor it had just placed went unseen for up to 10 ticks and it
-    // placed more beside it.
+    // Scan anchors round each target each tick (4 across, 3 down and 4 up from its feet).
     let mut candidates = Vec::new();
     for t in &targets {
         let feet = t.pos.map(|v| v.floor() as i32);
@@ -576,8 +574,7 @@ pub(super) fn prepare(game: &mut Game<'_>, m: &Module, ticks: u64) -> Option<Rat
                 }
             }
         }
-        // Best first, as Anubis tries them (they were turned round by a counter, so the four tried each tick were
-        // seldom the best four).
+        // Evaluate the most promising positions first.
         places.sort_by(|a, b| optimistic(*b, &targets).total_cmp(&optimistic(*a, &targets)));
         candidates.extend(places);
     }

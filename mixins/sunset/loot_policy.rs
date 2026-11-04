@@ -2,7 +2,7 @@
 pub const CAPACITY: usize = 16;
 pub const TTL_MS: u64 = 30_000;
 pub const DROP_MARGIN: f64 = 2.0;
-// Anubis's: a death spot with no dropped item left round it (8 blocks across, 4 up or down) is let go this long
+// A death spot with no dropped item left round it (8 blocks across, 4 up or down) is let go this long
 // after the death, so one kill doesn't hold every crystal back for the whole TTL.
 pub const EMPTY_GRACE_MS: u64 = 3_000;
 pub const LOOT_BOX: [f64; 3] = [8.0, 4.0, 8.0];

@@ -1,5 +1,4 @@
-// Base-hunting modules beside Base Finder, written fresh from what Meteor's Stash Finder and Trouser-Streak's hunting
-// modules do (behaviour only): Stash Finder (chunks full of storage), Cave Disturbance Detector (a plain air block
+// Base-hunting modules beside Base Finder: Stash Finder (chunks full of storage), Cave Disturbance Detector (a plain air block
 // in a cave's cave air: someone dug there), Portal Pattern Finder (a portal's shape left in plain air inside cave
 // air), Activated Spawner Detector (spawners a player has been near) and Mob Gear ESP (mobs wearing what players
 // lose).

@@ -1,4 +1,4 @@
-// Entity Control (Meteor's, which takes in Boat Fly): the boat you drive goes where you look at the speed you set,
+// Entity Control (Sunset's, which takes in Boat Fly): the boat you drive goes where you look at the speed you set,
 // flies up with Jump and down with Sprint, and holds its height otherwise. Horizon simulates a driven boat on the
 // client and sends it once a tick (MoveVehicle), so the boat's own tick is where its motion is replaced. Animals
 // are driven by the server from your input on Horizon's server, and need a saddle on any server, so this is boats.
@@ -38,7 +38,7 @@ fn drive(game: &Game<'_>, m: &Module, velocity: Vec3, on_ground: bool, in_water:
     let held = |k: KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
     let mut v = velocity;
     if m.b("Speed") && (!m.b("Only on ground") || on_ground || m.b("Fly")) && (m.b("In water") || !in_water) {
-        // The keys' direction turned by the view (PlayerUtils.getHorizontalVelocity).
+        // Turn the keys' direction by the view.
         let (f, s) = (f64::from(held(KeyCode::KeyW)) - f64::from(held(KeyCode::KeyS)), f64::from(held(KeyCode::KeyA)) - f64::from(held(KeyCode::KeyD)));
         let len = f.hypot(s);
         let (x, z) = if len > 0.0 {

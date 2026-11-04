@@ -1,4 +1,4 @@
-// ESP's Murderer finder (vape-rs's MurdererFinder): every other player seen with one of the Murderer items in hand is
+// ESP's Murderer finder: every other player seen with one of the Murderer items in hand is
 // remembered until the world changes, drawn in the Murderer color, listed at the top of the screen and, with Callout,
 // named in chat, one line a delay.
 use super::sunset::{Module, Shape};

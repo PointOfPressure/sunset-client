@@ -272,7 +272,7 @@ pub(super) fn hit(game: &Game<'_>) {
     }
 }
 
-// Block hit (vape-rs's BlockHit), each tick, with a sword, axe or mace in hand and a shield in the off hand: Manual
+// Block hit (Sunset's BlockHit), each tick, with a sword, axe or mace in hand and a shield in the off hand: Manual
 // keeps the shield up for Block hit ticks after a share of your hits; Predict times the next hit on you from the
 // last three gaps between hurts (0.25 to 1.5 s) and puts the shield up from Max hurt time (plus the ping with Include
 // ping) before it until Hold after ticks past it, with an enemy player within 6 blocks. With Require mouse down only

@@ -1,4 +1,4 @@
-// ClickGUI's Inventory blur (vape-rs's InventoryBlur): your inventory blurs the world behind it as the pause menu
+// ClickGUI's Inventory blur: your inventory blurs the world behind it as the pause menu
 // does, at the game's Menu blur strength.
 fn sunset_inventory_blur(screen: crate::game::Screen) -> std::ops::ControlFlow<bool> {
     use horizon_client::screen_effects::sunset_overlay::INVENTORY_BLUR;

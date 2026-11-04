@@ -1,5 +1,4 @@
-// The inventory modules: Offhand (Meteor's Offhand for its items, vape-rs's Auto Totem for its totem, and Rust's Hover
-// Totem from PR #16 as its Hover), Key Throw (#16) and Fast Use's Throwables (#16's FastXP). A Hover totem moves by one
+// The inventory modules: Offhand (including Auto Totem and Rust's Hover Totem from PR #16), Key Throw (#16) and Fast Use's Throwables (#16's FastXP). A Hover totem moves by one
 // swap click, never by picking stacks up, and counts as moved once the server's own slot packets say both slots
 // changed.
 use super::sunset::{self, Category, Module, hold, with};
@@ -114,7 +113,7 @@ struct Job {
     revision: Option<i32>,
 }
 
-// Auto Totem, as vape-rs's AutoTotem (Offhand's Item Totem): while the offhand holds no totem and the main inventory or
+// Auto Totem (Offhand's Item Totem): while the offhand holds no totem and the main inventory or
 // hotbar has one, one swap-with-offhand click on it (the first, or a random one with Random slot) in your inventory:
 // the one open, else one opened for it (Open inventory; closed again with Close inventory), or with Silent open the
 // inventory clicked with no screen, the look the server has held and your move keys and clicks held until a Silent
@@ -137,7 +136,7 @@ struct Totem {
 }
 
 // What a tick asks of Auto Totem. Its clicks and closes go out in the next frame, after the tick's end packet, as a
-// click on a screen does (vape-rs's are sent there too); Grim's PacketOrderO flags one sent between the tick's move
+// click on a screen does; Grim's PacketOrderO flags one sent between the tick's move
 // and its end, where the tick's modules run.
 enum Work {
     Step(Module),
@@ -842,7 +841,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     state(|s| s.press = Some(Press { kind: if pearl { Throw::Pearl } else { Throw::Wind }, slot: game.selected, tick: game.ticks, from: None }));
 }
 
-// Hotbar keys (Duelkit's Quick use): the hotbar key of a slot with an ender pearl or wind charge throws it, and the
+// Hotbar keys: the hotbar key of a slot with an ender pearl or wind charge throws it, and the
 // slot you held stays (the game selects the slot on the key; the throw puts it back first).
 fn hotbar_key(game: &mut Game<'_>, key: &str) {
     let Some(from) = (0..9).find(|i| game.settings.keys.get(&format!("key.hotbar.{}", i + 1)) == key) else {

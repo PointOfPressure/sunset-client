@@ -1018,7 +1018,7 @@ fn release(game: &mut Game<'_>) {
     });
 }
 
-// Fast tower (Meteor's): while you hold jump (and stand still, or While moving), lifted at Tower speed while there is
+// Fast tower (Sunset's): while you hold jump (and stand still, or While moving), lifted at Tower speed while there is
 // room above, set on the block's top under a ceiling.
 fn fast_tower(game: &mut Game<'_>, m: &Module) {
     let moving = move_input(game) != (0.0, 0.0);

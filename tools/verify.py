@@ -3956,7 +3956,7 @@ def _():
 
     slow = eating_rate()
     only("noslow")
-    # Skip (the default, vape-rs's) and Scale at 100% walk as fast; Scale at Ground 50% half as fast.
+    # Skip (the default) and Scale at 100% walk as fast; Scale at Ground 50% half as fast.
     skip = eating_rate()
     setting("noslow", "mode", "Scale")
     full = eating_rate()
@@ -4035,7 +4035,7 @@ def _():
 
 @test("Offhand (Auto Totem)")
 def _():
-    # vape-rs's AutoTotem as Offhand's Item Totem: no totem with Item None; with Item Totem one always, by a swap click in
+    # Offhand's Item Totem: no totem with Item None; with Item Totem one always, by a swap click in
     # the inventory it opens and closes again (the screen after: playing); the first totem, not a random one, with
     # Random slot off (slot 9 taken, 29 left); with Inventory only none until you open the inventory; with Silent open
     # one with no screen ever shown.
@@ -5814,7 +5814,7 @@ def _():
 
 @test("Kill Aura (Silent aura)")
 def _():
-    # The default mode (vape-rs's SilentAura): it hits a pig within vanilla reach without turning your view, and
+    # The default mode (Silent aura): it hits a pig within vanilla reach without turning your view, and
     # one within Range but beyond vanilla reach (3 blocks from the eyes) not at all.
     def attacked(dz):
         reset()
@@ -5841,7 +5841,7 @@ def _():
 
 @test("Anti AFK (Wander)")
 def _():
-    # The default mode (vape-rs's): after the start delay with no move key held, small turns (Max yaw change 10) and
+    # The default mode: after the start delay with no move key held, small turns (Max yaw change 10) and
     # short steps; holding a move key starts the delay again.
     reset()
     setting("antiafk", "shortest start delay (s)", "1")
@@ -5864,7 +5864,7 @@ def _():
 
 @test("Aim Assist (Simple)")
 def _():
-    # The default mode (vape-rs's): with attack held it turns you toward a husk 25 degrees off on its own; with
+    # The default mode: with attack held it turns you toward a husk 25 degrees off on its own; with
     # attack let go (Require mouse down) it does nothing.
     eid = aim_setup()
     say(".reset aimassist")
@@ -6022,7 +6022,7 @@ def _():
     return ok, f"attacks from two weak clicks: {skipped[0]} with Skip with weakness, {plain[0]} without"
 
 
-# ---- Aim Assist (Duelkit's): real mouse motion (mouse-move), and for moving targets the probe's frames
+# ---- Aim Assist (Duelkit mode): real mouse motion (mouse-move), and for moving targets the probe's frames
 
 def session_dir():
     with open(os.path.join(os.path.dirname(CTL), "session")) as f:
@@ -6097,7 +6097,7 @@ def off_centre(f, eid):
 
 
 def aim_gap(f, eid, inset=0.15):
-    """Duelkit's gap: degrees from the crosshair to the nearest point of the box shrunk by the inset."""
+    """The Duelkit mode's gap: degrees from the crosshair to the nearest point of the box shrunk by the inset."""
     c, hw, hh = f.mobs[eid]
     half = (hw - inset, hh - inset, hw - inset)
     look = view(f.yaw, f.pitch)
@@ -6107,7 +6107,7 @@ def aim_gap(f, eid, inset=0.15):
 
 
 def aim_defaults():
-    """Aim Assist at its defaults in Duelkit mode (the tests below are Duelkit's; Simple has its own)."""
+    """Aim Assist at its defaults in Duelkit mode (the tests below exercise Duelkit mode; Simple has its own)."""
     say(".reset aimassist")
     say(".set aimassist mode Duelkit")
     on.discard("aimassist")
@@ -7838,7 +7838,7 @@ def _():
 @test("Offhand (re-totem after a pop)")
 def _():
     # 20 totem pops each way: ticks until the offhand holds a totem again, with totems in the main inventory only (Item
-    # Totem: vape-rs's AutoTotem opens the inventory, clicks and closes it, a Totem delay apart; then Silent open, which
+    # Totem: Auto Totem opens the inventory, clicks and closes it, a Totem delay apart; then Silent open, which
     # clicks with no screen), and no kick.
     reset()
     cmd("item replace entity @s weapon.offhand with minecraft:totem_of_undying")
@@ -8550,7 +8550,7 @@ def _():
 
 @test("Key Throw (Hotbar keys)")
 def _():
-    # Duelkit's Quick use: holding a sword, 3 presses each of the pearls' hotbar key (5) and the wind charges' (6) with
+    # Hotbar Quick use: holding a sword, 3 presses each of the pearls' hotbar key (5) and the wind charges' (6) with
     # Hotbar keys on: each throws one and the sword stays in hand. Off, the key selects the slot as usual.
     reset()
     slot(0, "diamond_sword")
@@ -8579,7 +8579,7 @@ def _():
 
 @test("Fast Use (Fast throw)")
 def _():
-    # Duelkit's Fast throw through Fast Use's Throwables: wind charges (10-tick cooldown, the game retries use every 4
+    # Fast throw through Fast Use's Throwables: wind charges (10-tick cooldown, the game retries use every 4
     # ticks) held on use for 3 s, and a stack of 16 snowballs for 1.5 s, without and with it (Snowballs and eggs ticked).
     setting("fastuse", "throwables", "true")
     setting("fastuse", "snowballs and eggs", "true")
@@ -9202,7 +9202,7 @@ def _():
 
 @test("Loadouts (panel)")
 def _():
-    # Duelkit's panel, K held: a sword named Duel saved in slot 1; then a plain sword and the named one in the
+    # The Loadouts panel, K held: a sword named Duel saved in slot 1; then a plain sword and the named one in the
     # inventory and dirt in slot 1: a click on the row takes the named one (the item and its name matched first); a
     # right click deletes the row; Save current keeps what you hold as "Loadout 1". A screenshot of the panel.
     def listed():

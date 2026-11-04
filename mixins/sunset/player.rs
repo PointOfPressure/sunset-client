@@ -1,4 +1,4 @@
-// More of Meteor's player and misc modules: Auto Fish, Auto Gap, Fast Use,
+// More of Sunset's player and misc modules: Auto Fish, Auto Gap, Fast Use,
 // Spam, and Anchor.
 
 use super::sunset::{Category, Module, hold, look_at};
@@ -212,7 +212,7 @@ fn pick_mob(game: &Game<'_>, bits: u64, grow: f64, grown: &[u32], mace: Option<(
         .min_by(|a, b| a.1.total_cmp(&b.1))
 }
 
-// Hitboxes (Meteor's), for the crosshair's pick: the mobs whose boxes grow by Expand, those the Entities list names
+// Hitboxes (Sunset's), for the crosshair's pick: the mobs whose boxes grow by Expand, those the Entities list names
 // (with @all, @player, @hostile, @passive), not friends with Ignore friends, and none unless what Weapons lists is
 // in hand with Only on weapon.
 fn hitboxes(game: &Game<'_>, m: Option<&Module>) -> (f64, Vec<u32>) {
@@ -280,7 +280,7 @@ fn usable(game: &Game<'_>, p: [i32; 3]) -> bool {
             .any(|k| name == *k || name.ends_with(&format!("_{k}")))
 }
 
-// Ghost Hand (Meteor's): your right click is not on a usable block, so the first one along the look within reach is
+// Ghost Hand (Sunset's): your right click is not on a usable block, so the first one along the look within reach is
 // used instead, through whatever is in between (servers check the distance only).
 fn ghost_hand(game: &mut Game<'_>) {
     if !super::sunset::with(|s| s.module("Ghost Hand").is_some_and(|m| m.on && m.b("Blocks"))) {
@@ -354,7 +354,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     };
     ENTITY_REACH.store(entity.map_or(u64::MAX, f64::to_bits), std::sync::atomic::Ordering::Relaxed);
     *HITBOXES.lock().unwrap_or_else(|e| e.into_inner()) = hitboxes(game, get("Hitboxes"));
-    // Mine Through Mobs (Meteor's): with a pickaxe in either hand (or anything, with Only with a pickaxe off).
+    // Mine Through Mobs (Sunset's): with a pickaxe in either hand (or anything, with Only with a pickaxe off).
     let pickaxe = [game.held(), game.offhand.as_ref()].into_iter().flatten().any(|s| s.item.ends_with("_pickaxe"));
     *NO_TRACE.lock().unwrap_or_else(|e| e.into_inner()) =
         get("Mine Through Mobs").filter(|m| pickaxe || !m.b("Only with a pickaxe")).map(|m| m.t("Entities").to_owned());
@@ -859,9 +859,9 @@ fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// ---- Anti AFK (Meteor's AntiAFK)
+// ---- Anti AFK (Sunset's AntiAFK)
 
-// Wander, vape-rs's Anti-AFK (github.com/rdbtCVS/vape-rs, MIT): once none of your move keys has been held for a
+// Wander, Anti AFK: once none of your move keys has been held for a
 // random Start delay, every few seconds at random (Frequency) a small visible turn at a random speed (at most Max yaw
 // and Max pitch change) and a short walk, a tenth to a fifth of a second, toward a point within a block. Keep close
 // walks back and turns back once it has drifted from where it started. Times in ticks.
@@ -889,7 +889,7 @@ fn wrap180(a: f32) -> f32 {
     (a + 180.0).rem_euclid(360.0) - 180.0
 }
 
-// The move keys from `at` toward `to` with this yaw (vape-rs's keys_towards).
+// The move keys from `at` toward `to` with this yaw (Sunset's keys_towards).
 fn keys_towards(at: [f64; 2], yaw: f32, to: [f64; 2]) -> Vec<KeyCode> {
     let (dx, dz) = (to[0] - at[0], to[1] - at[1]);
     if dx.hypot(dz) < 0.1 {
@@ -1118,8 +1118,8 @@ fn spam(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// ---- No Fall (Meteor's NoFall): Air place and Place, and Clutch's place under Packet and No ground. Those two change
-// the move packets (runtime.rs's outgoing). This runs after the tick, once its move packet has gone, where Meteor uses
+// ---- No Fall (Sunset's NoFall): Air place and Place, and Clutch's place under Packet and No ground. Those two change
+// the move packets (runtime.rs's outgoing). This runs after the tick, once its move packet has gone, when the player uses
 // the item.
 
 // Place's choices: the item, and whether it is a bucket (used, and picked back up) or a block (placed).
@@ -1234,7 +1234,7 @@ fn use_held(game: &mut Game<'_>, slot: usize, yaw: f32, pitch: f32) {
     hold(game, before);
 }
 
-// Where the fall lands within the next 8 ticks (Meteor's findLandingSurface, straight down): the block it lands on and
+// Where the fall lands within the next 8 ticks (Sunset's findLandingSurface, straight down): the block it lands on and
 // the point on its top below you; nothing if it lands in water or later.
 fn landing(game: &Game<'_>) -> Option<([i32; 3], [f64; 3])> {
     let p = game.player.as_ref()?;
@@ -1258,7 +1258,7 @@ fn landing(game: &Game<'_>) -> Option<([i32; 3], [f64; 3])> {
     None
 }
 
-// ---- Speed Mine (Meteor's SpeedMine), before the tick, where the game goes on breaking the block
+// ---- Speed Mine (Sunset's SpeedMine), before the tick, where the game goes on breaking the block
 
 pub(super) fn speed_mine(game: &mut Game<'_>, m: Option<&Module>) {
     use super::remote::sunset_remote as remote;

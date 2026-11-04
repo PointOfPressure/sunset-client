@@ -52,9 +52,3 @@ Horizon itself has auto reconnect, Discord presence and a minimap: reuse them wh
 - Activity and chunk finders need bounded scans and measured false positives. Model outlines, post-processing and
   custom skies need original wgpu work.
 - Server-specific tools (regions, economy and teleport macros) need specified server behaviour and a test server.
-
-## Research credit
-
-Planning used static behaviour research from Anubis, whose original-author metadata names **4ldenz**, alongside
-Sunset and Horizon's source. This document describes functional requirements only, not Anubis source or assets; the
-original authors keep their rights. Keep attribution for any material actually reused.

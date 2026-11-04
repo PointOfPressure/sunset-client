@@ -1,5 +1,4 @@
 // Native-resolution player radar.
-// Anubis (4ldenz) was a behavior reference.
 
 use super::Game;
 use super::sunset::{Category, Module, accent, own_id};

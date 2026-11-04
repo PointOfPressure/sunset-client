@@ -1,4 +1,4 @@
-// Packet Mine (Meteor's): a click on a block queues it, and it is mined by packets in the background: START, then
+// Packet Mine (Sunset's): a click on a block queues it, and it is mined by packets in the background: START, then
 // STOP once the server's break time has passed (its progress at 0.7, as the server counts it, with the best tool in
 // the hotbar), the best tool held only for the STOP tick. You can walk, look away or click more blocks meanwhile.
 use super::sunset::{Category, Module, hold, with};

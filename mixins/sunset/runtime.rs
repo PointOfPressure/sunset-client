@@ -1,4 +1,4 @@
-// Sunset: Horizon's first cheat client, a Meteor Client style utility mod, rebuilt in Rust as a
+// Sunset: Horizon's first cheat client, a utility mod, rebuilt in Rust as a
 // Horizon native mod. Modules in categories, each with settings and a key
 // bind, a menu on vanilla's own Options > Mods page, `.` chat commands, and a
 // HUD with the active modules. The bundle adds this file to the game as
@@ -32,7 +32,7 @@ pub(crate) const DESCRIPTION: &str =
 // The menu key's name on the mod's page and its default (Right Shift).
 pub(crate) const MENU_KEY: &str = "menu";
 pub(crate) const MENU_DEFAULT: &str = "key.keyboard.grave.accent";
-// A second key for the same thing, Meteor's own default.
+// A second key for the same thing, Sunset's own default.
 pub(crate) const MENU2_KEY: &str = "menu2";
 pub(crate) const MENU2_DEFAULT: &str = "key.keyboard.right.shift";
 // Sunset's sun gold.
@@ -305,7 +305,7 @@ impl Module {
             _ => "",
         }
     }
-    // What the module list shows beside the name (as Meteor's info string).
+    // What the module list shows beside the name (as Sunset's info string).
     pub(super) fn info(&self) -> Option<String> {
         match self.name {
             "Flight" => Some(self.p("Mode").to_owned()),
@@ -1012,7 +1012,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Sprint", true)
             .bool("Ground", true),
         Module::new("Anti AFK", Player, "Stops AFK kicks.")
-            // Wander is vape-rs's Anti-AFK (small turns and steps once you have been idle); Meteor is Meteor's.
+            // Wander makes small turns and steps after idling; Meteor spins, jumps and strafes.
             .pick("Mode", &["Wander", "Meteor"])
             .num("Shortest start delay (s)", 30.0, 1.0, 200.0, 1.0)
             .num("Longest start delay (s)", 40.0, 1.0, 200.0, 1.0)
@@ -1288,7 +1288,7 @@ pub(super) struct State {
     strafe: Strafe,
     bhop: Bhop,
     knockback_ticks: u32,
-    // Flight: Meteor's anti kick counters, the yaw it keeps, which way it nudged last, and whether it let go of sneak.
+    // Flight: Sunset's anti kick counters, the yaw it keeps, which way it nudged last, and whether it let go of sneak.
     fly_delay: i32,
     fly_off: i32,
     fly_last_yaw: f32,
@@ -1345,7 +1345,7 @@ pub(super) struct State {
     nuke: Option<([i32; 3], u32)>,
     // Blocks Nuker just stopped on and the tick to forget them at.
     nuke_skip: Vec<([i32; 3], u64)>,
-    // Nuker (Meteor's): its delay, the first-block flag, the last block, the ticks with nothing to break, the blocks
+    // Nuker (Sunset's): its delay, the first-block flag, the last block, the ticks with nothing to break, the blocks
     // it right-clicked (Interact), its Cube box and the blocks it broke (drawn for 8 ticks).
     nuke_timer: u32,
     nuke_first: bool,
@@ -1587,7 +1587,7 @@ impl State {
                     ("killaura", "switchdelay") => Some(("weaponswitchdelay", v.to_owned())),
                     // Range was 64 by default before All (0): an unchanged one becomes All.
                     ("esp" | "tracers" | "nametags", "range") if v == "64" => Some(("range", "0".to_owned())),
-                    // Offhand before vape-rs's Auto Totem: Refill Inventory opened the inventory for the totem; Off and
+                    // Offhand before Sunset's Auto Totem: Refill Inventory opened the inventory for the totem; Off and
                     // Hotbar Swap moved it with no screen.
                     ("offhand", "refill") => Some(("silentopen", (v != "Inventory").to_string())),
                     // Base Finder's one list before its tiers: a list of your own becomes List 7.
@@ -1739,12 +1739,12 @@ pub(super) struct Preview {
     pub(super) settings: usize,
 }
 
-// Offhand's settings from before vape-rs's Auto Totem (0.9): set_field turns Health, Refill and Swap delay into the new
+// Offhand's settings from before Sunset's Auto Totem (0.9): set_field turns Health, Refill and Swap delay into the new
 // ones, and the rest are gone.
 const OFFHAND_RETIRED: [&str; 10] =
     ["health", "elytra", "fall", "explosion", "refill", "reactiondelay", "swapdelay", "closedelay", "switchbackdelay", "doublehand"];
 
-// Settings that are gone: Client Sort's orders, lists and pace (0.9, it works as ClientSort does). Their lines go.
+// Settings that are gone: Client Sort's old orders, lists and pace (0.9). Their lines go.
 const DROPPED: [(&str, &str); 8] = [
     ("clientsort", "order"), ("clientsort", "shiftorder"), ("clientsort", "ctrlorder"), ("clientsort", "altorder"),
     ("clientsort", "hotbar"), ("clientsort", "startitems"), ("clientsort", "enditems"), ("clientsort", "clickspertick"),
@@ -3051,7 +3051,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         } else if was_stepping {
             let _ = p.set_modifier("minecraft:step_height", "sunset:step", 0.0, "add_value", false);
         }
-        // High Jump: Meteor multiplies the jump's own speed, so the jump starts higher from its first tick.
+        // High Jump multiplies the jump's own speed, so the jump starts higher from its first tick.
         if let Some(h) = &high_jump {
             let _ = p.set_modifier("minecraft:jump_strength", "sunset:high_jump", h.n("Multiplier") - 1.0, "add_multiplied_total", true);
         } else if was_high_jumping {
@@ -3071,7 +3071,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
 }
 
 // How high Step lets you climb this tick: the setting, or vanilla's 0.6 when
-// its conditions say no (Meteor's Step: active when, safe step).
+// its conditions say no (Sunset's Step: active when, safe step).
 fn step_height(game: &Game<'_>, m: &Module) -> f64 {
     let sneaking = game.keys.contains(&KeyCode::ShiftLeft);
     let active = match m.p("Active when") {
@@ -3296,7 +3296,7 @@ fn module_tick(game: &mut Game<'_>) {
                 (v.x, v.y, v.z) = (v.x * k, v.y * k, v.z * k);
             }
         }
-        // Elytra Fly (Meteor's Vanilla mode): gliding, the keys set the move outright: Horizontal speed (blocks a tick)
+        // Elytra Fly (Sunset's Vanilla mode): gliding, the keys set the move outright: Horizontal speed (blocks a tick)
         // the way they point, up or down at Vertical speed with jump or sneak, else a slow sink (Fall multiplier).
         // Auto take off opens the elytra as soon as a jump starts to fall; Stop in water lets water end the glide.
         if let Some(e) = get("Elytra Fly")
@@ -3330,7 +3330,7 @@ fn module_tick(game: &mut Game<'_>) {
                 p.velocity.z *= k;
             }
         }
-        // Jesus (Meteor's Solid mode): on the top of water or lava you stand as on a block, at the liquid's top, unless
+        // Jesus (Sunset's Solid mode): on the top of water or lava you stand as on a block, at the liquid's top, unless
         // you sneak (Dip on sneak), are burning in lava's place (Dip if burning) or are already under it.
         if let Some(j) = get("Jesus") {
             let feet = [p.position.x.floor() as i32, (p.position.y - 0.05).floor() as i32, p.position.z.floor() as i32];
@@ -3559,7 +3559,7 @@ pub(super) fn solid_at(game: &Game<'_>, x: i32, y: i32, z: i32) -> bool {
 
 // The block column just ahead of the player's feet, in the direction the
 // move keys point: its x and z, and the y of the block under the feet.
-// Parkour (Meteor's), before the tick moves you: on the ground, moving, jump not held and not sneaking. Last tick:
+// Parkour (Sunset's), before the tick moves you: on the ground, moving, jump not held and not sneaking. Last tick:
 // jump when your box where this tick's move takes you (as far as the last tick's), Edge distance narrower each side
 // and half a block down, would touch no block, so you leave from the last spot on it. Early: when a point 0.35 blocks
 // ahead of you is over air.
@@ -3781,7 +3781,7 @@ pub(super) fn auto_click(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// Auto Clicker's right button (vape-rs's RightClicker): held, then Right start delay after it went down, with what
+// Auto Clicker's right button (Sunset's RightClicker): held, then Right start delay after it went down, with what
 // Right items lists in hand (empty: anything; `blocks`: any block) and, with Right sneak only, sneaking.
 fn right_ready(game: &Game<'_>, m: &Module, weapon: bool) -> bool {
     let held = m.b("Right") && weapon && (game.physical_buttons.contains(&winit::event::MouseButton::Right) || game.right);
@@ -3824,7 +3824,7 @@ fn right_own(game: &mut Game<'_>, m: &Module) {
     with(|s| s.right_due = Some(now + std::time::Duration::from_secs_f64(1.0 / rate.max(1.0))));
 }
 
-// Auto Eat (Meteor's): once health or hunger is at its threshold, holds use on the best food (the off hand's first,
+// Auto Eat (Sunset's): once health or hunger is at its threshold, holds use on the best food (the off hand's first,
 // then the hotbar's, then the inventory's moved into the hotbar), with Kill Aura off meanwhile, until neither is.
 // Each tick it eats from the food it chose: held again if something else took the hand (your keys, Auto Tool,
 // Scaffold), and use is only pressed with food in that hand, so it never uses or places what took its place. A
@@ -4157,7 +4157,7 @@ fn armor_material(item: &str) -> &str {
     name.rsplit_once('_').map_or(name, |(material, _)| material)
 }
 
-// Switch key (vape-rs's ArmorSwitch), on a press: the next set Switch sets lists after the one you wear, once all four
+// Switch key (Sunset's ArmorSwitch), on a press: the next set Switch sets lists after the one you wear, once all four
 // of its pieces are on you or in your inventory; Auto Armor then wears that set instead of the best.
 fn armor_switch(game: &mut Game<'_>, key: &str) {
     let Some(m) = with(|s| s.module("Auto Armor").filter(|m| m.on).cloned()) else {
@@ -4303,7 +4303,7 @@ pub(super) fn auto_replenish(game: &mut Game<'_>, m: &Module) {
 
 // The hotbar tool that mines the block under the crosshair fastest, while
 // the attack button is held; back to the old slot after.
-// Auto Tool (Meteor's): while you break a block, the hotbar tool with the best score for it (Meteor's getScore:
+// Auto Tool (Sunset's): while you break a block, the hotbar tool with the best score for it (Sunset's getScore:
 // a tool that is right for the block's drops, by its speed and enchantments), after Switch delay; Switch back when you
 // let go; Anti break lets go of a tool about to break. Only below you: only for the block under you. From inventory:
 // with no better tool in the hotbar, the best in the main inventory swapped into your hand (one swap click), and
@@ -4403,7 +4403,7 @@ fn tool_spent(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items:
     m.b("Anti break") && max > 0 && f64::from(max - s.damage.min(max)) < f64::from(max) * m.n("Anti break percentage") / 100.0
 }
 
-// Meteor's AutoTool.getScore, on the game's own destroy speed: any item (a sword or shears on a cobweb, a sword on
+// Sunset's AutoTool.getScore, on the game's own destroy speed: any item (a sword or shears on a cobweb, a sword on
 // bamboo, a pickaxe on stone) scores by how fast it breaks the block (its name, and whether it needs the right tool to
 // drop: a wrong tool then breaks it at a third of its speed), the right tool first on a tie; -1 for one no faster
 // than the bare hand.
@@ -4470,7 +4470,7 @@ pub(super) fn middle_click(game: &mut Game<'_>) {
     });
 }
 
-// Nuker's box for the Cube shape (Meteor's pos1 and pos2 by the way you face, with its offsets), block corners.
+// Nuker's box for the Cube shape (Sunset's pos1 and pos2 by the way you face, with its offsets), block corners.
 fn nuke_cube(game: &Game<'_>, m: &Module, at: [f64; 3]) -> [[f64; 3]; 2] {
     let n = |k: &str| m.n(k);
     let (x, y, z) = (at[0], at[1], at[2]);
@@ -4490,7 +4490,7 @@ fn nuke_cube(game: &Game<'_>, m: &Module, at: [f64; 3]) -> [[f64; 3]; 2] {
     [std::array::from_fn(|i| lo[i].min(hi[i])), std::array::from_fn(|i| lo[i].max(hi[i]))]
 }
 
-// Nuker (Meteor's): every block in its shape (a sphere of Range round your feet, a box by Up, Down and the sides,
+// Nuker (Sunset's): every block in its shape (a sphere of Range round your feet, a box by Up, Down and the sides,
 // or a cube of whole blocks), above your feet in Flatten mode and only the instantly broken in Smash, within reach
 // (behind a block, within Walls range) and the lists allow; sorted, then broken: as many as Max blocks per tick of
 // those that break at once, else the first, mined over the ticks it takes (Packet mine starts and stops them all).
@@ -4823,7 +4823,7 @@ pub(super) fn notify(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// Hole ESP (Meteor's): open blocks Min height tall, walled below and on the four sides by bedrock (unbreakable) or
+// Hole ESP (Sunset's): open blocks Min height tall, walled below and on the four sides by bedrock (unbreakable) or
 // blast-proof blocks (obsidian and the like), or with Doubles two such side by side. Searched again every second, a
 // few slices a tick.
 pub(super) fn scan_holes(game: &Game<'_>, m: &Module, ticks: u64) {
@@ -4937,7 +4937,7 @@ fn knockback_shares(m: &Module, ground: bool) -> [f64; 2] {
     [velocity_share(m, h), velocity_share(m, v)]
 }
 
-// Flight (Meteor's) before the tick: hovering after a fall of three blocks, nudge the yaw a degree either way so the
+// Flight (Sunset's) before the tick: hovering after a fall of three blocks, nudge the yaw a degree either way so the
 // look the server sees moves (put back after the tick); in Velocity mode set the speed the air gives you, and with
 // No sneak let go of sneaking (its key still takes you down).
 fn flight_pre(game: &mut Game<'_>, m: Option<&Module>) {
@@ -4980,7 +4980,7 @@ fn flight_pre(game: &mut Game<'_>, m: Option<&Module>) {
     }
 }
 
-// Flight after the tick: Meteor's anti kick (Packet: every `Delay` ticks the next move packets sink a little for
+// Flight after the tick: Sunset's anti kick (Packet: every `Delay` ticks the next move packets sink a little for
 // `Off time` ticks, Normal: the flying stops for those ticks), the yaw put back, then the mode: Abilities flies as
 // creative does at Speed; Velocity holds you still but for the jump and sneak keys, and Speed sets the air's pull.
 fn flight_post(game: &mut Game<'_>, m: Option<&Module>, jump: bool, sneak: bool, screen_dir: Option<[f64; 2]>) {
@@ -5040,7 +5040,7 @@ fn flight_post(game: &mut Game<'_>, m: Option<&Module>, jump: bool, sneak: bool,
     }
 }
 
-// Speed's Strafe mode between moves: Meteor's stage, the last tick's distance, the speed, and the speed limit's clock.
+// Speed's Strafe mode between moves: Sunset's stage, the last tick's distance, the speed, and the speed limit's clock.
 #[derive(Default)]
 pub(super) struct Strafe {
     stage: u8,
@@ -5188,7 +5188,7 @@ fn bhop_hops(game: &Game<'_>, m: &Module) -> bool {
         && !game.block_in_tag("minecraft:climbable", &game.block_name(feet))
 }
 
-// Speed (Meteor's): this tick's own move across the ground, blocks a tick (and Strafe's hop up), or None to leave
+// Speed (Sunset's): this tick's own move across the ground, blocks a tick (and Strafe's hop up), or None to leave
 // it to the game. Vanilla moves the setting's blocks a second the way the move keys point, and stands still without
 // them; Strafe hops, faster at each jump, slowing in the air.
 fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
@@ -5212,7 +5212,7 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     ) { return None; }
     let scale_across = |v: [f64; 2]| [v[0] * slow_factor, v[1] * slow_factor];
     let effect = |id: &str| game.potions.effects.amplifier(id).map_or(0.0, |a| f64::from(a + 1));
-    // Meteor's stopSpeed.
+    // Sunset's stopSpeed.
     if p.fall_flying
         || game.block_in_tag("minecraft:climbable", &game.block_name(feet))
         || game.riding.is_some()
@@ -5253,7 +5253,7 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     }
     let yaw = f64::from(game.yaw).to_radians();
     if vanilla {
-        // PlayerUtils.getHorizontalVelocity, with the Speed effect's boost.
+        // Horizontal velocity from the keys, with the Speed effect's boost.
         let (forward, right) = ([-yaw.sin(), yaw.cos()], [-yaw.cos(), -yaw.sin()]);
         let f = f64::from(i8::from(held(KeyCode::KeyW)) - i8::from(held(KeyCode::KeyS)));
         let r = f64::from(i8::from(held(KeyCode::KeyD)) - i8::from(held(KeyCode::KeyA)));
@@ -5349,7 +5349,7 @@ pub(super) fn explosion_push(game: &mut Game<'_>, push: Option<[f64; 3]>) {
     }
 }
 
-// Velocity (Meteor's), before the tick moves the player: of what changed the velocity since the last tick, the
+// Velocity (Sunset's), before the tick moves the player: of what changed the velocity since the last tick, the
 // explosions' pushes keep their share and the rest, the server's knockback, its own; flowing liquids push by their
 // share (the flow hook), and of the entities pushing you only the push amount is left.
 fn velocity(game: &mut Game<'_>, m: Option<&Module>) {
@@ -5459,7 +5459,7 @@ enum Crit {
     Fall,
 }
 
-// Criticals (Meteor's) for a hit now: never flying, gliding, riding, in water or lava or on a ladder. A mace (Mace
+// Criticals (Sunset's) for a hit now: never flying, gliding, riding, in water or lava or on a ladder. A mace (Mace
 // smash) hops 1.501 blocks plus Additional height so the server counts a smash; on the ground the Mode; in the air,
 // with Only on ground off, a hit waits for the fall. A hop needs the room above you, else Packet's goes back to 0.0625.
 fn crit_plan(game: &Game<'_>, m: &Module) -> Option<Crit> {
@@ -5943,7 +5943,7 @@ impl Move {
     }
 }
 
-// No Slow's No item release (vape-rs's NoItemRelease): letting go of the use button never tells the server, with a
+// No Slow's No item release (Sunset's NoItemRelease): letting go of the use button never tells the server, with a
 // menu open or what Release items lists in hand (`swords`, `food`, `potions` or item names), so it goes on using it.
 fn kept_using(game: &Game<'_>) -> bool {
     let Some(m) = with(|s| s.module("No Slow").filter(|m| m.on && m.b("No item release")).cloned()) else {
@@ -6023,17 +6023,17 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         CRIT_STAGE.store(if stage == CRIT_LAND { 0 } else { stage + 1 }, Ordering::Relaxed);
     } else {
         // Flight's Packet anti kick: the move carries the position, sunk 0.0313 below the last height sent while it
-        // is due and you are in the air (Meteor's antiKickPacket).
+        // is due and you are in the air (Sunset's antiKickPacket).
         if FLY_PACKET.load(Ordering::Relaxed) {
             fly_down(game, &mut m, here);
         }
         // The server adds each move's drop to the fall, and a move that says you are on the ground costs what has
         // added up beyond three blocks. No Fall's Packet mode claims the ground on every move down, so the count
-        // never passes one move's drop (Meteor's waits for 0.5 blocks a tick, which leaves a fall the server counted
+        // never passes one move's drop (Sunset's waits for 0.5 blocks a tick, which leaves a fall the server counted
         // before to hurt), and one move drops 3.92 at most, which costs nothing. No ground never claims it. Flying that
         // way claims it all the time. settle_fall has the last word.
         // Anti Hunger hides the ground, but not while you break a block: off the ground the server mines five times
-        // slower and refuses the break, so the block comes back (Meteor's skips it then too). Nor once the server
+        // slower and refuses the break, so the block comes back (Sunset's skips it then too). Nor once the server
         // has counted a fall, or this move adds one: hidden, every jump and step down would add up to one fall that
         // the first move you are on the ground for makes you pay.
         let falling = !p.ground.on_ground && !p.flying && !p.fall_flying;
@@ -6084,7 +6084,7 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     if let Some(look) = look {
         m.look = Some(look);
     }
-    // A look the server already has is left out (as vape-rs's look through the game's own sender never repeats one):
+    // A look the server already has is left out (as Sunset's look through the game's own sender never repeats one):
     // the same look twice in a row is what Grim's AimDuplicateLook catches.
     if m.look.is_some() && m.look == last_look() {
         m.look = None;
@@ -6237,7 +6237,7 @@ fn fly_down(game: &Game<'_>, m: &mut Move, here: [f64; 3]) {
 //
 // Rotate in Kill Aura, Nuker, Scaffold and the rest: a module asks for a look and hands over what to do once the server
 // has it. The look rides on the tick's own move packet, or in a tick without one on the single one Sunset sends at
-// its end, and what was asked runs after that packet has gone (Meteor's Rotations). Servers kick for a second move
+// its end, and what was asked runs after that packet has gone (Sunset's Rotations). Servers kick for a second move
 // packet in a tick, and some check the look of a click.
 
 type Deed = Box<dyn for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send>;
@@ -8183,7 +8183,7 @@ pub(super) fn line(out: &mut impl Canvas, from: [f32; 2], to: [f32; 2], argb: u3
 
 // ---------------------------------------------------------------- click GUI
 //
-// Meteor's style: every category as a panel at once, over the world. Left
+// Sunset's style: every category as a panel at once, over the world. Left
 // click turns a module on or off, right click opens its settings under it;
 // headers drag the panels (right click folds one). Numbers are sliders. The
 // game keeps running (single player does not pause), the pointer is free and

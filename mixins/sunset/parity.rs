@@ -1,7 +1,7 @@
-// Meteor's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil, Auto Anvil,
+// Sunset's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil, Auto Anvil,
 // Rotations, No Status Effects (render.rs keeps the effects aside), Mine Through Mobs
 // (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player (single player only), Quiver, Arrow Dodge
-// (with vape-rs's AntiFireball as Hit fireballs), Liquid Interact and No Interact (with vape-rs's HitSelect in
+// (with Hit fireballs), Liquid Interact and No Interact (with Hit select in
 // click_fix.rs).
 use super::{Game, Screen};
 use super::sunset::{Category, Module, with};
@@ -15,7 +15,7 @@ use winit::event::MouseButton;
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
     vec![
-        // Anti Anvil, Self Anvil and Auto Anvil (Meteor's three modules) as sections; Rotate is all three's.
+        // Anti Anvil, Self Anvil and Auto Anvil (Sunset's three modules) as sections; Rotate is all three's.
         Module::new("Anvil", Combat, "Blocks anvils over you, drops them on players.")
             .bool("Anti Anvil", true)
             .bool("Self Anvil", false)
@@ -164,7 +164,7 @@ fn module(name: &str) -> Option<Module> {
     with(|s| s.module(name).filter(|m| m.on).cloned())
 }
 
-// Rotations' No rotate (Meteor's No Rotate): a teleport from the server is about to set your look; it is kept to put
+// Rotations' No rotate (Sunset's No Rotate): a teleport from the server is about to set your look; it is kept to put
 // back. Lock then holds it to its angles as before the teleport.
 pub(super) fn correction(game: &Game<'_>) {
     if module("Rotations").is_some_and(|m| m.b("No rotate")) {
@@ -173,7 +173,7 @@ pub(super) fn correction(game: &Game<'_>) {
 }
 
 // Before the tick's packets: the look a teleport took comes back (a hair off, so the tick's move packet carries it).
-// Multitask (Meteor's): your clicks at a mob while you use an item (the game takes none then) become hits, through
+// Multitask (Sunset's): your clicks at a mob while you use an item (the game takes none then) become hits, through
 // the strikes queue, in this tick before its move packet.
 pub(super) fn pre_tick(game: &mut Game<'_>) {
     if let Some((yaw, pitch)) = parity(|p| p.look.take()) {
@@ -214,7 +214,7 @@ pub(super) fn clicked(game: &Game<'_>, left: bool) {
     }
 }
 
-// Portals (Meteor's): in a nether portal the game closes every screen but the chat; with Portals on it sees the chat
+// Portals (Sunset's): in a nether portal the game closes every screen but the chat; with Portals on it sees the chat
 // while its portal effect runs, and the screen comes back after.
 pub(super) fn portal_before(game: &mut Game<'_>) {
     if !matches!(game.screen, Screen::Playing | Screen::Chat | Screen::Dead) && module("Portals").is_some() {
@@ -287,7 +287,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
 }
 
-// Fake Player (Meteor's): while on, a player where you stood when it came on, with Health and (Copy inventory) what
+// Fake Player (Sunset's): while on, a player where you stood when it came on, with Health and (Copy inventory) what
 // you hold and wear; gone when it goes off. Single player only: a server never sent it, so a hit at it is an
 // interaction with nothing, which anticheats flag. On a server it goes straight off with one line saying so.
 fn fake_player(game: &mut Game<'_>, m: Option<&Module>) {
@@ -331,7 +331,7 @@ fn potion_effect(potion: &str) -> &str {
     }
 }
 
-// Quiver (Meteor's): in a hole (Only in hole), on the ground, above Min health and with room over your head, each
+// Quiver (Sunset's): in a hole (Only in hole), on the ground, above Min health and with room over your head, each
 // effect a tipped arrow's potion gives (Potions lists it; with Check effects one you lack) is shot once straight up
 // to fall on you: the arrow moved to where the bow takes its arrow from first, the bow drawn 4 ticks, the look turned
 // up in two move packets and the bow let go between them. Off when none is left.
@@ -420,7 +420,7 @@ fn quiver_done(game: &mut Game<'_>) {
     }
 }
 
-// Arrow Dodge (Meteor's, Velocity mode): each arrow in flight (any projectile with All projectiles; not yours with
+// Arrow Dodge (Sunset's, Velocity mode): each arrow in flight (any projectile with All projectiles; not yours with
 // Ignore own) is followed for up to 200 ticks, falling as an arrow does, until it meets a block. When a point of a
 // path comes within Distance check of your feet or head, you are pushed (your velocity, no packets of its own) the
 // first of eight ways that keeps you clear, onto free blocks with ground under them (Ground check), Move speed
@@ -430,7 +430,7 @@ fn fireball_in_reach(game: &Game<'_>, f: &horizon_client::projectiles::Projectil
     game.eye_position().is_some_and(|eye| util::dist(eye, [f.position.x, f.position.y + 0.5, f.position.z]) <= 3.5)
 }
 
-// Hit fireballs (vape-rs's AntiFireball): a ghast's large fireball coming at you, whose line passes within 4 blocks
+// Hit fireballs (Hit fireballs): a ghast's large fireball coming at you, whose line passes within 4 blocks
 // of your eyes, is looked at (the server's look, or yours too without Fireball silent aim) and hit back once in
 // reach, 4 ticks apart at most.
 fn aim_fireball(game: &mut Game<'_>, m: &Module) {
@@ -531,7 +531,7 @@ fn arrow_dodge(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// No Interact (Meteor's): whether your click may go to what the crosshair is on: a mob (Hit or Use entities, and
+// No Interact (Sunset's): whether your click may go to what the crosshair is on: a mob (Hit or Use entities, and
 // friends, babies and named mobs when their switch covers the click) before the block behind it (Mine or Use blocks),
 // each list a blacklist or a whitelist.
 fn allowed(m: &Module, list: &str, mode: &str, name: &str) -> bool {
@@ -572,7 +572,7 @@ pub(super) fn use_blocked(game: &Game<'_>) -> bool {
     !interact_ok(game, false)
 }
 
-// Liquid Interact (Meteor's): the crosshair's pick (the pick hook, in its place: None leaves it to the game), as
+// Liquid Interact (Sunset's): the crosshair's pick (the pick hook, in its place: None leaves it to the game), as
 // the game makes it, or when that meets no block, the first water or lava along the look within reach as the block it
 // hits (its face the one the look comes in by).
 pub(super) fn liquid_pick(game: &Game<'_>) -> Option<Option<super::Hit>> {
@@ -608,7 +608,7 @@ fn liquid_ray(game: &Game<'_>, eye: [f64; 3], dir: [f64; 3], reach: f64) -> Opti
     None
 }
 
-// Rotation (Meteor's): the yaw and pitch set to their angles (Simple) or to the nearest 45 and 30 degrees (Smart).
+// Rotation (Sunset's): the yaw and pitch set to their angles (Simple) or to the nearest 45 and 30 degrees (Smart).
 fn rotation(game: &mut Game<'_>, m: &Module) {
     match m.p("Yaw lock") {
         "Simple" => game.yaw = m.n("Yaw angle") as f32,
@@ -622,7 +622,7 @@ fn rotation(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// Anti Anvil (Meteor's): an anvil above you within reach with air under it gets obsidian under it; one already
+// Anti Anvil (Sunset's): an anvil above you within reach with air under it gets obsidian under it; one already
 // falling onto your block, obsidian over your head.
 fn anti_anvil(game: &mut Game<'_>, m: &Module, feet: [i32; 3]) {
     let Some(slot) = find_held(game, |n| n == "obsidian") else {
@@ -646,7 +646,7 @@ fn anti_anvil(game: &mut Game<'_>, m: &Module, feet: [i32; 3]) {
     }
 }
 
-// Auto Anvil (Meteor's): the player in Target range with the least health (not you, not a friend) gets a button or
+// Auto Anvil (Sunset's): the player in Target range with the least health (not you, not a friend) gets a button or
 // pressure plate at their feet (Place at feet: the anvil lands on it and breaks, and the next one falls too) and, every
 // Delay ticks, anvils from Height down to 2 over their head (only the highest with Multi place off).
 fn auto_anvil(game: &mut Game<'_>, m: &Module) {
