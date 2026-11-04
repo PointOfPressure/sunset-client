@@ -1,7 +1,8 @@
 // Meteor's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil, Auto Anvil,
 // Anti Bed, Rotation, No Rotate, No Status Effects (render.rs keeps the effects aside), Mine Through Mobs
-// (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player (single player only), Quiver, Arrow Dodge,
-// Liquid Interact and No Interact.
+// (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player (single player only), Quiver, Arrow Dodge
+// (with vape-rs's AntiFireball as Hit fireballs), Liquid Interact and No Interact (with vape-rs's HitSelect in
+// click_fix.rs).
 use super::{Game, Screen};
 use super::sunset::{Category, Module, with};
 use super::sunset_util::{self as util, facts, feet_block, find_held, is_air, listed, place_block, short, toggle_off};
@@ -55,7 +56,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Distance check", 1.0, 0.1, 5.0, 0.1)
             .bool("Ground check", true)
             .bool("All projectiles", false)
-            .bool("Ignore own", true),
+            .bool("Ignore own", true)
+            .bool("Dodge", true)
+            .bool("Hit fireballs", false)
+            .bool("Fireball silent aim", true),
         Module::new("Liquid Interact", Player, "Lets you place on water and lava."),
         Module::new("No Interact", Player, "Stops clicks on what you list.")
             .text("Mine blocks", "")
@@ -73,6 +77,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Hit fix weapons only", true)
             .bool("Hit fix hurt time", true)
             .bool("Hit fix on ground", true)
+            .pick("Hit select", &["Off", "Cancel", "Sprint reset"])
+            .num("Hit select chance (%)", 90.0, 0.0, 100.0, 1.0)
+            .pick("Hit select favours", &["KB reduction", "Critical hits"])
             .bool("No miss delay", false)
             .num("Humanize (%)", 0.0, 0.0, 100.0, 1.0)
             .bool("In combat only", false)
@@ -123,6 +130,9 @@ struct Parity {
     quiver: Quiver,
     quiver_back: Option<usize>,
     quiver_shot: Vec<String>,
+    // Arrow Dodge's Hit fireballs: the fireball to hit at the start of the next tick, and not before this tick again.
+    fireball: Option<u32>,
+    fireball_next: u64,
 }
 
 #[derive(Default, Clone, Copy, PartialEq)]
@@ -181,6 +191,16 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         let rest = with(|s| s.module("Quiver").map_or(0, |m| m.n("Cooldown") as u32));
         parity(|p| p.quiver = Quiver::Rest(rest));
     }
+    // Arrow Dodge's Hit fireballs: the hit, once the server has the look at it.
+    if let Some(id) = parity(|p| p.fireball.take())
+        && !super::sunset::strike_waiting()
+        && game.creatures.projectiles.iter().any(|f| f.id == id && fireball_in_reach(game, f))
+    {
+        game.send(S::Attack(play::Attack { id: id as i32 }));
+        game.swing_arm();
+        game.send(S::Punch(Empty));
+        game.reset_attack_strength();
+    }
     if parity(|p| std::mem::take(&mut p.clicks)) > 0
         && game.using.is_some()
         && game.screen == Screen::Playing
@@ -231,7 +251,12 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         None => quiver_done(game),
     }
     if let Some(m) = get("Arrow Dodge") {
-        arrow_dodge(game, m);
+        if m.b("Dodge") {
+            arrow_dodge(game, m);
+        }
+        if m.b("Hit fireballs") {
+            aim_fireball(game, m);
+        }
     }
     if let Some(m) = get("Rotation") {
         rotation(game, m);
@@ -410,6 +435,56 @@ fn quiver_done(game: &mut Game<'_>) {
 // path comes within Distance check of your feet or head, you are pushed (your velocity, no packets of its own) the
 // first of eight ways that keeps you clear, onto free blocks with ground under them (Ground check), Move speed
 // blocks a tick, further if none is.
+// A large fireball is within a hit of your eyes (3 blocks to its middle, and half its size).
+fn fireball_in_reach(game: &Game<'_>, f: &horizon_client::projectiles::Projectile) -> bool {
+    game.eye_position().is_some_and(|eye| util::dist(eye, [f.position.x, f.position.y + 0.5, f.position.z]) <= 3.5)
+}
+
+// Hit fireballs (vape-rs's AntiFireball): a ghast's large fireball coming at you, whose line passes within 4 blocks
+// of your eyes, is looked at (the server's look, or yours too without Fireball silent aim) and hit back once in
+// reach, 4 ticks apart at most.
+fn aim_fireball(game: &mut Game<'_>, m: &Module) {
+    use horizon_client::projectiles::ProjectileKind;
+    let Some(eye) = game.eye_position() else {
+        return;
+    };
+    if game.ticks < parity(|p| p.fireball_next) || game.screen != Screen::Playing {
+        return;
+    }
+    let passes = |f: &&horizon_client::projectiles::Projectile| {
+        let (pos, vel) = ([f.position.x, f.position.y + 0.5, f.position.z], [f.velocity.x, f.velocity.y, f.velocity.z]);
+        let to = [eye[0] - pos[0], eye[1] - pos[1], eye[2] - pos[2]];
+        let speed = vel.iter().map(|v| v * v).sum::<f64>();
+        let along = (0..3).map(|i| to[i] * vel[i]).sum::<f64>();
+        if speed < 1e-6 || along <= 0.0 {
+            return false;
+        }
+        let t = along / speed;
+        let near = (0..3).map(|i| (pos[i] + vel[i] * t - eye[i]).powi(2)).sum::<f64>().sqrt();
+        near <= 4.0 && fireball_in_reach(game, f)
+    };
+    let Some(f) = game
+        .creatures
+        .projectiles
+        .iter()
+        .filter(|f| matches!(f.kind, ProjectileKind::LargeFireball { .. }) && f.id != 0)
+        .filter(passes)
+        .min_by(|a, b| {
+            let d = |f: &horizon_client::projectiles::Projectile| util::dist(eye, [f.position.x, f.position.y, f.position.z]);
+            d(a).total_cmp(&d(b))
+        })
+    else {
+        return;
+    };
+    let (id, (yaw, pitch)) = (f.id, super::sunset::look_at(eye, [f.position.x, f.position.y + 0.5, f.position.z]));
+    if !m.b("Fireball silent aim") {
+        game.yaw = yaw;
+        game.pitch = pitch;
+    }
+    parity(|p| p.fireball_next = game.ticks + 4);
+    super::sunset::turn_then("Arrow Dodge", yaw, pitch, move |_| parity(|p| p.fireball = Some(id)));
+}
+
 fn arrow_dodge(game: &mut Game<'_>, m: &Module) {
     use horizon_client_core::who::Who;
     use horizon_client::projectiles::ProjectileKind;

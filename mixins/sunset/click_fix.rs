@@ -27,7 +27,26 @@ struct State {
     // A hit Silent aim, Hit flick or Hit fix sent on: the clicks wait until it has gone.
     busy_until: u64,
     roll: u64,
+    select: Select,
 }
+
+// Hit select (vape-rs's HitSelect): Cancel's verdict for this tick and its rest after a failed chance; Sprint reset's
+// ticks since you were knocked, your hurt time last tick, the last reset stamped and one waiting to be, the last hit
+// that went (at whom, when), and the measured hit-to-hurt delays (ms).
+#[derive(Default)]
+struct Select {
+    cancel: bool,
+    rest: i32,
+    knocked: i32,
+    hurt_was: i32,
+    reset_at: Option<Instant>,
+    pending: bool,
+    sent: Option<(u32, Instant)>,
+    delays: Vec<u64>,
+}
+
+const SELECT_REST: i32 = 8;
+const SELECT_KNOCKED: i32 = 7;
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
@@ -193,6 +212,129 @@ pub(super) fn hit_blocked(game: &Game<'_>) -> bool {
         return true;
     }
     false
+}
+
+// Hit select, each tick: Cancel holds clicks while you stand on the ground and the player on your crosshair is still
+// in hurt time (over 2), with a failed chance a rest of 8 ticks; Sprint reset stamps the reset its last click made,
+// marks 7 ticks after you are knocked, and learns how long your hits take to show on the target.
+pub(super) fn select_tick(game: &Game<'_>) {
+    let Some(m) = module("No Interact").filter(|m| m.p("Hit select") != "Off") else {
+        return;
+    };
+    let hurt = game.player.as_ref().map_or(0, |p| p.health.hurt.hurt_time);
+    let target = game.mob_hit().map(|(i, _)| &game.mobs[i]).filter(|t| t.kind.id == "minecraft:player");
+    let roll = random(game) * 100.0;
+    let cancel_mode = m.p("Hit select") == "Cancel" && live(game);
+    let on_ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
+    st(|s| {
+        let h = &mut s.select;
+        if hurt > h.hurt_was {
+            h.knocked = SELECT_KNOCKED;
+        }
+        h.hurt_was = hurt;
+        if let Some((id, at)) = h.sent {
+            let elapsed = at.elapsed().as_millis() as u64;
+            if elapsed >= 500 {
+                h.sent = None;
+            } else if game.mobs.iter().any(|t| t.id == id && t.hurt_time > 0) {
+                h.delays.push(elapsed);
+                let over = h.delays.len().saturating_sub(10);
+                h.delays.drain(..over);
+                h.sent = None;
+            }
+        }
+        if std::mem::take(&mut h.pending) {
+            h.reset_at = Some(Instant::now());
+        }
+        h.cancel = false;
+        if !cancel_mode {
+            return;
+        }
+        if h.rest > 0 {
+            h.rest -= 1;
+            return;
+        }
+        if on_ground && target.is_some_and(|t| t.hurt_time > 2) {
+            if m.n("Hit select chance (%)") < roll {
+                h.rest = SELECT_REST;
+            }
+            h.cancel = true;
+        }
+    });
+}
+
+// Hit select on your attack click: true stops it. Cancel: while this tick's verdict holds. Sprint reset (by the
+// chance): a click goes when it lands as the target's hurt time runs out (the measured delay in ticks, or one over),
+// or as a fresh reset twice the measured delay after the last; while you are knocked, KB reduction lets every click
+// go and Critical hits those on the ground or rising; a click while you move away from the target goes too. A click
+// held back still swings.
+pub(super) fn hit_select(game: &mut Game<'_>) -> bool {
+    let Some(m) = module("No Interact").filter(|m| m.p("Hit select") != "Off") else {
+        return false;
+    };
+    if !live(game) {
+        return false;
+    }
+    if m.p("Hit select") == "Cancel" {
+        return st(|s| s.select.cancel);
+    }
+    let target = game.mob_hit().map(|(i, _)| &game.mobs[i]).filter(|t| t.kind.id == "minecraft:player");
+    let pass = |id: Option<u32>| {
+        if let Some(id) = id {
+            st(|s| s.select.sent = Some((id, Instant::now())));
+        }
+        false
+    };
+    if m.n("Hit select chance (%)") < random(game) * 100.0 {
+        return pass(target.map(|t| t.id));
+    }
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    let (on_ground, motion, me) = (p.ground.on_ground, [p.velocity.x, p.velocity.y, p.velocity.z], [p.position.x, p.position.z]);
+    let knocked = st(|s| {
+        let h = &mut s.select;
+        let was = h.knocked > 0;
+        if was {
+            h.knocked = if on_ground { 0 } else { h.knocked - 1 };
+        }
+        was
+    });
+    let mut rising = false;
+    if knocked {
+        if m.p("Hit select favours") == "KB reduction" {
+            return pass(target.map(|t| t.id));
+        }
+        if motion[1] > 0.0 {
+            rising = true;
+        } else if !on_ground {
+            return pass(target.map(|t| t.id));
+        }
+    }
+    let Some(t) = target else {
+        return false;
+    };
+    let toward = (t.position.x - me[0] < 0.0) == (motion[0] < 0.0) && (t.position.z - me[1] < 0.0) == (motion[2] < 0.0);
+    if !toward {
+        return pass(Some(t.id));
+    }
+    if !rising {
+        let (expected, average) = st(|s| {
+            let d = &s.select.delays;
+            let average = d.iter().sum::<u64>() / (d.len() as u64).max(1);
+            ((average / 50) as i32, average)
+        });
+        let since = st(|s| s.select.reset_at.map_or(u64::MAX, |at| at.elapsed().as_millis() as u64));
+        if t.hurt_time <= expected && since >= average * 2 {
+            st(|s| s.select.pending = true);
+            return pass(Some(t.id));
+        }
+        if t.hurt_time > expected && t.hurt_time <= expected + 1 {
+            return pass(Some(t.id));
+        }
+    }
+    game.swing_arm();
+    true
 }
 
 // Hit fix: a hit on `target` would count now (out of hurt time with Hurt time, on the ground with On ground).

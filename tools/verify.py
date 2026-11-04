@@ -12381,6 +12381,176 @@ def _():
     return ok and (horizon or (walls[0] or 0) > 0), ("Horizon's server: " if horizon else "") + note
 
 
+@test("Auto Clicker (Right clicker)")
+def _():
+    # Right held 15 ticks with 16 snowballs: Auto Clicker's Right with Right own CPS 20 throws more than the game's own
+    # repeat; Right items `blocks` (a snowball is none) and Right sneak only (standing up) leave it at the game's rate,
+    # Right items `snowball` does not; Right start delay 400 ms throws fewer than none.
+    def thrown(mods=()):
+        reset()
+        slot(0, "snowball", 16)
+        ctl("key", "1", "tap")
+        only(*mods)
+        wait(4)
+        ctl("mouse", "right", "down")
+        wait(15)
+        ctl("mouse", "right", "up")
+        only()
+        return 16 - items_of("snowball")
+
+    for k, v in (("left", "false"), ("right", "true"), ("right own cps", "true"), ("right min cps", "20"), ("right max cps", "20")):
+        setting("autoclicker", k, v)
+    got = {"game": thrown(), "own": thrown(("autoclicker",))}
+    setting("autoclicker", "right items", "blocks")
+    got["blocks"] = thrown(("autoclicker",))
+    setting("autoclicker", "right items", "snowball")
+    got["listed"] = thrown(("autoclicker",))
+    setting("autoclicker", "right sneak only", "true")
+    got["sneak only"] = thrown(("autoclicker",))
+    setting("autoclicker", "right sneak only", "false")
+    setting("autoclicker", "right start delay (ms)", "400")
+    got["delayed"] = thrown(("autoclicker",))
+    say(".reset autoclicker")
+    g = got["game"]
+    ok = (got["own"] >= g + 4 and got["listed"] >= g + 4 and got["blocks"] <= g + 1 and got["sneak only"] <= g + 1
+          and g < got["delayed"] < got["own"])
+    return ok, f"snowballs thrown in 15 ticks: {got}"
+
+
+@test("Shield (Block hit)")
+def _():
+    # A sword in hand and a shield in the off hand, five clicks 15 ticks apart on a husk: Manual at 100% puts the shield
+    # up (a UseItem) after each hit and down before the next (every click still a hit); at 0%, with Block hit Off, or
+    # with Require mouse down and the use button up, it never goes up. Predict (with Bot1 near): hurt three times 15
+    # ticks apart, the shield goes up before the fourth would come; Off, not.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    setting("shield", "auto block", "false")
+    setting("shield", "block hit min chance (%)", "100")
+    setting("shield", "block hit max chance (%)", "100")
+
+    def setup():
+        reset()
+        slot(0, "stone_sword")
+        ctl("key", "1", "tap")
+        cmd("item replace entity @s weapon.offhand with minecraft:shield")
+
+    def clicks(mode, **kv):
+        setting("shield", "block hit", mode)
+        for k, v in kv.items():
+            setting("shield", k.replace("_", " "), v)
+        setup()
+        cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 2.5} {HUSK}")
+        wait(10)
+        eid = next(e["id"] for e in ctl("entities")["entities"] if e.get("type") == "minecraft:husk")
+        ctl("look-at-entity", str(eid))
+        only("shield")
+        mark = probe_mark()
+        for _ in range(5):
+            ctl("mouse", "left", "click")
+            wait(15)
+        only()
+        ticks = probe_ticks(mark)
+        cmd("kill @e[type=husk]")
+        return sum(t.count("order attack") for t in ticks), sum(t.count(f"pkt {USE_ITEM}") for t in ticks)
+
+    got = {"manual": clicks("Manual")}
+    got["0%"] = clicks("Manual", **{"block_hit_min_chance_(%)": "0", "block_hit_max_chance_(%)": "0"})
+    setting("shield", "block hit min chance (%)", "100")
+    setting("shield", "block hit max chance (%)", "100")
+    got["needs mouse"] = clicks("Manual", require_mouse_down="true")
+    setting("shield", "require mouse down", "false")
+    got["off"] = clicks("Off")
+    ok = got["manual"][0] >= 4 and got["manual"][1] >= 4 and all(got[k][1] == 0 for k in ("0%", "needs mouse", "off"))
+    note = f"(hits, shield raises) over five clicks: {got}"
+    if CTL2:
+        predicted = {}
+        for mode in ("Off", "Predict"):
+            setting("shield", "block hit", mode)
+            setup()
+            bot_ready(3.0, 180)
+            only("shield")
+            for i in range(3):
+                cmd("damage @s 1 minecraft:generic")
+                if i == 2:
+                    mark = probe_mark()
+                wait(15)
+            wait(5)
+            only()
+            predicted[mode] = sum(t.count(f"pkt {USE_ITEM}") for t in probe_ticks(mark))
+        bot_done()
+        ok = ok and predicted["Off"] == 0 and predicted["Predict"] >= 1
+        note += f"; Predict, raises before the fourth hurt: {predicted}"
+    say(".reset shield")
+    return ok, note
+
+
+@test("No Interact (Hit select)")
+def _():
+    # Twelve clicks 2 ticks apart on Bot1 (2 blocks away, no knockback) with a sword: every click hits without Hit
+    # select; Cancel at 100% holds those that come while Bot1 is still hurt, so far fewer go; Cancel at 0% chance rests
+    # 8 ticks after each failed roll, so more go than at 100%; Sprint reset lets through only those landing as the
+    # hurt time runs out.
+    if not CTL2:
+        return None, "needs a second player"
+
+    def hits(mode=None, chance="100"):
+        if mode:
+            setting("nointeract", "hit select", mode)
+            setting("nointeract", "hit select chance (%)", chance)
+        reset()
+        slot(0, "stone_sword")
+        ctl("key", "1", "tap")
+        bot_ready(2.0, 180, "attribute Bot1 minecraft:knockback_resistance base set 1")
+        bot = next(e["id"] for e in ctl("entities").get("entities", []) if e.get("type") == "minecraft:player")
+        only(*(("nointeract",) if mode else ()))
+        wait(5)
+        mark = probe_mark()
+        for _ in range(12):
+            ctl("look-at-entity", str(bot))
+            ctl("mouse", "left", "click")
+            wait(2)
+        only()
+        return sum(t.count("order attack") for t in probe_ticks(mark))
+
+    got = {"off": hits(), "cancel": hits("Cancel"), "cancel 0%": hits("Cancel", "0"), "sprint reset": hits("Sprint reset")}
+    cmd("attribute Bot1 minecraft:knockback_resistance base set 0")
+    bot_done()
+    say(".reset nointeract")
+    ok = got["off"] >= 5 and got["cancel"] <= got["off"] / 2 and got["cancel 0%"] > got["cancel"] and got["sprint reset"] < got["off"]
+    return ok, f"hits out of twelve clicks: {got}"
+
+
+@test("Arrow Dodge (Hit fireballs)")
+def _():
+    # A large fireball flying at you from 6 blocks: with Hit fireballs it is hit (an attack) and sent back away from
+    # you; with Arrow Dodge on but Hit fireballs off, or Arrow Dodge off, it is not hit.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    setting("arrowdodge", "dodge", "false")
+
+    def run(mods, hit="true"):
+        setting("arrowdodge", "hit fireballs", hit)
+        reset()
+        immune()
+        cmd("gamerule mob_griefing false")
+        only(*mods)
+        wait(5)
+        mark = probe_mark()
+        cmd(f"summon minecraft:fireball {X0 + 0.5} {Y + 2.2} {Z0 + 6.5} {{Motion:[0.0,0.0,-0.4],acceleration_power:0.0d}}")
+        wait(25)
+        only()
+        attacks = sum(t.count("order attack") for t in probe_ticks(mark))
+        balls = [e for e in ctl("entities").get("entities", []) if e.get("type") == "minecraft:fireball"]
+        away = any(e.get("pos", e.get("position", [0, 0, 0]))[2] > Z0 + 6.5 for e in balls)
+        cmd("kill @e[type=minecraft:fireball]")
+        return attacks, away
+
+    got = {"on": run(("arrowdodge",)), "hit off": run(("arrowdodge",), "false"), "module off": run(())}
+    cmd("gamerule mob_griefing true")
+    say(".reset arrowdodge")
+    ok = got["on"][0] >= 1 and got["hit off"][0] == 0 and got["module off"][0] == 0
+    return ok, f"(attacks, fireball sent back past where it came from): {got}"
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

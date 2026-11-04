@@ -25,7 +25,15 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Disable tracker", true)
             .bool("Swap to sword", false)
             .text("Swap key", "None")
-            .bool("From inventory", true),
+            .bool("From inventory", true)
+            .pick("Block hit", &["Off", "Manual", "Predict"])
+            .num("Block hit min chance (%)", 70.0, 0.0, 100.0, 1.0)
+            .num("Block hit max chance (%)", 90.0, 0.0, 100.0, 1.0)
+            .num("Block hit ticks", 3.0, 1.0, 10.0, 1.0)
+            .num("Max hurt time (ms)", 50.0, 0.0, 500.0, 10.0)
+            .bool("Include ping", true)
+            .num("Hold after", 2.0, 0.0, 10.0, 1.0)
+            .bool("Require mouse down", false),
     ]
 }
 
@@ -44,6 +52,10 @@ struct State {
     pressed: Option<bool>,
     // Your last hit: Auto block looks again two ticks after it.
     hit_tick: u64,
+    // Block hit: Manual's shield up until this tick after a hit; Predict's ticks you were hurt, the hurt time last tick.
+    block_until: u64,
+    hurts: Vec<u64>,
+    hurt_was: i32,
     // The tick each player near you last started a swing, and their swing clock last tick.
     swings: Vec<(u32, u64, f32)>,
     // The shield's cooldown (disabled by an axe) seen last tick.
@@ -170,7 +182,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
     let busy = busy || !loaded || !kept;
     note_swings(game);
     let busy = busy || double_hand(game, busy);
-    match module(NAME).filter(|m| m.b("Auto block")).and_then(|m| block(game, &m, busy)) {
+    let shield = module(NAME);
+    let hit = shield.as_ref().filter(|m| m.p("Block hit") != "Off").and_then(|m| block_hit(game, m));
+    match hit.or_else(|| shield.filter(|m| m.b("Auto block")).and_then(|m| block(game, &m, busy))) {
         Some(down) => press(game, down),
         None => let_go(game),
     }
@@ -248,6 +262,58 @@ fn note_swings(game: &Game<'_>) {
 // Your hit: Auto block waits two ticks before looking again.
 pub(super) fn hit(game: &Game<'_>) {
     st(|s| s.hit_tick = game.ticks);
+    // Block hit Manual: a share of the hits (a chance rolled between the two) put the shield up for Block hit ticks.
+    if let Some(m) = module(NAME).filter(|m| m.p("Block hit") == "Manual") {
+        let roll = |salt: u64| super::sunset_rotation::Rng::new(game.ticks.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ salt).next();
+        let (lo, hi) = (m.n("Block hit min chance (%)"), m.n("Block hit max chance (%)").max(m.n("Block hit min chance (%)")));
+        if roll(0xB10C) * 100.0 < lo + roll(0xC4A7) * (hi - lo) {
+            st(|s| s.block_until = game.ticks + m.n("Block hit ticks") as u64);
+        }
+    }
+}
+
+// Block hit (vape-rs's BlockHit), each tick, with a sword, axe or mace in hand and a shield in the off hand: Manual
+// keeps the shield up for Block hit ticks after a share of your hits; Predict times the next hit on you from the
+// last three gaps between hurts (0.25 to 1.5 s) and puts the shield up from Max hurt time (plus the ping with Include
+// ping) before it until Hold after ticks past it, with an enemy player within 6 blocks. With Require mouse down only
+// while you hold the use button, and then the shield is down between. None: leave the button to Auto block or you.
+fn block_hit(game: &Game<'_>, m: &Module) -> Option<bool> {
+    let p = game.player.as_ref()?;
+    let now = game.ticks;
+    let hurt = p.health.hurt.hurt_time;
+    st(|s| {
+        if hurt > s.hurt_was {
+            s.hurts.push(now);
+            let over = s.hurts.len().saturating_sub(4);
+            s.hurts.drain(..over);
+        }
+        s.hurt_was = hurt;
+    });
+    let held = game.held().map_or("", |h| &*h.item);
+    let armed = tagged(game, held, "minecraft:swords") || tagged(game, held, "minecraft:axes") || held == "minecraft:mace";
+    if !armed || !is(game.offhand.as_ref(), "shield") || p.fall_flying {
+        return None;
+    }
+    let up = match m.p("Block hit") {
+        "Manual" => now > st(|s| s.hit_tick) && now <= st(|s| s.block_until),
+        _ => {
+            let me = [p.position.x, p.position.y, p.position.z];
+            let near = game.mobs.iter().any(|t| util::player_enemy(game, t) && util::dist(me, [t.position.x, t.position.y, t.position.z]) <= 6.0);
+            let ping = if m.b("Include ping") { super::remote::sunset_combat_remote::latency(game).unwrap_or(0) } else { 0 };
+            let lead = ((m.n("Max hurt time (ms)") + f64::from(ping)) / 50.0).ceil() as u64;
+            let next = st(|s| {
+                let gaps: Vec<u64> = s.hurts.windows(2).map(|w| w[1] - w[0]).filter(|g| (5..=30).contains(g)).collect();
+                let last = *s.hurts.last()?;
+                let gap = if gaps.is_empty() { 10 } else { gaps.iter().rev().take(3).sum::<u64>() / gaps.len().min(3) as u64 };
+                Some(last + gap.max(10))
+            });
+            near && next.is_some_and(|at| now + lead >= at && now <= at + m.n("Hold after") as u64)
+        }
+    };
+    if m.b("Require mouse down") {
+        return game.physical_buttons.contains(&MouseButton::Right).then_some(up);
+    }
+    up.then_some(true)
 }
 
 // Auto block, each tick: Some(true) to hold the shield up, Some(false) to keep it down, None to leave the button to you.
