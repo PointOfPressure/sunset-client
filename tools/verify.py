@@ -12521,6 +12521,30 @@ def _():
     return ok, f"hits out of twelve clicks: {got}"
 
 
+@test("No Slow (No item release)")
+def _():
+    # A golden apple held on the use button for half a second, then let go: the server never hears of the release with
+    # No item release (food listed), so it finishes eating it; without it, or with only swords listed, it is not eaten.
+    def eaten(mods=(), items="swords,food,potions"):
+        setting("noslow", "no item release", "true")
+        setting("noslow", "release items", items)
+        reset()
+        slot(0, "golden_apple", 4)
+        ctl("key", "1", "tap")
+        only(*mods)
+        wait(4)
+        ctl("mouse", "right", "down")
+        wait(10)
+        ctl("mouse", "right", "up")
+        wait(45)
+        only()
+        return 4 - items_of("golden_apple")
+
+    got = {"off": eaten(), "on": eaten(("noslow",)), "swords only": eaten(("noslow",), "swords")}
+    say(".reset noslow")
+    return got == {"off": 0, "on": 1, "swords only": 0}, f"apples eaten after letting go early: {got}"
+
+
 @test("Arrow Dodge (Hit fireballs)")
 def _():
     # A large fireball flying at you from 6 blocks: with Hit fireballs it is hit (an attack) and sent back away from

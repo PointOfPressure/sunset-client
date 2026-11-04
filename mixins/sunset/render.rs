@@ -89,7 +89,9 @@ pub(super) fn defaults() -> Vec<Module> {
             // knockback until you land. Scale walks at Ground % / Air % of your speed instead.
             .pick("Mode", &["Skip", "Scale", "GrimAC"])
             .num("Ground %", 100.0, 20.0, 100.0, 5.0)
-            .num("Air %", 100.0, 20.0, 100.0, 5.0),
+            .num("Air %", 100.0, 20.0, 100.0, 5.0)
+            .bool("No item release", false)
+            .text("Release items", "swords,food,potions"),
     ]
 }
 

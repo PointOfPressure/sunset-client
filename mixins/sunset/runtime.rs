@@ -333,6 +333,10 @@ impl Module {
                 "Fireball silent aim" => self.b("Hit fireballs"),
                 _ => true,
             },
+            "No Slow" => match name {
+                "Release items" => self.b("No item release"),
+                _ => true,
+            },
             "Auto Clicker" => match name {
                 "Delay (ticks)" => self.p("Mode") == "Delay",
                 "Min CPS" | "Max CPS" => self.p("Mode") == "CPS",
@@ -5664,6 +5668,25 @@ impl Move {
     }
 }
 
+// No Slow's No item release (vape-rs's NoItemRelease): letting go of the use button never tells the server, with a
+// menu open or what Release items lists in hand (`swords`, `food`, `potions` or item names), so it goes on using it.
+fn kept_using(game: &Game<'_>) -> bool {
+    let Some(m) = with(|s| s.module("No Slow").filter(|m| m.on && m.b("No item release")).cloned()) else {
+        return false;
+    };
+    if gui_open() || !matches!(game.screen, super::Screen::Playing) {
+        return true;
+    }
+    let list = m.t("Release items");
+    game.held().is_some_and(|h| {
+        let tagged = |tag: &str| game.res.items().item_tags.get(tag).is_some_and(|t| t.contains(&*h.item));
+        super::sunset_util::listed(list, &h.item)
+            || (super::sunset_util::listed(list, "swords") && tagged("minecraft:swords"))
+            || (super::sunset_util::listed(list, "food") && game.res.items().get(&h.item).is_some_and(|i| i.food.is_some()))
+            || (super::sunset_util::listed(list, "potions") && h.item.ends_with("potion"))
+    })
+}
+
 // Outgoing packets: Blink holds moves, Anti Hunger hides sprinting and the ground, No Fall claims the ground as you
 // fall (or, in No ground, never), Criticals hops, Flight's anti kick sinks, no move claims the ground with a fall that
 // is not yours to pay (settle_fall), and the look modules asked for (turn_then) rides along. Each is a change to the
@@ -5671,6 +5694,12 @@ impl Move {
 pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     if let Some(changed) = super::sunset_world_parity::outgoing(game, packet) {
         return Out::Replace(changed);
+    }
+    if let S::PlayerAction(a) = packet
+        && a.action == 6
+        && kept_using(game)
+    {
+        return Out::Drop;
     }
     if ANTI_SPRINT.load(Ordering::Relaxed)
         && let S::PlayerCommand(c) = packet
