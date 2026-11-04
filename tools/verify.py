@@ -341,6 +341,47 @@ def _():
                 f"moves {stop:.3f} the tick after letting go; Strafe {strafe:.2f}; Timer 2 while moving: {tps:.0f} ticks/s; off again {back:.2f}")
 
 
+@test("Speed (Bhop)")
+def _():
+    # Bhop holding W: the speed across the ground with Hop speed 11 and 15 (a hop on each landing), how high a hop
+    # goes with Hop height 0.42 and 0.3, and the move the tick after letting go (Stop on release).
+    plain = rate()
+    only("speed")
+    setting("speed", "mode", "Bhop")
+    reset(z=-14.5)
+    hop = rate(ticks=24)
+    setting("speed", "hop speed", "15")
+    reset(z=-14.5)
+    fast = rate(ticks=24)
+    setting("speed", "hop speed", "11")
+
+    def peak():
+        reset(z=-14.5)
+        y0 = pos()[1]
+        ctl("key", "w", "down")
+        ys = poll(24, 1, lambda: pos()[1])
+        ctl("key", "w", "up")
+        wait(5)
+        return max(ys) - y0
+
+    high = peak()
+    setting("speed", "hop height", "0.3")
+    low = peak()
+    setting("speed", "hop height", "0.42")
+    reset(z=-14.5)
+    ctl("key", "w", "down")
+    wait(15)
+    ctl("key", "w", "up")
+    a = pos()
+    wait(1)
+    stop = flat(a, pos())
+    setting("speed", "mode", "Vanilla")
+    only()
+    ok = hop > plain * 1.4 and fast > hop * 1.2 and 1.0 < high < 1.45 and low < high - 0.3 and stop < 0.02
+    return ok, (f"walking {plain:.2f} blocks/s; Bhop Hop speed 11: {hop:.2f}, 15: {fast:.2f}; hop height {high:.2f} "
+                f"(Hop height 0.42), {low:.2f} (0.3); moved {stop:.3f} the tick after letting go")
+
+
 @test("Sprint")
 def _():
     reset(z=-14.5)
@@ -1751,12 +1792,12 @@ def modules_on():
     return names
 
 
-@test("Extra Modules")
+@test("Modules")
 def _():
-    # Jesus is an extra: the menu's search leaves it out (Enter on "jesus" turns nothing on) until its switch in Extra
-    # Modules is on; .t reaches it either way. A left click on Extra Modules' row opens its switches (a screenshot)
-    # instead of turning it on.
-    say(".reset extramodules")
+    # Jesus is hidden by default: the menu's search leaves it out (Enter on "jesus" turns nothing on) until its switch
+    # in Modules is on; .t reaches it either way. Pearl Catch shows by default, and Kill Aura's switch off leaves it out.
+    # A left click on Modules' row opens its switches (a screenshot) instead of turning it on.
+    say(".reset modules")
     say(".menu")
     wait(6)
     ctl("screenshot", f"{SHOTS}/menu.png")
@@ -1771,7 +1812,7 @@ def _():
     say(".t jesus")
     by_command = "Jesus" in modules_on()
     say(".t jesus")
-    setting("extramodules", "jesus", "true")
+    setting("modules", "jesus", "true")
     say(".menu jesus")
     wait(6)
     ctl("key", "enter", "tap")
@@ -1780,25 +1821,41 @@ def _():
     listed = "Jesus" in modules_on()
     if listed:
         say(".t jesus")
-    say(".menu extra modules")
+
+    def enter_on(query, name):
+        say(f".menu {query}")
+        wait(6)
+        ctl("key", "enter", "tap")
+        wait(3)
+        close_menu()
+        on = name in modules_on()
+        if on:
+            say(f".t {query}")
+        return on
+
+    pearl = enter_on("pearl catch", "Pearl Catch")
+    setting("modules", "kill aura", "false")
+    aura_hidden = enter_on("kill aura", "Kill Aura")
+    say(".menu modules")
     wait(6)
     ctl("click-at", *map(str, menu_row(5, 1)))
     wait(5)
-    ctl("screenshot", f"{SHOTS}/extra_modules.png")
+    ctl("screenshot", f"{SHOTS}/modules.png")
     time.sleep(2)
     close_menu()
-    switch = "Extra Modules" in modules_on()
-    say(".reset extramodules")
-    ok = not hidden and by_command and listed and not switch
+    switch = "Modules" in modules_on()
+    say(".reset modules")
+    ok = not hidden and by_command and listed and pearl and not aura_hidden and not switch
     return ok, (f"Enter on 'jesus' while hidden turned it on: {hidden}; .t jesus while hidden: {by_command}; Enter once listed: "
-                f"{listed}; a click on Extra Modules turned it on: {switch} (shot {SHOTS}/extra_modules.png)")
+                f"{listed}; Pearl Catch shown by default: {pearl}; Kill Aura switched off still turned on: {aura_hidden}; "
+                f"a click on Modules turned it on: {switch} (shot {SHOTS}/modules.png)")
 
 
 @test("Old profile converts")
 def _():
     # A profile from before 0.9: Auto Steal and No Mining Trace by their old names, Reverse Step on its own, Potion
     # Saver. Imported and loaded: Chest Stealer and Mine Through Mobs have their settings, Step is on with only its
-    # Reverse step section, Potion Saver's lines are gone, and Extra Modules lists the extras it used.
+    # Reverse step section, Potion Saver's lines are gone, and Modules shows the hidden modules it used.
     found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
     if not found:
         say(".profile list")
@@ -1813,7 +1870,7 @@ def _():
     stealer = said_after(".settings cheststealer")
     step = said_after(".settings step")
     mine = said_after(".settings minethroughmobs")
-    extras = said_after(".settings extramodules")
+    extras = said_after(".settings modules")
     now_on = modules_on()
     say(".menu")
     wait(6)
@@ -1822,14 +1879,14 @@ def _():
     close_menu()
     say(".profile load before-load")
     say(".profile delete oldcfg")
-    for m in ("cheststealer", "step", "minethroughmobs", "extramodules"):
+    for m in ("cheststealer", "step", "minethroughmobs", "modules"):
         touched.add(m)
     ok = (any("Imported" in l for l in imported) and any("Loaded" in l for l in loaded) and "Items per tick: 3" in stealer
           and "Step up: OFF" in step and "Reverse step: ON" in step and "Fall speed: 2" in step
           and "Only with a pickaxe: OFF" in mine and "Step: ON" in extras and "Mine Through Mobs: ON" in extras
           and {"Chest Stealer", "Step", "Mine Through Mobs"} <= set(now_on))
     return ok, (f"import {imported[:1]}, load {loaded[:1]}; Chest Stealer {[l for l in stealer if 'tick' in l]}; Step "
-                f"{[l for l in step if 'step' in l.lower() or 'Fall' in l]}; Mine Through Mobs {mine[-1:]}; Extra Modules on: "
+                f"{[l for l in step if 'step' in l.lower() or 'Fall' in l]}; Mine Through Mobs {mine[-1:]}; Modules on: "
                 f"{[l for l in extras if l.endswith(': ON')]}; on: {[n for n in now_on if n in ('Chest Stealer', 'Step', 'Mine Through Mobs')]}")
 
 
@@ -5724,6 +5781,37 @@ def _():
     return green > 150, f"{green} health-bar pixels beside the crosshair"
 
 
+@test("Kill Aura (Target strafe)")
+def _():
+    # A pig with 1000 health 3 blocks ahead, Kill Aura on it with a sword, holding W for 60 ticks: with Target strafe
+    # (Strafe radius 2) you go round the pig near the radius (the angle round it turns well past 120 degrees); without
+    # it you walk on.
+    setting("killaura", "entities", "pig")
+    pig = (X0 + 0.5, Z0 + 3.5)
+    got = {}
+    for name, on in (("off", False), ("on", True)):
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        cmd(f"summon pig {pig[0]} {Y + 1} {pig[1]} {TOUGH_PIG}")
+        wait(10)
+        setting("killaura", "target strafe", "true" if on else "false")
+        setting("killaura", "strafe radius", "2")
+        only("killaura")
+        ctl("key", "w", "down")
+        points = poll(60, 2, pos)
+        ctl("key", "w", "up")
+        only()
+        tail = points[10:]
+        dists = [math.hypot(q[0] - pig[0], q[2] - pig[1]) for q in tail]
+        angles = [math.atan2(q[2] - pig[1], q[0] - pig[0]) for q in tail]
+        turn = sum(abs((b - a + math.pi) % (2 * math.pi) - math.pi) for a, b in zip(angles, angles[1:]))
+        got[name] = (round(min(dists), 2), round(max(dists), 2), round(math.degrees(turn)))
+    setting("killaura", "target strafe", "false")
+    ok = 1.3 < got["on"][0] and got["on"][1] < 2.9 and got["on"][2] > 120 and got["off"][2] < 120
+    return ok, f"(closest, furthest, degrees round the pig) after the first 20 ticks: without Target strafe {got['off']}, with it {got['on']}"
+
+
 @test("Kill Aura (Silent aura)")
 def _():
     # The default mode (vape-rs's SilentAura): it hits a pig within vanilla reach without turning your view, and
@@ -6694,7 +6782,7 @@ SWEEPS = [
                          "autowalk", "fastclimb", "autojump", "sneak", "noslow", "nojumpdelay", "antivoid",
                          "elytraboost", "chestswap", "scaffold", "timer", "fastplace", "breakdelay", "autoclicker", "autoweapon",
                          "triggerbot", "autoarmor", "autoreplenish", "autogap", "airplace", "reach", "autotrap", "autoweb",
-                         "holefiller", "aimassist", "bowspam", "crystaloptimizer", "flamethrower", "autoshearer", "automount",
+                         "holefiller", "aimassist", "crystaloptimizer", "flamethrower", "autoshearer", "automount",
                          "cheststealer", "inventorycleaner", "middleclickextra", "autofish")
 ]
 
@@ -7064,8 +7152,8 @@ def poll(ticks, every=2, fn=None):
 
 
 def weapon(*sections):
-    """Auto Weapon with only these of its sections on (best weapon, axe on shields, mace, spear)."""
-    for section in ("best weapon", "axe on shields", "mace", "spear"):
+    """Auto Weapon with only these of its sections on (best weapon, axe on shields)."""
+    for section in ("best weapon", "axe on shields"):
         setting("autoweapon", section, "true" if section in sections else "false")
 
 
@@ -7477,15 +7565,16 @@ def _():
     return found, f"Auto Weapon on after searching \"shield breaker\" and Enter: {found}"
 
 
-@test("Auto Weapon (Mace)")
+@test("Auto Mace (Kill Aura)")
 def _():
-    # Falling 7 blocks past a pig with 1000 health, Kill Aura holding a sword, a mace in slot 3: the first hit's
-    # damage without and with Auto Weapon's Mace (a smash adds 4 a block for the first 3 fallen, 2 for the next 5).
-    reset()
+    # Falling 11 blocks past a pig with 1000 health, Kill Aura holding a sword, a mace in slot 3, Auto Mace's Min fall
+    # at 3 and Swap back on: the first hit's damage without and with Auto Mace (a smash adds 4 a block for the first 3
+    # fallen, 2 for the next 5, 1 after), and the sword back in hand after it.
     setting("killaura", "entities", "pig")
-    weapon("mace")
+    setting("automace", "min fall", "3")
+    setting("automace", "swap back", "true")
     lost = {}
-    for name, mods in (("off", ("killaura",)), ("on", ("killaura", "autoweapon"))):
+    for name, mods in (("off", ("killaura",)), ("on", ("killaura", "automace"))):
         reset()
         slot(0, "diamond_sword")
         slot(2, "mace")
@@ -7493,7 +7582,7 @@ def _():
         cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 1.5} {TOUGH_PIG}")
         wait(10)
         only(*mods)
-        cmd(f"tp @s {X0 + 0.5} {Y + 8} {Z0 + 0.5} 0 60")
+        cmd(f"tp @s {X0 + 0.5} {Y + 12} {Z0 + 0.5} 0 60")
         hit = 0
         for _ in range(60):
             wait(1)
@@ -7501,32 +7590,73 @@ def _():
             if m and m[0]["health"] < 1000:
                 hit = 1000 - m[0]["health"]
                 break
+        wait(10)
         only()
         lost[name] = (round(hit, 1), (state().get("held") or {}).get("item", ""))
+    setting("automace", "min fall", "10")
+    setting("automace", "swap back", "false")
     return lost["on"][0] > lost["off"][0] * 1.5 and "sword" in lost["on"][1], (
-        f"first hit falling past the pig: {lost['off'][0]} with the sword alone, {lost['on'][0]} with Mace; hand after: "
-        f"{lost['on'][1]}")
+        f"first hit falling past the pig: {lost['off'][0]} with the sword alone, {lost['on'][0]} with Auto Mace; hand "
+        f"after: {lost['on'][1]}")
 
 
-@test("Auto Weapon (Holding, Back after a delay)")
+@test("Auto Mace (Swap back)")
 def _():
-    # Mace's smash as above, Kill Aura holding the item: a sword (Holding lists it: the mace swaps in) and a stick
-    # (Holding sword,axe: no swap, a weak hit); then with Back after A delay (Shortest 5, Longest 5), the ticks the mace
-    # stays in hand after the hit (Same tick: 1).
-    setting("killaura", "entities", "pig")
-    setting("killaura", "attack when holding", "All")
-    setting("autoweapon", "holding", "sword,axe")
-    weapon("mace")
-
-    def fall(item):
+    # Falling 11 blocks past a pig with 1000 health, a sword in hand and a mace in slot 3, your own clicks at the pig
+    # with Criticals on (it may hold the hit for its hop): Auto Mace (Min fall 3, Swap back, no Trigger) puts the mace
+    # in for the click, the hit is the mace's smash (far more than the sword's), and the sword is back after it.
+    setting("automace", "min fall", "3")
+    setting("automace", "swap back", "true")
+    setting("automace", "trigger", "false")
+    got = {}
+    for name, mods in (("off", ("criticals",)), ("on", ("criticals", "automace"))):
         reset()
-        slot(0, item)
+        slot(0, "diamond_sword")
         slot(2, "mace")
         ctl("key", "1", "tap")
         cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 1.5} {TOUGH_PIG}")
         wait(10)
+        target = str(mobs("pig")[0]["id"])
+        only(*mods)
+        cmd(f"tp @s {X0 + 0.5} {Y + 12} {Z0 + 0.5} 0 60")
+        hit = 0
+        for _ in range(60):
+            ctl("look-at-entity", target)
+            ctl("mouse", "left", "click")
+            wait(1)
+            m = mobs("pig")
+            if m and m[0]["health"] < 1000:
+                hit = 1000 - m[0]["health"]
+                break
+        wait(10)
+        only()
+        got[name] = (round(hit, 1), held().get("item", "").replace("minecraft:", ""))
+    setting("automace", "min fall", "10")
+    setting("automace", "swap back", "false")
+    setting("automace", "trigger", "true")
+    ok = got["on"][0] > got["off"][0] * 1.5 and got["on"][1] == "diamond_sword"
+    return ok, f"(first hit, hand after) the sword alone {got['off']}, with Auto Mace {got['on']}"
+
+
+@test("Auto Weapon (Holding, Back after a delay)")
+def _():
+    # Kill Aura at a pig with 1000 health, a diamond sword in slot 3, Best weapon alone, holding the item: a wooden
+    # sword (Holding lists it: the diamond sword swaps in) and a stick (Holding sword,axe: no swap, a weak hit); then
+    # with Back after A delay (Shortest 5, Longest 5), the ticks the diamond sword stays in hand after the hit (Same
+    # tick: 1).
+    setting("killaura", "entities", "pig")
+    setting("killaura", "attack when holding", "All")
+    setting("autoweapon", "holding", "sword,axe")
+    weapon("best weapon")
+
+    def hit_with(item):
+        reset()
+        slot(0, item)
+        slot(2, "diamond_sword")
+        ctl("key", "1", "tap")
+        cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 2.0} {TOUGH_PIG}")
+        wait(10)
         only("killaura", "autoweapon")
-        cmd(f"tp @s {X0 + 0.5} {Y + 8} {Z0 + 0.5} 0 60")
         hit, held_for = 0, 0
         for _ in range(60):
             wait(1)
@@ -7534,34 +7664,35 @@ def _():
             if m and m[0]["health"] < 1000:
                 hit = 1000 - m[0]["health"]
                 break
-        while held_for < 20 and "mace" in held().get("item", ""):
+        while held_for < 20 and "diamond_sword" in held().get("item", ""):
             wait(1)
             held_for += 1
         only()
         return round(hit, 1), held_for, held().get("item", "").replace("minecraft:", "")
 
-    sword, stick = fall("diamond_sword"), fall("stick")
+    sword, stick = hit_with("wooden_sword"), hit_with("stick")
     setting("autoweapon", "back after", "A delay")
     setting("autoweapon", "shortest delay", "5")
     setting("autoweapon", "longest delay", "5")
-    delayed = fall("diamond_sword")
-    ok = sword[0] > stick[0] * 1.5 and delayed[0] > stick[0] * 1.5 and delayed[1] >= sword[1] + 2 and "sword" in delayed[2]
-    return ok, (f"(first hit, ticks the mace stayed after it, hand after) holding a sword: {sword}; a stick: {stick}; "
-                f"a sword, Back after a 5-tick delay: {delayed}")
+    delayed = hit_with("wooden_sword")
+    setting("autoweapon", "back after", "Same tick")
+    weapon("best weapon", "axe on shields")
+    ok = sword[0] > stick[0] * 1.5 and delayed[0] > stick[0] * 1.5 and delayed[1] >= sword[1] + 2 and delayed[2] == "wooden_sword"
+    return ok, (f"(first hit, ticks the diamond sword stayed after it, hand after) holding a wooden sword: {sword}; a "
+                f"stick: {stick}; a wooden sword, Back after a 5-tick delay: {delayed}")
 
 
-@test("Auto Weapon (Reach poke)")
+@test("Auto Spear (Reach poke)")
 def _():
     # A pig 4.5 blocks off (past the 3 blocks of reach), a sword in hand and an iron spear in slot 3: your clicks.
-    weapon("spear")
     lost = {}
-    for name, mods in (("off", ()), ("on", ("autoweapon",))):
+    for name, mods in (("off", ()), ("on", ("autospear",))):
         reset()
         slot(0, "diamond_sword")
         slot(2, "iron_spear")
         ctl("key", "1", "tap")
         if mods:
-            setting("autoweapon", "reach poke", "true")
+            setting("autospear", "reach poke", "true")
         pid = None
         cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 5.0} {TOUGH_PIG}")
         wait(10)
@@ -8870,6 +9001,8 @@ def pig_clicks(mods, z, settings=(), wall=None, n=5):
     for _ in range(n):
         ctl("mouse", "left", "click")
         wait(25)
+    if n == 0:
+        wait(125)
     only()
     m = mobs("pig")
     if wall:
@@ -8914,17 +9047,34 @@ def _():
     return ok, f"health the pig lost to 5 clicks 0.3 beside its box: off {lost['off']}, on {lost['on']}, on for players only {lost['players']}"
 
 
-@test("Auto Weapon (Spear reach)")
+@test("Auto Spear (Spear reach)")
 def _():
     # The same pig, a sword in hand and an iron spear in slot 3: Spear reach (When out of reach) reaches it with the
     # sword, passing through the spear's slot; the sword stays in hand.
-    weapon("spear")
     off = pig_clicks((), 5.0)
-    on = pig_clicks(("autoweapon",), 5.0, (("autoweapon", "spear reach", "when out of reach"),))
+    on = pig_clicks(("autospear",), 5.0, (("autospear", "spear reach", "when out of reach"),))
+    setting("autospear", "spear reach", "off")
     if HORIZON_SERVER and on[0] == 0:
         return None, f"{REFUSED}: off {off[0]}, on {on[0]}"
     return off[0] == 0 and (on[0] or 0) > 0 and "sword" in on[1], (
         f"5 clicks at a pig 4.5 blocks off: {off[0]} health lost without Spear reach, {on[0]} with it; hand after: {on[1]}")
+
+
+@test("Auto Spear (Extended reach)")
+def _():
+    # The same pig 4.5 blocks off, a sword in hand and an iron spear (no Lunge) in slot 3: Extended reach stabs it with
+    # the spear on your clicks (the sword back two ticks after each), and with Trigger Bot (Works with Trigger Bot) on
+    # its own while you look at it.
+    off = pig_clicks((), 5.0)
+    clicks = pig_clicks(("autospear",), 5.0, (("autospear", "extended reach", "true"),))
+    trigger = pig_clicks(("autospear", "triggerbot"), 5.0, (("triggerbot", "passive", "true"),), n=0)
+    setting("autospear", "extended reach", "false")
+    setting("triggerbot", "passive", "false")
+    if HORIZON_SERVER and clicks[0] == 0:
+        return None, f"{REFUSED}: off {off[0]}, clicks {clicks[0]}, Trigger Bot {trigger[0]}"
+    ok = off[0] == 0 and (clicks[0] or 0) > 0 and "sword" in clicks[1] and (trigger[0] or 0) > 0 and "sword" in trigger[1]
+    return ok, (f"(health lost, hand after) at a pig 4.5 blocks off: 5 clicks without Extended reach {off}, with it "
+                f"{clicks}; Trigger Bot with it {trigger}")
 
 
 @test("Ghost Hand (Hits)")
@@ -9267,40 +9417,43 @@ def _():
 @test("Auto Weapon (settings from before 0.9)")
 def _():
     # A profile from before Auto Weapon took in Shield Breaker, Mace and Spear Swap: Shield Breaker on (Auto, Holding
-    # sword, bound to G, Switch back off), Mace on (Breach swap), Spear Swap and Auto Weapon off.
+    # sword, bound to G, Switch back off), Mace on (Breach swap: dropped, Auto Mace has the mace now), Spear Swap and
+    # Auto Weapon off.
     shown = old_profile("verifyweapon", ["shieldbreaker.on=true", "shieldbreaker.key=key.keyboard.g", "shieldbreaker.mode=Auto",
                                          "shieldbreaker.holding=sword", "shieldbreaker.switchback=false", "mace.on=true", "mace.key=none",
                                          "mace.breachswap=true", "spearswap.on=false", "spearswap.key=none", "autoweapon.on=false",
                                          "autoweapon.key=none"], "autoweapon")
     if shown is None:
         return False, "no profile file written"
-    want = ["Best weapon: OFF", "Axe on shields: ON", "Shield mode: Auto", "Mace: ON", "Breach swap: ON", "Spear: OFF",
-            "Holding: sword", "Swap back: OFF"]
+    want = ["Best weapon: OFF", "Axe on shields: ON", "Shield mode: Auto", "Holding: sword", "Swap back: OFF"]
     on = any("Auto Weapon*" in line for line in shown)
     bound = any(line.startswith("Auto Weapon: G") for line in shown)
     got = [w for w in want if any(line.startswith(w) for line in shown)]
     return on and bound and got == want, f"Auto Weapon on: {on}, bound to G: {bound}, settings {got} of {want}; said {shown[:2]}"
 
 
-@test("Rotation and No Rotate")
+@test("Rotations")
 def _():
-    # Rotation Simple (yaw 90, pitch 30) holds the look while you turn; Smart snaps it to the nearest 45 and 30
-    # degrees. No Rotate: a /tp that sets yaw 180 and pitch 45 leaves your look as it was (off: it takes it).
+    # Rotations' Lock, Simple (yaw 90, pitch 30), holds the look while you turn; Smart snaps it to the nearest 45 and
+    # 30 degrees. No rotate alone (its default): a /tp that sets yaw 180 and pitch 45 leaves your look as it was (off:
+    # it takes it).
     reset()
-    setting("rotation", "yaw angle", "90")
-    setting("rotation", "pitch angle", "30")
-    only("rotation")
+    setting("rotations", "lock", "true")
+    setting("rotations", "yaw angle", "90")
+    setting("rotations", "pitch angle", "30")
+    only("rotations")
     ctl("look", "10", "-20")
     wait(5)
     simple = tuple(round(v) for v in aim_view())
-    setting("rotation", "yaw lock", "Smart")
-    setting("rotation", "pitch lock", "Smart")
+    setting("rotations", "yaw lock", "Smart")
+    setting("rotations", "pitch lock", "Smart")
     ctl("look", "50", "-20")
     wait(5)
     smart = tuple(round(v) % 360 if i == 0 else round(v) for i, v in enumerate(aim_view()))
     only()
+    say(".reset rotations")
     turned = {}
-    for name, mods in (("off", ()), ("on", ("norotate",))):
+    for name, mods in (("off", ()), ("on", ("rotations",))):
         ctl("look", "0", "0")
         only(*mods)
         wait(3)
@@ -9309,7 +9462,7 @@ def _():
         turned[name] = tuple(round(v) % 360 if i == 0 else round(v) for i, v in enumerate(aim_view()))
         only()
     ok = simple == (90, 30) and smart == (45, -30) and turned["off"] == (180, 45) and turned["on"] == (0, 0)
-    return ok, f"Rotation Simple {simple}, Smart from (50, -20) {smart}; look after a /tp to (180, 45): off {turned['off']}, No Rotate {turned['on']}"
+    return ok, f"Lock Simple {simple}, Smart from (50, -20) {smart}; look after a /tp to (180, 45): off {turned['off']}, No rotate {turned['on']}"
 
 
 def active_effects():
@@ -9356,11 +9509,10 @@ def _():
     return ok, f"(pig's health lost, stone left) off {got['off']}, Mine Through Mobs {got['on']}"
 
 
-@test("Anvil (Self Anvil, Anti Anvil), Anti Bed")
+@test("Anvil (Self Anvil, Anti Anvil)")
 def _():
     # In an obsidian hole with walls 3 high: Anvil's Self Anvil alone puts an anvil 2 over your feet (it falls into the
-    # hole) and Anvil turns off; its Anti Anvil puts obsidian over your head against an anvil falling from 7 over your feet; Anti Bed puts
-    # string in your head's block.
+    # hole) and Anvil turns off; its Anti Anvil puts obsidian over your head against an anvil falling from 7 over your feet.
     def hole():
         reset()
         cmd(f"fill {X0 - 1} {Y} {Z0 - 1} {X0 + 1} {Y + 3} {Z0 + 1} minecraft:obsidian", f"fill {X0} {Y + 1} {Z0} {X0} {Y + 8} {Z0} minecraft:air",
@@ -9385,15 +9537,9 @@ def _():
     wait(30)
     anti_anvil = "minecraft:obsidian" in at(2) and "minecraft:anvil" in at(3)
     only()
-    hole()
-    slot(0, "string", 8)
-    only("antibed")
-    wait(10)
-    anti_bed = "minecraft:tripwire" in at(1)
-    only()
     cmd(f"fill {X0 - 1} {Y + 1} {Z0 - 1} {X0 + 1} {Y + 8} {Z0 + 1} minecraft:air", f"fill {X0 - 1} {Y} {Z0 - 1} {X0 + 1} {Y} {Z0 + 1} minecraft:stone")
-    ok = self_anvil == (True, False) and anti_anvil and anti_bed
-    return ok, f"Self Anvil (anvil in the hole, still on): {self_anvil}; Anti Anvil obsidian over your head, the anvil on it: {anti_anvil}; Anti Bed string: {anti_bed}"
+    ok = self_anvil == (True, False) and anti_anvil
+    return ok, f"Self Anvil (anvil in the hole, still on): {self_anvil}; Anti Anvil obsidian over your head, the anvil on it: {anti_anvil}"
 
 
 @test("Portals and Multitask")
@@ -9612,26 +9758,6 @@ def _():
     return there == 1 and hits in (0, None) and gone, f"fake players in the world: {there}; hits sent at it by Kill Aura in 2 s: {hits}; gone when off: {gone} (shot {SHOTS}/fake_player.png)"
 
 
-@test("Bow Spam (Crossbows)")
-def _():
-    # A crossbow and 64 arrows, use held for 5 s looking up: arrows shot without and with Bow Spam.
-    shot = {}
-    for name, mods in (("off", ()), ("on", ("bowspam",))):
-        reset()
-        slot(0, "crossbow")
-        slot(8, "arrow", 64)
-        ctl("key", "1", "tap")
-        ctl("look", "0", "-45")
-        only(*mods)
-        ctl("mouse", "right", "down")
-        wait(100)
-        ctl("mouse", "right", "up")
-        only()
-        hotbar = ctl("inventory").get("hotbar") or []
-        shot[name] = 64 - sum(s.get("count", 0) for s in hotbar if s and "arrow" in (s.get("item") or ""))
-    return shot["on"] >= shot["off"] + 2, f"arrows shot holding use for 5 s: off {shot['off']}, on {shot['on']}"
-
-
 @test("Death Location")
 def _():
     # Killed with Death Location on: its chat line and Death waypoint; back at the spot, it clears.
@@ -9654,30 +9780,31 @@ def _():
     return bool(died) and bool(listed) and bool(reached), f"said {died}, waypoints {listed}, back there: {reached}"
 
 
-@test("Auto Weapon (Stun slam)")
+@test("Auto Mace (Stun slam)")
 def _():
-    # Falling 7 blocks onto Bot1, who holds a shield up at you, with Kill Aura (a sword), an axe in slot 3 and a mace
-    # in slot 4, Auto Weapon's Axe on shields and Mace on: Bot1's health lost by the time you land, Stun slam off and on.
+    # Bot1 on a pillar 7 blocks up, holding a shield up toward the drop beside it; you fall past it from 19 blocks up
+    # with an axe in hand and a mace in slot 4, Auto Mace's Trigger with Silent aim (Min fall 3): Bot1's health lost by
+    # the time you land, Stun slam off (the mace hits the shield) and on (the axe takes the shield down first).
     if not CTL2:
         return None, "needs a second player"
-    setting("killaura", "entities", "player")
+    setting("automace", "min fall", "3")
+    setting("automace", "silent aim", "true")
     lost = {}
     for name in ("false", "true"):
         reset()
-        slot(0, "diamond_sword")
-        slot(2, "diamond_axe")
+        slot(0, "diamond_axe")
         slot(3, "mace")
         ctl("key", "1", "tap")
-        setting("autoweapon", "stun slam", name)
-        weapon("axe on shields", "mace")
-        bot_ready(2.0, 180, "give Bot1 minecraft:shield")
+        setting("automace", "stun slam", name)
+        bot_ready(1.5, 180, "give Bot1 minecraft:shield", f"setblock {X0} {Y + 7} {Z0 + 1} minecraft:stone",
+                  f"tp Bot1 {X0 + 0.5} {Y + 8} {Z0 + 1.5} 180 0")
         ctl2("select", "1")
         ctl2("mouse", "right", "down")
         wait(10)
         before = bot_health()
-        only("killaura", "autoweapon")
-        cmd(f"tp @s {X0 + 0.5} {Y + 8} {Z0 + 0.5} 0 60")
-        for _ in range(40):
+        only("automace")
+        cmd(f"tp @s {X0 + 0.5} {Y + 20} {Z0 + 0.5} 0 0")
+        for _ in range(60):
             wait(1)
             if state()["player"].get("on_ground"):
                 break
@@ -9685,8 +9812,12 @@ def _():
         only()
         lost[name] = round(before - bot_health(), 1)
         ctl2("mouse", "right", "up")
+        cmd(f"setblock {X0} {Y + 7} {Z0 + 1} minecraft:air")
     bot_done()
-    return lost["true"] > lost["false"], f"Bot1's health lost to the fall: Stun slam off {lost['false']}, on {lost['true']}"
+    setting("automace", "stun slam", "false")
+    setting("automace", "silent aim", "false")
+    setting("automace", "min fall", "10")
+    return lost["true"] > lost["false"], f"Bot1's health lost to your fall past it: Stun slam off {lost['false']}, on {lost['true']}"
 
 
 def x_window():
@@ -10049,6 +10180,36 @@ def _():
     return ok, (f"missing sections {missing}; Grim table {counts}; ESP line {esp!r}; packet log has W's input, the "
                 f"commands and moves {wire}; chat lines {chat_ok}; {len(text)} chars, no colour codes {clean}; module row copies once "
                 f"and goes off {once}; clipboard {'unchecked' if clip is None else clip}")
+
+
+@test("Debug report save folder")
+def _():
+    # The default stays under Sunset's debug folder. A relative setting resolves under Sunset's data folder,
+    # while an absolute one is used directly.
+    say(".reset debugreport")
+    def saved_path():
+        line, text = debug_report(lambda: say(".debug"))
+        path = line.split(" saved to ", 1)[1] if line and " saved to " in line else None
+        return path, text
+
+    default_path, default_text = saved_path()
+    if default_path is None or default_text is None:
+        return False, "default report was not saved"
+    data_dir = os.path.dirname(os.path.dirname(default_path))
+    relative_dir = os.path.join(data_dir, "debug reports")
+    absolute_dir = os.path.abspath(os.path.join(SHOTS, "sunset-debug-custom"))
+    try:
+        setting("debugreport", "save folder", "debug reports")
+        relative_path, relative_text = saved_path()
+        setting("debugreport", "save folder", absolute_dir)
+        absolute_path, absolute_text = saved_path()
+    finally:
+        say(".reset debugreport")
+    ok = (os.path.basename(os.path.dirname(default_path)) == "debug"
+          and relative_path is not None and os.path.dirname(relative_path) == relative_dir
+          and absolute_path is not None and os.path.dirname(absolute_path) == absolute_dir
+          and relative_text is not None and absolute_text is not None)
+    return ok, f"default {default_path}; relative {relative_path}; absolute {absolute_path}"
 
 
 @test("Debug report (Grim alerts)")
@@ -10564,15 +10725,14 @@ def _():
     return got["on"] and not got["off"], f"web where Bot1 lands: {got['off']} without, {got['on']} with Only when falling"
 
 
-@test("Auto Weapon (Spear damage indicator)")
+@test("Auto Spear (Spear damage indicator)")
 def _():
     # A visual: charging a spear with the Damage indicator on draws its box under the crosshair (a screenshot).
     reset()
     slot(0, "iron_spear")
     ctl("key", "1", "tap")
-    setting("autoweapon", "spear", "true")
-    setting("autoweapon", "damage indicator", "true")
-    only("autoweapon")
+    setting("autospear", "damage indicator", "true")
+    only("autospear")
     ctl("mouse", "right", "down")
     wait(15)
     path = f"{SHOTS}/spear-indicator.png"
@@ -10580,7 +10740,7 @@ def _():
     wait(5)
     ctl("mouse", "right", "up")
     only()
-    say(".reset autoweapon")
+    say(".reset autospear")
     return None, f"look at {path}"
 
 
@@ -12796,6 +12956,184 @@ def _():
     got = {"on": run(), "fill off": run("false"), "no shift": run(shift=False)}
     say(".reset clientsort")
     return got == {"on": False, "fill off": True, "no shift": True}, f"dirt still in the main inventory slot: {got}"
+
+
+@test("Auto Weapon (Mode)")
+def _():
+    # Kill Aura at a pig with nothing in hand, a sword in slot 2 and an axe in slot 3 (each kept 10 ticks after a hit,
+    # Back after A delay): Mode Sword takes only the sword, Mode Axe only the axe, Custom with every section off neither.
+    setting("killaura", "entities", "pig")
+    setting("killaura", "attack when holding", "All")
+    setting("autoweapon", "holding", "empty")
+    setting("autoweapon", "back after", "A delay")
+    setting("autoweapon", "shortest delay", "10")
+    setting("autoweapon", "longest delay", "10")
+    weapon()
+    seen = {}
+    for mode in ("Sword", "Axe", "Custom"):
+        reset()
+        slot(1, "diamond_sword")
+        slot(2, "diamond_axe")
+        ctl("key", "1", "tap")
+        setting("autoweapon", "mode", mode)
+        cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 2.0} {TOUGH_PIG}")
+        wait(10)
+        only("killaura", "autoweapon")
+        items = poll(60, 2, lambda: held().get("item", ""))
+        only()
+        seen[mode] = sorted({i.replace("minecraft:", "") for i in items if i})
+    setting("autoweapon", "mode", "Custom")
+    setting("autoweapon", "back after", "Same tick")
+    weapon("best weapon", "axe on shields")
+    ok = seen["Sword"] == ["diamond_sword"] and seen["Axe"] == ["diamond_axe"] and seen["Custom"] == []
+    return ok, f"items seen in hand: Sword {seen['Sword']}, Axe {seen['Axe']}, Custom with no sections {seen['Custom']}"
+
+
+@test("Auto Spear (Lunge on hit)")
+def _():
+    # A pig 2.5 blocks ahead, a sword in hand and an iron spear with Lunge II in slot 3: your clicks. With Auto Spear's
+    # Lunge on hit each click goes as a jab of the spear (the lunge carries you toward the pig) and the sword comes
+    # back; off, plain sword hits and you stay put.
+    got = {}
+    for name, on in (("off", False), ("on", True)):
+        reset()
+        slot(0, "diamond_sword")
+        slot(2, "iron_spear[enchantments={lunge:2}]")
+        ctl("key", "1", "tap")
+        setting("autospear", "holding", "sword,axe")
+        setting("autospear", "lunge on hit", "true" if on else "false")
+        cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 3.0} {TOUGH_PIG}")
+        wait(10)
+        ctl("look-at-entity", str(mobs("pig")[0]["id"]))
+        only("autospear")
+        a = pos()
+        for _ in range(3):
+            ctl("mouse", "left", "click")
+            wait(25)
+        moved = round(flat(a, pos()), 2)
+        only()
+        m = mobs("pig")
+        got[name] = (round(1000 - m[0]["health"], 1) if m else None, moved, held().get("item", "").replace("minecraft:", ""))
+    setting("autospear", "lunge on hit", "false")
+    setting("autospear", "holding", "sword,axe,spear,mace,trident,empty")
+    off, on = got["off"], got["on"]
+    ok = (on[0] or 0) > 0 and on[1] > off[1] + 0.5 and "sword" in on[2]
+    return ok, f"(health lost, moved, hand after) without Lunge on hit {off}, with it {on}"
+
+
+@test("No Render (Remove slowness)")
+def _():
+    # Slowness IV on you, walking forward 40 ticks: with No Render's Remove slowness (single player: the server here
+    # is your own) you walk much further than with it off.
+    walked = {}
+    for name, on in (("off", False), ("on", True)):
+        reset()
+        cmd("effect give @s minecraft:slowness 60 3 true")
+        setting("norender", "remove slowness", "true" if on else "false")
+        only("norender")
+        wait(10)
+        a = pos()
+        ctl("key", "w", "down")
+        wait(40)
+        ctl("key", "w", "up")
+        walked[name] = round(flat(a, pos()), 2)
+        only()
+    setting("norender", "remove slowness", "false")
+    cmd("effect clear @s minecraft:slowness")
+    return walked["on"] > walked["off"] * 1.5, f"blocks walked in 40 ticks under Slowness IV: off {walked['off']}, on {walked['on']}"
+
+
+def sharpness(name, box):
+    """How much neighbouring pixels differ in `box` of a screenshot: lower when the picture is blurred."""
+    from PIL import Image
+    path = f"{SHOTS}/{name}.png"
+    ctl("screenshot", path)
+    time.sleep(2)
+    img = Image.open(path).convert("L").crop(box)
+    px = img.load()
+    w, h = img.size
+    return sum(abs(px[x, y] - px[x + 1, y]) for y in range(h) for x in range(w - 1)) / max(1, (w - 1) * h)
+
+
+@test("ClickGUI (Inventory blur)")
+def _():
+    # The inventory open over the floor, Menu dim on: the world beside the inventory's panel is sharp without
+    # Inventory blur and blurred with it.
+    reset("creative")
+    ctl("look", "0", "50")
+    setting("clickgui", "menu dim", "true")
+    box = (8, 40, 120, 200)
+    got = {}
+    for name, on in (("off", False), ("on", True)):
+        setting("clickgui", "inventory blur", "true" if on else "false")
+        ctl("open-inventory")
+        wait(10)
+        got[name] = round(sharpness(f"ib_{name}", box), 2)
+        ctl("close")
+        wait(5)
+    setting("clickgui", "inventory blur", "false")
+    setting("clickgui", "menu dim", "false")
+    return got["on"] < got["off"] * 0.6, f"sharpness beside the inventory: off {got['off']}, on {got['on']}"
+
+
+@test("ESP (Murderer finder)")
+def _():
+    # Bot1 with an iron sword in hand: ESP's Murderer finder with Callout says so in chat, once.
+    if not CTL2:
+        return None, "needs a second player"
+    reset()
+    setting("esp", "murderer finder", "true")
+    setting("esp", "callout", "true")
+    setting("esp", "callout delay (ms)", "0")
+    setting("esp", "callout messages", "%s is the murderer!")
+    bot_ready(2.5, 180, "give Bot1 minecraft:iron_sword")
+    ctl2("select", "1")
+    wait(10)
+    only("esp")
+    wait(40)
+    only()
+    bot_done()
+    lines = [line for line in ctl("chat-log", "20").get("chat", []) if "is the murderer" in str(line)]
+    setting("esp", "murderer finder", "false")
+    setting("esp", "callout", "false")
+    ok = len(lines) == 1 and "Bot1" in str(lines[0])
+    return ok, f"chat lines naming a murderer: {lines}"
+
+
+@test("HUD layout editor (chat)")
+def _():
+    # With the chat open, Coordinates (top left), Compass (top middle) and the Armor HUD (by the hotbar) are dragged to
+    # the middle of the screen, the left and the top right: afterwards each draws there, no longer where it was.
+    hud_scene()
+    w, h = hud_size()
+    wear()
+    for name, value in (("watermark", "false"), ("module list", "false"), ("fps", "false"), ("speed", "false"),
+                        ("facing", "false"), ("totems", "false"), ("coordinates position", "Top left"),
+                        ("compass position", "Top")):
+        setting("hud", name, value)
+    off = hud_frame("le_off", ("coordinates", "false"), ("compass", "false"), ("armor hud", "false"))
+    before = hud_frame("le_before", ("coordinates", "true"), ("compass", "true"), ("armor hud", "true"))
+    places = {
+        "coordinates": ((6, 6), (w / 2 - 20, h / 2 - 30), hud_box(0, 0, 60, 12), hud_box(w / 2 - 30, h / 2 - 40, w / 2 + 60, h / 2 - 20)),
+        "compass": ((w / 2, 16), (100, h / 2 + 20), hud_box(w / 2 - 80, 8, w / 2 + 80, 28), hud_box(15, h / 2 + 5, 185, h / 2 + 35)),
+        "armor hud": ((w / 2 + 110, h - 10), (w - 50, 40), hud_box(w / 2 + 95, h - 23, w / 2 + 179, h), hud_box(w - 100, 25, w, 55)),
+    }
+    ctl("key", "t", "tap")
+    wait(5)
+    for (x0, y0), (x1, y1), _, _ in places.values():
+        ctl("drag-at", str(x0), str(y0), str((x0 + x1) / 2), str((y0 + y1) / 2), str(x1), str(y1))
+        wait(4)
+    ctl("key", "esc", "tap")
+    after = hud_frame("le_after")
+    report, ok = [], True
+    for name, (_, _, old, new) in places.items():
+        was, left, moved = changed(off, before, old), changed(off, after, old), changed(off, after, new)
+        ok = ok and was > 100 and left < was / 4 and moved > 100
+        report.append(f"{name}: {was} px where it was, {left} there after, {moved} where dropped")
+    for name in ("coordinates", "compass", "armor hud"):
+        setting("hud", f"{name} position", "Top left" if name == "coordinates" else "Top" if name == "compass" else "Hotbar")
+    setting("hud", "compass", "false")
+    return ok, "; ".join(report)
 
 
 if __name__ == "__main__":
