@@ -121,6 +121,7 @@ autorespawn.on=true
 aimassist.on=true
 hitboxes.on=true
 autoweapon.on=true
+shield.on=true
 autotool.on=true
 autoeat.on=true
 nametags.on=true
