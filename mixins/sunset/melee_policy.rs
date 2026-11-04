@@ -1,5 +1,5 @@
 // The melee modules' rules that need no world (Rust's PR #16): when a borrowed hotbar slot goes back, distances to a
-// box, whether a shield faces an attacker, the mace's fall bonus, attack speed, W Tap and Jump Reset's triggers.
+// box, whether a shield faces an attacker, attack speed, W Tap and Jump Reset's triggers.
 
 // More living things than this nearby and the melee modules sit out the tick.
 pub(super) const POPULATION_LIMIT: usize = 512;
@@ -54,14 +54,6 @@ pub(super) fn facing_attack(defender: [f64; 3], yaw: f32, attacker: [f64; 3], an
     dot.clamp(-1.0, 1.0).acos().to_degrees() <= f64::from(angle.min(180.0))
 }
 
-// The mace's smash bonus for a fall: 4 a block for the first 3, 2 for the next 5, 1 after.
-pub(super) fn smash_bonus(fall: f64) -> Option<f64> {
-    if !fall.is_finite() || fall < 0.0 {
-        return None;
-    }
-    Some(fall.min(3.0) * 4.0 + (fall - 3.0).clamp(0.0, 5.0) * 2.0 + (fall - 8.0).max(0.0))
-}
-
 // W Tap: a charged hit while you sprint forward at something alive.
 pub(super) fn should_tap(sprinting: bool, forward: bool, strength: f32, living_target: bool) -> bool {
     sprinting && forward && living_target && strength.is_finite() && strength > 0.9
@@ -87,7 +79,7 @@ pub(super) fn attack_speed(item_modifier: f64, total_modifiers: impl IntoIterato
     Some(value.clamp(0.0, 1024.0))
 }
 
-// A key press kept for a few ticks (Auto Weapon's Lunge key).
+// A key press kept for a few ticks (Auto Spear's Lunge key).
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct Request {
     deadline: Option<u64>,

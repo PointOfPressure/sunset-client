@@ -1,13 +1,13 @@
-// Extra Modules (Client): modules the menu leaves out until their switch here is on. Binds, commands, profiles and
-// saved settings reach them all the same; only the ClickGUI, its search and the Options pages skip them. A module
-// joins the list with one line in EXTRAS.
+// Modules (Client): a switch for every module, by category; the menu leaves out the ones switched off. Binds,
+// commands, profiles and saved settings reach them all the same; only the ClickGUI, its search and the Options pages
+// skip them. Modules itself always shows, so a switch can always be put back.
 
-use super::sunset::{Category, Module};
+use super::sunset::{CATEGORIES, Category, Module};
 
-pub(super) const NAME: &str = "Extra Modules";
+pub(super) const NAME: &str = "Modules";
 
-// The extra modules, in the order Extra Modules lists their switches.
-pub(super) const EXTRAS: &[&str] = &[
+// The modules hidden until their switch is on (the extras of Extra Modules, Pearl Catch now shown).
+pub(super) const HIDDEN: &[&str] = &[
     "Slippy",
     "Auto City",
     "Self Web",
@@ -18,7 +18,6 @@ pub(super) const EXTRAS: &[&str] = &[
     "Jesus",
     "Trident Boost",
     "Step",
-    "Pearl Catch",
     "Wind Jump",
     "Hold to Eat",
     "Mine Through Mobs",
@@ -26,16 +25,21 @@ pub(super) const EXTRAS: &[&str] = &[
     "Fake Player",
 ];
 
-pub(super) fn defaults() -> Vec<Module> {
-    let mut m = Module::new(NAME, Category::Client, "Lists extra modules in the menu.");
-    for name in EXTRAS {
-        m = m.bool(name, false);
+// Its switches are every module in `modules`, by category in the menu's order.
+pub(super) fn defaults(modules: &[Module]) -> Module {
+    let mut m = Module::new(NAME, Category::Client, "Shows or hides each module in the menu.");
+    for category in CATEGORIES {
+        for name in modules.iter().filter(|m| m.category == category).map(|m| m.name) {
+            m = m.bool(name, !HIDDEN.contains(&name));
+        }
     }
-    vec![m]
+    m
 }
 
-// The extras the menu leaves out now.
+// The modules the menu leaves out now.
 pub(super) fn hidden(modules: &[Module]) -> Vec<&'static str> {
-    let shown = modules.iter().find(|m| m.name == NAME);
-    EXTRAS.iter().copied().filter(|name| !shown.is_some_and(|m| m.b(name))).collect()
+    let Some(list) = modules.iter().find(|m| m.name == NAME) else {
+        return HIDDEN.to_vec();
+    };
+    list.settings.iter().map(|s| s.name).filter(|name| *name != NAME && !list.b(name)).collect()
 }

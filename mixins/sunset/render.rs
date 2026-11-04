@@ -72,6 +72,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Hide blindness", true)
             .bool("Hide darkness", true)
             .bool("Hide nausea", true)
+            // vape-rs's AntiDebuff (Remove Slowness): slowness and its speed modifier off your own client. The server
+            // still slows you, so its anticheat sees you outrun what it expects.
+            .bool("Remove slowness", false)
             .bool("Hide fire overlay", true)
             .bool("Hide liquid overlay", true)
             .bool("Hide in-wall overlay", true)
@@ -637,12 +640,18 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
         game.tool_highlight.timer = 0;
     }
     // The dim and blur behind menus: ClickGUI's Menu dim switch (off hides them).
-    overlay::NO_MENU.store(!mods.iter().find(|m| m.name == "ClickGUI").is_some_and(|m| m.b("Menu dim")), Ordering::Relaxed);
+    let gui = mods.iter().find(|m| m.name == "ClickGUI");
+    overlay::NO_MENU.store(!gui.is_some_and(|m| m.b("Menu dim")), Ordering::Relaxed);
+    overlay::INVENTORY_BLUR.store(gui.is_some_and(|m| m.b("Menu dim") && m.b("Inventory blur")), Ordering::Relaxed);
     // Effects the server put on the player that only change what it sees, and those No Status Effects lists: kept
     // aside while hidden, counted down as the game would, and put back when No Render (or its switch) goes off.
-    let (blind, dark, nausea) = (flag("Hide blindness"), flag("Hide darkness"), flag("Hide nausea"));
+    let (blind, dark, nausea, slow) = (flag("Hide blindness"), flag("Hide darkness"), flag("Hide nausea"), flag("Remove slowness"));
     let hide = |id: &str| {
-        (blind && id == "blindness") || (dark && id == "darkness") || (nausea && id == "nausea") || super::sunset_parity::ignored_effect(id)
+        (blind && id == "blindness")
+            || (dark && id == "darkness")
+            || (nausea && id == "nausea")
+            || (slow && id == "slowness")
+            || super::sunset_parity::ignored_effect(id)
     };
     let taken: Vec<_> = game.potions.effects.list.extract_if(.., |e| hide(e.id)).collect();
     let back: Vec<_> = rs(|r| {
@@ -658,10 +667,26 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
         }
         r.hidden_effects.extract_if(.., |e| !hide(e.id)).collect()
     });
+    // Slowness's modifier comes with the server's attributes, after its effect: taken off every tick it is hidden,
+    // and put back with the effect.
+    let hidden_slow = rs(|r| r.hidden_effects.iter().any(|e| e.id == "slowness"));
     for e in back {
+        if e.id == "slowness"
+            && let Some(p) = game.player.as_mut()
+        {
+            let _ = p.set_modifier(SPEED, SLOWNESS, -0.15 * f64::from(e.amplifier + 1), "add_multiplied_total", true);
+        }
         game.potions.effects.add(e);
     }
+    if hidden_slow
+        && let Some(p) = game.player.as_mut()
+    {
+        let _ = p.set_modifier(SPEED, SLOWNESS, 0.0, "add_multiplied_total", false);
+    }
 }
+
+const SPEED: &str = "minecraft:movement_speed";
+const SLOWNESS: &str = "minecraft:effect.slowness";
 
 // Xray: the mesher draws only the listed blocks (and water, lava and the blocks you placed, if asked); the world is
 // rebuilt when that changes.

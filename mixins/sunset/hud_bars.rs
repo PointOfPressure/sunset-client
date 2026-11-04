@@ -1,6 +1,7 @@
-// HUD's Armor HUD (the look of uku3lig's Armor HUD, with vape-rs's Armor Status as its Compact style), Shield status,
-// Item durability (on every damageable item's icon, and remaining/max in its tooltip), and the settings that change
-// the game's own bars (Mount HUD, Food preview, Saturation, Exhaustion; drawn by hunger_flags.rs).
+// HUD's Armor HUD (the look of uku3lig's Armor HUD, with vape-rs's Armor Status as its Compact style), Compass
+// (vape-rs's), Shield status, Item durability (on every damageable item's icon, and remaining/max in its tooltip), the
+// settings that change the game's own bars (Mount HUD, Food preview, Saturation, Exhaustion; drawn by hunger_flags.rs),
+// and the layout editor: with the chat (or the menu) open, Coordinates, Compass and the Armor HUD move by dragging.
 use super::Game;
 use super::sunset::{Module, Shape};
 use horizon_client::extras::Corner;
@@ -16,8 +17,12 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering::Relaxed};
 // Item durability: 0 off, 1 the number left, 2 the percent left; and the tooltip line.
 static DURABILITY: AtomicU8 = AtomicU8::new(0);
 static TOOLTIP: AtomicBool = AtomicBool::new(false);
-// Where the Armor HUD was drawn last frame (x, y, width, height) and the screen it was on, for dragging it.
-static ARMOR_RECT: Mutex<Option<([f32; 4], [f32; 2])>> = Mutex::new(None);
+// The elements that can be dragged: where each was drawn last frame (x, y, width, height) and the screen it was on.
+static PLACED: Mutex<Vec<Placed>> = Mutex::new(Vec::new());
+// The left button was down last frame, while the chat was open.
+static CHAT_PRESSED: AtomicBool = AtomicBool::new(false);
+
+type Placed = (&'static str, [f32; 4], [f32; 2]);
 // Shield status: the tick the shield's cooldown was first seen, and how much of it was left then.
 static SHIELD_SINCE: Mutex<Option<(f32, f32)>> = Mutex::new(None);
 
@@ -142,26 +147,139 @@ pub(super) fn tooltip(
     ControlFlow::Break(())
 }
 
-// The Armor HUD's position as fractions of the screen, from where its top left corner is dragged to.
-pub(super) fn armor_drag(x: f32, y: f32) -> Option<(f64, f64)> {
-    let ([_, _, w, h], [sw, sh]) = (*ARMOR_RECT.lock().unwrap_or_else(|e| e.into_inner()))?;
-    let fx = (x.clamp(0.0, (sw - w).max(0.0)) / sw.max(1.0)) as f64;
-    let fy = (y.clamp(0.0, (sh - h).max(0.0)) / sh.max(1.0)) as f64;
-    Some((fx, fy))
+fn placed<R>(f: impl FnOnce(&mut Vec<Placed>) -> R) -> R {
+    f(&mut PLACED.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
-// A press on the Armor HUD (while the menu is open): where in it the pointer took it.
-pub(super) fn armor_grab(at: (f32, f32)) -> Option<(f32, f32)> {
-    let ([x, y, w, h], _) = (*ARMOR_RECT.lock().unwrap_or_else(|e| e.into_inner()))?;
-    (at.0 >= x && at.0 < x + w && at.1 >= y && at.1 < y + h).then_some((at.0 - x, at.1 - y))
+// A new frame of the HUD: what it draws is placed again.
+pub(super) fn clear_placed() {
+    placed(Vec::clear);
+}
+
+// `name` was drawn at `rect` on a screen `w` by `h`.
+pub(super) fn place(name: &'static str, rect: [f32; 4], w: f32, h: f32) {
+    placed(|p| {
+        p.retain(|e| e.0 != name);
+        p.push((name, rect, [w, h]));
+    });
+}
+
+// An element's position as fractions of the screen, from where its top left corner is dragged to.
+pub(super) fn drag_to(name: &str, x: f32, y: f32) -> Option<(f64, f64)> {
+    let (_, [_, _, w, h], [sw, sh]) = placed(|p| p.iter().find(|e| e.0 == name).copied())?;
+    Some(fractions([x, y], [w, h], [sw, sh]))
+}
+
+fn fractions(at: [f32; 2], size: [f32; 2], screen: [f32; 2]) -> (f64, f64) {
+    let fx = at[0].clamp(0.0, (screen[0] - size[0]).max(0.0)) / screen[0].max(1.0);
+    let fy = at[1].clamp(0.0, (screen[1] - size[1]).max(0.0)) / screen[1].max(1.0);
+    (f64::from(fx), f64::from(fy))
+}
+
+// A press on an element (the chat or the menu open): which, and where in it the pointer took it.
+pub(super) fn grab(at: (f32, f32)) -> Option<(&'static str, f32, f32)> {
+    placed(|p| {
+        p.iter()
+            .rev()
+            .find(|(_, [x, y, w, h], _)| at.0 >= *x && at.0 < x + w && at.1 >= *y && at.1 < y + h)
+            .map(|(name, [x, y, _, _], _)| (*name, at.0 - x, at.1 - y))
+    })
+}
+
+// What the chat's layout editor does this frame with a drag.
+pub(super) enum ChatDrag {
+    // A press took an element, where in it.
+    Start(&'static str, f32, f32),
+    // The button came up.
+    End,
+}
+
+// The layout editor with the chat open: a frame round each element, a press on one takes it, its release ends the drag.
+pub(super) fn chat_layout(game: &Game<'_>, dragging: Option<&'static str>, out: &mut Vec<Shape>) -> Option<ChatDrag> {
+    let down = game.physical_buttons.contains(&winit::event::MouseButton::Left);
+    let was = CHAT_PRESSED.swap(down, Relaxed);
+    for (name, [x, y, w, h], _) in placed(|p| p.clone()) {
+        let colour = if dragging == Some(name) { 0xC0FF_FFFF } else { 0x60FF_FFFF };
+        out.push(Shape::Fill([x - 1.0, y - 1.0, w + 2.0, 1.0], colour));
+        out.push(Shape::Fill([x - 1.0, y + h, w + 2.0, 1.0], colour));
+        out.push(Shape::Fill([x - 1.0, y, 1.0, h], colour));
+        out.push(Shape::Fill([x + w, y, 1.0, h], colour));
+    }
+    match dragging {
+        Some(_) if !down => Some(ChatDrag::End),
+        None if down && !was => grab(game.cursor).map(|(name, dx, dy)| ChatDrag::Start(name, dx, dy)),
+        _ => None,
+    }
+}
+
+// The chat closed: the next press there starts afresh.
+pub(super) fn chat_closed() {
+    CHAT_PRESSED.store(false, Relaxed);
+}
+
+// Compass (vape-rs's CompassStrip): 140 degrees of headings round the one you face, a tick every 5 degrees, a label
+// every 15 (N, NE, E... at the eighths), and your heading over the middle.
+fn compass(game: &Game<'_>, hud: &Module, w: f32, h: f32, out: &mut Vec<Shape>) {
+    const WIDTH: f32 = 180.0;
+    const HEIGHT: f32 = 26.0;
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let (x0, y0) = if hud.p("Compass position") == "Custom" {
+        (
+            (hud.n("Compass x") as f32 * w).clamp(0.0, (w - WIDTH).max(0.0)),
+            (hud.n("Compass y") as f32 * h).clamp(0.0, (h - HEIGHT).max(0.0)),
+        )
+    } else {
+        ((w - WIDTH) / 2.0, 2.0)
+    };
+    place("Compass", [x0, y0, WIDTH, HEIGHT], w, h);
+    out.push(Shape::Fill([x0, y0 + 9.0, WIDTH, HEIGHT - 9.0], 0x5000_0000));
+    let heading = heading(p.yaw);
+    let middle = y0 + 9.0 + (HEIGHT - 9.0) / 2.0;
+    for (offset, degree) in ticks(heading) {
+        let x = x0 + offset * WIDTH;
+        let major = degree % 45 == 0;
+        let (top, bottom) = if major { (middle - 7.0, middle - 1.0) } else { (middle - 5.0, middle - 3.0) };
+        out.push(Shape::Fill([x, top, 1.0, bottom - top], if major { 0xD0FF_FFFF } else { 0x90FF_FFFF }));
+        if degree % 15 == 0 {
+            let text = if major { ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][(degree / 45) as usize].to_owned() } else { degree.to_string() };
+            let (scale, colour) = if major { (0.8, 0xFFFFFF) } else { (0.6, 0xAAAAAA) };
+            let tx = x - game.native_text_width(&text) * scale / 2.0;
+            out.push(Shape::Scaled(text, [tx, middle + 1.0], colour, scale));
+        }
+    }
+    let mid = x0 + WIDTH / 2.0;
+    out.push(Shape::Fill([mid - 0.5, y0 + 9.0, 1.0, HEIGHT - 9.0], 0xFFE5_2E33));
+    let text = (heading as i32).rem_euclid(360).to_string();
+    let tx = mid - game.native_text_width(&text) * 0.4;
+    out.push(Shape::Scaled(text, [tx, y0], 0xE6E6E6, 0.8));
+}
+
+// Your heading from north (0) round through east (90), as a compass reads it: the game's yaw is 0 facing south.
+fn heading(yaw: f32) -> f32 {
+    (yaw + 180.0).rem_euclid(360.0)
+}
+
+// The compass's ticks for `heading`: each 5 degrees within 70 either side, as how far across the strip it is (0 to 1)
+// and its heading (0 to 355).
+fn ticks(heading: f32) -> Vec<(f32, i32)> {
+    let from = heading - 70.0;
+    let first = (from / 5.0).ceil() as i32 * 5;
+    (0..)
+        .map(|i| first + i * 5)
+        .take_while(|&d| d as f32 <= heading + 70.0)
+        .map(|d| ((d as f32 - from) / 140.0, d.rem_euclid(360)))
+        .collect()
 }
 
 // One piece the Armor HUD shows: its item, damage and maximum (0: none), or an empty slot.
 type Piece = Option<(std::sync::Arc<str>, u32, u32)>;
 
 pub(super) fn draw(game: &Game<'_>, hud: &Module, w: f32, h: f32, corners: &mut Corners, out: &mut Vec<Shape>) {
-    let mut rect = ARMOR_RECT.lock().unwrap_or_else(|e| e.into_inner());
-    *rect = None;
+    if hud.b("Compass") {
+        compass(game, hud, w, h, out);
+    }
     if hud.b("Shield status") {
         shield(game, w, h, out);
     } else {
@@ -216,7 +334,7 @@ pub(super) fn draw(game: &Game<'_>, hud: &Module, w: f32, h: f32, corners: &mut 
         _ if game.settings.main_hand_left => (w / 2.0 - 91.0 - 6.0 - bw, h - bh),
         _ => (w / 2.0 + 91.0 + 6.0, h - bh),
     };
-    *rect = Some(([x0, y0, bw, bh], [w, h]));
+    place("Armor HUD", [x0, y0, bw, bh], w, h);
     if !compact && !vertical {
         frame(out, x0, y0, pieces.len());
     }
@@ -290,4 +408,34 @@ fn shield(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     out.push(Shape::Text(text, [x + 20.0, y + 6.0], 0xFF5555));
     out.push(Shape::Fill([x + 2.0, y + 20.0, width - 4.0, 2.0], 0xFF30_3030));
     out.push(Shape::Fill([x + 2.0, y + 20.0, (width - 4.0) * left, 2.0], 0xFFFF_5555));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_compass_reads_north_at_the_games_yaw_180() {
+        assert_eq!([heading(180.0), heading(-90.0), heading(0.0), heading(90.0), heading(-180.0)], [0.0, 90.0, 180.0, 270.0, 0.0]);
+    }
+
+    #[test]
+    fn compass_ticks_cover_140_degrees_every_5() {
+        let t = ticks(0.0);
+        assert_eq!(t.len(), 29);
+        assert_eq!(t.first().copied(), Some((0.0, 290)));
+        assert_eq!(t[14], (0.5, 0));
+        assert_eq!(t.last().copied(), Some((1.0, 70)));
+        // Off the 5s: the first tick is past the strip's left edge, never before it.
+        let t = ticks(12.5);
+        assert!(t.iter().all(|&(at, d)| (0.0..=1.0).contains(&at) && d % 5 == 0));
+        assert_eq!(t.first().map(|v| v.1), Some(305));
+    }
+
+    #[test]
+    fn a_dragged_element_stays_on_the_screen() {
+        assert_eq!(fractions([64.0, 32.0], [32.0, 16.0], [128.0, 64.0]), (0.5, 0.5));
+        assert_eq!(fractions([-30.0, 90.0], [32.0, 16.0], [128.0, 64.0]), (0.0, 0.75));
+        assert_eq!(fractions([120.0, 0.0], [32.0, 16.0], [128.0, 64.0]), (0.75, 0.0));
+    }
 }

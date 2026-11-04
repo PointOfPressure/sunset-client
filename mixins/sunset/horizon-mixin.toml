@@ -1043,6 +1043,14 @@ bindings = [
 ]
 
 [[injection]]
+id = "inventory_blur"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::screens::Screen::blurs_background"
+helper = "inventory_blur_hook.rs"
+bindings = [{ name = "screen", ty = "crate::game::Screen", value = "self" }]
+
+[[injection]]
 id = "menu_blur"
 kind = "HEAD"
 cancellable = true
@@ -1670,6 +1678,12 @@ name = "sunset_ore_sim_replay"
 source = "ore_sim_replay.rs"
 
 [[module]]
+id = "murder"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_murder"
+source = "murder.rs"
+
+[[module]]
 id = "esp2d"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_esp2d"
@@ -1766,10 +1780,16 @@ name = "sunset_mace_policy"
 source = "mace_policy.rs"
 
 [[module]]
-id = "mace_native"
+id = "target_strafe"
 file = "crates/horizon-client/src/game.rs"
-name = "sunset_mace_native"
-source = "mace_native.rs"
+name = "sunset_target_strafe"
+source = "target_strafe.rs"
+
+[[module]]
+id = "auto_mace"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_auto_mace"
+source = "auto_mace.rs"
 
 [[module]]
 id = "combat_collision"

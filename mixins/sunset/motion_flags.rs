@@ -1,8 +1,8 @@
 // What Sunset asks of the player's own movement, set once a tick by the game and read by the hooks on the
 // movement code (the window's thread only, never a server's): Safe Walk keeps to edges as sneaking does (Meteor's
 // ClipAtLedgeEvent), Speed sets the move across the ground (Meteor's PlayerMoveEvent), Velocity scales how
-// flowing liquids push (the flow each fluid block gives, across and up), Flight sets the air's pull, and GUI Move
-// keeps a sprint going behind a screen.
+// flowing liquids push (the flow each fluid block gives, across and up), Flight sets the air's pull, GUI Move
+// keeps a sprint going behind a screen, and Kill Aura's Target strafe turns the move across the ground.
 
 use std::cell::Cell;
 
@@ -11,6 +11,8 @@ thread_local! {
     // Blocks a tick across the ground, x and z.
     static ACROSS: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
     static UP: Cell<Option<f64>> = const { Cell::new(None) };
+    // Target strafe: the way (x, z, length 1) the move across the ground goes this tick, at its own speed.
+    static STRAFE_DIR: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
     static LIQUID: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
     // Flight's Velocity mode: the air's pull on your input (Player.getFlyingSpeed).
     static FLYING: Cell<Option<f32>> = const { Cell::new(None) };
@@ -134,6 +136,10 @@ pub fn set_up(up: Option<f64>) {
     UP.with(|c| c.set(up));
 }
 
+pub fn set_strafe_dir(dir: Option<[f64; 2]>) {
+    STRAFE_DIR.with(|c| c.set(dir));
+}
+
 pub fn set_liquid_flow(share: Option<[f64; 2]>) {
     LIQUID.with(|c| c.set(share));
 }
@@ -151,8 +157,12 @@ pub fn clip_at_ledge(sneaking: bool) -> bool {
 
 pub fn self_move(movement: horizon_core::geometry::Vec3) -> horizon_core::geometry::Vec3 {
     let y = UP.with(Cell::get).unwrap_or(movement.y);
-    match ACROSS.with(Cell::get) {
-        Some([x, z]) => horizon_core::geometry::Vec3::new(x, y, z),
-        None => horizon_core::geometry::Vec3::new(movement.x, y, movement.z),
+    let [x, z] = ACROSS.with(Cell::get).unwrap_or([movement.x, movement.z]);
+    match STRAFE_DIR.with(Cell::get) {
+        Some([dx, dz]) => {
+            let speed = x.hypot(z);
+            horizon_core::geometry::Vec3::new(dx * speed, y, dz * speed)
+        }
+        None => horizon_core::geometry::Vec3::new(x, y, z),
     }
 }

@@ -27,7 +27,7 @@ const SEND_PER_TICK: usize = 6;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(NAME, Category::Render, "Shows ores from the world seed.")
+        Module::new(NAME, Category::World, "Shows ores from the world seed.")
             .text("Seed", "")
             .num("Chunks", 5.0, 1.0, 10.0, 1.0)
             .text("Ores", "coal,copper,iron,lapis,redstone,gold,diamond,emerald,quartz,debris")

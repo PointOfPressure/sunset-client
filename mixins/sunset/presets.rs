@@ -38,11 +38,12 @@ autorespawn.on=true
     Preset {
         id: "pvp-sword",
         title: "PvP: sword and mace",
-        about: "Kill Aura with criticals and the best weapon for each hit.",
+        about: "Kill Aura with criticals, the best weapon for each hit and the mace while you fall.",
         text: "sunset-profile=1
 killaura.on=true
 criticals.on=true
 autoweapon.on=true
+automace.on=true
 wtap.on=true
 friendguard.on=true
 offhand.on=true

@@ -1,22 +1,18 @@
-// The melee helpers from Rust's PR #16: Auto Weapon (its sections Best weapon, Axe on shields (Shield Breaker before),
-// Mace and Spear (Spear Swap)), W Tap, Jump Reset and Friend Guard, and the weapon they pick for Kill Aura's and
-// Trigger Bot's hits. Hits use the game's own inventory, movement, item components, packets and spear ray.
+// The melee helpers from Rust's PR #16: Auto Weapon (its sections Best weapon and Axe on shields (Shield Breaker
+// before)), Auto Spear (Spear Swap before, then Auto Weapon's Spear), W Tap, Jump Reset and Friend Guard, and the
+// weapon they pick for Kill Aura's and Trigger Bot's hits. Hits use the game's own inventory, movement, item
+// components, packets and spear ray. The mace is Auto Mace's (auto_mace.rs).
 use super::sunset::{Canvas, Category, Module, gui_open, hold, try_turn_then, with};
 use super::sunset_combat_control as control;
-use super::sunset_mace_policy as mace_policy;
 use super::sunset_melee_policy::{self as policy, SlotLease};
 use super::sunset_util as util;
 use super::{Game, Screen};
-use horizon_client::collisions::SceneCollisions;
-use horizon_client::enchant::EffectContext;
 use horizon_client::items::ItemStack;
 use horizon_client::mobs::Mob;
 use horizon_client::spear::{Kinetic, REACH, hits_in_reach};
 use horizon_core::geometry::Vec3;
-use horizon_core::random::LegacyRandom;
 use horizon_protocol::packets::Empty;
 use horizon_protocol::packets::play::{self, Serverbound as S};
-use horizon_world::combat_rules::{self, ArmorWorld};
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -26,42 +22,42 @@ const WEAPON: &str = "Auto Weapon";
 // Auto Weapon's sections: each its switch's name, and the owner of what it does (the hand, its look).
 const BEST: &str = "Best weapon";
 const SHIELD: &str = "Axe on shields";
-const MACE: &str = "Mace";
-const SPEAR: &str = "Spear";
+// Auto Spear: the module, and the owner of its jabs, lunges and reach swaps.
+const SPEAR: &str = "Auto Spear";
 const TAP: &str = "W Tap";
 const JUMP: &str = "Jump Reset";
 const FRIEND: &str = "Friend Guard";
-// The keys W Tap, Jump Reset, Smash assist's hold and Air steer press or let go for a tick.
-const INPUT_KEYS: [KeyCode; 6] = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::ControlLeft, KeyCode::Space, KeyCode::KeyA, KeyCode::KeyD];
+// The keys W Tap and Jump Reset press or let go for a tick.
+const INPUT_KEYS: [KeyCode; 4] = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::ControlLeft, KeyCode::Space];
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
         // One weapon module for every hit: each section on its own switch, all of them with the Holding filter and the
         // slot back after the hit (Duelkit's).
         Module::new(WEAPON, Category::Combat, "Picks the weapon for each hit.")
+            .pick("Mode", &["Custom", "Sword", "Axe"])
             .bool(BEST, true)
             .bool("Prefer axes", false)
             .bool("Totem hit", false)
             .bool(SHIELD, true)
             .pick("Shield mode", &["Passive", "Auto"])
             .bool("Shield held", false)
-            .bool("Stun slam", true)
-            .bool(MACE, true)
-            .bool("Mace swap", true)
-            .pick("Mace pick", &["Damage", "Wind Burst"])
-            .bool("Breach swap", false)
-            .num("Min charge", 0.9, 0.5, 1.0, 0.05)
-            .bool("Smash assist", false)
-            .pick("Smash timing", &["Delayed", "Direct"])
-            .num("Min fall", 3.0, 1.5, 30.0, 0.5)
-            .bool("Smash mobs", false)
-            .pick("Relaunch", &["Off", "Offhand", "Hotbar"])
-            .num("Relaunch range", 4.0, 2.0, 6.0, 0.5)
-            .bool("Air steer", true)
-            .bool(SPEAR, false)
+            .text("Holding", "sword,axe,spear,mace,trident,empty")
+            .bool("Swap back", true)
+            .pick("Back after", &["Same tick", "A delay"])
+            .num("Shortest delay", 2.0, 1.0, 20.0, 1.0)
+            .num("Longest delay", 4.0, 1.0, 20.0, 1.0),
+        // The spear for your hits: Lunge key, Lunge on hit, Reach poke, Spear reach, Extended reach and the Damage
+        // indicator, with the Holding filter and the slot back after a jab, as Auto Weapon has them.
+        Module::new(SPEAR, Category::Combat, "Lunges, jabs and reaches with the spear.")
             .text("Lunge key", "None")
+            .bool("Lunge on hit", false)
             .bool("Reach poke", false)
             .pick("Spear reach", &["Off", "When out of reach", "Every hit"])
+            .bool("Extended reach", false)
+            .num("Reach chance (%)", 100.0, 0.0, 100.0, 5.0)
+            .text("Reach weapons", "sword,axe,mace")
+            .bool("Works with Trigger Bot", true)
             .bool("Damage indicator", false)
             .text("Holding", "sword,axe,spear,mace,trident,empty")
             .bool("Swap back", true)
@@ -76,7 +72,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Chance (%)", 100.0, 0.0, 100.0, 5.0),
         Module::new(JUMP, Category::Combat, "Jumps to take less knockback.")
             .num("Chance (%)", 100.0, 0.0, 100.0, 5.0),
-        Module::new(FRIEND, Category::Combat, "Stops hits on friends.")
+        Module::new(FRIEND, Category::Client, "Stops hits on friends.")
             .bool("Notifications", true),
     ]
 }
@@ -86,13 +82,6 @@ struct InputSave {
     before: [bool; INPUT_KEYS.len()],
     physical: [bool; INPUT_KEYS.len()],
     changed: [bool; INPUT_KEYS.len()],
-}
-
-// Relaunch: the tick the next may start, and Air steer's target until a tick.
-#[derive(Default)]
-struct Relaunch {
-    next: u64,
-    steer: Option<(u32, u64)>,
 }
 
 #[derive(Default)]
@@ -113,14 +102,15 @@ struct State {
     input: Option<InputSave>,
     last_attack: Option<u64>,
     shield_ready: u64,
-    mace: mace_policy::Smash,
     broken_shield: Option<(u32, u64)>,
     friend_hint_at: Option<Instant>,
     friend_hint: Option<u32>,
     jump_owner: Option<&'static str>,
-    // Smash assist holds a smash: sprinting stops at the start of the next tick, by its key, before the move packet.
-    unsprint: bool,
-    relaunch: Relaunch,
+    // Auto Spear's Extended reach: the slot to go back to, the ticks before it may (a missed Chance roll's lockout too),
+    // and Trigger Bot's target for a stab at the start of the next tick.
+    reach_back: Option<usize>,
+    reach_wait: u32,
+    reach_strike: Option<u32>,
     // A hit whose look the server has: it goes at the start of the next tick, before that tick's move packet, as the
     // game's own attack does.
     due: Option<Box<dyn for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send>>,
@@ -137,11 +127,30 @@ fn module(name: &str) -> Option<Module> {
     with(|s| s.module(name).filter(|m| m.on).cloned())
 }
 
-// Auto Weapon, on with the section `owner` names on; any other owner's module of that name.
+// Auto Weapon, on with the section `owner` names on; any other owner's module of that name (Auto Spear's own).
 fn section(owner: &str) -> Option<Module> {
     match owner {
-        BEST | SHIELD | MACE | SPEAR => module(WEAPON).filter(|m| m.b(owner)),
+        BEST | SHIELD => module(WEAPON).filter(|m| weapon_on(m, owner)),
         _ => module(owner),
+    }
+}
+
+// Auto Weapon's Mode: Custom runs the sections switched on; each other mode one weapon's. Axe brings Axe on shields.
+pub(super) fn weapon_on(m: &Module, owner: &str) -> bool {
+    match m.p("Mode") {
+        "Sword" => owner == BEST,
+        "Axe" => owner == BEST || owner == SHIELD,
+        _ => m.b(owner),
+    }
+}
+
+// Best weapon's pick in the Sword and Axe modes: only that kind; Custom's goes by Prefer axes.
+fn best_fits(game: &Game<'_>, m: &Module, slot: usize) -> bool {
+    let kind = game.inventory.get(slot).and_then(|s| s.as_ref()).map_or("empty", |s| stack_kind(game, s));
+    match m.p("Mode") {
+        "Sword" => kind == "sword",
+        "Axe" => kind == "axe",
+        _ => true,
     }
 }
 
@@ -154,7 +163,8 @@ fn alive(game: &Game<'_>) -> bool {
         && game.selected < 9
 }
 
-fn allowed(game: &Game<'_>) -> bool {
+// The hands are free for an automatic hit or swap (Auto Mace's too).
+pub(super) fn allowed(game: &Game<'_>) -> bool {
     alive(game)
         && game.native_playing()
         && game.screen == Screen::Playing
@@ -176,7 +186,8 @@ pub(super) fn note_action(game: &Game<'_>) {
     });
 }
 
-fn acted(game: &Game<'_>) -> bool {
+// A hit or use went out this tick (anyone's): no other may.
+pub(super) fn acted(game: &Game<'_>) -> bool {
     state(|s| {
         s.action_tick == Some(game.ticks)
             && s.action_scene.as_ref().is_some_and(|old| {
@@ -186,19 +197,6 @@ fn acted(game: &Game<'_>) -> bool {
                     })
             })
     })
-}
-
-// The fall a mace hit would smash with, as the server counts it: the game's own, or what you dropped since your last
-// smash (see mace_policy's Smash). 0 while gliding.
-fn smash_fall(game: &Game<'_>) -> f64 {
-    let Some(p) = game.player.as_ref() else {
-        return 0.0;
-    };
-    if p.fall_flying {
-        return 0.0;
-    }
-    let (native, y) = (p.fall_distance, p.position.y);
-    state(|s| s.mace.fall(native, y))
 }
 
 // The attack cooldown (0 to 1) a hit with the item in hotbar `slot` would have, `partial` ticks on.
@@ -361,6 +359,12 @@ pub(super) fn guard_stab_at(game: &Game<'_>, yaw: f32, pitch: f32) -> bool {
     hits.is_none() || friend.is_some()
 }
 
+// A lunge may go: not riding, gliding or in water, and food enough to sprint (the game's own lunge rules).
+fn lunge_fits(game: &Game<'_>) -> bool {
+    game.riding.is_none()
+        && game.player.as_ref().is_some_and(|p| !p.fall_flying && !p.fluids.was_touching_water && (game.creative || p.health.food.food >= 7))
+}
+
 // A held spear charge that would run through a friend is let go (the game's release-use packet).
 fn stop_guarded_use(game: &mut Game<'_>) {
     let spear = game.using.and_then(|(slot, _)| game.stack_in(slot)).is_some_and(|s| Kinetic::of(&s.item).is_some());
@@ -427,95 +431,6 @@ fn best_axe(game: &Game<'_>) -> Option<usize> {
         .map(|(slot, _)| slot)
 }
 
-// The target's armour as the server would weigh it against a mace smash (Breach lowers it).
-struct ArmorEstimate<'a, 'r> {
-    game: &'a Game<'r>,
-    stack: &'a ItemStack,
-    victim: &'a str,
-    random: LegacyRandom,
-}
-
-impl ArmorWorld for ArmorEstimate<'_, '_> {
-    type Error = std::convert::Infallible;
-    type Weapon = ();
-    type ServerLevel = ();
-    fn weapon(&mut self) -> Result<Option<()>, Self::Error> {
-        Ok(Some(()))
-    }
-    fn server_level(&mut self) -> Result<Option<()>, Self::Error> {
-        Ok(Some(()))
-    }
-    fn modify_armor_effectiveness(&mut self, _: (), _: (), value: f32) -> Result<f32, Self::Error> {
-        let ctx = EffectContext {
-            this: Some(self.victim),
-            attacker: Some("minecraft:player"),
-            direct_attacker: Some("minecraft:player"),
-            is_direct: true,
-            damage_type: Some("minecraft:mace_smash"),
-            items: Some(self.game.res.items()),
-            ..Default::default()
-        };
-        Ok(self.game.res.items().enchantments.modify_value(
-            Some(self.stack),
-            "minecraft:armor_effectiveness",
-            &ctx,
-            &mut self.random,
-            value,
-        ))
-    }
-}
-
-// The damage a hit with `stack` would do to `target` after armour, a smash's fall bonus included. Its own random
-// stream: weighing the hotbar changes nothing in the game.
-fn estimate_weapon(game: &Game<'_>, stack: &ItemStack, target: &Mob) -> Option<f32> {
-    let info = game.res.items().get(&stack.item)?;
-    let fall = smash_fall(game);
-    let smashing = &*stack.item == "minecraft:mace" && fall > 1.5;
-    let ctx = EffectContext {
-        this: Some(&target.kind.id),
-        attacker: Some("minecraft:player"),
-        direct_attacker: Some("minecraft:player"),
-        is_direct: true,
-        damage_type: Some(if smashing { "minecraft:mace_smash" } else { "minecraft:player_attack" }),
-        items: Some(game.res.items()),
-        ..Default::default()
-    };
-    let enchantments = &game.res.items().enchantments;
-    let mut random = LegacyRandom::new(0);
-    let mut damage = enchantments.modify_value(
-        Some(stack),
-        "minecraft:damage",
-        &ctx,
-        &mut random,
-        1.0 + info.attack_damage + game.effect_attack_bonus(),
-    );
-    if smashing {
-        let per = enchantments.modify_value(Some(stack), "minecraft:smash_damage_per_fallen_block", &ctx, &mut random, 0.0);
-        damage += (policy::smash_bonus(fall)? + f64::from(per) * fall) as f32;
-    }
-    let (armor, tough) = target.worn_armor();
-    let mut estimate = ArmorEstimate { game, stack, victim: &target.kind.id, random };
-    let damage =
-        combat_rules::after_armor(&mut estimate, damage, target.kind.armor + armor, target.kind.armor_toughness + tough).ok()?;
-    (damage.is_finite() && damage >= 0.0).then_some(damage)
-}
-
-// The mace that does most to `target` (Wind Burst first with Pick on it); outside a smash only one with Breach.
-fn best_mace(game: &Game<'_>, target: &Mob, m: &Module) -> Option<usize> {
-    let smash = smash_fall(game) > 1.5;
-    let wind = smash && m.p("Mace pick") == "Wind Burst";
-    (0..9)
-        .filter_map(|slot| {
-            let stack = available_item(game, slot)?;
-            if &*stack.item != "minecraft:mace" || (!smash && stack.enchantment_level("minecraft:breach") == 0) {
-                return None;
-            }
-            Some((slot, wind && stack.enchantment_level("minecraft:wind_burst") > 0, estimate_weapon(game, stack, target)?))
-        })
-        .max_by(|a, b| a.1.cmp(&b.1).then_with(|| a.2.total_cmp(&b.2)))
-        .map(|(slot, _, _)| slot)
-}
-
 // A slot to hit `id` with, and whether to go back after.
 #[derive(Clone, Copy)]
 struct WeaponPlan {
@@ -528,9 +443,10 @@ struct WeaponPlan {
 
 // What the hand holds, as Duelkit's Holding lists name it.
 fn held_kind(game: &Game<'_>) -> &'static str {
-    let Some(stack) = game.held() else {
-        return "empty";
-    };
+    game.held().map_or("empty", |stack| stack_kind(game, stack))
+}
+
+fn stack_kind(game: &Game<'_>, stack: &ItemStack) -> &'static str {
     let tagged = |tag: &str| game.res.items().item_tags.get(tag).is_some_and(|items| items.contains(&*stack.item));
     match &*stack.item {
         "minecraft:mace" => "mace",
@@ -580,8 +496,8 @@ pub(super) fn back_delay(game: &Game<'_>, m: &Module) -> u64 {
 }
 
 // The weapon Auto Weapon wants for a hit on `id`, while what Holding lists is held: an axe at a raised shield (Axe on
-// shields), a mace for a smash or for Breach doing 15% more (Mace), else the best weapon (Best weapon). It only
-// chooses: whoever hits switches and goes back.
+// shields), else the best weapon (Best weapon), none while Auto Mace has the hit. It only chooses: whoever hits
+// switches and goes back.
 fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
     if !allowed(game) {
         return None;
@@ -590,35 +506,33 @@ fn preferred_weapon(game: &Game<'_>, id: u32) -> Option<WeaponPlan> {
     let target = game.mobs.iter().find(|m| m.id == id && m.alive() && !m.removed)?;
     let plan = |slot, owner| WeaponPlan { slot, owner, restore: m.b("Swap back"), delay: back_delay(game, &m) };
     let shield_up = shield_counts(game, id) && !broken_shield(game, id);
-    if m.b(SHIELD)
+    if weapon_on(&m, SHIELD)
         && target.kind.id == "minecraft:player"
         && shield_up
         && !game.held().and_then(|s| game.res.items().get(&s.item)).is_some_and(|i| i.disable_blocking_seconds > 0.0)
     {
         return best_axe(game).map(|slot| plan(slot, SHIELD));
     }
-    let smash = smash_fall(game) > 1.5;
-    if m.b(MACE)
-        && m.b("Mace swap")
-        && !shield_up
-        && (smash || m.b("Breach swap"))
-        && let Some(slot) = best_mace(game, target, &m)
-    {
-        // Breach swap (Prism's BreachSwap): only once the mace itself would hit with Min charge. The cooldown fills
-        // at the held item's pace, and a mace's is far slower than a sword's, so a hit at sword pace is a weak one. A
-        // smash needs no charge: its fall bonus comes after the charge's scaling.
-        let charged = slot_strength(game, slot, 0.5).is_some_and(|c| f64::from(c) >= m.n("Min charge"));
-        let old = game.held().and_then(|s| estimate_weapon(game, s, target)).unwrap_or(1.0);
-        if smash
-            || (charged && available_item(game, slot).and_then(|s| estimate_weapon(game, s, target)).is_some_and(|new| new >= old * 1.15))
-        {
-            return Some(plan(slot, MACE));
-        }
+    if super::sunset_auto_mace::claims(game) {
+        return None;
     }
-    if m.b(BEST) {
-        return super::sunset::best_weapon(game, m.b("Prefer axes")).filter(|&slot| slot != game.selected).map(|slot| plan(slot, BEST));
+    if weapon_on(&m, BEST) {
+        let axes = m.p("Mode") == "Axe" || (m.p("Mode") == "Custom" && m.b("Prefer axes"));
+        return super::sunset::best_weapon(game, axes)
+            .filter(|&slot| slot != game.selected && best_fits(game, &m, slot))
+            .map(|slot| plan(slot, BEST));
     }
     None
+}
+
+// Auto Weapon's Axe on shields has the hit on `id`: the player's shield counts and a hotbar axe (maybe the one in
+// hand) is for it. Auto Mace leaves such a hit alone.
+pub(super) fn axe_at_shield(game: &Game<'_>, id: u32) -> bool {
+    module(WEAPON).is_some_and(|m| weapon_on(&m, SHIELD) && holding(game, &m))
+        && game.mobs.iter().any(|t| t.id == id && t.alive() && !t.removed && t.kind.id == "minecraft:player")
+        && shield_counts(game, id)
+        && !broken_shield(game, id)
+        && best_axe(game).is_some()
 }
 
 // `owner` turned off: its look waiting and its borrowed slot go.
@@ -696,7 +610,7 @@ fn release_lease(game: &mut Game<'_>, force: bool) {
 pub(super) fn cancel(game: &mut Game<'_>) {
     post_input(game);
     release_lease(game, true);
-    for owner in [BEST, SHIELD, MACE, SPEAR] {
+    for owner in [BEST, SHIELD, SPEAR] {
         super::sunset::cancel_turns(owner);
     }
     state(|s| {
@@ -710,16 +624,10 @@ pub(super) fn request_jump(owner: &'static str) {
     state(|s| s.jump_owner = Some(owner));
 }
 
-// An Attack packet went out: a mace smash resets the fall, an Axe on shields hit counts for a second, W Tap starts.
+// An Attack packet went out: an Axe on shields hit counts for a second, W Tap starts.
 fn note_attack(game: &Game<'_>, id: u32) {
     note_action(game);
     super::sunset_swap_keys::hit(game);
-    if game.held().is_some_and(|s| &*s.item == "minecraft:mace")
-        && smash_fall(game) > 1.5
-        && let Some(y) = game.player.as_ref().map(|p| p.position.y)
-    {
-        state(|s| s.mace.smashed(y));
-    }
     if observed_shield(game, id)
         && game.held().and_then(|s| game.res.items().get(&s.item)).is_some_and(|i| i.disable_blocking_seconds > 0.0)
     {
@@ -846,14 +754,10 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
             s.tap_until = 0;
             s.jump_pending = false;
             s.jump_owner = None;
-            s.unsprint = false;
-            s.relaunch.steer = None;
         });
         return;
     }
-    let unsprint = state(|s| std::mem::take(&mut s.unsprint)) && game.player.as_ref().is_some_and(|p| p.sprinting);
-    let steer = steer_keys(game);
-    let tap = state(|s| (s.tap_from..s.tap_until).contains(&game.ticks).then_some(s.tap_back));
+    let tap =state(|s| (s.tap_from..s.tap_until).contains(&game.ticks).then_some(s.tap_back));
     let asked = state(|s| s.jump_owner.take()).is_some_and(|owner| section(owner).is_some() && control::available(owner));
     let knocked = state(|s| std::mem::take(&mut s.jump_pending))
         && module(JUMP).is_some()
@@ -866,32 +770,16 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
         && super::remote::sunset_prediction_remote::local_motion(game).is_some_and(|motion| !motion.floating)
         && game.using.is_none()
         && game.riding.is_none();
-    if tap.is_none() && !jump && !unsprint && steer.is_none() {
+    if tap.is_none() && !jump {
         return;
     }
     let before = INPUT_KEYS.map(|key| game.keys.contains(&key));
     let physical = INPUT_KEYS.map(|key| game.physical_keys.contains(&key));
-    if let Some(keys) = steer {
-        for key in [KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD] {
-            if keys.contains(&key) {
-                game.keys.insert(key);
-            } else {
-                game.keys.remove(&key);
-            }
-        }
-    }
     if let Some(back) = tap {
         game.keys.remove(&KeyCode::KeyW);
         game.keys.remove(&KeyCode::ControlLeft);
         if back {
             game.keys.insert(KeyCode::KeyS);
-        }
-    }
-    // The game's own tick then tells the server, before the move packet, as letting go of sprint does.
-    if unsprint {
-        game.keys.remove(&KeyCode::ControlLeft);
-        if let Some(p) = game.player.as_mut() {
-            let _ = p.set_sprinting(false);
         }
     }
     if jump {
@@ -928,7 +816,7 @@ pub(super) fn post_input(game: &mut Game<'_>) {
     }
 }
 
-// Auto Weapon's Spear Lunge key, pressed: a lunge waits up to 10 ticks for its moment.
+// Auto Spear's Lunge key, pressed: a lunge waits up to 10 ticks for its moment.
 pub(super) fn key(game: &Game<'_>, key: &str, pressed: bool) {
     if !pressed || !game.native_playing() || gui_open() || !alive(game) {
         return;
@@ -964,7 +852,7 @@ fn best_spear(game: &Game<'_>, lunge: bool) -> Option<usize> {
 // Reach poke: your click reaches nobody, but a spear's stab along your look would reach an enemy past ordinary
 // reach (and no friend): the spear to jab with.
 fn poke_slot(game: &mut Game<'_>, m: &Module) -> Option<usize> {
-    if !m.b("Reach poke") || game.held().is_some_and(|s| Kinetic::of(&s.item).is_some()) || game.mob_hit().is_some() {
+    if !m.b("Reach poke") || !holding(game, m) || game.held().is_some_and(|s| Kinetic::of(&s.item).is_some()) || game.mob_hit().is_some() {
         return None;
     }
     let eye = game.eye_position()?;
@@ -990,7 +878,126 @@ fn poke_slot(game: &mut Game<'_>, m: &Module) -> Option<usize> {
     best_spear(game, false).filter(|&slot| jab_ready(game, slot))
 }
 
-// The attack hook, before your click: Some(false) takes the click (a friend, a reach poke). None: the game's own.
+// How far along your look Extended reach looks for a block (none may be there) and a mob, and how near the mob is.
+const REACH_LINE: f64 = 4.75;
+const REACH_NEAR: f64 = 6.0;
+
+// Extended reach's spear: the first in the hotbar without Lunge (a Lunge spear's stab would carry you).
+fn reach_spear(game: &Game<'_>) -> Option<usize> {
+    (0..9).find(|&slot| {
+        game.inventory
+            .get(slot)
+            .and_then(|s| s.as_ref())
+            .is_some_and(|s| s.count > 0 && Kinetic::of(&s.item).is_some() && s.enchantment_level("minecraft:lunge") == 0)
+    })
+}
+
+// Extended reach's target: with such a spear in the hotbar, the hand's attack charged full, and nobody under your
+// crosshair, the line along your look meets no block in its first 4.75 blocks, and the first mob in the world's list
+// within 6 blocks, in sight, whose box that line crosses.
+fn reach_target(game: &Game<'_>) -> Option<u32> {
+    reach_spear(game)?;
+    if slot_strength(game, game.selected, 0.0).is_none_or(|c| c < 1.0) || game.mob_hit().is_some_and(|(_, d)| game.before_block(d)) {
+        return None;
+    }
+    let eye = game.eye_position()?;
+    let look = super::view_vector(game.yaw, game.pitch);
+    if game.clip_ray(eye, look, REACH_LINE).is_some() {
+        return None;
+    }
+    let from = Vec3::new(eye[0], eye[1], eye[2]);
+    let to = from.add_vector(Vec3::new(look[0], look[1], look[2]).scale(REACH_LINE));
+    let p = game.player.as_ref()?;
+    game.mobs
+        .iter()
+        .find(|t| {
+            let b = t.bounds();
+            let their_eye = [t.position.x, t.position.y + t.eye_height(), t.position.z];
+            t.alive()
+                && !t.removed
+                && p.position.distance_squared(t.position).sqrt() <= REACH_NEAR
+                && super::sunset_combat::clip_clear(game, eye, their_eye, util::dist(eye, their_eye))
+                && (b.contains(from) || b.clip(from, to).is_some())
+        })
+        .map(|t| t.id)
+}
+
+// Extended reach may swap now, for its target: the Chance roll (a miss locks it out this tick and the next), no swap
+// of its own under way, not falling past 1.5 blocks (a mace smash's), what Reach weapons lists (sword, axe, mace) in
+// hand, and no friend along the stab (Friend Guard).
+fn reach_check(game: &Game<'_>, m: &Module) -> Option<u32> {
+    let target = reach_target(game)?;
+    if roll(game, 9) as f64 >= m.n("Reach chance (%)") * 100.0 {
+        state(|s| s.reach_wait = 1);
+    }
+    let kind = held_kind(game);
+    let fits = matches!(kind, "sword" | "axe" | "mace") && util::listed(m.t("Reach weapons"), kind);
+    let falling = game.player.as_ref().is_some_and(|p| p.fall_distance > 1.5);
+    (state(|s| s.reach_wait == 0 && s.reach_back.is_none()) && !falling && fits && !block_stab(game)).then_some(target)
+}
+
+// Extended reach's stab: the spear in hand, its stab along your look at once (as your click would go with it), and the
+// slot you had back two ticks on (reach_tick).
+fn reach_go(game: &mut Game<'_>) -> bool {
+    let Some((spear, kinetic)) = reach_spear(game).and_then(|slot| Some((slot, Kinetic::of(&game.inventory.get(slot)?.as_ref()?.item)?))) else {
+        return false;
+    };
+    let back = game.selected;
+    state(|s| {
+        s.reach_back = Some(back);
+        s.reach_wait = 1;
+    });
+    hold(game, spear);
+    stab(game, kinetic);
+    claim_tick(game);
+    true
+}
+
+// The start of a tick (`busy`: a hit or slot change went before in it): Extended reach's wait runs down, then its slot
+// goes back; or Trigger Bot's stab goes, its target still the one along your look. True if anything was sent.
+pub(super) fn reach_tick(game: &mut Game<'_>, busy: bool) -> bool {
+    let back = state(|s| {
+        if s.reach_wait > 0 {
+            s.reach_wait -= 1;
+            None
+        } else if busy {
+            None
+        } else {
+            s.reach_back.take()
+        }
+    });
+    if let Some(slot) = back {
+        let was = game.selected;
+        if alive(game) && slot < 9 {
+            hold(game, slot);
+        }
+        return game.selected != was;
+    }
+    let Some(id) = state(|s| s.reach_strike.take()) else {
+        return false;
+    };
+    if busy || acted(game) || !allowed(game) || state(|s| s.reach_back.is_some() || s.reach_wait > 0) || reach_target(game) != Some(id) {
+        return false;
+    }
+    reach_go(game)
+}
+
+// Trigger Bot with nobody under the crosshair: Extended reach's target (Works with Trigger Bot), for reach_strike.
+pub(super) fn reach_trigger(game: &Game<'_>) -> Option<u32> {
+    let m = section(SPEAR).filter(|m| m.b("Extended reach") && m.b("Works with Trigger Bot"))?;
+    if !allowed(game) {
+        return None;
+    }
+    reach_check(game, &m)
+}
+
+// Trigger Bot hits `id` by Extended reach: the stab goes at the start of the next tick.
+pub(super) fn reach_strike(id: u32) {
+    state(|s| s.reach_strike = Some(id));
+}
+
+// The attack hook, before your click: Some(false) takes the click (a friend, a reach poke, Extended reach's stab).
+// None: the game's own.
 pub(super) fn before_click(game: &mut Game<'_>) -> Option<bool> {
     if !allowed(game) {
         return None;
@@ -998,9 +1005,23 @@ pub(super) fn before_click(game: &mut Game<'_>) -> Option<bool> {
     if game.held().is_some_and(|s| Kinetic::of(&s.item).is_some()) {
         return block_stab(game).then_some(false);
     }
+    if let Some(m) = section(SPEAR).filter(|m| m.b("Extended reach"))
+        && reach_check(game, &m).is_some()
+        && reach_go(game)
+    {
+        return Some(false);
+    }
     if let Some((index, distance)) = game.mob_hit() {
         let id = game.mobs[index].id;
         let held = game.selected;
+        if game.before_block(distance)
+            && !guard_attack(game, id)
+            && let Some(m) = section(SPEAR)
+            && let Some(slot) = lunge_on_hit(game, &m, index)
+            && queue_action(game, SPEAR, m, Automatic::Jab { slot, lunge: true })
+        {
+            return Some(false);
+        }
         if game.before_block(distance) && !before_attack(game, id) {
             return Some(false);
         }
@@ -1015,6 +1036,19 @@ pub(super) fn before_click(game: &mut Game<'_>) -> Option<bool> {
     queue_action(game, SPEAR, m, Automatic::Jab { slot, lunge: false }).then_some(false)
 }
 
+// Lunge on hit: your click on an enemy (the mob at `index`), with what Holding lists in hand, goes as a jab of the
+// hotbar's Lunge spear instead, when its stab along your look reaches them and a lunge may go. The jab waits for the
+// start of the next tick and the slot goes back the tick after, one slot change a tick.
+fn lunge_on_hit(game: &Game<'_>, m: &Module, index: usize) -> Option<usize> {
+    if !m.b("Lunge on hit") || !holding(game, m) || held_kind(game) == "spear" || !lunge_fits(game) || block_stab(game) {
+        return None;
+    }
+    if !enemy(game, &game.mobs[index], true) || !spear_hits_at(game, game.yaw, game.pitch)?.contains(&index) {
+        return None;
+    }
+    best_spear(game, true).filter(|&slot| jab_ready(game, slot))
+}
+
 fn jab_ready(game: &Game<'_>, slot: usize) -> bool {
     available_item(game, slot).is_some()
         && slot_strength(game, slot, 0.0).is_some_and(|s| s >= 1.0)
@@ -1025,11 +1059,7 @@ fn jab_ready(game: &Game<'_>, slot: usize) -> bool {
 #[derive(Clone, Copy)]
 enum Automatic {
     Shield(u32),
-    Smash(u32),
-    SmashShield(u32),
     Jab { slot: usize, lunge: bool },
-    // Mace's Relaunch: the wind charge (a hotbar slot or the offhand) and the target it is for.
-    Relaunch { charge: usize, target: u32 },
 }
 
 // A hit of queue_action's waits for the start of the next tick.
@@ -1059,8 +1089,7 @@ fn queue_action(game: &mut Game<'_>, owner: &'static str, m: Module, action: Aut
     let original_item = game.held().cloned();
     let dimension = game.dim;
     let queued = Instant::now();
-    // Relaunch throws straight down.
-    let (yaw, pitch) = (game.yaw, if matches!(action, Automatic::Relaunch { .. }) { 90.0 } else { game.pitch });
+    let (yaw, pitch) = (game.yaw, game.pitch);
     state(|s| {
         s.queued = Some(owner);
         s.queued_since = Some(queued);
@@ -1083,11 +1112,7 @@ fn queue_action(game: &mut Game<'_>, owner: &'static str, m: Module, action: Aut
         if !valid {
             return;
         }
-        if let Automatic::Relaunch { charge, target } = action {
-            throw_relaunch(game, &m, charge, target, yaw, done);
-            return;
-        }
-        let under = |game: &Game<'_>, id: u32| game.mob_hit().is_some_and(|(i, d)| game.mobs[i].id == id && game.before_block(d));
+        let under =|game: &Game<'_>, id: u32| game.mob_hit().is_some_and(|(i, d)| game.mobs[i].id == id && game.before_block(d));
         let slot = match action {
             Automatic::Shield(id) => {
                 if !under(game, id) || !shield_counts(game, id) || guard_attack(game, id) {
@@ -1096,28 +1121,15 @@ fn queue_action(game: &mut Game<'_>, owner: &'static str, m: Module, action: Aut
                     best_axe(game)
                 }
             }
-            Automatic::SmashShield(id) => match smash_intent(game, &m, id) {
-                mace_policy::Intent::BreakShield { slot } => Some(slot),
-                _ => None,
-            },
-            Automatic::Smash(id) => {
-                if !under(game, id) || smash_intent(game, &m, id) != mace_policy::Intent::Smash || guard_attack(game, id) {
-                    None
-                } else if m.b("Mace swap") {
-                    game.mobs.iter().find(|t| t.id == id).and_then(|target| best_mace(game, target, &m))
-                } else {
-                    available_item(game, game.selected).filter(|s| &*s.item == "minecraft:mace").map(|_| game.selected)
-                }
-            }
             Automatic::Jab { slot, lunge } => {
                 let valid = available_item(game, slot)
                     .is_some_and(|s| Kinetic::of(&s.item).is_some() && (!lunge || s.enchantment_level("minecraft:lunge") > 0))
                     && jab_ready(game, slot)
+                    && (!lunge || lunge_fits(game))
                     && !block_stab(game)
                     && (lunge || poke_slot(game, &m) == Some(slot));
                 valid.then_some(slot)
             }
-            Automatic::Relaunch { .. } => None,
         };
         let Some(slot) = slot else {
             return;
@@ -1129,16 +1141,12 @@ fn queue_action(game: &mut Game<'_>, owner: &'static str, m: Module, action: Aut
             return;
         }
         match action {
-            Automatic::Shield(id) | Automatic::Smash(id) | Automatic::SmashShield(id) => {
+            Automatic::Shield(id) => {
                 game.send(S::Attack(play::Attack { id: id as i32 }));
                 game.swing_arm();
                 game.send(S::Punch(Empty));
                 game.reset_attack_strength();
-                state(|s| match action {
-                    Automatic::Shield(_) => s.shield_ready = game.ticks.saturating_add(10),
-                    Automatic::Smash(_) => s.mace.accepted(mace_policy::Intent::Smash, id, game.ticks),
-                    _ => s.mace.accepted(mace_policy::Intent::BreakShield { slot }, id, game.ticks),
-                });
+                state(|s| s.shield_ready = game.ticks.saturating_add(10));
             }
             Automatic::Jab { slot, .. } => {
                 if let Some(kinetic) = available_item(game, slot).and_then(|s| Kinetic::of(&s.item)) {
@@ -1146,7 +1154,6 @@ fn queue_action(game: &mut Game<'_>, owner: &'static str, m: Module, action: Aut
                 }
                 state(|s| s.lunge.clear());
             }
-            Automatic::Relaunch { .. } => {}
         }
         claim_tick(game);
     }))));
@@ -1159,8 +1166,6 @@ fn queue_action(game: &mut Game<'_>, owner: &'static str, m: Module, action: Aut
 pub(super) fn tick(game: &mut Game<'_>) {
     flush_friend_hint(game);
     stop_guarded_use(game);
-    let (grounded, y) = game.player.as_ref().map_or((true, 0.0), |p| (p.ground.on_ground, p.position.y));
-    state(|s| s.mace.observe(grounded, y));
     if !alive(game) {
         release_lease(game, true);
         state(|s| {
@@ -1189,17 +1194,10 @@ pub(super) fn tick(game: &mut Game<'_>) {
     }
     if let Some(m) = section(SPEAR)
         && state(|s| s.lunge.active(game.ticks))
-        && game.riding.is_none()
-        && game.player.as_ref().is_some_and(|p| !p.fall_flying && !p.fluids.was_touching_water && (game.creative || p.health.food.food >= 7))
+        && lunge_fits(game)
         && let Some(slot) = best_spear(game, true).filter(|&i| jab_ready(game, i))
         && !block_stab(game)
         && queue_action(game, SPEAR, m, Automatic::Jab { slot, lunge: true })
-    {
-        return;
-    }
-    if let Some(m) = section(MACE)
-        && let Some((charge, target)) = relaunch_plan(game, &m)
-        && queue_action(game, MACE, m, Automatic::Relaunch { charge, target })
     {
         return;
     }
@@ -1221,25 +1219,10 @@ pub(super) fn tick(game: &mut Game<'_>) {
     {
         return;
     }
-    if let Some(m) = section(MACE).filter(|m| m.b("Smash assist")) {
-        match smash_intent(game, &m, id) {
-            mace_policy::Intent::BreakShield { .. } => {
-                queue_action(game, MACE, m, Automatic::SmashShield(id));
-            }
-            mace_policy::Intent::Hold => {
-                state(|s| s.unsprint = true);
-                game.clicks.miss_time = game.clicks.miss_time.max(1);
-            }
-            mace_policy::Intent::Smash => {
-                queue_action(game, MACE, m, Automatic::Smash(id));
-            }
-            mace_policy::Intent::Idle => {}
-        }
-    }
 }
 
 // A hit went out this tick: the game's own click and use wait.
-fn claim_tick(game: &mut Game<'_>) {
+pub(super) fn claim_tick(game: &mut Game<'_>) {
     game.attack_clicks = 0;
     game.clicks.miss_time = game.clicks.miss_time.max(1);
     game.clicks.right_click_delay = game.clicks.right_click_delay.max(2);
@@ -1247,55 +1230,15 @@ fn claim_tick(game: &mut Game<'_>) {
 }
 
 fn broken_shield(game: &Game<'_>, id: u32) -> bool {
-    state(|s| s.broken_shield.is_some_and(|(target, until)| target == id && game.ticks < until) || s.mace.shield_attempted(id, game.ticks))
+    state(|s| s.broken_shield.is_some_and(|(target, until)| target == id && game.ticks < until))
 }
 
-// Falling far enough onto `id` for Mace's smash, with a mace in hand or to swap to.
-fn smash_ready(game: &Game<'_>, id: u32) -> bool {
-    let Some(m) = section(MACE) else {
-        return false;
-    };
-    let fall = smash_fall(game);
-    if fall <= 1.5 || fall < m.n("Min fall") {
-        return false;
-    }
-    available_item(game, game.selected).is_some_and(|s| &*s.item == "minecraft:mace")
-        || (m.b("Mace swap") && game.mobs.iter().find(|t| t.id == id).is_some_and(|target| best_mace(game, target, &m).is_some()))
-}
-
-fn can_hold_smash(game: &mut Game<'_>, id: u32) -> bool {
-    let (yaw, pitch) = super::sunset_combat_wire::sent_look(game).unwrap_or((game.yaw, game.pitch));
-    super::sunset_mace_native::continuation(game, id, yaw, pitch).unwrap_or(false)
-}
-
-// A hit from Kill Aura or Trigger Bot on `id`, planned: the slot of Auto Weapon's axe at a raised shield, mace or
-// best weapon for it, when it is not the one in hand, and the ticks after the hit it goes back (None: it stays). The
-// caller holds it.
+// A hit from Kill Aura or Trigger Bot on `id`, planned: the slot of Auto Weapon's axe at a raised shield or best
+// weapon for it, when it is not the one in hand, and the ticks after the hit it goes back (None: it stays). The caller
+// holds it.
 pub(super) fn strike_weapon(game: &Game<'_>, id: u32) -> Option<(usize, Option<u64>)> {
     let plan = preferred_weapon(game, id)?;
     (plan.slot != game.selected).then_some((plan.slot, plan.restore.then_some(plan.delay)))
-}
-
-// Stun slam's mace hit, the tick after the axe's: still falling far enough, the mace still in `slot`, no friend, and
-// `id` within reach.
-pub(super) fn slam_ready(game: &mut Game<'_>, id: u32, slot: usize) -> bool {
-    let Some(mace) = section(MACE) else {
-        return false;
-    };
-    let fall = smash_fall(game);
-    if !allowed(game) || fall <= 1.5 || fall < mace.n("Min fall") || guard_attack(game, id) {
-        return false;
-    }
-    if !available_item(game, slot).is_some_and(|s| &*s.item == "minecraft:mace") {
-        return false;
-    }
-    let reach = game.player.as_mut().and_then(|p| p.attribute("minecraft:entity_interaction_range").ok()).unwrap_or(3.0);
-    let (Some(eye), Some(target)) = (game.eye_position(), game.mobs.iter().find(|t| t.id == id && t.alive() && !t.removed)) else {
-        return false;
-    };
-    let b = target.bounds();
-    let (lo, hi) = (b.min_position(), b.max_position());
-    policy::box_distance(eye, [lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z]).is_some_and(|d| d <= reach)
 }
 
 // The start of a tick, before its hits: a borrowed slot whose time is up goes back. (Sent after the tick's move packet
@@ -1308,46 +1251,6 @@ pub(super) fn lease_back(game: &mut Game<'_>) -> bool {
     let disabled = state(|s| s.lease).is_some_and(|l| section(l.owner).is_none());
     release_lease(game, disabled || !game.native_playing() || gui_open());
     game.selected != before
-}
-
-fn smash_intent(game: &mut Game<'_>, m: &Module, id: u32) -> mace_policy::Intent {
-    let Some(target) = game.mobs.iter().find(|t| t.id == id) else {
-        return mace_policy::Intent::Idle;
-    };
-    let target_allowed = enemy(game, target, m.b("Smash mobs"));
-    let target_immune = target.hurt_time > 0;
-    // The charge is the mace's, the one swapped in if it is not in hand (Prism's): a held sword's would be too high.
-    let held_mace = available_item(game, game.selected).is_some_and(|s| &*s.item == "minecraft:mace");
-    let charge_slot = if held_mace || !m.b("Mace swap") { game.selected } else { best_mace(game, target, m).unwrap_or(game.selected) };
-    let shield_blocks = observed_shield(game, id) && !broken_shield(game, id);
-    let mace_available = smash_ready(game, id);
-    let fall = smash_fall(game);
-    let can_continue = can_hold_smash(game, id);
-    let Some(p) = game.player.as_ref() else {
-        return mace_policy::Intent::Idle;
-    };
-    let frame = mace_policy::Frame {
-        tick: game.ticks,
-        target: id,
-        grounded: p.ground.on_ground,
-        descending: p.velocity.y < 0.0,
-        native_smash: fall > 1.5,
-        fall,
-        min_fall: m.n("Min fall"),
-        target_allowed,
-        mace_available,
-        shield_blocks,
-        axe: best_axe(game),
-        auto_swap: m.b("Mace swap"),
-        swap_back: m.b("Swap back"),
-        can_continue,
-        timing: if m.p("Smash timing") == "Delayed" { mace_policy::Timing::Delayed } else { mace_policy::Timing::Direct },
-        charge: f64::from(slot_strength(game, charge_slot, 0.5).unwrap_or(0.0)),
-        charge_next: f64::from(slot_strength(game, charge_slot, 1.5).unwrap_or(0.0)),
-        target_immune,
-        sprinting: p.sprinting,
-    };
-    state(|s| s.mace.plan(frame))
 }
 
 // Spear reach (Duelkit's): the hotbar spear the crosshair reaches as far as, while what Holding lists is held (a
@@ -1378,20 +1281,6 @@ pub(super) fn spear_pass(game: &mut Game<'_>, id: u32) {
         hold(game, spear);
         hold(game, weapon);
     }
-}
-
-// Axe on shields' Stun slam, before Kill Aura's axe hit on `id`: falling far enough onto their raised shield, the
-// mace to hit with at the start of the next tick (slam_ready).
-pub(super) fn stun_slam(game: &Game<'_>, id: u32) -> Option<usize> {
-    section(SHIELD).filter(|m| m.b("Stun slam"))?;
-    let mace = section(MACE)?;
-    let axe = game.held().and_then(|s| game.res.items().get(&s.item)).is_some_and(|i| i.disable_blocking_seconds > 0.0);
-    let fall = smash_fall(game);
-    if !axe || !observed_shield(game, id) || fall <= 1.5 || fall < mace.n("Min fall") {
-        return None;
-    }
-    let target = game.mobs.iter().find(|t| t.id == id)?;
-    best_mace(game, target, &mace)
 }
 
 // Key Throw's Hotbar keys on a Lunge spear (Duelkit's Quick use): a jab with it at the start of the next tick, before
@@ -1432,126 +1321,6 @@ pub(super) fn quick_lunge(game: &mut Game<'_>, slot: usize) -> bool {
         }))
     });
     true
-}
-
-// A wind charge `stack` may be thrown: its cooldown is over.
-fn off_cooldown(game: &Game<'_>, stack: &ItemStack) -> bool {
-    game.res.items().get(&stack.item).is_some_and(|info| {
-        !game.cooldowns.is_on_cooldown(&horizon_client::cooldowns::group(stack, info.use_cooldown.as_ref()))
-    })
-}
-
-// Mace's Relaunch (the idea of Prism's WindJump and Nora's MaceCombo, done with the game's own packets: no velocity
-// written, no move packet of its own). It needs ground under you, an enemy within Relaunch range, a mace to come down
-// with, room above you for the rise, and a wind charge off cooldown (the offhand's, or with Hotbar one from the
-// hotbar). Returns the charge's slot and the target.
-fn relaunch_plan(game: &Game<'_>, m: &Module) -> Option<(usize, u32)> {
-    let mode = m.p("Relaunch");
-    if mode == "Off" || !allowed(game) || game.creative || game.riding.is_some() || game.ticks < state(|s| s.relaunch.next) {
-        return None;
-    }
-    let p = game.player.as_ref()?;
-    if !p.ground.on_ground || p.flying || p.fall_flying || p.fluids.was_touching_water || p.is_in_lava() {
-        return None;
-    }
-    let mace = (0..9).any(|slot| {
-        (slot == game.selected || m.b("Mace swap")) && available_item(game, slot).is_some_and(|s| &*s.item == "minecraft:mace")
-    });
-    if !mace {
-        return None;
-    }
-    let charge = |stack: Option<&ItemStack>| {
-        stack.is_some_and(|s| &*s.item == "minecraft:wind_charge" && s.count > 0 && off_cooldown(game, s))
-    };
-    let slot = if charge(game.offhand.as_ref()) {
-        util::OFFHAND
-    } else if mode == "Hotbar" {
-        (0..9).find(|&i| charge(game.inventory.get(i).and_then(|s| s.as_ref())))?
-    } else {
-        return None;
-    };
-    let eye = game.eye_position()?;
-    let range = m.n("Relaunch range");
-    let target = game
-        .mobs
-        .iter()
-        .filter(|t| enemy(game, t, m.b("Smash mobs")) && !known_friend(game, t.id))
-        .filter_map(|t| {
-            let b = t.bounds();
-            let (lo, hi) = (b.min_position(), b.max_position());
-            let d = policy::box_distance(eye, [lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z])?;
-            (d <= range).then_some((t.id, d))
-        })
-        .min_by(|a, b| a.1.total_cmp(&b.1))?
-        .0;
-    let mut scene = SceneCollisions { world: &game.world, binding: game.collision, subject: None };
-    let body = p.bounds();
-    let room = (1..=3).all(|up| scene.unobstructed(body.move_by(Vec3::new(0.0, f64::from(up), 0.0))).unwrap_or(false));
-    room.then_some((slot, target))
-}
-
-// Relaunch's throw, at the start of the tick after the server took your look straight down (as a player looks down,
-// jumps and right clicks). The wind charge goes along that look: from the offhand, or a hotbar one selected for it and
-// put back at the start of the next tick, never after the use in this tick (Grim's PacketOrderE). The jump key is held
-// this tick. The look stays down for this tick's move packet, since a use packet's look must be the move's (Grim's
-// BadPacketsJ). Air steer then takes you toward the target.
-fn throw_relaunch(game: &mut Game<'_>, m: &Module, charge: usize, target: u32, yaw: f32, done: control::Finish) {
-    // Another module's look waits: this tick's move packet would carry that one.
-    if relaunch_plan(game, m) != Some((charge, target)) || super::sunset::turn_pending() {
-        return;
-    }
-    if charge != util::OFFHAND && !take_slot(game, WeaponPlan { slot: charge, owner: MACE, restore: true, delay: 0 }, 1, Some(done)) {
-        return;
-    }
-    // The yaw the move packet will carry, so the use packet's look is the move's exactly.
-    let sent_yaw = super::sunset::wire_yaw(game, yaw);
-    super::sunset::turn(MACE, yaw, 90.0);
-    let sequence = util::sequence(game);
-    game.send(S::UseItem(play::UseItem { hand: i32::from(charge == util::OFFHAND), sequence, yaw: sent_yaw, pitch: 90.0 }));
-    request_jump(MACE);
-    claim_tick(game);
-    let now = game.ticks;
-    state(|s| s.relaunch = Relaunch { next: now.saturating_add(20), steer: Some((target, now)) });
-}
-
-// Air steer (Prism's MovementHooks): for up to 40 ticks after a Relaunch, while you are in the air, the move keys
-// toward the target's feet (none once you are over them). Any key you hold yourself wins, except W alone. None: no
-// steering this tick.
-fn steer_keys(game: &Game<'_>) -> Option<Vec<KeyCode>> {
-    let (id, start) = state(|s| s.relaunch.steer)?;
-    let on = section(MACE).is_some_and(|m| m.p("Relaunch") != "Off" && m.b("Air steer"));
-    let target = game.mobs.iter().find(|t| t.id == id && t.alive() && !t.removed);
-    let p = game.player.as_ref()?;
-    let over = game.ticks > start.saturating_add(40)
-        || (p.ground.on_ground && game.ticks > start.saturating_add(3))
-        || p.fall_flying
-        || p.fluids.was_touching_water;
-    let (Some(target), true, false) = (target, on, over) else {
-        state(|s| s.relaunch.steer = None);
-        return None;
-    };
-    if [KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD].iter().any(|k| game.physical_keys.contains(k)) {
-        return None;
-    }
-    let (dx, dz) = (target.position.x - p.position.x, target.position.z - p.position.z);
-    if dx * dx + dz * dz < 0.35 * 0.35 {
-        return Some(Vec::new());
-    }
-    // The move keys go by your own yaw, the one the game moves you with. Yaw grows turning right.
-    let toward = (-dx).atan2(dz).to_degrees() as f32;
-    let off = (toward - game.yaw + 180.0).rem_euclid(360.0) - 180.0;
-    let mut keys = Vec::new();
-    if off.abs() < 67.5 {
-        keys.push(KeyCode::KeyW);
-    } else if off.abs() > 112.5 {
-        keys.push(KeyCode::KeyS);
-    }
-    if (22.5..157.5).contains(&off) {
-        keys.push(KeyCode::KeyD);
-    } else if (-157.5..-22.5).contains(&off) {
-        keys.push(KeyCode::KeyA);
-    }
-    Some(keys)
 }
 
 // Spear's Damage indicator: while you charge a spear, the hit it would do to the nearest player as things stand (the

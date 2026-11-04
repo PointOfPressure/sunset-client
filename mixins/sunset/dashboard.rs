@@ -22,7 +22,7 @@ struct Listed {
     page: usize,
     query: String,
     count: usize,
-    // The extras Extra Modules left out.
+    // The modules switched off in Modules.
     hidden: Vec<&'static str>,
     ids: Vec<usize>,
 }

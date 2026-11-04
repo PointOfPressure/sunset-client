@@ -67,6 +67,7 @@ pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
     }
     super::sunset_prediction::forwarded(game, packet);
     super::sunset_melee::forwarded(game, packet);
+    super::sunset_auto_mace::forwarded(game, packet);
     super::sunset_combat_inventory::forwarded(game, packet);
 }
 

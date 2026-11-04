@@ -46,6 +46,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Target switch delay", 0.0, 0.0, 40.0, 1.0)
             .num("Range", 4.5, 1.0, 6.0, 0.1)
             .num("Walls range", 3.5, 1.0, 6.0, 0.1)
+            // Target strafe (target_strafe.rs): your move goes round the target at Strafe radius.
+            .bool("Target strafe", false)
+            .num("Strafe radius", 2.5, 0.5, 6.0, 0.1)
+            .pick("Strafe when", &["Always", "Jump held", "Speed on"])
+            .bool("Avoid edges", true)
             .pick("Passive mob age filter", &["Adult", "Baby", "Both"])
             .pick("Hostile mob age filter", &["Both", "Adult", "Baby"])
             .bool("Ignore named", false)

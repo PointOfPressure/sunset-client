@@ -171,30 +171,38 @@ static HITBOXES: Mutex<(f64, Vec<u32>)> = Mutex::new((0.0, Vec::new()));
 // Mine Through Mobs, at work this tick: the mobs it leaves to be hit as usual.
 static NO_TRACE: Mutex<Option<String>> = Mutex::new(None);
 
-// The mob under the crosshair with Reach's Entity reach or Auto Weapon's Spear reach, as the game's own pick finds it
-// (the nearest box along the look), the boxes Hitboxes grows grown; none with Mine Through Mobs while a block is in
-// reach (but for the mobs it lists). None: the game's own.
+// The mob under the crosshair with Reach's Entity reach or Auto Spear's Spear reach, as the game's own pick finds it
+// (the nearest box along the look), the boxes Hitboxes and Auto Mace's Expand hitbox grow grown; none with Mine
+// Through Mobs while a block is in reach (but for the mobs it lists). None: the game's own.
 pub(super) fn mob_hit(game: &Game<'_>) -> Option<Option<(usize, f64)>> {
     let bits = ENTITY_REACH.load(std::sync::atomic::Ordering::Relaxed);
     let (grow, grown) = HITBOXES.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let trace = NO_TRACE.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    if bits == u64::MAX && grown.is_empty() && trace.is_none() {
+    let mace = super::sunset_auto_mace::grown();
+    if bits == u64::MAX && grown.is_empty() && trace.is_none() && mace.is_none() {
         return None;
     }
-    let hit = pick_mob(game, bits, grow, &grown);
+    let hit = pick_mob(game, bits, grow, &grown, mace);
     match (hit, trace) {
         (Some((i, _)), Some(kept)) if game.pick().is_some() && !listed(&kept, &game.mobs[i].kind.id) => Some(None),
         _ => Some(hit),
     }
 }
 
-fn pick_mob(game: &Game<'_>, bits: u64, grow: f64, grown: &[u32]) -> Option<(usize, f64)> {
+// `mace`: Expand hitbox's player and how far its box grows each way, on top of Hitboxes.
+fn pick_mob(game: &Game<'_>, bits: u64, grow: f64, grown: &[u32], mace: Option<(u32, f64)>) -> Option<(usize, f64)> {
     let ordinary = if game.creative { 5.0 } else { 3.0 };
     let reach = if bits == u64::MAX { ordinary } else { f64::from_bits(bits).max(ordinary) };
     let (eye, dir) = game.aim()?;
     let boxed = |m: &horizon_client::mobs::Mob| {
+        let mut by = if grown.contains(&m.id) { grow } else { 0.0 };
+        if let Some((id, extra)) = mace
+            && id == m.id
+        {
+            by += extra;
+        }
         let b = m.bounds();
-        if grown.contains(&m.id) { b.inflate(horizon_core::geometry::Vec3::new(grow, grow, grow)) } else { b }
+        if by > 0.0 { b.inflate(horizon_core::geometry::Vec3::new(by, by, by)) } else { b }
     };
     game.mobs
         .iter()

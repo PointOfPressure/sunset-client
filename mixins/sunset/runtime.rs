@@ -276,6 +276,10 @@ impl Module {
         });
         self
     }
+    // Auto Weapon: whether its Mode runs this section.
+    fn weapon(&self, section: &str) -> bool {
+        super::sunset_melee::weapon_on(self, section)
+    }
     pub(super) fn setting(&self, name: &str) -> Option<&Setting> {
         self.settings.iter().find(|s| s.name == name)
     }
@@ -326,6 +330,10 @@ impl Module {
             },
             "Ghost Hand" => name != "Cut through" || !self.b("Hits"),
             "HUD" => match name {
+                "Coordinates position" => self.b("Coordinates"),
+                "Coordinates x" | "Coordinates y" => self.b("Coordinates") && self.p("Coordinates position") == "Custom",
+                "Compass position" => self.b("Compass"),
+                "Compass x" | "Compass y" => self.b("Compass") && self.p("Compass position") == "Custom",
                 "Armor HUD x" | "Armor HUD y" => self.b("Armor HUD") && self.p("Armor HUD position") == "Custom",
                 _ if name.starts_with("Armor HUD ") => self.b("Armor HUD"),
                 "Durability format" | "Durability tooltip" => self.b("Item durability"),
@@ -405,8 +413,12 @@ impl Module {
                 _ => true,
             },
             "Speed" => match name {
-                "Vanilla speed" => self.p("Mode") != "Strafe",
+                "Vanilla speed" => !matches!(self.p("Mode"), "Strafe" | "Bhop"),
                 "Strafe speed" | "Speed limit" => self.p("Mode") == "Strafe",
+                "Hop speed" | "Hop gain (%)" | "Hop height" | "Hop slope" | "Air friction (%)" | "Air control" | "Fast fall"
+                | "Hop when" | "Damage boost" | "Stop on release" => self.p("Mode") == "Bhop",
+                "Hop max speed" => self.p("Mode") == "Bhop" && self.n("Hop gain (%)") > 0.0,
+                "Only on ground" => self.p("Mode") != "Bhop",
                 "Ground multiplier" => advanced && self.p("Mode") == "Custom",
                 "Air multiplier" => advanced && matches!(self.p("Mode"), "Smooth" | "Low Hop" | "Custom") && !self.b("Only on ground"),
                 "Acceleration" | "Deceleration" | "Strafe strength" => advanced && matches!(self.p("Mode"), "Smooth" | "Custom"),
@@ -432,6 +444,7 @@ impl Module {
                     "Target lock" => self.p("Attack mode") == "Single",
                     "Target switch delay" => self.p("Attack mode") != "Multi",
                     "Hit delay" => self.p("Attack timing") == "Custom delay",
+                    "Strafe radius" | "Strafe when" | "Avoid edges" => self.b("Target strafe"),
                     _ => true,
                 }
             }
@@ -549,6 +562,12 @@ impl Module {
                 "Min pitch" | "Only holding blocks" => self.p("Mode") == "Sneak",
                 _ => true,
             },
+            "Rotations" => match name {
+                "Yaw lock" | "Pitch lock" => self.b("Lock"),
+                "Yaw angle" => self.b("Lock") && self.p("Yaw lock") == "Simple",
+                "Pitch angle" => self.b("Lock") && self.p("Pitch lock") == "Simple",
+                _ => true,
+            },
             "Step" => match name {
                 "Height" | "Active when" | "Safe step" => self.b("Step up"),
                 "Step health" => self.b("Step up") && self.b("Safe step"),
@@ -563,6 +582,8 @@ impl Module {
                 "2D style" | "Health bar" | "2D names" | "2D distance" | "Glow" => self.p("Mode") == "2D box",
                 "Health side" | "Health text" => self.p("Mode") == "2D box" && self.b("Health bar"),
                 "Shield mode" | "Shield color" | "Broken shield color" => self.b("Shield colors"),
+                "Murderer items" | "Murderer color" | "Murderer list" | "Callout" => self.b("Murderer finder"),
+                "Callout delay (ms)" | "Callout messages" => self.b("Murderer finder") && self.b("Callout"),
                 _ => true,
             },
             "Nametags" => match name {
@@ -575,14 +596,22 @@ impl Module {
                 _ => true,
             },
             "Cart" => super::sunset_cart::visible(self, name),
+            "Auto Mace" => super::sunset_auto_mace::visible(self, name),
+            "ClickGUI" => match name {
+                "Inventory blur" => self.b("Menu dim"),
+                _ => true,
+            },
             "Auto Weapon" => match name {
-                "Prefer axes" | "Totem hit" => self.b("Best weapon"),
-                "Shield mode" | "Shield held" | "Stun slam" => self.b("Axe on shields"),
-                "Mace swap" | "Mace pick" | "Breach swap" | "Smash assist" | "Min fall" | "Smash mobs" | "Relaunch" => self.b("Mace"),
-                "Min charge" => self.b("Mace") && self.b("Breach swap"),
-                "Smash timing" => self.b("Mace") && self.b("Smash assist"),
-                "Relaunch range" | "Air steer" => self.b("Mace") && self.p("Relaunch") != "Off",
-                "Lunge key" | "Reach poke" | "Spear reach" | "Damage indicator" => self.b("Spear"),
+                "Best weapon" | "Axe on shields" => self.p("Mode") == "Custom",
+                "Prefer axes" => self.p("Mode") == "Custom" && self.b("Best weapon"),
+                "Totem hit" => self.weapon("Best weapon"),
+                "Shield mode" | "Shield held" => self.weapon("Axe on shields"),
+                "Back after" => self.b("Swap back"),
+                "Shortest delay" | "Longest delay" => self.b("Swap back") && self.p("Back after") == "A delay",
+                _ => true,
+            },
+            "Auto Spear" => match name {
+                "Reach chance (%)" | "Reach weapons" | "Works with Trigger Bot" => self.b("Extended reach"),
                 "Back after" => self.b("Swap back"),
                 "Shortest delay" | "Longest delay" => self.b("Swap back") && self.p("Back after") == "A delay",
                 _ => true,
@@ -664,10 +693,21 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Delay", 20.0, 1.0, 200.0, 1.0)
             .num("Off time", 1.0, 1.0, 20.0, 1.0),
         Module::new("Speed", Movement, "Moves faster on the ground.")
-            .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom"])
+            .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop"])
             .num("Vanilla speed", 5.6, 0.0, 20.0, 0.1)
             .num("Strafe speed", 1.6, 0.0, 3.0, 0.05)
             .bool("Speed limit", false)
+            .num("Hop speed", 11.0, 4.0, 40.0, 0.5)
+            .num("Hop gain (%)", 0.0, 0.0, 50.0, 1.0)
+            .num("Hop max speed", 20.0, 4.0, 60.0, 0.5)
+            .num("Hop height", 0.42, 0.2, 0.6, 0.01)
+            .num("Hop slope", 0.4, 0.0, 1.0, 0.01)
+            .num("Air friction (%)", 0.6, 0.0, 10.0, 0.1)
+            .num("Air control", 1.0, 0.0, 1.0, 0.05)
+            .num("Fast fall", 0.0, 0.0, 1.0, 0.05)
+            .pick("Hop when", &["Moving", "Jump held"])
+            .bool("Damage boost", true)
+            .bool("Stop on release", true)
             .num("Timer", 1.0, 0.01, 10.0, 0.01)
             .bool("In liquids", false)
             .bool("When sneaking", false)
@@ -782,6 +822,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Background opacity", 0.9, 0.2, 1.0, 0.05)
             .num("Background dim", 20.0, 0.0, 100.0, 5.0)
             .bool("Menu dim", false)
+            .bool("Inventory blur", false)
             .bool("Toggle messages", true)
             .bool("Module messages", true)
             .text("Friends", ""),
@@ -792,9 +833,16 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Module list", true)
             .pick("Module list side", &["Right", "Left"])
             .bool("Coordinates", true)
+            .pick("Coordinates position", &["Top left", "Custom"])
+            .num("Coordinates x", 0.0, 0.0, 1.0, 0.001)
+            .num("Coordinates y", 0.0, 0.0, 1.0, 0.001)
             .bool("FPS", true)
             .bool("Speed", false)
             .bool("Facing", true)
+            .bool("Compass", false)
+            .pick("Compass position", &["Top", "Custom"])
+            .num("Compass x", 0.5, 0.0, 1.0, 0.001)
+            .num("Compass y", 0.0, 0.0, 1.0, 0.001)
             .bool("Totems", false)
             .bool("Target HUD", true)
             .pick("Target HUD mode", &["Full", "Potato"])
@@ -847,6 +895,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .colour("Hostiles color", "Red")
             .colour("Passive color", "Green")
             .colour("Items color", "Orange")
+            .bool("Murderer finder", false)
+            .text("Murderer items", "swords,axes,pickaxes,shovels,feather,golden_carrot,name_tag,carrot_on_a_stick,blaze_rod,redstone_torch,torch,bone")
+            .colour("Murderer color", "Red")
+            .bool("Murderer list", true)
+            .bool("Callout", false)
+            .num("Callout delay (ms)", 3100.0, 0.0, 5000.0, 100.0)
+            .text("Callout messages", "%s is the murderer!; i saw that %s!")
             .num("Range", 0.0, 0.0, ALL_RANGE_MAX, 8.0)
             .num("Max", 256.0, 8.0, 1024.0, 8.0),
         Module::new("Tracers", Render, "Lines to entities.")
@@ -1080,10 +1135,6 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Logout Spots", Render, "Marks where players logged out.")
             .pick("Mode", &["Box", "Outline", "Potato"])
             .num("Minutes", 10.0, 1.0, 60.0, 1.0),
-        Module::new("Bow Spam", Combat, "Fires arrows quickly.")
-            .num("Charge (ticks)", 5.0, 3.0, 20.0, 1.0)
-            .bool("Crossbows", true)
-            .num("Crossbow delay", 2.0, 0.0, 20.0, 1.0),
         Module::new("Notifier", Player, "Reports joins and leaves.")
             .bool("Join", true)
             .bool("Leave", true),
@@ -1144,6 +1195,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_cart::defaults());
     v.extend(super::sunset_anchor_aura::defaults());
     v.extend(super::sunset_melee::defaults());
+    v.extend(super::sunset_auto_mace::defaults());
     v.extend(super::sunset_combat_inventory::defaults());
     v.extend(super::sunset_lag::defaults());
     v.extend(super::sunset_swap_keys::defaults());
@@ -1172,8 +1224,9 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_vanish::defaults());
     v.extend(super::sunset_server_scan::defaults());
     v.extend(super::sunset_extras::defaults());
-    v.extend(super::sunset_extra_modules::defaults());
     v.extend(super::sunset_debug::defaults());
+    let list = super::sunset_extra_modules::defaults(&v);
+    v.push(list);
     // Modules that only draw can be held on with their bind instead of toggled.
     for m in v.iter_mut().filter(|m| holds(m.name)) {
         let hold = usize::from(m.name == "Zoom");
@@ -1233,6 +1286,7 @@ pub(super) struct State {
     // the next one is the server's push (Velocity).
     velocity: Option<[f64; 3]>,
     strafe: Strafe,
+    bhop: Bhop,
     knockback_ticks: u32,
     // Flight: Meteor's anti kick counters, the yaw it keeps, which way it nudged last, and whether it let go of sneak.
     fly_delay: i32,
@@ -1349,6 +1403,7 @@ impl State {
             high_jumping: false,
                     velocity: None,
                     strafe: Strafe::default(),
+                    bhop: Bhop::default(),
             knockback_ticks: 0,
                     fly_delay: 0,
                     fly_off: 0,
@@ -1666,7 +1721,7 @@ impl State {
     pub(super) fn module(&self, name: &str) -> Option<&Module> {
         self.modules.iter().find(|m| m.name == name)
     }
-    // The menus' modules: all but the extras Extra Modules leaves out.
+    // The menus' modules: all but the ones switched off in Modules.
     pub(super) fn listed(&self) -> impl Fn(&Module) -> bool + use<> {
         let hidden = super::sunset_extra_modules::hidden(&self.modules);
         move |m| !hidden.contains(&m.name)
@@ -1703,6 +1758,7 @@ const DROPPED: [(&str, &str); 8] = [
 // Offhand is on if any of its three was, with the first key bound; the old Offhand's Item when it was on, else a totem
 // always (Auto Totem Strict) or only when needed (None), else the new default; Refill is Auto Inventory Totem's Mode.
 // Modules renamed since go by their new names first, and a config from before Extra Modules lists the extras it uses.
+// Extra Modules is Modules (its switches the same; Pearl Catch shows unless switched off since).
 fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let renamed = renamed_modules(text);
     let owned = match merge_lines(&renamed) {
@@ -1713,7 +1769,8 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
 }
 
 // Modules with new names (0.9): Auto Steal is Chest Stealer, No Mining Trace is Mine Through Mobs.
-const RENAMED: [(&str, &str); 3] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot")];
+const RENAMED: [(&str, &str); 4] =
+    [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot"), ("extramodules", "modules")];
 
 fn renamed_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let old = |l: &str| RENAMED.iter().find(|(from, _)| l.split_once('.').is_some_and(|(id, _)| id == *from));
@@ -1722,6 +1779,7 @@ fn renamed_modules(text: &str) -> std::borrow::Cow<'_, str> {
     }
     let lines: Vec<String> = text
         .lines()
+        .filter(|l| l.trim() != "extramodules.pearlcatch=false")
         .map(|l| match old(l) {
             Some((from, to)) => format!("{to}{}", &l[from.len()..]),
             None => l.to_owned(),
@@ -1730,12 +1788,13 @@ fn renamed_modules(text: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(lines.join("\n"))
 }
 
-// A config or profile with no Extra Modules lines (from before it) has the extras it turns on or binds listed.
+// A config or profile with no Modules lines (from before Extra Modules) has the hidden modules it turns on or binds
+// listed.
 fn listed_extras(text: std::borrow::Cow<'_, str>) -> std::borrow::Cow<'_, str> {
-    if text.lines().any(|l| l.starts_with("extramodules.")) {
+    if text.lines().any(|l| l.starts_with("modules.")) {
         return text;
     }
-    let used: Vec<String> = super::sunset_extra_modules::EXTRAS
+    let used: Vec<String> = super::sunset_extra_modules::HIDDEN
         .iter()
         .map(|name| norm(name))
         .filter(|extra| {
@@ -1750,7 +1809,7 @@ fn listed_extras(text: std::borrow::Cow<'_, str>) -> std::borrow::Cow<'_, str> {
     }
     let mut out = text.into_owned();
     for extra in used {
-        out.push_str(&format!("\nextramodules.{extra}=true"));
+        out.push_str(&format!("\nmodules.{extra}=true"));
     }
     std::borrow::Cow::Owned(out)
 }
@@ -1774,9 +1833,13 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
         "spearswap", "crystalmacro", "anchormacro", "antianvil", "selfanvil", "autoanvil", "anchor", "reversestep",
         // Potion Saver (gone in 0.9) only held the timer you see; the server's ran down all the same.
         "potionsaver",
+        // Bow Spam and Anti Bed are gone; Rotation and No Rotate are Rotations' Lock and No rotate.
+        "bowspam", "antibed", "rotation", "norotate",
     ];
     let dropped = lines.iter().any(|&(id, field, _)| DROPPED.contains(&(id, field)));
-    if !old_offhand && !dropped && !gone.iter().any(|id| had(id)) {
+    // A config from before Auto Spear: Auto Weapon's spear lines go to it.
+    let spear_moved = !had("autospear") && (get("autoweapon", "spear").is_some() || get("autoweapon", "mode") == Some("Spear"));
+    if !old_offhand && !dropped && !spear_moved && !gone.iter().any(|id| had(id)) {
         return std::borrow::Cow::Borrowed(text);
     }
     let mut out: Vec<String> = text
@@ -1824,35 +1887,55 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
             }
         }
     }
-    // Shield Breaker, Mace and Spear Swap are Auto Weapon's sections (Best weapon the old Auto Weapon): Auto Weapon on
-    // if any of the four was, then with only their sections on, and the first key bound; the shared Holding and slot
-    // back from the first of them that was on.
-    if ["shieldbreaker", "mace", "spearswap"].iter().any(|id| had(id)) {
-        let old = ["autoweapon", "shieldbreaker", "mace", "spearswap"];
+    // Shield Breaker is Auto Weapon's Axe on shields (Best weapon the old Auto Weapon): Auto Weapon on if either was,
+    // then with only their sections on, and the first key bound; Holding and slot back from Shield Breaker when it was
+    // on. The old Mace's lines are dropped: its section left Auto Weapon for Auto Mace. Spear Swap is Auto Spear.
+    if had("spearswap") && !had("autospear") {
+        out.push(format!("autospear.on={}", on("spearswap")));
+        for (old_field, field) in [
+            ("key", "key"), ("lungekey", "lungekey"), ("reachpoke", "reachpoke"), ("spearreach", "spearreach"), ("holding", "holding"),
+            ("switchback", "swapback"), ("backafter", "backafter"), ("shortestdelay", "shortestdelay"), ("longestdelay", "longestdelay"),
+        ] {
+            if let Some(v) = get("spearswap", old_field) {
+                out.push(format!("autospear.{field}={v}"));
+            }
+        }
+    }
+    // Auto Weapon's Spear section (or Mode Spear) is Auto Spear: on with Auto Weapon if it ran, with its settings and
+    // Auto Weapon's Holding and slot back.
+    if spear_moved {
+        let spear = on("autoweapon") && (get("autoweapon", "spear") == Some("true") || get("autoweapon", "mode") == Some("Spear"));
+        out.push(format!("autospear.on={spear}"));
+        for field in [
+            "lungekey", "lungeonhit", "reachpoke", "spearreach", "damageindicator", "holding", "swapback", "backafter", "shortestdelay",
+            "longestdelay",
+        ] {
+            if let Some(v) = get("autoweapon", field) {
+                out.push(format!("autospear.{field}={v}"));
+            }
+        }
+    }
+    if had("shieldbreaker") {
+        let old = ["autoweapon", "shieldbreaker"];
         let weapon = get("autoweapon", "bestweapon").is_none() && on("autoweapon");
         out.push(format!("autoweapon.on={}", old.iter().any(|id| on(id))));
         if let Some(key) = old.iter().filter_map(|id| get(id, "key")).find(|k| *k != "none") {
             out.push(format!("autoweapon.key={key}"));
         }
         if old.iter().any(|id| on(id)) {
-            for (id, section) in [("autoweapon", "bestweapon"), ("shieldbreaker", "axeonshields"), ("mace", "mace"), ("spearswap", "spear")] {
+            for (id, section) in [("autoweapon", "bestweapon"), ("shieldbreaker", "axeonshields")] {
                 out.push(format!("autoweapon.{section}={}", if id == "autoweapon" { weapon } else { on(id) }));
             }
         }
         for (id, old_field, field) in [
-            ("shieldbreaker", "mode", "shieldmode"), ("shieldbreaker", "shieldheld", "shieldheld"), ("shieldbreaker", "stunslam", "stunslam"),
-            ("mace", "autoswap", "maceswap"), ("mace", "pick", "macepick"), ("mace", "breachswap", "breachswap"),
-            ("mace", "smashassist", "smashassist"), ("mace", "smashtiming", "smashtiming"), ("mace", "minfall", "minfall"),
-            ("mace", "mobs", "smashmobs"), ("spearswap", "lungekey", "lungekey"), ("spearswap", "reachpoke", "reachpoke"),
-            ("spearswap", "spearreach", "spearreach"),
+            ("shieldbreaker", "mode", "shieldmode"), ("shieldbreaker", "shieldheld", "shieldheld"),
         ] {
             if let Some(v) = get(id, old_field) {
                 out.push(format!("autoweapon.{field}={v}"));
             }
         }
-        if let Some(first) = ["shieldbreaker", "mace", "spearswap"].into_iter().find(|id| on(id)) {
-            let back = if first == "mace" { "swapback" } else { "switchback" };
-            for (old_field, field) in [("holding", "holding"), (back, "swapback"), ("backafter", "backafter"), ("shortestdelay", "shortestdelay"), ("longestdelay", "longestdelay")] {
+        if let Some(first) = ["shieldbreaker"].into_iter().find(|id| on(id)) {
+            for (old_field, field) in [("holding", "holding"), ("switchback", "swapback"), ("backafter", "backafter"), ("shortestdelay", "shortestdelay"), ("longestdelay", "longestdelay")] {
                 if let Some(v) = get(first, old_field) {
                     out.push(format!("autoweapon.{field}={v}"));
                 }
@@ -1945,6 +2028,15 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
             &[
                 ("anchormacro", "mode", "mode"), ("anchormacro", "delay", "delay"), ("anchormacro", "safeanchor", "safeanchor"),
                 ("anchormacro", "ifunguarded", "ifunguarded"), ("anchormacro", "switchback", "switchback"),
+            ],
+        );
+        merge(
+            "rotations",
+            &[("rotation", "lock"), ("norotate", "norotate")],
+            &[],
+            &[
+                ("rotation", "yawlock", "yawlock"), ("rotation", "yawangle", "yawangle"),
+                ("rotation", "pitchlock", "pitchlock"), ("rotation", "pitchangle", "pitchangle"),
             ],
         );
         // Step took in Reverse Step as its Reverse step section (0.9).
@@ -2509,7 +2601,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 super::sunset_scaffold_bridge::stop(game);
             }
             "Speed" => {
-                with(|s| { s.strafe = Strafe::default(); s.knockback_ticks = 0; });
+                with(|s| { s.strafe = Strafe::default(); s.bhop.reset(); s.knockback_ticks = 0; });
                 horizon_client::motion::sunset_motion::set_across(None);
                 horizon_client::motion::sunset_motion::set_up(None);
             },
@@ -2787,6 +2879,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         combat_cleanup(game);
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
+        horizon_client::motion::sunset_motion::set_strafe_dir(None);
+        bhop_body(game, None);
         horizon_client::motion::sunset_motion::set_safe_walk(false);
         horizon_client::motion::sunset_motion::set_screen_keys(None);
         restore_scaffold_rotation(game);
@@ -2798,6 +2892,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if super::sunset_combat_control::begin_tick(game) {
         drop_strikes();
         super::sunset_melee::cancel(game);
+        super::sunset_auto_mace::cancel();
     }
     combat_packets(game, &packets);
     ensure_loaded(game);
@@ -2823,8 +2918,11 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     super::sunset_hands::before_hits(game, strike_due() || super::sunset_melee::due_waiting());
     send_strikes(game);
-    send_slam(game);
     super::sunset_melee::due(game);
+    // Auto Spear's Extended reach: its slot back, or Trigger Bot's stab, in a tick with no hit or slot change before.
+    let hits = super::sunset_melee::reach_tick(game, hits || game.selected != selected || super::sunset_melee::acted(game)) || hits;
+    // Auto Mace's slot changes, clicks and hits: in a tick with no hit and no slot change before them.
+    let hits = super::sunset_auto_mace::pre_tick(game, hits || game.selected != selected) || hits;
     // Pearl Catch's wind charge: in a tick with no hit and no slot change before it.
     super::sunset_duel::catch_throw(game, hits || game.selected != selected);
     // Cart's steps: in a tick with no hit and no slot change before them.
@@ -2857,6 +2955,11 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         want.push(KeyCode::ControlLeft);
     }
     if on("Auto Jump") && playing && move_input(game) != (0.0, 0.0) {
+        want.push(KeyCode::Space);
+    }
+    // Speed's Bhop presses jump for this tick on the ground: the game's own jump, at Hop height.
+    let bhop = get("Speed").filter(|m| m.on && m.p("Mode") == "Bhop" && playing);
+    if bhop.is_some_and(|m| bhop_hops(game, m)) {
         want.push(KeyCode::Space);
     }
     if on("Sneak") && playing {
@@ -2926,6 +3029,10 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     let across = get("Speed").filter(|m| m.on).and_then(|m| speed(game, &m));
     horizon_client::motion::sunset_motion::set_across(across.map(|(xz, _)| xz));
     horizon_client::motion::sunset_motion::set_up(across.and_then(|(_, y)| y));
+    bhop_body(game, bhop);
+    // Kill Aura's Target strafe: the move this tick takes goes round its target.
+    let strafe = get("Kill Aura").filter(|m| m.on && m.b("Target strafe") && playing);
+    horizon_client::motion::sunset_motion::set_strafe_dir(strafe.and_then(|m| super::sunset_target_strafe::direction(game, m, on("Speed"))));
     let flight = get("Flight").filter(|m| m.on);
     flight_pre(game, flight);
     let step = get("Step").filter(|m| m.on && m.b("Step up"));
@@ -3335,9 +3442,6 @@ fn module_tick(game: &mut Game<'_>) {
             auto_replenish(game, m);
         }
     }
-    if let Some(m) = get("Bow Spam") {
-        bow_spam(game, m);
-    }
     if let Some(m) = get("Notifier") {
         notify(game, m);
     } else {
@@ -3419,6 +3523,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_duel::tick(game);
     super::sunset_loadouts::tick(game);
     super::sunset_parity::tick(game, &mods);
+    super::sunset_murder::tick(game, mods.iter().find(|m| m.name == "ESP" && m.on));
     super::sunset_hands::tick(game);
     super::sunset_combat::tick(game, &mods);
     super::sunset_cart::post_tick(game);
@@ -4697,32 +4802,6 @@ fn reach_deaths(game: &mut Game<'_>) {
     }
 }
 
-pub(super) fn bow_spam(game: &mut Game<'_>, m: &Module) {
-    use winit::event::MouseButton;
-    if !game.native_playing() || !(game.physical_buttons.contains(&MouseButton::Right) || game.right) {
-        return;
-    }
-    // Crossbows: once it is loaded the charge is let go (the release packet: the server loads it then), and the use
-    // still held fires it after Crossbow delay ticks, then charges the next.
-    if m.b("Crossbows") && let Some(stack) = game.held().filter(|s| &*s.item == "minecraft:crossbow") {
-        if stack.data().is_some_and(|d| !d.charged.is_empty()) && game.using.is_some() {
-            game.send(S::PlayerAction(play::PlayerAction { action: 6, pos: [0; 3], direction: 0, sequence: 0 }));
-            game.using = None;
-            game.use_delay = game.use_delay.max(m.n("Crossbow delay") as _);
-        }
-        return;
-    }
-    if !game.held().is_some_and(|s| &*s.item == "minecraft:bow") {
-        return;
-    }
-    if let Some((_, ticks)) = game.using
-        && f64::from(ticks) >= m.n("Charge (ticks)")
-    {
-        let _ = game.play_mouse(MouseButton::Right, false);
-        let _ = game.play_mouse(MouseButton::Right, true);
-    }
-}
-
 // Join and leave messages, from the server's player list.
 pub(super) fn notify(game: &mut Game<'_>, m: &Module) {
     let Some(mut now) = game.remote_online_names() else {
@@ -4835,11 +4914,13 @@ pub(super) fn server_correction(game: &mut Game<'_>) {
     with(|s| {
         s.knockback_ticks = 0;
         s.strafe = Strafe::default();
+        s.bhop.reset();
         s.scaffold_stack = None;
     });
     super::sunset_scaffold_normal::correction();
     horizon_client::motion::sunset_motion::set_across(None);
     horizon_client::motion::sunset_motion::set_up(None);
+    horizon_client::motion::sunset_motion::set_strafe_dir(None);
 }
 
 fn velocity_share(m: &Module, name: &str) -> f64 {
@@ -4968,6 +5049,145 @@ pub(super) struct Strafe {
     since: Option<std::time::Instant>,
 }
 
+// Speed's Bhop mode between ticks: the speed it carries (blocks a tick), the ticks in the air since its jump (None: on
+// the ground), the ticks on the ground since the last landing, hops in a row (Hop gain) and whether the last one was
+// a hop, a knockback's speed for Damage boost, whether the last tick was still rising (Fast fall's top), and whether
+// Hop height's jump modifier is on the player.
+#[derive(Default)]
+pub(super) struct Bhop {
+    speed: f64,
+    air: Option<u32>,
+    ground: u32,
+    chain: u32,
+    hopped: bool,
+    kick: f64,
+    rising: bool,
+    jump_set: bool,
+}
+
+impl Bhop {
+    // Back to standing (Speed off, a correction, Panic); Hop height's modifier is taken off by bhop_body.
+    fn reset(&mut self) {
+        *self = Bhop { jump_set: self.jump_set, ..Bhop::default() };
+    }
+}
+
+// Speed's Bhop: hops on the game's own jump each landing (Hop height's), and takes the move across the ground:
+// Hop speed on the jump's tick (Hop gain more for each hop in a row, up to Hop max speed), Hop slope of the speed over
+// the sprint-jump speed lost the next tick, then Air friction each tick in the air, never under the sprint-jump speed
+// (Speed's effect counted). It goes the way the move keys point, turned by Air control from the way you were going;
+// a wall or a stop starts it again. Damage boost takes a knockback's speed when it is more. With no move key held,
+// Stop on release stands you still.
+fn bhop(game: &Game<'_>, m: &Module, base: f64, scale: f64) -> Option<([f64; 2], Option<f64>)> {
+    let p = game.player.as_ref()?;
+    let Some(wish) = move_direction(game) else {
+        with(|s| s.bhop.reset());
+        return m.b("Stop on release").then_some(([0.0; 2], None));
+    };
+    let ground = p.ground.on_ground;
+    // The jump goes this tick: on the ground with jump held (pressed by Bhop, or by you with Hop when Jump held).
+    let jumping = ground && game.keys.contains(&KeyCode::Space);
+    let (hop, gain, max) = (m.n("Hop speed") / 20.0, m.n("Hop gain (%)") / 100.0, m.n("Hop max speed") / 20.0);
+    let (slope, friction) = (m.n("Hop slope").clamp(0.0, 1.0), (m.n("Air friction (%)") / 100.0).clamp(0.0, 1.0));
+    let boost = m.b("Damage boost");
+    let wall = p.collision.horizontal;
+    let speed = with(|s| {
+        let b = &mut s.bhop;
+        if wall {
+            b.speed = base;
+            b.chain = 0;
+        }
+        if jumping {
+            b.chain = if b.hopped && b.ground <= 2 { b.chain + 1 } else { 0 };
+            let top = if gain > 0.0 { max.max(hop) } else { hop };
+            b.speed = (hop * (1.0 + gain * f64::from(b.chain))).min(top).max(base);
+            b.air = Some(0);
+            b.ground = 0;
+            b.hopped = true;
+        } else if ground {
+            b.ground = b.ground.saturating_add(1);
+            if b.ground > 2 {
+                b.chain = 0;
+                b.hopped = false;
+            }
+            b.air = None;
+            b.speed = base;
+        } else {
+            let n = b.air.map_or(1, |a| a.saturating_add(1));
+            b.air = Some(n);
+            if n == 1 {
+                b.speed -= slope * (b.speed - base);
+            } else {
+                b.speed -= b.speed * friction;
+            }
+            b.speed = b.speed.max(base);
+        }
+        if boost && b.kick > 0.0 {
+            b.speed = b.speed.max(b.kick.min(max.max(hop)));
+        }
+        b.kick = 0.0;
+        b.speed
+    });
+    // Air control: on the ground the keys' way at once; in the air turned that share from the way you were going.
+    let was = [p.position.x - game.previous_position.x, p.position.z - game.previous_position.z];
+    let was_len = was[0].hypot(was[1]);
+    let control = m.n("Air control").clamp(0.0, 1.0);
+    let dir = if ground || control >= 1.0 || was_len < 1e-4 {
+        wish
+    } else {
+        let mix = [was[0] / was_len * (1.0 - control) + wish[0] * control, was[1] / was_len * (1.0 - control) + wish[1] * control];
+        let len = mix[0].hypot(mix[1]);
+        if len < 1e-6 { wish } else { [mix[0] / len, mix[1] / len] }
+    };
+    Some(([dir[0] * speed * scale, dir[1] * speed * scale], None))
+}
+
+// Bhop on the player itself, before the tick moves it: Hop height's jump (the game's jump strength scaled, so the
+// jump is the game's own), no jump delay on the ground (a held jump hops again on landing), and Fast fall's pull down
+// at the top of a hop. `m`: Speed in Bhop mode, on.
+fn bhop_body(game: &mut Game<'_>, m: Option<&Module>) {
+    let moving = move_input(game) != (0.0, 0.0);
+    let was = with(|s| s.bhop.jump_set);
+    let Some(p) = game.player.as_mut() else {
+        return;
+    };
+    let Some(m) = m else {
+        if was {
+            let _ = p.set_modifier("minecraft:jump_strength", "sunset:bhop", 0.0, "add_multiplied_total", false);
+            with(|s| s.bhop.jump_set = false);
+        }
+        return;
+    };
+    let _ = p.set_modifier("minecraft:jump_strength", "sunset:bhop", m.n("Hop height") / 0.42 - 1.0, "add_multiplied_total", true);
+    if p.ground.on_ground {
+        p.no_jump_delay = 0;
+    }
+    let fast_fall = m.n("Fast fall");
+    let rising = with(|s| std::mem::replace(&mut s.bhop.rising, p.velocity.y > 0.0));
+    if fast_fall > 0.0 && moving && rising && !p.ground.on_ground && p.velocity.y <= 0.0 && !p.fall_flying && !p.flying {
+        p.velocity.y -= fast_fall;
+        with(|s| s.bhop.rising = false);
+    }
+    with(|s| s.bhop.jump_set = true);
+}
+
+// Bhop presses the game's jump this tick: on the ground with a move key held (Hop when Moving), where Speed moves you.
+fn bhop_hops(game: &Game<'_>, m: &Module) -> bool {
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
+    m.p("Hop when") == "Moving"
+        && move_input(game) != (0.0, 0.0)
+        && p.ground.on_ground
+        && !p.flying
+        && !p.fall_flying
+        && game.riding.is_none()
+        && (m.b("When sneaking") || !game.keys.contains(&KeyCode::ShiftLeft))
+        && (m.b("In liquids") || !(p.fluids.was_touching_water || p.is_in_lava()))
+        && !game.block_in_tag("minecraft:climbable", &game.block_name(feet))
+}
+
 // Speed (Meteor's): this tick's own move across the ground, blocks a tick (and Strafe's hop up), or None to leave
 // it to the game. Vanilla moves the setting's blocks a second the way the move keys point, and stands still without
 // them; Strafe hops, faster at each jump, slowing in the air.
@@ -5001,6 +5221,10 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         || (!m.b("In liquids") && (p.fluids.was_touching_water || p.is_in_lava()))
     {
         return None;
+    }
+    if mode == "Bhop" {
+        let base = 0.2873 * (1.0 + 0.2 * effect("speed")) / (1.0 + 0.2 * effect("slowness"));
+        return bhop(game, m, base, slow_factor);
     }
     if matches!(mode, "Smooth" | "Low Hop" | "Custom") {
         if m.b("Only on ground") && !p.ground.on_ground { return None; }
@@ -5134,7 +5358,18 @@ fn velocity(game: &mut Game<'_>, m: Option<&Module>) {
     if let (Some(last), Some(p)) = (last, game.player.as_ref()) {
         let impulse = [p.velocity.x - last[0] - blast[0], p.velocity.y - last[1] - blast[1], p.velocity.z - last[2] - blast[2]];
         if game.remote.is_some() && impulse[0].hypot(impulse[2]).hypot(impulse[1]) > 0.08 {
-            with(|s| s.knockback_ticks = s.module("Speed").filter(|m| m.on).map_or(0, |m| m.n("Knockback pause") as u32));
+            // Bhop's Damage boost takes the knockback's speed across the ground.
+            let kick = impulse[0].hypot(impulse[2]);
+            with(|s| {
+                let (pause, bhop) = s
+                    .module("Speed")
+                    .filter(|m| m.on)
+                    .map_or((0, false), |m| (m.n("Knockback pause") as u32, m.p("Mode") == "Bhop"));
+                s.knockback_ticks = pause;
+                if bhop {
+                    s.bhop.kick = s.bhop.kick.max(kick);
+                }
+            });
         }
     }
     let share = |on: &str, h: &str, v: &str| m.filter(|m| m.b(on)).map_or([1.0; 2], |m| [velocity_share(m, h), velocity_share(m, v)]);
@@ -5358,8 +5593,6 @@ struct Strikes {
     queue: Vec<(u32, bool)>,
     weapon: Option<StrikeWeapon>,
     back: Option<(usize, usize, u64)>,
-    // Stun slam's mace hit (target, mace slot, the axe hit's tick): it goes at the start of the tick after the axe's.
-    slam: Option<(u32, usize, u64)>,
 }
 
 // The weapon for the hits waiting: its slot, the delay before it goes back (None: it stays), and the slot it replaced
@@ -5371,7 +5604,7 @@ struct StrikeWeapon {
     replaced: Option<usize>,
 }
 
-static STRIKES: Mutex<Strikes> = Mutex::new(Strikes { queue: Vec::new(), weapon: None, back: None, slam: None });
+static STRIKES: Mutex<Strikes> = Mutex::new(Strikes { queue: Vec::new(), weapon: None, back: None });
 
 fn strikes<R>(f: impl FnOnce(&mut Strikes) -> R) -> R {
     f(&mut STRIKES.lock().unwrap_or_else(|e| e.into_inner()))
@@ -5383,7 +5616,6 @@ fn drop_strikes() {
         s.queue.clear();
         s.weapon = None;
         s.back = None;
-        s.slam = None;
     });
 }
 
@@ -5392,11 +5624,12 @@ pub(super) fn strike(game: &mut Game<'_>, id: u32) {
 }
 
 // Decided after the tick's move packet: the hit and its weapon both go at the start of the next tick, the slot first,
-// as a hotbar key before a click (a slot change after the move packet is what Grim's Post check flags).
+// as a hotbar key before a click (a slot change after the move packet is what Grim's Post check flags). The weapon is
+// Auto Mace's mace while you fall, else Auto Weapon's.
 fn queue_strike(game: &mut Game<'_>, id: u32, critical: bool) {
     let first = strikes(|s| s.queue.is_empty() && s.weapon.is_none());
     let weapon = first
-        .then(|| super::sunset_melee::strike_weapon(game, id))
+        .then(|| super::sunset_auto_mace::strike_weapon(game, id).or_else(|| super::sunset_melee::strike_weapon(game, id)))
         .flatten()
         .map(|(slot, back_after)| StrikeWeapon { slot, back_after, replaced: None });
     strikes(|s| {
@@ -5407,19 +5640,19 @@ fn queue_strike(game: &mut Game<'_>, id: u32, critical: bool) {
 
 // A hit is on its way: the attack cooldown has not restarted yet, so nothing else may hit this tick.
 pub(super) fn strike_waiting() -> bool {
-    strikes(|s| !s.queue.is_empty() || s.slam.is_some())
+    strikes(|s| !s.queue.is_empty())
 }
 
-// Hits go out this tick (not only their weapon), Stun slam's mace hit among them.
+// Hits go out this tick (not only their weapon).
 fn strike_due() -> bool {
-    strikes(|s| (!s.queue.is_empty() && s.weapon.is_none_or(|w| w.replaced.is_some())) || s.slam.is_some())
+    strikes(|s| !s.queue.is_empty() && s.weapon.is_none_or(|w| w.replaced.is_some()))
 }
 
 // The start of a tick after a hit, before any hit or use in it: the hotbar slot the hit's weapon replaced comes back.
 fn strike_weapon_back(game: &mut Game<'_>) {
     let ticks = game.ticks;
     if let Some((slot, weapon, _)) =
-        strikes(|s| (s.queue.is_empty() && s.slam.is_none() && s.back.is_some_and(|b| ticks >= b.2)).then(|| s.back.take()).flatten())
+        strikes(|s| (s.queue.is_empty() && s.back.is_some_and(|b| ticks >= b.2)).then(|| s.back.take()).flatten())
         && game.selected == weapon
     {
         hold(game, slot);
@@ -5451,29 +5684,6 @@ fn send_strikes(game: &mut Game<'_>) {
     }
 }
 
-// Stun slam's second hit, at the start of the tick after the axe's: the mace selected, then its hit. Its slot goes back
-// at the start of the next tick.
-fn send_slam(game: &mut Game<'_>) {
-    let ticks = game.ticks;
-    let Some((id, mace, _)) = strikes(|s| s.slam.take_if(|(_, _, at)| ticks > *at)) else {
-        return;
-    };
-    if game.remote.is_none()
-        || !game.mobs.iter().any(|m| m.id == id && m.alive() && !m.removed)
-        || super::sunset_parity::fake(id)
-        || !super::sunset_melee::slam_ready(game, id, mace)
-    {
-        return;
-    }
-    let axe = game.selected;
-    hold(game, mace);
-    game.send(S::Attack(play::Attack { id: id as i32 }));
-    game.swing_arm();
-    game.send(S::Punch(Empty));
-    game.reset_attack_strength();
-    strikes(|s| s.back = Some(s.back.map_or((axe, mace, ticks + 1), |(slot, _, _)| (slot, mace, ticks + 1))));
-}
-
 fn strike_now(game: &mut Game<'_>, id: u32) {
     // Gone since the hit was decided: the id may be someone else's by now. Fake Player's is no one's on the server.
     if !game.mobs.iter().any(|m| m.id == id && m.alive() && !m.removed) || super::sunset_parity::fake(id) {
@@ -5489,17 +5699,12 @@ fn strike_now(game: &mut Game<'_>, id: u32) {
         }
     } else {
         super::sunset_melee::spear_pass(game, id);
-        let slam = super::sunset_melee::stun_slam(game, id);
+        // An axe hit at a raised shield readies Auto Mace's Stun slam, as your own click does.
+        super::sunset_auto_mace::before_strike(game);
         game.send(S::Attack(play::Attack { id: id as i32 }));
         game.swing_arm();
         game.send(S::Punch(Empty));
         game.reset_attack_strength();
-        // Stun slam: the mace's hit follows at the start of the next tick (send_slam). A slot change after a hit in
-        // the same tick is what Grim's PacketOrderE flags, and the axe keeps the shield down for seconds.
-        if let Some(mace) = slam {
-            let due = game.ticks;
-            strikes(|s| s.slam = Some((id, mace, due)));
-        }
     }
 }
 
@@ -5620,7 +5825,10 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     {
         return;
     }
-    let Some((i, _)) = game.mob_hit() else {
+    // Nobody under the crosshair: Auto Spear's Extended reach may give a target along your look (Works with Trigger
+    // Bot), hit with its spear's stab.
+    let reach = game.mob_hit().is_none().then(|| super::sunset_melee::reach_trigger(game)).flatten();
+    let Some(i) = game.mob_hit().map(|(i, _)| i).or_else(|| reach.and_then(|id| game.mobs.iter().position(|t| t.id == id))) else {
         with(|s| s.trigger_missed = None);
         return;
     };
@@ -5659,7 +5867,11 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
         with(|s| s.trigger_missed = Some(id));
         return;
     }
-    attack(game, id, crits, None);
+    if reach == Some(id) {
+        super::sunset_melee::reach_strike(id);
+    } else {
+        attack(game, id, crits, None);
+    }
     let (lo, hi) = (m.n("Shortest cooldown (%)"), m.n("Longest cooldown (%)").max(m.n("Shortest cooldown (%)")));
     let need = ((lo + rng.next() * (hi - lo)) / 100.0) as f32;
     with(|s| {
@@ -6084,6 +6296,7 @@ fn combat_cleanup(game: &mut Game<'_>) {
     super::sunset_pvp_bot::release(game);
     drop_strikes();
     super::sunset_melee::cancel(game);
+    super::sunset_auto_mace::cancel();
     super::sunset_aura::disabled(game, false);
     super::sunset_combat_inventory::cancel(game);
     super::sunset_combat_control::reset();
@@ -6275,7 +6488,7 @@ const HELP: &[(&str, &str)] = &[
     (".panic", "turn every module off and hide Sunset (.panic again brings it back)"),
     (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
     (".preset [name] [apply]", "the pre-made profiles: a name says what it turns on and off, apply takes it (.profile load before-load undoes it)"),
-    (".debug [chat lines]", "copy a debug report (chat, anticheat flags, the client's state, the last packets sent) to the clipboard, saved in the mod's data folder too"),
+    (".debug [chat lines]", "copy a debug report (chat, anticheat flags, the client's state, the last packets sent) to the clipboard and its configured Save folder"),
     (".scan [plugins|details|channels|commands|status|run] [page]", "show server-reported findings; run optional Extended checks manually"),
     (".auradebug", "why Kill Aura did what it did last, and who has the hand"),
     (".plugins", "the plugins loaded, their modules and commands"),
@@ -6292,6 +6505,7 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
         m.on = false;
     }
     s.strafe = Strafe::default();
+    s.bhop.reset();
     s.knockback_ticks = 0;
     s.velocity = None;
     s.blast = [0.0; 3];
@@ -6313,6 +6527,8 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     }
     horizon_client::motion::sunset_motion::set_across(None);
     horizon_client::motion::sunset_motion::set_up(None);
+    horizon_client::motion::sunset_motion::set_strafe_dir(None);
+    bhop_body(game, None);
     horizon_client::motion::sunset_motion::set_safe_walk(false);
     horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed);
     save(game);
@@ -7118,6 +7334,10 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
 
     super::sunset_loadouts::draw(game, w, h, &mut shapes);
     super::sunset_melee::draw_spear(game, w, h, &mut shapes);
+    if let Some(esp) = get("ESP") {
+        super::sunset_murder::draw(game, esp, w, &mut shapes);
+    }
+    super::sunset_hud_bars::clear_placed();
     if let Some(hud) = get("HUD") {
         if hud.b("Target HUD") && get("Kill Aura").is_some() {
             super::sunset_aura::draw_target(game, w, h, hud.p("Target HUD mode") == "Potato", &mut shapes);
@@ -7144,18 +7364,31 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
                 }
             }
         }
+        let coordinates = game.native_player().filter(|_| hud.b("Coordinates")).map(|p| {
+            let (x, y, z) = (p.x.floor(), p.y.floor(), p.z.floor());
+            let other = match p.dimension {
+                "minecraft:overworld" => format!(" (Nether {} {})", (p.x / 8.0).floor(), (p.z / 8.0).floor()),
+                "minecraft:the_nether" => format!(" (Overworld {} {})", (p.x * 8.0).floor(), (p.z * 8.0).floor()),
+                _ => String::new(),
+            };
+            format!("XYZ {x} {y} {z}{other}")
+        });
+        let custom = hud.p("Coordinates position") == "Custom";
+        // Coordinates moved off the corner: on their own where they were dragged to.
+        if custom && let Some(text) = &coordinates {
+            let (tw, th) = (game.native_text_width(text) + 4.0, 12.0);
+            let x = (hud.n("Coordinates x") as f32 * w).clamp(0.0, (w - tw).max(0.0));
+            let y = (hud.n("Coordinates y") as f32 * h).clamp(0.0, (h - th).max(0.0));
+            super::sunset_hud_bars::place("Coordinates", [x, y, tw, th], w, h);
+            shapes.push(Shape::Text(text.clone(), [x + 2.0, y + 2.0], 0xFFFFFF));
+        }
         if game.native_corner_shown(Corner::TopLeft)
             && let Some(p) = game.native_player()
         {
             let mut lines: Vec<String> = Vec::new();
-            if hud.b("Coordinates") {
-                let (x, y, z) = (p.x.floor(), p.y.floor(), p.z.floor());
-                let other = match p.dimension {
-                    "minecraft:overworld" => format!(" (Nether {} {})", (p.x / 8.0).floor(), (p.z / 8.0).floor()),
-                    "minecraft:the_nether" => format!(" (Overworld {} {})", (p.x * 8.0).floor(), (p.z * 8.0).floor()),
-                    _ => String::new(),
-                };
-                lines.push(format!("XYZ {x} {y} {z}{other}"));
+            let in_corner = coordinates.filter(|_| !custom);
+            if let Some(text) = &in_corner {
+                lines.push(text.clone());
             }
             let mut info: Vec<String> = Vec::new();
             if hud.b("FPS") {
@@ -7185,6 +7418,9 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             let width = lines.iter().map(|l| game.native_text_width(l)).fold(0.0, f32::max);
             if !lines.is_empty() {
                 let (bx, by) = corners.place(Corner::TopLeft, width + 4.0, lines.len() as f32 * 10.0 + 2.0);
+                if let Some(text) = &in_corner {
+                    super::sunset_hud_bars::place("Coordinates", [bx, by, game.native_text_width(text) + 4.0, 12.0], w, h);
+                }
                 for (i, line) in lines.into_iter().enumerate() {
                     shapes.push(Shape::Text(line, [bx + 2.0, by + 2.0 + i as f32 * 10.0], 0xFFFFFF));
                 }
@@ -7195,6 +7431,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             super::sunset_hud_bars::draw(game, hud, w, h, corners, &mut shapes);
         }
     }
+    chat_layout(game, &mut shapes);
 
     // Scaffold's block counter: a number and a word above the hotbar, clear of the hearts, armour and item name.
     if let Some(m) = get("Scaffold").filter(|m| m.b("Block counter"))
@@ -7607,6 +7844,8 @@ impl EntityLook {
 fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw: f32, out: &mut impl Canvas) {
     let [esp, tracers, tags] = mods.map(|m| m.map(EntityLook::of));
     let two = mods[0].map(super::sunset_esp2d::TwoD::of);
+    // ESP's Murderer finder: its suspects in the Murderer color.
+    let murderer = mods[0].filter(|m| m.b("Murderer finder")).map(|m| m.c("Murderer color"));
     let tags_module = mods[2];
     let banded = tags_module.is_some_and(|m| m.p("Health colors") == "Bands");
     let (tracer_target, tracer_bottom, tracer_by_distance) =
@@ -7667,6 +7906,10 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             let col = if l.potato { l.kinds.colour(kind, false) } else { faded(l.kinds.colour(kind, friend()), d, l.fade) };
             let shield = two.as_ref().filter(|_| !l.potato).and_then(|t| super::sunset_esp2d::shield_colour(game, t, mob));
             let col = shield.map_or(col, |c| faded(c, d, l.fade));
+            let col = match &murderer {
+                Some(c) if kind == Kind::Player && super::sunset_murder::suspect(mob.id) => faded(*c, d, l.fade),
+                _ => col,
+            };
             let shown = match two.as_ref().filter(|t| l.look.draw == Draw::Box2d && t.extras()) {
                 Some(t) => super::sunset_esp2d::draw(game, cam, out, t, mob, lo, hi, d, col, lw),
                 None => draw_box(cam, out, &l.look, lo, hi, col, lw),
@@ -7962,8 +8205,8 @@ pub(super) enum Drag {
     Slider(usize, usize, [f32; 4], f32),
     // The settings window by its title, where in it the pointer took it.
     Window(f32, f32),
-    // The Armor HUD, where in it the pointer took it (in the HUD's own units).
-    Armor(f32, f32),
+    // A HUD element (Coordinates, Compass, Armor HUD), where in it the pointer took it (in the HUD's own units).
+    Hud(&'static str, f32, f32),
 }
 
 #[derive(Clone, Debug)]
@@ -8201,6 +8444,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Jump Reset" => "auto jump reset jumpreset",
         "New Chunks" => "newer new chunks chunk trail trouser palette",
         "Ore Sim" => "ore simulation oresimulation seed xray anti xray antixray ores diamonds",
+        "Rotations" => "rotation no rotate norotate yaw lock pitch lock look lock",
         "Player Activity Detector" => "online player activity detector",
         "Base Finder" => "trouser stash base hunting",
         "Stash Finder" => "stash chests base hunting",
@@ -8218,7 +8462,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Chest Stealer" => "auto steal autosteal loot",
         "Liquid Filler" => "auto drain autodrain drain bucket scoop water lava cobweb",
         "Auto Tool" => "auto pickaxe autopickaxe tool swap pickaxe below",
-        "ESP" => "2d esp twodesp 2d box corners brackets health bar glow shield renderer shieldrenderer shield colors",
+        "ESP" => "2d esp twodesp 2d box corners brackets health bar glow shield renderer shieldrenderer shield colors murderer finder murder mystery murdererfinder callout",
         "Nametags" => "health indicators healthindicators health colors bands",
         "Target ESP" => "target renderer targetrenderer ghost square target hud marker",
         "Atmosphere" => "ambience fog color fog distance custom fog sky horizon",
@@ -8229,14 +8473,17 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Mine Through Mobs" => "no mining trace nominingtrace",
         "GUI Move" => "inventory move invmove gui walk",
         "Flight" => "fly",
-        "Kill Aura" => "aura killaura",
+        "Speed" => "bhop bunnyhop bunny hop strafe low hop",
+        "Kill Aura" => "aura killaura target strafe",
         "Break Delay" => "fast break nuker delay",
         "Fast Place" => "fastplace place speed delay",
         "Fast Use" => "fastuse fastxp fast xp exp bottles throw throwables",
         "Fullbright" => "gamma night vision",
         "Criticals" => "crits",
         "Offhand" => "totem auto totem inventory totem hover totem crystal gapple double hand predict double hand mainhand totem",
-        "Auto Weapon" => "shield breaker axe mace spear swap lunge best weapon swap hit totem hit instant lunge spear damage",
+        "Auto Weapon" => "shield breaker axe sword swap best weapon swap hit totem hit",
+        "Auto Spear" => "spear lunge instant lunge reach poke spear reach extended reach damage indicator spear swap",
+        "Auto Mace" => "mace smash stun slam axe density breach trigger silent aim elytra takeoff hitbox swap back",
         "Crystal Aura" => "crystal macro auto hit crystal autohitcrystal auto obby crystal perfect timing",
         "Cart" => "tnt minecart cart pvp auto cart cart aura xbow cart crossbow safe cart cover refill cart refill pearl catch",
         "Anchor Aura" => "anchor macro double anchor anchor placer anchor exploder safe anchor anchor pearl catch anchorpearlcatch",
@@ -8857,13 +9104,13 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             s.gui.editor = None;
         }
         let Some((r, hit)) = found else {
-            // Off the menu: the Armor HUD can be taken and moved.
-            if let Some((dx, dy)) = super::sunset_hud_bars::armor_grab(game.cursor).filter(|_| !right) {
-                s.gui.drag = Some(Drag::Armor(dx, dy));
+            // Off the menu: a HUD element can be taken and moved.
+            if let Some((name, dx, dy)) = super::sunset_hud_bars::grab(game.cursor).filter(|_| !right) {
+                s.gui.drag = Some(Drag::Hud(name, dx, dy));
             }
             return;
         };
-        // Extra Modules is its switches: either button opens them.
+        // Modules is its switches: either button opens them.
         let right = right || matches!(hit, Hit::Module(i) if s.modules[i].name == super::sunset_extra_modules::NAME);
         match (hit, right) {
             (Hit::WinTitle, false) => {
@@ -8962,6 +9209,66 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
     }
 }
 
+// A HUD element dragged by the pointer, taken `dx`, `dy` into it: its position Custom, at where its corner is now.
+fn move_hud(s: &mut State, game: &Game<'_>, name: &str, dx: f32, dy: f32) {
+    let Some((fx, fy)) = super::sunset_hud_bars::drag_to(name, game.cursor.0 - dx, game.cursor.1 - dy) else {
+        return;
+    };
+    let Some(m) = s.modules.iter_mut().find(|m| m.name == "HUD") else {
+        return;
+    };
+    for st in &mut m.settings {
+        match st.name.strip_prefix(name).map(str::trim) {
+            Some("position") => {
+                if let Value::Pick { i, of } = &mut st.value {
+                    *i = of.iter().position(|o| *o == "Custom").unwrap_or(*i);
+                }
+            }
+            Some("x") => {
+                if let Value::Num { v, .. } = &mut st.value {
+                    *v = fx;
+                }
+            }
+            Some("y") => {
+                if let Value::Num { v, .. } = &mut st.value {
+                    *v = fy;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+// HUD's layout editor with the chat open: Coordinates, Compass and the Armor HUD are framed, and a press on one drags
+// it until the button comes up (saved then). The chat closed, a drag still going ends there.
+fn chat_layout(game: &Game<'_>, out: &mut Vec<Shape>) {
+    use super::sunset_hud_bars::ChatDrag;
+    let dragging = with(|s| match s.gui.drag {
+        Some(Drag::Hud(name, dx, dy)) => Some((name, dx, dy)),
+        _ => None,
+    });
+    if game.screen != Screen::Chat || with(|s| s.gui.open) {
+        super::sunset_hud_bars::chat_closed();
+        if dragging.is_some() && !with(|s| s.gui.open) {
+            with(|s| s.gui.drag = None);
+            save(game);
+        }
+        return;
+    }
+    match super::sunset_hud_bars::chat_layout(game, dragging.map(|d| d.0), out) {
+        Some(ChatDrag::Start(name, dx, dy)) => with(|s| s.gui.drag = Some(Drag::Hud(name, dx, dy))),
+        Some(ChatDrag::End) => {
+            with(|s| s.gui.drag = None);
+            save(game);
+        }
+        None => {
+            if let Some((name, dx, dy)) = dragging {
+                with(|s| move_hud(s, game, name, dx, dy));
+            }
+        }
+    }
+}
+
 // A drag follows the pointer each frame.
 pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
     let at = gui_cursor(game);
@@ -8983,20 +9290,7 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
                 (win.x, win.y) = (at.0 - dx, at.1 - dy);
             }
         }
-        Some(Drag::Armor(dx, dy)) => {
-            if let Some((fx, fy)) = super::sunset_hud_bars::armor_drag(game.cursor.0 - dx, game.cursor.1 - dy)
-                && let Some(m) = s.modules.iter_mut().find(|m| m.name == "HUD")
-            {
-                for st in &mut m.settings {
-                    match (st.name, &mut st.value) {
-                        ("Armor HUD position", Value::Pick { i, of }) => *i = of.iter().position(|o| *o == "Custom").unwrap_or(*i),
-                        ("Armor HUD x", Value::Num { v, .. }) => *v = fx,
-                        ("Armor HUD y", Value::Num { v, .. }) => *v = fy,
-                        _ => {}
-                    }
-                }
-            }
-        }
+        Some(Drag::Hud(name, dx, dy)) => move_hud(s, game, name, dx, dy),
         None => {}
     });
     // The left button came up: the drag ends where the pointer is.
@@ -9604,6 +9898,64 @@ mod movement_config_tests {
     use super::*;
 
     #[test]
+    fn auto_weapon_modes_show_only_their_weapons_settings() {
+        let mut state = State::new();
+        let weapon = state.modules.iter_mut().find(|m| m.name == "Auto Weapon").unwrap();
+        let shown = |m: &Module, name: &str| m.setting_visible(m.settings.iter().position(|s| s.name == name).unwrap());
+        // Custom first: a profile from before Mode keeps its sections.
+        assert_eq!(weapon.p("Mode"), "Custom");
+        for name in ["Best weapon", "Axe on shields", "Prefer axes"] {
+            assert!(shown(weapon, name), "Custom shows {name}");
+        }
+        for (mode, on, off) in [
+            ("Sword", &["Totem hit", "Holding", "Swap back"][..], &["Best weapon", "Prefer axes", "Shield mode"][..]),
+            ("Axe", &["Totem hit", "Shield mode"][..], &["Prefer axes", "Axe on shields"][..]),
+        ] {
+            weapon.settings.iter_mut().find(|s| s.name == "Mode").unwrap().parse(mode);
+            for name in on {
+                assert!(shown(weapon, name), "{mode} uses {name}");
+            }
+            for name in off {
+                assert!(!shown(weapon, name), "{mode} does not use {name}");
+            }
+        }
+        // Mode decides, whatever the Custom switches say.
+        weapon.settings.iter_mut().find(|s| s.name == "Axe on shields").unwrap().parse("false");
+        assert!(super::super::sunset_melee::weapon_on(weapon, "Axe on shields"));
+        weapon.settings.iter_mut().find(|s| s.name == "Mode").unwrap().parse("Sword");
+        assert!(!super::super::sunset_melee::weapon_on(weapon, "Axe on shields"));
+        weapon.settings.iter_mut().find(|s| s.name == "Mode").unwrap().parse("Custom");
+        assert!(!super::super::sunset_melee::weapon_on(weapon, "Axe on shields"));
+        // The spear's settings are Auto Spear's now, Extended reach's shown with it.
+        let spear = state.modules.iter_mut().find(|m| m.name == "Auto Spear").unwrap();
+        assert!(shown(spear, "Lunge key") && !shown(spear, "Reach chance (%)"));
+        spear.settings.iter_mut().find(|s| s.name == "Extended reach").unwrap().parse("true");
+        assert!(shown(spear, "Reach chance (%)") && shown(spear, "Reach weapons") && shown(spear, "Works with Trigger Bot"));
+    }
+
+    #[test]
+    fn hud_places_and_inventory_blur_show_with_what_they_move() {
+        let mut state = State::new();
+        let shown = |m: &Module, name: &str| m.setting_visible(m.settings.iter().position(|s| s.name == name).unwrap());
+        let set = |m: &mut Module, name: &str, value: &str| m.settings.iter_mut().find(|s| s.name == name).unwrap().parse(value);
+        let hud = state.modules.iter_mut().find(|m| m.name == "HUD").unwrap();
+        assert!(shown(hud, "Coordinates position") && !shown(hud, "Coordinates x") && !shown(hud, "Compass position"));
+        set(hud, "Coordinates position", "Custom");
+        set(hud, "Compass", "true");
+        assert!(shown(hud, "Coordinates x") && shown(hud, "Coordinates y") && shown(hud, "Compass position") && !shown(hud, "Compass x"));
+        let gui = state.modules.iter_mut().find(|m| m.name == "ClickGUI").unwrap();
+        assert!(!shown(gui, "Inventory blur"));
+        set(gui, "Menu dim", "true");
+        assert!(shown(gui, "Inventory blur"));
+        let esp = state.modules.iter_mut().find(|m| m.name == "ESP").unwrap();
+        assert!(!shown(esp, "Murderer items") && !shown(esp, "Callout messages"));
+        set(esp, "Murderer finder", "true");
+        assert!(shown(esp, "Murderer items") && shown(esp, "Callout") && !shown(esp, "Callout messages"));
+        set(esp, "Callout", "true");
+        assert!(shown(esp, "Callout messages") && shown(esp, "Callout delay (ms)"));
+    }
+
+    #[test]
     fn scaffold_modes_show_only_their_own_controls() {
         let mut state = State::new();
         let scaffold = state.modules.iter_mut().find(|m| m.name == "Scaffold").unwrap();
@@ -9932,8 +10284,8 @@ mod cleanup_tests {
         assert_eq!(out["cheststealer.key"], "key.keyboard.j");
         assert_eq!(out["minethroughmobs.onlywithapickaxe"], "false");
         assert!(!out.keys().any(|k| k.starts_with("autosteal.") || k.starts_with("nominingtrace.")));
-        // Mine Through Mobs is an extra; it was off and unbound, so it stays out of the menu.
-        assert!(!out.contains_key("extramodules.minethroughmobs"));
+        // Mine Through Mobs is hidden; it was off and unbound, so it stays out of the menu.
+        assert!(!out.contains_key("modules.minethroughmobs"));
     }
 
     #[test]
@@ -9942,33 +10294,73 @@ mod cleanup_tests {
         for (field, value) in [("on", "true"), ("key", "key.keyboard.r"), ("stepup", "false"), ("reversestep", "true"), ("fallspeed", "2")] {
             assert_eq!(out[&format!("step.{field}")], value, "{field}");
         }
-        assert_eq!(out["extramodules.step"], "true");
+        assert_eq!(out["modules.step"], "true");
         assert!(!out.keys().any(|k| k.starts_with("reversestep.") || k.starts_with("potionsaver.")));
     }
 
     #[test]
     fn extras_in_use_are_listed_and_current_configs_are_left_alone() {
         let out = fields("jesus.on=true\njesus.key=none\nslippy.on=false\nslippy.key=key.keyboard.p\nburrow.on=false\nburrow.key=none\n");
-        assert_eq!(out["extramodules.jesus"], "true");
-        assert_eq!(out["extramodules.slippy"], "true");
-        assert!(!out.contains_key("extramodules.burrow"));
-        let current = "jesus.on=true\nextramodules.jesus=false\n";
+        assert_eq!(out["modules.jesus"], "true");
+        assert_eq!(out["modules.slippy"], "true");
+        assert!(!out.contains_key("modules.burrow"));
+        let current = "jesus.on=true\nmodules.jesus=false\n";
         assert!(matches!(merged_modules(current), std::borrow::Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn extra_modules_lines_are_modules_and_pearl_catch_shows() {
+        let out = fields("extramodules.jesus=true\nextramodules.step=false\nextramodules.pearlcatch=false\n");
+        assert_eq!(out["modules.jesus"], "true");
+        assert_eq!(out["modules.step"], "false");
+        assert!(!out.keys().any(|k| k.starts_with("extramodules.")));
+        assert!(!out.contains_key("modules.pearlcatch"));
+        assert_eq!(fields("extramodules.pearlcatch=true\n")["modules.pearlcatch"], "true");
+    }
+
+    #[test]
+    fn every_module_has_a_switch_and_modules_always_shows() {
+        let mut state = State::new();
+        let list = state.module("Modules").unwrap();
+        for m in state.modules.iter().filter(|m| m.name != "Modules") {
+            assert!(list.settings.iter().any(|s| s.name == m.name), "{} has a switch", m.name);
+        }
+        let shown = |state: &State, name: &str| state.listed()(&state.modules[state.find(name).unwrap()]);
+        assert!(shown(&state, "Pearl Catch") && shown(&state, "Kill Aura") && !shown(&state, "Jesus"));
+        State::set_field(&mut state.modules, "modules.killaura", "false");
+        assert!(!shown(&state, "Kill Aura"));
+        State::set_field(&mut state.modules, "modules.modules", "false");
+        assert!(shown(&state, "Modules"));
+    }
+
+    #[test]
+    fn rotation_and_no_rotate_are_rotations() {
+        let out = fields("rotation.on=true\nrotation.key=key.keyboard.r\nrotation.yawlock=Smart\nrotation.yawangle=90\nnorotate.on=false\n");
+        for (field, value) in [("on", "true"), ("key", "key.keyboard.r"), ("lock", "true"), ("norotate", "false"), ("yawlock", "Smart"), ("yawangle", "90")] {
+            assert_eq!(out[&format!("rotations.{field}")], value, "{field}");
+        }
+        let out = fields("norotate.on=true\nrotation.on=false\n");
+        assert_eq!((out["rotations.on"].as_str(), out["rotations.norotate"].as_str(), out["rotations.lock"].as_str()), ("true", "true", "false"));
+        assert!(!out.keys().any(|k| k.starts_with("rotation.") || k.starts_with("norotate.")));
+        let out = fields("bowspam.on=true\nantibed.on=true\n");
+        assert!(!out.keys().any(|k| k.starts_with("bowspam.") || k.starts_with("antibed.")));
     }
 
     #[test]
     fn extras_are_modules_and_hidden_until_listed() {
         let mut state = State::new();
-        for name in super::super::sunset_extra_modules::EXTRAS {
+        for name in super::super::sunset_extra_modules::HIDDEN {
             assert!(state.find(name).is_some(), "{name} is a module");
         }
         let jesus = state.find("Jesus").unwrap();
         assert!(!state.listed()(&state.modules[jesus]));
-        State::set_field(&mut state.modules, "extramodules.jesus", "true");
+        State::set_field(&mut state.modules, "modules.jesus", "true");
         assert!(state.listed()(&state.modules[jesus]));
-        let gone = ["Potion Saver", "Reverse Step", "Auto Steal", "No Mining Trace"];
+        let gone = ["Potion Saver", "Reverse Step", "Auto Steal", "No Mining Trace", "Bow Spam", "Anti Bed", "Rotation", "No Rotate", "Extra Modules"];
         assert!(gone.iter().all(|name| state.module(name).is_none()));
         assert_eq!(state.module("Reach").map(|m| m.category), Some(Category::Combat));
+        assert_eq!(state.module("Friend Guard").map(|m| m.category), Some(Category::Client));
+        assert_eq!(state.module("Ore Sim").map(|m| m.category), Some(Category::World));
         assert_eq!(state.module("Unlock All Recipes").map(|m| m.category), Some(Category::World));
     }
 

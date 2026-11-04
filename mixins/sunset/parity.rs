@@ -1,5 +1,5 @@
 // Meteor's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil, Auto Anvil,
-// Anti Bed, Rotation, No Rotate, No Status Effects (render.rs keeps the effects aside), Mine Through Mobs
+// Rotations, No Status Effects (render.rs keeps the effects aside), Mine Through Mobs
 // (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player (single player only), Quiver, Arrow Dodge
 // (with vape-rs's AntiFireball as Hit fireballs), Liquid Interact and No Interact (with vape-rs's HitSelect in
 // click_fix.rs).
@@ -26,17 +26,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Place at feet", true)
             .bool("Multi place", true)
             .bool("Rotate", true),
-        Module::new("Anti Bed", Combat, "String in your hole against beds.")
-            .bool("String top", false)
-            .bool("String middle", true)
-            .bool("String bottom", false)
-            .bool("Only in hole", true),
-        Module::new("Rotation", Player, "Locks your yaw and pitch.")
+        Module::new("Rotations", Player, "Keeps your look when the server turns you, or locks it.")
+            .bool("No rotate", true)
+            .bool("Lock", false)
             .pick("Yaw lock", &["Simple", "Smart", "None"])
             .num("Yaw angle", 0.0, 0.0, 360.0, 1.0)
             .pick("Pitch lock", &["Simple", "Smart", "None"])
             .num("Pitch angle", 0.0, -90.0, 90.0, 1.0),
-        Module::new("No Rotate", Player, "Keeps your look when the server turns you."),
         Module::new("No Status Effects", Player, "Ignores the effects you list.")
             .text("Effects", "levitation,jump_boost,slow_falling,dolphins_grace"),
         Module::new("Mine Through Mobs", Player, "Mines through mobs in the way.")
@@ -111,10 +107,8 @@ pub(super) fn defaults() -> Vec<Module> {
 
 #[derive(Default)]
 struct Parity {
-    // No Rotate: your look before the server's teleport turned it.
+    // Rotations' No rotate: your look before the server's teleport turned it.
     look: Option<(f32, f32)>,
-    // Anti Bed: a bed over your head was broken last tick (the stop goes this tick).
-    breaking: Option<[i32; 3]>,
     // Portals: the screen a portal's effect would have closed.
     screen: Option<Screen>,
     // Multitask: left clicks while you used an item, since the last tick.
@@ -170,9 +164,10 @@ fn module(name: &str) -> Option<Module> {
     with(|s| s.module(name).filter(|m| m.on).cloned())
 }
 
-// No Rotate (Meteor's): a teleport from the server is about to set your look; it is kept to put back.
+// Rotations' No rotate (Meteor's No Rotate): a teleport from the server is about to set your look; it is kept to put
+// back. Lock then holds it to its angles as before the teleport.
 pub(super) fn correction(game: &Game<'_>) {
-    if module("No Rotate").is_some() {
+    if module("Rotations").is_some_and(|m| m.b("No rotate")) {
         parity(|p| p.look = Some((game.yaw, game.pitch)));
     }
 }
@@ -258,7 +253,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
             aim_fireball(game, m);
         }
     }
-    if let Some(m) = get("Rotation") {
+    if let Some(m) = get("Rotations").filter(|m| m.b("Lock")) {
         rotation(game, m);
     }
     // Anvil's Self Anvil drops one anvil each time it comes on (the module, or the section while the module is on).
@@ -289,11 +284,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         if m.b("Auto Anvil") {
             auto_anvil(game, m);
         }
-    }
-    if let Some(m) = get("Anti Bed") {
-        anti_bed(game, m, feet);
-    } else {
-        parity(|p| p.breaking = None);
     }
 }
 
@@ -696,35 +686,6 @@ fn auto_anvil(game: &mut Game<'_>, m: &Module) {
         let at = [feet[0], feet[1] + 1 + i, feet[2]];
         if place_block(game, at, slot, m.b("Rotate"), true) && !m.b("Multi place") {
             return;
-        }
-    }
-}
-
-// Anti Bed (Meteor's): in a hole (or anywhere with Only in hole off), a bed over your head is broken (start and stop
-// of a dig; the next tick the dig is called off) and string goes where its switches say: your feet, your head's
-// block, the block above.
-fn anti_bed(game: &mut Game<'_>, m: &Module, feet: [i32; 3]) {
-    if m.b("Only in hole") && !in_hole(game, feet) {
-        return;
-    }
-    let head = [feet[0], feet[1] + 1, feet[2]];
-    if let Some(pos) = parity(|p| p.breaking.take()) {
-        game.send(S::PlayerAction(play::PlayerAction { action: 2, pos, direction: 1, sequence: 0 }));
-        game.send(S::Punch(Empty));
-    } else if short(&facts(game, head).name).ends_with("_bed") {
-        for action in [0, 3] {
-            let sequence = util::sequence(game);
-            game.send(S::PlayerAction(play::PlayerAction { action, pos: head, direction: 1, sequence }));
-        }
-        parity(|p| p.breaking = Some(head));
-    }
-    let Some(slot) = find_held(game, |n| n == "string") else {
-        return;
-    };
-    for (switch, y) in [("String top", 2), ("String middle", 1), ("String bottom", 0)] {
-        let at = [feet[0], feet[1] + y, feet[2]];
-        if m.b(switch) && short(&facts(game, at).name) != "tripwire" && util::replaceable(game, at) {
-            place_block(game, at, slot, false, false);
         }
     }
 }
