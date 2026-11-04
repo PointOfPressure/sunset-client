@@ -3316,7 +3316,20 @@ def _():
     return ok, f"from the shulker box: {carts} carts, {stone} stone, closed after: {shut}; from a chest: {chest_carts} carts"
 
 
-@test("Inventory Cleaner (presets)")
+@test("Spam (Once)")
+def _():
+    # Once with a /command as its message: the command runs one time as Spam turns on, and Spam goes off.
+    setting("spam", "messages", "/say sunset-once")
+    setting("spam", "delay (ticks)", "5")
+    setting("spam", "once", "true")
+    mark = log_mark()
+    say(".t spam")
+    wait(40)
+    said = [line for line in chat_since(mark) if "sunset-once" in line and "Messages" not in line]
+    say(".reset spam")
+    return len(said) == 1, f"lines saying it in 2 s: {said}"
+
+
 def _():
     # Preset PvP: of two swords, two pickaxes and a helmet like the one worn only the best of each kind stays; 3
     # stacks of 64 stone keep 128 (Blocks); 3 stacks of 64 arrows keep 64; dirt (Junk) goes; a torch and bread stay.

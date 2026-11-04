@@ -70,7 +70,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Delay (ticks)", 20.0, 1.0, 400.0, 1.0)
             .bool("Randomise", false)
             .bool("Bypass", false)
-            .num("Bypass length", 16.0, 4.0, 32.0, 1.0),
+            .num("Bypass length", 16.0, 4.0, 32.0, 1.0)
+            .bool("Once", false),
         Module::new("Reach", Combat, "Longer reach.")
             .num("Extra block reach", 1.0, 0.0, 6.0, 0.5)
             .num("Entity reach", 4.5, 3.0, 6.0, 0.1),
@@ -1088,6 +1089,10 @@ fn spam(game: &mut Game<'_>, m: &Module) {
     text.truncate(256);
     game.send_chat(&text);
     ps(|p| p.spam_timer = m.n("Delay (ticks)") as u32);
+    // Once: one message (or /command) as it turns on, then off (a kit or warp on a key).
+    if m.b("Once") {
+        toggle_off(game, "Spam");
+    }
 }
 
 // ---- No Fall (Meteor's NoFall): Air place and Place, and Clutch's place under Packet and No ground. Those two change
