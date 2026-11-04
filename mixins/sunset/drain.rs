@@ -14,8 +14,9 @@ const ENEMY_RANGE: f64 = 10.0;
 
 #[derive(Default)]
 struct Drain {
-    // Sources you put down, and those scooped or webbed already (both forgotten once no liquid is left there).
-    own: Vec<[i32; 3]>,
+    // Sources you put down (and the tick: kept 2 s at least, as the server's water can come a tick or more after the
+    // click), and those scooped or webbed already (both forgotten once no liquid is left there).
+    own: Vec<([i32; 3], u64)>,
     done: Vec<[i32; 3]>,
     // The slot from before a Drain swap; whether a scoop went since.
     back: Option<usize>,
@@ -57,7 +58,7 @@ fn wanted(game: &Game<'_>, m: &Module, p: [i32; 3]) -> bool {
             .iter()
             .any(|d| util::short(&util::facts(game, [p[0] + d[0], p[1] + d[1], p[2] + d[2]]).name) == "cobweb")
     };
-    kind_ok && still(game, p) && st(|s| !s.own.contains(&p) && !s.done.contains(&p)) && (!m.b("Only by cobwebs") || by_web())
+    kind_ok && still(game, p) && st(|s| !s.own.iter().any(|o| o.0 == p) && !s.done.contains(&p)) && (!m.b("Only by cobwebs") || by_web())
 }
 
 // Your bucket put water or lava down: that spot is yours.
@@ -78,9 +79,10 @@ pub(super) fn sent(game: &Game<'_>, packet: &S) {
         _ => [1, 0, 0],
     };
     let at = [u.pos[0] + d[0], u.pos[1] + d[1], u.pos[2] + d[2]];
+    let now = game.ticks;
     st(|s| {
-        s.own.retain(|p| *p != at);
-        s.own.push(at);
+        s.own.retain(|p| p.0 != at);
+        s.own.push((at, now));
         if s.own.len() > 256 {
             s.own.remove(0);
         }
@@ -166,11 +168,11 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
         }
         return;
     };
+    let now = game.ticks;
     st(|s| {
-        s.own.retain(|p| liquid(game, *p).is_some());
+        s.own.retain(|&(p, at)| now < at + 40 || liquid(game, p).is_some());
         s.done.retain(|p| liquid(game, *p).is_some());
     });
-    let now = game.ticks;
     if busy || game.using.is_some() || now < st(|s| s.next) {
         return;
     }
