@@ -9395,6 +9395,142 @@ def _():
     return 150 <= extra <= 450, f"you see Bot1 walk away {late['off']} ms late without Backtrack, {late['on']} ms with it (+{extra} ms for 300 ms)"
 
 
+@test("Auto Weapon (Totem hit)")
+def _():
+    # A totem in hand and a Knockback II sword in slot 1: one click on Bot1, without and with Totem hit. With it Auto
+    # Weapon puts the sword in hand for the hit (in the hit's own tick, so the totem's charge counts and the sword's
+    # Knockback rides along) and the totem comes back: Bot1 goes further.
+    if not CTL2:
+        return None, "needs a second player"
+    pushed = {}
+    for name, value in (("off", "false"), ("on", "true")):
+        setting("autoweapon", "totem hit", value)
+        reset()
+        slot(0, "diamond_sword[enchantments={knockback:2}]")
+        slot(1, "totem_of_undying")
+        ctl("key", "2", "tap")
+        bot_ready(2.5, 180)
+        bot = next(e["id"] for e in ctl("entities").get("entities", []) if e.get("type") == "minecraft:player")
+        only("autoweapon")
+        wait(15)
+        z = ctl2("state")["player"]["position"][2]
+        ctl("look-at-entity", str(bot))
+        mark = probe_mark() if probe_path() else None
+        ctl("mouse", "left", "click")
+        wait(15)
+        # The click's tick: a slot change before its hit.
+        swapped = mark is not None and any(
+            "order attack" in t and f"pkt {SET_CARRIED_ITEM}" in t[:t.index("order attack")] for t in probe_ticks(mark))
+        pushed[name] = (round(ctl2("state")["player"]["position"][2] - z, 2), state().get("selected"), swapped)
+        only()
+    bot_done()
+    # Single player's server moves Bot1 for no single click here; elsewhere the Knockback must show.
+    moved = pushed["off"][0] > 0.1
+    ok = pushed["on"][2] and not pushed["off"][2] and pushed["on"][1] == 2 and (not moved or pushed["on"][0] > pushed["off"][0] + 1.0)
+    return ok, (f"(Bot1 pushed back, slot held after, sword swapped in before the hit) one click holding a totem: "
+                f"{pushed['off']} without, {pushed['on']} with Totem hit")
+
+
+@test("W Tap and Jump Reset (Chance)")
+def _():
+    # With Chance 0 neither does anything. W Tap: as its own test, sprinting hits on Bot1 with Kill Aura give no sprint
+    # hit after the first (as with W Tap off; servers that give none after the first either way say nothing). Jump
+    # Reset: Bot1 hits you 3 times off and 3 times at 0%: you go back as far either way.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("killaura", "entities", "player")
+    setting("wtap", "chance", "0")
+    reset(z=-13.5)
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    bot_ready(-10.5, 180)
+    sound = heard("minecraft:entity.player.attack.knockback")
+    pushes = after_hits(("killaura", "wtap"), 60, lambda: ctl2("state")["player"]["position"][2], bot_health, ticks_after=3)
+    sprints = heard("minecraft:entity.player.attack.knockback") - sound
+    setting("jumpreset", "chance", "0")
+    back = {}
+    for name, mods in (("off", ()), ("0%", ("jumpreset",))):
+        reset(z=-13.5)
+        cmd("effect give @s minecraft:resistance 600 3 true")
+        bot_ready(-11.0, 180, "give Bot1 minecraft:stick[enchantments={knockback:1}]")
+        ctl2("select", "1")
+        tester = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
+        only(*mods)
+        back[name] = []
+        for _ in range(3):
+            cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 - 13.5} 0 0", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 - 11.0} 180 0")
+            wait(10)
+            ctl("key", "ctrl", "down")
+            ctl("key", "w", "down")
+            wait(8)
+            health = own_health()
+            ctl2("look-at-entity", str(tester))
+            ctl2("mouse", "left", "click")
+            at = state()["player"]["position"]
+            samples = poll(10, 1, lambda: state()["player"]["position"])
+            ctl("key", "w", "up")
+            ctl("key", "ctrl", "up")
+            if own_health() < health - 0.01:
+                back[name].append(round(at[2] - min(p[2] for p in samples), 2))
+        only()
+    bot_done()
+    jump_ok = len(back["off"]) >= 2 and len(back["0%"]) >= 2 and mean(back["0%"]) > mean(back["off"]) - 0.25
+    tap_ok = len(pushes) < 3 or sprints <= 1
+    note = (f"W Tap at 0%: {sprints} sprint hits in {len(pushes)}; Jump Reset knocked you back (blocks) off "
+            f"{mean(back['off'])} {back['off']}, at 0% {mean(back['0%'])} {back['0%']}")
+    return jump_ok and tap_ok, note
+
+
+@test("Sprint (Keep sprint)")
+def _():
+    # As W Tap's test: you sprint at Bot1 with Kill Aura for 3 s, Sprint on, without and with Keep sprint (1-2 ticks):
+    # after each hit forward is let go and pressed again, so more of the hits are sprint hits.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("killaura", "entities", "player")
+    runs = {}
+    for name, value in (("off", "false"), ("on", "true")):
+        setting("sprint", "keep sprint", value)
+        reset(z=-13.5)
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        bot_ready(-10.5, 180)
+        sound, mark = heard("minecraft:entity.player.attack.knockback"), probe_mark() if probe_path() else None
+        pushes = after_hits(("killaura", "sprint"), 60, lambda: ctl2("state")["player"]["position"][2], bot_health, ticks_after=3)
+        commands = 0
+        if mark is not None:
+            with open(probe_path(), errors="replace") as f:
+                f.seek(mark)
+                commands = sum(1 for line in f if line.strip() == "pkt 42")
+        runs[name] = (heard("minecraft:entity.player.attack.knockback") - sound, len(pushes), commands)
+    bot_done()
+    say(".reset sprint")
+    note = f"(sprint hits, hits, sprint commands sent): off {runs['off']}, Keep sprint {runs['on']}"
+    # Each hit with Keep sprint stops the sprint and starts it again (2 commands); without it the sprint stops once.
+    # Whether the server then counts the next hit as a sprint hit varies with the rig's load (W Tap's test shows it).
+    return runs["on"][1] >= 2 and runs["on"][2] >= runs["off"][2] + 2 * (runs["on"][1] - 1), note
+
+
+@test("Auto Weapon (Spear damage indicator)")
+def _():
+    # A visual: charging a spear with the Damage indicator on draws its box under the crosshair (a screenshot).
+    reset()
+    slot(0, "iron_spear")
+    ctl("key", "1", "tap")
+    setting("autoweapon", "spear", "true")
+    setting("autoweapon", "damage indicator", "true")
+    only("autoweapon")
+    ctl("mouse", "right", "down")
+    wait(15)
+    path = f"{SHOTS}/spear-indicator.png"
+    ctl("screenshot", path)
+    wait(5)
+    ctl("mouse", "right", "up")
+    only()
+    say(".reset autoweapon")
+    return None, f"look at {path}"
+
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

@@ -1,7 +1,7 @@
 // The melee helpers from Rust's PR #16: Auto Weapon (its sections Best weapon, Axe on shields (Shield Breaker before),
 // Mace and Spear (Spear Swap)), W Tap, Jump Reset and Friend Guard, and the weapon they pick for Kill Aura's and
 // Trigger Bot's hits. Hits use the game's own inventory, movement, item components, packets and spear ray.
-use super::sunset::{Category, Module, gui_open, hold, try_turn_then, with};
+use super::sunset::{Canvas, Category, Module, gui_open, hold, try_turn_then, with};
 use super::sunset_combat_control as control;
 use super::sunset_mace_policy as mace_policy;
 use super::sunset_melee_policy::{self as policy, SlotLease};
@@ -41,6 +41,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new(WEAPON, Category::Combat, "Picks the weapon for each hit.")
             .bool(BEST, true)
             .bool("Prefer axes", false)
+            .bool("Totem hit", false)
             .bool(SHIELD, true)
             .pick("Shield mode", &["Passive", "Auto"])
             .bool("Shield held", false)
@@ -61,6 +62,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Lunge key", "None")
             .bool("Reach poke", false)
             .pick("Spear reach", &["Off", "When out of reach", "Every hit"])
+            .bool("Damage indicator", false)
             .text("Holding", "sword,axe,spear,mace,trident,empty")
             .bool("Swap back", true)
             .pick("Back after", &["Same tick", "A delay"])
@@ -68,8 +70,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Longest delay", 4.0, 1.0, 20.0, 1.0),
         Module::new(TAP, Category::Combat, "Resets sprint between hits.")
             .pick("Mode", &["W Tap", "S Tap"])
-            .num("Hold", 1.0, 1.0, 3.0, 1.0),
-        Module::new(JUMP, Category::Combat, "Jumps to take less knockback."),
+            .num("Hold", 1.0, 1.0, 8.0, 1.0)
+            .num("Longest hold", 1.0, 1.0, 8.0, 1.0)
+            .num("Reaction (ticks)", 0.0, 0.0, 5.0, 1.0)
+            .num("Chance (%)", 100.0, 0.0, 100.0, 5.0),
+        Module::new(JUMP, Category::Combat, "Jumps to take less knockback.")
+            .num("Chance (%)", 100.0, 0.0, 100.0, 5.0),
         Module::new(FRIEND, Category::Combat, "Stops hits on friends.")
             .bool("Notifications", true),
     ]
@@ -99,7 +105,10 @@ struct State {
     queued: Option<&'static str>,
     queued_since: Option<Instant>,
     lunge: policy::Request,
+    // W Tap and Sprint's Keep sprint: forward let go from `tap_from` until `tap_until` (S held too with `tap_back`).
+    tap_from: u64,
     tap_until: u64,
+    tap_back: bool,
     jump_pending: bool,
     input: Option<InputSave>,
     last_attack: Option<u64>,
@@ -526,6 +535,7 @@ fn held_kind(game: &Game<'_>) -> &'static str {
     match &*stack.item {
         "minecraft:mace" => "mace",
         "minecraft:trident" => "trident",
+        "minecraft:totem_of_undying" => "totem",
         name if Kinetic::of(name).is_some() => "spear",
         _ if tagged("minecraft:swords") => "sword",
         _ if tagged("minecraft:axes") => "axe",
@@ -533,9 +543,29 @@ fn held_kind(game: &Game<'_>) -> &'static str {
     }
 }
 
-// The swap modules start only from what their Holding lists.
+// The swap modules start only from what their Holding lists; Totem hit adds a totem in hand.
 fn holding(game: &Game<'_>, m: &Module) -> bool {
-    util::listed(m.t("Holding"), held_kind(game))
+    let kind = held_kind(game);
+    util::listed(m.t("Holding"), kind) || (kind == "totem" && m.b("Totem hit"))
+}
+
+// A roll from 0 to 9999 for the chance settings, different each tick and for each `salt`.
+fn roll(game: &Game<'_>, salt: u64) -> u64 {
+    let mut x = game.ticks.wrapping_add(salt.wrapping_mul(0x9E37_79B9_7F4A_7C15)) | 1;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    x % 10_000
+}
+
+fn chance(game: &Game<'_>, m: &Module, salt: u64) -> bool {
+    (roll(game, salt) as f64) < m.n("Chance (%)") * 100.0
+}
+
+// A tick count from `lo` to `hi` (either way round), picked by the tick.
+fn between(game: &Game<'_>, lo: f64, hi: f64, salt: u64) -> u64 {
+    let (lo, hi) = (lo.min(hi).max(0.0) as u64, lo.max(hi).max(0.0) as u64);
+    lo + roll(game, salt) % (hi - lo + 1)
 }
 
 // Duelkit's After a delay: the swapped weapon stays in hand a few ticks, from Shortest to Longest delay (picked by the
@@ -694,28 +724,65 @@ fn note_attack(game: &Game<'_>, id: u32) {
     {
         state(|s| s.broken_shield = Some((id, game.ticks.saturating_add(20))));
     }
-    let Some(m) = module(TAP) else {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let living = game.mobs.iter().any(|t| t.id == id && t.alive() && !t.removed);
+    let tap = module(TAP);
+    if let Some(m) = &tap
+        && policy::should_tap(
+            p.sprinting,
+            game.keys.contains(&KeyCode::KeyW),
+            slot_strength(game, game.selected, 0.5).unwrap_or(0.0),
+            living,
+        )
+    {
+        start_tap(game, m);
+    } else if tap.is_none() {
+        keep_sprint(game, id);
+    }
+}
+
+// W Tap after a hit: by Chance, Reaction ticks later, forward let go for Hold to Longest hold ticks.
+fn start_tap(game: &Game<'_>, m: &Module) {
+    if state(|s| s.last_attack == Some(game.ticks)) {
+        return;
+    }
+    state(|s| s.last_attack = Some(game.ticks));
+    if !chance(game, m, 1) {
+        return;
+    }
+    let from = game.ticks.saturating_add(m.n("Reaction (ticks)").clamp(0.0, 5.0) as u64);
+    let hold = between(game, m.n("Hold"), m.n("Longest hold"), 2).clamp(1, 8);
+    state(|s| (s.tap_from, s.tap_until, s.tap_back) = (from, from + hold, m.p("Mode") == "S Tap"));
+}
+
+// Sprint's Keep sprint, without W Tap: after a sprinting hit on a player with forward held, forward is let go for the
+// restore delay's ticks and pressed again, so the server sees the sprint start again (0 ticks: never).
+fn keep_sprint(game: &Game<'_>, id: u32) {
+    let Some(m) = module("Sprint").filter(|m| m.b("Keep sprint")) else {
         return;
     };
     let Some(p) = game.player.as_ref() else {
         return;
     };
-    let living = game.mobs.iter().any(|t| t.id == id && t.alive() && !t.removed);
-    if policy::should_tap(
-        p.sprinting,
-        game.keys.contains(&KeyCode::KeyW),
-        slot_strength(game, game.selected, 0.5).unwrap_or(0.0),
-        living,
-    ) {
-        start_tap(game, &m);
+    let player = game.mobs.iter().any(|t| t.id == id && t.alive() && !t.removed && t.kind.id == "minecraft:player");
+    if !player
+        || !p.sprinting
+        || !game.keys.contains(&KeyCode::KeyW)
+        || game.keys.contains(&KeyCode::ShiftLeft)
+        || p.collision.horizontal
+        || game.using.is_some()
+        || p.health.food.food <= 6
+        || state(|s| s.last_attack == Some(game.ticks) || game.ticks < s.tap_until)
+    {
+        return;
     }
-}
-
-fn start_tap(game: &Game<'_>, m: &Module) {
+    let ticks = between(game, m.n("Shortest restore delay"), m.n("Longest restore delay"), 3);
     state(|s| {
-        if s.last_attack != Some(game.ticks) {
-            s.last_attack = Some(game.ticks);
-            s.tap_until = game.ticks.saturating_add(m.n("Hold").clamp(1.0, 3.0) as u64);
+        s.last_attack = Some(game.ticks);
+        if ticks > 0 {
+            (s.tap_from, s.tap_until, s.tap_back) = (game.ticks, game.ticks + ticks, false);
         }
     });
 }
@@ -761,7 +828,7 @@ pub(super) fn allowed_out(game: &Game<'_>, packet: &S) -> bool {
 
 // The server's knockback on you (a velocity packet): Jump Reset jumps next tick.
 pub(super) fn note_velocity(game: &Game<'_>, entity: i32, velocity: [f64; 3]) {
-    if module(JUMP).is_some()
+    if module(JUMP).is_some_and(|m| chance(game, &m, 4))
         && game.remote.as_ref().is_some_and(|r| r.entity_id == entity)
         && policy::jump_knockback(velocity)
     {
@@ -785,7 +852,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     }
     let unsprint = state(|s| std::mem::take(&mut s.unsprint)) && game.player.as_ref().is_some_and(|p| p.sprinting);
     let steer = steer_keys(game);
-    let tap = module(TAP).filter(|_| state(|s| game.ticks < s.tap_until));
+    let tap = state(|s| (s.tap_from..s.tap_until).contains(&game.ticks).then_some(s.tap_back));
     let asked = state(|s| s.jump_owner.take()).is_some_and(|owner| section(owner).is_some() && control::available(owner));
     let knocked = state(|s| std::mem::take(&mut s.jump_pending))
         && module(JUMP).is_some()
@@ -812,10 +879,10 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
             }
         }
     }
-    if let Some(m) = tap {
+    if let Some(back) = tap {
         game.keys.remove(&KeyCode::KeyW);
         game.keys.remove(&KeyCode::ControlLeft);
-        if m.p("Mode") == "S Tap" {
+        if back {
             game.keys.insert(KeyCode::KeyS);
         }
     }
@@ -1484,4 +1551,37 @@ fn steer_keys(game: &Game<'_>) -> Option<Vec<KeyCode>> {
         keys.push(KeyCode::KeyA);
     }
     Some(keys)
+}
+
+// Spear's Damage indicator: while you charge a spear, the hit it would do to the nearest player as things stand (the
+// game's kinetic damage: a player's base attack damage plus the closing speed along your look, in blocks a second, times the
+// spear's damage multiplier, rounded down), under the crosshair; LETHAL from 20.
+const BASE_DAMAGE: f64 = 1.0;
+
+pub(super) fn draw_spear(game: &Game<'_>, w: f32, h: f32, out: &mut impl Canvas) {
+    if section(SPEAR).is_none_or(|m| !m.b("Damage indicator")) {
+        return;
+    }
+    let Some(kinetic) = game.using.and_then(|(slot, _)| game.stack_in(slot)).and_then(|s| Kinetic::of(&s.item)) else {
+        return;
+    };
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let (yaw, pitch) = (f64::from(game.yaw).to_radians(), f64::from(game.pitch).to_radians());
+    let look = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
+    let along = |v: [f64; 3]| (0..3).map(|i| look[i] * v[i] * 20.0).sum::<f64>();
+    let theirs = util::player_target(game, 12.0, "Distance").map_or(0.0, |t| along([t.pos[0] - t.prev[0], t.pos[1] - t.prev[1], t.pos[2] - t.prev[2]]));
+    let mine = along([p.velocity.x, p.velocity.y, p.velocity.z]);
+    let damage = BASE_DAMAGE + ((mine - theirs).max(0.0) * f64::from(kinetic.damage_multiplier)).floor();
+    let text = if damage >= 20.0 { "LETHAL".to_owned() } else { format!("Damage: {damage:.0} HP") };
+    let (bw, bh) = (64.0_f32, 20.0_f32);
+    let (x, y) = (w / 2.0 - bw / 2.0, h / 2.0 + 30.0);
+    let share = (damage / 20.0).clamp(0.0, 1.0) as f32;
+    out.fill([x, y, bw, bh], 0x960E_0E0E);
+    out.text(&text, [x + (bw - game.native_text_width(&text)) / 2.0, y + 3.0], 0xFFFFFF);
+    out.fill([x + 7.0, y + bh - 7.0, bw - 14.0, 4.0], 0x5A00_0000);
+    let red = ((1.0 - share) * 255.0) as u32;
+    let green = (share * 255.0) as u32;
+    out.fill([x + 7.0, y + bh - 7.0, (bw - 14.0) * share, 4.0], 0xDC00_0000 | red << 16 | green << 8);
 }

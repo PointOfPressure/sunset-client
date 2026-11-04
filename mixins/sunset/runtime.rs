@@ -413,6 +413,7 @@ impl Module {
                 "Backtrack min range" | "Backtrack max range" | "Shortest latency (ms)" | "Longest latency (ms)" | "Backtrack weapon only" => self.b("Backtrack"),
                 _ => true,
             },
+            "Sprint" if name.ends_with("restore delay") => self.b("Keep sprint"),
             "Step" => match name {
                 "Height" | "Active when" | "Safe step" => self.b("Step up"),
                 "Step health" => self.b("Step up") && self.b("Safe step"),
@@ -422,13 +423,13 @@ impl Module {
             "Base Finder" => super::sunset_base_finder::visible(self, name),
             "Cart" => super::sunset_cart::visible(self, name),
             "Auto Weapon" => match name {
-                "Prefer axes" => self.b("Best weapon"),
+                "Prefer axes" | "Totem hit" => self.b("Best weapon"),
                 "Shield mode" | "Shield held" | "Stun slam" => self.b("Axe on shields"),
                 "Mace swap" | "Mace pick" | "Breach swap" | "Smash assist" | "Min fall" | "Smash mobs" | "Relaunch" => self.b("Mace"),
                 "Min charge" => self.b("Mace") && self.b("Breach swap"),
                 "Smash timing" => self.b("Mace") && self.b("Smash assist"),
                 "Relaunch range" | "Air steer" => self.b("Mace") && self.p("Relaunch") != "Off",
-                "Lunge key" | "Reach poke" | "Spear reach" => self.b("Spear"),
+                "Lunge key" | "Reach poke" | "Spear reach" | "Damage indicator" => self.b("Spear"),
                 "Back after" => self.b("Swap back"),
                 "Shortest delay" | "Longest delay" => self.b("Swap back") && self.p("Back after") == "A delay",
                 _ => true,
@@ -480,7 +481,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only with a weapon", false)
             .bool("Only on ground", false),
         // Movement
-        Module::new("Sprint", Movement, "Sprints for you."),
+        Module::new("Sprint", Movement, "Sprints for you.")
+            .bool("Keep sprint", false)
+            .num("Shortest restore delay", 1.0, 0.0, 3.0, 1.0)
+            .num("Longest restore delay", 2.0, 0.0, 3.0, 1.0),
         Module::new("Auto Walk", Movement, "Walks forward for you."),
         Module::new("Flight", Movement, "Lets you fly.")
             .pick("Mode", &["Abilities", "Velocity"])
@@ -6640,6 +6644,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     }
 
     super::sunset_loadouts::draw(game, w, h, &mut shapes);
+    super::sunset_melee::draw_spear(game, w, h, &mut shapes);
     if let Some(hud) = get("HUD") {
         if hud.b("Target HUD") && get("Kill Aura").is_some() {
             super::sunset_aura::draw_target(game, w, h, hud.p("Target HUD mode") == "Potato", &mut shapes);
@@ -7629,6 +7634,9 @@ pub(super) fn aliases(name: &str) -> &'static str {
     match name {
         "Velocity" => "knockback delay knockbackdelay",
         "Fake Lag" => "fakelag backtrack back track choke lag",
+        "Sprint" => "keep sprint keepsprint",
+        "W Tap" => "wtap w-tap s tap",
+        "Jump Reset" => "auto jump reset jumpreset",
         "New Chunks" => "newer new chunks chunk trail trouser palette",
         "Player Activity Detector" => "online player activity detector",
         "Base Finder" => "trouser stash base hunting",
@@ -7653,7 +7661,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Fullbright" => "gamma night vision",
         "Criticals" => "crits",
         "Offhand" => "totem auto totem inventory totem hover totem crystal gapple",
-        "Auto Weapon" => "shield breaker axe mace spear swap lunge best weapon",
+        "Auto Weapon" => "shield breaker axe mace spear swap lunge best weapon swap hit totem hit instant lunge spear damage",
         "Crystal Aura" => "crystal macro",
         "Cart" => "tnt minecart cart pvp auto cart cart aura xbow cart crossbow safe cart cover refill cart refill pearl catch",
         "Anchor Aura" => "anchor macro",
