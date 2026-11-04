@@ -400,11 +400,17 @@ impl Module {
                     "Shortest silent move delay (ms)" | "Longest silent move delay (ms)" => totem && open && silent,
                     "Close inventory" => totem && open && !silent,
                     "Hotbar refill" => self.b("Hover"),
+                    "Double hand on" | "Double hand sensitivity" | "Reswap delay (ticks)" => self.b("Double hand"),
                     "Hotbar slot" => self.b("Hover") && self.b("Hotbar refill"),
                     _ => true,
                 }
             }
             "Hitboxes" if name == "Weapons" => self.b("Only on weapon"),
+            "Shield" => match name {
+                "Target distance" | "FOV" | "Movement threshold" | "Sword cooldown correction (%)" | "Disable tracker" => self.b("Auto block"),
+                "Swap to sword" => self.b("Auto block") && self.b("Disable tracker"),
+                _ => true,
+            },
             "Fake Lag" => match name {
                 "Delay (ms)" => matches!(self.p("Mode"), "Dynamic" | "Always"),
                 "Range" => matches!(self.p("Mode"), "Dynamic" | "Ranged"),
@@ -907,6 +913,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_melee::defaults());
     v.extend(super::sunset_combat_inventory::defaults());
     v.extend(super::sunset_lag::defaults());
+    v.extend(super::sunset_swap_keys::defaults());
     v.extend(super::sunset_pvp_bot::defaults());
     v.extend(super::sunset_duel::defaults());
     v.extend(super::sunset_snap_tap::defaults());
@@ -2383,6 +2390,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
         super::agent::sunset_goto::key(game, key);
     }
     super::sunset_melee::key(game, key, pressed);
+    super::sunset_swap_keys::key(game, key, pressed);
     super::sunset_combat_inventory::key(game, key, pressed);
     super::sunset_duel::key(game, key, pressed);
     super::sunset_cart::key(game, key, pressed);
@@ -2528,6 +2536,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_duel::catch_throw(game, hits || game.selected != selected);
     // Cart's steps: in a tick with no hit and no slot change before them.
     super::sunset_cart::pre_tick(game, hits || game.selected != selected);
+    // Shield, Key Throw's Crossbow key and Offhand's Double hand: likewise.
+    super::sunset_swap_keys::pre_tick(game, hits || game.selected != selected);
     let mods = snapshot();
     super::sunset_render::pre_tick(game, &mods);
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
@@ -7647,6 +7657,8 @@ pub(super) fn dash_search_clear(s: &mut State) {
 pub(super) fn aliases(name: &str) -> &'static str {
     match name {
         "Velocity" => "knockback delay knockbackdelay",
+        "Shield" => "auto shield autoshield instant shield instantshield block",
+        "Key Throw" => "instant crossbow instantcrossbow",
         "Fake Lag" => "fakelag backtrack back track choke lag",
         "Aim Assist" => "silent aim silentaim hit flick hitflick",
         "No Interact" => "hit fix hitfix no miss delay nomissdelay anti action antiaction",
@@ -7676,7 +7688,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Fast Use" => "fastuse fastxp fast xp exp bottles throw throwables",
         "Fullbright" => "gamma night vision",
         "Criticals" => "crits",
-        "Offhand" => "totem auto totem inventory totem hover totem crystal gapple",
+        "Offhand" => "totem auto totem inventory totem hover totem crystal gapple double hand predict double hand mainhand totem",
         "Auto Weapon" => "shield breaker axe mace spear swap lunge best weapon swap hit totem hit instant lunge spear damage",
         "Crystal Aura" => "crystal macro",
         "Cart" => "tnt minecart cart pvp auto cart cart aura xbow cart crossbow safe cart cover refill cart refill pearl catch",

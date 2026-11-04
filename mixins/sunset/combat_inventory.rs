@@ -44,12 +44,18 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Sword pot", false)
             .bool("Hover", false)
             .bool("Hotbar refill", false)
-            .num("Hotbar slot", 1.0, 1.0, 9.0, 1.0),
+            .num("Hotbar slot", 1.0, 1.0, 9.0, 1.0)
+            .bool("Double hand", false)
+            .text("Double hand on", "anchors,crystals,obsidian,sword,mace")
+            .num("Double hand sensitivity", 1.0, 0.5, 1.5, 0.05)
+            .num("Reswap delay (ticks)", 1.0, 1.0, 10.0, 1.0),
         Module::new(THROW, Category::Combat, "Throws a pearl or wind charge on a key.")
             .text("Pearl key", "None")
             .text("Wind charge key", "None")
             .bool("Hotbar keys", false)
-            .bool("Lunge spears", true),
+            .bool("Lunge spears", true)
+            .text("Crossbow key", "None")
+            .bool("Crossbow from inventory", true),
     ]
 }
 

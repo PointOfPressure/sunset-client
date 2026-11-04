@@ -1559,6 +1559,12 @@ name = "sunset_click_fix"
 source = "click_fix.rs"
 
 [[module]]
+id = "swap_keys"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_swap_keys"
+source = "swap_keys.rs"
+
+[[module]]
 id = "lag"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_lag"

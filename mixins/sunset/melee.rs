@@ -713,6 +713,7 @@ pub(super) fn request_jump(owner: &'static str) {
 // An Attack packet went out: a mace smash resets the fall, an Axe on shields hit counts for a second, W Tap starts.
 fn note_attack(game: &Game<'_>, id: u32) {
     note_action(game);
+    super::sunset_swap_keys::hit(game);
     if game.held().is_some_and(|s| &*s.item == "minecraft:mace")
         && smash_fall(game) > 1.5
         && let Some(y) = game.player.as_ref().map(|p| p.position.y)

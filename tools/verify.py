@@ -9539,6 +9539,101 @@ def _():
     return got["off"] and not got["on"], f"glowstone put on the floor: {got['off']} without, {got['on']} with Anti action"
 
 
+@test("Shield")
+def _():
+    # Swap key: a shield in the main inventory comes into your hand on G and goes back on the next G. Auto block: a
+    # sword in hand and a shield in the offhand, Bot1 with a sword 2.5 blocks away: the shield goes up (UseItem sent)
+    # with Shield on, not without.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    reset()
+    slot(0, "stone_sword")
+    ctl("key", "1", "tap")
+    cmd("item replace entity @s inventory.11 with minecraft:shield")
+    setting("shield", "auto block", "false")
+    setting("shield", "swap key", "g")
+    only("shield")
+    wait(5)
+    ctl("key", "g", "tap")
+    wait(10)
+    swapped = (held().get("item") or "").endswith("shield")
+    ctl("key", "g", "tap")
+    wait(10)
+    back = (held().get("item") or "").endswith("stone_sword")
+    only()
+    note = f"Swap key: shield in hand {swapped}, sword back {back}"
+    if not CTL2:
+        return swapped and back, note + "; Auto block needs a second player"
+    setting("shield", "auto block", "true")
+    cmd("item replace entity @s weapon.offhand with minecraft:shield")
+    uses = {}
+    for name, mods in (("off", ()), ("on", ("shield",))):
+        bot_ready(2.5, 180, "give Bot1 minecraft:iron_sword")
+        ctl2("select", "1")
+        mark = probe_mark()
+        only(*mods)
+        wait(30)
+        only()
+        with open(probe_path(), errors="replace") as f:
+            f.seek(mark)
+            uses[name] = sum(1 for line in f if line.strip() == f"pkt {USE_ITEM}")
+    bot_done()
+    ok = swapped and back and uses["off"] == 0 and uses["on"] >= 1
+    return ok, note + f"; shield raises (UseItem) in 1.5 s with Bot1 holding a sword near: {uses['off']} without, {uses['on']} with Auto block"
+
+
+@test("Key Throw (Crossbow key)")
+def _():
+    # A crossbow in the main inventory and arrows: on the Crossbow key it comes into your hand and is loaded (an arrow
+    # used); holding another slot puts it back in the inventory.
+    reset()
+    slot(0, "stone_sword")
+    ctl("key", "1", "tap")
+    cmd("item replace entity @s inventory.11 with minecraft:crossbow", "item replace entity @s inventory.12 with minecraft:arrow 16")
+    setting("keythrow", "crossbow key", "g")
+    only("keythrow")
+    wait(5)
+    ctl("key", "g", "tap")
+    wait(45)
+    inhand = (held().get("item") or "").endswith("crossbow")
+    arrows = ctl("inventory").get("counts", {}).get("minecraft:arrow", 0)
+    ctl("key", "2", "tap")
+    wait(10)
+    ctl("key", "1", "tap")
+    wait(5)
+    back = (held().get("item") or "").endswith("stone_sword")
+    only()
+    return inhand and arrows == 15 and back, f"crossbow in hand {inhand}, arrows left {arrows} of 16 (one loaded), sword back in slot 1 {back}"
+
+
+@test("Offhand (Double hand)")
+def _():
+    # 6 health, a totem in hotbar slot 3, Bot1 3 blocks away and an end crystal beside you: Double hand puts the totem
+    # in hand (the crystal could take more than you have); without Double hand it stays where it is.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("offhand", "double hand", "true")
+    setting("offhand", "item", "None")
+    got = {}
+    for name, mods in (("off", ()), ("on", ("offhand",))):
+        reset()
+        slot(0, "stone_sword")
+        slot(2, "totem_of_undying")
+        ctl("key", "1", "tap")
+        bot_ready(3.0, 180)
+        cmd(f"setblock {X0 + 2} {Y} {Z0} minecraft:obsidian", f"summon end_crystal {X0 + 2.5} {Y + 1} {Z0 + 0.5} {{ShowBottom:0b}}")
+        cmd("effect clear @s", "damage @s 14 minecraft:generic")
+        wait(5)
+        only(*mods)
+        wait(10)
+        only()
+        got[name] = state().get("selected")  # 1 to 9
+        cmd("kill @e[type=end_crystal]", f"setblock {X0 + 2} {Y} {Z0} minecraft:stone", "effect give @s minecraft:instant_health 1 5")
+    bot_done()
+    say(".reset offhand")
+    return got["off"] == 1 and got["on"] == 3, f"selected slot (totem in 3): {got['off']} without, {got['on']} with Double hand"
+
+
 @test("Auto Weapon (Totem hit)")
 def _():
     # A totem in hand and a Knockback II sword in slot 1: one click on Bot1, without and with Totem hit. With it Auto
