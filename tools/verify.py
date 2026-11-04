@@ -3149,6 +3149,23 @@ def _():
     return elytra and off, f"elytra on after: {elytra}; off after: {off}"
 
 
+@test("Chest Swap While Moving")
+def _():
+    cmd("item replace entity @s armor.chest with minecraft:iron_chestplate", "item replace entity @s inventory.5 with minecraft:elytra")
+    wait(5)
+    ctl("key", "w", "down")
+    wait(3)
+    only("chestswap")
+    wait(5)
+    held = check("execute if items entity @s armor.chest minecraft:iron_chestplate")
+    ctl("key", "w", "up")
+    wait(8)
+    swapped = check("execute if items entity @s armor.chest minecraft:elytra")
+    off = turned_itself_off("chestswap", "Chest Swap")
+    only()
+    return held and swapped and off, f"chestplate while W held: {held}; elytra after release: {swapped}; off after: {off}"
+
+
 # ---- player and world
 
 def nuker_soak(mode):

@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 type Session = Arc<Mutex<Option<Arc<horizon_protocol::connection::Counters>>>>;
 static LOOK: Mutex<Option<(Session, Dim, (f32, f32))>> = Mutex::new(None);
 static SPRINT: Mutex<Option<(Session, Dim, bool)>> = Mutex::new(None);
+static INPUT: Mutex<Option<(Session, Dim, u8)>> = Mutex::new(None);
 pub(super) fn sent_look(game: &Game<'_>) -> Option<(f32, f32)> {
     LOOK.lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -26,7 +27,22 @@ pub(super) fn sent_sprinting(game: &Game<'_>) -> bool {
         })
         .is_some_and(|(_, _, sprinting)| *sprinting)
 }
+pub(super) fn sent_input(game: &Game<'_>) -> u8 {
+    INPUT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .filter(|(session, dim, _)| {
+            *dim == game.dim
+                && game.remote.as_ref().is_some_and(|remote| Arc::ptr_eq(session, &remote.session.counters))
+        })
+        .map_or(0, |(_, _, input)| *input)
+}
 pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
+    if let (S::PlayerInput(input), Some(remote)) = (packet, &game.remote) {
+        *INPUT.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((remote.session.counters.clone(), game.dim, input.flags));
+    }
     if let (S::PlayerCommand(command), Some(remote)) = (packet, &game.remote)
         && command.id == remote.entity_id
         && matches!(command.action, 1 | 2)

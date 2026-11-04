@@ -179,6 +179,10 @@ fn release(game: &Game<'_>, all: bool, superseded: bool) {
     send(game, rest);
 }
 
+pub(super) fn pending() -> bool {
+    lag(|l| !l.held.is_empty())
+}
+
 // The send hook, on the packet that would go out (after Sunset's other changes to it): true if Fake Lag holds it.
 pub(super) fn held(game: &Game<'_>, packet: &S) -> bool {
     if let S::Attack(p) = packet

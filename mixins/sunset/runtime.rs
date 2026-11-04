@@ -2704,6 +2704,16 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     combat_packets(game, &packets);
     ensure_loaded(game);
+    // The game sends movement later in this tick. A click after that movement trips Grim's PacketOrderO.
+    if with(|s| s.module("Chest Swap").is_some_and(|m| m.on && m.p("Mode") == "Swap"))
+        && !with(|s| s.is_on("Blink"))
+        && !super::sunset_lag::pending()
+        && super::sunset_combat_control::owner().is_none()
+        && chest_swap(game)
+        && let Some(i) = with(|s| s.find("Chest Swap"))
+    {
+        toggle(game, i, false);
+    }
     super::sunset_parity::pre_tick(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     crit_sprint_back(game);
@@ -3219,12 +3229,6 @@ fn module_tick(game: &mut Game<'_>) {
     let combat_hand = super::sunset_combat_control::owner().is_some();
     if let Some(m) = get("Auto Armor").filter(|_| !combat_hand) {
         auto_armor(game, m);
-    }
-    if get("Chest Swap").is_some_and(|m| m.p("Mode") == "Swap") && !combat_hand {
-        chest_swap(game);
-        if let Some(i) = with(|s| s.find("Chest Swap")) {
-            toggle(game, i, false);
-        }
     }
     if let Some(m) = get("Auto Replenish").filter(|_| !combat_hand) {
         super::sunset_refill::replenish(game, m);
@@ -3944,10 +3948,19 @@ pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// Swaps the chestplate and the elytra, once.
-pub(super) fn chest_swap(game: &mut Game<'_>) {
-    if !inventory_idle(game) {
-        return;
+// Swaps the chestplate and the elytra once the server has received idle input.
+// Grim checks the last PlayerInput and sprint state on each inventory click.
+pub(super) fn chest_swap(game: &mut Game<'_>) -> bool {
+    let moving_now = [KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD, KeyCode::Space, KeyCode::ShiftLeft]
+        .into_iter()
+        .any(|key| game.keys.contains(&key) || game.physical_keys.contains(&key));
+    if !inventory_idle(game)
+        || moving_now
+        || super::sunset_combat_wire::sent_input(game) & 0x3f != 0
+        || super::sunset_combat_wire::sent_sprinting(game)
+        || game.player.as_ref().is_some_and(|p| p.sprinting || p.fall_flying)
+    {
+        return false;
     }
     let wearing_elytra = game.armor[1].as_ref().is_some_and(|s| s.item.ends_with("elytra"));
     let found = (0..36).find(|&i| {
@@ -3964,6 +3977,7 @@ pub(super) fn chest_swap(game: &mut Game<'_>) {
         Some(i) => wear(game, i, 1),
         None => say(game, if wearing_elytra { "No chestplate in your inventory." } else { "No elytra in your inventory." }),
     }
+    true
 }
 
 pub(super) fn auto_replenish(game: &mut Game<'_>, m: &Module) {
