@@ -319,13 +319,22 @@ impl Module {
         match self.name {
             // Kill Aura's and Trigger Bot's Shield: its settings with it on.
             "Kill Aura" | "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
-            "Auto Armor" => name != "Armor key" || self.p("Mode") == "Key",
+            "Auto Armor" => match name {
+                "Armor key" => self.p("Mode") == "Key",
+                "Switch sets" => key_from_text(self.t("Switch key")).is_some(),
+                _ => true,
+            },
             "Ghost Hand" => name != "Cut through" || !self.b("Hits"),
             "HUD" => match name {
                 "Armor HUD x" | "Armor HUD y" => self.b("Armor HUD") && self.p("Armor HUD position") == "Custom",
                 _ if name.starts_with("Armor HUD ") => self.b("Armor HUD"),
                 "Durability format" | "Durability tooltip" => self.b("Item durability"),
                 "Target HUD mode" => self.b("Target HUD"),
+                _ => true,
+            },
+            "Client Sort" => name != "Fill CPS" || self.b("Shift fill"),
+            "Loadouts" => match name {
+                "Hotbar mode" | "Hotbar rules" | "Hotbar delay (ms)" => self.b("Auto hotbar"),
                 _ => true,
             },
             "Arrow Dodge" => match name {
@@ -352,6 +361,7 @@ impl Module {
             "Auto Gap" => match name {
                 "Pot mode" | "Pot pitch" => self.b("Auto pot"),
                 "Pot health" => self.b("Auto pot") && self.p("Pot mode") == "Auto",
+                "Soup health" | "Soup delay (ms)" | "Drop bowls" => self.b("Soup"),
                 _ => true,
             },
             "Auto Replenish" => match name {
@@ -437,6 +447,11 @@ impl Module {
                 "Shortest hit delay (ms)" | "Longest hit delay (ms)" => self.b("Auto short pearl"),
                 "Thrower range" | "Min landing distance" | "Landing range" | "Max error" | "Shortest follow delay (ms)"
                 | "Longest follow delay (ms)" | "Follow only on ground" => self.b("Pearl follow"),
+                "Pot type" | "Pot amount" | "Random order" | "Throw bowls" => key_from_text(self.t("Pot key")).is_some(),
+                "Debuff mode" | "Debuffs" => key_from_text(self.t("Debuff key")).is_some(),
+                "Shortest pot delay (ms)" | "Longest pot delay (ms)" => {
+                    key_from_text(self.t("Pot key")).is_some() || key_from_text(self.t("Debuff key")).is_some()
+                }
                 _ => true,
             },
             "Pearl Catch" => match name {
@@ -1012,7 +1027,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0)
             .pick("Mode", &["Always", "Inventory open", "Key"])
             .text("Armor key", "None")
-            .bool("Avoid cursed", false),
+            .bool("Avoid cursed", false)
+            .text("Switch key", "None")
+            .text("Switch sets", "netherite,diamond"),
         Module::new("Long Jump", Movement, "Jumps further.")
             .num("Multiplier", 2.0, 1.5, 5.0, 0.5),
         Module::new("Auto Jump", Movement, "Jumps as you walk."),
@@ -1282,6 +1299,8 @@ pub(super) struct State {
     nuke_box: Option<[[f64; 3]; 2]>,
     nuke_broken: Vec<([i32; 3], u8)>,
     armor_wait: u32,
+    // Auto Armor's Switch key: the set it went to (worn until the key goes to the next).
+    armor_set: Option<String>,
     replenish_wait: u32,
     last_pos: Vec<(String, [f64; 3], String)>,
     spots: Vec<Spot>,
@@ -1376,6 +1395,7 @@ impl State {
             nuke_box: None,
             nuke_broken: Vec::new(),
             armor_wait: 0,
+            armor_set: None,
             replenish_wait: 0,
             last_pos: Vec::new(),
             spots: Vec::new(),
@@ -2648,6 +2668,9 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     super::sunset_duel::key(game, key, pressed);
     super::sunset_cart::key(game, key, pressed);
     super::sunset_throws::key(game, key, pressed);
+    if pressed {
+        armor_switch(game, key);
+    }
     super::sunset_refill::key(key, pressed);
     super::sunset_takeoff::key(key, pressed);
     if !pressed {
@@ -4021,9 +4044,43 @@ pub(super) fn wear(game: &mut Game<'_>, i: usize, a: usize) {
     }
 }
 
+// An armour piece's material: `diamond` of diamond_helmet.
+fn armor_material(item: &str) -> &str {
+    let name = super::sunset_util::short(item);
+    name.rsplit_once('_').map_or(name, |(material, _)| material)
+}
+
+// Switch key (vape-rs's ArmorSwitch), on a press: the next set Switch sets lists after the one you wear, once all four
+// of its pieces are on you or in your inventory; Auto Armor then wears that set instead of the best.
+fn armor_switch(game: &mut Game<'_>, key: &str) {
+    let Some(m) = with(|s| s.module("Auto Armor").filter(|m| m.on).cloned()) else {
+        return;
+    };
+    if key_from_text(m.t("Switch key")).as_deref() != Some(key) || !game.native_playing() || !inventory_idle(game) {
+        return;
+    }
+    let sets: Vec<&str> = m.t("Switch sets").split(',').map(str::trim).filter(|t| !t.is_empty()).collect();
+    let worn = game.armor.iter().flatten().next().map(|s| armor_material(&s.item).to_owned());
+    let at = worn.as_deref().and_then(|w| sets.iter().position(|s| *s == w));
+    let next = at.map_or(0, |i| i + 1);
+    let complete = |set: &str| {
+        ["head", "chest", "legs", "feet"].iter().all(|slot| {
+            game.armor.iter().chain(game.inventory.iter().take(36)).flatten().any(|st| {
+                armor_material(&st.item) == set && game.res.items().get(&st.item).is_some_and(|i| i.equip_slot.as_deref() == Some(*slot))
+            })
+        })
+    };
+    match (0..sets.len()).map(|k| sets[(next + k) % sets.len()]).find(|set| Some(*set) != worn.as_deref() && complete(set)) {
+        Some(set) => with(|s| s.armor_set = Some(set.to_owned())),
+        None => say(game, "No other full armour set from Switch sets."),
+    }
+}
+
 pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
-    // Inventory open: only with your inventory screen up; Key: only while Armor key is held.
-    let allowed = match m.p("Mode") {
+    let set = with(|s| s.armor_set.clone());
+    // Inventory open: only with your inventory screen up; Key: only while Armor key is held. A set from Switch key
+    // goes on anyway.
+    let allowed = set.is_some() || match m.p("Mode") {
         "Inventory open" => game.screen == Screen::Inventory,
         "Key" => super::sunset_util::setting_key_down(game, m, "Armor key"),
         _ => true,
@@ -4058,7 +4115,11 @@ pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
                 .get(&st.item)
                 .is_some_and(|inf| inf.equip_slot.as_deref() == Some(*slot_name));
             let score = armor_score(&st.item, st.damage);
-            if fits && score > worn && best.is_none_or(|(_, b)| score > b) {
+            let wanted = match set.as_deref() {
+                Some(set) => armor_material(&st.item) == set && game.armor[a].as_ref().is_none_or(|w| armor_material(&w.item) != set),
+                None => score > worn,
+            };
+            if fits && wanted && best.is_none_or(|(_, b)| score > b) {
                 best = Some((i, score));
             }
         }

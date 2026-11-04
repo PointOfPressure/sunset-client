@@ -1,8 +1,9 @@
-// Loadouts, ported from Sayer's Duelkit (MIT, github.com/PointOfPressure/duelkit) and grown into inventory profiles:
-// a loadout keeps the hotbar and the off hand, with Armour what you wear, with Full layout the main inventory too,
-// and the Locked slots of the time. Equipping puts every saved item back where it was; Locked slots are left alone by
-// every Sunset module that moves items; Refill broken tools puts the same tool from the inventory in the hotbar slot
-// whose tool just broke. Loadouts are shared as files through the exports and imports folders, as profiles are.
+// Loadouts, ported from Sayer's Duelkit (MIT, github.com/PointOfPressure/duelkit) and grown into inventory profiles: a
+// loadout keeps the hotbar and the off hand, with Armour what you wear, with Full layout the main inventory too, and
+// the Locked slots of the time. Equipping puts every saved item back where it was; Locked slots are left alone by every
+// Sunset module that moves items; Refill broken tools puts the same tool from the inventory in the hotbar slot whose
+// tool just broke; Auto hotbar (vape-rs's AutoHotbar) keeps hotbar slots filled by rules. Loadouts are shared as files
+// through the exports and imports folders, as profiles are.
 use super::sunset::{Canvas, Category, Module, Shape, say, with};
 use super::sunset_util as util;
 use super::{Game, Screen};
@@ -17,7 +18,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Armour", true)
             .bool("Full layout", false)
             .text("Locked slots", "")
-            .bool("Refill broken tools", true),
+            .bool("Refill broken tools", true)
+            .bool("Auto hotbar", false)
+            .pick("Hotbar mode", &["Inventory open", "Always"])
+            .text("Hotbar rules", "1:sword,2:blocks,9:ender_pearl")
+            .num("Hotbar delay (ms)", 110.0, 0.0, 300.0, 10.0),
     ]
 }
 
@@ -28,6 +33,8 @@ struct Panel {
     undo: Option<(usize, usize)>,
     // Refill broken tools: each hotbar slot's tool last tick, and whether it was a use from breaking.
     tools: [Option<(String, bool)>; 9],
+    // Auto hotbar: not before this tick again.
+    hotbar_next: u64,
 }
 
 static PANEL: Mutex<Option<Panel>> = Mutex::new(None);
@@ -254,6 +261,9 @@ pub(super) fn tick(game: &mut Game<'_>) {
     {
         super::sunset::hold(game, back);
     }
+    if let Some(m) = module().filter(|m| m.b("Auto hotbar")) {
+        auto_hotbar(game, &m);
+    }
     let Some(m) = module().filter(|m| m.b("Refill broken tools")) else {
         panel(|p| p.tools = Default::default());
         return;
@@ -281,6 +291,65 @@ pub(super) fn tick(game: &mut Game<'_>) {
         {
             game.remote_menu_ops(&[(Some(k), i as i32, Input::Swap)]);
             panel(|p| p.tools[i] = None);
+        }
+    }
+}
+
+// What an Auto hotbar rule asks for: a kind (`sword`, `axe`, `pickaxe`, `shovel`, `hoe`, `blocks`, `food`) or an item
+// name; for a weapon or tool kind the best of it (attack damage, then durability), else the biggest stack.
+fn rule_score(game: &Game<'_>, rule: &str, s: &ItemStack) -> Option<f64> {
+    let info = game.res.items().get(&s.item);
+    let tag = |t: &str| game.res.items().item_tags.get(t).is_some_and(|set| set.contains(&*s.item));
+    let tool = match rule {
+        "sword" | "axe" | "pickaxe" | "shovel" | "hoe" => tag(&format!("minecraft:{rule}s")),
+        "blocks" => return info.and_then(|i| i.block).is_some().then_some(f64::from(s.count)),
+        "food" => return info.is_some_and(|i| i.food.is_some()).then_some(f64::from(s.count)),
+        _ => return util::listed(rule, &s.item).then_some(f64::from(s.count)),
+    };
+    let info = info.filter(|_| tool)?;
+    Some(f64::from(info.attack_damage) * 10_000.0 + f64::from(info.max_damage) - f64::from(s.damage))
+}
+
+// Auto hotbar (vape-rs's AutoHotbar): each rule `slot:what` (slots 1 to 9) gets the best match from the inventory
+// (another hotbar slot no rule wants it for, or the main inventory) swapped in, one swap each Hotbar delay, with
+// your inventory open (Inventory open) or with no screen (Always). Locked slots are left alone.
+fn auto_hotbar(game: &mut Game<'_>, m: &Module) {
+    let open = game.screen == Screen::Inventory;
+    let ready = if m.p("Hotbar mode") == "Always" { util::inventory_idle(game) } else { open };
+    if !ready || game.ticks < panel(|p| p.hotbar_next) {
+        return;
+    }
+    let rules: Vec<(usize, String)> = m
+        .t("Hotbar rules")
+        .split(',')
+        .filter_map(|r| {
+            let (slot, what) = r.split_once(':')?;
+            let slot = slot.trim().parse::<usize>().ok().filter(|n| (1..=9).contains(n))? - 1;
+            Some((slot, util::short(what.trim()).to_owned()))
+        })
+        .collect();
+    let locked = locked_slots();
+    let claimed = |k: usize, s: &ItemStack| rules.iter().any(|(slot, rule)| *slot == k && rule_score(game, rule, s).is_some());
+    for (slot, rule) in &rules {
+        if locked[*slot] {
+            continue;
+        }
+        let have = game.inventory[*slot].as_ref().and_then(|s| rule_score(game, rule, s));
+        let best = (0..36)
+            .filter(|&k| k != *slot && !locked[k])
+            .filter_map(|k| {
+                let s = game.inventory[k].as_ref()?;
+                (k >= 9 || !claimed(k, s)).then_some(())?;
+                Some((rule_score(game, rule, s)?, k))
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0));
+        if let Some((score, k)) = best
+            && have.is_none_or(|h| score > h)
+        {
+            game.remote_menu_ops(&[(Some(k), *slot as i32, Input::Swap)]);
+            let wait = (m.n("Hotbar delay (ms)") / 50.0).round() as u64;
+            panel(|p| p.hotbar_next = game.ticks + wait.max(1));
+            return;
         }
     }
 }

@@ -29,7 +29,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Auto pot", false)
             .pick("Pot mode", &["Auto", "While holding"])
             .num("Pot health", 10.0, 1.0, 20.0, 0.5)
-            .num("Pot pitch", 70.0, 50.0, 90.0, 1.0),
+            .num("Pot pitch", 70.0, 50.0, 90.0, 1.0)
+            .bool("Soup", false)
+            .num("Soup health", 17.0, 1.0, 20.0, 1.0)
+            .num("Soup delay (ms)", 500.0, 50.0, 1000.0, 50.0)
+            .bool("Drop bowls", true),
         Module::new("Chest Stealer", Player, "Empties containers you open.")
             .num("Items per tick", 3.0, 1.0, 27.0, 1.0)
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0)

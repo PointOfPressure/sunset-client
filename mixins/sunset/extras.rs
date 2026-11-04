@@ -2,7 +2,8 @@
 // ClientSort as Sayer uses it: three small buttons down the right of each part of an inventory screen (sort_buttons.rs),
 // Sort, Fill Stacks and Restock. Sort goes in creative order, by count with Shift, by name with Ctrl and by id with Alt; Horizon's
 // sort key does the same, on the hotbar only while the pointer is on it. The clicks go out a few a tick, an operation
-// at least two ticks after the one before.
+// at least two ticks after the one before. Shift fill (vape-rs's InventoryFill) shift-clicks the slot under the pointer
+// while you hold Shift and the left button.
 
 use super::sunset::{Category, Module};
 use super::Game;
@@ -24,12 +25,62 @@ pub(super) fn defaults() -> Vec<Module> {
             "Shows every recipe as unlocked."),
         Module::new("Profiles", Category::Client, "Saved settings to load."),
         Module::new("Client Sort", Category::Client,
-            "Sorts inventories in your order."),
+            "Sorts inventories in your order.")
+            .bool("Shift fill", false)
+            .num("Fill CPS", 15.0, 1.0, 20.0, 1.0),
     ]
 }
 
 // Client Sort is on (read by the buttons' hooks each frame).
 static ON: AtomicBool = AtomicBool::new(false);
+
+// Shift fill (vape-rs's InventoryFill): the slot under the pointer this frame, the last slot it clicked, and when the
+// next click may go.
+struct Fill {
+    hovered: Option<usize>,
+    last: Option<usize>,
+    next: Option<std::time::Instant>,
+    roll: u64,
+}
+
+static FILL: Mutex<Fill> = Mutex::new(Fill { hovered: None, last: None, next: None, roll: 0x5EED });
+
+fn fill<R>(f: impl FnOnce(&mut Fill) -> R) -> R {
+    f(&mut FILL.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+// The inventory screen's draw: the slot under the pointer.
+pub(super) fn note_hover(slot: Option<usize>) {
+    fill(|f| f.hovered = slot);
+}
+
+// Shift fill, each tick with Shift and the left button held over an inventory screen and nothing carried: the slot
+// under the pointer is shift-clicked, Fill CPS (one either side) a second; the slot just clicked again only one time
+// in five.
+fn shift_fill(game: &mut Game<'_>, m: &Module) {
+    let held = (game.physical_buttons.contains(&winit::event::MouseButton::Left) || game.left)
+        && [KeyCode::ShiftLeft, KeyCode::ShiftRight].iter().any(|k| game.physical_keys.contains(k) || game.keys.contains(k));
+    let now = std::time::Instant::now();
+    let Some(slot) = fill(|f| f.hovered).filter(|_| held && game.carried.is_none()) else {
+        fill(|f| f.last = None);
+        return;
+    };
+    let roll = fill(|f| {
+        f.roll ^= f.roll << 13;
+        f.roll ^= f.roll >> 7;
+        f.roll ^= f.roll << 17;
+        (f.roll >> 11) as f64 / (1u64 << 53) as f64
+    });
+    if fill(|f| f.next.is_some_and(|due| now < due) || (f.last == Some(slot) && roll < 0.8)) {
+        return;
+    }
+    game.tweak_click(slot, 0, Input::QuickMove);
+    let cps = (m.n("Fill CPS") - 1.0 + roll * 2.0).clamp(1.0, 20.0);
+    fill(|f| {
+        f.last = Some(slot);
+        f.next = Some(now + std::time::Duration::from_secs_f64(1.0 / cps));
+    });
+}
 
 pub(super) fn on() -> bool {
     ON.load(Ordering::Relaxed)
@@ -164,7 +215,11 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
     if game.screen != super::Screen::Inventory {
         queue(|q| q.ops.clear());
+        fill(|f| f.hovered = None);
         return;
+    }
+    if let Some(m) = mods.iter().find(|m| m.name == "Client Sort" && m.on && m.b("Shift fill")) {
+        shift_fill(game, m);
     }
     let now: Vec<(usize, bool)> = queue(|q| {
         if q.wait > 0 {

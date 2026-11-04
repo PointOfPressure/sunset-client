@@ -27,6 +27,27 @@ pub(super) enum Item {
     Wind,
     // A splash potion of healing.
     HealPot,
+    // Mushroom stew (soup servers heal with it at once).
+    Soup,
+    // A splash potion of harming, weakness, poison or slowness.
+    Debuff,
+}
+
+const DEBUFFS: [&str; 4] = ["harming", "weakness", "poison", "slowness"];
+
+// A splash potion's effect without its long_ or strong_ prefix.
+fn potion_kind(s: &horizon_client::items::ItemStack) -> Option<&str> {
+    (util::short(&s.item) == "splash_potion")
+        .then(|| s.potion())
+        .flatten()
+        .map(|p| util::short(p).trim_start_matches("long_").trim_start_matches("strong_"))
+}
+
+// One step of the Pot key's and the Debuff key's runs: use the item in a hotbar slot, or drop the bowl a soup left.
+#[derive(Clone, Copy)]
+enum Step {
+    Use(usize, Item),
+    Bowl(usize),
 }
 
 impl Item {
@@ -34,7 +55,9 @@ impl Item {
         match self {
             Self::Pearl => util::short(&s.item) == "ender_pearl",
             Self::Wind => util::short(&s.item) == "wind_charge",
-            Self::HealPot => util::short(&s.item) == "splash_potion" && s.potion().is_some_and(|p| util::short(p).ends_with("healing")),
+            Self::HealPot => potion_kind(s) == Some("healing"),
+            Self::Soup => util::short(&s.item) == "mushroom_stew",
+            Self::Debuff => potion_kind(s).is_some_and(|k| DEBUFFS.contains(&k)),
         }
     }
 }
@@ -160,6 +183,24 @@ struct Throws {
     elytra_at: u64,
     glide_at: u64,
     keys_down: Vec<String>,
+    // The Pot key's, Debuff key's or Auto Gap's Soup run: what is left of it, whose it is, the tick its next step may
+    // go, and the gap after each step (shortest and longest, ms).
+    queue: std::collections::VecDeque<Step>,
+    queue_owner: &'static str,
+    queue_at: u64,
+    queue_gap: (f64, f64),
+}
+
+impl Throws {
+    // The last pearl, wind charge and healing potion used, for the gaps between them.
+    fn note_use(&mut self, item: Item, now: u64) {
+        match item {
+            Item::Pearl => self.last_pearl = now,
+            Item::Wind => self.last_wind = now,
+            Item::HealPot => self.last_pot = now,
+            Item::Soup | Item::Debuff => {}
+        }
+    }
 }
 
 static THROWS: Mutex<Option<Throws>> = Mutex::new(None);
@@ -294,11 +335,7 @@ fn throw_from(game: &mut Game<'_>, owner: &'static str, slot: usize, item: Item,
     let now = game.ticks;
     st(|s| {
         s.used = now;
-        match item {
-            Item::Pearl => s.last_pearl = now,
-            Item::Wind => s.last_wind = now,
-            Item::HealPot => s.last_pot = now,
-        }
+        s.note_use(item, now);
     });
     Some(true)
 }
@@ -311,7 +348,8 @@ fn throw(game: &mut Game<'_>, owner: &'static str, item: Item, look: (f32, f32))
 // The slot from before comes back (a tick after the last use), and the lease goes, once nothing waits. Whether the
 // slot changed.
 fn settle(game: &mut Game<'_>) -> bool {
-    let (idle, back, used, lease) = st(|s| (s.single.is_none() && s.legit.is_none() && s.catch.is_none(), s.back, s.used, s.lease));
+    let (idle, back, used, lease) =
+        st(|s| (s.single.is_none() && s.legit.is_none() && s.catch.is_none() && s.queue.is_empty(), s.back, s.used, s.lease));
     if !idle || used >= game.ticks {
         return false;
     }
@@ -330,7 +368,10 @@ fn settle(game: &mut Game<'_>) -> bool {
 }
 
 pub(super) fn reset(game: &mut Game<'_>) {
-    let (back, lease, legit) = st(|s| (s.back.take(), s.lease.take(), s.legit.take()));
+    let (back, lease, legit) = st(|s| {
+        s.queue.clear();
+        (s.back.take(), s.lease.take(), s.legit.take())
+    });
     if let Some(b) = back.filter(|&b| b < 9 && b != game.selected && game.player.is_some()) {
         hold(game, b);
     }
@@ -560,6 +601,130 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     if let Some(m) = module(CATCH).filter(|m| named(m, "Catch key")) {
         catch_start(game, &m);
     }
+    if let Some(m) = module(THROW).filter(|m| named(m, "Pot key") || named(m, "Debuff key"))
+        && st(|s| s.queue.is_empty())
+    {
+        let run = if named(&m, "Pot key") { pot_run(game, &m) } else { debuff_run(game, &m) };
+        start_run(game, THROW, run, (m.n("Shortest pot delay (ms)"), m.n("Longest pot delay (ms)")));
+    }
+}
+
+// Throwpot (vape-rs's), on the Pot key: the hotbar's healing splash potions and soups (Pot type), in hotbar order or
+// with Random order shuffled; Dynamic takes as many as the health you miss needs (a potion 4, a strong one 8, a soup
+// 7), Single one. With Throw bowls each soup's bowl is dropped after it.
+fn pot_run(game: &Game<'_>, m: &Module) -> std::collections::VecDeque<Step> {
+    let kind = m.p("Pot type");
+    let mut slots: Vec<(usize, Item, f32)> = (0..9)
+        .filter_map(|i| {
+            let s = game.stack_in(i)?;
+            if kind != "Soup" && Item::HealPot.is(s) {
+                let strong = s.potion().is_some_and(|p| util::short(p).starts_with("strong_"));
+                Some((i, Item::HealPot, if strong { 8.0 } else { 4.0 }))
+            } else if kind != "Pots" && Item::Soup.is(s) {
+                Some((i, Item::Soup, 7.0))
+            } else {
+                None
+            }
+        })
+        .collect();
+    if m.b("Random order") {
+        for i in (1..slots.len()).rev() {
+            slots.swap(i, roll(game, 0.0, (i + 1) as f64) as usize % (i + 1));
+        }
+    }
+    let mut missing = game.player.as_ref().map_or(0.0, |p| 20.0 - p.health.health());
+    let mut run = std::collections::VecDeque::new();
+    for (slot, item, heals) in slots {
+        if !run.is_empty() && (m.p("Pot amount") == "Single" || missing <= 0.0) {
+            break;
+        }
+        missing -= heals;
+        run.push_back(Step::Use(slot, item));
+        if item == Item::Soup && m.b("Throw bowls") {
+            run.push_back(Step::Bowl(slot));
+        }
+    }
+    run
+}
+
+// ThrowDebuff (vape-rs's), on the Debuff key: the hotbar's splash potions of what Debuffs lists, thrown along your
+// look: One of each kind, All of them, or the First.
+fn debuff_run(game: &Game<'_>, m: &Module) -> std::collections::VecDeque<Step> {
+    let mut seen: Vec<&str> = Vec::new();
+    let mut run = std::collections::VecDeque::new();
+    for i in 0..9 {
+        let Some(kind) = game.stack_in(i).and_then(potion_kind).filter(|k| DEBUFFS.contains(k) && util::listed(m.t("Debuffs"), k)) else {
+            continue;
+        };
+        if m.p("Debuff mode") == "One of each" && seen.contains(&kind) {
+            continue;
+        }
+        seen.push(kind);
+        run.push_back(Step::Use(i, Item::Debuff));
+        if m.p("Debuff mode") == "First" {
+            break;
+        }
+    }
+    run
+}
+
+fn start_run(game: &Game<'_>, owner: &'static str, run: std::collections::VecDeque<Step>, gap: (f64, f64)) {
+    let at = game.ticks;
+    st(|s| {
+        s.queue = run;
+        s.queue_owner = owner;
+        s.queue_at = at;
+        s.queue_gap = gap;
+    });
+}
+
+// Auto Gap's Soup (vape-rs's AutoHeal, Legit): at or under Soup health, the first hotbar soup is used, and with Drop
+// bowls its bowl dropped, Soup delay after the last.
+fn auto_soup(game: &Game<'_>, m: &Module) {
+    let health = game.player.as_ref().map_or(20.0, |p| f64::from(p.health.health()));
+    let Some(slot) = (0..9).find(|&i| has(game, i, Item::Soup)).filter(|_| health <= m.n("Soup health")) else {
+        return;
+    };
+    let mut run = std::collections::VecDeque::from([Step::Use(slot, Item::Soup)]);
+    if m.b("Drop bowls") {
+        run.push_back(Step::Bowl(slot));
+    }
+    let gap = m.n("Soup delay (ms)");
+    start_run(game, GAP, run, (gap, gap));
+}
+
+// The next step of a run, its gap after the step before.
+fn queue_step(game: &mut Game<'_>) {
+    let Some(step) = st(|s| s.queue.front().copied()) else {
+        return;
+    };
+    if game.ticks < st(|s| s.queue_at) {
+        return;
+    }
+    let (owner, gap) = st(|s| (s.queue_owner, s.queue_gap));
+    if module(owner).is_none() {
+        st(|s| s.queue.clear());
+        return;
+    }
+    let done = match step {
+        Step::Use(slot, item) => match throw_from(game, owner, slot, item, (game.yaw, game.pitch)) {
+            Some(false) => return,
+            _ => true,
+        },
+        Step::Bowl(slot) => {
+            if game.selected == slot && game.stack_in(slot).is_some_and(|s| util::short(&s.item) == "bowl") {
+                game.remote_drop(false);
+            }
+            true
+        }
+    };
+    if done {
+        let wait = ticks_of(roll(game, gap.0, gap.1)).max(1);
+        st(|s| {
+            s.queue.pop_front();
+            s.queue_at = game.ticks + wait;
+        });
+    }
 }
 
 // Key Throw's Pearl and Wind charge keys in Legit mode.
@@ -568,7 +733,7 @@ pub(super) fn legit_press(game: &mut Game<'_>, m: &Module, item: Item) {
         return;
     }
     match item {
-        Item::Pearl | Item::HealPot => legit_start(game, m, item, None, false),
+        Item::Pearl | Item::HealPot | Item::Soup | Item::Debuff => legit_start(game, m, item, None, false),
         Item::Wind if m.b("Wind charge along look") => legit_start(game, m, Item::Wind, None, false),
         Item::Wind => {
             let pitch = m.n("Wind charge pitch") as f32 - 1.0 + roll(game, 0.0, 2.0) as f32;
@@ -591,11 +756,11 @@ fn legit_start(game: &mut Game<'_>, m: &Module, item: Item, pitch: Option<f32>, 
 // The start of a tick, before its move packet. `busy`: a hit or a slot change went already this tick.
 pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
     let (throw_m, catch_m, wind_m) = (module(THROW), module(CATCH), module(WIND));
-    let pot_m = module(GAP).filter(|m| m.b("Auto pot"));
+    let gap_m = module(GAP).filter(|m| m.b("Auto pot") || m.b("Soup"));
     if live(game) {
         track(game);
     }
-    if !live(game) || (throw_m.is_none() && catch_m.is_none() && wind_m.is_none() && pot_m.is_none()) {
+    if !live(game) || (throw_m.is_none() && catch_m.is_none() && wind_m.is_none() && gap_m.is_none()) {
         if st(|s| s.back.is_some() || s.lease.is_some() || s.legit.is_some() || s.catch.is_some() || s.single.is_some()) {
             reset(game);
         }
@@ -623,8 +788,15 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
         single_step(game);
         return;
     }
-    if let Some(m) = &pot_m {
+    if st(|s| !s.queue.is_empty()) {
+        queue_step(game);
+        return;
+    }
+    if let Some(m) = gap_m.as_ref().filter(|m| m.b("Auto pot")) {
         auto_pot(game, m);
+    }
+    if let Some(m) = gap_m.as_ref().filter(|m| m.b("Soup") && st(|s| s.single.is_none() && game.ticks >= s.queue_at)) {
+        auto_soup(game, m);
     }
     if let Some(m) = throw_m.as_ref().filter(|m| m.b("Pearl follow")) {
         follow(game, m);
@@ -764,11 +936,7 @@ fn legit_step(game: &mut Game<'_>, m: &Module) {
                         st(|s| {
                             s.used = now;
                             s.jump = l.jump && game.player.as_ref().is_some_and(|p| p.ground.on_ground);
-                            match l.item {
-                                Item::Pearl => s.last_pearl = now,
-                                Item::Wind => s.last_wind = now,
-                                Item::HealPot => s.last_pot = now,
-                            }
+                            s.note_use(l.item, now);
                         });
                         if l.item == Item::Pearl {
                             pearl_thrown(game);

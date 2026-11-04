@@ -78,7 +78,17 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Max error", 2.0, 0.5, 10.0, 0.5)
             .num("Shortest follow delay (ms)", 50.0, 0.0, 500.0, 10.0)
             .num("Longest follow delay (ms)", 100.0, 0.0, 500.0, 10.0)
-            .bool("Follow only on ground", false),
+            .bool("Follow only on ground", false)
+            .text("Pot key", "None")
+            .pick("Pot type", &["Both", "Pots", "Soup"])
+            .pick("Pot amount", &["Dynamic", "Single"])
+            .bool("Random order", false)
+            .bool("Throw bowls", true)
+            .text("Debuff key", "None")
+            .pick("Debuff mode", &["One of each", "All", "First"])
+            .text("Debuffs", "harming,weakness,poison,slowness")
+            .num("Shortest pot delay (ms)", 80.0, 0.0, 200.0, 5.0)
+            .num("Longest pot delay (ms)", 115.0, 0.0, 200.0, 5.0),
     ]
 }
 

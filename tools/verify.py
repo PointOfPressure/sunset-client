@@ -12545,6 +12545,90 @@ def _():
     return got == {"off": 0, "on": 1, "swords only": 0}, f"apples eaten after letting go early: {got}"
 
 
+@test("Key Throw (Pot key, Debuff key)")
+def _():
+    # Pot key: five healing splash potions in slots 5 to 9 at 10 health, looking down: Dynamic throws three (4 health
+    # each for the 10 missing), Single one, Key Throw off none, and the sword is in hand after. Debuff key, looking
+    # ahead: poison, weakness, poison and harming in slots 1 to 4: One of each throws three, All four, First one, and
+    # One of each with Debuffs `poison` one.
+    for k, v in (("pot key", "h"), ("debuff key", "j"), ("throw mode", "Silent")):
+        setting("keythrow", k, v)
+
+    def pots(mods=("keythrow",), amount="Dynamic"):
+        setting("keythrow", "pot amount", amount)
+        reset()
+        slot(0, "diamond_sword")
+        for i in range(4, 9):
+            slot(i, HEAL_POT)
+        ctl("key", "1", "tap")
+        cmd("damage @s 10 minecraft:generic")
+        ctl("look", "0", "90")
+        only(*mods)
+        wait(5)
+        ctl("key", "h", "tap")
+        wait(30)
+        only()
+        return 5 - items_of("splash_potion"), held().get("item", "").split(":")[-1]
+
+    def debuffs(mode, kinds="harming,weakness,poison,slowness"):
+        setting("keythrow", "debuff mode", mode)
+        setting("keythrow", "debuffs", kinds)
+        reset()
+        immune()
+        for i, p in enumerate(("poison", "weakness", "poison", "harming")):
+            slot(i, f'splash_potion[potion_contents={{potion:"minecraft:{p}"}}]')
+        slot(5, "diamond_sword")
+        ctl("key", "6", "tap")
+        ctl("look", "0", "-20")
+        only("keythrow")
+        wait(5)
+        ctl("key", "j", "tap")
+        wait(30)
+        only()
+        return 4 - items_of("splash_potion")
+
+    got = {"dynamic": pots(), "single": pots(amount="Single"), "off": pots(())}
+    got.update({"one of each": debuffs("One of each"), "all": debuffs("All"), "first": debuffs("First"),
+                "poison only": debuffs("One of each", "poison")})
+    say(".reset keythrow")
+    ok = (got["dynamic"] == (3, "diamond_sword") and got["single"] == (1, "diamond_sword") and got["off"][0] == 0
+          and (got["one of each"], got["all"], got["first"], got["poison only"]) == (3, 4, 1, 1))
+    return ok, f"(potions thrown, in hand after) / debuffs thrown: {got}"
+
+
+@test("Auto Gap (Soup)")
+def _():
+    # A sword in hand and mushroom stew in slot 4 at 10 health: with Soup the stew's slot is held and used (a UseItem),
+    # each before its tick's move packet, and the sword is back after; at 20 health, or with Soup health 5, nothing.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    setting("autogap", "health enabled", "false")
+    setting("autogap", "soup", "true")
+
+    def run(damage, soup_health="17"):
+        setting("autogap", "soup health", soup_health)
+        reset()
+        slot(0, "diamond_sword")
+        slot(3, "mushroom_stew")
+        ctl("key", "1", "tap")
+        if damage:
+            cmd(f"damage @s {damage} minecraft:generic")
+        wait(5)
+        mark = probe_mark()
+        only("autogap")
+        wait(20)
+        only()
+        wait(5)
+        ticks = probe_ticks(mark)
+        uses = sum(t.count(f"pkt {USE_ITEM}") for t in ticks)
+        return uses, held().get("item", "").split(":")[-1], cart_order(mark)
+
+    got = {"hurt": run(10), "full": run(0), "under 5": run(10, "5")}
+    say(".reset autogap")
+    ok = got["hurt"][0] >= 1 and got["hurt"][1] == "diamond_sword" and not any(got["hurt"][2]) and got["full"][0] == 0 and got["under 5"][0] == 0
+    return ok, f"(stew uses, in hand after, (late, two slot changes, two moves)): {got}"
+
+
 @test("Arrow Dodge (Hit fireballs)")
 def _():
     # A large fireball flying at you from 6 blocks: with Hit fireballs it is hit (an attack) and sent back away from
@@ -12575,6 +12659,128 @@ def _():
     say(".reset arrowdodge")
     ok = got["on"][0] >= 1 and got["hit off"][0] == 0 and got["module off"][0] == 0
     return ok, f"(attacks, fireball sent back past where it came from): {got}"
+
+
+@test("Auto Armor (Switch key)")
+def _():
+    # Wearing iron with a diamond set in the inventory, Mode Key with no Armor key, Switch sets `diamond,iron`: nothing
+    # changes until G, then all four diamond pieces go on; G again puts the iron back; with the diamond boots gone the
+    # set is not whole and G changes nothing.
+    pieces = ("head", "chest", "legs", "feet")
+    names = {"head": "helmet", "chest": "chestplate", "legs": "leggings", "feet": "boots"}
+
+    def wearing(material):
+        worn = [(a.get("item") or "").split(":")[-1] for a in ctl("inventory").get("armor", [])]
+        return worn == [f"{material}_{names[p]}" for p in pieces]
+
+    reset()
+    cmd("clear @s", *[f"item replace entity @s armor.{p} with minecraft:iron_{names[p]}" for p in pieces],
+        *[f"item replace entity @s inventory.{i} with minecraft:diamond_{names[p]}" for i, p in enumerate(pieces)])
+    for k, v in (("mode", "Key"), ("armor key", "None"), ("switch key", "G"), ("switch sets", "diamond,iron"), ("delay (ticks)", "4")):
+        setting("autoarmor", k, v)
+    only("autoarmor")
+    wait(30)
+    before = wearing("iron")
+    ctl("key", "g", "tap")
+    wait(50)
+    diamond = wearing("diamond")
+    ctl("key", "g", "tap")
+    wait(50)
+    iron = wearing("iron")
+    # The boots went back to the slot they came from (inventory.3); `clear @s <item>` is not the same on every server.
+    cmd("item replace entity @s inventory.3 with minecraft:air")
+    wait(5)
+    boots = items_of("diamond_boots") == 0
+    ctl("key", "g", "tap")
+    wait(50)
+    kept = wearing("iron")
+    only()
+    say(".reset autoarmor")
+    return before and diamond and iron and boots and kept, (f"iron before G {before}, diamond after G {diamond}, iron after G again {iron}, "
+                                                            f"boots gone {boots}, iron kept without them {kept}")
+
+
+@test("Loadouts (Auto hotbar)")
+def _():
+    # Rules `1:sword,9:ender_pearl`, dirt in slot 1, a stone sword in slot 4, a diamond sword and pearls in the main
+    # inventory: Always puts the diamond sword in slot 1 and the pearls in slot 9; Inventory open does nothing with no
+    # screen and the same once the inventory is open; with slot 1 locked only the pearls move.
+    def run(mode, open_inv=False, locked=""):
+        for k, v in (("auto hotbar", "true"), ("hotbar mode", mode), ("hotbar rules", "1:sword,9:ender_pearl"), ("locked slots", locked or "None")):
+            setting("loadouts", k, v)
+        reset()
+        cmd("clear @s", "item replace entity @s hotbar.0 with minecraft:dirt 8", "item replace entity @s hotbar.3 with minecraft:stone_sword",
+            "item replace entity @s inventory.2 with minecraft:diamond_sword", "item replace entity @s inventory.7 with minecraft:ender_pearl 16")
+        only("loadouts")
+        wait(20)
+        if open_inv:
+            ctl("open-inventory")
+            wait(20)
+            ctl("close")
+        only()
+        bar = ctl("inventory").get("hotbar", [])
+        name = lambda i: ((bar[i] or {}).get("item") or "").split(":")[-1] if i < len(bar) else ""
+        return name(0), name(8)
+
+    got = {"always": run("Always"), "closed": run("Inventory open"), "open": run("Inventory open", True), "locked": run("Always", locked="1")}
+    say(".reset loadouts")
+    ok = (got["always"] == ("diamond_sword", "ender_pearl") and got["closed"] == ("dirt", "") and got["open"] == ("diamond_sword", "ender_pearl")
+          and got["locked"] == ("dirt", "ender_pearl"))
+    return ok, f"(slot 1, slot 9): {got}"
+
+
+@test("Client Sort (Shift fill)")
+def _():
+    # The inventory open, the pointer on the first main inventory slot (empty), Shift and the left button held (real
+    # presses, xdotool), then dirt put in that slot: Shift fill shift-clicks it into the hotbar; with Shift fill off,
+    # or without Shift, it stays.
+    window = x_window()
+    if not window:
+        return None, "needs xdotool and the game's window"
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+
+    def xdo(*args):
+        subprocess.run(["xdotool", *args], env=env, capture_output=True)
+
+    def run(fill="true", shift=True):
+        setting("clientsort", "shift fill", fill)
+        reset()
+        cmd("clear @s")
+        only("clientsort")
+        ctl("open-inventory")
+        wait(6)
+        w, h = gui_size()
+        ctl("screenshot", f"{SHOTS}/shift_fill.png")
+        time.sleep(2)
+        from PIL import Image
+        img = Image.open(f"{SHOTS}/shift_fill.png").convert("L")
+        k = img.width / w
+        book = 77 if img.getpixel((int(((w - 176) / 2 + 10) * k), int(((h - 166) / 2 + 60) * k))) < 90 else 0
+        # Bot1's window (on the same display) can lie over this one: raised first, so the pointer's presses land here.
+        xdo("windowraise", window)
+        xdo("windowfocus", "--sync", window)
+        xdo("mousemove", "--window", window, str(int(((w - 176) / 2 + book + 16) * k)), str(int(((h - 166) / 2 + 92) * k)))
+        wait(4)
+        if shift:
+            xdo("keydown", "shift")
+        xdo("mousedown", "1")
+        wait(4)
+        cmd("item replace entity @s inventory.0 with minecraft:dirt 10")
+        wait(20)
+        xdo("mouseup", "1")
+        if shift:
+            xdo("keyup", "shift")
+        inv = ctl("inventory")
+        ctl("close")
+        only()
+        main = (inv.get("main") or [{}])[0] or {}
+        return "dirt" in (main.get("item") or "")
+
+    got = {"on": run(), "fill off": run("false"), "no shift": run(shift=False)}
+    say(".reset clientsort")
+    return got == {"on": False, "fill off": True, "no shift": True}, f"dirt still in the main inventory slot: {got}"
+
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)
