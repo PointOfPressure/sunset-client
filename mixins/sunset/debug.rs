@@ -1,5 +1,5 @@
 // Debug Report (Client): `.debug [chat lines]`, the module's row or its bind copies a plain-text report to the
-// clipboard (the game's own) and saves it as <mod data>/debug/<date-time>.md: versions and server, the player, the
+// clipboard (the game's own) and saves it in its configured folder as <date-time>.md: versions and server, the player, the
 // input sent, the modules on with their changed settings, the anticheat alerts read from chat (counted per check),
 // the server's position corrections and the disconnects, the last packets sent tick by tick, and the chat. Markdown
 // in short labelled sections, for pasting into an AI or a bug report. It reads; it changes nothing, and it holds no
@@ -21,10 +21,11 @@ const HORIZON_PIN: &str = "ba6344a";
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(NAME, Category::Client, "Copies a debug report to the clipboard.")
+        Module::new(NAME, Category::Client, "Copies a debug report and saves it to Save folder.")
             .num("Chat lines", 100.0, 0.0, 500.0, 10.0)
             .num("Packet ticks", 40.0, 5.0, 200.0, 5.0)
-            .num("Max size (k chars)", 20.0, 5.0, 100.0, 5.0),
+            .num("Max size (k chars)", 20.0, 5.0, 100.0, 5.0)
+            .text("Save folder", "debug"),
     ]
 }
 
@@ -77,7 +78,14 @@ pub(super) fn copy(game: &mut Game<'_>, chat_lines: Option<usize>) {
     };
     let report = report(game, &limits);
     game.clipboard.set(&report);
-    let dir = game.native_data_dir(super::sunset::ID).join("debug");
+    let folder = m.map_or("debug", |m| m.t("Save folder"));
+    let folder = if folder.is_empty() { "debug" } else { folder };
+    let path = std::path::Path::new(folder);
+    let dir = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        game.native_data_dir(super::sunset::ID).join(path)
+    };
     let saved = std::fs::create_dir_all(&dir).and_then(|()| {
         let base = chrono::Local::now().format("%Y-%m-%d_%H.%M.%S").to_string();
         let path = (1..)
