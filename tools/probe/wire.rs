@@ -7,7 +7,8 @@
 // check that a hit goes before its tick's move packet as vanilla sends it: those skip the single player server's
 // packets (its threads are named horizon-lan-... and horizon-local-...), so they hold in single player too. And a
 // "pkt <id>" line for every packet the client sends (the same threads skipped), to count all of them in a tick. And an
-// "input <flags>" line for each PlayerInput (the move keys the server predicts the move from; the same threads skipped).
+// "input <flags>" line for each PlayerInput (the move keys the server predicts the move from; the same threads skipped),
+// and a "look <yaw> <pitch>" line after each move packet that carries a look (the same threads skipped).
 
 use std::io::Write as _;
 use std::sync::{Mutex, OnceLock};
@@ -62,6 +63,9 @@ pub fn sent(body: &[u8]) {
     if i < KINDS.len() {
         let _ = f.write_all(format!("send {}{}\n", KINDS[i], moved(i, &body[start..])).as_bytes());
     }
+    if own && let Some((yaw, pitch)) = looked(i, &body[start..]) {
+        let _ = f.write_all(format!("look {yaw:.2} {pitch:.2}\n").as_bytes());
+    }
     if i == 8 {
         if own && let Some(flags) = body.get(start) {
             let _ = f.write_all(format!("input {flags}\n").as_bytes());
@@ -96,4 +100,15 @@ fn moved(kind: usize, body: &[u8]) -> String {
     };
     let y = y.and_then(|at| body.get(at..at + 8)).and_then(|b| b.try_into().ok()).map(f64::from_be_bytes);
     format!(" {} {}", y.map_or("-".to_string(), |y| format!("{y:.5}")), flags & 1)
+}
+
+// The look a move packet carries (posrot: after x y z; rot: first), as two floats.
+fn looked(kind: usize, body: &[u8]) -> Option<(f32, f32)> {
+    let at = match kind {
+        1 => 24,
+        2 => 0,
+        _ => return None,
+    };
+    let float = |from: usize| body.get(from..from + 4).and_then(|b| b.try_into().ok()).map(f32::from_be_bytes);
+    Some((float(at)?, float(at + 4)?))
 }
