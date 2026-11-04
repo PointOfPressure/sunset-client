@@ -1,6 +1,6 @@
 // Pearl and wind charge throws: Key Throw's Short pearl key, Legit throws, Wind charge after pearl, Auto short pearl
 // and Pearl follow; Pearl Catch's Catch key (Up, Fast, Offhand, Diagonal, Diagonal macro); Wind Jump's Elytra and Hit
-// charges. A throw goes at the start of a tick, before its move packet, once the server has its look from the last
+// charges; Auto Gap's Auto pot. A throw goes at the start of a tick, before its move packet, once the server has its look from the last
 // one (asked a tick ahead); a hotbar item is held for it and the slot from before comes back at the start of a later
 // tick, never after a use in the same one; one slot change a tick.
 use super::sunset::{Module, hold, own_id, turn, with};
@@ -14,6 +14,7 @@ use std::sync::Mutex;
 const THROW: &str = "Key Throw";
 const CATCH: &str = "Pearl Catch";
 const WIND: &str = "Wind Jump";
+const GAP: &str = "Auto Gap";
 
 // A pearl leaves at 1.5 blocks a tick, slowed by 0.99 and pulled down 0.03 a tick; a wind charge flies at 1.5.
 const THROW_SPEED: f64 = 1.5;
@@ -24,13 +25,16 @@ const PEARL_GRAVITY: f64 = 0.03;
 pub(super) enum Item {
     Pearl,
     Wind,
+    // A splash potion of healing.
+    HealPot,
 }
 
 impl Item {
-    fn id(self) -> &'static str {
+    fn is(self, s: &horizon_client::items::ItemStack) -> bool {
         match self {
-            Self::Pearl => "ender_pearl",
-            Self::Wind => "wind_charge",
+            Self::Pearl => util::short(&s.item) == "ender_pearl",
+            Self::Wind => util::short(&s.item) == "wind_charge",
+            Self::HealPot => util::short(&s.item) == "splash_potion" && s.potion().is_some_and(|p| util::short(p).ends_with("healing")),
         }
     }
 }
@@ -147,6 +151,7 @@ struct Throws {
     owners: Vec<(u32, u32)>,
     last_pearl: u64,
     last_wind: u64,
+    last_pot: u64,
     // Pearl follow: the pearls looked at, and where to follow one to from which tick.
     followed: Vec<u32>,
     follow: Option<([f64; 3], u64)>,
@@ -228,7 +233,7 @@ fn forward_speed(game: &Game<'_>, yaw: f32) -> f32 {
 
 fn usable(game: &Game<'_>, slot: usize, item: Item) -> bool {
     game.stack_in(slot).is_some_and(|s| {
-        util::short(&s.item) == item.id()
+        item.is(s)
             && s.count > 0
             && !game.res.items().get(&s.item).is_some_and(|i| {
                 game.cooldowns.is_on_cooldown(&horizon_client::cooldowns::group(s, i.use_cooldown.as_ref()))
@@ -237,7 +242,7 @@ fn usable(game: &Game<'_>, slot: usize, item: Item) -> bool {
 }
 
 fn has(game: &Game<'_>, slot: usize, item: Item) -> bool {
-    game.stack_in(slot).is_some_and(|s| util::short(&s.item) == item.id() && s.count > 0)
+    game.stack_in(slot).is_some_and(|s| item.is(s) && s.count > 0)
 }
 
 // Where a throw of `item` comes from: the offhand if it holds one, else the held slot, else the hotbar.
@@ -292,6 +297,7 @@ fn throw_from(game: &mut Game<'_>, owner: &'static str, slot: usize, item: Item,
         match item {
             Item::Pearl => s.last_pearl = now,
             Item::Wind => s.last_wind = now,
+            Item::HealPot => s.last_pot = now,
         }
     });
     Some(true)
@@ -334,7 +340,7 @@ pub(super) fn reset(game: &mut Game<'_>) {
     if let Some(owner) = lease {
         super::sunset_combat_control::release(owner);
     }
-    for owner in [THROW, CATCH, WIND] {
+    for owner in [THROW, CATCH, WIND, GAP] {
         super::sunset::cancel_turns(owner);
     }
     st(|s| {
@@ -562,7 +568,7 @@ pub(super) fn legit_press(game: &mut Game<'_>, m: &Module, item: Item) {
         return;
     }
     match item {
-        Item::Pearl => legit_start(game, m, Item::Pearl, None, false),
+        Item::Pearl | Item::HealPot => legit_start(game, m, item, None, false),
         Item::Wind if m.b("Wind charge along look") => legit_start(game, m, Item::Wind, None, false),
         Item::Wind => {
             let pitch = m.n("Wind charge pitch") as f32 - 1.0 + roll(game, 0.0, 2.0) as f32;
@@ -585,10 +591,11 @@ fn legit_start(game: &mut Game<'_>, m: &Module, item: Item, pitch: Option<f32>, 
 // The start of a tick, before its move packet. `busy`: a hit or a slot change went already this tick.
 pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
     let (throw_m, catch_m, wind_m) = (module(THROW), module(CATCH), module(WIND));
+    let pot_m = module(GAP).filter(|m| m.b("Auto pot"));
     if live(game) {
         track(game);
     }
-    if !live(game) || (throw_m.is_none() && catch_m.is_none() && wind_m.is_none()) {
+    if !live(game) || (throw_m.is_none() && catch_m.is_none() && wind_m.is_none() && pot_m.is_none()) {
         if st(|s| s.back.is_some() || s.lease.is_some() || s.legit.is_some() || s.catch.is_some() || s.single.is_some()) {
             reset(game);
         }
@@ -616,6 +623,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
         single_step(game);
         return;
     }
+    if let Some(m) = &pot_m {
+        auto_pot(game, m);
+    }
     if let Some(m) = throw_m.as_ref().filter(|m| m.b("Pearl follow")) {
         follow(game, m);
     }
@@ -627,6 +637,28 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
             hit_charges(game, m);
         }
     }
+}
+
+// Auto Gap's Auto pot: a splash potion of healing thrown down at Pot pitch (rolled up to a degree under it), 300 ms
+// (6 ticks) apart at least. Auto: at or under Pot health, one from the hotbar (the slot from before back a tick
+// later). While holding: whenever you hold one.
+fn auto_pot(game: &mut Game<'_>, m: &Module) {
+    if game.ticks < st(|s| s.last_pot) + 6 {
+        return;
+    }
+    let ready = match m.p("Pot mode") {
+        "While holding" => has(game, game.selected, Item::HealPot),
+        _ => {
+            let health = game.player.as_ref().map_or(20.0, |p| f64::from(p.health.health()));
+            health <= m.n("Pot health") && (0..9).chain(std::iter::once(OFFHAND)).any(|s| has(game, s, Item::HealPot))
+        }
+    };
+    if !ready {
+        return;
+    }
+    let pitch = m.n("Pot pitch") as f32 - 1.0 + roll(game, 0.0, 1.0) as f32;
+    let at = game.ticks;
+    st(|s| s.single = Some(Single { owner: GAP, item: Item::HealPot, aim: Aim::Pitch(pitch), at, until: at + 10, jump: false, then_wind: false }));
 }
 
 // The jump a throw asked for, in this tick's input.
@@ -735,6 +767,7 @@ fn legit_step(game: &mut Game<'_>, m: &Module) {
                             match l.item {
                                 Item::Pearl => s.last_pearl = now,
                                 Item::Wind => s.last_wind = now,
+                                Item::HealPot => s.last_pot = now,
                             }
                         });
                         if l.item == Item::Pearl {

@@ -3,7 +3,8 @@
 // Hit fix (a hit on a player still in hurt time or off the ground waits until it counts), No miss delay (a sword or axe
 // swing at nothing never goes, so neither the miss delay nor the cooldown reset follow) and Anti action (a sword hit
 // on a raised shield, a second glowstone in an anchor, an ender chest opened with combat gear in hand, glowstone put
-// down off an anchor, a firework fired on foot).
+// down off an anchor, a firework fired on foot) and Ghost place (a block put behind the mob you click instead of a use on
+// it).
 use super::sunset::{self, Module, attack, gui_open, look_at, turn_then, with};
 use super::sunset_util as util;
 use super::Game;
@@ -283,6 +284,31 @@ pub(super) fn use_blocked(game: &Game<'_>) -> bool {
         return true;
     }
     m.b("Open ender chest") && name == "ender_chest" && !sneaking && (combat_gear(game, game.held()) || combat_gear(game, game.offhand.as_ref()))
+}
+
+// Ghost place: your right click on a player or mob (not a friend) with cobweb in hand (any block, with Cobweb only
+// off; the offhand's, with Use offhand and nothing placeable in the main hand) goes to the block behind them along
+// your look instead, as a placement, rather than to them. The hand it places with.
+pub(super) fn ghost_place(game: &Game<'_>) -> Option<horizon_client::first_person::Hand> {
+    use horizon_client::first_person::Hand;
+    let m = module("No Interact").filter(|m| m.b("Ghost place"))?;
+    if !live(game) || game.using.is_some() {
+        return None;
+    }
+    let placeable = |s: Option<&horizon_client::items::ItemStack>| {
+        s.is_some_and(|s| if m.b("Cobweb only") { &*s.item == "minecraft:cobweb" } else { game.res.items().get(&s.item).is_some_and(|i| i.block.is_some()) })
+    };
+    let hand = if placeable(game.held()) {
+        Hand::Main
+    } else if m.b("Use offhand") && placeable(game.offhand.as_ref()) {
+        Hand::Off
+    } else {
+        return None;
+    };
+    let (i, _) = game.mob_hit().filter(|(_, d)| game.before_block(*d))?;
+    let mob = &game.mobs[i];
+    let friend = mob.kind.id == "minecraft:player" && sunset::is_friend(&with(|s| s.friends.clone()), &game.remote_player_names(), mob.id);
+    (mob.kind.id != "minecraft:armor_stand" && !mob.removed && !friend && game.pick().is_some()).then_some(hand)
 }
 
 fn anchor_charged(game: &Game<'_>, p: [i32; 3]) -> bool {

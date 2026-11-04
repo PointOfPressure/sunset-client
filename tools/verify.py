@@ -10161,6 +10161,337 @@ def _():
     return ok, f"accent pixels: one arrow {got['single']}, multishot {got['multishot']}, a flying pearl {pearl}"
 
 
+HEAL_POT = 'splash_potion[potion_contents={potion:"minecraft:healing"}]'
+
+
+@test("Auto Gap (Auto pot)")
+def _():
+    # A sword in hand and four splash potions of healing in slots 6 to 9, health knocked down to 6: with Auto pot a potion
+    # goes at your feet (Pot pitch 70 on the wire), health comes back up, the sword is in hand after, each throw
+    # before its tick's move packet; without it no potion goes.
+    setting("autogap", "auto pot", "true")
+    setting("autogap", "health enabled", "false")
+    got, fine = {}, True
+    for name, mods in (("off", ()), ("on", ("autogap",))):
+        reset()
+        slot(0, "diamond_sword")
+        for i in (5, 6, 7, 8):
+            slot(i, HEAL_POT)
+        ctl("key", "1", "tap")
+        cmd("effect clear @s", "damage @s 14 minecraft:generic")
+        wait(5)
+        low = hp()
+        mark = probe_mark() if probe_path() else None
+        only(*mods)
+        wait(40)
+        only()
+        pitches = [p for _, p in probe_looks(mark)] if mark is not None else []
+        late, doubled, crowded = cart_order(mark) if mark is not None else (0, 0, 0)
+        got[name] = (round(low, 1), round(hp(), 1), items_of("splash_potion"), held().get("item", "").split(":")[-1],
+                     round(max(pitches, default=0), 1), late, doubled, crowded)
+    say(".reset autogap")
+    off, on = got["off"], got["on"]
+    fine = off[2] == 4 and on[2] < 4 and on[1] > on[0] + 2 and "sword" in on[3] and not any(on[5:])
+    fine &= mark is None or 68 <= on[4] <= 71
+    return fine, f"(health before, after, potions left, in hand, lowest look, late, two slot changes, two moves): {got}"
+
+
+@test("Auto Replenish (Inventory open, Key, Potion refill)")
+def _():
+    # Mode Inventory open: three stone in slot 1 and a stack in the main inventory are not touched with no screen
+    # open, and topped up to 64 once the inventory is open. Key: with no screen, topped up only while R is held.
+    # Potion refill: a splash potion of healing in the main inventory goes into the empty hotbar with the screen open.
+    setting("autoreplenish", "mode", "Inventory open")
+    setting("autoreplenish", "threshold", "32")
+    setting("autoreplenish", "delay (ticks)", "2")
+    setting("autoreplenish", "potion refill", "true")
+
+    def setup():
+        reset()
+        cmd("item replace entity @s hotbar.0 with minecraft:stone 3", "item replace entity @s inventory.0 with minecraft:stone 64",
+            f"item replace entity @s inventory.5 with minecraft:{HEAL_POT}")
+        ctl("key", "1", "tap")
+
+    setup()
+    only("autoreplenish")
+    wait(20)
+    closed = held().get("count", 0)
+    ctl("open-inventory")
+    wait(20)
+    inv = ctl("inventory")
+    ctl("close")
+    opened = (inv.get("hotbar") or [{}])[0].get("count", 0) if (inv.get("hotbar") or [None])[0] else 0
+    potion_hotbar = sum(1 for s in (inv.get("hotbar") or []) if s and "splash_potion" in (s.get("item") or ""))
+    only()
+    setting("autoreplenish", "mode", "Key")
+    setting("autoreplenish", "refill key", "R")
+    setup()
+    only("autoreplenish")
+    wait(20)
+    unheld = held().get("count", 0)
+    ctl("key", "r", "down")
+    wait(20)
+    ctl("key", "r", "up")
+    keyed = held().get("count", 0)
+    only()
+    say(".reset autoreplenish")
+    ok = closed == 3 and opened == 64 and potion_hotbar == 1 and unheld == 3 and keyed == 64
+    return ok, (f"Inventory open: {closed} with no screen, {opened} with it open, potions moved to the hotbar {potion_hotbar}; "
+                f"Key: {unheld} before R, {keyed} while held")
+
+
+@test("Inventory Cleaner (Loot key)")
+def _():
+    # Three totems (one a slot) and seven pearl stacks: holding the Loot key G with the inventory open drops totems down
+    # to Keep totems (1) slots, then pearl stacks down to Keep pearl stacks (5); nothing goes without the key.
+    setting("inventorycleaner", "loot key", "G")
+    setting("inventorycleaner", "items", "rotten_flesh")
+    reset()
+    lines = [f"item replace entity @s inventory.{i} with minecraft:totem_of_undying" for i in range(3)]
+    lines += [f"item replace entity @s inventory.{i} with minecraft:ender_pearl 16" for i in range(3, 10)]
+    cmd(*lines)
+    only("inventorycleaner")
+    ctl("open-inventory")
+    wait(20)
+    before = (items_of("totem_of_undying"), items_of("ender_pearl"))
+    ctl("key", "g", "down")
+    wait(40)
+    ctl("key", "g", "up")
+    after = (items_of("totem_of_undying"), items_of("ender_pearl"))
+    ctl("close")
+    only()
+    cmd("kill @e[type=item]")
+    say(".reset inventorycleaner")
+    ok = before == (3, 112) and after == (1, 80)
+    return ok, f"(totems, pearls) before the key {before}, after holding it {after}"
+
+
+@test("Auto Tool (Only below you, From inventory)")
+def _():
+    # A sword held and a pickaxe only in the main inventory: mining the stone under you swaps the pickaxe into your
+    # hand (From inventory), and letting go swaps it back; with Only below you a stone block ahead isn't swapped for.
+    setting("autotool", "only below you", "true")
+    setting("autotool", "from inventory", "true")
+    reset()
+    slot(0, "diamond_sword")
+    cmd("item replace entity @s inventory.4 with minecraft:diamond_pickaxe", f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:stone")
+    ctl("key", "1", "tap")
+    only("autotool")
+    ctl("look-at-block", str(X0), str(Y + 1), str(Z0 + 2))
+    wait(3)
+    ctl("mouse", "left", "down")
+    wait(4)
+    ahead = held().get("item", "")
+    ctl("mouse", "left", "up")
+    wait(5)
+    ctl("look", "0", "90")
+    wait(3)
+    ctl("mouse", "left", "down")
+    wait(4)
+    below = held().get("item", "")
+    ctl("mouse", "left", "up")
+    wait(6)
+    after = held().get("item", "")
+    main = json.dumps(ctl("inventory").get("main") or [])
+    only()
+    cmd(f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:air", f"setblock {X0} {Y} {Z0} minecraft:stone")
+    say(".reset autotool")
+    ok = "sword" in ahead and "pickaxe" in below and "sword" in after and "diamond_pickaxe" in main
+    return ok, f"in hand: mining ahead {ahead}, mining below {below}, after {after}; pickaxe back in the main inventory: {'diamond_pickaxe' in main}"
+
+
+@test("No Interact (Ghost place)")
+def _():
+    # A pig in front of a stone wall, cobweb in hand: a right click on the pig puts the web against the wall behind it
+    # (on the wall's near face) with Ghost place; without it nothing is placed.
+    setting("nointeract", "ghost place", "true")
+    got = {}
+    for name, mods in (("off", ()), ("on", ("nointeract",))):
+        reset()
+        cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 3} {X0 + 1} {Y + 3} {Z0 + 3} minecraft:stone",
+            f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 1.5} {NOAI}")
+        slot(0, "cobweb", 8)
+        ctl("key", "1", "tap")
+        only(*mods)
+        wait(10)
+        # Through the top of the pig (a block short of the wall) to the wall's face.
+        ctl("look-at", str(X0 + 0.5), str(Y + 1.3), str(Z0 + 3.0))
+        wait(3)
+        ctl("mouse", "right", "click")
+        wait(10)
+        only()
+        got[name] = count(X0 - 1, Y + 1, Z0, X0 + 1, Y + 3, Z0 + 2, "cobweb")
+        cmd(f"fill {X0 - 1} {Y + 1} {Z0} {X0 + 1} {Y + 3} {Z0 + 3} minecraft:air")
+    say(".reset nointeract")
+    return got["off"] == 0 and got["on"] == 1, f"cobwebs placed by the pig: {got['off']} without, {got['on']} with Ghost place"
+
+
+@test("No Interact (Anti trap)")
+def _():
+    # An armor stand 2 blocks ahead, a helmet in hand: a right click on the stand puts the helmet on it. With Anti trap
+    # the stand is gone for you (one loaded before: Remove loaded; one summoned after: Drop spawns), so it never gets
+    # it. Anti sign: a sign put down opens no editor.
+    setting("nointeract", "anti trap", "true")
+    got = {}
+    for name, mods, before in (("off", (), True), ("loaded", ("nointeract",), True), ("spawned", ("nointeract",), False)):
+        setting("nointeract", "remove loaded", "true" if name != "spawned" else "false")
+        reset()
+        slot(0, "diamond_helmet")
+        ctl("key", "1", "tap")
+        stand = f"summon armor_stand {X0 + 0.5} {Y + 1} {Z0 + 2.5} {{NoGravity:1b}}"
+        if before:
+            cmd(stand)
+            wait(10)
+        only(*mods)
+        wait(5)
+        if not before:
+            cmd(stand)
+            wait(10)
+        ctl("look-at", str(X0 + 0.5), str(Y + 1.5), str(Z0 + 2.5))
+        wait(3)
+        ctl("mouse", "right", "click")
+        wait(10)
+        got[name] = check("execute if items entity @e[type=armor_stand,limit=1] armor.head minecraft:diamond_helmet")
+        only()
+    reset("creative")
+    slot(0, "oak_sign", 2)
+    only("nointeract")
+    ctl("look", "0", f"{math.degrees(math.atan2(1.62, 2)):.3f}")
+    wait(3)
+    ctl("mouse", "right", "click")
+    wait(10)
+    sign = state().get("screen")
+    ctl("key", "esc", "tap")
+    only()
+    cmd(f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:air")
+    say(".reset nointeract")
+    ok = got["off"] and not got["loaded"] and not got["spawned"] and sign == "playing"
+    return ok, f"the stand took the helmet: {got}; screen after putting a sign down with Anti sign: {sign}"
+
+
+@test("Liquid Filler (Drain)")
+def _():
+    # Bot1 3 blocks away, a bucket in hand: a water source someone else put 2 blocks ahead (in a hole) is scooped (Legit: under the
+    # crosshair; Silent aim: with the camera turned away); water you put down yourself is left. Without an enemy near,
+    # nothing is scooped.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("liquidfiller", "mode", "Drain")
+    got = {}
+    for name, aim, bot in (("legit", "Legit", True), ("silent", "Silent aim", True), ("alone", "Legit", False)):
+        setting("liquidfiller", "drain aim", aim)
+        reset()
+        slot(0, "bucket")
+        ctl("key", "1", "tap")
+        if bot:
+            bot_ready(-3.5, 0)
+        # In a hole in the floor, so it stays one source.
+        cmd(f"setblock {X0} {Y} {Z0 + 2} minecraft:water")
+        ctl("look-at", str(X0 + 0.5), str(Y + 0.8), str(Z0 + 2.5))
+        if aim != "Legit":
+            ctl("look", "90", "0")
+        wait(3)
+        mark = probe_mark() if probe_path() else None
+        only("liquidfiller")
+        wait(20)
+        only()
+        late = cart_order(mark)[0] if mark is not None else 0
+        got[name] = (not check(f"execute if block {X0} {Y} {Z0 + 2} minecraft:water"), held().get("item", "").split(":")[-1], late)
+        cmd(f"setblock {X0} {Y} {Z0 + 2} minecraft:stone")
+        if bot:
+            bot_done()
+    # Your own: placed with a water bucket, Bot1 near, Drain on.
+    reset()
+    slot(0, "water_bucket")
+    ctl("key", "1", "tap")
+    bot_ready(-3.5, 0)
+    setting("liquidfiller", "drain aim", "Legit")
+    only("liquidfiller")
+    wait(10)
+    ctl("look-at", str(X0 + 0.5), str(Y + 0.99), str(Z0 + 2.5))
+    wait(3)
+    ctl("mouse", "right", "click")
+    wait(20)
+    own = check(f"execute if block {X0} {Y + 1} {Z0 + 2} minecraft:water")
+    only()
+    bot_done()
+    cmd(f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:air")
+    say(".reset liquidfiller")
+    ok = got["legit"][0] and got["silent"][0] and not got["alone"][0] and own and not got["legit"][2] and not got["silent"][2]
+    return ok, f"(scooped, in hand, actions after the move): {got}; own water left: {own}"
+
+
+@test("Safe Walk (Sneak)")
+def _():
+    # On a one-block pillar with a deep drop ahead, stone in hand, looking down: walking forward with Mode Sneak sneaks
+    # at the edge and stays up; with Safe Walk off you walk off and fall.
+    setting("safewalk", "mode", "Sneak")
+    got = {}
+    for name, mods in (("off", ()), ("on", ("safewalk",))):
+        cmd(f"setblock {X0} {Y + 5} {Z0} minecraft:stone")
+        reset(y=Y + 6)
+        slot(0, "stone", 16)
+        ctl("key", "1", "tap")
+        ctl("look", "0", "80")
+        only(*mods)
+        wait(5)
+        walk(30)
+        got[name] = round(pos()[1] - (Y + 6), 2)
+        only()
+        cmd(f"setblock {X0} {Y + 5} {Z0} minecraft:air")
+    say(".reset safewalk")
+    return got["off"] < -2 and abs(got["on"]) < 0.2, f"height left after walking forward: {got['off']} off, {got['on']} with Sneak"
+
+
+@test("Parkour (edge distance range)")
+def _():
+    # Edge distance 0.001 to Longest edge distance 0.01, rolled each side each tick: walking off a block edge still
+    # jumps (you end above the floor at some point).
+    setting("parkour", "longest edge distance", "0.01")
+    reset()
+    cmd(f"fill {X0 - 1} {Y} {Z0 + 2} {X0 + 1} {Y} {Z0 + 8} minecraft:air")
+    only("parkour")
+    ctl("key", "w", "down")
+    ys = poll(30, 1, lambda: pos()[1])
+    ctl("key", "w", "up")
+    only()
+    cmd(f"fill {X0 - 1} {Y} {Z0 + 2} {X0 + 1} {Y} {Z0 + 8} minecraft:stone")
+    say(".reset parkour")
+    rose = round(max(ys) - (Y + 1), 2)
+    return rose > 0.5, f"highest above the floor while walking off the edge: {rose}"
+
+
+@test("Chest Swap (Take off)")
+def _():
+    # An iron chestplate worn, an elytra and rockets in the main inventory, Auto jump on: Take off puts the elytra on,
+    # jumps, opens the glide, fires a rocket, and after Fly time puts the chestplate back and turns itself off; each
+    # use before its tick's move packet.
+    setting("chestswap", "mode", "Take off")
+    setting("chestswap", "auto jump", "true")
+    reset()
+    cmd(f"fill {X0-20} {Y} {Z0-20} {X0+20} {Y} {Z0+60} minecraft:stone", f"fill {X0-20} {Y+1} {Z0-20} {X0+20} {Y+40} {Z0+60} minecraft:air",
+        "item replace entity @s armor.chest with minecraft:iron_chestplate", "item replace entity @s inventory.3 with minecraft:elytra",
+        "item replace entity @s inventory.8 with minecraft:firework_rocket 8")
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    ctl("look", "0", "-20")
+    wait(5)
+    mark = probe_mark() if probe_path() else None
+    only("chestswap")
+    states = poll(80, 1, lambda: (state()["player"], json.dumps(ctl("inventory").get("armor") or [])))
+    glided = sum(1 for p, _ in states if p.get("fall_flying"))
+    elytra = any("elytra" in a for _, a in states)
+    off = turned_itself_off("chestswap", "Chest Swap")
+    only()
+    armor = json.dumps(ctl("inventory").get("armor") or [])
+    used = 8 - items_of("firework_rocket")
+    late = cart_order(mark)[0] if mark is not None else 0
+    cmd("item replace entity @s armor.chest with minecraft:air")
+    say(".reset chestswap")
+    ok = elytra and glided > 3 and used == 1 and "iron_chestplate" in armor and off and not late
+    return ok, f"elytra worn {elytra}, ticks gliding {glided}, rockets {used}, chest after {'iron' if 'iron_chestplate' in armor else armor}, off {off}, late {late}"
+
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

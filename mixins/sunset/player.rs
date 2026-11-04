@@ -25,7 +25,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Potions fire resistance", true)
             .bool("Potions absorption", false)
             .bool("Health enabled", true)
-            .num("Health threshold", 20.0, 1.0, 40.0, 1.0),
+            .num("Health threshold", 20.0, 1.0, 40.0, 1.0)
+            .bool("Auto pot", false)
+            .pick("Pot mode", &["Auto", "While holding"])
+            .num("Pot health", 10.0, 1.0, 20.0, 0.5)
+            .num("Pot pitch", 70.0, 50.0, 90.0, 1.0),
         Module::new("Chest Stealer", Player, "Empties containers you open.")
             .num("Items per tick", 3.0, 1.0, 27.0, 1.0)
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0),
@@ -38,7 +42,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Arrows", 64.0, 0.0, 576.0, 16.0)
             .num("Pearls", 16.0, 0.0, 64.0, 1.0)
             .text("Junk", PRESETS[0].5)
-            .num("Delay (ticks)", 1.0, 0.0, 10.0, 1.0),
+            .num("Delay (ticks)", 1.0, 0.0, 10.0, 1.0)
+            .text("Loot key", "None")
+            .num("Keep totems", 1.0, 1.0, 20.0, 1.0)
+            .num("Keep pearl stacks", 5.0, 1.0, 10.0, 1.0),
         Module::new("Fast Use", Player, "Uses items faster.")
             .pick("Mode", &["All", "Some"])
             .pick("List mode", &["Whitelist", "Blacklist"])
@@ -787,7 +794,7 @@ fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
     }
 
     use horizon_client::menu::Input::Throw;
-    if game.screen != Screen::Inventory || game.remote_menu().1 != "inventory" {
+    if game.screen != Screen::Inventory || game.remote_menu().1 != "inventory" || super::sunset_refill::loot(game, m) {
         return;
     }
     if ps(|p| {

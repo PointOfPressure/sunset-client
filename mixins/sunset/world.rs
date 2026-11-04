@@ -43,7 +43,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Rotate", true)
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "pig,cow,sheep,chicken,rabbit"),
-        Module::new("Liquid Filler", World, "Fills water and lava with blocks.")
+        // Fill (Meteor's) puts blocks in liquids; Drain (sunset_drain) takes away an enemy's with a bucket or a web.
+        Module::new("Liquid Filler", World, "Fills water and lava with blocks, or drains an enemy's.")
+            .pick("Mode", &["Fill", "Drain"])
             .pick("Place in", &["Both", "Water", "Lava"])
             .pick("Shape", &["Sphere", "Uniform cube"])
             .num("Place range", 4.5, 1.0, 6.0, 0.5)
@@ -54,7 +56,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Rotate", true)
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Whitelist", "dirt,cobblestone,stone,netherrack,diorite,granite,andesite")
-            .text("Blacklist", ""),
+            .text("Blacklist", "")
+            .pick("Drain aim", &["Legit", "Silent aim"])
+            .bool("Only by cobwebs", false)
+            .bool("Drain swap", false)
+            .bool("Swap back", true)
+            .bool("Fallback to cobweb", true)
+            .num("Silent aim FOV", 180.0, 0.0, 180.0, 5.0),
         Module::new("Spawn Proofer", World, "Blocks mob spawn spots.")
             .num("Place delay", 1.0, 0.0, 10.0, 1.0)
             .num("Place range", 4.5, 1.0, 6.0, 0.5)
@@ -133,7 +141,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     if let Some(m) = get("Bow Aimbot") {
         bow_aimbot(game, m);
     }
-    if let Some(m) = get("Liquid Filler") {
+    if let Some(m) = get("Liquid Filler").filter(|m| m.p("Mode") == "Fill") {
         liquid_filler(game, m);
     }
     if let Some(m) = get("Spawn Proofer") {

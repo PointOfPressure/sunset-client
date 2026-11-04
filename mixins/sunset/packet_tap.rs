@@ -228,6 +228,47 @@ pub fn seen(events: &[super::Event]) {
     }
 }
 
+// No Interact's Anti trap: what it drops as it arrives, as Sunset's tick last told it (kept while told within 250
+// ms): the spawns of these entity types within `range` of `at`, and the sign editor.
+struct Trap {
+    kinds: Vec<i32>,
+    at: [f64; 3],
+    range: f64,
+    sign: bool,
+    told: Instant,
+}
+
+static TRAP: Mutex<Option<Trap>> = Mutex::new(None);
+
+pub fn trap(kinds: Vec<i32>, at: [f64; 3], range: f64, sign: bool) {
+    *TRAP.lock().unwrap_or_else(|e| e.into_inner()) = Some(Trap { kinds, at, range, sign, told: Instant::now() });
+}
+
+pub fn trap_off() {
+    *TRAP.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+pub fn trap_filter(mut events: Vec<super::Event>) -> Vec<super::Event> {
+    let guard = TRAP.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(trap) = guard.as_ref().filter(|t| t.told.elapsed() < Duration::from_millis(250)) else {
+        return events;
+    };
+    events.retain(|event| {
+        let super::Event::Packet(p) = event else {
+            return true;
+        };
+        match &**p {
+            C::OpenSignEditor(_) => !trap.sign,
+            C::AddEntity(a) if trap.kinds.contains(&a.kind) => {
+                let d2: f64 = (0..3).map(|k| (a.position[k] - trap.at[k]).powi(2)).sum();
+                d2 > trap.range * trap.range
+            }
+            _ => true,
+        }
+    });
+    events
+}
+
 pub fn take() -> Vec<C> {
     std::mem::take(&mut *SEEN.lock().unwrap_or_else(|e| e.into_inner()))
 }

@@ -319,7 +319,18 @@ impl Module {
         match self.name {
             // Kill Aura's and Trigger Bot's Shield: its settings with it on.
             "Kill Aura" | "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
+            "Auto Gap" => match name {
+                "Pot mode" | "Pot pitch" => self.b("Auto pot"),
+                "Pot health" => self.b("Auto pot") && self.p("Pot mode") == "Auto",
+                _ => true,
+            },
+            "Auto Replenish" => match name {
+                "Refill key" => self.p("Mode") == "Key",
+                "Healing only" | "Potion delay (ticks)" => self.b("Potion refill"),
+                _ => true,
+            },
             "Inventory Cleaner" => match name {
+                "Keep totems" | "Keep pearl stacks" => self.t("Loot key") != "None",
                 "List mode" | "Items" => self.p("Preset") == "Custom",
                 "Blocks" | "Food" | "Arrows" | "Pearls" | "Junk" => self.p("Preset") != "Custom",
                 _ => true,
@@ -458,11 +469,32 @@ impl Module {
                 "Flick players only" | "Flick needs sprint" | "Flick min angle" | "Flick max angle" | "Flick direction" => self.b("Hit flick"),
                 _ => true,
             },
+            "Liquid Filler" => match name {
+                "Drain aim" | "Only by cobwebs" | "Drain swap" | "Swap back" | "Fallback to cobweb" => self.p("Mode") == "Drain",
+                "Silent aim FOV" => self.p("Mode") == "Drain" && self.p("Drain aim") == "Silent aim",
+                "Shape" | "Place range" | "Walls range" | "Max blocks per tick" | "Sort" | "List mode" | "Whitelist" | "Blacklist" => {
+                    self.p("Mode") == "Fill"
+                }
+                _ => true,
+            },
             "No Interact" => match name {
                 "Hit fix weapons only" | "Hit fix hurt time" | "Hit fix on ground" => self.b("Hit fix"),
                 "Humanize (%)" | "In combat only" => self.b("No miss delay"),
                 "Combat range" => self.b("No miss delay") && self.b("In combat only"),
                 "Double glowstone" | "Open ender chest" | "Place glowstone" | "Ground firework" => self.b("Anti action"),
+                "Cobweb only" | "Use offhand" => self.b("Ghost place"),
+                "Hide armor stands" | "Hide minecarts" | "Hide item frames" | "Hide boats" | "Hide end crystals" | "Trap range"
+                | "Drop spawns" | "Remove loaded" | "Anti sign" => self.b("Anti trap"),
+                _ => true,
+            },
+            "Chest Swap" => match name {
+                "Mode" => true,
+                "Fly time (ms)" => self.p("Mode") == "Take off" && self.b("Auto disable"),
+                "Shortest space cooldown (ms)" | "Longest space cooldown (ms)" => self.p("Mode") == "Take off" && self.b("Firework on space"),
+                _ => self.p("Mode") == "Take off",
+            },
+            "Safe Walk" => match name {
+                "Min pitch" | "Only holding blocks" => self.p("Mode") == "Sneak",
                 _ => true,
             },
             "Step" => match name {
@@ -747,13 +779,18 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Auto Log", Player, "Leaves at low health.")
             .num("Health", 6.0, 1.0, 19.0, 1.0),
         Module::new("Sneak", Movement, "Sneaks for you."),
-        Module::new("Safe Walk", Movement, "Stops you walking off edges."),
+        // Stop holds you on the edge; Sneak sneaks while you hold a block, look down and are over a drop of 3 or more.
+        Module::new("Safe Walk", Movement, "Stops you walking off edges.")
+            .pick("Mode", &["Stop", "Sneak"])
+            .num("Min pitch", 70.0, 0.0, 90.0, 5.0)
+            .bool("Only holding blocks", true),
         Module::new("Fast Climb", Movement, "Climbs faster.")
             .num("Speed", 0.3, 0.1, 1.0, 0.05),
         Module::new("High Jump", Movement, "Jumps higher.")
             .num("Multiplier", 2.0, 1.0, 5.0, 0.5),
         Module::new("Parkour", Movement, "Jumps at block edges.")
             .num("Edge distance", 0.001, 0.001, 0.1, 0.001)
+            .num("Longest edge distance", 0.001, 0.001, 0.1, 0.001)
             .pick("Jump when", &["Last tick", "Early"])
             .bool("Only while sprinting", false)
             .bool("Only when moving forward", false)
@@ -857,10 +894,28 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Long Jump", Movement, "Jumps further.")
             .num("Multiplier", 2.0, 1.5, 5.0, 0.5),
         Module::new("Auto Jump", Movement, "Jumps as you walk."),
-        Module::new("Chest Swap", Movement, "Swaps chestplate and elytra."),
+        // Swap swaps once; Take off (sunset_takeoff) puts the elytra on, takes off with a rocket and swaps back.
+        Module::new("Chest Swap", Movement, "Swaps chestplate and elytra, or takes off with them.")
+            .pick("Mode", &["Swap", "Take off"])
+            .bool("Require land", true)
+            .num("Delay (ticks)", 1.0, 1.0, 6.0, 1.0)
+            .bool("Firework", true)
+            .bool("Auto jump", false)
+            .bool("Auto disable", true)
+            .num("Fly time (ms)", 300.0, 0.0, 1000.0, 50.0)
+            .bool("Firework on space", false)
+            .num("Shortest space cooldown (ms)", 400.0, 0.0, 3000.0, 50.0)
+            .num("Longest space cooldown (ms)", 600.0, 0.0, 3000.0, 50.0),
+        // Silent tops up with no screen open; Inventory open with your inventory screen open, Key while Refill key is
+        // held. Potion refill moves splash potions into empty hotbar slots with the screen open.
         Module::new("Auto Replenish", Player, "Refills hotbar stacks.")
-            .num("Threshold", 8.0, 1.0, 32.0, 1.0)
-            .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0),
+            .pick("Mode", &["Silent", "Inventory open", "Key"])
+            .text("Refill key", "None")
+            .num("Threshold", 8.0, 1.0, 63.0, 1.0)
+            .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0)
+            .bool("Potion refill", false)
+            .bool("Healing only", false)
+            .num("Potion delay (ticks)", 1.0, 0.0, 10.0, 1.0),
         Module::new("Auto Tool", Player, "Switches to the best tool.")
             .pick("Prefer", &["Fortune", "None", "Silk touch"])
             .bool("Silk touch for ender chest", true)
@@ -869,6 +924,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Anti break percentage", 10.0, 1.0, 100.0, 1.0)
             .bool("Switch back", false)
             .num("Switch delay", 0.0, 0.0, 20.0, 1.0)
+            .bool("Only below you", false)
+            .bool("From inventory", false)
             .pick("List mode", &["Blacklist", "Whitelist"])
             .text("Whitelist", "")
             .text("Blacklist", ""),
@@ -1073,6 +1130,8 @@ pub(super) struct State {
     // Hole ESP's finds: where, and what walls them (0 bedrock, 1 obsidian, 2 both).
     holes: Sweep<u8>,
     tool_back: Option<usize>,
+    // Auto Tool's From inventory: the main inventory slot a tool was swapped in from, and the hotbar slot it went to.
+    tool_pulled: Option<(usize, usize)>,
     mc_back: Option<(usize, u32)>,
     nuke: Option<([i32; 3], u32)>,
     // Blocks Nuker just stopped on and the tick to forget them at.
@@ -1164,6 +1223,7 @@ impl State {
             notify: None,
             holes: Sweep::new(),
             tool_back: None,
+            tool_pulled: None,
             mc_back: None,
             nuke: None,
             nuke_skip: Vec::new(),
@@ -2431,6 +2491,8 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     super::sunset_duel::key(game, key, pressed);
     super::sunset_cart::key(game, key, pressed);
     super::sunset_throws::key(game, key, pressed);
+    super::sunset_refill::key(key, pressed);
+    super::sunset_takeoff::key(key, pressed);
     if !pressed {
         with(|s| {
             let held = s.inputs.release(key);
@@ -2579,6 +2641,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_throws::pre_tick(game, hits || game.selected != selected);
     // Anchor Aura's Pearl catch: likewise.
     super::sunset_anchor_catch::pre_tick(game, hits || game.selected != selected);
+    // Liquid Filler's Drain and Chest Swap's Take off: likewise.
+    super::sunset_drain::pre_tick(game, hits || game.selected != selected);
+    super::sunset_takeoff::pre_tick(game, hits || game.selected != selected);
     let mods = snapshot();
     super::sunset_render::pre_tick(game, &mods);
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
@@ -2619,8 +2684,15 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     {
         want.extend(super::sunset_player::afk_keys(game, &m));
     }
+    if let Some(m) = get("Safe Walk").filter(|m| m.on && m.p("Mode") == "Sneak")
+        && playing
+        && edge_sneak(game, &m)
+    {
+        want.push(KeyCode::ShiftLeft);
+    }
     let scaffold_walk = get("Scaffold").is_some_and(|m| m.on && m.p("Mode") == "Normal" && m.b("Safe walk"));
-    horizon_client::motion::sunset_motion::set_safe_walk((on("Safe Walk") || scaffold_walk) && playing);
+    let stop_walk = get("Safe Walk").is_some_and(|m| m.on && m.p("Mode") == "Stop");
+    horizon_client::motion::sunset_motion::set_safe_walk((stop_walk || scaffold_walk) && playing);
     // Snap Tap: of two opposite move keys held, the one pressed last (GUI Move's keys too).
     let snapped = super::sunset_snap_tap::pre_tick(game, get("Snap Tap").filter(|m| m.on));
     // GUI Move: behind a screen the game takes no move keys, so its movement is given the ones held and walks you as
@@ -2689,6 +2761,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_melee::pre_input(game);
     super::sunset_duel::pre_input(game);
     super::sunset_throws::pre_input(game);
+    super::sunset_takeoff::pre_input(game);
 }
 
 // How high Step lets you climb this tick: the setting, or vanilla's 0.6 when
@@ -3057,14 +3130,17 @@ fn module_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Auto Armor").filter(|_| !combat_hand) {
         auto_armor(game, m);
     }
-    if get("Chest Swap").is_some() && !combat_hand {
+    if get("Chest Swap").is_some_and(|m| m.p("Mode") == "Swap") && !combat_hand {
         chest_swap(game);
         if let Some(i) = with(|s| s.find("Chest Swap")) {
             toggle(game, i, false);
         }
     }
     if let Some(m) = get("Auto Replenish").filter(|_| !combat_hand) {
-        auto_replenish(game, m);
+        super::sunset_refill::replenish(game, m);
+        if m.p("Mode") == "Silent" {
+            auto_replenish(game, m);
+        }
     }
     if let Some(m) = get("Bow Spam") {
         bow_spam(game, m);
@@ -3142,6 +3218,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_combat_macros::tick(game, &mods, game.ticks);
     super::sunset_melee::tick(game);
     super::sunset_click_fix::tick(game);
+    super::sunset_anti_trap::tick(game);
     super::sunset_combat_inventory::tick(game, &mods);
     super::sunset_lag::tick(game, &mods);
     super::sunset_pvp_bot::tick(game, &mods);
@@ -3204,11 +3281,24 @@ fn parkour_jump(game: &Game<'_>, m: &Module) -> bool {
         return ahead(game).is_some_and(|(x, y, z)| !solid_at(game, x, y, z));
     }
     let step = Vec3::new(p.position.x - game.previous_position.x, -0.5, p.position.z - game.previous_position.z);
-    let edge = m.n("Edge distance");
-    let under = p.bounds().move_by(step).deflate(Vec3::new(edge, 0.0, edge));
+    // Each side's edge distance rolled between Edge distance and Longest edge distance (the same when they match).
+    let mut rng = super::sunset_rotation::Rng::new(game.ticks.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x51ED);
+    let (lo, hi) = (m.n("Edge distance"), m.n("Longest edge distance").max(m.n("Edge distance")));
+    let mut edge = || lo + rng.next() * (hi - lo);
+    let under = p.bounds().move_by(step).deflate(Vec3::new(edge(), 0.0, edge()));
     horizon_client::collisions::SceneCollisions { world: &game.world, binding: game.collision, subject: None }
         .unobstructed(under)
         .unwrap_or(false)
+}
+
+// Safe Walk's Sneak: a block item in either hand (with Only holding blocks), your look at least Min pitch down, and
+// the block under you and the two below it all air or replaceable, so you are past the edge of what you stand on.
+fn edge_sneak(game: &Game<'_>, m: &Module) -> bool {
+    let block = |s: Option<&horizon_client::items::ItemStack>| s.is_some_and(|s| game.res.items().get(&s.item).is_some_and(|i| i.block.is_some()));
+    if (m.b("Only holding blocks") && !block(game.held()) && !block(game.offhand.as_ref())) || f64::from(game.pitch) < m.n("Min pitch") {
+        return false;
+    }
+    super::sunset_util::block_pos(game).is_some_and(|[x, y, z]| (1..=3).all(|d| super::sunset_util::replaceable(game, [x, y - d, z])))
 }
 
 pub(super) fn ahead(game: &Game<'_>) -> Option<(i32, i32, i32)> {
@@ -3937,10 +4027,21 @@ pub(super) fn auto_replenish(game: &mut Game<'_>, m: &Module) {
 // the attack button is held; back to the old slot after.
 // Auto Tool (Meteor's): while you break a block, the hotbar tool with the best score for it (Meteor's getScore:
 // a tool that is right for the block's drops, by its speed and enchantments), after Switch delay; Switch back when you
-// let go; Anti break lets go of a tool about to break.
+// let go; Anti break lets go of a tool about to break. Only below you: only for the block under you. From inventory:
+// with no better tool in the hotbar, the best in the main inventory swapped into your hand (one swap click), and
+// swapped back when you let go or look off the block.
 pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
     use winit::event::MouseButton;
-    let down = game.native_playing() && (game.physical_buttons.contains(&MouseButton::Left) || game.left) && !gui_open();
+    let below = super::sunset_util::block_pos(game).map(|[x, y, z]| [x, y - 1, z]);
+    let on_block = !m.b("Only below you") || game.pick().is_some_and(|hit| Some(hit.pos) == below);
+    let down = game.native_playing() && (game.physical_buttons.contains(&MouseButton::Left) || game.left) && !gui_open() && on_block;
+    if !down || game.selected != with(|s| s.tool_pulled.map_or(game.selected, |p| p.1)) {
+        if let Some((from, to)) = with(|s| s.tool_pulled.take())
+            && super::sunset::inventory_idle(game)
+        {
+            game.remote_menu_ops(&[(Some(from), to as i32, horizon_client::menu::Input::Swap)]);
+        }
+    }
     if !down {
         let back = with(|s| {
             s.tool_wait = None;
@@ -3979,6 +4080,23 @@ pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
         .filter(|(_, score)| *score >= 0.0)
         .fold(None, |b: Option<(usize, f64)>, (i, v)| if b.is_none_or(|b| v > b.1) { Some((i, v)) } else { b });
     let current = stack(game.selected);
+    let locked = super::sunset_loadouts::locked;
+    let pull = (m.b("From inventory") && with(|s| s.tool_pulled.is_none()) && inventory_idle(game) && !locked(game.selected))
+        .then(|| {
+            let held = tool_score(game, m, current, &block).max(best.map_or(-1.0, |b| b.1));
+            (9..36)
+                .filter(|&i| !locked(i) && allowed(stack(i)))
+                .map(|i| (i, tool_score(game, m, stack(i), &block)))
+                .filter(|&(_, score)| score > held)
+                .fold(None, |b: Option<(usize, f64)>, (i, v)| if b.is_none_or(|b| v > b.1) { Some((i, v)) } else { b })
+        })
+        .flatten();
+    if let Some((from, _)) = pull {
+        let to = game.selected;
+        game.remote_menu_ops(&[(Some(from), to as i32, horizon_client::menu::Input::Swap)]);
+        with(|s| s.tool_pulled = Some((from, to)));
+        return;
+    }
     let switch = best
         .filter(|&(slot, score)| slot != game.selected && (score > tool_score(game, m, current, &block) || tool_spent(game, m, current)))
         .map(|(slot, _)| slot);
@@ -7755,7 +7873,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Wind Jump" => "elytra wind charge elytrawindcharge wind charge aura windchargeaura deflect",
         "Fake Lag" => "fakelag backtrack back track choke lag",
         "Aim Assist" => "silent aim silentaim hit flick hitflick",
-        "No Interact" => "hit fix hitfix no miss delay nomissdelay anti action antiaction",
+        "No Interact" => "hit fix hitfix no miss delay nomissdelay anti action antiaction ghost place ghostplace anti trap antitrap tpa trap sign",
         "Sprint" => "keep sprint keepsprint",
         "W Tap" => "wtap w-tap s tap",
         "Jump Reset" => "auto jump reset jumpreset",
@@ -7764,6 +7882,9 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Base Finder" => "trouser stash base hunting",
         "Stash Finder" => "stash chests base hunting",
         "Mob Gear ESP" => "mob gear player gear",
+        "Chest Swap" => "auto elytra autoelytra elytra take off takeoff firework rocket",
+        "Safe Walk" => "fast bridge fastbridge edge sneak bridge",
+        "Parkour" => "edge jump auto jump edge",
         "Step" => "step up stepup stairs reverse step step down stepdown",
         "ClickGUI" => "dropdown dashboard style gui menu color colour theme accent opacity width dim blur background indent scale size zoom bigger radius corner round",
         "Glide" => "slow fall slowfall",
@@ -7772,8 +7893,12 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Panic" => "disable all off hide",
         "Debug Report" => "debug report bug report clipboard copy log flags anticheat alerts packets",
         "Chest Stealer" => "auto steal autosteal loot",
+        "Liquid Filler" => "auto drain autodrain drain bucket scoop water lava cobweb",
+        "Auto Tool" => "auto pickaxe autopickaxe tool swap pickaxe below",
+        "Auto Gap" => "auto pot autopot splash potion healing pot",
+        "Auto Replenish" => "refill potion refill potionrefill hotbar refill",
+        "Inventory Cleaner" => "inventory cleaner junk drop clean auto loot autoloot loot key",
         "Mine Through Mobs" => "no mining trace nominingtrace",
-        "Inventory Cleaner" => "inventory cleaner junk drop clean",
         "GUI Move" => "inventory move invmove gui walk",
         "Flight" => "fly",
         "Kill Aura" => "aura killaura",

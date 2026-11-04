@@ -25,6 +25,7 @@ fn sunset_send(
     crate::game::sunset_combat_wire::forwarded(game, last);
     crate::game::sunset_cart::sent(game, last);
     crate::game::sunset_render::sent(game, last);
+    crate::game::sunset_drain::sent(game, last);
     match changed {
         None => std::ops::ControlFlow::Continue(()),
         Some(changed) => {

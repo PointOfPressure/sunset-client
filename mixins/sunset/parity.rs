@@ -82,7 +82,20 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Open ender chest", true)
             .bool("Place glowstone", true)
             .bool("Ground firework", true)
-            .bool("Sword on shield", true),
+            .bool("Sword on shield", true)
+            .bool("Ghost place", false)
+            .bool("Cobweb only", true)
+            .bool("Use offhand", false)
+            .bool("Anti trap", false)
+            .bool("Hide armor stands", true)
+            .bool("Hide minecarts", true)
+            .bool("Hide item frames", false)
+            .bool("Hide boats", false)
+            .bool("Hide end crystals", false)
+            .num("Trap range", 128.0, 0.0, 256.0, 8.0)
+            .bool("Drop spawns", true)
+            .bool("Remove loaded", true)
+            .bool("Anti sign", true),
         Module::new("Fake Player", Player, "A copy of you to test modules on.")
             .num("Health", 20.0, 1.0, 100.0, 1.0)
             .bool("Copy inventory", true),
