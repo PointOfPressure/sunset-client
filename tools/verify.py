@@ -11509,6 +11509,444 @@ def _():
     return share > 0.3 and plain < red / 4, f"red share with Custom fog {share:.2f}; red pixels without {plain}"
 
 
+# ---- the plugin API (version 2), through the example plugins (sunset-plugins: hello, afk) and the test plugin
+# (tools/plugcheck), all three staged next to Sunset on the test machine. They answer in chat: the log has it.
+
+def said_after(mark, *lines, settle=4):
+    """Types each line, waits, and gives what Sunset said since mark."""
+    for line in lines:
+        say(line)
+    wait(settle)
+    return sunset_said(mark)
+
+
+def plugcheck_events():
+    """The test plugin's event counts (name: count), the priority order string and its last event line."""
+    mark = log_mark()
+    line = next((l for l in said_after(mark, ".plugcheck events") if l.startswith("plugcheck events")), "")
+    counts = dict((k, int(v)) for k, v in re.findall(r"(\w+)=(\d+)", line))
+    order = re.search(r" order (\S*) last", line)
+    last = line.split(" last ", 1)[1] if " last " in line else ""
+    return counts, (order.group(1) if order else ""), last
+
+
+@test("Plugin API: .plugins and the refused names")
+def _():
+    # .plugins lists each plugin with its version, modules and commands (a failed one with why); the names a plugin
+    # can't have (a module Sunset has, a built-in command, a bad command name, a bad plugin id) were each refused with a
+    # chat line when it loaded; .help lists the plugins' commands.
+    mark = log_mark()
+    said = said_after(mark, ".plugins", ".help")
+    text = " | ".join(said)
+    listed = all(x in text for x in ("hello 0.2.0 - modules: Hello - commands: .hello",
+                                     "afk 0.1.0 - modules: AFK Fisher - commands: .afk",
+                                     "plugcheck 0.1.0 - modules: Plug Check - commands: .plugcheck",
+                                     "plugin API 2"))
+    bad_id = "Bad Id 0.1.0" in text and "OFF: its id" in text
+    helped = ".hello - say Hello's message" in text and ".afk - AFK Fisher" in text and ".plugins - the plugins loaded" in text
+    start = " | ".join(sunset_said(0))
+    refused = ["a module called Kill Aura is already there" in start, "the command .set can't be added: that name is taken" in start,
+               "the command .bad name can't be added: use letters" in start, "Plugin Bad Id is off" in start]
+    # The clash didn't replace Sunset's Kill Aura (still Combat, with its Range).
+    mark = log_mark()
+    ka = said_after(mark, ".settings killaura")
+    kept = any("Range" in l for l in ka)
+    ok = listed and bad_id and helped and all(refused) and kept
+    return ok, f"listed {listed}, bad id shown {bad_id}, .help {helped}, refused at load {refused}, Kill Aura kept {kept}"
+
+
+@test("Plugin API: Hello module, settings and enable/disable")
+def _():
+    # Turned on and off from chat: its on_enable/on_disable lines; with Every 1 s and a new Message (.set, so the
+    # plugin's module takes Sunset's typed settings) the message comes about once a second while on, never while off.
+    mark = log_mark()
+    setting("hello", "message", "Plugin test 123")
+    setting("hello", "every (seconds)", "1")
+    toggle("hello", True)
+    wait(70)
+    on_said = sunset_said(mark)
+    toggle("hello", False)
+    wait(4)
+    mark2 = log_mark()
+    wait(60)
+    off_said = sunset_said(mark2)
+    lines = sum(1 for l in on_said if l == "Plugin test 123")
+    enabled = "Hello is on." in on_said
+    disabled = "Hello is off." in sunset_said(mark)
+    # .reset puts a plugin's module back to what the plugin registered (it once crashed the game).
+    mark = log_mark()
+    shown = " | ".join(said_after(mark, ".reset hello", ".settings hello"))
+    reset_ok = "Hello reset." in shown and "Every (seconds): 10" in shown and "Message: Hello from a plugin" in shown
+    alive = bool(state().get("player"))
+    ok = enabled and disabled and 2 <= lines <= 5 and not any("Plugin test" in l for l in off_said) and reset_ok and alive
+    return ok, (f"on line {enabled}, off line {disabled}, messages in 3.5 s on {lines}, while off {len(off_said)} lines: "
+                f"{off_said[:3]}; .reset {reset_ok} (alive {alive}): {shown[:200]}")
+
+
+@test("Plugin API: Hello command and timers")
+def _():
+    # .hello 3: three lines, a second apart (after()); a bad count: the usage line; .hello 9 is held to 5; .hello 5 then
+    # .panic: the lines still waiting are dropped (Panic stops every plugin's tasks); .hello total counts up and is
+    # kept in the plugin's data folder.
+    setting("hello", "message", "Timer line")
+    mark = log_mark()
+    say(".hello 3")
+    t0 = time.time()
+    got = poll(80, 2, lambda: sum(1 for l in sunset_said(mark) if l == "Timer line"))
+    first_three = next((i for i, n in enumerate(got) if n >= 3), None)
+    three = got[-1]
+    mark = log_mark()
+    bad = said_after(mark, ".hello lots")
+    mark = log_mark()
+    say(".hello 9")
+    wait(120)
+    nine = sum(1 for l in sunset_said(mark) if l == "Timer line")
+    mark = log_mark()
+    say(".hello 5")
+    say(".panic")
+    say(".panic")
+    wait(120)
+    panicked = sum(1 for l in sunset_said(mark) if l == "Timer line")
+    mark = log_mark()
+    tot = said_after(mark, ".hello total", ".hello total")
+    nums = [int(n) for l in tot for n in re.findall(r"ran (\d+) times", l)]
+    data = [os.path.join(r, f) for r, _, fs in os.walk(session_dir()) for f in fs if r.endswith(os.path.join(".horizon-mod-data", "hello")) and f == "total"]
+    kept = open(data[0]).read().strip() if data else None
+    ok = (three == 3 and first_three is not None and first_three >= 15 and any("Use .hello [times]" in l for l in bad)
+          and nine == 5 and panicked <= 1 and len(nums) == 2 and nums[1] == nums[0] + 1 and kept == str(nums[1]))
+    return ok, (f".hello 3: {three} lines (3rd by poll {first_three}, {time.time() - t0:.0f} s); bad count {bad}; .hello 9: {nine}; "
+                f".hello 5 then .panic: {panicked}; totals {nums}, file {kept}")
+
+
+@test("Plugin API: Hello cancels hits, draws HUD and world")
+def _():
+    # Hold back hits (an on_packet_out handler cancelling Attack): a pig clicked three times is never hurt and no
+    # attack goes on the wire; with it off the same clicks hurt it. The HUD and world handlers draw each frame while
+    # their settings are on, and stop when off (counted by the plugin); one screenshot for the eye.
+    def clicks(hold_back):
+        reset()
+        pid = pig()
+        ctl("look-at-entity", str(pid))
+        setting("hello", "hold back hits", hold_back)
+        toggle("hello", True)
+        wait(5)
+        mark = probe_mark() if probe_path() else None
+        for _ in range(3):
+            ctl("mouse", "left", "down")
+            wait(2)
+            ctl("mouse", "left", "up")
+            wait(14)
+        wait(10)
+        m = mobs("pig")
+        attacks = sum(t.count("order attack") for t in probe_ticks(mark)) if mark is not None else None
+        toggle("hello", False)
+        return (m[0]["health"] if m else 0), attacks
+
+    def stats():
+        mark = log_mark()
+        line = next((l for l in said_after(mark, ".hello stats") if l.startswith("hud ")), "")
+        return dict((k, int(v)) for k, v in re.findall(r"(\w+) (\d+)", line))
+
+    s0 = stats()
+    held, held_attacks = clicks("true")
+    s1 = stats()
+    hurt, hurt_attacks = clicks("false")
+    reset()
+    # Looking down, so the block under you is in sight.
+    ctl("look", "0", "70")
+    setting("hello", "box under me", "true")
+    toggle("hello", True)
+    wait(30)
+    s2 = stats()
+    ctl("screenshot", os.path.join(SHOTS, "plugin-hello.png"))
+    setting("hello", "show on hud", "false")
+    setting("hello", "box under me", "false")
+    wait(10)
+    s3 = stats()
+    wait(30)
+    s4 = stats()
+    toggle("hello", False)
+    blocked = s1.get("blocked", 0) - s0.get("blocked", 0)
+    drawing = s2.get("hud", 0) > s1.get("hud", 0) and s2.get("world", 0) > s1.get("world", 0)
+    stopped = s4.get("hud") == s3.get("hud") and s4.get("world") == s3.get("world")
+    ok = held == 10 and blocked >= 3 and hurt < 10 and held_attacks in (0, None) and (hurt_attacks is None or hurt_attacks >= 1) and drawing and stopped
+    return ok, (f"pig health with Hold back hits {held} ({blocked} attacks cancelled, {held_attacks} on the wire), without {hurt} "
+                f"({hurt_attacks} on the wire); drawing {s1} -> {s2}; settings off {s3} -> {s4}")
+
+
+@test("Plugin API: any module's settings and toggles")
+def _():
+    # api::set with a good value, a misspelt module (a suggestion), a misspelt setting (the list), a bad number, a
+    # number past the range (held to its end), a plugin module's switch and a bad choice; api::toggle twice on (no
+    # flip back), off by another spelling, and an unknown module.
+    touched.update(("killaura", "plugcheck"))
+    mark = log_mark()
+    said = said_after(mark, ".plugcheck set", ".plugcheck toggle")
+    text = " | ".join(said)
+    ranges = re.findall(r"plugcheck ok: Range: ([\d.]+)", text)
+    checks = {
+        "set": "plugcheck ok: Range: 4.5" in text,
+        "module": 'plugcheck err: No module called "Kil Aura". Did you mean Kill Aura' in text,
+        "setting": 'Kill Aura has no setting "Rnge". Its settings: ' in text and "Range" in text,
+        "number": re.search(r'"far" is not a value for Kill Aura > Range: give a number from [\d.]+ to [\d.]+', text) is not None,
+        "clamped": len(ranges) == 2 and ranges[0] == "4.5" and 4.5 < float(ranges[1]) < 99,
+        "switch": "plugcheck ok: Flag: ON" in text,
+        "choice": "is not a value for Kill Aura > Rotation mode: give one of:" in text,
+        "read back": re.search(r"plugcheck range Some\([\d.]+\) flag true", text) is not None and "range Some(4.5)" not in text,
+        "on": "plugcheck ok: sprint true" in text and "plugcheck ok: sprint again true" in text,
+        "off": "plugcheck ok: sprint off false" in text,
+        "unknown": 'plugcheck err: No module called "Nope Module"' in text,
+        "count": re.search(r"plugcheck modules (\d{3})", text) is not None,
+    }
+    ok = all(checks.values())
+    return ok, f"{[k for k, v in checks.items() if not v] or 'all'} ok; {text[:600]}"
+
+
+@test("Plugin API: refused sends, a refused replace, and a panicking plugin")
+def _():
+    # api::send refuses a move packet and a held slot change with the fix in the error; say_server refuses 300
+    # characters and sends a short line; a packet turned into a move packet is refused (one move packet a tick). Then
+    # plugcrash's command panics: the game goes on, plugcrash is off (.plugins says why) and its command says so.
+    mark = log_mark()
+    said = said_after(mark, ".plugcheck send", settle=10)
+    text = " | ".join(said)
+    sends = ["plugcheck err: Move packets can't be sent" in text, "plugcheck err: Change the held slot with api::hold" in text,
+             "256 characters at most" in text, "plugcheck ok: said" in text,
+             "a packet can't be replaced by a move packet" in text]
+    mark = log_mark()
+    said = said_after(mark, ".crash", settle=6)
+    alive = bool(state().get("player"))
+    said += said_after(log_mark(), ".plugins", ".crash")
+    text = " | ".join(said)
+    crashed = "Plugin plugcrash is off: its command code panicked: boom from plugcrash" in text or "plugcrash failed" in text
+    listed = "plugcrash 0.1.0 - modules: none - commands: .crash - OFF: its command code panicked: boom from plugcrash" in text
+    refused = ".crash is off: its plugin plugcrash failed" in text
+    ok = all(sends) and alive and crashed and listed and refused
+    return ok, f"send checks {sends}; game alive after the panic {alive}, crash line {crashed}, listed off {listed}, command refused {refused}"
+
+
+@test("Plugin API: events (ticks, toggles, keys, chat, packets, hurt, low health, death, priorities)")
+def _():
+    # The test plugin counts each event from .plugcheck reset: ticks before and after the move (about as many),
+    # HUD and world frames, a toggle (Sprint on), a key, two server chat lines with its marker (Sunset's own line with
+    # it doesn't count), the server's time packets, hurts (with health before and after), low health once per crossing
+    # under 10, a death, no join (a respawn is no reconnect). Priorities: the HIGH tick handler before the LOW one; the
+    # HIGH packet handler cancels "/plugblock" so the LOW one never sees it.
+    cmd("gamerule natural_health_regeneration false")
+    say(".plugcheck reset")
+    wait(40)
+    toggle("sprint", True)
+    ctl("key", "h", "tap")
+    cmd("say plugcheck-chat one", "say plugcheck-chat two", "plugblock now")
+    cmd("damage @s 6")
+    wait(4)
+    _, _, hurt_last = plugcheck_events()
+    cmd("damage @s 6")
+    wait(4)
+    cmd("damage @s 2")
+    wait(4)
+    cmd("effect give @s minecraft:instant_health 1 10 true")
+    wait(6)
+    cmd("damage @s 12")
+    wait(4)
+    cmd("kill @s")
+    wait(10)
+    ensure_alive()
+    wait(10)
+    counts, order, _ = plugcheck_events()
+    cmd("gamerule natural_health_regeneration true")
+    c = counts.get
+    checks = {
+        "ticks": c("tick", 0) >= 40 and abs(c("tick", 0) - c("pretick", 0)) <= 3,
+        "frames": c("hud", 0) > 10 and c("world", 0) > 10,
+        "toggle": c("toggle", 0) >= 1,
+        "key": c("hkey", 0) >= 1,
+        "chat": c("chat", 0) == 2,
+        "packets in": c("settime", 0) >= 1,
+        "hurt": c("hurt", 0) >= 4 and hurt_last == "hurt 14 from 20",
+        "low": c("low", 0) == 2,
+        "death": c("death", 0) == 1,
+        "no join": c("join", 0) == 0,
+        "order": order.startswith("HL"),
+        "cancel": c("blocked", 0) == 1 and c("lowsaw", 0) == 0,
+    }
+    ok = all(checks.values())
+    return ok, f"failed {[k for k, v in checks.items() if not v]}; counts {counts}, order {order}, first hurt {hurt_last!r}"
+
+
+@test("Plugin API: scheduler, data, stop everything, reads and friends")
+def _():
+    # after/every/cancel (an every cancelled from inside itself after 3 runs; a task cancelled before it ran, twice);
+    # save/load (a count on disk, bad keys and Sunset's own id refused); stop_everything: modules off, tasks dropped,
+    # every plugin's on_stop; reads against horizon-ctl's own view; friends added once, then removed.
+    mark = log_mark()
+    say(".plugcheck tasks")
+    wait(60)
+    tasks = sunset_said(mark)
+    mark = log_mark()
+    store = said_after(mark, ".plugcheck store", ".plugcheck store")
+    runs = [int(n) for l in store for n in re.findall(r"plugcheck ok: runs (\d+)", l)]
+    data = [os.path.join(r, f) for r, _, fs in os.walk(session_dir()) for f in fs if r.endswith(os.path.join(".horizon-mod-data", "plugcheck")) and f == "runs"]
+    on_disk = open(data[0]).read().strip() if data else None
+    toggle("fullbright", True)
+    say(".plugcheck reset")
+    mark = log_mark()
+    say(".plugcheck stop")
+    on.clear()
+    wait(40)
+    stop = sunset_said(mark)
+    counts, _, last = plugcheck_events()
+    slot(0, "dirt", 5)
+    slot(3, "cobblestone", 3)
+    pig(3.0)
+    wait(5)
+    mark = log_mark()
+    reads = " ".join(said_after(mark, ".plugcheck reads", ".plugcheck friends"))
+    st = state()["player"]
+    m = re.search(r"plugcheck me (\S+) (\S+) (\S+) hp (\d+)", reads)
+    near = re.search(r"near minecraft:pig ([\d.]+)", reads)
+    t = " | ".join(tasks + store + stop)
+    checks = {
+        "tasks": "plugcheck tasks after 1 every 3 cancel true false" in t and "cancelled task ran" not in t,
+        "store": len(runs) == 2 and runs[1] == runs[0] + 1 and on_disk == str(runs[1]),
+        "store refused": t.count("plugcheck err: save(") == 4 and "plugcheck load Some(" in t and "missing None" in t,
+        "stop": "Stopped everything: plugcheck" in t and "plugcheck tasks left 0 fullbright false" in t and "task after stop ran" not in t
+                and counts.get("stop") == 1 and last == "stop plugcheck",
+        "me": m is not None and all(abs(float(m.group(i + 1)) - st["position"][i]) < 0.2 for i in range(3)) and int(m.group(4)) == round(st["health"]),
+        "reads": all(x in reads for x in ("under stone", "slot0 dirtx5", "count 8", "find Some(0)", "dim minecraft:overworld", "in_world true", "ground true", "slot 0")),
+        "near": near is not None and abs(float(near.group(1)) - 3.0) < 0.6,
+        "friends": "plugcheck friend true once 1 after false" in reads,
+    }
+    ok = all(checks.values())
+    return ok, f"failed {[k for k, v in checks.items() if not v]}; {t[:400]} || {reads[:400]}"
+
+
+def afk_status():
+    mark = log_mark()
+    return " | ".join(said_after(mark, ".afk"))
+
+
+@test("AFK Fisher: starts Auto Fish, stops on danger")
+def _():
+    # No rod in the hotbar (none, or one in the main inventory): it says so and stays off. With a rod: Auto Fish on,
+    # Auto-reconnect on. Health exactly at Leave below health (10) is no danger; one below stops everything (AFK Fisher
+    # and Auto Fish off, the reason kept). Log out is off here (the server test logs out); a death stops it too.
+    cmd("gamerule natural_health_regeneration false")
+    mark = log_mark()
+    # Each .t turns it on; it turns itself off again at once.
+    say(".t afkfisher")
+    wait(4)
+    slot(0, "stone")
+    cmd("item replace entity @s inventory.5 with minecraft:fishing_rod")
+    say(".t afkfisher")
+    wait(4)
+    no_rod = sum(1 for l in sunset_said(mark) if "put a fishing rod in your hotbar first" in l)
+    off_without = "AFK Fisher off" in afk_status()
+    slot(1, "fishing_rod")
+    setting("afkfisher", "log out", "false")
+    mark = log_mark()
+    toggle("afkfisher", True)
+    wait(25)
+    started = " ".join(sunset_said(mark))
+    running = afk_status()
+    cmd("damage @s 10")
+    wait(6)
+    at_line = afk_status()
+    cmd("damage @s 1")
+    wait(6)
+    on.discard("afkfisher")
+    after = afk_status()
+    cmd("effect give @s minecraft:instant_health 1 10 true")
+    wait(5)
+    toggle("afkfisher", True)
+    wait(6)
+    cmd("kill @s")
+    wait(10)
+    on.discard("afkfisher")
+    ensure_alive()
+    died = afk_status()
+    cmd("gamerule natural_health_regeneration true")
+    checks = {
+        "no rod": no_rod == 2 and off_without,
+        "started": "AFK Fisher on: fishing; leaves below 10 health or a player comes within 32 blocks." in started,
+        "running": "AFK Fisher on:" in running and "Auto Fish on" in running and "auto reconnect on" in running,
+        "at the line": "AFK Fisher on:" in at_line,
+        "stopped": "AFK Fisher off" in after and "Auto Fish off" in after and "Last stop: AFK Fisher: health 9 is below 10" in after,
+        "death": "AFK Fisher off" in died and "Last stop: AFK Fisher: you died" in died,
+    }
+    ok = all(checks.values())
+    return ok, f"failed {[k for k, v in checks.items() if not v]}; running: {running}; at 10: {at_line}; at 9: {after}; died: {died}"
+
+
+@test("AFK Fisher: catches fish")
+def _():
+    # A pool in front, a Lure III rod: Auto Fish casts and reels in, AFK Fisher counts the fish (up to 75 s).
+    reset()
+    cmd(f"fill {X0-2} {Y-2} {Z0+2} {X0+2} {Y} {Z0+6} minecraft:water",
+        "item replace entity @s hotbar.0 with minecraft:fishing_rod[enchantments={lure:3}]")
+    ctl("look", "0", "35")
+    toggle("afkfisher", True)
+    caught = 0
+    for _ in range(30):
+        wait(50)
+        m = re.search(r"AFK Fisher on: (\d+) fish", afk_status())
+        caught = int(m.group(1)) if m else -1
+        if caught >= 1:
+            break
+    toggle("afkfisher", False)
+    cmd(f"fill {X0-2} {Y-2} {Z0+2} {X0+2} {Y} {Z0+6} minecraft:stone")
+    return caught >= 1, f"fish counted {caught}"
+
+
+@test("AFK Fisher: logs out on danger, keeps its state over a kick and rejoin")
+def _():
+    # On a server: danger with Log out on leaves the server (on purpose: nothing retried); back in, .afk still has the
+    # reason and the test plugin saw the join. Then a kick: its reason comes to on_disconnect, not retried.
+    if not SERVER:
+        return None, "needs a server"
+    cmd("gamerule natural_health_regeneration false")
+    slot(0, "fishing_rod")
+    say(".plugcheck reset")
+    toggle("afkfisher", True)
+    wait(25)
+    cmd("damage @s 12")
+    wait(30)
+    on.discard("afkfisher")
+    gone = not state().get("player")
+    rejoin("AFK Fisher (danger)")
+    kicks.pop() if kicks and kicks[-1][0] == "AFK Fisher (danger)" else None
+    back = afk_status()
+    counts, _, _ = plugcheck_events()
+    cmd("gamerule natural_health_regeneration true")
+    cmd("kick Tester plugcheck kick")
+    time.sleep(3)
+    rejoin("AFK Fisher (kick)")
+    kicks.pop() if kicks and kicks[-1][0] == "AFK Fisher (kick)" else None
+    kicked = afk_status()
+    ok = (gone and "Last stop: AFK Fisher: health 8 is below 10" in back and counts.get("join", 0) >= 1
+          and "plugcheck kick" in kicked and "not retried" in kicked)
+    return ok, f"left the server {gone}; back: {back}; joins seen {counts.get('join')}; after the kick: {kicked}"
+
+
+@test("AFK Fisher: a player comes near (friends don't count)")
+def _():
+    if not CTL2:
+        return None, "needs Bot1"
+    slot(0, "fishing_rod")
+    setting("afkfisher", "log out", "false")
+    say(".friend add Bot1")
+    toggle("afkfisher", True)
+    cmd("gamemode survival Bot1", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 8.5}")
+    wait(60)
+    friend = afk_status()
+    say(".friend remove Bot1")
+    wait(40)
+    on.discard("afkfisher")
+    stranger = afk_status()
+    ok = "AFK Fisher on:" in friend and "AFK Fisher off" in stranger and re.search(r"Last stop: AFK Fisher: Bot1 came within \d+ blocks", stranger) is not None
+    return ok, f"friend near: {friend}; not a friend: {stranger}"
+
+
 if __name__ == "__main__":
     import signal
     signal.signal(signal.SIGALRM, overran)

@@ -1,0 +1,25 @@
+# A test plugin for tools/verify.py, staged next to Sunset (and the example plugins) on the test machine only (never
+# packed or shipped): it drives the plugin API's edges from chat (.plugcheck <case>) and reports in chat, and a second
+# plugin from the same bundle, plugcrash, panics on .crash.
+[mod]
+id = "plugcheck"
+version = "0.1.0"
+priority = 100
+
+[compatibility]
+horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
+
+[[module]]
+id = "plugin"
+file = "crates/horizon-client/src/game.rs"
+name = "plugcheck_plugin"
+source = "plugin.rs"
+
+[[injection]]
+id = "tick"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_tick"
+helper = "tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]

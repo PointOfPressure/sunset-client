@@ -76,6 +76,7 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 | `.modules`, `.binds` | list the modules, the binds |
 | `.friend add\|remove\|list <name>` | friends are left alone by Kill Aura, Aim Assist and the other targeting modules |
 | `.waypoint add\|remove\|list <name>` | places the Waypoints module shows on screen |
+| `.plugins` | the plugins loaded, with their version, modules and commands |
 | `.vclip <n>`, `.hclip <n>` | move up or down, forward |
 | `.goto <x> <y> <z>`, `.goto stop` | walk there through loaded terrain (up to 128 blocks); a movement key or a menu stops it |
 | `.profile save\|load\|delete <name>`, `.profile list` | keep every module's on/off, settings and keys under a name and bring them back (a PvP set-up, a building one); `.profile load before-load` undoes the last load |
@@ -163,7 +164,10 @@ update Sunset with the installer again.
 
 ## Plugins
 
-Other native mods can add modules to Sunset. The API docs, an example plugin and a pack script are in
+Other native mods can add modules, commands, HUD and world drawing, packet handlers and timers to Sunset: a plugin
+is one small Rust file. Plugin API 2 (Sunset 0.9) reaches everything a built-in module does, including unattended
+(AFK) play: events for hurts, deaths and disconnects, a safe stop, and Horizon's Auto-reconnect. The full reference, a
+template, one-command build scripts and two example plugins (Hello, and AFK Fisher) are in
 [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) (MIT).
 
 ## Building from source

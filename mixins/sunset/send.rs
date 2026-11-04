@@ -18,6 +18,12 @@ fn sunset_send(
         Out::Drop => return std::ops::ControlFlow::Break(()),
         Out::Replace(changed) => Some(changed),
     };
+    // Plugins' packet handlers (the plugin API), after Sunset's own changes.
+    let changed = match crate::game::sunset_api::packet_out(game, changed.as_ref().unwrap_or(packet)) {
+        Out::Pass => changed,
+        Out::Drop => return std::ops::ControlFlow::Break(()),
+        Out::Replace(replaced) => Some(replaced),
+    };
     let last = changed.as_ref().unwrap_or(packet);
     if crate::game::sunset_lag::held(game, last) {
         return std::ops::ControlFlow::Break(());

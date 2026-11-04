@@ -43,6 +43,8 @@ horizon-mixins native mod. Mod id `sunset`; all code is in `mixins/sunset/`. The
 - End of a batch: single player, Horizon's dedicated server, vanilla and Paper.
 - Before a release: the six-server matrix (`docs/test-matrix.md`).
 - `tools/verify.py CTL_PATH [test names...]` runs tests in a headless game through horizon-ctl.
+- The plugin API tests (`Plugin API: ...`, `AFK Fisher: ...`) need `tools/plugcheck` and sunset-plugins'
+  `examples/hello-plugin` and `examples/afk-plugin` staged next to Sunset (mixins/plugcheck, mixins/hello, mixins/afk).
 
 ## Notes from earlier runs
 

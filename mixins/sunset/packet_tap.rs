@@ -151,6 +151,43 @@ mod scan_tests {
 
 static SEEN: Mutex<Vec<C>> = Mutex::new(Vec::new());
 
+// The plugin API's: every packet (once a plugin listens for them, the last 4096 kept) and the connection's joins and
+// ends, read by the game at its next tick and frame.
+pub static PLUGIN_PACKETS: AtomicBool = AtomicBool::new(false);
+static PLUGIN_IN: Mutex<VecDeque<C>> = Mutex::new(VecDeque::new());
+pub enum Connection {
+    Joined,
+    // The reason, and whether the server gave it.
+    Left(String, bool),
+}
+static PLUGIN_CONNECTION: Mutex<Vec<Connection>> = Mutex::new(Vec::new());
+
+pub fn plugin_packets() -> Vec<C> {
+    PLUGIN_IN.lock().unwrap_or_else(|e| e.into_inner()).drain(..).collect()
+}
+
+pub fn plugin_connection() -> Vec<Connection> {
+    std::mem::take(&mut *PLUGIN_CONNECTION.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+fn plugin_seen(event: &super::Event) {
+    match event {
+        super::Event::Joined { .. } => PLUGIN_CONNECTION.lock().unwrap_or_else(|e| e.into_inner()).push(Connection::Joined),
+        super::Event::Disconnected { reason, from_server } => PLUGIN_CONNECTION
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Connection::Left(reason.chars().take(512).collect(), *from_server)),
+        super::Event::Packet(p) if PLUGIN_PACKETS.load(Ordering::Relaxed) => {
+            let mut queue = PLUGIN_IN.lock().unwrap_or_else(|e| e.into_inner());
+            if queue.len() == 4096 {
+                queue.pop_front();
+            }
+            queue.push_back((**p).clone());
+        }
+        _ => {}
+    }
+}
+
 // Debug Report: the server's clock as it came (when, and its game time), for a TPS estimate, and the connections'
 // ends with their reasons.
 static CLOCK: Mutex<VecDeque<(Instant, i64)>> = Mutex::new(VecDeque::new());
@@ -199,6 +236,7 @@ pub fn seen(events: &[super::Event]) {
     for event in events {
         scan_seen(event, scan_active);
         debug_seen(event);
+        plugin_seen(event);
         if let super::Event::Packet(p) = event
             && matches!(
                 **p,

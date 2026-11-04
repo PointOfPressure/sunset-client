@@ -142,7 +142,7 @@ pub(super) struct Setting {
 }
 
 impl Setting {
-    fn shown(&self) -> String {
+    pub(super) fn shown(&self) -> String {
         format!("{}: {}", self.name, self.value_text())
     }
     fn value_text(&self) -> String {
@@ -192,7 +192,7 @@ impl Setting {
         }
     }
     // From text (`.set`, the config): whether it was understood.
-    fn parse(&mut self, text: &str) -> bool {
+    pub(super) fn parse(&mut self, text: &str) -> bool {
         let t = text.trim();
         match &mut self.value {
             Value::Bool(b) => match t.to_ascii_lowercase().as_str() {
@@ -1141,6 +1141,8 @@ pub(super) struct State {
     pub(super) friends: Vec<String>,
     // The config file as read: modules a plugin registers later take their saved settings from it.
     raw: String,
+    // Plugins' modules as they registered them: what .reset and a slider's right click go back to.
+    plugin_defaults: Vec<Module>,
     selection: super::sunset_profiles::Selection,
     // Keys this mod held down for the tick (Auto Walk, Sprint).
     injected: Vec<KeyCode>,
@@ -1260,6 +1262,7 @@ impl State {
             inputs: Inputs::default(),
             friends: Vec::new(),
             raw: String::new(),
+            plugin_defaults: Vec::new(),
             selection: super::sunset_profiles::Selection::default(),
             injected: Vec::new(),
             loaded: false,
@@ -1991,11 +1994,22 @@ pub(super) fn register_module(m: Module) {
         if s.modules.iter().any(|x| x.name == m.name) {
             return;
         }
+        s.plugin_defaults.push(m.clone());
         s.modules.push(m);
         let raw = s.raw.clone();
         s.load_text(&raw);
         sync_flags(s);
     });
+}
+
+// The module at `i` as it starts: Sunset's own defaults, or a plugin's module as the plugin registered it.
+fn fresh_module(s: &State, i: usize) -> Module {
+    let mut built_in = defaults();
+    if i < built_in.len() {
+        return built_in.swap_remove(i);
+    }
+    let name = s.modules[i].name;
+    s.plugin_defaults.iter().find(|m| m.name == name).cloned().unwrap_or_else(|| s.modules[i].clone())
 }
 
 // The modules for one tick or frame. Comparing costs no allocation, so they are copied only when they changed.
@@ -2569,6 +2583,9 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     if !game.native_window() {
         return;
     }
+    if game.native_on(ID) && !HIDDEN.load(Ordering::Relaxed) {
+        super::sunset_api::key(game, key, pressed);
+    }
     if pressed {
         super::agent::sunset_goto::key(game, key);
     }
@@ -2707,6 +2724,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     combat_packets(game, &packets);
     ensure_loaded(game);
+    super::sunset_api::pre_tick(game);
     // The game sends movement later in this tick. A click after that movement trips Grim's PacketOrderO.
     if with(|s| s.module("Chest Swap").is_some_and(|m| m.on && m.p("Mode") == "Swap"))
         && !with(|s| s.is_on("Blink"))
@@ -2931,6 +2949,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     super::sunset_sky::keep_shown(game);
     super::sunset_melee::post_input(game);
     turned(game);
+    super::sunset_api::tick(game);
     module_tick(game);
     end_turns(game);
 }
@@ -6071,6 +6090,7 @@ const HELP: &[(&str, &str)] = &[
     (".debug [chat lines]", "copy a debug report (chat, anticheat flags, the client's state, the last packets sent) to the clipboard, saved in the mod's data folder too"),
     (".scan [plugins|details|channels|commands|status|run] [page]", "show server-reported findings; run optional Extended checks manually"),
     (".auradebug", "why Kill Aura did what it did last, and who has the hand"),
+    (".plugins", "the plugins loaded, their modules and commands"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
     (".vclip <blocks>", "move up or down"),
@@ -6091,7 +6111,8 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
     take_scaffold_rotation(&mut s.scaffold_rotation)
 }
 
-pub(super) fn panic_off(game: &mut Game<'_>) {
+// Every module off (Panic, and the plugin API's stop_everything).
+pub(super) fn all_off(game: &mut Game<'_>) {
     super::sunset_server_scan::disabled();
     super::agent::sunset_goto::cancel(game, "stopped by Panic");
     combat_cleanup(game);
@@ -6110,6 +6131,11 @@ pub(super) fn panic_off(game: &mut Game<'_>) {
     if gui_open() {
         close_gui(game);
     }
+}
+
+pub(super) fn panic_off(game: &mut Game<'_>) {
+    all_off(game);
+    super::sunset_api::stopped(game, "Panic");
     HIDDEN.store(true, Ordering::Relaxed);
 }
 
@@ -6317,6 +6343,9 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
             for (c, d) in HELP {
                 say(game, &format!("{c} - {d}"));
             }
+            for (c, d) in super::sunset_api::help() {
+                say(game, &format!("{c} - {d}"));
+            }
         }
         "menu" | "gui" => {
             // `.menu esp` opens it with that search typed.
@@ -6464,7 +6493,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
             if let Some(i) = module_arg(game, args.get(1)) {
                 let name = with(|s| {
                     s.inputs.take_where(|h| h.module == i);
-                    let fresh = defaults().swap_remove(i);
+                    let fresh = fresh_module(s, i);
                     s.modules[i] = fresh;
                     s.modules[i].name
                 });
@@ -6561,7 +6590,12 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 p.velocity = horizon_core::geometry::Vec3::ZERO;
             }
         }
-        _ => say(game, &format!("Unknown command .{cmd}. Try .help")),
+        "plugins" => super::sunset_api::list(game),
+        _ => {
+            if !super::sunset_api::command(game, &cmd, &args[1..]) {
+                say(game, &format!("Unknown command .{cmd}. Try .help"));
+            }
+        }
     }
 }
 
@@ -6874,6 +6908,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             batch.scale = real * scale;
         }
         world_overlays(game, &cam, &mods, lw, &mut Painter { game, batch: &mut *batch });
+        super::sunset_api::world(game, &cam, &mut Painter { game, batch: &mut *batch }, lw);
         batch.scale = real;
     }
 
@@ -7001,6 +7036,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     if !gui_shapes.is_empty() {
         batch.scale = real * scale;
     }
+    super::sunset_api::hud(game, &mut shapes, [w, h], lw);
     paint(game, batch, &mut shapes, 1.0 / batch.scale);
     *SHAPES.lock().unwrap_or_else(|e| e.into_inner()) = shapes;
     // The GUI goes on top of the rest of the frame too: gui_top paints it last.
@@ -8680,7 +8716,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     changed = slide(s, i, j, r, at.0);
                 } else if number.is_some() {
                     // Right click on a slider: back to its default.
-                    let fresh = defaults().swap_remove(i).settings.swap_remove(j);
+                    let fresh = fresh_module(s, i).settings.swap_remove(j);
                     s.modules[i].settings[j] = fresh;
                     changed = true;
                 } else if let (Value::Text(t), false) = (&s.modules[i].settings[j].value, right) {
