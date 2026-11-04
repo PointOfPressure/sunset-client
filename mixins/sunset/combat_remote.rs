@@ -22,6 +22,11 @@ pub(crate) fn player_mode(game: &crate::game::Game<'_>, id: u32) -> Option<i32> 
     Some(remote.tab_players.get(uuid)?.game_mode)
 }
 
+// The UUID of a player the server told of.
+pub(crate) fn player_uuid(game: &crate::game::Game<'_>, id: u32) -> Option<u128> {
+    game.remote.as_ref()?.level_players.get(&(id as i32)).copied()
+}
+
 // The menu's state id, as the last server packet left it.
 pub(crate) fn container_state(game: &crate::game::Game<'_>) -> Option<i32> {
     Some(game.remote.as_ref()?.state_id)

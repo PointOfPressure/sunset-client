@@ -655,7 +655,7 @@ fn anti_bed(game: &mut Game<'_>, m: &Module, feet: [i32; 3]) {
 }
 
 // Standing in a hole: the four sides and the floor of your block are blocks that do not burn or break by a blast.
-fn in_hole(game: &Game<'_>, feet: [i32; 3]) -> bool {
+pub(super) fn in_hole(game: &Game<'_>, feet: [i32; 3]) -> bool {
     let hard = |p: [i32; 3]| matches!(short(&facts(game, p).name), "obsidian" | "bedrock" | "crying_obsidian" | "netherite_block" | "respawn_anchor" | "ender_chest");
     [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]].iter().all(|d| hard([feet[0] + d[0], feet[1] + d[1], feet[2] + d[2]]))
 }

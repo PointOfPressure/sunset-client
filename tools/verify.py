@@ -8016,13 +8016,14 @@ def _():
                                          f"obsidian) {trapped}/5 times standing {placed['still']}, walking it placed {placed['walking']}")
 
 
-@test("Sword PvP Bot")
+@test("PvP Bot (Sword)")
 def _():
     # Bot1 (20 health, no armour) 8 blocks away, 3 times standing still and 3 times strafing left and right; you have
-    # a diamond sword and Sword PvP Bot on: it has to kill Bot1 within 20 s. After each fight, once it is off, you must
-    # stand still (no key left held).
+    # a diamond sword and PvP Bot on in Sword mode: it has to kill Bot1 within 20 s. After each fight, once it is off,
+    # you must stand still (no key left held).
     if not CTL2:
         return None, "needs a second player"
+    setting("pvpbot", "mode", "Sword")
     won, stuck = {"still": [], "strafing": []}, 0
     for name in ("still", "still", "still", "strafing", "strafing", "strafing"):
         reset()
@@ -8032,7 +8033,7 @@ def _():
         cmd("gamemode survival Bot1", "clear Bot1", "effect clear Bot1", "effect give Bot1 minecraft:instant_health 1 10 true",
             f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 8.5} 180 0")
         wait(10)
-        only("swordpvpbot")
+        only("pvpbot")
         start, dead = time.time(), False
         for step in range(100):
             if name == "strafing" and step % 5 == 0:
@@ -8056,6 +8057,345 @@ def _():
     wins = sum(t is not None for ts in won.values() for t in ts)
     return wins >= 5 and stuck == 0, (f"Bot1 killed {wins}/6 times; seconds per fight (None: alive after 20 s): still {won['still']}, "
                                       f"strafing {won['strafing']}; still moving after it turned off: {stuck}")
+
+
+# The modules PvP Bot's Crystal mode drives.
+BOT_HANDS = ("Crystal Aura", "Anchor Aura", "Offhand", "Auto Gap", "Surround", "Self Trap", "Auto City", "Key Throw")
+
+
+def crystal_bot_arena(dist=7.0, bot_hp=1000, bot_totem=False, kit=True):
+    """Obsidian floor, you in Blast Protection IV, Bot1 `dist` blocks south (healed, no knockback), and a crystal kit
+    in the hotbar: crystals, obsidian, anchors, glowstone, golden apples, pearls, a sword held, totems in the
+    inventory. Crystal mode at its defaults, Learn rivals on."""
+    reset()
+    blast_arena(bot=False)
+    bot_respawned()
+    cmd("gamemode survival Bot1", "clear Bot1", "effect clear Bot1", f"attribute Bot1 minecraft:max_health base set {bot_hp}",
+        "attribute Bot1 minecraft:knockback_resistance base set 1", "attribute Bot1 minecraft:explosion_knockback_resistance base set 1",
+        f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + dist + 0.5} 180 0", "effect give Bot1 minecraft:instant_health 1 28 true")
+    if bot_totem:
+        cmd("item replace entity Bot1 weapon.offhand with minecraft:totem_of_undying")
+    ctl2("release")
+    if kit:
+        for i, (item, n) in enumerate([("end_crystal", 64), ("obsidian", 64), ("respawn_anchor", 16), ("glowstone", 64),
+                                       ("golden_apple", 16), ("ender_pearl", 4)]):
+            slot(i, item, n)
+        for i in range(4):
+            cmd(f"item replace entity @s inventory.{i} with minecraft:totem_of_undying")
+    slot(8, "diamond_sword")
+    ctl("key", "9", "tap")
+    for name, value in (("mode", "Crystal"), ("crystal range", "4.5"), ("use anchors", "true"), ("hole up", "true"),
+                        ("self trap below hp", "12"), ("city", "true"), ("pearl below hp", "8"), ("learn rivals", "true")):
+        setting("pvpbot", name, value)
+    wait(10)
+
+
+def crystal_control():
+    """hand_crystal(), once more after a wait when it reads nothing (Bot1 can still be in its respawn grace)."""
+    control = hand_crystal()
+    if not control:
+        wait(60)
+        control = hand_crystal()
+    return control
+
+
+def rival_files():
+    """The rival history files PvP Bot keeps: {name: text}."""
+    out = {}
+    for r, d, fs in os.walk(os.path.join(session_dir(), "home")):
+        if os.path.basename(r) == "rivals" and "sunset" in r:
+            for f in fs:
+                with open(os.path.join(r, f)) as fh:
+                    out[f] = fh.read()
+    return out
+
+
+def clear_rivals():
+    for r, d, fs in os.walk(os.path.join(session_dir(), "home")):
+        if os.path.basename(r) == "rivals" and "sunset" in r:
+            for f in fs:
+                os.remove(os.path.join(r, f))
+
+
+def saved_config():
+    """Sunset's saved config, {key: value}."""
+    for r, d, fs in os.walk(os.path.join(session_dir(), "home")):
+        if r.endswith(os.path.join(".horizon-mod-data", "sunset")) and "config" in fs:
+            with open(os.path.join(r, "config")) as f:
+                return dict(l.split("=", 1) for l in f.read().splitlines() if "=" in l)
+    return {}
+
+
+def bot_hands_on():
+    return sorted(set(modules_on()) & set(BOT_HANDS))
+
+
+@test("PvP Bot (Crystal)")
+def _():
+    # Bot1 (1000 health) 7 blocks south, you with the crystal kit and PvP Bot on in Crystal mode for 15 s: it walks
+    # into crystal range, its modules are on 2.5 s in, Crystal Aura and Anchor Aura deal damage (where the server
+    # deals another player's blasts any), you live, one move packet a tick at most, and the config saved while it runs has the modules it turned on
+    # saved as off. Off: none of them stays on, no key stays held. Then with Crystal Aura on by hand first: the bot
+    # leaves it on when it goes off.
+    if not CTL2:
+        return None, "needs a second player"
+    reset()
+    blast_arena()
+    control = crystal_control()
+    crystal_bot_arena()
+    mark = probe_mark() if SERVER and probe_path() else None
+    bot0, own0 = bot_health(), own_health()
+    only("pvpbot")
+    closest, cfg, during = 99.0, {}, []
+    for step in range(30):
+        wait(10)
+        b = (ctl2("state").get("player") or {}).get("position")
+        if b:
+            closest = min(closest, flat(pos(), [b["x"], b["y"], b["z"]] if isinstance(b, dict) else b))
+        if step == 5:
+            during = bot_hands_on()
+        if step == 20:
+            cfg = saved_config()
+    dealt = bot0 - bot_health()
+    st = state()
+    alive = st.get("screen") != "dead" and bool(st.get("player"))
+    most = wire_stats(mark)[1] if mark is not None else None
+    only()
+    wait(10)
+    after = bot_hands_on()
+    a = pos()
+    wait(20)
+    still = math.dist(a, pos()) < 0.1
+    # Crystal Aura yours before the bot.
+    ensure_alive()
+    crystal_bot_arena()
+    toggle("crystalaura", True)
+    toggle("pvpbot", True)
+    wait(60)
+    toggle("pvpbot", False)
+    wait(10)
+    kept = is_on("Crystal Aura")
+    only()
+    blast_done()
+    bot_done()
+    saved_off = cfg.get("crystalaura.on") == "false" and cfg.get("offhand.on") == "false" and cfg.get("pvpbot.on") == "true"
+    hit = dealt > 0 or control == 0
+    ok = (hit and closest <= 5.5 and alive and most in (None, 0, 1) and "Crystal Aura" in during and after == []
+          and still and kept and saved_off)
+    return ok, (f"a crystal broken by hand beside Bot1 costs it {control}; Bot1 took {dealt:.0f}, you "
+                f"{own0 - (own_health() if alive else 0):.0f}, alive {alive}; closest {closest:.1f} blocks; on while it ran "
+                f"{during}, after {after}; standing still after {still}; most move packets in a tick {most}; config "
+                f"while running: crystalaura.on={cfg.get('crystalaura.on')} offhand.on={cfg.get('offhand.on')} "
+                f"pvpbot.on={cfg.get('pvpbot.on')}; Crystal Aura on by hand kept on after: {kept}")
+
+
+@test("PvP Bot (Crystal) pops and kill")
+def _():
+    # Bot1 at 20 health, no armour, a totem in its offhand, 5 blocks south: the bot has to pop the totem and kill it
+    # within 20 s; once Bot1 is dead the bot lets go (none of its modules on, no key held) though it stays on, and the
+    # rival history file for Bot1 has the fight and the pop. Then Learn rivals off, another fight: no file changes.
+    if not CTL2:
+        return None, "needs a second player"
+    reset()
+    blast_arena()
+    control = crystal_control()
+    if control == 0:
+        blast_done()
+        bot_done()
+        return None, "the server deals no damage for another player's crystal (Horizon's own)"
+    clear_rivals()
+    crystal_bot_arena(dist=5.0, bot_hp=20, bot_totem=True)
+    only("pvpbot")
+    popped = dead = False
+    took = None
+    start = time.time()
+    for _ in range(100):
+        wait(4)
+        bst = ctl2("state")
+        if bst.get("screen") == "dead" or bot_health() <= 0:
+            dead = True
+            took = round(time.time() - start, 1)
+            break
+        if (ctl2("inventory").get("offhand") or {}).get("item") != "minecraft:totem_of_undying":
+            popped = True
+    wait(30)
+    after = bot_hands_on()
+    a = pos()
+    wait(20)
+    still = math.dist(a, pos()) < 0.1
+    still_on = is_on("PvP Bot")
+    only()
+    wait(10)
+    files = rival_files()
+    record = json.loads(next(iter(files.values()))) if len(files) == 1 else {}
+    # Learn rivals off.
+    setting("pvpbot", "learn rivals", "false")
+    crystal_bot_arena(dist=5.0, bot_hp=1000)
+    setting("pvpbot", "learn rivals", "false")
+    only("pvpbot")
+    wait(100)
+    only()
+    wait(10)
+    unchanged = rival_files() == files
+    setting("pvpbot", "learn rivals", "true")
+    blast_done()
+    bot_done()
+    ok = (popped or dead) and dead and after == [] and still and still_on and record.get("fights", 0) >= 1 \
+        and record.get("pops", 0) >= 1 and unchanged
+    return ok, (f"totem popped {popped or dead}, Bot1 dead {dead} after {took} s; after it died: modules on {after}, "
+                f"standing still {still}, bot still on {still_on}; rival files {len(files)}: {record}; Learn rivals off "
+                f"left them unchanged: {unchanged}")
+
+
+def pearls():
+    """Ender pearls anywhere in the inventory."""
+    return ctl("inventory").get("counts", {}).get("minecraft:ender_pearl", 0)
+
+
+@test("PvP Bot (Crystal) hole, trap and pearl")
+def _():
+    # (1) A hole dug in the floor 2 blocks east, Bot1 4 blocks south: Hole up walks you into it; off, you stay put.
+    # (2) Standing with Self trap below HP at 36 and obsidian: Surround puts obsidian round your feet and Self Trap
+    # over your head; at 0, nothing over your head. (3) 10 health, no totem, pearls, Pearl below HP 12: one pearl thrown
+    # in 7 s, you end farther from Bot1 and alive (it lands clear of walls); with a totem in the inventory no pearl goes.
+    if not CTL2:
+        return None, "needs a second player"
+    out = {}
+    for hole_up in (True, False):
+        crystal_bot_arena(dist=4.0, kit=False)
+        cmd(f"setblock {X0 + 2} {Y} {Z0} minecraft:air")
+        setting("pvpbot", "hole up", str(hole_up).lower())
+        only("pvpbot")
+        wait(80)
+        p = pos()
+        only()
+        out[f"hole {hole_up}"] = [math.floor(p[0]) - X0, math.floor(p[1] + 0.01) - Y, math.floor(p[2]) - Z0]
+    setting("pvpbot", "hole up", "true")
+    for below in (36, 0):
+        crystal_bot_arena(dist=4.0, kit=False)
+        slot(1, "obsidian", 64)
+        setting("pvpbot", "self trap below hp", str(below))
+        only("pvpbot")
+        wait(80)
+        only()
+        f = [math.floor(v) for v in pos()]
+        is_obs = lambda x, y, z: ctl("block", str(x), str(y), str(z)).get("block") == "minecraft:obsidian"
+        sides = sum(is_obs(f[0] + dx, f[1], f[2] + dz) for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+        out[f"trap {below}"] = (sides, is_obs(f[0], f[1] + 2, f[2]))
+        cmd(f"fill {X0-5} {Y+1} {Z0-4} {X0+5} {Y+4} {Z0+8} minecraft:air")
+    setting("pvpbot", "self trap below hp", "12")
+    for totem in (False, True):
+        crystal_bot_arena(dist=4.0, kit=False)
+        slot(5, "ender_pearl", 4)
+        if totem:
+            cmd("item replace entity @s inventory.0 with minecraft:totem_of_undying")
+        cmd("attribute @s minecraft:max_health base set 10")
+        setting("pvpbot", "pearl below hp", "12")
+        wait(10)
+        b0 = ctl2("state").get("player", {}).get("position")
+        d0 = flat(pos(), [b0["x"], b0["y"], b0["z"]] if isinstance(b0, dict) else b0) if b0 else None
+        only("pvpbot")
+        timeline = []
+        for _ in range(10):
+            wait(10)
+            timeline.append(pearls())
+        only()
+        wait(40)
+        out[f"timeline {totem}"] = timeline
+        left = sum(s.get("count", 0) for s in (ctl("inventory").get("hotbar") or []) if s and "ender_pearl" in (s.get("item") or ""))
+        b1 = ctl2("state").get("player", {}).get("position")
+        d1 = flat(pos(), [b1["x"], b1["y"], b1["z"]] if isinstance(b1, dict) else b1) if b1 else None
+        out[f"pearl totem={totem}"] = (left, d0 and round(d0, 1), d1 and round(d1, 1), state().get("screen") != "dead")
+        cmd("attribute @s minecraft:max_health base reset")
+    setting("pvpbot", "pearl below hp", "8")
+    blast_done()
+    bot_done()
+    away = out["pearl totem=False"]
+    ok = (out["hole True"] == [2, 0, 0] and out["hole False"] != [2, 0, 0] and out["trap 36"][0] >= 3
+          and out["trap 36"][1] and not out["trap 0"][1] and away[0] == 3 and away[1] is not None
+          and away[2] is not None and away[2] >= away[1] + 3 and away[3] and out["pearl totem=True"][0] == 4
+          and out["pearl totem=True"][1] is not None and out["pearl totem=True"][1] < 6)
+    return ok, (f"feet after 4 s, Hole up on/off (hole at [2, 0, 0]): {out['hole True']} / {out['hole False']}; obsidian "
+                f"sides and over the head at Self trap 36 / 0: {out['trap 36']} / {out['trap 0']}; pearls left and blocks "
+                f"from Bot1 before/after, no totem: {away} (pearls each 10 ticks {out['timeline False']}), with a totem: "
+                f"{out['pearl totem=True']}")
+
+
+def say2(text):
+    """A line typed into Bot1's chat box (its own Sunset's . commands)."""
+    ctl2("key", "t", "tap")
+    wait(1)
+    ctl2("type", text)
+    ctl2("key", "enter", "tap")
+    wait(1)
+
+
+@test("PvP Bot (Crystal) survives a crystal fight")
+def _():
+    # Bot1 (1000 health, Resistance IV so it lasts) 5 blocks south fights back with its own Crystal Aura; you at 20 health in
+    # Blast Protection IV with 4 totems in the inventory and golden apples, PvP Bot in Crystal mode for 20 s: you are
+    # alive at the end (Offhand re-totems, Auto Gap eats), totems popped counted. Where the server deals no damage for
+    # another player's crystal (Horizon's own, single player) it only checks you are alive.
+    if not CTL2:
+        return None, "needs a second player"
+    reset()
+    blast_arena()
+    control = crystal_control()
+    crystal_bot_arena(dist=5.0)
+    cmd("item replace entity Bot1 hotbar.0 with minecraft:end_crystal 64", "item replace entity Bot1 hotbar.1 with minecraft:obsidian 64",
+        "effect give Bot1 minecraft:resistance 60 3 true")
+    say2(".t crystalaura")
+    only("pvpbot")
+    alive_for, lowest = 0, 99.0
+    for _ in range(40):
+        wait(10)
+        st = state()
+        if st.get("screen") == "dead" or not st.get("player"):
+            break
+        lowest = min(lowest, own_health())
+        alive_for += 0.5
+    only()
+    say2(".t crystalaura")
+    wait(10)
+    used = 64 - ctl2("inventory").get("counts", {}).get("minecraft:end_crystal", 0)
+    bot_alive = ctl2("state").get("screen") != "dead"
+    counts = ctl("inventory").get("counts", {})
+    left = counts.get("minecraft:totem_of_undying", 0)
+    alive = state().get("screen") != "dead"
+    ensure_alive()
+    blast_done()
+    bot_done()
+    return alive and alive_for >= 20, (f"a crystal broken by hand beside Bot1 costs it {control}; alive {alive_for} of 20 s, "
+                                       f"totems left {left} of 4 (popped {4 - left}), lowest health {lowest:.1f}; Bot1 placed {used} crystals, "
+                                       f"alive at the end {bot_alive}")
+
+
+@test("PvP Bot old config converts")
+def _():
+    # A profile from before the Crystal mode, with Sword PvP Bot by its old name: imported and loaded, PvP Bot is on in
+    # Sword mode with its Style.
+    found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
+    if not found:
+        say(".profile list")
+        found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
+    if not found:
+        return False, "no imports folder"
+    with open(os.path.join(found[0], "oldbot.profile"), "w") as f:
+        f.write("sunset-profile=1\nswordpvpbot.on=true\nswordpvpbot.style=Aggressive\nswordpvpbot.fightrange=12\n")
+    say(".profile import oldbot")
+    loaded = said_after(".profile load oldbot")
+    bot = said_after(".settings pvpbot")
+    on = "PvP Bot" in modules_on()
+    say(".menu pvp bot")
+    wait(6)
+    ctl("screenshot", f"{SHOTS}/pvp_bot_menu.png")
+    time.sleep(2)
+    close_menu()
+    say(".profile load before-load")
+    say(".profile delete oldbot")
+    touched.add("pvpbot")
+    ok = any("Loaded" in l for l in loaded) and on and "Mode: Sword" in bot and "Style: Aggressive" in bot and "Fight range: 12" in bot
+    return ok, f"load {loaded[:1]}; on {on}; settings {[l for l in bot if l.split(':')[0] in ('Mode', 'Style', 'Fight range')]}"
 
 
 @test("Key Throw (Hotbar keys)")

@@ -518,6 +518,7 @@ impl Module {
             },
             "Base Finder" => super::sunset_base_finder::visible(self, name),
             "Effects" => super::sunset_effects::visible(self, name),
+            super::sunset_pvp_bot::NAME => super::sunset_pvp_bot::visible(self, name),
             "Atmosphere" => super::sunset_atmosphere::visible(self, name),
             "ESP" => match name {
                 "2D style" | "Health bar" | "2D names" | "2D distance" | "Glow" => self.p("Mode") == "2D box",
@@ -1367,7 +1368,8 @@ impl State {
         let mut out = String::new();
         for (i, m) in self.modules.iter().enumerate() {
             let id = norm(m.name);
-            out.push_str(&format!("{id}.on={}\n", self.inputs.saved_on(i, m.on)));
+            let on = super::sunset_pvp_bot::saved_on(m.name, self.inputs.saved_on(i, m.on));
+            out.push_str(&format!("{id}.on={on}\n"));
             out.push_str(&format!("{id}.key={}\n", m.key.as_deref().unwrap_or("none")));
             for s in &m.settings {
                 out.push_str(&format!("{id}.{}={}\n", norm(s.name), s.stored()));
@@ -1634,7 +1636,7 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
 }
 
 // Modules with new names (0.9): Auto Steal is Chest Stealer, No Mining Trace is Mine Through Mobs.
-const RENAMED: [(&str, &str); 2] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs")];
+const RENAMED: [(&str, &str); 3] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot")];
 
 fn renamed_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let old = |l: &str| RENAMED.iter().find(|(from, _)| l.split_once('.').is_some_and(|(id, _)| id == *from));
@@ -2405,6 +2407,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
     });
     super::sunset_combat_macros::toggled(game, name, on);
     super::sunset_combat_inventory::toggled(game, name);
+    super::sunset_pvp_bot::toggled(name);
     super::sunset_packet_mine::toggled(game, name, on);
     if name == "Friend Guard" {
         super::sunset_melee::reset_friend_feedback();
@@ -7938,6 +7941,7 @@ pub(super) fn dash_search_clear(s: &mut State) {
 pub(super) fn aliases(name: &str) -> &'static str {
     match name {
         "Velocity" => "knockback delay knockbackdelay",
+        "PvP Bot" => "sword pvp bot swordpvpbot crystal pvp bot crystalpvpbot crystal bot crystalbot",
         "Auto Web" => "cobweb placer cobwebplacer web key",
         "Shield" => "auto shield autoshield instant shield instantshield block",
         "Key Throw" => "instant crossbow instantcrossbow key pearl keypearl key wind charge keywindcharge short pearl shortpearl auto short pearl autoshortpearl short wind charge shortwindcharge pearl wind charge pearlwindcharge pearl follow pearlfollow",

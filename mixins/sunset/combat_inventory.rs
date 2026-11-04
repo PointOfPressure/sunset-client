@@ -856,6 +856,11 @@ fn hotbar_key(game: &mut Game<'_>, key: &str) {
     state(|s| s.press = Some(Press { kind, slot: game.selected, tick: game.ticks, from: Some(from) }));
 }
 
+// PvP Bot's escape: a pearl thrown along the look, as Key Throw's pearl key throws it (Key Throw on).
+pub(super) fn throw_pearl(game: &Game<'_>) {
+    state(|s| s.press = Some(Press { kind: Throw::Pearl, slot: game.selected, tick: game.ticks, from: None }));
+}
+
 fn can_use(game: &Game<'_>, item: &ItemStack) -> bool {
     let Some(info) = game.res.items().get(&item.item) else {
         return false;
