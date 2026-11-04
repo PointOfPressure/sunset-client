@@ -42,7 +42,23 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Safe anchor", true)
             .pick("If unguarded", &["Detonate", "Cancel"])
             .bool("Switch back", false)
-            .bool("Protect loot", true),
+            .bool("Protect loot", true)
+            .bool("Pearl catch", false)
+            .num("Scan range", 48.0, 16.0, 96.0, 4.0)
+            .num("Catch min damage", 15.0, 0.0, 40.0, 1.0)
+            .num("Catch max self damage", 10.0, 0.0, 36.0, 0.5)
+            .bool("Anti suicide", true)
+            .bool("Damage tick", true)
+            .bool("Safe cover", true)
+            .pick("Safe block", &["Glowstone", "Obsidian"])
+            .num("Silent aim FOV", 180.0, 0.0, 180.0, 5.0)
+            .bool("Catch swap back", true)
+            .num("Shortest place delay (ms)", 0.0, 0.0, 500.0, 10.0)
+            .num("Longest place delay (ms)", 40.0, 0.0, 500.0, 10.0)
+            .num("Shortest charge delay (ms)", 20.0, 0.0, 500.0, 10.0)
+            .num("Longest charge delay (ms)", 60.0, 0.0, 500.0, 10.0)
+            .num("Shortest detonate delay (ms)", 40.0, 0.0, 500.0, 10.0)
+            .num("Longest detonate delay (ms)", 120.0, 0.0, 500.0, 10.0),
     ]
 }
 

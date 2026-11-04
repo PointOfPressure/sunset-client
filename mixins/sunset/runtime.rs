@@ -335,7 +335,12 @@ impl Module {
                 _ => self.b("Aura") || self.b("Macro"),
             },
             "Anchor Aura" => match name {
-                "Aura" | "Macro" => true,
+                "Aura" | "Macro" | "Pearl catch" => true,
+                "Scan range" | "Catch min damage" | "Catch max self damage" | "Anti suicide" | "Damage tick" | "Safe cover"
+                | "Silent aim FOV" | "Catch swap back" | "Shortest place delay (ms)" | "Longest place delay (ms)"
+                | "Shortest charge delay (ms)" | "Longest charge delay (ms)" | "Shortest detonate delay (ms)"
+                | "Longest detonate delay (ms)" => self.b("Pearl catch"),
+                "Safe block" => self.b("Pearl catch") && self.b("Safe cover"),
                 "Render color" => self.b("Aura") && self.b("Render"),
                 "Min damage" | "Max self damage" | "Render" | "Turn speed" => self.b("Aura"),
                 "Mode" | "Delay" | "Safe anchor" | "Switch back" => self.b("Macro"),
@@ -383,6 +388,26 @@ impl Module {
                 "Horizontal speed" | "Only on ground" | "In water" => self.b("Speed"),
                 "Vertical speed" | "Fall speed" | "Anti fly kick" => self.b("Fly"),
                 "Delay" => self.b("Fly") && self.b("Anti fly kick"),
+                _ => true,
+            },
+            "Key Throw" => match name {
+                "Shortest step delay (ms)" | "Longest step delay (ms)" | "Smoothing" => self.p("Throw mode") == "Legit",
+                "Wind charge pitch" => !self.b("Wind charge along look"),
+                "Shortest hit delay (ms)" | "Longest hit delay (ms)" => self.b("Auto short pearl"),
+                "Thrower range" | "Min landing distance" | "Landing range" | "Max error" | "Shortest follow delay (ms)"
+                | "Longest follow delay (ms)" | "Follow only on ground" => self.b("Pearl follow"),
+                _ => true,
+            },
+            "Pearl Catch" => match name {
+                "Wind charge delay (ms)" => matches!(self.p("Key mode"), "Up" | "Diagonal macro"),
+                "Moving delay (ms)" => self.p("Key mode") == "Up",
+                "Pearl angle" | "Wind charge angle" => self.p("Key mode") == "Fast",
+                "Offhand pearl angle" | "Offhand wind charge angle" => self.p("Key mode") == "Offhand",
+                "Max yaw delta" => self.p("Key mode") == "Diagonal",
+                _ => true,
+            },
+            "Wind Jump" => match name {
+                "Hit reach" | "Max yaw" | "In air only" | "Humanized aim" => self.b("Hit charges"),
                 _ => true,
             },
             "Fast Use" => match name {
@@ -2402,6 +2427,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     super::sunset_combat_inventory::key(game, key, pressed);
     super::sunset_duel::key(game, key, pressed);
     super::sunset_cart::key(game, key, pressed);
+    super::sunset_throws::key(game, key, pressed);
     if !pressed {
         with(|s| {
             let held = s.inputs.release(key);
@@ -2546,6 +2572,10 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_cart::pre_tick(game, hits || game.selected != selected);
     // Shield, Key Throw's Crossbow key and Offhand's Double hand: likewise.
     super::sunset_swap_keys::pre_tick(game, hits || game.selected != selected);
+    // Key Throw's, Pearl Catch's and Wind Jump's throws: likewise.
+    super::sunset_throws::pre_tick(game, hits || game.selected != selected);
+    // Anchor Aura's Pearl catch: likewise.
+    super::sunset_anchor_catch::pre_tick(game, hits || game.selected != selected);
     let mods = snapshot();
     super::sunset_render::pre_tick(game, &mods);
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
@@ -2655,6 +2685,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     });
     super::sunset_melee::pre_input(game);
     super::sunset_duel::pre_input(game);
+    super::sunset_throws::pre_input(game);
 }
 
 // How high Step lets you climb this tick: the setting, or vanilla's 0.6 when
@@ -3117,6 +3148,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_hands::tick(game);
     super::sunset_combat::tick(game, &mods);
     super::sunset_cart::post_tick(game);
+    super::sunset_anchor_catch::post_tick();
     super::sunset_explosive_aura::tick(game, &mods, game.ticks);
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_player::tick(game, &mods);
@@ -5664,6 +5696,7 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
             super::sunset_combat_wire::reset_look();
         }
         super::sunset_combat_inventory::packet(game, packet);
+        super::sunset_throws::packet(game, packet);
         super::recipe_book::sunset_recipes::packet(packet);
         if let C::SetEntityMotion(p) = packet {
             super::sunset_melee::note_velocity(game, p.id, p.velocity);
@@ -5688,6 +5721,8 @@ fn combat_cleanup(game: &mut Game<'_>) {
     super::sunset_crystal_aura::disabled(game);
     super::sunset_anchor_aura::disabled(game);
     super::sunset_cart::reset(game);
+    super::sunset_throws::reset(game);
+    super::sunset_anchor_catch::reset(game);
 }
 
 // turn_then only when no look waits: Crystal Aura, Anchor Aura and the macros switch the hand in `then`, so an ask
@@ -7667,7 +7702,9 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Velocity" => "knockback delay knockbackdelay",
         "Auto Web" => "cobweb placer cobwebplacer web key",
         "Shield" => "auto shield autoshield instant shield instantshield block",
-        "Key Throw" => "instant crossbow instantcrossbow",
+        "Key Throw" => "instant crossbow instantcrossbow key pearl keypearl key wind charge keywindcharge short pearl shortpearl auto short pearl autoshortpearl short wind charge shortwindcharge pearl wind charge pearlwindcharge pearl follow pearlfollow",
+        "Pearl Catch" => "auto pearl catch autopearlcatch fast pearl catch fastpearlcatch diagonal pearl catch diagonalpearlcatch",
+        "Wind Jump" => "elytra wind charge elytrawindcharge wind charge aura windchargeaura deflect",
         "Fake Lag" => "fakelag backtrack back track choke lag",
         "Aim Assist" => "silent aim silentaim hit flick hitflick",
         "No Interact" => "hit fix hitfix no miss delay nomissdelay anti action antiaction",
@@ -7701,7 +7738,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Auto Weapon" => "shield breaker axe mace spear swap lunge best weapon swap hit totem hit instant lunge spear damage",
         "Crystal Aura" => "crystal macro auto hit crystal autohitcrystal auto obby crystal perfect timing",
         "Cart" => "tnt minecart cart pvp auto cart cart aura xbow cart crossbow safe cart cover refill cart refill pearl catch",
-        "Anchor Aura" => "anchor macro double anchor anchor placer anchor exploder safe anchor",
+        "Anchor Aura" => "anchor macro double anchor anchor placer anchor exploder safe anchor anchor pearl catch anchorpearlcatch",
         "Anvil" => "anti anvil self anvil auto anvil",
         "Xray" => "x-ray",
         "Entity Control" => "boat fly boatfly entity speed entity fly horse ride vehicle",

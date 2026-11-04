@@ -10,7 +10,14 @@ use winit::event::MouseButton;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new("Wind Jump", Category::Movement, "Jumps with wind charges.").num("Min pitch", 60.0, 0.0, 90.0, 5.0),
+        Module::new("Wind Jump", Category::Movement, "Jumps and glides up with wind charges, and hits others' away.")
+            .num("Min pitch", 60.0, 0.0, 90.0, 5.0)
+            .bool("Elytra", false)
+            .bool("Hit charges", false)
+            .num("Hit reach", 2.95, 1.0, 3.0, 0.05)
+            .num("Max yaw", 180.0, 0.0, 180.0, 5.0)
+            .bool("In air only", true)
+            .bool("Humanized aim", true),
         Module::new("Hold to Eat", Category::Player, "Eats from a held hotbar key.")
             .bool("Golden apples", true)
             .bool("Any food", false),
@@ -19,7 +26,17 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Auto", true)
             .num("Max delay", 10.0, 1.0, 20.0, 1.0)
             .num("Delay", 2.0, 1.0, 20.0, 1.0)
-            .bool("At feet", false),
+            .bool("At feet", false)
+            .text("Catch key", "None")
+            .pick("Key mode", &["Up", "Fast", "Offhand", "Diagonal", "Diagonal macro"])
+            .num("Wind charge delay (ms)", 120.0, 10.0, 300.0, 10.0)
+            .num("Moving delay (ms)", 80.0, 50.0, 300.0, 10.0)
+            .num("Pearl angle", 48.0, 0.0, 90.0, 1.0)
+            .num("Wind charge angle", 40.0, 0.0, 90.0, 1.0)
+            .num("Offhand pearl angle", 70.0, 0.0, 90.0, 1.0)
+            .num("Offhand wind charge angle", 66.0, 0.0, 90.0, 1.0)
+            .num("Max yaw delta", 180.0, 10.0, 180.0, 5.0)
+            .bool("Swap back", true),
     ]
 }
 

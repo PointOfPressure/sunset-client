@@ -49,13 +49,33 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Double hand on", "anchors,crystals,obsidian,sword,mace")
             .num("Double hand sensitivity", 1.0, 0.5, 1.5, 0.05)
             .num("Reswap delay (ticks)", 1.0, 1.0, 10.0, 1.0),
-        Module::new(THROW, Category::Combat, "Throws a pearl or wind charge on a key.")
+        Module::new(THROW, Category::Combat, "Throws pearls and wind charges on keys, when hit, or after an enemy's pearl.")
             .text("Pearl key", "None")
             .text("Wind charge key", "None")
             .bool("Hotbar keys", false)
             .bool("Lunge spears", true)
             .text("Crossbow key", "None")
-            .bool("Crossbow from inventory", true),
+            .bool("Crossbow from inventory", true)
+            .pick("Throw mode", &["Silent", "Legit"])
+            .num("Shortest step delay (ms)", 10.0, 0.0, 200.0, 5.0)
+            .num("Longest step delay (ms)", 30.0, 0.0, 200.0, 5.0)
+            .num("Smoothing", 0.5, 0.1, 2.0, 0.1)
+            .text("Short pearl key", "None")
+            .num("Short pearl pitch", 70.0, 30.0, 90.0, 1.0)
+            .num("Wind charge pitch", 90.0, 30.0, 90.0, 1.0)
+            .bool("Wind charge along look", false)
+            .bool("Wind charge after pearl", false)
+            .bool("Auto short pearl", false)
+            .num("Shortest hit delay (ms)", 30.0, 0.0, 300.0, 5.0)
+            .num("Longest hit delay (ms)", 70.0, 0.0, 300.0, 5.0)
+            .bool("Pearl follow", false)
+            .num("Thrower range", 50.0, 5.0, 200.0, 1.0)
+            .num("Min landing distance", 8.0, 0.0, 50.0, 1.0)
+            .num("Landing range", 60.0, 5.0, 200.0, 1.0)
+            .num("Max error", 2.0, 0.5, 10.0, 0.5)
+            .num("Shortest follow delay (ms)", 50.0, 0.0, 500.0, 10.0)
+            .num("Longest follow delay (ms)", 100.0, 0.0, 500.0, 10.0)
+            .bool("Follow only on ground", false),
     ]
 }
 
@@ -801,6 +821,11 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     if !edge || !m.on || !alive(game) || game.screen != Screen::Playing {
         return;
     }
+    if m.p("Throw mode") == "Legit" {
+        let item = if pearl { super::sunset_throws::Item::Pearl } else { super::sunset_throws::Item::Wind };
+        super::sunset_throws::legit_press(game, &m, item);
+        return;
+    }
     state(|s| s.press = Some(Press { kind: if pearl { Throw::Pearl } else { Throw::Wind }, slot: game.selected, tick: game.ticks, from: None }));
 }
 
@@ -871,7 +896,7 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
         return false;
     }
     let done = control::finish(THROW);
-    let down = press.from.is_none() && matches!(press.kind, Throw::Wind);
+    let down = press.from.is_none() && matches!(press.kind, Throw::Wind) && !m.b("Wind charge along look");
     if down && game.player.as_ref().is_some_and(|p| p.ground.on_ground) {
         super::sunset_melee::request_jump(THROW);
         return true;
@@ -880,7 +905,7 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
         return false;
     };
     let expected = m.clone();
-    let (yaw, pitch) = (game.yaw, if down { 90.0 } else { game.pitch });
+    let (yaw, pitch) = (game.yaw, if down { m.n("Wind charge pitch") as f32 } else { game.pitch });
     let queued = Instant::now();
     state(|s| s.queued_use = Some((THROW, queued)));
     let accepted = sunset::try_turn_then(THROW, yaw, pitch, move |game| {
@@ -910,6 +935,9 @@ fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
         let sequence = util::sequence(game);
         game.send(S::UseItem(play::UseItem { hand: i32::from(slot == util::OFFHAND), sequence, yaw, pitch }));
         state(|s| s.press = None);
+        if matches!(press.kind, Throw::Pearl) {
+            super::sunset_throws::pearl_thrown(game);
+        }
         if slot != util::OFFHAND && game.selected == slot {
             hold(game, previous);
         }

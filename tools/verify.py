@@ -8198,10 +8198,12 @@ def _():
 def _():
     # A pearl thrown looking 80 degrees up, wind charges in slot 3: the tick the pearl takes you (you move more than
     # 3 blocks in a tick: a blast's push is less), the highest you are in the 100 ticks after the throw, and wind
-    # charges used, without and with Pearl Catch (Auto).
+    # charges used, without and with Pearl Catch (Auto). The air above is cleared first: a server's world keeps what
+    # earlier runs left up there, and a block 21 up caught the plain pearl on Paper.
     got = {}
     for name, mods in (("off", ()), ("on", ("pearlcatch",))):
         reset()
+        cmd(f"fill {X0-6} {Y+1} {Z0-6} {X0+6} {Y+60} {Z0+12} minecraft:air")
         slot(0, "ender_pearl", 4)
         slot(2, "wind_charge", 16)
         ctl("key", "1", "tap")
@@ -9792,6 +9794,324 @@ def _():
     only()
     say(".reset autoweapon")
     return None, f"look at {path}"
+
+
+def items_of(item):
+    return ctl("inventory").get("counts", {}).get(f"minecraft:{item}", 0)
+
+
+def probe_looks(mark):
+    """The looks the move packets carried since `mark`: [(yaw, pitch)]."""
+    return [(float(w[1]), float(w[2])) for t in probe_ticks(mark) for w in (line.split() for line in t) if w[0] == "look"]
+
+
+@test("Key Throw (Short pearl key)")
+def _():
+    # A sword in hand and pearls in slot 5: the Short pearl key throws one down ahead of you (Short pearl pitch 70) and
+    # the sword stays. Silent: the pitch only on the wire (a move packet's look near 70), the slot and the throw before
+    # the tick's move packet. Legit: the camera itself turns down and back, the slot is held and comes back. Each takes
+    # you 0.3 to 6 blocks.
+    got, fine = {}, True
+    for mode in ("Silent", "Legit"):
+        reset()
+        slot(0, "diamond_sword")
+        slot(4, "ender_pearl", 16)
+        ctl("key", "1", "tap")
+        ctl("look", "0", "0")
+        setting("keythrow", "short pearl key", "G")
+        setting("keythrow", "throw mode", mode)
+        only("keythrow")
+        wait(5)
+        a, mark = pos(), probe_mark()
+        ctl("key", "g", "tap")
+        pitches = poll(60, 1, lambda: aim_view()[1])
+        b = pos()
+        only()
+        moved = round(math.dist((a[0], a[2]), (b[0], b[2])), 2)
+        late, doubled, crowded = cart_order(mark)
+        wire = [p for _, p in probe_looks(mark)]
+        down = max(pitches) if mode == "Legit" else max(wire, default=0)
+        got[mode] = (moved, items_of("ender_pearl"), held().get("item", "").split(":")[-1], round(down, 1), round(pitches[-1], 1),
+                     late, doubled, crowded)
+        fine &= 0.3 < moved < 6 and got[mode][1] == 15 and "sword" in got[mode][2] and 68 <= down <= 71.5
+        fine &= abs(pitches[-1]) < 1 and not doubled and not crowded and (mode == "Legit" or not late)
+        fine &= (max(pitches) < 1) if mode == "Silent" else True
+    setting("keythrow", "short pearl key", "None")
+    setting("keythrow", "throw mode", "Silent")
+    return fine, ("(moved, pearls left, in hand, lowest look, camera pitch after, actions after the move, two slot changes "
+                  f"in a tick, two moves): {got}")
+
+
+@test("Key Throw (Auto short pearl)")
+def _():
+    # Pearls in slot 5, a sword held: Bot1 hits you once; with Auto short pearl a pearl goes straight down at your
+    # feet 30 to 70 ms later (one pearl used, the sword in hand after); without it, none.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("keythrow", "auto short pearl", "true")
+    used = {}
+    for name, mods in (("off", ()), ("on", ("keythrow",))):
+        reset()
+        cmd("effect give @s minecraft:resistance 600 3 true")
+        slot(0, "diamond_sword")
+        slot(4, "ender_pearl", 16)
+        ctl("key", "1", "tap")
+        bot_ready(2.5, 180, "give Bot1 minecraft:stick")
+        tester = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
+        only(*mods)
+        wait(5)
+        mark = probe_mark()
+        ctl2("look-at-entity", str(tester))
+        ctl2("mouse", "left", "click")
+        wait(40)
+        only()
+        late, doubled, crowded = cart_order(mark)
+        used[name] = (16 - items_of("ender_pearl"), held().get("item", "").split(":")[-1], late, doubled, crowded)
+    bot_done()
+    setting("keythrow", "auto short pearl", "false")
+    on = used["on"]
+    ok = used["off"][0] == 0 and on[0] == 1 and "sword" in on[1] and not any(on[2:])
+    return ok, f"(pearls thrown, in hand after, actions after the move, two slot changes, two moves): {used}"
+
+
+@test("Key Throw (Wind charge after pearl)")
+def _():
+    # The Pearl key throws a pearl 15 degrees up ahead; with Wind charge after pearl a wind charge goes straight down
+    # the moment the pearl takes you (and you jump), so you go up from where you land; without it, nothing more.
+    got = {}
+    for name, value in (("off", "false"), ("on", "true")):
+        reset()
+        cmd(f"fill {X0-3} {Y} {Z0} {X0+3} {Y} {Z0+30} minecraft:stone", f"fill {X0-3} {Y+1} {Z0} {X0+3} {Y+20} {Z0+30} minecraft:air")
+        slot(0, "diamond_sword")
+        slot(4, "ender_pearl", 16)
+        slot(5, "wind_charge", 16)
+        ctl("key", "1", "tap")
+        ctl("look", "0", "-15")
+        setting("keythrow", "pearl key", "G")
+        setting("keythrow", "wind charge after pearl", value)
+        only("keythrow")
+        wait(5)
+        a = pos()
+        ctl("key", "g", "tap")
+        landed, top = None, None
+        for t in range(120):
+            wait(1)
+            b = pos()
+            if landed is None and math.dist(a, b) > 3:
+                landed, top = b[1], b[1]
+            if landed is not None:
+                top = max(top, b[1])
+            a = b
+        only()
+        got[name] = (16 - items_of("wind_charge"), None if landed is None else round(top - landed, 1))
+    setting("keythrow", "pearl key", "None")
+    setting("keythrow", "wind charge after pearl", "false")
+    ok = got["off"][0] == 0 and got["on"][0] == 1 and (got["on"][1] or 0) > (got["off"][1] or 0) + 1
+    return ok, f"(wind charges used, rise after the pearl took you): off {got['off']}, on {got['on']}"
+
+
+@test("Key Throw (Pearl follow)")
+def _():
+    # Bot1, 10 blocks ahead, throws a pearl off to your right (it lands some 20 blocks from you): with Pearl follow you
+    # throw one of yours after it 50 to 100 ms later and land within 3 blocks of where Bot1 lands; without it you stay.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("keythrow", "pearl follow", "true")
+    got = {}
+    for name, mods in (("off", ()), ("on", ("keythrow",))):
+        reset()
+        cmd(f"fill {X0-4} {Y} {Z0-4} {X0+34} {Y} {Z0+14} minecraft:stone", f"fill {X0-4} {Y+1} {Z0-4} {X0+34} {Y+20} {Z0+14} minecraft:air")
+        slot(0, "diamond_sword")
+        slot(4, "ender_pearl", 16)
+        ctl("key", "1", "tap")
+        bot_ready(10.5, -90, "give Bot1 minecraft:ender_pearl 4")
+        ctl2("select", "1")
+        only(*mods)
+        wait(10)
+        mark = probe_mark()
+        cmd(f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 10.5} -90 -10")
+        wait(5)
+        ctl2("mouse", "right", "down")
+        wait(3)
+        ctl2("mouse", "right", "up")
+        wait(80)
+        only()
+        me = pos()
+        bot = (ctl2("state").get("player") or {}).get("position") or [0, 0, 0]
+        late, doubled, crowded = cart_order(mark)
+        got[name] = (16 - items_of("ender_pearl"), round(math.dist((me[0], me[2]), (bot[0], bot[2])), 1),
+                     round(math.dist((me[0], me[2]), (X0 + 0.5, Z0 + 0.5)), 1), late, doubled, crowded)
+    bot_done()
+    setting("keythrow", "pearl follow", "false")
+    on = got["on"]
+    ok = got["off"][0] == 0 and on[0] == 1 and on[1] <= 3 and on[2] > 8 and not any(on[3:])
+    return ok, f"(pearls thrown, from Bot1 after, from the start, actions after the move, two slot changes, two moves): {got}"
+
+
+@test("Pearl Catch (Catch key)")
+def _():
+    # The Catch key in each Key mode, a sword held, pearls in slot 5 and wind charges in slot 6, looking 30 degrees up
+    # (60 for the Diagonal ones): one pearl and one wind charge go, the sword is in hand after, the pearl takes you (a
+    # move of more than 3 blocks in a tick; Diagonal macro's fixed delay along your look need not catch it), all of it
+    # before the ticks' move packets and one slot change a tick.
+    setting("pearlcatch", "catch key", "G")
+    got, fine = {}, True
+    for mode in ("Up", "Fast", "Offhand", "Diagonal", "Diagonal macro"):
+        reset()
+        cmd(f"fill {X0-6} {Y} {Z0-6} {X0+6} {Y} {Z0+40} minecraft:stone", f"fill {X0-6} {Y+1} {Z0-6} {X0+6} {Y+60} {Z0+40} minecraft:air")
+        slot(0, "diamond_sword")
+        slot(4, "ender_pearl", 16)
+        slot(5, "wind_charge", 16)
+        cmd("item replace entity @s weapon.offhand with minecraft:shield")
+        ctl("key", "1", "tap")
+        ctl("look", "0", "-60" if mode.startswith("Diagonal") else "-30")
+        setting("pearlcatch", "key mode", mode)
+        only("pearlcatch")
+        wait(5)
+        a, ground, mark = pos(), pos()[1], probe_mark()
+        ctl("key", "g", "tap")
+        took, top = None, ground
+        for t in range(100):
+            wait(1)
+            b = pos()
+            if took is None and math.dist(a, b) > 3:
+                took = t
+            top, a = max(top, b[1]), b
+        only()
+        late, doubled, crowded = cart_order(mark)
+        off = (ctl("inventory").get("offhand") or {}).get("item") or ""
+        got[mode] = (16 - items_of("ender_pearl"), 16 - items_of("wind_charge"), (held().get("item") or "").split(":")[-1], took,
+                     round(top - ground, 1), off.split(":")[-1], late, doubled, crowded)
+        fine &= got[mode][:2] == (1, 1) and "sword" in got[mode][2] and "shield" in off
+        fine &= took is not None or mode == "Diagonal macro"
+        fine &= not late and not doubled and not crowded
+        cmd("effect give @s minecraft:instant_health 1 10 true")
+    setting("pearlcatch", "catch key", "None")
+    setting("pearlcatch", "key mode", "Up")
+    return fine, ("(pearls, wind charges used, in hand, tick the pearl took you, highest, offhand after, actions after "
+                  f"the move, two slot changes, two moves): {got}")
+
+
+@test("Wind Jump (Elytra)")
+def _():
+    # An elytra in slot 2 and wind charges in slot 3, wearing nothing: Wind Jump's Elytra puts the elytra on, jumps,
+    # opens it in the air, and throws a wind charge down as the glide nears the ground: in 200 ticks the elytra is worn,
+    # you glided, and charges went (each before its tick's move packet).
+    reset()
+    cmd(f"fill {X0-20} {Y} {Z0-20} {X0+20} {Y} {Z0+60} minecraft:stone", f"fill {X0-20} {Y+1} {Z0-20} {X0+20} {Y+40} {Z0+60} minecraft:air")
+    slot(0, "diamond_sword")
+    slot(1, "elytra")
+    slot(2, "wind_charge", 64)
+    ctl("key", "1", "tap")
+    ctl("look", "0", "0")
+    setting("windjump", "elytra", "true")
+    only("windjump")
+    mark, ground = probe_mark(), pos()[1]
+    states = poll(200, 1, lambda: state()["player"])
+    only()
+    setting("windjump", "elytra", "false")
+    chest = (ctl("inventory").get("armor") or [None, None, None, None])
+    worn = "elytra" in json.dumps(chest)
+    glided = sum(1 for p in states if p.get("fall_flying"))
+    top = round(max(p["position"][1] for p in states) - ground, 1)
+    used = 64 - items_of("wind_charge")
+    late, doubled, crowded = cart_order(mark)
+    cmd("item replace entity @s armor.chest with minecraft:air")
+    ok = worn and glided > 5 and used >= 1 and not late and not doubled and not crowded
+    return ok, (f"elytra worn {worn}, ticks gliding {glided}, wind charges {used}, highest {top}; actions after the move "
+                f"{late}, two slot changes {doubled}, two moves {crowded}")
+
+
+@test("Wind Jump (Hit charges)")
+def _():
+    # Bot1, 10 blocks ahead, throws wind charges at you: with Hit charges (In air only off) you hit them (an attack
+    # with the server's look on the charge, before the tick's move packet); without it, no attack.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("windjump", "hit charges", "true")
+    setting("windjump", "in air only", "false")
+    got = {}
+    for name, mods in (("off", ()), ("on", ("windjump",))):
+        reset()
+        cmd("effect give @s minecraft:resistance 600 3 true")
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        bot_ready(10.5, 180, "give Bot1 minecraft:wind_charge 16")
+        ctl2("select", "1")
+        tester = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
+        only(*mods)
+        wait(5)
+        mark = probe_mark()
+        for _ in range(3):
+            ctl2("look-at-entity", str(tester))
+            ctl2("mouse", "right", "down")
+            wait(2)
+            ctl2("mouse", "right", "up")
+            wait(25)
+        only()
+        hits = sum(t.count("order attack") for t in probe_ticks(mark))
+        late, doubled, crowded = cart_order(mark)
+        got[name] = (hits, late, doubled, crowded)
+        # Charges knocked away fly on: one would catch the next test's pearl.
+        cmd("kill @e[type=minecraft:wind_charge]")
+    bot_done()
+    setting("windjump", "hit charges", "false")
+    setting("windjump", "in air only", "true")
+    ok = got["off"][0] == 0 and got["on"][0] >= 1 and not any(got["on"][1:])
+    return ok, f"(attacks sent, actions after the move, two slot changes, two moves): off {got['off']}, on {got['on']}"
+
+
+@test("Anchor Aura (Pearl catch)")
+def _():
+    # Bot1, 30 blocks ahead, throws a pearl toward you (it lands about 4 blocks ahead): Pearl catch puts an anchor by
+    # the landing just before it, charges it and sets it off once Bot1 is there; Bot1 loses more than the pearl's 5.
+    # You hold anchors, glowstone and a totem, with Resistance IV and 100 health. Aura is off.
+    if not CTL2:
+        return None, "needs a second player"
+    reset()
+    setting("anchoraura", "aura", "false")
+    setting("anchoraura", "pearl catch", "true")
+    setting("anchoraura", "catch min damage", "4")
+    setting("anchoraura", "catch max self damage", "30")
+    cmd("difficulty normal", "attribute @s minecraft:max_health base set 100", "effect give @s minecraft:instant_health 1 28 true",
+        "effect give @s minecraft:resistance 120 3 true")
+    slot(0, "totem_of_undying")
+    slot(1, "respawn_anchor", 8)
+    slot(2, "glowstone", 16)
+    slot(3, "obsidian", 16)
+    ctl("key", "1", "tap")
+    bot_respawned()
+    cmd("gamemode survival Bot1", "clear Bot1", "effect clear Bot1", "attribute Bot1 minecraft:max_health base set 100",
+        "effect give Bot1 minecraft:instant_health 1 28 true",
+        f"fill {X0-1} {Y} {Z0+29} {X0+1} {Y} {Z0+31} minecraft:stone", f"fill {X0-1} {Y+1} {Z0+29} {X0+1} {Y+3} {Z0+31} minecraft:air",
+        f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 30.5} 180 -10", "give Bot1 minecraft:ender_pearl 4")
+    wait(20)
+    ctl2("select", "1")
+    wait(5)
+    before, mark = bot_health(), probe_mark()
+    only("anchoraura")
+    wait(5)
+    ctl2("mouse", "right", "down")
+    wait(3)
+    ctl2("mouse", "right", "up")
+    anchors = 0
+    for _ in range(40):
+        anchors = max(anchors, count(X0 - 4, Y - 1, Z0, X0 + 4, Y + 3, Z0 + 10, "respawn_anchor"))
+        wait(1)
+    wait(20)
+    lost = round(before - bot_health(), 1)
+    used = 8 - items_of("respawn_anchor")
+    late, doubled, crowded = cart_order(mark)
+    only()
+    bot_done()
+    blast_done()
+    for name in ("aura",):
+        setting("anchoraura", name, "true")
+    setting("anchoraura", "pearl catch", "false")
+    hurt = lost > 5 or not SERVER
+    ok = used >= 1 and hurt and not late and not doubled and not crowded
+    return ok, (f"anchors used {used}, seen {anchors}; Bot1 lost {lost} (5 of it the pearl's); actions after the move "
+                f"{late}, two slot changes {doubled}, two moves {crowded}")
 
 
 if __name__ == "__main__":

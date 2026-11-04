@@ -1324,31 +1324,7 @@ fn auto_hit(game: &mut Game<'_>, m: &Module) -> bool {
 
 // An enemy pearl's flight: where it first meets a block and in how many ticks.
 fn pearl_path(game: &Game<'_>, id: u32) -> Option<([f64; 3], u32)> {
-    let p = game.creatures.projectiles.iter().find(|p| p.id == id && !p.stuck)?;
-    let mut pos = [p.position.x, p.position.y, p.position.z];
-    let mut v = [p.velocity.x, p.velocity.y, p.velocity.z];
-    for tick in 1..=200 {
-        let next = add(pos, v);
-        if let Some(hit) = segment_hit(game, pos, next) {
-            let at = game
-                .clip_ray(
-                    pos,
-                    {
-                        let d = util::dist(pos, next).max(1e-9);
-                        [0, 1, 2].map(|k| (next[k] - pos[k]) / d)
-                    },
-                    util::dist(pos, next),
-                )
-                .map_or(centre(hit), |h| h.point);
-            return Some((at, tick));
-        }
-        pos = next;
-        v = [v[0] * 0.99, v[1] * 0.99 - 0.03, v[2] * 0.99];
-        if pos[1] < -65.0 {
-            break;
-        }
-    }
-    None
+    super::sunset_throws::pearl_landing(game, id, 200).map(|f| (f.land, f.ticks))
 }
 
 fn pearl_eta(game: &Game<'_>, id: u32) -> Option<u32> {
