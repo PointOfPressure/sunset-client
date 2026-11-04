@@ -17,7 +17,13 @@
 // - movement correction: the tick's move goes by the look the server is told (Strict), with the move keys turned
 //   first to the ones that walk your way at that look (Silent), so the PlayerInput the server is sent, the look and
 //   the move all agree.
-// Written fresh against GrimAC's and NoCheatPlus's place checks. A block the server takes back is retried; a cell taken back twice waits two seconds.
+// The edge without sneaking: a side can be clicked only once the eyes are past it (the server's PositionPlace), and
+// stepping off a block drops you only in the move after (the move collides down first), so the click goes in the
+// first tick or two past the edge. Strict's look is aimed one move ahead, from the step this tick's move will take
+// (the speed kept plus the push your keys gave the last move), turned toward the edge some ticks before you get there,
+// and on the last tick before a fall Late click clicks with the look this tick's move packet carries.
+// Written fresh against GrimAC's and NoCheatPlus's place checks. A block the server takes back is retried; a cell taken
+// back twice waits two seconds.
 use super::Game;
 use super::sunset::{Module, legit_sneak, look_at, move_input, scaffold_slot};
 use super::sunset_rotation::{Rng, degrees_per_count, direction, step, whole_counts};
@@ -34,6 +40,10 @@ const MAX_CELLS: usize = 12;
 const MAX_RAYS: usize = 24;
 // Ticks with nothing to place before the look goes back to your camera while Scaffold stays on.
 const IDLE_TICKS: u32 = 15;
+// How many moves ahead the look starts turning toward an edge you walk to.
+const AHEAD_TICKS: u32 = 6;
+// Half a player's width, a hair in, for what a player stands on.
+const HALF_WIDTH: f64 = 0.299;
 // A predicted block is watched this long for the server taking it back.
 const WATCH_TICKS: u64 = 20;
 // A cell whose block was taken back (or refused) this many times waits this long.
@@ -133,6 +143,7 @@ struct Stats {
     refused: u64,
     taken_back: u64,
     cooled: u64,
+    late: u64,
     state: &'static str,
 }
 
@@ -157,6 +168,8 @@ struct Normal {
     air: u32,
     // Same Y: the row the blocks go in.
     row: Option<i32>,
+    // The last tick's position and kept speed, for the step this tick's move takes.
+    last_move: Option<(u64, [f64; 3], [f64; 3])>,
     last_place: Option<u64>,
     // The ticks of the last 20 places (ring), for Max per second.
     recent: [u64; 20],
@@ -512,7 +525,9 @@ fn choices(game: &Game<'_>, out: &mut Vec<Choice>, cell: [i32; 3], aim: &Aim) ->
         let behind = aim.back.map(|yaws| {
             yaws.map(|yaw| {
                 let (least, most) = side.pitches(aim.eye, yaw)?;
-                let pitch = if most - least > 1.0 { aim.now.1.clamp(least + 0.5, most - 0.5) } else { (least + most) / 2.0 };
+                // Within the middle half of the window: a step a little off the one foreseen still meets the side.
+                let q = (most - least) / 4.0;
+                let pitch = aim.now.1.clamp(least + q, most - q);
                 let point = side.crossing(aim.eye, direction((yaw, pitch))).map_or_else(|| side.clamp(aim.eye), |p| side.clamp(p));
                 Some(((yaw, pitch.min(90.0)), point))
             })
@@ -648,6 +663,25 @@ fn under_y(y: f64) -> i32 {
     if (y - y.trunc()).abs() == 0.5 { y.floor() as i32 } else { (y - 1.0).floor() as i32 }
 }
 
+// The step across this tick's move takes: the speed kept from the last move (after friction, only about half a walking
+// step) plus the push the keys gave the last move (how far it went beyond the speed it started with), which holds while
+// the keys and the ground stay the same. Without the last tick, or after a jolt (a hit, a setback), the kept speed alone.
+fn next_step(last: Option<(u64, [f64; 3], [f64; 3])>, tick: u64, pos: [f64; 3], vel: [f64; 3]) -> [f64; 2] {
+    let push = last.filter(|l| l.0 + 1 == tick).map_or([0.0; 2], |(_, p, v)| [pos[0] - p[0] - v[0], pos[2] - p[2] - v[2]]);
+    if push[0].hypot(push[1]) > 0.3 {
+        return [vel[0], vel[2]];
+    }
+    [vel[0] + push[0], vel[2] + push[1]]
+}
+
+// Whether a player at (x, z) stands on something in row `y`: a block that is not air, a plant or a fluid under a corner
+// of its box.
+fn stands(game: &Game<'_>, x: f64, z: f64, y: i32) -> bool {
+    [[-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]].iter().any(|c| {
+        !util::replaceable(game, [(x + c[0] * HALF_WIDTH).floor() as i32, y, (z + c[1] * HALF_WIDTH).floor() as i32])
+    })
+}
+
 // The game's own right click on `click`, if the game says it puts a block in one of the cells: the slot to the blocks
 // first (the game tells the server before the click), then the click.
 fn click(game: &mut Game<'_>, n: &mut Normal, click: Click, slot: usize, render: bool) -> Option<[i32; 3]> {
@@ -705,6 +739,8 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
         return;
     };
     let (pos, vel, ground) = ([p.position.x, p.position.y, p.position.z], [p.velocity.x, p.velocity.y, p.velocity.z], p.ground.on_ground);
+    let step = next_step(n.last_move, tick, pos, vel);
+    n.last_move = Some((tick, pos, vel));
     n.air = if ground { 0 } else { n.air.saturating_add(1) };
     let input = move_input(game);
     let moving = input != (0.0, 0.0);
@@ -728,8 +764,8 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
     }
     y = y.min(feet - 1);
 
-    // The cells: under the line to where this speed takes you in two ticks, and Expand blocks on along your walk.
-    let mut end = [pos[0] + vel[0] * 2.0, pos[2] + vel[2] * 2.0];
+    // The cells: under the line to where two steps take you, and Expand blocks on along your walk.
+    let mut end = [pos[0] + step[0] * 2.0, pos[2] + step[1] * 2.0];
     let expand = m.n("Expand");
     if expand > 0.0 && moving {
         let r = f64::from(walk).to_radians();
@@ -757,7 +793,7 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
     let now = if visible { camera } else { n.look.unwrap_or(sent) };
     // The look picked now is used for the click next tick with Strict (from where this tick's move takes you), this
     // tick's otherwise.
-    let aim_eye = if ray_cast == "Strict" { [eye[0] + vel[0], eye[1] + if ground { 0.0 } else { vel[1] }, eye[2] + vel[2]] } else { eye };
+    let aim_eye = if ray_cast == "Strict" { [eye[0] + step[0], eye[1] + if ground { 0.0 } else { vel[1] }, eye[2] + step[1]] } else { eye };
     let back = (mode == "Backwards" || telly).then(|| {
         let behind = walk + 180.0;
         let snap = |a: f32| (wrap(a) / 45.0).round() * 45.0;
@@ -797,14 +833,33 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
     }
 
     let found = if n.cells.len == 0 { None } else { plan(game, n, &aim, ray_cast != "Off", m.n("Closest block range"), tick) };
-    if found.is_some() || placed.is_some() {
+    // The look still meets a side whose click fills a cell: it stays.
+    let holding = placed.is_some()
+        || placing_ray(game, aim_eye, now, reach).is_some_and(|c| n.cells.has(cell_of(&c)));
+    // Nothing to click yet, walking to an edge: the look the click past it will want, from where the steps ahead take
+    // you, so the turn is done by the time you get there.
+    let ahead = if found.is_none() && !holding && rotate && moving && ground && !matches!(mode, "Snap" | "Telly") {
+        (2..=AHEAD_TICKS).find_map(|k| {
+            let k = f64::from(k);
+            let cell = [(pos[0] + step[0] * k).floor() as i32, y, (pos[2] + step[1] * k).floor() as i32];
+            if !util::can_place(game, cell, false) || n.cooled(cell, tick) {
+                return None;
+            }
+            let there = Aim { eye: [eye[0] + step[0] * k, eye[1], eye[2] + step[1] * k], ..aim };
+            let mut list = std::mem::take(&mut n.choices);
+            choices(game, &mut list, cell, &there);
+            let look = list.first().map(|c| c.plan.look);
+            n.choices = list;
+            look
+        })
+    } else {
+        None
+    };
+    if found.is_some() || placed.is_some() || ahead.is_some() {
         n.idle = 0;
     } else {
         n.idle = n.idle.saturating_add(1);
     }
-    // The look still meets a side whose click fills a cell: it stays.
-    let holding = placed.is_some()
-        || placing_ray(game, aim_eye, now, reach).is_some_and(|c| n.cells.has(cell_of(&c)));
     let (lo, hi) = (m.n("Min rotation speed") as f32, m.n("Rotation speed") as f32);
     n.speed = lo.min(hi) + (hi - lo).abs() * n.random(tick) as f32;
     let degrees = degrees_per_count(f64::from(game.settings.sensitivity));
@@ -813,9 +868,9 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
         "Telly" if ground || f64::from(n.air) < m.n("Telly ticks") => Some(forward),
         "Snap" if found.is_none() && !holding => Some(forward),
         _ if holding => Some(now),
-        _ => found.map(|p| p.look),
+        _ => found.map(|p| p.look).or(ahead),
     };
-    let next = if !rotate {
+    let mut next = if !rotate {
         None
     } else if n.idle > IDLE_TICKS && !matches!(mode, "Snap" | "Telly") {
         let back = turn_back(now, camera, n.speed.max(30.0), degrees);
@@ -847,6 +902,27 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
             _ => {}
         }
     }
+    // Late click: Strict's look missed and this move starts off the edge, the last one before a fall. The click goes
+    // with the look this tick's move packet carries, as Ray cast Normal's does.
+    if wait.is_none()
+        && placed.is_none()
+        && rotate
+        && ray_cast == "Strict"
+        && m.b("Late click")
+        && ground
+        && moving
+        && !stands(game, pos[0], pos[2], y)
+        && let Some(p) = plan(game, n, &Aim { eye, ..aim }, true, m.n("Closest block range"), tick)
+    {
+        let look = turn(now, p.look, n.speed, degrees);
+        if let Some(c) = placing_ray(game, eye, look, reach) {
+            placed = click(game, n, c, slot, render);
+            if placed.is_some() {
+                next = Some(look);
+                n.stats.late += 1;
+            }
+        }
+    }
     if placed.is_none() {
         n.stats.state = wait.unwrap_or(if found.is_some() { "turning to the side" } else { "no side to place against" });
     }
@@ -875,7 +951,7 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
 
     // Ledge sneak: on the ground, walking where a block is still wanted and none went this tick, sneak (the game then
     // keeps you on the edge, and the server is told you sneak).
-    let next_cell = [(pos[0] + vel[0]).floor() as i32, y, (pos[2] + vel[2]).floor() as i32];
+    let next_cell = [(pos[0] + step[0]).floor() as i32, y, (pos[2] + step[1]).floor() as i32];
     let jumping = m.p("Same Y") == "Auto jump" || telly;
     let danger = m.b("Ledge sneak") && !jumping && ground && moving && !space && placed.is_none() && n.cells.has(next_cell);
     if danger != n.sneaking {
@@ -1023,7 +1099,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
 // A server correction (a setback or teleport): the server set the look, so Normal starts again from yours.
 pub(super) fn correction() {
     with(|n| {
-        (n.look, n.row) = (None, None);
+        (n.look, n.row, n.last_move) = (None, None, None);
         n.watch = Default::default();
     });
     super::sunset_rotation::scaffold_look(None);
@@ -1059,8 +1135,8 @@ pub(super) fn report(out: &mut String) {
     let _ = writeln!(out, "\n## Scaffold (Normal)");
     let _ = writeln!(
         out,
-        "- Clicks: {}; blocks the game predicted: {}; refused by the game: {}; taken back by the server: {}; cells set to wait: {}",
-        s.clicks, s.predicted, s.refused, s.taken_back, s.cooled
+        "- Clicks: {} (late clicks: {}); blocks the game predicted: {}; refused by the game: {}; taken back by the server: {}; cells set to wait: {}",
+        s.clicks, s.late, s.predicted, s.refused, s.taken_back, s.cooled
     );
     let _ = writeln!(out, "- Last state: {}", if s.state.is_empty() { "-" } else { s.state });
 }
@@ -1187,6 +1263,47 @@ mod tests {
         assert!(most > 89.9 && least > 60.0 && least < 80.0, "{least} {most}");
         let p = top.crossing([0.5, 65.62, 0.5], direction((90.0, least + 0.01))).expect("ahead");
         assert!(p[0] >= top.lo[0] - 1e-6, "{p:?}");
+    }
+
+    #[test]
+    fn the_next_step_is_the_kept_speed_plus_the_last_push() {
+        // Walking from a stand on the ground: each move goes the kept speed plus the keys' push, then friction keeps
+        // 0.546 of it.
+        let (push, friction) = (0.098, 0.546);
+        let (mut pos, mut vel) = ([0.5, 64.0, 0.5], [0.0; 3]);
+        let mut last = None;
+        for tick in 1..12u64 {
+            let step = next_step(last, tick, pos, vel);
+            let moved = vel[2] + push;
+            if tick > 1 {
+                assert!((step[1] - moved).abs() < 1e-9 && step[0].abs() < 1e-9, "tick {tick}: {step:?} for {moved}");
+            }
+            last = Some((tick, pos, vel));
+            pos[2] += moved;
+            vel[2] = moved * friction;
+        }
+        // Near the walking speed by then, about twice the kept speed.
+        assert!((vel[2] / friction - 0.2158).abs() < 0.002, "{}", vel[2] / friction);
+        // No last tick, or a jolt since: the kept speed alone.
+        assert_eq!(next_step(None, 5, pos, vel), [vel[0], vel[2]]);
+        assert_eq!(next_step(Some((4, [pos[0] + 3.0, pos[1], pos[2]], vel)), 5, pos, vel), [vel[0], vel[2]]);
+        assert_eq!(next_step(Some((3, pos, vel)), 5, pos, vel), [vel[0], vel[2]]);
+    }
+
+    #[test]
+    fn a_look_aimed_one_step_ahead_still_meets_the_side_a_little_off_it() {
+        // Walking back past a block's south side: the look picked for the eyes 0.2 past it is clicked from where the
+        // move really took them.
+        let side = Side::of([0.0, 63.0, 0.0, 1.0, 64.0, 1.0], [0, 0, 1]);
+        let (least, most) = side.pitches([0.5, 65.62, 1.2], 180.0).expect("in front");
+        let q = (most - least) / 4.0;
+        for now in [0.0, 85.0, 90.0] {
+            let pitch = f32::clamp(now, least + q, most - q);
+            for off in [-0.01, 0.0, 0.01] {
+                let (lo, hi) = side.pitches([0.5, 65.62, 1.2 + off], 180.0).expect("in front");
+                assert!(pitch >= lo && pitch <= hi, "from {now}: {pitch} outside {lo}..{hi} at {off}");
+            }
+        }
     }
 
     #[test]

@@ -4238,17 +4238,17 @@ def _():
                 f"jumping 2 s: {climb:.1f} blocks up, {tower:.1f} with Fast tower")
 
 
-def bridge_backwards(mode, keys, look, jump=None):
+def bridge_backwards(mode, keys, look, jump=None, yaw="180"):
     """Bridging backwards off the platform's edge for 6 s: facing the platform, stone in hand, `keys` held, Scaffold in
     `mode`. The blocks past the edge as the server has them (and whether they run on without a gap), how far you got,
     the lowest your feet went (a block the server takes back drops you a level), whether you sneaked, the most move
     packets in a tick (probe, on a server) and kicks. `jump`: the 0.15 s step at which jump is tapped once; then the
-    highest the feet stood after it comes last."""
+    highest the feet stood after it comes last. `yaw`: the camera's (180 faces the platform, 0 faces the drop)."""
     reset(z=15.5)
     cmd(f"fill {X0-2} {Y-1} {Z0+17} {X0+2} {Y} {Z0+40} minecraft:air")
     slot(0, "stone", 64)
     ctl("key", "1", "tap")
-    ctl("look", "180", str(look))
+    ctl("look", yaw, str(look))
     setting("scaffold", "mode", mode)
     setting("scaffold", "activation blocks", "0")
     only("scaffold")
@@ -4314,6 +4314,23 @@ def _():
     ok = all(k >= 4 and g and lo > Y + 0.99 and (mo or 0) <= 1 and ki == 0 for _r, k, g, lo, mo, ki in runs)
     return ok, "; ".join(f"{r}: {k} kept, gapless {g}, lowest feet {lo - Y - 1:+.2f}, moves a tick {mo}, kicks {ki}"
                          for r, k, g, lo, mo, ki in runs)
+
+
+@test("Scaffold (Normal, no ledge sneak)")
+def _():
+    # Ledge sneak off: each click goes in the first ticks past an edge, with the look aimed a move ahead and turned
+    # before the edge. Never sneaks, never drops: backwards (S, Backwards and Normal rotations) and forwards (W, the look
+    # turning round on the way to the edge).
+    setting("scaffold", "ledge sneak", "false")
+    runs = []
+    for name, rotations, keys, yaw in (("S, Backwards", "Backwards", [("key", "s")], "180"),
+                                       ("S, Normal", "Normal", [("key", "s")], "180"),
+                                       ("W, Normal", "Normal", [("key", "w")], "0")):
+        setting("scaffold", "rotations", rotations)
+        runs.append((name, bridged(*bridge_backwards("Normal", keys, 30, yaw=yaw), sneak=False)))
+    setting("scaffold", "rotations", "Normal")
+    setting("scaffold", "ledge sneak", "true")
+    return all(ok for _n, (ok, _d) in runs), "; ".join(f"{n}: {d}" for n, (_ok, d) in runs)
 
 
 @test("Scaffold (Normal, diagonal)")

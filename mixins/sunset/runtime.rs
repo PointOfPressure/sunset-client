@@ -595,6 +595,7 @@ impl Module {
                 "Rotations" | "Look" | "Rotation speed" | "Min rotation speed" | "Ray cast" => self.p("Mode") == "Normal" && self.b("Rotate"),
                 "Telly ticks" => self.p("Mode") == "Normal" && self.b("Rotate") && self.p("Rotations") == "Telly",
                 "Movement correction" => self.p("Mode") == "Normal" && self.b("Rotate") && self.p("Look") == "Silent",
+                "Late click" => self.p("Mode") == "Normal" && self.b("Rotate") && self.p("Ray cast") == "Strict",
                 "Air place" => self.p("Mode") == "Normal" && (!self.b("Rotate") || self.p("Ray cast") == "Off"),
                 "Fast tower" | "Only on click" | "Rotate" | "Sprint" | "Same Y" | "Expand" | "Ledge sneak" | "Render"
                 | "Delay (ticks)" | "Advanced" => self.p("Mode") == "Normal",
@@ -934,6 +935,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Same Y", &["Off", "On", "Auto jump"])
             .num("Expand", 0.0, 0.0, 4.0, 1.0)
             .bool("Ledge sneak", true)
+            .bool("Late click", true)
             .bool("Fast tower", false)
             .num("Tower speed", 0.5, 0.0, 1.0, 0.05)
             .bool("While moving", false)
@@ -9612,10 +9614,10 @@ mod movement_config_tests {
              &["Activation blocks", "Auto switch", "Rotate", "Delay (ticks)", "Air place", "Safe walk", "Render", "Fast tower"][..]),
             ("Godbridge", &["Activation blocks", "Auto switch", "Blocks"][..],
              &["Shortest sneak delay (ms)", "Rotate", "Rotation speed", "Delay (ticks)", "Ray cast", "Same Y", "Swap back",
-               "Ledge sneak", "Render"][..]),
+               "Ledge sneak", "Late click", "Render"][..]),
             ("Normal", &["Rotate", "Rotations", "Look", "Rotation speed", "Min rotation speed", "Ray cast", "Movement correction",
-                         "Sprint", "Same Y", "Expand", "Ledge sneak", "Delay (ticks)", "Safe walk", "Max per second", "Render",
-                         "Auto switch", "Swap back"][..],
+                         "Sprint", "Same Y", "Expand", "Ledge sneak", "Late click", "Delay (ticks)", "Safe walk",
+                         "Max per second", "Render", "Auto switch", "Swap back"][..],
              &["Shortest sneak delay (ms)", "Activation blocks", "Telly ticks", "Tower speed", "Air place"][..]),
         ] {
             scaffold.settings.iter_mut().find(|s| s.name == "Mode").unwrap().parse(mode);
@@ -9635,9 +9637,10 @@ mod movement_config_tests {
         for name in ["Telly ticks", "Air place", "Tower speed", "While moving"] {
             assert!(shown(scaffold, name), "Normal uses {name} here");
         }
+        assert!(!shown(scaffold, "Late click"), "Late click backs up Strict's look only");
         assert!(!shown(scaffold, "Movement correction"), "a visible look needs no correction");
         set(scaffold, "Rotate", "false");
-        for name in ["Rotations", "Ray cast", "Rotation speed", "Movement correction"] {
+        for name in ["Rotations", "Ray cast", "Rotation speed", "Movement correction", "Late click"] {
             assert!(!shown(scaffold, name), "no look, no {name}");
         }
         assert!(shown(scaffold, "Air place"));
