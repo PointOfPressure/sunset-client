@@ -30,8 +30,8 @@ horizon-mixins native mod. Mod id `sunset`; all code is in `mixins/sunset/`. The
 - Zero warnings. No generated docs, no AI or SPDX headers in source.
 - Every new module or behaviour gets a test in `tools/verify.py` (`@test("Name")`).
 - GPL code (Meteor, Trouser-Streak) is behaviour only: write it fresh, never translate line by line.
-  MIT sources (vape-rs, Anubis 1.0) may be ported closely; keep their notice in LICENSE and credit them in the
-  commit and README.
+  MIT sources (vape-rs, Anubis 1.0) may be ported closely; credit them in the commit. No third-party notices
+  section in LICENSE; don't put the vape-rs/Anubis attributions back.
 - Credit contributors in the commit and in README's Credits.
 - Nothing that hides Sunset (from Horizon's mod menu, from servers, server brand spoofing). Those get refused.
 - Don't change existing Kill Aura behaviour; new modes go alongside.
