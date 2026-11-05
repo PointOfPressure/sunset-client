@@ -60,6 +60,9 @@ pub fn sent(body: &[u8]) {
     let Some(i) = ids.iter().position(|x| *x == got) else {
         return;
     };
+    if own && i == 6 && let Some((target, _)) = id(&body[start..]) {
+        let _ = f.write_all(format!("attack {target}\n").as_bytes());
+    }
     if i < KINDS.len() {
         let _ = f.write_all(format!("send {}{}\n", KINDS[i], moved(i, &body[start..])).as_bytes());
     }

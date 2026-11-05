@@ -31,6 +31,40 @@ name = "probe_wire"
 source = "wire.rs"
 visibility = "pub"
 
+[[module]]
+id = "probe_antibot"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "probe_antibot"
+source = "antibot.rs"
+
+[[injection]]
+id = "antibot_tick"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::remote_handle_input"
+helper = "antibot_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "self" },
+]
+
+[[injection]]
+id = "antibot_replace_on_turn"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::remote_send_state"
+helper = "antibot_turn_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "self" },
+]
+
+[[injection]]
+id = "antibot_evade_pending"
+kind = "RETURN"
+target = "horizon_client::game::native_hooks::Game<'_>::native_tick"
+helper = "antibot_after_tick.rs"
+bindings = [
+  { name = "value", ty = "()", value = "$value" },
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "self" },
+]
+
 [[injection]]
 id = "wire"
 kind = "HEAD"

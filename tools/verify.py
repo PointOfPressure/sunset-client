@@ -6078,7 +6078,355 @@ def _():
     return ok, f"attacks from two weak clicks: {skipped[0]} with Skip with weakness, {plain[0]} without"
 
 
+# ---- Anti Bot: test-only incoming packets, real target selection and outgoing hits
+
+ANTIBOT_DECOY, ANTIBOT_REAL = 900001, 900002
+
+
+@test("Anti Bot (classifier simulations)")
+def _():
+    import pathlib, shutil, tempfile
+    compiler = shutil.which("rustc")
+    if not compiler:
+        return None, "needs rustc for the standalone classifier scenarios"
+    source = pathlib.Path(__file__).resolve().parents[1] / "mixins" / "sunset" / "antibot_state.rs"
+    with tempfile.TemporaryDirectory(prefix="sunset-antibot-") as directory:
+        wrapper = pathlib.Path(directory) / "tests.rs"
+        wrapper.write_text("#![allow(dead_code)]\n#[path = " + json.dumps(source.as_posix()) + "]\nmod antibot_state;\n")
+        binary = pathlib.Path(directory) / ("tests.exe" if os.name == "nt" else "tests")
+        compiled = subprocess.run([compiler, "--edition=2024", "--test", str(wrapper), "-o", str(binary)], capture_output=True, text=True, timeout=120)
+        if compiled.returncode:
+            return False, compiled.stderr[-1500:]
+        result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
+        return result.returncode == 0, (result.stdout + result.stderr)[-1500:]
+
+
+def antibot_fixture(entities, ticks=4, **control):
+    """Only the separately staged probe reads this file; the shipped mod has no fixture controls."""
+    path = os.environ.get("SUNSET_ANTIBOT_FIXTURE")
+    if not path:
+        raise RuntimeError("needs tools/probe and SUNSET_ANTIBOT_FIXTURE in game and verifier")
+    revision = time.time_ns()
+    pending = path + ".next"
+    with open(pending, "w") as f:
+        json.dump({"revision": revision, "entities": entities} | control, f)
+    os.replace(pending, path)
+    wait(ticks)
+    for _ in range(10):
+        try:
+            with open(path + ".state") as f:
+                result = json.load(f)
+            if result.get("revision") == revision:
+                if result.get("error"):
+                    raise RuntimeError(result["error"])
+                return result
+        except (OSError, json.JSONDecodeError):
+            pass
+        wait(2)
+    raise RuntimeError("Anti Bot fixture did not acknowledge command")
+
+
+def antibot_state():
+    path = os.environ["SUNSET_ANTIBOT_FIXTURE"] + ".state"
+    for _ in range(10):
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            wait(1)
+    raise RuntimeError("Anti Bot fixture status unreadable")
+
+
+def antibot_entity(eid=ANTIBOT_DECOY, motion="plain", **fields):
+    return dict(id=eid, generation=1, name="FixtureDecoy" if eid == ANTIBOT_DECOY else "FixtureReal",
+                motion=motion, x=0.0 if eid == ANTIBOT_DECOY else 0.8, y=0.0, z=2.0 if eid == ANTIBOT_DECOY else 2.7,
+                scale=1.0, listed=True, mode=0) | fields
+
+
+def antibot_prepare():
+    reset()
+    antibot_fixture([])
+    for consumer in ("killaura", "aimassist", "triggerbot"):
+        say(f".reset {consumer}")
+        on.discard(consumer)
+    say(".friend remove FixtureReal")
+    # .reset restores this module's enabled default; keep the driver's toggle
+    # bookkeeping consistent before only() starts a fresh observation period.
+    say(".reset antibot")
+    on.add("antibot")
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    setting("killaura", "anti bot", "true")
+    setting("killaura", "range", "4.5")
+    setting("aimassist", "anti bot", "true")
+    setting("aimassist", "require mouse down", "false")
+    setting("aimassist", "only while turning", "false")
+    setting("antibot", "sensitivity", "Balanced")
+    only("antibot")
+
+
+def antibot_hits(mark):
+    with open(probe_path(), errors="replace") as f:
+        f.seek(mark)
+        return [int(line.split()[1]) for line in f if line.startswith("attack ")]
+
+
+def antibot_only(*consumers, master=True):
+    """Switch consumers without restarting the master and discarding its observations."""
+    desired = set(consumers) | ({"antibot"} if master else set())
+    for name in list(on):
+        if name not in desired:
+            toggle(name, False)
+    for name in sorted(desired):
+        toggle(name, True)
+
+
+@test("Anti Bot (listed decoy and stationary player)")
+def _():
+    # Removing either consumer's shared classifier check must expose the closer, fully listed decoy.
+    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
+        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    try:
+        antibot_prepare()
+        antibot_fixture([antibot_entity(motion="orbit"), antibot_entity(ANTIBOT_REAL, listed=False, scale=3.0)], 100)
+        status = antibot_state()
+        entities = {e["id"]: e for e in status["entities"]}
+        classified = entities[ANTIBOT_DECOY]["blocked"] and not entities[ANTIBOT_REAL]["blocked"]
+        antibot_only("killaura")
+        mark = probe_mark()
+        wait(60)
+        hits = antibot_hits(mark)
+        antibot_only()
+        ctl("look", "0", "0")
+        antibot_only("aimassist")
+        wait(30)
+        aim = antibot_state()["aim"]
+        ok = classified and ANTIBOT_REAL in hits and ANTIBOT_DECOY not in hits and aim == ANTIBOT_REAL
+        return ok, f"classified={classified}, Aura hits={hits}, Aim Assist target={aim}; {entities[ANTIBOT_DECOY]['diagnostics']}"
+    finally:
+        only()
+        antibot_fixture([])
+
+
+@test("Anti Bot (cached targets revalidated)")
+def _():
+    # A target becoming a decoy must leave each consumer's cached target, without respawning it.
+    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
+        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    observations = {}
+    try:
+        antibot_prepare()
+        setting("killaura", "target lock", "true")
+        for consumer, field, mode in (("killaura", "aura", None), ("aimassist", "aim", "Simple"), ("aimassist", "aim", "Duelkit")):
+            antibot_only()
+            ctl("mouse", "left", "up")
+            if mode:
+                setting("aimassist", "mode", mode)
+                setting("aimassist", "require mouse down", "true" if mode == "Simple" else "false")
+            antibot_fixture([antibot_entity()], 30)
+            ctl("look", "0", "0")
+            antibot_only(consumer)
+            if mode == "Simple":
+                ctl("mouse", "left", "down")
+            wait(30)
+            before = antibot_state()[field]
+            # Same spawn generation and UUID: this tests revalidation, not destruction cleanup.
+            antibot_fixture([antibot_entity(motion="orbit"), antibot_entity(ANTIBOT_REAL)], 100)
+            mark = probe_mark()
+            ctl("look", "0", "0")
+            wait(40)
+            after = antibot_state()[field]
+            hits = antibot_hits(mark) if consumer == "killaura" else []
+            say(".friend add FixtureReal")
+            wait(4)
+            friend = antibot_state()[field]
+            say(".friend remove FixtureReal")
+            observations[f"{consumer} {mode}"] = (before, after, hits, friend)
+            antibot_only()
+            antibot_fixture([])
+        ok = all(before == ANTIBOT_DECOY and after == ANTIBOT_REAL and ANTIBOT_DECOY not in hits and friend is None
+                 for before, after, hits, friend in observations.values())
+        return ok, f"cached target before/after and late hits: {observations}"
+    finally:
+        ctl("mouse", "left", "up")
+        say(".friend remove FixtureReal")
+        only()
+        antibot_fixture([])
+
+
+@test("Anti Bot (consumer and master bypass switches)")
+def _():
+    # A disabled consumer filter or disabled master must restore targeting, while the other consumer stays protected.
+    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
+        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    observed = {}
+    try:
+        antibot_prepare()
+        antibot_fixture([antibot_entity(motion="orbit")], 100)
+        for consumer, field in (("killaura", "aura"), ("aimassist", "aim")):
+            antibot_only()
+            wait(100)
+            for label, enabled, own in (("protected", True, "true"), ("consumer off", True, "false"), ("master off", False, "true")):
+                antibot_only()
+                setting(consumer, "anti bot", own)
+                ctl("look", "0", "0")
+                antibot_only(consumer, master=enabled)
+                seen = []
+                for _ in range(20):
+                    wait(4)
+                    seen.append(antibot_state()[field])
+                observed[f"{consumer} {label}"] = ANTIBOT_DECOY in seen
+        ok = all(value == ("protected" not in name) for name, value in observed.items())
+        return ok, f"decoy selected: {observed}"
+    finally:
+        only()
+        antibot_fixture([])
+
+
+@test("Anti Bot (Clicks only Silent aim and Hit flick)")
+def _():
+    # The alternate click paths must not issue a hit at a rejected entity, and their opt-out must still work.
+    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
+        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    observed = {}
+    try:
+        antibot_prepare()
+        setting("aimassist", "mode", "Clicks only")
+        setting("aimassist", "flick needs sprint", "false")
+        # Orbit raises confidence first; briefly hovering holds the player still for each actual click.
+        antibot_fixture([antibot_entity(motion="orbit")], 100)
+        for path in ("silent aim", "hit flick"):
+            antibot_only()
+            setting("aimassist", "silent aim", "true" if path == "silent aim" else "false")
+            setting("aimassist", "hit flick", "true" if path == "hit flick" else "false")
+            for protected in (True, False):
+                setting("aimassist", "anti bot", "true" if protected else "false")
+                antibot_only("aimassist")
+                mark = probe_mark()
+                trace = []
+                for _ in range(8):
+                    # Pause at its current position, avoiding artificial jumps
+                    # across the observer that legitimately weaken orbit evidence.
+                    at = next(e["pos"] for e in ctl("entities")["entities"] if e["id"] == ANTIBOT_DECOY)
+                    antibot_fixture([antibot_entity(motion="hover", x=at[0] - X0 - 0.5,
+                        y=at[1] - Y - 1, z=at[2] - Z0 - 0.5)], 2)
+                    ctl("look-at-entity", str(ANTIBOT_DECOY))
+                    if path == "silent aim":
+                        yaw, pitch = aim_view()
+                        ctl("look", str(yaw + 30), str(pitch))
+                    blocked = next(e["blocked"] for e in antibot_state()["entities"] if e["id"] == ANTIBOT_DECOY)
+                    click_mark = probe_mark()
+                    ctl("mouse", "left", "click")
+                    wait(4)
+                    trace.append((blocked, antibot_hits(click_mark)))
+                    antibot_fixture([antibot_entity(motion="orbit")], 30)
+                observed[f"{path} protected={protected}"] = (antibot_hits(mark).count(ANTIBOT_DECOY), trace)
+                antibot_only()
+        ok = all((count == 0 and all(blocked for blocked, _ in trace)) if "=True" in key else count > 0
+                 for key, (count, trace) in observed.items())
+        counts = {key: count for key, (count, _) in observed.items()}
+        return ok, f"wire hits at rejected player: {counts}" + (f"; trace={observed}" if not ok else "")
+    finally:
+        only()
+        antibot_fixture([])
+
+
+@test("Anti Bot (entity ID reuse clears rejection)")
+def _():
+    # Reusing a rejected ID for a different real player must create a new identity and restore eligibility.
+    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
+        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    try:
+        antibot_prepare()
+        before = antibot_fixture([antibot_entity(motion="orbit")], 100)["entities"][0]
+        after = antibot_fixture([antibot_entity(generation=2, uuid=str((1 << 64) | ANTIBOT_DECOY), name="ReplacementReal")], 20)["entities"][0]
+        antibot_only("killaura")
+        mark = probe_mark()
+        wait(40)
+        hits = antibot_hits(mark)
+        ok = before["blocked"] and not after["blocked"] and before["token"] != after["token"] and ANTIBOT_DECOY in hits
+        return ok, f"rejection {before['blocked']}->{after['blocked']}, token {before['token']}->{after['token']}, replacement hits={hits}"
+    finally:
+        only()
+        antibot_fixture([])
+
+
 # ---- Aim Assist (Duelkit mode): real mouse motion (mouse-move), and for moving targets the probe's frames
+
+@test("Anti Bot (world reset preserves player-info)")
+def _():
+    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
+        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    try:
+        antibot_prepare()
+        before = antibot_fixture([antibot_entity(motion="orbit")], 100)["entities"][0]
+        # The world hook resets motion/tickets, while current player-info survives
+        # normal respawns. The fixture does not resend mode after this boundary.
+        after = antibot_fixture([antibot_entity(motion="orbit")], 100, world_reset=True)["entities"][0]
+        return before["blocked"] and after["blocked"] and before["token"] != after["token"], \
+            f"before={before}, after world reset={after}"
+    finally:
+        only()
+        antibot_fixture([])
+
+
+@test("Anti Bot (Trigger Bot delayed target revalidated)")
+def _():
+    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
+        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    try:
+        antibot_prepare()
+        setting("triggerbot", "anti bot", "true")
+        antibot_fixture([antibot_entity()], 20)
+        ctl("look-at-entity", str(ANTIBOT_DECOY))
+        mark = probe_mark()
+        antibot_only("triggerbot")
+        wait(40)
+        control = antibot_hits(mark).count(ANTIBOT_DECOY)
+        antibot_only()
+        status = antibot_fixture([antibot_entity(generation=2, evade_pending=True)], 20)
+        before = status["evasions"]
+        ctl("look-at-entity", str(ANTIBOT_DECOY))
+        mark = probe_mark()
+        antibot_only("triggerbot")
+        wait(40)
+        hits = antibot_hits(mark)
+        after = antibot_state()["evasions"]
+        return control > 0 and after == before + 1 and ANTIBOT_DECOY not in hits, \
+            f"control hits={control}, evasions={before}->{after}, delayed hits={hits}"
+    finally:
+        only()
+        antibot_fixture([])
+
+@test("Anti Bot (delayed Hit flick identity)")
+def _():
+    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
+        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    try:
+        antibot_prepare()
+        setting("aimassist", "mode", "Clicks only")
+        setting("aimassist", "hit flick", "true")
+        setting("aimassist", "flick needs sprint", "false")
+        antibot_fixture([antibot_entity()], 20)
+        antibot_only("aimassist")
+        ctl("look-at-entity", str(ANTIBOT_DECOY))
+        mark = probe_mark()
+        ctl("mouse", "left", "click")
+        wait(20)
+        control = antibot_hits(mark).count(ANTIBOT_DECOY)
+        before = antibot_state()["replacements"]
+        antibot_fixture([antibot_entity(replace_on_turn=True)], 4)
+        ctl("look-at-entity", str(ANTIBOT_DECOY))
+        mark = probe_mark()
+        ctl("mouse", "left", "click")
+        wait(20)
+        hits = antibot_hits(mark)
+        after = antibot_state()["replacements"]
+        return control > 0 and after == before + 1 and ANTIBOT_DECOY not in hits, \
+            f"control hits={control}, replacements={before}->{after}, stale deed hits={hits}"
+    finally:
+        only()
+        antibot_fixture([])
 
 def session_dir():
     with open(os.path.join(os.path.dirname(CTL), "session")) as f:
@@ -13229,18 +13577,22 @@ def _():
 
 if __name__ == "__main__":
     import signal
-    signal.signal(signal.SIGALRM, overran)
+    has_alarm = hasattr(signal, "SIGALRM")
+    if has_alarm:
+        signal.signal(signal.SIGALRM, overran)
     arena()
     for fn in TESTS:
         if ONLY and fn.test_name not in ONLY:
             continue
-        signal.alarm(600)
+        if has_alarm:
+            signal.alarm(600)
         try:
             ok, note = fn()
         except Exception as e:  # noqa: BLE001
             ok, note = False, f"error: {e!r}"
             traceback.print_exc()
-        signal.alarm(0)
+        if has_alarm:
+            signal.alarm(0)
         rejoin(fn.test_name)
         if ok is not None:
             results.append((fn.test_name, ok, note))
