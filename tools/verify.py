@@ -4075,14 +4075,18 @@ def _():
 @test("Fast Place (speeds)")
 def _():
     # A stone at eye height 5 blocks ahead: holding use builds a row of 4 back towards you. Ticks until all 4 are in.
-    def row(speed):
+    def row(speed, clicker=False):
         reset()
         cmd(f"setblock {X0} {Y+2} {Z0+5} minecraft:stone")
         slot(0, "cobblestone", 64)
         ctl("key", "1", "tap")
         if speed:
             setting("fastplace", "speed", str(speed))
-            only("fastplace")
+            if clicker:
+                for key, value in (("left", "false"), ("right", "true"), ("right own cps", "true"),
+                                   ("right min cps", "1"), ("right max cps", "1")):
+                    setting("autoclicker", key, value)
+            only("fastplace", *(["autoclicker"] if clicker else []))
         ctl("look", "0", "0")
         wait(5)
         t0 = state()["ticks"]
@@ -4098,8 +4102,9 @@ def _():
         cmd(f"fill {X0} {Y+2} {Z0+1} {X0} {Y+2} {Z0+5} minecraft:air")
         return took
 
-    plain, one, five = row(None), row(1), row(5)
-    return 0 < five < one < plain or (0 < five < plain and one <= plain), f"4 blocks placed in {plain} ticks without, {one} at Speed 1, {five} at Speed 5"
+    plain, one, five, together = row(None), row(1), row(5), row(5, True)
+    ok = (0 < five < one < plain or (0 < five < plain and one <= plain)) and 0 < together <= five + 3
+    return ok, f"4 blocks placed in {plain} ticks without, {one} at Speed 1, {five} at Speed 5, {together} with Auto Clicker right at 1 CPS"
 
 
 @test("Middle Click Extra")
@@ -4777,6 +4782,160 @@ def _():
     return ok, f"pushed {plain[0]:.2f} blocks plain, {whole[0]:.2f} at chance 0, {cut[0]:.2f} at chance 100"
 
 
+@test("Auto Clicker (clock simulations)")
+def _():
+    import pathlib, shutil, tempfile
+    compiler = shutil.which("rustc")
+    if not compiler:
+        return None, "needs rustc for the standalone repeat-clock scenarios"
+    source = pathlib.Path(__file__).resolve().parents[1] / "mixins" / "sunset" / "click_clock.rs"
+    with tempfile.TemporaryDirectory(prefix="sunset-click-clock-") as directory:
+        wrapper = pathlib.Path(directory) / "tests.rs"
+        wrapper.write_text("#![allow(dead_code)]\n#[path = " + json.dumps(source.as_posix()) + "]\nmod click_clock;\n")
+        binary = pathlib.Path(directory) / ("tests.exe" if os.name == "nt" else "tests")
+        compiled = subprocess.run([compiler, "--edition=2024", "--test", str(wrapper), "-o", str(binary)], capture_output=True, text=True, timeout=120)
+        if compiled.returncode:
+            return False, compiled.stderr[-1500:]
+        result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
+        return result.returncode == 0, (result.stdout + result.stderr)[-1500:]
+
+
+@test("Auto Clicker (CPS accuracy and air misses)")
+def _():
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    measured = {}
+    for target in ("entity", "air", "air-respect"):
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        if target == "entity":
+            cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 2.5} {HUSK}")
+            wait(8)
+            eid = next(e["id"] for e in ctl("entities")["entities"] if e.get("type") == "minecraft:husk")
+            ctl("look-at-entity", str(eid))
+        else:
+            ctl("look", "0", "-80")
+        for key, value in (("mode", "CPS"), ("min cps", "12"), ("max cps", "12")):
+            setting("autoclicker", key, value)
+        setting("autoclicker", "respect miss cooldown", "true" if target == "air-respect" else "false")
+        only("autoclicker")
+        mark = probe_mark()
+        ctl("mouse", "left", "down")
+        wait(60)
+        ctl("mouse", "left", "up")
+        only()
+        with open(probe_path(), errors="replace") as f:
+            f.seek(mark)
+            measured[target] = sum(line.strip() == f"pkt {PUNCH}" for line in f)
+    ok = all(33 <= measured[name] <= 39 for name in ("entity", "air")) and 4 <= measured["air-respect"] <= 8
+    return ok, f"12 CPS for 3 seconds, outgoing clicks: {measured}"
+
+
+@test("Auto Clicker (release, toggle input and menus)")
+def _():
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    ctl("look", "0", "-80")
+    for key, value in (("mode", "CPS"), ("min cps", "12"), ("max cps", "12")):
+        setting("autoclicker", key, value)
+    def punches(mark):
+        with open(probe_path(), errors="replace") as f:
+            f.seek(mark)
+            return sum(line.strip() == f"pkt {PUNCH}" for line in f)
+    def buttons(mark):
+        with open(probe_path(), errors="replace") as f:
+            f.seek(mark)
+            return [list(map(int, line.split()[2:6])) for line in f if line.startswith("buttons ")]
+    try:
+        ctl("options-set", "toggleAttack", "true")
+        only("autoclicker")
+        ctl("mouse", "left", "click")
+        wait(4)
+        mark = probe_mark()
+        wait(30)
+        held = buttons(mark)
+        count = punches(mark)
+        ctl("mouse", "left", "click")
+        wait(3)
+        release_mark = probe_mark()
+        wait(20)
+        released = buttons(release_mark)
+        late = punches(release_mark)
+        ctl("options-set", "toggleAttack", "false")
+        ctl("mouse", "left", "down")
+        wait(5)
+        say(".menu autoclicker")
+        wait(3)
+        menu_mark = probe_mark()
+        wait(20)
+        menu_clicks = punches(menu_mark)
+        close_menu()
+        ctl("mouse", "left", "up")
+        # The headless controller's synthetic keys do not drive physical binds.
+        # Re-establish the held input after each command closes its chat screen.
+        only()
+        ctl("mouse", "left", "down")
+        wait(3)
+        off_mark = probe_mark()
+        wait(20)
+        off = punches(off_mark)
+        only("autoclicker")
+        again_mark = probe_mark()
+        ctl("mouse", "left", "down")
+        wait(40)
+        again = punches(again_mark)
+        ctl("mouse", "left", "up")
+        ok = bool(held and released) and all(row[0] == row[2] == 1 for row in held)
+        ok &= all(row[0] == row[2] == 0 for row in released) and late == off == 0
+        ok &= 15 <= count <= 20 and menu_clicks <= 2 and 21 <= again <= 26
+        return ok, f"toggle held clicks={count}, menu={menu_clicks}, released={late}, disabled={off}, restarted={again}; held parity={all(r[0] == r[2] for r in held)}"
+    finally:
+        ctl("options-set", "toggleAttack", "false")
+        ctl("mouse", "left", "up")
+        close_menu()
+        say(".reset autoclicker")
+        on.discard("autoclicker")
+
+
+@test("Auto Clicker (independent buttons and low right CPS)")
+def _():
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    reset()
+    slot(0, "snowball", 64)
+    ctl("key", "1", "tap")
+    cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 2.5} {HUSK}")
+    wait(8)
+    eid = next(e["id"] for e in ctl("entities")["entities"] if e.get("type") == "minecraft:husk")
+    ctl("look-at-entity", str(eid))
+    for key, value in (("mode", "CPS"), ("min cps", "12"), ("max cps", "12"), ("right", "true"),
+                       ("right own cps", "true"), ("right min cps", "2"), ("right max cps", "2")):
+        setting("autoclicker", key, value)
+    try:
+        only("autoclicker")
+        mark = probe_mark()
+        ctl("mouse", "left", "down")
+        ctl("mouse", "right", "down")
+        wait(60)
+        ctl("mouse", "left", "up")
+        ctl("mouse", "right", "up")
+        wait(4)
+        ticks = probe_ticks(mark)
+        attacks = sum(t.count("order attack") for t in ticks)
+        uses = sum(t.count(f"pkt {USE_ITEM}") for t in ticks)
+        late = sum(t.count("order attack") + t.count(f"pkt {USE_ITEM}") for t in ticks if "order move" in t
+                   and any(line in ("order attack", f"pkt {USE_ITEM}") for line in t[t.index("order move") + 1:]))
+        return 33 <= attacks <= 39 and 5 <= uses <= 8 and late == 0, f"3 s: left attacks={attacks}, right uses={uses}, late interaction ticks={late}"
+    finally:
+        ctl("mouse", "left", "up")
+        ctl("mouse", "right", "up")
+        only()
+
+
 @test("Auto Clicker (CPS, only with a weapon)")
 def _():
     # Left held on an unhurt husk: CPS mode at 10 clicks about twice as often as Delay mode's 4 ticks (5 a second);
@@ -4804,6 +4963,7 @@ def _():
         only()
         return sum(t.count("order attack") for t in probe_ticks(mark))
 
+    setting("autoclicker", "mode", "Delay")
     delay = clicks("diamond_sword")
     setting("autoclicker", "mode", "CPS")
     setting("autoclicker", "min cps", "10")
@@ -4814,6 +4974,56 @@ def _():
     say(".reset autoclicker")
     ok = delay >= 6 and cps >= delay * 1.5 and bare <= 1
     return ok, f"clicks in 2 s: {delay} at Delay 4 ticks, {cps} at 10 CPS, {bare} bare-handed with Only with a weapon"
+
+
+@test("Auto Clicker (mining and held item use)")
+def _():
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    got = {}
+    def held_buttons(mark, index):
+        with open(probe_path(), errors="replace") as f:
+            f.seek(mark)
+            rows = [list(map(int, line.split()[2:6])) for line in f if line.startswith("buttons ")]
+        return bool(rows) and all(row[index] == row[index + 2] == 1 for row in rows)
+    try:
+        for stop in (False, True):
+            reset()
+            slot(0, "diamond_pickaxe")
+            ctl("key", "1", "tap")
+            cmd("gamemode survival", f"setblock {X0} {Y+2} {Z0+2} minecraft:stone")
+            ctl("look-at", "block", str(X0), str(Y + 2), str(Z0 + 2))
+            setting("autoclicker", "stop on blocks", str(stop).lower())
+            only("autoclicker")
+            ctl("mouse", "left", "down")
+            wait(3)
+            mark = probe_mark()
+            wait(24)
+            parity = held_buttons(mark, 0)
+            ctl("mouse", "left", "up")
+            wait(3)
+            broke = count(X0, Y + 2, Z0 + 2, X0, Y + 2, Z0 + 2, "stone") == 0
+            got[f"mine stop={stop}"] = broke and parity
+        reset()
+        slot(0, "shield")
+        ctl("key", "1", "tap")
+        for key, value in (("left", "false"), ("right", "true"), ("right own cps", "true"),
+                           ("right min cps", "20"), ("right max cps", "20")):
+            setting("autoclicker", key, value)
+        only("autoclicker")
+        ctl("mouse", "right", "down")
+        wait(5)
+        mark = probe_mark()
+        wait(24)
+        got["shield remains held"] = state().get("using") is not None and held_buttons(mark, 1)
+        ctl("mouse", "right", "up")
+        wait(3)
+        got["shield released"] = state().get("using") is None
+        return all(got.values()), str(got)
+    finally:
+        ctl("mouse", "left", "up")
+        ctl("mouse", "right", "up")
+        only()
 
 
 @test("Entities list on top of the kinds")

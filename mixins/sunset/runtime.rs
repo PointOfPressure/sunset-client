@@ -373,7 +373,9 @@ impl Module {
             },
             "Auto Clicker" => match name {
                 "Delay (ticks)" => self.p("Mode") == "Delay",
-                "Min CPS" | "Max CPS" => self.p("Mode") == "CPS",
+                "Min CPS" | "Max CPS" => self.b("Left") && self.p("Mode") == "CPS" || self.b("Right") && !self.b("Right own CPS") && self.p("Mode") == "CPS",
+                "CPS pattern" => self.p("Mode") == "CPS" || self.b("Right") && self.b("Right own CPS"),
+                "Respect miss cooldown" => self.b("Left"),
                 "Right items" | "Right sneak only" | "Right start delay (ms)" | "Right own CPS" => self.b("Right"),
                 "Right min CPS" | "Right max CPS" => self.b("Right") && self.b("Right own CPS"),
                 _ => true,
@@ -1052,13 +1054,15 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Random", false)
             .num("Delay (seconds)", 15.0, 1.0, 120.0, 1.0)
             .text("Messages", "Sunset on top!|Sunset on crack!"),
-        Module::new("Auto Clicker", Player, "Clicks for you.")
+        Module::new("Auto Clicker", Player, "Repeats held clicks at the configured rate.")
             .bool("Left", true)
             .bool("Right", false)
-            .pick("Mode", &["Delay", "CPS"])
+            .pick("Mode", &["CPS", "Delay"])
             .num("Delay (ticks)", 4.0, 1.0, 20.0, 1.0)
             .num("Min CPS", 5.0, 1.0, 20.0, 1.0)
             .num("Max CPS", 15.0, 1.0, 20.0, 1.0)
+            .pick("CPS pattern", &["Smooth", "Uniform"])
+            .bool("Respect miss cooldown", false)
             .bool("Only with a weapon", false)
             .bool("Stop on blocks", false)
             .text("Right items", "")
@@ -1331,12 +1335,6 @@ pub(super) struct State {
     scaffold_placed: Vec<([i32; 3], u8)>,
     // Legit Scaffold holds sneak (not you).
     scaffold_sneak: bool,
-    click_wait: u32,
-    // Auto Clicker's CPS mode: when the next click is due.
-    click_due: Option<std::time::Instant>,
-    // Auto Clicker's right button: when it went down, and its own next click with Right own CPS.
-    right_since: Option<std::time::Instant>,
-    right_due: Option<std::time::Instant>,
     blink_ticks: u32,
     eating: bool,
     // Auto Eat: the slot it eats from (None: the off hand), the one held before, and Kill Aura turned off meanwhile.
@@ -1443,10 +1441,6 @@ impl State {
             scaffold_stack: None,
                     scaffold_placed: Vec::new(),
             scaffold_sneak: false,
-            click_wait: 0,
-            click_due: None,
-            right_since: None,
-            right_due: None,
             blink_ticks: 0,
             eating: false,
             eat_slot: None,
@@ -3502,9 +3496,6 @@ fn module_tick(game: &mut Game<'_>) {
             s.last_pos.clear();
         });
     }
-    if let Some(m) = get("Auto Clicker") {
-        auto_click(game, m);
-    }
     if let Some(m) = get("Auto Eat").filter(|_| super::sunset_combat_control::available("Auto Eat")) {
         auto_eat(game, m);
     } else if with(|s| s.eating) {
@@ -3753,100 +3744,6 @@ pub(super) fn legit_sneak(game: &mut Game<'_>, down: bool) {
         }
         with(|s| s.scaffold_sneak = false);
     }
-}
-
-pub(super) fn auto_click(game: &mut Game<'_>, m: &Module) {
-    use winit::event::MouseButton;
-    if !game.native_playing() {
-        return;
-    }
-    // Only with a weapon: a sword, axe, spear, mace or trident in hand. Stop on blocks: no left click while the
-    // crosshair is on a block (so it never mines).
-    let weapon = !m.b("Only with a weapon") || super::sunset_combat::holds_weapon(game);
-    let on_block = m.b("Stop on blocks") && game.mob_hit().is_none() && game.pick().is_some();
-    let left = m.b("Left") && weapon && !on_block && (game.physical_buttons.contains(&MouseButton::Left) || game.left);
-    let right = right_ready(game, m, weapon);
-    let own = m.b("Right own CPS");
-    if right && own {
-        right_own(game, m);
-    }
-    let right = right && !own;
-    if !left && !right {
-        with(|s| s.click_due = None);
-        return;
-    }
-    let cps = m.p("Mode") == "CPS";
-    let now = std::time::Instant::now();
-    if cps {
-        if with(|s| s.click_due.is_some_and(|due| now < due)) {
-            return;
-        }
-    } else if with(|s| {
-        s.click_wait = s.click_wait.saturating_sub(1);
-        s.click_wait > 0
-    }) {
-        return;
-    }
-    // The click's release lets go of a button you still hold: it stays held after (mining goes on).
-    let held = (game.left, game.right);
-    for (down, button) in [(left, MouseButton::Left), (right, MouseButton::Right)] {
-        if down {
-            let _ = game.play_mouse(button, true);
-            let _ = game.play_mouse(button, false);
-        }
-    }
-    (game.left, game.right) = (game.left || held.0, game.right || held.1);
-    if cps {
-        // CPS: the next click after 1 / (a rate rolled between Min and Max CPS) seconds.
-        let (lo, hi) = (m.n("Min CPS"), m.n("Max CPS").max(m.n("Min CPS")));
-        let rate = lo + super::sunset_rotation::Rng::new(game.ticks.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xC11C).next() * (hi - lo);
-        with(|s| s.click_due = Some(now + std::time::Duration::from_secs_f64(1.0 / rate.max(1.0))));
-    } else {
-        with(|s| s.click_wait = m.n("Delay (ticks)") as u32);
-    }
-}
-
-// Auto Clicker's right button (Sunset's RightClicker): held, then Right start delay after it went down, with what
-// Right items lists in hand (empty: anything; `blocks`: any block) and, with Right sneak only, sneaking.
-fn right_ready(game: &Game<'_>, m: &Module, weapon: bool) -> bool {
-    let held = m.b("Right") && weapon && (game.physical_buttons.contains(&winit::event::MouseButton::Right) || game.right);
-    let now = std::time::Instant::now();
-    let since = with(|s| {
-        if held {
-            Some(*s.right_since.get_or_insert(now))
-        } else {
-            s.right_since = None;
-            s.right_due = None;
-            None
-        }
-    });
-    let Some(since) = since else {
-        return false;
-    };
-    let items = m.t("Right items").trim();
-    let item_ok = items.is_empty()
-        || game.held().is_some_and(|h| {
-            super::sunset_util::listed(items, &h.item)
-                || (super::sunset_util::listed(items, "blocks") && item_info(game, game.selected).is_some_and(|i| i.block.is_some()))
-        });
-    let sneak_ok = !m.b("Right sneak only") || game.player.as_ref().is_some_and(|p| p.shift_key_down);
-    item_ok && sneak_ok && now.duration_since(since).as_secs_f64() * 1000.0 >= m.n("Right start delay (ms)")
-}
-
-// Right own CPS: right clicks on their own clock, 1 / (a rate rolled between Right min and Right max CPS) apart.
-fn right_own(game: &mut Game<'_>, m: &Module) {
-    use winit::event::MouseButton;
-    let now = std::time::Instant::now();
-    if with(|s| s.right_due.is_some_and(|due| now < due)) {
-        return;
-    }
-    let held = game.right;
-    let _ = game.play_mouse(MouseButton::Right, true);
-    let _ = game.play_mouse(MouseButton::Right, false);
-    game.right = held;
-    let (lo, hi) = (m.n("Right min CPS"), m.n("Right max CPS").max(m.n("Right min CPS")));
-    let rate = lo + super::sunset_rotation::Rng::new(game.ticks.wrapping_mul(0xD1B5_4A32_D192_ED03) ^ 0x51C4).next() * (hi - lo);
-    with(|s| s.right_due = Some(now + std::time::Duration::from_secs_f64(1.0 / rate.max(1.0))));
 }
 
 // Auto Eat (Sunset's): once health or hunger is at its threshold, holds use on the best food (the off hand's first,
@@ -6492,6 +6389,7 @@ fn combat_cleanup(game: &mut Game<'_>) {
 
 // A scene change invalidates target caches as well as actions carrying old IDs.
 pub(super) fn reset_targets(game: &mut Game<'_>) {
+    super::sunset_autoclicker::reset();
     drop_strikes();
     super::sunset_aura::clear_targets(game);
     super::sunset_combat::reset_aim();
@@ -10656,5 +10554,18 @@ mod cleanup_tests {
         CRIT_SPRINT.store(CRIT_SPRINT_STOPPED, Ordering::Relaxed);
         drop(CriticalCompletion(true));
         assert_eq!(CRIT_SPRINT.swap(0, Ordering::Relaxed), CRIT_SPRINT_DUE);
+    }
+    #[test]
+    fn auto_clicker_cps_defaults_keep_saved_tick_delay_and_filters() {
+        let mut state = State::new();
+        let m = state.module("Auto Clicker").unwrap();
+        assert_eq!(m.p("Mode"), "CPS");
+        assert_eq!(m.p("CPS pattern"), "Smooth");
+        assert!(!m.b("Respect miss cooldown"));
+        state.load_text("autoclicker.mode=Delay\nautoclicker.delayticks=7\nautoclicker.rightowncps=true\nautoclicker.stoponblocks=true\n");
+        let m = state.module("Auto Clicker").unwrap();
+        assert_eq!(m.p("Mode"), "Delay");
+        assert_eq!(m.n("Delay (ticks)"), 7.0);
+        assert!(m.b("Right own CPS") && m.b("Stop on blocks"));
     }
 }

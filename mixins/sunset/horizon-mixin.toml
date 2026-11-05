@@ -9,6 +9,27 @@ priority = 100
 horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
 
 [[module]]
+id = "click_clock"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_click_clock"
+source = "click_clock.rs"
+
+[[module]]
+id = "autoclicker"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_autoclicker"
+source = "autoclicker.rs"
+
+[[injection]]
+id = "autoclicker_input"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::remote_handle_input"
+helper = "autoclicker_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[module]]
 id = "antibot_state"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_antibot_state"

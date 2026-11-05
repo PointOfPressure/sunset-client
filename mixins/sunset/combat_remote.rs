@@ -1,5 +1,14 @@
 // Bits of the connection the combat modules read and send: the ping, the server's sprint, a player's game mode, a
 // menu's state, a swap click.
+// A repeat is a queued click, not a physical press/release: toggle state and
+// macro user-input hooks must stay untouched. The engine consumes it this tick.
+pub(crate) fn click(game: &mut crate::game::Game<'_>, attack: bool) {
+    if let Some(remote) = game.remote.as_mut() {
+        remote.input.press(if attack { horizon_client::interaction_input::Button::Attack }
+            else { horizon_client::interaction_input::Button::Use });
+    }
+}
+
 pub(crate) fn latency(game: &crate::game::Game<'_>) -> Option<i32> {
     let remote = game.remote.as_ref()?;
     let milliseconds = remote.tab_players.get(&remote.profile)?.latency;

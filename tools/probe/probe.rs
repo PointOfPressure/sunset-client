@@ -70,6 +70,9 @@ pub(super) fn frame(game: &Game<'_>) {
     }
     line.push('\n');
     if let Ok(mut f) = out.lock() {
+        let _ = writeln!(line, "buttons {} {} {} {} {} {}", game.ticks,
+            u8::from(game.left), u8::from(game.right), u8::from(game.toggles.is_down(2)),
+            u8::from(game.toggles.is_down(3)), game.clicks.miss_time);
         let _ = f.write_all(line.as_bytes());
     }
 }

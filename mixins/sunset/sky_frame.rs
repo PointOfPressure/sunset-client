@@ -4,6 +4,7 @@
 // names to hide (on the title screen too).
 fn sunset_sky_frame(game: &mut crate::game::Game<'_>) {
     crate::game::sunset_antibot::frame(game);
+    crate::game::sunset_autoclicker::frame(game);
     crate::game::agent::sunset_goto::frame(game);
     crate::game::sunset_sky::shown(game);
     crate::game::sunset_hands::frame(game);
