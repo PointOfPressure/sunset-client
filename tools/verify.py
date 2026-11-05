@@ -6083,6 +6083,15 @@ def _():
 ANTIBOT_DECOY, ANTIBOT_REAL = 900001, 900002
 
 
+@test("Anti Bot (combat settings)")
+def _():
+    modules = said_after(".modules")
+    settings = {name: said_after(f".settings {name}") for name in ("killaura", "aimassist", "triggerbot")}
+    standalone = any("Anti Bot" in line for line in modules)
+    embedded = all(any(line.startswith("Anti bot sensitivity:") for line in lines) for lines in settings.values())
+    return not standalone and embedded, f"standalone={standalone}, sensitivity in combat settings={embedded}"
+
+
 @test("Anti Bot (classifier simulations)")
 def _():
     import pathlib, shutil, tempfile
@@ -6150,10 +6159,6 @@ def antibot_prepare():
         say(f".reset {consumer}")
         on.discard(consumer)
     say(".friend remove FixtureReal")
-    # .reset restores this module's enabled default; keep the driver's toggle
-    # bookkeeping consistent before only() starts a fresh observation period.
-    say(".reset antibot")
-    on.add("antibot")
     slot(0, "diamond_sword")
     ctl("key", "1", "tap")
     setting("killaura", "anti bot", "true")
@@ -6161,8 +6166,9 @@ def antibot_prepare():
     setting("aimassist", "anti bot", "true")
     setting("aimassist", "require mouse down", "false")
     setting("aimassist", "only while turning", "false")
-    setting("antibot", "sensitivity", "Balanced")
-    only("antibot")
+    for consumer in ("killaura", "aimassist", "triggerbot"):
+        setting(consumer, "anti bot sensitivity", "Balanced")
+    only()
 
 
 def antibot_hits(mark):
@@ -6171,9 +6177,9 @@ def antibot_hits(mark):
         return [int(line.split()[1]) for line in f if line.startswith("attack ")]
 
 
-def antibot_only(*consumers, master=True):
-    """Switch consumers without restarting the master and discarding its observations."""
-    desired = set(consumers) | ({"antibot"} if master else set())
+def antibot_only(*consumers):
+    """Switch consumers while retaining the shared internal observations."""
+    desired = set(consumers)
     for name in list(on):
         if name not in desired:
             toggle(name, False)
@@ -6254,9 +6260,9 @@ def _():
         antibot_fixture([])
 
 
-@test("Anti Bot (consumer and master bypass switches)")
+@test("Anti Bot (consumer switches and sensitivity)")
 def _():
-    # A disabled consumer filter or disabled master must restore targeting, while the other consumer stays protected.
+    # Each consumer's toggle and sensitivity control targeting without a master switch.
     if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
         return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
     observed = {}
@@ -6266,11 +6272,12 @@ def _():
         for consumer, field in (("killaura", "aura"), ("aimassist", "aim")):
             antibot_only()
             wait(100)
-            for label, enabled, own in (("protected", True, "true"), ("consumer off", True, "false"), ("master off", False, "true")):
+            for label, own, sensitivity in (("protected", "true", "Balanced"), ("consumer off", "false", "Balanced"), ("conservative", "true", "Conservative")):
                 antibot_only()
                 setting(consumer, "anti bot", own)
+                setting(consumer, "anti bot sensitivity", sensitivity)
                 ctl("look", "0", "0")
-                antibot_only(consumer, master=enabled)
+                antibot_only(consumer)
                 seen = []
                 for _ in range(20):
                     wait(4)

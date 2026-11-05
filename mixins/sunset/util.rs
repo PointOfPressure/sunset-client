@@ -541,7 +541,7 @@ pub(super) fn name_into(game: &Game<'_>, mob: &horizon_client::mobs::Mob, out: &
 
 // Every automated targeting path reads the same cached classification.
 pub(super) fn spared(game: &Game<'_>, m: &Module, id: u32, _player: bool) -> bool {
-    (m.b("Anti bot") && super::sunset_antibot::blocked(id))
+    super::sunset_antibot::blocked_for(id, m)
         || (m.b("Ignore teams")
         && horizon_client::scoreboard::teams_allied(game.score.board.players_team(&game.options.player_name()), game.mob_team(id))
         )

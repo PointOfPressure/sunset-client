@@ -670,6 +670,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "")
             .bool("Anti bot", true)
+            .pick("Anti bot sensitivity", &["Balanced", "Conservative", "Sensitive"])
             .bool("Ignore teams", false)
             .bool("Wait for cooldown", true)
             .num("Shortest cooldown (%)", 100.0, 50.0, 100.0, 1.0)
@@ -1201,7 +1202,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Time", 6000.0, 0.0, 24000.0, 1000.0),
     ];
     v.splice(0..0, super::sunset_aura::defaults());
-    v.extend(super::sunset_antibot::defaults());
     v.extend(super::sunset_combat::defaults());
     v.extend(super::sunset_crystal_aura::defaults());
     v.extend(super::sunset_cart::defaults());
@@ -10549,20 +10549,22 @@ mod cleanup_tests {
     #[test]
     fn antibot_defaults_protect_combat_and_saved_optouts_still_load() {
         let mut state = State::new();
-        assert!(state.module("Anti Bot").unwrap().on);
-        assert_eq!(state.module("Anti Bot").unwrap().p("Sensitivity"), "Balanced");
+        assert!(state.module("Anti Bot").is_none());
         for name in ["Kill Aura", "Aim Assist", "Trigger Bot"] {
             assert!(state.module(name).unwrap().b("Anti bot"), "{name}");
+            assert_eq!(state.module(name).unwrap().p("Anti bot sensitivity"), "Balanced");
         }
         state.load_text(concat!(
             "killaura.antibot=false\n", "aimassist.antibot=false\n", "triggerbot.antibot=false\n",
             "antibot.on=false\n", "antibot.sensitivity=Conservative\n",
+            "killaura.antibotsensitivity=Conservative\n", "aimassist.antibotsensitivity=Sensitive\n",
         ));
         for name in ["Kill Aura", "Aim Assist", "Trigger Bot"] {
             assert!(!state.module(name).unwrap().b("Anti bot"), "{name}");
         }
-        assert!(!state.module("Anti Bot").unwrap().on);
-        assert_eq!(state.module("Anti Bot").unwrap().p("Sensitivity"), "Conservative");
+        assert!(state.module("Anti Bot").is_none());
+        assert_eq!(state.module("Kill Aura").unwrap().p("Anti bot sensitivity"), "Conservative");
+        assert_eq!(state.module("Aim Assist").unwrap().p("Anti bot sensitivity"), "Sensitive");
     }
 
     #[test]

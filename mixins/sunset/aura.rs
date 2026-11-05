@@ -55,6 +55,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ignore named", false)
             .bool("Ignore passive", true)
             .bool("Anti bot", true)
+            .pick("Anti bot sensitivity", &["Balanced", "Conservative", "Sensitive"])
             .bool("Ignore teams", false)
             .bool("Ignore invisible", false)
             .num("Health threshold", 0.0, 0.0, 100.0, 1.0)

@@ -1,6 +1,6 @@
 // One tick's classification, shared by combat paths. Network lifecycle hooks
 // invalidate identities when the world actually applies a spawn or removal.
-use super::sunset::{Category, Module};
+use super::sunset::Module;
 use super::sunset_antibot_state::{self as state, Class, Observation, Sensitivity, Tracker};
 pub(super) use state::Token;
 use super::{Dim, Game};
@@ -16,8 +16,6 @@ struct State {
     entity: Option<i32>,
     changed: bool,
     active: bool,
-    enabled: bool,
-    sensitivity: Sensitivity,
     start: Instant,
     uuids: HashMap<u128, u16>,
     names: HashMap<u64, u16>,
@@ -27,7 +25,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             tracker: Tracker::default(), session: None, dim: None, entity: None,
-            changed: false, active: false, enabled: true, sensitivity: Sensitivity::Balanced,
+            changed: false, active: false,
             start: Instant::now(), uuids: HashMap::new(), names: HashMap::new(), modes: HashMap::new(),
         }
     }
@@ -36,10 +34,10 @@ static STATE: Mutex<Option<State>> = Mutex::new(None);
 fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(STATE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(State::default))
 }
-pub(super) fn defaults() -> Vec<Module> {
-    vec![Module::new("Anti Bot", Category::Combat, "Filters decoys using combined observations.")
-        .on()
-        .pick("Sensitivity", &["Balanced", "Conservative", "Sensitive"])]
+fn sensitivity(module: &Module) -> Sensitivity {
+    match module.p("Anti bot sensitivity") {
+        "Conservative" => Sensitivity::Conservative, "Sensitive" => Sensitivity::Sensitive, _ => Sensitivity::Balanced,
+    }
 }
 fn bind(game: &Game<'_>, s: &mut State) {
     let active = game.native_on(super::sunset::ID) && game.player.is_some() && game.remote.is_some();
@@ -106,18 +104,8 @@ fn invalid_name(name: &str) -> bool {
 // tracker uses monotonic time, independent of Timer and the world's tick rate.
 pub(super) fn tick(game: &mut Game<'_>) {
     frame(game);
-    let (enabled, sensitivity) = super::sunset::with(|s| s.module("Anti Bot").map_or((true, Sensitivity::Balanced), |m| {
-        (m.on, match m.p("Sensitivity") {
-            "Conservative" => Sensitivity::Conservative, "Sensitive" => Sensitivity::Sensitive, _ => Sensitivity::Balanced,
-        })
-    }));
     let Some(local) = game.player.as_ref().map(|p| [p.position.x, p.position.y, p.position.z]) else { return; };
     with(|s| {
-        if s.enabled != enabled {
-            s.tracker.clear();
-            s.enabled = enabled;
-        }
-        s.sensitivity = sensitivity;
         s.uuids.clear();
         s.names.clear();
         for mob in game.mobs.iter().filter(|m| m.kind.id == "minecraft:player" && m.alive() && !m.removed) {
@@ -154,7 +142,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
                 scale: f64::from(mob.extra.model_scale), size: [hi.x - lo.x, hi.y - lo.y, hi.z - lo.z],
                 on_ground: mob.on_ground, flying: mob.extra.fall_flying,
                 age: mob.age, invisible: mob.invisible,
-            }, sensitivity);
+            }, Sensitivity::Balanced);
         }
         s.tracker.finish(now);
     });
@@ -162,13 +150,26 @@ pub(super) fn tick(game: &mut Game<'_>) {
 pub(super) fn token(id: u32) -> Option<Token> { with(|s| s.tracker.token(id)) }
 pub(super) fn current(token: Token) -> bool { with(|s| s.tracker.current(token)) }
 pub(super) fn blocked(id: u32) -> bool {
-    with(|s| s.enabled && s.tracker.decision(id).class == Class::Rejected)
+    with(|s| s.tracker.decision(id).class == Class::Rejected)
+}
+pub(super) fn blocked_for(id: u32, module: &Module) -> bool {
+    if !module.b("Anti bot") { return false; }
+    match sensitivity(module) {
+        Sensitivity::Balanced => blocked(id),
+        sensitivity => with(|s| s.tracker.decision_for(id, sensitivity).class == Class::Rejected),
+    }
 }
 pub(super) fn diagnostics(game: &Game<'_>, id: Option<u32>) -> Vec<String> {
     let local = game.eye_position().unwrap_or([0.0; 3]);
     let targets = (super::sunset_aura::target_id(), super::sunset_combat::aim_target_id(), super::sunset_click_fix::pending_target_id());
+    let policies = super::sunset::with(|s| ["Kill Aura", "Aim Assist", "Trigger Bot"].map(|name| {
+        s.module(name).map(|m| (name, m.b("Anti bot"), sensitivity(m)))
+    }));
     with(|s| {
-        let mut out = vec![format!("AntiBot enabled={} sensitivity={:?}; confidence is evidence, not a measured probability.", s.enabled, s.sensitivity)];
+        let mut out = vec!["AntiBot is configured inside each combat module; confidence is evidence, not a measured probability.".to_owned()];
+        for (name, enabled, sensitivity) in policies.into_iter().flatten() {
+            out.push(format!("{name}: Anti bot={enabled}, sensitivity={sensitivity:?}"));
+        }
         out.push(format!("Targets aura={:?} aim={:?} pending={:?}", targets.0, targets.1, targets.2));
         for mob in game.mobs.iter().filter(|m| id.map_or_else(
             || super::sunset_util::dist(local, [m.position.x, m.position.y, m.position.z]) < 12.0,

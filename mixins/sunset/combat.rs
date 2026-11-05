@@ -124,6 +124,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Pause while mining", false)
             .bool("Only while turning", false)
             .bool("Anti bot", true)
+            .pick("Anti bot sensitivity", &["Balanced", "Conservative", "Sensitive"])
             .bool("Ignore teams", false)
             .bool("Silent aim", false)
             .bool("Silent players only", true)

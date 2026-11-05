@@ -3,6 +3,9 @@ use std::collections::{HashMap, VecDeque};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Sensitivity { Conservative, Balanced, Sensitive }
+impl Sensitivity {
+    fn index(self) -> usize { match self { Self::Conservative => 0, Self::Balanced => 1, Self::Sensitive => 2 } }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Class { Trusted, Suspicious, Rejected }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,9 +72,9 @@ struct Record {
     history: History,
     confidence: f64,
     reasons: u16,
-    rejected: bool,
+    rejected: [bool; 3],
     sensitivity: Sensitivity,
-    supported_until: f64,
+    supported_until: [f64; 3],
 }
 struct Identity {
     token: Token,
@@ -209,14 +212,11 @@ impl Tracker {
         if !self.records.contains_key(&o.id) && self.records.len() < MAX_ENTITIES {
             self.records.insert(o.id, Record {
                 born: now, seen: now, history: History::default(),
-                confidence: 0.0, reasons: 0, rejected: false, sensitivity, supported_until: now,
+                confidence: 0.0, reasons: 0, rejected: [false; 3], sensitivity, supported_until: [now; 3],
             });
         }
         let Some(r) = self.records.get_mut(&o.id) else { return; };
-        if r.sensitivity != sensitivity {
-            r.rejected = false;
-            r.sensitivity = sensitivity;
-        }
+        r.sensitivity = sensitivity;
         r.seen = now;
         let last = r.history.last();
         if last.is_some_and(|s| now - s.time < 0.04) { return; }
@@ -226,7 +226,7 @@ impl Tracker {
         if last.is_some_and(|s| length(sub(s.local, o.local)) > 8.0 || now - s.time > 0.5) {
             r.history = History::default();
             r.confidence = 0.0;
-            r.rejected = false;
+            r.rejected = [false; 3];
         }
         r.history.push(Sample { time: now, position: o.position, local: o.local, yaw: o.local_yaw.to_radians(), grounded: o.on_ground });
         let mut reasons = movement(&r.history, &o);
@@ -258,23 +258,28 @@ impl Tracker {
         } else {
             r.confidence = desired.max(r.confidence - dt * 30.0);
         }
-        let threshold = match sensitivity {
-            Sensitivity::Conservative => 80.0, Sensitivity::Balanced => 60.0, Sensitivity::Sensitive => 50.0,
-        };
-        let supported = families.iter().filter(|score| **score > 0).count() >= 2 && desired >= threshold;
-        if supported { r.supported_until = now + 0.5; }
-        if supported && r.confidence + 1e-6 >= threshold {
-            r.rejected = true;
-        } else if r.confidence < threshold - 20.0 || now > r.supported_until {
-            r.rejected = false;
+        // Share observations and confidence, but retain each sensitivity's
+        // recovery state so one combat module cannot change another's policy.
+        let corroborated = families.iter().filter(|score| **score > 0).count() >= 2;
+        for (index, threshold) in [80.0, 60.0, 50.0].into_iter().enumerate() {
+            let supported = corroborated && desired >= threshold;
+            if supported { r.supported_until[index] = now + 0.5; }
+            if supported && r.confidence + 1e-6 >= threshold {
+                r.rejected[index] = true;
+            } else if r.confidence < threshold - 20.0 || now > r.supported_until[index] {
+                r.rejected[index] = false;
+            }
         }
         // Retain the supporting explanation during the short recovery period.
-        if reasons != 0 || !r.rejected { r.reasons = reasons; }
+        if reasons != 0 || !r.rejected.iter().any(|rejected| *rejected) { r.reasons = reasons; }
     }
     pub fn decision(&self, id: u32) -> Decision {
+        self.decision_for(id, self.records.get(&id).map_or(Sensitivity::Balanced, |r| r.sensitivity))
+    }
+    pub fn decision_for(&self, id: u32, sensitivity: Sensitivity) -> Decision {
         let Some(r) = self.records.get(&id) else { return Decision { class: Class::Trusted, confidence: 0, reasons: 0, observed: false }; };
         Decision {
-            class: if r.rejected { Class::Rejected } else if r.confidence >= 10.0 { Class::Suspicious } else { Class::Trusted },
+            class: if r.rejected[sensitivity.index()] { Class::Rejected } else if r.confidence >= 10.0 { Class::Suspicious } else { Class::Trusted },
             confidence: r.confidence.round() as u8, reasons: r.reasons, observed: true,
         }
     }
@@ -517,6 +522,26 @@ mod tests {
         orbit(100, &mut o);
         t.observe(5.0, o, Sensitivity::Conservative);
         assert_ne!(t.decision(1).class, Class::Rejected);
+    }
+    #[test]
+    fn combat_sensitivities_share_evidence_without_changing_each_others_verdicts() {
+        let mut t = Tracker::default();
+        run(&mut t, 100, orbit);
+        let confidence = t.decision(1).confidence;
+        for _ in 0..100 {
+            assert_ne!(t.decision_for(1, Sensitivity::Conservative).class, Class::Rejected);
+            assert_eq!(t.decision_for(1, Sensitivity::Balanced).class, Class::Rejected);
+            assert_eq!(t.decision_for(1, Sensitivity::Sensitive).class, Class::Rejected);
+        }
+        assert_eq!(t.decision(1).confidence, confidence);
+        for step in 100..240 {
+            let mut o = player(1);
+            o.age = step;
+            t.observe(f64::from(step) * 0.05, o, Sensitivity::Balanced);
+        }
+        for sensitivity in [Sensitivity::Conservative, Sensitivity::Balanced, Sensitivity::Sensitive] {
+            assert_ne!(t.decision_for(1, sensitivity).class, Class::Rejected);
+        }
     }
     #[test]
     fn repeated_queries_and_duplicate_samples_cannot_increase_confidence() {

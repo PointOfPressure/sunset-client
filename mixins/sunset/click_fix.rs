@@ -110,8 +110,8 @@ pub(super) fn aim_click(game: &mut Game<'_>) -> Option<bool> {
     let m = module("Aim Assist").filter(|m| m.b("Silent aim") || m.b("Hit flick"))?;
     if !live(game) { return None; }
     // A busy assisted attack must not hand a rejected click back to vanilla.
-    if m.b("Anti bot") && game.mob_hit().is_some_and(|(index, distance)|
-        game.before_block(distance) && super::sunset_antibot::blocked(game.mobs[index].id))
+    if game.mob_hit().is_some_and(|(index, distance)|
+        game.before_block(distance) && super::sunset_antibot::blocked_for(game.mobs[index].id, &m))
     { return Some(false); }
     if game.clicks.miss_time > 0 || sunset::strike_waiting() || game.held().is_some_and(|s| horizon_client::spear::Kinetic::of(&s.item).is_some()) {
         return None;
