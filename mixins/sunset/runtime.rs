@@ -312,6 +312,7 @@ impl Module {
             "Kill Aura" => Some(num(self.n("Range"))),
             "Fast Place" => Some(num(self.n("Speed"))),
             "Speed" | "Criticals" => Some(self.p("Mode").to_owned()),
+            "Client Spoofer" => Some(self.p("Client").to_owned()),
             "Offhand" if self.b("Show totem count") => Some(super::sunset_combat_inventory::totem_count().to_string()),
             _ => None,
         }
@@ -323,6 +324,14 @@ impl Module {
         match self.name {
             // Kill Aura's and Trigger Bot's Shield: its settings with it on.
             "Kill Aura" | "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
+            // Client Spoofer: Custom brand with Custom, the Lunar settings with Lunar Client (or with Per server set).
+            "Client Spoofer" => match name {
+                "Custom brand" => self.p("Client") == "Custom" || !self.t("Per server").trim().is_empty(),
+                "Lunar version" | "Lunar Fabric tag" => {
+                    self.p("Client") == "Lunar Client" || !self.t("Per server").trim().is_empty()
+                }
+                _ => true,
+            },
             "Auto Armor" => match name {
                 "Armor key" => self.p("Mode") == "Key",
                 "Switch sets" => key_from_text(self.t("Switch key")).is_some(),
@@ -1225,6 +1234,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_server_scan::defaults());
     v.extend(super::sunset_extras::defaults());
     v.extend(super::sunset_debug::defaults());
+    v.extend(super::sunset_client_spoofer::defaults());
     let list = super::sunset_extra_modules::defaults(&v);
     v.push(list);
     // Modules that only draw can be held on with their bind instead of toggled.
@@ -3542,6 +3552,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_extras::tick(game, &mods);
     super::sunset_vanish::tick(game, mods.iter().find(|m| m.name == "Anti Vanish" && m.on));
     super::sunset_server_scan::tick(game, mods.iter().find(|m| m.name == "Server Scan" && m.on));
+    super::sunset_client_spoofer::tick(game, mods.iter().find(|m| m.name == super::sunset_client_spoofer::NAME && m.on));
     crit_tick(game);
     if let Some(m) = get("Kill Aura") {
         kill_aura(game, m, get("Criticals").is_some());
@@ -8459,6 +8470,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Zoom" => "wi zoom spyglass",
         "Panic" => "disable all off hide",
         "Debug Report" => "debug report bug report clipboard copy log flags anticheat alerts packets",
+        "Client Spoofer" => "client spoofer brand spoof client brand vanilla fabric lunar client badlion labymod feather forge neoforge",
         "Chest Stealer" => "auto steal autosteal loot",
         "Liquid Filler" => "auto drain autodrain drain bucket scoop water lava cobweb",
         "Auto Tool" => "auto pickaxe autopickaxe tool swap pickaxe below",

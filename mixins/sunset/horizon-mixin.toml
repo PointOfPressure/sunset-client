@@ -1220,6 +1220,34 @@ bindings = [
   { name = "data", ty = "&[u8]", value = "data" },
 ]
 
+[[module]]
+id = "client_spoofer"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_client_spoofer"
+source = "client_spoofer.rs"
+
+[[module]]
+id = "client_brand_wire"
+file = "crates/horizon-client/src/net.rs"
+name = "sunset_client_brand"
+source = "client_brand.rs"
+visibility = "pub"
+
+[[injection]]
+id = "client_brand"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::net::brand"
+helper = "client_brand_hook.rs"
+bindings = []
+
+[[injection]]
+id = "client_local"
+kind = "HEAD"
+target = "horizon_client::net::Session::connect_local"
+helper = "client_local_hook.rs"
+bindings = []
+
 [[injection]]
 id = "server_scan_config_channel"
 kind = "HEAD"

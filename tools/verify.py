@@ -753,6 +753,62 @@ class Lag:
         self.stalled_until = time.time() + seconds
 
 
+class BrandTap:
+    """A relay between the game and SERVER that notes the client brand (minecraft:brand) of each connection made
+    through it, as the server gets it: an offline server's stream is unencrypted and the brand too small to compress."""
+
+    def __init__(self):
+        import socket, threading
+        self.brands = []
+        self.listener = socket.create_server(("127.0.0.1", 0))
+        self.port = self.listener.getsockname()[1]
+        host, port = SERVER.rsplit(":", 1)
+
+        def pipe(src, dst, seen=None):
+            buf = b"" if seen is not None else None
+            try:
+                while chunk := src.recv(65536):
+                    if buf is not None:
+                        buf += chunk
+                        brand = BrandTap.read(buf)
+                        if brand is not None:
+                            seen.append(brand)
+                            buf = None
+                        elif len(buf) > 1 << 16:
+                            buf = None
+                    dst.sendall(chunk)
+                dst.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+
+        def serve():
+            while True:
+                try:
+                    game, _ = self.listener.accept()
+                    server = socket.create_connection((host, int(port)))
+                except OSError:
+                    return
+                threading.Thread(target=pipe, args=(game, server, self.brands), daemon=True).start()
+                threading.Thread(target=pipe, args=(server, game), daemon=True).start()
+        threading.Thread(target=serve, daemon=True).start()
+
+    @staticmethod
+    def read(buf):
+        """The string after the channel name, once all of it is there."""
+        at = buf.find(b"\x0fminecraft:brand")
+        if at < 0:
+            return None
+        i, n, shift = at + 16, 0, 0
+        while i < len(buf):
+            b = buf[i]
+            i += 1
+            n |= (b & 0x7F) << shift
+            shift += 7
+            if not b & 0x80:
+                return buf[i:i + n].decode("utf-8", "replace") if len(buf) >= i + n else None
+        return None
+
+
 def join(address):
     ctl("disconnect")
     time.sleep(2)
@@ -8074,6 +8130,38 @@ def _():
     return ok, (f"Passive: Query sent {queried}, packet kinds beyond the module off {extra}, suggestion requests {passive.count(15)}, "
                 f"{len(found)} lines ({found[1] if len(found) > 1 else ''!r}); Extended run: suggestion requests "
                 f"{extended.count(15)}, {target!r}")
+
+
+@test("Client Spoofer")
+def _():
+    # Through a relay that reads what reaches the server: the client brand with the module off (Horizon's own), with
+    # Client Fabric, with Custom, and with Per server naming NeoForge for the relay's address over Client Lunar Client;
+    # Diagnostics says what went out.
+    if not SERVER:
+        return None, "servers only"
+    tap = BrandTap()
+    relay = f"127.0.0.1:{tap.port}"
+    got, said = {}, []
+    try:
+        for name, mods, settings in (
+                ("off", (), ()),
+                ("Fabric", ("clientspoofer",), (("client", "Fabric"),)),
+                ("Custom", ("clientspoofer",), (("client", "Custom"), ("custom brand", "Test Brand 1"))),
+                ("Per server", ("clientspoofer",), (("client", "Lunar Client"), ("per server", "127.0.0.1=NeoForge")))):
+            only(*mods)
+            for k, v in settings:
+                setting("clientspoofer", k, v)
+            before, mark = len(tap.brands), log_mark()
+            join(relay)
+            got[name] = tap.brands[before] if len(tap.brands) > before else None
+            if name == "Fabric":
+                said = [line for line in sunset_said(mark) if "Client Spoofer" in line]
+    finally:
+        only()
+        join(SERVER)
+    want = {"off": "horizon", "Fabric": "fabric", "Custom": "Test Brand 1", "Per server": "neoforge"}
+    ok = got == want and any('"fabric" (Fabric)' in line for line in said)
+    return ok, f"brands the server got: {got}; Diagnostics: {said[:1]}"
 
 
 @test("Velocity (knockback delay)")
