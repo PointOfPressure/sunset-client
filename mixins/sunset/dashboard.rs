@@ -75,7 +75,7 @@ pub(super) fn on() -> bool {
     ON.load(Ordering::Relaxed)
 }
 
-// How wide the panel is for ClickGUI's Panel width: 400 at its least, 540 by default, 680 at its most.
+// How wide the panel is for ClickGUI's Panel width: 400 at its least, 610 by default, 680 at its most.
 const WIDTH_BASE: f32 = 190.0;
 const WIDTH_PER_PANEL: f32 = 3.5;
 const HEIGHT: f32 = 420.0;

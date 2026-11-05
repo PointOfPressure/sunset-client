@@ -3072,6 +3072,7 @@ def _():
     ww = min(max(panel * 1.6, 150), w - 8)
     x = (w - ww) / 2
     bind_row = (x + ww / 2, 40 + 16 + 14 + 14 + 7)
+    setting("clickgui", "settings", "Window")
     say(".menu auto walk")
     wait(5)
     ctl("click-at", *map(str, menu_row(1, 1)), "right")

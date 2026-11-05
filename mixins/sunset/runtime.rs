@@ -42,15 +42,15 @@ pub(crate) const MENU2_DEFAULT: &str = "key.keyboard.right.shift";
 // bits).
 static LOOK: [std::sync::atomic::AtomicU32; 11] = [
     std::sync::atomic::AtomicU32::new(0xFFB020),
-    std::sync::atomic::AtomicU32::new(0x42C8_0000),
-    std::sync::atomic::AtomicU32::new(0x3F66_6666),
+    std::sync::atomic::AtomicU32::new(0x42F0_0000),
+    std::sync::atomic::AtomicU32::new(0x3F73_3333),
+    std::sync::atomic::AtomicU32::new(35),
     std::sync::atomic::AtomicU32::new(0),
-    std::sync::atomic::AtomicU32::new(0),
-    std::sync::atomic::AtomicU32::new(0x40C0_0000),
+    std::sync::atomic::AtomicU32::new(0x4000_0000),
     std::sync::atomic::AtomicU32::new(0x3F80_0000),
     std::sync::atomic::AtomicU32::new(0x3F80_0000),
-    std::sync::atomic::AtomicU32::new(0x40C0_0000),
     std::sync::atomic::AtomicU32::new(0x4080_0000),
+    std::sync::atomic::AtomicU32::new(0x4040_0000),
     std::sync::atomic::AtomicU32::new(0),
 ];
 
@@ -831,15 +831,15 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Animations", &["Minimal", "Off"])
             .colour("Accent color", "Sunset Orange")
             .num("GUI scale", 1.0, 0.75, 2.0, 0.05)
-            .num("Panel width", 100.0, 60.0, 140.0, 2.0)
-            .num("Panel radius", 6.0, 0.0, 12.0, 1.0)
-            .num("Control radius", 4.0, 0.0, 6.0, 1.0)
+            .num("Panel width", 120.0, 60.0, 140.0, 2.0)
+            .num("Panel radius", 4.0, 0.0, 12.0, 1.0)
+            .num("Control radius", 3.0, 0.0, 6.0, 1.0)
             .pick("Spacing", &["Comfortable", "Compact"])
-            .num("Text indent", 6.0, 0.0, 12.0, 1.0)
-            .pick("Settings", &["Window", "Inline"])
-            .num("Background opacity", 0.9, 0.2, 1.0, 0.05)
-            .num("Background dim", 20.0, 0.0, 100.0, 5.0)
-            .bool("Menu dim", false)
+            .num("Text indent", 2.0, 0.0, 12.0, 1.0)
+            .pick("Settings", &["Inline", "Window"])
+            .num("Background opacity", 0.95, 0.2, 1.0, 0.05)
+            .num("Background dim", 35.0, 0.0, 100.0, 5.0)
+            .bool("Menu dim", true)
             .bool("Inventory blur", false)
             .bool("Toggle messages", true)
             .bool("Module messages", true)
@@ -2220,13 +2220,13 @@ pub(super) fn sync_flags(s: &mut State) {
     super::sunset_dashboard::set_on(g.is_some_and(|m| m.p("Style") == "Dashboard"));
     super::sunset_smooth::set_enabled(g.is_none_or(|m| m.p("Animations") != "Off"));
     LOOK[0].store(g.map_or(0xFFB020, |m| m.c("Accent color") & 0x00FF_FFFF), Ordering::Relaxed);
-    LOOK[1].store(g.map_or(100.0, |m| m.n("Panel width") as f32).to_bits(), Ordering::Relaxed);
-    LOOK[2].store(g.map_or(0.9, |m| m.n("Background opacity") as f32).to_bits(), Ordering::Relaxed);
-    LOOK[3].store(g.map_or(20.0, |m| m.n("Background dim")) as u32, Ordering::Relaxed);
-    LOOK[5].store(g.map_or(6.0, |m| m.n("Text indent") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[1].store(g.map_or(120.0, |m| m.n("Panel width") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[2].store(g.map_or(0.95, |m| m.n("Background opacity") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[3].store(g.map_or(35.0, |m| m.n("Background dim")) as u32, Ordering::Relaxed);
+    LOOK[5].store(g.map_or(2.0, |m| m.n("Text indent") as f32).to_bits(), Ordering::Relaxed);
     LOOK[6].store(g.map_or(1.0, |m| m.n("GUI scale") as f32).to_bits(), Ordering::Relaxed);
-    LOOK[8].store(g.map_or(6.0, |m| m.n("Panel radius") as f32).to_bits(), Ordering::Relaxed);
-    LOOK[9].store(g.map_or(4.0, |m| m.n("Control radius") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[8].store(g.map_or(4.0, |m| m.n("Panel radius") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[9].store(g.map_or(3.0, |m| m.n("Control radius") as f32).to_bits(), Ordering::Relaxed);
     LOOK[10].store(u32::from(g.is_some_and(|m| m.p("Spacing") == "Compact")), Ordering::Relaxed);
     let no_fall = s.module("No Fall").filter(|m| m.on);
     NO_FALL.store(no_fall.map_or(0, |m| match m.p("Mode") {
@@ -10193,6 +10193,8 @@ mod movement_config_tests {
         set(hud, "Compass", "true");
         assert!(shown(hud, "Coordinates x") && shown(hud, "Coordinates y") && shown(hud, "Compass position") && !shown(hud, "Compass x"));
         let gui = state.modules.iter_mut().find(|m| m.name == "ClickGUI").unwrap();
+        assert!(shown(gui, "Inventory blur"), "Menu dim is on by default");
+        set(gui, "Menu dim", "false");
         assert!(!shown(gui, "Inventory blur"));
         set(gui, "Menu dim", "true");
         assert!(shown(gui, "Inventory blur"));
