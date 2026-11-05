@@ -192,9 +192,11 @@ fn wanted(l: &Loadout, k: usize) -> Option<&Slot> {
 // slots that already hold theirs staying: the hotbar and the off hand with the clicks of a number key pressed over it
 // in the inventory, using slot swaps; armour and the main inventory picked up, put down and the stack it met put back.
 // Then the loadout's locked slots are the ones locked (a loadout with no lock list leaves them).
-fn equip(game: &mut Game<'_>, l: &Loadout) {
-    if !util::inventory_idle(game) {
-        return;
+// Its clicks go only while the server knows you stand still (a click while moving is what Grim's MultiActionsC flags):
+// false when nothing was done.
+fn equip(game: &mut Game<'_>, l: &Loadout) -> bool {
+    if !util::inventory_idle(game) || !super::remote::sunset_combat_remote::quiet(game) {
+        return false;
     }
     let mut done = [false; 36];
     let best = |game: &Game<'_>, want: &Slot, done: &[bool; 36]| {
@@ -243,13 +245,14 @@ fn equip(game: &mut Game<'_>, l: &Loadout) {
     if let Some(locked) = &l.locked {
         super::sunset::set_setting(game, "loadouts.lockedslots", locked);
     }
+    true
 }
 
 fn equip_row(game: &mut Game<'_>, row: usize) {
     let list = loadouts();
     if let Some(l) = list.get(row) {
-        equip(game, l);
-        game.titles.set_overlay(format!("Equipped {}", l.name).into(), false);
+        let text = if equip(game, l) { format!("Equipped {}", l.name) } else { format!("Stand still to equip {}", l.name) };
+        game.titles.set_overlay(text.into(), false);
     }
 }
 
@@ -275,6 +278,11 @@ pub(super) fn tick(game: &mut Game<'_>) {
     });
     let was = panel(|p| std::mem::replace(&mut p.tools, now.clone()));
     if !util::inventory_idle(game) {
+        return;
+    }
+    // A click while moving is what Grim's MultiActionsC flags: the tool that broke is remembered until you stand still.
+    if !super::remote::sunset_combat_remote::quiet(game) {
+        panel(|p| p.tools = was);
         return;
     }
     let locked = slot_numbers(m.t("Locked slots"));
@@ -315,7 +323,12 @@ fn rule_score(game: &Game<'_>, rule: &str, s: &ItemStack) -> Option<f64> {
 // your inventory open (Inventory open) or with no screen (Always). Locked slots are left alone.
 fn auto_hotbar(game: &mut Game<'_>, m: &Module) {
     let open = game.screen == Screen::Inventory;
-    let ready = if m.p("Hotbar mode") == "Always" { util::inventory_idle(game) } else { open };
+    // Always: with no screen, only while the server knows you stand still (Grim's MultiActionsC).
+    let ready = if m.p("Hotbar mode") == "Always" {
+        util::inventory_idle(game) && super::remote::sunset_combat_remote::quiet(game)
+    } else {
+        open
+    };
     if !ready || game.ticks < panel(|p| p.hotbar_next) {
         return;
     }

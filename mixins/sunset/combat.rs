@@ -1038,7 +1038,9 @@ pub(super) fn offhand_click(game: &mut Game<'_>, m: &Module, want: &str) {
             }
         }
         Some(i) => {
-            super::sunset::menu_click(game, &[(i, Pickup), (504, Pickup), (i, Pickup)]);
+            if !super::sunset::menu_click(game, &[(i, Pickup), (504, Pickup), (i, Pickup)]) {
+                return;
+            }
             cs(|c| {
                 c.offhand_warned = false;
                 c.offhand_ticks = 0;

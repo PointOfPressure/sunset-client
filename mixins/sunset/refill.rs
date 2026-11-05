@@ -68,8 +68,9 @@ pub(super) fn replenish(game: &mut Game<'_>, m: &Module) {
         let room = (0..9).any(|h| !locked[h] && game.inventory.get(h).is_some_and(Option::is_none));
         let healing = m.b("Healing only");
         if let Some(src) = (9..36).find(|&i| !locked[i] && splash(game, i, healing)).filter(|_| room) {
-            menu_click(game, &[(src, QuickMove)]);
-            st(|s| s.potion_wait = m.n("Potion delay (ticks)") as u32 + 1);
+            if menu_click(game, &[(src, QuickMove)]) {
+                st(|s| s.potion_wait = m.n("Potion delay (ticks)") as u32 + 1);
+            }
             return;
         }
     }
@@ -93,8 +94,9 @@ pub(super) fn replenish(game: &mut Game<'_>, m: &Module) {
         let item = st_h.item.clone();
         let source = (9..36).find(|&i| !locked[i] && game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| s.item == item));
         if let Some(src) = source {
-            menu_click(game, &[(src, Pickup), (h, Pickup), (src, Pickup)]);
-            st(|s| s.replenish_wait = m.n("Delay (ticks)") as u32);
+            if menu_click(game, &[(src, Pickup), (h, Pickup), (src, Pickup)]) {
+                st(|s| s.replenish_wait = m.n("Delay (ticks)") as u32);
+            }
             return;
         }
     }

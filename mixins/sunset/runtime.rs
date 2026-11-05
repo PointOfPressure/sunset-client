@@ -1354,6 +1354,9 @@ pub(super) struct State {
     tool_back: Option<usize>,
     // Auto Tool's From inventory: the main inventory slot a tool was swapped in from, and the hotbar slot it went to.
     tool_pulled: Option<(usize, usize)>,
+    // Middle Click Extra: the hotbar slot and item a click asked for (used at the start of the next tick), and the
+    // slot to go back to with the ticks left.
+    mc_use: Option<(usize, &'static str)>,
     mc_back: Option<(usize, u32)>,
     nuke: Option<([i32; 3], u32)>,
     // Blocks Nuker just stopped on and the tick to forget them at.
@@ -1454,6 +1457,7 @@ impl State {
             holes: Sweep::new(),
             tool_back: None,
             tool_pulled: None,
+            mc_use: None,
             mc_back: None,
             nuke: None,
             nuke_skip: Vec::new(),
@@ -2953,7 +2957,14 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     // Liquid Filler's Drain and Chest Swap's Take off: likewise.
     super::sunset_drain::pre_tick(game, hits || game.selected != selected);
     super::sunset_takeoff::pre_tick(game, hits || game.selected != selected);
+    // Middle Click Extra's use and slot back: likewise.
+    let hits = middle_click_tick(game, hits || game.selected != selected) || hits;
     let mods = snapshot();
+    // Auto Tool's slot changes and swaps: before the tick's dig packets, likewise.
+    match mods.iter().find(|m| m.name == "Auto Tool" && m.on) {
+        Some(m) => auto_tool(game, m, hits || game.selected != selected),
+        None => auto_tool_off(game),
+    }
     super::sunset_render::pre_tick(game, &mods);
     super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
     super::sunset_player::no_break_reset(game, mods.iter().find(|m| m.name == "No Break Reset" && m.on));
@@ -3476,17 +3487,6 @@ fn module_tick(game: &mut Game<'_>) {
         let seq = super::sunset_util::sequence(game);
         game.send(S::PlayerAction(play::PlayerAction { action: 2, pos, direction: 1, sequence: seq }));
     }
-    if let Some(m) = get("Auto Tool") {
-        auto_tool(game, m);
-    }
-    if let Some((back, wait)) = with(|s| s.mc_back) {
-        if wait <= 1 {
-            hold(game, back);
-            with(|s| s.mc_back = None);
-        } else {
-            with(|s| s.mc_back = Some((back, wait - 1)));
-        }
-    }
     if let Some(m) = get("Logout Spots") {
         track_logouts(game, m);
     } else {
@@ -4002,7 +4002,9 @@ fn eat_from(game: &mut Game<'_>, slot: Option<usize>) -> bool {
             let Some(empty) = empty_hotbar(game) else {
                 return false;
             };
-            menu_click(game, &[(i, horizon_client::menu::Input::Pickup), (empty, horizon_client::menu::Input::Pickup)]);
+            if !menu_click(game, &[(i, horizon_client::menu::Input::Pickup), (empty, horizon_client::menu::Input::Pickup)]) {
+                return false;
+            }
             empty
         }
     };
@@ -4122,13 +4124,16 @@ pub(super) fn scan_blocks(game: &Game<'_>, m: &Module, ticks: u64) {
 // container open), by the menu's slot numbers: 0 to 8 the hotbar, 9 to 35
 // the rest, 500 to 503 the armor.
 // Clicks on inventory slots; none at all when one is a slot Loadouts locks.
-pub(super) fn menu_click(game: &mut Game<'_>, ops: &[(usize, horizon_client::menu::Input)]) {
-    if ops.iter().any(|&(slot, _)| super::sunset_loadouts::locked(slot)) {
-        return;
+// Clicks in the player's inventory, for modules that click on their own: only while the server knows you stand still
+// (no movement keys, jump, sneak or sprint in the last input sent), as with any screen open: a click while moving is
+// what Grim's MultiActionsC flags (and cancels). False when nothing was clicked; the caller tries again later.
+pub(super) fn menu_click(game: &mut Game<'_>, ops: &[(usize, horizon_client::menu::Input)]) -> bool {
+    if ops.iter().any(|&(slot, _)| super::sunset_loadouts::locked(slot)) || !super::remote::sunset_combat_remote::quiet(game) {
+        return false;
     }
     let ops: Vec<(Option<usize>, i32, horizon_client::menu::Input)> =
         ops.iter().map(|&(slot, input)| (Some(slot), 0, input)).collect();
-    game.remote_menu_ops(&ops);
+    game.remote_menu_ops(&ops)
 }
 
 pub(super) fn inventory_idle(game: &Game<'_>) -> bool {
@@ -4160,13 +4165,16 @@ pub(super) fn armor_score(item: &str, damage: u32) -> f32 {
 
 // Puts the stack in inventory slot `i` on armor slot `a`: shift-click into an
 // empty slot, else swap by picking both up.
+// Ungated: Chest Swap and Take off check the input themselves, and a restore must go out.
 pub(super) fn wear(game: &mut Game<'_>, i: usize, a: usize) {
     use horizon_client::menu::Input::{Pickup, QuickMove};
-    if game.armor[a].is_none() {
-        menu_click(game, &[(i, QuickMove)]);
-    } else {
-        menu_click(game, &[(i, Pickup), (500 + a, Pickup), (i, Pickup)]);
+    let ops: &[(usize, horizon_client::menu::Input)] =
+        if game.armor[a].is_none() { &[(i, QuickMove)] } else { &[(i, Pickup), (500 + a, Pickup), (i, Pickup)] };
+    if ops.iter().any(|&(slot, _)| super::sunset_loadouts::locked(slot)) {
+        return;
     }
+    let ops: Vec<(Option<usize>, i32, horizon_client::menu::Input)> = ops.iter().map(|&(slot, input)| (Some(slot), 0, input)).collect();
+    game.remote_menu_ops(&ops);
 }
 
 // An armour piece's material: `diamond` of diamond_helmet.
@@ -4249,6 +4257,10 @@ pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
             }
         }
         if let Some((i, _)) = best {
+            // A click while moving is what Grim's MultiActionsC flags: the piece waits until you stand still.
+            if !super::remote::sunset_combat_remote::quiet(game) {
+                return;
+            }
             wear(game, i, a);
             with(|s| s.armor_wait = m.n("Delay (ticks)") as u32);
             return;
@@ -4312,36 +4324,36 @@ pub(super) fn auto_replenish(game: &mut Game<'_>, m: &Module) {
         let source = (9..36).find(|&i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| s.item == item));
         if let Some(src) = source {
             // Shift-click from the main inventory fills the hotbar stack first.
-            menu_click(game, &[(src, QuickMove)]);
-            with(|s| s.replenish_wait = m.n("Delay (ticks)") as u32);
+            if menu_click(game, &[(src, QuickMove)]) {
+                with(|s| s.replenish_wait = m.n("Delay (ticks)") as u32);
+            }
             return;
         }
     }
 }
 
-// The hotbar tool that mines the block under the crosshair fastest, while
-// the attack button is held; back to the old slot after.
 // Auto Tool (Sunset's): while you break a block, the hotbar tool with the best score for it (Sunset's getScore:
 // a tool that is right for the block's drops, by its speed and enchantments), after Switch delay; Switch back when you
 // let go; Anti break lets go of a tool about to break. Only below you: only for the block under you. From inventory:
 // with no better tool in the hotbar, the best in the main inventory swapped into your hand (one swap click), and
 // swapped back when you let go or look off the block.
-pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
+// It runs at the start of a tick, before the game's dig packets and the move packet, as a hotbar key does: a slot
+// change after the move packet is what Grim's Post check flags, and one after a hit in the same tick its PacketOrderE
+// (`busy`: a hit or a slot change already went this tick; the change waits a tick). The swap clicks go only while the
+// server knows you stand still (no movement keys, sneak or sprint sent: Grim's MultiActionsC), each with the
+// inventory's close after it, as the game sends them.
+pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module, busy: bool) {
     use winit::event::MouseButton;
     let below = super::sunset_util::block_pos(game).map(|[x, y, z]| [x, y - 1, z]);
     let on_block = !m.b("Only below you") || game.pick().is_some_and(|hit| Some(hit.pos) == below);
     let down = game.native_playing() && (game.physical_buttons.contains(&MouseButton::Left) || game.left) && !gui_open() && on_block;
     if !down || game.selected != with(|s| s.tool_pulled.map_or(game.selected, |p| p.1)) {
-        if let Some((from, to)) = with(|s| s.tool_pulled.take())
-            && super::sunset::inventory_idle(game)
-        {
-            game.remote_menu_ops(&[(Some(from), to as i32, horizon_client::menu::Input::Swap)]);
-        }
+        tool_unpull(game);
     }
     if !down {
         let back = with(|s| {
             s.tool_wait = None;
-            s.tool_back.take()
+            if busy && m.b("Switch back") { None } else { s.tool_back.take() }
         });
         if let Some(back) = back.filter(|_| m.b("Switch back")) {
             hold(game, back);
@@ -4349,11 +4361,11 @@ pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
         return;
     }
     if let Some((slot, left)) = with(|s| s.tool_wait) {
-        if left == 0 {
+        if left > 1 {
+            with(|s| s.tool_wait = Some((slot, left - 1)));
+        } else if !busy {
             hold(game, slot);
             with(|s| s.tool_wait = None);
-        } else {
-            with(|s| s.tool_wait = Some((slot, left - 1)));
         }
     }
     if game.creative || game.remote.is_none() || game.entity_targeted() {
@@ -4377,7 +4389,8 @@ pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
         .fold(None, |b: Option<(usize, f64)>, (i, v)| if b.is_none_or(|b| v > b.1) { Some((i, v)) } else { b });
     let current = stack(game.selected);
     let locked = super::sunset_loadouts::locked;
-    let pull = (m.b("From inventory") && with(|s| s.tool_pulled.is_none()) && inventory_idle(game) && !locked(game.selected))
+    let still = super::remote::sunset_combat_remote::quiet(game);
+    let pull = (m.b("From inventory") && still && with(|s| s.tool_pulled.is_none()) && inventory_idle(game) && !locked(game.selected))
         .then(|| {
             let held = tool_score(game, m, current, &block).max(best.map_or(-1.0, |b| b.1));
             (9..36)
@@ -4389,8 +4402,10 @@ pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
         .flatten();
     if let Some((from, _)) = pull {
         let to = game.selected;
-        game.remote_menu_ops(&[(Some(from), to as i32, horizon_client::menu::Input::Swap)]);
-        with(|s| s.tool_pulled = Some((from, to)));
+        if game.remote_menu_ops(&[(Some(from), to as i32, horizon_client::menu::Input::Swap)]) {
+            game.close_container();
+            with(|s| s.tool_pulled = Some((from, to)));
+        }
         return;
     }
     let switch = best
@@ -4401,15 +4416,45 @@ pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module) {
         with(|s| {
             s.tool_back.get_or_insert(selected);
         });
+        // Switch delay counts from when the tool is first wanted: the wait is set once, not again each tick.
         match m.n("Switch delay") as u32 {
-            0 => hold(game, slot),
-            delay => with(|s| s.tool_wait = Some((slot, delay))),
+            0 if !busy => hold(game, slot),
+            0 => {}
+            delay => with(|s| {
+                if s.tool_wait.is_none_or(|(waiting, _)| waiting != slot) {
+                    s.tool_wait = Some((slot, delay));
+                }
+            }),
         }
     }
     let held = game.inventory.get(game.selected).and_then(|s| s.as_ref());
     if tool_spent(game, m, held) {
         let _ = game.play_mouse(MouseButton::Left, false);
     }
+}
+
+// From inventory's tool goes back where it came from: one swap click and the inventory's close, once the server knows
+// you stand still (else it waits).
+fn tool_unpull(game: &mut Game<'_>) {
+    let Some((from, to)) = with(|s| s.tool_pulled) else {
+        return;
+    };
+    if !inventory_idle(game) || !super::remote::sunset_combat_remote::quiet(game) {
+        return;
+    }
+    if game.remote_menu_ops(&[(Some(from), to as i32, horizon_client::menu::Input::Swap)]) {
+        game.close_container();
+    }
+    with(|s| s.tool_pulled = None);
+}
+
+// Auto Tool turned off: a tool it pulled from the inventory still goes back, nothing else waits.
+pub(super) fn auto_tool_off(game: &mut Game<'_>) {
+    with(|s| {
+        s.tool_wait = None;
+        s.tool_back = None;
+    });
+    tool_unpull(game);
 }
 
 // Anti break: a tool worn down to its last Anti break percentage.
@@ -4455,7 +4500,6 @@ fn tool_score(game: &Game<'_>, m: &Module, stack: Option<&horizon_client::items:
 // Middle click: throws or uses the chosen item from the hotbar, and switches
 // back a few ticks later.
 pub(super) fn middle_click(game: &mut Game<'_>) {
-    use winit::event::MouseButton;
     let Some(m) = with(|s| s.module("Middle Click Extra").filter(|m| m.on).cloned()) else {
         return;
     };
@@ -4474,18 +4518,48 @@ pub(super) fn middle_click(game: &mut Game<'_>) {
         _ => "experience_bottle",
     };
     let slot = (0..9).find(|&i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| s.item.ends_with(want)));
-    let Some(slot) = slot else {
-        return;
-    };
-    let before = game.selected;
-    hold(game, slot);
-    let _ = game.play_mouse(MouseButton::Right, true);
-    let _ = game.play_mouse(MouseButton::Right, false);
-    with(|s| {
-        if s.mc_back.is_none() {
-            s.mc_back = Some((before, 3));
+    if let Some(slot) = slot {
+        with(|s| s.mc_use = Some((slot, want)));
+    }
+}
+
+// Middle Click Extra's use and its slot back, at the start of a tick as a hotbar key and a right click are: the slot,
+// then the use, before the tick's move packet (a slot change or use after it is what Grim's Post check flags); the slot
+// goes back three ticks later, never in the tick of the use (Grim's PacketOrderE). `busy`: a hit or a slot change went
+// already this tick; both wait.
+fn middle_click_tick(game: &mut Game<'_>, busy: bool) -> bool {
+    use winit::event::MouseButton;
+    if busy {
+        return false;
+    }
+    if let Some((slot, want)) = with(|s| s.mc_use.take()) {
+        if !game.inventory.get(slot).and_then(|s| s.as_ref()).is_some_and(|s| s.item.ends_with(want)) {
+            return false;
         }
-    });
+        let before = game.selected;
+        hold(game, slot);
+        let _ = game.play_mouse(MouseButton::Right, true);
+        let _ = game.play_mouse(MouseButton::Right, false);
+        with(|s| {
+            if s.mc_back.is_none() {
+                s.mc_back = Some((before, 3));
+            }
+        });
+        return true;
+    }
+    match with(|s| s.mc_back) {
+        Some((back, wait)) if wait <= 1 => {
+            with(|s| s.mc_back = None);
+            let moved = game.selected != back;
+            hold(game, back);
+            moved
+        }
+        Some((back, wait)) => {
+            with(|s| s.mc_back = Some((back, wait - 1)));
+            false
+        }
+        None => false,
+    }
 }
 
 // Nuker's box for the Cube shape (Sunset's pos1 and pos2 by the way you face, with its offsets), block corners.

@@ -107,7 +107,10 @@ fn bring(game: &mut Game<'_>, name: &str, inventory: bool) -> Option<Borrow> {
         hold(game, slot);
         return Some(Borrow { previous, slot, from: None });
     }
-    let from = (9..36).find(|&i| is(game.stack_in(i), name)).filter(|_| inventory && !super::sunset_loadouts::locked(previous))?;
+    // From the main inventory: a swap click, only while the server knows you stand still (Grim's MultiActionsC).
+    let from = (9..36)
+        .find(|&i| is(game.stack_in(i), name))
+        .filter(|_| inventory && !super::sunset_loadouts::locked(previous) && super::remote::sunset_combat_remote::quiet(game))?;
     game.remote_menu_ops(&[(Some(from), previous as i32, Input::Swap)]);
     Some(Borrow { previous, slot: previous, from: Some(from) })
 }

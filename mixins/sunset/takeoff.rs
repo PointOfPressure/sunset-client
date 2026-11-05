@@ -167,7 +167,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
                     say(game, "Take off: no elytra in your inventory.");
                     return toggle_named(game, NAME, false);
                 };
-                if !super::sunset::inventory_idle(game) {
+                // A click while moving is what Grim's MultiActionsC flags: the elytra waits until you stand still.
+                if !super::sunset::inventory_idle(game) || !super::remote::sunset_combat_remote::quiet(game) {
                     return;
                 }
                 let had_chest = game.armor[1].is_some();
@@ -183,7 +184,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
             // A rocket only in the main inventory: swapped into an empty hotbar slot (or the held one).
             let in_hotbar = (0..9).any(|i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| util::short(&s.item) == "firework_rocket"));
             if !in_hotbar && let Some(from) = item_at(game, "firework_rocket") {
-                if !super::sunset::inventory_idle(game) {
+                if !super::sunset::inventory_idle(game) || !super::remote::sunset_combat_remote::quiet(game) {
                     return;
                 }
                 let to = (0..9).find(|&i| game.inventory.get(i).is_some_and(Option::is_none)).unwrap_or(game.selected);

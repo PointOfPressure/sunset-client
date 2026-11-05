@@ -3753,6 +3753,31 @@ def _():
         f"stone with Anti break and a worn pickaxe: {worn}")
 
 
+@test("Auto Tool (Switch delay)")
+def _():
+    # Mining obsidian with a sword in hand and a pickaxe in slot 2: with Switch delay 6 the sword stays the first ticks
+    # and the pickaxe comes in about 6 ticks after the tool is wanted (with a delay it never came before); the switch
+    # goes at the start of a tick, before its dig packets, as a hotbar key does.
+    slot(0, "diamond_sword")
+    slot(1, "diamond_pickaxe")
+    ctl("key", "1", "tap")
+    wait(2)
+    only("autotool")
+    setting("autotool", "switch delay", "6")
+    cmd(f"setblock {X0} {Y+1} {Z0+2} minecraft:obsidian")
+    ctl("look-at-block", str(X0), str(Y + 1), str(Z0 + 2))
+    wait(2)
+    ctl("mouse", "left", "down")
+    items = poll(16, 1, lambda: held().get("item", "").replace("minecraft:", ""))
+    ctl("mouse", "left", "up")
+    wait(5)
+    setting("autotool", "switch delay", "0")
+    only()
+    first = next((i + 1 for i, item in enumerate(items) if "pickaxe" in item), None)
+    ok = first is not None and 4 <= first <= 10 and "sword" in items[0]
+    return ok, f"ticks until the pickaxe was held: {first} (held each tick: {items})"
+
+
 @test("Auto Tool (cobweb)")
 def _():
     # A cobweb, the pickaxe held and a sword beside it: Auto Tool takes the sword (the game breaks a cobweb fastest
