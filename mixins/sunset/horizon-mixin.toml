@@ -1271,6 +1271,100 @@ name = "sunset_client_brand"
 source = "client_brand.rs"
 visibility = "pub"
 
+[[module]]
+id = "streamer_mode"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_streamer_mode"
+source = "streamer_mode.rs"
+
+[[module]]
+id = "streamer_names"
+file = "crates/horizon-client-render/src/hud.rs"
+name = "sunset_streamer"
+source = "streamer_names.rs"
+visibility = "pub"
+
+[[injection]]
+id = "streamer_text"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::hud::HudBatch::styled_text"
+helper = "streamer_text_hook.rs"
+bindings = [
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *self" },
+  { name = "atlas", ty = "&HudAtlas", value = "atlas" },
+  { name = "text", ty = "&crate::text::Text", value = "text" },
+  { name = "x", ty = "f32", value = "x" },
+  { name = "y", ty = "f32", value = "y" },
+  { name = "color", ty = "u32", value = "color" },
+  { name = "shadow", ty = "bool", value = "shadow" },
+  { name = "world", ty = "bool", value = "world" },
+]
+
+[[injection]]
+id = "streamer_width"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::font::Font::width"
+helper = "streamer_width_hook.rs"
+bindings = [
+  { name = "font", ty = "&Font", value = "&*self" },
+  { name = "s", ty = "&str", value = "s" },
+]
+
+[[injection]]
+id = "streamer_width_text"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::font::Font::width_text"
+helper = "streamer_width_text_hook.rs"
+bindings = [
+  { name = "font", ty = "&Font", value = "&*self" },
+  { name = "t", ty = "&Text", value = "t" },
+]
+
+[[injection]]
+id = "streamer_ui"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::ui_theme::Ui<'_>::text_line"
+helper = "streamer_ui_hook.rs"
+bindings = [
+  { name = "ui", ty = "&mut Ui<'_>", value = "&mut *self" },
+  { name = "face", ty = "Face", value = "face" },
+  { name = "size", ty = "f32", value = "size" },
+  { name = "line", ty = "f32", value = "line" },
+  { name = "x", ty = "f32", value = "x" },
+  { name = "y", ty = "f32", value = "y" },
+  { name = "color", ty = "u32", value = "color" },
+  { name = "text", ty = "&str", value = "text" },
+]
+
+[[injection]]
+id = "streamer_ui_measure"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::ui_theme::Ui<'_>::measure"
+helper = "streamer_ui_measure_hook.rs"
+bindings = [
+  { name = "ui", ty = "&Ui<'_>", value = "&*self" },
+  { name = "face", ty = "Face", value = "face" },
+  { name = "size", ty = "f32", value = "size" },
+  { name = "text", ty = "&str", value = "text" },
+]
+
+[[injection]]
+id = "streamer_sign"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::block_entity_render::draw_text"
+helper = "streamer_sign_hook.rs"
+bindings = [
+  { name = "scene", ty = "&Scene", value = "scene" },
+  { name = "call", ty = "&TextCall", value = "call" },
+  { name = "out", ty = "&mut Vec<Vertex>", value = "out" },
+]
+
 [[injection]]
 id = "client_brand"
 kind = "HEAD"

@@ -324,6 +324,12 @@ impl Module {
         match self.name {
             // Kill Aura's and Trigger Bot's Shield: its settings with it on.
             "Kill Aura" | "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
+            // Streamer Mode: what shows in place of a name, with that name hidden.
+            "Streamer Mode" => match name {
+                "Your name" => self.b("Hide your name"),
+                "Others as" | "Others' name" => self.b("Hide others"),
+                _ => true,
+            },
             // Client Spoofer: a profile's own settings with it picked (all of them with Per server set).
             "Client Spoofer" => {
                 let picked = |profile: &str| self.p("Client") == profile || !self.t("Per server").trim().is_empty();
@@ -1238,6 +1244,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_extras::defaults());
     v.extend(super::sunset_debug::defaults());
     v.extend(super::sunset_client_spoofer::defaults());
+    v.extend(super::sunset_streamer_mode::defaults());
     let list = super::sunset_extra_modules::defaults(&v);
     v.push(list);
     // Modules that only draw can be held on with their bind instead of toggled.
@@ -8699,6 +8706,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Zoom" => "wi zoom spyglass",
         "Panic" => "disable all off hide",
         "Debug Report" => "debug report bug report clipboard copy log flags anticheat alerts packets",
+        "Streamer Mode" => "streamer mode name protect nameprotect hide names nick nickname privacy",
         "Client Spoofer" => "client spoofer brand spoof client brand vanilla fabric lunar client apollo badlion labymod feather forge neoforge channels",
         "Chest Stealer" => "auto steal autosteal loot",
         "Liquid Filler" => "auto drain autodrain drain bucket scoop water lava cobweb",

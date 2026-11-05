@@ -5970,6 +5970,32 @@ def _():
     return held < 15.0 and free > 20.0, f"25 deg off: {held:.1f} deg off after 2 s holding attack, {free:.1f} without"
 
 
+@test("Aim Assist (Simple, pulling away)")
+def _():
+    # Simple with attack held, a husk on the crosshair: the mouse pulls away 20 counts a tick for a second. The view
+    # goes the way you pull, tick after tick, never back toward the husk while you pull (pulling against you, the
+    # assist flickered the view back and forth); once you stop it may pull you back.
+    eid = aim_setup()
+    say(".reset aimassist")
+    face(eid, 0)
+    only("aimassist")
+    ctl("mouse", "left", "down")
+    wait(10)
+    yaws = []
+    for _ in range(20):
+        ctl("mouse-move", "20", "0")
+        wait(1)
+        yaws.append(aim_view()[0])
+    ctl("mouse", "left", "up")
+    only()
+    aim_done()
+    steps = [wrap(b - a) for a, b in zip(yaws, yaws[1:])]
+    back = sum(1 for d in steps if d < -0.01)
+    pulled = wrap(yaws[-1] - yaws[0])
+    ok = back == 0 and pulled > 20.0
+    return ok, f"pulled {pulled:.1f} deg in a second, {back} ticks back toward the husk (each tick: {[round(d, 2) for d in steps]})"
+
+
 @test("Kill Aura (Anti bot, Ignore teams, friends)")
 def _():
     if not CTL2:
@@ -8510,6 +8536,30 @@ def _():
     return ok, (f"Passive: Query sent {queried}, packet kinds beyond the module off {extra}, suggestion requests {passive.count(15)}, "
                 f"{len(found)} lines ({found[1] if len(found) > 1 else ''!r}); Extended run: suggestion requests "
                 f"{extended.count(15)}, {target!r}")
+
+
+@test("Streamer Mode")
+def _():
+    # A visual: with Streamer Mode on, your name shows as "You" in chat (a /say of yours, which names you twice), in
+    # the tab list (Tab held) and over an armor stand named after you; nowhere your own name (a screenshot).
+    reset()
+    me = ctl("status").get("name") or "Tester"
+    only("streamermode")
+    wait(10)
+    cmd(f"say hi, {me} here", f"summon armor_stand {X0 + 0.5} {Y + 1} {Z0 + 2.5} "
+        f"{{CustomName:\"{me}\",CustomNameVisible:1b,NoGravity:1b}}")
+    ctl("look-at", str(X0 + 0.5), str(Y + 2.5), str(Z0 + 2.5))
+    wait(10)
+    ctl("key", "tab", "down")
+    wait(5)
+    path = f"{SHOTS}/streamer-mode.png"
+    ctl("screenshot", path)
+    wait(2)
+    ctl("key", "tab", "up")
+    only()
+    cmd("kill @e[type=minecraft:armor_stand]")
+    say(".reset streamermode")
+    return None, f"look at {path}: 'You' in chat, the tab list and over the armor stand, and no '{me}'"
 
 
 @test("Client Spoofer")

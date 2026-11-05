@@ -1443,6 +1443,7 @@ pub(super) fn aim_after(game: &mut Game<'_>) {
 // target's side, a little faster the further off, the nearer, and when it jumps about; a slow random drift is added;
 // the frame turns you by the whole mouse counts that adds up to at your sensitivity. Horizontal only unless Aim
 // vertically. With Require mouse down it aims only while you hold attack, at the target it took when you pressed.
+// While your own mouse turns you away on an axis, it lets go on that axis instead of pulling against you.
 
 #[derive(Default)]
 struct Simple {
@@ -1743,7 +1744,21 @@ fn simple_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
     s.counts = (s.counts.0 - whole.0, s.counts.1 - whole.1);
     s.drift = (0, 0);
     let per = f64::from(super::sunset_rotation::degrees_per_count(f64::from(game.settings.sensitivity)));
-    [f64::from(whole.0) * per, f64::from(whole.1) * per]
+    let mut turn = [f64::from(whole.0) * per, f64::from(whole.1) * per];
+    // You turning one way this frame (a mouse count or more) and the assist the other: it lets go on that axis rather
+    // than pull against you, and starts again from rest once you stop. A tug of war in whole counts with a random
+    // force each step nets out to the view going back and forth every other frame: the flicker when you pull away.
+    let before = cs(|c| c.aim_before);
+    let user = [wrap(f64::from(game.yaw) - f64::from(before[0])), f64::from(game.pitch) - f64::from(before[1])];
+    if user[0].abs() >= per / 2.0 && (turn[0] * user[0] < 0.0 || f64::from(s.h_velocity) * user[0] < 0.0) {
+        turn[0] = 0.0;
+        (s.h_velocity, s.h_buffer, s.counts.0) = (0.0, 0.0, 0.0);
+    }
+    if user[1].abs() >= per / 2.0 && (turn[1] * user[1] < 0.0 || f64::from(s.v_buffer) * user[1] < 0.0) {
+        turn[1] = 0.0;
+        (s.v_velocity, s.v_buffer, s.counts.1) = (0.0, 0.0, 0.0);
+    }
+    turn
 }
 
 fn simple_reset() {

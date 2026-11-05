@@ -68,3 +68,37 @@ pub(crate) fn tab_names(game: &Game<'_>) -> Vec<String> {
         r.tab_players.values().filter(|p| p.uuid != r.profile && r.listed.contains(&p.uuid)).map(|p| p.name.clone()).collect()
     })
 }
+
+// Streamer Mode: your names (your profile's, and the last word of your listed display name, a nickname, when it is
+// not your profile name) and everyone else's the same way from the server's player list, with the players in the world.
+pub(crate) fn player_names(game: &Game<'_>) -> (Vec<String>, Vec<String>) {
+    let Some(r) = game.remote.as_ref() else {
+        return (Vec::new(), Vec::new());
+    };
+    let mut own = vec![r.profile_name.clone()];
+    let mut others = Vec::new();
+    for t in r.tab_players.values() {
+        let list = if t.uuid == r.profile { &mut own } else { &mut others };
+        list.push(t.name.clone());
+        let shown = t.display_name.as_ref().map(horizon_client::scoreboard::comp_text).map(|text| text.plain());
+        // A display name that shows the profile name is no nickname ("[VIP] Notch", "Notch [AFK]").
+        let nick = shown.as_deref().and_then(|plain| {
+            let words: Vec<&str> = plain.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).filter(|w| !w.is_empty()).collect();
+            (!words.iter().any(|w| w.eq_ignore_ascii_case(&t.name))).then(|| words.last().copied()).flatten()
+        });
+        if let Some(nick) = nick {
+            list.push(nick.to_owned());
+        }
+    }
+    others.extend(r.level_player_names.values().cloned());
+    (own, others)
+}
+
+// Streamer Mode: what changes when a player joins, leaves or appears in the world (cheap enough for every frame).
+pub(crate) fn players_changed_key(game: &Game<'_>) -> u128 {
+    game.remote.as_ref().map_or(0, |r| {
+        let listed = r.tab_players.keys().fold(0u128, |a, k| a ^ k.rotate_left(17));
+        let level = r.level_player_names.keys().fold(0u128, |a, &k| a.wrapping_add(k as u128 * 0x9e37_79b9));
+        listed ^ level ^ ((r.tab_players.len() as u128) << 96) ^ ((r.level_player_names.len() as u128) << 64)
+    })
+}
