@@ -183,7 +183,7 @@ update Sunset with the installer again.
 ## Plugins
 
 Other native mods can add modules, commands, HUD and world drawing, packet handlers and timers to Sunset: a plugin
-is one small Rust file. Plugin API 2 (Sunset 0.9) reaches everything a built-in module does, including unattended
+is one small Rust file. Plugin API 2 (Sunset 1.0) reaches everything a built-in module does, including unattended
 (AFK) play: events for hurts, deaths and disconnects, a safe stop, and Horizon's Auto-reconnect. The full reference, a
 template, one-command build scripts and two example plugins (Hello, and AFK Fisher) are in
 [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) (MIT).
