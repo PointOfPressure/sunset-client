@@ -324,14 +324,16 @@ impl Module {
         match self.name {
             // Kill Aura's and Trigger Bot's Shield: its settings with it on.
             "Kill Aura" | "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
-            // Client Spoofer: Custom brand with Custom, the Lunar settings with Lunar Client (or with Per server set).
-            "Client Spoofer" => match name {
-                "Custom brand" => self.p("Client") == "Custom" || !self.t("Per server").trim().is_empty(),
-                "Lunar version" | "Lunar Fabric tag" => {
-                    self.p("Client") == "Lunar Client" || !self.t("Per server").trim().is_empty()
+            // Client Spoofer: a profile's own settings with it picked (all of them with Per server set).
+            "Client Spoofer" => {
+                let picked = |profile: &str| self.p("Client") == profile || !self.t("Per server").trim().is_empty();
+                match name {
+                    "Custom brand" => picked("Custom"),
+                    "Lunar version" | "Lunar Fabric tag" => picked("Lunar Client"),
+                    "LabyMod version" => picked("LabyMod"),
+                    _ => true,
                 }
-                _ => true,
-            },
+            }
             "Auto Armor" => match name {
                 "Armor key" => self.p("Mode") == "Key",
                 "Switch sets" => key_from_text(self.t("Switch key")).is_some(),
@@ -8470,7 +8472,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Zoom" => "wi zoom spyglass",
         "Panic" => "disable all off hide",
         "Debug Report" => "debug report bug report clipboard copy log flags anticheat alerts packets",
-        "Client Spoofer" => "client spoofer brand spoof client brand vanilla fabric lunar client badlion labymod feather forge neoforge",
+        "Client Spoofer" => "client spoofer brand spoof client brand vanilla fabric lunar client apollo badlion labymod feather forge neoforge channels",
         "Chest Stealer" => "auto steal autosteal loot",
         "Liquid Filler" => "auto drain autodrain drain bucket scoop water lava cobweb",
         "Auto Tool" => "auto pickaxe autopickaxe tool swap pickaxe below",

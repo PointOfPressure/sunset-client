@@ -755,27 +755,26 @@ class Lag:
 
 class BrandTap:
     """A relay between the game and SERVER that notes the client brand (minecraft:brand) of each connection made
-    through it, as the server gets it: an offline server's stream is unencrypted and the brand too small to compress."""
+    through it, as the server gets it, and keeps what the game sent (the first megabyte): an offline server's stream is
+    unencrypted, and packets this small go uncompressed."""
 
     def __init__(self):
         import socket, threading
         self.brands = []
+        self.streams = []
         self.listener = socket.create_server(("127.0.0.1", 0))
         self.port = self.listener.getsockname()[1]
         host, port = SERVER.rsplit(":", 1)
 
-        def pipe(src, dst, seen=None):
-            buf = b"" if seen is not None else None
+        def pipe(src, dst, stream=None):
+            found = stream is None
             try:
                 while chunk := src.recv(65536):
-                    if buf is not None:
-                        buf += chunk
-                        brand = BrandTap.read(buf)
-                        if brand is not None:
-                            seen.append(brand)
-                            buf = None
-                        elif len(buf) > 1 << 16:
-                            buf = None
+                    if stream is not None and len(stream) < 1 << 20:
+                        stream += chunk
+                        if not found and (brand := BrandTap.read(bytes(stream))) is not None:
+                            self.brands.append(brand)
+                            found = True
                     dst.sendall(chunk)
                 dst.shutdown(socket.SHUT_WR)
             except OSError:
@@ -788,7 +787,8 @@ class BrandTap:
                     server = socket.create_connection((host, int(port)))
                 except OSError:
                     return
-                threading.Thread(target=pipe, args=(game, server, self.brands), daemon=True).start()
+                self.streams.append(bytearray())
+                threading.Thread(target=pipe, args=(game, server, self.streams[-1]), daemon=True).start()
                 threading.Thread(target=pipe, args=(server, game), daemon=True).start()
         threading.Thread(target=serve, daemon=True).start()
 
@@ -8135,18 +8135,19 @@ def _():
 @test("Client Spoofer")
 def _():
     # Through a relay that reads what reaches the server: the client brand with the module off (Horizon's own), with
-    # Client Fabric, with Custom, and with Per server naming NeoForge for the relay's address over Client Lunar Client;
-    # Diagnostics says what went out.
+    # Client Fabric, with Custom, with LabyMod (and its VersionLoginPacket on labymod:neo once in), and with Per server
+    # naming NeoForge for the relay's address over Client Lunar Client; Diagnostics says what went out.
     if not SERVER:
         return None, "servers only"
     tap = BrandTap()
     relay = f"127.0.0.1:{tap.port}"
-    got, said = {}, []
+    got, said, laby = {}, [], False
     try:
         for name, mods, settings in (
                 ("off", (), ()),
                 ("Fabric", ("clientspoofer",), (("client", "Fabric"),)),
                 ("Custom", ("clientspoofer",), (("client", "Custom"), ("custom brand", "Test Brand 1"))),
+                ("LabyMod", ("clientspoofer",), (("client", "LabyMod"), ("labymod version", "4.2.60"))),
                 ("Per server", ("clientspoofer",), (("client", "Lunar Client"), ("per server", "127.0.0.1=NeoForge")))):
             only(*mods)
             for k, v in settings:
@@ -8156,12 +8157,14 @@ def _():
             got[name] = tap.brands[before] if len(tap.brands) > before else None
             if name == "Fabric":
                 said = [line for line in sunset_said(mark) if "Client Spoofer" in line]
+            if name == "LabyMod":
+                laby = b"\x0blabymod:neo\x00\x064.2.60" in bytes(tap.streams[-1])
     finally:
         only()
         join(SERVER)
-    want = {"off": "horizon", "Fabric": "fabric", "Custom": "Test Brand 1", "Per server": "neoforge"}
-    ok = got == want and any('"fabric" (Fabric)' in line for line in said)
-    return ok, f"brands the server got: {got}; Diagnostics: {said[:1]}"
+    want = {"off": "horizon", "Fabric": "fabric", "Custom": "Test Brand 1", "LabyMod": "labymod", "Per server": "neoforge"}
+    ok = got == want and laby and any('"fabric" (Fabric' in line for line in said)
+    return ok, f"brands the server got: {got}; LabyMod's version packet: {laby}; Diagnostics: {said[:1]}"
 
 
 @test("Velocity (knockback delay)")
