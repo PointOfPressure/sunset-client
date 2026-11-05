@@ -249,6 +249,8 @@ pub fn seen(events: &[super::Event]) {
                     | C::AddEntity(_)
                     | C::RemoveEntities(_)
                     | C::SetEntityData(_)
+                    | C::PlayerInfoUpdate(_)
+                    | C::PlayerInfoRemove(_)
                     | C::SetEquipment(_)
                     | C::DamageEvent(_)
                     | C::EntityEvent(_)

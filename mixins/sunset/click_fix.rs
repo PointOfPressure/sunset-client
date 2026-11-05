@@ -5,7 +5,7 @@
 // on a raised shield, a second glowstone in an anchor, an ender chest opened with combat gear in hand, glowstone put
 // down off an anchor, a firework fired on foot) and Ghost place (a block put behind the mob you click instead of a use on
 // it).
-use super::sunset::{self, Module, attack, gui_open, look_at, turn_then, with};
+use super::sunset::{self, Module, attack, gui_open, look_at, with};
 use super::sunset_util as util;
 use super::Game;
 use horizon_client::mobs::Mob;
@@ -23,9 +23,10 @@ const REACH: f64 = 3.0;
 #[derive(Default)]
 struct State {
     // Hit fix: the player a hit waits for, and since when.
-    held: Option<(u32, Instant)>,
+    held: Option<(super::sunset_antibot::Token, Instant)>,
     // A hit Silent aim, Hit flick or Hit fix sent on: the clicks wait until it has gone.
     busy_until: u64,
+    assisted: Option<sunset::AttackGuard>,
     roll: u64,
     select: Select,
 }
@@ -107,7 +108,12 @@ fn wrap(degrees: f32) -> f32 {
 // Your attack click, after No Interact: Some(instant) takes it (as the attack hook returns), None leaves it to the game.
 pub(super) fn aim_click(game: &mut Game<'_>) -> Option<bool> {
     let m = module("Aim Assist").filter(|m| m.b("Silent aim") || m.b("Hit flick"))?;
-    if !live(game) || game.clicks.miss_time > 0 || sunset::strike_waiting() || game.held().is_some_and(|s| horizon_client::spear::Kinetic::of(&s.item).is_some()) {
+    if !live(game) { return None; }
+    // A busy assisted attack must not hand a rejected click back to vanilla.
+    if m.b("Anti bot") && game.mob_hit().is_some_and(|(index, distance)|
+        game.before_block(distance) && super::sunset_antibot::blocked(game.mobs[index].id))
+    { return Some(false); }
+    if game.clicks.miss_time > 0 || sunset::strike_waiting() || game.held().is_some_and(|s| horizon_client::spear::Kinetic::of(&s.item).is_some()) {
         return None;
     }
     if game.ticks < st(|s| s.busy_until) {
@@ -118,14 +124,14 @@ pub(super) fn aim_click(game: &mut Game<'_>) -> Option<bool> {
         Some((i, distance)) if game.before_block(distance) => {
             let target = &game.mobs[i];
             if !m.b("Hit flick")
-                || (m.b("Flick players only") && target.kind.id != "minecraft:player")
-                || (target.kind.id == "minecraft:player" && !util::player_enemy(game, target))
+                || !super::sunset_combat::click_eligible(game, &m, target, m.b("Flick players only"))
                 || (m.b("Flick needs sprint") && !game.player.as_ref().is_some_and(|p| p.sprinting))
                 || game.using.is_some()
             {
                 return None;
             }
             let id = target.id;
+            let guard = sunset::attack_guard(id, sunset::AttackSource::HitFlick)?;
             let side = match m.p("Flick direction") {
                 "Left" => -1.0,
                 "Right" => 1.0,
@@ -137,9 +143,9 @@ pub(super) fn aim_click(game: &mut Game<'_>) -> Option<bool> {
             let yaw = game.yaw + side * angle + (random(game) * 3.0 - 1.5) as f32;
             let pitch = (game.pitch + (random(game) * 2.0 - 1.0) as f32).clamp(-89.9, 89.9);
             let points = m.t("Aim points").to_owned();
-            st(|s| s.busy_until = game.ticks + 4);
+            st(|s| { s.busy_until = game.ticks + 4; s.assisted = Some(guard); });
             // The look away goes with the next move packet; the look back and the hit after it.
-            turn_then("Hit flick", yaw, pitch, move |game| {
+            sunset::turn_then_checked("Hit flick", yaw, pitch, guard, move |game| {
                 let (Some(eye), Some(target)) = (game.eye_position(), mob(game, id)) else {
                     return;
                 };
@@ -148,7 +154,7 @@ pub(super) fn aim_click(game: &mut Game<'_>) -> Option<bool> {
                     return;
                 }
                 let (yaw, pitch) = look_at(eye, at);
-                attack(game, id, true, Some((yaw, pitch.clamp(-89.9, 89.9))));
+                sunset::attack_guarded(game, guard, true, Some((yaw, pitch.clamp(-89.9, 89.9))));
             });
             Some(false)
         }
@@ -163,8 +169,7 @@ pub(super) fn aim_click(game: &mut Game<'_>) -> Option<bool> {
             let (id, at) = game
                 .mobs
                 .iter()
-                .filter(|t| t.alive() && !t.removed && Some(t.id) != sunset::own_id(game))
-                .filter(|t| if t.kind.id == "minecraft:player" { util::player_enemy(game, t) } else { !m.b("Silent players only") })
+                .filter(|t| super::sunset_combat::click_eligible(game, &m, t, m.b("Silent players only")))
                 .map(|t| (t.id, aim_point(eye, t, points)))
                 .filter(|(_, at)| util::dist(eye, *at) <= REACH && util::clear_line(game, *at, [i32::MIN; 3]))
                 .filter(|(_, at)| {
@@ -173,11 +178,26 @@ pub(super) fn aim_click(game: &mut Game<'_>) -> Option<bool> {
                 })
                 .min_by(|a, b| util::dist(eye, a.1).total_cmp(&util::dist(eye, b.1)))?;
             let (yaw, pitch) = look_at(eye, at);
-            st(|s| s.busy_until = game.ticks + 3);
-            attack(game, id, true, Some((yaw, pitch.clamp(-89.9, 89.9))));
+            let guard = sunset::attack_guard(id, sunset::AttackSource::SilentAim)?;
+            st(|s| { s.busy_until = game.ticks + 3; s.assisted = Some(guard); });
+            sunset::attack_guarded(game, guard, true, Some((yaw, pitch.clamp(-89.9, 89.9))));
             Some(false)
         }
     }
+}
+
+pub(super) fn reset() { *STATE.lock().unwrap_or_else(|e| e.into_inner()) = None; }
+pub(super) fn revalidate(game: &Game<'_>) {
+    let pending = st(|s| s.assisted);
+    if pending.is_some_and(|guard| !guard.valid(game)) {
+        st(|s| { s.assisted = None; s.busy_until = 0; });
+        sunset::cancel_turns("Hit flick");
+    } else if game.ticks >= st(|s| s.busy_until) {
+        st(|s| s.assisted = None);
+    }
+}
+pub(super) fn pending_target_id() -> Option<u32> {
+    st(|s| s.assisted.map(|guard| guard.id()).or_else(|| s.held.map(|held| held.0.id)))
 }
 
 // ---- No Interact
@@ -201,12 +221,12 @@ pub(super) fn hit_blocked(game: &Game<'_>) -> bool {
     if !m.b("Hit fix") || (m.b("Hit fix weapons only") && !sword_or_axe(game)) || distance > REACH {
         return false;
     }
-    let waiting = st(|s| s.held.is_some_and(|(id, at)| id == target.id && at.elapsed() < HIT_FIX_WAIT));
+    let waiting = st(|s| s.held.is_some_and(|(token, at)| token.id == target.id && super::sunset_antibot::current(token) && at.elapsed() < HIT_FIX_WAIT));
     if waiting || !takes_hit(&m, target) {
-        let id = target.id;
+        let token = super::sunset_antibot::token(target.id);
         st(|s| {
             if !waiting {
-                s.held = Some((id, Instant::now()));
+                s.held = token.map(|token| (token, Instant::now()));
             }
         });
         return true;
@@ -365,15 +385,17 @@ pub(super) fn miss_blocked(game: &Game<'_>) -> bool {
 // Each tick: Hit fix's waiting hit goes once the player can take it, within reach and in sight, under a look at
 // them; past a second it is dropped.
 pub(super) fn tick(game: &mut Game<'_>) {
-    let Some((id, at)) = st(|s| s.held) else {
+    revalidate(game);
+    let Some((token, at)) = st(|s| s.held) else {
         return;
     };
+    let id = token.id;
     let m = module("No Interact").filter(|m| m.b("Hit fix"));
     let (Some(m), Some(eye)) = (m, game.eye_position()) else {
         st(|s| s.held = None);
         return;
     };
-    if at.elapsed() >= HIT_FIX_WAIT || !live(game) || game.using.is_some() {
+    if at.elapsed() >= HIT_FIX_WAIT || !super::sunset_antibot::current(token) || !live(game) || game.using.is_some() {
         st(|s| s.held = None);
         return;
     }

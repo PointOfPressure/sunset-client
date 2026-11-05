@@ -27,6 +27,16 @@ pub(crate) fn player_uuid(game: &crate::game::Game<'_>, id: u32) -> Option<u128>
     game.remote.as_ref()?.level_players.get(&(id as i32)).copied()
 }
 
+// Presence in player-info differs from the optional "listed in tab" flag.
+pub(crate) fn player_has_info(game: &crate::game::Game<'_>, id: u32) -> bool {
+    player_uuid(game, id).is_some_and(|uuid| game.remote.as_ref().is_some_and(|r| r.tab_players.contains_key(&uuid)))
+}
+
+// The last position applied from the network, before client interpolation.
+pub(crate) fn entity_position(game: &crate::game::Game<'_>, id: u32) -> Option<[f64; 3]> {
+    Some(game.remote.as_ref()?.entities.get(&(id as i32))?.position)
+}
+
 // The menu's state id, as the last server packet left it.
 pub(crate) fn container_state(game: &crate::game::Game<'_>) -> Option<i32> {
     Some(game.remote.as_ref()?.state_id)

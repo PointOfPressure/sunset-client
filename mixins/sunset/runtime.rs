@@ -669,7 +669,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Passive", false)
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "")
-            .bool("Anti bot", false)
+            .bool("Anti bot", true)
             .bool("Ignore teams", false)
             .bool("Wait for cooldown", true)
             .num("Shortest cooldown (%)", 100.0, 50.0, 100.0, 1.0)
@@ -1201,6 +1201,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Time", 6000.0, 0.0, 24000.0, 1000.0),
     ];
     v.splice(0..0, super::sunset_aura::defaults());
+    v.extend(super::sunset_antibot::defaults());
     v.extend(super::sunset_combat::defaults());
     v.extend(super::sunset_crystal_aura::defaults());
     v.extend(super::sunset_cart::defaults());
@@ -1284,8 +1285,8 @@ pub(super) struct State {
     // cooldown after each), the target Miss chance passed over until the crosshair leaves it, and the Sticky
     // target.
     trigger_need: f32,
-    trigger_missed: Option<u32>,
-    trigger_sticky: Option<u32>,
+    trigger_missed: Option<super::sunset_antibot::Token>,
+    trigger_sticky: Option<super::sunset_antibot::Token>,
     respawn_wait: u32,
     // Death Location: the death screen was up last tick.
     dead: bool,
@@ -1341,7 +1342,7 @@ pub(super) struct State {
     crumb_at: u64,
     // Criticals: who the waiting hit is for, the ticks it has waited, the ticks you have fallen meanwhile, and the
     // look it is made with.
-    crit_target: Option<u32>,
+    crit_target: Option<AttackGuard>,
     crit_ticks: u32,
     crit_falls: u32,
     // The hit started again from the ground once already (it does so once).
@@ -2887,6 +2888,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     horizon_client::motion::sunset_motion::expire_attack_slow(game.ticks);
     let packets = horizon_client::net::sunset_packets::take();
+    super::sunset_antibot::packets(game, &packets);
     if !game.native_on(ID) || game.player.is_none() {
         combat_cleanup(game);
         horizon_client::motion::sunset_motion::set_across(None);
@@ -2901,6 +2903,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; });
         return;
     }
+    ensure_loaded(game);
+    super::sunset_antibot::tick(game);
+    revalidate_targets(game);
     if super::sunset_combat_control::begin_tick(game) {
         drop_strikes();
         super::sunset_melee::cancel(game);
@@ -5523,17 +5528,71 @@ fn lands_next(game: &Game<'_>) -> bool {
     game.player.as_ref().is_some_and(|p| !p.ground.on_ground && p.velocity.y < 0.0) && !room_above(game, game.player.as_ref().map_or(0.0, |p| p.velocity.y))
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(super) enum AttackSource { KillAura, TriggerBot, TriggerReach, SilentAim, HitFlick }
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct AttackGuard {
+    token: super::sunset_antibot::Token,
+    source: Option<AttackSource>,
+}
+impl AttackGuard {
+    pub(super) fn id(self) -> u32 { self.token.id }
+    pub(super) fn valid(self, game: &Game<'_>) -> bool {
+        if game.remote.is_none() || game.player.as_ref().is_none_or(|p| !p.health.health().is_finite() || p.health.health() <= 0.0) { return false; }
+        if !super::sunset_antibot::current(self.token) { return false; }
+        let Some(mob) = game.mobs.iter().find(|m| m.id == self.token.id && m.alive() && !m.removed) else { return false; };
+        let Some(source) = self.source else { return true; };
+        if !game.native_playing() || gui_open() || game.spectator() { return false; }
+        let name = match source {
+            AttackSource::KillAura => "Kill Aura", AttackSource::TriggerBot | AttackSource::TriggerReach => "Trigger Bot",
+            AttackSource::SilentAim | AttackSource::HitFlick => "Aim Assist",
+        };
+        let Some(m) = with(|s| s.module(name).filter(|m| m.on).cloned()) else { return false; };
+        if !super::sunset_util::combat_eligible(game, &m, mob) { return false; }
+        match source {
+            AttackSource::KillAura => super::sunset_aura::eligible(game, &m, mob.id),
+            AttackSource::TriggerBot => wanted(&m, kind_of(mob), &mob.kind.id)
+                && game.mob_hit().is_some_and(|(index, distance)| game.mobs[index].id == mob.id && game.before_block(distance)),
+            AttackSource::TriggerReach => wanted(&m, kind_of(mob), &mob.kind.id),
+            AttackSource::SilentAim | AttackSource::HitFlick => {
+                let silent = matches!(source, AttackSource::SilentAim);
+                let players_only = m.b(if silent { "Silent players only" } else { "Flick players only" });
+                if !m.b(if silent { "Silent aim" } else { "Hit flick" })
+                    || !super::sunset_combat::click_eligible(game, &m, mob, players_only)
+                { return false; }
+                let Some(eye) = game.eye_position() else { return false; };
+                let b = mob.bounds();
+                let (lo, hi) = (b.min_position(), b.max_position());
+                let at = [eye[0].clamp(lo.x, hi.x), eye[1].clamp(lo.y, hi.y), eye[2].clamp(lo.z, hi.z)];
+                super::sunset_util::dist(eye, at) <= 3.0 && super::sunset_util::clear_line(game, at, [i32::MIN; 3])
+            }
+        }
+    }
+}
+pub(super) fn attack_guard(id: u32, source: AttackSource) -> Option<AttackGuard> {
+    Some(AttackGuard { token: super::sunset_antibot::token(id)?, source: Some(source) })
+}
+pub(super) fn attack_for(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(f32, f32)>, source: AttackSource) {
+    if let Some(guard) = attack_guard(id, source) { attack_guarded(game, guard, crits, rotate); }
+}
 pub(super) fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(f32, f32)>) {
+    if let Some(token) = super::sunset_antibot::token(id) {
+        attack_guarded(game, AttackGuard { token, source: None }, crits, rotate);
+    }
+}
+pub(super) fn attack_guarded(game: &mut Game<'_>, guard: AttackGuard, crits: bool, rotate: Option<(f32, f32)>) {
+    if !guard.valid(game) { return; }
     let plan = with(|s| s.module("Criticals").filter(|m| m.on).cloned()).filter(|_| crits).and_then(|m| crit_plan(game, &m));
     let Some(plan) = plan else {
         match rotate {
-            Some((yaw, pitch)) => turn_then("Attack", yaw, pitch, move |game| strike(game, id)),
-            None => strike(game, id),
+            Some((yaw, pitch)) => turn_then_checked("Attack", yaw, pitch, guard, move |game| queue_strike(game, guard, false)),
+            None => queue_strike(game, guard, false),
         }
         return;
     };
     with(|s| {
-        s.crit_target = Some(id);
+        s.crit_target = Some(guard);
         s.crit_ticks = 0;
         s.crit_falls = 0;
         s.crit_again = false;
@@ -5603,7 +5662,7 @@ pub(super) fn crit_click(game: &mut Game<'_>) -> Option<bool> {
 // and the tick it may go back). Nothing changes slot after a tick's move packet (Grim's Post) or after a hit in the
 // same tick (Grim's PacketOrderE).
 struct Strikes {
-    queue: Vec<(u32, bool)>,
+    queue: Vec<(AttackGuard, bool)>,
     weapon: Option<StrikeWeapon>,
     back: Option<(usize, usize, u64)>,
 }
@@ -5633,20 +5692,24 @@ fn drop_strikes() {
 }
 
 pub(super) fn strike(game: &mut Game<'_>, id: u32) {
-    queue_strike(game, id, false);
+    if let Some(token) = super::sunset_antibot::token(id) {
+        queue_strike(game, AttackGuard { token, source: None }, false);
+    }
 }
 
 // Decided after the tick's move packet: the hit and its weapon both go at the start of the next tick, the slot first,
 // as a hotbar key before a click (a slot change after the move packet is what Grim's Post check flags). The weapon is
 // Auto Mace's mace while you fall, else Auto Weapon's.
-fn queue_strike(game: &mut Game<'_>, id: u32, critical: bool) {
+fn queue_strike(game: &mut Game<'_>, guard: AttackGuard, critical: bool) {
+    if !guard.valid(game) { if critical { crit_done(); } return; }
+    let id = guard.token.id;
     let first = strikes(|s| s.queue.is_empty() && s.weapon.is_none());
     let weapon = first
         .then(|| super::sunset_auto_mace::strike_weapon(game, id).or_else(|| super::sunset_melee::strike_weapon(game, id)))
         .flatten()
         .map(|(slot, back_after)| StrikeWeapon { slot, back_after, replaced: None });
     strikes(|s| {
-        s.queue.push((id, critical));
+        s.queue.push((guard, critical));
         s.weapon = s.weapon.or(weapon);
     });
 }
@@ -5673,7 +5736,17 @@ fn strike_weapon_back(game: &mut Game<'_>) {
 }
 
 fn send_strikes(game: &mut Game<'_>) {
+    let mut queue = strikes(|s| std::mem::take(&mut s.queue));
+    queue.retain(|(guard, critical)| {
+        let keep = guard.valid(game);
+        if !keep && *critical { crit_done(); }
+        keep
+    });
+    strikes(|s| s.queue = queue);
     if strikes(|s| s.queue.is_empty()) {
+        if let Some(StrikeWeapon { slot, back_after: Some(_), replaced: Some(replaced) }) = strikes(|s| s.weapon.take())
+            && game.selected == slot
+        { strikes(|s| s.back = s.back.or(Some((replaced, slot, game.ticks + 1)))); }
         return;
     }
     if let Some(slot) = strikes(|s| s.weapon.filter(|w| w.replaced.is_none()).map(|w| w.slot)) {
@@ -5687,9 +5760,9 @@ fn send_strikes(game: &mut Game<'_>) {
     {
         strikes(|s| s.back = s.back.or(Some((replaced, slot, game.ticks + 1 + delay))));
     }
-    for (id, critical) in strikes(|s| std::mem::take(&mut s.queue)) {
+    for (guard, critical) in strikes(|s| std::mem::take(&mut s.queue)) {
         if game.remote.is_some() {
-            strike_now(game, id);
+            strike_now(game, guard);
         }
         if critical {
             crit_done();
@@ -5697,7 +5770,9 @@ fn send_strikes(game: &mut Game<'_>) {
     }
 }
 
-fn strike_now(game: &mut Game<'_>, id: u32) {
+fn strike_now(game: &mut Game<'_>, guard: AttackGuard) {
+    if !guard.valid(game) { return; }
+    let id = guard.token.id;
     // Gone since the hit was decided: the id may be someone else's by now. Fake Player's is no one's on the server.
     if !game.mobs.iter().any(|m| m.id == id && m.alive() && !m.removed) || super::sunset_parity::fake(id) {
         return;
@@ -5765,7 +5840,7 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
         if (falls >= 2 && !lands_next(game)) || (ground && ticks > 3) || ticks > 20 {
             CRIT_STAGE.store(0, Ordering::Relaxed);
             match with(|s| s.crit_target.take().map(|id| (id, s.crit_look.take()))) {
-                Some((id, Some((yaw, pitch)))) => turn_then("Attack", yaw, pitch, move |game| crit_strike(game, id)),
+                Some((guard, Some((yaw, pitch)))) => queue_turn("Attack", yaw, pitch, Some(guard), true, move |game| crit_strike(game, guard)),
                 Some((id, None)) => crit_strike(game, id),
                 None => crit_done(),
             }
@@ -5797,8 +5872,8 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
 
 // A critical hit, with the sprint stopped since it was planned (CRIT_SPRINT): it gives up sprinting's extra
 // knockback, as a critical one does in vanilla.
-fn crit_strike(game: &mut Game<'_>, id: u32) {
-    queue_strike(game, id, true);
+fn crit_strike(game: &mut Game<'_>, guard: AttackGuard) {
+    queue_strike(game, guard, true);
 }
 
 // The critical hit went, or none will: the sprint Criticals stopped goes back on next tick.
@@ -5851,10 +5926,11 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     let names = game.remote_player_names();
     let friends = with(|s| s.friends.clone());
     let player = kind == Kind::Player;
-    if with(|s| s.trigger_missed.is_some_and(|t| t != id)) {
+    let identity = super::sunset_antibot::token(id);
+    if with(|s| s.trigger_missed.is_some_and(|t| t.id != id || !super::sunset_antibot::current(t))) {
         with(|s| s.trigger_missed = None);
     }
-    if !want || (player && is_friend(&friends, &names, id)) || super::sunset_util::spared(game, m, id, player) {
+    if !want || (player && is_friend(&friends, &names, id)) || !super::sunset_util::combat_eligible(game, m, mob) {
         return;
     }
     if m.b("Sticky target") && trigger_sticky_elsewhere(game, m, id) {
@@ -5871,19 +5947,21 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     let mut wait = with(|s| s.trigger_wait);
     let ready = cooldown_ready(game, m, &mut wait, with(|s| s.trigger_need));
     with(|s| s.trigger_wait = wait);
-    if !ready || with(|s| s.trigger_missed == Some(id)) {
+    if !ready || with(|s| s.trigger_missed.is_some_and(|t| Some(t) == identity)) {
         return;
     }
     let mut rng = super::sunset_rotation::Rng::new(game.ticks.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ u64::from(id));
     // Miss chance: a target rolled as missed is let go until the crosshair leaves it or another is under it.
     if rng.next() * 100.0 < m.n("Miss chance (%)") {
-        with(|s| s.trigger_missed = Some(id));
+        with(|s| s.trigger_missed = identity);
         return;
     }
     if reach == Some(id) {
-        super::sunset_melee::reach_strike(id);
+        if let Some(guard) = attack_guard(id, AttackSource::TriggerReach) {
+            super::sunset_melee::reach_strike(guard);
+        }
     } else {
-        attack(game, id, crits, None);
+        attack_for(game, id, crits, None, AttackSource::TriggerBot);
     }
     let (lo, hi) = (m.n("Shortest cooldown (%)"), m.n("Longest cooldown (%)").max(m.n("Shortest cooldown (%)")));
     let need = ((lo + rng.next() * (hi - lo)) / 100.0) as f32;
@@ -5891,25 +5969,27 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
         s.trigger_wait = m.n("Delay (ticks)") as u32;
         s.trigger_need = need;
         if m.b("Sticky target") {
-            s.trigger_sticky = Some(id);
+            s.trigger_sticky = identity;
         }
     });
 }
 
 // Sticky target: another target is locked (the first one hit), still alive and within Sticky range of you.
 fn trigger_sticky_elsewhere(game: &Game<'_>, m: &Module, id: u32) -> bool {
-    let Some(locked) = with(|s| s.trigger_sticky).filter(|&t| t != id) else {
+    let Some(locked) = with(|s| s.trigger_sticky) else {
         return false;
     };
     let here = game.player.as_ref().map(|p| [p.position.x, p.position.y, p.position.z]);
-    let held = game.mobs.iter().find(|mob| mob.id == locked).is_some_and(|mob| {
+    let held = super::sunset_antibot::current(locked) && game.mobs.iter().find(|mob| mob.id == locked.id).is_some_and(|mob| {
         mob.health > 0.0
+            && super::sunset_util::combat_eligible(game, m, mob)
+            && wanted(m, kind_of(mob), &mob.kind.id)
             && here.is_some_and(|h| super::sunset_util::dist(h, [mob.position.x, mob.position.y, mob.position.z]) <= m.n("Sticky range"))
     });
     if !held {
         with(|s| s.trigger_sticky = None);
     }
-    held
+    held && locked.id != id
 }
 
 // A totem in the hotbar goes to the offhand by selecting it and pressing the
@@ -6253,7 +6333,15 @@ fn fly_down(game: &Game<'_>, m: &mut Move, here: [f64; 3]) {
 // its end, and what was asked runs after that packet has gone (Sunset's Rotations). Servers kick for a second move
 // packet in a tick, and some check the look of a click.
 
-type Deed = Box<dyn for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send>;
+struct Deed {
+    guard: Option<AttackGuard>,
+    critical: CriticalCompletion,
+    run: Box<dyn for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send>,
+}
+struct CriticalCompletion(bool);
+impl Drop for CriticalCompletion {
+    fn drop(&mut self) { if self.0 { crit_done(); } }
+}
 
 struct Ask {
     who: &'static str,
@@ -6304,6 +6392,7 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
 
 // Crystal Aura, Anchor Aura and the combat macros let go of what they hold: the hand they switched, a look waiting.
 fn combat_cleanup(game: &mut Game<'_>) {
+    reset_targets(game);
     super::sunset_combat_control::prepare_cleanup(game);
     super::sunset_combat_macros::reset(game);
     super::sunset_pvp_bot::release(game);
@@ -6320,6 +6409,52 @@ fn combat_cleanup(game: &mut Game<'_>) {
     super::sunset_anchor_catch::reset(game);
 }
 
+// A scene change invalidates target caches as well as actions carrying old IDs.
+pub(super) fn reset_targets(game: &mut Game<'_>) {
+    drop_strikes();
+    super::sunset_aura::clear_targets(game);
+    super::sunset_combat::reset_aim();
+    super::sunset_click_fix::reset();
+    for who in ["Attack", "Hit flick", "Kill Aura"] { cancel_turns(who); }
+    CRIT_STAGE.store(0, Ordering::Relaxed);
+    CRIT_SPRINT.store(0, Ordering::Relaxed);
+    CRIT_JUMP.store(false, Ordering::Relaxed);
+    with(|s| {
+        s.crit_target = None;
+        s.crit_look = None;
+        s.trigger_sticky = None;
+        s.trigger_missed = None;
+    });
+}
+
+fn revalidate_targets(game: &Game<'_>) {
+    super::sunset_click_fix::revalidate(game);
+    let pending = with(|s| s.crit_target);
+    if pending.is_some_and(|guard| !guard.valid(game)) {
+        with(|s| { s.crit_target = None; s.crit_look = None; });
+        CRIT_STAGE.store(0, Ordering::Relaxed);
+        CRIT_JUMP.store(false, Ordering::Relaxed);
+        crit_done();
+        cancel_turns("Attack");
+    }
+    // Validate outside the queue lock: eligibility consults the shared module
+    // settings and the classifier, neither of which may call a held deed.
+    let mut queue = turns(|t| std::mem::take(&mut t.queue));
+    for ask in &mut queue {
+        if ask.deeds.first().is_some_and(|deed| deed.guard.is_some_and(|guard| !guard.valid(game))) {
+            ask.deeds.clear();
+            continue;
+        }
+        ask.deeds.retain(|deed| deed.guard.is_none_or(|guard| guard.valid(game)));
+    }
+    let head_kept = queue.first().is_none_or(|ask| !ask.deeds.is_empty());
+    queue.retain(|ask| !ask.deeds.is_empty());
+    turns(|t| {
+        t.queue = queue;
+        if !head_kept { t.carried = false; }
+    });
+}
+
 // turn_then only when no look waits: Crystal Aura, Anchor Aura and the macros switch the hand in `then`, so an ask
 // refused changes nothing. Never while Blink holds the moves.
 pub(super) fn try_turn_then(who: &'static str, yaw: f32, pitch: f32,
@@ -6332,7 +6467,7 @@ pub(super) fn try_turn_then(who: &'static str, yaw: f32, pitch: f32,
         if t.carried || !t.queue.is_empty() {
             return false;
         }
-        t.queue.push(Ask { who, look, deeds: vec![Box::new(then)], fresh: true });
+        t.queue.push(Ask { who, look, deeds: vec![Deed { guard: None, critical: CriticalCompletion(false), run: Box::new(then) }], fresh: true });
         true
     })
 }
@@ -6355,21 +6490,31 @@ pub(super) fn cancel_turns(who: &str) {
 // Has the server see the player look at (yaw, pitch), then does `then`. `who` names the module: what it asks again in
 // the same tick goes along under its first look, and an ask from an earlier tick still waiting is replaced.
 pub(super) fn turn_then(who: &'static str, yaw: f32, pitch: f32, then: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) {
+    queue_turn(who, yaw, pitch, None, false, then);
+}
+pub(super) fn turn_then_checked(who: &'static str, yaw: f32, pitch: f32, guard: AttackGuard,
+    then: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) {
+    queue_turn(who, yaw, pitch, Some(guard), false, then);
+}
+fn queue_turn(who: &'static str, yaw: f32, pitch: f32, guard: Option<AttackGuard>, critical: bool,
+    then: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) {
+    let critical = CriticalCompletion(critical);
     if !yaw.is_finite() || !pitch.is_finite() {
         return;
     }
     let look = (yaw, pitch.clamp(-90.0, 90.0));
+    let deed = Deed { guard, critical, run: Box::new(then) };
     turns(|t| match t.queue.iter_mut().position(|a| a.who == who) {
-        Some(i) if t.queue[i].fresh => t.queue[i].deeds.push(Box::new(then)),
+        Some(i) if t.queue[i].fresh => t.queue[i].deeds.push(deed),
         Some(i) => {
             if i == 0 && t.carried {
                 // Its look is on the way already: the new ask waits behind it.
-                t.queue.push(Ask { who, look, deeds: vec![Box::new(then)], fresh: true });
+                t.queue.push(Ask { who, look, deeds: vec![deed], fresh: true });
             } else {
-                t.queue[i] = Ask { who, look, deeds: vec![Box::new(then)], fresh: true };
+                t.queue[i] = Ask { who, look, deeds: vec![deed], fresh: true };
             }
         }
-        None => t.queue.push(Ask { who, look, deeds: vec![Box::new(then)], fresh: true }),
+        None => t.queue.push(Ask { who, look, deeds: vec![deed], fresh: true }),
     });
 }
 
@@ -6381,8 +6526,11 @@ pub(super) fn turn(who: &'static str, yaw: f32, pitch: f32) {
 // Runs what waited for the look this tick's move packet carried.
 fn turned(game: &mut Game<'_>) {
     let ask = turns(|t| std::mem::take(&mut t.carried).then(|| t.queue.remove(0)));
-    for deed in ask.map_or_else(Vec::new, |a| a.deeds) {
-        deed(game);
+    for mut deed in ask.map_or_else(Vec::new, |a| a.deeds) {
+        if deed.guard.is_none_or(|guard| guard.valid(game)) {
+            deed.critical.0 = false;
+            (deed.run)(game);
+        }
     }
 }
 
@@ -6504,6 +6652,7 @@ const HELP: &[(&str, &str)] = &[
     (".debug [chat lines]", "copy a debug report (chat, anticheat flags, the client's state, the last packets sent) to the clipboard and its configured Save folder"),
     (".scan [plugins|details|channels|commands|status|run] [page]", "show server-reported findings; run optional Extended checks manually"),
     (".auradebug", "why Kill Aura did what it did last, and who has the hand"),
+    (".antibotdebug [entity id]", "show cached decoy confidence and supporting observations"),
     (".plugins", "the plugins loaded, their modules and commands"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
@@ -6750,6 +6899,10 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
     };
     match cmd.as_str() {
         "auradebug" => say(game, &super::sunset_aura::diagnostics()),
+        "antibotdebug" => {
+            let id = args.get(1).and_then(|id| id.parse::<u32>().ok());
+            for line in super::sunset_antibot::diagnostics(game, id) { say(game, &line); }
+        }
         "scan" => super::sunset_server_scan::command(game, &args[1..]),
         "goto" => {
             let text = super::agent::sunset_goto::command(game, &args[1..]).unwrap_or_else(|e| e);
@@ -10391,5 +10544,31 @@ mod cleanup_tests {
             assert_eq!(preview.off.contains(&"Kill Aura"), !preset.text.contains("killaura.on=true"), "{}", preset.id);
         }
         assert!(find("pvp-cart").is_some());
+    }
+
+    #[test]
+    fn antibot_defaults_protect_combat_and_saved_optouts_still_load() {
+        let mut state = State::new();
+        assert!(state.module("Anti Bot").unwrap().on);
+        assert_eq!(state.module("Anti Bot").unwrap().p("Sensitivity"), "Balanced");
+        for name in ["Kill Aura", "Aim Assist", "Trigger Bot"] {
+            assert!(state.module(name).unwrap().b("Anti bot"), "{name}");
+        }
+        state.load_text(concat!(
+            "killaura.antibot=false\n", "aimassist.antibot=false\n", "triggerbot.antibot=false\n",
+            "antibot.on=false\n", "antibot.sensitivity=Conservative\n",
+        ));
+        for name in ["Kill Aura", "Aim Assist", "Trigger Bot"] {
+            assert!(!state.module(name).unwrap().b("Anti bot"), "{name}");
+        }
+        assert!(!state.module("Anti Bot").unwrap().on);
+        assert_eq!(state.module("Anti Bot").unwrap().p("Sensitivity"), "Conservative");
+    }
+
+    #[test]
+    fn cancelled_critical_look_restores_the_stopped_sprint() {
+        CRIT_SPRINT.store(CRIT_SPRINT_STOPPED, Ordering::Relaxed);
+        drop(CriticalCompletion(true));
+        assert_eq!(CRIT_SPRINT.swap(0, Ordering::Relaxed), CRIT_SPRINT_DUE);
     }
 }

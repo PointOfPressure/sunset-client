@@ -54,7 +54,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Hostile mob age filter", &["Both", "Adult", "Baby"])
             .bool("Ignore named", false)
             .bool("Ignore passive", true)
-            .bool("Anti bot", false)
+            .bool("Anti bot", true)
             .bool("Ignore teams", false)
             .bool("Ignore invisible", false)
             .num("Health threshold", 0.0, 0.0, 100.0, 1.0)
@@ -87,6 +87,7 @@ struct As {
     target: Option<u32>,
     // The target it stays on or is switching from, and the ticks before it may hit a new one.
     current: Option<u32>,
+    identity: Option<super::sunset_antibot::Token>,
     target_timer: u32,
     // Switch: the last hit landed, so the next target's turn.
     switch_next: bool,
@@ -102,6 +103,22 @@ struct As {
 }
 
 static AS: Mutex<Option<As>> = Mutex::new(None);
+impl As {
+    fn select(&mut self, id: u32, delay: u32, multi: bool, released: bool) -> bool {
+        self.attacking = true;
+        self.target = Some(id);
+        let changed = self.current.replace(id).is_some_and(|old| old != id);
+        if (changed || released) && !multi { self.target_timer = delay; }
+        let waiting = self.target_timer > 0;
+        self.target_timer = self.target_timer.saturating_sub(1);
+        waiting
+    }
+    fn clear(&mut self, preserve_scene: bool) -> (bool, usize, usize) {
+        let old = std::mem::take(self);
+        if preserve_scene { self.own_id = old.own_id; }
+        (old.swapped, old.prev, old.given)
+    }
+}
 
 fn st<R>(f: impl FnOnce(&mut As) -> R) -> R {
     let mut g = AS.lock().unwrap_or_else(|e| e.into_inner());
@@ -261,7 +278,7 @@ fn stab_hits(game: &Game<'_>, m: &Module, eye: [f64; 3], look: (f32, f32), t: &T
 }
 
 fn entity_check(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool {
-    if t.health <= 0.0 || spared(game, m, t.id, t.player) {
+    if !game.mobs.iter().any(|mob| mob.id == t.id && combat_eligible(game, m, mob)) {
         return false;
     }
     if reach(eye, t) > m.n("Range") || entity_listed(m.t("Entities"), t) == (m.p("List mode") == "Blacklist") || !in_fov(game, m, t, eye) {
@@ -299,6 +316,7 @@ fn stop(game: &mut Game<'_>, m: &Module) {
     silent_return(game, m);
     let (was, swapped, prev, given) = st(|s| {
         s.current = None;
+        s.identity = None;
         s.target_timer = 0;
         s.switch_next = false;
         s.look = None;
@@ -309,20 +327,47 @@ fn stop(game: &mut Game<'_>, m: &Module) {
         hold(game, prev);
     }
     control::release(HAND);
+    super::sunset::cancel_turns(HAND);
 }
 
 // Turned off: back to the weapon it swapped from, and nothing kept for next time (the game sends your own look again).
 pub(super) fn disabled(game: &mut Game<'_>, swap_back: bool) {
-    let (swapped, prev, given) = st(|s| {
-        let was = (s.swapped, s.prev, s.given);
-        *s = As::default();
-        was
-    });
+    reset(game, swap_back, false);
+}
+pub(super) fn clear_targets(game: &mut Game<'_>) {
+    reset(game, false, true);
+}
+fn reset(game: &mut Game<'_>, swap_back: bool, preserve_scene: bool) {
+    let (swapped, prev, given) = st(|s| s.clear(preserve_scene));
     super::sunset_rotation::let_go();
     if swap_back && swapped && game.selected == given {
         hold(game, prev);
     }
     control::release(HAND);
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    #[test]
+    fn clearing_targets_preserves_auto_disable_world_comparison() {
+        let mut state = As { own_id: Some(7), current: Some(3), ..As::default() };
+        state.clear(true);
+        assert!(state.current.is_none());
+        assert!(state.own_id.replace(8).is_some_and(|old| old != 8));
+        state.clear(false);
+        assert!(state.own_id.is_none());
+    }
+    #[test]
+    fn releasing_an_ineligible_target_keeps_the_configured_switch_delay() {
+        let mut state = As::default();
+        assert!(state.select(2, 3, false, true));
+        assert!(state.select(2, 3, false, false));
+        assert!(state.select(2, 3, false, false));
+        assert!(!state.select(2, 3, false, false));
+        let mut multi = As::default();
+        assert!(!multi.select(2, 3, true, true));
+    }
 }
 
 // Who to hit this tick: Multi all it may, Switch each in turn, Single one (the same one with Target lock).
@@ -396,6 +441,11 @@ fn silent_return(game: &Game<'_>, m: &Module) {
 
 pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     st(|s| s.target = None);
+    let held = st(|s| (s.current, s.identity));
+    let released = held.0.is_some_and(|id| held.1.is_none_or(|token| !super::sunset_antibot::current(token)) || !eligible(game, m, id));
+    if released {
+        stop(game, m);
+    }
     if game.remote.is_none() {
         st(|s| s.managed = None);
         super::sunset_rotation::let_go();
@@ -451,8 +501,6 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     let Some(eye) = game.eye_position() else {
         return;
     };
-    let friends = super::sunset::with(|s| s.friends.clone());
-    let names = game.remote_player_names();
     let mut list: Vec<Target> = if m.b("Only on look") {
         game.mob_hit().map(|(i, _)| mob_target(&game.mobs[i])).into_iter().collect()
     } else {
@@ -460,7 +508,6 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     };
     list.retain(|t| {
         Some(t.id) != own
-            && !(t.player && names.iter().any(|(i, n)| *i == t.id && friends.iter().any(|f| f.eq_ignore_ascii_case(n))))
             && entity_check(game, m, t, eye)
     });
     sort_targets(game, &mut list, m.p("Priority"));
@@ -504,14 +551,8 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     let primary = list[0].clone();
     let delay = m.n("Target switch delay") as u32;
     let waiting = st(|s| {
-        s.attacking = true;
-        s.target = Some(primary.id);
-        if s.current.replace(primary.id).is_some_and(|was| was != primary.id) && m.p("Attack mode") != "Multi" {
-            s.target_timer = delay;
-        }
-        let wait = s.target_timer > 0;
-        s.target_timer = s.target_timer.saturating_sub(1);
-        wait
+        s.identity = super::sunset_antibot::token(primary.id);
+        s.select(primary.id, delay, m.p("Attack mode") == "Multi", released)
     });
     let rotate_mode = m.p("Rotate");
     let silent = rotate_mode == "Always" && m.p("Rotation mode") == "Silent aura";
@@ -602,7 +643,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         if if spear { !stab_hits(game, m, eye, aim, t) } else { check && !ray_hits(game, m, eye, aim, t, range) } {
             continue;
         }
-        super::sunset::attack(game, t.id, crits, on_hit);
+        super::sunset::attack_for(game, t.id, crits, on_hit, super::sunset::AttackSource::KillAura);
         hit = true;
     }
     if hit {
@@ -613,6 +654,12 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             s.hit = Some(control::finish(HAND));
         });
     }
+}
+
+// Rechecked after deferred rotation/Criticals and immediately before a hit.
+pub(super) fn eligible(game: &Game<'_>, m: &Module, id: u32) -> bool {
+    game.eye_position().zip(game.mobs.iter().find(|mob| mob.id == id))
+        .is_some_and(|(eye, mob)| entity_check(game, m, &mob_target(mob), eye))
 }
 
 // Who Kill Aura is hitting (Target ESP marks them).

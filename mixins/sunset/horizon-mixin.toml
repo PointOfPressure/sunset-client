@@ -9,6 +9,44 @@ priority = 100
 horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
 
 [[module]]
+id = "antibot_state"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_antibot_state"
+source = "antibot_state.rs"
+
+[[module]]
+id = "antibot"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_antibot"
+source = "antibot.rs"
+
+[[injection]]
+id = "antibot_spawn"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::spawn_entity"
+helper = "antibot_entity_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "id", ty = "i32", value = "id" },
+]
+
+[[injection]]
+id = "antibot_despawn"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::remove_entity"
+helper = "antibot_entity_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "id", ty = "i32", value = "id" },
+]
+
+[[injection]]
+id = "antibot_world"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::enter_remote_dimension"
+helper = "antibot_world_hook.rs"
+
+[[module]]
 id = "runtime"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset"

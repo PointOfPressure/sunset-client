@@ -539,28 +539,28 @@ pub(super) fn name_into(game: &Game<'_>, mob: &horizon_client::mobs::Mob, out: &
     }
 }
 
-// Who the targeting modules leave alone: with Anti bot, a player the server's player list does not show or with a name
-// no account could have; with Ignore teams, anyone on your own scoreboard team.
-pub(super) fn spared(game: &Game<'_>, m: &Module, id: u32, player: bool) -> bool {
-    // A name no account could have: 3 to 16 letters, digits or _, with the . or * Bedrock players get from Geyser.
-    if player
-        && m.b("Anti bot")
-        && game.remote_player_name(id).is_some_and(|n| {
-            let core = n.strip_prefix(['.', '*']).unwrap_or(n);
-            !(3..=16).contains(&core.len()) || !core.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-        })
-    {
-        return true;
-    }
-    if player
-        && m.b("Anti bot")
-        && let Some(online) = game.remote_online_names()
-        && game.remote_player_name(id).is_none_or(|n| !online.iter().any(|o| o == n))
-    {
-        return true;
-    }
-    m.b("Ignore teams")
+// Every automated targeting path reads the same cached classification.
+pub(super) fn spared(game: &Game<'_>, m: &Module, id: u32, _player: bool) -> bool {
+    (m.b("Anti bot") && super::sunset_antibot::blocked(id))
+        || (m.b("Ignore teams")
         && horizon_client::scoreboard::teams_allied(game.score.board.players_team(&game.options.player_name()), game.mob_team(id))
+        )
+}
+
+pub(super) fn combat_eligible(game: &Game<'_>, m: &Module, mob: &horizon_client::mobs::Mob) -> bool {
+    let player = mob.kind.id == "minecraft:player";
+    if !mob.alive() || !mob.health.is_finite() || mob.removed
+        || Some(mob.id) == super::sunset::own_id(game) || game.riding == Some(mob.id)
+        || spared(game, m, mob.id, player)
+        || (player && super::remote::sunset_combat_remote::player_mode(game, mob.id) == Some(3))
+    { return false; }
+    let b = mob.bounds();
+    let (lo, hi) = (b.min_position(), b.max_position());
+    if [lo.x, lo.y, lo.z, hi.x, hi.y, hi.z].iter().any(|v| !v.is_finite())
+        || lo.x >= hi.x || lo.y >= hi.y || lo.z >= hi.z
+    { return false; }
+    !player || !game.remote_player_name(mob.id).is_some_and(|name|
+        with(|s| s.friends.iter().any(|friend| friend.eq_ignore_ascii_case(name))))
 }
 
 pub(super) const PRIORITIES: &[&str] = &["Lowest distance", "Highest distance", "Lowest health", "Closest angle"];

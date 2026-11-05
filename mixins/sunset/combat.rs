@@ -2,7 +2,7 @@
 // Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow,
 // Offhand and Auto EXP; and Auto City (Rust's PR #16).
 
-use super::sunset::{Category, Module, gui_open, hold, is_friend, own_id, with};
+use super::sunset::{Category, Module, gui_open, hold, own_id, with};
 use super::sunset_util::*;
 use super::Game;
 use horizon_protocol::packets::play::{self, Serverbound as S};
@@ -123,7 +123,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only with a weapon", true)
             .bool("Pause while mining", false)
             .bool("Only while turning", false)
-            .bool("Anti bot", false)
+            .bool("Anti bot", true)
             .bool("Ignore teams", false)
             .bool("Silent aim", false)
             .bool("Silent players only", true)
@@ -173,7 +173,7 @@ struct Cs {
     exp_repairing: Option<usize>,
     aim_before: [f32; 2],
     aim_frame: Option<Instant>,
-    aim_target: Option<u32>,
+    aim_target: Option<super::sunset_antibot::Token>,
     aim_last: [f64; 2],
     city: Option<City>,
 }
@@ -1274,8 +1274,6 @@ struct Aim<'a, 'g> {
     alpha: f64,
     range: f64,
     own: Option<u32>,
-    names: Vec<(u32, String)>,
-    friends: Vec<String>,
 }
 
 impl<'a> Aim<'a, '_> {
@@ -1290,11 +1288,8 @@ impl<'a> Aim<'a, '_> {
         let wanted = if player { self.m.b("Players") } else { e.hostile() && self.m.b("Hostiles") };
         wanted
             && Some(e.id) != self.own
-            && e.alive()
-            && !e.removed
+            && combat_eligible(self.game, self.m, e)
             && !invisible_to_you(self.game, e)
-            && !(player && is_friend(&self.friends, &self.names, e.id))
-            && !spared(self.game, self.m, e.id, player)
     }
 
     // A target, within `half_cone` degrees of the crosshair, in range and not behind a block.
@@ -1366,10 +1361,11 @@ fn aim_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
         lerp(was.z, p.position.z),
     ];
     let look = view_vector(game.yaw, game.pitch);
-    let aim = Aim { game, m, eye, look, alpha, range, own: own_id(game), names: game.remote_player_names(), friends: with(|s| s.friends.clone()) };
+    let aim = Aim { game, m, eye, look, alpha, range, own: own_id(game) };
     let (previous, last, before) = cs(|c| (c.aim_target, c.aim_last, c.aim_before));
     let kept = previous
-        .and_then(|id| game.mobs.iter().find(|e| e.id == id))
+        .filter(|token| super::sunset_antibot::current(*token))
+        .and_then(|token| game.mobs.iter().find(|e| e.id == token.id))
         .filter(|e| aim.valid(e, cone / 2.0 * m.n("Keep target")));
     let Some(target) = kept.or_else(|| aim.pick(cone)) else {
         cs(|c| c.aim_target = None);
@@ -1388,7 +1384,8 @@ fn aim_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
     let mut turn = [0.0; 2];
     // Tracking fades out as the crosshair drifts off the hitbox, instead of switching off at a hard edge.
     let within = m.n("Track within (degrees)");
-    if previous == Some(target.id) && gap < within {
+    let identity = super::sunset_antibot::token(target.id);
+    if previous.is_some() && previous == identity && gap < within {
         let t = tracking * (1.0 - gap / within);
         turn[0] += wrap(yaw_to - last[0]) * t;
         turn[1] += (pitch_to - last[1]) * t;
@@ -1411,9 +1408,8 @@ fn aim_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
             turn[1] += gap_pitch / gap * extra;
         }
     }
-    let id = target.id;
     cs(|c| {
-        c.aim_target = Some(id);
+        c.aim_target = identity;
         c.aim_last = [yaw_to, pitch_to];
     });
     turn
@@ -1424,13 +1420,13 @@ pub(super) fn aim_after(game: &mut Game<'_>) {
     let now = Instant::now();
     let dt = cs(|c| c.aim_frame.replace(now)).map_or(0.0, |t| now.duration_since(t).as_secs_f64().min(0.05));
     let Some(m) = with(|s| s.module("Aim Assist").filter(|m| m.on).cloned()).filter(|m| aim_allowed(game, m)) else {
-        cs(|c| c.aim_target = None);
+        reset_aim();
         return;
     };
     let turn = match m.p("Mode") {
-        "Simple" => simple_turn(game, &m, dt),
-        "Duelkit" => aim_turn(game, &m, dt),
-        _ => return,
+        "Simple" => { cs(|c| c.aim_target = None); simple_turn(game, &m, dt) },
+        "Duelkit" => { simple_reset(); aim_turn(game, &m, dt) },
+        _ => { reset_aim(); return; },
     };
     // turn_player takes mouse units, 0.15 degrees each (Entity.turn), and keeps the interpolation in step.
     if turn != [0.0; 2] {
@@ -1440,14 +1436,14 @@ pub(super) fn aim_after(game: &mut Game<'_>) {
 
 
 // ---- Aim Assist's Simple mode:
-// submodule). A worker step for each millisecond since the last frame (at most 100) eases a velocity toward the
+// A worker step for each millisecond since the last frame (at most 100) eases a velocity toward the
 // target's side, a little faster the further off, the nearer, and when it jumps about; a slow random drift is added;
 // the frame turns you by the whole mouse counts that adds up to at your sensitivity. Horizontal only unless Aim
 // vertically. With Require mouse down it aims only while you hold attack, at the target it took when you pressed.
 
 #[derive(Default)]
 struct Simple {
-    target: Option<u32>,
+    target: Option<super::sunset_antibot::Token>,
     retarget: i32,
     swap: i32,
     sample: i32,
@@ -1501,6 +1497,9 @@ fn yaw_off(from: [f64; 3], yaw: f32, to: [f64; 3]) -> (f64, bool) {
 }
 
 impl Simple {
+    fn forget(&mut self) {
+        *self = Self { rng: self.rng, shared: self.shared, ..Self::default() };
+    }
     fn reset_turn(&mut self) {
         self.counts = (0.0, 0.0);
         self.offset = (0, 0);
@@ -1668,8 +1667,6 @@ fn simple_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
         alpha,
         range: m.n("Distance"),
         own: own_id(game),
-        names: game.remote_player_names(),
-        friends: with(|s| s.friends.clone()),
     };
     let held = |k: winit::keyboard::KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
     let strafe = f32::from(u8::from(held(winit::keyboard::KeyCode::KeyA))) - f32::from(u8::from(held(winit::keyboard::KeyCode::KeyD)));
@@ -1679,42 +1676,45 @@ fn simple_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
     // isValidTarget: alive, nearer than Distance (whole blocks), within half Max angle (whole degrees).
     let valid = |e: &Mob| {
         let at = [e.position.x, e.position.y, e.position.z];
-        aim.matches(e) && dist(tick_feet, at) < f64::from(distance as i32) && yaw_off(tick_feet, look.0, at).0 as i32 <= half as i32
+        let point = closest_point(&aim.boxed(e), eye, aim.look);
+        aim.matches(e) && dist(tick_feet, at) < f64::from(distance as i32)
+            && yaw_off(tick_feet, look.0, at).0 as i32 <= half as i32
+            && clip_clear(game, eye, point, dist(eye, point))
     };
     let best = || {
         game.mobs
             .iter()
             .filter(|e| valid(e))
             .min_by_key(|e| yaw_off(tick_feet, look.0, [e.position.x, e.position.y, e.position.z]).0 as i32)
-            .map(|e| e.id)
+            .and_then(|e| super::sunset_antibot::token(e.id))
     };
     let steps = (dt * 1000.0).round().min(100.0) as u32;
     let mut g = SIMPLE.lock().unwrap_or_else(|e| e.into_inner());
     let s = g.get_or_insert_with(Simple::default);
+    // Revalidate before consuming any buffered turn, even on frames with no
+    // millisecond worker step. Holding attack never exempts a retained target.
+    if (require && !down) || s.target.is_some_and(|token|
+        !super::sunset_antibot::current(token)
+            || !game.mobs.iter().any(|e| e.id == token.id && valid(e)))
+    { s.forget(); }
     for _ in 0..steps {
         if require && !down {
-            s.target = None;
-            s.reset_turn();
+            s.forget();
             continue;
-        }
-        let current = s.target.and_then(|id| game.mobs.iter().find(|e| e.id == id));
-        if current.is_some_and(|e| !e.alive() || dist(tick_feet, [e.position.x, e.position.y, e.position.z]) > distance) || current.is_none() {
-            if s.target.is_some() {
-                s.reset_turn();
-            }
-            s.target = None;
         }
         if !require {
             s.retarget += 1;
-            let invalid = s.target.and_then(|id| game.mobs.iter().find(|e| e.id == id)).is_none_or(|e| !valid(e));
+            let invalid = s.target.is_none();
             if s.retarget > 700 || invalid {
-                s.target = best();
+                let next = best();
+                if next != s.target { s.forget(); }
+                s.target = next;
                 s.retarget = 0;
             }
         } else if s.target.is_none() {
             s.target = best();
         }
-        let Some(e) = s.target.and_then(|id| game.mobs.iter().find(|e| e.id == id)) else {
+        let Some(e) = s.target.and_then(|token| game.mobs.iter().find(|e| e.id == token.id)) else {
             s.reset_turn();
             continue;
         };
@@ -1741,6 +1741,23 @@ fn simple_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
     s.drift = (0, 0);
     let per = f64::from(super::sunset_rotation::degrees_per_count(f64::from(game.settings.sensitivity)));
     [f64::from(whole.0) * per, f64::from(whole.1) * per]
+}
+
+fn simple_reset() {
+    *SIMPLE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+pub(super) fn reset_aim() {
+    cs(|c| { c.aim_target = None; c.aim_last = [0.0; 2]; });
+    simple_reset();
+}
+pub(super) fn aim_target_id() -> Option<u32> {
+    if with(|s| s.module("Aim Assist").is_some_and(|m| m.p("Mode") == "Simple")) {
+        SIMPLE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|s| s.target.map(|t| t.id))
+    } else { cs(|c| c.aim_target.map(|t| t.id)) }
+}
+pub(super) fn click_eligible(game: &Game<'_>, m: &Module, mob: &Mob, players_only: bool) -> bool {
+    combat_eligible(game, m, mob) && !invisible_to_you(game, mob)
+        && if mob.kind.id == "minecraft:player" { m.b("Players") } else { !players_only }
 }
 
 // ---- Crystal Optimizer

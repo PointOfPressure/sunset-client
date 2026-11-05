@@ -110,7 +110,7 @@ struct State {
     // and Trigger Bot's target for a stab at the start of the next tick.
     reach_back: Option<usize>,
     reach_wait: u32,
-    reach_strike: Option<u32>,
+    reach_strike: Option<super::sunset::AttackGuard>,
     // A hit whose look the server has: it goes at the start of the next tick, before that tick's move packet, as the
     // game's own attack does.
     due: Option<Box<dyn for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send>>,
@@ -973,10 +973,10 @@ pub(super) fn reach_tick(game: &mut Game<'_>, busy: bool) -> bool {
         }
         return game.selected != was;
     }
-    let Some(id) = state(|s| s.reach_strike.take()) else {
+    let Some(guard) = state(|s| s.reach_strike.take()) else {
         return false;
     };
-    if busy || acted(game) || !allowed(game) || state(|s| s.reach_back.is_some() || s.reach_wait > 0) || reach_target(game) != Some(id) {
+    if busy || !guard.valid(game) || acted(game) || !allowed(game) || state(|s| s.reach_back.is_some() || s.reach_wait > 0) || reach_target(game) != Some(guard.id()) {
         return false;
     }
     reach_go(game)
@@ -992,8 +992,8 @@ pub(super) fn reach_trigger(game: &Game<'_>) -> Option<u32> {
 }
 
 // Trigger Bot hits `id` by Extended reach: the stab goes at the start of the next tick.
-pub(super) fn reach_strike(id: u32) {
-    state(|s| s.reach_strike = Some(id));
+pub(super) fn reach_strike(guard: super::sunset::AttackGuard) {
+    state(|s| s.reach_strike = Some(guard));
 }
 
 // The attack hook, before your click: Some(false) takes the click (a friend, a reach poke, Extended reach's stab).

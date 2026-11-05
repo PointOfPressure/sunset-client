@@ -2,6 +2,7 @@
 // screen, where nothing is left of the last world. RF Click learns whether you type; .goto stops or reports; Offhand's
 // Auto Totem clicks, between ticks as a screen's clicks are; plugins hear of joins and disconnects.
 fn sunset_sky_frame(game: &mut crate::game::Game<'_>) {
+    crate::game::sunset_antibot::frame(game);
     crate::game::agent::sunset_goto::frame(game);
     crate::game::sunset_sky::shown(game);
     crate::game::sunset_hands::frame(game);
