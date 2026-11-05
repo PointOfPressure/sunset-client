@@ -1,6 +1,6 @@
 [mod]
 id = "sunset"
-version = "0.8.1"
+version = "0.9.0"
 priority = 100
 
 # It hooks the game's own functions as well as the native hook points, so it
