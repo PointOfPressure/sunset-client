@@ -33,7 +33,8 @@ horizon-mixins native mod. Mod id `sunset`; all code is in `mixins/sunset/`. The
   MIT sources (vape-rs, Anubis 1.0) may be ported closely; credit them in the commit. No third-party notices
   section in LICENSE; don't put the vape-rs/Anubis attributions back.
 - Credit contributors in the commit and in README's Credits.
-- Nothing that hides Sunset (from Horizon's mod menu, from servers, server brand spoofing). Those get refused.
+- Don't hide Sunset from Horizon's mod menu. Client Spoofer is allowed: it spoofs the client brand and the client
+  identity sent to servers (brand spoofing included). Nothing else that hides Sunset from servers.
 - Don't change existing Kill Aura behaviour; new modes go alongside.
 
 ## Testing
