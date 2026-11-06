@@ -8,6 +8,79 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+// GUI Move owns the client prediction until its held clicks have reached the server. Keep incoming authority
+// separate meanwhile; the game rebases the same semantic clicks before another mouse action can use it.
+static GUI_MOVE_ACTIVE: AtomicBool = AtomicBool::new(false);
+static GUI_MOVE_UPDATES: Mutex<Vec<C>> = Mutex::new(Vec::new());
+
+pub fn gui_move_active(active: bool) {
+    GUI_MOVE_ACTIVE.store(active, Ordering::Release);
+}
+
+pub fn gui_move_take() -> Vec<C> {
+    std::mem::take(&mut *GUI_MOVE_UPDATES.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+pub fn gui_move_pending() -> bool {
+    !GUI_MOVE_UPDATES.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+}
+
+fn gui_move_key(packet: &C) -> Option<(u8, i32)> {
+    match packet {
+        C::ContainerSetContent(p) if p.container == 0 => Some((0, 0)),
+        C::ContainerSetSlot(p) if p.container == 0 && (0..46).contains(&p.slot) => Some((1, i32::from(p.slot))),
+        C::SetPlayerInventory(p) if (0..41).contains(&p.slot) => Some((2, p.slot)),
+        C::SetCursorItem(_) => Some((3, 0)),
+        _ => None,
+    }
+}
+
+fn gui_move_defer(holding: &mut bool, boundary: bool, inventory: bool) -> bool {
+    if boundary { *holding = false; }
+    *holding && inventory
+}
+
+#[cfg(test)]
+mod gui_move_boundary_tests {
+    use super::gui_move_defer;
+
+    #[test]
+    fn later_inventory_authority_keeps_its_order_after_a_menu_boundary() {
+        let mut holding = true;
+        assert!(gui_move_defer(&mut holding, false, true));
+        assert!(!gui_move_defer(&mut holding, true, false));
+        assert!(!gui_move_defer(&mut holding, false, false));
+        assert!(!gui_move_defer(&mut holding, false, true));
+    }
+}
+
+pub fn gui_move_hold(events: Vec<super::Event>) -> Vec<super::Event> {
+    if !GUI_MOVE_ACTIVE.load(Ordering::Acquire) { return events; }
+    let mut holding = true;
+    events.into_iter().filter(|event| {
+        let super::Event::Packet(packet) = event else { return true; };
+        // A boundary is applied by native_client_packet's HEAD hook before its native handler. Only updates
+        // preceding it belong to the old shadow. Everything after it retains the network's original order.
+        let boundary = matches!(&**packet, C::OpenScreen(_) | C::MountScreenOpen(_) | C::ContainerClose(_)
+            | C::Respawn(_) | C::Login(_) | C::Disconnect(_));
+        if boundary {
+            GUI_MOVE_ACTIVE.store(false, Ordering::Release);
+        }
+        let key = gui_move_key(packet);
+        if !gui_move_defer(&mut holding, boundary, key.is_some()) { return true; }
+        let Some(key) = key else { return true; };
+        let mut updates = GUI_MOVE_UPDATES.lock().unwrap_or_else(|e| e.into_inner());
+        if key == (0, 0) {
+            // A full own-menu snapshot supersedes every older own-menu slot/cursor snapshot.
+            updates.clear();
+        } else {
+            updates.retain(|old| gui_move_key(old) != Some(key));
+        }
+        updates.push((**packet).clone());
+        false
+    }).collect()
+}
+
 // Server Scan's evidence, each piece tagged with the configuration it belongs to: 1 for the first, one more for
 // each proxy backend switch. This tap counts configurations as the game takes them in (Joined, then each
 // Reconfigured), so play packets still queued from the old backend keep its number. A configuration payload
@@ -259,6 +332,7 @@ pub fn seen(events: &[super::Event]) {
                     | C::ContainerSetContent(_)
                     | C::SetPlayerInventory(_)
                     | C::SetCursorItem(_)
+                    | C::ContainerClose(_)
                     | C::OpenScreen(_)
             )
             && seen.len() < 4096

@@ -9,6 +9,79 @@ priority = 100
 horizon_revision = "66f3981f522b24c250b21523a70080965b940424"
 
 [[module]]
+id = "gui_move"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_gui_move"
+source = "gui_move.rs"
+
+[[module]]
+id = "gui_move_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_gui_move_policy"
+source = "gui_move_policy.rs"
+
+[[module]]
+id = "gui_move_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_gui_move_remote"
+source = "gui_move_remote.rs"
+visibility = "pub(crate)"
+
+[[injection]]
+id = "gui_move_click"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_menu_ops"
+helper = "gui_move_click_hook.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+[[injection]]
+id = "gui_move_throw"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_throw"
+helper = "gui_move_action_hook.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+[[injection]]
+id = "gui_move_quick_move"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_quick_move_all"
+helper = "gui_move_action_hook.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+[[injection]]
+id = "gui_move_shift"
+kind = "RETURN"
+target = "horizon_client::game::Game<'_>::has_shift_down"
+helper = "gui_move_shift_hook.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "value", ty = "bool", value = "$value" },
+]
+
+[[injection]]
+id = "gui_move_server_menu"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::remote_menu_state"
+helper = "gui_move_state_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "container", ty = "i32", value = "container" },
+]
+
+[[injection]]
+id = "gui_move_incoming_boundary"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_client_packet"
+helper = "gui_move_incoming_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "packet", ty = "&horizon_protocol::packets::play::Clientbound", value = "packet" },
+]
+
+[[module]]
 id = "click_clock"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_click_clock"

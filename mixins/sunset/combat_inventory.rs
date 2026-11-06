@@ -719,6 +719,7 @@ fn totem_frame(game: &mut Game<'_>, m: &Module) {
 
 // Each frame: what the last tick asked of Auto Totem, in the world it was asked in.
 pub(super) fn frame(game: &mut Game<'_>) {
+    if super::sunset_gui_move::inventory_busy() { return; }
     let Some(work) = state(|s| s.totem.work.take()) else {
         return;
     };
@@ -1073,6 +1074,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         cancel(game);
         return;
     }
+    if super::sunset_gui_move::inventory_busy() { return; }
     let ticks = game.ticks;
     if state(|s| s.connection.as_ref().is_none_or(|old| !same_session(game, old)) || ticks < s.tick) {
         reset();

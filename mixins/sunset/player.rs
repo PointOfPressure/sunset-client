@@ -822,6 +822,7 @@ fn junk_slots(game: &Game<'_>, m: &Module) -> Vec<usize> {
 }
 
 fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
+    if super::sunset_gui_move::inventory_busy() { return; }
     // A preset just picked fills in its limits and junk (not on the first look, so a change you made stays).
     let preset = m.p("Preset");
     let before = ps(|p| std::mem::replace(&mut p.clean_preset, preset.to_owned()));

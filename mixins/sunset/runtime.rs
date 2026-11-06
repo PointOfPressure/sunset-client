@@ -635,6 +635,10 @@ impl Module {
                 "Shortest delay" | "Longest delay" => self.b("Swap back") && self.p("Back after") == "A delay",
                 _ => true,
             },
+            "GUI Move" => match name {
+                "Rotate speed" => self.b("Arrows"),
+                _ => true,
+            },
             "Scaffold" => match name {
                 "Shortest sneak delay (ms)" | "Longest sneak delay (ms)" => self.p("Mode") == "Legit",
                 "Activation blocks" => self.p("Mode") == "Godbridge",
@@ -791,10 +795,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Reverse step", false)
             .num("Fall speed", 1.0, 0.5, 3.0, 0.5),
         Module::new("GUI Move", Movement, "Moves while a menu is open.")
+            .pick("Mode", &["Normal", "GrimAC"])
             .pick("Screens", &["All menus", "Inventory"])
             .bool("Jump", true)
             .bool("Sneak", true)
             .bool("Arrows", true)
+            .num("Rotate speed", 6.0, 1.0, 20.0, 1.0)
             .bool("Sprint", true),
         Module::new("Glide", Movement, "Falls slowly.")
             .num("Fall speed", 2.5, 0.5, 8.0, 0.5),
@@ -2894,6 +2900,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     horizon_client::motion::sunset_motion::expire_attack_slow(game.ticks);
     let packets = horizon_client::net::sunset_packets::take();
     super::sunset_antibot::packets(game, &packets);
+    super::sunset_gui_move::packets(game, &packets);
+    let inventory_stop = super::sunset_gui_move::pre_tick(game);
+    horizon_client::motion::sunset_motion::set_freeze(inventory_stop);
     if !game.native_on(ID) || game.player.is_none() {
         combat_cleanup(game);
         horizon_client::motion::sunset_motion::set_across(None);
@@ -3031,8 +3040,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         left: held(KeyCode::KeyA),
         right: held(KeyCode::KeyD),
         jump: m.b("Jump") && held(KeyCode::Space),
-        shift: m.b("Sneak") && held(KeyCode::ShiftLeft),
-        sprint: m.b("Sprint") && (on("Sprint") || held(KeyCode::ControlLeft)),
+        shift: m.b("Sneak") && (m.p("Mode") != "GrimAC" || !game.settings.toggle_crouch) && held(KeyCode::ShiftLeft),
+        sprint: m.b("Sprint") && (m.p("Mode") != "GrimAC" || !game.settings.toggle_sprint) && (on("Sprint") || held(KeyCode::ControlLeft)),
         analog: None,
     });
     horizon_client::motion::sunset_motion::set_screen_keys(screen_keys);
@@ -3130,7 +3139,9 @@ fn step_height(game: &Game<'_>, m: &Module) -> f64 {
 // a screen you type in. (A single-player game stops while the pause menu and the like are open: nothing moves there.)
 fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
     if game.screen == Screen::Inventory {
-        return game.remote_menu().1 != "anvil";
+        let (id, kind) = game.remote_menu();
+        return !game.recipe_search_focused() && super::sunset_util::short(&kind) != "anvil"
+            && (m.p("Mode") != "GrimAC" || (id == 0 && kind == "inventory"));
     }
     if m.p("Screens") != "All menus" {
         return false;
@@ -3143,7 +3154,7 @@ fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
             options.selected_key.is_none()
                 && !matches!(options.page(), Page::Video | Page::Controls | Page::KeyBinds | Page::Language | Page::Packs)
         }
-        Screen::Creative => game.creative_screen.tabs.get(game.creative_screen.selected).is_some_and(|t| !t.search),
+        Screen::Creative => m.p("Mode") != "GrimAC" && game.creative_screen.tabs.get(game.creative_screen.selected).is_some_and(|t| !t.search),
         _ => false,
     }
 }
@@ -3257,8 +3268,10 @@ fn module_tick(game: &mut Game<'_>) {
     });
     if let Some((.., true, arrows)) = screen_keys {
         let turn = |neg: bool, pos: bool| f32::from(i8::from(pos) - i8::from(neg));
-        game.yaw += turn(arrows[0], arrows[1]) * 6.0;
-        game.pitch = (game.pitch + turn(arrows[2], arrows[3]) * 4.0).clamp(-90.0, 90.0);
+        let speed = screen_move.as_ref().map_or(6.0, |m| m.n("Rotate speed") as f32);
+        let vertical = if screen_move.as_ref().is_some_and(|m| m.p("Mode") == "GrimAC") { speed } else { speed * (2.0 / 3.0) };
+        game.yaw += turn(arrows[0], arrows[1]) * speed;
+        game.pitch = (game.pitch + turn(arrows[2], arrows[3]) * vertical).clamp(-90.0, 90.0);
     }
     let (yaw, pitch) = (game.yaw, game.pitch);
     let flat = |f: f64, s: f64| {
@@ -3461,7 +3474,7 @@ fn module_tick(game: &mut Game<'_>) {
     }
     scaffold_fade();
     // A combat macro or Crystal/Anchor Aura has the hotbar: the inventory modules wait.
-    let combat_hand = super::sunset_combat_control::owner().is_some();
+    let combat_hand = super::sunset_combat_control::owner().is_some() || super::sunset_gui_move::inventory_busy();
     if let Some(m) = get("Auto Armor").filter(|_| !combat_hand) {
         auto_armor(game, m);
     }
@@ -4032,6 +4045,7 @@ pub(super) fn scan_blocks(game: &Game<'_>, m: &Module, ticks: u64) {
 // (no movement keys, jump, sneak or sprint in the last input sent), as with any screen open: a click while moving is
 // what Grim's MultiActionsC flags (and cancels). False when nothing was clicked; the caller tries again later.
 pub(super) fn menu_click(game: &mut Game<'_>, ops: &[(usize, horizon_client::menu::Input)]) -> bool {
+    if super::sunset_gui_move::inventory_busy() { return false; }
     if ops.iter().any(|&(slot, _)| super::sunset_loadouts::locked(slot)) || !super::remote::sunset_combat_remote::quiet(game) {
         return false;
     }
@@ -4041,7 +4055,7 @@ pub(super) fn menu_click(game: &mut Game<'_>, ops: &[(usize, horizon_client::men
 }
 
 pub(super) fn inventory_idle(game: &Game<'_>) -> bool {
-    game.native_playing() && game.remote.is_some() && game.remote_menu().1 == "inventory"
+    !super::sunset_gui_move::inventory_busy() && game.native_playing() && game.remote.is_some() && game.remote_menu().1 == "inventory"
 }
 
 // A rough rank of an armor piece: its material, less what it has worn.
@@ -6047,7 +6061,7 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     {
         return Out::Drop;
     }
-    if ANTI_SPRINT.load(Ordering::Relaxed)
+    if ANTI_SPRINT.load(Ordering::Relaxed) && !super::sunset_gui_move::stopping()
         && let S::PlayerCommand(c) = packet
         && (c.action == 1 || c.action == 2)
     {
@@ -6063,9 +6077,13 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     let Some(sent) = Move::of(packet) else {
         return Out::Pass;
     };
-    if BLINK.load(Ordering::Relaxed) {
+    if BLINK.load(Ordering::Relaxed) && !super::sunset_gui_move::stopping() {
         BLINK_HELD.store(true, Ordering::Relaxed);
         return Out::Drop;
+    }
+    if super::sunset_gui_move::stopping() {
+        // This native movement supersedes Blink's held endpoint; never add a second move to drain it.
+        BLINK_HELD.store(false, Ordering::Relaxed);
     }
     MOVED_THIS_TICK.store(true, Ordering::Relaxed);
     let Some(p) = game.player.as_ref() else {
@@ -6662,6 +6680,7 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     legit_sneak(game, false);
     super::sunset_scaffold_bridge::stop(game);
     super::sunset_scaffold_normal::stop(game);
+    super::sunset_gui_move::stop(game);
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
         game.pitch = pitch;

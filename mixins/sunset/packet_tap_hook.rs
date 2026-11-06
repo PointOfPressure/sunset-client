@@ -7,5 +7,5 @@ fn sunset_packet_tap(value: Vec<Event>) -> Vec<Event> {
     let value = crate::net::sunset_packets::hold(value);
     crate::net::sunset_packets::seen(&value);
     crate::net::sunset_client_brand::seen(&value);
-    value
+    crate::net::sunset_packets::gui_move_hold(value)
 }

@@ -259,6 +259,7 @@ fn equip_row(game: &mut Game<'_>, row: usize) {
 // Refill broken tools: a hotbar slot whose tool was a use from breaking last tick and is empty now gets the same tool
 // from the inventory (the least worn), swapped in as a number key over it would.
 pub(super) fn tick(game: &mut Game<'_>) {
+    if super::sunset_gui_move::inventory_busy() { return; }
     if let Some((from, back)) = panel(|p| p.undo.take())
         && game.selected == from
     {

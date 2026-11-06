@@ -15,7 +15,7 @@ use std::sync::{Mutex, OnceLock};
 
 const KINDS: [&str; 6] = ["pos", "posrot", "rot", "status", "tickend", "teleport"];
 
-static OUT: OnceLock<Option<(Mutex<std::fs::File>, [i32; 9])>> = OnceLock::new();
+static OUT: OnceLock<Option<(Mutex<std::fs::File>, [i32; 13])>> = OnceLock::new();
 
 // The packet id at the start of an encoded packet (a VarInt), and its length.
 fn id(body: &[u8]) -> Option<(i32, usize)> {
@@ -44,6 +44,10 @@ pub fn sent(body: &[u8]) {
             S::Attack(play::Attack { id: 0 }),
             S::PlayerAction(play::PlayerAction { action: 8, pos: [0; 3], direction: 0, sequence: 0 }),
             S::PlayerInput(play::PlayerInput { flags: 0 }),
+            S::ContainerClick(play::ContainerClick { container: 0, state: 0, slot: 0, button: 0, input: 0, changed: Vec::new(), carried: None }),
+            S::ContainerClose(play::ContainerClose { container: 0 }),
+            S::PlayerCommand(play::PlayerCommand { id: 0, action: 2, data: 0 }),
+            S::UseItemOn(play::UseItemOn { hand: 0, pos: [0; 3], face: 1, cursor: [0.5; 3], inside: false, world_border: false, sequence: 0 }),
         ];
         Some((Mutex::new(file), made.map(|p| id(&p.encode()).map_or(-1, |(id, _)| id))))
     });
@@ -60,6 +64,32 @@ pub fn sent(body: &[u8]) {
     let Some(i) = ids.iter().position(|x| *x == got) else {
         return;
     };
+    if own && i >= 9 {
+        let data = &body[start..];
+        let mut at = 0;
+        let mut number = || { let (value, len) = id(data.get(at..)?)?; at += len; Some(value) };
+        match i {
+            9 => {
+                if let (Some(container), Some(state)) = (number(), number()) {
+                    drop(number);
+                    if let Some(slot) = data.get(at..at + 2).and_then(|b| b.try_into().ok()).map(i16::from_be_bytes)
+                        && let Some(button) = data.get(at + 2)
+                        && let Some((input, _)) = id(&data[at + 3..])
+                    {
+                        let _ = writeln!(f, "inventory click {container} {state} {slot} {button} {input}");
+                    }
+                }
+            }
+            10 => { if let Some(container) = number() { let _ = writeln!(f, "inventory close {container}"); } }
+            11 => {
+                if let (Some(_), Some(action)) = (number(), number()) && matches!(action, 1 | 2) {
+                    let _ = writeln!(f, "sprint {}", u8::from(action == 1));
+                }
+            }
+            _ => { let _ = writeln!(f, "order place"); }
+        }
+        return;
+    }
     if own && i == 6 && let Some((target, _)) = id(&body[start..]) {
         let _ = f.write_all(format!("attack {target}\n").as_bytes());
     }

@@ -1509,6 +1509,92 @@ def _():
     return 4.0 < speed < 4.6 and plain < 0.05, f"walks {speed:.2f} blocks/s with the inventory open (the game's walking speed), {plain:.2f} off"
 
 
+def inventory_wire(mark):
+    with open(probe_path(), errors="replace") as stream:
+        stream.seek(mark)
+        return stream.read().splitlines()
+
+
+@test("GUI Move (GrimAC prediction and packet order)")
+def _():
+    if not probe_path():
+        return None, "needs tools/probe"
+    outcomes = []
+    for extra in ((), ("blink",), ("fakelag",)):
+        reset(z=-10.5)
+        slot(0, "stone", 8)
+        setting("guimove", "mode", "GrimAC")
+        if extra == ("fakelag",):
+            setting("fakelag", "mode", "Always")
+        only("guimove", *extra)
+        ctl("open-inventory")
+        wait(4)
+        mark = probe_mark()
+        ctl("key", "w", "down")
+        ctl("key", "ctrl", "down")
+        wait(8)
+        ctl("click-slot", "0")
+        picked = (ctl("inventory").get("carried") or {}).get("count", 0)
+        # An unrelated authoritative slot change must not remove the predicted cursor stack.
+        cmd("item replace entity @s hotbar.2 with minecraft:torch 3")
+        wait(5)
+        rebased = (ctl("inventory").get("carried") or {}).get("count", 0)
+        ctl("click-slot", "9")
+        wait(3)
+        held = [line for line in inventory_wire(mark) if line.startswith("inventory ")]
+        ctl("close")
+        wait(25)
+        ctl("release")
+        wait(4)
+        lines = inventory_wire(mark)
+        flags, sprint, safe, actions = 0, False, True, []
+        for line in lines:
+            if line.startswith("input "):
+                flags = int(line.split()[1])
+            elif line.startswith("sprint "):
+                sprint = line.endswith("1")
+            elif line.startswith("inventory "):
+                actions.append(line)
+                safe = safe and flags == 0 and not sprint
+        same = check('execute if data entity @s Inventory[{Slot:9b,id:"minecraft:stone",count:8}]')
+        click_slots = [int(line.split()[4]) for line in actions if line.startswith("inventory click ")]
+        ok = picked == 8 and rebased == 8 and not held and safe and same and click_slots == [36, 9]
+        ok = ok and actions[-1:] == ["inventory close 0"]
+        outcomes.append((extra or ("plain",), ok, picked, rebased, actions, safe, same))
+        only()
+    return all(row[1] for row in outcomes), str(outcomes)
+
+
+@test("GUI Move (GrimAC shift and empty close)")
+def _():
+    if not probe_path():
+        return None, "needs tools/probe"
+    reset(z=-10.5)
+    slot(0, "stone", 8)
+    setting("guimove", "mode", "GrimAC")
+    only("guimove")
+    ctl("open-inventory")
+    mark = probe_mark()
+    ctl("key", "w", "down")
+    ctl("key", "shift", "down")
+    wait(4)
+    ctl("click-slot", "0", "shift")
+    picked = (ctl("inventory").get("carried") or {}).get("count", 0)
+    ctl("click-slot", "9")
+    ctl("close")
+    wait(25)
+    ctl("release")
+    wait(5)
+    modes = [int(line.split()[-1]) for line in inventory_wire(mark) if line.startswith("inventory click ")]
+    ctl("open-inventory")
+    mark = probe_mark()
+    ctl("close")
+    wait(25)
+    empty_close = "inventory close 0" in inventory_wire(mark)
+    only()
+    return picked == 8 and modes == [0, 0] and empty_close, f"moving Shift picked {picked}, click modes {modes}, empty close forwarded {empty_close}"
+
+
 @test("GUI Move (pause menu)")
 def _():
     only("guimove")

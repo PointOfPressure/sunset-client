@@ -302,7 +302,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     });
     send(game, stale);
     // Not while Blink holds the moves itself, nor while a combat module is in the middle of something.
-    let paused = get("Blink").is_some() || super::sunset_combat_control::owner().is_some();
+    let paused = get("Blink").is_some() || super::sunset_combat_control::owner().is_some() || super::sunset_gui_move::stopping();
     let m = get(LAG).filter(|_| live && !paused);
     let on = m.filter(|m| match m.p("Mode") {
         "Always" => true,

@@ -60,8 +60,12 @@ pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
         *LOOK.lock().unwrap_or_else(|e| e.into_inner()) = Some((remote.session.counters.clone(), game.dim, rotation));
     }
     if !game.native_window() || !game.native_on(super::sunset::ID) {
+        if game.native_window() {
+            super::sunset_gui_move::forwarded(game, packet);
+        }
         return;
     }
+    super::sunset_gui_move::forwarded(game, packet);
     if let S::Attack(p) = packet {
         attack_slow(game, p.id);
     }
@@ -74,6 +78,7 @@ pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
 pub(super) fn reset_look() {
     *LOOK.lock().unwrap_or_else(|e| e.into_inner()) = None;
     *SPRINT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *INPUT.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 // Player.attack's own side, on the attacking client: a hit on a player with a sprint and over 0.9 of the charge

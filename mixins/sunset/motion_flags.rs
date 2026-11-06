@@ -7,6 +7,11 @@
 use std::cell::Cell;
 
 thread_local! {
+    // GUI Move's pending inventory transaction: one movement consumes the override,
+    // while the matching PlayerInput remains empty through the end of this tick.
+    static FREEZE_MOVE: Cell<bool> = const { Cell::new(false) };
+    static FREEZE_INPUT: Cell<bool> = const { Cell::new(false) };
+    static INPUT_SCALE: Cell<Option<f32>> = const { Cell::new(None) };
     static SAFE_WALK: Cell<bool> = const { Cell::new(false) };
     // Blocks a tick across the ground, x and z.
     static ACROSS: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
@@ -33,6 +38,20 @@ thread_local! {
     // Scaffold's Sprint Off: the next movement goes without a sprint. Taken by that movement.
     static NO_SPRINT: Cell<bool> = const { Cell::new(false) };
 }
+
+pub fn set_freeze(on: bool) {
+    FREEZE_MOVE.with(|c| c.set(on));
+    FREEZE_INPUT.with(|c| c.set(on));
+}
+
+pub fn take_freeze() -> bool { FREEZE_MOVE.with(Cell::take) }
+pub fn frozen() -> bool { FREEZE_INPUT.with(Cell::get) }
+
+pub fn set_input_scale(scale: Option<f32>) {
+    INPUT_SCALE.with(|c| c.set(scale.filter(|s| s.is_finite()).map(|s| s.clamp(0.01, 1.0))));
+}
+
+pub fn take_input_scale() -> Option<f32> { INPUT_SCALE.with(Cell::take) }
 
 pub fn set_move_yaw(yaw: Option<f32>) {
     MOVE_YAW.with(|c| c.set(yaw));
@@ -92,6 +111,7 @@ pub fn set_screen_keys(keys: Option<crate::sprint::Keys>) {
 // The keys a tick's movement takes behind a screen while GUI Move walks you: the ones held, when the game gave it none
 // (a screen keeps them from it) and some are held. None: the keys as they are.
 pub fn screen_keys(keys: crate::sprint::Keys) -> Option<crate::sprint::Keys> {
+    if frozen() { return None; }
     let pressed = |k: crate::sprint::Keys| k.direction() != [0.0, 0.0] || k.jump || k.shift;
     let moved = SCREEN_KEYS.with(Cell::get).filter(|held| !pressed(keys) && pressed(*held));
     // Kept till the next tick: the move's call again with these keys passes through here too.
@@ -104,6 +124,7 @@ pub fn screen_keys(keys: crate::sprint::Keys) -> Option<crate::sprint::Keys> {
 // The PlayerInput flags a tick sends with the keys GUI Move moved with behind a screen added (the game's have none
 // there, and the server predicts the move from them); None when that adds nothing.
 pub fn screen_input(input: u8) -> Option<u8> {
+    if frozen() { return (input != 0).then_some(0); }
     let k = SCREEN_MOVED.with(Cell::get)?;
     let with = input
         | u8::from(k.forward)
@@ -156,6 +177,7 @@ pub fn clip_at_ledge(sneaking: bool) -> bool {
 }
 
 pub fn self_move(movement: horizon_core::geometry::Vec3) -> horizon_core::geometry::Vec3 {
+    if frozen() { return movement; }
     let y = UP.with(Cell::get).unwrap_or(movement.y);
     let [x, z] = ACROSS.with(Cell::get).unwrap_or([movement.x, movement.z]);
     match STRAFE_DIR.with(Cell::get) {
@@ -164,5 +186,33 @@ pub fn self_move(movement: horizon_core::geometry::Vec3) -> horizon_core::geomet
             horizon_core::geometry::Vec3::new(dx * speed, y, dz * speed)
         }
         None => horizon_core::geometry::Vec3::new(x, y, z),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inventory_stop_clears_every_input_bit_and_expires_next_tick() {
+        set_screen_keys(Some(crate::sprint::Keys { forward: true, sprint: true, shift: true, ..Default::default() }));
+        let _ = screen_keys(Default::default());
+        set_freeze(true);
+        assert!(take_freeze());
+        assert!(!take_freeze(), "recursive movement must not freeze twice");
+        assert_eq!(screen_input(127), Some(0));
+        assert_eq!(screen_input(0), None);
+        set_freeze(false);
+        assert_eq!(screen_input(0), Some(97));
+        set_screen_keys(None);
+    }
+
+    #[test]
+    fn movement_scaling_is_bounded_and_consumed_once() {
+        set_input_scale(Some(0.6));
+        assert_eq!(take_input_scale(), Some(0.6));
+        assert_eq!(take_input_scale(), None);
+        set_input_scale(Some(f32::NAN));
+        assert_eq!(take_input_scale(), None);
     }
 }

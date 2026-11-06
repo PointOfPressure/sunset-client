@@ -23,11 +23,23 @@ fn sunset_screen_keys(world: &mut MotionWorld<'_, '_, '_>, keys: crate::sprint::
     let screen = crate::motion::sunset_motion::screen_keys(keys);
     let turn = crate::motion::sunset_motion::take_move_yaw();
     let no_sprint = crate::motion::sunset_motion::take_no_sprint();
-    if screen.is_none() && turn.is_none() && !no_sprint {
+    let freeze = crate::motion::sunset_motion::take_freeze();
+    let scale = crate::motion::sunset_motion::take_input_scale();
+    if screen.is_none() && turn.is_none() && !no_sprint && !freeze && scale.is_none() {
         return std::ops::ControlFlow::Continue(());
     }
     let mut keys = screen.unwrap_or(keys);
-    if no_sprint {
+    if let Some(scale) = scale {
+        keys.analog = Some(keys.direction().map(|v| v * scale));
+    }
+    if freeze {
+        keys = Default::default();
+        crate::motion::sunset_motion::set_across(None);
+        crate::motion::sunset_motion::set_up(None);
+        crate::motion::sunset_motion::set_strafe_dir(None);
+        crate::motion::sunset_motion::set_flying_speed(None);
+    }
+    if no_sprint || freeze {
         keys.sprint = false;
         let _ = world.player.set_sprinting(false);
     }
