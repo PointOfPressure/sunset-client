@@ -640,19 +640,25 @@ impl Module {
                 _ => true,
             },
             "Scaffold" => match name {
+                "Telly rotations" | "Start speed min" | "Start speed max" | "Normal speed min" | "Normal speed max"
+                | "Keep Y" | "Tower" | "Telly sprint" | "Ground motion (%)" | "Air motion (%)" | "Speed motion (%)"
+                | "Multi place" | "Swing" | "Reject wait (ticks)" => self.p("Mode") == "Telly",
+                "Keep Y on press" => self.p("Mode") == "Telly" && self.p("Keep Y") == "Telly",
                 "Shortest sneak delay (ms)" | "Longest sneak delay (ms)" => self.p("Mode") == "Legit",
                 "Activation blocks" => self.p("Mode") == "Godbridge",
                 "Auto switch" => self.p("Mode") != "Legit",
-                "Swap back" => self.p("Mode") == "Normal" && self.b("Auto switch"),
+                "Swap back" => matches!(self.p("Mode"), "Normal" | "Telly") && self.b("Auto switch"),
+                "Delay (ticks)" => matches!(self.p("Mode"), "Normal" | "Telly"),
                 "Rotations" | "Look" | "Rotation speed" | "Min rotation speed" | "Ray cast" => self.p("Mode") == "Normal" && self.b("Rotate"),
                 "Telly ticks" => self.p("Mode") == "Normal" && self.b("Rotate") && self.p("Rotations") == "Telly",
                 "Movement correction" => self.p("Mode") == "Normal" && self.b("Rotate") && self.p("Look") == "Silent",
                 "Late click" => self.p("Mode") == "Normal" && self.b("Rotate") && self.p("Ray cast") == "Strict",
                 "Air place" => self.p("Mode") == "Normal" && (!self.b("Rotate") || self.p("Ray cast") == "Off"),
-                "Fast tower" | "Only on click" | "Rotate" | "Sprint" | "Same Y" | "Expand" | "Ledge sneak" | "Render"
-                | "Delay (ticks)" | "Advanced" => self.p("Mode") == "Normal",
+                "Render" => matches!(self.p("Mode"), "Normal" | "Telly"),
+                "Fast tower" | "Only on click" | "Rotate" | "Sprint" | "Same Y" | "Expand" | "Ledge sneak"
+                | "Advanced" => self.p("Mode") == "Normal",
                 "Tower speed" | "While moving" => self.p("Mode") == "Normal" && self.b("Fast tower"),
-                "Shape mode" | "Fill opacity" | "Color" => self.p("Mode") == "Normal" && self.b("Render"),
+                "Shape mode" | "Fill opacity" | "Color" => matches!(self.p("Mode"), "Normal" | "Telly") && self.b("Render"),
                 "Safe walk" | "Max placement distance" | "Closest block range" | "Max per second" => {
                     self.p("Mode") == "Normal" && advanced
                 }
@@ -995,8 +1001,23 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ignore sneaking", false),
         Module::new("Blink", Movement, "Holds back your movement, then sends it.")
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
-        Module::new("Scaffold", Movement, "Places blocks under you. Normal places them for you from a silent look; Legit sneaks at edges while you place; Godbridge bridges backwards without sneaking.")
-            .pick("Mode", &["Normal", "Legit", "Godbridge"])
+        Module::new("Scaffold", Movement, "Places blocks under you. Normal places from a silent look; Legit sneaks at edges; Godbridge bridges backwards; Telly sprint-jumps with timed silent placement.")
+            .pick("Mode", &["Normal", "Legit", "Godbridge", "Telly"])
+            .pick("Telly rotations", &["Default", "Backwards", "Sideways", "None"])
+            .num("Start speed min", 95.0, 1.0, 180.0, 0.5)
+            .num("Start speed max", 107.5, 1.0, 180.0, 0.5)
+            .num("Normal speed min", 30.0, 1.0, 180.0, 0.5)
+            .num("Normal speed max", 35.0, 1.0, 180.0, 0.5)
+            .pick("Keep Y", &["Telly", "Off"])
+            .bool("Keep Y on press", false)
+            .pick("Tower", &["Telly", "None"])
+            .pick("Telly sprint", &["Legit", "Vanilla", "None"])
+            .num("Ground motion (%)", 100.0, 1.0, 100.0, 1.0)
+            .num("Air motion (%)", 100.0, 1.0, 100.0, 1.0)
+            .num("Speed motion (%)", 100.0, 1.0, 100.0, 1.0)
+            .bool("Multi place", false)
+            .bool("Swing", true)
+            .num("Reject wait (ticks)", 5.0, 0.0, 20.0, 1.0)
             .num("Shortest sneak delay (ms)", 100.0, 0.0, 500.0, 10.0)
             .num("Longest sneak delay (ms)", 200.0, 0.0, 500.0, 10.0)
             .num("Activation blocks", 2.0, 0.0, 4.0, 1.0)
@@ -2623,6 +2644,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 restore_scaffold_rotation(game);
                 legit_sneak(game, false);
                 super::sunset_scaffold_bridge::stop(game);
+                super::sunset_scaffold_telly::stop(game);
             }
             "Speed" => {
                 with(|s| { s.strafe = Strafe::default(); s.bhop.reset(); s.knockback_ticks = 0; });
@@ -2914,6 +2936,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         restore_scaffold_rotation(game);
         super::sunset_scaffold_bridge::stop(game);
         super::sunset_scaffold_normal::stop(game);
+        super::sunset_scaffold_telly::stop(game);
         with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; });
         return;
     }
@@ -2921,6 +2944,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_antibot::tick(game);
     revalidate_targets(game);
     if super::sunset_combat_control::begin_tick(game) {
+        super::sunset_scaffold_telly::scene_changed(game);
         drop_strikes();
         super::sunset_melee::cancel(game);
         super::sunset_auto_mace::cancel();
@@ -3053,14 +3077,23 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     // Scaffold's Legit and Godbridge sneak, turn and click before the game's tick moves you.
     let bridging = get("Scaffold")
-        .filter(|m| m.on && m.p("Mode") != "Normal" && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
+        .filter(|m| m.on && matches!(m.p("Mode"), "Legit" | "Godbridge") && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
         .filter(|_| playing && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
     super::sunset_scaffold_bridge::pre_tick(game, bridging);
     // Scaffold's Normal clicks, looks and turns the keys before the game's tick moves you (its look rides the move).
     let normal = get("Scaffold")
         .filter(|m| m.on && m.p("Mode") == "Normal" && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
         .filter(|_| playing && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
-    super::sunset_scaffold_normal::pre_tick(game, normal);
+    if normal.is_some() { super::sunset_scaffold_telly::pre_tick(game, None); }
+    if get("Scaffold").is_some_and(|m| m.on && m.p("Mode") == "Telly") {
+        super::sunset_scaffold_normal::stop(game);
+    } else {
+        super::sunset_scaffold_normal::pre_tick(game, normal);
+    }
+    let telly = get("Scaffold")
+        .filter(|m| m.on && m.p("Mode") == "Telly" && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
+        .filter(|_| playing && !inventory_stop && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
+    if normal.is_none() { super::sunset_scaffold_telly::pre_tick(game, telly); }
     // Offhand's Silent open holds your move keys and clicks while its totem moves.
     super::sunset_combat_inventory::pre_tick(game, get("Offhand").filter(|m| m.on && playing));
     velocity(game, get("Velocity").filter(|m| m.on));
@@ -3163,6 +3196,7 @@ fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
 // After the tick: first what waited for the look its move packet carried, then the modules, then (in a tick that
 // sent no move packet) the one that carries the next look.
 pub(super) fn post_tick(game: &mut Game<'_>) {
+    super::sunset_scaffold_telly::post_tick(game);
     super::sunset_scaffold_normal::post_tick(game);
     super::sunset_snap_tap::post_tick(game);
     super::sunset_scaffold_bridge::post_tick(game);
@@ -4928,6 +4962,7 @@ pub(super) fn server_correction(game: &mut Game<'_>) {
         s.scaffold_stack = None;
     });
     super::sunset_scaffold_normal::correction();
+    super::sunset_scaffold_telly::correction();
     horizon_client::motion::sunset_motion::set_across(None);
     horizon_client::motion::sunset_motion::set_up(None);
     horizon_client::motion::sunset_motion::set_strafe_dir(None);
@@ -6680,6 +6715,7 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     legit_sneak(game, false);
     super::sunset_scaffold_bridge::stop(game);
     super::sunset_scaffold_normal::stop(game);
+    super::sunset_scaffold_telly::stop(game);
     super::sunset_gui_move::stop(game);
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
@@ -10135,6 +10171,10 @@ mod movement_config_tests {
             ("Godbridge", &["Activation blocks", "Auto switch", "Blocks"][..],
              &["Shortest sneak delay (ms)", "Rotate", "Rotation speed", "Delay (ticks)", "Ray cast", "Same Y", "Swap back",
                "Ledge sneak", "Late click", "Render"][..]),
+            ("Telly", &["Telly rotations", "Start speed min", "Normal speed max", "Keep Y", "Keep Y on press", "Tower",
+                        "Telly sprint", "Ground motion (%)", "Air motion (%)", "Speed motion (%)", "Multi place", "Swing",
+                        "Reject wait (ticks)", "Delay (ticks)", "Auto switch", "Swap back", "Block counter"][..],
+             &["Rotations", "Telly ticks", "Same Y", "Ray cast", "Fast tower", "Safe walk", "Ledge sneak"][..]),
             ("Normal", &["Rotate", "Rotations", "Look", "Rotation speed", "Min rotation speed", "Ray cast", "Movement correction",
                          "Sprint", "Same Y", "Expand", "Ledge sneak", "Late click", "Delay (ticks)", "Safe walk",
                          "Max per second", "Render", "Auto switch", "Swap back"][..],

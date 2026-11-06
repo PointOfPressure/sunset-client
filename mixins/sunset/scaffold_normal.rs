@@ -36,8 +36,9 @@ use winit::keyboard::KeyCode;
 // How far in from a side's edges a look's point stays.
 const INSET: f64 = 0.12;
 // Most cells a tick plans for, and most rays it casts to check looks.
-const MAX_CELLS: usize = 12;
+const MAX_CELLS: usize = 24;
 const MAX_RAYS: usize = 24;
+const TELLY_RAYS: usize = 96;
 // Ticks with nothing to place before the look goes back to your camera while Scaffold stays on.
 const IDLE_TICKS: u32 = 15;
 // How many moves ahead the look starts turning toward an edge you walk to.
@@ -84,17 +85,17 @@ const USED: [&str; 24] = [
 
 // A right click on a block's side: the block, its side's outward normal, and the point on it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Click {
-    pos: [i32; 3],
-    face: [i32; 3],
-    point: [f64; 3],
+pub(super) struct Click {
+    pub(super) pos: [i32; 3],
+    pub(super) face: [i32; 3],
+    pub(super) point: [f64; 3],
 }
 
 // A way to place a block: the click that puts it there, and the look whose ray makes that click.
 #[derive(Clone, Copy, Debug)]
-struct Plan {
-    click: Click,
-    look: (f32, f32),
+pub(super) struct Plan {
+    pub(super) click: Click,
+    pub(super) look: (f32, f32),
 }
 
 // A look considered for a plan, and what turning to it costs.
@@ -266,7 +267,7 @@ fn angle(a: (f32, f32), b: (f32, f32)) -> f32 {
 }
 
 // The yaw of the way the move keys (forward, left) walk at `yaw`: forward 0, left -90, right +90, back 180.
-fn walk_yaw(yaw: f32, (forward, left): (f64, f64)) -> f32 {
+pub(super) fn walk_yaw(yaw: f32, (forward, left): (f64, f64)) -> f32 {
     if forward == 0.0 && left == 0.0 {
         return yaw;
     }
@@ -306,7 +307,7 @@ fn turned_keys(forward: i8, left: i8, view: f32, look: f32) -> (i8, i8) {
 
 // The cells (x, z) a line from `a` to `b` crosses, in order, each sharing a side with the one before (a line through a
 // corner takes one of the two cells beside it as well). `visit` returns false to stop.
-fn line_cells(a: [f64; 2], b: [f64; 2], mut visit: impl FnMut([i32; 2]) -> bool) {
+pub(super) fn line_cells(a: [f64; 2], b: [f64; 2], mut visit: impl FnMut([i32; 2]) -> bool) {
     let mut cell = [a[0].floor() as i32, a[1].floor() as i32];
     let end = [b[0].floor() as i32, b[1].floor() as i32];
     let d = [b[0] - a[0], b[1] - a[1]];
@@ -477,12 +478,12 @@ fn ray(game: &Game<'_>, eye: [f64; 3], look: (f32, f32), reach: f64) -> Option<C
 }
 
 // The same, when the block it meets is one to place against.
-fn placing_ray(game: &Game<'_>, eye: [f64; 3], look: (f32, f32), reach: f64) -> Option<Click> {
+pub(super) fn placing_ray(game: &Game<'_>, eye: [f64; 3], look: (f32, f32), reach: f64) -> Option<Click> {
     ray(game, eye, look, reach).filter(|c| support(game, c.pos).is_some())
 }
 
 // The cell a click would put a block in, as the shape of things says (the game's own word is `places_into`).
-fn cell_of(click: &Click) -> [i32; 3] {
+pub(super) fn cell_of(click: &Click) -> [i32; 3] {
     std::array::from_fn(|i| click.pos[i] + click.face[i])
 }
 
@@ -553,7 +554,7 @@ fn choices(game: &Game<'_>, out: &mut Vec<Choice>, cell: [i32; 3], aim: &Aim) ->
 // The plan for this tick: for the cells in order, the cheapest look whose ray really clicks its side (any, without
 // `checked`). When the first cell has no block beside it at all, the nearest cell around it within `range` that has one
 // (added to the cells); one whose side the eyes cannot see yet is waited for.
-fn plan(game: &Game<'_>, n: &mut Normal, aim: &Aim, checked: bool, range: f64, tick: u64) -> Option<Plan> {
+fn plan(game: &Game<'_>, n: &mut Normal, aim: &Aim, checked: bool, range: f64, tick: u64, budget: usize) -> Option<Plan> {
     let rays = std::cell::Cell::new(0);
     let mut choices = std::mem::take(&mut n.choices);
     let mut found = None;
@@ -567,7 +568,7 @@ fn plan(game: &Game<'_>, n: &mut Normal, aim: &Aim, checked: bool, range: f64, t
             if !checked {
                 return Some(Some(c.plan));
             }
-            if rays.get() >= MAX_RAYS {
+            if rays.get() >= budget {
                 return Some(None);
             }
             rays.set(rays.get() + 1);
@@ -600,7 +601,7 @@ fn plan(game: &Game<'_>, n: &mut Normal, aim: &Aim, checked: bool, range: f64, t
             for dy in [0, -1] {
                 for dx in -radius..=radius {
                     for dz in -radius..=radius {
-                        if rays.get() >= MAX_RAYS {
+                        if rays.get() >= budget {
                             break 'search;
                         }
                         if dx.abs().max(dz.abs()) != radius {
@@ -624,14 +625,43 @@ fn plan(game: &Game<'_>, n: &mut Normal, aim: &Aim, checked: bool, range: f64, t
     found
 }
 
+// Telly reuses the same bounded geometry and ray planner, retaining its scratch allocation between ticks.
+#[derive(Default)]
+pub(super) struct Planner(Normal);
+
+pub(super) fn plan_cells(
+    planner: &mut Planner,
+    game: &Game<'_>,
+    targets: &[[i32; 3]],
+    eye: [f64; 3],
+    sent: (f32, f32),
+    back: Option<[f32; 4]>,
+    walk: Option<f32>,
+    reach: f64,
+) -> Option<Plan> {
+    planner.0.cells = Cells::default();
+    for &cell in targets {
+        planner.0.cells.push(cell);
+    }
+    let aim = Aim {
+        eye,
+        now: sent,
+        reach,
+        back,
+        walk,
+    };
+    // Telly has many cells in one jump (two to a step on a diagonal), and a third of a second to place them.
+    plan(game, &mut planner.0, &aim, true, 0.0, game.ticks, TELLY_RAYS)
+}
+
 // A step of the look from `from` toward `to`, at most `speed` degrees a tick each way, in whole mouse counts.
-fn turn(from: (f32, f32), to: (f32, f32), speed: f32, degrees: f32) -> (f32, f32) {
+pub(super) fn turn(from: (f32, f32), to: (f32, f32), speed: f32, degrees: f32) -> (f32, f32) {
     whole_counts(from, step("Custom", from, to, speed, speed, 0.0), degrees)
 }
 
 // A step of the look back to your camera. The yaw goes the way that unwinds it to your camera's own yaw (not the short
 // way round): letting go at a yaw 360 off would be a full turn in one packet to the server (Grim's AimModulo360).
-fn turn_back(from: (f32, f32), camera: (f32, f32), speed: f32, degrees: f32) -> (f32, f32) {
+pub(super) fn turn_back(from: (f32, f32), camera: (f32, f32), speed: f32, degrees: f32) -> (f32, f32) {
     let counts = |d: f32| (d.clamp(-speed, speed) / degrees).round() * degrees;
     (from.0 + counts(camera.0 - from.0), (from.1 + counts(camera.1 - from.1)).clamp(-90.0, 90.0))
 }
@@ -639,6 +669,10 @@ fn turn_back(from: (f32, f32), camera: (f32, f32), speed: f32, degrees: f32) -> 
 // Silent movement correction: the move keys turned to the ones that walk your way at the look's yaw. What they were is
 // kept for after the tick.
 fn turn_keys(game: &mut Game<'_>, n: &mut Normal, view: f32, look: f32) {
+    turn_input(game, &mut n.keys_before, view, look);
+}
+
+pub(super) fn turn_input(game: &mut Game<'_>, before: &mut Option<[bool; 4]>, view: f32, look: f32) {
     let keys = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyA, KeyCode::KeyD];
     let held = keys.map(|k| game.keys.contains(&k));
     let forward = i8::from(held[0]) - i8::from(held[1]);
@@ -648,7 +682,7 @@ fn turn_keys(game: &mut Game<'_>, n: &mut Normal, view: f32, look: f32) {
     if want == held || (forward == 0 && left == 0) {
         return;
     }
-    n.keys_before.get_or_insert(held);
+    before.get_or_insert(held);
     for (k, on) in keys.into_iter().zip(want) {
         if on {
             game.keys.insert(k);
@@ -832,7 +866,7 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
         }
     }
 
-    let found = if n.cells.len == 0 { None } else { plan(game, n, &aim, ray_cast != "Off", m.n("Closest block range"), tick) };
+    let found = if n.cells.len == 0 { None } else { plan(game, n, &aim, ray_cast != "Off", m.n("Closest block range"), tick, MAX_RAYS) };
     // The look still meets a side whose click fills a cell: it stays.
     let holding = placed.is_some()
         || placing_ray(game, aim_eye, now, reach).is_some_and(|c| n.cells.has(cell_of(&c)));
@@ -912,7 +946,7 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
         && ground
         && moving
         && !stands(game, pos[0], pos[2], y)
-        && let Some(p) = plan(game, n, &Aim { eye, ..aim }, true, m.n("Closest block range"), tick)
+        && let Some(p) = plan(game, n, &Aim { eye, ..aim }, true, m.n("Closest block range"), tick, MAX_RAYS)
     {
         let look = turn(now, p.look, n.speed, degrees);
         if let Some(c) = placing_ray(game, eye, look, reach) {
@@ -1338,12 +1372,12 @@ mod tests {
         }
         assert_eq!(n.failed.iter().flatten().count(), n.failed.len());
         let mut cells = Cells::default();
-        for i in 0..20 {
+        for i in 0..40 {
             cells.push([i, 0, 0]);
             cells.push([i, 0, 0]);
         }
         assert_eq!(cells.len, MAX_CELLS);
-        assert!(cells.has([3, 0, 0]) && !cells.has([15, 0, 0]));
+        assert!(cells.has([3, 0, 0]) && !cells.has([30, 0, 0]));
         n.recent = [0; 20];
         n.recent[0] = 90;
         n.recent[1] = 95;

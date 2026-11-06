@@ -4519,6 +4519,76 @@ def bridged(kept, gapless, far, low, sneaked, most, kicked, top, sneak):
                 f"(edge 17), lowest feet {low - Y - 1:+.2f}, sneaked: {sneaked}, most moves a tick: {most}, kicks: {kicked}")
 
 
+@test("Scaffold (Telly sprint jumps and Keep Y)")
+def _():
+    if not probe_path():
+        return None, "needs tools/probe"
+    reset(z=12.5)
+    cmd(f"fill {X0-8} {Y-1} {Z0+17} {X0+8} {Y+3} {Z0+42} minecraft:air")
+    slot(0, "stone", 64)
+    ctl("look", "0", "15")
+    setting("scaffold", "mode", "Telly")
+    only("scaffold")
+    mark = probe_mark()
+    low, high = pos()[1], pos()[1]
+    ctl("key", "w", "down")
+    for _ in range(40):
+        wait(2)
+        y = pos()[1]
+        low, high = min(low, y), max(high, y)
+    ctl("key", "w", "up")
+    end = pos()
+    only()
+    wait(12)
+    lines = inventory_wire(mark)
+    cameras = [(float(p[2]), float(p[3])) for line in lines if (p := line.split()) and p[0][0].isdigit() and len(p) > 4]
+    camera_still = bool(cameras) and all(abs(yaw) < 0.1 and abs(pitch-15) < 0.1 for yaw, pitch in cameras)
+    last_pitch, moved, late, clicks, most, in_tick = None, False, 0, 0, 0, 0
+    for line in lines:
+        if line.startswith("look "):
+            last_pitch = float(line.split()[2])
+        elif line == "order move":
+            moved = True
+            in_tick += 1
+        elif line == "order place":
+            clicks += 1
+            late += int(moved or last_pitch is None or last_pitch < 20)
+        elif line == "order tickend":
+            most = max(most, in_tick)
+            moved, in_tick = False, 0
+    blocks = count(X0-8, Y, Z0+17, X0+8, Y, Z0+42, "stone")
+    raised = count(X0-8, Y+1, Z0+17, X0+8, Y+3, Z0+42, "stone")
+    ok = end[2] > Z0+21 and low >= Y+0.99 and high > Y+2 and blocks >= 4 and raised == 0
+    ok = ok and camera_still and clicks >= 4 and late == 0 and most <= 1
+    return ok, f"end {end}, low/high {low:.3f}/{high:.3f}, blocks {blocks}, raised {raised}, silent {camera_still}, clicks {clicks}, invalid order {late}, moves/tick {most}"
+
+
+@test("Scaffold (Telly diagonal tower and reset)")
+def _():
+    reset()
+    slot(0, "stone", 64)
+    setting("scaffold", "mode", "Telly")
+    only("scaffold")
+    ctl("look", "37", "15")
+    start = pos()
+    held_keys(("w", "d"), 30)
+    end = pos()
+    # A vanilla jump tower can rise only after clearing its own block's top; no vertical velocity override.
+    reset()
+    slot(0, "stone", 64)
+    ctl("look", "0", "15")
+    held_keys(("w", "space"), 30)
+    tower = pos()[1]
+    only()
+    wait(15)
+    ctl("key", "w", "up")
+    ctl("key", "space", "up")
+    settled = pos()
+    wait(12)
+    drift = flat(pos(), settled)
+    return end[0] < start[0] and end[2] > start[2] and tower > Y+2 and drift < 0.05, f"diagonal {start}->{end}, tower feet {tower:.3f}, disabled drift {drift:.4f}"
+
+
 @test("Scaffold (Legit, backwards)")
 def _():
     # Legit only sneaks: the test holds use with the crosshair low enough to meet the edge block's side.

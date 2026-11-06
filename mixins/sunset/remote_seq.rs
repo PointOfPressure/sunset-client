@@ -24,6 +24,28 @@ pub(crate) fn places_into(game: &mut Game<'_>, hit: &crate::game::Hit, slot: usi
     game.remote_can_place(hit, &stack).map(|(pos, _)| [pos.x, pos.y, pos.z])
 }
 
+// Telly clicks immediately before the movement pass. The native use owns sequencing, inventory consumption,
+// interaction callbacks, prediction and the swing packet. Only the optional local arm animation is restored.
+pub(crate) fn use_block(game: &mut Game<'_>, hit: crate::game::Hit, look: (f32, f32), swing: bool) {
+    let previous_hit = game.forced_hit.replace(hit);
+    let animation = game.swing;
+    let view = (game.yaw, game.pitch);
+    (game.yaw, game.pitch) = look;
+    game.remote_use();
+    (game.yaw, game.pitch) = view;
+    game.forced_hit = previous_hit;
+    if !swing {
+        game.swing = animation;
+    }
+}
+
+// A missing predicted block is only a rejection once the native prediction handler has settled it.
+pub(crate) fn prediction_pending(game: &Game<'_>, cell: [i32; 3]) -> bool {
+    game.remote
+        .as_ref()
+        .is_some_and(|r| r.predictions.contains_key(&cell))
+}
+
 // The held slot as the server knows it: true when `slot` is news to it (the caller sends the SetCarriedItem). The
 // game's tick sends one whenever the selection differs from what it last told, so this keeps it from sending the same
 // slot a second time (Grim BadPacketsA, Intave "sent slot twice"). False without a connection.

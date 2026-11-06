@@ -123,6 +123,7 @@ fn report(game: &Game<'_>, limits: &Limits) -> String {
     input(&mut out, game);
     modules(&mut out);
     super::sunset_scaffold_normal::report(&mut out);
+    super::sunset_scaffold_telly::report(&mut out);
     anticheat(&mut out, &chat);
     // The packet log gets up to two fifths of the room, the chat what is left.
     let packets = packet_log(&sent, ticks, limits.ticks, limits.size * 2 / 5);

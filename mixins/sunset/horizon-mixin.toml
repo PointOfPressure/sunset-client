@@ -1879,6 +1879,22 @@ name = "sunset_scaffold_normal"
 source = "scaffold_normal.rs"
 
 [[module]]
+id = "scaffold_telly"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scaffold_telly"
+source = "scaffold_telly.rs"
+
+[[injection]]
+id = "scaffold_telly_use"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_use"
+helper = "scaffold_telly_use_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[module]]
 id = "melee"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_melee"
