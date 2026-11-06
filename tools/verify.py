@@ -4906,7 +4906,7 @@ def _():
     if not probe_path():
         return None, "needs the probe (tools/probe)"
     reset()
-    slot(0, "snowball", 64)
+    slot(0, "snowball", 16)
     ctl("key", "1", "tap")
     cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 2.5} {HUSK}")
     wait(8)
