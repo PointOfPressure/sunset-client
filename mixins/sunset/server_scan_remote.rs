@@ -2,6 +2,7 @@
 use crate::game::Game;
 use horizon_client::command::{Dispatcher, NodeKind, Suggests};
 use std::collections::VecDeque;
+use std::sync::Mutex;
 
 pub(crate) struct View {
     pub address: String,
@@ -10,12 +11,20 @@ pub(crate) struct View {
     pub commands: Option<(Vec<String>, Vec<String>, Option<String>)>,
 }
 
+// What the server's own command tree holds. Remote keeps only the chat's tree (the server's with the mods'
+// commands merged in), so it is read where that tree is built; a new connection, which has no tree yet, clears it.
+static COMMANDS: Mutex<Option<(Vec<String>, Vec<String>, Option<String>)>> = Mutex::new(None);
+
+pub(crate) fn server_tree(tree: Option<&Dispatcher>) {
+    *COMMANDS.lock().unwrap_or_else(|e| e.into_inner()) = tree.map(extract);
+}
+
 pub(crate) fn view(game: &Game<'_>) -> Option<View> {
     let remote = game.remote.as_ref()?;
     Some(View {
         address: remote.session.address.clone(),
         brand: remote.brand.chars().take(128).collect(),
-        commands: remote.commands.as_ref().map(extract),
+        commands: COMMANDS.lock().unwrap_or_else(|e| e.into_inner()).clone(),
     })
 }
 

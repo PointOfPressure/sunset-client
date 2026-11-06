@@ -157,8 +157,8 @@ pub static PLUGIN_PACKETS: AtomicBool = AtomicBool::new(false);
 static PLUGIN_IN: Mutex<VecDeque<C>> = Mutex::new(VecDeque::new());
 pub enum Connection {
     Joined,
-    // The reason, and whether the server gave it.
-    Left(String, bool),
+    // The reason, its translation key when it had one, and whether the server gave it.
+    Left(String, Option<String>, bool),
 }
 static PLUGIN_CONNECTION: Mutex<Vec<Connection>> = Mutex::new(Vec::new());
 
@@ -173,10 +173,10 @@ pub fn plugin_connection() -> Vec<Connection> {
 fn plugin_seen(event: &super::Event) {
     match event {
         super::Event::Joined { .. } => PLUGIN_CONNECTION.lock().unwrap_or_else(|e| e.into_inner()).push(Connection::Joined),
-        super::Event::Disconnected { reason, from_server } => PLUGIN_CONNECTION
+        super::Event::Disconnected { reason, key, from_server } => PLUGIN_CONNECTION
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(Connection::Left(reason.chars().take(512).collect(), *from_server)),
+            .push(Connection::Left(reason.chars().take(512).collect(), key.clone(), *from_server)),
         super::Event::Packet(p) if PLUGIN_PACKETS.load(Ordering::Relaxed) => {
             let mut queue = PLUGIN_IN.lock().unwrap_or_else(|e| e.into_inner());
             if queue.len() == 4096 {
@@ -196,7 +196,7 @@ static ENDS: Mutex<VecDeque<(std::time::SystemTime, String, bool)>> = Mutex::new
 fn debug_seen(event: &super::Event) {
     match event {
         super::Event::Joined { .. } => CLOCK.lock().unwrap_or_else(|e| e.into_inner()).clear(),
-        super::Event::Disconnected { reason, from_server } => {
+        super::Event::Disconnected { reason, from_server, .. } => {
             let mut ends = ENDS.lock().unwrap_or_else(|e| e.into_inner());
             if ends.len() == 20 {
                 ends.pop_front();

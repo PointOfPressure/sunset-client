@@ -1244,9 +1244,9 @@ pub(super) fn frame(game: &mut Game<'_>) {
     for event in events {
         match event {
             horizon_client::net::sunset_packets::Connection::Joined => JOINED.store(true, Ordering::Relaxed),
-            horizon_client::net::sunset_packets::Connection::Left(reason, by_server) => {
+            horizon_client::net::sunset_packets::Connection::Left(reason, key, by_server) => {
                 JOINED.store(false, Ordering::Relaxed);
-                let retry = auto_reconnect_on(game) && horizon_client::reconnect::allowed(&reason, by_server);
+                let retry = auto_reconnect_on(game) && horizon_client::reconnect::allowed(&reason, key.as_deref(), by_server);
                 let d = Disconnect { reason, by_server, retry };
                 each(9, |on| {
                     if let On::Leave(f) = on {

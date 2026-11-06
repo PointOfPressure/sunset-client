@@ -8749,6 +8749,32 @@ def _():
                 f"{extended.count(15)}, {target!r}")
 
 
+@test("Server Scan (command tree)")
+def _():
+    # Server Scan reads the command tree the server sent (taken where Horizon builds the chat's tree from it, since
+    # 66f3981 keeps only that merged tree): the roots, /weather's subcommands, an unknown root, and /studio, which
+    # Horizon adds to the chat's tree on the client, never counts as one of the server's commands.
+    def ask(c):
+        said = log_mark()
+        say(c)
+        wait(20)
+        return sunset_said(said)
+
+    only("serverscan")
+    setting("serverscan", "mode", "Passive")
+    wait(20)
+    roots = ask(".scan commands")
+    sub = ask(".scan commands weather")
+    nope = ask(".scan commands sunsetnope")
+    studio = ask(".scan commands studio")
+    only()
+    off = ask(".scan commands")
+    seen = any("Server Scan — Commands (" in l and "visible" in l for l in roots)
+    ok = (seen and any("/weather clear" in l for l in sub) and any("no visible command /sunsetnope" in l for l in nope)
+          and any("no visible command /studio" in l for l in studio))
+    return ok, f"roots {roots[:2]!r}; weather {sub[:3]!r}; unknown {nope[:1]!r}; studio {studio[:1]!r}; module off {off[:1]!r}"
+
+
 @test("Streamer Mode")
 def _():
     # A visual: with Streamer Mode on, your name shows as "You" in chat (a /say of yours, which names you twice), in
@@ -12190,7 +12216,7 @@ def clear_chat():
 WALL = (-3, 1, 6, 3, 6, 6)
 
 
-def wall(block="stone"):
+def back_wall(block="stone"):
     """A wall 6 blocks ahead, behind what a frame looks at, so nothing moves behind it."""
     x1, y1, z1, x2, y2, z2 = WALL
     cmd(f"fill {X0 + x1} {Y + y1} {Z0 + z1} {X0 + x2} {Y + y2} {Z0 + z2} minecraft:{block}")
@@ -12216,7 +12242,7 @@ def _():
     # A husk 3 blocks ahead under the crosshair, a wall behind: Target ESP's Ghost (trails circling it) and Square (a
     # turning square on it) each draw round it, as Brackets do. Screenshots target-esp-<style>-on.png.
     reset()
-    wall()
+    back_wall()
     cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 3.5} {HUSK}")
     ctl("look-at", str(X0 + 0.5), str(Y + 1.6), str(Z0 + 3.5))
     setting("targetesp", "target", "Crosshair")
@@ -12224,7 +12250,7 @@ def _():
     for style in ("Brackets", "Ghost", "Square"):
         setting("targetesp", "style", style)
         got[style] = on_off(f"target-esp-{style.lower()}", ("targetesp",), settle=30)
-    wall("air")
+    back_wall("air")
     say(".reset targetesp")
     return all(v > 200 for v in got.values()), f"pixels changed with each style on: {got}"
 
@@ -12249,7 +12275,7 @@ def _():
 
     got["trail"] = on_off("effects-trail", ("effects",), setup=walked, settle=2)
     reset()
-    wall()
+    back_wall()
     cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 2.5} {HUSK}")
     slot(0, "stick")
     ctl("key", "1", "tap")
@@ -12260,7 +12286,7 @@ def _():
         ctl("mouse", "left", "click")
 
     got["hit"] = on_off("effects-hit", ("effects",), setup=hit, settle=4)
-    wall("air")
+    back_wall("air")
     # Snow falling in front of a big wall 9 blocks ahead, looking straight at it.
     big = f"{X0 - 9} {Y + 1} {Z0 + 9} {X0 + 9} {Y + 14} {Z0 + 9}"
     cmd(f"fill {big} minecraft:stone")
@@ -12280,7 +12306,7 @@ def _():
     # A husk ahead of a wall: ESP's 2D box with Corners, a health bar, its name and a glow draws differently from the
     # plain 2D box, and the health bar's green shows. With Bot1 holding a shield, Shield colors turns their box Lime.
     reset()
-    wall()
+    back_wall()
     cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 4.5} {HUSK}")
     ctl("look-at", str(X0 + 0.5), str(Y + 1.5), str(Z0 + 4.5))
     setting("esp", "mode", "2D box")
@@ -12306,7 +12332,7 @@ def _():
         lime = sum(1 for px in colour_frame("esp-shield").getdata() if 130 < px[0] < 160 and px[1] > 240 and 50 < px[2] < 80)
         only()
         bot_done()
-    wall("air")
+    back_wall("air")
     say(".reset esp")
     diff = recoloured(plain.crop((240, 60, 1040, 560)), styled.crop((240, 60, 1040, 560)))
     ok = diff > 100 and bar > 0 and (lime is None or lime > 20)
@@ -12317,7 +12343,7 @@ def _():
 def _():
     # A husk at 8 of 20 health: with Health colors Bands its tag's health shows gold (to 10); Gradient shows yellow.
     reset()
-    wall()
+    back_wall()
     cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 4.5} {{NoAI:1b,Invulnerable:1b,PersistenceRequired:1b,Silent:1b,Health:8f}}")
     setting("nametags", "mobs", "true")
     ctl("look", "0", "-5")
@@ -12329,7 +12355,7 @@ def _():
         wait(10)
         got[mode] = sum(1 for px in colour_frame(f"nametags-{mode.lower()}").getdata() if px[0] > 235 and 150 < px[1] < 190 and px[2] < 40)
         only()
-    wall("air")
+    back_wall("air")
     say(".reset nametags")
     return got["Bands"] > 5 and got["Gradient"] < got["Bands"], f"gold tag pixels: {got}"
 
@@ -12338,7 +12364,7 @@ def _():
 def _():
     # A husk holding a totem pops it (/damage past its health): with Totem pops its tag gains a grey " -1".
     reset()
-    wall()
+    back_wall()
     cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 4.5} {{NoAI:1b,PersistenceRequired:1b,Silent:1b,Health:4f,"
         'equipment:{mainhand:{id:"minecraft:totem_of_undying",count:1}},drop_chances:{mainhand:0f}}')
     setting("nametags", "mobs", "true")
@@ -12356,7 +12382,7 @@ def _():
         grey[pops] = sum(1 for px in colour_frame(f"nametags-pops-{pops}").getdata()
                          if 160 <= px[0] <= 180 and 160 <= px[1] <= 180 and 160 <= px[2] <= 180)
         only()
-    wall("air")
+    back_wall("air")
     cmd("kill @e[type=husk]")
     say(".reset nametags")
     return grey["true"] > grey["false"] + 5, f"grey tag pixels with Totem pops off and on: {grey}"
@@ -13115,7 +13141,7 @@ def _():
     return px > 40, f"{px} px of the tooltip changed with the line"
 
 
-def hungry(to=12):
+def hungry_to(to=12):
     """Food down to `to` or less (Hunger until then; not in Peaceful, which feeds you), no saturation left: the food
     the server last sent. The test puts Peaceful back."""
     cmd("difficulty easy", "effect give @s minecraft:hunger 20 100 true")
@@ -13143,7 +13169,7 @@ def _():
     sat = hud_frame("fp_full_sat", ("saturation", "true"))
     full_preview = hud_frame("fp_full_preview", ("saturation", "false"), ("food preview", "true"))
     setting("hud", "food preview", "false")
-    hungry()
+    hungry_to()
     food = state()["player"].get("food")
     low = hud_frame("fp_low_off")
     preview = hud_frame("fp_low_preview", ("food preview", "true"))

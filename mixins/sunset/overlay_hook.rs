@@ -20,6 +20,7 @@ fn sunset_overlay_hook(this: &ScreenEffects, input: &ScreenInputs<'_>) -> std::o
         block_overlay: if wall { None } else { input.block_overlay.clone() },
         water: if liquid { None } else { input.water },
         on_fire: input.on_fire && !fire,
+        fire_lower: input.fire_lower,
         gui_overlays: if gui { none } else { input.gui_overlays },
     };
     let quads = this.build(&changed);

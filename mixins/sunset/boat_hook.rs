@@ -1,14 +1,17 @@
 // Entity Control: after the boat you drive has ticked, its move is made again with the motion Sunset gives it, and
 // you sit in it where it now is.
-fn sunset_boat_ride(this: &mut Game<'_>, keys: Keys) -> std::ops::ControlFlow<bool> {
+fn sunset_boat_ride(this: &mut Game<'_>, keys: Keys, sprint_window: i32) -> std::ops::ControlFlow<Result<bool>> {
     use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
     static BUSY: AtomicBool = AtomicBool::new(false);
     if BUSY.load(Relaxed) || this.riding.is_none_or(|id| !this.boats.iter().any(|b| b.id == id)) {
         return std::ops::ControlFlow::Continue(());
     }
     BUSY.store(true, Relaxed);
-    let value = this.remote_ride(keys);
+    let value = this.remote_ride(keys, sprint_window);
     BUSY.store(false, Relaxed);
+    if value.is_err() {
+        return std::ops::ControlFlow::Break(value);
+    }
     let Some(i) = this.riding.and_then(|id| this.boats.iter().position(|b| b.id == id)) else {
         return std::ops::ControlFlow::Break(value);
     };

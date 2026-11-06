@@ -110,7 +110,7 @@ pub(crate) fn place(game: &mut Game<'_>, index: usize) -> bool {
         let pick = left
             .iter()
             .enumerate()
-            .filter(|(_, (_, item, count))| *count > 0 && need.0.contains(item))
+            .filter(|(_, (_, item, count))| *count > 0 && need.items.contains(item))
             .min_by_key(|(_, (slot, _, _))| !from.iter().any(|f| f.0 == *slot))
             .map(|(i, _)| i);
         let Some(i) = pick else {

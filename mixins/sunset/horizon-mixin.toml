@@ -6,7 +6,7 @@ priority = 100
 # It hooks the game's own functions as well as the native hook points, so it
 # builds on this exact Horizon commit (the Nightly it was made for).
 [compatibility]
-horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
+horizon_revision = "66f3981f522b24c250b21523a70080965b940424"
 
 [[module]]
 id = "click_clock"
@@ -218,6 +218,15 @@ file = "crates/horizon-client/src/game/remote.rs"
 name = "sunset_server_scan_remote"
 source = "server_scan_remote.rs"
 visibility = "pub(crate)"
+
+[[injection]]
+id = "server_scan_tree"
+kind = "HEAD"
+target = "horizon_client::game::chat::Game<'_>::chat_tree_for"
+helper = "server_tree_hook.rs"
+bindings = [
+  { name = "base", ty = "Option<&horizon_client::command::Dispatcher>", value = "base" },
+]
 
 [[module]]
 id = "sky"
@@ -732,7 +741,7 @@ bindings = [
 id = "equip-hold"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::first_person::HandHeights::tick"
+target = "horizon_client_lib::first_person::HandHeights::tick"
 helper = "equip_hold.rs"
 bindings = [
   { name = "this", ty = "&mut HandHeights", value = "&mut *self" },
@@ -784,14 +793,14 @@ bindings = [
 id = "sway"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::first_person::HandSway::rotation"
+target = "horizon_client_lib::first_person::HandSway::rotation"
 helper = "sway.rs"
 bindings = []
 
 [[injection]]
 id = "totem-pose"
 kind = "RETURN"
-target = "horizon_client::item_activation::animation_pose"
+target = "horizon_client_lib::item_activation::animation_pose"
 helper = "totem_pose.rs"
 bindings = [
   { name = "value", ty = "Mat4", value = "$value" },
@@ -801,7 +810,7 @@ bindings = [
 [[injection]]
 id = "totem-tick"
 kind = "HEAD"
-target = "horizon_client::item_activation::ItemActivation::tick"
+target = "horizon_client_lib::item_activation::ItemActivation::tick"
 helper = "totem_tick.rs"
 bindings = [
   { name = "this", ty = "&mut ItemActivation", value = "&mut *self" },
@@ -835,6 +844,7 @@ target = "horizon_client_render::sprites::Sprites::register"
 helper = "water_sprites.rs"
 bindings = [
   { name = "this", ty = "&mut Sprites", value = "&mut *self" },
+  { name = "root", ty = "&Path", value = "root" },
   { name = "name", ty = "&str", value = "name" },
   { name = "decoded", ty = "&crate::sprite_cache::Decoded", value = "&decoded" },
 ]
@@ -848,6 +858,7 @@ helper = "boat_hook.rs"
 bindings = [
   { name = "this", ty = "&mut Game<'_>", value = "&mut *self" },
   { name = "keys", ty = "Keys", value = "keys" },
+  { name = "sprint_window", ty = "i32", value = "sprint_window" },
 ]
 
 [[injection]]
@@ -877,7 +888,7 @@ bindings = [
 id = "timer"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::clock::FixedStep::advance"
+target = "horizon_client_lib::clock::FixedStep::advance"
 helper = "timer.rs"
 bindings = [
   { name = "this", ty = "&mut FixedStep", value = "&mut *self" },
@@ -1027,7 +1038,7 @@ bindings = [
   { name = "world", ty = "&World", value = "world" },
   { name = "facts", ty = "&BlockFacts", value = "facts" },
   { name = "camera", ty = "[f64; 3]", value = "camera" },
-  { name = "forward", ty = "[f64; 3]", value = "forward" },
+  { name = "near", ty = "&NearPlane", value = "near" },
 ]
 
 [[injection]]
@@ -1130,7 +1141,7 @@ bindings = [
 [[injection]]
 id = "safe_walk"
 kind = "RETURN"
-target = "horizon_client::motion::<MotionWorld<'_,'_,'_> as EdgeBackoffWorld>::staying_on_ground_surface"
+target = "horizon_client_lib::motion::<MotionWorld<'_,'_,'_> as EdgeBackoffWorld>::staying_on_ground_surface"
 helper = "ledge_hook.rs"
 bindings = [
   { name = "value", ty = "Result<bool>", value = "$value" },
@@ -1163,7 +1174,7 @@ bindings = [
 [[injection]]
 id = "speed_move"
 kind = "MODIFY_ARG"
-target = "horizon_client::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::move_self"
+target = "horizon_client_lib::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::move_self"
 selector = "MotionWorld::move_self"
 require = 1
 ordinal = 0
@@ -1177,7 +1188,7 @@ bindings = [
 id = "screen_keys"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::motion::MotionWorld<'_,'_,'_>::controlled_simulation_tick_with_sprint_window"
+target = "horizon_client_lib::motion::MotionWorld<'_,'_,'_>::controlled_simulation_tick_with_sprint_window"
 helper = "screen_keys_hook.rs"
 bindings = [
   { name = "world", ty = "&mut MotionWorld<'_, '_, '_>", value = "&mut *self" },
@@ -1188,7 +1199,7 @@ bindings = [
 [[injection]]
 id = "liquid_flow"
 kind = "RETURN"
-target = "horizon_client::motion::fluids::<MotionWorld<'_,'_,'_> as FluidInteractionWorld>::flow"
+target = "horizon_client_lib::motion::fluids::<MotionWorld<'_,'_,'_> as FluidInteractionWorld>::flow"
 helper = "flow_hook.rs"
 bindings = [
   { name = "value", ty = "Result<Vec3>", value = "$value" },
@@ -1207,7 +1218,7 @@ bindings = [
 [[injection]]
 id = "flying_speed"
 kind = "RETURN"
-target = "horizon_client::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::flying_speed"
+target = "horizon_client_lib::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::flying_speed"
 helper = "flying_hook.rs"
 bindings = [
   { name = "value", ty = "Result<f32>", value = "$value" },
@@ -1216,7 +1227,7 @@ bindings = [
 [[injection]]
 id = "position_reminder"
 kind = "HEAD"
-target = "horizon_client::player_sync::PositionSender::update"
+target = "horizon_client_lib::player_sync::PositionSender::update"
 helper = "sync_hook.rs"
 bindings = [
   { name = "this", ty = "&mut PositionSender", value = "&mut *self" },
@@ -1320,6 +1331,7 @@ bindings = [
   { name = "color", ty = "u32", value = "color" },
   { name = "shadow", ty = "bool", value = "shadow" },
   { name = "world", ty = "bool", value = "world" },
+  { name = "outline", ty = "Option<(u32, [f32; 2])>", value = "outline" },
 ]
 
 [[injection]]
@@ -1348,7 +1360,7 @@ bindings = [
 id = "streamer_ui"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::ui_theme::Ui<'_>::text_line"
+target = "horizon_client_lib::ui_theme::Ui<'_>::text_line"
 helper = "streamer_ui_hook.rs"
 bindings = [
   { name = "ui", ty = "&mut Ui<'_>", value = "&mut *self" },
@@ -1365,7 +1377,7 @@ bindings = [
 id = "streamer_ui_measure"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::ui_theme::Ui<'_>::measure"
+target = "horizon_client_lib::ui_theme::Ui<'_>::measure"
 helper = "streamer_ui_measure_hook.rs"
 bindings = [
   { name = "ui", ty = "&Ui<'_>", value = "&*self" },
@@ -1390,21 +1402,21 @@ bindings = [
 id = "client_brand"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::net::brand"
+target = "horizon_client_lib::net::brand"
 helper = "client_brand_hook.rs"
 bindings = []
 
 [[injection]]
 id = "client_local"
 kind = "HEAD"
-target = "horizon_client::net::Session::connect_local"
+target = "horizon_client_lib::net::Session::connect_local"
 helper = "client_local_hook.rs"
 bindings = []
 
 [[injection]]
 id = "server_scan_config_channel"
 kind = "HEAD"
-target = "horizon_client::net::receive_brand"
+target = "horizon_client_lib::net::receive_brand"
 helper = "server_scan_channel.rs"
 bindings = [{ name = "payload", ty = "&horizon_protocol::packets::configuration::CustomPayload", value = "payload" }]
 
@@ -1701,7 +1713,7 @@ visibility = "pub"
 [[injection]]
 id = "packet_tap"
 kind = "RETURN"
-target = "horizon_client::net::Session::poll"
+target = "horizon_client_lib::net::Session::poll"
 helper = "packet_tap_hook.rs"
 bindings = [
   { name = "value", ty = "Vec<Event>", value = "$value" },

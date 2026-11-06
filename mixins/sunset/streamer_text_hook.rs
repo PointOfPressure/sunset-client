@@ -9,10 +9,11 @@ fn sunset_streamer_text(
     color: u32,
     shadow: bool,
     world: bool,
+    outline: Option<(u32, [f32; 2])>,
 ) -> std::ops::ControlFlow<f32> {
     match crate::hud::sunset_streamer::protect(text) {
         Some(t) => std::ops::ControlFlow::Break(crate::hud::sunset_streamer::guarded(|| {
-            batch.styled_text(atlas, &t, x, y, color, shadow, world)
+            batch.styled_text(atlas, &t, x, y, color, shadow, world, outline)
         })),
         None => std::ops::ControlFlow::Continue(()),
     }

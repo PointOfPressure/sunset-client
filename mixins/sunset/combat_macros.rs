@@ -765,8 +765,13 @@ pub(super) fn enchant_damage(game: &Game<'_>, stack: &horizon_client::items::Ite
     }
     sum.is_finite() && sum > 0.0
 }
+// Strength and weakness on a bare hand's attack damage (what Game::effect_attack_bonus gave before 66f3981).
+fn effect_attack_bonus(game: &Game<'_>) -> f32 {
+    let fx = &game.potions.effects;
+    fx.amplifier("strength").map_or(0.0, |a| 3.0 * (a + 1) as f32) - fx.amplifier("weakness").map_or(0.0, |a| 4.0 * (a + 1) as f32)
+}
 pub(super) fn weapon_route(game: &Game<'_>) -> Option<usize> {
-    let bare = 1.0 + game.effect_attack_bonus();
+    let bare = 1.0 + effect_attack_bonus(game);
     let mut fallback = None;
     for slot in std::iter::once(game.selected).chain((0..9).filter(|slot| *slot != game.selected)) {
         let Some(stack) = game.inventory[slot].as_ref() else {
@@ -800,7 +805,7 @@ pub(super) fn weapon_route(game: &Game<'_>) -> Option<usize> {
     fallback
 }
 pub(super) fn weak_settling(game: &Game<'_>) -> bool {
-    let bare = 1.0 + game.effect_attack_bonus();
+    let bare = 1.0 + effect_attack_bonus(game);
     bare <= 0.0
         && !game.inventory[game.selected].as_ref().is_some_and(|s| enchant_damage(game, s))
         && state(|s| s.main.as_ref().is_none_or(|(_, _, since)| game.ticks < *since || game.ticks - *since < 2))

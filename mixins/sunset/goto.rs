@@ -1,6 +1,6 @@
 // .goto x y z (from Rust's PR #24): walks there on Horizon's own A* path and walking task, the one horizon-ctl's goto
 // runs, so it lives next to them in agent.rs. Movement keys, a screen, the menu, Panic or turning Sunset off stop it.
-use super::{Game, Goto, MOVE_KEYS, TaskKind};
+use super::{Game, Goto, MOVE_KEYS, Progress, TaskKind};
 use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
@@ -70,14 +70,19 @@ pub(crate) fn command(game: &mut Game<'_>, args: &[&str]) -> Result<String, Stri
     if far > RANGE {
         return Err(format!("That is {far:.0} blocks away; .goto walks up to {RANGE:.0}."));
     }
-    let path = game.find_path(from, target, 0.6).ok_or("No walking path there through loaded terrain.")?;
-    let nodes = path.len();
+    let path = game.find_path(from, target, 0.6, &[]).ok_or("No walking path there through loaded terrain.")?;
+    let nodes = path.nodes.len();
+    let position = [p.position.x, p.position.y, p.position.z];
+    let mut next = 1;
+    let aim = path.aim(position, &mut next, target).unwrap_or(target);
     let goto = Goto {
         target,
         near: 0.6,
         sprint: false,
         path,
-        next: 1,
+        blocked: Vec::new(),
+        progress: Progress::new(position, aim),
+        next,
         progress_tick: game.ticks,
         replans: 0,
         jump_until: 0,

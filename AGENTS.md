@@ -2,14 +2,17 @@
 
 Sunset is a Meteor-style client for Horizon (horizon-rust/horizon, a Rust rewrite of Minecraft 26.3), built as a
 horizon-mixins native mod. Mod id `sunset`; all code is in `mixins/sunset/`. The Horizon nightly it pins is in
-`horizon-native.json` (currently ba6344a); check engine code against that revision, not upstream main.
+`horizon-native.json` (currently 66f3981, horizon-mixins e8cd0aa); check engine code against that revision, not upstream main.
 
 ## Hooking limits (horizon-mixins)
 
 - A hook target that uses any macro (`vec!`, `format!`, `log::`...) is refused. Hook a different function.
 - Closures are fine in HEAD hooks, refused in RETURN hooks.
 - `key_pressed` and `remote::handle_packet` can't be hooked (opaque macros).
-- Functions with `?` in them (e.g. `block_friction`) can't be hooked either.
+- Functions with `?` in them (e.g. `block_friction`) couldn't be hooked on 0d6b103; e8cd0aa takes a cancellable HEAD
+  on one (`remote_ride`). Other kinds on `?` functions are untested.
+- `horizon_client::` names only the `game`, `entry` and `mod_api` modules now; the rest of the client is in
+  `horizon_client_lib::` (same folder, `client_lib.rs`). Hook targets must use the crate that defines them.
 
 ## Protocol rules
 
@@ -20,8 +23,9 @@ horizon-mixins native mod. Mod id `sunset`; all code is in `mixins/sunset/`. The
 
 ## Horizon's own server
 
-- It re-runs every hit along your look (3 blocks), so reach-style hits do nothing there.
-- It sends shulker boxes without their contents.
+- It checks a hit with vanilla's attack range (`isWithinAttackRange`, 3 blocks to the target's box) since 66f3981;
+  before that it re-ran every hit along your look.
+- It sends shulker boxes with their contents since 66f3981 (before: without).
 - It never sends chat session keys.
 - It packs chunk palettes and pre-flows liquids, so New Chunks can only go by liquid flow starts there.
 

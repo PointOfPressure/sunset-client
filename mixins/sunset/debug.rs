@@ -17,7 +17,7 @@ use std::time::SystemTime;
 pub(super) const NAME: &str = "Debug Report";
 // tools/pack.py writes the commit it packs here; a build straight from the source folder says so.
 const COMMIT: &str = "unpacked";
-const HORIZON_PIN: &str = "ba6344a";
+const HORIZON_PIN: &str = "66f3981";
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
@@ -200,11 +200,15 @@ fn screen_name(game: &Game<'_>) -> &'static str {
         Sc::Advancements => "advancements",
         Sc::WorldOptions => "world options",
         Sc::Friends => "friends",
+        Sc::Social => "social interactions",
         Sc::CommandBlock => "command block",
+        Sc::BlockEditor => "block editor",
         Sc::ServerLinks => "server links",
         Sc::ConfirmLink => "confirm link",
         Sc::DialogWarning => "dialog warning",
         Sc::Win => "end credits",
+        Sc::DebugOptions => "debug options",
+        Sc::Mod => "mod screen",
     }
 }
 
