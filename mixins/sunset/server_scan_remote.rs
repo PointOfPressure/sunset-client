@@ -120,6 +120,7 @@ mod tests {
             command: None,
             redirect: None,
             permission: 0,
+            restricted: false,
             suggests: None,
         });
         tree.nodes.push(Node {
@@ -128,6 +129,7 @@ mod tests {
             command: None,
             redirect: None,
             permission: 0,
+            restricted: false,
             suggests: None,
         });
         tree.nodes.push(Node {
@@ -139,6 +141,7 @@ mod tests {
             command: None,
             redirect: None,
             permission: 0,
+            restricted: false,
             suggests: Some(Suggests::AskServer),
         });
         tree.nodes.push(Node {
@@ -147,6 +150,7 @@ mod tests {
             command: None,
             redirect: None,
             permission: 0,
+            restricted: false,
             suggests: None,
         });
         tree.nodes[0].children = vec![1, 2, 999];
