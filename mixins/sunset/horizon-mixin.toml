@@ -703,12 +703,14 @@ bindings = [
 id = "xray"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client_render::mesher::Mesher<'_>::mesh"
+target = "horizon_client_render::mesher::Mesher<'_>::mesh_reusing"
 helper = "xray.rs"
 bindings = [
   { name = "this", ty = "&mut Mesher<'_>", value = "&mut *self" },
   { name = "region", ty = "&[[Option<&Chunk>; 3]; 3]", value = "region" },
   { name = "sy", ty = "i32", value = "sy" },
+  { name = "out", ty = "&mut SectionMesh", value = "&mut out" },
+  { name = "scratch", ty = "&mut MeshScratch", value = "&mut *scratch" },
 ]
 
 [[injection]]

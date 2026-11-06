@@ -48,4 +48,13 @@ pub fn clear(mesh: &mut super::SectionMesh) {
             v.color = v.color & 0xFF00_0000 | lit[0] | lit[1] << 8 | lit[2] << 16;
         }
     }
+    // The renderer reads the layers a mesh uses from this list, not from its vertices.
+    if level < STEPS {
+        for (_, copies) in layers.iter() {
+            if mesh.translucent.iter().any(|v| u32::from(v.layer & !super::OPAQUE_LAYER) == copies[level]) {
+                mesh.note_sprite_layer(copies[level] as u16);
+            }
+        }
+        mesh.finish_sprite_layers();
+    }
 }
