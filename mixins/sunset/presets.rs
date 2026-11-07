@@ -57,6 +57,55 @@ sprint.on=true
 autorespawn.on=true
 ",
     },
+    // Sayer's mace setup (7 Nov 2026), his non-default lines without the key binds and the modules presets leave alone.
+    Preset {
+        id: "pvp-mace",
+        title: "PvP: mace",
+        about: "Aim Assist, W-Tap, Jump Reset, Wind Jump and Pearl Catch for mace fights; Auto Mace set up but left off.",
+        text: "sunset-profile=1
+aimassist.on=true
+aimassist.distance=3.5
+aimassist.pull=1.2
+aimassist.stickiness=0.3
+wtap.on=true
+wtap.longesthold=2
+wtap.reactionticks=1
+wtap.chance=80
+jumpreset.on=true
+jumpreset.chance=80
+windjump.on=true
+windjump.minpitch=40
+pearlcatch.on=true
+automace.horizontalrange=4
+automace.minfall=5
+automace.stunslam=true
+automace.stunminfall=1.5
+automace.axeholdticks=1
+automace.swapback=true
+nojumpdelay.on=true
+fastplace.on=true
+fastplace.speed=4
+breakdelay.cooldownticks=1
+autotool.antibreak=true
+autotool.switchdelay=1
+scaffold.mode=Telly
+scaffold.activationblocks=1
+guimove.mode=GrimAC
+nobreakreset.on=true
+serverscan.on=true
+serverscan.mode=Extended
+fullbright.on=true
+timechanger.on=true
+timechanger.time=9000
+clearwater.on=true
+handview.on=true
+handview.totempopscale=0.8
+handview.totempopspeed=2
+handview.leftscale=0.7
+norender.on=true
+norender.hideallparticles=true
+",
+    },
     // Cart PvP: the general fight set and Cart.
     Preset {
         id: "pvp-cart",

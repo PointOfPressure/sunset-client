@@ -2041,6 +2041,9 @@ def _():
     toggle("killaura", True)
     listing = said_after(".preset")
     preview = said_after(".preset pvp-crystal")
+    # PvP: mace (Sayer's mace setup) reads whole: its preview turns Aim Assist and Wind Jump on.
+    mace = said_after(".preset pvp-mace")
+    mace_ok = any(l.startswith("Turns on:") and "Aim Assist" in l and "Wind Jump" in l for l in mace)
     unchanged = "Crystal Aura" not in modules_on()
     taken = said_after(".preset pvp-crystal apply")
     after = modules_on()
@@ -2080,8 +2083,8 @@ def _():
     toggle("killaura", False)
     ok = (any("pvp-crystal" in l for l in listing) and any(l.startswith("Turns on:") and "Crystal Aura" in l for l in preview)
           and any(l.startswith("Turns off:") and "Kill Aura" in l for l in preview) and unchanged and applied and undone
-          and menu_applied and any("Took preset" in l for l in taken))
-    return ok, (f"list {listing[:1]}; preview {preview[:3]}; unchanged before apply: {unchanged}; applied: {applied} ({taken[:1]}); "
+          and menu_applied and any("Took preset" in l for l in taken) and mace_ok)
+    return ok, (f"list {listing[:1]}; preview {preview[:3]}; mace preview {mace[:3]}; unchanged before apply: {unchanged}; applied: {applied} ({taken[:1]}); "
                 f"undone: {undone}; from the menu: {menu_applied} (shot {SHOTS}/preset_preview.png)")
 
 
