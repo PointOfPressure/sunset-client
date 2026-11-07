@@ -5,6 +5,22 @@ Additional permission from the licensor: the Horizon project's mod registry revi
 
 Required Notice: Copyright (c) 2026 PointOfPressure (https://github.com/PointOfPressure)
 
+### Additional Permission for Horizon Mod Registry
+
+Copyright (c) 2026 PointOfPressure.
+
+The Horizon Mod Registry and its maintainers are granted a non-exclusive, royalty-free permission to:
+
+- Read, inspect, build and test Sunset's source code for security review and compatibility checks.
+- Host, store, mirror and distribute unmodified official Sunset `.hnmod` releases through the Horizon Mod Registry, website and launcher.
+- Perform the automated processing required to verify and build these releases.
+
+Users downloading Sunset through the official Horizon Registry are permitted to compile, integrate and run the mod with Horizon for personal, non-commercial use.
+
+This permission does not allow third parties to redistribute Sunset independently, publish modified versions, create derivative projects or use Sunset commercially.
+
+All other rights remain reserved under the PolyForm Strict License 1.0.0. This permission applies only to Sunset releases published by the copyright holders with this grant.
+
 # PolyForm Strict License 1.0.0
 
 <https://polyformproject.org/licenses/strict/1.0.0>
