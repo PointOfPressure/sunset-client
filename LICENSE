@@ -1,6 +1,7 @@
 Sunset is licensed under the PolyForm Strict License 1.0.0, below, from version 0.8.1 on.
 Versions up to and including 0.8.0 (released as Solstice) were released under the MIT licence and stay available under it, as published.
 Additional permission from the licensor: plugins for Sunset that use its plugin API (sunset_api) may be made and shared under any licence. The plugin docs and example are MIT, at https://github.com/PointOfPressure/sunset-plugins.
+Additional permission from the licensor: the Horizon project's mod registry reviewers (https://github.com/horizon-rust) may read, build, run and test this source to review Sunset and each of its versions for the Horizon mod registry. This gives no right to share or change Sunset beyond that review.
 
 Required Notice: Copyright (c) 2026 PointOfPressure (https://github.com/PointOfPressure)
 
