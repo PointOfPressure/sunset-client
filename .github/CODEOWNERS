@@ -1,0 +1,5 @@
+# Verified repository owner: https://github.com/PointOfPressure/sunset-client
+# Require code-owner review in branch protection/rulesets to enforce these entries.
+/AGENTS.md             @PointOfPressure
+**/AGENTS.md           @PointOfPressure
+/.github/CODEOWNERS    @PointOfPressure
