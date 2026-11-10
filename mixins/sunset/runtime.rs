@@ -397,7 +397,7 @@ impl Module {
                 "Healing only" | "Potion delay (ticks)" => self.b("Potion refill"),
                 _ => true,
             },
-            "Inventory Cleaner" => match name {
+            "Inventory Manager" => match name {
                 "Keep totems" | "Keep pearl stacks" => self.t("Loot key") != "None",
                 "List mode" | "Items" => self.p("Preset") == "Custom",
                 "Blocks" | "Food" | "Arrows" | "Pearls" | "Junk" => self.p("Preset") != "Custom",
@@ -1821,9 +1821,10 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     super::sunset_lag::migrated(listed_extras(owned.map_or(renamed, std::borrow::Cow::Owned)))
 }
 
-// Modules with new names (0.9): Auto Steal is Chest Stealer, No Mining Trace is Mine Through Mobs.
-const RENAMED: [(&str, &str); 4] =
-    [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot"), ("extramodules", "modules")];
+// Modules with new names (0.9): Auto Steal is Chest Stealer, No Mining Trace is Mine Through Mobs; Inventory Cleaner is
+// Inventory Manager (1.0).
+const RENAMED: [(&str, &str); 5] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot"),
+    ("extramodules", "modules"), ("inventorycleaner", "inventorymanager")];
 
 fn renamed_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let old = |l: &str| RENAMED.iter().find(|(from, _)| l.split_once('.').is_some_and(|(id, _)| id == *from));
@@ -8905,7 +8906,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Effects" => "jump circles jumpcircles trails footsteps hit effect hiteffect hit particles totem pop particles weather rain snow fireflies embers ambience",
         "Auto Gap" => "auto pot autopot splash potion healing pot",
         "Auto Replenish" => "refill potion refill potionrefill hotbar refill",
-        "Inventory Cleaner" => "inventory cleaner junk drop clean auto loot autoloot loot key",
+        "Inventory Manager" => "inventory manager cleaner junk drop clean sort hotbar layout duplicates auto loot autoloot loot key",
         "Mine Through Mobs" => "no mining trace nominingtrace",
         "GUI Move" => "inventory move invmove gui walk",
         "Flight" => "fly",

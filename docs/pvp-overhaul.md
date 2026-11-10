@@ -7,13 +7,13 @@ Working notes for the Kill Aura, Scaffold and Inventory Manager overhaul, so a l
 | Phase | State |
 |---|---|
 | 1. Kill Aura: combat version and attack scheduler | Done (committed) |
-| 3. Inventory Manager | In progress: planner written (`inventory_plan.rs`), wiring next |
-| 2. Scaffold | Not started (see "Scaffold: findings so far") |
+| 3. Inventory Manager | Done (committed) |
+| 2. Scaffold | In progress: Sprint Off / Vanilla / Keep |
 | 4. Integration checks | Not started |
 
 Last good check: `bash /c/Users/jnowa/hzbuild/check.sh <name>` (applies the checkout's mixins to Horizon 66f3981 in a
 fresh stage, `cargo check -p horizon-client --bin horizon-client`, then `cargo test -p horizon-client --lib -- sunset`).
-Phase 1: 0 Rust warnings, 203 tests passed. The script lives outside the repository; its steps are those of the
+Phase 1: 0 Rust warnings, 203 tests passed. Phase 3: 0 warnings, 209 tests passed. The script lives outside the repository; its steps are those of the
 "local compile check" (horizon-mixins apply with an out dir outside the repo, the launcher's Rust 1.99.1 and mingw on
 `PATH`, `CARGO_HOME` the launcher's cargo). Nothing here has been tried in game yet.
 
@@ -38,28 +38,34 @@ Phase 1: 0 Rust warnings, 203 tests passed. The script lives outside the reposit
   world changes (AntiBot tokens, own entity id). Kill Aura has no sprint handling of its own; W Tap and Jump Reset
   act on its hits, so there is no second sprint reset.
 
-## Phase 3: Inventory Manager (in progress)
+## Phase 3: Inventory Manager
 
-`inventory_plan.rs` (written, unit tests written, not yet registered or compiled):
-- Scores from the game's item data: weapons (attack damage and speed, by combat version; Sharpness 1.25 a level in
-  Legacy, 0.5 + 0.5 a level in Modern; Fire Aspect, Knockback), armour (points, toughness, Protection), tools
-  (mining speed with Efficiency), all scaled by wear (Unbreaking and Mending soften it; a piece about to break is
-  worth half).
-- Duplicates: per kind (sword, axe, pickaxe, shovel, hoe, the four armour slots), a piece goes only when another
-  piece, worn or carried, is worth more and dominates it (no custom name, and every enchantment it has is also on the
-  better one at the same level or higher). Maces, spears, tridents, bows and crossbows are never duplicates.
-- `hotbar_step`: category layout (`sword,pickaxe,,blocks,...`), filled left to right with the best match, one
-  hotbar-key swap a step; locked slots are neither taken from nor filled.
-- `sort_step`: main inventory order (weapons, tools, armour, blocks, food, potions, the rest; then by name, bigger
-  stacks first), one swap of two slots a step; equal items never shuffled.
+Inventory Cleaner is now **Inventory Manager**: the module is renamed and saved settings carry over (`RENAMED`:
+`inventorycleaner` → `inventorymanager`). Its presets, junk lists, limits and Loot key are kept.
 
-Wiring still to do (player.rs): build `Item`s from stacks (`ItemInfo.attack_damage`/`attack_speed`/`max_damage`, the
-`minecraft:armor` and `armor_toughness` modifiers, the best `ToolRule` speed, `stack.enchantments()`,
-`stack.custom_name()`); rename the module to Inventory Manager with a `RENAMED` entry
-(`inventorycleaner` → `inventorymanager`); new settings (Duplicates, Protected items, Hotbar layout, Sort inventory,
-Only in inventory, Delay variation); one step per delay in the order hotbar, cleanup, sorting; skip while GUI Move is
-busy, another module holds the hand (`combat_control`), or a slot is locked by Loadouts. Auto Armor keeps owning what
-you wear. Update verify.py's `inventorycleaner` settings and the README.
+`inventory_plan.rs` (pure, unit tested) plans; `player.rs` (`inventory_manager`, `plan_item`) runs one step every
+Delay ticks (plus up to Delay variation), in this order: hotbar layout, then a junk stack or worse duplicate thrown,
+then a sorting swap.
+- Scores come from the game's item data (`ItemInfo.attack_damage`/`attack_speed` modifier amounts, the
+  `minecraft:armor` and `armor_toughness` modifiers, the best `ToolRule` speed, `stack.enchantments()`):
+  weapons by combat version (Kill Aura's Combat version setting, else Auto from your attack speed), armour, tools,
+  each scaled by wear.
+- **Duplicates**: a piece goes only when another one, worn or carried, is worth more and dominates it (no custom
+  name, each of its enchantments on the better one at the same level or higher). Maces, spears, tridents, bows and
+  crossbows never count as duplicates. Unlike the old tier pass, this also runs with the Custom preset; Duplicates
+  turns it off.
+- **Protected items** (default totems, pearls, golden apples, elytra, mace, trident) and slots Loadouts locks are
+  never thrown.
+- **Hotbar layout**: `sword,pickaxe,,blocks,...`, filled left to right with the best match by hotbar-key swaps.
+  It doesn't overlap with Loadouts, which places exact items: Loadouts' locked slots are left alone.
+- **Sort inventory**: the main inventory in order, one swap of two slots (three pickup clicks) a step.
+- **Only in inventory** (on by default): with it off, steps also run with no screen open.
+- Coordination: nothing runs while GUI Move holds clicks or another module holds the hand
+  (`combat_control::owner()`); armour you wear stays Auto Armor's (only slots 0 to 35 are touched); the offhand
+  stays Offhand's; Chest Stealer works in containers, where Inventory Manager doesn't run.
+
+Limits: no stack merging; no manual run key (the Loot key stays); Auto Armor still ranks armour by material, so a
+carried piece Inventory Manager rates higher (Protection IV iron over plain diamond) is kept but not worn.
 
 ## Scaffold: findings so far
 

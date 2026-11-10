@@ -2,6 +2,7 @@
 // Spam, and Anchor.
 
 use super::sunset::{Category, Module, hold, look_at};
+use super::sunset_inventory_plan as plan;
 use super::sunset_util::*;
 use super::{Game, Screen};
 use std::sync::Mutex;
@@ -40,8 +41,22 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Take", &["All", "Carts from shulkers"])
             .bool("Close when done", false)
             .text("Steal key", "None"),
-        Module::new("Inventory Cleaner", Player, "Drops junk from your inventory.")
+        Module::new("Inventory Manager", Player, "Keeps your inventory in order: your hotbar laid out, worse duplicates and junk dropped, the rest sorted.")
+            // Profiles: a preset fills in Cleanup's limits and junk.
             .pick("Preset", &["Custom", "PvP", "Building", "Mining", "Survival"])
+            // General: one step every Delay ticks (plus up to Delay variation more), with the inventory open unless
+            // Only in inventory is off.
+            .num("Delay (ticks)", 1.0, 0.0, 10.0, 1.0)
+            .num("Delay variation", 0.0, 0.0, 5.0, 1.0)
+            .bool("Only in inventory", true)
+            // Equipment: worse duplicates of your weapons, tools and armour go (inventory_plan.rs); these never go.
+            .bool("Duplicates", true)
+            .text("Protected items", "totem_of_undying,ender_pearl,golden_apple,enchanted_golden_apple,elytra,mace,trident")
+            // Hotbar: what each slot from the left holds (sword, pickaxe, blocks, an item id...); empty leaves a slot.
+            .text("Hotbar layout", "")
+            // Sorting: the rest of the inventory in order (weapons, tools, armour, blocks, food, potions, the rest).
+            .bool("Sort inventory", false)
+            // Cleanup.
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Items", "rotten_flesh,spider_eye,poisonous_potato,gravel,cobblestone,netherrack,cobbled_deepslate,andesite,diorite,granite,tuff")
             .num("Blocks", 128.0, 0.0, 2304.0, 64.0)
@@ -49,7 +64,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Arrows", 64.0, 0.0, 576.0, 16.0)
             .num("Pearls", 16.0, 0.0, 64.0, 1.0)
             .text("Junk", PRESETS[0].5)
-            .num("Delay (ticks)", 1.0, 0.0, 10.0, 1.0)
             .text("Loot key", "None")
             .num("Keep totems", 1.0, 1.0, 20.0, 1.0)
             .num("Keep pearl stacks", 5.0, 1.0, 10.0, 1.0),
@@ -128,7 +142,7 @@ struct Ps {
     steal_same: u32,
     steal_done: i32,
     clean_wait: u32,
-    // Inventory Cleaner's Preset as last seen.
+    // Inventory Manager's Preset as last seen.
     clean_preset: String,
     // No Break Reset: the step the block's break took last tick, with the item held then.
     break_step: f32,
@@ -375,8 +389,8 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         if let Some(m) = get("Chest Stealer") {
             auto_steal(game, m);
         }
-        if let Some(m) = get("Inventory Cleaner") {
-            inventory_cleaner(game, m);
+        if let Some(m) = get("Inventory Manager") {
+            inventory_manager(game, m);
         }
     }
     if !in_world(game) {
@@ -674,7 +688,7 @@ mod fast_place_tests {
     }
 }
 
-// ---- Chest Stealer and Inventory Cleaner
+// ---- Chest Stealer and Inventory Manager
 
 // How many slots a server's container menu has, for the ones that are just a grid of items.
 fn container_size(menu: &str) -> Option<usize> {
@@ -746,7 +760,7 @@ fn auto_steal(game: &mut Game<'_>, m: &Module) {
     ps(|p| p.steal_wait = m.n("Delay (ticks)") as u32);
 }
 
-// Inventory Cleaner's presets: name, then the blocks, food, arrows and pearls kept, and the junk.
+// Inventory Manager's presets: name, then the blocks, food, arrows and pearls kept, and the junk.
 const PRESETS: [(&str, f64, f64, f64, f64, &str); 4] = [
     ("PvP", 128.0, 64.0, 64.0, 16.0, "dirt,gravel,sand,rotten_flesh,spider_eye,poisonous_potato,wheat_seeds,bone,string,feather,flint,stick,egg"),
     ("Building", 1728.0, 32.0, 0.0, 16.0, "rotten_flesh,spider_eye,poisonous_potato,wheat_seeds,bone,string,feather,flint,egg"),
@@ -754,49 +768,35 @@ const PRESETS: [(&str, f64, f64, f64, f64, &str); 4] = [
     ("Survival", 256.0, 128.0, 128.0, 16.0, "rotten_flesh,spider_eye,poisonous_potato"),
 ];
 
-// A tool, weapon or armour piece: its kind (the word after the material) and how good its material is.
-fn gear(item: &str) -> Option<(&str, u32)> {
-    const KINDS: [&str; 13] = ["sword", "axe", "pickaxe", "shovel", "hoe", "spear", "helmet", "chestplate", "leggings", "boots", "bow", "crossbow", "mace"];
-    let (material, kind) = item.rsplit_once('_').unwrap_or(("", item));
-    if !KINDS.contains(&kind) || (material.is_empty() && !matches!(kind, "bow" | "crossbow" | "mace")) {
-        return None;
-    }
-    let tier = match material {
-        "netherite" => 7,
-        "diamond" => 6,
-        "iron" => 5,
-        "copper" => 4,
-        "stone" | "chainmail" | "turtle" => 3,
-        "golden" => 2,
-        _ => 1,
+// A stack as Inventory Manager's planner sees it, from the game's item data.
+fn plan_item(game: &Game<'_>, stack: &horizon_client::items::ItemStack) -> plan::Item {
+    let info = game.res.items().get(&stack.item);
+    let modifier = |attribute: &str| {
+        info.as_ref().map_or(0.0, |i| i.modifiers.iter().filter(|m| m.0 == attribute).map(|m| m.2 as f32).sum::<f32>())
     };
-    Some((kind, tier))
+    let mining = info.as_ref().map_or(1.0, |i| i.tool.iter().filter_map(|r| r.speed).fold(i.tool_default_speed.max(1.0), f32::max));
+    plan::Item {
+        name: short(&stack.item).to_owned(),
+        count: stack.count,
+        attack: info.as_ref().map_or(0.0, |i| i.attack_damage),
+        speed: 4.0 + info.as_ref().map_or(0.0, |i| i.attack_speed),
+        armor: modifier("minecraft:armor"),
+        toughness: modifier("minecraft:armor_toughness"),
+        mining,
+        damage: stack.damage,
+        max_damage: info.as_ref().map_or(0, |i| i.max_damage),
+        enchants: stack.enchantments().iter().map(|(e, l)| (e.to_string(), *l)).collect(),
+        named: stack.custom_name().is_some(),
+        block: info.as_ref().and_then(|i| i.block).is_some_and(|b| game.res.facts().get(b).full_collision),
+        food: info.as_ref().is_some_and(|i| i.food.is_some()),
+    }
 }
 
-// The inventory slots (0-35) a preset drops: its junk; a tool, weapon or armour piece when a better one or the same
-// one is kept (worn armour counts); building blocks, food, arrows and pearls past its limits.
+// The inventory slots (0-35) a preset drops: its junk, and building blocks, food, arrows and pearls past its limits.
+// Worse duplicates are inventory_plan's (Duplicates).
 fn junk_slots(game: &Game<'_>, m: &Module) -> Vec<usize> {
     let item = |i: usize| game.inventory.get(i).and_then(|s| s.as_ref());
     let mut out = Vec::new();
-    // What you wear is the best so far of its kind, and never dropped.
-    const WORN: usize = usize::MAX;
-    let mut best: Vec<(&str, u32, usize)> =
-        game.armor.iter().flatten().filter_map(|s| gear(short(&s.item)).map(|(kind, tier)| (kind, tier, WORN))).collect();
-    for i in 0..36 {
-        let Some((kind, tier)) = item(i).and_then(|s| gear(short(&s.item))) else {
-            continue;
-        };
-        match best.iter_mut().find(|b| b.0 == kind) {
-            Some(b) if tier > b.1 => {
-                if b.2 != WORN {
-                    out.push(b.2);
-                }
-                *b = (kind, tier, i);
-            }
-            Some(_) => out.push(i),
-            None => best.push((kind, tier, i)),
-        }
-    }
     let mut kept = [0.0; 4];
     for i in 0..36 {
         let Some(stack) = item(i) else {
@@ -831,7 +831,13 @@ fn junk_slots(game: &Game<'_>, m: &Module) -> Vec<usize> {
     out
 }
 
-fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
+// Inventory Manager: one step at a time, Delay apart: first the hotbar layout, then a junk stack or a worse
+// duplicate dropped, then a swap toward the sorted inventory. Each step is planned from the inventory as it is now
+// (inventory_plan.rs), so a refused click or a change from elsewhere is planned around. Nothing moves while GUI Move
+// holds clicks, another module has the hand (combat_control), or in a slot Loadouts locks; armour you wear is Auto
+// Armor's and the offhand Offhand's.
+fn inventory_manager(game: &mut Game<'_>, m: &Module) {
+    use horizon_client::menu::Input::{Pickup, Swap, Throw};
     if super::sunset_gui_move::inventory_busy() { return; }
     // A preset just picked fills in its limits and junk (not on the first look, so a change you made stays).
     let preset = m.p("Preset");
@@ -842,13 +848,14 @@ fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
         for (field, value) in [("blocks", blocks.to_string()), ("food", food.to_string()), ("arrows", arrows.to_string()),
             ("pearls", pearls.to_string()), ("junk", junk.to_owned())]
         {
-            super::sunset::set_setting(game, &format!("inventorycleaner.{field}"), &value);
+            super::sunset::set_setting(game, &format!("inventorymanager.{field}"), &value);
         }
         return;
     }
-
-    use horizon_client::menu::Input::Throw;
-    if game.screen != Screen::Inventory || game.remote_menu().1 != "inventory" || super::sunset_refill::loot(game, m) {
+    let in_screen = game.screen == Screen::Inventory && game.remote_menu().1 == "inventory";
+    // Off the screen: only with no other menu open (the player inventory's clicks need no screen on the server).
+    let closed = !m.b("Only in inventory") && game.screen == Screen::Playing && game.remote_menu().0 == 0;
+    if !(in_screen || closed) || (in_screen && super::sunset_refill::loot(game, m)) {
         return;
     }
     if ps(|p| {
@@ -857,16 +864,45 @@ fn inventory_cleaner(game: &mut Game<'_>, m: &Module) {
     }) {
         return;
     }
-    // Never from a slot Loadouts locks.
+    if super::sunset_combat_control::owner().is_some() {
+        return;
+    }
+    let wait = |m: &Module| m.n("Delay (ticks)") as u32 + 1 + rand(m.n("Delay variation") as usize + 1) as u32;
     let locked = super::sunset_loadouts::locked_slots();
-    let junk = if preset == "Custom" {
-        (0..36).find(|&i| !locked[i] && game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| passes(m, "Items", short(&s.item))))
+    let items: Vec<Option<plan::Item>> = (0..36).map(|i| game.inventory.get(i).and_then(|s| s.as_ref()).map(|s| plan_item(game, s))).collect();
+    let protected: Vec<bool> = (0..36)
+        .map(|i| locked[i] || items[i].as_ref().is_some_and(|s| listed(m.t("Protected items"), &s.name)))
+        .collect();
+    let kill_aura = super::sunset::with(|s| s.module("Kill Aura").map(|k| k.p("Combat version")).unwrap_or("Auto"));
+    let legacy = super::sunset_aura_timing::version(kill_aura, game.main_hand_attack_speed()).0 == super::sunset_aura_timing::Version::Legacy;
+    // The hotbar layout first: what you fight and build with.
+    let wants = plan::layout(m.t("Hotbar layout"));
+    if let Some((from, to)) = plan::hotbar_step(&items, &wants, &locked, legacy) {
+        game.remote_menu_ops(&[(Some(from), to as i32, Swap)]);
+        ps(|p| p.clean_wait = wait(m));
+        return;
+    }
+    // Then junk and worse duplicates, never a protected item.
+    let mut drop = if preset == "Custom" {
+        (0..36).filter(|&i| items[i].as_ref().is_some_and(|s| passes(m, "Items", &s.name))).collect()
     } else {
-        junk_slots(game, m).into_iter().find(|&i| !locked[i])
+        junk_slots(game, m)
     };
-    if let Some(i) = junk {
-        game.menu_ops(&[(Some(i), 1, Throw)]);
-        ps(|p| p.clean_wait = m.n("Delay (ticks)") as u32 + 1);
+    if m.b("Duplicates") {
+        let worn: [Option<plan::Item>; 4] = std::array::from_fn(|a| game.armor.get(a).and_then(|s| s.as_ref()).map(|s| plan_item(game, s)));
+        drop.extend(plan::duplicates(&items, &worn, &protected, legacy));
+    }
+    if let Some(i) = drop.into_iter().filter(|&i| !protected[i]).min() {
+        game.remote_menu_ops(&[(Some(i), 1, Throw)]);
+        ps(|p| p.clean_wait = wait(m));
+        return;
+    }
+    // Then the rest in order: two slots changing places, picked up and put down.
+    if m.b("Sort inventory")
+        && let Some((a, b)) = plan::sort_step(&items, 9..36, &locked)
+    {
+        game.remote_menu_ops(&[(Some(a), 0, Pickup), (Some(b), 0, Pickup), (Some(a), 0, Pickup)]);
+        ps(|p| p.clean_wait = wait(m));
     }
 }
 

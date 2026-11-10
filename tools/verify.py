@@ -3600,20 +3600,20 @@ def _():
         return ctl("inventory").get("counts", {})
 
     reset()
-    setting("inventorycleaner", "preset", "Custom")
-    only("inventorycleaner")
+    setting("inventorymanager", "preset", "Custom")
+    only("inventorymanager")
     cmd("clear @s", "item replace entity @s armor.head with minecraft:iron_helmet")
     wait(5)
-    setting("inventorycleaner", "preset", "PvP")
+    setting("inventorymanager", "preset", "PvP")
     wait(5)
     give = {0: "diamond_sword", 1: "iron_sword", 2: "stone_pickaxe", 3: "netherite_pickaxe", 4: "iron_helmet", 5: "stone 64",
             6: "stone 64", 7: "stone 64", 8: "arrow 64", 9: "arrow 64", 10: "arrow 64", 11: "dirt 32", 12: "torch 16", 13: "bread 8"}
     cmd(*[f"item replace entity @s inventory.{i} with minecraft:{v}" for i, v in give.items()])
     got = clean()
-    setting("inventorycleaner", "blocks", "64")
+    setting("inventorymanager", "blocks", "64")
     fewer = clean().get("minecraft:stone")
     only()
-    setting("inventorycleaner", "preset", "Custom")
+    setting("inventorymanager", "preset", "Custom")
     cmd("clear @s", "kill @e[type=item]")
     want = {"minecraft:diamond_sword": 1, "minecraft:netherite_pickaxe": 1, "minecraft:stone": 128, "minecraft:arrow": 64,
             "minecraft:torch": 16, "minecraft:bread": 8}
@@ -3622,23 +3622,23 @@ def _():
     return ok, f"PvP kept {got}; not as wanted: {wrong}; stone with Blocks 64: {fewer}"
 
 
-@test("Inventory Cleaner")
+@test("Inventory Manager")
 def _():
     cmd("item replace entity @s inventory.3 with minecraft:rotten_flesh 12", "item replace entity @s inventory.4 with minecraft:bread 4")
-    only("inventorycleaner")
+    only("inventorymanager")
     ctl("open-inventory")
     wait(30)
     ctl("close")
     counts = ctl("inventory").get("counts", {})
     gone, kept = "minecraft:rotten_flesh" not in counts, counts.get("minecraft:bread") == 4
-    setting("inventorycleaner", "items", "bread")
+    setting("inventorymanager", "items", "bread")
     ctl("open-inventory")
     wait(30)
     ctl("close")
     bread = "minecraft:bread" not in ctl("inventory").get("counts", {})
     # List mode Blacklist: everything but the listed items goes (the clean() after the test empties the rest).
     cmd("clear @s", "item replace entity @s inventory.3 with minecraft:rotten_flesh 12", "item replace entity @s inventory.4 with minecraft:bread 4")
-    setting("inventorycleaner", "list mode", "Blacklist")
+    setting("inventorymanager", "list mode", "Blacklist")
     ctl("open-inventory")
     wait(30)
     ctl("close")
@@ -7652,7 +7652,7 @@ SWEEPS = [
                          "elytraboost", "chestswap", "scaffold", "timer", "fastplace", "breakdelay", "autoclicker", "autoweapon",
                          "triggerbot", "autoarmor", "autoreplenish", "autogap", "airplace", "reach", "autotrap", "autoweb",
                          "holefiller", "aimassist", "crystaloptimizer", "flamethrower", "autoshearer", "automount",
-                         "cheststealer", "inventorycleaner", "middleclickextra", "autofish")
+                         "cheststealer", "inventorymanager", "middleclickextra", "autofish")
 ]
 
 for _keys, _sets in SWEEPS:
@@ -10260,7 +10260,7 @@ def _():
 def _():
     # A kit with Armour and Full layout and slots 1 and 10 locked: a sword and a bow in slots 1 and 2, stone and apples
     # in the main inventory's first and sixth, a totem in the off hand, an iron helmet and a diamond chestplate worn.
-    # Everything moved elsewhere: .loadout kit puts it all back. Then the locked slots: Inventory Cleaner throws the
+    # Everything moved elsewhere: .loadout kit puts it all back. Then the locked slots: Inventory Manager throws the
     # dirt of slot 11 but not of 1 and 10. Refill broken tools: the sword of slot 1 breaks on a pig, the spare from
     # the inventory takes its place. Export, then import the file under another name.
     def said(command):
@@ -10297,11 +10297,11 @@ def _():
               check("execute if items entity @s armor.chest minecraft:diamond_chestplate"))
     locked = next((c for c in said(".settings loadouts") if c.startswith("Locked slots:")), "")
     # The locked slots (the kit's 1 and 10) keep their dirt.
-    setting("inventorycleaner", "preset", "Custom")
-    setting("inventorycleaner", "items", "dirt")
+    setting("inventorymanager", "preset", "Custom")
+    setting("inventorymanager", "items", "dirt")
     cmd("clear @s", "item replace entity @s hotbar.0 with minecraft:dirt 2", "item replace entity @s inventory.0 with minecraft:dirt 3",
         "item replace entity @s inventory.1 with minecraft:dirt 4")
-    only("loadouts", "inventorycleaner")
+    only("loadouts", "inventorymanager")
     ctl("open-inventory")
     wait(30)
     ctl("close")
@@ -10337,7 +10337,7 @@ def _():
     only()
     ok = (layout == ("diamond_sword", "bow", "stone", "apple", "totem_of_undying", True, True) and locked == "Locked slots: 1 10"
           and cleaned == ("dirt", "dirt", "") and refilled == ("diamond_sword", "") and any("2: shared" in l for l in listed))
-    return ok, (f"after .loadout kit (slot 1, 2, 10, 15, off hand, helmet, chestplate): {layout}, {locked!r}; Inventory Cleaner "
+    return ok, (f"after .loadout kit (slot 1, 2, 10, 15, off hand, helmet, chestplate): {layout}, {locked!r}; Inventory Manager "
                 f"on dirt in slots 1, 10 (locked) and 11: {cleaned}; after the sword broke (slot 1, spare's slot): {refilled}; "
                 f"export {exported[:1]}, import {imported[:1]}, list {listed}")
 
@@ -12241,17 +12241,17 @@ def _():
                 f"Key: {unheld} before R, {keyed} while held")
 
 
-@test("Inventory Cleaner (Loot key)")
+@test("Inventory Manager (Loot key)")
 def _():
     # Three totems (one a slot) and seven pearl stacks: holding the Loot key G with the inventory open drops totems down
     # to Keep totems (1) slots, then pearl stacks down to Keep pearl stacks (5); nothing goes without the key.
-    setting("inventorycleaner", "loot key", "G")
-    setting("inventorycleaner", "items", "rotten_flesh")
+    setting("inventorymanager", "loot key", "G")
+    setting("inventorymanager", "items", "rotten_flesh")
     reset()
     lines = [f"item replace entity @s inventory.{i} with minecraft:totem_of_undying" for i in range(3)]
     lines += [f"item replace entity @s inventory.{i} with minecraft:ender_pearl 16" for i in range(3, 10)]
     cmd(*lines)
-    only("inventorycleaner")
+    only("inventorymanager")
     ctl("open-inventory")
     wait(20)
     before = (items_of("totem_of_undying"), items_of("ender_pearl"))
@@ -12262,7 +12262,7 @@ def _():
     ctl("close")
     only()
     cmd("kill @e[type=item]")
-    say(".reset inventorycleaner")
+    say(".reset inventorymanager")
     ok = before == (3, 112) and after == (1, 80)
     return ok, f"(totems, pearls) before the key {before}, after holding it {after}"
 

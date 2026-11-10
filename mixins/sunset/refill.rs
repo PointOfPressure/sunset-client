@@ -1,5 +1,5 @@
 // Inventory routines on modules that had a silent version already: Auto Replenish's Inventory open and Key modes and
-// its Potion refill, and Inventory Cleaner's Loot key. Each is one click step at a time with the module's delay
+// its Potion refill, and Inventory Manager's Loot key. Each is one click step at a time with the module's delay
 // between, from the player's own inventory menu (no container open), never from a slot Loadouts locks.
 use super::sunset::{Module, key_from_text, menu_click};
 use super::sunset_util::short;
@@ -104,7 +104,7 @@ pub(super) fn replenish(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// Inventory Cleaner's Loot key: held with your inventory screen open, it makes room for loot by dropping whole stacks
+// Inventory Manager's Loot key: held with your inventory screen open, it makes room for loot by dropping whole stacks
 // of totems while more slots than Keep totems hold one, then ender pearl stacks past Keep pearl stacks; one stack a
 // step, Delay apart. True while the key is held (the junk list waits).
 pub(super) fn loot(game: &mut Game<'_>, m: &Module) -> bool {
