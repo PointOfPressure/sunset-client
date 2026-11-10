@@ -867,7 +867,8 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
     if super::sunset_combat_control::owner().is_some() {
         return;
     }
-    let wait = |m: &Module| m.n("Delay (ticks)") as u32 + 1 + rand(m.n("Delay variation") as usize + 1) as u32;
+    // The wait after a step, rolled here: rand() takes the PS lock itself, so it must not run inside a ps() closure.
+    let wait = m.n("Delay (ticks)") as u32 + 1 + rand(m.n("Delay variation") as usize + 1) as u32;
     let locked = super::sunset_loadouts::locked_slots();
     let items: Vec<Option<plan::Item>> = (0..36).map(|i| game.inventory.get(i).and_then(|s| s.as_ref()).map(|s| plan_item(game, s))).collect();
     let protected: Vec<bool> = (0..36)
@@ -879,7 +880,7 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
     let wants = plan::layout(m.t("Hotbar layout"));
     if let Some((from, to)) = plan::hotbar_step(&items, &wants, &locked, legacy) {
         game.remote_menu_ops(&[(Some(from), to as i32, Swap)]);
-        ps(|p| p.clean_wait = wait(m));
+        ps(|p| p.clean_wait = wait);
         return;
     }
     // Then junk and worse duplicates, never a protected item.
@@ -894,7 +895,7 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
     }
     if let Some(i) = drop.into_iter().filter(|&i| !protected[i]).min() {
         game.remote_menu_ops(&[(Some(i), 1, Throw)]);
-        ps(|p| p.clean_wait = wait(m));
+        ps(|p| p.clean_wait = wait);
         return;
     }
     // Then the rest in order: two slots changing places, picked up and put down.
@@ -902,7 +903,7 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
         && let Some((a, b)) = plan::sort_step(&items, 9..36, &locked)
     {
         game.remote_menu_ops(&[(Some(a), 0, Pickup), (Some(b), 0, Pickup), (Some(a), 0, Pickup)]);
-        ps(|p| p.clean_wait = wait(m));
+        ps(|p| p.clean_wait = wait);
     }
 }
 
