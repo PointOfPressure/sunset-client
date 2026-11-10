@@ -545,7 +545,7 @@ pub fn hold(session: &super::Session, events: Vec<super::Event>) -> Vec<super::E
     }
     // Sunset's tick stopped coming (off, a menu, no world): nothing waits.
     let now = Instant::now();
-    let on = now - d.told < Duration::from_millis(250);
+    let on = horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() && now - d.told < Duration::from_millis(250);
     if d.held.is_empty() && !on {
         return events;
     }
@@ -689,7 +689,7 @@ pub fn backtrack_hold(session: &super::Session, events: Vec<super::Event>) -> Ve
         b.switched = false;
     }
     let now = Instant::now();
-    let on = now - b.told < Duration::from_millis(250);
+    let on = horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() && now - b.told < Duration::from_millis(250);
     if b.held.is_empty() && !on {
         b.server = None;
         b.switched = false;

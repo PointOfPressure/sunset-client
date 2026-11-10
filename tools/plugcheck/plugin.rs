@@ -14,6 +14,10 @@ static SEEN: Mutex<Vec<(&'static str, u64)>> = Mutex::new(Vec::new());
 static ORDER: Mutex<String> = Mutex::new(String::new());
 static LAST: Mutex<String> = Mutex::new(String::new());
 static REPLACE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static WATCH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static WATCH_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static FROZEN: Mutex<Option<Vec<(&'static str, u64)>>> = Mutex::new(None);
+static DORMANT_TICKS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 fn seen(what: &'static str) {
     let mut s = SEEN.lock().unwrap_or_else(|e| e.into_inner());
@@ -28,6 +32,23 @@ fn last(text: String) {
 }
 
 pub(super) fn tick(game: &mut Game<'_>) {
+    // This test-only direct hook observes the stopped bus without dispatching a
+    // plugin callback. Real direct hooks must cooperate with api::running().
+    if WATCH.load(std::sync::atomic::Ordering::Relaxed) && !api::running() {
+        let now = SEEN.lock().unwrap_or_else(|e| e.into_inner()).iter().copied().filter(|(n, _)| *n != "stop").collect::<Vec<_>>();
+        let mut frozen = FROZEN.lock().unwrap_or_else(|e| e.into_inner());
+        if frozen.as_ref().is_some_and(|before| *before != now) {
+            WATCH_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        frozen.get_or_insert(now);
+        drop(frozen);
+        // After Panic no plugin command runs (`.plugcheck watch-result` is the server's chat then): the result goes
+        // to the game's log, for verify.py, once the stale task's time has long passed.
+        if DORMANT_TICKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1 == 205 {
+            WATCH.store(false, std::sync::atomic::Ordering::Relaxed);
+            log::info!("{}", watch_result());
+        }
+    }
     api::plugin(game, ID, "0.1.0", setup);
     api::plugin(game, "plugcrash", "0.1.0", |p| {
         p.command("crash", "panics (a test)", |_game, _args| panic!("boom from plugcrash"));
@@ -80,6 +101,7 @@ fn setup(p: &mut api::Plugin) {
     p.on_join(|_game| seen("join"));
     p.on_disconnect(|_game, d| last(format!("left {} server {} retry {}", d.reason, d.by_server, d.retry)));
     p.on_stop(|_game, why| {
+        *FROZEN.lock().unwrap_or_else(|e| e.into_inner()) = None;
         seen("stop");
         last(format!("stop {why}"));
     });
@@ -114,8 +136,29 @@ fn setup(p: &mut api::Plugin) {
     p.command("plugcheck", "the plugin API's test cases", run);
 }
 
+// What the bus did while Sunset was stopped: nothing changed, one stop, the stale task never ran, no task left.
+fn watch_result() -> String {
+    let frozen = FROZEN.lock().unwrap_or_else(|e| e.into_inner()).is_some();
+    let failed = WATCH_FAILED.load(std::sync::atomic::Ordering::Relaxed);
+    let seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    let stops = seen.iter().find(|(n, _)| *n == "stop").map_or(0, |(_, n)| *n);
+    let stale = seen.iter().any(|(n, _)| *n == "stale_task");
+    format!("plugcheck panic frozen {frozen} changed {failed} stops {stops} stale {stale} tasks {}", api::tasks())
+}
+
 fn run(game: &mut Game<'_>, args: &[&str]) {
     match args.first().copied().unwrap_or("") {
+        "watch" => {
+            *FROZEN.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            WATCH_FAILED.store(false, std::sync::atomic::Ordering::Relaxed);
+            DORMANT_TICKS.store(0, std::sync::atomic::Ordering::Relaxed);
+            WATCH.store(true, std::sync::atomic::Ordering::Relaxed);
+            api::after(200, |_game| seen("stale_task"));
+        }
+        "watch-result" => {
+            WATCH.store(false, std::sync::atomic::Ordering::Relaxed);
+            api::chat(game, &watch_result());
+        }
         "reset" => {
             SEEN.lock().unwrap_or_else(|e| e.into_inner()).clear();
             ORDER.lock().unwrap_or_else(|e| e.into_inner()).clear();

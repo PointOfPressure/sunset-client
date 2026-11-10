@@ -38,7 +38,9 @@ pub(super) fn sent_input(game: &Game<'_>) -> u8 {
         })
         .map_or(0, |(_, _, input)| *input)
 }
-pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
+// Lifecycle bookkeeping only: keep native sendChanges retry caches accurate
+// while ordinary module observers are stopped.
+pub(super) fn observe(game: &Game<'_>, packet: &S) {
     if let (S::PlayerInput(input), Some(remote)) = (packet, &game.remote) {
         *INPUT.lock().unwrap_or_else(|e| e.into_inner()) =
             Some((remote.session.counters.clone(), game.dim, input.flags));
@@ -59,6 +61,26 @@ pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
     if let (Some(rotation), Some(remote)) = (rotation, &game.remote) {
         *LOOK.lock().unwrap_or_else(|e| e.into_inner()) = Some((remote.session.counters.clone(), game.dim, rotation));
     }
+}
+
+// The one place that tells Sunset a packet is going on the wire now, whether the send hook let it through or Fake Lag
+// let it go later, so every module that tracks what the server has hears of each packet once, at the time it goes.
+pub(super) fn delivered(game: &Game<'_>, packet: &S) {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() {
+        observe(game, packet);
+        return;
+    }
+    forwarded(game, packet);
+    super::sunset_cart::sent(game, packet);
+    super::sunset_render::sent(game, packet);
+    super::sunset_drain::sent(game, packet);
+    super::sunset_effects::sent(game, packet);
+    super::sunset_lag::sent(game, packet);
+    super::sunset_backtrack::sent(game, packet);
+}
+
+pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
+    observe(game, packet);
     if !game.native_window() || !game.native_on(super::sunset::ID) {
         if game.native_window() {
             super::sunset_gui_move::forwarded(game, packet);
@@ -73,18 +95,6 @@ pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
     super::sunset_melee::forwarded(game, packet);
     super::sunset_auto_mace::forwarded(game, packet);
     super::sunset_combat_inventory::forwarded(game, packet);
-}
-
-// The one place that tells Sunset a packet is going on the wire now, whether the send hook let it through or Fake Lag
-// let it go later, so every module that tracks what the server has hears of each packet once, at the time it goes.
-pub(super) fn delivered(game: &Game<'_>, packet: &S) {
-    forwarded(game, packet);
-    super::sunset_cart::sent(game, packet);
-    super::sunset_render::sent(game, packet);
-    super::sunset_drain::sent(game, packet);
-    super::sunset_effects::sent(game, packet);
-    super::sunset_lag::sent(game, packet);
-    super::sunset_backtrack::sent(game, packet);
 }
 
 pub(super) fn reset_look() {

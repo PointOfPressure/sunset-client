@@ -1,5 +1,7 @@
 // Clear Water: a water sprite is laid out at every lower opacity just before itself, so its own layer follows them.
 fn sunset_water_sprites(this: &mut Sprites, root: &Path, name: &str, decoded: &crate::sprite_cache::Decoded) -> std::ops::ControlFlow<Result<u32>> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     use crate::mesher::sunset_water as w;
     let Some(sprite) = w::SPRITES.iter().position(|s| *s == name) else {
         return std::ops::ControlFlow::Continue(());

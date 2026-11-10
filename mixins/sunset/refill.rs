@@ -18,6 +18,8 @@ struct Refill {
 
 static REFILL: Mutex<Option<Refill>> = Mutex::new(None);
 
+pub(super) fn shutdown() { *REFILL.lock().unwrap_or_else(|e| e.into_inner()) = None; }
+
 fn st<R>(f: impl FnOnce(&mut Refill) -> R) -> R {
     f(REFILL.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Refill::default))
 }

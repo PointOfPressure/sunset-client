@@ -178,14 +178,12 @@ def clean():
         wait(2)
         if state().get("screen") not in ("playing", None):
             ctl("close")
-    # Every module off, whatever a test left on (a toggle typed while dead never arrives), then the HUD back on.
-    # .panic hides Sunset too; the second one brings it back.
-    say(".panic")
-    say(".panic")
+    # Every module a test turned on back to its defaults (off), whatever it left (a toggle typed while dead never
+    # arrives), then the HUD as it starts. Not .panic: that stops Sunset until the game restarts.
+    for m in sorted(on | touched):
+        say(f".reset {m}")
     say(".reset hud")
     on.clear()
-    for m in sorted(touched):
-        say(f".reset {m}")
     touched.clear()
     # Land first, in whatever game mode, so a fall a test left you in costs nothing.
     cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
@@ -1805,29 +1803,68 @@ def _():
     return rate_now > 30, f"{rate_now:.0f} ticks a second after Enter (20 is normal, Timer doubles it)"
 
 
-@test("Panic")
+@test("Panic (ends Sunset for the session, runs last)")
 def _():
-    # .panic turns everything off and hides Sunset on screen: nothing said, no HUD; .panic again brings it back
-    # (everything still off). Sunset stays listed in Options > Mods throughout.
-    only("sprint", "fastplace", "fullbright")
+    # Hard Panic stops Sunset until the game restarts: no HUD or chat line of Sunset's, every module off (sprint let
+    # go), its row gone from Options > Mods, its commands the server's chat (.panic again brings nothing back), no
+    # plugin handler or task runs, and the player stays in the same server session.
+    def mods_page():
+        ctl("options", "mods")
+        wait(3)
+        labels = json.dumps(ctl("ui").get("widgets") or [])
+        ctl("close")
+        wait(2)
+        return "Sunset" in labels
+
+    plugins = "plugcheck events" in " ".join(said_since(log_mark(), ".plugcheck events"))
+    if plugins:
+        say(".plugcheck reset")
+        say(".plugcheck watch")
+    only("sprint", "noslow", "fullbright")
+    listed = mods_page()
     shown = watermark()
+    kicked = len(kicks)
     mark = log_mark()
     say(".panic")
     wait(6)
-    said = sunset_said(mark)
     sprinting = state()["player"].get("sprinting")
     on.clear()
     hidden = watermark()
-    mark = log_mark()
     say(".panic")
+    say(".modules")
     wait(6)
-    back_said = sunset_said(mark)
-    # Panic switched the HUD module off too: put it back as it starts.
-    say(".reset hud")
-    back = watermark()
-    ok = not sprinting and shown and not said and not hidden and back and back_said
-    return ok, (f"HUD before {shown}; after .panic Sunset says {said}, sprinting: {sprinting}, HUD {hidden}; "
-                f"after .panic again it says {back_said}, HUD {back}")
+    said = sunset_said(mark)
+    gone = not mods_page()
+    wait(210)
+    with open(os.path.join(session_dir(), "home", "logs", "latest.log"), errors="replace") as f:
+        f.seek(mark)
+        logged = [l.strip() for l in f if "plugcheck panic frozen" in l]
+    expected = "plugcheck panic frozen true changed false stops 1 stale false tasks 0"
+    plugin_ok = not plugins or any(expected in l for l in logged)
+    connected = bool(state().get("player")) and len(kicks) == kicked
+    ok = listed and shown and not sprinting and not hidden and not said and gone and plugin_ok and connected
+    return ok, (f"listed before {listed}, HUD before {shown}; after .panic: sprinting {sprinting}, HUD {hidden}, "
+                f"Sunset said {said}, Options > Mods without it {gone}, plugin bus {logged[-1:] if plugins else 'not staged'}, "
+                f"still connected {connected}")
+
+
+_.ends_session = True
+
+
+@test("Panic: lifecycle and stale work")
+def _():
+    import pathlib, shutil, tempfile
+    compiler = shutil.which("rustc")
+    if not compiler:
+        return None, "needs rustc for the standalone lifecycle tests"
+    source = pathlib.Path(__file__).resolve().parents[1] / "mixins" / "sunset" / "lifecycle.rs"
+    with tempfile.TemporaryDirectory(prefix="sunset-panic-") as directory:
+        binary = pathlib.Path(directory) / ("tests.exe" if os.name == "nt" else "tests")
+        compiled = subprocess.run([compiler, "--edition=2024", "--test", str(source), "-o", str(binary)], capture_output=True, text=True, timeout=120)
+        if compiled.returncode:
+            return False, compiled.stderr[-1500:]
+        result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
+        return result.returncode == 0, (result.stdout + result.stderr)[-1500:]
 
 
 @test("Profiles (module)")
@@ -7940,12 +7977,10 @@ def light_clean():
     if state().get("screen") not in ("playing", None):
         ctl("key", "esc", "tap")
         wait(2)
-    say(".panic")
-    say(".panic")
+    for m in sorted(on | touched):
+        say(f".reset {m}")
     say(".reset hud")
     on.clear()
-    for m in sorted(touched):
-        say(f".reset {m}")
     touched.clear()
 
 
@@ -11015,14 +11050,13 @@ def _():
 
 @test(".goto (stopping)")
 def _():
-    # 14 blocks east, stopped after 2 by: the inventory, the ClickGUI (a real ` press), Panic on a key, A held
-    # (you walk left instead, at once) and .goto stop. Each must leave you standing (no keys held by the walk).
+    # 14 blocks east, stopped after 2 by: the inventory, the ClickGUI (a real ` press), A held (you walk left instead,
+    # at once) and .goto stop. Each must leave you standing (no keys held by the walk). Not Panic: it would stop Sunset
+    # for the rest of the run (all_off cancels the walk; the Panic test runs last).
     window = x_window()
-    say(".bind panic k")
     stops = {
         "inventory": lambda: ctl("key", "e", "tap"),
         "ClickGUI": (lambda: x_keys(window, "grave")) if window else None,
-        "Panic": lambda: ctl("key", "k", "tap"),
         "A held": lambda: ctl("key", "a", "down"),
         ".goto stop": lambda: say(".goto stop"),
     }
@@ -11040,10 +11074,6 @@ def _():
             wait(3)
         if state().get("screen") not in ("playing", None):
             ctl("close")
-        if name == "Panic":
-            say(".panic")
-    say(".bind panic none")
-    touched.discard("panic")
     stopped = all(left > 3 and (drift > 0.5 if name == "A held" else drift < 0.2) for name, (_, left, drift) in got.items())
     return stopped, f"(walked, blocks short, moved after: A held walks on by hand, the rest stand) {got}" + ("" if window else "; ClickGUI: no window")
 
@@ -12788,8 +12818,8 @@ def _():
 @test("Plugin API: Hello command and timers")
 def _():
     # .hello 3: three lines, a second apart (after()); a bad count: the usage line; .hello 9 is held to 5; .hello 5 then
-    # .panic: the lines still waiting are dropped (Panic stops every plugin's tasks); .hello total counts up and is
-    # kept in the plugin's data folder.
+    # a stop (plugcheck's api::stop_everything, when staged): the lines still waiting are dropped (a stop drops every
+    # plugin's tasks); .hello total counts up and is kept in the plugin's data folder.
     setting("hello", "message", "Timer line")
     mark = log_mark()
     say(".hello 3")
@@ -12804,11 +12834,14 @@ def _():
     wait(120)
     nine = sum(1 for l in sunset_said(mark) if l == "Timer line")
     mark = log_mark()
+    stoppable = "plugcheck events" in " ".join(said_since(mark, ".plugcheck events"))
+    mark = log_mark()
     say(".hello 5")
-    say(".panic")
-    say(".panic")
+    if stoppable:
+        say(".plugcheck stop")
+        on.clear()
     wait(120)
-    panicked = sum(1 for l in sunset_said(mark) if l == "Timer line")
+    panicked = sum(1 for l in sunset_said(mark) if l == "Timer line") if stoppable else 0
     mark = log_mark()
     tot = said_since(mark, ".hello total", ".hello total")
     nums = [int(n) for l in tot for n in re.findall(r"ran (\d+) times", l)]
@@ -12817,7 +12850,7 @@ def _():
     ok = (three == 3 and first_three is not None and first_three >= 15 and any("Use .hello [times]" in l for l in bad)
           and nine == 5 and panicked <= 1 and len(nums) == 2 and nums[1] == nums[0] + 1 and kept == str(nums[1]))
     return ok, (f".hello 3: {three} lines (3rd by poll {first_three}, {time.time() - t0:.0f} s); bad count {bad}; .hello 9: {nine}; "
-                f".hello 5 then .panic: {panicked}; totals {nums}, file {kept}")
+                f".hello 5 then a stop: {panicked if stoppable else 'plugcheck not staged'}; totals {nums}, file {kept}")
 
 
 @test("Plugin API: Hello cancels hits, draws HUD and world")
@@ -14165,7 +14198,8 @@ if __name__ == "__main__":
     if has_alarm:
         signal.signal(signal.SIGALRM, overran)
     arena()
-    for fn in TESTS:
+    # A test that ends Sunset's session (Hard Panic) goes after every other one, and nothing is cleaned up after it.
+    for fn in sorted(TESTS, key=lambda t: getattr(t, "ends_session", False)):
         if ONLY and fn.test_name not in ONLY:
             continue
         if has_alarm:
@@ -14181,6 +14215,8 @@ if __name__ == "__main__":
         if ok is not None:
             results.append((fn.test_name, ok, note))
         print("SKIP" if ok is None else "PASS" if ok else "FAIL", fn.test_name, "-", note, flush=True)
+        if getattr(fn, "ends_session", False):
+            break
         (light_clean if getattr(fn, "light", False) else clean)()
     p = sum(1 for _, ok, _ in results if ok)
     print(f"\n{p}/{len(results)} passed")

@@ -5,6 +5,14 @@ fn sunset_send(
     game: &crate::game::Game<'_>,
     packet: &horizon_protocol::packets::play::Serverbound,
 ) -> std::ops::ControlFlow<()> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() {
+        if horizon_protocol::connection::sunset_lifecycle::RUNTIME.stopping() {
+            crate::game::sunset_lag::drain(game);
+        }
+        crate::game::sunset_combat_wire::observe(game, packet);
+        return std::ops::ControlFlow::Continue(());
+    }
+
     use crate::game::sunset::Out;
     // Friend Guard: no hit on a friend, whoever sends it.
     if game.native_window()

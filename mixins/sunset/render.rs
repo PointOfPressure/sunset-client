@@ -178,6 +178,25 @@ fn on<'a>(mods: &'a [Module], name: &str) -> Option<&'a Module> {
 
 static IN_CAMERA: AtomicBool = AtomicBool::new(false);
 
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    pre_tick(game, &[]);
+    engine_flags(game, &[]);
+    no_render(game, &[]);
+    xray(game, &[]);
+    clear_water(game, &[]);
+    horizon_client::screen_effects::sunset_overlay::NO_MENU.store(false, Ordering::Relaxed);
+    horizon_client::screen_effects::sunset_overlay::INVENTORY_BLUR.store(false, Ordering::Relaxed);
+    horizon_client::font::sunset_font::STYLE.store(0, Ordering::Relaxed);
+    NO_SLOW_KNOCKED.store(false, Ordering::Relaxed);
+    *ZOOM.lock().unwrap_or_else(|e| e.into_inner()) = Zoom { level: 0.0, now: 1.0, at: None, held: false };
+    rs(|r| *r = Rs::default());
+    if let Some(r) = game.renderer.as_mut() {
+        r.fullbright = game.settings.extras.fullbright;
+        horizon_client::gfx::sunset_atmosphere_renderer::release(r);
+    }
+    horizon_client::gfx::sunset_block_overlay_flags::publish(false);
+}
+
 // ---- Zoom (as Wurst's WI Zoom)
 
 // The zoom the key holds (the wheel changes it), the zoom the view is at as it eases there, when it last moved, and

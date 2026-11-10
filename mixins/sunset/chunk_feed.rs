@@ -19,13 +19,16 @@ pub(super) struct Feed<T> {
 impl<T: Send + 'static> Feed<T> {
     // A thread named `name` that runs `look` on each chunk, which puts what it finds in the Vec it is given.
     pub(super) fn start(name: &str, key: String, mut look: impl FnMut(&Chunk, &mut Vec<T>) + Send + 'static) -> Option<Self> {
+        let generation = horizon_protocol::connection::sunset_lifecycle::RUNTIME.token();
         let (jobs, rx) = channel::<Arc<Chunk>>();
         let (tx, found) = channel();
         let thread = move || {
             let mut out = Vec::new();
             for chunk in rx {
+                if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(generation) { return; }
                 look(&chunk, &mut out);
                 for t in out.drain(..) {
+                    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(generation) { return; }
                     if tx.send(t).is_err() {
                         return;
                     }

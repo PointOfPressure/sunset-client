@@ -6,6 +6,8 @@
 // before the tick, so the PlayerInput sent says the same keys), and without a sprint when its Sprint is Off. Both are
 // taken here, so the call again passes.
 fn sunset_screen_keys(world: &mut MotionWorld<'_, '_, '_>, keys: crate::sprint::Keys, window: i32) -> std::ops::ControlFlow<Result<()>> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     if world.player.item_use_speed.is_some() && crate::motion::sunset_motion::no_slow_grim() {
         crate::motion::sunset_motion::set_across(None);
         crate::motion::sunset_motion::set_up(None);

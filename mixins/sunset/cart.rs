@@ -720,7 +720,7 @@ pub(super) fn reset(game: &mut Game<'_>) {
     let (job, back) = st(|s| (s.job.take(), s.aura.swapped.take().or(s.cover_back.take())));
     if let Some(j) = job {
         if matches!(j.step, Step::Draw) {
-            let _ = game.play_mouse(MouseButton::Right, false);
+            let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
         }
         if j.back < 9 && game.selected != j.back {
             hold(game, j.back);
@@ -923,7 +923,7 @@ fn give_up(game: &mut Game<'_>, job: &Job, why: &str) {
         util::report(game, &format!("Cart: pearl skipped, {why}"));
     }
     if matches!(job.step, Step::Draw) {
-        let _ = game.play_mouse(MouseButton::Right, false);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
     }
     finish(game, job);
 }
@@ -1188,7 +1188,7 @@ fn shoot_step(game: &mut Game<'_>, m: &Module, mut job: Job, now: u64, fov: f64)
     }
     if game.using.is_none() {
         st(|s| s.own_shot = true);
-        let _ = game.play_mouse(MouseButton::Right, true);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
         job.step = Step::Draw;
         job.looked = 0;
         st(|s| s.job = Some(job));
@@ -1225,7 +1225,7 @@ fn draw_step(game: &mut Game<'_>, m: &Module, mut job: Job, now: u64, fov: f64) 
         return false;
     }
     st(|s| s.own_shot = true);
-    let _ = game.play_mouse(MouseButton::Right, false);
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
     shot_gone(game, job, now, want.unwrap_or((game.yaw, game.pitch)), draw_power(ticks));
     true
 }
@@ -1314,7 +1314,7 @@ fn auto_hit(game: &mut Game<'_>, m: &Module) -> bool {
     let have = have_look(game, want);
     if f64::from(ticks) >= m.n("Auto hit charge") && have {
         st(|s| s.auto_released = true);
-        let _ = game.play_mouse(MouseButton::Right, false);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
         return true;
     }
     false

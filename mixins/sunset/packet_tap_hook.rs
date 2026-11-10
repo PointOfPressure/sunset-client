@@ -4,6 +4,12 @@
 // Knockback Delay hold belongs to the session it came from, and the connection's boundaries are counted for Fake Lag.
 fn sunset_packet_tap(session: &Session, value: Vec<Event>) -> Vec<Event> {
     crate::net::sunset_packets::note(session, &value);
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() {
+        // Preserve incoming server authority: release delayed packets, without
+        // calling observers, filters or plugin handlers while stopped.
+        let value = crate::net::sunset_packets::backtrack_hold(session, value);
+        return crate::net::sunset_packets::hold(session, value);
+    }
     let value = crate::net::sunset_packets::trap_filter(value);
     let value = crate::net::sunset_packets::backtrack_hold(session, value);
     let value = crate::net::sunset_packets::hold(session, value);

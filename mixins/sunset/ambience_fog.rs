@@ -2,6 +2,8 @@
 // off while Custom fog is on, and sets the fog's distances and colour here instead (in air: water and lava keep
 // theirs).
 fn sunset_ambience_fog(fog: &mut FogData, input: &FogInputs) -> std::ops::ControlFlow<()> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     let custom = *sunset_fog::CUSTOM.lock().unwrap_or_else(|e| e.into_inner());
     let Some((start, end, rgb, cover)) = custom.filter(|_| input.fog_type == FogType::Atmospheric) else {
         return std::ops::ControlFlow::Continue(());

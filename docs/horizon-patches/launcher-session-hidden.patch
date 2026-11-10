@@ -1,0 +1,136 @@
+diff --git a/launcher/src/instance_mods.rs b/launcher/src/instance_mods.rs
+index bc897d4..7eb2be6 100644
+--- a/launcher/src/instance_mods.rs
++++ b/launcher/src/instance_mods.rs
+@@ -96,6 +96,8 @@ impl InstanceMods {
+ 
+ /// The mods of the instance at `home`: a Java one's jars in `mods/` (on or off), a Horizon one's
+ /// registry mods. Each jar names itself (`fabric.mod.json`, `quilt.mod.json`...), else its file.
++/// A native mod that a game running from `home` hides (`native_status::hidden`) is left out until
++/// that game ends; it stays installed, on and built as it was.
+ fn read(home: &Path, java_instance: bool) -> Vec<ModRow> {
+     let entries: Vec<installed::Entry> = installed::Installed::load(home)
+         .entries
+@@ -165,6 +167,19 @@ fn read(home: &Path, java_instance: bool) -> Vec<ModRow> {
+                 }),
+         );
+     }
++    if !java_instance {
++        let hidden = native_status::hidden(home);
++        if !hidden.is_empty() {
++            rows.retain(|r| {
++                let id = r
++                    .native
++                    .as_ref()
++                    .map(|n| n.id.as_str())
++                    .or_else(|| r.entry.as_ref().and_then(horizon::mod_id));
++                id.is_none_or(|id| !hidden.contains(id))
++            });
++        }
++    }
+     rows.sort_by_key(|r| r.name.to_lowercase());
+     rows
+ }
+diff --git a/launcher/src/native_status.rs b/launcher/src/native_status.rs
+index c150e6c..4650fd9 100644
+--- a/launcher/src/native_status.rs
++++ b/launcher/src/native_status.rs
+@@ -205,10 +205,59 @@ fn parse_built(about: &serde_json::Value) -> Vec<Mod> {
+         .collect()
+ }
+ 
++/// Where a running game lists the native mods it hides from the launcher's lists for as long as
++/// it runs (Sunset's Panic): `<id>.<pid>.lock`, each held under an exclusive lock by that game
++/// process. The installation is untouched; only what the lists show changes.
++pub const SESSION_HIDDEN: &str = "horizon-session/hidden";
++
++/// The mod ids a game still running from `home` hides ([`SESSION_HIDDEN`]). A marker whose lock
++/// can be taken belongs to a game that has ended, however it ended (the system drops the lock
++/// with the process), so it hides nothing and is removed. Another instance's games have their own
++/// folder, so they hide nothing here.
++pub fn hidden(home: &Path) -> std::collections::BTreeSet<String> {
++    let mut ids = std::collections::BTreeSet::new();
++    let Ok(entries) = fs::read_dir(home.join(SESSION_HIDDEN)) else {
++        return ids;
++    };
++    for path in entries.flatten().map(|e| e.path()) {
++        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
++            continue;
++        };
++        // `<id>.<pid>.tmp` is a marker being made: its game locks it before naming it `.lock`.
++        let Some((id, pid)) = name
++            .strip_suffix(".lock")
++            .and_then(|stem| stem.rsplit_once('.'))
++        else {
++            continue;
++        };
++        if id.is_empty() || pid.parse::<u32>().is_err() {
++            continue;
++        }
++        let Ok(file) = fs::File::open(&path) else {
++            continue;
++        };
++        match file.try_lock_shared() {
++            Err(fs::TryLockError::WouldBlock) => {
++                ids.insert(id.to_owned());
++            }
++            Ok(()) => {
++                drop(file);
++                let _ = fs::remove_file(&path);
++            }
++            Err(fs::TryLockError::Error(_)) => {}
++        }
++    }
++    ids
++}
++
+ /// What [`state`] depends on, cheap to read on every frame: the folder, the version, the on/off
+-/// list and each `.hnmod`'s size and time. The Mods page reads the mods again when it changes.
++/// list, each `.hnmod`'s size and time, and the mods a running game hides ([`hidden`]). The Mods
++/// page reads the mods again when it changes.
+ pub fn fingerprint(home: &Path, version: Option<&str>) -> String {
+     let mut out = format!("{}\n{version:?}\n", home.display());
++    for id in hidden(home) {
++        out += &format!("hidden {id}\n");
++    }
+     // The on/off list (`browser::java::is_enabled`).
+     out += &fs::read_to_string(home.join("horizon-mods.txt")).unwrap_or_default();
+     for path in hnmods(home)
+@@ -238,6 +287,37 @@ fn stem(path: &Path) -> String {
+         .unwrap_or_default()
+ }
+ 
++#[cfg(test)]
++mod session_hidden_tests {
++    use super::*;
++
++    #[test]
++    fn only_markers_a_running_game_holds_hide_a_mod() {
++        let home = std::env::temp_dir().join(format!("hidden-native-mods-{}", std::process::id()));
++        let _ = fs::remove_dir_all(&home);
++        let dir = home.join(SESSION_HIDDEN);
++        fs::create_dir_all(&dir).unwrap();
++        assert!(hidden(&home).is_empty());
++        let before = fingerprint(&home, None);
++        // The game's marker, held as a running game holds it.
++        let held = fs::File::create(dir.join("sunset.4242.lock")).unwrap();
++        held.try_lock().unwrap();
++        // A game that ended: its marker is free.
++        drop(fs::File::create(dir.join("other.17.lock")).unwrap());
++        // Not markers.
++        fs::write(dir.join("notes.txt"), "").unwrap();
++        fs::write(dir.join("bad.lock"), "").unwrap();
++        assert_eq!(hidden(&home).into_iter().collect::<Vec<_>>(), ["sunset"]);
++        assert!(!dir.join("other.17.lock").exists(), "a stale marker is removed");
++        assert_ne!(fingerprint(&home, None), before, "the Mods tab reads its list again");
++        // The game exits (or is killed): the system lets the lock go.
++        drop(held);
++        assert!(hidden(&home).is_empty());
++        assert_eq!(fingerprint(&home, None), before);
++        let _ = fs::remove_dir_all(&home);
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;

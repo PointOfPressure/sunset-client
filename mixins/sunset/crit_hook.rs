@@ -4,6 +4,8 @@
 // on a block; Friend Guard and Auto Spear's Reach poke and Extended reach see the click first, then Auto Mace takes
 // the mace for it.
 fn sunset_crit_click(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<bool> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     if crate::game::sunset_combat_macros::active()
         || crate::game::sunset_parity::hit_blocked(game)
         || crate::game::sunset_click_fix::hit_blocked(game)

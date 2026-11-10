@@ -44,6 +44,11 @@ struct Takeoff {
 
 static TAKEOFF: Mutex<Option<Takeoff>> = Mutex::new(None);
 
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    undo(game);
+    st(|s| *s = Takeoff::default());
+}
+
 fn st<R>(f: impl FnOnce(&mut Takeoff) -> R) -> R {
     f(TAKEOFF.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Takeoff::default))
 }

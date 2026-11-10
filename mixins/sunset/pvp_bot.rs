@@ -139,7 +139,7 @@ pub(super) fn release(game: &mut Game<'_>) {
         }
     }
     if let Some(back) = eating {
-        let _ = game.play_mouse(MouseButton::Right, false);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
         hold(game, back);
     }
     for name in HANDS {
@@ -291,7 +291,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         (Some(_), true) => {
             press(game, &[KeyCode::KeyS]);
             if game.using.is_none() {
-                let _ = game.play_mouse(MouseButton::Right, true);
+                let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
             }
             return;
         }
@@ -301,7 +301,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
                 let back = game.selected;
                 press(game, &[KeyCode::KeyS]);
                 hold(game, slot);
-                let _ = game.play_mouse(MouseButton::Right, true);
+                let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
                 bot(|b| b.eating = Some(back));
                 return;
             }
@@ -437,15 +437,18 @@ fn begin_fight(game: &mut Game<'_>, id: u32, learn: bool) {
     let Some(uuid) = uuid.filter(|_| learn) else {
         return;
     };
-    if rivals(|r| r.contains_key(&uuid)) {
+    if rivals(|r| r.get(&uuid).is_some_and(Option::is_some)) {
         return;
     }
     rivals(|r| {
         r.insert(uuid, None);
     });
     let data = game.native_data_dir(sunset::ID);
+    let generation = horizon_protocol::connection::sunset_lifecycle::RUNTIME.token();
     std::thread::spawn(move || {
+        if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(generation) { return; }
         let read = super::sunset_rival_store::read(&data, uuid).ok().and_then(|text| Rival::parse(&text)).unwrap_or_default();
+        if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(generation) { return; }
         rivals(|r| {
             r.insert(uuid, Some(read));
         });
@@ -457,6 +460,7 @@ fn end_fight(game: &mut Game<'_>) {
     let Some(f) = bot(|b| b.fight.take()) else {
         return;
     };
+    if !sunset::running() { return; }
     let learn = with(|s| s.module(NAME).is_some_and(|m| m.b("Learn rivals")));
     let Some(uuid) = f.uuid.filter(|_| learn && f.ticks > 0) else {
         return;
@@ -476,7 +480,7 @@ fn end_fight(game: &mut Game<'_>) {
     };
     let data = game.native_data_dir(sunset::ID);
     std::thread::spawn(move || {
-        let _ = super::sunset_rival_store::save(&data, &[(uuid, next.text())]);
+        if sunset::running() { let _ = super::sunset_rival_store::save(&data, &[(uuid, next.text())]); }
     });
 }
 

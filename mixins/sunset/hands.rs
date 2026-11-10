@@ -25,12 +25,34 @@ struct Hands {
     keys: [Option<String>; 2],
     typing: bool,
     down: [bool; 2],
+    physical: [bool; 2],
     // Shield: it holds use, and the tick it last lowered the shield for a hit.
     raised: bool,
     lowered: Option<u64>,
 }
 
 static HANDS: Mutex<Option<Hands>> = Mutex::new(None);
+static RF_EVENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(super) fn rf_generated() -> bool { RF_EVENT.load(std::sync::atomic::Ordering::Relaxed) }
+
+pub(super) fn release_rf(game: &mut Game<'_>) {
+    let (down, physical) = hands(|h| (h.down, h.physical));
+    for (i, button) in [MouseButton::Left, MouseButton::Right].into_iter().enumerate() {
+        if down[i] && !physical[i] { game.physical_buttons.remove(&button); }
+    }
+}
+
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    let down = hands(|h| {
+        let down = [h.down[0], h.down[1] || h.raised];
+        *h = Hands { physical: h.physical, ..Hands::default() };
+        down
+    });
+    for (owned, button) in down.into_iter().zip([MouseButton::Left, MouseButton::Right]) {
+        if owned && !game.physical_buttons.contains(&button) { let _ = super::remote::sunset_combat_remote::mouse(game, button, false); }
+    }
+}
 
 fn hands<R>(f: impl FnOnce(&mut Hands) -> R) -> R {
     f(HANDS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Hands::default))
@@ -75,6 +97,12 @@ pub(super) fn rf_focus_lost() {
 // The window's key events, before anything sees them: RF Click's keys become mouse button presses and releases (a key
 // repeat becomes nothing). A key let go is always the button let go, even if typing started meanwhile.
 pub(super) fn rf_event(event: &mut WindowEvent) {
+    RF_EVENT.store(false, std::sync::atomic::Ordering::Relaxed);
+    if let WindowEvent::MouseInput { state, button, .. } = event {
+        let i = match button { MouseButton::Left => Some(0), MouseButton::Right => Some(1), _ => None };
+        if let Some(i) = i { hands(|h| h.physical[i] = *state == ElementState::Pressed); }
+    }
+    if !super::sunset::running() { return; }
     let WindowEvent::KeyboardInput { device_id, event: key, .. } = event else {
         return;
     };
@@ -107,6 +135,7 @@ pub(super) fn rf_event(event: &mut WindowEvent) {
     let Some(i) = button else {
         return;
     };
+    RF_EVENT.store(true, std::sync::atomic::Ordering::Relaxed);
     *event = if repeat {
         WindowEvent::HoveredFileCancelled
     } else {
@@ -158,7 +187,7 @@ pub(super) fn before_hits(game: &mut Game<'_>, hits: bool) {
     }
     game.send(S::PlayerAction(play::PlayerAction { action: 6, pos: [0; 3], direction: 0, sequence: 0 }));
     game.using = None;
-    let _ = game.play_mouse(MouseButton::Right, false);
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
     hands(|h| {
         h.raised = false;
         h.lowered = Some(game.ticks);
@@ -177,7 +206,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
         if raised {
             hands(|h| h.raised = false);
             if !game.physical_buttons.contains(&MouseButton::Right) {
-                let _ = game.play_mouse(MouseButton::Right, false);
+                let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
             }
         }
         return;
@@ -185,7 +214,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
     let delay = m.as_ref().map_or(0, |m| m.n("Shield re-raise delay") as u64);
     let rested = hands(|h| h.lowered.is_none_or(|t| game.ticks >= t.saturating_add(delay)));
     if !raised && rested && game.using.is_none() && !super::sunset::strike_waiting() {
-        let _ = game.play_mouse(MouseButton::Right, true);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
         hands(|h| h.raised = true);
     }
 }

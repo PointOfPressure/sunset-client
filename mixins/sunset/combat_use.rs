@@ -3,6 +3,8 @@
 // anchor; Fast Use's Throwables hold one back, and with Burst add more of the same use before it (each re-enters here
 // and goes through).
 fn sunset_combat_use(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<()> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     use crate::game::sunset_combat_inventory as inventory;
     if inventory::bursting() {
         return std::ops::ControlFlow::Continue(());

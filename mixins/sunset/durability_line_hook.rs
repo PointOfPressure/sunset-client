@@ -8,5 +8,7 @@ fn sunset_durability_line(
     y: f32,
     after_name: &Vec<(horizon_client::text::Text, u32)>,
 ) -> std::ops::ControlFlow<()> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     crate::game::sunset_hud_bars::tooltip(game, batch, stack, creative, [x, y], after_name)
 }

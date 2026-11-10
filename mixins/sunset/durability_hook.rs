@@ -6,5 +6,7 @@ fn sunset_item_durability(
     x: f32,
     y: f32,
 ) -> std::ops::ControlFlow<()> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     crate::game::sunset_hud_bars::item_model(game, batch, stack, x, y)
 }

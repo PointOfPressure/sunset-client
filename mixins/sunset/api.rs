@@ -6,10 +6,17 @@
 // at its own tick, for the packets it sends and sees, at its HUD and world drawing, on joins, disconnects, hurts,
 // deaths, and when everything is stopped. Docs and two whole example plugins are in
 // github.com/PointOfPressure/sunset-plugins.
+//
+// Panic stops Sunset for the rest of the game process: no handler, command or task of any plugin runs again, and the
+// action helpers refuse. It gates this bus, the task scheduler and those helpers, not arbitrary native code: plugins
+// with direct Horizon hooks must check `running()` themselves and cancel their own threads and resources in on_stop
+// (the last call they get). A currently executing callback returns normally; stop handlers run after dispatch
+// releases it. Do not block on a worker that waits for the game thread from on_stop.
 
 use super::{Game, Screen};
 use super::sunset::{Out, with};
 use horizon_protocol::packets::play::{Clientbound, Serverbound};
+use horizon_protocol::connection::sunset_lifecycle::RUNTIME;
 use std::cell::Cell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Mutex;
@@ -17,6 +24,9 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 #[allow(dead_code)]
 pub(super) const API_VERSION: u32 = 2;
+
+#[allow(dead_code)]
+pub(super) fn running() -> bool { RUNTIME.running() }
 
 // `const _: () = api::needs(2);` in a plugin: an older Sunset stops the build with this message.
 #[allow(dead_code)]
@@ -27,12 +37,28 @@ pub(super) const fn needs(version: u32) {
 }
 
 #[allow(unused_imports)]
-pub(super) use super::sunset::{Camera, Canvas, Category, Module, Shape, hold, line, look_at, outline, turn, turn_then};
+pub(super) use super::sunset::{Camera, Canvas, Category, Module, Shape, line, look_at, outline, turn, turn_then};
 #[allow(unused_imports)]
 pub(super) use super::sunset_util::{
     PRIORITIES, Target, can_place, center_of, clear_line, dist, every_living, facts, find_hotbar, find_inventory, in_reach,
-    is_air, listed, other_players, place_block, player_target, replaceable, sequence, short, show, toggle_off, turned_to,
+    is_air, listed, other_players, player_target, replaceable, sequence, short, show, toggle_off,
 };
+
+#[allow(dead_code)]
+pub(super) fn hold(game: &mut Game<'_>, slot: usize) {
+    if RUNTIME.running() { super::sunset::hold(game, slot); }
+}
+
+#[allow(dead_code)]
+pub(super) fn place_block(game: &mut Game<'_>, pos: [i32; 3], slot: usize, rotate: bool, check_entities: bool) -> bool {
+    RUNTIME.running() && super::sunset_util::place_block(game, pos, slot, rotate, check_entities)
+}
+
+#[allow(dead_code)]
+pub(super) fn turned_to(game: &mut Game<'_>, who: &'static str, rotate: bool, at: [f64; 3],
+    deed: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) {
+    if RUNTIME.running() { super::sunset_util::turned_to(game, who, rotate, at, deed); }
+}
 // The game's packets, to read and send: `api::packets::Serverbound::Swing(..)`.
 #[allow(unused_imports)]
 pub(super) use horizon_protocol::packets::play as packets;
@@ -61,6 +87,7 @@ pub(super) fn register(module: Module) {
 // The module named `name` when the player has it on: its current settings.
 #[allow(dead_code)]
 pub(super) fn module(name: &str) -> Option<Module> {
+    if !RUNTIME.running() { return None; }
     with(|s| s.module(name).filter(|m| m.on).cloned())
 }
 
@@ -196,6 +223,7 @@ fn failed(plugin: &'static str) -> bool {
 // Runs a plugin's code as that plugin; a panic switches the plugin off (every handler, command and task of it) with a
 // chat line that says where.
 fn guarded<R>(plugin: &'static str, what: &str, f: impl FnOnce() -> R) -> Option<R> {
+    let _callback = if what == "stop" { None } else { Some(RUNTIME.enter()?) };
     let before = CURRENT.with(|c| c.replace(Some(plugin)));
     let result = catch_unwind(AssertUnwindSafe(f));
     CURRENT.with(|c| c.set(before));
@@ -217,11 +245,13 @@ fn guarded<R>(plugin: &'static str, what: &str, f: impl FnOnce() -> R) -> Option
 // packet). The list is taken out while they run, so a handler may add handlers or call any of the API; a handler that
 // sets off its own kind of event again (a packet handler sending a packet) is not called for that one.
 fn each(kind: usize, mut call: impl FnMut(&mut On) -> bool) {
+    if kind != 13 && !RUNTIME.running() { return; }
     if LIVE.load(Ordering::Relaxed) & (1 << kind) == 0 {
         return;
     }
     let mut list = std::mem::take(&mut lock(&BUS)[kind]);
     for l in &mut list {
+        if kind != 13 && !RUNTIME.running() { break; }
         if failed(l.plugin) {
             continue;
         }
@@ -270,7 +300,7 @@ fn plain_name(name: &str) -> bool {
 // native_tick hook every tick. `id` is your mod's id (lower case letters, digits, - and _).
 #[allow(dead_code)]
 pub(super) fn plugin(game: &mut Game<'_>, id: &'static str, version: &'static str, setup: impl FnOnce(&mut Plugin)) {
-    if !game.native_window() {
+    if !RUNTIME.running() || !game.native_window() {
         return;
     }
     {
@@ -290,6 +320,7 @@ pub(super) fn plugin(game: &mut Game<'_>, id: &'static str, version: &'static st
     }
     let mut p = Plugin { id, priority: NORMAL };
     guarded(id, "setup", || setup(&mut p));
+    super::sunset::finish_shutdown(game);
 }
 
 // What `setup` gets: add modules, commands and handlers. `.priority(n)` applies to the handlers added after it.
@@ -587,10 +618,12 @@ static NEXT_TASK: AtomicU64 = AtomicU64::new(1);
 static CLOCK: AtomicU64 = AtomicU64::new(0);
 
 fn schedule(ticks: u64, every: Option<u64>, run: Run) -> u64 {
+    let mut tasks = lock(&TASKS);
+    if !RUNTIME.running() { return 0; }
     let id = NEXT_TASK.fetch_add(1, Ordering::Relaxed);
     let plugin = CURRENT.with(Cell::get);
     let due = CLOCK.load(Ordering::Relaxed) + ticks.max(1);
-    lock(&TASKS).push(Task { id, plugin, due, every, run });
+    tasks.push(Task { id, plugin, due, every, run });
     id
 }
 
@@ -632,7 +665,15 @@ pub(super) fn tasks() -> usize {
     lock(&TASKS).len()
 }
 
+pub(super) fn cancel_tasks() {
+    let tasks = std::mem::take(&mut *lock(&TASKS));
+    drop(tasks);
+    lock(&CANCELLED).clear();
+}
+
 fn run_tasks(game: &mut Game<'_>) {
+    let generation = RUNTIME.token();
+    if !RUNTIME.current(generation) { return; }
     let now = CLOCK.fetch_add(1, Ordering::Relaxed) + 1;
     let due: Vec<Task> = {
         let mut tasks = lock(&TASKS);
@@ -641,13 +682,17 @@ fn run_tasks(game: &mut Game<'_>) {
         due
     };
     for mut t in due {
+        if !RUNTIME.current(generation) { break; }
         if lock(&CANCELLED).contains(&t.id) {
             continue;
         }
         let ran = match t.plugin {
             Some(p) if failed(p) => continue,
             Some(p) => guarded(p, "scheduled task", || (t.run)(game)).is_some(),
-            None => catch_unwind(AssertUnwindSafe(|| (t.run)(game))).map_err(|e| note(format!("A scheduled task panicked: {}", panic_text(&*e)))).is_ok(),
+            None => {
+                let Some(_callback) = RUNTIME.enter() else { break; };
+                catch_unwind(AssertUnwindSafe(|| (t.run)(game))).map_err(|e| note(format!("A scheduled task panicked: {}", panic_text(&*e)))).is_ok()
+            }
         };
         let cancelled = {
             let mut c = lock(&CANCELLED);
@@ -655,9 +700,10 @@ fn run_tasks(game: &mut Game<'_>) {
             c.retain(|&i| i != t.id);
             had
         };
-        if let (true, false, Some(every)) = (ran, cancelled, t.every) {
+        if let (true, false, Some(every)) = (ran && RUNTIME.current(generation), cancelled, t.every) {
             t.due = now + every;
-            lock(&TASKS).push(t);
+            let mut tasks = lock(&TASKS);
+            if RUNTIME.current(generation) { tasks.push(t); }
         }
     }
     lock(&CANCELLED).clear();
@@ -679,6 +725,7 @@ pub(super) fn find_module(name: &str) -> Option<Module> {
 
 #[allow(dead_code)]
 pub(super) fn is_on(name: &str) -> bool {
+    if !RUNTIME.running() { return false; }
     with(|s| s.find(name).is_some_and(|i| s.modules[i].on))
 }
 
@@ -706,6 +753,7 @@ fn no_module(name: &str) -> String {
 // click in the GUI.
 #[allow(dead_code)]
 pub(super) fn toggle(game: &mut Game<'_>, name: &str, on: bool) -> Result<(), String> {
+    if !RUNTIME.running() { return Err("Sunset is stopped until the game restarts.".into()); }
     let Some((i, now)) = with(|s| s.find(name).map(|i| (i, s.modules[i].on))) else {
         return Err(no_module(name));
     };
@@ -768,6 +816,7 @@ impl SettingValue for String {
 #[allow(dead_code)]
 pub(super) fn set(game: &Game<'_>, module: &str, setting: &str, value: impl SettingValue) -> Result<String, String> {
     use super::sunset::Value;
+    if !RUNTIME.running() { return Err("Sunset is stopped until the game restarts.".into()); }
     let value = value.text();
     let Some(i) = with(|s| s.find(module)) else {
         return Err(no_module(module));
@@ -954,7 +1003,7 @@ pub(super) fn is_friend(name: &str) -> bool {
 // Kill Aura, Trigger Bot, Aim Assist and the rest leave friends alone; saved with Sunset's config.
 #[allow(dead_code)]
 pub(super) fn add_friend(game: &Game<'_>, name: &str) {
-    if !is_friend(name) {
+    if RUNTIME.running() && !is_friend(name) {
         with(|s| s.flip_friend(name));
         super::sunset::save(game);
     }
@@ -962,7 +1011,7 @@ pub(super) fn add_friend(game: &Game<'_>, name: &str) {
 
 #[allow(dead_code)]
 pub(super) fn remove_friend(game: &Game<'_>, name: &str) {
-    if is_friend(name) {
+    if RUNTIME.running() && is_friend(name) {
         with(|s| s.flip_friend(name));
         super::sunset::save(game);
     }
@@ -975,6 +1024,7 @@ pub(super) fn remove_friend(game: &Game<'_>, name: &str) {
 // server sees it once. Block actions need the game's own sequence number: `sequence(game)`.
 #[allow(dead_code)]
 pub(super) fn send(game: &mut Game<'_>, packet: Serverbound) -> Result<(), String> {
+    if !RUNTIME.running() { return Err("Sunset is stopped.".into()); }
     if is_move(&packet) {
         return Err("Move packets can't be sent by a plugin (one a tick; a second gets you kicked): use turn/turn_then for the look, or change the tick's own one in on_packet_out.".to_owned());
     }
@@ -991,6 +1041,7 @@ pub(super) fn send(game: &mut Game<'_>, packet: Serverbound) -> Result<(), Strin
 // A message (or "/command") to the server, as if typed in chat. At most 256 characters.
 #[allow(dead_code)]
 pub(super) fn say_server(game: &mut Game<'_>, text: &str) -> Result<(), String> {
+    if !RUNTIME.running() { return Err("Sunset is stopped.".into()); }
     if text.chars().count() > 256 {
         return Err("A chat message takes 256 characters at most (servers kick longer ones).".to_owned());
     }
@@ -1004,6 +1055,7 @@ pub(super) fn say_server(game: &mut Game<'_>, text: &str) -> Result<(), String> 
 // A right click with what you hold, as the game's own use key does it (eat, cast a rod, throw, place...).
 #[allow(dead_code)]
 pub(super) fn use_item(game: &mut Game<'_>) -> Result<(), String> {
+    if !RUNTIME.running() { return Err("Sunset is stopped.".into()); }
     if !in_world(game) {
         return Err("Use items in a world, with no menu open (check api::in_world).".to_owned());
     }
@@ -1014,6 +1066,7 @@ pub(super) fn use_item(game: &mut Game<'_>) -> Result<(), String> {
 // vanilla's packet order).
 #[allow(dead_code)]
 pub(super) fn attack(game: &mut Game<'_>, id: u32) {
+    if !RUNTIME.running() { return; }
     super::sunset::attack(game, id, true, None);
 }
 
@@ -1022,6 +1075,7 @@ static LEAVE: AtomicBool = AtomicBool::new(false);
 // Leaves the server (or closes single player) on purpose, before the next frame: Auto-reconnect doesn't try again.
 #[allow(dead_code)]
 pub(super) fn disconnect(game: &mut Game<'_>) {
+    if !RUNTIME.running() { return; }
     if game.remote.is_some() {
         LEAVE.store(true, Ordering::Relaxed);
     }
@@ -1031,6 +1085,7 @@ pub(super) fn disconnect(game: &mut Game<'_>) {
 // shutting down or restarting (five tries, 5 to 60 seconds apart), never a kick or ban.
 #[allow(dead_code)]
 pub(super) fn auto_reconnect(game: &mut Game<'_>, on: bool) {
+    if !RUNTIME.running() { return; }
     game.settings.extras.auto_reconnect = on;
 }
 
@@ -1040,13 +1095,12 @@ pub(super) fn auto_reconnect_on(game: &Game<'_>) -> bool {
 }
 
 // The safe stop: every module off, held keys let go, every plugin's tasks dropped and its on_stop run. `why` goes in
-// chat and to the on_stop handlers.
+// chat and to the on_stop handlers. Sunset keeps running (modules can be turned on again); only Panic stops it for
+// the rest of the game process.
 #[allow(dead_code)]
 pub(super) fn stop_everything(game: &mut Game<'_>, why: &str) {
+    if !RUNTIME.running() { return; }
     super::sunset::all_off(game);
-    game.keys.clear();
-    game.left = false;
-    game.right = false;
     stopped(game, why);
     super::sunset::say(game, &format!("Stopped everything: {why}"));
 }
@@ -1102,7 +1156,7 @@ static CHAT_SEEN: AtomicU64 = AtomicU64::new(u64::MAX);
 
 // Before the game's own tick work (Sunset's pre_tick), in a world.
 pub(super) fn pre_tick(game: &mut Game<'_>) {
-    if game.player.is_none() {
+    if !RUNTIME.running() || game.player.is_none() {
         return;
     }
     each(0, |on| {
@@ -1111,10 +1165,12 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         }
         false
     });
+    super::sunset::finish_shutdown(game);
 }
 
 // Sunset's tick (post_tick), in a world: packets seen, joins, toggles, health, chat, tasks, then the tick handlers.
 pub(super) fn tick(game: &mut Game<'_>) {
+    if !RUNTIME.running() { return; }
     flush_notes(game);
     if game.player.is_none() {
         return;
@@ -1149,6 +1205,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
         false
     });
     flush_notes(game);
+    super::sunset::finish_shutdown(game);
 }
 
 fn toggles(game: &mut Game<'_>) {
@@ -1234,10 +1291,15 @@ pub(super) fn frame(game: &mut Game<'_>) {
     if !game.native_window() {
         return;
     }
-    if LEAVE.swap(false, Ordering::Relaxed) && game.remote.is_some() {
+    if RUNTIME.running() && LEAVE.swap(false, Ordering::Relaxed) && game.remote.is_some() {
         let _ = game.leave_server(None);
     }
     let events = horizon_client::net::sunset_packets::plugin_connection();
+    if !RUNTIME.running() {
+        LEAVE.store(false, Ordering::Relaxed);
+        JOINED.store(false, Ordering::Relaxed);
+        return;
+    }
     if !game.native_on(super::sunset::ID) {
         return;
     }
@@ -1257,6 +1319,7 @@ pub(super) fn frame(game: &mut Game<'_>) {
             }
         }
     }
+    super::sunset::finish_shutdown(game);
 }
 
 // Sunset's send hook, after its own modules changed the packet.
@@ -1285,6 +1348,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
         }
         false
     });
+    super::sunset::finish_shutdown(game);
 }
 
 pub(super) fn hud(game: &Game<'_>, out: &mut dyn Canvas, size: [f32; 2], lw: f32) {
@@ -1310,17 +1374,28 @@ pub(super) fn world(game: &Game<'_>, cam: &Camera, out: &mut dyn Canvas, lw: f32
 
 // Everything stopped (stop_everything, Panic): tasks dropped, then every plugin's on_stop.
 pub(super) fn stopped(game: &mut Game<'_>, why: &str) {
-    lock(&TASKS).clear();
+    cancel_tasks();
+    let _ = horizon_client::net::sunset_packets::plugin_packets();
+    let _ = horizon_client::net::sunset_packets::plugin_connection();
+    let _ = horizon_client::net::sunset_packets::take();
+    LEAVE.store(false, Ordering::Relaxed);
+    JOINED.store(false, Ordering::Relaxed);
     each(13, |on| {
         if let On::Stop(f) = on {
             f(game, why);
         }
         false
     });
+    lock(&TASKS).clear();
+    *lock(&LAST_ON) = super::sunset::snapshot().iter().map(|m| (m.name, false)).collect();
+    LAST_HEALTH.store(u32::MAX, Ordering::Relaxed);
+    DEAD.store(false, Ordering::Relaxed);
+    CHAT_SEEN.store(horizon_client::chat::sunset_chat_log::since(u64::MAX).0, Ordering::Relaxed);
 }
 
 // `.name args` for a plugin's command: whether there was one.
 pub(super) fn command(game: &mut Game<'_>, name: &str, args: &[&str]) -> bool {
+    if !RUNTIME.running() { return false; }
     let mut commands = std::mem::take(&mut *lock(&COMMANDS));
     let found = commands.iter_mut().find(|c| c.name.eq_ignore_ascii_case(name));
     let ran = match found {
@@ -1338,6 +1413,7 @@ pub(super) fn command(game: &mut Game<'_>, name: &str, args: &[&str]) -> bool {
     commands.append(&mut kept);
     *kept = commands;
     drop(kept);
+    super::sunset::finish_shutdown(game);
     flush_notes(game);
     ran
 }

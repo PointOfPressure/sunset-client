@@ -237,17 +237,15 @@ fn send_queued(game: &Game<'_>) {
     net::gui_move_active(false);
 }
 
-pub(super) fn stop(game: &mut Game<'_>) {
-    state(|s| {
-        if !s.packets.is_empty() {
-            if own(game) {
-                s.closing = true;
-            } else {
-                begin_close(s, 0);
-            }
-        }
-    });
-    let _ = pre_tick(game);
+// Panic cancels predictions instead of scheduling another inventory action.
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    if state(|s| same_session(game, s)) && game.remote_menu().0 == 0 {
+        cancel(game, "Sunset stopped");
+    } else {
+        net::gui_move_active(false);
+        let _ = net::gui_move_take();
+    }
+    state(|s| *s = Transaction::default());
 }
 
 pub(super) fn packets(game: &mut Game<'_>, incoming: &[C]) {

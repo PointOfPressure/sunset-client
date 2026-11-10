@@ -1,5 +1,7 @@
 // Anti Vanish's completion requests are answered to it, not to the chat box.
 fn sunset_vanish_completions(game: &mut crate::game::Game<'_>, data: &[u8]) -> std::ops::ControlFlow<()> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     if crate::game::sunset_server_scan::completions(data) {
         return std::ops::ControlFlow::Break(());
     }

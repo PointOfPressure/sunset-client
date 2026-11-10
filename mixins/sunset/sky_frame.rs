@@ -3,6 +3,9 @@
 // Auto Totem clicks, between ticks as a screen's clicks are; plugins hear of joins and disconnects; Streamer Mode's
 // names to hide (on the title screen too).
 fn sunset_sky_frame(game: &mut crate::game::Game<'_>) {
+    crate::game::sunset::finish_shutdown(game);
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return; }
+
     crate::game::sunset_gui_move::frame(game);
     crate::game::sunset_antibot::frame(game);
     crate::game::sunset_autoclicker::frame(game);
@@ -11,5 +14,6 @@ fn sunset_sky_frame(game: &mut crate::game::Game<'_>) {
     crate::game::sunset_hands::frame(game);
     crate::game::sunset_combat_inventory::frame(game);
     crate::game::sunset_api::frame(game);
+    if !crate::game::sunset::running() { return; }
     crate::game::sunset_streamer_mode::frame(game);
 }

@@ -23,6 +23,7 @@ use horizon_protocol::packets::{
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use winit::keyboard::KeyCode;
+use winit::event::MouseButton;
 
 pub(crate) const ID: &str = "sunset";
 pub(crate) const NAME: &str = "Sunset";
@@ -837,7 +838,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Death Location", Player, "Saves where you died.")
             .num("Keep", 3.0, 1.0, 10.0, 1.0)
             .bool("Clear on reach", true),
-        Module::new("Panic", Player, "Turns everything off and hides Sunset."),
+        Module::new("Panic", Player, "Stops Sunset until the game restarts: every module off, its menu, HUD and commands gone, and it leaves Options > Mods. The server connection stays."),
         // Render
         Module::new("ClickGUI", Render, "How this menu looks.")
             .pick("Style", &["Dropdown", "Dashboard"])
@@ -1316,6 +1317,7 @@ pub(super) struct State {
     selection: super::sunset_profiles::Selection,
     // Keys this mod held down for the tick (Auto Walk, Sprint).
     injected: Vec<KeyCode>,
+    sprint_owned: bool,
     loaded: bool,
     ticks: u64,
     trigger_wait: u32,
@@ -1438,6 +1440,7 @@ impl State {
             plugin_defaults: Vec::new(),
             selection: super::sunset_profiles::Selection::default(),
             injected: Vec::new(),
+            sprint_owned: false,
             loaded: false,
             ticks: 0,
                     trigger_wait: 0,
@@ -2161,9 +2164,55 @@ static FLY_LAST_Y: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 static ANTI_SPRINT: AtomicBool = AtomicBool::new(false);
 static ANTI_GROUND: AtomicBool = AtomicBool::new(false);
 static WELCOMED: AtomicBool = AtomicBool::new(false);
-// Panic hid Sunset: no HUD, menu, chat lines or keys, and only .panic is read from the chat
-// (it brings Sunset back). Not saved: a restart brings it back too.
-static HIDDEN: AtomicBool = AtomicBool::new(false);
+// Hard Panic: Sunset stops for the rest of this game process (lifecycle.rs: Running, Stopping,
+// Dormant). Nothing about it is saved; the next launch starts Running, with the settings as they
+// were saved before Panic.
+use horizon_protocol::connection::sunset_lifecycle::RUNTIME;
+static STOP_REASON: Mutex<Option<String>> = Mutex::new(None);
+
+pub(super) fn running() -> bool { RUNTIME.running() }
+
+// Panic. The first call closes every Sunset entry point at once (each hook checks `running()`)
+// and takes Sunset out of Options > Mods and the launcher's list; the cleanup itself waits until
+// no plugin callback is still executing (a callback may have asked for the stop), then
+// `finish_shutdown` runs it once from whichever entry point comes next on the game thread.
+pub(super) fn shutdown(game: &mut Game<'_>, why: &str) {
+    if RUNTIME.request_stop() {
+        // The input-only crate has no protocol dependency; its hook uses this
+        // existing switch directly instead of dispatching through the lifecycle.
+        horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed);
+        *STOP_REASON.lock().unwrap_or_else(|e| e.into_inner()) = Some(why.to_owned());
+        super::sunset_api::cancel_tasks();
+        // The menu closes now (and gives the game back its cursor); the HUD stops drawing with
+        // `running()`, its state is cleared with the rest.
+        if gui_open() { close_gui(game); }
+        unlist(game);
+        super::sunset_session::hide(ID);
+    }
+    finish_shutdown(game);
+}
+
+pub(super) fn finish_shutdown(game: &mut Game<'_>) {
+    if !RUNTIME.stopping() || !RUNTIME.idle() { return; }
+    let why = STOP_REASON.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let Some(why) = why else { return; };
+    all_off(game);
+    super::sunset_api::stopped(game, &why);
+    // Stop handlers may use the API for cleanup, but cannot leave modules on.
+    with(|s| { for m in &mut s.modules { m.on = false; } sync_flags(s); });
+    // Stop handlers ran after the first unlist; a row they could have caused goes too.
+    unlist(game);
+    RUNTIME.finish_stop();
+}
+
+// Sunset's row leaves Options > Mods for this session: the row list (`ModList::installed`, which
+// is never saved), and the options screen's pages and waiting key that pointed at it. The mod
+// stays built in and on (`horizon-mods.txt` is untouched); `listed` adds no row again.
+fn unlist(game: &mut Game<'_>) {
+    let Some(i) = mod_index(game) else { return; };
+    game.settings.mods.installed.remove(i);
+    horizon_client::options_ui::sunset_mod_rows::removed(&mut game.ui.options, i);
+}
 // The server takes one position packet per tick and disconnects a client that
 // sends more ("Invalid move player packet received"). Criticals hops over three
 // ticks instead: stages 1 to 3 turn the next position packets into the hop up
@@ -2209,6 +2258,7 @@ pub(super) fn register_module(m: Module) {
         s.modules.push(m);
         let raw = s.raw.clone();
         s.load_text(&raw);
+        if !running() { for m in &mut s.modules { m.on = false; } }
         sync_flags(s);
     });
 }
@@ -2316,6 +2366,8 @@ pub(super) fn set_setting(game: &Game<'_>, key: &str, value: &str) {
 }
 
 pub(super) fn save(game: &Game<'_>) {
+    // Panic writes nothing: the next launch starts from the settings saved before it.
+    if !running() { return; }
     let text = with(|s| {
         release_changed_binds(s);
         sync_flags(s);
@@ -2396,7 +2448,7 @@ pub(super) fn chat_lines(kind: &str) -> bool {
 
 // A line in chat: Sunset's tag, then the message.
 pub(super) fn say(game: &mut Game<'_>, msg: &str) {
-    if HIDDEN.load(Ordering::Relaxed) {
+    if !running() {
         return;
     }
     let line = Text::literal("[Sunset] ")
@@ -2487,7 +2539,10 @@ pub(super) fn look_at(eye: [f64; 3], at: [f64; 3]) -> (f32, f32) {
 
 // ---------------------------------------------------------------- the menu
 
+// Sunset's row in Options > Mods; none after Panic, when the list is made again (`unlist` took the one it had).
 pub(super) fn listed(mods: &mut Vec<super::native_hooks::NativeMod>) {
+    if !running() { return; }
+    super::sunset_session::sweep();
     mods.push(super::native_hooks::NativeMod {
         id: ID.into(),
         title: format!("{NAME} {VERSION}"),
@@ -2515,6 +2570,7 @@ pub(super) fn is_menu_key(game: &Game<'_>, key: &str) -> bool {
 }
 
 pub(super) fn open_menu(game: &mut Game<'_>) {
+    if !running() { return; }
     release_binds();
     let Some(i) = mod_index(game) else {
         say(game, "Turn Sunset on in Options > Mods first.");
@@ -2529,6 +2585,7 @@ pub(super) fn open_menu(game: &mut Game<'_>) {
 }
 
 pub(super) fn buttons(game: &Game<'_>, out: &mut Vec<String>) {
+    if !running() { return; }
     ensure_loaded(game);
     with(|s| match s.page {
         Page::Main => {
@@ -2570,6 +2627,7 @@ pub(super) fn buttons(game: &Game<'_>, out: &mut Vec<String>) {
 }
 
 pub(super) fn click(game: &mut Game<'_>, button: usize) {
+    if !running() { return; }
     ensure_loaded(game);
     let shift = game.modifiers.shift_key();
     let mut toggled = None;
@@ -2623,6 +2681,11 @@ pub(super) fn click(game: &mut Game<'_>, button: usize) {
 }
 
 pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
+    if !running() { return; }
+    if with(|s| s.modules[i].name == "Panic" && !s.modules[i].on) {
+        panic_off(game);
+        return;
+    }
     let (name, on) = with(|s| {
         // Turned on or off by hand: a Hold bind no longer has it.
         s.inputs.take_where(|held| held.module == i);
@@ -2792,12 +2855,23 @@ pub(super) fn bind_event(event: &winit::event::WindowEvent) {
 }
 
 pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
+    finish_shutdown(game);
+    if !running() { return; }
     if !game.native_window() {
         return;
     }
-    if game.native_on(ID) && !HIDDEN.load(Ordering::Relaxed) {
+    ensure_loaded(game);
+    if pressed && game.native_on(ID) && game.native_playing() && !gui_open()
+        && with(|s| !s.inputs.is_synthetic(key) && s.module("Panic").is_some_and(|m| m.key.as_deref() == Some(key)))
+        && with(|s| s.inputs.press(key))
+    {
+        panic_off(game);
+        return;
+    }
+    if game.native_on(ID) {
         super::sunset_api::key(game, key, pressed);
     }
+    if !running() { return; }
     if pressed {
         super::agent::sunset_goto::key(game, key);
     }
@@ -2820,7 +2894,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
         });
         return;
     }
-    if !game.native_on(ID) || HIDDEN.load(Ordering::Relaxed) {
+    if !game.native_on(ID) {
         release_binds();
         return;
     }
@@ -2881,6 +2955,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
             .collect()
     });
     for i in bound {
+        if !running() { break; }
         if with(|s| s.modules[i].p("Bind mode") == "Hold") {
             // On while the key is down, then as it was.
             with(|s| {
@@ -2910,6 +2985,8 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
 
 // Before the game ticks: keys this mod holds, abilities, step height.
 pub(super) fn pre_tick(game: &mut Game<'_>) {
+    finish_shutdown(game);
+    if !running() { return; }
     sync_binds(game);
     // Single player's own server ticks a game of its own (no window) through here too: it must leave the player's
     // state alone, or it clears Velocity's baseline and Speed's push between the client's ticks.
@@ -2952,6 +3029,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     combat_packets(game, &packets);
     ensure_loaded(game);
     super::sunset_api::pre_tick(game);
+    if !running() { return; }
     // The game sends movement later in this tick. A click after that movement trips Grim's PacketOrderO.
     if with(|s| s.module("Chest Swap").is_some_and(|m| m.on && m.p("Mode") == "Swap"))
         && !with(|s| s.is_on("Blink"))
@@ -3014,7 +3092,12 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         want.push(KeyCode::KeyW);
     }
     if on("Sprint") && playing {
+        if game.player.as_ref().is_some_and(|p| !p.sprinting) && !native_held_input(game).0.contains(&KeyCode::ControlLeft) {
+            with(|s| s.sprint_owned = true);
+        }
         want.push(KeyCode::ControlLeft);
+    } else {
+        with(|s| s.sprint_owned = false);
     }
     if on("Auto Jump") && playing && move_input(game) != (0.0, 0.0) {
         want.push(KeyCode::Space);
@@ -3196,6 +3279,8 @@ fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
 // After the tick: first what waited for the look its move packet carried, then the modules, then (in a tick that
 // sent no move packet) the one that carries the next look.
 pub(super) fn post_tick(game: &mut Game<'_>) {
+    finish_shutdown(game);
+    if !running() { return; }
     super::sunset_scaffold_telly::post_tick(game);
     super::sunset_scaffold_normal::post_tick(game);
     super::sunset_snap_tap::post_tick(game);
@@ -3208,11 +3293,13 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     super::sunset_melee::post_input(game);
     turned(game);
     super::sunset_api::tick(game);
+    if !running() { return; }
     module_tick(game);
     end_turns(game);
 }
 
 fn module_tick(game: &mut Game<'_>) {
+    if !running() { return; }
     ensure_loaded(game);
     let injected = with(|s| std::mem::take(&mut s.injected));
     for k in injected {
@@ -3596,7 +3683,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_effects::tick(game);
     super::sunset_player::tick(game, &mods);
-    super::sunset_hud_bars::tick(game, &mods, game.native_on(ID) && !HIDDEN.load(Ordering::Relaxed));
+    super::sunset_hud_bars::tick(game, &mods, game.native_on(ID));
     super::sunset_world::tick(game, &mods);
     super::sunset_hunting::tick(game, &mods);
     super::sunset_new_chunks::tick(game, &mods);
@@ -3832,7 +3919,7 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
         if let Some(i) = want
             && game.selected != i
         {
-            let _ = game.play_mouse(MouseButton::Right, false);
+            let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
             hold(game, i);
             return;
         }
@@ -3841,7 +3928,7 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
             return;
         }
         if game.using.is_none() {
-            let _ = game.play_mouse(MouseButton::Right, true);
+            let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
         }
         return;
     }
@@ -3868,7 +3955,7 @@ pub(super) fn auto_eat(game: &mut Game<'_>, m: &Module) {
         s.eat_prev = prev;
         s.eat_paused_aura = paused;
     });
-    let _ = game.play_mouse(MouseButton::Right, true);
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
 }
 
 // Health and hunger against the thresholds, as Threshold mode joins them.
@@ -3973,7 +4060,7 @@ fn eat_stop(game: &mut Game<'_>) {
         s.eating = false;
         (s.eat_prev, std::mem::take(&mut s.eat_paused_aura))
     });
-    let _ = game.play_mouse(MouseButton::Right, false);
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
     hold(game, prev);
     if aura {
         toggle_named(game, "Kill Aura", true);
@@ -4383,7 +4470,7 @@ pub(super) fn auto_tool(game: &mut Game<'_>, m: &Module, busy: bool) {
     }
     let held = game.inventory.get(game.selected).and_then(|s| s.as_ref());
     if tool_spent(game, m, held) {
-        let _ = game.play_mouse(MouseButton::Left, false);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Left, false);
     }
 }
 
@@ -4492,8 +4579,8 @@ fn middle_click_tick(game: &mut Game<'_>, busy: bool) -> bool {
         }
         let before = game.selected;
         hold(game, slot);
-        let _ = game.play_mouse(MouseButton::Right, true);
-        let _ = game.play_mouse(MouseButton::Right, false);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
         with(|s| {
             if s.mc_back.is_none() {
                 s.mc_back = Some((before, 3));
@@ -5568,6 +5655,7 @@ pub(super) struct AttackGuard {
 impl AttackGuard {
     pub(super) fn id(self) -> u32 { self.token.id }
     pub(super) fn valid(self, game: &Game<'_>) -> bool {
+        if !running() { return false; }
         if game.remote.is_none() || game.player.as_ref().is_none_or(|p| !p.health.health().is_finite() || p.health.health() <= 0.0) { return false; }
         if !super::sunset_antibot::current(self.token) { return false; }
         let Some(mob) = game.mobs.iter().find(|m| m.id == self.token.id && m.alive() && !m.removed) else { return false; };
@@ -5611,6 +5699,7 @@ pub(super) fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(
     }
 }
 pub(super) fn attack_guarded(game: &mut Game<'_>, guard: AttackGuard, crits: bool, rotate: Option<(f32, f32)>) {
+    if !running() { return; }
     if !guard.valid(game) { return; }
     let plan = with(|s| s.module("Criticals").filter(|m| m.on).cloned()).filter(|_| crits).and_then(|m| crit_plan(game, &m));
     let Some(plan) = plan else {
@@ -5730,6 +5819,7 @@ pub(super) fn strike(game: &mut Game<'_>, id: u32) {
 // as a hotbar key before a click (a slot change after the move packet is what Grim's Post check flags). The weapon is
 // Auto Mace's mace while you fall, else Auto Weapon's.
 fn queue_strike(game: &mut Game<'_>, guard: AttackGuard, critical: bool) {
+    if !running() { return; }
     if !guard.valid(game) { if critical { crit_done(); } return; }
     let id = guard.token.id;
     let first = strikes(|s| s.queue.is_empty() && s.weapon.is_none());
@@ -6089,6 +6179,7 @@ fn kept_using(game: &Game<'_>) -> bool {
 // is not yours to pay (settle_fall), and the look modules asked for (turn_then) rides along. Each is a change to the
 // tick's own move packet, never another one.
 pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
+    if !running() { return Out::Pass; }
     if let Some(changed) = super::sunset_world_parity::outgoing(game, packet) {
         return Out::Replace(changed);
     }
@@ -6493,6 +6584,7 @@ fn revalidate_targets(game: &Game<'_>) {
 // refused changes nothing. Never while Blink holds the moves.
 pub(super) fn try_turn_then(who: &'static str, yaw: f32, pitch: f32,
     then: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) -> bool {
+    if !running() { return false; }
     if !yaw.is_finite() || !pitch.is_finite() || BLINK.load(Ordering::Relaxed) {
         return false;
     }
@@ -6532,6 +6624,7 @@ pub(super) fn turn_then_checked(who: &'static str, yaw: f32, pitch: f32, guard: 
 }
 fn queue_turn(who: &'static str, yaw: f32, pitch: f32, guard: Option<AttackGuard>, critical: bool,
     then: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static) {
+    if !running() { return; }
     let critical = CriticalCompletion(critical);
     if !yaw.is_finite() || !pitch.is_finite() {
         return;
@@ -6561,6 +6654,7 @@ pub(super) fn turn(who: &'static str, yaw: f32, pitch: f32) {
 fn turned(game: &mut Game<'_>) {
     let ask = turns(|t| std::mem::take(&mut t.carried).then(|| t.queue.remove(0)));
     for mut deed in ask.map_or_else(Vec::new, |a| a.deeds) {
+        if !running() { break; }
         if deed.guard.is_none_or(|guard| guard.valid(game)) {
             deed.critical.0 = false;
             (deed.run)(game);
@@ -6645,14 +6739,10 @@ pub(super) fn chat(game: &mut Game<'_>, message: &str) -> bool {
     if !game.native_window() || !game.native_on(ID) {
         return false;
     }
-    // Hidden, the chat is the game's own but for .panic, which brings Sunset back.
-    if HIDDEN.load(Ordering::Relaxed) {
-        if message.trim() != ".panic" {
-            return false;
-        }
-        HIDDEN.store(false, Ordering::Relaxed);
-        say(game, "Back. Everything is still off.");
-        return true;
+    // After Panic the chat is the game's own: no command is read, .panic included, until restart.
+    if !running() {
+        finish_shutdown(game);
+        return false;
     }
     let Some(rest) = message.strip_prefix('.') else {
         return false;
@@ -6680,7 +6770,7 @@ const HELP: &[(&str, &str)] = &[
     (".bind <module> <key|mouse4|none>", "bind a key or mouse button to a module"),
     (".binds", "list the binds"),
     (".reset <module>", "put a module back to its defaults"),
-    (".panic", "turn every module off and hide Sunset (.panic again brings it back)"),
+    (".panic", "stop Sunset until the game restarts (nothing brings it back sooner)"),
     (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
     (".preset [name] [apply]", "the pre-made profiles: a name says what it turns on and off, apply takes it (.profile load before-load undoes it)"),
     (".debug [chat lines]", "copy a debug report (chat, anticheat flags, the client's state, the last packets sent) to the clipboard and its configured Save folder"),
@@ -6695,7 +6785,7 @@ const HELP: &[(&str, &str)] = &[
     (".goto <x> <y> <z>|stop", "walk there through loaded terrain, up to 128 blocks (by Rust); a movement key or a screen stops it"),
 ];
 
-// Every module off: the Panic module, or .panic.
+// Every module off and their pending work dropped (Panic, and the plugin API's stop_everything).
 fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
     for m in &mut s.modules {
         m.on = false;
@@ -6706,23 +6796,129 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
     s.velocity = None;
     s.blast = [0.0; 3];
     s.scaffold_stack = None;
+    s.inputs.suspend();
+    s.binding = None;
+    s.tool_wait = None;
+    s.mc_use = None;
+    s.mc_back = None;
+    s.crit_target = None;
+    s.crit_look = None;
+    s.trigger_sticky = None;
+    s.trigger_missed = None;
+    s.eat_paused_aura = false;
+    s.scaffold_placed.clear();
+    s.blocks = Sweep::new();
+    s.holes = Sweep::new();
+    s.unsneaked = false;
+    s.blink_ticks = 0;
+    s.fly_delay = 0;
+    s.fly_off = 0;
+    s.nuke = None;
+    s.nuke_skip.clear();
+    s.nuke_interacted.clear();
+    s.nuke_box = None;
+    s.nuke_broken.clear();
     take_scaffold_rotation(&mut s.scaffold_rotation)
 }
 
 // Every module off (Panic, and the plugin API's stop_everything).
+fn mapped_input(
+    bindings: &horizon_client::keybinds::KeyBinds,
+    keys: &std::collections::HashSet<KeyCode>,
+    buttons: &std::collections::HashSet<MouseButton>,
+    toggles: [Option<bool>; 4],
+) -> (std::collections::HashSet<KeyCode>, std::collections::HashSet<MouseButton>) {
+    let mut held = (std::collections::HashSet::new(), std::collections::HashSet::new());
+    for action in keys.iter().flat_map(|k| bindings.translate_all(*k))
+        .chain(buttons.iter().flat_map(|b| bindings.translate_mouse_all(*b))) {
+        match action { Ok(k) => { held.0.insert(k); } Err(b) => { held.1.insert(b); } }
+    }
+    for (slot, key) in [KeyCode::ShiftLeft, KeyCode::ControlLeft].into_iter().enumerate() {
+        if let Some(down) = toggles[slot] {
+            if down { held.0.insert(key); } else { held.0.remove(&key); }
+        }
+    }
+    for (i, button) in [MouseButton::Left, MouseButton::Right].into_iter().enumerate() {
+        if let Some(down) = toggles[i + 2] {
+            if down { held.1.insert(button); } else { held.1.remove(&button); }
+        }
+    }
+    held
+}
+
+fn native_held_input(game: &Game<'_>) -> (std::collections::HashSet<KeyCode>, std::collections::HashSet<MouseButton>) {
+    let options = [game.settings.toggle_crouch, game.settings.toggle_sprint, game.settings.toggle_attack, game.settings.toggle_use];
+    let toggles = std::array::from_fn(|i| (options[i] || game.toggles.is_down(i)).then(|| game.toggles.is_down(i)));
+    let mut held = mapped_input(&game.settings.keys, &game.physical_keys, &game.physical_buttons, toggles);
+    for (mapping, key) in [("key.forward", KeyCode::KeyW), ("key.back", KeyCode::KeyS), ("key.left", KeyCode::KeyA),
+        ("key.right", KeyCode::KeyD), ("key.jump", KeyCode::Space), ("key.sneak", KeyCode::ShiftLeft), ("key.sprint", KeyCode::ControlLeft)] {
+        if game.pad.holds_action(&game.settings.controller, mapping) { held.0.insert(key); }
+    }
+    for (mapping, button) in [("key.attack", MouseButton::Left), ("key.use", MouseButton::Right)] {
+        if game.pad.holds_action(&game.settings.controller, mapping) { held.1.insert(button); }
+    }
+    held
+}
+
 pub(super) fn all_off(game: &mut Game<'_>) {
+    super::sunset_hands::release_rf(game);
+    super::remote::sunset_combat_remote::restore_buttons(game);
+    let native_input = native_held_input(game);
+    let sprint_owned = with(|s| std::mem::take(&mut s.sprint_owned));
+    // Turn modules off before any release method can send or consult settings.
+    let restore = with(panic_off_state);
+    GUI_TOP.lock().unwrap_or_else(|e| e.into_inner()).0.clear();
+    SHAPES.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    with(sync_flags);
+    let injected = with(|s| std::mem::take(&mut s.injected));
+    for k in injected {
+        if !native_input.0.contains(&k) { game.keys.remove(&k); }
+    }
     super::sunset_server_scan::disabled();
+    horizon_client::net::sunset_client_brand::next(None);
     super::agent::sunset_goto::cancel(game, "stopped by Panic");
+    super::sunset_gui_move::shutdown(game);
     combat_cleanup(game);
     legit_sneak(game, false);
     super::sunset_scaffold_bridge::stop(game);
     super::sunset_scaffold_normal::stop(game);
     super::sunset_scaffold_telly::stop(game);
-    super::sunset_gui_move::stop(game);
     super::sunset_lag::shutdown(game);
     super::sunset_backtrack::shutdown();
     super::sunset_knockback_delay::shutdown();
-    if let Some((yaw, pitch)) = with(panic_off_state) {
+    super::sunset_packet_mine::toggled(game, "Packet Mine", false);
+    super::sunset_duel::shutdown(game);
+    super::sunset_swap_keys::shutdown(game);
+    super::sunset_takeoff::shutdown(game);
+    super::sunset_drain::shutdown(game);
+    super::sunset_hands::shutdown(game);
+    if with(|s| s.eating) { eat_stop(game); }
+    super::sunset_snap_tap::post_tick(game);
+    auto_tool_off(game);
+    with(|s| { s.tool_back = None; s.tool_pulled = None; s.eating = false; s.eat_slot = None; });
+    turns(|t| { t.queue.clear(); t.carried = false; t.restore = false; });
+    BLINK_HELD.store(false, Ordering::Relaxed);
+    FLY_DOWN.store(false, Ordering::Relaxed);
+    FLY_LAST_Y.store(u64::MAX, Ordering::Relaxed);
+    set_last_look(None);
+    super::sunset_sky::real(game);
+    super::sunset_sky::forget();
+    super::sunset_atmosphere::sync(game);
+    super::sunset_render::shutdown(game);
+    super::sunset_parity::shutdown(game);
+    super::sunset_player::shutdown(game);
+    super::sunset_extras::shutdown(game);
+    super::sunset_refill::shutdown();
+    super::sunset_world_parity::tick(game, &[]);
+    super::sunset_vanish::tick(game, None);
+    super::sunset_base_finder::tick(game, None);
+    super::sunset_hunting::tick(game, &[]);
+    super::sunset_new_chunks::tick(game, &[]);
+    super::sunset_ore_sim::tick(game, &[]);
+    super::sunset_hud_bars::tick(game, &[], false);
+    super::sunset_hud_bars::chat_closed();
+    super::sunset_streamer_mode::frame(game);
+    if let Some((yaw, pitch)) = restore {
         game.yaw = yaw;
         game.pitch = pitch;
     }
@@ -6732,16 +6928,42 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     bhop_body(game, None);
     horizon_client::motion::sunset_motion::set_safe_walk(false);
     horizon_client::input::sunset_flags::NO_SLOW.store(false, Ordering::Relaxed);
+    horizon_client::motion::sunset_motion::reset();
+    let (flying, stepping, jumping) = with(|s| {
+        let old = (s.flying, s.stepping, s.high_jumping);
+        s.flying = false; s.stepping = false; s.high_jumping = false;
+        old
+    });
+    let spectator = game.spectator();
+    if let Some(p) = game.player.as_mut() {
+        if flying {
+            p.flying = (game.creative && p.flying) || spectator;
+            p.may_fly = game.creative || spectator;
+            p.flying_speed = 0.05;
+        }
+        if stepping { let _ = p.set_modifier("minecraft:step_height", "sunset:step", 0.0, "add_value", false); }
+        if jumping { let _ = p.set_modifier("minecraft:jump_strength", "sunset:high_jump", 0.0, "add_multiplied_total", false); }
+        if sprint_owned && !native_input.0.contains(&KeyCode::ControlLeft) { let _ = p.set_sprinting(false); }
+    }
     save(game);
     if gui_open() {
         close_gui(game);
     }
+    super::remote::sunset_combat_remote::cancel_input(game);
+    // Release methods may temporarily take a real key/button up. Restore the
+    // physical state without synthesizing new clicks or replaying queued input.
+    if game.native_playing() {
+        for key in [KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD, KeyCode::Space, KeyCode::ShiftLeft, KeyCode::ControlLeft] {
+            if native_input.0.contains(&key) { game.keys.insert(key); } else { game.keys.remove(&key); }
+        }
+        game.left = native_input.1.contains(&MouseButton::Left);
+        game.right = native_input.1.contains(&MouseButton::Right);
+    }
 }
 
+// Panic (the module, its key, .panic, or a plugin turning it on): Sunset stops until the game restarts.
 pub(super) fn panic_off(game: &mut Game<'_>) {
-    all_off(game);
-    super::sunset_api::stopped(game, "Panic");
-    HIDDEN.store(true, Ordering::Relaxed);
+    shutdown(game, "Panic");
 }
 
 // .profile save|load|delete|list <name>: the modules' settings kept under a name.
@@ -7509,7 +7731,7 @@ fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32
 }
 
 pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corners) {
-    if !game.native_window() || !game.native_on(ID) || HIDDEN.load(Ordering::Relaxed) {
+    if !running() || !game.native_window() || !game.native_on(ID) {
         return;
     }
     ensure_loaded(game);
@@ -8991,6 +9213,7 @@ pub(super) fn hit_at(s: &State, at: (f32, f32)) -> Option<([f32; 4], Hit)> {
 }
 
 pub(super) fn open_gui(game: &mut Game<'_>) {
+    if !running() { return; }
     release_binds();
     if !game.native_playing() {
         return;
@@ -10383,10 +10606,39 @@ offhand.refill=Inventory
     #[test]
     fn panic_cleanup_disables_modules_and_returns_scaffold_rotation() {
         let mut state = State::new();
-        state.modules.iter_mut().find(|m| m.name == "Scaffold").unwrap().on = true;
+        for m in &mut state.modules { m.on = true; }
         state.scaffold_rotation = Some((135.0, -20.0));
+        state.tool_wait = Some((2, 3));
+        state.mc_use = Some((1, "ender_pearl"));
+        state.mc_back = Some((0, 4));
+        state.eat_paused_aura = true;
         assert_eq!(panic_off_state(&mut state), Some((135.0, -20.0)));
-        assert!(!state.module("Scaffold").unwrap().on);
+        assert!(state.modules.iter().all(|m| !m.on));
+        assert!(state.tool_wait.is_none() && state.mc_use.is_none() && state.mc_back.is_none());
+        assert!(!state.eat_paused_aura);
+        assert_eq!(panic_off_state(&mut state), None);
+        assert!(state.modules.iter().all(|m| !m.on));
+    }
+
+    #[test]
+    fn panic_input_uses_actions_instead_of_raw_device_buttons() {
+        let mut bindings = horizon_client::keybinds::KeyBinds::default();
+        // J has no default action (P is also Social Interactions', which stays held as P).
+        bindings.set("key.forward", "key.keyboard.j");
+        bindings.set("key.attack", "key.keyboard.q");
+        bindings.set("key.use", "key.keyboard.z");
+        bindings.set("key.jump", "key.mouse.right");
+        let keys = [KeyCode::KeyJ, KeyCode::KeyQ].into_iter().collect();
+        let buttons = [MouseButton::Right].into_iter().collect();
+        let (held, mouse) = mapped_input(&bindings, &keys, &buttons, [None; 4]);
+        assert!(held.contains(&KeyCode::KeyW) && held.contains(&KeyCode::Space));
+        assert!(!held.contains(&KeyCode::KeyJ));
+        assert!(mouse.contains(&MouseButton::Left));
+        assert!(!mouse.contains(&MouseButton::Right));
+        let (held, mouse) = mapped_input(&bindings, &keys, &buttons, [None, None, Some(false), Some(true)]);
+        assert!(held.contains(&KeyCode::KeyW));
+        assert!(!mouse.contains(&MouseButton::Left));
+        assert!(mouse.contains(&MouseButton::Right));
     }
 }
 

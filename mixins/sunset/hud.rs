@@ -5,5 +5,7 @@ fn sunset_hud(
     batch: &mut horizon_client::hud::HudBatch,
     corners: &mut horizon_client::extras_hud::Corners,
 ) {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return; }
+
     crate::game::sunset::hud(game, batch, corners);
 }

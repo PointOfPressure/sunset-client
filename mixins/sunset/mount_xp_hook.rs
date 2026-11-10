@@ -7,5 +7,7 @@ fn sunset_mount_xp(
     bar: bool,
     width: &dyn Fn(&str) -> i32,
 ) -> std::ops::ControlFlow<Vec<GuiDraw>> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     crate::hud_layout::sunset_hunger::experience(w, h, progress, level, bar, width)
 }

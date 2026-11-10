@@ -10,9 +10,7 @@ pub(crate) fn next(game: &mut Game<'_>) -> i32 {
 // A right click for the tick's keybind pass (Minecraft's keyUse.consumeClick): it waits for no use delay, and the
 // game places with its own sequence number and prediction, before the tick's movement. Scaffold's Godbridge.
 pub(crate) fn press_use(game: &mut Game<'_>) {
-    if let Some(r) = game.remote.as_mut() {
-        r.input.press(horizon_client::interaction_input::Button::Use);
-    }
+    super::sunset_combat_remote::click(game, false);
 }
 
 // Where the game's own right click on `hit` with the stack in hotbar `slot` would put a block, as the game predicts it

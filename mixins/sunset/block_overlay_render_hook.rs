@@ -1,6 +1,8 @@
 // HUD construction runs before Renderer::render submits this frame's outline.
 // Reset before its early exits or config reads, then publish style ownership.
 fn sunset_block_overlay_render(game: &crate::game::Game<'_>) {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return; }
+
     use horizon_client::gfx::sunset_block_overlay_flags as flags;
     flags::publish(false);
     if !game.native_window() || !game.native_on(crate::game::sunset::ID) {

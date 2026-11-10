@@ -7,6 +7,8 @@ fn sunset_crosshair_rect(
     rect: crate::hud::Rect,
     color: u32,
 ) -> std::ops::ControlFlow<()> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     if crate::hud::sunset_crosshair::suppress_mark(batch, x, y, w, h, rect, color) {
         std::ops::ControlFlow::Break(())
     } else {

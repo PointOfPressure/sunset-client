@@ -2152,6 +2152,53 @@ name = "sunset_debug"
 source = "debug.rs"
 
 [[module]]
+id = "lifecycle"
+file = "crates/horizon-protocol/src/connection.rs"
+name = "sunset_lifecycle"
+source = "lifecycle.rs"
+visibility = "pub"
+
+# Panic takes Sunset's row out of Options > Mods while the screen may be open: the screen's
+# indices into the rows (private to options_ui) follow.
+[[module]]
+id = "mod_rows"
+file = "crates/horizon-client-render/src/options_ui.rs"
+name = "sunset_mod_rows"
+source = "mod_rows.rs"
+visibility = "pub"
+
+# The launcher's list leaves Sunset out while this game process runs after Panic.
+[[module]]
+id = "session"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_session"
+source = "session.rs"
+
+[[module]]
+id = "owned_clicks"
+file = "crates/horizon-client-input/src/interaction_input.rs"
+name = "sunset_owned_clicks"
+source = "input_queue.rs"
+visibility = "pub"
+
+[[injection]]
+id = "input_consumed"
+kind = "RETURN"
+target = "horizon_client::game::remote::Game<'_>::remote_handle_input"
+helper = "input_consumed.rs"
+bindings = [{ name = "value", ty = "()", value = "$value" }]
+
+[[injection]]
+id = "input_screen"
+kind = "RETURN"
+target = "horizon_client::game::Game<'_>::track_toggle_screens"
+helper = "input_screen.rs"
+bindings = [
+  { name = "value", ty = "()", value = "$value" },
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[module]]
 id = "debug_wire_log"
 file = "crates/horizon-protocol/src/connection.rs"
 name = "sunset_wire"

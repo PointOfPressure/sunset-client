@@ -132,6 +132,22 @@ struct Duel {
 
 static DUEL: Mutex<Option<Duel>> = Mutex::new(None);
 
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    let (eat, back) = duel(|d| {
+        let saved = (d.eating.take(), d.catch_back.take());
+        *d = Duel::default();
+        saved
+    });
+    if let Some((_, _, slot)) = eat {
+        if !game.physical_buttons.contains(&winit::event::MouseButton::Right) {
+            let _ = super::remote::sunset_combat_remote::mouse(game, winit::event::MouseButton::Right, false);
+        }
+        super::sunset::hold(game, slot);
+    } else if let Some((slot, borrowed)) = back {
+        if game.selected == borrowed { super::sunset::hold(game, slot); }
+    }
+}
+
 fn duel<R>(f: impl FnOnce(&mut Duel) -> R) -> R {
     f(DUEL.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Duel::default))
 }
@@ -384,12 +400,12 @@ pub(super) fn tick(game: &mut Game<'_>) {
     if held && go_on && game.screen == Screen::Playing {
         hold(game, slot);
         if game.using.is_none() {
-            let _ = game.play_mouse(MouseButton::Right, true);
+            let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
         }
         return;
     }
     // Let go (or ran out): stop eating, and the slot from before comes back.
-    let _ = game.play_mouse(MouseButton::Right, false);
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
     hold(game, back);
     duel(|d| d.eating = None);
 }

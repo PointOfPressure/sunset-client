@@ -71,6 +71,13 @@ struct State {
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    let (shield, crossbow) = st(|s| (s.shield.take(), s.crossbow.take()));
+    let_go(game);
+    for b in [shield, crossbow].into_iter().flatten() { put_back(game, b); }
+    st(|s| *s = State::default());
+}
+
 fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(STATE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(State::default))
 }
@@ -129,12 +136,12 @@ fn put_back(game: &mut Game<'_>, b: Borrow) {
 // The use button as you hold it.
 fn yours(game: &mut Game<'_>) {
     let down = game.physical_buttons.contains(&MouseButton::Right);
-    let _ = game.play_mouse(MouseButton::Right, down);
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, down);
 }
 
 fn press(game: &mut Game<'_>, down: bool) {
     if st(|s| s.pressed) != Some(down) {
-        let _ = game.play_mouse(MouseButton::Right, down);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, down);
     }
     st(|s| s.pressed = Some(down));
 }
@@ -236,7 +243,7 @@ fn crossbow(game: &mut Game<'_>) -> bool {
             yours(game);
         }
     } else if !st(|s| s.loading) {
-        let _ = game.play_mouse(MouseButton::Right, true);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
         st(|s| s.loading = true);
     }
     true

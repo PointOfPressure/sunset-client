@@ -1,5 +1,7 @@
 // No Render: the screen overlays the player chose to hide are left out.
 fn sunset_overlay_hook(this: &ScreenEffects, input: &ScreenInputs<'_>) -> std::ops::ControlFlow<Vec<ScreenQuad>> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     use std::sync::atomic::Ordering::Relaxed;
     let (fire, liquid, wall, gui) = (
         sunset_overlay::NO_FIRE.load(Relaxed),

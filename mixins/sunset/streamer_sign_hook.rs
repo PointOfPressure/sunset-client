@@ -1,5 +1,7 @@
 // Streamer Mode: sign text in the world is drawn with the names replaced, centred again on its new width.
 fn sunset_streamer_sign(scene: &Scene, call: &TextCall, out: &mut Vec<Vertex>) -> std::ops::ControlFlow<()> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     let Some(text) = crate::hud::sunset_streamer::protect_str(&call.text) else {
         return std::ops::ControlFlow::Continue(());
     };

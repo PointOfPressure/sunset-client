@@ -26,6 +26,14 @@ struct Drain {
 
 static DRAIN: Mutex<Option<Drain>> = Mutex::new(None);
 
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    if let Some(back) = st(|s| s.back.take()) {
+        if game.player.is_some() && game.selected != back { hold(game, back); }
+    }
+    st(|s| *s = Drain::default());
+    super::sunset_combat_control::release(OWNER);
+}
+
 fn st<R>(f: impl FnOnce(&mut Drain) -> R) -> R {
     f(DRAIN.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Drain::default))
 }

@@ -4,6 +4,8 @@ fn sunset_combat_use_hand(
     game: &crate::game::Game<'_>,
     hand: horizon_client::first_person::Hand,
 ) -> std::ops::ControlFlow<bool> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     if game.using.is_none() && horizon_client::motion::sunset_motion::no_slow_grim() {
         crate::game::sunset_render::no_slow_reset();
     }

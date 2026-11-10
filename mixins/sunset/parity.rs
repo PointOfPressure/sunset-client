@@ -156,6 +156,14 @@ pub(super) fn fake(id: u32) -> bool {
 
 static PARITY: Mutex<Option<Parity>> = Mutex::new(None);
 
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    LIQUID.store(false, Ordering::Relaxed);
+    fake_player(game, None);
+    quiver_done(game);
+    parity(|p| *p = Parity::default());
+    horizon_client::net::sunset_packets::trap_off();
+}
+
 fn parity<R>(f: impl FnOnce(&mut Parity) -> R) -> R {
     f(PARITY.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Parity::default))
 }
@@ -182,7 +190,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     // Quiver: the bow is let go while the server has the look up.
     if parity(|p| p.quiver) == Quiver::Loose {
-        let _ = game.play_mouse(MouseButton::Right, false);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
         let rest = with(|s| s.module("Quiver").map_or(0, |m| m.n("Cooldown") as u32));
         parity(|p| p.quiver = Quiver::Rest(rest));
     }
@@ -402,7 +410,7 @@ fn quiver(game: &mut Game<'_>, m: &Module) {
         p.quiver_shot.extend(effect);
     });
     super::sunset::hold(game, bow);
-    let _ = game.play_mouse(MouseButton::Right, true);
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
     parity(|p| p.quiver = Quiver::Drawing(0));
 }
 
@@ -413,7 +421,7 @@ fn quiver_done(game: &mut Game<'_>) {
         (std::mem::take(&mut p.quiver), p.quiver_back.take())
     });
     if matches!(state, Quiver::Drawing(_) | Quiver::Aim | Quiver::Loose) {
-        let _ = game.play_mouse(MouseButton::Right, false);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
     }
     if let Some(slot) = back {
         super::sunset::hold(game, slot);

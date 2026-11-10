@@ -213,9 +213,13 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         let flowing: Vec<bool> = facts.states.iter().map(|s| s.fluid_level > 0 && (s.fluid_level < 8 || s.fluid_falling)).collect();
         let (jobs, rx) = channel::<Arrival>();
         let (tx, verdicts) = channel();
+        let generation = horizon_protocol::connection::sunset_lifecycle::RUNTIME.token();
         let thread = move || {
             for a in rx {
-                if let Some(v) = judge(&a, air, &flowing) && tx.send(v).is_err() {
+                if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(generation) { return; }
+                let verdict = judge(&a, air, &flowing);
+                if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(generation) { return; }
+                if let Some(v) = verdict && tx.send(v).is_err() {
                     return;
                 }
             }

@@ -1,5 +1,7 @@
 // Shulker Peek: the grid a middle click pinned, in place of the hovered slot's tooltip.
 fn sunset_peek_pinned(game: &crate::game::Game<'_>, batch: &mut HudBatch) -> std::ops::ControlFlow<()> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     if crate::game::sunset_render::pinned(game, batch) {
         return std::ops::ControlFlow::Break(());
     }

@@ -2,6 +2,8 @@
 // it), and presses, releases and focus for the binds (a Hold bind lets go even when a screen took the release) and the
 // combat macros.
 fn sunset_window_event(event: &winit::event::WindowEvent) {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return; }
+
     crate::game::sunset::text_event(event);
     crate::game::sunset::bind_event(event);
     if let winit::event::WindowEvent::Focused(false) = event {

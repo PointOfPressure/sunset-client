@@ -2,6 +2,8 @@
 // every channel (which blends as the coverage squared and thins every edge), and a touch of weight is added.
 // Only grey texels are changed, so the bitmap fonts' white and transparent ones stay as they are.
 fn sunset_patches(this: &Font) -> std::ops::ControlFlow<Vec<Patch>> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     if sunset_font::STYLE.load(std::sync::atomic::Ordering::Relaxed) == 0 {
         return std::ops::ControlFlow::Continue(());
     }

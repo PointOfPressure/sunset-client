@@ -7,6 +7,8 @@ fn sunset_xray_hook(
     out: &mut SectionMesh,
     scratch: &mut MeshScratch,
 ) -> std::ops::ControlFlow<SectionMesh> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     use std::sync::atomic::Ordering::Relaxed;
     let (xray, water) = (sunset_xray::ON.load(Relaxed), sunset_water::on());
     if !(xray || water) || sunset_xray::meshing() {

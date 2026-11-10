@@ -94,6 +94,13 @@ struct Queue {
 
 static QUEUE: Mutex<Queue> = Mutex::new(Queue { ops: VecDeque::new(), wait: 0 });
 
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    ON.store(false, Ordering::Relaxed);
+    queue(|q| { q.ops.clear(); q.wait = 0; });
+    fill(|f| { f.hovered = None; f.last = None; f.next = None; });
+    super::recipe_book::sunset_recipes::sync(game, false);
+}
+
 fn queue<R>(f: impl FnOnce(&mut Queue) -> R) -> R {
     f(&mut QUEUE.lock().unwrap_or_else(|e| e.into_inner()))
 }

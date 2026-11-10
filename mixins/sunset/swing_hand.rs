@@ -1,5 +1,7 @@
 // Hand View's Slow swing: your own swings last longer (the game's own duration otherwise, haste and fatigue too).
 fn sunset_swing_hand(this: &mut Game<'_>, hand: Hand, animation: SwingAnimation) -> std::ops::ControlFlow<()> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     use horizon_client::first_person::sunset_hand_view as view;
     if !view::SLOW_SWING.load(std::sync::atomic::Ordering::Relaxed) {
         return std::ops::ControlFlow::Continue(());

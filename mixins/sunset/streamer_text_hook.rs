@@ -11,6 +11,8 @@ fn sunset_streamer_text(
     world: bool,
     outline: Option<(u32, [f32; 2])>,
 ) -> std::ops::ControlFlow<f32> {
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+
     match crate::hud::sunset_streamer::protect(text) {
         Some(t) => std::ops::ControlFlow::Break(crate::hud::sunset_streamer::guarded(|| {
             batch.styled_text(atlas, &t, x, y, color, shadow, world, outline)

@@ -120,6 +120,8 @@ pub(crate) fn query(host: &str, port: u16) -> Result<QueryInfo, String> {
 }
 
 fn query_with_timeout(host: &str, port: u16, timeout: Duration) -> Result<QueryInfo, String> {
+    let generation = horizon_protocol::connection::sunset_lifecycle::RUNTIME.token();
+    if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(generation) { return Err("Sunset stopped".into()); }
     if port == 0 {
         return Err("the Query port is not valid".into());
     }
@@ -147,19 +149,20 @@ fn query_with_timeout(host: &str, port: u16, timeout: Duration) -> Result<QueryI
     let mut challenge_request = [0u8; 7];
     challenge_request[..3].copy_from_slice(&[0xfe, 0xfd, 9]);
     challenge_request[3..].copy_from_slice(&session);
-    let challenge_reply = exchange(&socket, &challenge_request, port)?;
+    let challenge_reply = exchange(&socket, &challenge_request, port, generation)?;
     let challenge = parse_challenge(&challenge_reply, session)?;
     let mut full_request = [0u8; 15];
     full_request[..3].copy_from_slice(&[0xfe, 0xfd, 0]);
     full_request[3..7].copy_from_slice(&session);
     full_request[7..11].copy_from_slice(&challenge.to_be_bytes());
-    let full_reply = exchange(&socket, &full_request, port)?;
+    let full_reply = exchange(&socket, &full_request, port, generation)?;
     parse_full(&full_reply, session)
 }
 
-fn exchange(socket: &UdpSocket, request: &[u8], port: u16) -> Result<Vec<u8>, String> {
+fn exchange(socket: &UdpSocket, request: &[u8], port: u16, generation: u64) -> Result<Vec<u8>, String> {
     let mut buffer = [0; MAX_PACKET + 1];
     for attempt in 0..2 {
+        if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(generation) { return Err("Sunset stopped".into()); }
         socket.send(request).map_err(|e| format!("could not send to UDP {port} ({e})"))?;
         match socket.recv(&mut buffer) {
             Ok(n) if n <= MAX_PACKET => return Ok(buffer[..n].to_vec()),

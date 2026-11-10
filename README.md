@@ -82,8 +82,19 @@ They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
 | `.profile export\|import <name>` | share a profile: export copies it to the mod's `exports` folder, import takes `<name>.profile` from its `imports` folder |
 | `.preset [name] [apply]` | the pre-made profiles (PvP: crystal, PvP: sword and mace, PvP: mace, PvP: carts, Anarchy and base hunting, Building, Legit (Grim-safe), Survival QoL): a name says what it turns on and off, `apply` takes it |
 | `.debug [chat lines]` | copy a debug report to the clipboard (and save it in the mod's `debug` folder): versions and server, your state, the input and packets sent tick by tick, the modules on with their changed settings, anticheat alerts from chat counted per check, setbacks, kicks and the chat (100 lines by default). Paste it into a bug report or an AI. **Debug Report** (Client) does the same from its row or a key. Its **Save folder** setting changes where the timestamped `.md` files go; relative paths start in the mod's data folder, and absolute paths work too |
-| `.panic` | turn every module off and hide Sunset until `.panic` again or restart (or bind the **Panic** module to a key) |
+| `.panic` | stop Sunset until the game restarts (or bind the **Panic** module to a key) |
 | `.menu [text]` | open the menu, already searching for the text |
+
+Panic stops Sunset for the rest of the game process; nothing brings it back before a restart, which starts it as
+usual. Every module goes off, queued actions and plugin tasks are cancelled, held packets go out in order, the input,
+inventory and rendering overrides are released, and the ClickGUI, HUD and commands go (`.` lines are ordinary chat
+after it). Sunset leaves Options > Mods for that session, and, with the launcher patch in
+[docs/hard-panic.md](docs/hard-panic.md), the launcher's Mods tab while that game runs. The server connection stays.
+Settings are not saved by Panic. A plugin's `stop_everything` is not Panic: it turns everything off and Sunset keeps
+running. Plugin `on_stop` handlers run once after the active callback returns. Direct native hooks and plugin-owned
+threads must cooperate with `sunset_api::running()` and clean up in `on_stop`. Background scans cancel between work
+units; an in-flight chunk calculation or blocking I/O may finish, with its result discarded. Panic cannot unload
+compiled mixins, undo sent packets or remove historical evidence of execution.
 
 List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the same way:
 `.set xray blocks diamond_ore,ancient_debris`.
@@ -202,7 +213,7 @@ See the [feature roadmap](docs/feature-roadmap.md) for what has landed, what is 
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and block counter, Scaffold Legit, Godbridge and Telly modes, GUI Move's GrimAC mode, W Tap's Adaptive S Tap, the ordered Fake Lag line and Backtrack as its own module, Offhand's Auto Totem and its clicks between ticks, Chest Swap packet timing, Auto Weapon's modes, Auto Spear with Lunge on hit and Extended reach, Auto Mace, the HUD layout editor, Kill Aura, Time and Weather Changer fixes, the Dashboard menu style and smooth scrolling, Server Scan, the Crystal Aura and Anchor Aura Macro sections and Anvil merge, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro and Anchor Macro (their Macro sections), Shield Breaker, Mace and Spear Swap (Auto Weapon's Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smash fall count Auto Mace goes by), W Tap, Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and block counter, Scaffold Legit, Godbridge and Telly modes, GUI Move's GrimAC mode, W Tap's Adaptive S Tap, the ordered Fake Lag line and Backtrack as its own module, Hard Panic, Offhand's Auto Totem and its clicks between ticks, Chest Swap packet timing, Auto Weapon's modes, Auto Spear with Lunge on hit and Extended reach, Auto Mace, the HUD layout editor, Kill Aura, Time and Weather Changer fixes, the Dashboard menu style and smooth scrolling, Server Scan, the Crystal Aura and Anchor Aura Macro sections and Anvil merge, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro and Anchor Macro (their Macro sections), Shield Breaker, Mace and Spear Swap (Auto Weapon's Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smash fall count Auto Mace goes by), W Tap, Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 

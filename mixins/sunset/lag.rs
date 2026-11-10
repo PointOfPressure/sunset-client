@@ -186,6 +186,14 @@ fn release(game: &Game<'_>, now: Instant) {
     }
 }
 
+// Panic, while its cleanup waits for a plugin callback: a packet the game sends goes behind what was held, never before
+// it (the send hook calls this before letting it through).
+pub(super) fn drain(game: &Game<'_>) {
+    if DELIVERING.with(Cell::get) == 0 && lag(|l| l.line.len()) > 0 {
+        flush(game, Flush::Stopped);
+    }
+}
+
 // Everything held goes now, in order.
 fn flush(game: &Game<'_>, why: Flush) -> usize {
     let now = Instant::now();

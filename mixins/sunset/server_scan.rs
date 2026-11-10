@@ -1021,6 +1021,7 @@ fn run(game: &mut Game<'_>, module: &Module) -> Vec<String> {
 }
 
 fn start_query(id: u64, host: String, port: u16) -> Result<Receiver<(u64, Result<QueryInfo, String>)>, String> {
+    let generation = horizon_protocol::connection::sunset_lifecycle::RUNTIME.token();
     if QUERY_RUNNING.swap(true, Ordering::Relaxed) {
         return Err("the previous Query is still running".into());
     }
@@ -1028,9 +1029,13 @@ fn start_query(id: u64, host: String, port: u16) -> Result<Receiver<(u64, Result
     std::thread::Builder::new()
         .name("sunset-server-scan-query".into())
         .spawn(move || {
+            if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(generation) {
+                QUERY_RUNNING.store(false, Ordering::Relaxed);
+                return;
+            }
             let result = query::query(&host, port);
             QUERY_RUNNING.store(false, Ordering::Relaxed);
-            let _ = tx.send((id, result));
+            if horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(generation) { let _ = tx.send((id, result)); }
         })
         .map(|_| rx)
         .map_err(|error| {

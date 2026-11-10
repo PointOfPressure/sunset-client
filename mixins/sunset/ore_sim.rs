@@ -116,6 +116,7 @@ fn ore_states(registry: &BlockRegistry) -> Vec<bool> {
 
 impl Sim {
     fn start(game: &Game<'_>, key: (i64, &'static str), build: (i32, i32), generation: (i32, i32, i32)) -> Option<Self> {
+        let lifecycle = horizon_protocol::connection::sunset_lifecycle::RUNTIME.token();
         let registry: &'static BlockRegistry = game.pack.assets.registry;
         let dir: PathBuf = game.options.resources.join("worldgen");
         let biome_names: Vec<String> = game.res.biomes().list.iter().map(|b| b.name.clone()).collect();
@@ -123,6 +124,7 @@ impl Sim {
         let (jobs, rx) = channel::<Job>();
         let (tx, done) = channel();
         let thread = move || {
+            if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(lifecycle) { return; }
             let loaded = horizon_client::vanillagen::shared_data(&dir, registry)
                 .map_err(|e| e.to_string())
                 .and_then(|data| ore_sim(&data, "minecraft:normal", key.1, build, generation));
@@ -140,8 +142,10 @@ impl Sim {
             let biomes: Vec<Option<u32>> = biome_names.iter().map(|n| sim.biome_index(n)).collect();
             let air = registry.default_state("minecraft:air").map_or(0, |s| s.0);
             for job in rx {
+                if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(lifecycle) { return; }
                 let view = View { at: job.at, chunks: &job.chunks, biomes: &biomes, solid: &solid, air };
                 let found = sim.chunk(key.0, job.at.0, job.at.1, &view);
+                if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(lifecycle) { return; }
                 if tx.send(Done::Chunk(job.at, found)).is_err() {
                     return;
                 }

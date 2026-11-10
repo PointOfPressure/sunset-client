@@ -6,6 +6,23 @@
 
 use std::cell::Cell;
 
+pub fn reset() {
+    set_freeze(false);
+    set_input_scale(None);
+    set_move_yaw(None);
+    set_no_sprint(false);
+    set_no_slow_grim(false);
+    set_no_slow_skip(false);
+    set_screen_keys(None);
+    set_flying_speed(None);
+    set_safe_walk(false);
+    set_across(None);
+    set_up(None);
+    set_strafe_dir(None);
+    set_liquid_flow(None);
+    ATTACK_SLOW.with(|c| c.set((0, 0)));
+}
+
 thread_local! {
     // GUI Move's pending inventory transaction: one movement consumes the override,
     // while the matching PlayerInput remains empty through the end of this tick.

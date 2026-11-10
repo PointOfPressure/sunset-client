@@ -141,6 +141,16 @@ struct Ps {
 
 static PS: Mutex<Option<Ps>> = Mutex::new(None);
 
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    if ps(|p| p.gap_eating) && game.held().is_some_and(|s| s.item.ends_with("golden_apple")) {
+        stop_eating(game);
+    }
+    tick(game, &[]);
+    speed_mine(game, None);
+    no_break_reset(game, None);
+    ps(|p| *p = Ps::default());
+}
+
 fn ps<R>(f: impl FnOnce(&mut Ps) -> R) -> R {
     let mut g = PS.lock().unwrap_or_else(|e| e.into_inner());
     f(g.get_or_insert_with(Ps::default))
@@ -381,7 +391,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     if let Some(m) = get("Auto Gap") {
         auto_gap(game, m);
     } else if ps(|p| std::mem::take(&mut p.gap_eating)) {
-        let _ = game.play_mouse(MouseButton::Right, false);
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
     }
     if let Some(m) = get("Fast Place") {
         fast_place(game, m);
@@ -454,8 +464,8 @@ fn use_rod(game: &mut Game<'_>, m: &Module) -> bool {
         }
         hold(game, slot);
     }
-    let _ = game.play_mouse(MouseButton::Right, true);
-    let _ = game.play_mouse(MouseButton::Right, false);
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
     ps(|p| p.cast_left = m.n("Cast delay (ticks)") as u32);
     true
 }
@@ -555,7 +565,7 @@ fn auto_gap(game: &mut Game<'_>, m: &Module) {
                 Some(slot) => {
                     hold(game, slot);
                     if game.using.is_none() {
-                        let _ = game.play_mouse(MouseButton::Right, true);
+                        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
                     }
                 }
                 None => stop_eating(game),
@@ -571,13 +581,13 @@ fn auto_gap(game: &mut Game<'_>, m: &Module) {
                 s.gap_eating = true;
             });
             hold(game, slot);
-            let _ = game.play_mouse(MouseButton::Right, true);
+            let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
         }
     }
 }
 
 fn stop_eating(game: &mut Game<'_>) {
-    let _ = game.play_mouse(MouseButton::Right, false);
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
     let prev = ps(|s| {
         s.gap_eating = false;
         s.gap_prev
