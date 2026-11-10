@@ -38,6 +38,27 @@ Phase 1: 0 Rust warnings, 203 tests passed. Phase 3: 209. Phase 2: 211, 0 warnin
   world changes (AntiBot tokens, own entity id). Kill Aura has no sprint handling of its own; W Tap and Jump Reset
   act on its hits, so there is no second sprint reset.
 
+## Round 2, phase 0: Inventory Manager stutter (in progress)
+
+Findings (from the code and a timing test, not from a server trace):
+- Planning is cheap: a full 36-slot inventory takes about 84 us a plan (hotbar, duplicates and sort, in an
+  unoptimized test build; `inventory_plan::tests::planning_a_full_inventory_is_cheap`). It was not the freeze.
+- The freeze in 235c185's parent was a lock taken twice (`rand()` inside a `ps()` closure); fixed in 235c185.
+- What was still wrong: a click every Delay ticks with no regard for the server. On a laggy or 1.8-style server
+  the next click went out before the server's answer to the last one, so clicks piled up against an inventory the
+  server didn't share, and each mismatch brought a full resync (the stutter). It also planned every tick, clicked
+  while you held an item on the cursor or clicked yourself, and could retry a refused step forever.
+
+Fix: `inventory_exec.rs` (pure, unit tested) runs one step at a time. After a click the next waits at least a round
+trip (`settle_ticks`: the ping in ticks plus one, at least Delay plus Delay variation), so the server's answer is in
+before the next plan. A step that left no trace once it settled counts as refused and is not tried again on the same
+inventory. Nothing is planned while the inventory fingerprint (slots, armour, the server's state id) is unchanged since
+a plan found nothing to do, while the cursor holds an item, or while you click (and for 10 ticks after). Closing the
+inventory clears pending and refused steps. The Debug Report has an Inventory Manager line (plans, mean and most
+planning time, unchanged ticks skipped, steps, refused).
+
+Not done: tested on a real 1.8 or NCP server (not available here); Steps are slower now (a round trip each).
+
 ## Phase 3: Inventory Manager
 
 Inventory Cleaner is now **Inventory Manager**: the module is renamed and saved settings carry over (`RENAMED`:

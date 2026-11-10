@@ -2,6 +2,7 @@
 // Spam, and Anchor.
 
 use super::sunset::{Category, Module, hold, look_at};
+use super::sunset_inventory_exec::{Gate, Step};
 use super::sunset_inventory_plan as plan;
 use super::sunset_util::*;
 use super::{Game, Screen};
@@ -141,7 +142,6 @@ struct Ps {
     steal_last: usize,
     steal_same: u32,
     steal_done: i32,
-    clean_wait: u32,
     // Inventory Manager's Preset as last seen.
     clean_preset: String,
     // No Break Reset: the step the block's break took last tick, with the item held then.
@@ -855,20 +855,67 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
     let in_screen = game.screen == Screen::Inventory && game.remote_menu().1 == "inventory";
     // Off the screen: only with no other menu open (the player inventory's clicks need no screen on the server).
     let closed = !m.b("Only in inventory") && game.screen == Screen::Playing && game.remote_menu().0 == 0;
-    if !(in_screen || closed) || (in_screen && super::sunset_refill::loot(game, m)) {
+    if !(in_screen || closed) {
+        // Nowhere to work: a later step starts afresh, with nothing pending or remembered as refused.
+        exec(|e| e.reset());
         return;
     }
-    if ps(|p| {
-        p.clean_wait = p.clean_wait.saturating_sub(1);
-        p.clean_wait > 0
-    }) {
+    if in_screen && super::sunset_refill::loot(game, m) {
         return;
     }
-    if super::sunset_combat_control::owner().is_some() {
+    let now = game.ticks;
+    // You first: an item on your cursor, or a button down on the screen.
+    let clicking = in_screen && (game.physical_buttons.contains(&MouseButton::Left) || game.physical_buttons.contains(&MouseButton::Right));
+    if game.carried.is_some() || clicking {
+        exec(|e| e.user(now));
         return;
     }
-    // The wait after a step, rolled here: rand() takes the PS lock itself, so it must not run inside a ps() closure.
-    let wait = m.n("Delay (ticks)") as u32 + 1 + rand(m.n("Delay variation") as usize + 1) as u32;
+    let fingerprint = inventory_fingerprint(game);
+    if exec(|e| e.gate(now, fingerprint)) == Gate::Wait || super::sunset_combat_control::owner().is_some() {
+        return;
+    }
+    let started = std::time::Instant::now();
+    let step = plan_step(game, m, preset);
+    let took = started.elapsed();
+    let Some(step) = exec(|e| e.planned(fingerprint, step, took)) else {
+        return;
+    };
+    match step {
+        Step::Swap { from, to } => game.remote_menu_ops(&[(Some(from), to as i32, Swap)]),
+        Step::Throw(i) => game.remote_menu_ops(&[(Some(i), 1, Throw)]),
+        Step::Exchange(a, b) => game.remote_menu_ops(&[(Some(a), 0, Pickup), (Some(b), 0, Pickup), (Some(a), 0, Pickup)]),
+    };
+    // rand() takes the PS lock itself: rolled here, outside any ps() or exec() closure.
+    let delay = m.n("Delay (ticks)") as u64 + rand(m.n("Delay variation") as usize + 1) as u64;
+    let settle = super::sunset_inventory_exec::settle_ticks(super::remote::sunset_combat_remote::latency(game), delay);
+    exec(|e| e.sent(step, fingerprint, now, settle));
+}
+
+// Inventory Manager's executor state (inventory_exec.rs). Its closures only read and write it: no game call, no other
+// lock is taken inside.
+static EXEC: Mutex<Option<super::sunset_inventory_exec::Exec>> = Mutex::new(None);
+
+fn exec<R>(f: impl FnOnce(&mut super::sunset_inventory_exec::Exec) -> R) -> R {
+    f(EXEC.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default))
+}
+
+// What the inventory holds, as one number: each slot's item, count and wear, what you wear, and the server's state
+// id. Cheap enough for every tick; a change means a new plan.
+fn inventory_fingerprint(game: &Game<'_>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for stack in game.inventory.iter().take(36).chain(game.armor.iter()) {
+        match stack {
+            Some(s) => (&*s.item, s.count, s.damage, s.extra.is_some()).hash(&mut h),
+            None => 0u8.hash(&mut h),
+        }
+    }
+    super::remote::sunset_combat_remote::container_state(game).hash(&mut h);
+    h.finish()
+}
+
+// The next step for the inventory as it is: the hotbar layout first, then junk and worse duplicates, then sorting.
+fn plan_step(game: &Game<'_>, m: &Module, preset: &str) -> Option<Step> {
     let locked = super::sunset_loadouts::locked_slots();
     let items: Vec<Option<plan::Item>> = (0..36).map(|i| game.inventory.get(i).and_then(|s| s.as_ref()).map(|s| plan_item(game, s))).collect();
     let protected: Vec<bool> = (0..36)
@@ -876,14 +923,9 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
         .collect();
     let kill_aura = super::sunset::with(|s| s.module("Kill Aura").map(|k| k.p("Combat version")).unwrap_or("Auto"));
     let legacy = super::sunset_aura_timing::version(kill_aura, game.main_hand_attack_speed()).0 == super::sunset_aura_timing::Version::Legacy;
-    // The hotbar layout first: what you fight and build with.
-    let wants = plan::layout(m.t("Hotbar layout"));
-    if let Some((from, to)) = plan::hotbar_step(&items, &wants, &locked, legacy) {
-        game.remote_menu_ops(&[(Some(from), to as i32, Swap)]);
-        ps(|p| p.clean_wait = wait);
-        return;
+    if let Some((from, to)) = plan::hotbar_step(&items, &plan::layout(m.t("Hotbar layout")), &locked, legacy) {
+        return Some(Step::Swap { from, to });
     }
-    // Then junk and worse duplicates, never a protected item.
     let mut drop = if preset == "Custom" {
         (0..36).filter(|&i| items[i].as_ref().is_some_and(|s| passes(m, "Items", &s.name))).collect()
     } else {
@@ -894,17 +936,22 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
         drop.extend(plan::duplicates(&items, &worn, &protected, legacy));
     }
     if let Some(i) = drop.into_iter().filter(|&i| !protected[i]).min() {
-        game.remote_menu_ops(&[(Some(i), 1, Throw)]);
-        ps(|p| p.clean_wait = wait);
-        return;
+        return Some(Step::Throw(i));
     }
-    // Then the rest in order: two slots changing places, picked up and put down.
-    if m.b("Sort inventory")
-        && let Some((a, b)) = plan::sort_step(&items, 9..36, &locked)
-    {
-        game.remote_menu_ops(&[(Some(a), 0, Pickup), (Some(b), 0, Pickup), (Some(a), 0, Pickup)]);
-        ps(|p| p.clean_wait = wait);
+    if m.b("Sort inventory") {
+        return plan::sort_step(&items, 9..36, &locked).map(|(a, b)| Step::Exchange(a, b));
     }
+    None
+}
+
+// The Debug Report's Inventory Manager line: how often it planned, skipped an unchanged inventory, stepped, and how
+// long its planning took.
+pub(super) fn inventory_report(out: &mut String) {
+    use std::fmt::Write;
+    let s = exec(|e| e.stats);
+    let mean = if s.plans == 0 { 0 } else { (s.plan_total / s.plans as u32).as_micros() };
+    let _ = writeln!(out, "- Inventory Manager: {} plans (mean {mean} us, most {} us), {} unchanged ticks skipped, {} steps, {} refused",
+        s.plans, s.plan_most.as_micros(), s.skipped, s.steps, s.refused);
 }
 
 // ---- Anti AFK (Sunset's AntiAFK)

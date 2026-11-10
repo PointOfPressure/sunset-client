@@ -439,4 +439,33 @@ mod tests {
         assert!(steps <= 5, "{steps}: one swap per slot put right, at most");
         assert_eq!(sort_step(&slots, 9..36, &locked), None);
     }
+
+    // Planning cost on a full, messy inventory: an Inventory Manager plan is every planner once, as player.rs runs them.
+    // Prints the time (cargo test -- --nocapture); fails only if a plan takes over 2 ms, far above a tick's share.
+    #[test]
+    fn planning_a_full_inventory_is_cheap() {
+        let names = ["diamond_sword", "iron_sword", "diamond_pickaxe", "iron_pickaxe", "diamond_chestplate", "iron_chestplate", "bread", "stone"];
+        let slots: Vec<Option<Item>> = (0..36)
+            .map(|i| {
+                let mut it = with(item(names[i % names.len()]), "unbreaking", (i % 3) as u32);
+                it.block = it.name == "stone";
+                it.food = it.name == "bread";
+                it.count = 1 + i as u32;
+                Some(it)
+            })
+            .collect();
+        let worn: [Option<Item>; 4] = Default::default();
+        let wants = layout("sword,pickaxe,,blocks,food");
+        let locked = vec![false; 36];
+        let runs = 2000;
+        let started = std::time::Instant::now();
+        for _ in 0..runs {
+            std::hint::black_box(hotbar_step(&slots, &wants, &locked, false));
+            std::hint::black_box(duplicates(&slots, &worn, &locked, false));
+            std::hint::black_box(sort_step(&slots, 9..36, &locked));
+        }
+        let each = started.elapsed() / runs;
+        println!("inventory plan (hotbar + duplicates + sort, 36 full slots): {} us a plan", each.as_micros());
+        assert!(each < std::time::Duration::from_millis(2), "{each:?}");
+    }
 }
