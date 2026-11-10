@@ -5,6 +5,7 @@
 // that look meets the target within vanilla reach (see sunset_rotation).
 
 use super::sunset::{Canvas, Category, Module, health_colour, hold, look_at, toggle_named};
+use super::sunset_aura_timing as timing;
 use super::sunset_combat_control as control;
 use super::sunset_rotation::{Managed, direction, track};
 use super::sunset_util::*;
@@ -17,22 +18,20 @@ use std::sync::atomic::Ordering;
 pub(super) fn defaults() -> Vec<Module> {
     vec![
         Module::new("Kill Aura", Category::Combat, "Attacks nearby entities.")
+            // Combat: how hits work on this server, what it hits with and how far.
+            .pick("Combat version", &["Auto", "Legacy (1.8)", "Modern (1.9+)"])
             .pick("Attack when holding", &["Weapons", "All"])
             .text("Selected weapon types", "diamond_sword,diamond_axe,trident,mace,diamond_spear")
-            .pick("Rotate", &["Always", "On hit", "None"])
-            .pick("Rotation mode", &["Silent aura", "Snap", "Normal", "Smooth", "Custom"])
-            .pick("Rotation view", &["Silent", "Visible"])
-            .num("Yaw speed", 60.0, 5.0, 180.0, 5.0)
-            .num("Pitch speed", 60.0, 5.0, 180.0, 5.0)
-            .num("Smoothing", 0.0, 0.0, 0.9, 0.05)
-            // Silent aura's turning speed.
-            .num("Aim speed", 7.0, 1.0, 10.0, 0.1)
-            .bool("Ray cast", false)
             .bool("Auto switch", false)
             .bool("Swap back", false)
+            .num("Weapon switch delay", 0.0, 0.0, 10.0, 1.0)
+            .num("Range", 4.5, 1.0, 6.0, 0.1)
+            .num("Walls range", 3.5, 1.0, 6.0, 0.1)
             .bool("Only on click", false)
             .bool("Only on look", false)
+            .bool("Pause on use", false)
             .bool("Auto disable", false)
+            // Targeting.
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "player")
             .pick("Priority", PRIORITIES)
@@ -43,13 +42,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Attack mode", &["Single", "Switch", "Multi"])
             .bool("Target lock", false)
             .num("Target switch delay", 0.0, 0.0, 40.0, 1.0)
-            .num("Range", 4.5, 1.0, 6.0, 0.1)
-            .num("Walls range", 3.5, 1.0, 6.0, 0.1)
-            // Target strafe (target_strafe.rs): your move goes round the target at Strafe radius.
-            .bool("Target strafe", false)
-            .num("Strafe radius", 2.5, 0.5, 6.0, 0.1)
-            .pick("Strafe when", &["Always", "Jump held", "Speed on"])
-            .bool("Avoid edges", true)
             .pick("Passive mob age filter", &["Adult", "Baby", "Both"])
             .pick("Hostile mob age filter", &["Both", "Adult", "Baby"])
             .bool("Ignore named", false)
@@ -59,10 +51,29 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ignore teams", false)
             .bool("Ignore invisible", false)
             .num("Health threshold", 0.0, 0.0, 100.0, 1.0)
-            .bool("Pause on use", false)
+            // Rotations.
+            .pick("Rotate", &["Always", "On hit", "None"])
+            .pick("Rotation mode", &["Silent aura", "Snap", "Normal", "Smooth", "Custom"])
+            .pick("Rotation view", &["Silent", "Visible"])
+            .num("Yaw speed", 60.0, 5.0, 180.0, 5.0)
+            .num("Pitch speed", 60.0, 5.0, 180.0, 5.0)
+            .num("Smoothing", 0.0, 0.0, 0.9, 0.05)
+            // Silent aura's turning speed.
+            .num("Aim speed", 7.0, 1.0, 10.0, 0.1)
+            .bool("Ray cast", false)
+            // Timing (aura_timing.rs). Modern: the cooldown (or a fixed delay, or Hit select's wait for the hurt time to
+            // pass); Legacy: a click rate.
             .pick("Attack timing", &["Vanilla cooldown", "Custom delay", "Hit select"])
+            .num("Cooldown", 1.0, 0.5, 1.0, 0.05)
             .num("Hit delay", 11.0, 0.0, 60.0, 1.0)
-            .num("Weapon switch delay", 0.0, 0.0, 10.0, 1.0)
+            .num("Min CPS", 9.0, 1.0, 20.0, 0.5)
+            .num("Max CPS", 13.0, 1.0, 20.0, 0.5)
+            .pick("CPS pattern", &["Random", "Drift", "Steady"])
+            // Advanced. Target strafe (target_strafe.rs): your move goes round the target at Strafe radius.
+            .bool("Target strafe", false)
+            .num("Strafe radius", 2.5, 0.5, 6.0, 0.1)
+            .pick("Strafe when", &["Always", "Jump held", "Speed on"])
+            .bool("Avoid edges", true)
             .shield(),
     ]
 }
@@ -101,6 +112,9 @@ struct As {
     // Silent aura: the managed look, and who it is aiming at.
     managed: Option<Managed>,
     silent_target: Option<u32>,
+    // Legacy's click clock (aura_timing.rs), and the combat model it went by last tick and why (.auradebug).
+    clicks: Option<timing::Clicks>,
+    version: &'static str,
 }
 
 static AS: Mutex<Option<As>> = Mutex::new(None);
@@ -322,6 +336,7 @@ fn stop(game: &mut Game<'_>, m: &Module) {
         s.switch_next = false;
         s.look = None;
         s.aimed = None;
+        if let Some(c) = s.clicks.as_mut() { c.stop(); }
         (std::mem::take(&mut s.attacking), std::mem::take(&mut s.swapped), s.prev, s.given)
     });
     if was && swapped && m.b("Swap back") && game.selected == given && control::owns(HAND) {
@@ -606,8 +621,17 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         st(|s| s.reason = "weapon switch delay");
         return;
     }
-    let timing = m.p("Attack timing");
-    let ready = if timing == "Custom delay" {
+    // Legacy clicks at a rate; Modern waits for the cooldown, a fixed delay, or (Hit select) the hurt time too.
+    let speed = game.main_hand_attack_speed();
+    let (version, why) = timing::version(m.p("Combat version"), speed);
+    st(|s| s.version = why);
+    let legacy = version == timing::Version::Legacy;
+    let timing = if legacy { "Clicks" } else { m.p("Attack timing") };
+    let ready = if legacy {
+        let seed = u64::from(primary.id) << 32 ^ game.ticks;
+        let pattern = timing::Pattern::named(m.p("CPS pattern"));
+        st(|s| s.clicks.get_or_insert_with(|| timing::Clicks::new(seed)).tick(m.n("Min CPS"), m.n("Max CPS"), pattern))
+    } else if timing == "Custom delay" {
         st(|s| {
             if s.hit_timer < m.n("Hit delay") as u32 {
                 s.hit_timer += 1;
@@ -617,7 +641,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             }
         })
     } else {
-        game.hand_strength.scale(0.5, game.main_hand_attack_speed()) >= 1.0
+        timing::modern_ready(game.hand_strength.scale(0.5, speed), m.n("Cooldown"))
     };
     let spear = game.held().is_some_and(|s| Kinetic::of(&s.item).is_some());
     if !ready || (spear && game.cannot_attack_with_item(game.hand_strength.ticker, 0)) {
@@ -647,6 +671,10 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         super::sunset::attack_for(game, t.id, crits, on_hit, super::sunset::AttackSource::KillAura);
         hit = true;
     }
+    if !hit && legacy {
+        // The click was due: it goes as soon as the look meets, not a whole gap later.
+        st(|s| if let Some(c) = s.clicks.as_mut() { c.missed(); });
+    }
     if hit {
         st(|s| {
             s.hit_timer = 0;
@@ -669,7 +697,7 @@ pub(super) fn target_id() -> Option<u32> {
 }
 
 pub(super) fn diagnostics() -> String {
-    st(|s| format!("KillAura reason={} target={:?} hand={:?}", s.reason, s.target, control::owner()))
+    st(|s| format!("KillAura reason={} target={:?} hand={:?} combat={}", s.reason, s.target, control::owner(), s.version))
 }
 
 // The Target HUD: a box by the crosshair with the name, distance and health of who Kill Aura is hitting.

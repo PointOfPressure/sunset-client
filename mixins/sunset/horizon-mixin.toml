@@ -1993,6 +1993,12 @@ name = "sunset_lag"
 source = "lag.rs"
 
 [[module]]
+id = "aura_timing"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_aura_timing"
+source = "aura_timing.rs"
+
+[[module]]
 id = "lag_line"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_lag_line"

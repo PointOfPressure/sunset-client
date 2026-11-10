@@ -460,10 +460,15 @@ impl Module {
                 match name {
                     "Rotation mode" | "Rotation view" => always,
                     "Yaw speed" | "Pitch speed" | "Smoothing" => always && self.p("Rotation mode") == "Custom",
+                    "Aim speed" => always && self.p("Rotation mode") == "Silent aura",
                     "Max targets" => self.p("Attack mode") == "Multi",
                     "Target lock" => self.p("Attack mode") == "Single",
                     "Target switch delay" => self.p("Attack mode") != "Multi",
-                    "Hit delay" => self.p("Attack timing") == "Custom delay",
+                    // Modern's timing and Legacy's clicks; Auto may run either, so it shows both.
+                    "Attack timing" => self.p("Combat version") != "Legacy (1.8)",
+                    "Cooldown" => self.p("Combat version") != "Legacy (1.8)" && self.p("Attack timing") != "Custom delay",
+                    "Hit delay" => self.p("Combat version") != "Legacy (1.8)" && self.p("Attack timing") == "Custom delay",
+                    "Min CPS" | "Max CPS" | "CPS pattern" => self.p("Combat version") != "Modern (1.9+)",
                     "Strafe radius" | "Strafe when" | "Avoid edges" => self.b("Target strafe"),
                     _ => true,
                 }
