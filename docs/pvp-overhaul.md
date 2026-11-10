@@ -72,6 +72,21 @@ still owns what you wear; Offhand, Chest Swap and Take off are unchanged (Auto A
 Tests: migration (`auto_armor_settings_move_into_inventory_manager`) and turn-taking. `.toggle autoarmor` no
 longer exists (use the setting or its key).
 
+## Round 2, phases 2 and 3: Scaffold tower, Flight setbacks
+
+- Scaffold (Normal): Fast tower lifted at Tower speed, or settled you on a block's top as "on the ground", whether or
+  not a block was under you; a missed placement left you rising over nothing. It now acts only with a block under
+  your feet (`tower_action`, unit tested): after a miss you come down onto the last block and the next placement
+  is tried from there. Scaffold says once when it has no blocks to place (none in the hotbar or the Blocks filter
+  leaves none), until there are blocks again.
+- Flight: a server setback (a correction of your position) now pauses Flight for Setback pause ticks (10; no push
+  of its own, vanilla flying speed), so the next move starts from where the server put you instead of pushing back
+  into the same refusal. Disable on setback turns Flight off instead. `fly_paused` is unit tested.
+- Not done, on purpose: no NCP or Watchdog Flight mode. The Rise archive's NCP flights were not read or ported (the
+  archive's licence forbids reuse, and nothing here could be tested on NCP); no Moon source was found to check.
+  Snap and Breezily bridging, diagonal bridging work and placement retries were not touched: they need the tuned
+  engine and in-game testing.
+
 ## Phase 3: Inventory Manager
 
 Inventory Cleaner is now **Inventory Manager**: the module is renamed and saved settings carry over (`RENAMED`:

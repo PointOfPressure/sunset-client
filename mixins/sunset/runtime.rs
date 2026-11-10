@@ -723,7 +723,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("No sneak", false)
             .pick("Anti kick mode", &["Packet", "Normal", "None"])
             .num("Delay", 20.0, 1.0, 200.0, 1.0)
-            .num("Off time", 1.0, 1.0, 20.0, 1.0),
+            .num("Off time", 1.0, 1.0, 20.0, 1.0)
+            // After the server puts you back: the ticks Flight holds still (no push of its own) so the next move
+            // starts from where the server has you, or Flight off.
+            .num("Setback pause (ticks)", 10.0, 0.0, 40.0, 1.0)
+            .bool("Disable on setback", false),
         Module::new("Speed", Movement, "Moves faster on the ground.")
             .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop"])
             .num("Vanilla speed", 5.6, 0.0, 20.0, 0.1)
@@ -1340,6 +1344,8 @@ pub(super) struct State {
     knockback_ticks: u32,
     // Flight: Sunset's anti kick counters, the yaw it keeps, which way it nudged last, and whether it let go of sneak.
     fly_delay: i32,
+    // Flight's ticks still to hold after a server setback.
+    fly_setback: u32,
     fly_off: i32,
     fly_last_yaw: f32,
     fly_flip: bool,
@@ -1454,6 +1460,7 @@ impl State {
                     bhop: Bhop::default(),
             knockback_ticks: 0,
                     fly_delay: 0,
+                    fly_setback: 0,
                     fly_off: 0,
                     fly_last_yaw: 0.0,
                     fly_flip: false,
@@ -5106,6 +5113,15 @@ pub(super) fn remember_velocity(game: &Game<'_>) {
 pub(super) fn server_correction(game: &mut Game<'_>) {
     super::sunset_lag::correction(game);
     if !game.native_on(ID) { return; }
+    // Flight: a setback is the server refusing where Flight took you; pushing on from there is what loops.
+    if let Some((pause, disable)) = with(|s| s.module("Flight").filter(|m| m.on).map(|m| (m.n("Setback pause (ticks)") as u32, m.b("Disable on setback")))) {
+        if disable {
+            toggle_named(game, "Flight", false);
+            say(game, "Flight off: the server set you back.");
+        } else {
+            with(|s| s.fly_setback = pause);
+        }
+    }
     super::sunset_render::no_slow_reset();
     super::sunset_parity::correction(game);
     with(|s| {
@@ -5181,6 +5197,13 @@ fn flight_pre(game: &mut Game<'_>, m: Option<&Module>) {
 // Flight after the tick: Sunset's anti kick (Packet: every `Delay` ticks the next move packets sink a little for
 // `Off time` ticks, Normal: the flying stops for those ticks), the yaw put back, then the mode: Abilities flies as
 // creative does at Speed; Velocity holds you still but for the jump and sneak keys, and Speed sets the air's pull.
+// A tick of Flight's setback pause: true while it holds still, counting down.
+fn fly_paused(left: &mut u32) -> bool {
+    let paused = *left > 0;
+    *left = left.saturating_sub(1);
+    paused
+}
+
 fn flight_post(game: &mut Game<'_>, m: Option<&Module>, jump: bool, sneak: bool, screen_dir: Option<[f64; 2]>) {
     let Some(m) = m else {
         return;
@@ -5207,9 +5230,19 @@ fn flight_post(game: &mut Game<'_>, m: Option<&Module>, jump: bool, sneak: bool,
         horizon_client::player_sync::sunset_sync::remind();
     }
     let (creative, spectator) = (game.creative, game.spectator());
+    let paused = with(|s| fly_paused(&mut s.fly_setback));
     let Some(p) = game.player.as_mut() else {
         return;
     };
+    if paused {
+        // Held still where the server put you: no push, and vanilla's flying speed.
+        if velocity {
+            p.velocity = horizon_core::geometry::Vec3::new(0.0, 0.0, 0.0);
+        } else {
+            p.flying_speed = 0.05;
+        }
+        return;
+    }
     if rest {
         p.flying = false;
         p.flying_speed = 0.05;
@@ -10955,6 +10988,15 @@ mod cleanup_tests {
 #[cfg(test)]
 mod scaffold_preset_tests {
     use super::*;
+
+    #[test]
+    fn flight_holds_still_for_its_setback_pause_then_flies() {
+        let mut left = 3;
+        assert_eq!([fly_paused(&mut left), fly_paused(&mut left), fly_paused(&mut left), fly_paused(&mut left)], [true, true, true, false]);
+        assert_eq!(left, 0);
+        let mut none = 0;
+        assert!(!fly_paused(&mut none), "no setback, no pause");
+    }
 
     // An Auto Armor module's lines become Inventory Manager's Auto Armor settings, its on/off independent of the
     // manager's own.
