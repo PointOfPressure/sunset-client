@@ -158,6 +158,8 @@ enum Correction {
 
 #[derive(Default)]
 struct Normal {
+    // "No blocks" was said, until there are blocks again.
+    warned: bool,
     // The look the move packets carry while Normal holds one (your camera's own with Look Visible).
     look: Option<(f32, f32)>,
     visible: bool,
@@ -757,6 +759,14 @@ pub(super) fn pre_tick(game: &mut Game<'_>, m: Option<&Module>) {
     let clicking = game.physical_buttons.contains(&MouseButton::Right) || game.right;
     let slot = scaffold_slot(game, m);
     let flying = game.player.as_ref().is_none_or(|p| p.flying);
+    let warn = with(|n| {
+        let warn = slot.is_none() && !n.warned;
+        n.warned = slot.is_none();
+        warn
+    });
+    if warn {
+        super::sunset::say(game, "Scaffold: no blocks to place (none in your hotbar, or the Blocks filter leaves none).");
+    }
     let (Some(slot), false, true) = (slot, flying, clicking || !m.b("Only on click")) else {
         with(|n| n.stats.state = if slot.is_none() { "no blocks" } else { "waiting" });
         release(game);
@@ -1062,8 +1072,26 @@ fn release(game: &mut Game<'_>) {
     });
 }
 
+// What Fast tower does this tick: lift at Tower speed, settle on the block's top under a ceiling, or nothing. Both
+// need a block under you: after a missed placement the lift stops, you come down onto the last block and the next
+// placement is tried from there, instead of rising (or being told on the ground) over nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Tower {
+    Lift,
+    Cap,
+    Wait,
+}
+
+pub(super) fn tower_action(room: bool, supported: bool) -> Tower {
+    match (supported, room) {
+        (false, _) => Tower::Wait,
+        (true, true) => Tower::Lift,
+        (true, false) => Tower::Cap,
+    }
+}
+
 // Fast tower (Sunset's): while you hold jump (and stand still, or While moving), lifted at Tower speed while there is
-// room above, set on the block's top under a ceiling.
+// room above, set on the block's top under a ceiling (tower_action).
 fn fast_tower(game: &mut Game<'_>, m: &Module) {
     let moving = move_input(game) != (0.0, 0.0);
     let (space, sneak) = (game.keys.contains(&KeyCode::Space), game.keys.contains(&KeyCode::ShiftLeft));
@@ -1075,14 +1103,17 @@ fn fast_tower(game: &mut Game<'_>, m: &Module) {
     };
     let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
     let room = (0..2).all(|dy| util::is_air(game, [feet[0], feet[1] + 2 + dy, feet[2]]));
+    let supported = !util::is_air(game, [feet[0], feet[1] - 1, feet[2]]);
     let Some(p) = game.player.as_mut() else {
         return;
     };
-    if room {
-        p.velocity.y = m.n("Tower speed");
-    } else {
-        p.velocity.y = p.position.y.ceil() - p.position.y;
-        p.ground.on_ground = true;
+    match tower_action(room, supported) {
+        Tower::Lift => p.velocity.y = m.n("Tower speed"),
+        Tower::Cap => {
+            p.velocity.y = p.position.y.ceil() - p.position.y;
+            p.ground.on_ground = true;
+        }
+        Tower::Wait => {}
     }
 }
 
@@ -1200,6 +1231,15 @@ pub(super) fn sprint_allowed(input: (f32, f32), view: f32, sent: f32) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fast_tower_needs_a_block_under_you() {
+        use super::{Tower, tower_action};
+        assert_eq!(tower_action(true, true), Tower::Lift);
+        assert_eq!(tower_action(false, true), Tower::Cap);
+        assert_eq!(tower_action(true, false), Tower::Wait, "a missed block: no lift over nothing");
+        assert_eq!(tower_action(false, false), Tower::Wait, "nor on the ground over nothing");
+    }
+
     #[test]
     fn vanilla_sprint_follows_the_sent_look() {
         use super::sprint_allowed;
