@@ -4229,29 +4229,6 @@ pub(super) fn inventory_idle(game: &Game<'_>) -> bool {
     !super::sunset_gui_move::inventory_busy() && game.native_playing() && game.remote.is_some() && game.remote_menu().1 == "inventory"
 }
 
-// A rough rank of an armor piece: its material, less what it has worn.
-pub(super) fn armor_score(item: &str, damage: u32) -> f32 {
-    let n = item.strip_prefix("minecraft:").unwrap_or(item);
-    let tier = if n.starts_with("netherite") {
-        6.0
-    } else if n.starts_with("diamond") {
-        5.0
-    } else if n.starts_with("iron") {
-        4.0
-    } else if n.starts_with("chainmail") {
-        3.0
-    } else if n.starts_with("copper") {
-        2.5
-    } else if n.starts_with("golden") {
-        2.0
-    } else if n.starts_with("turtle") {
-        2.0
-    } else {
-        1.0
-    };
-    tier - (damage as f32 / 2000.0).min(0.9)
-}
-
 // Puts the stack in inventory slot `i` on armor slot `a`: shift-click into an
 // empty slot, else swap by picking both up.
 // Ungated: Chest Swap and Take off check the input themselves, and a restore must go out.
@@ -4341,8 +4318,15 @@ pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
         return;
     }
     const SLOTS: [&str; 4] = ["head", "chest", "legs", "feet"];
+    // Pieces are ranked by inventory_plan's armour evaluator (vanilla's damage reduction with Protection), the same one
+    // Inventory Manager keeps armour by, so the two never disagree.
+    let value = |game: &Game<'_>, s: &horizon_client::items::ItemStack| super::sunset_inventory_plan::armor_score(&super::sunset_player::plan_item(game, s));
     for (a, slot_name) in SLOTS.iter().enumerate() {
-        let worn = game.armor[a].as_ref().map_or(0.0, |s| armor_score(&s.item, s.damage));
+        // A worn elytra is Chest Swap's to change, not Auto Armor's.
+        if a == 1 && game.armor[a].as_ref().is_some_and(|s| s.item.ends_with("elytra")) && set.is_none() {
+            continue;
+        }
+        let worn = game.armor[a].as_ref().map_or(0.0, |s| value(game, s));
         let mut best: Option<(usize, f32)> = None;
         for i in 0..36 {
             let Some(st) = game.inventory.get(i).and_then(|s| s.as_ref()) else {
@@ -4356,10 +4340,11 @@ pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
                 .items()
                 .get(&st.item)
                 .is_some_and(|inf| inf.equip_slot.as_deref() == Some(*slot_name));
-            let score = armor_score(&st.item, st.damage);
+            let score = value(game, st);
             let wanted = match set.as_deref() {
                 Some(set) => armor_material(&st.item) == set && game.armor[a].as_ref().is_none_or(|w| armor_material(&w.item) != set),
-                None => score > worn,
+                // Better by more than a hair: no swapping back and forth between near-equal pieces.
+                None => score > worn + 0.005,
             };
             if fits && wanted && best.is_none_or(|(_, b)| score > b) {
                 best = Some((i, score));
