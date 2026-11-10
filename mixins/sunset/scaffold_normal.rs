@@ -981,7 +981,17 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
             super::sunset_rotation::scaffold_look(None);
         }
     }
-    horizon_client::motion::sunset_motion::set_no_sprint(m.p("Sprint") == "Off");
+    // Sprint: Keep leaves your sprint be, Off stops it, Vanilla allows it only when vanilla would for the look the
+    // server has: your move at least 0.8 forward along it (a silent look behind you allows none).
+    let sent_yaw = match next { Some(look) if !visible => look.0, _ => camera.0 };
+    let held = |k: KeyCode| f32::from(u8::from(game.keys.contains(&k)));
+    let input = (held(KeyCode::KeyW) - held(KeyCode::KeyS), held(KeyCode::KeyA) - held(KeyCode::KeyD));
+    let no_sprint = match m.p("Sprint") {
+        "Off" => true,
+        "Vanilla" => !sprint_allowed(input, camera.0, sent_yaw),
+        _ => false,
+    };
+    horizon_client::motion::sunset_motion::set_no_sprint(no_sprint);
 
     // Ledge sneak: on the ground, walking where a block is still wanted and none went this tick, sneak (the game then
     // keeps you on the edge, and the server is told you sneak).
@@ -1175,8 +1185,36 @@ pub(super) fn report(out: &mut String) {
     let _ = writeln!(out, "- Last state: {}", if s.state.is_empty() { "-" } else { s.state });
 }
 
+// Whether vanilla lets you sprint moving by `input` (forward, left: -1 to 1 each, as the keys give it) with your view
+// at `view` while the server has your look at `sent` (yaw degrees): the keys' move, seen from the sent look, needs a
+// forward impulse of 0.8 or more (vanilla's classic threshold to sprint; W with A is 1 when the looks agree).
+pub(super) fn sprint_allowed(input: (f32, f32), view: f32, sent: f32) -> bool {
+    let (forward, left) = input;
+    if forward == 0.0 && left == 0.0 {
+        return false;
+    }
+    // The way you move, as a yaw: your view turned left by the keys' angle.
+    let moving = view - left.atan2(forward).to_degrees();
+    forward.hypot(left) * (moving - sent).to_radians().cos() >= 0.8
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn vanilla_sprint_follows_the_sent_look() {
+        use super::sprint_allowed;
+        assert!(sprint_allowed((1.0, 0.0), 30.0, 30.0), "forward along the look");
+        assert!(!sprint_allowed((1.0, 0.0), 30.0, 210.0), "the server sees you walking backwards");
+        assert!(!sprint_allowed((1.0, 0.0), 0.0, 60.0), "60 degrees off is under 0.8 forward");
+        assert!(sprint_allowed((1.0, 0.0), 0.0, 30.0));
+        // W with A: forward 1 while the looks agree, as in vanilla; A alone is no forward impulse.
+        assert!(sprint_allowed((1.0, 1.0), 0.0, 0.0));
+        assert!(sprint_allowed((1.0, 1.0), 0.0, -45.0));
+        assert!(!sprint_allowed((0.0, 1.0), 0.0, 0.0));
+        assert!(!sprint_allowed((1.0, 1.0), 0.0, 90.0), "the look turned right: you go sideways to it");
+        assert!(!sprint_allowed((0.0, 0.0), 0.0, 0.0), "standing still");
+    }
+
     use super::*;
 
     #[test]

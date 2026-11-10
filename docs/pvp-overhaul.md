@@ -8,12 +8,12 @@ Working notes for the Kill Aura, Scaffold and Inventory Manager overhaul, so a l
 |---|---|
 | 1. Kill Aura: combat version and attack scheduler | Done (committed) |
 | 3. Inventory Manager | Done (committed) |
-| 2. Scaffold | In progress: Sprint Off / Vanilla / Keep |
-| 4. Integration checks | Not started |
+| 2. Scaffold | Done for this round (committed): Sprint Vanilla, presets |
+| 4. Integration checks | Reviewed in code; in-game checks pending |
 
 Last good check: `bash /c/Users/jnowa/hzbuild/check.sh <name>` (applies the checkout's mixins to Horizon 66f3981 in a
 fresh stage, `cargo check -p horizon-client --bin horizon-client`, then `cargo test -p horizon-client --lib -- sunset`).
-Phase 1: 0 Rust warnings, 203 tests passed. Phase 3: 0 warnings, 209 tests passed. The script lives outside the repository; its steps are those of the
+Phase 1: 0 Rust warnings, 203 tests passed. Phase 3: 209. Phase 2: 211, 0 warnings. The script lives outside the repository; its steps are those of the
 "local compile check" (horizon-mixins apply with an out dir outside the repo, the launcher's Rust 1.99.1 and mingw on
 `PATH`, `CARGO_HOME` the launcher's cargo). Nothing here has been tried in game yet.
 
@@ -67,10 +67,33 @@ then a sorting swap.
 Limits: no stack merging; no manual run key (the Loot key stays); Auto Armor still ranks armour by material, so a
 carried piece Inventory Manager rates higher (Protection IV iron over plain diamond) is kept but not worn.
 
-## Scaffold: findings so far
+## Phase 2: Scaffold
 
-Not started. Existing: Normal (`scaffold_normal.rs`), Legit/Godbridge (`scaffold_bridge.rs`), Telly
-(`scaffold_telly.rs`), rotations through `sunset_rotation` (Scaffold's look goes before Kill Aura's in `sent()`).
+Scaffold was already complete in its algorithms (Normal with silent/visible looks, ray cast and movement correction
+modes, Late click, Same Y, Expand, Fast tower; Legit's edge sneaking; Godbridge; Telly with its own sprint, Keep Y
+and tower; Scaffold's look goes before Kill Aura's in `sunset_rotation::sent()`, and Kill Aura can pause it with
+Disable with Kill Aura). Those were tuned against GrimAC traces in earlier work, so this phase adds to them without
+rewriting them:
+- **Sprint** (Normal): Keep, **Vanilla** (new: sprint only while the keys' move, seen from the look the server has,
+  has a forward impulse of 0.8 or more, as vanilla requires; `scaffold_normal::sprint_allowed`, unit tested), Off.
+- **Preset**: Custom, **Speedbridge** (Legit with 0-50 ms sneak delays), **Blatant** (Normal: Snap rotations, silent
+  look with movement correction, no ray cast, sprint kept, Expand 2, fast tower while moving). They fill in
+  existing settings when picked and add no algorithm, so placement goes through the same engine and its one move
+  packet a tick. A test checks every preset field is a real setting that takes its value.
+
+Not done (needs in-game work on the tuned engine): a rework of tower recovery after a missed placement, placement
+feedback messages, and Telly/Godbridge sprint unification. No mode is claimed to pass any anticheat.
+
+## Phase 4: integration (by reading the code; not tried in game)
+
+- Kill Aura + Scaffold: Scaffold's look wins in `sent()`; Disable with Kill Aura pauses Scaffold.
+- Kill Aura + W Tap / Jump Reset: Kill Aura has no sprint control; they act on its hits (`melee.rs`).
+- Inventory Manager + Kill Aura / Auto Mace / Scaffold / Auto Tool: no step while another module holds the hand.
+- Inventory Manager + Auto Armor / Offhand: it never touches worn armour or the offhand.
+- Inventory Manager + Loadouts: locked slots are never moved from, filled or thrown.
+- Inventory Manager + Chest Stealer: Chest Stealer works in containers, Inventory Manager only in your inventory
+  (or with no screen open).
+- Inventory Manager + GUI Move: no step while GUI Move holds clicks.
 
 ## Known issues and limits
 

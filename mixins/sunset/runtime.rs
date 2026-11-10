@@ -1008,6 +1008,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
         Module::new("Scaffold", Movement, "Places blocks under you. Normal places from a silent look; Legit sneaks at edges; Godbridge bridges backwards; Telly sprint-jumps with timed silent placement.")
             .pick("Mode", &["Normal", "Legit", "Godbridge", "Telly"])
+            // Settings made for a style of bridging, filled in when picked (scaffold_preset); Custom leaves them.
+            .pick("Preset", &["Custom", "Speedbridge", "Blatant"])
             .pick("Telly rotations", &["Default", "Backwards", "Sideways", "None"])
             .num("Start speed min", 95.0, 1.0, 180.0, 0.5)
             .num("Start speed max", 107.5, 1.0, 180.0, 0.5)
@@ -1038,7 +1040,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Rotation speed", 75.0, 5.0, 180.0, 5.0)
             .pick("Ray cast", &["Strict", "Normal", "Off"])
             .pick("Movement correction", &["Silent", "Strict", "Off"])
-            .pick("Sprint", &["Keep", "Off"])
+            .pick("Sprint", &["Keep", "Vanilla", "Off"])
             .pick("Same Y", &["Off", "On", "Auto jump"])
             .num("Expand", 0.0, 0.0, 4.0, 1.0)
             .bool("Ledge sneak", true)
@@ -3164,6 +3166,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
             injected.push(k);
         }
     }
+    if let Some(m) = get("Scaffold") {
+        scaffold_preset(game, m);
+    }
     // Scaffold's Legit and Godbridge sneak, turn and click before the game's tick moves you.
     let bridging = get("Scaffold")
         .filter(|m| m.on && matches!(m.p("Mode"), "Legit" | "Godbridge") && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
@@ -3819,6 +3824,30 @@ pub(super) fn scaffold_item(game: &Game<'_>, m: &Module, slot: usize) -> bool {
     let listed = super::sunset_util::listed(m.t("Blocks"), name);
     let falls = ["sand", "gravel", "concrete_powder", "anvil"].iter().any(|e| name.ends_with(e)) || name == "dragon_egg";
     listed == (m.p("Blocks filter") == "Whitelist") && f.full_collision && !falls
+}
+
+// Scaffold's presets: settings of its modes made for one style, filled in when the Preset is picked (not on the first
+// look, so a change you made afterwards stays). Speedbridge is Legit's edge sneaking at its quickest; Blatant is Normal
+// with snap rotations, no ray cast, sprint kept, a reach ahead and fast tower while moving. Neither adds an algorithm.
+const SCAFFOLD_PRESETS: [(&str, &[(&str, &str)]); 2] = [
+    ("Speedbridge", &[("Mode", "Legit"), ("Shortest sneak delay (ms)", "0"), ("Longest sneak delay (ms)", "50")]),
+    ("Blatant", &[("Mode", "Normal"), ("Rotate", "true"), ("Rotations", "Snap"), ("Look", "Silent"), ("Ray cast", "Off"),
+        ("Movement correction", "Silent"), ("Sprint", "Keep"), ("Expand", "2"), ("Same Y", "Off"), ("Ledge sneak", "false"),
+        ("Fast tower", "true"), ("While moving", "true")]),
+];
+static SCAFFOLD_PRESET: Mutex<String> = Mutex::new(String::new());
+
+fn scaffold_preset(game: &Game<'_>, m: &Module) {
+    let preset = m.p("Preset");
+    let before = std::mem::replace(&mut *SCAFFOLD_PRESET.lock().unwrap_or_else(|e| e.into_inner()), preset.to_owned());
+    if before.is_empty() || before == preset {
+        return;
+    }
+    if let Some((_, fields)) = SCAFFOLD_PRESETS.iter().find(|p| p.0 == preset) {
+        for (name, value) in fields.iter() {
+            set_setting(game, &format!("scaffold.{}", norm(name)), value);
+        }
+    }
 }
 
 // Scaffold waits while Blink is on, and while Kill Aura is if Disable with Kill Aura says so.
@@ -10891,5 +10920,32 @@ mod cleanup_tests {
         assert_eq!(m.p("Mode"), "Delay");
         assert_eq!(m.n("Delay (ticks)"), 7.0);
         assert!(m.b("Right own CPS") && m.b("Stop on blocks"));
+    }
+}
+
+#[cfg(test)]
+mod scaffold_preset_tests {
+    use super::*;
+
+    // Every preset field names one of Scaffold's settings and takes the value it gives.
+    #[test]
+    fn scaffold_presets_set_real_settings() {
+        for (preset, fields) in SCAFFOLD_PRESETS {
+            let mut state = State::new();
+            for (name, value) in fields.iter() {
+                State::set_field(&mut state.modules, &format!("scaffold.{}", norm(name)), value);
+            }
+            let m = state.module("Scaffold").unwrap();
+            for (name, value) in fields.iter() {
+                let setting = m.setting(name).unwrap_or_else(|| panic!("{preset}: no setting {name}"));
+                let got = match &setting.value {
+                    Value::Bool(b) => b.to_string(),
+                    Value::Num { v, .. } => num(*v),
+                    Value::Pick { i, of } => of[*i].to_owned(),
+                    Value::Text(t) => t.clone(),
+                };
+                assert_eq!(got, *value, "{preset}: {name}");
+            }
+        }
     }
 }
