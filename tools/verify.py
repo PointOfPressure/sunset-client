@@ -8602,6 +8602,62 @@ def _():
     return ok, note
 
 
+@test("S Tap (Adaptive)")
+def _():
+    # W Tap's S Tap with Adaptive on and Longest hold 4, as W Tap's test: you sprint at Bot1 with Kill Aura. Each tap
+    # ends by itself (the Debug Report's W Tap line says how). In a second run (Reaction 3 ticks) you press S yourself
+    # as soon as a hit shows: the tap ends as it starts. After either run, with your keys let go, nothing moves you.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("killaura", "entities", "player")
+    setting("wtap", "mode", "S Tap")
+    setting("wtap", "adaptive", "true")
+    setting("wtap", "longest hold", "4")
+
+    def tap_line():
+        _, text = debug_report(lambda: say(".debug 60"))
+        return next((l for l in (text or "").splitlines() if l.startswith("- W Tap:")), "no W Tap line")
+
+    def still():
+        wait(5)
+        a = pos()
+        wait(10)
+        b = pos()
+        return abs(a[0] - b[0]) + abs(a[2] - b[2]) < 0.05
+
+    def run(act=None):
+        reset(z=-13.5)
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        bot_ready(-10.5, 180)
+        return after_hits(("killaura", "wtap"), 60, lambda: ctl2("state")["player"]["position"][2], bot_health, act=act,
+                          ticks_after=3)
+
+    pushes = run()
+    stopped = still()
+    line = tap_line()
+    natural = any(w in line for w in ("spacing reached", "no back needed", "Longest hold"))
+    seen = {"health": None, "pressed": None}
+
+    def press_back(t):
+        h = bot_health()
+        if seen["pressed"] is None and seen["health"] is not None and h < seen["health"] - 0.01:
+            # Held to the end of the run: with W and S both held you don't sprint, so no later tap replaces this one.
+            ctl("key", "s", "down")
+            seen["pressed"] = t
+        seen["health"] = h
+
+    setting("wtap", "reaction ticks", "3")
+    run(press_back)
+    ctl("key", "s", "up")
+    stopped_after_back = still()
+    back_line = tap_line()
+    bot_done()
+    ok = len(pushes) >= 3 and natural and stopped and stopped_after_back and "you pressed back" in back_line
+    return ok, (f"{len(pushes)} hits {pushes}; adaptive run: {line}; still after: {stopped}; with S pressed: {back_line};"
+                f" still after: {stopped_after_back}")
+
+
 @test("Jump Reset")
 def _():
     # Six times each, off and on: you sprint (W and Ctrl) from 2.5 blocks at Bot1, who stands still, and after 8 ticks

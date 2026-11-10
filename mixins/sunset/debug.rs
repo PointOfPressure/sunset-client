@@ -312,6 +312,7 @@ fn input(out: &mut String, game: &Game<'_>) {
         if on("Snap Tap") { "on" } else { "off" },
         if lost.is_empty() { "nothing".to_owned() } else { lost.join(", ") }
     );
+    let _ = writeln!(out, "- W Tap: {}; {}", if on("W Tap") { "on" } else { "off" }, super::sunset_melee::tap_report(game));
     let last_move = decoded(sunset_wire::last_move()).map(|(t, p)| format!("{} at tick {t}", packet_line(&p)));
     let _ = writeln!(out, "- Last move packet: {}", last_move.as_deref().unwrap_or("none this game"));
 }

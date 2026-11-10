@@ -102,7 +102,7 @@ fn aim(here: [f64; 2], centre: [f64; 2], radius: f64, step: f64, side: f64, yaw:
 
 // Where a few ticks' move along `dir` takes you is no hazard and no drop of more than three blocks below the ground
 // under you now (over no ground already, any way is as good).
-fn safe(game: &Game<'_>, here: [f64; 2], dir: [f64; 2], step: f64, y: f64) -> bool {
+pub(super) fn safe(game: &Game<'_>, here: [f64; 2], dir: [f64; 2], step: f64, y: f64) -> bool {
     let ahead = (step * 3.0).clamp(0.6, 2.0);
     let at = [here[0] + dir[0] * ahead, here[1] + dir[1] * ahead];
     let feet = y.floor() as i32;

@@ -69,7 +69,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Hold", 1.0, 1.0, 8.0, 1.0)
             .num("Longest hold", 1.0, 1.0, 8.0, 1.0)
             .num("Reaction (ticks)", 0.0, 0.0, 5.0, 1.0)
-            .num("Chance (%)", 100.0, 0.0, 100.0, 5.0),
+            .num("Chance (%)", 100.0, 0.0, 100.0, 5.0)
+            // S Tap only: back held while the gap to the target needs it, Hold to Longest hold ticks.
+            .bool("Adaptive", true)
+            .pick("Spacing", &["Balanced", "Conservative", "Aggressive"]),
         Module::new(JUMP, Category::Combat, "Jumps to take less knockback.")
             .num("Chance (%)", 100.0, 0.0, 100.0, 5.0),
         Module::new(FRIEND, Category::Client, "Stops hits on friends.")
@@ -82,6 +85,27 @@ struct InputSave {
     before: [bool; INPUT_KEYS.len()],
     physical: [bool; INPUT_KEYS.len()],
     changed: [bool; INPUT_KEYS.len()],
+}
+
+// An S Tap under way: the target of the hit that started it, its Hold limits, its Spacing (None: the fixed tap, back
+// held all along), whether back went down and came up again (it stays up then), and the ticks it held back.
+#[derive(Clone, Copy)]
+struct STap {
+    target: u32,
+    shortest: u64,
+    longest: u64,
+    spacing: Option<policy::Spacing>,
+    backed_off: bool,
+    back_ticks: u8,
+}
+
+// How the last S Tap went, for the Debug Report.
+#[derive(Clone, Copy)]
+struct TapReport {
+    tick: u64,
+    ticks: u64,
+    back_ticks: u8,
+    end: &'static str,
 }
 
 #[derive(Default)]
@@ -98,6 +122,9 @@ struct State {
     tap_from: u64,
     tap_until: u64,
     tap_back: bool,
+    s_tap: Option<STap>,
+    tap_report: Option<TapReport>,
+    reach: Option<f64>,
     jump_pending: bool,
     input: Option<InputSave>,
     last_attack: Option<u64>,
@@ -614,8 +641,8 @@ pub(super) fn cancel(game: &mut Game<'_>) {
         super::sunset::cancel_turns(owner);
     }
     state(|s| {
-        let (action_tick, action_scene) = (s.action_tick, s.action_scene.take());
-        *s = State { action_tick, action_scene, ..State::default() };
+        let (action_tick, action_scene, tap_report) = (s.action_tick, s.action_scene.take(), s.tap_report);
+        *s = State { action_tick, action_scene, tap_report, ..State::default() };
     });
 }
 
@@ -645,16 +672,41 @@ fn note_attack(game: &Game<'_>, id: u32) {
             slot_strength(game, game.selected, 0.5).unwrap_or(0.0),
             living,
         )
+        && (m.p("Mode") != "S Tap" || in_reach(game, id))
     {
-        start_tap(game, m);
+        start_tap(game, m, id);
     } else if tap.is_none() {
         keep_sprint(game, id);
     }
 }
 
-// W Tap after a hit: by Chance, Reaction ticks later, forward let go for Hold to Longest hold ticks.
-fn start_tap(game: &Game<'_>, m: &Module) {
+// S Tap's hit is one the server takes: the target's box within your reach (a little over for lag), unless Reach is
+// on (it hits from further, where the server allows it).
+fn in_reach(game: &Game<'_>, id: u32) -> bool {
+    if module("Reach").is_some() {
+        return true;
+    }
+    let (Some(eye), Some(target)) = (game.eye_position(), game.mobs.iter().find(|m| m.id == id)) else {
+        return false;
+    };
+    let b = target.bounds();
+    let (lo, hi) = (b.min_position(), b.max_position());
+    policy::box_distance(eye, [lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z]).is_some_and(|d| d <= reach() + 0.6)
+}
+
+// Your reach at entities: the entity interaction range attribute (3 blocks in survival), as pre_input last read it.
+fn reach() -> f64 {
+    state(|s| s.reach).filter(|r| r.is_finite() && *r > 0.0).unwrap_or(3.0)
+}
+
+// W Tap after a hit: by Chance, Reaction ticks later, forward let go for Hold to Longest hold ticks. S Tap holds back
+// too: all along (Adaptive off), or while the gap to `target` needs it. A hit during an S Tap leaves it be.
+fn start_tap(game: &Game<'_>, m: &Module, target: u32) {
     if state(|s| s.last_attack == Some(game.ticks)) {
+        return;
+    }
+    let s_tap = m.p("Mode") == "S Tap";
+    if s_tap && state(|s| s.s_tap.is_some() && game.ticks < s.tap_until) {
         return;
     }
     state(|s| s.last_attack = Some(game.ticks));
@@ -663,7 +715,25 @@ fn start_tap(game: &Game<'_>, m: &Module) {
     }
     let from = game.ticks.saturating_add(m.n("Reaction (ticks)").clamp(0.0, 5.0) as u64);
     let hold = between(game, m.n("Hold"), m.n("Longest hold"), 2).clamp(1, 8);
-    state(|s| (s.tap_from, s.tap_until, s.tap_back) = (from, from + hold, m.p("Mode") == "S Tap"));
+    let adaptive = s_tap && m.b("Adaptive");
+    let (shortest, longest) = if adaptive {
+        let (a, b) = (m.n("Hold").clamp(1.0, 8.0) as u64, m.n("Longest hold").clamp(1.0, 8.0) as u64);
+        (a.min(b), a.max(b))
+    } else {
+        (hold, hold)
+    };
+    let tap = s_tap.then_some(STap {
+        target,
+        shortest,
+        longest,
+        spacing: adaptive.then(|| policy::Spacing::named(m.p("Spacing"))),
+        backed_off: false,
+        back_ticks: 0,
+    });
+    state(|s| {
+        (s.tap_from, s.tap_until, s.tap_back) = (from, from + longest, s_tap);
+        s.s_tap = tap;
+    });
 }
 
 // Sprint's Keep sprint, without W Tap: after a sprinting hit on a player with forward held, forward is let go for the
@@ -692,6 +762,7 @@ fn keep_sprint(game: &Game<'_>, id: u32) {
         s.last_attack = Some(game.ticks);
         if ticks > 0 {
             (s.tap_from, s.tap_until, s.tap_back) = (game.ticks, game.ticks + ticks, false);
+            s.s_tap = None;
         }
     });
 }
@@ -702,9 +773,10 @@ fn note_stab_at(game: &Game<'_>, yaw: f32, pitch: f32) {
     if let Some(m) = module(TAP)
         && super::sunset_combat_wire::sent_sprinting(game)
         && game.keys.contains(&KeyCode::KeyW)
-        && spear_hits_at(game, yaw, pitch).is_some_and(|hits| !hits.is_empty())
+        && let Some(&first) = spear_hits_at(game, yaw, pitch).as_deref().and_then(|hits| hits.first())
+        && let Some(target) = game.mobs.get(first)
     {
-        start_tap(game, &m);
+        start_tap(game, &m, target.id);
     }
 }
 
@@ -750,6 +822,7 @@ pub(super) fn note_velocity(game: &Game<'_>, entity: i32, velocity: [f64; 3]) {
 pub(super) fn pre_input(game: &mut Game<'_>) {
     post_input(game);
     if !alive(game) || !game.native_playing() || gui_open() {
+        end_s_tap(game, "a screen, death or Sunset off");
         state(|s| {
             s.tap_until = 0;
             s.jump_pending = false;
@@ -757,7 +830,10 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
         });
         return;
     }
-    let tap =state(|s| (s.tap_from..s.tap_until).contains(&game.ticks).then_some(s.tap_back));
+    if with(|s| s.module(TAP).is_some_and(|m| m.on && m.p("Mode") == "S Tap")) {
+        let reach = game.player.as_mut().and_then(|p| p.attribute("minecraft:entity_interaction_range").ok());
+        state(|s| s.reach = reach);
+    }
     let asked = state(|s| s.jump_owner.take()).is_some_and(|owner| section(owner).is_some() && control::available(owner));
     let knocked = state(|s| std::mem::take(&mut s.jump_pending))
         && module(JUMP).is_some()
@@ -770,6 +846,11 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
         && super::remote::sunset_prediction_remote::local_motion(game).is_some_and(|motion| !motion.floating)
         && game.using.is_none()
         && game.riding.is_none();
+    let tap = if state(|s| s.s_tap.is_some() && s.tap_back && game.ticks >= s.tap_from) {
+        s_tap_tick(game, jump)
+    } else {
+        state(|s| (s.tap_from..s.tap_until).contains(&game.ticks).then_some(s.tap_back))
+    };
     if tap.is_none() && !jump {
         return;
     }
@@ -787,6 +868,125 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     }
     let changed = std::array::from_fn(|i| before[i] != game.keys.contains(&INPUT_KEYS[i]));
     state(|s| s.input = Some(InputSave { before, physical, changed }));
+}
+
+// This tick of an S Tap: Some(true) back held (forward let go), Some(false) forward let go only, None over (your keys
+// as they are). Your own keys win: letting go of forward or pressing back ends it, as do a gone target, a module that
+// moves you, and W Tap off or in W Tap mode.
+fn s_tap_tick(game: &mut Game<'_>, jump: bool) -> Option<bool> {
+    let (from, mut tap) = state(|s| s.s_tap.map(|t| (s.tap_from, t)))?;
+    let (s_tap_mode, movement_taken) = with(|s| {
+        let on = |name: &str| s.module(name).is_some_and(|m| m.on);
+        (
+            s.module(TAP).is_some_and(|m| m.on && m.p("Mode") == "S Tap"),
+            on("Scaffold") || on("PvP Bot") || on("Flight"),
+        )
+    });
+    let back_pressed = game.physical_keys.contains(&KeyCode::KeyS);
+    let stop = policy::tap_stop(policy::TapCheck {
+        s_tap_mode,
+        forward_held: game.keys.contains(&KeyCode::KeyW),
+        back_pressed,
+        target_valid: game.mobs.iter().any(|t| t.id == tap.target && t.alive() && !t.removed),
+        movement_taken: movement_taken || (!back_pressed && game.keys.contains(&KeyCode::KeyS)),
+    });
+    if let Some(why) = stop {
+        end_s_tap(game, why);
+        return None;
+    }
+    let elapsed = game.ticks.saturating_sub(from);
+    let safe = back_safe(game, jump);
+    let back = match tap.spacing {
+        None => safe,
+        Some(spacing) => {
+            let ready = slot_strength(game, game.selected, 0.5).is_some_and(|s| s >= 0.9);
+            safe && !tap.backed_off && gap_to(game, tap.target).is_some_and(|gap| policy::wants_back(spacing, gap, ready))
+        }
+    };
+    let step = policy::tap_step(elapsed, tap.shortest, tap.longest, back);
+    if step == policy::TapStep::Done {
+        let why = if elapsed >= tap.longest { "Longest hold" } else if tap.back_ticks > 0 { "spacing reached" } else { "no back needed" };
+        end_s_tap(game, why);
+        return None;
+    }
+    if step == policy::TapStep::Back {
+        tap.back_ticks = tap.back_ticks.saturating_add(1);
+    } else if tap.back_ticks > 0 {
+        tap.backed_off = true;
+    }
+    state(|s| s.s_tap = Some(tap));
+    Some(step == policy::TapStep::Back)
+}
+
+// The S Tap under way, if any, is over: its keys come back at once (post_input, after this tick's move) and the Debug
+// Report says why.
+fn end_s_tap(game: &Game<'_>, end: &'static str) {
+    state(|s| {
+        let Some(tap) = s.s_tap.take() else {
+            return;
+        };
+        s.tap_report = Some(TapReport { tick: game.ticks, ticks: game.ticks.saturating_sub(s.tap_from), back_ticks: tap.back_ticks, end });
+        s.tap_until = 0;
+    });
+}
+
+// The gap to `id` for S Tap: your eyes to its box, and last tick's moves along the line between your feet and its
+// middle (seen from above).
+fn gap_to(game: &Game<'_>, id: u32) -> Option<policy::Gap> {
+    let p = game.player.as_ref()?;
+    let eye = game.eye_position()?;
+    let t = game.mobs.iter().find(|m| m.id == id)?;
+    let b = t.bounds();
+    let (lo, hi) = (b.min_position(), b.max_position());
+    let distance = policy::box_distance(eye, [lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z])?;
+    let (dx, dz) = ((lo.x + hi.x) / 2.0 - p.position.x, (lo.z + hi.z) / 2.0 - p.position.z);
+    let len = dx.hypot(dz);
+    // Standing inside its box: along your look instead.
+    let u = if len > 1.0e-3 {
+        [dx / len, dz / len]
+    } else {
+        let yaw = f64::from(game.yaw).to_radians();
+        [-yaw.sin(), yaw.cos()]
+    };
+    let along = |x: f64, z: f64| x * u[0] + z * u[1];
+    Some(policy::Gap {
+        distance,
+        reach: reach(),
+        mine: along(p.position.x - game.previous_position.x, p.position.z - game.previous_position.z),
+        theirs: along(t.position.x - t.previous.x, t.position.z - t.previous.z),
+        ground: p.ground.on_ground,
+    })
+}
+
+// Back may go down: walking on your feet (not flying, gliding, riding, in water or lava, nor jumping this tick, when
+// back would turn the jump), with Kill Aura's Target strafe off (it steers the move), and no drop of more than three
+// blocks or hazard behind you (Target strafe's own check).
+fn back_safe(game: &Game<'_>, jump: bool) -> bool {
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    if jump || p.flying || p.fall_flying || p.fluids.was_touching_water || p.is_in_lava() || game.riding.is_some() {
+        return false;
+    }
+    if with(|s| s.module("Kill Aura").is_some_and(|m| m.on && m.b("Target strafe"))) {
+        return false;
+    }
+    let yaw = f64::from(game.yaw).to_radians();
+    super::sunset_target_strafe::safe(game, [p.position.x, p.position.z], [yaw.sin(), -yaw.cos()], 0.2, p.position.y)
+}
+
+// The last S Tap, for the Debug Report.
+pub(super) fn tap_report(game: &Game<'_>) -> String {
+    match state(|s| s.tap_report) {
+        Some(r) => format!(
+            "last S Tap {} ticks ago: {} tick(s), back held {}, ended by {}",
+            game.ticks.saturating_sub(r.tick),
+            r.ticks,
+            r.back_ticks,
+            r.end
+        ),
+        None => "no S Tap this session".to_owned(),
+    }
 }
 
 // Wind Jump: jump held for this tick (after pre_input, before the tick's move and PlayerInput); post_input lets it
@@ -808,7 +1008,7 @@ pub(super) fn post_input(game: &mut Game<'_>) {
         return;
     };
     for (i, key) in INPUT_KEYS.iter().enumerate().filter(|(i, _)| saved.changed[*i]) {
-        if game.physical_keys.contains(key) || (saved.before[i] && !saved.physical[i]) {
+        if policy::key_back(game.physical_keys.contains(key), saved.before[i], saved.physical[i]) {
             game.keys.insert(*key);
         } else {
             game.keys.remove(key);
@@ -1168,6 +1368,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
     stop_guarded_use(game);
     if !alive(game) {
         release_lease(game, true);
+        end_s_tap(game, "a screen, death or Sunset off");
         state(|s| {
             s.lunge.clear();
             s.jump_pending = false;

@@ -639,6 +639,12 @@ impl Module {
                 "Rotate speed" => self.b("Arrows"),
                 _ => true,
             },
+            // W Tap's S Tap: its own settings in that mode.
+            "W Tap" => match name {
+                "Adaptive" => self.p("Mode") == "S Tap",
+                "Spacing" => self.p("Mode") == "S Tap" && self.b("Adaptive"),
+                _ => true,
+            },
             "Scaffold" => match name {
                 "Telly rotations" | "Start speed min" | "Start speed max" | "Normal speed min" | "Normal speed max"
                 | "Keep Y" | "Tower" | "Telly sprint" | "Ground motion (%)" | "Air motion (%)" | "Speed motion (%)"
