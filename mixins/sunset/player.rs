@@ -52,11 +52,27 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only in inventory", true)
             // Equipment: worse duplicates of your weapons, tools and armour go (inventory_plan.rs); these never go.
             .bool("Duplicates", true)
+            // What survives as a duplicate: the best and one backup, the best only, or the best of each speciality
+            // (Fortune, Silk Touch, Fire Aspect...). A piece with an enchantment the kept ones lack always stays.
+            .pick("Retention", &["Best + backup", "Best only", "Keep specialized"])
             .text("Protected items", "totem_of_undying,ender_pearl,golden_apple,enchanted_golden_apple,elytra,mace,trident")
             // Hotbar: what each slot from the left holds (sword, pickaxe, blocks, an item id...); empty leaves a slot.
             .text("Hotbar layout", "")
+            // Each hotbar slot from the left, planned together (inventory_plan::plan_hotbar). None: the slot's word in
+            // Hotbar layout, if any (how layouts were written before), else left alone.
+            .pick("Slot 1", plan::SLOT_CHOICES)
+            .pick("Slot 2", plan::SLOT_CHOICES)
+            .pick("Slot 3", plan::SLOT_CHOICES)
+            .pick("Slot 4", plan::SLOT_CHOICES)
+            .pick("Slot 5", plan::SLOT_CHOICES)
+            .pick("Slot 6", plan::SLOT_CHOICES)
+            .pick("Slot 7", plan::SLOT_CHOICES)
+            .pick("Slot 8", plan::SLOT_CHOICES)
+            .pick("Slot 9", plan::SLOT_CHOICES)
             // Sorting: the rest of the inventory in order (weapons, tools, armour, blocks, food, potions, the rest).
             .bool("Sort inventory", false)
+            // Part stacks of the same item (and components) go together; what does not fit goes back.
+            .bool("Merge stacks", true)
             // Auto Armor (runtime.rs auto_armor): wears your best armour. On by its own switch, whether or not
             // Inventory Manager is on; both share one step at a time.
             .bool("Auto Armor", false)
@@ -779,7 +795,7 @@ const PRESETS: [(&str, f64, f64, f64, f64, &str); 4] = [
 ];
 
 // A stack as Inventory Manager's planner sees it, from the game's item data.
-fn plan_item(game: &Game<'_>, stack: &horizon_client::items::ItemStack) -> plan::Item {
+pub(super) fn plan_item(game: &Game<'_>, stack: &horizon_client::items::ItemStack) -> plan::Item {
     let info = game.res.items().get(&stack.item);
     let modifier = |attribute: &str| {
         info.as_ref().map_or(0.0, |i| i.modifiers.iter().filter(|m| m.0 == attribute).map(|m| m.2 as f32).sum::<f32>())
@@ -798,7 +814,15 @@ fn plan_item(game: &Game<'_>, stack: &horizon_client::items::ItemStack) -> plan:
         enchants: stack.enchantments().iter().map(|(e, l)| (e.to_string(), *l)).collect(),
         named: stack.custom_name().is_some(),
         block: info.as_ref().and_then(|i| i.block).is_some_and(|b| game.res.facts().get(b).full_collision),
-        food: info.as_ref().is_some_and(|i| i.food.is_some()),
+        food: info.as_ref().and_then(|i| i.food).map_or(0.0, |(nutrition, saturation)| nutrition as f32 + saturation),
+        max_stack: info.as_ref().map_or(64, |i| i.max_stack),
+        // Components beyond count and wear, as one number: equal for stacks that may merge.
+        meta: stack.extra.as_ref().map_or(0, |extra| {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            format!("{extra:?}").hash(&mut h);
+            h.finish() | 1
+        }),
     }
 }
 
@@ -935,28 +959,43 @@ fn inventory_fingerprint(game: &Game<'_>) -> u64 {
 }
 
 // The next step for the inventory as it is: the hotbar layout first, then junk and worse duplicates, then sorting.
+// The next step for the inventory as it is: the hotbar plan first; then, with what must stay worked out first (the
+// hotbar's picks, protected and Loadouts' slots, the best of each kind and its backups, specialised, named and
+// unknown items), junk, items past their limits and excess duplicates; then merging and sorting.
 fn plan_step(game: &Game<'_>, m: &Module, preset: &str) -> Option<Step> {
     let locked = super::sunset_loadouts::locked_slots();
     let items: Vec<Option<plan::Item>> = (0..36).map(|i| game.inventory.get(i).and_then(|s| s.as_ref()).map(|s| plan_item(game, s))).collect();
-    let protected: Vec<bool> = (0..36)
-        .map(|i| locked[i] || items[i].as_ref().is_some_and(|s| listed(m.t("Protected items"), &s.name)))
-        .collect();
     let kill_aura = super::sunset::with(|s| s.module("Kill Aura").map(|k| k.p("Combat version")).unwrap_or("Auto"));
     let legacy = super::sunset_aura_timing::version(kill_aura, game.main_hand_attack_speed()).0 == super::sunset_aura_timing::Version::Legacy;
-    if let Some((from, to)) = plan::hotbar_step(&items, &plan::layout(m.t("Hotbar layout")), &locked, legacy) {
-        return Some(Step::Swap { from, to });
+    let slot_words: [&str; 9] = std::array::from_fn(|i| m.p(["Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8", "Slot 9"][i]));
+    let wants = plan::wants(slot_words, m.t("Hotbar layout"));
+    let hotbar = plan::plan_hotbar(&items, &wants, &locked, legacy);
+    if let Some((h, from)) = (0..9).find_map(|h| hotbar[h].filter(|&from| from != h).map(|from| (h, from))) {
+        return Some(Step::Swap { from, to: h });
     }
-    let mut drop = if preset == "Custom" {
+    // Retention first: what nothing may drop.
+    let mut keep: Vec<bool> = (0..36)
+        .map(|i| locked[i] || items[i].as_ref().is_none_or(|s| plan::never_drop(s) || listed(m.t("Protected items"), &s.name)))
+        .collect();
+    for i in hotbar.iter().flatten() {
+        keep[*i] = true;
+    }
+    let mut drop: Vec<usize> = if preset == "Custom" {
         (0..36).filter(|&i| items[i].as_ref().is_some_and(|s| passes(m, "Items", &s.name))).collect()
     } else {
         junk_slots(game, m)
     };
     if m.b("Duplicates") {
         let worn: [Option<plan::Item>; 4] = std::array::from_fn(|a| game.armor.get(a).and_then(|s| s.as_ref()).map(|s| plan_item(game, s)));
-        drop.extend(plan::duplicates(&items, &worn, &protected, legacy));
+        drop.extend(plan::excess(&items, &worn, &keep, legacy, plan::Retention::named(m.p("Retention"))));
     }
-    if let Some(i) = drop.into_iter().filter(|&i| !protected[i]).min() {
+    if let Some(i) = drop.into_iter().filter(|&i| !keep[i]).min() {
         return Some(Step::Throw(i));
+    }
+    if m.b("Merge stacks")
+        && let Some((from, into)) = plan::merge_step(&items, &locked)
+    {
+        return Some(Step::Exchange(from, into));
     }
     if m.b("Sort inventory") {
         return plan::sort_step(&items, 9..36, &locked).map(|(a, b)| Step::Exchange(a, b));

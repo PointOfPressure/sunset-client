@@ -72,6 +72,46 @@ still owns what you wear; Offhand, Chest Swap and Take off are unchanged (Auto A
 Tests: migration (`auto_armor_settings_move_into_inventory_manager`) and turn-taking. `.toggle autoarmor` no
 longer exists (use the setting or its key).
 
+## Round 3: Inventory Manager 2.0 (groups A and part of B)
+
+`inventory_plan.rs` was rewritten around decisions:
+- Classification: `Kind` (adds Elytra), `BlockUse` (Building, Falls: sand, gravel, concrete powder, anvils;
+  Valuable: obsidian, anchors, ender chests...), `speciality` (Fortune, Silk Touch, Looting, Fire Aspect...: what
+  sets a piece apart). Unknown and modded items are Other: never duplicates, dropped only if a junk list names them.
+- Evaluation: weapons give a hit's damage and damage over time (`weapon_damage`; Legacy ranks by the hit, Modern by
+  over time), tools mining speed with Efficiency, armour vanilla's reduction (`reduction`: points less damage over
+  2 + toughness / 4, capped at 20, then Protection EPF at 4% a point) for a set like the piece, averaged over 6, 12
+  and 20 damage hits. Protection IV iron 0.89 > plain diamond 0.80 > plain iron 0.69.
+- Hotbar: nine Slot settings (Sword, Pickaxe, Blocks, Golden apple, Pearl, Totem, Crystal, Obsidian, Anchor,
+  Glowstone, Water bucket, Rockets, Wind charge, Cobweb, Arrows...); a slot left at None falls back to that slot's
+  word in the old Hotbar layout text (so old layouts keep working; any item id still works there). `plan_hotbar`
+  plans all nine together: up to three candidates a slot (what already sits there first when within 5% of the
+  best), then a search for the assignment that fills most slots, uses the better candidates, and moves fewest
+  items. An already right hotbar gives no step; a placed item is never moved again by later steps.
+- Retention before cleanup: the hotbar's picks, protected and Loadouts' slots, named items, containers (shulker
+  boxes, bundles) and elytras are kept first. Duplicates (`excess`) follow Retention: Best + backup (default), Best
+  only, Keep specialized (best per speciality). A piece with an enchantment the kept ones lack is always kept, so a
+  Fortune and a Silk Touch pickaxe both stay.
+- Merge stacks (on): part stacks of the same item with equal components merge (three clicks; what does not fit
+  goes back, nothing on the cursor).
+- Auto Armor ranks pieces with the same `armor_score` (the old material-tier `armor_score` is gone), swaps only for
+  a better piece by more than 0.005, and leaves a worn elytra to Chest Swap.
+
+Not done from A/B: profiles as full strategies (Legacy/BedWars, Crystal PvP...; the old presets still only set
+limits and junk), potion effect evaluation (potions rank by splash first, then count), per-slot priorities. The
+executor (65c833f) is unchanged.
+
+## Next steps (groups C to G, not started)
+
+- C/D Scaffold: compact settings (Mode, Preset, Rotations, Sprint, Tower Off/Legit/Fast, Auto switch, Same Y,
+  Advanced) with mode-filtered visibility and migration of old names; block selection from `BlockUse` (no falling or
+  valuable blocks); diagnostics line in the Debug Report. Keep Normal, Legit, Godbridge and Telly as they are.
+- E Flight: per-mode state instead of the shared FLY_* statics; keep Abilities and Velocity; isolate Anti kick and
+  ground flags per strategy.
+- F Experimental NCP Hover / Burst / Bounce: to be written from the behaviour described in the task, only with an
+  NCP test server to check them against. None exists here yet.
+- G: in-game checks by the user.
+
 ## Round 2, phases 2 and 3: Scaffold tower, Flight setbacks
 
 - Scaffold (Normal): Fast tower lifted at Tower speed, or settled you on a block's top as "on the ground", whether or
