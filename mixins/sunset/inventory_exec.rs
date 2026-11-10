@@ -102,6 +102,16 @@ impl Exec {
         self.pending = Some(Pending { step, before: fingerprint, until: now + settle.max(1) });
     }
 
+    // A step is still settling, or you are at the inventory yourself.
+    pub(super) fn busy(&self, now: u64) -> bool {
+        now < self.quiet_until || self.pending.is_some_and(|p| now < p.until)
+    }
+
+    // Another part of the inventory modules (Auto Armor) clicked: wait until `until` before planning.
+    pub(super) fn hold(&mut self, until: u64) {
+        self.quiet_until = self.quiet_until.max(until);
+    }
+
     // Turned off, a new world: nothing pending, nothing remembered.
     pub(super) fn reset(&mut self) {
         let stats = self.stats;
@@ -170,6 +180,20 @@ mod tests {
         e.user(10);
         assert_eq!(e.gate(15, 1), Gate::Wait);
         assert_eq!(e.gate(20, 1), Gate::Plan);
+    }
+
+    #[test]
+    fn auto_armor_and_the_manager_take_turns() {
+        let mut e = Exec::default();
+        e.hold(5);
+        assert!(e.busy(4));
+        assert_eq!(e.gate(4, 1), Gate::Wait);
+        assert!(!e.busy(5));
+        assert_eq!(e.gate(5, 1), Gate::Plan);
+        let s = e.planned(1, Some(Step::Throw(2)), D).unwrap();
+        e.sent(s, 1, 5, 3);
+        assert!(e.busy(7), "Auto Armor waits for the manager's step");
+        assert!(!e.busy(8));
     }
 
     #[test]

@@ -38,7 +38,7 @@ Phase 1: 0 Rust warnings, 203 tests passed. Phase 3: 209. Phase 2: 211, 0 warnin
   world changes (AntiBot tokens, own entity id). Kill Aura has no sprint handling of its own; W Tap and Jump Reset
   act on its hits, so there is no second sprint reset.
 
-## Round 2, phase 0: Inventory Manager stutter (in progress)
+## Round 2, phase 0: Inventory Manager stutter (65c833f)
 
 Findings (from the code and a timing test, not from a server trace):
 - Planning is cheap: a full 36-slot inventory takes about 84 us a plan (hotbar, duplicates and sort, in an
@@ -58,6 +58,19 @@ inventory clears pending and refused steps. The Debug Report has an Inventory Ma
 planning time, unchanged ticks skipped, steps, refused).
 
 Not done: tested on a real 1.8 or NCP server (not available here); Steps are slower now (a round trip each).
+
+## Round 2, phase 1: Auto Armor inside Inventory Manager
+
+Auto Armor is no longer a module of its own. Its settings are Inventory Manager's (Auto Armor, Auto Armor key,
+Armor delay, Armor mode, Armor key, Avoid cursed, Switch key, Switch sets), and the Auto Armor setting is its own
+on/off: it runs whether Inventory Manager is on or off (runtime.rs looks Inventory Manager up regardless of `on`),
+and Inventory Manager runs without it. Old configs migrate (`auto_armor_line`: `autoarmor.on` to the Auto Armor
+setting, its key to Auto Armor key, which toggles it), and the presets turn it on the new way. The two share one
+step at a time: Auto Armor waits while an Inventory Manager step settles, and Inventory Manager waits a round trip
+after Auto Armor's click (`inventory_stepping`, `inventory_hold`). Auto Armor still ranks armour by material and
+still owns what you wear; Offhand, Chest Swap and Take off are unchanged (Auto Armor skips the elytra as before).
+Tests: migration (`auto_armor_settings_move_into_inventory_manager`) and turn-taking. `.toggle autoarmor` no
+longer exists (use the setting or its key).
 
 ## Phase 3: Inventory Manager
 

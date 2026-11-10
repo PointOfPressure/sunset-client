@@ -341,11 +341,6 @@ impl Module {
                     _ => true,
                 }
             }
-            "Auto Armor" => match name {
-                "Armor key" => self.p("Mode") == "Key",
-                "Switch sets" => key_from_text(self.t("Switch key")).is_some(),
-                _ => true,
-            },
             "Ghost Hand" => name != "Cut through" || !self.b("Hits"),
             "HUD" => match name {
                 "Coordinates position" => self.b("Coordinates"),
@@ -398,6 +393,8 @@ impl Module {
                 _ => true,
             },
             "Inventory Manager" => match name {
+                "Armor key" => self.p("Armor mode") == "Key",
+                "Switch sets" => key_from_text(self.t("Switch key")).is_some(),
                 "Keep totems" | "Keep pearl stacks" => self.t("Loot key") != "None",
                 "List mode" | "Items" => self.p("Preset") == "Custom",
                 "Blocks" | "Food" | "Arrows" | "Pearls" | "Junk" => self.p("Preset") != "Custom",
@@ -1136,13 +1133,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Mode", &["Full", "Potato"])
             .num("Range", 1000.0, 50.0, 10000.0, 50.0),
         // Added in 0.4
-        Module::new("Auto Armor", Player, "Wears your best armor.")
-            .num("Delay (ticks)", 10.0, 2.0, 40.0, 2.0)
-            .pick("Mode", &["Always", "Inventory open", "Key"])
-            .text("Armor key", "None")
-            .bool("Avoid cursed", false)
-            .text("Switch key", "None")
-            .text("Switch sets", "netherite,diamond"),
         Module::new("Long Jump", Movement, "Jumps further.")
             .num("Multiplier", 2.0, 1.5, 5.0, 0.5),
         Module::new("Auto Jump", Movement, "Jumps as you walk."),
@@ -1828,9 +1818,24 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
 const RENAMED: [(&str, &str); 5] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot"),
     ("extramodules", "modules"), ("inventorycleaner", "inventorymanager")];
 
+// Auto Armor joined Inventory Manager (1.0): its on/off is the Auto Armor setting, its key Auto Armor key, its Delay
+// and Mode Armor delay and Armor mode; the rest keep their names.
+fn auto_armor_line(l: &str) -> Option<String> {
+    let (field, value) = l.strip_prefix("autoarmor.")?.split_once('=')?;
+    let field = match field {
+        "on" => "autoarmor",
+        "key" => "autoarmorkey",
+        "delayticks" => "armordelayticks",
+        "mode" => "armormode",
+        other => other,
+    };
+    let value = if field == "autoarmorkey" && value == "none" { "None" } else { value };
+    Some(format!("inventorymanager.{field}={value}"))
+}
+
 fn renamed_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let old = |l: &str| RENAMED.iter().find(|(from, _)| l.split_once('.').is_some_and(|(id, _)| id == *from));
-    if !text.lines().any(|l| old(l).is_some()) {
+    if !text.lines().any(|l| old(l).is_some() || l.starts_with("autoarmor.")) {
         return std::borrow::Cow::Borrowed(text);
     }
     let lines: Vec<String> = text
@@ -1838,7 +1843,7 @@ fn renamed_modules(text: &str) -> std::borrow::Cow<'_, str> {
         .filter(|l| l.trim() != "extramodules.pearlcatch=false")
         .map(|l| match old(l) {
             Some((from, to)) => format!("{to}{}", &l[from.len()..]),
-            None => l.to_owned(),
+            None => auto_armor_line(l).unwrap_or_else(|| l.to_owned()),
         })
         .collect();
     std::borrow::Cow::Owned(lines.join("\n"))
@@ -3607,7 +3612,8 @@ fn module_tick(game: &mut Game<'_>) {
     scaffold_fade();
     // A combat macro or Crystal/Anchor Aura has the hotbar: the inventory modules wait.
     let combat_hand = super::sunset_combat_control::owner().is_some() || super::sunset_gui_move::inventory_busy();
-    if let Some(m) = get("Auto Armor").filter(|_| !combat_hand) {
+    // Auto Armor: Inventory Manager's, on by its own switch whether or not the rest of Inventory Manager is.
+    if let Some(m) = mods.iter().find(|m| m.name == "Inventory Manager" && m.b("Auto Armor")).filter(|_| !combat_hand) {
         auto_armor(game, m);
     }
     if let Some(m) = get("Auto Replenish").filter(|_| !combat_hand) {
@@ -4262,7 +4268,8 @@ fn armor_material(item: &str) -> &str {
 // Switch key (Sunset's ArmorSwitch), on a press: the next set Switch sets lists after the one you wear, once all four
 // of its pieces are on you or in your inventory; Auto Armor then wears that set instead of the best.
 fn armor_switch(game: &mut Game<'_>, key: &str) {
-    let Some(m) = with(|s| s.module("Auto Armor").filter(|m| m.on).cloned()) else {
+    auto_armor_key(game, key);
+    let Some(m) = with(|s| s.module("Inventory Manager").filter(|m| m.b("Auto Armor")).cloned()) else {
         return;
     };
     if key_from_text(m.t("Switch key")).as_deref() != Some(key) || !game.native_playing() || !inventory_idle(game) {
@@ -4285,11 +4292,30 @@ fn armor_switch(game: &mut Game<'_>, key: &str) {
     }
 }
 
+// Auto Armor key: turns Auto Armor on or off, as its module's key did before it joined Inventory Manager.
+fn auto_armor_key(game: &mut Game<'_>, key: &str) {
+    let bound = with(|s| s.module("Inventory Manager").map(|m| (key_from_text(m.t("Auto Armor key")), m.b("Auto Armor"))));
+    let Some((Some(bound), on)) = bound else {
+        return;
+    };
+    if bound != key || gui_open() || !game.native_playing() {
+        return;
+    }
+    set_setting(game, "inventorymanager.autoarmor", if on { "false" } else { "true" });
+    if chat_lines("Toggle messages") {
+        say(game, if on { "Auto Armor off" } else { "Auto Armor on" });
+    }
+}
+
 pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
+    // One inventory step at a time: Inventory Manager's last one settles first.
+    if super::sunset_player::inventory_stepping(game.ticks) {
+        return;
+    }
     let set = with(|s| s.armor_set.clone());
     // Inventory open: only with your inventory screen up; Key: only while Armor key is held. A set from Switch key
     // goes on anyway.
-    let allowed = set.is_some() || match m.p("Mode") {
+    let allowed = set.is_some() || match m.p("Armor mode") {
         "Inventory open" => game.screen == Screen::Inventory,
         "Key" => super::sunset_util::setting_key_down(game, m, "Armor key"),
         _ => true,
@@ -4338,7 +4364,10 @@ pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
                 return;
             }
             wear(game, i, a);
-            with(|s| s.armor_wait = m.n("Delay (ticks)") as u32);
+            with(|s| s.armor_wait = m.n("Armor delay (ticks)") as u32);
+            // Inventory Manager waits for the server's answer to this too.
+            let settle = super::sunset_inventory_exec::settle_ticks(super::remote::sunset_combat_remote::latency(game), 0);
+            super::sunset_player::inventory_hold(game.ticks + settle);
             return;
         }
     }
@@ -10926,6 +10955,36 @@ mod cleanup_tests {
 #[cfg(test)]
 mod scaffold_preset_tests {
     use super::*;
+
+    // An Auto Armor module's lines become Inventory Manager's Auto Armor settings, its on/off independent of the
+    // manager's own.
+    #[test]
+    fn auto_armor_settings_move_into_inventory_manager() {
+        let old = "inventorycleaner.on=false
+autoarmor.on=true
+autoarmor.key=key.keyboard.g
+autoarmor.delayticks=4
+autoarmor.mode=Key
+autoarmor.armorkey=key.keyboard.r
+autoarmor.avoidcursed=true
+";
+        let text = merged_modules(old).into_owned();
+        let mut state = State::new();
+        for line in text.lines() {
+            if let Some((k, v)) = line.split_once('=') {
+                State::set_field(&mut state.modules, k, v);
+            }
+        }
+        let m = state.module("Inventory Manager").unwrap();
+        assert!(!m.on, "the manager stays off");
+        assert!(m.b("Auto Armor"), "Auto Armor stays on");
+        assert_eq!(key_from_text(m.t("Auto Armor key")).as_deref(), Some("key.keyboard.g"));
+        assert_eq!(m.n("Armor delay (ticks)"), 4.0);
+        assert_eq!(m.p("Armor mode"), "Key");
+        assert!(m.b("Avoid cursed"));
+        assert!(state.module("Auto Armor").is_none(), "no second module");
+        assert!(!text.contains("autoarmor."), "{text}");
+    }
 
     // Every preset field names one of Scaffold's settings and takes the value it gives.
     #[test]

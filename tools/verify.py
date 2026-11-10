@@ -4765,7 +4765,8 @@ def _():
 @test("Auto Armor")
 def _():
     cmd("give @s minecraft:iron_chestplate", "give @s minecraft:diamond_chestplate", "give @s minecraft:leather_boots")
-    only("autoarmor")
+    only()
+    setting("inventorymanager", "auto armor", "true")
     wait(60)
     chest = check("execute if items entity @s armor.chest minecraft:diamond_chestplate")
     boots = check("execute if items entity @s armor.feet minecraft:leather_boots")
@@ -4777,9 +4778,10 @@ def _():
     # Mode Key: nothing is worn until Armor key is held. Avoid cursed: an iron helmet goes on over a diamond one with
     # Curse of Binding.
     cmd("give @s minecraft:diamond_chestplate")
-    setting("autoarmor", "mode", "Key")
-    setting("autoarmor", "armor key", "G")
-    only("autoarmor")
+    setting("inventorymanager", "armor mode", "Key")
+    setting("inventorymanager", "armor key", "G")
+    only()
+    setting("inventorymanager", "auto armor", "true")
     wait(40)
     early = check("execute if items entity @s armor.chest minecraft:diamond_chestplate")
     ctl("key", "g", "down")
@@ -4787,14 +4789,15 @@ def _():
     ctl("key", "g", "up")
     keyed = check("execute if items entity @s armor.chest minecraft:diamond_chestplate")
     only()
-    setting("autoarmor", "mode", "Always")
-    setting("autoarmor", "avoid cursed", "true")
+    setting("inventorymanager", "armor mode", "Always")
+    setting("inventorymanager", "avoid cursed", "true")
     cmd('give @s minecraft:diamond_helmet[enchantments={"minecraft:binding_curse":1}]', "give @s minecraft:iron_helmet")
-    only("autoarmor")
+    only()
+    setting("inventorymanager", "auto armor", "true")
     wait(60)
     iron = check("execute if items entity @s armor.head minecraft:iron_helmet")
     only()
-    say(".reset autoarmor")
+    say(".reset inventorymanager")
     return not early and keyed and iron, f"chestplate worn before the key: {early}, with it held: {keyed}; iron helmet over the cursed diamond: {iron}"
 
 
@@ -7650,7 +7653,7 @@ SWEEPS = [
     ((k,), []) for k in ("velocity", "blink", "glide", "longjump", "highjump", "airjump", "spider", "parkour", "safewalk", "sprint",
                          "autowalk", "fastclimb", "autojump", "sneak", "noslow", "nojumpdelay", "antivoid",
                          "elytraboost", "chestswap", "scaffold", "timer", "fastplace", "breakdelay", "autoclicker", "autoweapon",
-                         "triggerbot", "autoarmor", "autoreplenish", "autogap", "airplace", "reach", "autotrap", "autoweb",
+                         "triggerbot", "autoreplenish", "autogap", "airplace", "reach", "autotrap", "autoweb",
                          "holefiller", "aimassist", "crystaloptimizer", "flamethrower", "autoshearer", "automount",
                          "cheststealer", "inventorymanager", "middleclickextra", "autofish")
 ]
@@ -13909,9 +13912,10 @@ def _():
     reset()
     cmd("clear @s", *[f"item replace entity @s armor.{p} with minecraft:iron_{names[p]}" for p in pieces],
         *[f"item replace entity @s inventory.{i} with minecraft:diamond_{names[p]}" for i, p in enumerate(pieces)])
-    for k, v in (("mode", "Key"), ("armor key", "None"), ("switch key", "G"), ("switch sets", "diamond,iron"), ("delay (ticks)", "4")):
-        setting("autoarmor", k, v)
-    only("autoarmor")
+    for k, v in (("armor mode", "Key"), ("armor key", "None"), ("switch key", "G"), ("switch sets", "diamond,iron"), ("armor delay (ticks)", "4")):
+        setting("inventorymanager", k, v)
+    only()
+    setting("inventorymanager", "auto armor", "true")
     wait(30)
     before = wearing("iron")
     ctl("key", "g", "tap")
@@ -13928,7 +13932,7 @@ def _():
     wait(50)
     kept = wearing("iron")
     only()
-    say(".reset autoarmor")
+    say(".reset inventorymanager")
     return before and diamond and iron and boots and kept, (f"iron before G {before}, diamond after G {diamond}, iron after G again {iron}, "
                                                             f"boots gone {boots}, iron kept without them {kept}")
 

@@ -57,6 +57,16 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Hotbar layout", "")
             // Sorting: the rest of the inventory in order (weapons, tools, armour, blocks, food, potions, the rest).
             .bool("Sort inventory", false)
+            // Auto Armor (runtime.rs auto_armor): wears your best armour. On by its own switch, whether or not
+            // Inventory Manager is on; both share one step at a time.
+            .bool("Auto Armor", false)
+            .text("Auto Armor key", "None")
+            .num("Armor delay (ticks)", 10.0, 2.0, 40.0, 2.0)
+            .pick("Armor mode", &["Always", "Inventory open", "Key"])
+            .text("Armor key", "None")
+            .bool("Avoid cursed", false)
+            .text("Switch key", "None")
+            .text("Switch sets", "netherite,diamond")
             // Cleanup.
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Items", "rotten_flesh,spider_eye,poisonous_potato,gravel,cobblestone,netherrack,cobbled_deepslate,andesite,diorite,granite,tuff")
@@ -889,6 +899,16 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
     let delay = m.n("Delay (ticks)") as u64 + rand(m.n("Delay variation") as usize + 1) as u64;
     let settle = super::sunset_inventory_exec::settle_ticks(super::remote::sunset_combat_remote::latency(game), delay);
     exec(|e| e.sent(step, fingerprint, now, settle));
+}
+
+// Whether an inventory step (Inventory Manager's or Auto Armor's) is still settling at `now`: the other waits.
+pub(super) fn inventory_stepping(now: u64) -> bool {
+    exec(|e| e.busy(now))
+}
+
+// Auto Armor clicked: Inventory Manager's next step waits until `until`.
+pub(super) fn inventory_hold(until: u64) {
+    exec(|e| e.hold(until));
 }
 
 // Inventory Manager's executor state (inventory_exec.rs). Its closures only read and write it: no game call, no other
