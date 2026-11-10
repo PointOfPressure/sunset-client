@@ -8,7 +8,8 @@
 // packets (its threads are named horizon-lan-... and horizon-local-...), so they hold in single player too. And a
 // "pkt <id>" line for every packet the client sends (the same threads skipped), to count all of them in a tick. And an
 // "input <flags>" line for each PlayerInput (the move keys the server predicts the move from; the same threads skipped),
-// and a "look <yaw> <pitch>" line after each move packet that carries a look (the same threads skipped).
+// and a "look <yaw> <pitch>" line after each move packet that carries a look (the same threads skipped), and a
+// "tickat <unix seconds>" line after each "order tickend" (when that client tick went).
 
 use std::io::Write as _;
 use std::sync::{Mutex, OnceLock};
@@ -115,6 +116,11 @@ pub fn sent(body: &[u8]) {
     };
     if own {
         let _ = f.write_all(format!("order {order}\n").as_bytes());
+        // When each client tick left (unix seconds), to tell a steady stream from bursts.
+        if i == 4 {
+            let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
+            let _ = writeln!(f, "tickat {at:.4}");
+        }
     }
 }
 

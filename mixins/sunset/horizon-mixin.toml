@@ -1791,6 +1791,7 @@ kind = "RETURN"
 target = "horizon_client_lib::net::Session::poll"
 helper = "packet_tap_hook.rs"
 bindings = [
+  { name = "session", ty = "&Session", value = "&*self" },
   { name = "value", ty = "Vec<Event>", value = "$value" },
 ]
 
@@ -1990,6 +1991,24 @@ id = "lag"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_lag"
 source = "lag.rs"
+
+[[module]]
+id = "lag_line"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_lag_line"
+source = "lag_line.rs"
+
+[[module]]
+id = "backtrack"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_backtrack"
+source = "backtrack.rs"
+
+[[module]]
+id = "knockback_delay"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_knockback_delay"
+source = "knockback_delay.rs"
 
 [[module]]
 id = "pvp_bot"

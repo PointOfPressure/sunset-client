@@ -311,7 +311,7 @@ impl Module {
             "Flight" => Some(self.p("Mode").to_owned()),
             "Kill Aura" => Some(num(self.n("Range"))),
             "Fast Place" => Some(num(self.n("Speed"))),
-            "Speed" | "Criticals" => Some(self.p("Mode").to_owned()),
+            "Speed" | "Criticals" | "Fake Lag" => Some(self.p("Mode").to_owned()),
             "Client Spoofer" => Some(self.p("Client").to_owned()),
             "Offhand" if self.b("Show totem count") => Some(super::sunset_combat_inventory::totem_count().to_string()),
             _ => None,
@@ -536,14 +536,7 @@ impl Module {
                 "Require mouse down" => self.p("Block hit") != "Off",
                 _ => true,
             },
-            "Fake Lag" => match name {
-                "Delay (ms)" => matches!(self.p("Mode"), "Dynamic" | "Always"),
-                "Range" => matches!(self.p("Mode"), "Dynamic" | "Ranged"),
-                "Shortest choke (ms)" | "Longest choke (ms)" => matches!(self.p("Mode"), "Timed" | "Knockback"),
-                "Range choke (ms)" => self.p("Mode") == "Ranged",
-                "Backtrack min range" | "Backtrack max range" | "Shortest latency (ms)" | "Longest latency (ms)" | "Backtrack weapon only" => self.b("Backtrack"),
-                _ => true,
-            },
+            "Fake Lag" => super::sunset_lag::setting_visible(self, name),
             "Sprint" if name.ends_with("restore delay") => self.b("Keep sprint"),
             "Aim Assist" => match name {
                 "Silent players only" | "Silent weapon only" | "Silent max yaw" | "Silent max pitch" => self.b("Silent aim"),
@@ -1253,6 +1246,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_auto_mace::defaults());
     v.extend(super::sunset_combat_inventory::defaults());
     v.extend(super::sunset_lag::defaults());
+    v.extend(super::sunset_backtrack::defaults());
     v.extend(super::sunset_swap_keys::defaults());
     v.extend(super::sunset_pvp_bot::defaults());
     v.extend(super::sunset_duel::defaults());
@@ -1816,7 +1810,7 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
         std::borrow::Cow::Owned(out) => Some(out),
         std::borrow::Cow::Borrowed(_) => None,
     };
-    listed_extras(owned.map_or(renamed, std::borrow::Cow::Owned))
+    super::sunset_lag::migrated(listed_extras(owned.map_or(renamed, std::borrow::Cow::Owned)))
 }
 
 // Modules with new names (0.9): Auto Steal is Chest Stealer, No Mining Trace is Mine Through Mobs.
@@ -3587,6 +3581,8 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_anti_trap::tick(game);
     super::sunset_combat_inventory::tick(game, &mods);
     super::sunset_lag::tick(game, &mods);
+    super::sunset_backtrack::tick(game, &mods);
+    super::sunset_knockback_delay::tick(game, &mods);
     super::sunset_pvp_bot::tick(game, &mods);
     super::sunset_duel::tick(game);
     super::sunset_loadouts::tick(game);
@@ -6723,6 +6719,9 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     super::sunset_scaffold_normal::stop(game);
     super::sunset_scaffold_telly::stop(game);
     super::sunset_gui_move::stop(game);
+    super::sunset_lag::shutdown(game);
+    super::sunset_backtrack::shutdown();
+    super::sunset_knockback_delay::shutdown();
     if let Some((yaw, pitch)) = with(panic_off_state) {
         game.yaw = yaw;
         game.pitch = pitch;
@@ -7761,6 +7760,7 @@ pub(super) fn gui_top(game: &Game<'_>, batch: &mut HudBatch) {
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
     super::sunset_explosive_aura::draw(game, cam, mods, out, lw);
     super::sunset_lag::draw(game, cam, mods, out, lw);
+    super::sunset_backtrack::draw(cam, mods, out, lw);
     super::sunset_block_overlay::overlay(game, cam, mods, out, lw);
     if let Some(m) = mods.iter().find(|m| m.name == "Target ESP" && m.on) {
         super::sunset_target_esp::draw(game, cam, m, [cam.w as f32, cam.h as f32], lw, out);
@@ -8642,7 +8642,8 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Key Throw" => "instant crossbow instantcrossbow key pearl keypearl key wind charge keywindcharge short pearl shortpearl auto short pearl autoshortpearl short wind charge shortwindcharge pearl wind charge pearlwindcharge pearl follow pearlfollow",
         "Pearl Catch" => "auto pearl catch autopearlcatch fast pearl catch fastpearlcatch diagonal pearl catch diagonalpearlcatch",
         "Wind Jump" => "elytra wind charge elytrawindcharge wind charge aura windchargeaura deflect",
-        "Fake Lag" => "fakelag backtrack back track choke lag",
+        "Fake Lag" => "fakelag choke lag delay pulse dynamic",
+        "Backtrack" => "backtrack back track",
         "Aim Assist" => "silent aim silentaim hit flick hitflick",
         "No Interact" => "hit fix hitfix no miss delay nomissdelay anti action antiaction ghost place ghostplace anti trap antitrap tpa trap sign",
         "Sprint" => "keep sprint keepsprint",

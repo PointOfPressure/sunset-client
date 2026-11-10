@@ -75,6 +75,18 @@ pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
     super::sunset_combat_inventory::forwarded(game, packet);
 }
 
+// The one place that tells Sunset a packet is going on the wire now, whether the send hook let it through or Fake Lag
+// let it go later, so every module that tracks what the server has hears of each packet once, at the time it goes.
+pub(super) fn delivered(game: &Game<'_>, packet: &S) {
+    forwarded(game, packet);
+    super::sunset_cart::sent(game, packet);
+    super::sunset_render::sent(game, packet);
+    super::sunset_drain::sent(game, packet);
+    super::sunset_effects::sent(game, packet);
+    super::sunset_lag::sent(game, packet);
+    super::sunset_backtrack::sent(game, packet);
+}
+
 pub(super) fn reset_look() {
     *LOOK.lock().unwrap_or_else(|e| e.into_inner()) = None;
     *SPRINT.lock().unwrap_or_else(|e| e.into_inner()) = None;

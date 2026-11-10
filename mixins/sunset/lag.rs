@@ -1,77 +1,122 @@
-// Fake Lag and Knockback Delay, from Rust's PR #16. Fake Lag holds what you send (moves, the end of each client
-// tick, sprint, swings...) and lets it go in order after the delay (Dynamic, Always), or all of it at the end of a
-// choke (Timed, Ranged, Knockback); an action (hit, use, click, chat) sends what is held first and goes straight out.
-// What goes out at once never carries two moves in a tick: the held moves become one, to where the last one had you,
-// and it waits for the next tick if the tick sent one already. Its Backtrack holds what the server sends while the
-// player you hit moves away from you (crate::net::sunset_packets). Knockback Delay holds the server's pushes to you
-// (your velocity, explosions) in the network module and lets the game take them after the delay.
+// Fake Lag (from Rust's PR #16, rebuilt): what you send waits on a line (sunset_lag_line) and goes in the order it was
+// sent, whole client ticks at a time, so the server sees a slower connection rather than a broken client: no move is
+// merged, dropped or moved past its ClientTickEnd, and the Pongs answering the server's pings stay where the client
+// wrote them. The modes only decide when the line holds and for how long:
+// - Delay: always, each packet Delay (ms) late.
+// - Pulse: chokes of Shortest to Longest choke (ms), each let go at once at its end, with Pulse gap (ms) (a tick at
+//   least) between them.
+// - Dynamic: Delay's line while an enemy is near (Trigger: one you face and walk towards, or the nearest closing in),
+//   kept a few ticks after it stops, so the edge of the range does not flip it every tick.
+// - Knockback: one choke after each push the game takes (after Velocity's Knockback delay, if that holds it).
+// An action (a hit, a use, a click, chat), with Release on action, sends what is held first and goes at once; so does
+// an accepted teleport. A teleport, a respawn or a new dimension lets everything held go before the game answers it,
+// and the answering tick goes undelayed. A disconnect, a transfer or a proxy's reconfiguration throws what is held
+// away: it was written for a connection that is gone. Turning the module off, or a mode whose condition ends, lets the
+// line drain on its schedule; Blink, a combat macro or GUI Move taking the stream empties it at once.
+// Backtrack and Knockback Delay hold what comes in: sunset_backtrack and sunset_knockback_delay.
 use super::sunset::{self, Camera, Canvas, Category, Module};
+use super::sunset_lag_line::{self as line, Decision, Discard, Flush, Hysteresis, Kind, Line, Phase, Plan, Pulse};
 use super::{Game, Screen};
-use horizon_client::net::sunset_packets as net;
-use horizon_protocol::packets::play::{self, Serverbound as S};
+use horizon_client::net::sunset_packets::{Link, Linked};
+use horizon_protocol::packets::play::Serverbound as S;
+use std::borrow::Cow;
+use std::cell::Cell;
 use std::collections::VecDeque;
+use std::fmt::Write as _;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
-const LAG: &str = "Fake Lag";
-// Held for a second at most, 128 packets at most: past either, all of it goes.
-const MOST: usize = 128;
-const OLDEST: Duration = Duration::from_secs(1);
+pub(super) const LAG: &str = "Fake Lag";
+// Dynamic lets go after its condition failed this many ticks running.
+const EXIT_TICKS: u32 = 3;
+// Sunset's tick tells the line how to hold; one that stops coming (Sunset off) holds nothing after this.
+const TOLD: Duration = Duration::from_millis(250);
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(LAG, Category::Combat, "Delays what you send.")
-            .pick("Mode", &["Dynamic", "Always", "Timed", "Ranged", "Knockback", "Off"])
+        Module::new(LAG, Category::Combat, "Delays what you send, in order.")
+            .pick("Mode", &["Delay", "Pulse", "Dynamic", "Knockback"])
             .num("Delay (ms)", 100.0, 10.0, 1000.0, 10.0)
+            .pick("Trigger", &["Facing", "Closing"])
             .num("Range", 6.0, 3.0, 12.0, 0.5)
             .num("Shortest choke (ms)", 100.0, 0.0, 1000.0, 10.0)
             .num("Longest choke (ms)", 150.0, 0.0, 1000.0, 10.0)
-            .num("Range choke (ms)", 600.0, 50.0, 1000.0, 10.0)
-            .bool("Show server position", true)
-            .bool("Backtrack", false)
-            .num("Backtrack min range", 1.0, 0.0, 10.0, 0.5)
-            .num("Backtrack max range", 5.0, 0.0, 10.0, 0.5)
-            .num("Shortest latency (ms)", 100.0, 0.0, 1500.0, 10.0)
-            .num("Longest latency (ms)", 150.0, 0.0, 1500.0, 10.0)
-            .bool("Backtrack weapon only", false),
+            .num("Pulse gap (ms)", 0.0, 0.0, 1000.0, 10.0)
+            .bool("Release on action", true)
+            .bool("Show server position", true),
     ]
 }
 
-struct Held {
-    packet: S,
-    born: Instant,
-    due: Instant,
+// Which settings show for a mode (the ClickGUI).
+pub(super) fn setting_visible(m: &Module, name: &str) -> bool {
+    let mode = m.p("Mode");
+    match name {
+        "Delay (ms)" => matches!(mode, "Delay" | "Dynamic"),
+        "Trigger" | "Range" => mode == "Dynamic",
+        "Shortest choke (ms)" | "Longest choke (ms)" => matches!(mode, "Pulse" | "Knockback"),
+        "Pulse gap (ms)" => matches!(mode, "Pulse" | "Knockback"),
+        _ => true,
+    }
+}
+
+// ---------------------------------------------------------------- state
+
+#[derive(Default)]
+struct Dynamic {
+    gate: Hysteresis,
+    // Closing: how far the nearest enemy was last tick.
+    enemy_was: Option<f64>,
+}
+
+struct Note {
+    at: SystemTime,
+    tick: u64,
+    what: Cow<'static, str>,
+    packets: usize,
 }
 
 #[derive(Default)]
 struct Lag {
-    held: VecDeque<Held>,
-    // Holding now for how long, as of the last tick (a tick that stops coming, Sunset off, holds nothing).
-    on: Option<(Duration, Instant)>,
-    // Where the server has you: the last position that went out.
-    sent_at: Option<[f64; 3]>,
-    // The life the held moves belong to: entity id and dimension.
+    line: Line<S>,
+    // The connection what is held was written for.
+    link: Option<Link>,
+    // The life what is held belongs to: entity id and dimension.
     life: Option<(i32, super::Dim)>,
-    // The choke modes: everything waits until then, and goes together.
-    choke_until: Option<Instant>,
-    // Ranged: how far the nearest enemy was last tick.
-    enemy_was: Option<f64>,
-    // Knockback: the server pushed you since the last tick.
+    // As Sunset's tick last said: actions release, and when it said so.
+    actions: bool,
+    told: Option<Instant>,
+    mode: &'static str,
+    pulse: Pulse,
+    dynamic: Dynamic,
+    // The game took a push on you since the last tick.
     knocked: bool,
-    // The tick a move went on the wire.
-    moved_tick: Option<u64>,
-    // Backtrack: the player you last hit.
-    last_hit: Option<u32>,
+    // Where the server has you: the last position that went on the wire.
+    sent_at: Option<[f64; 3]>,
     roll: u64,
+    notes: VecDeque<Note>,
 }
 
 static LAG_STATE: Mutex<Option<Lag>> = Mutex::new(None);
+
+thread_local! {
+    // Inside Fake Lag's own delivery: a packet a module sends from there goes behind what is still to go.
+    static DELIVERING: Cell<u32> = const { Cell::new(0) };
+}
 
 fn lag<R>(f: impl FnOnce(&mut Lag) -> R) -> R {
     f(LAG_STATE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Lag::default))
 }
 
-// Packets that do something: they never wait, and what was held goes before them.
+fn note(l: &mut Lag, what: impl Into<Cow<'static, str>>, packets: usize) {
+    if l.notes.len() == 16 {
+        l.notes.pop_front();
+    }
+    l.notes.push_back(Note { at: SystemTime::now(), tick: horizon_protocol::connection::sunset_wire::ticks(), what: what.into(), packets });
+}
+
+// ---------------------------------------------------------------- packets
+
+// Packets that do something: with Release on action, what is held goes before them, and they go at once.
 fn action(packet: &S) -> bool {
     matches!(
         packet,
@@ -79,13 +124,18 @@ fn action(packet: &S) -> bool {
             | S::ContainerClick(_) | S::ContainerButtonClick(_) | S::ContainerClose(_) | S::Chat(_)
             | S::ChatCommand(_) | S::ChatCommandSigned(_) | S::SignUpdate(_) | S::EditBook(_) | S::PlaceRecipe(_)
             | S::SelectTrade(_) | S::SetCreativeModeSlot(_) | S::PickItemFromBlock(_) | S::PickItemFromEntity(_)
-            | S::AcceptTeleportation(_) | S::ConfigurationAcknowledged(_) | S::Unknown(..)
+            | S::Unknown(..)
     )
 }
 
-// A position the server has to take as given: no good after a teleport, a respawn or a new world.
-fn motion(packet: &S) -> bool {
-    matches!(packet, S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_) | S::MovePlayerStatus(_) | S::MoveVehicle(_))
+fn kind(packet: &S, actions: bool) -> Kind {
+    match packet {
+        S::ClientTickEnd(_) => Kind::TickEnd,
+        // Answers to the server's re-anchoring: never behind what was written before it.
+        S::AcceptTeleportation(_) | S::ConfigurationAcknowledged(_) => Kind::Trigger,
+        _ if actions && action(packet) => Kind::Trigger,
+        _ => Kind::Other,
+    }
 }
 
 fn position(packet: &S) -> Option<[f64; 3]> {
@@ -96,134 +146,169 @@ fn position(packet: &S) -> Option<[f64; 3]> {
     }
 }
 
-fn look(packet: &S) -> Option<(f32, f32)> {
-    match packet {
-        S::MovePlayerRot(p) => Some((p.yaw, p.pitch)),
-        S::MovePlayerPosRot(p) => Some((p.yaw, p.pitch)),
-        _ => None,
-    }
-}
-
-fn flags(packet: &S) -> u8 {
-    match packet {
-        S::MovePlayerPos(p) => p.flags,
-        S::MovePlayerPosRot(p) => p.flags,
-        S::MovePlayerRot(p) => p.flags,
-        S::MovePlayerStatus(p) => p.flags,
-        _ => 0,
-    }
-}
-
-fn player_move(packet: &S) -> bool {
-    motion(packet) && !matches!(packet, S::MoveVehicle(_))
-}
-
-// The player's moves among `packets` as one, where the last of them was, with the last look among them and the last
-// one's flags; the vehicle's moves as their last. Each goes in the place of the last of its kind.
-fn merged(packets: Vec<S>) -> Vec<S> {
-    let last_move = packets.iter().rposition(player_move);
-    let last_vehicle = packets.iter().rposition(|p| matches!(p, S::MoveVehicle(_)));
-    let at = packets.iter().rev().find_map(position);
-    let turn = packets.iter().rev().find_map(look);
-    let mut out = Vec::with_capacity(packets.len());
-    for (i, packet) in packets.into_iter().enumerate() {
-        if player_move(&packet) {
-            if Some(i) == last_move {
-                let flags = flags(&packet);
-                out.push(match (at, turn) {
-                    (Some([x, y, z]), Some((yaw, pitch))) => S::MovePlayerPosRot(play::MovePlayerPosRot { x, y, z, yaw, pitch, flags }),
-                    (Some([x, y, z]), None) => S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags }),
-                    (None, Some((yaw, pitch))) => S::MovePlayerRot(play::MovePlayerRot { yaw, pitch, flags }),
-                    (None, None) => S::MovePlayerStatus(play::MovePlayerStatus { flags }),
-                });
-            }
-        } else if !matches!(packet, S::MoveVehicle(_)) || Some(i) == last_vehicle {
-            out.push(packet);
-        }
-    }
-    out
-}
-
-fn send(game: &Game<'_>, packets: Vec<S>) {
-    let Some(r) = &game.remote else {
+// What is held is the connection's it was written for; another connection's (or a reconfigured one's) is thrown away.
+fn bind(l: &mut Lag, session: Option<&horizon_client::net::Session>) {
+    let linked = l.link.as_ref().map_or(Linked::Other, |old| old.to(session));
+    if linked == Linked::Same {
         return;
-    };
-    if let Some(at) = packets.iter().rev().find_map(position) {
-        lag(|l| l.sent_at = Some(at));
     }
-    for packet in packets {
-        if motion(&packet) {
-            lag(|l| l.moved_tick = Some(game.ticks));
-        }
-        super::sunset_combat_wire::forwarded(game, &packet);
+    if !l.line.is_empty() {
+        let why = if linked == Linked::Reconfigured { Discard::Reconfigured } else { Discard::Session };
+        let n = l.line.discard(why);
+        l.pulse.reset();
+        l.dynamic = Dynamic::default();
+        note(l, format!("discarded: {}", why.name()), n);
+    }
+    l.link = session.map(Link::of);
+}
+
+// A packet going out now, after the send hook or from the line: Sunset hears of it, then the wire takes it.
+fn deliver(game: &Game<'_>, packet: S) {
+    DELIVERING.with(|d| d.set(d.get() + 1));
+    super::sunset_combat_wire::delivered(game, &packet);
+    if let Some(r) = &game.remote {
         r.session.send(packet);
     }
+    DELIVERING.with(|d| d.set(d.get() - 1));
 }
 
-// Lets go of what is due (or all of it), its moves as one (none with `superseded`: a move goes right after). A tick
-// that sent a move already keeps that one back for the next.
-fn release(game: &Game<'_>, all: bool, superseded: bool) {
-    let now = Instant::now();
-    let due: Vec<S> = lag(|l| {
-        let n = l.held.iter().take_while(|h| all || h.due <= now || now - h.born >= OLDEST).count();
-        l.held.drain(..n).map(|h| h.packet).collect()
-    });
-    let due = if superseded { due.into_iter().filter(|p| !motion(p)).collect() } else { merged(due) };
-    let moved = lag(|l| l.moved_tick == Some(game.ticks));
-    let (moves, rest): (Vec<S>, Vec<S>) = due.into_iter().partition(|p| moved && motion(p));
-    lag(|l| {
-        for packet in moves.into_iter().rev() {
-            l.held.push_front(Held { packet, born: now, due: now });
+// What may go now goes, in order; a packet a module sends meanwhile is queued behind and may go in the same pass.
+fn release(game: &Game<'_>, now: Instant) {
+    for _ in 0..2 * line::MOST {
+        let n = lag(|l| l.line.releasable(now));
+        if n == 0 {
+            return;
         }
+        for _ in 0..n {
+            let Some(p) = lag(|l| l.line.pop(now)) else { break };
+            deliver(game, p);
+        }
+    }
+}
+
+// Everything held goes now, in order.
+fn flush(game: &Game<'_>, why: Flush) -> usize {
+    let now = Instant::now();
+    let n = lag(|l| {
+        let n = l.line.len();
+        if n > 0 {
+            l.line.note_flush(why);
+        }
+        n
     });
-    send(game, rest);
+    for _ in 0..n + line::MOST {
+        let Some(p) = lag(|l| l.line.pop(now)) else { break };
+        deliver(game, p);
+    }
+    n
+}
+
+// The send hook, on the packet that would go out (after Sunset's other changes to it): true if Fake Lag took it (held
+// it, or sent it itself behind what it held).
+pub(super) fn held(game: &Game<'_>, packet: &S) -> bool {
+    let now = Instant::now();
+    if DELIVERING.with(Cell::get) > 0 {
+        lag(|l| {
+            let k = kind(packet, l.actions);
+            l.line.push(packet.clone(), k, now, now);
+        });
+        return true;
+    }
+    let session = game.remote.as_ref().map(|r| &r.session);
+    // The ordinary path: one lock, nothing held, the packet goes.
+    let idle = lag(|l| {
+        bind(l, session);
+        // Sunset's tick stopped coming: hold nothing more, let what is held drain.
+        if l.line.phase() == Phase::Holding && l.told.is_none_or(|t| now - t >= TOLD) {
+            l.line.stop();
+        }
+        l.line.phase() == Phase::Idle
+    });
+    if idle {
+        return false;
+    }
+    release(game, now);
+    let decision = lag(|l| {
+        let k = kind(packet, l.actions);
+        let d = l.line.decide(k, now);
+        match d {
+            Decision::Pass => l.line.passed(k),
+            Decision::Hold(due) => l.line.push(packet.clone(), k, now, due),
+            Decision::Flush(_) => l.line.push(packet.clone(), k, now, now),
+        }
+        d
+    });
+    match decision {
+        Decision::Pass => false,
+        Decision::Hold(_) => {
+            release(game, now);
+            true
+        }
+        Decision::Flush(why) => {
+            if why == Flush::Overflow {
+                lag(|l| {
+                    let n = l.line.len();
+                    note(l, "overflow: sent everything held", n);
+                });
+            }
+            flush(game, why);
+            true
+        }
+    }
+}
+
+// Every packet that went on the wire (sunset_combat_wire::delivered): where the server now has you.
+pub(super) fn sent(_game: &Game<'_>, packet: &S) {
+    if let Some(at) = position(packet) {
+        lag(|l| l.sent_at = Some(at));
+    }
 }
 
 pub(super) fn pending() -> bool {
-    lag(|l| !l.held.is_empty())
+    lag(|l| !l.line.is_empty())
 }
 
-// The send hook, on the packet that would go out (after Sunset's other changes to it): true if Fake Lag holds it.
-pub(super) fn held(game: &Game<'_>, packet: &S) -> bool {
-    if let S::Attack(p) = packet
-        && p.id >= 0
-    {
-        lag(|l| l.last_hit = Some(p.id as u32));
-    }
-    let on = lag(|l| l.on.filter(|(_, at)| at.elapsed() < Duration::from_millis(250)).map(|(d, _)| d));
-    let choke = lag(|l| l.choke_until.filter(|_| on.is_some()));
-    let full = lag(|l| l.held.len() >= MOST);
-    let now = Instant::now();
-    // A move after one went this tick (what was held, let go by an action): it waits for the next tick.
-    if motion(packet) && lag(|l| l.moved_tick == Some(game.ticks)) {
-        lag(|l| l.held.push_back(Held { packet: packet.clone(), born: now, due: now }));
-        return true;
-    }
-    let Some(delay) = on.filter(|_| !action(packet) && !full) else {
-        release(game, true, motion(packet));
-        if let Some(at) = position(packet) {
-            lag(|l| l.sent_at = Some(at));
-        }
-        if motion(packet) {
-            lag(|l| l.moved_tick = Some(game.ticks));
-        }
-        return false;
-    };
-    release(game, false, false);
-    lag(|l| {
-        // Each packet's turn comes after the one before it; in a choke, all at its end.
-        let due = match choke {
-            Some(end) => end.max(now),
-            None => l.held.back().map_or(now + delay, |b| b.due.max(now + delay)),
-        };
-        l.held.push_back(Held { packet: packet.clone(), born: now, due });
-    });
-    true
-}
-
-// The server pushed you (a velocity packet): Knockback's choke starts.
+// The server pushed you (a velocity packet the game took): Knockback's choke starts.
 pub(super) fn knocked() {
     lag(|l| l.knocked = true);
+}
+
+// A position packet from the server (remote_teleport's head, before the game answers it): what is held goes first
+// (the server ignores moves until the client accepts), and the answer goes undelayed.
+pub(super) fn correction(game: &Game<'_>) {
+    let session = game.remote.as_ref().map(|r| &r.session);
+    let busy = lag(|l| {
+        bind(l, session);
+        l.line.phase() != Phase::Idle
+    });
+    if !busy {
+        return;
+    }
+    let n = flush(game, Flush::Reanchor);
+    lag(|l| {
+        l.line.reset();
+        l.pulse.reset();
+        note(l, "teleport: sent everything held", n);
+    });
+}
+
+// Panic: everything held goes now, in order, and nothing more is held. (Thrown away, the Pongs among it would leave
+// the server waiting on answers it never gets, and the ticks it already counted on would be missing.)
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    let session = game.remote.as_ref().map(|r| &r.session);
+    lag(|l| bind(l, session));
+    let n = flush(game, Flush::Stopped);
+    lag(|l| {
+        if n > 0 {
+            note(l, "Sunset stopped: sent everything held", n);
+        }
+        l.line.clear_keeping_stats();
+        l.told = None;
+        l.pulse.reset();
+        l.dynamic = Dynamic::default();
+        l.knocked = false;
+    });
+    super::remote::sunset_gui_move_remote::retry_idle(game);
 }
 
 fn rolled(lo: f64, hi: f64) -> Duration {
@@ -238,15 +323,6 @@ fn rolled(lo: f64, hi: f64) -> Duration {
     Duration::from_millis((lo + r * (hi - lo)) as u64)
 }
 
-// A teleport from the server: held positions are stale; the rest (each tick's end) still goes, before the answer.
-pub(super) fn correction(game: &Game<'_>) {
-    let kept = lag(|l| {
-        l.held.drain(..).map(|h| h.packet).filter(|p| !motion(p)).collect()
-    });
-    send(game, kept);
-    lag(|l| l.choke_until = None);
-}
-
 fn live(game: &Game<'_>) -> bool {
     game.remote.is_some()
         && game.screen == Screen::Playing
@@ -255,8 +331,19 @@ fn live(game: &Game<'_>) -> bool {
         && game.player.as_ref().is_some_and(|p| p.health.health() > 0.0)
 }
 
+// Another module owns the outgoing stream this tick: Fake Lag hands it over empty.
+fn yielding(mods: &[Module]) -> Option<&'static str> {
+    if mods.iter().any(|m| m.name == "Blink" && m.on) {
+        return Some("Blink");
+    }
+    if let Some(owner) = super::sunset_combat_control::owner() {
+        return Some(owner);
+    }
+    super::sunset_gui_move::stopping().then_some("GUI Move")
+}
+
 // A player who is not a friend within range; with `facing`, only one you look at (30 degrees) and walk towards.
-fn enemy(game: &Game<'_>, range: f64, facing: bool) -> bool {
+pub(super) fn enemy(game: &Game<'_>, range: f64, facing: bool) -> bool {
     let (Some(p), Some(eye), Some(me)) = (game.player.as_ref(), game.eye_position(), game.remote.as_ref().map(|r| r.entity_id as u32)) else {
         return false;
     };
@@ -286,97 +373,6 @@ fn enemy(game: &Game<'_>, range: f64, facing: bool) -> bool {
     })
 }
 
-pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
-    let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
-    let live = live(game);
-    // A new life or world: the held moves are of the old one.
-    let life = game.remote.as_ref().map(|r| (r.entity_id, game.dim));
-    let stale = lag(|l| {
-        let stale = l.life != life;
-        l.life = life;
-        if stale {
-            l.held.drain(..).map(|h| h.packet).filter(|p| !motion(p)).collect()
-        } else {
-            Vec::new()
-        }
-    });
-    send(game, stale);
-    // Not while Blink holds the moves itself, nor while a combat module is in the middle of something.
-    let paused = get("Blink").is_some() || super::sunset_combat_control::owner().is_some() || super::sunset_gui_move::stopping();
-    let m = get(LAG).filter(|_| live && !paused);
-    let on = m.filter(|m| match m.p("Mode") {
-        "Always" => true,
-        "Dynamic" => enemy(game, m.n("Range"), true),
-        "Off" => false,
-        _ => choking(game, m),
-    });
-    if on.is_none() {
-        lag(|l| l.choke_until = None);
-    }
-    lag(|l| l.on = on.map(|m| (Duration::from_millis(m.n("Delay (ms)").clamp(10.0, 1000.0) as u64), Instant::now())));
-    release(game, on.is_none(), false);
-    backtrack(game, get(LAG).filter(|m| live && m.b("Backtrack")));
-    // Knockback Delay: what the network module holds by for the next pushes.
-    let kb = get("Velocity").filter(|m| {
-        m.b("Knockback delay") && live && (!m.b("Delay only near enemies") || enemy(game, 6.0, false))
-            && !(m.b("Delay not in water") && game.player.as_ref().is_some_and(|p| p.fluids.was_touching_water))
-    });
-    match (kb, game.remote.as_ref()) {
-        (Some(m), Some(r)) => {
-            let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
-            let (a, b) = if ground {
-                (m.n("Ground delay min (ms)"), m.n("Ground delay max (ms)"))
-            } else {
-                (m.n("Air delay min (ms)"), m.n("Air delay max (ms)"))
-            };
-            net::delay(r.entity_id, m.n("Delay chance (%)"), [a.min(b) as u64, a.max(b) as u64]);
-        }
-        _ => net::delay_off(),
-    }
-}
-
-// The choke modes, each tick: whether to hold now. A choke that ran out lets everything go and the next one starts
-// (Timed), while an enemy within Range comes closer for up to Range choke (Ranged), or once after each push on you
-// (Knockback).
-fn choking(game: &Game<'_>, m: &Module) -> bool {
-    let now = Instant::now();
-    let ended = lag(|l| l.choke_until.is_some_and(|end| now >= end));
-    let knocked = lag(|l| std::mem::take(&mut l.knocked));
-    let fresh = |d: Duration| lag(|l| l.choke_until = Some(now + d));
-    let choke = || rolled(m.n("Shortest choke (ms)"), m.n("Longest choke (ms)"));
-    if ended {
-        release(game, true, false);
-        lag(|l| l.choke_until = None);
-    }
-    match m.p("Mode") {
-        "Timed" => {
-            if lag(|l| l.choke_until.is_none()) {
-                fresh(choke());
-            }
-            true
-        }
-        "Ranged" => {
-            let near = nearest_enemy(game).filter(|d| *d <= m.n("Range"));
-            let was = lag(|l| std::mem::replace(&mut l.enemy_was, near));
-            let closing = near.is_some_and(|d| was.is_none_or(|w| d <= w + 0.01));
-            if !closing {
-                lag(|l| l.choke_until = None);
-                return false;
-            }
-            if lag(|l| l.choke_until.is_none()) {
-                fresh(Duration::from_millis(m.n("Range choke (ms)") as u64));
-            }
-            true
-        }
-        _ => {
-            if knocked {
-                fresh(choke());
-            }
-            lag(|l| l.choke_until.is_some())
-        }
-    }
-}
-
 fn nearest_enemy(game: &Game<'_>) -> Option<f64> {
     let me = super::sunset_util::player_pos(game)?;
     game.mobs
@@ -386,51 +382,261 @@ fn nearest_enemy(game: &Game<'_>) -> Option<f64> {
         .min_by(f64::total_cmp)
 }
 
-// Backtrack: the player you last hit, while within its range band (and with a weapon in hand, with Weapon only), is
-// told to the network module each tick; it holds what comes in while they move away.
-fn backtrack(game: &Game<'_>, m: Option<&Module>) {
-    let target = m.and_then(|m| {
-        if m.b("Backtrack weapon only") && !holds_weapon(game) {
-            return None;
+// When this tick's mode wants the line to hold, and how.
+fn plan(game: &Game<'_>, m: &Module, now: Instant) -> Option<Plan> {
+    let delay = Plan::Latency(Duration::from_millis(m.n("Delay (ms)").clamp(10.0, 1000.0) as u64));
+    let gap = Duration::from_millis(m.n("Pulse gap (ms)").max(0.0) as u64);
+    let choke = || rolled(m.n("Shortest choke (ms)"), m.n("Longest choke (ms)"));
+    match m.p("Mode") {
+        "Pulse" => {
+            let mut pulse = lag(|l| l.pulse);
+            let plan = pulse.step(now, true, choke, gap);
+            lag(|l| l.pulse = pulse);
+            plan
         }
-        let id = lag(|l| l.last_hit)?;
-        let mob = game.mobs.iter().find(|t| t.id == id && super::sunset_util::player_enemy(game, t))?;
-        let at = [mob.position.x, mob.position.y, mob.position.z];
-        let d = super::sunset_util::dist(super::sunset_util::player_pos(game)?, at);
-        (d >= m.n("Backtrack min range") && d <= m.n("Backtrack max range")).then_some((m, mob.id, at))
-    });
-    match (target, game.remote.as_ref(), game.eye_position()) {
-        (Some((m, id, at)), Some(r), Some(eye)) => {
-            let (a, b) = (m.n("Shortest latency (ms)"), m.n("Longest latency (ms)"));
-            net::backtrack(r.entity_id, id as i32, at, eye, [a.min(b) as u64, a.max(b) as u64]);
+        "Knockback" => {
+            let (mut pulse, knocked) = lag(|l| (l.pulse, std::mem::take(&mut l.knocked)));
+            let plan = pulse.step(now, knocked, choke, gap);
+            lag(|l| l.pulse = pulse);
+            plan
         }
-        _ => net::backtrack_off(),
+        "Dynamic" => {
+            let range = m.n("Range");
+            let near = if m.p("Trigger") == "Closing" {
+                let d = nearest_enemy(game).filter(|d| *d <= range);
+                let was = lag(|l| std::mem::replace(&mut l.dynamic.enemy_was, d));
+                d.is_some_and(|d| was.is_none_or(|w| d <= w + 0.01))
+            } else {
+                enemy(game, range, true)
+            };
+            lag(|l| l.dynamic.gate.step(near, EXIT_TICKS)).then_some(delay)
+        }
+        _ => Some(delay),
     }
 }
 
-fn holds_weapon(game: &Game<'_>) -> bool {
-    game.held().is_some_and(|s| {
-        &*s.item == "minecraft:mace"
-            || ["minecraft:swords", "minecraft:axes"].iter().any(|t| game.res.items().item_tags.get(*t).is_some_and(|t| t.contains(&*s.item)))
-    })
+pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
+    let now = Instant::now();
+    let session = game.remote.as_ref().map(|r| &r.session);
+    lag(|l| bind(l, session));
+    // A new life or world in the same session: what is held goes first (the server takes no move until the client has
+    // accepted where it now is), and the new life starts with nothing held.
+    let life = game.remote.as_ref().map(|r| (r.entity_id, game.dim));
+    let reanchor = lag(|l| {
+        let changed = l.life.is_some() && life.is_some() && l.life != life;
+        l.life = life;
+        changed && l.line.phase() != Phase::Idle
+    });
+    if reanchor {
+        let n = flush(game, Flush::Reanchor);
+        lag(|l| {
+            l.line.reset();
+            l.pulse.reset();
+            note(l, "new life or dimension: sent everything held", n);
+        });
+    }
+    let m = mods.iter().find(|m| m.name == LAG && m.on);
+    if let Some(who) = yielding(mods) {
+        if pending() {
+            let n = flush(game, Flush::Yield);
+            lag(|l| note(l, format!("{who} took the outgoing stream: sent everything held"), n));
+        }
+        lag(|l| {
+            l.line.stop();
+            l.pulse.reset();
+            l.dynamic = Dynamic::default();
+            l.knocked = false;
+        });
+    } else if let Some(m) = m.filter(|_| live(game)) {
+        let plan = plan(game, m, now);
+        lag(|l| match plan {
+            Some(plan) => l.line.hold(plan),
+            None => l.line.stop(),
+        });
+    } else {
+        lag(|l| {
+            l.line.stop();
+            l.pulse.reset();
+            l.dynamic = Dynamic::default();
+            l.knocked = false;
+        });
+    }
+    lag(|l| {
+        l.told = Some(now);
+        l.actions = m.is_none_or(|m| m.b("Release on action"));
+        l.mode = m.map_or("", |m| m.p("Mode"));
+    });
+    release(game, now);
 }
 
-// Show server position: where the server has you while Fake Lag holds your moves, and where Backtrack's player really
-// is while it holds what comes in.
+// Show server position: where the server has you while Fake Lag holds what you send.
 pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut impl Canvas, lw: f32) {
     if !mods.iter().any(|m| m.name == LAG && m.on && m.b("Show server position")) {
         return;
     }
-    if let Some(at) = net::backtrack_shown() {
-        let lo = [at[0] - 0.3, at[1], at[2] - 0.3];
-        let hi = [at[0] + 0.3, at[1] + 1.8, at[2] + 0.3];
-        super::sunset_visual::draw_box(cam, out, &super::sunset_visual::Look::BOXED, lo, hi, 0xFF55_AAFF, lw);
-    }
-    let (Some(at), Some(p)) = (lag(|l| l.sent_at.filter(|_| !l.held.is_empty())), game.player.as_ref()) else {
+    let (Some(at), Some(p)) = (lag(|l| l.sent_at.filter(|_| !l.line.is_empty())), game.player.as_ref()) else {
         return;
     };
     let half = f64::from(p.dimensions.width) / 2.0;
     let lo = [at[0] - half, at[1], at[2] - half];
     let hi = [at[0] + half, at[1] + f64::from(p.dimensions.height), at[2] + half];
     super::sunset_visual::draw_box(cam, out, &super::sunset_visual::Look::BOXED, lo, hi, 0xFFFF_5555, lw);
+}
+
+// ---------------------------------------------------------------- Debug Report
+
+pub(super) fn report(out: &mut String) {
+    let now = Instant::now();
+    lag(|l| {
+        let s = &l.line.stats;
+        let _ = writeln!(out, "\n## Fake Lag (outgoing)");
+        let plan = match l.line.plan() {
+            Some(Plan::Latency(d)) => format!("each packet {} ms late", d.as_millis()),
+            Some(Plan::Until(at)) => format!("choke ends in {} ms", at.saturating_duration_since(now).as_millis()),
+            None => "not holding".into(),
+        };
+        let mode = if l.mode.is_empty() { "module off" } else { l.mode };
+        let pulse = if l.pulse.choking() { "; a choke running" } else { "" };
+        let _ = writeln!(out, "- State: {} ({mode}; {plan}{pulse}); release on action {}", l.line.phase().name(), if l.actions { "on" } else { "off" });
+        let link = l.link.as_ref().map_or("none".to_owned(), |k| format!("session #{} epoch {}", k.serial, k.epoch));
+        let _ = writeln!(out, "- Held now: {} packets, oldest {} ms; bound to {link}", l.line.len(), l.line.oldest(now).as_millis());
+        let _ = writeln!(out, "- Since start: {} held, {} released; deepest {} packets, longest wait {} ms", s.captured, s.released, s.max_depth, s.max_wait_ms);
+        let flushes: Vec<String> =
+            line::FLUSHES.iter().zip(s.flushes).filter(|(_, n)| *n > 0).map(|(f, n)| format!("{} {n}", f.name())).collect();
+        let _ = writeln!(out, "- Sent at once (times, by reason): {}", if flushes.is_empty() { "none".into() } else { flushes.join(", ") });
+        let discards: Vec<String> =
+            line::DISCARDS.iter().zip(s.discarded).filter(|(_, n)| *n > 0).map(|(d, n)| format!("{} {n}", d.name())).collect();
+        let _ = writeln!(out, "- Thrown away (packets, by reason): {}", if discards.is_empty() { "none".into() } else { discards.join(", ") });
+        if s.reordered > 0 {
+            let _ = writeln!(out, "- **Reordered by Fake Lag: {} (a bug: it must keep the order)**", s.reordered);
+        }
+        if !l.notes.is_empty() {
+            let _ = writeln!(out, "\n| Time | Tick | Event | Packets |\n|---|---|---|---|");
+            for n in l.notes.iter().rev() {
+                let at = chrono::DateTime::<chrono::Local>::from(n.at).format("%H:%M:%S%.3f");
+                let _ = writeln!(out, "| {at} | {} | {} | {} |", n.tick, n.what, n.packets);
+            }
+        }
+    });
+}
+
+// ---------------------------------------------------------------- old settings
+
+// Fake Lag before its line (and Backtrack inside it): Always is Delay, Timed is Pulse, Ranged is Dynamic closing in
+// (with its Range choke as the delay), Off was Backtrack alone (Fake Lag off, its key Backtrack's). Backtrack's
+// settings are the Backtrack module's, on if Fake Lag was with it, and on the same key.
+pub(super) fn migrated(text: Cow<'_, str>) -> Cow<'_, str> {
+    let line_of = |l: &str| l.split_once('=').and_then(|(k, v)| k.strip_prefix("fakelag.").map(|f| (f.to_owned(), v.trim().to_owned())));
+    let old_mode = |v: &str| matches!(v, "Always" | "Timed" | "Ranged" | "Off");
+    let backtrack_field = |f: &str| f.starts_with("backtrack") || matches!(f, "shortestlatencyms" | "longestlatencyms");
+    let old = text.lines().filter_map(line_of).any(|(f, v)| (f == "mode" && old_mode(&v)) || f == "rangechoke" || backtrack_field(&f));
+    if !old {
+        return text;
+    }
+    let fields: Vec<(String, String)> = text.lines().filter_map(line_of).collect();
+    let get = |f: &str| fields.iter().rev().find(|(k, _)| k == f).map(|(_, v)| v.as_str());
+    let mode = get("mode").unwrap_or("Dynamic");
+    let backtrack = get("backtrack") == Some("true");
+    let mut out: Vec<String> = text
+        .lines()
+        .filter(|l| line_of(*l).is_none_or(|(f, _)| f != "mode" && f != "rangechoke" && !backtrack_field(&f)))
+        .map(str::to_owned)
+        .collect();
+    let (new_mode, off) = match mode {
+        "Always" => ("Delay", false),
+        "Timed" => ("Pulse", false),
+        "Ranged" => ("Dynamic", false),
+        "Off" => ("Delay", true),
+        other => (other, false),
+    };
+    out.push(format!("fakelag.mode={new_mode}"));
+    if mode == "Ranged" {
+        out.push("fakelag.trigger=Closing".into());
+        if let Some(choke) = get("rangechoke") {
+            out.push(format!("fakelag.delayms={choke}"));
+        }
+    }
+    if off {
+        out.push("fakelag.on=false".into());
+    }
+    if backtrack && !text.lines().any(|l| l.starts_with("backtrack.")) {
+        // A profile that leaves Fake Lag's switch alone leaves Backtrack's too.
+        if let Some(on) = get("on") {
+            out.push(format!("backtrack.on={on}"));
+        }
+        if let Some(key) = get("key").filter(|k| *k != "none") {
+            out.push(format!("backtrack.key={key}"));
+            if let Some(bind) = get("bindmode") {
+                out.push(format!("backtrack.bindmode={bind}"));
+            }
+            if off {
+                out.push("fakelag.key=none".into());
+            }
+        }
+        for (old, new) in [
+            ("backtrackminrange", "minrange"),
+            ("backtrackmaxrange", "maxrange"),
+            ("shortestlatencyms", "shortestlatencyms"),
+            ("longestlatencyms", "longestlatencyms"),
+            ("backtrackweapononly", "weapononly"),
+            ("showserverposition", "showserverposition"),
+        ] {
+            if let Some(v) = get(old) {
+                out.push(format!("backtrack.{new}={v}"));
+            }
+        }
+    }
+    Cow::Owned(out.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::migrated;
+    use std::borrow::Cow;
+    use std::collections::HashMap;
+
+    fn fields(text: &str) -> HashMap<String, String> {
+        migrated(Cow::Borrowed(text)).lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.into(), v.into())).collect()
+    }
+
+    #[test]
+    fn current_settings_are_left_alone() {
+        let text = "fakelag.on=true\nfakelag.mode=Pulse\nfakelag.delayms=200\n";
+        assert!(matches!(migrated(Cow::Borrowed(text)), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn old_modes_become_the_new_ones() {
+        for (old, new) in [("Always", "Delay"), ("Timed", "Pulse"), ("Dynamic", "Dynamic"), ("Knockback", "Knockback")] {
+            let out = fields(&format!("fakelag.on=true\nfakelag.mode={old}\nfakelag.rangechoke=600\n"));
+            assert_eq!(out["fakelag.mode"], new, "{old}");
+            assert_eq!(out["fakelag.on"], "true");
+            assert!(!out.contains_key("fakelag.rangechoke"));
+        }
+        let out = fields("fakelag.mode=Ranged\nfakelag.rangechoke=450\nfakelag.delayms=100\n");
+        assert_eq!((out["fakelag.mode"].as_str(), out["fakelag.trigger"].as_str(), out["fakelag.delayms"].as_str()), ("Dynamic", "Closing", "450"));
+    }
+
+    #[test]
+    fn backtrack_moves_to_its_own_module() {
+        let out = fields(
+            "fakelag.on=true\nfakelag.key=key.keyboard.g\nfakelag.mode=Off\nfakelag.backtrack=true\nfakelag.backtrackmaxrange=7\n\
+             fakelag.shortestlatencyms=200\nfakelag.backtrackweapononly=true\nfakelag.showserverposition=false\n",
+        );
+        assert_eq!(out["fakelag.on"], "false");
+        assert_eq!(out["fakelag.key"], "none");
+        assert_eq!(out["backtrack.on"], "true");
+        assert_eq!(out["backtrack.key"], "key.keyboard.g");
+        assert_eq!(out["backtrack.maxrange"], "7");
+        assert_eq!(out["backtrack.shortestlatencyms"], "200");
+        assert_eq!(out["backtrack.weapononly"], "true");
+        assert_eq!(out["backtrack.showserverposition"], "false");
+        assert!(!out.keys().any(|k| k.starts_with("fakelag.backtrack")));
+        // With a mode as well, both stay on one key.
+        let out = fields("fakelag.on=true\nfakelag.key=key.keyboard.g\nfakelag.mode=Always\nfakelag.backtrack=true\n");
+        assert_eq!((out["fakelag.mode"].as_str(), out["fakelag.key"].as_str(), out["backtrack.key"].as_str()), ("Delay", "key.keyboard.g", "key.keyboard.g"));
+        // Backtrack off: nothing of it is carried over.
+        let out = fields("fakelag.on=true\nfakelag.mode=Dynamic\nfakelag.backtrack=false\nfakelag.backtrackminrange=2\n");
+        assert!(!out.keys().any(|k| k.starts_with("backtrack.")));
+    }
 }

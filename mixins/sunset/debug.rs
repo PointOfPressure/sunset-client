@@ -124,6 +124,9 @@ fn report(game: &Game<'_>, limits: &Limits) -> String {
     modules(&mut out);
     super::sunset_scaffold_normal::report(&mut out);
     super::sunset_scaffold_telly::report(&mut out);
+    super::sunset_lag::report(&mut out);
+    super::sunset_backtrack::report(&mut out);
+    wire_sequence(&mut out);
     anticheat(&mut out, &chat);
     // The packet log gets up to two fifths of the room, the chat what is left.
     let packets = packet_log(&sent, ticks, limits.ticks, limits.size * 2 / 5);
@@ -551,6 +554,18 @@ fn anticheat(out: &mut String, chat: &[horizon_client::chat::sunset_chat_log::Li
         let by = if *from_server { "server's reason" } else { "connection" };
         let _ = writeln!(out, "- {} ({by}): {}", clock(*at), reason.replace('\n', " "));
     }
+}
+
+// The client ticks as they went on the wire: a tick with two moves is one the server rejects, whoever sent them.
+fn wire_sequence(out: &mut String) {
+    let s = horizon_protocol::connection::sunset_wire::sequence();
+    let _ = writeln!(out, "\n### Tick sequencing (on the wire)");
+    if s.extra_moves == 0 {
+        let _ = writeln!(out, "- No client tick carried more than one move packet this game.");
+        return;
+    }
+    let ticks: Vec<String> = s.last.iter().flatten().map(u64::to_string).collect();
+    let _ = writeln!(out, "- {} client ticks carried more than one move packet; the latest at ticks {}.", s.extra_moves, ticks.join(", "));
 }
 
 // ---------------------------------------------------------------- packets and chat

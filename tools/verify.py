@@ -1525,7 +1525,7 @@ def _():
         slot(0, "stone", 8)
         setting("guimove", "mode", "GrimAC")
         if extra == ("fakelag",):
-            setting("fakelag", "mode", "Always")
+            setting("fakelag", "mode", "Delay")
         only("guimove", *extra)
         ctl("open-inventory")
         wait(4)
@@ -8889,7 +8889,7 @@ def seen_late(own, seen):
 
 @test("Fake Lag")
 def _():
-    # You strafe left and right in front of Bot1 for 3 s, without and with Fake Lag (Always, 300 ms). From both
+    # You strafe left and right in front of Bot1 for 3 s, without and with Fake Lag (Delay, 300 ms). From both
     # clients' probes: your x as you see it and as Bot1 sees you, and the shift in time that fits them best (how late
     # the server and Bot1 have you). The wire probe: never two move packets in a client tick, no kick.
     if not CTL2:
@@ -8899,7 +8899,7 @@ def _():
     reset()
     bot_ready(4.5, 180)
     me = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
-    setting("fakelag", "mode", "Always")
+    setting("fakelag", "mode", "Delay")
     setting("fakelag", "delay", "300")
     late, wire = {}, {}
     for name, mods in (("off", ()), ("on", ("fakelag",))):
@@ -11227,7 +11227,7 @@ def _():
     return ok, f"table {rows}; alert lines in chat {per_check}; setbacks listed {setbacks}"
 
 
-# ---- combat ports, batch 2 (Fake Lag modes and Backtrack, Aim Assist's Silent aim and Hit flick, No Interact's Hit
+# ---- combat ports, batch 2 (Fake Lag modes, Backtrack, Aim Assist's Silent aim and Hit flick, No Interact's Hit
 # fix, No miss delay and Anti action, Shield, Key Throw's Crossbow key, Offhand's Double hand, Auto Weapon's Totem hit,
 # W Tap and Jump Reset chances, Sprint's Keep sprint, Auto Web's falling webs, the macros' hurt-time waits)
 
@@ -11247,16 +11247,26 @@ def strafe(steps=6, each=10):
         ctl("key", "ad"[step % 2], "up")
 
 
-@test("Fake Lag (Timed)")
+def tick_times(mark):
+    """When each client tick went since mark (the wire probe's "tickat" lines, unix seconds)."""
+    with open(probe_path(), errors="replace") as f:
+        f.seek(mark)
+        return [float(line.split()[1]) for line in f if line.startswith("tickat ")]
+
+
+@test("Fake Lag (Pulse)")
 def _():
-    # You strafe for 3 s, without and with Fake Lag on Timed (choke 300 ms): what you send waits and goes at the end of
-    # each choke as one move, so most client ticks send no move packet, and none sends more than one; no kick.
+    # You strafe for 3 s, without and with Fake Lag on Pulse (chokes of 300 ms): what you send waits and goes at the end
+    # of each choke, whole and in order. No move packet is merged or dropped (about as many client ticks carry one as
+    # without it), none carries two, the ticks leave in bursts (gaps of 250 ms and more between tick ends), and you
+    # stay playing.
     if not probe_path():
         return None, "needs the probe (tools/probe)"
     reset()
-    setting("fakelag", "mode", "Timed")
+    setting("fakelag", "mode", "Pulse")
     setting("fakelag", "shortest choke", "300")
     setting("fakelag", "longest choke", "300")
+    setting("fakelag", "pulse gap", "0")
     got = {}
     for name, mods in (("off", ()), ("on", ("fakelag",))):
         cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
@@ -11267,16 +11277,58 @@ def _():
         strafe()
         wait(10)
         only()
+        wait(10)
         ticks, moved = move_ticks(mark)
-        got[name] = (moved, ticks, order_stats(mark)[3])
+        times = tick_times(mark)
+        bursts = sum(1 for a, b in zip(times, times[1:]) if b - a >= 0.25)
+        got[name] = (moved, ticks, order_stats(mark)[3], bursts)
     wait(10)
     playing = state().get("screen") == "playing"
-    note = f"(ticks with a move packet, ticks, most in a tick) off {got['off']}, Timed {got['on']}; still playing {playing}"
-    ok = playing and got["on"][2] <= 1 and got["off"][2] <= 1 and got["on"][0] * 2 < got["on"][1] and got["off"][0] * 2 > got["off"][1]
+    note = (f"(ticks with a move packet, ticks, most in a tick, gaps of 250 ms+) off {got['off']}, Pulse {got['on']}; "
+            f"still playing {playing}")
+    share = lambda g: g[0] / max(g[1], 1)
+    ok = (playing and got["on"][2] <= 1 and got["off"][2] <= 1 and share(got["on"]) >= 0.8 * share(got["off"])
+          and got["on"][3] >= 4 and got["off"][3] <= 1)
     return ok, note
 
 
-@test("Fake Lag (Backtrack)")
+@test("Fake Lag (teleport)")
+def _():
+    # Strafing with Fake Lag on Delay (500 ms), the server teleports you three times: what was held goes before the
+    # answer, the answer (AcceptTeleportation) goes in the tick the teleport came, no tick carries two move packets, and
+    # you end where the last teleport put you, still playing. A baseline run without Fake Lag first.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    reset()
+    setting("fakelag", "mode", "Delay")
+    setting("fakelag", "delay", "500")
+    got = {}
+    for name, mods in (("off", ()), ("on", ("fakelag",))):
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
+        wait(10)
+        only(*mods)
+        wait(5)
+        mark = probe_mark()
+        ctl("key", "a", "down")
+        for k in range(3):
+            wait(12)
+            cmd(f"tp @s {X0 + 0.5 + 2 * (k + 1)} {Y + 1} {Z0 + 0.5} 0 0")
+        wait(12)
+        ctl("key", "a", "up")
+        wait(15)
+        only()
+        wait(15)
+        p = pos()
+        ticks = probe_ticks(mark)
+        accepted = sum(line == "send teleport" for t in ticks for line in t)
+        got[name] = (accepted, order_stats(mark)[3], round(p[0] - X0 - 0.5, 1))
+    playing = state().get("screen") == "playing"
+    note = f"(teleports accepted, most moves in a tick, x after) off {got['off']}, Delay {got['on']}; still playing {playing}"
+    ok = playing and got["on"][0] >= 3 and got["on"][1] <= 1 and got["off"][1] <= 1
+    return ok, note
+
+
+@test("Backtrack")
 def _():
     # You hit Bot1 once, then it walks away from you for a second. From both clients' probes: Bot1's z as it has it and
     # as you see it, and how late you see it (the best fitting shift), without and with Backtrack (latency 300 ms):
@@ -11285,13 +11337,11 @@ def _():
         return None, "needs a second player"
     if not probe_path():
         return None, "needs the probe (tools/probe)"
-    setting("fakelag", "mode", "Off")
-    setting("fakelag", "backtrack", "true")
-    setting("fakelag", "backtrack max range", "10")
-    setting("fakelag", "shortest latency", "300")
-    setting("fakelag", "longest latency", "300")
+    setting("backtrack", "max range", "10")
+    setting("backtrack", "shortest latency", "300")
+    setting("backtrack", "longest latency", "300")
     late = {}
-    for name, mods in (("off", ()), ("on", ("fakelag",))):
+    for name, mods in (("off", ()), ("on", ("backtrack",))):
         reset()
         cmd("effect give @s minecraft:resistance 600 4 true")
         slot(0, "wooden_sword")

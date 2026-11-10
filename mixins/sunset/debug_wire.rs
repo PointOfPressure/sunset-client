@@ -25,6 +25,40 @@ static LOG: Mutex<VecDeque<Sent>> = Mutex::new(VecDeque::new());
 static LAST_INPUT: Mutex<Option<Sent>> = Mutex::new(None);
 static LAST_MOVE: Mutex<Option<Sent>> = Mutex::new(None);
 
+// The client tick's shape as the server reads it (the packets between two ClientTickEnds are one tick; GrimAC's
+// TickTimer and Horizon's server both reject a second move in one): moves since the last ClientTickEnd, and the ticks
+// that broke it, whatever sent them (the game, a module, Fake Lag's line).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Sequence {
+    // Ticks that carried a second (or third...) move packet.
+    pub extra_moves: u64,
+    // The wire tick of the last few of them, newest last.
+    pub last: [Option<u64>; 8],
+}
+
+static MOVES_THIS_TICK: AtomicU64 = AtomicU64::new(0);
+static SEQUENCE: Mutex<Sequence> = Mutex::new(Sequence { extra_moves: 0, last: [None; 8] });
+
+fn sequence_seen(id: i32, tick: u64) {
+    use crate::ids::play::serverbound as ids;
+    match id {
+        ids::MOVE_PLAYER_POS | ids::MOVE_PLAYER_POS_ROT | ids::MOVE_PLAYER_ROT | ids::MOVE_PLAYER_STATUS_ONLY => {
+            if MOVES_THIS_TICK.fetch_add(1, Ordering::Relaxed) == 1 {
+                let mut s = SEQUENCE.lock().unwrap_or_else(|e| e.into_inner());
+                s.extra_moves += 1;
+                s.last.rotate_left(1);
+                s.last[7] = Some(tick);
+            }
+        }
+        ids::CLIENT_TICK_END => MOVES_THIS_TICK.store(0, Ordering::Relaxed),
+        _ => {}
+    }
+}
+
+pub fn sequence() -> Sequence {
+    *SEQUENCE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn id(body: &[u8]) -> Option<(i32, usize)> {
     let mut value = 0i32;
     for (i, b) in body.iter().take(5).enumerate() {
@@ -46,6 +80,7 @@ pub fn sent(body: &[u8]) {
     use crate::ids::play::serverbound as ids;
     let payload = body[start..].get(..BODY).unwrap_or(&body[start..]).to_vec();
     let sent = Sent { tick: TICKS.load(Ordering::Relaxed), id, payload, len: body.len() - start };
+    sequence_seen(id, sent.tick);
     let last = match id {
         ids::PLAYER_INPUT => Some(&LAST_INPUT),
         ids::MOVE_PLAYER_POS | ids::MOVE_PLAYER_POS_ROT | ids::MOVE_PLAYER_ROT | ids::MOVE_PLAYER_STATUS_ONLY => Some(&LAST_MOVE),

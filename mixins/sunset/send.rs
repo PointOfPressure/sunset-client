@@ -1,6 +1,6 @@
 // Outgoing packets: Friend Guard drops hits on friends, Blink holds moves, Anti Hunger and No Fall change them, Fake Lag
-// holds what goes out for a while; what goes on the wire is noted (the look and the sprint the server has, for Crystal
-// Aura and Anchor Aura).
+// holds what goes out for a while; what goes on the wire is noted (sunset_combat_wire::delivered, the same for a packet
+// Fake Lag lets go later).
 fn sunset_send(
     game: &crate::game::Game<'_>,
     packet: &horizon_protocol::packets::play::Serverbound,
@@ -29,14 +29,11 @@ fn sunset_send(
     if !replay && crate::game::sunset_gui_move::outgoing(game, last) {
         return std::ops::ControlFlow::Break(());
     }
+    // Fake Lag: held (or sent by it, behind what it held) means it is no longer this hook's to send.
     if crate::game::sunset_lag::held(game, last) {
         return std::ops::ControlFlow::Break(());
     }
-    crate::game::sunset_combat_wire::forwarded(game, last);
-    crate::game::sunset_cart::sent(game, last);
-    crate::game::sunset_render::sent(game, last);
-    crate::game::sunset_drain::sent(game, last);
-    crate::game::sunset_effects::sent(game, last);
+    crate::game::sunset_combat_wire::delivered(game, last);
     match changed {
         None => std::ops::ControlFlow::Continue(()),
         Some(changed) => {

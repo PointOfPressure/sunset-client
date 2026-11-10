@@ -4,9 +4,104 @@
 
 use horizon_protocol::packets::play::Clientbound as C;
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+
+// ---------------------------------------------------------------- which connection a held packet belongs to
+
+// Horizon's Session has no serial number, so a held packet is bound to its Session by the Session's own `counters`
+// cell, held weakly: the allocation cannot be reused for another Session while a Link to it exists, so comparing
+// addresses is exact. The epoch counts the connection's boundaries as the game takes them in (a join, a proxy's
+// reconfiguration start and end, a disconnect): the network thread acknowledges a reconfiguration by itself, so a play
+// packet written before one can never reach the same server, and after it would reach the next backend.
+static EPOCH: AtomicU64 = AtomicU64::new(0);
+static SERIAL: AtomicU64 = AtomicU64::new(0);
+static LAST_SESSION: Mutex<Option<Weak<CountersCell>>> = Mutex::new(None);
+
+type CountersCell = Mutex<Option<Arc<horizon_protocol::connection::Counters>>>;
+
+#[derive(Clone, Debug)]
+pub struct Link {
+    cell: Weak<CountersCell>,
+    // For reports: the n-th session this game polled, and its epoch.
+    pub serial: u64,
+    pub epoch: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Linked {
+    Same,
+    // The same Session, past a reconfiguration or a disconnect.
+    Reconfigured,
+    // Another Session, or none.
+    Other,
+}
+
+impl Link {
+    pub fn of(session: &super::Session) -> Self {
+        Self { cell: Arc::downgrade(&session.counters), serial: SERIAL.load(Ordering::Acquire), epoch: EPOCH.load(Ordering::Acquire) }
+    }
+
+    pub fn to(&self, session: Option<&super::Session>) -> Linked {
+        match session {
+            Some(s) if std::ptr::eq(self.cell.as_ptr(), Arc::as_ptr(&s.counters)) => {
+                if self.epoch == EPOCH.load(Ordering::Acquire) { Linked::Same } else { Linked::Reconfigured }
+            }
+            _ => Linked::Other,
+        }
+    }
+}
+
+fn boundary(event: &super::Event) -> bool {
+    matches!(
+        event,
+        super::Event::Joined { .. } | super::Event::Reconfiguring | super::Event::Reconfigured(_) | super::Event::Disconnected { .. }
+    )
+}
+
+// Every poll, before anything reads its events (also while Sunset is stopped).
+pub fn note(session: &super::Session, events: &[super::Event]) {
+    {
+        let mut last = LAST_SESSION.lock().unwrap_or_else(|e| e.into_inner());
+        if last.as_ref().is_none_or(|w| !std::ptr::eq(w.as_ptr(), Arc::as_ptr(&session.counters))) {
+            *last = Some(Arc::downgrade(&session.counters));
+            SERIAL.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+    let n = events.iter().filter(|e| boundary(e)).count() as u64;
+    if n > 0 {
+        EPOCH.fetch_add(n, Ordering::AcqRel);
+    }
+}
+
+// What an incoming queue did, for Debug Report.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct QueueStats {
+    pub held: u64,
+    pub released: u64,
+    // By reason: see FLUSH_REASONS.
+    pub flushed: [u64; 7],
+    // Thrown away: held for another session.
+    pub discarded_session: u64,
+    // Thrown away: pushes of a life that ended (Knockback Delay).
+    pub discarded_life: u64,
+    pub max_depth: usize,
+    pub depth: usize,
+    pub target_switches: u64,
+}
+
+pub const FLUSH_REASONS: [&str; 7] =
+    ["connection boundary", "teleport", "own velocity", "target removed", "target switch", "not moving away", "off"];
+
+fn flushed<T>(held: &mut VecDeque<(Instant, T)>, stats: &mut QueueStats, reason: usize, out: &mut Vec<T>) {
+    if held.is_empty() {
+        return;
+    }
+    stats.flushed[reason] += held.len() as u64;
+    stats.released += held.len() as u64;
+    out.extend(held.drain(..).map(|(_, e)| e));
+}
 
 // GUI Move owns the client prediction until its held clicks have reached the server. Keep incoming authority
 // separate meanwhile; the game rebases the same semantic clicks before another mouse action can use it.
@@ -387,22 +482,34 @@ pub fn take() -> Vec<C> {
     std::mem::take(&mut *SEEN.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
-// Knockback Delay: the pushes on you (your velocity, an explosion's knockback) wait here, by chance, before the game
-// takes them; the rest comes in on time. Sunset's tick says each tick how: whose pushes, the chance and the wait (ms).
+// Knockback Delay (Velocity's): the pushes on you (your velocity, an explosion's knockback) wait here, by chance, before
+// the game takes them; the rest comes in on time. Sunset's tick says each tick how: whose pushes, the chance and the
+// wait (ms). Its state is its own: Fake Lag's Knockback mode only sees a push once the game has taken it.
 struct Delay {
     me: i32,
     chance: f64,
     wait: [u64; 2],
     told: Instant,
+    link: Option<Link>,
     held: VecDeque<(Instant, super::Event)>,
     roll: u64,
+    stats: QueueStats,
 }
 
 static DELAY: Mutex<Option<Delay>> = Mutex::new(None);
 
 pub fn delay(me: i32, chance: f64, wait: [u64; 2]) {
     let mut d = DELAY.lock().unwrap_or_else(|e| e.into_inner());
-    let d = d.get_or_insert_with(|| Delay { me, chance, wait, told: Instant::now(), held: VecDeque::new(), roll: 0x9e37_79b9_7f4a_7c15 });
+    let d = d.get_or_insert_with(|| Delay {
+        me,
+        chance,
+        wait,
+        told: Instant::now(),
+        link: None,
+        held: VecDeque::new(),
+        roll: 0x9e37_79b9_7f4a_7c15,
+        stats: QueueStats::default(),
+    });
     (d.me, d.chance, d.wait, d.told) = (me, chance, wait, Instant::now());
 }
 
@@ -412,11 +519,30 @@ pub fn delay_off() {
     }
 }
 
-pub fn hold(events: Vec<super::Event>) -> Vec<super::Event> {
+pub fn delay_stats() -> Option<QueueStats> {
+    DELAY.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|d| QueueStats { depth: d.held.len(), ..d.stats })
+}
+
+// Held packets of another Session never reach this one; true when they were thrown away.
+fn rebind(link: &mut Option<Link>, session: &super::Session, held: usize, stats: &mut QueueStats) -> bool {
+    let stale = link.as_ref().is_some_and(|l| l.to(Some(session)) == Linked::Other);
+    if stale {
+        stats.discarded_session += held as u64;
+    }
+    if link.is_none() || stale {
+        *link = Some(Link::of(session));
+    }
+    stale
+}
+
+pub fn hold(session: &super::Session, events: Vec<super::Event>) -> Vec<super::Event> {
     let mut guard = DELAY.lock().unwrap_or_else(|e| e.into_inner());
     let Some(d) = guard.as_mut() else {
         return events;
     };
+    if rebind(&mut d.link, session, d.held.len(), &mut d.stats) {
+        d.held.clear();
+    }
     // Sunset's tick stopped coming (off, a menu, no world): nothing waits.
     let now = Instant::now();
     let on = now - d.told < Duration::from_millis(250);
@@ -425,62 +551,79 @@ pub fn hold(events: Vec<super::Event>) -> Vec<super::Event> {
     }
     let mut out = Vec::with_capacity(events.len() + d.held.len());
     let due = d.held.iter().take_while(|(at, _)| !on || *at <= now).count();
+    d.stats.released += due as u64;
     out.extend(d.held.drain(..due).map(|(_, e)| e));
     for event in events {
-        if let super::Event::Packet(p) = &event {
-            match &**p {
-                // A new world or life: the old one's pushes are no good.
-                C::Login(_) | C::Respawn(_) => d.held.clear(),
-                // A teleport: what came before it first.
-                C::PlayerPosition(_) => out.extend(d.held.drain(..).map(|(_, e)| e)),
-                C::SetEntityMotion(m) if m.id == d.me => {}
-                C::Explode(x) if x.knockback.is_some() => {}
-                _ => {
-                    out.push(event);
-                    continue;
-                }
+        let super::Event::Packet(p) = &event else {
+            // The connection's boundary: what was held goes first, in order.
+            if boundary(&event) {
+                flushed(&mut d.held, &mut d.stats, 0, &mut out);
             }
-            if on && matches!(&**p, C::SetEntityMotion(_) | C::Explode(_)) {
-                // One waiting already: this one goes after it; else the chance decides.
-                let at = if let Some((last, _)) = d.held.back() {
-                    Some(*last)
-                } else {
-                    d.roll ^= d.roll << 13;
-                    d.roll ^= d.roll >> 7;
-                    d.roll ^= d.roll << 17;
-                    let [lo, hi] = d.wait;
-                    let lucky = ((d.roll % 10_000) as f64) < d.chance * 100.0;
-                    (lucky && hi > 0).then(|| now + Duration::from_millis(lo + (d.roll >> 16) % (hi - lo + 1)))
-                };
-                if let Some(at) = at {
-                    d.held.push_back((at, event));
-                    continue;
-                }
+            out.push(event);
+            continue;
+        };
+        match &**p {
+            // A new world or life: the old one's pushes are no good.
+            C::Login(_) | C::Respawn(_) => {
+                d.stats.discarded_life += d.held.len() as u64;
+                d.held.clear();
             }
-            out.extend(d.held.drain(..).map(|(_, e)| e));
+            // A teleport: what came before it first.
+            C::PlayerPosition(_) => flushed(&mut d.held, &mut d.stats, 1, &mut out),
+            C::SetEntityMotion(m) if m.id == d.me => {}
+            C::Explode(x) if x.knockback.is_some() => {}
+            _ => {
+                out.push(event);
+                continue;
+            }
         }
+        if on && matches!(&**p, C::SetEntityMotion(_) | C::Explode(_)) {
+            // One waiting already: this one goes after it; else the chance decides.
+            let at = if let Some((last, _)) = d.held.back() {
+                Some(*last)
+            } else {
+                d.roll ^= d.roll << 13;
+                d.roll ^= d.roll >> 7;
+                d.roll ^= d.roll << 17;
+                let [lo, hi] = d.wait;
+                let lucky = ((d.roll % 10_000) as f64) < d.chance * 100.0;
+                (lucky && hi > 0).then(|| now + Duration::from_millis(lo + (d.roll >> 16) % (hi - lo + 1)))
+            };
+            if let Some(at) = at {
+                d.held.push_back((at, event));
+                d.stats.held += 1;
+                d.stats.max_depth = d.stats.max_depth.max(d.held.len());
+                continue;
+            }
+        }
+        flushed(&mut d.held, &mut d.stats, 6, &mut out);
         out.push(event);
     }
     out
 }
 
-// Backtrack (Fake Lag's): while the player you last hit moves away from you, everything the server sends waits a
-// little (each packet Shortest to Longest latency, in order), so the world, them included, reaches you that much later
-// and stays in reach a moment longer; when they stop moving away, all of it comes at once. A teleport, your own
-// velocity, a new world or their removal lets it all through first. Sunset's tick says each tick whom, from where
-// (your eyes) and how long; a tick that stops coming lets go of it all.
+// Backtrack: while the player you last hit moves away from you, everything the server sends waits a little (each
+// packet Shortest to Longest latency, in order), so the world, them included, reaches you that much later and stays in
+// reach a moment longer; when they stop moving away, all of it comes at once. A teleport, your own velocity, a new
+// world, the connection's boundaries, their removal or a new target lets it all through first. Sunset's tick says each
+// tick whom, from where (your eyes) and how long; a tick that stops coming lets go of it all. Its state is its own: Fake
+// Lag (outgoing) shares nothing with it.
 struct Backtrack {
     me: i32,
     target: i32,
     eye: [f64; 3],
     latency: [u64; 2],
     told: Instant,
-    // Where the server has them, from what it sent (their position as the game had it when they became the target).
+    link: Option<Link>,
+    // Where the server has them, from what it sent, starting from where the game had them with nothing held.
     server: Option<[f64; 3]>,
+    // A new target: what is held (the old one's world) goes before anything is held for the new one.
+    switched: bool,
     away: bool,
     last_due: Option<Instant>,
     held: VecDeque<(Instant, super::Event)>,
     roll: u64,
+    stats: QueueStats,
 }
 
 static BACKTRACK: Mutex<Option<Backtrack>> = Mutex::new(None);
@@ -493,15 +636,23 @@ pub fn backtrack(me: i32, target: i32, at: [f64; 3], eye: [f64; 3], latency: [u6
         eye,
         latency,
         told: Instant::now(),
+        link: None,
         server: None,
+        switched: false,
         away: false,
         last_due: None,
         held: VecDeque::new(),
         roll: 0x2545_f491_4f6c_dd1d,
+        stats: QueueStats::default(),
     });
-    if b.target != target || b.server.is_none() {
-        b.server = Some(at);
+    if b.target != target {
+        // The game's position of the new target is behind what is held: track it only once that has gone.
+        b.switched = !b.held.is_empty();
+        b.server = None;
         b.away = false;
+        b.stats.target_switches += 1;
+    } else if b.server.is_none() && b.held.is_empty() && !b.switched {
+        b.server = Some(at);
     }
     (b.me, b.target, b.eye, b.latency, b.told) = (me, target, eye, latency, Instant::now());
 }
@@ -517,42 +668,66 @@ pub fn backtrack_shown() -> Option<[f64; 3]> {
     BACKTRACK.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|b| !b.held.is_empty()).and_then(|b| b.server)
 }
 
+pub fn backtrack_stats() -> Option<QueueStats> {
+    BACKTRACK.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|b| QueueStats { depth: b.held.len(), ..b.stats })
+}
+
 fn far(eye: [f64; 3], at: [f64; 3]) -> f64 {
     let centre = [at[0], at[1] + 0.9, at[2]];
     (0..3).map(|i| (centre[i] - eye[i]).powi(2)).sum::<f64>().sqrt()
 }
 
-pub fn backtrack_hold(events: Vec<super::Event>) -> Vec<super::Event> {
+pub fn backtrack_hold(session: &super::Session, events: Vec<super::Event>) -> Vec<super::Event> {
     let mut guard = BACKTRACK.lock().unwrap_or_else(|e| e.into_inner());
     let Some(b) = guard.as_mut() else {
         return events;
     };
+    if rebind(&mut b.link, session, b.held.len(), &mut b.stats) {
+        b.held.clear();
+        b.server = None;
+        b.away = false;
+        b.switched = false;
+    }
     let now = Instant::now();
     let on = now - b.told < Duration::from_millis(250);
     if b.held.is_empty() && !on {
         b.server = None;
+        b.switched = false;
         return events;
     }
     let mut out = Vec::with_capacity(events.len() + b.held.len());
+    if b.switched {
+        flushed(&mut b.held, &mut b.stats, 4, &mut out);
+        b.switched = false;
+    }
     let due = b.held.iter().take_while(|(at, _)| on && *at <= now).count();
-    let due = if on && b.held.len() < 4096 { due } else { b.held.len() };
-    out.extend(b.held.drain(..due).map(|(_, e)| e));
+    if on && b.held.len() < 4096 {
+        b.stats.released += due as u64;
+        out.extend(b.held.drain(..due).map(|(_, e)| e));
+    } else {
+        flushed(&mut b.held, &mut b.stats, 6, &mut out);
+    }
     for event in events {
         let super::Event::Packet(p) = &event else {
-            out.extend(b.held.drain(..).map(|(_, e)| e));
+            flushed(&mut b.held, &mut b.stats, 0, &mut out);
+            b.away = false;
+            if boundary(&event) {
+                b.server = None;
+            }
             out.push(event);
             continue;
         };
         let flush = match &**p {
-            C::Login(_) | C::Respawn(_) | C::Disconnect(_) | C::PlayerPosition(_) => true,
-            C::SetEntityMotion(m) => m.id == b.me,
-            C::RemoveEntities(r) => r.ids.contains(&b.target),
-            _ => false,
+            C::Login(_) | C::Respawn(_) | C::Disconnect(_) => Some(0),
+            C::PlayerPosition(_) => Some(1),
+            C::SetEntityMotion(m) if m.id == b.me => Some(2),
+            C::RemoveEntities(r) if r.ids.contains(&b.target) => Some(3),
+            _ => None,
         };
-        if flush || !on {
-            out.extend(b.held.drain(..).map(|(_, e)| e));
+        if flush.is_some() || !on {
+            flushed(&mut b.held, &mut b.stats, flush.unwrap_or(6), &mut out);
             b.away = false;
-            if flush {
+            if flush.is_some_and(|f| f != 2) {
                 b.server = None;
             }
             out.push(event);
@@ -570,7 +745,7 @@ pub fn backtrack_hold(events: Vec<super::Event>) -> Vec<super::Event> {
             b.server = Some(at);
         }
         if !b.away {
-            out.extend(b.held.drain(..).map(|(_, e)| e));
+            flushed(&mut b.held, &mut b.stats, 5, &mut out);
             out.push(event);
             continue;
         }
@@ -584,6 +759,8 @@ pub fn backtrack_hold(events: Vec<super::Event>) -> Vec<super::Event> {
         }
         b.last_due = Some(at);
         b.held.push_back((at, event));
+        b.stats.held += 1;
+        b.stats.max_depth = b.stats.max_depth.max(b.held.len());
     }
     out
 }

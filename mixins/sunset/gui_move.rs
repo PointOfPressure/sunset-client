@@ -393,7 +393,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) -> bool {
         )
     });
     // Fake Lag can still hold an old non-empty input behind the last observed idle one. Do not let a click's
-    // action flush that input immediately before the click. Let the delay drain naturally while frozen.
+    // action flush that input immediately before the click: Fake Lag yields to a closing GUI Move at its tick, and
+    // readiness is judged on what actually went on the wire.
     if ready && game.riding.is_none() && !super::sunset_lag::pending() && !net::gui_move_pending() {
         send_queued(game);
     } else if state(|s| {
