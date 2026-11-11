@@ -308,19 +308,10 @@ What's planned and what a contribution needs: [feature roadmap](docs/feature-roa
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure).
+Made by [PointOfPressure](https://github.com/PointOfPressure) and [vstxx](https://github.com/vstxx).
 
 <details>
 <summary>Contributors</summary>
-
-**vs.** ([vstxx](https://github.com/vstxx)): movement modes, Velocity, Scaffold controls and block counter, Scaffold
-Legit, Godbridge and Telly modes, GUI Move's GrimAC mode, W Tap's Adaptive S Tap, the ordered Fake Lag line and
-Backtrack as its own module, Hard Panic, Kill Aura's combat version and attack scheduler, Inventory Manager (with Auto
-Armor), Flight's experimental strategies and Damage fly, Speed's NCP and Watchdog modes, Gear ESP, settings sections
-and the Dashboard's header layout, Offhand's Auto Totem and its clicks between ticks, Chest Swap packet timing, Auto
-Weapon's modes, Auto Spear with Lunge on hit and Extended reach, Auto Mace, the HUD layout editor, Kill Aura, Time and
-Weather Changer fixes, the Dashboard menu style and smooth scrolling, Server Scan, the Crystal Aura and Anchor Aura
-Macro sections and Anvil merge, this README.
 
 **Rust** ([zackmsa777-a11y](https://github.com/zackmsa777-a11y)): Radar, profile files, Spawner Alerts, Item ESP
 names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura,
