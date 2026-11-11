@@ -338,12 +338,20 @@ pub(super) fn reset() {
 //   movement each tick, carries it on at the air's 0.91 a tick; the other modes leave it to the game's friction. An
 //   anticheat that predicts movement (Grim, Horizon's) expects the knockback exactly: only Keep with a boost of 1
 //   matches it, and the flight after it is checked as any flight is.
-// - Self damage: standing on the ground with room above, a fall the server counts by vanilla's rules goes out in the
-//   game's own move packets (one a tick, each with the position) while you stand still: up at most a jump's 0.42 a
-//   tick to the safe fall distance plus 1.05, back down as gravity pulls, then the ground, which costs a point of
-//   health (`floor(fall + 1e-6 - safe distance)`). A server that takes moves as they come counts it; one that
-//   predicts them sees a climb from the ground. Three tries without a hurt and it stops trying until Flight is turned
-//   on again (it still waits for other damage).
+// - Self damage, standing on the ground: a fall the server counts by vanilla's rules, told in position packets while
+//   you stay where you are. The server deals it on the landing; a hurt then opens the window like any other.
+//   - Burst (default): in one tick, pairs of moves BURST_STEP up and back down, off the ground, then the ground. A
+//     Bukkit server fires PlayerMoveEvent, which its anticheat checks movement on (NoCheatPlus), only for a move of
+//     more than 1/16 block from where it last fired, so none of these reaches it; the server's own movement code
+//     still adds each drop to the fall. First a fall just past the safe distance (a 1.8 server's `ceil(fall - 3)`
+//     costs half a heart), and when that brings no hurt one past it by 1.05 (a modern server's
+//     `floor(fall + 1e-6 - 3)`); the height that worked is kept. Over a hundred packets in a tick: a packet-rate check
+//     may count them, and Horizon's own server kicks for a second position packet in a tick (use Spread there).
+//   - Spread: the game's own move packets, one a tick, while you are held still: up at most a jump's 0.42 a tick to
+//     the safe distance plus 1.05, down as gravity pulls, then the ground. Plainly a climb to a checked move.
+//   An anticheat that predicts movement (Grim, Horizon's) sees either. A failed try (a setback, you moved, no hurt)
+//   waits two seconds before the next; three in a row and it only waits for other damage until Flight is turned on
+//   again.
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) enum Trigger {
@@ -385,10 +393,16 @@ pub(super) struct DamageCfg {
     pub(super) again: bool,
 }
 
-// The ticks a self damage's landing waits for the server's hurt before it counts as failed.
+// The ticks a self damage's landing waits for the server's hurt before it counts as failed, and a failed try waits.
 const LANDED_WAIT: u32 = 20;
+const RETRY_WAIT: u64 = 40;
+// Burst's step: under the 1/16 block (squared 1/256) a Bukkit server's PlayerMoveEvent needs, with room for where it
+// last fired being a little off to the side.
+pub(super) const BURST_STEP: f64 = 0.049;
 // Self damage tries that bring no hurt before it stops trying.
 const MOST_FAILS: u32 = 3;
+// How far past the safe fall distance a fall goes for a point of damage under a modern server's rule.
+const FALL_EXTRA: f64 = 1.05;
 
 // One tick of Damage fly's wait (not Off): the phase now, from the last one and this tick's news: a hurt (never while
 // a self damage still falls; that one is kept for its landing), whether a self damage may start, whether the one
@@ -425,6 +439,19 @@ pub(super) fn fall_heights(top: f64) -> Vec<f64> {
     out
 }
 
+// Burst's moves above where you stand, in order: (height, on the ground). The drops add up to at least `top`; none is
+// more than `step`.
+pub(super) fn burst_moves(top: f64, step: f64) -> Vec<(f64, bool)> {
+    let pairs = (top / step).ceil().max(1.0) as usize;
+    let mut out = Vec::with_capacity(pairs * 2 + 1);
+    for _ in 0..pairs {
+        out.push((step, false));
+        out.push((0.0, false));
+    }
+    out.push((0.0, true));
+    out
+}
+
 // The knockback Damage fly flies on with: its speed across the ground times `boost`, along it or along `toward`
 // (Redirect), and its rise as it came.
 pub(super) fn kick(knock: [f64; 3], boost: f64, toward: Option<[f64; 2]>) -> [f64; 3] {
@@ -455,6 +482,12 @@ struct Damage {
     base: [f64; 3],
     broken: bool,
     fails: u32,
+    // When the next try may start; why the tries in a row failed; the fall the try under way tells, and the one a
+    // Burst got a hurt from.
+    retry_at: u64,
+    reasons: Vec<&'static str>,
+    try_top: f64,
+    burst_top: Option<f64>,
     health: Option<f32>,
     hurts: u32,
     windows: u32,
@@ -465,6 +498,8 @@ static DAMAGE: Mutex<Option<Damage>> = Mutex::new(None);
 // Whether Flight may fly this tick: Damage fly Off, or its window open. The move packet's false ground and anti kick
 // read it.
 static OPEN: AtomicBool = AtomicBool::new(true);
+// A Spread self damage holds you still: Speed and the like wait.
+static SELF_FALLING: AtomicBool = AtomicBool::new(false);
 
 fn damage<R>(f: impl FnOnce(&mut Damage) -> R) -> R {
     f(DAMAGE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Damage::default))
@@ -472,6 +507,11 @@ fn damage<R>(f: impl FnOnce(&mut Damage) -> R) -> R {
 
 pub(super) fn damage_open() -> bool {
     OPEN.load(Ordering::Relaxed)
+}
+
+// A Spread self damage is under way: movement modules leave you be.
+pub(super) fn self_falling() -> bool {
+    SELF_FALLING.load(Ordering::Relaxed)
 }
 
 // You were hurt (a DamageEvent for you).
@@ -506,15 +546,16 @@ pub(super) fn fall_move() -> Option<(f64, bool)> {
 // Flight off: the next turning on starts from waiting, with self damage's tries back.
 pub(super) fn damage_reset() {
     damage(|d| {
-        let (hurts, windows, self_damages, health) = (d.hurts, d.windows, d.self_damages, d.health);
-        *d = Damage { hurts, windows, self_damages, health, ..Damage::default() };
+        let (hurts, windows, self_damages, health, burst_top) = (d.hurts, d.windows, d.self_damages, d.health, d.burst_top);
+        *d = Damage { hurts, windows, self_damages, health, burst_top, ..Damage::default() };
     });
     OPEN.store(true, Ordering::Relaxed);
+    SELF_FALLING.store(false, Ordering::Relaxed);
 }
 
-// Whether a self damage may start now, and the fall it takes (the safe fall distance plus 1.05): on the ground, out of
-// water, above Self damage health, nothing of an earlier fall still counted, and room above for the climb.
-fn self_damage_top(game: &mut Game<'_>, m: &Module) -> Option<f64> {
+// Whether a self damage may start now, and the safe fall distance: on the ground, out of water, above Self damage
+// health, nothing of an earlier fall still counted, and room above for a climb of `climb` blocks.
+fn self_damage_safe(game: &mut Game<'_>, m: &Module, climb: f64) -> Option<f64> {
     if game.creative || game.spectator() || !super::sunset::fall_clean() {
         return None;
     }
@@ -522,16 +563,16 @@ fn self_damage_top(game: &mut Game<'_>, m: &Module) -> Option<f64> {
     if !p.ground.on_ground || p.flying || p.fall_flying || p.fluids.was_touching_water || p.health.health() <= m.n("Self damage health") as f32 {
         return None;
     }
-    let top = p.attribute("minecraft:safe_fall_distance").ok().unwrap_or(3.0) + 1.05;
+    let safe = p.attribute("minecraft:safe_fall_distance").ok().unwrap_or(3.0);
     let (x, y, z) = (p.position.x, p.position.y, p.position.z);
-    let (from, to) = ((y + 1.8).floor() as i32, (y + 1.8 + top).floor() as i32);
+    let (from, to) = ((y + 1.8).floor() as i32, (y + 1.8 + climb).floor() as i32);
     let mut columns: Vec<[i32; 2]> = [(-0.3, -0.3), (0.3, -0.3), (-0.3, 0.3), (0.3, 0.3)]
         .iter()
         .map(|(dx, dz)| [(x + dx).floor() as i32, (z + dz).floor() as i32])
         .collect();
     columns.dedup();
     let clear = columns.iter().all(|[cx, cz]| (from..=to).all(|by| super::sunset_util::is_air(game, [*cx, by, *cz])));
-    clear.then_some(top)
+    clear.then_some(safe)
 }
 
 // Damage fly's tick, before the game's moves the player (with Flight on): whether Flight flies this tick. It stands you
@@ -551,41 +592,84 @@ pub(super) fn damage_tick(game: &mut Game<'_>, m: &Module) -> bool {
         damage(|d| d.trigger = trigger);
     }
     let cfg = DamageCfg { trigger, window: m.n("Damage time (ticks)") as u32, again: m.p("After damage") == "Wait again" };
-    let (prev, len, base, fails) = damage(|d| (d.phase, d.heights.len(), d.base, d.fails));
-    let top = (trigger == Trigger::SelfDamage && prev == Wait::Armed && fails < MOST_FAILS).then(|| self_damage_top(game, m)).flatten();
+    let burst = m.p("Self damage method") != "Spread";
+    let now = game.ticks;
+    let (prev, len, base, fails, retry_at, burst_top) = damage(|d| (d.phase, d.heights.len(), d.base, d.fails, d.retry_at, d.burst_top));
+    // Not with Blink holding moves: these would pass what it holds.
+    let ready = trigger == Trigger::SelfDamage && prev == Wait::Armed && fails < MOST_FAILS && now >= retry_at
+        && !super::sunset::with(|s| s.is_on("Blink"));
+    let top = ready
+        .then(|| self_damage_safe(game, m, if burst { BURST_STEP } else { 3.0 + FALL_EXTRA }))
+        .flatten()
+        .map(|safe| match (burst, burst_top) {
+            (true, Some(top)) => top,
+            (true, None) if fails == 0 => safe + 0.1,
+            _ => safe + FALL_EXTRA,
+        });
     let here = game.player.as_ref().map(|p| [p.position.x, p.position.y, p.position.z]);
     let falling = matches!(prev, Wait::Falling(t) if t < len);
     let moved = falling && here.is_none_or(|h| (0..3).any(|i| (h[i] - base[i]).abs() > 0.05));
-    let (next, gave_up) = damage(|d| {
+    let (next, gave_up, send) = damage(|d| {
         let hurt = std::mem::take(&mut d.hurt);
         d.owed |= falling && hurt;
         let hurt = !falling && (hurt || std::mem::take(&mut d.owed));
         let setback = std::mem::take(&mut d.broken);
         let broken = falling && (setback || moved);
-        let next = wait_tick(d.phase, cfg, hurt, top.is_some(), broken, len);
+        let mut next = wait_tick(d.phase, cfg, hurt, top.is_some(), broken, len);
         d.hurts += u32::from(hurt);
         d.fresh = matches!(next, Wait::Open(_)) && !matches!(d.phase, Wait::Open(_));
         d.windows += u32::from(d.fresh);
         let failed = next == Wait::Armed && matches!(d.phase, Wait::Falling(_) | Wait::Landed(_));
-        d.fails += u32::from(failed);
+        if failed {
+            d.fails += 1;
+            d.retry_at = now + RETRY_WAIT;
+            d.reasons.push(match d.phase {
+                Wait::Landed(_) => "no hurt",
+                _ if setback => "setback",
+                _ => "moved",
+            });
+        }
         if matches!(next, Wait::Open(_)) {
+            // A Burst that brought it: its height is the one to use from now on.
+            if burst && matches!(d.phase, Wait::Landed(_)) {
+                d.burst_top = Some(d.try_top);
+            }
             d.fails = 0;
+            d.reasons.clear();
         } else {
             d.carry = None;
             d.knock = None;
         }
+        let mut send = None;
         if next == Wait::Falling(0)
             && let (Some(top), Some(h)) = (top, here)
         {
-            d.heights = fall_heights(top);
-            d.base = h;
             d.self_damages += 1;
+            d.try_top = top;
+            if burst {
+                // All of it this tick: next, the wait for the hurt.
+                send = Some((h, top));
+                next = Wait::Landed(0);
+            } else {
+                d.heights = fall_heights(top);
+                d.base = h;
+            }
         }
         d.phase = next;
-        (next, failed && d.fails == MOST_FAILS)
+        let gave_up = (failed && d.fails == MOST_FAILS).then(|| d.reasons.join(", "));
+        (next, gave_up, send)
     });
-    if gave_up {
-        super::sunset_util::report(game, "Flight: self damage brought no hurt three times; it waits for damage instead.");
+    if let Some(reasons) = gave_up {
+        super::sunset_util::report(game, &format!("Flight: self damage brought no hurt three times ({reasons}); it waits for damage instead."));
+    }
+    if let Some((at, top)) = send {
+        use horizon_protocol::packets::play::{self, Serverbound as S};
+        // Past Sunset's own changes to moves (the look, the ground, the fall it keeps): these are the fall as it is.
+        super::sunset_gui_move::direct(|| {
+            for (dy, ground) in burst_moves(top, BURST_STEP) {
+                game.send(S::MovePlayerPos(play::MovePlayerPos { x: at[0], y: at[1] + dy, z: at[2], flags: u8::from(ground) }));
+            }
+        });
     }
     match next {
         Wait::Falling(_) => {
@@ -616,6 +700,7 @@ pub(super) fn damage_tick(game: &mut Game<'_>, m: &Module) -> bool {
     }
     let open = matches!(next, Wait::Open(_));
     OPEN.store(open, Ordering::Relaxed);
+    SELF_FALLING.store(matches!(next, Wait::Falling(_)), Ordering::Relaxed);
     open
 }
 
@@ -733,6 +818,27 @@ mod tests {
         assert!((counted - 4.05).abs() < 1e-9);
         assert_eq!((counted + 1e-6 - 3.0f64).floor(), 1.0, "one point of fall damage at the default safe distance");
         assert!(heights.len() <= 24, "about a second: {}", heights.len());
+    }
+
+    #[test]
+    fn a_burst_stays_under_bukkits_move_event_and_adds_up_the_fall() {
+        for top in [3.1, 4.05] {
+            let moves = burst_moves(top, BURST_STEP);
+            assert_eq!(moves.last(), Some(&(0.0, true)), "it ends on the ground");
+            assert!(moves[..moves.len() - 1].iter().all(|m| !m.1), "everything before is off the ground");
+            let (mut last, mut counted) = (0.0, 0.0);
+            for &(h, _) in &moves {
+                let d: f64 = h - last;
+                assert!(d * d < 1.0 / 256.0, "{d}: a move Bukkit would report");
+                counted += (last - h).max(0.0);
+                last = h;
+            }
+            assert!(counted >= top && counted < top + BURST_STEP, "{counted}");
+        }
+        // 1.8: ceil(fall - 3) is half a heart just past 3; modern servers want a fall past 4.
+        assert_eq!((3.1f64 - 3.0).ceil(), 1.0);
+        assert_eq!((3.1f64 + 1e-6 - 3.0).floor(), 0.0);
+        assert!(burst_moves(4.05, BURST_STEP).len() < 200);
     }
 
     #[test]

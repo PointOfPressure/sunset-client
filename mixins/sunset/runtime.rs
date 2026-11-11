@@ -405,7 +405,7 @@ impl Module {
                     "Burst speed" | "Burst friction" | "Burst repeat" => mode == "NCP Burst",
                     "Bounce period (ticks)" | "Bounce boost" => mode == "NCP Bounce",
                     "Damage time (ticks)" | "Knockback" | "Damage boost" | "After damage" => self.p("Damage fly") != "Off",
-                    "Self damage health" => self.p("Damage fly") == "Self damage",
+                    "Self damage health" | "Self damage method" => self.p("Damage fly") == "Self damage",
                     _ => true,
                 }
             }
@@ -767,7 +767,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Knockback", &["Keep", "Redirect"])
             .num("Damage boost", 1.0, 0.0, 3.0, 0.05)
             .pick("After damage", &["Wait again", "Disable"])
-            .num("Self damage health", 10.0, 2.0, 20.0, 1.0),
+            .num("Self damage health", 10.0, 2.0, 20.0, 1.0)
+            .pick("Self damage method", &["Burst", "Spread"]),
         Module::new("Speed", Movement, "Moves faster on the ground. NCP and Watchdog are experimental legacy strategies.")
             .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop", "NCP", "Watchdog"])
             .bool("NCP reduced jump", false)
@@ -5631,7 +5632,7 @@ fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         let pause = s.knockback_ticks;
         s.knockback_ticks = pause.saturating_sub(1);
         let no_slow = s.module("No Slow").filter(|m| m.on).map(|m| [m.n("Ground %"), m.n("Air %")]);
-        (s.is_on("Flight") && super::sunset_flight::damage_open(), no_slow, pause)
+        (s.is_on("Flight") && (super::sunset_flight::damage_open() || super::sunset_flight::self_falling()), no_slow, pause)
     });
     let using = game.using.is_some() || super::sunset_hands::legacy_using();
     let slow_factor = super::sunset_movement::item_use_factor(

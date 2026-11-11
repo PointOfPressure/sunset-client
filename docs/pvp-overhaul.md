@@ -157,11 +157,17 @@ A Damage fly setting over every Mode (`flight.rs`, `wait_tick`), not a new mode:
   along your keys (Redirect), with its rise. Velocity mode carries it on at 0.91 a tick (it sets the movement itself);
   the others leave it to the game. NCP Burst can start from the hit in the air. With Damage fly on, knockback no longer
   puts the experimental strategies into their 10-tick recovery.
-- Self damage: on the ground, with room above, health over Self damage health (10), no fall still counted: a fall of the
-  safe fall distance plus 1.05 goes out in the game's own move packets (one a tick, position each tick, you held still
-  with GUI Move's input freeze): up at most 0.42 a tick, down at gravity, then the landing, which `settle_fall` lets
-  through as a fall that is yours. One point of damage at vanilla's rule (`floor(fall + 1e-6 - 3)`); about 22 ticks.
-  A setback or a move breaks it; three tries without a hurt and it only waits.
+- Self damage: on the ground, health over Self damage health (10), no fall still counted. Self damage method:
+  - Burst (default, the classic packet self damage): in one tick, pairs of position packets 0.049 up and back down,
+    off the ground, then one on the ground. Bukkit fires PlayerMoveEvent (where NoCheatPlus checks movement) only for a
+    move over 1/16 block from where it last fired, so NCP never sees them; the server's movement code still counts
+    each drop. The first try falls 3.1 (1.8's `ceil(fall - 3)`: half a heart); if no hurt comes, 4.05 (modern
+    `floor(fall + 1e-6 - 3)`); the height that worked is kept. 130 to 170 packets in one tick: a packet-rate check may
+    see them, and Horizon's own server kicks for a second position packet in a tick.
+  - Spread: the game's own move packets, one a tick, held still: up 0.42 a tick to 4.05, down at gravity, then the
+    landing (`settle_fall` lets it through as your fall); about 22 ticks. Speed waits meanwhile.
+  - A setback, a move or no hurt fails a try; the next waits 2 s; three in a row and it only waits, saying why.
+- First test on rewound.cc (old NCP), before Burst: Spread failed three times within a second (setbacks most likely).
 
 Compatibility, honestly: Keep with boost 1 is the knockback as the server sent it; Redirect and boosts rely on
 anticheats that allow a hit's speed for a while without checking its direction. A prediction anticheat (Grim,

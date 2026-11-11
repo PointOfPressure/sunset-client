@@ -579,7 +579,7 @@ fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
     hv::NO_EQUIP_DROP.store(hands.is_some_and(|m| m.b("No equip drop")), Ordering::Relaxed);
     hv::TOTEM_EXTRA_TICKS.store(hands.as_ref().map_or(0, |m| (m.n("Totem pop speed").round() as u32).saturating_sub(1)), Ordering::Relaxed);
     let moving = super::sunset::move_input(game) != (0.0, 0.0);
-    let speed_timer = if on(mods, "Flight").filter(|_| super::sunset_flight::damage_open()).is_none() {
+    let speed_timer = if on(mods, "Flight").filter(|_| super::sunset_flight::damage_open() || super::sunset_flight::self_falling()).is_none() {
         on(mods, "Speed").map(|m| m.n("Timer")).filter(|t| (*t - 1.0).abs() > 1e-9 && moving)
     } else { None };
     let mult = speed_timer.or_else(|| on(mods, "Timer").map(|m| m.n("Multiplier"))).unwrap_or(1.0) as f32;
