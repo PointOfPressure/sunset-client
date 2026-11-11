@@ -1,20 +1,22 @@
-// The Dashboard style of the click GUI: one solid panel with the categories, a list of modules and the settings of the
-// one chosen. Its rows are the menu's own, so draw_gui draws them and gui_press clicks them as ever; this file places them
-// and draws around them. A left click on a module turns it on or off, a right click shows its settings.
+// The Dashboard style of the click GUI: one solid panel with a header (the name and the search), the categories down the
+// left, the modules of the one picked, and the settings of the module chosen, in its sections. Its rows are the menu's own,
+// so draw_gui draws them and gui_press clicks them as ever; this file places them and draws around them. A left click on a
+// module turns it on or off, a right click shows its settings; the switch over its settings turns it on or off too.
 
 use super::Game;
-use super::sunset::{CATEGORIES, Hit, Shape, State, accent, aliases, dash_menu, dash_search_clear, fit_to, norm, panel_radius, row_h, row_hh, snap_scroll, text_y, wanted_panel_w};
+use super::sunset::{CATEGORIES, Hit, Shape, State, accent, aliases, control_radius, dash_menu, dash_search_clear, fit_to, norm, panel_radius, row_h, row_hh, snap_scroll, text_y, wanted_panel_w};
 use super::sunset_smooth as smooth;
 use horizon_client::hud::HudBatch;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-// What can be clicked around the rows: anywhere on the panel, a category.
+// What can be clicked around the rows: anywhere on the panel, a category, the chosen module's switch.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Part {
     Frame,
     Page(usize),
+    Toggle,
 }
 
 // The modules a category and search list, kept until those change.
@@ -27,11 +29,20 @@ struct Listed {
     ids: Vec<usize>,
 }
 
-// One scrolling column: where the wheel put it, its rows' offsets, and how tall they are.
+// One scrolling column: where the wheel put it, its rows' offsets, where the wheel stops (the rows, and a section's top so
+// its title shows), and how tall they are.
 struct Column {
     scroll: f32,
     rows: Vec<(f32, Hit)>,
+    stops: Vec<(f32, Hit)>,
     content: f32,
+}
+
+// A section of the chosen module's settings: its card's top and bottom in the column, and its title.
+struct Card {
+    top: f32,
+    bottom: f32,
+    title: Option<&'static str>,
 }
 
 // The category shown (0 while a search shows every module's matches), the module chosen, this frame's columns, what the
@@ -42,6 +53,9 @@ struct View {
     listed: Listed,
     list: Column,
     pane: Column,
+    cards: Vec<Card>,
+    // The settings with a line above them: all but the first of a section.
+    lined: Vec<Hit>,
     hover: Option<(Hit, Instant)>,
     left: Option<(Hit, Instant)>,
     lit: [u32; 2],
@@ -52,8 +66,10 @@ static VIEW: Mutex<View> = Mutex::new(View {
     page: 1,
     chosen: None,
     listed: Listed { page: usize::MAX, query: String::new(), count: 0, hidden: Vec::new(), ids: Vec::new() },
-    list: Column { scroll: 0.0, rows: Vec::new(), content: 0.0 },
-    pane: Column { scroll: 0.0, rows: Vec::new(), content: 0.0 },
+    list: Column { scroll: 0.0, rows: Vec::new(), stops: Vec::new(), content: 0.0 },
+    pane: Column { scroll: 0.0, rows: Vec::new(), stops: Vec::new(), content: 0.0 },
+    cards: Vec::new(),
+    lined: Vec::new(),
     hover: None,
     left: None,
     lit: [0; 2],
@@ -85,17 +101,28 @@ const PAD: f32 = 8.0;
 const LIST_MIN: f32 = 150.0;
 const LIST_MAX: f32 = 270.0;
 const SEARCH_H: f32 = 18.0;
+const SEARCH_MAX: f32 = 300.0;
+// The header across the top, and the band at the top of the module list and of the settings (their titles).
+const HEADER_H: f32 = 28.0;
+const BAND_H: f32 = 34.0;
 const TAB_H: f32 = 20.0;
 const TAB_GAP: f32 = 2.0;
-const TABS_Y: f32 = 34.0;
-const TOGGLE_W: f32 = 14.0;
-const TOGGLE_H: f32 = 8.0;
-// To the right of a row's toggle.
-const TOGGLE_PAD: f32 = 7.0;
+const TABS_Y: f32 = HEADER_H + 8.0;
+// The chosen module's switch, at the right of its band.
+const TOGGLE_W: f32 = 22.0;
+const TOGGLE_H: f32 = 12.0;
+// The settings' sections: inset from the column's sides, apart from each other, the rows inside them, a title's height.
+const CARD_M: f32 = 8.0;
+const CARD_GAP: f32 = 6.0;
+const CARD_PAD: f32 = 3.0;
+const CARD_IN: f32 = 2.0;
+const TITLE_H: f32 = 13.0;
 
 const SURFACE: u32 = 0xFF12_1214;
 const HAIRLINE: u32 = 0xFF26_262B;
 const CONTROL: u32 = 0xFF1C_1C20;
+const CARD: u32 = 0xFF17_171A;
+const MUTED: u32 = 0x8C8C94;
 // A lit row or category at its brightest.
 const LIT: u32 = 0x10;
 const FADE: f32 = 0.08;
@@ -115,12 +142,18 @@ fn frame_in(view_w: f32, view_h: f32) -> [f32; 4] {
     [((view_w - w) / 2.0).floor(), ((view_h - h) / 2.0).floor(), w, h]
 }
 
-// The list and the settings beside it.
+// Where the module list's and the settings' rows scroll, under their bands.
 fn columns(s: &State) -> ([f32; 4], [f32; 4]) {
     let [x, y, w, h] = frame(s);
-    let (top, room, rest) = (y + PAD, (h - 2.0 * PAD).max(0.0), (w - SIDE).max(0.0));
+    let (top, room, rest) = (y + HEADER_H + BAND_H, (h - HEADER_H - BAND_H - PAD).max(0.0), (w - SIDE).max(0.0));
     let list = (rest * 0.42).clamp(LIST_MIN, LIST_MAX).min(rest).floor();
     ([x + SIDE, top, list, room], [x + SIDE + list, top, rest - list, room])
+}
+
+// The chosen module's switch.
+fn toggle_rect(s: &State) -> [f32; 4] {
+    let pane = columns(s).1;
+    [pane[0] + pane[2] - CARD_M - TOGGLE_W, pane[1] - BAND_H + (BAND_H - TOGGLE_H) / 2.0, TOGGLE_W, TOGGLE_H]
 }
 
 fn module_h() -> f32 {
@@ -140,9 +173,19 @@ fn tab_rect(s: &State, page: usize) -> [f32; 4] {
     [x + 8.0, y + TABS_Y + (page - 1) as f32 * (TAB_H + TAB_GAP), SIDE - 16.0, TAB_H]
 }
 
-// Where a module's name and bound key go in its row: clear of its toggle.
+// Where a module's name and bound key go in its row.
 pub(super) fn module_text([x, y, w, h]: [f32; 4]) -> [f32; 4] {
-    [x, y + 2.0, w - TOGGLE_W - 4.0, h - 4.0]
+    [x, y + 2.0, w - 4.0, h - 4.0]
+}
+
+// Whether a row has a line above it: only the settings after the first of a section.
+pub(super) fn line_above(hit: Hit) -> bool {
+    view(|v| v.lined.contains(&hit))
+}
+
+// The module whose settings show.
+pub(super) fn chosen() -> Option<usize> {
+    view(|v| v.chosen)
 }
 
 // Once a frame, before anything reads the columns; a column that got shorter comes back to its end.
@@ -176,7 +219,7 @@ pub(super) fn prepare(s: &State) {
             v.pane.scroll = 0.0;
             smooth::jump(smooth::PANE);
         }
-        let View { listed, list, pane, chosen, .. } = v;
+        let View { listed, list, pane, chosen, cards, lined, .. } = v;
         list.rows.clear();
         let mut y = 0.0;
         for &i in &listed.ids {
@@ -184,21 +227,52 @@ pub(super) fn prepare(s: &State) {
             y += module_h();
         }
         list.content = y;
+        list.stops.clone_from(&list.rows);
+        // The bind first, then each section in its card (one with no title for a module without sections).
         pane.rows.clear();
+        pane.stops.clear();
+        cards.clear();
+        lined.clear();
         let mut y = 0.0;
         if let Some(i) = *chosen {
             let m = &s.modules[i];
-            pane.rows.push((y, Hit::Bind(i)));
-            y += row_hh();
-            for j in (0..m.settings.len()).filter(|&j| m.setting_visible(j)) {
-                let hit = Hit::Setting(i, j);
+            let (bind, settings): (Vec<usize>, Vec<usize>) =
+                (0..m.settings.len()).filter(|&j| m.setting_visible(j)).partition(|&j| m.settings[j].name == "Bind mode");
+            for hit in std::iter::once(Hit::Bind(i)).chain(bind.into_iter().map(|j| Hit::Setting(i, j))) {
                 pane.rows.push((y, hit));
                 y += row_h(s, hit);
             }
+            let mut section: Option<Option<&'static str>> = None;
+            for j in settings {
+                let hit = Hit::Setting(i, j);
+                let group = m.group_of(j);
+                if section != Some(group) {
+                    if let Some(card) = cards.last_mut() {
+                        y += CARD_PAD;
+                        card.bottom = y;
+                    }
+                    y += CARD_GAP;
+                    pane.stops.push((y, Hit::Dash(Part::Frame)));
+                    cards.push(Card { top: y, bottom: y, title: group });
+                    y += if group.is_some() { TITLE_H } else { CARD_PAD };
+                    section = Some(group);
+                } else {
+                    lined.push(hit);
+                }
+                pane.rows.push((y, hit));
+                pane.stops.push((y, hit));
+                y += row_h(s, hit);
+            }
+            if let Some(card) = cards.last_mut() {
+                y += CARD_PAD;
+                card.bottom = y;
+            }
+            y += PAD;
         }
         pane.content = y;
-        list.scroll = snap_scroll(&list.rows, list.content, room, list.scroll, 0);
-        pane.scroll = snap_scroll(&pane.rows, pane.content, room, pane.scroll, 0);
+        pane.stops.insert(0, (0.0, Hit::Dash(Part::Frame)));
+        list.scroll = snap_scroll(&list.stops, list.content, room, list.scroll, 0);
+        pane.scroll = snap_scroll(&pane.stops, pane.content, room, pane.scroll, 0);
     });
 }
 
@@ -228,9 +302,11 @@ fn column_rows(s: &State, column: &Column, [x, y, w, room]: [f32; 4], scroll: f3
     out.extend(column.rows[visible(&column.rows, scroll, room)].iter().map(|&(off, hit)| ([x, y + off - scroll, w, height(s, hit)], hit)));
 }
 
-// The rows in view, and where. One part way in view is drawn cut.
+// The rows in view, and where. One part way in view is drawn cut. The settings sit inside their cards.
 pub(super) fn rows(s: &State) -> Vec<([f32; 4], Hit)> {
     let (list, pane) = columns(s);
+    let inset = CARD_M + CARD_IN;
+    let pane = [pane[0] + inset, pane[1], (pane[2] - 2.0 * inset).max(0.0), pane[3]];
     let (list_at, pane_at) = view(|v| (v.list.scroll, v.pane.scroll));
     let (list_at, pane_at) = (smooth::shown(smooth::DASHBOARD, list_at), smooth::shown(smooth::PANE, pane_at));
     let mut out = Vec::new();
@@ -248,6 +324,9 @@ pub(super) fn hits(s: &State) -> Vec<([f32; 4], Hit)> {
     }
     let mut out = vec![(frame(s), Hit::Dash(Part::Frame))];
     out.extend((1..=CATEGORIES.len()).map(|p| (tab_rect(s, p), Hit::Dash(Part::Page(p)))));
+    if view(|v| v.chosen.is_some()) {
+        out.push((toggle_rect(s), Hit::Dash(Part::Toggle)));
+    }
     out
 }
 
@@ -280,7 +359,7 @@ pub(super) fn wheel(s: &State, steps: f32, at: (f32, f32)) {
     let over_pane = super::sunset::inside(pane, at);
     view(|v| {
         let column = if over_pane { &mut v.pane } else { &mut v.list };
-        column.scroll = snap_scroll(&column.rows, column.content, list[3], column.scroll, by);
+        column.scroll = snap_scroll(&column.stops, column.content, list[3], column.scroll, by);
     });
 }
 
@@ -381,8 +460,8 @@ pub(super) fn squircle(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f32
     }
 }
 
-// Everything under the rows: the panel, its dividers, the search box, the categories, and each listed module's mark for
-// being chosen and its toggle.
+// Everything under the rows: the panel, the header with the search box, the categories, the module list's title and the
+// mark of the chosen module, and the chosen module's band (name, description, switch) and sections.
 pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out: &mut Vec<Shape>) {
     follow_hover(hover);
     let solid = 0xFF00_0000 | accent();
@@ -391,18 +470,21 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     let (list, pane) = columns(s);
     let menu = dash_menu(s);
     let page = if menu.search.is_empty() { view(|v| v.page) } else { 0 };
+    let body = f[1] + HEADER_H;
 
     out.push(Shape::Squircle([f[0] - px, f[1] - px, f[2] + 2.0 * px, f[3] + 2.0 * px], radius + px, HAIRLINE));
     out.push(Shape::Squircle(f, radius, SURFACE));
-    out.push(Shape::Fill([list[0], f[1], px, f[3]], HAIRLINE));
-    out.push(Shape::Fill([pane[0], f[1], px, f[3]], HAIRLINE));
+    out.push(Shape::Fill([f[0], body, f[2], px], HAIRLINE));
+    out.push(Shape::Fill([list[0], body, px, f[1] + f[3] - body], HAIRLINE));
+    out.push(Shape::Fill([pane[0], body, px, f[1] + f[3] - body], HAIRLINE));
 
-    // The search box: typing anywhere goes to it.
-    let r = [f[0] + 8.0, f[1] + 8.0, SIDE - 16.0, SEARCH_H];
+    // The header: the name, and the search box over the columns (typing anywhere goes to it).
+    out.push(Shape::Head("Sunset".to_owned(), [f[0] + 14.0, f[1] + text_y(HEADER_H)], 0xFFFFFF));
+    let r = [list[0] + CARD_M, f[1] + (HEADER_H - SEARCH_H) / 2.0, (list[2] + pane[2] - 2.0 * CARD_M).clamp(0.0, SEARCH_MAX), SEARCH_H];
     let selected = menu.select_all && !menu.search.is_empty();
     out.push(Shape::Round(r, radius, if selected { 0xFF30_60B0 } else { CONTROL }));
-    let text = if menu.search.is_empty() { "Search".to_owned() } else { format!("{}_", menu.search) };
-    let colour = if menu.search.is_empty() { 0xD4D4D8 } else { 0xFFFFFF };
+    let text = if menu.search.is_empty() { "Search modules".to_owned() } else { format!("{}_", menu.search) };
+    let colour = if menu.search.is_empty() { MUTED } else { 0xFFFFFF };
     out.push(Shape::Text(fit_to(game, &text, r[2] - 16.0), [r[0] + 8.0, r[1] + text_y(r[3])], colour));
 
     // The categories: the one shown a capsule in the accent colour.
@@ -420,31 +502,63 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         out.push(Shape::Head(CATEGORIES[p - 1].label().to_owned(), [r[0] + 10.0, r[1] + text_y(r[3])], colour));
     }
 
-    // The list's rows: the chosen one lit, and each module's toggle.
+    // The module list's title: the category (or the search) and how many modules it lists.
+    let (title, count) = view(|v| (if page == 0 { "Search" } else { CATEGORIES[page - 1].label() }, v.listed.ids.len()));
+    let band_y = list[1] - BAND_H;
+    out.push(Shape::Head(title.to_owned(), [list[0] + 10.0, band_y + text_y(BAND_H)], 0xFFFFFF));
+    let count = count.to_string();
+    let tw = game.native_text_width(title) + 1.0;
+    out.push(Shape::Text(count, [list[0] + 10.0 + tw + 6.0, band_y + text_y(BAND_H)], MUTED));
+
+    // The list's rows: the chosen one lit (an enabled module's name is in the accent colour: draw_row).
     let scroll = smooth::shown(smooth::DASHBOARD, list_scroll());
-    let (content, pane_content) = view(|v| {
+    let chosen = view(|v| {
         let shown = visible(&v.list.rows, scroll, list[3]);
         out.push(Shape::ClipStart);
         for &(off, hit) in &v.list.rows[shown] {
-            let Hit::Module(i) = hit else {
-                continue;
-            };
-            let y = list[1] + off - scroll;
-            if v.chosen == Some(i) {
-                out.push(Shape::Fill([list[0], y, list[2], module_h()], 0x16FF_FFFF));
+            if let Hit::Module(i) = hit
+                && v.chosen == Some(i)
+            {
+                out.push(Shape::Fill([list[0], list[1] + off - scroll, list[2], module_h()], 0x16FF_FFFF));
             }
-            let on = s.modules[i].on;
-            let (tx, ty) = (list[0] + list[2] - TOGGLE_PAD - TOGGLE_W, y + (module_h() - TOGGLE_H) / 2.0);
-            out.push(Shape::Round([tx, ty, TOGGLE_W, TOGGLE_H], TOGGLE_H / 2.0, if on { solid } else { 0xFF2E_2E33 }));
-            let knob = TOGGLE_H - 2.0;
-            out.push(Shape::Round([if on { tx + TOGGLE_W - knob - 1.0 } else { tx + 1.0 }, ty + 1.0, knob, knob], knob / 2.0, SURFACE));
         }
         out.push(Shape::ClipEnd([list[0], list[1], list[0] + list[2], list[1] + list[3]]));
-        (v.list.content, v.pane.content)
+        v.chosen
     });
 
-    // The scroll markers: how much of a column shows, and where.
+    // The chosen module's band: its name and what it does, and its switch.
+    if let Some(i) = chosen {
+        let m = &s.modules[i];
+        let t = toggle_rect(s);
+        let room = (t[0] - pane[0] - CARD_M - 8.0).max(0.0);
+        out.push(Shape::Head(fit_to(game, m.name, room), [pane[0] + CARD_M + 2.0, band_y + 5.0], 0xFFFFFF));
+        out.push(Shape::Text(fit_to(game, m.about, room), [pane[0] + CARD_M + 2.0, band_y + 18.0], MUTED));
+        let lit = glow(Hit::Dash(Part::Toggle));
+        out.push(Shape::Round(t, TOGGLE_H / 2.0, if m.on { solid } else { 0xFF2E_2E33 + (lit << 16 | lit << 8 | lit) }));
+        let knob = TOGGLE_H - 4.0;
+        let kx = if m.on { t[0] + t[2] - knob - 2.0 } else { t[0] + 2.0 };
+        out.push(Shape::Round([kx, t[1] + 2.0, knob, knob], knob / 2.0, if m.on { 0xFFFF_FFFF } else { 0xFFB4_B4BA }));
+    }
+
+    // Its sections: a card each, with its title.
     let pane_at = smooth::shown(smooth::PANE, pane_scroll());
+    view(|v| {
+        out.push(Shape::ClipStart);
+        for card in &v.cards {
+            let (top, bottom) = (pane[1] + card.top - pane_at, pane[1] + card.bottom - pane_at);
+            if bottom < pane[1] || top > pane[1] + pane[3] {
+                continue;
+            }
+            out.push(Shape::Round([pane[0] + CARD_M, top, pane[2] - 2.0 * CARD_M, bottom - top], control_radius().max(4.0), CARD));
+            if let Some(title) = card.title {
+                out.push(Shape::Text(title.to_owned(), [pane[0] + CARD_M + 7.0, top + 3.0], MUTED));
+            }
+        }
+        out.push(Shape::ClipEnd([pane[0], pane[1], pane[0] + pane[2], pane[1] + pane[3]]));
+    });
+    let (content, pane_content) = view(|v| (v.list.content, v.pane.content));
+
+    // The scroll markers: how much of a column shows, and where.
     for (c, content, at) in [(list, content, scroll), (pane, pane_content, pane_at)] {
         let room = c[3];
         if content > room && room > 0.0 {

@@ -9972,6 +9972,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             }
             (Hit::WinClose, false) => s.gui.window = None,
             (Hit::WinBody | Hit::WinTitle | Hit::WinClose, _) => {}
+            (Hit::Dash(super::sunset_dashboard::Part::Toggle), false) => toggled = super::sunset_dashboard::chosen(),
             (Hit::Dash(part), right) => super::sunset_dashboard::press(s, part, right),
             (Hit::Header(c), false) => {
                 let p = s.gui.panels[c];
@@ -10501,8 +10502,8 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         } else if std::mem::take(&mut first_row) {
             // The header's line is under it already.
             false
-        } else if dash && y <= body[0] + 0.01 {
-            // The first row of a Dashboard column.
+        } else if dash && (y <= body[0] + 0.01 || !super::sunset_dashboard::line_above(*hit)) {
+            // The Dashboard draws lines only between the settings of a section.
             false
         } else {
             out.push(Shape::Fill([x, y, rw, px], 0x12FF_FFFF));
