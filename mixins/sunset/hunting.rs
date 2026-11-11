@@ -1,7 +1,7 @@
 // Base-hunting modules beside Base Finder: Stash Finder (chunks full of storage), Cave Disturbance Detector (a plain air block
 // in a cave's cave air: someone dug there), Portal Pattern Finder (a portal's shape left in plain air inside cave
-// air), Activated Spawner Detector (spawners a player has been near) and Mob Gear ESP (mobs wearing what players
-// lose).
+// air) and Activated Spawner Detector (spawners a player has been near). Mobs wearing what players lose are Gear ESP's
+// (gear.rs).
 
 use super::sunset::{Camera, Canvas, Category, Module};
 use super::sunset_chunk_feed::Feed;
@@ -35,13 +35,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Strongholds", true)
             .bool("Others", true)
             .colour("Color", "Red"),
-        Module::new("Mob Gear ESP", Category::Render, "Shows mobs wearing player gear.")
-            .text("Items", "netherite_*,diamond_sword,diamond_axe,diamond_pickaxe,diamond_shovel,diamond_hoe,mace,elytra,totem_of_undying,shulker_box,*_shulker_box,enchanted_golden_apple,ender_pearl")
-            .text("Enchantments", "mending,frost_walker,soul_speed,swift_sneak,binding_curse,vanishing_curse")
-            .bool("Named items", true)
-            .bool("Chat", true)
-            .colour("Color", "Pink")
-            .num("Fill opacity", 0.25, 0.0, 1.0, 0.05),
     ]
 }
 
@@ -69,8 +62,6 @@ struct Hs {
     portals: Vec<([i32; 3], [i32; 3])>,
     spawners: Vec<[i32; 3]>,
     spawners_seen: HashSet<[i32; 3]>,
-    gear: Vec<u32>,
-    gear_said: HashSet<u32>,
     world: (u64, &'static str),
 }
 
@@ -91,7 +82,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     cave_scan(game, get("Cave Disturbance Detector"), false);
     cave_scan(game, get("Portal Pattern Finder"), true);
     activated_spawners(game, get("Activated Spawner Detector"));
-    mob_gear(game, get("Mob Gear ESP"));
 }
 
 // ---- Stash Finder
@@ -358,63 +348,9 @@ fn activated_spawners(game: &mut Game<'_>, m: Option<&Module>) {
     }
 }
 
-// ---- Mob Gear ESP
-
-// What on a mob gives it away: the first listed item it wears or holds, a listed enchantment, or a named piece.
-fn player_gear(m: &Module, mob: &horizon_client::mobs::Mob) -> Option<String> {
-    let listed_item = |id: &str| {
-        let id = short(id);
-        m.t("Items").split(',').map(str::trim).filter(|x| !x.is_empty()).any(|x| x.strip_prefix('*').map_or(x == id, |end| id.ends_with(end)))
-            || m.t("Items").split(',').map(str::trim).any(|x| x.strip_suffix('*').is_some_and(|start| !start.is_empty() && id.starts_with(start)))
-    };
-    let e = &mob.extra;
-    for id in [&e.main_hand, &e.off_hand, &e.head, &e.chest, &e.legs, &e.feet].into_iter().flatten() {
-        if listed_item(id) {
-            return Some(short(id).replace('_', " "));
-        }
-    }
-    for stack in e.armor.iter().flatten() {
-        if let Some((name, _)) = stack.enchantments().iter().find(|(n, _)| listed(m.t("Enchantments"), n)) {
-            return Some(format!("{} with {}", short(&stack.item).replace('_', " "), short(name).replace('_', " ")));
-        }
-        if m.b("Named items") && let Some(name) = stack.custom_name() {
-            return Some(format!("{} named {name}", short(&stack.item).replace('_', " ")));
-        }
-    }
-    None
-}
-
-fn mob_gear(game: &mut Game<'_>, m: Option<&Module>) {
-    let Some(m) = m else {
-        hs(|h| {
-            h.gear.clear();
-            h.gear_said.clear();
-        });
-        return;
-    };
-    if game.ticks % 10 != 0 {
-        return;
-    }
-    let found: Vec<(u32, String, [f64; 3], String)> = game
-        .mobs
-        .iter()
-        .filter(|x| x.alive() && !x.removed && short(&x.kind.id) != "player")
-        .filter_map(|x| player_gear(m, x).map(|g| (x.id, g, [x.position.x, x.position.y, x.position.z], short(&x.kind.id).replace('_', " "))))
-        .collect();
-    let fresh: Vec<_> = hs(|h| {
-        h.gear = found.iter().map(|f| f.0).collect();
-        found.into_iter().filter(|f| h.gear_said.insert(f.0)).collect()
-    });
-    if m.b("Chat") {
-        for (_, gear, p, kind) in fresh {
-            report(game, &format!("A {kind} with {gear} at {:.0} {:.0} {:.0}", p[0], p[1], p[2]));
-        }
-    }
-}
-
 // ---- Drawing
 
-pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut impl Canvas, lw: f32) {
+pub(super) fn draw(cam: &Camera, mods: &[Module], out: &mut impl Canvas, lw: f32) {
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     let block = |p: [i32; 3], size: [i32; 3]| {
         let lo = p.map(f64::from);
@@ -433,14 +369,6 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
             for &p in &h.spawners {
                 let (lo, hi) = block(p, [1, 1, 1]);
                 draw_box(cam, out, &Look::BOXED, lo, hi, m.c("Color"), lw);
-            }
-        }
-        if let Some(m) = get("Mob Gear ESP") {
-            let look = Look::of(m);
-            for mob in game.mobs.iter().filter(|x| h.gear.contains(&x.id)) {
-                let b = mob.bounds();
-                let (lo, hi) = (b.min_position(), b.max_position());
-                draw_box(cam, out, &look, [lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z], m.c("Color"), lw);
             }
         }
     });

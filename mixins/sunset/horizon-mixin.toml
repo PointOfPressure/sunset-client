@@ -261,6 +261,12 @@ name = "sunset_hunting"
 source = "hunting.rs"
 
 [[module]]
+id = "gear"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_gear"
+source = "gear.rs"
+
+[[module]]
 id = "new_chunks"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_new_chunks"

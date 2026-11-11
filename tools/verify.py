@@ -2705,7 +2705,7 @@ def _():
     return ok, f"said: {said}"
 
 
-@test("Mob Gear ESP")
+@test("Gear ESP")
 def _():
     # A husk in a netherite chestplate and a plain one: the first is said and boxed.
     reset("creative")
@@ -2718,7 +2718,7 @@ def _():
     pink = lambda r, g, b: r > 230 and 90 < g < 140 and b > 170
     before = shot_pixels("gear0", pink)
     mark = log_mark()
-    only("mobgearesp")
+    only("gearesp")
     wait(30)
     boxed = shot_pixels("gear1", pink)
     said = [l for l in sunset_said(mark) if l.startswith("A husk")]

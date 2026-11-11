@@ -548,6 +548,12 @@ impl Canvas for Draw<'_> {
     fn text(&mut self, text: &str, at: [f32; 2], rgb: u32) {
         self.out.text(text, at, rgb);
     }
+    fn item(&mut self, stack: &horizon_client::items::ItemStack, at: [f32; 2], size: f32) {
+        self.out.item(stack, at, size);
+    }
+    fn scaled(&mut self, text: &str, at: [f32; 2], rgb: u32, size: f32) {
+        self.out.scaled(text, at, rgb, size);
+    }
 }
 
 #[allow(dead_code)]

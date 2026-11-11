@@ -75,7 +75,7 @@ fn left_fraction(damage: u32, max: u32) -> f32 {
 }
 
 // The game's durability bar colour: green when whole, through yellow, to red as it wears.
-fn wear_rgb(fraction: f32) -> u32 {
+pub(super) fn wear_rgb(fraction: f32) -> u32 {
     horizon_client::hud_layout::hsv_to_argb(fraction / 3.0, 1.0, 1.0, 0) & 0x00FF_FFFF
 }
 

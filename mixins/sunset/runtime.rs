@@ -635,6 +635,7 @@ impl Module {
                 _ => true,
             },
             "Cart" => super::sunset_cart::visible(self, name),
+            super::sunset_gear::NAME => super::sunset_gear::visible(self, name),
             "Auto Mace" => super::sunset_auto_mace::visible(self, name),
             "ClickGUI" => match name {
                 "Inventory blur" => self.b("Menu dim"),
@@ -1309,6 +1310,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_world::defaults());
     v.extend(super::sunset_base_finder::defaults());
     v.extend(super::sunset_hunting::defaults());
+    v.extend(super::sunset_gear::defaults());
     v.extend(super::sunset_new_chunks::defaults());
     v.extend(super::sunset_ore_sim::defaults());
     v.extend(super::sunset_world_parity::defaults());
@@ -1876,9 +1878,9 @@ fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
 }
 
 // Modules with new names (0.9): Auto Steal is Chest Stealer, No Mining Trace is Mine Through Mobs; Inventory Cleaner is
-// Inventory Manager (1.0).
-const RENAMED: [(&str, &str); 5] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot"),
-    ("extramodules", "modules"), ("inventorycleaner", "inventorymanager")];
+// Inventory Manager, Mob Gear ESP is Gear ESP (1.0).
+const RENAMED: [(&str, &str); 6] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot"),
+    ("extramodules", "modules"), ("inventorycleaner", "inventorymanager"), ("mobgearesp", "gearesp")];
 
 // Auto Armor joined Inventory Manager (1.0): its on/off is the Auto Armor setting, its key Auto Armor key, its Delay
 // and Mode Armor delay and Armor mode; the rest keep their names.
@@ -3818,6 +3820,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_hud_bars::tick(game, &mods, game.native_on(ID));
     super::sunset_world::tick(game, &mods);
     super::sunset_hunting::tick(game, &mods);
+    super::sunset_gear::tick(game, &mods);
     super::sunset_new_chunks::tick(game, &mods);
     super::sunset_ore_sim::tick(game, &mods);
     super::sunset_world_parity::tick(game, &mods);
@@ -6833,6 +6836,7 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
             _ => {}
         }
         super::sunset_combat_inventory::packet(game, packet);
+        super::sunset_gear::packet(game, packet);
         super::sunset_throws::packet(game, packet);
         super::sunset_effects::packet(game, packet);
         super::recipe_book::sunset_recipes::packet(packet);
@@ -7255,6 +7259,7 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     super::sunset_vanish::tick(game, None);
     super::sunset_base_finder::tick(game, None);
     super::sunset_hunting::tick(game, &[]);
+    super::sunset_gear::tick(game, &[]);
     super::sunset_new_chunks::tick(game, &[]);
     super::sunset_ore_sim::tick(game, &[]);
     super::sunset_hud_bars::tick(game, &[], false);
@@ -7796,6 +7801,11 @@ pub(super) struct Camera {
 }
 
 impl Camera {
+    // Where the view is from.
+    pub(super) fn pos(&self) -> [f64; 3] {
+        self.pos
+    }
+
     pub(super) fn of(game: &Game<'_>, w: f32, h: f32) -> Option<Self> {
         let (last_pos, last_yaw, last_pitch, fov) = game.locator_camera?;
         let p = game.player.as_ref()?;
@@ -7922,6 +7932,12 @@ pub(super) trait Canvas {
     fn fill(&mut self, r: [f32; 4], argb: u32);
     fn quad(&mut self, corners: [[f32; 2]; 4], argb: u32);
     fn text(&mut self, text: &str, at: [f32; 2], rgb: u32);
+    // An item's icon as the game's menus draw it (enchantment glint included), `size` pixels square.
+    fn item(&mut self, _stack: &horizon_client::items::ItemStack, _at: [f32; 2], _size: f32) {}
+    // A line of text at a size (1: the usual).
+    fn scaled(&mut self, text: &str, at: [f32; 2], rgb: u32, _size: f32) {
+        self.text(text, at, rgb);
+    }
 }
 
 impl Canvas for Vec<Shape> {
@@ -7933,6 +7949,12 @@ impl Canvas for Vec<Shape> {
     }
     fn text(&mut self, text: &str, at: [f32; 2], rgb: u32) {
         self.push(Shape::Text(text.to_owned(), at, rgb));
+    }
+    fn item(&mut self, stack: &horizon_client::items::ItemStack, at: [f32; 2], size: f32) {
+        self.push(Shape::Item(stack.item.clone(), at, size));
+    }
+    fn scaled(&mut self, text: &str, at: [f32; 2], rgb: u32, size: f32) {
+        self.push(Shape::Scaled(text.to_owned(), at, rgb, size));
     }
 }
 
@@ -7951,6 +7973,16 @@ impl Canvas for Painter<'_, '_> {
     }
     fn text(&mut self, text: &str, at: [f32; 2], rgb: u32) {
         self.game.native_text(self.batch, text, at, rgb, true);
+    }
+    fn item(&mut self, stack: &horizon_client::items::ItemStack, [x, y]: [f32; 2], size: f32) {
+        let start = self.batch.vertices.len();
+        super::sunset_hud_bars::plain(|| self.game.draw_item_model(self.batch, stack, x, y));
+        self.batch.scale_since(start, x, y, size / 16.0, size / 16.0);
+    }
+    fn scaled(&mut self, text: &str, [x, y]: [f32; 2], rgb: u32, size: f32) {
+        let start = self.batch.vertices.len();
+        self.game.native_text(self.batch, text, [x, y], rgb, true);
+        self.batch.scale_since(start, x, y, size, size);
     }
 }
 
@@ -8342,7 +8374,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     super::sunset_render::overlay(game, cam, mods, out, lw);
     super::sunset_new_chunks::draw(cam, mods, out);
     super::sunset_ore_sim::draw(game, cam, mods, out, lw);
-    super::sunset_hunting::draw(game, cam, mods, out, lw);
+    super::sunset_hunting::draw(cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     if let Some(m) = get("Nuker") {
         let (look, argb) = (Look::of(m), m.c("Broken color"));
@@ -8374,9 +8406,12 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
         (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
     };
     let (esp, tracers, tags) = (get("ESP"), get("Tracers"), get("Nametags"));
+    // The players Nametags tags this frame, and where: Gear ESP's rows go above them.
+    let mut tagged: Vec<(u32, [f32; 2])> = Vec::new();
     if esp.is_some() || tracers.is_some() || tags.is_some() {
-        entity_overlays(game, cam, [esp, tracers, tags], lw, out);
+        entity_overlays(game, cam, [esp, tracers, tags], lw, out, &mut tagged);
     }
+    super::sunset_gear::draw(game, cam, mods, out, lw, &tagged);
     // Text drawn from one buffer, written over for each label.
     let mut text = String::new();
 
@@ -8619,7 +8654,7 @@ impl EntityLook {
 
 // ESP, Tracers and Nametags in one pass over the mobs: those in range of any of them, nearest first when a Max
 // leaves some out.
-fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw: f32, out: &mut impl Canvas) {
+fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw: f32, out: &mut impl Canvas, tagged: &mut Vec<(u32, [f32; 2])>) {
     let [esp, tracers, tags] = mods.map(|m| m.map(EntityLook::of));
     let two = mods[0].map(super::sunset_esp2d::TwoD::of);
     // ESP's Murderer finder: its suspects in the Murderer color.
@@ -8737,6 +8772,9 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             super::sunset_util::name_into(game, mob, &mut name);
             let name_colour = if friend { 0x55FFFF } else { tag_colour };
             let nw = game.native_text_width(&name);
+            if kind == Kind::Player {
+                tagged.push((mob.id, [x, y - 2.0]));
+            }
             // Potato: the name alone.
             if l.potato {
                 out.text(&name, [x - nw / 2.0, y], name_colour);
@@ -9227,7 +9265,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Player Activity Detector" => "online player activity detector",
         "Base Finder" => "trouser stash base hunting",
         "Stash Finder" => "stash chests base hunting",
-        "Mob Gear ESP" => "mob gear player gear",
+        "Gear ESP" => "mob gear esp player gear armor armour inventory items equipment nametags",
         "Chest Swap" => "auto elytra autoelytra elytra take off takeoff firework rocket",
         "Safe Walk" => "fast bridge fastbridge edge sneak bridge",
         "Parkour" => "edge jump auto jump edge",
