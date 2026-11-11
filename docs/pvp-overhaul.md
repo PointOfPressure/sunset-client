@@ -123,6 +123,30 @@ executor (65c833f) is unchanged.
   velocity; the strategy's comes later in the tick). None of the three has been tried against NoCheatPlus: there is
   no NCP test server here. They are named NCP for what they were modelled on, not for passing it.
 
+## Round 4: Inventory Manager's cursor
+
+Symptom: sorting sometimes left an item on the cursor, and then stopped. Cause: an Exchange was three PICKUP clicks
+(pick up, put down, put back) that the server takes one by one. When one is refused or lost (an anticheat's click
+limit, a translated 1.8 server refusing a mismatched click until it is confirmed, an item picked up into the slot just
+emptied), the stack stays on the cursor. The manager took any cursor item for yours and waited for good; with
+prediction-paced cadence the next steps could also start on a server cursor that was not empty. PICKUP onto a bundle
+also put the other stack into the bundle.
+
+Fix:
+- Exchange is hotbar-key swaps through a hotbar slot that is not the held one (`exchange_swaps`, `pivot`): one swap
+  from the hotbar, two or three otherwise. Nothing is ever on the cursor; a refused middle swap puts both back, any
+  refusal leaves every item in a slot. Auto Armor's `wear` (also Chest Swap, Take off, Auto Mace) works the same way.
+- Merge still needs the cursor: it goes only when nothing sent is unconfirmed, and nothing follows it for a round trip.
+- Cursor ownership (`inventory_exec.rs`): after a Merge, an item on the cursor with no click of yours since is the
+  manager's. It is put back (Place: where it came from, a same-item stack with room, then an empty slot; `place_target`)
+  before anything else. That Merge is not tried again on that inventory until settings or the screen change. Your
+  clicks through the screen are seen in GUI Move's click hook (`inventory_clicked`), so a click between ticks still
+  counts; what you put on the cursor is never touched. With no slot free it is left to you, with a message.
+- Auto Armor does not click while the cursor holds anything.
+
+Not tried in game yet. Worth checking: sorting on a NoCheatPlus/Grim server with Delay 0, an item picked up mid-sort,
+the inventory closed mid-merge.
+
 ## Next steps
 
 - Test: NCP Hover/Burst/Bounce against a pinned NoCheatPlus build (record server version, config, ping,

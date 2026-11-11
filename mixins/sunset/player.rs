@@ -906,10 +906,15 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
         return;
     }
     let now = game.ticks;
-    // You first: an item on your cursor, or a button down on the screen.
+    // You first: a button down on the screen (a click of yours that came and went between ticks is told by
+    // `inventory_clicked`), or an item in use.
     let clicking = game.physical_buttons.contains(&MouseButton::Left) || game.physical_buttons.contains(&MouseButton::Right);
-    if game.carried.is_some() || clicking || game.using.is_some() || (closed && (game.left || game.right)) {
+    if clicking || (closed && (game.left || game.right)) {
         exec(|e| e.user(now));
+        return;
+    }
+    if game.using.is_some() {
+        exec(|e| e.hold(now + 1));
         return;
     }
     let mut locked = super::sunset_loadouts::locked_slots();
@@ -917,20 +922,29 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
     let fingerprint = inventory_fingerprint(game);
     let context = inventory_context(game, m, &locked, loot);
     exec(|e| e.context(context));
+    // An item on the cursor: the player's is left alone (nothing else moves until it is put down); the manager's own,
+    // left by a refused click of a Merge, goes back before anything else.
+    if game.carried.is_some() {
+        match exec(|e| e.owns_cursor()) {
+            Some(origin) => put_back(game, origin, &locked, fingerprint),
+            None => exec(|e| e.user(now)),
+        }
+        return;
+    }
+    exec(|e| e.cursor_empty(now));
     if exec(|e| e.gate(now, fingerprint)) == Gate::Wait || super::sunset_combat_control::owner().is_some() {
         return;
     }
     // A correction can refuse one operation without blocking all other work. Protect its slots until contents or
     // settings change, so a refused hotbar placement cannot turn into a destructive cleanup of that same item.
     let unavailable = exec(|e| {
-        let mut steps = e.blocked(fingerprint);
-        steps.extend(e.reserved(now));
-        steps
+        let mut slots: Vec<usize> = e.blocked(fingerprint).into_iter().flat_map(|s| s.slots().into_iter().flatten()).collect();
+        slots.extend(e.reserved(now));
+        slots
     });
-    for step in unavailable {
-        match step {
-            Step::Swap { from, to } | Step::Exchange(from, to) => { locked[from] = true; locked[to] = true; }
-            Step::Throw(i) => locked[i] = true,
+    for i in unavailable {
+        if let Some(l) = locked.get_mut(i) {
+            *l = true;
         }
     }
     let started = std::time::Instant::now();
@@ -943,21 +957,81 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
     let Some(step) = exec(|e| e.planned(fingerprint, step, took)) else {
         return;
     };
+    // A Merge holds the stack on the cursor between its clicks: it goes only once everything sent before it has been
+    // confirmed, so it never starts on a cursor the server has not emptied.
+    if step.cursor() && !exec(|e| e.exclusive(now)) {
+        return;
+    }
     // Its clicks go straight out (past GUI Move's GrimAC queue, which would hold them until the inventory closes), so
     // only while you stand still: a click while moving is what anticheats look for. Moving, it waits.
     if !super::remote::sunset_combat_remote::quiet(game) {
         return;
     }
-    let sent = super::sunset_gui_move::direct(|| match step {
-        Step::Swap { from, to } => game.remote_menu_ops(&[(Some(from), to as i32, Swap)]),
-        Step::Throw(i) => game.remote_menu_ops(&[(Some(i), 1, Throw)]),
-        Step::Exchange(a, b) => game.remote_menu_ops(&[(Some(a), 0, Pickup), (Some(b), 0, Pickup), (Some(a), 0, Pickup)]),
-    });
-    if !sent { return; }
+    // Two slots change places through a hotbar slot by hotbar-key swaps, never by picking items up: a refused click
+    // then leaves every item in a slot rather than on the cursor, and a bundle never takes in the other stack.
+    let via = match step {
+        Step::Exchange(a, b) if a >= 9 && b >= 9 => {
+            let empty: [bool; 9] = std::array::from_fn(|h| game.inventory.get(h).is_none_or(|s| s.is_none()));
+            let held: [bool; 9] = std::array::from_fn(|h| locked[h]);
+            let Some(via) = plan::pivot(empty, held, game.selected) else { return };
+            Some(via)
+        }
+        _ => None,
+    };
+    let clicks: Vec<(Option<usize>, i32, horizon_client::menu::Input)> = match step {
+        Step::Swap { from, to } => vec![(Some(from), to as i32, Swap)],
+        Step::Throw(i) => vec![(Some(i), 1, Throw)],
+        Step::Exchange(a, b) => plan::exchange_swaps(a, b, via.unwrap_or(0), |i| game.inventory.get(i).is_none_or(|s| s.is_none()))
+            .into_iter()
+            .map(|(slot, key)| (Some(slot), key as i32, Swap))
+            .collect(),
+        Step::Merge { from, into } => vec![(Some(from), 0, Pickup), (Some(into), 0, Pickup), (Some(from), 0, Pickup)],
+        Step::Place(_) => return,
+    };
+    if !super::sunset_gui_move::direct(|| game.remote_menu_ops(&clicks)) { return; }
     // rand() takes the PS lock itself: rolled here, outside any ps() or exec() closure.
     let delay = m.n("Delay (ticks)") as u64 + rand(m.n("Delay variation") as usize + 1) as u64;
     let latency = super::remote::sunset_combat_remote::latency(game);
-    exec(|e| e.sent_predicted(step, fingerprint, now, delay, latency));
+    if step.cursor() {
+        // Nothing follows it until the server's answer is in: a round trip, at least Delay.
+        exec(|e| e.sent(step, fingerprint, now, super::sunset_inventory_exec::settle_ticks(latency, delay)));
+    } else {
+        exec(|e| e.sent_predicted(step, via, fingerprint, now, delay, latency));
+    }
+}
+
+// The stack the manager left on the cursor goes into a slot that takes it (`place_target`): where it came from, a
+// stack of the same item, an empty slot. One click, settled for a round trip before anything else; a slot refused once
+// is not tried again on the same inventory. With no slot left it is the player's, and they are told.
+fn put_back(game: &mut Game<'_>, origin: Option<usize>, locked: &[bool; 36], fingerprint: u64) {
+    let now = game.ticks;
+    if !exec(|e| e.settle(now, fingerprint) && e.exclusive(now)) {
+        return;
+    }
+    // The Merge that left it there is not tried again on its inventory.
+    exec(|e| e.stranded());
+    if !super::remote::sunset_combat_remote::quiet(game) {
+        return;
+    }
+    let Some(carried) = game.carried.as_ref().map(|s| plan_item(game, s)) else { return };
+    let items: Vec<Option<plan::Item>> = (0..36).map(|i| game.inventory.get(i).and_then(|s| s.as_ref()).map(|s| plan_item(game, s))).collect();
+    let refused: Vec<usize> = exec(|e| e.blocked(fingerprint)).into_iter().filter_map(|s| match s { Step::Place(i) => Some(i), _ => None }).collect();
+    let Some(target) = plan::place_target(&items, &carried, origin, locked, game.selected, &refused) else {
+        exec(|e| e.disown_cursor());
+        report(game, "Inventory Manager: an item it moved is left on the cursor, and no slot takes it.");
+        return;
+    };
+    if !super::sunset_gui_move::direct(|| game.remote_menu_ops(&[(Some(target), 0, horizon_client::menu::Input::Pickup)])) {
+        return;
+    }
+    let settle = super::sunset_inventory_exec::settle_ticks(super::remote::sunset_combat_remote::latency(game), 1);
+    exec(|e| e.sent(Step::Place(target), fingerprint, now, settle));
+}
+
+// A click on the inventory that is not the manager's (yours, through the game's screen, or another module's): what
+// the cursor holds is no longer the manager's to put back, and it waits a moment.
+pub(super) fn inventory_clicked(now: u64) {
+    exec(|e| e.user(now));
 }
 
 // Whether the manager's action cadence or another owner's explicit hold still blocks clicks at `now`.
@@ -1057,7 +1131,7 @@ fn plan_step(game: &Game<'_>, m: &Module, preset: &str, locked: &[bool; 36]) -> 
     if m.b("Merge stacks")
         && let Some((from, into)) = plan::merge_step(&items, locked)
     {
-        return Some(Step::Exchange(from, into));
+        return Some(Step::Merge { from, into });
     }
     if m.b("Sort inventory") {
         return plan::sort_step(&items, 9..36, locked).map(|(a, b)| Step::Exchange(a, b));

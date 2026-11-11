@@ -90,6 +90,8 @@ pub(super) fn before_click(game: &mut Game<'_>) -> bool {
     if replaying() {
         return true;
     }
+    // Your click (or another module's, outside `direct`): what the cursor holds is no longer Inventory Manager's.
+    super::sunset_player::inventory_clicked(game.ticks);
     if game.remote_menu().0 != 0 && inventory_busy() {
         cancel(game, "a server container replaced the inventory");
     }

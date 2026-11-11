@@ -486,8 +486,8 @@ pub(super) fn quota_excess(slots: &[Option<Item>], keep: &[bool], limits: [u32; 
 
 // Two part stacks of the same item and components: (from, into), a main-inventory stack into an earlier slot.
 // Hotbar stacks are destinations only: draining one fights repeated layout wishes and the player's arrangement.
-// As three clicks (pick up `from`, click `into`, click `from`) whatever does not fit goes back: nothing stays on the
-// cursor, nothing is lost.
+// As three clicks (pick up `from`, click `into`, click `from`) whatever does not fit goes back. The cursor holds the
+// stack between them, so a refused click leaves it there: the executor puts it back (`place_target`).
 pub(super) fn merge_step(slots: &[Option<Item>], locked: &[bool]) -> Option<(usize, usize)> {
     let part = |i: usize| slots[i].as_ref().filter(|s| s.max_stack > 1 && s.count < s.max_stack && !locked.get(i).copied().unwrap_or(true));
     for into in 0..slots.len() {
@@ -535,6 +535,46 @@ pub(super) fn sort_step(slots: &[Option<Item>], range: std::ops::Range<usize>, l
         return Some((p, q));
     }
     None
+}
+
+// The hotbar slot two other slots change places through (and Auto Armor wears a piece from the main inventory
+// through): not the one held, whose item would be in your hand for a moment; an unlocked one before a locked one, an
+// empty one before a full one (fewer clicks).
+pub(super) fn pivot(empty: [bool; 9], locked: [bool; 9], selected: usize) -> Option<usize> {
+    (0..9).filter(|&h| h != selected).min_by_key(|&h| (locked[h], !empty[h], h))
+}
+
+// Two slots changing places by hotbar-key swaps (a click with a hotbar key exchanges the slot with that hotbar slot)
+// through the hotbar slot `via`: (slot clicked, hotbar key) in order. One swap when either slot is in the hotbar; two
+// when `via` and one of them are empty; three otherwise, and `via` ends as it began. No click holds anything on the
+// cursor, and a refused click leaves every item in some slot (a refused middle one puts both back).
+pub(super) fn exchange_swaps(a: usize, b: usize, via: usize, empty: impl Fn(usize) -> bool) -> Vec<(usize, usize)> {
+    if a < 9 {
+        return vec![(b, a)];
+    }
+    if b < 9 {
+        return vec![(a, b)];
+    }
+    match (empty(via), empty(a), empty(b)) {
+        (true, _, true) => vec![(a, via), (b, via)],
+        (true, true, _) => vec![(b, via), (a, via)],
+        _ => vec![(a, via), (b, via), (a, via)],
+    }
+}
+
+// Where the stack on the cursor goes back: the slot it came from if that still takes it, else a stack of the same item
+// with room, else an empty slot (main inventory first, the held hotbar slot last). Locked slots and slots a put-back
+// was refused on are left out. None: no slot takes it.
+pub(super) fn place_target(slots: &[Option<Item>], carried: &Item, origin: Option<usize>, locked: &[bool], selected: usize, refused: &[usize]) -> Option<usize> {
+    let usable = |i: usize| i < slots.len() && !locked.get(i).copied().unwrap_or(false) && !refused.contains(&i);
+    let joins = |i: usize| {
+        slots[i].as_ref().is_some_and(|s| s.name == carried.name && s.meta == carried.meta && s.damage == carried.damage && s.count < s.max_stack)
+    };
+    let order: Vec<usize> = (9..slots.len()).chain((0..9.min(slots.len())).filter(|&h| h != selected)).chain([selected]).collect();
+    origin
+        .filter(|&o| usable(o) && (slots[o].is_none() || joins(o)))
+        .or_else(|| order.iter().copied().find(|&i| usable(i) && joins(i)))
+        .or_else(|| order.iter().copied().find(|&i| usable(i) && slots[i].is_none()))
 }
 
 #[cfg(test)]
@@ -849,5 +889,69 @@ mod tests {
         let each = started.elapsed() / runs;
         println!("inventory plan (hotbar search, retention, merge, sort; 36 full slots): {} us a plan", each.as_micros());
         assert!(each < std::time::Duration::from_millis(5), "{each:?}");
+    }
+
+    // Vanilla's hotbar-key click (SWAP): the clicked slot and the hotbar slot exchange what they hold, with nothing on
+    // the cursor. Every way two slots and the hotbar slot between them can be filled ends with the two exchanged and
+    // the hotbar slot as it was; a refused middle click puts everything back.
+    #[test]
+    fn exchanges_go_by_hotbar_swaps_and_lose_nothing() {
+        let run = |inv: &mut Vec<Option<&str>>, clicks: &[(usize, usize)], refuse: Option<usize>| {
+            for (k, &(slot, key)) in clicks.iter().enumerate() {
+                if Some(k) != refuse {
+                    inv.swap(slot, key);
+                }
+            }
+        };
+        for (a, b, via) in [(12, 30, 4), (12, 3, 4), (2, 30, 4)] {
+            for fill in 0..8u8 {
+                let mut inv: Vec<Option<&str>> = vec![None; 36];
+                inv[a] = (fill & 1 != 0).then_some("sword");
+                inv[b] = (fill & 2 != 0).then_some("stone");
+                inv[via] = (fill & 4 != 0).then_some("pearl");
+                let before = inv.clone();
+                let clicks = exchange_swaps(a, b, via, |i| inv[i].is_none());
+                let mut done = inv.clone();
+                run(&mut done, &clicks, None);
+                assert_eq!((done[a], done[b], done[via]), (before[b], before[a], before[via]), "{a} {b} {via} {fill}: {clicks:?}");
+                if clicks.len() == 3 {
+                    let mut refused = inv.clone();
+                    run(&mut refused, &clicks, Some(1));
+                    assert_eq!(refused, before, "a refused middle click puts everything back");
+                }
+                let count = |v: &Vec<Option<&str>>| v.iter().flatten().count();
+                for refuse in 0..clicks.len() {
+                    let mut partial = inv.clone();
+                    run(&mut partial, &clicks, Some(refuse));
+                    assert_eq!(count(&partial), count(&before), "nothing is lost to a refused click");
+                }
+            }
+        }
+        // The hotbar slot is never the one held; free and unlocked ones first.
+        let mut empty = [false; 9];
+        empty[5] = true;
+        assert_eq!(pivot(empty, [false; 9], 0), Some(5));
+        assert_eq!(pivot([false; 9], [false; 9], 0), Some(1));
+        let mut locked = [true; 9];
+        locked[7] = false;
+        assert_eq!(pivot(empty, locked, 0), Some(7));
+        assert_eq!(pivot([true; 9], [true; 9], 3), Some(0));
+    }
+
+    #[test]
+    fn a_stack_left_on_the_cursor_goes_back_where_it_fits() {
+        let pearls = n(item("ender_pearl"), 10);
+        let mut slots = inv(&[(12, n(item("ender_pearl"), 16)), (20, n(item("ender_pearl"), 4))]);
+        // Where it came from, when that still takes it.
+        assert_eq!(place_target(&slots, &pearls, Some(30), &[false; 36], 0, &[]), Some(30));
+        // Filled meanwhile (an item picked up): a stack with room, then an empty slot, the held one last.
+        slots[30] = Some(item("stone"));
+        assert_eq!(place_target(&slots, &pearls, Some(30), &[false; 36], 0, &[]), Some(20));
+        assert_eq!(place_target(&slots, &pearls, Some(30), &[false; 36], 0, &[20]), Some(9), "not where it was refused");
+        let full: Vec<Option<Item>> = (0..36).map(|i| (i != 4).then(|| item("stone"))).collect();
+        assert_eq!(place_target(&full, &pearls, None, &[false; 36], 4, &[]), Some(4));
+        let mut locked = [false; 36];
+        locked[4] = true;
+        assert_eq!(place_target(&full, &pearls, None, &locked, 0, &[]), None, "no room: left to the player");
     }
 }

@@ -4318,17 +4318,29 @@ pub(super) fn inventory_idle(game: &Game<'_>) -> bool {
     !super::sunset_gui_move::inventory_busy() && game.native_playing() && game.remote.is_some() && game.remote_menu().1 == "inventory"
 }
 
-// Puts the stack in inventory slot `i` on armor slot `a`: shift-click into an
-// empty slot, else swap by picking both up.
+// Puts the stack in inventory slot `i` on armor slot `a`: shift-click into an empty slot; else from the hotbar one
+// hotbar-key swap with the armor slot, and from the main inventory three (into a hotbar slot, onto the armor slot, the
+// worn piece back to `i`). Never by picking pieces up: a server that refuses one of the clicks would leave a piece on
+// the cursor, and a refused middle swap puts both back.
 // Ungated: Chest Swap and Take off check the input themselves, and a restore must go out.
 pub(super) fn wear(game: &mut Game<'_>, i: usize, a: usize) {
-    use horizon_client::menu::Input::{Pickup, QuickMove};
-    let ops: &[(usize, horizon_client::menu::Input)] =
-        if game.armor[a].is_none() { &[(i, QuickMove)] } else { &[(i, Pickup), (500 + a, Pickup), (i, Pickup)] };
-    if ops.iter().any(|&(slot, _)| super::sunset_loadouts::locked(slot)) {
+    use horizon_client::menu::Input::{QuickMove, Swap};
+    let armor = 500 + a;
+    if super::sunset_loadouts::locked(i) || super::sunset_loadouts::locked(armor) {
         return;
     }
-    let ops: Vec<(Option<usize>, i32, horizon_client::menu::Input)> = ops.iter().map(|&(slot, input)| (Some(slot), 0, input)).collect();
+    let ops: Vec<(Option<usize>, i32, horizon_client::menu::Input)> = if game.armor[a].is_none() {
+        vec![(Some(i), 0, QuickMove)]
+    } else if i < 9 {
+        vec![(Some(armor), i as i32, Swap)]
+    } else {
+        let empty: [bool; 9] = std::array::from_fn(|h| game.inventory.get(h).is_none_or(|s| s.is_none()));
+        let locked: [bool; 9] = std::array::from_fn(super::sunset_loadouts::locked);
+        let Some(h) = super::sunset_inventory_plan::pivot(empty, locked, game.selected) else {
+            return;
+        };
+        vec![(Some(i), h as i32, Swap), (Some(armor), h as i32, Swap), (Some(i), h as i32, Swap)]
+    };
     game.remote_menu_ops(&ops);
 }
 
@@ -4393,7 +4405,8 @@ pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
         "Key" => super::sunset_util::setting_key_down(game, m, "Armor key"),
         _ => true,
     };
-    if !allowed || !inventory_idle(game) {
+    // Nothing while the cursor holds an item (yours, or one Inventory Manager is putting back): a click would move it.
+    if !allowed || !inventory_idle(game) || game.carried.is_some() {
         return;
     }
     // Avoid cursed: never a piece with Curse of Binding or Vanishing.

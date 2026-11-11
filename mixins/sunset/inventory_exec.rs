@@ -6,15 +6,42 @@
 // A vanilla server acknowledges correct prediction with silence. An operation that leaves no trace, or whose
 // original contents return during its observation window, is suppressed on those contents. Recent history is
 // bounded. Other inventory owners can explicitly hold dispatch; player input always takes priority.
+//
+// The cursor: a server takes a step's clicks one by one, so a step that holds an item on the cursor between its clicks
+// (Merge) leaves it there when one of them is refused or lost (an anticheat's click limit, a translated old server
+// refusing a click, an item picked up into the slot it came from). Only Merge and Place use the cursor (Exchange goes
+// by hotbar-key swaps); each goes alone, after every earlier step has been confirmed, and nothing follows it for a
+// round trip. An item on the cursor after one of them, with no click of the player's since, is the manager's own and
+// is put back (Place) before anything else; any other is the player's and is left alone.
 
 use std::time::Duration;
 
-// One click step: a hotbar-key swap, a stack thrown, or two slots changing places.
+// One click step: a hotbar-key swap, a stack thrown, two slots changing places (by hotbar-key swaps through a third
+// slot), part stacks merged (picked up, put on the other, the rest put back), or the cursor's stack put in a slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Step {
     Swap { from: usize, to: usize },
     Throw(usize),
     Exchange(usize, usize),
+    Merge { from: usize, into: usize },
+    Place(usize),
+}
+
+impl Step {
+    // Whether the cursor holds an item between its clicks.
+    pub(super) fn cursor(self) -> bool {
+        matches!(self, Step::Merge { .. } | Step::Place(_))
+    }
+
+    // The slots it changes.
+    pub(super) fn slots(self) -> [Option<usize>; 2] {
+        match self {
+            Step::Swap { from, to } => [Some(from), Some(to)],
+            Step::Exchange(a, b) => [Some(a), Some(b)],
+            Step::Merge { from, into } => [Some(from), Some(into)],
+            Step::Throw(i) | Step::Place(i) => [Some(i), None],
+        }
+    }
 }
 
 // What the last ticks cost and did, for the Debug Report.
@@ -31,6 +58,8 @@ pub(super) struct Stats {
 #[derive(Clone, Copy, Debug)]
 struct Pending {
     step: Step,
+    // A third slot the step went through (an Exchange's hotbar slot).
+    via: Option<usize>,
     before: u64,
     until: u64,
     watch_until: u64,
@@ -48,6 +77,14 @@ pub(super) struct Exec {
     // Steps that left no trace, with the inventory they were tried on.
     refused: Vec<(Step, u64)>,
     quiet_until: u64,
+    // The item on the cursor, if any, is this executor's: a cursor step went out and the player has not clicked
+    // since. The slot a Merge took it from.
+    cursor_owned: bool,
+    cursor_origin: Option<usize>,
+    // The last Merge, with the inventory it went out on; and Merges whose stack the server left on the cursor, not
+    // tried again on that inventory until the settings or the screen change (each try would strand it again).
+    cursor_step: Option<(Step, u64)>,
+    stranded: Vec<(Step, u64)>,
     pub(super) stats: Stats,
 }
 
@@ -67,17 +104,60 @@ impl Exec {
             self.revision = self.revision.wrapping_add(1);
             self.planned = None;
             self.refused.clear();
+            self.stranded.clear();
         }
     }
 
     pub(super) fn blocked(&self, fingerprint: u64) -> Vec<Step> {
-        self.refused.iter().filter_map(|&(step, on)| (on == fingerprint).then_some(step)).collect()
+        self.refused.iter().chain(self.stranded.iter()).filter_map(|&(step, on)| (on == fingerprint).then_some(step)).collect()
+    }
+
+    // The server left the last Merge's stack on the cursor: that Merge is not tried again on the same inventory.
+    pub(super) fn stranded(&mut self) {
+        if let Some(s) = self.cursor_step.take()
+            && !self.stranded.contains(&s)
+        {
+            if self.stranded.len() == 16 {
+                self.stranded.remove(0);
+            }
+            self.stranded.push(s);
+            self.stats.refused += 1;
+        }
     }
 
     // Later actions must not depend on unconfirmed slot contents: a rejected swap followed by a throw could drop
     // the valuable source item still present on the server. Independent slots can proceed at full cadence.
-    pub(super) fn reserved(&self, now: u64) -> Vec<Step> {
-        self.pending.iter().chain(self.recent.iter()).filter(|p| now < p.watch_until).map(|p| p.step).collect()
+    pub(super) fn reserved(&self, now: u64) -> Vec<usize> {
+        self.pending
+            .iter()
+            .chain(self.recent.iter())
+            .filter(|p| now < p.watch_until)
+            .flat_map(|p| p.step.slots().into_iter().chain([p.via]).flatten())
+            .collect()
+    }
+
+    // Nothing sent is still unconfirmed: a cursor step may go.
+    pub(super) fn exclusive(&self, now: u64) -> bool {
+        self.pending.iter().chain(self.recent.iter()).all(|p| now >= p.watch_until)
+    }
+
+    // Some(origin) when the item on the cursor is the executor's own to put back (origin: the slot a Merge took it
+    // from).
+    pub(super) fn owns_cursor(&self) -> Option<Option<usize>> {
+        self.cursor_owned.then_some(self.cursor_origin)
+    }
+
+    // The cursor is empty: once no cursor step can still bring an item back onto it, nothing there is owned.
+    pub(super) fn cursor_empty(&mut self, now: u64) {
+        if self.cursor_owned && !self.pending.iter().chain(self.recent.iter()).any(|p| p.step.cursor() && now < p.watch_until) {
+            self.disown_cursor();
+        }
+    }
+
+    // What is on the cursor is the player's (they clicked, or no slot takes it).
+    pub(super) fn disown_cursor(&mut self) {
+        self.cursor_owned = false;
+        self.cursor_origin = None;
     }
 
     fn remember(&mut self, p: Pending) {
@@ -85,8 +165,10 @@ impl Exec {
         self.recent.push(p);
     }
 
-    // You are using the inventory yourself (an item on the cursor, a button down): nothing for a moment after.
+    // You are using the inventory yourself (a button down, a click): nothing for a moment after, and what is on the
+    // cursor is yours.
     pub(super) fn user(&mut self, now: u64) {
+        self.disown_cursor();
         self.quiet_until = self.quiet_until.max(now + 1).max(self.pending.map_or(0, |p| p.until));
         if let Some(p) = self.pending.take().filter(|p| now < p.watch_until) { self.remember(p); }
         // The user can legitimately recreate old contents; keep the slot reservations, but abandon attribution.
@@ -95,8 +177,21 @@ impl Exec {
     }
 
     pub(super) fn gate(&mut self, now: u64, fingerprint: u64) -> Gate {
-        if now < self.quiet_until {
+        if !self.settle(now, fingerprint) {
             return Gate::Wait;
+        }
+        if self.planned == Some((fingerprint, true)) {
+            self.stats.skipped += 1;
+            return Gate::Wait;
+        }
+        Gate::Plan
+    }
+
+    // What became of the steps sent (a refusal is remembered), and whether a click may go now: not while you were
+    // just at the inventory, an explicit hold lasts or the last step still settles.
+    pub(super) fn settle(&mut self, now: u64, fingerprint: u64) -> bool {
+        if now < self.quiet_until {
+            return false;
         }
         // A delayed correction may restore an inventory from before an earlier predicted operation. Keep watching
         // after its cadence deadline, including when the latest plan has already found nothing else to do.
@@ -114,7 +209,7 @@ impl Exec {
         }
         if let Some(p) = self.pending {
             if now < p.until {
-                return Gate::Wait;
+                return false;
             }
             // Settled: no trace of it means the server refused it (or put it back).
             if fingerprint == p.before && p.revision == self.revision {
@@ -126,11 +221,7 @@ impl Exec {
         }
         // What was refused on another inventory may work now.
         self.refused.retain(|(_, on)| *on == fingerprint);
-        if self.planned == Some((fingerprint, true)) {
-            self.stats.skipped += 1;
-            return Gate::Wait;
-        }
-        Gate::Plan
+        true
     }
 
     fn refuse(&mut self, p: Pending) {
@@ -146,19 +237,31 @@ impl Exec {
         self.stats.plan_total += took;
         self.stats.plan_most = self.stats.plan_most.max(took);
         self.planned = Some((fingerprint, step.is_none()));
-        step.filter(|s| !self.refused.iter().any(|(r, on)| r == s && *on == fingerprint))
+        step.filter(|s| !self.refused.iter().chain(self.stranded.iter()).any(|(r, on)| r == s && *on == fingerprint))
     }
 
-    // The step went out at `now`; the next waits `settle` ticks (at least 1).
+    // The step went out at `now`; the next waits `settle` ticks (at least 1). A cursor step owns what the cursor holds
+    // from now on, until the player clicks or the cursor is seen empty after the step has settled.
     pub(super) fn sent(&mut self, step: Step, fingerprint: u64, now: u64, settle: u64) {
         self.stats.steps += 1;
         let until = now + settle.max(1);
-        self.pending = Some(Pending { step, before: fingerprint, until, watch_until: until, revision: self.revision });
+        self.pending = Some(Pending { step, via: None, before: fingerprint, until, watch_until: until, revision: self.revision });
+        match step {
+            Step::Merge { from, .. } => {
+                (self.cursor_owned, self.cursor_origin) = (true, Some(from));
+                self.cursor_step = Some((step, fingerprint));
+            }
+            Step::Place(_) => self.cursor_owned = true,
+            _ => {}
+        }
     }
 
-    pub(super) fn sent_predicted(&mut self, step: Step, fingerprint: u64, now: u64, delay: u64, latency_ms: Option<i32>) {
+    // A step that never holds the cursor goes at Delay's cadence and is watched for a round trip. `via`: a third slot
+    // it goes through, reserved with its own.
+    pub(super) fn sent_predicted(&mut self, step: Step, via: Option<usize>, fingerprint: u64, now: u64, delay: u64, latency_ms: Option<i32>) {
         self.sent(step, fingerprint, now, delay.max(1));
         if let Some(p) = &mut self.pending {
+            p.via = via;
             p.watch_until = now + settle_ticks(latency_ms, delay);
         }
     }
@@ -196,7 +299,7 @@ mod tests {
     fn zero_delay_uses_prediction_without_waiting_a_round_trip() {
         for ping in [None, Some(0), Some(100), Some(2000)] {
             let mut e = Exec::default();
-            e.sent_predicted(Step::Swap { from: 9, to: 0 }, 1, 0, 0, ping);
+            e.sent_predicted(Step::Swap { from: 9, to: 0 }, None, 1, 0, 0, ping);
             assert_eq!(e.gate(0, 2), Gate::Wait, "one operation per tick");
             assert_eq!(e.gate(1, 2), Gate::Plan, "ping must not override zero delay: {ping:?}");
         }
@@ -214,9 +317,9 @@ mod tests {
     fn delayed_rollbacks_are_detected_after_another_predicted_step() {
         let mut e = Exec::default();
         let first = Step::Swap { from: 9, to: 0 };
-        e.sent_predicted(first, 1, 0, 0, Some(500));
+        e.sent_predicted(first, None, 1, 0, 0, Some(500));
         assert_eq!(e.gate(1, 2), Gate::Plan);
-        e.sent_predicted(Step::Throw(10), 2, 1, 0, Some(500));
+        e.sent_predicted(Step::Throw(10), None, 2, 1, 0, Some(500));
         assert_eq!(e.gate(2, 3), Gate::Plan);
         e.planned(3, None, D);
         assert_eq!(e.gate(3, 3), Gate::Wait);
@@ -230,7 +333,7 @@ mod tests {
     fn configured_delays_and_external_holds_are_still_respected() {
         for delay in [1, 2, 6] {
             let mut e = Exec::default();
-            e.sent_predicted(Step::Throw(9), 1, 0, delay, Some(2000));
+            e.sent_predicted(Step::Throw(9), None, 1, 0, delay, Some(2000));
             assert_eq!(e.gate(delay - 1, 2), Gate::Wait);
             assert_eq!(e.gate(delay, 2), Gate::Plan, "delay is not replaced by ping");
             e.hold(50);
@@ -244,9 +347,9 @@ mod tests {
         let mut e = Exec::default();
         e.context(1);
         let swap = Step::Swap { from: 9, to: 0 };
-        e.sent_predicted(swap, 1, 0, 0, Some(200)); // Observe through tick 5.
+        e.sent_predicted(swap, None, 1, 0, 0, Some(200)); // Observe through tick 5.
         assert_eq!(e.gate(1, 2), Gate::Plan, "independent slots can work next tick");
-        assert_eq!(e.reserved(1), [swap], "do not throw the displaced sword at slot 9 yet");
+        assert_eq!(e.reserved(1), [9, 0], "do not throw the displaced sword at slot 9 yet");
         assert!(e.busy(1), "Auto Armor must not conflict with the reserved slots either");
         e.planned(2, None, D); // Only dependent work remains.
         assert_eq!(e.gate(4, 2), Gate::Wait);
@@ -254,11 +357,11 @@ mod tests {
         assert!(e.reserved(5).is_empty());
         assert!(!e.busy(5));
 
-        e.sent_predicted(swap, 2, 5, 0, Some(200));
+        e.sent_predicted(swap, None, 2, 5, 0, Some(200));
         e.context(2);
         assert_eq!(e.gate(6, 3), Gate::Plan);
         e.user(7);
-        assert_eq!(e.reserved(8), [swap], "settings/input cannot expose uncertain slots to cleanup");
+        assert_eq!(e.reserved(8), [9, 0], "settings/input cannot expose uncertain slots to cleanup");
         assert_eq!(e.gate(8, 2), Gate::Plan);
         assert!(e.blocked(2).is_empty(), "old context/manual input cannot be attributed to a refusal");
     }
@@ -373,5 +476,58 @@ mod tests {
         assert_eq!(settle_ticks(Some(40), 6), 6, "Delay when longer");
         assert_eq!(settle_ticks(None, 1), 3, "an unknown ping counts as 100 ms");
         assert_eq!(settle_ticks(Some(100_000), 1), 41, "capped at 2 s");
+    }
+
+    #[test]
+    fn a_cursor_step_goes_alone_and_owns_what_it_leaves_on_the_cursor() {
+        let mut e = Exec::default();
+        e.sent_predicted(Step::Swap { from: 9, to: 0 }, None, 1, 0, 0, Some(200)); // Watched through tick 5.
+        assert_eq!(e.gate(1, 2), Gate::Plan);
+        assert!(!e.exclusive(1), "a merge waits until the swap is confirmed");
+        assert!(e.exclusive(5));
+        e.sent(Step::Merge { from: 12, into: 3 }, 2, 5, settle_ticks(Some(200), 0));
+        assert_eq!(e.gate(9, 3), Gate::Wait, "nothing follows a cursor step for a round trip");
+        // The client predicts an empty cursor: until the step has settled that proves nothing.
+        e.cursor_empty(7);
+        assert_eq!(e.owns_cursor(), Some(Some(12)));
+        // The server's answer left the stack on the cursor: still the manager's, to put back where it came from.
+        assert_eq!(e.gate(10, 4), Gate::Plan);
+        assert_eq!(e.owns_cursor(), Some(Some(12)));
+        // A click of the player's makes it theirs.
+        e.user(11);
+        assert_eq!(e.owns_cursor(), None);
+        e.sent(Step::Place(20), 4, 12, 5);
+        e.cursor_empty(13);
+        assert_eq!(e.owns_cursor(), Some(None), "a put-back owns the cursor until it settles");
+        e.cursor_empty(17);
+        assert_eq!(e.owns_cursor(), None);
+        assert_eq!(e.reserved(16), [20]);
+    }
+
+    #[test]
+    fn a_merge_the_server_stranded_is_not_tried_again_on_that_inventory() {
+        let mut e = Exec::default();
+        e.context(1);
+        let merge = Step::Merge { from: 12, into: 3 };
+        e.sent(merge, 7, 0, 4);
+        assert_eq!(e.gate(4, 8), Gate::Plan);
+        e.stranded();
+        e.stranded();
+        assert_eq!(e.stats.refused, 1, "counted once");
+        // Put back, the inventory is as before the Merge: it is not planned again there, unlike other work.
+        assert_eq!(e.planned(7, Some(merge), D), None);
+        assert_eq!(e.blocked(7), [merge]);
+        assert_eq!(e.planned(7, Some(Step::Throw(20)), D), Some(Step::Throw(20)));
+        // New settings or screen: tried again.
+        e.context(2);
+        assert_eq!(e.planned(7, Some(merge), D), Some(merge));
+    }
+
+    #[test]
+    fn an_exchange_reserves_the_hotbar_slot_it_goes_through() {
+        let mut e = Exec::default();
+        e.sent_predicted(Step::Exchange(12, 30), Some(4), 1, 0, 0, Some(100));
+        assert_eq!(e.reserved(1), [12, 30, 4]);
+        assert!(!Step::Exchange(12, 30).cursor() && Step::Merge { from: 1, into: 2 }.cursor() && Step::Place(3).cursor());
     }
 }
