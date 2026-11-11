@@ -27,7 +27,7 @@ use winit::event::MouseButton;
 
 pub(crate) const ID: &str = "sunset";
 pub(crate) const NAME: &str = "Sunset";
-pub(crate) const VERSION: &str = "1.0.0";
+pub(crate) const VERSION: &str = "1.1.0";
 pub(crate) const DESCRIPTION: &str =
     "Utility client: combat, movement and render modules, a menu, key binds and . commands.";
 // The menu key's name on the mod's page and its default (Right Shift).
