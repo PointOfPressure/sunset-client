@@ -10,22 +10,20 @@
 <p align="center">A native utility client for <a href="https://github.com/horizon-rust/horizon">Horizon</a> on Minecraft 26.3.</p>
 <p align="center"><a href="https://sunset-client.pages.dev">Website</a> · <a href="https://github.com/PointOfPressure/sunset-client/releases/latest">Latest release</a> · <a href="#install">Install</a> · <a href="#features">Features</a> · <a href="https://discord.gg/fhD2frFdzm">Discord</a> · <a href="CONTRIBUTING.md">Contribute</a></p>
 
-Sunset brings 100+ modules for combat, movement, building and rendering to Horizon, with a configurable ClickGUI,
-key binds, chat commands and saved profiles. It is written in Rust for Horizon.
+Sunset adds over 160 modules to Horizon: combat, movement, building, ESP and world tools. Everything is set from
+a click menu or chat commands, can be bound to a key, and can be saved as a profile. It is written in Rust and
+compiled into the game, so it runs as part of Horizon rather than on top of it.
 
-![Sunset 0.8.1 ClickGUI showing the five module categories](docs/images/gui-overview.png)
+![Sunset's click menu with the Combat, Movement, Player, Render, World and Client panels](docs/images/gui-overview.png)
 
-*Sunset 0.8.1 in game: Combat, Movement, Player, Render and World panels.*
-
-> Not made by, or affiliated with, the Horizon project. Use it where it's allowed: many servers ban
-> modules like these.
+> Sunset is not made by or affiliated with the Horizon project. Many servers ban clients like this one: only use it
+> where it's allowed.
 
 ## Install
 
-You need the [Horizon launcher](https://playhorizon.dev) installed and opened once. Then one command does
-everything (installs Sunset, builds it into the game, starts it):
+You need the [Horizon launcher](https://playhorizon.dev), opened at least once. Then run one command:
 
-**Windows** (PowerShell)
+**Windows** (PowerShell, not Command Prompt)
 
 ```powershell
 irm https://github.com/PointOfPressure/sunset-client/releases/latest/download/install.ps1 | iex
@@ -37,185 +35,304 @@ irm https://github.com/PointOfPressure/sunset-client/releases/latest/download/in
 curl -fsSL https://github.com/PointOfPressure/sunset-client/releases/latest/download/install.sh | sh
 ```
 
-The first run builds Horizon with Sunset and can take **10 to 30 minutes**. When it finishes, Horizon starts with
-Sunset installed. Later, open the launcher and choose the **Native mods** instance. Press the **backtick/grave** key
-(usually below Esc) or **Right Shift** to open the ClickGUI.
+The command downloads Sunset, builds it into Horizon and starts the game. The first build compiles the whole game
+and takes **10 to 30 minutes**; later updates are quicker. On Linux it may ask for your password once, to install
+two system libraries the build needs.
 
-On Linux the installer may ask for your password once, to install two small system libraries the build needs.
+After that, start the **Native mods** instance from the launcher whenever you want to play with Sunset.
 
-## Quick start
+## Getting started
 
-The ClickGUI groups modules into five panels: Combat, Movement, Player, Render and World.
+Press the **`** key (under Esc) or **Right Shift** in game to open the menu. Both keys can be changed in
+Options > Mods > Sunset.
 
-- **Left click** a module to turn it on or off. **Right click** it for its settings and key bind, in a window of its own
-  (drag it by its title; Esc closes it), or in the panel with ClickGUI *Settings: Inline*. Click a slider's number to
-  type one.
-- **Just type** to search: `esp` shows the modules with ESP in the name. **Enter** turns on the first match (Enter again turns it off). **Ctrl+A** selects the search text, **Esc** clears it, then closes the menu.
-- The dark dim and the blur the game puts behind the inventory, chests and the Esc menu are off; **ClickGUI > Menu dim** brings them back, and its **Inventory blur** blurs the world behind your inventory too.
-- **Drag** a panel's header to move it, **right click** a header to fold it, **scroll** a long panel.
-- **ClickGUI** sets the menu's look: **GUI scale** makes it bigger, **Panel radius** and **Control radius** round its corners.
-- Change a **bind** with the *Bind* row: press a key or a mouse button (right, middle or a side button; Backspace clears
-  it). Drawing modules (ESP, Tracers, Zoom, HUD...) have **Bind mode** *Hold*: on only while the bind is held. Both menu
-  keys can be rebound under Options > Mods > Sunset.
+**In the menu**
 
-Everything is saved as you change it.
+| Do this | To |
+| --- | --- |
+| Left click a module | turn it on or off |
+| Right click a module | open its settings and key bind |
+| Start typing | search modules (`esp` shows everything with ESP in the name) |
+| Enter | turn the first search result on or off |
+| Esc | clear the search, then close the menu |
+| Click a slider's number | type an exact value |
+| Drag a panel's title / right click it | move the panel / fold it |
+
+Changes are saved as you make them.
+
+**Two menu styles.** *ClickGUI > Style* switches between:
+- **Dropdown**: one panel per category, as in the picture above. Settings open inside the panel, or in their own
+  window with *Settings: Window*.
+- **Dashboard**: one window with a header and search, the categories on the left, the module list in the middle and
+  the chosen module's settings on the right.
+
+Large modules like Kill Aura and Scaffold group their settings into sections (General, Targeting, Rotations,
+Timing...). Settings that don't apply to the mode you picked stay hidden.
+
+**Key binds.** Use a module's *Bind* row and press a key or mouse button (Backspace clears it). Drawing modules such
+as ESP, Tracers and Zoom also offer *Bind mode: Hold*, which keeps them on only while the key is held.
+
+**Profiles and presets.** A profile stores every module's on/off state, settings and binds under a name. Save and
+load them from the **Profiles** module (Client) or with `.profile`. Presets are ready-made profiles: PvP (crystal,
+sword and mace, mace, carts), Anarchy and base hunting, Building, Legit (Grim-safe) and Survival QoL. Each one lists
+what it turns on and off before you apply it. The HUD shows the active profile under the watermark, with
+"(modified)" once you change something.
+
+**Hiding modules.** The **Modules** module (Client) has a switch for every module. A hidden module is left out of
+the menu and search, but its bind and `.t` still work. These start hidden: Slippy, Auto City, Self Web, Hole Filler,
+Burrow, Key Throw, Arrow Dodge, Jesus, Trident Boost, Step, Wind Jump, Hold to Eat, Mine Through Mobs, RF Click and
+Fake Player.
+
+**Panic.** The **Panic** module (or `.panic`) shuts Sunset down until you restart the game: every module turns off,
+the menu, HUD and commands disappear, and Sunset leaves Options > Mods. You stay connected to the server. Panic does
+not save settings. How it works and what plugins must do: [docs/hard-panic.md](docs/hard-panic.md).
 
 ### Chat commands
 
-They start with `.` and are never sent to the server (type `..hi` to say `.hi`).
+Commands start with `.` and are never sent to the server. Type `..hi` to send `.hi` as a normal message. For module
+and setting names, the start of the name is enough.
 
-| Command | Does |
+| Command | What it does |
 | --- | --- |
-| `.help` | list the commands |
-| `.t <module>` | turn a module on or off (`.t killaura`) |
-| `.set <module> <setting> <value>` | change a setting: `.set killaura range 4`. The start of a name is enough, and a value can be several words |
+| `.help` | list all commands |
+| `.t <module>` | turn a module on or off: `.t killaura` |
+| `.set <module> <setting> <value>` | change a setting: `.set killaura range 4`, or a list: `.set xray blocks diamond_ore,ancient_debris` |
 | `.settings <module>` | show a module's settings |
-| `.bind <module> <key>` | bind a key or mouse button: `.bind flight r`, `.bind zoom mouse4`, or `none` |
+| `.bind <module> <key>` | bind a key or mouse button: `.bind flight r`, `.bind zoom mouse4`, `.bind zoom none` |
 | `.reset <module>` | put a module back to its defaults |
-| `.modules`, `.binds` | list the modules, the binds |
-| `.friend add\|remove\|list <name>` | friends are left alone by Kill Aura, Aim Assist and the other targeting modules |
-| `.waypoint add\|remove\|list <name>` | places the Waypoints module shows on screen |
-| `.plugins` | the plugins loaded, with their version, modules and commands |
-| `.vclip <n>`, `.hclip <n>` | move up or down, forward |
-| `.goto <x> <y> <z>`, `.goto stop` | walk there through loaded terrain (up to 128 blocks); a movement key or a menu stops it |
-| `.profile save\|load\|delete <name>`, `.profile list` | keep every module's on/off, settings and keys under a name and bring them back (a PvP set-up, a building one); `.profile load before-load` undoes the last load |
-| `.profile export\|import <name>` | share a profile: export copies it to the mod's `exports` folder, import takes `<name>.profile` from its `imports` folder |
-| `.preset [name] [apply]` | the pre-made profiles (PvP: crystal, PvP: sword and mace, PvP: mace, PvP: carts, Anarchy and base hunting, Building, Legit (Grim-safe), Survival QoL): a name says what it turns on and off, `apply` takes it |
-| `.debug [chat lines]` | copy a debug report to the clipboard (and save it in the mod's `debug` folder): versions and server, your state, the input and packets sent tick by tick, the modules on with their changed settings, anticheat alerts from chat counted per check, setbacks, kicks and the chat (100 lines by default). Paste it into a bug report or an AI. **Debug Report** (Client) does the same from its row or a key. Its **Save folder** setting changes where the timestamped `.md` files go; relative paths start in the mod's data folder, and absolute paths work too |
-| `.panic` | stop Sunset until the game restarts (or bind the **Panic** module to a key) |
-| `.menu [text]` | open the menu, already searching for the text |
+| `.modules`, `.binds` | list modules, list binds |
+| `.friend add\|remove\|list <name>` | friends are never targeted by Kill Aura, Aim Assist and other combat modules |
+| `.waypoint add\|remove\|list <name>` | save places for the Waypoints module to show |
+| `.profile save\|load\|delete\|list <name>` | manage profiles; `.profile load before-load` undoes the last load |
+| `.profile export\|import <name>` | share a profile through the mod's `exports` and `imports` folders |
+| `.preset [name] [apply]` | show the presets, see what one changes, or apply it |
+| `.goto <x> <y> <z>`, `.goto stop` | walk somewhere through loaded terrain (up to 128 blocks); any movement key stops it |
+| `.vclip <n>`, `.hclip <n>` | move up or down, or forward |
+| `.plugins` | list loaded plugins with their modules and commands |
+| `.debug [lines]` | copy a debug report to the clipboard (see below) |
+| `.menu [text]` | open the menu with a search already typed |
+| `.panic` | shut Sunset down until the game restarts |
 
-Panic stops Sunset for the rest of the game process; nothing brings it back before a restart, which starts it as
-usual. Every module goes off, queued actions and plugin tasks are cancelled, held packets go out in order, the input,
-inventory and rendering overrides are released, and the ClickGUI, HUD and commands go (`.` lines are ordinary chat
-after it). Sunset leaves Options > Mods for that session, and, with the launcher patch in
-[docs/hard-panic.md](docs/hard-panic.md), the launcher's Mods tab while that game runs. The server connection stays.
-Settings are not saved by Panic. A plugin's `stop_everything` is not Panic: it turns everything off and Sunset keeps
-running. Plugin `on_stop` handlers run once after the active callback returns. Direct native hooks and plugin-owned
-threads must cooperate with `sunset_api::running()` and clean up in `on_stop`. Background scans cancel between work
-units; an in-flight chunk calculation or blocking I/O may finish, with its result discarded. Panic cannot unload
-compiled mixins, undo sent packets or remove historical evidence of execution.
-
-List settings (the blocks Xray shows, the mobs Kill Aura attacks) are set the same way:
-`.set xray blocks diamond_ore,ancient_debris`.
-
-The HUD shows the profile in use under the watermark ("(modified)" once you change a setting); the **Profiles** module
-(Client) lists the saved ones to load, and its Presets tab the pre-made ones: each shows what it turns on and off
-before you apply it. HUD > Module list side puts the list of modules on the left or the right.
-
-**Modules** (Client) has a switch for every module: one switched off is left out of the menu, its search and the Options
-pages. Slippy, Auto City, Self Web, Hole Filler, Burrow, Key Throw, Arrow Dodge, Jesus, Trident Boost, Step, Wind Jump,
-Hold to Eat, Mine Through Mobs, RF Click and Fake Player start hidden. Binds and `.t` work while a module is hidden.
+**Debug reports.** `.debug`, or the **Debug Report** module, copies a report to your clipboard and saves it as a
+`.md` file. It contains your versions and server, your state, the input and packets sent tick by tick, the modules
+you have on with their changed settings, anticheat alerts seen in chat, setbacks, kicks and recent chat. Paste it
+into a bug report. *Save folder* changes where the files go.
 
 ## Features
 
-Speed has Vanilla, Strafe, Smooth, Low Hop and Custom modes. Velocity can scale, blend or delay knockback (each with a chance); Scaffold
-counts your blocks over the hotbar; Fast Place has five speed levels. ClickGUI has Dropdown and Dashboard styles (Dashboard: a header with the search, the categories, the module list and
-the chosen module's settings, with its own on/off switch); its settings cover scale, spacing, colors and panel shape.
-Kill Aura's and Scaffold's settings come in sections (General, Targeting, Rotations, Timing...), and advanced
-controls appear only for relevant modes.
+A few highlights:
+
+- **Kill Aura** with 1.8-style CPS clicking or 1.9+ cooldown timing (Auto picks per server), several rotation modes
+  including a server-side-only Silent aura, target strafing, AutoBlock and bot filtering.
+- **Scaffold** with Normal, Legit, Godbridge and Telly modes, Speedbridge and Blatant presets, and a tower.
+- **Crystal Aura, Anchor Aura and PvP Bot** for crystal PvP, with damage limits so they never blow you up.
+- **Inventory Manager** keeps your hotbar laid out, drops junk and worse duplicates, sorts your inventory and wears
+  your best armour.
+- **Gear ESP** shows what nearby players are wearing and holding, and what they are known to carry.
+- **Base hunting**: Base Finder, New Chunks, Stash Finder, Ore Sim and other detectors.
+- **Plugins** can add their own modules, commands and HUD (see [Plugins](#plugins)).
+
+Modules marked *experimental* below are new strategies that haven't been proven against anticheats.
 
 <details>
-<summary>Browse the built-in modules</summary>
+<summary><b>Combat</b> (34 modules)</summary>
 
-| Category | Modules |
-| --- | --- |
-| **Combat** | Kill Aura (Combat version: Legacy (1.8) clicks at a rate between Min and Max CPS, Random, Drift or Steady; Modern (1.9+) waits for the attack cooldown, a share of it, a fixed delay or Hit select; Auto goes Legacy where the server took the cooldown away. Target strafe: your move goes round its target at a radius you set, away from walls, drops and lava), Trigger Bot (both with Shield: your shield kept up between hits; Trigger Bot also times hits for crits, waits a rolled share of the cooldown, can miss on purpose and stick to its first target), Shield (Auto block: your shield up while a player who can hit you is near, down for an axe or your own crit; Swap key; Block hit after your hits or before theirs), Aim Assist (Silent aim sends a missed swing to the target beside it, Hit flick looks away and back around a hit; it can pause while you mine or wait for your own mouse), Fake Lag (Delay, Pulse, Dynamic and Knockback: what you send waits and goes in the order it was sent, whole client ticks at a time, no move merged or dropped; an action sends what is held first), Backtrack (holds what the server sends while the player you hit moves away), W Tap (S Tap mode: Adaptive holds back only while the gap to what you hit needs it, Conservative, Balanced or Aggressive Spacing, never off a drop or into lava, and your own keys end it), Jump Reset, Reach, Criticals, Crystal Aura and Anchor Aura (each with a Macro section: the whole place and break, or place, charge and set off, on your right click; Anchor Aura's Pearl catch puts a charged anchor where an enemy's pearl lands), Cart (TNT minecart PvP: Aura breaks enemy carts, Auto cart places a rail and cart where your arrow lands or at your crosshair, Xbow sets one off through a fire with a crossbow, Cover blocks carts that would hurt you, Refill, Pearls answers an enemy pearl with a cart), Crystal Optimizer (can leave crystals alone under Weakness), Offhand (totems included; Double hand puts a hotbar totem in hand when a blast could pop you; Totem on low health keeps another item there until you are low), Auto Weapon (a Mode for each weapon, Sword or Axe, or Custom for both at once; Totem hit), Auto Spear (Lunge key, Lunge on hit that turns your click into a lunge jab, Reach poke, Spear reach, Extended reach that stabs past your reach with a hotbar spear for your click or Trigger Bot's, and the damage indicator), Auto Mace (the mace for your hits while you fall: Trigger hits the player under your crosshair or, with Silent aim, the nearest one in view; your clicks and Kill Aura's hits take the mace too; Stun slam takes an axe to a raised shield first, by chance or on a held key; Breach check, Takeoff elytra, Expand hitbox and Swap back), PvP Bot (fights the nearest player by itself; Sword mode, or Crystal mode: walks into range, holes up, and drives Crystal Aura, Anchor Aura, Offhand, Auto Gap, Surround, Self Trap, Auto City and a pearl away when low, learning each rival), Hitboxes, Auto EXP, Bow Aimbot, Surround, Self Trap, Auto Trap, Self Web, Auto Web (webs where a falling player lands, a Web key), Key Throw (pearl, short pearl and wind charge keys, Silent or Legit; a pearl at your feet when a player hits you; a wind charge where your pearl lands; Pearl follow throws your pearl after an enemy's; Pot and Debuff keys), Hole Filler, Burrow, Anvil (Anti Anvil, Self Anvil and Auto Anvil), Quiver, Arrow Dodge (Hit fireballs knocks fireballs back) |
-| **Movement** | Flight (Abilities or Velocity, and the experimental NCP Hover, NCP Burst and NCP Bounce, each with its own state and no false ground claim or anti kick; after a server setback it holds still for Setback pause ticks, or turns off with Disable on setback; Damage fly flies only after you are hurt, from the hit's knockback (kept or turned your way, scaled by Damage boost), waiting for a hit or dealing itself fall damage first: Burst sends the classic one-tick packet fall, Spread one move a tick), Speed (Bhop mode: a hop on each landing at your Hop speed and Hop height, gaining speed hop on hop if you like, with air friction, air control, fast fall and damage boost), Sprint (Keep sprint), Sneak, Auto Walk, Auto Jump, Step (with Reverse step), Spider, High Jump, Long Jump, Air Jump, Parkour, Fast Climb, Safe Walk (Sneak sneaks at the edge while you bridge), Anti Void, Elytra Boost, Chest Swap (Take off puts the elytra on, glides off with a rocket and swaps back), Blink, Scaffold (Legit sneaks at the edge, Godbridge bridges backwards without sneaking, Telly sprint-jumps across and places from a silent look behind you, Keep Y or tower; Speedbridge and Blatant presets fill in Legit's and Normal's settings for those styles; Normal's Sprint keeps it, allows it only where vanilla would for the look the server has, or stops it; Fast tower lifts only over a block you placed, so a missed one is placed again from the block below), No Fall, No Slow (No item release), Velocity, Glide, No Jump Delay, GUI Move (walk with the inventory or another menu open; GrimAC mode holds your inventory clicks until you stand still), Snap Tap (of A and D, or W and S, the last pressed wins), Click TP, Trident Boost, Elytra Fly, Jesus, Slippy, Wind Jump (Elytra glides and wind-charges up off the ground, Hit charges knocks others' wind charges away), Pearl Catch (a Catch key throws the pearl and the wind charge that catches it: Up, Fast, Offhand, Diagonal) |
-| **Player** | Fast Place (speed 1 to 5), Break Delay, Speed Mine, No Break Reset, Fast Use (with FastXP's throwables: every tick or in bursts), Air Place, Auto Log, Auto Eat, Auto Gap (Auto pot throws healing potions at your feet; Soup eats soup), Auto Fish, Auto Tool (a tool from the main inventory, or only for the block under you), Auto Replenish (with your inventory open or on a key; potions into an empty hotbar), Auto Clicker (a fixed delay or a rolled clicks-per-second; the right button with its own items, start delay and CPS), Auto Respawn, Anti AFK, Anti Hunger, Middle Click Extra, Notifier, Spam (Once: one line or command as it turns on), Chest Stealer (TNT minecarts out of shulker boxes, closes when done, on a key), Inventory Manager (once Inventory Cleaner, and now home to Auto Armor, which has its own switch and works with the rest of Inventory Manager off: always, with your inventory open or on a key, can skip cursed pieces, Switch key swaps between armour sets; nine Slot settings planned together for your best sword, pickaxe, blocks, golden apples, crystals and so on, an already right hotbar left alone; worse duplicates dropped only after what must stay is worked out (Retention: best plus backup, best only, or the best of each speciality, so a Fortune and a Silk Touch pickaxe both stay), judged by damage for your combat version, vanilla's armour reduction, mining speed, enchantments and wear, never a protected, named or unknown item; Merge stacks; Sort inventory, by hotbar-key swaps so a refused click never leaves an item on the cursor, and anything a refused merge leaves there is put back; PvP, Building, Mining and Survival presets; a Loot key drops spare totems and pearls), Anti Vanish, Server Scan (the software, plugins and channels the server shows), Panic, Rotations (No rotate keeps your look when the server turns you; Lock holds your yaw and pitch), No Status Effects, Mine Through Mobs, Portals, Multitask, Fake Player (single player only), Liquid Interact, No Interact (also Hit fix, Hit select, No miss delay, Anti action, Ghost place: a web behind the player you click, and Anti trap: trap entities and sign editors dropped) |
-| **Render** | ClickGUI, HUD, Radar, ESP (2D corners or brackets with a health bar, boxes coloured by shields, Murderer finder for Murder Mystery: players seen with a murderer item are coloured, listed and, with Callout, named in chat), Tracers, Nametags (banded health colours), Storage ESP, Block ESP, Xray, Freecam, Free Look, Zoom, Fullbright, Trajectories (crossbows with multishot, wind charges, pearls in flight with their landing time), Waypoints, Breadcrumbs, Logout Spots, Hole ESP, Tunnel ESP, Void ESP, Light Overlay, Gear ESP (mobs wearing what players lose; what nearby players wear, hold and are known to carry, shown with Nametags), No Render (no fog, water fog, darkness, blindness, fire or other overlays, hurt cam, scoreboard, titles or held item name; Remove slowness takes slowness off your own client, which the server's anticheat sees), Effects (jump circles, footstep and ring trails, hit sparks, rain, snow, fireflies or embers), Target ESP (Brackets, Ghost or Square), Hand View (swing styles, slow swing, no equip drop), Atmosphere (custom fog) |
-| **World** | Nuker, Packet Mine, Timer, Time Changer, Weather Changer, Liquid Filler (Drain scoops an enemy's water or lava), Spawn Proofer, Flamethrower, Auto Shearer, Auto Nametag, Auto Mount, Auto Breed, Auto Sign, Build Height, Enderman Look, Spawner Alerts, Base Finder (block tiers, written signs, open portals, bubble columns, sky builds, lone spawners, name tags, traded villagers...), New Chunks (new and old chunks from the server's palettes and liquid flow, kept per server), Player Activity Detector, Stash Finder, Cave Disturbance Detector, Portal Pattern Finder, Activated Spawner Detector, Unlock All Recipes (every recipe in the book, on any server), Ore Sim (ores worked out from the world seed with the game's own ore generation, for servers that hide them) |
-| **Client** | Profiles (saved and pre-made), Client Sort (Sort, Fill Stacks and Restock buttons; Shift fill), Friend Guard (no hits on your friends), Modules, Debug Report |
+- **Kill Aura**: attacks nearby entities.
+  - Combat version: *Legacy (1.8)* clicks between Min and Max CPS; *Modern (1.9+)* waits for the attack cooldown, a
+    set delay or Hit select; *Auto* picks per server.
+  - Single, Switch or Multi targets; Silent aura, Snap, Normal, Smooth, Custom or Adaptive rotations; Ray cast.
+  - Target strafe circles your target while avoiding walls, drops and lava. AutoBlock (Legacy is experimental).
+- **Trigger Bot**: attacks what you aim at, timing crits and the cooldown; can miss on purpose.
+- **Aim Assist**: helps your aim. *Simple* turns you toward the target while you hold attack; *Duelkit* only adds to
+  your own mouse movement. Silent aim and Hit flick.
+- **Criticals**, **Reach**, **Hitboxes**: crits on every hit, longer reach, bigger boxes to aim at.
+- **Shield**: keeps your shield up while an enemy can hit you, lowers it for an axe or your own crit; Block hit.
+- **W Tap**, **Jump Reset**: sprint resets between hits (Adaptive S Tap with spacing) and less knockback.
+- **Fake Lag**: delays what you send, in order (Delay, Pulse, Dynamic, Knockback). **Backtrack**: holds the server's
+  updates while the player you hit moves away.
+- **Auto Weapon**: picks the weapon for each hit (sword, axe on shields, or both). **Auto Spear**: lunges, jabs and
+  reach with the spear. **Auto Mace**: takes the mace while you fall, with Stun slam and Breach checks.
+- **Crystal Aura**, **Anchor Aura**: place and set off crystals or anchors on enemies, or on your right click
+  (Macro). Never more self damage than *Max self damage*. **Crystal Optimizer** breaks hit crystals at once.
+- **PvP Bot**: fights the nearest player by itself, with a sword or with crystals and anchors.
+- **Cart**: TNT minecart PvP (break, place, set off and cover carts).
+- **Offhand**: totem or another item in your offhand; Double hand, Totem on low health.
+- **Key Throw**: pearls, short pearls and wind charges on keys; Pot and Debuff keys; Pearl follow.
+- **Surround**, **Self Trap**, **Auto Trap**, **Auto City**, **Hole Filler**, **Burrow**, **Self Web**,
+  **Auto Web**: block and web placement for crystal PvP.
+- **Anvil** (block anvils over you, drop them on players), **Auto EXP** (repair with XP bottles), **Quiver**
+  (tipped arrows at yourself), **Bow Aimbot**, **Arrow Dodge** (also hits fireballs back).
 
 </details>
 
-Kill Aura, Trigger Bot and Aim Assist can skip bots (**Anti bot**: players the server's player list doesn't show) and
-players on your own team (**Ignore teams**). **HUD > Target HUD** shows who Kill Aura is hitting: name, distance and health.
-**HUD > Armor HUD** puts your armour (and with **Hands** what you hold) in slot boxes beside the hotbar, or a corner,
-or wherever you drag it with the chat or the menu open: real icons, a durability bar, percent or number, green to red as
-it wears, in a row or a column; **Compact** uses a smaller layout. **Coordinates** and **Compass**
-move the same way: open the chat, and drag them by their frames. **HUD > Item durability** writes what is left (a
-number or a percent) on every damageable item in the hotbar and inventories, and **Durability tooltip** adds
-remaining / max to its tooltip. **Food preview**, **Saturation** and **Exhaustion** show on the food row what the
-held food gives, your saturation as gold frames and the exhaustion under it. **Mount HUD** keeps
-the food row and the XP bar while riding, the mount's hearts above (the jump bar shows while a jump charges).
-**Shield status** shows the seconds left while an axe has your shield down. **Ghost Hand > Cut through** hits the mob
-behind grass, flowers, cobwebs and other blocks with nothing to collide with.
-Kill Aura hits one target (**Single**, with **Target lock** to stay on it), each in turn (**Switch**) or several (**Multi**).
-**Rotation mode** is Silent aura (the default: a look the server alone sees, turned in whole
-mouse steps at **Aim speed** and sent in the game's own move packets, hitting only within vanilla reach), Snap, Normal,
-Smooth or Custom (its own yaw and pitch speeds), told only to the server or also turning your view (**Rotation view**).
-**Ray cast** hits only when the look really meets the target's box.
-Aim Assist's **Simple** mode (the default) turns you toward the target on its own while you hold attack;
-**Duelkit** only adds to your own mouse movement. Anti AFK's **Wander** (the default) makes small turns and steps
-once you have been idle a while; **Meteor** spins, jumps and strafes. No Slow's **Skip** (the default)
-leaves the game's item-use slowdown out except in water and after a knockback; **Scale** walks at Ground % / Air %;
-**No item release** never tells the server you let go of what **Release items** lists, so it goes on using it.
-Auto Clicker's right button gets **Right items** (`blocks` or item names), **Right sneak only**, a
-**Right start delay** and **Right own CPS**; Shield's **Block hit** puts the shield up after a share of your hits
-(**Manual**) or just before the next hit on you is due (**Predict**); No Interact's **Hit select** holds clicks while
-the player you aim at is still hurt (**Cancel**) or lets through only those that land as their hurt time ends
-(**Sprint reset**); Key Throw's **Pot key** throws the healing potions (or soups) the health you miss needs and its
-**Debuff key** throws harming, weakness, poison and slowness potions; Auto Gap's **Soup** eats soup when you are low;
-Arrow Dodge's **Hit fireballs** knocks a ghast's fireball back; Auto Armor's **Switch key** swaps between the armour
-sets **Switch sets** lists; Loadouts' **Auto hotbar** keeps hotbar slots filled by **Hotbar rules** (`1:sword,9:ender_pearl`);
-Client Sort's **Shift fill** shift-clicks the slot under the pointer while you hold Shift and the left button.
-It waits while another module has the hand, skips broken weapons, and stabs with spears; a stab never goes through a friend.
-Crystal Aura and Anchor Aura take the hotbar from whatever you hold (a sword, pickaxe, food or
-blocks; not a golden apple) and give it back after; they wait while you use the item. They put obsidian down on plain
-ground first. They never set off a crystal or anchor that would deal you more than **Max self damage** or leave you near
-death: without armour with Protection every spot in reach would, so they wait.
+<details>
+<summary><b>Movement</b> (34 modules)</summary>
 
-Not here (no clean way to do it in Horizon yet): Jesus, Click TP, Highway Builder and Infinity Miner.
+- **Flight**: Abilities or Velocity, plus experimental NCP Hover, NCP Burst and NCP Bounce. Holds still after a
+  server setback. *Damage fly* only flies after you get hurt, starting from the hit's knockback; it can wait for a
+  hit or deal you fall damage first (Burst: one tick of packets; Spread: one move a tick). Experimental.
+- **Speed**: Vanilla, Strafe, Smooth, Low Hop, Custom and Bhop; experimental NCP and Watchdog modes.
+- **Scaffold**: places blocks under you. *Normal* places from a silent look, *Legit* sneaks at edges, *Godbridge*
+  bridges backwards, *Telly* sprint-jumps across. Speedbridge and Blatant presets, Keep Y, tower, block counter.
+- **Velocity**: scale, blend or delay knockback. **No Slow**: no slowdown while using items. **No Fall**.
+- **GUI Move**: walk with a menu open (GrimAC mode waits to click until you stand still).
+- **Sprint**, **Sneak**, **Auto Walk**, **Auto Jump**, **Safe Walk**, **Parkour**, **Snap Tap** (of two opposite
+  keys, the last pressed wins).
+- **Step**, **Spider**, **High Jump**, **Long Jump**, **Air Jump**, **No Jump Delay**, **Fast Climb**, **Glide**,
+  **Anti Void**, **Blink**, **Click TP**.
+- **Elytra Boost**, **Elytra Fly**, **Chest Swap** (swap chestplate and elytra; Take off launches you with a rocket).
+- **Wind Jump**, **Pearl Catch**, **Trident Boost**, **Entity Control** (drive and fly boats), **Jesus**, **Slippy**.
+
+</details>
+
+<details>
+<summary><b>Player</b> (37 modules)</summary>
+
+- **Inventory Manager**: keeps your inventory in order.
+  - Nine slot settings plan your hotbar (best sword, pickaxe, blocks, golden apples, crystals...).
+  - Drops junk and worse duplicates after working out what must stay; never protected, named or unknown items.
+  - Sorts and merges stacks with clicks that never leave an item stuck on the cursor.
+  - Includes **Auto Armor** with its own switch: always, with your inventory open, or on a key; armour set
+    switching.
+  - PvP, Building, Mining and Survival presets; a Loot key drops spare totems and pearls.
+- **Chest Stealer**: empties containers you open. **Auto Replenish**: refills hotbar stacks. **Loadouts**: saved
+  inventory layouts on K.
+- **Auto Tool**, **Speed Mine**, **Fast Place**, **Fast Use**, **Break Delay**, **No Break Reset**, **Air Place**,
+  **Ghost Hand** (use containers through blocks).
+- **Auto Eat**, **Auto Gap** (also potions and soup), **Hold to Eat**, **Auto Fish**, **Auto Clicker** (fixed delay
+  or random CPS, separate right-click settings), **Multitask** (hit while eating).
+- **Auto Log**, **Auto Respawn**, **Death Location**, **Anti AFK**, **Anti Hunger**, **Notifier**, **Spam**.
+- **Rotations** (keep or lock your look), **No Status Effects**, **Portals** (menus in portals), **Liquid
+  Interact**, **No Interact**, **Mine Through Mobs**, **Middle Click Extra**, **RF Click**.
+- **Server Scan** (the server's software, plugins and channels), **Anti Vanish**, **Fake Player** (single player),
+  **Panic**.
+
+</details>
+
+<details>
+<summary><b>Render</b> (31 modules)</summary>
+
+- **ESP**: boxes or 2D frames with health bars and shield colours; Murderer finder for Murder Mystery.
+- **Tracers**, **Nametags** (health colours, totem pops), **Target ESP**, **Storage ESP**, **Block ESP**,
+  **Hole ESP**, **Tunnel ESP**, **Void ESP**, **Light Overlay**, **Logout Spots**.
+- **Gear ESP**: what nearby players wear and hold, and what they are known to carry, above their name; mobs
+  wearing what players have lost.
+- **Xray**, **Clear Water**, **Fullbright**, **Freecam**, **Free Look**, **Zoom**.
+- **Trajectories** (crossbows, wind charges, pearls in flight), **Breadcrumbs**, **Waypoints**, **Radar**,
+  **Shulker Peek**.
+- **HUD**: module list, Target HUD, Armor HUD, coordinates, compass, item durability, food preview and more; drag
+  elements while the chat is open.
+- **ClickGUI** (the menu's look), **No Render** (fog, overlays, hurt cam and more), **Effects** (jump circles,
+  trails, hit sparks, weather), **Hand View**, **Crosshair**, **Block Overlay**, **Atmosphere** (custom skies).
+
+</details>
+
+<details>
+<summary><b>World</b> (25 modules)</summary>
+
+- **Base Finder**, **New Chunks**, **Stash Finder**, **Player Activity Detector**, **Cave Disturbance Detector**,
+  **Portal Pattern Finder**, **Activated Spawner Detector**, **Spawner Alerts**: find bases and where players have
+  been.
+- **Ore Sim**: shows ores worked out from the world seed, for servers that hide them.
+- **Nuker**, **Packet Mine**, **Liquid Filler** (also drains an enemy's water or lava), **Spawn Proofer**,
+  **Build Height**, **Auto Sign**.
+- **Auto Shearer**, **Auto Nametag**, **Auto Breed**, **Auto Mount**, **Flamethrower**, **Enderman Look**.
+- **Timer**, **Time Changer**, **Weather Changer**, **Unlock All Recipes**.
+
+</details>
+
+<details>
+<summary><b>Client</b> (7 modules)</summary>
+
+- **Profiles**: saved and ready-made settings.
+- **Modules**: show or hide each module in the menu.
+- **Friend Guard**: no hits on your friends.
+- **Client Sort**: Sort, Fill Stacks and Restock buttons in inventories.
+- **Client Spoofer**: tells servers you use another client (Lunar Client, LabyMod).
+- **Streamer Mode**: hides your name and other players' names on screen.
+- **Debug Report**: see [Debug reports](#chat-commands).
+
+</details>
 
 ## Updating and removing
 
-**Update:** run the same command again. Sunset was called Solstice before 0.8.1: the command removes the old
-`solstice.hnmod` and Sunset takes your saved settings over on its first start.
+**Update:** run the install command again. It replaces the old version and keeps your settings and profiles.
+(Sunset was called Solstice before 0.8.1; the installer removes `solstice.hnmod` and Sunset takes over its settings.)
 
-**Remove:** delete `sunset.hnmod` from the `horizon-native-mods` folder in Horizon's game folder (Windows:
-`%APPDATA%\horizon`, Linux: `~/.local/share/horizon`, macOS: `~/Library/Application Support/horizon`, and the same
-folder inside `instances\native-mods`), then play the plain **Horizon** instance.
+**Remove:** delete `sunset.hnmod` from the `horizon-native-mods` folder in Horizon's game folder, and from the same
+folder inside `instances/native-mods`. Then play the plain **Horizon** instance.
 
-Each Sunset release is built for one Horizon release. The **Native mods** instance stays on that revision until you
-update Sunset with the installer again.
+| System | Horizon's game folder |
+| --- | --- |
+| Windows | `%APPDATA%\horizon` |
+| Linux | `~/.local/share/horizon` |
+| macOS | `~/Library/Application Support/horizon` |
 
-## If something goes wrong
+Each Sunset release is built for one Horizon version (the release notes name it). The Native mods instance stays on
+that version until you update Sunset.
 
-- **"I couldn't find the Horizon launcher"**: install it from [playhorizon.dev](https://playhorizon.dev), open it once, run the command again.
-- **The build fails on Linux** with a message about `alsa` or `libudev`: install `libasound2-dev libudev-dev pkg-config` (Debian, Ubuntu), or your system's equivalents, and run the command again.
-- **The launcher says "These mods were made for different Horizon revisions and can't be built together"**: you have another native mod (for example `mousetricks`) made for a different Horizon version than Sunset's. Native mods are built into the game together, so all of them must match. Turn the other one off on the launcher's Mods page (or delete its `.hnmod` from `horizon-native-mods`), then run the command again. You don't need to install the Nightly named in the release notes: the build downloads its source itself, so it's fine that it isn't on the Versions page.
-- **Windows: "Compiling the game failed" with `windres: preprocessing failed` and a path cut off at a space**: your Windows user name has a space in it, and Horizon's own build can't handle that. The installer now moves the launcher's files to `C:\horizon-launcher` for you (you sign in again); older copies of the installer don't, so run the current command. You can also set the `HORIZON_LAUNCHER_HOME` environment variable to a folder without spaces yourself.
-- **The command did nothing on Windows**: run it in *PowerShell*, not Command Prompt.
-- **No Sunset in game**: you played the plain **Horizon** instance. Pick **Native mods**.
-- **The first build is slow**: yes. It compiles the whole game once.
-- **A module misbehaves or a server flags you**: type `.debug` right after and paste the report (it's on your clipboard) into the ticket.
-- **Installer or launch still fails**: open a ticket on the [Discord](https://discord.gg/fhD2frFdzm) or an
-  [issue](https://github.com/PointOfPressure/sunset-client/issues) with the installer output, your OS and the Horizon version.
+## Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| "I couldn't find the Horizon launcher" | Install it from [playhorizon.dev](https://playhorizon.dev), open it once, run the command again. |
+| The command does nothing on Windows | Run it in PowerShell, not Command Prompt. |
+| No Sunset in game | You started the plain Horizon instance. Pick **Native mods**. |
+| The first build is slow | That's normal: it compiles the whole game once. |
+| Linux build fails mentioning `alsa` or `libudev` | Install `libasound2-dev libudev-dev pkg-config` (Debian/Ubuntu) or your system's equivalents, then run the command again. |
+| "These mods were made for different Horizon revisions" | Another native mod (for example `mousetricks`) was made for a different Horizon version. Turn it off on the launcher's Mods page or delete its `.hnmod` from `horizon-native-mods`, then run the command again. You don't need to install the Nightly named in the release notes yourself. |
+| Windows: `windres: preprocessing failed` with a path cut off at a space | Your Windows user name contains a space, which Horizon's build can't handle. The current installer moves the launcher to `C:\horizon-launcher` for you (you sign in again), or set `HORIZON_LAUNCHER_HOME` to a folder without spaces. |
+| A module misbehaves or a server flags you | Type `.debug` right away and attach the report to your ticket. |
+| Still stuck | Open a ticket on [Discord](https://discord.gg/fhD2frFdzm) or an [issue](https://github.com/PointOfPressure/sunset-client/issues) with the installer output, your OS and Horizon version. |
 
 ## Plugins
 
-Other native mods can add modules, commands, HUD and world drawing, packet handlers and timers to Sunset: a plugin
-is one small Rust file. Plugin API 2 (Sunset 1.0) reaches everything a built-in module does, including unattended
-(AFK) play: events for hurts, deaths and disconnects, a safe stop, and Horizon's Auto-reconnect. The full reference, a
-template, one-command build scripts and two example plugins (Hello, and AFK Fisher) are in
+Other native mods can extend Sunset with modules, commands, HUD and world drawing, packet handlers and timers. A
+plugin is a single Rust file. Plugin API 2 can do anything a built-in module can, including unattended (AFK) play
+with events for hurts, deaths and disconnects, a safe stop, and Horizon's auto-reconnect.
+
+The API reference, a template, build scripts and two example plugins (Hello and AFK Fisher) are in
 [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) (MIT).
 
 ## Building from source
 
-`python3 tools/pack.py` writes `dist/sunset-<version>.hnmod`. To compile-check it against the Horizon Nightly it
-pins, stage it with [horizon-mixins](https://github.com/horizon-rust/horizon-mixins)
-(`horizon-mixins apply --workspace <horizon at that commit> --mods mixins --out stage`) and run
-`cargo check -p horizon-client` in the stage. `tools/verify.py` runs the modules in a test arena in a headless
-game.
+- `python3 tools/pack.py` writes `dist/sunset-<version>.hnmod`.
+- To compile-check against the Horizon Nightly pinned in `horizon-native.json`: stage the mod with
+  [horizon-mixins](https://github.com/horizon-rust/horizon-mixins)
+  (`horizon-mixins apply --workspace <horizon at that commit> --mods mixins --out stage`), then run
+  `cargo check -p horizon-client` in the stage.
+- `tools/verify.py` runs modules in a test arena in a headless game.
 
-## Feature planning
-
-See the [feature roadmap](docs/feature-roadmap.md) for what has landed, what is next and what each contribution needs.
+What's planned and what a contribution needs: [feature roadmap](docs/feature-roadmap.md) and
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure). Contributors: vs. ([vstxx](https://github.com/vstxx): movement modes, Velocity, Scaffold controls and block counter, Scaffold Legit, Godbridge and Telly modes, GUI Move's GrimAC mode, W Tap's Adaptive S Tap, the ordered Fake Lag line and Backtrack as its own module, Hard Panic, Kill Aura's combat version and attack scheduler, Inventory Manager (with Auto Armor), Flight's experimental strategies and Damage fly, Speed's NCP and Watchdog modes, Gear ESP, settings sections and the Dashboard's header layout, Offhand's Auto Totem and its clicks between ticks, Chest Swap packet timing, Auto Weapon's modes, Auto Spear with Lunge on hit and Extended reach, Auto Mace, the HUD layout editor, Kill Aura, Time and Weather Changer fixes, the Dashboard menu style and smooth scrolling, Server Scan, the Crystal Aura and Anchor Aura Macro sections and Anvil merge, this README), Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y): Radar, profile files, Spawner Alerts, Item ESP names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura, Anchor Aura, Crystal Macro and Anchor Macro (their Macro sections), Shield Breaker, Mace and Spear Swap (Auto Weapon's Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smash fall count Auto Mace goes by), W Tap, Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Made by [PointOfPressure](https://github.com/PointOfPressure).
+
+<details>
+<summary>Contributors</summary>
+
+**vs.** ([vstxx](https://github.com/vstxx)): movement modes, Velocity, Scaffold controls and block counter, Scaffold
+Legit, Godbridge and Telly modes, GUI Move's GrimAC mode, W Tap's Adaptive S Tap, the ordered Fake Lag line and
+Backtrack as its own module, Hard Panic, Kill Aura's combat version and attack scheduler, Inventory Manager (with Auto
+Armor), Flight's experimental strategies and Damage fly, Speed's NCP and Watchdog modes, Gear ESP, settings sections
+and the Dashboard's header layout, Offhand's Auto Totem and its clicks between ticks, Chest Swap packet timing, Auto
+Weapon's modes, Auto Spear with Lunge on hit and Extended reach, Auto Mace, the HUD layout editor, Kill Aura, Time and
+Weather Changer fixes, the Dashboard menu style and smooth scrolling, Server Scan, the Crystal Aura and Anchor Aura
+Macro sections and Anvil merge, this README.
+
+**Rust** ([zackmsa777-a11y](https://github.com/zackmsa777-a11y)): Radar, profile files, Spawner Alerts, Item ESP
+names and filter, Anti Vanish, the roadmap, Crosshair, Block Overlay, Target ESP, Atmosphere skies, Crystal Aura,
+Anchor Aura, Crystal Macro and Anchor Macro (their Macro sections), Shield Breaker, Mace and Spear Swap (Auto Weapon's
+Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smash fall count Auto Mace goes by), W Tap,
+Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast
+Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback
+Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps.
+
+</details>
+
+Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
