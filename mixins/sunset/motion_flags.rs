@@ -33,6 +33,8 @@ thread_local! {
     // Blocks a tick across the ground, x and z.
     static ACROSS: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
     static UP: Cell<Option<f64>> = const { Cell::new(None) };
+    // Legacy Speed requests a native ballistic jump at a scale of jump strength, with native block/Jump Boost factors.
+    static BALLISTIC_JUMP: Cell<Option<f64>> = const { Cell::new(None) };
     // Target strafe: the way (x, z, length 1) the move across the ground goes this tick, at its own speed.
     static STRAFE_DIR: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
     static LIQUID: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
@@ -172,6 +174,16 @@ pub fn set_across(across: Option<[f64; 2]>) {
 
 pub fn set_up(up: Option<f64>) {
     UP.with(|c| c.set(up));
+    BALLISTIC_JUMP.with(|c| c.set(None));
+}
+
+pub fn set_ballistic_jump(scale: Option<f64>) {
+    set_up(None);
+    BALLISTIC_JUMP.with(|c| c.set(scale));
+}
+
+pub fn take_ballistic_jump() -> Option<f64> {
+    BALLISTIC_JUMP.with(|c| c.take())
 }
 
 pub fn set_strafe_dir(dir: Option<[f64; 2]>) {
@@ -209,6 +221,16 @@ pub fn self_move(movement: horizon_core::geometry::Vec3) -> horizon_core::geomet
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ballistic_jump_is_consumed_once_and_cleared_by_movement_reset() {
+        set_ballistic_jump(Some(1.0));
+        assert_eq!(take_ballistic_jump(), Some(1.0));
+        assert_eq!(take_ballistic_jump(), None);
+        set_ballistic_jump(Some(0.4 / 0.42));
+        set_up(None);
+        assert_eq!(take_ballistic_jump(), None);
+    }
 
     #[test]
     fn inventory_stop_clears_every_input_bit_and_expires_next_tick() {

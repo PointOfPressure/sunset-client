@@ -442,12 +442,13 @@ impl Module {
                 _ => true,
             },
             "Speed" => match name {
-                "Vanilla speed" => !matches!(self.p("Mode"), "Strafe" | "Bhop"),
+                "Vanilla speed" => !matches!(self.p("Mode"), "Strafe" | "Bhop" | "NCP"),
+                "NCP reduced jump" => self.p("Mode") == "NCP",
                 "Strafe speed" | "Speed limit" => self.p("Mode") == "Strafe",
                 "Hop speed" | "Hop gain (%)" | "Hop height" | "Hop slope" | "Air friction (%)" | "Air control" | "Fast fall"
                 | "Hop when" | "Damage boost" | "Stop on release" => self.p("Mode") == "Bhop",
                 "Hop max speed" => self.p("Mode") == "Bhop" && self.n("Hop gain (%)") > 0.0,
-                "Only on ground" => self.p("Mode") != "Bhop",
+                "Only on ground" => !matches!(self.p("Mode"), "Bhop" | "NCP"),
                 "Ground multiplier" => advanced && self.p("Mode") == "Custom",
                 "Air multiplier" => advanced && matches!(self.p("Mode"), "Smooth" | "Low Hop" | "Custom") && !self.b("Only on ground"),
                 "Acceleration" | "Deceleration" | "Strafe strength" => advanced && matches!(self.p("Mode"), "Smooth" | "Custom"),
@@ -753,7 +754,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Setback pause (ticks)", 10.0, 0.0, 40.0, 1.0)
             .bool("Disable on setback", false),
         Module::new("Speed", Movement, "Moves faster on the ground.")
-            .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop"])
+            .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop", "NCP"])
+            .bool("NCP reduced jump", false)
             .num("Vanilla speed", 5.6, 0.0, 20.0, 0.1)
             .num("Strafe speed", 1.6, 0.0, 3.0, 0.05)
             .bool("Speed limit", false)
@@ -1365,6 +1367,7 @@ pub(super) struct State {
     velocity: Option<[f64; 3]>,
     strafe: Strafe,
     bhop: Bhop,
+    ncp: super::sunset_legacy_speed::Ncp,
     knockback_ticks: u32,
     // Flight: Sunset's anti kick counters, the yaw it keeps, which way it nudged last, and whether it let go of sneak.
     fly_delay: i32,
@@ -1482,6 +1485,7 @@ impl State {
                     velocity: None,
                     strafe: Strafe::default(),
                     bhop: Bhop::default(),
+                    ncp: super::sunset_legacy_speed::Ncp::default(),
             knockback_ticks: 0,
                     fly_delay: 0,
                     fly_setback: 0,
@@ -2773,7 +2777,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 super::sunset_scaffold_telly::stop(game);
             }
             "Speed" => {
-                with(|s| { s.strafe = Strafe::default(); s.bhop.reset(); s.knockback_ticks = 0; });
+                with(|s| { s.strafe = Strafe::default(); s.bhop.reset(); s.ncp.reset(); s.knockback_ticks = 0; });
                 horizon_client::motion::sunset_motion::set_across(None);
                 horizon_client::motion::sunset_motion::set_up(None);
             },
@@ -3077,13 +3081,14 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         super::sunset_scaffold_bridge::stop(game);
         super::sunset_scaffold_normal::stop(game);
         super::sunset_scaffold_telly::stop(game);
-        with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; });
+        with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.ncp.reset(); });
         return;
     }
     ensure_loaded(game);
     super::sunset_antibot::tick(game);
     revalidate_targets(game);
     if super::sunset_combat_control::begin_tick(game) {
+        with(|s| s.ncp.recover());
         super::sunset_scaffold_telly::scene_changed(game);
         drop_strikes();
         super::sunset_melee::cancel(game);
@@ -3246,9 +3251,16 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     // Offhand's Silent open holds your move keys and clicks while its totem moves.
     super::sunset_combat_inventory::pre_tick(game, get("Offhand").filter(|m| m.on && playing));
     velocity(game, get("Velocity").filter(|m| m.on));
-    let across = get("Speed").filter(|m| m.on).and_then(|m| speed(game, &m));
+    let across = match get("Speed").filter(|m| m.on) {
+        Some(m) => speed(game, m),
+        None => { with(|s| s.ncp.reset()); None }
+    };
     horizon_client::motion::sunset_motion::set_across(across.map(|(xz, _)| xz));
-    horizon_client::motion::sunset_motion::set_up(across.and_then(|(_, y)| y));
+    if get("Speed").is_some_and(|m| m.on && m.p("Mode") == "NCP") {
+        horizon_client::motion::sunset_motion::set_ballistic_jump(across.and_then(|(_, scale)| scale));
+    } else {
+        horizon_client::motion::sunset_motion::set_up(across.and_then(|(_, y)| y));
+    }
     bhop_body(game, bhop);
     // Kill Aura's Target strafe: the move this tick takes goes round its target.
     let strafe = get("Kill Aura").filter(|m| m.on && m.b("Target strafe") && playing);
@@ -5158,6 +5170,7 @@ pub(super) fn server_correction(game: &mut Game<'_>) {
         s.knockback_ticks = 0;
         s.strafe = Strafe::default();
         s.bhop.reset();
+        s.ncp.recover();
         s.scaffold_stack = None;
     });
     super::sunset_scaffold_normal::correction();
@@ -5459,14 +5472,43 @@ fn bhop_hops(game: &Game<'_>, m: &Module) -> bool {
         && !game.block_in_tag("minecraft:climbable", &game.block_name(feet))
 }
 
+// NCP's distinct controller; actual attributes include Speed/Slowness and server modifications. Remove only the
+// native sprint multiplier before applying the historical walk/sprint baseline (do not count potion levels twice).
+fn ncp_speed(game: &mut Game<'_>, m: &Module, item_scale: f64) -> Option<([f64; 2], Option<f64>)> {
+    if !game.native_playing() || gui_open() || super::sunset_gui_move::inventory_busy()
+        || with(|s| s.is_on("Scaffold"))
+    {
+        with(|s| s.ncp.recover());
+        return None;
+    }
+    let direction = move_direction(game);
+    let speed_effect = game.potions.effects.amplifier("speed").is_some();
+    let p = game.player.as_mut()?;
+    let native_speed = p.attribute("minecraft:movement_speed").ok()?;
+    let base = if p.sprinting { 0.2873 * native_speed / 0.13 } else { 0.216 * native_speed / 0.1 };
+    let frame = super::sunset_legacy_speed::Frame {
+        tick: game.ticks,
+        position: [p.position.x, p.position.z],
+        grounded: p.ground.on_ground,
+        blocked: p.collision.horizontal || (p.collision.vertical && !p.ground.on_ground),
+        direction,
+        base,
+        jump_scale: if m.b("NCP reduced jump") { 0.4 / 0.42 } else { 1.0 },
+        speed_effect,
+    };
+    let step = with(|s| s.ncp.step(frame))?;
+    Some(([step.across[0] * item_scale, step.across[1] * item_scale], step.jump_scale))
+}
+
 // Speed (Sunset's): this tick's own move across the ground, blocks a tick (and Strafe's hop up), or None to leave
 // it to the game. Vanilla moves the setting's blocks a second the way the move keys point, and stands still without
 // them; Strafe hops, faster at each jump, slowing in the air.
-fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
+fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     let p = game.player.as_ref()?;
     let held = |k: KeyCode| game.keys.contains(&k);
     let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
     let mode = m.p("Mode");
+    if mode != "NCP" { with(|s| s.ncp.reset()); }
     let vanilla = mode == "Vanilla";
     let (flight, no_slow, pause) = with(|s| {
         let pause = s.knockback_ticks;
@@ -5480,7 +5522,10 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     if !super::sunset_movement::speed_can_write(
         flight || p.flying, p.fall_flying, game.using.is_some(), no_slow.is_some(),
         pause, p.collision.horizontal, m.b("Stop at wall"),
-    ) { return None; }
+    ) {
+        if mode == "NCP" { with(|s| s.ncp.recover()); }
+        return None;
+    }
     let scale_across = |v: [f64; 2]| [v[0] * slow_factor, v[1] * slow_factor];
     let effect = |id: &str| game.potions.effects.amplifier(id).map_or(0.0, |a| f64::from(a + 1));
     // Sunset's stopSpeed.
@@ -5491,7 +5536,11 @@ fn speed(game: &Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         || (vanilla && m.b("Only on ground") && !p.ground.on_ground)
         || (!m.b("In liquids") && (p.fluids.was_touching_water || p.is_in_lava()))
     {
+        if mode == "NCP" { with(|s| s.ncp.recover()); }
         return None;
+    }
+    if mode == "NCP" {
+        return ncp_speed(game, m, slow_factor);
     }
     if mode == "Bhop" {
         let base = 0.2873 * (1.0 + 0.2 * effect("speed")) / (1.0 + 0.2 * effect("slowness"));
@@ -6938,6 +6987,7 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
     }
     s.strafe = Strafe::default();
     s.bhop.reset();
+    s.ncp.reset();
     s.knockback_ticks = 0;
     s.velocity = None;
     s.blast = [0.0; 3];

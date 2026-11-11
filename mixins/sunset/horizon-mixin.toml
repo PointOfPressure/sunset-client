@@ -153,6 +153,12 @@ name = "sunset_movement"
 source = "movement.rs"
 
 [[module]]
+id = "legacy_speed"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_legacy_speed"
+source = "legacy_speed.rs"
+
+[[module]]
 id = "rotation"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_rotation"
@@ -1258,6 +1264,13 @@ helper = "move_hook.rs"
 bindings = [
   { name = "value", ty = "Vec3", value = "$value" },
 ]
+
+[[injection]]
+id = "legacy_speed_jump"
+kind = "HEAD"
+target = "horizon_client_lib::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::move_self"
+helper = "legacy_jump_hook.rs"
+bindings = [{ name = "world", ty = "&mut MotionWorld<'_, '_, '_>", value = "self" }]
 
 [[injection]]
 id = "screen_keys"
