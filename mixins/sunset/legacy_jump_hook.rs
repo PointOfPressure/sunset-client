@@ -2,6 +2,12 @@
 // Merely overriding move_self's Y produces a one-tick position lift followed by the old vertical velocity.
 fn sunset_legacy_jump(world: &mut MotionWorld<'_, '_, '_>) {
     if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return; }
+    if let Some([x, z]) = crate::motion::sunset_motion::take_legacy_velocity()
+        && x.is_finite() && z.is_finite()
+    {
+        world.player.velocity.x = x;
+        world.player.velocity.z = z;
+    }
     let Some(scale) = crate::motion::sunset_motion::take_ballistic_jump() else { return };
     if !scale.is_finite() || scale <= 0.0 { return; }
     let Ok(power) = horizon_world::living_motion::jump_power(world, scale as f32) else { return };

@@ -21,7 +21,7 @@ scheduling is not protocol translation. Rewound's modified NCP revision/configur
 | Feature | Moon implementation | Sunset equivalent | Missing behaviour | Compatibility | Decision |
 | --- | --- | --- | --- | --- | --- |
 | NCP Speed | Ground launch, measured-distance transition, distinct potion coefficients, recurrent airborne speed | Strafe has different launch/transition/decay; Bhop uses configurable carried speed; Low Hop/Custom are different | This specific phase controller, lifecycle recovery | Modern physics still apply; use actual movement/jump attributes and correct effect levels | Valuable new Experimental NCP mode |
-| Watchdog Speed | Ground jump/launch, native airborne motion, input/yaw tracking, knockback-triggered optional boost | Bhop plus Velocity, No Jump Delay and shared direction/ownership | Compare native-air cycle and genuine knockback coordination | Moon's stored speed/input damping is not generally applied to its MoveEvent; do not reproduce dead state | Audit then implement only meaningful distinct behaviour |
+| Watchdog Speed | Ground jump/launch, native airborne motion, input/yaw tracking, knockback-triggered optional boost | Bhop plus Velocity, No Jump Delay and shared direction/ownership | Native-air cycle and genuine knockback coordination | Moon's stored speed/input damping is not generally applied to its MoveEvent; do not reproduce dead state | Added distinct Experimental controller |
 | Aura selection/rotation/timing | Separate components; distinct ranges, hurt-time selection, fractional CPS | `aura`, `aura_aim`, `aura_timing`, target/rotation/hand ownership already provide these | No wholesale rewrite justified | Preserve real cooldown/Legacy scheduler and hit feasibility | Already implemented; retain |
 | Watchdog AutoBlock | Sword use/release; special 1.12.2 Via use-item packets and alternate old placement packet | Offhand shield release/re-raise in `hands` | Verify modern-to-legacy sword-use capability | Modern shield is not proof of translated sword blocking | Protocol investigation required before exposing Legacy |
 | Other scaffold/NoSlow/Velocity/WTap mechanisms | Selected historical packet/tick coordination | Existing Scaffold, No Slow, Velocity and sprint/attack ownership | Evaluate interactions only | Historical packets cannot be injected as modern IDs | No unrelated overhaul |
@@ -35,7 +35,7 @@ named mode constants, not claimed protocol facts.
 - [x] A: inspect dirty tree, pinned engine, NCP/Watchdog/Watchdog AutoBlock and relevant aura components.
 - [x] B: pure NCP controller + explicit phases; measured displacement; input/collision/teleport/world/disable recovery;
   actual attributes, reduced jump setting, shared movement integration. Focused tests, pinned compilation, commit.
-- [ ] C: distinct Watchdog ground/native-air cycle and server knockback integration, with Velocity/Sprint/Jump Delay
+- [x] C: distinct Watchdog ground/native-air cycle and server knockback integration, with Velocity/Sprint/Jump Delay
   ownership. Focused tests, compilation, commit.
 - [ ] D: prove translation support or record exact Legacy AutoBlock blocker; reuse/improve supported shield ownership
   and attack coordination where justified. Focused tests, compilation, commit.
@@ -50,6 +50,16 @@ tests); pinned mixin application and `cargo check -p horizon-client --tests` pas
 and reset tests compile with the native tests. Existing Strafe/Bhop/Smooth/Low Hop/Custom paths retain their formulas.
 NCP yields to Scaffold, Flight, inventory freeze, item-use policy and knockback pause. Native jump power handles
 registered block factors and Jump Boost; only the jump-strength portion is reduced by the optional setting.
+
+Phase B commit: `b819153`.
+Phase C validation: fourteen pure controller/shared movement tests passed; pinned apply and native test compilation
+passed. Watchdog launches through native jump power and writes its launch velocity once; ordinary airborne ticks
+retain native movement. `Watchdog knockback boost` is off by default and observes only this player's received
+`SetEntityMotion`, after Velocity's configured scaling/pause. It steers at most 25 degrees once within six ticks,
+preserving the actual impulse magnitude. It does not synthesize Moon's configured damage multiplier, treat
+explosions as hit boosts, or restore removed velocity. Disable/release removes only owned surplus launch momentum.
+Both controllers yield to Scaffold rather than compete with its tower/movement correction. Ten recovery ticks
+follow a correction; three corrections less than 100 ticks apart turn Speed off. These are safety bounds, not NCP rules.
 
 Runtime results: **none for these modes**. No Rewound or pinned historical NCP runtime test has been performed;
 use a controlled/pinned server when available. Record server/protocol/config, baseline, accepted displacement,

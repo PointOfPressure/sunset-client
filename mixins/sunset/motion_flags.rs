@@ -35,6 +35,7 @@ thread_local! {
     static UP: Cell<Option<f64>> = const { Cell::new(None) };
     // Legacy Speed requests a native ballistic jump at a scale of jump strength, with native block/Jump Boost factors.
     static BALLISTIC_JUMP: Cell<Option<f64>> = const { Cell::new(None) };
+    static LEGACY_VELOCITY: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
     // Target strafe: the way (x, z, length 1) the move across the ground goes this tick, at its own speed.
     static STRAFE_DIR: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
     static LIQUID: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
@@ -175,6 +176,7 @@ pub fn set_across(across: Option<[f64; 2]>) {
 pub fn set_up(up: Option<f64>) {
     UP.with(|c| c.set(up));
     BALLISTIC_JUMP.with(|c| c.set(None));
+    LEGACY_VELOCITY.with(|c| c.set(None));
 }
 
 pub fn set_ballistic_jump(scale: Option<f64>) {
@@ -184,6 +186,14 @@ pub fn set_ballistic_jump(scale: Option<f64>) {
 
 pub fn take_ballistic_jump() -> Option<f64> {
     BALLISTIC_JUMP.with(|c| c.take())
+}
+
+pub fn set_legacy_velocity(across: Option<[f64; 2]>) {
+    LEGACY_VELOCITY.with(|c| c.set(across));
+}
+
+pub fn take_legacy_velocity() -> Option<[f64; 2]> {
+    LEGACY_VELOCITY.with(|c| c.take())
 }
 
 pub fn set_strafe_dir(dir: Option<[f64; 2]>) {

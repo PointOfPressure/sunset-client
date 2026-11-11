@@ -442,13 +442,14 @@ impl Module {
                 _ => true,
             },
             "Speed" => match name {
-                "Vanilla speed" => !matches!(self.p("Mode"), "Strafe" | "Bhop" | "NCP"),
+                "Vanilla speed" => !matches!(self.p("Mode"), "Strafe" | "Bhop" | "NCP" | "Watchdog"),
                 "NCP reduced jump" => self.p("Mode") == "NCP",
+                "Watchdog knockback boost" => self.p("Mode") == "Watchdog",
                 "Strafe speed" | "Speed limit" => self.p("Mode") == "Strafe",
                 "Hop speed" | "Hop gain (%)" | "Hop height" | "Hop slope" | "Air friction (%)" | "Air control" | "Fast fall"
                 | "Hop when" | "Damage boost" | "Stop on release" => self.p("Mode") == "Bhop",
                 "Hop max speed" => self.p("Mode") == "Bhop" && self.n("Hop gain (%)") > 0.0,
-                "Only on ground" => !matches!(self.p("Mode"), "Bhop" | "NCP"),
+                "Only on ground" => !matches!(self.p("Mode"), "Bhop" | "NCP" | "Watchdog"),
                 "Ground multiplier" => advanced && self.p("Mode") == "Custom",
                 "Air multiplier" => advanced && matches!(self.p("Mode"), "Smooth" | "Low Hop" | "Custom") && !self.b("Only on ground"),
                 "Acceleration" | "Deceleration" | "Strafe strength" => advanced && matches!(self.p("Mode"), "Smooth" | "Custom"),
@@ -753,9 +754,10 @@ pub(super) fn defaults() -> Vec<Module> {
             // starts from where the server has you, or Flight off.
             .num("Setback pause (ticks)", 10.0, 0.0, 40.0, 1.0)
             .bool("Disable on setback", false),
-        Module::new("Speed", Movement, "Moves faster on the ground.")
-            .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop", "NCP"])
+        Module::new("Speed", Movement, "Moves faster on the ground. NCP and Watchdog are experimental legacy strategies.")
+            .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop", "NCP", "Watchdog"])
             .bool("NCP reduced jump", false)
+            .bool("Watchdog knockback boost", false)
             .num("Vanilla speed", 5.6, 0.0, 20.0, 0.1)
             .num("Strafe speed", 1.6, 0.0, 3.0, 0.05)
             .bool("Speed limit", false)
@@ -1368,6 +1370,8 @@ pub(super) struct State {
     strafe: Strafe,
     bhop: Bhop,
     ncp: super::sunset_legacy_speed::Ncp,
+    watchdog: super::sunset_legacy_speed::Watchdog,
+    legacy_recovery: super::sunset_legacy_speed::Recovery,
     knockback_ticks: u32,
     // Flight: Sunset's anti kick counters, the yaw it keeps, which way it nudged last, and whether it let go of sneak.
     fly_delay: i32,
@@ -1486,6 +1490,8 @@ impl State {
                     strafe: Strafe::default(),
                     bhop: Bhop::default(),
                     ncp: super::sunset_legacy_speed::Ncp::default(),
+                    watchdog: super::sunset_legacy_speed::Watchdog::default(),
+                    legacy_recovery: super::sunset_legacy_speed::Recovery::default(),
             knockback_ticks: 0,
                     fly_delay: 0,
                     fly_setback: 0,
@@ -2777,7 +2783,9 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
                 super::sunset_scaffold_telly::stop(game);
             }
             "Speed" => {
+                watchdog_stop(game, true);
                 with(|s| { s.strafe = Strafe::default(); s.bhop.reset(); s.ncp.reset(); s.knockback_ticks = 0; });
+                with(|s| s.legacy_recovery = Default::default());
                 horizon_client::motion::sunset_motion::set_across(None);
                 horizon_client::motion::sunset_motion::set_up(None);
             },
@@ -3081,14 +3089,17 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         super::sunset_scaffold_bridge::stop(game);
         super::sunset_scaffold_normal::stop(game);
         super::sunset_scaffold_telly::stop(game);
-        with(|s| { s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.ncp.reset(); });
+        with(|s| {
+            s.velocity = None; s.blast = [0.0; 3]; s.knockback_ticks = 0; s.ncp.reset();
+            s.watchdog.reset(); s.legacy_recovery = Default::default();
+        });
         return;
     }
     ensure_loaded(game);
     super::sunset_antibot::tick(game);
     revalidate_targets(game);
     if super::sunset_combat_control::begin_tick(game) {
-        with(|s| s.ncp.recover());
+        with(|s| { s.ncp.reset(); s.watchdog.reset(); s.legacy_recovery = Default::default(); });
         super::sunset_scaffold_telly::scene_changed(game);
         drop_strikes();
         super::sunset_melee::cancel(game);
@@ -3253,11 +3264,18 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     velocity(game, get("Velocity").filter(|m| m.on));
     let across = match get("Speed").filter(|m| m.on) {
         Some(m) => speed(game, m),
-        None => { with(|s| s.ncp.reset()); None }
+        None => {
+            watchdog_stop(game, true);
+            with(|s| { s.ncp.reset(); s.legacy_recovery = Default::default(); });
+            None
+        }
     };
     horizon_client::motion::sunset_motion::set_across(across.map(|(xz, _)| xz));
-    if get("Speed").is_some_and(|m| m.on && m.p("Mode") == "NCP") {
+    if get("Speed").is_some_and(|m| m.on && matches!(m.p("Mode"), "NCP" | "Watchdog")) {
         horizon_client::motion::sunset_motion::set_ballistic_jump(across.and_then(|(_, scale)| scale));
+        if get("Speed").is_some_and(|m| m.p("Mode") == "Watchdog") {
+            horizon_client::motion::sunset_motion::set_legacy_velocity(across.map(|(xz, _)| xz));
+        }
     } else {
         horizon_client::motion::sunset_motion::set_up(across.and_then(|(_, y)| y));
     }
@@ -5166,13 +5184,20 @@ pub(super) fn server_correction(game: &mut Game<'_>) {
     }
     super::sunset_render::no_slow_reset();
     super::sunset_parity::correction(game);
-    with(|s| {
+    let disable_speed = with(|s| {
         s.knockback_ticks = 0;
         s.strafe = Strafe::default();
         s.bhop.reset();
         s.ncp.recover();
+        s.watchdog.reset(); // A server correction owns its new velocity; never restore old launch momentum here.
         s.scaffold_stack = None;
+        s.module("Speed").is_some_and(|m| m.on && matches!(m.p("Mode"), "NCP" | "Watchdog"))
+            && s.legacy_recovery.correction(game.ticks)
     });
+    if disable_speed {
+        toggle_named(game, "Speed", false);
+        say(game, "Speed off: repeated server corrections in an experimental legacy mode.");
+    }
     super::sunset_scaffold_normal::correction();
     super::sunset_scaffold_telly::correction();
     horizon_client::motion::sunset_motion::set_across(None);
@@ -5474,15 +5499,15 @@ fn bhop_hops(game: &Game<'_>, m: &Module) -> bool {
 
 // NCP's distinct controller; actual attributes include Speed/Slowness and server modifications. Remove only the
 // native sprint multiplier before applying the historical walk/sprint baseline (do not count potion levels twice).
-fn ncp_speed(game: &mut Game<'_>, m: &Module, item_scale: f64) -> Option<([f64; 2], Option<f64>)> {
+fn legacy_speed_move(game: &mut Game<'_>, m: &Module, item_scale: f64) -> Option<([f64; 2], Option<f64>)> {
     if !game.native_playing() || gui_open() || super::sunset_gui_move::inventory_busy()
         || with(|s| s.is_on("Scaffold"))
     {
-        with(|s| s.ncp.recover());
+        with(|s| { s.ncp.recover(); s.watchdog.suspend(); });
         return None;
     }
     let direction = move_direction(game);
-    let speed_effect = game.potions.effects.amplifier("speed").is_some();
+    let speed_level = game.potions.effects.amplifier("speed").map(|a| a.max(0) as u32);
     let p = game.player.as_mut()?;
     let native_speed = p.attribute("minecraft:movement_speed").ok()?;
     let base = if p.sprinting { 0.2873 * native_speed / 0.13 } else { 0.216 * native_speed / 0.1 };
@@ -5494,21 +5519,51 @@ fn ncp_speed(game: &mut Game<'_>, m: &Module, item_scale: f64) -> Option<([f64; 
         direction,
         base,
         jump_scale: if m.b("NCP reduced jump") { 0.4 / 0.42 } else { 1.0 },
-        speed_effect,
+        speed_effect: speed_level.is_some(),
     };
-    let step = with(|s| s.ncp.step(frame))?;
-    Some(([step.across[0] * item_scale, step.across[1] * item_scale], step.jump_scale))
+    let velocity = [p.velocity.x, p.velocity.z];
+    if m.p("Mode") == "Watchdog" && (frame.direction.is_none() || frame.blocked) {
+        watchdog_stop(game, false);
+        return None;
+    }
+    let step = with(|s| {
+        if m.p("Mode") == "NCP" { s.ncp.step(frame) }
+        else { s.watchdog.step(frame, velocity, speed_level, m.b("Watchdog knockback boost")) }
+    })?;
+    // Item-use settings scale owned acceleration, not a server impulse already filtered by Velocity.
+    let scale = if m.p("Mode") == "Watchdog" && step.jump_scale.is_none() { 1.0 } else { item_scale };
+    Some(([step.across[0] * scale, step.across[1] * scale], step.jump_scale))
+}
+
+// Restore only surplus momentum created by Watchdog's own launch. Genuine server impulses relinquish this ownership.
+fn watchdog_stop(game: &mut Game<'_>, reset: bool) {
+    let owned = with(|s| if reset { s.watchdog.reset() } else { s.watchdog.suspend() });
+    if !owned { return; }
+    let Some(p) = game.player.as_mut() else { return };
+    let Ok(attribute) = p.attribute("minecraft:movement_speed") else { return };
+    let base = if p.sprinting { 0.2873 * attribute / 0.13 } else { 0.216 * attribute / 0.1 };
+    let magnitude = p.velocity.x.hypot(p.velocity.z);
+    if base.is_finite() && base >= 0.0 && magnitude.is_finite() && magnitude > base {
+        p.velocity.x *= base / magnitude;
+        p.velocity.z *= base / magnitude;
+    }
 }
 
 // Speed (Sunset's): this tick's own move across the ground, blocks a tick (and Strafe's hop up), or None to leave
 // it to the game. Vanilla moves the setting's blocks a second the way the move keys point, and stands still without
 // them; Strafe hops, faster at each jump, slowing in the air.
 fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
+    if m.p("Mode") != "Watchdog" { watchdog_stop(game, true); }
     let p = game.player.as_ref()?;
     let held = |k: KeyCode| game.keys.contains(&k);
     let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
     let mode = m.p("Mode");
     if mode != "NCP" { with(|s| s.ncp.reset()); }
+    if matches!(mode, "NCP" | "Watchdog") && with(|s| s.legacy_recovery.waiting(game.ticks)) {
+        with(|s| { s.ncp.recover(); s.watchdog.suspend(); });
+        return None;
+    }
+    if !matches!(mode, "NCP" | "Watchdog") { with(|s| s.legacy_recovery = Default::default()); }
     let vanilla = mode == "Vanilla";
     let (flight, no_slow, pause) = with(|s| {
         let pause = s.knockback_ticks;
@@ -5523,7 +5578,7 @@ fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         flight || p.flying, p.fall_flying, game.using.is_some(), no_slow.is_some(),
         pause, p.collision.horizontal, m.b("Stop at wall"),
     ) {
-        if mode == "NCP" { with(|s| s.ncp.recover()); }
+        if matches!(mode, "NCP" | "Watchdog") { with(|s| { s.ncp.recover(); s.watchdog.suspend(); }); }
         return None;
     }
     let scale_across = |v: [f64; 2]| [v[0] * slow_factor, v[1] * slow_factor];
@@ -5536,11 +5591,11 @@ fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         || (vanilla && m.b("Only on ground") && !p.ground.on_ground)
         || (!m.b("In liquids") && (p.fluids.was_touching_water || p.is_in_lava()))
     {
-        if mode == "NCP" { with(|s| s.ncp.recover()); }
+        if matches!(mode, "NCP" | "Watchdog") { with(|s| { s.ncp.recover(); s.watchdog.suspend(); }); }
         return None;
     }
-    if mode == "NCP" {
-        return ncp_speed(game, m, slow_factor);
+    if matches!(mode, "NCP" | "Watchdog") {
+        return legacy_speed_move(game, m, slow_factor);
     }
     if mode == "Bhop" {
         let base = 0.2873 * (1.0 + 0.2 * effect("speed")) / (1.0 + 0.2 * effect("slowness"));
@@ -5648,6 +5703,7 @@ fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
 // An explosion packet's push on the player, as it arrives (before the game adds it).
 pub(super) fn explosion_push(game: &mut Game<'_>, push: Option<[f64; 3]>) {
     if let Some(push) = push {
+        with(|s| { s.watchdog.reset(); }); // Preserve the explosion; it is not a damage-steering event.
         super::sunset_render::no_slow_knocked();
         let shares = with(|s| {
             s.knockback_ticks = s.module("Speed").filter(|m| m.on).map_or(0, |m| m.n("Knockback pause") as u32);
@@ -6701,6 +6757,9 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
         if let C::SetEntityMotion(p) = packet {
             super::sunset_melee::note_velocity(game, p.id, p.velocity);
             if game.remote.as_ref().is_some_and(|r| r.entity_id == p.id) {
+                if with(|s| s.module("Speed").is_some_and(|m| m.on && m.p("Mode") == "Watchdog")) {
+                    with(|s| s.watchdog.knocked(game.ticks, p.velocity));
+                }
                 super::sunset_flight::knocked();
                 super::sunset_lag::knocked();
                 super::sunset_render::no_slow_knocked();
@@ -6988,6 +7047,8 @@ fn panic_off_state(s: &mut State) -> Option<(f32, f32)> {
     s.strafe = Strafe::default();
     s.bhop.reset();
     s.ncp.reset();
+    s.watchdog.reset();
+    s.legacy_recovery = Default::default();
     s.knockback_ticks = 0;
     s.velocity = None;
     s.blast = [0.0; 3];
@@ -7057,6 +7118,7 @@ fn native_held_input(game: &Game<'_>) -> (std::collections::HashSet<KeyCode>, st
 }
 
 pub(super) fn all_off(game: &mut Game<'_>) {
+    watchdog_stop(game, true);
     super::sunset_hands::release_rf(game);
     super::remote::sunset_combat_remote::restore_buttons(game);
     let native_input = native_held_input(game);
