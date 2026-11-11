@@ -147,6 +147,26 @@ Fix:
 Not tried in game yet. Worth checking: sorting on a NoCheatPlus/Grim server with Delay 0, an item picked up mid-sort,
 the inventory closed mid-merge.
 
+## Round 4: Flight's Damage fly
+
+A Damage fly setting over every Mode (`flight.rs`, `wait_tick`), not a new mode:
+- Off: as before. Wait: Flight is on but does not fly (no false ground, no anti kick, Speed works) until you are
+  hurt (a DamageEvent for you, or a health drop); then Damage time ticks (20) of the Mode, a further hurt starting the
+  time again; then Wait again or (After damage Disable) Flight off.
+- The hit's knockback starts the flight: its speed across the ground times Damage boost (1), along it (Keep) or
+  along your keys (Redirect), with its rise. Velocity mode carries it on at 0.91 a tick (it sets the movement itself);
+  the others leave it to the game. NCP Burst can start from the hit in the air. With Damage fly on, knockback no longer
+  puts the experimental strategies into their 10-tick recovery.
+- Self damage: on the ground, with room above, health over Self damage health (10), no fall still counted: a fall of the
+  safe fall distance plus 1.05 goes out in the game's own move packets (one a tick, position each tick, you held still
+  with GUI Move's input freeze): up at most 0.42 a tick, down at gravity, then the landing, which `settle_fall` lets
+  through as a fall that is yours. One point of damage at vanilla's rule (`floor(fall + 1e-6 - 3)`); about 22 ticks.
+  A setback or a move breaks it; three tries without a hurt and it only waits.
+
+Compatibility, honestly: Keep with boost 1 is the knockback as the server sent it; Redirect and boosts rely on
+anticheats that allow a hit's speed for a while without checking its direction. A prediction anticheat (Grim,
+Horizon's) predicts the knockback exactly and sees the self damage's climb from the ground. Not tried in game.
+
 ## Next steps
 
 - Test: NCP Hover/Burst/Bounce against a pinned NoCheatPlus build (record server version, config, ping,

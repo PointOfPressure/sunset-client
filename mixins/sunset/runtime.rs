@@ -404,6 +404,8 @@ impl Module {
                     "Vertical speed match" | "No sneak" => mode == "Velocity",
                     "Burst speed" | "Burst friction" | "Burst repeat" => mode == "NCP Burst",
                     "Bounce period (ticks)" | "Bounce boost" => mode == "NCP Bounce",
+                    "Damage time (ticks)" | "Knockback" | "Damage boost" | "After damage" => self.p("Damage fly") != "Off",
+                    "Self damage health" => self.p("Damage fly") == "Self damage",
                     _ => true,
                 }
             }
@@ -756,7 +758,15 @@ pub(super) fn defaults() -> Vec<Module> {
             // After the server puts you back: the ticks Flight holds still (no push of its own) so the next move
             // starts from where the server has you, or Flight off.
             .num("Setback pause (ticks)", 10.0, 0.0, 40.0, 1.0)
-            .bool("Disable on setback", false),
+            .bool("Disable on setback", false)
+            // Damage fly (flight.rs), over every Mode: no flight until you are hurt (Wait), or until a fall Flight deals
+            // you itself (Self damage); then Damage time ticks of it, starting from the hit's knockback.
+            .pick("Damage fly", &["Off", "Wait", "Self damage"])
+            .num("Damage time (ticks)", 20.0, 1.0, 200.0, 1.0)
+            .pick("Knockback", &["Keep", "Redirect"])
+            .num("Damage boost", 1.0, 0.0, 3.0, 0.05)
+            .pick("After damage", &["Wait again", "Disable"])
+            .num("Self damage health", 10.0, 2.0, 20.0, 1.0),
         Module::new("Speed", Movement, "Moves faster on the ground. NCP and Watchdog are experimental legacy strategies.")
             .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop", "NCP", "Watchdog"])
             .bool("NCP reduced jump", false)
@@ -3235,7 +3245,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     // it would without the screen (its own speeds, sprint, jumps, and the walk's look in first and third person).
     let held = |k: KeyCode| !snapped.contains(&k) && (game.keys.contains(&k) || game.physical_keys.contains(&k));
     // Flight flies you behind a screen by itself.
-    let screen_keys = get("GUI Move").filter(|m| m.on && !on("Flight") && !gui_open() && gui_move_screen(game, m)).map(|m| horizon_client::sprint::Keys {
+    let flying = on("Flight") && super::sunset_flight::damage_open();
+    let screen_keys = get("GUI Move").filter(|m| m.on && !flying && !gui_open() && gui_move_screen(game, m)).map(|m| horizon_client::sprint::Keys {
         forward: held(KeyCode::KeyW),
         backward: held(KeyCode::KeyS),
         left: held(KeyCode::KeyA),
@@ -3298,7 +3309,14 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     // Kill Aura's Target strafe: the move this tick takes goes round its target.
     let strafe = get("Kill Aura").filter(|m| m.on && m.b("Target strafe") && playing);
     horizon_client::motion::sunset_motion::set_strafe_dir(strafe.and_then(|m| super::sunset_target_strafe::direction(game, m, on("Speed"))));
-    let flight = get("Flight").filter(|m| m.on);
+    // Damage fly: Flight on but waiting for a hurt flies as if off (flight.rs).
+    let flight = match get("Flight").filter(|m| m.on) {
+        Some(m) => Some(m).filter(|m| super::sunset_flight::damage_tick(game, m)),
+        None => {
+            super::sunset_flight::damage_reset();
+            None
+        }
+    };
     flight_pre(game, flight);
     let step = get("Step").filter(|m| m.on && m.b("Step up"));
     let high_jump = get("High Jump").filter(|m| m.on);
@@ -3518,8 +3536,9 @@ fn module_tick(game: &mut Game<'_>) {
     let sneak = game.native_playing() && game.keys.contains(&KeyCode::ShiftLeft) || screen_keys.is_some_and(|k| k.3);
     let forward = move_input(game).0 > 0.0 || screen_keys.is_some_and(|k| k.0 > 0.0);
     let dim = game.dim.id();
-    let flight_abilities = get("Flight").is_some_and(|f| f.p("Mode") == "Abilities");
-    flight_post(game, get("Flight"), jump, sneak, screen_keys.and(dir));
+    let flight = get("Flight").filter(|_| super::sunset_flight::damage_open());
+    let flight_abilities = flight.is_some_and(|f| f.p("Mode") == "Abilities");
+    flight_post(game, flight, jump, sneak, screen_keys.and(dir));
 
     if let Some(p) = game.player.as_mut() {
         // Behind a screen, Flight's Abilities mode flies by hand at its speed, as creative flight does (about 11 blocks
@@ -5363,6 +5382,10 @@ fn flight_post(game: &mut Game<'_>, m: Option<&Module>, jump: bool, sneak: bool,
         let up = speed * if m.b("Vertical speed match") { 10.0 } else { 5.0 };
         let down = sneak || game.physical_keys.contains(&KeyCode::ShiftLeft);
         p.velocity = horizon_core::geometry::Vec3::new(0.0, f64::from(u8::from(jump)) * up - f64::from(u8::from(down)) * up, 0.0);
+        // Damage fly: the hit's knockback carried on across the ground.
+        if let Some([x, z]) = super::sunset_flight::carry() {
+            (p.velocity.x, p.velocity.z) = (x, z);
+        }
         // GUI Move: behind a menu the game takes no move keys, so the pull they would give is set by hand.
         if let Some([x, z]) = screen_dir {
             let pull = speed * if p.sprinting { 15.0 } else { 10.0 };
@@ -5605,7 +5628,7 @@ fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         let pause = s.knockback_ticks;
         s.knockback_ticks = pause.saturating_sub(1);
         let no_slow = s.module("No Slow").filter(|m| m.on).map(|m| [m.n("Ground %"), m.n("Air %")]);
-        (s.is_on("Flight"), no_slow, pause)
+        (s.is_on("Flight") && super::sunset_flight::damage_open(), no_slow, pause)
     });
     let using = game.using.is_some() || super::sunset_hands::legacy_using();
     let slow_factor = super::sunset_movement::item_use_factor(
@@ -6522,7 +6545,7 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     } else {
         // Flight's Packet anti kick: the move carries the position, sunk 0.0313 below the last height sent while it
         // is due and you are in the air (Sunset's antiKickPacket).
-        if FLY_PACKET.load(Ordering::Relaxed) {
+        if FLY_PACKET.load(Ordering::Relaxed) && super::sunset_flight::damage_open() {
             fly_down(game, &mut m, here);
         }
         if let Some(dy) = super::sunset_flight::offset() {
@@ -6543,7 +6566,8 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         let no_fall = NO_FALL.load(Ordering::Relaxed);
         let paused = game.creative || (NO_FALL_MACE.load(Ordering::Relaxed) && game.held().is_some_and(|s| s.item.ends_with(":mace")));
         spared = no_fall != 0 && !paused;
-        ground = if FLIGHT_GROUND.load(Ordering::Relaxed) || (GLIDE_GROUND.load(Ordering::Relaxed) && !p.flying) {
+        let flight_ground = FLIGHT_GROUND.load(Ordering::Relaxed) && super::sunset_flight::damage_open();
+        ground = if flight_ground || (GLIDE_GROUND.load(Ordering::Relaxed) && !p.flying) {
             Some(true)
         } else if no_fall == 1 && !paused && falling && p.velocity.y < 0.0 {
             Some(true)
@@ -6562,9 +6586,18 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
             m.flags = (m.flags & !1) | u8::from(g);
         }
     }
-    let told = settle_fall(game, &m, sent.flags & 1 != 0, ground == Some(true) || spared);
+    // Flight's Damage fly dealing itself fall damage: this tick's height of its fall, off the ground, or its landing.
+    // That fall is yours to pay (settle_fall lets it land).
+    let own_fall = super::sunset_flight::fall_move();
+    if let Some((y, lands)) = own_fall {
+        let mut at = m.at.unwrap_or(here);
+        at[1] = y;
+        m.at = Some(at);
+        m.flags = (m.flags & !1) | u8::from(lands);
+    }
+    let told = settle_fall(game, &m, sent.flags & 1 != 0, ground == Some(true) || spared, own_fall.is_some());
     m.flags = (m.flags & !1) | u8::from(told);
-    if ground.is_some() {
+    if ground.is_some() || own_fall.is_some() {
         horizon_client::player_sync::sunset_sync::told_ground(told);
     }
     // The look a module asked for, else the player's own back after one (not during the Criticals hop, whose hit
@@ -6673,7 +6706,7 @@ fn drop_of(f: &Fall, m: &Move) -> f64 {
 // `claimed` a module claiming it, or No Fall on): the ground the move should tell. Gliding, a move that drops less
 // than half a block brings the count down to one (LivingEntity.travelFallFlying), but a steep dive adds up: No Fall
 // can't claim the ground in the glide (the server would end it), so the landing is kept.
-fn settle_fall(game: &Game<'_>, m: &Move, real: bool, claimed: bool) -> bool {
+fn settle_fall(game: &Game<'_>, m: &Move, real: bool, claimed: bool, owned: bool) -> bool {
     let (Some(p), Some(_)) = (game.player.as_ref(), game.remote.as_ref()) else {
         return m.flags & 1 != 0;
     };
@@ -6689,10 +6722,10 @@ fn settle_fall(game: &Game<'_>, m: &Move, real: bool, claimed: bool) -> bool {
             (f.counted, f.kept) = (0.0, false);
             return told;
         }
-        if told && counted >= FREE_FALL && (f.kept || claimed) {
+        if told && counted >= FREE_FALL && (f.kept || claimed) && !owned {
             told = false;
             f.kept = true;
-        } else if !told && real && counted > 0.0 {
+        } else if !told && real && counted > 0.0 && !owned {
             f.kept = true;
         }
         if told {
@@ -6714,6 +6747,11 @@ fn fall_cleared(game: &Game<'_>) -> bool {
         || (game.creative && p.flying)
         || game.spectator()
         || game.block_in_tag("minecraft:climbable", &game.block_name(feet))
+}
+
+// Nothing of a fall is counted (Damage fly's self damage adds exactly its own).
+pub(super) fn fall_clean() -> bool {
+    fall(|f| f.counted == 0.0 && !f.kept)
 }
 
 // Death: the next body has fallen nowhere.
@@ -6789,6 +6827,11 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
         if matches!(packet, C::Login(_) | C::Respawn(_)) {
             super::sunset_flight::reset();
         }
+        match packet {
+            C::DamageEvent(p) if game.remote.as_ref().is_some_and(|r| r.entity_id == p.id) => super::sunset_flight::hurt(),
+            C::SetHealth(p) => super::sunset_flight::health(p.health),
+            _ => {}
+        }
         super::sunset_combat_inventory::packet(game, packet);
         super::sunset_throws::packet(game, packet);
         super::sunset_effects::packet(game, packet);
@@ -6799,7 +6842,7 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
                 if with(|s| s.module("Speed").is_some_and(|m| m.on && m.p("Mode") == "Watchdog")) {
                     with(|s| s.watchdog.knocked(game.ticks, p.velocity));
                 }
-                super::sunset_flight::knocked();
+                super::sunset_flight::knocked(p.velocity);
                 super::sunset_lag::knocked();
                 super::sunset_render::no_slow_knocked();
             }
@@ -7196,6 +7239,7 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     turns(|t| { t.queue.clear(); t.carried = false; t.restore = false; });
     BLINK_HELD.store(false, Ordering::Relaxed);
     super::sunset_flight::stop(game);
+    super::sunset_flight::damage_reset();
     FLY_DOWN.store(false, Ordering::Relaxed);
     FLY_LAST_Y.store(u64::MAX, Ordering::Relaxed);
     set_last_look(None);
