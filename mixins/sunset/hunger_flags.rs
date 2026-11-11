@@ -82,11 +82,10 @@ pub fn layout(hud: &mut HealthHud, i: &HealthInputs, w: i32, h: i32) -> ControlF
         }
     }
     INSIDE.with(|c| c.set(true));
+    // The game lays the air bubbles out here too, over the food row it draws for `own`; the mount's hearts go up over
+    // both (`raise`).
     out.extend(hud.layout(&own, w, h));
     INSIDE.with(|c| c.set(false));
-    if riding {
-        hud.right_height += 10 * ((i.vehicle_hearts + 9) / 10);
-    }
     if !food_row {
         return ControlFlow::Break(out);
     }

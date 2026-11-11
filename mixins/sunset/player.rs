@@ -225,7 +225,7 @@ static NO_TRACE: Mutex<Option<String>> = Mutex::new(None);
 // The mob under the crosshair with Reach's Entity reach or Auto Spear's Spear reach, as the game's own pick finds it
 // (the nearest box along the look), the boxes Hitboxes and Auto Mace's Expand hitbox grow grown; none with Mine
 // Through Mobs while a block is in reach (but for the mobs it lists). None: the game's own.
-pub(super) fn mob_hit(game: &Game<'_>) -> Option<Option<(usize, f64)>> {
+pub(super) fn mob_hit(game: &Game<'_>) -> Option<Option<(usize, f64, [f64; 3])>> {
     let bits = ENTITY_REACH.load(std::sync::atomic::Ordering::Relaxed);
     let (grow, grown) = HITBOXES.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let trace = NO_TRACE.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -235,13 +235,15 @@ pub(super) fn mob_hit(game: &Game<'_>) -> Option<Option<(usize, f64)>> {
     }
     let hit = pick_mob(game, bits, grow, &grown, mace);
     match (hit, trace) {
-        (Some((i, _)), Some(kept)) if game.pick().is_some() && !listed(&kept, &game.mobs[i].kind.id) => Some(None),
+        (Some((i, ..)), Some(kept)) if game.pick().is_some() && !listed(&kept, &game.mobs[i].kind.id) => Some(None),
         _ => Some(hit),
     }
 }
 
-// `mace`: Expand hitbox's player and how far its box grows each way, on top of Hitboxes.
-fn pick_mob(game: &Game<'_>, bits: u64, grow: f64, grown: &[u32], mace: Option<(u32, f64)>) -> Option<(usize, f64)> {
+// `mace`: Expand hitbox's player and how far its box grows each way, on top of Hitboxes. The hit is the mob, the
+// distance and where on it the interaction lands from its feet (the game's `interact_location`), kept on its real box
+// when a grown one was hit.
+fn pick_mob(game: &Game<'_>, bits: u64, grow: f64, grown: &[u32], mace: Option<(u32, f64)>) -> Option<(usize, f64, [f64; 3])> {
     let ordinary = if game.creative { 5.0 } else { 3.0 };
     let reach = if bits == u64::MAX { ordinary } else { f64::from_bits(bits).max(ordinary) };
     let (eye, dir) = game.aim()?;
@@ -255,12 +257,20 @@ fn pick_mob(game: &Game<'_>, bits: u64, grow: f64, grown: &[u32], mace: Option<(
         let b = m.bounds();
         if by > 0.0 { b.inflate(horizon_core::geometry::Vec3::new(by, by, by)) } else { b }
     };
-    game.mobs
+    let (i, t) = game.mobs
         .iter()
         .enumerate()
         .filter(|(_, m)| m.alive() && Some(m.id) != game.riding)
         .filter_map(|(i, m)| Some((i, super::ray_box(eye, dir, reach, boxed(m))?)))
-        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .min_by(|a, b| a.1.total_cmp(&b.1))?;
+    let m = &game.mobs[i];
+    let (lo, hi) = (m.bounds().min_position(), m.bounds().max_position());
+    let point = horizon_core::geometry::Vec3::new(
+        (eye[0] + dir[0] * t).clamp(lo.x, hi.x),
+        (eye[1] + dir[1] * t).clamp(lo.y, hi.y),
+        (eye[2] + dir[2] * t).clamp(lo.z, hi.z),
+    );
+    Some((i, t, super::interact_location(point, m.position)))
 }
 
 // Hitboxes (Sunset's), for the crosshair's pick: the mobs whose boxes grow by Expand, those the Entities list names
@@ -309,7 +319,7 @@ fn hitboxes(game: &Game<'_>, m: Option<&Module>) -> (f64, Vec<u32>) {
 // you and it has a collision box (grass, flowers, torches, cobwebs and the like are passed).
 pub(super) fn hit_through_walls(game: &Game<'_>, distance: f64) -> bool {
     let mode = WALL_HITS.load(std::sync::atomic::Ordering::Relaxed);
-    if mode == 0 || !game.mob_hit().is_some_and(|(_, d)| d == distance) {
+    if mode == 0 || !game.mob_hit().is_some_and(|(_, d, _)| d == distance) {
         return false;
     }
     mode == 1

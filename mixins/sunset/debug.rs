@@ -196,6 +196,8 @@ fn screen_name(game: &Game<'_>) -> &'static str {
     match game.screen {
         Sc::Playing => "none (playing)",
         Sc::GameModeSwitcher => "game mode switcher",
+        Sc::EmoteWheel => "emote wheel",
+        Sc::HudEditor => "HUD widget editor",
         Sc::Paused => "pause menu",
         Sc::Options => "options",
         Sc::Chat => "chat",

@@ -59,7 +59,7 @@ $others = @($others | Sort-Object -Unique)
 if ($others.Count -gt 0) {
     Write-Host ""
     Write-Host ("You also have other native mods: " + ($others -join ", "))
-    Write-Host "They are built into the game together with Sunset, so they must be made for the same Horizon version (this Sunset is made for Nightly 66f3981)."
+    Write-Host "They are built into the game together with Sunset, so they must be made for the same Horizon version (this Sunset is made for Nightly fdc87ae)."
     Write-Host "If the build says 'made for different Horizon revisions', turn the others off in the launcher's Mods page, or delete their .hnmod from horizon-native-mods, and run this again."
     Write-Host ""
 }

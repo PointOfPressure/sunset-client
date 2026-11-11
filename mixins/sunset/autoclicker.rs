@@ -41,7 +41,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
     { reset(); return; }
     let Some(m) = sunset::with(|s| s.module("Auto Clicker").filter(|m| m.on).cloned()) else { reset(); return; };
     let weapon = !m.b("Only with a weapon") || super::sunset_combat::holds_weapon(game);
-    let entity_first = game.mob_hit().is_some_and(|(_, distance)| game.before_block(distance));
+    let entity_first = game.mob_hit().is_some_and(|(_, distance, _)| game.before_block(distance));
     let block = !entity_first && game.pick().is_some();
     let left = m.b("Left") && weapon && !(m.b("Stop on blocks") && block)
         && (game.left || game.physical_buttons.contains(&MouseButton::Left));

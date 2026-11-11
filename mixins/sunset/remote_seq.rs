@@ -45,10 +45,11 @@ pub(crate) fn prediction_pending(game: &Game<'_>, cell: [i32; 3]) -> bool {
 }
 
 // The held slot as the server knows it: true when `slot` is news to it (the caller sends the SetCarriedItem). The
-// game's tick sends one whenever the selection differs from what it last told, so this keeps it from sending the same
-// slot a second time (Grim BadPacketsA, Intave "sent slot twice"). False without a connection.
+// game sends one before anything the selected slot acts with whenever the selection differs from what it last told
+// (`remote_send_carried`, MultiPlayerGameMode.ensureHasSentCarriedItem), so this keeps it from sending the same slot a
+// second time (Grim BadPacketsA, Intave "sent slot twice"). False without a connection.
 pub(crate) fn tell_carried(game: &mut Game<'_>, slot: usize) -> bool {
-    game.remote.as_mut().is_some_and(|r| r.carried.replace(slot) != Some(slot))
+    game.remote.as_mut().is_some_and(|r| r.carried.replace(Some(slot)) != Some(slot))
 }
 
 // The wait the game puts between one block's breaking and the next (5 ticks).

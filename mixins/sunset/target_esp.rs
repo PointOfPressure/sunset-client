@@ -137,7 +137,7 @@ pub(super) fn tick(game: &Game<'_>, modules: &[Module], combat_id: Option<u32>) 
         (m.p("Target") != "Combat")
             .then(|| game.mob_hit())
             .flatten()
-            .and_then(|(i, _)| allowed(i))
+            .and_then(|(i, ..)| allowed(i))
     });
     if let Some(index) = picked {
         *selected = Some(Selected {

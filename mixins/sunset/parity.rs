@@ -207,7 +207,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     if parity(|p| std::mem::take(&mut p.clicks)) > 0
         && game.using.is_some()
         && game.screen == Screen::Playing
-        && let Some((i, distance)) = game.mob_hit()
+        && let Some((i, distance, _)) = game.mob_hit()
         && game.before_block(distance)
     {
         let id = game.mobs[i].id;
@@ -550,7 +550,7 @@ fn interact_ok(game: &Game<'_>, hit: bool) -> bool {
     let Some(m) = module("No Interact") else {
         return true;
     };
-    if let Some((i, distance)) = game.mob_hit()
+    if let Some((i, distance, _)) = game.mob_hit()
         && game.before_block(distance)
     {
         let mob = &game.mobs[i];

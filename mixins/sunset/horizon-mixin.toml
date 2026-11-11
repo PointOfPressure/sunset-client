@@ -6,7 +6,7 @@ priority = 100
 # It hooks the game's own functions as well as the native hook points, so it
 # builds on this exact Horizon commit (the Nightly it was made for).
 [compatibility]
-horizon_revision = "66f3981f522b24c250b21523a70080965b940424"
+horizon_revision = "fdc87aecdbd116bf1e08adcd062fcbaea8c2e2ca"
 
 [[module]]
 id = "gui_move"
@@ -613,7 +613,7 @@ bindings = [
 id = "keys"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::game::Game<'_>::mapped_key"
+target = "horizon_client::game::play_input::Game<'_>::mapped_key"
 helper = "input.rs"
 bindings = [
   { name = "pressed", ty = "bool", value = "pressed" },
@@ -623,7 +623,7 @@ bindings = [
 id = "buttons"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::game::Game<'_>::play_mouse"
+target = "horizon_client::game::play_input::Game<'_>::play_mouse"
 helper = "buttons.rs"
 bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
@@ -1003,7 +1003,7 @@ bindings = [
 [[injection]]
 id = "mouse_before"
 kind = "HEAD"
-target = "horizon_client::game::Game<'_>::apply_mouse_look"
+target = "horizon_client::game::pointer_capture::Game<'_>::apply_mouse_look"
 helper = "mouse_before.rs"
 bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
@@ -1052,7 +1052,7 @@ bindings = [
 [[injection]]
 id = "mouse_after"
 kind = "RETURN"
-target = "horizon_client::game::Game<'_>::apply_mouse_look"
+target = "horizon_client::game::pointer_capture::Game<'_>::apply_mouse_look"
 helper = "mouse_after.rs"
 bindings = [
   { name = "value", ty = "()", value = "$value" },
@@ -2246,7 +2246,7 @@ bindings = [{ name = "value", ty = "()", value = "$value" }]
 [[injection]]
 id = "input_screen"
 kind = "RETURN"
-target = "horizon_client::game::Game<'_>::track_toggle_screens"
+target = "horizon_client::game::play_input::Game<'_>::track_toggle_screens"
 helper = "input_screen.rs"
 bindings = [
   { name = "value", ty = "()", value = "$value" },

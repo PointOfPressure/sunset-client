@@ -110,7 +110,7 @@ pub(super) fn aim_click(game: &mut Game<'_>) -> Option<bool> {
     let m = module("Aim Assist").filter(|m| m.b("Silent aim") || m.b("Hit flick"))?;
     if !live(game) { return None; }
     // A busy assisted attack must not hand a rejected click back to vanilla.
-    if game.mob_hit().is_some_and(|(index, distance)|
+    if game.mob_hit().is_some_and(|(index, distance, _)|
         game.before_block(distance) && super::sunset_antibot::blocked_for(game.mobs[index].id, &m))
     { return Some(false); }
     if game.clicks.miss_time > 0 || sunset::strike_waiting() || game.held().is_some_and(|s| horizon_client::spear::Kinetic::of(&s.item).is_some()) {
@@ -121,7 +121,7 @@ pub(super) fn aim_click(game: &mut Game<'_>) -> Option<bool> {
     }
     let eye = game.eye_position()?;
     match game.mob_hit() {
-        Some((i, distance)) if game.before_block(distance) => {
+        Some((i, distance, _)) if game.before_block(distance) => {
             let target = &game.mobs[i];
             if !m.b("Hit flick")
                 || !super::sunset_combat::click_eligible(game, &m, target, m.b("Flick players only"))
@@ -208,7 +208,7 @@ pub(super) fn hit_blocked(game: &Game<'_>) -> bool {
     let Some(m) = module("No Interact") else {
         return false;
     };
-    let Some((i, distance)) = game.mob_hit().filter(|(_, d)| game.before_block(*d)) else {
+    let Some((i, distance, _)) = game.mob_hit().filter(|(_, d, _)| game.before_block(*d)) else {
         return false;
     };
     let target = &game.mobs[i];
@@ -242,7 +242,7 @@ pub(super) fn select_tick(game: &Game<'_>) {
         return;
     };
     let hurt = game.player.as_ref().map_or(0, |p| p.health.hurt.hurt_time);
-    let target = game.mob_hit().map(|(i, _)| &game.mobs[i]).filter(|t| t.kind.id == "minecraft:player");
+    let target = game.mob_hit().map(|(i, ..)| &game.mobs[i]).filter(|t| t.kind.id == "minecraft:player");
     let roll = random(game) * 100.0;
     let cancel_mode = m.p("Hit select") == "Cancel" && live(game);
     let on_ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
@@ -298,7 +298,7 @@ pub(super) fn hit_select(game: &mut Game<'_>) -> bool {
     if m.p("Hit select") == "Cancel" {
         return st(|s| s.select.cancel);
     }
-    let target = game.mob_hit().map(|(i, _)| &game.mobs[i]).filter(|t| t.kind.id == "minecraft:player");
+    let target = game.mob_hit().map(|(i, ..)| &game.mobs[i]).filter(|t| t.kind.id == "minecraft:player");
     let pass = |id: Option<u32>| {
         if let Some(id) = id {
             st(|s| s.select.sent = Some((id, Instant::now())));
@@ -433,7 +433,7 @@ pub(super) fn use_blocked(game: &Game<'_>) -> bool {
     {
         return true;
     }
-    if game.mob_hit().is_some_and(|(_, d)| game.before_block(d)) {
+    if game.mob_hit().is_some_and(|(_, d, _)| game.before_block(d)) {
         return false;
     }
     let Some(hit) = game.pick() else {
@@ -469,7 +469,7 @@ pub(super) fn ghost_place(game: &Game<'_>) -> Option<horizon_client::first_perso
     } else {
         return None;
     };
-    let (i, _) = game.mob_hit().filter(|(_, d)| game.before_block(*d))?;
+    let (i, _, _) = game.mob_hit().filter(|(_, d, _)| game.before_block(*d))?;
     let mob = &game.mobs[i];
     let friend = mob.kind.id == "minecraft:player" && sunset::is_friend(&with(|s| s.friends.clone()), &game.remote_player_names(), mob.id);
     (mob.kind.id != "minecraft:armor_stand" && !mob.removed && !friend && game.pick().is_some()).then_some(hand)

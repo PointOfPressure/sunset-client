@@ -4727,7 +4727,7 @@ pub(super) fn middle_click(game: &mut Game<'_>) {
         return;
     };
     if m.p("Item") == "Friend" {
-        let player = game.mob_hit().map(|(i, _)| &game.mobs[i]).filter(|mob| kind_of(mob) == Kind::Player).map(|mob| mob.id);
+        let player = game.mob_hit().map(|(i, ..)| &game.mobs[i]).filter(|mob| kind_of(mob) == Kind::Player).map(|mob| mob.id);
         if let Some(name) = player.and_then(|id| game.remote_player_name(id)).map(str::to_owned) {
             let now = with(|s| s.flip_friend(&name));
             save(game);
@@ -5977,7 +5977,7 @@ impl AttackGuard {
         match source {
             AttackSource::KillAura => super::sunset_aura::eligible(game, &m, mob.id),
             AttackSource::TriggerBot => wanted(&m, kind_of(mob), &mob.kind.id)
-                && game.mob_hit().is_some_and(|(index, distance)| game.mobs[index].id == mob.id && game.before_block(distance)),
+                && game.mob_hit().is_some_and(|(index, distance, _)| game.mobs[index].id == mob.id && game.before_block(distance)),
             AttackSource::TriggerReach => wanted(&m, kind_of(mob), &mob.kind.id),
             AttackSource::SilentAim | AttackSource::HitFlick => {
                 let silent = matches!(source, AttackSource::SilentAim);
@@ -6066,7 +6066,7 @@ pub(super) fn crit_click(game: &mut Game<'_>) -> Option<bool> {
     if game.held().is_some_and(|s| horizon_client::spear::Kinetic::of(&s.item).is_some()) {
         return None;
     }
-    let (i, distance) = game.mob_hit()?;
+    let (i, distance, _) = game.mob_hit()?;
     let projectile = game.redirectable_hit().is_some_and(|(_, d)| d <= distance);
     let object = game.remote_object_hit(true).is_some_and(|hit| hit.distance < distance);
     if projectile || object || !game.before_block(distance) {
@@ -6342,7 +6342,7 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     // Nobody under the crosshair: Auto Spear's Extended reach may give a target along your look (Works with Trigger
     // Bot), hit with its spear's stab.
     let reach = game.mob_hit().is_none().then(|| super::sunset_melee::reach_trigger(game)).flatten();
-    let Some(i) = game.mob_hit().map(|(i, _)| i).or_else(|| reach.and_then(|id| game.mobs.iter().position(|t| t.id == id))) else {
+    let Some(i) = game.mob_hit().map(|(i, ..)| i).or_else(|| reach.and_then(|id| game.mobs.iter().position(|t| t.id == id))) else {
         with(|s| s.trigger_missed = None);
         return;
     };

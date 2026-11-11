@@ -1097,7 +1097,7 @@ fn reach_spear(game: &Game<'_>) -> Option<usize> {
 // within 6 blocks, in sight, whose box that line crosses.
 fn reach_target(game: &Game<'_>) -> Option<u32> {
     reach_spear(game)?;
-    if slot_strength(game, game.selected, 0.0).is_none_or(|c| c < 1.0) || game.mob_hit().is_some_and(|(_, d)| game.before_block(d)) {
+    if slot_strength(game, game.selected, 0.0).is_none_or(|c| c < 1.0) || game.mob_hit().is_some_and(|(_, d, _)| game.before_block(d)) {
         return None;
     }
     let eye = game.eye_position()?;
@@ -1211,7 +1211,7 @@ pub(super) fn before_click(game: &mut Game<'_>) -> Option<bool> {
     {
         return Some(false);
     }
-    if let Some((index, distance)) = game.mob_hit() {
+    if let Some((index, distance, _)) = game.mob_hit() {
         let id = game.mobs[index].id;
         let held = game.selected;
         if game.before_block(distance)
@@ -1312,7 +1312,7 @@ fn queue_action(game: &mut Game<'_>, owner: &'static str, m: Module, action: Aut
         if !valid {
             return;
         }
-        let under =|game: &Game<'_>, id: u32| game.mob_hit().is_some_and(|(i, d)| game.mobs[i].id == id && game.before_block(d));
+        let under =|game: &Game<'_>, id: u32| game.mob_hit().is_some_and(|(i, d, _)| game.mobs[i].id == id && game.before_block(d));
         let slot = match action {
             Automatic::Shield(id) => {
                 if !under(game, id) || !shield_counts(game, id) || guard_attack(game, id) {
@@ -1402,7 +1402,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
     {
         return;
     }
-    let Some((index, distance)) = game.mob_hit() else {
+    let Some((index, distance, _)) = game.mob_hit() else {
         return;
     };
     if !game.before_block(distance) {

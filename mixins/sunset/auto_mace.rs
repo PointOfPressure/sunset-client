@@ -232,7 +232,7 @@ fn nearest_flat(game: &Game<'_>, range: f64) -> Option<u32> {
 
 // The player under the crosshair (in reach, before any block).
 fn crosshair(game: &Game<'_>) -> Option<u32> {
-    let (index, distance) = game.mob_hit()?;
+    let (index, distance, _) = game.mob_hit()?;
     let target = &game.mobs[index];
     (game.before_block(distance) && target.kind.id == "minecraft:player").then_some(target.id)
 }
@@ -748,7 +748,7 @@ pub(super) fn before_click(game: &mut Game<'_>) {
     let Some(mace) = best_mace(game, &m, fall) else {
         return;
     };
-    let Some((index, distance)) = game.mob_hit() else {
+    let Some((index, distance, _)) = game.mob_hit() else {
         return;
     };
     let id = game.mobs[index].id;
