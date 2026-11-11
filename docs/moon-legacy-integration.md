@@ -50,7 +50,8 @@ named mode constants, not claimed protocol facts.
   ownership. Focused tests, compilation, commit.
 - [x] D: establish a representable translation mechanism and document endpoint uncertainty; reuse/improve shield ownership
   and attack coordination where justified. Focused tests, compilation, commit.
-- [ ] E: focused integration checks, independent final review, recorded commit hashes and runtime results.
+- [x] E: focused automated/static integration checks, independent final review and recorded commits/results.
+  Live server cases below remain pending; this checkpoint does not mean server compatibility was verified.
 
 Validation: pure state/controller tests first (launch, measured transition, effects, yaw wrap, collisions, resets,
 external velocity); pinned mixin application and `cargo check -p horizon-client --tests`. Runtime checks are reported
@@ -64,6 +65,7 @@ registered block factors and Jump Boost; only the jump-strength portion is reduc
 
 Phase B commit: `b819153`.
 Phase C commit: `7d5bde4`.
+Phase D commit: `5fbaaa3` (also includes interaction/cleanup fixes found in final review).
 Phase C validation: fourteen pure controller/shared movement tests passed; pinned apply and native test compilation
 passed. Watchdog launches through native jump power and writes its launch velocity once; ordinary airborne ticks
 retain native movement. `Watchdog knockback boost` is off by default and observes only this player's received
@@ -101,6 +103,18 @@ renders modern sword mechanics; there is no asserted local sword-block animation
 Phase D validation: 25 pure tests passed, including release/reblock ownership and composition with the unchanged
 Legacy CPS scheduler. Pinned native mixin application and `cargo check -p horizon-client --tests` passed. Native
 profile-migration and motion-flag tests were compiled, not executed. No live server or GPU/gameplay test was run.
+
+Reproduce the 25 pure checks without a Horizon checkout:
+
+```powershell
+rustc --edition 2024 --test -O tools/legacy_pvp_tests.rs -o "$env:TEMP/sunset-legacy-pvp-tests.exe"
+& "$env:TEMP/sunset-legacy-pvp-tests.exe"
+```
+
+Final native check used game 26.3, protocol 777, Horizon/mixin revisions listed above and Rust 1.97 MSVC.
+The integration commit adds only this portable test entry point and the final validation notes. Existing dirty
+Inventory Manager work remains separate. Remaining work is controlled runtime testing of the cases below,
+including verification of Rewound's actual translation stack and server-side sword-block damage reduction.
 
 ## Focused integration evidence / manual work
 
