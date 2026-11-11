@@ -224,6 +224,8 @@ pub(super) struct Module {
     pub(crate) on: bool,
     pub(crate) key: Option<String>,
     pub(crate) settings: Vec<Setting>,
+    // Its settings' sections, for the menu: where each starts (a setting's index) and its title. None for most modules.
+    pub(crate) groups: Vec<(usize, &'static str)>,
 }
 
 impl Module {
@@ -235,7 +237,18 @@ impl Module {
             on: false,
             key: None,
             settings: Vec::new(),
+            groups: Vec::new(),
         }
+    }
+    // The settings after this, up to the next group, are a section of the menu under `title`. Only the menu reads it:
+    // saved settings go by name.
+    pub(super) fn group(mut self, title: &'static str) -> Self {
+        self.groups.push((self.settings.len(), title));
+        self
+    }
+    // The section a setting is in, if the module has sections.
+    pub(super) fn group_of(&self, j: usize) -> Option<&'static str> {
+        self.groups.iter().rev().find(|(start, _)| *start <= j).map(|(_, title)| *title)
     }
     pub(super) fn on(mut self) -> Self {
         self.on = true;
@@ -491,6 +504,9 @@ impl Module {
                     "Hit delay" => self.p("Combat version") != "Legacy (1.8)" && self.p("Attack timing") == "Custom delay",
                     "Min CPS" | "Max CPS" | "CPS pattern" => self.p("Combat version") != "Modern (1.9+)",
                     "Strafe radius" | "Strafe when" | "Avoid edges" => self.b("Target strafe"),
+                    "Selected weapon types" => self.p("Attack when holding") == "Weapons",
+                    "Swap back" => self.b("Auto switch"),
+                    "Anti bot sensitivity" => self.b("Anti bot"),
                     _ => true,
                 }
             }
@@ -1051,31 +1067,24 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Blink", Movement, "Holds back your movement, then sends it.")
             .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
         Module::new("Scaffold", Movement, "Places blocks under you. Normal places from a silent look; Legit sneaks at edges; Godbridge bridges backwards; Telly sprint-jumps with timed silent placement.")
+            // Sections in the menu; each mode shows only its own settings (setting_visible). Saved settings go by name.
+            .group("General")
             .pick("Mode", &["Normal", "Legit", "Godbridge", "Telly"])
             // Settings made for a style of bridging, filled in when picked (scaffold_preset); Custom leaves them.
             .pick("Preset", &["Custom", "Speedbridge", "Blatant"])
-            .pick("Telly rotations", &["Default", "Backwards", "Sideways", "None"])
-            .num("Start speed min", 95.0, 1.0, 180.0, 0.5)
-            .num("Start speed max", 107.5, 1.0, 180.0, 0.5)
-            .num("Normal speed min", 30.0, 1.0, 180.0, 0.5)
-            .num("Normal speed max", 35.0, 1.0, 180.0, 0.5)
-            .pick("Keep Y", &["Telly", "Off"])
-            .bool("Keep Y on press", false)
-            .pick("Tower", &["Telly", "None"])
-            .pick("Telly sprint", &["Legit", "Vanilla", "None"])
-            .num("Ground motion (%)", 100.0, 1.0, 100.0, 1.0)
-            .num("Air motion (%)", 100.0, 1.0, 100.0, 1.0)
-            .num("Speed motion (%)", 100.0, 1.0, 100.0, 1.0)
-            .bool("Multi place", false)
-            .bool("Swing", true)
-            .num("Reject wait (ticks)", 5.0, 0.0, 20.0, 1.0)
+            .bool("Only on click", false)
+            .bool("Disable with Kill Aura", true)
+            .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0)
+            .num("Activation blocks", 2.0, 0.0, 4.0, 1.0)
             .num("Shortest sneak delay (ms)", 100.0, 0.0, 500.0, 10.0)
             .num("Longest sneak delay (ms)", 200.0, 0.0, 500.0, 10.0)
-            .num("Activation blocks", 2.0, 0.0, 4.0, 1.0)
-            .bool("Disable with Kill Aura", true)
-            .bool("Block counter", true)
+            .group("Blocks")
             .text("Blocks", "")
             .pick("Blocks filter", &["Blacklist", "Whitelist"])
+            .bool("Auto switch", true)
+            .bool("Swap back", true)
+            .bool("Block counter", true)
+            .group("Rotations")
             .bool("Rotate", true)
             .pick("Rotations", &["Normal", "Backwards", "Snap", "Telly"])
             .num("Telly ticks", 3.0, 1.0, 8.0, 1.0)
@@ -1084,28 +1093,44 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Rotation speed", 75.0, 5.0, 180.0, 5.0)
             .pick("Ray cast", &["Strict", "Normal", "Off"])
             .pick("Movement correction", &["Silent", "Strict", "Off"])
+            .pick("Telly rotations", &["Default", "Backwards", "Sideways", "None"])
+            .num("Start speed min", 95.0, 1.0, 180.0, 0.5)
+            .num("Start speed max", 107.5, 1.0, 180.0, 0.5)
+            .num("Normal speed min", 30.0, 1.0, 180.0, 0.5)
+            .num("Normal speed max", 35.0, 1.0, 180.0, 0.5)
+            .group("Movement")
             .pick("Sprint", &["Keep", "Vanilla", "Off"])
+            .pick("Telly sprint", &["Legit", "Vanilla", "None"])
             .pick("Same Y", &["Off", "On", "Auto jump"])
-            .num("Expand", 0.0, 0.0, 4.0, 1.0)
+            .pick("Keep Y", &["Telly", "Off"])
+            .bool("Keep Y on press", false)
             .bool("Ledge sneak", true)
-            .bool("Late click", true)
+            .num("Ground motion (%)", 100.0, 1.0, 100.0, 1.0)
+            .num("Air motion (%)", 100.0, 1.0, 100.0, 1.0)
+            .num("Speed motion (%)", 100.0, 1.0, 100.0, 1.0)
+            .group("Tower")
             .bool("Fast tower", false)
             .num("Tower speed", 0.5, 0.0, 1.0, 0.05)
             .bool("While moving", false)
-            .bool("Only on click", false)
-            .bool("Auto switch", true)
-            .bool("Swap back", true)
+            .pick("Tower", &["Telly", "None"])
+            .group("Placement")
+            .bool("Late click", true)
             .bool("Air place", false)
+            .num("Expand", 0.0, 0.0, 4.0, 1.0)
+            .bool("Multi place", false)
+            .bool("Swing", true)
+            .num("Reject wait (ticks)", 5.0, 0.0, 20.0, 1.0)
+            // Normal's limits, shown with Advanced on.
+            .bool("Advanced", false)
+            .num("Max placement distance", 4.5, 2.0, 6.0, 0.25)
+            .num("Closest block range", 4.0, 0.0, 8.0, 0.5)
+            .num("Max per second", 20.0, 1.0, 20.0, 1.0)
+            .bool("Safe walk", false)
+            .group("Visuals")
             .bool("Render", true)
             .pick("Shape mode", &["Both", "Lines", "Sides"])
             .num("Fill opacity", 0.04, 0.0, 1.0, 0.02)
-            .colour("Color", "Purple")
-            .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0)
-            .bool("Advanced", false)
-            .bool("Safe walk", false)
-            .num("Max placement distance", 4.5, 2.0, 6.0, 0.25)
-            .num("Closest block range", 4.0, 0.0, 8.0, 0.5)
-            .num("Max per second", 20.0, 1.0, 20.0, 1.0),
+            .colour("Color", "Purple"),
         Module::new("Anti Hunger", Player, "Uses less food.")
             .bool("Sprint", true)
             .bool("Ground", true),
@@ -9439,15 +9464,21 @@ fn win_w(s: &State) -> f32 {
     (panel_w() * 1.6).max(150.0).min(s.gui.view_w - 8.0)
 }
 
-// The window's rows under its title and description, each group under its name: the settings, then the bind.
+// The window's rows under its title and description, each group under its name: the settings (in the module's sections,
+// or all under General), then the bind.
 fn win_body(s: &State, i: usize) -> (Vec<(f32, WinRow)>, f32) {
     let m = &s.modules[i];
-    let (bind, general): (Vec<usize>, Vec<usize>) =
+    let (bind, settings): (Vec<usize>, Vec<usize>) =
         (0..m.settings.len()).filter(|&j| m.setting_visible(j)).partition(|&j| m.settings[j].name == "Bind mode");
-    let groups = [
-        ("General", general.into_iter().map(|j| Hit::Setting(i, j)).collect::<Vec<_>>()),
-        ("Bind", std::iter::once(Hit::Bind(i)).chain(bind.into_iter().map(|j| Hit::Setting(i, j))).collect()),
-    ];
+    let mut groups: Vec<(&'static str, Vec<Hit>)> = Vec::new();
+    for j in settings {
+        let title = m.group_of(j).unwrap_or("General");
+        match groups.last_mut() {
+            Some((last, hits)) if *last == title => hits.push(Hit::Setting(i, j)),
+            _ => groups.push((title, vec![Hit::Setting(i, j)])),
+        }
+    }
+    groups.push(("Bind", std::iter::once(Hit::Bind(i)).chain(bind.into_iter().map(|j| Hit::Setting(i, j))).collect()));
     let mut rows = Vec::new();
     let mut y = 0.0;
     for (name, hits) in groups.into_iter().filter(|(_, hits)| !hits.is_empty()) {

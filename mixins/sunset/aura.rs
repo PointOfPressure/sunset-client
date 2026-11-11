@@ -19,45 +19,41 @@ use std::sync::atomic::Ordering;
 pub(super) fn defaults() -> Vec<Module> {
     vec![
         Module::new("Kill Aura", Category::Combat, "Attacks nearby entities. Legacy AutoBlock is experimental and requires translated sword use.")
+            // The menu shows these in sections (General, Targeting, Rotations, Timing, Inventory, Blocking, Movement);
+            // saved settings go by name. Two orders matter on loading: Max targets before Attack mode, the Shield alias
+            // before AutoBlock (set_field).
+            .group("General")
             // Settings for a way of fighting, filled in when picked (preset); Custom leaves them.
             .pick("Preset", &["Custom", "HvH", "Blatant", "Ghost"])
-            // Combat: how hits work on this server, what it hits with and how far.
+            // How hits work on this server.
             .pick("Combat version", &["Auto", "Legacy (1.8)", "Modern (1.9+)"])
-            .pick("Attack when holding", &["Weapons", "All"])
-            .text("Selected weapon types", "diamond_sword,diamond_axe,trident,mace,diamond_spear")
-            .bool("Auto switch", false)
-            .bool("Swap back", false)
-            .num("Weapon switch delay", 0.0, 0.0, 10.0, 1.0)
             // Range: who it may target and track. Attack range: how far a hit may go (the server's reach: Horizon's,
             // vanilla's, takes 3 blocks to the target's box).
             .num("Range", 4.5, 1.0, 6.0, 0.1)
             .num("Attack range", 3.0, 1.0, 6.0, 0.05)
             .num("Walls range", 3.5, 1.0, 6.0, 0.1)
-            .bool("Only on click", false)
-            .bool("Only on look", false)
-            .bool("Pause on use", false)
             .bool("Auto disable", false)
-            // Targeting.
-            .pick("List mode", &["Whitelist", "Blacklist"])
-            .text("Entities", "player")
-            .pick("Priority", PRIORITY_CHOICES)
-            .bool("Hurt time priority", false)
-            .num("Target FOV", 360.0, 10.0, 360.0, 5.0)
+            .group("Targeting")
             // Loaded before Attack mode: a config older than it says Multi by a Max targets above 1 (see set_field).
             .num("Max targets", 1.0, 1.0, 5.0, 1.0)
             .pick("Attack mode", &["Single", "Switch", "Multi"])
             .bool("Target lock", false)
             .num("Target switch delay", 0.0, 0.0, 40.0, 1.0)
-            .pick("Passive mob age filter", &["Adult", "Baby", "Both"])
-            .pick("Hostile mob age filter", &["Both", "Adult", "Baby"])
-            .bool("Ignore named", false)
-            .bool("Ignore passive", true)
+            .pick("Priority", PRIORITY_CHOICES)
+            .bool("Hurt time priority", false)
+            .num("Target FOV", 360.0, 10.0, 360.0, 5.0)
+            .pick("List mode", &["Whitelist", "Blacklist"])
+            .text("Entities", "player")
+            .num("Health threshold", 0.0, 0.0, 100.0, 1.0)
             .bool("Anti bot", true)
             .pick("Anti bot sensitivity", &["Balanced", "Conservative", "Sensitive"])
             .bool("Ignore teams", false)
             .bool("Ignore invisible", false)
-            .num("Health threshold", 0.0, 0.0, 100.0, 1.0)
-            // Rotations.
+            .bool("Ignore named", false)
+            .bool("Ignore passive", true)
+            .pick("Passive mob age filter", &["Adult", "Baby", "Both"])
+            .pick("Hostile mob age filter", &["Both", "Adult", "Baby"])
+            .group("Rotations")
             .pick("Rotate", &["Always", "On hit", "None"])
             // Snap turns at once (Instant); Normal, Smooth and Custom follow at their speeds (Tracked); Adaptive turns
             // fast when far, settles near the point, holds inside a deadzone and lands as a hit is due.
@@ -75,23 +71,41 @@ pub(super) fn defaults() -> Vec<Module> {
             // Silent aura's turning speed.
             .num("Aim speed", 7.0, 1.0, 10.0, 0.1)
             .bool("Ray cast", false)
-            // Timing (aura_timing.rs). Modern: the cooldown (or a fixed delay, or Hit select's wait for the hurt time to
-            // pass); Legacy: a click rate.
+            // When it attacks (aura_timing.rs). Modern: the cooldown (or a fixed delay, or Hit select's wait for the hurt
+            // time to pass); Legacy: a click rate.
+            .group("Timing")
+            .bool("Only on click", false)
+            .bool("Only on look", false)
+            .bool("Pause on use", false)
             .pick("Attack timing", &["Vanilla cooldown", "Custom delay", "Hit select"])
             .num("Cooldown", 1.0, 0.5, 1.0, 0.05)
             .num("Hit delay", 11.0, 0.0, 60.0, 1.0)
             .num("Min CPS", 9.0, 1.0, 20.0, 0.5)
             .num("Max CPS", 13.0, 1.0, 20.0, 0.5)
             .pick("CPS pattern", &["Random", "Drift", "Steady"])
-            // Advanced. Target strafe (target_strafe.rs): your move goes round the target at Strafe radius.
+            // What it hits with.
+            .group("Inventory")
+            .pick("Attack when holding", &["Weapons", "All"])
+            .text("Selected weapon types", "diamond_sword,diamond_axe,trident,mace,diamond_spear")
+            .bool("Auto switch", false)
+            .bool("Swap back", false)
+            .num("Weapon switch delay", 0.0, 0.0, 10.0, 1.0)
+            .group("Blocking")
+            // The retained Shield alias (hidden) comes before AutoBlock, so an explicit new profile value overrides the
+            // old bool's migration; Modern's shield settings follow.
+            .bool("Shield", false)
+            .pick("AutoBlock", &["Off", "Legacy", "Modern"])
+            .num("Legacy reblock delay", 1.0, 0.0, 10.0, 1.0)
+            .bool("Shield only with a weapon", true)
+            .bool("Shield only near a target", true)
+            .num("Shield range", 6.0, 2.0, 16.0, 0.5)
+            .num("Shield re-raise delay", 0.0, 0.0, 10.0, 1.0)
+            // Target strafe (target_strafe.rs): your move goes round the target at Strafe radius.
+            .group("Movement")
             .bool("Target strafe", false)
             .num("Strafe radius", 2.5, 0.5, 6.0, 0.1)
             .pick("Strafe when", &["Always", "Jump held", "Speed on"])
-            .bool("Avoid edges", true)
-            .shield()
-            // Comes after the retained Shield alias, so an explicit new profile value overrides old bool migration.
-            .pick("AutoBlock", &["Off", "Legacy", "Modern"])
-            .num("Legacy reblock delay", 1.0, 0.0, 10.0, 1.0),
+            .bool("Avoid edges", true),
     ]
 }
 
