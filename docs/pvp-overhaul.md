@@ -11,7 +11,9 @@ Working notes for the Kill Aura, Scaffold and Inventory Manager overhaul, so a l
 | 2. Scaffold | Done for this round (committed): Sprint Vanilla, presets |
 | 4. Integration checks | Reviewed in code; in-game checks pending |
 
-Last good check: `bash /c/Users/jnowa/hzbuild/check.sh <name>` (applies the checkout's mixins to Horizon 66f3981 in a
+Since 1.1.0 (31e7e45) Sunset pins Horizon nightly fdc87ae with horizon-mixins e59da90: the check is
+`bash /c/Users/jnowa/hzbuild/check-n.sh <name>` (same steps on that pin). Before that, the last good check was
+`bash /c/Users/jnowa/hzbuild/check.sh <name>` (applies the checkout's mixins to Horizon 66f3981 in a
 fresh stage, `cargo check -p horizon-client --bin horizon-client`, then `cargo test -p horizon-client --lib -- sunset`).
 Phase 1: 0 Rust warnings, 203 tests passed. Phase 3: 209. Phase 2: 211, 0 warnings. The script lives outside the repository; its steps are those of the
 "local compile check" (horizon-mixins apply with an out dir outside the repo, the launcher's Rust 1.99.1 and mingw on
@@ -172,6 +174,19 @@ A Damage fly setting over every Mode (`flight.rs`, `wait_tick`), not a new mode:
 Compatibility, honestly: Keep with boost 1 is the knockback as the server sent it; Redirect and boosts rely on
 anticheats that allow a hit's speed for a while without checking its direction. A prediction anticheat (Grim,
 Horizon's) predicts the knockback exactly and sees the self damage's climb from the ground. Not tried in game.
+
+## 1.1.0: nightly fdc87ae, settings sections, Dashboard layout
+
+- Retarget (31e7e45): hooks follow code moved to `game::play_input` and `game::pointer_capture`; `mob_hit` returns
+  the interaction point (Sunset's pick keeps it on the real box); `Remote::carried` is a Cell and the held slot goes
+  out before the action using it; HealthHud lays out the air bubbles; two new screens in the Debug Report.
+- Settings sections (fef92bd): `Module::group` titles runs of settings for the menu only (saving stays by name).
+  Kill Aura: General, Targeting, Rotations, Timing, Inventory, Blocking, Movement; Scaffold: General, Blocks,
+  Rotations, Movement, Tower, Placement, Visuals. Load-order pairs kept: Max targets before Attack mode, the Shield
+  alias before AutoBlock.
+- Dashboard (b3854bb): header (name, search), categories, module list under a title and count (no switches; enabled
+  names in the accent), the chosen module's band (name, description, switch) and its sections as cards.
+- Built and launched on the instance (native-fdc87ae); in-game checks of the new layout pending.
 
 ## Next steps
 
