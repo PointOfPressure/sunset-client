@@ -4,7 +4,7 @@
 use super::sunset::{Module, key_from_text, menu_click};
 use super::sunset_util::short;
 use super::{Game, Screen};
-use horizon_client::menu::Input::{Pickup, QuickMove, Throw};
+use horizon_client::menu::Input::{Pickup, QuickMove};
 use std::sync::Mutex;
 
 #[derive(Default)]
@@ -13,7 +13,6 @@ struct Refill {
     down: Vec<String>,
     replenish_wait: u32,
     potion_wait: u32,
-    loot_wait: u32,
 }
 
 static REFILL: Mutex<Option<Refill>> = Mutex::new(None);
@@ -104,26 +103,16 @@ pub(super) fn replenish(game: &mut Game<'_>, m: &Module) {
     }
 }
 
-// Inventory Manager's Loot key: held with your inventory screen open, it makes room for loot by dropping whole stacks
-// of totems while more slots than Keep totems hold one, then ender pearl stacks past Keep pearl stacks; one stack a
-// step, Delay apart. True while the key is held (the junk list waits).
-pub(super) fn loot(game: &mut Game<'_>, m: &Module) -> bool {
-    if !held(m, "Loot key") || !inventory_screen(game) {
-        return false;
-    }
-    if waiting(|s| &mut s.loot_wait) {
-        return true;
-    }
-    let locked = super::sunset_loadouts::locked_slots();
+pub(super) fn looting(m: &Module) -> bool {
+    held(m, "Loot key")
+}
+
+// Inventory Manager executes Loot through its shared cursor/input/settle gates, not a second independent timer.
+// Holding the key replaces normal cleanup, even when there is nothing left to drop.
+pub(super) fn loot_step(game: &Game<'_>, m: &Module, locked: &[bool; 36]) -> Option<usize> {
     let slots = |item: &str| -> Vec<usize> {
         (0..36).filter(|&i| game.inventory.get(i).and_then(|s| s.as_ref()).is_some_and(|s| short(&s.item) == item)).collect()
     };
     let extra = |found: Vec<usize>, keep: f64| (found.len() as f64 > keep).then(|| found.into_iter().find(|&i| !locked[i])).flatten();
-    let drop = extra(slots("totem_of_undying"), m.n("Keep totems")).or_else(|| extra(slots("ender_pearl"), m.n("Keep pearl stacks")));
-    if let Some(i) = drop {
-        // Button 1: the whole stack.
-        game.remote_menu_ops(&[(Some(i), 1, Throw)]);
-        st(|s| s.loot_wait = m.n("Delay (ticks)") as u32 + 1);
-    }
-    true
+    extra(slots("totem_of_undying"), m.n("Keep totems")).or_else(|| extra(slots("ender_pearl"), m.n("Keep pearl stacks")))
 }

@@ -188,6 +188,7 @@ pub(super) fn shutdown(game: &mut Game<'_>) {
     tick(game, &[]);
     speed_mine(game, None);
     no_break_reset(game, None);
+    exec(|e| e.reset());
     ps(|p| *p = Ps::default());
 }
 
@@ -417,7 +418,12 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         }
         if let Some(m) = get("Inventory Manager") {
             inventory_manager(game, m);
+        } else {
+            // A finished plan cannot survive disable/enable without an inventory packet.
+            exec(|e| e.context(u64::MAX));
         }
+    } else {
+        exec(|e| e.reset());
     }
     if !in_world(game) {
         ps(|p| p.place_credit = 0);
@@ -816,52 +822,56 @@ pub(super) fn plan_item(game: &Game<'_>, stack: &horizon_client::items::ItemStac
         block: info.as_ref().and_then(|i| i.block).is_some_and(|b| game.res.facts().get(b).full_collision),
         food: info.as_ref().and_then(|i| i.food).map_or(0.0, |(nutrition, saturation)| nutrition as f32 + saturation),
         max_stack: info.as_ref().map_or(64, |i| i.max_stack),
-        // Components beyond count and wear, as one number: equal for stacks that may merge.
-        meta: stack.extra.as_ref().map_or(0, |extra| {
-            use std::hash::{Hash, Hasher};
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            format!("{extra:?}").hash(&mut h);
-            h.finish() | 1
-        }),
+        meta: component_fingerprint(stack),
     }
 }
 
-// The inventory slots (0-35) a preset drops: its junk, and building blocks, food, arrows and pearls past its limits.
-// Worse duplicates are inventory_plan's (Duplicates).
-fn junk_slots(game: &Game<'_>, m: &Module) -> Vec<usize> {
-    let item = |i: usize| game.inventory.get(i).and_then(|s| s.as_ref());
+// Network Wire bookkeeping includes the original stack count; bundle selection is runtime-only. Neither belongs
+// in component equality. Use Horizon's saved component representation, with canonical compound ordering.
+fn component_fingerprint(stack: &horizon_client::items::ItemStack) -> u64 {
+    use std::hash::{Hash, Hasher};
+    horizon_client::item_data::encode_components(stack).map_or(0, |tag| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        horizon_client::item_data::canon_tag(&tag).hash(&mut h);
+        h.finish() | 1
+    })
+}
+
+#[cfg(test)]
+mod inventory_data_tests {
+    use super::component_fingerprint;
+    use horizon_client::{item_data::Wire, items::ItemStack};
+    use std::sync::Arc;
+
+    #[test]
+    fn network_bookkeeping_does_not_split_compatible_stacks() {
+        let mut a = ItemStack::new("minecraft:stone", 10);
+        let original_a = a.clone();
+        a.data_mut().wire = Wire::new(original_a, Arc::from([1u8]));
+        let mut b = ItemStack::new("minecraft:stone", 20);
+        let original_b = b.clone();
+        b.data_mut().wire = Wire::new(original_b, Arc::from([2u8]));
+        assert!(a.same_item_same_components(&b));
+        assert_eq!(component_fingerprint(&a), component_fingerprint(&b));
+        b.enchant("minecraft:sharpness", 2);
+        assert_ne!(component_fingerprint(&a), component_fingerprint(&b));
+        let before = component_fingerprint(&b);
+        b.enchant("minecraft:sharpness", 3);
+        assert_ne!(before, component_fingerprint(&b), "changes inside existing extra data invalidate plans too");
+    }
+}
+
+// Explicit junk plus conservative whole-stack quotas. The planner already built the item snapshot and retention.
+fn junk_slots(m: &Module, items: &[Option<plan::Item>], keep: &[bool]) -> Vec<usize> {
+    let mut remaining = items.to_vec();
     let mut out = Vec::new();
-    let mut kept = [0.0; 4];
-    for i in 0..36 {
-        let Some(stack) = item(i) else {
-            continue;
-        };
-        let name = short(&stack.item);
-        if listed(m.t("Junk"), name) {
+    for (i, item) in items.iter().enumerate() {
+        if item.as_ref().is_some_and(|s| listed(m.t("Junk"), &s.name)) && !keep[i] {
             out.push(i);
-            continue;
-        }
-        let info = game.res.items().get(&stack.item);
-        let class = if info.as_ref().and_then(|i| i.block).is_some_and(|b| game.res.facts().get(b).full_collision) {
-            0
-        } else if info.as_ref().is_some_and(|i| i.food.is_some()) {
-            1
-        } else if name.ends_with("arrow") {
-            2
-        } else if name == "ender_pearl" {
-            3
-        } else {
-            continue;
-        };
-        let limit = m.n(["Blocks", "Food", "Arrows", "Pearls"][class]);
-        if kept[class] + stack.count as f64 > limit {
-            out.push(i);
-        } else {
-            kept[class] += stack.count as f64;
+            remaining[i] = None;
         }
     }
-    out.sort_unstable();
-    out.dedup();
+    out.extend(plan::quota_excess(&remaining, keep, ["Blocks", "Food", "Arrows", "Pearls"].map(|key| m.n(key) as u32)));
     out
 }
 
@@ -886,30 +896,49 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
         }
         return;
     }
-    let in_screen = game.screen == Screen::Inventory && game.remote_menu().1 == "inventory";
+    let menu = game.remote_menu();
+    let in_screen = game.screen == Screen::Inventory && menu.0 == 0 && menu.1 == "inventory";
     // Off the screen: only with no other menu open (the player inventory's clicks need no screen on the server).
-    let closed = !m.b("Only in inventory") && game.screen == Screen::Playing && game.remote_menu().0 == 0;
+    let closed = !m.b("Only in inventory") && game.screen == Screen::Playing && menu.0 == 0 && menu.1 == "inventory";
     if !(in_screen || closed) {
-        // Nowhere to work: a later step starts afresh, with nothing pending or remembered as refused.
-        exec(|e| e.reset());
-        return;
-    }
-    if in_screen && super::sunset_refill::loot(game, m) {
+        // Invalidate decisions without shortening the settle deadline of an outstanding click.
+        exec(|e| e.context(u64::MAX));
         return;
     }
     let now = game.ticks;
     // You first: an item on your cursor, or a button down on the screen.
-    let clicking = in_screen && (game.physical_buttons.contains(&MouseButton::Left) || game.physical_buttons.contains(&MouseButton::Right));
-    if game.carried.is_some() || clicking {
+    let clicking = game.physical_buttons.contains(&MouseButton::Left) || game.physical_buttons.contains(&MouseButton::Right);
+    if game.carried.is_some() || clicking || game.using.is_some() || (closed && (game.left || game.right)) {
         exec(|e| e.user(now));
         return;
     }
+    let mut locked = super::sunset_loadouts::locked_slots();
+    let loot = in_screen && super::sunset_refill::looting(m);
     let fingerprint = inventory_fingerprint(game);
+    let context = inventory_context(game, m, &locked, loot);
+    exec(|e| e.context(context));
     if exec(|e| e.gate(now, fingerprint)) == Gate::Wait || super::sunset_combat_control::owner().is_some() {
         return;
     }
+    // A correction can refuse one operation without blocking all other work. Protect its slots until contents or
+    // settings change, so a refused hotbar placement cannot turn into a destructive cleanup of that same item.
+    let unavailable = exec(|e| {
+        let mut steps = e.blocked(fingerprint);
+        steps.extend(e.reserved(now));
+        steps
+    });
+    for step in unavailable {
+        match step {
+            Step::Swap { from, to } | Step::Exchange(from, to) => { locked[from] = true; locked[to] = true; }
+            Step::Throw(i) => locked[i] = true,
+        }
+    }
     let started = std::time::Instant::now();
-    let step = plan_step(game, m, preset);
+    let step = if loot {
+        super::sunset_refill::loot_step(game, m, &locked).map(Step::Throw)
+    } else {
+        plan_step(game, m, preset, &locked)
+    };
     let took = started.elapsed();
     let Some(step) = exec(|e| e.planned(fingerprint, step, took)) else {
         return;
@@ -919,25 +948,30 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
     if !super::remote::sunset_combat_remote::quiet(game) {
         return;
     }
-    super::sunset_gui_move::direct(|| match step {
+    let sent = super::sunset_gui_move::direct(|| match step {
         Step::Swap { from, to } => game.remote_menu_ops(&[(Some(from), to as i32, Swap)]),
         Step::Throw(i) => game.remote_menu_ops(&[(Some(i), 1, Throw)]),
         Step::Exchange(a, b) => game.remote_menu_ops(&[(Some(a), 0, Pickup), (Some(b), 0, Pickup), (Some(a), 0, Pickup)]),
     });
+    if !sent { return; }
     // rand() takes the PS lock itself: rolled here, outside any ps() or exec() closure.
     let delay = m.n("Delay (ticks)") as u64 + rand(m.n("Delay variation") as usize + 1) as u64;
-    let settle = super::sunset_inventory_exec::settle_ticks(super::remote::sunset_combat_remote::latency(game), delay);
-    exec(|e| e.sent(step, fingerprint, now, settle));
+    let latency = super::remote::sunset_combat_remote::latency(game);
+    exec(|e| e.sent_predicted(step, fingerprint, now, delay, latency));
 }
 
-// Whether an inventory step (Inventory Manager's or Auto Armor's) is still settling at `now`: the other waits.
+// Whether the manager's action cadence or another owner's explicit hold still blocks clicks at `now`.
 pub(super) fn inventory_stepping(now: u64) -> bool {
     exec(|e| e.busy(now))
 }
 
-// Auto Armor clicked: Inventory Manager's next step waits until `until`.
+// Auto Armor clicked: its separate delay/settle policy holds Inventory Manager until `until`.
 pub(super) fn inventory_hold(until: u64) {
     exec(|e| e.hold(until));
+}
+
+pub(super) fn inventory_reset() {
+    exec(|e| e.reset());
 }
 
 // Inventory Manager's executor state (inventory_exec.rs). Its closures only read and write it: no game call, no other
@@ -948,33 +982,56 @@ fn exec<R>(f: impl FnOnce(&mut super::sunset_inventory_exec::Exec) -> R) -> R {
     f(EXEC.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default))
 }
 
-// What the inventory holds, as one number: each slot's item, count and wear, what you wear, and the server's state
-// id. Cheap enough for every tick; a change means a new plan.
+// Include component values: two different enchanted/custom stacks may both have `extra`. State-id-only updates
+// are not changed contents, and must not restart retries of a refused operation.
 fn inventory_fingerprint(game: &Game<'_>) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     for stack in game.inventory.iter().take(36).chain(game.armor.iter()) {
         match stack {
-            Some(s) => (&*s.item, s.count, s.damage, s.extra.is_some()).hash(&mut h),
+            Some(s) => {
+                (&*s.item, s.count, s.damage).hash(&mut h);
+                component_fingerprint(s).hash(&mut h);
+            }
             None => 0u8.hash(&mut h),
         }
     }
-    super::remote::sunset_combat_remote::container_state(game).hash(&mut h);
     h.finish()
 }
 
-// The next step for the inventory as it is: the hotbar layout first, then junk and worse duplicates, then sorting.
+fn inventory_context(game: &Game<'_>, m: &Module, locked: &[bool; 36], loot: bool) -> u64 {
+    use std::hash::{Hash, Hasher};
+    use super::sunset::Value;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for setting in &m.settings {
+        setting.name.hash(&mut h);
+        match &setting.value {
+            Value::Bool(b) => b.hash(&mut h),
+            Value::Num { v, .. } => v.to_bits().hash(&mut h),
+            Value::Pick { i, .. } => i.hash(&mut h),
+            Value::Text(t) => t.hash(&mut h),
+        }
+    }
+    locked.hash(&mut h);
+    loot.hash(&mut h);
+    (game.screen == Screen::Inventory).hash(&mut h);
+    super::sunset::with(|s| s.module("Kill Aura").map(|k| k.p("Combat version"))).hash(&mut h);
+    // Auto combat mode can change via server attributes without changing any stack.
+    let legacy = super::sunset_aura_timing::version("Auto", game.main_hand_attack_speed()).0 == super::sunset_aura_timing::Version::Legacy;
+    legacy.hash(&mut h);
+    h.finish()
+}
+
 // The next step for the inventory as it is: the hotbar plan first; then, with what must stay worked out first (the
 // hotbar's picks, protected and Loadouts' slots, the best of each kind and its backups, specialised, named and
 // unknown items), junk, items past their limits and excess duplicates; then merging and sorting.
-fn plan_step(game: &Game<'_>, m: &Module, preset: &str) -> Option<Step> {
-    let locked = super::sunset_loadouts::locked_slots();
+fn plan_step(game: &Game<'_>, m: &Module, preset: &str, locked: &[bool; 36]) -> Option<Step> {
     let items: Vec<Option<plan::Item>> = (0..36).map(|i| game.inventory.get(i).and_then(|s| s.as_ref()).map(|s| plan_item(game, s))).collect();
     let kill_aura = super::sunset::with(|s| s.module("Kill Aura").map(|k| k.p("Combat version")).unwrap_or("Auto"));
     let legacy = super::sunset_aura_timing::version(kill_aura, game.main_hand_attack_speed()).0 == super::sunset_aura_timing::Version::Legacy;
     let slot_words: [&str; 9] = std::array::from_fn(|i| m.p(["Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8", "Slot 9"][i]));
     let wants = plan::wants(slot_words, m.t("Hotbar layout"));
-    let hotbar = plan::plan_hotbar(&items, &wants, &locked, legacy);
+    let hotbar = plan::plan_hotbar(&items, &wants, locked, legacy);
     if let Some((h, from)) = (0..9).find_map(|h| hotbar[h].filter(|&from| from != h).map(|from| (h, from))) {
         return Some(Step::Swap { from, to: h });
     }
@@ -988,7 +1045,7 @@ fn plan_step(game: &Game<'_>, m: &Module, preset: &str) -> Option<Step> {
     let mut drop: Vec<usize> = if preset == "Custom" {
         (0..36).filter(|&i| items[i].as_ref().is_some_and(|s| passes(m, "Items", &s.name))).collect()
     } else {
-        junk_slots(game, m)
+        junk_slots(m, &items, &keep)
     };
     if m.b("Duplicates") {
         let worn: [Option<plan::Item>; 4] = std::array::from_fn(|a| game.armor.get(a).and_then(|s| s.as_ref()).map(|s| plan_item(game, s)));
@@ -998,12 +1055,12 @@ fn plan_step(game: &Game<'_>, m: &Module, preset: &str) -> Option<Step> {
         return Some(Step::Throw(i));
     }
     if m.b("Merge stacks")
-        && let Some((from, into)) = plan::merge_step(&items, &locked)
+        && let Some((from, into)) = plan::merge_step(&items, locked)
     {
         return Some(Step::Exchange(from, into));
     }
     if m.b("Sort inventory") {
-        return plan::sort_step(&items, 9..36, &locked).map(|(a, b)| Step::Exchange(a, b));
+        return plan::sort_step(&items, 9..36, locked).map(|(a, b)| Step::Exchange(a, b));
     }
     None
 }

@@ -3437,6 +3437,7 @@ fn module_tick(game: &mut Game<'_>) {
     }
 
     if game.player.is_none() {
+        super::sunset_player::inventory_reset();
         return;
     }
     // Debug Report: on for one tick (its button or bind), it copies the report.

@@ -384,12 +384,10 @@ fn worth(want: &Want, item: &Item, legacy: bool) -> f32 {
 
 // A piece already in its slot stays unless another is this much better: no swapping for a hair of difference.
 const STAY: f32 = 1.05;
-// The candidates weighed per slot.
-const CANDIDATES: usize = 3;
 
 type Pick = [Option<usize>; 9];
 
-// The nine slots planned together: for each wish its best few candidates (what already sits there first when it is
+// The nine slots planned together: for each wish all candidates (what already sits there first when it is
 // within STAY of the best), then the assignment (each item once) that fills the most slots, then uses the better
 // candidates, then moves the fewest items. Slots without a wish, and locked slots or items, are left as they are.
 // Ties go the same way every time.
@@ -409,40 +407,37 @@ pub(super) fn plan_hotbar(slots: &[Option<Item>], wants: &[Option<Want>; 9], loc
                 let here = c.remove(at);
                 c.insert(0, here);
             }
-            c.truncate(CANDIDATES);
             c.into_iter().map(|(i, _)| i).collect()
         })
         .collect();
-    let mut best = ((i32::MIN, 0, 0), [None; 9]);
-    search(0, &options, &mut Vec::new(), &mut [None; 9], (0, 0, 0), &mut best);
+    // Assignment over nine destination bits, visiting each source once. This considers every item without the
+    // exponential search (or a candidate cutoff that leaves repeated roles unfilled).
+    let mut assignments = vec![None; 1 << 9];
+    assignments[0] = Some(((0, 0), [None; 9]));
+    for source in 0..slots.len() {
+        let ranks: [Option<usize>; 9] = std::array::from_fn(|h| options[h].iter().position(|&i| i == source));
+        for mask in (0usize..1 << 9).rev() {
+            let Some((score, pick)) = assignments[mask] else { continue };
+            for h in 0..9 {
+                let Some(rank) = ranks[h].filter(|_| mask & (1 << h) == 0) else { continue };
+                let next = mask | (1 << h);
+                let score = (score.0 - rank as i32, score.1 - i32::from(source != h));
+                let mut pick = pick;
+                pick[h] = Some(source);
+                if assignments[next].is_none_or(|(old, old_pick)| score > old || (score == old && pick < old_pick)) {
+                    assignments[next] = Some((score, pick));
+                }
+            }
+        }
+    }
+    let mut best = ((0, i32::MIN, i32::MIN), [None; 9]);
+    for (mask, assignment) in assignments.into_iter().enumerate() {
+        if let Some(((rank, moves), pick)) = assignment {
+            let score = (mask.count_ones(), rank, moves);
+            if score > best.0 { best = (score, pick); }
+        }
+    }
     best.1
-}
-
-// Depth-first over the slots: each takes one of its candidates (not taken already) or none. Score: (slots filled,
-// minus the candidate ranks used, minus the items moved), the higher the better; the first of equal ones stays.
-fn search(h: usize, options: &[Vec<usize>], used: &mut Vec<usize>, pick: &mut Pick, score: (i32, i32, i32), best: &mut ((i32, i32, i32), Pick)) {
-    if h == 9 {
-        if score > best.0 {
-            *best = (score, *pick);
-        }
-        return;
-    }
-    // Filling every slot left still could not fill as many as the best: no need to look further.
-    let open = options[h..].iter().filter(|o| !o.is_empty()).count() as i32;
-    if score.0 + open < best.0.0 {
-        return;
-    }
-    for (rank, &i) in options[h].iter().enumerate() {
-        if used.contains(&i) {
-            continue;
-        }
-        used.push(i);
-        pick[h] = Some(i);
-        search(h + 1, options, used, pick, (score.0 + 1, score.1 - rank as i32, score.2 - i32::from(i != h)), best);
-        pick[h] = None;
-        used.pop();
-    }
-    search(h + 1, options, used, pick, score, best);
 }
 
 // The next hotbar-key swap toward the plan: (the slot to take from, the hotbar slot it goes to); none when every planned
@@ -456,14 +451,48 @@ pub(super) fn hotbar_step(slots: &[Option<Item>], wants: &[Option<Want>; 9], loc
 
 // ---- merging and sorting
 
-// Two part stacks of the same item and components: (from, into), the later slot into the earlier (a hotbar one first).
+// Limits trim whole stacks, without throwing away the last stack needed to meet a nonzero quota. The remaining
+// amount can exceed a limit by part of one stack; avoid a burst of partial-drop clicks or touching the cursor.
+// Protected/assigned stacks count toward the quota but are never selected for removal.
+pub(super) fn quota_excess(slots: &[Option<Item>], keep: &[bool], limits: [u32; 4]) -> Vec<usize> {
+    let class = |item: &Item| {
+        if item.block { Some(0) }
+        else if item.food > 0.0 { Some(1) }
+        else if item.name.ends_with("arrow") { Some(2) }
+        else if item.name == "ender_pearl" { Some(3) }
+        else { None }
+    };
+    let mut out = Vec::new();
+    for (category, limit) in limits.into_iter().enumerate() {
+        let mut total: u64 = 0;
+        let mut candidates = Vec::new();
+        for (i, item) in slots.iter().enumerate() {
+            if let Some(item) = item.as_ref().filter(|item| class(item) == Some(category)) {
+                total += u64::from(item.count);
+                if !keep.get(i).copied().unwrap_or(true) { candidates.push((i, item.count)); }
+            }
+        }
+        // Main inventory first, smallest stacks first, stable ties from the end of the inventory.
+        candidates.sort_by_key(|&(i, count)| (i < 9, count, std::cmp::Reverse(i)));
+        for (i, count) in candidates {
+            if total.saturating_sub(u64::from(count)) >= u64::from(limit) {
+                total -= u64::from(count);
+                out.push(i);
+            }
+        }
+    }
+    out
+}
+
+// Two part stacks of the same item and components: (from, into), a main-inventory stack into an earlier slot.
+// Hotbar stacks are destinations only: draining one fights repeated layout wishes and the player's arrangement.
 // As three clicks (pick up `from`, click `into`, click `from`) whatever does not fit goes back: nothing stays on the
 // cursor, nothing is lost.
 pub(super) fn merge_step(slots: &[Option<Item>], locked: &[bool]) -> Option<(usize, usize)> {
     let part = |i: usize| slots[i].as_ref().filter(|s| s.max_stack > 1 && s.count < s.max_stack && !locked.get(i).copied().unwrap_or(true));
     for into in 0..slots.len() {
         let Some(a) = part(into) else { continue };
-        if let Some(from) = (into + 1..slots.len()).find(|&j| part(j).is_some_and(|b| b.name == a.name && b.meta == a.meta)) {
+        if let Some(from) = ((into + 1).max(9)..slots.len()).find(|&j| part(j).is_some_and(|b| b.name == a.name && b.meta == a.meta && b.damage == a.damage)) {
             return Some((from, into));
         }
     }
@@ -741,6 +770,37 @@ mod tests {
         for choice in SLOT_CHOICES.iter().skip(1) {
             assert!(want(choice).is_some(), "{choice}");
         }
+    }
+
+    #[test]
+    fn repeated_roles_can_fill_all_nine_hotbar_slots() {
+        let mut inventory = inv(&(9..18).map(|i| (i, n(item("stone"), 64))).collect::<Vec<_>>());
+        let w = slots(["Blocks"; 9]);
+        let locked = vec![false; 36];
+        run_hotbar(&mut inventory, &w, &locked);
+        assert!(inventory[..9].iter().all(Option::is_some));
+        assert_eq!(hotbar_step(&inventory, &w, &locked, false), None);
+    }
+
+    #[test]
+    fn quotas_keep_the_last_useful_stack_and_count_protected_stacks() {
+        let inventory = inv(&[(0, n(item("stone"), 64)), (9, n(item("stone"), 64)), (10, n(item("stone"), 64)),
+            (11, n(item("bread"), 8)), (12, n(item("arrow"), 64))]);
+        let mut keep = vec![false; 36];
+        keep[0] = true;
+        assert_eq!(quota_excess(&inventory, &keep, [80, 4, 0, 16]), [10, 12]);
+        // A protected stack already meets the quota: ordinary copies can go, but that stack cannot.
+        assert_eq!(quota_excess(&inventory, &keep, [32, 4, 0, 16]), [10, 9, 12]);
+    }
+
+    #[test]
+    fn merging_does_not_empty_another_hotbar_slot() {
+        let inventory = inv(&[(0, n(item("stone"), 10)), (8, n(item("stone"), 20))]);
+        assert_eq!(merge_step(&inventory, &vec![false; 36]), None,
+            "merging hotbar stacks fights the layout and the player's own arrangement");
+        let mut inventory = inventory;
+        inventory[9] = Some(n(item("stone"), 5));
+        assert_eq!(merge_step(&inventory, &vec![false; 36]), Some((9, 0)));
     }
 
     #[test]
