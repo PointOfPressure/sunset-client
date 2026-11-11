@@ -9,6 +9,7 @@ use std::cell::Cell;
 pub fn reset() {
     set_freeze(false);
     set_input_scale(None);
+    set_block_use_scale(None);
     set_move_yaw(None);
     set_no_sprint(false);
     set_no_slow_grim(false);
@@ -29,6 +30,7 @@ thread_local! {
     static FREEZE_MOVE: Cell<bool> = const { Cell::new(false) };
     static FREEZE_INPUT: Cell<bool> = const { Cell::new(false) };
     static INPUT_SCALE: Cell<Option<f32>> = const { Cell::new(None) };
+    static BLOCK_USE_SCALE: Cell<Option<f32>> = const { Cell::new(None) };
     static SAFE_WALK: Cell<bool> = const { Cell::new(false) };
     // Blocks a tick across the ground, x and z.
     static ACROSS: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
@@ -178,6 +180,14 @@ pub fn set_up(up: Option<f64>) {
     BALLISTIC_JUMP.with(|c| c.set(None));
     LEGACY_VELOCITY.with(|c| c.set(None));
 }
+
+pub fn set_block_use_scale(scale: Option<f32>) {
+    BLOCK_USE_SCALE.with(|c| c.set(scale));
+}
+
+pub fn block_use_scale() -> Option<f32> { BLOCK_USE_SCALE.with(Cell::get) }
+
+pub fn take_block_use_scale() -> Option<f32> { BLOCK_USE_SCALE.with(|c| c.take()) }
 
 pub fn set_ballistic_jump(scale: Option<f64>) {
     set_up(None);

@@ -104,6 +104,10 @@ pub(crate) fn sprint_synced(game: &crate::game::Game<'_>) -> bool {
     game.player.as_ref().is_some_and(|player| player.sprinting == crate::game::sunset_combat_wire::sent_sprinting(game))
 }
 
+pub(crate) fn carried_synced(game: &crate::game::Game<'_>) -> bool {
+    game.remote.as_ref().is_some_and(|r| r.carried == Some(game.selected))
+}
+
 // The entity is a player the server told of (not you).
 pub(crate) fn is_player(game: &crate::game::Game<'_>, id: i32) -> bool {
     game.remote.as_ref().is_some_and(|remote| id != remote.entity_id && remote.level_players.contains_key(&id))

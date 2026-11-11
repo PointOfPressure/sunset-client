@@ -104,6 +104,12 @@ pub(super) fn item_use_factor(
     }
 }
 
+// Native 1.8 sword use reduces movement input to 20%. Horizon has no native sword-using state, so translated
+// AutoBlock supplies this factor explicitly; No Slow's existing percentages can opt into a different factor.
+pub(super) fn legacy_use_factor(no_slow_percent: Option<[f64; 2]>, on_ground: bool) -> f32 {
+    item_use_factor(true, Some(no_slow_percent.unwrap_or([20.0; 2])), on_ground) as f32
+}
+
 pub(super) fn turn_toward(from: f32, to: f32, max_degrees: f32) -> f32 {
     if !from.is_finite() || !to.is_finite() || !max_degrees.is_finite() {
         return from;
@@ -131,6 +137,14 @@ pub(super) fn speed_can_write(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn translated_blocking_keeps_normal_slowdown_and_existing_no_slow_percentages() {
+        assert_eq!(legacy_use_factor(None, true), 0.2);
+        assert_eq!(legacy_use_factor(Some([50.0, 80.0]), true), 0.5);
+        assert_eq!(legacy_use_factor(Some([50.0, 80.0]), false), 0.8);
+        assert_eq!(legacy_use_factor(Some([100.0; 2]), false), 1.0);
+    }
 
     #[test]
     fn steering_accelerates_and_caps_without_diagonal_gain() {

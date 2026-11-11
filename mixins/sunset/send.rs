@@ -37,6 +37,14 @@ fn sunset_send(
     if !replay && crate::game::sunset_gui_move::outgoing(game, last) {
         return std::ops::ControlFlow::Break(());
     }
+    if let Some(release) = crate::game::sunset_hands::before_outgoing(game, last)
+        && let Some(remote) = &game.remote
+    {
+        // Owned cleanup precedes the accepted attack, including native clicks and deferred Criticals. It bypasses
+        // No Slow's intentional item-release suppression; it must not suppress AutoBlock's own release.
+        crate::game::sunset_combat_wire::delivered(game, &release);
+        remote.session.send(release);
+    }
     // Fake Lag: held (or sent by it, behind what it held) means it is no longer this hook's to send.
     if crate::game::sunset_lag::held(game, last) {
         return std::ops::ControlFlow::Break(());

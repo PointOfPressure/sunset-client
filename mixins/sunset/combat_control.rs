@@ -31,6 +31,9 @@ fn same(game: &Game<'_>, s: &State) -> bool {
             _ => false,
         }
 }
+
+// Cleanup may run after master-off, but must never apply an old connection's use state to a new scene.
+pub(super) fn same_scene(game: &Game<'_>) -> bool { with(|s| same(game, s)) }
 // Returns an identity change or live deactivation. Callers cancel transient
 // state AFTER this invalidates stale tickets, preventing old-scene restoration.
 pub(super) fn begin_tick(game: &Game<'_>) -> bool {

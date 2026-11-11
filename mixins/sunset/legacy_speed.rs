@@ -120,6 +120,13 @@ const WATCHDOG_TURN: f64 = 25.0 * std::f64::consts::PI / 180.0;
 const KNOCK_WINDOW: u64 = 6;
 
 impl Watchdog {
+    pub(super) fn recovering(&self) -> bool { self.phase == Phase::Recovery }
+
+    fn recover_state(&mut self) {
+        // Keep the ownership bit until the game adapter actually restores the owned surplus momentum.
+        self.previous = None;
+        self.phase = Phase::Recovery;
+    }
     pub(super) fn reset(&mut self) -> bool {
         let owned = self.owns_momentum;
         *self = Self::default();
@@ -142,19 +149,25 @@ impl Watchdog {
         self.phase = Phase::Recovery;
     }
 
+    pub(super) fn filtered_knockback(&mut self, tick: u64, horizontal_share: f64) {
+        if let Some((at, eligible)) = self.knock.as_mut()
+            && *at == tick && (!horizontal_share.is_finite() || horizontal_share <= 0.0)
+        { *eligible = false; }
+    }
+
     pub(super) fn step(&mut self, f: Frame, velocity: [f64; 2], speed_level: Option<u32>, boost: bool) -> Option<Move> {
         let Some(dir) = f.direction.filter(|d| d.iter().all(|n| n.is_finite()) && d[0].hypot(d[1]) > 1e-9) else {
-            self.suspend(); return None;
+            self.recover_state(); return None;
         };
         if f.blocked || !f.position.iter().chain(velocity.iter()).all(|n| n.is_finite())
             || !f.base.is_finite() || f.base <= 0.0
-        { self.suspend(); return None; }
+        { self.recover_state(); return None; }
         let norm = dir[0].hypot(dir[1]);
         let dir = [dir[0] / norm, dir[1] / norm];
         let previous = self.previous.replace((f.tick, f.position));
         if previous.is_some_and(|(tick, pos)| tick.checked_add(1) != Some(f.tick)
             || (f.position[0] - pos[0]).hypot(f.position[1] - pos[1]) > MAX_SAMPLE_DISTANCE)
-        { self.suspend(); return None; }
+        { self.recover_state(); return None; }
         let magnitude = velocity[0].hypot(velocity[1]);
         if let Some((tick, eligible)) = self.knock {
             let age = f.tick.saturating_sub(tick);
@@ -231,6 +244,11 @@ mod tests {
     fn watchdog_never_recreates_knockback_removed_by_velocity_and_wraps_turns() {
         let mut w = Watchdog::default();
         w.knocked(0, [-0.7, 0.4, -0.01]);
+        w.filtered_knockback(0, 0.0);
+        assert_eq!(w.step(frame(1, 0.0, false), [0.7, 0.0], None, true), None,
+            "zero Velocity share restores old momentum; it is not a new damage impulse to steer");
+        w.knocked(1, [-0.7, 0.4, -0.01]);
+        w.filtered_knockback(1, 0.5);
         assert_eq!(w.step(frame(1, 0.0, false), [0.0; 2], None, true), None, "Velocity's zero share stays zero");
         let mut f = frame(2, 0.0, false);
         f.direction = Some([-1.0, 0.01]); // Crosses the +/-pi seam.
@@ -255,6 +273,18 @@ mod tests {
         f.blocked = false;
         f.direction = None;
         assert_eq!(w.step(f, [0.0; 2], None, false), None);
+    }
+
+    #[test]
+    fn watchdog_interruption_keeps_cleanup_ownership_until_adapter_restores_it() {
+        let mut w = Watchdog::default();
+        w.step(frame(0, 0.0, true), [0.0; 2], None, false);
+        let mut stopped = frame(1, 0.4, false);
+        stopped.direction = None;
+        assert_eq!(w.step(stopped, [0.45, 0.0], None, false), None);
+        assert!(w.recovering());
+        assert!(w.suspend(), "the game adapter still owes restoration of the launch surplus");
+        assert!(!w.reset());
     }
 
     #[test]

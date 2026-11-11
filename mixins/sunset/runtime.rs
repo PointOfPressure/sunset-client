@@ -324,7 +324,10 @@ impl Module {
         let advanced = self.b("Advanced");
         match self.name {
             // Kill Aura's and Trigger Bot's Shield: its settings with it on.
-            "Kill Aura" | "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
+            "Kill Aura" if name == "Shield" => false, // Retained compatibility alias, superseded by AutoBlock.
+            "Kill Aura" if name.starts_with("Shield ") => self.p("AutoBlock") == "Modern",
+            "Kill Aura" if name == "Legacy reblock delay" => self.p("AutoBlock") == "Legacy",
+            "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
             // Streamer Mode: what shows in place of a name, with that name hidden.
             "Streamer Mode" => match name {
                 "Your name" => self.b("Hide your name"),
@@ -1654,6 +1657,14 @@ impl State {
             "on" => m.on = v == "true",
             "key" => m.key = key_from_text(v),
             _ => {
+                if id == "killaura" && field == "shield" {
+                    let parsed = m.settings.iter_mut().find(|s| s.name == "Shield").is_some_and(|s| s.parse(v));
+                    if parsed {
+                        let mode = if m.b("Shield") { "Modern" } else { "Off" };
+                        if let Some(s) = m.settings.iter_mut().find(|s| s.name == "AutoBlock") { s.parse(mode); }
+                    }
+                    return;
+                }
                 // Settings from the earlier local movement build used different names and percentage units.
                 let migrated = match (id, field) {
                     ("speed", "speed") => Some(("vanillaspeed", v.to_owned())),
@@ -2793,6 +2804,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
             "Crystal Aura" => super::sunset_crystal_aura::disabled(game),
             "Cart" => super::sunset_cart::reset(game),
             "Kill Aura" => {
+                super::sunset_hands::stop_kill_aura_block(game);
                 let swap_back = with(|s| s.module("Kill Aura").is_some_and(|m| m.b("Swap back")));
                 super::sunset_aura::disabled(game, swap_back);
             }
@@ -3078,6 +3090,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     let inventory_stop = super::sunset_gui_move::pre_tick(game);
     horizon_client::motion::sunset_motion::set_freeze(inventory_stop);
     if !game.native_on(ID) || game.player.is_none() {
+        super::sunset_hands::stop_autoblock(game);
         combat_cleanup(game);
         horizon_client::motion::sunset_motion::set_across(None);
         horizon_client::motion::sunset_motion::set_up(None);
@@ -3098,7 +3111,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     ensure_loaded(game);
     super::sunset_antibot::tick(game);
     revalidate_targets(game);
+    let same_combat_scene = super::sunset_combat_control::same_scene(game);
     if super::sunset_combat_control::begin_tick(game) {
+        super::sunset_hands::scene_changed(game, same_combat_scene);
         with(|s| { s.ncp.reset(); s.watchdog.reset(); s.legacy_recovery = Default::default(); });
         super::sunset_scaffold_telly::scene_changed(game);
         drop_strikes();
@@ -5502,8 +5517,10 @@ fn bhop_hops(game: &Game<'_>, m: &Module) -> bool {
 fn legacy_speed_move(game: &mut Game<'_>, m: &Module, item_scale: f64) -> Option<([f64; 2], Option<f64>)> {
     if !game.native_playing() || gui_open() || super::sunset_gui_move::inventory_busy()
         || with(|s| s.is_on("Scaffold"))
+        || CRIT_STAGE.load(Ordering::Relaxed) != 0
     {
-        with(|s| { s.ncp.recover(); s.watchdog.suspend(); });
+        watchdog_stop(game, false);
+        with(|s| s.ncp.recover());
         return None;
     }
     let direction = move_direction(game);
@@ -5529,7 +5546,11 @@ fn legacy_speed_move(game: &mut Game<'_>, m: &Module, item_scale: f64) -> Option
     let step = with(|s| {
         if m.p("Mode") == "NCP" { s.ncp.step(frame) }
         else { s.watchdog.step(frame, velocity, speed_level, m.b("Watchdog knockback boost")) }
-    })?;
+    });
+    if step.is_none() && m.p("Mode") == "Watchdog" && with(|s| s.watchdog.recovering()) {
+        watchdog_stop(game, false);
+    }
+    let step = step?;
     // Item-use settings scale owned acceleration, not a server impulse already filtered by Velocity.
     let scale = if m.p("Mode") == "Watchdog" && step.jump_scale.is_none() { 1.0 } else { item_scale };
     Some(([step.across[0] * scale, step.across[1] * scale], step.jump_scale))
@@ -5560,7 +5581,8 @@ fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     let mode = m.p("Mode");
     if mode != "NCP" { with(|s| s.ncp.reset()); }
     if matches!(mode, "NCP" | "Watchdog") && with(|s| s.legacy_recovery.waiting(game.ticks)) {
-        with(|s| { s.ncp.recover(); s.watchdog.suspend(); });
+        watchdog_stop(game, false);
+        with(|s| s.ncp.recover());
         return None;
     }
     if !matches!(mode, "NCP" | "Watchdog") { with(|s| s.legacy_recovery = Default::default()); }
@@ -5571,14 +5593,15 @@ fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         let no_slow = s.module("No Slow").filter(|m| m.on).map(|m| [m.n("Ground %"), m.n("Air %")]);
         (s.is_on("Flight"), no_slow, pause)
     });
+    let using = game.using.is_some() || super::sunset_hands::legacy_using();
     let slow_factor = super::sunset_movement::item_use_factor(
-        game.using.is_some(), no_slow, p.ground.on_ground,
+        using, no_slow, p.ground.on_ground,
     );
     if !super::sunset_movement::speed_can_write(
-        flight || p.flying, p.fall_flying, game.using.is_some(), no_slow.is_some(),
+        flight || p.flying, p.fall_flying, using, no_slow.is_some(),
         pause, p.collision.horizontal, m.b("Stop at wall"),
     ) {
-        if matches!(mode, "NCP" | "Watchdog") { with(|s| { s.ncp.recover(); s.watchdog.suspend(); }); }
+        if matches!(mode, "NCP" | "Watchdog") { watchdog_stop(game, false); with(|s| s.ncp.recover()); }
         return None;
     }
     let scale_across = |v: [f64; 2]| [v[0] * slow_factor, v[1] * slow_factor];
@@ -5591,7 +5614,7 @@ fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
         || (vanilla && m.b("Only on ground") && !p.ground.on_ground)
         || (!m.b("In liquids") && (p.fluids.was_touching_water || p.is_in_lava()))
     {
-        if matches!(mode, "NCP" | "Watchdog") { with(|s| { s.ncp.recover(); s.watchdog.suspend(); }); }
+        if matches!(mode, "NCP" | "Watchdog") { watchdog_stop(game, false); with(|s| s.ncp.recover()); }
         return None;
     }
     if matches!(mode, "NCP" | "Watchdog") {
@@ -5760,6 +5783,7 @@ fn velocity(game: &mut Game<'_>, m: Option<&Module>) {
     let roll = super::sunset_rotation::Rng::new(game.ticks.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x7E10).next() * 100.0;
     let knock =
         if m.b("Knockback") && roll < m.n("Knockback chance (%)") { knockback_shares(m, ground) } else { [1.0; 2] };
+    with(|s| s.watchdog.filtered_knockback(game.ticks, knock[0]));
     let blasts = share("Explosions", "Explosions horizontal", "Explosions vertical");
     let Some(p) = game.player.as_mut() else {
         return;
@@ -6427,6 +6451,7 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     }
     if let S::PlayerAction(a) = packet
         && a.action == 6
+        && !super::sunset_hands::owned_block_packet()
         && kept_using(game)
     {
         return Out::Drop;
@@ -6562,7 +6587,7 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
 // The last look a move packet carried to the server (None after a teleport, which sets it).
 static LAST_LOOK: Mutex<Option<(f32, f32)>> = Mutex::new(None);
 
-fn last_look() -> Option<(f32, f32)> {
+pub(super) fn last_look() -> Option<(f32, f32)> {
     *LAST_LOOK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -7508,8 +7533,16 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
             let value = value.as_str();
             let result = found.and_then(|at| {
                 with(|s| {
-                    let setting = &mut s.modules[i].settings[at];
-                    Some((setting.parse(value), setting.shown()))
+                    let m = &mut s.modules[i];
+                    let setting = &mut m.settings[at];
+                    let alias = m.name == "Kill Aura" && setting.name == "Shield";
+                    let parsed = setting.parse(value);
+                    let shown = setting.shown();
+                    if parsed && alias {
+                        let mode = if m.b("Shield") { "Modern" } else { "Off" };
+                        if let Some(s) = m.settings.iter_mut().find(|s| s.name == "AutoBlock") { s.parse(mode); }
+                    }
+                    Some((parsed, shown))
                 })
             });
             match result {
@@ -10587,6 +10620,25 @@ fn menu_result(game: &mut Game<'_>, result: Result<String, String>) {
 #[cfg(test)]
 mod movement_config_tests {
     use super::*;
+
+    #[test]
+    fn legacy_autoblock_preserves_old_shield_profiles_and_explicit_new_choices() {
+        let mut state = State::new();
+        state.load_text("killaura.shield=true\n");
+        assert_eq!(state.module("Kill Aura").unwrap().p("AutoBlock"), "Modern");
+        state.load_text("killaura.shield=true\nkillaura.autoblock=Legacy\n");
+        let aura = state.module("Kill Aura").unwrap();
+        assert_eq!(aura.p("AutoBlock"), "Legacy");
+        assert!(aura.setting_visible(aura.settings.iter().position(|s| s.name == "Legacy reblock delay").unwrap()));
+        assert!(!aura.setting_visible(aura.settings.iter().position(|s| s.name == "Shield").unwrap()));
+        assert!(!aura.setting_visible(aura.settings.iter().position(|s| s.name == "Shield range").unwrap()));
+        state.load_text("killaura.shield=true\nkillaura.autoblock=Off\n");
+        assert_eq!(state.module("Kill Aura").unwrap().p("AutoBlock"), "Off");
+        let saved = state.module_text();
+        let mut loaded = State::new();
+        loaded.load_text(&saved);
+        assert_eq!(loaded.module("Kill Aura").unwrap().p("AutoBlock"), "Off");
+    }
 
     #[test]
     fn auto_weapon_modes_show_only_their_weapons_settings() {

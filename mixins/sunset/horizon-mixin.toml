@@ -159,6 +159,12 @@ name = "sunset_legacy_speed"
 source = "legacy_speed.rs"
 
 [[module]]
+id = "autoblock"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_autoblock"
+source = "autoblock.rs"
+
+[[module]]
 id = "rotation"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_rotation"

@@ -8,7 +8,8 @@
 fn sunset_screen_keys(world: &mut MotionWorld<'_, '_, '_>, keys: crate::sprint::Keys, window: i32) -> std::ops::ControlFlow<Result<()>> {
     if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
 
-    if world.player.item_use_speed.is_some() && crate::motion::sunset_motion::no_slow_grim() {
+    let block_scale = crate::motion::sunset_motion::take_block_use_scale();
+    if (world.player.item_use_speed.is_some() || block_scale.is_some()) && crate::motion::sunset_motion::no_slow_grim() {
         crate::motion::sunset_motion::set_across(None);
         crate::motion::sunset_motion::set_up(None);
     }
@@ -24,9 +25,12 @@ fn sunset_screen_keys(world: &mut MotionWorld<'_, '_, '_>, keys: crate::sprint::
     }
     let screen = crate::motion::sunset_motion::screen_keys(keys);
     let turn = crate::motion::sunset_motion::take_move_yaw();
-    let no_sprint = crate::motion::sunset_motion::take_no_sprint();
+    let no_sprint = crate::motion::sunset_motion::take_no_sprint() || block_scale.is_some_and(|s| s < 1.0);
     let freeze = crate::motion::sunset_motion::take_freeze();
-    let scale = crate::motion::sunset_motion::take_input_scale();
+    let scale = match (crate::motion::sunset_motion::take_input_scale(), block_scale) {
+        (Some(a), Some(b)) => Some(a * b),
+        (a, b) => a.or(b),
+    };
     if screen.is_none() && turn.is_none() && !no_sprint && !freeze && scale.is_none() {
         return std::ops::ControlFlow::Continue(());
     }

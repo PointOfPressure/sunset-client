@@ -18,7 +18,7 @@ use std::sync::atomic::Ordering;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new("Kill Aura", Category::Combat, "Attacks nearby entities.")
+        Module::new("Kill Aura", Category::Combat, "Attacks nearby entities. Legacy AutoBlock is experimental and requires translated sword use.")
             // Settings for a way of fighting, filled in when picked (preset); Custom leaves them.
             .pick("Preset", &["Custom", "HvH", "Blatant", "Ghost"])
             // Combat: how hits work on this server, what it hits with and how far.
@@ -88,7 +88,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Strafe radius", 2.5, 0.5, 6.0, 0.1)
             .pick("Strafe when", &["Always", "Jump held", "Speed on"])
             .bool("Avoid edges", true)
-            .shield(),
+            .shield()
+            // Comes after the retained Shield alias, so an explicit new profile value overrides old bool migration.
+            .pick("AutoBlock", &["Off", "Legacy", "Modern"])
+            .num("Legacy reblock delay", 1.0, 0.0, 10.0, 1.0),
     ]
 }
 
@@ -896,7 +899,8 @@ pub(super) fn target_id() -> Option<u32> {
 
 pub(super) fn diagnostics() -> String {
     st(|s| {
-        let mut out = format!("KillAura reason={} target={:?} hand={:?} combat={}", s.reason, s.target, control::owner(), s.version);
+        let mut out = format!("KillAura reason={} target={:?} hand={:?} combat={} autoblock={}", s.reason, s.target, control::owner(), s.version,
+            super::sunset_hands::autoblock_status());
         if let Some((point, ahead, error)) = s.aimed_at {
             out.push_str(&format!(" aim=[{:.2},{:.2},{:.2}] predicted=[{:.2},{:.2},{:.2}] turn_left={error:.1} trust={:.2}",
                 point[0], point[1], point[2], ahead[0], ahead[1], ahead[2], s.track.trust()));
