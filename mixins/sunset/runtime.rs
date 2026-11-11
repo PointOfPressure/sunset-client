@@ -1859,17 +1859,35 @@ fn auto_armor_line(l: &str) -> Option<String> {
     Some(format!("inventorymanager.{field}={value}"))
 }
 
+// The Modules list's line for a module that was renamed (`modules.inventorycleaner=` is now
+// `modules.inventorymanager=`), or None for one that is gone (Auto Armor: it is Inventory Manager's now, and that has
+// its own line). Other lines: Some(unchanged).
+fn modules_list_line(l: &str) -> Option<String> {
+    let Some((field, value)) = l.strip_prefix("modules.").and_then(|r| r.split_once('=')) else {
+        return Some(l.to_owned());
+    };
+    if field == "autoarmor" {
+        return None;
+    }
+    match RENAMED.iter().find(|(from, _)| *from == field) {
+        Some((_, to)) => Some(format!("modules.{to}={value}")),
+        None => Some(l.to_owned()),
+    }
+}
+
 fn renamed_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let old = |l: &str| RENAMED.iter().find(|(from, _)| l.split_once('.').is_some_and(|(id, _)| id == *from));
-    if !text.lines().any(|l| old(l).is_some() || l.starts_with("autoarmor.")) {
+    let listed_old = |l: &str| modules_list_line(l).as_deref() != Some(l);
+    if !text.lines().any(|l| old(l).is_some() || l.starts_with("autoarmor.") || listed_old(l)) {
         return std::borrow::Cow::Borrowed(text);
     }
     let lines: Vec<String> = text
         .lines()
         .filter(|l| l.trim() != "extramodules.pearlcatch=false")
-        .map(|l| match old(l) {
+        .filter_map(modules_list_line)
+        .map(|l| match old(&l) {
             Some((from, to)) => format!("{to}{}", &l[from.len()..]),
-            None => auto_armor_line(l).unwrap_or_else(|| l.to_owned()),
+            None => auto_armor_line(&l).unwrap_or_else(|| l.clone()),
         })
         .collect();
     std::borrow::Cow::Owned(lines.join("\n"))
@@ -11053,6 +11071,27 @@ autoarmor.avoidcursed=true
         assert!(m.b("Avoid cursed"));
         assert!(state.module("Auto Armor").is_none(), "no second module");
         assert!(!text.contains("autoarmor."), "{text}");
+    }
+
+    // A profile saved before Auto Armor joined Inventory Manager and before Inventory Cleaner's rename, with the
+    // Modules list's lines for both: it is accepted, and both land on Inventory Manager.
+    #[test]
+    fn old_profiles_with_modules_list_lines_still_load() {
+        let state = State::new();
+        let body = "modules.on=false
+modules.autoarmor=true
+modules.inventorycleaner=true
+autoarmor.on=true
+autoarmor.mode=Inventory open
+inventorycleaner.on=true
+inventorycleaner.delayticks=2
+";
+        let text = format!("{}
+{body}", super::super::sunset_profiles::HEADER);
+        assert!(state.check_profile(&text).is_ok(), "{:?}", state.check_profile(&text));
+        let merged = merged_modules(body).into_owned();
+        assert!(merged.contains("modules.inventorymanager=true") && !merged.contains("modules.autoarmor"), "{merged}");
+        assert!(merged.contains("inventorymanager.autoarmor=true") && merged.contains("inventorymanager.armormode=Inventory open"), "{merged}");
     }
 
     // Every preset field names one of Scaffold's settings and takes the value it gives.
