@@ -39,6 +39,15 @@ pub(super) fn replaying() -> bool {
     REPLAY.with(Cell::get)
 }
 
+// A click Sunset's inventory modules send themselves while you stand still (Inventory Manager, Auto Armor): it goes
+// past GrimAC mode's queue as a plain click. Queued, it would wait for the inventory to close, and the module with it.
+pub(super) fn direct<R>(f: impl FnOnce() -> R) -> R {
+    let before = REPLAY.with(|flag| flag.replace(true));
+    let result = f();
+    REPLAY.with(|flag| flag.set(before));
+    result
+}
+
 fn enabled(game: &Game<'_>) -> bool {
     game.native_window()
         && game.native_on(sunset::ID)

@@ -914,11 +914,16 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
     let Some(step) = exec(|e| e.planned(fingerprint, step, took)) else {
         return;
     };
-    match step {
+    // Its clicks go straight out (past GUI Move's GrimAC queue, which would hold them until the inventory closes), so
+    // only while you stand still: a click while moving is what anticheats look for. Moving, it waits.
+    if !super::remote::sunset_combat_remote::quiet(game) {
+        return;
+    }
+    super::sunset_gui_move::direct(|| match step {
         Step::Swap { from, to } => game.remote_menu_ops(&[(Some(from), to as i32, Swap)]),
         Step::Throw(i) => game.remote_menu_ops(&[(Some(i), 1, Throw)]),
         Step::Exchange(a, b) => game.remote_menu_ops(&[(Some(a), 0, Pickup), (Some(b), 0, Pickup), (Some(a), 0, Pickup)]),
-    };
+    });
     // rand() takes the PS lock itself: rolled here, outside any ps() or exec() closure.
     let delay = m.n("Delay (ticks)") as u64 + rand(m.n("Delay variation") as usize + 1) as u64;
     let settle = super::sunset_inventory_exec::settle_ticks(super::remote::sunset_combat_remote::latency(game), delay);

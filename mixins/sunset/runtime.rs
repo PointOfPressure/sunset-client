@@ -4375,7 +4375,8 @@ pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
             if !super::remote::sunset_combat_remote::quiet(game) {
                 return;
             }
-            wear(game, i, a);
+            // Past GUI Move's GrimAC queue (it would hold the click until the inventory closes); you stand still here.
+            super::sunset_gui_move::direct(|| wear(game, i, a));
             with(|s| s.armor_wait = m.n("Armor delay (ticks)") as u32);
             // Inventory Manager waits for the server's answer to this too.
             let settle = super::sunset_inventory_exec::settle_ticks(super::remote::sunset_combat_remote::latency(game), 0);
