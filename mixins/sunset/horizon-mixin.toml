@@ -1993,6 +1993,12 @@ name = "sunset_lag"
 source = "lag.rs"
 
 [[module]]
+id = "flight"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_flight"
+source = "flight.rs"
+
+[[module]]
 id = "inventory_exec"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_inventory_exec"

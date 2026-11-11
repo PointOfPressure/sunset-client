@@ -127,6 +127,7 @@ fn report(game: &Game<'_>, limits: &Limits) -> String {
     super::sunset_lag::report(&mut out);
     super::sunset_backtrack::report(&mut out);
     super::sunset_player::inventory_report(&mut out);
+    super::sunset_flight::report(&mut out);
     wire_sequence(&mut out);
     anticheat(&mut out, &chat);
     // The packet log gets up to two fifths of the room, the chat what is left.

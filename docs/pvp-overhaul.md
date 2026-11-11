@@ -101,16 +101,35 @@ Not done from A/B: profiles as full strategies (Legacy/BedWars, Crystal PvP...; 
 limits and junk), potion effect evaluation (potions rank by splash first, then count), per-slot priorities. The
 executor (65c833f) is unchanged.
 
-## Next steps (groups C to G, not started)
+## Round 3: Flight 2.0 (groups E and F)
 
-- C/D Scaffold: compact settings (Mode, Preset, Rotations, Sprint, Tower Off/Legit/Fast, Auto switch, Same Y,
-  Advanced) with mode-filtered visibility and migration of old names; block selection from `BlockUse` (no falling or
-  valuable blocks); diagnostics line in the Debug Report. Keep Normal, Legit, Godbridge and Telly as they are.
-- E Flight: per-mode state instead of the shared FLY_* statics; keep Abilities and Velocity; isolate Anti kick and
-  ground flags per strategy.
-- F Experimental NCP Hover / Burst / Bounce: to be written from the behaviour described in the task, only with an
-  NCP test server to check them against. None exists here yet.
-- G: in-game checks by the user.
+- Isolation: the false ground claim (`FLIGHT_GROUND`, every move "on the ground") and the Packet anti kick
+  (`FLY_PACKET`/`fly_down`) are now Abilities' and Velocity's only; the new strategies never get them.
+  `flight_pre`'s still-flight yaw nudge and flying speed are skipped for them too.
+- `flight.rs` (new): experimental strategies with their own state and phases (Idle, Preparing, Active, Recovery):
+  - NCP Hover: vertical speed held at 0, horizontal left to the game; the height sent is raised by 1e-5 plus a
+    random 1e-10 to 1e-5 every other tick (never negative), applied on the move packet only in the air.
+  - NCP Burst: on the ground with two free blocks above, a jump with Burst speed (9) blocks a tick of horizontal
+    speed along your keys, times Burst friction (0.935) each tick, the fall softened to -0.05; ends falling past
+    -0.3, under 0.3 speed, on landing or after 20 ticks, then Recovery until you land. One burst per enabling
+    unless Burst repeat.
+  - NCP Bounce: a cycle of Bounce period (4) ticks: the movement saved, held at a stop, given back times Bounce boost
+    (upward at most 0.42).
+  - A server setback puts the strategy in Recovery for Setback pause ticks (nothing saved kept); real knockback
+    (SetEntityMotion for you) for 10 ticks. Flight off, a mode change, Panic or a new world take back the horizontal
+    speed a strategy gave and reset it. The Debug Report has a Flight strategy line.
+- Not done: the old Clip variant (it relies on client timer changes and expected server teleports, which Horizon's
+  protocol does not reproduce faithfully here); coordination with Speed (Speed's motion and a strategy's both set
+  velocity; the strategy's comes later in the tick). None of the three has been tried against NoCheatPlus: there is
+  no NCP test server here. They are named NCP for what they were modelled on, not for passing it.
+
+## Next steps
+
+- Test: NCP Hover/Burst/Bounce against a pinned NoCheatPlus build (record server version, config, ping,
+  violations, setbacks); Abilities/Velocity unchanged behaviour.
+- C/D Scaffold: compact settings with mode-filtered visibility and migration; block selection from `BlockUse`;
+  diagnostics line. Keep Normal, Legit, Godbridge and Telly as they are.
+- Inventory profiles as full strategies; potion effects.
 
 ## Round 2, phases 2 and 3: Scaffold tower, Flight setbacks
 

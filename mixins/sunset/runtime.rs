@@ -392,6 +392,18 @@ impl Module {
                 "Healing only" | "Potion delay (ticks)" => self.b("Potion refill"),
                 _ => true,
             },
+            "Flight" => {
+                let mode = self.p("Mode");
+                let old = matches!(mode, "Abilities" | "Velocity");
+                match name {
+                    "Speed" | "Anti kick mode" => old,
+                    "Delay" | "Off time" => old && self.p("Anti kick mode") != "None",
+                    "Vertical speed match" | "No sneak" => mode == "Velocity",
+                    "Burst speed" | "Burst friction" | "Burst repeat" => mode == "NCP Burst",
+                    "Bounce period (ticks)" | "Bounce boost" => mode == "NCP Bounce",
+                    _ => true,
+                }
+            }
             "Inventory Manager" => match name {
                 "Armor key" => self.p("Armor mode") == "Key",
                 "Switch sets" => key_from_text(self.t("Switch key")).is_some(),
@@ -717,7 +729,14 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Longest restore delay", 2.0, 0.0, 3.0, 1.0),
         Module::new("Auto Walk", Movement, "Walks forward for you."),
         Module::new("Flight", Movement, "Lets you fly.")
-            .pick("Mode", &["Abilities", "Velocity"])
+            // NCP Hover, NCP Burst and NCP Bounce are experimental strategies (flight.rs), each with its own state;
+            // they take neither the false ground claim nor the anti kick.
+            .pick("Mode", &["Abilities", "Velocity", "NCP Hover", "NCP Burst", "NCP Bounce"])
+            .num("Burst speed", 9.0, 0.5, 10.0, 0.25)
+            .num("Burst friction", 0.935, 0.8, 0.99, 0.005)
+            .bool("Burst repeat", false)
+            .num("Bounce period (ticks)", 4.0, 2.0, 10.0, 1.0)
+            .num("Bounce boost", 1.0, 0.5, 2.0, 0.05)
             .num("Speed", 0.1, 0.0, 5.0, 0.01)
             .bool("Vertical speed match", false)
             .bool("No sneak", false)
@@ -2327,9 +2346,10 @@ pub(super) fn sync_flags(s: &mut State) {
     }), Ordering::Relaxed);
     NO_FALL_MACE.store(no_fall.is_some_and(|m| m.b("Pause on mace")), Ordering::Relaxed);
     let flight = s.module("Flight").filter(|m| m.on);
-    FLIGHT_GROUND.store(flight.is_some(), Ordering::Relaxed);
+    let legacy_flight = flight.filter(|m| !super::sunset_flight::experimental(m.p("Mode")));
+    FLIGHT_GROUND.store(legacy_flight.is_some(), Ordering::Relaxed);
     GLIDE_GROUND.store(s.is_on("Glide"), Ordering::Relaxed);
-    FLY_PACKET.store(flight.is_some_and(|m| m.p("Anti kick mode") == "Packet"), Ordering::Relaxed);
+    FLY_PACKET.store(legacy_flight.is_some_and(|m| m.p("Anti kick mode") == "Packet"), Ordering::Relaxed);
     BLINK.store(s.is_on("Blink"), Ordering::Relaxed);
     let hunger = s.module("Anti Hunger").filter(|m| m.on);
     ANTI_SPRINT.store(hunger.is_some_and(|m| m.b("Sprint")), Ordering::Relaxed);
@@ -5105,6 +5125,7 @@ pub(super) fn server_correction(game: &mut Game<'_>) {
             say(game, "Flight off: the server set you back.");
         } else {
             with(|s| s.fly_setback = pause);
+            super::sunset_flight::correction(pause);
         }
     }
     super::sunset_render::no_slow_reset();
@@ -5142,6 +5163,7 @@ fn knockback_shares(m: &Module, ground: bool) -> [f64; 2] {
 fn flight_pre(game: &mut Game<'_>, m: Option<&Module>) {
     use horizon_client::motion::sunset_motion as motion;
     let Some(m) = m else {
+        super::sunset_flight::stop(game);
         motion::set_flying_speed(None);
         let (delay, off) = (20, 1);
         with(|s| {
@@ -5154,6 +5176,11 @@ fn flight_pre(game: &mut Game<'_>, m: Option<&Module>) {
         FLY_LAST_Y.store(u64::MAX, Ordering::Relaxed);
         return;
     };
+    if super::sunset_flight::experimental(m.p("Mode")) {
+        motion::set_flying_speed(None);
+        return;
+    }
+    super::sunset_flight::stop(game);
     let Some(p) = game.player.as_ref() else {
         return;
     };
@@ -5193,6 +5220,10 @@ fn flight_post(game: &mut Game<'_>, m: Option<&Module>, jump: bool, sneak: bool,
     let Some(m) = m else {
         return;
     };
+    if super::sunset_flight::experimental(m.p("Mode")) {
+        super::sunset_flight::tick(game, m);
+        return;
+    }
     let (velocity, kick) = (m.p("Mode") == "Velocity", m.p("Anti kick mode"));
     let (delay, off_time) = (m.n("Delay") as i32, m.n("Off time") as i32);
     let (rest, remind, last_yaw) = with(|s| {
@@ -6326,6 +6357,11 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         if FLY_PACKET.load(Ordering::Relaxed) {
             fly_down(game, &mut m, here);
         }
+        if let Some(dy) = super::sunset_flight::offset() {
+            let mut at = m.at.unwrap_or(here);
+            at[1] += dy;
+            m.at = Some(at);
+        }
         // The server adds each move's drop to the fall, and a move that says you are on the ground costs what has
         // added up beyond three blocks. No Fall's Packet mode claims the ground on every move down, so the count
         // never passes one move's drop (Sunset's waits for 0.5 blocks a tick, which leaves a fall the server counted
@@ -6582,6 +6618,9 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
         if matches!(packet, C::Login(_) | C::Respawn(_) | C::PlayerPosition(_)) {
             super::sunset_combat_wire::reset_look();
         }
+        if matches!(packet, C::Login(_) | C::Respawn(_)) {
+            super::sunset_flight::reset();
+        }
         super::sunset_combat_inventory::packet(game, packet);
         super::sunset_throws::packet(game, packet);
         super::sunset_effects::packet(game, packet);
@@ -6589,6 +6628,7 @@ fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::C
         if let C::SetEntityMotion(p) = packet {
             super::sunset_melee::note_velocity(game, p.id, p.velocity);
             if game.remote.as_ref().is_some_and(|r| r.entity_id == p.id) {
+                super::sunset_flight::knocked();
                 super::sunset_lag::knocked();
                 super::sunset_render::no_slow_knocked();
             }
@@ -6980,6 +7020,7 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     with(|s| { s.tool_back = None; s.tool_pulled = None; s.eating = false; s.eat_slot = None; });
     turns(|t| { t.queue.clear(); t.carried = false; t.restore = false; });
     BLINK_HELD.store(false, Ordering::Relaxed);
+    super::sunset_flight::stop(game);
     FLY_DOWN.store(false, Ordering::Relaxed);
     FLY_LAST_Y.store(u64::MAX, Ordering::Relaxed);
     set_last_look(None);
