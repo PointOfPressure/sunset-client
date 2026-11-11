@@ -5,6 +5,7 @@
 // that look meets the target within vanilla reach (see sunset_rotation).
 
 use super::sunset::{Canvas, Category, Module, health_colour, hold, look_at, toggle_named};
+use super::sunset_aura_aim as aim;
 use super::sunset_aura_timing as timing;
 use super::sunset_combat_control as control;
 use super::sunset_rotation::{Managed, direction, track};
@@ -18,6 +19,8 @@ use std::sync::atomic::Ordering;
 pub(super) fn defaults() -> Vec<Module> {
     vec![
         Module::new("Kill Aura", Category::Combat, "Attacks nearby entities.")
+            // Settings for a way of fighting, filled in when picked (preset); Custom leaves them.
+            .pick("Preset", &["Custom", "HvH", "Blatant", "Ghost"])
             // Combat: how hits work on this server, what it hits with and how far.
             .pick("Combat version", &["Auto", "Legacy (1.8)", "Modern (1.9+)"])
             .pick("Attack when holding", &["Weapons", "All"])
@@ -25,7 +28,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Auto switch", false)
             .bool("Swap back", false)
             .num("Weapon switch delay", 0.0, 0.0, 10.0, 1.0)
+            // Range: who it may target and track. Attack range: how far a hit may go (the server's reach: Horizon's,
+            // vanilla's, takes 3 blocks to the target's box).
             .num("Range", 4.5, 1.0, 6.0, 0.1)
+            .num("Attack range", 3.0, 1.0, 6.0, 0.05)
             .num("Walls range", 3.5, 1.0, 6.0, 0.1)
             .bool("Only on click", false)
             .bool("Only on look", false)
@@ -34,7 +40,7 @@ pub(super) fn defaults() -> Vec<Module> {
             // Targeting.
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "player")
-            .pick("Priority", PRIORITIES)
+            .pick("Priority", PRIORITY_CHOICES)
             .bool("Hurt time priority", false)
             .num("Target FOV", 360.0, 10.0, 360.0, 5.0)
             // Loaded before Attack mode: a config older than it says Multi by a Max targets above 1 (see set_field).
@@ -53,8 +59,16 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Health threshold", 0.0, 0.0, 100.0, 1.0)
             // Rotations.
             .pick("Rotate", &["Always", "On hit", "None"])
-            .pick("Rotation mode", &["Silent aura", "Snap", "Normal", "Smooth", "Custom"])
+            // Snap turns at once (Instant); Normal, Smooth and Custom follow at their speeds (Tracked); Adaptive turns
+            // fast when far, settles near the point, holds inside a deadzone and lands as a hit is due.
+            .pick("Rotation mode", &["Silent aura", "Snap", "Normal", "Smooth", "Custom", "Adaptive"])
             .pick("Rotation view", &["Silent", "Visible"])
+            // Aiming starts within Rotation range; where in the box (aura_aim.rs), and how far ahead of its movement.
+            .num("Rotation range", 4.5, 1.0, 8.0, 0.1)
+            .pick("Aim point", &["Dynamic", "Center", "Nearest", "Custom"])
+            .num("Aim height (%)", 50.0, 0.0, 100.0, 5.0)
+            .pick("Prediction", &["Basic", "Adaptive", "Off"])
+            .num("Prediction strength", 1.0, 0.0, 2.0, 0.1)
             .num("Yaw speed", 60.0, 5.0, 180.0, 5.0)
             .num("Pitch speed", 60.0, 5.0, 180.0, 5.0)
             .num("Smoothing", 0.0, 0.0, 0.9, 0.05)
@@ -115,7 +129,42 @@ struct As {
     // Legacy's click clock (aura_timing.rs), and the combat model it went by last tick and why (.auradebug).
     clicks: Option<timing::Clicks>,
     version: &'static str,
+    // The target's track (prediction), the point kept in its box, Switch's memory, and the last aim (.auradebug).
+    track: aim::Track,
+    aim_share: Option<aim::Share>,
+    recent: aim::Recent,
+    aimed_at: Option<([f64; 3], [f64; 3], f32)>,
+    // Hits sent and not yet seen to land (target id, tick), and the counts .auradebug shows.
+    pending: Vec<(u32, u64)>,
+    stats: Stats,
 }
+
+// What happened to Kill Aura's attacks, as counted since it was turned on. Sent is a hit packet on its way; landed and
+// unseen are inferred from the target's hurt time afterwards (another player's hit looks the same: no confirmation).
+#[derive(Clone, Copy, Debug, Default)]
+struct Stats {
+    sent: u64,
+    landed: u64,
+    unseen: u64,
+    // Why ticks passed with no hit, by reason (the most recent dozen kinds).
+    reasons: [(&'static str, u64); 12],
+}
+
+impl As {
+    // Why it did what it did this tick, counted.
+    fn why(&mut self, reason: &'static str) {
+        self.reason = reason;
+        let r = &mut self.stats.reasons;
+        if let Some(e) = r.iter_mut().find(|e| e.0 == reason) {
+            e.1 += 1;
+        } else if let Some(e) = r.iter_mut().find(|e| e.0.is_empty()) {
+            *e = (reason, 1);
+        }
+    }
+}
+
+// Kill Aura's Priority choices: the shared ones, and Smart (aura_aim::smart_score).
+const PRIORITY_CHOICES: &[&str] = &["Lowest distance", "Highest distance", "Lowest health", "Closest angle", "Smart"];
 
 static AS: Mutex<Option<As>> = Mutex::new(None);
 impl As {
@@ -189,13 +238,28 @@ fn fit_slot(game: &Game<'_>, m: &Module, slot: usize) -> bool {
     }
 }
 
-// What to hit with: what you hold if it will do, else with Auto switch the first in the hotbar that will.
-fn weapon_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
-    if fit_slot(game, m, game.selected) {
-        return Some(game.selected);
+// What to hit with. Without Auto switch, what you hold if it will do. With it, the best weapon of the hotbar it may use,
+// ranked by the shared evaluator (inventory_plan::weapon_score: a hit's damage in Legacy, damage over time in Modern,
+// enchantments and wear), what you hold kept unless another is over 5% better.
+fn weapon_slot(game: &Game<'_>, m: &Module, legacy: bool) -> Option<usize> {
+    let held_fits = fit_slot(game, m, game.selected);
+    if !m.b("Auto switch") {
+        return held_fits.then_some(game.selected);
     }
-    let held = |slot: usize| game.inventory.get(slot).is_some_and(Option::is_some);
-    m.b("Auto switch").then(|| (0..9).find(|&slot| held(slot) && fit_slot(game, m, slot))).flatten()
+    let value = |slot: usize| {
+        game.inventory.get(slot).and_then(Option::as_ref)
+            .map(|s| super::sunset_inventory_plan::weapon_score(&super::sunset_player::plan_item(game, s), legacy))
+    };
+    let best = (0..9)
+        .filter(|&slot| fit_slot(game, m, slot))
+        .filter_map(|slot| value(slot).map(|v| (slot, v)))
+        .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
+    match (held_fits, best) {
+        (true, Some((_, top))) if value(game.selected).is_none_or(|v| v * 1.05 >= top) => Some(game.selected),
+        (_, Some((slot, _))) => Some(slot),
+        (true, None) => Some(game.selected),
+        (false, None) => None,
+    }
 }
 
 pub(super) fn is_hostile(kind: &str) -> bool {
@@ -387,7 +451,7 @@ mod identity_tests {
 }
 
 // Who to hit this tick: Multi all it may, Switch each in turn, Single one (the same one with Target lock).
-fn choose(m: &Module, mut list: Vec<Target>) -> Vec<Target> {
+fn choose(m: &Module, mut list: Vec<Target>, now: u64) -> Vec<Target> {
     let mode = m.p("Attack mode");
     if mode == "Multi" {
         list.truncate(m.n("Max targets") as usize);
@@ -395,8 +459,13 @@ fn choose(m: &Module, mut list: Vec<Target>) -> Vec<Target> {
     }
     let (current, next) = st(|s| (s.current, std::mem::take(&mut s.switch_next)));
     let at = current.and_then(|id| list.iter().position(|t| t.id == id));
+    // Switch moves on after each hit sent (no landing is confirmed), to the best target not hit in the last 10 ticks.
+    let fresh = |now: u64| {
+        let ids: Vec<u32> = list.iter().map(|t| t.id).collect();
+        st(|s| s.recent.next(&ids, now, 10)).unwrap_or(0)
+    };
     let pick = match (mode, at) {
-        ("Switch", Some(i)) if next => (i + 1) % list.len(),
+        ("Switch", Some(_)) if next => fresh(now),
         ("Switch", Some(i)) => i,
         ("Single", Some(i)) if m.b("Target lock") => i,
         _ => 0,
@@ -456,6 +525,8 @@ fn silent_return(game: &Game<'_>, m: &Module) {
 }
 
 pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
+    preset(game, m);
+    observe_hits(game);
     st(|s| s.target = None);
     let held = st(|s| (s.current, s.identity));
     let released = held.0.is_some_and(|id| held.1.is_none_or(|token| !super::sunset_antibot::current(token)) || !eligible(game, m, id));
@@ -473,7 +544,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     // A hit on its way: nothing else may take the hand before it goes.
     if super::sunset::CRIT_STAGE.load(Ordering::Relaxed) != 0 || super::sunset::strike_waiting() {
         let _ = control::claim(HAND);
-        st(|s| s.reason = "a hit is on its way");
+        st(|s| s.why("a hit is on its way"));
         return;
     }
     // Auto disable: after you die, or in a new world.
@@ -490,7 +561,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     }
     // The hit has gone, and the hand with it, unless it was lost on the way (a new world, say).
     if st(|s| s.hit.take()).is_some_and(|hit| !hit.current()) {
-        st(|s| s.reason = "lost the hand before the hit went");
+        st(|s| s.why("lost the hand before the hit went"));
     }
     // The hand: kept only for a weapon to swap back from, and left alone while another module has it.
     if !st(|s| s.swapped) {
@@ -498,7 +569,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     }
     if !control::available(HAND) || !super::sunset::inventory_idle(game) {
         stop(game, m);
-        st(|s| s.reason = "another module has the hand, or a menu is open");
+        st(|s| s.why("another module has the hand, or a menu is open"));
         return;
     }
     if game.player.as_ref().is_none_or(|p| p.health.health() <= 0.0) || game.spectator() {
@@ -526,7 +597,20 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         Some(t.id) != own
             && entity_check(game, m, t, eye)
     });
-    sort_targets(game, &mut list, m.p("Priority"));
+    if m.p("Priority") == "Smart" {
+        let look = st(|s| s.look).unwrap_or((game.yaw, game.pitch));
+        let held = st(|s| s.current);
+        let range = m.n("Range");
+        let mut scored: Vec<(f64, Target)> = list.into_iter().map(|t| {
+            let hurt = game.mobs.iter().any(|x| x.id == t.id && x.hurt_time > 0);
+            let turn = aim::angle(look, look_at(eye, centre(&t)));
+            (aim::smart_score(reach(eye, &t), range, turn, hurt, in_sight(game, &t), held == Some(t.id)), t)
+        }).collect();
+        scored.sort_by(|a, b| a.0.total_cmp(&b.0));
+        list = scored.into_iter().map(|(_, t)| t).collect();
+    } else {
+        sort_targets(game, &mut list, m.p("Priority"));
+    }
     if m.b("Hurt time priority") {
         // Who can take a hit soonest; the sort keeps Priority's order among equals.
         let hurt = |t: &Target| game.mobs.iter().find(|x| x.id == t.id).map_or(0, |x| x.hurt_time);
@@ -534,18 +618,19 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     }
     if list.is_empty() {
         stop(game, m);
-        st(|s| s.reason = "no target");
+        st(|s| s.why("no target"));
         return;
     }
     // Pick the weapon: never out of a hand eating, blocking or mining.
-    let Some(slot) = weapon_slot(game, m) else {
+    let legacy_now = timing::version(m.p("Combat version"), game.main_hand_attack_speed()).0 == timing::Version::Legacy;
+    let Some(slot) = weapon_slot(game, m, legacy_now) else {
         stop(game, m);
-        st(|s| s.reason = "no usable weapon");
+        st(|s| s.why("no usable weapon"));
         return;
     };
     if slot != game.selected {
         if using || game.mining.is_some() || !control::claim(HAND) {
-            st(|s| s.reason = "the hand is busy");
+            st(|s| s.why("the hand is busy"));
             return;
         }
         if m.b("Swap back") {
@@ -560,18 +645,20 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         hold(game, slot);
     }
     if st(|s| s.swapped) && !control::claim(HAND) {
-        st(|s| s.reason = "the hand is busy");
+        st(|s| s.why("the hand is busy"));
         return;
     }
-    let list = choose(m, list);
+    let list = choose(m, list, game.ticks);
     let primary = list[0].clone();
     let delay = m.n("Target switch delay") as u32;
     let waiting = st(|s| {
         s.identity = super::sunset_antibot::token(primary.id);
         s.select(primary.id, delay, m.p("Attack mode") == "Multi", released)
     });
-    let rotate_mode = m.p("Rotate");
+    // Aiming waits for Rotation range (the target stays chosen meanwhile).
+    let rotate_mode = if m.p("Rotate") == "Always" && reach(eye, &primary) > m.n("Rotation range") { "None" } else { m.p("Rotate") };
     let silent = rotate_mode == "Always" && m.p("Rotation mode") == "Silent aura";
+    let attack_range = m.n("Attack range");
     if !silent {
         silent_return(game, m);
     }
@@ -584,17 +671,42 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         let yours = game.player.as_ref().filter(|_| game.riding.is_none()).map_or([0.0; 3], |p| {
             [p.position.x - game.previous_position.x, p.position.y - game.previous_position.y, p.position.z - game.previous_position.z]
         });
-        let c = centre(&primary);
-        let to = look_at(
-            [eye[0] + yours[0], eye[1] + yours[1], eye[2] + yours[2]],
-            [c[0] + primary.pos[0] - primary.prev[0], c[1] + primary.pos[1] - primary.prev[1], c[2] + primary.pos[2] - primary.prev[2]],
+        // Where the target will be (the predictor's track, at your ping), and the point of its box to aim at there.
+        let latency = super::remote::sunset_combat_remote::latency(game);
+        let prediction = aim::Prediction::named(m.p("Prediction"));
+        let ahead = st(|s| {
+            s.track.observe(primary.id, primary.pos);
+            s.track.predict(prediction, aim::horizon_ticks(latency), m.n("Prediction strength"))
+        });
+        let shift = [ahead[0] - primary.pos[0], ahead[1] - primary.pos[1], ahead[2] - primary.pos[2]];
+        let (lo, hi) = (
+            [primary.lo[0] + shift[0], primary.lo[1] + shift[1], primary.lo[2] + shift[2]],
+            [primary.hi[0] + shift[0], primary.hi[1] + shift[1], primary.hi[2] + shift[2]],
         );
+        let eye_next = [eye[0] + yours[0], eye[1] + yours[1], eye[2] + yours[2]];
+        let walls = m.n("Walls range");
+        let point_mode = aim::AimPoint::named(m.p("Aim point"), m.n("Aim height (%)"));
+        let kept = st(|s| s.aim_share);
+        let mut visible = |p: [f64; 3]| dist(eye_next, p) <= walls || clear_line(game, p, [i32::MIN; 3]);
+        let (point, share) = aim::plan_point(eye_next, lo, hi, from, point_mode, attack_range, kept, &mut visible);
+        let to = look_at(eye_next, point);
+        st(|s| {
+            s.aim_share = Some(share);
+            s.aimed_at = Some((point, ahead, aim::angle(from, to)));
+        });
         let was = st(|s| s.aimed.replace((primary.id, to))).filter(|a| a.0 == primary.id).map(|a| a.1);
         let next = if silent {
             // Silent aura: the game's own move packet carries it (only when it changed), whatever Rotation view says.
             silent_aim(game, m, &primary, eye)
         } else {
-            let next = track(m.p("Rotation mode"), from, to, was, m.n("Yaw speed") as f32, m.n("Pitch speed") as f32, m.n("Smoothing") as f32);
+            let next = if m.p("Rotation mode") == "Adaptive" {
+                // A hit is due when the cooldown (Modern) is nearly charged; Legacy's clicks can come any tick.
+                let due = legacy_now || game.hand_strength.scale(0.5, game.main_hand_attack_speed()) >= 0.85;
+                let carried = was.map_or(from, |w| (from.0 + ((to.0 - w.0 + 180.0).rem_euclid(360.0) - 180.0), from.1 + (to.1 - w.1)));
+                aim::adaptive_step(carried, to, (m.n("Yaw speed") as f32, m.n("Pitch speed") as f32), due)
+            } else {
+                track(m.p("Rotation mode"), from, to, was, m.n("Yaw speed") as f32, m.n("Pitch speed") as f32, m.n("Smoothing") as f32)
+            };
             if m.p("Rotation view") == "Visible" {
                 (game.yaw, game.pitch) = next;
             } else {
@@ -606,7 +718,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     }
     // Just found a target: its look has not gone out yet.
     if waiting || (rotate_mode == "Always" && sent.is_none()) {
-        st(|s| s.reason = "turning to a new target");
+        st(|s| s.why("turning to a new target"));
         return;
     }
     // The delay: the game's cooldown, or a fixed number of ticks. Hit select also waits out the target's hurt time.
@@ -618,7 +730,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             false
         }
     }) {
-        st(|s| s.reason = "weapon switch delay");
+        st(|s| s.why("weapon switch delay"));
         return;
     }
     // Legacy clicks at a rate; Modern waits for the cooldown, a fixed delay, or (Hit select) the hurt time too.
@@ -645,11 +757,11 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     };
     let spear = game.held().is_some_and(|s| Kinetic::of(&s.item).is_some());
     if !ready || (spear && game.cannot_attack_with_item(game.hand_strength.ticker, 0)) {
-        st(|s| s.reason = "cooling down");
+        st(|s| s.why("cooling down"));
         return;
     }
     if !control::claim(HAND) {
-        st(|s| s.reason = "the hand is busy");
+        st(|s| s.why("the hand is busy"));
         return;
     }
     // With Always a hit waits until the look the server has meets the target, whether Ray cast is on or not.
@@ -658,17 +770,33 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     st(|s| s.reason = "the look does not meet the target");
     // A stab is one action, whoever it goes through.
     for t in list.iter().take(if spear { 1 } else { usize::MAX }) {
-        if timing == "Hit select" && game.mobs.iter().any(|x| x.id == t.id && x.hurt_time > 0) {
+        // Hit select: not while the target's hurt time still guards it; its last tick counts (the hit lands as it ends).
+        if timing == "Hit select" && game.mobs.iter().any(|x| x.id == t.id && x.hurt_time > 1) {
+            st(|s| s.why("hit select: the target is still hurt"));
             continue;
         }
         let on_hit = (rotate_mode == "On hit").then(|| look_at(eye, centre(t)));
         let aim = on_hit.or(sent).unwrap_or((game.yaw, game.pitch));
-        // Silent aura hits only within vanilla reach of the look the server has (Range only picks who it aims at).
-        let range = if silent { m.n("Range").min(vanilla_reach(game)) } else { m.n("Range") };
+        // A hit goes only within Attack range (Silent aura's also within vanilla reach); Range only picks whom it aims at.
+        let range = if silent { attack_range.min(vanilla_reach(game)) } else { attack_range };
+        if !spear && reach(eye, t) > range {
+            st(|s| s.why("out of attack range"));
+            continue;
+        }
         if if spear { !stab_hits(game, m, eye, aim, t) } else { check && !ray_hits(game, m, eye, aim, t, range) } {
+            st(|s| s.why("the look does not meet the target"));
             continue;
         }
         super::sunset::attack_for(game, t.id, crits, on_hit, super::sunset::AttackSource::KillAura);
+        let tick = game.ticks;
+        st(|s| {
+            s.stats.sent += 1;
+            s.recent.hit(t.id, tick);
+            if s.pending.len() >= 8 {
+                s.pending.remove(0);
+            }
+            s.pending.push((t.id, tick));
+        });
         hit = true;
     }
     if !hit && legacy {
@@ -679,7 +807,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         st(|s| {
             s.hit_timer = 0;
             s.switch_next = true;
-            s.reason = "hit sent";
+            s.why("hit sent");
             s.hit = Some(control::finish(HAND));
         });
     }
@@ -691,13 +819,96 @@ pub(super) fn eligible(game: &Game<'_>, m: &Module, id: u32) -> bool {
         .is_some_and(|(eye, mob)| entity_check(game, m, &mob_target(mob), eye))
 }
 
+// Hits sent a few ticks ago: the target's hurt time starting again says it took one (or someone else's, so: inferred);
+// four ticks with none says it did not show.
+fn observe_hits(game: &Game<'_>) {
+    let now = game.ticks;
+    let pending = st(|s| std::mem::take(&mut s.pending));
+    let mut keep = Vec::with_capacity(pending.len());
+    let (mut landed, mut unseen) = (0, 0);
+    for (id, tick) in pending {
+        let hurt = game.mobs.iter().find(|x| x.id == id).map(|x| x.hurt_time);
+        match hurt {
+            Some(h) if h >= 8 && now > tick => landed += 1,
+            _ if now.saturating_sub(tick) > 4 => unseen += 1,
+            _ => keep.push((id, tick)),
+        }
+    }
+    st(|s| {
+        s.pending = keep;
+        s.stats.landed += landed;
+        s.stats.unseen += unseen;
+    });
+}
+
+// Kill Aura's presets: real settings for a way of fighting, filled in when picked (not on the first look, so a change
+// made afterwards stays). HvH: one locked target, Smart priority, Adaptive aim at a dynamic point with adaptive
+// prediction. Blatant: fast switching and snapping at the nearest point, at full range. Ghost: only while you click,
+// within a narrow field of view, slow adaptive turns.
+const PRESETS: [(&str, &[(&str, &str)]); 3] = [
+    ("HvH", &[("Attack mode", "Single"), ("Target lock", "true"), ("Priority", "Smart"), ("Hurt time priority", "false"),
+        ("Rotate", "Always"), ("Rotation mode", "Adaptive"), ("Aim point", "Dynamic"), ("Prediction", "Adaptive"),
+        ("Ray cast", "true"), ("Auto switch", "true"), ("Range", "6"), ("Rotation range", "6"), ("Only on click", "false"),
+        ("Yaw speed", "180"), ("Pitch speed", "180")]),
+    ("Blatant", &[("Attack mode", "Switch"), ("Priority", "Lowest distance"), ("Rotate", "Always"), ("Rotation mode", "Snap"),
+        ("Aim point", "Nearest"), ("Prediction", "Basic"), ("Range", "6"), ("Rotation range", "6"), ("Target FOV", "360"),
+        ("Auto switch", "true"), ("Only on click", "false")]),
+    ("Ghost", &[("Attack mode", "Single"), ("Priority", "Closest angle"), ("Rotate", "Always"), ("Rotation mode", "Adaptive"),
+        ("Aim point", "Dynamic"), ("Prediction", "Basic"), ("Range", "3.8"), ("Rotation range", "3.8"), ("Target FOV", "90"),
+        ("Only on click", "true"), ("Yaw speed", "25"), ("Pitch speed", "20")]),
+];
+static LAST_PRESET: Mutex<String> = Mutex::new(String::new());
+
+fn preset(game: &Game<'_>, m: &Module) {
+    let picked = m.p("Preset");
+    let before = std::mem::replace(&mut *LAST_PRESET.lock().unwrap_or_else(|e| e.into_inner()), picked.to_owned());
+    if before.is_empty() || before == picked {
+        return;
+    }
+    if let Some((_, fields)) = PRESETS.iter().find(|p| p.0 == picked) {
+        for (name, value) in fields.iter() {
+            super::sunset::set_setting(game, &format!("killaura.{}", super::sunset::norm(name)), value);
+        }
+    }
+}
+
+#[cfg(test)]
+mod preset_tests {
+    use super::*;
+
+    // Every preset field is one of Kill Aura's settings and takes its value.
+    #[test]
+    fn kill_aura_presets_set_real_settings() {
+        let m = defaults().into_iter().next().unwrap();
+        for (preset, fields) in PRESETS {
+            for (name, value) in fields.iter() {
+                let setting = m.setting(name).unwrap_or_else(|| panic!("{preset}: no setting {name}"));
+                assert!(setting.clone().parse(value), "{preset}: {name} = {value}");
+            }
+        }
+    }
+}
+
 // Who Kill Aura is hitting (Target ESP marks them).
 pub(super) fn target_id() -> Option<u32> {
     st(|s| s.target)
 }
 
 pub(super) fn diagnostics() -> String {
-    st(|s| format!("KillAura reason={} target={:?} hand={:?} combat={}", s.reason, s.target, control::owner(), s.version))
+    st(|s| {
+        let mut out = format!("KillAura reason={} target={:?} hand={:?} combat={}", s.reason, s.target, control::owner(), s.version);
+        if let Some((point, ahead, error)) = s.aimed_at {
+            out.push_str(&format!(" aim=[{:.2},{:.2},{:.2}] predicted=[{:.2},{:.2},{:.2}] turn_left={error:.1} trust={:.2}",
+                point[0], point[1], point[2], ahead[0], ahead[1], ahead[2], s.track.trust()));
+        }
+        out.push_str(&format!(" | sent={} landed={} unseen={} (landed/unseen inferred from hurt time)", s.stats.sent, s.stats.landed, s.stats.unseen));
+        let mut reasons: Vec<&(&str, u64)> = s.stats.reasons.iter().filter(|r| !r.0.is_empty()).collect();
+        reasons.sort_by(|a, b| b.1.cmp(&a.1));
+        for (r, n) in reasons.iter().take(6) {
+            out.push_str(&format!(" | {r}: {n}"));
+        }
+        out
+    })
 }
 
 // The Target HUD: a box by the crosshair with the name, distance and health of who Kill Aura is hitting.

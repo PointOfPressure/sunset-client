@@ -2011,6 +2011,12 @@ name = "sunset_inventory_plan"
 source = "inventory_plan.rs"
 
 [[module]]
+id = "aura_aim"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_aura_aim"
+source = "aura_aim.rs"
+
+[[module]]
 id = "aura_timing"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_aura_timing"

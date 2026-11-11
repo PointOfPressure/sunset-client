@@ -468,8 +468,13 @@ impl Module {
                 let always = self.p("Rotate") == "Always";
                 match name {
                     "Rotation mode" | "Rotation view" => always,
-                    "Yaw speed" | "Pitch speed" | "Smoothing" => always && self.p("Rotation mode") == "Custom",
+                    "Yaw speed" | "Pitch speed" => always && matches!(self.p("Rotation mode"), "Custom" | "Adaptive"),
+                    "Smoothing" => always && self.p("Rotation mode") == "Custom",
                     "Aim speed" => always && self.p("Rotation mode") == "Silent aura",
+                    "Rotation range" => self.p("Rotate") != "None",
+                    "Aim point" | "Prediction" => always && self.p("Rotation mode") != "Silent aura",
+                    "Aim height (%)" => always && self.p("Rotation mode") != "Silent aura" && self.p("Aim point") == "Custom",
+                    "Prediction strength" => always && self.p("Rotation mode") != "Silent aura" && self.p("Prediction") != "Off",
                     "Max targets" => self.p("Attack mode") == "Multi",
                     "Target lock" => self.p("Attack mode") == "Single",
                     "Target switch delay" => self.p("Attack mode") != "Multi",
