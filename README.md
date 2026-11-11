@@ -14,6 +14,9 @@ Sunset adds over 160 modules to Horizon: combat, movement, building, ESP and wor
 a click menu or chat commands, can be bound to a key, and can be saved as a profile. It is written in Rust and
 compiled into the game, so it runs as part of Horizon rather than on top of it.
 
+> **Current version: Sunset 1.1.0, for Horizon Nightly 2026-11-08 (`fdc87ae`)**, listed in the launcher as
+> `nightly-2026-11-08-fdc87ae`. You don't have to install that Nightly yourself: the installer builds Sunset on it.
+
 ![Sunset's click menu with the Combat, Movement, Player, Render, World and Client panels](docs/images/gui-overview.png)
 
 > Sunset is not made by or affiliated with the Horizon project. Many servers ban clients like this one: only use it
@@ -40,6 +43,18 @@ and takes **10 to 30 minutes**; later updates are quicker. On Linux it may ask f
 two system libraries the build needs.
 
 After that, start the **Native mods** instance from the launcher whenever you want to play with Sunset.
+
+**Which Horizon version?** Each Sunset release is built for one Horizon version, and the Native mods instance runs on
+that version:
+
+| Sunset | Horizon |
+| --- | --- |
+| **1.1.0** (current) | Nightly 2026-11-08, `fdc87ae` |
+| 1.0.0 | Nightly 2026-11-05, `66f3981` |
+
+The build fetches the right Horizon source on its own, even if that Nightly is no longer on the launcher's Versions
+page. Other native mods you use must be made for the same Horizon version (see
+[Troubleshooting](#troubleshooting)).
 
 ## Getting started
 
