@@ -1,1 +1,5 @@
 dist/
+# Local third-party research archives and extracted source trees.
+/docs/sourcecodes/
+__pycache__/
+*.py[cod]
