@@ -1877,10 +1877,12 @@ pub(super) struct Preview {
 const OFFHAND_RETIRED: [&str; 10] =
     ["health", "elytra", "fall", "explosion", "refill", "reactiondelay", "swapdelay", "closedelay", "switchbackdelay", "doublehand"];
 
-// Settings that are gone: Client Sort's old orders, lists and pace (0.9). Their lines go.
-const DROPPED: [(&str, &str); 8] = [
+// Settings that are gone: Client Sort's old orders, lists and pace (0.9), PvP Bot's City (with Auto City, after
+// 1.1.0). Their lines go.
+const DROPPED: [(&str, &str); 9] = [
     ("clientsort", "order"), ("clientsort", "shiftorder"), ("clientsort", "ctrlorder"), ("clientsort", "altorder"),
     ("clientsort", "hotbar"), ("clientsort", "startitems"), ("clientsort", "enditems"), ("clientsort", "clickspertick"),
+    ("pvpbot", "city"),
 ];
 
 // Offhand took in Auto Totem, Auto Inventory Totem and Hover Totem, Fast Use took in FastXP, Velocity took in
@@ -2002,8 +2004,11 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
         "potionsaver",
         // Bow Spam and Anti Bed are gone; Rotation and No Rotate are Rotations' Lock and No rotate.
         "bowspam", "antibed", "rotation", "norotate",
+        // Removed after 1.1.0.
+        "burrow", "holefiller", "autocity", "keythrow", "arrowdodge", "holdtoeat", "targetesp",
     ];
-    let dropped = lines.iter().any(|&(id, field, _)| DROPPED.contains(&(id, field)));
+    // A gone module's entry in the Modules list goes with it.
+    let dropped = lines.iter().any(|&(id, field, _)| DROPPED.contains(&(id, field)) || (id == "modules" && gone.contains(&field)));
     // A config from before Auto Spear: Auto Weapon's spear lines go to it.
     let spear_moved = !had("autospear") && (get("autoweapon", "spear").is_some() || get("autoweapon", "mode") == Some("Spear"));
     if !old_offhand && !dropped && !spear_moved && !gone.iter().any(|id| had(id)) {
@@ -2014,7 +2019,10 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
         .filter(|l| {
             let key = l.split_once('=').map_or("", |(k, _)| k);
             let (id, field) = key.split_once('.').unwrap_or((key, ""));
-            !gone.contains(&id) && !(old_offhand && id == "offhand") && !DROPPED.contains(&(id, field))
+            !gone.contains(&id)
+                && !(old_offhand && id == "offhand")
+                && !DROPPED.contains(&(id, field))
+                && !(id == "modules" && gone.contains(&field))
         })
         .map(str::to_owned)
         .collect();
@@ -11493,6 +11501,37 @@ inventorycleaner.delayticks=2
         let merged = merged_modules(body).into_owned();
         assert!(merged.contains("modules.inventorymanager=true") && !merged.contains("modules.autoarmor"), "{merged}");
         assert!(merged.contains("inventorymanager.autoarmor=true") && merged.contains("inventorymanager.armormode=Inventory open"), "{merged}");
+    }
+
+    // A profile saved before Burrow, Hole Filler, Auto City, Key Throw, Arrow Dodge, Hold to Eat and Target ESP went
+    // (and PvP Bot's City with Auto City): their lines, Modules list entries included, go, and the rest loads.
+    #[test]
+    fn profiles_with_removed_modules_still_load() {
+        let state = State::new();
+        let body = "modules.on=false
+modules.killaura=true
+modules.burrow=false
+modules.autocity=false
+burrow.on=false
+burrow.block=Obsidian
+holefiller.on=true
+autocity.breakrange=4.5
+keythrow.pearlkey=G
+arrowdodge.hitfireballs=true
+holdtoeat.anyfood=false
+targetesp.style=Ghost
+pvpbot.city=true
+pvpbot.on=false
+killaura.on=true
+";
+        let text = format!("{}
+{body}", super::super::sunset_profiles::HEADER);
+        assert!(state.check_profile(&text).is_ok(), "{:?}", state.check_profile(&text));
+        let merged = merged_modules(body).into_owned();
+        for gone in ["burrow", "holefiller", "autocity", "keythrow", "arrowdodge", "holdtoeat", "targetesp", "pvpbot.city"] {
+            assert!(!merged.contains(gone), "{gone}: {merged}");
+        }
+        assert!(merged.contains("modules.killaura=true") && merged.contains("killaura.on=true") && merged.contains("pvpbot.on=false"));
     }
 
     // Every preset field names one of Scaffold's settings and takes the value it gives.
