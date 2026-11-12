@@ -741,7 +741,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Flight", Movement, "Lets you fly.")
             // NCP Hover, NCP Burst and NCP Bounce are experimental strategies (flight.rs), each with its own state;
             // they take neither the false ground claim nor the anti kick.
-            .pick("Mode", &["Abilities", "Velocity", "NCP Hover", "NCP Burst", "NCP Bounce"])
+            .pick("Mode", &["Abilities", "Velocity", "NCP Hover", "NCP Burst", "NCP Bounce", "Old NCP"])
             .num("Burst speed", 9.0, 0.5, 10.0, 0.25)
             .num("Burst friction", 0.935, 0.8, 0.99, 0.005)
             .bool("Burst repeat", false)
@@ -5314,6 +5314,10 @@ fn flight_pre(game: &mut Game<'_>, m: Option<&Module>) {
     };
     if super::sunset_flight::experimental(m.p("Mode")) {
         motion::set_flying_speed(None);
+        // Old NCP sets the move across itself (over Speed's), at the 1.8 strafe's allowed distance.
+        if m.p("Mode") == "Old NCP" {
+            motion::set_across(super::sunset_flight::old_ncp_across(game));
+        }
         return;
     }
     super::sunset_flight::stop(game);
@@ -5358,6 +5362,17 @@ fn flight_post(game: &mut Game<'_>, m: Option<&Module>, jump: bool, sneak: bool,
     };
     if super::sunset_flight::experimental(m.p("Mode")) {
         super::sunset_flight::tick(game, m);
+        // Old NCP: a move packet every tick, as a 1.8 client sends one, so each carries its height offset. The game
+        // sends none on a tick you neither moved nor turned; this one goes then (never a second in a tick).
+        if m.p("Mode") == "Old NCP"
+            && !MOVED_THIS_TICK.load(Ordering::Relaxed)
+            && game.remote.is_some()
+            && let Some(p) = game.player.as_ref()
+        {
+            let (x, y, z) = (p.position.x, p.position.y, p.position.z);
+            let flags = u8::from(p.ground.on_ground) | (u8::from(p.collision.horizontal) << 1);
+            game.send(S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags }));
+        }
         return;
     }
     let (velocity, kick) = (m.p("Mode") == "Velocity", m.p("Anti kick mode"));

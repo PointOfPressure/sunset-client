@@ -1,10 +1,10 @@
-// Flight's experimental strategies (NCP Hover, NCP Burst, NCP Bounce), each with its own state and lifecycle: Idle,
-// Preparing (waiting for its start conditions), Active, Recovery (after a setback, real knockback or a burst's end:
-// no override of its own until it settles). Abilities and Velocity stay in runtime.rs; these never take the false
-// ground claim or the Packet anti kick those use (runtime.rs gates both on `experimental`).
+// Flight's experimental strategies (NCP Hover, NCP Burst, NCP Bounce, Old NCP), each with its own state and
+// lifecycle: Idle, Preparing (waiting for its start conditions), Active, Recovery (after a setback, real knockback or a
+// burst's end: no override of its own until it settles). Abilities and Velocity stay in runtime.rs; these never take
+// the false ground claim or the Packet anti kick those use (runtime.rs gates both on `experimental`).
 //
-// Written from how the old movement strategies are described, not from any client's code, and for testing against a
-// specific NoCheatPlus build: no mode here is known to pass anything.
+// Written from how the old movement strategies behave (Old NCP after how a 1.8 client's hover moves), not copied from
+// any client's code, and for testing against a specific NoCheatPlus build: no mode here is known to pass anything.
 // - Hover: vertical speed held at zero, horizontal movement left as the game makes it, and the height sent raised by
 //   1e-5 plus, every other tick, a random 1e-10 to 1e-5 (the offset is never negative).
 // - Burst: on the ground with room above, a jump with a large horizontal impulse (Burst speed, blocks a tick) that
@@ -12,6 +12,11 @@
 //   20 ticks, then waits to land (Burst repeat for the next one).
 // - Bounce: a cycle of Bounce period ticks: the movement is saved, held at a stop, then given back scaled by Bounce
 //   boost (upward at most a jump's 0.42).
+// - Old NCP: the old NoCheatPlus hover as 1.8 clients flew it: no vertical speed at all (the height stays where it was),
+//   each move packet's height raised by 1e-5 and then, on alternate ticks, raised or lowered by a random 1e-10 to 1e-5,
+//   a move packet every tick, and the move across the 1.8 strafe at the allowed distance (legacy_speed: walking's
+//   0.221, a sprint's 1.3 of it whenever the keys could sprint, Speed's 20% a level) along your keys, nothing kept of the
+//   last move but a random 1/2000 at most. There is no up or down.
 
 use super::Game;
 use super::sunset::Module;
@@ -24,6 +29,7 @@ pub(super) enum Strategy {
     Hover,
     Burst,
     Bounce,
+    OldNcp,
 }
 
 impl Strategy {
@@ -33,6 +39,7 @@ impl Strategy {
             "NCP Hover" => Some(Self::Hover),
             "NCP Burst" => Some(Self::Burst),
             "NCP Bounce" => Some(Self::Bounce),
+            "Old NCP" => Some(Self::OldNcp),
             _ => None,
         }
     }
@@ -63,8 +70,10 @@ struct State {
     // Bounce's saved movement.
     saved: Option<[f64; 3]>,
     recover: u32,
-    // The height added to this tick's move packet (Hover).
+    // The height added to this tick's move packet (Hover, Old NCP).
     offset: Option<f64>,
+    // Old NCP's last move across.
+    last_across: [f64; 2],
     rng: u64,
     corrections: u32,
     knocks: u32,
@@ -90,6 +99,30 @@ fn unit(rng: &mut u64) -> f64 {
 pub(super) fn hover_offset(tick: u32, rng: &mut u64) -> f64 {
     let extra = if tick % 2 == 0 { 1e-10 + unit(rng) * (1e-5 - 1e-10) } else { 0.0 };
     1e-5 + extra
+}
+
+// Old NCP's height offset for a tick: 1e-5, then a random 1e-10 to 1e-5 added on even ticks and taken away on odd ones.
+pub(super) fn old_ncp_offset(tick: u64, rng: &mut u64) -> f64 {
+    let r = 1e-10 + unit(rng) * (1e-5 - 1e-10);
+    1e-5 + if tick % 2 == 0 { r } else { -r }
+}
+
+// Old NCP's move across for this tick, before the tick moves you (None while it recovers from a setback or knockback).
+pub(super) fn old_ncp_across(game: &mut Game<'_>) -> Option<[f64; 2]> {
+    use super::sunset_legacy_speed::{allowed_distance, strafe_move};
+    if state(|s| s.recover > 0 || s.phase == Phase::Recovery) {
+        return None;
+    }
+    let (input, allowance) = super::sunset::legacy_strafe_frame(game)?;
+    let ground = game.player.as_ref()?.ground.on_ground;
+    let friction = if ground { 0.6 * 0.91 } else { 0.91 };
+    Some(state(|s| {
+        let keep = unit(&mut s.rng) / 2000.0;
+        let residual = [s.last_across[0] * friction, s.last_across[1] * friction];
+        let across = strafe_move(allowed_distance(allowance, input), input, residual, keep);
+        s.last_across = across;
+        across
+    }))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -209,6 +242,17 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module) {
                 p.velocity.y = 0.0;
             }
         }
+        Strategy::OldNcp => {
+            let tick = game.ticks;
+            state(|s| {
+                s.phase = Phase::Active;
+                s.ticks = s.ticks.wrapping_add(1);
+                s.offset = Some(old_ncp_offset(tick, &mut s.rng));
+            });
+            if let Some(p) = game.player.as_mut() {
+                p.velocity.y = 0.0;
+            }
+        }
         Strategy::Burst => {
             let feet = [position[0].floor() as i32, position[1].floor() as i32, position[2].floor() as i32];
             let room = (2..4).all(|dy| super::sunset_util::is_air(game, [feet[0], feet[1] + dy, feet[2]]));
@@ -292,7 +336,8 @@ pub(super) fn knocked(velocity: [f64; 3]) {
         return;
     }
     state(|s| {
-        if s.strategy.is_some() {
+        // Old NCP's strafe and held height take over the knockback as a 1.8 client's do: no recovery for it.
+        if s.strategy.is_some_and(|k| k != Strategy::OldNcp) {
             s.recover = s.recover.max(10);
             s.knocks += 1;
             s.saved = None;
@@ -723,6 +768,21 @@ pub(super) fn report(out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_ncp_offset_alternates_around_its_raise() {
+        let mut rng = 7;
+        for t in 0..200u64 {
+            let o = old_ncp_offset(t, &mut rng);
+            if t % 2 == 0 {
+                assert!(o > 1e-5 && o < 2e-5, "{t}: {o}");
+            } else {
+                assert!(o < 1e-5 && o > 0.0, "{t}: {o}");
+            }
+        }
+        assert_eq!(Strategy::of("Old NCP"), Some(Strategy::OldNcp));
+        assert!(experimental("Old NCP"));
+    }
 
     #[test]
     fn hover_offset_is_small_and_never_negative() {

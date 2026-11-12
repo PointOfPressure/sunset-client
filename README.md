@@ -180,7 +180,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 <details>
 <summary><b>Movement</b> (34 modules)</summary>
 
-- **Flight**: Abilities or Velocity, plus experimental NCP Hover, NCP Burst and NCP Bounce. Holds still after a
+- **Flight**: Abilities or Velocity, plus experimental NCP Hover, NCP Burst, NCP Bounce and Old NCP. Holds still after a
   server setback. *Damage fly* only flies after you get hurt, starting from the hit's knockback; it can wait for a
   hit or deal you fall damage first (Burst: one tick of packets; Spread: one move a tick). Experimental.
 - **Speed**: Vanilla, Strafe, Smooth, Low Hop, Custom and Bhop; experimental NCP, NCP Hop and Watchdog modes.
