@@ -973,7 +973,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Saturation", false)
             .bool("Exhaustion", false)
             .bool("Mount HUD", false)
-            .bool("Shield status", false),
+            .bool("Shield status", false)
+            // The tab list tags spectators [S] (aqua) and creative players [C] (gold) after their names (tab_modes.rs).
+            .bool("Tab game modes", true),
         Module::new("Fullbright", Render, "Lights everything up."),
         Module::new("ESP", Render, "Boxes around entities.")
             .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])

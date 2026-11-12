@@ -576,6 +576,7 @@ fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
         *v = view;
     }
     hv::NO_SWAY.store(hands.is_some_and(|m| m.b("No sway")), Ordering::Relaxed);
+    horizon_client::tab_list::sunset_tab_modes::MARK.store(on(mods, "HUD").is_some_and(|m| m.b("Tab game modes")), Ordering::Relaxed);
     hv::NO_SHADOW.store(hands.is_some_and(|m| m.b("No hand shadow")), Ordering::Relaxed);
     let pop = hands.as_ref().map(|m| hv::TotemPop {
         scale: m.n("Totem pop scale") as f32,

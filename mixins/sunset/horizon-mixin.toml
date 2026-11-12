@@ -1412,6 +1412,34 @@ name = "sunset_streamer_mode"
 source = "streamer_mode.rs"
 
 [[module]]
+id = "tab_modes"
+file = "crates/horizon-client-render/src/tab_list.rs"
+name = "sunset_tab_modes"
+source = "tab_modes.rs"
+visibility = "pub"
+
+# HUD's Tab game modes: spectators and creative players tagged in the tab list.
+[[injection]]
+id = "tab_modes_name"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::tab_list::name_for_display"
+helper = "tab_modes_name_hook.rs"
+bindings = [
+  { name = "p", ty = "&TabPlayer", value = "p" },
+  { name = "board", ty = "&Scoreboard", value = "board" },
+]
+
+[[injection]]
+id = "tab_modes_layout"
+kind = "HEAD"
+target = "horizon_client_render::tab_list::TabList::layout"
+helper = "tab_modes_layout_hook.rs"
+bindings = [
+  { name = "this", ty = "&mut TabList", value = "&mut *self" },
+]
+
+[[module]]
 id = "streamer_names"
 file = "crates/horizon-client-render/src/hud.rs"
 name = "sunset_streamer"

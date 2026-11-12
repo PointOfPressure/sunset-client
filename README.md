@@ -232,7 +232,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Xray**, **Clear Water**, **Fullbright**, **Freecam**, **Free Look**, **Zoom**.
 - **Trajectories** (crossbows, wind charges, pearls in flight), **Breadcrumbs**, **Waypoints**, **Radar**,
   **Shulker Peek**.
-- **HUD**: module list, Target HUD, Armor HUD, coordinates, compass, item durability, food preview and more; drag
+- **HUD**: module list, Target HUD, Armor HUD, coordinates, compass, item durability, food preview, spectators and creative players tagged in the tab list and more; drag
   elements while the chat is open.
 - **ClickGUI** (the menu's look), **No Render** (fog, overlays, hurt cam and more), **Effects** (jump circles,
   trails, hit sparks, weather), **Hand View** (1.9+ and 1.8 swing and sword block animations), **Crosshair**,
