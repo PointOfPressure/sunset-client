@@ -734,6 +734,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Anti bot", true)
             .pick("Anti bot sensitivity", &["Balanced", "Conservative", "Sensitive"])
             .bool("Ignore teams", false)
+            // How a hit goes out: 1.8 swings, then hits; 1.9+ hits, then swings. Auto decides by your attack speed.
+            .pick("Combat version", &["Auto", "Legacy (1.8)", "Modern (1.9+)"])
             .bool("Wait for cooldown", true)
             .num("Shortest cooldown (%)", 100.0, 50.0, 100.0, 1.0)
             .num("Longest cooldown (%)", 100.0, 50.0, 100.0, 1.0)
@@ -6364,7 +6366,7 @@ fn strike_now(game: &mut Game<'_>, guard: AttackGuard) {
         // An axe hit at a raised shield readies Auto Mace's Stun slam, as your own click does.
         super::sunset_auto_mace::before_strike(game);
         // A 1.8 client swings, then hits (and a 1.8 server's anticheat may want the swing first); 1.9+ hits first.
-        let legacy = legacy_combat(game);
+        let legacy = legacy_combat(game, guard.source);
         if legacy {
             super::sunset_hands::strike_swing(game);
         }
@@ -6377,11 +6379,13 @@ fn strike_now(game: &mut Game<'_>, guard: AttackGuard) {
     }
 }
 
-// Hits go the 1.8 way (swing first): Kill Aura's Combat version, Auto deciding by your attack speed.
-fn legacy_combat(game: &Game<'_>) -> bool {
+// Hits go the 1.8 way (swing first) by the Combat version of the module that sent them: Trigger Bot's own for its hits,
+// Kill Aura's for the rest. Auto decides by your attack speed.
+fn legacy_combat(game: &Game<'_>, source: Option<AttackSource>) -> bool {
     let speed = game.main_hand_attack_speed();
+    let owner = if matches!(source, Some(AttackSource::TriggerBot | AttackSource::TriggerReach)) { "Trigger Bot" } else { "Kill Aura" };
     with(|s| {
-        let setting = s.module("Kill Aura").map_or("Auto", |m| m.p("Combat version"));
+        let setting = s.module(owner).map_or("Auto", |m| m.p("Combat version"));
         super::sunset_aura_timing::version(setting, speed).0 == super::sunset_aura_timing::Version::Legacy
     })
 }

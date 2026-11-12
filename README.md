@@ -156,7 +156,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
     set delay or Hit select; *Auto* picks per server.
   - Single, Switch or Multi targets; Silent aura, Snap, Normal, Smooth, Custom or Adaptive rotations; Ray cast.
   - Target strafe circles your target while avoiding walls, drops and lava. AutoBlock (Legacy is experimental).
-- **Trigger Bot**: attacks what you aim at, timing crits and the cooldown; can miss on purpose.
+- **Trigger Bot**: attacks what you aim at, timing crits and the cooldown, with its own 1.8 or 1.9+ hit order; can miss on purpose.
 - **Aim Assist**: helps your aim. *Simple* turns you toward the target while you hold attack; *Duelkit* only adds to
   your own mouse movement. Silent aim and Hit flick.
 - **Criticals**, **Reach**, **Hitboxes**: crits on every hit, longer reach, bigger boxes to aim at.
