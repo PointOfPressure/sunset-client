@@ -637,6 +637,7 @@ impl Module {
             },
             "Base Finder" => super::sunset_base_finder::visible(self, name),
             super::sunset_light_scan::GEODE | super::sunset_light_scan::LIGHT => super::sunset_light_scan::visible(self, name),
+            "Anti Vanish" => super::sunset_vanish::visible(self, name),
             "Effects" => super::sunset_effects::visible(self, name),
             super::sunset_pvp_bot::NAME => super::sunset_pvp_bot::visible(self, name),
             "Atmosphere" => super::sunset_atmosphere::visible(self, name),

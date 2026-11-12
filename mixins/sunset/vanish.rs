@@ -1,12 +1,20 @@
 // Anti Vanish (Sunset's AntiVanish): a player who leaves the tab list with no chat line about them has likely gone
 // into vanish, and one who comes back with none has come out of it. Completion check also asks the server which
-// names a command (/msg) completes: a name it completes that the tab list doesn't show is online but hidden.
-// Watched players narrows all of it to some names; Server watchlists gives a server its own.
+// names a command (/msg) completes: a name it completes that the tab list doesn't show is online but hidden; it is said
+// once it has come back Confirmations times in a row (a stale completion comes once). Watched players narrows all of
+// it to some names; Server watchlists gives a server its own.
+//
+// What vanish plugins leave in the player info (after Donut Client 3.0's Staff Detector): Spectators, a player the
+// server reports in spectator mode (staff watching from the camera); Invisible players, a player entity sent within
+// Nearby range while invisible; Unlisted players, one the server keeps in the player info but hides from the tab list.
+// Shop and lobby NPCs are unlisted players too, so that check needs a watchlist: it looks only at the names on it.
+// Each is said once when it starts.
 
 use super::Game;
 use super::sunset::{Category, Module, with};
 use horizon_protocol::buf::{Reader, Writer};
 use horizon_protocol::packets::play::Serverbound as S;
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 pub(super) fn defaults() -> Vec<Module> {
@@ -16,8 +24,21 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Watched players", "")
             .text("Server watchlists", "")
             .bool("Completion check", false)
-            .text("Command", "msg"),
+            .text("Command", "msg")
+            .num("Confirmations", 2.0, 1.0, 10.0, 1.0)
+            .bool("Spectators", true)
+            .bool("Invisible players", true)
+            .num("Nearby range", 64.0, 8.0, 256.0, 8.0)
+            .bool("Unlisted players", true),
     ]
+}
+
+pub(super) fn visible(m: &Module, name: &str) -> bool {
+    match name {
+        "Command" | "Confirmations" => m.b("Completion check"),
+        "Nearby range" => m.b("Invisible players"),
+        _ => true,
+    }
 }
 
 // Sunset's completion requests: the game numbers its own up from 0.
@@ -26,11 +47,16 @@ const ASK: i32 = -0x5355;
 #[derive(Default)]
 struct Vs {
     // The server joined last (its address as typed), the ticks since the last check, the tab list's names then
-    // (None before the first) and the hidden names the completions showed last.
+    // (None before the first).
     server: String,
     timer: u32,
     tab: Option<Vec<String>>,
-    hidden: Vec<String>,
+    // How many completions in a row have named each hidden name.
+    streak: HashMap<String, u32>,
+    // The players in spectator mode, invisible near you and unlisted at the last look.
+    spectators: Vec<String>,
+    invisible: Vec<String>,
+    unlisted: Vec<String>,
 }
 
 static VS: Mutex<Option<Vs>> = Mutex::new(None);
@@ -59,16 +85,24 @@ fn host(address: &str) -> &str {
     }
 }
 
-// Whether the module tells you about `name` here: the server's own watchlist if it has one, else Watched players
-// (everyone when empty).
-fn watched(m: &Module, server: &str, name: &str) -> bool {
-    let list = m
-        .t("Server watchlists")
+// The names the module tells you about here: the server's own watchlist if it has one, else Watched players (empty:
+// everyone).
+fn watchlist<'a>(m: &'a Module, server: &str) -> &'a str {
+    m.t("Server watchlists")
         .split(';')
         .filter_map(|entry| entry.split_once('='))
         .find(|(s, _)| host(s).eq_ignore_ascii_case(host(server)))
-        .map_or(m.t("Watched players"), |(_, names)| names);
+        .map_or(m.t("Watched players"), |(_, names)| names)
+}
+
+fn watched(m: &Module, server: &str, name: &str) -> bool {
+    let list = watchlist(m, server);
     list.trim().is_empty() || list.split(',').any(|n| n.trim().eq_ignore_ascii_case(name))
+}
+
+// A name a player can have: up to 16 letters, digits and underscores (NPCs often have others).
+fn player_name(name: &str) -> bool {
+    (1..=16).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
@@ -76,10 +110,16 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
         vs(|v| {
             v.timer = 0;
             v.tab = None;
-            v.hidden.clear();
+            v.streak.clear();
+            v.spectators.clear();
+            v.invisible.clear();
+            v.unlisted.clear();
         });
         return;
     };
+    if game.ticks % 10 == 0 {
+        presence(game, m);
+    }
     let due = vs(|v| {
         v.timer += 1;
         v.timer >= m.n("Interval") as u32
@@ -117,8 +157,53 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
     }
 }
 
+// Spectators, Invisible players and Unlisted players: who each shows now, and a line for each new one.
+fn presence(game: &mut Game<'_>, m: &Module) {
+    let server = vs(|v| v.server.clone());
+    let info = super::remote::sunset_remote::tab_presence(game);
+    let spectators: Vec<String> = if m.b("Spectators") {
+        info.iter().filter(|(n, mode, _)| *mode == 3 && watched(m, &server, n)).map(|(n, ..)| n.clone()).collect()
+    } else {
+        Vec::new()
+    };
+    let unlisted: Vec<String> = if m.b("Unlisted players") && !watchlist(m, &server).trim().is_empty() {
+        info.iter().filter(|(n, _, listed)| !listed && player_name(n) && watched(m, &server, n)).map(|(n, ..)| n.clone()).collect()
+    } else {
+        Vec::new()
+    };
+    let mut invisible: Vec<(String, f64)> = Vec::new();
+    if m.b("Invisible players") && let Some(here) = super::sunset_util::player_pos(game) {
+        let me = super::sunset::own_id(game);
+        for mob in game.mobs.iter().filter(|x| x.kind.id == "minecraft:player" && x.invisible && x.alive() && !x.removed && Some(x.id) != me) {
+            let d = super::sunset_util::dist(here, [mob.position.x, mob.position.y, mob.position.z]);
+            if d <= m.n("Nearby range") && let Some(name) = game.remote_player_name(mob.id).filter(|n| watched(m, &server, n)) {
+                invisible.push((name.to_owned(), d));
+            }
+        }
+    }
+    let lines = vs(|v| {
+        let mut lines = Vec::new();
+        for n in spectators.iter().filter(|n| !v.spectators.contains(n)) {
+            lines.push(format!("{n} is in spectator mode: watching?"));
+        }
+        for n in unlisted.iter().filter(|n| !v.unlisted.contains(n)) {
+            lines.push(format!("{n} is online but kept out of the tab list: in vanish?"));
+        }
+        for (n, d) in invisible.iter().filter(|(n, _)| !v.invisible.contains(n)) {
+            lines.push(format!("{n} is invisible {d:.0} m away"));
+        }
+        v.spectators = spectators;
+        v.unlisted = unlisted;
+        v.invisible = invisible.into_iter().map(|(n, _)| n).collect();
+        lines
+    });
+    for line in lines {
+        super::sunset_util::report(game, &line);
+    }
+}
+
 // The server's completions for Sunset's request (true: the game never sees them): names it completes that the tab
-// list doesn't show, each told once while it stays hidden.
+// list doesn't show, each told once it has come back Confirmations times in a row, and once only while it stays hidden.
 pub(super) fn completions(game: &mut Game<'_>, data: &[u8]) -> bool {
     let mut r = Reader::new(data);
     if r.varint().ok() != Some(ASK) {
@@ -147,13 +232,32 @@ pub(super) fn completions(game: &mut Game<'_>, data: &[u8]) -> bool {
         .into_iter()
         .filter(|n| n.len() <= 16 && !n.contains(' ') && *n != own && !tab.contains(n))
         .collect();
+    let need = m.n("Confirmations").max(1.0) as u32;
     let (server, new) = vs(|v| {
-        let new: Vec<String> = hidden.iter().filter(|n| !v.hidden.contains(n)).cloned().collect();
-        v.hidden = hidden;
+        v.streak.retain(|n, _| hidden.contains(n));
+        let mut new = Vec::new();
+        for n in &hidden {
+            let streak = v.streak.entry(n.clone()).or_default();
+            *streak += 1;
+            if *streak == need {
+                new.push(n.clone());
+            }
+        }
         (v.server.clone(), new)
     });
     for name in new.iter().filter(|n| watched(&m, &server, n)) {
         super::sunset_util::report(game, &format!("{name} is online but not in the tab list: in vanish?"));
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::player_name;
+
+    #[test]
+    fn only_real_player_names_count_as_unlisted() {
+        assert!(player_name("Notch") && player_name("a_b_9"));
+        assert!(!player_name("") && !player_name("CIT-1a2b3c4d") && !player_name("§6Shop") && !player_name("seventeen_chars_x"));
+    }
 }

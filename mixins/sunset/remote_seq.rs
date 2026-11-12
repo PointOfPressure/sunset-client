@@ -84,6 +84,13 @@ pub(crate) fn keep_breaking(game: &mut Game<'_>) {
 }
 
 // Anti Vanish: the names in the tab list (the listed players, not you).
+// Anti Vanish: everyone else the server's player info names, with their game mode and whether the tab list shows them.
+pub(crate) fn tab_presence(game: &Game<'_>) -> Vec<(String, i32, bool)> {
+    game.remote.as_ref().map_or_else(Vec::new, |r| {
+        r.tab_players.values().filter(|p| p.uuid != r.profile).map(|p| (p.name.clone(), p.game_mode, r.listed.contains(&p.uuid))).collect()
+    })
+}
+
 pub(crate) fn tab_names(game: &Game<'_>) -> Vec<String> {
     game.remote.as_ref().map_or_else(Vec::new, |r| {
         r.tab_players.values().filter(|p| p.uuid != r.profile && r.listed.contains(&p.uuid)).map(|p| p.name.clone()).collect()
