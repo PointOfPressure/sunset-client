@@ -455,14 +455,18 @@ impl Module {
                 _ => true,
             },
             "Speed" => match name {
-                "Vanilla speed" => !matches!(self.p("Mode"), "Strafe" | "Bhop" | "NCP" | "Watchdog"),
+                "Vanilla speed" => !matches!(self.p("Mode"), "Strafe" | "Bhop" | "NCP" | "NCP Hop" | "Watchdog"),
                 "NCP reduced jump" => self.p("Mode") == "NCP",
+                "NCP hop jump" | "NCP hop ground speed" | "NCP hop slope" | "NCP hop custom boost" | "NCP hop low hop"
+                | "NCP hop Y-port" => self.p("Mode") == "NCP Hop",
+                "NCP hop boost speed" | "NCP hop hurt ticks" => self.p("Mode") == "NCP Hop" && self.b("NCP hop custom boost"),
                 "Watchdog knockback boost" => self.p("Mode") == "Watchdog",
                 "Strafe speed" | "Speed limit" => self.p("Mode") == "Strafe",
                 "Hop speed" | "Hop gain (%)" | "Hop height" | "Hop slope" | "Air friction (%)" | "Air control" | "Fast fall"
-                | "Hop when" | "Damage boost" | "Stop on release" => self.p("Mode") == "Bhop",
+                | "Hop when" | "Stop on release" => self.p("Mode") == "Bhop",
+                "Damage boost" => matches!(self.p("Mode"), "Bhop" | "NCP Hop"),
                 "Hop max speed" => self.p("Mode") == "Bhop" && self.n("Hop gain (%)") > 0.0,
-                "Only on ground" => !matches!(self.p("Mode"), "Bhop" | "NCP" | "Watchdog"),
+                "Only on ground" => !matches!(self.p("Mode"), "Bhop" | "NCP" | "NCP Hop" | "Watchdog"),
                 "Ground multiplier" => advanced && self.p("Mode") == "Custom",
                 "Air multiplier" => advanced && matches!(self.p("Mode"), "Smooth" | "Low Hop" | "Custom") && !self.b("Only on ground"),
                 "Acceleration" | "Deceleration" | "Strafe strength" => advanced && matches!(self.p("Mode"), "Smooth" | "Custom"),
@@ -762,9 +766,20 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("After damage", &["Wait again", "Disable"])
             .num("Self damage health", 10.0, 2.0, 20.0, 1.0)
             .pick("Self damage method", &["Burst", "Spread"]),
-        Module::new("Speed", Movement, "Moves faster on the ground. NCP and Watchdog are experimental legacy strategies.")
-            .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop", "NCP", "Watchdog"])
+        Module::new("Speed", Movement, "Moves faster on the ground. NCP, NCP Hop and Watchdog are legacy (1.8) strategies.")
+            .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop", "NCP", "NCP Hop", "Watchdog"])
             .bool("NCP reduced jump", false)
+            // NCP Hop (legacy_speed::NcpHop): its jump (0.4, else the full 0.42), the launch as a share of the allowed
+            // distance, the first air tick's pull back toward it, a boost for the first ticks of a hurt, and the hop
+            // pulled down early (Low hop on its 4th air tick, Y-port on its 5th).
+            .num("NCP hop jump", 0.4, 0.4, 0.42, 0.01)
+            .num("NCP hop ground speed", 1.75, 0.1, 2.5, 0.05)
+            .num("NCP hop slope", 0.66, 0.0, 1.0, 0.01)
+            .bool("NCP hop custom boost", false)
+            .num("NCP hop boost speed", 0.8, 0.1, 9.5, 0.1)
+            .num("NCP hop hurt ticks", 6.0, 1.0, 10.0, 1.0)
+            .bool("NCP hop low hop", false)
+            .bool("NCP hop Y-port", false)
             .bool("Watchdog knockback boost", false)
             .num("Vanilla speed", 5.6, 0.0, 20.0, 0.1)
             .num("Strafe speed", 1.6, 0.0, 3.0, 0.05)
@@ -1387,6 +1402,10 @@ pub(super) struct State {
     strafe: Strafe,
     bhop: Bhop,
     ncp: super::sunset_legacy_speed::Ncp,
+    // NCP Hop: its speed, the ticks since you left the ground, and the last move it made.
+    ncp_hop: super::sunset_legacy_speed::NcpHop,
+    hop_air: u32,
+    hop_last: [f64; 2],
     watchdog: super::sunset_legacy_speed::Watchdog,
     legacy_recovery: super::sunset_legacy_speed::Recovery,
     knockback_ticks: u32,
@@ -1507,6 +1526,9 @@ impl State {
                     strafe: Strafe::default(),
                     bhop: Bhop::default(),
                     ncp: super::sunset_legacy_speed::Ncp::default(),
+                    ncp_hop: super::sunset_legacy_speed::NcpHop::default(),
+                    hop_air: 0,
+                    hop_last: [0.0; 2],
                     watchdog: super::sunset_legacy_speed::Watchdog::default(),
                     legacy_recovery: super::sunset_legacy_speed::Recovery::default(),
             knockback_ticks: 0,
@@ -3295,7 +3317,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         Some(m) => speed(game, m),
         None => {
             watchdog_stop(game, true);
-            with(|s| { s.ncp.reset(); s.legacy_recovery = Default::default(); });
+            with(|s| { s.ncp.reset(); s.ncp_hop.reset(); s.legacy_recovery = Default::default(); });
             None
         }
     };
@@ -5240,6 +5262,7 @@ pub(super) fn server_correction(game: &mut Game<'_>) {
         s.strafe = Strafe::default();
         s.bhop.reset();
         s.ncp.recover();
+        s.ncp_hop.teleported();
         s.watchdog.reset(); // A server correction owns its new velocity; never restore old launch momentum here.
         s.scaffold_stack = None;
         s.module("Speed").is_some_and(|m| m.on && matches!(m.p("Mode"), "NCP" | "Watchdog"))
@@ -5596,6 +5619,77 @@ fn legacy_speed_move(game: &mut Game<'_>, m: &Module, item_scale: f64) -> Option
     Some(([step.across[0] * scale, step.across[1] * scale], step.jump_scale))
 }
 
+// The move keys and the place you are in as a 1.8 client has them, for the 1.8 strafe (legacy_speed::strafe_move):
+// Speed's NCP Hop and Flight's Old NCP. An item in use slows the keys to 20% (No Slow's share instead), as 1.8 does.
+pub(super) fn legacy_strafe_frame(
+    game: &mut Game<'_>,
+) -> Option<(super::sunset_legacy_speed::Input, super::sunset_legacy_speed::Allowance)> {
+    use super::sunset_legacy_speed::{Allowance, Input};
+    let held = |k: KeyCode| f64::from(u8::from(game.keys.contains(&k)));
+    let (forward, left) = (held(KeyCode::KeyW) - held(KeyCode::KeyS), held(KeyCode::KeyA) - held(KeyCode::KeyD));
+    let sneaking = game.keys.contains(&KeyCode::ShiftLeft);
+    let no_slow = with(|s| s.module("No Slow").filter(|m| m.on).map(|m| [m.n("Ground %"), m.n("Air %")]));
+    let using = game.using.is_some() || super::sunset_hands::legacy_using();
+    let level = |id: &str| game.potions.effects.amplifier(id).map(|a| (a + 1).max(0) as u32);
+    let (speed, slowness) = (level("speed"), level("slowness").is_some());
+    let p = game.player.as_ref()?;
+    let ground = p.ground.on_ground;
+    let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
+    let liquid = p.fluids.was_touching_water || p.is_in_lava();
+    let web = [feet, [feet[0], feet[1] + 1, feet[2]]]
+        .iter()
+        .any(|&b| super::sunset_util::short(&super::sunset_util::facts(game, b).name) == "cobweb");
+    let use_factor = if using { super::sunset_movement::item_use_factor(true, Some(no_slow.unwrap_or([20.0; 2])), ground) } else { 1.0 };
+    let efficiency = game.player.as_mut()?.attribute("minecraft:water_movement_efficiency").unwrap_or(0.0);
+    let depth_strider = (efficiency * 3.0).round().clamp(0.0, 3.0) as u32;
+    Some((
+        Input::of(forward, left, sneaking, use_factor, game.yaw),
+        Allowance { web, liquid, depth_strider, sneaking, speed, slowness },
+    ))
+}
+
+// Speed's NCP Hop (legacy_speed::NcpHop): this tick's move across, the hop's vertical speed written on the player
+// before the tick moves it (the jump, Low hop's and Y-port's pull down).
+fn ncp_hop(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
+    use super::sunset_legacy_speed::{HopCfg, HopFrame, allowed_distance, strafe_move};
+    let (input, allowance) = legacy_strafe_frame(game)?;
+    let jump_boost = game.potions.effects.amplifier("jump_boost").map_or(0, |a| (a + 1).max(0) as u32);
+    let p = game.player.as_ref()?;
+    let ground = p.ground.on_ground;
+    let air = with(|s| {
+        s.hop_air = if ground { 0 } else { s.hop_air.saturating_add(1) };
+        s.hop_air
+    });
+    let hurt = p.health.hurt.hurt_time;
+    let frame = HopFrame {
+        air,
+        moving: input.moving(),
+        blocked: p.collision.horizontal,
+        allowed: allowed_distance(allowance, input),
+        vy: p.velocity.y,
+        hurt: (hurt > 0).then(|| (10 - hurt).max(0) as u32),
+    };
+    let cfg = HopCfg {
+        jump: m.n("NCP hop jump"),
+        ground_speed: m.n("NCP hop ground speed"),
+        slope: m.n("NCP hop slope"),
+        custom_boost: m.b("NCP hop custom boost").then(|| (m.n("NCP hop boost speed"), m.n("NCP hop hurt ticks") as u32)),
+        low_hop: m.b("NCP hop low hop"),
+        y_port: m.b("NCP hop Y-port"),
+        jump_boost,
+    };
+    // What the last move left (a 1.8 tick's friction on it), kept at a random 0 to 1/2000.
+    let keep = super::sunset_rotation::Rng::new(game.ticks.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x4E43_5048).next() / 2000.0;
+    let friction = if ground { 0.6 * 0.91 } else { 0.91 };
+    let (out, residual) = with(|s| (s.ncp_hop.step(frame, cfg), [s.hop_last[0] * friction, s.hop_last[1] * friction]));
+    if let (Some(vy), Some(p)) = (out.vy, game.player.as_mut()) {
+        p.velocity.y = vy;
+    }
+    let across = strafe_move(out.speed, input, residual, keep);
+    with(|s| s.hop_last = across);
+    Some((across, None))
+}
+
 // Restore only surplus momentum created by Watchdog's own launch. Genuine server impulses relinquish this ownership.
 fn watchdog_stop(game: &mut Game<'_>, reset: bool) {
     let owned = with(|s| if reset { s.watchdog.reset() } else { s.watchdog.suspend() });
@@ -5620,6 +5714,7 @@ fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
     let mode = m.p("Mode");
     if mode != "NCP" { with(|s| s.ncp.reset()); }
+    if mode != "NCP Hop" { with(|s| { s.ncp_hop.reset(); s.hop_air = 0; }); }
     if matches!(mode, "NCP" | "Watchdog") && with(|s| s.legacy_recovery.waiting(game.ticks)) {
         watchdog_stop(game, false);
         with(|s| s.ncp.recover());
@@ -5659,6 +5754,9 @@ fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     }
     if matches!(mode, "NCP" | "Watchdog") {
         return legacy_speed_move(game, m, slow_factor);
+    }
+    if mode == "NCP Hop" {
+        return ncp_hop(game, m);
     }
     if mode == "Bhop" {
         let base = 0.2873 * (1.0 + 0.2 * effect("speed")) / (1.0 + 0.2 * effect("slowness"));
@@ -5800,13 +5898,15 @@ fn velocity(game: &mut Game<'_>, m: Option<&Module>) {
             // Bhop's Damage boost takes the knockback's speed across the ground.
             let kick = impulse[0].hypot(impulse[2]);
             with(|s| {
-                let (pause, bhop) = s
-                    .module("Speed")
-                    .filter(|m| m.on)
-                    .map_or((0, false), |m| (m.n("Knockback pause") as u32, m.p("Mode") == "Bhop"));
-                s.knockback_ticks = pause;
+                let (pause, bhop, hop) = s.module("Speed").filter(|m| m.on).map_or((0, false, false), |m| {
+                    (m.n("Knockback pause") as u32, m.p("Mode") == "Bhop", m.p("Mode") == "NCP Hop" && m.b("Damage boost"))
+                });
+                s.knockback_ticks = if hop { 0 } else { pause };
                 if bhop {
                     s.bhop.kick = s.bhop.kick.max(kick);
+                }
+                if hop {
+                    s.ncp_hop.knocked(kick);
                 }
             });
         }

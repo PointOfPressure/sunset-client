@@ -218,6 +218,279 @@ impl Recovery {
     }
 }
 
+// ---- the 1.8 strafe: Speed's NCP Hop and Flight's Old NCP set the tick's move the way a 1.8 client's moveFlying does
+// when its friction is replaced (the speed given, along the move keys at the yaw, what was left of the old motion kept
+// at a random 0 to 1/2000). Floats are the 1.8 client's (f32 constants widened).
+
+// The move keys as a 1.8 client has them: each 0.98, sneaking a 0.3 share, an item in use its slowdown share.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct Input {
+    pub forward: f64,
+    pub strafe: f64,
+    pub yaw: f32,
+}
+
+impl Input {
+    // `forward`/`left`: -1, 0 or 1 from the keys; `use_factor`: 1 with no item in use.
+    pub(super) fn of(forward: f64, left: f64, sneaking: bool, use_factor: f64, yaw: f32) -> Self {
+        let k = f64::from(0.98f32) * if sneaking { f64::from(0.3f32) } else { 1.0 } * use_factor;
+        Self { forward: forward * k, strafe: left * k, yaw }
+    }
+
+    pub(super) fn moving(&self) -> bool {
+        self.forward != 0.0 || self.strafe != 0.0
+    }
+
+    // `enoughMovementForSprinting`: a key's share of 0.8 or more.
+    fn sprint_input(&self) -> bool {
+        self.forward.abs() >= f64::from(0.8f32) || self.strafe.abs() >= f64::from(0.8f32)
+    }
+}
+
+// Where you are and what slows you, for the allowed distance.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct Allowance {
+    pub web: bool,
+    pub liquid: bool,
+    // Depth Strider's level, 0 to 3.
+    pub depth_strider: u32,
+    pub sneaking: bool,
+    // The Speed effect's level (amplifier + 1), if any.
+    pub speed: Option<u32>,
+    pub slowness: bool,
+}
+
+const DEPTH_STRIDER: [f64; 4] = [1.0, 1.4304347400741908, 1.7347825295420372, 1.9217390955733897];
+
+// The horizontal distance a tick a 1.8 strategy allows itself: walking's 0.221 (a sprint's 1.3 times it whenever the
+// keys could sprint), sneaking's, a liquid's (with Depth Strider) or a web's; the Speed effect's 20% a level; Slowness
+// sets it to 0.29.
+pub(super) fn allowed_distance(a: Allowance, input: Input) -> f64 {
+    let (mut d, scaled) = if a.web {
+        (0.105, false)
+    } else if a.liquid {
+        let d = 0.11500000208616258;
+        if a.depth_strider > 0 { (d * DEPTH_STRIDER[a.depth_strider.min(3) as usize], true) } else { (d, false) }
+    } else if a.sneaking {
+        (0.0663000026345253, false)
+    } else {
+        (0.221, true)
+    };
+    if scaled {
+        if input.sprint_input() {
+            d *= f64::from(1.3f32);
+        }
+        if let Some(level) = a.speed {
+            d *= 1.0 + 0.2 * f64::from(level);
+        }
+        if a.slowness {
+            d = 0.29;
+        }
+    }
+    d
+}
+
+// The tick's move across: `speed` along the keys at the yaw (a diagonal's 0.98 of it, as the strafe it replaces has),
+// plus `residual` (the motion left from the last move) times `keep`.
+pub(super) fn strafe_move(speed: f64, input: Input, residual: [f64; 2], keep: f64) -> [f64; 2] {
+    let diagonal = input.forward != 0.0 && input.strafe != 0.0;
+    let friction = f64::from((if diagonal { speed * f64::from(0.98f32) } else { speed }) as f32);
+    let mut out = [residual[0] * keep, residual[1] * keep];
+    let f = input.strafe * input.strafe + input.forward * input.forward;
+    if f >= 1.0e-4 {
+        let f = friction / f.sqrt().max(1.0);
+        let (strafe, forward) = (input.strafe * f, input.forward * f);
+        let yaw = f64::from(input.yaw).to_radians() as f32;
+        let (sin, cos) = (f64::from(yaw.sin()), f64::from(yaw.cos()));
+        out[0] += strafe * cos - forward * sin;
+        out[1] += forward * cos + strafe * sin;
+    }
+    out
+}
+
+// Speed's NCP Hop: a jump each landing at Ground speed times the allowed distance, the first tick after it drawn back
+// toward the allowed distance by Slope, then a 1/159.9 loss a tick, never under the allowed distance; a wall or no keys
+// bring it back to that. Damage boost takes a knockback's speed across; Custom boost sets Boost speed for the first
+// ticks of a hurt; Low hop and Y-port pull the hop down early.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct HopCfg {
+    pub jump: f64,
+    pub ground_speed: f64,
+    pub slope: f64,
+    // Boost speed and the hurt ticks it lasts.
+    pub custom_boost: Option<(f64, u32)>,
+    pub low_hop: bool,
+    pub y_port: bool,
+    // Jump Boost's level (amplifier + 1), 0 without.
+    pub jump_boost: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct HopFrame {
+    // Ticks since you left the ground (0 on it).
+    pub air: u32,
+    pub moving: bool,
+    pub blocked: bool,
+    pub allowed: f64,
+    // Vertical speed before this tick's move.
+    pub vy: f64,
+    // Ticks since you were hurt, while the hurt lasts.
+    pub hurt: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct HopOut {
+    pub speed: f64,
+    pub vy: Option<f64>,
+}
+
+const LOW_HOP_FALL: f64 = -0.09800000190734864;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct NcpHop {
+    speed: f64,
+    reset: bool,
+}
+
+impl NcpHop {
+    pub(super) fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    // A teleport: nothing carried.
+    pub(super) fn teleported(&mut self) {
+        self.speed = 0.0;
+    }
+
+    // Damage boost: the knockback's speed across.
+    pub(super) fn knocked(&mut self, across: f64) {
+        if across.is_finite() {
+            self.speed = across;
+        }
+    }
+
+    pub(super) fn step(&mut self, f: HopFrame, c: HopCfg) -> HopOut {
+        let mut vy = None;
+        if c.low_hop && f.air == 4 {
+            vy = Some(LOW_HOP_FALL);
+        }
+        if c.y_port && f.air == 5 && (f.vy - LOW_HOP_FALL.abs()).abs() < 0.12 {
+            vy = Some(LOW_HOP_FALL);
+        }
+        if let Some((boost, ticks)) = c.custom_boost
+            && f.hurt.is_some_and(|t| t <= ticks)
+        {
+            self.speed = boost;
+        }
+        let d0 = f.allowed;
+        if f.moving {
+            match f.air {
+                0 => {
+                    let jump = if !f.blocked && (c.jump as f32) == 0.4f32 { 0.4f32 } else { 0.42f32 };
+                    vy = Some(f64::from(jump) + f64::from(c.jump_boost) * f64::from(0.1f32));
+                    self.speed = d0 * c.ground_speed;
+                }
+                1 => self.speed -= c.slope * (self.speed - d0),
+                _ => self.speed -= self.speed / f64::from(159.9f32),
+            }
+            self.reset = false;
+        } else if !self.reset {
+            self.speed = d0;
+            self.reset = true;
+        }
+        if f.blocked {
+            self.speed = d0;
+        }
+        HopOut { speed: self.speed.max(d0), vy }
+    }
+}
+
+#[cfg(test)]
+mod hop_tests {
+    use super::*;
+
+    const CFG: HopCfg = HopCfg { jump: 0.4, ground_speed: 1.75, slope: 0.66, custom_boost: None, low_hop: false, y_port: false, jump_boost: 0 };
+
+    fn frame(air: u32, allowed: f64) -> HopFrame {
+        HopFrame { air, moving: true, blocked: false, allowed, vy: 0.0, hurt: None }
+    }
+
+    #[test]
+    fn a_hop_launches_then_slopes_then_decays_but_never_under_the_allowed_distance() {
+        let walk = Input::of(1.0, 0.0, false, 1.0, 0.0);
+        let d0 = allowed_distance(Allowance::default(), walk);
+        assert!((d0 - 0.221 * f64::from(1.3f32)).abs() < 1e-12, "{d0}");
+        let mut hop = NcpHop::default();
+        let launch = hop.step(frame(0, d0), CFG);
+        assert_eq!(launch.vy, Some(f64::from(0.4f32)));
+        assert!((launch.speed - d0 * 1.75).abs() < 1e-12);
+        let first = hop.step(frame(1, d0), CFG).speed;
+        assert!((first - (d0 * 1.75 - 0.66 * (d0 * 1.75 - d0))).abs() < 1e-12);
+        let mut last = first;
+        for air in 2..40 {
+            let s = hop.step(frame(air, d0), CFG).speed;
+            assert!(s <= last && s >= d0);
+            last = s;
+        }
+        // A wall: back to the allowed distance; no keys: the same, once.
+        assert_eq!(hop.step(HopFrame { blocked: true, ..frame(3, d0) }, CFG).speed, d0);
+        assert_eq!(hop.step(HopFrame { moving: false, ..frame(0, d0) }, CFG), HopOut { speed: d0, vy: None });
+    }
+
+    #[test]
+    fn a_jump_against_a_wall_or_off_the_setting_is_the_full_jump_and_low_hop_pulls_down() {
+        let mut hop = NcpHop::default();
+        assert_eq!(hop.step(HopFrame { blocked: true, ..frame(0, 0.28) }, CFG).vy, Some(f64::from(0.42f32)));
+        assert_eq!(hop.step(frame(0, 0.28), HopCfg { jump: 0.41, ..CFG }).vy, Some(f64::from(0.42f32)));
+        let boosted = hop.step(frame(0, 0.28), HopCfg { jump_boost: 2, ..CFG }).vy.unwrap();
+        assert!((boosted - (f64::from(0.4f32) + 2.0 * f64::from(0.1f32))).abs() < 1e-12);
+        assert_eq!(hop.step(frame(4, 0.28), HopCfg { low_hop: true, ..CFG }).vy, Some(LOW_HOP_FALL));
+        assert_eq!(hop.step(HopFrame { vy: 0.1, ..frame(5, 0.28) }, HopCfg { y_port: true, ..CFG }).vy, Some(LOW_HOP_FALL));
+    }
+
+    #[test]
+    fn knockback_and_custom_boost_set_the_speed() {
+        let mut hop = NcpHop::default();
+        hop.step(frame(0, 0.28), CFG);
+        hop.knocked(0.9);
+        assert!((hop.step(frame(3, 0.28), CFG).speed - (0.9 - 0.9 / f64::from(159.9f32))).abs() < 1e-12);
+        let boost = HopCfg { custom_boost: Some((1.2, 6)), ..CFG };
+        let s = hop.step(HopFrame { hurt: Some(2), ..frame(3, 0.28) }, boost).speed;
+        assert!((s - (1.2 - 1.2 / f64::from(159.9f32))).abs() < 1e-12);
+    }
+
+    #[test]
+    fn the_strafe_moves_a_diagonal_as_far_as_a_straight_line() {
+        let straight = strafe_move(0.3, Input::of(1.0, 0.0, false, 1.0, 0.0), [0.0; 2], 0.0);
+        let diagonal = strafe_move(0.3, Input::of(1.0, 1.0, false, 1.0, 0.0), [0.0; 2], 0.0);
+        let len = |v: [f64; 2]| v[0].hypot(v[1]);
+        assert!((len(straight) - 0.3 * f64::from(0.98f32)).abs() < 1e-6, "{straight:?}");
+        assert!((len(straight) - len(diagonal)).abs() < 1e-6);
+        // Yaw 0 faces +z; left (A) is +x.
+        assert!(straight[1] > 0.29 && straight[0].abs() < 1e-9);
+        let left = strafe_move(0.3, Input::of(0.0, 1.0, false, 1.0, 0.0), [0.0; 2], 0.0);
+        assert!(left[0] > 0.29);
+        // No keys: only what was left, kept by its share.
+        assert_eq!(strafe_move(0.3, Input::default(), [1.0, 2.0], 0.5), [0.5, 1.0]);
+    }
+
+    #[test]
+    fn the_allowed_distance_follows_the_1_8_cases() {
+        let walk = Input::of(1.0, 0.0, false, 1.0, 0.0);
+        assert_eq!(allowed_distance(Allowance { web: true, ..Allowance::default() }, walk), 0.105);
+        assert_eq!(allowed_distance(Allowance { sneaking: true, ..Allowance::default() }, walk), 0.0663000026345253);
+        assert_eq!(allowed_distance(Allowance { liquid: true, ..Allowance::default() }, walk), 0.11500000208616258);
+        let strider = allowed_distance(Allowance { liquid: true, depth_strider: 3, ..Allowance::default() }, walk);
+        assert!((strider - 0.11500000208616258 * 1.9217390955733897 * f64::from(1.3f32)).abs() < 1e-12);
+        let fast = allowed_distance(Allowance { speed: Some(2), ..Allowance::default() }, walk);
+        assert!((fast - 0.221 * f64::from(1.3f32) * 1.4).abs() < 1e-12);
+        assert_eq!(allowed_distance(Allowance { slowness: true, speed: Some(1), ..Allowance::default() }, walk), 0.29);
+        // An item in use takes the sprint's share away.
+        let using = Input::of(1.0, 0.0, false, 0.2, 0.0);
+        assert_eq!(allowed_distance(Allowance::default(), using), 0.221);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -183,7 +183,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Flight**: Abilities or Velocity, plus experimental NCP Hover, NCP Burst and NCP Bounce. Holds still after a
   server setback. *Damage fly* only flies after you get hurt, starting from the hit's knockback; it can wait for a
   hit or deal you fall damage first (Burst: one tick of packets; Spread: one move a tick). Experimental.
-- **Speed**: Vanilla, Strafe, Smooth, Low Hop, Custom and Bhop; experimental NCP and Watchdog modes.
+- **Speed**: Vanilla, Strafe, Smooth, Low Hop, Custom and Bhop; experimental NCP, NCP Hop and Watchdog modes.
 - **Scaffold**: places blocks under you. *Normal* places from a silent look, *Legit* sneaks at edges, *Godbridge*
   bridges backwards, *Telly* sprint-jumps across. Speedbridge and Blatant presets, Keep Y, tower, block counter.
 - **Velocity**: scale, blend or delay knockback. **No Slow**: no slowdown while using items. **No Fall**.
