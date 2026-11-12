@@ -4,6 +4,17 @@
 // but mushrooms on the nether roof; and entities: item frames without an elytra, resting ender pearls, name-tagged
 // mobs, villagers that have traded, boats and crowds. Each chunk is said once (one line per cooldown) with a waypoint
 // that goes when Base Finder turns off.
+//
+// Signs of time spent nearby, which last after a base is gone or hidden: a hidden light source (light the server
+// sends that no block it shows gives: a torch behind anti-xray, see light_scan.rs), kelp, vines and cave vines
+// grown longer than the world makes them, bee nests filled with honey, and Grown amethyst. Amethyst buds grow only in
+// chunks the server ticks, within its simulation distance of a player: a geode whose buds have all grown into
+// clusters was ticked for a long time. Each chunk's clusters count for every chunk within Simulation distance of it,
+// a bud still on its budding block rules out every chunk that close (someone staying there would have grown it), and
+// the chunk that scores highest round it with at least Sensitivity is where the player stayed. On servers that hide
+// the geodes (DonutSMP's DonutFolia, or Amethyst method Palette) the sections' palettes say what they hold: a bud
+// named rules out, clusters with no bud score one. (After Donut Client 3.0's Base Finder, the Spectre 26.2 Sus Chunk
+// Finder's Classic method and growth clues, written anew.)
 
 use super::sunset::{Category, Module};
 use super::sunset_util::*;
@@ -12,7 +23,7 @@ use horizon_client::chunk::Chunk;
 use horizon_client::containers::BlockEntity;
 use horizon_world::registry::BlockStateId;
 use super::sunset_chunk_feed::Feed;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Mutex;
 
 const NAME: &str = "Base Finder";
@@ -49,6 +60,18 @@ pub(super) fn defaults() -> Vec<Module> {
         .num("Bedrock layers", 5.0, 1.0, 16.0, 1.0)
         .bool("Lone spawners", true)
         .bool("Nether roof", true)
+        .bool("Hidden light", true)
+        .num("Hidden light level", 10.0, 1.0, 15.0, 1.0)
+        .bool("Grown amethyst", true)
+        .pick("Amethyst method", &["Auto", "Blocks", "Palette"])
+        .num("Simulation distance", 5.0, 2.0, 16.0, 1.0)
+        .num("Sensitivity", 6.0, 1.0, 20.0, 1.0)
+        .bool("Long plants", true)
+        .num("Kelp length", 16.0, 4.0, 26.0, 1.0)
+        .num("Vine length", 32.0, 4.0, 64.0, 1.0)
+        .num("Cave vine length", 20.0, 4.0, 64.0, 1.0)
+        .bool("Honey nests", true)
+        .num("Honey level", 5.0, 1.0, 5.0, 1.0)
         .num("Entity scan delay", 20.0, 1.0, 200.0, 1.0)
         .bool("Item frames", true)
         .bool("Ender pearls", true)
@@ -70,6 +93,10 @@ pub(super) fn visible(m: &Module, name: &str) -> bool {
         "Sky build Y" => m.b("Sky builds"),
         "Bedrock layers" => m.b("Bedrock"),
         "Cluster size" | "Cluster entities" => m.b("Entity clusters"),
+        "Hidden light level" => m.b("Hidden light"),
+        "Amethyst method" | "Simulation distance" | "Sensitivity" => m.b("Grown amethyst"),
+        "Kelp length" | "Vine length" | "Cave vine length" => m.b("Long plants"),
+        "Honey level" => m.b("Honey nests"),
         _ => true,
     }
 }
@@ -80,6 +107,8 @@ struct Look {
     list: u8,
     kind: u16,
     sign: u8,
+    // 1 + its index in PLANTS for the plants Long plants measures.
+    plant: u8,
 }
 
 const AIR: u8 = 1;
@@ -90,6 +119,10 @@ const MUSHROOM: u8 = 5;
 const SPAWNER: u8 = 6;
 const COMPANION: u8 = 7;
 const END_PORTAL: u8 = 8;
+const HONEY: u8 = 9;
+
+// The plants Long plants measures, by their code in a Look's `plant`.
+const PLANTS: [&str; 3] = ["kelp", "vine", "cave vine"];
 
 // What the scan thread is told once: the table, the lists' names and counts, and which signs to look for where.
 struct Plan {
@@ -103,6 +136,36 @@ struct Plan {
     bedrock: Option<i32>,
     spawners: bool,
     roof: bool,
+    // How long each of PLANTS must grow (None: Long plants off).
+    plants: Option<[u32; 3]>,
+    // Amethyst and each state's light, for Hidden light and Grown amethyst, and every state's name.
+    table: Option<super::sunset_light_scan::Table>,
+    states: Vec<std::sync::Arc<str>>,
+    hidden: Option<u8>,
+    // Grown amethyst: off, from the blocks, or from the palettes.
+    growth: Growth,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Growth {
+    Off,
+    Blocks,
+    Palette,
+}
+
+// A chunk's amethyst for Grown amethyst: clusters (and buds off their budding block) counted, whether a bud still on
+// its budding block is there, and the clusters' mean height.
+struct Amethyst {
+    chunk: (i32, i32),
+    grown: u32,
+    ungrown: bool,
+    y: i32,
+}
+
+// What the scan thread sends back for a chunk.
+enum Out {
+    Found(Found),
+    Amethyst(Amethyst),
 }
 
 // A chunk with a sign of a base: why, where to look, and the most common listed kinds with their counts.
@@ -116,12 +179,15 @@ struct Found {
 // A scan for one dimension and one set of settings: its chunk feed, the chunks found, those just found, and the chat
 // lines waiting for the cooldown.
 struct Scan {
-    feed: Feed<Found>,
+    feed: Feed<Out>,
     said: HashSet<(i32, i32)>,
     fresh: Vec<Found>,
     lines: VecDeque<String>,
     cooldown: u32,
     entity_timer: u32,
+    // Grown amethyst: each scanned chunk's amethyst, and whether it changed since the peaks were last looked for.
+    amethyst: HashMap<(i32, i32), (u32, bool, i32)>,
+    amethyst_dirty: bool,
 }
 
 static SCAN: Mutex<Option<Scan>> = Mutex::new(None);
@@ -131,25 +197,42 @@ fn scan<R>(f: impl FnOnce(&mut Option<Scan>) -> R) -> R {
 }
 
 // On the scan thread: a chunk's blocks counted by list and kind, and the signs looked for; a chunk with any is found.
-fn look(plan: &Plan, states: &mut [u32; 4096], chunk: &Chunk) -> Option<Found> {
+// With Grown amethyst on, every chunk's amethyst goes back too.
+fn look(plan: &Plan, states: &mut [u32; 4096], chunk: &Chunk, out: &mut Vec<Out>) {
+    if plan.growth != Growth::Off && let Some(t) = &plan.table {
+        out.push(Out::Amethyst(amethyst(plan.growth, t, states, chunk)));
+    }
     let nether = plan.dim == "minecraft:the_nether";
     let overworld = plan.dim == "minecraft:overworld";
     let mut per_list = [0u32; 7];
     let mut per_kind = vec![0u32; plan.names.len()];
     let mut sums = [[0i64; 3]; 7];
-    let mut sign: Option<(&str, [i32; 3])> = None;
+    let mut sign: Option<(String, [i32; 3])> = None;
     let mut spawner: Option<[i32; 3]> = None;
     let mut companion = false;
+    // Long plants: each column's run (its plant, length and lowest Y) and the longest that is long enough.
+    let mut runs = [(0u8, 0u32, 0i32); 256];
+    let mut long: Option<(u8, u32, [i32; 3])> = None;
+    let end_run = |run: &mut (u8, u32, i32), col: usize, long: &mut Option<(u8, u32, [i32; 3])>| {
+        let (plant, n, y) = *run;
+        if plant > 0 && plan.plants.is_some_and(|need| n >= need[usize::from(plant - 1)]) && long.is_none_or(|l| n > l.1) {
+            *long = Some((plant, n, [chunk.x * 16 + (col as i32 & 15), y, chunk.z * 16 + (col as i32 >> 4)]));
+        }
+        *run = (0, 0, 0);
+    };
     for (i, section) in chunk.sections.iter().enumerate() {
         let y0 = chunk.min_y() + i as i32 * 16;
         // A section all of one state: air, stone, water... only its first block needs looking at.
         let first = section.get(0);
-        if section.is_uniform(first) && plan.looks.get(first as usize).is_none_or(|l| l.list == 0 && l.sign <= AIR) {
+        if section.is_uniform(first) && plan.looks.get(first as usize).is_none_or(|l| l.list == 0 && l.sign <= AIR && l.plant == 0) {
+            for (col, run) in runs.iter_mut().enumerate() {
+                end_run(run, col, &mut long);
+            }
             if overworld && plan.sky.is_some_and(|y| y0 + 15 > y) && plan.looks.get(first as usize).is_none_or(|l| l.sign != AIR) {
-                sign = sign.or(Some(("a build above the terrain", [chunk.x * 16, y0, chunk.z * 16])));
+                sign = sign.or(Some(("a build above the terrain".into(), [chunk.x * 16, y0, chunk.z * 16])));
             }
             if nether && plan.roof && y0 >= 128 && plan.looks.get(first as usize).is_none_or(|l| l.sign != AIR) {
-                sign = sign.or(Some(("a build on the nether roof", [chunk.x * 16, y0, chunk.z * 16])));
+                sign = sign.or(Some(("a build on the nether roof".into(), [chunk.x * 16, y0, chunk.z * 16])));
             }
             continue;
         }
@@ -162,6 +245,18 @@ fn look(plan: &Plan, states: &mut [u32; 4096], chunk: &Chunk) -> Option<Found> {
                 per_list[l] += 1;
                 per_kind[usize::from(look.kind)] += 1;
                 sums[l] = [sums[l][0] + i64::from(x), sums[l][1] + i64::from(y), sums[l][2] + i64::from(z)];
+            }
+            // The cells go up each column section after section, so a run of one plant is counted as it goes.
+            if plan.plants.is_some() {
+                let col = j & 255;
+                if look.plant > 0 && runs[col].0 == look.plant {
+                    runs[col].1 += 1;
+                } else {
+                    end_run(&mut runs[col], col, &mut long);
+                    if look.plant > 0 {
+                        runs[col] = (look.plant, 1, y);
+                    }
+                }
             }
             if sign.is_some() && look.sign != SPAWNER && look.sign != COMPANION {
                 continue;
@@ -177,6 +272,7 @@ fn look(plan: &Plan, states: &mut [u32; 4096], chunk: &Chunk) -> Option<Found> {
                         nether && (n..128 - n).contains(&y)
                     }
                 }) => Some("bedrock where none grows"),
+                HONEY => Some("a bee nest filled with honey"),
                 SPAWNER => {
                     spawner = spawner.or(Some([x, y, z]));
                     None
@@ -198,12 +294,25 @@ fn look(plan: &Plan, states: &mut [u32; 4096], chunk: &Chunk) -> Option<Found> {
                 }
             };
             if let Some(why) = why {
-                sign = Some((why, [x, y, z]));
+                sign = Some((why.into(), [x, y, z]));
             }
         }
     }
+    for (col, run) in runs.iter_mut().enumerate() {
+        end_run(run, col, &mut long);
+    }
     if plan.spawners && !companion && sign.is_none() && let Some(at) = spawner {
-        sign = Some(("a spawner with none of its structure", at));
+        sign = Some(("a spawner with none of its structure".into(), at));
+    }
+    if sign.is_none() && let Some((plant, n, at)) = long {
+        sign = Some((format!("{} grown {n} blocks long", PLANTS[usize::from(plant - 1)]), at));
+    }
+    if sign.is_none()
+        && let (Some(min), Some(t)) = (plan.hidden, &plan.table)
+        && let Some((at, l)) = super::sunset_light_scan::first_hidden(chunk, t, min)
+    {
+        let shown = plan.states.get(chunk.get(at[0] - chunk.x * 16, at[1], at[2] - chunk.z * 16) as usize).map_or("?", |n| short(n));
+        sign = Some((format!("a hidden light source (light {l} where the server shows {})", shown.replace('_', " ")), at));
     }
     let tier = (0..7).find(|&l| plan.counts[l] > 0 && per_list[l] >= plan.counts[l]);
     let (why, at) = match (tier, sign) {
@@ -212,13 +321,98 @@ fn look(plan: &Plan, states: &mut [u32; 4096], chunk: &Chunk) -> Option<Found> {
             let total: u32 = per_list.iter().sum();
             (format!("{total} placed block{}", if total == 1 { "" } else { "s" }), [(sums[l][0] / n) as i32, (sums[l][1] / n) as i32, (sums[l][2] / n) as i32])
         }
-        (None, Some((why, at))) => (why.to_owned(), at),
-        (None, None) => return None,
+        (None, Some((why, at))) => (why, at),
+        (None, None) => return,
     };
     let mut kinds: Vec<(String, u32)> = plan.names.iter().cloned().zip(per_kind).filter(|(_, c)| *c > 0).collect();
     kinds.sort_by(|a, b| b.1.cmp(&a.1));
     kinds.truncate(4);
-    Some(Found { chunk: (chunk.x, chunk.z), why, at, kinds })
+    out.push(Out::Found(Found { chunk: (chunk.x, chunk.z), why, at, kinds }));
+}
+
+// A chunk's amethyst, from its blocks (a bud has grown unless the block behind it is budding amethyst; one against
+// the next chunk is left out) or from its sections' palettes.
+fn amethyst(growth: Growth, t: &super::sunset_light_scan::Table, states: &mut [u32; 4096], chunk: &Chunk) -> Amethyst {
+    use super::sunset_light_scan::{BUD, BUDDING, CLUSTER, NO_FACING, SIDES};
+    let mut a = Amethyst { chunk: (chunk.x, chunk.z), grown: 0, ungrown: false, y: 0 };
+    let mut y_sum = 0i64;
+    for (i, section) in chunk.sections.iter().enumerate() {
+        if !section.blocks.maybe_has(|v| matches!(t.kind(v), CLUSTER | BUD)) {
+            continue;
+        }
+        let y0 = chunk.min_y() + i as i32 * 16;
+        if growth == Growth::Palette {
+            if section.blocks.palette().is_some_and(|p| p.iter().any(|&v| t.kind(v) == BUD)) {
+                a.ungrown = true;
+            } else if a.grown == 0 {
+                a.grown = 1;
+                y_sum = i64::from(y0 + 8);
+            }
+            continue;
+        }
+        section.unpack(states);
+        for (j, &v) in states.iter().enumerate() {
+            let kind = t.kind(v);
+            if kind != CLUSTER && kind != BUD {
+                continue;
+            }
+            let (x, y, z) = (j as i32 & 15, y0 + (j as i32 >> 8), j as i32 >> 4 & 15);
+            let grown = kind == CLUSTER || {
+                let f = t.facing.get(v as usize).copied().unwrap_or(NO_FACING);
+                let Some(d) = SIDES.get(usize::from(f)) else { continue };
+                let (bx, by, bz) = (x - d[0], y - d[1], z - d[2]);
+                if !(0..16).contains(&bx) || !(0..16).contains(&bz) {
+                    continue;
+                }
+                t.kind(chunk.get(bx, by, bz)) != BUDDING
+            };
+            if grown {
+                a.grown += 1;
+                y_sum += i64::from(y);
+            } else {
+                a.ungrown = true;
+            }
+        }
+    }
+    a.y = if growth == Growth::Palette { y_sum as i32 } else { (y_sum / i64::from(a.grown.max(1))) as i32 };
+    a
+}
+
+// Grown amethyst's places: chunks whose clusters within `r` add up to at least `need`, with no bud still growing
+// that close and at least three neighbours scanned, scoring highest within `r`. Each with its score.
+fn stays(cells: &HashMap<(i32, i32), (u32, bool, i32)>, r: i32, need: u32) -> Vec<((i32, i32), u32)> {
+    let mut heat: HashMap<(i32, i32), u32> = HashMap::new();
+    let mut ruled_out: HashSet<(i32, i32)> = HashSet::new();
+    for (&(cx, cz), &(grown, ungrown, _)) in cells {
+        if grown == 0 && !ungrown {
+            continue;
+        }
+        for dx in -r..=r {
+            for dz in -r..=r {
+                let c = (cx + dx, cz + dz);
+                if grown > 0 {
+                    *heat.entry(c).or_default() += grown;
+                }
+                if ungrown {
+                    ruled_out.insert(c);
+                }
+            }
+        }
+    }
+    let scanned = |(cx, cz): (i32, i32)| {
+        (-1..=1).flat_map(|dx| (-1..=1).map(move |dz| (dx, dz))).filter(|&(dx, dz)| (dx, dz) != (0, 0) && cells.contains_key(&(cx + dx, cz + dz))).count()
+    };
+    let eligible: HashMap<(i32, i32), u32> =
+        heat.into_iter().filter(|(c, _)| !ruled_out.contains(c) && cells.contains_key(c) && scanned(*c) >= 3).collect();
+    let mut out: Vec<((i32, i32), u32)> = eligible
+        .iter()
+        .filter(|&(&(cx, cz), &v)| {
+            v >= need && (-r..=r).all(|dx| (-r..=r).all(|dz| (dx, dz) == (0, 0) || eligible.get(&(cx + dx, cz + dz)).is_none_or(|&o| o <= v)))
+        })
+        .map(|(&c, &v)| (c, v))
+        .collect();
+    out.sort();
+    out
 }
 
 // Base Finder's own waypoints, "Base x z": a waypoint of yours called "Base" or "Base camp" is not one.
@@ -241,6 +435,7 @@ fn plan(game: &Game<'_>, m: &Module) -> Plan {
     let lists: Vec<Vec<&str>> =
         LISTS.iter().map(|(list, ..)| m.t(list).split(',').map(str::trim).filter(|x| !x.is_empty()).collect()).collect();
     let mut names: Vec<String> = Vec::new();
+    let honey = m.b("Honey nests").then(|| m.n("Honey level") as u32);
     let looks = states
         .iter()
         .enumerate()
@@ -258,21 +453,38 @@ fn plan(game: &Game<'_>, m: &Module) -> Plan {
                 "bedrock" => BEDROCK,
                 "red_mushroom" | "brown_mushroom" => MUSHROOM,
                 "spawner" => SPAWNER,
+                "bee_nest"
+                    if honey.is_some_and(|need| {
+                        registry
+                            .state(BlockStateId(id as u32))
+                            .and_then(|b| b.properties.get("honey_level"))
+                            .and_then(|l| l.parse::<u32>().ok())
+                            .is_some_and(|l| l >= need)
+                    }) =>
+                {
+                    HONEY
+                }
                 // What a dungeon, mineshaft, fortress, stronghold or bastion spawner has around it.
                 "mossy_cobblestone" | "cobweb" | "nether_bricks" | "nether_brick_fence" | "stone_bricks" | "mossy_stone_bricks"
                 | "cracked_stone_bricks" | "end_portal_frame" | "polished_blackstone_bricks" | "cracked_polished_blackstone_bricks"
                 | "blackstone" | "gilded_blackstone" => COMPANION,
                 _ => 0,
             };
+            let plant = match name {
+                "kelp" | "kelp_plant" => 1,
+                "vine" => 2,
+                "cave_vines" | "cave_vines_plant" => 3,
+                _ => 0,
+            };
             let Some((l, k)) = lists.iter().enumerate().find_map(|(l, list)| entry(list, name).map(|k| (l, k))) else {
-                return Look { sign, ..Look::default() };
+                return Look { sign, plant, ..Look::default() };
             };
             let label = lists[l][k].trim_start_matches("*_").replace('_', " ");
             let kind = names.iter().position(|n| *n == label).unwrap_or_else(|| {
                 names.push(label);
                 names.len() - 1
             });
-            Look { list: l as u8 + 1, kind: kind as u16, sign }
+            Look { list: l as u8 + 1, kind: kind as u16, sign, plant }
         })
         .collect();
     let mut counts = [0u32; 7];
@@ -290,14 +502,36 @@ fn plan(game: &Game<'_>, m: &Module) -> Plan {
         bedrock: m.b("Bedrock").then(|| m.n("Bedrock layers") as i32),
         spawners: m.b("Lone spawners"),
         roof: m.b("Nether roof"),
+        plants: m.b("Long plants").then(|| ["Kelp length", "Vine length", "Cave vine length"].map(|n| m.n(n) as u32)),
+        table: (m.b("Hidden light") || m.b("Grown amethyst")).then(|| super::sunset_light_scan::Table::of(game)),
+        states: states.iter().map(|s| s.name.clone()).collect(),
+        hidden: m.b("Hidden light").then(|| m.n("Hidden light level") as u8),
+        growth: growth(game, m),
+    }
+}
+
+// How Grown amethyst reads the chunks: Auto takes the palettes on DonutSMP (its DonutFolia hides the geodes).
+fn growth(game: &Game<'_>, m: &Module) -> Growth {
+    if !m.b("Grown amethyst") {
+        return Growth::Off;
+    }
+    match m.p("Amethyst method") {
+        "Palette" => Growth::Palette,
+        "Blocks" => Growth::Blocks,
+        _ if game.remote.as_ref().is_some_and(|r| r.brand.to_ascii_lowercase().contains("donutfolia")) => Growth::Palette,
+        _ => Growth::Blocks,
     }
 }
 
 // What the scan depends on: the dimension and the settings the thread reads (the lists and the block signs).
-const BLOCK_SIGNS: [&str; 8] = ["Open portals", "Bubble columns", "Sky builds", "Sky build Y", "Bedrock", "Bedrock layers", "Lone spawners", "Nether roof"];
+const BLOCK_SIGNS: [&str; 18] = [
+    "Open portals", "Bubble columns", "Sky builds", "Sky build Y", "Bedrock", "Bedrock layers", "Lone spawners", "Nether roof",
+    "Hidden light", "Hidden light level", "Grown amethyst", "Amethyst method", "Long plants", "Kelp length", "Vine length",
+    "Cave vine length", "Honey nests", "Honey level",
+];
 
 fn key(game: &Game<'_>, m: &Module) -> String {
-    let mut k = game.dim.id().to_owned();
+    let mut k = format!("{}|{}", game.dim.id(), growth(game, m) as u8);
     for s in m.settings.iter().filter(|s| s.name.starts_with("List ") || BLOCK_SIGNS.contains(&s.name)) {
         k.push_str(&format!("|{:?}", s.value));
     }
@@ -318,18 +552,52 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
     if scan(|s| s.as_ref().is_none_or(|s| s.feed.key != key)) {
         let plan = plan(game, m);
         let mut states = [0u32; 4096];
-        let Some(feed) = Feed::start("base-finder", key, move |chunk, out| out.extend(look(&plan, &mut states, chunk))) else {
+        let Some(feed) = Feed::start("base-finder", key, move |chunk, out| look(&plan, &mut states, chunk, out)) else {
             return;
         };
-        scan(|s| *s = Some(Scan { feed, said: HashSet::new(), fresh: Vec::new(), lines: VecDeque::new(), cooldown: 0, entity_timer: 0 }));
+        scan(|s| {
+            *s = Some(Scan {
+                feed,
+                said: HashSet::new(),
+                fresh: Vec::new(),
+                lines: VecDeque::new(),
+                cooldown: 0,
+                entity_timer: 0,
+                amethyst: HashMap::new(),
+                amethyst_dirty: false,
+            })
+        });
     }
+    // Grown amethyst looks for its places again once a second while new chunks come in.
+    let stay = (m.b("Grown amethyst") && game.ticks % 20 == 0).then(|| (m.n("Simulation distance") as i32, m.n("Sensitivity") as u32));
     let entity_scan = scan(|s| {
         let Some(s) = s.as_mut() else {
             return false;
         };
-        for f in s.feed.pump(game) {
-            if s.said.insert(f.chunk) {
-                s.fresh.push(f);
+        for out in s.feed.pump(game) {
+            match out {
+                Out::Found(f) => {
+                    if s.said.insert(f.chunk) {
+                        s.fresh.push(f);
+                    }
+                }
+                Out::Amethyst(a) => {
+                    s.amethyst.insert(a.chunk, (a.grown, a.ungrown, a.y));
+                    s.amethyst_dirty = true;
+                }
+            }
+        }
+        if let Some((r, need)) = stay.filter(|_| std::mem::take(&mut s.amethyst_dirty)) {
+            for ((cx, cz), score) in stays(&s.amethyst, r, need) {
+                let y = s.amethyst.get(&(cx, cz)).map_or(0, |a| a.2);
+                if s.said.insert((cx, cz)) {
+                    s.fresh.push(Found {
+                        chunk: (cx, cz),
+                        why: format!("amethyst grown all round (score {score}): someone stayed near here"),
+                        at: [cx * 16 + 8, y, cz * 16 + 8],
+                        kinds: Vec::new(),
+                    });
+                }
             }
         }
         s.entity_timer = s.entity_timer.saturating_sub(1);
