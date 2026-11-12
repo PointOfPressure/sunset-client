@@ -537,7 +537,9 @@ pub(super) fn migrated(text: Cow<'_, str>) -> Cow<'_, str> {
     let line_of = |l: &str| l.split_once('=').and_then(|(k, v)| k.strip_prefix("fakelag.").map(|f| (f.to_owned(), v.trim().to_owned())));
     let old_mode = |v: &str| matches!(v, "Always" | "Timed" | "Ranged" | "Off");
     let backtrack_field = |f: &str| f.starts_with("backtrack") || matches!(f, "shortestlatencyms" | "longestlatencyms");
-    let old = text.lines().filter_map(line_of).any(|(f, v)| (f == "mode" && old_mode(&v)) || f == "rangechoke" || backtrack_field(&f));
+    // Range choke was saved as `rangechoke` and, in builds between, `rangechokems`.
+    let choke_field = |f: &str| matches!(f, "rangechoke" | "rangechokems");
+    let old = text.lines().filter_map(line_of).any(|(f, v)| (f == "mode" && old_mode(&v)) || choke_field(&f) || backtrack_field(&f));
     if !old {
         return text;
     }
@@ -547,7 +549,7 @@ pub(super) fn migrated(text: Cow<'_, str>) -> Cow<'_, str> {
     let backtrack = get("backtrack") == Some("true");
     let mut out: Vec<String> = text
         .lines()
-        .filter(|l| line_of(*l).is_none_or(|(f, _)| f != "mode" && f != "rangechoke" && !backtrack_field(&f)))
+        .filter(|l| line_of(*l).is_none_or(|(f, _)| f != "mode" && !choke_field(&f) && !backtrack_field(&f)))
         .map(str::to_owned)
         .collect();
     let (new_mode, off) = match mode {
@@ -560,7 +562,7 @@ pub(super) fn migrated(text: Cow<'_, str>) -> Cow<'_, str> {
     out.push(format!("fakelag.mode={new_mode}"));
     if mode == "Ranged" {
         out.push("fakelag.trigger=Closing".into());
-        if let Some(choke) = get("rangechoke") {
+        if let Some(choke) = get("rangechoke").or_else(|| get("rangechokems")) {
             out.push(format!("fakelag.delayms={choke}"));
         }
     }
@@ -621,6 +623,8 @@ mod tests {
             assert_eq!(out["fakelag.on"], "true");
             assert!(!out.contains_key("fakelag.rangechoke"));
         }
+        let out = fields("fakelag.mode=Dynamic\nfakelag.rangechokems=600\nfakelag.delayms=100\n");
+        assert!(!out.contains_key("fakelag.rangechokems") && out["fakelag.delayms"] == "100", "{out:?}");
         let out = fields("fakelag.mode=Ranged\nfakelag.rangechoke=450\nfakelag.delayms=100\n");
         assert_eq!((out["fakelag.mode"].as_str(), out["fakelag.trigger"].as_str(), out["fakelag.delayms"].as_str()), ("Dynamic", "Closing", "450"));
     }
