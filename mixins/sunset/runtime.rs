@@ -454,6 +454,15 @@ impl Module {
                 "Rotate" => self.b("Anti Anvil") || self.b("Self Anvil") || self.b("Auto Anvil"),
                 _ => true,
             },
+            "Hand View" => {
+                let legacy = self.p("Animations") == "1.8";
+                match name {
+                    "Swing animation" | "Block animation" => !legacy,
+                    "1.8 swing" => legacy,
+                    "1.8 block" => legacy || self.p("Block animation") == "1.8 style",
+                    _ => true,
+                }
+            }
             "Speed" => match name {
                 "Vanilla speed" => !matches!(self.p("Mode"), "Strafe" | "Bhop" | "NCP" | "NCP Hop" | "Watchdog"),
                 "NCP reduced jump" => self.p("Mode") == "NCP",
@@ -9407,7 +9416,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Step" => "step up stepup stairs reverse step step down stepdown",
         "ClickGUI" => "dropdown dashboard style gui menu color colour theme accent opacity width dim blur background indent scale size zoom bigger radius corner round",
         "Glide" => "slow fall slowfall",
-        "Hand View" => "small hands hand sway viewmodel item position totem pop totem size hand shadow hand light animations swing animation slow swing old animations equip totem animation",
+        "Hand View" => "small hands hand sway viewmodel item position totem pop totem size hand shadow hand light animations swing animation slow swing old animations equip totem animation 1.8 animations 1.7 animations block animation blockhit sword block autoblock animation",
         "Zoom" => "wi zoom spyglass",
         "Panic" => "disable all off hide",
         "Debug Report" => "debug report bug report clipboard copy log flags anticheat alerts packets",

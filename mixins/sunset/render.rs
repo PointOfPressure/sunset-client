@@ -522,16 +522,28 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
 // hands have when the view turns taken away. No hand shadow lights the hands at full brightness under blocks and in
 // caves; the totem pop is sized, moved on the screen and sped up (extra ticks of its 40).
 fn hand_view() -> Module {
-    let mut m = Module::new("Hand View", Category::Render, "Moves and sizes your hands and the totem pop.")
+    use horizon_client::first_person::sunset_hand_view as hv;
+    let mut m = Module::new("Hand View", Category::Render, "Moves and sizes your hands and the totem pop; 1.9+ or 1.8 swing and block animations.")
+        .group("General")
         .bool("No sway", false)
         .bool("No hand shadow", false)
         .num("Totem pop scale", 1.0, 0.1, 3.0, 0.05)
         .num("Totem pop X", 0.0, -1.0, 1.0, 0.05)
         .num("Totem pop Y", 0.0, -1.0, 1.0, 0.05)
         .num("Totem pop speed", 1.0, 1.0, 6.0, 1.0)
-        .pick("Swing animation", &["Vanilla", "1", "2", "3"])
+        // How a held item swings and a sword blocks (hand_view_flags): 1.9+ in the game's own pose, 1.8 in 1.8's
+        // (flat items in the right main hand). A sword blocks while Kill Aura's Legacy AutoBlock has a target, or
+        // while you hold right click with Block on right click.
+        .group("Animations")
+        .pick("Animations", &["1.9+", "1.8"])
+        .pick("Swing animation", hv::SWINGS)
+        .pick("Block animation", hv::BLOCKS)
+        .pick("1.8 swing", hv::SWINGS_18)
+        .pick("1.8 block", hv::BLOCKS_18)
+        .bool("Block on right click", false)
         .bool("Slow swing", false)
-        .bool("No equip drop", false);
+        .bool("No equip drop", false)
+        .group("Hands");
     for (scale, x, y, z, rx, ry, rz) in [
         ("Right scale", "Right X", "Right Y", "Right Z", "Right turn X", "Right turn Y", "Right turn Z"),
         ("Left scale", "Left X", "Left Y", "Left Z", "Left turn X", "Left turn Y", "Left turn Z"),
@@ -573,10 +585,29 @@ fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
     if let Ok(mut t) = hv::TOTEM.write() {
         *t = pop.filter(|p| *p != hv::TotemPop { scale: 1.0, x: 0.0, y: 0.0 });
     }
-    let style = hands.as_ref().map_or(0, |m| m.p("Swing animation").parse::<u32>().unwrap_or(0));
-    hv::SWING.store(style, Ordering::Relaxed);
+    let pick = |name: &str, choices: &[&str]| hands.as_ref().map_or(0, |m| hv::index_of(choices, m.p(name)));
+    hv::SWING.store(pick("Swing animation", hv::SWINGS), Ordering::Relaxed);
+    hv::LEGACY.store(hands.is_some_and(|m| m.p("Animations") == "1.8"), Ordering::Relaxed);
+    hv::SWING_18.store(pick("1.8 swing", hv::SWINGS_18), Ordering::Relaxed);
+    hv::BLOCK_18.store(pick("1.8 block", hv::BLOCKS_18), Ordering::Relaxed);
+    hv::BLOCK.store(pick("Block animation", hv::BLOCKS), Ordering::Relaxed);
     hv::SLOW_SWING.store(hands.is_some_and(|m| m.b("Slow swing")), Ordering::Relaxed);
     hv::NO_EQUIP_DROP.store(hands.is_some_and(|m| m.b("No equip drop")), Ordering::Relaxed);
+    // Kill Aura's Legacy AutoBlock, with the Legacy combat version it blocks under and someone to hit (engaged, which
+    // holds through the tick a hit waits to go, so the block does not drop for a frame at each hit): the sword shows
+    // the block (hand_item), as a 1.8 client's does, Hand View on or not.
+    let speed = game.main_hand_attack_speed();
+    let blocking = on(mods, "Kill Aura").is_some_and(|m| {
+        m.p("AutoBlock") == "Legacy"
+            && super::sunset_aura_timing::version(m.p("Combat version"), speed).0 == super::sunset_aura_timing::Version::Legacy
+    }) && super::sunset_aura::engaged();
+    // Block on right click: right click held with a sword in hand and nothing in use (Horizon has no sword block of
+    // its own; a 1.8 server behind ViaVersion takes the click as one).
+    let right_click = hands.is_some_and(|m| m.b("Block on right click"))
+        && (game.right || game.physical_buttons.contains(&winit::event::MouseButton::Right))
+        && game.using.is_none()
+        && game.held().is_some_and(|s| s.item.ends_with("_sword"));
+    hv::SWORD_BLOCK.store(blocking || right_click, Ordering::Relaxed);
     hv::TOTEM_EXTRA_TICKS.store(hands.as_ref().map_or(0, |m| (m.n("Totem pop speed").round() as u32).saturating_sub(1)), Ordering::Relaxed);
     let moving = super::sunset::move_input(game) != (0.0, 0.0);
     let speed_timer = if on(mods, "Flight").filter(|_| super::sunset_flight::damage_open() || super::sunset_flight::self_falling()).is_none() {

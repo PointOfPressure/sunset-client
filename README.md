@@ -235,7 +235,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **HUD**: module list, Target HUD, Armor HUD, coordinates, compass, item durability, food preview and more; drag
   elements while the chat is open.
 - **ClickGUI** (the menu's look), **No Render** (fog, overlays, hurt cam and more), **Effects** (jump circles,
-  trails, hit sparks, weather), **Hand View**, **Crosshair**, **Block Overlay**, **Atmosphere** (custom skies).
+  trails, hit sparks, weather), **Hand View** (1.9+ and 1.8 swing and sword block animations), **Crosshair**,
+  **Block Overlay**, **Atmosphere** (custom skies).
 
 </details>
 

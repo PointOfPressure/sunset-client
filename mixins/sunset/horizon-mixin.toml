@@ -838,6 +838,8 @@ target = "horizon_client_lib::first_person::HandHeights::tick"
 helper = "equip_hold.rs"
 bindings = [
   { name = "this", ty = "&mut HandHeights", value = "&mut *self" },
+  { name = "hands_busy", ty = "bool", value = "hands_busy" },
+  { name = "swap_scale", ty = "f32", value = "swap_scale" },
   { name = "changed", ty = "[bool; 2]", value = "changed" },
 ]
 
