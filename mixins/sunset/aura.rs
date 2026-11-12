@@ -356,6 +356,30 @@ fn ray_hits(game: &Game<'_>, m: &Module, eye: [f64; 3], look: (f32, f32), t: &Ta
     d <= m.n("Walls range") || clear_line(game, [eye[0] + dir[0] * d, eye[1] + dir[1] * d, eye[2] + dir[2] * d], [i32::MIN; 3])
 }
 
+// Reach as a 1.8 server's anticheat measures it (NoCheatPlus's fight.reach, and 1.8's own check): from the eyes to the
+// target's middle line (its height clamped to the eyes'), at where the server last put it (before the client's
+// smoothing), not to the near side of its box.
+fn axis_reach(game: &Game<'_>, eye: [f64; 3], t: &Target) -> f64 {
+    let at = super::remote::sunset_combat_remote::entity_position(game, t.id).unwrap_or(t.pos);
+    let height = t.hi[1] - t.lo[1];
+    let y = eye[1].clamp(at[1], at[1] + height);
+    dist(eye, [at[0], y, at[2]])
+}
+
+// Does a look point at the target, give or take `margin` blocks round its box (a direction check's leeway)?
+fn looks_at(game: &Game<'_>, m: &Module, eye: [f64; 3], look: (f32, f32), t: &Target, margin: f64, range: f64) -> bool {
+    let wide = Target {
+        lo: [t.lo[0] - margin, t.lo[1] - margin, t.lo[2] - margin],
+        hi: [t.hi[0] + margin, t.hi[1] + margin, t.hi[2] + margin],
+        ..t.clone()
+    };
+    ray_hits(game, m, eye, look, &wide, range)
+}
+
+// How far off the target the look the server has may be for a hit without Ray cast: NoCheatPlus's fight.direction
+// cancels a hit whose look misses the box by more (and holds the next ones back a while).
+const DIRECTION_MARGIN: f64 = 0.5;
+
 // A spear stabs along the look the server has, and through everyone on it: does that reach the target, within its own
 // reach and Range, without going through a friend too?
 fn stab_hits(game: &Game<'_>, m: &Module, eye: [f64; 3], look: (f32, f32), t: &Target) -> bool {
@@ -826,19 +850,27 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         // A hit goes within Attack range (Range only picks whom it aims at). With Ray cast it also needs a look that
         // meets the target: the one the server has or the one sent right after the hit (On hit's own turn goes first).
         // Without, the rotation aims but the hit does not wait for it. A stab goes along the look the server has.
-        if !spear && reach(eye, t) > attack_range {
+        // Legacy: reach to the target's middle line, as a 1.8 server's anticheat measures it.
+        let far = if legacy { axis_reach(game, eye, t) } else { reach(eye, t) };
+        if !spear && far > attack_range {
             st(|s| s.why("out of attack range"));
             continue;
         }
-        let meets = |look: (f32, f32)| ray_hits(game, m, eye, look, t, attack_range);
+        // Legacy: the hit reaches a 1.8 server before the look sent after it, so only the look it has counts.
+        let meets = |look: (f32, f32)| ray_hits(game, m, eye, look, t, attack_range + 1.0);
         let fits = if spear {
             stab_hits(game, m, eye, on_hit.unwrap_or(server), t)
-        } else if !ray_cast {
-            true
         } else if let Some(look) = on_hit {
-            meets(look)
+            !ray_cast || meets(look)
+        } else if ray_cast {
+            meets(server) || (!legacy && meets(coming))
+        } else if rotate_mode == "Always" {
+            // No Ray cast: the rotation need not meet the box, but a look far off it (a new target's first tick, a
+            // flick) waits for the next one.
+            let near = |look: (f32, f32)| looks_at(game, m, eye, look, t, DIRECTION_MARGIN, attack_range + 1.0);
+            near(server) || (!legacy && near(coming))
         } else {
-            meets(server) || meets(coming)
+            true
         };
         if !fits {
             st(|s| s.why("the look does not meet the target"));
