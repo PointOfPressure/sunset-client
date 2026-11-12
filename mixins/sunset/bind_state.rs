@@ -8,7 +8,7 @@ use std::collections::HashSet;
 pub(super) fn holds(module: &str) -> bool {
     matches!(
         module,
-        "Zoom" | "Radar" | "ESP" | "Tracers" | "Nametags" | "Storage ESP" | "Block ESP" | "HUD" | "Trajectories" | "Waypoints"
+        "Zoom" | "Radar" | "ESP" | "Tracers" | "Nametags" | "Storage ESP" | "Block ESP" | "Light ESP" | "HUD" | "Trajectories" | "Waypoints"
             | "Breadcrumbs" | "Logout Spots" | "Hole ESP" | "Tunnel ESP" | "Void ESP" | "Light Overlay"
     )
 }

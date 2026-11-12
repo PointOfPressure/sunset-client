@@ -261,6 +261,12 @@ name = "sunset_hunting"
 source = "hunting.rs"
 
 [[module]]
+id = "light_scan"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_light_scan"
+source = "light_scan.rs"
+
+[[module]]
 id = "gear"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_gear"
