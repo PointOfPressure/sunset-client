@@ -89,28 +89,9 @@ impl<T: PartialEq> Failure<T> {
     }
 }
 
-// A key going down (not held).
-#[derive(Default)]
-pub(super) struct Edge {
-    down: bool,
-}
-
-impl Edge {
-    pub(super) fn update(&mut self, pressed: bool) -> bool {
-        let rising = pressed && !self.down;
-        self.down = pressed;
-        rising
-    }
-}
-
 // A delay setting in ticks, at most `maximum`.
 pub(super) fn delay(value: f64, maximum: u64) -> u64 {
     if value.is_finite() && value >= 0.0 { (value as u64).min(maximum) } else { maximum }
-}
-
-// Key Throw's press lasts 10 ticks, the press tick included.
-pub(super) fn press_alive(pressed: u64, now: u64) -> bool {
-    now >= pressed && now - pressed < 10
 }
 
 // How long to wait for the server to confirm a swap: three times the ping plus 250 ms, from 0.75 to 5 s, in ticks.

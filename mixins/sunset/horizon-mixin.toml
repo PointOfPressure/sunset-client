@@ -1544,18 +1544,6 @@ file = "crates/horizon-client/src/game.rs"
 name = "sunset_block_overlay_math"
 source = "block_overlay_math.rs"
 
-[[module]]
-id = "target_esp"
-file = "crates/horizon-client/src/game.rs"
-name = "sunset_target_esp"
-source = "target_esp.rs"
-
-[[module]]
-id = "target_esp_math"
-file = "crates/horizon-client/src/game.rs"
-name = "sunset_target_esp_math"
-source = "target_esp_math.rs"
-
 [[injection]]
 id = "custom_crosshair"
 kind = "HEAD"

@@ -51,7 +51,6 @@ inventorymanager.autoarmor=true
 autogap.on=true
 velocity.on=true
 nametags.on=true
-targetesp.on=true
 fullbright.on=true
 sprint.on=true
 autorespawn.on=true

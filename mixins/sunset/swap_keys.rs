@@ -1,8 +1,7 @@
 // What goes in your main hand for a fight: Shield (Auto block: the shield up while a player who can hit you is near,
 // down when an axe or a crit would get through it; Swap key: a shield in hand on a key, from the hotbar or the main
-// inventory, and back on the next press), Key Throw's Crossbow key (a crossbow in hand, from the hotbar or the
-// inventory, kept loaded while you hold it, put back when you change slot) and Offhand's Double hand (a hotbar totem
-// in hand when a blast or a smash near an enemy could take more than the health you have). All of it at the start of
+// inventory, and back on the next press) and Offhand's Double hand (a hotbar totem in hand when a blast or a smash
+// near an enemy could take more than the health you have). All of it at the start of
 // a tick, before its move packet, and only in a tick no other slot change went in.
 use super::sunset::{Category, Module, gui_open, hold, with};
 use super::sunset_util as util;
@@ -61,9 +60,6 @@ struct State {
     // The shield's cooldown (disabled by an axe) seen last tick.
     disabled: bool,
     shield: Option<Borrow>,
-    crossbow: Option<Borrow>,
-    // The crossbow key holds the use button.
-    loading: bool,
     // Double hand: not again before this tick; the pearl cooldown seen last tick.
     double_next: u64,
     pearl_cooling: bool,
@@ -72,9 +68,11 @@ struct State {
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
 pub(super) fn shutdown(game: &mut Game<'_>) {
-    let (shield, crossbow) = st(|s| (s.shield.take(), s.crossbow.take()));
+    let shield = st(|s| s.shield.take());
     let_go(game);
-    for b in [shield, crossbow].into_iter().flatten() { put_back(game, b); }
+    if let Some(b) = shield {
+        put_back(game, b);
+    }
     st(|s| *s = State::default());
 }
 
@@ -152,7 +150,7 @@ fn let_go(game: &mut Game<'_>) {
     }
 }
 
-// The key handler: Shield's Swap key and Key Throw's Crossbow key.
+// The key handler: Shield's Swap key.
 pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     if !pressed || !live(game) {
         return;
@@ -168,12 +166,6 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
             }
         }
     }
-    if let Some(m) = module("Key Throw").filter(|m| named(m, "Crossbow key"))
-        && st(|s| s.crossbow.is_none())
-    {
-        let b = bring(game, "crossbow", m.b("Crossbow from inventory"));
-        st(|s| s.crossbow = b);
-    }
 }
 
 // The start of a tick; `busy`: a slot changed already in it (a hit's weapon, a slot coming back).
@@ -181,15 +173,12 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
     if !live(game) {
         st(|s| {
             s.shield = None;
-            s.crossbow = None;
-            s.loading = false;
             s.swings.clear();
         });
         let_go(game);
         return;
     }
-    let (loaded, kept) = (crossbow(game), swap_key(game));
-    let busy = busy || !loaded || !kept;
+    let busy = busy || !swap_key(game);
     note_swings(game);
     let busy = busy || double_hand(game, busy);
     let shield = module(NAME);
@@ -211,40 +200,6 @@ fn swap_key(game: &mut Game<'_>) -> bool {
             put_back(game, b);
             return false;
         }
-    }
-    true
-}
-
-// Crossbow key: the use button held until the crossbow is loaded; again after each shot while it is in hand; once you
-// hold another slot it goes back. False: a slot changed.
-fn crossbow(game: &mut Game<'_>) -> bool {
-    let Some(b) = st(|s| s.crossbow) else {
-        return true;
-    };
-    if module("Key Throw").is_none() || game.selected != b.slot || !is(game.held(), "crossbow") {
-        if st(|s| std::mem::take(&mut s.loading)) {
-            yours(game);
-        }
-        st(|s| s.crossbow = None);
-        if game.selected != b.slot && b.from.is_some() {
-            put_back(game, b);
-            return false;
-        }
-        return true;
-    }
-    let Some(stack) = game.held() else {
-        return true;
-    };
-    let loaded = stack.data().is_some_and(|d| !d.charged.is_empty());
-    let pull = (25 - 5 * stack.enchantment_level("minecraft:quick_charge") as i64).max(1) as u32;
-    let drawn = game.using.is_some_and(|(slot, ticks)| slot == game.selected && ticks >= pull);
-    if loaded || drawn {
-        if st(|s| std::mem::take(&mut s.loading)) {
-            yours(game);
-        }
-    } else if !st(|s| s.loading) {
-        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
-        st(|s| s.loading = true);
     }
     true
 }

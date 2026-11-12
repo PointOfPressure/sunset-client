@@ -1,6 +1,5 @@
 // Sunset's combat modules beyond the core ones, implemented for Sunset:
-// Surround, Self Trap, Auto Trap, Self Web, Auto Web, Hole Filler, Burrow,
-// Offhand and Auto EXP; and Auto City (Rust's PR #16).
+// Surround, Self Trap, Auto Trap, Self Web, Auto Web, Offhand and Auto EXP.
 
 use super::sunset::{Category, Module, gui_open, hold, own_id, with};
 use super::sunset_util::*;
@@ -34,12 +33,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Center", true)
             .bool("Turn off", true)
             .bool("Rotate", true),
-        Module::new("Auto City", Combat, "Mines into a player's surround.")
-            .num("Target range", 5.5, 0.0, 6.0, 0.5)
-            .num("Break range", 4.5, 0.0, 6.0, 0.5)
-            .bool("Support", true)
-            .bool("Rotate", true)
-            .bool("Notifications", true),
         Module::new("Auto Trap", Combat, "Traps players in blocks.")
             .text("Blocks", "obsidian,crying_obsidian")
             .num("Place range", 4.0, 1.0, 6.0, 0.5)
@@ -70,28 +63,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only when falling", false)
             .num("Max webs per fall", 1.0, 1.0, 10.0, 1.0)
             .text("Web key", "None"),
-        Module::new("Hole Filler", Combat, "Fills holes with blocks.")
-            .text("Blocks", "obsidian,crying_obsidian,netherite_block,respawn_anchor,cobweb")
-            .num("Search radius", 5.0, 1.0, 8.0, 1.0)
-            .num("Place range", 4.5, 1.0, 6.0, 0.5)
-            .num("Walls range", 4.5, 1.0, 6.0, 0.5)
-            .bool("Doubles", true)
-            .bool("Rotate", false)
-            .num("Place delay", 1.0, 0.0, 10.0, 1.0)
-            .num("Blocks per tick", 3.0, 1.0, 8.0, 1.0)
-            .bool("Smart", true)
-            .bool("Predict movement", true)
-            .num("Ticks to predict", 10.0, 1.0, 30.0, 1.0)
-            .bool("Ignore safe", true)
-            .bool("Only moving", true)
-            .num("Target range", 7.0, 1.0, 20.0, 1.0)
-            .num("Feet range", 1.5, 0.5, 4.0, 0.5),
-        Module::new("Burrow", Combat, "Places a block inside you.")
-            .pick("Block", &["E-Chest", "Obsidian", "Anvil", "Held"])
-            .num("Trigger height", 1.12, 0.5, 1.5, 0.01)
-            .num("Rubberband height", 12.0, 3.0, 20.0, 1.0)
-            .bool("Center", true)
-            .bool("Rotate", true),
         Module::new("Aim Assist", Combat, "Helps your aim.")
             // Simple turns you toward the target on its own; the Duelkit mode only adds to your mouse.
             .pick("Mode", &["Simple", "Duelkit", "Clicks only"])
@@ -166,8 +137,6 @@ struct Cs {
     web_target: Option<u32>,
     // Only when falling: the player falling, and the webs put under them in this fall.
     web_fall: Option<(u32, u32)>,
-    hole_timer: i32,
-    burrow: Option<([i32; 3], bool)>,
     // Offhand: ticks since its last move, and whether its warning was said.
     offhand_ticks: u32,
     offhand_warned: bool,
@@ -176,18 +145,6 @@ struct Cs {
     aim_frame: Option<Instant>,
     aim_target: Option<super::sunset_antibot::Token>,
     aim_last: [f64; 2],
-    city: Option<City>,
-}
-
-// Auto City's block: its target, the slot to go back to, the progress so far, and once the stop went the ticks
-// left to wait for the server's answer.
-#[derive(Clone, Copy)]
-struct City {
-    pos: [i32; 3],
-    target: u32,
-    back: usize,
-    done: f32,
-    waiting: Option<u32>,
 }
 
 static CS: Mutex<Option<Cs>> = Mutex::new(None);
@@ -212,7 +169,7 @@ fn activated(name: &str, on: bool) -> bool {
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     show_clear();
     let get = |n: &str| mods.iter().find(|m| m.name == n);
-    for name in ["Surround", "Self Trap", "Auto City", "Auto Trap", "Self Web", "Auto Web", "Hole Filler", "Burrow", "Auto EXP"] {
+    for name in ["Surround", "Self Trap", "Auto Trap", "Self Web", "Auto Web", "Auto EXP"] {
         let Some(m) = get(name).filter(|m| m.on) else {
             activated(name, false);
             continue;
@@ -226,12 +183,9 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         match name {
             "Surround" => surround(game, m, just),
             "Self Trap" => self_trap(game, m, just),
-            "Auto City" => auto_city(game, m, just),
             "Auto Trap" => auto_trap(game, m, just),
             "Self Web" => self_web(game, m),
             "Auto Web" => auto_web(game, m),
-            "Hole Filler" => hole_filler(game, m, just),
-            "Burrow" => burrow(game, m, just),
             _ => auto_exp(game, m),
         }
     }
@@ -394,109 +348,6 @@ fn self_trap(game: &mut Game<'_>, m: &Module, just: bool) {
             });
         }
         cs(|c| c.trap_delay = 0);
-    }
-}
-
-// ---- Auto City
-
-fn auto_city(game: &mut Game<'_>, m: &Module, just: bool) {
-    let note = |game: &mut Game<'_>, msg: &str| {
-        if m.b("Notifications") {
-            super::sunset_util::report(game, msg);
-        }
-    };
-    if just {
-        let found = city_block(game, m);
-        let Some((t, pos)) = found else {
-            note(game, "Auto City: no player next to a block to mine.");
-            cs(|c| c.city = None);
-            return toggle_off(game, "Auto City");
-        };
-        let Some(pick) = find_held(game, |n| n.ends_with("_pickaxe")) else {
-            note(game, "Auto City: no pickaxe in the hotbar.");
-            return toggle_off(game, "Auto City");
-        };
-        // Support: obsidian under the block, for the crystal that goes where it was.
-        let below = [pos[0], pos[1] - 1, pos[2]];
-        if m.b("Support")
-            && let Some(slot) = blocks_slot(game, "obsidian")
-            && let Some(eye) = game.eye_position()
-            && dist(eye, center_of(below)) <= m.n("Break range")
-        {
-            place_block(game, below, slot, m.b("Rotate"), true);
-        }
-        let back = game.selected;
-        hold(game, pick);
-        cs(|c| c.city = Some(City { pos, target: t, back, done: 0.0, waiting: None }));
-        start_city(game, pos, m.b("Rotate"), 0);
-        return;
-    }
-    let Some(mut city) = cs(|c| c.city) else {
-        return;
-    };
-    show(city.pos, 0x40FF_2020);
-    let gone = game.res.facts().is_air(game.world.block(city.pos[0], city.pos[1], city.pos[2]));
-    let target = target_by_id(game, city.target);
-    let eye = game.eye_position();
-    let (msg, over) = if gone {
-        (format!("Auto City: mined {} {} {}.", city.pos[0], city.pos[1], city.pos[2]), true)
-    } else if bad_target(game, &target, m.n("Target range")) || eye.is_none_or(|e| dist(e, center_of(city.pos)) > m.n("Break range")) {
-        ("Auto City: the target or the block went out of range.".to_owned(), true)
-    } else if city.waiting == Some(0) {
-        ("Auto City: the server kept the block.".to_owned(), true)
-    } else {
-        (String::new(), false)
-    };
-    if over {
-        note(game, &msg);
-        hold(game, city.back);
-        cs(|c| c.city = None);
-        return toggle_off(game, "Auto City");
-    }
-    if let Some(left) = city.waiting {
-        city.waiting = Some(left - 1);
-    } else {
-        // The game's own progress a tick with what is held (the pickaxe, its enchantments, haste, off the ground...).
-        city.done += game.destroy_progress(city.pos);
-        // The server lets a stop through once the progress reaches 0.7, counting the tick it started in.
-        if city.done >= 0.7 {
-            start_city(game, city.pos, m.b("Rotate"), 3);
-            city.waiting = Some(10);
-        }
-    }
-    cs(|c| c.city = Some(city));
-}
-
-// The nearest player in Target range, and the block of the wall round their feet that is closest to your eyes in
-// Break range (not air, not unbreakable).
-fn city_block(game: &Game<'_>, m: &Module) -> Option<(u32, [i32; 3])> {
-    let eye = game.eye_position()?;
-    let t = player_target(game, m.n("Target range"), "Lowest distance")?;
-    let feet = [t.pos[0].floor() as i32, t.pos[1].floor() as i32, t.pos[2].floor() as i32];
-    HORIZONTAL
-        .iter()
-        .map(|d| [feet[0] + d[0], feet[1], feet[2] + d[2]])
-        .filter(|&p| {
-            let f = facts(game, p);
-            !game.res.facts().is_air(game.world.block(p[0], p[1], p[2])) && f.hardness >= 0.0 && dist(eye, center_of(p)) <= m.n("Break range")
-        })
-        .min_by(|a, b| dist(eye, center_of(*a)).total_cmp(&dist(eye, center_of(*b))))
-        .map(|p| (t.id, p))
-}
-
-// START (0) or STOP (3) breaking the block, facing it first when Rotate is on.
-fn start_city(game: &mut Game<'_>, pos: [i32; 3], rotate: bool, action: i32) {
-    let send = move |game: &mut Game<'_>| {
-        let sequence = sequence(game);
-        game.send(S::PlayerAction(play::PlayerAction { action, pos, direction: 1, sequence }));
-        game.swing_arm();
-    };
-    match game.eye_position() {
-        Some(eye) if rotate => {
-            let (yaw, pitch) = super::sunset::look_at(eye, center_of(pos));
-            super::sunset::turn_then("Auto City", yaw, pitch, send);
-        }
-        _ => send(game),
     }
 }
 
@@ -754,215 +605,6 @@ pub(super) fn web_key(game: &mut Game<'_>, key: &str, pressed: bool) {
         place_block(game, at, slot, false, true);
         show(at, 0x40FF_FFFF);
     }
-}
-
-// ---- Hole Filler
-
-// `getExplosionResistance() >= 600`: obsidian, bedrock and the like.
-fn hard(game: &Game<'_>, p: [i32; 3]) -> bool {
-    !is_air(game, p) && facts(game, p).explosion_resistance >= 600.0
-}
-
-fn hole_filler(game: &mut Game<'_>, m: &Module, _just: bool) {
-    let Some(me) = block_pos(game) else {
-        return;
-    };
-    let Some(slot) = blocks_slot(game, m.t("Blocks")) else {
-        return;
-    };
-    let smart = m.b("Smart");
-    let targets: Vec<Target> = if smart {
-        let eye = game.eye_position().unwrap_or([0.0; 3]);
-        other_players(game)
-            .into_iter()
-            .filter(|t| dist(eye, t.pos) <= m.n("Target range"))
-            .filter(|t| !(m.b("Ignore safe") && is_surrounded_hard(game, t)))
-            .filter(|t| !(m.b("Only moving") && t.pos == t.prev))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let (range, walls) = (m.n("Place range"), m.n("Walls range"));
-    let close = |t: &Target, p: [i32; 3]| {
-        let mut pos = t.pos;
-        if m.b("Predict movement") {
-            let k = m.n("Ticks to predict");
-            for i in 0..3 {
-                pos[i] += (t.pos[i] - t.prev[i]) * k;
-            }
-        }
-        let d = [pos[0] - (f64::from(p[0]) + 0.5), pos[1] - (f64::from(p[1]) + 1.0), pos[2] - (f64::from(p[2]) + 0.5)];
-        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() < m.n("Feet range")
-    };
-    let valid = |game: &Game<'_>, p: [i32; 3]| -> bool {
-        if !can_place(game, p, true) || !replaceable(game, [p[0], p[1] + 1, p[2]]) {
-            return false;
-        }
-        let top = [f64::from(p[0]) + 0.5, f64::from(p[1]) + 0.999, f64::from(p[2]) + 0.5];
-        let d = game.eye_position().map_or(f64::MAX, |eye| dist(eye, top));
-        // `isOutOfRange`: past the range, or in the way and past the walls range.
-        if d > range || (!clear_line(game, top, p) && d > walls) {
-            return false;
-        }
-        !smart || targets.iter().any(|t| t.pos[1] > f64::from(p[1]) && close(t, p))
-    };
-    let r = m.n("Search radius") as i32;
-    let mut holes: Vec<[i32; 3]> = Vec::new();
-    const DIRS: [[i32; 3]; 5] = [[0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
-    for x in me[0] - r..=me[0] + r {
-        for y in me[1] - r..=me[1] + r {
-            for z in me[2] - r..=me[2] + r {
-                let p = [x, y, z];
-                if !valid(game, p) {
-                    continue;
-                }
-                let mut surround = 0;
-                let mut air: Option<[i32; 3]> = None;
-                let mut bad = false;
-                for d in DIRS {
-                    let n = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-                    if hard(game, n) {
-                        surround += 1;
-                    } else if d == [0, -1, 0] {
-                        bad = true;
-                        break;
-                    } else if valid(game, n) && air.is_none() {
-                        for e in DIRS {
-                            if e == [-d[0], -d[1], -d[2]] {
-                                continue;
-                            }
-                            let n2 = [n[0] + e[0], n[1] + e[1], n[2] + e[2]];
-                            if hard(game, n2) {
-                                surround += 1;
-                            } else {
-                                bad = true;
-                                break;
-                            }
-                        }
-                        if bad {
-                            break;
-                        }
-                        air = Some(d);
-                    }
-                }
-                if bad {
-                    continue;
-                }
-                if surround == 5 && air.is_none() || surround == 8 && m.b("Doubles") && air.is_some() {
-                    holes.push(p);
-                }
-            }
-        }
-    }
-    for &p in &holes {
-        show(p, 0x4000_FF80);
-    }
-    let timer = cs(|c| {
-        c.hole_timer -= 1;
-        c.hole_timer
-    });
-    if timer > 0 || holes.is_empty() {
-        return;
-    }
-    let mut placed = 0;
-    for p in holes {
-        if placed >= m.n("Blocks per tick") as u32 {
-            break;
-        }
-        if place_block(game, p, slot, m.b("Rotate"), true) {
-            placed += 1;
-        }
-    }
-    cs(|c| c.hole_timer = m.n("Place delay") as i32);
-}
-
-fn is_surrounded_hard(game: &Game<'_>, t: &Target) -> bool {
-    let p = [t.pos[0].floor() as i32, t.pos[1].floor() as i32, t.pos[2].floor() as i32];
-    HORIZONTAL.iter().all(|d| hard(game, [p[0] + d[0], p[1], p[2] + d[2]]))
-}
-
-// ---- Burrow
-
-fn burrow_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
-    match m.p("Block") {
-        "E-Chest" => find_hotbar(game, |n| n == "ender_chest"),
-        "Anvil" => find_hotbar(game, |n| n.ends_with("anvil")),
-        "Held" => Some(game.selected),
-        _ => find_hotbar(game, |n| n == "obsidian" || n == "crying_obsidian"),
-    }
-}
-
-fn burrow(game: &mut Game<'_>, m: &Module, just: bool) {
-    let Some(at) = block_pos(game) else {
-        return;
-    };
-    if just {
-        // Check the state at activation.
-        if !replaceable(game, at) {
-            report(game, "Already burrowed.");
-            toggle_off(game, "Burrow");
-            return;
-        }
-        let head = [at[0], at[1] + 2, at[2]];
-        if !replaceable(game, head) {
-            report(game, "Not enough headroom to burrow.");
-            toggle_off(game, "Burrow");
-            return;
-        }
-        if burrow_slot(game, m).is_none() {
-            report(game, "No burrow block in your hotbar.");
-            toggle_off(game, "Burrow");
-            return;
-        }
-        cs(|c| c.burrow = Some((at, false)));
-        if let Some(p) = game.player.as_mut() {
-            if p.ground.on_ground {
-                p.velocity.y = 0.42;
-            }
-        }
-        return;
-    }
-    let Some((start, _)) = cs(|c| c.burrow) else {
-        return;
-    };
-    let Some(y) = game.player.as_ref().map(|p| p.position.y) else {
-        return;
-    };
-    if y <= f64::from(start[1]) + m.n("Trigger height") {
-        return;
-    }
-    if m.b("Center") {
-        center_player(game);
-    }
-    let rubberband = m.n("Rubberband height");
-    // The block first, then the rubberband (the next move packet): a server that took the move first would find the
-    // block out of reach.
-    let lift = move |game: &mut Game<'_>| {
-        if let Some(p) = game.player.as_mut() {
-            p.position.y += rubberband;
-        }
-    };
-    match burrow_slot(game, m) {
-        Some(slot) => turned_to(game, "Burrow", m.b("Rotate"), center_of(start), move |game| {
-            let before = game.selected;
-            hold(game, slot);
-            let seq = sequence(game);
-            game.send(S::UseItemOn(play::UseItemOn {
-                hand: 0,
-                pos: start,
-                face: 1,
-                cursor: [0.5, 0.5, 0.5],
-                inside: false,
-                world_border: false,
-                sequence: seq,
-            }));
-            hold(game, before);
-            lift(game);
-        }),
-        None => lift(game),
-    }
-    cs(|c| c.burrow = None);
-    toggle_off(game, "Burrow");
 }
 
 // ---- Offhand (its module is in combat_inventory.rs, with the careful totem moves)

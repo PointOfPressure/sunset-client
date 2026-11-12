@@ -4,8 +4,7 @@
 // eats a golden apple when low. Hits go through the strikes queue like Kill Aura's. Your own movement keys take over.
 // Crystal mode follows the behaviour of #16's crystal controller, with Sunset's own modules as its hands: it walks
 // into crystal range, holes up (into a hole nearby, else Surround where it stands), and while it fights keeps Crystal
-// Aura, Anchor Aura, Offhand and Auto Gap on, Self Trap when low, Auto City on a target in a hole, and pearls away
-// when low with no totem left. What it learns of each rival (Rust's PR #20 store) changes how it fights them again.
+// Aura, Anchor Aura, Offhand and Auto Gap on, Self Trap when low, and pearls away when low with no totem left. What it learns of each rival (Rust's PR #20 store) changes how it fights them again.
 use super::sunset::{self, Category, Module, hold, own_id, with};
 use super::sunset_util as util;
 use super::{Game, Screen};
@@ -19,7 +18,7 @@ const KEYS: [KeyCode; 6] = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyA, KeyCode
 // The vanilla reach to a player's box, with a little kept back.
 const REACH: f64 = 2.9;
 // The modules Crystal mode drives.
-const HANDS: [&str; 8] = ["Crystal Aura", "Anchor Aura", "Offhand", "Auto Gap", "Surround", "Self Trap", "Auto City", "Key Throw"];
+const HANDS: [&str; 6] = ["Crystal Aura", "Anchor Aura", "Offhand", "Auto Gap", "Surround", "Self Trap"];
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
@@ -36,7 +35,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Use anchors", true)
             .bool("Hole up", true)
             .num("Self trap below HP", 12.0, 0.0, 36.0, 1.0)
-            .bool("City", true)
             .num("Pearl below HP", 8.0, 0.0, 20.0, 1.0)
             .bool("Learn rivals", true),
     ]
@@ -46,7 +44,7 @@ pub(super) fn visible(m: &Module, name: &str) -> bool {
     let crystal = m.p("Mode") == "Crystal";
     match name {
         "Style" | "Strafe" | "Jump crits" | "Jump reset" | "Gapple below HP" => !crystal,
-        "Crystal range" | "Use anchors" | "Hole up" | "Self trap below HP" | "City" | "Pearl below HP" | "Learn rivals" => crystal,
+        "Crystal range" | "Use anchors" | "Hole up" | "Self trap below HP" | "Pearl below HP" | "Learn rivals" => crystal,
         _ => true,
     }
 }
@@ -105,10 +103,6 @@ impl Rival {
         }
         let n = |k: &str| v[k].as_u64().and_then(|n| u32::try_from(n).ok());
         Some(Self { fights: n("fights")?, pops: n("pops")?, taken: n("taken")?, ticks: n("ticks")?, hole_ticks: n("hole_ticks")? })
-    }
-    // Sits in a hole half the time or more: Auto City is ready from the start.
-    fn holes_up(&self) -> bool {
-        self.fights > 0 && self.hole_ticks * 2 >= self.ticks
     }
     // Has popped more of your totems than you of theirs: the pearl goes earlier.
     fn beats_you(&self) -> bool {
@@ -261,7 +255,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     let crystal = m.p("Mode") == "Crystal";
     // Crystal mode keeps its modules on through a screen (Offhand opens the inventory for a totem), only standing.
     if crystal && let (Some(t), Some(eye), true) = (target.as_ref(), game.eye_position(), alive) {
-        crystal_tick(game, m, mods, t, eye, yours, !playing);
+        crystal_tick(game, m, t, eye, yours, !playing);
         return;
     }
     if crystal || bot(|b| !b.leased.is_empty() || b.fight.is_some()) {
@@ -489,7 +483,7 @@ pub(super) fn rival(uuid: u128) -> Option<Rival> {
     rivals(|r| r.get(&uuid).copied().flatten())
 }
 
-fn crystal_tick(game: &mut Game<'_>, m: &Module, mods: &[Module], t: &util::Target, eye: [f64; 3], yours: bool, paused: bool) {
+fn crystal_tick(game: &mut Game<'_>, m: &Module, t: &util::Target, eye: [f64; 3], yours: bool, paused: bool) {
     let learn = m.b("Learn rivals");
     begin_fight(game, t.id, learn);
     let Some(p) = game.player.as_ref() else {
@@ -518,7 +512,7 @@ fn crystal_tick(game: &mut Game<'_>, m: &Module, mods: &[Module], t: &util::Targ
     }
     let gap = util::dist([eye[0], 0.0, eye[2]], [t.pos[0], 0.0, t.pos[2]]);
     let (yaw, pitch) = sunset::look_at(eye, [t.pos[0], (t.lo[1] + t.hi[1]) / 2.0, t.pos[2]]);
-    // Low with no totem left: one pearl away from them (Key Throw throws it along the look; another 10 s on at the
+    // Low with no totem left: one pearl away from them (thrown once the server has its look; another 10 s on at the
     // soonest), then keep back and eat.
     let below = m.n("Pearl below HP") + if history.is_some_and(|r| r.beats_you()) { 4.0 } else { 0.0 };
     let escaping = m.n("Pearl below HP") > 0.0 && health < below && totems(game) == 0;
@@ -532,25 +526,20 @@ fn crystal_tick(game: &mut Game<'_>, m: &Module, mods: &[Module], t: &util::Targ
         {
             lease(game, "Crystal Aura", false);
             lease(game, "Anchor Aura", false);
-            lease(game, "Key Throw", true);
             (game.yaw, game.pitch) = look;
-            let ready = mods.iter().any(|m| m.name == "Key Throw" && m.on) && super::sunset_combat_control::owner().is_none();
-            if ready {
-                super::sunset_combat_inventory::throw_pearl(game);
+            if super::sunset_combat_control::owner().is_none() && super::sunset_throws::escape_pearl(game, look) {
                 bot(|b| b.pearl_at = now);
             }
             press(game, &[]);
             return;
         }
     }
-    // The pearl's look holds for 5 ticks while Key Throw turns to it.
+    // The pearl's look holds for 5 ticks while it is thrown.
     let throwing = bot(|b| b.pearl_at > 0 && now >= b.pearl_at && now < b.pearl_at + 5);
-    lease(game, "Key Throw", throwing);
     lease(game, "Crystal Aura", !escaping);
     lease(game, "Anchor Aura", !escaping && m.b("Use anchors"));
     lease(game, "Offhand", true);
     lease(game, "Auto Gap", true);
-    lease(game, "Auto City", m.b("City") && gap <= 5.5 && (their_hole || history.is_some_and(|r| r.holes_up())));
     let in_hole = super::sunset_parity::in_hole(game, feet);
     let range = m.n("Crystal range");
     // Where to go: back from them while escaping, in while out of crystal range, into a hole nearby once in it.

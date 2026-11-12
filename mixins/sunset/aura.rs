@@ -906,7 +906,7 @@ mod preset_tests {
     }
 }
 
-// Who Kill Aura is hitting (Target ESP marks them).
+// Who Kill Aura is hitting.
 pub(super) fn target_id() -> Option<u32> {
     st(|s| s.target)
 }

@@ -1,6 +1,5 @@
-// Pearl and wind charge throws: Key Throw's Short pearl key, Legit throws, Wind charge after pearl, Auto short pearl
-// and Pearl follow; Pearl Catch's Catch key (Up, Fast, Offhand, Diagonal, Diagonal macro); Wind Jump's Elytra and Hit
-// charges; Auto Gap's Auto pot. A throw goes at the start of a tick, before its move packet, once the server has its look from the last
+// Pearl and wind charge throws: Pearl Catch's Catch key (Up, Fast, Offhand, Diagonal, Diagonal macro); Wind Jump's
+// Elytra and Hit charges; Auto Gap's Auto pot and Soup; PvP Bot's escape pearl. A throw goes at the start of a tick, before its move packet, once the server has its look from the last
 // one (asked a tick ahead); a hotbar item is held for it and the slot from before comes back at the start of a later
 // tick, never after a use in the same one; one slot change a tick.
 use super::sunset::{Module, hold, own_id, turn, with};
@@ -11,10 +10,10 @@ use horizon_client::projectiles::ProjectileKind;
 use horizon_protocol::packets::play::{self, Clientbound as C, Serverbound as S};
 use std::sync::Mutex;
 
-const THROW: &str = "Key Throw";
 const CATCH: &str = "Pearl Catch";
 const WIND: &str = "Wind Jump";
 const GAP: &str = "Auto Gap";
+const BOT: &str = "PvP Bot";
 
 // A pearl leaves at 1.5 blocks a tick, slowed by 0.99 and pulled down 0.03 a tick; a wind charge flies at 1.5.
 const THROW_SPEED: f64 = 1.5;
@@ -29,11 +28,7 @@ pub(super) enum Item {
     HealPot,
     // Mushroom stew (soup servers heal with it at once).
     Soup,
-    // A splash potion of harming, weakness, poison or slowness.
-    Debuff,
 }
-
-const DEBUFFS: [&str; 4] = ["harming", "weakness", "poison", "slowness"];
 
 // A splash potion's effect without its long_ or strong_ prefix.
 fn potion_kind(s: &horizon_client::items::ItemStack) -> Option<&str> {
@@ -43,7 +38,7 @@ fn potion_kind(s: &horizon_client::items::ItemStack) -> Option<&str> {
         .map(|p| util::short(p).trim_start_matches("long_").trim_start_matches("strong_"))
 }
 
-// One step of the Pot key's and the Debuff key's runs: use the item in a hotbar slot, or drop the bowl a soup left.
+// One step of Auto Gap's Soup run: use the item in a hotbar slot, or drop the bowl a soup left.
 #[derive(Clone, Copy)]
 enum Step {
     Use(usize, Item),
@@ -57,7 +52,6 @@ impl Item {
             Self::Wind => util::short(&s.item) == "wind_charge",
             Self::HealPot => potion_kind(s) == Some("healing"),
             Self::Soup => util::short(&s.item) == "mushroom_stew",
-            Self::Debuff => potion_kind(s).is_some_and(|k| DEBUFFS.contains(&k)),
         }
     }
 }
@@ -78,8 +72,8 @@ impl Aim {
     }
 }
 
-// One throw waiting: who asked, what, the look, not before tick `at` and not after `until`; a jump with it from the
-// ground; and whether it is a pearl Wind charge after pearl follows.
+// One throw waiting: who asked, what, the look, not before tick `at` and not after `until`; and a jump with it from
+// the ground.
 #[derive(Clone, Copy)]
 struct Single {
     owner: &'static str,
@@ -88,30 +82,6 @@ struct Single {
     at: u64,
     until: u64,
     jump: bool,
-    then_wind: bool,
-}
-
-// Key Throw's Legit throws, a step a tick at most and a rolled delay between: the item's slot held, the camera turned
-// to the pitch (if any), the throw with your own look once the server has it, the camera back, the slot back.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Stage {
-    Select,
-    Turn,
-    Throw,
-    TurnBack,
-    Back,
-}
-
-#[derive(Clone, Copy)]
-struct Legit {
-    item: Item,
-    pitch: Option<f32>,
-    jump: bool,
-    stage: Stage,
-    next: u64,
-    back: usize,
-    from: f32,
-    until: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -160,7 +130,6 @@ struct Seen {
 struct Throws {
     rng: Option<Rng>,
     single: Option<Single>,
-    legit: Option<Legit>,
     catch: Option<Catch>,
     // The slot held before the first borrowed one, the tick of the last use, and the combat lease held.
     back: Option<usize>,
@@ -168,22 +137,17 @@ struct Throws {
     lease: Option<&'static str>,
     // A jump in this tick's input.
     jump: bool,
-    // Wind charge after pearl: armed for a pearl Key Throw threw, until this tick.
-    after_pearl: Option<u64>,
     seen: Vec<Seen>,
     owners: Vec<(u32, u32)>,
     last_pearl: u64,
     last_wind: u64,
     last_pot: u64,
-    // Pearl follow: the pearls looked at, and where to follow one to from which tick.
-    followed: Vec<u32>,
-    follow: Option<([f64; 3], u64)>,
     // Wind Jump: the last charge hit, the last Elytra charge, the last glide try.
     hit_at: u64,
     elytra_at: u64,
     glide_at: u64,
     keys_down: Vec<String>,
-    // The Pot key's, Debuff key's or Auto Gap's Soup run: what is left of it, whose it is, the tick its next step may
+    // Auto Gap's Soup run: what is left of it, whose it is, the tick its next step may
     // go, and the gap after each step (shortest and longest, ms).
     queue: std::collections::VecDeque<Step>,
     queue_owner: &'static str,
@@ -198,7 +162,7 @@ impl Throws {
             Item::Pearl => self.last_pearl = now,
             Item::Wind => self.last_wind = now,
             Item::HealPot => self.last_pot = now,
-            Item::Soup | Item::Debuff => {}
+            Item::Soup => {}
         }
     }
 }
@@ -222,10 +186,6 @@ fn roll(game: &Game<'_>, lo: f64, hi: f64) -> f64 {
 // Milliseconds as ticks.
 fn ticks_of(ms: f64) -> u64 {
     (ms / 50.0).ceil().max(0.0) as u64
-}
-
-fn rolled_ticks(game: &Game<'_>, m: &Module, shortest: &str, longest: &str) -> u64 {
-    ticks_of(roll(game, m.n(shortest), m.n(longest)))
 }
 
 fn wrap(d: f32) -> f32 {
@@ -349,7 +309,7 @@ fn throw(game: &mut Game<'_>, owner: &'static str, item: Item, look: (f32, f32))
 // slot changed.
 fn settle(game: &mut Game<'_>) -> bool {
     let (idle, back, used, lease) =
-        st(|s| (s.single.is_none() && s.legit.is_none() && s.catch.is_none() && s.queue.is_empty(), s.back, s.used, s.lease));
+        st(|s| (s.single.is_none() && s.catch.is_none() && s.queue.is_empty(), s.back, s.used, s.lease));
     if !idle || used >= game.ticks {
         return false;
     }
@@ -368,27 +328,22 @@ fn settle(game: &mut Game<'_>) -> bool {
 }
 
 pub(super) fn reset(game: &mut Game<'_>) {
-    let (back, lease, legit) = st(|s| {
+    let (back, lease) = st(|s| {
         s.queue.clear();
-        (s.back.take(), s.lease.take(), s.legit.take())
+        (s.back.take(), s.lease.take())
     });
     if let Some(b) = back.filter(|&b| b < 9 && b != game.selected && game.player.is_some()) {
         hold(game, b);
     }
-    if let Some(l) = legit.filter(|l| l.back != game.selected && l.back < 9 && l.stage != Stage::Select) {
-        hold(game, l.back);
-    }
     if let Some(owner) = lease {
         super::sunset_combat_control::release(owner);
     }
-    for owner in [THROW, CATCH, WIND, GAP] {
+    for owner in [CATCH, WIND, GAP, BOT] {
         super::sunset::cancel_turns(owner);
     }
     st(|s| {
         s.single = None;
         s.catch = None;
-        s.after_pearl = None;
-        s.follow = None;
         s.jump = false;
     });
 }
@@ -415,7 +370,6 @@ fn track(game: &Game<'_>) {
         .collect();
     st(|s| {
         s.seen.retain(|x| flying.iter().any(|(id, ..)| *id == x.id));
-        s.followed.retain(|id| flying.iter().any(|(i, ..)| i == id));
         for &(id, item, at) in &flying {
             if !s.seen.iter().any(|x| x.id == id) {
                 let near_me = eye.is_some_and(|e| util::dist(e, at) <= 3.0);
@@ -464,7 +418,7 @@ pub(super) fn settled(game: &Game<'_>, id: u32) -> bool {
     st(|s| s.seen.iter().any(|x| x.id == id && x.tick + 2 <= game.ticks))
 }
 
-// The entity id of an enemy player who threw the pearl or charge `id` (Pearl follow, Anchor Aura's Pearl catch).
+// The entity id of an enemy player who threw the pearl or charge `id` (Anchor Aura's Pearl catch).
 pub(super) fn enemy_thrower(game: &Game<'_>, id: u32) -> Option<u32> {
     let s = st(|t| t.seen.iter().find(|x| x.id == id).copied())?;
     if own(game, &s) {
@@ -478,17 +432,15 @@ fn own_pearl_since(game: &Game<'_>, tick: u64) -> bool {
     seen.iter().any(|s| s.item == Item::Pearl && s.tick + 1 >= tick && own(game, s))
 }
 
-// A pearl's flight from `pos` at `vel` until it meets a block: where, after how many ticks, its highest point, and
-// (with `keep`) the points it passes.
+// A pearl's flight from `pos` at `vel` until it meets a block: where, after how many ticks, and (with `keep`) the
+// points it passes.
 pub(super) struct Flight {
     pub(super) land: [f64; 3],
     pub(super) ticks: u32,
-    pub(super) apex: f64,
     pub(super) path: Vec<[f64; 3]>,
 }
 
 pub(super) fn pearl_flight(game: &Game<'_>, mut pos: [f64; 3], mut vel: [f64; 3], max: u32, keep: bool) -> Option<Flight> {
-    let mut apex = pos[1];
     let mut path = if keep { vec![pos] } else { Vec::new() };
     for tick in 1..=max {
         let next = add(pos, vel);
@@ -499,10 +451,9 @@ pub(super) fn pearl_flight(game: &Game<'_>, mut pos: [f64; 3], mut vel: [f64; 3]
             if keep {
                 path.push(hit.point);
             }
-            return Some(Flight { land: hit.point, ticks: tick, apex, path });
+            return Some(Flight { land: hit.point, ticks: tick, path });
         }
         pos = next;
-        apex = apex.max(pos[1]);
         if keep {
             path.push(pos);
         }
@@ -514,7 +465,7 @@ pub(super) fn pearl_flight(game: &Game<'_>, mut pos: [f64; 3], mut vel: [f64; 3]
     None
 }
 
-// A flying pearl's landing (Cart's Pearls, Pearl follow, Trajectories).
+// A flying pearl's landing (Cart's Pearls, Trajectories).
 pub(super) fn pearl_landing(game: &Game<'_>, id: u32, max: u32, keep: bool) -> Option<Flight> {
     let p = game.creatures.projectiles.iter().find(|p| p.id == id && !p.stuck)?;
     pearl_flight(game, [p.position.x, p.position.y, p.position.z], [p.velocity.x, p.velocity.y, p.velocity.z], max, keep)
@@ -522,8 +473,7 @@ pub(super) fn pearl_landing(game: &Game<'_>, id: u32, max: u32, keep: bool) -> O
 
 // ---- hooks
 
-// The packets of the last tick: owners of pearls and charges, a player's hit on you (Auto short pearl), your teleport
-// (Wind charge after pearl).
+// The packets of the last tick: owners of pearls and charges.
 pub(super) fn packet(game: &Game<'_>, packet: &C) {
     match packet {
         C::AddEntity(p) => {
@@ -539,40 +489,21 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
                 });
             }
         }
-        C::DamageEvent(p) if game.remote.as_ref().is_some_and(|r| r.entity_id == p.id) => {
-            let player_hit = game
-                .remote
-                .as_ref()
-                .and_then(|r| r.registries.name("minecraft:damage_type", p.source_type))
-                == Some("minecraft:player_attack");
-            if let Some(m) = module(THROW).filter(|m| player_hit && m.b("Auto short pearl"))
-                && st(|s| s.single.is_none())
-            {
-                let at = game.ticks + rolled_ticks(game, &m, "Shortest hit delay (ms)", "Longest hit delay (ms)");
-                let pitch = 89.0 + roll(game, 0.0, 1.0) as f32;
-                st(|s| s.single = Some(Single { owner: THROW, item: Item::Pearl, aim: Aim::Pitch(pitch), at, until: at + 10, jump: false, then_wind: false }));
-            }
-        }
-        C::PlayerPosition(_) => {
-            if st(|s| s.after_pearl.take()).is_some_and(|until| game.ticks <= until) && st(|s| s.single.is_none()) {
-                let at = game.ticks;
-                st(|s| s.single = Some(Single { owner: THROW, item: Item::Wind, aim: Aim::Pitch(90.0), at, until: at + 10, jump: true, then_wind: false }));
-            }
-        }
         _ => {}
     }
 }
 
-// Key Throw threw a pearl: Wind charge after pearl waits for the teleport.
-pub(super) fn pearl_thrown(game: &Game<'_>) {
-    let now = game.ticks;
-    st(|s| s.last_pearl = now);
-    if module(THROW).is_some_and(|m| m.b("Wind charge after pearl")) {
-        st(|s| s.after_pearl = Some(now + 200));
+// PvP Bot's escape: one pearl along `look`, once the server has it. False: another throw is waiting.
+pub(super) fn escape_pearl(game: &Game<'_>, look: (f32, f32)) -> bool {
+    if st(|s| s.single.is_some()) {
+        return false;
     }
+    let at = game.ticks;
+    st(|s| s.single = Some(Single { owner: BOT, item: Item::Pearl, aim: Aim::At(look.0, look.1), at, until: at + 10, jump: false }));
+    true
 }
 
-// Key Throw's Short pearl key and Pearl Catch's Catch key: a press starts its throw.
+// Pearl Catch's Catch key: a press starts its throw.
 pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     let fresh = st(|s| {
         let was = s.keys_down.iter().any(|k| k == key);
@@ -587,85 +518,9 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
         return;
     }
     let named = |m: &Module, setting: &str| super::sunset::key_from_text(m.t(setting)).as_deref() == Some(key);
-    if let Some(m) = module(THROW).filter(|m| named(m, "Short pearl key")) {
-        let pitch = m.n("Short pearl pitch") as f32;
-        if m.p("Throw mode") == "Legit" {
-            legit_start(game, &m, Item::Pearl, Some(pitch), false);
-        } else if st(|s| s.single.is_none()) {
-            let pitch = pitch - 1.0 + roll(game, 0.0, 2.0) as f32;
-            let then_wind = m.b("Wind charge after pearl");
-            let at = game.ticks;
-            st(|s| s.single = Some(Single { owner: THROW, item: Item::Pearl, aim: Aim::Pitch(pitch), at, until: at + 10, jump: false, then_wind }));
-        }
-    }
     if let Some(m) = module(CATCH).filter(|m| named(m, "Catch key")) {
         catch_start(game, &m);
     }
-    if let Some(m) = module(THROW).filter(|m| named(m, "Pot key") || named(m, "Debuff key"))
-        && st(|s| s.queue.is_empty())
-    {
-        let run = if named(&m, "Pot key") { pot_run(game, &m) } else { debuff_run(game, &m) };
-        start_run(game, THROW, run, (m.n("Shortest pot delay (ms)"), m.n("Longest pot delay (ms)")));
-    }
-}
-
-// Throwpot (Sunset's), on the Pot key: the hotbar's healing splash potions and soups (Pot type), in hotbar order or
-// with Random order shuffled; Dynamic takes as many as the health you miss needs (a potion 4, a strong one 8, a soup
-// 7), Single one. With Throw bowls each soup's bowl is dropped after it.
-fn pot_run(game: &Game<'_>, m: &Module) -> std::collections::VecDeque<Step> {
-    let kind = m.p("Pot type");
-    let mut slots: Vec<(usize, Item, f32)> = (0..9)
-        .filter_map(|i| {
-            let s = game.stack_in(i)?;
-            if kind != "Soup" && Item::HealPot.is(s) {
-                let strong = s.potion().is_some_and(|p| util::short(p).starts_with("strong_"));
-                Some((i, Item::HealPot, if strong { 8.0 } else { 4.0 }))
-            } else if kind != "Pots" && Item::Soup.is(s) {
-                Some((i, Item::Soup, 7.0))
-            } else {
-                None
-            }
-        })
-        .collect();
-    if m.b("Random order") {
-        for i in (1..slots.len()).rev() {
-            slots.swap(i, roll(game, 0.0, (i + 1) as f64) as usize % (i + 1));
-        }
-    }
-    let mut missing = game.player.as_ref().map_or(0.0, |p| 20.0 - p.health.health());
-    let mut run = std::collections::VecDeque::new();
-    for (slot, item, heals) in slots {
-        if !run.is_empty() && (m.p("Pot amount") == "Single" || missing <= 0.0) {
-            break;
-        }
-        missing -= heals;
-        run.push_back(Step::Use(slot, item));
-        if item == Item::Soup && m.b("Throw bowls") {
-            run.push_back(Step::Bowl(slot));
-        }
-    }
-    run
-}
-
-// ThrowDebuff (Sunset's), on the Debuff key: the hotbar's splash potions of what Debuffs lists, thrown along your
-// look: One of each kind, All of them, or the First.
-fn debuff_run(game: &Game<'_>, m: &Module) -> std::collections::VecDeque<Step> {
-    let mut seen: Vec<&str> = Vec::new();
-    let mut run = std::collections::VecDeque::new();
-    for i in 0..9 {
-        let Some(kind) = game.stack_in(i).and_then(potion_kind).filter(|k| DEBUFFS.contains(k) && util::listed(m.t("Debuffs"), k)) else {
-            continue;
-        };
-        if m.p("Debuff mode") == "One of each" && seen.contains(&kind) {
-            continue;
-        }
-        seen.push(kind);
-        run.push_back(Step::Use(i, Item::Debuff));
-        if m.p("Debuff mode") == "First" {
-            break;
-        }
-    }
-    run
 }
 
 fn start_run(game: &Game<'_>, owner: &'static str, run: std::collections::VecDeque<Step>, gap: (f64, f64)) {
@@ -727,41 +582,17 @@ fn queue_step(game: &mut Game<'_>) {
     }
 }
 
-// Key Throw's Pearl and Wind charge keys in Legit mode.
-pub(super) fn legit_press(game: &mut Game<'_>, m: &Module, item: Item) {
-    if !live(game) || !playing(game) {
-        return;
-    }
-    match item {
-        Item::Pearl | Item::HealPot | Item::Soup | Item::Debuff => legit_start(game, m, item, None, false),
-        Item::Wind if m.b("Wind charge along look") => legit_start(game, m, Item::Wind, None, false),
-        Item::Wind => {
-            let pitch = m.n("Wind charge pitch") as f32 - 1.0 + roll(game, 0.0, 2.0) as f32;
-            legit_start(game, m, Item::Wind, Some(pitch.min(90.0)), true);
-        }
-    }
-}
-
-fn legit_start(game: &mut Game<'_>, m: &Module, item: Item, pitch: Option<f32>, jump: bool) {
-    if st(|s| s.legit.is_some()) || !(0..9).chain(std::iter::once(OFFHAND)).any(|s| has(game, s, item)) {
-        return;
-    }
-    let next = game.ticks + rolled_ticks(game, m, "Shortest step delay (ms)", "Longest step delay (ms)");
-    let legit = Legit { item, pitch, jump, stage: Stage::Select, next, back: game.selected, from: game.pitch, until: game.ticks + 100 };
-    st(|s| s.legit = Some(legit));
-}
-
 // ---- the tick
 
 // The start of a tick, before its move packet. `busy`: a hit or a slot change went already this tick.
 pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
-    let (throw_m, catch_m, wind_m) = (module(THROW), module(CATCH), module(WIND));
+    let (catch_m, wind_m, bot_m) = (module(CATCH), module(WIND), module(BOT));
     let gap_m = module(GAP).filter(|m| m.b("Auto pot") || m.b("Soup"));
     if live(game) {
         track(game);
     }
-    if !live(game) || (throw_m.is_none() && catch_m.is_none() && wind_m.is_none() && gap_m.is_none()) {
-        if st(|s| s.back.is_some() || s.lease.is_some() || s.legit.is_some() || s.catch.is_some() || s.single.is_some()) {
+    if !live(game) || (catch_m.is_none() && wind_m.is_none() && gap_m.is_none() && bot_m.is_none()) {
+        if st(|s| s.back.is_some() || s.lease.is_some() || s.catch.is_some() || s.single.is_some()) {
             reset(game);
         }
         return;
@@ -770,12 +601,6 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
         return;
     }
     if settle(game) {
-        return;
-    }
-    if let Some(m) = &throw_m
-        && st(|s| s.legit.is_some())
-    {
-        legit_step(game, m);
         return;
     }
     if let Some(m) = &catch_m
@@ -797,9 +622,6 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
     }
     if let Some(m) = gap_m.as_ref().filter(|m| m.b("Soup") && st(|s| s.single.is_none() && game.ticks >= s.queue_at)) {
         auto_soup(game, m);
-    }
-    if let Some(m) = throw_m.as_ref().filter(|m| m.b("Pearl follow")) {
-        follow(game, m);
     }
     if let Some(m) = &wind_m {
         if m.b("Elytra") {
@@ -830,7 +652,7 @@ fn auto_pot(game: &mut Game<'_>, m: &Module) {
     }
     let pitch = m.n("Pot pitch") as f32 - 1.0 + roll(game, 0.0, 1.0) as f32;
     let at = game.ticks;
-    st(|s| s.single = Some(Single { owner: GAP, item: Item::HealPot, aim: Aim::Pitch(pitch), at, until: at + 10, jump: false, then_wind: false }));
+    st(|s| s.single = Some(Single { owner: GAP, item: Item::HealPot, aim: Aim::Pitch(pitch), at, until: at + 10, jump: false }));
 }
 
 // The jump a throw asked for, in this tick's input.
@@ -864,109 +686,10 @@ fn single_step(game: &mut Game<'_>) {
                 s.single = None;
                 s.jump = one.jump && on_ground;
             });
-            if one.then_wind {
-                pearl_thrown(game);
-            }
         }
         Some(false) => {}
         None => st(|s| s.single = None),
     }
-}
-
-fn legit_step(game: &mut Game<'_>, m: &Module) {
-    let Some(mut l) = st(|s| s.legit) else {
-        return;
-    };
-    let now = game.ticks;
-    if now > l.until {
-        st(|s| s.legit = None);
-        return;
-    }
-    if now < l.next {
-        return;
-    }
-    let share = ((m.n("Smoothing") / 2.0) as f32).clamp(0.05, 1.0);
-    let toward = |game: &mut Game<'_>, to: f32| -> bool {
-        let left = to - game.pitch;
-        if left.abs() <= 0.5 {
-            game.pitch = to;
-            return true;
-        }
-        game.pitch += left * share;
-        false
-    };
-    let done = match l.stage {
-        Stage::Select => {
-            let Some(slot) = (0..9).find(|&s| has(game, s, l.item)).or_else(|| has(game, OFFHAND, l.item).then_some(OFFHAND)) else {
-                st(|s| s.legit = None);
-                return;
-            };
-            if slot != OFFHAND && game.selected != slot && !has(game, game.selected, l.item) {
-                hold(game, slot);
-            }
-            l.stage = if l.pitch.is_some() { Stage::Turn } else { Stage::Throw };
-            true
-        }
-        Stage::Turn => {
-            if toward(game, l.pitch.unwrap_or(game.pitch)) {
-                l.stage = Stage::Throw;
-                true
-            } else {
-                false
-            }
-        }
-        Stage::Throw => {
-            let own = (game.yaw, game.pitch);
-            let have = super::sunset_combat_wire::sent_look(game).unwrap_or(own);
-            let slot = if has(game, game.selected, l.item) { Some(game.selected) } else { has(game, OFFHAND, l.item).then_some(OFFHAND) };
-            match slot {
-                None => {
-                    l.stage = Stage::TurnBack;
-                    true
-                }
-                Some(_) if !same_look(have, own) => false,
-                Some(slot) => {
-                    if !usable(game, slot, l.item) {
-                        false
-                    } else {
-                        let sequence = util::sequence(game);
-                        game.send(S::UseItem(play::UseItem { hand: i32::from(slot == OFFHAND), sequence, yaw: own.0, pitch: own.1 }));
-                        game.swing_arm();
-                        game.use_delay = game.use_delay.max(4);
-                        st(|s| {
-                            s.used = now;
-                            s.jump = l.jump && game.player.as_ref().is_some_and(|p| p.ground.on_ground);
-                            s.note_use(l.item, now);
-                        });
-                        if l.item == Item::Pearl {
-                            pearl_thrown(game);
-                        }
-                        l.stage = if l.pitch.is_some() { Stage::TurnBack } else { Stage::Back };
-                        true
-                    }
-                }
-            }
-        }
-        Stage::TurnBack => {
-            if toward(game, l.from) {
-                l.stage = Stage::Back;
-                true
-            } else {
-                false
-            }
-        }
-        Stage::Back => {
-            if l.back < 9 && game.selected != l.back {
-                hold(game, l.back);
-            }
-            st(|s| s.legit = None);
-            return;
-        }
-    };
-    if done {
-        l.next = now + rolled_ticks(game, m, "Shortest step delay (ms)", "Longest step delay (ms)").max(1);
-    }
-    st(|s| s.legit = Some(l));
 }
 
 // ---- Pearl Catch's Catch key
@@ -1214,123 +937,6 @@ fn diagonal_plan(game: &Game<'_>, look: (f32, f32)) -> Option<(u32, (f32, f32))>
     (d <= 0.4).then_some((at as u32, (yaw, pitch.clamp(-90.0, 90.0))))
 }
 
-// ---- Key Throw's Pearl follow
-
-fn follow(game: &mut Game<'_>, m: &Module) {
-    let Some(eye) = game.eye_position() else {
-        return;
-    };
-    let now = game.ticks;
-    if st(|s| s.follow.is_none()) {
-        let seen: Vec<Seen> = st(|s| {
-            s.seen.iter().filter(|x| x.item == Item::Pearl && x.tick + 2 <= now && !s.followed.contains(&x.id)).copied().collect()
-        });
-        for s in seen {
-            st(|t| t.followed.push(s.id));
-            let Some(by) = enemy_thrower(game, s.id).and_then(|id| game.mobs.iter().find(|x| x.id == id)) else {
-                continue;
-            };
-            if util::dist(eye, [by.position.x, by.position.y, by.position.z]) > m.n("Thrower range") {
-                continue;
-            }
-            let Some(flight) = pearl_landing(game, s.id, 400, false) else {
-                continue;
-            };
-            let d = util::dist(eye, flight.land);
-            if d < m.n("Min landing distance") || d > m.n("Landing range") {
-                continue;
-            }
-            let at = now + rolled_ticks(game, m, "Shortest follow delay (ms)", "Longest follow delay (ms)");
-            st(|t| t.follow = Some((flight.land, at)));
-            break;
-        }
-    }
-    let Some((to, at)) = st(|s| s.follow) else {
-        return;
-    };
-    if now < at || (m.b("Follow only on ground") && !game.player.as_ref().is_some_and(|p| p.ground.on_ground)) {
-        if now > at + 40 {
-            st(|s| s.follow = None);
-        }
-        return;
-    }
-    st(|s| s.follow = None);
-    if !(0..9).chain(std::iter::once(OFFHAND)).any(|s| has(game, s, Item::Pearl)) {
-        return;
-    }
-    if let Some(look) = follow_look(game, eye, to, m.n("Max error")) {
-        st(|s| s.single = Some(Single { owner: THROW, item: Item::Pearl, aim: Aim::At(look.0, look.1), at: now, until: now + 10, jump: false, then_wind: false }));
-    }
-}
-
-#[derive(Clone, Copy)]
-struct Shot {
-    pitch: f32,
-    error: f64,
-    ticks: u32,
-    apex: f64,
-}
-
-// The better of two shots: sooner there, then a lower arc, then nearer, then the lower pitch (more downward).
-fn better(a: Shot, b: Shot) -> Shot {
-    let key = |s: &Shot| (s.ticks, s.apex, s.error);
-    match key(&a).partial_cmp(&key(&b)) {
-        Some(std::cmp::Ordering::Less) => a,
-        Some(std::cmp::Ordering::Greater) => b,
-        _ if a.pitch > b.pitch => a,
-        _ => b,
-    }
-}
-
-// The look whose pearl lands nearest `to` (within Max error): every 2 degrees of pitch toward it, the three best dips
-// looked at again every 0.2 degrees, and of those near the best, the one there soonest.
-fn follow_look(game: &Game<'_>, eye: [f64; 3], to: [f64; 3], max_error: f64) -> Option<(f32, f32)> {
-    let yaw = look_to(eye, to).0;
-    let start = [eye[0], eye[1] - 0.1, eye[2]];
-    let shot = |pitch: f32| -> Option<Shot> {
-        let f = pearl_flight(game, start, scale(super::view_vector(yaw, pitch), THROW_SPEED), 400, false)?;
-        Some(Shot { pitch, error: util::dist(f.land, to), ticks: f.ticks, apex: f.apex })
-    };
-    let coarse: Vec<Option<Shot>> = (0..=85).map(|i| shot(-85.0 + i as f32 * 2.0)).collect();
-    let err = |i: usize| coarse.get(i).and_then(|s| s.map(|s| s.error)).unwrap_or(f64::INFINITY);
-    let dips: Vec<Shot> = (0..coarse.len())
-        .filter_map(|i| coarse[i].filter(|s| s.error <= err(i.wrapping_sub(1)) && s.error <= err(i + 1)))
-        .collect();
-    let mut picked: Vec<Shot> = Vec::new();
-    while picked.len() < 3 {
-        let Some(next) = dips
-            .iter()
-            .filter(|d| !picked.iter().any(|p| (p.pitch - d.pitch).abs() < 6.0))
-            .min_by(|a, b| a.error.total_cmp(&b.error))
-        else {
-            break;
-        };
-        picked.push(*next);
-    }
-    let first_ok = coarse.iter().flatten().filter(|s| s.error <= max_error).copied().reduce(better);
-    let mut centres: Vec<f32> = picked.iter().map(|s| s.pitch).collect();
-    if let Some(ok) = first_ok.filter(|ok| !picked.iter().any(|p| (p.pitch - ok.pitch).abs() < 0.1)) {
-        centres.push(ok.pitch);
-    }
-    let mut pool = picked;
-    for c in centres {
-        for i in -11..=11 {
-            let p = c + i as f32 * 0.2;
-            if (-85.0..=85.0).contains(&p)
-                && let Some(s) = shot(p)
-            {
-                pool.push(s);
-            }
-        }
-    }
-    let least = pool.iter().filter(|s| s.error <= max_error).map(|s| s.error).fold(f64::INFINITY, f64::min);
-    if !least.is_finite() {
-        return None;
-    }
-    let cut = max_error.min(least + 0.25);
-    pool.into_iter().filter(|s| s.error <= cut).reduce(better).map(|s| (yaw, s.pitch))
-}
-
 // ---- Wind Jump's Elytra and Hit charges
 
 // Elytra: worn (used from the hotbar if not), a jump from the ground and another in the air to glide, and a wind
@@ -1379,7 +985,7 @@ fn elytra(game: &mut Game<'_>) {
     let pitch = 87.0 + roll(game, 0.0, 3.0) as f32;
     st(|s| {
         s.elytra_at = now;
-        s.single = Some(Single { owner: WIND, item: Item::Wind, aim: Aim::Pitch(pitch), at: now, until: now + 4, jump: false, then_wind: false });
+        s.single = Some(Single { owner: WIND, item: Item::Wind, aim: Aim::Pitch(pitch), at: now, until: now + 4, jump: false });
     });
     single_step(game);
 }

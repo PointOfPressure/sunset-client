@@ -1,7 +1,7 @@
 // Effects: visuals in the world that only you see. Jump circles (a ring grows where a player jumps), Trails
 // (footsteps, rings or sparks where players walk), Hit particles (glowing sparks off what you hit, and off a totem
 // pop) and Weather (rain, snow, fireflies or embers round you). Drawn on the HUD as projected shapes; nothing is
-// sent. Also the glow, disc and ring shapes Target ESP draws with, and the shield breaks ESP colours by.
+// sent. Also the shield breaks ESP colours by.
 use super::Game;
 use super::sunset::{Camera, Canvas, Category, Module, accent, own_id, with};
 use horizon_protocol::packets::play::{Clientbound as C, Serverbound as S};

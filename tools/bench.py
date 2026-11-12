@@ -30,7 +30,7 @@ RUNS = [
 ROUNDS = 4
 # Every module that neither moves the player, changes the world nor talks: the "everything on" scene.
 EVERYTHING = ["esp", "tracers", "nametags", "storageesp", "blockesp", "holeesp", "tunnelesp", "voidesp", "lightoverlay",
-              "breadcrumbs", "waypoints", "trajectories", "radar", "logoutspots", "blockoverlay", "targetesp", "handview",
+              "breadcrumbs", "waypoints", "trajectories", "radar", "logoutspots", "blockoverlay", "handview",
               "norender", "fullbright", "atmosphere", "clearwater", "shulkerpeek", "spawneralerts", "basefinder",
               "antivanish", "deathlocation", "killaura", "triggerbot", "criticals", "offhand", "autoarmor", "autoweapon",
               "autoeat", "autoreplenish", "autotool", "fastplace", "autorespawn", "antihunger", "sprint", "nofall",

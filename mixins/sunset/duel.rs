@@ -1,4 +1,4 @@
-// Sunset modules: Wind Jump, Hold to Eat and Pearl Catch
+// Sunset modules: Wind Jump and Pearl Catch
 // (Loadouts are in loadouts.rs).
 use super::sunset::{Category, Module, hold, with};
 use super::sunset_util as util;
@@ -6,7 +6,6 @@ use super::{Game, Screen};
 use horizon_client::projectiles::ProjectileKind;
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use std::sync::Mutex;
-use winit::event::MouseButton;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
@@ -18,9 +17,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Max yaw", 180.0, 0.0, 180.0, 5.0)
             .bool("In air only", true)
             .bool("Humanized aim", true),
-        Module::new("Hold to Eat", Category::Player, "Eats from a held hotbar key.")
-            .bool("Golden apples", true)
-            .bool("Any food", false),
         Module::new("Pearl Catch", Category::Movement, "Catches pearls with wind charges.")
             .num("Min look up", 45.0, 0.0, 90.0, 5.0)
             .bool("Auto", true)
@@ -119,8 +115,6 @@ struct Duel {
     thrown: Option<(u64, bool)>,
     // Wind Jump: the ticks from a throw to its blast, the last three on this connection.
     blast_after: Option<(usize, Vec<u64>)>,
-    // Hold to Eat: the slot eaten from, its key, and the slot to go back to.
-    eating: Option<(usize, String, usize)>,
     // Pearl Catch: the tick of the catch, the pearl as thrown (start, speed, tick), the throw
     // waiting for the look the server has (charge slot, yaw, pitch, retried), and the slot to come back (slot, charge
     // slot) at the start of the tick after a hotbar charge went.
@@ -133,18 +127,11 @@ struct Duel {
 static DUEL: Mutex<Option<Duel>> = Mutex::new(None);
 
 pub(super) fn shutdown(game: &mut Game<'_>) {
-    let (eat, back) = duel(|d| {
-        let saved = (d.eating.take(), d.catch_back.take());
-        *d = Duel::default();
-        saved
-    });
-    if let Some((_, _, slot)) = eat {
-        if !game.physical_buttons.contains(&winit::event::MouseButton::Right) {
-            let _ = super::remote::sunset_combat_remote::mouse(game, winit::event::MouseButton::Right, false);
-        }
+    let back = duel(|d| std::mem::take(d).catch_back);
+    if let Some((slot, borrowed)) = back
+        && game.selected == borrowed
+    {
         super::sunset::hold(game, slot);
-    } else if let Some((slot, borrowed)) = back {
-        if game.selected == borrowed { super::sunset::hold(game, slot); }
     }
 }
 
@@ -246,35 +233,9 @@ pub(super) fn blast(game: &Game<'_>, push: Option<[f64; 3]>) {
     });
 }
 
-fn edible(game: &Game<'_>, m: &Module, slot: usize) -> bool {
-    game.inventory[slot].as_ref().is_some_and(|s| {
-        if s.item.ends_with(":golden_apple") || s.item.ends_with(":enchanted_golden_apple") {
-            m.b("Golden apples")
-        } else {
-            m.b("Any food") && game.res.items().get(&s.item).is_some_and(|i| i.food.is_some())
-        }
-    })
-}
-
-// The key hook: Hold to Eat: the hotbar key of food pressed starts eating it (unless the Loadouts panel has the keys).
+// The key hook: the Loadouts panel's keys.
 pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     super::sunset_loadouts::key(game, key, pressed);
-    if super::sunset_loadouts::listing() {
-        return;
-    }
-    let Some(m) = module("Hold to Eat") else {
-        return;
-    };
-    if !pressed || game.screen != Screen::Playing || duel(|d| d.eating.is_some()) {
-        return;
-    }
-    let Some(slot) = (0..9).find(|i| game.settings.keys.get(&format!("key.hotbar.{}", i + 1)) == key) else {
-        return;
-    };
-    if edible(game, &m, slot) {
-        let back = game.selected;
-        duel(|d| d.eating = Some((slot, key.to_owned(), back)));
-    }
 }
 
 // A wind charge Pearl Catch can throw from `slot`: there, and off cooldown.
@@ -392,20 +353,4 @@ pub(super) fn tick(game: &mut Game<'_>) {
             _ => duel(|d| d.catch_at = None),
         }
     }
-    let Some((slot, key, back)) = duel(|d| d.eating.clone()) else {
-        return;
-    };
-    let held = game.physical_keys.iter().any(|k| horizon_client::keybinds::key_name(*k) == Some(key.as_str()));
-    let go_on = module("Hold to Eat").is_some_and(|m| edible(game, &m, slot));
-    if held && go_on && game.screen == Screen::Playing {
-        hold(game, slot);
-        if game.using.is_none() {
-            let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
-        }
-        return;
-    }
-    // Let go (or ran out): stop eating, and the slot from before comes back.
-    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
-    hold(game, back);
-    duel(|d| d.eating = None);
 }

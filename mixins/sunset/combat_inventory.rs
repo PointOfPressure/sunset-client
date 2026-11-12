@@ -1,13 +1,13 @@
-// The inventory modules: Offhand (including Auto Totem and Rust's Hover Totem from PR #16), Key Throw (#16) and Fast Use's Throwables (#16's FastXP). A Hover totem moves by one
+// The inventory modules: Offhand (including Auto Totem and Rust's Hover Totem from PR #16) and Fast Use's Throwables (#16's FastXP). A Hover totem moves by one
 // swap click, never by picking stacks up, and counts as moved once the server's own slot packets say both slots
 // changed.
-use super::sunset::{self, Category, Module, hold, with};
+use super::sunset::{self, Category, Module, with};
 use super::sunset_combat_control as control;
 use super::sunset_inventory_policy::{self as policy, Failure, OFFHAND, Status, Swap};
 use super::sunset_util as util;
 use super::{Game, Screen};
 use horizon_client::items::ItemStack;
-use horizon_protocol::packets::play::{self, Clientbound as C, Serverbound as S};
+use horizon_protocol::packets::play::{Clientbound as C, Serverbound as S};
 use std::any::Any;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -16,8 +16,7 @@ use std::time::{Duration, Instant};
 const INV: &str = "Offhand";
 const HOVER: &str = "Offhand (hover)";
 const XP: &str = "Fast Use";
-const THROW: &str = "Key Throw";
-const OWNERS: [&str; 4] = [INV, HOVER, XP, THROW];
+const OWNERS: [&str; 3] = [INV, HOVER, XP];
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
@@ -51,43 +50,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Totem on low health", false)
             .num("Totem health", 5.0, 1.0, 20.0, 0.5)
             .bool("Wait while shielding", true),
-        Module::new(THROW, Category::Combat, "Throws pearls and wind charges on keys, when hit, or after an enemy's pearl.")
-            .text("Pearl key", "None")
-            .text("Wind charge key", "None")
-            .bool("Hotbar keys", false)
-            .bool("Lunge spears", true)
-            .text("Crossbow key", "None")
-            .bool("Crossbow from inventory", true)
-            .pick("Throw mode", &["Silent", "Legit"])
-            .num("Shortest step delay (ms)", 10.0, 0.0, 200.0, 5.0)
-            .num("Longest step delay (ms)", 30.0, 0.0, 200.0, 5.0)
-            .num("Smoothing", 0.5, 0.1, 2.0, 0.1)
-            .text("Short pearl key", "None")
-            .num("Short pearl pitch", 70.0, 30.0, 90.0, 1.0)
-            .num("Wind charge pitch", 90.0, 30.0, 90.0, 1.0)
-            .bool("Wind charge along look", false)
-            .bool("Wind charge after pearl", false)
-            .bool("Auto short pearl", false)
-            .num("Shortest hit delay (ms)", 30.0, 0.0, 300.0, 5.0)
-            .num("Longest hit delay (ms)", 70.0, 0.0, 300.0, 5.0)
-            .bool("Pearl follow", false)
-            .num("Thrower range", 50.0, 5.0, 200.0, 1.0)
-            .num("Min landing distance", 8.0, 0.0, 50.0, 1.0)
-            .num("Landing range", 60.0, 5.0, 200.0, 1.0)
-            .num("Max error", 2.0, 0.5, 10.0, 0.5)
-            .num("Shortest follow delay (ms)", 50.0, 0.0, 500.0, 10.0)
-            .num("Longest follow delay (ms)", 100.0, 0.0, 500.0, 10.0)
-            .bool("Follow only on ground", false)
-            .text("Pot key", "None")
-            .pick("Pot type", &["Both", "Pots", "Soup"])
-            .pick("Pot amount", &["Dynamic", "Single"])
-            .bool("Random order", false)
-            .bool("Throw bowls", true)
-            .text("Debuff key", "None")
-            .pick("Debuff mode", &["One of each", "All", "First"])
-            .text("Debuffs", "harming,weakness,poison,slowness")
-            .num("Shortest pot delay (ms)", 80.0, 0.0, 200.0, 5.0)
-            .num("Longest pot delay (ms)", 115.0, 0.0, 200.0, 5.0),
     ]
 }
 
@@ -208,21 +170,6 @@ impl Totem {
     }
 }
 
-#[derive(Clone, Copy)]
-enum Throw {
-    Pearl,
-    Wind,
-}
-
-#[derive(Clone, Copy)]
-struct Press {
-    kind: Throw,
-    slot: usize,
-    tick: u64,
-    // Hotbar keys: the slot whose key was pressed, thrown with your own look.
-    from: Option<usize>,
-}
-
 type Session = (i32, super::Dim, Arc<dyn Any + Send + Sync>);
 
 #[derive(Default)]
@@ -231,11 +178,7 @@ struct State {
     tick: u64,
     job: Option<Job>,
     failures: Vec<(&'static str, Failure<ItemStack>)>,
-    pearl: policy::Edge,
-    wind: policy::Edge,
-    press: Option<Press>,
     next: u64,
-    queued_use: Option<(&'static str, Instant)>,
     totem: Totem,
     // The tick a hit went out: a throw waits for the next one. (A use does not: the packets of a tick's use can go
     // on the wire as the next tick starts, and Throwables' next use is due then.)
@@ -254,19 +197,6 @@ fn state<R>(f: impl FnOnce(&mut State) -> R) -> R {
 
 // A module turned on or off: its move in progress stops (the slot goes back, the inventory it opened closes).
 pub(super) fn toggled(game: &mut Game<'_>, name: &str) {
-    if name == THROW {
-        super::sunset_melee::cancel_owner(game, THROW);
-        state(|s| {
-            s.press = None;
-            s.pearl = policy::Edge::default();
-            s.wind = policy::Edge::default();
-        });
-        if state(|s| s.queued_use.is_some_and(|(owner, _)| owner == THROW)) {
-            sunset::cancel_turns(THROW);
-            control::release(THROW);
-            state(|s| s.queued_use = None);
-        }
-    }
     state(|s| s.job.take_if(|j| j.settings.name == name));
     if name == INV {
         totem_stop(game);
@@ -472,10 +402,7 @@ fn run_job(game: &mut Game<'_>, mods: &[Module]) -> bool {
 // The server's packets (copies, in order): what they say the swapped slots hold.
 pub(super) fn packet(game: &Game<'_>, packet: &C) {
     if matches!(packet, C::Login(_) | C::Respawn(_) | C::Disconnect(_)) {
-        let dropped = state(std::mem::take);
-        if let Some((owner, _)) = dropped.queued_use {
-            sunset::cancel_turns(owner);
-        }
+        state(|s| *s = State::default());
         return;
     }
     state(|s| {
@@ -816,155 +743,11 @@ fn hover(game: &mut Game<'_>, m: &Module) -> bool {
     !is_totem(&stack(game, to)) && schedule(game, m, HOVER, from, to)
 }
 
-// Key Throw's keys: a press (not a held key) asks for one throw.
-pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
-    let Some(m) = with(|s| s.module(THROW).cloned()) else {
-        return;
-    };
-    let pearl = sunset::key_from_text(m.t("Pearl key")).as_deref() == Some(key);
-    let wind = sunset::key_from_text(m.t("Wind charge key")).as_deref() == Some(key);
-    let edge = state(|s| {
-        let a = pearl && s.pearl.update(pressed);
-        let b = wind && s.wind.update(pressed);
-        a || b
-    });
-    if pressed && m.on && m.b("Hotbar keys") {
-        hotbar_key(game, key);
-    }
-    if !edge || !m.on || !alive(game) || game.screen != Screen::Playing {
-        return;
-    }
-    if m.p("Throw mode") == "Legit" {
-        let item = if pearl { super::sunset_throws::Item::Pearl } else { super::sunset_throws::Item::Wind };
-        super::sunset_throws::legit_press(game, &m, item);
-        return;
-    }
-    state(|s| s.press = Some(Press { kind: if pearl { Throw::Pearl } else { Throw::Wind }, slot: game.selected, tick: game.ticks, from: None }));
-}
-
-// Hotbar keys: the hotbar key of a slot with an ender pearl or wind charge throws it, and the
-// slot you held stays (the game selects the slot on the key; the throw puts it back first).
-fn hotbar_key(game: &mut Game<'_>, key: &str) {
-    let Some(from) = (0..9).find(|i| game.settings.keys.get(&format!("key.hotbar.{}", i + 1)) == key) else {
-        return;
-    };
-    if from == game.selected || game.screen != Screen::Playing || !alive(game) {
-        return;
-    }
-    let kind = match game.inventory[from].as_ref().map(|s| util::short(&s.item)) {
-        Some("ender_pearl") => Throw::Pearl,
-        Some("wind_charge") => Throw::Wind,
-        _ => {
-            if with(|s| s.module(THROW).is_some_and(|m| m.b("Lunge spears")))
-                && game.inventory[from].as_ref().is_some_and(|s| s.enchantment_level("minecraft:lunge") > 0)
-            {
-                super::sunset_melee::quick_lunge(game, from);
-            }
-            return;
-        }
-    };
-    state(|s| s.press = Some(Press { kind, slot: game.selected, tick: game.ticks, from: Some(from) }));
-}
-
-// PvP Bot's escape: a pearl thrown along the look, as Key Throw's pearl key throws it (Key Throw on).
-pub(super) fn throw_pearl(game: &Game<'_>) {
-    state(|s| s.press = Some(Press { kind: Throw::Pearl, slot: game.selected, tick: game.ticks, from: None }));
-}
-
 fn can_use(game: &Game<'_>, item: &ItemStack) -> bool {
     let Some(info) = game.res.items().get(&item.item) else {
         return false;
     };
     item.count > 0 && !game.cooldowns.is_on_cooldown(&horizon_client::cooldowns::group(item, info.use_cooldown.as_ref()))
-}
-
-// The throw: a wind charge on the ground jumps first; then, with the look the server has (straight down for a wind
-// charge), the slot switched, one UseItem, and the slot back.
-fn key_throw(game: &mut Game<'_>, m: &Module) -> bool {
-    let Some(press) = state(|s| s.press) else {
-        return false;
-    };
-    if press.from == Some(game.selected) {
-        game.selected = press.slot;
-    }
-    if game.selected != press.slot || !policy::press_alive(press.tick, game.ticks) {
-        state(|s| s.press = None);
-        return false;
-    }
-    if !plain(game) || game.left || game.right {
-        return false;
-    }
-    let want = match press.kind {
-        Throw::Pearl => "ender_pearl",
-        Throw::Wind => "wind_charge",
-    };
-    let slot = if press.from.is_some() {
-        press.from
-    } else if game.offhand.as_ref().is_some_and(|s| util::short(&s.item) == want && s.count > 0) {
-        Some(util::OFFHAND)
-    } else {
-        util::find_held(game, |s| s == want)
-    };
-    let Some(slot) = slot else {
-        state(|s| s.press = None);
-        return false;
-    };
-    let original = if slot == util::OFFHAND { game.offhand.clone() } else { game.inventory[slot].clone() };
-    if !original.as_ref().is_some_and(|item| can_use(game, item)) || !control::claim(THROW) {
-        return false;
-    }
-    let done = control::finish(THROW);
-    let down = press.from.is_none() && matches!(press.kind, Throw::Wind) && !m.b("Wind charge along look");
-    if down && game.player.as_ref().is_some_and(|p| p.ground.on_ground) {
-        super::sunset_melee::request_jump(THROW);
-        return true;
-    }
-    let Some(connection) = session(game) else {
-        return false;
-    };
-    let expected = m.clone();
-    let (yaw, pitch) = (game.yaw, if down { m.n("Wind charge pitch") as f32 } else { game.pitch });
-    let queued = Instant::now();
-    state(|s| s.queued_use = Some((THROW, queued)));
-    let accepted = sunset::try_turn_then(THROW, yaw, pitch, move |game| {
-        let done = done;
-        if !done.current() {
-            return;
-        }
-        state(|s| s.queued_use = None);
-        let actual = if slot == util::OFFHAND { game.offhand.as_ref() } else { game.inventory[slot].as_ref() };
-        if queued.elapsed() > Duration::from_millis(200)
-            || !same_session(game, &connection)
-            || !plain(game)
-            || game.left
-            || game.right
-            || game.selected != press.slot
-            || !policy::press_alive(press.tick, game.ticks)
-            || actual != original.as_ref()
-            || !actual.is_some_and(|item| can_use(game, item))
-            || !with(|s| s.module(THROW).is_some_and(|m| m.on && m == &expected))
-        {
-            return;
-        }
-        let previous = game.selected;
-        if slot != util::OFFHAND {
-            hold(game, slot);
-        }
-        let sequence = util::sequence(game);
-        game.send(S::UseItem(play::UseItem { hand: i32::from(slot == util::OFFHAND), sequence, yaw, pitch }));
-        state(|s| s.press = None);
-        if matches!(press.kind, Throw::Pearl) {
-            super::sunset_throws::pearl_thrown(game);
-        }
-        if slot != util::OFFHAND && game.selected == slot {
-            hold(game, previous);
-        }
-        state(|s| s.next = game.ticks.saturating_add(2));
-    });
-    if !accepted {
-        state(|s| s.queued_use = None);
-    }
-    accepted
 }
 
 // What Fast Use's Throwables throw faster: an experience bottle, ender pearl, wind charge, snowball or egg, or splash
@@ -1085,16 +868,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     if run_job(game, mods) {
         return;
     }
-    if let Some((owner, at)) = state(|s| s.queued_use) {
-        if at.elapsed() > Duration::from_millis(200) || get(owner).is_none() {
-            sunset::cancel_turns(owner);
-            state(|s| s.queued_use = None);
-            control::release(owner);
-        } else {
-            control::claim(owner);
-            return;
-        }
-    }
     if ticks < state(|s| s.next) {
         return;
     }
@@ -1104,14 +877,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         }
     } else if state(|s| s.totem.active()) {
         state(|s| s.totem.work = Some(Work::Stop));
-    }
-    match get(THROW) {
-        Some(m) => {
-            if key_throw(game, m) {
-                return;
-            }
-        }
-        None => state(|s| s.press = None),
     }
     if let Some(m) = get(XP).filter(|m| m.b("Throwables")) {
         fast_xp(game, m);

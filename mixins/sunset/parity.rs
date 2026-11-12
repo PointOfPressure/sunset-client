@@ -1,13 +1,10 @@
 // Sunset's smaller combat and player modules, written from their behaviour: Anti Anvil, Self Anvil, Auto Anvil,
 // Rotations, No Status Effects (render.rs keeps the effects aside), Mine Through Mobs
-// (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player (single player only), Quiver, Arrow Dodge
-// (with Hit fireballs), Liquid Interact and No Interact (with Hit select in
-// click_fix.rs).
+// (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player (single player only), Quiver,
+// Liquid Interact and No Interact (with Hit select in click_fix.rs).
 use super::{Game, Screen};
 use super::sunset::{Category, Module, with};
 use super::sunset_util::{self as util, facts, feet_block, find_held, is_air, listed, place_block, short, toggle_off};
-use horizon_protocol::packets::Empty;
-use horizon_protocol::packets::play::{self, Serverbound as S};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use winit::event::MouseButton;
@@ -47,15 +44,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only in hole", true)
             .bool("Only on ground", true)
             .num("Min health", 10.0, 0.0, 36.0, 1.0),
-        Module::new("Arrow Dodge", Combat, "Steps out of arrows' way.")
-            .num("Move speed", 1.0, 0.05, 5.0, 0.05)
-            .num("Distance check", 1.0, 0.1, 5.0, 0.1)
-            .bool("Ground check", true)
-            .bool("All projectiles", false)
-            .bool("Ignore own", true)
-            .bool("Dodge", true)
-            .bool("Hit fireballs", false)
-            .bool("Fireball silent aim", true),
         Module::new("Liquid Interact", Player, "Lets you place on water and lava."),
         Module::new("No Interact", Player, "Stops clicks on what you list.")
             .text("Mine blocks", "")
@@ -124,9 +112,6 @@ struct Parity {
     quiver: Quiver,
     quiver_back: Option<usize>,
     quiver_shot: Vec<String>,
-    // Arrow Dodge's Hit fireballs: the fireball to hit at the start of the next tick, and not before this tick again.
-    fireball: Option<u32>,
-    fireball_next: u64,
 }
 
 #[derive(Default, Clone, Copy, PartialEq)]
@@ -194,16 +179,6 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         let rest = with(|s| s.module("Quiver").map_or(0, |m| m.n("Cooldown") as u32));
         parity(|p| p.quiver = Quiver::Rest(rest));
     }
-    // Arrow Dodge's Hit fireballs: the hit, once the server has the look at it.
-    if let Some(id) = parity(|p| p.fireball.take())
-        && !super::sunset::strike_waiting()
-        && game.creatures.projectiles.iter().any(|f| f.id == id && fireball_in_reach(game, f))
-    {
-        game.send(S::Attack(play::Attack { id: id as i32 }));
-        game.swing_arm();
-        game.send(S::Punch(Empty));
-        game.reset_attack_strength();
-    }
     if parity(|p| std::mem::take(&mut p.clicks)) > 0
         && game.using.is_some()
         && game.screen == Screen::Playing
@@ -252,14 +227,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     match get("Quiver") {
         Some(m) => quiver(game, m),
         None => quiver_done(game),
-    }
-    if let Some(m) = get("Arrow Dodge") {
-        if m.b("Dodge") {
-            arrow_dodge(game, m);
-        }
-        if m.b("Hit fireballs") {
-            aim_fireball(game, m);
-        }
     }
     if let Some(m) = get("Rotations").filter(|m| m.b("Lock")) {
         rotation(game, m);
@@ -425,117 +392,6 @@ fn quiver_done(game: &mut Game<'_>) {
     }
     if let Some(slot) = back {
         super::sunset::hold(game, slot);
-    }
-}
-
-// Arrow Dodge (Sunset's, Velocity mode): each arrow in flight (any projectile with All projectiles; not yours with
-// Ignore own) is followed for up to 200 ticks, falling as an arrow does, until it meets a block. When a point of a
-// path comes within Distance check of your feet or head, you are pushed (your velocity, no packets of its own) the
-// first of eight ways that keeps you clear, onto free blocks with ground under them (Ground check), Move speed
-// blocks a tick, further if none is.
-// A large fireball is within a hit of your eyes (3 blocks to its middle, and half its size).
-fn fireball_in_reach(game: &Game<'_>, f: &horizon_client::projectiles::Projectile) -> bool {
-    game.eye_position().is_some_and(|eye| util::dist(eye, [f.position.x, f.position.y + 0.5, f.position.z]) <= 3.5)
-}
-
-// Hit fireballs (Hit fireballs): a ghast's large fireball coming at you, whose line passes within 4 blocks
-// of your eyes, is looked at (the server's look, or yours too without Fireball silent aim) and hit back once in
-// reach, 4 ticks apart at most.
-fn aim_fireball(game: &mut Game<'_>, m: &Module) {
-    use horizon_client::projectiles::ProjectileKind;
-    let Some(eye) = game.eye_position() else {
-        return;
-    };
-    if game.ticks < parity(|p| p.fireball_next) || game.screen != Screen::Playing {
-        return;
-    }
-    let passes = |f: &&horizon_client::projectiles::Projectile| {
-        let (pos, vel) = ([f.position.x, f.position.y + 0.5, f.position.z], [f.velocity.x, f.velocity.y, f.velocity.z]);
-        let to = [eye[0] - pos[0], eye[1] - pos[1], eye[2] - pos[2]];
-        let speed = vel.iter().map(|v| v * v).sum::<f64>();
-        let along = (0..3).map(|i| to[i] * vel[i]).sum::<f64>();
-        if speed < 1e-6 || along <= 0.0 {
-            return false;
-        }
-        let t = along / speed;
-        let near = (0..3).map(|i| (pos[i] + vel[i] * t - eye[i]).powi(2)).sum::<f64>().sqrt();
-        near <= 4.0 && fireball_in_reach(game, f)
-    };
-    let Some(f) = game
-        .creatures
-        .projectiles
-        .iter()
-        .filter(|f| matches!(f.kind, ProjectileKind::LargeFireball { .. }) && f.id != 0)
-        .filter(passes)
-        .min_by(|a, b| {
-            let d = |f: &horizon_client::projectiles::Projectile| util::dist(eye, [f.position.x, f.position.y, f.position.z]);
-            d(a).total_cmp(&d(b))
-        })
-    else {
-        return;
-    };
-    let (id, (yaw, pitch)) = (f.id, super::sunset::look_at(eye, [f.position.x, f.position.y + 0.5, f.position.z]));
-    if !m.b("Fireball silent aim") {
-        game.yaw = yaw;
-        game.pitch = pitch;
-    }
-    parity(|p| p.fireball_next = game.ticks + 4);
-    super::sunset::turn_then("Arrow Dodge", yaw, pitch, move |_| parity(|p| p.fireball = Some(id)));
-}
-
-fn arrow_dodge(game: &mut Game<'_>, m: &Module) {
-    use horizon_client_core::who::Who;
-    use horizon_client::projectiles::ProjectileKind;
-    let own = game.remote.as_ref().map(|r| r.entity_id as u32);
-    let mut points: Vec<[f64; 3]> = Vec::new();
-    for p in game.creatures.projectiles.iter().filter(|p| !p.stuck) {
-        let arrow = matches!(p.kind, ProjectileKind::Arrow { .. });
-        let mine = matches!(p.owner, Some(Who::Player)) || own.is_some_and(|id| p.owner == Some(Who::Mob(id)));
-        if (!arrow && !m.b("All projectiles")) || (mine && m.b("Ignore own")) {
-            continue;
-        }
-        let (mut at, mut v) = ([p.position.x, p.position.y, p.position.z], [p.velocity.x, p.velocity.y, p.velocity.z]);
-        for _ in 0..200 {
-            points.push(at);
-            at = [at[0] + v[0], at[1] + v[1], at[2] + v[2]];
-            v = [v[0] * 0.99, v[1] * 0.99 - 0.05, v[2] * 0.99];
-            let block = at.map(|c| c.floor() as i32);
-            if !is_air(game, block) && facts(game, block).full_collision {
-                break;
-            }
-        }
-    }
-    let Some(me) = game.player.as_ref().map(|p| [p.position.x, p.position.y, p.position.z]) else {
-        return;
-    };
-    let reach = m.n("Distance check");
-    let clear = |at: [f64; 3]| {
-        points.iter().all(|q| {
-            let d = |dy: f64| ((q[0] - at[0]).powi(2) + (q[1] - at[1] - dy).powi(2) + (q[2] - at[2]).powi(2)).sqrt();
-            d(0.0) >= reach && d(1.0) >= reach
-        })
-    };
-    if points.is_empty() || clear(me) {
-        return;
-    }
-    let free = |b: [i32; 3]| is_air(game, b) || !facts(game, b).full_collision;
-    const WAYS: [[f64; 2]; 8] = [[1.0, 1.0], [0.0, 1.0], [-1.0, 1.0], [1.0, 0.0], [-1.0, 0.0], [1.0, -1.0], [0.0, -1.0], [-1.0, -1.0]];
-    let start = (game.ticks % 8) as usize;
-    for step in 1..=10 {
-        let speed = m.n("Move speed") * f64::from(step);
-        for k in 0..8 {
-            let [dx, dz] = WAYS[(start + k) % 8];
-            let at = [me[0] + dx * speed, me[1], me[2] + dz * speed];
-            let b = at.map(|c| c.floor() as i32);
-            let ground = !free([b[0], b[1] - 1, b[2]]);
-            if clear(at) && free(b) && free([b[0], b[1] + 1, b[2]]) && (ground || !m.b("Ground check")) {
-                if let Some(p) = game.player.as_mut() {
-                    p.velocity.x = dx * speed;
-                    p.velocity.z = dz * speed;
-                }
-                return;
-            }
-        }
     }
 }
 

@@ -3354,31 +3354,6 @@ def _():
     return boxed == 5 and off, f"{boxed} obsidian round Bot1's head (5 is the Full top); off after: {off}"
 
 
-@test("Burrow")
-def _():
-    slot(0, "ender_chest", 4)
-    wait(5)
-    only("burrow")
-    wait(40)
-    chest = check(f"execute if block {X0} {Y+1} {Z0} minecraft:ender_chest")
-    off = turned_itself_off("burrow", "Burrow")
-    only()
-    return chest and off, f"ender chest where you stood: {chest}; off after: {off}; you at {[round(v, 2) for v in pos()]}"
-
-
-@test("Hole Filler")
-def _():
-    # A one-block hole in obsidian in the floor beside you (Smart off: every hole near you, not only near other players).
-    cmd(f"fill {X0+1} {Y-1} {Z0-1} {X0+3} {Y} {Z0+1} minecraft:obsidian", f"setblock {X0+2} {Y} {Z0} minecraft:air")
-    slot(0, "obsidian", 16)
-    setting("holefiller", "smart", "false")
-    only("holefiller")
-    wait(20)
-    filled = check(f"execute if block {X0+2} {Y} {Z0} minecraft:obsidian")
-    only()
-    return filled, f"the hole beside you filled: {filled}"
-
-
 @test("Chest Swap")
 def _():
     cmd("item replace entity @s armor.chest with minecraft:iron_chestplate", "item replace entity @s inventory.5 with minecraft:elytra")
@@ -5552,15 +5527,13 @@ def changed(a, b, box=None):
     return sum(1 for v in d.getdata() if v > 40)
 
 
-@test("Crosshair, Block Overlay, Target ESP")
+@test("Crosshair, Block Overlay")
 def _():
     # Each changes the frame where it should: the crosshair in the middle (Cross and Dot differ), Block Overlay on the
-    # fence looked at, Target ESP round Kill Aura's husk. Looking down (no moving clouds), and every frame taken once
+    # fence looked at. Looking down (no moving clouds), and every frame taken once
     # the chat lines a toggle prints have faded.
     reset()
-    cmd("difficulty easy", f"setblock {X0} {Y+1} {Z0+1} minecraft:oak_fence", f"summon husk {X0 + 1.5} {Y + 1} {Z0 + 2.5} {HUSK}")
-    slot(0, "diamond_sword")
-    ctl("key", "1", "tap")
+    cmd(f"setblock {X0} {Y+1} {Z0+1} minecraft:oak_fence")
     ctl("look-at-block", str(X0), str(Y + 1), str(Z0 + 1))
     w, h = 1280, 720
     middle = (w // 2 - 40, h // 2 - 40, w // 2 + 40, h // 2 + 40)
@@ -5574,18 +5547,14 @@ def _():
     setting("crosshair", "mode", "Dot")
     dot = shot("vis_dot", "crosshair")
     block = shot("vis_block", "blockoverlay")
-    setting("killaura", "entities", "husk")
-    setting("targetesp", "target", "Combat")
-    aura = shot("vis_aura", "killaura")
-    target = shot("vis_target", "killaura", "targetesp")
     only()
     cmd(f"setblock {X0} {Y+1} {Z0+1} minecraft:air")
     cross_mid, cross_out = changed(plain, cross, middle), changed(plain, cross) - changed(plain, cross, middle)
     dot_vs_cross = changed(cross, dot, middle)
-    block_px, target_px = changed(plain, block), changed(aura, target)
-    ok = cross_mid > 20 and cross_out < 0.005 * w * h and dot_vs_cross > 10 and block_px > 200 and target_px > 50
+    block_px = changed(plain, block)
+    ok = cross_mid > 20 and cross_out < 0.005 * w * h and dot_vs_cross > 10 and block_px > 200
     return ok, (f"pixels changed: Crosshair {cross_mid} in the middle ({cross_out} elsewhere), Dot against Cross {dot_vs_cross}; "
-                f"Block Overlay on a fence {block_px}; Target ESP on Kill Aura's husk {target_px} (frames in {SHOTS}/vis_*.png)")
+                f"Block Overlay on a fence {block_px} (frames in {SHOTS}/vis_*.png)")
 
 
 @test("Atmosphere")
@@ -7616,8 +7585,6 @@ SWEEPS = [
 ] + [
     (("selfweb",), [("selfweb", "mode", m)]) for m in ("Normal", "Smart")
 ] + [
-    (("burrow",), [("burrow", "block", m)]) for m in ("Obsidian", "Held")
-] + [
     (("offhand",), [("offhand", "item", m)]) for m in ("Crystal", "Totem", "Gapple", "Enchanted gapple", "None")
 ] + [
     (("offhand",), [("offhand", "silent open", m)]) for m in ("false", "true")
@@ -7654,7 +7621,7 @@ SWEEPS = [
                          "autowalk", "fastclimb", "autojump", "sneak", "noslow", "nojumpdelay", "antivoid",
                          "elytraboost", "chestswap", "scaffold", "timer", "fastplace", "breakdelay", "autoclicker", "autoweapon",
                          "triggerbot", "autoreplenish", "autogap", "airplace", "reach", "autotrap", "autoweb",
-                         "holefiller", "aimassist", "crystaloptimizer", "flamethrower", "autoshearer", "automount",
+                         "aimassist", "crystaloptimizer", "flamethrower", "autoshearer", "automount",
                          "cheststealer", "inventorymanager", "middleclickextra", "autofish")
 ]
 
@@ -8859,10 +8826,9 @@ def _():
     return ok, f"offhand after the pointer rests on the totem: off {got['off'][0] or 'empty'}, on {got['on'][0] or 'empty'} (in {got['on'][1]} ticks)"
 
 
-@test("Fast Use (Throwables) and Key Throw")
+@test("Fast Use (Throwables)")
 def _():
-    # Bottles thrown in 2 s of holding use, without and with Fast Use's Throwables (FastXP); pearls thrown by 5 presses
-    # of Key Throw's key, the hand back on its slot after.
+    # Bottles thrown in 2 s of holding use, without and with Fast Use's Throwables (FastXP).
     setting("fastuse", "throwables", "true")
     used = {}
     for name, mods in (("off", ()), ("on", ("fastuse",))):
@@ -8876,22 +8842,7 @@ def _():
         ctl("mouse", "right", "up")
         only()
         used[name] = 64 - ((state().get("held") or {}).get("count", 0))
-    reset()
-    slot(0, "diamond_sword")
-    slot(4, "ender_pearl", 16)
-    ctl("key", "1", "tap")
-    setting("keythrow", "pearl key", "G")
-    only("keythrow")
-    for _ in range(5):
-        ctl("key", "g", "tap")
-        wait(30)
-    only()
-    inv = ctl("inventory")
-    left = sum(s.get("count", 0) for s in inv.get("hotbar") or [] if s and "ender_pearl" in (s.get("item") or ""))
-    back = (state().get("held") or {}).get("item", "")
-    return used["on"] > used["off"] and left == 11 and "sword" in back, (
-        f"bottles in 2 s: {used['off']} without Throwables, {used['on']} with it; Key Throw: {16 - left} pearls for 5 presses, hand "
-        f"back on {back}")
+    return used["on"] > used["off"], f"bottles in 2 s: {used['off']} without Throwables, {used['on']} with it"
 
 
 
@@ -9129,33 +9080,12 @@ def _():
     return 300 <= on - off <= 550, f"knockback lands (ms after Bot1's click, median): off {off} {late['off']}, on {on} {late['on']}"
 
 
-@test("Auto City and Auto Trap (rates)")
+@test("Auto Trap (rates)")
 def _():
-    # Auto City, 5 times: Bot1 stands in a ring of obsidian 3 blocks in front, you hold an Efficiency V netherite
-    # pickaxe; it has to mine the ring block nearest you and turn off. Auto Trap, 5 times with Bot1 still and 3 times
-    # with it walking sideways: obsidian placed round it in 3 s.
+    # Auto Trap, 5 times with Bot1 still and 3 times with it walking sideways: obsidian placed round it in 3 s.
     if not CTL2:
         return None, "needs a second player"
     reset()
-    cmd("give @s minecraft:netherite_pickaxe[enchantments={efficiency:5}]", "give @s minecraft:obsidian 64")
-    wait(5)
-    mined, ticks = 0, []
-    for _ in range(5):
-        cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 1} {Y + 1} {Z0 + 4} minecraft:obsidian", f"setblock {X0} {Y + 1} {Z0 + 3} minecraft:air")
-        bot_ready(3.5, 180)
-        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
-        wait(5)
-        only("autocity")
-        for t in range(0, 120, 5):
-            wait(5)
-            if not is_on("Auto City"):
-                break
-        turned_itself_off("autocity", "Auto City")
-        only()
-        if not check(f"execute if block {X0} {Y + 1} {Z0 + 2} minecraft:obsidian"):
-            mined += 1
-            ticks.append(t + 5)
-    cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 1} {Y + 1} {Z0 + 4} minecraft:air")
     placed = {"still": [], "walking": []}
     for name, runs in (("still", 5), ("walking", 3)):
         for _ in range(runs):
@@ -9173,8 +9103,8 @@ def _():
     bot_done()
     cmd(f"fill {X0 - 3} {Y + 1} {Z0 + 1} {X0 + 3} {Y + 3} {Z0 + 4} minecraft:air")
     trapped = sum(n >= 5 for n in placed["still"])
-    return mined >= 4 and trapped >= 4, (f"Auto City mined the wall {mined}/5 times, in {ticks} ticks; Auto Trap boxed Bot1 (5+ "
-                                         f"obsidian) {trapped}/5 times standing {placed['still']}, walking it placed {placed['walking']}")
+    return trapped >= 4, (f"Auto Trap boxed Bot1 (5+ obsidian) {trapped}/5 times standing {placed['still']}, walking it placed "
+                          f"{placed['walking']}")
 
 
 @test("PvP Bot (Sword)")
@@ -9221,7 +9151,7 @@ def _():
 
 
 # The modules PvP Bot's Crystal mode drives.
-BOT_HANDS = ("Crystal Aura", "Anchor Aura", "Offhand", "Auto Gap", "Surround", "Self Trap", "Auto City", "Key Throw")
+BOT_HANDS = ("Crystal Aura", "Anchor Aura", "Offhand", "Auto Gap", "Surround", "Self Trap")
 
 
 def crystal_bot_arena(dist=7.0, bot_hp=1000, bot_totem=False, kit=True):
@@ -9246,7 +9176,7 @@ def crystal_bot_arena(dist=7.0, bot_hp=1000, bot_totem=False, kit=True):
     slot(8, "diamond_sword")
     ctl("key", "9", "tap")
     for name, value in (("mode", "Crystal"), ("crystal range", "4.5"), ("use anchors", "true"), ("hole up", "true"),
-                        ("self trap below hp", "12"), ("city", "true"), ("pearl below hp", "8"), ("learn rivals", "true")):
+                        ("self trap below hp", "12"), ("pearl below hp", "8"), ("learn rivals", "true")):
         setting("pvpbot", name, value)
     wait(10)
 
@@ -9557,35 +9487,6 @@ def _():
     touched.add("pvpbot")
     ok = any("Loaded" in l for l in loaded) and on and "Mode: Sword" in bot and "Style: Aggressive" in bot and "Fight range: 12" in bot
     return ok, f"load {loaded[:1]}; on {on}; settings {[l for l in bot if l.split(':')[0] in ('Mode', 'Style', 'Fight range')]}"
-
-
-@test("Key Throw (Hotbar keys)")
-def _():
-    # Hotbar Quick use: holding a sword, 3 presses each of the pearls' hotbar key (5) and the wind charges' (6) with
-    # Hotbar keys on: each throws one and the sword stays in hand. Off, the key selects the slot as usual.
-    reset()
-    slot(0, "diamond_sword")
-    slot(4, "ender_pearl", 16)
-    slot(5, "wind_charge", 16)
-    ctl("key", "1", "tap")
-    ctl("look", "0", "-80")
-    setting("keythrow", "hotbar keys", "true")
-    only("keythrow")
-    kept = 0
-    for key in "555666":
-        ctl("key", key, "tap")
-        wait(25)
-        kept += "sword" in held().get("item", "")
-    only()
-    hotbar = ctl("inventory").get("hotbar") or []
-    left = {k: sum(s.get("count", 0) for s in hotbar if s and k in (s.get("item") or "")) for k in ("ender_pearl", "wind_charge")}
-    ctl("key", "5", "tap")
-    wait(2)
-    off = held().get("item", "")
-    setting("keythrow", "hotbar keys", "false")
-    return left == {"ender_pearl": 13, "wind_charge": 13} and kept == 6 and "pearl" in off, (
-        f"after 3 presses of each key: {left} left (13 each wanted), sword in hand after {kept}/6; Key Throw off, key 5 "
-        f"selects {off}")
 
 
 @test("Fast Use (Fast throw)")
@@ -9964,29 +9865,6 @@ def _():
                 f"rise); then the highest rise: off {off}, on {on}")
 
 
-@test("Hold to Eat")
-def _():
-    # A sword held, golden apples in slot 4: with Hold to Eat, key 4 held for 40 ticks eats one and the sword comes
-    # back; off, the key only selects the apples.
-    got = {}
-    for name, mods in (("off", ()), ("on", ("holdtoeat",))):
-        reset()
-        slot(0, "diamond_sword")
-        slot(3, "golden_apple", 8)
-        ctl("key", "1", "tap")
-        only(*mods)
-        ctl("key", "4", "down")
-        wait(40)
-        ctl("key", "4", "up")
-        wait(5)
-        only()
-        hotbar = ctl("inventory").get("hotbar") or []
-        apples = sum(s.get("count", 0) for s in hotbar if s and "golden_apple" in (s.get("item") or ""))
-        got[name] = (apples, held().get("item", ""))
-    ok = got["off"][0] == 8 and got["on"][0] == 7 and "sword" in got["on"][1]
-    return ok, f"apples left and the item in hand after: off {got['off']}, on {got['on']}"
-
-
 # Horizon's own server (a dedicated one on 25599, or single player's) runs the hit again along your look with 3
 # blocks of reach and blocks in the way: hits past that or through walls are its to refuse.
 HORIZON_SERVER = SERVER is None or SERVER.endswith(":25599")
@@ -10118,29 +9996,6 @@ def _():
         cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 1} {Y + 3} {Z0 + 3} minecraft:air")
     return opened["off"] == "playing" and opened["on"] not in ("playing", None), (
         f"right click at a chest behind a wall: screen {opened['off']} without Ghost Hand, {opened['on']} with it")
-
-
-@test("Key Throw (Lunge spears)")
-def _():
-    # A sword held, an iron spear with Lunge III in slot 5: key 5 with Hotbar keys on jabs with it (the lunge dashes
-    # you forward) and the sword stays; off, the key selects the spear.
-    got = {}
-    for name, mods in (("off", ()), ("on", ("keythrow",))):
-        reset()
-        slot(0, "diamond_sword")
-        slot(4, "iron_spear[enchantments={lunge:3}]")
-        ctl("key", "1", "tap")
-        if mods:
-            setting("keythrow", "hotbar keys", "true")
-        only(*mods)
-        wait(5)
-        a = pos()
-        ctl("key", "5", "tap")
-        wait(15)
-        got[name] = (round(flat(a, pos()), 2), held().get("item", ""))
-        only()
-    return got["on"][0] > got["off"][0] + 0.5 and "sword" in got["on"][1] and "spear" in got["off"][1], (
-        f"moved and the item in hand after key 5: off {got['off']}, on {got['on']}")
 
 
 @test("Pearl Catch")
@@ -10625,25 +10480,6 @@ def _():
     if HORIZON_SERVER and not strong and left == 1:
         return None, f"Horizon's server gives no effect from your own tipped arrow: shot 1 of 2, still on {still}"
     return ok, f"strength after Quiver: {strong}; still on: {still}; tipped arrows left {left} of 2, plain arrows {counts.get('minecraft:arrow')}"
-
-
-@test("Arrow Dodge")
-def _():
-    # Three arrows shot at you from 10 blocks south, one a second: health lost and where you are after, without and
-    # with Arrow Dodge.
-    got = {}
-    for name, mods in (("off", ()), ("on", ("arrowdodge",))):
-        reset()
-        only(*mods)
-        start = own_health()
-        for _ in range(3):
-            cmd(f"summon arrow {X0 + 0.5} {Y + 2.3} {Z0 + 10.5} {{Motion:[0.0d,0.0d,-2.0d]}}")
-            wait(20)
-        got[name] = (round(start - own_health(), 1), round(flat(pos(), (X0 + 0.5, 0, Z0 + 0.5)), 1))
-        only()
-        cmd("kill @e[type=arrow]")
-    ok = got["off"][0] > 0 and got["on"][0] == 0
-    return ok, f"(health lost, blocks moved) to 3 arrows: off {got['off']}, Arrow Dodge {got['on']}"
 
 
 @test("Liquid Interact")
@@ -11261,7 +11097,7 @@ def _():
 
 
 # ---- combat ports, batch 2 (Fake Lag modes, Backtrack, Aim Assist's Silent aim and Hit flick, No Interact's Hit
-# fix, No miss delay and Anti action, Shield, Key Throw's Crossbow key, Offhand's Double hand, Auto Weapon's Totem hit,
+# fix, No miss delay and Anti action, Shield, Offhand's Double hand, Auto Weapon's Totem hit,
 # W Tap and Jump Reset chances, Sprint's Keep sprint, Auto Web's falling webs, the macros' hurt-time waits)
 
 PUNCH = 46
@@ -11589,30 +11425,6 @@ def _():
     return ok, note + f"; shield raises (UseItem) in 1.5 s with Bot1 holding a sword near: {uses['off']} without, {uses['on']} with Auto block"
 
 
-@test("Key Throw (Crossbow key)")
-def _():
-    # A crossbow in the main inventory and arrows: on the Crossbow key it comes into your hand and is loaded (an arrow
-    # used); holding another slot puts it back in the inventory.
-    reset()
-    slot(0, "stone_sword")
-    ctl("key", "1", "tap")
-    cmd("item replace entity @s inventory.11 with minecraft:crossbow", "item replace entity @s inventory.12 with minecraft:arrow 16")
-    setting("keythrow", "crossbow key", "g")
-    only("keythrow")
-    wait(5)
-    ctl("key", "g", "tap")
-    wait(45)
-    inhand = (held().get("item") or "").endswith("crossbow")
-    arrows = ctl("inventory").get("counts", {}).get("minecraft:arrow", 0)
-    ctl("key", "2", "tap")
-    wait(10)
-    ctl("key", "1", "tap")
-    wait(5)
-    back = (held().get("item") or "").endswith("stone_sword")
-    only()
-    return inhand and arrows == 15 and back, f"crossbow in hand {inhand}, arrows left {arrows} of 16 (one loaded), sword back in slot 1 {back}"
-
-
 @test("Offhand (Double hand)")
 def _():
     # 6 health, a totem in hotbar slot 3, Bot1 3 blocks away and an end crystal beside you: Double hand puts the totem
@@ -11807,149 +11619,6 @@ def items_of(item):
 def probe_looks(mark):
     """The looks the move packets carried since `mark`: [(yaw, pitch)]."""
     return [(float(w[1]), float(w[2])) for t in probe_ticks(mark) for w in (line.split() for line in t) if w[0] == "look"]
-
-
-@test("Key Throw (Short pearl key)")
-def _():
-    # A sword in hand and pearls in slot 5: the Short pearl key throws one down ahead of you (Short pearl pitch 70) and
-    # the sword stays. Silent: the pitch only on the wire (a move packet's look near 70), the slot and the throw before
-    # the tick's move packet. Legit: the camera itself turns down and back, the slot is held and comes back. Each takes
-    # you 0.3 to 6 blocks.
-    got, fine = {}, True
-    for mode in ("Silent", "Legit"):
-        reset()
-        slot(0, "diamond_sword")
-        slot(4, "ender_pearl", 16)
-        ctl("key", "1", "tap")
-        ctl("look", "0", "0")
-        setting("keythrow", "short pearl key", "G")
-        setting("keythrow", "throw mode", mode)
-        only("keythrow")
-        wait(5)
-        a, mark = pos(), probe_mark()
-        ctl("key", "g", "tap")
-        pitches = poll(60, 1, lambda: aim_view()[1])
-        b = pos()
-        only()
-        moved = round(math.dist((a[0], a[2]), (b[0], b[2])), 2)
-        late, doubled, crowded = cart_order(mark)
-        wire = [p for _, p in probe_looks(mark)]
-        down = max(pitches) if mode == "Legit" else max(wire, default=0)
-        got[mode] = (moved, items_of("ender_pearl"), held().get("item", "").split(":")[-1], round(down, 1), round(pitches[-1], 1),
-                     late, doubled, crowded)
-        fine &= 0.3 < moved < 6 and got[mode][1] == 15 and "sword" in got[mode][2] and 68 <= down <= 71.5
-        fine &= abs(pitches[-1]) < 1 and not doubled and not crowded and (mode == "Legit" or not late)
-        fine &= (max(pitches) < 1) if mode == "Silent" else True
-    setting("keythrow", "short pearl key", "None")
-    setting("keythrow", "throw mode", "Silent")
-    return fine, ("(moved, pearls left, in hand, lowest look, camera pitch after, actions after the move, two slot changes "
-                  f"in a tick, two moves): {got}")
-
-
-@test("Key Throw (Auto short pearl)")
-def _():
-    # Pearls in slot 5, a sword held: Bot1 hits you once; with Auto short pearl a pearl goes straight down at your
-    # feet 30 to 70 ms later (one pearl used, the sword in hand after); without it, none.
-    if not CTL2:
-        return None, "needs a second player"
-    setting("keythrow", "auto short pearl", "true")
-    used = {}
-    for name, mods in (("off", ()), ("on", ("keythrow",))):
-        reset()
-        cmd("effect give @s minecraft:resistance 600 3 true")
-        slot(0, "diamond_sword")
-        slot(4, "ender_pearl", 16)
-        ctl("key", "1", "tap")
-        bot_ready(2.5, 180, "give Bot1 minecraft:stick")
-        tester = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
-        only(*mods)
-        wait(5)
-        mark = probe_mark()
-        ctl2("look-at-entity", str(tester))
-        ctl2("mouse", "left", "click")
-        wait(40)
-        only()
-        late, doubled, crowded = cart_order(mark)
-        used[name] = (16 - items_of("ender_pearl"), held().get("item", "").split(":")[-1], late, doubled, crowded)
-    bot_done()
-    setting("keythrow", "auto short pearl", "false")
-    on = used["on"]
-    ok = used["off"][0] == 0 and on[0] == 1 and "sword" in on[1] and not any(on[2:])
-    return ok, f"(pearls thrown, in hand after, actions after the move, two slot changes, two moves): {used}"
-
-
-@test("Key Throw (Wind charge after pearl)")
-def _():
-    # The Pearl key throws a pearl 15 degrees up ahead; with Wind charge after pearl a wind charge goes straight down
-    # the moment the pearl takes you (and you jump), so you go up from where you land; without it, nothing more.
-    got = {}
-    for name, value in (("off", "false"), ("on", "true")):
-        reset()
-        cmd(f"fill {X0-3} {Y} {Z0} {X0+3} {Y} {Z0+30} minecraft:stone", f"fill {X0-3} {Y+1} {Z0} {X0+3} {Y+20} {Z0+30} minecraft:air")
-        slot(0, "diamond_sword")
-        slot(4, "ender_pearl", 16)
-        slot(5, "wind_charge", 16)
-        ctl("key", "1", "tap")
-        ctl("look", "0", "-15")
-        setting("keythrow", "pearl key", "G")
-        setting("keythrow", "wind charge after pearl", value)
-        only("keythrow")
-        wait(5)
-        a = pos()
-        ctl("key", "g", "tap")
-        landed, top = None, None
-        for t in range(120):
-            wait(1)
-            b = pos()
-            if landed is None and math.dist(a, b) > 3:
-                landed, top = b[1], b[1]
-            if landed is not None:
-                top = max(top, b[1])
-            a = b
-        only()
-        got[name] = (16 - items_of("wind_charge"), None if landed is None else round(top - landed, 1))
-    setting("keythrow", "pearl key", "None")
-    setting("keythrow", "wind charge after pearl", "false")
-    ok = got["off"][0] == 0 and got["on"][0] == 1 and (got["on"][1] or 0) > (got["off"][1] or 0) + 1
-    return ok, f"(wind charges used, rise after the pearl took you): off {got['off']}, on {got['on']}"
-
-
-@test("Key Throw (Pearl follow)")
-def _():
-    # Bot1, 10 blocks ahead, throws a pearl off to your right (it lands some 20 blocks from you): with Pearl follow you
-    # throw one of yours after it 50 to 100 ms later and land within 3 blocks of where Bot1 lands; without it you stay.
-    if not CTL2:
-        return None, "needs a second player"
-    setting("keythrow", "pearl follow", "true")
-    got = {}
-    for name, mods in (("off", ()), ("on", ("keythrow",))):
-        reset()
-        cmd(f"fill {X0-4} {Y} {Z0-4} {X0+34} {Y} {Z0+14} minecraft:stone", f"fill {X0-4} {Y+1} {Z0-4} {X0+34} {Y+20} {Z0+14} minecraft:air")
-        slot(0, "diamond_sword")
-        slot(4, "ender_pearl", 16)
-        ctl("key", "1", "tap")
-        bot_ready(10.5, -90, "give Bot1 minecraft:ender_pearl 4")
-        ctl2("select", "1")
-        only(*mods)
-        wait(10)
-        mark = probe_mark()
-        cmd(f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 10.5} -90 -10")
-        wait(5)
-        ctl2("mouse", "right", "down")
-        wait(3)
-        ctl2("mouse", "right", "up")
-        wait(80)
-        only()
-        me = pos()
-        bot = (ctl2("state").get("player") or {}).get("position") or [0, 0, 0]
-        late, doubled, crowded = cart_order(mark)
-        got[name] = (16 - items_of("ender_pearl"), round(math.dist((me[0], me[2]), (bot[0], bot[2])), 1),
-                     round(math.dist((me[0], me[2]), (X0 + 0.5, Z0 + 0.5)), 1), late, doubled, crowded)
-    bot_done()
-    setting("keythrow", "pearl follow", "false")
-    on = got["on"]
-    ok = got["off"][0] == 0 and on[0] == 1 and on[1] <= 3 and on[2] > 8 and not any(on[3:])
-    return ok, f"(pearls thrown, from Bot1 after, from the start, actions after the move, two slot changes, two moves): {got}"
 
 
 @test("Pearl Catch (Catch key)")
@@ -12533,24 +12202,6 @@ def on_off(name, mods, setup=None, settle=10, box=(240, 60, 1040, 560)):
         frames[state] = colour_frame(f"{name}-{state}").crop(box)
     only()
     return recoloured(frames["off"], frames["on"])
-
-
-@test("Target ESP (Ghost, Square)")
-def _():
-    # A husk 3 blocks ahead under the crosshair, a wall behind: Target ESP's Ghost (trails circling it) and Square (a
-    # turning square on it) each draw round it, as Brackets do. Screenshots target-esp-<style>-on.png.
-    reset()
-    back_wall()
-    cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 3.5} {HUSK}")
-    ctl("look-at", str(X0 + 0.5), str(Y + 1.6), str(Z0 + 3.5))
-    setting("targetesp", "target", "Crosshair")
-    got = {}
-    for style in ("Brackets", "Ghost", "Square"):
-        setting("targetesp", "style", style)
-        got[style] = on_off(f"target-esp-{style.lower()}", ("targetesp",), settle=30)
-    back_wall("air")
-    say(".reset targetesp")
-    return all(v > 200 for v in got.values()), f"pixels changed with each style on: {got}"
 
 
 @test("Effects (circles, trails, hit particles, weather)")
@@ -13781,57 +13432,6 @@ def _():
     return got == {"off": 0, "on": 1, "swords only": 0}, f"apples eaten after letting go early: {got}"
 
 
-@test("Key Throw (Pot key, Debuff key)")
-def _():
-    # Pot key: five healing splash potions in slots 5 to 9 at 10 health, looking down: Dynamic throws three (4 health
-    # each for the 10 missing), Single one, Key Throw off none, and the sword is in hand after. Debuff key, looking
-    # ahead: poison, weakness, poison and harming in slots 1 to 4: One of each throws three, All four, First one, and
-    # One of each with Debuffs `poison` one.
-    for k, v in (("pot key", "h"), ("debuff key", "j"), ("throw mode", "Silent")):
-        setting("keythrow", k, v)
-
-    def pots(mods=("keythrow",), amount="Dynamic"):
-        setting("keythrow", "pot amount", amount)
-        reset()
-        slot(0, "diamond_sword")
-        for i in range(4, 9):
-            slot(i, HEAL_POT)
-        ctl("key", "1", "tap")
-        cmd("damage @s 10 minecraft:generic")
-        ctl("look", "0", "90")
-        only(*mods)
-        wait(5)
-        ctl("key", "h", "tap")
-        wait(30)
-        only()
-        return 5 - items_of("splash_potion"), held().get("item", "").split(":")[-1]
-
-    def debuffs(mode, kinds="harming,weakness,poison,slowness"):
-        setting("keythrow", "debuff mode", mode)
-        setting("keythrow", "debuffs", kinds)
-        reset()
-        immune()
-        for i, p in enumerate(("poison", "weakness", "poison", "harming")):
-            slot(i, f'splash_potion[potion_contents={{potion:"minecraft:{p}"}}]')
-        slot(5, "diamond_sword")
-        ctl("key", "6", "tap")
-        ctl("look", "0", "-20")
-        only("keythrow")
-        wait(5)
-        ctl("key", "j", "tap")
-        wait(30)
-        only()
-        return 4 - items_of("splash_potion")
-
-    got = {"dynamic": pots(), "single": pots(amount="Single"), "off": pots(())}
-    got.update({"one of each": debuffs("One of each"), "all": debuffs("All"), "first": debuffs("First"),
-                "poison only": debuffs("One of each", "poison")})
-    say(".reset keythrow")
-    ok = (got["dynamic"] == (3, "diamond_sword") and got["single"] == (1, "diamond_sword") and got["off"][0] == 0
-          and (got["one of each"], got["all"], got["first"], got["poison only"]) == (3, 4, 1, 1))
-    return ok, f"(potions thrown, in hand after) / debuffs thrown: {got}"
-
-
 @test("Auto Gap (Soup)")
 def _():
     # A sword in hand and mushroom stew in slot 4 at 10 health: with Soup the stew's slot is held and used (a UseItem),
@@ -13863,38 +13463,6 @@ def _():
     say(".reset autogap")
     ok = got["hurt"][0] >= 1 and got["hurt"][1] == "diamond_sword" and not any(got["hurt"][2]) and got["full"][0] == 0 and got["under 5"][0] == 0
     return ok, f"(stew uses, in hand after, (late, two slot changes, two moves)): {got}"
-
-
-@test("Arrow Dodge (Hit fireballs)")
-def _():
-    # A large fireball flying at you from 6 blocks: with Hit fireballs it is hit (an attack) and sent back away from
-    # you; with Arrow Dodge on but Hit fireballs off, or Arrow Dodge off, it is not hit.
-    if not probe_path():
-        return None, "needs the probe (tools/probe)"
-    setting("arrowdodge", "dodge", "false")
-
-    def run(mods, hit="true"):
-        setting("arrowdodge", "hit fireballs", hit)
-        reset()
-        immune()
-        cmd("gamerule mob_griefing false")
-        only(*mods)
-        wait(5)
-        mark = probe_mark()
-        cmd(f"summon minecraft:fireball {X0 + 0.5} {Y + 2.2} {Z0 + 6.5} {{Motion:[0.0,0.0,-0.4],acceleration_power:0.0d}}")
-        wait(25)
-        only()
-        attacks = sum(t.count("order attack") for t in probe_ticks(mark))
-        balls = [e for e in ctl("entities").get("entities", []) if e.get("type") == "minecraft:fireball"]
-        away = any(e.get("pos", e.get("position", [0, 0, 0]))[2] > Z0 + 6.5 for e in balls)
-        cmd("kill @e[type=minecraft:fireball]")
-        return attacks, away
-
-    got = {"on": run(("arrowdodge",)), "hit off": run(("arrowdodge",), "false"), "module off": run(())}
-    cmd("gamerule mob_griefing true")
-    say(".reset arrowdodge")
-    ok = got["on"][0] >= 1 and got["hit off"][0] == 0 and got["module off"][0] == 0
-    return ok, f"(attacks, fireball sent back past where it came from): {got}"
 
 
 @test("Auto Armor (Switch key)")

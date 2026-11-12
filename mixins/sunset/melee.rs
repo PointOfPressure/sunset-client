@@ -132,7 +132,6 @@ struct State {
     broken_shield: Option<(u32, u64)>,
     friend_hint_at: Option<Instant>,
     friend_hint: Option<u32>,
-    jump_owner: Option<&'static str>,
     // Auto Spear's Extended reach: the slot to go back to, the ticks before it may (a missed Chance roll's lockout too),
     // and Trigger Bot's target for a stab at the start of the next tick.
     reach_back: Option<usize>,
@@ -562,19 +561,6 @@ pub(super) fn axe_at_shield(game: &Game<'_>, id: u32) -> bool {
         && best_axe(game).is_some()
 }
 
-// `owner` turned off: its look waiting and its borrowed slot go.
-pub(super) fn cancel_owner(game: &mut Game<'_>, owner: &str) {
-    state(|s| {
-        if s.jump_owner == Some(owner) {
-            s.jump_owner = None;
-        }
-    });
-    super::sunset::cancel_turns(owner);
-    if state(|s| s.lease.is_some_and(|lease| lease.owner == owner)) {
-        release_lease(game, true);
-    }
-}
-
 fn take_slot(game: &mut Game<'_>, plan: WeaponPlan, hold_ticks: u64, queued_end: Option<control::Finish>) -> bool {
     if state(|s| s.lease.is_some() && !s.lease_end.as_ref().is_some_and(|end| end.current())) {
         state(|s| {
@@ -644,11 +630,6 @@ pub(super) fn cancel(game: &mut Game<'_>) {
         let (action_tick, action_scene, tap_report) = (s.action_tick, s.action_scene.take(), s.tap_report);
         *s = State { action_tick, action_scene, tap_report, ..State::default() };
     });
-}
-
-// Key Throw's wind charge jump presses the jump key for the next tick, while `owner` is on.
-pub(super) fn request_jump(owner: &'static str) {
-    state(|s| s.jump_owner = Some(owner));
 }
 
 // An Attack packet went out: an Axe on shields hit counts for a second, W Tap starts.
@@ -817,8 +798,7 @@ pub(super) fn note_velocity(game: &Game<'_>, entity: i32, velocity: [f64; 3]) {
     }
 }
 
-// Before the tick's movement: W Tap lets go of forward (S Tap presses back), Jump Reset and a requested jump press
-// jump. post_input puts the keys back.
+// Before the tick's movement: W Tap lets go of forward (S Tap presses back), Jump Reset presses jump. post_input puts the keys back.
 pub(super) fn pre_input(game: &mut Game<'_>) {
     post_input(game);
     if !alive(game) || !game.native_playing() || gui_open() {
@@ -826,7 +806,6 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
         state(|s| {
             s.tap_until = 0;
             s.jump_pending = false;
-            s.jump_owner = None;
         });
         return;
     }
@@ -834,12 +813,11 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
         let reach = game.player.as_mut().and_then(|p| p.attribute("minecraft:entity_interaction_range").ok());
         state(|s| s.reach = reach);
     }
-    let asked = state(|s| s.jump_owner.take()).is_some_and(|owner| section(owner).is_some() && control::available(owner));
     let knocked = state(|s| std::mem::take(&mut s.jump_pending))
         && module(JUMP).is_some()
         && game.keys.contains(&KeyCode::KeyW)
         && game.player.as_ref().is_some_and(|p| p.sprinting);
-    let jump = (knocked || asked)
+    let jump = knocked
         && game.player.as_ref().is_some_and(|p| {
             p.ground.on_ground && !p.flying && !p.fall_flying && !p.fluids.was_touching_water && !p.is_in_lava()
         })
@@ -1482,46 +1460,6 @@ pub(super) fn spear_pass(game: &mut Game<'_>, id: u32) {
         hold(game, spear);
         hold(game, weapon);
     }
-}
-
-// Key Throw's Hotbar keys on a Lunge spear (Sunset's Quick use): a jab with it at the start of the next tick, before
-// its move packet (the lunge is the jab's), and the slot you held back in the same tick.
-pub(super) fn quick_lunge(game: &mut Game<'_>, slot: usize) -> bool {
-    // No charge check: the game's key selected the spear, which restarted this client's charge, while the server's
-    // is still the weapon's when the jab arrives.
-    let fit = move |game: &Game<'_>| {
-        allowed(game)
-            && game.clicks.miss_time <= 0
-            && game.mining.is_none()
-            && !block_stab(game)
-            && game.riding.is_none()
-            && available_item(game, slot).is_some_and(|s| Kinetic::of(&s.item).is_some() && s.enchantment_level("minecraft:lunge") > 0)
-            && game.player.as_ref().is_some_and(|p| !p.fall_flying && !p.fluids.was_touching_water && (game.creative || p.health.food.food >= 7))
-    };
-    if !fit(game) || state(|s| s.due.is_some()) {
-        return false;
-    }
-    let back = game.selected;
-    state(|s| {
-        s.due = Some(Box::new(move |game: &mut Game<'_>| {
-            let Some(kinetic) = available_item(game, slot).and_then(|s| Kinetic::of(&s.item)) else {
-                return;
-            };
-            // The game's own hotbar key selected the spear meanwhile: that is undone first.
-            if ![back, slot].contains(&game.selected) {
-                return;
-            }
-            game.selected = back;
-            if !fit(game) || acted(game) {
-                return;
-            }
-            hold(game, slot);
-            stab(game, kinetic);
-            hold(game, back);
-            claim_tick(game);
-        }))
-    });
-    true
 }
 
 // Spear's Damage indicator: while you charge a spear, the hit it would do to the nearest player as things stand (the

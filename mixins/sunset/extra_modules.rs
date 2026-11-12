@@ -9,17 +9,11 @@ pub(super) const NAME: &str = "Modules";
 // The modules hidden until their switch is on (the extras of Extra Modules, Pearl Catch now shown).
 pub(super) const HIDDEN: &[&str] = &[
     "Slippy",
-    "Auto City",
     "Self Web",
-    "Hole Filler",
-    "Burrow",
-    "Key Throw",
-    "Arrow Dodge",
     "Jesus",
     "Trident Boost",
     "Step",
     "Wind Jump",
-    "Hold to Eat",
     "Mine Through Mobs",
     "RF Click",
     "Fake Player",

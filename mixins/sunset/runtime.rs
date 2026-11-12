@@ -374,11 +374,6 @@ impl Module {
                 "Hotbar mode" | "Hotbar rules" | "Hotbar delay (ms)" => self.b("Auto hotbar"),
                 _ => true,
             },
-            "Arrow Dodge" => match name {
-                "Move speed" | "Distance check" | "Ground check" | "All projectiles" | "Ignore own" => self.b("Dodge"),
-                "Fireball silent aim" => self.b("Hit fireballs"),
-                _ => true,
-            },
             "No Slow" => match name {
                 "Release items" => self.b("No item release"),
                 _ => true,
@@ -516,19 +511,6 @@ impl Module {
                 "Delay" => self.b("Fly") && self.b("Anti fly kick"),
                 _ => true,
             },
-            "Key Throw" => match name {
-                "Shortest step delay (ms)" | "Longest step delay (ms)" | "Smoothing" => self.p("Throw mode") == "Legit",
-                "Wind charge pitch" => !self.b("Wind charge along look"),
-                "Shortest hit delay (ms)" | "Longest hit delay (ms)" => self.b("Auto short pearl"),
-                "Thrower range" | "Min landing distance" | "Landing range" | "Max error" | "Shortest follow delay (ms)"
-                | "Longest follow delay (ms)" | "Follow only on ground" => self.b("Pearl follow"),
-                "Pot type" | "Pot amount" | "Random order" | "Throw bowls" => key_from_text(self.t("Pot key")).is_some(),
-                "Debuff mode" | "Debuffs" => key_from_text(self.t("Debuff key")).is_some(),
-                "Shortest pot delay (ms)" | "Longest pot delay (ms)" => {
-                    key_from_text(self.t("Pot key")).is_some() || key_from_text(self.t("Debuff key")).is_some()
-                }
-                _ => true,
-            },
             "Pearl Catch" => match name {
                 "Wind charge delay (ms)" => matches!(self.p("Key mode"), "Up" | "Diagonal macro"),
                 "Moving delay (ms)" => self.p("Key mode") == "Up",
@@ -643,11 +625,6 @@ impl Module {
             },
             "Nametags" => match name {
                 "Health colors" => self.b("Health"),
-                _ => true,
-            },
-            "Target ESP" => match name {
-                "Corner length" | "Padding" | "Thickness" | "Outline" => self.p("Style") == "Brackets",
-                "Custom color" => self.p("Color") == "Custom",
                 _ => true,
             },
             "Cart" => super::sunset_cart::visible(self, name),
@@ -1330,7 +1307,6 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_radar::defaults());
     v.extend(super::sunset_crosshair::defaults());
     v.push(super::sunset_block_overlay::defaults());
-    v.extend(super::sunset_target_esp::defaults());
     v.extend(super::sunset_atmosphere::defaults());
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
@@ -3003,7 +2979,6 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     super::sunset_melee::key(game, key, pressed);
     super::sunset_swap_keys::key(game, key, pressed);
     super::sunset_combat::web_key(game, key, pressed);
-    super::sunset_combat_inventory::key(game, key, pressed);
     super::sunset_duel::key(game, key, pressed);
     super::sunset_cart::key(game, key, pressed);
     super::sunset_throws::key(game, key, pressed);
@@ -3192,9 +3167,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_duel::catch_throw(game, hits || game.selected != selected);
     // Cart's steps: in a tick with no hit and no slot change before them.
     super::sunset_cart::pre_tick(game, hits || game.selected != selected);
-    // Shield, Key Throw's Crossbow key and Offhand's Double hand: likewise.
+    // Shield and Offhand's Double hand: likewise.
     super::sunset_swap_keys::pre_tick(game, hits || game.selected != selected);
-    // Key Throw's, Pearl Catch's and Wind Jump's throws: likewise.
+    // Pearl Catch's, Wind Jump's, Auto Gap's and PvP Bot's throws: likewise.
     super::sunset_throws::pre_tick(game, hits || game.selected != selected);
     // Anchor Aura's Pearl catch: likewise.
     super::sunset_anchor_catch::pre_tick(game, hits || game.selected != selected);
@@ -3862,8 +3837,6 @@ fn module_tick(game: &mut Game<'_>) {
     if let Some(m) = get("Trigger Bot") {
         trigger_bot(game, m, get("Criticals").is_some_and(|c| !c.b("Only Kill Aura")));
     }
-    let combat_target = get("Kill Aura").and_then(|_| super::sunset_aura::target_id());
-    super::sunset_target_esp::tick(game, &mods, combat_target);
 }
 
 pub(super) fn solid_at(game: &Game<'_>, x: i32, y: i32, z: i32) -> bool {
@@ -8392,9 +8365,6 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     super::sunset_lag::draw(game, cam, mods, out, lw);
     super::sunset_backtrack::draw(cam, mods, out, lw);
     super::sunset_block_overlay::overlay(game, cam, mods, out, lw);
-    if let Some(m) = mods.iter().find(|m| m.name == "Target ESP" && m.on) {
-        super::sunset_target_esp::draw(game, cam, m, [cam.w as f32, cam.h as f32], lw, out);
-    }
     super::sunset_util::draw_shown(cam, out, lw);
     super::sunset_effects::draw(game, cam, mods, out);
     super::sunset_render::overlay(game, cam, mods, out, lw);
@@ -9275,7 +9245,6 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "PvP Bot" => "sword pvp bot swordpvpbot crystal pvp bot crystalpvpbot crystal bot crystalbot",
         "Auto Web" => "cobweb placer cobwebplacer web key",
         "Shield" => "auto shield autoshield instant shield instantshield block",
-        "Key Throw" => "instant crossbow instantcrossbow key pearl keypearl key wind charge keywindcharge short pearl shortpearl auto short pearl autoshortpearl short wind charge shortwindcharge pearl wind charge pearlwindcharge pearl follow pearlfollow",
         "Pearl Catch" => "auto pearl catch autopearlcatch fast pearl catch fastpearlcatch diagonal pearl catch diagonalpearlcatch",
         "Wind Jump" => "elytra wind charge elytrawindcharge wind charge aura windchargeaura deflect",
         "Fake Lag" => "fakelag choke lag delay pulse dynamic",
@@ -9309,7 +9278,6 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Auto Tool" => "auto pickaxe autopickaxe tool swap pickaxe below",
         "ESP" => "2d esp twodesp 2d box corners brackets health bar glow shield renderer shieldrenderer shield colors murderer finder murder mystery murdererfinder callout",
         "Nametags" => "health indicators healthindicators health colors bands",
-        "Target ESP" => "target renderer targetrenderer ghost square target hud marker",
         "Atmosphere" => "ambience fog color fog distance custom fog sky horizon",
         "Effects" => "jump circles jumpcircles trails footsteps hit effect hiteffect hit particles totem pop particles weather rain snow fireflies embers ambience",
         "Auto Gap" => "auto pot autopot splash potion healing pot",
@@ -11207,10 +11175,10 @@ mod cleanup_tests {
 
     #[test]
     fn extras_in_use_are_listed_and_current_configs_are_left_alone() {
-        let out = fields("jesus.on=true\njesus.key=none\nslippy.on=false\nslippy.key=key.keyboard.p\nburrow.on=false\nburrow.key=none\n");
+        let out = fields("jesus.on=true\njesus.key=none\nslippy.on=false\nslippy.key=key.keyboard.p\nselfweb.on=false\nselfweb.key=none\n");
         assert_eq!(out["modules.jesus"], "true");
         assert_eq!(out["modules.slippy"], "true");
-        assert!(!out.contains_key("modules.burrow"));
+        assert!(!out.contains_key("modules.selfweb"));
         let current = "jesus.on=true\nmodules.jesus=false\n";
         assert!(matches!(merged_modules(current), std::borrow::Cow::Borrowed(_)));
     }
