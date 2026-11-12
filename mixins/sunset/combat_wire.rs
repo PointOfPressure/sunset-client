@@ -88,6 +88,7 @@ pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
         return;
     }
     super::sunset_gui_move::forwarded(game, packet);
+    super::sunset_inventory_slots::sent(packet);
     if let S::Attack(p) = packet {
         attack_slow(game, p.id);
     }

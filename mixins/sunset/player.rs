@@ -43,6 +43,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Close when done", false)
             .text("Steal key", "None"),
         Module::new("Inventory Manager", Player, "Keeps your inventory in order: your hotbar laid out, worse duplicates and junk dropped, the rest sorted.")
+            // Slots (inventory_slots.rs): a fixed hotbar layout and a lean inventory, the classic 1.8 PvP way, one
+            // action a random Delay apart. Planner (inventory_plan.rs): the whole inventory planned and sorted.
+            .pick("Mode", &["Slots", "Planner"])
             // Profiles: a preset fills in Cleanup's limits and junk.
             .pick("Preset", &["Custom", "PvP", "Building", "Mining", "Survival"])
             // General: one step every Delay ticks (plus up to Delay variation more), with the inventory open unless
@@ -93,7 +96,32 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Junk", PRESETS[0].5)
             .text("Loot key", "None")
             .num("Keep totems", 1.0, 1.0, 20.0, 1.0)
-            .num("Keep pearl stacks", 5.0, 1.0, 10.0, 1.0),
+            .num("Keep pearl stacks", 5.0, 1.0, 10.0, 1.0)
+            // Slots: the pause after each action, menu items, the limits, and each kept item's hotbar slot (1 to 9,
+            // 0 for none; a range for blocks, potions and food).
+            .num("Delay min (ms)", 100.0, 0.0, 500.0, 50.0)
+            .num("Delay max (ms)", 150.0, 0.0, 500.0, 50.0)
+            .bool("Drop custom items", false)
+            .bool("Use custom items", false)
+            .bool("Prioritize splash potions", false)
+            .num("Block limit", 512.0, 0.0, 512.0, 4.0)
+            .num("Arrow limit", 128.0, 0.0, 512.0, 4.0)
+            .num("Bucket limit", 1.0, 0.0, 4.0, 1.0)
+            .num("Snowball and egg limit", 16.0, 0.0, 64.0, 1.0)
+            .num("Ender pearl limit", 16.0, 0.0, 64.0, 1.0)
+            .num("Sword slot", 1.0, 0.0, 9.0, 1.0)
+            .num("Second sword slot", 2.0, 0.0, 9.0, 1.0)
+            .num("Pickaxe slot", 2.0, 0.0, 9.0, 1.0)
+            .num("Axe slot", 3.0, 0.0, 9.0, 1.0)
+            .num("Shovel slot", 4.0, 0.0, 9.0, 1.0)
+            .num("Block slots from", 5.0, 0.0, 9.0, 1.0)
+            .num("Block slots to", 5.0, 0.0, 9.0, 1.0)
+            .num("Potion slots from", 6.0, 0.0, 9.0, 1.0)
+            .num("Potion slots to", 6.0, 0.0, 9.0, 1.0)
+            .num("Bow slot", 7.0, 0.0, 9.0, 1.0)
+            .num("Rod slot", 8.0, 0.0, 9.0, 1.0)
+            .num("Food slots from", 9.0, 0.0, 9.0, 1.0)
+            .num("Food slots to", 9.0, 0.0, 9.0, 1.0),
         Module::new("Fast Use", Player, "Uses items faster.")
             .pick("Mode", &["All", "Some"])
             .pick("List mode", &["Whitelist", "Blacklist"])
@@ -426,7 +454,8 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         if let Some(m) = get("Chest Stealer") {
             auto_steal(game, m);
         }
-        if let Some(m) = get("Inventory Manager") {
+        // Slots mode runs before the tick (runtime pre_tick, inventory_slots.rs).
+        if let Some(m) = get("Inventory Manager").filter(|m| m.p("Mode") != "Slots") {
             inventory_manager(game, m);
         } else {
             // A finished plan cannot survive disable/enable without an inventory packet.

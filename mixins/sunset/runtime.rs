@@ -417,14 +417,25 @@ impl Module {
                     _ => true,
                 }
             }
-            "Inventory Manager" => match name {
-                "Armor key" => self.p("Armor mode") == "Key",
-                "Switch sets" => key_from_text(self.t("Switch key")).is_some(),
-                "Keep totems" | "Keep pearl stacks" => self.t("Loot key") != "None",
-                "List mode" | "Items" => self.p("Preset") == "Custom",
-                "Blocks" | "Food" | "Arrows" | "Pearls" | "Junk" => self.p("Preset") != "Custom",
-                _ => true,
-            },
+            "Inventory Manager" => {
+                let slots = self.p("Mode") == "Slots";
+                match name {
+                    "Armor key" => self.p("Armor mode") == "Key",
+                    "Switch sets" => key_from_text(self.t("Switch key")).is_some(),
+                    "Mode" | "Only in inventory" | "Protected items" | "Auto Armor" | "Auto Armor key"
+                    | "Armor delay (ticks)" | "Armor mode" | "Avoid cursed" | "Switch key" => true,
+                    "Delay min (ms)" | "Delay max (ms)" | "Drop custom items" | "Use custom items" | "Prioritize splash potions"
+                    | "Block limit" | "Arrow limit" | "Bucket limit" | "Snowball and egg limit" | "Ender pearl limit"
+                    | "Sword slot" | "Second sword slot" | "Pickaxe slot" | "Axe slot" | "Shovel slot" | "Block slots from"
+                    | "Block slots to" | "Potion slots from" | "Potion slots to" | "Bow slot" | "Rod slot" | "Food slots from"
+                    | "Food slots to" => slots,
+                    _ if slots => false,
+                    "Keep totems" | "Keep pearl stacks" => self.t("Loot key") != "None",
+                    "List mode" | "Items" => self.p("Preset") == "Custom",
+                    "Blocks" | "Food" | "Arrows" | "Pearls" | "Junk" => self.p("Preset") != "Custom",
+                    _ => true,
+                }
+            }
             // Crystal Aura and Anchor Aura: each section's settings with it on, the shared ones with either.
             "Crystal Aura" => match name {
                 "Aura" | "Macro" => true,
@@ -3327,6 +3338,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         .filter(|m| m.on && m.p("Mode") == "Telly" && !scaffold_paused(m, on("Kill Aura") && super::sunset_aura::engaged(), on("Blink")))
         .filter(|_| playing && !inventory_stop && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
     if normal.is_none() { super::sunset_scaffold_telly::pre_tick(game, telly); }
+    // Inventory Manager's Slots mode: its action goes before the tick's move packet (inventory_slots.rs).
+    super::sunset_inventory_slots::pre_tick(game, get("Inventory Manager").filter(|m| m.on && m.p("Mode") == "Slots"));
     // Offhand's Silent open holds your move keys and clicks while its totem moves.
     super::sunset_combat_inventory::pre_tick(game, get("Offhand").filter(|m| m.on && playing));
     velocity(game, get("Velocity").filter(|m| m.on));
@@ -4454,6 +4467,10 @@ fn auto_armor_key(game: &mut Game<'_>, key: &str) {
 }
 
 pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
+    // Inventory Manager's Slots mode wears your armour itself (inventory_slots.rs).
+    if m.on && m.p("Mode") == "Slots" {
+        return;
+    }
     // One inventory step at a time: Inventory Manager's last one settles first.
     if super::sunset_player::inventory_stepping(game.ticks) {
         return;
@@ -9431,7 +9448,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Effects" => "jump circles jumpcircles trails footsteps hit effect hiteffect hit particles totem pop particles weather rain snow fireflies embers ambience",
         "Auto Gap" => "auto pot autopot splash potion healing pot",
         "Auto Replenish" => "refill potion refill potionrefill hotbar refill",
-        "Inventory Manager" => "inventory manager cleaner junk drop clean sort hotbar layout duplicates auto loot autoloot loot key",
+        "Inventory Manager" => "inventory manager invmanager inv manager cleaner junk drop clean sort hotbar layout duplicates auto loot autoloot loot key slots sword slot block slot",
         "Mine Through Mobs" => "no mining trace nominingtrace",
         "GUI Move" => "inventory move invmove gui walk",
         "Flight" => "fly",
