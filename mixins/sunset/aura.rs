@@ -1,8 +1,9 @@
 // Kill Aura, implemented for Sunset with its settings: which weapons it
 // attacks with, how it rotates and switches, who it targets and how many at
 // once, and its timing. Its default Rotation mode, Silent aura, uses a silent look turned in whole
-// mouse counts that the game's own move packet carries, and hits only where
-// that look meets the target within vanilla reach (see sunset_rotation).
+// mouse counts that the game's own move packet carries (see sunset_rotation). A hit goes within Attack range; with
+// Ray cast, only once the look the server has, or the one sent right after the hit, meets the target. It leaves the
+// look and the hand to Scaffold while Scaffold places.
 
 use super::sunset::{Canvas, Category, Module, health_colour, hold, look_at, toggle_named};
 use super::sunset_aura_aim as aim;
@@ -435,6 +436,7 @@ pub(super) fn clear_targets(game: &mut Game<'_>) {
     reset(game, false, true);
 }
 fn reset(game: &mut Game<'_>, swap_back: bool, preserve_scene: bool) {
+    ENGAGED.store(false, Ordering::Relaxed);
     let (swapped, prev, given) = st(|s| s.clear(preserve_scene));
     super::sunset_rotation::let_go();
     if swap_back && swapped && game.selected == given {
@@ -490,9 +492,24 @@ fn choose(m: &Module, mut list: Vec<Target>, now: u64) -> Vec<Target> {
     vec![list.swap_remove(pick)]
 }
 
-// What a hit reaches in vanilla (the entity interaction range; creative adds 2).
-fn vanilla_reach(game: &Game<'_>) -> f64 {
-    if game.creative { 5.0 } else { 3.0 }
+// Kill Aura had someone to hit on its last tick (Scaffold's Disable with Kill Aura pauses for that, not for the module
+// merely being on).
+static ENGAGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(super) fn engaged() -> bool {
+    ENGAGED.load(Ordering::Relaxed)
+}
+
+// Scaffold is on and placing (not paused for Kill Aura or Blink, and its Only on click held if set): Kill Aura leaves it
+// the look and the hand, as both would rewrite the one move packet's look.
+fn scaffold_placing(game: &Game<'_>) -> bool {
+    let clicking = game.right || game.physical_buttons.contains(&winit::event::MouseButton::Right);
+    super::sunset::with(|s| {
+        let blink = s.is_on("Blink");
+        s.module("Scaffold").filter(|m| m.on).is_some_and(|m| {
+            !blink && !m.b("Disable with Kill Aura") && (clicking || !m.b("Only on click"))
+        })
+    })
 }
 
 // Silent aura: the managed look a tick nearer the target's aim point, for the game's next move packet. SilentAura
@@ -545,6 +562,8 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     preset(game, m);
     observe_hits(game);
     st(|s| s.target = None);
+    // Who it is engaged with is decided again below; a hit still on its way keeps it.
+    let was_engaged = ENGAGED.swap(false, Ordering::Relaxed);
     let held = st(|s| (s.current, s.identity));
     let released = held.0.is_some_and(|id| held.1.is_none_or(|token| !super::sunset_antibot::current(token)) || !eligible(game, m, id));
     if released {
@@ -561,6 +580,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     // A hit on its way: nothing else may take the hand before it goes.
     if super::sunset::CRIT_STAGE.load(Ordering::Relaxed) != 0 || super::sunset::strike_waiting() {
         let _ = control::claim(HAND);
+        ENGAGED.store(was_engaged, Ordering::Relaxed);
         st(|s| s.why("a hit is on its way"));
         return;
     }
@@ -633,9 +653,15 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         let hurt = |t: &Target| game.mobs.iter().find(|x| x.id == t.id).map_or(0, |x| x.hurt_time);
         list.sort_by_key(hurt);
     }
+    ENGAGED.store(!list.is_empty(), Ordering::Relaxed);
     if list.is_empty() {
         stop(game, m);
         st(|s| s.why("no target"));
+        return;
+    }
+    if scaffold_placing(game) {
+        stop(game, m);
+        st(|s| s.why("Scaffold is placing"));
         return;
     }
     // Pick the weapon: never out of a hand eating, blocking or mining.
@@ -733,8 +759,8 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         };
         st(|s| s.look = Some(next));
     }
-    // Just found a target: its look has not gone out yet.
-    if waiting || (rotate_mode == "Always" && sent.is_none()) {
+    // Target switch delay: the new target waits.
+    if waiting {
         st(|s| s.why("turning to a new target"));
         return;
     }
@@ -781,8 +807,12 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         st(|s| s.why("the hand is busy"));
         return;
     }
-    // With Always a hit waits until the look the server has meets the target, whether Ray cast is on or not.
-    let check = m.b("Ray cast") || rotate_mode == "Always";
+    // The looks a hit can be judged by. It goes at the start of the next tick, before that tick's move packet: the
+    // server has the look the last move packet carried, and the move packet right after the hit carries the look worked
+    // out this tick (as a player's click goes with the look of the frame it was made in, sent just after it).
+    let server = super::sunset_combat_wire::sent_look(game).unwrap_or((game.yaw, game.pitch));
+    let coming = if rotate_mode == "Always" { st(|s| s.look).unwrap_or(server) } else { (game.yaw, game.pitch) };
+    let ray_cast = m.b("Ray cast");
     let mut hit = false;
     st(|s| s.reason = "the look does not meet the target");
     // A stab is one action, whoever it goes through.
@@ -793,14 +823,24 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             continue;
         }
         let on_hit = (rotate_mode == "On hit").then(|| look_at(eye, centre(t)));
-        let aim = on_hit.or(sent).unwrap_or((game.yaw, game.pitch));
-        // A hit goes only within Attack range (Silent aura's also within vanilla reach); Range only picks whom it aims at.
-        let range = if silent { attack_range.min(vanilla_reach(game)) } else { attack_range };
-        if !spear && reach(eye, t) > range {
+        // A hit goes within Attack range (Range only picks whom it aims at). With Ray cast it also needs a look that
+        // meets the target: the one the server has or the one sent right after the hit (On hit's own turn goes first).
+        // Without, the rotation aims but the hit does not wait for it. A stab goes along the look the server has.
+        if !spear && reach(eye, t) > attack_range {
             st(|s| s.why("out of attack range"));
             continue;
         }
-        if if spear { !stab_hits(game, m, eye, aim, t) } else { check && !ray_hits(game, m, eye, aim, t, range) } {
+        let meets = |look: (f32, f32)| ray_hits(game, m, eye, look, t, attack_range);
+        let fits = if spear {
+            stab_hits(game, m, eye, on_hit.unwrap_or(server), t)
+        } else if !ray_cast {
+            true
+        } else if let Some(look) = on_hit {
+            meets(look)
+        } else {
+            meets(server) || meets(coming)
+        };
+        if !fits {
             st(|s| s.why("the look does not meet the target"));
             continue;
         }

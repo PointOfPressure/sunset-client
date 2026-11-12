@@ -100,7 +100,11 @@ pub(super) fn legacy_using() -> bool { hands(|h| h.legacy.active()) }
 // before the attack packet, even if it came from Criticals, WTap, a native click or a different combat module.
 // The returned cleanup packet is delivered by the shared send hook; no game call occurs under the Hands lock.
 pub(super) fn before_outgoing(game: &Game<'_>, packet: &S) -> Option<S> {
-    if owned_block_packet() || !matches!(packet, S::Attack(_) | S::SetCarriedItem(_) | S::UseItem(_) | S::PlayerAction(_)) {
+    // A 1.8-order hit's swing goes before its attack: the release goes before the swing then.
+    let strike_swing = matches!(packet, S::Punch(_)) && STRIKE_SWING.with(std::cell::Cell::get);
+    if owned_block_packet()
+        || !(strike_swing || matches!(packet, S::Attack(_) | S::SetCarriedItem(_) | S::UseItem(_) | S::PlayerAction(_)))
+    {
         return None;
     }
     if !hands(|h| h.legacy.active()) { return None; }
@@ -108,7 +112,7 @@ pub(super) fn before_outgoing(game: &Game<'_>, packet: &S) -> Option<S> {
         hands(|h| { h.legacy.stop(); });
         return None;
     }
-    let attack = matches!(packet, S::Attack(_)) || matches!(packet, S::PlayerAction(a) if a.action == 8);
+    let attack = strike_swing || matches!(packet, S::Attack(_)) || matches!(packet, S::PlayerAction(a) if a.action == 8);
     if attack {
         let delay = module("Kill Aura").map_or(1, |m| m.n("Legacy reblock delay") as u64);
         let released = hands(|h| h.legacy.attack(game.ticks, delay));
@@ -121,6 +125,17 @@ pub(super) fn before_outgoing(game: &Game<'_>, packet: &S) -> Option<S> {
         horizon_client::motion::sunset_motion::set_block_use_scale(None);
     }
     None
+}
+
+thread_local! {
+    static STRIKE_SWING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+// The swing of a hit sent the 1.8 way (swing, then attack): AutoBlock's release goes ahead of it, as of an attack.
+pub(super) fn strike_swing(game: &mut Game<'_>) {
+    STRIKE_SWING.with(|f| f.set(true));
+    game.send(S::Punch(horizon_protocol::packets::Empty));
+    STRIKE_SWING.with(|f| f.set(false));
 }
 
 static HANDS: Mutex<Option<Hands>> = Mutex::new(None);

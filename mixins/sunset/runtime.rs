@@ -1066,9 +1066,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Rotations", &["Normal", "Backwards", "Snap", "Telly"])
             .num("Telly ticks", 3.0, 1.0, 8.0, 1.0)
             .pick("Look", &["Silent", "Visible"])
-            .num("Min rotation speed", 45.0, 5.0, 180.0, 5.0)
-            .num("Rotation speed", 75.0, 5.0, 180.0, 5.0)
-            .pick("Ray cast", &["Strict", "Normal", "Off"])
+            .num("Min rotation speed", 150.0, 5.0, 180.0, 5.0)
+            .num("Rotation speed", 180.0, 5.0, 180.0, 5.0)
+            .pick("Ray cast", &["Normal", "Strict", "Off"])
             .pick("Movement correction", &["Silent", "Strict", "Off"])
             .pick("Telly rotations", &["Default", "Backwards", "Sideways", "None"])
             .num("Start speed min", 95.0, 1.0, 180.0, 0.5)
@@ -3271,12 +3271,12 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     // Scaffold's Legit and Godbridge sneak, turn and click before the game's tick moves you.
     let bridging = get("Scaffold")
-        .filter(|m| m.on && matches!(m.p("Mode"), "Legit" | "Godbridge") && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
+        .filter(|m| m.on && matches!(m.p("Mode"), "Legit" | "Godbridge") && !scaffold_paused(m, on("Kill Aura") && super::sunset_aura::engaged(), on("Blink")))
         .filter(|_| playing && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
     super::sunset_scaffold_bridge::pre_tick(game, bridging);
     // Scaffold's Normal clicks, looks and turns the keys before the game's tick moves you (its look rides the move).
     let normal = get("Scaffold")
-        .filter(|m| m.on && m.p("Mode") == "Normal" && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
+        .filter(|m| m.on && m.p("Mode") == "Normal" && !scaffold_paused(m, on("Kill Aura") && super::sunset_aura::engaged(), on("Blink")))
         .filter(|_| playing && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
     if normal.is_some() { super::sunset_scaffold_telly::pre_tick(game, None); }
     if get("Scaffold").is_some_and(|m| m.on && m.p("Mode") == "Telly") {
@@ -3285,7 +3285,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         super::sunset_scaffold_normal::pre_tick(game, normal);
     }
     let telly = get("Scaffold")
-        .filter(|m| m.on && m.p("Mode") == "Telly" && !scaffold_paused(m, on("Kill Aura"), on("Blink")))
+        .filter(|m| m.on && m.p("Mode") == "Telly" && !scaffold_paused(m, on("Kill Aura") && super::sunset_aura::engaged(), on("Blink")))
         .filter(|_| playing && !inventory_stop && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
     if normal.is_none() { super::sunset_scaffold_telly::pre_tick(game, telly); }
     // Offhand's Silent open holds your move keys and clicks while its totem moves.
@@ -3973,9 +3973,10 @@ fn scaffold_preset(game: &Game<'_>, m: &Module) {
     }
 }
 
-// Scaffold waits while Blink is on, and while Kill Aura is if Disable with Kill Aura says so.
-fn scaffold_paused(m: &Module, kill_aura: bool, blink: bool) -> bool {
-    blink || (kill_aura && m.b("Disable with Kill Aura"))
+// Scaffold waits while Blink is on, and while Kill Aura has someone to hit if Disable with Kill Aura says so (Kill
+// Aura on with no one about leaves Scaffold be; without the setting Kill Aura waits for Scaffold instead).
+fn scaffold_paused(m: &Module, kill_aura_engaged: bool, blink: bool) -> bool {
+    blink || (kill_aura_engaged && m.b("Disable with Kill Aura"))
 }
 
 // The biggest stack in the hotbar (the one in hand if two are level), kept until it runs out: taking the biggest
@@ -6213,11 +6214,27 @@ fn strike_now(game: &mut Game<'_>, guard: AttackGuard) {
         super::sunset_melee::spear_pass(game, id);
         // An axe hit at a raised shield readies Auto Mace's Stun slam, as your own click does.
         super::sunset_auto_mace::before_strike(game);
+        // A 1.8 client swings, then hits (and a 1.8 server's anticheat may want the swing first); 1.9+ hits first.
+        let legacy = legacy_combat(game);
+        if legacy {
+            super::sunset_hands::strike_swing(game);
+        }
         game.send(S::Attack(play::Attack { id: id as i32 }));
         game.swing_arm();
-        game.send(S::Punch(Empty));
+        if !legacy {
+            game.send(S::Punch(Empty));
+        }
         game.reset_attack_strength();
     }
+}
+
+// Hits go the 1.8 way (swing first): Kill Aura's Combat version, Auto deciding by your attack speed.
+fn legacy_combat(game: &Game<'_>) -> bool {
+    let speed = game.main_hand_attack_speed();
+    with(|s| {
+        let setting = s.module("Kill Aura").map_or("Auto", |m| m.p("Combat version"));
+        super::sunset_aura_timing::version(setting, speed).0 == super::sunset_aura_timing::Version::Legacy
+    })
 }
 
 // The Criticals hop, a tick at a time. The regular position packet of a tick
@@ -10814,7 +10831,7 @@ mod movement_config_tests {
                         "Reject wait (ticks)", "Delay (ticks)", "Auto switch", "Swap back", "Block counter"][..],
              &["Rotations", "Telly ticks", "Same Y", "Ray cast", "Fast tower", "Safe walk", "Ledge sneak"][..]),
             ("Normal", &["Rotate", "Rotations", "Look", "Rotation speed", "Min rotation speed", "Ray cast", "Movement correction",
-                         "Sprint", "Same Y", "Expand", "Ledge sneak", "Late click", "Delay (ticks)", "Safe walk",
+                         "Sprint", "Same Y", "Expand", "Ledge sneak", "Delay (ticks)", "Safe walk",
                          "Max per second", "Render", "Auto switch", "Swap back"][..],
              &["Shortest sneak delay (ms)", "Activation blocks", "Telly ticks", "Tower speed", "Air place"][..]),
         ] {
@@ -10828,6 +10845,9 @@ mod movement_config_tests {
         }
         // Normal's controls that hang on others.
         let set = |m: &mut Module, name: &str, value: &str| m.settings.iter_mut().find(|s| s.name == name).unwrap().parse(value);
+        assert!(!shown(scaffold, "Late click"), "Normal's Ray cast (the default) needs no Late click");
+        set(scaffold, "Ray cast", "Strict");
+        assert!(shown(scaffold, "Late click"), "Late click backs up Strict's look");
         set(scaffold, "Rotations", "Telly");
         set(scaffold, "Ray cast", "Off");
         set(scaffold, "Look", "Visible");
