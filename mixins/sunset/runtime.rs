@@ -637,6 +637,7 @@ impl Module {
             },
             "Base Finder" => super::sunset_base_finder::visible(self, name),
             super::sunset_light_scan::GEODE | super::sunset_light_scan::LIGHT => super::sunset_light_scan::visible(self, name),
+            super::sunset_sound_detector::NAME => super::sunset_sound_detector::visible(self, name),
             "Anti Vanish" => super::sunset_vanish::visible(self, name),
             "Effects" => super::sunset_effects::visible(self, name),
             super::sunset_pvp_bot::NAME => super::sunset_pvp_bot::visible(self, name),
@@ -1354,6 +1355,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_base_finder::defaults());
     v.extend(super::sunset_hunting::defaults());
     v.extend(super::sunset_light_scan::defaults());
+    v.extend(super::sunset_sound_detector::defaults());
     v.extend(super::sunset_gear::defaults());
     v.extend(super::sunset_new_chunks::defaults());
     v.extend(super::sunset_ore_sim::defaults());
@@ -3881,6 +3883,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_world::tick(game, &mods);
     super::sunset_hunting::tick(game, &mods);
     super::sunset_light_scan::tick(game, &mods);
+    super::sunset_sound_detector::tick(game, mods.iter().find(|m| m.name == super::sunset_sound_detector::NAME && m.on));
     super::sunset_gear::tick(game, &mods);
     super::sunset_new_chunks::tick(game, &mods);
     super::sunset_ore_sim::tick(game, &mods);
@@ -7435,6 +7438,7 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     super::sunset_base_finder::tick(game, None);
     super::sunset_hunting::tick(game, &[]);
     super::sunset_light_scan::tick(game, &[]);
+    super::sunset_sound_detector::tick(game, None);
     super::sunset_gear::tick(game, &[]);
     super::sunset_new_chunks::tick(game, &[]);
     super::sunset_ore_sim::tick(game, &[]);
@@ -8549,6 +8553,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     super::sunset_ore_sim::draw(game, cam, mods, out, lw);
     super::sunset_hunting::draw(cam, mods, out, lw);
     super::sunset_light_scan::draw(cam, mods, out, lw);
+    super::sunset_sound_detector::draw(game, cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     if let Some(m) = get("Nuker") {
         let (look, argb) = (Look::of(m), m.c("Broken color"));

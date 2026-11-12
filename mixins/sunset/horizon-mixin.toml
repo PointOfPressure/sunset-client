@@ -267,6 +267,12 @@ name = "sunset_light_scan"
 source = "light_scan.rs"
 
 [[module]]
+id = "sound_detector"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sound_detector"
+source = "sound_detector.rs"
+
+[[module]]
 id = "gear"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_gear"

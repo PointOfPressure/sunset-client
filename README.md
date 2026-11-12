@@ -216,17 +216,20 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Auto Log**, **Auto Respawn**, **Death Location**, **Anti AFK**, **Anti Hunger**, **Notifier**, **Spam**.
 - **Rotations** (keep or lock your look), **No Status Effects**, **Portals** (menus in portals), **Liquid
   Interact**, **No Interact**, **Mine Through Mobs**, **Middle Click Extra**, **RF Click**.
-- **Server Scan** (the server's software, plugins and channels), **Anti Vanish**, **Fake Player** (single player),
+- **Server Scan** (the server's software, plugins and channels), **Anti Vanish** (tab list, /msg completions,
+  spectators, invisible and unlisted players), **Fake Player** (single player),
   **Panic**.
 
 </details>
 
 <details>
-<summary><b>Render</b> (30 modules)</summary>
+<summary><b>Render</b> (31 modules)</summary>
 
 - **ESP**: boxes or 2D frames with health bars and shield colours; Murderer finder for Murder Mystery.
 - **Tracers**, **Nametags** (health colours, totem pops), **Storage ESP**, **Block ESP**, **Hole ESP**,
   **Tunnel ESP**, **Void ESP**, **Light Overlay**, **Logout Spots**.
+- **Light ESP**: light the server sends underground (torches of bases dug into the deepslate), or only the light no
+  block it shows gives (a light source hidden by anti-xray).
 - **Gear ESP**: what nearby players wear and hold, and what they are known to carry, above their name; mobs
   wearing what players have lost.
 - **Xray**, **Clear Water**, **Fullbright**, **Freecam**, **Free Look**, **Zoom**.
@@ -241,11 +244,17 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 </details>
 
 <details>
-<summary><b>World</b> (25 modules)</summary>
+<summary><b>World</b> (27 modules)</summary>
 
 - **Base Finder**, **New Chunks**, **Stash Finder**, **Player Activity Detector**, **Cave Disturbance Detector**,
   **Portal Pattern Finder**, **Activated Spawner Detector**, **Spawner Alerts**: find bases and where players have
-  been.
+  been. Base Finder also reads what time near a place leaves: hidden light sources, kelp and vines grown long, bee
+  nests full of honey, and Grown amethyst (geodes ripened all round where someone stayed; on DonutSMP from the
+  palettes its DonutFolia leaves).
+- **Geode Finder**: geodes the server hides, from their palettes, their buds' light or the light edges a hiding plugin
+  leaves.
+- **Sound Detector**: what players nearby are doing (chests, doors, building, mining, crafting, eating, explosions,
+  withers spawned anywhere), with where and often who.
 - **Ore Sim**: shows ores worked out from the world seed, for servers that hide them.
 - **Nuker**, **Packet Mine**, **Liquid Filler** (also drains an enemy's water or lava), **Spawn Proofer**,
   **Build Height**, **Auto Sign**.
@@ -333,6 +342,16 @@ Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smas
 Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast
 Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback
 Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps.
+
+</details>
+
+<details>
+<summary>Behaviour references</summary>
+
+Geode Finder, Light ESP, Sound Detector, Base Finder's Grown amethyst and growth signs and Anti Vanish's spectator,
+invisible and unlisted checks follow the behaviour of [Donut Client](https://github.com/Raindots/donut-client) 3.0
+(MIT, Donut Client contributors), whose Amethyst Scanner, Light Debug and Base Finder adapt Spectre Client 26.2 by
+4ldenz (GPL-3.0-only). Sunset's code for them is written anew; no source from either is copied.
 
 </details>
 

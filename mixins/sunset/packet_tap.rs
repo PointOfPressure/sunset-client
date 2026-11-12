@@ -434,7 +434,40 @@ pub fn seen(events: &[super::Event]) {
         {
             seen.push((**p).clone());
         }
+        if let super::Event::Packet(p) = event
+            && SOUNDS_ON.load(Ordering::Relaxed)
+            && matches!(
+                **p,
+                C::Sound(_)
+                    | C::SoundEntity(_)
+                    | C::BlockEvent(_)
+                    | C::LevelEvent(_)
+                    | C::BlockDestruction(_)
+                    | C::TakeItemEntity(_)
+                    | C::Explode(_)
+            )
+        {
+            let mut sounds = SOUNDS.lock().unwrap_or_else(|e| e.into_inner());
+            if sounds.len() < 512 {
+                sounds.push((**p).clone());
+            }
+        }
     }
+}
+
+// Sound Detector's packets (sounds, block and level events, mining, pickups, explosions), kept apart from the rest so a
+// noisy place can't push those out, and only while it is on: the last 512 till its next tick.
+static SOUNDS_ON: AtomicBool = AtomicBool::new(false);
+static SOUNDS: Mutex<Vec<C>> = Mutex::new(Vec::new());
+
+pub fn sounds_on(on: bool) {
+    if SOUNDS_ON.swap(on, Ordering::Relaxed) && !on {
+        SOUNDS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+}
+
+pub fn take_sounds() -> Vec<C> {
+    std::mem::take(&mut *SOUNDS.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
 // No Interact's Anti trap: what it drops as it arrives, as Sunset's tick last told it (kept while told within 250
