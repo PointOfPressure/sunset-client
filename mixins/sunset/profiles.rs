@@ -22,7 +22,7 @@ pub(super) struct Selection {
     modified: bool,
 }
 
-fn fingerprint(text: &str) -> u64 {
+pub(super) fn fingerprint(text: &str) -> u64 {
     text.bytes().fold(0xcbf29ce484222325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3))
 }
 
@@ -264,10 +264,40 @@ fn read(path: &Path) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| "a profile is UTF-8 text".into())
 }
 
+// The config: the game's own setting writer truncates the file and then writes it, so a crash or a full disk in
+// between left an empty config (every setting gone). Sunset writes it as it writes profiles instead.
+pub(super) fn write_config(data: &Path, key: &str, text: &str) -> Result<(), String> {
+    let data = folder(data.to_path_buf())?;
+    write_limited(&data.join(key), text, 16 * MAX_BYTES)
+}
+
+// A config that holds settings: anything else (empty, cut short before its first module) is not one to load.
+pub(super) fn whole_config(text: &str) -> bool {
+    text.lines().any(|l| l.contains(".on="))
+}
+
+// Files a write left behind when the game was closed in the middle of it (`config.tmp1234`, `pvp.tmp1234`).
+pub(super) fn sweep(data: &Path) {
+    for dir in [data.to_path_buf(), data.join("profiles")] {
+        for entry in fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let stray = name.rsplit_once(".tmp").is_some_and(|(_, pid)| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()));
+            if stray && entry.file_type().is_ok_and(|t| t.is_file()) {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
 // Written beside the old file and renamed over it, so a failed write leaves the old one whole.
 fn write(path: &Path, text: &str) -> Result<(), String> {
-    if text.len() > MAX_BYTES {
-        return Err("a profile is 1 MiB at most".into());
+    write_limited(path, text, MAX_BYTES)
+}
+
+fn write_limited(path: &Path, text: &str, limit: usize) -> Result<(), String> {
+    if text.len() > limit {
+        return Err(format!("{} is {} KiB at most", path.display(), limit / 1024));
     }
     if fs::symlink_metadata(path).is_ok() {
         plain(path, false)?;
@@ -283,4 +313,28 @@ fn write(path: &Path, text: &str) -> Result<(), String> {
         let _ = fs::remove_file(&tmp);
     }
     done.map_err(|e| format!("can't write {}: {e}", path.display()))
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    // The config is written whole or not at all, a cut-short one is told apart, and a crashed write's leftovers go.
+    #[test]
+    fn config_writes_replace_whole_and_leftovers_are_swept() {
+        let dir = std::env::temp_dir().join(format!("sunset-store-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        write_config(&dir, "config", "sprint.on=true\n").unwrap();
+        write_config(&dir, "config", "sprint.on=false\nhud.on=true\n").unwrap();
+        assert_eq!(fs::read_to_string(dir.join("config")).unwrap(), "sprint.on=false\nhud.on=true\n");
+        fs::write(dir.join("config.tmp4242"), "half").unwrap();
+        fs::create_dir_all(dir.join("profiles")).unwrap();
+        fs::write(dir.join("profiles").join("pvp.tmp99"), "half").unwrap();
+        fs::write(dir.join("profiles").join("pvp.profile"), "kept").unwrap();
+        sweep(&dir);
+        assert!(!dir.join("config.tmp4242").exists() && !dir.join("profiles").join("pvp.tmp99").exists());
+        assert!(dir.join("profiles").join("pvp.profile").exists() && dir.join("config").exists());
+        assert!(whole_config("sprint.on=true") && !whole_config("") && !whole_config("friends=a"));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

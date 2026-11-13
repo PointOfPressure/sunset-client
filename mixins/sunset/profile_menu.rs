@@ -1,6 +1,6 @@
 // The list the Profiles module's row opens: the saved profiles, or (its Presets tab) the pre-made ones. A click, or
 // the arrows and Enter, loads a saved one; a preset first shows what taking it turns on and off, with Apply and Back.
-// Left and Right change tabs. The files are read when it opens and when one loads, never while drawing.
+// Save (under the saved ones) writes the settings as they are now to the profile in use. Left and Right change tabs. The files are read when it opens and when one loads, never while drawing.
 use super::{Game, sunset::{Shape, accent, panel_radius}};
 use super::sunset_presets::PRESETS;
 
@@ -21,6 +21,7 @@ pub(super) enum Tab {
 // What a click or a key in the menu asks for.
 pub(super) enum Choice {
     Load(String),
+    Save(String),
     Preview(usize),
     Apply(usize),
 }
@@ -38,6 +39,8 @@ pub(super) struct Menu {
     pub(super) error: Option<String>,
     pub(super) tab: Tab,
     pub(super) preview: Option<Preview>,
+    // The saved profile in use, which Save writes to.
+    in_use: Option<String>,
     focus: usize,
     start: usize,
 }
@@ -70,6 +73,11 @@ fn buttons(r: [f32; 4]) -> ([f32; 4], [f32; 4]) {
     ([r[0] + r[2] - 2.0 * bw - 14.0, y, bw, bh], [r[0] + r[2] - bw - 8.0, y, bw, bh])
 }
 
+// The Save button, at the foot of the Saved tab.
+fn save_button(r: [f32; 4]) -> [f32; 4] {
+    [r[0] + r[2] - 98.0, r[1] + r[3] - 19.0, 90.0, 15.0]
+}
+
 // The two tabs in the title row.
 fn tabs(r: [f32; 4]) -> [([f32; 4], Tab, &'static str); 2] {
     let y = r[1] + 4.0;
@@ -90,7 +98,8 @@ impl Menu {
     pub(super) fn new(names: Vec<String>, selected: Option<&str>, w: f32, h: f32) -> Self {
         let tab = if names.is_empty() { Tab::Presets } else { Tab::Saved };
         let focus = selected.and_then(|n| names.iter().position(|p| p == n)).unwrap_or(0);
-        let mut menu = Self { names, error: None, tab, preview: None, focus, start: 0 };
+        let in_use = selected.filter(|n| names.iter().any(|p| p == n)).map(str::to_owned);
+        let mut menu = Self { names, error: None, tab, preview: None, in_use, focus, start: 0 };
         menu.reveal(w, h);
         menu
     }
@@ -180,6 +189,9 @@ impl Menu {
         if let Some((_, tab, _)) = tabs(r).into_iter().find(|(t, _, _)| inside(*t, at)) {
             self.switch(tab, w, h);
             return None;
+        }
+        if self.tab == Tab::Saved && let Some(name) = &self.in_use && inside(save_button(r), at) {
+            return Some(Choice::Save(name.clone()));
         }
         let list = [r[0] + 4.0, r[1] + TOP, r[2] - 8.0, rows(r) as f32 * ROW];
         inside(list, at).then(|| self.choice(self.start + ((at.1 - list[1]) / ROW) as usize)).flatten()
@@ -277,7 +289,16 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
             }
         }
     }
+    let saving = menu.tab == Tab::Saved && menu.in_use.is_some();
+    if let Some(name) = menu.in_use.as_deref().filter(|_| saving) {
+        let b = save_button(r);
+        out.push(Shape::Round(b, panel_radius(), if inside(b, at) { 0xFF00_0000 | accent() } else { 0xFF3A_3A3A }));
+        let label = fit(game, &format!("Save {name}"), b[2] - 8.0);
+        let tw = game.native_text_width(&label);
+        out.push(Shape::Text(label, [b[0] + (b[2] - tw) / 2.0, b[1] + 3.0], 0xFFFFFF));
+    }
     if let Some(error) = &menu.error {
-        out.push(Shape::Text(fit(game, error, r[2] - 16.0), [r[0] + 8.0, r[1] + r[3] - 16.0], 0xFF9090));
+        let room = if saving { r[2] - 112.0 } else { r[2] - 16.0 };
+        out.push(Shape::Text(fit(game, error, room), [r[0] + 8.0, r[1] + r[3] - 16.0], 0xFF9090));
     }
 }

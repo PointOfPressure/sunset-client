@@ -160,12 +160,14 @@ impl Setting {
     fn all_loaded(&self, v: f64) -> bool {
         self.name == "Range" && v == 0.0 && matches!(self.value, Value::Num { min, max, .. } if min == 0.0 && max == ALL_RANGE_MAX)
     }
+    // As the config and profiles keep it: numbers to six places (HUD positions step by 0.001, frictions by 0.005;
+    // two places moved them a little at every save), text on one line.
     fn stored(&self) -> String {
         match &self.value {
             Value::Bool(b) => b.to_string(),
-            Value::Num { v, .. } => num(*v),
+            Value::Num { v, .. } => exact(*v),
             Value::Pick { i, of } => of[*i].to_owned(),
-            Value::Text(t) => t.clone(),
+            Value::Text(t) => one_line(t),
         }
     }
     // A click: a switch flips, a number goes up a step (down with Shift) and
@@ -210,10 +212,22 @@ impl Setting {
                 Some(p) => *i = p,
                 None => return false,
             },
-            Value::Text(v) => *v = t.to_owned(),
+            Value::Text(v) => *v = one_line(t),
         }
         true
     }
+}
+
+// A number as the config keeps it: up to six places, no trailing zeros.
+pub(super) fn exact(v: f64) -> String {
+    let s = format!("{v:.6}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" { "0".into() } else { s.into() }
+}
+
+// Text with its line breaks and other control characters made spaces: a value is one line of the config.
+fn one_line(t: &str) -> String {
+    if t.chars().any(char::is_control) { t.chars().map(|c| if c.is_control() { ' ' } else { c }).collect() } else { t.to_owned() }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1707,7 +1721,7 @@ impl State {
             }
             Self::set_field(&mut self.modules, k, v);
         }
-        let snapshot = self.module_text();
+        let snapshot = self.profile_text();
         self.selection.refresh(&snapshot);
     }
     // One "module.field=value" line of a config or a profile, on `modules`.
@@ -1792,11 +1806,13 @@ impl State {
     }
     // The modules' states, settings and keys: a profile.
     fn profile_text(&self) -> String {
-        self.module_text().trim_end().to_owned()
+        let text = self.module_text();
+        let kept: Vec<&str> = text.lines().filter(|l| l.split_once('=').is_none_or(|(k, _)| !not_in_profiles(k))).collect();
+        kept.join("\n")
     }
     // The profile in use is `name`, as the modules are now.
     fn select(&mut self, name: &str) {
-        let snapshot = self.module_text();
+        let snapshot = self.profile_text();
         self.selection.choose(name, &snapshot);
     }
     // Migration for configs saved before selection metadata existed. Only a
@@ -1824,19 +1840,21 @@ impl State {
     }
     fn load_profile(&mut self, text: &str) {
         for line in merged_modules(text).lines() {
-            if let Some((k, v)) = line.split_once('=') {
+            if let Some((k, v)) = line.split_once('=')
+                && !not_in_profiles(k)
+            {
                 Self::set_field(&mut self.modules, k, v.trim());
             }
         }
     }
     // A preset's lines as it is taken: every module it neither turns on nor leaves alone goes off first.
     fn preset_text(&self, preset: &super::sunset_presets::Preset) -> Result<String, String> {
-        let body = self.check_profile(preset.text)?;
+        let checked = self.check_profile(preset.text)?;
         let mut out = String::new();
         for m in self.modules.iter().filter(|m| m.on && !super::sunset_presets::untouched(m)) {
             out.push_str(&format!("{}.on=false\n", norm(m.name)));
         }
-        out.push_str(body);
+        out.push_str(&checked.body);
         Ok(out)
     }
     // What taking a preset does: the modules it turns on, those it turns off, and how many settings it changes.
@@ -1859,26 +1877,49 @@ impl State {
         }
         Ok(preview)
     }
-    // A profile file read whole before anything changes: its header, then lines this version knows, with values that
-    // fit them. The lines, without the header.
-    fn check_profile<'a>(&self, text: &'a str) -> Result<&'a str, String> {
+    // A profile file read whole before anything changes: its header, then its lines. Lines this version doesn't know
+    // (a module or setting since removed or renamed, a value that doesn't fit, a hand edit gone wrong) are left out
+    // and named rather than refusing the profile: the rest of it still loads. Your friends and Panic are never a
+    // profile's. The lines kept (the header off, as this version reads them) and the ones left out.
+    fn check_profile(&self, text: &str) -> Result<Checked, String> {
+        // A file saved on Windows by hand has \r\n lines and may start with a byte order mark.
+        let text = text.trim_start_matches('\u{feff}').replace("\r\n", "\n");
         let body = text.strip_prefix(super::sunset_profiles::HEADER).and_then(|t| t.strip_prefix('\n')).ok_or("not a Sunset profile")?;
-        for (n, line) in merged_modules(body).lines().enumerate().filter(|(_, l)| !l.trim().is_empty()) {
-            let bad = |what: &str| format!("line {}: {what}", n + 2);
-            let (k, v) = line.split_once('=').ok_or_else(|| bad("no ="))?;
-            let (id, field) = k.split_once('.').ok_or_else(|| bad("no module"))?;
-            let m = self.modules.iter().find(|m| norm(m.name) == id).ok_or_else(|| bad(&format!("no module called {id}")))?;
+        let mut checked = Checked::default();
+        for line in merged_modules(body).lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+            let mut skip = |why: String| checked.skipped.push(why);
+            let Some((k, v)) = line.split_once('=') else {
+                skip(format!("{} (no =)", line.chars().take(40).collect::<String>()));
+                continue;
+            };
+            if not_in_profiles(k) {
+                continue;
+            }
+            let Some((id, field)) = k.split_once('.') else {
+                skip(format!("{k} (no module)"));
+                continue;
+            };
+            let Some(m) = self.modules.iter().find(|m| norm(m.name) == id) else {
+                skip(format!("{k} (no module called {id})"));
+                continue;
+            };
             let fits = match field {
                 "on" => matches!(v.trim(), "true" | "false"),
                 "key" => !v.chars().any(char::is_control),
                 _ => (id == "offhand" && OFFHAND_RETIRED.contains(&field))
                     || m.settings.iter().find(|s| norm(s.name) == field).is_some_and(|s| s.clone().parse(v)),
             };
-            if !fits {
-                return Err(bad(&format!("{k} can't be {}", v.chars().take(40).collect::<String>())));
+            if fits {
+                checked.body.push_str(line);
+                checked.body.push('\n');
+            } else {
+                skip(format!("{k}={}", v.chars().take(40).collect::<String>()));
             }
         }
-        Ok(body)
+        if checked.body.is_empty() && !checked.skipped.is_empty() {
+            return Err(format!("nothing in it this version of Sunset knows ({} lines left out)", checked.skipped.len()));
+        }
+        Ok(checked)
     }
     pub(super) fn module(&self, name: &str) -> Option<&Module> {
         self.modules.iter().find(|m| m.name == name)
@@ -1923,6 +1964,30 @@ const DROPPED: [(&str, &str); 9] = [
 // always (Auto Totem Strict) or only when needed (None), else the new default; Refill is Auto Inventory Totem's Mode.
 // Modules renamed since go by their new names first, and a config from before Extra Modules lists the extras it uses.
 // Extra Modules is Modules (its switches the same; Pearl Catch shows unless switched off since).
+// A profile as this version reads it: the lines it loads, and those it left out (what each was).
+#[derive(Debug, Default)]
+pub(super) struct Checked {
+    body: String,
+    skipped: Vec<String>,
+}
+
+impl Checked {
+    // What was left out, for the message after a load or an import ("" when nothing was).
+    fn skipped_note(&self) -> String {
+        match self.skipped.as_slice() {
+            [] => String::new(),
+            [one] => format!(" Left out a line this version doesn't know: {one}."),
+            [first, rest @ ..] => format!(" Left out {} lines this version doesn't know, the first {first}.", rest.len() + 1),
+        }
+    }
+}
+
+// What a profile never carries: your friends (ClickGUI's Friends list: a profile from before you met someone would
+// take them off it) and Panic's switch (a profile with it on would shut Sunset down as it loads).
+fn not_in_profiles(key: &str) -> bool {
+    matches!(key.trim(), "clickgui.friends" | "panic.on")
+}
+
 fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let renamed = renamed_modules(text);
     let owned = match merge_lines(&renamed) {
@@ -2492,7 +2557,26 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
         return;
     }
     take_over_old_settings(game);
-    let text = game.native_setting(ID, "config").unwrap_or_default();
+    let data = game.native_data_dir(ID);
+    super::sunset_profiles::sweep(&data);
+    let mut text = game.native_setting(ID, "config").unwrap_or_default();
+    let mut recovered = false;
+    // A config cut short (a crash while an older version wrote it, a disk that filled up): the copy kept at the last
+    // launch that loaded a whole one. Without either, the defaults (a first launch).
+    if !super::sunset_profiles::whole_config(&text)
+        && let Some(copy) = game.native_setting(ID, "config.bak").filter(|t| super::sunset_profiles::whole_config(t))
+    {
+        notice(format!(
+            "Sunset's settings file was {}: loaded the copy kept at the last launch.",
+            if text.is_empty() { "missing or empty" } else { "cut short" }
+        ));
+        text = copy;
+        recovered = true;
+    } else if super::sunset_profiles::whole_config(&text)
+        && let Err(e) = super::sunset_profiles::write_config(&data, "config.bak", &text)
+    {
+        notice(format!("Couldn't keep a copy of the settings ({e})."));
+    }
     with(|s| {
         s.raw = text.clone();
         s.load_text(&text);
@@ -2506,12 +2590,14 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
             && let Ok(names) = store.list()
         {
             let matches: Vec<String> = names.into_iter().filter(|n| n != super::sunset_profiles::BACKUP).filter(|n| {
-                store.read(n).is_ok_and(|text| with(|s| s.check_profile(&text).is_ok_and(|body| s.matches_profile(body))))
+                store.read(n).is_ok_and(|text| with(|s| s.check_profile(&text).is_ok_and(|c| s.matches_profile(&c.body))))
             }).collect();
             if let [name] = matches.as_slice() {
                 with(|s| s.select(name));
             }
         }
+        save(game);
+    } else if recovered {
         save(game);
     }
 }
@@ -2528,11 +2614,46 @@ pub(super) fn save(game: &Game<'_>) {
     let text = with(|s| {
         release_changed_binds(s);
         sync_flags(s);
-        let snapshot = s.module_text();
+        let snapshot = s.profile_text();
         s.selection.refresh(&snapshot);
         s.save_text()
     });
-    game.native_set_setting(ID, "config", &text);
+    // Unchanged since the last write: nothing to do (a click that changed nothing, the same value dragged back).
+    let hash = super::sunset_profiles::fingerprint(&text);
+    let mut last = LAST_SAVED.lock().unwrap_or_else(|e| e.into_inner());
+    if *last == Some(hash) {
+        return;
+    }
+    match super::sunset_profiles::write_config(&game.native_data_dir(ID), "config", &text) {
+        Ok(()) => *last = Some(hash),
+        Err(e) => {
+            // A virus scanner holding the old file can stop the rename: the game's own writer still gets it saved.
+            game.native_set_setting(ID, "config", &text);
+            *last = None;
+            notice(format!("Couldn't save the settings safely ({e}); saved them the plain way."));
+        }
+    }
+}
+
+// What the config was last written as, so the same text isn't written again.
+static LAST_SAVED: Mutex<Option<u64>> = Mutex::new(None);
+
+// Lines for the chat from where there is none to write to (loading the settings): said at the next tick in a world,
+// each once.
+static NOTICES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn notice(line: String) {
+    let mut n = NOTICES.lock().unwrap_or_else(|e| e.into_inner());
+    if !n.contains(&line) && n.len() < 8 {
+        n.push(line);
+    }
+}
+
+fn say_notices(game: &mut Game<'_>) {
+    let lines = std::mem::take(&mut *NOTICES.lock().unwrap_or_else(|e| e.into_inner()));
+    for line in lines {
+        say(game, &line);
+    }
 }
 
 // ---------------------------------------------------------------- helpers
@@ -2850,6 +2971,18 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
         m.on = !m.on;
         (m.name, m.on)
     });
+    switched_effects(game, name, on);
+    save(game);
+    if announce && name != super::sunset_debug::NAME {
+        say(game, &format!("{name} {}", if on { "on" } else { "off" }));
+    }
+}
+
+// What a module going on or off does besides its switch: by hand (toggle) or as a profile or preset loads.
+fn switched_effects(game: &mut Game<'_>, name: &'static str, on: bool) {
+    if name == "Panic" {
+        return;
+    }
     super::sunset_combat_macros::toggled(game, name, on);
     super::sunset_combat_inventory::toggled(game, name);
     super::sunset_pvp_bot::toggled(name);
@@ -2890,10 +3023,6 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
             "Server Scan" => super::sunset_server_scan::disabled(),
             _ => {},
         }
-    }
-    save(game);
-    if announce && name != super::sunset_debug::NAME {
-        say(game, &format!("{name} {}", if on { "on" } else { "off" }));
     }
 }
 
@@ -3154,6 +3283,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     if game.player.is_none() {
         fall_died();
+    } else {
+        say_notices(game);
     }
     horizon_client::motion::sunset_motion::expire_attack_slow(game.ticks);
     let packets = horizon_client::net::sunset_packets::take();
@@ -7543,17 +7674,11 @@ fn profile_action(game: &mut Game<'_>, args: &[&str]) -> Result<String, String> 
             }
             "load" => {
                 let text = store.read(&name)?;
-                let body = with(|s| s.check_profile(&text).map(str::to_owned))?;
+                let checked = with(|s| s.check_profile(&text))?;
                 let before = with(|s| s.profile_text());
                 store.write(BACKUP, &format!("{HEADER}\n{before}\n"))?;
-                with(|s| {
-                    s.load_profile(&body);
-                    release_changed_binds(s);
-                    let snapshot = s.module_text();
-                    s.selection.loaded(&name, &snapshot);
-                });
-                save(game);
-                Ok(format!("Loaded profile {name}. .profile load {BACKUP} puts the settings back as they were."))
+                apply_profile(game, &checked.body, &name);
+                Ok(format!("Loaded profile {name}. .profile load {BACKUP} puts the settings back as they were.{}", checked.skipped_note()))
             }
             "delete" => {
                 store.delete(&name)?;
@@ -7564,9 +7689,9 @@ fn profile_action(game: &mut Game<'_>, args: &[&str]) -> Result<String, String> 
             "export" => Ok(format!("Profile {name} is in {}", store.export(&name)?.display())),
             "import" => {
                 let text = store.import(&name).map_err(|e| format!("{e} (put {name}.profile in {})", store.imports().display()))?;
-                with(|s| s.check_profile(&text).map(|_| ()))?;
+                let checked = with(|s| s.check_profile(&text))?;
                 store.write(&name, &text)?;
-                Ok(format!("Imported profile {name}; .profile load {name} uses it."))
+                Ok(format!("Imported profile {name}; .profile load {name} uses it.{}", checked.skipped_note()))
             }
             _ => Err("use .profile save|load|delete|export|import <name>, or .profile list".into()),
         }
@@ -7621,14 +7746,26 @@ fn take_preset(game: &mut Game<'_>, i: usize) -> Result<String, String> {
     let text = with(|s| s.preset_text(preset))?;
     let before = with(|s| s.profile_text());
     store.write(BACKUP, &format!("{HEADER}\n{before}\n"))?;
-    with(|s| {
-        s.load_profile(&text);
-        release_changed_binds(s);
-        let snapshot = s.module_text();
-        s.selection.loaded(preset.id, &snapshot);
-    });
-    save(game);
+    apply_profile(game, &text, preset.id);
     Ok(format!("Took preset {}. .profile load {BACKUP} puts the settings back as they were.", preset.title))
+}
+
+// A profile's (or preset's) checked lines taken as `name`: what turning each module on or off does by hand happens for
+// those it switches (Scaffold gives back your look, Kill Aura stops blocking and swaps back, Speed lets go of its
+// motion...), Hold binds of modules it changed end, and the settings are saved.
+fn apply_profile(game: &mut Game<'_>, body: &str, name: &str) {
+    let before: Vec<bool> = with(|s| s.modules.iter().map(|m| m.on).collect());
+    let switched = with(|s| {
+        s.load_profile(body);
+        release_changed_binds(s);
+        let snapshot = s.profile_text();
+        s.selection.loaded(name, &snapshot);
+        s.modules.iter().zip(&before).filter(|(m, was)| m.on != **was).map(|(m, _)| (m.name, m.on)).collect::<Vec<_>>()
+    });
+    for (module, on) in switched {
+        switched_effects(game, module, on);
+    }
+    save(game);
 }
 
 fn apply_movement_preset(state: &mut State, style: &str) -> bool {
@@ -10854,6 +10991,10 @@ fn profile_menu_choice(game: &mut Game<'_>, choice: super::sunset_profile_menu::
     use super::sunset_profile_menu::{self as menu, Choice};
     let preset = match choice {
         Choice::Load(name) => return load_profile_from_menu(game, &name),
+        Choice::Save(name) => {
+            let result = profile_action(game, &["save", &name]);
+            return menu_result(game, result);
+        }
         Choice::Apply(i) => {
             let result = take_preset(game, i);
             return menu_result(game, result);
@@ -11597,5 +11738,98 @@ killaura.on=true
                 assert_eq!(got, *value, "{preset}: {name}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod profile_robustness_tests {
+    use super::*;
+    use super::super::sunset_profiles::HEADER;
+
+    // Every fine-stepped number (HUD positions by 0.001, frictions by 0.005) comes back from a save exactly.
+    #[test]
+    fn fine_numbers_survive_a_save_and_a_profile() {
+        let mut state = State::new();
+        let mut set = 0;
+        for m in &mut state.modules {
+            for s in &mut m.settings {
+                if let Value::Num { v, min, max, step } = &mut s.value
+                    && *step < 0.01
+                {
+                    *v = round_to((*min + (*max - *min) * 0.37).clamp(*min, *max), *step);
+                    set += 1;
+                }
+            }
+        }
+        assert!(set > 0);
+        let mut loaded = State::new();
+        loaded.load_text(&state.save_text());
+        let mut from_profile = State::new();
+        from_profile.load_profile(&state.profile_text());
+        for (a, (b, c)) in state.modules.iter().zip(loaded.modules.iter().zip(&from_profile.modules)) {
+            for (x, (y, z)) in a.settings.iter().zip(b.settings.iter().zip(&c.settings)) {
+                assert_eq!(x.value, y.value, "{}: {} after the config", a.name, x.name);
+                assert_eq!(x.value, z.value, "{}: {} after a profile", a.name, x.name);
+            }
+        }
+    }
+
+    // A line break typed or pasted into a text setting can't split the config into a line of its own.
+    #[test]
+    fn text_values_stay_on_one_line() {
+        let mut state = State::new();
+        let i = state.find("ClickGUI").unwrap();
+        let j = state.modules[i].settings.iter().position(|s| matches!(s.value, Value::Text(_))).unwrap();
+        state.modules[i].settings[j].value = Value::Text("a\nkillaura.on=true\r\nb".into());
+        let text = state.save_text();
+        assert!(!text.lines().any(|l| l == "killaura.on=true"), "{text}");
+        let mut loaded = State::new();
+        loaded.load_text(&text);
+        assert!(!loaded.is_on("Kill Aura"));
+    }
+
+    // Friends and Panic are never a profile's: saving leaves them out, loading never touches them.
+    #[test]
+    fn profiles_keep_friends_and_panic_out() {
+        let mut state = State::new();
+        state.set_friends(vec!["Alice".into()]);
+        let text = state.profile_text();
+        assert!(!text.contains("clickgui.friends") && !text.contains("panic.on"), "{text}");
+        let hostile = format!("{HEADER}\nclickgui.friends=Mallory\npanic.on=true\nsprint.on=true\n");
+        let checked = state.check_profile(&hostile).unwrap();
+        assert!(checked.skipped.is_empty(), "{:?}", checked.skipped);
+        state.load_profile(&checked.body);
+        sync_flags(&mut state);
+        assert_eq!(state.friends, vec!["Alice".to_owned()]);
+        assert!(!state.is_on("Panic") && state.is_on("Sprint"));
+    }
+
+    // A profile from another version or edited by hand: what this version doesn't know is left out and named, the
+    // rest loads; Windows line ends and a byte order mark are fine; a file of nothing known is refused.
+    #[test]
+    fn unknown_lines_are_left_out_not_fatal() {
+        let state = State::new();
+        let text = format!("\u{feff}{HEADER}\r\nsprint.on=true\r\nnosuchmodule.on=true\r\nsprint.nosuchsetting=4\r\nkillaura.range=banana\r\n# a note\r\n");
+        let checked = state.check_profile(&text).unwrap();
+        assert_eq!(checked.body.trim(), "sprint.on=true");
+        assert_eq!(checked.skipped.len(), 3, "{:?}", checked.skipped);
+        assert!(checked.skipped_note().contains("3 lines"));
+        assert!(state.check_profile(&format!("{HEADER}\nnosuchmodule.on=true\n")).is_err());
+        assert!(state.check_profile("sprint.on=true\n").is_err());
+    }
+
+    // What a saved profile holds loads back to the same modules, keys and settings.
+    #[test]
+    fn a_saved_profile_loads_back_the_same() {
+        let mut state = State::new();
+        let i = state.find("Kill Aura").unwrap();
+        state.modules[i].on = true;
+        state.modules[i].key = Some("key.keyboard.r".into());
+        let text = format!("{HEADER}\n{}\n", state.profile_text());
+        let mut other = State::new();
+        let checked = other.check_profile(&text).unwrap();
+        assert!(checked.skipped.is_empty(), "{:?}", checked.skipped);
+        other.load_profile(&checked.body);
+        assert_eq!(other.profile_text(), state.profile_text());
     }
 }
