@@ -67,8 +67,8 @@ Options > Mods > Sunset.
 | --- | --- |
 | Left click a module | turn it on or off |
 | Right click a module | open its settings and key bind |
-| Start typing | search modules (`esp` shows everything with ESP in the name) |
-| Enter | turn the first search result on or off |
+| Start typing | search modules, best match first: names, initials (`ka`), words in any order, typos (`kilaura`), settings (`tracers` shows the modules with a Tracers setting, that setting under each) and descriptions |
+| Enter | turn the best search result on or off |
 | Esc | clear the search, then close the menu |
 | Click a slider's number | type an exact value |
 | Drag a panel's title / right click it | move the panel / fold it |
@@ -87,8 +87,11 @@ Timing...). Settings that don't apply to the mode you picked stay hidden.
 **Key binds.** Use a module's *Bind* row and press a key or mouse button (Backspace clears it). Drawing modules such
 as ESP, Tracers and Zoom also offer *Bind mode: Hold*, which keeps them on only while the key is held.
 
-**Profiles and presets.** A profile stores every module's on/off state, settings and binds under a name. Save and
-load them from the **Profiles** module (Client) or with `.profile`. Presets are ready-made profiles: PvP (crystal,
+**Profiles and presets.** A profile stores every module's on/off state, settings and binds under a name (not your
+friends, and never Panic). Save and load them from the **Profiles** module (Client; its Save button writes the
+settings to the profile in use) or with `.profile`. A profile from another version loads what this one knows and
+names the lines it left out. The settings file is written whole or not at all, and a damaged one is replaced by
+the copy kept at the last launch. Presets are ready-made profiles: PvP (crystal,
 sword and mace, mace, carts), Anarchy and base hunting, Building, Legit (Grim-safe) and Survival QoL. Each one lists
 what it turns on and off before you apply it. The HUD shows the active profile under the watermark, with
 "(modified)" once you change something.

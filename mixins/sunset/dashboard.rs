@@ -4,7 +4,7 @@
 // module turns it on or off, a right click shows its settings; the switch over its settings turns it on or off too.
 
 use super::Game;
-use super::sunset::{CATEGORIES, Hit, Shape, State, accent, aliases, control_radius, dash_menu, dash_search_clear, fit_to, norm, panel_radius, row_h, row_hh, snap_scroll, text_y, wanted_panel_w};
+use super::sunset::{CATEGORIES, Hit, Shape, State, accent, control_radius, dash_menu, dash_search_clear, fit_to, panel_radius, row_h, row_hh, snap_scroll, text_y, wanted_panel_w};
 use super::sunset_smooth as smooth;
 use horizon_client::hud::HudBatch;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -199,14 +199,19 @@ pub(super) fn prepare(s: &State) {
         let page = if menu.search.is_empty() { v.page } else { 0 };
         let hidden = super::sunset_extra_modules::hidden(&s.modules);
         if v.listed.page != page || v.listed.query != menu.search || v.listed.count != s.modules.len() || v.listed.hidden != hidden {
-            let query = norm(menu.search);
+            // Searching: what it finds, best first (search.rs); else the page's modules in order.
+            let shown = s.modules.iter().enumerate().filter(|(_, m)| (page == 0 || m.category == CATEGORIES[page - 1]) && !hidden.contains(&m.name)).map(|(i, _)| i);
+            let ids = if menu.search.trim().is_empty() {
+                shown.collect()
+            } else {
+                super::sunset_search::ranked(&super::sunset_search::results(&s.modules, menu.search), shown)
+            };
+            // A new search shows its best find.
+            if v.listed.query != menu.search && !menu.search.trim().is_empty() {
+                v.chosen = None;
+            }
             v.listed.ids.clear();
-            v.listed.ids.extend(s.modules.iter().enumerate().filter_map(|(i, m)| {
-                let shown = (page == 0 || m.category == CATEGORIES[page - 1])
-                    && !hidden.contains(&m.name)
-                    && (norm(m.name).contains(&query) || norm(aliases(m.name)).contains(&query));
-                shown.then_some(i)
-            }));
+            v.listed.ids.extend(ids);
             v.listed.page = page;
             v.listed.query.clear();
             v.listed.query.push_str(menu.search);

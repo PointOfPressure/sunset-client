@@ -9641,16 +9641,27 @@ pub(super) fn row_h(s: &State, hit: Hit) -> f32 {
 pub(super) fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
     let mut rows = Vec::new();
     let mut y = 0.0;
-    let query = norm(&s.gui.search);
     let listed = s.listed();
-    for (i, m) in s
-        .modules
-        .iter()
-        .enumerate()
-        .filter(|(_, m)| m.category == CATEGORIES[c] && listed(m) && (norm(m.name).contains(&query) || norm(aliases(m.name)).contains(&query)))
-    {
+    let in_panel = s.modules.iter().enumerate().filter(|(_, m)| m.category == CATEGORIES[c] && listed(m)).map(|(i, _)| i);
+    // Searching: what it finds, best first, each with the settings it matched shown under it while it is closed.
+    let found = (!s.gui.search.trim().is_empty()).then(|| super::sunset_search::results(&s.modules, &s.gui.search));
+    let order: Vec<usize> = match &found {
+        Some(found) => super::sunset_search::ranked(found, in_panel),
+        None => in_panel.collect(),
+    };
+    for i in order {
+        let m = &s.modules[i];
         rows.push((y, Hit::Module(i)));
         y += row_hh();
+        if !s.gui.expanded.contains(&i)
+            && let Some(hit) = found.as_ref().and_then(|f| f[i].as_ref())
+        {
+            for &j in hit.settings.iter().filter(|&&j| m.setting_visible(j)) {
+                let hit = Hit::Setting(i, j);
+                rows.push((y, hit));
+                y += row_h(s, hit);
+            }
+        }
         if s.gui.expanded.contains(&i) {
             rows.push((y, Hit::Bind(i)));
             y += row_hh();
@@ -10096,42 +10107,21 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
             if std::mem::take(&mut s.gui.select_all) {
                 s.gui.search.clear();
             }
-            if s.gui.search.chars().count() < 20 {
+            if s.gui.search.chars().count() < 32 {
                 s.gui.search.push(c);
             }
         });
     }
 }
 
-// The module a search points at: an exact name, then a name that starts with it, then one that contains it, then
-// one known by another name.
+// The module a search points at: the one it scores best (search.rs).
 fn first_match(s: &State) -> Option<usize> {
-    let query = norm(&s.gui.search);
-    if query.is_empty() {
+    if s.gui.search.trim().is_empty() {
         return None;
     }
     let listed = s.listed();
-    s.modules
-        .iter()
-        .enumerate()
-        .filter(|(_, m)| listed(m))
-        .filter_map(|(i, m)| {
-            let name = norm(m.name);
-            let rank = if name == query {
-                0
-            } else if name.starts_with(&query) {
-                1
-            } else if name.contains(&query) {
-                2
-            } else if norm(aliases(m.name)).contains(&query) {
-                3
-            } else {
-                return None;
-            };
-            Some((rank, i))
-        })
-        .min()
-        .map(|(_, i)| i)
+    let found = super::sunset_search::results(&s.modules, &s.gui.search);
+    super::sunset_search::ranked(&found, (0..s.modules.len()).filter(|&i| listed(&s.modules[i]))).first().copied()
 }
 
 // A letter, digit or space typed in the click GUI's search.
