@@ -238,8 +238,13 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Xray**, **Clear Water**, **Fullbright**, **Freecam**, **Free Look**, **Zoom**.
 - **Trajectories** (crossbows, wind charges, pearls in flight), **Breadcrumbs**, **Waypoints**, **Radar**,
   **Shulker Peek**.
-- **HUD**: module list, Target HUD, Armor HUD, coordinates, compass, item durability, food preview, spectators and creative players tagged in the tab list and more; drag
-  elements while the chat is open.
+- **HUD**: module list, Target HUD, Armor HUD, coordinates, compass, item durability, food preview, spectators and
+  creative players tagged in the tab list and more; drag elements while the chat is open. Its settings come in
+  sections (General, Watermark, Module list, Info, Combat, Armor HUD, Items and food, Other). Text case
+  (lowercase, UPPERCASE) and Text shadow apply to all of the HUD; Theme and Second color, with Static, Fade,
+  Breathe and Rainbow modes, colour the module list and the watermark. The module list slides rows in and out,
+  shows module details (gray, in brackets, after a dash, or none), can leave out Render or unbound modules, and has
+  a background, a bar, spacing and sorting of its own. The watermark's text can be your own.
 - **ClickGUI** (the menu's look), **No Render** (fog, overlays, hurt cam and more), **Effects** (jump circles,
   trails, hit sparks, weather), **Hand View** (1.9+ and 1.8 swing and sword block animations), **Crosshair**,
   **Block Overlay**, **Atmosphere** (custom skies).

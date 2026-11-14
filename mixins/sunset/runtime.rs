@@ -373,6 +373,11 @@ impl Module {
             }
             "Ghost Hand" => name != "Cut through" || !self.b("Hits"),
             "HUD" => match name {
+                "Second color" => self.p("List color mode") != "Static" || self.p("Watermark color mode") != "Static",
+                "Color speed" => [self.p("List color mode"), self.p("Watermark color mode")].iter().any(|m| *m != "Static"),
+                "Watermark text" | "Watermark profile" | "Watermark color mode" => self.b("Watermark"),
+                "Module list side" | "Modules shown" | "Module details" | "Remove spaces" | "List sort" | "List color mode"
+                | "List background" | "List bar" | "List spacing" | "List animations" => self.b("Module list"),
                 "Coordinates position" => self.b("Coordinates"),
                 "Coordinates x" | "Coordinates y" => self.b("Coordinates") && self.p("Coordinates position") == "Custom",
                 "Compass position" => self.b("Compass"),
@@ -954,12 +959,35 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Toggle messages", true)
             .bool("Module messages", true)
             .text("Friends", ""),
+        // Sections as Rise's Interface groups them; setting names are what configs and profiles keep, so a move
+        // between sections changes nothing saved.
         Module::new("HUD", Render, "On-screen info.")
             .on()
+            .group("General")
             .pick("Font", &horizon_client::font::sunset_fontdata::LABELS)
+            .pick("Text case", &["Normal", "lowercase", "UPPERCASE"])
+            .bool("Text shadow", true)
+            .pick("Theme color", super::sunset_hud_list::COLOURS)
+            .pick("Second color", super::sunset_hud_list::SECOND_COLOURS)
+            .num("Color speed", 1.0, 0.1, 5.0, 0.1)
+            .group("Watermark")
             .bool("Watermark", true)
+            .text("Watermark text", "")
+            .bool("Watermark profile", true)
+            .pick("Watermark color mode", &["Static", "Fade", "Breathe", "Rainbow"])
+            .group("Module list")
             .bool("Module list", true)
             .pick("Module list side", &["Right", "Left"])
+            .pick("Modules shown", &["All", "Exclude render", "Only bound"])
+            .pick("Module details", &["Gray", "Brackets", "Dash", "Off"])
+            .bool("Remove spaces", false)
+            .pick("List sort", &["Width", "Name"])
+            .pick("List color mode", &["Fade", "Static", "Breathe", "Rainbow"])
+            .num("List background", 0.35, 0.0, 1.0, 0.05)
+            .pick("List bar", &["Outer", "Inner", "Off"])
+            .num("List spacing", 11.0, 9.0, 16.0, 1.0)
+            .bool("List animations", true)
+            .group("Info")
             .bool("Coordinates", true)
             .pick("Coordinates position", &["Top left", "Custom"])
             .num("Coordinates x", 0.0, 0.0, 1.0, 0.001)
@@ -967,13 +995,16 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("FPS", true)
             .bool("Speed", false)
             .bool("Facing", true)
+            .bool("Totems", false)
             .bool("Compass", false)
             .pick("Compass position", &["Top", "Custom"])
             .num("Compass x", 0.5, 0.0, 1.0, 0.001)
             .num("Compass y", 0.0, 0.0, 1.0, 0.001)
-            .bool("Totems", false)
+            .group("Combat")
             .bool("Target HUD", true)
             .pick("Target HUD mode", &["Full", "Potato"])
+            .bool("Shield status", false)
+            .group("Armor HUD")
             .bool("Armor HUD", false)
             .pick("Armor HUD style", &["Boxes", "Compact"])
             .pick("Armor HUD layout", &["Horizontal", "Vertical"])
@@ -983,14 +1014,15 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Armor HUD position", &["Hotbar", "Top left", "Top right", "Bottom left", "Bottom right", "Custom"])
             .num("Armor HUD x", 0.5, 0.0, 1.0, 0.001)
             .num("Armor HUD y", 0.5, 0.0, 1.0, 0.001)
+            .group("Items and food")
             .bool("Item durability", false)
             .pick("Durability format", &["Number", "Percent"])
             .bool("Durability tooltip", true)
             .bool("Food preview", false)
             .bool("Saturation", false)
             .bool("Exhaustion", false)
+            .group("Other")
             .bool("Mount HUD", false)
-            .bool("Shield status", false)
             // The tab list tags spectators [S] (aqua) and creative players [C] (gold) after their names (tab_modes.rs).
             .bool("Tab game modes", true),
         Module::new("Fullbright", Render, "Lights everything up."),
@@ -8370,7 +8402,9 @@ fn round_fill(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f32; 4], rad
 }
 
 // Draws a list of shapes (and empties it, keeping its room).
-fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32) {
+// Text whose colour has an alpha byte (other than 0 and FF: opaque) is drawn that see-through: the module list's
+// rows fading in and out. `shadow`: text with its drop shadow (the HUD's Text shadow; the menu always has it).
+fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32, shadow: bool) {
     let mut clip = 0;
     for s in shapes.drain(..) {
         match s {
@@ -8384,10 +8418,17 @@ fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32
                 let [a, r, g, b] = argb.to_be_bytes();
                 batch.fill_quad(&game.gui.atlas, corners, horizon_client::hud::rgba(r, g, b, a));
             }
-            Shape::Text(t, at, rgb) => game.native_text(batch, &t, at, rgb, true),
+            Shape::Text(t, at, argb) => match argb >> 24 {
+                0 | 0xFF => game.native_text(batch, &t, at, argb & 0x00FF_FFFF, shadow),
+                a => {
+                    let [_, r, g, b] = argb.to_be_bytes();
+                    let colour = horizon_client::hud::rgba(r, g, b, a as u8);
+                    batch.text_styled(&game.gui.atlas, &Text::literal(&*t), at[0], at[1], colour, shadow);
+                }
+            },
             Shape::Head(t, at, rgb) => {
                 horizon_client::font::sunset_font::BOLD.store(true, Ordering::Relaxed);
-                game.native_text(batch, &t, at, rgb, true);
+                game.native_text(batch, &t, at, rgb, shadow);
                 horizon_client::font::sunset_font::BOLD.store(false, Ordering::Relaxed);
             }
             Shape::Item(item, [x, y], size) => {
@@ -8405,7 +8446,7 @@ fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32
             }
             Shape::Scaled(t, [x, y], rgb, size) => {
                 let start = batch.vertices.len();
-                game.native_text(batch, &t, [x, y], rgb, true);
+                game.native_text(batch, &t, [x, y], rgb, shadow);
                 batch.scale_since(start, x, y, size, size);
             }
             Shape::Face(skin, [x, y], size) => {
@@ -8464,31 +8505,31 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         super::sunset_murder::draw(game, esp, w, &mut shapes);
     }
     super::sunset_hud_bars::clear_placed();
+    // Where the HUD module's own shapes start: its Text case is for them, not for the menu, the chat or plugins.
+    let hud_from = shapes.len();
     if let Some(hud) = get("HUD") {
         if hud.b("Target HUD") && get("Kill Aura").is_some() {
             super::sunset_aura::draw_target(game, w, h, hud.p("Target HUD mode") == "Potato", &mut shapes);
         }
+        let cased = |text: &str| super::sunset_hud_list::cased(hud, text);
         if hud.b("Watermark") && game.native_corner_shown(Corner::TopLeft) {
-            let text = format!("{NAME} {VERSION}");
+            let custom = hud.t("Watermark text").trim();
+            let text = cased(&if custom.is_empty() { format!("{NAME} {VERSION}") } else { custom.to_owned() });
             let tw = game.native_text_width(&text);
             let (x, y) = corners.place(Corner::TopLeft, tw + 4.0, 12.0);
-            shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], accent()));
-            let text = with(|s| format!("Profile: {}", s.selection.label()));
-            let (x, y) = corners.place(Corner::TopLeft, game.native_text_width(&text) + 4.0, 12.0);
-            shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], 0xE4E4E4));
+            let colour = super::sunset_hud_list::colour_at(hud, hud.p("Watermark color mode"), y);
+            shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], colour));
+            if hud.b("Watermark profile") {
+                let text = cased(&with(|s| format!("Profile: {}", s.selection.label())));
+                let (x, y) = corners.place(Corner::TopLeft, game.native_text_width(&text) + 4.0, 12.0);
+                shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], 0xE4E4E4));
+            }
         }
         let left = hud.p("Module list side") == "Left";
         let corner = if left { Corner::TopLeft } else { Corner::TopRight };
         if hud.b("Module list") && game.native_corner_shown(corner) {
-            let mut list = MODULE_LIST.lock().unwrap_or_else(|e| e.into_inner());
-            list.update(game, &mods);
-            if let Some(&(_, widest)) = list.lines.first() {
-                let (x, y) = corners.place(corner, widest + 4.0, list.lines.len() as f32 * 10.0 + 2.0);
-                for (row, (text, tw)) in list.lines.iter().enumerate() {
-                    let tx = if left { x + 2.0 } else { x + widest + 2.0 - tw };
-                    shapes.push(Shape::Text(text.clone(), [tx, y + 2.0 + row as f32 * 10.0], 0xFFFFFF));
-                }
-            }
+            let mut place = |width: f32, height: f32| corners.place(corner, width, height);
+            super::sunset_hud_list::draw(game, hud, &mods, !left, &mut place, &mut shapes);
         }
         let coordinates = game.native_player().filter(|_| hud.b("Coordinates")).map(|p| {
             let (x, y, z) = (p.x.floor(), p.y.floor(), p.z.floor());
@@ -8541,6 +8582,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             if !info.is_empty() {
                 lines.push(info.join("  "));
             }
+            let lines: Vec<String> = lines.iter().map(|l| cased(l)).collect();
             let width = lines.iter().map(|l| game.native_text_width(l)).fold(0.0, f32::max);
             if !lines.is_empty() {
                 let (bx, by) = corners.place(Corner::TopLeft, width + 4.0, lines.len() as f32 * 10.0 + 2.0);
@@ -8556,7 +8598,9 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         if game.native_playing() {
             super::sunset_hud_bars::draw(game, hud, w, h, corners, &mut shapes);
         }
+        super::sunset_hud_list::case_shapes(hud, &mut shapes[hud_from..]);
     }
+    let shadow = get("HUD").is_none_or(|hud| hud.b("Text shadow"));
     chat_layout(game, &mut shapes);
 
     // Scaffold's block counter: a number and a word above the hotbar, clear of the hearts, armour and item name.
@@ -8608,48 +8652,13 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         batch.scale = real * scale;
     }
     super::sunset_api::hud(game, &mut shapes, [w, h], lw);
-    paint(game, batch, &mut shapes, 1.0 / batch.scale);
+    paint(game, batch, &mut shapes, 1.0 / batch.scale, shadow);
     *SHAPES.lock().unwrap_or_else(|e| e.into_inner()) = shapes;
     // The GUI goes on top of the rest of the frame too: gui_top paints it last.
     *GUI_TOP.lock().unwrap_or_else(|e| e.into_inner()) = (gui_shapes, scale);
     batch.scale = real;
     if !with(|s| s.gui.open) {
         super::sunset_radar::draw(game, batch, corners, &mods);
-    }
-}
-
-// The HUD's module list, widest line first: made again (text, measuring, order) only when the modules on, their info
-// or the font changed.
-struct ModuleList {
-    key: Vec<(&'static str, Option<String>)>,
-    font: u32,
-    lines: Vec<(String, f32)>,
-}
-
-static MODULE_LIST: Mutex<ModuleList> = Mutex::new(ModuleList { key: Vec::new(), font: u32::MAX, lines: Vec::new() });
-
-impl ModuleList {
-    fn update(&mut self, game: &Game<'_>, mods: &[Module]) {
-        let font = u32::from(horizon_client::font::sunset_font::STYLE.load(Ordering::Relaxed));
-        let on = mods.iter().filter(|m| m.on && m.name != "HUD");
-        if font == self.font && self.key.len() == on.clone().count() && on.zip(&self.key).all(|(m, (n, i))| m.name == *n && m.info() == *i) {
-            return;
-        }
-        self.font = font;
-        self.key = mods.iter().filter(|m| m.on && m.name != "HUD").map(|m| (m.name, m.info())).collect();
-        self.lines = self
-            .key
-            .iter()
-            .map(|(name, info)| {
-                let text = match info {
-                    Some(i) => format!("{name} [{i}]"),
-                    None => (*name).to_owned(),
-                };
-                let tw = game.native_text_width(&text);
-                (text, tw)
-            })
-            .collect();
-        self.lines.sort_by(|a, b| b.1.total_cmp(&a.1));
     }
 }
 
@@ -8666,7 +8675,7 @@ pub(super) fn gui_top(game: &Game<'_>, batch: &mut HudBatch) {
     let real = batch.scale;
     batch.scale = real * scale;
     let start = batch.vertices.len();
-    paint(game, batch, &mut shapes, 1.0 / batch.scale);
+    paint(game, batch, &mut shapes, 1.0 / batch.scale, true);
     // Opening, it rises into place as it fades in.
     if let Some((opacity, below)) = super::sunset_dashboard::open_motion() {
         for v in &mut batch.vertices[start..] {
