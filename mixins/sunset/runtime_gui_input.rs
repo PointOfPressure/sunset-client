@@ -200,6 +200,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
     };
     let mut toggled = None;
     let mut changed = false;
+    let mut reset = None;
     with(|s| {
         // The editor is in front of everything: its buttons, nothing else; a picker's rows too.
         if let Some(Editor { module, setting, draft: Ok(draft), list: Some(picker), .. }) = &s.gui.editor {
@@ -243,9 +244,13 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             s.gui.editor = None;
         }
         let Some((r, hit)) = found else {
-            // Off the menu: a HUD element can be taken and moved.
-            if let Some((name, dx, dy)) = super::sunset_hud_bars::grab(game.cursor).filter(|_| !right) {
-                s.gui.drag = Some(Drag::Hud(name, dx, dy));
+            // Off the menu: a HUD element can be taken and moved, or (the right button) sent back to its place.
+            if let Some((name, dx, dy)) = super::sunset_hud_bars::grab(game.cursor) {
+                if right {
+                    reset = Some(name);
+                } else {
+                    s.gui.drag = Some(Drag::Hud(name, dx, dy));
+                }
             }
             return;
         };
@@ -347,14 +352,28 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
     } else if changed {
         save(game);
     }
+    if let Some(name) = reset {
+        reset_place(game, name);
+    }
+}
+
+// The module that keeps an element's place: the one with its `name position` setting (HUD's own, Scaffold's block
+// counter, ESP's Murderer list, Auto Spear's damage indicator, Radar).
+fn place_owner<'a>(modules: &'a mut [Module], name: &str) -> Option<&'a mut Module> {
+    let key = format!("{name} position");
+    modules.iter_mut().find(|m| m.settings.iter().any(|st| st.name == key))
 }
 
 // A HUD element dragged by the pointer, taken `dx`, `dy` into it: its position Custom, at where its corner is now.
+// Horizon's widgets are moved in Horizon's layout instead (drag_widgets).
 fn move_hud(s: &mut State, game: &Game<'_>, name: &str, dx: f32, dy: f32) {
+    if super::sunset_hud_bars::widget(name).is_some() {
+        return;
+    }
     let Some((fx, fy)) = super::sunset_hud_bars::drag_to(name, game.cursor.0 - dx, game.cursor.1 - dy) else {
         return;
     };
-    let Some(m) = s.modules.iter_mut().find(|m| m.name == "HUD") else {
+    let Some(m) = place_owner(&mut s.modules, name) else {
         return;
     };
     for st in &mut m.settings {
@@ -379,9 +398,46 @@ fn move_hud(s: &mut State, game: &Game<'_>, name: &str, dx: f32, dy: f32) {
     }
 }
 
-// HUD's layout editor with the chat open: Coordinates, Compass and the Armor HUD are framed, and a press on one drags
-// it until the button comes up (saved then). The chat closed, a drag still going ends there.
-pub(super) fn chat_layout(game: &Game<'_>, out: &mut Vec<Shape>) {
+// A right click on a HUD element: back to its Default place (its position as the module's defaults have it), or a
+// Horizon widget back to its corner.
+pub(super) fn reset_place(game: &mut Game<'_>, name: &str) {
+    if let Some(id) = super::sunset_hud_bars::widget(name) {
+        super::sunset_hud_bars::reset_widget(game, id);
+        super::sunset_hud_bars::settle_widgets(game);
+        return;
+    }
+    let key = format!("{name} position");
+    let fresh = defaults();
+    let reset = with(|s| {
+        let m = place_owner(&mut s.modules, name)?;
+        let default = fresh.iter().find(|f| f.name == m.name)?.settings.iter().find(|st| st.name == key)?.value.clone();
+        let st = m.settings.iter_mut().find(|st| st.name == key)?;
+        (st.value != default).then(|| st.value = default)
+    });
+    if reset.is_some() {
+        save(game);
+    }
+}
+
+// Each frame: a Horizon widget being dragged follows the pointer in Horizon's layout; once none is, Horizon's options
+// are saved if one moved.
+pub(super) fn drag_widgets(game: &mut Game<'_>) {
+    let dragging = with(|s| match s.gui.drag {
+        Some(Drag::Hud(name, dx, dy)) => super::sunset_hud_bars::widget(name).map(|id| (id, dx, dy)),
+        _ => None,
+    });
+    match dragging {
+        Some((id, dx, dy)) => {
+            let (x, y) = (game.cursor.0 - dx, game.cursor.1 - dy);
+            super::sunset_hud_bars::move_widget(game, id, x, y);
+        }
+        None => super::sunset_hud_bars::settle_widgets(game),
+    }
+}
+
+// HUD's layout editor with the chat open: every element is framed, a press on one drags it until the button comes up
+// (saved then), and a right click sends it back to its place. The chat closed, a drag still going ends there.
+pub(super) fn chat_layout(game: &mut Game<'_>, out: &mut Vec<Shape>) {
     use super::sunset_hud_bars::ChatDrag;
     let dragging = with(|s| match s.gui.drag {
         Some(Drag::Hud(name, dx, dy)) => Some((name, dx, dy)),
@@ -401,6 +457,7 @@ pub(super) fn chat_layout(game: &Game<'_>, out: &mut Vec<Shape>) {
             with(|s| s.gui.drag = None);
             save(game);
         }
+        Some(ChatDrag::Reset(name)) => reset_place(game, name),
         None => {
             if let Some((name, dx, dy)) = dragging {
                 with(|s| move_hud(s, game, name, dx, dy));

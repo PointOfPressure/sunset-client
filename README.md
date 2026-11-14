@@ -240,8 +240,10 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   **Shulker Peek**.
 - **HUD**: module list, Target HUD, Armor HUD, coordinates, compass, item durability, food preview, spectators and
   creative players tagged in the tab list and more. Open the chat (or the menu) and every element is framed and drags
-  to anywhere on screen — the watermark, the module list, the Target HUD, coordinates, the compass, the Armor HUD and
-  the server's own scoreboard — each with a Default/Custom position of its own. Its settings come in
+  to anywhere on screen — the watermark, the module list, the Target HUD, coordinates, FPS, speed, facing and totems
+  (each on its own), the compass, the Armor HUD, Shield status, the server's own scoreboard, Scaffold's block counter,
+  the Murderer list, Auto Spear's damage indicator, Radar and Horizon's own HUD widgets (FPS, CPS, ping and the rest) —
+  each with a Default/Custom position of its own; a right click sends one back to its Default place. Its settings come in
   sections (General, Watermark, Module list, Info, Combat, Armor HUD, Items and food, Other). Text case
   (lowercase, UPPERCASE) and Text shadow apply to all of the HUD; Theme and Second color, with Static, Fade,
   Breathe and Rainbow modes, colour the module list and the watermark. The module list slides rows in and out,

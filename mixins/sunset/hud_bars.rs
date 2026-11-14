@@ -1,7 +1,9 @@
 // HUD's Armor HUD (with Compact style), Compass, Shield status, Item durability (on every damageable item's icon, and remaining/max in its tooltip), the
 // settings that change the game's own bars (Mount HUD, Food preview, Saturation, Exhaustion; drawn by hunger_flags.rs),
-// and the layout editor: with the chat (or the menu) open, every framed element moves by dragging — Coordinates,
-// Compass, the Armor HUD, the watermark, the module list, the Target HUD and the server's scoreboard.
+// and the layout editor: with the chat (or the menu) open, every framed element moves by dragging and goes back to its
+// Default place with a right click — Coordinates, FPS, Speed, Facing and Totems (each on its own), the Compass, the
+// Armor HUD, Shield status, the watermark, the module list, the Target HUD, the server's scoreboard, other modules'
+// (Scaffold's block counter, the Murderer list, Auto Spear's damage indicator, Radar) and Horizon's own HUD widgets.
 use super::Game;
 use super::sunset::{Module, Shape};
 use horizon_client::extras::Corner;
@@ -9,6 +11,7 @@ use horizon_client::extras_hud::Corners;
 use horizon_client::hud::HudBatch;
 use horizon_client::hud_layout::sunset_hunger::{BARS, Bars};
 use horizon_client::items::ItemStack;
+use horizon_client::pvp_hud::{self, WidgetId};
 use std::cell::Cell;
 use std::ops::ControlFlow;
 use std::sync::Mutex;
@@ -19,8 +22,11 @@ static DURABILITY: AtomicU8 = AtomicU8::new(0);
 static TOOLTIP: AtomicBool = AtomicBool::new(false);
 // The elements that can be dragged: where each was drawn last frame (x, y, width, height) and the screen it was on.
 static PLACED: Mutex<Vec<Placed>> = Mutex::new(Vec::new());
-// The left button was down last frame, while the chat was open.
+// The left button was down last frame, while the chat was open; and the right one.
 static CHAT_PRESSED: AtomicBool = AtomicBool::new(false);
+static CHAT_RIGHT: AtomicBool = AtomicBool::new(false);
+// One of Horizon's widgets was moved and Horizon's options are not saved yet (they are when the drag ends).
+static WIDGET_MOVED: AtomicBool = AtomicBool::new(false);
 
 type Placed = (&'static str, [f32; 4], [f32; 2]);
 // Shield status: the tick the shield's cooldown was first seen, and how much of it was left then.
@@ -192,12 +198,17 @@ pub(super) enum ChatDrag {
     Start(&'static str, f32, f32),
     // The button came up.
     End,
+    // A right click on an element: back to its Default place.
+    Reset(&'static str),
 }
 
-// The layout editor with the chat open: a frame round each element, a press on one takes it, its release ends the drag.
+// The layout editor with the chat open: a frame round each element, a press on one takes it, its release ends the drag;
+// a right click on one sends it back.
 pub(super) fn chat_layout(game: &Game<'_>, dragging: Option<&'static str>, out: &mut Vec<Shape>) -> Option<ChatDrag> {
     let down = game.physical_buttons.contains(&winit::event::MouseButton::Left);
     let was = CHAT_PRESSED.swap(down, Relaxed);
+    let right = game.physical_buttons.contains(&winit::event::MouseButton::Right);
+    let right_was = CHAT_RIGHT.swap(right, Relaxed);
     for (name, [x, y, w, h], _) in placed(|p| p.clone()) {
         let colour = if dragging == Some(name) { 0xC0FF_FFFF } else { 0x60FF_FFFF };
         out.push(Shape::Fill([x - 1.0, y - 1.0, w + 2.0, 1.0], colour));
@@ -208,6 +219,7 @@ pub(super) fn chat_layout(game: &Game<'_>, dragging: Option<&'static str>, out: 
     match dragging {
         Some(_) if !down => Some(ChatDrag::End),
         None if down && !was => grab(game.cursor).map(|(name, dx, dy)| ChatDrag::Start(name, dx, dy)),
+        None if right && !right_was => grab(game.cursor).map(|(name, _, _)| ChatDrag::Reset(name)),
         _ => None,
     }
 }
@@ -215,6 +227,65 @@ pub(super) fn chat_layout(game: &Game<'_>, dragging: Option<&'static str>, out: 
 // The chat closed: the next press there starts afresh.
 pub(super) fn chat_closed() {
     CHAT_PRESSED.store(false, Relaxed);
+    CHAT_RIGHT.store(false, Relaxed);
+}
+
+// Horizon's own HUD widgets (its PvP & HUD page: FPS, CPS, ping and the rest), framed and dragged with Sunset's: each by
+// a name of its own here. Their places are Horizon's (its layout, in its options), as its own HUD editor sets them.
+const WIDGETS: [(WidgetId, &str); 13] = [
+    (WidgetId::Armour, "Horizon armor"),
+    (WidgetId::Effects, "Horizon effects"),
+    (WidgetId::Held, "Horizon held item"),
+    (WidgetId::Ping, "Horizon ping"),
+    (WidgetId::Coords, "Horizon coordinates"),
+    (WidgetId::Server, "Horizon server"),
+    (WidgetId::Combo, "Horizon combo"),
+    (WidgetId::Fps, "Horizon FPS"),
+    (WidgetId::Cps, "Horizon CPS"),
+    (WidgetId::Keys, "Horizon keystrokes"),
+    (WidgetId::Clock, "Horizon clock"),
+    (WidgetId::Reach, "Horizon reach"),
+    (WidgetId::Speed, "Horizon speed"),
+];
+
+// The Horizon widget an element's name is, if it is one.
+pub(super) fn widget(name: &str) -> Option<WidgetId> {
+    WIDGETS.iter().find(|w| w.1 == name).map(|w| w.0)
+}
+
+// The widgets Horizon drew this frame (before the mods' HUD), as elements the editor can take.
+pub(super) fn place_widgets(game: &Game<'_>, w: f32, h: f32) {
+    for &(id, rect) in &game.pvp.boxes {
+        if let Some(&(_, name)) = WIDGETS.iter().find(|x| x.0 == id) {
+            place(name, rect, w, h);
+        }
+    }
+}
+
+// A widget dragged with its top left corner to (x, y): its place in Horizon's layout, kept on screen.
+pub(super) fn move_widget(game: &mut Game<'_>, id: WidgetId, x: f32, y: f32) {
+    let Some(&(_, [_, _, bw, bh])) = game.pvp.boxes.iter().find(|b| b.0 == id) else {
+        return;
+    };
+    let at = pvp_hud::to_fractions((x, y), (bw, bh), game.gui_size());
+    let place = game.settings.extras.pvp.layout.get_mut(id);
+    if place.at != Some(at) {
+        place.at = Some(at);
+        WIDGET_MOVED.store(true, Relaxed);
+    }
+}
+
+// A right click on a widget: back to its corner, at the size it has.
+pub(super) fn reset_widget(game: &mut Game<'_>, id: WidgetId) {
+    game.settings.extras.pvp.layout.get_mut(id).at = None;
+    WIDGET_MOVED.store(true, Relaxed);
+}
+
+// No widget is being dragged: Horizon's options are saved if one moved (as its own editor does on the release).
+pub(super) fn settle_widgets(game: &Game<'_>) {
+    if WIDGET_MOVED.swap(false, Relaxed) {
+        game.settings.save(&Game::options_path());
+    }
 }
 
 // Move a shape by (dx, dy): every coordinate it carries, so a whole element drawn into a run of shapes slides together
@@ -241,8 +312,9 @@ pub(super) fn shift(shape: &mut Shape, dx: f32, dy: f32) {
     }
 }
 
-// The rectangle a run of shapes covers, from the rectangles it drew (text sits inside those). None if it drew no box.
-pub(super) fn bounds(shapes: &[Shape]) -> Option<[f32; 4]> {
+// The rectangle a run of shapes covers: what it filled, its icons and its text (a line 9 high, as the font draws it).
+// None if it drew nothing with a place.
+pub(super) fn bounds(game: &Game<'_>, shapes: &[Shape]) -> Option<[f32; 4]> {
     let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
     for s in shapes {
         let r = match s {
@@ -257,7 +329,10 @@ pub(super) fn bounds(shapes: &[Shape]) -> Option<[f32; 4]> {
                 }
                 continue;
             }
-            _ => continue,
+            Shape::Text(t, p, _) | Shape::Head(t, p, _) => [p[0], p[1], game.native_text_width(t), 9.0],
+            Shape::Scaled(t, p, _, k) => [p[0], p[1], game.native_text_width(t) * k, 9.0 * k],
+            Shape::Item(_, p, size) | Shape::Face(_, p, size) => [p[0], p[1], *size, *size],
+            Shape::ClipStart | Shape::ClipEnd(_) => continue,
         };
         x0 = x0.min(r[0]);
         y0 = y0.min(r[1]);
@@ -267,16 +342,16 @@ pub(super) fn bounds(shapes: &[Shape]) -> Option<[f32; 4]> {
     (x0 <= x1).then(|| [x0, y0, x1 - x0, y1 - y0])
 }
 
-// An independent HUD element (not stacked in a corner) just drawn into `shapes[from..]`: registered so the chat editor
-// can grab it, and, when its position is Custom, slid to where it was dragged. Its box is the rectangles it drew.
-pub(super) fn editable(shapes: &mut Vec<Shape>, from: usize, hud: &Module, name: &'static str, w: f32, h: f32) {
-    let Some([bx, by, bw, bh]) = bounds(&shapes[from..]) else {
+// An independent element (not stacked in a corner) just drawn into `shapes[from..]` by module `m`: registered so the
+// editor can grab it, and, when its `name position` is Custom, slid to where it was dragged. Its box is what it drew.
+pub(super) fn editable(game: &Game<'_>, shapes: &mut Vec<Shape>, from: usize, m: &Module, name: &'static str, w: f32, h: f32) {
+    let Some([bx, by, bw, bh]) = bounds(game, &shapes[from..]) else {
         return;
     };
-    let (x, y) = if hud.p(&format!("{name} position")) == "Custom" {
+    let (x, y) = if m.p(&format!("{name} position")) == "Custom" {
         (
-            (hud.n(&format!("{name} x")) as f32 * w).clamp(0.0, (w - bw).max(0.0)),
-            (hud.n(&format!("{name} y")) as f32 * h).clamp(0.0, (h - bh).max(0.0)),
+            (m.n(&format!("{name} x")) as f32 * w).clamp(0.0, (w - bw).max(0.0)),
+            (m.n(&format!("{name} y")) as f32 * h).clamp(0.0, (h - bh).max(0.0)),
         )
     } else {
         (bx, by)
@@ -354,7 +429,9 @@ pub(super) fn draw(game: &Game<'_>, hud: &Module, w: f32, h: f32, corners: &mut 
         compass(game, hud, w, h, out);
     }
     if hud.b("Shield status") {
+        let from = out.len();
         shield(game, w, h, out);
+        editable(game, out, from, hud, "Shield status", w, h);
     } else {
         *SHIELD_SINCE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }

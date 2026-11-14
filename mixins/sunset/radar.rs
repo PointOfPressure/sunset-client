@@ -20,7 +20,11 @@ pub(super) fn defaults() -> Vec<Module> {
         .num("Range", 64.0, 8.0, 256.0, 1.0)
         .num("Size", 100.0, 80.0, 320.0, 1.0)
         .bool("Rotate", true)
-        .colour("Players color", "White"),
+        .colour("Players color", "White")
+        // Its place: the bottom left corner, or where the chat or the menu dragged it.
+        .pick("Radar position", &["Default", "Custom"])
+        .num("Radar x", 0.0, 0.0, 1.0, 0.001)
+        .num("Radar y", 1.0, 0.0, 1.0, 0.001),
     ]
 }
 
@@ -90,29 +94,41 @@ fn disc(game: &Game<'_>, batch: &mut HudBatch, center: [f32; 2], radius: f32, co
     );
 }
 
-pub(super) fn draw(
-    game: &Game<'_>,
-    batch: &mut HudBatch,
-    corners: &mut Corners,
-    modules: &[Module],
-) {
+// Where the radar goes this frame (x, y, its size), worked out before the HUD's layout editor looks so it can be taken:
+// in the bottom left corner, or where it was dragged (Custom). None: not drawn this frame.
+pub(super) fn place(game: &Game<'_>, w: f32, h: f32, corners: &mut Corners, modules: &[Module]) -> Option<[f32; 3]> {
+    let module = modules.iter().find(|m| m.name == "Radar" && m.on)?;
+    game.player.as_ref()?;
+    let custom = module.p("Radar position") == "Custom";
+    if game.title.is_some() || (!custom && !game.native_corner_shown(Corner::BottomLeft)) {
+        return None;
+    }
+    let size = fitted_size(module.n("Size") as f32, w, h)?;
+    let (x, y) = if custom {
+        (
+            (module.n("Radar x") as f32 * w).clamp(0.0, (w - size).max(0.0)),
+            (module.n("Radar y") as f32 * h).clamp(0.0, (h - size - 12.0).max(0.0)),
+        )
+    } else {
+        let (x, y) = corners.place(Corner::BottomLeft, size, size + 12.0);
+        // A preceding native panel can consume the corner. Avoid drawing offscreen.
+        if x < 0.0 || y < 2.0 || x + size > w {
+            return None;
+        }
+        (x, y)
+    };
+    super::sunset_hud_bars::place("Radar", [x, y, size, size + 12.0], w, h);
+    Some([x, y, size])
+}
+
+// The radar at the place `place` gave it.
+pub(super) fn draw(game: &Game<'_>, batch: &mut HudBatch, [x, y, size]: [f32; 3], modules: &[Module]) {
     let Some(module) = modules.iter().find(|m| m.name == "Radar" && m.on) else {
         return;
     };
     let Some(player) = game.player.as_ref() else {
         return;
     };
-    if game.title.is_some() || !game.native_corner_shown(Corner::BottomLeft) {
-        return;
-    }
-    let Some(size) = fitted_size(module.n("Size") as f32, batch.width, batch.height) else {
-        return;
-    };
-    let (x, y) = corners.place(Corner::BottomLeft, size, size + 12.0);
-    // A preceding native panel can consume the corner. Avoid drawing offscreen.
-    if x < 0.0 || y < 2.0 || x + size > batch.width {
-        return;
-    }
     let center = [x + size / 2.0, y + size / 2.0];
     let radius = size / 2.0 - 1.0;
     let reach = radius - 17.0;

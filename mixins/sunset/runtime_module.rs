@@ -298,6 +298,15 @@ impl Module {
                 "Compass position" => self.b("Compass"),
                 "Compass x" | "Compass y" => self.b("Compass") && self.p("Compass position") == "Custom",
                 "Armor HUD x" | "Armor HUD y" => self.b("Armor HUD") && self.p("Armor HUD position") == "Custom",
+                // The Info line's parts and Shield status, each placed on its own once dragged.
+                "FPS position" | "Speed position" | "Facing position" | "Totems position" | "Shield status position" => {
+                    self.b(name.trim_end_matches(" position"))
+                }
+                "FPS x" | "FPS y" => self.b("FPS") && self.p("FPS position") == "Custom",
+                "Speed x" | "Speed y" => self.b("Speed") && self.p("Speed position") == "Custom",
+                "Facing x" | "Facing y" => self.b("Facing") && self.p("Facing position") == "Custom",
+                "Totems x" | "Totems y" => self.b("Totems") && self.p("Totems position") == "Custom",
+                "Shield status x" | "Shield status y" => self.b("Shield status") && self.p("Shield status position") == "Custom",
                 _ if name.starts_with("Armor HUD ") => self.b("Armor HUD"),
                 "Durability format" | "Durability tooltip" => self.b("Item durability"),
                 "Target HUD mode" => self.b("Target HUD"),
@@ -581,6 +590,10 @@ impl Module {
                 "Health side" | "Health text" => self.p("Mode") == "2D box" && self.b("Health bar"),
                 "Shield mode" | "Shield color" | "Broken shield color" => self.b("Shield colors"),
                 "Murderer items" | "Murderer color" | "Murderer list" | "Callout" => self.b("Murderer finder"),
+                "Murderer list position" => self.b("Murderer finder") && self.b("Murderer list"),
+                "Murderer list x" | "Murderer list y" => {
+                    self.b("Murderer finder") && self.b("Murderer list") && self.p("Murderer list position") == "Custom"
+                }
                 "Callout delay (ms)" | "Callout messages" => self.b("Murderer finder") && self.b("Callout"),
                 _ => true,
             },
@@ -604,8 +617,11 @@ impl Module {
                 "Shortest delay" | "Longest delay" => self.b("Swap back") && self.p("Back after") == "A delay",
                 _ => true,
             },
+            "Radar" => !matches!(name, "Radar x" | "Radar y") || self.p("Radar position") == "Custom",
             "Auto Spear" => match name {
                 "Reach chance (%)" | "Reach weapons" | "Works with Trigger Bot" => self.b("Extended reach"),
+                "Damage indicator position" => self.b("Damage indicator"),
+                "Damage indicator x" | "Damage indicator y" => self.b("Damage indicator") && self.p("Damage indicator position") == "Custom",
                 "Back after" => self.b("Swap back"),
                 "Shortest delay" | "Longest delay" => self.b("Swap back") && self.p("Back after") == "A delay",
                 _ => true,
@@ -621,6 +637,8 @@ impl Module {
                 _ => true,
             },
             "Scaffold" => match name {
+                "Block counter position" => self.b("Block counter"),
+                "Block counter x" | "Block counter y" => self.b("Block counter") && self.p("Block counter position") == "Custom",
                 "Telly rotations" | "Start speed min" | "Start speed max" | "Normal speed min" | "Normal speed max"
                 | "Keep Y" | "Tower" | "Telly sprint" | "Ground motion (%)" | "Air motion (%)" | "Speed motion (%)"
                 | "Multi place" | "Swing" | "Reject wait (ticks)" => self.p("Mode") == "Telly",

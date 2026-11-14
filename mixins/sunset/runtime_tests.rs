@@ -798,3 +798,38 @@ mod profile_robustness_tests {
         assert_eq!(other.profile_text(), state.profile_text());
     }
 }
+
+#[cfg(test)]
+mod hud_place_tests {
+    use super::super::sunset::*;
+
+    // The layout editor drags an element by name: `X position` (with Custom), `X x` and `X y` in one module only, which
+    // is where a drag writes and a right click resets.
+    #[test]
+    fn every_draggable_element_has_one_place() {
+        let modules = defaults();
+        let mut owners: Vec<(&str, &str)> = Vec::new();
+        for m in &modules {
+            for st in &m.settings {
+                let Some(base) = st.name.strip_suffix(" position") else { continue };
+                let Value::Pick { of, .. } = &st.value else { continue };
+                if !of.contains(&"Custom") {
+                    continue;
+                }
+                for axis in ["x", "y"] {
+                    let name = format!("{base} {axis}");
+                    assert!(
+                        m.settings.iter().any(|s| s.name == name && matches!(s.value, Value::Num { .. })),
+                        "{}: {name}",
+                        m.name
+                    );
+                }
+                assert!(owners.iter().all(|o| o.0 != base), "{base} is placed by {} and {}", m.name, owners.iter().find(|o| o.0 == base).unwrap().1);
+                owners.push((base, m.name));
+            }
+        }
+        for element in ["FPS", "Speed", "Facing", "Totems", "Shield status", "Block counter", "Murderer list", "Damage indicator", "Radar"] {
+            assert!(owners.iter().any(|o| o.0 == element), "{element} has no place");
+        }
+    }
+}
