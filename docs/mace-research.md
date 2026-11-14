@@ -52,7 +52,7 @@ Auto Weapon is defined in `mixins/sunset/melee.rs`, in `defaults()`. Its Mace se
 | Min fall | 3.0 (1.5–30) | Fall needed before a smash |
 | Smash mobs | off | Smash mobs too, not just players |
 
-Under Axe on shields there is also **Stun slam**. Visibility rules are in `runtime.rs`, in the `"Auto Weapon"` arm,
+Under Axe on shields there is also **Stun slam**. Visibility rules are in `runtime_module.rs`, in the `"Auto Weapon"` arm,
 around line 388.
 
 | Piece | Where | What it does |
@@ -62,8 +62,8 @@ around line 388.
 | `strike_weapon` | melee.rs | Kill Aura and Trigger Bot hits swap here. Swap back is same tick or after Shortest–Longest delay ticks (`back_delay`). |
 | `smash_intent` → `Smash::plan` | melee.rs, `mace_policy.rs` | Smash assist decides each tick: Idle, BreakShield (axe first), Hold or Smash. It holds while the target is still hittable next tick (`continuation` in `mace_native.rs`), while the target has hurt time, while you sprint, or until the charge is about to pass 0.9. One smash per fall. |
 | `stun_slam` | melee.rs | Falling onto a raised shield: axe hit, then mace hit in the same tick. |
-| Criticals "Mace smash" | runtime.rs, `crit_plan` | Meteor's packet spoof: a hop of 1.501 blocks + Additional height. |
-| No Fall "Pause on mace" | runtime.rs, `NO_FALL_MACE` | Meteor's pause-on-mace. |
+| Criticals "Mace smash" | runtime_combat.rs, `crit_plan` | Meteor's packet spoof: a hop of 1.501 blocks + Additional height. |
+| No Fall "Pause on mace" | runtime_state.rs, `NO_FALL_MACE` | Meteor's pause-on-mace. |
 
 **Known gap:** `Smash.spent` is cleared only on the ground (`observe_grounded` and `plan`). After a Wind Burst
 bounce, Smash assist therefore refuses the second smash, so Wind Burst chains don't work with Smash assist. Kill
@@ -351,7 +351,7 @@ None of these claims came with proof:
 
 ### What Sunset does today, measured against Grim
 
-1. **Kill Aura / Trigger Bot path: clean.** `queue_strike` / `strike_weapon_back` in runtime.rs put the weapon in hand
+1. **Kill Aura / Trigger Bot path: clean.** `queue_strike` / `strike_weapon_back` in runtime_combat.rs put the weapon in hand
    a tick before the hit and back the tick after it ("Same tick" means no extra delay). That avoids PacketOrderE and
    Post.
 2. **Stun slam would trip PacketOrderE** when experimental checks are on. It sends axe hit → slot change → mace hit in

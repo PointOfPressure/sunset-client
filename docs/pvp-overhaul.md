@@ -33,7 +33,7 @@ Phase 1: 0 Rust warnings, 203 tests passed. Phase 3: 209. Phase 2: 211, 0 warnin
 - `aura.rs`: settings grouped Combat, Targeting, Rotations, Timing, Advanced (the list has no headers; the order
   groups them). Max targets stays before Attack mode (old-config migration depends on it). `.auradebug` shows the
   combat model and why.
-- Visibility (`runtime.rs`, `setting_visible`): Legacy hides Attack timing, Cooldown and Hit delay; Modern hides
+- Visibility (`runtime_module.rs`, `setting_visible`): Legacy hides Attack timing, Cooldown and Hit delay; Modern hides
   the CPS settings; Auto shows both. Aim speed shows only for Silent aura.
 - Audit, no change needed: Snap already turns instantly, so no separate Instant mode was added. Losing a target
   clears the look, the aim and queued turns, and Silent aura turns back at its own speed. Target identity survives
@@ -65,7 +65,7 @@ Not done: tested on a real 1.8 or NCP server (not available here); Steps are slo
 
 Auto Armor is no longer a module of its own. Its settings are Inventory Manager's (Auto Armor, Auto Armor key,
 Armor delay, Armor mode, Armor key, Avoid cursed, Switch key, Switch sets), and the Auto Armor setting is its own
-on/off: it runs whether Inventory Manager is on or off (runtime.rs looks Inventory Manager up regardless of `on`),
+on/off: it runs whether Inventory Manager is on or off (runtime_tick.rs looks Inventory Manager up regardless of `on`),
 and Inventory Manager runs without it. Old configs migrate (`auto_armor_line`: `autoarmor.on` to the Auto Armor
 setting, its key to Auto Armor key, which toggles it), and the presets turn it on the new way. The two share one
 step at a time: Auto Armor waits while an Inventory Manager step settles, and Inventory Manager waits a round trip

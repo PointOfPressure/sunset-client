@@ -147,6 +147,132 @@ name = "sunset"
 source = "runtime.rs"
 
 [[module]]
+id = "runtime_module"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_module"
+source = "runtime_module.rs"
+
+[[module]]
+id = "runtime_catalog"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_catalog"
+source = "runtime_catalog.rs"
+
+[[module]]
+id = "runtime_state"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_state"
+source = "runtime_state.rs"
+
+[[module]]
+id = "runtime_config"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_config"
+source = "runtime_config.rs"
+
+[[module]]
+id = "runtime_helpers"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_helpers"
+source = "runtime_helpers.rs"
+
+[[module]]
+id = "runtime_menu"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_menu"
+source = "runtime_menu.rs"
+
+[[module]]
+id = "runtime_tick"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_tick"
+source = "runtime_tick.rs"
+
+[[module]]
+id = "runtime_player"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_player"
+source = "runtime_player.rs"
+
+[[module]]
+id = "runtime_inventory"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_inventory"
+source = "runtime_inventory.rs"
+
+[[module]]
+id = "runtime_world"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_world"
+source = "runtime_world.rs"
+
+[[module]]
+id = "runtime_movement"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_movement"
+source = "runtime_movement.rs"
+
+[[module]]
+id = "runtime_combat"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_combat"
+source = "runtime_combat.rs"
+
+[[module]]
+id = "runtime_packets"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_packets"
+source = "runtime_packets.rs"
+
+[[module]]
+id = "runtime_commands"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_commands"
+source = "runtime_commands.rs"
+
+[[module]]
+id = "runtime_draw"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_draw"
+source = "runtime_draw.rs"
+
+[[module]]
+id = "runtime_hud"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_hud"
+source = "runtime_hud.rs"
+
+[[module]]
+id = "runtime_overlays"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_overlays"
+source = "runtime_overlays.rs"
+
+[[module]]
+id = "runtime_gui"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_gui"
+source = "runtime_gui.rs"
+
+[[module]]
+id = "runtime_gui_input"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_gui_input"
+source = "runtime_gui_input.rs"
+
+[[module]]
+id = "runtime_gui_draw"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_gui_draw"
+source = "runtime_gui_draw.rs"
+
+[[module]]
+id = "runtime_tests"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_tests"
+source = "runtime_tests.rs"
+
+[[module]]
 id = "movement"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_movement"

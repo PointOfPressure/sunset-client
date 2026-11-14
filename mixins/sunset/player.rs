@@ -76,7 +76,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Sort inventory", false)
             // Part stacks of the same item (and components) go together; what does not fit goes back.
             .bool("Merge stacks", true)
-            // Auto Armor (runtime.rs auto_armor): wears your best armour. On by its own switch, whether or not
+            // Auto Armor (runtime_inventory.rs auto_armor): wears your best armour. On by its own switch, whether or not
             // Inventory Manager is on; both share one step at a time.
             .bool("Auto Armor", false)
             .text("Auto Armor key", "None")
@@ -1448,7 +1448,7 @@ fn spam(game: &mut Game<'_>, m: &Module) {
 }
 
 // ---- No Fall (Sunset's NoFall): Air place and Place, and Clutch's place under Packet and No ground. Those two change
-// the move packets (runtime.rs's outgoing). This runs after the tick, once its move packet has gone, when the player uses
+// the move packets (runtime_packets.rs's outgoing). This runs after the tick, once its move packet has gone, when the player uses
 // the item.
 
 // Place's choices: the item, and whether it is a bucket (used, and picked back up) or a block (placed).
