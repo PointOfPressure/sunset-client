@@ -894,6 +894,16 @@ target = "horizon_client::game::scoreboard::Game<'_>::draw_scoreboard"
 helper = "scoreboard_hook.rs"
 bindings = []
 
+# The scoreboard sidebar's draws, measured for the layout editor and moved to where it was dragged.
+[[injection]]
+id = "scoreboard_offset"
+kind = "RETURN"
+target = "horizon_client_render::hud_overlays::sidebar"
+helper = "scoreboard_offset_hook.rs"
+bindings = [
+  { name = "value", ty = "Vec<GuiDraw>", value = "$value" },
+]
+
 [[injection]]
 id = "arm-pose"
 kind = "HEAD"
@@ -2268,6 +2278,14 @@ id = "mod_rows"
 file = "crates/horizon-client-render/src/options_ui.rs"
 name = "sunset_mod_rows"
 source = "mod_rows.rs"
+visibility = "pub"
+
+# The scoreboard sidebar's place and move offset, shared with the HUD's chat layout editor in the game crate.
+[[module]]
+id = "scoreboard_pos"
+file = "crates/horizon-client-render/src/hud_overlays.rs"
+name = "sunset_scoreboard_pos"
+source = "scoreboard_pos.rs"
 visibility = "pub"
 
 # The launcher's list leaves Sunset out while this game process runs after Panic.

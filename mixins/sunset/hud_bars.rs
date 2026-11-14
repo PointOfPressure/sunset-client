@@ -1,6 +1,7 @@
 // HUD's Armor HUD (with Compact style), Compass, Shield status, Item durability (on every damageable item's icon, and remaining/max in its tooltip), the
 // settings that change the game's own bars (Mount HUD, Food preview, Saturation, Exhaustion; drawn by hunger_flags.rs),
-// and the layout editor: with the chat (or the menu) open, Coordinates, Compass and the Armor HUD move by dragging.
+// and the layout editor: with the chat (or the menu) open, every framed element moves by dragging — Coordinates,
+// Compass, the Armor HUD, the watermark, the module list, the Target HUD and the server's scoreboard.
 use super::Game;
 use super::sunset::{Module, Shape};
 use horizon_client::extras::Corner;
@@ -214,6 +215,79 @@ pub(super) fn chat_layout(game: &Game<'_>, dragging: Option<&'static str>, out: 
 // The chat closed: the next press there starts afresh.
 pub(super) fn chat_closed() {
     CHAT_PRESSED.store(false, Relaxed);
+}
+
+// Move a shape by (dx, dy): every coordinate it carries, so a whole element drawn into a run of shapes slides together
+// (its clip rectangle and all).
+pub(super) fn shift(shape: &mut Shape, dx: f32, dy: f32) {
+    match shape {
+        Shape::Fill(r, _) | Shape::Round(r, _, _) | Shape::Corners(r, _, _, _) | Shape::Sprite(_, r, _)
+        | Shape::Squircle(r, _, _) | Shape::ClipEnd(r) => {
+            r[0] += dx;
+            r[1] += dy;
+        }
+        Shape::Quad(corners, _) => {
+            for c in corners {
+                c[0] += dx;
+                c[1] += dy;
+            }
+        }
+        Shape::Text(_, p, _) | Shape::Head(_, p, _) | Shape::Item(_, p, _) | Shape::Scaled(_, p, _, _)
+        | Shape::Face(_, p, _) => {
+            p[0] += dx;
+            p[1] += dy;
+        }
+        Shape::ClipStart => {}
+    }
+}
+
+// The rectangle a run of shapes covers, from the rectangles it drew (text sits inside those). None if it drew no box.
+pub(super) fn bounds(shapes: &[Shape]) -> Option<[f32; 4]> {
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for s in shapes {
+        let r = match s {
+            Shape::Fill(r, _) | Shape::Round(r, _, _) | Shape::Corners(r, _, _, _) | Shape::Sprite(_, r, _)
+            | Shape::Squircle(r, _, _) => *r,
+            Shape::Quad(c, _) => {
+                for p in c {
+                    x0 = x0.min(p[0]);
+                    y0 = y0.min(p[1]);
+                    x1 = x1.max(p[0]);
+                    y1 = y1.max(p[1]);
+                }
+                continue;
+            }
+            _ => continue,
+        };
+        x0 = x0.min(r[0]);
+        y0 = y0.min(r[1]);
+        x1 = x1.max(r[0] + r[2]);
+        y1 = y1.max(r[1] + r[3]);
+    }
+    (x0 <= x1).then(|| [x0, y0, x1 - x0, y1 - y0])
+}
+
+// An independent HUD element (not stacked in a corner) just drawn into `shapes[from..]`: registered so the chat editor
+// can grab it, and, when its position is Custom, slid to where it was dragged. Its box is the rectangles it drew.
+pub(super) fn editable(shapes: &mut Vec<Shape>, from: usize, hud: &Module, name: &'static str, w: f32, h: f32) {
+    let Some([bx, by, bw, bh]) = bounds(&shapes[from..]) else {
+        return;
+    };
+    let (x, y) = if hud.p(&format!("{name} position")) == "Custom" {
+        (
+            (hud.n(&format!("{name} x")) as f32 * w).clamp(0.0, (w - bw).max(0.0)),
+            (hud.n(&format!("{name} y")) as f32 * h).clamp(0.0, (h - bh).max(0.0)),
+        )
+    } else {
+        (bx, by)
+    };
+    let (dx, dy) = (x - bx, y - by);
+    if dx != 0.0 || dy != 0.0 {
+        for s in &mut shapes[from..] {
+            shift(s, dx, dy);
+        }
+    }
+    place(name, [x, y, bw, bh], w, h);
 }
 
 // Compass: 140 degrees of headings round the one you face, a tick every 5 degrees, a label

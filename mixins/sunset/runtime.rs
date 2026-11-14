@@ -375,9 +375,14 @@ impl Module {
             "HUD" => match name {
                 "Second color" => self.p("List color mode") != "Static" || self.p("Watermark color mode") != "Static",
                 "Color speed" => [self.p("List color mode"), self.p("Watermark color mode")].iter().any(|m| *m != "Static"),
-                "Watermark text" | "Watermark profile" | "Watermark color mode" => self.b("Watermark"),
+                "Watermark text" | "Watermark profile" | "Watermark color mode" | "Watermark position" => self.b("Watermark"),
+                "Watermark x" | "Watermark y" => self.b("Watermark") && self.p("Watermark position") == "Custom",
                 "Module list side" | "Modules shown" | "Module details" | "Remove spaces" | "List sort" | "List color mode"
-                | "List background" | "List bar" | "List spacing" | "List animations" => self.b("Module list"),
+                | "List background" | "List bar" | "List spacing" | "List animations" | "Module list position" => self.b("Module list"),
+                "Module list x" | "Module list y" => self.b("Module list") && self.p("Module list position") == "Custom",
+                "Target HUD position" => self.b("Target HUD"),
+                "Target HUD x" | "Target HUD y" => self.b("Target HUD") && self.p("Target HUD position") == "Custom",
+                "Scoreboard x" | "Scoreboard y" => self.p("Scoreboard position") == "Custom",
                 "Coordinates position" => self.b("Coordinates"),
                 "Coordinates x" | "Coordinates y" => self.b("Coordinates") && self.p("Coordinates position") == "Custom",
                 "Compass position" => self.b("Compass"),
@@ -975,6 +980,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Watermark text", "")
             .bool("Watermark profile", true)
             .pick("Watermark color mode", &["Static", "Fade", "Breathe", "Rainbow"])
+            .pick("Watermark position", &["Default", "Custom"])
+            .num("Watermark x", 0.0, 0.0, 1.0, 0.001)
+            .num("Watermark y", 0.0, 0.0, 1.0, 0.001)
             .group("Module list")
             .bool("Module list", true)
             .pick("Module list side", &["Right", "Left"])
@@ -987,6 +995,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("List bar", &["Outer", "Inner", "Off"])
             .num("List spacing", 11.0, 9.0, 16.0, 1.0)
             .bool("List animations", true)
+            .pick("Module list position", &["Default", "Custom"])
+            .num("Module list x", 0.8, 0.0, 1.0, 0.001)
+            .num("Module list y", 0.0, 0.0, 1.0, 0.001)
             .group("Info")
             .bool("Coordinates", true)
             .pick("Coordinates position", &["Top left", "Custom"])
@@ -1003,6 +1014,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .group("Combat")
             .bool("Target HUD", true)
             .pick("Target HUD mode", &["Full", "Potato"])
+            .pick("Target HUD position", &["Default", "Custom"])
+            .num("Target HUD x", 0.5, 0.0, 1.0, 0.001)
+            .num("Target HUD y", 0.5, 0.0, 1.0, 0.001)
             .bool("Shield status", false)
             .group("Armor HUD")
             .bool("Armor HUD", false)
@@ -1024,7 +1038,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .group("Other")
             .bool("Mount HUD", false)
             // The tab list tags spectators [S] (aqua) and creative players [C] (gold) after their names (tab_modes.rs).
-            .bool("Tab game modes", true),
+            .bool("Tab game modes", true)
+            // The server's scoreboard sidebar isn't drawn by the HUD, but the chat editor can move it (scoreboard_pos.rs).
+            .pick("Scoreboard position", &["Default", "Custom"])
+            .num("Scoreboard x", 1.0, 0.0, 1.0, 0.001)
+            .num("Scoreboard y", 0.4, 0.0, 1.0, 0.001),
         Module::new("Fullbright", Render, "Lights everything up."),
         Module::new("ESP", Render, "Boxes around entities.")
             .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
@@ -8509,27 +8527,66 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     let hud_from = shapes.len();
     if let Some(hud) = get("HUD") {
         if hud.b("Target HUD") && get("Kill Aura").is_some() {
+            // Target HUD sits by the crosshair; drawn there, then slid to its dragged place if moved.
+            let from = shapes.len();
             super::sunset_aura::draw_target(game, w, h, hud.p("Target HUD mode") == "Potato", &mut shapes);
+            super::sunset_hud_bars::editable(&mut shapes, from, hud, "Target HUD", w, h);
         }
         let cased = |text: &str| super::sunset_hud_list::cased(hud, text);
-        if hud.b("Watermark") && game.native_corner_shown(Corner::TopLeft) {
-            let custom = hud.t("Watermark text").trim();
-            let text = cased(&if custom.is_empty() { format!("{NAME} {VERSION}") } else { custom.to_owned() });
-            let tw = game.native_text_width(&text);
-            let (x, y) = corners.place(Corner::TopLeft, tw + 4.0, 12.0);
+        if hud.b("Watermark") && (hud.p("Watermark position") == "Custom" || game.native_corner_shown(Corner::TopLeft)) {
+            let own = hud.t("Watermark text").trim();
+            let line = cased(&if own.is_empty() { format!("{NAME} {VERSION}") } else { own.to_owned() });
+            let profile = hud.b("Watermark profile").then(|| cased(&with(|s| format!("Profile: {}", s.selection.label()))));
+            let bw = game.native_text_width(&line).max(profile.as_ref().map_or(0.0, |t| game.native_text_width(t))) + 4.0;
+            let bh = if profile.is_some() { 24.0 } else { 12.0 };
+            let (x, y) = if hud.p("Watermark position") == "Custom" {
+                (
+                    (hud.n("Watermark x") as f32 * w).clamp(0.0, (w - bw).max(0.0)),
+                    (hud.n("Watermark y") as f32 * h).clamp(0.0, (h - bh).max(0.0)),
+                )
+            } else {
+                corners.place(Corner::TopLeft, bw, bh)
+            };
             let colour = super::sunset_hud_list::colour_at(hud, hud.p("Watermark color mode"), y);
-            shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], colour));
-            if hud.b("Watermark profile") {
-                let text = cased(&with(|s| format!("Profile: {}", s.selection.label())));
-                let (x, y) = corners.place(Corner::TopLeft, game.native_text_width(&text) + 4.0, 12.0);
-                shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], 0xE4E4E4));
+            shapes.push(Shape::Text(line, [x + 2.0, y + 2.0], colour));
+            if let Some(text) = profile {
+                shapes.push(Shape::Text(text, [x + 2.0, y + 14.0], 0xE4E4E4));
             }
+            super::sunset_hud_bars::place("Watermark", [x, y, bw, bh], w, h);
         }
         let left = hud.p("Module list side") == "Left";
         let corner = if left { Corner::TopLeft } else { Corner::TopRight };
-        if hud.b("Module list") && game.native_corner_shown(corner) {
-            let mut place = |width: f32, height: f32| corners.place(corner, width, height);
+        let moved = hud.p("Module list position") == "Custom";
+        if hud.b("Module list") && (moved || game.native_corner_shown(corner)) {
+            let mut place = |width: f32, height: f32| {
+                let (x, y) = if moved {
+                    (
+                        (hud.n("Module list x") as f32 * w).clamp(0.0, (w - width).max(0.0)),
+                        (hud.n("Module list y") as f32 * h).clamp(0.0, (h - height).max(0.0)),
+                    )
+                } else {
+                    corners.place(corner, width, height)
+                };
+                super::sunset_hud_bars::place("Module list", [x, y, width, height], w, h);
+                (x, y)
+            };
             super::sunset_hud_list::draw(game, hud, &mods, !left, &mut place, &mut shapes);
+        }
+        // The server's scoreboard sidebar (drawn by the game itself): framed here so the chat editor can grab it, and
+        // moved by the offset the render crate applies to its draws, to where it was dragged.
+        if let Some((nx, ny, nw, nh)) = horizon_client_render::hud_overlays::sunset_scoreboard_pos::natural() {
+            let (nxf, nyf, nwf, nhf) = (nx as f32, ny as f32, nw as f32, nh as f32);
+            let custom = hud.p("Scoreboard position") == "Custom";
+            let (x, y) = if custom {
+                (
+                    (hud.n("Scoreboard x") as f32 * w).clamp(0.0, (w - nwf).max(0.0)),
+                    (hud.n("Scoreboard y") as f32 * h).clamp(0.0, (h - nhf).max(0.0)),
+                )
+            } else {
+                (nxf, nyf)
+            };
+            super::sunset_hud_bars::place("Scoreboard", [x, y, nwf, nhf], w, h);
+            horizon_client_render::hud_overlays::sunset_scoreboard_pos::set_offset(custom, (x - nxf) as i32, (y - nyf) as i32);
         }
         let coordinates = game.native_player().filter(|_| hud.b("Coordinates")).map(|p| {
             let (x, y, z) = (p.x.floor(), p.y.floor(), p.z.floor());
