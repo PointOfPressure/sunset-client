@@ -11,8 +11,9 @@ Working notes for the Kill Aura, Scaffold and Inventory Manager overhaul, so a l
 | 2. Scaffold | Done for this round (committed): Sprint Vanilla, presets |
 | 4. Integration checks | Reviewed in code; in-game checks pending |
 
-Since 1.1.0 (31e7e45) Sunset pins Horizon nightly fdc87ae with horizon-mixins e59da90: the check is
-`bash /c/Users/jnowa/hzbuild/check-n.sh <name>` (same steps on that pin). Before that, the last good check was
+Since 1.2.0 (0ff1dbd) Sunset pins Horizon nightly 9f42064 with horizon-mixins e59da90: the check is
+`bash /c/Users/jnowa/hzbuild/check-9f.sh <name>` (same steps on that pin). From 1.1.0 (31e7e45) it was nightly fdc87ae
+and `check-n.sh`. Before that, the last good check was
 `bash /c/Users/jnowa/hzbuild/check.sh <name>` (applies the checkout's mixins to Horizon 66f3981 in a
 fresh stage, `cargo check -p horizon-client --bin horizon-client`, then `cargo test -p horizon-client --lib -- sunset`).
 Phase 1: 0 Rust warnings, 203 tests passed. Phase 3: 209. Phase 2: 211, 0 warnings. The script lives outside the repository; its steps are those of the
@@ -187,6 +188,16 @@ Horizon's) predicts the knockback exactly and sees the self damage's climb from 
 - Dashboard (b3854bb): header (name, search), categories, module list under a title and count (no switches; enabled
   names in the accent), the chosen module's band (name, description, switch) and its sections as cards.
 - Built and launched on the instance (native-fdc87ae); in-game checks of the new layout pending.
+
+## 1.2.0: nightly 9f42064
+
+- Retarget (0ff1dbd): hooks follow code moved to `extras::sorting` (Client Sort), `extras::reconnect`,
+  `world_session`, `frame_geometry`, `inventory_input` and `player_spawn`. Two hooks the move would have left silent:
+  Antibot's despawns (RemoveEntities goes through `remote::removal::remove_entities` as one batch) and Mount HUD's
+  riding XP bar (`experience_colored`). Collision contexts name their entity kind; Ore Sim reads a biome's features
+  as a bitset. Horizon now syncs the camera's look before a spear jab; Sunset's own jabs keep their look.
+- Every hooked function's body and call sites were compared between fdc87ae and 9f42064; the rest changed nothing
+  a hook relies on.
 
 ## Next steps
 
