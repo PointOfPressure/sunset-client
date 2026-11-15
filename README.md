@@ -14,8 +14,8 @@ Sunset adds over 160 modules to Horizon: combat, movement, building, ESP and wor
 a click menu or chat commands, can be bound to a key, and can be saved as a profile. It is written in Rust and
 compiled into the game, so it runs as part of Horizon rather than on top of it.
 
-> **Current version: Sunset 1.1.0, for Horizon Nightly 2026-11-08 (`fdc87ae`)**, listed in the launcher as
-> `nightly-2026-11-08-fdc87ae`. You don't have to install that Nightly yourself: the installer builds Sunset on it.
+> **Current version: Sunset 1.2.1, for Horizon Nightly 2026-11-13 (`9f42064`)**, listed in the launcher as
+> `nightly-2026-11-13-9f42064`. You don't have to install that Nightly yourself: the installer builds Sunset on it.
 
 ![Sunset's click menu with the Combat, Movement, Player, Render, World and Client panels](docs/images/gui-overview.png)
 
@@ -49,7 +49,9 @@ that version:
 
 | Sunset | Horizon |
 | --- | --- |
-| **1.1.0** (current) | Nightly 2026-11-08, `fdc87ae` |
+| **1.2.1** (current) | Nightly 2026-11-13, `9f42064` |
+| 1.2.0 | Nightly 2026-11-13, `9f42064` |
+| 1.1.0 | Nightly 2026-11-08, `fdc87ae` |
 | 1.0.0 | Nightly 2026-11-05, `66f3981` |
 
 The build fetches the right Horizon source on its own, even if that Nightly is no longer on the launcher's Versions
@@ -239,7 +241,11 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Trajectories** (crossbows, wind charges, pearls in flight), **Breadcrumbs**, **Waypoints**, **Radar**,
   **Shulker Peek**.
 - **HUD**: module list, Target HUD, Armor HUD, coordinates, compass, item durability, food preview, spectators and
-  creative players tagged in the tab list and more; drag elements while the chat is open. Its settings come in
+  creative players tagged in the tab list and more. Open the chat (or the menu) and every element is framed and drags
+  to anywhere on screen — the watermark, the module list, the Target HUD, coordinates, FPS, speed, facing and totems
+  (each on its own), the compass, the Armor HUD, Shield status, the server's own scoreboard, Scaffold's block counter,
+  the Murderer list, Auto Spear's damage indicator, Radar and Horizon's own HUD widgets (FPS, CPS, ping and the rest) —
+  each with a Default/Custom position of its own; a right click sends one back to its Default place. Its settings come in
   sections (General, Watermark, Module list, Info, Combat, Armor HUD, Items and food, Other). Text case
   (lowercase, UPPERCASE) and Text shadow apply to all of the HUD; Theme and Second color, with Static, Fade,
   Breathe and Rainbow modes, colour the module list and the watermark. The module list slides rows in and out,

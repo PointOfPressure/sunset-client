@@ -2149,7 +2149,7 @@ def menu_row(panel, row):
 
 
 def editor_buttons():
-    """The middle of the text editor's Apply and Cancel buttons, in GUI pixels (as runtime.rs lays them out)."""
+    """The middle of the text editor's Apply and Cancel buttons, in GUI pixels (as runtime_gui.rs lays them out)."""
     w, h = gui_size()
     width = min(w - 8, 320)
     x, y = (w - width) / 2, max((h - 76) / 2, 0)

@@ -1,7 +1,7 @@
 // The game's own bars, as HUD's Mount HUD and food settings ask (set by Sunset each tick): the food row also while
 // riding, the mount's hearts moved up over it, the XP bar instead of a jump bar that isn't charging; the held
 // food's hunger and saturation drawn on the row, the saturation you have, and the exhaustion under it.
-use super::{Blend, GuiDraw, HealthHud, HealthInputs, experience as experience_layout};
+use super::{Blend, GuiDraw, HealthHud, HealthInputs, experience_colored as experience_layout};
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::ops::ControlFlow;
@@ -132,13 +132,22 @@ pub fn raise(mut draws: Vec<GuiDraw>) -> Vec<GuiDraw> {
     draws
 }
 
-// experience: with Mount HUD's XP bar, the bar the game leaves out for the jump bar.
-pub fn experience(w: i32, h: i32, progress: f32, level: i32, bar: bool, width: &dyn Fn(&str) -> i32) -> ControlFlow<Vec<GuiDraw>> {
+// experience_colored: with Mount HUD's XP bar, the bar the game leaves out for the jump bar (in a resource pack's
+// level number colours, as the game's own).
+pub fn experience(
+    colours: [Option<u32>; 2],
+    w: i32,
+    h: i32,
+    progress: f32,
+    level: i32,
+    bar: bool,
+    width: &dyn Fn(&str) -> i32,
+) -> ControlFlow<Vec<GuiDraw>> {
     if bar || INSIDE.with(Cell::get) || !bars().mount_xp {
         return ControlFlow::Continue(());
     }
     INSIDE.with(|c| c.set(true));
-    let draws = experience_layout(w, h, progress, level, true, width);
+    let draws = experience_layout(colours, w, h, progress, level, true, width);
     INSIDE.with(|c| c.set(false));
     ControlFlow::Break(draws)
 }

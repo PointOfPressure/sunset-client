@@ -147,6 +147,7 @@ fn context<'a>(game: &'a Game<'_>, target: &Target) -> Option<CollisionContext<'
     Some(CollisionContext::for_entity(
         CollisionEntity {
             identity: EntityIdentity(u64::from(target.id)),
+            kind: if &*mob.kind.id == "minecraft:player" { horizon_world::collision_context::EntityContextKind::Player } else { horizon_world::collision_context::EntityContextKind::Living },
             y: mob.position.y,
             descending: mob.extra.crouching,
             main_hand: Some(held),
@@ -221,6 +222,7 @@ pub(super) fn local_offset(game: &Game<'_>, ahead: u32) -> Option<[f64; 3]> {
         context: CollisionContext::for_entity(
             CollisionEntity {
                 identity: EntityIdentity(0),
+                kind: horizon_world::collision_context::EntityContextKind::Player,
                 y: player.position.y,
                 descending: player.shift_key_down,
                 main_hand: Some(held),

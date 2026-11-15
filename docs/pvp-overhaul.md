@@ -11,8 +11,9 @@ Working notes for the Kill Aura, Scaffold and Inventory Manager overhaul, so a l
 | 2. Scaffold | Done for this round (committed): Sprint Vanilla, presets |
 | 4. Integration checks | Reviewed in code; in-game checks pending |
 
-Since 1.1.0 (31e7e45) Sunset pins Horizon nightly fdc87ae with horizon-mixins e59da90: the check is
-`bash /c/Users/jnowa/hzbuild/check-n.sh <name>` (same steps on that pin). Before that, the last good check was
+Since 1.2.0 (0ff1dbd) Sunset pins Horizon nightly 9f42064 with horizon-mixins e59da90: the check is
+`bash /c/Users/jnowa/hzbuild/check-9f.sh <name>` (same steps on that pin). From 1.1.0 (31e7e45) it was nightly fdc87ae
+and `check-n.sh`. Before that, the last good check was
 `bash /c/Users/jnowa/hzbuild/check.sh <name>` (applies the checkout's mixins to Horizon 66f3981 in a
 fresh stage, `cargo check -p horizon-client --bin horizon-client`, then `cargo test -p horizon-client --lib -- sunset`).
 Phase 1: 0 Rust warnings, 203 tests passed. Phase 3: 209. Phase 2: 211, 0 warnings. The script lives outside the repository; its steps are those of the
@@ -33,7 +34,7 @@ Phase 1: 0 Rust warnings, 203 tests passed. Phase 3: 209. Phase 2: 211, 0 warnin
 - `aura.rs`: settings grouped Combat, Targeting, Rotations, Timing, Advanced (the list has no headers; the order
   groups them). Max targets stays before Attack mode (old-config migration depends on it). `.auradebug` shows the
   combat model and why.
-- Visibility (`runtime.rs`, `setting_visible`): Legacy hides Attack timing, Cooldown and Hit delay; Modern hides
+- Visibility (`runtime_module.rs`, `setting_visible`): Legacy hides Attack timing, Cooldown and Hit delay; Modern hides
   the CPS settings; Auto shows both. Aim speed shows only for Silent aura.
 - Audit, no change needed: Snap already turns instantly, so no separate Instant mode was added. Losing a target
   clears the look, the aim and queued turns, and Silent aura turns back at its own speed. Target identity survives
@@ -65,7 +66,7 @@ Not done: tested on a real 1.8 or NCP server (not available here); Steps are slo
 
 Auto Armor is no longer a module of its own. Its settings are Inventory Manager's (Auto Armor, Auto Armor key,
 Armor delay, Armor mode, Armor key, Avoid cursed, Switch key, Switch sets), and the Auto Armor setting is its own
-on/off: it runs whether Inventory Manager is on or off (runtime.rs looks Inventory Manager up regardless of `on`),
+on/off: it runs whether Inventory Manager is on or off (runtime_tick.rs looks Inventory Manager up regardless of `on`),
 and Inventory Manager runs without it. Old configs migrate (`auto_armor_line`: `autoarmor.on` to the Auto Armor
 setting, its key to Auto Armor key, which toggles it), and the presets turn it on the new way. The two share one
 step at a time: Auto Armor waits while an Inventory Manager step settles, and Inventory Manager waits a round trip
@@ -187,6 +188,16 @@ Horizon's) predicts the knockback exactly and sees the self damage's climb from 
 - Dashboard (b3854bb): header (name, search), categories, module list under a title and count (no switches; enabled
   names in the accent), the chosen module's band (name, description, switch) and its sections as cards.
 - Built and launched on the instance (native-fdc87ae); in-game checks of the new layout pending.
+
+## 1.2.0: nightly 9f42064
+
+- Retarget (0ff1dbd): hooks follow code moved to `extras::sorting` (Client Sort), `extras::reconnect`,
+  `world_session`, `frame_geometry`, `inventory_input` and `player_spawn`. Two hooks the move would have left silent:
+  Antibot's despawns (RemoveEntities goes through `remote::removal::remove_entities` as one batch) and Mount HUD's
+  riding XP bar (`experience_colored`). Collision contexts name their entity kind; Ore Sim reads a biome's features
+  as a bitset. Horizon now syncs the camera's look before a spear jab; Sunset's own jabs keep their look.
+- Every hooked function's body and call sites were compared between fdc87ae and 9f42064; the rest changed nothing
+  a hook relies on.
 
 ## Next steps
 

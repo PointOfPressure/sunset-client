@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "id": "sunset",
-  "version": "1.1.0",
+  "version": "1.2.1",
   "game": "26.3",
-  "horizon": "fdc87aecdbd116bf1e08adcd062fcbaea8c2e2ca",
+  "horizon": "9f42064c11efe7ef3e5ed2baad7ddc2a3b36eea0",
   "mixins": "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
 }

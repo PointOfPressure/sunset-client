@@ -1,7 +1,7 @@
 // Flight's experimental strategies (NCP Hover, NCP Burst, NCP Bounce, Old NCP), each with its own state and
 // lifecycle: Idle, Preparing (waiting for its start conditions), Active, Recovery (after a setback, real knockback or a
-// burst's end: no override of its own until it settles). Abilities and Velocity stay in runtime.rs; these never take
-// the false ground claim or the Packet anti kick those use (runtime.rs gates both on `experimental`).
+// burst's end: no override of its own until it settles). Abilities and Velocity stay in runtime_movement.rs; these never take
+// the false ground claim or the Packet anti kick those use (runtime_movement.rs gates both on `experimental`).
 //
 // Written from how the old movement strategies behave (Old NCP after how a 1.8 client's hover moves), not copied from
 // any client's code, and for testing against a specific NoCheatPlus build: no mode here is known to pass anything.
@@ -196,7 +196,7 @@ fn heading(game: &Game<'_>) -> [f64; 2] {
     [x / len, z / len]
 }
 
-// One tick of the experimental strategy Flight's Mode names (runtime.rs flight_post calls it in place of Abilities'
+// One tick of the experimental strategy Flight's Mode names (runtime_movement.rs flight_post calls it in place of Abilities'
 // and Velocity's work).
 pub(super) fn tick(game: &mut Game<'_>, m: &Module) {
     let Some(strategy) = Strategy::of(m.p("Mode")) else {

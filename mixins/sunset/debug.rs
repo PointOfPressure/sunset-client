@@ -198,6 +198,7 @@ fn screen_name(game: &Game<'_>) -> &'static str {
         Sc::GameModeSwitcher => "game mode switcher",
         Sc::EmoteWheel => "emote wheel",
         Sc::HudEditor => "HUD widget editor",
+        Sc::Studio => "Horizon Studio script screen",
         Sc::Paused => "pause menu",
         Sc::Options => "options",
         Sc::Chat => "chat",
