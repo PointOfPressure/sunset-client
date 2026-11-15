@@ -317,6 +317,8 @@ pub(super) fn bind_event(event: &winit::event::WindowEvent) {
         WindowEvent::MouseInput { state, button, .. } => (horizon_client::keybinds::mouse_name(*button), *state == ElementState::Pressed, false),
         _ => return,
     };
+    // RF Click's R/F clicks are clicks for the game only: no bind on that mouse button fires from them.
+    let rf = matches!(event, WindowEvent::MouseInput { .. }) && super::sunset_hands::rf_generated();
     with(|s| {
         if !pressed {
             let held = s.inputs.release(&name);
@@ -328,7 +330,7 @@ pub(super) fn bind_event(event: &winit::event::WindowEvent) {
             let held = s.inputs.suspend();
             restore_holds(s, held);
         }
-        if synthetic {
+        if synthetic || rf {
             s.inputs.synthetic(&name);
         }
     });
