@@ -10472,8 +10472,9 @@ fn move_hud(s: &mut State, game: &Game<'_>, name: &str, dx: f32, dy: f32) {
     }
 }
 
-// HUD's layout editor with the chat open: the watermark, the module list, Coordinates, Compass and the Armor HUD are framed, and a press on one drags
-// it until the button comes up (saved then). The chat closed, a drag still going ends there.
+// HUD's layout editor with the chat open: the watermark, the module list, Coordinates, Compass and the Armor HUD are
+// framed, and a press on one drags it until the button comes up (saved then). The chat closed, a drag still going ends
+// there.
 fn chat_layout(game: &Game<'_>, out: &mut Vec<Shape>) {
     use super::sunset_hud_bars::ChatDrag;
     let dragging = with(|s| match s.gui.drag {
