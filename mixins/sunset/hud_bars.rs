@@ -342,6 +342,48 @@ pub(super) fn bounds(game: &Game<'_>, shapes: &[Shape]) -> Option<[f32; 4]> {
     (x0 <= x1).then(|| [x0, y0, x1 - x0, y1 - y0])
 }
 
+// The bands the game's status effect icons take at the top right, when it draws them (`Hud.extractEffects`: 24 pixel
+// icons 25 apart from the right edge, the beneficial row at y 1 and the harmful one at 26): each as wide as its icons
+// and 25 high, as Horizon's top right corner reserves them. None while Horizon's effects widget takes their place, nor
+// in an inventory that lists its own effects (wide enough for that, as `EffectsInInventory.canSeeEffects`).
+fn effect_bands(game: &Game<'_>, w: f32) -> [Option<[f32; 4]>; 2] {
+    use super::Screen;
+    let own_list = match game.screen {
+        Screen::Inventory => game.container.is_none() && game.craft_size == 2 && (w - 176.0) / 2.0 - 2.0 >= 32.0,
+        Screen::Creative => (w - horizon_client::creative::Creative::WIDTH as f32) / 2.0 - 2.0 >= 32.0,
+        _ => false,
+    };
+    if own_list || game.settings.extras.pvp.hud.effects {
+        return [None, None];
+    }
+    let (mut beneficial, mut harmful) = (0.0, 0.0);
+    for e in &game.potions.effects.list {
+        let icon = horizon_client_render::hud_overlays::EffectIcon::from(e);
+        if !icon.show_icon {
+            continue;
+        }
+        if icon.beneficial {
+            beneficial += 25.0;
+        } else {
+            harmful += 25.0;
+        }
+    }
+    let band = |width: f32, top: f32| (width > 0.0).then_some([w - width, top, width, 25.0]);
+    [band(beneficial, 0.0), band(harmful, 25.0)]
+}
+
+// The module list's top left for a box at `rect`: where it is, or just under the effect icons it would cover (2 below
+// their band, as Horizon's corner puts what follows them), wherever it was placed or dragged to.
+pub(super) fn below_effects(game: &Game<'_>, [x, y, bw, bh]: [f32; 4], w: f32, h: f32) -> (f32, f32) {
+    let mut y = y;
+    for [ex, ey, ew, eh] in effect_bands(game, w).into_iter().flatten() {
+        if x < ex + ew && x + bw > ex && y < ey + eh && y + bh > ey {
+            y = ey + eh + 2.0;
+        }
+    }
+    (x, y.min((h - bh).max(0.0)))
+}
+
 // An independent element (not stacked in a corner) just drawn into `shapes[from..]` by module `m`: registered so the
 // editor can grab it, and, when its `name position` is Custom, slid to where it was dragged. Its box is what it drew.
 pub(super) fn editable(game: &Game<'_>, shapes: &mut Vec<Shape>, from: usize, m: &Module, name: &'static str, w: f32, h: f32) {

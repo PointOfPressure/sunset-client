@@ -98,6 +98,9 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
                 } else {
                     corners.place(corner, width, height)
                 };
+                // Never over the status effect icons at the top right: just under them, Default or dragged (the game's
+                // corner leaves them room only while playing, not with the chat open).
+                let (x, y) = super::sunset_hud_bars::below_effects(game, [x, y, width, height], w, h);
                 super::sunset_hud_bars::place("Module list", [x, y, width, height], w, h);
                 (x, y)
             };
