@@ -8480,6 +8480,41 @@ fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32
     }
 }
 
+// Where a HUD element `size` big goes: in its corner, below (or above) what that corner holds already, or at its
+// Custom place ("<name> x" and "<name> y", hud_place.rs), kept whole on the screen. None while the debug screen (F3)
+// covers that corner (for a Custom element, the corner it is nearest). Recorded for the chat's layout editor, which
+// moves it by dragging.
+fn place_element(
+    game: &Game<'_>,
+    corners: &mut Corners,
+    hud: &Module,
+    name: &'static str,
+    place: super::sunset_hud_place::Place,
+    size: [f32; 2],
+    right: bool,
+    screen: [f32; 2],
+) -> Option<(f32, f32)> {
+    use super::sunset_hud_place::{Place, custom, nearest};
+    let (x, y) = match place {
+        Place::Corner(c) => {
+            if !game.native_corner_shown(c) {
+                return None;
+            }
+            corners.place(c, size[0], size[1])
+        }
+        Place::Custom => {
+            let at = [hud.n(&format!("{name} x")), hud.n(&format!("{name} y"))];
+            let [x, y] = custom(at, size, screen, right);
+            if !game.native_corner_shown(nearest([x, y, size[0], size[1]], screen)) {
+                return None;
+            }
+            (x, y)
+        }
+    };
+    super::sunset_hud_bars::place(name, [x, y, size[0], size[1]], screen[0], screen[1]);
+    Some((x, y))
+}
+
 pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corners) {
     if !running() || !game.native_window() || !game.native_on(ID) {
         return;
@@ -8522,24 +8557,54 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             super::sunset_aura::draw_target(game, w, h, hud.p("Target HUD mode") == "Potato", &mut shapes);
         }
         let cased = |text: &str| super::sunset_hud_list::cased(hud, text);
-        if hud.b("Watermark") && game.native_corner_shown(Corner::TopLeft) {
+        if hud.b("Watermark") {
             let custom = hud.t("Watermark text").trim();
             let text = cased(&if custom.is_empty() { format!("{NAME} {VERSION}") } else { custom.to_owned() });
-            let tw = game.native_text_width(&text);
-            let (x, y) = corners.place(Corner::TopLeft, tw + 4.0, 12.0);
-            let colour = super::sunset_hud_list::colour_at(hud, hud.p("Watermark color mode"), y);
-            shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], colour));
-            if hud.b("Watermark profile") {
-                let text = cased(&with(|s| format!("Profile: {}", s.selection.label())));
-                let (x, y) = corners.place(Corner::TopLeft, game.native_text_width(&text) + 4.0, 12.0);
-                shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], 0xE4E4E4));
+            let profile = hud.b("Watermark profile").then(|| cased(&with(|s| format!("Profile: {}", s.selection.label()))));
+            // One block: the name, and the profile under it (the 2 pixels between them that a corner puts between
+            // two boxes, so the default layout is as it was).
+            let tw = game.native_text_width(&text) + 4.0;
+            let pw = profile.as_ref().map_or(0.0, |p| game.native_text_width(p) + 4.0);
+            let size = [tw.max(pw), if profile.is_some() { 26.0 } else { 12.0 }];
+            let place = super::sunset_hud_place::parse(hud.p("Watermark position"), Corner::TopLeft);
+            // In a right corner the lines keep to the screen's edge.
+            let flush = matches!(place, super::sunset_hud_place::Place::Corner(c) if !c.left());
+            if let Some((x, y)) = place_element(game, corners, hud, "Watermark", place, size, false, [w, h]) {
+                let at = |width: f32| if flush { x + size[0] - width + 2.0 } else { x + 2.0 };
+                let colour = super::sunset_hud_list::colour_at(hud, hud.p("Watermark color mode"), y);
+                shapes.push(Shape::Text(text, [at(tw), y + 2.0], colour));
+                if let Some(p) = profile {
+                    shapes.push(Shape::Text(p, [at(pw), y + 16.0], 0xE4E4E4));
+                }
             }
         }
         let left = hud.p("Module list side") == "Left";
-        let corner = if left { Corner::TopLeft } else { Corner::TopRight };
-        if hud.b("Module list") && game.native_corner_shown(corner) {
-            let mut place = |width: f32, height: f32| corners.place(corner, width, height);
-            super::sunset_hud_list::draw(game, hud, &mods, !left, &mut place, &mut shapes);
+        if hud.b("Module list") {
+            use super::sunset_hud_place::Place;
+            let place = super::sunset_hud_place::list_place(hud.p("Module list position"), !left);
+            let at = [hud.n("Module list x"), hud.n("Module list y")];
+            // F3 hides it with its corner; a Custom list by the corner its anchor (its right edge on the right) is in.
+            let shown = match place {
+                Place::Corner(c) => game.native_corner_shown(c),
+                Place::Custom => {
+                    let [x, y] = [at[0] as f32 * w, at[1] as f32 * h];
+                    game.native_corner_shown(super::sunset_hud_place::nearest([x, y, 0.0, 0.0], [w, h]))
+                }
+            };
+            if shown {
+                let mut put = |width: f32, height: f32| {
+                    let (x, y) = match place {
+                        Place::Corner(c) => corners.place(c, width, height),
+                        Place::Custom => {
+                            let [x, y] = super::sunset_hud_place::custom(at, [width, height], [w, h], !left);
+                            (x, y)
+                        }
+                    };
+                    super::sunset_hud_bars::place("Module list", [x, y, width, height], w, h);
+                    (x, y)
+                };
+                super::sunset_hud_list::draw(game, hud, &mods, !left, &mut put, &mut shapes);
+            }
         }
         let coordinates = game.native_player().filter(|_| hud.b("Coordinates")).map(|p| {
             let (x, y, z) = (p.x.floor(), p.y.floor(), p.z.floor());
@@ -8550,14 +8615,15 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             };
             format!("XYZ {x} {y} {z}{other}")
         });
-        let custom = hud.p("Coordinates position") == "Custom";
-        // Coordinates moved off the corner: on their own where they were dragged to.
+        let coordinates_at = super::sunset_hud_place::parse(hud.p("Coordinates position"), Corner::TopLeft);
+        // In the top left corner the coordinates head the info lines (FPS, Speed, Facing, Totems); anywhere else
+        // (another corner, or where they were dragged to) they go on their own.
+        let custom = coordinates_at != super::sunset_hud_place::Place::Corner(Corner::TopLeft);
         if custom && let Some(text) = &coordinates {
-            let (tw, th) = (game.native_text_width(text) + 4.0, 12.0);
-            let x = (hud.n("Coordinates x") as f32 * w).clamp(0.0, (w - tw).max(0.0));
-            let y = (hud.n("Coordinates y") as f32 * h).clamp(0.0, (h - th).max(0.0));
-            super::sunset_hud_bars::place("Coordinates", [x, y, tw, th], w, h);
-            shapes.push(Shape::Text(text.clone(), [x + 2.0, y + 2.0], 0xFFFFFF));
+            let size = [game.native_text_width(text) + 4.0, 12.0];
+            if let Some((x, y)) = place_element(game, corners, hud, "Coordinates", coordinates_at, size, false, [w, h]) {
+                shapes.push(Shape::Text(text.clone(), [x + 2.0, y + 2.0], 0xFFFFFF));
+            }
         }
         if game.native_corner_shown(Corner::TopLeft)
             && let Some(p) = game.native_player()
@@ -10367,6 +10433,13 @@ fn move_hud(s: &mut State, game: &Game<'_>, name: &str, dx: f32, dy: f32) {
     let Some(m) = s.modules.iter_mut().find(|m| m.name == "HUD") else {
         return;
     };
+    // The module list on the right keeps its right edge where it is dropped (it grows to the left; hud_place.rs).
+    let fx = match super::sunset_hud_bars::placed_rect(name) {
+        Some(([_, _, width, height], screen)) if name == "Module list" && m.p("Module list side") != "Left" => {
+            super::sunset_hud_place::stored([game.cursor.0 - dx, game.cursor.1 - dy], [width, height], screen, true).0
+        }
+        _ => fx,
+    };
     for st in &mut m.settings {
         match st.name.strip_prefix(name).map(str::trim) {
             Some("position") => {
@@ -10389,7 +10462,7 @@ fn move_hud(s: &mut State, game: &Game<'_>, name: &str, dx: f32, dy: f32) {
     }
 }
 
-// HUD's layout editor with the chat open: Coordinates, Compass and the Armor HUD are framed, and a press on one drags
+// HUD's layout editor with the chat open: the watermark, the module list, Coordinates, Compass and the Armor HUD are framed, and a press on one drags
 // it until the button comes up (saved then). The chat closed, a drag still going ends there.
 fn chat_layout(game: &Game<'_>, out: &mut Vec<Shape>) {
     use super::sunset_hud_bars::ChatDrag;

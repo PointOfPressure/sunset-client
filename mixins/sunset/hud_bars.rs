@@ -1,6 +1,7 @@
 // HUD's Armor HUD (with Compact style), Compass, Shield status, Item durability (on every damageable item's icon, and remaining/max in its tooltip), the
 // settings that change the game's own bars (Mount HUD, Food preview, Saturation, Exhaustion; drawn by hunger_flags.rs),
-// and the layout editor: with the chat (or the menu) open, Coordinates, Compass and the Armor HUD move by dragging.
+// and the layout editor: with the chat (or the menu) open, the watermark, module list, Coordinates, Compass and the
+// Armor HUD move by dragging.
 use super::Game;
 use super::sunset::{Module, Shape};
 use horizon_client::extras::Corner;
@@ -161,6 +162,11 @@ pub(super) fn place(name: &'static str, rect: [f32; 4], w: f32, h: f32) {
         p.retain(|e| e.0 != name);
         p.push((name, rect, [w, h]));
     });
+}
+
+// Where `name` was drawn last frame (x, y, width, height) and the size of the screen it was on.
+pub(super) fn placed_rect(name: &str) -> Option<([f32; 4], [f32; 2])> {
+    placed(|p| p.iter().find(|e| e.0 == name).map(|e| (e.1, e.2)))
 }
 
 // An element's position as fractions of the screen, from where its top left corner is dragged to.
