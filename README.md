@@ -14,7 +14,7 @@ Sunset adds over 160 modules to Horizon: combat, movement, building, ESP and wor
 a click menu or chat commands, can be bound to a key, and can be saved as a profile. It is written in Rust and
 compiled into the game, so it runs as part of Horizon rather than on top of it.
 
-> **Current version: Sunset 1.2.0, for Horizon Nightly 2026-11-13 (`9f42064`)**, listed in the launcher as
+> **Current version: Sunset 1.2.1, for Horizon Nightly 2026-11-13 (`9f42064`)**, listed in the launcher as
 > `nightly-2026-11-13-9f42064`. You don't have to install that Nightly yourself: the installer builds Sunset on it.
 
 ![Sunset's click menu with the Combat, Movement, Player, Render, World and Client panels](docs/images/gui-overview.png)
@@ -49,7 +49,8 @@ that version:
 
 | Sunset | Horizon |
 | --- | --- |
-| **1.2.0** (current) | Nightly 2026-11-13, `9f42064` |
+| **1.2.1** (current) | Nightly 2026-11-13, `9f42064` |
+| 1.2.0 | Nightly 2026-11-13, `9f42064` |
 | 1.1.0 | Nightly 2026-11-08, `fdc87ae` |
 | 1.0.0 | Nightly 2026-11-05, `66f3981` |
 
