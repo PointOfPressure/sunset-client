@@ -244,7 +244,9 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   (lowercase, UPPERCASE) and Text shadow apply to all of the HUD; Theme and Second color, with Static, Fade,
   Breathe and Rainbow modes, colour the module list and the watermark. The module list slides rows in and out,
   shows module details (gray, in brackets, after a dash, or none), can leave out Render or unbound modules, and has
-  a background, a bar, spacing and sorting of its own. The watermark's text can be your own.
+  a background, a bar, spacing and sorting of its own. The watermark's text can be your own. The watermark, the
+  module list and the coordinates go in any corner or anywhere you drag them (kept in proportion when the window is
+  resized, and saved in profiles); Low health warning tints or flashes the screen's edges below a health you set.
 - **ClickGUI** (the menu's look), **No Render** (fog, overlays, hurt cam and more), **Effects** (jump circles,
   trails, hit sparks, weather), **Hand View** (1.9+ and 1.8 swing and sword block animations), **Crosshair**,
   **Block Overlay**, **Atmosphere** (custom skies).
