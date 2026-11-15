@@ -273,6 +273,12 @@ name = "sunset_hud_list"
 source = "hud_list.rs"
 
 [[module]]
+id = "hud_place"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hud_place"
+source = "hud_place.rs"
+
+[[module]]
 id = "search"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_search"
