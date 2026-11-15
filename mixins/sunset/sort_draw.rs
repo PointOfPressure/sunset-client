@@ -4,7 +4,7 @@ fn sunset_sort_draw(game: &crate::game::Game<'_>, batch: &mut horizon_client::hu
 
     crate::game::sunset_extras::note_hover(game.slot_at(batch, game.cursor.0, game.cursor.1));
     if crate::game::sunset_extras::on() {
-        crate::game::tweaks::sunset_sort_buttons::draw(game, batch, ox, oy);
+        crate::game::extras::sorting::sunset_sort_buttons::draw(game, batch, ox, oy);
         return std::ops::ControlFlow::Break(());
     }
     std::ops::ControlFlow::Continue(())

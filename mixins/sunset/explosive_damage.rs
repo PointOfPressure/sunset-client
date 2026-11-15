@@ -125,6 +125,8 @@ fn rays<'a, 'r>(game: &'a Game<'r>, y: f64, ignored: Option<[i32; 3]>) -> Rays<'
         context: CollisionContext::for_entity(
             CollisionEntity {
                 identity: EntityIdentity(0),
+                // As the game's own explosion rays (no entity's shape).
+                kind: horizon_world::collision_context::EntityContextKind::None,
                 y,
                 descending: false,
                 main_hand: Some(CollisionItem::EMPTY),

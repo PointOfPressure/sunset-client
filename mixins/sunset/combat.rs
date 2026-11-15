@@ -881,6 +881,7 @@ pub(super) fn clip_clear(game: &Game<'_>, eye: [f64; 3], to: [f64; 3], d: f64) -
         context: CollisionContext::for_entity(
             CollisionEntity {
                 identity: EntityIdentity(0),
+                kind: horizon_world::collision_context::EntityContextKind::Player,
                 y: p.position.y,
                 descending: p.shift_key_down,
                 main_hand: Some(CollisionItem::EMPTY),

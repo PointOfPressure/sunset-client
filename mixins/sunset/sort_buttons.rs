@@ -1,5 +1,5 @@
 // Client Sort's buttons, in place of Horizon's one sort button per part of the screen: three small ones stacked down
-// its right edge, Sort, Fill Stacks and Restock. A child of the tweaks so it reads Horizon's own list of the parts.
+// its right edge, Sort, Fill Stacks and Restock. A child of Horizon's sorting so it reads its own list of the parts.
 use super::Game;
 use horizon_client::hud::{HudBatch, rgba};
 
@@ -13,7 +13,7 @@ const X: f32 = 172.0;
 // inventory's always (on a server Horizon gives your own inventory none).
 fn buttons(game: &Game<'_>) -> Vec<((f32, f32), usize, Vec<usize>)> {
     let mut parts = game.sort_buttons();
-    if game.screen == super::Screen::Inventory
+    if game.screen == crate::game::Screen::Inventory
         && game.station.is_none()
         && !game.mount_active()
         && !parts.iter().any(|(_, slots)| slots.first() == Some(&9))

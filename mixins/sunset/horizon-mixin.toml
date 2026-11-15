@@ -6,7 +6,7 @@ priority = 100
 # It hooks the game's own functions as well as the native hook points, so it
 # builds on this exact Horizon commit (the Nightly it was made for).
 [compatibility]
-horizon_revision = "fdc87aecdbd116bf1e08adcd062fcbaea8c2e2ca"
+horizon_revision = "9f42064c11efe7ef3e5ed2baad7ddc2a3b36eea0"
 
 [[module]]
 id = "gui_move"
@@ -54,10 +54,10 @@ bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
 [[injection]]
 id = "gui_move_shift"
 kind = "RETURN"
-target = "horizon_client::game::Game<'_>::has_shift_down"
+target = "horizon_client::game::inventory_input::Game<'_>::has_shift_down"
 helper = "gui_move_shift_hook.rs"
 bindings = [
-  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
   { name = "value", ty = "bool", value = "$value" },
 ]
 
@@ -127,11 +127,11 @@ bindings = [
 [[injection]]
 id = "antibot_despawn"
 kind = "HEAD"
-target = "horizon_client::game::remote::Game<'_>::remove_entity"
-helper = "antibot_entity_hook.rs"
+target = "horizon_client::game::remote::removal::Game<'_>::remove_entities"
+helper = "antibot_despawn_hook.rs"
 bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
-  { name = "id", ty = "i32", value = "id" },
+  { name = "ids", ty = "&[i32]", value = "ids" },
 ]
 
 [[injection]]
@@ -712,7 +712,7 @@ bindings = [
 [[injection]]
 id = "sky_shown"
 kind = "HEAD"
-target = "horizon_client::game::Game<'_>::spawn_player"
+target = "horizon_client::game::player_spawn::Game<'_>::spawn_player"
 helper = "sky_shown.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
@@ -785,7 +785,7 @@ bindings = [
 id = "press"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::game::tweaks::Game<'_>::sort_mouse_press"
+target = "horizon_client::game::extras::sorting::Game<'_>::sort_mouse_press"
 helper = "press.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
@@ -812,7 +812,7 @@ source = "presets.rs"
 
 [[module]]
 id = "sort_buttons"
-file = "crates/horizon-client/src/game/tweaks.rs"
+file = "crates/horizon-client/src/game/extras/sorting.rs"
 name = "sunset_sort_buttons"
 source = "sort_buttons.rs"
 visibility = "pub(crate)"
@@ -822,7 +822,7 @@ visibility = "pub(crate)"
 id = "sort_draw"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::game::tweaks::Game<'_>::draw_sort_buttons"
+target = "horizon_client::game::extras::sorting::Game<'_>::draw_sort_buttons"
 helper = "sort_draw.rs"
 bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
@@ -835,7 +835,7 @@ bindings = [
 id = "sort_press"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::game::tweaks::Game<'_>::sort_press"
+target = "horizon_client::game::extras::sorting::Game<'_>::sort_press"
 helper = "sort_press.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
@@ -845,7 +845,7 @@ bindings = [
 id = "sort"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::game::tweaks::Game<'_>::sort_slots"
+target = "horizon_client::game::extras::sorting::Game<'_>::sort_slots"
 helper = "sort_hook.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
@@ -1034,7 +1034,7 @@ bindings = [
 id = "arm-pose"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::game::Game<'_>::first_person_arm"
+target = "horizon_client::game::frame_geometry::Game<'_>::first_person_arm"
 helper = "arm_pose.rs"
 bindings = [
   { name = "this", ty = "&Game<'_>", value = "&*self" },
@@ -1537,7 +1537,7 @@ bindings = [
 [[injection]]
 id = "vanish_connect"
 kind = "HEAD"
-target = "horizon_client::game::extras::Game<'_>::extras_connecting"
+target = "horizon_client::game::extras::reconnect::Game<'_>::extras_connecting"
 helper = "vanish_connect.rs"
 bindings = [{ name = "address", ty = "&str", value = "address" }]
 
@@ -1851,7 +1851,7 @@ bindings = []
 [[injection]]
 id = "atmosphere_finish"
 kind = "HEAD"
-target = "horizon_client::game::Game<'_>::finish_perf"
+target = "horizon_client::game::world_session::Game<'_>::finish_perf"
 helper = "atmosphere_finish_hook.rs"
 bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
 
@@ -2517,9 +2517,11 @@ bindings = [
 id = "mount_xp"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client_render::hud_layout::experience"
+target = "horizon_client_render::hud_layout::experience_colored"
 helper = "mount_xp_hook.rs"
 bindings = [
+  { name = "number", ty = "Option<u32>", value = "number" },
+  { name = "outline", ty = "Option<u32>", value = "outline" },
   { name = "w", ty = "i32", value = "w" },
   { name = "h", ty = "i32", value = "h" },
   { name = "progress", ty = "f32", value = "progress" },

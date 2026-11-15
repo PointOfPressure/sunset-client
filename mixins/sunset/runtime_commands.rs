@@ -129,10 +129,10 @@ pub(super) fn native_held_input(game: &Game<'_>) -> (std::collections::HashSet<K
     let mut held = mapped_input(&game.settings.keys, &game.physical_keys, &game.physical_buttons, toggles);
     for (mapping, key) in [("key.forward", KeyCode::KeyW), ("key.back", KeyCode::KeyS), ("key.left", KeyCode::KeyA),
         ("key.right", KeyCode::KeyD), ("key.jump", KeyCode::Space), ("key.sneak", KeyCode::ShiftLeft), ("key.sprint", KeyCode::ControlLeft)] {
-        if game.pad.holds_action(&game.settings.controller, mapping) { held.0.insert(key); }
+        if game.pad.holds_action(mapping) { held.0.insert(key); }
     }
     for (mapping, button) in [("key.attack", MouseButton::Left), ("key.use", MouseButton::Right)] {
-        if game.pad.holds_action(&game.settings.controller, mapping) { held.1.insert(button); }
+        if game.pad.holds_action(mapping) { held.1.insert(button); }
     }
     held
 }

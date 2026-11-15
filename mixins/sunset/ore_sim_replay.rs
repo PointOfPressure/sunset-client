@@ -10,6 +10,11 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 // The ore kinds, in the order Sunset's settings list them. A root's kind is the first whose word its name holds.
+// A biome's features are a bitset (one bit a feature identity), as Horizon's own biome_allows_feature reads it.
+fn has_feature(bits: &[u64], feature: FeatureIdentity) -> bool {
+    bits.get(feature.0 as usize / 64).is_some_and(|w| w >> (feature.0 % 64) & 1 != 0)
+}
+
 pub const KINDS: [&str; 10] = ["coal", "copper", "iron", "lapis", "redstone", "gold", "diamond", "emerald", "quartz", "debris"];
 
 // What the replay reads of the world the player sees.
@@ -108,7 +113,7 @@ impl OreSim {
         let mut placer = FeaturePlacer::new();
         for root in &self.roots {
             let id = FeatureIdentity(root.identity);
-            if !present.iter().any(|b| self.decoration.biome_features.get(*b as usize).is_some_and(|f| f.contains(&id))) {
+            if !present.iter().any(|b| self.decoration.biome_features.get(*b as usize).is_some_and(|f| has_feature(f, id))) {
                 continue;
             }
             let Ok(feature) = &self.decoration.features[root.identity as usize] else { continue };
@@ -171,7 +176,7 @@ impl<S: SeenWorld> PlacementContext for Replay<'_, S> {
     }
     fn biome_allows_feature(&mut self, p: [i32; 3], feature: FeatureIdentity) -> Result<bool, PlacementQueryError> {
         let biome = self.seen.biome(p).ok_or(PlacementQueryError::Unavailable)?;
-        Ok(self.sim.decoration.biome_features.get(biome as usize).is_some_and(|f| f.contains(&feature)))
+        Ok(self.sim.decoration.biome_features.get(biome as usize).is_some_and(|f| has_feature(f, feature)))
     }
     fn block_state(&mut self, p: [i32; 3]) -> Result<BlockStateId, PlacementQueryError> {
         self.read(p).ok_or(PlacementQueryError::Unavailable)
