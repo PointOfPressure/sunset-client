@@ -11925,3 +11925,92 @@ mod profile_robustness_tests {
         assert_eq!(other.profile_text(), state.profile_text());
     }
 }
+
+#[cfg(test)]
+mod hud_place_tests {
+    use super::*;
+
+    fn hud(state: &mut State) -> &mut Module {
+        state.modules.iter_mut().find(|m| m.name == "HUD").unwrap()
+    }
+
+    fn set(m: &mut Module, name: &str, value: &str) {
+        assert!(m.settings.iter_mut().find(|s| s.name == name).unwrap().parse(value), "{name}={value}");
+    }
+
+    fn get(m: &Module, name: &str) -> String {
+        m.settings.iter().find(|s| s.name == name).unwrap().stored()
+    }
+
+    // The defaults are the layout from before: watermark and coordinates top left, the list at the top of its side,
+    // no low health warning.
+    #[test]
+    fn defaults_keep_the_old_layout() {
+        let mut state = State::new();
+        let m = hud(&mut state);
+        assert_eq!(m.p("Watermark position"), "Top left");
+        assert_eq!(m.p("Module list position"), "Top");
+        assert_eq!(m.p("Coordinates position"), "Top left");
+        assert!(!m.b("Low health warning"));
+    }
+
+    // Positions, Custom places and the low health warning come back from the config and from a profile.
+    #[test]
+    fn hud_places_survive_the_config_and_profiles() {
+        let mut state = State::new();
+        let m = hud(&mut state);
+        for (name, value) in [
+            ("Watermark position", "Custom"),
+            ("Watermark x", "0.25"),
+            ("Watermark y", "0.731"),
+            ("Module list position", "Bottom"),
+            ("Module list side", "Left"),
+            ("Module list x", "0.9"),
+            ("Coordinates position", "Bottom right"),
+            ("Low health warning", "true"),
+            ("Low health below", "8"),
+            ("Low health style", "Flash"),
+        ] {
+            set(m, name, value);
+        }
+        let want: Vec<(String, String)> = m.settings.iter().map(|s| (s.name.to_owned(), s.stored())).collect();
+        let mut from_config = State::new();
+        from_config.load_text(&state.save_text());
+        let mut from_profile = State::new();
+        from_profile.load_profile(&state.profile_text());
+        for loaded in [&mut from_config, &mut from_profile] {
+            let m = hud(loaded);
+            for (name, value) in &want {
+                assert_eq!(&get(m, name), value, "{name}");
+            }
+        }
+    }
+
+    // A config written before keeps its coordinates where they were; a value no longer offered leaves the default.
+    #[test]
+    fn older_configs_load() {
+        let mut state = State::new();
+        state.load_text("hud.coordinatesposition=Custom\nhud.coordinatesx=0.4\nhud.watermarkposition=Middle\n");
+        let m = hud(&mut state);
+        assert_eq!(m.p("Coordinates position"), "Custom");
+        assert_eq!(get(m, "Coordinates x"), "0.4");
+        assert_eq!(m.p("Watermark position"), "Top left");
+    }
+
+    // x and y show in the menu only with Custom, the low health settings only with the warning on.
+    #[test]
+    fn place_settings_show_with_what_they_move() {
+        let mut state = State::new();
+        let m = hud(&mut state);
+        let shown = |m: &Module, name: &str| m.setting_visible(m.settings.iter().position(|s| s.name == name).unwrap());
+        assert!(shown(m, "Watermark position") && !shown(m, "Watermark x") && !shown(m, "Module list y"));
+        assert!(!shown(m, "Low health below") && !shown(m, "Low health style"));
+        set(m, "Watermark position", "Custom");
+        set(m, "Module list position", "Custom");
+        set(m, "Low health warning", "true");
+        assert!(shown(m, "Watermark x") && shown(m, "Watermark y") && shown(m, "Module list x") && shown(m, "Module list y"));
+        assert!(shown(m, "Low health below") && shown(m, "Low health style") && shown(m, "Low health strength"));
+        set(m, "Watermark", "false");
+        assert!(!shown(m, "Watermark position") && !shown(m, "Watermark x"));
+    }
+}
