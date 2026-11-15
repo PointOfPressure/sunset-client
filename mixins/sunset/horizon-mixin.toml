@@ -1316,6 +1316,16 @@ bindings = [
   { name = "root", ty = "&Path", value = "root" },
 ]
 
+# Since nightly 9f42064 the HUD atlas loads its fonts through load_over (pack overlay over the game resources).
+[[injection]]
+id = "font_over"
+kind = "HEAD"
+target = "horizon_client_render::font::Font::load_over"
+helper = "font_over_hook.rs"
+bindings = [
+  { name = "root", ty = "&Path", value = "root" },
+]
+
 [[injection]]
 id = "text"
 kind = "HEAD"
