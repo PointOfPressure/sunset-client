@@ -388,6 +388,7 @@ impl Module {
                 _ if name.starts_with("Armor HUD ") => self.b("Armor HUD"),
                 "Durability format" | "Durability tooltip" => self.b("Item durability"),
                 "Target HUD mode" => self.b("Target HUD"),
+                "Low health below" | "Low health style" | "Low health strength" => self.b("Low health warning"),
                 _ => true,
             },
             "Client Sort" => name != "Fill CPS" || self.b("Shift fill"),
@@ -1014,6 +1015,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Target HUD", true)
             .pick("Target HUD mode", &["Full", "Potato"])
             .bool("Shield status", false)
+            // The screen's edges tinted red below a health (hud_health.rs).
+            .bool("Low health warning", false)
+            .num("Low health below", 6.0, 1.0, 20.0, 1.0)
+            .pick("Low health style", &["Edge tint", "Flash"])
+            .num("Low health strength", 0.6, 0.1, 1.0, 0.05)
             .group("Armor HUD")
             .bool("Armor HUD", false)
             .pick("Armor HUD style", &["Boxes", "Compact"])
@@ -8553,6 +8559,10 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     // Where the HUD module's own shapes start: its Text case is for them, not for the menu, the chat or plugins.
     let hud_from = shapes.len();
     if let Some(hud) = get("HUD") {
+        // First, so the HUD's text and boxes stay over the tint.
+        if game.native_playing() {
+            super::sunset_hud_health::draw(game, hud, w, h, &mut shapes);
+        }
         if hud.b("Target HUD") && get("Kill Aura").is_some() {
             super::sunset_aura::draw_target(game, w, h, hud.p("Target HUD mode") == "Potato", &mut shapes);
         }
