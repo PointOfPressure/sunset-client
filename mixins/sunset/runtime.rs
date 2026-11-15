@@ -375,9 +375,11 @@ impl Module {
             "HUD" => match name {
                 "Second color" => self.p("List color mode") != "Static" || self.p("Watermark color mode") != "Static",
                 "Color speed" => [self.p("List color mode"), self.p("Watermark color mode")].iter().any(|m| *m != "Static"),
-                "Watermark text" | "Watermark profile" | "Watermark color mode" => self.b("Watermark"),
-                "Module list side" | "Modules shown" | "Module details" | "Remove spaces" | "List sort" | "List color mode"
-                | "List background" | "List bar" | "List spacing" | "List animations" => self.b("Module list"),
+                "Watermark text" | "Watermark profile" | "Watermark color mode" | "Watermark position" => self.b("Watermark"),
+                "Watermark x" | "Watermark y" => self.b("Watermark") && self.p("Watermark position") == "Custom",
+                "Module list side" | "Module list position" | "Modules shown" | "Module details" | "Remove spaces" | "List sort"
+                | "List color mode" | "List background" | "List bar" | "List spacing" | "List animations" => self.b("Module list"),
+                "Module list x" | "Module list y" => self.b("Module list") && self.p("Module list position") == "Custom",
                 "Coordinates position" => self.b("Coordinates"),
                 "Coordinates x" | "Coordinates y" => self.b("Coordinates") && self.p("Coordinates position") == "Custom",
                 "Compass position" => self.b("Compass"),
@@ -975,9 +977,17 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Watermark text", "")
             .bool("Watermark profile", true)
             .pick("Watermark color mode", &["Static", "Fade", "Breathe", "Rainbow"])
+            // Where the watermark, the module list and the coordinates go: a corner, or Custom (dragged with the chat
+            // open, kept as fractions of the screen; hud_place.rs).
+            .pick("Watermark position", super::sunset_hud_place::POSITIONS)
+            .num("Watermark x", 0.0, 0.0, 1.0, 0.001)
+            .num("Watermark y", 0.0, 0.0, 1.0, 0.001)
             .group("Module list")
             .bool("Module list", true)
             .pick("Module list side", &["Right", "Left"])
+            .pick("Module list position", super::sunset_hud_place::LIST_POSITIONS)
+            .num("Module list x", 1.0, 0.0, 1.0, 0.001)
+            .num("Module list y", 0.0, 0.0, 1.0, 0.001)
             .pick("Modules shown", &["All", "Exclude render", "Only bound"])
             .pick("Module details", &["Gray", "Brackets", "Dash", "Off"])
             .bool("Remove spaces", false)
@@ -989,7 +999,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("List animations", true)
             .group("Info")
             .bool("Coordinates", true)
-            .pick("Coordinates position", &["Top left", "Custom"])
+            .pick("Coordinates position", super::sunset_hud_place::POSITIONS)
             .num("Coordinates x", 0.0, 0.0, 1.0, 0.001)
             .num("Coordinates y", 0.0, 0.0, 1.0, 0.001)
             .bool("FPS", true)
