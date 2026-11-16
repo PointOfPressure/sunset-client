@@ -22,22 +22,53 @@ use horizon_client::net::sunset_packets::{Link, Linked, scan_configuring};
 use horizon_protocol::connection::sunset_lifecycle::RUNTIME;
 use horizon_protocol::packets::play::Clientbound;
 use horizon_world::registry::BlockRegistry;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, RwLock, Weak};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const MAX_OBSERVATIONS: usize = 4096;
 const MAX_DATABASE: u64 = 2 * 1024 * 1024;
 const QUEUE_SIZE: usize = 16;
 const SEND_PER_TICK: usize = 2;
+const MAX_VERIFIED_SEEDS: usize = 64;
+
+// Diagnostic only: exercise packet/chunk discovery even in an integrated world. Read once per process;
+// no save/profile setting, local seed read or cache reuse can bypass that experiment.
+static FORCE_CRACK: LazyLock<bool> = LazyLock::new(|| std::env::var_os("SUNSET_SEEDCRACKER_FORCE_CRACK").is_some_and(|v| v == "1"));
+// An optional collection window makes live diagnostic runs practical without changing the solver or
+// seeding it with fixtures. Ignored outside FORCE_CRACK; normal collection/search timing is unchanged.
+static START_DELAY: LazyLock<Duration> = LazyLock::new(|| Duration::from_secs(if *FORCE_CRACK {
+    std::env::var("SUNSET_SEEDCRACKER_START_DELAY").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0).min(300)
+} else { 0 }));
+
+#[derive(Default)]
+struct VerifiedSeeds(VecDeque<(i64, i64)>);
+
+impl VerifiedSeeds {
+    fn remember(&mut self, hash: Option<i64>, seed: i64) {
+        if !verified(seed, hash) { return; }
+        let hash = hash.unwrap();
+        self.0.retain(|&(h, _)| h != hash);
+        self.0.push_back((hash, seed));
+        if self.0.len() > MAX_VERIFIED_SEEDS { self.0.pop_front(); }
+    }
+
+    fn get(&mut self, hash: Option<i64>) -> Option<i64> {
+        let hash = hash?;
+        let index = self.0.iter().position(|&(h, _)| h == hash)?;
+        let entry = self.0.remove(index)?;
+        self.0.push_back(entry);
+        Some(entry.1)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SeedOrigin { Local, Cracked, Database }
+pub(super) enum SeedOrigin { Local, Cracked, Database, Reused }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct FoundSeed {
@@ -139,14 +170,17 @@ struct GameHost {
     published: Mutex<Snapshot>,
     finished: AtomicBool,
     database_started: AtomicBool,
+    cache: Arc<Mutex<VerifiedSeeds>>,
 }
 
 impl GameHost {
-    fn new(world: u64, run: u64, hash: Option<i64>) -> Arc<Self> {
+    fn new(world: u64, run: u64, hash: Option<i64>, cache: Arc<Mutex<VerifiedSeeds>>) -> Arc<Self> {
         Arc::new(Self { world, run, hash, cancelled: Arc::new(AtomicBool::new(false)), lifecycle: RUNTIME.token(),
             published: Mutex::new(Snapshot { world, run, phase: "Collecting".into(), wanted_bits: 32.0,
-                detail: hash.is_none().then(|| "Waiting for the world's seed hash".into()), ..Snapshot::default() }),
-            finished: AtomicBool::new(false), database_started: AtomicBool::new(false) })
+                detail: if hash.is_none() { Some("Waiting for the world's seed hash".into()) }
+                    else if !START_DELAY.is_zero() { Some(format!("Diagnostic collection window: {} seconds before solving", START_DELAY.as_secs())) }
+                    else { None }, ..Snapshot::default() }),
+            finished: AtomicBool::new(false), database_started: AtomicBool::new(false), cache })
     }
 
     fn update(&self, update: impl FnOnce(&mut Snapshot)) {
@@ -162,6 +196,8 @@ impl GameHost {
             if !verified(value, self.hash) { return; }
         }
         self.update(|s| {
+            // Publish and remember under the same cancellation gate. Manual input never reaches this Host.
+            lock(&self.cache).remember(self.hash, value);
             s.found = Some(FoundSeed { world: self.world, run: self.run, value, origin });
             s.phase = "Seed found".into();
             s.world_candidates = 1;
@@ -329,14 +365,14 @@ impl WorkerInput {
     fn of(game: &Game<'_>, policy: Policy) -> Self {
         let biomes = game.world_biomes.as_deref().unwrap_or_else(|| game.res.biomes());
         let dimension = match game.dim { super::Dim::Nether => Dimension::Nether, super::Dim::End => Dimension::End, _ => Dimension::Overworld };
-        let local = match &game.remote {
+        let local = if *FORCE_CRACK { None } else { match &game.remote {
             None => game.native_level(game.dim.id()).and_then(|l| game.native_level_seed(l)).map(LocalSeed::Direct),
             Some(remote) if game.integrated.is_some() => remote.save_folder.as_ref().and_then(|folder| {
                 // This is the integrated server's actual save folder, not a server address or seed guess.
                 std::env::current_dir().ok().map(|p| LocalSeed::Saved(p.join("saves").join(folder)))
             }),
             _ => None,
-        };
+        } };
         Self { registry: game.pack.assets.registry, biomes: biomes.list.iter().take(8192).map(|b| b.name.clone()).collect(),
             dimension, height: (game.world.shape.min_y, game.world.shape.max_y()), local, policy }
     }
@@ -353,8 +389,9 @@ struct Run {
 }
 
 impl Run {
-    fn start(game: &Game<'_>, world: u64, run: u64, hash: Option<i64>, policy: Policy) -> Result<Self, String> {
-        let host = GameHost::new(world, run, hash);
+    fn start(game: &Game<'_>, world: u64, run: u64, hash: Option<i64>, policy: Policy,
+        cache: Arc<Mutex<VerifiedSeeds>>) -> Result<Self, String> {
+        let host = GameHost::new(world, run, hash, cache);
         let storage = DataStorage::new(host.clone());
         storage.get_time_machine().set_threads(policy.threads);
         let latest = Arc::new(RwLock::new(None));
@@ -452,12 +489,13 @@ fn coordinate(host: &Arc<GameHost>, storage: &Arc<DataStorage>, latest: &RwLock<
         let poke: DataAddedEvent = Arc::new(|s| s.get_time_machine().poke(s, Some(Phase::Biomes)));
         storage.add_hashed_seed_data(HashedSeedData::new(hash), poke);
     }
+    let collecting_since = Instant::now();
     loop {
         if host.cancelled() || lock(&host.published).found.is_some() { break; }
         if solver.as_ref().is_some_and(JoinHandle::is_finished) {
             if solver.take().unwrap().join().is_err() { host.failed("Seed solver failed; use .seed restart to retry"); return; }
         }
-        if solver.is_none() { *solver = storage.tick(); }
+        if solver.is_none() && collecting_since.elapsed() >= *START_DELAY { *solver = storage.tick(); }
         let job = match input.recv_timeout(Duration::from_millis(50)) {
             Ok(job) => Some(job),
             Err(RecvTimeoutError::Timeout) => None,
@@ -492,6 +530,8 @@ struct Controller {
     retiring: Option<JoinHandle<()>>,
     idle: Snapshot,
     start_failed: bool,
+    // Kept for the process lifetime across boundaries, stop, restart and Panic; never serialized.
+    cache: Arc<Mutex<VerifiedSeeds>>,
 }
 
 impl Controller {
@@ -520,6 +560,15 @@ impl Controller {
         self.idle.clone()
     }
 
+    fn reuse(&mut self, hash: Option<i64>) {
+        if self.active.is_some() || self.idle.found.is_some() { return; }
+        let Some(value) = lock(&self.cache).get(hash) else { return; };
+        self.run = self.run.wrapping_add(1).max(1);
+        self.idle = Snapshot { world: self.world, run: self.run, phase: "Seed reused".into(), world_candidates: 1,
+            found: Some(FoundSeed { world: self.world, run: self.run, value, origin: SeedOrigin::Reused }),
+            ..Snapshot::default() };
+    }
+
     fn synchronize(&mut self, game: &Game<'_>, policy: Policy) {
         self.reap();
         let next = Identity::of(game);
@@ -534,6 +583,8 @@ impl Controller {
         if !policy.automatic || self.identity.is_none() || !RUNTIME.running() {
             if self.active.is_some() { self.retire(); }
             self.idle.phase = if policy.automatic { "Waiting for world" } else { "Off" }.into();
+        } else if !*FORCE_CRACK {
+            self.reuse(self.identity.as_ref().and_then(|i| i.hash));
         }
     }
 }
@@ -557,12 +608,12 @@ pub(super) fn tick(game: &mut Game<'_>, module: Option<&Module>) {
     let policy = Policy::of(module);
     let mut c = lock(&CONTROLLER);
     c.synchronize(game, policy);
-    if !policy.automatic || c.identity.is_none() || c.start_failed { return; }
+    if !policy.automatic || c.identity.is_none() || c.start_failed || c.idle.found.is_some() { return; }
     if c.active.is_none() {
         if c.retiring.is_some() { c.idle.phase = "Stopping previous search".into(); return; }
         c.run = c.run.wrapping_add(1).max(1);
         let hash = c.identity.as_ref().and_then(|i| i.hash);
-        match Run::start(game, c.world, c.run, hash, policy) {
+        match Run::start(game, c.world, c.run, hash, policy, c.cache.clone()) {
             Ok(run) => c.active = Some(run),
             Err(why) => { c.start_failed = true; c.idle.phase = "Waiting".into(); c.idle.detail = Some(why); }
         }
@@ -600,7 +651,7 @@ pub(super) fn snapshot() -> Snapshot {
 pub(super) fn status_line() -> Option<String> {
     let s = snapshot();
     if s.phase.is_empty() || s.phase == "Off" { return None; }
-    if s.found.is_some() { return Some("Seed found".into()); }
+    if s.found.is_some() { return Some(s.phase); }
     if s.total > 0 { return Some(format!("{} {}%", s.phase, (s.checked.saturating_mul(100) / s.total).min(100))); }
     if s.world_candidates > 0 { return Some(format!("{} world candidates", s.world_candidates)); }
     if s.structure_candidates > 0 { return Some(format!("{} structure candidates", s.structure_candidates)); }
@@ -628,6 +679,10 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
 
+    fn new_host(world: u64, run: u64, hash: Option<i64>) -> Arc<GameHost> {
+        GameHost::new(world, run, hash, Arc::default())
+    }
+
     fn module() -> Module {
         let mut m = Module::new("Ore Sim", super::super::sunset::Category::World, "test")
             .text("Seed", "").pick("Seed source", &["Auto-crack", "Manual"])
@@ -638,7 +693,7 @@ mod tests {
 
     #[test]
     fn cancelled_and_unverified_callbacks_cannot_deliver_a_seed_or_progress() {
-        let host = GameHost::new(1, 1, Some(world_seed::to_hash(-42)));
+        let host = new_host(1, 1, Some(world_seed::to_hash(-42)));
         host.print_seed("candidate", -42);
         assert!(lock(&host.published).found.is_none());
         host.world_seed_found(7);
@@ -671,13 +726,80 @@ mod tests {
     }
 
     #[test]
+    fn verified_cache_is_bounded_and_recently_reused_seeds_survive_eviction() {
+        let mut cache = VerifiedSeeds::default();
+        for seed in 0..MAX_VERIFIED_SEEDS as i64 {
+            cache.remember(Some(world_seed::to_hash(seed)), seed);
+        }
+        assert_eq!(cache.get(Some(world_seed::to_hash(0))), Some(0));
+        cache.remember(Some(world_seed::to_hash(-42)), -42);
+        assert_eq!(cache.0.len(), MAX_VERIFIED_SEEDS);
+        assert_eq!(cache.get(Some(world_seed::to_hash(1))), None);
+        assert_eq!(cache.get(Some(world_seed::to_hash(0))), Some(0));
+        cache.remember(Some(world_seed::to_hash(-42)), -42);
+        assert_eq!(cache.0.len(), MAX_VERIFIED_SEEDS);
+    }
+
+    #[test]
+    fn only_current_hash_verified_callbacks_enter_the_cache() {
+        let cache = Arc::new(Mutex::new(VerifiedSeeds::default()));
+        let host = GameHost::new(1, 1, Some(world_seed::to_hash(-42)), cache.clone());
+        host.print_seed("candidate", -42);
+        host.world_seed_found(7);
+        assert!(lock(&cache).0.is_empty());
+        host.world_seed_found(-42);
+        assert_eq!(lock(&cache).get(host.hash), Some(-42));
+        let cancelled = GameHost::new(1, 2, Some(world_seed::to_hash(7)), cache.clone());
+        cancelled.cancelled.store(true, Ordering::Release);
+        cancelled.world_seed_found(7);
+        let local = GameHost::new(1, 3, None, cache.clone());
+        local.found(7, SeedOrigin::Local);
+        lock(&cache).remember(None, 7);
+        lock(&cache).remember(Some(world_seed::to_hash(-42)), 7);
+        assert_eq!(lock(&cache).0.len(), 1);
+        assert_eq!(lock(&cache).get(None), None);
+        assert_eq!(lock(&cache).get(Some(world_seed::to_hash(7))), None);
+    }
+
+    #[test]
+    fn lifecycle_boundaries_reuse_only_matching_hashes_with_fresh_delivery_ids() {
+        let mut c = Controller::default();
+        let hash = Some(world_seed::to_hash(-42));
+        // The normal Host path populates the process cache; no manual-setting path does so.
+        let host = GameHost::new(0, 1, hash, c.cache.clone());
+        host.world_seed_found(-42);
+        let mut previous = (0, 0);
+        for _ in 0..3 { // death/Respawn, dimension/Respawn, reconnect/Login
+            c.boundary();
+            assert!(c.read().found.is_none());
+            c.reuse(None);
+            c.reuse(Some(world_seed::to_hash(7)));
+            assert!(c.read().found.is_none());
+            c.reuse(hash);
+            let snap = c.read();
+            let found = snap.found.unwrap();
+            assert_eq!((found.value, found.origin), (-42, SeedOrigin::Reused));
+            assert!(found.world > previous.0 && found.run > previous.1);
+            previous = (found.world, found.run);
+            assert_eq!(snap.phase, "Seed reused");
+            assert_eq!((snap.observations, snap.structure_candidates), (0, 0));
+            assert_eq!((snap.base_bits, snap.lifting_bits), (0.0, 0.0));
+            assert!(c.active.is_none());
+        }
+        c.retire(); // off/restart also preserves the bounded process cache
+        assert!(c.read().found.is_none());
+        c.reuse(hash);
+        assert_eq!(c.read().found.unwrap().value, -42);
+    }
+
+    #[test]
     fn database_gate_and_hash_recheck_reject_stale_rows() {
         let requests = AtomicUsize::new(0);
         let enabled = Policy { automatic: true, database: true, threads: 1 };
-        let host = GameHost::new(1, 1, None);
+        let host = new_host(1, 1, None);
         fetch_database(&host, enabled, || { requests.fetch_add(1, Ordering::Relaxed); Ok(String::new()) });
         assert_eq!(requests.load(Ordering::Relaxed), 0);
-        let host = GameHost::new(1, 2, Some(world_seed::to_hash(42)));
+        let host = new_host(1, 2, Some(world_seed::to_hash(42)));
         for policy in [Policy::default(), Policy { database: false, ..enabled }, Policy { automatic: false, ..enabled }] {
             fetch_database(&host, policy, || { requests.fetch_add(1, Ordering::Relaxed); Ok(String::new()) });
         }
@@ -687,7 +809,7 @@ mod tests {
             Ok(format!("header\nserver,x,7L,x,x,x,{}", world_seed::to_hash(42)))
         });
         assert!(lock(&host.published).found.is_none());
-        let current = GameHost::new(1, 3, host.hash);
+        let current = new_host(1, 3, host.hash);
         fetch_database(&current, enabled, || {
             requests.fetch_add(1, Ordering::Relaxed);
             Ok(format!("header\nserver,x,42L,x,x,x,{}", world_seed::to_hash(42)))
@@ -744,7 +866,7 @@ mod tests {
     #[test]
     fn retired_worker_cannot_deliver_into_a_reconnect_with_the_same_hash() {
         let hash = Some(world_seed::to_hash(-42));
-        let old = GameHost::new(1, 1, hash);
+        let old = new_host(1, 1, hash);
         let (release, wait) = sync_channel(1);
         let callback = old.clone();
         let worker = std::thread::spawn(move || {
@@ -767,7 +889,7 @@ mod tests {
         c.retiring.take().unwrap().join().unwrap();
         assert!(lock(&old.published).found.is_none());
         assert_eq!(lock(&old.published).checked, 0);
-        let current = GameHost::new(c.world, 2, hash);
+        let current = new_host(c.world, 2, hash);
         current.world_seed_found(-42);
         let found = lock(&current.published).found.unwrap();
         assert_eq!((found.world, found.run), (2, 2));

@@ -139,6 +139,7 @@ fn origin(source: SeedOrigin) -> &'static str {
         SeedOrigin::Local => "Local seed",
         SeedOrigin::Cracked => "Hash-verified seed",
         SeedOrigin::Database => "Hash-verified database seed",
+        SeedOrigin::Reused => "Reused hash-verified seed",
     }
 }
 

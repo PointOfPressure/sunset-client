@@ -2587,6 +2587,125 @@ def _():
                 f"manual command leaves off {unchanged_off}, profile round-trip {round_trip}")
 
 
+@test("Ore Sim seed crack")
+def _():
+    # Launch a FRESH normal-terrain integrated world with SUNSET_SEEDCRACKER_FORCE_CRACK=1.
+    # /seed is only the assertion oracle. Only naturally generated, server-sent blocks feed the cracker:
+    # no manual seed, database row, injected observation or precomputed candidate enters it.
+    if os.environ.get("SUNSET_SEEDCRACKER_FORCE_CRACK") != "1":
+        return None, "requires a fresh local world launched with SUNSET_SEEDCRACKER_FORCE_CRACK=1 (README > Ore Sim)"
+    if os.environ.get("SUNSET_SEEDCRACKER_START_DELAY") != "240":
+        return None, "also launch with SUNSET_SEEDCRACKER_START_DELAY=240 to collect a practical batch before solving"
+    if ctl("status").get("server", {}).get("address") != "local":
+        return False, "requires a fresh integrated world with normal terrain and command permissions"
+    reset("creative")
+    mark = log_mark()
+    cmd("seed")
+    wait(5)
+    found = [re.search(r"Seed: \[(-?\d+)\]", line) for line in chat_since(mark)]
+    expected = next((int(f.group(1)) for f in found if f), None)
+    if expected is None:
+        return False, f"no world seed oracle: {chat_since(mark)[-3:]}"
+    setting("oresim", "database fetch", "false")
+    setting("oresim", "cracker threads", "8")
+    setting("oresim", "chunks", "2")
+    say(".seed auto")
+    say(".seed restart")
+    replay_mark = log_mark()
+    toggle("ore sim", True)
+    started = time.monotonic()
+    deadline = started + 540
+    status = said_after(".seed status")
+    if ("Ore Sim seed: verification hash available." not in status
+            or not any("Diagnostic collection window: 240 seconds before solving" in line for line in status)):
+        return False, f"game did not acknowledge the packet hash and diagnostic collection mode: {status!r}"
+    visited = set()
+    route = []
+
+    def result(lines):
+        return next((int(m.group(1)) for line in lines
+                     if (m := re.fullmatch(r"Ore Sim seed: Hash-verified seed (-?\d+)\.", line))), None)
+
+    # Pyramids supply lifting bits; monuments break correlations between their candidates. Visit separated
+    # regions on both axes, collecting two monuments and eight pyramids during the diagnostic window.
+    # The server's locator chooses actual structures; no observation or candidate is injected into Sunset.
+    stops = [("monument", x, z) for x, z in ((65536, 65536), (-65536, 65536), (65536, -65536), (-65536, -65536))]
+    stops += [("desert_pyramid", (i % 4) * 8192, (i // 4) * 8192) for i in range(24)]
+    for kind, origin_x, origin_z in stops:
+        if result(status) is not None or len(visited) >= 10 or time.monotonic() >= deadline:
+            break
+        if sum(v[0] == kind for v in visited) >= (2 if kind == "monument" else 8):
+            continue
+        mark = log_mark()
+        cmd(f"execute positioned {origin_x} 100 {origin_z} run locate structure minecraft:{kind}")
+        at = None
+        locate_deadline = min(deadline, time.monotonic() + 30)
+        while at is None and time.monotonic() < locate_deadline:
+            coordinates = [re.search(r"\[(-?\d+), [^,]+, (-?\d+)\]", line) for line in chat_since(mark)]
+            at = next(((int(m.group(1)), int(m.group(2))) for m in coordinates if m), None)
+            if at is None:
+                wait(10)
+        if at is None or (kind, *at) in visited:
+            route.append(f"locate {kind} at {origin_x},{origin_z}: {chat_since(mark)[-2:]!r}")
+            continue
+        visited.add((kind, *at))
+        x, z = at
+        cmd(f"tp @s {x + 8} 120 {z + 8}")
+        for _ in range(12 if kind == "monument" else 8):
+            wait(20)
+            status = said_after(".seed status")
+            # Stay long enough for loaded neighbours and late server decoration to reach WorldView.
+            if result(status) is not None:
+                break
+        route.append(f"{kind} {at}: {status!r}")
+        print(f"PROGRESS Ore Sim seed crack - {route[-1]}", flush=True)
+
+    while result(status) is None and time.monotonic() < deadline:
+        if any("Local seed " in line or "Reused hash-verified" in line or "database seed" in line for line in status):
+            return False, f"shortcut unexpectedly resolved instead of cracking: {status!r}"
+        wait(40)
+        status = said_after(".seed status")
+    cracked = result(status)
+    if cracked != expected:
+        return False, (f"world seed {expected}, cracked {cracked}; {len(visited)} natural structures visited; "
+                       f"elapsed {time.monotonic()-started:.1f}s; final {status!r}; route {route!r}")
+    # The effective seed must drive the existing replay and ore drawing without writing a manual setting.
+    cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}")
+    completion = ""
+    for _ in range(60):
+        wait(10)
+        # Ore Sim announces once per run, including when the first replay finished before this status poll.
+        completion = next((line for line in reversed(sunset_said(replay_mark))
+                           if re.search(r"^Ore Sim: \d+ ores in \d+ chunks,", line)), "")
+        if completion:
+            break
+    ores = re.search(r"(\d+) ores in (\d+) chunks, (\d+) of them", completion)
+    settings = said_after(".settings oresim")
+    still_on = "Ore Sim" in modules_on()
+    ctl("look", "0", "70")
+    wait(20)
+    ctl("screenshot", f"{SHOTS}/ore_sim_seed_crack.png")
+    time.sleep(2)
+    toggle("ore sim", False)
+    wait(10)
+    ctl("screenshot", f"{SHOTS}/ore_sim_seed_crack_off.png")
+    time.sleep(2)
+    from PIL import Image, ImageChops
+    with Image.open(f"{SHOTS}/ore_sim_seed_crack.png") as drawn, Image.open(f"{SHOTS}/ore_sim_seed_crack_off.png") as off:
+        # Exclude chat and module-list text: compare the ore overlay in the stationary world view.
+        w, h = drawn.size
+        area = (int(w * 0.25), int(h * 0.2), int(w * 0.75), int(h * 0.55))
+        channels = ImageChops.difference(drawn.convert("RGB"), off.convert("RGB")).crop(area).split()
+        delta = ImageChops.lighter(ImageChops.lighter(channels[0], channels[1]), channels[2])
+        rendered = sum(delta.histogram()[24:])
+    ok = (ores is not None and int(ores.group(1)) >= 100 and int(ores.group(2)) > 0
+          and int(ores.group(3)) >= 0.6 * int(ores.group(1)) and "Seed: (empty)" in settings
+          and "Seed source: Auto-crack" in settings and still_on and rendered > 100)
+    return ok, (f"world/cracked seed {expected}/{cracked}; natural structures {len(visited)}; "
+                f"{time.monotonic()-started:.1f}s; {completion!r}; ore overlay {rendered} pixels; final {status!r}; "
+                f"frame {SHOTS}/ore_sim_seed_crack.png")
+
+
 @test("Base Finder")
 def _():
     # A "base" (5 chests, 4 beds, 3 signs, a crafting table and a furnace: 14 listed blocks) is built east, in a
