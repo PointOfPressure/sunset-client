@@ -13,7 +13,7 @@ commit = (git("rev-parse", "--short", "HEAD") or "unknown") + ("-dirty" if git("
 UNPACKED = 'const COMMIT: &str = "unpacked";'
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     z.write(root / "horizon-native.json", "horizon-native.json")
-    for notice in ("seedcracker.LICENSE", "seedcracker.NOTICE.md"):
+    for notice in ("seedcracker.LICENSE", "seedcracker.NOTICE.md", "seedcracker.UPSTREAM.md"):
         z.write(root / "mixins" / "sunset" / notice, f"mixins/sunset/{notice}")
     for f in sorted((root / "mixins" / "sunset").iterdir()):
         if f.name == "debug.rs":
