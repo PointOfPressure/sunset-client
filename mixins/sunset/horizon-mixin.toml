@@ -423,6 +423,12 @@ name = "sunset_new_chunks"
 source = "new_chunks.rs"
 
 [[module]]
+id = "auto_sign"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_auto_sign"
+source = "auto_sign.rs"
+
+[[module]]
 id = "world_parity"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_world_parity"
@@ -2569,3 +2575,11 @@ bindings = [
   { name = "y", ty = "f32", value = "y" },
   { name = "after_name", ty = "&Vec<(horizon_client::text::Text, u32)>", value = "&after_name" },
 ]
+
+[[injection]]
+id = "auto_sign_open"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::sign_edit::Game<'_>::remote_open_sign_editor"
+helper = "auto_sign_hook.rs"
+bindings = [{ name = "p", ty = "&play::OpenSignEditor", value = "&p" }]

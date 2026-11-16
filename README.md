@@ -271,7 +271,12 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   withers spawned anywhere), with where and often who.
 - **Ore Sim**: shows ores worked out from the world seed, for servers that hide them.
 - **Nuker**, **Packet Mine**, **Liquid Filler** (also drains an enemy's water or lava), **Spawn Proofer**,
-  **Build Height**, **Auto Sign**.
+  **Build Height**.
+- **Auto Sign**: writes signs without the editor ever showing, with text from its settings (front and back) or the
+  first sign you write; both sides (a server opens the side you stand on, so the other side is written once you're on
+  it); Aura clicks the signs in reach around you, with an Anticheat mode: Grim (one click a tick, the look in that
+  tick's move packet and the next) or Horizon (many signs a tick). Every side still needs a real click on the sign:
+  servers take a sign's text only from the player they opened it for.
 - **Auto Shearer**, **Auto Nametag**, **Auto Breed**, **Auto Mount**, **Flamethrower**, **Enderman Look**.
 - **Timer**, **Time Changer**, **Weather Changer**, **Unlock All Recipes**.
 

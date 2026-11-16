@@ -2951,6 +2951,7 @@ def _():
     reset("creative")
     slot(0, "oak_sign", 4)
     only("autosign")
+    setting("autosign", "textsource", "First sign")
     texts = []
     for yaw, dz in ((0, 2), (180, -2)):
         pitch = math.degrees(math.atan2(1.62, abs(dz)))
@@ -2974,6 +2975,187 @@ def _():
     cmd(f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:air", f"setblock {X0} {Y + 1} {Z0 - 2} minecraft:air")
     ok = all(t and "hello" in t[0] for t in texts) and screen == "playing"
     return ok, f"first and second sign: {texts}; screen after {screen}"
+
+
+def sign_side(x, y, z, front=True, what="messages[0]"):
+    """A sign's line (or other side field) as the server has it, from /data get."""
+    mark = log_mark()
+    cmd(f"data get block {x} {y} {z} {'front' if front else 'back'}_text.{what}")
+    wait(4)
+    got = [l for l in chat_since(mark) if "block data" in l or "found" in l.lower() or "no " in l.lower()]
+    return got[-1] if got else ""
+
+
+def click_sign_at(dz, watch=False, shot=None):
+    """Right-clicks the sign dz blocks along z from where reset() put the player (empty hand), facing it; with watch,
+    the screens seen each tick from the click on."""
+    yaw = 0 if dz > 0 else 180
+    pitch = math.degrees(math.atan2(1.12, abs(dz) - 0.5 + 0.5))
+    ctl("look", str(yaw), f"{pitch:.3f}")
+    wait(2)
+    ctl("mouse", "right", "down")
+    seen = []
+    for i in range(12 if watch else 1):
+        wait(1)
+        if shot and i == 1:
+            ctl("screenshot", f"{SHOTS}/{shot}.png")
+        seen.append(state().get("screen"))
+    ctl("mouse", "right", "up")
+    return seen
+
+
+@test("Auto Sign both sides")
+def _():
+    # Text from the settings, Silent: a standing sign south of the player (rotation 0, facing south) is clicked from its
+    # north side, so the server opens its back: "bk" goes on without a screen. Then from the south (Both sides) the
+    # module clicks it itself and the front gets "fr". A second sign with Both sides off keeps its front blank; a third
+    # whose back says "bk" already gets no text sent (nothing to change).
+    reset("creative")
+    s1, s2 = (X0, Y + 1, Z0 + 2), (X0 + 4, Y + 1, Z0 + 2)
+    cmd(f"setblock {s1[0]} {s1[1]} {s1[2]} minecraft:oak_sign[rotation=0]",
+        f"setblock {s2[0]} {s2[1]} {s2[2]} minecraft:oak_sign[rotation=0]")
+    wait(5)
+    only("autosign")
+    for k, v in (("textsource", "Settings"), ("front1", "fr"), ("back1", "bk"), ("silent", "true"), ("bothsides", "true"),
+                 ("aura", "false"), ("delay", "2")):
+        setting("autosign", k, v)
+    wait(3)
+    seen = click_sign_at(2, watch=True, shot="autosign_silent_click")
+    wait(10)
+    back = sign_side(*s1, front=False)
+    front_before = sign_side(*s1)
+    mark = probe_mark()
+    cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 4.5} 180 20")
+    wait(30)
+    front = sign_side(*s1)
+    uses = sum(t.count(f"pkt {USE_ITEM_ON}") for t in probe_ticks(mark))
+    # Both sides off: the second sign, clicked from the north, then the player south of it.
+    setting("autosign", "bothsides", "false")
+    cmd(f"tp @s {X0 + 4.5} {Y + 1} {Z0 + 0.5} 0 0")
+    wait(20)
+    click_sign_at(2)
+    wait(10)
+    cmd(f"tp @s {X0 + 4.5} {Y + 1} {Z0 + 4.5} 180 20")
+    wait(30)
+    off_back, off_front = sign_side(*s2, front=False), sign_side(*s2)
+    # Already "bk": clicked again from the north, no SignUpdate goes.
+    cmd(f"tp @s {X0 + 4.5} {Y + 1} {Z0 + 0.5} 0 0")
+    wait(20)
+    mark = probe_mark()
+    click_sign_at(2)
+    wait(15)
+    updates = sum(t.count(f"pkt {SIGN_UPDATE}") for t in probe_ticks(mark))
+    screen = state().get("screen")
+    only()
+    cmd(f"setblock {s1[0]} {s1[1]} {s1[2]} minecraft:air", f"setblock {s2[0]} {s2[1]} {s2[2]} minecraft:air")
+    ok = ("bk" in back and "fr" not in front_before and "fr" in front and uses == 1 and set(seen) == {"playing"}
+          and "bk" in off_back and "fr" not in off_front and updates == 0 and screen == "playing")
+    return ok, (f"back {back!r}, front before {front_before!r} after {front!r} (module clicks {uses}); screens {set(seen)}; "
+                f"Both sides off: back {off_back!r} front {off_front!r}; same text again: {updates} updates")
+
+
+@test("Auto Sign silent off")
+def _():
+    # Silent off: the editor opens on the screen and is closed by the module, the text still goes on.
+    reset("creative")
+    s1 = (X0, Y + 1, Z0 + 2)
+    cmd(f"setblock {s1[0]} {s1[1]} {s1[2]} minecraft:oak_sign[rotation=8]")
+    wait(5)
+    only("autosign")
+    for k, v in (("textsource", "Settings"), ("front1", "loud"), ("silent", "false"), ("aura", "false"), ("delay", "2")):
+        setting("autosign", k, v)
+    wait(3)
+    seen = click_sign_at(2, watch=True)
+    wait(10)
+    front = sign_side(*s1)
+    only()
+    cmd(f"setblock {s1[0]} {s1[1]} {s1[2]} minecraft:air")
+    ok = "loud" in front and seen[-1] == "playing"
+    return ok, f"front {front!r}; screens each tick {seen}"
+
+
+SIGN_UPDATE = 62
+
+
+def aura_signs():
+    """Signs around the player at the arena's centre: (pos, block, the side the server opens from there, the line it
+    gets; None for one Sign Aura leaves)."""
+    x, y, z = X0, Y + 1, Z0
+    return [
+        ((x, y, z + 3), "oak_sign[rotation=0]", False, "ba"),
+        ((x + 3, y, z), "oak_sign[rotation=4]", True, "fa"),
+        ((x - 3, y, z), "spruce_sign[rotation=4]", False, "ba"),
+        ((x, y, z - 3), "oak_sign[rotation=0]", True, "fa"),
+        ((x - 2, y + 1, z - 3), "oak_wall_sign[facing=south]", True, "fa"),
+        ((x + 2, y, z + 2), "oak_sign[rotation=0]{is_waxed:1b}", False, None),
+        ((x, y, z + 6), "oak_sign[rotation=0]", False, None),
+    ]
+
+
+def aura_run(mode, extra=(), item=None):
+    reset("creative")
+    signs = aura_signs()
+    keep = (X0 + 2, Y + 1, Z0 - 2)
+    cmd(*[f"setblock {p[0]} {p[1]} {p[2]} minecraft:{b}" for p, b, _, _ in signs],
+        f"setblock {keep[0]} {keep[1]} {keep[2]} minecraft:oak_sign[rotation=0]{{front_text:{{messages:['\"keep\"','\"\"','\"\"','\"\"']}}}}")
+    if item:
+        slot(0, item, 1)
+    wait(10)
+    only("autosign")
+    for k, v in (("textsource", "Settings"), ("front1", "fa"), ("back1", "ba"), ("silent", "true"), ("bothsides", "false"),
+                 ("aura", "false"), ("anticheat", mode), *extra):
+        setting("autosign", k, v)
+    wait(3)
+    before = state().get("selected")
+    mark = probe_mark()
+    setting("autosign", "aura", "true")
+    screens = set()
+    for _ in range(40):
+        wait(1)
+        screens.add(state().get("screen"))
+    ticks = probe_ticks(mark)
+    mark2 = probe_mark()
+    wait(40)
+    again = sum(t.count(f"pkt {USE_ITEM_ON}") for t in probe_ticks(mark2))
+    selected = state().get("selected") == before
+    got = [(sign_side(*p, front=f), want) for p, _, f, want in signs]
+    kept = sign_side(*keep)
+    color = sign_side(*signs[0][0], front=False, what="color")
+    only()
+    cmd(*[f"setblock {p[0]} {p[1]} {p[2]} minecraft:air" for p, _, _, _ in signs], f"setblock {keep[0]} {keep[1]} {keep[2]} minecraft:air")
+    written = sum(1 for line, want in got if want and want in line)
+    wrong = sum(1 for line, want in got if not want and ("fa" in line or "ba" in line))
+    uses = [t.count(f"pkt {USE_ITEM_ON}") for t in ticks]
+    moves = max((t.count("order move") for t in ticks), default=0)
+    # A click's tick: its move packet (the look) before it. Grim: the next tick's move packet keeps the look.
+    late = sum(1 for t in ticks if f"pkt {USE_ITEM_ON}" in t and ("order move" not in t or t.index("order move") > t.index(f"pkt {USE_ITEM_ON}")))
+    unkept = sum(1 for i, t in enumerate(ticks[:-1]) if f"pkt {USE_ITEM_ON}" in t and "order move" not in ticks[i + 1])
+    return dict(written=written, of=sum(1 for *_, w in signs if w), wrong=wrong, most=max(uses, default=0), clicks=sum(uses),
+                moves=moves, late=late, unkept=unkept, again=again, kept=kept, screens=screens, selected=selected, color=color)
+
+
+@test("Sign Aura grim")
+def _():
+    # Anticheat Grim: one click a tick, its look in that tick's move packet before it and kept in the next; every sign
+    # in reach written on the side that faces the player, the waxed and the far one left, the written one ("keep")
+    # left by Only blank; no click again after (the signs are remembered); a red dye in hand is swapped off and back.
+    r = aura_run("Grim", (("clickspertick", "1"), ("cooldown", "1"), ("range", "4.4"), ("delay", "2"), ("onlyblank", "true")),
+                 item="red_dye")
+    ok = (r["written"] == r["of"] and r["wrong"] == 0 and r["most"] == 1 and r["moves"] <= 1 and r["late"] == 0
+          and r["unkept"] == 0 and r["again"] == 0 and "keep" in r["kept"] and r["screens"] == {"playing"}
+          and r["selected"] and "red" not in r["color"])
+    return ok, str(r)
+
+
+@test("Sign Aura horizon")
+def _():
+    # Anticheat Horizon (its preset: 8 clicks a tick, no cooldown, Delay 0): the signs clicked in one tick, one move
+    # packet a tick still; Only blank off writes over "keep".
+    # Its preset is what sets 8 clicks a tick: Anticheat is changed from Grim (the default) with the module on.
+    r = aura_run("Horizon", (("onlyblank", "false"),))
+    ok = (r["written"] == r["of"] and r["wrong"] == 0 and r["most"] >= 2 and r["moves"] <= 1 and r["late"] == 0
+          and r["again"] == 0 and "fa" in r["kept"] and r["screens"] == {"playing"})
+    return ok, str(r)
 
 
 @test("Jesus")

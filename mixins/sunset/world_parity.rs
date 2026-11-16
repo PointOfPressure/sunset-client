@@ -5,12 +5,10 @@ use super::sunset::{Category, Module, look_at, turn};
 use super::sunset_util::*;
 use super::Game;
 use horizon_protocol::packets::play::{self, Serverbound as S};
-use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-// Auto Sign and Build Height on, for what goes out (read where the module list may be locked).
-static SIGN: AtomicBool = AtomicBool::new(false);
+// Build Height on, for what goes out (read where the module list may be locked).
 static HEIGHT: AtomicBool = AtomicBool::new(false);
 
 pub(super) fn defaults() -> Vec<Module> {
@@ -20,8 +18,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Stun hostiles", true),
         Module::new("Click TP", Category::Movement, "Teleports you to the block you right-click.")
             .num("Max distance", 8.0, 1.0, 9.5, 0.5),
-        Module::new("Auto Sign", Category::World, "Writes your first sign's text on every sign.")
-            .num("Delay", 10.0, 0.0, 100.0, 1.0),
+        super::sunset_auto_sign::module(Module::new(
+            "Auto Sign",
+            Category::World,
+            "Writes signs without the editor: your text, or the first sign you write; both sides; Aura clicks the signs around you.",
+        )),
         Module::new("Build Height", Category::World, "Lets you place against the build limit."),
         Module::new("Trident Boost", Category::Movement, "Boosts riptide.")
             .num("Boost", 2.0, 0.1, 10.0, 0.1),
@@ -30,10 +31,6 @@ pub(super) fn defaults() -> Vec<Module> {
 
 #[derive(Default)]
 struct Wp {
-    // Auto Sign: the first text written and its side, and the signs waiting to be written with it.
-    sign_text: Option<[String; 4]>,
-    signs: VecDeque<play::SignUpdate>,
-    sign_timer: u32,
     // Click TP: use held last tick; Trident Boost: riptide's ticks last tick.
     using: bool,
     spin: i32,
@@ -47,16 +44,9 @@ fn wp<R>(f: impl FnOnce(&mut Wp) -> R) -> R {
 
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
-    SIGN.store(get("Auto Sign").is_some(), Ordering::Relaxed);
     HEIGHT.store(get("Build Height").is_some(), Ordering::Relaxed);
-    // Auto Sign closes the sign editor's screen, so it runs with that screen open.
-    match get("Auto Sign").filter(|_| game.remote.is_some() && game.player.is_some()) {
-        Some(m) => auto_sign(game, m),
-        None => wp(|w| {
-            w.sign_text = None;
-            w.signs.clear();
-        }),
-    }
+    // Auto Sign runs with the sign editor's screen open (Silent off closes it).
+    super::sunset_auto_sign::tick(game, get("Auto Sign"));
     if !in_world(game) {
         return;
     }
@@ -77,16 +67,12 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
 }
 
-// What goes out: Auto Sign keeps the first text you write; Build Height turns a click on the top of a block at the build
-// limit into one on its underside, which the server takes.
+// What goes out: Auto Sign keeps the first text you write (auto_sign.rs); Build Height turns a click on the top of a
+// block at the build limit into one on its underside, which the server takes.
 pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Option<S> {
     match packet {
-        S::SignUpdate(p) if SIGN.load(Ordering::Relaxed) => {
-            wp(|w| {
-                if w.sign_text.is_none() && p.lines.iter().any(|l| !l.is_empty()) {
-                    w.sign_text = Some(p.lines.clone());
-                }
-            });
+        S::SignUpdate(_) => {
+            super::sunset_auto_sign::outgoing(packet);
             None
         }
         S::UseItemOn(p) if HEIGHT.load(Ordering::Relaxed) && p.face == 1 && p.pos[1] + 1 >= top(game) => {
@@ -200,35 +186,6 @@ fn click_tp(game: &mut Game<'_>, m: &Module) {
     p.position.y = to[1];
     p.position.z = to[2];
     p.velocity = p.velocity.scale(0.0);
-}
-
-// ---- Auto Sign
-
-// A sign's editor opening once a text is kept: closed at once, the text sent for it after Delay ticks (some servers
-// refuse a sign written too soon after the click).
-fn auto_sign(game: &mut Game<'_>, m: &Module) {
-    if let Some(lines) = wp(|w| w.sign_text.clone())
-        && let Some(edit) = game.sign_edit.take()
-    {
-        let (x, y, z) = edit.pos;
-        game.capture(true);
-        wp(|w| w.signs.push_back(play::SignUpdate { pos: [x, y, z], lines, front: edit.front }));
-    }
-    let next = wp(|w| {
-        if w.signs.is_empty() {
-            w.sign_timer = 0;
-            return None;
-        }
-        w.sign_timer += 1;
-        if f64::from(w.sign_timer) <= m.n("Delay") {
-            return None;
-        }
-        w.sign_timer = 0;
-        w.signs.pop_front()
-    });
-    if let Some(p) = next {
-        game.send(S::SignUpdate(p));
-    }
 }
 
 #[cfg(test)]
