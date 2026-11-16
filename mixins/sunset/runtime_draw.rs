@@ -232,7 +232,7 @@ pub(super) fn health_colour(fraction: f32) -> u32 {
 pub(super) static SHAPES: Mutex<Vec<Shape>> = Mutex::new(Vec::new());
 
 // A rounded rectangle: straight sides as plain fills, each corner a fan with one physical pixel of edge fade (`px`).
-fn round_fill(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f32; 4], radius: f32, which: [bool; 4], argb: u32, px: f32) {
+pub(super) fn round_fill(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f32; 4], radius: f32, which: [bool; 4], argb: u32, px: f32) {
     let r = radius.min(w / 2.0).min(h / 2.0);
     if r < px {
         game.native_fill(batch, [x, y, w, h], argb);

@@ -86,10 +86,19 @@ def log_mark():
     return os.path.getsize(os.path.join(session_dir(), "home", "logs", "latest.log"))
 
 
-def sunset_said(mark):
+SUNSET_LINE = ("[CHAT] [Sunset] ", "[Sunset toast] ")
+
+
+def sunset_said(mark, only=SUNSET_LINE):
+    """Sunset's lines in the game's log since mark: chat lines (command replies) and toasts (everything else)."""
+    out = []
     with open(os.path.join(session_dir(), "home", "logs", "latest.log"), errors="replace") as f:
         f.seek(mark)
-        return [line.split("[CHAT] [Sunset] ", 1)[1].strip() for line in f if "[CHAT] [Sunset] " in line]
+        for line in f:
+            tag = next((t for t in only if t in line), None)
+            if tag:
+                out.append(line.split(tag, 1)[1].strip())
+    return out
 
 
 def chat_first():
@@ -13979,6 +13988,142 @@ def _():
     return ok, "; ".join(report)
 
 
+# ---- Notifications and Sunset Presence
+
+def toasts_since(mark):
+    return sunset_said(mark, ("[Sunset toast] ",))
+
+
+def chat_since(mark):
+    return sunset_said(mark, ("[CHAT] [Sunset] ",))
+
+
+def presence_said(mark, ctl_dir=None):
+    """Sunset Presence's own log lines since mark (no IDs in them)."""
+    path = os.path.join(ctl_dir or session_dir(), "home", "logs", "latest.log")
+    with open(path, errors="replace") as f:
+        f.seek(mark)
+        return [l.split("[Sunset presence] ", 1)[1].strip() for l in f if "[Sunset presence] " in l]
+
+
+def wait_for(pred, ticks, step=10):
+    for _ in range(max(1, ticks // step)):
+        if pred():
+            return True
+        wait(step)
+    return pred()
+
+
+@test("Notifications")
+def _():
+    # Sunset's messages are toasts (logged as [Sunset toast]), never chat lines; a reply to a command typed in the chat
+    # stays in the chat. Module toggles off hides the "X on/off" toasts only; Notifications off shows none at all while
+    # command replies still reach the chat. The first-launch notice is shown at most once.
+    mark = log_mark()
+    say(".t sprint")
+    say(".t sprint")
+    say(".t fullbright")
+    ctl("screenshot", f"{SHOTS}/toasts.png")
+    say(".t fullbright")
+    wait(4)
+    t1, c1 = [l for l in toasts_since(mark) if l.startswith("Sprint")], chat_since(mark)
+    mark = log_mark()
+    say(".help")
+    wait(4)
+    t2, c2 = toasts_since(mark), chat_since(mark)
+    setting("notifications", "module toggles", "false")
+    mark = log_mark()
+    say(".t sprint")
+    say(".t sprint")
+    wait(4)
+    t3 = toasts_since(mark)
+    setting("notifications", "module toggles", "true")
+    say(".t notifications")
+    mark = log_mark()
+    say(".t sprint")
+    say(".t sprint")
+    say(".help")
+    wait(4)
+    t4, c4 = toasts_since(mark), chat_since(mark)
+    say(".t notifications")
+    mark = log_mark()
+    say(".t sprint")
+    say(".t sprint")
+    wait(4)
+    t5 = toasts_since(mark)
+    notices = [l for l in toasts_since(0) if l.startswith("Sunset sends anonymous usage stats")]
+    checks = {
+        "toggle toasts": t1 == ["Sprint on", "Sprint off"] and not any(l.startswith("Sprint") for l in c1),
+        "reply in chat": "Commands:" in c2 and not any(l.startswith("Commands") for l in t2),
+        "toggles off": not any(l.startswith("Sprint") for l in t3),
+        "all off": t4 == [] and "Commands:" in c4,
+        "back on": t5 == ["Sprint on", "Sprint off"],
+        "notice once": len(notices) <= 1,
+    }
+    return all(checks.values()), f"failed {[k for k, v in checks.items() if not v]}; {t1} {c1[:2]} {t2} {t3} {t4} {c4[:2]} {t5} {notices}"
+
+
+@test("Sunset Presence")
+def _():
+    # Against a local backend (SUNSET_PRESENCE_BASE=http://127.0.0.1:..., `wrangler dev` with DEV_KEYS holding the
+    # hash of SUNSET_PRESENCE_TEST_KEY). Analytics: the start ping went out and the dates file is today's. Presence on:
+    # a session starts within seconds; off: it ends within seconds. With Bot1: you as a developer (the key file), Bot1
+    # sharing its presence: you are told 1 player is confirmed here; Bot1 turning it off takes it back to 0.
+    base = os.environ.get("SUNSET_PRESENCE_BASE", "")
+    key = os.environ.get("SUNSET_PRESENCE_TEST_KEY", "")
+    if not base.startswith("http://127.0.0.1") or not key:
+        return None, "needs a local backend (SUNSET_PRESENCE_BASE, SUNSET_PRESENCE_TEST_KEY)"
+    start = presence_said(0)
+    seen = [os.path.join(r, "analytics-seen") for r, _, fs in os.walk(session_dir()) if r.endswith(os.path.join(".horizon-mod-data", "sunset")) and "analytics-seen" in fs]
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    dates = open(seen[0]).read().split() if seen else []
+    data = next(r for r, _, fs in os.walk(os.path.join(session_dir(), "home")) if r.endswith(os.path.join(".horizon-mod-data", "sunset")))
+    keyfile = os.path.join(data, "presence-dev-key")
+    if os.path.exists(keyfile):
+        os.remove(keyfile)
+    mark = log_mark()
+    setting("sunsetpresence", "share in-game presence", "true")
+    started = wait_for(lambda: "presence session started" in presence_said(mark), 100)
+    mark = log_mark()
+    setting("sunsetpresence", "share in-game presence", "false")
+    ended = wait_for(lambda: "presence session ended" in presence_said(mark), 100)
+    checks = {
+        "start ping": "analytics ping sent (start)" in start,
+        "dates kept": dates[:1] == [today],
+        "session starts": started,
+        "session ends": ended,
+    }
+    detail = f"{start[:4]} {dates}"
+    if CTL2:
+        with open(keyfile, "w") as f:
+            f.write(key)
+        mark = log_mark()
+        setting("sunsetpresence", "share in-game presence", "true")
+        dev_started = wait_for(lambda: "presence session started (developer)" in presence_said(mark), 100)
+        say2(".set sunsetpresence share in-game presence true")
+        confirmed = wait_for(lambda: "developer: 1 confirmed here" in presence_said(mark), 2400, step=20)
+        # The tab list held: Bot1's row gains the orange sun (#DB5000) it lacks after Bot1 stops sharing.
+        orange = lambda r, g, b: abs(r - 219) < 25 and abs(g - 80) < 25 and b < 40
+        wait(25)
+        ctl("key", "tab", "down")
+        wait(10)
+        tab_on = shot_pixels("presence-tab", orange)
+        ctl("key", "tab", "up")
+        mark2 = log_mark()
+        say2(".set sunsetpresence share in-game presence false")
+        gone = wait_for(lambda: "developer: 0 confirmed here" in presence_said(mark2), 2400, step=20)
+        wait(25)
+        ctl("key", "tab", "down")
+        wait(10)
+        tab_off = shot_pixels("presence-tab-off", orange)
+        ctl("key", "tab", "up")
+        setting("sunsetpresence", "share in-game presence", "false")
+        os.remove(keyfile)
+        checks.update({"developer session": dev_started, "user confirmed": confirmed, "user gone": gone, "tab icon": tab_on > tab_off + 10})
+        detail += f" {presence_said(mark)[-6:]} orange {tab_on}/{tab_off}"
+    return all(checks.values()), f"failed {[k for k, v in checks.items() if not v]}; {detail}"
+
+
 if __name__ == "__main__":
     import signal
     has_alarm = hasattr(signal, "SIGALRM")
@@ -14009,3 +14154,4 @@ if __name__ == "__main__":
     print(f"\n{p}/{len(results)} passed")
     for test, screen in kicks:
         print(f"KICKED during {test}: {screen}")
+

@@ -833,7 +833,8 @@ fn notice(line: String) {
 
 pub(super) fn say_notices(game: &mut Game<'_>) {
     let lines = std::mem::take(&mut *NOTICES.lock().unwrap_or_else(|e| e.into_inner()));
+    let _ = game;
     for line in lines {
-        say(game, &line);
+        super::sunset_toast::push(super::sunset_toast::Kind::Warning, &line);
     }
 }

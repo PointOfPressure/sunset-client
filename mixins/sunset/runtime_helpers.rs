@@ -69,13 +69,31 @@ pub(super) fn key_label(key: Option<&str>) -> String {
     }
 }
 
-// ClickGUI's switch for a kind of chat line ("Toggle messages", "Module messages").
-pub(super) fn chat_lines(kind: &str) -> bool {
-    with(|s| s.module("ClickGUI").is_none_or(|m| m.b(kind)))
+// A module turned on or off: a toast, replacing that module's last one, unless Notifications' Module toggles is off.
+pub(super) fn announce_toggle(name: &'static str, on: bool) {
+    use super::sunset_toast::{Kind, push_keyed, toggles_shown};
+    if running() && toggles_shown() {
+        push_keyed(if on { Kind::Success } else { Kind::Info }, &format!("{name} {}", if on { "on" } else { "off" }), Some(name));
+    }
+}
+
+// Set while a command typed in the chat runs: its replies are lines in the chat, under the command.
+pub(super) static REPLYING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+// A message from Sunset: a toast (Notifications), or a chat line when it answers a command typed in the chat.
+pub(super) fn say(game: &mut Game<'_>, msg: &str) {
+    if !running() {
+        return;
+    }
+    if REPLYING.load(std::sync::atomic::Ordering::Relaxed) {
+        chat_line(game, msg);
+    } else {
+        super::sunset_toast::push(super::sunset_toast::kind_of(msg), msg);
+    }
 }
 
 // A line in chat: Sunset's tag, then the message.
-pub(super) fn say(game: &mut Game<'_>, msg: &str) {
+pub(super) fn chat_line(game: &mut Game<'_>, msg: &str) {
     if !running() {
         return;
     }

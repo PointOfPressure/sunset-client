@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sunset Presence</title>
+<style>
+  :root { --bg:#111214; --panel:#1a1b1f; --line:#2a2c31; --text:#e8e8ea; --dim:#9a9ca3; --accent:#db5000; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.4 system-ui, sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:24px; }
+  header { display:flex; align-items:baseline; gap:16px; margin-bottom:20px; }
+  h1 { font-size:20px; margin:0; } h1 span { color:var(--accent); }
+  #at { color:var(--dim); font-size:12px; flex:1; }
+  button { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 12px; cursor:pointer; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; margin-bottom:20px; }
+  .tile, .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; }
+  .tile b { display:block; font-size:24px; font-variant-numeric:tabular-nums; }
+  .tile small, .card h2 small { color:var(--dim); font-size:12px; font-weight:normal; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:800px) { .grid { grid-template-columns:1fr; } }
+  .card h2 { font-size:13px; margin:0 0 8px; font-weight:600; }
+  svg { width:100%; height:160px; display:block; }
+  .bar { display:grid; grid-template-columns:110px 1fr 60px; gap:8px; align-items:center; margin:4px 0; font-size:12px; }
+  .bar i { display:block; height:10px; background:var(--accent); border-radius:2px; }
+  .bar span:last-child { text-align:right; color:var(--dim); font-variant-numeric:tabular-nums; }
+  .ok { color:#5cc97b; } .bad { color:#e0564f; }
+  footer { color:var(--dim); font-size:12px; margin-top:20px; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1><span>Sunset</span> Presence</h1><div id="at">Loading</div><button id="refresh">Refresh</button></header>
+  <div class="tiles" id="tiles"></div>
+  <div class="grid">
+    <div class="card"><h2>Daily actives <small>installs with a ping that day, 90 days</small></h2><svg id="daily"></svg></div>
+    <div class="card"><h2>Peak concurrent <small>busiest 10 minutes of each day</small></h2><svg id="peak"></svg></div>
+    <div class="card"><h2>Weekly actives <small>by ISO week</small></h2><svg id="weekly"></svg></div>
+    <div class="card"><h2>Monthly actives <small>estimated adoption</small></h2><svg id="monthly"></svg></div>
+    <div class="card"><h2>Versions <small>daily actives, 7 days</small></h2><div id="versions"></div></div>
+    <div class="card"><h2>OS <small>daily actives, 7 days</small></h2><div id="oses"></div></div>
+  </div>
+  <div class="card" style="margin-top:10px"><h2>Backend health</h2><div id="health"></div></div>
+  <footer>Aggregates only. Clients send no ID: actives are sums of first-ping-of-the-day/week/month flags, instances are
+  pings per 10 minutes. Presence sessions never reach these stats. Figures are estimates (sampling, reinstalls, clock skew).
+  Data is cached for 5 minutes; Analytics Engine keeps 90 days.</footer>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => Number(n || 0).toLocaleString("en-GB", { maximumFractionDigits: 0 });
+const el = (tag, attrs = {}, text) => { const e = document.createElementNS(tag === "div" || tag === "span" || tag === "i" || tag === "b" || tag === "small" ? "http://www.w3.org/1999/xhtml" : "http://www.w3.org/2000/svg", tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text !== undefined) e.textContent = text; return e; };
+
+function chart(svg, points) {
+  svg.replaceChildren();
+  const w = svg.clientWidth || 500, h = 160, pad = 28;
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  if (!points.length) { svg.append(el("text", { x: w / 2, y: h / 2, fill: "#9a9ca3", "text-anchor": "middle", "font-size": 12 }, "No data yet")); return; }
+  const max = Math.max(1, ...points.map((p) => p.n));
+  const x = (i) => pad + (points.length === 1 ? 0 : (i * (w - pad - 8)) / (points.length - 1));
+  const y = (n) => h - 18 - (n / max) * (h - 30);
+  svg.append(el("line", { x1: pad, x2: w - 8, y1: y(0), y2: y(0), stroke: "#2a2c31" }));
+  svg.append(el("text", { x: pad - 4, y: y(max) + 4, fill: "#9a9ca3", "text-anchor": "end", "font-size": 10 }, fmt(max)));
+  svg.append(el("text", { x: pad - 4, y: y(0) + 4, fill: "#9a9ca3", "text-anchor": "end", "font-size": 10 }, "0"));
+  svg.append(el("text", { x: pad, y: h - 3, fill: "#9a9ca3", "font-size": 10 }, points[0].k));
+  svg.append(el("text", { x: w - 8, y: h - 3, fill: "#9a9ca3", "font-size": 10, "text-anchor": "end" }, points.at(-1).k));
+  svg.append(el("polyline", { points: points.map((p, i) => `${x(i)},${y(p.n)}`).join(" "), fill: "none", stroke: "#db5000", "stroke-width": 2 }));
+  points.forEach((p, i) => { const c = el("circle", { cx: x(i), cy: y(p.n), r: points.length > 40 ? 0 : 2.5, fill: "#db5000" }); c.append(el("title", {}, `${p.k}: ${fmt(p.n)}`)); svg.append(c); });
+}
+
+function bars(box, rows) {
+  box.replaceChildren();
+  if (!rows.length) { box.textContent = "No data yet"; return; }
+  const max = Math.max(1, ...rows.map((r) => r.n));
+  for (const r of rows) {
+    const row = el("div", { class: "bar" });
+    const bar = el("i", { style: `width:${(r.n / max) * 100}%` });
+    const track = el("div"); track.append(bar);
+    row.append(el("span", {}, r.k || "?"), track, el("span", {}, fmt(r.n)));
+    box.append(row);
+  }
+}
+
+async function load() {
+  $("at").textContent = "Loading";
+  let s;
+  try { s = await (await fetch("/api/stats", { credentials: "same-origin" })).json(); } catch { $("at").textContent = "Couldn't load the stats."; return; }
+  $("at").textContent = `Updated ${new Date(s.at).toLocaleString("en-GB")}`;
+  const h = s.health || {};
+  $("health").innerHTML = "";
+  const line = (ok, text) => { const d = el("div"); const b = el("span", { class: ok ? "ok" : "bad" }, ok ? "OK " : "Down "); d.append(b, document.createTextNode(text)); $("health").append(d); };
+  line(h.ingest?.ok, `Ingest Worker${h.ingest?.ms != null ? ` (${h.ingest.ms} ms)` : ""}`);
+  line(h.analytics, `Analytics Engine${h.error ? `: ${h.error}` : ""}`);
+  if (s.pingsLastHour !== undefined) line(true, `${fmt(s.pingsLastHour)} pings in the last hour`);
+  const tiles = [["Active now", s.activeNow, "instances, last 10 min"], ["Peak today", s.peak24h, "concurrent, 24 h"], ["Peak 7 days", s.peak7d, "concurrent"],
+    ["Peak 90 days", s.peak90d, "concurrent"], ["Today", s.today, "daily actives"], ["This week", s.thisWeek, "weekly actives"],
+    ["This month", s.thisMonth, "estimated adoption"], ["New installs", s.newInstalls30d, "first launch, 30 days"]];
+  $("tiles").replaceChildren(...tiles.map(([label, n, note]) => { const t = el("div", { class: "tile" }); t.append(el("small", {}, label), el("b", {}, s.activeNow === undefined ? "-" : fmt(n)), el("small", {}, note)); return t; }));
+  chart($("daily"), s.daily || []); chart($("peak"), s.peakDaily || []); chart($("weekly"), s.weekly || []); chart($("monthly"), s.monthly || []);
+  bars($("versions"), s.versions || []); bars($("oses"), s.oses || []);
+}
+$("refresh").onclick = load;
+load();
+</script>
+</body>
+</html>

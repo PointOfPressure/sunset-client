@@ -1,0 +1,17 @@
+// Sunset Presence ingest: anonymous analytics (Analytics Engine) and presence rooms (one Durable Object per server).
+// Public. Deploy: cd presence-backend/ingest && npx wrangler deploy. Developer keys: see ../README.md.
+{
+  "name": "sunset-presence",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "observability": { "enabled": false },
+  "analytics_engine_datasets": [{ "binding": "AE", "dataset": "sunset_analytics" }],
+  "durable_objects": { "bindings": [{ "name": "ROOMS", "class_name": "Room" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  // Per IP and path, checked before a body is read.
+  "ratelimits": [
+    { "name": "LIMIT_A", "namespace_id": "71001", "simple": { "limit": 12, "period": 60 } },
+    { "name": "LIMIT_P", "namespace_id": "71002", "simple": { "limit": 30, "period": 60 } }
+  ]
+}

@@ -24,6 +24,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     } else {
         say_notices(game);
     }
+    super::sunset_presence::tick(game);
     horizon_client::motion::sunset_motion::expire_attack_slow(game.ticks);
     let packets = horizon_client::net::sunset_packets::take();
     super::sunset_antibot::packets(game, &packets);

@@ -53,7 +53,8 @@ impl Checked {
 // What a profile never carries: your friends (ClickGUI's Friends list: a profile from before you met someone would
 // take them off it) and Panic's switch (a profile with it on would shut Sunset down as it loads).
 pub(super) fn not_in_profiles(key: &str) -> bool {
-    matches!(key.trim(), "clickgui.friends" | "panic.on")
+    // Sunset Presence is only ever set by hand: a shared profile can't turn sharing on (or analytics off).
+    matches!(key.trim(), "clickgui.friends" | "panic.on") || key.trim().starts_with("sunsetpresence.")
 }
 
 pub(super) fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
@@ -62,7 +63,25 @@ pub(super) fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
         std::borrow::Cow::Owned(out) => Some(out),
         std::borrow::Cow::Borrowed(_) => None,
     };
-    super::sunset_lag::migrated(listed_extras(owned.map_or(renamed, std::borrow::Cow::Owned)))
+    moved_messages(super::sunset_lag::migrated(listed_extras(owned.map_or(renamed, std::borrow::Cow::Owned))))
+}
+
+// ClickGUI's Toggle messages and Module messages moved to Notifications (1.3), as Module toggles and Module messages.
+pub(super) const MOVED_MESSAGES: [(&str, &str); 2] =
+    [("clickgui.togglemessages=", "notifications.moduletoggles="), ("clickgui.modulemessages=", "notifications.modulemessages=")];
+
+fn moved_messages(text: std::borrow::Cow<'_, str>) -> std::borrow::Cow<'_, str> {
+    if !text.lines().any(|l| MOVED_MESSAGES.iter().any(|(from, _)| l.starts_with(from))) {
+        return text;
+    }
+    let lines: Vec<String> = text
+        .lines()
+        .map(|l| match MOVED_MESSAGES.iter().find(|(from, _)| l.starts_with(from)) {
+            Some((from, to)) => format!("{to}{}", &l[from.len()..]),
+            None => l.to_owned(),
+        })
+        .collect();
+    std::borrow::Cow::Owned(lines.join("\n"))
 }
 
 // Modules with new names (0.9): Auto Steal is Chest Stealer, No Mining Trace is Mine Through Mobs; Inventory Cleaner is
