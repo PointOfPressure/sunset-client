@@ -98,6 +98,15 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         // The server set your look: what it has now is not the last one sent.
         set_last_look(None);
     }
+    // A mace hit with a smash's fall counted: the server ends that fall if the smash lands (smash_confirmed).
+    if let S::Attack(a) = packet
+        && a.id >= 0
+        && game.held().is_some_and(|s| &*s.item == "minecraft:mace")
+        && !game.player.as_ref().is_some_and(|p| p.fall_flying)
+        && fall(|f| f.counted) > 1.5
+    {
+        SMASH_SENT.store(game.ticks.max(1), Ordering::Relaxed);
+    }
     let Some(sent) = Move::of(packet) else {
         return Out::Pass;
     };
@@ -367,6 +376,26 @@ pub(super) fn fall_clean() -> bool {
     fall(|f| f.counted == 0.0 && !f.kept)
 }
 
+// The tick a smash hit went (0: none waiting for its answer).
+static SMASH_SENT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+// The server's answer to a smash hit: your motion set to 0.01 up at once (MaceItem.hurtEnemy), or Wind Burst's
+// explosion pushing you up (it only goes off after a smash landed). A smash ends the fall, so Sunset's count ends
+// too; else a big smash hop's fall would stay counted: every move would keep off the ground (settle_fall) for
+// nothing, and a break off the ground is five times slower.
+fn smash_confirmed(game: &Game<'_>, confirms: bool) {
+    let sent = SMASH_SENT.load(Ordering::Relaxed);
+    if sent == 0 {
+        return;
+    }
+    if game.ticks.saturating_sub(sent) > 5 {
+        SMASH_SENT.store(0, Ordering::Relaxed);
+    } else if confirms {
+        SMASH_SENT.store(0, Ordering::Relaxed);
+        fall(|f| (f.counted, f.kept, f.before) = (0.0, false, 0.0));
+    }
+}
+
 // Death: the next body has fallen nowhere.
 pub(super) fn fall_died() {
     fall(|f| *f = Fall { counted: 0.0, last: None, kept: false, before: 0.0 });
@@ -450,9 +479,15 @@ pub(super) fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packe
         super::sunset_throws::packet(game, packet);
         super::sunset_effects::packet(game, packet);
         super::recipe_book::sunset_recipes::packet(packet);
+        if let C::Explode(e) = packet
+            && e.knockback.is_some_and(|k| k[1] > 0.0)
+        {
+            smash_confirmed(game, true);
+        }
         if let C::SetEntityMotion(p) = packet {
             super::sunset_melee::note_velocity(game, p.id, p.velocity);
             if game.remote.as_ref().is_some_and(|r| r.entity_id == p.id) {
+                smash_confirmed(game, (p.velocity[1] - 0.01).abs() < 0.002);
                 if with(|s| s.module("Speed").is_some_and(|m| m.on && m.p("Mode") == "Watchdog")) {
                     with(|s| s.watchdog.knocked(game.ticks, p.velocity));
                 }

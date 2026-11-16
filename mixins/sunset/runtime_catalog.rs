@@ -33,7 +33,9 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Criticals", Combat, "Makes hits critical.")
             .pick("Mode", &["Packet", "Jump", "Mini jump"])
             .bool("Only Kill Aura", false)
-            .num("Additional height", 0.0, 0.0, 1.0, 0.05)
+            // Up to 7.5: the mace's smash hop (1.501 more) stays under the 10 blocks a move may go on Horizon's
+            // server ("moved too quickly"), even started while falling. Packet's hop takes at most 1 of it.
+            .num("Additional height", 0.0, 0.0, 7.5, 0.05)
             .bool("Mace smash", true)
             .bool("Only with a weapon", false)
             .bool("Only on ground", false),

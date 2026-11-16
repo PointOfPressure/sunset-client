@@ -37,6 +37,9 @@ enum Crit {
 const SMASH_FALL: f64 = 1.5;
 // The smash hop: just over the threshold, plus Additional height.
 const SMASH_HOP: f64 = 1.501;
+// The most of Additional height a crit hop (Packet) takes: a hop's drop is a fall the server counts, and one of more
+// than three blocks would hurt you when you land. A smash ends the fall (MaceItem.postHurtEnemy), so it takes it all.
+const CRIT_EXTRA: f64 = 1.0;
 
 // Criticals (Sunset's) for a hit now, if it can make it critical (Player.canCriticalAttack): never flying, gliding,
 // riding, in water or lava, on a ladder or blind, nor while Blink holds the moves a hop is made of.
@@ -74,9 +77,14 @@ fn crit_plan(game: &Game<'_>, m: &Module, id: u32) -> Option<Crit> {
         if air && counted > SMASH_FALL {
             return (!lands_next(game) && charged_in(game, 1)).then_some(Crit::Now);
         }
+        // As high as Additional height asks, or as the room above allows (a block at a time lower), down to 1.501.
         let rising = air && p.velocity.y > 0.0;
-        if !rising && game.potions.effects.get("slow_falling").is_none() && room(SMASH_HOP + extra) {
-            return Some(Crit::Smash(SMASH_HOP + extra));
+        let height = std::iter::successors(Some(SMASH_HOP + extra), |h| (*h > SMASH_HOP).then(|| (h - 1.0).max(SMASH_HOP)))
+            .find(|&h| room(h));
+        if !rising && game.potions.effects.get("slow_falling").is_none()
+            && let Some(height) = height
+        {
+            return Some(Crit::Smash(height));
         }
     }
     // In the air, a hit waits until the server has counted a fall (a server counts no fall on the first move after
@@ -91,6 +99,7 @@ fn crit_plan(game: &Game<'_>, m: &Module, id: u32) -> Option<Crit> {
         }
         return charged_in(game, 2).then_some(Crit::Fall);
     }
+    let extra = extra.min(CRIT_EXTRA);
     let (plan, ticks) = match m.p("Mode") {
         "Jump" => (Crit::Jump, 6),
         "Mini jump" => (Crit::MiniJump, 4),
