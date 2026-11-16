@@ -12,6 +12,7 @@ use super::sunset::*;
 // Before the game ticks: keys this mod holds, abilities, step height.
 pub(super) fn pre_tick(game: &mut Game<'_>) {
     finish_shutdown(game);
+    super::sunset_baritone::maintain(game);
     if !running() { return; }
     sync_binds(game);
     // Single player's own server ticks a game of its own (no window) through here too: it must leave the player's
@@ -31,6 +32,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     let inventory_stop = super::sunset_gui_move::pre_tick(game);
     horizon_client::motion::sunset_motion::set_freeze(inventory_stop);
     if !game.native_on(ID) || game.player.is_none() {
+        super::sunset_movement_owner::auto_walk(game, false);
         super::sunset_hands::stop_autoblock(game);
         combat_cleanup(game);
         horizon_client::motion::sunset_motion::set_across(None);
@@ -123,10 +125,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         game.keys.clear();
     }
     let mut want = Vec::new();
-    if on("Auto Walk") && playing {
-        want.push(KeyCode::KeyW);
-    }
-    if on("Sprint") && playing {
+    super::sunset_movement_owner::auto_walk(game, on("Auto Walk") && playing);
+    let baritone_owns = super::sunset_movement_owner::current().is_some_and(|l| l.owner == super::sunset_movement_owner::Owner::Baritone);
+    if on("Sprint") && playing && !baritone_owns {
         if game.player.as_ref().is_some_and(|p| !p.sprinting) && !native_held_input(game).0.contains(&KeyCode::ControlLeft) {
             with(|s| s.sprint_owned = true);
         }
@@ -284,6 +285,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_duel::pre_input(game);
     super::sunset_throws::pre_input(game);
     super::sunset_takeoff::pre_input(game);
+    // The only Baritone driver runs after arbitration and before Horizon's ordinary movement/mining tick.
+    super::sunset_baritone::pre_tick(game, &mods);
 }
 
 // How high Step lets you climb this tick: the setting, or vanilla's 0.6 when
@@ -344,6 +347,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     // native_window identifies the client role, including offscreen clients. An integrated server ticks another
     // Game in this process; its missing player/window must not retire the window client's workers.
     if game.native_window() {
+        super::sunset_baritone::post_tick(game);
         super::sunset_seedcracker::maintain(game);
         super::sunset_ore_sim::maintain(game);
     }
@@ -372,7 +376,7 @@ fn module_tick(game: &mut Game<'_>) {
     let injected = with(|s| std::mem::take(&mut s.injected));
     for k in injected {
         if !game.physical_keys.contains(&k) {
-            game.keys.remove(&k);
+            game.keys.release(&k, horizon_client::held::Source::Keyboard);
         }
     }
     let mods = snapshot();

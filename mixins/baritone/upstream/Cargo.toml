@@ -1,0 +1,15 @@
+[package]
+name = "horizon-baritone"
+version = "1.1.52"
+edition = "2024"
+publish = false
+
+# The parts of Baritone that use no game types (goals, costs, the A* search, settings, selections,
+# schematics, waypoints, the argument parser) build and test on their own: `cargo test` in this
+# folder. Everything else is spliced into the game by horizon-mixins (see horizon-mixin.toml).
+[lib]
+path = "src/lib.rs"
+
+# The elytra tests search generated terrain against the 500 ms primary timeout of the Java, which an unoptimised build misses.
+[profile.test]
+opt-level = 2

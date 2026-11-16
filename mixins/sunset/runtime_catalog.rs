@@ -700,6 +700,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_gear::defaults());
     v.extend(super::sunset_new_chunks::defaults());
     v.extend(super::sunset_ore_sim::defaults());
+    v.push(super::sunset_baritone::defaults());
     v.extend(super::sunset_world_parity::defaults());
     v.extend(super::sunset_vehicle::defaults());
     v.extend(super::sunset_vanish::defaults());

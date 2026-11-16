@@ -58,6 +58,7 @@ const HELP: &[(&str, &str)] = &[
     (".vclip <blocks>", "move up or down"),
     (".hclip <blocks>", "move forward"),
     (".goto <x> <y> <z>|stop", "walk there through loaded terrain, up to 128 blocks (by Rust); a movement key or a screen stops it"),
+    (".b / .baritone status|goto|mine|stop|off|targets|help", "Baritone navigation and visible/Ore Sim mining; requires the separate companion"),
 ];
 
 // Every module off and their pending work dropped (Panic, and the plugin API's stop_everything).
@@ -139,6 +140,8 @@ pub(super) fn native_held_input(game: &Game<'_>) -> (std::collections::HashSet<K
 }
 
 pub(super) fn all_off(game: &mut Game<'_>) {
+    super::sunset_baritone::stop(game, super::sunset_baritone::StopReason::Disabled);
+    if let Some(lease) = super::sunset_movement_owner::current() { super::sunset_movement_owner::release(game, lease); }
     watchdog_stop(game, true);
     super::sunset_hands::release_rf(game);
     super::remote::sunset_combat_remote::restore_buttons(game);
@@ -381,6 +384,7 @@ pub(super) fn take_preset(game: &mut Game<'_>, i: usize) -> Result<String, Strin
 // those it switches (Scaffold gives back your look, Kill Aura stops blocking and swaps back, Speed lets go of its
 // motion...), Hold binds of modules it changed end, and the settings are saved.
 fn apply_profile(game: &mut Game<'_>, body: &str, name: &str) {
+    super::sunset_baritone::stop(game, super::sunset_baritone::StopReason::User);
     let before: Vec<bool> = with(|s| s.modules.iter().map(|m| m.on).collect());
     let switched = with(|s| {
         s.load_profile(body);
@@ -456,12 +460,14 @@ fn seed_command(game: &mut Game<'_>, args: &[&str]) {
     match text.to_ascii_lowercase().as_str() {
         "" | "status" => {}
         "restart" => {
+            super::sunset_baritone::source_changed(game);
             super::sunset_seedcracker::restart();
             super::sunset_ore_sim::stop();
             say(game, "Ore Sim seed: automatic observations cleared; the next eligible tick starts a fresh run. Manual text is unchanged.");
             return;
         }
         _ => {
+            super::sunset_baritone::source_changed(game);
             with(|s| seed_settings(s, &text));
             super::sunset_seedcracker::stop();
             super::sunset_ore_sim::stop();
@@ -497,6 +503,10 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         "scan" => super::sunset_server_scan::command(game, &args[1..]),
         "goto" => {
             let text = super::agent::sunset_goto::command(game, &args[1..]).unwrap_or_else(|e| e);
+            say(game, &text);
+        }
+        "baritone" | "b" => {
+            let text = super::sunset_baritone::command(game, &args[1..]).unwrap_or_else(|e| e);
             say(game, &text);
         }
         "help" | "commands" => {
@@ -597,6 +607,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 Some((false, shown, _)) => say(game, &format!("Could not read {value}. Now {shown}")),
                 Some((true, shown, seed_changed)) => {
                     if seed_changed {
+                        super::sunset_baritone::source_changed(game);
                         super::sunset_seedcracker::stop();
                         super::sunset_ore_sim::stop();
                     }

@@ -252,6 +252,7 @@ impl Module {
             "Speed" | "Criticals" | "Fake Lag" => Some(self.p("Mode").to_owned()),
             "Client Spoofer" => Some(self.p("Client").to_owned()),
             "Ore Sim" => super::sunset_ore_sim::info(self),
+            "Baritone" => super::sunset_baritone::info(self),
             "Offhand" if self.b("Show totem count") => Some(super::sunset_combat_inventory::totem_count().to_string()),
             _ => None,
         }

@@ -44,6 +44,10 @@ two system libraries the build needs.
 
 After that, start the **Native mods** instance from the launcher whenever you want to play with Sunset.
 
+**Built-in Baritone.** The Baritone-enabled Sunset package contains the complete supplied runtime and its
+Ore Sim mining engine; no separate plugin is needed. Keep the matching engine-source archive with the package. See
+[Baritone installation, engine replacement and limits](docs/baritone.md).
+
 **Which Horizon version?** Each Sunset release is built for one Horizon version, and the Native mods instance runs on
 that version:
 
@@ -259,7 +263,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 </details>
 
 <details>
-<summary><b>World</b> (27 modules)</summary>
+<summary><b>World</b> (28 modules)</summary>
 
 - **Base Finder**, **New Chunks**, **Stash Finder**, **Player Activity Detector**, **Cave Disturbance Detector**,
   **Portal Pattern Finder**, **Activated Spawner Detector**, **Spawner Alerts**: find bases and where players have
@@ -304,6 +308,20 @@ Modules marked *experimental* below are new strategies that haven't been proven 
     world with both FORCE_CRACK=1 and START_DELAY=240, using the full variable names above. The check collects
     natural pyramids and monuments, checks the recovered seed and compares the drawn ore overlay on/off.
     No diagnostic value is saved in profiles; the delay does not change the engine or its search space.
+- **Baritone**: the supplied full horizon-baritone runtime, with `#help`, `#set list`, building, farming, following,
+  exploration, Elytra, parkour, waypoints, selections and its native settings UI. `.b goto <x> <y> <z>` starts a
+  route; `.b mine iron,diamond` mines visible ores; `.b mine oresim [ore,ore...]` mines Ore Sim's current-world
+  predictions, including cover that reveals an ore after approach. Ore Sim must be on, with a manual seed or
+  SeedCracker's verified current-world seed. `.b targets [limit]` inspects predictions, `.b status` shows counters,
+  `.b stop` releases the job's input, and `.b off` also disables the module. `.baritone` is the long alias.
+  - Defaults: diamond, absolute Y -64..319, radius 128 from the job's fixed start, 64 attempted targets. Its
+    filters and mining cap are independent of Ore Sim's display settings. Final ore must be exposed and verified;
+    local predicted air alone is not a successful mine. Wrong-seed/unrevealed targets have bounded retries.
+  - Path, goal and target overlays use Sunset's palette, contextual block boxes, Lines/Sides/Both, fill opacity,
+    line width and a separate render cap. Movement is shared with Auto Walk and `.goto`; explicit handoff,
+    manual input, stop, disable, world changes and Panic cancel jobs. Profiles save preferences without paths.
+  - Initial engine delivery is Windows x86_64 MSVC. Full runtime commands use the original `#` prefix; the
+    bounded Ore Sim controller keeps the `.b` commands above. See [commands, installation, source and DLL replacement](docs/baritone.md).
 - **Nuker**, **Packet Mine**, **Liquid Filler** (also drains an enemy's water or lava), **Spawn Proofer**,
   **Build Height**.
 - **Auto Sign**: writes signs without the editor ever showing, with text from its settings (front and back) or the
@@ -395,7 +413,7 @@ Anchor Aura, Crystal Macro and Anchor Macro (their Macro sections), Shield Break
 Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smash fall count Auto Mace goes by), W Tap,
 Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast
 Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback
-Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps.
+Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps, and the Baritone/Ore Sim integration.
 
 </details>
 
@@ -416,11 +434,22 @@ code is MIT licensed; its [license](mixins/sunset/seedcracker.LICENSE) and
 [notices](mixins/sunset/seedcracker.NOTICE.md) ship in Sunset's `.hnmod`, together with the exact upstream revision,
 [file mapping and local changes](mixins/sunset/seedcracker.UPSTREAM.md).
 
+Baritone uses [horizon-baritone](https://github.com/luhnox/horizon-baritone) by [luhnox](https://github.com/luhnox),
+a Rust port of [Baritone](https://github.com/cabaletta/baritone) 1.21.4 by leijurv and contributors. The complete supplied
+runtime preserves its [MIT permission text](mixins/baritone/upstream/LICENSE). The existing separate Ore Sim
+engine retains its upstream LGPL-3.0 terms with its [notices](baritone-engine/NOTICE.md) and
+corresponding source; Sunset supplies its controls, rendering and Ore Sim integration. Its LGPL and referenced GPL
+texts and upstream image ship unchanged in the integrated package. See [source delivery and replacement](docs/baritone.md).
+
 Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
 Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine, and the plugin docs and example in [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) are MIT. Versions up to 0.8.0 stay under the MIT licence they were released with. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+The separately licensed Baritone engine and MIT loader/interface retain their own terms. The engine's LGPL rights,
+including modification, replacement and debugging of those modifications, are described with its
+[licences and corresponding source](docs/baritone.md#source-and-licences); Sunset's licence does not replace them.
 
 <details>
 <summary>Font credits</summary>
