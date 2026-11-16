@@ -6114,7 +6114,7 @@ def _():
 
     key = lambda: ctl("key", "k", "tap")
     keyed_on = lines(key)
-    setting("clickgui", "toggle messages", "false")
+    setting("notifications", "module toggles", "false")
     keyed_off = lines(lambda: (key(), wait(3), key()))
     typed = lines(lambda: say(".t fullbright"))
     say(".bind fullbright none")

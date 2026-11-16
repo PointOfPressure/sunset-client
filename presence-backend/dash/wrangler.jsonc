@@ -9,8 +9,8 @@
   "observability": { "enabled": false },
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
   "vars": {
-    "ACCESS_TEAM": "",
-    "ACCESS_AUD": "",
+    "ACCESS_TEAM": "s4yerh4rris0n",
+    "ACCESS_AUD": "9c9711278fde2bc635cb435d476138c647201ec15c57e7cede8328c04475b26c",
     "INGEST_URL": "https://sunset-presence.s4yerh4rris0n.workers.dev"
   }
 }
