@@ -598,7 +598,7 @@ fn module_tick(game: &mut Game<'_>) {
     if !alive {
         fall_died();
     } else if fall_cleared(game) {
-        fall(|f| (f.counted, f.kept) = (0.0, false));
+        fall(|f| (f.counted, f.kept, f.before) = (0.0, false, 0.0));
     }
     // Blink: let go of what it held when it turns off, or at its limit.
     {

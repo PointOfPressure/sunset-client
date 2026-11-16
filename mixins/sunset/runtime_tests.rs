@@ -1,6 +1,35 @@
 // Runtime part (see runtime.rs): tests of the runtime parts.
 
 #[cfg(test)]
+mod criticals_tests {
+    use super::super::sunset::*;
+
+    // The server's fall count over the hop's moves, after `moves` of them (the drop of each move told off the ground).
+    fn counted(hop: f64, drop: bool, moves: u8) -> f64 {
+        let mut last = 0.0;
+        let mut fall = 0.0;
+        for stage in 1..=moves {
+            let at = crit_lift(stage, hop, drop);
+            fall += (last - at).max(0.0);
+            last = at;
+        }
+        fall
+    }
+
+    #[test]
+    fn smash_hop_is_counted_a_tick_before_its_hit() {
+        // Moves 1-3 go before the hit; Horizon may count the third together with the hit, so two must do.
+        assert!(counted(1.501, true, 2) > 1.5);
+        assert!(counted(1.501, true, 3) > 1.5);
+        // The crit hop drops on both moves after its top, and ends where it started.
+        assert!(counted(0.0625, false, 2) > 0.0);
+        assert!(crit_lift(3, 0.0625, false) < crit_lift(2, 0.0625, false));
+        assert_eq!(crit_lift(3, 0.0625, false), 0.0);
+        assert_eq!(crit_lift(CRIT_LAND, 1.501, true), 0.0);
+    }
+}
+
+#[cfg(test)]
 mod movement_config_tests {
     use super::super::sunset::*;
     use winit::keyboard::KeyCode;

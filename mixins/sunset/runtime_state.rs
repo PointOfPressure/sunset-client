@@ -627,7 +627,10 @@ fn unlist(game: &mut Game<'_>) {
 // (CRIT_HOP blocks, f64 bits), half way down and back down (all off the ground),
 // stage 4 lets the hit follow. Vanilla servers take each packet as it comes, so
 // two would do; Horizon's counts a tick's moves only after its packets, the hit
-// included, so the hit needs a move down counted in an earlier tick. The hit
+// included, so the hit needs a move down counted in an earlier tick. A mace's
+// smash hop (CRIT_DROP) comes all the way down on its second move: the whole
+// drop is counted a tick before the hit, so a hit that arrives in the same
+// server tick as the last move still smashes. The hit
 // goes at the start of the next tick, and that tick's move (CRIT_LAND) stays off
 // the ground where the hop ended: Horizon's server judges a tick's hit with the
 // ground its move says. Stage CRIT_FALL waits for you to fall (Jump, Mini jump,
@@ -637,6 +640,7 @@ pub(super) const CRIT_HIT: u8 = 4;
 pub(super) const CRIT_FALL: u8 = 5;
 pub(super) const CRIT_LAND: u8 = 6;
 pub(super) static CRIT_HOP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(super) static CRIT_DROP: AtomicBool = AtomicBool::new(false);
 pub(super) static CRIT_JUMP: AtomicBool = AtomicBool::new(false);
 // A server takes no critical hit from a sprinting player, and Horizon's applies all the sprint commands of a tick
 // before its hits: so a critical hit's sprint stop goes out when the hit is planned, ticks before it, and the sprint

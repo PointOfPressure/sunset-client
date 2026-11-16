@@ -90,6 +90,11 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     // the next one is far away.
     if let S::AcceptTeleportation(t) = packet {
         fall(|f| f.last = Some(t.y));
+        // Put back mid-hop (the hop refused, or anything else): no more of it goes from the new place; the hit
+        // follows now, uncritical as it may be (crit_tick).
+        if (1..CRIT_HIT).contains(&CRIT_STAGE.load(Ordering::Relaxed)) {
+            CRIT_STAGE.store(CRIT_HIT, Ordering::Relaxed);
+        }
         // The server set your look: what it has now is not the last one sent.
         set_last_look(None);
     }
@@ -123,12 +128,17 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     let hopping = (stage > 0 && stage < CRIT_HIT) || stage == CRIT_LAND;
     if hopping {
         let [x, y, z] = m.at.unwrap_or(here);
-        let hop = f64::from_bits(CRIT_HOP.load(Ordering::Relaxed));
-        let lift = if stage == CRIT_LAND { 0.0 } else { hop * f64::from(3 - stage) / 2.0 };
+        let lift = crit_lift(stage, f64::from_bits(CRIT_HOP.load(Ordering::Relaxed)), CRIT_DROP.load(Ordering::Relaxed));
         m.at = Some([x, y + lift, z]);
         m.flags = 0;
         ground = Some(false);
-        CRIT_STAGE.store(if stage == CRIT_LAND { 0 } else { stage + 1 }, Ordering::Relaxed);
+        // The landing stays off the ground until the hit has gone (a weapon swapped in for it delays it a tick).
+        let next = match stage {
+            CRIT_LAND if critical_waiting() => CRIT_LAND,
+            CRIT_LAND => 0,
+            _ => stage + 1,
+        };
+        CRIT_STAGE.store(next, Ordering::Relaxed);
     } else {
         // Flight's Packet anti kick: the move carries the position, sunk 0.0313 below the last height sent while it
         // is due and you are in the air (Sunset's antiKickPacket).
@@ -156,7 +166,7 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         let flight_ground = FLIGHT_GROUND.load(Ordering::Relaxed) && super::sunset_flight::damage_open();
         ground = if flight_ground || (GLIDE_GROUND.load(Ordering::Relaxed) && !p.flying) {
             Some(true)
-        } else if no_fall == 1 && !paused && falling && p.velocity.y < 0.0 {
+        } else if no_fall == 1 && !paused && falling && p.velocity.y < 0.0 && !crit_falling() {
             Some(true)
         } else if no_fall == 2 && !paused {
             Some(false)
@@ -218,6 +228,18 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     if m == sent { Out::Pass } else { Out::Replace(m.packet()) }
 }
 
+// How far above where you are a Criticals hop's move puts you, by its stage: the top on the first move, then a crit
+// hop half way and back down (each move after the top drops, so even Slow Falling, which keeps only the last move's
+// fall, leaves one); a smash hop (`drop`) all the way down on its second move, so the whole drop is counted a tick
+// before its hit. The landing (CRIT_LAND) and any other stage: none.
+pub(super) fn crit_lift(stage: u8, hop: f64, drop: bool) -> f64 {
+    match stage {
+        1 => hop,
+        2 if !drop => hop / 2.0,
+        _ => 0.0,
+    }
+}
+
 // The last look a move packet carried to the server (None after a teleport, which sets it).
 static LAST_LOOK: Mutex<Option<(f32, f32)>> = Mutex::new(None);
 
@@ -265,9 +287,12 @@ pub(super) struct Fall {
     pub(super) last: Option<f64>,
     // Part of the count is not yours to pay.
     pub(super) kept: bool,
+    // The count before the last move: what the server has surely counted by the time a hit sent next tick arrives
+    // (Horizon's counts a tick's moves after its packets, so the last move may come in with the hit).
+    pub(super) before: f64,
 }
 
-static FALL: Mutex<Fall> = Mutex::new(Fall { counted: 0.0, last: None, kept: false });
+static FALL: Mutex<Fall> = Mutex::new(Fall { counted: 0.0, last: None, kept: false, before: 0.0 });
 
 // The most the server lets you land with for nothing: four blocks costs a point (LivingEntity.calculateFallPower adds
 // 1.0E-6 to the fall). A move at full falling speed drops 3.92.
@@ -301,12 +326,13 @@ fn settle_fall(game: &Game<'_>, m: &Move, real: bool, claimed: bool, owned: bool
     fall(|f| {
         let drop = drop_of(f, m);
         let counted = if p.fall_flying && drop < 0.5 { (f.counted + drop).min(1.0) } else { f.counted + drop };
+        f.before = f.counted;
         if let Some([_, y, _]) = m.at {
             f.last = Some(y);
         }
         let mut told = m.flags & 1 != 0;
         if cleared {
-            (f.counted, f.kept) = (0.0, false);
+            (f.counted, f.kept, f.before) = (0.0, false, 0.0);
             return told;
         }
         if told && counted >= FREE_FALL && (f.kept || claimed) && !owned {
@@ -343,7 +369,7 @@ pub(super) fn fall_clean() -> bool {
 
 // Death: the next body has fallen nowhere.
 pub(super) fn fall_died() {
-    fall(|f| *f = Fall { counted: 0.0, last: None, kept: false });
+    fall(|f| *f = Fall { counted: 0.0, last: None, kept: false, before: 0.0 });
 }
 
 // Flight's Packet anti kick on the move: while it is due and you are in the air, the height sinks 0.0313 below the

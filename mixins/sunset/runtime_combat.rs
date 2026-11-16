@@ -20,22 +20,38 @@ pub(super) fn cooldown_ready(game: &Game<'_>, m: &Module, wait: &mut u32, need: 
     }
 }
 
-// How Criticals makes a hit critical, when it can: a hop of so many blocks over two ticks (Packet, the mace's
-// smash), or a wait for the fall (Jump, Mini jump, a hit while rising).
+// How Criticals makes a hit critical, when it can: a hop of so many blocks over three ticks (Packet), the mace's
+// smash hop (all the way down on its second move), a wait for the fall (Jump, Mini jump, a hit while rising), or
+// nothing to wait for: already falling (the hit only needs the sprint stopped).
 #[derive(Clone, Copy)]
 enum Crit {
     Hop(f64),
+    Smash(f64),
     Jump,
     MiniJump,
     Fall,
+    Now,
 }
 
-// Criticals (Sunset's) for a hit now: never flying, gliding, riding, in water or lava or on a ladder. A mace (Mace
-// smash) hops 1.501 blocks plus Additional height so the server counts a smash; on the ground the Mode; in the air,
-// with Only on ground off, a hit waits for the fall. A hop needs the room above you, else Packet's goes back to 0.0625.
-fn crit_plan(game: &Game<'_>, m: &Module) -> Option<Crit> {
+// MaceItem.SMASH_ATTACK_FALL_THRESHOLD: a mace hit after a fall of more than this is a smash.
+const SMASH_FALL: f64 = 1.5;
+// The smash hop: just over the threshold, plus Additional height.
+const SMASH_HOP: f64 = 1.501;
+
+// Criticals (Sunset's) for a hit now, if it can make it critical (Player.canCriticalAttack): never flying, gliding,
+// riding, in water or lava, on a ladder or blind, nor while Blink holds the moves a hop is made of.
+//
+// A mace (Mace smash): when the fall the server has surely counted is past 1.5 blocks the hit is a smash already and
+// goes at once (critical too unless the next move lands); else it hops 1.501 blocks plus Additional height so the
+// server counts a smash (not rising, nor with Slow Falling, which forgets every move's fall but the last).
+//
+// Anything else: in the air (Only on ground off), critical at once once the server has counted a fall that the next
+// move does not end, else it waits for the fall; on the ground the Mode, given the room above for its hop (Packet
+// goes back to 0.0625 without it). A crit needs the attack charged past 0.9 when the hit lands (Modern combat), so a
+// hit that will not be is left alone rather than delayed for nothing.
+fn crit_plan(game: &Game<'_>, m: &Module, id: u32) -> Option<Crit> {
     let p = game.player.as_ref()?;
-    let item = game.held().map_or("", |s| &*s.item);
+    let item = strike_item(game, id);
     let weapon = ["_sword", "_axe", "_spear", ":mace", ":trident"].iter().any(|w| item.ends_with(w));
     if (m.b("Only with a weapon") && !weapon)
         || p.flying
@@ -45,25 +61,61 @@ fn crit_plan(game: &Game<'_>, m: &Module) -> Option<Crit> {
         || p.fluids.was_touching_water
         || p.is_in_lava()
         || p.last_climbable.is_some()
+        || game.potions.effects.get("blindness").is_some()
+        || BLINK.load(Ordering::Relaxed)
     {
         return None;
     }
     let extra = m.n("Additional height");
     let room = |h: f64| room_above(game, h);
-    if m.b("Mace smash") && item.ends_with(":mace") && room(1.501 + extra) {
-        return Some(Crit::Hop(1.501 + extra));
+    let air = !p.ground.on_ground;
+    let counted = fall(|f| f.before);
+    if m.b("Mace smash") && item.ends_with(":mace") {
+        if air && counted > SMASH_FALL {
+            return (!lands_next(game) && charged_in(game, 1)).then_some(Crit::Now);
+        }
+        let rising = air && p.velocity.y > 0.0;
+        if !rising && game.potions.effects.get("slow_falling").is_none() && room(SMASH_HOP + extra) {
+            return Some(Crit::Smash(SMASH_HOP + extra));
+        }
     }
-    // In the air, a hit waits until you have fallen for two ticks (a server counts no fall on the first after a jump's
-    // top, and Horizon's only after the tick it came in); after that it is critical as it is, unless the next move
-    // lands: a hit is judged with the ground of its tick's move, so that one waits too.
-    if !p.ground.on_ground {
-        return (!m.b("Only on ground") && (p.velocity.y > -0.15 || lands_next(game))).then_some(Crit::Fall);
+    // In the air, a hit waits until the server has counted a fall (a server counts no fall on the first move after
+    // a jump's top, and Horizon's only after the tick it came in); after that it is critical as it is, unless the
+    // next move lands: a hit is judged with the ground of its tick's move, so that one waits too.
+    if air {
+        if m.b("Only on ground") {
+            return None;
+        }
+        if counted > 0.0 && !lands_next(game) {
+            return charged_in(game, 1).then_some(Crit::Now);
+        }
+        return charged_in(game, 2).then_some(Crit::Fall);
     }
-    Some(match m.p("Mode") {
-        "Jump" => Crit::Jump,
-        "Mini jump" => Crit::MiniJump,
-        _ => Crit::Hop(if room(0.0625 + extra) { 0.0625 + extra } else { 0.0625 }),
-    })
+    let (plan, ticks) = match m.p("Mode") {
+        "Jump" => (Crit::Jump, 6),
+        "Mini jump" => (Crit::MiniJump, 4),
+        _ => (Crit::Hop(if room(0.0625 + extra) { 0.0625 + extra } else { 0.0625 }), 3),
+    };
+    charged_in(game, ticks).then_some(plan)
+}
+
+// The item a hit on `id` queued now lands with: the weapon a hit already waiting has swapped in, else the one Auto Mace
+// or Auto Weapon would (as queue_strike picks it), else what is held.
+fn strike_item<'a>(game: &'a Game<'_>, id: u32) -> &'a str {
+    let slot = match strikes(|s| (s.weapon.map(|w| w.slot), s.queue.is_empty())) {
+        (Some(slot), _) => Some(slot),
+        (None, true) => super::sunset_auto_mace::strike_weapon(game, id)
+            .or_else(|| super::sunset_melee::strike_weapon(game, id))
+            .map(|(slot, _)| slot),
+        (None, false) => None,
+    };
+    slot.and_then(|i| game.stack_in(i)).or_else(|| game.held()).map_or("", |s| &*s.item)
+}
+
+// The attack charged past 0.9 (Player.attack's crit condition) `ticks` ticks from now, at the least, when the hit
+// goes; always with Legacy (1.8) combat, which has no charge.
+fn charged_in(game: &Game<'_>, ticks: u32) -> bool {
+    legacy_combat(game, None) || game.hand_strength.scale(0.5 + ticks as f32, game.main_hand_attack_speed()) > 0.9
 }
 
 // Nothing in the way of your box moved `h` blocks up (down if negative).
@@ -138,7 +190,12 @@ pub(super) fn attack(game: &mut Game<'_>, id: u32, crits: bool, rotate: Option<(
 pub(super) fn attack_guarded(game: &mut Game<'_>, guard: AttackGuard, crits: bool, rotate: Option<(f32, f32)>) {
     if !running() { return; }
     if !guard.valid(game) { return; }
-    let plan = with(|s| s.module("Criticals").filter(|m| m.on).cloned()).filter(|_| crits).and_then(|m| crit_plan(game, &m));
+    // One Criticals hit at a time: while one is under way (its hop, sprint stop and look are its own), another goes
+    // as it is.
+    let busy = CRIT_STAGE.load(Ordering::Relaxed) != 0 || with(|s| s.crit_target.is_some());
+    let plan = with(|s| s.module("Criticals").filter(|m| m.on).cloned())
+        .filter(|_| crits && !busy)
+        .and_then(|m| crit_plan(game, &m, guard.id()));
     let Some(plan) = plan else {
         match rotate {
             Some((yaw, pitch)) => turn_then_checked("Attack", yaw, pitch, guard, move |game| queue_strike(game, guard, false)),
@@ -162,8 +219,9 @@ pub(super) fn attack_guarded(game: &mut Game<'_>, guard: AttackGuard, crits: boo
 // The hop starts, or the jump, or the wait for the fall.
 fn start_crit(game: &mut Game<'_>, plan: Crit) {
     match plan {
-        Crit::Hop(height) => {
+        Crit::Hop(height) | Crit::Smash(height) => {
             CRIT_HOP.store(height.to_bits(), Ordering::Relaxed);
+            CRIT_DROP.store(matches!(plan, Crit::Smash(_)), Ordering::Relaxed);
             // The look rides on the hop's packets, and the hit follows them.
             if let Some((yaw, pitch)) = with(|s| s.crit_look.take()) {
                 turn("Attack", yaw, pitch);
@@ -178,6 +236,17 @@ fn start_crit(game: &mut Game<'_>, plan: Crit) {
             }
         }
         Crit::Fall => {}
+        // Critical as it is: the hit goes at the start of the next tick, after the sprint stop.
+        Crit::Now => {
+            match with(|s| s.crit_target.take().map(|guard| (guard, s.crit_look.take()))) {
+                Some((guard, Some((yaw, pitch)))) => {
+                    queue_turn("Attack", yaw, pitch, Some(guard), true, move |game| crit_strike(game, guard))
+                }
+                Some((guard, None)) => crit_strike(game, guard),
+                None => crit_done(),
+            }
+            return;
+        }
     }
     CRIT_STAGE.store(CRIT_FALL, Ordering::Relaxed);
 }
@@ -190,7 +259,7 @@ pub(super) fn crit_click(game: &mut Game<'_>) -> Option<bool> {
     if game.remote.is_none() || game.spectator() || game.clicks.miss_time > 0 {
         return None;
     }
-    if CRIT_STAGE.load(Ordering::Relaxed) != 0 {
+    if CRIT_STAGE.load(Ordering::Relaxed) != 0 || with(|s| s.crit_target.is_some()) || strike_waiting() {
         return Some(false);
     }
     if game.held().is_some_and(|s| horizon_client::spear::Kinetic::of(&s.item).is_some()) {
@@ -202,8 +271,11 @@ pub(super) fn crit_click(game: &mut Game<'_>) -> Option<bool> {
     if projectile || object || !game.before_block(distance) {
         return None;
     }
-    crit_plan(game, &m)?;
+    // Critical as it is, with no sprint for the server to see: the game's own hit, this tick.
     let id = game.mobs[i].id;
+    if matches!(crit_plan(game, &m, id)?, Crit::Now) && !game.player.as_ref().is_some_and(|p| p.sprinting) {
+        return None;
+    }
     attack(game, id, true, None);
     Some(false)
 }
@@ -273,6 +345,17 @@ fn queue_strike(game: &mut Game<'_>, guard: AttackGuard, critical: bool) {
 // A hit is on its way: the attack cooldown has not restarted yet, so nothing else may hit this tick.
 pub(super) fn strike_waiting() -> bool {
     strikes(|s| !s.queue.is_empty())
+}
+
+// A critical hit is on its way.
+pub(super) fn critical_waiting() -> bool {
+    strikes(|s| s.queue.iter().any(|(_, critical)| *critical))
+}
+
+// Criticals waits for a fall, or its hit is on its way: No Fall's Packet mode must not claim the ground on the moves
+// the fall is counted from, nor on the hit's tick.
+pub(super) fn crit_falling() -> bool {
+    CRIT_STAGE.load(Ordering::Relaxed) == CRIT_FALL || critical_waiting()
 }
 
 // Hits go out this tick (not only their weapon).
@@ -380,9 +463,12 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
     if stage == 0 {
         return;
     }
-    // The tick of the hit had no move packet to keep off the ground: nothing to do.
+    // The tick of the hit had no move packet to keep off the ground: nothing to do, unless the hit still waits (for
+    // the weapon swapped in for it).
     if stage == CRIT_LAND {
-        CRIT_STAGE.store(0, Ordering::Relaxed);
+        if !critical_waiting() {
+            CRIT_STAGE.store(0, Ordering::Relaxed);
+        }
         return;
     }
     let ticks = with(|s| {
@@ -401,8 +487,9 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
         // Landed first (the fall's last move would have had the hit judged on the ground): it starts again from the
         // ground, the way Mode makes it critical there.
         if ground && ticks > 3 && !with(|s| s.crit_again) {
-            let plan = with(|s| s.module("Criticals").filter(|m| m.on).cloned()).and_then(|m| crit_plan(game, &m));
-            if let Some(plan @ (Crit::Hop(_) | Crit::Jump | Crit::MiniJump)) = plan {
+            let plan = with(|s| s.module("Criticals").filter(|m| m.on).cloned().zip(s.crit_target))
+                .and_then(|(m, guard)| crit_plan(game, &m, guard.id()));
+            if let Some(plan @ (Crit::Hop(_) | Crit::Smash(_) | Crit::Jump | Crit::MiniJump)) = plan {
                 with(|s| {
                     s.crit_again = true;
                     s.crit_ticks = 0;
