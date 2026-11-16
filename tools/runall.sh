@@ -8,6 +8,8 @@
 # targets one after another instead (same setup, for comparing). RETRY=1 then runs each target's failed tests again,
 # one target at a time (a few timing-bound tests can fail under the load of four at once): <target>.retry.log.
 # DISPLAY0 is the first Xvfb display (default 101), so a second run can go beside one already going.
+# Sunset Presence: test clients never reach the live backend (a local `wrangler dev` URL can be given instead).
+export SUNSET_PRESENCE_BASE=${SUNSET_PRESENCE_BASE:-off}
 H=~/hzmeteor; R=$H/$1; shift
 IFS='|' read -ra TESTS <<< "$1"; shift
 TARGETS=("$@")

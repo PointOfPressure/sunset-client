@@ -217,8 +217,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Background dim", 35.0, 0.0, 100.0, 5.0)
             .bool("Menu dim", true)
             .bool("Inventory blur", false)
-            .bool("Toggle messages", true)
-            .bool("Module messages", true)
             .text("Friends", ""),
         // Sections as Rise's Interface groups them; setting names are what configs and profiles keep, so a move
         // between sections changes nothing saved.
@@ -709,6 +707,8 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_debug::defaults());
     v.extend(super::sunset_client_spoofer::defaults());
     v.extend(super::sunset_streamer_mode::defaults());
+    v.extend(super::sunset_toast::defaults());
+    v.extend(super::sunset_presence::defaults());
     let list = super::sunset_extra_modules::defaults(&v);
     v.push(list);
     // Modules that only draw can be held on with their bind instead of toggled.

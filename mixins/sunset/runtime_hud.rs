@@ -284,15 +284,22 @@ pub(super) static GUI_TOP: Mutex<(Vec<Shape>, f32)> = Mutex::new((Vec::new(), 1.
 
 // After all of the frame's HUD (chat, titles, the tab list, toasts) and before its prompts (a server's pack, a dialog, a
 // link), which stay on top and take the clicks, as ever: the GUI, scaled about the corner its coordinates start from.
+// Notifications' toasts go over it.
 pub(super) fn gui_top(game: &Game<'_>, batch: &mut HudBatch) {
     let (mut shapes, scale) = std::mem::replace(&mut *GUI_TOP.lock().unwrap_or_else(|e| e.into_inner()), (Vec::new(), 1.0));
-    if shapes.is_empty() {
-        return;
+    if !shapes.is_empty() {
+        gui_shapes(game, batch, &mut shapes, scale);
     }
+    if game.native_window() && game.native_on(ID) {
+        super::sunset_toast::draw(game, batch);
+    }
+}
+
+fn gui_shapes(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, scale: f32) {
     let real = batch.scale;
     batch.scale = real * scale;
     let start = batch.vertices.len();
-    paint(game, batch, &mut shapes, 1.0 / batch.scale, true);
+    paint(game, batch, shapes, 1.0 / batch.scale, true);
     // Opening, it rises into place as it fades in.
     if let Some((opacity, below)) = super::sunset_dashboard::open_motion() {
         for v in &mut batch.vertices[start..] {

@@ -165,7 +165,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
     switched_effects(game, name, on);
     save(game);
     if announce && name != super::sunset_debug::NAME && with(|s| s.modules[i].on == on) {
-        say(game, &format!("{name} {}", if on { "on" } else { "off" }));
+        announce_toggle(name, on);
     }
 }
 
@@ -470,7 +470,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
                 sync_flags(s);
             });
         } else {
-            toggle(game, i, chat_lines("Toggle messages"));
+            toggle(game, i, true);
         }
     }
     // Air Jump: the jump key in mid-air jumps again.

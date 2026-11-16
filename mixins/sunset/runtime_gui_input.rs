@@ -96,7 +96,7 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
     if name.ends_with("enter") {
         // Enter in the search turns on (or off) the module it found.
         if let Some(i) = with(|s| first_match(s)) {
-            toggle(game, i, chat_lines("Toggle messages"));
+            toggle(game, i, true);
         }
     } else if control && name == "key.keyboard.a" {
         with(|s| s.gui.select_all = !s.gui.search.is_empty());
@@ -148,6 +148,10 @@ pub(super) fn key_char(name: &str) -> Option<char> {
 // the held buttons each frame).
 pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) {
     use winit::event::MouseButton;
+    // A click on a toast closes it, and goes no further.
+    if button == MouseButton::Left && super::sunset_toast::click(game.cursor) {
+        return;
+    }
     let at = gui_cursor(game);
     if with(|s| s.gui.profile_menu.is_some()) {
         if button == MouseButton::Left {

@@ -1618,6 +1618,18 @@ source = "client_brand.rs"
 visibility = "pub"
 
 [[module]]
+id = "presence"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_presence"
+source = "presence.rs"
+
+[[module]]
+id = "toast"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_toast"
+source = "toast.rs"
+
+[[module]]
 id = "streamer_mode"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_streamer_mode"

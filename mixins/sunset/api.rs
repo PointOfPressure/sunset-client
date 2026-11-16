@@ -131,10 +131,10 @@ pub(super) fn module(name: &str) -> Option<Module> {
     with(|s| s.module(name).filter(|m| m.on).cloned())
 }
 
-// A line in chat from Sunset.
+// A line in chat from Sunset (plugins' own messages stay chat lines, as the plugin API says).
 #[allow(dead_code)]
 pub(super) fn chat(game: &mut Game<'_>, text: &str) {
-    super::sunset::say(game, text);
+    super::sunset::chat_line(game, text);
 }
 
 // Turns a module off (its key bind and the GUI keep working).

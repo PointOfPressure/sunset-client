@@ -348,6 +348,25 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 
 </details>
 
+## Privacy
+
+Sunset Presence (menu: Client > Sunset Presence; also Options > Mods) has two switches; turning the module off sends
+nothing at all.
+
+- **Anonymous analytics** (on by default; a one-time notice says so). Every 10 minutes while you are in a world:
+  the Sunset version, your OS family, and whether this is your first launch today, this week, this month and ever.
+  No ID, account, name, UUID, server, IP-derived data, hardware data or settings. The dates behind the flags stay in
+  a local file (`analytics-seen` in Sunset's data folder). Developers see only totals and trends.
+- **Share in-game presence** (off by default). While you are on a server: your player UUID and a SHA-256 of the
+  server's address, so a Sunset developer on the same server sees a sun by your name in their tab list. It works only
+  when your own client sees that developer in your tab list too. The session is deleted when you leave the server or
+  turn it off, and expires within 5 minutes if the game stops. Nothing of it is kept in the stats.
+
+Both use HTTPS to a Cloudflare Worker run by Sunset's maintainer; it logs no requests, and your IP is used only to rate
+limit. No chat, coordinates, files or movement are ever sent. If the service is down, Sunset works the same. Details:
+[presence-backend/README.md](presence-backend/README.md). Sunset's messages are toasts (Client > Notifications), never
+chat lines, apart from replies to commands you type.
+
 ## Updating and removing
 
 **Update:** run the install command again. It replaces the old version and keeps your settings and profiles.

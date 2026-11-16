@@ -91,6 +91,12 @@ pub(crate) fn tab_presence(game: &Game<'_>) -> Vec<(String, i32, bool)> {
     })
 }
 
+// Sunset Presence: your own UUID, and the other players the tab list shows (at most `max`).
+pub(crate) fn tab_uuids(game: &Game<'_>, max: usize) -> Option<(u128, Vec<u128>)> {
+    let r = game.remote.as_ref()?;
+    Some((r.profile, r.tab_players.values().map(|p| p.uuid).filter(|u| *u != r.profile && r.listed.contains(u)).take(max).collect()))
+}
+
 pub(crate) fn tab_names(game: &Game<'_>) -> Vec<String> {
     game.remote.as_ref().map_or_else(Vec::new, |r| {
         r.tab_players.values().filter(|p| p.uuid != r.profile && r.listed.contains(&p.uuid)).map(|p| p.name.clone()).collect()

@@ -73,9 +73,7 @@ fn auto_armor_key(game: &mut Game<'_>, key: &str) {
         return;
     }
     set_setting(game, "inventorymanager.autoarmor", if on { "false" } else { "true" });
-    if chat_lines("Toggle messages") {
-        say(game, if on { "Auto Armor off" } else { "Auto Armor on" });
-    }
+    announce_toggle("Auto Armor", !on);
 }
 
 pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {

@@ -28,7 +28,9 @@ pub(super) fn chat(game: &mut Game<'_>, message: &str) -> bool {
     ensure_loaded(game);
     game.ui.chat.add_recent(message);
     let args: Vec<&str> = rest.split_whitespace().collect();
+    REPLYING.store(true, std::sync::atomic::Ordering::Relaxed);
     run(game, &args);
+    REPLYING.store(false, std::sync::atomic::Ordering::Relaxed);
     true
 }
 
@@ -252,6 +254,7 @@ pub(super) fn all_off(game: &mut Game<'_>) {
 // Panic (the module, its key, .panic, or a plugin turning it on): Sunset stops until the game restarts.
 pub(super) fn panic_off(game: &mut Game<'_>) {
     shutdown(game, "Panic");
+    super::sunset_toast::clear();
 }
 
 // .profile save|load|delete|list <name>: the modules' settings kept under a name.

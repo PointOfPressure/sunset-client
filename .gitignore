@@ -3,3 +3,7 @@ dist/
 /docs/sourcecodes/
 __pycache__/
 *.py[cod]
+
+# Wrangler local state (presence-backend)
+.wrangler/
+node_modules/

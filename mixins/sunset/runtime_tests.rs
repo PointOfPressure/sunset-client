@@ -935,6 +935,28 @@ mod profile_robustness_tests {
         assert!(!state.is_on("Panic") && state.is_on("Sprint"));
     }
 
+    // ClickGUI's message switches moved to Notifications with their values; Sunset Presence's switches are never a
+    // profile's (a shared profile can't turn presence on).
+    #[test]
+    fn message_switches_move_and_presence_stays_out_of_profiles() {
+        let mut state = State::new();
+        let n = state.find("Notifications").unwrap();
+        assert!(state.modules[n].on && state.modules[n].b("Module toggles") && state.modules[n].b("Module messages"));
+        state.load_text("clickgui.togglemessages=false\nclickgui.modulemessages=true\n");
+        assert!(!state.modules[n].b("Module toggles") && state.modules[n].b("Module messages"));
+        let saved = state.save_text();
+        assert!(saved.contains("notifications.moduletoggles=false") && !saved.contains("togglemessages"), "{saved}");
+
+        let p = state.find("Sunset Presence").unwrap();
+        assert!(state.modules[p].on && state.modules[p].b("Anonymous analytics") && !state.modules[p].b("Share in-game presence"));
+        let text = state.profile_text();
+        assert!(!text.contains("sunsetpresence."), "{text}");
+        let hostile = format!("{HEADER}\nsunsetpresence.shareingamepresence=true\nsunsetpresence.on=false\nsprint.on=true\n");
+        let checked = state.check_profile(&hostile).unwrap();
+        state.load_profile(&checked.body);
+        assert!(state.modules[p].on && !state.modules[p].b("Share in-game presence") && state.is_on("Sprint"));
+    }
+
     // A profile from another version or edited by hand: what this version doesn't know is left out and named, the
     // rest loads; Windows line ends and a byte order mark are fine; a file of nothing known is refused.
     #[test]
