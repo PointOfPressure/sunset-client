@@ -6,8 +6,9 @@
 // mined away stops being drawn. When the chunks round you are done it says how many it found and how many of
 // them already show as ore, which tells a wrong seed (almost none) from the right one.
 
-use super::{Dim, Game};
+use super::{Dim, Game, Screen};
 use super::sunset::{Camera, Canvas, Category, Module};
+use super::sunset_seedcracker::{self as seedcracker, SeedOrigin};
 use super::sunset_util::{dist, player_pos, toggle_off};
 use super::sunset_visual::{Look, draw_box};
 use horizon_client::chunk::{Chunk, MIN_Y};
@@ -15,8 +16,10 @@ use horizon_world::registry::{BlockRegistry, BlockStateId};
 use horizon_world::worldgen::generator::sunset_ore_sim::{KINDS, SeenWorld, ore_sim};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, channel, sync_channel};
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 
 pub(super) const NAME: &str = "Ore Sim";
 
@@ -29,6 +32,9 @@ pub(super) fn defaults() -> Vec<Module> {
     vec![
         Module::new(NAME, Category::World, "Shows ores from the world seed.")
             .text("Seed", "")
+            .pick("Seed source", &["Manual", "Auto-crack"])
+            .bool("Database fetch", false)
+            .num("Cracker threads", 2.0, 1.0, 8.0, 1.0)
             .num("Chunks", 5.0, 1.0, 10.0, 1.0)
             .text("Ores", "coal,copper,iron,lapis,redstone,gold,diamond,emerald,quartz,debris")
             .bool("Hide shown ores", false)
@@ -54,10 +60,12 @@ enum Done {
 }
 
 struct Sim {
-    // The seed and dimension the thread was started for.
-    key: (i64, &'static str),
-    jobs: Sender<Job>,
+    // Sessions with the same seed and dimension still need separate replay state.
+    key: (u64, i64, &'static str),
+    jobs: SyncSender<Job>,
     done: Receiver<Done>,
+    cancelled: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
     sent: HashSet<(i32, i32)>,
     ores: HashMap<(i32, i32), Vec<([i32; 3], u8)>>,
     // Block states that are an ore, for the summary and Hide shown ores.
@@ -66,6 +74,7 @@ struct Sim {
 }
 
 static SIM: Mutex<Option<Sim>> = Mutex::new(None);
+static RETIRING: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 
 // A seed as vanilla's world creation reads one: a number, or else the text's hash.
 fn seed(text: &str) -> Option<i64> {
@@ -76,6 +85,106 @@ fn seed(text: &str) -> Option<i64> {
     Some(text.parse::<i64>().unwrap_or_else(|_| {
         i64::from(text.encode_utf16().fold(0i32, |h, c| h.wrapping_mul(31).wrapping_add(i32::from(c))))
     }))
+}
+
+pub(super) fn manual_seed(module: &Module) -> Option<i64> {
+    seed(module.t("Seed"))
+}
+
+// This is also called while the runtime's settings lock is held: only read the controller's small status.
+pub(super) fn info(module: &Module) -> Option<String> {
+    if manual_seed(module).is_some() {
+        Some(if module.p("Seed source") == "Auto-crack" { "Manual override" } else { "Manual" }.into())
+    } else if module.p("Seed source") == "Auto-crack" && module.on {
+        seedcracker::status_line().or_else(|| Some("Waiting for observations".into()))
+    } else {
+        Some("Manual".into())
+    }
+}
+
+pub(super) fn status(game: &Game<'_>, module: &Module) -> Vec<String> {
+    let enabled = if module.on { "" } else { "Off; " };
+    if let Some(value) = manual_seed(module) {
+        let source = if module.p("Seed source") == "Auto-crack" { "Manual override" } else { "Manual" };
+        return vec![format!("Ore Sim seed: {enabled}{source} {value}.")];
+    }
+    if module.p("Seed source") != "Auto-crack" {
+        return vec![format!("Ore Sim seed: {enabled}Manual; set a seed with .seed <seed> or select .seed auto.")];
+    }
+    if !module.on {
+        return vec!["Ore Sim seed: Off; Auto-crack is selected.".into()];
+    }
+    let found = seedcracker::resolved(game);
+    let snap = seedcracker::snapshot();
+    let mut lines = vec![match found {
+        Some(found) => format!("Ore Sim seed: {} {}.", origin(found.origin), found.value),
+        None => format!("Ore Sim seed: {}.", seedcracker::status_line().unwrap_or_else(|| "Waiting for observations".into())),
+    }];
+    lines.push(format!(
+        "Ore Sim seed: {} observations; {:.1}/{:.0} base bits, {:.1}/40 lifting bits; {} structure candidates (48-bit), {} world candidates.",
+        snap.observations, snap.base_bits, snap.wanted_bits, snap.lifting_bits, snap.structure_candidates, snap.world_candidates,
+    ));
+    lines.push(format!("Ore Sim seed: verification hash {}.", if game.remote.is_some() && game.player.is_some() { "available" } else { "unavailable" }));
+    if snap.total > 0 {
+        lines.push(format!("Ore Sim seed: {} {}/{} checked.", snap.phase, snap.checked, snap.total));
+    }
+    if let Some(detail) = snap.detail {
+        lines.push(format!("Ore Sim seed: {detail}"));
+    }
+    lines
+}
+
+fn origin(source: SeedOrigin) -> &'static str {
+    match source {
+        SeedOrigin::Local => "Local seed",
+        SeedOrigin::Cracked => "Hash-verified seed",
+        SeedOrigin::Database => "Hash-verified database seed",
+    }
+}
+
+// Read the controller before SIM; never hold the two locks together.
+fn input(game: &Game<'_>, module: &Module) -> Option<(u64, i64)> {
+    let world = seedcracker::world_id(game);
+    if let Some(value) = manual_seed(module) {
+        Some((world, value))
+    } else if module.p("Seed source") == "Auto-crack" {
+        seedcracker::resolved(game).filter(|found| found.world == world).map(|found| (world, found.value))
+    } else {
+        None
+    }
+}
+
+// Request cancellation immediately, without waiting for a worldgen chunk already being replayed.
+pub(super) fn stop() {
+    *SIM.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    reap_worker();
+}
+
+fn reap_worker() -> bool {
+    let mut retired = RETIRING.lock().unwrap_or_else(|e| e.into_inner());
+    if retired.as_ref().is_some_and(JoinHandle::is_finished) {
+        if let Some(worker) = retired.take() { let _ = worker.join(); }
+    }
+    retired.is_none()
+}
+
+// Runs even when the normal module tick cannot: no old ores or work survive a world/lifecycle boundary.
+pub(super) fn maintain(game: &Game<'_>) {
+    if !game.native_window() { return; }
+    if !super::sunset::running() || !game.native_on(super::sunset::ID)
+        || game.player.is_none() || game.screen == Screen::Dead
+    {
+        stop();
+        return;
+    }
+    let module = super::sunset::with(|s| s.module(NAME).filter(|m| m.on).cloned());
+    let key = module.as_ref().and_then(|m| input(game, m)).map(|(world, value)| (world, value, dimension(game).0));
+    let mut slot = SIM.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.as_ref().is_some_and(|sim| Some(sim.key) != key) {
+        *slot = None;
+    }
+    drop(slot);
+    reap_worker();
 }
 
 // The dimension's id, its build range and its generator's range (vanilla's noise settings).
@@ -115,19 +224,24 @@ fn ore_states(registry: &BlockRegistry) -> Vec<bool> {
 }
 
 impl Sim {
-    fn start(game: &Game<'_>, key: (i64, &'static str), build: (i32, i32), generation: (i32, i32, i32)) -> Option<Self> {
+    fn start(game: &Game<'_>, key: (u64, i64, &'static str), build: (i32, i32), generation: (i32, i32, i32)) -> Option<Self> {
+        if !reap_worker() { return None; }
         let lifecycle = horizon_protocol::connection::sunset_lifecycle::RUNTIME.token();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let cancel = cancelled.clone();
         let registry: &'static BlockRegistry = game.pack.assets.registry;
         let dir: PathBuf = game.options.resources.join("worldgen");
         let biome_names: Vec<String> = game.res.biomes().list.iter().map(|b| b.name.clone()).collect();
         let solid = floor_blocks(game);
-        let (jobs, rx) = channel::<Job>();
+        let (jobs, rx) = sync_channel::<Job>(SEND_PER_TICK * 2);
         let (tx, done) = channel();
         let thread = move || {
-            if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(lifecycle) { return; }
+            let current = || !cancel.load(Ordering::Acquire) && horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(lifecycle);
+            if !current() { return; }
             let loaded = horizon_client::vanillagen::shared_data(&dir, registry)
                 .map_err(|e| e.to_string())
-                .and_then(|data| ore_sim(&data, "minecraft:normal", key.1, build, generation));
+                .and_then(|data| ore_sim(&data, "minecraft:normal", key.2, build, generation));
+            if !current() { return; }
             let sim = match loaded {
                 Ok(Some(sim)) if sim.roots() > 0 => sim,
                 Ok(_) => {
@@ -142,25 +256,35 @@ impl Sim {
             let biomes: Vec<Option<u32>> = biome_names.iter().map(|n| sim.biome_index(n)).collect();
             let air = registry.default_state("minecraft:air").map_or(0, |s| s.0);
             for job in rx {
-                if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(lifecycle) { return; }
+                if !current() { return; }
                 let view = View { at: job.at, chunks: &job.chunks, biomes: &biomes, solid: &solid, air };
-                let found = sim.chunk(key.0, job.at.0, job.at.1, &view);
-                if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.current(lifecycle) { return; }
+                let found = sim.chunk(key.1, job.at.0, job.at.1, &view);
+                if !current() { return; }
                 if tx.send(Done::Chunk(job.at, found)).is_err() {
                     return;
                 }
             }
         };
-        std::thread::Builder::new().name("sunset-ore-sim".into()).spawn(thread).ok()?;
+        let worker = std::thread::Builder::new().name("sunset-ore-sim".into()).spawn(thread).ok()?;
         Some(Self {
             key,
             jobs,
             done,
+            cancelled,
+            worker: Some(worker),
             sent: HashSet::new(),
             ores: HashMap::new(),
             ore_states: ore_states(registry),
             said: false,
         })
+    }
+}
+
+impl Drop for Sim {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Release);
+        // start() waits for this handle before launching another replay, so rapid toggles keep one retiring worker.
+        *RETIRING.lock().unwrap_or_else(|e| e.into_inner()) = self.worker.take();
     }
 }
 
@@ -213,20 +337,32 @@ impl SeenWorld for View<'_> {
 
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     let Some(m) = mods.iter().find(|m| m.name == NAME && m.on) else {
-        *SIM.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        stop();
         return;
     };
-    let Some(seed) = seed(m.t("Seed")) else {
-        super::sunset::say(game, "Ore Sim: set the world's seed first (.set oresim seed <seed>).");
-        toggle_off(game, NAME);
+    let Some((world, seed)) = input(game, m) else {
+        stop();
+        if m.p("Seed source") != "Auto-crack" {
+            super::sunset::say(game, "Ore Sim: set the world's seed first (.seed <seed> or .set oresim seed <seed>).");
+            toggle_off(game, NAME);
+        }
         return;
     };
     let Some(here) = player_pos(game) else { return };
     let (dim, build, generation) = dimension(game);
-    let key = (seed, dim);
+    let key = (world, seed, dim);
     let mut slot = SIM.lock().unwrap_or_else(|e| e.into_inner());
     if slot.as_ref().is_none_or(|s| s.key != key) {
+        *slot = None;
         *slot = Sim::start(game, key, build, generation);
+        let started = slot.is_some();
+        drop(slot);
+        if started && manual_seed(m).is_none() {
+            if let Some(found) = seedcracker::resolved(game) {
+                super::sunset::say(game, &format!("Ore Sim seed: {} {}.", origin(found.origin), found.value));
+            }
+        }
+        slot = SIM.lock().unwrap_or_else(|e| e.into_inner());
     }
     let Some(sim) = slot.as_mut() else { return };
     let mut failed = None;
@@ -239,6 +375,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         }
     }
     if let Some(why) = failed {
+        *slot = None;
         drop(slot);
         super::sunset::say(game, &format!("Ore Sim: {why}."));
         toggle_off(game, NAME);
@@ -263,7 +400,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
                 (-1..=1).flat_map(|j| (-1..=1).map(move |i| (at.0 + i, at.1 + j))).map(|c| chunks.get(&c).cloned()).collect();
             let Some(around) = around else { continue };
             waiting = true;
-            if sent < SEND_PER_TICK && sim.jobs.send(Job { at, chunks: around }).is_ok() {
+            if sent < SEND_PER_TICK && sim.jobs.try_send(Job { at, chunks: around }).is_ok() {
                 sim.sent.insert(at);
                 sent += 1;
             }
@@ -287,12 +424,15 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
 
 pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut impl Canvas, lw: f32) {
     let Some(m) = mods.iter().find(|m| m.name == NAME && m.on) else { return };
+    let Some((world, seed)) = input(game, m) else { return };
+    let key = (world, seed, dimension(game).0);
     let Some(here) = player_pos(game) else { return };
     let wanted: Vec<bool> = KINDS.iter().map(|k| m.t("Ores").split(',').any(|o| o.trim() == *k)).collect();
     let (hide_shown, max) = (m.b("Hide shown ores"), m.n("Max") as usize);
     let range = (m.n("Chunks") * 16.0 + 16.0) * 1.5;
     let slot = SIM.lock().unwrap_or_else(|e| e.into_inner());
     let Some(sim) = slot.as_ref() else { return };
+    if sim.key != key { return; }
     let mut drawn = 0;
     for &(p, kind) in sim.ores.values().flatten() {
         if !wanted[kind as usize] {

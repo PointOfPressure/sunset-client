@@ -287,7 +287,7 @@ fn listen(plugin: &'static str, priority: i32, on: On) {
 // Sunset's own commands: a plugin can't take these names.
 const BUILT_IN: &[&str] = &[
     "auradebug", "scan", "goto", "help", "commands", "menu", "gui", "pages", "toggle", "t", "modules", "list", "settings",
-    "get", "set", "movementpreset", "bind", "binds", "panic", "debug", "profile", "profiles", "config", "cfg", "preset",
+    "get", "set", "seed", "movementpreset", "bind", "binds", "panic", "debug", "profile", "profiles", "config", "cfg", "preset",
     "presets", "reset", "friend", "friends", "f", "loadout", "loadouts", "waypoint", "waypoints", "wp", "vclip", "hclip",
     "plugins",
 ];

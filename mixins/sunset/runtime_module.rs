@@ -251,6 +251,7 @@ impl Module {
             "Fast Place" => Some(num(self.n("Speed"))),
             "Speed" | "Criticals" | "Fake Lag" => Some(self.p("Mode").to_owned()),
             "Client Spoofer" => Some(self.p("Client").to_owned()),
+            "Ore Sim" => super::sunset_ore_sim::info(self),
             "Offhand" if self.b("Show totem count") => Some(super::sunset_combat_inventory::totem_count().to_string()),
             _ => None,
         }
@@ -260,6 +261,7 @@ impl Module {
         let name = self.settings[j].name;
         let advanced = self.b("Advanced");
         match self.name {
+            "Ore Sim" if matches!(name, "Database fetch" | "Cracker threads") => self.p("Seed source") == "Auto-crack",
             // Kill Aura's and Trigger Bot's Shield: its settings with it on.
             "Kill Aura" if name == "Shield" => false, // Retained compatibility alias, superseded by AutoBlock.
             "Kill Aura" if name.starts_with("Shield ") => self.p("AutoBlock") == "Modern",

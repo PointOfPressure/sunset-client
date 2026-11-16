@@ -2471,6 +2471,7 @@ def _():
     seed = next((int(f.group(1)) for f in found if f), None)
     if seed is None:
         return False, f"no seed in chat: {chat_since(mark)[-3:]}"
+    setting("oresim", "seed source", "Manual")
     setting("oresim", "chunks", "2")
 
     def run(value):
@@ -2498,6 +2499,83 @@ def _():
     ok = (right is not None and wrong is not None and right[0] >= 100 and right[2] >= 0.6 * right[0]
           and wrong[2] <= 0.1 * max(wrong[0], 1))
     return ok, f"seed {seed}: {line!r}; seed {seed + 1}: {line2!r}"
+
+
+@test("Ore Sim seed source")
+def _():
+    # A normal server can remain in collection indefinitely without enough structures; an integrated world may
+    # supply an authoritative local seed immediately. Both must stay enabled and accept a manual override.
+    reset("creative")
+    touched.add("oresim")
+    mark = log_mark()
+    cmd("seed")
+    wait(5)
+    found = [re.search(r"Seed: \[(-?\d+)\]", line) for line in chat_since(mark)]
+    seed = next((int(f.group(1)) for f in found if f), None)
+    if seed is None:
+        return False, f"no seed in chat: {chat_since(mark)[-3:]}"
+    setting("oresim", "chunks", "2")
+    setting("oresim", "cracker threads", "3")
+    say(".seed auto")
+    selected = said_after(".settings oresim")
+    default_off = any(line.casefold() == "database fetch: off" for line in selected)
+    selected_auto = "Seed source: Auto-crack" in selected and "Seed: (empty)" in selected
+    toggle("ore sim", True)
+    wait(20)
+    automatic = said_after(".seed status")
+    stayed_on = "Ore Sim" in modules_on()
+    progress = any("observations;" in line and "structure candidates (48-bit)" in line and "world candidates" in line for line in automatic)
+
+    # Keep Auto selected while supplying Seed through the original setting path: it must win over a queued or
+    # already resolved automatic result and drive the unchanged replay.
+    override = seed + 1
+    mark = log_mark()
+    setting("oresim", "seed", str(override))
+    manual_status = said_after(".seed status")
+    completion = ""
+    for _ in range(60):
+        wait(10)
+        summaries = [line for line in sunset_said(mark) if re.search(r"^Ore Sim: \d+ ores in \d+ chunks,", line)]
+        completion = summaries[-1] if summaries else ""
+        replay = re.search(r"(\d+) ores in (\d+) chunks, (\d+) of them", completion)
+        if replay and int(replay.group(1)) >= 100 and int(replay.group(3)) <= 0.1 * int(replay.group(1)):
+            break
+    replay = re.search(r"(\d+) ores in (\d+) chunks, (\d+) of them", completion)
+    manual_replay = replay is not None and int(replay.group(1)) >= 100 and int(replay.group(3)) <= 0.1 * int(replay.group(1))
+    manual = any(f"Manual override {override}." in line for line in manual_status)
+    say(".seed restart")
+    preserved = any(f"Manual override {override}." in line for line in said_after(".seed"))
+    say(".seed clear")
+    resumed_settings = said_after(".settings oresim")
+    resumed = said_after(".seed status")
+    cleared = ("Seed: (empty)" in resumed_settings and "Seed source: Auto-crack" in resumed_settings
+               and "Ore Sim" in modules_on() and not any("Manual override" in line for line in resumed))
+    toggle("ore sim", False)
+    off_mark = log_mark()
+    wait(30)
+    late = [line for line in sunset_said(off_mark) if line.startswith(("Ore Sim:", "Ore Sim seed:"))]
+    off = said_after(".seed status")
+    stopped = "Ore Sim" not in modules_on() and off == ["Ore Sim seed: Off; Auto-crack is selected."] and not late
+
+    # Commands save the same named fields as profiles; automatic runtime results must leave Seed empty.
+    profile = "verify-ore-seed"
+    try:
+        say(f".profile save {profile}")
+        manual_off = said_after(".seed 0")
+        unchanged_off = "Ore Sim" not in modules_on() and manual_off == ["Ore Sim seed: Off; Manual 0."]
+        say(f".profile load {profile}")
+        restored = said_after(".settings oresim")
+        round_trip = ("Seed: (empty)" in restored and "Seed source: Auto-crack" in restored
+                      and "Cracker threads: 3" in restored and any(line.casefold() == "database fetch: off" for line in restored)
+                      and "Ore Sim" not in modules_on())
+    finally:
+        say(f".profile delete {profile}")
+    waiting = not any("Local seed " in line or "Hash-verified" in line for line in automatic)
+    ok = (default_off and selected_auto and stayed_on and progress and manual and manual_replay and preserved
+          and cleared and stopped and unchanged_off and round_trip)
+    return ok, (f"auto {automatic[:2]!r}; default fetch off {default_off}; waiting path {waiting} (local fast path can resolve immediately); "
+                f"manual {manual_status!r}, replay {completion!r}; clear {cleared}, off {off!r}, late {late!r}; "
+                f"manual command leaves off {unchanged_off}, profile round-trip {round_trip}")
 
 
 @test("Base Finder")

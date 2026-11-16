@@ -117,6 +117,7 @@ and setting names, the start of the name is enough.
 | `.t <module>` | turn a module on or off: `.t killaura` |
 | `.set <module> <setting> <value>` | change a setting: `.set killaura range 4`, or a list: `.set xray blocks diamond_ore,ancient_debris` |
 | `.settings <module>` | show a module's settings |
+| `.seed [status\|auto\|clear\|restart\|seed text]` | Ore Sim's effective seed and discovery progress, or set a manual seed |
 | `.bind <module> <key>` | bind a key or mouse button: `.bind flight r`, `.bind zoom mouse4`, `.bind zoom none` |
 | `.reset <module>` | put a module back to its defaults |
 | `.modules`, `.binds` | list modules, list binds |
@@ -270,6 +271,27 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Sound Detector**: what players nearby are doing (chests, doors, building, mining, crafting, eating, explosions,
   withers spawned anywhere), with where and often who.
 - **Ore Sim**: shows ores worked out from the world seed, for servers that hide them.
+  - **Seed source** defaults to *Manual*. Enter a signed number (including `0`) or a text seed in **Seed**, with
+    `.seed <seed text>` or `.set oresim seed <seed text>`. A nonempty Seed always overrides automatic discovery,
+    even with *Auto-crack* selected, and stops automatic work.
+  - `.seed auto` clears the manual text and selects *Auto-crack*. It uses an authoritative local seed when
+    available, or collects visible structures and verifies a full world seed against the server's seed hash.
+    While waiting, Ore Sim stays on and shows progress beside its name; it draws ores once a verified seed is
+    available. Automatic results belong to the current world and are never saved into Seed or profiles.
+  - `.seed` or `.seed status` shows the effective seed, observations, bits, and separate 48-bit structure and full
+    world candidate counts. `.seed clear` clears only the manual text; `.seed restart` clears automatic observations
+    and results while preserving manual text. These commands leave the module's on/off switch as it is. Use
+    `.set oresim seed <text>` for literal text seeds named `auto`, `status`, `clear` or `restart`.
+  - With *Auto-crack* selected, **Cracker threads** defaults to 2 and is capped at 8 and the available CPU budget.
+    **Database fetch** defaults to off. Turning it on permits one read-only seed-database request per eligible
+    world/run; only a result matching the current seed hash can be used. There are no seed submissions or account
+    authentication. Manual input, switching the module off and Panic cancel automatic work.
+  - Discovery needs enough intact observations and compatible generation. Searches can be expensive; a server
+    that hides structures or changes feature salts, seed hashes or world generation can prevent recovery. The
+    inherited discovery tables target 1.21.3 and have not been independently validated for every 26.3 structure.
+    General biome/lattice recovery and anti-xray bypasses are not implemented. Even with the right seed, custom
+    world generation, obfuscated blocks or edited terrain can reduce Ore Sim's replay accuracy. Manual seeds
+    remain available in single player and on vanilla, Paper and Horizon servers.
 - **Nuker**, **Packet Mine**, **Liquid Filler** (also drains an enemy's water or lava), **Spawn Proofer**,
   **Build Height**.
 - **Auto Sign**: writes signs without the editor ever showing, with text from its settings (front and back) or the
@@ -374,6 +396,12 @@ invisible and unlisted checks follow the behaviour of [Donut Client](https://git
 4ldenz (GPL-3.0-only). Sunset's code for them is written anew; no source from either is copied.
 
 </details>
+
+Ore Sim's automatic seed discovery uses [horizon-seedcrackerx](https://github.com/luhnox/horizon-seedcrackerx) by
+[luhnox](https://github.com/luhnox), a Rust port of [SeedCrackerX](https://github.com/19MisterX98/SeedcrackerX),
+originally by KaptainWutax and maintained by 19MisterX98 and contributors, with the SeedFinding libraries. The reused
+code is MIT licensed; its [license](mixins/sunset/seedcracker.LICENSE) and
+[notices](mixins/sunset/seedcracker.NOTICE.md) ship in Sunset's `.hnmod`.
 
 Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 

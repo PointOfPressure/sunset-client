@@ -1,6 +1,98 @@
 // Runtime part (see runtime.rs): tests of the runtime parts.
 
 #[cfg(test)]
+mod ore_sim_config_tests {
+    use super::super::sunset::*;
+    use super::super::sunset_ore_sim::manual_seed;
+
+    #[test]
+    fn old_ore_sim_config_and_profiles_keep_all_manual_fields() {
+        let old = "oresim.on=true\noresim.key=key.keyboard.o\noresim.seed=-8675309\noresim.chunks=2\noresim.ores=diamond,debris\noresim.hideshownores=true\noresim.max=512\n";
+        let mut state = State::new();
+        state.load_text(old);
+        let module = state.module("Ore Sim").unwrap();
+        assert!(module.on && module.b("Hide shown ores"));
+        assert_eq!(module.key.as_deref(), Some("key.keyboard.o"));
+        assert_eq!(manual_seed(module), Some(-8675309));
+        assert_eq!((module.n("Chunks"), module.n("Max")), (2.0, 512.0));
+        assert_eq!(module.t("Ores"), "diamond,debris");
+        assert_eq!(module.p("Seed source"), "Manual");
+        assert!(!module.b("Database fetch"));
+        let profile = format!("{}\n{old}", super::super::sunset_profiles::HEADER);
+        let checked = state.check_profile(&profile).unwrap();
+        assert!(checked.skipped.is_empty(), "{:?}", checked.skipped);
+        let mut from_profile = State::new();
+        from_profile.load_profile(&checked.body);
+        let mut loaded = State::new();
+        loaded.load_text(&state.save_text());
+        assert_eq!(from_profile.module("Ore Sim"), Some(module));
+        assert_eq!(loaded.module("Ore Sim"), Some(module));
+        from_profile.load_profile("oresim.on=false\n");
+        assert!(!from_profile.is_on("Ore Sim"));
+        assert_eq!(manual_seed(from_profile.module("Ore Sim").unwrap()), Some(-8675309));
+    }
+
+    #[test]
+    fn automatic_settings_round_trip_and_old_profiles_overlay_them() {
+        let mut state = State::new();
+        let defaults = state.module("Ore Sim").unwrap();
+        let shown = |module: &Module, name: &str| module.setting_visible(module.settings.iter().position(|s| s.name == name).unwrap());
+        assert!(!defaults.on && !defaults.b("Database fetch"));
+        assert!(shown(defaults, "Seed") && shown(defaults, "Seed source"));
+        assert!(!shown(defaults, "Database fetch") && !shown(defaults, "Cracker threads"));
+        state.load_text("oresim.seedsource=Auto-crack\noresim.databasefetch=true\noresim.crackerthreads=3\n");
+        let module = state.module("Ore Sim").unwrap();
+        assert!(shown(module, "Seed") && shown(module, "Database fetch") && shown(module, "Cracker threads"));
+        assert_eq!(manual_seed(module), None);
+        let mut loaded = State::new();
+        loaded.load_text(&state.save_text());
+        let mut from_profile = State::new();
+        from_profile.load_profile(&state.profile_text());
+        assert_eq!(loaded.module("Ore Sim"), Some(module));
+        assert_eq!(from_profile.module("Ore Sim"), Some(module));
+        // An old profile has no new fields: its nonempty Seed still overrides an explicitly selected Auto mode.
+        from_profile.load_profile("oresim.seed=0\noresim.chunks=4\noresim.on=true\n");
+        let overlay = from_profile.module("Ore Sim").unwrap();
+        assert_eq!(overlay.p("Seed source"), "Auto-crack");
+        assert!(overlay.b("Database fetch"));
+        assert_eq!(overlay.n("Cracker threads"), 3.0);
+        assert_eq!(manual_seed(overlay), Some(0));
+        assert_eq!(overlay.info().as_deref(), Some("Manual override"));
+        assert!(from_profile.profile_text().contains("oresim.seed=0\n"));
+    }
+
+    #[test]
+    fn seed_command_preserves_enable_state_and_manual_java_seed_parsing() {
+        let mut state = State::new();
+        for (text, value) in [("0", 0), ("-9223372036854775808", i64::MIN), ("A😀", 1_835_364)] {
+            seed_settings(&mut state, "auto");
+            seed_settings(&mut state, text);
+            let module = state.module("Ore Sim").unwrap();
+            assert!(!module.on, "setting a seed does not enable Ore Sim");
+            assert_eq!(module.p("Seed source"), "Manual");
+            assert_eq!(module.t("Seed"), text);
+            assert_eq!(manual_seed(module), Some(value));
+        }
+        State::set_field(&mut state.modules, "oresim.on", "true");
+        seed_settings(&mut state, "auto");
+        let module = state.module("Ore Sim").unwrap();
+        assert!(module.on);
+        assert_eq!(module.p("Seed source"), "Auto-crack");
+        assert_eq!(manual_seed(module), None);
+        State::set_field(&mut state.modules, "oresim.seed", "0");
+        assert_eq!(state.module("Ore Sim").unwrap().info().as_deref(), Some("Manual override"));
+        seed_settings(&mut state, "clear");
+        assert_eq!(state.module("Ore Sim").unwrap().p("Seed source"), "Auto-crack");
+        seed_settings(&mut state, "123");
+        seed_settings(&mut state, "clear");
+        let module = state.module("Ore Sim").unwrap();
+        assert_eq!(module.p("Seed source"), "Manual");
+        assert_eq!(manual_seed(module), None);
+        assert!(module.on, "clearing a seed does not toggle Ore Sim");
+    }
+}
+
+#[cfg(test)]
 mod movement_config_tests {
     use super::super::sunset::*;
     use winit::keyboard::KeyCode;
