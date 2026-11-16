@@ -617,7 +617,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) -> bool {
         }
         return false;
     }
-    if busy || melee::acted(game) {
+    // A Criticals hit under way (its hop moves you on the server, its hit follows): nothing of Auto Mace's in between.
+    if busy || melee::acted(game) || super::sunset::CRIT_STAGE.load(std::sync::atomic::Ordering::Relaxed) != 0 {
         return false;
     }
     let sent = act(game, &m, fall);
