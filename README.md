@@ -384,16 +384,6 @@ Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal 
 
 </details>
 
-<details>
-<summary>Behaviour references</summary>
-
-Geode Finder, Light ESP, Sound Detector, Base Finder's Grown amethyst and growth signs and Anti Vanish's spectator,
-invisible and unlisted checks follow the behaviour of [Donut Client](https://github.com/Raindots/donut-client) 3.0
-(MIT, Donut Client contributors), whose Amethyst Scanner, Light Debug and Base Finder adapt Spectre Client 26.2 by
-4ldenz (GPL-3.0-only). Sunset's code for them is written anew; no source from either is copied.
-
-</details>
-
 Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
