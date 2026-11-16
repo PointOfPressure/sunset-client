@@ -3158,6 +3158,39 @@ def _():
     return ok, str(r)
 
 
+@test("Sign Aura rewrite")
+def _():
+    # Rewrite changed: a sign the aura wrote, then changed by someone else ("other"), gets the text again; with it off
+    # the change stays. Either way no clicks once the signs say what they should.
+    def run(rewrite):
+        reset("creative")
+        p = (X0, Y + 1, Z0 + 3)
+        cmd(f"setblock {p[0]} {p[1]} {p[2]} minecraft:oak_sign[rotation=0]")
+        wait(10)
+        only("autosign")
+        for k, v in (("textsource", "Settings"), ("front1", "fa"), ("back1", "ba"), ("silent", "true"), ("bothsides", "false"),
+                     ("aura", "false"), ("anticheat", "Horizon"), ("onlyblank", "false"), ("rewritechanged", rewrite)):
+            setting("autosign", k, v)
+        wait(3)
+        setting("autosign", "aura", "true")
+        wait(30)
+        first = sign_side(*p, front=False)
+        cmd(f"setblock {p[0]} {p[1]} {p[2]} minecraft:air",
+            f"setblock {p[0]} {p[1]} {p[2]} minecraft:oak_sign[rotation=0]{{back_text:{{messages:['\"other\"','\"\"','\"\"','\"\"']}}}}")
+        wait(30)
+        after = sign_side(*p, front=False)
+        mark = probe_mark()
+        wait(30)
+        again = sum(t.count(f"pkt {USE_ITEM_ON}") for t in probe_ticks(mark))
+        only()
+        cmd(f"setblock {p[0]} {p[1]} {p[2]} minecraft:air")
+        return first, after, again
+
+    on, off = run("true"), run("false")
+    ok = "ba" in on[0] and "ba" in on[1] and on[2] == 0 and "ba" in off[0] and "other" in off[1] and off[2] == 0
+    return ok, f"on (written, after the change, clicks after): {on}; off: {off}"
+
+
 @test("Jesus")
 def _():
     # Dropped onto a pool: with Jesus you stand on the water's top, without you go in.

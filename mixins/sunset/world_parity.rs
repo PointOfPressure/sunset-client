@@ -21,7 +21,7 @@ pub(super) fn defaults() -> Vec<Module> {
         super::sunset_auto_sign::module(Module::new(
             "Auto Sign",
             Category::World,
-            "Writes signs without the editor: your text, or the first sign you write; both sides; Aura clicks the signs around you.",
+            "Writes signs without the editor: your text, or the first sign you write; both sides; rewrites signs changed since; Aura clicks the signs around you.",
         )),
         Module::new("Build Height", Category::World, "Lets you place against the build limit."),
         Module::new("Trident Boost", Category::Movement, "Boosts riptide.")

@@ -275,7 +275,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Auto Sign**: writes signs without the editor ever showing, with text from its settings (front and back) or the
   first sign you write; both sides (a server opens the side you stand on, so the other side is written once you're on
   it); Aura clicks the signs in reach around you, with an Anticheat mode: Grim (one click a tick, the look in that
-  tick's move packet and the next) or Horizon (many signs a tick). Every side still needs a real click on the sign:
+  tick's move packet and the next) or Horizon (many signs a tick). Rewrite changed writes a sign again when
+  someone changes it from your text. Every side still needs a real click on the sign:
   servers take a sign's text only from the player they opened it for.
 - **Auto Shearer**, **Auto Nametag**, **Auto Breed**, **Auto Mount**, **Flamethrower**, **Enderman Look**.
 - **Timer**, **Time Changer**, **Weather Changer**, **Unlock All Recipes**.

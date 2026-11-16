@@ -44,6 +44,7 @@ pub(super) fn module(m: Module) -> Module {
         .bool("Aura", false)
         .pick("Anticheat", &["Grim", "Horizon"])
         .bool("Only blank", false)
+        .bool("Rewrite changed", true)
         .num("Range", 4.4, 1.0, REACH, 0.1)
         .num("Clicks per tick", 1.0, 1.0, 16.0, 1.0)
         .num("Cooldown", 1.0, 0.0, 40.0, 1.0)
@@ -78,8 +79,9 @@ struct St {
     pending: VecDeque<(u64, play::SignUpdate)>,
     // Our clicks waiting for their editor: pos -> (front, tick).
     clicked: HashMap<[i32; 3], (bool, u64)>,
-    // Sides written or given up on, signs with a side written, failed clicks per side.
-    done: HashSet<([i32; 3], bool)>,
+    // Sides written or given up on, with the lines they had then (a side still saying that was refused or is still on
+    // its way; any other text is someone's edit since), signs with a side written, failed clicks per side.
+    done: HashMap<([i32; 3], bool), [String; 4]>,
     touched: HashSet<[i32; 3]>,
     failed: HashMap<([i32; 3], bool), u8>,
     // Ticks until the next click; the tick a click was asked for (its look on the way); Grim's look to keep a tick.
@@ -171,9 +173,10 @@ fn answer(game: &Game<'_>, m: &Module) {
             let Some(lines) = s.text[usize::from(!front)].clone() else {
                 continue;
             };
-            s.done.insert((pos, front));
+            let had = side_lines(game, pos, front).cloned().unwrap_or_default();
+            s.done.insert((pos, front), had.clone());
             s.touched.insert(pos);
-            if side_lines(game, pos, front).is_some_and(|l| *l == lines) {
+            if had == lines {
                 continue;
             }
             s.pending.push_back((now + delay, play::SignUpdate { pos, lines, front }));
@@ -185,7 +188,7 @@ fn answer(game: &Game<'_>, m: &Module) {
             let n = s.failed.entry((pos, front)).or_insert(0);
             *n += 1;
             if *n >= 2 {
-                s.done.insert((pos, front));
+                s.done.insert((pos, front), side_lines(game, pos, front).cloned().unwrap_or_default());
             }
         }
     });
@@ -237,7 +240,7 @@ fn click(game: &mut Game<'_>, m: &Module) {
     });
     let aura = m.b("Aura");
     let both = m.b("Both sides");
-    if !ready || (!aura && !both) || !in_world(game) || game.player.as_ref().is_none_or(|p| p.shift_key_down) {
+    if !ready || (!aura && !both && !m.b("Rewrite changed")) || !in_world(game) || game.player.as_ref().is_none_or(|p| p.shift_key_down) {
         return;
     }
     let Some(eye) = game.eye_position() else {
@@ -248,6 +251,7 @@ fn click(game: &mut Game<'_>, m: &Module) {
     };
     let range = m.n("Range").clamp(1.0, REACH);
     let only_blank = m.b("Only blank");
+    let rewrite = m.b("Rewrite changed");
     let mut found: Vec<(f64, [i32; 3], bool)> = st(|s| {
         let mut out = Vec::new();
         for (&(x, y, z), entity) in &game.world.block_entities {
@@ -257,18 +261,31 @@ fn click(game: &mut Game<'_>, m: &Module) {
             let pos = [x, y, z];
             let d = box_distance(eye, pos);
             let touched = s.touched.contains(&pos);
-            // Without Both sides a sign gets one side; without Aura only the signs you wrote get their other side.
-            if d > range || sign.waxed || s.clicked.contains_key(&pos) || (touched != both && (touched || !aura)) {
+            // Without Aura only the signs you wrote.
+            if d > range || sign.waxed || s.clicked.contains_key(&pos) || (!touched && !aura) {
                 continue;
             }
             let Some(front) = facing_front(game, pos) else {
                 continue;
             };
+            let key = (pos, front);
+            // A sign you wrote: the other side only with Both sides, the side written again only with Rewrite changed.
+            if touched && !(both || rewrite && s.done.contains_key(&key)) {
+                continue;
+            }
             let Some(lines) = s.text[usize::from(!front)].as_ref() else {
                 continue;
             };
             let side = if front { &sign.front } else { &sign.back };
-            if s.done.contains(&(pos, front)) || side.lines == *lines || side.click.iter().any(Option::is_some) {
+            if side.lines == *lines {
+                // Written: an edit after this is someone else's, and gets the text again with Rewrite changed.
+                if let Some(had) = s.done.get_mut(&key) {
+                    had.clone_from(lines);
+                    s.failed.remove(&key);
+                }
+                continue;
+            }
+            if side.click.iter().any(Option::is_some) || s.done.get(&key).is_some_and(|had| !rewrite || *had == side.lines) {
                 continue;
             }
             // Only blank is the aura's own: Both sides still writes the other side of a sign you wrote.
