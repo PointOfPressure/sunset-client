@@ -342,6 +342,12 @@ fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
 // After the tick: first what waited for the look its move packet carried, then the modules, then (in a tick that
 // sent no move packet) the one that carries the next look.
 pub(super) fn post_tick(game: &mut Game<'_>) {
+    // native_window identifies the client role, including offscreen clients. An integrated server ticks another
+    // Game in this process; its missing player/window must not retire the window client's workers.
+    if game.native_window() {
+        super::sunset_seedcracker::maintain(game);
+        super::sunset_ore_sim::maintain(game);
+    }
     finish_shutdown(game);
     if !running() { return; }
     super::sunset_scaffold_telly::post_tick(game);
@@ -756,6 +762,7 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_sound_detector::tick(game, mods.iter().find(|m| m.name == super::sunset_sound_detector::NAME && m.on));
     super::sunset_gear::tick(game, &mods);
     super::sunset_new_chunks::tick(game, &mods);
+    super::sunset_seedcracker::tick(game, get(super::sunset_ore_sim::NAME));
     super::sunset_ore_sim::tick(game, &mods);
     super::sunset_world_parity::tick(game, &mods);
     super::sunset_packet_mine::tick(game);

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Packs the mod as dist/sunset-<version>.hnmod: horizon-native.json and
-# mixins/sunset/ (only .rs and .toml), as Horizon's launcher reads it. Debug
+# mixins/sunset/ sources and third-party notices, as Horizon's launcher reads it. Debug
 # Report's commit line gets the commit packed (with -dirty for local changes).
 import json, pathlib, subprocess, zipfile
 
@@ -13,6 +13,8 @@ commit = (git("rev-parse", "--short", "HEAD") or "unknown") + ("-dirty" if git("
 UNPACKED = 'const COMMIT: &str = "unpacked";'
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     z.write(root / "horizon-native.json", "horizon-native.json")
+    for notice in ("seedcracker.LICENSE", "seedcracker.NOTICE.md"):
+        z.write(root / "mixins" / "sunset" / notice, f"mixins/sunset/{notice}")
     for f in sorted((root / "mixins" / "sunset").iterdir()):
         if f.name == "debug.rs":
             text = f.read_text()

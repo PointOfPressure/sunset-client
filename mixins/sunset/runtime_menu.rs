@@ -183,6 +183,10 @@ pub(super) fn switched_effects(game: &mut Game<'_>, name: &'static str, on: bool
     }
     if !on {
         match name {
+            "Ore Sim" => {
+                super::sunset_seedcracker::stop();
+                super::sunset_ore_sim::stop();
+            }
             "Scaffold" => {
                 with(|s| s.scaffold_stack = None);
                 restore_scaffold_rotation(game);
