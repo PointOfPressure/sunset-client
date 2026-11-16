@@ -5849,7 +5849,7 @@ def _():
     # A clear line to the block at eye height (a world where the arena sits in terrain), the block really there, and
     # the chat faded with no toggle lines after it (the count is of the middle of the frame only, where the chat and
     # the HUD's own gold would be counted too), and lit (Paper's test world has the arena under ground).
-    setting("clickgui", "toggle messages", "false")
+    setting("notifications", "module toggles", "false")
     cmd("time set 6000", "effect give @s minecraft:night_vision 60 0 true", f"fill {X0-2} {Y+1} {Z0+1} {X0+2} {Y+6} {Z0+13} minecraft:air", f"setblock {X0} {Y+2} {Z0+12} minecraft:gold_block")
     ctl("look", "0", "0")
     wait(210)
@@ -6101,8 +6101,8 @@ def _():
 
 @test("Chat feedback switches")
 def _():
-    # ClickGUI's Toggle messages off: Fullbright turned on and off by its key writes no line, .t still answers; Module
-    # messages off: Self Web with no cobwebs writes no "No cobwebs" line (on, it does).
+    # Notifications' Module toggles off: Fullbright turned on and off by its key writes no line, .t still answers;
+    # Module messages off: Self Web with no cobwebs writes no "No cobwebs" line (on, it does).
     reset()
     say(".bind fullbright k")
 
@@ -6120,7 +6120,7 @@ def _():
     say(".bind fullbright none")
     web_on = lines(lambda: toggle("selfweb", True))
     toggle("selfweb", False)
-    setting("clickgui", "module messages", "false")
+    setting("notifications", "module messages", "false")
     web_off = lines(lambda: toggle("selfweb", True))
     toggle("selfweb", False)
     cobwebs = lambda got: any("cobweb" in l for l in got)
@@ -13994,7 +13994,8 @@ def toasts_since(mark):
     return sunset_said(mark, ("[Sunset toast] ",))
 
 
-def chat_since(mark):
+def sunset_chat_since(mark):
+    """Sunset's own chat lines (replies to typed commands) since mark."""
     return sunset_said(mark, ("[CHAT] [Sunset] ",))
 
 
@@ -14029,7 +14030,8 @@ def tab_orange(name):
 @test("Notifications")
 def _():
     # Sunset's messages are toasts (logged as [Sunset toast]), never chat lines; a reply to a command typed in the chat
-    # stays in the chat. Module toggles off hides the "X on/off" toasts only; Notifications off shows none at all while
+    # stays in the chat. Module toggles off hides a bind's "X on/off" toasts (a typed .t still answers); Notifications
+    # off shows none at all while
     # command replies still reach the chat. The first-launch notice is shown at most once.
     mark = log_mark()
     say(".t sprint")
@@ -14038,17 +14040,25 @@ def _():
     ctl("screenshot", f"{SHOTS}/toasts.png")
     say(".t fullbright")
     wait(4)
-    t1, c1 = [l for l in toasts_since(mark) if l.startswith("Sprint")], chat_since(mark)
+    t1, c1 = [l for l in toasts_since(mark) if l.startswith("Sprint")], sunset_chat_since(mark)
     mark = log_mark()
     say(".help")
     wait(4)
-    t2, c2 = toasts_since(mark), chat_since(mark)
+    t2, c2 = toasts_since(mark), sunset_chat_since(mark)
     setting("notifications", "module toggles", "false")
+    say(".bind fullbright k")
+    mark = log_mark()
+    ctl("key", "k", "tap")
+    wait(3)
+    ctl("key", "k", "tap")
+    wait(4)
+    t3 = toasts_since(mark)
     mark = log_mark()
     say(".t sprint")
     say(".t sprint")
     wait(4)
-    t3 = toasts_since(mark)
+    t3b = toasts_since(mark)
+    say(".bind fullbright none")
     setting("notifications", "module toggles", "true")
     say(".t notifications")
     mark = log_mark()
@@ -14056,7 +14066,7 @@ def _():
     say(".t sprint")
     say(".help")
     wait(4)
-    t4, c4 = toasts_since(mark), chat_since(mark)
+    t4, c4 = toasts_since(mark), sunset_chat_since(mark)
     say(".t notifications")
     mark = log_mark()
     say(".t sprint")
@@ -14067,12 +14077,12 @@ def _():
     checks = {
         "toggle toasts": t1 == ["Sprint on", "Sprint off"] and not any(l.startswith("Sprint") for l in c1),
         "reply in chat": "Commands:" in c2 and not any(l.startswith("Commands") for l in t2),
-        "toggles off": not any(l.startswith("Sprint") for l in t3),
+        "toggles off": not any(l.startswith("Fullbright") for l in t3) and t3b == ["Sprint on", "Sprint off"],
         "all off": t4 == [] and "Commands:" in c4,
         "back on": t5 == ["Sprint on", "Sprint off"],
         "notice once": len(notices) <= 1,
     }
-    return all(checks.values()), f"failed {[k for k, v in checks.items() if not v]}; {t1} {c1[:2]} {t2} {t3} {t4} {c4[:2]} {t5} {notices}"
+    return all(checks.values()), f"failed {[k for k, v in checks.items() if not v]}; {t1} {c1[:2]} {t2} {t3} {t3b} {t4} {c4[:2]} {t5} {notices}"
 
 
 @test("Sunset Presence")

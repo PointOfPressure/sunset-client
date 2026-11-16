@@ -69,10 +69,11 @@ pub(super) fn key_label(key: Option<&str>) -> String {
     }
 }
 
-// A module turned on or off: a toast, replacing that module's last one, unless Notifications' Module toggles is off.
+// A module turned on or off: a toast, replacing that module's last one, unless Notifications' Module toggles is off
+// (a typed .t is still answered then).
 pub(super) fn announce_toggle(name: &'static str, on: bool) {
     use super::sunset_toast::{Kind, push_keyed, toggles_shown};
-    if running() && toggles_shown() {
+    if running() && (toggles_shown() || REPLYING.load(std::sync::atomic::Ordering::Relaxed)) {
         push_keyed(if on { Kind::Success } else { Kind::Info }, &format!("{name} {}", if on { "on" } else { "off" }), Some(name));
     }
 }
