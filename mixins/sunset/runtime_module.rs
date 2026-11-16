@@ -150,6 +150,9 @@ pub(super) struct Module {
     pub(crate) settings: Vec<Setting>,
     // Its settings' sections, for the menu: where each starts (a setting's index) and its title. None for most modules.
     pub(crate) groups: Vec<(usize, &'static str)>,
+    // In the ClickGUI (every style, its search and its counts). False (`menu_only`): only in Options > Mods > Sunset
+    // and `.pages`; still toggled by `.t` and its key.
+    pub(crate) in_gui: bool,
 }
 
 impl Module {
@@ -162,6 +165,7 @@ impl Module {
             key: None,
             settings: Vec::new(),
             groups: Vec::new(),
+            in_gui: true,
         }
     }
     // The settings after this, up to the next group, are a section of the menu under `title`. Only the menu reads it:
@@ -173,6 +177,10 @@ impl Module {
     // The section a setting is in, if the module has sections.
     pub(super) fn group_of(&self, j: usize) -> Option<&'static str> {
         self.groups.iter().rev().find(|(start, _)| *start <= j).map(|(_, title)| *title)
+    }
+    pub(super) fn menu_only(mut self) -> Self {
+        self.in_gui = false;
+        self
     }
     pub(super) fn on(mut self) -> Self {
         self.on = true;

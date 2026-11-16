@@ -14073,7 +14073,7 @@ def _():
     say(".t sprint")
     wait(4)
     t5 = toasts_since(mark)
-    notices = [l for l in toasts_since(0) if l.startswith("Sunset sends anonymous usage stats")]
+    notices = [l for l in toasts_since(0) if l.startswith("By default Sunset sends anonymous stats")]
     checks = {
         "toggle toasts": t1 == ["Sprint on", "Sprint off"] and not any(l.startswith("Sprint") for l in c1),
         "reply in chat": "Commands:" in c2 and not any(l.startswith("Commands") for l in t2),
@@ -14088,8 +14088,10 @@ def _():
 @test("Sunset Presence")
 def _():
     # Against a local backend (SUNSET_PRESENCE_BASE=http://127.0.0.1:..., `wrangler dev` with DEV_KEYS holding the
-    # hash of SUNSET_PRESENCE_TEST_KEY). Analytics: the start ping went out and the dates file is today's. Presence on:
-    # a session starts within seconds; off: it ends within seconds. With Bot1: you as a developer (the key file), Bot1
+    # hash of SUNSET_PRESENCE_TEST_KEY). Analytics: the start ping went out and the dates file is today's. Presence is
+    # on by default (a session started with nothing set) and the one notice says so, with where to turn it off. Off: the
+    # session ends within seconds; on: it starts again, with analytics off too; `.t` on the menu-only module ends and
+    # restarts it. With Bot1: you as a developer (the key file), Bot1
     # sharing its presence: you are told 1 player is confirmed here; Bot1 turning it off takes it back to 0.
     base = os.environ.get("SUNSET_PRESENCE_BASE", "")
     key = os.environ.get("SUNSET_PRESENCE_TEST_KEY", "")
@@ -14105,19 +14107,35 @@ def _():
     keyfile = os.path.join(data, "presence-dev-key")
     if os.path.exists(keyfile):
         os.remove(keyfile)
-    mark = log_mark()
-    setting("sunsetpresence", "share in-game presence", "true")
-    started = wait_for(lambda: "presence session started" in presence_said(mark), 100)
+    by_default = wait_for(lambda: "presence session started" in presence_said(0), 100)
+    notice = [l for l in toasts_since(0) if l.startswith("By default Sunset sends anonymous stats")]
     mark = log_mark()
     setting("sunsetpresence", "share in-game presence", "false")
     ended = wait_for(lambda: "presence session ended" in presence_said(mark), 100)
+    mark = log_mark()
+    setting("sunsetpresence", "anonymous analytics", "false")
+    setting("sunsetpresence", "share in-game presence", "true")
+    started = wait_for(lambda: "presence session started" in presence_said(mark), 100)
+    setting("sunsetpresence", "anonymous analytics", "true")
+    mark = log_mark()
+    say(".t sunsetpresence")
+    t_off = wait_for(lambda: "presence session ended" in presence_said(mark), 100)
+    mark = log_mark()
+    say(".t sunsetpresence")
+    t_on = wait_for(lambda: "presence session started" in presence_said(mark), 100)
+    mark = log_mark()
+    setting("sunsetpresence", "share in-game presence", "false")
+    ended2 = wait_for(lambda: "presence session ended" in presence_said(mark), 100)
     checks = {
         "start ping": "analytics ping sent (start)" in start,
         "dates kept": dates[:1] == [today],
-        "session starts": started,
-        "session ends": ended,
+        "shared by default": by_default,
+        "notice": len(notice) == 1 and "by default" in notice[0].lower() and "Options > Mods > Sunset > Client > Sunset Presence" in notice[0],
+        "session ends": ended and ended2,
+        "starts without analytics": started,
+        ".t off and on": t_off and t_on,
     }
-    detail = f"{start[:4]} {dates}"
+    detail = f"{start[:4]} {dates} {notice}"
     if CTL2:
         with open(keyfile, "w") as f:
             f.write(key)

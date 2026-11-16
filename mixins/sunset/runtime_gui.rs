@@ -333,7 +333,7 @@ pub(super) fn row_h(s: &State, hit: Hit) -> f32 {
 pub(super) fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
     let mut rows = Vec::new();
     let mut y = 0.0;
-    let listed = s.listed();
+    let listed = s.in_gui();
     let in_panel = s.modules.iter().enumerate().filter(|(_, m)| m.category == CATEGORIES[c] && listed(m)).map(|(i, _)| i);
     // Searching: what it finds, best first, each with the settings it matched shown under it while it is closed.
     let found = (!s.gui.search.trim().is_empty()).then(|| super::sunset_search::results(&s.modules, &s.gui.search));

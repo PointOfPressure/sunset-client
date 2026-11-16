@@ -543,6 +543,11 @@ impl State {
         let hidden = super::sunset_extra_modules::hidden(&self.modules);
         move |m| !hidden.contains(&m.name)
     }
+    // The ClickGUI's modules: the menus' less the menu-only ones.
+    pub(super) fn in_gui(&self) -> impl Fn(&Module) -> bool + use<> {
+        let listed = self.listed();
+        move |m| m.in_gui && listed(m)
+    }
     pub(super) fn is_on(&self, name: &str) -> bool {
         self.module(name).is_some_and(|m| m.on)
     }

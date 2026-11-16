@@ -17,6 +17,8 @@ const SHOWN: usize = 4;
 // Kept waiting beyond those shown (a burst of messages): the oldest go first.
 const QUEUED: usize = 16;
 const LINES: usize = 3;
+// A notice's (`long`): it is read once and must not lose its end.
+const LONG_LINES: usize = 6;
 const PAD: f32 = 5.0;
 const LINE_H: f32 = 10.0;
 const MARGIN: f32 = 4.0;
@@ -181,8 +183,8 @@ pub(super) fn click(at: (f32, f32)) -> bool {
     false
 }
 
-// The words of a text in lines no wider than max, at most LINES of them (the last cut with "..." if it runs over).
-fn wrap(text: &str, max: f32, width: &dyn Fn(&str) -> f32) -> Vec<String> {
+// The words of a text in lines no wider than max, at most `most` of them (the last cut with "..." if it runs over).
+fn wrap(text: &str, max: f32, most: usize, width: &dyn Fn(&str) -> f32) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     let mut line = String::new();
     for word in text.split_whitespace() {
@@ -206,9 +208,9 @@ fn wrap(text: &str, max: f32, width: &dyn Fn(&str) -> f32) -> Vec<String> {
     if !line.is_empty() {
         lines.push(line);
     }
-    if lines.len() > LINES {
-        lines.truncate(LINES);
-        let last = &mut lines[LINES - 1];
+    if lines.len() > most {
+        lines.truncate(most);
+        let last = &mut lines[most - 1];
         while !last.is_empty() && width(&format!("{last}...")) > max {
             last.pop();
         }
@@ -259,7 +261,7 @@ pub(super) fn draw(game: &Game<'_>, batch: &mut HudBatch) {
     let mut y = if bottom { h - MARGIN } else { MARGIN };
     for t in q.iter_mut().rev() {
         if t.laid_for != max {
-            t.lines = wrap(&t.text, max - 2.0 * PAD - 3.0, &|s| game.native_text_width(s));
+            t.lines = wrap(&t.text, max - 2.0 * PAD - 3.0, if t.long { LONG_LINES } else { LINES }, &|s| game.native_text_width(s));
             let text_w = t.lines.iter().map(|l| game.native_text_width(l)).fold(0.0, f32::max);
             t.size = [text_w + 2.0 * PAD + 3.0, t.lines.len() as f32 * LINE_H + 2.0 * PAD - 2.0];
             t.laid_for = max;
@@ -298,18 +300,21 @@ mod tests {
 
     #[test]
     fn wraps_words_and_cuts_long_ones() {
-        assert_eq!(wrap("Kill Aura on", 200.0, &width), vec!["Kill Aura on"]);
-        assert_eq!(wrap("aaaa bbbb cccc", 60.0, &width), vec!["aaaa bbbb", "cccc"]);
+        assert_eq!(wrap("Kill Aura on", 200.0, LINES, &width), vec!["Kill Aura on"]);
+        assert_eq!(wrap("aaaa bbbb cccc", 60.0, LINES, &width), vec!["aaaa bbbb", "cccc"]);
         // A 20-letter word at 10 letters a line.
-        assert_eq!(wrap("abcdefghijklmnopqrst", 60.0, &width), vec!["abcdefghij", "klmnopqrst"]);
-        assert!(wrap("", 60.0, &width).is_empty());
+        assert_eq!(wrap("abcdefghijklmnopqrst", 60.0, LINES, &width), vec!["abcdefghij", "klmnopqrst"]);
+        assert!(wrap("", 60.0, LINES, &width).is_empty());
     }
 
     #[test]
     fn long_text_stops_at_three_lines() {
-        let lines = wrap(&"word ".repeat(40), 60.0, &width);
+        let lines = wrap(&"word ".repeat(40), 60.0, LINES, &width);
         assert_eq!(lines.len(), LINES);
         assert!(lines[2].ends_with("..."));
+        // Sunset Presence's notice at a narrow width: all of it, the way to turn it off included.
+        let notice = wrap(super::super::sunset_presence::NOTICE, 180.0, LONG_LINES, &width);
+        assert!(notice.len() <= LONG_LINES && notice.last().is_some_and(|l| l.ends_with("Sunset Presence.")), "{notice:?}");
         assert!(lines.iter().all(|l| width(l) <= 60.0));
     }
 

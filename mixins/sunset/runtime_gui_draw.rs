@@ -370,7 +370,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                 out.push(Shape::Fill([x, y + rh - px, rw, px], 0x24FF_FFFF));
             }
             let name = CATEGORIES[c].label();
-            let on = modules.iter().filter(|m| m.category == CATEGORIES[c] && m.on).count();
+            let on = modules.iter().filter(|m| m.category == CATEGORIES[c] && m.in_gui && m.on).count();
             let count = format!("{on}");
             let cw = game.native_text_width(&count);
             out.push(Shape::Head(fit(name, rw - indent() - RIGHT_PAD - cw - 3.0), [x + indent(), y + text_y(rh)], 0xFFFFFF));

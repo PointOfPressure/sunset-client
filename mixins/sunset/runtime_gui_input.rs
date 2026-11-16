@@ -128,7 +128,7 @@ fn first_match(s: &State) -> Option<usize> {
     if s.gui.search.trim().is_empty() {
         return None;
     }
-    let listed = s.listed();
+    let listed = s.in_gui();
     let found = super::sunset_search::results(&s.modules, &s.gui.search);
     super::sunset_search::ranked(&found, (0..s.modules.len()).filter(|&i| listed(&s.modules[i]))).first().copied()
 }

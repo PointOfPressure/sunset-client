@@ -514,6 +514,26 @@ mod cleanup_tests {
     }
 
     #[test]
+    fn presence_is_menu_only_and_shares_by_default() {
+        let mut state = State::new();
+        let i = state.find("Sunset Presence").unwrap();
+        let m = &state.modules[i];
+        assert!(m.on && m.b("Anonymous analytics") && m.b("Share in-game presence") && !m.in_gui);
+        assert!(state.listed()(m) && !state.in_gui()(m), "in Options > Mods and .pages, not the ClickGUI");
+        assert!(state.modules.iter().filter(|m| m.name != "Sunset Presence").all(|m| m.in_gui));
+        // A config saved before the default changed keeps its false; one without the key gets the new default.
+        state.load_text("sunsetpresence.on=true\nsunsetpresence.shareingamepresence=false\n");
+        assert!(!state.modules[i].b("Share in-game presence"));
+        let mut fresh = State::new();
+        fresh.load_text("sunsetpresence.on=true\nsunsetpresence.anonymousanalytics=false\n");
+        let m = &fresh.modules[i];
+        assert!(m.b("Share in-game presence") && !m.b("Anonymous analytics"));
+        // Turned off in Modules: gone from the Options page too, and still never in the ClickGUI.
+        State::set_field(&mut fresh.modules, "modules.sunsetpresence", "false");
+        assert!(!fresh.listed()(&fresh.modules[i]) && !fresh.in_gui()(&fresh.modules[i]));
+    }
+
+    #[test]
     fn extras_are_modules_and_hidden_until_listed() {
         let mut state = State::new();
         for name in super::super::sunset_extra_modules::HIDDEN {
@@ -782,7 +802,9 @@ mod profile_robustness_tests {
         assert!(saved.contains("notifications.moduletoggles=false") && !saved.contains("togglemessages"), "{saved}");
 
         let p = state.find("Sunset Presence").unwrap();
-        assert!(state.modules[p].on && state.modules[p].b("Anonymous analytics") && !state.modules[p].b("Share in-game presence"));
+        assert!(state.modules[p].on && state.modules[p].b("Anonymous analytics") && state.modules[p].b("Share in-game presence"));
+        // Turned off by the user: a profile can't turn it back on (nor the module off).
+        State::set_field(&mut state.modules, "sunsetpresence.shareingamepresence", "false");
         let text = state.profile_text();
         assert!(!text.contains("sunsetpresence."), "{text}");
         let hostile = format!("{HEADER}\nsunsetpresence.shareingamepresence=true\nsunsetpresence.on=false\nsprint.on=true\n");

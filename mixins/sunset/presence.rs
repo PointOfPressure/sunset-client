@@ -1,12 +1,13 @@
-// Sunset Presence (Client): anonymous usage counts for Sunset's developers, and (opt-in) letting a Sunset developer on
-// the same server see that you use Sunset (a sun before your name in their tab list). Settings are the module's;
-// the module off sends nothing at all. The backend is presence-backend/ (Cloudflare Workers).
+// Sunset Presence (Client): anonymous usage counts for Sunset's developers, and (on by default) letting a Sunset
+// developer on the same server see that you use Sunset (a sun before your name in their tab list). Settings are the
+// module's, in Options > Mods > Sunset > Client > Sunset Presence (it is menu-only: not in the ClickGUI); the module
+// off sends nothing at all. The backend is presence-backend/ (Cloudflare Workers).
 //
 // Anonymous analytics: every 10 minutes while in a world, one ping of the Sunset version, the OS family and four flags:
 // whether it is this install's first ping today, this ISO week, this month and ever (the dates are kept in a local file,
 // never sent). No ID of any kind: the dashboard counts actives by summing the flags and instances by counting pings.
 //
-// Share in-game presence (off by default): on a server (not single player), a session in that server's room: a SHA-256
+// Share in-game presence (on by default): on a server (not single player), a session in that server's room: a SHA-256
 // of its address, your player UUID and a short-lived token from the backend. Developers in the room are sent to your
 // client as challenge hashes (SHA-256 of the room's nonce and their UUID); your client answers with those that match a
 // player in your own tab list. A developer is shown only the players whose own client saw them on that server, and their
@@ -32,11 +33,15 @@ const BASE: &str = "https://sunset-presence.s4yerh4rris0n.workers.dev";
 const ANALYTICS_EVERY: Duration = Duration::from_secs(600);
 // The game thread's snapshot older than this (no world: the title screen, a loading screen) means nothing is wanted.
 const STALE: Duration = Duration::from_secs(5);
-const NOTICE_KEY: &str = "presence-notice";
+// Shown once, before anything is sent. NOTICE_KEY_1 is the notice of 1.2.1 (analytics only): an install that saw it is
+// told again only when it shares its presence.
+const NOTICE_KEY: &str = "presence-notice-2";
+const NOTICE_KEY_1: &str = "presence-notice";
 const KEY_FILE: &str = "presence-dev-key";
 const SEEN_FILE: &str = "analytics-seen";
 const ROSTER_MAX: usize = 500;
-pub(super) const NOTICE: &str = "Sunset sends anonymous usage stats. Turn off in Mod Menu > Sunset Presence.";
+pub(super) const NOTICE: &str = "By default Sunset sends anonymous stats, and your UUID and a server hash so Sunset devs \
+    there see you. Off: Options > Mods > Sunset > Client > Sunset Presence.";
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
@@ -44,13 +49,14 @@ pub(super) fn defaults() -> Vec<Module> {
             NAME,
             Category::Client,
             "Anonymous analytics: every 10 minutes in a world, the Sunset version, your OS and whether it is today's, this \
-             week's or this month's first launch. No ID, name or server. Share in-game presence: on a server, your player \
-             UUID and a hash of the server's address, so Sunset developers on that server see a sun by your name in the \
-             tab list. Off: nothing is sent.",
+             week's or this month's first launch. No ID, name or server. Share in-game presence (on by default): on a \
+             server, your player UUID and a hash of the server's address, so Sunset developers on that server see a sun \
+             by your name in the tab list. Off: nothing is sent. Here: Options > Mods > Sunset > Client > Sunset Presence.",
         )
         .on()
+        .menu_only()
         .bool("Anonymous analytics", true)
-        .bool("Share in-game presence", false),
+        .bool("Share in-game presence", true),
     ]
 }
 
@@ -134,9 +140,9 @@ pub(super) fn tick(game: &mut Game<'_>) {
         with(|s| s.module(NAME).map_or((false, false, false), |m| (m.on, m.b("Anonymous analytics"), m.b("Share in-game presence"))));
     let analytics = on && analytics;
     // The one first-launch notice, before anything is sent.
-    if analytics && !NOTICE_DONE.load(Relaxed) {
+    if (analytics || on && presence) && !NOTICE_DONE.load(Relaxed) {
         NOTICE_DONE.store(true, Relaxed);
-        if game.native_setting(ID, NOTICE_KEY).is_none() {
+        if game.native_setting(ID, NOTICE_KEY).is_none() && (presence || game.native_setting(ID, NOTICE_KEY_1).is_none()) {
             super::sunset_toast::push_notice(NOTICE);
             game.native_set_setting(ID, NOTICE_KEY, "1");
         }
