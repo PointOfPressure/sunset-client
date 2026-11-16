@@ -201,7 +201,7 @@ pub(super) fn attack_guarded(game: &mut Game<'_>, guard: AttackGuard, crits: boo
     if !guard.valid(game) { return; }
     // One Criticals hit at a time: while one is under way (its hop, sprint stop and look are its own), another goes
     // as it is.
-    let busy = CRIT_STAGE.load(Ordering::Relaxed) != 0 || with(|s| s.crit_target.is_some());
+    let busy = CRIT_STAGE.load(Ordering::Relaxed) != 0 || with(|s| s.crit_target.is_some()) || critical_waiting();
     let plan = with(|s| s.module("Criticals").filter(|m| m.on).cloned())
         .filter(|_| crits && !busy)
         .and_then(|m| crit_plan(game, &m, guard.id()));
@@ -353,12 +353,12 @@ fn queue_strike(game: &mut Game<'_>, guard: AttackGuard, critical: bool) {
 
 // A hit is on its way: the attack cooldown has not restarted yet, so nothing else may hit this tick.
 pub(super) fn strike_waiting() -> bool {
-    strikes(|s| !s.queue.is_empty())
+    strikes(|s| !s.queue.is_empty()) || critical_turn_waiting()
 }
 
 // A critical hit is on its way.
 pub(super) fn critical_waiting() -> bool {
-    strikes(|s| s.queue.iter().any(|(_, critical)| *critical))
+    strikes(|s| s.queue.iter().any(|(_, critical)| *critical)) || critical_turn_waiting()
 }
 
 // Criticals waits for a fall, or its hit is on its way: No Fall's Packet mode must not claim the ground on the moves

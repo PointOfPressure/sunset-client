@@ -103,9 +103,10 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         && a.id >= 0
         && game.held().is_some_and(|s| &*s.item == "minecraft:mace")
         && !game.player.as_ref().is_some_and(|p| p.fall_flying)
-        && fall(|f| f.counted) > 1.5
     {
-        SMASH_SENT.store(game.ticks.max(1), Ordering::Relaxed);
+        fall(|f| {
+            if f.counted > 1.5 { f.smash_pending = true; }
+        });
     }
     let Some(sent) = Move::of(packet) else {
         return Out::Pass;
@@ -299,9 +300,29 @@ pub(super) struct Fall {
     // The count before the last move: what the server has surely counted by the time a hit sent next tick arrives
     // (Horizon's counts a tick's moves after its packets, so the last move may come in with the hit).
     pub(super) before: f64,
+    // A mace hit sent during this fall can still receive its server acknowledgement.
+    smash_pending: bool,
 }
 
-static FALL: Mutex<Fall> = Mutex::new(Fall { counted: 0.0, last: None, kept: false, before: 0.0 });
+impl Fall {
+    const fn new() -> Self {
+        Self { counted: 0.0, last: None, kept: false, before: 0.0, smash_pending: false }
+    }
+
+    pub(super) fn clear_count(&mut self) {
+        (self.counted, self.kept, self.before, self.smash_pending) = (0.0, false, 0.0, false);
+    }
+
+    // Horizon sends this self-motion when a smash lands, before Wind Burst. Keep the pending hit for this fall,
+    // regardless of network delay; a generic upward explosion does not establish that our smash landed.
+    fn confirm_smash(&mut self, own: bool, velocity_y: f64) {
+        if self.smash_pending && own && (velocity_y - 0.01).abs() < 0.002 {
+            self.clear_count();
+        }
+    }
+}
+
+static FALL: Mutex<Fall> = Mutex::new(Fall::new());
 
 // The most the server lets you land with for nothing: four blocks costs a point (LivingEntity.calculateFallPower adds
 // 1.0E-6 to the fall). A move at full falling speed drops 3.92.
@@ -341,7 +362,7 @@ fn settle_fall(game: &Game<'_>, m: &Move, real: bool, claimed: bool, owned: bool
         }
         let mut told = m.flags & 1 != 0;
         if cleared {
-            (f.counted, f.kept, f.before) = (0.0, false, 0.0);
+            f.clear_count();
             return told;
         }
         if told && counted >= FREE_FALL && (f.kept || claimed) && !owned {
@@ -352,6 +373,7 @@ fn settle_fall(game: &Game<'_>, m: &Move, real: bool, claimed: bool, owned: bool
         }
         if told {
             (f.counted, f.kept) = (0.0, false);
+            f.smash_pending = false;
         } else {
             f.counted = counted;
         }
@@ -376,29 +398,52 @@ pub(super) fn fall_clean() -> bool {
     fall(|f| f.counted == 0.0 && !f.kept)
 }
 
-// The tick a smash hit went (0: none waiting for its answer).
-static SMASH_SENT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-// The server's answer to a smash hit: your motion set to 0.01 up at once (MaceItem.hurtEnemy), or Wind Burst's
-// explosion pushing you up (it only goes off after a smash landed). A smash ends the fall, so Sunset's count ends
-// too; else a big smash hop's fall would stay counted: every move would keep off the ground (settle_fall) for
-// nothing, and a break off the ground is five times slower.
-fn smash_confirmed(game: &Game<'_>, confirms: bool) {
-    let sent = SMASH_SENT.load(Ordering::Relaxed);
-    if sent == 0 {
-        return;
-    }
-    if game.ticks.saturating_sub(sent) > 5 {
-        SMASH_SENT.store(0, Ordering::Relaxed);
-    } else if confirms {
-        SMASH_SENT.store(0, Ordering::Relaxed);
-        fall(|f| (f.counted, f.kept, f.before) = (0.0, false, 0.0));
-    }
-}
-
 // Death: the next body has fallen nowhere.
 pub(super) fn fall_died() {
-    fall(|f| *f = Fall { counted: 0.0, last: None, kept: false, before: 0.0 });
+    fall(|f| *f = Fall::new());
+}
+
+#[cfg(test)]
+mod smash_ack_tests {
+    use super::*;
+
+    fn pending_fall() -> Fall {
+        Fall { counted: 9.001, last: Some(64.0), kept: true, before: 9.001, smash_pending: true }
+    }
+
+    #[test]
+    fn smash_ack_clears_the_kept_fall_without_expiring_or_losing_position() {
+        let mut f = pending_fall();
+        // No client tick deadline: an acknowledgement after a long network/server delay is still valid.
+        f.confirm_smash(true, 0.01);
+        assert_eq!((f.counted, f.kept, f.before, f.smash_pending), (0.0, false, 0.0, false));
+        assert_eq!(f.last, Some(64.0));
+    }
+
+    #[test]
+    fn unrelated_motion_and_motion_without_a_pending_hit_preserve_the_fall() {
+        let mut f = pending_fall();
+        for (own, y) in [(false, 0.01), (true, 0.2), (true, f64::NAN)] {
+            f.confirm_smash(own, y);
+            assert_eq!((f.counted, f.kept, f.before, f.smash_pending), (9.001, true, 9.001, true));
+        }
+        f.smash_pending = false;
+        f.confirm_smash(true, 0.01);
+        assert_eq!((f.counted, f.kept, f.before), (9.001, true, 9.001));
+    }
+
+    #[test]
+    fn clearing_a_fall_also_invalidates_its_pending_acknowledgement() {
+        let mut f = pending_fall();
+        f.clear_count();
+        f.counted = 2.0;
+        f.before = 1.0;
+        f.confirm_smash(true, 0.01);
+        assert_eq!((f.counted, f.before, f.last), (2.0, 1.0, Some(64.0)));
+        f = Fall::new();
+        assert!(!f.smash_pending);
+        assert_eq!(f.last, None);
+    }
 }
 
 // Flight's Packet anti kick on the move: while it is due and you are in the air, the height sinks 0.0313 below the
@@ -456,6 +501,59 @@ pub(super) fn turns<R>(f: impl FnOnce(&mut Turns) -> R) -> R {
     f(&mut TURNS.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
+impl Turns {
+    fn critical_waiting(&self) -> bool {
+        self.queue.iter().any(|ask| ask.deeds.iter().any(|deed| deed.critical.0))
+    }
+}
+
+pub(super) fn critical_turn_waiting() -> bool {
+    turns(|t| t.critical_waiting())
+}
+
+#[cfg(test)]
+mod critical_turn_tests {
+    use super::*;
+
+    #[test]
+    fn pending_critical_look_blocks_other_hits_and_no_fall() {
+        let pending = Turns {
+            queue: vec![Ask {
+                who: "Attack", look: (0.0, 0.0), fresh: true,
+                deeds: vec![Deed { guard: None, critical: CriticalCompletion(true), run: Box::new(|_| {}) }],
+            }],
+            carried: false, restore: false,
+        };
+        let original = turns(|t| std::mem::replace(t, pending));
+        let waiting = (strike_waiting(), critical_waiting(), crit_falling());
+        let mut pending = turns(|t| std::mem::replace(t, original));
+        pending.queue[0].deeds[0].critical.0 = false;
+        assert_eq!(waiting, (true, true, true));
+    }
+
+    #[test]
+    fn a_critical_deed_reserves_its_hit_until_completed_or_cancelled() {
+        let mut t = Turns { queue: Vec::new(), carried: false, restore: false };
+        let ask = |critical| Ask {
+            who: "Attack", look: (0.0, 0.0), fresh: true,
+            deeds: vec![Deed { guard: None, critical: CriticalCompletion(critical), run: Box::new(|_| {}) }],
+        };
+        assert!(!t.critical_waiting());
+        t.queue.push(ask(false));
+        assert!(!t.critical_waiting(), "an ordinary look does not reserve a critical hit");
+        t.queue.push(ask(true));
+        let reserved = t.critical_waiting();
+        t.carried = true;
+        let carried = t.critical_waiting();
+        // Disarm the test's completion guard before dropping it, without changing shared sprint state.
+        t.queue[1].deeds[0].critical.0 = false;
+        assert!(reserved && carried, "the critical remains pending before and after its look is carried");
+        assert!(!t.critical_waiting());
+        t.queue.clear();
+        assert!(!t.critical_waiting());
+    }
+}
+
 // The packets that came since the last tick, to what Crystal Aura and Anchor Aura keep track of.
 pub(super) fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packets::play::Clientbound]) {
     use horizon_protocol::packets::play::Clientbound as C;
@@ -479,15 +577,10 @@ pub(super) fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packe
         super::sunset_throws::packet(game, packet);
         super::sunset_effects::packet(game, packet);
         super::recipe_book::sunset_recipes::packet(packet);
-        if let C::Explode(e) = packet
-            && e.knockback.is_some_and(|k| k[1] > 0.0)
-        {
-            smash_confirmed(game, true);
-        }
         if let C::SetEntityMotion(p) = packet {
             super::sunset_melee::note_velocity(game, p.id, p.velocity);
             if game.remote.as_ref().is_some_and(|r| r.entity_id == p.id) {
-                smash_confirmed(game, (p.velocity[1] - 0.01).abs() < 0.002);
+                fall(|f| f.confirm_smash(true, p.velocity[1]));
                 if with(|s| s.module("Speed").is_some_and(|m| m.on && m.p("Mode") == "Watchdog")) {
                     with(|s| s.watchdog.knocked(game.ticks, p.velocity));
                 }
@@ -520,6 +613,7 @@ pub(super) fn combat_cleanup(game: &mut Game<'_>) {
 
 // A scene change invalidates target caches as well as actions carrying old IDs.
 pub(super) fn reset_targets(game: &mut Game<'_>) {
+    fall(|f| f.smash_pending = false);
     super::sunset_autoclicker::reset();
     drop_strikes();
     super::sunset_aura::clear_targets(game);
