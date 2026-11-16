@@ -14014,6 +14014,18 @@ def wait_for(pred, ticks, step=10):
     return pred()
 
 
+def tab_orange(name):
+    """Orange-hued pixels (the sun, #DB5000, dimmed or not) in the tab list's area: the top middle of the screen."""
+    from PIL import Image
+    path = f"{SHOTS}/{name}.png"
+    ctl("screenshot", path)
+    time.sleep(2)
+    img = Image.open(path).convert("RGB")
+    w, h = img.size
+    box = img.crop((int(w * 0.3), 0, int(w * 0.7), int(h * 0.3)))
+    return sum(1 for r, g, b in box.getdata() if r > 90 and r > g * 1.6 and g > b * 1.3)
+
+
 @test("Notifications")
 def _():
     # Sunset's messages are toasts (logged as [Sunset toast]), never chat lines; a reply to a command typed in the chat
@@ -14073,6 +14085,8 @@ def _():
     key = os.environ.get("SUNSET_PRESENCE_TEST_KEY", "")
     if not base.startswith("http://127.0.0.1") or not key:
         return None, "needs a local backend (SUNSET_PRESENCE_BASE, SUNSET_PRESENCE_TEST_KEY)"
+    if not SERVER:
+        return None, "single player has no server to share presence on"
     start = presence_said(0)
     seen = [os.path.join(r, "analytics-seen") for r, _, fs in os.walk(session_dir()) if r.endswith(os.path.join(".horizon-mod-data", "sunset")) and "analytics-seen" in fs]
     today = time.strftime("%Y-%m-%d", time.gmtime())
@@ -14103,11 +14117,10 @@ def _():
         say2(".set sunsetpresence share in-game presence true")
         confirmed = wait_for(lambda: "developer: 1 confirmed here" in presence_said(mark), 2400, step=20)
         # The tab list held: Bot1's row gains the orange sun (#DB5000) it lacks after Bot1 stops sharing.
-        orange = lambda r, g, b: abs(r - 219) < 25 and abs(g - 80) < 25 and b < 40
         wait(25)
         ctl("key", "tab", "down")
         wait(10)
-        tab_on = shot_pixels("presence-tab", orange)
+        tab_on = tab_orange("presence-tab")
         ctl("key", "tab", "up")
         mark2 = log_mark()
         say2(".set sunsetpresence share in-game presence false")
@@ -14115,7 +14128,7 @@ def _():
         wait(25)
         ctl("key", "tab", "down")
         wait(10)
-        tab_off = shot_pixels("presence-tab-off", orange)
+        tab_off = tab_orange("presence-tab-off")
         ctl("key", "tab", "up")
         setting("sunsetpresence", "share in-game presence", "false")
         os.remove(keyfile)
