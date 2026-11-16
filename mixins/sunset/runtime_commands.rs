@@ -60,7 +60,7 @@ const HELP: &[(&str, &str)] = &[
     (".vclip <blocks>", "move up or down"),
     (".hclip <blocks>", "move forward"),
     (".goto <x> <y> <z>|stop", "walk there through loaded terrain, up to 128 blocks (by Rust); a movement key or a screen stops it"),
-    (".b / .baritone status|goto|mine|stop|off|targets|help", "Baritone navigation and visible/Ore Sim mining; requires the separate companion"),
+    (".b / .baritone status|goto|mine|stop|off|targets|help", "Full Baritone and bounded visible/Ore Sim mining, bundled with Sunset"),
 ];
 
 // Every module off and their pending work dropped (Panic, and the plugin API's stop_everything).
