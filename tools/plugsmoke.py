@@ -76,6 +76,12 @@ for pid in ("hello", "afk"):
     stage(BUILD, pid, example / "mixins" / pid, json.loads((example / "horizon-native.json").read_text()))
 for pid in ("plugcheck", "hello", "afk"):
     check(pid)
+    # The SDK's own check, as a plugin author's build.py runs it, against this checkout.
+    if pid != "plugcheck":
+        r = subprocess.run([sys.executable, str(SDK / "tools" / "build.py"), str(SDK / "examples" / f"{pid}-plugin"),
+                            "--check", "--sunset", str(ROOT)], capture_output=True, text=True)
+        if r.returncode != 0:
+            fail(f"the SDK's build.py --check refused {pid}: {(r.stderr or r.stdout).strip()}")
 sdk_rev = subprocess.run(["git", "-C", str(SDK), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
 print(f"Staged Sunset (plugin API {api}, Horizon {pins['horizon'][:7]}) with hello, afk (SDK {sdk_rev or '?'}), plugcheck, probe")
 
