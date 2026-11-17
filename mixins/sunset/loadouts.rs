@@ -47,8 +47,8 @@ fn module() -> Option<Module> {
     with(|s| s.module("Loadouts").filter(|m| m.on).cloned())
 }
 
-// The panel is open.
-fn listing() -> bool {
+// The panel is open (Eat Tap leaves the number keys to it then).
+pub(super) fn listing() -> bool {
     panel(|p| p.listing)
 }
 

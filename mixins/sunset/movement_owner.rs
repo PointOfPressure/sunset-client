@@ -44,7 +44,7 @@ pub(super) fn conflict(mods: &[super::sunset::Module]) -> Option<&'static str> {
         "Offhand" | "Anti AFK" | "Parkour" | "Auto Jump" | "Sneak" | "Elytra Fly" | "Elytra Boost" |
         "Glide" | "Spider" | "High Jump" | "Long Jump" | "Jesus" | "Blink" | "Freecam" |
         "Aim Assist" | "Bow Aim" | "Auto City" | "Hole Filler" | "Liquid Filler" | "Burrow" |
-        "Key Throw" | "Wind Jump" | "Pearl Catch" | "Middle Click Extra" | "Auto Clicker" |
+        "Tap Use" | "Wind Jump" | "Pearl Catch" | "Middle Click Extra" | "Auto Clicker" |
         "Fast Place" | "Step" | "Anti Void" | "No Fall" | "Speed Mine" | "Auto Fish" | "Fast Use" |
         "Surround" | "Self Trap" | "Auto Trap" | "Self Web" | "Auto Web" | "Auto EXP" | "Crystal Optimizer" |
         "Bow Aimbot" | "Auto Shearer" | "Auto Nametag" | "Auto Breed" | "Auto Mount" | "Flamethrower" | "Spawn Proofer" |

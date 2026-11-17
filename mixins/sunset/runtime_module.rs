@@ -498,6 +498,19 @@ impl Module {
                 "Max yaw delta" => self.p("Key mode") == "Diagonal",
                 _ => true,
             },
+            "Tap Use" => match name {
+                "Shortest step delay (ms)" | "Longest step delay (ms)" | "Smoothing" => self.p("Throw mode") == "Legit",
+                "Wind charge pitch" => !self.b("Wind charge along look"),
+                "Shortest hit delay (ms)" | "Longest hit delay (ms)" => self.b("Auto short pearl"),
+                "Thrower range" | "Min landing distance" | "Landing range" | "Max error" | "Shortest follow delay (ms)"
+                | "Longest follow delay (ms)" | "Follow only on ground" => self.b("Pearl follow"),
+                "Pot type" | "Pot amount" | "Random order" | "Throw bowls" => key_from_text(self.t("Pot key")).is_some(),
+                "Debuff mode" | "Debuffs" => key_from_text(self.t("Debuff key")).is_some(),
+                "Shortest pot delay (ms)" | "Longest pot delay (ms)" => {
+                    key_from_text(self.t("Pot key")).is_some() || key_from_text(self.t("Debuff key")).is_some()
+                }
+                _ => true,
+            },
             "Wind Jump" => match name {
                 "Hit reach" | "Max yaw" | "In air only" | "Humanized aim" => self.b("Hit charges"),
                 _ => true,

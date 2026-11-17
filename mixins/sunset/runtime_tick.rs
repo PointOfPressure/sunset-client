@@ -96,11 +96,13 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     let hits = super::sunset_auto_mace::pre_tick(game, hits || game.selected != selected) || hits;
     // Pearl Catch's wind charge: in a tick with no hit and no slot change before it.
     super::sunset_duel::catch_throw(game, hits || game.selected != selected);
+    // Eat Tap's slot changes: likewise.
+    super::sunset_duel::eat_tap(game, hits || game.selected != selected);
     // Cart's steps: in a tick with no hit and no slot change before them.
     super::sunset_cart::pre_tick(game, hits || game.selected != selected);
-    // Shield and Offhand's Double hand: likewise.
+    // Shield, Tap Use's Crossbow key and Offhand's Double hand: likewise.
     super::sunset_swap_keys::pre_tick(game, hits || game.selected != selected);
-    // Pearl Catch's, Wind Jump's, Auto Gap's and PvP Bot's throws: likewise.
+    // Tap Use's, Pearl Catch's, Wind Jump's, Auto Gap's and PvP Bot's throws: likewise.
     super::sunset_throws::pre_tick(game, hits || game.selected != selected);
     // Anchor Aura's Pearl catch: likewise.
     super::sunset_anchor_catch::pre_tick(game, hits || game.selected != selected);

@@ -1,4 +1,4 @@
-// Sunset modules: Wind Jump and Pearl Catch
+// Sunset modules: Wind Jump, Eat Tap and Pearl Catch
 // (Loadouts are in loadouts.rs).
 use super::sunset::{Category, Module, hold, with};
 use super::sunset_util as util;
@@ -6,6 +6,7 @@ use super::{Game, Screen};
 use horizon_client::projectiles::ProjectileKind;
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use std::sync::Mutex;
+use winit::event::MouseButton;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
@@ -17,6 +18,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Max yaw", 180.0, 0.0, 180.0, 5.0)
             .bool("In air only", true)
             .bool("Humanized aim", true),
+        Module::new("Eat Tap", Category::Player, "Eats while a key is held: the best food, or the food on a hotbar key.")
+            .text("Eat key", "None")
+            .bool("Hotbar keys", true)
+            .bool("Golden apples", true)
+            .bool("Any food", false)
+            .bool("Switch back", true),
         Module::new("Pearl Catch", Category::Movement, "Catches pearls with wind charges.")
             .num("Min look up", 45.0, 0.0, 90.0, 5.0)
             .bool("Auto", true)
@@ -115,6 +122,10 @@ struct Duel {
     thrown: Option<(u64, bool)>,
     // Wind Jump: the ticks from a throw to its blast, the last three on this connection.
     blast_after: Option<(usize, Vec<u64>)>,
+    // Eat Tap: the slot eaten from, its key, and the slot to go back to; once let go, the slot to go back to, the
+    // slot eaten from and the tick it let go (the slot comes back after the game has stopped eating, in a later tick).
+    eating: Option<(usize, String, usize)>,
+    eat_back: Option<(usize, usize, u64)>,
     // Pearl Catch: the tick of the catch, the pearl as thrown (start, speed, tick), the throw
     // waiting for the look the server has (charge slot, yaw, pitch, retried), and the slot to come back (slot, charge
     // slot) at the start of the tick after a hotbar charge went.
@@ -127,11 +138,22 @@ struct Duel {
 static DUEL: Mutex<Option<Duel>> = Mutex::new(None);
 
 pub(super) fn shutdown(game: &mut Game<'_>) {
-    let back = duel(|d| std::mem::take(d).catch_back);
-    if let Some((slot, borrowed)) = back
-        && game.selected == borrowed
-    {
-        super::sunset::hold(game, slot);
+    let (eat, eat_back, back) = duel(|d| {
+        let saved = (d.eating.take(), d.eat_back.take(), d.catch_back.take());
+        *d = Duel::default();
+        saved
+    });
+    if let Some((slot, _, back)) = eat {
+        if !game.physical_buttons.contains(&MouseButton::Right) {
+            let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
+        }
+        if game.selected == slot && back != slot {
+            hold(game, back);
+        }
+    } else if let Some((back, slot, _)) = eat_back {
+        if game.selected == slot { hold(game, back); }
+    } else if let Some((slot, borrowed)) = back {
+        if game.selected == borrowed { super::sunset::hold(game, slot); }
     }
 }
 
@@ -233,9 +255,55 @@ pub(super) fn blast(game: &Game<'_>, push: Option<[f64; 3]>) {
     });
 }
 
-// The key hook: the Loadouts panel's keys.
+fn edible(game: &Game<'_>, m: &Module, slot: usize) -> bool {
+    game.inventory[slot].as_ref().is_some_and(|s| {
+        if s.item.ends_with(":golden_apple") || s.item.ends_with(":enchanted_golden_apple") {
+            m.b("Golden apples")
+        } else {
+            m.b("Any food") && game.res.items().get(&s.item).is_some_and(|i| i.food.is_some())
+        }
+    })
+}
+
+// Eat Tap's best food in the hotbar: an enchanted golden apple, then a golden apple, then the most hunger and
+// saturation together.
+fn best_food(game: &Game<'_>, m: &Module) -> Option<usize> {
+    let value = |slot: usize| {
+        let stack = game.inventory[slot].as_ref()?;
+        edible(game, m, slot).then_some(())?;
+        Some(match util::short(&stack.item) {
+            "enchanted_golden_apple" => 1000.0,
+            "golden_apple" => 500.0,
+            _ => game.res.items().get(&stack.item)?.food.map(|(nutrition, saturation)| nutrition as f32 + saturation)?,
+        })
+    };
+    (0..9).filter_map(|slot| value(slot).map(|v| (slot, v))).fold(None, |b: Option<(usize, f32)>, (slot, v)| {
+        if b.is_none_or(|b| v > b.1 || (v == b.1 && slot == game.selected)) { Some((slot, v)) } else { b }
+    }).map(|(slot, _)| slot)
+}
+
+// The key hook: Eat Tap: its Eat key pressed starts eating the best food, and with Hotbar keys the hotbar key of food
+// starts eating that (unless the Loadouts panel has the number keys). Not while a screen is open.
 pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     super::sunset_loadouts::key(game, key, pressed);
+    let Some(m) = module("Eat Tap") else {
+        return;
+    };
+    if !pressed || game.screen != Screen::Playing || duel(|d| d.eating.is_some()) {
+        return;
+    }
+    let slot = if super::sunset::key_from_text(m.t("Eat key")).as_deref() == Some(key) {
+        best_food(game, &m)
+    } else if m.b("Hotbar keys") && !super::sunset_loadouts::listing() {
+        (0..9).find(|&i| game.settings.keys.get(&format!("key.hotbar.{}", i + 1)) == key && edible(game, &m, i))
+    } else {
+        None
+    };
+    if let Some(slot) = slot {
+        // A slot still waiting to come back from the last bite is where this one goes back to.
+        let back = duel(|d| d.eat_back.take()).map_or(game.selected, |(back, _, _)| back);
+        duel(|d| d.eating = Some((slot, key.to_owned(), back)));
+    }
 }
 
 // A wind charge Pearl Catch can throw from `slot`: there, and off cooldown.
@@ -352,5 +420,47 @@ pub(super) fn tick(game: &mut Game<'_>) {
             }
             _ => duel(|d| d.catch_at = None),
         }
+    }
+}
+
+// Eat Tap, at the start of a tick before its move packet (a slot change after it flags Grim's Post), unless another
+// slot change went this tick (`busy`): while the key is held (and the food is still there, no screen open), the food's slot held and the use
+// button down, so the game eats it as its own right click would (slowed as eating slows). Let go, finished or off:
+// the button comes up, and with Switch back the slot from before comes back once the game has stopped eating, at
+// least two ticks later, so the slot change never follows the release in the same tick (Grim's PacketOrderE).
+pub(super) fn eat_tap(game: &mut Game<'_>, busy: bool) {
+    let now = game.ticks;
+    if busy {
+        return;
+    }
+    if let Some((back, slot, at)) = duel(|d| d.eat_back) {
+        if now > at + 20 || game.selected != slot {
+            duel(|d| d.eat_back = None);
+        } else if now >= at + 2 && game.using.is_none() {
+            duel(|d| d.eat_back = None);
+            hold(game, back);
+            return;
+        }
+    }
+    let Some((slot, key, back)) = duel(|d| d.eating.clone()) else {
+        return;
+    };
+    let held = game.physical_keys.iter().any(|k| horizon_client::keybinds::key_name(*k) == Some(key.as_str()));
+    let m = module("Eat Tap");
+    let go_on = m.as_ref().is_some_and(|m| edible(game, m, slot));
+    if held && go_on && game.screen == Screen::Playing {
+        hold(game, slot);
+        if game.using.is_none() {
+            let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
+        }
+        return;
+    }
+    duel(|d| d.eating = None);
+    if !game.physical_buttons.contains(&MouseButton::Right) {
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
+    }
+    // Switch back (on by default; with the module off the slot comes back too).
+    if m.is_none_or(|m| m.b("Switch back")) && back != slot && game.selected == slot {
+        duel(|d| d.eat_back = Some((back, slot, now)));
     }
 }

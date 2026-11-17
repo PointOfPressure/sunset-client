@@ -386,6 +386,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     }
     super::sunset_melee::key(game, key, pressed);
     super::sunset_swap_keys::key(game, key, pressed);
+    super::sunset_combat_inventory::key(game, key, pressed);
     super::sunset_combat::web_key(game, key, pressed);
     super::sunset_duel::key(game, key, pressed);
     super::sunset_cart::key(game, key, pressed);

@@ -163,7 +163,7 @@ A few highlights:
 Modules marked *experimental* below are new strategies that haven't been proven against anticheats.
 
 <details>
-<summary><b>Combat</b> (29 modules)</summary>
+<summary><b>Combat</b> (30 modules)</summary>
 
 - **Kill Aura**: attacks nearby entities.
   - Combat version: *Legacy (1.8)* clicks between Min and Max CPS; *Modern (1.9+)* waits for the attack cooldown, a
@@ -187,6 +187,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **PvP Bot**: fights the nearest player by itself, with a sword or with crystals and anchors.
 - **Cart**: TNT minecart PvP (break, place, set off and cover carts).
 - **Offhand**: totem or another item in your offhand; Double hand, Totem on low health.
+- **Tap Use**: pearls, short pearls and wind charges on keys or their hotbar keys (the slot you held comes back);
+  Pot and Debuff keys for splash potions; Crossbow key; Pearl follow.
 - **Surround**, **Self Trap**, **Auto Trap**, **Self Web**, **Auto Web**: block and web placement for crystal PvP.
 - **Anvil** (block anvils over you, drop them on players), **Auto EXP** (repair with XP bottles), **Quiver**
   (tipped arrows at yourself), **Bow Aimbot**.
@@ -214,7 +216,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 </details>
 
 <details>
-<summary><b>Player</b> (36 modules)</summary>
+<summary><b>Player</b> (37 modules)</summary>
 
 - **Inventory Manager**: keeps your inventory in order.
   - Nine slot settings plan your hotbar (best sword, pickaxe, blocks, golden apples, crystals...).
@@ -227,7 +229,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   inventory layouts on K.
 - **Auto Tool**, **Speed Mine**, **Fast Place**, **Fast Use**, **Break Delay**, **No Break Reset**, **Air Place**,
   **Ghost Hand** (use containers through blocks).
-- **Auto Eat**, **Auto Gap** (also potions and soup), **Auto Fish**, **Auto Clicker** (fixed delay
+- **Auto Eat**, **Auto Gap** (also potions and soup), **Eat Tap** (hold a key to eat the best food,
+  Switch back), **Auto Fish**, **Auto Clicker** (fixed delay
   or random CPS, separate right-click settings), **Multitask** (hit while eating).
 - **Auto Log**, **Auto Respawn**, **Death Location**, **Anti AFK**, **Anti Hunger**, **Notifier**, **Spam**.
 - **Rotations** (keep or lock your look), **No Status Effects**, **Portals** (menus in portals), **Liquid

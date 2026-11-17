@@ -87,9 +87,10 @@ fn moved_messages(text: std::borrow::Cow<'_, str>) -> std::borrow::Cow<'_, str> 
 }
 
 // Modules with new names (0.9): Auto Steal is Chest Stealer, No Mining Trace is Mine Through Mobs; Inventory Cleaner is
-// Inventory Manager, Mob Gear ESP is Gear ESP (1.0).
-pub(super) const RENAMED: [(&str, &str); 6] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot"),
-    ("extramodules", "modules"), ("inventorycleaner", "inventorymanager"), ("mobgearesp", "gearesp")];
+// Inventory Manager, Mob Gear ESP is Gear ESP (1.0); Key Throw is Tap Use and Hold to Eat is Eat Tap (after 1.1.0).
+pub(super) const RENAMED: [(&str, &str); 8] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot"),
+    ("extramodules", "modules"), ("inventorycleaner", "inventorymanager"), ("mobgearesp", "gearesp"), ("keythrow", "tapuse"),
+    ("holdtoeat", "eattap")];
 
 // Auto Armor joined Inventory Manager (1.0): its on/off is the Auto Armor setting, its key Auto Armor key, its Delay
 // and Mode Armor delay and Armor mode; the rest keep their names.
@@ -188,7 +189,7 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
         // Bow Spam and Anti Bed are gone; Rotation and No Rotate are Rotations' Lock and No rotate.
         "bowspam", "antibed", "rotation", "norotate",
         // Removed after 1.1.0.
-        "burrow", "holefiller", "autocity", "keythrow", "arrowdodge", "holdtoeat", "targetesp",
+        "burrow", "holefiller", "autocity", "arrowdodge", "targetesp",
     ];
     // A gone module's entry in the Modules list goes with it.
     let dropped = lines.iter().any(|&(id, field, _)| DROPPED.contains(&(id, field)) || (id == "modules" && gone.contains(&field)));

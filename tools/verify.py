@@ -9696,9 +9696,10 @@ def _():
     return ok, f"offhand after the pointer rests on the totem: off {got['off'][0] or 'empty'}, on {got['on'][0] or 'empty'} (in {got['on'][1]} ticks)"
 
 
-@test("Fast Use (Throwables)")
+@test("Fast Use (Throwables) and Tap Use")
 def _():
-    # Bottles thrown in 2 s of holding use, without and with Fast Use's Throwables (FastXP).
+    # Bottles thrown in 2 s of holding use, without and with Fast Use's Throwables (FastXP); pearls thrown by 5 presses
+    # of Tap Use's key, the hand back on its slot after.
     setting("fastuse", "throwables", "true")
     used = {}
     for name, mods in (("off", ()), ("on", ("fastuse",))):
@@ -9712,7 +9713,22 @@ def _():
         ctl("mouse", "right", "up")
         only()
         used[name] = 64 - ((state().get("held") or {}).get("count", 0))
-    return used["on"] > used["off"], f"bottles in 2 s: {used['off']} without Throwables, {used['on']} with it"
+    reset()
+    slot(0, "diamond_sword")
+    slot(4, "ender_pearl", 16)
+    ctl("key", "1", "tap")
+    setting("tapuse", "pearl key", "G")
+    only("tapuse")
+    for _ in range(5):
+        ctl("key", "g", "tap")
+        wait(30)
+    only()
+    inv = ctl("inventory")
+    left = sum(s.get("count", 0) for s in inv.get("hotbar") or [] if s and "ender_pearl" in (s.get("item") or ""))
+    back = (state().get("held") or {}).get("item", "")
+    return used["on"] > used["off"] and left == 11 and "sword" in back, (
+        f"bottles in 2 s: {used['off']} without Throwables, {used['on']} with it; Tap Use: {16 - left} pearls for 5 presses, hand "
+        f"back on {back}")
 
 
 
@@ -10359,6 +10375,37 @@ def _():
     return ok, f"load {loaded[:1]}; on {on}; settings {[l for l in bot if l.split(':')[0] in ('Mode', 'Style', 'Fight range')]}"
 
 
+@test("Tap Use (Hotbar keys)")
+def _():
+    # Hotbar Quick use: holding a sword, 3 presses each of the pearls' hotbar key (5) and the wind charges' (6) with
+    # Hotbar keys on: each throws one and the sword stays in hand. Off, the key selects the slot as usual.
+    reset()
+    slot(0, "diamond_sword")
+    slot(4, "ender_pearl", 16)
+    slot(5, "wind_charge", 16)
+    ctl("key", "1", "tap")
+    ctl("look", "0", "-80")
+    setting("tapuse", "hotbar keys", "true")
+    only("tapuse")
+    kept, mark = 0, probe_mark()
+    for key in "555666":
+        ctl("key", key, "tap")
+        wait(25)
+        kept += "sword" in held().get("item", "")
+    only()
+    swaps, doubled, late, after_use = slot_order(mark)
+    hotbar = ctl("inventory").get("hotbar") or []
+    left = {k: sum(s.get("count", 0) for s in hotbar if s and k in (s.get("item") or "")) for k in ("ender_pearl", "wind_charge")}
+    ctl("key", "5", "tap")
+    wait(2)
+    off = held().get("item", "")
+    setting("tapuse", "hotbar keys", "false")
+    order = swaps >= 12 and not doubled and not late and not after_use
+    return left == {"ender_pearl": 13, "wind_charge": 13} and kept == 6 and "pearl" in off and order, (
+        f"after 3 presses of each key: {left} left (13 each wanted), sword in hand after {kept}/6; Tap Use off, key 5 "
+        f"selects {off}; {swaps} slot changes (12+), two in a tick {doubled}, after the move {late}, after the use {after_use}")
+
+
 @test("Fast Use (Fast throw)")
 def _():
     # Fast throw through Fast Use's Throwables: wind charges (10-tick cooldown, the game retries use every 4
@@ -10810,6 +10857,27 @@ def probe_ticks(mark):
 USE_ITEM, SET_CARRIED_ITEM = 67, 54
 
 
+def slot_order(mark):
+    """From the probe since `mark`: (slot changes, ticks with two, slot changes after the tick's move packet, slot
+    changes after a use in the same tick). Grim: BadPacketsA (the same slot twice), Post (after the move), PacketOrderE
+    (after a use, attack or release in the tick)."""
+    swaps = doubled = late = after_use = 0
+    for t in probe_ticks(mark):
+        n = t.count(f"pkt {SET_CARRIED_ITEM}")
+        swaps += n
+        doubled += n > 1
+        seen_move = seen_use = False
+        for line in t:
+            if line == "order move":
+                seen_move = True
+            elif line in (f"pkt {USE_ITEM}", f"pkt {PLAYER_ACTION}", "order attack"):
+                seen_use = True
+            elif line == f"pkt {SET_CARRIED_ITEM}":
+                late += seen_move
+                after_use += seen_use
+    return swaps, doubled, late, after_use
+
+
 @test("Wind Jump jumps before the blast")
 def _():
     # A wind charge thrown straight down from the ground: with Wind Jump, the first move off the ground after the
@@ -10845,6 +10913,51 @@ def _():
     ok = not off[0] and bool(jumped) and all(r[0] or r[1] is None or r[1][1] > 1.0 for r in on)
     return ok, (f"the first move off the ground after the throw: jump in its PlayerInput, (ticks after the throw, "
                 f"rise); then the highest rise: off {off}, on {on}")
+
+
+@test("Eat Tap")
+def _():
+    # A sword held, golden apples in slot 4 and bread in slot 7. Off: key 4 only selects the apples. On (Hotbar keys):
+    # key 4 held for 40 ticks eats one apple and the sword comes back. Eat key G held: the best food (the apple, not
+    # the bread, with Any food on) is eaten and the sword comes back; with Switch back off the apples stay in hand.
+    # With the inventory open G does nothing. Every slot change one a tick, before the move packet, never after the
+    # use (or its release) in the same tick.
+    got, order = {}, [0, 0, 0, 0]
+    runs = (("off", (), "4", {}), ("hotbar key", ("eattap",), "4", {}), ("eat key", ("eattap",), "g", {"eat key": "G", "any food": "true"}),
+            ("no switch back", ("eattap",), "g", {"eat key": "G", "switch back": "false"}),
+            ("inventory open", ("eattap",), "g", {"eat key": "G"}))
+    for name, mods, key, opts in runs:
+        reset()
+        slot(0, "diamond_sword")
+        slot(3, "golden_apple", 8)
+        slot(6, "bread", 8)
+        ctl("key", "1", "tap")
+        for k, v in opts.items():
+            setting("eattap", k, v)
+        only(*mods)
+        if name == "inventory open":
+            ctl("open-inventory")
+            wait(3)
+        mark = probe_mark()
+        ctl("key", key, "down")
+        wait(40)
+        ctl("key", key, "up")
+        wait(8)
+        if name == "inventory open":
+            ctl("close")
+            wait(2)
+        only()
+        for k in opts:
+            setting("eattap", k, {"eat key": "None", "any food": "false", "switch back": "true"}[k])
+        order = [a + b for a, b in zip(order, slot_order(mark))]
+        hotbar = ctl("inventory").get("hotbar") or []
+        count = lambda item: sum(s.get("count", 0) for s in hotbar if s and item in (s.get("item") or ""))
+        got[name] = (count("golden_apple"), count("bread"), held().get("item", "").replace("minecraft:", ""))
+    want = {"off": (8, 8, "golden_apple"), "hotbar key": (7, 8, "diamond_sword"), "eat key": (7, 8, "diamond_sword"),
+            "no switch back": (7, 8, "golden_apple"), "inventory open": (8, 8, "diamond_sword")}
+    ok = got == want and order[0] >= 6 and not any(order[1:])
+    return ok, (f"apples, bread and hand after: {got}; slot changes {order[0]} (6+), two in a tick {order[1]}, after the "
+                f"move {order[2]}, after a use {order[3]}")
 
 
 # Horizon's own server (a dedicated one on 25599, or single player's) runs the hit again along your look with 3
@@ -11010,6 +11123,38 @@ def _():
         cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 1} {Y + 3} {Z0 + 3} minecraft:air")
     return opened["off"] == "playing" and opened["on"] not in ("playing", None), (
         f"right click at a chest behind a wall: screen {opened['off']} without Ghost Hand, {opened['on']} with it")
+
+
+@test("Tap Use (Lunge spears)")
+def _():
+    # A sword held, an iron spear with Lunge III in slot 5, a pig 3 blocks ahead (the server lunges a jab that hits):
+    # key 5 with Hotbar keys on jabs with it (the lunge dashes you forward) and the sword stays, the slot changes one a
+    # tick, before the move packet and never after the jab in its tick; off, the key selects the spear.
+    got, order = {}, None
+    for name, mods in (("off", ()), ("on", ("tapuse",))):
+        reset()
+        slot(0, "diamond_sword")
+        slot(4, "iron_spear[enchantments={lunge:3}]")
+        ctl("key", "1", "tap")
+        cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 3.0} {TOUGH_PIG}")
+        wait(10)
+        ctl("look-at-entity", str(mobs("pig")[0]["id"]))
+        if mods:
+            setting("tapuse", "hotbar keys", "true")
+        only(*mods)
+        wait(5)
+        a, mark = pos(), probe_mark()
+        ctl("key", "5", "tap")
+        wait(15)
+        got[name] = (round(flat(a, pos()), 2), held().get("item", ""))
+        if mods:
+            order = slot_order(mark)
+        only()
+    swaps, doubled, late, after_use = order
+    ok = got["on"][0] > got["off"][0] + 0.5 and "sword" in got["on"][1] and "spear" in got["off"][1]
+    return ok and swaps >= 2 and not (doubled or late or after_use), (
+        f"moved and the item in hand after key 5: off {got['off']}, on {got['on']}; {swaps} slot changes, two in a tick "
+        f"{doubled}, after the move {late}, after the jab {after_use}")
 
 
 @test("Pearl Catch")
@@ -12114,7 +12259,7 @@ def _():
 
 
 # ---- combat ports, batch 2 (Fake Lag modes, Backtrack, Aim Assist's Silent aim and Hit flick, No Interact's Hit
-# fix, No miss delay and Anti action, Shield, Offhand's Double hand, Auto Weapon's Totem hit,
+# fix, No miss delay and Anti action, Shield, Tap Use's Crossbow key, Offhand's Double hand, Auto Weapon's Totem hit,
 # W Tap and Jump Reset chances, Sprint's Keep sprint, Auto Web's falling webs, the macros' hurt-time waits)
 
 PUNCH = 46
@@ -12442,6 +12587,30 @@ def _():
     return ok, note + f"; shield raises (UseItem) in 1.5 s with Bot1 holding a sword near: {uses['off']} without, {uses['on']} with Auto block"
 
 
+@test("Tap Use (Crossbow key)")
+def _():
+    # A crossbow in the main inventory and arrows: on the Crossbow key it comes into your hand and is loaded (an arrow
+    # used); holding another slot puts it back in the inventory.
+    reset()
+    slot(0, "stone_sword")
+    ctl("key", "1", "tap")
+    cmd("item replace entity @s inventory.11 with minecraft:crossbow", "item replace entity @s inventory.12 with minecraft:arrow 16")
+    setting("tapuse", "crossbow key", "g")
+    only("tapuse")
+    wait(5)
+    ctl("key", "g", "tap")
+    wait(45)
+    inhand = (held().get("item") or "").endswith("crossbow")
+    arrows = ctl("inventory").get("counts", {}).get("minecraft:arrow", 0)
+    ctl("key", "2", "tap")
+    wait(10)
+    ctl("key", "1", "tap")
+    wait(5)
+    back = (held().get("item") or "").endswith("stone_sword")
+    only()
+    return inhand and arrows == 15 and back, f"crossbow in hand {inhand}, arrows left {arrows} of 16 (one loaded), sword back in slot 1 {back}"
+
+
 @test("Offhand (Double hand)")
 def _():
     # 6 health, a totem in hotbar slot 3, Bot1 3 blocks away and an end crystal beside you: Double hand puts the totem
@@ -12636,6 +12805,149 @@ def items_of(item):
 def probe_looks(mark):
     """The looks the move packets carried since `mark`: [(yaw, pitch)]."""
     return [(float(w[1]), float(w[2])) for t in probe_ticks(mark) for w in (line.split() for line in t) if w[0] == "look"]
+
+
+@test("Tap Use (Short pearl key)")
+def _():
+    # A sword in hand and pearls in slot 5: the Short pearl key throws one down ahead of you (Short pearl pitch 70) and
+    # the sword stays. Silent: the pitch only on the wire (a move packet's look near 70), the slot and the throw before
+    # the tick's move packet. Legit: the camera itself turns down and back, the slot is held and comes back. Each takes
+    # you 0.3 to 6 blocks.
+    got, fine = {}, True
+    for mode in ("Silent", "Legit"):
+        reset()
+        slot(0, "diamond_sword")
+        slot(4, "ender_pearl", 16)
+        ctl("key", "1", "tap")
+        ctl("look", "0", "0")
+        setting("tapuse", "short pearl key", "G")
+        setting("tapuse", "throw mode", mode)
+        only("tapuse")
+        wait(5)
+        a, mark = pos(), probe_mark()
+        ctl("key", "g", "tap")
+        pitches = poll(60, 1, lambda: aim_view()[1])
+        b = pos()
+        only()
+        moved = round(math.dist((a[0], a[2]), (b[0], b[2])), 2)
+        late, doubled, crowded = cart_order(mark)
+        wire = [p for _, p in probe_looks(mark)]
+        down = max(pitches) if mode == "Legit" else max(wire, default=0)
+        got[mode] = (moved, items_of("ender_pearl"), held().get("item", "").split(":")[-1], round(down, 1), round(pitches[-1], 1),
+                     late, doubled, crowded)
+        fine &= 0.3 < moved < 6 and got[mode][1] == 15 and "sword" in got[mode][2] and 68 <= down <= 71.5
+        fine &= abs(pitches[-1]) < 1 and not doubled and not crowded and (mode == "Legit" or not late)
+        fine &= (max(pitches) < 1) if mode == "Silent" else True
+    setting("tapuse", "short pearl key", "None")
+    setting("tapuse", "throw mode", "Silent")
+    return fine, ("(moved, pearls left, in hand, lowest look, camera pitch after, actions after the move, two slot changes "
+                  f"in a tick, two moves): {got}")
+
+
+@test("Tap Use (Auto short pearl)")
+def _():
+    # Pearls in slot 5, a sword held: Bot1 hits you once; with Auto short pearl a pearl goes straight down at your
+    # feet 30 to 70 ms later (one pearl used, the sword in hand after); without it, none.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("tapuse", "auto short pearl", "true")
+    used = {}
+    for name, mods in (("off", ()), ("on", ("tapuse",))):
+        reset()
+        cmd("effect give @s minecraft:resistance 600 3 true")
+        slot(0, "diamond_sword")
+        slot(4, "ender_pearl", 16)
+        ctl("key", "1", "tap")
+        bot_ready(2.5, 180, "give Bot1 minecraft:stick")
+        tester = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
+        only(*mods)
+        wait(5)
+        mark = probe_mark()
+        ctl2("look-at-entity", str(tester))
+        ctl2("mouse", "left", "click")
+        wait(40)
+        only()
+        late, doubled, crowded = cart_order(mark)
+        used[name] = (16 - items_of("ender_pearl"), held().get("item", "").split(":")[-1], late, doubled, crowded)
+    bot_done()
+    setting("tapuse", "auto short pearl", "false")
+    on = used["on"]
+    ok = used["off"][0] == 0 and on[0] == 1 and "sword" in on[1] and not any(on[2:])
+    return ok, f"(pearls thrown, in hand after, actions after the move, two slot changes, two moves): {used}"
+
+
+@test("Tap Use (Wind charge after pearl)")
+def _():
+    # The Pearl key throws a pearl 15 degrees up ahead; with Wind charge after pearl a wind charge goes straight down
+    # the moment the pearl takes you (and you jump), so you go up from where you land; without it, nothing more.
+    got = {}
+    for name, value in (("off", "false"), ("on", "true")):
+        reset()
+        cmd(f"fill {X0-3} {Y} {Z0} {X0+3} {Y} {Z0+30} minecraft:stone", f"fill {X0-3} {Y+1} {Z0} {X0+3} {Y+20} {Z0+30} minecraft:air")
+        slot(0, "diamond_sword")
+        slot(4, "ender_pearl", 16)
+        slot(5, "wind_charge", 16)
+        ctl("key", "1", "tap")
+        ctl("look", "0", "-15")
+        setting("tapuse", "pearl key", "G")
+        setting("tapuse", "wind charge after pearl", value)
+        only("tapuse")
+        wait(5)
+        a = pos()
+        ctl("key", "g", "tap")
+        landed, top = None, None
+        for t in range(120):
+            wait(1)
+            b = pos()
+            if landed is None and math.dist(a, b) > 3:
+                landed, top = b[1], b[1]
+            if landed is not None:
+                top = max(top, b[1])
+            a = b
+        only()
+        got[name] = (16 - items_of("wind_charge"), None if landed is None else round(top - landed, 1))
+    setting("tapuse", "pearl key", "None")
+    setting("tapuse", "wind charge after pearl", "false")
+    ok = got["off"][0] == 0 and got["on"][0] == 1 and (got["on"][1] or 0) > (got["off"][1] or 0) + 1
+    return ok, f"(wind charges used, rise after the pearl took you): off {got['off']}, on {got['on']}"
+
+
+@test("Tap Use (Pearl follow)")
+def _():
+    # Bot1, 10 blocks ahead, throws a pearl off to your right (it lands some 20 blocks from you): with Pearl follow you
+    # throw one of yours after it 50 to 100 ms later and land within 3 blocks of where Bot1 lands; without it you stay.
+    if not CTL2:
+        return None, "needs a second player"
+    setting("tapuse", "pearl follow", "true")
+    got = {}
+    for name, mods in (("off", ()), ("on", ("tapuse",))):
+        reset()
+        cmd(f"fill {X0-4} {Y} {Z0-4} {X0+34} {Y} {Z0+14} minecraft:stone", f"fill {X0-4} {Y+1} {Z0-4} {X0+34} {Y+20} {Z0+14} minecraft:air")
+        slot(0, "diamond_sword")
+        slot(4, "ender_pearl", 16)
+        ctl("key", "1", "tap")
+        bot_ready(10.5, -90, "give Bot1 minecraft:ender_pearl 4")
+        ctl2("select", "1")
+        only(*mods)
+        wait(10)
+        mark = probe_mark()
+        cmd(f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 10.5} -90 -10")
+        wait(5)
+        ctl2("mouse", "right", "down")
+        wait(3)
+        ctl2("mouse", "right", "up")
+        wait(80)
+        only()
+        me = pos()
+        bot = (ctl2("state").get("player") or {}).get("position") or [0, 0, 0]
+        late, doubled, crowded = cart_order(mark)
+        got[name] = (16 - items_of("ender_pearl"), round(math.dist((me[0], me[2]), (bot[0], bot[2])), 1),
+                     round(math.dist((me[0], me[2]), (X0 + 0.5, Z0 + 0.5)), 1), late, doubled, crowded)
+    bot_done()
+    setting("tapuse", "pearl follow", "false")
+    on = got["on"]
+    ok = got["off"][0] == 0 and on[0] == 1 and on[1] <= 3 and on[2] > 8 and not any(on[3:])
+    return ok, f"(pearls thrown, from Bot1 after, from the start, actions after the move, two slot changes, two moves): {got}"
 
 
 @test("Pearl Catch (Catch key)")
@@ -14505,6 +14817,57 @@ def _():
     got = {"off": eaten(), "on": eaten(("noslow",)), "swords only": eaten(("noslow",), "swords")}
     say(".reset noslow")
     return got == {"off": 0, "on": 1, "swords only": 0}, f"apples eaten after letting go early: {got}"
+
+
+@test("Tap Use (Pot key, Debuff key)")
+def _():
+    # Pot key: five healing splash potions in slots 5 to 9 at 10 health, looking down: Dynamic throws three (4 health
+    # each for the 10 missing), Single one, Tap Use off none, and the sword is in hand after. Debuff key, looking
+    # ahead: poison, weakness, poison and harming in slots 1 to 4: One of each throws three, All four, First one, and
+    # One of each with Debuffs `poison` one.
+    for k, v in (("pot key", "h"), ("debuff key", "j"), ("throw mode", "Silent")):
+        setting("tapuse", k, v)
+
+    def pots(mods=("tapuse",), amount="Dynamic"):
+        setting("tapuse", "pot amount", amount)
+        reset()
+        slot(0, "diamond_sword")
+        for i in range(4, 9):
+            slot(i, HEAL_POT)
+        ctl("key", "1", "tap")
+        cmd("damage @s 10 minecraft:generic")
+        ctl("look", "0", "90")
+        only(*mods)
+        wait(5)
+        ctl("key", "h", "tap")
+        wait(30)
+        only()
+        return 5 - items_of("splash_potion"), held().get("item", "").split(":")[-1]
+
+    def debuffs(mode, kinds="harming,weakness,poison,slowness"):
+        setting("tapuse", "debuff mode", mode)
+        setting("tapuse", "debuffs", kinds)
+        reset()
+        immune()
+        for i, p in enumerate(("poison", "weakness", "poison", "harming")):
+            slot(i, f'splash_potion[potion_contents={{potion:"minecraft:{p}"}}]')
+        slot(5, "diamond_sword")
+        ctl("key", "6", "tap")
+        ctl("look", "0", "-20")
+        only("tapuse")
+        wait(5)
+        ctl("key", "j", "tap")
+        wait(30)
+        only()
+        return 4 - items_of("splash_potion")
+
+    got = {"dynamic": pots(), "single": pots(amount="Single"), "off": pots(())}
+    got.update({"one of each": debuffs("One of each"), "all": debuffs("All"), "first": debuffs("First"),
+                "poison only": debuffs("One of each", "poison")})
+    say(".reset tapuse")
+    ok = (got["dynamic"] == (3, "diamond_sword") and got["single"] == (1, "diamond_sword") and got["off"][0] == 0
+          and (got["one of each"], got["all"], got["first"], got["poison only"]) == (3, 4, 1, 1))
+    return ok, f"(potions thrown, in hand after) / debuffs thrown: {got}"
 
 
 @test("Auto Gap (Soup)")

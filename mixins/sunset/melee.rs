@@ -143,6 +143,9 @@ struct State {
     // A hit whose look the server has: it goes at the start of the next tick, before that tick's move packet, as the
     // game's own attack does.
     due: Option<Box<dyn for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send>>,
+    // Quick use's jab: the slot to go back to, the spear's slot and the tick of the jab (the slot comes back at the
+    // start of a later tick: a slot change after a hit in the same tick flags Grim's PacketOrderE).
+    lunge_back: Option<(usize, usize, u64)>,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -625,6 +628,11 @@ fn release_lease(game: &mut Game<'_>, force: bool) {
 // Sunset off, a new world or life: the borrowed slot goes back, keys come back, the rest is dropped.
 pub(super) fn cancel(game: &mut Game<'_>) {
     post_input(game);
+    if let Some((back, slot, _)) = state(|s| s.lunge_back.take()) {
+        if game.selected == slot && game.player.is_some() {
+            hold(game, back);
+        }
+    }
     release_lease(game, true);
     for owner in [BEST, SHIELD, SPEAR] {
         super::sunset::cancel_turns(owner);
@@ -1251,6 +1259,13 @@ pub(super) fn due_waiting() -> bool {
 // The start of a tick, before its move packet (a slot change after it flags Grim's Post), after lease_back: the hit
 // queue_action has ready goes.
 pub(super) fn due(game: &mut Game<'_>) {
+    let now = game.ticks;
+    if let Some((back, slot, _)) = state(|s| s.lunge_back.take_if(|&mut (_, _, at)| now > at)) {
+        if game.selected == slot {
+            hold(game, back);
+            return;
+        }
+    }
     if let Some(hit) = state(|s| s.due.take()) {
         hit(game);
     }
@@ -1463,6 +1478,48 @@ pub(super) fn spear_pass(game: &mut Game<'_>, id: u32) {
         hold(game, spear);
         hold(game, weapon);
     }
+}
+
+// Tap Use's Hotbar keys on a Lunge spear (Sunset's Quick use): a jab with it at the start of the next tick, before
+// its move packet (the lunge is the jab's), and the slot you held back at the start of the tick after.
+pub(super) fn quick_lunge(game: &mut Game<'_>, slot: usize) -> bool {
+    // No charge check: the game's key selected the spear, which restarted this client's charge, while the server's
+    // is still the weapon's when the jab arrives.
+    let fit = move |game: &Game<'_>| {
+        allowed(game)
+            && game.clicks.miss_time <= 0
+            && game.mining.is_none()
+            && !block_stab(game)
+            && game.riding.is_none()
+            && available_item(game, slot).is_some_and(|s| Kinetic::of(&s.item).is_some() && s.enchantment_level("minecraft:lunge") > 0)
+            && game.player.as_ref().is_some_and(|p| !p.fall_flying && !p.fluids.was_touching_water && (game.creative || p.health.food.food >= 7))
+    };
+    if !fit(game) || state(|s| s.due.is_some() || s.lunge_back.is_some()) {
+        return false;
+    }
+    let back = game.selected;
+    state(|s| {
+        s.due = Some(Box::new(move |game: &mut Game<'_>| {
+            let Some(kinetic) = available_item(game, slot).and_then(|s| Kinetic::of(&s.item)) else {
+                return;
+            };
+            // The game's own hotbar key selected the spear meanwhile: that is undone first.
+            if ![back, slot].contains(&game.selected) {
+                return;
+            }
+            game.selected = back;
+            if !fit(game) || acted(game) {
+                return;
+            }
+            hold(game, slot);
+            stab(game, kinetic);
+            if back != slot {
+                state(|s| s.lunge_back = Some((back, slot, game.ticks)));
+            }
+            claim_tick(game);
+        }))
+    });
+    true
 }
 
 // Spear's Damage indicator: while you charge a spear, the hit it would do to the nearest player as things stand (the

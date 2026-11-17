@@ -887,8 +887,9 @@ inventorycleaner.delayticks=2
         assert!(merged.contains("inventorymanager.autoarmor=true") && merged.contains("inventorymanager.armormode=Inventory open"), "{merged}");
     }
 
-    // A profile saved before Burrow, Hole Filler, Auto City, Key Throw, Arrow Dodge, Hold to Eat and Target ESP went
-    // (and PvP Bot's City with Auto City): their lines, Modules list entries included, go, and the rest loads.
+    // A profile saved before Burrow, Hole Filler, Auto City, Arrow Dodge and Target ESP went (and PvP Bot's City with
+    // Auto City): their lines, Modules list entries included, go, and the rest loads. Key Throw and Hold to Eat came
+    // back as Tap Use and Eat Tap: their lines carry over under the new names.
     #[test]
     fn profiles_with_removed_modules_still_load() {
         let state = State::new();
@@ -896,6 +897,7 @@ inventorycleaner.delayticks=2
 modules.killaura=true
 modules.burrow=false
 modules.autocity=false
+modules.keythrow=true
 burrow.on=false
 burrow.block=Obsidian
 holefiller.on=true
@@ -914,6 +916,9 @@ killaura.on=true
         let merged = merged_modules(body).into_owned();
         for gone in ["burrow", "holefiller", "autocity", "keythrow", "arrowdodge", "holdtoeat", "targetesp", "pvpbot.city"] {
             assert!(!merged.contains(gone), "{gone}: {merged}");
+        }
+        for kept in ["tapuse.pearlkey=G", "eattap.anyfood=false", "modules.tapuse=true"] {
+            assert!(merged.contains(kept), "{kept}: {merged}");
         }
         assert!(merged.contains("modules.killaura=true") && merged.contains("killaura.on=true") && merged.contains("pvpbot.on=false"));
     }

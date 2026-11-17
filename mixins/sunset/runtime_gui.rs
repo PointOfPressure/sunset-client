@@ -259,6 +259,8 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Auto Web" => "cobweb placer cobwebplacer web key",
         "Shield" => "auto shield autoshield instant shield instantshield block",
         "Pearl Catch" => "auto pearl catch autopearlcatch fast pearl catch fastpearlcatch diagonal pearl catch diagonalpearlcatch",
+        "Tap Use" => "key throw keythrow instant crossbow instantcrossbow key pearl keypearl key wind charge keywindcharge short pearl shortpearl auto short pearl autoshortpearl short wind charge shortwindcharge pearl wind charge pearlwindcharge pearl follow pearlfollow",
+        "Eat Tap" => "hold to eat holdtoeat eat key eatkey golden apple gap",
         "Wind Jump" => "elytra wind charge elytrawindcharge wind charge aura windchargeaura deflect",
         "Fake Lag" => "fakelag choke lag delay pulse dynamic",
         "Backtrack" => "backtrack back track",
