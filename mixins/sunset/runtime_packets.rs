@@ -3,7 +3,7 @@
 use super::Game;
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use std::sync::Mutex;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use super::sunset::*;
 
 // ---------------------------------------------------------------- packets
@@ -810,4 +810,74 @@ pub(super) fn flush_blink(game: &mut Game<'_>) {
     let flags = u8::from(p.ground.on_ground) | u8::from(p.collision.horizontal) << 1;
     let (x, y, z) = (p.position.x, p.position.y, p.position.z);
     game.send(S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags }));
+}
+
+// ---------------------------------------------------------------- Packet Order
+
+// Packet Order (Client): every action goes out before the tick's move packet, as the game's own do. The game acts in
+// its tick ahead of the move packet (keys, clicks, then the move, then ClientTickEnd); much of Sunset acts after it
+// (the modules' tick follows the game's) or between ticks (frames, packet handlers). An action packet then lands
+// between the move packet and the next pong, which Grim's Post check flags and no vanilla client sends. With this on,
+// such a packet waits, in order, and goes first in the next tick (before the game's own actions and the move), so
+// the server has the look from the move before it and the wire reads [actions][move][tick end] each tick.
+//
+// Held: what Grim's Post counts for a current client (attack, interact, place, use, dig and other player actions,
+// sprint and other player commands, held slot, abilities, spectate, punch). Menu clicks keep their time: menus send
+// them between ticks in vanilla too, and Post does not count them. Nothing is merged or dropped, so a held slot change
+// goes out exactly as a module sent it.
+
+pub(super) const PACKET_ORDER: &str = "Packet Order";
+
+// The module is on (with Sunset running, in a world with a window); read by the send hook.
+static ORDER_ON: AtomicBool = AtomicBool::new(false);
+// From the tick's start until its move packet (or ClientTickEnd with no move): an action going now is in order.
+static ORDER_OPEN: AtomicBool = AtomicBool::new(false);
+static ORDER_HELD: Mutex<Vec<S>> = Mutex::new(Vec::new());
+
+fn order_held() -> std::sync::MutexGuard<'static, Vec<S>> {
+    ORDER_HELD.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+// Game::tick's start (pre_tick, first thing): what waited goes now, in order, and the tick's actions go straight out
+// until its move packet. Off, stopped or out of a world: nothing more is held; what is held still goes (not out of a
+// world, where it belongs to a connection that is gone).
+pub(super) fn order_tick_start(game: &Game<'_>, on: bool) {
+    if !game.native_window() {
+        return;
+    }
+    ORDER_ON.store(on && game.remote.is_some(), Ordering::Relaxed);
+    ORDER_OPEN.store(true, Ordering::Relaxed);
+    let waiting = std::mem::take(&mut *order_held());
+    if game.remote.is_none() {
+        return;
+    }
+    for packet in waiting {
+        game.send(packet);
+    }
+}
+
+// The send hook, first: true if the packet now waits for the next tick.
+pub(super) fn order_hold(game: &Game<'_>, packet: &S) -> bool {
+    if !game.native_window() {
+        return false;
+    }
+    if matches!(packet, S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_) | S::MovePlayerStatus(_) | S::ClientTickEnd(_)) {
+        ORDER_OPEN.store(false, Ordering::Relaxed);
+        return false;
+    }
+    if !ORDER_ON.load(Ordering::Relaxed) || ORDER_OPEN.load(Ordering::Relaxed) || !order_counted(game, packet) {
+        return false;
+    }
+    order_held().push(packet.clone());
+    true
+}
+
+fn order_counted(game: &Game<'_>, packet: &S) -> bool {
+    match packet {
+        S::Attack(_) | S::Interact(_) | S::UseItemOn(_) | S::UseItem(_) | S::PlayerAction(_) | S::Punch(_)
+        | S::SetCarriedItem(_) | S::PlayerAbilities(_) | S::TeleportToEntity(_) => true,
+        // Post leaves out leaving a bed (0) and a rider's commands.
+        S::PlayerCommand(c) => c.action != 0 && game.riding.is_none(),
+        _ => false,
+    }
 }

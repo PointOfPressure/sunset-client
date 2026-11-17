@@ -3780,22 +3780,36 @@ def aura_run(mode, extra=(), item=None):
     wrong = sum(1 for line, want in got if not want and ("fa" in line or "ba" in line))
     uses = [t.count(f"pkt {USE_ITEM_ON}") for t in ticks]
     moves = max((t.count("order move") for t in ticks), default=0)
-    # A click's tick: its move packet (the look) before it. Grim: the next tick's move packet keeps the look.
-    late = sum(1 for t in ticks if f"pkt {USE_ITEM_ON}" in t and ("order move" not in t or t.index("order move") > t.index(f"pkt {USE_ITEM_ON}")))
-    unkept = sum(1 for i, t in enumerate(ticks[:-1]) if f"pkt {USE_ITEM_ON}" in t and "order move" not in ticks[i + 1])
+    # A click: a move packet (its look) before it in its tick or in the tick before (Packet Order sends it at the next
+    # tick's start, after the tick that sent the look), and none after its tick's move packet (Grim's Post). Grim: a
+    # move packet follows it in the same tick or the next, keeping the look.
+    late = unkept = post = 0
+    flat = [(i, line) for i, t in enumerate(ticks) for line in t]
+    moved_in = set()
+    for i, line in flat:
+        if line == "order move":
+            moved_in.add(i)
+        elif line == f"pkt {USE_ITEM_ON}":
+            late += i not in moved_in and i - 1 not in moved_in
+            post += i in moved_in
+    for n, (i, line) in enumerate(flat):
+        if line == f"pkt {USE_ITEM_ON}":
+            unkept += not any(l == "order move" and j <= i + 1 for j, l in flat[n + 1:])
     return dict(written=written, of=sum(1 for *_, w in signs if w), wrong=wrong, most=max(uses, default=0), clicks=sum(uses),
-                moves=moves, late=late, unkept=unkept, again=again, kept=kept, screens=screens, selected=selected, color=color)
+                moves=moves, late=late, post=post, unkept=unkept, again=again, kept=kept, screens=screens, selected=selected,
+                color=color)
 
 
 @test("Sign Aura grim")
 def _():
-    # Anticheat Grim: one click a tick, its look in that tick's move packet before it and kept in the next; every sign
+    # Anticheat Grim: one click a tick, its look in a move packet before it (the tick before, with Packet Order) and
+    # kept in the next, no click after its tick's move packet; every sign
     # in reach written on the side that faces the player, the waxed and the far one left, the written one ("keep")
     # left by Only blank; no click again after (the signs are remembered); a red dye in hand is swapped off and back.
     r = aura_run("Grim", (("clickspertick", "1"), ("cooldown", "1"), ("range", "4.4"), ("delay", "2"), ("onlyblank", "true")),
                  item="red_dye")
     ok = (r["written"] == r["of"] and r["wrong"] == 0 and r["most"] == 1 and r["moves"] <= 1 and r["late"] == 0
-          and r["unkept"] == 0 and r["again"] == 0 and "keep" in r["kept"] and r["screens"] == {"playing"}
+          and r["post"] == 0 and r["unkept"] == 0 and r["again"] == 0 and "keep" in r["kept"] and r["screens"] == {"playing"}
           and r["selected"] and "red" not in r["color"])
     return ok, str(r)
 
@@ -8554,6 +8568,115 @@ def _():
     return ok, f"against {kind}: " + "; ".join(
         f"{name} {hits} hits, {late} after the move packet, {lost} health lost, at most {most} moves a tick"
         for name, (hits, late, ticks, most, lost) in runs.items())
+
+# Attack, Interact, PlayerAbilities, PlayerAction, PlayerCommand, Punch, SetCarriedItem, TeleportToEntity, UseItemOn,
+# UseItem: what Grim's Post check counts after a tick's move packet.
+POST_IDS = {1, 26, 40, 41, 42, 46, 54, 64, 66, 67}
+
+
+def post_actions(mark):
+    """From the probe since `mark`: (actions after their tick's move packet, actions, ticks with a move packet, the most
+    move packets in a tick)."""
+    late = actions = moved = most = 0
+    for t in probe_ticks(mark):
+        moves = 0
+        for line in t:
+            if line == "order move":
+                moves += 1
+            elif line.startswith("pkt ") and int(line.split()[1]) in POST_IDS:
+                actions += 1
+                late += moves > 0
+        moved += moves > 0
+        most = max(most, moves)
+    return late, actions, moved, most
+
+
+@test("Packet Order (actions before the move packet)")
+def _():
+    # Packet Order (on by default) holds an action that would follow its tick's move packet for the next tick's start.
+    # The look turns a degree a tick so every tick has a move packet. BlockIn (obsidian in slot 3, the sword held: a
+    # slot change, four places and the change back) and Nuker (survival, an iron pickaxe: digs), each with Packet Order
+    # off and on, then your own clicks on a pig with it on. Off: some action follows the move packet (what Grim's Post
+    # flags; reported, so the check is seen to see it). On: none does, the work is the same (4 obsidian, 6 or more of 12
+    # stone broken; BlockIn's place packets no more than one over its count with it off: a held place is not sent
+    # again before the server's block comes), the pig is hit, never two move packets a tick, and Packet Order is on
+    # again at the end. Done: BlockIn's (obsidian, place packets), Nuker's stone broken, the pig's health lost.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    box = (X0 - 1, Y + 1, Z0 + 1, X0 + 1, Y + 2, Z0 + 2)
+
+    def turning(ticks):
+        for step in range(ticks):
+            ctl("look", str(step % 90), "0")
+            wait(1)
+
+    def blockin():
+        reset()
+        slot(0, "diamond_sword")
+        slot(2, "obsidian", 16)
+        ctl("key", "1", "tap")
+        wait(5)
+        mark = probe_mark()
+        only("blockin")
+        turning(30)
+        only()
+        placed = count(X0 - 1, Y + 1, Z0 - 1, X0 + 1, Y + 1, Z0 + 1, "obsidian")
+        cmd(f"fill {X0 - 1} {Y + 1} {Z0 - 1} {X0 + 1} {Y + 2} {Z0 + 1} minecraft:air")
+        places = sum(t.count(f"pkt {USE_ITEM_ON}") for t in probe_ticks(mark))
+        return (*post_actions(mark), (placed, places))
+
+    def nuker():
+        reset()
+        slot(0, "iron_pickaxe")
+        ctl("key", "1", "tap")
+        cmd(f"fill {' '.join(map(str, box))} minecraft:stone")
+        wait(5)
+        mark = probe_mark()
+        only("nuker")
+        turning(60)
+        only()
+        broken = 12 - count(*box, "stone")
+        cmd(f"fill {' '.join(map(str, box))} minecraft:air")
+        return (*post_actions(mark), broken)
+
+    def clicks():
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        target = pig(2.5, tag=TOUGH_PIG)
+        wait(5)
+        before, mark = mobs("pig")[0]["health"], probe_mark()
+        for step in range(30):
+            if step % 5 == 0:
+                ctl("key", "ad"[step // 5 % 2], "down")
+                ctl("key", "da"[step // 5 % 2], "up")
+            ctl("look-at-entity", str(target))
+            if step % 6 == 0:
+                ctl("mouse", "left", "click")
+            wait(1)
+        ctl("key", "a", "up")
+        ctl("key", "d", "up")
+        return (*post_actions(mark), round(before - mobs("pig")[0]["health"], 1))
+
+    runs = {}
+    try:
+        say(".t packetorder")
+        wait(2)
+        off_state = is_on("Packet Order")
+        runs["BlockIn off"], runs["Nuker off"] = blockin(), nuker()
+    finally:
+        say(".t packetorder")
+        wait(2)
+    on_state = is_on("Packet Order")
+    runs["BlockIn on"], runs["Nuker on"], runs["clicks on"] = blockin(), nuker(), clicks()
+    cmd("kill @e[type=pig]")
+    on_runs = [runs[k] for k in ("BlockIn on", "Nuker on", "clicks on")]
+    ok = (not off_state and on_state and all(r[0] == 0 and r[1] > 0 and r[2] >= 20 and r[3] <= 1 for r in on_runs)
+          and runs["BlockIn on"][4][0] == 4 and runs["BlockIn on"][4][1] <= runs["BlockIn off"][4][1] + 1
+          and runs["Nuker on"][4] >= 6 and runs["clicks on"][4] > 0)
+    return ok, f"off then on ({not off_state}, {on_state}): " + "; ".join(
+        f"{name}: {late} of {n} actions after the move packet, {moved} ticks moved, most {most} moves a tick, done {done}"
+        for name, (late, n, moved, most, done) in runs.items())
 
 # ---- sweeps: every mode of every module that talks to the server, through the same short stretch of play, and every
 # render mode once in single player. On a server each one counts, from the probe's wire log, the move packets in a

@@ -302,10 +302,22 @@ pub(super) fn can_place(game: &Game<'_>, p: [i32; 3], check_entities: bool) -> b
     p[1] >= -64 && p[1] < 320 && replaceable(game, p) && (!check_entities || !obstructed(game, p))
 }
 
+// Places sent, by tick: the block shows once the server answers, a round trip later (a tick later still when Packet
+// Order holds the place for the next tick), and until then the spot is not clicked again.
+static SENT: Mutex<Vec<([i32; 3], u64)>> = Mutex::new(Vec::new());
+
+fn awaiting(game: &Game<'_>, p: [i32; 3]) -> bool {
+    let ping = super::remote::sunset_combat_remote::latency(game).unwrap_or(0).max(0) as u64;
+    let wait = (2 + ping.div_ceil(50)).min(20);
+    let mut sent = SENT.lock().unwrap_or_else(|e| e.into_inner());
+    sent.retain(|(_, at)| game.ticks.wrapping_sub(*at) < wait);
+    sent.iter().any(|(q, _)| *q == p)
+}
+
 // Put the block in hotbar `slot` (or the offhand's, slot OFFHAND) at `p`, clicking a
 // neighbour (or the position itself when there is none, an air place).
 pub(super) fn place_block(game: &mut Game<'_>, p: [i32; 3], slot: usize, rotate: bool, check_entities: bool) -> bool {
-    if (slot > 8 && slot != OFFHAND) || game.remote.is_none() || !can_place(game, p, check_entities) {
+    if (slot > 8 && slot != OFFHAND) || game.remote.is_none() || !can_place(game, p, check_entities) || awaiting(game, p) {
         return false;
     }
     if game.eye_position().is_none() {
@@ -346,6 +358,7 @@ pub(super) fn place_block(game: &mut Game<'_>, p: [i32; 3], slot: usize, rotate:
         if !offhand {
             hold(game, before);
         }
+        SENT.lock().unwrap_or_else(|e| e.into_inner()).push((p, game.ticks));
     });
     true
 }
