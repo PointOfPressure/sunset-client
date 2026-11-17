@@ -1119,11 +1119,16 @@ fn data_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= 64 && !name.starts_with('.') && name.chars().all(|c| c.is_ascii_alphanumeric() || "_-.".contains(c))
 }
 
+// A plugin id whose data folder a plugin may use: a data name, and not Sunset's own.
+fn plugin_name(plugin: &str) -> bool {
+    data_name(plugin) && plugin != super::sunset::ID
+}
+
 // Keeps `value` under `key` for your plugin, across restarts and reconnects: a file in your mod's data folder
 // (horizon-mods/.horizon-mod-data/<plugin>/<key>). A value that didn't change isn't written again.
 #[allow(dead_code)]
 pub(super) fn save(game: &Game<'_>, plugin: &str, key: &str, value: &str) -> Result<(), String> {
-    if !data_name(plugin) || plugin == super::sunset::ID || !data_name(key) {
+    if !plugin_name(plugin) || !data_name(key) {
         return Err(format!("save(\"{plugin}\", \"{key}\"): use your plugin's id and a key of letters, digits, - _ and . (not \"sunset\")."));
     }
     let mut stored = lock(&STORED);
@@ -1140,7 +1145,7 @@ pub(super) fn save(game: &Game<'_>, plugin: &str, key: &str, value: &str) -> Res
 // What `save` kept under `key`, if anything.
 #[allow(dead_code)]
 pub(super) fn load(game: &Game<'_>, plugin: &str, key: &str) -> Option<String> {
-    if !data_name(plugin) || plugin == super::sunset::ID || !data_name(key) {
+    if !plugin_name(plugin) || !data_name(key) {
         return None;
     }
     if let Some((_, _, v)) = lock(&STORED).iter().find(|(p, k, _)| p == plugin && k == key) {
@@ -1149,6 +1154,58 @@ pub(super) fn load(game: &Game<'_>, plugin: &str, key: &str) -> Option<String> {
     let v = game.native_setting(plugin, key)?;
     lock(&STORED).push((plugin.to_owned(), key.to_owned(), v.clone()));
     Some(v)
+}
+
+// Deletes what `save` kept under `key` (its file). Ok(true) if there was a value, Ok(false) if there wasn't.
+#[allow(dead_code)]
+pub(super) fn forget(game: &Game<'_>, plugin: &str, key: &str) -> Result<bool, String> {
+    if !plugin_name(plugin) || !data_name(key) {
+        return Err(format!("forget(\"{plugin}\", \"{key}\"): use your plugin's id and a key of letters, digits, - _ and . (not \"sunset\")."));
+    }
+    lock(&STORED).retain(|(p, k, _)| !(p == plugin && k == key));
+    forget_file(&game.native_data_dir(plugin), key).map_err(|e| format!("forget(\"{plugin}\", \"{key}\"): {e}"))
+}
+
+// Deletes every key `save` kept for your plugin; gives how many there were. Files in the folder that aren't keys
+// (other names, folders) are left alone.
+#[allow(dead_code)]
+pub(super) fn forget_all(game: &Game<'_>, plugin: &str) -> Result<usize, String> {
+    if !plugin_name(plugin) {
+        return Err(format!("forget_all(\"{plugin}\"): use your plugin's id (not \"sunset\")."));
+    }
+    lock(&STORED).retain(|(p, _, _)| p != plugin);
+    forget_files(&game.native_data_dir(plugin)).map_err(|e| format!("forget_all(\"{plugin}\"): {e}"))
+}
+
+// The key's file in `dir`, if it is one (a link is removed, not what it points at). The name is checked again here
+// so nothing outside `dir` can be named.
+fn forget_file(dir: &std::path::Path, key: &str) -> std::io::Result<bool> {
+    if !data_name(key) {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a key name"));
+    }
+    let path = dir.join(key);
+    match std::fs::symlink_metadata(&path) {
+        Ok(m) if m.is_dir() => Ok(false),
+        Ok(_) => std::fs::remove_file(&path).map(|()| true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+fn forget_files(dir: &std::path::Path) -> std::io::Result<usize> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(e),
+    };
+    let mut gone = 0;
+    for entry in entries {
+        let name = entry?.file_name();
+        if let Some(key) = name.to_str().filter(|k| data_name(k)) {
+            gone += usize::from(forget_file(dir, key)?);
+        }
+    }
+    Ok(gone)
 }
 
 // ---------------------------------------------------------------- what Sunset calls
@@ -1448,5 +1505,92 @@ pub(super) fn list(game: &mut Game<'_>) {
     super::sunset::say(game, &format!("Plugins ({}, plugin API {API_VERSION}):", lines.len()));
     for l in lines {
         super::sunset::say(game, &l);
+    }
+}
+
+#[cfg(test)]
+mod storage_tests {
+    use super::{data_name, forget_file, forget_files, plugin_name};
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("sunset-api-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("data")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn names_cannot_leave_the_folder() {
+        for bad in ["", ".", "..", "../x", "a/b", "a\\b", ".hidden", "x:y", "a b", "\u{e9}", &"k".repeat(65)] {
+            assert!(!data_name(bad), "{bad:?}");
+        }
+        for good in ["a", "a.b", "a..b", "key-1_2", "COUNT", &"k".repeat(64)] {
+            assert!(data_name(good), "{good:?}");
+        }
+        assert!(plugin_name("hello"));
+        assert!(!plugin_name(super::super::sunset::ID));
+        assert!(!plugin_name("../sunset"));
+    }
+
+    #[test]
+    fn forget_removes_one_key() {
+        let root = temp("one");
+        let data = root.join("data");
+        fs::write(data.join("count"), "3").unwrap();
+        fs::write(data.join("other"), "x").unwrap();
+        assert!(forget_file(&data, "count").unwrap());
+        assert!(!data.join("count").exists());
+        assert!(data.join("other").exists());
+        assert!(!forget_file(&data, "count").unwrap(), "already gone");
+        assert!(!forget_file(&root.join("missing"), "count").unwrap(), "no folder yet");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn forget_refuses_paths_and_folders() {
+        let root = temp("paths");
+        let data = root.join("data");
+        fs::write(root.join("outside"), "keep").unwrap();
+        for bad in ["../outside", "..", "/tmp/outside", ".hidden", ""] {
+            assert!(forget_file(&data, bad).is_err(), "{bad:?}");
+        }
+        assert!(root.join("outside").exists());
+        fs::create_dir(data.join("sub")).unwrap();
+        assert!(!forget_file(&data, "sub").unwrap());
+        assert!(data.join("sub").is_dir());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn forget_removes_a_link_not_its_target() {
+        let root = temp("link");
+        let data = root.join("data");
+        fs::write(root.join("target"), "keep").unwrap();
+        std::os::unix::fs::symlink(root.join("target"), data.join("key")).unwrap();
+        assert!(forget_file(&data, "key").unwrap());
+        assert!(fs::symlink_metadata(data.join("key")).is_err());
+        assert_eq!(fs::read_to_string(root.join("target")).unwrap(), "keep");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn forget_all_removes_only_keys() {
+        let root = temp("all");
+        let data = root.join("data");
+        for k in ["a", "b.txt", "c-1"] {
+            fs::write(data.join(k), "v").unwrap();
+        }
+        fs::write(data.join(".hidden"), "v").unwrap();
+        fs::create_dir(data.join("world")).unwrap();
+        fs::write(data.join("world").join("inner"), "v").unwrap();
+        assert_eq!(forget_files(&data).unwrap(), 3);
+        assert!(data.join(".hidden").exists());
+        assert!(data.join("world").join("inner").exists());
+        assert_eq!(forget_files(&data).unwrap(), 0);
+        assert_eq!(forget_files(&root.join("missing")).unwrap(), 0);
+        fs::remove_dir_all(&root).unwrap();
     }
 }
