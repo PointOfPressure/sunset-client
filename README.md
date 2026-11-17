@@ -446,6 +446,7 @@ What's planned and what a contribution needs: [feature roadmap](docs/feature-roa
 ## Credits
 
 Made by [PointOfPressure](https://github.com/PointOfPressure) and [vstxx](https://github.com/vstxx).
+Core contributor: [Rust](https://github.com/zackmsa777-a11y).
 
 <details>
 <summary>Contributors</summary>
