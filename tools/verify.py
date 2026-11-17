@@ -13295,7 +13295,7 @@ def _():
     listed = all(x in text for x in ("hello 0.2.0 - modules: Hello - commands: .hello",
                                      "afk 0.1.0 - modules: AFK Fisher - commands: .afk",
                                      "plugcheck 0.1.0 - modules: Plug Check - commands: .plugcheck",
-                                     "plugin API 2"))
+                                     "plugin API 3"))
     bad_id = "Bad Id 0.1.0" in text and "OFF: its id" in text
     helped = ".hello - say Hello's message" in text and ".afk - AFK Fisher" in text and ".plugins - the plugins loaded" in text
     start = " | ".join(sunset_said(0))
