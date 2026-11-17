@@ -196,6 +196,9 @@ pub(super) fn switched_effects(game: &mut Game<'_>, name: &'static str, on: bool
     super::sunset_combat_inventory::toggled(game, name);
     super::sunset_pvp_bot::toggled(name);
     super::sunset_packet_mine::toggled(game, name, on);
+    if name == super::sunset_vein_miner::NAME && !on {
+        super::sunset_vein_miner::stop(game);
+    }
     if name == "Friend Guard" {
         super::sunset_melee::reset_friend_feedback();
     }

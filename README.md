@@ -269,7 +269,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 </details>
 
 <details>
-<summary><b>World</b> (28 modules)</summary>
+<summary><b>World</b> (29 modules)</summary>
 
 - **Base Finder**, **New Chunks**, **Stash Finder**, **Player Activity Detector**, **Cave Disturbance Detector**,
   **Portal Pattern Finder**, **Activated Spawner Detector**, **Spawner Alerts**: find bases and where players have
@@ -330,8 +330,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
     manual input, stop, disable, world changes and Panic cancel jobs. Profiles save preferences without paths.
   - The engine ships for Linux and Windows (x86_64). Full runtime commands use the original `#` prefix; the
     bounded Ore Sim controller keeps the `.b` commands above. See [commands, installation, source and DLL replacement](docs/baritone.md).
-- **Nuker**, **Packet Mine**, **Liquid Filler** (also drains an enemy's water or lava), **Spawn Proofer**,
-  **Build Height**.
+- **Nuker**, **Packet Mine**, **Vein Miner** (the ore touching an ore you break), **Liquid Filler** (also drains an
+  enemy's water or lava), **Spawn Proofer**, **Build Height**.
 - **Auto Sign**: writes signs without the editor ever showing, with text from its settings (front and back) or the
   first sign you write; both sides (a server opens the side you stand on, so the other side is written once you're on
   it); Aura clicks the signs in reach around you, with an Anticheat mode: Grim (one click a tick, the look in that
@@ -450,6 +450,8 @@ Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smas
 Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast
 Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback
 Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps, Ore Sim's automatic seed (SeedCrackerX) and the Baritone/Ore Sim integration.
+
+**compkrx** ([compkrx](https://github.com/compkrx)): Vein Miner.
 
 </details>
 

@@ -10537,6 +10537,118 @@ def _():
     return on and bound and got == want, f"Fast Use on: {on}, bound to J: {bound}, settings {got} of {want}"
 
 
+PLAYER_ACTION = 41
+
+
+def vein_spots():
+    """Vein Miner's test ore, by spot (X0 is set once the arena is known)."""
+    return {
+        (X0, Y + 2, Z0 + 2): "diamond_ore",
+        (X0 + 1, Y + 2, Z0 + 2): "diamond_ore",
+        (X0 + 2, Y + 2, Z0 + 2): "deepslate_diamond_ore",
+        (X0 + 3, Y + 2, Z0 + 2): "deepslate_diamond_ore",
+        (X0, Y + 3, Z0 + 2): "iron_ore",
+        (X0, Y + 2, Z0 + 4): "diamond_ore",
+    }
+
+
+def vein(tool="diamond_pickaxe", then=None):
+    """Mines the first ore of vein_spots() by hand (button held until it goes, then let go), waits for Vein Miner. `then` runs
+    right after the button comes up. Returns (broken by hand, [block at each spot], the probe's ticks since the
+    button came up or None)."""
+    spots = vein_spots()
+    slot(0, tool)
+    ctl("key", "1", "tap")
+    cmd(*(f"setblock {x} {y} {z} minecraft:{ore}" for (x, y, z), ore in spots.items()))
+    seed = next(iter(spots))
+
+    def block(pos):
+        return ctl("block", *map(str, pos)).get("block")
+
+    if not wait_for(lambda: all(block(pos) == f"minecraft:{ore}" for pos, ore in spots.items()), 40):
+        return False, ["could not place the test ore"], None
+    ctl("look-at", *(str(v + 0.5) for v in seed))
+    wait(5)
+    ctl("mouse", "left", "down")
+    by_hand = wait_for(lambda: block(seed) == "minecraft:air", 200, step=2)
+    ctl("mouse", "left", "up")
+    mark = probe_mark() if probe_path() else None
+    if then:
+        then()
+    wait(140)
+    return by_hand, [block(pos) for pos in spots], probe_ticks(mark) if mark is not None else None
+
+
+def vein_left(n):
+    """The test ore with the first n gone (the rest of the line, the iron above and the ore past a gap stay)."""
+    return ["minecraft:air"] * n + [f"minecraft:{ore}" for ore in list(vein_spots().values())[n:]]
+
+
+def dig_wire(ticks):
+    """From probe ticks: (most PlayerActions in a tick, ticks with a PlayerAction but no swing, most moves in a tick,
+    the distinct looks the move packets carried)."""
+    if ticks is None:
+        return None
+    digs = [t.count(f"pkt {PLAYER_ACTION}") for t in ticks]
+    bare = sum(1 for t, d in zip(ticks, digs) if d and f"pkt {PUNCH}" not in t)
+    moves = max((t.count("order move") for t in ticks), default=0)
+    looks = {(round(float(w[1])), round(float(w[2]))) for t in ticks for w in (line.split() for line in t) if w[0] == "look"}
+    return max(digs, default=0), bare, moves, looks
+
+
+@test("Vein Miner")
+def _():
+    # Max blocks 3 (the first counts), Rotate on: the ore beside the one broken by hand and the deepslate kind next to it
+    # go, the fourth stays (the cap), as do the iron above and the diamond past a gap. On the wire: one PlayerAction a
+    # tick at most, each with a swing, one move packet a tick, and the server is shown other looks than yours.
+    only("Vein Miner")
+    setting("veinminer", "max blocks", 3)
+    by_hand, got, ticks = vein()
+    wire = dig_wire(ticks)
+    ok = by_hand and got == vein_left(3)
+    if wire:
+        ok = ok and wire[0] == 1 and wire[1] == 0 and wire[2] <= 1 and len(wire[3]) >= 2
+    return ok, f"by hand: {by_hand}; blocks {got}; wire (digs/tick, digs without swing, moves/tick, looks) {wire}"
+
+
+@test("Vein Miner (Fast finish, no Rotate)")
+def _():
+    # Max blocks 16, Fast finish on, Rotate off: the whole line of four goes, nothing else; no look but yours goes out,
+    # one PlayerAction a tick with its swing.
+    only("Vein Miner")
+    setting("veinminer", "rotate", "false")
+    setting("veinminer", "fast finish", "true")
+    by_hand, got, ticks = vein()
+    wire = dig_wire(ticks)
+    ok = by_hand and got == vein_left(4)
+    if wire:
+        ok = ok and wire[0] == 1 and wire[1] == 0 and wire[2] <= 1 and len(wire[3]) <= 1
+    return ok, f"by hand: {by_hand}; blocks {got}; wire {wire}"
+
+
+@test("Vein Miner (Max blocks 1, off)")
+def _():
+    # Max blocks 1 is the ore broken by hand alone; with the module off nothing else goes either.
+    only("Vein Miner")
+    setting("veinminer", "max blocks", 1)
+    one_hand, one, _ = vein()
+    only()
+    off_hand, off, _ = vein()
+    ok = one_hand and off_hand and one == vein_left(1) and off == vein_left(1)
+    return ok, f"Max blocks 1: {one_hand} {one}; off: {off_hand} {off}"
+
+
+@test("Vein Miner (wrong tool, slot change)")
+def _():
+    # A stone pickaxe can't harvest diamond: no vein. A slot change as the button comes up ends the vein before its first
+    # block is broken (a dig started is dropped with PlayerAction 2, which the wire can't tell apart, so blocks only).
+    only("Vein Miner")
+    stone_hand, stone, _ = vein("stone_pickaxe")
+    swap_hand, swap, _ = vein(then=lambda: ctl("key", "2", "tap"))
+    ok = stone_hand and swap_hand and stone == vein_left(1) and swap == vein_left(1)
+    return ok, f"stone pickaxe: {stone_hand} {stone}; slot change: {swap_hand} {swap}"
+
+
 @test("Packet Mine")
 def _():
     # Each block 2 in front at head height: ticks to break it holding the right tool and the button, then with Packet

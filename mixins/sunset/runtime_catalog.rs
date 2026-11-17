@@ -685,6 +685,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_parity::defaults());
     v.extend(super::sunset_hands::defaults());
     v.extend(super::sunset_packet_mine::defaults());
+    v.extend(super::sunset_vein_miner::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_effects::defaults());
     v.extend(super::sunset_radar::defaults());

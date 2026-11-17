@@ -2,7 +2,7 @@
 // clicks do nothing, nor those No Interact stops (its lists, Hit fix, Sword on shield, Hit select); Aim Assist's Silent
 // aim and Hit flick take a miss or a hit next, then No miss delay drops a swing at nothing; Packet Mine takes a click
 // on a block; Friend Guard and Auto Spear's Reach poke and Extended reach see the click first, then Auto Mace takes
-// the mace for it.
+// the mace for it. A click on a block that gets through starts Vein Miner's watch.
 fn sunset_crit_click(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<bool> {
     if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
 
@@ -28,6 +28,9 @@ fn sunset_crit_click(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<
     crate::game::sunset_auto_mace::before_click(game);
     match crate::game::sunset::crit_click(game) {
         Some(instant) => std::ops::ControlFlow::Break(instant),
-        None => std::ops::ControlFlow::Continue(()),
+        None => {
+            crate::game::sunset_vein_miner::clicked(game);
+            std::ops::ControlFlow::Continue(())
+        }
     }
 }

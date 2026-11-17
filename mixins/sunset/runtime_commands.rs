@@ -171,6 +171,7 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     super::sunset_backtrack::shutdown();
     super::sunset_knockback_delay::shutdown();
     super::sunset_packet_mine::toggled(game, "Packet Mine", false);
+    super::sunset_vein_miner::stop(game);
     super::sunset_duel::shutdown(game);
     super::sunset_swap_keys::shutdown(game);
     super::sunset_takeoff::shutdown(game);
