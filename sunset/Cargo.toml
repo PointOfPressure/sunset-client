@@ -1,0 +1,12 @@
+[package]
+name = "sunset-core"
+version = "1.2.1"
+edition = "2024"
+publish = false
+description = "Sunset's own crate: the state its game-side code and its hooks below the game share."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+horizon-mod-api = { path = ".horizon/sdk/api/crates/horizon-mod-api" }
