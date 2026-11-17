@@ -15,9 +15,14 @@ use super::sunset::*;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Panel {
-    // Negative until the first frame places it.
+    // Where it is drawn this frame (hit tests read it too): worked out from `home` by the layout (draw_gui), never
+    // kept.
     pub(super) x: f32,
     pub(super) y: f32,
+    // Its place of your own, as saved: x spaced for the Panel width you asked for, and y. A window too small for it
+    // (F11, a resize, a minimise on the way) draws it elsewhere without moving this, so it comes back where it was;
+    // only a drag (or a new Panel width) changes it. x is negative until the first frame places it.
+    pub(super) home: [f32; 2],
     pub(super) collapsed: bool,
     pub(super) scroll: f32,
 }
@@ -41,6 +46,8 @@ pub(super) struct Gui {
     // press can't also reach the game (Esc would open the pause menu).
     pub(super) closing: bool,
     pub(super) panels: Vec<Panel>,
+    // The Panel width the panels' homes are spaced for (0 before the first frame): a new one spreads or closes them up.
+    pub(super) laid_for: f32,
     pub(super) expanded: Vec<usize>,
     pub(super) drag: Option<Drag>,
     // The height of the GUI the panels last drew in.
@@ -182,8 +189,9 @@ impl Default for Gui {
             typed: false,
             shortcut: false,
             panels: (0..CATEGORIES.len())
-                .map(|_| Panel { x: -1.0, y: 32.0, collapsed: false, scroll: 0.0 })
+                .map(|_| Panel { x: -1.0, y: 32.0, home: [-1.0, 32.0], collapsed: false, scroll: 0.0 })
                 .collect(),
+            laid_for: 0.0,
             expanded: Vec::new(),
             drag: None,
             view_h: 240.0,
@@ -442,8 +450,10 @@ pub(super) fn gui_rows(s: &State) -> Vec<([f32; 4], Hit)> {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Win {
     pub(super) module: usize,
+    // Where it is drawn this frame, from `home` (where it was opened or dragged to) kept on the screen.
     pub(super) x: f32,
     pub(super) y: f32,
+    pub(super) home: [f32; 2],
     pub(super) scroll: f32,
     // As it last drew: its description's height, its rows' height and how much of them shows.
     pub(super) about_h: f32,

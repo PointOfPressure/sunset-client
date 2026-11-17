@@ -275,7 +275,8 @@ impl State {
             out.push_str(&format!("waypoint={}|{}|{}|{}|{}\n", w.name, w.pos[0], w.pos[1], w.pos[2], w.dim));
         }
         for (c, p) in CATEGORIES.iter().zip(&self.gui.panels) {
-            out.push_str(&format!("panel.{}={},{},{}\n", norm(c.label()), p.x, p.y, p.collapsed));
+            // Its place of your own, not where a small window happens to draw it.
+            out.push_str(&format!("panel.{}={},{},{}\n", norm(c.label()), p.home[0], p.home[1], p.collapsed));
         }
         out
     }
@@ -318,7 +319,7 @@ impl State {
                 if let (Some(i), [x, y, c]) = (CATEGORIES.iter().position(|c| norm(c.label()) == cat), parts.as_slice())
                     && let (Ok(x), Ok(y)) = (x.parse(), y.parse())
                 {
-                    self.gui.panels[i] = Panel { x, y, collapsed: *c == "true", scroll: 0.0 };
+                    self.gui.panels[i] = Panel { x, y, home: [x, y], collapsed: *c == "true", scroll: 0.0 };
                 }
                 continue;
             }

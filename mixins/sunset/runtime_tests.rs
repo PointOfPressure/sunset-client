@@ -1247,3 +1247,44 @@ mod menu_tidy_tests {
         assert!(state.module("Elytra Boost").is_none() && state.module("Surround").is_none() && state.module("Speed Mine").is_none());
     }
 }
+
+#[cfg(test)]
+mod panel_layout_tests {
+    use super::super::sunset::*;
+
+    // F11 out and back (and the sizes a window passes through, down to nothing): the panels are drawn on the smaller
+    // screen without overlapping, and back on the full one exactly where they were; their saved places never move.
+    #[test]
+    fn a_window_size_never_moves_the_panels_places() {
+        let mut gui = State::new().gui;
+        let (asked, head) = (120.0, 16.0);
+        let draw = |gui: &mut Gui, w: f32, h: f32| {
+            lay_out(gui, asked, panel_width(asked, w), w, h, head);
+            gui.panels.iter().map(|p| [p.x, p.y]).collect::<Vec<_>>()
+        };
+        // The first frame lays the panels out in a row; then a layout of your own: Client dragged right, low down.
+        draw(&mut gui, 960.0, 540.0);
+        gui.panels[5].home = [800.0, 300.0];
+        let full = draw(&mut gui, 960.0, 540.0);
+        let homes: Vec<[f32; 2]> = gui.panels.iter().map(|p| p.home).collect();
+        for (w, h) in [(640.0, 360.0), (1.0, 1.0), (0.0, 0.0), (320.0, 240.0), (640.0, 360.0)] {
+            let small = draw(&mut gui, w, h);
+            let width = panel_width(asked, w);
+            if w >= 640.0 {
+                for pair in small.windows(2).take(4) {
+                    assert!(pair[1][0] >= pair[0][0] + width, "{w}: {small:?}");
+                }
+            }
+            assert!(small.iter().all(|p| p[0] >= 0.0 && p[0] <= (w - width).max(0.0) && p[1] >= 0.0));
+        }
+        assert_eq!(gui.panels.iter().map(|p| p.home).collect::<Vec<_>>(), homes);
+        assert_eq!(draw(&mut gui, 960.0, 540.0), full);
+        // Saved and loaded: the places, not where a small window drew them.
+        let mut state = State::new();
+        state.gui = gui.clone();
+        let _ = draw(&mut state.gui, 640.0, 360.0);
+        let mut loaded = State::new();
+        loaded.load_text(&state.save_text());
+        assert_eq!(loaded.gui.panels.iter().map(|p| p.home).collect::<Vec<_>>(), homes);
+    }
+}

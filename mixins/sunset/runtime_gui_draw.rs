@@ -125,6 +125,39 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
     out.push(Shape::Text("Done".to_owned(), [done[0] + (done[2] - tw) / 2.0, done[1] + text_y(done[3])], 0xFFFFFF));
 }
 
+// The width the panels are drawn: the Panel width asked for, or less, so all of them sit in a row on a screen `w` wide.
+pub(super) fn panel_width(asked: f32, w: f32) -> f32 {
+    let fits = ((w - 4.0 - 3.0 * (CATEGORIES.len() as f32 - 1.0)) / CATEGORIES.len() as f32).floor();
+    asked.min(fits).max(50.0)
+}
+
+// Where each panel is drawn on a screen `w` by `h`, the panels `width` wide (`asked` wanted). Each panel's place of
+// your own (its home) stays as you left it, spaced for the Panel width asked for; where it is drawn is worked out from
+// it every frame, spread or closed up to the width the panels have now and kept on the screen. So no window size (F11
+// out and back, a resize, the sizes a window passes through on the way) moves a place: the panels come back where
+// they were, apart as they were.
+pub(super) fn lay_out(gui: &mut Gui, asked: f32, width: f32, w: f32, h: f32, head: f32) {
+    if gui.laid_for > 0.0 && gui.laid_for != asked {
+        // Another Panel width: the places spread or close up with it, so a layout of your own keeps its shape.
+        let k = (asked + 3.0) / (gui.laid_for + 3.0);
+        for p in gui.panels.iter_mut().filter(|p| p.home[0] >= 0.0) {
+            p.home[0] = 2.0 + (p.home[0] - 2.0).max(0.0) * k;
+        }
+    }
+    gui.laid_for = asked;
+    // Panels with no place yet go left to right in a row (the width drawn always fits one).
+    let mut x = 2.0;
+    for p in gui.panels.iter_mut().filter(|p| p.home[0] < 0.0) {
+        p.home = [x, 32.0];
+        x += asked + 3.0;
+    }
+    let k = (width + 3.0) / (asked + 3.0);
+    for p in &mut gui.panels {
+        p.x = (2.0 + (p.home[0] - 2.0) * k).clamp(0.0, (w - width).max(0.0));
+        p.y = p.home[1].clamp(0.0, (h - head).max(0.0));
+    }
+}
+
 pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: f32, out: &mut Vec<Shape>) {
     check_measured(game);
     follow_drag(game, w, h);
@@ -142,36 +175,13 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         smooth::frame(targets);
     });
     // The panels are as wide as asked, or as wide as lets all of them sit in a row.
-    let fits = ((w - 4.0 - 3.0 * (CATEGORIES.len() as f32 - 1.0)) / CATEGORIES.len() as f32).floor();
-    let width = f32::from_bits(LOOK[1].load(Ordering::Relaxed)).min(fits).max(50.0);
-    let before = LOOK[4].swap(width.to_bits(), Ordering::Relaxed);
-    let was = f32::from_bits(before);
+    let asked = wanted_panel_w();
+    let width = panel_width(asked, w);
+    LOOK[4].store(width.to_bits(), Ordering::Relaxed);
     with(|s| {
         s.gui.view_h = h;
         s.gui.view_w = w;
-        if before != 0 && was != width {
-            // Another width: the panels spread or close up and a layout of your own keeps its shape.
-            let k = (width + 3.0) / (was + 3.0);
-            for p in s.gui.panels.iter_mut().filter(|p| p.x >= 0.0) {
-                p.x = (2.0 + (p.x - 2.0) * k).max(0.0);
-            }
-        }
-        // Panels with no place yet go left to right, in a second row when the
-        // window is narrow.
-        let mut x = 2.0;
-        let mut y = 32.0;
-        for p in s.gui.panels.iter_mut().filter(|p| p.x < 0.0) {
-            if x + panel_w() > w {
-                x = 2.0;
-                y += head_h() + 3.0;
-            }
-            (p.x, p.y) = (x, y);
-            x += panel_w() + 3.0;
-        }
-        for p in &mut s.gui.panels {
-            p.x = p.x.clamp(0.0, (w - panel_w()).max(0.0));
-            p.y = p.y.clamp(0.0, (h - head_h()).max(0.0));
-        }
+        lay_out(&mut s.gui, asked, width, w, h, head_h());
         // The Dashboard has no panels to keep in order.
         if super::sunset_dashboard::on() {
             return;
@@ -198,11 +208,13 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         let mut win = s.gui.window?;
         win.about_h = if about.is_empty() { 0.0 } else { about.len() as f32 * 10.0 + 4.0 };
         win.content = win_body(s, win.module).1;
+        // Drawn where it was opened or dragged to (its home), kept on the screen; the home itself stays.
+        (win.x, win.y) = (win.home[0], win.home[1]);
         win.room = (h - 4.0 - win.y.max(0.0) - head_h() - win.about_h - body_pad()).max(row_hh() * 3.0);
         win.scroll = win.scroll.clamp(0.0, (win.content - win.room).max(0.0));
         let [_, _, ww, wh] = win_frame(s, &win);
-        win.x = win.x.clamp(0.0, (w - ww).max(0.0));
-        win.y = win.y.clamp(0.0, (h - wh).max(0.0));
+        win.x = win.home[0].clamp(0.0, (w - ww).max(0.0));
+        win.y = win.home[1].clamp(0.0, (h - wh).max(0.0));
         s.gui.window = Some(win);
         Some((win, win_frame(s, &win), win_rows(s), about))
     });

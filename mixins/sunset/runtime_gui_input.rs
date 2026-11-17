@@ -294,7 +294,10 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             (Hit::Module(i), true) => {
                 s.gui.window = match s.gui.window {
                     Some(w) if w.module == i => None,
-                    _ => Some(Win { module: i, x: (s.gui.view_w - win_w(s)) / 2.0, y: 40.0, scroll: 0.0, about_h: 0.0, content: 0.0, room: 0.0 }),
+                    _ => {
+                        let at = [(s.gui.view_w - win_w(s)) / 2.0, 40.0];
+                        Some(Win { module: i, x: at[0], y: at[1], home: at, scroll: 0.0, about_h: 0.0, content: 0.0, room: 0.0 })
+                    }
                 };
                 s.binding = None;
             }
@@ -485,6 +488,9 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
             let p = &mut s.gui.panels[c];
             p.x = (at.0 - dx).clamp(0.0, (w - panel_w()).max(0.0));
             p.y = (at.1 - dy).clamp(0.0, (h - head_h()).max(0.0));
+            // Dropped here: its place of your own, spaced back to the Panel width asked for (the layout spaces it to
+            // the width drawn).
+            p.home = [2.0 + (p.x - 2.0) * (wanted_panel_w() + 3.0) / (panel_w() + 3.0), p.y];
         }
         Some(Drag::Slider(i, j, r, scale)) => {
             // The look follows as it is dragged, but for what moves the panels: that waits for the release (save).
@@ -495,7 +501,8 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
         }
         Some(Drag::Window(dx, dy)) => {
             if let Some(win) = &mut s.gui.window {
-                (win.x, win.y) = (at.0 - dx, at.1 - dy);
+                win.home = [(at.0 - dx).max(0.0), (at.1 - dy).max(0.0)];
+                (win.x, win.y) = (win.home[0], win.home[1]);
             }
         }
         Some(Drag::Hud(name, dx, dy)) => move_hud(s, game, name, dx, dy),
