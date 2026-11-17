@@ -4,7 +4,7 @@ use abi::*;
 use core::ffi::c_void;
 use libloading::Library;
 use std::fs::{self, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Write};
 use std::marker::PhantomData;
 use std::mem::{align_of, size_of};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -12,7 +12,12 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::thread::{self, ThreadId};
 
+// The engine is built for the game's system (the Windows one with the GNU toolchain: a plain C ABI DLL) and
+// named the way that system names a shared library.
+#[cfg(windows)]
 pub const ENGINE_FILE: &str = "sunset_baritone_engine.dll";
+#[cfg(not(windows))]
+pub const ENGINE_FILE: &str = "libsunset_baritone_engine.so";
 pub const ENGINE_VERSION: &str = "1.1.52";
 
 // Option<extern fn> has the C nullable-function-pointer representation. Receive
@@ -65,11 +70,18 @@ impl RawApiV1 {
 
 // Source-inserted game modules cannot use include_bytes at this transformer pin.
 // Only this independent crate includes the staged payload, as opaque data.
-#[cfg(feature = "bundled-engine")]
+#[cfg(all(feature = "bundled-engine", windows))]
 pub fn bundled_engine_bytes() -> &'static [u8] {
     include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../../native-data/sunset_baritone/engine/x86_64-pc-windows-msvc/sunset_baritone_engine.dll"
+        "/../../../native-data/sunset_baritone/engine/x86_64-pc-windows-gnu/sunset_baritone_engine.dll"
+    ))
+}
+#[cfg(all(feature = "bundled-engine", not(windows)))]
+pub fn bundled_engine_bytes() -> &'static [u8] {
+    include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../native-data/sunset_baritone/engine/x86_64-unknown-linux-gnu/libsunset_baritone_engine.so"
     ))
 }
 
@@ -112,31 +124,66 @@ pub fn engine_path(root: &Path, bundled: &[u8]) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+#[cfg(windows)]
 fn check_architecture(path: &Path) -> Result<(), String> {
+    use std::io::{Seek, SeekFrom};
     let mut file =
-        fs::File::open(path).map_err(|e| format!("Baritone DLL {}: {e}", path.display()))?;
+        fs::File::open(path).map_err(|e| format!("Baritone engine {}: {e}", path.display()))?;
     let mut dos = [0u8; 64];
     file.read_exact(&mut dos)
-        .map_err(|_| "Baritone DLL has no PE header")?;
+        .map_err(|_| "Baritone engine library is not a Windows PE library")?;
     if &dos[..2] != b"MZ" {
-        return Err("Baritone DLL is not a Windows PE library".into());
+        return Err("Baritone engine library is not a Windows PE library".into());
     }
     let offset = u32::from_le_bytes(dos[60..64].try_into().expect("four-byte slice"));
     if offset > 16 * 1024 * 1024 {
-        return Err("Baritone DLL PE offset is invalid".into());
+        return Err("Baritone engine PE offset is invalid".into());
     }
     file.seek(SeekFrom::Start(u64::from(offset)))
         .map_err(|e| e.to_string())?;
     let mut pe = [0u8; 24];
     file.read_exact(&mut pe)
-        .map_err(|_| "Baritone DLL PE header is truncated")?;
+        .map_err(|_| "Baritone engine PE header is truncated")?;
     if &pe[..4] != b"PE\0\0" || u16::from_le_bytes([pe[4], pe[5]]) != 0x8664 {
-        return Err("Baritone DLL must be x86_64 MSVC, matching the game".into());
+        return Err("Baritone engine must be x86_64, matching the game".into());
     }
     if u16::from_le_bytes([pe[22], pe[23]]) & 0x2000 == 0 {
         return Err("Baritone engine is not a DLL".into());
     }
     Ok(())
+}
+
+#[cfg(not(windows))]
+fn check_architecture(path: &Path) -> Result<(), String> {
+    let mut file =
+        fs::File::open(path).map_err(|e| format!("Baritone engine {}: {e}", path.display()))?;
+    let mut elf = [0u8; 20];
+    file.read_exact(&mut elf)
+        .map_err(|_| "Baritone engine library is not an ELF library")?;
+    if &elf[..4] != b"\x7fELF" || elf[4] != 2 || elf[5] != 1 {
+        return Err("Baritone engine library is not an ELF library".into());
+    }
+    if u16::from_le_bytes([elf[18], elf[19]]) != 0x3e {
+        return Err("Baritone engine must be x86_64, matching the game".into());
+    }
+    if u16::from_le_bytes([elf[16], elf[17]]) != 3 {
+        return Err("Baritone engine is not a shared library".into());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+unsafe fn load(path: &Path) -> Result<Library, libloading::Error> {
+    unsafe { Library::new(path) }
+}
+
+// Never unmapped on Linux (RTLD_NODELETE, glibc's 0x1000): the engine's thread-local destructors stay registered
+// with the threads that called it, and a thread ending after an unload would run code that is gone.
+#[cfg(not(windows))]
+unsafe fn load(path: &Path) -> Result<Library, libloading::Error> {
+    use libloading::os::unix;
+    const RTLD_NODELETE: std::os::raw::c_int = 0x1000;
+    unsafe { unix::Library::open(Some(path), unix::RTLD_NOW | unix::RTLD_LOCAL | RTLD_NODELETE) }.map(Library::from)
 }
 
 /// The library outlives its instance/function table. Rc marker and creator thread
@@ -154,15 +201,14 @@ impl Runtime {
         if !path.is_absolute() {
             return Err("Baritone DLL path must be absolute".into());
         }
-        if !cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-            return Err("Baritone engine V1 requires Windows x86_64".into());
+        if !cfg!(all(any(windows, target_os = "linux"), target_arch = "x86_64")) {
+            return Err("Baritone engine V1 runs on x86_64 Windows and Linux".into());
         }
         check_architecture(path)?;
         // SAFETY: absolute user-selected or bundled library; architecture checked.
         // The entry point and callback contract is ABI v1. An incompatible native
         // library can still violate that contract; it is executable code.
-        let library =
-            unsafe { Library::new(path) }.map_err(|e| format!("Baritone DLL load: {e}"))?;
+        let library = unsafe { load(path) }.map_err(|e| format!("Baritone engine load: {e}"))?;
         let discover = unsafe { library.get::<DiscoverV1>(b"horizon_baritone_api_v1\0") }
             .map_err(|e| format!("Baritone DLL discovery: {e}"))?;
         let mut output = RawApiV1::empty();
@@ -410,7 +456,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let file = root.join("bad.dll");
         fs::write(&file, [0u8; 128]).unwrap();
-        assert!(Runtime::open(&file).err().unwrap().contains("PE"));
+        assert!(Runtime::open(&file).err().unwrap().contains("is not a"));
     }
 
     struct EmptyHost;

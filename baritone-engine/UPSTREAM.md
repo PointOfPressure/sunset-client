@@ -2,8 +2,7 @@
 
 Vendored from [luhnox/horizon-baritone](https://github.com/luhnox/horizon-baritone),
 commit `41e1b720dc2028d06618cb8f7cf55f2697bba83c`, version 1.1.52,
-on 2026-11-16. The read-only source checkout was
-`D:\sunset-work\horizon-baritone`.
+on 2026-11-16.
 
 The upstream `src/` tree and `tests/data/` fixtures are retained here. The
 standalone library compiles upstream's pure module graph, including its real
@@ -21,9 +20,9 @@ reinterpreted as another licence grant. `license-file` points to the LGPL text.
 See `CHANGES.md` for the integration changes and `DEPENDENCIES.md` for transport
 and third-party dependencies.
 
-Sunset's host controller uses a separately built, replaceable engine DLL. The
+Sunset's host controller uses a separately built, replaceable engine library. The
 MIT companion is independently authored and has no Cargo dependency on this
 engine. A compatible modified engine can be selected using the documented
 override path without rebuilding the game. Corresponding-source archives must
 include this tree, the MIT `mixins/baritone/{loader,interface}` sources, the
-companion MIT licence and `tools/build-baritone.ps1` at their relative paths.
+loader's MIT licence and `tools/pack.py` (which builds the engine) at their relative paths.

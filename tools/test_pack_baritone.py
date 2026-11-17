@@ -37,7 +37,7 @@ class Packages(unittest.TestCase):
         self.write("mixins/baritone/horizon-native.json", json.dumps({"schema": 1, "id": "sunset_baritone", "version": "1.1.52", "game": "26.3", "horizon": self.horizon, "mixins": self.mixins}))
         self.write("mixins/baritone/horizon-mixin.toml", f'[mod]\nid="sunset_baritone"\nversion="1.1.52"\n[compatibility]\nhorizon_revision="{self.horizon}"\n[[crate]]\nid="loader"\npath="loader"\n')
         self.write("mixins/baritone/loader/Cargo.toml", '[package]\nname="sunset-baritone-loader"\nversion="1.0.0"\n[dependencies]\nlibloading="0.8.9"\n')
-        self.write("mixins/baritone/loader/src/lib.rs", 'pub fn bundled() -> &\'static [u8] { include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../native-data/sunset_baritone/engine/x86_64-pc-windows-msvc/sunset_baritone_engine.dll")) }\n')
+        self.write("mixins/baritone/loader/src/lib.rs", 'pub fn bundled() -> &\'static [u8] { include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../native-data/sunset_baritone/engine/x86_64-unknown-linux-gnu/libsunset_baritone_engine.so")) }\n')
         self.write("mixins/baritone/LICENSE", b"MIT loader licence\r\n")
         for name in ("mixins/baritone/interface/abi-v1.rs", "mixins/baritone/loader/src/abi.rs", "baritone-engine/src/abi.rs"):
             self.write(name, b"// independently authored MIT ABI\r\n")
@@ -51,16 +51,16 @@ class Packages(unittest.TestCase):
             notice = b"unaltered upstream notice\r\n" + bytes([i, 0xff])
             self.write("baritone-engine/" + name, notice)
             self.write("mixins/baritone/notices/" + name, notice)
-        self.write("tools/build-baritone.ps1", "# independent DLL build\n")
-        self.write("tools/build-playable.ps1", "# optimized native client build\n")
         self.write("tools/pack.py", pathlib.Path(pack.__file__).read_bytes())
         self.write("docs/baritone.md", "# Replacement and source\n")
-        payload = bytearray(256)
-        payload[:2] = b"MZ"
-        payload[60:64] = (128).to_bytes(4, "little")
-        payload[128:134] = b"PE\0\0\x64\x86"
-        payload[150:152] = (0x2000).to_bytes(2, "little")
-        return self.write(f"mixins/baritone/data/engine/{pack.TARGET}/{pack.DLL}", bytes(payload))
+        dll = bytearray(256)
+        dll[:2] = b"MZ"
+        dll[60:64] = (128).to_bytes(4, "little")
+        dll[128:134] = b"PE\0\0\x64\x86"
+        dll[150:152] = (0x2000).to_bytes(2, "little")
+        so = b"\x7fELF\x02\x01" + bytes(10) + b"\x03\x00\x3e\x00" + bytes(64)
+        self.engines = {"x86_64-unknown-linux-gnu": so, "x86_64-pc-windows-gnu": bytes(dll)}
+        return self.engines
 
     def test_plain_pack_needs_no_companion_and_preserves_seed_notices(self):
         outputs = pack.package(self.root)
@@ -72,10 +72,10 @@ class Packages(unittest.TestCase):
                 self.assertEqual(archive.read("mixins/sunset/" + name), (self.root / "mixins/sunset" / name).read_bytes())
 
     def test_companion_and_source_are_complete_with_byte_exact_notices(self):
-        dll = self.companion()
+        engines = self.companion()
         for name in ("baritone-engine/target/debug/secret.pdb", "baritone-engine/target/debug/build.rs", "mixins/baritone/loader/target/cache.rs", "baritone-engine/tmp/stale.rs", "baritone-engine/resources/game.json", "baritone-engine/crash.log"):
             self.write(name, "must not ship")
-        outputs = pack.package(self.root, with_baritone=True)
+        outputs = pack.package(self.root, with_baritone=True, engines=self.engines)
         self.assertEqual(len(outputs), 2)
         prefix = "mixins/sunset/baritone/"
         with zipfile.ZipFile(outputs[0]) as sunset, zipfile.ZipFile(outputs[0]) as companion, zipfile.ZipFile(outputs[1]) as source:
@@ -89,7 +89,8 @@ class Packages(unittest.TestCase):
                     self.assertIn(expected, combined)
                 else:
                     self.assertEqual(sunset.read("mixins/sunset/data/notices/baritone/" + name), expected)
-            self.assertEqual(companion.read(f"mixins/sunset/data/baritone/engine/{pack.TARGET}/{pack.DLL}"), dll.read_bytes())
+            for target, payload in engines.items():
+                self.assertEqual(companion.read(f"mixins/sunset/data/baritone/engine/{target}/{pack.ENGINES[target]}"), payload)
             self.assertIn(prefix + "loader/Cargo.toml", companion.namelist())
             loader = companion.read(prefix + "loader/src/lib.rs")
             self.assertIn(b"native-data/sunset/baritone/engine/", loader)
@@ -98,17 +99,18 @@ class Packages(unittest.TestCase):
             # from the root data/ directory; the corresponding source stays intact.
             literal = re.search(rb'"(/\.\./\.\./\.\./native-data/[^\"]+)"', loader).group(1)
             staged_relative = literal.decode().split("/native-data/sunset/", 1)[1]
-            self.assertEqual(companion.read("mixins/sunset/data/" + staged_relative), dll.read_bytes())
+            self.assertEqual(companion.read("mixins/sunset/data/" + staged_relative), engines["x86_64-unknown-linux-gnu"])
             self.assertEqual(source.read("mixins/baritone/loader/src/lib.rs"),
                              (self.root / "mixins/baritone/loader/src/lib.rs").read_bytes())
             self.assertNotIn("baritone-engine/Cargo.toml", companion.namelist())
-            for name in ("baritone-engine/Cargo.lock", "baritone-engine/tests/data/oracle.bin", "tools/build-baritone.ps1", "tools/build-playable.ps1", "mixins/baritone/interface/abi-v1.rs", "docs/baritone.md"):
+            for name in ("baritone-engine/Cargo.lock", "baritone-engine/tests/data/oracle.bin", "mixins/baritone/interface/abi-v1.rs", "docs/baritone.md"):
                 self.assertIn(name, source.namelist())
             self.assertFalse(any("/target/" in name or name.endswith((".dll", ".pdb", ".log")) for name in source.namelist()))
-            self.assertEqual(json.loads(source.read("ENGINE-BINARY.json"))["sha256"], hashlib.sha256(dll.read_bytes()).hexdigest())
+            self.assertEqual({lib["target"]: lib["sha256"] for lib in json.loads(source.read("ENGINE-BINARY.json"))["libraries"]},
+                             {target: hashlib.sha256(payload).hexdigest() for target, payload in engines.items()})
 
     def test_invalid_linkage_notice_and_architecture_fail_before_repacking(self):
-        dll = self.companion()
+        engines = self.companion()
         outputs = pack.package(self.root)
         original = outputs[0].read_bytes()
         for name, content, reason in (
@@ -116,20 +118,26 @@ class Packages(unittest.TestCase):
             ("mixins/baritone/loader/Cargo.toml", '[package]\nname="loader"\nversion="1.0.0"\n[target.\'cfg(windows)\'.dependencies]\nengine={package="sunset-baritone-engine",version="1.1.52"}\n', "cannot depend"),
             ("mixins/baritone/notices/NOTICE.md", "missing attribution", "notice differs"),
             ("mixins/baritone/loader/src/abi.rs", "incompatible ABI", "ABI declarations differ"),
-            (str(dll.relative_to(self.root)), b"not a dll", "Not a Windows engine DLL"),
         ):
             with self.subTest(name=name):
                 path = self.root / name
                 before = path.read_bytes()
                 self.write(name, content)
                 with self.assertRaisesRegex(ValueError, reason):
-                    pack.package(self.root, with_baritone=True)
+                    pack.package(self.root, with_baritone=True, engines=self.engines)
                 self.assertEqual(outputs[0].read_bytes(), original)
                 path.write_bytes(before)
+        for target, reason in (("x86_64-pc-windows-gnu", "not an x86_64 DLL"), ("x86_64-unknown-linux-gnu", "not an x86_64 ELF")):
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(ValueError, reason):
+                    pack.package(self.root, with_baritone=True, engines={**engines, target: b"not a library"})
+                self.assertEqual(outputs[0].read_bytes(), original)
+        with self.assertRaisesRegex(ValueError, "exactly"):
+            pack.package(self.root, with_baritone=True, engines={"x86_64-pc-windows-gnu": engines["x86_64-pc-windows-gnu"]})
 
     def test_launcher_id_and_file_allowlist_regressions(self):
         self.companion()
-        package = pack.package(self.root, with_baritone=True)[0]
+        package = pack.package(self.root, with_baritone=True, engines=self.engines)[0]
         with zipfile.ZipFile(package, "a", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("mixins/sunset/baritone/interface/protocol-v1.md", "must be under data or use README prefix")
         with self.assertRaisesRegex(ValueError, "Horizon rejects native archive path"):
@@ -151,7 +159,7 @@ class Packages(unittest.TestCase):
         declarations = re.sub(r'(?m)^(source|helper) = "([^"]+)"', r'\1 = "upstream/\2"', declarations)
         manifest = self.root / "mixins/baritone/horizon-mixin.toml"
         manifest.write_text(manifest.read_text() + "\n" + declarations, encoding="utf-8")
-        package, source = pack.package(self.root, with_baritone=True)
+        package, source = pack.package(self.root, with_baritone=True, engines=self.engines)
         with zipfile.ZipFile(package) as native, zipfile.ZipFile(source) as corresponding:
             parsed = tomllib.loads(manifest.read_text())
             combined = tomllib.loads(native.read("mixins/sunset/horizon-mixin.toml").decode())

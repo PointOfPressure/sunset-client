@@ -6,7 +6,7 @@ the LGPL engine crate. The loader owns every game-side unsafe operation.
 
 Discovery symbol: `horizon_baritone_api_v1`. The discovery output is uninitialized
 until success; pass `size_of::<ApiV1>()`. ABI and exact table size must equal v1.
-The DLL uses C calling conventions and the game's x86_64 MSVC architecture.
+The library uses C calling conventions and the game's x86_64 architecture (Linux or Windows).
 Return codes: 0 OK, 1 unsupported ABI/operation, 2 bad request, 3 host unavailable,
 4 insufficient pure-query buffer, 5 engine failure. Each successful dispatch
 emits exactly one complete response synchronously, with at most 4 MiB. A failing
@@ -136,10 +136,10 @@ loaded=0 for unknown/unloaded, never fabricated air. Flags are 0 or 1.
 
 ## Replacement
 
-Stock DLL: `data/engine/x86_64-pc-windows-msvc/sunset_baritone_engine.dll`.
-Runtime override: `<native_data_dir("sunset_baritone")>/engine-override/
-sunset_baritone_engine.dll`. Otherwise extract stock to `engine/1.1.52/<asset
-hash>/sunset_baritone_engine.dll` using create-new semantics. An existing
+Stock library: `data/engine/<target>/<file>`, `x86_64-unknown-linux-gnu/libsunset_baritone_engine.so` or
+`x86_64-pc-windows-gnu/sunset_baritone_engine.dll`. Runtime override:
+`<native_data_dir("sunset_baritone")>/engine-override/<file>`. Otherwise extract stock to
+`engine/1.1.52/<asset hash>/<file>` using create-new semantics. An existing
 modified extraction is preserved and loaded. Explicit invalid override fails
 closed with no stock fallback. Absolute paths only, no PATH/CWD search.
 Library lifetime covers engine destruction and all callbacks; restart after

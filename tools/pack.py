@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-# Plain packaging remains Sunset-only. --with-baritone also consumes a separately built engine DLL.
+# Packs dist/sunset-<version>.hnmod. With Baritone (the default when mixins/baritone exists) it first builds the LGPL
+# engine from baritone-engine/ for Linux and Windows (cargo, the x86_64-pc-windows-gnu target and a mingw-w64 linker)
+# and ships both libraries beside the full runtime, plus baritone-engine-<version>-source.zip.
 import argparse
 import hashlib
 import json
@@ -12,16 +14,16 @@ import tempfile
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-TARGET = "x86_64-pc-windows-msvc"
-DLL = "sunset_baritone_engine.dll"
+# Rust target -> the library file the loader looks for on that system.
+ENGINES = {"x86_64-unknown-linux-gnu": "libsunset_baritone_engine.so", "x86_64-pc-windows-gnu": "sunset_baritone_engine.dll"}
 NOTICES = ("LICENSE", "COPYING", "NOTICE.md", "LICENSE-Part-2.jpg", "UPSTREAM.md", "CHANGES.md", "DEPENDENCIES.md")
 UNPACKED = 'const COMMIT: &str = "unpacked";'
 EXCLUDED_DIRS = {"target", ".git", ".cache", ".local", "__pycache__", "node_modules", "dist", "tmp", "temp", "saves", "resources", "native-data", ".horizon-mod-data"}
 EXCLUDED_SUFFIXES = {".dll", ".so", ".dylib", ".pdb", ".lib", ".exp", ".exe", ".pyc", ".tmp", ".log"}
 THIRD_PARTY = """Baritone engine: horizon-baritone by luhnox, based on Baritone 1.21.4 by leijurv and contributors.
 The separately replaceable engine is LGPL-3.0 under its upstream terms; its rights are separate from Sunset's licence.
-The companion's loader and ABI are MIT. See the accompanying notices and baritone-engine-<version>-source.zip.
-Install both .hnmod packages. DLL replacement and source build instructions: docs/baritone.md in the source archive.
+The loader and ABI are MIT. See the accompanying notices and baritone-engine-<version>-source.zip.
+Replacing the engine library and building it from source: docs/baritone.md in the source archive.
 """
 
 
@@ -90,7 +92,7 @@ def validate_native_archive(path):
             raise ValueError("Native archive manifest/metadata identity or revision mismatch")
 
 
-def validate_baritone(root, dll, target):
+def validate_baritone(root, engines):
     companion = root / "mixins" / "baritone"
     engine = root / "baritone-engine"
     metadata = json.loads((companion / "horizon-native.json").read_text(encoding="utf-8"))
@@ -129,20 +131,36 @@ def validate_baritone(root, dll, target):
         copy = companion / "notices" / name
         if copy.exists() and copy.read_bytes() != original:
             raise ValueError(f"Companion notice differs from engine: {name}")
-    for path in (engine / "Cargo.lock", companion / "LICENSE", root / "tools" / "build-baritone.ps1", root / "tools" / "build-playable.ps1", root / "docs" / "baritone.md"):
+    for path in (engine / "Cargo.lock", companion / "LICENSE", root / "docs" / "baritone.md"):
         if not path.is_file():
             raise ValueError(f"Required corresponding-source file missing: {path}")
-    if target != TARGET:
-        raise ValueError(f"Only the verified Windows target {TARGET} is supported")
-    payload = dll.read_bytes()
-    if len(payload) < 64 or payload[:2] != b"MZ":
-        raise ValueError(f"Not a Windows engine DLL: {dll}; run tools/build-baritone.ps1 first")
-    offset = int.from_bytes(payload[60:64], "little")
-    if payload[offset:offset + 6] != b"PE\0\0\x64\x86":
-        raise ValueError(f"Engine DLL must be x86_64 PE: {dll}")
-    if offset + 24 > len(payload) or not int.from_bytes(payload[offset + 22:offset + 24], "little") & 0x2000:
-        raise ValueError(f"PE asset is not a DLL: {dll}")
-    return metadata, cargo["package"]["version"], payload
+    if set(engines) != set(ENGINES):
+        raise ValueError(f"Engine libraries are needed for exactly {sorted(ENGINES)}")
+    for target, payload in engines.items():
+        check_engine(target, payload)
+    return metadata, cargo["package"]["version"], engines
+
+
+def check_engine(target, payload):
+    if "windows" in target:
+        offset = int.from_bytes(payload[60:64], "little") if len(payload) >= 64 and payload[:2] == b"MZ" else -1
+        if offset < 0 or payload[offset:offset + 6] != b"PE\0\0\x64\x86" or offset + 24 > len(payload) \
+                or not int.from_bytes(payload[offset + 22:offset + 24], "little") & 0x2000:
+            raise ValueError(f"The {target} engine is not an x86_64 DLL")
+    elif payload[:6] != b"\x7fELF\x02\x01" or payload[16:20] != b"\x03\x00\x3e\x00":
+        raise ValueError(f"The {target} engine is not an x86_64 ELF shared library")
+
+
+def build_engines(root):
+    """Builds the engine from source for every shipped target; nothing prebuilt is packed."""
+    engine = root / "baritone-engine"
+    target_dir = root / "target" / "baritone-engine"
+    built = {}
+    for target, file in ENGINES.items():
+        subprocess.run(["cargo", "build", "--release", "--locked", "--target", target, "--manifest-path", str(engine / "Cargo.toml"),
+                        "--target-dir", str(target_dir)], check=True, env={**os.environ, "RUSTFLAGS": "-Dwarnings"})
+        built[target] = (target_dir / target / "release" / file).read_bytes()
+    return built
 
 
 def pack_sunset(root, output, manifest, commit, with_baritone=False):
@@ -219,11 +237,11 @@ def builtin_baritone(root, sunset, companion):
     (sunset.parent/"sunset.hnmod").write_bytes(sunset.read_bytes())
 
 
-def pack_baritone(root, output, metadata, engine_version, payload, target):
+def pack_baritone(root, output, metadata, engine_version, engines):
     companion = root / "mixins" / "baritone"
     engine = root / "baritone-engine"
     prefix = f"mixins/{metadata['id']}"
-    out = output / f"sunset-baritone-{metadata['version']}-{target}.hnmod"
+    out = output / f"sunset-baritone-{metadata['version']}.hnmod"
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.write(companion / "horizon-native.json", "horizon-native.json")
         for path in source_files(companion):
@@ -234,7 +252,8 @@ def pack_baritone(root, output, metadata, engine_version, payload, target):
             if not native_allowed(relative):
                 relative = "data/docs/" + relative
             archive.write(path, f"{prefix}/{relative}")
-        archive.writestr(f"{prefix}/data/engine/{target}/{DLL}", payload)
+        for target, payload in engines.items():
+            archive.writestr(f"{prefix}/data/engine/{target}/{ENGINES[target]}", payload)
         archive.writestr(f"{prefix}/NOTICE.third-party.md", THIRD_PARTY)
         for name, path in notice_files(engine):
             archive.write(path, f"{prefix}/data/notices/{name}")
@@ -250,23 +269,25 @@ def pack_baritone(root, output, metadata, engine_version, payload, target):
                 archive.write(path, path.relative_to(root).as_posix())
         for name, path in notice_files(engine):
             archive.write(path, f"mixins/baritone/notices/{name}")
-        for name in ("tools/build-baritone.ps1", "tools/build-playable.ps1", "tools/pack.py", "docs/baritone.md"):
+        for name in ("tools/pack.py", "docs/baritone.md"):
             archive.write(root / name, name)
-        archive.writestr("ENGINE-BINARY.json", json.dumps({"engine_version": engine_version, "target": target,
-            "file": DLL, "sha256": hashlib.sha256(payload).hexdigest(), "source": source.name}, indent=2) + "\n")
+        archive.writestr("ENGINE-BINARY.json", json.dumps({"engine_version": engine_version, "source": source.name, "libraries": [
+            {"target": target, "file": ENGINES[target], "sha256": hashlib.sha256(payload).hexdigest()} for target, payload in engines.items()]},
+            indent=2) + "\n")
     with zipfile.ZipFile(out) as archive, zipfile.ZipFile(source) as sources:
         for name, path in notice_files(engine):
             expected = path.read_bytes()
             if archive.read(f"{prefix}/data/notices/{name}") != expected or sources.read(f"baritone-engine/{name}") != expected:
                 raise ValueError(f"Packaged notice is not byte-identical: {name}")
-        if archive.read(f"{prefix}/data/engine/{target}/{DLL}") != payload:
-            raise ValueError("Packaged DLL differs from the explicitly built engine")
+        for target, payload in engines.items():
+            if archive.read(f"{prefix}/data/engine/{target}/{ENGINES[target]}") != payload:
+                raise ValueError(f"Packaged {target} engine differs from the one built")
         if any(name.endswith(('.pdb', '.lib', '.exp')) or name.startswith("baritone-engine/") for name in archive.namelist()):
             raise ValueError("Companion includes link inputs or engine implementation")
     return out, source
 
 
-def package(root=ROOT, with_baritone=None, dll=None, target=TARGET):
+def package(root=ROOT, with_baritone=None, engines=None):
     if with_baritone is None:
         with_baritone = (root / "mixins/baritone/full.rs").is_file()
     manifest = json.loads((root / "horizon-native.json").read_text(encoding="utf-8"))
@@ -274,14 +295,13 @@ def package(root=ROOT, with_baritone=None, dll=None, target=TARGET):
     output.mkdir(exist_ok=True)
     bundle = None
     if with_baritone:
-        dll = pathlib.Path(dll) if dll else root / "mixins" / "baritone" / "data" / "engine" / target / DLL
-        bundle = validate_baritone(root, dll, target)
+        bundle = validate_baritone(root, engines if engines is not None else build_engines(root))
     git = lambda *args: subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True).stdout.strip()
     commit = (git("rev-parse", "--short", "HEAD") or "unknown") + ("-dirty" if git("status", "--porcelain") else "")
     outputs = [pack_sunset(root, output, manifest, commit, with_baritone)]
     if bundle:
         with tempfile.TemporaryDirectory(prefix="baritone-pack-", dir=output) as scratch:
-            companion, sources = pack_baritone(root, pathlib.Path(scratch), *bundle, target)
+            companion, sources = pack_baritone(root, pathlib.Path(scratch), *bundle)
             builtin_baritone(root, outputs[0], companion)
             source_out = output / sources.name
             shutil.copy2(sources, source_out)
@@ -294,12 +314,9 @@ if __name__ == "__main__":
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--with-baritone", action="store_true", default=None, help="build one Sunset package with full Baritone and its engine")
     selection.add_argument("--without-baritone", action="store_false", dest="with_baritone", help="development-only Sunset subset without Baritone runtime")
-    parser.add_argument("--baritone-dll", type=pathlib.Path, help="explicit prebuilt engine DLL (requires --with-baritone)")
     args = parser.parse_args()
-    if args.baritone_dll and not args.with_baritone:
-        parser.error("--baritone-dll requires --with-baritone")
     try:
-        for path in package(with_baritone=args.with_baritone, dll=args.baritone_dll):
+        for path in package(with_baritone=args.with_baritone):
             print(path)
-    except (OSError, ValueError, KeyError) as error:
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Packaging failed: {error}\n")
