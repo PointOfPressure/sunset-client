@@ -7,6 +7,7 @@
 # defaults, the arena bare, nothing held or open, the player healthy in
 # survival in the middle of the platform. So the full run gives what each test
 # gives alone.
+# Failed checks, unknown selected names and runs with no executed checks exit nonzero.
 #
 # Tests that need a second player (on a server) use the control wrapper in the
 # CTL2 environment variable and are skipped without it; it plays Bot1.
@@ -32,7 +33,9 @@ results = []
 
 
 def ctl(*args, timeout=90):
-    r = subprocess.run([CTL, *args], capture_output=True, text=True, timeout=timeout)
+    socket = os.environ.get("SUNSET_VERIFY_SOCKET")
+    command = [CTL, "--socket", socket] if socket else [CTL]
+    r = subprocess.run([*command, *args], capture_output=True, text=True, timeout=timeout)
     out = r.stdout.strip()
     try:
         return json.loads(out) if out else {}
@@ -7090,6 +7093,9 @@ def _():
         antibot_fixture([])
 
 def session_dir():
+    session = os.environ.get("SUNSET_VERIFY_SESSION")
+    if session:
+        return session
     with open(os.path.join(os.path.dirname(CTL), "session")) as f:
         return f.read().strip()
 
@@ -12619,8 +12625,18 @@ def _():
     return share > 0.3 and plain < red / 4, f"red share with Custom fog {share:.2f}; red pixels without {plain}"
 
 
-# ---- the plugin API (version 2), through the example plugins (sunset-plugins: hello, afk) and the test plugin
+# ---- the plugin API, through the example plugins (sunset-plugins: hello, afk) and the test plugin
 # (tools/plugcheck), all three staged next to Sunset on the test machine. They answer in chat: the log has it.
+
+def plugin_api_matches(text):
+    """The release gate pins this to its host; ordinary runs accept compatible API versions."""
+    header = re.search(r"\bPlugins \(\d+, plugin API (\d+)\):", text)
+    if not header:
+        return False
+    version = int(header.group(1))
+    expected = os.environ.get("SUNSET_PLUGIN_API_VERSION")
+    return version == int(expected) if expected is not None else version >= 2
+
 
 def said_since(mark, *lines, settle=4):
     """Types each line, waits, and gives what Sunset said since mark."""
@@ -12650,8 +12666,8 @@ def _():
     text = " | ".join(said)
     listed = all(x in text for x in ("hello 0.2.0 - modules: Hello - commands: .hello",
                                      "afk 0.1.0 - modules: AFK Fisher - commands: .afk",
-                                     "plugcheck 0.1.0 - modules: Plug Check - commands: .plugcheck",
-                                     "plugin API 2"))
+                                     "plugcheck 0.1.0 - modules: Plug Check - commands: .plugcheck"))
+    version_ok = plugin_api_matches(text)
     bad_id = "Bad Id 0.1.0" in text and "OFF: its id" in text
     helped = ".hello - say Hello's message" in text and ".afk - AFK Fisher" in text and ".plugins - the plugins loaded" in text
     start = " | ".join(sunset_said(0))
@@ -12661,8 +12677,8 @@ def _():
     mark = log_mark()
     ka = said_since(mark, ".settings killaura")
     kept = any("Range" in l for l in ka)
-    ok = listed and bad_id and helped and all(refused) and kept
-    return ok, f"listed {listed}, bad id shown {bad_id}, .help {helped}, refused at load {refused}, Kill Aura kept {kept}"
+    ok = listed and version_ok and bad_id and helped and all(refused) and kept
+    return ok, f"listed {listed}, API version {version_ok}, bad id shown {bad_id}, .help {helped}, refused at load {refused}, Kill Aura kept {kept}"
 
 
 @test("Plugin API: Hello module, settings and enable/disable")
@@ -14166,6 +14182,9 @@ def _():
 
 
 if __name__ == "__main__":
+    unknown = sorted(set(ONLY) - {fn.test_name for fn in TESTS})
+    if unknown:
+        sys.exit("Unknown test name(s): " + ", ".join(unknown))
     import signal
     has_alarm = hasattr(signal, "SIGALRM")
     if has_alarm:
@@ -14195,4 +14214,5 @@ if __name__ == "__main__":
     print(f"\n{p}/{len(results)} passed")
     for test, screen in kicks:
         print(f"KICKED during {test}: {screen}")
+    sys.exit(0 if results and p == len(results) else 1)
 

@@ -7,3 +7,6 @@ By opening a pull request you confirm you wrote the change (or are allowed to gi
 Keep your work in its own files where you can, so changes don't collide.
 
 Run `tools/verify.py` if you can (see the README).
+
+Before publishing a release, run the [plugin release check](docs/plugin-release.md). It builds Hello, AFK Fisher
+and plugcheck with the host, runs their in-game checks, and packs only after every required check passes.

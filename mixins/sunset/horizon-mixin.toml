@@ -2506,6 +2506,16 @@ bindings = [
   { name = "source", ty = "crate::chat::ChatSource", value = "source" },
 ]
 
+# Player and disguised server chat use add_signed, which does not call add.
+[[injection]]
+id = "debug_player_chat"
+kind = "HEAD"
+target = "horizon_client_render::chat::Chat::add_signed"
+helper = "debug_player_chat_hook.rs"
+bindings = [
+  { name = "content", ty = "&crate::text::Text", value = "&content" },
+]
+
 [[module]]
 id = "hud_bars"
 file = "crates/horizon-client/src/game.rs"

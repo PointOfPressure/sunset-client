@@ -126,7 +126,7 @@ fn setup(p: &mut api::Plugin) {
             packet.cancel();
         }
         // A non-move packet turned into a move packet: refused.
-        if REPLACE.swap(false, std::sync::atomic::Ordering::Relaxed) && !packet.is_move() {
+        if !packet.is_move() && REPLACE.swap(false, std::sync::atomic::Ordering::Relaxed) {
             packet.replace(api::packets::Serverbound::MovePlayerStatus(api::packets::MovePlayerStatus { flags: 1 }));
             seen("replaced");
         }
@@ -203,9 +203,9 @@ fn run(game: &mut Game<'_>, args: &[&str]) {
             say(game, b);
             let c = api::say_server(game, &"x".repeat(300)).map(|()| String::new());
             say(game, c);
+            REPLACE.store(true, std::sync::atomic::Ordering::Relaxed);
             let d = api::say_server(game, "plugcheck-chat from the plugin").map(|()| "said".to_owned());
             say(game, d);
-            REPLACE.store(true, std::sync::atomic::Ordering::Relaxed);
         }
         "tasks" => {
             let runs = std::sync::Arc::new(Mutex::new((0u32, 0u32)));
