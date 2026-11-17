@@ -12821,7 +12821,21 @@ def _():
     # characters and sends a short line; a packet turned into a move packet is refused (one move packet a tick). Then
     # plugcrash's command panics: the game goes on, plugcrash is off (.plugins says why) and its command says so.
     mark = log_mark()
-    said = said_since(mark, ".plugcheck send", settle=10)
+    # The command is a packet that isn't a move packet for the armed replace to act on (an idle player may send
+    # none for a while; a command typed in the chat box doesn't reach the server from a test).
+    # After other tests the game can be many seconds behind the typed line: the command goes once the line has run
+    # (its "said" reply), and the refusal is waited for; 30 s at most each.
+    said_since(mark, ".plugcheck send", settle=1)
+    for _ in range(30):
+        if any("plugcheck ok: said" in line for line in sunset_said(mark)):
+            break
+        wait(1)
+    cmd("time query daytime")
+    for _ in range(30):
+        wait(1)
+        said = sunset_said(mark)
+        if any("can't be replaced by a move packet" in line for line in said):
+            break
     text = " | ".join(said)
     sends = ["plugcheck err: Move packets can't be sent" in text, "plugcheck err: Change the held slot with api::hold" in text,
              "256 characters at most" in text, "plugcheck ok: said" in text,

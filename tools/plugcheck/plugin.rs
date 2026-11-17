@@ -125,8 +125,8 @@ fn setup(p: &mut api::Plugin) {
             seen("blocked");
             packet.cancel();
         }
-        // A non-move packet turned into a move packet: refused.
-        if REPLACE.swap(false, std::sync::atomic::Ordering::Relaxed) && !packet.is_move() {
+        // A non-move packet turned into a move packet: refused. (A move packet going first leaves the flag set.)
+        if !packet.is_move() && REPLACE.swap(false, std::sync::atomic::Ordering::Relaxed) {
             packet.replace(api::packets::Serverbound::MovePlayerStatus(api::packets::MovePlayerStatus { flags: 1 }));
             seen("replaced");
         }

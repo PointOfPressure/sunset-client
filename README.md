@@ -42,6 +42,7 @@ The command downloads Sunset, builds it into Horizon and starts the game. The fi
 and takes **10 to 30 minutes**; later updates are quicker. On Linux it may ask for your password once, to install
 two system libraries the build needs.
 
+
 After that, start the **Native mods** instance from the launcher whenever you want to play with Sunset.
 
 **Which Horizon version?** Each Sunset release is built for one Horizon version, and the Native mods instance runs on
@@ -363,6 +364,11 @@ The API reference, a template, build scripts and two example plugins (Hello and 
   (`horizon-mixins apply --workspace <horizon at that commit> --mods mixins --out stage`), then run
   `cargo check -p horizon-client` in the stage.
 - `tools/verify.py` runs modules in a test arena in a headless game.
+- Before a release, `python3 tools/plugsmoke.py` builds Sunset with the plugin SDK's examples (hello and afk from a
+  [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) checkout, `SDK=`) and the test plugin
+  `tools/plugcheck` on Sunset's pin, then runs verify.py's `Plugin API:` checks on single player and Horizon's
+  server. It stops the release on a pin or API mismatch, a plugin left out of the build, a compiler warning or a
+  failed check. Paths and options are at the top of the script.
 
 What's planned and what a contribution needs: [feature roadmap](docs/feature-roadmap.md) and
 [CONTRIBUTING.md](CONTRIBUTING.md).
