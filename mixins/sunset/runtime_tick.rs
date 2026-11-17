@@ -109,6 +109,8 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     // Liquid Filler's Drain and Chest Swap's Take off: likewise.
     super::sunset_drain::pre_tick(game, hits || game.selected != selected);
     super::sunset_takeoff::pre_tick(game, hits || game.selected != selected);
+    // Elytra Target's rockets and the slot back after one: likewise.
+    super::sunset_elytra_target::pre_tick(game, hits || game.selected != selected);
     // Middle Click Extra's use and slot back: likewise.
     let hits = middle_click_tick(game, hits || game.selected != selected) || hits;
     let mods = snapshot();
@@ -778,6 +780,8 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_server_scan::tick(game, mods.iter().find(|m| m.name == "Server Scan" && m.on));
     super::sunset_client_spoofer::tick(game, mods.iter().find(|m| m.name == super::sunset_client_spoofer::NAME && m.on));
     crit_tick(game);
+    // Elytra Target's look first: Kill Aura hits by it.
+    super::sunset_elytra_target::post_tick(game);
     if let Some(m) = get("Kill Aura") {
         kill_aura(game, m, get("Criticals").is_some());
     }

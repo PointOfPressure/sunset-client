@@ -6,6 +6,8 @@
 // - `adaptive_step`: a turn that is fast when far off, settles near the point, holds still inside a deadzone, and lands
 //   exactly when a hit is due.
 // - `smart_score` and `Recent`: the composite target priority and Switch's memory of whom it hit.
+// - `rotation_step`: the explosive auras' turn toward a target (Rust's rotation step).
+// - Elytra Target's steering and firework timing (the section at the end).
 
 pub(super) type V3 = [f64; 3];
 
@@ -293,6 +295,134 @@ impl Recent {
     }
 }
 
+// ---- the explosive auras' turn
+
+// The look a tick turns toward a target (Rust's rotation step): a stride that grows with the distance and the speed, a
+// little shorter at random, at most 25 degrees, in whole steps of the mouse.
+pub fn rotation_step(base: [f32; 2], desired: [f32; 2], quantum: f64, speed: f64, random: f64) -> Option<[f32; 2]> {
+    if !base.iter().chain(desired.iter()).all(|n| n.is_finite())
+        || !quantum.is_finite()
+        || quantum <= 0.
+        || !speed.is_finite()
+        || speed < 0.
+        || !random.is_finite()
+    {
+        return None;
+    }
+    let yaw = f64::from((desired[0] - base[0] + 180.).rem_euclid(360.) - 180.);
+    let pitch = f64::from(desired[1] - base[1]);
+    let distance = yaw.hypot(pitch);
+    let mut scale = 1.;
+    if distance >= 1e-4 && speed > 0. {
+        let mut stride = (0.313 * distance + 1.56 * speed).min(distance);
+        if stride < distance {
+            stride *= 0.85 + 0.15 * random.clamp(0., 1.);
+        }
+        scale = stride / distance;
+    }
+    let axis = yaw.abs().max(pitch.abs()) * scale;
+    if axis > 25. {
+        scale *= 25. / axis;
+    }
+    let cap = (25. / quantum).floor().max(1.);
+    let counts = |delta: f64| ((delta * scale / quantum) + 0.5).floor().clamp(-cap, cap);
+    Some([
+        (f64::from(base[0]) + counts(yaw) * quantum) as f32,
+        (f64::from(base[1]) + counts(pitch) * quantum).clamp(-90., 90.) as f32,
+    ])
+}
+
+// ---- Elytra Target
+//
+// Elytra Target's steering and firework timing, apart from the game (elytra_target.rs feeds it positions and answers):
+// - `predicted`: where a gliding target will be a couple of ticks on (Kill Aura's `Track`, its last move carried on),
+//   with an optional gravity drop; a target that is not gliding is aimed at where it is.
+// - `aim_point`: the eyes or the middle of its box.
+// - `hold_pitch`: inside Ideal distance and with no hit due, the look tips up so the glide bleeds speed (a climb slows
+//   an elytra) and keeps its distance; with the hit due it goes straight at the target.
+// - `step`: one tick's turn, never past Yaw/Pitch speed, cut to whole mouse counts, and no turn at all inside the
+//   deadzone (an unchanged look is never sent again).
+// - `firework_due`: a rocket when the target is beyond Firework distance and Firework delay has passed since the last.
+// All steering is the look alone: the game's own glide physics turn it into motion, as a mouse would.
+
+// Gravity's pull over the ticks ahead for Gravity drop, blocks a tick squared (an entity's 0.08, as a glide that is
+// not lifting feels it).
+const GRAVITY: f64 = 0.08;
+// The most Ideal distance tips the look up, degrees, reached when the target is right beside you.
+const HOLD_MAX: f32 = 30.0;
+// Safe's climb: the look at least this far up while the next tick's box would hit a block.
+pub(super) const SAFE_PITCH: f32 = -35.0;
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Ahead {
+    pub on: bool,
+    pub ticks: f64,
+    pub gliding_only: bool,
+    pub gravity: bool,
+}
+
+// Where the target is expected `cfg.ticks` ahead, as a shift from where it is now.
+pub(super) fn predicted(track: &Track, now: V3, gliding: bool, cfg: Ahead) -> V3 {
+    if !cfg.on || (cfg.gliding_only && !gliding) {
+        return [0.0; 3];
+    }
+    let ticks = cfg.ticks.clamp(0.0, 2.0);
+    let to = track.predict(Prediction::Basic, ticks, ticks);
+    let drop = if cfg.gravity { 0.5 * GRAVITY * ticks * ticks } else { 0.0 };
+    [to[0] - now[0], to[1] - now[1] - drop, to[2] - now[2]]
+}
+
+// The eyes (high in the box, so a gliding body's low box too) or the middle of the box.
+pub(super) fn aim_point(lo: V3, hi: V3, eyes: bool) -> V3 {
+    let share = if eyes { 0.85 } else { 0.5 };
+    [(lo[0] + hi[0]) / 2.0, lo[1] + (hi[1] - lo[1]) * share, (lo[2] + hi[2]) / 2.0]
+}
+
+// How far up (negative pitch) to tip the look this tick: none from Ideal distance out or with the hit due.
+pub(super) fn hold_pitch(distance: f64, ideal: f64, close_in: bool) -> f32 {
+    if close_in || ideal <= 0.0 || distance >= ideal {
+        return 0.0;
+    }
+    -HOLD_MAX * ((ideal - distance) / ideal) as f32
+}
+
+// The look to aim for: at `point` from `eye`, tipped by `hold`, and up to Safe's climb when the next tick would collide.
+pub(super) fn wanted(eye: V3, point: V3, hold: f32, colliding: bool) -> (f32, f32) {
+    let (yaw, pitch) = look_at(eye, point);
+    let pitch = (pitch + hold).clamp(-90.0, 90.0);
+    (yaw, if colliding { pitch.min(SAFE_PITCH) } else { pitch })
+}
+
+fn wrap(d: f32) -> f32 {
+    (d + 180.0).rem_euclid(360.0) - 180.0
+}
+
+// One tick's turn from `from` toward `to`: at most `cap` (yaw, pitch) degrees, in whole counts of `count` degrees
+// (rounded toward `from`, so never past the cap), yaw continuous with `from` (no fold into ±180, no 360 snap), and
+// `from` itself inside the deadzone.
+pub(super) fn step(from: (f32, f32), to: (f32, f32), cap: (f32, f32), count: f32) -> (f32, f32) {
+    let dy = wrap(to.0 - from.0);
+    let dp = to.1 - from.1;
+    if dy.hypot(dp) <= DEADZONE {
+        return from;
+    }
+    let count = count.max(1e-4);
+    let whole = |d: f32, cap: f32| (d.clamp(-cap.max(0.0), cap.max(0.0)) / count).trunc() * count;
+    (from.0 + whole(dy, cap.0), (from.1 + whole(dp, cap.1)).clamp(-90.0, 90.0))
+}
+
+// A rocket now: the target beyond `distance`, `delay` ticks since the last one (or none yet), and nothing holding it
+// back (`wait`: Kill Aura's hit about to go, with Sync).
+pub(super) fn firework_due(target_distance: f64, distance: f64, now: u64, last: Option<u64>, delay: u64, wait: bool) -> bool {
+    target_distance > distance && !wait && last.is_none_or(|t| now >= t + delay)
+}
+
+// With Sync with Kill Aura: while Kill Aura is engaged, a rocket goes only in the ticks just after its hit went (the
+// tick it was planned in, the next one that sends it, then two free ones), never in a tick a hit could go in.
+pub(super) fn sync_wait(engaged: bool, now: u64, last_hit: Option<u64>) -> bool {
+    engaged && !last_hit.is_some_and(|t| now >= t + 2 && now <= t + 3)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -404,5 +534,140 @@ mod tests {
         assert_eq!(r.last(1), None, "bounded: the oldest are forgotten");
         // Smart priority keeps the held target over a near tie.
         assert!(smart_score(3.0, 6.0, 10.0, false, true, true) < smart_score(2.8, 6.0, 8.0, false, true, false));
+    }
+}
+
+#[cfg(test)]
+mod elytra_tests {
+    use super::*;
+
+    fn glide(track: &mut Track, from: V3, vel: V3, ticks: u32) -> V3 {
+        let mut p = from;
+        for _ in 0..ticks {
+            track.observe(7, p);
+            p = [p[0] + vel[0], p[1] + vel[1], p[2] + vel[2]];
+        }
+        [p[0] - vel[0], p[1] - vel[1], p[2] - vel[2]]
+    }
+
+    const ON: Ahead = Ahead { on: true, ticks: 1.9, gliding_only: true, gravity: false };
+
+    #[test]
+    fn a_gliding_target_is_led_by_its_velocity_times_the_ticks() {
+        let mut t = Track::default();
+        let now = glide(&mut t, [0.0, 100.0, 0.0], [1.5, -0.2, 0.0], 5);
+        let s = predicted(&t, now, true, ON);
+        assert!((s[0] - 2.85).abs() < 1e-6 && (s[1] + 0.38).abs() < 1e-6 && s[2].abs() < 1e-9, "{s:?}");
+    }
+
+    #[test]
+    fn a_target_not_gliding_or_prediction_off_is_aimed_where_it_is() {
+        let mut t = Track::default();
+        let now = glide(&mut t, [0.0, 100.0, 0.0], [0.3, 0.0, 0.0], 5);
+        assert_eq!(predicted(&t, now, false, ON), [0.0; 3]);
+        assert_eq!(predicted(&t, now, true, Ahead { on: false, ..ON }), [0.0; 3]);
+        // Gliding targets only off: a walker is led too.
+        let s = predicted(&t, now, false, Ahead { gliding_only: false, ..ON });
+        assert!((s[0] - 0.57).abs() < 1e-6, "{s:?}");
+    }
+
+    #[test]
+    fn gravity_drop_lowers_the_lead_and_ticks_are_capped_at_two() {
+        let mut t = Track::default();
+        let now = glide(&mut t, [0.0, 100.0, 0.0], [1.0, 0.0, 0.0], 5);
+        let s = predicted(&t, now, true, Ahead { gravity: true, ticks: 2.0, ..ON });
+        assert!((s[1] + 0.16).abs() < 1e-9 && (s[0] - 2.0).abs() < 1e-9, "{s:?}");
+        let capped = predicted(&t, now, true, Ahead { ticks: 9.0, ..ON });
+        assert!((capped[0] - 2.0).abs() < 1e-9, "{capped:?}");
+    }
+
+    #[test]
+    fn eyes_sit_high_in_the_box_and_body_in_the_middle() {
+        let (lo, hi) = ([0.0, 10.0, 0.0], [0.6, 11.8, 0.6]);
+        let e = aim_point(lo, hi, true);
+        let b = aim_point(lo, hi, false);
+        assert!((e[1] - 11.53).abs() < 1e-9 && (b[1] - 10.9).abs() < 1e-9 && e[0] == 0.3 && b[2] == 0.3);
+    }
+
+    #[test]
+    fn inside_ideal_distance_the_look_tips_up_unless_the_hit_is_due() {
+        assert_eq!(hold_pitch(15.0, 10.0, false), 0.0);
+        assert_eq!(hold_pitch(10.0, 10.0, false), 0.0);
+        assert!((hold_pitch(5.0, 10.0, false) + 15.0).abs() < 1e-6);
+        assert!((hold_pitch(0.0, 10.0, false) + HOLD_MAX).abs() < 1e-6);
+        assert_eq!(hold_pitch(2.0, 10.0, true), 0.0);
+        assert_eq!(hold_pitch(2.0, 0.0, false), 0.0);
+    }
+
+    #[test]
+    fn safe_climbs_only_when_the_next_tick_collides() {
+        let eye = [0.0, 100.0, 0.0];
+        let level = wanted(eye, [0.0, 90.0, 10.0], 0.0, false);
+        assert!(level.1 > 40.0 && level.0.abs() < 1e-4);
+        assert_eq!(wanted(eye, [0.0, 90.0, 10.0], 0.0, true).1, SAFE_PITCH);
+        // Already climbing harder than Safe's: kept.
+        assert!(wanted(eye, [0.0, 120.0, 5.0], 0.0, true).1 < SAFE_PITCH);
+        // The hold tips it up from the straight line.
+        assert!((wanted(eye, [0.0, 100.0, 10.0], -12.0, false).1 + 12.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn a_step_never_passes_the_caps_and_takes_the_short_way() {
+        let count = 0.15;
+        let s = step((170.0, 0.0), (-170.0, 80.0), (45.0, 35.0), count);
+        // -170 is 20 degrees on from 170, the short way: yaw goes up past 180 (continuous), not back through 0.
+        assert!(s.0 > 170.0 && s.0 - 170.0 <= 20.0 + 1e-3, "{s:?}");
+        assert!(s.1 > 0.0 && s.1 <= 35.0 + 1e-4, "{s:?}");
+        let big = step((0.0, 0.0), (179.0, -90.0), (45.0, 35.0), count);
+        assert!(big.0 <= 45.0 + 1e-4 && big.0 > 44.0 && big.1 >= -35.0 - 1e-4, "{big:?}");
+        // Whole mouse counts: each move is a multiple of the count.
+        for d in [s.0 - 170.0, s.1, big.0, big.1] {
+            let n = d / count;
+            assert!((n - n.round()).abs() < 1e-2, "{d} is not whole counts");
+        }
+    }
+
+    #[test]
+    fn a_settled_look_does_not_move_so_no_duplicate_is_sent() {
+        assert_eq!(step((10.0, 5.0), (10.2, 5.1), (45.0, 35.0), 0.15), (10.0, 5.0));
+        assert_eq!(step((10.0, 5.0), (10.0, 5.0), (45.0, 35.0), 0.15), (10.0, 5.0));
+        // Just outside the deadzone but under one count: no change either.
+        let s = step((0.0, 0.0), (0.5, 0.0), (45.0, 35.0), 1.0);
+        assert_eq!(s, (0.0, 0.0));
+    }
+
+    #[test]
+    fn steering_converges_on_a_fixed_look_without_overshoot() {
+        let mut look = (0.0_f32, 0.0_f32);
+        let to = (135.0_f32, -40.0_f32);
+        let mut moved = Vec::new();
+        for _ in 0..12 {
+            let next = step(look, to, (45.0, 35.0), 0.15);
+            moved.push(wrap(next.0 - look.0).abs().max((next.1 - look.1).abs()));
+            assert!(wrap(to.0 - next.0) >= -0.15 && next.1 >= to.1 - 0.15, "{next:?} passed {to:?}");
+            look = next;
+        }
+        assert!(wrap(to.0 - look.0).abs() < 0.5 && (to.1 - look.1).abs() < 0.5, "{look:?}");
+        // AimModulo360: never a yaw step anywhere near 320 degrees.
+        assert!(moved.iter().all(|&d| d <= 45.0 + 1e-3));
+    }
+
+    #[test]
+    fn fireworks_go_beyond_the_distance_after_the_delay() {
+        assert!(firework_due(20.0, 16.0, 100, None, 10, false));
+        assert!(!firework_due(12.0, 16.0, 100, None, 10, false));
+        assert!(!firework_due(20.0, 16.0, 105, Some(100), 10, false));
+        assert!(firework_due(20.0, 16.0, 110, Some(100), 10, false));
+        assert!(!firework_due(20.0, 16.0, 110, Some(100), 10, true));
+    }
+
+    #[test]
+    fn sync_lets_a_rocket_go_only_just_after_kill_auras_hit() {
+        assert!(!sync_wait(false, 50, None));
+        assert!(sync_wait(true, 50, None));
+        assert!(sync_wait(true, 50, Some(49)));
+        assert!(!sync_wait(true, 50, Some(48)));
+        assert!(!sync_wait(true, 50, Some(47)));
+        assert!(sync_wait(true, 50, Some(46)));
     }
 }

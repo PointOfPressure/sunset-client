@@ -681,6 +681,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_anchor_aura::defaults());
     v.extend(super::sunset_melee::defaults());
     v.extend(super::sunset_auto_mace::defaults());
+    v.extend(super::sunset_elytra_target::defaults());
     v.extend(super::sunset_combat_inventory::defaults());
     v.extend(super::sunset_lag::defaults());
     v.extend(super::sunset_backtrack::defaults());

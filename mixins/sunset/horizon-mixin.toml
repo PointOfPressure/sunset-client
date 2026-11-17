@@ -2135,12 +2135,6 @@ name = "sunset_explosive_tactics"
 source = "explosive_tactics.rs"
 
 [[module]]
-id = "aura_policy"
-file = "crates/horizon-client/src/game.rs"
-name = "sunset_aura_policy"
-source = "aura_policy.rs"
-
-[[module]]
 id = "snap_tap"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_snap_tap"
@@ -2584,6 +2578,12 @@ id = "target_strafe"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_target_strafe"
 source = "target_strafe.rs"
+
+[[module]]
+id = "elytra_target"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_elytra_target"
+source = "elytra_target.rs"
 
 [[module]]
 id = "auto_mace"

@@ -311,6 +311,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Offhand" => "totem auto totem inventory totem hover totem crystal gapple double hand predict double hand mainhand totem",
         "Auto Weapon" => "shield breaker axe sword swap best weapon swap hit totem hit",
         "Auto Spear" => "spear lunge instant lunge reach poke spear reach extended reach damage indicator spear swap",
+        "Elytra Target" => "elytratarget elytra target glide chase firework rocket kill aura aim",
         "Auto Mace" => "mace smash stun slam axe density breach trigger silent aim elytra takeoff hitbox swap back",
         "Crystal Aura" => "crystal macro auto hit crystal autohitcrystal auto obby crystal perfect timing",
         "Cart" => "tnt minecart cart pvp auto cart cart aura xbow cart crossbow safe cart cover refill cart refill pearl catch",

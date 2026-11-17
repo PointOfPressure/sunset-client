@@ -500,6 +500,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
     match cmd.as_str() {
         "seed" => seed_command(game, &args[1..]),
         "auradebug" => say(game, &super::sunset_aura::diagnostics()),
+        "elytratarget" => say(game, &super::sunset_elytra_target::diagnostics()),
         "antibotdebug" => {
             let id = args.get(1).and_then(|id| id.parse::<u32>().ok());
             for line in super::sunset_antibot::diagnostics(game, id) { say(game, &line); }

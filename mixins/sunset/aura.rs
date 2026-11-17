@@ -154,6 +154,8 @@ struct As {
     aimed_at: Option<([f64; 3], [f64; 3], f32)>,
     // Hits sent and not yet seen to land (target id, tick), and the counts .auradebug shows.
     pending: Vec<(u32, u64)>,
+    // The tick of the last hit sent (Elytra Target's Sync with Kill Aura times its rockets by it).
+    last_hit: Option<u64>,
     stats: Stats,
 }
 
@@ -326,7 +328,7 @@ fn centre(t: &Target) -> [f64; 3] {
 }
 
 // In plain sight: a clear line to its head, middle or feet, so someone half behind a block still counts.
-fn in_sight(game: &Game<'_>, t: &Target) -> bool {
+pub(super) fn in_sight(game: &Game<'_>, t: &Target) -> bool {
     let c = centre(t);
     [c, [c[0], t.hi[1] - 0.1, c[2]], [c[0], t.lo[1] + 0.1, c[2]]].iter().any(|&p| clear_line(game, p, [i32::MIN; 3]))
 }
@@ -723,9 +725,22 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     });
     // Aiming waits for Rotation range (the target stays chosen meanwhile).
     let rotate_mode = if m.p("Rotate") == "Always" && reach(eye, &primary) > m.n("Rotation range") { "None" } else { m.p("Rotate") };
+    // Elytra Target steers the look while you glide (Override Kill Aura): no turn of its own, and nothing silent left
+    // on the wire, as the glide goes by the look the move packet carries.
+    let steered = super::sunset_elytra_target::steering();
+    let rotate_mode = if steered { "None" } else { rotate_mode };
     let silent = rotate_mode == "Always" && m.p("Rotation mode") == "Silent aura";
     let attack_range = m.n("Attack range");
-    if !silent {
+    if steered {
+        st(|s| {
+            s.managed = None;
+            s.silent_target = None;
+            s.look = None;
+            s.aimed = None;
+        });
+        super::sunset_rotation::let_go();
+        super::sunset::cancel_turns(HAND);
+    } else if !silent {
         silent_return(game, m);
     }
     // The look this tick: from where the last tick's got to (or your own), a step toward the target. Silent tells only
@@ -861,7 +876,9 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             stab_hits(game, m, eye, on_hit.unwrap_or(server), t)
         } else if let Some(look) = on_hit {
             !ray_cast || meets(look)
-        } else if ray_cast {
+        } else if ray_cast || steered {
+            // Steered: the server judges the hit by the look it has or the one sent right after (Grim's Hitboxes and
+            // Reach take either), so one of them has to meet the box.
             meets(server) || (!legacy && meets(coming))
         } else if rotate_mode == "Always" {
             // No Ray cast: the rotation need not meet the box, but a look far off it (a new target's first tick, a
@@ -884,6 +901,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
                 s.pending.remove(0);
             }
             s.pending.push((t.id, tick));
+            s.last_hit = Some(tick);
         });
         hit = true;
     }
@@ -980,6 +998,11 @@ mod preset_tests {
 // Who Kill Aura is hitting.
 pub(super) fn target_id() -> Option<u32> {
     st(|s| s.target)
+}
+
+// The tick its last hit was sent in.
+pub(super) fn last_hit_tick() -> Option<u64> {
+    st(|s| s.last_hit)
 }
 
 pub(super) fn diagnostics() -> String {

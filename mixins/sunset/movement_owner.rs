@@ -39,7 +39,7 @@ pub(super) fn current() -> Option<Lease> { BROKER.lock().unwrap_or_else(|e| e.in
 pub(super) fn conflict(mods: &[super::sunset::Module]) -> Option<&'static str> {
     mods.iter().find(|m| (m.name == "Inventory Manager" && m.b("Auto Armor")) || m.on && matches!(m.name,
         "Flight" | "Speed" | "Scaffold" | "Packet Mine" | "Nuker" | "Kill Aura" | "Trigger Bot" |
-        "Crystal Aura" | "Anchor Aura" | "Cart" | "PvP Bot" | "Auto Mace" | "Auto Spear" |
+        "Crystal Aura" | "Anchor Aura" | "Cart" | "PvP Bot" | "Auto Mace" | "Elytra Target" | "Auto Spear" |
         "Auto Tool" | "Auto Eat" | "Auto Gap" | "Inventory Manager" | "Auto Replenish" | "Chest Swap" |
         "Offhand" | "Anti AFK" | "Parkour" | "Auto Jump" | "Sneak" | "Elytra Fly" | "Elytra Boost" |
         "Glide" | "Spider" | "High Jump" | "Long Jump" | "Jesus" | "Blink" | "Freecam" |

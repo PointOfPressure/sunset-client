@@ -141,7 +141,7 @@ pub(super) fn next_look(game: &Game<'_>, desired: (f32, f32), speed: f64) -> (f3
         let mut random = RANDOM.lock().unwrap_or_else(|e| e.into_inner());
         random.get_or_insert_with(|| LegacyRandom::new(game.ticks as i64)).next_double()
     };
-    super::sunset_aura_policy::rotation_step([base.0, base.1], [desired.0, desired.1], quantum, speed, random)
+    super::sunset_aura_aim::rotation_step([base.0, base.1], [desired.0, desired.1], quantum, speed, random)
         .map_or((game.yaw, game.pitch), |[yaw, pitch]| (yaw, pitch))
 }
 pub(super) fn same_camera(game: &Game<'_>) -> bool {

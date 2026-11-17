@@ -182,6 +182,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   updates while the player you hit moves away.
 - **Auto Weapon**: picks the weapon for each hit (sword, axe on shields, or both). **Auto Spear**: lunges, jabs and
   reach with the spear. **Auto Mace**: takes the mace while you fall, with Stun slam and Breach checks.
+- **Elytra Target**: while you glide, steers your view at a player for Kill Aura's hits (prediction, Ideal distance,
+  capped turns, Safe climb) and fires rockets from the hotbar or offhand when they get away.
 - **Crystal Aura**, **Anchor Aura**: place and set off crystals or anchors on enemies, or on your right click
   (Macro). Never more self damage than *Max self damage*. **Crystal Optimizer** breaks hit crystals at once.
 - **PvP Bot**: fights the nearest player by itself, with a sword or with crystals and anchors.
@@ -462,6 +464,9 @@ Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal 
 and coordinates) and Low health warning.
 
 </details>
+
+Elytra Target was asked for by muhalo1545 on the Sunset Discord; its behaviour follows LiquidBounce's ElytraTarget
+(GPL-3.0), written fresh for Sunset with no code taken.
 
 Ore Sim's automatic seed discovery uses [horizon-seedcrackerx](https://github.com/luhnox/horizon-seedcrackerx) by
 [luhnox](https://github.com/luhnox), a Rust port of [SeedCrackerX](https://github.com/19MisterX98/SeedcrackerX),

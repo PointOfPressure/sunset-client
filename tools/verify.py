@@ -3910,6 +3910,212 @@ def _():
         f"drop in 20 ticks: off {drop_off:.2f}, on {drop_on:.2f}; with W held {ahead:.1f} blocks")
 
 
+def ely_glide(y_up, yaw=0, pitch=10):
+    """An elytra on, `y_up` blocks over the arena facing (yaw, pitch), and a jump press in the fall to open it: gliding?"""
+    cmd("item replace entity @s armor.chest with minecraft:elytra", f"tp @s {X0 + 0.5} {Y + y_up} {Z0 + 0.5} {yaw} {pitch}")
+    wait(4)
+    held_keys(("space",), 3)
+    wait(2)
+    return bool(state()["player"].get("fall_flying"))
+
+
+def ely_said():
+    mark = log_mark()
+    say(".elytratarget")
+    wait(2)
+    return next((c for c in sunset_said(mark) if c.startswith("Elytra Target:")), "")
+
+
+def look_steps(mark):
+    """The move packets' looks since `mark`: (largest yaw step, largest pitch step, looks sent twice in a row)."""
+    looks = probe_looks(mark)
+    pairs = list(zip(looks, looks[1:]))
+    yaw = max((abs(wrap(b[0] - a[0])) for a, b in pairs), default=0.0)
+    pitch = max((abs(b[1] - a[1]) for a, b in pairs), default=0.0)
+    return yaw, pitch, sum(1 for a, b in pairs if a == b)
+
+
+def late_actions(mark):
+    """Uses, slot changes and hits after the tick's move packet (Grim's PacketOrderO), from the probe since `mark`."""
+    late = 0
+    for t in probe_ticks(mark):
+        moved = False
+        for line in t:
+            if line == "order move":
+                moved = True
+            elif moved and line in (f"pkt {USE_ITEM}", f"pkt {SET_CARRIED_ITEM}", "order attack"):
+                late += 1
+    return late
+
+
+@test("Elytra Target (states, turns, rockets)")
+def _():
+    # Bot1 stands on a glass block 30 blocks south and 20 down of where you glide from. (a) Elytra Target on, gliding,
+    # Bot1 not there (spectator): no target, the look you set stays. (b) On, standing on the ground with Bot1 in sight:
+    # no turn. (c) Off, gliding toward a Bot1 off to the side: no turn. (d) On, gliding, Bot1 60 degrees to your
+    # right: the view turns onto Bot1 in capped steps (Yaw speed 10: no move packet's yaw steps more than 10 degrees),
+    # never the same look twice in a row. (e) Rockets in hotbar slot 3 and the sword held: with Bot1 beyond Firework
+    # distance a rocket goes, the sword comes back the next tick, one slot change a tick, none after a use or the move
+    # packet; Auto firework off: none. (f) Rockets in the offhand: one goes with no slot change at all.
+    if not CTL2:
+        return None, "needs a second player"
+    out = {}
+    bx, by, bz = X0 + 30, Y + 50, Z0 + 30
+
+    def bot_on_glass():
+        bot_respawned()
+        cmd(f"setblock {bx} {by - 1} {bz} glass", "gamemode survival Bot1", f"tp Bot1 {bx + 0.5} {by} {bz + 0.5} 0 0")
+        wait(10)
+
+    def counts(line):
+        return tuple(int(re.search(rf"{k} (\d+)", line).group(1)) if re.search(rf"{k} (\d+)", line) else 0
+                     for k in ("turns", "steered", "fireworks"))
+
+    def run(tag, setup, glide=True, yaw=0, pitch=10, ticks=30, after=None):
+        reset()
+        setup()
+        c0 = counts(ely_said())
+        mark = probe_mark()
+        gl = ely_glide(70, yaw, pitch) if glide else True
+        a = aim_view()
+        looks = poll(ticks, 2, aim_view)
+        line = ely_said()
+        steps = look_steps(mark)
+        extra = after(mark) if after else None
+        out[tag] = (gl, a, looks[-1], line, steps, extra, tuple(b - a for a, b in zip(c0, counts(line))))
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}", "clear @s")
+        wait(5)
+
+    cmd("gamemode spectator Bot1")
+    only("elytratarget")
+    run("a no target", lambda: None)
+    bot_on_glass()
+    # (b): standing on the arena floor, Bot1 up on its block in sight.
+    run("b ground", lambda: None, glide=False, ticks=20)
+    only()
+    run("c off", bot_on_glass, yaw=-45)
+    only("elytratarget")
+    setting("elytratarget", "yaw speed", "10")
+    run("d turn", bot_on_glass, yaw=-15, pitch=10, ticks=40)
+    setting("elytratarget", "yaw speed", "45")
+
+    def rockets(mark):
+        return (64 - ctl("inventory").get("counts", {}).get("minecraft:firework_rocket", 0), slot_order(mark),
+                late_actions(mark), state().get("selected"))
+
+    def kit(off=False):
+        bot_on_glass()
+        slot(0, "diamond_sword")
+        if off:
+            cmd("item replace entity @s weapon.offhand with minecraft:firework_rocket 64")
+        else:
+            slot(2, "firework_rocket", 64)
+        ctl("key", "1", "tap")
+
+    setting("elytratarget", "firework distance", "8")
+    setting("elytratarget", "firework delay", "10")
+    run("e rockets", kit, yaw=45, ticks=24, after=rockets)
+    setting("elytratarget", "auto firework", "false")
+    run("e off", kit, yaw=45, ticks=24, after=rockets)
+    setting("elytratarget", "auto firework", "true")
+    run("f offhand", lambda: kit(True), yaw=45, ticks=24, after=rockets)
+    # (g) Kill Aura on too: it hands the look over (steered ticks). (h) Override Kill Aura off, Kill Aura with no one in
+    # its range: Elytra Target still turns, and Kill Aura is not handed the look.
+    only("elytratarget", "killaura")
+    run("g override", bot_on_glass, yaw=-15, ticks=20)
+    setting("elytratarget", "override kill aura", "false")
+    run("h no override", bot_on_glass, yaw=-15, ticks=20)
+    only()
+    cmd(f"setblock {bx} {by - 1} {bz} air")
+    bot_done()
+
+    def turned(tag):
+        _, a, b, *_ = out[tag]
+        return abs(wrap(b[0] - a[0])) + abs(b[1] - a[1])
+
+    # Bot1 from the glide start: where (d) has to turn to.
+    want = math.degrees(math.atan2(-(bx + 0.5 - X0 - 0.5), bz + 0.5 - Z0 - 0.5))
+    a_ok = out["a no target"][0] and "target None" in out["a no target"][3] and turned("a no target") < 0.5
+    b_ok = "target None" in out["b ground"][3] and turned("b ground") < 0.5
+    c_ok = out["c off"][0] and turned("c off") < 0.5
+    d = out["d turn"]
+    d_ok = d[0] and abs(wrap(d[2][0] - want)) < 20 and "turns 0" not in d[3] and d[4][0] <= 10.05 and d[4][2] == 0
+    e, eo, f = out["e rockets"], out["e off"], out["f offhand"]
+    # slot_order: (changes, ticks with two, after the move, after a use); late: uses/swaps/hits after the move.
+    e_ok = (e[0] and e[5][0] >= 1 and e[5][1][1] == 0 and e[5][1][2] == 0 and e[5][1][3] == 0 and e[5][2] == 0
+            and e[5][1][0] == 2 * e[5][0] and e[5][3] == eo[5][3])
+    eo_ok = eo[5][0] == 0 and eo[5][1][0] == 0
+    f_ok = f[0] and f[5][0] >= 1 and f[5][1][0] == 0 and f[5][2] == 0
+    g, h = out["g override"], out["h no override"]
+    g_ok = g[0] and g[6][0] > 0 and g[6][1] > 0
+    h_ok = h[0] and h[6][0] > 0 and h[6][1] == 0
+    ok = a_ok and b_ok and c_ok and d_ok and e_ok and eo_ok and f_ok and g_ok and h_ok
+    return ok, (f"(a) glide {out['a no target'][0]} turned {turned('a no target'):.1f} [{out['a no target'][3]}]; "
+                f"(b) turned {turned('b ground'):.1f} [{out['b ground'][3]}]; (c) off turned {turned('c off'):.1f}; "
+                f"(d) yaw {d[1][0]:.1f}->{d[2][0]:.1f} want {want:.1f}, steps (yaw, pitch, dup) {tuple(round(x, 2) for x in d[4])} "
+                f"[{d[3]}]; (e) rockets, slots (changes, doubled, after move, after use), late, held: {e[5]}; "
+                f"auto off {eo[5]}; (f) offhand {f[5]}; (turns, steered, rockets) with Kill Aura {g[6]}, without "
+                f"Override {h[6]}")
+
+
+@test("Elytra Target chases and hits a gliding player")
+def _():
+    # The end-to-end chase: Bot1 glides south ahead of you (24 blocks, a little higher), you glide after it with Elytra
+    # Target, Kill Aura and rockets in slot 3 (sword held). Within 200 ticks Elytra Target closes in (rockets go while
+    # Bot1 is beyond Firework distance) and Kill Aura's hits land on the gliding Bot1 (its health drops). Along the way:
+    # one move packet per tick looks, never the same look twice in a row, yaw steps within Yaw speed, no slot change
+    # doubled or after a use or the move packet, no use or hit after the move packet.
+    if not CTL2:
+        return None, "needs a second player"
+    reset()
+    bot_ready(z=2.5)
+    cmd("item replace entity Bot1 armor.chest with minecraft:elytra", f"tp Bot1 {X0 + 0.5} {Y + 92} {Z0 + 24.5} 0 15")
+    slot(0, "diamond_sword")
+    slot(2, "firework_rocket", 64)
+    ctl("key", "1", "tap")
+    only("elytratarget", "killaura")
+    hp0 = bot_health()
+    wait(4)
+    ctl2("key", "space", "down")
+    mark = probe_mark()
+    gl = ely_glide(90, 0, 10)
+    ctl2("key", "space", "up")
+    ctl2("look", "0", "15")
+    track = []
+    for _ in range(50):
+        wait(4)
+        me, bot = state()["player"], ctl2("state").get("player") or {}
+        if not me.get("fall_flying") or not bot.get("position"):
+            break
+        track.append((math.dist(me["position"], bot["position"]), bool(bot.get("fall_flying")), bot_health()))
+        if bot_health() < hp0 - 0.5 and len(track) > 3:
+            wait(10)
+            break
+    line, aura = ely_said(), ""
+    mark2 = log_mark()
+    say(".auradebug")
+    wait(2)
+    aura = next((c for c in sunset_said(mark2) if c.startswith("KillAura")), "")
+    hp1 = bot_health()
+    steps = look_steps(mark)
+    swaps = slot_order(mark)
+    late = late_actions(mark)
+    hits = sum(1 for t in probe_ticks(mark) for l in t if l == "order attack")
+    used = 64 - ctl("inventory").get("counts", {}).get("minecraft:firework_rocket", 0)
+    only()
+    cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}", "clear @s")
+    ctl2("key", "space", "up")
+    bot_done()
+    closest = min((d for d, *_ in track), default=99.0)
+    bot_glided = any(g for _, g, _ in track)
+    ok = (gl and bot_glided and hits >= 1 and hp1 < hp0 - 0.5 and used >= 1 and steps[0] <= 45.05 and steps[2] == 0
+          and swaps[1] == 0 and swaps[2] == 0 and swaps[3] == 0 and late == 0)
+    return ok, (f"you glided {gl}, Bot1 glided {bot_glided}; distance {track[0][0] if track else 0:.1f} -> closest "
+                f"{closest:.1f} over {len(track) * 4} ticks; hits sent {hits}, Bot1 health {hp0:.1f} -> {hp1:.1f}; "
+                f"rockets {used}; look steps (yaw, pitch, dup) {tuple(round(x, 2) for x in steps)}; slots {swaps}, "
+                f"late {late}; [{line}] [{aura[:160]}]")
+
+
 @test("Text setting editor")
 def _():
     def messages():
