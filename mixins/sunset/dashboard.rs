@@ -199,10 +199,10 @@ pub(super) fn prepare(s: &State) {
         let page = if menu.search.is_empty() { v.page } else { 0 };
         let hidden = super::sunset_extra_modules::hidden(&s.modules);
         if v.listed.page != page || v.listed.query != menu.search || v.listed.count != s.modules.len() || v.listed.hidden != hidden {
-            // Searching: what it finds, best first (search.rs); else the page's modules in order.
+            // Searching: what it finds, best first (search.rs); else the page's modules A to Z.
             let shown = s.modules.iter().enumerate().filter(|(_, m)| (page == 0 || m.category == CATEGORIES[page - 1]) && m.in_gui && !hidden.contains(&m.name)).map(|(i, _)| i);
             let ids = if menu.search.trim().is_empty() {
-                shown.collect()
+                super::sunset::alphabetical(&s.modules, shown)
             } else {
                 super::sunset_search::ranked(&super::sunset_search::results(&s.modules, menu.search), shown)
             };

@@ -53,6 +53,13 @@ pub(super) fn open_menu(game: &mut Game<'_>) {
     game.native_settings_refresh(i);
 }
 
+// A category's page: its modules the menu lists, A to Z. Drawing the buttons and pressing one both read it, so the
+// button pressed is the module shown.
+fn category_page(s: &State, c: Category) -> Vec<usize> {
+    let listed = s.listed();
+    alphabetical(&s.modules, (0..s.modules.len()).filter(|&i| s.modules[i].category == c && listed(&s.modules[i])))
+}
+
 pub(super) fn buttons(game: &Game<'_>, out: &mut Vec<String>) {
     if !running() { return; }
     ensure_loaded(game);
@@ -69,8 +76,8 @@ pub(super) fn buttons(game: &Game<'_>, out: &mut Vec<String>) {
         }
         Page::Category(c) => {
             out.push("< Back".into());
-            let listed = s.listed();
-            for m in s.modules.iter().filter(|m| m.category == c && listed(m)) {
+            for i in category_page(s, c) {
+                let m = &s.modules[i];
                 out.push(format!("{}: {}", m.name, on_off(m.on)));
             }
         }
@@ -112,9 +119,7 @@ pub(super) fn click(game: &mut Game<'_>, button: usize) {
                 s.page = Page::Main;
                 return false;
             }
-            let listed = s.listed();
-            let idx: Vec<usize> = (0..s.modules.len()).filter(|&i| s.modules[i].category == c && listed(&s.modules[i])).collect();
-            if let Some(&i) = idx.get(button - 1) {
+            if let Some(&i) = category_page(s, c).get(button - 1) {
                 s.page = Page::Module(i);
             }
             false

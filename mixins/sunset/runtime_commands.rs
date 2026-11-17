@@ -540,10 +540,9 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 CATEGORIES
                     .iter()
                     .map(|&c| {
-                        let names: Vec<String> = s
-                            .modules
-                            .iter()
-                            .filter(|m| m.category == c)
+                        let names: Vec<String> = alphabetical(&s.modules, (0..s.modules.len()).filter(|&i| s.modules[i].category == c))
+                            .into_iter()
+                            .map(|i| &s.modules[i])
                             .map(|m| if m.on { format!("{}*", m.name) } else { m.name.to_owned() })
                             .collect();
                         format!("{}: {}", c.label(), names.join(", "))

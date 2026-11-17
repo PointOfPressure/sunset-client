@@ -24,6 +24,15 @@ pub(super) const CATEGORIES: [Category; 6] = [
     Category::Client,
 ];
 
+// The menus (both ClickGUI styles, the Options pages, .modules, Modules' switches) list modules A to Z, as Rise,
+// Meteor and LiquidBounce do, whatever order the catalog and plugins add them in. Case is ignored; equal names keep
+// their order. A search still ranks what it finds best first (search.rs).
+pub(super) fn alphabetical(modules: &[Module], ids: impl IntoIterator<Item = usize>) -> Vec<usize> {
+    let mut ids: Vec<usize> = ids.into_iter().collect();
+    ids.sort_by_cached_key(|&i| modules[i].name.to_ascii_lowercase());
+    ids
+}
+
 impl Category {
     pub(super) fn label(self) -> &'static str {
         match self {

@@ -343,7 +343,7 @@ pub(super) fn panel_body(s: &State, c: usize) -> (Vec<(f32, Hit)>, f32) {
     let found = (!s.gui.search.trim().is_empty()).then(|| super::sunset_search::results(&s.modules, &s.gui.search));
     let order: Vec<usize> = match &found {
         Some(found) => super::sunset_search::ranked(found, in_panel),
-        None => in_panel.collect(),
+        None => alphabetical(&s.modules, in_panel),
     };
     for i in order {
         let m = &s.modules[i];

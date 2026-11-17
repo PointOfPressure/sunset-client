@@ -91,6 +91,8 @@ Changes are saved as you make them.
 - **Dashboard**: one window with a header and search, the categories on the left, the module list in the middle and
   the chosen module's settings on the right.
 
+Both list each category's modules A to Z (a search shows its best matches first).
+
 Large modules like Kill Aura and Scaffold group their settings into sections (General, Targeting, Rotations,
 Timing...). Settings that don't apply to the mode you picked stay hidden.
 

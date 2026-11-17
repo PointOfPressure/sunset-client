@@ -19,11 +19,12 @@ pub(super) const HIDDEN: &[&str] = &[
     "Fake Player",
 ];
 
-// Its switches are every module in `modules`, by category in the menu's order.
+// Its switches are every module in `modules`, by category, A to Z as the menu lists them.
 pub(super) fn defaults(modules: &[Module]) -> Module {
     let mut m = Module::new(NAME, Category::Client, "Shows or hides each module in the menu.");
     for category in CATEGORIES {
-        for name in modules.iter().filter(|m| m.category == category).map(|m| m.name) {
+        let page = super::sunset::alphabetical(modules, (0..modules.len()).filter(|&i| modules[i].category == category));
+        for name in page.into_iter().map(|i| modules[i].name) {
             m = m.bool(name, !HIDDEN.contains(&name));
         }
     }
