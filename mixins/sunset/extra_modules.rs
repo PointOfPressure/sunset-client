@@ -17,7 +17,18 @@ pub(super) const HIDDEN: &[&str] = &[
     "Mine Through Mobs",
     "RF Click",
     "Fake Player",
+    "Self Trap",
+    "Anvil",
+    "Quiver",
+    "PvP Bot",
+    "Middle Click Extra",
+    "Enderman Look",
+    "Spawner Alerts",
 ];
+
+// Hidden since 1.3: a config saved before then still lists them shown, so it hides them once (runtime_config.rs).
+pub(super) const HIDDEN_SINCE_1_3: &[&str] =
+    &["Self Trap", "Anvil", "Quiver", "PvP Bot", "Middle Click Extra", "Enderman Look", "Spawner Alerts"];
 
 // Its switches are every module in `modules`, by category, A to Z as the menu lists them.
 pub(super) fn defaults(modules: &[Module]) -> Module {

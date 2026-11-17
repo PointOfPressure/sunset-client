@@ -110,7 +110,8 @@ what it turns on and off before you apply it. The HUD shows the active profile u
 
 **Hiding modules.** The **Modules** module (Client) has a switch for every module. A hidden module is left out of
 the menu and search, but its bind and `.t` still work. These start hidden: Slippy, Self Web, Jesus, Trident Boost, Step,
-Wind Jump, Mine Through Mobs, RF Click and Fake Player.
+Wind Jump, Mine Through Mobs, RF Click, Fake Player, Self Trap, Anvil, Quiver, PvP Bot, Middle Click Extra, Enderman
+Look and Spawner Alerts. A settings file from before 1.3 hides the last seven once, unless one is on or bound.
 
 **Panic.** The **Panic** module (or `.panic`) shuts Sunset down until you restart the game: every module turns off,
 the menu, HUD and commands disappear, and Sunset leaves Options > Mods. You stay connected to the server. Panic does

@@ -268,6 +268,7 @@ impl State {
     }
     pub(super) fn save_text(&self) -> String {
         let mut out = self.module_text();
+        out.push_str(&format!("{MENU_HIDDEN}={MENU_HIDDEN_LIST}\n"));
         out.push_str(&format!("profile-selection={}\n", self.selection.stored()));
         out.push_str(&format!("friends={}\n", self.friends.join(",")));
         for w in &self.waypoints {
@@ -296,11 +297,16 @@ impl State {
         self.waypoints.clear();
         self.loadouts.clear();
         self.selection = super::sunset_profiles::Selection::default();
-        for line in merged_modules(text).lines() {
+        let merged = merged_modules(text);
+        let text = hidden_since_1_3(&merged);
+        for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else {
                 continue;
             };
             let v = v.trim();
+            if k == MENU_HIDDEN {
+                continue;
+            }
             if k == "profile-selection" {
                 self.selection.restore(v);
                 continue;

@@ -168,6 +168,29 @@ fn listed_extras(text: std::borrow::Cow<'_, str>) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(out)
 }
 
+// Which of the menu's hidden-by-default lists a config was saved with: 2 is 1.3's (HIDDEN_SINCE_1_3 joined it).
+pub(super) const MENU_HIDDEN: &str = "menu-hidden";
+pub(super) const MENU_HIDDEN_LIST: u32 = 2;
+
+// A config saved before 1.3 lists Self Trap, Anvil, Quiver, PvP Bot, Middle Click Extra, Enderman Look and Spawner
+// Alerts shown (its Modules lines hold every switch): they go hidden, once, unless it turns one on or binds it. A
+// config saved since says menu-hidden=2, so a module shown again stays shown. One with no Modules lines at all is
+// listed_extras's.
+pub(super) fn hidden_since_1_3(text: &str) -> std::borrow::Cow<'_, str> {
+    let saved_with = |l: &str| l.strip_prefix(MENU_HIDDEN).and_then(|r| r.strip_prefix('=')).and_then(|v| v.trim().parse::<u32>().ok());
+    if text.lines().filter_map(saved_with).any(|n| n >= MENU_HIDDEN_LIST) || !text.lines().any(|l| l.starts_with("modules.")) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let last = |id: &str, field: &str| text.lines().rev().find_map(|l| l.strip_prefix(&format!("{id}.{field}=")).map(str::trim));
+    let mut out = text.to_owned();
+    for id in super::sunset_extra_modules::HIDDEN_SINCE_1_3.iter().map(|name| norm(name)) {
+        if last(&id, "on") != Some("true") && last(&id, "key").is_none_or(|k| k == "none") {
+            out.push_str(&format!("\nmodules.{id}=false"));
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
     let lines: Vec<(&str, &str, &str)> = text
         .lines()
