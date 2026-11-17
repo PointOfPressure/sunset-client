@@ -629,6 +629,16 @@ pub(super) fn hit_at(s: &State, at: (f32, f32)) -> Option<([f32; 4], Hit)> {
     gui_rows(s).into_iter().rfind(|(r, _)| inside(*r, at))
 }
 
+// The ClickGUI module is on exactly while the menu is open, however it opened (the menu key, .menu, the Options
+// button, its own bind) or closed (Esc, the menu key, leaving the world, Panic). Its switch is the menu's state, never
+// a toggle message of its own.
+pub(super) fn mirror_gui(s: &mut State) {
+    let open = s.gui.open;
+    if let Some(m) = s.modules.iter_mut().find(|m| m.name == "ClickGUI") {
+        m.on = open;
+    }
+}
+
 pub(super) fn open_gui(game: &mut Game<'_>) {
     if !running() { return; }
     release_binds();
@@ -645,6 +655,7 @@ pub(super) fn open_gui(game: &mut Game<'_>) {
         s.gui.closing = false;
         s.gui.drag = None;
         s.binding = None;
+        mirror_gui(s);
     });
     super::sunset_dashboard::opened();
 }
@@ -658,6 +669,7 @@ pub(super) fn close_gui(game: &mut Game<'_>) {
         s.gui.editor = None;
         s.gui.window = None;
         s.binding = None;
+        mirror_gui(s);
     });
     save(game);
     if game.screen == Screen::Playing {

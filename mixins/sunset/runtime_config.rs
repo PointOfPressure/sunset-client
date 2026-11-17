@@ -55,8 +55,9 @@ impl Checked {
 // What a profile never carries: your friends (ClickGUI's Friends list: a profile from before you met someone would
 // take them off it) and Panic's switch (a profile with it on would shut Sunset down as it loads).
 pub(super) fn not_in_profiles(key: &str) -> bool {
-    // Sunset Presence is only ever set by hand: a shared profile can't turn sharing on (or analytics off).
-    matches!(key.trim(), "clickgui.friends" | "panic.on") || key.trim().starts_with("sunsetpresence.")
+    // Sunset Presence is only ever set by hand: a shared profile can't turn sharing on (or analytics off). ClickGUI's
+    // switch is whether the menu is open (mirror_gui), never a profile's.
+    matches!(key.trim(), "clickgui.friends" | "clickgui.on" | "panic.on") || key.trim().starts_with("sunsetpresence.")
 }
 
 pub(super) fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {

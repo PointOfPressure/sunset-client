@@ -307,6 +307,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
                 s.gui.drag = None;
                 s.gui.editor = None;
                 s.gui.window = None;
+                mirror_gui(s);
             });
         }
     }

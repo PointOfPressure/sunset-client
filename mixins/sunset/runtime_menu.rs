@@ -160,6 +160,11 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
         panic_off(game);
         return;
     }
+    // ClickGUI's switch opens or closes the menu (and follows it: mirror_gui).
+    if with(|s| s.modules[i].name == "ClickGUI") {
+        if gui_open() { close_gui(game) } else { open_gui(game) }
+        return;
+    }
     let (name, on) = with(|s| {
         // Turned on or off by hand: a Hold bind no longer has it.
         s.inputs.take_where(|held| held.module == i);

@@ -342,6 +342,8 @@ impl State {
             }
             Self::set_field(&mut self.modules, k, v);
         }
+        // A config saved with the menu open (as every close saves, or a crash) doesn't open it: ClickGUI follows it.
+        mirror_gui(self);
         let snapshot = self.profile_text();
         self.selection.refresh(&snapshot);
     }
@@ -468,6 +470,7 @@ impl State {
                 Self::set_field(&mut self.modules, k, v.trim());
             }
         }
+        mirror_gui(self);
     }
     // Profiles predating Baritone cannot arm it or carry new preferences across a legacy load.
     fn absent_baritone_defaults(&mut self, text: &str) {
