@@ -2,13 +2,15 @@
 #
 #   irm https://github.com/PointOfPressure/sunset-client/releases/latest/download/install.ps1 | iex
 #
-# Options (from a downloaded copy): .\install.ps1 [-NoBuild] [-NoPlay] [-File sunset.hnmod] [-GameHome C:\path\to\horizon]
+# Options (from a downloaded copy): .\install.ps1 [-NoBuild] [-NoPlay] [-Yes] [-File sunset.hnmod] [-GameHome C:\path\to\horizon]
+# -Yes (or $env:SUNSET_YES = "1") builds other native mods already installed without asking.
 param(
     [switch]$NoBuild,
     [switch]$NoPlay,
     [string]$File = "",
     [string]$GameHome = "",
-    [switch]$Dry
+    [switch]$Dry,
+    [switch]$Yes
 )
 $ErrorActionPreference = "Stop"
 
@@ -52,7 +54,10 @@ $others = @()
 foreach ($h in $homes) {
     $mods = Join-Path $h "horizon-native-mods"
     if (Test-Path $mods) {
-        $others += @(Get-ChildItem -LiteralPath $mods -Filter "*.hnmod" | Where-Object { $_.BaseName -ne "sunset" } | ForEach-Object { $_.BaseName })
+        # Turned off in the launcher's Mods page: not built.
+        $list = Join-Path $h "horizon-mods.txt"
+        $off = if (Test-Path $list) { @(Get-Content -LiteralPath $list | ForEach-Object { if ($_ -match '^mod\.(.+): false$') { $Matches[1] } }) } else { @() }
+        $others += @(Get-ChildItem -LiteralPath $mods -Filter "*.hnmod" | Where-Object { $_.BaseName -ne "sunset" -and $off -notcontains $_.BaseName } | ForEach-Object { $_.BaseName })
     }
 }
 $others = @($others | Sort-Object -Unique)
@@ -104,6 +109,20 @@ function Find-Launcher {
 if ($NoBuild) {
     Write-Host "Next: in the Horizon launcher, Settings > Game > Native mods (experimental) on, then Build. Or run this again without -NoBuild."
     return
+}
+
+# Every installed native mod is compiled into the game and runs with your rights, so the others need a yes first.
+if ($others.Count -gt 0 -and -not $Yes -and $env:SUNSET_YES -ne "1") {
+    Write-Host ("The build also compiles these native mods into the game: " + ($others -join ", "))
+    Write-Host "Native mods are not sandboxed: they run as native code with full access to your computer (files, accounts,"
+    Write-Host "network). Only build mods whose source you have read or whose author you trust."
+    $answer = ""
+    try { $answer = Read-Host "Build them with Sunset? [y/N]" } catch { $answer = "" }
+    if ($answer -notmatch '^(y|yes)$') {
+        Write-Host "Not built. Sunset is installed; turn the other mods off in the launcher's Mods page (or delete their .hnmod"
+        Write-Host "from horizon-native-mods) and run this again, or run it with -Yes (or `$env:SUNSET_YES = `"1`") to build them."
+        exit 1
+    }
 }
 
 $launcher = Find-Launcher

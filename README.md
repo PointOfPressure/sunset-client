@@ -42,6 +42,9 @@ The command downloads Sunset, builds it into Horizon and starts the game. The fi
 and takes **10 to 30 minutes**; later updates are quicker. On Linux it may ask for your password once, to install
 two system libraries the build needs.
 
+If you have other native mods installed (plugins, for example), the build compiles them in too, and they run with
+full access to your computer. The command lists them and asks first; answer `y` only for mods you trust. To answer
+yes from a script: `sh -s -- --yes` after `| sh`, or `$env:SUNSET_YES = "1"` before the PowerShell command.
 
 After that, start the **Native mods** instance from the launcher whenever you want to play with Sunset.
 
@@ -355,6 +358,10 @@ with events for hurts, deaths and disconnects, a safe stop, and Horizon's auto-r
 
 The API reference, a template, build scripts and two example plugins (Hello and AFK Fisher) are in
 [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) (MIT).
+
+A plugin is native code compiled into the game, not sandboxed: it can do anything on your computer. Sunset can't
+check or ask about it at runtime (by then it is already built in), so the install script and sunset-plugins'
+`build.py` ask before building one in. Install only plugins you wrote, read or trust.
 
 ## Building from source
 

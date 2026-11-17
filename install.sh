@@ -4,11 +4,13 @@
 #   curl -fsSL https://github.com/PointOfPressure/sunset-client/releases/latest/download/install.sh | sh
 #
 # Options (after `sh -s --` when piping): --no-build (only put the file in place), --no-play (build, don't start),
+# --yes (build other native mods already installed without asking; SUNSET_YES=1 does the same),
 # and, from a downloaded copy: sh install.sh [sunset.hnmod] [game folder]. SUNSET_DRY=1 shows what it would run.
 set -e
 
 build=1
 play=1
+yes=${SUNSET_YES:-0}
 file=""
 home=""
 for arg in "$@"; do
@@ -16,6 +18,7 @@ for arg in "$@"; do
         --no-build) build=0; play=0 ;;
         --no-play) play=0 ;;
         --build) build=1 ;;
+        --yes|-y) yes=1 ;;
         "") ;;
         *) if [ -z "$file" ] && [ -f "$arg" ]; then file=$arg; else home=$arg; fi ;;
     esac
@@ -62,7 +65,7 @@ find_launcher() {
 }
 
 tmp=$(mktemp)
-trap 'rm -f "$tmp"' EXIT
+trap 'rm -f "$tmp" "$tmp.others"' EXIT
 say "Sunset: getting the mod..."
 if [ -n "$file" ]; then
     cp "$file" "$tmp"
@@ -93,7 +96,8 @@ echo "$homes" | {
         for f in "$h"/horizon-native-mods/*.hnmod; do
             [ -f "$f" ] || continue
             n=$(basename "$f" .hnmod)
-            [ "$n" = sunset ] || echo "$n"
+            # Turned off in the launcher's Mods page: not built.
+            [ "$n" = sunset ] || grep -qx "mod\.$n: false" "$h/horizon-mods.txt" 2>/dev/null || echo "$n"
         done
     done
 } | sort -u > "$tmp.others"
@@ -104,11 +108,36 @@ if [ -s "$tmp.others" ]; then
     say "If the build says 'made for different Horizon revisions', turn the others off in the launcher's Mods page, or delete their .hnmod from horizon-native-mods, and run this again."
     say ""
 fi
-rm -f "$tmp.others"
 
 if [ "$build" = 0 ]; then
     say "Next: in the Horizon launcher, Settings > Game > Native mods (experimental) on, then Build. Or run this again without --no-build."
     exit 0
+fi
+
+# Every installed native mod is compiled into the game and runs with your rights, so the others need a yes first.
+if [ -s "$tmp.others" ] && [ "$yes" != 1 ]; then
+    names=$(tr '\n' ' ' < "$tmp.others")
+    say "The build also compiles these native mods into the game: $names"
+    say "Native mods are not sandboxed: they run as native code with full access to your computer (files, accounts,"
+    say "network). Only build mods whose source you have read or whose author you trust."
+    answer=""
+    if [ -t 0 ]; then
+        printf 'Build them with Sunset? [y/N] '
+        read -r answer || answer=""
+    elif (exec </dev/tty) 2>/dev/null; then
+        printf 'Build them with Sunset? [y/N] '
+        read -r answer </dev/tty || answer=""
+    else
+        say "No terminal to ask on: run this again with --yes (sh -s -- --yes when piping) to build them, or remove them first."
+        exit 1
+    fi
+    case "$answer" in
+        y|Y|yes|Yes|YES) ;;
+        *)
+            say "Not built. Sunset is installed; turn the other mods off in the launcher's Mods page (or delete their .hnmod"
+            say "from horizon-native-mods) and run this again, or run it with --yes to build them."
+            exit 1 ;;
+    esac
 fi
 
 launcher=$(find_launcher) || {
