@@ -105,10 +105,9 @@ pub(super) fn place(game: &Game<'_>, w: f32, h: f32, corners: &mut Corners, modu
     }
     let size = fitted_size(module.n("Size") as f32, w, h)?;
     let (x, y) = if custom {
-        (
-            (module.n("Radar x") as f32 * w).clamp(0.0, (w - size).max(0.0)),
-            (module.n("Radar y") as f32 * h).clamp(0.0, (h - size - 12.0).max(0.0)),
-        )
+        // Its label under it (12 more) belongs to its place.
+        let [x, y] = super::sunset_hud_place::custom([module.n("Radar x"), module.n("Radar y")], [size, size + 12.0], [w, h], false);
+        (x, y)
     } else {
         let (x, y) = corners.place(Corner::BottomLeft, size, size + 12.0);
         // A preceding native panel can consume the corner. Avoid drawing offscreen.

@@ -52,6 +52,9 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     let mods = snapshot();
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     let (w, h) = (batch.width, batch.height);
+    // Custom HUD places are fractions of the monitor-sized screen (hud_place.rs), in the HUD's units.
+    let monitor = game.window.as_deref().and_then(horizon_client::window::display).map(|d| [d.width as f32, d.height as f32]);
+    super::sunset_hud_place::set_reference(monitor, batch.scale);
     // GUI scale, as far as a row of the narrowest panels still fits the window.
     let scale = f32::from_bits(LOOK[6].load(Ordering::Relaxed)).min((w / MIN_ROW).max(1.0));
     LOOK[7].store(scale.to_bits(), Ordering::Relaxed);
@@ -160,10 +163,8 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             let (nxf, nyf, nwf, nhf) = (nx as f32, ny as f32, nw as f32, nh as f32);
             let custom = hud.p("Scoreboard position") == "Custom";
             let (x, y) = if custom {
-                (
-                    (hud.n("Scoreboard x") as f32 * w).clamp(0.0, (w - nwf).max(0.0)),
-                    (hud.n("Scoreboard y") as f32 * h).clamp(0.0, (h - nhf).max(0.0)),
-                )
+                let [x, y] = super::sunset_hud_place::custom([hud.n("Scoreboard x"), hud.n("Scoreboard y")], [nwf, nhf], [w, h], false);
+                (x, y)
             } else {
                 (nxf, nyf)
             };
@@ -221,8 +222,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             .partition(|(name, _)| hud.p(&format!("{name} position")) == "Custom");
         for (name, text) in moved {
             let (tw, th) = (game.native_text_width(&text) + 4.0, 12.0);
-            let x = (hud.n(&format!("{name} x")) as f32 * w).clamp(0.0, (w - tw).max(0.0));
-            let y = (hud.n(&format!("{name} y")) as f32 * h).clamp(0.0, (h - th).max(0.0));
+            let [x, y] = super::sunset_hud_place::custom([hud.n(&format!("{name} x")), hud.n(&format!("{name} y"))], [tw, th], [w, h], false);
             super::sunset_hud_bars::place(name, [x, y, tw, th], w, h);
             shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], 0xFFFFFF));
         }

@@ -182,9 +182,7 @@ pub(super) fn drag_to(name: &str, x: f32, y: f32) -> Option<(f64, f64)> {
 }
 
 fn fractions(at: [f32; 2], size: [f32; 2], screen: [f32; 2]) -> (f64, f64) {
-    let fx = at[0].clamp(0.0, (screen[0] - size[0]).max(0.0)) / screen[0].max(1.0);
-    let fy = at[1].clamp(0.0, (screen[1] - size[1]).max(0.0)) / screen[1].max(1.0);
-    (f64::from(fx), f64::from(fy))
+    super::sunset_hud_place::stored(at, size, screen, false)
 }
 
 // A press on an element (the chat or the menu open): which, and where in it the pointer took it.
@@ -396,10 +394,8 @@ pub(super) fn editable(game: &Game<'_>, shapes: &mut Vec<Shape>, from: usize, m:
         return;
     };
     let (x, y) = if m.p(&format!("{name} position")) == "Custom" {
-        (
-            (m.n(&format!("{name} x")) as f32 * w).clamp(0.0, (w - bw).max(0.0)),
-            (m.n(&format!("{name} y")) as f32 * h).clamp(0.0, (h - bh).max(0.0)),
-        )
+        let [x, y] = super::sunset_hud_place::custom([m.n(&format!("{name} x")), m.n(&format!("{name} y"))], [bw, bh], [w, h], false);
+        (x, y)
     } else {
         (bx, by)
     };
@@ -421,10 +417,8 @@ fn compass(game: &Game<'_>, hud: &Module, w: f32, h: f32, out: &mut Vec<Shape>) 
         return;
     };
     let (x0, y0) = if hud.p("Compass position") == "Custom" {
-        (
-            (hud.n("Compass x") as f32 * w).clamp(0.0, (w - WIDTH).max(0.0)),
-            (hud.n("Compass y") as f32 * h).clamp(0.0, (h - HEIGHT).max(0.0)),
-        )
+        let [x, y] = super::sunset_hud_place::custom([hud.n("Compass x"), hud.n("Compass y")], [WIDTH, HEIGHT], [w, h], false);
+        (x, y)
     } else {
         ((w - WIDTH) / 2.0, 2.0)
     };
@@ -523,10 +517,10 @@ pub(super) fn draw(game: &Game<'_>, hud: &Module, w: f32, h: f32, corners: &mut 
         "Top right" => corners.place(Corner::TopRight, bw, bh),
         "Bottom left" => corners.place(Corner::BottomLeft, bw, bh),
         "Bottom right" => corners.place(Corner::BottomRight, bw, bh),
-        "Custom" => (
-            (hud.n("Armor HUD x") as f32 * w).clamp(0.0, (w - bw).max(0.0)),
-            (hud.n("Armor HUD y") as f32 * h).clamp(0.0, (h - bh).max(0.0)),
-        ),
+        "Custom" => {
+            let [x, y] = super::sunset_hud_place::custom([hud.n("Armor HUD x"), hud.n("Armor HUD y")], [bw, bh], [w, h], false);
+            (x, y)
+        }
         // Beside the hotbar, on the side the off hand slot isn't.
         _ if game.settings.main_hand_left => (w / 2.0 - 91.0 - 6.0 - bw, h - bh),
         _ => (w / 2.0 + 91.0 + 6.0, h - bh),
