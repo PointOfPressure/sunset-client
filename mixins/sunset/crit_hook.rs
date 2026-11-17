@@ -6,6 +6,7 @@
 fn sunset_crit_click(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<bool> {
     if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
 
+    crate::game::sunset_vein_miner::stop(game);
     if crate::game::sunset_combat_macros::active()
         || crate::game::sunset_parity::hit_blocked(game)
         || crate::game::sunset_click_fix::hit_blocked(game)
@@ -28,6 +29,9 @@ fn sunset_crit_click(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<
     crate::game::sunset_auto_mace::before_click(game);
     match crate::game::sunset::crit_click(game) {
         Some(instant) => std::ops::ControlFlow::Break(instant),
-        None => std::ops::ControlFlow::Continue(()),
+        None => {
+            crate::game::sunset_vein_miner::observe(game);
+            std::ops::ControlFlow::Continue(())
+        }
     }
 }

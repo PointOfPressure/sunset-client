@@ -2314,6 +2314,12 @@ name = "sunset_packet_mine"
 source = "packet_mine.rs"
 
 [[module]]
+id = "vein_miner"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_vein_miner"
+source = "vein_miner.rs"
+
+[[module]]
 id = "hands"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_hands"

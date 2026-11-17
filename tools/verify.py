@@ -9891,6 +9891,37 @@ def _():
     return on and bound and got == want, f"Fast Use on: {on}, bound to J: {bound}, settings {got} of {want}"
 
 
+@test("Vein Miner")
+def _():
+    only("Vein Miner")
+    setting("veinminer", "max blocks", 3)
+    slot(0, "diamond_pickaxe")
+    seed = (X0, Y + 2, Z0 + 2)
+    blocks = {
+        seed: "diamond_ore",
+        (X0 + 1, Y + 2, Z0 + 2): "diamond_ore",
+        (X0 + 2, Y + 2, Z0 + 2): "deepslate_diamond_ore",
+        (X0 + 3, Y + 2, Z0 + 2): "deepslate_diamond_ore",
+        (X0, Y + 3, Z0 + 2): "iron_ore",
+        (X0, Y + 2, Z0 + 4): "diamond_ore",
+    }
+    cmd(*(f"setblock {x} {y} {z} minecraft:{ore}" for (x, y, z), ore in blocks.items()))
+
+    def block(pos):
+        return ctl("block", *map(str, pos)).get("block")
+
+    if not wait_for(lambda: all(block(pos) == f"minecraft:{ore}" for pos, ore in blocks.items()), 40):
+        return False, "could not place the test ore"
+    ctl("look-at", *(str(v + 0.5) for v in seed))
+    ctl("mouse", "left", "down")
+    manual = wait_for(lambda: block(seed) == "minecraft:air", 120, step=2)
+    ctl("mouse", "left", "up")
+    wait(120)
+    actual = [block(pos) for pos in blocks]
+    expected = ["minecraft:air"] * 3 + [f"minecraft:{ore}" for ore in list(blocks.values())[3:]]
+    return manual and actual == expected, f"manual break: {manual}; blocks: {actual}"
+
+
 @test("Packet Mine")
 def _():
     # Each block 2 in front at head height: ticks to break it holding the right tool and the button, then with Packet

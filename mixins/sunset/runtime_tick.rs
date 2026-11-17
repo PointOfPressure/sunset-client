@@ -388,6 +388,7 @@ fn module_tick(game: &mut Game<'_>) {
         r.fullbright = fullbright;
     }
 
+    super::sunset_vein_miner::tick(game, get("Packet Mine").is_some());
     if game.player.is_none() {
         super::sunset_player::inventory_reset();
         return;
