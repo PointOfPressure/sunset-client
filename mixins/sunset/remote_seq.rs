@@ -59,7 +59,7 @@ pub(crate) fn clear_destroy_delay(game: &mut Game<'_>, wait: u32) {
     }
 }
 
-// The block being broken by hand and how far it is (0 to 1), for Speed Mine.
+// The block being broken by hand and how far it is (0 to 1), for Fast Break.
 pub(crate) fn breaking(game: &Game<'_>) -> Option<([i32; 3], f32)> {
     game.remote.as_ref()?.destroying.map(|(pos, _, done)| (pos, done))
 }

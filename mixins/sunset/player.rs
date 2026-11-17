@@ -180,7 +180,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Blocks", true),
         Module::new("Air Place", Player, "Places blocks in the air.")
             .num("Range", 5.0, 2.0, 6.0, 0.5),
-        Module::new("Speed Mine", Player, "Mines faster.")
+        Module::new("Fast Break", Player, "Breaks blocks faster.")
             .pick("Mode", &["Damage", "Normal", "Haste"])
             .text("Blocks", "")
             .pick("Blocks filter", &["Blacklist", "Whitelist"])
@@ -234,7 +234,7 @@ pub(super) fn shutdown(game: &mut Game<'_>) {
         stop_eating(game);
     }
     tick(game, &[]);
-    speed_mine(game, None);
+    fast_break(game, None);
     no_break_reset(game, None);
     exec(|e| e.reset());
     ps(|p| *p = Ps::default());
@@ -1621,9 +1621,9 @@ fn landing(game: &Game<'_>) -> Option<([i32; 3], [f64; 3])> {
     None
 }
 
-// ---- Speed Mine (Sunset's SpeedMine), before the tick, where the game goes on breaking the block
+// ---- Fast Break (was Speed Mine), before the tick, where the game goes on breaking the block
 
-pub(super) fn speed_mine(game: &mut Game<'_>, m: Option<&Module>) {
+pub(super) fn fast_break(game: &mut Game<'_>, m: Option<&Module>) {
     use super::remote::sunset_remote as remote;
     // Haste mode's own Haste, taken off when it is no longer wanted.
     let haste = m.filter(|m| m.p("Mode") == "Haste").map(|m| m.n("Haste amplifier") as i32 - 1);

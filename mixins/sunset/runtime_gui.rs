@@ -254,6 +254,8 @@ pub(super) fn dash_search_clear(s: &mut State) {
 pub(super) fn aliases(name: &str) -> &'static str {
     match name {
         "Velocity" => "knockback delay knockbackdelay",
+        "BlockIn" => "surround block in feet obsidian",
+        "Fast Break" => "speed mine speedmine fast mine fastmine",
         "Hit Through Walls" => "attack through blocks wall hits wallhits through walls ghost hand hits",
         "PvP Bot" => "sword pvp bot swordpvpbot crystal pvp bot crystalpvpbot crystal bot crystalbot",
         "Auto Web" => "cobweb placer cobwebplacer web key",

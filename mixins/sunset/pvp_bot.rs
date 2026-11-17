@@ -3,7 +3,7 @@
 // distance (Patient) or presses on (Aggressive), strafes, jumps for critical hits and on being hit (Jump reset), and
 // eats a golden apple when low. Hits go through the strikes queue like Kill Aura's. Your own movement keys take over.
 // Crystal mode follows the behaviour of #16's crystal controller, with Sunset's own modules as its hands: it walks
-// into crystal range, holes up (into a hole nearby, else Surround where it stands), and while it fights keeps Crystal
+// into crystal range, holes up (into a hole nearby, else BlockIn where it stands), and while it fights keeps Crystal
 // Aura, Anchor Aura, Offhand and Auto Gap on, Self Trap when low, and pearls away when low with no totem left. What it learns of each rival (Rust's PR #20 store) changes how it fights them again.
 use super::sunset::{self, Category, Module, hold, own_id, with};
 use super::sunset_util as util;
@@ -18,7 +18,7 @@ const KEYS: [KeyCode; 6] = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyA, KeyCode
 // The vanilla reach to a player's box, with a little kept back.
 const REACH: f64 = 2.9;
 // The modules Crystal mode drives.
-const HANDS: [&str; 6] = ["Crystal Aura", "Anchor Aura", "Offhand", "Auto Gap", "Surround", "Self Trap"];
+const HANDS: [&str; 6] = ["Crystal Aura", "Anchor Aura", "Offhand", "Auto Gap", "BlockIn", "Self Trap"];
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
@@ -566,8 +566,8 @@ fn crystal_tick(game: &mut Game<'_>, m: &Module, t: &util::Target, eye: [f64; 3]
     } else {
         standing = ground;
     }
-    // Standing to fight: Surround where it stands (or the hole's open sides), Self Trap when low.
-    lease(game, "Surround", m.b("Hole up") && standing && !yours);
+    // Standing to fight: BlockIn where it stands (or the hole's open sides), Self Trap when low.
+    lease(game, "BlockIn", m.b("Hole up") && standing && !yours);
     lease(game, "Self Trap", standing && !yours && health < m.n("Self trap below HP"));
     if yours {
         press(game, &[]);

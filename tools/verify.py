@@ -4403,14 +4403,14 @@ def _():
         f"block over your head, off after: {flat_}; stood on a slab {slab_}; with no blocks {none}")
 
 
-@test("Surround (Toggle on complete)")
+@test("BlockIn (Toggle on complete)")
 def _():
     slot(0, "obsidian", 16)
-    setting("surround", "toggle on complete", "true")
-    only("surround")
+    setting("blockin", "toggle on complete", "true")
+    only("blockin")
     wait(30)
     four = count(X0 - 1, Y + 1, Z0 - 1, X0 + 1, Y + 1, Z0 + 1, "obsidian")
-    off = turned_itself_off("surround", "Surround")
+    off = turned_itself_off("blockin", "BlockIn")
     only()
     return four == 4 and off, f"{four} obsidian round your feet before it turned itself off: {off}"
 
@@ -5139,13 +5139,13 @@ def _():
 SPEED_CASES = [("stone_pickaxe", "stone"), ("iron_pickaxe", "stone"), ("diamond_pickaxe", "stone"), ("diamond_pickaxe", "obsidian")]
 
 
-def speed_mine(mode):
+def fast_break(mode):
     # The game waits 5 ticks (while you keep attacking) between one block's breaking and the next, and every timed
     # break but the very first follows another: a first break makes them all wait the same.
     break_ticks("stone_pickaxe", "stone", 1)
     plain = [break_ticks(p, b, 1 if b == "obsidian" else 3) for p, b in SPEED_CASES]
-    setting("speedmine", "mode", mode)
-    only("speedmine")
+    setting("fastbreak", "mode", mode)
+    only("fastbreak")
     fast = [break_ticks(p, b, 1 if b == "obsidian" else 3) for p, b in SPEED_CASES]
     only()
     alive = bool(state().get("player"))
@@ -5155,7 +5155,7 @@ def speed_mine(mode):
 
 
 for _mode in ("Damage", "Normal", "Haste"):
-    test(f"Speed Mine ({_mode})")(lambda _m=_mode: speed_mine(_m))
+    test(f"Fast Break ({_mode})")(lambda _m=_mode: fast_break(_m))
 
 
 def swap_break(first, then, swap_at=6):
@@ -5497,13 +5497,13 @@ def _():
     return 1 <= dark < dim, f"{dark} torches light a dark 7x7 room to above 0, {dim} to above 7"
 
 
-@test("Surround")
+@test("BlockIn")
 def _():
     slot(0, "obsidian", 16)
-    only("surround")
+    only("blockin")
     wait(30)
     four = count(X0 - 1, Y + 1, Z0 - 1, X0 + 1, Y + 2, Z0 + 1, "obsidian")
-    setting("surround", "double height", "true")
+    setting("blockin", "double height", "true")
     wait(30)
     eight = count(X0 - 1, Y + 1, Z0 - 1, X0 + 1, Y + 2, Z0 + 1, "obsidian")
     only()
@@ -8655,7 +8655,7 @@ SWEEPS = [
 ] + [
     (("killaura",), [("killaura", "attack when holding", "All")]),
 ] + [
-    (("surround",), [("surround", "center", m)]) for m in ("Never", "On activate", "Always", "Incomplete")
+    (("blockin",), [("blockin", "center", m)]) for m in ("Never", "On activate", "Always", "Incomplete")
 ] + [
     (("selftrap",), [("selftrap", "top mode", m)]) for m in ("Top", "Anti face place", "Full", "None")
 ] + [
@@ -8671,7 +8671,7 @@ SWEEPS = [
 ] + [
     (("fastuse",), [("fastuse", "throwables", "true"), ("fastuse", "throw mode", m)]) for m in ("Delay", "Every tick", "Burst")
 ] + [
-    (("speedmine",), [("speedmine", "mode", m)]) for m in ("Damage", "Normal", "Haste")
+    (("fastbreak",), [("fastbreak", "mode", m)]) for m in ("Damage", "Normal", "Haste")
 ] + [
     (("antiafk",), [("antiafk", "spin mode", m)]) for m in ("Server", "Client")
 ] + [
@@ -10243,7 +10243,7 @@ def _():
 
 
 # The modules PvP Bot's Crystal mode drives.
-BOT_HANDS = ("Crystal Aura", "Anchor Aura", "Offhand", "Auto Gap", "Surround", "Self Trap")
+BOT_HANDS = ("Crystal Aura", "Anchor Aura", "Offhand", "Auto Gap", "BlockIn", "Self Trap")
 
 
 def crystal_bot_arena(dist=7.0, bot_hp=1000, bot_totem=False, kit=True):
@@ -10438,7 +10438,7 @@ def pearls():
 @test("PvP Bot (Crystal) hole, trap and pearl")
 def _():
     # (1) A hole dug in the floor 2 blocks east, Bot1 4 blocks south: Hole up walks you into it; off, you stay put.
-    # (2) Standing with Self trap below HP at 36 and obsidian: Surround puts obsidian round your feet and Self Trap
+    # (2) Standing with Self trap below HP at 36 and obsidian: BlockIn puts obsidian round your feet and Self Trap
     # over your head; at 0, nothing over your head. (3) 10 health, no totem, pearls, Pearl below HP 12: one pearl thrown
     # in 7 s, you end farther from Bot1 and alive (it lands clear of walls); with a totem in the inventory no pearl goes.
     if not CTL2:

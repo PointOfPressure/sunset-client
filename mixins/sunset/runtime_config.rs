@@ -87,10 +87,11 @@ fn moved_messages(text: std::borrow::Cow<'_, str>) -> std::borrow::Cow<'_, str> 
 }
 
 // Modules with new names (0.9): Auto Steal is Chest Stealer, No Mining Trace is Mine Through Mobs; Inventory Cleaner is
-// Inventory Manager, Mob Gear ESP is Gear ESP (1.0); Key Throw is Tap Use and Hold to Eat is Eat Tap (after 1.1.0).
-pub(super) const RENAMED: [(&str, &str); 8] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot"),
+// Inventory Manager, Mob Gear ESP is Gear ESP (1.0); Key Throw is Tap Use and Hold to Eat is Eat Tap (after 1.1.0);
+// Surround is BlockIn and Speed Mine is Fast Break (1.3).
+pub(super) const RENAMED: [(&str, &str); 10] = [("autosteal", "cheststealer"), ("nominingtrace", "minethroughmobs"), ("swordpvpbot", "pvpbot"),
     ("extramodules", "modules"), ("inventorycleaner", "inventorymanager"), ("mobgearesp", "gearesp"), ("keythrow", "tapuse"),
-    ("holdtoeat", "eattap")];
+    ("holdtoeat", "eattap"), ("surround", "blockin"), ("speedmine", "fastbreak")];
 
 // Auto Armor joined Inventory Manager (1.0): its on/off is the Auto Armor setting, its key Auto Armor key, its Delay
 // and Mode Armor delay and Armor mode; the rest keep their names.

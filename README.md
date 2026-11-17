@@ -193,7 +193,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Offhand**: totem or another item in your offhand; Double hand, Totem on low health.
 - **Tap Use**: pearls, short pearls and wind charges on keys or their hotbar keys (the slot you held comes back);
   Pot and Debuff keys for splash potions; Crossbow key; Pearl follow.
-- **Surround**, **Self Trap**, **Auto Trap**, **Self Web**, **Auto Web**: block and web placement for crystal PvP.
+- **BlockIn** (blocks round your feet; was Surround), **Self Trap**, **Auto Trap**, **Self Web**, **Auto Web**: block and web placement for crystal PvP.
 - **Anvil** (block anvils over you, drop them on players), **Auto EXP** (repair with XP bottles), **Quiver**
   (tipped arrows at yourself), **Bow Aimbot**.
 
@@ -231,7 +231,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   - PvP, Building, Mining and Survival presets; a Loot key drops spare totems and pearls.
 - **Chest Stealer**: empties containers you open. **Auto Replenish**: refills hotbar stacks. **Loadouts**: saved
   inventory layouts on K.
-- **Auto Tool**, **Speed Mine**, **Fast Place**, **Fast Use**, **Break Delay**, **No Break Reset**, **Air Place**,
+- **Auto Tool**, **Fast Break** (was Speed Mine), **Fast Place**, **Fast Use**, **Break Delay**, **No Break Reset**, **Air Place**,
   **Ghost Hand** (use containers through blocks).
 - **Auto Eat**, **Auto Gap** (also potions and soup), **Eat Tap** (hold a key to eat the best food,
   Switch back), **Auto Fish**, **Auto Clicker** (fixed delay

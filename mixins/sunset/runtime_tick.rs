@@ -120,7 +120,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         None => auto_tool_off(game),
     }
     super::sunset_render::pre_tick(game, &mods);
-    super::sunset_player::speed_mine(game, mods.iter().find(|m| m.name == "Speed Mine" && m.on));
+    super::sunset_player::fast_break(game, mods.iter().find(|m| m.name == "Fast Break" && m.on));
     super::sunset_player::no_break_reset(game, mods.iter().find(|m| m.name == "No Break Reset" && m.on));
     let on = |n: &str| mods.iter().any(|m| m.name == n && m.on);
     let get = |n: &str| mods.iter().find(|m| m.name == n);

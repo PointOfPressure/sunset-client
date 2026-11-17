@@ -1,5 +1,5 @@
 // Sunset's combat modules beyond the core ones, implemented for Sunset:
-// Surround, Self Trap, Auto Trap, Self Web, Auto Web, Offhand and Auto EXP.
+// BlockIn, Self Trap, Auto Trap, Self Web, Auto Web, Offhand and Auto EXP.
 
 use super::sunset::{Category, Module, gui_open, hold, own_id, with};
 use super::sunset_util::*;
@@ -14,7 +14,7 @@ const HORIZONTAL: [[i32; 3]; 4] = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]]
 pub(super) fn defaults() -> Vec<Module> {
     use Category::Combat;
     vec![
-        Module::new("Surround", Combat, "Surrounds you in blocks.")
+        Module::new("BlockIn", Combat, "Places blocks round your feet.")
             .text("Blocks", TRAP_BLOCKS)
             .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0)
             .num("Blocks per tick", 1.0, 1.0, 8.0, 1.0)
@@ -127,7 +127,7 @@ pub(super) fn defaults() -> Vec<Module> {
 #[derive(Default)]
 struct Cs {
     on: HashSet<String>,
-    surround_timer: u32,
+    blockin_timer: u32,
     trap_delay: u32,
     trap_placed: bool,
     trap_positions: Vec<[i32; 3]>,
@@ -169,7 +169,7 @@ fn activated(name: &str, on: bool) -> bool {
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     show_clear();
     let get = |n: &str| mods.iter().find(|m| m.name == n);
-    for name in ["Surround", "Self Trap", "Auto Trap", "Self Web", "Auto Web", "Auto EXP"] {
+    for name in ["BlockIn", "Self Trap", "Auto Trap", "Self Web", "Auto Web", "Auto EXP"] {
         let Some(m) = get(name).filter(|m| m.on) else {
             activated(name, false);
             continue;
@@ -181,7 +181,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         }
         let just = activated(name, true);
         match name {
-            "Surround" => surround(game, m, just),
+            "BlockIn" => block_in(game, m, just),
             "Self Trap" => self_trap(game, m, just),
             "Auto Trap" => auto_trap(game, m, just),
             "Self Web" => self_web(game, m),
@@ -195,16 +195,16 @@ fn blocks_slot(game: &Game<'_>, list: &str) -> Option<usize> {
     find_held(game, |n| listed(list, n))
 }
 
-// ---- Surround
+// ---- BlockIn (was Surround)
 
-fn surround(game: &mut Game<'_>, m: &Module, just: bool) {
+fn block_in(game: &mut Game<'_>, m: &Module, just: bool) {
     if just && m.p("Center") == "On activate" {
         center_player(game);
     }
     let delay = m.n("Delay (ticks)") as u32;
     let waited = cs(|c| {
-        let t = c.surround_timer;
-        c.surround_timer += 1;
+        let t = c.blockin_timer;
+        c.blockin_timer += 1;
         t
     });
     if waited < delay {
@@ -214,7 +214,7 @@ fn surround(game: &mut Game<'_>, m: &Module, just: bool) {
         return;
     };
     if m.b("Toggle on Y change") && (game.previous_position.y - p.position.y).abs() > 1e-9 {
-        toggle_off(game, "Surround");
+        toggle_off(game, "BlockIn");
         return;
     }
     if m.b("Only on ground") && !p.ground.on_ground {
@@ -268,10 +268,10 @@ fn surround(game: &mut Game<'_>, m: &Module, just: bool) {
             }
         }
     }
-    cs(|c| c.surround_timer = 0);
+    cs(|c| c.blockin_timer = 0);
     // Complete once every block is in the world: one sent this tick isn't yet.
     if complete && placed == 0 && m.b("Toggle on complete") {
-        toggle_off(game, "Surround");
+        toggle_off(game, "BlockIn");
         return;
     }
     if !complete && m.p("Center") == "Incomplete" {
