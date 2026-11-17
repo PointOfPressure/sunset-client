@@ -62,6 +62,10 @@ pub(super) fn not_in_profiles(key: &str) -> bool {
 
 pub(super) fn merged_modules(text: &str) -> std::borrow::Cow<'_, str> {
     let renamed = renamed_modules(text);
+    let renamed = match elytra_boost_joined(&renamed) {
+        Some(joined) => std::borrow::Cow::Owned(joined),
+        None => renamed,
+    };
     let owned = match merge_lines(&renamed) {
         std::borrow::Cow::Owned(out) => Some(out),
         std::borrow::Cow::Borrowed(_) => None,
@@ -167,6 +171,40 @@ fn listed_extras(text: std::borrow::Cow<'_, str>) -> std::borrow::Cow<'_, str> {
         out.push_str(&format!("\nmodules.{extra}=true"));
     }
     std::borrow::Cow::Owned(out)
+}
+
+// Elytra Boost joined Elytra Fly (1.3) as its Boost mode: its Boost and Max speed carry over, and an Elytra Boost in
+// use (on or bound) with Elytra Fly not (off and unbound) makes Elytra Fly a Boost one, on, bound and listed as it
+// was. Its other lines go. None: nothing of Elytra Boost's in the text.
+fn elytra_boost_joined(text: &str) -> Option<String> {
+    const OLD: &str = "elytraboost.";
+    if !text.lines().any(|l| l.starts_with(OLD) || l.starts_with("modules.elytraboost=")) {
+        return None;
+    }
+    let last = |key: &str| text.lines().rev().find_map(|l| l.strip_prefix(key).and_then(|r| r.strip_prefix('=')).map(str::trim));
+    let used = |id: &str| last(&format!("{id}.on")) == Some("true") || last(&format!("{id}.key")).is_some_and(|k| k != "none");
+    let mut out: Vec<String> = text
+        .lines()
+        .filter(|l| !l.starts_with(OLD) && !l.starts_with("modules.elytraboost="))
+        .map(str::to_owned)
+        .collect();
+    for field in ["boost", "maxspeed"] {
+        if let Some(v) = last(&format!("{OLD}{field}")) {
+            out.push(format!("elytrafly.{field}={v}"));
+        }
+    }
+    if used("elytraboost") && !used("elytrafly") {
+        out.push("elytrafly.mode=Boost".into());
+        for field in ["on", "key"] {
+            if let Some(v) = last(&format!("{OLD}{field}")) {
+                out.push(format!("elytrafly.{field}={v}"));
+            }
+        }
+        if let Some(v) = last("modules.elytraboost") {
+            out.push(format!("modules.elytrafly={v}"));
+        }
+    }
+    Some(out.join("\n"))
 }
 
 // Which of the menu's hidden-by-default lists a config was saved with: 2 is 1.3's (HIDDEN_SINCE_1_3 joined it).

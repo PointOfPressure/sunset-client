@@ -8673,6 +8673,8 @@ SWEEPS = [
 ] + [
     (("fastbreak",), [("fastbreak", "mode", m)]) for m in ("Damage", "Normal", "Haste")
 ] + [
+    (("elytrafly",), [("elytrafly", "mode", m)]) for m in ("Control", "Boost")
+] + [
     (("antiafk",), [("antiafk", "spin mode", m)]) for m in ("Server", "Client")
 ] + [
     (("autoeat",), [("autoeat", "threshold mode", m)]) for m in ("Any", "Health", "Hunger", "Both")
@@ -8695,7 +8697,7 @@ SWEEPS = [
 ] + [
     ((k,), []) for k in ("velocity", "blink", "glide", "longjump", "highjump", "airjump", "spider", "parkour", "safewalk", "sprint",
                          "autowalk", "fastclimb", "autojump", "sneak", "noslow", "nojumpdelay", "antivoid",
-                         "elytraboost", "chestswap", "scaffold", "timer", "fastplace", "breakdelay", "autoclicker", "autoweapon",
+                         "chestswap", "scaffold", "timer", "fastplace", "breakdelay", "autoclicker", "autoweapon",
                          "triggerbot", "autoreplenish", "autogap", "airplace", "reach", "autotrap", "autoweb",
                          "aimassist", "crystaloptimizer", "flamethrower", "autoshearer", "automount",
                          "cheststealer", "inventorymanager", "middleclickextra", "autofish")

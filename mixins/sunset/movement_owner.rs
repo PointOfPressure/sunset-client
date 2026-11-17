@@ -41,7 +41,7 @@ pub(super) fn conflict(mods: &[super::sunset::Module]) -> Option<&'static str> {
         "Flight" | "Speed" | "Scaffold" | "Packet Mine" | "Nuker" | "Kill Aura" | "Trigger Bot" |
         "Crystal Aura" | "Anchor Aura" | "Cart" | "PvP Bot" | "Auto Mace" | "Elytra Target" | "Auto Spear" |
         "Auto Tool" | "Auto Eat" | "Auto Gap" | "Inventory Manager" | "Auto Replenish" | "Chest Swap" |
-        "Offhand" | "Anti AFK" | "Parkour" | "Auto Jump" | "Sneak" | "Elytra Fly" | "Elytra Boost" |
+        "Offhand" | "Anti AFK" | "Parkour" | "Auto Jump" | "Sneak" | "Elytra Fly" |
         "Glide" | "Spider" | "High Jump" | "Long Jump" | "Jesus" | "Blink" | "Freecam" |
         "Aim Assist" | "Bow Aim" | "Auto City" | "Hole Filler" | "Liquid Filler" | "Burrow" |
         "Tap Use" | "Wind Jump" | "Pearl Catch" | "Middle Click Extra" | "Auto Clicker" |

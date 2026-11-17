@@ -323,6 +323,13 @@ fn step_height(game: &Game<'_>, m: &Module) -> f64 {
 // The screens GUI Move walks you in: the inventory and containers (not an anvil's rename box) and, with "All menus",
 // the pause menu, the Options pages with no search box, Statistics, Advancements and the creative tabs but the search. Never
 // a screen you type in. (A single-player game stops while the pause menu and the like are open: nothing moves there.)
+// A firework is boosting your glide now (FireworkRocketEntity.attachedToEntity): one this game ticks on you (single
+// player; not one boosting a LAN guest), or one the server says is attached to your entity.
+fn firework_boosting(game: &Game<'_>) -> bool {
+    let me = own_id(game);
+    game.rockets.iter().any(|r| (r.attached && r.guest.is_none()) || (me.is_some() && r.attached_to == me))
+}
+
 fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
     if game.screen == Screen::Inventory {
         let (id, kind) = game.remote_menu();
@@ -488,6 +495,7 @@ fn module_tick(game: &mut Game<'_>) {
     let flight = get("Flight").filter(|_| super::sunset_flight::damage_open());
     let flight_abilities = flight.is_some_and(|f| f.p("Mode") == "Abilities");
     flight_post(game, flight, jump, sneak, screen_keys.and(dir));
+    let firework = firework_boosting(game);
 
     if let Some(p) = game.player.as_mut() {
         // Behind a screen, Flight's Abilities mode flies by hand at its speed, as creative flight does (about 11 blocks
@@ -522,26 +530,12 @@ fn module_tick(game: &mut Game<'_>) {
             p.velocity.y = sp.n("Climb speed");
             p.fall_distance = 0.0;
         }
-        if let Some(e) = get("Elytra Boost")
-            && p.fall_flying
-            && forward
-        {
-            let look = horizon_client::gizmos::view_vector(pitch, yaw);
-            let a = e.n("Boost");
-            p.velocity.x += look[0] * a;
-            p.velocity.y += look[1] * a;
-            p.velocity.z += look[2] * a;
-            let v = &mut p.velocity;
-            let len = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
-            let max = e.n("Max speed");
-            if len > max {
-                let k = max / len;
-                (v.x, v.y, v.z) = (v.x * k, v.y * k, v.z * k);
-            }
-        }
-        // Elytra Fly (Sunset's Vanilla mode): gliding, the keys set the move outright: Horizontal speed (blocks a tick)
-        // the way they point, up or down at Vertical speed with jump or sneak, else a slow sink (Fall multiplier).
-        // Auto take off opens the elytra as soon as a jump starts to fall; Stop in water lets water end the glide.
+        // Elytra Fly. Control (Sunset's Vanilla mode): gliding, the keys set the move outright: Horizontal speed
+        // (blocks a tick) the way they point, up or down at Vertical speed with jump or sneak, else a slow sink (Fall
+        // multiplier). Boost (Elytra Boost before 1.3): the game glides as ever and each tick adds Boost along where you
+        // look, while forward is held or a firework is boosting you (only then with Boost only on firework). It never
+        // takes you past Max speed, nor slows a glide that is already faster (a rocket's). Auto take off opens the
+        // elytra as soon as a jump starts to fall; Stop in water lets water end the glide.
         if let Some(e) = get("Elytra Fly")
             && game.armor[1].as_ref().is_some_and(|s| s.item.ends_with("elytra"))
             && !(e.b("Stop in water") && p.fluids.was_touching_water)
@@ -549,7 +543,22 @@ fn module_tick(game: &mut Game<'_>) {
             if e.b("Auto take off") && !p.fall_flying && !p.ground.on_ground && p.velocity.y < 0.0 && jump {
                 p.fall_flying = true;
             }
-            if p.fall_flying {
+            if p.fall_flying && e.p("Mode") == "Boost" {
+                let wanted = if e.b("Boost only on firework") { firework } else { forward || firework };
+                let v = &mut p.velocity;
+                let before = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
+                let max = e.n("Max speed");
+                if wanted && before < max {
+                    let look = horizon_client::gizmos::view_vector(pitch, yaw);
+                    let a = e.n("Boost");
+                    (v.x, v.y, v.z) = (v.x + look[0] * a, v.y + look[1] * a, v.z + look[2] * a);
+                    let len = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
+                    if len > max {
+                        let k = max / len;
+                        (v.x, v.y, v.z) = (v.x * k, v.y * k, v.z * k);
+                    }
+                }
+            } else if p.fall_flying {
                 let h = e.n("Horizontal speed");
                 let [x, z] = dir.map_or([0.0, 0.0], |[x, z]| [x * h, z * h]);
                 let y = if jump {

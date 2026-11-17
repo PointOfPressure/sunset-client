@@ -216,7 +216,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   keys, the last pressed wins).
 - **Step**, **Spider**, **High Jump**, **Long Jump**, **Air Jump**, **No Jump Delay**, **Fast Climb**, **Glide**,
   **Anti Void**, **Blink**, **Click TP**.
-- **Elytra Boost**, **Elytra Fly**, **Chest Swap** (swap chestplate and elytra; Take off launches you with a rocket).
+- **Elytra Fly** (Control: fly freely; Boost: speeds up your glide, optionally only while a firework boosts you;
+  Elytra Boost's settings carry over), **Chest Swap** (swap chestplate and elytra; Take off launches you with a rocket).
 - **Wind Jump**, **Pearl Catch**, **Trident Boost**, **Entity Control** (drive and fly boats), **Jesus**, **Slippy**.
 
 </details>

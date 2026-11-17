@@ -642,6 +642,12 @@ impl Module {
                 "Inventory blur" => self.b("Menu dim"),
                 _ => true,
             },
+            // Elytra Fly: each mode's own settings.
+            "Elytra Fly" => match name {
+                "Horizontal speed" | "Vertical speed" | "Fall multiplier" => self.p("Mode") == "Control",
+                "Boost" | "Max speed" | "Boost only on firework" => self.p("Mode") == "Boost",
+                _ => true,
+            },
             "Auto Weapon" => match name {
                 "Best weapon" | "Axe on shields" => self.p("Mode") == "Custom",
                 "Prefer axes" => self.p("Mode") == "Custom" && self.b("Best weapon"),

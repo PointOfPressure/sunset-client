@@ -176,13 +176,15 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Fall speed", 2.5, 0.5, 8.0, 0.5),
         Module::new("No Jump Delay", Movement, "Jumps again on landing."),
         Module::new("Air Jump", Movement, "Jumps in mid-air."),
-        Module::new("Elytra Boost", Movement, "Speeds up gliding.")
-            .num("Boost", 0.05, 0.01, 0.2, 0.01)
-            .num("Max speed", 2.0, 0.5, 5.0, 0.5),
-        Module::new("Elytra Fly", Movement, "Flies freely with an elytra.")
+        // Control flies freely; Boost (Elytra Boost before 1.3) speeds up the game's own glide.
+        Module::new("Elytra Fly", Movement, "Flies with an elytra: freely, or boosting your glide.")
+            .pick("Mode", &["Control", "Boost"])
             .num("Horizontal speed", 1.0, 0.1, 5.0, 0.1)
             .num("Vertical speed", 1.0, 0.1, 5.0, 0.1)
             .num("Fall multiplier", 0.01, 0.0, 1.0, 0.01)
+            .num("Boost", 0.05, 0.01, 0.2, 0.01)
+            .num("Max speed", 2.0, 0.5, 5.0, 0.5)
+            .bool("Boost only on firework", false)
             .bool("Auto take off", false)
             .bool("Stop in water", true),
         Module::new("Slippy", Movement, "Makes every block slippery.")
