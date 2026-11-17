@@ -330,7 +330,7 @@ impl ElytraProcess {
     }
 
     /// `pathTo(Goal)`: an error is what the Java throws as an IllegalArgumentException.
-    pub fn path_to(&mut self, core: &mut Core, game: &mut Game<'_>, goal: &GoalRef) -> Result<(), String> {
+    pub(super) fn path_to(&mut self, core: &mut Core, game: &mut Game<'_>, goal: &GoalRef) -> Result<(), String> {
         let Some(target) = goal.elytra_target() else { return Err("The goal must be a GoalXZ or GoalBlock".into()) };
         let dimension = game.native_player().map_or("minecraft:overworld", |p| p.dimension).to_owned();
         if !self.is_supported_pos(core, target, &dimension) {
@@ -380,7 +380,7 @@ impl ElytraProcess {
     }
 
     /// `resetState`: start again towards the same destination.
-    pub fn reset_state(&mut self, core: &mut Core, game: &mut Game<'_>) -> Result<(), String> {
+    pub(super) fn reset_state(&mut self, core: &mut Core, game: &mut Game<'_>) -> Result<(), String> {
         let destination = self.current_destination();
         self.lost(true);
         if let Some(d) = destination {
@@ -395,7 +395,7 @@ impl ElytraProcess {
     }
 
     /// `repackChunks`.
-    pub fn repack(&mut self, game: &Game<'_>) {
+    pub(super) fn repack(&mut self, game: &Game<'_>) {
         if let Some(b) = self.behavior.as_mut() {
             b.repack_chunks(game);
         }

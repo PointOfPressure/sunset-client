@@ -107,7 +107,7 @@ impl MineProcess {
     }
 
     /// `mine(quantity, filter)`.
-    pub fn mine(&mut self, core: &mut Core, game: &mut Game<'_>, quantity: i32, filter: Option<BlockOptionalMetaLookup>) {
+    pub(super) fn mine(&mut self, core: &mut Core, game: &mut Game<'_>, quantity: i32, filter: Option<BlockOptionalMetaLookup>) {
         self.filter = filter;
         if self.filter_filter(core, game).is_none() {
             self.filter = None;
@@ -385,7 +385,7 @@ pub fn is_next_to_air(ctx: &CalculationContext, pos: Pos, radius: i32) -> bool {
 
 /// `MineProcess.prune`: forget what is gone, implausible, out of the height limits or blacklisted, and keep the
 /// nearest `max`. A drop already next to a known block of the filter is not a place of its own.
-pub fn prune(core: &mut Core, game: &mut Game<'_>, locs2: Vec<Pos>, filter: &BlockOptionalMetaLookup, max: usize, blacklist: &[Pos], dropped: &mut Vec<Pos>, hooks: Option<Rc<dyn CostHooks>>) -> Vec<Pos> {
+pub(super) fn prune(core: &mut Core, game: &mut Game<'_>, locs2: Vec<Pos>, filter: &BlockOptionalMetaLookup, max: usize, blacklist: &[Pos], dropped: &mut Vec<Pos>, hooks: Option<Rc<dyn CostHooks>>) -> Vec<Pos> {
     let exposed_only = core.settings.flag("allowOnlyExposedOres");
     let exposed_distance = core.settings.int("allowOnlyExposedOresDistance") as i32;
     let min_y = core.settings.int("minYLevelWhileMining") as i32;
@@ -416,7 +416,7 @@ pub fn prune(core: &mut Core, game: &mut Game<'_>, locs2: Vec<Pos>, filter: &Blo
 
 /// `MineProcess.searchWorld`: the places the wanted blocks are, from the cache for the blocks it keeps track of
 /// and from a scan of the loaded chunks for the rest, pruned.
-pub fn search_world(core: &mut Core, game: &mut Game<'_>, filter: &BlockOptionalMetaLookup, max: usize, already_known: &[Pos], blacklist: &[Pos], dropped: &mut Vec<Pos>, hooks: Option<Rc<dyn CostHooks>>) -> Vec<Pos> {
+pub(super) fn search_world(core: &mut Core, game: &mut Game<'_>, filter: &BlockOptionalMetaLookup, max: usize, already_known: &[Pos], blacklist: &[Pos], dropped: &mut Vec<Pos>, hooks: Option<Rc<dyn CostHooks>>) -> Vec<Pos> {
     let feet = core.player_feet(game).unwrap_or([0, 0, 0]);
     let mut locs: Vec<Pos> = Vec::new();
     let mut untracked = false;

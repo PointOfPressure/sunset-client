@@ -115,3 +115,22 @@ Rules of this code, learned the hard way on Horizon:
   borrow of it across a call back into the game.
 - Blocks are `Pos = [i32; 3]`; the player's own position is `[f64; 3]`.
 
+## License
+
+Baritone is LGPL-3.0 (with an anime exception, see its [LICENSE-Part-2.jpg](LICENSE-Part-2.jpg)) and this is a derivative of it,
+so it is LGPL-3.0 as well: [LICENSE](LICENSE), [COPYING](COPYING) and [NOTICE.md](NOTICE.md).
+
+## Changes in Sunset
+
+This copy is horizon-baritone `41e1b72` as built into Sunset (Rust, zackmsa777-a11y, and the Sunset contributors,
+November 2026). It runs under the mod id `sunset_baritone`, shares movement with Sunset (stop, Panic, hand-off) and
+leaves idle ticks to Sunset. Changed files:
+`src/baritone.rs`, `src/behavior/input.rs`, `src/cache/cached_world.rs`, `src/game/bridge.rs`,
+`src/pathing/calc/a_star.rs`, `src/process/elytra/flight.rs`, `src/process/follow.rs`, `hooks/block_change.rs`,
+`hooks/block_interact.rs`, `hooks/chat.rs`, `hooks/click_escape.rs`, `hooks/click_key.rs`, `hooks/click_press.rs`,
+`hooks/click.rs`, `hooks/command.rs`, `hooks/goal_beam.rs`, `hooks/keys_before.rs`, `hooks/keys_remote.rs`,
+`hooks/list.rs`, `hooks/page_drag.rs`, `hooks/page_draw.rs`, `hooks/page_key.rs`, `hooks/page_mouse.rs`,
+`hooks/page_text.rs`, `hooks/page_wheel.rs`, `hooks/settings.rs`, `hooks/tick.rs`, `hooks/toast_draw.rs`.
+Also, in 23 files the items that take the game's private `Game` type are `pub(super)` instead of `pub`, and
+parts only the standalone crate uses are marked `#[allow(dead_code)]`, so Sunset's build has no warnings.
+The rest is unchanged. It stays LGPL-3.0: see LICENSE, COPYING and NOTICE.md.

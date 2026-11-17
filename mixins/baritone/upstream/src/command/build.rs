@@ -93,18 +93,18 @@ pub const COMMANDS: &[Command] = &[
 ];
 
 /// The folder schematics are read from.
-pub fn schematics_dir(game: &Game<'_>) -> PathBuf {
+pub(super) fn schematics_dir(game: &Game<'_>) -> PathBuf {
     game.native_data_dir(ID).join("schematics")
 }
 
 /// RelativeFile: a path as given if it is absolute, else inside the schematics folder.
-pub fn relative_file(game: &Game<'_>, name: &str) -> PathBuf {
+pub(super) fn relative_file(game: &Game<'_>, name: &str) -> PathBuf {
     let given = PathBuf::from(name);
     if given.is_absolute() { given } else { schematics_dir(game).join(name) }
 }
 
 /// A file named for `explorefilter`: as given, else beside the schematics.
-pub fn resolve_file(game: &Game<'_>, name: &str) -> PathBuf {
+pub(super) fn resolve_file(game: &Game<'_>, name: &str) -> PathBuf {
     relative_file(game, name)
 }
 

@@ -123,14 +123,14 @@ impl Core {
     }
 
     /// Set a setting and keep it for the next game.
-    pub fn set_setting(&mut self, game: &mut Game<'_>, name: &str, value: &str) -> Result<(&'static settings::Def, String), String> {
+    pub(super) fn set_setting(&mut self, game: &mut Game<'_>, name: &str, value: &str) -> Result<(&'static settings::Def, String), String> {
         let (def, canonical) = self.settings.set(name, value)?;
         self.save_settings(game);
         self.refresh();
         Ok((def, canonical))
     }
 
-    pub fn reset_setting(&mut self, game: &mut Game<'_>, def: &'static settings::Def) {
+    pub(super) fn reset_setting(&mut self, game: &mut Game<'_>, def: &'static settings::Def) {
         self.settings.reset(def);
         self.save_settings(game);
         self.refresh();
@@ -167,14 +167,14 @@ impl Core {
     }
 
     /// `SettingsUtil.save`.
-    pub fn save_settings(&self, game: &mut Game<'_>) {
+    pub(super) fn save_settings(&self, game: &mut Game<'_>) {
         if Self::write_settings(game, &self.settings).is_err() {
             self.say_red(game, "Exception thrown while saving Baritone settings!");
         }
     }
 
     /// `#set load`: everything back to its default, then the file. The lines to say come back.
-    pub fn load_settings(&mut self, game: &Game<'_>, file: &str) -> Vec<String> {
+    pub(super) fn load_settings(&mut self, game: &Game<'_>, file: &str) -> Vec<String> {
         self.settings = Settings::load(|_| None);
         let notes = match std::fs::read_to_string(game.native_data_dir(ID).join(file)) {
             Ok(text) => self.settings.apply_file_text(&text),
@@ -191,7 +191,7 @@ impl Core {
         game.native_data_dir(ID).join("cache").join(super::baritone_world_data::world_name(game)).join("waypoints.txt")
     }
 
-    pub fn save_waypoints(&self, game: &Game<'_>) {
+    pub(super) fn save_waypoints(&self, game: &Game<'_>) {
         let file = Self::waypoints_file(game);
         if let Some(dir) = file.parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -201,7 +201,7 @@ impl Core {
 
     /// Switch to the waypoints of the world now being played in. The one list older versions kept for every world goes to
     /// the first world opened after the change, once, so nothing is lost.
-    pub fn follow_waypoints(&mut self, game: &Game<'_>) {
+    pub(super) fn follow_waypoints(&mut self, game: &Game<'_>) {
         let world = super::baritone_world_data::world_name(game);
         if self.waypoints_world.as_deref() == Some(world.as_str()) {
             return;
@@ -230,7 +230,7 @@ impl Core {
     }
 
     /// Every block name the game knows, sorted, for commands to check a name against.
-    pub fn known_blocks(&mut self, game: &Game<'_>) -> &Vec<String> {
+    pub(super) fn known_blocks(&mut self, game: &Game<'_>) -> &Vec<String> {
         self.block_names.get_or_insert_with(|| {
             let mut names: Vec<String> = game.res.facts().states.iter().map(|s| s.name.to_string()).collect();
             names.sort();
@@ -240,7 +240,7 @@ impl Core {
     }
 
     /// `stone`, `minecraft:stone` -> `minecraft:stone`, if there is such a block.
-    pub fn block_named(&mut self, game: &Game<'_>, word: &str) -> Option<String> {
+    pub(super) fn block_named(&mut self, game: &Game<'_>, word: &str) -> Option<String> {
         let full = if word.contains(':') { word.to_ascii_lowercase() } else { format!("minecraft:{}", word.to_ascii_lowercase()) };
         self.known_blocks(game).binary_search(&full).ok().map(|_| full)
     }
@@ -269,7 +269,7 @@ impl Core {
         }
     }
 
-    pub fn say_text(&self, game: &mut Game<'_>, body: Text) {
+    pub(super) fn say_text(&self, game: &mut Game<'_>, body: Text) {
         // logAsToast: the message is a toast and not a line of chat.
         if self.settings.flag("logAsToast") {
             self.log_toast(&body);
@@ -289,16 +289,16 @@ impl Core {
         }
     }
 
-    pub fn say(&self, game: &mut Game<'_>, message: &str) {
+    pub(super) fn say(&self, game: &mut Game<'_>, message: &str) {
         self.say_text(game, Text::colored(message, text::GRAY));
     }
 
-    pub fn say_red(&self, game: &mut Game<'_>, message: &str) {
+    pub(super) fn say_red(&self, game: &mut Game<'_>, message: &str) {
         self.say_text(game, Text::colored(message, text::RED));
     }
 
     /// A line with no prefix, for lists.
-    pub fn say_plain(&self, game: &mut Game<'_>, line: Text) {
+    pub(super) fn say_plain(&self, game: &mut Game<'_>, line: Text) {
         let focused = game.screen == Screen::Chat;
         game.ui.chat.add(&game.gui.atlas, line, None, ChatSource::Client, game.ticks, focused);
     }
@@ -337,7 +337,7 @@ impl Procs {
     }
 
     /// Every process, in the order they were registered.
-    pub fn ordered(&mut self) -> Vec<&mut dyn Process> {
+    pub(super) fn ordered(&mut self) -> Vec<&mut dyn Process> {
         vec![
             &mut self.goal,
             &mut self.get_to_block,
@@ -354,7 +354,7 @@ impl Procs {
     }
 
     /// The process with this name.
-    pub fn by_name(&mut self, name: &str) -> Option<&mut dyn Process> {
+    pub(super) fn by_name(&mut self, name: &str) -> Option<&mut dyn Process> {
         self.ordered().into_iter().find(|p| p.name() == name)
     }
 
@@ -388,7 +388,7 @@ impl Baritone {
 
     /// `PathingBehavior.cancelEverything`: every process stops, and the path too unless that would drop the player mid-move, in which
     /// case the tick cancels it as soon as it is safe (no process is left to ask for anything else).
-    pub fn cancel_everything(&mut self, game: &mut Game<'_>) {
+    pub(super) fn cancel_everything(&mut self, game: &mut Game<'_>) {
         if self.core.pathing_safe_to_cancel() {
             self.core.drive(game, |p, ctx, _| p.secret_internal_segment_cancel(ctx));
         }
@@ -396,7 +396,7 @@ impl Baritone {
     }
 
     /// `forceCancel`: the same whether it is safe or not, and the search as well. Also what leaving the world does.
-    pub fn force_cancel(&mut self, game: &mut Game<'_>) {
+    pub(super) fn force_cancel(&mut self, game: &mut Game<'_>) {
         self.cancel_processes();
         self.core.pathing_reset(game);
     }
@@ -716,7 +716,7 @@ thread_local! {
 
 /// Run `f` with the instance, taking it out of its cell for the length of the call. None when it is
 /// already in use (the game called back into a hook from inside one).
-pub fn with<R>(game: &mut Game<'_>, f: impl FnOnce(&mut Baritone, &mut Game<'_>) -> R) -> Option<R> {
+pub(super) fn with<R>(game: &mut Game<'_>, f: impl FnOnce(&mut Baritone, &mut Game<'_>) -> R) -> Option<R> {
     if BUSY.with(FlagCell::get) {
         return None;
     }
@@ -737,7 +737,7 @@ thread_local! {
 }
 
 /// `BlockChangeEvent`: a block was set.
-pub fn block_changed(game: &Game<'_>, pos: [i32; 3], state: i32) {
+pub(super) fn block_changed(game: &Game<'_>, pos: [i32; 3], state: i32) {
     let id = horizon_world::registry::BlockStateId(state.max(0) as u32);
     let solid = !game.res.facts().is_air(id);
     let name = game.res.facts().get(id).name.clone();
@@ -766,7 +766,7 @@ pub fn take_block_changes() -> Vec<(i32, i32, i32, bool)> {
 }
 
 /// `BlockInteractEvent` USE, which WaypointBehavior listens to: a bed that is right-clicked becomes a bed waypoint, at its head.
-pub fn block_interact_use(game: &mut Game<'_>) {
+pub(super) fn block_interact_use(game: &mut Game<'_>) {
     if !game.native_window() {
         return;
     }
@@ -804,7 +804,7 @@ thread_local! {
 }
 
 /// Escape on the click screen: it closes, and the mouse goes back to the game. True when it was open.
-pub fn click_escape(game: &mut Game<'_>) -> bool {
+pub(super) fn click_escape(game: &mut Game<'_>) -> bool {
     if !CLICK_OPEN.with(FlagCell::get) || game.screen != Screen::Playing {
         return false;
     }
@@ -816,14 +816,14 @@ pub fn click_escape(game: &mut Game<'_>) -> bool {
 }
 
 /// GuiClick.mouseClicked: a button pressed, any button.
-pub fn click_press(game: &mut Game<'_>) {
+pub(super) fn click_press(game: &mut Game<'_>) {
     if CLICK_OPEN.with(FlagCell::get) {
         with(game, |b, _| b.core.click.pressed());
     }
 }
 
 /// A key or a mouse button while playing. A press through the game's control socket comes this way too.
-pub fn click_key(game: &mut Game<'_>, key: &str, pressed: bool) {
+pub(super) fn click_key(game: &mut Game<'_>, key: &str, pressed: bool) {
     use super::baritone_gui_click::Button;
     use winit::event::MouseButton;
     if !CLICK_OPEN.with(FlagCell::get) {
@@ -846,12 +846,12 @@ pub fn click_key(game: &mut Game<'_>, key: &str, pressed: bool) {
 }
 
 /// Whether the page open in Options is Baritone's own (Options > Mods > Baritone).
-pub fn page_open(game: &Game<'_>) -> bool {
+pub(super) fn page_open(game: &Game<'_>) -> bool {
     matches!(game.ui.options.page(), horizon_client::options_ui::Page::NativeMod(i)
         if game.settings.mods.installed.get(i).is_some_and(|m| m.id == ID))
 }
 
-pub fn page_draw(game: &mut Game<'_>, batch: &mut horizon_client::hud::HudBatch) {
+pub(super) fn page_draw(game: &mut Game<'_>, batch: &mut horizon_client::hud::HudBatch) {
     with(game, |b, game| {
         b.page_sync(game);
         super::baritone_settings_ui::draw(b, game, batch);
@@ -859,12 +859,12 @@ pub fn page_draw(game: &mut Game<'_>, batch: &mut horizon_client::hud::HudBatch)
 }
 
 /// Characters typed on the page: a field takes them, and with none up they are dropped.
-pub fn page_text(game: &mut Game<'_>, text: &str) {
+pub(super) fn page_text(game: &mut Game<'_>, text: &str) {
     with(game, |b, game| b.page_typed(game, super::baritone_screen::Key::Other, Some(text)));
 }
 
 /// A key on the page: true when the page took it. Escape in a field only leaves the field.
-pub fn page_key(game: &mut Game<'_>, key: winit::keyboard::KeyCode, text: Option<&str>) -> bool {
+pub(super) fn page_key(game: &mut Game<'_>, key: winit::keyboard::KeyCode, text: Option<&str>) -> bool {
     use winit::keyboard::KeyCode;
     use super::baritone_screen::Key;
     let key = match key {
@@ -877,7 +877,7 @@ pub fn page_key(game: &mut Game<'_>, key: winit::keyboard::KeyCode, text: Option
 }
 
 /// A press at the cursor (`drag`: a movement with the button held): see `Baritone::page_click`. A right click does nothing.
-pub fn page_press(game: &mut Game<'_>, drag: bool, right: bool) -> u8 {
+pub(super) fn page_press(game: &mut Game<'_>, drag: bool, right: bool) -> u8 {
     if right {
         return 0;
     }
@@ -886,7 +886,7 @@ pub fn page_press(game: &mut Game<'_>, drag: bool, right: bool) -> u8 {
 }
 
 /// The wheel over the page scrolls the rows.
-pub fn page_wheel(game: &mut Game<'_>, amount: f32) {
+pub(super) fn page_wheel(game: &mut Game<'_>, amount: f32) {
     let size = game.gui_size();
     with(game, |b, _| {
         let l = super::baritone_screen::layout(size.0, size.1);
@@ -895,7 +895,7 @@ pub fn page_wheel(game: &mut Game<'_>, amount: f32) {
 }
 
 /// `onPlayerUpdate` PRE, just before the player's motion reads its rotation.
-pub fn look_pre(game: &mut Game<'_>) {
+pub(super) fn look_pre(game: &mut Game<'_>) {
     if !game.native_window() {
         return;
     }
@@ -911,7 +911,7 @@ pub fn look_pre(game: &mut Game<'_>) {
 }
 
 /// `onPlayerUpdate` POST, once the tick has been sent to the server.
-pub fn look_post(game: &mut Game<'_>) {
+pub(super) fn look_post(game: &mut Game<'_>) {
     with(game, |b, game| {
         let fall_flying = game.player.as_ref().is_some_and(|p| p.fall_flying);
         let current = super::baritone_rotation::Rotation::new(game.yaw, game.pitch);
@@ -922,7 +922,7 @@ pub fn look_post(game: &mut Game<'_>) {
     });
 }
 
-pub fn tick(game: &mut Game<'_>) {
+pub(super) fn tick(game: &mut Game<'_>) {
     look_post(game);
     super::baritone_input::back(game);
     if !game.native_window() {
@@ -969,7 +969,7 @@ fn block_properties(game: &Game<'_>) -> super::baritone_tab::BlockProperties {
 
 /// The toast hook, once a frame from the game's mod HUD: `ToastManager.extractRenderState` for the Baritone toast, in a free
 /// 32 pixel slot, with the sound of a toast coming and going.
-pub fn draw_toast(game: &mut Game<'_>, batch: &mut horizon_client::hud::HudBatch) {
+pub(super) fn draw_toast(game: &mut Game<'_>, batch: &mut horizon_client::hud::HudBatch) {
     with(game, |b, game| {
         let mut cell = b.core.toast.borrow_mut();
         let Some(toast) = cell.as_mut() else { return };
@@ -995,7 +995,7 @@ pub fn draw_toast(game: &mut Game<'_>, batch: &mut horizon_client::hud::HudBatch
 }
 
 /// The beacon hook: the beam of a GoalXZ, drawn with the beacons.
-pub fn goal_beams(game: &mut Game<'_>, camera: glam::DVec3, alpha: f64, out: &mut Vec<horizon_client::mesher::Vertex>) {
+pub(super) fn goal_beams(game: &mut Game<'_>, camera: glam::DVec3, alpha: f64, out: &mut Vec<horizon_client::mesher::Vertex>) {
     if !game.native_window() {
         return;
     }
@@ -1040,7 +1040,7 @@ fn publish_tab(b: &mut Baritone, game: &mut Game<'_>) {
 }
 
 /// The mod was turned off: stop and draw nothing.
-pub fn stop(game: &mut Game<'_>) {
+pub(super) fn stop(game: &mut Game<'_>) {
     look_post(game);
     if !game.native_window() {
         return;
@@ -1064,7 +1064,7 @@ fn publish(b: &mut Baritone, game: &Game<'_>) {
 }
 
 /// A line typed in chat: true when it was a Baritone command, so the server never sees it.
-pub fn chat(game: &mut Game<'_>, message: &str) -> bool {
+pub(super) fn chat(game: &mut Game<'_>, message: &str) -> bool {
     with(game, |b, game| {
         let s = &b.core.settings;
         let prefix = s.text("prefix");
@@ -1087,7 +1087,7 @@ pub fn chat(game: &mut Game<'_>, message: &str) -> bool {
 }
 
 /// `@baritone <line>` from a clicked chat line, and `/baritone <line>` typed with a slash.
-pub fn command(game: &mut Game<'_>, command: &str, ran: &mut bool) {
+pub(super) fn command(game: &mut Game<'_>, command: &str, ran: &mut bool) {
     let mut words = command.splitn(2, char::is_whitespace);
     let first = words.next().unwrap_or("");
     if first != commands::CLICK && !first.eq_ignore_ascii_case("baritone") && !first.eq_ignore_ascii_case("b") {
@@ -1112,14 +1112,14 @@ fn toggle_on(game: &Game<'_>, name: &str) -> bool {
     Core::stored_settings(game).0.flag(name)
 }
 
-pub fn page_labels(game: &Game<'_>) -> Vec<String> {
+pub(super) fn page_labels(game: &Game<'_>) -> Vec<String> {
     PAGE_TOGGLES
         .iter()
         .map(|(label, name)| format!("{label}: {}", if toggle_on(game, name) { "ON" } else { "OFF" }))
         .collect()
 }
 
-pub fn page_click(game: &mut Game<'_>, button: usize) {
+pub(super) fn page_click(game: &mut Game<'_>, button: usize) {
     let Some((_, name)) = PAGE_TOGGLES.get(button) else {
         return;
     };

@@ -55,7 +55,7 @@ impl InventoryBehavior {
     }
 
     /// `onTick`: with allowInventory, keep a throwaway block in slot 8 and the best pickaxe in slot 0 while pathing.
-    pub fn tick(&mut self, game: &mut Game<'_>, settings: &Settings, acceptable: &[String], pathing: bool, tools: &ToolSettings) {
+    pub(super) fn tick(&mut self, game: &mut Game<'_>, settings: &Settings, acceptable: &[String], pathing: bool, tools: &ToolSettings) {
         if !settings.flag("allowInventory") {
             return;
         }
@@ -82,7 +82,7 @@ impl InventoryBehavior {
 
     /// `attemptToPutOnHotbar`: a hotbar slot not in use for something else gets the stack of the main inventory slot. False
     /// when the swap was asked for and could not be made yet.
-    pub fn attempt_to_put_on_hotbar(&mut self, game: &mut Game<'_>, settings: &Settings, in_main_inventory: usize, disallowed_hotbar: &dyn Fn(usize) -> bool) -> bool {
+    pub(super) fn attempt_to_put_on_hotbar(&mut self, game: &mut Game<'_>, settings: &Settings, in_main_inventory: usize, disallowed_hotbar: &dyn Fn(usize) -> bool) -> bool {
         match temp_hotbar_slot(game, disallowed_hotbar) {
             Some(destination) => self.request_swap_with_hotbar(game, settings, in_main_inventory, destination),
             None => true,
@@ -108,14 +108,14 @@ impl InventoryBehavior {
     }
 
     /// `hasGenericThrowaway`: whether any acceptable throwaway item is at hand.
-    pub fn has_generic_throwaway(&mut self, game: &mut Game<'_>, settings: &Settings, acceptable: &[String]) -> bool {
+    pub(super) fn has_generic_throwaway(&mut self, game: &mut Game<'_>, settings: &Settings, acceptable: &[String]) -> bool {
         let allow = settings.flag("allowInventory");
         acceptable.iter().any(|item| self.throwaway(game, settings, false, &|s| bare(&s.item) == bare(item), allow))
     }
 
     /// `selectThrowawayForLocation`: a block to place. `placed` is the block the builder wants at the position, if it has a
     /// say: the stack of that block first, then the acceptable items in the order the setting lists them.
-    pub fn select_throwaway_for_location(&mut self, game: &mut Game<'_>, settings: &Settings, acceptable: &[String], select: bool, placed: Option<&str>) -> bool {
+    pub(super) fn select_throwaway_for_location(&mut self, game: &mut Game<'_>, settings: &Settings, acceptable: &[String], select: bool, placed: Option<&str>) -> bool {
         let allow = settings.flag("allowInventory");
         if let Some(block) = placed {
             if self.throwaway(game, settings, select, &|s| bare(&s.item) == bare(block), allow) {
@@ -128,7 +128,7 @@ impl InventoryBehavior {
     /// `throwaway`: hold a stack `desired` accepts. The hotbar first; then the off hand (which would win a right click, so
     /// the main hand is given something that does not right click); then, if the inventory may be used, the main inventory,
     /// whose stack is swapped to slot 7.
-    pub fn throwaway(&mut self, game: &mut Game<'_>, settings: &Settings, select: bool, desired: &dyn Fn(&ItemStack) -> bool, allow_inventory: bool) -> bool {
+    pub(super) fn throwaway(&mut self, game: &mut Game<'_>, settings: &Settings, select: bool, desired: &dyn Fn(&ItemStack) -> bool, allow_inventory: bool) -> bool {
         if let Some(slot) = (0..9).find(|&i| stack_at(game, i).is_some_and(|s| desired(&s))) {
             if select {
                 game.selected = slot;
@@ -226,7 +226,7 @@ fn swap_click(game: &mut Game<'_>, in_inventory: usize, in_hotbar: usize) -> boo
 
 /// `windowClick(containerId, slot, 0, ClickType.PICKUP)` on the player's inventory menu: the stack of the slot is picked up,
 /// or the carried one put down (the game's own slot numbers: hotbar 0 to 8, main inventory 9 to 35, armor 500 to 503).
-pub fn pickup_click(game: &mut Game<'_>, slot: usize) -> bool {
+pub(super) fn pickup_click(game: &mut Game<'_>, slot: usize) -> bool {
     let ops = [(Some(slot), 0, Input::Pickup)];
     if game.remote.is_some() {
         game.remote_menu_ops(&ops)
@@ -235,15 +235,15 @@ pub fn pickup_click(game: &mut Game<'_>, slot: usize) -> bool {
     }
 }
 
-pub fn bucket_slot(game: &Game<'_>) -> Option<usize> {
+pub(super) fn bucket_slot(game: &Game<'_>) -> Option<usize> {
     hotbar_slot(game, |n| n == "minecraft:water_bucket")
 }
 
-pub fn empty_bucket_slot(game: &Game<'_>) -> Option<usize> {
+pub(super) fn empty_bucket_slot(game: &Game<'_>) -> Option<usize> {
     hotbar_slot(game, |n| n == "minecraft:bucket")
 }
 
 /// Hold the stack in `slot`.
-pub fn select(game: &mut Game<'_>, slot: usize) {
+pub(super) fn select(game: &mut Game<'_>, slot: usize) {
     game.selected = slot;
 }

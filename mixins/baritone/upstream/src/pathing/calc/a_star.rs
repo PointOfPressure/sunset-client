@@ -38,6 +38,7 @@ impl PathNode {
 }
 
 /// IOpenSet: what the search asks of its open set. The nodes live in one arena, so the set holds indices into it.
+#[allow(dead_code)]
 pub trait IOpenSet {
     fn is_empty(&self) -> bool;
     /// Add a node whose combined cost is set.
@@ -68,6 +69,7 @@ impl IOpenSet for BinaryHeapOpenSet {
 /// uses BinaryHeapOpenSet. The list is kept with its head at the end of the vector, so a tie goes to the newest node as
 /// it does in the Java.
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct LinkedListOpenSet {
     list: Vec<usize>,
 }

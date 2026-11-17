@@ -221,7 +221,7 @@ fn xz_goals(goal: &GoalRef, color: u32, s: &Settings, out: &mut Vec<(i32, i32, u
 
 /// `PathRenderer.drawGoal`'s GoalXZ branch with `renderGoalXZBeacon`: `BeaconRenderer.renderBeaconBeam` from the world's
 /// lowest block, with the beacon's texture, for each GoalXZ of the goal. `camera` is where the frame is drawn from.
-pub fn goal_beams(b: &Baritone, game: &Game<'_>, camera: glam::DVec3, alpha: f64, out: &mut Vec<horizon_client::mesher::Vertex>) {
+pub(super) fn goal_beams(b: &Baritone, game: &Game<'_>, camera: glam::DVec3, alpha: f64, out: &mut Vec<horizon_client::mesher::Vertex>) {
     let s = &b.core.settings;
     if !s.flag("renderGoal") || !s.flag("renderGoalXZBeacon") {
         return;
@@ -252,7 +252,7 @@ pub fn goal_beams(b: &Baritone, game: &Game<'_>, camera: glam::DVec3, alpha: f64
 }
 
 /// `PathRenderer.render`, `SelectionRenderer.renderSelections` and the elytra's lines.
-pub fn lines(b: &Baritone, game: &Game<'_>, out: &mut Canvas) {
+pub(super) fn lines(b: &Baritone, game: &Game<'_>, out: &mut Canvas) {
     let s = &b.core.settings;
     let player = game.player.as_ref().map(|p| [p.position.x, p.position.y, p.position.z]);
     let (min_y, max_y) = dimension_extent_of(game);

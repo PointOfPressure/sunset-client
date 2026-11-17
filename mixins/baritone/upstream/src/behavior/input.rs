@@ -81,7 +81,7 @@ fn restore_motion_keys(keys: &mut HeldKeys, saved: [u8; 7]) {
 /// Just before the motion reads the keys: `player.input = new PlayerMovementInput(this)`. While Baritone is in control the motion sees
 /// its inputs and not the keyboard, on any screen, as the Java Baritone walks with any GUI open. The keys are the player's again
 /// right after, so what the player holds is never lost.
-pub fn through(game: &mut Game<'_>) {
+pub(super) fn through(game: &mut Game<'_>) {
     let path = PATH.with(Cell::get);
     if path.has_path && game.settings.auto_jump {
         game.settings.auto_jump = false;
@@ -123,7 +123,7 @@ pub fn through(game: &mut Game<'_>) {
 }
 
 /// After the motion has read them: the keys are the player's again, and the screen is the screen.
-pub fn back(game: &mut Game<'_>) {
+pub(super) fn back(game: &mut Game<'_>) {
     if AUTO_JUMP.with(Cell::take) {
         game.settings.auto_jump = true;
     }
@@ -173,7 +173,7 @@ mod tests {
 
 /// Once a tick: the chat screen is only ever opened together with its box, so a chat screen without one is a screen that
 /// swallows every key (even F5) and cannot be closed. Whatever left the game like that, it is the player's again.
-pub fn mend(game: &mut Game<'_>) {
+pub(super) fn mend(game: &mut Game<'_>) {
     if game.screen == Screen::Chat && game.ui.chat_screen.is_none() {
         game.screen = Screen::Playing;
         game.capture(true);
@@ -217,7 +217,7 @@ impl Input {
     }
 
     /// Put what is forced into the game: once a tick, after everything has set its inputs.
-    pub fn apply(&mut self, game: &mut Game<'_>) {
+    pub(super) fn apply(&mut self, game: &mut Game<'_>) {
         if self.is_input_forced_down(In::ClickLeft) {
             self.set_input_force_state(In::ClickRight, false);
         }
@@ -263,7 +263,7 @@ impl Input {
     }
 
     /// Let go of everything held, at once.
-    pub fn release(&mut self, game: &mut Game<'_>) {
+    pub(super) fn release(&mut self, game: &mut Game<'_>) {
         self.path = PathState::default();
         self.clear_all_keys();
         self.apply(game);

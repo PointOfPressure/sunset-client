@@ -41,7 +41,7 @@ impl GetToBlockProcess {
     }
 
     /// `getToBlock(block)`.
-    pub fn get_to_block(&mut self, core: &mut Core, game: &mut Game<'_>, block: super::baritone_bom::BlockOptionalMeta) {
+    pub(super) fn get_to_block(&mut self, core: &mut Core, game: &mut Game<'_>, block: super::baritone_bom::BlockOptionalMeta) {
         self.on_lost_control_inner(core);
         self.getting_to = Some(block);
         self.start = core.player_feet(game);
@@ -55,7 +55,7 @@ impl GetToBlockProcess {
     }
 
     /// Give up on the closest known block and the ones next to it (`blacklistClosest`).
-    pub fn blacklist_closest(&mut self, core: &mut Core, game: &mut Game<'_>) -> bool {
+    pub(super) fn blacklist_closest(&mut self, core: &mut Core, game: &mut Game<'_>) -> bool {
         let feet = core.player_feet(game).unwrap_or([0, 0, 0]);
         let Some(known) = self.known_locations.as_mut() else { return false };
         let mut new_blacklist: Vec<Pos> = Vec::new();

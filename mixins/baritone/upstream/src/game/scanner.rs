@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 /// Every block state id the lookup stands for (`getAllBlockStates` of each of its blocks).
-pub fn lookup_state_ids(game: &Game<'_>, lookup: &BlockOptionalMetaLookup) -> HashSet<u32> {
+pub(super) fn lookup_state_ids(game: &Game<'_>, lookup: &BlockOptionalMetaLookup) -> HashSet<u32> {
     let mut ids = HashSet::new();
     for bom in lookup.blocks() {
         let with_properties = !bom.properties().is_empty();
@@ -35,7 +35,7 @@ pub fn lookup_state_ids(game: &Game<'_>, lookup: &BlockOptionalMetaLookup) -> Ha
 /// `scanChunkRadius`: the positions of the wanted blocks in the loaded chunks around `feet`, in the order the
 /// scanner finds them (chunks spiralling out, each chunk's sections from the player's level outward), at most
 /// `max` of them. `max_search_radius` is in chunks.
-pub fn scan_chunk_radius(game: &Game<'_>, ids: &HashSet<u32>, feet: Pos, max: usize, max_search_radius: i32) -> Vec<Pos> {
+pub(super) fn scan_chunk_radius(game: &Game<'_>, ids: &HashSet<u32>, feet: Pos, max: usize, max_search_radius: i32) -> Vec<Pos> {
     let mut found: Vec<Pos> = Vec::new();
     if ids.is_empty() {
         return found;
@@ -76,7 +76,7 @@ pub fn scan_chunk_radius(game: &Game<'_>, ids: &HashSet<u32>, feet: Pos, max: us
 }
 
 /// `BlockOptionalMeta.drops`: the items a block gives when a netherite pickaxe breaks it, from its loot table.
-pub fn block_drops(game: &Game<'_>, block: &str) -> HashSet<String> {
+pub(super) fn block_drops(game: &Game<'_>, block: &str) -> HashSet<String> {
     let Some(state) = game.res.facts().states.iter().position(|s| &*s.name == block) else { return HashSet::new() };
     let id = horizon_world::registry::BlockStateId(state as _);
     let pickaxe = ItemStack { item: Arc::from("minecraft:netherite_pickaxe"), count: 1, damage: 0, extra: None };
@@ -90,7 +90,7 @@ pub fn block_drops(game: &Game<'_>, block: &str) -> HashSet<String> {
 }
 
 /// A lookup of the named blocks (with their drops filled in), `selector` being `id` or `id[properties]`.
-pub fn make_bom(game: &Game<'_>, selector: &str, resolve: &mut dyn FnMut(&str) -> Option<String>) -> Result<BlockOptionalMeta, String> {
+pub(super) fn make_bom(game: &Game<'_>, selector: &str, resolve: &mut dyn FnMut(&str) -> Option<String>) -> Result<BlockOptionalMeta, String> {
     let mut bom = BlockOptionalMeta::parse(selector, resolve)?;
     // A property that the block does not have, or a value it cannot take, is refused as the Java refuses it.
     if !bom.properties().is_empty() {

@@ -19,7 +19,7 @@ pub struct GameStateOps {
 }
 
 impl GameStateOps {
-    pub fn new(game: &Game<'_>, factory: Rc<StateFactory>) -> Self {
+    pub(super) fn new(game: &Game<'_>, factory: Rc<StateFactory>) -> Self {
         let transforms = TRANSFORMS
             .get_or_init(|| {
                 let json = std::fs::read_to_string(game.options.resources.join("worldgen/blocks/structure-blocks.json")).ok()?;

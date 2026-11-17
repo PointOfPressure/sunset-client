@@ -74,7 +74,7 @@ pub fn dimension_of(id: &str) -> Dimension {
 }
 
 /// The folder name of the world being played in: the server's address, or the single-player world's name.
-pub fn world_name(game: &Game<'_>) -> String {
+pub(super) fn world_name(game: &Game<'_>) -> String {
     match game.remote.as_ref() {
         Some(r) if r.session.address != "local" => sanitize(&r.session.address),
         // The integrated server holds the name of the world (the client's own `level` is empty then, as `state` shows).
@@ -262,7 +262,7 @@ impl WorldProvider {
     }
 
     /// Switch to the world and dimension being played in (saving the one left), when it changed.
-    pub fn follow(&mut self, game: &Game<'_>, settings: &super::baritone_settings::Settings) {
+    pub(super) fn follow(&mut self, game: &Game<'_>, settings: &super::baritone_settings::Settings) {
         let dimension = game.native_player().map_or("minecraft:overworld", |p| p.dimension);
         let world = world_name(game);
         let key = format!("{world}/{}", sanitize(dimension));
@@ -277,7 +277,7 @@ impl WorldProvider {
 
     /// Queue the chunks that appeared since the last look, and re-queue the ones near the player now and then (the Java
     /// packs a chunk again as it unloads: `pack_unloaded` does, from what the unload hook kept).
-    pub fn queue_chunks(&mut self, game: &Game<'_>) {
+    pub(super) fn queue_chunks(&mut self, game: &Game<'_>) {
         let Some(data) = self.current.as_mut() else { return };
         let revision = game.world.chunks.membership_revision();
         if revision != data.revision {
@@ -299,7 +299,7 @@ impl WorldProvider {
     }
 
     /// `repack`: queue every loaded chunk within `range` chunks of the player. How many were queued.
-    pub fn repack(&mut self, game: &Game<'_>, range: i32) -> usize {
+    pub(super) fn repack(&mut self, game: &Game<'_>, range: i32) -> usize {
         let Some(data) = self.current.as_mut() else { return 0 };
         let Some(p) = game.player.as_ref() else { return 0 };
         let (px, pz) = ((p.position.x.floor() as i32) >> 4, (p.position.z.floor() as i32) >> 4);
@@ -317,7 +317,7 @@ impl WorldProvider {
 
     /// The next few chunks to pack: loaded ones only. A chunk taken while more than `queue_max` wait behind it is dropped, not
     /// packed (`chunkPackerQueueMaxSize`, which the Java's packer thread does the same with).
-    pub fn take_batch(&mut self, game: &Game<'_>, n: usize, queue_max: usize) -> Vec<(i32, i32)> {
+    pub(super) fn take_batch(&mut self, game: &Game<'_>, n: usize, queue_max: usize) -> Vec<(i32, i32)> {
         let Some(data) = self.current.as_mut() else { return Vec::new() };
         let mut batch = Vec::new();
         while batch.len() < n {
@@ -333,7 +333,7 @@ impl WorldProvider {
     }
 
     /// Pack a batch for up to `budget_ms`: the chunks packed, and the ones that did not fit in the time.
-    pub fn pack_batch(game: &Game<'_>, calc: &CalculationContext, factory: &StateFactory, batch: Vec<(i32, i32)>, budget_ms: u128) -> (Vec<CachedChunk>, Vec<(i32, i32)>) {
+    pub(super) fn pack_batch(game: &Game<'_>, calc: &CalculationContext, factory: &StateFactory, batch: Vec<(i32, i32)>, budget_ms: u128) -> (Vec<CachedChunk>, Vec<(i32, i32)>) {
         let start = Instant::now();
         let now_ms = super::baritone_command::now_ms() as i64;
         let mut done = Vec::new();
@@ -351,7 +351,7 @@ impl WorldProvider {
 
     /// `onChunkEvent` before an unload: the chunks the server dropped, packed from what they were, for up to `budget_ms`. The
     /// ones that did not fit in the time are given back.
-    pub fn pack_unloaded(game: &Game<'_>, calc: &CalculationContext, factory: &StateFactory, unloaded: Vec<(i32, i32, Arc<Chunk>)>, budget_ms: u128) -> (Vec<CachedChunk>, Vec<(i32, i32, Arc<Chunk>)>) {
+    pub(super) fn pack_unloaded(game: &Game<'_>, calc: &CalculationContext, factory: &StateFactory, unloaded: Vec<(i32, i32, Arc<Chunk>)>, budget_ms: u128) -> (Vec<CachedChunk>, Vec<(i32, i32, Arc<Chunk>)>) {
         let start = Instant::now();
         let now_ms = super::baritone_command::now_ms() as i64;
         let mut done = Vec::new();
@@ -386,14 +386,14 @@ impl WorldProvider {
     }
 
     /// `save`, now and then (every ten minutes, as the Java's saver thread does after its first thirty seconds).
-    pub fn save_if_due(&mut self, game: &Game<'_>, settings: &super::baritone_settings::Settings) {
+    pub(super) fn save_if_due(&mut self, game: &Game<'_>, settings: &super::baritone_settings::Settings) {
         let due = self.current.as_ref().is_some_and(|c| game.ticks.saturating_sub(c.last_save) >= 20 * 60 * 10);
         if due {
             self.save(game, settings);
         }
     }
 
-    pub fn save(&mut self, game: &Game<'_>, settings: &super::baritone_settings::Settings) {
+    pub(super) fn save(&mut self, game: &Game<'_>, settings: &super::baritone_settings::Settings) {
         let Some(data) = self.current.as_mut() else { return };
         let center = game.player.as_ref().map_or([0, 0, 0], |p| [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32]);
         data.cache.save(&Self::cache_settings(settings), super::baritone_command::now_ms() as i64, center);

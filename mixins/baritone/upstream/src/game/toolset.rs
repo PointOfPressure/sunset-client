@@ -65,7 +65,7 @@ fn hotbar(game: &Game<'_>, slot: usize) -> Option<ItemStack> {
 
 /// `calculateSpeedVsBlock`: the progress one tick of this item makes against the block (1 / ticks); negative for what cannot
 /// be broken.
-pub fn calculate_speed_vs_block(game: &Game<'_>, stack: Option<&ItemStack>, state: BlockStateId) -> f64 {
+pub(super) fn calculate_speed_vs_block(game: &Game<'_>, stack: Option<&ItemStack>, state: BlockStateId) -> f64 {
     let facts = game.res.facts().get(state);
     let hardness = f64::from(facts.hardness);
     if hardness < 0.0 {
@@ -88,7 +88,7 @@ pub fn calculate_speed_vs_block(game: &Game<'_>, stack: Option<&ItemStack>, stat
 
 /// `getBestSlot`: the hotbar slot to break the block with. `path_calc` is `pathingCalculation`: with autoTool off the tool
 /// that is held is the one the path will use.
-pub fn best_slot(game: &Game<'_>, state: BlockStateId, prefer_silk_touch: bool, path_calc: bool, ts: &ToolSettings) -> usize {
+pub(super) fn best_slot(game: &Game<'_>, state: BlockStateId, prefer_silk_touch: bool, path_calc: bool, ts: &ToolSettings) -> usize {
     if !ts.auto_tool && path_calc {
         return game.selected;
     }
@@ -154,7 +154,7 @@ fn avoidance_multiplier(game: &Game<'_>, state: BlockStateId, ts: &ToolSettings)
 }
 
 /// `getStrVsBlock`: how fast the best tool at hand breaks the block, as 1 / ticks.
-pub fn str_vs_block(game: &Game<'_>, state: BlockStateId, ts: &ToolSettings) -> f64 {
+pub(super) fn str_vs_block(game: &Game<'_>, state: BlockStateId, ts: &ToolSettings) -> f64 {
     let slot = best_slot(game, state, false, true, ts);
     let stack = hotbar(game, slot);
     let best = calculate_speed_vs_block(game, stack.as_ref(), state) * avoidance_multiplier(game, state, ts);
@@ -162,6 +162,6 @@ pub fn str_vs_block(game: &Game<'_>, state: BlockStateId, ts: &ToolSettings) -> 
 }
 
 /// `switchToBestToolFor`: the slot to hold to break the block, when autoTool picks it.
-pub fn tool_slot_for(game: &Game<'_>, state: BlockStateId, ts: &ToolSettings) -> Option<usize> {
+pub(super) fn tool_slot_for(game: &Game<'_>, state: BlockStateId, ts: &ToolSettings) -> Option<usize> {
     (ts.auto_tool).then(|| best_slot(game, state, ts.prefer_silk_touch, false, ts))
 }

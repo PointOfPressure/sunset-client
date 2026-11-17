@@ -345,7 +345,7 @@ struct PackIds {
 
 impl ElytraBehavior {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(core: &Core, game: &Game<'_>, npf: Arc<NetherPathfinderContext>, destination: Pos, append_destination: bool, in_nether: bool, dimension: &str) -> Self {
+    pub(super) fn new(core: &Core, game: &Game<'_>, npf: Arc<NetherPathfinderContext>, destination: Pos, append_destination: bool, in_nether: bool, dimension: &str) -> Self {
         let s = &core.settings;
         SET_BACK.with(Cell::take); // the behavior only hears the packets from its creation on
         let (min_y, height) = dimension_extent(dimension);
@@ -635,7 +635,7 @@ impl ElytraBehavior {
     }
 
     /// `repackChunks`: queue every loaded chunk within 40 of the player.
-    pub fn repack_chunks(&mut self, game: &Game<'_>) {
+    pub(super) fn repack_chunks(&mut self, game: &Game<'_>) {
         let Some(p) = game.player.as_ref() else { return };
         let (px, pz) = ((p.position.x.floor() as i32) >> 4, (p.position.z.floor() as i32) >> 4);
         for x in px - 40..=px + 40 {
@@ -661,7 +661,7 @@ impl ElytraBehavior {
     }
 
     /// `onTick`: the part that runs whenever the process is in control.
-    pub fn on_tick(&mut self, core: &mut Core, game: &mut Game<'_>, flags: ProcessFlags) {
+    pub(super) fn on_tick(&mut self, core: &mut Core, game: &mut Game<'_>, flags: ProcessFlags) {
         self.pack_tick(game, super::baritone::take_block_changes());
         self.tick_inventory_transactions(game, &core.settings);
         let cull_after = (core.settings.int("elytraTimeBetweenCacheCullSecs") * 20) as u64;
@@ -718,7 +718,7 @@ impl ElytraBehavior {
     }
 
     /// `tick`: called when the process is in control and the player is flying.
-    pub fn tick(&mut self, core: &mut Core, game: &mut Game<'_>, flags: ProcessFlags) {
+    pub(super) fn tick(&mut self, core: &mut Core, game: &mut Game<'_>, flags: ProcessFlags) {
         if self.path_manager.path().is_empty() {
             return;
         }
@@ -846,6 +846,6 @@ pub fn firework_flight(stack: &horizon_client::items::ItemStack) -> Option<u8> {
 }
 
 /// How many boosting fireworks the inventory holds.
-pub fn firework_count(game: &Game<'_>) -> u32 {
+pub(super) fn firework_count(game: &Game<'_>) -> u32 {
     game.inventory.iter().flatten().filter(|s| firework_flight(s).is_some()).map(|s| s.count).sum()
 }

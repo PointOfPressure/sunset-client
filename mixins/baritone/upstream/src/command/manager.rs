@@ -21,7 +21,7 @@ use horizon_client::text::{self, ClickEvent, Style, Text};
 /// The command a clickable chat line runs.
 pub const CLICK: &str = "@baritone";
 
-pub type Run = fn(&mut Baritone, &mut Game<'_>, &mut Args) -> CommandResult;
+pub(super) type Run = fn(&mut Baritone, &mut Game<'_>, &mut Args) -> CommandResult;
 
 pub struct Command {
     pub names: &'static [&'static str],
@@ -29,11 +29,11 @@ pub struct Command {
     pub long: &'static [&'static str],
     /// A command that is only another one: what it runs (`set modified`).
     pub alias: &'static str,
-    pub run: Run,
+    pub(super) run: Run,
 }
 
 /// The run of an alias, which the manager never calls: it runs the target.
-pub fn alias_run(_b: &mut Baritone, _game: &mut Game<'_>, _args: &mut Args) -> CommandResult {
+pub(super) fn alias_run(_b: &mut Baritone, _game: &mut Game<'_>, _args: &mut Args) -> CommandResult {
     Ok(())
 }
 
@@ -63,7 +63,7 @@ pub fn find(name: &str) -> Option<&'static Command> {
 
 /// `ExampleBaritoneControl.runCommand`: a line typed after the prefix (`goto 10 64 -20`). A setting's name is a command too
 /// (`allowBreak` toggles a boolean, `pathCutoffFactor 0.4` sets), and the command is echoed to the chat when echoCommands says so.
-pub fn run(b: &mut Baritone, game: &mut Game<'_>, line: &str) {
+pub(super) fn run(b: &mut Baritone, game: &mut Game<'_>, line: &str) {
     let trimmed = line.trim();
     if trimmed.eq_ignore_ascii_case("damn") {
         b.core.say(game, "daniel");
@@ -166,7 +166,7 @@ pub fn run_event(command: &str) -> ClickEvent {
 
 /// Print a page of `entries`, then empty lines to fill it, then the pager. `prefix` is the command a
 /// click on << or >> runs, without the page number.
-pub fn paginate(
+pub(super) fn paginate(
     b: &Baritone,
     game: &mut Game<'_>,
     args: &mut Args,
@@ -199,7 +199,7 @@ pub fn paginate(
 }
 
 /// `help`, `help <page>`, `help <command>`.
-pub fn help(b: &mut Baritone, game: &mut Game<'_>, args: &mut Args) -> CommandResult {
+pub(super) fn help(b: &mut Baritone, game: &mut Game<'_>, args: &mut Args) -> CommandResult {
     args.require_max(1)?;
     if !args.has_any() || args.peek().is_some_and(|w| w.parse::<usize>().is_ok()) {
         // Newest registration first, as Registry.descendingStream does.
@@ -234,23 +234,23 @@ pub fn help(b: &mut Baritone, game: &mut Game<'_>, args: &mut Args) -> CommandRe
 // What the commands share.
 
 /// Where the player is.
-pub fn here(game: &Game<'_>) -> CommandResult<[f64; 3]> {
+pub(super) fn here(game: &Game<'_>) -> CommandResult<[f64; 3]> {
     player_pos(game).ok_or_else(|| CommandError::new("Not in a world."))
 }
 
 /// The block the player's feet are in.
-pub fn feet(game: &Game<'_>) -> CommandResult<Pos> {
+pub(super) fn feet(game: &Game<'_>) -> CommandResult<Pos> {
     super::baritone_gworld::player_feet(game).ok_or_else(|| CommandError::new("Not in a world."))
 }
 
 /// One block name (ForBlockOptionalMeta): `stone`, `minecraft:stone`, or `oak_stairs[facing=north]`.
-pub fn block_word(b: &mut Baritone, game: &Game<'_>, args: &Args, datatype: &str, word: &str) -> CommandResult<String> {
+pub(super) fn block_word(b: &mut Baritone, game: &Game<'_>, args: &Args, datatype: &str, word: &str) -> CommandResult<String> {
     let bare = word.split('[').next().unwrap_or(word);
     b.core.block_named(game, bare).ok_or_else(|| args.invalid_datatype(datatype))
 }
 
 /// One BlockOptionalMeta (ForBlockOptionalMeta): the block, with the properties typed, and what it drops.
-pub fn block_optional_meta(b: &mut Baritone, game: &Game<'_>, args: &Args, word: &str) -> CommandResult<super::baritone_bom::BlockOptionalMeta> {
+pub(super) fn block_optional_meta(b: &mut Baritone, game: &Game<'_>, args: &Args, word: &str) -> CommandResult<super::baritone_bom::BlockOptionalMeta> {
     let mut resolve = |id: &str| b.core.block_named(game, id);
     super::baritone_scanner::make_bom(game, word, &mut resolve).map_err(|_| args.invalid_datatype("ForBlockOptionalMeta"))
 }
@@ -286,6 +286,6 @@ pub fn now_ms() -> u64 {
 }
 
 /// The dimension the player is in, as a waypoint remembers it.
-pub fn dimension(game: &Game<'_>) -> String {
+pub(super) fn dimension(game: &Game<'_>) -> String {
     game.native_player().map_or("minecraft:overworld", |p| p.dimension).to_owned()
 }

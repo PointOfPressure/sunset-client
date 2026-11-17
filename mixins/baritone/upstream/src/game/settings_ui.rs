@@ -266,7 +266,7 @@ fn wrap(s: &str, max: usize) -> Vec<String> {
 }
 
 /// One frame of the screen, in place of the options screen's own page.
-pub fn draw(b: &mut Baritone, game: &Game<'_>, batch: &mut HudBatch) {
+pub(super) fn draw(b: &mut Baritone, game: &Game<'_>, batch: &mut HudBatch) {
     let atlas = &game.gui.atlas;
     let cursor = game.cursor;
     let (w, h) = (batch.width, batch.height);

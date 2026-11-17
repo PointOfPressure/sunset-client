@@ -5,8 +5,10 @@ use super::baritone_block_state::BlockState;
 use std::rc::Rc;
 
 /// `Mask`.
+#[allow(dead_code)]
 pub trait Mask {
     fn part_of_mask(&self, x: i32, y: i32, z: i32, current: &BlockState) -> bool;
+    #[allow(dead_code)]
     fn width_x(&self) -> i32;
     fn height_y(&self) -> i32;
     fn length_z(&self) -> i32;
@@ -36,6 +38,7 @@ impl AbstractMask {
 
 /// `BooleanBinaryOperators`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum BooleanBinaryOperators {
     Or,
     And,
@@ -43,6 +46,7 @@ pub enum BooleanBinaryOperators {
 }
 
 impl BooleanBinaryOperators {
+    #[allow(dead_code)]
     pub fn apply_as_boolean(self, a: bool, b: bool) -> bool {
         match self {
             Self::Or => a || b,
@@ -53,6 +57,7 @@ impl BooleanBinaryOperators {
 }
 
 /// `Mask.not`, `union`, `intersection` and `xor`.
+#[allow(dead_code)]
 pub trait MaskOps {
     fn not(&self) -> Rc<dyn Mask>;
     fn union(&self, other: &Rc<dyn Mask>) -> Rc<dyn Mask>;
@@ -79,6 +84,7 @@ impl MaskOps for Rc<dyn Mask> {
 }
 
 /// `StaticMask.not`, `union`, `intersection`, `xor` and `compute`.
+#[allow(dead_code)]
 pub trait StaticMaskOps {
     fn not(&self) -> Rc<dyn StaticMask>;
     fn union(&self, other: &Rc<dyn StaticMask>) -> Rc<dyn StaticMask>;
@@ -110,6 +116,7 @@ impl StaticMaskOps for Rc<dyn StaticMask> {
 }
 
 /// A static mask used as a mask: it ignores the block.
+#[allow(dead_code)]
 pub struct AsMask(pub Rc<dyn StaticMask>);
 
 impl Mask for AsMask {
@@ -131,6 +138,7 @@ impl Mask for AsMask {
 }
 
 /// `BinaryOperatorMask`.
+#[allow(dead_code)]
 pub struct BinaryOperatorMask {
     size: AbstractMask,
     a: Rc<dyn Mask>,
@@ -139,6 +147,7 @@ pub struct BinaryOperatorMask {
 }
 
 impl BinaryOperatorMask {
+    #[allow(dead_code)]
     pub fn new(a: Rc<dyn Mask>, b: Rc<dyn Mask>, operator: BooleanBinaryOperators) -> Self {
         let size = AbstractMask::new(a.width_x().max(b.width_x()), a.height_y().max(b.height_y()), a.length_z().max(b.length_z()));
         Self { size, a, b, operator }
@@ -168,6 +177,7 @@ impl Mask for BinaryOperatorMask {
 }
 
 /// `BinaryOperatorMask.Static`.
+#[allow(dead_code)]
 pub struct StaticBinaryOperatorMask {
     size: AbstractMask,
     a: Rc<dyn StaticMask>,
@@ -176,11 +186,13 @@ pub struct StaticBinaryOperatorMask {
 }
 
 impl StaticBinaryOperatorMask {
+    #[allow(dead_code)]
     pub fn new(a: Rc<dyn StaticMask>, b: Rc<dyn StaticMask>, operator: BooleanBinaryOperators) -> Self {
         let size = AbstractMask::new(a.width_x().max(b.width_x()), a.height_y().max(b.height_y()), a.length_z().max(b.length_z()));
         Self { size, a, b, operator }
     }
 
+    #[allow(dead_code)]
     fn part_of(mask: &dyn StaticMask, x: i32, y: i32, z: i32) -> bool {
         x < mask.width_x() && y < mask.height_y() && z < mask.length_z() && mask.part_of_mask(x, y, z)
     }
@@ -205,11 +217,13 @@ impl StaticMask for StaticBinaryOperatorMask {
 }
 
 /// `NotMask`.
+#[allow(dead_code)]
 pub struct NotMask {
     source: Rc<dyn Mask>,
 }
 
 impl NotMask {
+    #[allow(dead_code)]
     pub fn new(source: Rc<dyn Mask>) -> Self {
         Self { source }
     }
@@ -234,11 +248,13 @@ impl Mask for NotMask {
 }
 
 /// `NotMask.Static`.
+#[allow(dead_code)]
 pub struct StaticNotMask {
     source: Rc<dyn StaticMask>,
 }
 
 impl StaticNotMask {
+    #[allow(dead_code)]
     pub fn new(source: Rc<dyn StaticMask>) -> Self {
         Self { source }
     }
@@ -263,12 +279,14 @@ impl StaticMask for StaticNotMask {
 }
 
 /// `PreComputedMask`: every position asked once, up front. Laid out `[y][z][x]` as in the Java.
+#[allow(dead_code)]
 pub struct PreComputedMask {
     size: AbstractMask,
     mask: Vec<bool>,
 }
 
 impl PreComputedMask {
+    #[allow(dead_code)]
     pub fn new(source: &dyn StaticMask) -> Self {
         let size = AbstractMask::new(source.width_x(), source.height_y(), source.length_z());
         let mut mask = Vec::with_capacity((size.width_x.max(0) * size.height_y.max(0) * size.length_z.max(0)) as usize);
@@ -303,6 +321,7 @@ impl StaticMask for PreComputedMask {
 
 /// `SphereMask`: an ellipsoid as big as the box, solid or only its skin.
 pub struct SphereMask {
+    #[allow(dead_code)]
     size: AbstractMask,
     center: [f64; 3],
     radius_sq: [f64; 3],
@@ -346,6 +365,7 @@ impl StaticMask for SphereMask {
 
 /// `CylinderMask`: along an axis (0 x, 1 y, 2 z). Its radius is one less than half the box, as in the Java.
 pub struct CylinderMask {
+    #[allow(dead_code)]
     size: AbstractMask,
     center_a: f64,
     center_b: f64,

@@ -18,7 +18,7 @@ pub struct StateFactory {
 }
 
 impl StateFactory {
-    pub fn new(game: &Game<'_>) -> Self {
+    pub(super) fn new(game: &Game<'_>) -> Self {
         Self { res: game.res.clone(), registry: game.pack.assets.registry, cache: RefCell::new(HashMap::new()), by_name: RefCell::new(HashMap::new()) }
     }
 

@@ -60,7 +60,7 @@ pub struct GameCtx<'a, 'g> {
 }
 
 impl<'a, 'g> GameCtx<'a, 'g> {
-    pub fn new(game: &'a mut Game<'g>, input: &'a mut InputHandler, settings: &'a Settings, throwaway: &'a [String], aim: &'a AimProcessor, look: &'a mut LookBehavior, inventory: &'a mut InventoryBehavior, factory: &'a StateFactory, cache: Option<&'a CachedWorld>) -> Self {
+    pub(super) fn new(game: &'a mut Game<'g>, input: &'a mut InputHandler, settings: &'a Settings, throwaway: &'a [String], aim: &'a AimProcessor, look: &'a mut LookBehavior, inventory: &'a mut InventoryBehavior, factory: &'a StateFactory, cache: Option<&'a CachedWorld>) -> Self {
         let aim_settings = AimSettings::of(settings, f64::from(game.settings.sensitivity));
         let (min_y, height) = super::baritone_elytra_behavior::dimension_extent(game.dim.id());
         Self {
@@ -546,7 +546,7 @@ impl GameCtx<'_, '_> {
     }
 
     /// Run `f` with the game.
-    pub fn with_game<R>(&self, f: impl FnOnce(&Game<'_>) -> R) -> R {
+    pub(super) fn with_game<R>(&self, f: impl FnOnce(&Game<'_>) -> R) -> R {
         f(&self.game.borrow())
     }
 

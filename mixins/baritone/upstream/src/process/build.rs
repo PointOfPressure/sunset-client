@@ -121,7 +121,7 @@ impl BuilderProcess {
     }
 
     /// `build(name, schematic, origin)` for a schematic of this crate's kind.
-    pub fn build(&mut self, core: &mut Core, game: &mut Game<'_>, name: String, schematic: Rc<dyn Schematic>, origin: Pos) {
+    pub(super) fn build(&mut self, core: &mut Core, game: &mut Game<'_>, name: String, schematic: Rc<dyn Schematic>, origin: Pos) {
         let spec = self.spec_of(core, game, schematic);
         self.build_states(core, game, name, spec, origin, false);
     }
@@ -133,7 +133,7 @@ impl BuilderProcess {
 
     /// `build(name, File, origin)` after the parse, with `applyMapArtAndSelection`: mapArtMode keeps only the top block of each
     /// column, and buildOnlySelection only what the selections cover.
-    pub fn build_file(&mut self, core: &mut Core, game: &mut Game<'_>, name: String, parsed: StaticSchematic, origin: Pos) {
+    pub(super) fn build_file(&mut self, core: &mut Core, game: &mut Game<'_>, name: String, parsed: StaticSchematic, origin: Pos) {
         let size = parsed.size;
         let heights = core.settings.flag("mapArtMode").then(|| {
             map_art_heights(size[0], size[2], &|x, z| (0..size[1]).map(|y| parsed.blocks[parsed.index([x, y, z])].as_ref().is_some_and(|b| !b.is_air())).collect())
@@ -156,7 +156,7 @@ impl BuilderProcess {
 
     /// `build(name, ISchematic, origin)`: the substitutes, the mirror, the rotation and the skipped blocks go round it, in that
     /// order. `selection` is whether it is a SelectionSchematic.
-    pub fn build_states(&mut self, core: &mut Core, game: &mut Game<'_>, name: String, schematic: Rc<dyn ISchematic>, origin: Pos, selection: bool) {
+    pub(super) fn build_states(&mut self, core: &mut Core, game: &mut Game<'_>, name: String, schematic: Rc<dyn ISchematic>, origin: Pos, selection: bool) {
         let size = [schematic.width_x(), schematic.height_y(), schematic.length_z()];
         let ops: Rc<dyn StateOps> = Rc::new(GameStateOps::new(game, core.states.clone()));
         let mut wrapped = schematic;
@@ -226,7 +226,7 @@ impl BuilderProcess {
     }
 
     /// `clearArea(corner1, corner2)`.
-    pub fn clear_area(&mut self, core: &mut Core, game: &mut Game<'_>, c1: Pos, c2: Pos) {
+    pub(super) fn clear_area(&mut self, core: &mut Core, game: &mut Game<'_>, c1: Pos, c2: Pos) {
         let origin = [c1[0].min(c2[0]), c1[1].min(c2[1]), c1[2].min(c2[2])];
         let size = [(c1[0] - c2[0]).abs() + 1, (c1[1] - c2[1]).abs() + 1, (c1[2] - c2[2]).abs() + 1];
         let fill = super::baritone_schematic::FillSchematic { size, spec: BlockSpec::air() };

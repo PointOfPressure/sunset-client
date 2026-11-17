@@ -390,6 +390,7 @@ fn matches(item: &Item, query: &str) -> bool {
     [item.label, &describe(item), name, block].iter().any(|text| text.to_lowercase().contains(query))
 }
 
+#[allow(dead_code)]
 pub fn view(category: usize, query: &str) -> Vec<View> {
     view_with(category, query, &[])
 }

@@ -16,7 +16,7 @@ use super::Game;
 pub use super::baritone_pathing_behavior::PathingCommand;
 
 /// baritone.api.process.IBaritoneProcess.
-pub trait Process {
+pub(super) trait Process {
     fn name(&self) -> &'static str;
     /// What `#proc` says it is doing.
     fn display(&self) -> String;
@@ -39,19 +39,19 @@ pub trait Process {
 pub const DEFAULT_PRIORITY: f64 = -1.0;
 
 impl Core {
-    pub fn player_feet(&self, game: &Game<'_>) -> Option<Pos> {
+    pub(super) fn player_feet(&self, game: &Game<'_>) -> Option<Pos> {
         super::baritone_gworld::player_feet(game)
     }
 
     /// Run `f` with the pathing behavior and the game as the player it walks.
-    pub fn drive<R>(&mut self, game: &mut Game<'_>, f: impl FnOnce(&mut PathingBehavior, &GameCtx<'_, '_>, &Settings) -> R) -> R {
+    pub(super) fn drive<R>(&mut self, game: &mut Game<'_>, f: impl FnOnce(&mut PathingBehavior, &GameCtx<'_, '_>, &Settings) -> R) -> R {
         let Core { pathing, input, settings, throwaway, aim, look, inventory, states, world_data, .. } = self;
         let ctx = GameCtx::new(game, input, settings, throwaway, aim, look, inventory, states, world_data.current.as_ref().map(|d| &d.cache));
         f(pathing, &ctx, settings)
     }
 
     /// InventoryBehavior.onTick: the debug lines it has for the chat.
-    pub fn inventory_tick(&mut self, game: &mut Game<'_>) -> Vec<String> {
+    pub(super) fn inventory_tick(&mut self, game: &mut Game<'_>) -> Vec<String> {
         let tools = ToolSettings::of(&self.settings);
         let pathing = self.pathing.is_pathing();
         self.inventory.tick(game, &self.settings, &self.throwaway, pathing, &tools);
@@ -65,7 +65,7 @@ impl Core {
 
     /// WorldProvider and the chunk packer, once a tick: follow the world and dimension, queue the chunks that
     /// loaded, pack as many as there is time for, and save now and then.
-    pub fn cache_tick(&mut self, game: &mut Game<'_>) {
+    pub(super) fn cache_tick(&mut self, game: &mut Game<'_>) {
         let world_before = self.world_data.current.as_ref().map(|d| d.key.clone());
         // `onChunkEvent` before an unload: the chunks the server dropped since the last tick, still in the world's last
         // dimension unless this tick changed it.
@@ -107,12 +107,12 @@ impl Core {
     }
 
     /// Run `f` with a CalculationContext made now (`new CalculationContext(baritone)`).
-    pub fn with_calc<R>(&mut self, game: &mut Game<'_>, f: impl FnOnce(&CalculationContext, &GameCtx<'_, '_>, &Settings) -> R) -> R {
+    pub(super) fn with_calc<R>(&mut self, game: &mut Game<'_>, f: impl FnOnce(&CalculationContext, &GameCtx<'_, '_>, &Settings) -> R) -> R {
         self.with_calc_hooks(game, None, f)
     }
 
     /// The same with a subclass's overrides.
-    pub fn with_calc_hooks<R>(&mut self, game: &mut Game<'_>, hooks: Option<std::rc::Rc<dyn CostHooks>>, f: impl FnOnce(&CalculationContext, &GameCtx<'_, '_>, &Settings) -> R) -> R {
+    pub(super) fn with_calc_hooks<R>(&mut self, game: &mut Game<'_>, hooks: Option<std::rc::Rc<dyn CostHooks>>, f: impl FnOnce(&CalculationContext, &GameCtx<'_, '_>, &Settings) -> R) -> R {
         self.drive(game, |_, ctx, s| {
             let facts = PlayerContext::calculation_facts(ctx);
             let calc = CalculationContext::new(s, PlayerContext::bsi(ctx), ctx, &facts).with_hooks(hooks);
@@ -126,7 +126,7 @@ impl Core {
     }
 
     /// PathingBehavior.estimatedTicksToGoal.
-    pub fn estimated_ticks_to_goal(&mut self, game: &Game<'_>) -> Option<f64> {
+    pub(super) fn estimated_ticks_to_goal(&mut self, game: &Game<'_>) -> Option<f64> {
         let feet = self.player_feet(game)?;
         self.pathing.estimated_ticks_to_goal(feet)
     }
@@ -142,13 +142,13 @@ impl Core {
     }
 
     /// Drop the path and the search, and let go of every key.
-    pub fn pathing_cancel(&mut self, game: &mut Game<'_>) {
+    pub(super) fn pathing_cancel(&mut self, game: &mut Game<'_>) {
         self.drive(game, |p, ctx, _| p.force_cancel(ctx));
         self.input.release(game);
     }
 
     /// Forget the goal as well.
-    pub fn pathing_reset(&mut self, game: &mut Game<'_>) {
+    pub(super) fn pathing_reset(&mut self, game: &mut Game<'_>) {
         self.pathing_cancel(game);
         self.pathing.secret_internal_set_goal(None);
     }
@@ -159,7 +159,7 @@ impl Core {
         self.world_data.current.as_mut().map_or_else(Vec::new, |data| data.cache.get_locations_of(block, maximum, center[0], center[2], max_region_distance_sq))
     }
 
-    pub fn path_tick(&mut self, game: &mut Game<'_>, command: Option<&PathingCommand>, real_process_changed: bool) -> Vec<String> {
+    pub(super) fn path_tick(&mut self, game: &mut Game<'_>, command: Option<&PathingCommand>, real_process_changed: bool) -> Vec<String> {
         let ticks = game.ticks;
         // LookBehavior.onTick: the noise of this game tick.
         let aim_settings = AimSettings::of(&self.settings, f64::from(game.settings.sensitivity));
