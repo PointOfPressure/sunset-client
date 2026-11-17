@@ -30,6 +30,80 @@ mod criticals_tests {
 }
 
 #[cfg(test)]
+mod baritone_runtime_tests {
+    use super::super::{sunset::*, sunset_baritone as b, sunset_baritone_actions as actions};
+    use serde_json::json;
+
+    #[test]
+    fn baritone_commands_validate_before_start_and_bound_diagnostics() {
+        assert_eq!(b::parse(&[]).unwrap(), b::Command::Status);
+        assert_eq!(b::parse(&["stop"]).unwrap(), b::Command::Stop);
+        assert_eq!(b::parse(&["off"]).unwrap(), b::Command::Off);
+        assert_eq!(b::parse(&["mine"]).unwrap(), b::Command::Mine);
+        assert_eq!(b::parse(&["targets"]).unwrap(), b::Command::Targets(8));
+        assert_eq!(b::parse(&["targets", "999"]).unwrap(), b::Command::Targets(64));
+        assert_eq!(b::parse(&["goto", "-10", "-64", "20"]).unwrap(), b::Command::Goto([-10, -64, 20]));
+        assert_eq!(b::parse(&["mine", "oresim", "diamond,iron"]).unwrap(), b::Command::Predicted(Some("diamond,iron".into())));
+        for args in [vec!["goto", "-2147483648", "0", "0"], vec!["goto", "NaN", "0", "0"],
+            vec!["mine", "oresim", "typo"], vec!["stop", "extra"], vec!["targets", "0"]] {
+            assert!(b::parse(&args).is_err(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn baritone_old_profiles_load_off_defaults_and_new_preferences_round_trip() {
+        let mut old = State::new();
+        old.load_text("sprint.on=true\noresim.seed=8675309\noresim.hideshownores=false\n");
+        let module = old.module("Baritone").unwrap();
+        assert!(!module.on && module.b("Allow break") && !module.b("Allow place"));
+        assert_eq!(module.t("Ores"), "diamond");
+        assert_eq!((module.n("Min Y"), module.n("Max Y"), module.n("Radius"), module.n("Max targets")), (-64.0, 319.0, 128.0, 64.0));
+        old.load_profile("baritone.on=true\nbaritone.ores=iron,diamond\nbaritone.radius=48\nbaritone.path=false\n");
+        let profile = old.profile_text();
+        for forbidden in ["job_generation", "lease_generation", "targetqueue=", "activepath", "replay="] {
+            assert!(!profile.lines().any(|line| line.starts_with(&format!("baritone.{forbidden}"))));
+        }
+        let mut loaded = State::new();
+        loaded.load_profile(&profile);
+        assert_eq!(old.module("Baritone"), loaded.module("Baritone"));
+        let mut legacy_profile = State::new();
+        legacy_profile.load_profile("sprint.on=true\noresim.seed=0\n");
+        assert!(!legacy_profile.is_on("Baritone"));
+        panic_off_state(&mut loaded);
+        assert!(!loaded.is_on("Baritone"));
+        old.load_profile("sprint.on=false\noresim.seed=0\n");
+        assert_eq!(old.module("Baritone"), Some(&b::defaults()), "legacy profiles load Baritone off/default even after a new profile");
+    }
+
+    #[test]
+    fn baritone_stale_engine_frames_and_invalid_actions_fail_closed() {
+        let reply = json!({"schema":1,"world":"4","dimension":"minecraft:overworld",
+            "job_generation":"5","lease_generation":"6","tick":"7"});
+        assert!(b::response_matches(&reply, 4, "minecraft:overworld", 5, 6, 7));
+        assert!(!b::response_matches(&reply, 4, "minecraft:overworld", 8, 6, 7));
+        assert!(!b::response_matches(&reply, 4, "minecraft:the_nether", 5, 6, 7));
+        assert!(!b::response_matches(&reply, 4, "minecraft:overworld", 5, 9, 7));
+        assert!(!b::response_matches(&reply, 4, "minecraft:overworld", 5, 6, 8));
+        let bad = actions::Intent { yaw: Some(f32::NAN), ..Default::default() };
+        assert!(actions::validate(&bad).is_err());
+        assert!(actions::movement(128).is_err());
+        assert!(actions::movement(15).unwrap().is_empty());
+        let bad = actions::Intent { selected_slot: Some(9), ..Default::default() };
+        assert!(actions::validate(&bad).is_err());
+    }
+
+    #[test]
+    fn baritone_render_edits_preserve_jobs_and_execution_edits_cancel() {
+        let before = b::defaults();
+        let mut state = State::new();
+        state.load_profile("baritone.path=false\nbaritone.goal=false\nbaritone.targets=false\nbaritone.fillopacity=0.1\n");
+        assert!(!b::execution_changed(&before, state.module("Baritone").unwrap()));
+        state.load_profile("baritone.allowbreak=false\n");
+        assert!(b::execution_changed(&before, state.module("Baritone").unwrap()));
+    }
+}
+
+#[cfg(test)]
 mod ore_sim_config_tests {
     use super::super::sunset::*;
     use super::super::sunset_ore_sim::manual_seed;

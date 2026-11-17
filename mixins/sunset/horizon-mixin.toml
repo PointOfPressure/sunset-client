@@ -9,6 +9,42 @@ priority = 100
 horizon_revision = "9f42064c11efe7ef3e5ed2baad7ddc2a3b36eea0"
 
 [[module]]
+id = "baritone_controller"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone"
+source = "baritone.rs"
+
+[[module]]
+id = "movement_owner"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_movement_owner"
+source = "movement_owner.rs"
+
+[[module]]
+id = "baritone_actions"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone_actions"
+source = "baritone_actions.rs"
+
+[[module]]
+id = "baritone_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_baritone_remote"
+source = "baritone_remote.rs"
+
+[[module]]
+id = "baritone_targets"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone_targets"
+source = "baritone_targets.rs"
+
+[[module]]
+id = "baritone_draw"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone_draw"
+source = "baritone_draw.rs"
+
+[[module]]
 id = "gui_move"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_gui_move"

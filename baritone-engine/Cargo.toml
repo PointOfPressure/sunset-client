@@ -1,0 +1,18 @@
+[package]
+name = "sunset-baritone-engine"
+version = "1.1.52"
+edition = "2024"
+publish = false
+license-file = "LICENSE"
+description = "Replaceable Game-free horizon-baritone engine for Sunset"
+
+[lib]
+name = "sunset_baritone_engine"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde_json = "1.0"
+
+[profile.test]
+opt-level = 2

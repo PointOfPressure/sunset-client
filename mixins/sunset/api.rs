@@ -1,4 +1,4 @@
-// Sunset's plugin API, version 2 (version 1's calls work as they did).
+// Sunset's plugin API, version 3 (versions 1 and 2 keep their existing calls).
 //
 // A plugin is another native mod bundle built together with Sunset. It adds a [[module]] of its own to
 // crates/horizon-client/src/game.rs and hooks Horizon's native_tick to call `plugin(game, id, version, setup)` each
@@ -23,7 +23,47 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 #[allow(dead_code)]
-pub(super) const API_VERSION: u32 = 2;
+pub(super) const API_VERSION: u32 = 3;
+
+// Optional, independently loaded Baritone engine transport. This table contains only host-side function
+// pointers; the companion owns the DLL and must never retain a borrowed Game after a call returns.
+pub(super) type BaritoneCallV1 = for<'a, 'b> fn(
+    game: &'a Game<'b>, operation: u32, request: &[u8],
+) -> Result<Vec<u8>, String>;
+
+#[derive(Clone, Copy)]
+pub(super) struct BaritoneFullV1 {
+    pub command: for<'a, 'b> fn(&'a mut Game<'b>, &str) -> Result<(), String>,
+    pub stop: for<'a, 'b> fn(&'a mut Game<'b>),
+    pub status: fn() -> Option<String>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct BaritoneServiceV1 {
+    pub version: u32,
+    pub call: BaritoneCallV1,
+    pub available: for<'a, 'b> fn(&'a Game<'b>) -> bool,
+    pub cancel: fn(),
+    pub full: Option<BaritoneFullV1>,
+}
+
+static BARITONE: Mutex<Option<BaritoneServiceV1>> = Mutex::new(None);
+
+// Called from client-only plugin setup. Re-registering even the same provider is an error: there is one driver.
+#[allow(dead_code)]
+pub(super) fn register_baritone(service: BaritoneServiceV1) -> Result<(), &'static str> {
+    if !RUNTIME.running() { return Err("Sunset is stopped"); }
+    if service.version != 1 { return Err("unsupported Baritone service version"); }
+    if CURRENT.with(|c| c.get()).is_none() { return Err("register Baritone from client plugin setup"); }
+    let mut registered = lock(&BARITONE);
+    if registered.is_some() { return Err("a Baritone service is already registered"); }
+    *registered = Some(service);
+    Ok(())
+}
+
+pub(super) fn baritone_service() -> Option<BaritoneServiceV1> {
+    *lock(&BARITONE)
+}
 
 #[allow(dead_code)]
 pub(super) fn running() -> bool { RUNTIME.running() }
@@ -289,7 +329,7 @@ const BUILT_IN: &[&str] = &[
     "auradebug", "scan", "goto", "help", "commands", "menu", "gui", "pages", "toggle", "t", "modules", "list", "settings",
     "get", "set", "seed", "movementpreset", "bind", "binds", "panic", "debug", "profile", "profiles", "config", "cfg", "preset",
     "presets", "reset", "friend", "friends", "f", "loadout", "loadouts", "waypoint", "waypoints", "wp", "vclip", "hclip",
-    "plugins",
+    "plugins", "baritone", "b",
 ];
 
 fn plain_name(name: &str) -> bool {

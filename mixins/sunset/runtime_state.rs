@@ -292,6 +292,7 @@ impl State {
         out
     }
     pub(super) fn load_text(&mut self, text: &str) {
+        self.absent_baritone_defaults(text);
         self.waypoints.clear();
         self.loadouts.clear();
         self.selection = super::sunset_profiles::Selection::default();
@@ -453,11 +454,20 @@ impl State {
         })
     }
     pub(super) fn load_profile(&mut self, text: &str) {
+        self.absent_baritone_defaults(text);
         for line in merged_modules(text).lines() {
             if let Some((k, v)) = line.split_once('=')
                 && !not_in_profiles(k)
             {
                 Self::set_field(&mut self.modules, k, v.trim());
+            }
+        }
+    }
+    // Profiles predating Baritone cannot arm it or carry new preferences across a legacy load.
+    fn absent_baritone_defaults(&mut self, text: &str) {
+        if !text.lines().filter_map(|line| line.split_once('=')).any(|(key, _)| key.starts_with("baritone.")) {
+            if let Some(module) = self.modules.iter_mut().find(|m| m.name == "Baritone") {
+                *module = super::sunset_baritone::defaults();
             }
         }
     }
@@ -585,6 +595,7 @@ pub(super) fn running() -> bool { RUNTIME.running() }
 // no plugin callback is still executing (a callback may have asked for the stop), then
 // `finish_shutdown` runs it once from whichever entry point comes next on the game thread.
 pub(super) fn shutdown(game: &mut Game<'_>, why: &str) {
+    super::sunset_baritone::stop(game, super::sunset_baritone::StopReason::Panic);
     if RUNTIME.request_stop() {
         // The input-only crate has no protocol dependency; its hook uses this
         // existing switch directly instead of dispatching through the lifecycle.
