@@ -174,6 +174,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Aim Assist**: helps your aim. *Simple* turns you toward the target while you hold attack; *Duelkit* only adds to
   your own mouse movement. Silent aim and Hit flick.
 - **Criticals**, **Reach**, **Hitboxes**: crits on every hit, longer reach, bigger boxes to aim at.
+- **Hit Through Walls**: your clicks hit the entity behind the block under the crosshair, with Kill Aura's
+  entity filters (Horizon, vanilla, Paper and Grim do not check line of sight; other anticheats may).
 - **Shield**: keeps your shield up while an enemy can hit you, lowers it for an axe or your own crit; Block hit.
 - **W Tap**, **Jump Reset**: sprint resets between hits (Adaptive S Tap with spacing) and less knockback.
 - **Fake Lag**: delays what you send, in order (Delay, Pulse, Dynamic, Knockback). **Backtrack**: holds the server's

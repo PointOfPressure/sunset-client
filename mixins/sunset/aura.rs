@@ -399,31 +399,30 @@ fn stab_hits(game: &Game<'_>, m: &Module, eye: [f64; 3], look: (f32, f32), t: &T
 }
 
 fn entity_check(game: &Game<'_>, m: &Module, t: &Target, eye: [f64; 3]) -> bool {
-    if !game.mobs.iter().any(|mob| mob.id == t.id && combat_eligible(game, m, mob)) {
-        return false;
-    }
-    if reach(eye, t) > m.n("Range") || entity_listed(m.t("Entities"), t) == (m.p("List mode") == "Blacklist") || !in_fov(game, m, t, eye) {
+    game.mobs.iter().find(|mob| mob.id == t.id).is_some_and(|mob| target_filters(game, m, mob, t))
+        && reach(eye, t) <= m.n("Range")
+        && in_fov(game, m, t, eye)
+        && (reach(eye, t) <= m.n("Walls range") || in_sight(game, t))
+}
+
+// Kill Aura's entity filters, without range, field of view or sight: who may be hit at all. Hit Through Walls uses
+// them too, so a module that has them reads its own Entities, List mode, Anti bot, Ignore ... and age filters.
+pub(super) fn target_filters(game: &Game<'_>, m: &Module, mob: &horizon_client::mobs::Mob, t: &Target) -> bool {
+    if !combat_eligible(game, m, mob) || entity_listed(m.t("Entities"), t) == (m.p("List mode") == "Blacklist") {
         return false;
     }
     let threshold = m.n("Health threshold");
     if threshold > 0.0 && f64::from(t.health) > threshold {
         return false;
     }
-    let mob = game.mobs.iter().find(|x| x.id == t.id);
-    if m.b("Ignore named") && mob.is_some_and(|x| x.custom_name.is_some()) {
-        return false;
-    }
-    if m.b("Ignore invisible") && mob.is_some_and(|x| x.invisible) {
-        return false;
-    }
-    if reach(eye, t) > m.n("Walls range") && !in_sight(game, t) {
+    if (m.b("Ignore named") && mob.custom_name.is_some()) || (m.b("Ignore invisible") && mob.invisible) {
         return false;
     }
     let k = short(&t.kind);
     if m.b("Ignore passive") && matches!(k, "enderman" | "piglin" | "zombified_piglin" | "wolf") {
         return false;
     }
-    let baby = mob.is_some_and(|x| x.is_baby());
+    let baby = mob.is_baby();
     if matches!(k, "zombie" | "piglin" | "hoglin" | "zoglin") {
         return age_ok(m.p("Hostile mob age filter"), baby);
     }

@@ -17,10 +17,12 @@ pub(super) const OFFHAND_RETIRED: [&str; 10] =
 
 // Settings that are gone: Client Sort's old orders, lists and pace (0.9), PvP Bot's City (with Auto City, after
 // 1.1.0). Their lines go.
-const DROPPED: [(&str, &str); 9] = [
+const DROPPED: [(&str, &str); 11] = [
     ("clientsort", "order"), ("clientsort", "shiftorder"), ("clientsort", "ctrlorder"), ("clientsort", "altorder"),
     ("clientsort", "hotbar"), ("clientsort", "startitems"), ("clientsort", "enditems"), ("clientsort", "clickspertick"),
     ("pvpbot", "city"),
+    // Ghost Hand's Hits and Cut through are Hit Through Walls (merge_lines).
+    ("ghosthand", "hits"), ("ghosthand", "cutthrough"),
 ];
 
 // Offhand took in Auto Totem, Auto Inventory Totem and Hover Totem, Fast Use took in FastXP, Velocity took in
@@ -207,6 +209,16 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
         })
         .map(str::to_owned)
         .collect();
+    // Ghost Hand's Hits (through anything) or Cut through (only passable blocks) is Hit Through Walls, on with Ghost
+    // Hand if it ran, at any entity it hit before.
+    let hits = get("ghosthand", "hits") == Some("true");
+    if !had("hitthroughwalls") && (hits || get("ghosthand", "cutthrough") == Some("true")) {
+        out.push(format!("hitthroughwalls.on={}", on("ghosthand")));
+        out.push(format!("hitthroughwalls.mode={}", if hits { "Any block" } else { "Passable only" }));
+        out.push("hitthroughwalls.entities=@all".into());
+        out.push("hitthroughwalls.ignorepassive=false".into());
+        out.push("hitthroughwalls.passivemobagefilter=Both".into());
+    }
     // Knockback Delay is Velocity's Knockback delay: on alone, Velocity comes on with its own pushes left alone.
     if had("knockbackdelay") && get("velocity", "knockbackdelay").is_none() {
         let delay = on("knockbackdelay");

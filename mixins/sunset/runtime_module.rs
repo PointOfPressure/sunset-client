@@ -292,7 +292,6 @@ impl Module {
                     _ => true,
                 }
             }
-            "Ghost Hand" => name != "Cut through" || !self.b("Hits"),
             "Auto Sign" => super::sunset_auto_sign::visible(self, name),
             "HUD" => match name {
                 "Second color" => self.p("List color mode") != "Static" || self.p("Watermark color mode") != "Static",

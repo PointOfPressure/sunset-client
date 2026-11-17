@@ -555,6 +555,26 @@ mod velocity_merge_tests {
         assert!(!out.keys().any(|k| k.starts_with("knockbackdelay.")));
     }
 
+    // Ghost Hand's Hits or Cut through comes back as Hit Through Walls, on only if Ghost Hand was; Blocks stays.
+    #[test]
+    fn ghost_hand_hits_move_to_hit_through_walls() {
+        let out = fields("ghosthand.on=true\nghosthand.blocks=false\nghosthand.hits=true\nghosthand.cutthrough=true\n");
+        assert_eq!(out["hitthroughwalls.on"], "true");
+        assert_eq!(out["hitthroughwalls.mode"], "Any block");
+        assert_eq!(out["hitthroughwalls.ignorepassive"], "false");
+        assert_eq!(out["ghosthand.blocks"], "false");
+        assert!(!out.contains_key("ghosthand.hits") && !out.contains_key("ghosthand.cutthrough"));
+        let out = fields("ghosthand.on=false\nghosthand.hits=false\nghosthand.cutthrough=true\n");
+        assert_eq!(out["hitthroughwalls.on"], "false");
+        assert_eq!(out["hitthroughwalls.mode"], "Passable only");
+        let out = fields("ghosthand.on=true\nghosthand.hits=false\nghosthand.cutthrough=false\n");
+        assert!(!out.contains_key("hitthroughwalls.on") && !out.contains_key("ghosthand.hits"));
+        // A config that already has the module keeps its own lines.
+        let out = fields("ghosthand.on=true\nghosthand.hits=true\nhitthroughwalls.on=false\nhitthroughwalls.mode=Passable only\n");
+        assert_eq!(out["hitthroughwalls.on"], "false");
+        assert_eq!(out["hitthroughwalls.mode"], "Passable only");
+    }
+
     #[test]
     fn velocity_already_on_keeps_its_settings_and_key() {
         let out = fields("velocity.on=true\nvelocity.key=key.keyboard.v\nvelocity.knockback=true\nknockbackdelay.on=true\nknockbackdelay.key=key.keyboard.k\n");

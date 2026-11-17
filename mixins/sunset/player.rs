@@ -154,10 +154,30 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Ignore friends", true)
             .bool("Only on weapon", false)
             .text("Weapons", "sword,axe,pickaxe,shovel,hoe,mace,spear,trident"),
+        // Line of sight is not checked by Horizon's server (handleAttack: world border and isWithinAttackRange, 3
+        // blocks past the entity interaction range to the box), vanilla 26.3, Paper (the same, its buffer is
+        // client-interaction-leniency-distance) or Grim (Reach wants the look to meet the box within 3 blocks).
+        Module::new("Hit Through Walls", Combat, "Your clicks hit the living entity behind the block under the crosshair. \
+            Horizon, vanilla, Paper and Grim accept the hits (none checks line of sight); other anticheats may refuse them.")
+            // Passable only: only through blocks with nothing to collide with (grass, flowers, torches, cobwebs).
+            .pick("Mode", &["Any block", "Passable only"])
+            // Along the look to the box, and never past your entity reach (3 blocks, 4.5 with Reach's Entity reach):
+            // servers take 6, Grim about 3.
+            .num("Range", 3.0, 1.0, 6.0, 0.1)
+            .group("Targeting")
+            .pick("List mode", &["Whitelist", "Blacklist"])
+            .text("Entities", "@all")
+            .num("Health threshold", 0.0, 0.0, 100.0, 1.0)
+            .bool("Anti bot", true)
+            .pick("Anti bot sensitivity", &["Balanced", "Conservative", "Sensitive"])
+            .bool("Ignore teams", false)
+            .bool("Ignore invisible", false)
+            .bool("Ignore named", false)
+            .bool("Ignore passive", true)
+            .pick("Passive mob age filter", &["Adult", "Baby", "Both"])
+            .pick("Hostile mob age filter", &["Both", "Adult", "Baby"]),
         Module::new("Ghost Hand", Player, "Uses containers through blocks.")
-            .bool("Blocks", true)
-            .bool("Hits", false)
-            .bool("Cut through", false),
+            .bool("Blocks", true),
         Module::new("Air Place", Player, "Places blocks in the air.")
             .num("Range", 5.0, 2.0, 6.0, 0.5),
         Module::new("Speed Mine", Player, "Mines faster.")
@@ -240,10 +260,17 @@ pub(super) fn reach_extra() -> Option<f64> {
     (bits != u64::MAX).then(|| f64::from_bits(bits))
 }
 
-// How far the crosshair picks mobs (f64 bits; u64::MAX: the game's own), and Ghost Hand's Hits (1: through anything,
-// 2: Cut through, only through blocks with nothing to collide with), read by the mob_hit and before_block hooks.
+// How far the crosshair picks mobs (f64 bits; u64::MAX: the game's own), read by the mob_hit hook.
 static ENTITY_REACH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
-static WALL_HITS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+// Hit Through Walls this tick, for the before_block hook: None when off, else Passable only, Range and the mobs its
+// filters let it hit.
+static WALL_HITS: Mutex<Option<WallHits>> = Mutex::new(None);
+
+struct WallHits {
+    passable_only: bool,
+    range: f64,
+    ids: Vec<u32>,
+}
 
 // Hitboxes: how far the boxes of the mobs it picked this tick grow each way, and their ids (read by the mob_hit hook).
 static HITBOXES: Mutex<(f64, Vec<u32>)> = Mutex::new((0.0, Vec::new()));
@@ -343,14 +370,18 @@ fn hitboxes(game: &Game<'_>, m: Option<&Module>) -> (f64, Vec<u32>) {
     (m.n("Expand"), ids)
 }
 
-// Ghost Hand's Hits: the mob under the crosshair counts as before any block. Cut through: only when no block between
-// you and it has a collision box (grass, flowers, torches, cobwebs and the like are passed).
+// Hit Through Walls: the mob under the crosshair, within Range and let through by the filters, counts as before any
+// block, so the click attacks it and holding the button mines nothing. Passable only: only when no block between you
+// and it has a collision box (grass, flowers, torches, cobwebs and the like are passed).
 pub(super) fn hit_through_walls(game: &Game<'_>, distance: f64) -> bool {
-    let mode = WALL_HITS.load(std::sync::atomic::Ordering::Relaxed);
-    if mode == 0 || !game.mob_hit().is_some_and(|(_, d, _)| d == distance) {
+    let guard = WALL_HITS.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(w) = guard.as_ref() else {
+        return false;
+    };
+    if distance > w.range || !game.mob_hit().is_some_and(|(i, d, _)| d == distance && w.ids.contains(&game.mobs[i].id)) {
         return false;
     }
-    mode == 1
+    !w.passable_only
         || game.aim().is_some_and(|(eye, dir)| {
             let to = std::array::from_fn(|i| eye[i] + dir[i] * distance);
             super::sunset_combat::clip_clear(game, eye, to, distance)
@@ -447,8 +478,11 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     let pickaxe = [game.held(), game.offhand.as_ref()].into_iter().flatten().any(|s| s.item.ends_with("_pickaxe"));
     *NO_TRACE.lock().unwrap_or_else(|e| e.into_inner()) =
         get("Mine Through Mobs").filter(|m| pickaxe || !m.b("Only with a pickaxe")).map(|m| m.t("Entities").to_owned());
-    let hits = get("Ghost Hand").map_or(0, |m| if m.b("Hits") { 1 } else { 2 * u8::from(m.b("Cut through")) });
-    WALL_HITS.store(hits, std::sync::atomic::Ordering::Relaxed);
+    *WALL_HITS.lock().unwrap_or_else(|e| e.into_inner()) = get("Hit Through Walls").map(|m| WallHits {
+        passable_only: m.p("Mode") == "Passable only",
+        range: m.n("Range"),
+        ids: game.mobs.iter().filter(|mob| super::sunset_aura::target_filters(game, m, mob, &mob_target(mob))).map(|mob| mob.id).collect(),
+    });
     // These work on the inventory screen, which in_world leaves out.
     if game.remote.is_some() && game.player.is_some() {
         if let Some(m) = get("Chest Stealer") {

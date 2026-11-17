@@ -2052,8 +2052,9 @@ def _():
 @test("Old profile converts")
 def _():
     # A profile from before 0.9: Auto Steal and No Mining Trace by their old names, Reverse Step on its own, Potion
-    # Saver. Imported and loaded: Chest Stealer and Mine Through Mobs have their settings, Step is on with only its
-    # Reverse step section, Potion Saver's lines are gone, and Modules shows the hidden modules it used.
+    # Saver, Ghost Hand with Hits. Imported and loaded: Chest Stealer and Mine Through Mobs have their settings, Step is
+    # on with only its Reverse step section, Potion Saver's lines are gone, Modules shows the hidden modules it used,
+    # and Hit Through Walls is on through any block at every entity.
     found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
     if not found:
         say(".profile list")
@@ -2062,12 +2063,14 @@ def _():
         return False, "no imports folder"
     with open(os.path.join(found[0], "oldcfg.profile"), "w") as f:
         f.write("sunset-profile=1\nautosteal.on=true\nautosteal.itemspertick=3\nreversestep.on=true\nreversestep.speed=2\n"
-                "step.on=false\npotionsaver.on=true\nnominingtrace.on=true\nnominingtrace.onlywithapickaxe=false\n")
+                "step.on=false\npotionsaver.on=true\nnominingtrace.on=true\nnominingtrace.onlywithapickaxe=false\n"
+                "ghosthand.on=true\nghosthand.hits=true\n")
     imported = said_after(".profile import oldcfg")
     loaded = said_after(".profile load oldcfg")
     stealer = said_after(".settings cheststealer")
     step = said_after(".settings step")
     mine = said_after(".settings minethroughmobs")
+    walls = said_after(".settings hitthroughwalls")
     extras = said_after(".settings modules")
     now_on = modules_on()
     say(".menu")
@@ -2077,15 +2080,17 @@ def _():
     close_menu()
     say(".profile load before-load")
     say(".profile delete oldcfg")
-    for m in ("cheststealer", "step", "minethroughmobs", "modules"):
+    for m in ("cheststealer", "step", "minethroughmobs", "modules", "ghosthand", "hitthroughwalls"):
         touched.add(m)
     ok = (any("Imported" in l for l in imported) and any("Loaded" in l for l in loaded) and "Items per tick: 3" in stealer
           and "Step up: OFF" in step and "Reverse step: ON" in step and "Fall speed: 2" in step
           and "Only with a pickaxe: OFF" in mine and "Step: ON" in extras and "Mine Through Mobs: ON" in extras
-          and {"Chest Stealer", "Step", "Mine Through Mobs"} <= set(now_on))
+          and "Mode: Any block" in walls and "Ignore passive: OFF" in walls
+          and {"Chest Stealer", "Step", "Mine Through Mobs", "Hit Through Walls"} <= set(now_on))
     return ok, (f"import {imported[:1]}, load {loaded[:1]}; Chest Stealer {[l for l in stealer if 'tick' in l]}; Step "
                 f"{[l for l in step if 'step' in l.lower() or 'Fall' in l]}; Mine Through Mobs {mine[-1:]}; Modules on: "
-                f"{[l for l in extras if l.endswith(': ON')]}; on: {[n for n in now_on if n in ('Chest Stealer', 'Step', 'Mine Through Mobs')]}")
+                f"{[l for l in extras if l.endswith(': ON')]}; Hit Through Walls {[l for l in walls if 'Mode' in l or 'passive' in l]}; "
+                f"on: {[n for n in now_on if n in ('Chest Stealer', 'Step', 'Mine Through Mobs', 'Hit Through Walls')]}")
 
 
 @test("Presets")
@@ -10733,7 +10738,7 @@ def _():
 # Horizon's own server (a dedicated one on 25599, or single player's) runs the hit again along your look with 3
 # blocks of reach and blocks in the way: hits past that or through walls are its to refuse.
 HORIZON_SERVER = SERVER is None or SERVER.endswith(":25599")
-REFUSED = "Horizon's server refuses hits past 3 blocks or through walls (it hits along your look itself)"
+REFUSED = "Horizon's server refuses hits past 3 blocks (it hits along your look itself)"
 
 
 def pig_clicks(mods, z, settings=(), wall=None, n=5):
@@ -10831,14 +10836,46 @@ def _():
                 f"{clicks}; Trigger Bot with it {trigger}")
 
 
-@test("Ghost Hand (Hits)")
+@test("Hit Through Walls")
 def _():
-    # A pig 2.5 blocks off behind a stone wall 1.5 blocks off: 5 clicks, without and with Ghost Hand's Hits.
+    # A pig 2.5 blocks off behind a stone wall 1.5 blocks off: 5 clicks with Hit Through Walls off, on, on with
+    # Entities `player` (the filter skips the pig) and on with Range 1.5 (the pig's box is past it).
+    hw = "hitthroughwalls"
     off = pig_clicks((), 3.0, wall=1)
-    on = pig_clicks(("ghosthand",), 3.0, (("ghosthand", "hits", "true"),), wall=1)
-    if HORIZON_SERVER and on[0] == 0:
-        return None, f"{REFUSED}: off {off[0]}, on {on[0]}"
-    return off[0] == 0 and (on[0] or 0) > 0, f"5 clicks at a pig behind a wall: {off[0]} health lost without Ghost Hand, {on[0]} with Hits"
+    on = pig_clicks((hw,), 3.0, ((hw, "entities", "@all"), (hw, "range", "3")), wall=1)
+    players = pig_clicks((hw,), 3.0, ((hw, "entities", "player"),), wall=1)
+    short = pig_clicks((hw,), 3.0, ((hw, "entities", "@all"), (hw, "range", "1.5")), wall=1)
+    setting(hw, "range", "3")
+    ok = off[0] == 0 and (on[0] or 0) > 0 and players[0] == 0 and short[0] == 0
+    return ok, f"health a pig behind a wall lost to 5 clicks: off {off[0]}, on {on[0]}, players only {players[0]}, Range 1.5 {short[0]}"
+
+
+@test("Hit Through Walls (held click)")
+def _():
+    # A dirt wall 1.5 blocks off and a pig behind it, left held 40 ticks: off, the dirt breaks (the pig may be hit
+    # through the hole after); on, the first click hits the pig and the held button digs nothing, so the dirt stays.
+    def held(mods):
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        cmd(f"fill {X0 - 2} {Y + 1} {Z0 + 1} {X0 + 2} {Y + 3} {Z0 + 1} minecraft:dirt",
+            f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 3.0} {TOUGH_PIG}")
+        setting("hitthroughwalls", "entities", "@all")
+        wait(10)
+        ctl("look-at-entity", str(mobs("pig")[0]["id"]))
+        only(*mods)
+        ctl("mouse", "left", "down")
+        wait(40)
+        ctl("mouse", "left", "up")
+        wait(5)
+        only()
+        m = mobs("pig")
+        broken = not check(f"execute if block {X0} {Y + 2} {Z0 + 1} minecraft:dirt")
+        cmd(f"fill {X0 - 2} {Y + 1} {Z0 + 1} {X0 + 2} {Y + 3} {Z0 + 1} minecraft:air")
+        return (round(1000 - m[0]["health"], 1) if m else None), broken
+    off, on = held(()), held(("hitthroughwalls",))
+    ok = off[1] and not on[1] and (on[0] or 0) > 0
+    return ok, f"(pig health lost, dirt broken) with left held 2 s: off {off}, on {on}"
 
 
 @test("Ghost Hand (Blocks)")
@@ -14108,7 +14145,7 @@ def _():
     return shown > 40 and off < 10 and idle < 10, f"#FF5555 px left of the crosshair: disabled {shown}, off {off}, no hit {idle}"
 
 
-def cut_pig(block, *settings, mods=("ghosthand",)):
+def cut_pig(block, *settings, mods=("hitthroughwalls",)):
     """A tough pig 3 blocks ahead behind `block` (in the block before it, on a grass floor), one click at it with
     `mods` on: health it lost, and whether the block is still there."""
     reset()
@@ -14116,8 +14153,8 @@ def cut_pig(block, *settings, mods=("ghosthand",)):
     ctl("key", "1", "tap")
     cmd(f"setblock {X0} {Y} {Z0 + 2} minecraft:grass_block", f"setblock {X0} {Y + 1} {Z0 + 2} minecraft:{block}",
         f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 3.0} {TOUGH_PIG}")
-    for name, value in (("blocks", "false"), ("hits", "false"), ("cut through", "false"), *settings):
-        setting("ghosthand", name, value)
+    for name, value in (("mode", "any block"), ("entities", "@all"), *settings):
+        setting("hitthroughwalls", name, value)
     wait(10)
     ctl("look", "0", "27.8")
     only(*mods)
@@ -14131,23 +14168,21 @@ def cut_pig(block, *settings, mods=("ghosthand",)):
     return (round(1000 - m[0]["health"], 1) if m else None), there
 
 
-@test("Ghost Hand (Cut through)")
+@test("Hit Through Walls (Passable only)")
 def _():
-    # Through short grass and a cobweb to the pig behind with Cut through; off, the click breaks the grass and the
-    # pig is not hit; glass stops Cut through but not Hits (through anything).
+    # Through short grass and a cobweb to the pig behind with Passable only; off, the click breaks the grass and the
+    # pig is not hit; glass stops Passable only but not Any block.
     off = cut_pig("short_grass", mods=())
-    grass = cut_pig("short_grass", ("cut through", "true"))
-    web = cut_pig("cobweb", ("cut through", "true"))
-    glass = cut_pig("glass", ("cut through", "true"))
-    walls = cut_pig("glass", ("hits", "true"))
-    note = (f"pig health lost (block kept): off {off}, grass {grass}, cobweb {web}, glass {glass}, glass with Hits "
+    grass = cut_pig("short_grass", ("mode", "passable only"))
+    web = cut_pig("cobweb", ("mode", "passable only"))
+    glass = cut_pig("glass", ("mode", "passable only"))
+    walls = cut_pig("glass")
+    setting("hitthroughwalls", "mode", "any block")
+    note = (f"pig health lost (block kept): off {off}, grass {grass}, cobweb {web}, glass {glass}, glass with Any block "
             f"{walls}")
-    # Horizon's server (single player's too) hits along your look itself and stops at the grass: the click still
-    # goes to the pig (the grass is kept), and nothing is hit.
-    horizon = HORIZON_SERVER or not SERVER
-    hit = (lambda r: r[0] == 0) if horizon else (lambda r: (r[0] or 0) > 0)
+    hit = lambda r: (r[0] or 0) > 0
     ok = off[0] == 0 and not off[1] and hit(grass) and grass[1] and hit(web) and web[1] and glass[0] == 0
-    return ok and (horizon or (walls[0] or 0) > 0), ("Horizon's server: " if horizon else "") + note
+    return ok and hit(walls), note
 
 
 @test("Auto Clicker (Right clicker)")
