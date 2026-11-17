@@ -299,7 +299,9 @@ Modules marked *experimental* below are new strategies that haven't been proven 
     authentication. Manual input, switching the module off and Panic cancel automatic work.
   - Discovery needs enough intact observations and compatible generation. Searches can be expensive; a server
     that hides structures or changes feature salts, seed hashes or world generation can prevent recovery. The
-    inherited discovery tables target 1.21.3 and have not been independently validated for every 26.3 structure.
+    discovery tables come from SeedCrackerX's 1.21.3. Checked against 26.3's data: the structure grids and salts match
+    (villages are 34 chunks apart, as since 1.18) and so do the dungeon salts; the off-by-default Desert Well, Emerald
+    Ore and End Gateway finders still use pre-1.18 salts.
     General biome/lattice recovery and anti-xray bypasses are not implemented. Even with the right seed, custom
     world generation, obfuscated blocks or edited terrain can reduce Ore Sim's replay accuracy. Manual seeds
     remain available in single player and on vanilla, Paper and Horizon servers.
@@ -324,7 +326,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   - Path, goal and target overlays use Sunset's palette, contextual block boxes, Lines/Sides/Both, fill opacity,
     line width and a separate render cap. Movement is shared with Auto Walk and `.goto`; explicit handoff,
     manual input, stop, disable, world changes and Panic cancel jobs. Profiles save preferences without paths.
-  - Initial engine delivery is Windows x86_64 MSVC. Full runtime commands use the original `#` prefix; the
+  - The engine ships for Linux and Windows (x86_64). Full runtime commands use the original `#` prefix; the
     bounded Ore Sim controller keeps the `.b` commands above. See [commands, installation, source and DLL replacement](docs/baritone.md).
 - **Nuker**, **Packet Mine**, **Liquid Filler** (also drains an enemy's water or lava), **Spawn Proofer**,
   **Build Height**.
@@ -457,11 +459,10 @@ code is MIT licensed; its [license](mixins/sunset/seedcracker.LICENSE) and
 [file mapping and local changes](mixins/sunset/seedcracker.UPSTREAM.md).
 
 Baritone uses [horizon-baritone](https://github.com/luhnox/horizon-baritone) by [luhnox](https://github.com/luhnox),
-a Rust port of [Baritone](https://github.com/cabaletta/baritone) 1.21.4 by leijurv and contributors. The complete supplied
-runtime preserves its [MIT permission text](mixins/baritone/upstream/LICENSE). The existing separate Ore Sim
-engine retains its upstream LGPL-3.0 terms with its [notices](baritone-engine/NOTICE.md) and
-corresponding source; Sunset supplies its controls, rendering and Ore Sim integration. Its LGPL and referenced GPL
-texts and upstream image ship unchanged in the integrated package. See [source delivery and replacement](docs/baritone.md).
+a Rust port of [Baritone](https://github.com/cabaletta/baritone) 1.21.4 by leijurv and contributors, brought into Sunset by Rust.
+Both copies of it, the in-game runtime ([mixins/baritone/upstream](mixins/baritone/upstream/README.md)) and the
+replaceable Ore Sim mining engine ([baritone-engine](baritone-engine/NOTICE.md)), stay under its LGPL-3.0; their
+licence texts and notices ship unchanged in Sunset's package. See [source and replacement](docs/baritone.md).
 
 Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -469,9 +470,8 @@ Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine, and the plugin docs and example in [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) are MIT. Versions up to 0.8.0 stay under the MIT licence they were released with. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-The separately licensed Baritone engine and MIT loader/interface retain their own terms. The engine's LGPL rights,
-including modification, replacement and debugging of those modifications, are described with its
-[licences and corresponding source](docs/baritone.md#source-and-licences); Sunset's licence does not replace them.
+The Baritone parts above are LGPL-3.0 and their MIT loader keeps its own licence; Sunset's licence does not replace
+theirs. Your rights to change, rebuild and replace them are in [docs/baritone.md](docs/baritone.md#source-and-licences).
 
 <details>
 <summary>Font credits</summary>
