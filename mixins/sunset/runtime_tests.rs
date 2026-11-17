@@ -30,6 +30,172 @@ mod criticals_tests {
 }
 
 #[cfg(test)]
+mod baritone_runtime_tests {
+    use super::super::{sunset::*, sunset_baritone as b, sunset_baritone_actions as actions};
+    use serde_json::json;
+
+    #[test]
+    fn baritone_commands_validate_before_start_and_bound_diagnostics() {
+        assert_eq!(b::parse(&[]).unwrap(), b::Command::Status);
+        assert_eq!(b::parse(&["stop"]).unwrap(), b::Command::Stop);
+        assert_eq!(b::parse(&["off"]).unwrap(), b::Command::Off);
+        assert_eq!(b::parse(&["mine"]).unwrap(), b::Command::Mine);
+        assert_eq!(b::parse(&["targets"]).unwrap(), b::Command::Targets(8));
+        assert_eq!(b::parse(&["targets", "999"]).unwrap(), b::Command::Targets(64));
+        assert_eq!(b::parse(&["goto", "-10", "-64", "20"]).unwrap(), b::Command::Goto([-10, -64, 20]));
+        assert_eq!(b::parse(&["mine", "oresim", "diamond,iron"]).unwrap(), b::Command::Predicted(Some("diamond,iron".into())));
+        for args in [vec!["goto", "-2147483648", "0", "0"], vec!["goto", "NaN", "0", "0"],
+            vec!["mine", "oresim", "typo"], vec!["stop", "extra"], vec!["targets", "0"]] {
+            assert!(b::parse(&args).is_err(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn baritone_old_profiles_load_off_defaults_and_new_preferences_round_trip() {
+        let mut old = State::new();
+        old.load_text("sprint.on=true\noresim.seed=8675309\noresim.hideshownores=false\n");
+        let module = old.module("Baritone").unwrap();
+        assert!(!module.on && module.b("Allow break") && !module.b("Allow place"));
+        assert_eq!(module.t("Ores"), "diamond");
+        assert_eq!((module.n("Min Y"), module.n("Max Y"), module.n("Radius"), module.n("Max targets")), (-64.0, 319.0, 128.0, 64.0));
+        old.load_profile("baritone.on=true\nbaritone.ores=iron,diamond\nbaritone.radius=48\nbaritone.path=false\n");
+        let profile = old.profile_text();
+        for forbidden in ["job_generation", "lease_generation", "targetqueue=", "activepath", "replay="] {
+            assert!(!profile.lines().any(|line| line.starts_with(&format!("baritone.{forbidden}"))));
+        }
+        let mut loaded = State::new();
+        loaded.load_profile(&profile);
+        assert_eq!(old.module("Baritone"), loaded.module("Baritone"));
+        let mut legacy_profile = State::new();
+        legacy_profile.load_profile("sprint.on=true\noresim.seed=0\n");
+        assert!(!legacy_profile.is_on("Baritone"));
+        panic_off_state(&mut loaded);
+        assert!(!loaded.is_on("Baritone"));
+        old.load_profile("sprint.on=false\noresim.seed=0\n");
+        assert_eq!(old.module("Baritone"), Some(&b::defaults()), "legacy profiles load Baritone off/default even after a new profile");
+    }
+
+    #[test]
+    fn baritone_stale_engine_frames_and_invalid_actions_fail_closed() {
+        let reply = json!({"schema":1,"world":"4","dimension":"minecraft:overworld",
+            "job_generation":"5","lease_generation":"6","tick":"7"});
+        assert!(b::response_matches(&reply, 4, "minecraft:overworld", 5, 6, 7));
+        assert!(!b::response_matches(&reply, 4, "minecraft:overworld", 8, 6, 7));
+        assert!(!b::response_matches(&reply, 4, "minecraft:the_nether", 5, 6, 7));
+        assert!(!b::response_matches(&reply, 4, "minecraft:overworld", 5, 9, 7));
+        assert!(!b::response_matches(&reply, 4, "minecraft:overworld", 5, 6, 8));
+        let bad = actions::Intent { yaw: Some(f32::NAN), ..Default::default() };
+        assert!(actions::validate(&bad).is_err());
+        assert!(actions::movement(128).is_err());
+        assert!(actions::movement(15).unwrap().is_empty());
+        let bad = actions::Intent { selected_slot: Some(9), ..Default::default() };
+        assert!(actions::validate(&bad).is_err());
+    }
+
+    #[test]
+    fn baritone_render_edits_preserve_jobs_and_execution_edits_cancel() {
+        let before = b::defaults();
+        let mut state = State::new();
+        state.load_profile("baritone.path=false\nbaritone.goal=false\nbaritone.targets=false\nbaritone.fillopacity=0.1\n");
+        assert!(!b::execution_changed(&before, state.module("Baritone").unwrap()));
+        state.load_profile("baritone.allowbreak=false\n");
+        assert!(b::execution_changed(&before, state.module("Baritone").unwrap()));
+    }
+}
+
+#[cfg(test)]
+mod ore_sim_config_tests {
+    use super::super::sunset::*;
+    use super::super::sunset_ore_sim::manual_seed;
+
+    #[test]
+    fn old_ore_sim_config_and_profiles_keep_all_manual_fields() {
+        let old = "oresim.on=true\noresim.key=key.keyboard.o\noresim.seed=-8675309\noresim.chunks=2\noresim.ores=diamond,debris\noresim.hideshownores=true\noresim.max=512\n";
+        let mut state = State::new();
+        state.load_text(old);
+        let module = state.module("Ore Sim").unwrap();
+        assert!(module.on && module.b("Hide shown ores"));
+        assert_eq!(module.key.as_deref(), Some("key.keyboard.o"));
+        assert_eq!(manual_seed(module), Some(-8675309));
+        assert_eq!((module.n("Chunks"), module.n("Max")), (2.0, 512.0));
+        assert_eq!(module.t("Ores"), "diamond,debris");
+        assert_eq!(module.p("Seed source"), "Manual");
+        assert!(!module.b("Database fetch"));
+        let profile = format!("{}\n{old}", super::super::sunset_profiles::HEADER);
+        let checked = state.check_profile(&profile).unwrap();
+        assert!(checked.skipped.is_empty(), "{:?}", checked.skipped);
+        let mut from_profile = State::new();
+        from_profile.load_profile(&checked.body);
+        let mut loaded = State::new();
+        loaded.load_text(&state.save_text());
+        assert_eq!(from_profile.module("Ore Sim"), Some(module));
+        assert_eq!(loaded.module("Ore Sim"), Some(module));
+        from_profile.load_profile("oresim.on=false\n");
+        assert!(!from_profile.is_on("Ore Sim"));
+        assert_eq!(manual_seed(from_profile.module("Ore Sim").unwrap()), Some(-8675309));
+    }
+
+    #[test]
+    fn automatic_settings_round_trip_and_old_profiles_overlay_them() {
+        let mut state = State::new();
+        let defaults = state.module("Ore Sim").unwrap();
+        let shown = |module: &Module, name: &str| module.setting_visible(module.settings.iter().position(|s| s.name == name).unwrap());
+        assert!(!defaults.on && !defaults.b("Database fetch"));
+        assert!(shown(defaults, "Seed") && shown(defaults, "Seed source"));
+        assert!(!shown(defaults, "Database fetch") && !shown(defaults, "Cracker threads"));
+        state.load_text("oresim.seedsource=Auto-crack\noresim.databasefetch=true\noresim.crackerthreads=3\n");
+        let module = state.module("Ore Sim").unwrap();
+        assert!(shown(module, "Seed") && shown(module, "Database fetch") && shown(module, "Cracker threads"));
+        assert_eq!(manual_seed(module), None);
+        let mut loaded = State::new();
+        loaded.load_text(&state.save_text());
+        let mut from_profile = State::new();
+        from_profile.load_profile(&state.profile_text());
+        assert_eq!(loaded.module("Ore Sim"), Some(module));
+        assert_eq!(from_profile.module("Ore Sim"), Some(module));
+        // An old profile has no new fields: its nonempty Seed still overrides an explicitly selected Auto mode.
+        from_profile.load_profile("oresim.seed=0\noresim.chunks=4\noresim.on=true\n");
+        let overlay = from_profile.module("Ore Sim").unwrap();
+        assert_eq!(overlay.p("Seed source"), "Auto-crack");
+        assert!(overlay.b("Database fetch"));
+        assert_eq!(overlay.n("Cracker threads"), 3.0);
+        assert_eq!(manual_seed(overlay), Some(0));
+        assert_eq!(overlay.info().as_deref(), Some("Manual override"));
+        assert!(from_profile.profile_text().contains("oresim.seed=0\n"));
+    }
+
+    #[test]
+    fn seed_command_preserves_enable_state_and_manual_java_seed_parsing() {
+        let mut state = State::new();
+        for (text, value) in [("0", 0), ("-9223372036854775808", i64::MIN), ("A😀", 1_835_364)] {
+            seed_settings(&mut state, "auto");
+            seed_settings(&mut state, text);
+            let module = state.module("Ore Sim").unwrap();
+            assert!(!module.on, "setting a seed does not enable Ore Sim");
+            assert_eq!(module.p("Seed source"), "Manual");
+            assert_eq!(module.t("Seed"), text);
+            assert_eq!(manual_seed(module), Some(value));
+        }
+        State::set_field(&mut state.modules, "oresim.on", "true");
+        seed_settings(&mut state, "auto");
+        let module = state.module("Ore Sim").unwrap();
+        assert!(module.on);
+        assert_eq!(module.p("Seed source"), "Auto-crack");
+        assert_eq!(manual_seed(module), None);
+        State::set_field(&mut state.modules, "oresim.seed", "0");
+        assert_eq!(state.module("Ore Sim").unwrap().info().as_deref(), Some("Manual override"));
+        seed_settings(&mut state, "clear");
+        assert_eq!(state.module("Ore Sim").unwrap().p("Seed source"), "Auto-crack");
+        seed_settings(&mut state, "123");
+        seed_settings(&mut state, "clear");
+        let module = state.module("Ore Sim").unwrap();
+        assert_eq!(module.p("Seed source"), "Manual");
+        assert_eq!(manual_seed(module), None);
+        assert!(module.on, "clearing a seed does not toggle Ore Sim");
+    }
+}
+
+#[cfg(test)]
 mod movement_config_tests {
     use super::super::sunset::*;
     use winit::keyboard::KeyCode;

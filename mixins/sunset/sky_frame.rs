@@ -4,6 +4,7 @@
 // names to hide (on the title screen too).
 fn sunset_sky_frame(game: &mut crate::game::Game<'_>) {
     crate::game::sunset::finish_shutdown(game);
+    crate::game::sunset_baritone::maintain(game);
     if !horizon_protocol::connection::sunset_lifecycle::RUNTIME.running() { return; }
 
     crate::game::sunset_gui_move::frame(game);

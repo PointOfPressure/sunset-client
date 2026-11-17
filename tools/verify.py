@@ -1833,8 +1833,16 @@ def _():
     listed = mods_page()
     shown = watermark()
     kicked = len(kicks)
+    baritone_available = "Unavailable" not in baritone_status()
+    baritone_active = True
+    if baritone_available:
+        baritone_route()
+        start = pos()
+        baritone_start_goto()
+        baritone_active = baritone_wait_movement(start) and "source=goto" in baritone_status()
     mark = log_mark()
-    say(".panic")
+    # Direct local command: opening Chat would cancel Baritone before Panic could be measured.
+    ctl("chat", ".panic")
     wait(6)
     sprinting = state()["player"].get("sprinting")
     on.clear()
@@ -1844,17 +1852,19 @@ def _():
     wait(6)
     said = sunset_said(mark)
     gone = not mods_page()
+    settled = pos()
     wait(210)
+    baritone_released = not baritone_available or (baritone_clear_input() and flat(settled, pos()) < 0.15)
     with open(os.path.join(session_dir(), "home", "logs", "latest.log"), errors="replace") as f:
         f.seek(mark)
         logged = [l.strip() for l in f if "plugcheck panic frozen" in l]
     expected = "plugcheck panic frozen true changed false stops 1 stale false tasks 0"
     plugin_ok = not plugins or any(expected in l for l in logged)
     connected = bool(state().get("player")) and len(kicks) == kicked
-    ok = listed and shown and not sprinting and not hidden and not said and gone and plugin_ok and connected
+    ok = listed and shown and not sprinting and not hidden and not said and gone and plugin_ok and connected and baritone_active and baritone_released
     return ok, (f"listed before {listed}, HUD before {shown}; after .panic: sprinting {sprinting}, HUD {hidden}, "
                 f"Sunset said {said}, Options > Mods without it {gone}, plugin bus {logged[-1:] if plugins else 'not staged'}, "
-                f"still connected {connected}")
+                f"still connected {connected}; Baritone staged {baritone_available}, active before {baritone_active}, input released/no drift {baritone_released}")
 
 
 _.ends_session = True
@@ -2480,6 +2490,7 @@ def _():
     seed = next((int(f.group(1)) for f in found if f), None)
     if seed is None:
         return False, f"no seed in chat: {chat_since(mark)[-3:]}"
+    setting("oresim", "seed source", "Manual")
     setting("oresim", "chunks", "2")
 
     def run(value):
@@ -2507,6 +2518,634 @@ def _():
     ok = (right is not None and wrong is not None and right[0] >= 100 and right[2] >= 0.6 * right[0]
           and wrong[2] <= 0.1 * max(wrong[0], 1))
     return ok, f"seed {seed}: {line!r}; seed {seed + 1}: {line2!r}"
+
+
+@test("Ore Sim seed source")
+def _():
+    # A normal server can remain in collection indefinitely without enough structures; an integrated world may
+    # supply an authoritative local seed immediately. Both must stay enabled and accept a manual override.
+    reset("creative")
+    touched.add("oresim")
+    mark = log_mark()
+    cmd("seed")
+    wait(5)
+    found = [re.search(r"Seed: \[(-?\d+)\]", line) for line in chat_since(mark)]
+    seed = next((int(f.group(1)) for f in found if f), None)
+    if seed is None:
+        return False, f"no seed in chat: {chat_since(mark)[-3:]}"
+    setting("oresim", "chunks", "2")
+    setting("oresim", "cracker threads", "3")
+    say(".seed auto")
+    selected = said_after(".settings oresim")
+    default_off = any(line.casefold() == "database fetch: off" for line in selected)
+    selected_auto = "Seed source: Auto-crack" in selected and "Seed: (empty)" in selected
+    toggle("ore sim", True)
+    wait(20)
+    automatic = said_after(".seed status")
+    stayed_on = "Ore Sim" in modules_on()
+    progress = any("observations;" in line and "structure candidates (48-bit)" in line and "world candidates" in line for line in automatic)
+
+    # Keep Auto selected while supplying Seed through the original setting path: it must win over a queued or
+    # already resolved automatic result and drive the unchanged replay.
+    override = seed + 1
+    mark = log_mark()
+    setting("oresim", "seed", str(override))
+    manual_status = said_after(".seed status")
+    completion = ""
+    for _ in range(60):
+        wait(10)
+        summaries = [line for line in sunset_said(mark) if re.search(r"^Ore Sim: \d+ ores in \d+ chunks,", line)]
+        completion = summaries[-1] if summaries else ""
+        replay = re.search(r"(\d+) ores in (\d+) chunks, (\d+) of them", completion)
+        if replay and int(replay.group(1)) >= 100 and int(replay.group(3)) <= 0.1 * int(replay.group(1)):
+            break
+    replay = re.search(r"(\d+) ores in (\d+) chunks, (\d+) of them", completion)
+    manual_replay = replay is not None and int(replay.group(1)) >= 100 and int(replay.group(3)) <= 0.1 * int(replay.group(1))
+    manual = any(f"Manual override {override}." in line for line in manual_status)
+    say(".seed restart")
+    preserved = any(f"Manual override {override}." in line for line in said_after(".seed"))
+    say(".seed clear")
+    resumed_settings = said_after(".settings oresim")
+    resumed = said_after(".seed status")
+    cleared = ("Seed: (empty)" in resumed_settings and "Seed source: Auto-crack" in resumed_settings
+               and "Ore Sim" in modules_on() and not any("Manual override" in line for line in resumed))
+    toggle("ore sim", False)
+    off_mark = log_mark()
+    wait(30)
+    late = [line for line in sunset_said(off_mark) if line.startswith(("Ore Sim:", "Ore Sim seed:"))]
+    off = said_after(".seed status")
+    stopped = "Ore Sim" not in modules_on() and off == ["Ore Sim seed: Off; Auto-crack is selected."] and not late
+
+    # Commands save the same named fields as profiles; automatic runtime results must leave Seed empty.
+    profile = "verify-ore-seed"
+    try:
+        say(f".profile save {profile}")
+        manual_off = said_after(".seed 0")
+        unchanged_off = "Ore Sim" not in modules_on() and manual_off == ["Ore Sim seed: Off; Manual 0."]
+        say(f".profile load {profile}")
+        restored = said_after(".settings oresim")
+        round_trip = ("Seed: (empty)" in restored and "Seed source: Auto-crack" in restored
+                      and "Cracker threads: 3" in restored and any(line.casefold() == "database fetch: off" for line in restored)
+                      and "Ore Sim" not in modules_on())
+    finally:
+        say(f".profile delete {profile}")
+    waiting = not any("Local seed " in line or "Hash-verified" in line or "Reused hash-verified seed" in line for line in automatic)
+    ok = (default_off and selected_auto and stayed_on and progress and manual and manual_replay and preserved
+          and cleared and stopped and unchanged_off and round_trip)
+    return ok, (f"auto {automatic[:2]!r}; default fetch off {default_off}; waiting path {waiting} (local fast path can resolve immediately); "
+                f"manual {manual_status!r}, replay {completion!r}; clear {cleared}, off {off!r}, late {late!r}; "
+                f"manual command leaves off {unchanged_off}, profile round-trip {round_trip}")
+
+
+@test("Ore Sim seed crack")
+def _():
+    # Launch a FRESH normal-terrain integrated world with SUNSET_SEEDCRACKER_FORCE_CRACK=1.
+    # /seed is only the assertion oracle. Only naturally generated, server-sent blocks feed the cracker:
+    # no manual seed, database row, injected observation or precomputed candidate enters it.
+    if os.environ.get("SUNSET_SEEDCRACKER_FORCE_CRACK") != "1":
+        return None, "requires a fresh local world launched with SUNSET_SEEDCRACKER_FORCE_CRACK=1 (README > Ore Sim)"
+    if os.environ.get("SUNSET_SEEDCRACKER_START_DELAY") != "240":
+        return None, "also launch with SUNSET_SEEDCRACKER_START_DELAY=240 to collect a practical batch before solving"
+    if ctl("status").get("server", {}).get("address") != "local":
+        return False, "requires a fresh integrated world with normal terrain and command permissions"
+    reset("creative")
+    mark = log_mark()
+    cmd("seed")
+    wait(5)
+    found = [re.search(r"Seed: \[(-?\d+)\]", line) for line in chat_since(mark)]
+    expected = next((int(f.group(1)) for f in found if f), None)
+    if expected is None:
+        return False, f"no world seed oracle: {chat_since(mark)[-3:]}"
+    setting("oresim", "database fetch", "false")
+    setting("oresim", "cracker threads", "8")
+    setting("oresim", "chunks", "2")
+    say(".seed auto")
+    say(".seed restart")
+    replay_mark = log_mark()
+    toggle("ore sim", True)
+    started = time.monotonic()
+    deadline = started + 540
+    status = said_after(".seed status")
+    if ("Ore Sim seed: verification hash available." not in status
+            or not any("Diagnostic collection window: 240 seconds before solving" in line for line in status)):
+        return False, f"game did not acknowledge the packet hash and diagnostic collection mode: {status!r}"
+    visited = set()
+    route = []
+
+    def result(lines):
+        return next((int(m.group(1)) for line in lines
+                     if (m := re.fullmatch(r"Ore Sim seed: Hash-verified seed (-?\d+)\.", line))), None)
+
+    # Pyramids supply lifting bits; monuments break correlations between their candidates. Visit separated
+    # regions on both axes, collecting two monuments and eight pyramids during the diagnostic window.
+    # The server's locator chooses actual structures; no observation or candidate is injected into Sunset.
+    stops = [("monument", x, z) for x, z in ((65536, 65536), (-65536, 65536), (65536, -65536), (-65536, -65536))]
+    stops += [("desert_pyramid", (i % 4) * 8192, (i // 4) * 8192) for i in range(24)]
+    for kind, origin_x, origin_z in stops:
+        if result(status) is not None or len(visited) >= 10 or time.monotonic() >= deadline:
+            break
+        if sum(v[0] == kind for v in visited) >= (2 if kind == "monument" else 8):
+            continue
+        mark = log_mark()
+        cmd(f"execute positioned {origin_x} 100 {origin_z} run locate structure minecraft:{kind}")
+        at = None
+        locate_deadline = min(deadline, time.monotonic() + 30)
+        while at is None and time.monotonic() < locate_deadline:
+            coordinates = [re.search(r"\[(-?\d+), [^,]+, (-?\d+)\]", line) for line in chat_since(mark)]
+            at = next(((int(m.group(1)), int(m.group(2))) for m in coordinates if m), None)
+            if at is None:
+                wait(10)
+        if at is None or (kind, *at) in visited:
+            route.append(f"locate {kind} at {origin_x},{origin_z}: {chat_since(mark)[-2:]!r}")
+            continue
+        visited.add((kind, *at))
+        x, z = at
+        cmd(f"tp @s {x + 8} 120 {z + 8}")
+        for _ in range(12 if kind == "monument" else 8):
+            wait(20)
+            status = said_after(".seed status")
+            # Stay long enough for loaded neighbours and late server decoration to reach WorldView.
+            if result(status) is not None:
+                break
+        route.append(f"{kind} {at}: {status!r}")
+        print(f"PROGRESS Ore Sim seed crack - {route[-1]}", flush=True)
+
+    while result(status) is None and time.monotonic() < deadline:
+        if any("Local seed " in line or "Reused hash-verified" in line or "database seed" in line for line in status):
+            return False, f"shortcut unexpectedly resolved instead of cracking: {status!r}"
+        wait(40)
+        status = said_after(".seed status")
+    cracked = result(status)
+    if cracked != expected:
+        return False, (f"world seed {expected}, cracked {cracked}; {len(visited)} natural structures visited; "
+                       f"elapsed {time.monotonic()-started:.1f}s; final {status!r}; route {route!r}")
+    # The effective seed must drive the existing replay and ore drawing without writing a manual setting.
+    cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}")
+    completion = ""
+    for _ in range(60):
+        wait(10)
+        # Ore Sim announces once per run, including when the first replay finished before this status poll.
+        completion = next((line for line in reversed(sunset_said(replay_mark))
+                           if re.search(r"^Ore Sim: \d+ ores in \d+ chunks,", line)), "")
+        if completion:
+            break
+    ores = re.search(r"(\d+) ores in (\d+) chunks, (\d+) of them", completion)
+    settings = said_after(".settings oresim")
+    still_on = "Ore Sim" in modules_on()
+    ctl("look", "0", "70")
+    wait(20)
+    ctl("screenshot", f"{SHOTS}/ore_sim_seed_crack.png")
+    time.sleep(2)
+    toggle("ore sim", False)
+    wait(10)
+    ctl("screenshot", f"{SHOTS}/ore_sim_seed_crack_off.png")
+    time.sleep(2)
+    from PIL import Image, ImageChops
+    with Image.open(f"{SHOTS}/ore_sim_seed_crack.png") as drawn, Image.open(f"{SHOTS}/ore_sim_seed_crack_off.png") as off:
+        # Exclude chat and module-list text: compare the ore overlay in the stationary world view.
+        w, h = drawn.size
+        area = (int(w * 0.25), int(h * 0.2), int(w * 0.75), int(h * 0.55))
+        channels = ImageChops.difference(drawn.convert("RGB"), off.convert("RGB")).crop(area).split()
+        delta = ImageChops.lighter(ImageChops.lighter(channels[0], channels[1]), channels[2])
+        rendered = sum(delta.histogram()[24:])
+    ok = (ores is not None and int(ores.group(1)) >= 100 and int(ores.group(2)) > 0
+          and int(ores.group(3)) >= 0.6 * int(ores.group(1)) and "Seed: (empty)" in settings
+          and "Seed source: Auto-crack" in settings and still_on and rendered > 100)
+    return ok, (f"world/cracked seed {expected}/{cracked}; natural structures {len(visited)}; "
+                f"{time.monotonic()-started:.1f}s; {completion!r}; ore overlay {rendered} pixels; final {status!r}; "
+                f"frame {SHOTS}/ore_sim_seed_crack.png")
+
+
+# ---- Optional Baritone companion and the real Ore Sim prediction feed.
+
+def baritone_automatic_seed(lines):
+    # A matching hash can reuse the verified process cache after a reset; this is still
+    # an automatic result for the current world, not a manual seed or a stale candidate.
+    return any(re.fullmatch(r"Ore Sim seed: (?:Local seed|Reused hash-verified seed) -?\d+\.", line)
+               for line in lines)
+
+
+def baritone_wait(ticks):
+    # ctl wait is an Agent::Wait task, which correctly cancels a competing movement owner.
+    # Poll the read-only state instead, without starting any Horizon agent task.
+    start = state().get("ticks", 0)
+    deadline = time.monotonic() + max(15.0, ticks / 5.0)
+    while state().get("ticks", 0) - start < ticks:
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"Baritone passive wait: {ticks} game ticks did not pass")
+        time.sleep(0.04)
+
+
+def baritone_command(line, settle=1):
+    # Opening Chat is an intentional cancellation boundary. The control command reaches the same local
+    # command handler without opening a screen, so diagnostics do not stop the job being measured.
+    mark = log_mark()
+    ctl("chat", line)
+    if settle:
+        baritone_wait(settle)
+    return sunset_said(mark)
+
+
+def baritone_status():
+    return next((line for line in baritone_command(".b status") if line.startswith("Baritone:")), "")
+
+
+def baritone_setting(name, value):
+    touched.add("baritone")
+    return baritone_command(f".set baritone {name} {value}")
+
+
+def baritone_clear_input():
+    # Agent `state` is a compact schema without held keys; `status` is the full control schema.
+    st = ctl("status")
+    if "keys" not in st or "using" not in st:
+        raise AssertionError(f"Horizon status omitted held-input fields: {sorted(st)}")
+    observed = state()
+    if "mining" not in observed:
+        raise AssertionError("Horizon state omitted its active mining observation")
+    return not st["keys"] and not st["using"] and observed["mining"] is None
+
+
+def baritone_held_keys():
+    st = ctl("status")
+    if "keys" not in st:
+        raise AssertionError(f"Horizon status omitted held keys: {sorted(st)}")
+    return st["keys"]
+
+
+def baritone_targets(limit=64):
+    lines = baritone_command(f".b targets {limit}")
+    text = next((line for line in lines if line.startswith("Baritone targets:")), "")
+    header = re.search(r"world=(\d+) replay=(\d+) dimension=([^ ]+) revision=(\d+) pending=(true|false) completed_chunks=(\d+);", text)
+    ores = [{"pos": tuple(map(int, match[:3])), "kind": match[3], "state": match[4]}
+            for match in re.findall(r"(-?\d+) (-?\d+) (-?\d+) kind=(\w+) state=(\w+);", text)]
+    return header.groups() if header else None, ores, text or " | ".join(lines)
+
+
+def baritone_predictions(kinds="iron,diamond"):
+    # Stable read-only anchor inside terrain; mining switches back to survival at its prepared stance.
+    reset("spectator", y=24)
+    setting("oresim", "chunks", "2")
+    setting("oresim", "database fetch", "false")
+    say(".seed auto")
+    toggle("ore sim", True)
+    for name, value in (("ores", kinds), ("min y", "-64"), ("max y", "80"), ("radius", "128"), ("max targets", "64")):
+        baritone_setting(name, value)
+    header, targets, text = None, [], ""
+    for _ in range(80):
+        baritone_wait(10)
+        header, targets, text = baritone_targets()
+        if targets and header and header[4] == "false":
+            break
+    return header, targets, text
+
+
+def baritone_route():
+    baritone_command(".b stop")
+    reset()
+    cmd(f"fill {X0-2} {Y} {Z0-4} {X0+30} {Y} {Z0+4} minecraft:stone",
+        f"fill {X0-2} {Y+1} {Z0-4} {X0+30} {Y+4} {Z0+4} minecraft:air")
+    slot(0, "netherite_pickaxe")
+    ctl("key", "1", "tap")
+    baritone_setting("radius", "64")
+    baritone_setting("sprint", "false")
+
+
+def baritone_start_goto(x=24, y=Y + 1, z=0):
+    touched.add("baritone")
+    lines = baritone_command(f".b goto {X0+x} {y} {Z0+z}")
+    if any(line.startswith("Baritone started") for line in lines):
+        on.add("baritone")  # Valid explicit starts arm the module.
+    return lines
+
+
+def baritone_wait_movement(start, ticks=100):
+    for _ in range(ticks // 5):
+        baritone_wait(5)
+        if flat(start, pos()) > 0.4:
+            return True
+    return False
+
+
+@test("Baritone: unavailable without companion")
+def _():
+    status = baritone_status()
+    if "Unavailable" not in status:
+        return None, f"needs a Sunset-only build; companion is present: {status}"
+    before = pos()
+    refused = baritone_start_goto()
+    baritone_wait(20)
+    after = baritone_status()
+    clear = baritone_clear_input()
+    return (any("Unavailable" in line and "companion" in line for line in refused)
+            and "source=none" in after and flat(before, pos()) < 0.1 and clear), f"{status}; start {refused}; after {after}; input clear {clear}"
+
+
+@test("Baritone: prediction targets")
+def _():
+    if SERVER:
+        return None, "uses a disposable single-player world with the authoritative local seed"
+    header, targets, text = baritone_predictions()
+    if not header or not targets:
+        return False, f"fresh-world predictions missing: {text}"
+    second, same, _ = baritone_targets()
+    valid = (int(header[0]) > 0 and int(header[1]) > 0 and int(header[5]) > 0
+             and all(target["kind"] in ("iron", "diamond") for target in targets)
+             and len({target["pos"] for target in targets}) == len(targets) <= 64)
+    # All three display controls must leave the mining snapshot intact.
+    setting("oresim", "hide shown ores", "true")
+    setting("oresim", "max", "64")
+    setting("oresim", "ores", "coal")
+    display_header, display_targets, _ = baritone_targets()
+    mark = log_mark()
+    baritone_command(".seed restart")
+    restarted = None
+    for _ in range(80):
+        baritone_wait(10)
+        restarted, again, _ = baritone_targets()
+        if restarted and again and restarted[1] != header[1]:
+            break
+    automatic = baritone_automatic_seed(sunset_said(mark) + baritone_command(".seed status"))
+    ok = (automatic and valid and header == second and targets == same and display_targets == targets
+          and display_header and display_header[:3] == header[:3] and restarted and restarted[1] != header[1])
+    return bool(ok), f"{len(targets)} unique stable predictions; display independent {display_targets == targets}; replay {header[1]} -> {restarted[1] if restarted else None}; automatic seed {automatic}; {text[:450]}"
+
+
+@test("Baritone: Ore Sim mining")
+def _():
+    if "Unavailable" in baritone_status():
+        return None, "needs the built-in Baritone runtime and its engine"
+    if SERVER:
+        return None, "uses a disposable single-player world with the authoritative local seed"
+    header, predictions, text = baritone_predictions()
+    source_status = baritone_command(".seed status")
+    if not baritone_automatic_seed(source_status):
+        return False, f"Auto-crack did not resolve the single-player seed: {source_status}"
+    actual = []
+    for prediction in predictions:
+        p = prediction["pos"]
+        if p[1] <= -63:
+            continue
+        counts = ctl("blocks", *map(str, (*p, *p))).get("counts", {})
+        block = next((name for name, n in counts.items() if n == 1), "")
+        expected = {f"minecraft:{prediction['kind']}_ore", f"minecraft:deepslate_{prediction['kind']}_ore"}
+        if block in expected:
+            around = ctl("blocks", *map(str, (p[0]-5, p[1]-1, p[2]-3, p[0]+1, p[1]+4, p[2]+3))).get("counts", {})
+            unsafe = {"minecraft:water", "minecraft:lava", "minecraft:sand", "minecraft:red_sand", "minecraft:gravel",
+                      "minecraft:anvil", "minecraft:chipped_anvil", "minecraft:damaged_anvil"}
+            if any(n > 0 and (name in unsafe or name.endswith("_concrete_powder")) for name, n in around.items()):
+                continue
+            actual.append((prediction, block))
+            break
+    if not actual:
+        return False, f"no live matching prediction to mine: {text}"
+    prediction, original = actual[0]
+    x, y, z = prediction["pos"]
+    # Keep the ore's whole X plane intact. The adjacent approach space removes closer/tied vein
+    # coordinates from the sample as real air, making the one-target fixture deterministic.
+    cmd(f"fill {x-4} {y} {z-2} {x-1} {y+2} {z+2} minecraft:air",
+        f"fill {x-4} {y-1} {z-2} {x-1} {y-1} {z+2} minecraft:stone",
+        f"tp @s {x-2+0.5} {y} {z+0.5} -90 0", "gamemode survival")
+    slot(0, "netherite_pickaxe")
+    ctl("key", "1", "tap")
+    for name, value in (("ores", prediction["kind"]), ("min y", str(y)), ("max y", str(y)), ("radius", "8"), ("max targets", "1")):
+        baritone_setting(name, value)
+    _, selected, diagnostic = baritone_targets()
+    if not selected or selected[0]["pos"] != (x, y, z):
+        return False, f"stance changed the nearest target: wanted {(x,y,z)}, {diagnostic}"
+    start = baritone_command(".b mine oresim")
+    if any(line.startswith("Baritone started") for line in start):
+        on.add("baritone")
+    committed = False
+    status = ""
+    for _ in range(120):
+        baritone_wait(5)
+        status = baritone_status()
+        mined = re.search(r"mined=(\d+)", status)
+        if mined and int(mined[1]) >= 1:
+            # This command is evaluated by the integrated server, not the client's predicted block map.
+            marker = log_mark()
+            cmd(f'execute if block {x} {y} {z} minecraft:air run tellraw @s "BARITONE_COMMITTED_AIR"')
+            committed = any("BARITONE_COMMITTED_AIR" in line for line in chat_since(marker))
+            break
+        if "Stopped:" in status or "source=none" in status:
+            break
+    baritone_command(".b stop")
+    baritone_wait(5)
+    _, remaining, _ = baritone_targets()
+    air_excluded = all(target["pos"] != (x, y, z) for target in remaining)
+    # A block restored in the same look direction must survive: attack must have been released.
+    cmd(f"setblock {x} {y} {z} minecraft:stone")
+    baritone_wait(30)
+    sentinel = count(x, y, z, x, y, z, "stone") == 1
+    clear = baritone_clear_input()
+    ok = committed and air_excluded and sentinel and clear
+    return ok, f"source {header[:3] if header else None}; natural {original} at {(x,y,z)}; start {start}; {status}; server committed air {committed}, air excluded {air_excluded}, stop sentinel {sentinel}, input clear {clear}"
+
+
+def baritone_stop_sample():
+    baritone_route()
+    origin = pos()
+    baritone_start_goto()
+    moved = baritone_wait_movement(origin)
+    active = "source=goto" in baritone_status()
+    stopped = baritone_command(".b stop")
+    baritone_wait(10)
+    settled = pos()
+    baritone_wait(30)
+    drift = flat(settled, pos())
+    clear = baritone_clear_input()
+    cancelled = "source=none" in baritone_status()
+    return moved and active and cancelled and drift < 0.15 and clear, f"stop {stopped}, moved/active before {moved}/{active}, cancelled {cancelled}, drift {drift:.3f}, input clear {clear}"
+
+
+@test("Baritone: stop releases keys")
+def _():
+    if "Unavailable" in baritone_status():
+        return None, "needs the built-in Baritone runtime and its engine"
+    return baritone_stop_sample()
+
+
+@test("Baritone: goto and stop")
+def _():
+    if "Unavailable" in baritone_status():
+        return None, "needs the built-in Baritone runtime and its engine"
+    routes = {}
+    for mode in ("flat", "wall", "step", "drop"):
+        baritone_route()
+        goal_y = Y + 1
+        if mode == "wall":
+            cmd(f"fill {X0+4} {Y+1} {Z0-4} {X0+4} {Y+3} {Z0+4} minecraft:stone")
+        elif mode == "step":
+            cmd(f"fill {X0+3} {Y+1} {Z0-4} {X0+12} {Y+1} {Z0+4} minecraft:stone")
+            goal_y += 1
+        elif mode == "drop":
+            cmd(f"fill {X0-1} {Y+1} {Z0-1} {X0+1} {Y+2} {Z0+1} minecraft:stone",
+                f"tp @s {X0+0.5} {Y+3} {Z0+0.5} 0 0")
+        mark = probe_mark()
+        start = baritone_start_goto(8, goal_y)
+        for _ in range(100):
+            baritone_wait(5)
+            p = pos()
+            if math.hypot(p[0] - (X0+8.5), p[2] - (Z0+0.5)) < 0.9 and abs(p[1] - goal_y) < 0.6:
+                break
+            if "source=none" in baritone_status():
+                break
+        p = pos()
+        moves = max((t.count("order move") for t in probe_ticks(mark)), default=0)
+        routes[mode] = (round(math.hypot(p[0] - (X0+8.5), p[2] - (Z0+0.5)), 2), round(p[1] - goal_y, 2), moves, start, baritone_status())
+    stopped, note = baritone_stop_sample()
+    ok = all(off < 0.9 and abs(dy) < 0.6 and moves <= 1 for off, dy, moves, _, _ in routes.values()) and stopped
+    return ok, f"routes (distance,height,moves a tick,start,status) {routes}; {note}"
+
+
+@test("Baritone: ownership and boundaries")
+def _():
+    if "Unavailable" in baritone_status():
+        return None, "needs the built-in Baritone runtime and its engine"
+    outcomes = {}
+    held = {}
+    for reason in ("off", "module", "Auto Walk", ".goto", "manual", "inventory"):
+        baritone_route()
+        start = pos()
+        baritone_start_goto()
+        moved = baritone_wait_movement(start)
+        preserved = True
+        if reason == "off":
+            baritone_command(".b off")
+            on.discard("baritone")
+        elif reason == "module":
+            baritone_command(".t baritone")
+            on.discard("baritone")
+        elif reason == "Auto Walk":
+            baritone_command(".t autowalk")
+            baritone_wait(5)
+            held[reason] = baritone_held_keys()
+            preserved = "source=none" in baritone_status() and "KeyW" in held[reason]
+            baritone_command(".t autowalk")
+        elif reason == ".goto":
+            baritone_command(f".goto {X0+12} {Y+1} {Z0}")
+            preserved = "source=none" in baritone_status()
+            baritone_command(".goto stop")
+        elif reason == "manual":
+            ctl("key", "a", "down")
+            baritone_wait(3)
+            held[reason] = baritone_held_keys()
+            preserved = "KeyA" in held[reason]
+            ctl("key", "a", "up")
+        else:
+            ctl("key", "e", "tap")
+            baritone_wait(4)
+            ctl("key", "esc", "tap")
+        baritone_wait(10)
+        at = pos()
+        baritone_wait(20)
+        status = baritone_status()
+        outcomes[reason] = (moved, preserved, "source=none" in status, flat(at, pos()) < 0.15, baritone_clear_input())
+    return all(all(checks) for checks in outcomes.values()), f"(moved before, owner/physical input preserved, cancelled, no drift, clear keys/use/mining) {outcomes}; observed held keys {held}"
+
+
+@test("Baritone: rendering and config")
+def _():
+    old = old_profile("verify-baritone-old", ["oresim.on=false"], "baritone")
+    defaults = old is not None and any(line == "Ores: diamond" for line in old)
+    for name, value in (("path color", "Cyan"), ("shape mode", "Lines"), ("fill opacity", "0.25"), ("line width", "2"), ("render cap", "16")):
+        baritone_setting(name, value)
+    baritone_command(".profile save verify-baritone")
+    baritone_setting("path color", "Red")
+    baritone_command(".profile load verify-baritone")
+    shown = baritone_command(".settings baritone")
+    restored = all(any(line.startswith(prefix) for line in shown) for prefix in ("Path color: Cyan", "Shape mode: Lines", "Fill opacity: 0.25", "Line width: 2", "Render cap: 16"))
+    idle = "source=none" in baritone_status()
+    screenshot = "companion unavailable"
+    if "Unavailable" not in baritone_status():
+        from PIL import Image
+        baritone_route()
+        # Face the goal before acquiring a job; an active ctl look would take foreign agent ownership.
+        ctl("look", "-90", "20")
+        baritone_wait(2)
+        baritone_start_goto()
+        baritone_wait(3)
+        ctl("screenshot", f"{SHOTS}/baritone_path.png")
+        baritone_setting("path", "false")
+        baritone_setting("goal", "false")
+        baritone_setting("targets", "false")
+        still_active = "source=goto" in baritone_status()
+        ctl("screenshot", f"{SHOTS}/baritone_hidden.png")
+        baritone_command(".b stop")
+
+        def cyan_pixels(path):
+            with Image.open(path) as shot:
+                image = shot.convert("RGB")
+                crop = image.crop((0, image.height // 5, image.width, image.height * 4 // 5))
+                pixels = getattr(crop, "get_flattened_data", crop.getdata)()
+                return sum(1 for r, g, b in pixels if r < 140 and g > 225 and b > 225)
+
+        shown_pixels = cyan_pixels(f"{SHOTS}/baritone_path.png")
+        hidden_pixels = cyan_pixels(f"{SHOTS}/baritone_hidden.png")
+        screenshot = f"{SHOTS}/baritone_path.png and baritone_hidden.png; cyan path pixels {shown_pixels} -> {hidden_pixels}; rendering off leaves route active {still_active}"
+        restored = restored and still_active and shown_pixels > 20 and hidden_pixels < shown_pixels / 4
+    baritone_command(".profile delete verify-baritone")
+    return defaults and restored and idle, f"old profile defaults {defaults}, preferences round-trip {restored}, no job restored {idle}; {screenshot}"
+
+
+def baritone_full_goto(x, y, z, ticks=300):
+    """`#goto` through the full runtime: whether it got within a block, and the most move packets in a tick meanwhile."""
+    mark = probe_mark()
+    baritone_command(f"#goto {X0+x} {y} {Z0+z}")
+    reached = False
+    for _ in range(ticks // 5):
+        baritone_wait(5)
+        p = pos()
+        if math.hypot(p[0] - (X0+x+0.5), p[2] - (Z0+z+0.5)) < 1.0 and abs(p[1] - y) < 0.6:
+            reached = True
+            break
+    moves = max((t.count("order move") for t in probe_ticks(mark)), default=0)
+    return reached, moves
+
+
+@test("Baritone: #goto, #help and stopping")
+def _():
+    # The full runtime's own commands: #help answers, #goto walks to the block (flat, then up a step) with one move
+    # packet a tick, and a walk is stopped by #stop and by Sunset's .b stop alike (keys released, no drift after).
+    if "Unavailable" in baritone_status():
+        return None, "needs the built-in Baritone runtime"
+    mark = log_mark()
+    ctl("chat", "#help")
+    baritone_wait(10)
+    helped = sum(1 for line in chat_since(mark) if "All Baritone commands" in line)
+    baritone_route()
+    flat_reached, flat_moves = baritone_full_goto(14, Y + 1, 0)
+    baritone_route()
+    cmd(f"fill {X0+5} {Y+1} {Z0-4} {X0+30} {Y+1} {Z0+4} minecraft:stone")
+    step_reached, step_moves = baritone_full_goto(12, Y + 2, 0)
+    stops = {}
+    for stop in ("#stop", ".b stop"):
+        baritone_route()
+        origin = pos()
+        baritone_command(f"#goto {X0+28} {Y+1} {Z0}")
+        moved = baritone_wait_movement(origin)
+        baritone_command(stop)
+        baritone_wait(10)
+        settled = pos()
+        baritone_wait(30)
+        stops[stop] = (moved, round(flat(settled, pos()), 3), baritone_clear_input())
+    stopped = all(moved and drift < 0.15 and clear for moved, drift, clear in stops.values())
+    ok = helped > 0 and flat_reached and step_reached and max(flat_moves, step_moves) <= 1 and stopped
+    return ok, (f"#help pages {helped}; flat reached {flat_reached} ({flat_moves} moves/tick max), step reached "
+                f"{step_reached} ({step_moves}); stops (moved, drift, keys clear) {stops}")
+
+
+@test("Baritone: Panic cancels")
+def _():
+    if "Unavailable" in baritone_status():
+        return None, "needs the built-in Baritone runtime and its engine"
+    # Reuse the final-session check, which now starts a live route before Panic.
+    panic = next(fn for fn in TESTS if fn.test_name == "Panic (ends Sunset for the session, runs last)")
+    return panic()
+
+
+_.ends_session = True
 
 
 @test("Base Finder")
@@ -3332,7 +3971,9 @@ def watermark():
     ctl("screenshot", path)
     time.sleep(1)
     im = Image.open(path).convert("RGB")
-    return sum(1 for r, g, b in im.crop((0, 0, im.width // 5, im.height // 14)).getdata() if r > 200 and 60 < g < 210 and b < 90) > 20
+    cropped = im.crop((0, 0, im.width // 5, im.height // 14))
+    pixels = getattr(cropped, "get_flattened_data", cropped.getdata)()
+    return sum(1 for r, g, b in pixels if r > 200 and 60 < g < 210 and b < 90) > 20
 
 
 @test("Binds (mouse buttons, Hold)")
@@ -9197,7 +9838,7 @@ def _():
     studio = ask(".scan commands studio")
     only()
     off = ask(".scan commands")
-    seen = any("Server Scan — Commands (" in l and "visible" in l for l in roots)
+    seen = any("Server Scan â€” Commands (" in l and "visible" in l for l in roots)
     ok = (seen and any("/weather clear" in l for l in sub) and any("no visible command /sunsetnope" in l for l in nope)
           and any("no visible command /studio" in l for l in studio))
     return ok, f"roots {roots[:2]!r}; weather {sub[:3]!r}; unknown {nope[:1]!r}; studio {studio[:1]!r}; module off {off[:1]!r}"
@@ -10895,6 +11536,9 @@ def x_window():
     """The X window of this session's game (its process has the session's probe path), for real key presses with
     xdotool on its display; None without xdotool or a window."""
     global XDISPLAY
+    import shutil
+    if not shutil.which("pgrep") or not shutil.which("xdotool"):
+        return None
     want = f"{session_dir()}/probe.log"
     for pid in subprocess.run(["pgrep", "horizon-client"], capture_output=True, text=True).stdout.split():
         try:
@@ -11203,9 +11847,9 @@ def _():
     reset()
     toggle("ESP", True)
     setting("esp", "fill opacity", "0.5")
-    cmd('tellraw @s ["",{"text":"Grim ","color":"aqua"},{"text":"» ","color":"dark_gray"},{"text":"pointofpressure '
+    cmd('tellraw @s ["",{"text":"Grim ","color":"aqua"},{"text":"آ» ","color":"dark_gray"},{"text":"pointofpressure '
         'failed ","color":"white"},{"text":"Simulation (x102.0) ","color":"white"},{"text":".420000","color":"gray"}]')
-    cmd(*[f'tellraw @s "Grim » pointofpressure failed {l}"' for l in GRIM_LINES[1:]])
+    cmd(*[f'tellraw @s "Grim آ» pointofpressure failed {l}"' for l in GRIM_LINES[1:]])
     ctl("chat", "sgudpi")
     wait(5)
     ctl("key", "w", "down")
@@ -11226,8 +11870,8 @@ def _():
     wire = ("PlayerInput 0x01 (forward)" in packets and "ChatCommand (x" in packets and "MovePos" in packets
             and "Last PlayerInput sent: 0x00 (none) at tick" in text)
     chat = text.split("## Chat", 1)[-1]
-    chat_ok = "[player] <" in chat and "sgudpi" in chat and "[server] Grim » pointofpressure failed Simulation" in chat
-    clean = "§" not in text and len(text) <= 20500
+    chat_ok = "[player] <" in chat and "sgudpi" in chat and "[server] Grim آ» pointofpressure failed Simulation" in chat
+    clean = "آ§" not in text and len(text) <= 20500
     say(".menu debug report")
     wait(6)
     ctl("screenshot", f"{SHOTS}/debug_report_menu.png")
@@ -11310,7 +11954,7 @@ def _():
         if len(cells) == 8 and cells[0] == "Grim" and cells[1] == "Tester":
             rows[cells[2]] = int(cells[3])
     chat = text.split("## Chat", 1)[-1]
-    lines = [l for l in chat.splitlines() if "[server] Grim » Tester failed " in l]
+    lines = [l for l in chat.splitlines() if "[server] Grim آ» Tester failed " in l]
     per_check = {}
     for l in lines:
         check = l.split(" failed ", 1)[1].split(" ")[0]
@@ -12651,7 +13295,7 @@ def _():
     listed = all(x in text for x in ("hello 0.2.0 - modules: Hello - commands: .hello",
                                      "afk 0.1.0 - modules: AFK Fisher - commands: .afk",
                                      "plugcheck 0.1.0 - modules: Plug Check - commands: .plugcheck",
-                                     "plugin API 2"))
+                                     "plugin API 3"))
     bad_id = "Bad Id 0.1.0" in text and "OFF: its id" in text
     helped = ".hello - say Hello's message" in text and ".afk - AFK Fisher" in text and ".plugins - the plugins loaded" in text
     start = " | ".join(sunset_said(0))
@@ -14209,4 +14853,3 @@ if __name__ == "__main__":
     print(f"\n{p}/{len(results)} passed")
     for test, screen in kicks:
         print(f"KICKED during {test}: {screen}")
-

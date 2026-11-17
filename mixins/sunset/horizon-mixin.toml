@@ -9,6 +9,42 @@ priority = 100
 horizon_revision = "9f42064c11efe7ef3e5ed2baad7ddc2a3b36eea0"
 
 [[module]]
+id = "baritone_controller"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone"
+source = "baritone.rs"
+
+[[module]]
+id = "movement_owner"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_movement_owner"
+source = "movement_owner.rs"
+
+[[module]]
+id = "baritone_actions"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone_actions"
+source = "baritone_actions.rs"
+
+[[module]]
+id = "baritone_remote"
+file = "crates/horizon-client/src/game/remote.rs"
+name = "sunset_baritone_remote"
+source = "baritone_remote.rs"
+
+[[module]]
+id = "baritone_targets"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone_targets"
+source = "baritone_targets.rs"
+
+[[module]]
+id = "baritone_draw"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone_draw"
+source = "baritone_draw.rs"
+
+[[module]]
 id = "gui_move"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_gui_move"
@@ -2173,6 +2209,182 @@ id = "effects"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_effects"
 source = "effects.rs"
+
+[[module]]
+id = "seedcracker_version"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_version"
+source = "seedcracker_version.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_mth"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_mth"
+source = "seedcracker_mth.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_lcg"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_lcg"
+source = "seedcracker_lcg.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_sha256"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_sha256"
+source = "seedcracker_sha256.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_rand"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_rand"
+source = "seedcracker_rand.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_seeds"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_seeds"
+source = "seedcracker_seeds.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_dimension"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_dimension"
+source = "seedcracker_dimension.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_biome"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_biome"
+source = "seedcracker_biome.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_worldgen_random"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_worldgen_random"
+source = "seedcracker_worldgen_random.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_feature"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_feature"
+source = "seedcracker_feature.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_features"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_features"
+source = "seedcracker_features.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_cracker_data"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_cracker_data"
+source = "seedcracker_cracker_data.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_cracker_storage"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_cracker_storage"
+source = "seedcracker_cracker_storage.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_cracker_time_machine"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_cracker_time_machine"
+source = "seedcracker_cracker_time_machine.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_config"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_config"
+source = "seedcracker_config.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_lang"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_lang"
+source = "seedcracker_lang.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_database"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_database"
+source = "seedcracker_database.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_level"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_level"
+source = "seedcracker_level.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_finder_piece"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_finder_piece"
+source = "seedcracker_finder_piece.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_finder_structures"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_finder_structures"
+source = "seedcracker_finder_structures.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_finder"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_finder"
+source = "seedcracker_finder.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker_finders"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_finders"
+source = "seedcracker_finders.rs"
+visibility = "pub"
+
+[[module]]
+id = "seedcracker"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_seedcracker"
+source = "seedcracker.rs"
+
+[[module]]
+id = "seedcracker_world"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_seedcracker_world"
+source = "seedcracker_world.rs"
+
+[[injection]]
+id = "seedcracker_incoming_boundary"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_client_packet"
+helper = "seedcracker_packet_hook.rs"
+bindings = [
+  { name = "_game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "packet", ty = "&horizon_protocol::packets::play::Clientbound", value = "packet" },
+]
 
 [[module]]
 id = "ore_sim"

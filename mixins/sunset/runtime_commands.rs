@@ -42,6 +42,7 @@ const HELP: &[(&str, &str)] = &[
     (".menu [search]", "open the click menu, searching for the text"),
     (".settings <module>", "list a module's settings"),
     (".set <module> <setting> <value>", "change a setting"),
+    (".seed [status|auto|clear|restart|seed text]", "Ore Sim's seed, automatic discovery and progress; manual text always wins"),
     (".movementpreset <subtle|balanced|aggressive>", "apply explicit movement settings"),
     (".bind <module> <key|mouse4|none>", "bind a key or mouse button to a module"),
     (".binds", "list the binds"),
@@ -59,6 +60,7 @@ const HELP: &[(&str, &str)] = &[
     (".vclip <blocks>", "move up or down"),
     (".hclip <blocks>", "move forward"),
     (".goto <x> <y> <z>|stop", "walk there through loaded terrain, up to 128 blocks (by Rust); a movement key or a screen stops it"),
+    (".b / .baritone status|goto|mine|stop|off|targets|help", "Full Baritone and bounded visible/Ore Sim mining, bundled with Sunset"),
 ];
 
 // Every module off and their pending work dropped (Panic, and the plugin API's stop_everything).
@@ -140,6 +142,8 @@ pub(super) fn native_held_input(game: &Game<'_>) -> (std::collections::HashSet<K
 }
 
 pub(super) fn all_off(game: &mut Game<'_>) {
+    super::sunset_baritone::stop(game, super::sunset_baritone::StopReason::Disabled);
+    if let Some(lease) = super::sunset_movement_owner::current() { super::sunset_movement_owner::release(game, lease); }
     watchdog_stop(game, true);
     super::sunset_hands::release_rf(game);
     super::remote::sunset_combat_remote::restore_buttons(game);
@@ -199,7 +203,8 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     super::sunset_sound_detector::tick(game, None);
     super::sunset_gear::tick(game, &[]);
     super::sunset_new_chunks::tick(game, &[]);
-    super::sunset_ore_sim::tick(game, &[]);
+    super::sunset_seedcracker::stop();
+    super::sunset_ore_sim::stop();
     super::sunset_hud_bars::tick(game, &[], false);
     super::sunset_hud_bars::chat_closed();
     super::sunset_streamer_mode::frame(game);
@@ -382,6 +387,7 @@ pub(super) fn take_preset(game: &mut Game<'_>, i: usize) -> Result<String, Strin
 // those it switches (Scaffold gives back your look, Kill Aura stops blocking and swaps back, Speed lets go of its
 // motion...), Hold binds of modules it changed end, and the settings are saved.
 fn apply_profile(game: &mut Game<'_>, body: &str, name: &str) {
+    super::sunset_baritone::stop(game, super::sunset_baritone::StopReason::User);
     let before: Vec<bool> = with(|s| s.modules.iter().map(|m| m.on).collect());
     let switched = with(|s| {
         s.load_profile(body);
@@ -437,6 +443,46 @@ pub(super) fn apply_movement_preset(state: &mut State, style: &str) -> bool {
     true
 }
 
+// Setting edits shared by the command and config compatibility tests. Automatic results never use this path.
+pub(super) fn seed_settings(state: &mut State, text: &str) {
+    match text.to_ascii_lowercase().as_str() {
+        "auto" => {
+            State::set_field(&mut state.modules, "oresim.seed", "");
+            State::set_field(&mut state.modules, "oresim.seedsource", "Auto-crack");
+        }
+        "clear" => State::set_field(&mut state.modules, "oresim.seed", ""),
+        _ => {
+            State::set_field(&mut state.modules, "oresim.seed", text);
+            State::set_field(&mut state.modules, "oresim.seedsource", "Manual");
+        }
+    }
+}
+
+fn seed_command(game: &mut Game<'_>, args: &[&str]) {
+    let text = args.join(" ");
+    match text.to_ascii_lowercase().as_str() {
+        "" | "status" => {}
+        "restart" => {
+            super::sunset_baritone::source_changed(game);
+            super::sunset_seedcracker::restart();
+            super::sunset_ore_sim::stop();
+            say(game, "Ore Sim seed: automatic observations cleared; the next eligible tick starts a fresh run. Manual text is unchanged.");
+            return;
+        }
+        _ => {
+            super::sunset_baritone::source_changed(game);
+            with(|s| seed_settings(s, &text));
+            super::sunset_seedcracker::stop();
+            super::sunset_ore_sim::stop();
+            save(game);
+        }
+    }
+    let module = with(|s| s.module(super::sunset_ore_sim::NAME).cloned());
+    if let Some(module) = module {
+        for line in super::sunset_ore_sim::status(game, &module) { say(game, &line); }
+    }
+}
+
 pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
     let cmd = args[0].to_ascii_lowercase();
     let module_arg = |game: &mut Game<'_>, name: Option<&&str>| -> Option<usize> {
@@ -451,6 +497,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         found
     };
     match cmd.as_str() {
+        "seed" => seed_command(game, &args[1..]),
         "auradebug" => say(game, &super::sunset_aura::diagnostics()),
         "antibotdebug" => {
             let id = args.get(1).and_then(|id| id.parse::<u32>().ok());
@@ -459,6 +506,10 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         "scan" => super::sunset_server_scan::command(game, &args[1..]),
         "goto" => {
             let text = super::agent::sunset_goto::command(game, &args[1..]).unwrap_or_else(|e| e);
+            say(game, &text);
+        }
+        "baritone" | "b" => {
+            let text = super::sunset_baritone::command(game, &args[1..]).unwrap_or_else(|e| e);
             say(game, &text);
         }
         "help" | "commands" => {
@@ -544,19 +595,25 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                     let m = &mut s.modules[i];
                     let setting = &mut m.settings[at];
                     let alias = m.name == "Kill Aura" && setting.name == "Shield";
+                    let seed_changed = m.name == "Ore Sim" && matches!(setting.name, "Seed" | "Seed source" | "Database fetch" | "Cracker threads");
                     let parsed = setting.parse(value);
                     let shown = setting.shown();
                     if parsed && alias {
                         let mode = if m.b("Shield") { "Modern" } else { "Off" };
                         if let Some(s) = m.settings.iter_mut().find(|s| s.name == "AutoBlock") { s.parse(mode); }
                     }
-                    Some((parsed, shown))
+                    Some((parsed, shown, seed_changed))
                 })
             });
             match result {
                 None => say(game, "No such setting. Try .settings <module>"),
-                Some((false, shown)) => say(game, &format!("Could not read {value}. Now {shown}")),
-                Some((true, shown)) => {
+                Some((false, shown, _)) => say(game, &format!("Could not read {value}. Now {shown}")),
+                Some((true, shown, seed_changed)) => {
+                    if seed_changed {
+                        super::sunset_baritone::source_changed(game);
+                        super::sunset_seedcracker::stop();
+                        super::sunset_ore_sim::stop();
+                    }
                     save(game);
                     say(game, &shown);
                 }
@@ -629,6 +686,10 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                     s.modules[i].name
                 });
                 if name == "Server Scan" { super::sunset_server_scan::disabled(); }
+                if name == "Ore Sim" {
+                    super::sunset_seedcracker::stop();
+                    super::sunset_ore_sim::stop();
+                }
                 save(game);
                 say(game, &format!("{name} reset."));
             }

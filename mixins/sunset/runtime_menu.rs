@@ -164,7 +164,7 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
     });
     switched_effects(game, name, on);
     save(game);
-    if announce && name != super::sunset_debug::NAME {
+    if announce && name != super::sunset_debug::NAME && with(|s| s.modules[i].on == on) {
         announce_toggle(name, on);
     }
 }
@@ -173,6 +173,24 @@ pub(super) fn toggle(game: &mut Game<'_>, i: usize, announce: bool) {
 pub(super) fn switched_effects(game: &mut Game<'_>, name: &'static str, on: bool) {
     if name == "Panic" {
         return;
+    }
+    if name == "Baritone" && !on {
+        super::sunset_baritone::stop(game, super::sunset_baritone::StopReason::Disabled);
+    }
+    if on && name != "Baritone" && name != "Auto Walk"
+        && super::sunset_movement_owner::conflict(&snapshot()).is_some()
+    {
+        super::sunset_baritone::stop(game, super::sunset_baritone::StopReason::Conflict);
+    }
+    if name == "Auto Walk" {
+        if on {
+            if let Err(why) = super::sunset_movement_owner::acquire(game, super::sunset_movement_owner::Owner::AutoWalk) {
+                with(|s| { if let Some(m) = s.modules.iter_mut().find(|m| m.name == "Auto Walk") { m.on = false; } });
+                say(game, &why);
+            }
+        } else if let Some(lease) = super::sunset_movement_owner::current()
+            .filter(|l| l.owner == super::sunset_movement_owner::Owner::AutoWalk)
+        { super::sunset_movement_owner::release(game, lease); }
     }
     super::sunset_combat_macros::toggled(game, name, on);
     super::sunset_combat_inventory::toggled(game, name);
@@ -183,6 +201,11 @@ pub(super) fn switched_effects(game: &mut Game<'_>, name: &'static str, on: bool
     }
     if !on {
         match name {
+            "Ore Sim" => {
+                super::sunset_baritone::source_changed(game);
+                super::sunset_seedcracker::stop();
+                super::sunset_ore_sim::stop();
+            }
             "Scaffold" => {
                 with(|s| s.scaffold_stack = None);
                 restore_scaffold_rotation(game);
@@ -355,6 +378,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     }
     if !running() { return; }
     if pressed {
+        super::sunset_baritone::key(game, key, pressed);
         super::agent::sunset_goto::key(game, key);
     }
     super::sunset_melee::key(game, key, pressed);
