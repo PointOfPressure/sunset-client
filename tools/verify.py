@@ -13940,6 +13940,52 @@ def hud_frame(name, *settings, colour=False):
     return colour_frame(name) if colour else frame(name)
 
 
+@test("HUD placement")
+def _():
+    # The watermark in the bottom right corner leaves the top left for there; at Custom 0.5/0.5 it is mid-screen. The
+    # module list (Sprint on) at Bottom leaves the top right for the bottom right; back at Top it is where it was.
+    hud_scene()
+    only("Sprint")
+    w, h = hud_size()
+    tl, tr, br = hud_box(0, 0, 110, 28), hud_box(w - 90, 0, w, 40), hud_box(w - 110, h - 40, w, h)
+    mid = hud_box(w / 2 - 10, h / 2 - 6, w / 2 + 90, h / 2 + 22)
+    base = hud_frame("hp_base")
+    corner = hud_frame("hp_wm_br", ("watermark position", "Bottom right"))
+    custom = hud_frame("hp_wm_custom", ("watermark position", "Custom"), ("watermark x", "0.5"), ("watermark y", "0.5"))
+    listed = hud_frame("hp_list_bottom", ("watermark position", "Top left"), ("module list position", "Bottom"))
+    back = hud_frame("hp_list_top", ("module list position", "Top"))
+    wm = (changed(base, corner, tl), changed(base, corner, br), changed(base, custom, tl), changed(base, custom, mid))
+    ml = (changed(base, listed, tr), changed(base, listed, br), changed(base, back, tr))
+    ok = wm[0] > 50 and wm[1] > 50 and wm[2] > 50 and wm[3] > 50 and ml[0] > 30 and ml[1] > 30 and ml[2] < 10
+    return ok, f"watermark (left top left, in bottom right, Custom: left top left, mid) {wm}; list (left top right, in bottom right, back at Top) {ml}"
+
+
+@test("Low health warning")
+def _():
+    # At 4 HP the edges go red with Edge tint (below 6), not with the warning off, nor with Low health below 3; at
+    # full health nothing.
+    hud_scene()
+    w, h = hud_size()
+    edge = hud_box(0, h / 4, 8, h * 3 / 4)
+
+    def red(img):
+        return sum(1 for r, g, b in img.crop(edge).getdata() if r > g + 20 and r > b + 20)
+
+    cmd("gamerule natural_health_regeneration false")
+    setting("hud", "low health warning", "true")
+    full = red(hud_frame("lh_full", colour=True))
+    cmd("damage @s 16")
+    wait(5)
+    health = hp()
+    tint = red(hud_frame("lh_tint", colour=True))
+    above = red(hud_frame("lh_above", ("low health below", "3"), colour=True))
+    off = red(hud_frame("lh_off", ("low health below", "6"), ("low health warning", "false"), colour=True))
+    cmd("gamerule natural_health_regeneration true", "effect give @s minecraft:instant_health 1 5")
+    area = (edge[2] - edge[0]) * (edge[3] - edge[1])
+    ok = full == 0 and tint > area // 2 and above == 0 and off == 0
+    return ok, f"red edge pixels of {area}: full health {full}, at {health} HP {tint}, below 3 {above}, off {off}"
+
+
 @test("Armor HUD")
 def _():
     # Beside the hotbar on the right: nothing with no armour on (empty slots hidden), four boxes in a row with it,

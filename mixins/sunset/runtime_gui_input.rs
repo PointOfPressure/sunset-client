@@ -380,6 +380,13 @@ fn move_hud(s: &mut State, game: &Game<'_>, name: &str, dx: f32, dy: f32) {
     let Some(m) = place_owner(&mut s.modules, name) else {
         return;
     };
+    // The module list on the right keeps its right edge where it is dropped (it grows to the left; hud_place.rs).
+    let fx = match super::sunset_hud_bars::placed_rect(name) {
+        Some(([_, _, width, height], screen)) if name == "Module list" && m.p("Module list side") != "Left" => {
+            super::sunset_hud_place::stored([game.cursor.0 - dx, game.cursor.1 - dy], [width, height], screen, true).0
+        }
+        _ => fx,
+    };
     for st in &mut m.settings {
         match st.name.strip_prefix(name).map(str::trim) {
             Some("position") => {

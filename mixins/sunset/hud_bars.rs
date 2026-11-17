@@ -170,6 +170,11 @@ pub(super) fn place(name: &'static str, rect: [f32; 4], w: f32, h: f32) {
     });
 }
 
+// Where `name` was drawn last frame (x, y, width, height) and the size of the screen it was on.
+pub(super) fn placed_rect(name: &str) -> Option<([f32; 4], [f32; 2])> {
+    placed(|p| p.iter().find(|e| e.0 == name).map(|e| (e.1, e.2)))
+}
+
 // An element's position as fractions of the screen, from where its top left corner is dragged to.
 pub(super) fn drag_to(name: &str, x: f32, y: f32) -> Option<(f64, f64)> {
     let (_, [_, _, w, h], [sw, sh]) = placed(|p| p.iter().find(|e| e.0 == name).copied())?;

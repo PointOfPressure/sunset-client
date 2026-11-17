@@ -321,6 +321,7 @@ impl Module {
                 _ if name.starts_with("Armor HUD ") => self.b("Armor HUD"),
                 "Durability format" | "Durability tooltip" => self.b("Item durability"),
                 "Target HUD mode" => self.b("Target HUD"),
+                "Low health below" | "Low health style" | "Low health strength" => self.b("Low health warning"),
                 _ => true,
             },
             "Client Sort" => name != "Fill CPS" || self.b("Shift fill"),
