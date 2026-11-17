@@ -86,7 +86,8 @@ F1/hidden GUI and the Sunset menu hide the drawings. Drawing preferences do not 
 
 ## Build and replace the engine
 
-`python3 tools/pack.py` (Python 3.11+) builds the engine from `baritone-engine/` for both targets before packing,
+`python3 tools/pack.py` (Python 3.11+) builds the engine from `baritone-engine/` (which compiles the game-free modules of
+`mixins/baritone/upstream/src`, the one copy of horizon-baritone's source) for both targets before packing,
 so no prebuilt library is kept in the repository. It needs cargo with the `x86_64-unknown-linux-gnu` and
 `x86_64-pc-windows-gnu` targets (`rustup target add x86_64-pc-windows-gnu`) and the mingw-w64 linker
 (`x86_64-w64-mingw32-gcc`, Debian/Ubuntu package `gcc-mingw-w64-x86-64`). The Windows engine is a plain C ABI DLL,

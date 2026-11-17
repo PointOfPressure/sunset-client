@@ -460,8 +460,8 @@ code is MIT licensed; its [license](mixins/sunset/seedcracker.LICENSE) and
 
 Baritone uses [horizon-baritone](https://github.com/luhnox/horizon-baritone) by [luhnox](https://github.com/luhnox),
 a Rust port of [Baritone](https://github.com/cabaletta/baritone) 1.21.4 by leijurv and contributors, brought into Sunset by Rust.
-Both copies of it, the in-game runtime ([mixins/baritone/upstream](mixins/baritone/upstream/README.md)) and the
-replaceable Ore Sim mining engine ([baritone-engine](baritone-engine/NOTICE.md)), stay under its LGPL-3.0; their
+Its source ([mixins/baritone/upstream](mixins/baritone/upstream/README.md)) builds both the in-game runtime and the
+replaceable Ore Sim mining engine ([baritone-engine](baritone-engine/NOTICE.md)); both stay under its LGPL-3.0; their
 licence texts and notices ship unchanged in Sunset's package. See [source and replacement](docs/baritone.md).
 
 Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).

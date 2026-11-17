@@ -44,7 +44,8 @@ class Packages(unittest.TestCase):
         self.write("mixins/baritone/register.rs", "// MIT registration\n")
         self.write("baritone-engine/Cargo.toml", '[package]\nname="sunset-baritone-engine"\nversion="1.1.52"\nlicense-file="LICENSE"\n')
         self.write("baritone-engine/Cargo.lock", "version = 4\n")
-        self.write("baritone-engine/src/lib.rs", "// LGPL implementation\n")
+        self.write("baritone-engine/src/lib.rs", '// LGPL implementation\n#[path = "../../mixins/baritone/upstream/src/api/goals.rs"]\npub mod baritone_goals;\n')
+        self.write("mixins/baritone/upstream/src/api/goals.rs", "// horizon-baritone, shared with the game\n")
         self.write("baritone-engine/tests/data/oracle.bin", b"oracle fixture")
         self.write("baritone-engine/dependency-licenses/serde_json/LICENSE-MIT", b"exact dependency grant\r\n\xff")
         for i, name in enumerate(pack.NOTICES):
@@ -103,7 +104,7 @@ class Packages(unittest.TestCase):
             self.assertEqual(source.read("mixins/baritone/loader/src/lib.rs"),
                              (self.root / "mixins/baritone/loader/src/lib.rs").read_bytes())
             self.assertNotIn("baritone-engine/Cargo.toml", companion.namelist())
-            for name in ("baritone-engine/Cargo.lock", "baritone-engine/tests/data/oracle.bin", "mixins/baritone/interface/abi-v1.rs", "docs/baritone.md"):
+            for name in ("baritone-engine/Cargo.lock", "baritone-engine/tests/data/oracle.bin", "mixins/baritone/upstream/src/api/goals.rs", "mixins/baritone/interface/abi-v1.rs", "docs/baritone.md"):
                 self.assertIn(name, source.namelist())
             self.assertFalse(any("/target/" in name or name.endswith((".dll", ".pdb", ".log")) for name in source.namelist()))
             self.assertEqual({lib["target"]: lib["sha256"] for lib in json.loads(source.read("ENGINE-BINARY.json"))["libraries"]},
@@ -118,6 +119,9 @@ class Packages(unittest.TestCase):
             ("mixins/baritone/loader/Cargo.toml", '[package]\nname="loader"\nversion="1.0.0"\n[target.\'cfg(windows)\'.dependencies]\nengine={package="sunset-baritone-engine",version="1.1.52"}\n', "cannot depend"),
             ("mixins/baritone/notices/NOTICE.md", "missing attribution", "notice differs"),
             ("mixins/baritone/loader/src/abi.rs", "incompatible ABI", "ABI declarations differ"),
+            ("baritone-engine/src/lib.rs", '#[path = "../../mixins/baritone/upstream/src/gone.rs"]\nmod gone;\n', "missing or outside"),
+            ("baritone-engine/src/lib.rs", '#[path = "../../tools/pack.py"]\nmod outside;\n', "missing or outside"),
+            ("baritone-engine/src/lib.rs", '#[path = "../../mixins/baritone/notices/NOTICE.md"]\nmod notice;\n', "missing or outside"),
         ):
             with self.subTest(name=name):
                 path = self.root / name
@@ -152,7 +156,7 @@ class Packages(unittest.TestCase):
     def test_full_runtime_sources_hooks_commands_and_permission_text_ship(self):
         self.companion()
         upstream = pack.ROOT / "mixins/baritone/upstream"
-        shutil.copytree(upstream, self.root / "mixins/baritone/upstream")
+        shutil.copytree(upstream, self.root / "mixins/baritone/upstream", dirs_exist_ok=True)
         original = (upstream / "horizon-mixin.toml").read_text(encoding="utf-8")
         declarations = original[original.index("[[module]]"):]
         declarations = re.sub(r'(?m)^id = "([^"]+)"', r'id = "full_\1"', declarations)

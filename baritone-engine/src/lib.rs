@@ -1,6 +1,7 @@
-// The test crate for the parts of Baritone that use no game types. In the game the same files are
-// modules of game.rs (see horizon-mixin.toml); here they are modules of one crate with the same
-// names, so `use super::baritone_goals::...` reads the same in both.
+// The replaceable Baritone engine (LGPL-3.0, see NOTICE.md and CHANGES.md): the engine's own ABI, protocol, host and
+// predicted-ore modules here, plus the game-free parts of horizon-baritone. Those have one copy, in
+// mixins/baritone/upstream/src, which the game also builds as modules of game.rs (see mixins/baritone/horizon-mixin.toml);
+// here they are modules of this crate with the same names, so `use super::baritone_goals::...` reads the same in both.
 #![deny(unsafe_code)]
 pub mod abi;
 pub mod protocol;
@@ -11,122 +12,125 @@ pub mod engine;
 #[allow(unsafe_code)]
 #[path = "../../mixins/baritone/loader/src/engine_ffi.rs"]
 mod ffi;
-#[path = "api/utils.rs"]
+#[path = "../../mixins/baritone/upstream/src/api/utils.rs"]
 pub mod baritone_utils;
-#[path = "pathing/costs.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/costs.rs"]
 pub mod baritone_costs;
-#[path = "api/goals.rs"]
+#[path = "../../mixins/baritone/upstream/src/api/goals.rs"]
 pub mod baritone_goals;
-#[path = "api/block_optional_meta.rs"]
+#[path = "../../mixins/baritone/upstream/src/api/block_optional_meta.rs"]
 pub mod baritone_bom;
-#[path = "cache/world_scanner.rs"]
+#[path = "../../mixins/baritone/upstream/src/cache/world_scanner.rs"]
 pub mod baritone_world_scanner;
-#[path = "process/builder_logic.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/builder_logic.rs"]
 pub mod baritone_builder_logic;
-#[path = "schematic/mask.rs"]
+#[path = "../../mixins/baritone/upstream/src/schematic/mask.rs"]
 pub mod baritone_schematic_mask;
-#[path = "schematic/wrappers.rs"]
+#[path = "../../mixins/baritone/upstream/src/schematic/wrappers.rs"]
 pub mod baritone_schematic_wrappers;
-#[path = "schematic/legacy.rs"]
+#[path = "../../mixins/baritone/upstream/src/schematic/legacy.rs"]
 pub mod baritone_schematic_legacy;
-#[path = "utils/notification.rs"]
+#[path = "../../mixins/baritone/upstream/src/utils/notification.rs"]
 pub mod baritone_notification;
-#[path = "utils/gui_click.rs"]
+#[path = "../../mixins/baritone/upstream/src/utils/gui_click.rs"]
 pub mod baritone_gui_click;
-#[path = "ui/settings_screen.rs"]
+#[path = "../../mixins/baritone/upstream/src/ui/settings_screen.rs"]
 pub mod baritone_screen;
-#[path = "process/elytra/chunk.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/chunk.rs"]
 pub mod baritone_elytra_chunk;
-#[path = "process/elytra/noise.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/noise.rs"]
 pub mod baritone_elytra_noise;
-#[path = "process/elytra/chunk_generator_hell.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/chunk_generator_hell.rs"]
 pub mod baritone_elytra_generator;
-#[path = "process/elytra/path_node.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/path_node.rs"]
 pub mod baritone_elytra_path_node;
-#[path = "process/elytra/raytracer.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/raytracer.rs"]
 pub mod baritone_elytra_raytracer;
-#[path = "process/elytra/nether_pathfinder.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/nether_pathfinder.rs"]
 pub mod baritone_elytra_pathfinder;
-#[path = "process/elytra/region.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/region.rs"]
 pub mod baritone_elytra_region;
-#[path = "process/elytra/path_finder.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/path_finder.rs"]
 pub mod baritone_elytra_search;
-#[path = "process/elytra/segment.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/segment.rs"]
 pub mod baritone_elytra_segment;
-#[path = "process/elytra/flight.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/flight.rs"]
 pub mod baritone_elytra_flight;
-#[path = "process/elytra/context.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/context.rs"]
 pub mod baritone_elytra_context;
-#[path = "process/elytra/build_limit.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/build_limit.rs"]
 pub mod baritone_elytra_build_limit;
-#[path = "process/elytra/path_manager.rs"]
+#[path = "../../mixins/baritone/upstream/src/process/elytra/path_manager.rs"]
 pub mod baritone_elytra_path_manager;
-#[path = "cache/cached_world.rs"]
+#[path = "../../mixins/baritone/upstream/src/cache/cached_world.rs"]
 pub mod baritone_cached_world;
-#[path = "api/settings.rs"]
+#[path = "../../mixins/baritone/upstream/src/api/settings.rs"]
 pub mod baritone_settings;
-#[path = "selection/selection.rs"]
+#[path = "../../mixins/baritone/upstream/src/selection/selection.rs"]
 pub mod baritone_selection;
-#[path = "schematic/schematic.rs"]
+#[path = "../../mixins/baritone/upstream/src/schematic/schematic.rs"]
 pub mod baritone_schematic;
-#[path = "cache/waypoints.rs"]
+#[path = "../../mixins/baritone/upstream/src/cache/waypoints.rs"]
 pub mod baritone_waypoints;
-#[path = "command/argument.rs"]
+#[path = "../../mixins/baritone/upstream/src/command/argument.rs"]
 pub mod baritone_argument;
-#[path = "utils/block_state.rs"]
+#[path = "../../mixins/baritone/upstream/src/utils/block_state.rs"]
 pub mod baritone_block_state;
-#[path = "utils/block_state_interface.rs"]
+#[path = "../../mixins/baritone/upstream/src/utils/block_state_interface.rs"]
 pub mod baritone_block_state_interface;
-#[path = "pathing/movement/calculation_context.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/calculation_context.rs"]
 pub mod baritone_calculation_context;
-#[path = "pathing/movement/movement_helper.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/movement_helper.rs"]
 pub mod baritone_movement_helper;
-#[path = "pathing/movement/movements/traverse.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/movements/traverse.rs"]
 pub mod baritone_movement_traverse;
-#[path = "pathing/movement/movements/ascend.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/movements/ascend.rs"]
 pub mod baritone_movement_ascend;
-#[path = "pathing/movement/movements/descend.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/movements/descend.rs"]
 pub mod baritone_movement_descend;
-#[path = "pathing/movement/movements/diagonal.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/movements/diagonal.rs"]
 pub mod baritone_movement_diagonal;
-#[path = "pathing/movement/movements/downward.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/movements/downward.rs"]
 pub mod baritone_movement_downward;
-#[path = "pathing/movement/movements/parkour.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/movements/parkour.rs"]
 pub mod baritone_movement_parkour;
-#[path = "pathing/movement/movements/pillar.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/movements/pillar.rs"]
 pub mod baritone_movement_pillar;
-#[path = "pathing/movement/moves.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/moves.rs"]
 pub mod baritone_moves;
-#[path = "pathing/movement/movement.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/movement.rs"]
 pub mod baritone_movement;
-#[path = "pathing/calc/a_star.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/calc/a_star.rs"]
 pub mod baritone_astar;
-#[path = "pathing/calc/path.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/calc/path.rs"]
 pub mod baritone_calc_path;
-#[path = "utils/rotation.rs"]
+#[path = "../../mixins/baritone/upstream/src/utils/rotation.rs"]
 pub mod baritone_rotation;
-#[path = "behavior/aim.rs"]
+#[path = "../../mixins/baritone/upstream/src/behavior/aim.rs"]
 pub mod baritone_aim;
-#[path = "behavior/look.rs"]
+#[path = "../../mixins/baritone/upstream/src/behavior/look.rs"]
 pub mod baritone_look;
-#[path = "behavior/movement_state.rs"]
+#[path = "../../mixins/baritone/upstream/src/behavior/movement_state.rs"]
 pub mod baritone_movement_state;
-#[path = "behavior/player_context.rs"]
+#[path = "../../mixins/baritone/upstream/src/behavior/player_context.rs"]
 pub mod baritone_player_context;
-#[path = "pathing/movement/movement_exec.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/movement/movement_exec.rs"]
 pub mod baritone_movement_exec;
-#[path = "pathing/avoidance.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/avoidance.rs"]
 pub mod baritone_avoidance;
-#[path = "pathing/path/sprint_jump.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/path/sprint_jump.rs"]
 pub mod baritone_sprint_jump;
-#[path = "pathing/path/executor.rs"]
+#[path = "../../mixins/baritone/upstream/src/pathing/path/executor.rs"]
 pub mod baritone_executor;
-#[path = "behavior/pathing_behavior.rs"]
+#[path = "../../mixins/baritone/upstream/src/behavior/pathing_behavior.rs"]
 pub mod baritone_pathing_behavior;
 
 #[cfg(test)]
+#[path = "../../mixins/baritone/upstream/src/tests.rs"]
 mod tests;
 #[cfg(test)]
+#[path = "../../mixins/baritone/upstream/src/tests_pathing.rs"]
 mod tests_pathing;
 #[cfg(test)]
+#[path = "../../mixins/baritone/upstream/src/tests_elytra.rs"]
 mod tests_elytra;

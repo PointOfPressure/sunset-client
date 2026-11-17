@@ -98,6 +98,13 @@ def validate_baritone(root, engines):
     metadata = json.loads((companion / "horizon-native.json").read_text(encoding="utf-8"))
     sunset = json.loads((root / "horizon-native.json").read_text(encoding="utf-8"))
     manifest = read_toml(companion / "horizon-mixin.toml")
+    # The engine compiles horizon-baritone's one source copy (mixins/baritone/upstream/src) by relative path, so every
+    # file it names must exist and be in its source archive: under baritone-engine/ or mixins/baritone/ (not notices/data).
+    for included in re.findall(r'#\[path = "([^"]+)"\]', (engine / "src" / "lib.rs").read_text(encoding="utf-8")):
+        path = pathlib.Path(os.path.normpath(engine / "src" / included))
+        shipped = path.is_relative_to(engine) or (path.is_relative_to(companion) and path.relative_to(companion).parts[0] not in {"notices", "data"})
+        if not shipped or not path.is_file():
+            raise ValueError(f"Engine source missing or outside its source archive: {included}")
     cargo = read_toml(engine / "Cargo.toml")
     loader = read_toml(companion / "loader" / "Cargo.toml")
     if metadata["id"] != "sunset_baritone" or manifest["mod"]["id"] != metadata["id"]:

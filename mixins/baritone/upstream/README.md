@@ -81,7 +81,7 @@ src/
   command/              the commands and their argument parser   (baritone.command.*)
   cache/  selection/  schematic/                          (baritone.cache, .selection, .utils.schematic)
   game/                 what touches the game: the world view, drawing, the bridge into its modules
-  lib.rs, tests.rs      a crate of the parts that use no game types, so `cargo test` works on its own
+  tests.rs              tests of the parts that use no game types, run by Sunset's engine crate (../../../baritone-engine)
 hooks/                  one small function per hook point (chat, tick, keys, tab completion, lines)
 tools/                  pack.py (builds the .hnmod), dev-sync.sh (applies it to a Horizon checkout), patch_stack.py
 dist/                   where pack.py writes baritone.hnmod (not tracked; releases carry it)
@@ -91,14 +91,14 @@ PARITY.md               the class-by-class comparison with Baritone 1.21.4
 `#[allow(dead_code)]` marks what the Java's API has and nothing in this mod calls, kept so that the API stays whole.
 
 Inside the game every file of `src/` becomes a module of `game.rs` named `baritone_<file>` (see
-`horizon-mixin.toml`), so `use super::baritone_goals::...` reads the same in the game and in the test
+`horizon-mixin.toml`), so `use super::baritone_goals::...` reads the same in the game and in the engine
 crate. The `hooks/` files are not modules: each holds exactly one function that the mixin tool inserts at
 the start of a game function.
 
 ## Working on it
 
 ```
-cargo test                  # the pure parts: goals, costs, A*, settings, selections, schematics, waypoints, arguments
+cargo test --release        # in ../../../baritone-engine: the pure parts (goals, costs, A*, settings, selections, ...)
 python tools/pack.py        # rebuild dist/baritone.hnmod from horizon-mixin.toml
 ```
 
@@ -133,4 +133,6 @@ leaves idle ticks to Sunset. Changed files:
 `hooks/page_text.rs`, `hooks/page_wheel.rs`, `hooks/settings.rs`, `hooks/tick.rs`, `hooks/toast_draw.rs`.
 Also, in 23 files the items that take the game's private `Game` type are `pub(super)` instead of `pub`, and
 parts only the standalone crate uses are marked `#[allow(dead_code)]`, so Sunset's build has no warnings.
+Upstream's standalone `Cargo.toml`, `Cargo.lock` and `src/lib.rs` are left out: Sunset's engine crate,
+`baritone-engine/`, builds and tests the game-free parts from these same files.
 The rest is unchanged. It stays LGPL-3.0: see LICENSE, COPYING and NOTICE.md.

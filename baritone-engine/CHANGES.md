@@ -26,6 +26,10 @@
   engine-side entry adapter compiled by explicit relative source path. All
   engine algorithms deny unsafe code. Original game input/render hooks remain
   inactive. V1 does not integrate builder, farm, follow or elytra commands.
+- Keep one copy of the upstream source: this crate's `src/lib.rs` compiles the
+  pure modules and upstream's tests from `mixins/baritone/upstream/src`, the copy
+  the game builds, and replaces upstream's standalone `Cargo.toml`, `Cargo.lock`
+  and `src/lib.rs` (2026-11-17).
 - Add focused protocol, state-machine, host integration and transport tests.
 
 Baritone engine credit: luhnox/horizon-baritone
