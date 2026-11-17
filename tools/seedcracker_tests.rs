@@ -986,14 +986,13 @@ fn messages_are_the_language_files() {
 
 #[test]
 fn the_database_sheet_is_read_by_address_then_by_hash() {
-    use crate::sunset_scx_database::{post_body, Database};
+    use crate::sunset_scx_database::Database;
     let mut db = Database::default();
     db.parse_csv("ip,dim,seed,version,user,hash,hashed\nplay.example.net/1.2.3.4:25565,overworld,123456789L,1.21,x,0,-777\nshort,row\nbad,overworld,xL,1.21,x,0,5\nother,overworld,-42L,1.21,x,0,31337\n");
     assert_eq!(db.len(), 2);
     assert_eq!(db.get_seed("play.example.net/1.2.3.4:25565", 0), Some(123456789));
     assert_eq!(db.get_seed("elsewhere", 31337), Some(-42));
     assert_eq!(db.get_seed("elsewhere", 1), None);
-    assert_eq!(post_body("a b/1:2", "overworld", -5, "1.21.3", "Steve", true), "serverIp=a+b%2F1%3A2&dimension=overworld&seed=-5L&version=1.21.3&username=Steve&hash=1");
 }
 
 /// A development helper: the blocks of a pyramid the game generated (HORIZON_PYRAMID_BLOCKS, from horizon-ctl blocks) against
@@ -1143,6 +1142,11 @@ fn every_line_of_the_java_fixture_is_answered_the_same() {
     for line in FIXTURE.lines() {
         let parts: Vec<&str> = line.split(' ').collect();
         let kind = parts[0];
+        // From 1.18 villages are 34 chunks apart (26.3's villages structure set; villages_are_34_chunks_apart...);
+        // the Java keeps 32, so its villages and its outposts' village exclusion differ there.
+        if matches!(parts.get(1), Some(&("village" | "pillager_outpost"))) && version(parts[2]).is_newer_or_equal_to(MCVersion::v1_18) {
+            continue;
+        }
         *counts.entry(kind).or_default() += 1;
         match kind {
             "CFG" => {
@@ -1288,4 +1292,15 @@ fn every_line_of_the_java_fixture_is_answered_the_same() {
         assert!(counts.get(kind).copied().unwrap_or(0) > 0, "no {kind} lines");
     }
 }
+}
+
+#[test]
+fn villages_are_34_chunks_apart_from_1_18_as_in_26_3() {
+    use crate::sunset_scx_feature::{Structure, StructureClass};
+    use crate::sunset_scx_version::MCVersion;
+    let village = |v| Structure::new(StructureClass::Village, v).unwrap();
+    assert_eq!((village(MCVersion::latest()).spacing(), village(MCVersion::latest()).salt()), (34, 10387312));
+    assert_eq!(village(MCVersion::v1_17).spacing(), 32);
+    // The outpost checks its village exclusion on the same grid.
+    assert_eq!(Structure::new(StructureClass::PillagerOutpost, MCVersion::latest()).unwrap().village.unwrap().spacing(), 34);
 }

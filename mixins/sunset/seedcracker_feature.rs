@@ -120,7 +120,7 @@ impl StructureClass {
             StructureClass::Monument => VersionMap::new().add(v1_8, region(32, 5, 10387313)),
             StructureClass::EndCity => VersionMap::new().add(v1_9, region(20, 11, 10387313)),
             StructureClass::TrialChambers => VersionMap::new().add(v1_21, region(34, 12, 94251327)),
-            StructureClass::Village => VersionMap::new().add(v1_8, old(10387312)),
+            StructureClass::Village => VersionMap::new().add(v1_8, old(10387312)).add(v1_18, region(34, 8, 10387312)),
         }
     }
 }
