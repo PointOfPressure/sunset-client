@@ -1183,3 +1183,67 @@ mod hud_place_tests {
         assert!(!shown(m, "Watermark position") && !shown(m, "Watermark x"));
     }
 }
+
+#[cfg(test)]
+mod menu_tidy_tests {
+    use super::super::sunset::*;
+    use super::super::sunset_extra_modules::{HIDDEN_SINCE_1_3, hidden};
+
+    // Both menus, the Options pages and Modules' switches list a category A to Z, whatever the catalog's order.
+    #[test]
+    fn categories_list_a_to_z() {
+        let state = State::new();
+        for c in CATEGORIES {
+            let ids = alphabetical(&state.modules, (0..state.modules.len()).filter(|&i| state.modules[i].category == c));
+            let names: Vec<String> = ids.iter().map(|&i| state.modules[i].name.to_ascii_lowercase()).collect();
+            assert!(names.windows(2).all(|w| w[0] <= w[1]), "{c:?}: {names:?}");
+        }
+        let list = state.module("Modules").unwrap();
+        let combat: Vec<&str> = list.settings.iter().map(|s| s.name).filter(|n| state.module(n).is_some_and(|m| m.category == Category::Combat)).collect();
+        assert!(combat.windows(2).all(|w| w[0].to_ascii_lowercase() <= w[1].to_ascii_lowercase()), "{combat:?}");
+    }
+
+    // A config from before 1.3: Surround and Speed Mine load as BlockIn and Fast Break, Elytra Boost as Elytra Fly's Boost
+    // mode, and the newly hidden modules go hidden once, unless on or bound; saved again, a shown one stays shown.
+    #[test]
+    fn old_config_migrates_once() {
+        let mut old = String::from("surround.on=true\nsurround.key=key.keyboard.g\nsurround.doubleheight=true\nspeedmine.mode=Haste\n");
+        old.push_str("elytraboost.on=true\nelytraboost.boost=0.12\nelytraboost.maxspeed=3.5\nelytrafly.on=false\nelytrafly.key=none\n");
+        for name in HIDDEN_SINCE_1_3 {
+            old.push_str(&format!("modules.{}=true\n", norm(name)));
+        }
+        old.push_str("anvil.key=key.keyboard.h\nclickgui.on=true\n");
+        let mut state = State::new();
+        state.load_text(&old);
+        let block_in = state.module("BlockIn").unwrap();
+        assert!(block_in.on && block_in.b("Double height") && block_in.key.as_deref() == Some("key.keyboard.g"));
+        assert_eq!(state.module("Fast Break").unwrap().p("Mode"), "Haste");
+        let fly = state.module("Elytra Fly").unwrap();
+        assert!(fly.on && fly.p("Mode") == "Boost" && fly.n("Boost") == 0.12 && fly.n("Max speed") == 3.5);
+        assert_eq!(state.find("surround"), state.find("BlockIn"));
+        assert!(!state.is_on("ClickGUI"), "a saved open menu doesn't open it");
+        let gone = hidden(&state.modules);
+        for name in HIDDEN_SINCE_1_3 {
+            assert_eq!(gone.contains(name), *name != "Anvil", "{name}");
+        }
+        // Shown again by hand, saved, loaded: it stays shown.
+        state.load_text(&format!("{}modules.selftrap=true\n", state.save_text()));
+        let mut again = State::new();
+        again.load_text(&state.save_text());
+        assert!(!hidden(&again.modules).contains(&"Self Trap"));
+        // An old profile's lines are all known (none skipped).
+        let profile = format!("{}\nsurround.on=true\nspeedmine.mode=Normal\nelytraboost.boost=0.1\n", super::super::sunset_profiles::HEADER);
+        let checked = state.check_profile(&profile).unwrap();
+        assert!(checked.skipped.is_empty(), "{:?}", checked.skipped);
+    }
+
+    // A fresh config: the seven start hidden, Elytra Fly flies as before (Control).
+    #[test]
+    fn fresh_defaults() {
+        let state = State::new();
+        let gone = hidden(&state.modules);
+        assert!(HIDDEN_SINCE_1_3.iter().all(|n| gone.contains(n)));
+        assert_eq!(state.module("Elytra Fly").unwrap().p("Mode"), "Control");
+        assert!(state.module("Elytra Boost").is_none() && state.module("Surround").is_none() && state.module("Speed Mine").is_none());
+    }
+}
