@@ -2874,7 +2874,7 @@ def _():
 @test("Baritone: Ore Sim mining")
 def _():
     if "Unavailable" in baritone_status():
-        return None, "needs the Baritone companion and a compatible engine DLL"
+        return None, "needs the built-in Baritone runtime and its engine"
     if SERVER:
         return None, "uses a disposable single-player world with the authoritative local seed"
     header, predictions, text = baritone_predictions()
@@ -2962,14 +2962,14 @@ def baritone_stop_sample():
 @test("Baritone: stop releases keys")
 def _():
     if "Unavailable" in baritone_status():
-        return None, "needs the Baritone companion and a compatible engine DLL"
+        return None, "needs the built-in Baritone runtime and its engine"
     return baritone_stop_sample()
 
 
 @test("Baritone: goto and stop")
 def _():
     if "Unavailable" in baritone_status():
-        return None, "needs the Baritone companion and a compatible engine DLL"
+        return None, "needs the built-in Baritone runtime and its engine"
     routes = {}
     for mode in ("flat", "wall", "step", "drop"):
         baritone_route()
@@ -2982,6 +2982,7 @@ def _():
         elif mode == "drop":
             cmd(f"fill {X0-1} {Y+1} {Z0-1} {X0+1} {Y+2} {Z0+1} minecraft:stone",
                 f"tp @s {X0+0.5} {Y+3} {Z0+0.5} 0 0")
+        mark = probe_mark()
         start = baritone_start_goto(8, goal_y)
         for _ in range(100):
             baritone_wait(5)
@@ -2991,15 +2992,17 @@ def _():
             if "source=none" in baritone_status():
                 break
         p = pos()
-        routes[mode] = (round(math.hypot(p[0] - (X0+8.5), p[2] - (Z0+0.5)), 2), round(p[1] - goal_y, 2), start, baritone_status())
+        moves = max((t.count("order move") for t in probe_ticks(mark)), default=0)
+        routes[mode] = (round(math.hypot(p[0] - (X0+8.5), p[2] - (Z0+0.5)), 2), round(p[1] - goal_y, 2), moves, start, baritone_status())
     stopped, note = baritone_stop_sample()
-    return all(off < 0.9 and abs(dy) < 0.6 for off, dy, _, _ in routes.values()) and stopped, f"routes (distance,height,start,status) {routes}; {note}"
+    ok = all(off < 0.9 and abs(dy) < 0.6 and moves <= 1 for off, dy, moves, _, _ in routes.values()) and stopped
+    return ok, f"routes (distance,height,moves a tick,start,status) {routes}; {note}"
 
 
 @test("Baritone: ownership and boundaries")
 def _():
     if "Unavailable" in baritone_status():
-        return None, "needs the Baritone companion and a compatible engine DLL"
+        return None, "needs the built-in Baritone runtime and its engine"
     outcomes = {}
     held = {}
     for reason in ("off", "module", "Auto Walk", ".goto", "manual", "inventory"):
@@ -3086,10 +3089,57 @@ def _():
     return defaults and restored and idle, f"old profile defaults {defaults}, preferences round-trip {restored}, no job restored {idle}; {screenshot}"
 
 
+def baritone_full_goto(x, y, z, ticks=300):
+    """`#goto` through the full runtime: whether it got within a block, and the most move packets in a tick meanwhile."""
+    mark = probe_mark()
+    baritone_command(f"#goto {X0+x} {y} {Z0+z}")
+    reached = False
+    for _ in range(ticks // 5):
+        baritone_wait(5)
+        p = pos()
+        if math.hypot(p[0] - (X0+x+0.5), p[2] - (Z0+z+0.5)) < 1.0 and abs(p[1] - y) < 0.6:
+            reached = True
+            break
+    moves = max((t.count("order move") for t in probe_ticks(mark)), default=0)
+    return reached, moves
+
+
+@test("Baritone: #goto, #help and stopping")
+def _():
+    # The full runtime's own commands: #help answers, #goto walks to the block (flat, then up a step) with one move
+    # packet a tick, and a walk is stopped by #stop and by Sunset's .b stop alike (keys released, no drift after).
+    if "Unavailable" in baritone_status():
+        return None, "needs the built-in Baritone runtime"
+    mark = log_mark()
+    ctl("chat", "#help")
+    baritone_wait(10)
+    helped = sum(1 for line in chat_since(mark) if "All Baritone commands" in line)
+    baritone_route()
+    flat_reached, flat_moves = baritone_full_goto(14, Y + 1, 0)
+    baritone_route()
+    cmd(f"fill {X0+5} {Y+1} {Z0-4} {X0+30} {Y+1} {Z0+4} minecraft:stone")
+    step_reached, step_moves = baritone_full_goto(12, Y + 2, 0)
+    stops = {}
+    for stop in ("#stop", ".b stop"):
+        baritone_route()
+        origin = pos()
+        baritone_command(f"#goto {X0+28} {Y+1} {Z0}")
+        moved = baritone_wait_movement(origin)
+        baritone_command(stop)
+        baritone_wait(10)
+        settled = pos()
+        baritone_wait(30)
+        stops[stop] = (moved, round(flat(settled, pos()), 3), baritone_clear_input())
+    stopped = all(moved and drift < 0.15 and clear for moved, drift, clear in stops.values())
+    ok = helped > 0 and flat_reached and step_reached and max(flat_moves, step_moves) <= 1 and stopped
+    return ok, (f"#help pages {helped}; flat reached {flat_reached} ({flat_moves} moves/tick max), step reached "
+                f"{step_reached} ({step_moves}); stops (moved, drift, keys clear) {stops}")
+
+
 @test("Baritone: Panic cancels")
 def _():
     if "Unavailable" in baritone_status():
-        return None, "needs the Baritone companion and a compatible engine DLL"
+        return None, "needs the built-in Baritone runtime and its engine"
     # Reuse the final-session check, which now starts a live route before Panic.
     panic = next(fn for fn in TESTS if fn.test_name == "Panic (ends Sunset for the session, runs last)")
     return panic()
