@@ -9,6 +9,36 @@ priority = 100
 horizon_revision = "9f42064c11efe7ef3e5ed2baad7ddc2a3b36eea0"
 
 [[module]]
+id = "cyanite_utilities"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_cyanite_utilities"
+source = "cyanite_utilities.rs"
+
+[[module]]
+id = "cyanite_logic"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_cyanite_logic"
+source = "cyanite_logic.rs"
+
+[[module]]
+id = "cyanite_economy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_cyanite_economy"
+source = "cyanite_economy.rs"
+
+[[module]]
+id = "cyanite_render"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_cyanite_render"
+source = "cyanite_render.rs"
+
+[[module]]
+id = "cyanite_drill"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_cyanite_drill"
+source = "cyanite_drill.rs"
+
+[[module]]
 id = "baritone_controller"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_baritone"

@@ -73,6 +73,7 @@ pub(super) fn delivered(game: &Game<'_>, packet: &S) {
     forwarded(game, packet);
     super::sunset_cart::sent(game, packet);
     super::sunset_render::sent(game, packet);
+    super::sunset_cyanite_drill::sent(game, packet);
     super::sunset_drain::sent(game, packet);
     super::sunset_effects::sent(game, packet);
     super::sunset_lag::sent(game, packet);

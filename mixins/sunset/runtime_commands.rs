@@ -142,6 +142,9 @@ pub(super) fn native_held_input(game: &Game<'_>) -> (std::collections::HashSet<K
 }
 
 pub(super) fn all_off(game: &mut Game<'_>) {
+    super::sunset_cyanite_utilities::shutdown();
+    super::sunset_cyanite_economy::stopped(game);
+    super::sunset_cyanite_drill::shutdown();
     super::sunset_baritone::stop(game, super::sunset_baritone::StopReason::Disabled);
     if let Some(lease) = super::sunset_movement_owner::current() { super::sunset_movement_owner::release(game, lease); }
     watchdog_stop(game, true);

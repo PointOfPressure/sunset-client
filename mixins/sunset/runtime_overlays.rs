@@ -6,6 +6,8 @@ use std::fmt::Write as _;
 use super::sunset::*;
 
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
+    super::sunset_cyanite_utilities::draw(game, cam, mods, out, lw);
+    super::sunset_cyanite_render::draw(game, cam, mods, out, lw);
     super::sunset_explosive_aura::draw(game, cam, mods, out, lw);
     super::sunset_lag::draw(game, cam, mods, out, lw);
     super::sunset_backtrack::draw(cam, mods, out, lw);
