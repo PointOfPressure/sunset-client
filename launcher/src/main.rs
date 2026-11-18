@@ -2,6 +2,7 @@
 //! (for scripts and headless checks).
 
 mod core;
+mod fx;
 mod ui;
 
 use std::sync::atomic::AtomicBool;

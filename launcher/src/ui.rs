@@ -1,14 +1,17 @@
 //! The window. All slow work runs on threads from `core` and reports back through one channel.
 
 use crate::core::{self, Account, Manifest, Paths, Release, Settings, SignIn};
+use crate::fx;
 use gpui::prelude::FluentBuilder;
 use gpui::{
+    Animation, AnimationExt as _, SpringAnimation, TextRun, ease_out_quint, quadratic,
     App, AppContext as _, Application, Bounds, ClickEvent, ClipboardItem, Context, ElementId, Hsla, InteractiveElement as _,
     IntoElement, MouseButton, MouseDownEvent, Pixels, Point, ParentElement as _, Anchor, CursorStyle, Decorations, MouseMoveEvent, MouseUpEvent, ResizeEdge, WindowControlArea, WindowDecorations, PathBuilder, Render, Rgba, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
     WindowBounds, WindowOptions, anchored, canvas, deferred, div, point, px, rgb, size,
 };
 use std::path::PathBuf;
 use std::process::Child;
+use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -88,6 +91,9 @@ pub struct Launcher {
     faces: Vec<(String, Vec<[u8; 4]>)>,
     tab: Tab,
     menu: Option<Menu>,
+    /// A menu fading out after it closed, and which close that was (a later close's timer owns it).
+    closing: Option<(Menu, u64)>,
+    closes: u64,
     /// The menu the backdrop just closed and where that press landed, so the same click on its button doesn't reopen it.
     dismissed: Option<(Menu, Point<Pixels>)>,
     job: Option<Job>,
@@ -125,6 +131,8 @@ impl Launcher {
             faces: vec![],
             tab: Tab::Overview,
             menu: None,
+            closing: None,
+            closes: 0,
             dismissed: None,
             job: None,
             note: None,
@@ -228,7 +236,7 @@ impl Launcher {
     }
 
     fn start_sign_in(&mut self, cx: &mut Context<Self>) {
-        self.menu = None;
+        self.set_menu(None, cx);
         if core::cli_path(&self.paths).is_none() {
             // The CLI comes with the first install: fetch just the CLI now.
             let Some(rel) = self.latest.clone() else {
@@ -302,7 +310,7 @@ impl Launcher {
     }
 
     fn cli_action(&mut self, args: Vec<String>, done: &'static str, cx: &mut Context<Self>) {
-        self.menu = None;
+        self.set_menu(None, cx);
         let (p, tx) = (self.paths.clone(), self.send());
         std::thread::spawn(move || {
             let a: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -423,7 +431,7 @@ impl Launcher {
     }
 
     fn open(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.menu = None;
+        self.set_menu(None, cx);
         let _ = std::fs::create_dir_all(&path);
         cx.open_with_system(&path);
     }
@@ -448,6 +456,12 @@ fn bold(s: impl Into<SharedString>, size_px: f32) -> gpui::Div {
     text(s, size_px, TEXT).font_family(BOLD)
 }
 
+/// How wide `s` sets in BODY at `size` px.
+fn label_width(window: &Window, s: &'static str, size: f32) -> f32 {
+    let run = TextRun { len: s.len(), font: gpui::font(BODY), color: rgb(TEXT).into(), background_color: None, underline: None, strikethrough: None };
+    f32::from(window.text_system().shape_line(s.into(), px(size), &[run], None).width)
+}
+
 fn card() -> gpui::Div {
     div().bg(rgb(CARD)).border_1().border_color(rgb(LINE)).rounded(px(12.))
 }
@@ -455,8 +469,7 @@ fn card() -> gpui::Div {
 /// A button that does something; there are no disabled ones (what can't work isn't shown).
 fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, primary: bool) -> gpui::Stateful<gpui::Div> {
     let (bg, fg, hover) = if primary { (ACCENT, ON_ACCENT, ACCENT_HI) } else { (CHIP, TEXT, 0x26262a) };
-    div()
-        .id(id)
+    fx::control(id, hover, if primary { 8. } else { 7. })
         .px(px(14.))
         .h(px(CTRL_H))
         .flex()
@@ -469,7 +482,6 @@ fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, primary: boo
         .text_color(rgb(fg))
         .font_family(BOLD)
         .cursor_pointer()
-        .hover(move |s| s.bg(rgb(hover)))
         .child(label.into())
 }
 
@@ -710,8 +722,7 @@ fn page_head(title: &str, action: Option<gpui::AnyElement>) -> gpui::Div {
 
 /// The top bar's pill buttons (platform, instance, account) share this shape.
 fn top_chip(id: impl Into<ElementId>) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
+    fx::control(id, 0x26262a, CTRL_H / 2. - 1.)
         .flex()
         .items_center()
         .gap(px(8.))
@@ -722,7 +733,6 @@ fn top_chip(id: impl Into<ElementId>) -> gpui::Stateful<gpui::Div> {
         .border_1()
         .border_color(rgb(LINE))
         .cursor_pointer()
-        .hover(|s| s.bg(rgb(0x26262a)))
 }
 
 /// A menu row label with a checkmark on the right when `on`.
@@ -744,8 +754,7 @@ fn window_controls(window: &Window) -> Option<gpui::Div> {
         return None;
     }
     let ctl = |id: &'static str, kind: Icon, area: WindowControlArea, hover: u32| {
-        div()
-            .id(id)
+        fx::control(id, hover, 8.)
             .w(px(40.))
             .h(px(CTRL_H))
             .flex()
@@ -753,7 +762,6 @@ fn window_controls(window: &Window) -> Option<gpui::Div> {
             .justify_center()
             .rounded(px(8.))
             .cursor_pointer()
-            .hover(move |s| s.bg(rgb(hover)))
             .window_control_area(area)
             .child(icon(kind, 14., TEXT))
     };
@@ -816,24 +824,51 @@ impl Launcher {
         let left = group()
             .child(self.dropdown(Menu::Platform, "Horizon", cx))
             .child(self.dropdown(Menu::Instance, if has { "Sunset" } else { "No instance" }, cx))
-            .child(
-                div().flex().p(px(3.)).gap(px(2.)).rounded(px(CTRL_H / 2.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).children(tabs.into_iter().filter(|(t, _)| has || *t == Tab::Overview || *t == Tab::Settings).map(|(t, label)| {
+            .child({
+                let shown: Vec<_> = tabs.into_iter().filter(|(t, _)| has || *t == Tab::Overview || *t == Tab::Settings).collect();
+                // Tabs are sized here from their labels, so the pill that slides under them knows where each one is
+                // in the same frame.
+                let tab_h = CTRL_H - 8.;
+                let mut x = 0.;
+                let spans: Vec<(f32, f32)> = shown
+                    .iter()
+                    .map(|(_, label)| {
+                        let w = (label_width(window, label, 13.) + 36.).ceil();
+                        x += w + 2.;
+                        (x - w - 2., w)
+                    })
+                    .collect();
+                let widths: Vec<f32> = spans.iter().map(|s| s.1).collect();
+                let pill = shown.iter().position(|(t, _)| *t == self.tab).map(|at| {
+                    div().absolute().top(px(3.)).h(px(tab_h)).rounded(px(tab_h / 2.)).bg(rgb(0x2a2a2e)).with_spring(
+                        "tab-pill",
+                        SpringAnimation::new(fx::SLIDE).to(at as f32).with_epsilon(0.002),
+                        move |d, p| {
+                            let (left, w) = fx::pill_span(&spans, p);
+                            d.left(px(3. + left)).w(px(w))
+                        },
+                    )
+                });
+                div().relative().flex().p(px(3.)).gap(px(2.)).rounded(px(CTRL_H / 2.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).children(pill).children(shown.into_iter().zip(widths).map(|((t, label), w)| {
                     let on = self.tab == t;
-                    div()
-                        .id(label)
-                        .px(px(18.))
-                        .h(px(CTRL_H - 8.))
+                    let id = ElementId::from(label);
+                    let lit = on || fx::hovered(&id);
+                    fx::pressable(id, None, tab_h / 2.)
+                        .w(px(w))
+                        .h(px(tab_h))
                         .flex()
                         .items_center()
-                        .rounded(px((CTRL_H - 8.) / 2.))
-                        .when(on, |d| d.bg(rgb(0x2a2a2e)))
+                        .justify_center()
                         .cursor_pointer()
                         .text_size(px(13.))
-                        .text_color(rgb(if on { TEXT } else { MUTED }))
-                        .child(label)
+                        .child(div().child(label).with_spring(
+                            "tab-text",
+                            SpringAnimation::new(fx::HOVER).to(if lit { 1f32 } else { 0. }).with_epsilon(0.004),
+                            |d, t| d.text_color(fx::mix(MUTED, TEXT, t)),
+                        ))
                         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                             this.tab = t;
-                            this.menu = None;
+                            this.set_menu(None, cx);
                             if t != Tab::Overview {
                                 this.reload_local();
                             }
@@ -842,8 +877,8 @@ impl Launcher {
                             }
                             cx.notify();
                         }))
-                })),
-            );
+                }))
+            });
         div()
             .flex()
             .flex_none()
@@ -881,8 +916,21 @@ impl Launcher {
     /// `trigger` with `menu`'s list dropping down under it while open, lined up with its left or right edge. The
     /// backdrop that closes it is in `menu_popup`.
     fn with_menu(&self, menu: Menu, trigger: impl IntoElement, right: bool, cx: &mut Context<Self>) -> gpui::Div {
-        let list = (self.menu == Some(menu)).then(|| {
-            let pop = self.menu_items(menu, card().mt(px(6.)).p(px(4.)).min_w(px(200.)).flex().flex_col().shadow_lg().occlude(), cx);
+        let open = self.menu == Some(menu);
+        let closing = !open && self.closing.is_some_and(|(m, _)| m == menu);
+        let list = (open || closing).then(|| {
+            let pop = self.menu_items(menu, card().p(px(4.)).min_w(px(200.)).flex().flex_col().shadow_lg().occlude(), cx);
+            // In: fade up from 0 while dropping the last 4 px into place, fast then settling. Out: the same backwards,
+            // a touch quicker and accelerating away.
+            let (id, anim) = if open {
+                ("menu-in", Animation::new(fx::MENU_IN).with_easing(ease_out_quint()))
+            } else {
+                ("menu-out", Animation::new(fx::MENU_OUT).with_easing(quadratic))
+            };
+            let pop = pop.with_animation((id, menu as usize), anim, move |d, t| {
+                let v = if open { t } else { 1. - t };
+                d.opacity(v).mt(px(2. + 4. * v))
+            });
             let at = if right { anchored().anchor(Anchor::TopRight) } else { anchored() };
             div().absolute().top_full().when(right, |d| d.right_0()).when(!right, |d| d.left_0()).child(deferred(at.child(pop)).with_priority(1))
         });
@@ -962,20 +1010,22 @@ impl Launcher {
     }
 
     fn menu_row(&self, id: impl Into<ElementId>, label: gpui::Div, cx: &mut Context<Self>, f: impl Fn(&mut Self, &mut Context<Self>) + 'static) -> gpui::Stateful<gpui::Div> {
-        div()
-            .id(id)
+        fx::control(id, 0x26262a, 6.)
             .px(px(12.))
             .h(px(32.))
             .flex()
             .items_center()
             .rounded(px(6.))
             .cursor_pointer()
-            .hover(|s| s.bg(rgb(0x26262a)))
             .text_size(px(13.))
             .text_color(rgb(TEXT))
             .child(label)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.menu = None;
+                // A menu fading out still draws its rows; they no longer act.
+                if this.menu.is_none() {
+                    return;
+                }
+                this.set_menu(None, cx);
                 f(this, cx);
                 cx.notify();
             }))
@@ -986,15 +1036,39 @@ impl Launcher {
     fn toggle_menu(&mut self, menu: Menu, ev: &ClickEvent, cx: &mut Context<Self>) {
         let dismissed = self.dismissed.take();
         let just_closed = matches!((dismissed, ev), (Some((m, at)), ClickEvent::Mouse(c)) if m == menu && at == c.down.position);
-        self.menu = if self.menu == Some(menu) || just_closed { None } else { Some(menu) };
+        self.set_menu(if self.menu == Some(menu) || just_closed { None } else { Some(menu) }, cx);
         cx.notify();
+    }
+
+    /// Every menu opens and closes through here, so a closing menu stays drawn while it fades out.
+    fn set_menu(&mut self, next: Option<Menu>, cx: &mut Context<Self>) {
+        if let Some(old) = self.menu.filter(|m| Some(*m) != next) {
+            self.closes += 1;
+            let close = self.closes;
+            self.closing = Some((old, close));
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(fx::MENU_OUT + Duration::from_millis(30)).await;
+                let _ = this.update(cx, |app, cx| {
+                    if app.closing.is_some_and(|(_, c)| c == close) {
+                        app.closing = None;
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
+        if next.is_some() && self.closing.map(|(m, _)| m) == next {
+            self.closing = None;
+        }
+        self.menu = next;
     }
 
     /// The backdrop under an open menu (the menus themselves hang off their buttons, see `with_menu`).
     fn menu_popup(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         self.menu?;
         Some(div().id("menu-backdrop").absolute().size_full().top_0().left_0().on_mouse_down(MouseButton::Left, cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-            this.dismissed = this.menu.take().map(|m| (m, ev.position));
+            this.dismissed = this.menu.map(|m| (m, ev.position));
+            this.set_menu(None, cx);
             cx.notify();
         })))
     }
@@ -1043,8 +1117,7 @@ impl Launcher {
                 .items_center()
                 .gap(px(8.))
                 .child(
-                    div()
-                        .id("play")
+                    if self.playing { div().id("play") } else { fx::control("play", ACCENT_HI, 8.) }
                         .flex()
                         .items_center()
                         .justify_center()
@@ -1054,7 +1127,7 @@ impl Launcher {
                         .rounded(px(8.))
                         .bg(rgb(ACCENT))
                         .when(self.playing, |d| d.opacity(0.6))
-                        .when(!self.playing, |d| d.cursor_pointer().hover(|s| s.bg(rgb(ACCENT_HI))))
+                        .when(!self.playing, |d| d.cursor_pointer())
                         .child(icon(Icon::Play, 14., ON_ACCENT))
                         .child(div().text_size(px(16.)).font_family(BOLD).text_color(rgb(ON_ACCENT)).child(if self.playing { "Playing" } else { "Play" }))
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.play(cx))),
@@ -1136,15 +1209,17 @@ impl Launcher {
             .when_some(self.import_prompt(cx), |d, p| d.child(p))
             .child(div().flex().gap(px(GAP)).child(left).child(right))
             .child(
-                card()
-                    .id("instance-dir")
+                fx::control("instance-dir", 0x18181b, 11.)
+                    .bg(rgb(CARD))
+                    .border_1()
+                    .border_color(rgb(LINE))
+                    .rounded(px(12.))
                     .flex()
                     .items_center()
                     .gap(px(10.))
                     .h(px(48.))
                     .px(px(PAD))
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgb(0x18181b)))
                     .child(icon(Icon::Folder, 16., MUTED))
                     .child(text("Instance directory", 13., TEXT))
                     .child(div().flex_1())
@@ -1209,17 +1284,26 @@ impl Launcher {
         };
         let toggle = {
             let on = self.settings.auto_update;
+            let slide = SpringAnimation::new(fx::SLIDE).to(if on { 1f32 } else { 0. }).with_epsilon(0.002);
             div()
                 .id("auto-update")
+                .relative()
                 .w(px(38.))
                 .h(px(22.))
                 .rounded(px(11.))
-                .p(px(3.))
-                .flex()
-                .when(on, |d| d.justify_end())
-                .bg(rgb(if on { ACCENT } else { 0x3a3a40 }))
+                .bg(rgb(0x3a3a40))
                 .cursor_pointer()
-                .child(div().w(px(16.)).h(px(16.)).rounded_full().bg(rgb(if on { ON_ACCENT } else { MUTED })))
+                .child(div().size_full().rounded(px(11.)).bg(rgb(ACCENT)).with_spring("track", slide.clone(), |d, t| d.opacity(t)))
+                .child(
+                    div()
+                        .absolute()
+                        .top(px(3.))
+                        .size(px(16.))
+                        .rounded_full()
+                        .bg(rgb(MUTED))
+                        .child(div().size_full().rounded_full().bg(rgb(ON_ACCENT)).with_spring("knob-lit", slide.clone(), |d, t| d.opacity(t)))
+                        .with_spring("knob", slide, |d, t| d.left(px(3. + 16. * t))),
+                )
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.set_settings(|s| s.auto_update = !s.auto_update, cx)))
         };
         let version = match self.update_available() {
@@ -1369,6 +1453,7 @@ impl Launcher {
 
 impl Render for Launcher {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        fx::begin_frame();
         let page = match self.tab {
             Tab::Overview => self.overview(cx),
             Tab::Settings => self.settings_view(cx),
