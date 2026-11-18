@@ -561,6 +561,8 @@ impl<'a> Ui<'a> {
         text: &str,
         mut emit: impl FnMut(f32, f32, f32, f32, Rect),
     ) -> f32 {
+        // Measured and drawn as the client's display filter shows it.
+        let text = &*crate::text::shown_str(text);
         with_cache(atlas, |c| {
             let (ascent, descent, scale, all_pack) = {
                 let Some(fonts) = &c.fonts else {

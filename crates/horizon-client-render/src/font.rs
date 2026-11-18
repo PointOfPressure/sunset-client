@@ -1795,8 +1795,10 @@ impl Font {
         let g = self.glyph_styled(c, style);
         g.advance + if style.is_bold() { g.offset } else { 0.0 }
     }
-    /// Font.width of plain text (legacy codes are formatting, not glyphs).
+    /// Font.width of plain text (legacy codes are formatting, not glyphs), as
+    /// the client's display filter shows it (`text::shown_str`).
     pub fn width(&self, s: &str) -> f32 {
+        let s = &*crate::text::shown_str(s);
         if s.contains('§') {
             return self.width_text(&Text::legacy(s));
         }

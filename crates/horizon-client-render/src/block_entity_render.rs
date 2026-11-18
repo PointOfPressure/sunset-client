@@ -1172,6 +1172,8 @@ struct SignTextEntry {
     /// Within the glowing text outline's distance (only kept for glowing text).
     near: bool,
     glyphs: u64,
+    /// `text::display_generation` when it was made: the display filter's answers it shows.
+    shown: u64,
     /// Game time it was last drawn.
     used: i64,
     vertices: Vec<Vertex>,
@@ -2496,13 +2498,14 @@ impl BlockEntityRenderer {
                 .retain(|_, e| (now - SIGN_TEXT_KEEP..=now).contains(&e.used));
         }
         let glyphs = scene.glyphs;
+        let shown = crate::text::display_generation();
         let signs = &mut cache.signs;
         let entry = match signs.entry(pos) {
             std::collections::hash_map::Entry::Occupied(mut occupied) => {
                 let entry = occupied.get_mut();
                 let changed = entry.data != *data;
-                if (entry.state, entry.packed, entry.near, entry.glyphs)
-                    != (state, packed, near, glyphs)
+                if (entry.state, entry.packed, entry.near, entry.glyphs, entry.shown)
+                    != (state, packed, near, glyphs, shown)
                     || changed
                     || entry.animated
                 {
@@ -2526,6 +2529,7 @@ impl BlockEntityRenderer {
                     entry.packed = packed;
                     entry.near = near;
                     entry.glyphs = glyphs;
+                    entry.shown = shown;
                 }
                 occupied.into_mut()
             }
@@ -2549,6 +2553,7 @@ impl BlockEntityRenderer {
                     packed,
                     near,
                     glyphs,
+                    shown,
                     used: now,
                     vertices,
                 })

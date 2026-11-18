@@ -339,6 +339,59 @@ impl From<String> for Text {
         Text::untrusted(s)
     }
 }
+/// A client's filter of the text it shows, such as names hidden while streaming: the first function is handed each
+/// component [`Text::resolved`] gives, the second each plain string [`shown_str`] is asked about (plain-text
+/// measuring, the menus' own font); `None` shows the text as it is. Not applied to what the filter itself resolves
+/// or measures, so it can use both.
+pub type DisplayFilter = (fn(&Text) -> Option<Text>, fn(&str) -> Option<String>);
+
+static DISPLAY_FILTER: std::sync::OnceLock<DisplayFilter> = std::sync::OnceLock::new();
+
+thread_local! {
+    static FILTERING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Installs the [`DisplayFilter`] for the rest of the process; false when one is already set.
+pub fn filter_display(filter: DisplayFilter) -> bool {
+    DISPLAY_FILTER.set(filter).is_ok()
+}
+
+static DISPLAY_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Tells the caches of shown text (sign text) that the filter's answers changed, so they are made again.
+pub fn display_changed() {
+    DISPLAY_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// How many times [`display_changed`] was called: a cache of shown text keeps the count it was made at.
+pub fn display_generation() -> u64 {
+    DISPLAY_GENERATION.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// `s` as the [`DisplayFilter`] shows it.
+pub fn shown_str(s: &str) -> std::borrow::Cow<'_, str> {
+    match display_filtered(|filter| (filter.1)(s)) {
+        Some(shown) => std::borrow::Cow::Owned(shown),
+        None => std::borrow::Cow::Borrowed(s),
+    }
+}
+
+/// `apply` with the installed filter, unless there is none or it is already running on this thread.
+fn display_filtered<T>(apply: impl FnOnce(&DisplayFilter) -> Option<T>) -> Option<T> {
+    struct Done;
+    impl Drop for Done {
+        fn drop(&mut self) {
+            FILTERING.with(|on| on.set(false));
+        }
+    }
+    let filter = DISPLAY_FILTER.get()?;
+    if FILTERING.with(|on| on.replace(true)) {
+        return None;
+    }
+    let _done = Done;
+    apply(filter)
+}
+
 impl Text {
     pub fn empty() -> Self {
         Self::default()
@@ -941,12 +994,17 @@ impl Text {
         Self::from_spans(out.rendered.spans)
     }
     /// `resolve_legacy` borrowing `self` when no span holds a `§` code (the
-    /// common case).
+    /// common case), as the client's [`DisplayFilter`] shows it: every draw
+    /// and measure of a component goes through here.
     pub fn resolved(&self) -> std::borrow::Cow<'_, Text> {
-        if self.rendered.spans.iter().any(|s| s.text.contains('§')) {
+        let resolved = if self.rendered.spans.iter().any(|s| s.text.contains('§')) {
             std::borrow::Cow::Owned(self.resolve_legacy())
         } else {
             std::borrow::Cow::Borrowed(self)
+        };
+        match display_filtered(|filter| (filter.0)(&resolved)) {
+            Some(shown) => std::borrow::Cow::Owned(shown),
+            None => resolved,
         }
     }
     /// The text without its legacy `§` codes (ChatFormatting.stripFormatting:
