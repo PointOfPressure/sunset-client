@@ -158,6 +158,17 @@ impl Launcher {
         }
     }
 
+    /// Asks horizon-launcher for Horizon instances with Sunset data to import from (Settings lists them).
+    fn refresh_sources(&self) {
+        if core::cli_path(&self.paths).is_none() {
+            return;
+        }
+        let (p, tx) = (self.paths.clone(), self.send());
+        std::thread::spawn(move || {
+            let _ = tx.send_blocking(Msg::Sources(core::import_sources(&p)));
+        });
+    }
+
     fn refresh_accounts(&self) {
         if core::cli_path(&self.paths).is_none() {
             return;
@@ -826,6 +837,9 @@ impl Launcher {
                             if t != Tab::Overview {
                                 this.reload_local();
                             }
+                            if t == Tab::Settings {
+                                this.refresh_sources();
+                            }
                             cx.notify();
                         }))
                 })),
@@ -1111,6 +1125,7 @@ impl Launcher {
         let manage = button("manage", "Manage instance", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
             this.tab = Tab::Settings;
             this.reload_local();
+            this.refresh_sources();
             cx.notify();
         }));
         div()
