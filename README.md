@@ -356,13 +356,14 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 </details>
 
 <details>
-<summary><b>Client</b> (7 modules)</summary>
+<summary><b>Client</b> (8 modules)</summary>
 
 - **Profiles**: saved and ready-made settings.
 - **Modules**: show or hide each module in the menu.
 - **Friend Guard**: no hits on your friends.
 - **Client Sort**: Sort, Fill Stacks and Restock buttons in inventories.
 - **Client Spoofer**: tells servers you use another client (Lunar Client, LabyMod).
+- **Packet Order** (on by default): actions made after the tick's move packet go out at the start of the next tick, as vanilla orders them (Grim's Post check).
 - **Streamer Mode**: hides your name and other players' names on screen.
 - **Debug Report**: see [Debug reports](#chat-commands).
 

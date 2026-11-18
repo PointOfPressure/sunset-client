@@ -11,6 +11,8 @@ use super::sunset::*;
 
 // Before the game ticks: keys this mod holds, abilities, step height.
 pub(super) fn pre_tick(game: &mut Game<'_>) {
+    let in_order = running() && game.native_on(ID) && with(|s| s.module(PACKET_ORDER).is_some_and(|m| m.on));
+    order_tick_start(game, in_order);
     finish_shutdown(game);
     super::sunset_baritone::maintain(game);
     if !running() { return; }

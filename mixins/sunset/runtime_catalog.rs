@@ -732,6 +732,8 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_extras::defaults());
     v.extend(super::sunset_debug::defaults());
     v.extend(super::sunset_client_spoofer::defaults());
+    v.push(Module::new(PACKET_ORDER, Category::Client,
+        "Sends actions made after the tick's move packet at the next tick's start, before its move. For Grim's Post check.").on());
     v.extend(super::sunset_streamer_mode::defaults());
     v.extend(super::sunset_toast::defaults());
     v.extend(super::sunset_presence::defaults());
