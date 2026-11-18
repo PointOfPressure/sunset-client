@@ -2,8 +2,9 @@
 
 Horizon retired `.hnmod` (launcher 0.2.70+). Native mods are `.hmod` packages compiled against a prebuilt game by
 function replacement: `[native]` pins plus `[[native.mixin]]` and `[[native.module]]` rows in `horizon-mod.toml`.
-No Horizon release publishes the SDK this needs yet (horizon-rust/horizon#17391), so nobody can build Sunset with a
-released launcher today. This branch pins Horizon main **f86cffb** and is checked with a locally built SDK.
+It pins **Nightly 2026-11-18 · 0b14f8a**, the first Horizon build with a published mod SDK
+(`sdk-0b14f8acfd…`): the launcher (0.2.78) downloads the SDK by itself, so a player installs that Nightly and builds
+the package from the Mods page or with `native-build`.
 
 ## Layout
 
@@ -16,8 +17,8 @@ released launcher today. This branch pins Horizon main **f86cffb** and is checke
 
 ## State
 
-The launcher's real native build compiles the package (`native-build` with launcher 0.2.72 and
-`HORIZON_LAUNCHER_DEVELOPER_SDK`). Not yet run in game.
+Launcher 0.2.78 builds the package against the published SDK of 0b14f8a (`native-0b14f8a-…`, ~150 s) and the game
+starts with it (title screen, Sunset's data folder created). Modules not yet checked in a world.
 
 Not ported (commented at the end of the manifest): "xray" "equip-hold" "hurt-cam" "particle-push" "xray-get" "xray-unpack" "menu_dark" "inventory_blur" "safe_walk" "speed_move" "legacy_speed_jump" "liquid_flow" "flying_speed" "tab_modes_name" "tab_modes_layout" "streamer_text" "streamer_width" "streamer_width_text" "streamer_ui" "streamer_ui_measure" "streamer_sign" "client_brand" "crosshair_rect" "debug_wire" "debug_chat_signed" "hunger_bars" "mount_xp" "screen_keys" "screen_keys_after" "water-sprites" "block_outline_draw" "atmosphere_render".
 
@@ -40,9 +41,15 @@ Why, by group:
 - Options > Mods: the package is listed by the launcher itself; the old settings-page buttons are gone (ClickGUI only).
 - Plugins (`api.rs`, sunset-plugins): not adapted to separate .hmod packages yet; pack.py, install scripts, README too.
 
-## Building it locally
+## Building it
 
-Scripts in `~/hzbuild` (not in the repo): `build-sdk.sh` (`tools/prebuilt_game.py build` of a Horizon checkout at the
-pin, ~45 min), `setup-lhome.sh` (an isolated launcher data folder with a `developer-local` base and the pinned source),
-`nb.sh <mods folder> <log>` (launcher 0.2.72 `native-build`, ~2-3 min). To play it the base still needs prepared
-resources for this commit and a signed-in account in that folder.
+```sh
+horizon-launcher install nightly            # nightly-2026-11-18-0b14f8a
+horizon-launcher prepare --version nightly-2026-11-18-0b14f8a
+horizon-launcher instance create sunset-hmod
+horizon-launcher instance version sunset-hmod nightly-2026-11-18-0b14f8a
+horizon-launcher native-build PATH/TO/folder-with-sunset --instance sunset-hmod --trust-native-code
+horizon-launcher play --instance sunset-hmod
+```
+
+A newer Nightly needs the `[native] horizon` pin moved to its commit (each build has its own SDK).

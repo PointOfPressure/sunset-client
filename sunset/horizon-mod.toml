@@ -10,7 +10,7 @@ capabilities = ["registries"]
 # Sunset changes the game's own functions, so it is made for exactly this game build.
 [native]
 game = "26.3"
-horizon = "f86cffb9ac33d95530af420ed51e67cc0c3ae609"
+horizon = "0b14f8acfd97fa2c750e42795249dcc981178ca4"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
 
 [[native.module]]

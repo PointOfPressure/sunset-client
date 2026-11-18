@@ -164,7 +164,7 @@ fn supported(renderer: &Renderer, frame: &Frame<'_>, config: Config) -> bool {
         && !frame.underwater
         && frame.pack.eye_in == 0
         && frame.environment_fog.is_none()
-        && renderer.native.is_none()
+        && renderer.native_pack_name().is_none()
         && renderer.pack_post.is_none()
 }
 
