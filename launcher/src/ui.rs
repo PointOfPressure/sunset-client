@@ -3,9 +3,9 @@
 use crate::core::{self, Account, Manifest, Paths, Release, Settings, SignIn};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    App, AppContext as _, Application, Bounds, ClickEvent, ClipboardItem, Context, ElementId, Hsla, Image, ImageFormat, InteractiveElement as _,
+    App, AppContext as _, Application, Bounds, ClickEvent, ClipboardItem, Context, ElementId, Hsla, InteractiveElement as _,
     IntoElement, MouseButton, MouseDownEvent, Pixels, Point, ParentElement as _, Anchor, PathBuilder, Render, Rgba, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
-    WindowBounds, WindowOptions, anchored, canvas, deferred, div, img, point, px, rgb, size,
+    WindowBounds, WindowOptions, anchored, canvas, deferred, div, point, px, rgb, size,
 };
 use std::path::PathBuf;
 use std::process::Child;
@@ -99,7 +99,6 @@ pub struct Launcher {
     profiles: Vec<String>,
     mods: Vec<(String, String)>,
     tx: async_channel::Sender<Msg>,
-    logo: Arc<Image>,
 }
 
 impl Launcher {
@@ -135,7 +134,6 @@ impl Launcher {
             profiles: vec![],
             mods: vec![],
             tx,
-            logo: Arc::new(Image::from_bytes(ImageFormat::Png, include_bytes!("../../docs/images/icon.png").to_vec())),
         };
         app.reload_local();
         app.refresh_accounts();
@@ -560,6 +558,42 @@ fn banner() -> impl IntoElement {
     .w_full()
     .h(px(176.))
     .rounded(px(8.))
+}
+
+/// The Sunset mark (the site's and the game's): two half rings, drawn `w` wide and half as tall.
+fn mark(w: f32, color: u32) -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        move |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| {
+            // In the mark's own 432 x 216 units: centre x, baseline y, outer and inner radius, foot below the baseline.
+            let k = b.size.width / 432.;
+            let at = |x: f32, y: f32| point(b.origin.x + k * x, b.origin.y + k * y);
+            for (cx_, cy, ro, ri, foot) in [(216., 216., 216., 167., 0.), (216., 211., 121., 72., 5.)] {
+                let arc = |r: f32| (0..=32).map(move |i| {
+                    let a = std::f32::consts::PI * (1. + i as f32 / 32.);
+                    (cx_ + r * a.cos(), cy + r * a.sin())
+                });
+                let mut p = PathBuilder::fill();
+                p.move_to(at(cx_ - ro, cy + foot));
+                for (x, y) in arc(ro) {
+                    p.line_to(at(x, y));
+                }
+                p.line_to(at(cx_ + ro, cy + foot));
+                p.line_to(at(cx_ + ri, cy + foot));
+                for (x, y) in arc(ri).collect::<Vec<_>>().into_iter().rev() {
+                    p.line_to(at(x, y));
+                }
+                p.line_to(at(cx_ - ri, cy + foot));
+                p.close();
+                if let Ok(path) = p.build() {
+                    window.paint_path(path, rgb(color));
+                }
+            }
+        },
+    )
+    .w(px(w))
+    .h(px(w / 2.))
+    .flex_none()
 }
 
 fn face(pixels: &[[u8; 4]], s: f32) -> impl IntoElement {
@@ -1183,7 +1217,7 @@ impl Launcher {
             .gap(px(8.))
             .flex_none()
             .h(px(48.))
-            .child(img(self.logo.clone()).w(px(16.)).h(px(16.)))
+            .child(mark(22., ACCENT))
             .child(text(format!("Launcher {}", core::VERSION), 12., MUTED))
             .child(div().flex_1())
             .child(
