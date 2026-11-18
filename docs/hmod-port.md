@@ -20,25 +20,36 @@ the package from the Mods page or with `native-build`.
 Launcher 0.2.78 builds the package against the published SDK of 0b14f8a (`native-0b14f8a-…`, ~150 s) and the game
 starts with it (title screen, Sunset's data folder created). Modules not yet checked in a world.
 
-Not ported (commented at the end of the manifest): "xray" "equip-hold" "hurt-cam" "particle-push" "xray-get" "xray-unpack" "menu_dark" "inventory_blur" "safe_walk" "speed_move" "legacy_speed_jump" "liquid_flow" "flying_speed" "tab_modes_name" "tab_modes_layout" "streamer_text" "streamer_width" "streamer_width_text" "streamer_ui" "streamer_ui_measure" "streamer_sign" "client_brand" "crosshair_rect" "debug_wire" "debug_chat_signed" "hunger_bars" "mount_xp" "screen_keys" "screen_keys_after" "water-sprites" "block_outline_draw" "atmosphere_render".
+Restored through other routes on this build (2026-11-18):
+- Fonts: the game takes no fonts from package assets; the TrueType files are embedded and loaded into the game's
+  font cache with its own loader (`game/font.rs` `ensure`).
+- Safe Walk, Flight speed, Velocity's liquid push: mod API hooks `player_stays_on_ground_surface`,
+  `living_flying_speed`, `fluid_flow` (client side only).
+- GUI Move behind screens, No Slow (Grim, Skip), knockback slow, Scaffold movement correction: `tick_local_player`
+  (the keys where they are stored, the player after `sync_player_body`, the view back before `seat_own_stands`).
+- X-ray: the mesher's hidden-state table (`block_render_visibility`'s), rebuilt in `render.rs` `xray_hide`.
+- No Render's menu sheet, ClickGUI's inventory blur: HEAD of `render_transparent_background` (the blur through
+  `screen_blur_requested`, as the mod API's `apply_screen_blur`).
+- Hide hurt cam: `bob_matrix`'s tilt argument. Hand View's No equip drop / 1.8 animations: `tick_hand`.
+- Mount HUD food rows and overlays, mount XP, Sunset's crosshair: `hud_layers`.
 
-Why, by group:
-- Functions below the game crate without `#[horizon_mod_api_macros::replaceable]` and no usable game-side caller:
-  X-ray (mesher, chunk reads), Streamer Mode (font/HUD text), Tab game modes, custom crosshair mark, menu dark sheet,
-  hunger/mount XP bars, hurt cam, particle push, equip hold, Client Spoofer's brand, Debug Report wire log and signed
-  chat lines. Upstream `replaceable` markers, or a redesign against game-side callers, would bring them back.
-- Launcher limits found while porting (worth reporting upstream):
-  - the mirror keeps a grouped `use` whole, so `motion.rs`'s `use crate::{Result, ..., living_attributes::attribute_error}`
-    makes every function of `horizon_client_lib::motion` uncopyable: Safe Walk, Speed, Legacy Speed jump, Velocity's
-    liquid push, Flight speed, and the screen-keys hook (GUI Move behind screens, No Slow Skip, Scaffold movement
-    correction, knockback slow);
-  - a lower crate's mirror root drops its `pub use` re-exports unless a helper names them (worked around in the chat
-    and font hooks), and can't reach private child modules (`sprite_cache`: Clear Water) or child-private methods
-    (`gfx`: Atmosphere's sky, the native block outline);
-  - functions whose bodies use `format!`/`matches!`/`vec!` in modules with glob imports are refused by horizon-mixins
-    (`remote::apply_packet`, `poll_remote_events`), so hooks there moved to callers.
-- Ore Sim: the world generator's decoration is a private module; Ore Sim reports it is unavailable.
-- Options > Mods: the package is listed by the launcher itself; the old settings-page buttons are gone (ClickGUI only).
+Still missing, and why:
+- Speed, Legacy Speed jump: they replace `move_self`'s movement inside the motion (`LivingAirWorld::move_self`), which
+  is not replaceable; the mod API's `entity_move` fires on the server only. Needs an upstream client-side hook.
+- Streamer Mode: it rewrote every text at the font/batch level (`HudBatch::styled_text`, `Font::width`,
+  `Ui::text_line`, sign text); none is replaceable. Possible per source in the game crate (chat via the replaceable
+  `Chat::add`, tab list, name tags, sidebar, titles), not done yet.
+- Tab game modes: the tab list names are made in the render crate; possible by editing the listed players' display
+  names in the game crate, not done yet.
+- Client Spoofer's brand: the first brand is sent by `net::run` (not replaceable). A second brand could be sent in
+  the configuration phase from `receive_brand` (replaceable), but servers would see two brands.
+- Debug Report's wire log (`ConnWriter::send`) and signed chat lines (`Chat::add_signed`); particle push
+  (`ParticleEngine::push`); Clear Water (`Sprites::register` copy needs the private `sprite_cache`; its mesh tint
+  went with the old mesher hook); the native block outline and Atmosphere's sky (`Renderer::draw_outline`/`render`
+  copies need private gfx children); Server Scan's command tree (`chat_tree_for` copy repeats a private import).
+- X-ray's Show placed blocks: the hidden-state table is per state, not per position.
+- Ore Sim: the decoration's features and placer are private (only `Decoration::decorate` is exposed).
+- Options > Mods: the launcher lists the package; the old settings-page buttons are gone (ClickGUI only).
 - Plugins (`api.rs`, sunset-plugins): not adapted to separate .hmod packages yet; pack.py, install scripts, README too.
 
 ## Building it
