@@ -863,7 +863,11 @@ fn window_controls(window: &Window) -> Option<gpui::Div> {
             .window_control_area(area)
             .child(icon(kind, 14., TEXT))
     };
-    // Windows answers these areas itself (as caption buttons), so the clicks are only ours elsewhere.
+    // Windows answers these areas itself (as caption buttons), so the clicks are only ours elsewhere. There the press
+    // must reach the platform layer: it only remembers which caption button went down (and acts on its release) when
+    // no element stops the press, so these sit outside the top bar's press-taking groups. `occlude` keeps the drag
+    // area behind them out of the hit test (gpui answers Windows with the first control area under the pointer) and
+    // keeps the top bar's own press handler, which arms a window drag, from firing under them.
     let own = !cfg!(windows);
     let max = if window.is_maximized() { Icon::Restore } else { Icon::Maximize };
     Some(
@@ -872,6 +876,7 @@ fn window_controls(window: &Window) -> Option<gpui::Div> {
             .items_center()
             .gap(px(2.))
             .ml(px(8.))
+            .occlude()
             .child(ctl("win-min", Icon::Minimize, WindowControlArea::Min, 0x26262a).when(own, |d| d.on_click(|_, window, _| window.minimize_window())))
             .child(ctl("win-max", max, WindowControlArea::Max, 0x26262a).when(own, |d| d.on_click(|_, window, _| window.zoom_window())))
             .child(ctl("win-close", Icon::Close, WindowControlArea::Close, 0xc42b1c).when(own, |d| d.on_click(|_, _, cx| cx.quit()))),
@@ -1000,7 +1005,8 @@ impl Launcher {
             }))
             .child(left)
             .child(div().flex_1())
-            .child(group().child(self.account_chip(cx)).children(window_controls(window)))
+            .child(group().child(self.account_chip(cx)))
+            .children(window_controls(window))
     }
 
     /// A top-bar chip that toggles `menu`; its list drops down under it (the backdrop is in `menu_popup`).
