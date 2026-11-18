@@ -4963,6 +4963,7 @@ version = "0.1.0"
 dependencies = [
  "async-channel",
  "base64",
+ "embed-resource",
  "flate2",
  "gpui-fast",
  "gpui-fast-platform",

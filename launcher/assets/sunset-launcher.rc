@@ -1,0 +1,2 @@
+// The executable's icon. gpui loads icon resource 1 for its windows, so this is also the window's and taskbar's.
+1 ICON "sunset-launcher.ico"

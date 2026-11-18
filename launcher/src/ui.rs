@@ -1677,7 +1677,41 @@ impl Render for Launcher {
     }
 }
 
+/// Linux: a desktop entry and icon for the window's app id (`sunset-launcher`) under $XDG_DATA_HOME, which is where
+/// Wayland compositors and X11 docks look up a window's icon. Written when missing or different (the launcher moved);
+/// a failure only costs the icon. Windows takes the icon from the executable (build.rs).
+#[cfg(target_os = "linux")]
+fn desktop_entry() {
+    let Some(data) = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+    else {
+        return;
+    };
+    let Ok(exe) = std::env::current_exe() else { return };
+    // Exec's quoting: a backslash before " ` $ and \, then the string escape doubles every backslash; % is %%.
+    let exe = exe.to_string_lossy().replace('\\', "\\\\\\\\").replace('"', "\\\\\"").replace('`', "\\\\`").replace('$', "\\\\$").replace('%', "%%");
+    let entry = format!(
+        "[Desktop Entry]\nType=Application\nName=Sunset Launcher\nComment=Install and play Sunset\nExec=\"{exe}\"\nIcon=sunset-launcher\nTerminal=false\nCategories=Game;\nStartupWMClass=sunset-launcher\n"
+    );
+    let files: [(&str, &[u8]); 3] = [
+        ("icons/hicolor/scalable/apps/sunset-launcher.svg", include_bytes!("../assets/sunset-launcher.svg")),
+        ("icons/hicolor/256x256/apps/sunset-launcher.png", include_bytes!("../assets/sunset-launcher.png")),
+        ("applications/sunset-launcher.desktop", entry.as_bytes()),
+    ];
+    for (rel, bytes) in files {
+        let path = data.join(rel);
+        if std::fs::read(&path).ok().as_deref() != Some(bytes) {
+            let _ = path.parent().map(std::fs::create_dir_all);
+            let _ = std::fs::write(&path, bytes);
+        }
+    }
+}
+
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    desktop_entry();
     Application::with_platform(gpui_platform::current_platform(false)).run(|cx: &mut App| {
         let fonts = vec![
             std::borrow::Cow::Borrowed(include_bytes!("../../assets/inter.ttf").as_slice()),
