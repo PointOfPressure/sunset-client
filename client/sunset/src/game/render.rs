@@ -1,0 +1,1306 @@
+// Camera and engine-level modules, implemented for Sunset: Freecam, Free
+// Look, Xray, Tunnel ESP, Void ESP, Light Overlay, and the two that sit on
+// engine hooks, Timer and No Slow.
+use crate::game::sunset_compat::SunsetGame as _;
+
+use horizon_client::camera::CameraType;
+use super::sunset::{Camera, Canvas, Category, Module, accent, line};
+use super::sunset_visual::{Look, draw_box, potato};
+use super::sunset_util::*;
+use super::Game;
+use std::collections::HashSet;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use winit::keyboard::KeyCode;
+
+const ORES: &str = "coal_ore,deepslate_coal_ore,iron_ore,deepslate_iron_ore,gold_ore,deepslate_gold_ore,lapis_ore,deepslate_lapis_ore,redstone_ore,deepslate_redstone_ore,diamond_ore,deepslate_diamond_ore,emerald_ore,deepslate_emerald_ore,copper_ore,deepslate_copper_ore,nether_gold_ore,nether_quartz_ore,ancient_debris";
+
+pub(super) fn defaults() -> Vec<Module> {
+    use Category::*;
+    vec![
+        Module::new("Freecam", Render, "Moves the camera off your body.")
+            .num("Horizontal speed", 1.0, 0.05, 5.0, 0.05)
+            .num("Vertical speed", 1.0, 0.05, 5.0, 0.05)
+            .bool("Scroll speed", true)
+            .pick("Start", &["Inside", "In front", "Above"])
+            .bool("Tracer", true)
+            .bool("Move player", false)
+            .bool("Toggle on damage", false)
+            .bool("Toggle on death", false)
+            .bool("Toggle on log", true),
+        Module::new("Free Look", Render, "Looks around without turning.")
+            .pick("Mode", &["Player", "Camera"])
+            .bool("Toggle perspective", true)
+            .num("Camera sensitivity", 8.0, 1.0, 20.0, 1.0)
+            .bool("Arrows", true)
+            .num("Arrow speed", 4.0, 1.0, 10.0, 1.0),
+        Module::new("Xray", Render, "Shows only listed blocks.")
+            .pick("List", &["Simple", "Advanced"])
+            .text("Blocks", ORES)
+            .bool("Show water", false)
+            .bool("Show lava", false)
+            .bool("Show placed blocks", false)
+            .num("Placed blocks kept", 2000.0, 100.0, 10000.0, 100.0),
+        Module::new("Clear Water", Render, "See-through water.")
+            .num("Opacity", 30.0, 0.0, 100.0, 5.0)
+            .num("Lighter tint", 50.0, 0.0, 100.0, 5.0)
+            .bool("Hide fog", true),
+        hand_view(),
+        Module::new("Shulker Peek", Render, "Shows what is in a shulker box.")
+            .bool("Ender chest", true),
+        Module::new("Tunnel ESP", Render, "Highlights tunnels.")
+            .pick("Mode", &["Box", "Outline", "Potato"])
+            .num("Range", 24.0, 8.0, 48.0, 4.0)
+            .num("Height", 0.1, 0.02, 1.0, 0.02)
+            .num("Max", 1000.0, 50.0, 4000.0, 50.0),
+        Module::new("Void ESP", Render, "Marks holes to the void.")
+            .pick("Mode", &["Box", "Outline", "Potato"])
+            .bool("Air only", false)
+            .num("Horizontal radius", 32.0, 8.0, 64.0, 4.0)
+            .num("Hole height", 1.0, 1.0, 5.0, 1.0)
+            .bool("Nether roof", true)
+            .num("Max", 1000.0, 50.0, 4000.0, 50.0),
+        Module::new("Light Overlay", Render, "Shows mob spawn spots.")
+            .pick("Mode", &["Cross", "Potato"])
+            .num("Horizontal range", 8.0, 2.0, 16.0, 1.0)
+            .num("Vertical range", 4.0, 1.0, 8.0, 1.0)
+            .num("Light level", 0.0, 0.0, 15.0, 1.0)
+            .num("Max", 1000.0, 50.0, 4000.0, 50.0),
+        Module::new("No Render", Render, "Hides fog and overlays.")
+            .bool("Hide fog", true)
+            .bool("Hide water fog", true)
+            .bool("Hide lava and powder snow fog", false)
+            .bool("Hide blindness", true)
+            .bool("Hide darkness", true)
+            .bool("Hide nausea", true)
+            // Sunset's AntiDebuff (Remove Slowness): slowness and its speed modifier off your own client. The server
+            // still slows you, so its anticheat sees you outrun what it expects.
+            .bool("Remove slowness", false)
+            .bool("Hide fire overlay", true)
+            .bool("Hide liquid overlay", true)
+            .bool("Hide in-wall overlay", true)
+            .bool("Hide pumpkin, spyglass and powder snow overlays", false)
+            .bool("Hide all particles", false)
+            .text("Particles", "")
+            .bool("Hide hurt cam", false)
+            .bool("Hide scoreboard", false)
+            .bool("Hide titles", false)
+            .bool("Hide held item name", false),
+        Module::new("Timer", World, "Changes game speed.")
+            .num("Multiplier", 2.0, 0.1, 10.0, 0.1),
+        Module::new("No Slow", Movement, "No item-use slowdown.")
+            // Skip is No Slow: the game's own slowdown left out of the move, except in water and from a
+            // knockback until you land. Scale walks at Ground % / Air % of your speed instead.
+            .pick("Mode", &["Skip", "Scale", "GrimAC"])
+            .num("Ground %", 100.0, 20.0, 100.0, 5.0)
+            .num("Air %", 100.0, 20.0, 100.0, 5.0)
+            .bool("No item release", false)
+            .text("Release items", "swords,food,potions"),
+    ]
+}
+
+struct Fc {
+    pos: [f64; 3],
+    prev: [f64; 3],
+    yaw: f32,
+    pitch: f32,
+    camera: CameraType,
+    health: f32,
+    // The wheel's change to both speeds.
+    speed: f64,
+}
+
+struct Fl {
+    yaw: f32,
+    pitch: f32,
+    camera: CameraType,
+}
+
+#[derive(Default)]
+struct GrimCycle {
+    last_use: Option<(usize, u32)>,
+    fast_next: bool,
+}
+
+impl GrimCycle {
+    fn next(&mut self, using: Option<(usize, u32)>, eligible: bool) -> bool {
+        let Some((slot, ticks)) = using.filter(|_| eligible) else {
+            *self = Self::default();
+            return false;
+        };
+        let continued = self.last_use.is_some_and(|(last_slot, last_ticks)| {
+            last_slot == slot && last_ticks.checked_add(1) == Some(ticks)
+        });
+        self.fast_next = continued && !self.fast_next;
+        self.last_use = Some((slot, ticks));
+        self.fast_next
+    }
+}
+
+#[derive(Default)]
+struct Rs {
+    fc: Option<Fc>,
+    fl: Option<Fl>,
+    grim_cycle: GrimCycle,
+    xray: Option<(bool, String, bool, bool)>,
+    // Shulker Peek: the ender chest's slots when it was last open, and whether the menu open now is one.
+    ender: Option<Vec<(u8, horizon_client::items::ItemStack)>>,
+    ender_open: bool,
+    // The grid shown with the last tooltip (its slots, tint, the pointer and when), and the one a middle click pinned.
+    peeked: Option<(Vec<(u8, horizon_client::items::ItemStack)>, u32, (f32, f32), std::time::Instant)>,
+    pinned: Option<(Vec<(u8, horizon_client::items::ItemStack)>, u32)>,
+    placed: Placed,
+    tunnels: Sweep<()>,
+    voids: Sweep<()>,
+    // Where mobs can spawn, and whether only at night (lit by the sky).
+    lights: Sweep<bool>,
+    // The Fog option as it was before No Render turned it off.
+    fog_before: Option<bool>,
+    // The effects No Render hides, to put back.
+    hidden_effects: Vec<horizon_client::effects::EffectInstance>,
+}
+
+impl Default for Fc {
+    fn default() -> Self {
+        Self { pos: [0.0; 3], prev: [0.0; 3], yaw: 0.0, pitch: 0.0, camera: CameraType::FirstPerson, health: 20.0, speed: 1.0 }
+    }
+}
+
+static RS: Mutex<Option<Rs>> = Mutex::new(None);
+
+fn rs<R>(f: impl FnOnce(&mut Rs) -> R) -> R {
+    let mut g = RS.lock().unwrap_or_else(|e| e.into_inner());
+    f(g.get_or_insert_with(Rs::default))
+}
+
+fn on<'a>(mods: &'a [Module], name: &str) -> Option<&'a Module> {
+    mods.iter().find(|m| m.name == name && m.on)
+}
+
+static IN_CAMERA: AtomicBool = AtomicBool::new(false);
+
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    pre_tick(game, &[]);
+    engine_flags(game, &[]);
+    no_render(game, &[]);
+    xray(game, &[]);
+    clear_water(game, &[]);
+    ::sunset_core::overlay::NO_MENU.store(false, Ordering::Relaxed);
+    ::sunset_core::overlay::INVENTORY_BLUR.store(false, Ordering::Relaxed);
+    crate::game::sunset_font::STYLE.store(0, Ordering::Relaxed);
+    NO_SLOW_KNOCKED.store(false, Ordering::Relaxed);
+    *ZOOM.lock().unwrap_or_else(|e| e.into_inner()) = Zoom { level: 0.0, now: 1.0, at: None, held: false };
+    rs(|r| *r = Rs::default());
+    if let Some(r) = game.renderer.as_mut() {
+        r.fullbright = game.settings.extras.fullbright;
+        crate::game::sunset_atmosphere_renderer::release(r);
+    }
+    ::sunset_core::block_overlay::publish(false);
+}
+
+// ---- Zoom (as Wurst's WI Zoom)
+
+// The zoom the key holds (the wheel changes it), the zoom the view is at as it eases there, when it last moved, and
+// whether the key was down.
+struct Zoom {
+    level: f32,
+    now: f32,
+    at: Option<std::time::Instant>,
+    held: bool,
+}
+
+static ZOOM: Mutex<Zoom> = Mutex::new(Zoom { level: 0.0, now: 1.0, at: None, held: false });
+
+fn zoom_state<R>(f: impl FnOnce(&mut Zoom) -> R) -> R {
+    f(&mut ZOOM.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+// The zoom the view is at this frame, if zoomed: it eases to the held level and back out to 1 in about a tenth of a
+// second (at once with Smooth off).
+pub(super) fn zoom_now(game: &Game<'_>) -> Option<f32> {
+    if !game.sunset_window() || !game.native_on(super::sunset::ID) || !game.native_playing() {
+        return None;
+    }
+    let m = super::sunset::with(|s| s.module("Zoom").map(|m| (m.on, m.n("Zoom") as f32, m.b("Smooth"), m.b("Remember zoom"))));
+    let (on, start, smooth, remember) = m?;
+    zoom_state(|z| {
+        if on && !z.held && (!remember || z.level < 1.0) {
+            z.level = start;
+        }
+        z.held = on;
+        let want = if on { z.level } else { 1.0 };
+        let now = std::time::Instant::now();
+        let dt = z.at.map_or(0.0, |t| now.duration_since(t).as_secs_f32()).min(0.25);
+        z.at = Some(now);
+        // Eased in steps of the zoom's logarithm, so 2x to 4x looks like 20x to 40x.
+        z.now = if smooth { (z.now.ln() + (want.ln() - z.now.ln()) * (1.0 - (-dt * 25.0).exp())).exp() } else { want };
+        if (z.now - want).abs() < 0.001 * want {
+            z.now = want;
+        }
+        (z.now > 1.0).then_some(z.now)
+    })
+}
+
+// How much slower the mouse turns while zoomed (Scale sensitivity).
+pub(super) fn zoom_turn(game: &Game<'_>) -> Option<f64> {
+    let scaled = super::sunset::with(|s| s.module("Zoom").is_some_and(|m| m.b("Scale sensitivity")));
+    let now = zoom_state(|z| z.now);
+    (scaled && game.native_on(super::sunset::ID) && now > 1.0).then(|| 1.0 / f64::from(now))
+}
+
+// The wheel while Zoom is held changes the zoom (each notch by a tenth), while Freecam flies its speed.
+pub(super) fn camera_wheel(game: &Game<'_>, steps: f32) -> bool {
+    if !game.sunset_window() || !game.native_on(super::sunset::ID) || steps == 0.0 {
+        return false;
+    }
+    let (zoom, scroll, fly) = super::sunset::with(|s| {
+        let zoom = s.module("Zoom").filter(|m| m.on);
+        (zoom.is_some(), zoom.is_some_and(|m| m.b("Scroll")), s.module("Freecam").filter(|m| m.on && m.b("Scroll speed")).is_some())
+    });
+    if zoom {
+        if scroll {
+            zoom_state(|z| z.level = (z.level * 1.1_f32.powf(steps)).clamp(1.0, 50.0));
+        }
+        return scroll;
+    }
+    if fly && freecam_flying() {
+        rs(|r| {
+            if let Some(f) = r.fc.as_mut() {
+                f.speed = (f.speed * 1.1_f64.powf(f64::from(steps))).clamp(0.05, 10.0);
+            }
+        });
+        return true;
+    }
+    false
+}
+
+// ---- the camera hooks
+
+// The frame's camera pose when Freecam or Free Look decide it: Some(its answer).
+pub(super) fn camera(game: &mut Game<'_>, partial: f32) -> Option<Option<(glam::DVec3, f32, f32)>> {
+    if IN_CAMERA.load(Ordering::Relaxed) {
+        return None;
+    }
+    if let Some((pos, prev, yaw, pitch)) = rs(|r| r.fc.as_ref().map(|f| (f.pos, f.prev, f.yaw, f.pitch))) {
+        let t = game.clock.camera_fraction();
+        let at = glam::DVec3::new(
+            prev[0] + (pos[0] - prev[0]) * t,
+            prev[1] + (pos[1] - prev[1]) * t,
+            prev[2] + (pos[2] - prev[2]) * t,
+        );
+        return Some(Some((at, yaw, pitch)));
+    }
+    if let Some((yaw, pitch)) = rs(|r| r.fl.as_ref().map(|f| (f.yaw, f.pitch))) {
+        // The game's own third person camera, from the free angles.
+        let (sy, sp) = (game.yaw, game.pitch);
+        game.yaw = yaw;
+        game.pitch = pitch;
+        IN_CAMERA.store(true, Ordering::Relaxed);
+        let view = game.camera_view(partial);
+        IN_CAMERA.store(false, Ordering::Relaxed);
+        game.yaw = sy;
+        game.pitch = sp;
+        return Some(view);
+    }
+    None
+}
+
+fn free_look_player() -> bool {
+    super::sunset::with(|s| s.module("Free Look").is_some_and(|m| m.on && m.p("Mode") == "Player"))
+}
+
+// Freecam is flying the camera: the view stays third person behind the body (no hand, and the boxes and lines drawn
+// over the world project from the camera the frame is drawn from), whatever F5 would make it.
+pub(super) fn freecam_flying() -> bool {
+    rs(|r| r.fc.is_some())
+}
+
+// Whether the mouse turns a free camera (Freecam, or Free Look in Player mode) instead of the player.
+pub(super) fn camera_takes_mouse() -> bool {
+    let free_look_player = free_look_player();
+    rs(|r| r.fc.is_some() || (r.fl.is_some() && free_look_player))
+}
+
+// Mouse movement goes to the camera instead of the player: true when it did.
+pub(super) fn turn(game: &mut Game<'_>, xo: f64, yo: f64) -> bool {
+    let _ = game;
+    let free_look_player = free_look_player();
+    let sens = super::sunset::with(|s| s.module("Free Look").map_or(8.0, |m| m.n("Camera sensitivity"))) / 8.0;
+    rs(|r| {
+        if let Some(f) = r.fc.as_mut() {
+            f.yaw += (xo * 0.15) as f32;
+            f.pitch = (f.pitch + (yo * 0.15) as f32).clamp(-90.0, 90.0);
+            true
+        } else if let (Some(f), true) = (r.fl.as_mut(), free_look_player) {
+            f.yaw += (xo * 0.15 * sens) as f32;
+            f.pitch = (f.pitch + (yo * 0.15 * sens) as f32).clamp(-90.0, 90.0);
+            true
+        } else {
+            false
+        }
+    })
+}
+
+// ---- ticks
+
+const MOVE_KEYS: [KeyCode; 7] = [
+    KeyCode::KeyW,
+    KeyCode::KeyA,
+    KeyCode::KeyS,
+    KeyCode::KeyD,
+    KeyCode::Space,
+    KeyCode::ShiftLeft,
+    KeyCode::ControlLeft,
+];
+
+// Before the game's tick: start and stop the camera modules, and keep the
+// player still while Freecam flies.
+pub(super) fn pre_tick(game: &mut Game<'_>, mods: &[Module]) {
+    let freecam = on(mods, "Freecam");
+    let freelook = on(mods, "Free Look");
+    let eye = game.eye_position();
+    let health = game.player.as_ref().map_or(20.0, |p| p.health.health());
+    // Freecam.
+    match (freecam.as_ref(), rs(|r| r.fc.is_some())) {
+        (Some(m), false) => {
+            if let Some(e) = eye {
+                let camera = game.camera_type;
+                // Where the camera starts: at the eyes, 3 blocks in front of them, or 3 above.
+                let yaw = f64::from(game.yaw).to_radians();
+                let e = match m.p("Start") {
+                    "In front" => [e[0] - yaw.sin() * 3.0, e[1], e[2] + yaw.cos() * 3.0],
+                    "Above" => [e[0], e[1] + 3.0, e[2]],
+                    _ => e,
+                };
+                rs(|r| {
+                    r.fc = Some(Fc { pos: e, prev: e, yaw: game.yaw, pitch: game.pitch, camera, health, speed: 1.0 });
+                });
+                game.camera_type = CameraType::ThirdPersonBack;
+            }
+        }
+        (None, true) => {
+            if let Some(f) = rs(|r| r.fc.take()) {
+                game.camera_type = f.camera;
+            }
+        }
+        _ => {}
+    }
+    // The keys fly the camera, the body stands still; with Move player they move the body and the camera stays.
+    if freecam_flying() {
+        if !freecam.as_ref().is_some_and(|m| m.b("Move player")) {
+            for k in MOVE_KEYS {
+                game.keys.remove(&k);
+            }
+        }
+        game.camera_type = CameraType::ThirdPersonBack;
+    }
+    // Free Look.
+    match (freelook.clone(), rs(|r| r.fl.is_some())) {
+        (Some(m), false) => {
+            let camera = game.camera_type;
+            rs(|r| r.fl = Some(Fl { yaw: game.yaw, pitch: game.pitch, camera }));
+            if m.b("Toggle perspective") && camera != CameraType::ThirdPersonBack {
+                game.camera_type = CameraType::ThirdPersonBack;
+            }
+        }
+        (None, true) => {
+            if let Some(f) = rs(|r| r.fl.take()) {
+                if super::sunset::with(|s| s.module("Free Look").is_none_or(|m| m.b("Toggle perspective"))) {
+                    game.camera_type = f.camera;
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
+    // Freecam moves a camera each tick; Sunset's speed is blocks a tick, half
+    // of it, the whole of it while sprinting.
+    if let Some(m) = on(mods, "Freecam") {
+        let playing = game.native_playing();
+        let keys = game.physical_keys.clone();
+        let health = game.player.as_ref().map_or(20.0, |p| p.health.health());
+        let gone = game.remote.is_none();
+        let mut stop = false;
+        rs(|r| {
+            let Some(f) = r.fc.as_mut() else {
+                return;
+            };
+            if m.b("Toggle on damage") && health < f.health {
+                stop = true;
+            }
+            if m.b("Toggle on death") && health <= 0.0 || m.b("Toggle on log") && gone {
+                stop = true;
+            }
+            f.health = health;
+            f.prev = f.pos;
+            if !playing || m.b("Move player") {
+                return;
+            }
+            let down = |k: KeyCode| keys.contains(&k);
+            let sprint = if down(KeyCode::ControlLeft) { 1.0 } else { 0.5 } * f.speed;
+            let (s, up) = (sprint * m.n("Horizontal speed"), sprint * m.n("Vertical speed"));
+            let yaw = f64::from(f.yaw).to_radians();
+            let forward = [-yaw.sin(), yaw.cos()];
+            let right = [-yaw.cos(), -yaw.sin()];
+            let (mut vx, mut vy, mut vz) = (0.0, 0.0, 0.0);
+            let (fw, bw) = (down(KeyCode::KeyW), down(KeyCode::KeyS));
+            let (rt, lf) = (down(KeyCode::KeyD), down(KeyCode::KeyA));
+            if fw {
+                vx += forward[0] * s;
+                vz += forward[1] * s;
+            }
+            if bw {
+                vx -= forward[0] * s;
+                vz -= forward[1] * s;
+            }
+            if rt {
+                vx += right[0] * s;
+                vz += right[1] * s;
+            }
+            if lf {
+                vx -= right[0] * s;
+                vz -= right[1] * s;
+            }
+            if (fw || bw) && (rt || lf) {
+                vx *= std::f64::consts::FRAC_1_SQRT_2;
+                vz *= std::f64::consts::FRAC_1_SQRT_2;
+            }
+            if down(KeyCode::Space) {
+                vy += up;
+            }
+            if down(KeyCode::ShiftLeft) {
+                vy -= up;
+            }
+            f.pos = [f.pos[0] + vx, f.pos[1] + vy, f.pos[2] + vz];
+        });
+        if stop {
+            toggle_off(game, "Freecam");
+        }
+    }
+    // Free Look's arrow keys.
+    if let Some(m) = on(mods, "Free Look") {
+        if m.b("Arrows") && game.native_playing() {
+            let keys = game.physical_keys.clone();
+            let n = m.n("Arrow speed") * 2.0;
+            let d = |neg: KeyCode, pos: KeyCode| (f32::from(u8::from(keys.contains(&pos))) - f32::from(u8::from(keys.contains(&neg)))) * 0.5 * n as f32;
+            let (dx, dy) = (d(KeyCode::ArrowLeft, KeyCode::ArrowRight), d(KeyCode::ArrowUp, KeyCode::ArrowDown));
+            if m.p("Mode") == "Player" {
+                rs(|r| {
+                    if let Some(f) = r.fl.as_mut() {
+                        f.yaw += dx;
+                        f.pitch = (f.pitch + dy).clamp(-90.0, 90.0);
+                    }
+                });
+            }
+        }
+    }
+    engine_flags(game, mods);
+    let font = mods.iter().find(|m| m.name == "HUD").map_or(1, |m| crate::game::sunset_font::style(m.p("Font")));
+    crate::game::sunset_font::STYLE.store(font, Ordering::Relaxed);
+    no_render(game, mods);
+    xray(game, mods);
+    clear_water(game, mods);
+    ender_seen(game);
+    match on(mods, "Tunnel ESP") {
+        Some(m) => scan_tunnels(game, &m, ticks),
+        None => rs(|r| r.tunnels = Sweep::new()),
+    }
+    match on(mods, "Void ESP") {
+        Some(m) => scan_voids(game, &m, ticks),
+        None => rs(|r| r.voids = Sweep::new()),
+    }
+    match on(mods, "Light Overlay") {
+        Some(m) => scan_lights(game, &m, ticks),
+        None => rs(|r| r.lights = Sweep::new()),
+    }
+}
+
+// Timer and No Slow: the flags the engine hooks read. While you move, Speed's own Timer stands in for Timer's
+// (Sunset's override).
+// Hand View (Sunset's): each arm and what it holds moved (in blocks), turned (degrees) and sized, and the sway the
+// hands have when the view turns taken away. No hand shadow lights the hands at full brightness under blocks and in
+// caves; the totem pop is sized, moved on the screen and sped up (extra ticks of its 40).
+fn hand_view() -> Module {
+    use crate::game::sunset_hand_view as hv;
+    let mut m = Module::new("Hand View", Category::Render, "Moves and sizes your hands and the totem pop; 1.9+ or 1.8 swing and block animations.")
+        .group("General")
+        .bool("No sway", false)
+        .bool("No hand shadow", false)
+        .num("Totem pop scale", 1.0, 0.1, 3.0, 0.05)
+        .num("Totem pop X", 0.0, -1.0, 1.0, 0.05)
+        .num("Totem pop Y", 0.0, -1.0, 1.0, 0.05)
+        .num("Totem pop speed", 1.0, 1.0, 6.0, 1.0)
+        // How a held item swings and a sword blocks (hand_view_flags): 1.9+ in the game's own pose, 1.8 in 1.8's
+        // (flat items in the right main hand). A sword blocks while Kill Aura's Legacy AutoBlock has a target, or
+        // while you hold right click with Block on right click.
+        .group("Animations")
+        .pick("Animations", &["1.9+", "1.8"])
+        .pick("Swing animation", hv::SWINGS)
+        .pick("Block animation", hv::BLOCKS)
+        .pick("1.8 swing", hv::SWINGS_18)
+        .pick("1.8 block", hv::BLOCKS_18)
+        .bool("Block on right click", false)
+        .bool("Slow swing", false)
+        .bool("No equip drop", false)
+        .group("Hands");
+    for (scale, x, y, z, rx, ry, rz) in [
+        ("Right scale", "Right X", "Right Y", "Right Z", "Right turn X", "Right turn Y", "Right turn Z"),
+        ("Left scale", "Left X", "Left Y", "Left Z", "Left turn X", "Left turn Y", "Left turn Z"),
+    ] {
+        m = m.num(scale, 1.0, 0.1, 2.0, 0.05);
+        for axis in [x, y, z] {
+            m = m.num(axis, 0.0, -1.0, 1.0, 0.02);
+        }
+        for axis in [rx, ry, rz] {
+            m = m.num(axis, 0.0, -180.0, 180.0, 5.0);
+        }
+    }
+    m
+}
+
+fn hand_transform(m: &Module, side: &str) -> glam::Mat4 {
+    let n = |name: &str| m.n(&format!("{side} {name}")) as f32;
+    glam::Mat4::from_translation(glam::Vec3::new(n("X"), n("Y"), n("Z")))
+        * glam::Mat4::from_rotation_x(n("turn X").to_radians())
+        * glam::Mat4::from_rotation_y(n("turn Y").to_radians())
+        * glam::Mat4::from_rotation_z(n("turn Z").to_radians())
+        * glam::Mat4::from_scale(glam::Vec3::splat(n("scale")))
+}
+
+fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
+    use crate::game::sunset_hand_view as hv;
+    let hands = on(mods, "Hand View");
+    let view = hands.as_ref().map(|m| [hand_transform(m, "Right"), hand_transform(m, "Left")]);
+    if let Ok(mut v) = hv::VIEW.write() {
+        *v = view;
+    }
+    hv::NO_SWAY.store(hands.is_some_and(|m| m.b("No sway")), Ordering::Relaxed);
+    crate::game::sunset_tab_modes::MARK.store(on(mods, "HUD").is_some_and(|m| m.b("Tab game modes")), Ordering::Relaxed);
+    hv::NO_SHADOW.store(hands.is_some_and(|m| m.b("No hand shadow")), Ordering::Relaxed);
+    let pop = hands.as_ref().map(|m| hv::TotemPop {
+        scale: m.n("Totem pop scale") as f32,
+        x: m.n("Totem pop X") as f32,
+        y: m.n("Totem pop Y") as f32,
+    });
+    if let Ok(mut t) = hv::TOTEM.write() {
+        *t = pop.filter(|p| *p != hv::TotemPop { scale: 1.0, x: 0.0, y: 0.0 });
+    }
+    let pick = |name: &str, choices: &[&str]| hands.as_ref().map_or(0, |m| hv::index_of(choices, m.p(name)));
+    hv::SWING.store(pick("Swing animation", hv::SWINGS), Ordering::Relaxed);
+    hv::LEGACY.store(hands.is_some_and(|m| m.p("Animations") == "1.8"), Ordering::Relaxed);
+    hv::SWING_18.store(pick("1.8 swing", hv::SWINGS_18), Ordering::Relaxed);
+    hv::BLOCK_18.store(pick("1.8 block", hv::BLOCKS_18), Ordering::Relaxed);
+    hv::BLOCK.store(pick("Block animation", hv::BLOCKS), Ordering::Relaxed);
+    hv::SLOW_SWING.store(hands.is_some_and(|m| m.b("Slow swing")), Ordering::Relaxed);
+    hv::NO_EQUIP_DROP.store(hands.is_some_and(|m| m.b("No equip drop")), Ordering::Relaxed);
+    // Kill Aura's Legacy AutoBlock, with the Legacy combat version it blocks under and someone to hit (engaged, which
+    // holds through the tick a hit waits to go, so the block does not drop for a frame at each hit): the sword shows
+    // the block (hand_item), as a 1.8 client's does, Hand View on or not.
+    let speed = game.main_hand_attack_speed();
+    let blocking = on(mods, "Kill Aura").is_some_and(|m| {
+        m.p("AutoBlock") == "Legacy"
+            && super::sunset_aura_timing::version(m.p("Combat version"), speed).0 == super::sunset_aura_timing::Version::Legacy
+    }) && super::sunset_aura::engaged();
+    // Block on right click: right click held with a sword in hand and nothing in use (Horizon has no sword block of
+    // its own; a 1.8 server behind ViaVersion takes the click as one).
+    let right_click = hands.is_some_and(|m| m.b("Block on right click"))
+        && (game.right || game.physical_buttons.contains(&winit::event::MouseButton::Right))
+        && game.using.is_none()
+        && game.held().is_some_and(|s| s.item.ends_with("_sword"));
+    hv::SWORD_BLOCK.store(blocking || right_click, Ordering::Relaxed);
+    hv::TOTEM_EXTRA_TICKS.store(hands.as_ref().map_or(0, |m| (m.n("Totem pop speed").round() as u32).saturating_sub(1)), Ordering::Relaxed);
+    let moving = super::sunset::move_input(game) != (0.0, 0.0);
+    let speed_timer = if on(mods, "Flight").filter(|_| super::sunset_flight::damage_open() || super::sunset_flight::self_falling()).is_none() {
+        on(mods, "Speed").map(|m| m.n("Timer")).filter(|t| (*t - 1.0).abs() > 1e-9 && moving)
+    } else { None };
+    let mult = speed_timer.or_else(|| on(mods, "Timer").map(|m| m.n("Multiplier"))).unwrap_or(1.0) as f32;
+    ::sunset_core::timer::MULT.store(mult.to_bits(), Ordering::Relaxed);
+    let no_slow = on(mods, "No Slow");
+    let grim_mode = no_slow.as_ref().is_some_and(|m| m.p("Mode") == "GrimAC");
+    let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
+    let factor = no_slow.as_ref().map_or(0.2, |m| (m.n(if ground { "Ground %" } else { "Air %" }) / 100.0) as f32);
+    let skip_mode = no_slow.as_ref().is_some_and(|m| m.p("Mode") == "Skip");
+    // Skip (Sunset's): after a knockback, not until you are on the ground again (this tick still not).
+    let knocked = NO_SLOW_KNOCKED.load(Ordering::Relaxed);
+    if knocked && ground {
+        NO_SLOW_KNOCKED.store(false, Ordering::Relaxed);
+    }
+    let in_water = game.player.as_ref().is_some_and(|p| p.fluids.was_touching_water);
+    let eligible = grim_mode && !in_water && !knocked && game.riding.is_none()
+        && game.player.as_ref().is_some_and(|p| !p.flying && !p.fall_flying);
+    let grim_fast = rs(|r| r.grim_cycle.next(game.using, eligible));
+    ::sunset_core::motion::set_no_slow_grim(grim_mode);
+    ::sunset_core::motion::set_no_slow_skip(
+        (skip_mode && game.using.is_some() && !in_water && !knocked) || grim_fast,
+    );
+    ::sunset_core::input::NO_SLOW_FACTOR.store(factor.to_bits(), Ordering::Relaxed);
+    ::sunset_core::input::NO_SLOW.store(no_slow.is_some() && !skip_mode && !grim_mode, Ordering::Relaxed);
+}
+
+// No Slow's Skip: a knockback (a push for you, or an explosion's) pauses it until you land.
+static NO_SLOW_KNOCKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(super) fn no_slow_knocked() {
+    NO_SLOW_KNOCKED.store(true, Ordering::Relaxed);
+    no_slow_reset();
+}
+
+pub(super) fn no_slow_reset() {
+    if !::sunset_core::motion::no_slow_grim() {
+        return;
+    }
+    rs(|r| r.grim_cycle = GrimCycle::default());
+    ::sunset_core::motion::set_no_slow_skip(false);
+}
+
+// No Render: fog through Horizon's own Fog option, the effects the player does
+// not want to see taken off its list, and the overlay switches.
+// No Render's Hide scoreboard, read where the sidebar is drawn.
+pub(super) static NO_SCOREBOARD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn no_render(game: &mut Game<'_>, mods: &[Module]) {
+    use ::sunset_core::{fog, overlay};
+    let m = on(mods, "No Render");
+    let flag = |name: &str| m.as_ref().is_some_and(|m| m.b(name));
+    // Fog: Horizon's Fog option, remembered and put back (Atmosphere's Custom fog sets the fog where the game would
+    // clear it with the option off).
+    if flag("Hide fog") || super::sunset_atmosphere::custom_fog() {
+        if rs(|r| r.fog_before.is_none()) {
+            rs(|r| r.fog_before = Some(game.settings.horizon.fog));
+        }
+        game.settings.horizon.fog = false;
+    } else if let Some(before) = rs(|r| r.fog_before.take()) {
+        game.settings.horizon.fog = before;
+    }
+    // Particles: all of them, or the listed types, never made.
+    let listed = m.as_ref().map_or("", |m| m.t("Particles"));
+    ::sunset_core::particles::set(
+        flag("Hide all particles"),
+        listed
+            .split(',')
+            .filter_map(|n| horizon_client::particles::ParticleType::from_name(n.trim()))
+            .map(|t| t.name().to_owned())
+            .collect(),
+    );
+    let clear_fog = mods.iter().any(|m| m.name == "Clear Water" && m.on && m.b("Hide fog"));
+    fog::NO_WATER.store(flag("Hide water fog") || clear_fog, Ordering::Relaxed);
+    fog::NO_LAVA.store(flag("Hide lava and powder snow fog"), Ordering::Relaxed);
+    overlay::NO_FIRE.store(flag("Hide fire overlay"), Ordering::Relaxed);
+    overlay::NO_LIQUID.store(flag("Hide liquid overlay"), Ordering::Relaxed);
+    overlay::NO_WALL.store(flag("Hide in-wall overlay"), Ordering::Relaxed);
+    overlay::NO_GUI.store(flag("Hide pumpkin, spyglass and powder snow overlays"), Ordering::Relaxed);
+    overlay::NO_HURT.store(flag("Hide hurt cam"), Ordering::Relaxed);
+    NO_SCOREBOARD.store(flag("Hide scoreboard"), Ordering::Relaxed);
+    if flag("Hide titles") {
+        game.titles.clear();
+    }
+    if flag("Hide held item name") {
+        game.tool_highlight.timer = 0;
+    }
+    // The dim and blur behind menus: ClickGUI's Menu dim switch (off hides them).
+    let gui = mods.iter().find(|m| m.name == "ClickGUI");
+    overlay::NO_MENU.store(!gui.is_some_and(|m| m.b("Menu dim")), Ordering::Relaxed);
+    overlay::INVENTORY_BLUR.store(gui.is_some_and(|m| m.b("Menu dim") && m.b("Inventory blur")), Ordering::Relaxed);
+    // Effects the server put on the player that only change what it sees, and those No Status Effects lists: kept
+    // aside while hidden, counted down as the game would, and put back when No Render (or its switch) goes off.
+    let (blind, dark, nausea, slow) = (flag("Hide blindness"), flag("Hide darkness"), flag("Hide nausea"), flag("Remove slowness"));
+    let hide = |id: &str| {
+        (blind && id == "blindness")
+            || (dark && id == "darkness")
+            || (nausea && id == "nausea")
+            || (slow && id == "slowness")
+            || super::sunset_parity::ignored_effect(id)
+    };
+    let taken: Vec<_> = game.potions.effects.list.extract_if(.., |e| hide(e.id)).collect();
+    let back: Vec<_> = rs(|r| {
+        for e in &mut r.hidden_effects {
+            if e.duration > 0 {
+                e.duration -= 1;
+            }
+        }
+        r.hidden_effects.retain(|e| e.duration != 0);
+        for e in taken {
+            r.hidden_effects.retain(|h| h.id != e.id);
+            r.hidden_effects.push(e);
+        }
+        r.hidden_effects.extract_if(.., |e| !hide(e.id)).collect()
+    });
+    // Slowness's modifier comes with the server's attributes, after its effect: taken off every tick it is hidden,
+    // and put back with the effect.
+    let hidden_slow = rs(|r| r.hidden_effects.iter().any(|e| e.id == "slowness"));
+    for e in back {
+        if e.id == "slowness"
+            && let Some(p) = game.player.as_mut()
+        {
+            let _ = p.set_modifier(SPEED, SLOWNESS, -0.15 * f64::from(e.amplifier + 1), "add_multiplied_total", true);
+        }
+        game.potions.effects.add(e);
+    }
+    if hidden_slow
+        && let Some(p) = game.player.as_mut()
+    {
+        let _ = p.set_modifier(SPEED, SLOWNESS, 0.0, "add_multiplied_total", false);
+    }
+}
+
+const SPEED: &str = "minecraft:movement_speed";
+const SLOWNESS: &str = "minecraft:effect.slowness";
+
+// Xray: the mesher draws only the listed blocks (and water, lava and the blocks you placed, if asked); the world is
+// rebuilt when that changes.
+fn xray(game: &mut Game<'_>, mods: &[Module]) {
+    // Placed blocks are remembered while the switch is on, Xray on or off.
+    placed_blocks(game, mods.iter().find(|m| m.name == "Xray"));
+    let m = on(mods, "Xray");
+    let want = m.as_ref().map(|m| m.t("Blocks").to_owned());
+    let (water, lava) = m.as_ref().map_or((false, false), |m| (m.b("Show water"), m.b("Show lava")));
+    let key = (want.is_some(), want.clone().unwrap_or_default(), water, lava);
+    if rs(|r| r.xray.as_ref() == Some(&key)) {
+        // The game rebuilt the hidden states without Xray's (a join, another mod's refresh): Xray's go back in.
+        if want.is_some()
+            && std::sync::Arc::as_ptr(&game.pack.context.hidden_states).cast::<u8>() as usize
+                != XRAY_TABLE.load(Ordering::Relaxed)
+        {
+            xray_hide(game);
+        }
+        return;
+    }
+    let shown = |name: &str| (water && short(name) == "water") || (lava && short(name) == "lava");
+    let ids: HashSet<u32> = match &want {
+        Some(list) => game
+            .res
+            .facts()
+            .states
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| listed(list, &s.name) || shown(&s.name))
+            .map(|(i, _)| i as u32)
+            .collect(),
+        None => HashSet::new(),
+    };
+    if let Ok(mut set) = ::sunset_core::xray::VISIBLE.write() {
+        *set = ids;
+    }
+    ::sunset_core::xray::ON.store(want.is_some(), Ordering::Relaxed);
+    xray_hide(game);
+    rs(|r| r.xray = Some(key));
+}
+
+// The table of states the mesher hides (`block_render_visibility`): the mods' answers, and with Xray every state it
+// doesn't list, so those draw as air and the listed blocks show with every face. As the game's own
+// refresh_render_visibility, the loaded sections are meshed again when the table changes.
+static XRAY_TABLE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn xray_hide(game: &mut Game<'_>) {
+    use std::sync::Arc;
+    let on = ::sunset_core::xray::ON.load(Ordering::Relaxed);
+    let asked = mod_api::__private::has_scoped_hook(mod_api::HookId::BlockRenderVisibility);
+    let visible = ::sunset_core::xray::VISIBLE.read().map(|v| v.clone()).unwrap_or_default();
+    let states = game.pack.assets.registry.len();
+    let mut table = Vec::with_capacity(states);
+    for state in 0..states {
+        let mut hidden = false;
+        if asked {
+            game.native_block_render_visibility(horizon_world::registry::BlockStateId(state as u32), &mut hidden);
+        }
+        table.push(hidden || (on && state != 0 && !visible.contains(&(state as u32))));
+    }
+    let table: Arc<[bool]> = if table.contains(&true) { table.into() } else { Arc::from([]) };
+    if table != game.pack.context.hidden_states {
+        let old = &game.pack.context;
+        game.pack.context = Arc::new(horizon_client::streaming::WorkerContext {
+            assets: old.assets.clone(),
+            render: old.render.clone(),
+            tables: old.tables.clone(),
+            biomes: old.biomes.clone(),
+            light: old.light.clone(),
+            hidden_states: table,
+            part_tables: old.part_tables.clone(),
+        });
+        let context = game.worker_context();
+        game.streaming.reload_resources(&mut game.world, context);
+    }
+    XRAY_TABLE.store(Arc::as_ptr(&game.pack.context.hidden_states).cast::<u8>() as usize, Ordering::Relaxed);
+}
+
+// Clear Water: the mesher draws water with the copy of its sprites at the chosen opacity and a lighter tint; the
+// world is rebuilt when that changes.
+fn clear_water(game: &mut Game<'_>, mods: &[Module]) {
+    use ::sunset_core::water as w;
+    let key = mods.iter().find(|m| m.name == "Clear Water" && m.on).map_or((w::STEPS as u32, 0), |m| {
+        ((m.n("Opacity") / 100.0 * w::STEPS as f64).round().clamp(0.0, w::STEPS as f64) as u32, m.n("Lighter tint").round().clamp(0.0, 100.0) as u32)
+    });
+    // The tint goes into the biomes' water colours (mixins/water_sprites.rs); the game asks for them only when told,
+    // so they are asked again on a change and each second (a new world brings its own table; unchanged colours
+    // rebuild nothing). The opacity can't be changed on this build.
+    let changed = (w::LEVEL.swap(key.0, Ordering::Relaxed), w::TINT.swap(key.1, Ordering::Relaxed)) != key;
+    if changed || (key.1 > 0 && game.ticks % 20 == 0) {
+        game.refresh_biome_colors();
+    }
+}
+
+// Show placed blocks: where your own placing put a block, oldest first, for the world or server they are in (kept
+// in the mod's data folder), and the places a block was just placed on, with what was there and until which tick
+// to look for the new block.
+#[derive(Default)]
+struct Placed {
+    key: String,
+    at: Vec<[i32; 3]>,
+    pending: Vec<([i32; 3], u32, u64)>,
+    changed: bool,
+    saved_tick: u64,
+}
+
+// The world or server, as the name of its file.
+fn place_file(game: &Game<'_>) -> Option<String> {
+    Some(format!("xray-placed-{:016x}", super::sunset_util::world_hash(game)?))
+}
+
+// A use on a block: the block itself (when it can be replaced) or the one beside the face is where a block may go.
+pub(super) fn sent(game: &Game<'_>, packet: &horizon_protocol::packets::play::Serverbound) {
+    use horizon_protocol::packets::play::Serverbound as S;
+    let S::UseItemOn(p) = packet else {
+        return;
+    };
+    let [x, y, z] = p.pos;
+    if short(&game.res.facts().get(game.world.block(x, y, z)).name) == "ender_chest" {
+        rs(|r| r.ender_open = true);
+    }
+    if !rs(|r| !r.placed.key.is_empty()) {
+        return;
+    }
+    let n = FACES[p.face.clamp(0, 5) as usize];
+    let until = game.ticks + 10;
+    rs(|r| {
+        for at in [[x, y, z], [x + n[0], y + n[1], z + n[2]]] {
+            r.placed.pending.push((at, game.world.block(at[0], at[1], at[2]).0, until));
+        }
+    });
+}
+
+// Shulker Peek: an ender chest's slots while its menu is open (the one opened by a use on an ender chest).
+fn ender_seen(game: &mut Game<'_>) {
+    if game.screen != super::Screen::Inventory {
+        rs(|r| {
+            r.ender_open = false;
+            r.pinned = None;
+        });
+        return;
+    }
+    if !rs(|r| r.ender_open) {
+        return;
+    }
+    let slots: Vec<(u8, horizon_client::items::ItemStack)> =
+        (0..27u8).filter_map(|i| game.slot_mut(300 + usize::from(i)).clone().map(|s| (i, s))).collect();
+    rs(|r| r.ender = Some(slots));
+}
+
+// Shulker Peek, drawn before a stack's tooltip: a shulker box's (or the ender chest's last seen) slots in a 9 by 3
+// grid above the pointer, tinted the box's colour. Remembered as hovered, for a middle click to pin it.
+pub(super) fn peek(game: &Game<'_>, batch: &mut horizon_client::hud::HudBatch, stack: &horizon_client::items::ItemStack, x: f32, y: f32) {
+    if !game.sunset_window() || !game.native_on(super::sunset::ID) {
+        return;
+    }
+    let Some(m) = super::sunset::with(|s| s.module("Shulker Peek").filter(|m| m.on).cloned()) else {
+        return;
+    };
+    let id = short(&stack.item);
+    let (slots, tint) = if let Some(colour) = id.strip_suffix("shulker_box") {
+        (stack.extra.as_ref().map(|d| d.container.clone()).unwrap_or_default(), box_colour(colour.trim_end_matches('_')))
+    } else if id == "ender_chest" && m.b("Ender chest") {
+        match rs(|r| r.ender.clone()) {
+            Some(slots) => (slots, 0x0F_4040),
+            None => return,
+        }
+    } else {
+        return;
+    };
+    let top = (y - 14.0 - GRID[1]).max(0.0);
+    let left = (x + 12.0).min(batch.width - GRID[0]).max(0.0);
+    draw_grid(game, batch, &slots, tint, left, top);
+    rs(|r| r.peeked = Some((slots, tint, (x, y), std::time::Instant::now())));
+}
+
+// The grid's size: nine by three slots of 18 and a border of 4.
+const GRID: [f32; 2] = [9.0 * 18.0 + 8.0, 3.0 * 18.0 + 8.0];
+
+fn draw_grid(game: &Game<'_>, batch: &mut horizon_client::hud::HudBatch, slots: &[(u8, horizon_client::items::ItemStack)], tint: u32, left: f32, top: f32) {
+    let [w, h] = GRID;
+    game.native_fill(batch, [left, top, w, h], 0xF000_0000 | tint);
+    game.native_fill(batch, [left + 2.0, top + 2.0, w - 4.0, h - 4.0], 0xE018_1818);
+    for i in 0..27u8 {
+        let at = [left + 4.0 + f32::from(i % 9) * 18.0, top + 4.0 + f32::from(i / 9) * 18.0];
+        game.native_fill(batch, [at[0], at[1], 18.0, 18.0], 0x6000_0000 | tint);
+        game.native_fill(batch, [at[0] + 1.0, at[1] + 1.0, 16.0, 16.0], 0xFF8B_8B8B);
+    }
+    for (slot, item) in slots.iter().filter(|(i, _)| *i < 27) {
+        game.draw_item(batch, item, left + 5.0 + f32::from(slot % 9) * 18.0, top + 5.0 + f32::from(slot / 9) * 18.0);
+    }
+}
+
+// Shulker Peek's read-only view: a middle click on a peeked box pins its grid in the middle of the screen, in place
+// of the tooltips, until the next click or the screen closes. True when the click was Shulker Peek's.
+pub(super) fn peek_press(game: &Game<'_>, middle: bool) -> bool {
+    if rs(|r| r.pinned.take()).is_some() {
+        return true;
+    }
+    // Shown just now, for the slot the pointer is on now.
+    let fresh = rs(|r| r.peeked.take()).filter(|p| p.2 == game.cursor && p.3.elapsed() < std::time::Duration::from_millis(150));
+    match fresh {
+        Some((slots, tint, ..)) if middle && game.screen == super::Screen::Inventory => {
+            rs(|r| r.pinned = Some((slots, tint)));
+            true
+        }
+        _ => false,
+    }
+}
+
+// The pinned view, drawn where the hovered slot's tooltip would go. True when it was drawn (no tooltip then).
+pub(super) fn pinned(game: &Game<'_>, batch: &mut horizon_client::hud::HudBatch) -> bool {
+    let Some((slots, tint)) = rs(|r| r.pinned.clone()) else {
+        return false;
+    };
+    let (left, top) = (((batch.width - GRID[0]) / 2.0).floor(), ((batch.height - GRID[1]) / 2.0).floor());
+    game.native_fill(batch, [0.0, 0.0, batch.width, batch.height], 0x8000_0000);
+    draw_grid(game, batch, &slots, tint, left, top);
+    true
+}
+
+// A shulker box's colour, by its dye ("" is the plain purple one).
+fn box_colour(dye: &str) -> u32 {
+    match dye {
+        "white" => 0xE9ECEC,
+        "orange" => 0xF07613,
+        "magenta" => 0xBD44B3,
+        "light_blue" => 0x3AAFD9,
+        "yellow" => 0xF8C627,
+        "lime" => 0x70B919,
+        "pink" => 0xED8DAC,
+        "gray" => 0x3E4447,
+        "light_gray" => 0x8E8E86,
+        "cyan" => 0x158991,
+        "blue" => 0x35399D,
+        "brown" => 0x724728,
+        "green" => 0x546D1B,
+        "red" => 0xA12722,
+        "black" => 0x141519,
+        _ => 0x976997,
+    }
+}
+
+// The six faces' directions, in the protocol's order: down, up, north, south, west, east.
+const FACES: [[i32; 3]; 6] = [[0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1], [-1, 0, 0], [1, 0, 0]];
+
+fn placed_blocks(game: &mut Game<'_>, xray: Option<&Module>) {
+    let want = xray.filter(|m| m.b("Show placed blocks"));
+    let file = want.and_then(|_| place_file(game)).unwrap_or_default();
+    if rs(|r| r.placed.key != file) {
+        // The last world's changes are kept before the next world's are read.
+        if let Some((key, at)) = rs(|r| r.placed.changed.then(|| (r.placed.key.clone(), r.placed.at.clone()))) {
+            save_placed(game, &key, &at);
+        }
+        let at = if file.is_empty() { Vec::new() } else { load_placed(game, &file) };
+        mark(game, &at, &[]);
+        rs(|r| r.placed = Placed { key: file, at, ..Placed::default() });
+        if ::sunset_core::xray::ON.load(Ordering::Relaxed) {
+            game.all_sections_changed();
+        }
+    }
+    let Some(m) = want else {
+        return;
+    };
+    let keep = m.n("Placed blocks kept") as usize;
+    let tick = game.ticks;
+    // A block that turned up where one was placed is remembered; one that is air now (broken) is forgotten.
+    let air = |game: &Game<'_>, at: [i32; 3]| game.res.facts().is_air(game.world.block(at[0], at[1], at[2]));
+    let pending = rs(|r| std::mem::take(&mut r.placed.pending));
+    let (mut new, mut later) = (Vec::new(), Vec::new());
+    for (at, before, until) in pending {
+        let now = game.world.block(at[0], at[1], at[2]);
+        if now.0 != before && !air(game, at) {
+            new.push(at);
+        } else if until > tick {
+            later.push((at, before, until));
+        }
+    }
+    let gone: Vec<[i32; 3]> = if tick % 10 == 0 {
+        rs(|r| r.placed.at.clone()).into_iter().filter(|&at| game.world.chunks.contains_key(&(at[0] >> 4, at[2] >> 4)) && air(game, at)).collect()
+    } else {
+        Vec::new()
+    };
+    let changed = rs(|r| {
+        let p = &mut r.placed;
+        p.pending.extend(later);
+        p.at.retain(|at| !gone.contains(at));
+        for at in &new {
+            p.at.retain(|a| a != at);
+            p.at.push(*at);
+        }
+        let over = p.at.len().saturating_sub(keep);
+        p.at.drain(..over);
+        p.changed |= !new.is_empty() || !gone.is_empty() || over > 0;
+        let save = p.changed && tick >= p.saved_tick + 100;
+        if save {
+            p.changed = false;
+            p.saved_tick = tick;
+        }
+        (!new.is_empty() || !gone.is_empty(), save.then(|| (p.key.clone(), p.at.clone())))
+    });
+    if changed.0 {
+        mark(game, &rs(|r| r.placed.at.clone()), &new);
+    }
+    if let Some((key, at)) = changed.1 {
+        save_placed(game, &key, &at);
+    }
+}
+
+fn save_placed(game: &Game<'_>, file: &str, at: &[[i32; 3]]) {
+    let text: Vec<String> = at.iter().map(|[x, y, z]| format!("{x},{y},{z}")).collect();
+    game.native_set_setting(super::sunset::ID, file, &text.join(";"));
+}
+
+fn load_placed(game: &Game<'_>, file: &str) -> Vec<[i32; 3]> {
+    let text = game.native_setting(super::sunset::ID, file).unwrap_or_default();
+    text.split(';')
+        .filter_map(|p| {
+            let mut n = p.split(',').map(|v| v.trim().parse::<i32>().ok());
+            Some([n.next()??, n.next()??, n.next()??])
+        })
+        .collect()
+}
+
+// The places Xray's mesher shows whatever they hold, and the sections of `redraw` drawn again with them.
+fn mark(game: &mut Game<'_>, all: &[[i32; 3]], redraw: &[[i32; 3]]) {
+    ::sunset_core::xray::set_placed(all.iter().copied().collect());
+    if !::sunset_core::xray::ON.load(Ordering::Relaxed) {
+        return;
+    }
+    for &[x, y, z] in redraw {
+        if let Some(sy) = game.world.chunks.get(&(x >> 4, z >> 4)).map(|c| (y - c.min_y()) >> 4)
+            && sy >= 0
+        {
+            game.world.dirty_sections.insert((x >> 4, sy, z >> 4));
+        }
+    }
+}
+
+// ---- Tunnel ESP
+
+// Sunset's TunnelESP: a block you can walk through (air, or no collision and no fluid) or stand on (collision and no
+// fluid), each from one lookup.
+fn through(game: &Game<'_>, p: [i32; 3]) -> bool {
+    let (facts, state) = (game.res.facts(), game.world.block(p[0], p[1], p[2]));
+    facts.is_air(state) || (facts.get(state).fluid_level == 0 && !facts.get(state).full_collision)
+}
+
+fn walk_on(game: &Game<'_>, p: [i32; 3]) -> bool {
+    let (facts, state) = (game.res.facts(), game.world.block(p[0], p[1], p[2]));
+    !facts.is_air(state) && facts.get(state).fluid_level == 0 && facts.get(state).full_collision
+}
+
+// Room to walk in: a floor, two blocks of space and a roof.
+fn walk_in(game: &Game<'_>, [x, y, z]: [i32; 3]) -> bool {
+    walk_on(game, [x, y - 1, z]) && through(game, [x, y, z]) && !through(game, [x, y + 2, z]) && through(game, [x, y + 1, z])
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum Side {
+    Walkable,
+    Blocked,
+    Partial,
+}
+
+fn side(game: &Game<'_>, p: [i32; 3]) -> Side {
+    if walk_in(game, p) {
+        Side::Walkable
+    } else if !through(game, p) && !through(game, [p[0], p[1] + 1, p[2]]) {
+        Side::Blocked
+    } else {
+        Side::Partial
+    }
+}
+
+// Walkable on two opposite sides and walled on the other two; the cheap tests first, so open ground and solid rock
+// are turned away after a lookup or two.
+fn is_tunnel(game: &Game<'_>, p: [i32; 3]) -> bool {
+    if !walk_in(game, p) {
+        return false;
+    }
+    let mut sides = [Side::Partial; 4];
+    for (s, [dx, dz]) in sides.iter_mut().zip([[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        *s = side(game, [p[0] + dx, p[1], p[2] + dz]);
+        if *s == Side::Partial {
+            return false;
+        }
+    }
+    let [e, w, s, n] = sides;
+    (e == Side::Walkable && w == Side::Walkable && s == Side::Blocked && n == Side::Blocked)
+        || (e == Side::Blocked && w == Side::Blocked && s == Side::Walkable && n == Side::Walkable)
+}
+
+fn scan_tunnels(game: &Game<'_>, m: &Module, ticks: u64) {
+    let Some(at) = block_pos(game) else {
+        return;
+    };
+    let range = m.n("Range") as i32;
+    rs(|r| {
+        let ended = r.tunnels.tick(ticks, at, range, range as u64, 40, 8, |c, x, out| {
+            for z in c[2] - range..=c[2] + range {
+                for y in c[1] - 12..=c[1] + 12 {
+                    if is_tunnel(game, [x, y, z]) {
+                        out.push(([x, y, z], ()));
+                    }
+                }
+            }
+            (2 * range as usize + 1) * 25 * 2
+        });
+        // Only runs of tunnel, not lone cells.
+        if ended {
+            let all: HashSet<[i32; 3]> = r.tunnels.found.iter().map(|f| f.0).collect();
+            r.tunnels.found.retain(|(p, ())| [[1, 0], [-1, 0], [0, 1], [0, -1]].iter().any(|d| all.contains(&[p[0] + d[0], p[1], p[2] + d[1]])));
+        }
+    });
+}
+
+// ---- Void ESP
+
+fn scan_voids(game: &Game<'_>, m: &Module, ticks: u64) {
+    let dim = game.dim.id();
+    if dim == "minecraft:the_end" {
+        return;
+    }
+    let Some(at) = block_pos(game) else {
+        return;
+    };
+    let radius = m.n("Horizontal radius") as i32;
+    let height = m.n("Hole height") as i32;
+    let air_only = m.b("Air only");
+    let roof = m.b("Nether roof") && dim == "minecraft:the_nether";
+    let wrong = |x: i32, y: i32, z: i32| -> bool {
+        if !game.world.loaded(x, z) {
+            return true;
+        }
+        let air = is_air(game, [x, y, z]);
+        if air_only { !air } else { !air && facts(game, [x, y, z]).name.ends_with("bedrock") }
+    };
+    let hole = |x: i32, z: i32, floor: i32, roof: bool| -> bool {
+        (0..height).all(|i| !wrong(x, if roof { floor - i } else { floor + i }, z))
+    };
+    let min_y = if dim == "minecraft:the_nether" { 0 } else { -64 };
+    let key = u64::from(air_only) | u64::from(roof) << 1 | (height as u64) << 2 | (radius as u64) << 8;
+    rs(|r| {
+        r.voids.tick(ticks, at, radius, key, 40, 8, |c, x, out| {
+            for z in c[2] - radius..=c[2] + radius {
+                if hole(x, z, min_y, false) {
+                    out.push(([x, min_y, z], ()));
+                }
+                if roof && hole(x, z, 127, true) {
+                    out.push(([x, 127, z], ()));
+                }
+            }
+            (2 * radius as usize + 1) * height as usize * 2
+        })
+    });
+}
+
+// ---- Light Overlay
+
+fn scan_lights(game: &Game<'_>, m: &Module, ticks: u64) {
+    let Some(at) = block_pos(game) else {
+        return;
+    };
+    let (hr, vr) = (m.n("Horizontal range") as i32, m.n("Vertical range") as i32);
+    let limit = m.n("Light level") as u8;
+    let key = (hr as u64) | (vr as u64) << 8 | u64::from(limit) << 16;
+    rs(|r| {
+        r.lights.tick(ticks, at, hr, key, 10, 2, |c, x, out| {
+            for z in c[2] - hr..=c[2] + hr {
+                for y in c[1] - vr..=c[1] + vr {
+                    let p = [x, y, z];
+                    if !is_air(game, p) {
+                        continue;
+                    }
+                    let below = [x, y - 1, z];
+                    let f = facts(game, below);
+                    // `isValidSpawnBlock`.
+                    if is_air(game, below) || !f.solid_render || f.name.ends_with("bedrock") || f.name.ends_with("barrier") {
+                        continue;
+                    }
+                    let light = game.world.light(x, y, z);
+                    let (block, sky) = (light & 0x0F, light >> 4);
+                    if block > limit {
+                        continue;
+                    }
+                    out.push((p, sky > limit));
+                }
+            }
+            (2 * hr as usize + 1) * (2 * vr as usize + 1) * 3
+        })
+    });
+}
+
+// ---- drawing
+
+pub(super) fn overlay(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut impl Canvas, lw: f32) {
+    let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
+    let me = player_pos(game).unwrap_or([0.0; 3]);
+    // Freecam's tracer: a line from the middle of the view to your body.
+    if get("Freecam").is_some_and(|m| m.b("Tracer"))
+        && freecam_flying()
+        && let Some(body) = cam.project([me[0], me[1] + 0.9, me[2]])
+    {
+        line(out, [cam.w as f32 / 2.0, cam.h as f32 / 2.0], body, 0xFF00_0000 | accent(), lw);
+    }
+    if let Some(m) = get("Tunnel ESP") {
+        rs(|r| flat_boxes(cam, out, m, r.tunnels.found.iter().map(|f| f.0), m.n("Height"), 0xFF00_0000 | accent(), lw));
+    }
+    if let Some(m) = get("Void ESP") {
+        rs(|r| flat_boxes(cam, out, m, r.voids.found.iter().map(|f| f.0).filter(|p| dist(me, center_of(*p)) < 64.0), 1.0, 0xFF80_40FF, lw));
+    }
+    if let Some(m) = get("Light Overlay") {
+        let (dots, max) = (m.p("Mode") == "Potato", m.n("Max") as usize);
+        rs(|r| {
+            let mut drawn = 0;
+            for &(p, potential) in &r.lights.found {
+                let (x, y, z) = (f64::from(p[0]), f64::from(p[1]) + 0.0075, f64::from(p[2]));
+                let colour = if potential { 0xFFFF_FF55 } else { 0xFFFF_5555 };
+                let shown = if dots {
+                    potato(cam, out, [x + 0.5, y, z + 0.5], colour, lw)
+                } else if cam.sees([x + 0.5, y, z + 0.5], 0.71) {
+                    if let (Some(a), Some(b)) = (cam.project([x, y, z]), cam.project([x + 1.0, y, z + 1.0])) {
+                        line(out, a, b, colour, lw);
+                    }
+                    if let (Some(a), Some(b)) = (cam.project([x + 1.0, y, z]), cam.project([x, y, z + 1.0])) {
+                        line(out, a, b, colour, lw);
+                    }
+                    true
+                } else {
+                    false
+                };
+                if shown {
+                    drawn += 1;
+                    if drawn >= max {
+                        break;
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Flat boxes on blocks, `h` high, nearest first, up to the module's Max.
+fn flat_boxes(cam: &Camera, out: &mut impl Canvas, m: &Module, found: impl Iterator<Item = [i32; 3]>, h: f64, colour: u32, lw: f32) {
+    let (look, max) = (Look::of(m), m.n("Max") as usize);
+    let mut drawn = 0;
+    for p in found {
+        let lo = [f64::from(p[0]), f64::from(p[1]), f64::from(p[2])];
+        if draw_box(cam, out, &look, lo, [lo[0] + 1.0, lo[1] + h, lo[2] + 1.0], colour, lw) {
+            drawn += 1;
+            if drawn >= max {
+                return;
+            }
+        }
+    }
+}

@@ -1,12 +1,13 @@
 # Sunset workspace: launcher/ (the Sunset launcher), client/ (Sunset itself, built into Horizon by
 # horizon-mixins, not by cargo) and plugins/ (the plugin API's test plugin and checks).
 #
+# client/sunset is the .hmod package (built by the launcher against the Horizon SDK, see client/docs/hmod-port.md).
 # client/baritone-engine stays a standalone package: it ships as baritone-engine-<version>-source.zip with its
 # own Cargo.lock and is built with --locked, so the launcher's dependencies must not enter its lockfile.
 [workspace]
 resolver = "3"
 members = ["launcher"]
-exclude = ["client/baritone-engine"]
+exclude = ["client/baritone-engine", "client/sunset"]
 
 [workspace.package]
 edition = "2024"

@@ -8,3 +8,6 @@ __pycache__/
 .wrangler/
 node_modules/
 target/
+
+# The Horizon SDK the launcher unpacks next to the .hmod crate.
+client/sunset/.horizon/
