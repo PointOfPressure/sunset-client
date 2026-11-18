@@ -5,7 +5,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     App, AppContext as _, Application, Bounds, ClickEvent, ClipboardItem, Context, ElementId, Hsla, Image, ImageFormat, InteractiveElement as _,
     IntoElement, MouseButton, ParentElement as _, PathBuilder, Render, Rgba, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
-    WindowBounds, WindowOptions, canvas, div, img, point, px, rgb, size,
+    WindowBounds, WindowOptions, anchored, canvas, deferred, div, img, point, px, rgb, size,
 };
 use std::path::PathBuf;
 use std::process::Child;
@@ -40,6 +40,8 @@ enum Menu {
     Account,
     More,
     Window,
+    Platform,
+    Instance,
 }
 
 enum Msg {
@@ -454,6 +456,7 @@ fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, primary: boo
 enum Icon {
     Play,
     Chevron,
+    Check,
     Folder,
     Arrow,
 }
@@ -479,6 +482,11 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
                     p.move_to(point(x + w * 0.2, y + h * 0.38));
                     p.line_to(point(x + w * 0.5, y + h * 0.66));
                     p.line_to(point(x + w * 0.8, y + h * 0.38));
+                }
+                Icon::Check => {
+                    p.move_to(point(x + w * 0.2, y + h * 0.52));
+                    p.line_to(point(x + w * 0.42, y + h * 0.74));
+                    p.line_to(point(x + w * 0.8, y + h * 0.3));
                 }
                 Icon::Arrow => {
                     p.move_to(point(x + w * 0.12, y + h * 0.5));
@@ -583,24 +591,49 @@ fn window_label(w: &str) -> String {
     if w == "fullscreen" { "Fullscreen".into() } else { w.replace('x', " × ") }
 }
 
+/// The top bar's pill buttons (platform, instance, account) share this shape.
+fn top_chip(id: impl Into<ElementId>) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .h(px(36.))
+        .px(px(14.))
+        .rounded(px(18.))
+        .bg(rgb(CHIP))
+        .border_1()
+        .border_color(rgb(LINE))
+        .cursor_pointer()
+        .hover(|s| s.bg(rgb(0x26262a)))
+}
+
+/// A menu row label with a checkmark on the right when `on`.
+fn checked(label: impl Into<SharedString>, on: bool) -> gpui::Div {
+    div()
+        .flex()
+        .flex_1()
+        .items_center()
+        .justify_between()
+        .gap(px(16.))
+        .child(label.into())
+        .child(if on { icon(Icon::Check, 14., ACCENT).into_any_element() } else { div().w(px(14.)).into_any_element() })
+}
+
 // ---------------------------------------------------------------- views
 
 impl Launcher {
     fn top_bar(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let has = self.installed.is_some();
         let tabs = [(Tab::Overview, "Overview"), (Tab::Plugins, "Plugins"), (Tab::Profiles, "Profiles"), (Tab::Settings, "Settings")];
-        let chip = |label: String| {
-            div().flex().items_center().h(px(36.)).px(px(14.)).rounded(px(18.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).child(text(label, 13., TEXT))
-        };
         div()
             .flex()
             .items_center()
             .gap(px(8.))
-            .child(chip("Horizon".into()))
-            .child(chip(if has { "Sunset".into() } else { "No instance".into() }))
-            .child(div().flex_1())
+            .child(self.dropdown(Menu::Platform, "Horizon", cx))
+            .child(self.dropdown(Menu::Instance, if has { "Sunset" } else { "No instance" }, cx))
             .child(
-                div().flex().p(px(3.)).gap(px(2.)).rounded(px(20.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).children(tabs.into_iter().filter(|(t, _)| has || *t == Tab::Overview).map(|(t, label)| {
+                div().flex().ml(px(4.)).p(px(3.)).gap(px(2.)).rounded(px(20.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).children(tabs.into_iter().filter(|(t, _)| has || *t == Tab::Overview).map(|(t, label)| {
                     let on = self.tab == t;
                     div()
                         .id(label)
@@ -628,24 +661,53 @@ impl Launcher {
             .child(self.account_chip(cx))
     }
 
+    /// A top-bar chip that toggles `menu`; its list drops down under it (the backdrop is in `menu_popup`).
+    fn dropdown(&self, menu: Menu, label: &'static str, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let id = if menu == Menu::Platform { "platform" } else { "instance" };
+        let chip = top_chip(id)
+            .child(text(label, 13., TEXT))
+            .child(icon(Icon::Chevron, 14., MUTED))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.menu = if this.menu == Some(menu) { None } else { Some(menu) };
+                cx.notify();
+            }));
+        let list = (self.menu == Some(menu)).then(|| {
+            let pop = card().mt(px(6.)).p(px(4.)).min_w(px(200.)).flex().flex_col().shadow_lg().occlude();
+            let pop = match menu {
+                // Reserved for Sunrise/Java later; Horizon is the only platform today.
+                Menu::Platform => pop.child(self.menu_row("p-horizon", checked("Horizon", true), cx, |_, _| {})),
+                _ => {
+                    let pop = match self.installed {
+                        Some(_) => pop.child(self.menu_row("i-sunset", checked("Sunset", true), cx, |this, _| this.tab = Tab::Overview)),
+                        None => pop,
+                    };
+                    pop.child(self.menu_item("i-new", "New instance", cx, |this, cx| this.new_instance(cx)))
+                }
+            };
+            div().absolute().top_full().left_0().child(deferred(anchored().child(pop)).with_priority(1))
+        });
+        div().relative().child(chip).children(list)
+    }
+
+    /// The menu's New instance: the same install the empty Overview offers. Only one instance exists for now, so
+    /// with it installed this says so instead of reinstalling over it.
+    fn new_instance(&mut self, cx: &mut Context<Self>) {
+        self.tab = Tab::Overview;
+        if self.installed.is_some() {
+            self.note = Some((false, "Sunset has one instance for now, and it is already installed. Repair it from Overview.".into()));
+        } else {
+            self.start_install(false, cx);
+        }
+    }
+
     fn account_chip(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(a) = self.accounts.iter().find(|a| a.selected).or(self.accounts.first()) else {
-            return button("sign-in", "Sign in", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_sign_in(cx))).into_any_element();
+            return top_chip("sign-in").child(text("Sign in", 13., TEXT)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_sign_in(cx))).into_any_element();
         };
         let head = self.faces.iter().find(|(u, _)| u == &a.uuid).map(|(_, f)| face(f, 22.).into_any_element()).unwrap_or_else(|| div().w(px(22.)).h(px(22.)).rounded(px(3.)).bg(rgb(0x3a3a40)).into_any_element());
-        div()
-            .id("account")
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .h(px(36.))
+        top_chip("account")
             .pl(px(8.))
             .pr(px(10.))
-            .rounded(px(18.))
-            .bg(rgb(CHIP))
-            .border_1()
-            .border_color(rgb(LINE))
-            .cursor_pointer()
             .child(head)
             .child(text(a.name.clone(), 13., TEXT))
             .child(icon(Icon::Chevron, 14., MUTED))
@@ -656,7 +718,11 @@ impl Launcher {
             .into_any_element()
     }
 
-    fn menu_item(&self, id: impl Into<ElementId>, label: impl Into<SharedString>, cx: &mut Context<Self>, f: impl Fn(&mut Self, &mut Context<Self>) + 'static) -> impl IntoElement {
+    fn menu_item(&self, id: impl Into<ElementId>, label: impl Into<SharedString>, cx: &mut Context<Self>, f: impl Fn(&mut Self, &mut Context<Self>) + 'static) -> gpui::Stateful<gpui::Div> {
+        self.menu_row(id, div().child(label.into()), cx, f)
+    }
+
+    fn menu_row(&self, id: impl Into<ElementId>, label: gpui::Div, cx: &mut Context<Self>, f: impl Fn(&mut Self, &mut Context<Self>) + 'static) -> gpui::Stateful<gpui::Div> {
         div()
             .id(id)
             .px(px(12.))
@@ -668,7 +734,7 @@ impl Launcher {
             .hover(|s| s.bg(rgb(0x26262a)))
             .text_size(px(13.))
             .text_color(rgb(TEXT))
-            .child(label.into())
+            .child(label)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.menu = None;
                 f(this, cx);
@@ -680,7 +746,8 @@ impl Launcher {
         let m = self.menu?;
         let pop = card().absolute().p(px(4.)).min_w(px(200.)).flex().flex_col().shadow_lg();
         let pop = match m {
-            Menu::Account => {
+            Menu::Platform | Menu::Instance => None,
+            Menu::Account => Some({
                 let mut pop = pop.top(px(64.)).right(px(20.));
                 for (i, a) in self.accounts.iter().enumerate() {
                     let (uuid, name) = (a.uuid.clone(), a.name.clone());
@@ -694,21 +761,21 @@ impl Launcher {
                     }));
                 }
                 pop.child(self.menu_item("add-account", "Add account", cx, |this, cx| this.start_sign_in(cx)))
-            }
-            Menu::More => {
+            }),
+            Menu::More => Some({
                 let logs = self.paths.logs();
                 pop.top(px(400.)).left(px(330.))
                     .child(self.menu_item("m-logs", "Open logs", cx, move |this, cx| this.open(logs.clone(), cx)))
                     .child(self.menu_item("m-check", "Check for updates", cx, |this, _| this.check(false)))
                     .child(self.menu_item("m-repair", "Repair installation", cx, |this, cx| this.start_install(true, cx)))
-            }
-            Menu::Window => {
+            }),
+            Menu::Window => Some({
                 let mut pop = pop.top(px(200.)).right(px(40.));
                 for w in core::WINDOW_SIZES {
                     pop = pop.child(self.menu_item(SharedString::from(w), window_label(w), cx, move |this, cx| this.set_settings(|s| s.window = w.into(), cx)));
                 }
                 pop
-            }
+            }),
         };
         Some(
             div()
@@ -720,7 +787,7 @@ impl Launcher {
                     this.menu = None;
                     cx.notify();
                 })))
-                .child(pop.occlude()),
+                .children(pop.map(|p| p.occlude())),
         )
     }
 
