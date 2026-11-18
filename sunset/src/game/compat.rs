@@ -107,6 +107,7 @@ impl SunsetGame for Game<'_> {
         self.options.execution_role == super::execution_role::ExecutionRole::Client
     }
     fn sunset_text_width(&self, text: &str) -> f32 {
+        crate::game::sunset_font::ensure(&self.gui.atlas.font);
         if crate::game::sunset_font::enabled() {
             self.gui.atlas.font.width_text(&crate::game::sunset_font::text(text))
         } else {

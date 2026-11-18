@@ -11,6 +11,7 @@ use ::sunset_core::font::SCALE;
 pub fn sync(font: &horizon_client::font::Font, gui_scale: f32) {
     use ab_glyph::Font as _;
     use std::sync::atomic::Ordering::Relaxed;
+    ensure(font);
     if f32::from_bits(SCALE.load(Relaxed)) == gui_scale {
         return;
     }
@@ -55,4 +56,50 @@ pub fn text(s: &str) -> horizon_client::text::Text {
             ..Default::default()
         },
     )
+}
+
+// Puts Sunset's fonts into the game's font, once per font (a resource reload builds a new one): the game takes no
+// fonts from a package's assets, so each TrueType file is loaded the way the game loads one named by a definition.
+pub fn ensure(font: &horizon_client::font::Font) {
+    {
+        let cache = font.cache.borrow();
+        if cache.sets.iter().any(|(id, _)| id.starts_with("sunset:")) {
+            return;
+        }
+    }
+    let mut files = std::collections::BTreeMap::new();
+    let mut definitions = Vec::new();
+    for (stem, data) in ::sunset_core::font_data::FILES {
+        let base = stem.strip_suffix("-bold").unwrap_or(stem);
+        let size = FONTS.iter().find(|f| f.0 == base).map_or(8.0, |f| f.1);
+        files.insert(
+            format!("assets/sunset/font/{stem}.ttf"),
+            horizon_assets::resource_source::Resource::bytes(data.to_vec()),
+        );
+        definitions.push((
+            format!("sunset:{stem}"),
+            serde_json::json!({"type": "ttf", "file": format!("sunset:{stem}.ttf"), "size": size, "oversample": 4.0}),
+        ));
+    }
+    let source = horizon_assets::resource_source::ResourceSource::indexed(files);
+    let mut sets = Vec::new();
+    for (id, definition) in definitions {
+        let Some(tt) = horizon_client::font::load_true_type(&source, &definition) else {
+            continue;
+        };
+        sets.push((
+            id,
+            horizon_client::font::FontSet {
+                providers: vec![horizon_client::font::Provider::TrueType(
+                    horizon_client::font::Filter::default(),
+                    Box::new(tt),
+                )],
+                glyphs: Default::default(),
+                non_fishy: Default::default(),
+                by_width: None,
+            },
+        ));
+    }
+    font.cache.borrow_mut().sets.extend(sets);
+    ::sunset_core::font::loaded();
 }

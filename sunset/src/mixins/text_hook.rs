@@ -2,6 +2,7 @@
 fn sunset_text_hook(game: &Game<'_>, batch: &mut HudBatch, text: &str, at: [f32; 2], argb: u32, shadow: bool) -> std::ops::ControlFlow<()> {
     if !::sunset_core::lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
 
+    crate::game::sunset_font::ensure(&game.gui.atlas.font);
     if !crate::game::sunset_font::enabled() {
         return std::ops::ControlFlow::Continue(());
     }

@@ -8,8 +8,8 @@ use crate::font_data::FONTS;
 pub static STYLE: AtomicU8 = AtomicU8::new(1);
 // Set while a header is drawn: it takes the font's bolder weight.
 pub static BOLD: AtomicBool = AtomicBool::new(false);
-// The fonts are the package's own assets, there from the first resource load.
-pub static READY: AtomicBool = AtomicBool::new(true);
+// Set once the game's fonts were loaded with Sunset's (mixins/font_hook.rs).
+pub static READY: AtomicBool = AtomicBool::new(false);
 // The GUI scale the glyphs were last drawn for (f32 bits).
 pub static SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
@@ -33,4 +33,10 @@ pub fn name() -> String {
     let name = FONTS.get(usize::from(STYLE.load(Ordering::Relaxed)).wrapping_sub(1)).map_or(FONTS[0].0, |f| f.0);
     let bold = if BOLD.load(Ordering::Relaxed) { "-bold" } else { "" };
     format!("sunset:{name}{bold}")
+}
+
+// Sunset's fonts were put into the game's font: tune them at the next draw.
+pub fn loaded() {
+    READY.store(true, Ordering::Relaxed);
+    SCALE.store(0, Ordering::Relaxed);
 }

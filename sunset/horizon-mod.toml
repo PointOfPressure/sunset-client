@@ -1856,8 +1856,6 @@ bindings = [
   { name = "input", ty = "&ScreenInputs<'_>", value = "input" },
 ]
 
-# (removed font)
-
 [[native.mixin]]
 id = "text"
 target = "horizon_client::game::native_hooks::base::Game<'_>::native_text"
