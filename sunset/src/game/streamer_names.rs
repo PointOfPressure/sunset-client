@@ -177,6 +177,67 @@ pub fn protect(text: &Text) -> Option<Text> {
     Some(Text::from_spans(spans))
 }
 
+// A layout's texts with the names replaced; a centred one (titles, the action bar, boss bars) stays centred on its
+// new width.
+pub fn protect_draws(
+    mut draws: Vec<horizon_client::hud_layout::GuiDraw>,
+    font: &horizon_client::font::Font,
+    centred: bool,
+) -> Vec<horizon_client::hud_layout::GuiDraw> {
+    for d in &mut draws {
+        if let horizon_client::hud_layout::GuiDraw::Text { text, x, .. } = d
+            && let Some(shown) = protect(text)
+        {
+            if centred {
+                let (old, new) = (horizon_client::hud_layout::width(font, text), horizon_client::hud_layout::width(font, &shown));
+                *x += (old - new) / 2;
+            }
+            *text = shown;
+        }
+    }
+    draws
+}
+
+// A text component in its JSON form (a tab-list name) with the names replaced; true when one was.
+pub fn protect_json(value: &mut serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::String(s) => match protect_str(s) {
+            Some(shown) => {
+                *s = shown;
+                true
+            }
+            None => false,
+        },
+        serde_json::Value::Array(parts) => parts.iter_mut().fold(false, |any, p| protect_json(p) | any),
+        serde_json::Value::Object(map) => {
+            let mut any = false;
+            for (key, part) in map.iter_mut() {
+                any |= match key.as_str() {
+                    "text" => protect_json(part),
+                    "extra" | "with" => protect_json(part),
+                    _ => false,
+                };
+            }
+            any
+        }
+        _ => false,
+    }
+}
+
+// The bridge from the chat's hook (sunset_core::bridge): a line coming into the chat.
+pub fn register() {
+    ::sunset_core::bridge::STREAMER_TEXT.set(chat_line);
+}
+
+fn chat_line(text: ::sunset_core::bridge::Ptr) {
+    // SAFETY: Chat::add's hook passes its `&mut Text`, valid and not otherwise borrowed for this call.
+    #[allow(unsafe_code)]
+    let text = unsafe { &mut *(text as *mut Text) };
+    if let Some(shown) = protect(text) {
+        *text = shown;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

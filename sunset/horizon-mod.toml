@@ -2301,88 +2301,6 @@ bindings = [
 # bindings = [{ name = "world", ty = "&mut MotionWorld<'_, '_, '_>", value = "self" }]
 
 # [[native.mixin]]
-# id = "streamer_text"
-# target = "horizon_client_render::hud::HudBatch::styled_text"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/streamer_text_hook.rs"
-# bindings = [
-#   { name = "batch", ty = "&mut HudBatch", value = "&mut *self" },
-#   { name = "atlas", ty = "&HudAtlas", value = "atlas" },
-#   { name = "text", ty = "&crate::text::Text", value = "text" },
-#   { name = "x", ty = "f32", value = "x" },
-#   { name = "y", ty = "f32", value = "y" },
-#   { name = "color", ty = "u32", value = "color" },
-#   { name = "shadow", ty = "bool", value = "shadow" },
-#   { name = "world", ty = "bool", value = "world" },
-#   { name = "outline", ty = "Option<(u32, [f32; 2])>", value = "outline" },
-# ]
-
-# [[native.mixin]]
-# id = "streamer_width"
-# target = "horizon_client_render::font::Font::width"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/streamer_width_hook.rs"
-# bindings = [
-#   { name = "font", ty = "&Font", value = "&*self" },
-#   { name = "s", ty = "&str", value = "s" },
-# ]
-
-# [[native.mixin]]
-# id = "streamer_width_text"
-# target = "horizon_client_render::font::Font::width_text"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/streamer_width_text_hook.rs"
-# bindings = [
-#   { name = "font", ty = "&Font", value = "&*self" },
-#   { name = "t", ty = "&Text", value = "t" },
-# ]
-
-# [[native.mixin]]
-# id = "streamer_ui"
-# target = "horizon_client_lib::ui_theme::Ui<'_>::text_line"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/streamer_ui_hook.rs"
-# bindings = [
-#   { name = "ui", ty = "&mut Ui<'_>", value = "&mut *self" },
-#   { name = "face", ty = "Face", value = "face" },
-#   { name = "size", ty = "f32", value = "size" },
-#   { name = "line", ty = "f32", value = "line" },
-#   { name = "x", ty = "f32", value = "x" },
-#   { name = "y", ty = "f32", value = "y" },
-#   { name = "color", ty = "u32", value = "color" },
-#   { name = "text", ty = "&str", value = "text" },
-# ]
-
-# [[native.mixin]]
-# id = "streamer_ui_measure"
-# target = "horizon_client_lib::ui_theme::Ui<'_>::measure"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/streamer_ui_measure_hook.rs"
-# bindings = [
-#   { name = "ui", ty = "&Ui<'_>", value = "&*self" },
-#   { name = "face", ty = "Face", value = "face" },
-#   { name = "size", ty = "f32", value = "size" },
-#   { name = "text", ty = "&str", value = "text" },
-# ]
-
-# [[native.mixin]]
-# id = "streamer_sign"
-# target = "horizon_client_render::block_entity_render::draw_text"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/streamer_sign_hook.rs"
-# bindings = [
-#   { name = "scene", ty = "&Scene", value = "scene" },
-#   { name = "call", ty = "&TextCall", value = "call" },
-#   { name = "out", ty = "&mut Vec<Vertex>", value = "out" },
-# ]
-
-# [[native.mixin]]
 # id = "client_brand"
 # target = "horizon_client_lib::net::brand"
 # kind = "HEAD"
@@ -2564,3 +2482,71 @@ target = "horizon_client::game::native_hooks::base::Game<'_>::native_block_highl
 kind = "HEAD"
 helper = "src/mixins/block_overlay_draw_hook.rs"
 bindings = [{ name = "canceled", ty = "&mut bool", value = "&mut *canceled" }]
+
+# Streamer Mode: the names it hides, replaced where each text is made (the chat, name tags, titles, the action bar,
+# boss bars; the sidebar in scoreboard_offset, the tab list in tab_marks)
+[[native.mixin]]
+id = "streamer_chat"
+target = "horizon_client_render::chat::Chat::add"
+kind = "MODIFY_ARG"
+selector = "self.add_message"
+require = 1
+ordinal = 0
+argument = 1
+helper = "src/mixins/streamer_text_hook.rs"
+bindings = [{ name = "value", ty = "Text", value = "$value" }]
+
+[[native.mixin]]
+id = "streamer_name_tag"
+target = "horizon_client::game::names::NameTagLayouts::name_tag"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/streamer_sign_hook.rs"
+bindings = [
+  { name = "this", ty = "&mut NameTagLayouts", value = "&mut *self" },
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *batch" },
+  { name = "atlas", ty = "&HudAtlas", value = "atlas" },
+  { name = "text", ty = "&Text", value = "text" },
+  { name = "y", ty = "f32", value = "y" },
+  { name = "alpha", ty = "u32", value = "alpha" },
+  { name = "background", ty = "bool", value = "background" },
+]
+
+[[native.mixin]]
+id = "streamer_title"
+target = "horizon_client::game::titles::Game<'_>::draw_title"
+kind = "MODIFY_VARIABLE"
+variable = { name = "draws", ordinal = 0, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/streamer_ui_hook.rs"
+bindings = [
+  { name = "value", ty = "Vec<hud_layout::GuiDraw>", value = "$value" },
+  { name = "game", ty = "&Game<'_>", value = "self" },
+]
+
+[[native.mixin]]
+id = "streamer_action_bar"
+target = "horizon_client::game::titles::Game<'_>::draw_overlay_message"
+kind = "MODIFY_VARIABLE"
+variable = { name = "draws", ordinal = 0, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/streamer_ui_hook.rs"
+bindings = [
+  { name = "value", ty = "Vec<hud_layout::GuiDraw>", value = "$value" },
+  { name = "game", ty = "&Game<'_>", value = "self" },
+]
+
+[[native.mixin]]
+id = "streamer_boss_bars"
+target = "horizon_client::game::dragon::Game<'_>::draw_boss_bars"
+kind = "MODIFY_VARIABLE"
+variable = { name = "draws", ordinal = 0, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/streamer_ui_hook.rs"
+bindings = [
+  { name = "value", ty = "Vec<hud_layout::GuiDraw>", value = "$value" },
+  { name = "game", ty = "&Game<'_>", value = "self" },
+]

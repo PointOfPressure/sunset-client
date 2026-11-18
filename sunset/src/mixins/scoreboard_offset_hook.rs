@@ -12,6 +12,8 @@ fn sunset_sidebar(
 ) -> Vec<horizon_client::hud_layout::GuiDraw> {
     let mut draws = operation(w, h, board, objective, font, background, header);
     if ::sunset_core::lifecycle::RUNTIME.running() {
+        // Streamer Mode: the names it hides, replaced.
+        draws = crate::game::sunset_streamer::protect_draws(draws, font, false);
         crate::game::sunset_scoreboard_pos::apply(&mut draws);
     }
     draws

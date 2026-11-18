@@ -1,22 +1,11 @@
-// Streamer Mode: every text drawn in the game's font (HUD, chat, tab list, scoreboard, titles, boss bars, tooltips,
-// screens, name tags in the world) is drawn with the names it hides replaced.
-fn sunset_streamer_text(
-    batch: &mut HudBatch,
-    atlas: &HudAtlas,
-    text: &crate::text::Text,
-    x: f32,
-    y: f32,
-    color: u32,
-    shadow: bool,
-    world: bool,
-    outline: Option<(u32, [f32; 2])>,
-) -> std::ops::ControlFlow<f32> {
-    if !::sunset_core::lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
-
-    match crate::game::sunset_streamer::protect(text) {
-        Some(t) => std::ops::ControlFlow::Break(crate::game::sunset_streamer::guarded(|| {
-            batch.styled_text(atlas, &t, x, y, color, shadow, world, outline)
-        })),
-        None => std::ops::ControlFlow::Continue(()),
+// Streamer Mode: a line coming into the chat, its names replaced (after Debug Report's log and plugins' on_chat have
+// it as it came).
+fn sunset_streamer_chat(value: Text) -> Text {
+    let mut value = value;
+    if ::sunset_core::lifecycle::RUNTIME.running()
+        && let Some(protect) = ::sunset_core::bridge::STREAMER_TEXT.get()
+    {
+        protect(&mut value as *mut Text as ::sunset_core::bridge::Ptr);
     }
+    value
 }

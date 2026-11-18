@@ -35,3 +35,6 @@ pub static CONFIG_PAYLOAD: Hook<fn(Ptr)> = Hook::new();
 pub static RENDER: Hook<fn(Ptr, Ptr)> = Hook::new();
 // The renderer giving up its surface (Renderer::release_surface): &mut Renderer.
 pub static RELEASE_SURFACE: Hook<fn(Ptr)> = Hook::new();
+// Streamer Mode: a chat line coming into the chat (horizon_client::chat::Chat::add): &mut Text, its names replaced in
+// place.
+pub static STREAMER_TEXT: Hook<fn(Ptr)> = Hook::new();

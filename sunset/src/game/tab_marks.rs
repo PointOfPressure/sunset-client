@@ -1,4 +1,4 @@
-// HUD's Tab game modes (and Sunset Presence's sun) on a server: the marks go into the listed players' tab-list names,
+// HUD's Tab game modes (and Sunset Presence's sun) and Streamer Mode's names on a server: the marks go into the listed players' tab-list names,
 // each tick, over the names the server gave (kept here, so a mark taken away or a new name from the server shows as
 // it is). The tab list's own drawing can't be changed on this build.
 use std::collections::HashMap;
@@ -23,7 +23,14 @@ pub fn apply(game: &mut super::Game<'_>, running: bool) {
         let mut one = [p.clone()];
         one[0].display_name = server.clone();
         crate::game::sunset_tab_modes::mark_players(&mut one, board, running);
-        let [shown] = one;
+        let [mut shown] = one;
+        // Streamer Mode: the names it hides, in the tab-list name too.
+        if running {
+            let mut name = shown.display_name.clone().unwrap_or_else(|| crate::game::sunset_tab_modes::base_comp(&shown, board));
+            if crate::game::sunset_streamer::protect_json(&mut name) {
+                shown.display_name = Some(name);
+            }
+        }
         match shown.display_name {
             Some(ours) if Some(&ours) != server.as_ref() => {
                 p.display_name = Some(ours.clone());

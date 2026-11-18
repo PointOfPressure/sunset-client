@@ -70,6 +70,15 @@ pub fn changed(running: bool) -> bool {
     SUNSET_BUILT.swap(built, Relaxed) != built || marks
 }
 
+// A listed player's tab-list name as the game makes it with no display name: the profile name in its team's format.
+pub fn base_comp(p: &horizon_client::tab_list::TabPlayer, board: &horizon_client::scoreboard::Scoreboard) -> serde_json::Value {
+    let name = serde_json::Value::String(p.name.clone());
+    match board.players_team(&p.name) {
+        Some(team) => team.formatted_name_comp(&name),
+        None => name,
+    }
+}
+
 // The listed players with their marks put into their tab-list names (the name the game draws is then the marked
 // one; the list's cache sees the change): the game's own name (its display name, else the team's formatting of the
 // profile name), the Sunset sun before it and the game mode's tag after it, neither in a spectator's italics.
@@ -81,13 +90,7 @@ pub fn mark_players(players: &mut [horizon_client::tab_list::TabPlayer], board: 
         if tag.is_none() && !icon {
             continue;
         }
-        let base = p.display_name.clone().unwrap_or_else(|| {
-            let name = serde_json::Value::String(p.name.clone());
-            match board.players_team(&p.name) {
-                Some(team) => team.formatted_name_comp(&name),
-                None => name,
-            }
-        });
+        let base = p.display_name.clone().unwrap_or_else(|| base_comp(p, board));
         let mut extra = Vec::new();
         if icon {
             extra.push(serde_json::json!({"text": ICON, "color": format!("#{ICON_COLOR:06X}"), "italic": false}));
