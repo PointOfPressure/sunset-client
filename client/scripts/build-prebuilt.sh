@@ -149,6 +149,11 @@ if [ -n "${FORK:-}" ]; then
 fi
 
 # ---- manifest + signatures
+# The Sunset launcher downloads the same stock CLI from upstream and checks it against this signed hash.
+case $PLATFORM in windows-x86_64) CLI_FILE=horizon-launcher-windows-x64.zip ;; *) CLI_FILE=horizon-launcher-$PLATFORM.tar.gz ;; esac
+CLI_URL=https://github.com/horizon-rust/horizon/releases/download/launcher@$LAUNCHER_VERSION/$CLI_FILE
+CLI_SHA=$(curl -fsSL "https://github.com/horizon-rust/horizon/releases/download/launcher@$LAUNCHER_VERSION/SHA256SUMS" | awk -v f="$CLI_FILE" '$2 == f || $2 == "*" f {print $1}')
+[ ${#CLI_SHA} = 64 ] || die "no SHA-256 for $CLI_FILE in launcher@$LAUNCHER_VERSION's SHA256SUMS"
 python3 - "$OUT" "$NAME" "$VDIR" "$UNPACKED" <<EOF
 import hashlib, json, os, sys, datetime
 out, name, vdir, unpacked = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
@@ -169,6 +174,7 @@ m = {
     "horizon": {"revision": "$REV", "tag": "$TAG", "game": "$GAME", "mixins": "$MIXINS", "sdk": "sdk-$REV"},
     "build": {"launcher": "$LAUNCHER_VERSION", "rust": "$RUST", "profile": "optimized", "seconds": $BUILD_SECS,
               "built": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
+    "cli": {"version": "$LAUNCHER_VERSION", "file": "$CLI_FILE", "url": "$CLI_URL", "sha256": "$CLI_SHA"},
     "source": {"sunset_client": "$SRC_COMMIT", "local_changes": "$DIRTY" == "true",
                "horizon_fork": "https://github.com/PointOfPressure/horizon/tree/sunset/$SHORT",
                "horizon_fork_commit": "$FORK_HEAD" or None},

@@ -435,7 +435,7 @@ check or ask about it at runtime (by then it is already built in), so the instal
 ## Building from source
 
 The repository is a cargo workspace: `client/` is Sunset (the mod in `client/mixins/`, the Baritone engine, `tools/`,
-`horizon-native.json` and the Horizon patch series), `launcher/` the Sunset launcher (a stub for now) and `plugins/`
+`horizon-native.json` and the Horizon patch series), `launcher/` the Sunset launcher (below) and `plugins/`
 the plugin API's test plugin and smoke test. The plugin API itself is `client/mixins/sunset/api.rs`, compiled into
 Sunset. The `.hnmod` line (0.8.x/1.x fixes) is the `hnmod` branch.
 
@@ -450,6 +450,32 @@ Sunset. The `.hnmod` line (0.8.x/1.x fixes) is the `hnmod` branch.
   `plugins/plugcheck` on Sunset's pin, then runs verify.py's `Plugin API:` checks on single player and Horizon's
   server. It stops the release on a pin or API mismatch, a plugin left out of the build, a compiler warning or a
   failed check. Paths and options are at the top of the script.
+
+### Sunset launcher (2.0, not released yet)
+
+`launcher/` is a GPUI app that installs the signed prebuilt client (`client/scripts/build-prebuilt.sh`) and plays it.
+It only offers the Horizon Nightly that build pins, never a newer one. The stock `horizon-launcher` CLI does the
+sign-in, the Nightly and Play. The Sunset launcher downloads it (its SHA-256 is in the signed manifest) and runs it as a
+separate program, with its data inside the launcher's own folder (`~/.local/share/sunset-launcher`,
+`%APPDATA%\sunset-launcher`). It never copies another launcher's accounts.
+
+- **Sign in:** the Microsoft device code from `horizon-launcher account sign-in` (link, code, Copy). The tokens stay
+  with horizon-launcher.
+- **Install:** `manifest.json` and its `.minisig` from the newest `client-v*` GitHub release (`manifest-<platform>.json`
+  first), checked against `launcher/sunset.pub`. Then the pinned Nightly (`install`, then `prepare`, which takes
+  Minecraft 26.3 from another launcher or, once you are signed in, from Mojang). Then the package (minisign and SHA-256)
+  goes into `versions/`, with an instance `sunset` on it. **Repair** checks the package and unpacks it again. Auto-update
+  installs a newer pin at start.
+- **Play:** `horizon-launcher play --instance sunset`, with the window size from Settings.
+- **Import:** once, if you want, Sunset's config and profiles from a Horizon instance (files already here are kept).
+- **Linux:** the window and horizon-launcher both need `libxkbcommon0 libxkbcommon-x11-0 libxcb1` (Fedora and Arch:
+  `libxkbcommon libxkbcommon-x11 libxcb`). Without them the launcher can't start. `sunset-launcher deps` lists what
+  horizon-launcher is missing.
+- **Build:** `cargo build --release -p sunset-launcher` (Linux x86_64: 18.8 MB). Windows from Linux:
+  `cargo build --profile release-cross --target x86_64-pc-windows-gnu -p sunset-launcher` (8.5 MB, Windows 10 1903 or
+  later; this build compiles its shaders when it runs).
+- **Terminal:** `sunset-launcher check | install | repair | deps | sign-in | play | import`. `SUNSET_MANIFEST`
+  (`https://`, `http://` or `file://`) and `SUNSET_LAUNCHER_HOME` point it at a test release and data folder.
 
 What's planned and what a contribution needs: [feature roadmap](docs/feature-roadmap.md) and
 [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -492,6 +518,10 @@ a Rust port of [Baritone](https://github.com/cabaletta/baritone) 1.21.4 by leiju
 Its source ([client/mixins/baritone/upstream](client/mixins/baritone/upstream/README.md)) builds both the in-game runtime and the
 replaceable Ore Sim mining engine ([baritone-engine](client/baritone-engine/NOTICE.md)); both stay under its LGPL-3.0; their
 licence texts and notices ship unchanged in Sunset's package. See [source and replacement](client/docs/baritone.md).
+
+The Sunset launcher is built on [GPUI](https://github.com/zed-industries/zed) ([gpui-fast](https://github.com/longbridge/gpui-fast),
+Apache-2.0). It also uses MIT and Apache-2.0 crates (ureq and rustls, minisign-verify, ruzstd, tar, sha2 and png) and
+draws its text in Inter (OFL).
 
 Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 

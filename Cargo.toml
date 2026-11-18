@@ -13,3 +13,19 @@ exclude = ["client/baritone-engine", "client/sunset"]
 edition = "2024"
 publish = false
 license-file = "LICENSE"
+
+# The launcher is the only member: size over speed (its work is network and disk bound).
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Windows builds made on Linux: gpui's renderer compiles its HLSL shaders with fxc.exe at build time only on a Windows
+# host, and otherwise (with debug assertions) at run time through d3dcompiler_47.dll, which Windows 10+ has.
+[profile.release-cross]
+inherits = "release"
+
+[profile.release-cross.package.gpui-fast-windows]
+debug-assertions = true
