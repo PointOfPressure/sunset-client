@@ -1987,7 +1987,10 @@ id = "vanish_connect"
 target = "horizon_client::game::extras::reconnect::Game<'_>::extras_connecting"
 kind = "HEAD"
 helper = "src/mixins/vanish_connect.rs"
-bindings = [{ name = "address", ty = "&str", value = "address" }]
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "address", ty = "&str", value = "address" },
+]
 
 [[native.mixin]]
 id = "vanish_completions"

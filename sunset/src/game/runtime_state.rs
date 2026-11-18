@@ -824,6 +824,8 @@ pub(super) fn set_setting(game: &Game<'_>, key: &str, value: &str) {
 pub(super) fn save(game: &Game<'_>) {
     // Panic writes nothing: the next launch starts from the settings saved before it.
     if !running() { return; }
+    // Before the settings were read, the state is the defaults: writing it would replace the player's.
+    if !with(|s| s.loaded) { return; }
     let text = with(|s| {
         release_changed_binds(s);
         sync_flags(s);
