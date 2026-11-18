@@ -141,6 +141,7 @@ and setting names, the start of the name is enough.
 | `.goto <x> <y> <z>`, `.goto stop` | walk somewhere through loaded terrain (up to 128 blocks); any movement key stops it |
 | `.vclip <n>`, `.hclip <n>` | move up or down, or forward |
 | `.plugins` | list loaded plugins with their modules and commands |
+| `.relog [seconds]` | leave and rejoin this multiplayer server once; default 1 second, decimals allowed; Back cancels the countdown |
 | `.debug [lines]` | copy a debug report to the clipboard (see below) |
 | `.menu [text]` | open the menu with a search already typed |
 | `.panic` | shut Sunset down until the game restarts |
@@ -465,7 +466,7 @@ Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover 
 Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback
 Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps, Ore Sim's automatic seed (SeedCrackerX) and the Baritone/Ore Sim integration.
 
-**compkrx** ([compkrx](https://github.com/compkrx)): Vein Miner.
+**compkrx** ([compkrx](https://github.com/compkrx)): Vein Miner and the Relog command.
 
 **pxdns** ([pxdns](https://github.com/pxdns)): HUD placement (corners and Custom places for the watermark, module list
 and coordinates) and Low health warning.

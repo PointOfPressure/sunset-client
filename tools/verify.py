@@ -1990,6 +1990,25 @@ def modules_on():
     return names
 
 
+@test("Relog command")
+def _():
+    invalid = all(any("Usage: .relog" in line for line in said_after(f".relog {value}"))
+                  for value in ("-1", "NaN", "inf", "1 2"))
+    if not SERVER:
+        lines = said_after(".relog 0")
+        refused = any("active multiplayer server" in line for line in lines)
+        return invalid and refused and bool(state().get("player")), f"invalid delays rejected: {invalid}; single player stays open: {refused}"
+    start = time.monotonic()
+    say(".relog 1")
+    left = not state().get("player")
+    deadline = start + 20
+    while time.monotonic() < deadline and not state().get("player"):
+        time.sleep(0.1)
+    elapsed = time.monotonic() - start
+    joined = bool(state().get("player"))
+    return invalid and left and joined and elapsed >= 0.9, f"invalid delays rejected: {invalid}; left: {left}; rejoined after {elapsed:.2f}s: {joined}"
+
+
 @test("Modules")
 def _():
     # Jesus is hidden by default: the menu's search leaves it out (Enter on "jesus" turns nothing on) until its switch

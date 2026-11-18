@@ -329,7 +329,7 @@ const BUILT_IN: &[&str] = &[
     "auradebug", "scan", "goto", "help", "commands", "menu", "gui", "pages", "toggle", "t", "modules", "list", "settings",
     "get", "set", "seed", "movementpreset", "bind", "binds", "panic", "debug", "profile", "profiles", "config", "cfg", "preset",
     "presets", "reset", "friend", "friends", "f", "loadout", "loadouts", "waypoint", "waypoints", "wp", "vclip", "hclip",
-    "plugins", "baritone", "b",
+    "plugins", "baritone", "b", "relog",
 ];
 
 fn plain_name(name: &str) -> bool {
