@@ -1393,7 +1393,7 @@ bindings = [
 
 [[native.mixin]]
 id = "tick"
-target = "horizon_client::game::Game<'_>::tick_world"
+target = "horizon_client::game::native_hooks::client_tick_post::Game<'_>::native_client_tick_post"
 kind = "HEAD"
 helper = "src/mixins/tick.rs"
 bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]

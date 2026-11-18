@@ -48,6 +48,11 @@ pub fn sync(font: &horizon_client::font::Font, gui_scale: f32) {
 }
 
 // A line of text in the chosen font.
+pub fn text_styled(s: &str) -> horizon_client::text::Text {
+    text(s)
+}
+
+// A line of text in the chosen font.
 pub fn text(s: &str) -> horizon_client::text::Text {
     horizon_client::text::Text::styled(
         s,
@@ -111,4 +116,27 @@ pub fn ensure(font: &horizon_client::font::Font) {
         STYLE.load(std::sync::atomic::Ordering::Relaxed)
     );
     ::sunset_core::font::loaded();
+}
+
+// Sunset's text at `at` in `argb` (an alpha of 0 is opaque: Sunset gives its colours as 0xRRGGBB, and its fading
+// rows with their alpha): in the chosen font, each glyph on whole screen pixels with a soft shadow a screen pixel
+// away, or in Minecraft's font with its own shadow when the HUD's Font is Minecraft.
+pub fn draw(game: &crate::game::Game<'_>, batch: &mut horizon_client::hud::HudBatch, text: &str, at: [f32; 2], argb: u32, shadow: bool) {
+    let [a, r, g, b] = argb.to_be_bytes();
+    let a = if a == 0 { 0xFF } else { a };
+    let atlas = &game.gui.atlas;
+    ensure(&atlas.font);
+    if !enabled() {
+        batch.text_styled(atlas, &horizon_client::text::Text::literal(text), at[0], at[1], horizon_client::hud::rgba(r, g, b, a), shadow);
+        return;
+    }
+    sync(&atlas.font, batch.scale);
+    let snap = |v: f32| (v * batch.scale).round() / batch.scale;
+    let (x, y) = (snap(at[0]), snap(at[1]));
+    let styled = text_styled(text);
+    if shadow {
+        let shade = horizon_client::hud::rgba(0, 0, 0, (u32::from(a) * 0x60 / 0xFF) as u8);
+        batch.text_styled(atlas, &styled, x + 1.0 / batch.scale, y + 1.0 / batch.scale, shade, false);
+    }
+    batch.text_styled(atlas, &styled, x, y, horizon_client::hud::rgba(r, g, b, a), false);
 }

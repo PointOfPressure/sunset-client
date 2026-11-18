@@ -2,7 +2,6 @@
 
 use super::Game;
 use horizon_client::hud::HudBatch;
-use horizon_client::text::Text;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 
@@ -290,14 +289,8 @@ pub(super) fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shap
                 let [a, r, g, b] = argb.to_be_bytes();
                 batch.fill_quad(&game.gui.atlas, corners, horizon_client::hud::rgba(r, g, b, a));
             }
-            Shape::Text(t, at, argb) => match argb >> 24 {
-                0 | 0xFF => game.native_text(batch, &t, at, argb & 0x00FF_FFFF, shadow),
-                a => {
-                    let [_, r, g, b] = argb.to_be_bytes();
-                    let colour = horizon_client::hud::rgba(r, g, b, a as u8);
-                    batch.text_styled(&game.gui.atlas, &Text::literal(&*t), at[0], at[1], colour, shadow);
-                }
-            },
+            // A fading row keeps its alpha; drawn in Sunset's font like the rest.
+            Shape::Text(t, at, argb) => crate::game::sunset_font::draw(game, batch, &t, at, argb, shadow),
             Shape::Head(t, at, rgb) => {
                 crate::game::sunset_font::BOLD.store(true, Ordering::Relaxed);
                 game.native_text(batch, &t, at, rgb, shadow);
