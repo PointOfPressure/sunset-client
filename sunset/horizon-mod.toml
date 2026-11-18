@@ -2250,14 +2250,6 @@ helper = "src/mixins/client_local_hook.rs"
 
 # Not ported yet: these targets are below the game crate and not replaceable on this build.
 
-# [[native.mixin]]
-# id = "particle-push"
-# target = "horizon_client_render::particles::ParticleEngine::push"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/particle_push.rs"
-# bindings = [{ name = "particle", ty = "&Particle", value = "&particle" }]
-
 [[native.mixin]]
 id = "multitask_click"
 target = "horizon_client::game::extras::Game<'_>::extras_mouse"
@@ -2300,20 +2292,6 @@ bindings = [
 # helper = "src/mixins/legacy_jump_hook.rs"
 # bindings = [{ name = "world", ty = "&mut MotionWorld<'_, '_, '_>", value = "self" }]
 
-# [[native.mixin]]
-# id = "client_brand"
-# target = "horizon_client_lib::net::brand"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/client_brand_hook.rs"
-
-
-# [[native.mixin]]
-# id = "debug_wire"
-# target = "horizon_protocol::connection::ConnWriter::send"
-# kind = "HEAD"
-# helper = "src/mixins/debug_wire_hook.rs"
-# bindings = [{ name = "body", ty = "&[u8]", value = "body" }]
 
 
 # The move keys and the player's own move state (GUI Move, No Slow, knockback slow, Scaffold's movement correction):
@@ -2352,18 +2330,6 @@ bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
 
 # Blocked on this game build: the launcher's copy of these functions can't reach what their bodies use (the render
 # crate's private `mod sprite_cache`; methods private to gfx's child modules, core_lines::draw and capture::write_capture).
-# [[native.mixin]]
-# id = "water-sprites"
-# target = "horizon_client_render::sprites::Sprites::register"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/water_sprites.rs"
-# bindings = [
-#   { name = "this", ty = "&mut Sprites", value = "&mut *self" },
-#   { name = "name", ty = "&str", value = "name" },
-#   { name = "decoded", ty = "&crate::sprite_cache::Decoded", value = "&decoded" },
-# ]
-
 # [[native.mixin]]
 # id = "atmosphere_render"
 # target = "horizon_client_render::gfx::Renderer::render"
@@ -2550,3 +2516,43 @@ bindings = [
   { name = "value", ty = "Vec<hud_layout::GuiDraw>", value = "$value" },
   { name = "game", ty = "&Game<'_>", value = "self" },
 ]
+
+# Debug Report's packet log, No Render's particles made outside the options path, Clear Water's tint
+[[native.mixin]]
+id = "debug_wire"
+target = "horizon_client::game::remote::Game<'_>::send_play"
+kind = "BEFORE_CALL"
+selector = "r.session.send"
+require = 1
+ordinal = 0
+helper = "src/mixins/debug_wire_hook.rs"
+bindings = [{ name = "packet", ty = "&S", value = "&packet" }]
+
+[[native.mixin]]
+id = "particle-push-crack"
+target = "horizon_client::game::block_particles::Game<'_>::crack_particle"
+kind = "MODIFY_ARG"
+selector = "self.particles.push"
+require = 1
+ordinal = 0
+argument = 0
+helper = "src/mixins/particle_push.rs"
+bindings = [{ name = "value", ty = "horizon_client::particles::Particle", value = "$value" }]
+
+[[native.mixin]]
+id = "particle-push-warden"
+target = "horizon_client::game::sculk::Game<'_>::warden_dig_particles"
+kind = "MODIFY_ARG"
+selector = "self.particles.push"
+require = 1
+ordinal = 0
+argument = 0
+helper = "src/mixins/particle_push.rs"
+bindings = [{ name = "value", ty = "horizon_client::particles::Particle", value = "$value" }]
+
+[[native.mixin]]
+id = "water-tint"
+target = "horizon_client::game::native_hooks::base::Game<'_>::native_biome_colors"
+kind = "HEAD"
+helper = "src/mixins/water_sprites.rs"
+bindings = [{ name = "colors", ty = "&mut BiomeColors", value = "&mut *colors" }]

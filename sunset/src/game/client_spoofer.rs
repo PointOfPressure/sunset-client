@@ -35,13 +35,32 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Lunar Fabric tag", true)
             .text("LabyMod version", "")
             .text("Per server", "")
+            .bool("Brand after join", true)
             .bool("Diagnostics", true),
     ]
 }
 
 // A server being joined: its plan from the settings as they are now (none with the module off or on Horizon).
+// Horizon sends its own brand ("vanilla") as configuration starts, where no Sunset hook reaches on this build: the plan
+// is taken here, and its packets go out after the play Login, the brand first with Brand after join (the server then
+// has both brands, the spoofed one last).
 pub(crate) fn connecting(address: &str) {
-    wire::next(super::sunset::with(|s| s.module(NAME).filter(|m| m.on).and_then(|m| plan(m, address))));
+    let plan = super::sunset::with(|s| {
+        s.module(NAME).filter(|m| m.on).and_then(|m| {
+            let mut plan = plan(m, address)?;
+            if m.b("Brand after join") {
+                let mut w = Writer::new();
+                w.string(&plan.brand);
+                plan.joins.insert(0, ("minecraft:brand", w.data));
+                plan.notes.push("the brand went out after joining, after Horizon's own \"vanilla\"");
+            } else {
+                plan.notes.push("Horizon's own brand (\"vanilla\") went out; this build can't replace it");
+            }
+            Some(plan)
+        })
+    });
+    wire::next(plan);
+    let _ = wire::payload();
 }
 
 // After each play Login, the plan's join packets; once in the world, Diagnostics.

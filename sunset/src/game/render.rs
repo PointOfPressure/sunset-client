@@ -832,10 +832,13 @@ fn clear_water(game: &mut Game<'_>, mods: &[Module]) {
     let key = mods.iter().find(|m| m.name == "Clear Water" && m.on).map_or((w::STEPS as u32, 0), |m| {
         ((m.n("Opacity") / 100.0 * w::STEPS as f64).round().clamp(0.0, w::STEPS as f64) as u32, m.n("Lighter tint").round().clamp(0.0, 100.0) as u32)
     });
-    if (w::LEVEL.swap(key.0, Ordering::Relaxed), w::TINT.swap(key.1, Ordering::Relaxed)) == key {
-        return;
+    // The tint goes into the biomes' water colours (mixins/water_sprites.rs); the game asks for them only when told,
+    // so they are asked again on a change and each second (a new world brings its own table; unchanged colours
+    // rebuild nothing). The opacity can't be changed on this build.
+    let changed = (w::LEVEL.swap(key.0, Ordering::Relaxed), w::TINT.swap(key.1, Ordering::Relaxed)) != key;
+    if changed || (key.1 > 0 && game.ticks % 20 == 0) {
+        game.refresh_biome_colors();
     }
-    game.all_sections_changed();
 }
 
 // Show placed blocks: where your own placing put a block, oldest first, for the world or server they are in (kept

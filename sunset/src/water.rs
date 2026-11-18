@@ -27,3 +27,15 @@ pub fn faded(frames: &[Vec<u8>], step: usize) -> Vec<Vec<u8>> {
     let scale = |a: u8| (u32::from(a) * step as u32 / STEPS as u32) as u8;
     frames.iter().map(|f| f.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2], scale(p[3])]).collect()).collect()
 }
+
+// A water colour (0xRRGGBB) taken TINT hundredths of the way towards its brightest channel.
+pub fn lighter(rgb: u32) -> u32 {
+    let t = TINT.load(Relaxed).min(100);
+    if t == 0 {
+        return rgb;
+    }
+    let [_, r, g, b] = rgb.to_be_bytes();
+    let top = r.max(g).max(b) as u32;
+    let lift = |c: u8| (c as u32 + (top - c as u32) * t / 100) as u8;
+    u32::from_be_bytes([(rgb >> 24) as u8, lift(r), lift(g), lift(b)])
+}
