@@ -2468,6 +2468,7 @@ impl MotionWorld<'_, '_, '_> {
     /// `LocalPlayer.move`: the move, then `updateAutoJump` with the float
     /// horizontal displacement. The gate is this invocation's (arismoko/horizon#2414), armed
     /// here before the move's own handling, no-physics included.
+    #[horizon_mod_api_macros::replaceable]
     pub fn move_self(&mut self, gate: &mut MoveGate, movement: Vec3) -> Result<()> {
         crate::move_gate::arm(
             gate,
