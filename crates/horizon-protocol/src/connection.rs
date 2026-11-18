@@ -611,6 +611,16 @@ impl Framing {
         }
     }
 }
+/// Process-wide observers of every packet body a [`ConnWriter`] sends (VarInt id + payload, before the transport's
+/// adaptation, compression and framing), on the sending thread, in the order installed: for client diagnostics such
+/// as packet logs.
+static SENT_OBSERVERS: [std::sync::OnceLock<fn(&[u8])>; 4] = [const { std::sync::OnceLock::new() }; 4];
+
+/// Installs one of [`SENT_OBSERVERS`] for the rest of the process; false when all are taken.
+pub fn observe_sent(observer: fn(&[u8])) -> bool {
+    SENT_OBSERVERS.iter().any(|slot| slot.set(observer).is_ok())
+}
+
 impl ConnWriter {
     /// Remove this exact writer, leaving an explicitly disconnected placeholder.
     pub fn take(&mut self) -> Self {
@@ -695,6 +705,9 @@ impl ConnWriter {
     }
     /// Send one packet body (VarInt id + payload).
     pub fn send(&mut self, body: &[u8]) -> Result<()> {
+        for observe in SENT_OBSERVERS.iter().map_while(|slot| slot.get()) {
+            observe(body);
+        }
         if self.older_client.is_some() {
             for body in self.for_client(body)? {
                 self.send_contents(&self.contents(&body)?)?;
