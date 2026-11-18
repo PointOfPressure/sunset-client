@@ -4,7 +4,7 @@ use crate::core::{self, Account, Manifest, Paths, Release, Settings, SignIn};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     App, AppContext as _, Application, Bounds, ClickEvent, ClipboardItem, Context, ElementId, Hsla, InteractiveElement as _,
-    IntoElement, MouseButton, MouseDownEvent, Pixels, Point, ParentElement as _, Anchor, PathBuilder, Render, Rgba, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    IntoElement, MouseButton, MouseDownEvent, Pixels, Point, ParentElement as _, Anchor, CursorStyle, Decorations, MouseMoveEvent, MouseUpEvent, ResizeEdge, WindowControlArea, WindowDecorations, PathBuilder, Render, Rgba, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
     WindowBounds, WindowOptions, anchored, canvas, deferred, div, point, px, rgb, size,
 };
 use std::path::PathBuf;
@@ -95,6 +95,8 @@ pub struct Launcher {
     note: Option<(bool, String)>,
     sign_in: Option<SignInView>,
     about: bool,
+    /// Armed by a press on the title bar; the first move then hands the drag to the window manager.
+    title_drag: bool,
     playing: bool,
     sources: Vec<(String, PathBuf)>,
     profiles: Vec<String>,
@@ -130,6 +132,7 @@ impl Launcher {
             note: None,
             sign_in: None,
             about: false,
+            title_drag: false,
             playing: false,
             sources: vec![],
             profiles: vec![],
@@ -483,6 +486,10 @@ enum Icon {
     Check,
     Folder,
     Arrow,
+    Minimize,
+    Maximize,
+    Restore,
+    Close,
 }
 
 fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
@@ -518,6 +525,35 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
                     p.move_to(point(x + w * 0.58, y + h * 0.22));
                     p.line_to(point(x + w * 0.88, y + h * 0.5));
                     p.line_to(point(x + w * 0.58, y + h * 0.78));
+                }
+                Icon::Minimize => {
+                    p.move_to(point(x + w * 0.2, y + h * 0.5));
+                    p.line_to(point(x + w * 0.8, y + h * 0.5));
+                }
+                Icon::Maximize => {
+                    p.move_to(point(x + w * 0.2, y + h * 0.2));
+                    p.line_to(point(x + w * 0.8, y + h * 0.2));
+                    p.line_to(point(x + w * 0.8, y + h * 0.8));
+                    p.line_to(point(x + w * 0.2, y + h * 0.8));
+                    p.close();
+                }
+                Icon::Restore => {
+                    p.move_to(point(x + w * 0.2, y + h * 0.34));
+                    p.line_to(point(x + w * 0.66, y + h * 0.34));
+                    p.line_to(point(x + w * 0.66, y + h * 0.8));
+                    p.line_to(point(x + w * 0.2, y + h * 0.8));
+                    p.close();
+                    p.move_to(point(x + w * 0.34, y + h * 0.34));
+                    p.line_to(point(x + w * 0.34, y + h * 0.2));
+                    p.line_to(point(x + w * 0.8, y + h * 0.2));
+                    p.line_to(point(x + w * 0.8, y + h * 0.66));
+                    p.line_to(point(x + w * 0.66, y + h * 0.66));
+                }
+                Icon::Close => {
+                    p.move_to(point(x + w * 0.22, y + h * 0.22));
+                    p.line_to(point(x + w * 0.78, y + h * 0.78));
+                    p.move_to(point(x + w * 0.78, y + h * 0.22));
+                    p.line_to(point(x + w * 0.22, y + h * 0.78));
                 }
                 Icon::Folder => {
                     p.move_to(point(x + w * 0.08, y + h * 0.22));
@@ -691,18 +727,83 @@ fn checked(label: impl Into<SharedString>, on: bool) -> gpui::Div {
         .child(if on { icon(Icon::Check, 14., ACCENT).into_any_element() } else { div().w(px(14.)).into_any_element() })
 }
 
+/// Minimise, maximise/restore and close, drawn by us when the window has no system title bar (always on Windows,
+/// where the system still hit-tests them as caption buttons; on Linux when the desktop accepted client decorations).
+fn window_controls(window: &Window) -> Option<gpui::Div> {
+    if !cfg!(windows) && !matches!(window.window_decorations(), Decorations::Client { .. }) {
+        return None;
+    }
+    let ctl = |id: &'static str, kind: Icon, area: WindowControlArea, hover: u32| {
+        div()
+            .id(id)
+            .w(px(40.))
+            .h(px(CTRL_H))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(8.))
+            .cursor_pointer()
+            .hover(move |s| s.bg(rgb(hover)))
+            .window_control_area(area)
+            .child(icon(kind, 14., TEXT))
+    };
+    // Windows answers these areas itself (as caption buttons), so the clicks are only ours elsewhere.
+    let own = !cfg!(windows);
+    let max = if window.is_maximized() { Icon::Restore } else { Icon::Maximize };
+    Some(
+        div()
+            .flex()
+            .items_center()
+            .gap(px(2.))
+            .ml(px(8.))
+            .child(ctl("win-min", Icon::Minimize, WindowControlArea::Min, 0x26262a).when(own, |d| d.on_click(|_, window, _| window.minimize_window())))
+            .child(ctl("win-max", max, WindowControlArea::Max, 0x26262a).when(own, |d| d.on_click(|_, window, _| window.zoom_window())))
+            .child(ctl("win-close", Icon::Close, WindowControlArea::Close, 0xc42b1c).when(own, |d| d.on_click(|_, _, cx| cx.quit()))),
+    )
+}
+
+/// Thin strips along the edges and corners that start a resize, for client-decorated windows on Linux (Windows
+/// hit-tests its own borders). Edges tiled against the screen or a maximised window get none.
+fn resize_edges(window: &Window) -> Option<gpui::Div> {
+    if cfg!(windows) || window.is_maximized() || window.is_fullscreen() {
+        return None;
+    }
+    let Decorations::Client { tiling } = window.window_decorations() else { return None };
+    const E: f32 = 6.;
+    let strip = |edge: ResizeEdge, cursor: CursorStyle| {
+        div().absolute().cursor(cursor).occlude().on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            cx.stop_propagation();
+            window.start_window_resize(edge);
+        })
+    };
+    let (t, b, l, r) = (!tiling.top, !tiling.bottom, !tiling.left, !tiling.right);
+    Some(
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .when(t, |d| d.child(strip(ResizeEdge::Top, CursorStyle::ResizeUpDown).top_0().left(px(E)).right(px(E)).h(px(E))))
+            .when(b, |d| d.child(strip(ResizeEdge::Bottom, CursorStyle::ResizeUpDown).bottom_0().left(px(E)).right(px(E)).h(px(E))))
+            .when(l, |d| d.child(strip(ResizeEdge::Left, CursorStyle::ResizeLeftRight).left_0().top(px(E)).bottom(px(E)).w(px(E))))
+            .when(r, |d| d.child(strip(ResizeEdge::Right, CursorStyle::ResizeLeftRight).right_0().top(px(E)).bottom(px(E)).w(px(E))))
+            .when(t && l, |d| d.child(strip(ResizeEdge::TopLeft, CursorStyle::ResizeUpLeftDownRight).top_0().left_0().size(px(E))))
+            .when(t && r, |d| d.child(strip(ResizeEdge::TopRight, CursorStyle::ResizeUpRightDownLeft).top_0().right_0().size(px(E))))
+            .when(b && l, |d| d.child(strip(ResizeEdge::BottomLeft, CursorStyle::ResizeUpRightDownLeft).bottom_0().left_0().size(px(E))))
+            .when(b && r, |d| d.child(strip(ResizeEdge::BottomRight, CursorStyle::ResizeUpLeftDownRight).bottom_0().right_0().size(px(E)))),
+    )
+}
+
 // ---------------------------------------------------------------- views
 
 impl Launcher {
-    fn top_bar(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    /// The top bar doubles as the window's title bar: drag it to move, double-click to maximise. Its buttons sit in
+    /// groups that take the press for themselves (and block the drag area under them for Windows' hit test).
+    fn top_bar(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let has = self.installed.is_some();
         let tabs = [(Tab::Overview, "Overview"), (Tab::Plugins, "Plugins"), (Tab::Profiles, "Profiles"), (Tab::Settings, "Settings")];
-        div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .h(px(BAR_H))
-            .gap(px(8.))
+        let group = || div().flex().items_center().gap(px(8.)).occlude().on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
+        let left = group()
             .child(self.dropdown(Menu::Platform, "Horizon", cx))
             .child(self.dropdown(Menu::Instance, if has { "Sunset" } else { "No instance" }, cx))
             .child(
@@ -729,9 +830,29 @@ impl Launcher {
                             cx.notify();
                         }))
                 })),
-            )
+            );
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .h(px(BAR_H))
+            .gap(px(8.))
+            .window_control_area(WindowControlArea::Drag)
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, ev: &MouseDownEvent, window, _| {
+                this.title_drag = ev.click_count < 2;
+                if ev.click_count == 2 {
+                    window.zoom_window();
+                }
+            }))
+            .on_mouse_up(MouseButton::Left, cx.listener(|this, _: &MouseUpEvent, _, _| this.title_drag = false))
+            .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, window, _| {
+                if std::mem::take(&mut this.title_drag) && ev.pressed_button == Some(MouseButton::Left) {
+                    window.start_window_move();
+                }
+            }))
+            .child(left)
             .child(div().flex_1())
-            .child(self.account_chip(cx))
+            .child(group().child(self.account_chip(cx)).children(window_controls(window)))
     }
 
     /// A top-bar chip that toggles `menu`; its list drops down under it (the backdrop is in `menu_popup`).
@@ -1264,7 +1385,7 @@ impl Launcher {
 }
 
 impl Render for Launcher {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let page = match self.tab {
             Tab::Overview => self.overview(cx),
             Tab::Settings => self.settings_view(cx),
@@ -1302,13 +1423,14 @@ impl Render for Launcher {
             .flex()
             .flex_col()
             .px(px(GUTTER))
-            .child(self.top_bar(cx))
+            .child(self.top_bar(window, cx))
             .child(div().id("page").flex_1().mt(px(8.)).overflow_y_scroll().child(page))
             .when_some(note, |d, n| d.child(n.mt(px(GAP))))
             .child(self.footer(cx))
             .when_some(self.menu_popup(cx), |d, m| d.child(m))
             .when_some(self.sign_in_modal(cx), |d, m| d.child(m))
             .when_some(self.about_modal(cx), |d, m| d.child(m))
+            .when_some(resize_edges(window), |d, e| d.child(e))
     }
 }
 
@@ -1326,7 +1448,9 @@ pub fn run() {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             window_min_size: Some(size(px(980.), px(620.))),
             app_id: Some("sunset-launcher".into()),
-            titlebar: Some(gpui::TitlebarOptions { title: Some("Sunset".into()), ..Default::default() }),
+            // No system title bar: the top bar is the title bar (see `top_bar` and `window_controls`).
+            titlebar: None,
+            window_decorations: Some(WindowDecorations::Client),
             ..Default::default()
         };
         if let Err(e) = cx.open_window(opts, |_, cx| cx.new(Launcher::new)) {
