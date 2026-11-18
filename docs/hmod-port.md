@@ -42,12 +42,13 @@ Also restored later the same day:
   tint (biome water colours), Client Spoofer's join packets and its brand after joining (Brand after join).
 - Server Scan's command tree already came from the packet tap.
 
+- Sunset's page in Options > Mods (its menu as the native page's setting rows), Streamer Mode in item tooltips.
+
 Still missing, and what Horizon would need to add: see the end of this file.
 - Speed, Legacy Speed jump; Client Spoofer's brand in configuration (the server gets "vanilla" first); Streamer
-  Mode in Horizon's own menus, signs and tooltips; the packet log of the network thread's own packets; block-break
+  Mode in Horizon's own menus, signs and text tooltips; the packet log of the network thread's own packets; block-break
   particles and particles the renderer makes itself; Clear Water's opacity; Atmosphere's sky; X-ray's Show placed
   blocks; Ore Sim; Tab game modes in single player.
-- Options > Mods: the launcher lists the package; the old settings-page buttons are gone (ClickGUI only).
 - Plugins (`api.rs`, sunset-plugins): not adapted to separate .hmod packages yet; pack.py, install scripts, README too.
 
 ## Building it
