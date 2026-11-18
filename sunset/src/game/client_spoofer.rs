@@ -36,8 +36,82 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("LabyMod version", "")
             .text("Per server", "")
             .bool("Brand after join", true)
+            .bool("Fake resource packs", false)
+            .num("Pack load time", 1.5, 0.3, 10.0, 0.1)
             .bool("Diagnostics", true),
     ]
+}
+
+// Fake resource packs: a pack the server pushes (in configuration or in play) is answered as a client that took it
+// would answer: accepted at once, then downloaded and loaded after about Pack load time, split as a download and a
+// reload, each a little off so the answers don't come at fixed spacing. Nothing is downloaded or applied, no prompt
+// shows. Each due answer goes out from pack_tick, every client tick (configuration included).
+struct FakePack {
+    id: u128,
+    // The answers still to send, and when.
+    due: Vec<(std::time::Instant, i32)>,
+}
+
+static FAKE_PACKS: std::sync::Mutex<Vec<FakePack>> = std::sync::Mutex::new(Vec::new());
+
+const PACK_LOADED: i32 = 0;
+const PACK_ACCEPTED: i32 = 3;
+const PACK_DOWNLOADED: i32 = 4;
+
+// A spread of 0.85 to 1.15 from the clock's nanoseconds and the pack's id.
+fn jitter(id: u128, salt: u64) -> f64 {
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
+    let mut x = (id as u64) ^ ((id >> 64) as u64) ^ u64::from(nanos) ^ salt.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    x ^= x >> 33;
+    x = x.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    x ^= x >> 33;
+    0.85 + (x % 1000) as f64 / 1000.0 * 0.3
+}
+
+// A pushed pack: true when Fake resource packs answers it (the game then does nothing with it).
+pub(crate) fn fake_pack(game: &Game<'_>, id: u128) -> bool {
+    // Joining straight from the command line, a pack can come before Sunset's first tick read its settings.
+    super::sunset::ensure_loaded(game);
+    let Some(seconds) = super::sunset::with(|s| {
+        s.module(NAME).filter(|m| m.on && m.b("Fake resource packs")).map(|m| m.n("Pack load time"))
+    }) else {
+        return false;
+    };
+    let Some(r) = game.remote.as_ref() else {
+        return false;
+    };
+    r.session.send_pack_status(id, PACK_ACCEPTED);
+    let now = std::time::Instant::now();
+    let total = seconds.clamp(0.3, 10.0);
+    let download = std::time::Duration::from_secs_f64(total * 0.6 * jitter(id, 1));
+    let reload = download + std::time::Duration::from_secs_f64(total * 0.4 * jitter(id, 2));
+    let mut packs = FAKE_PACKS.lock().unwrap_or_else(|e| e.into_inner());
+    packs.retain(|p| p.id != id);
+    packs.push(FakePack { id, due: vec![(now + download, PACK_DOWNLOADED), (now + reload, PACK_LOADED)] });
+    true
+}
+
+// Every client tick: the fake packs' answers that are due. A connection gone drops what was left.
+pub(crate) fn pack_tick(game: &Game<'_>) {
+    let mut packs = FAKE_PACKS.lock().unwrap_or_else(|e| e.into_inner());
+    if packs.is_empty() {
+        return;
+    }
+    let Some(r) = game.remote.as_ref() else {
+        packs.clear();
+        return;
+    };
+    let now = std::time::Instant::now();
+    for pack in packs.iter_mut() {
+        while let Some(&(at, status)) = pack.due.first() {
+            if at > now {
+                break;
+            }
+            r.session.send_pack_status(pack.id, status);
+            pack.due.remove(0);
+        }
+    }
+    packs.retain(|p| !p.due.is_empty());
 }
 
 // A server being joined: its plan from the settings as they are now (none with the module off or on Horizon).

@@ -2593,3 +2593,15 @@ require = 1
 ordinal = 0
 helper = "src/mixins/streamer_ui_measure_hook.rs"
 bindings = [{ name = "lines", ty = "&mut Vec<(horizon_client::text::Text, u32)>", value = "$local_mut:lines:0" }]
+
+# Client Spoofer's Fake resource packs
+[[native.mixin]]
+id = "fake_pack"
+target = "horizon_client::game::server_packs::Game<'_>::handle_pack_push"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/fake_pack_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "p", ty = "&ResourcePackPush", value = "&p" },
+]

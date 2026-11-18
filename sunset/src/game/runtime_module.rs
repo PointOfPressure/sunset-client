@@ -323,6 +323,7 @@ impl Module {
                     self.b(name.trim_end_matches(" position"))
                 }
                 "FPS x" | "FPS y" => self.b("FPS") && self.p("FPS position") == "Custom",
+                "Pack load time" => self.b("Fake resource packs"),
                 "Speed x" | "Speed y" => self.b("Speed") && self.p("Speed position") == "Custom",
                 "Facing x" | "Facing y" => self.b("Facing") && self.p("Facing position") == "Custom",
                 "Totems x" | "Totems y" => self.b("Totems") && self.p("Totems position") == "Custom",
