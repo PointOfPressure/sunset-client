@@ -4,7 +4,7 @@ use crate::core::{self, Account, Manifest, Paths, Release, Settings, SignIn};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     App, AppContext as _, Application, Bounds, ClickEvent, ClipboardItem, Context, ElementId, Hsla, Image, ImageFormat, InteractiveElement as _,
-    IntoElement, MouseButton, ParentElement as _, PathBuilder, Render, Rgba, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    IntoElement, MouseButton, MouseDownEvent, Pixels, Point, ParentElement as _, PathBuilder, Render, Rgba, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
     WindowBounds, WindowOptions, anchored, canvas, deferred, div, img, point, px, rgb, size,
 };
 use std::path::PathBuf;
@@ -80,6 +80,8 @@ pub struct Launcher {
     faces: Vec<(String, Vec<[u8; 4]>)>,
     tab: Tab,
     menu: Option<Menu>,
+    /// The menu the backdrop just closed and where that press landed, so the same click on its button doesn't reopen it.
+    dismissed: Option<(Menu, Point<Pixels>)>,
     job: Option<Job>,
     note: Option<(bool, String)>,
     sign_in: Option<SignInView>,
@@ -115,6 +117,7 @@ impl Launcher {
             faces: vec![],
             tab: Tab::Overview,
             menu: None,
+            dismissed: None,
             job: None,
             note: None,
             sign_in: None,
@@ -667,10 +670,7 @@ impl Launcher {
         let chip = top_chip(id)
             .child(text(label, 13., TEXT))
             .child(icon(Icon::Chevron, 14., MUTED))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.menu = if this.menu == Some(menu) { None } else { Some(menu) };
-                cx.notify();
-            }));
+            .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| this.toggle_menu(menu, ev, cx)));
         let list = (self.menu == Some(menu)).then(|| {
             let pop = card().mt(px(6.)).p(px(4.)).min_w(px(200.)).flex().flex_col().shadow_lg().occlude();
             let pop = match menu {
@@ -711,10 +711,7 @@ impl Launcher {
             .child(head)
             .child(text(a.name.clone(), 13., TEXT))
             .child(icon(Icon::Chevron, 14., MUTED))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.menu = if this.menu == Some(Menu::Account) { None } else { Some(Menu::Account) };
-                cx.notify();
-            }))
+            .on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Account, ev, cx)))
             .into_any_element()
     }
 
@@ -740,6 +737,15 @@ impl Launcher {
                 f(this, cx);
                 cx.notify();
             }))
+    }
+
+    /// Opens `menu`, or closes it when it is already open. The backdrop closes menus on mouse down, before the
+    /// button's click arrives, so a click on the open menu's own button is recognised by its press position.
+    fn toggle_menu(&mut self, menu: Menu, ev: &ClickEvent, cx: &mut Context<Self>) {
+        let dismissed = self.dismissed.take();
+        let just_closed = matches!((dismissed, ev), (Some((m, at)), ClickEvent::Mouse(c)) if m == menu && at == c.down.position);
+        self.menu = if self.menu == Some(menu) || just_closed { None } else { Some(menu) };
+        cx.notify();
     }
 
     fn menu_popup(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
@@ -783,8 +789,8 @@ impl Launcher {
                 .size_full()
                 .top_0()
                 .left_0()
-                .child(div().id("menu-backdrop").absolute().size_full().on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                    this.menu = None;
+                .child(div().id("menu-backdrop").absolute().size_full().on_mouse_down(MouseButton::Left, cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                    this.dismissed = this.menu.take().map(|m| (m, ev.position));
                     cx.notify();
                 })))
                 .children(pop.map(|p| p.occlude())),
@@ -857,10 +863,7 @@ impl Launcher {
                     this.open(p, cx)
                 })))
                 .child(div().flex_1())
-                .child(button("more", "…", false).w(px(40.)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.menu = if this.menu == Some(Menu::More) { None } else { Some(Menu::More) };
-                    cx.notify();
-                })))
+                .child(button("more", "…", false).w(px(40.)).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::More, ev, cx))))
                 .into_any_element(),
         };
         let left = card()
@@ -1026,10 +1029,7 @@ impl Launcher {
             .gap(px(18.))
             .child(section("Launch", vec![setting_row(
                 "Window size",
-                button("s-window", window_label(&self.settings.window), false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.menu = if this.menu == Some(Menu::Window) { None } else { Some(Menu::Window) };
-                    cx.notify();
-                })),
+                button("s-window", window_label(&self.settings.window), false).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Window, ev, cx))),
                 true,
             )]))
             .child(section("Files", vec![
