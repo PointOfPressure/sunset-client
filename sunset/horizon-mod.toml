@@ -507,6 +507,12 @@ name = "sunset_server_scan_query"
 source = "src/game/server_scan_query.rs"
 
 [[native.module]]
+id = "tab_marks"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_tab_marks"
+source = "src/game/tab_marks.rs"
+
+[[native.module]]
 id = "server_scan_remote"
 file = "crates/horizon-client/src/game/network/remote/mod.rs"
 name = "sunset_server_scan_remote"
@@ -2295,24 +2301,6 @@ bindings = [
 # bindings = [{ name = "world", ty = "&mut MotionWorld<'_, '_, '_>", value = "self" }]
 
 # [[native.mixin]]
-# id = "tab_modes_name"
-# target = "horizon_client_render::tab_list::name_for_display"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/tab_modes_name_hook.rs"
-# bindings = [
-#   { name = "p", ty = "&TabPlayer", value = "p" },
-#   { name = "board", ty = "&Scoreboard", value = "board" },
-# ]
-
-# [[native.mixin]]
-# id = "tab_modes_layout"
-# target = "horizon_client_render::tab_list::TabList::layout"
-# kind = "HEAD"
-# helper = "src/mixins/tab_modes_layout_hook.rs"
-# bindings = [{ name = "this", ty = "&mut TabList", value = "&mut *self" }]
-
-# [[native.mixin]]
 # id = "streamer_text"
 # target = "horizon_client_render::hud::HudBatch::styled_text"
 # kind = "HEAD"
@@ -2409,13 +2397,6 @@ bindings = [
 # helper = "src/mixins/debug_wire_hook.rs"
 # bindings = [{ name = "body", ty = "&[u8]", value = "body" }]
 
-# [[native.mixin]]
-# id = "debug_chat_signed"
-# target = "horizon_client_render::chat::Chat::add_signed"
-# kind = "HEAD"
-# helper = "src/mixins/debug_chat_signed_hook.rs"
-# bindings = [{ name = "content", ty = "&crate::text::Text", value = "&content" }]
-
 
 # The move keys and the player's own move state (GUI Move, No Slow, knockback slow, Scaffold's movement correction):
 # the call into the motion has a struct-literal receiver no selector can name, so the keys are changed where they are
@@ -2464,13 +2445,6 @@ bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
 #   { name = "name", ty = "&str", value = "name" },
 #   { name = "decoded", ty = "&crate::sprite_cache::Decoded", value = "&decoded" },
 # ]
-
-# [[native.mixin]]
-# id = "block_outline_draw"
-# target = "horizon_client_render::gfx::Renderer::draw_outline"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/block_overlay_draw_hook.rs"
 
 # [[native.mixin]]
 # id = "atmosphere_render"
@@ -2571,3 +2545,22 @@ bindings = [
   { name = "full", ty = "bool", value = "$arg3" },
   { name = "operation", ty = "impl FnOnce(i32, i32, Option<f32>, bool) -> Vec<hud_layout::GuiDraw>", value = "$operation" },
 ]
+
+# Debug Report's signed chat, the native block outline
+[[native.mixin]]
+id = "debug_chat_signed"
+target = "horizon_client::game::remote::Game<'_>::signed_chat_line"
+kind = "MODIFY_ARG"
+selector = "self.ui.chat.add_signed"
+require = 1
+ordinal = 0
+argument = 1
+helper = "src/mixins/debug_chat_signed_hook.rs"
+bindings = [{ name = "value", ty = "horizon_client::text::Text", value = "$value" }]
+
+[[native.mixin]]
+id = "block_outline_draw"
+target = "horizon_client::game::native_hooks::base::Game<'_>::native_block_highlight"
+kind = "HEAD"
+helper = "src/mixins/block_overlay_draw_hook.rs"
+bindings = [{ name = "canceled", ty = "&mut bool", value = "&mut *canceled" }]

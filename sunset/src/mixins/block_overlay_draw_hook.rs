@@ -1,11 +1,7 @@
-// The native depth-tested stroke is skipped only for an owned visual frame.
-// No pipeline, buffer, pass, or gameplay state is changed.
-fn sunset_block_overlay_draw() -> std::ops::ControlFlow<()> {
-    if !::sunset_core::lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
-
-    if ::sunset_core::block_overlay::active() {
-        std::ops::ControlFlow::Break(())
-    } else {
-        std::ops::ControlFlow::Continue(())
+// Sunset's block overlay owns the frame: the game's own outline of the block looked at is left out (as a mod's
+// block_highlight answer does).
+fn sunset_block_overlay_draw(canceled: &mut bool) {
+    if ::sunset_core::lifecycle::RUNTIME.running() && ::sunset_core::block_overlay::active() {
+        *canceled = true;
     }
 }
