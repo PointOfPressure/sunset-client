@@ -39,6 +39,33 @@ name = "sunset_cyanite_drill"
 source = "cyanite_drill.rs"
 
 [[module]]
+id = "cyanite_storage"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_cyanite_storage"
+source = "cyanite_storage.rs"
+
+[[injection]]
+id = "cyanite_storage_data"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::remote_block_entity_data"
+helper = "cyanite_storage_data_hook.rs"
+bindings = [
+    { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+    { name = "pos", ty = "[i32; 3]", value = "pos" },
+    { name = "kind", ty = "i32", value = "kind" },
+]
+
+[[injection]]
+id = "cyanite_storage_chunk"
+kind = "HEAD"
+target = "horizon_client::game::remote_chunks::Game<'_>::remote_chunk"
+helper = "cyanite_storage_chunk_hook.rs"
+bindings = [
+    { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+    { name = "p", ty = "&horizon_protocol::packets::play::LevelChunkWithLight", value = "p" },
+]
+
+[[module]]
 id = "baritone_controller"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_baritone"

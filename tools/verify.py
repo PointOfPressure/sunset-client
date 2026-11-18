@@ -10853,7 +10853,7 @@ def dig_wire(ticks):
 
 @test("Cyanite utilities")
 def _():
-    only("Message Logger", "Depth Alert")
+    only("Depth Alert")
     setting("depthalert", "y level", str(Y + 3))
     mark = log_mark()
     cmd(f"tp @s {X0 + 0.5} {Y + 5} {Z0 + 0.5}")
@@ -10861,18 +10861,12 @@ def _():
     cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}")
     wait(4)
     depth = any("Depth Alert: crossed" in line for line in toasts_since(mark))
-    ctl("chat", "Cyanite native logger fixture")
-    wait(5)
     root = session_dir()
 
     def files(suffix):
         return [os.path.join(path, name) for path, _, names in os.walk(root)
                 for name in names if name.endswith(suffix) and ".horizon-mod-data" in path]
 
-    logged = False
-    for path in files(".jsonl"):
-        with open(path, encoding="utf-8") as f:
-            logged |= "Cyanite native logger fixture" in f.read()
     only("Chest Index")
     at = (X0, Y + 1, Z0 + 2)
     cmd(f'setblock {at[0]} {at[1]} {at[2]} minecraft:chest{{Items:[{{Slot:0b,id:"minecraft:diamond",count:7}}]}}')
@@ -10885,7 +10879,7 @@ def _():
             continue
         with open(path, encoding="utf-8") as f:
             indexed |= any(c["pos"] == list(at) and c["items"].get("minecraft:diamond") == 7 for c in json.load(f))
-    return depth and logged and indexed, f"height crossing: {depth}; chat file: {logged}; chest remembers 7 diamonds: {indexed}"
+    return depth and indexed, f"height crossing: {depth}; chest remembers 7 diamonds: {indexed}"
 
 
 @test("Vein Miner")

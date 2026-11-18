@@ -377,13 +377,16 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
         super::sunset_cyanite_utilities::shutdown();
         super::sunset_cyanite_economy::stopped(game);
         super::sunset_cyanite_drill::shutdown();
+        super::sunset_cyanite_storage::shutdown();
         return;
     }
     super::sunset_sky::keep_shown(game);
     ensure_loaded(game);
-    super::sunset_cyanite_utilities::tick(game, &snapshot());
-    super::sunset_cyanite_economy::tick(game, &snapshot());
-    super::sunset_cyanite_drill::tick(game, &snapshot());
+    let utility_modules = snapshot();
+    super::sunset_cyanite_utilities::tick(game, &utility_modules);
+    super::sunset_cyanite_economy::tick(game, &utility_modules);
+    super::sunset_cyanite_drill::tick(game, &utility_modules);
+    super::sunset_cyanite_storage::tick(game);
     super::sunset_melee::post_input(game);
     turned(game);
     super::sunset_api::tick(game);

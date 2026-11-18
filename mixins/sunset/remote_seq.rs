@@ -18,12 +18,12 @@ pub(crate) fn release_charged_trident(game: &mut Game<'_>, charge: u32) {
     }
 }
 
-// A server shop consumes this ordinary inventory click. It does not predict picking
-// the sold stack onto the local cursor, since the plugin owns the resulting sale.
-pub(crate) fn shop_sell_stack(game: &mut Game<'_>, window: i32, slot: usize) -> bool {
+// A plugin menu owns the result of this ordinary left click. Predicting a pickup
+// would put a listing/control on the local cursor while its next menu is in flight.
+pub(crate) fn server_menu_click(game: &mut Game<'_>, window: i32, slot: usize) -> bool {
     use horizon_protocol::packets::play::{self, Serverbound as S};
     let (open, menu) = game.remote_menu();
-    if open != window || game.carried.is_some() { return false; }
+    if window == 0 || open != window || game.carried.is_some() { return false; }
     let Some(index) = crate::game::Game::menu_slot_index(&menu, slot) else { return false };
     let Some(remote) = game.remote.as_ref() else { return false };
     let state = remote.state_id;

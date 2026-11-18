@@ -345,6 +345,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Passive", true)
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "")
+            .pick("Villager filter", &["All", "Employed", "Librarians", "Master level"])
+            .bool("Villager babies", true)
+            .bool("Villager profession colors", false)
+            .bool("Villager level label", false)
             .bool("Items", false)
             .bool("Item names", false)
             .bool("Item tracers", false)
@@ -399,6 +403,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Range", 0.0, 0.0, ALL_RANGE_MAX, 8.0)
             .num("Max", 64.0, 1.0, 512.0, 1.0),
         Module::new("Storage ESP", Render, "Boxes around storage.")
+            .bool("Hidden metadata", false)
+            .bool("Hidden storage", true)
+            .bool("Hidden spawners", true)
+            .bool("Metadata labels", true)
+            .num("Metadata range", 128.0, 16.0, 512.0, 16.0)
+            .colour("Metadata color", "Purple")
             .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])
             .pick("Shape mode", &["Both", "Lines", "Sides"])
             .num("Fill opacity", 0.16, 0.0, 1.0, 0.02)
@@ -698,7 +708,6 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_vein_miner::defaults());
     v.extend(super::sunset_cyanite_utilities::defaults());
     v.extend(super::sunset_cyanite_economy::defaults());
-    v.extend(super::sunset_cyanite_render::defaults());
     v.extend(super::sunset_cyanite_drill::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_effects::defaults());

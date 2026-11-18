@@ -23,9 +23,24 @@ pub(super) fn money(text: &str) -> Option<f64> {
 pub(super) fn listing_price(line: &str) -> Option<f64> {
     let lower = line.to_ascii_lowercase();
     let at = lower.find("price")?;
-    let rest = line[at + 5..].trim_start_matches(|c: char| !c.is_ascii_digit() && c != '-' && c != '+');
+    if at > 0 && lower.as_bytes()[at - 1].is_ascii_alphabetic() { return None; }
+    // Only the total purchase price is useful for both stack and per-item limits.
+    if ["unit", "each", "per item", "starting", "bid"].iter().any(|word| lower.contains(word)) { return None; }
+    let rest = line[at + 5..].trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ':' | '=' | '»' | '›'));
     let number = rest.split_whitespace().next()?;
     money(number)
+}
+
+pub(super) fn stable_listing_line(line: &str) -> bool {
+    let line = line.to_lowercase();
+    !["expires", "remaining", "time left", "ends in", "refresh"].iter().any(|word| line.contains(word))
+}
+
+pub(super) fn confirms(label: &str, wanted: &str) -> bool {
+    let label = label.to_lowercase();
+    let wanted = wanted.trim().to_lowercase();
+    !wanted.is_empty() && label.contains(&wanted)
+        && !label.split(|c: char| !c.is_alphabetic()).any(|w| matches!(w, "cancel" | "decline" | "deny" | "back" | "no" | "not"))
 }
 
 #[cfg(test)]
@@ -48,8 +63,29 @@ mod tests {
         assert_eq!(listing_price("Price: $1,250"), Some(1250.0));
         assert_eq!(listing_price("Total price: 1.5k coins"), Some(1500.0));
         assert_eq!(money("$2M"), Some(2_000_000.0));
-        for line in ["Seller: player123", "Price: -3", "Price: NaN", "Price: infinity", "Price: 0", "Price: 1e5"] {
+        for line in ["Seller: player123", "Price: -3", "Price: NaN", "Price: infinity", "Price: 0", "Price: 1e5",
+            "Surprise: 5", "Unit price: 2", "Price per item: 2", "Price: not for sale 50", "Starting price: 1"] {
             assert_eq!(listing_price(line), None, "{line}");
         }
+    }
+
+    #[test]
+    fn listing_identity_ignores_countdowns_but_keeps_seller_price_and_id() {
+        for line in ["Expires in 9m", "Time left: 6m", "9 minutes remaining", "Ends in 1h"] {
+            assert!(!stable_listing_line(line));
+        }
+        for line in ["Seller: Notch", "Price: $150k", "Listing ID: 1234"] {
+            assert!(stable_listing_line(line));
+        }
+    }
+
+    #[test]
+    fn confirmation_buttons_require_a_positive_named_action() {
+        assert!(confirms("CONFIRM PURCHASE", "confirm"));
+        assert!(confirms("Buy now", "buy"));
+        for label in ["Cancel", "Do not confirm", "Decline / Confirm", "No, go back"] {
+            assert!(!confirms(label, "confirm"), "{label}");
+        }
+        assert!(!confirms("Confirm", ""));
     }
 }

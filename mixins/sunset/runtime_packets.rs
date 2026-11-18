@@ -575,6 +575,7 @@ pub(super) fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packe
         super::sunset_combat_inventory::packet(game, packet);
         super::sunset_gear::packet(game, packet);
         super::sunset_cyanite_drill::packet(game, packet);
+        super::sunset_cyanite_storage::packet(game, packet);
         super::sunset_throws::packet(game, packet);
         super::sunset_effects::packet(game, packet);
         super::recipe_book::sunset_recipes::packet(packet);

@@ -4,10 +4,8 @@ use super::Game;
 use super::sunset::{Camera, Canvas, Category, Module, say};
 use super::sunset_util::{center_of, dist, listed, short};
 use super::sunset_cyanite_logic::crossed;
-use horizon_client::chat::ChatSource;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
-use std::io::Write;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -18,8 +16,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Trigger", &["Going down", "Going up", "Either way"]),
         Module::new("Auto Trident", Category::Movement, "Releases a charged Riptide trident while you hold use.")
             .num("Charge ticks", 10.0, 10.0, 40.0, 1.0),
-        Module::new("Message Logger", Category::Client, "Saves received chat in your local Sunset data folder.")
-            .bool("Server messages", true).bool("Player messages", true),
         Module::new("Staff List", Category::Player, "Lists online names matching your staff list or tab ranks.")
             .text("Names", "").text("Ranks", "admin,moderator,mod,staff")
             .bool("Notify", true),
@@ -53,9 +49,6 @@ struct Retry {
 struct State {
     world: Option<(u64, &'static str)>,
     last_y: Option<f64>,
-    logger_seen: u64,
-    logger_on: bool,
-    log_error: bool,
     staff: HashSet<String>,
     guarded: HashSet<u32>,
     guard_started: Option<Instant>,
@@ -67,8 +60,7 @@ struct State {
 
 impl Default for State {
     fn default() -> Self {
-        Self { world: None, last_y: None, logger_seen: u64::MAX, logger_on: false,
-            log_error: false, staff: HashSet::new(), guarded: HashSet::new(),
+        Self { world: None, last_y: None, staff: HashSet::new(), guarded: HashSet::new(),
             guard_started: None, retry: None, menu: 0, opened: None, containers: Vec::new() }
     }
 }
@@ -96,43 +88,6 @@ pub(super) fn world_key(game: &Game<'_>) -> Option<u64> {
 fn index_path(game: &Game<'_>) -> Option<std::path::PathBuf> {
     Some(game.native_data_dir(super::sunset::ID).join("chest-index")
         .join(format!("{:016x}-{}.json", world_key(game)?, short(game.dim.id()))))
-}
-
-fn logger(game: &mut Game<'_>, m: Option<&Module>) {
-    let Some(m) = m else {
-        state(|s| { s.logger_on = false; s.log_error = false; });
-        return;
-    };
-    let seen = state(|s| if s.logger_on { s.logger_seen } else { u64::MAX });
-    let (seen, lines) = horizon_client::chat::sunset_chat_log::since(seen);
-    state(|s| { s.logger_seen = seen; s.logger_on = true; });
-    let lines: Vec<_> = lines.into_iter().filter(|l| match l.source {
-        ChatSource::Client => false,
-        ChatSource::Player => m.b("Player messages"),
-        _ => m.b("Server messages"),
-    }).collect();
-    if lines.is_empty() { return; }
-    let dir = game.native_data_dir(super::sunset::ID).join("chat");
-    let Some(world) = world_key(game) else { return };
-    let result = (|| -> std::io::Result<()> {
-        std::fs::create_dir_all(&dir)?;
-        let date = chrono::Local::now().format("%Y-%m-%d");
-        let path = dir.join(format!("{world:016x}-{date}.jsonl"));
-        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
-        for line in lines {
-            let at = chrono::DateTime::<chrono::Local>::from(line.at).to_rfc3339();
-            let entry = serde_json::json!({"at":at, "player":matches!(line.source, ChatSource::Player), "text":line.text});
-            writeln!(file, "{entry}")?;
-        }
-        Ok(())
-    })();
-    if let Err(error) = result {
-        if !state(|s| std::mem::replace(&mut s.log_error, true)) {
-            say(game, &format!("Message Logger could not save chat: {error}"));
-        }
-    } else {
-        state(|s| s.log_error = false);
-    }
 }
 
 fn relog(game: &mut Game<'_>, enabled: bool, delay: f64) {
@@ -244,7 +199,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
             *s = State { world, containers, retry, ..State::default() };
         });
     }
-    logger(game, module(mods, "Message Logger"));
     if let Some(player) = &game.player {
         let y = player.position.y;
         let before = state(|s| std::mem::replace(&mut s.last_y, Some(y)));
