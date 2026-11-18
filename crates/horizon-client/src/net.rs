@@ -1743,6 +1743,7 @@ fn receive_brand(payload: &cfg::CustomPayload, send: &ingress::Producer<Event>) 
 }
 
 /// `ClientBrandRetriever.getClientModName`: vanilla's default client brand.
+#[horizon_mod_api_macros::replaceable]
 fn brand() -> Vec<u8> {
     let mut w = horizon_protocol::buf::Writer::new();
     w.string("vanilla");
