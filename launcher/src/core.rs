@@ -141,6 +141,22 @@ pub struct Manifest {
     pub horizon: HorizonPin,
     pub cli: CliPin,
     pub artifacts: Vec<Artifact>,
+    /// What changed in this version, shown on Overview. Optional: manifests written before it have none, and older
+    /// launchers ignore it. It is part of the signed manifest, so it is as trusted as the rest.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changelog: Vec<Change>,
+}
+
+/// One line of a version's changelog (client/CHANGELOG.md, written into the manifest by the release scripts).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Change {
+    /// The section it is listed under: New, Changed, Fixed, Removed.
+    #[serde(default)]
+    pub kind: String,
+    pub text: String,
+    /// Written in bold in the changelog: shown highlighted.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub important: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -882,6 +898,17 @@ mod tests {
             "ab".repeat(32)
         ))
         .unwrap()
+    }
+
+    #[test]
+    fn changelog_is_optional_and_read_when_present() {
+        assert!(manifest().changelog.is_empty());
+        let mut v: serde_json::Value = serde_json::to_value(manifest()).unwrap();
+        v["changelog"] = serde_json::json!([{"kind": "Fixed", "text": "Fonts", "important": true}, {"text": "Bare"}]);
+        let m: Manifest = serde_json::from_value(v).unwrap();
+        assert_eq!((m.changelog[0].kind.as_str(), m.changelog[0].important), ("Fixed", true));
+        assert_eq!((m.changelog[1].kind.as_str(), m.changelog[1].important), ("", false));
+        assert!(m.check().is_ok());
     }
 
     #[test]

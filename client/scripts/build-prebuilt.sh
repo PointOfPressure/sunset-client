@@ -172,9 +172,13 @@ case $PLATFORM in windows-x86_64) CLI_FILE=horizon-launcher-windows-x64.zip ;; *
 CLI_URL=https://github.com/horizon-rust/horizon/releases/download/launcher@$LAUNCHER_VERSION/$CLI_FILE
 CLI_SHA=$(curl -fsSL "https://github.com/horizon-rust/horizon/releases/download/launcher@$LAUNCHER_VERSION/SHA256SUMS" | awk -v f="$CLI_FILE" '$2 == f || $2 == "*" f {print $1}')
 [ ${#CLI_SHA} = 64 ] || die "no SHA-256 for $CLI_FILE in launcher@$LAUNCHER_VERSION's SHA256SUMS"
-python3 - "$OUT" "$NAME" "$VDIR" "$UNPACKED" <<EOF
+# The launcher shows this version's client/CHANGELOG.md section on Overview (empty when it has none).
+CHANGELOG_JSON=$(python3 "$REPO/client/scripts/changelog.py" "$VERSION" "$REPO/client/CHANGELOG.md")
+[ "$CHANGELOG_JSON" != "[]" ] || say "client/CHANGELOG.md has no $VERSION section: the launcher will show no changelog"
+python3 - "$OUT" "$NAME" "$VDIR" "$UNPACKED" "$CHANGELOG_JSON" <<EOF
 import hashlib, json, os, sys, datetime
 out, name, vdir, unpacked = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
+changelog = json.loads(sys.argv[5])
 def art(f, kind):
     p = os.path.join(out, f)
     h = hashlib.sha256(open(p, "rb").read()).hexdigest()
@@ -198,6 +202,8 @@ m = {
                "horizon_fork_commit": "$FORK_HEAD" or None},
     "artifacts": arts,
 }
+if changelog:
+    m["changelog"] = changelog
 json.dump(m, open(os.path.join(out, "manifest.json"), "w"), indent=2)
 open(os.path.join(out, "manifest.json"), "a").write("\n")
 EOF

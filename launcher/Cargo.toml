@@ -20,6 +20,8 @@ tar = { version = "0.4", default-features = false }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 base64 = "0.22"
 png = "0.18"
+# The round line caps and joins of the icons' strokes (gpui draws paths with lyon and re-exports its StrokeOptions).
+lyon_tessellation = "1"
 
 [target.'cfg(windows)'.dependencies]
 zip = { version = "2", default-features = false, features = ["deflate"] }

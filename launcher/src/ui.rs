@@ -6,9 +6,11 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     Animation, AnimationExt as _, SpringAnimation, TextRun, ease_out_quint, quadratic,
     App, AppContext as _, Application, Bounds, ClickEvent, ClipboardItem, Context, ElementId, Hsla, InteractiveElement as _,
-    IntoElement, MouseButton, MouseDownEvent, Pixels, Point, ParentElement as _, Anchor, CursorStyle, Decorations, MouseMoveEvent, MouseUpEvent, ResizeEdge, WindowControlArea, WindowDecorations, PathBuilder, Render, Rgba, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    IntoElement, MouseButton, MouseDownEvent, Pixels, Point, ParentElement as _, Anchor, CursorStyle, Decorations, MouseMoveEvent, MouseUpEvent, ResizeEdge, WindowControlArea, WindowDecorations, PathBuilder, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
     WindowBounds, WindowOptions, anchored, canvas, deferred, div, point, px, rgb, size,
+    Corners, PathStyle, StrokeOptions, linear_color_stop, linear_gradient,
 };
+use lyon_tessellation::{LineCap, LineJoin};
 use std::path::PathBuf;
 use std::process::Child;
 use std::time::Duration;
@@ -27,6 +29,8 @@ const ON_ACCENT: u32 = 0xffffff;
 const GREEN: u32 = 0x6fcf97;
 const AMBER: u32 = 0xe7b04a;
 const RED: u32 = 0xef6b6b;
+const SOFT: u32 = 0xc6c6cc; // body text a step under TEXT (changelog lines)
+const INSET: u32 = 0x0f0f11; // a well set into a card (the changelog)
 
 // One spacing scale for every page, so gutters, gaps and control heights line up across views.
 const GUTTER: f32 = 24.; // window edge to content, left and right
@@ -35,6 +39,24 @@ const PAD: f32 = 16.; // inside cards and their rows
 const CTRL_H: f32 = 36.; // buttons, top-bar chips and the tab pill
 const BIG_H: f32 = 40.; // the Play row
 const BAR_H: f32 = 68.; // the top bar, chips centred in it
+const PANEL_H: f32 = 176.; // the changelog on Overview
+
+// Corner radii: one scale for the whole window. Cards, menus and dialogs are R_CARD, everything you press is R_CTRL,
+// small labels are R_SMALL. A shape nested close inside another (a tab in the tab strip, a menu row in its menu, the
+// hover light inside a bordered button, the face in the account chip) takes the outer radius minus its inset, so both
+// corners share one centre and read as the same curve. Round things (status dots, the switch, the progress bar) stay
+// round.
+const R_CARD: f32 = 14.;
+const R_CTRL: f32 = 10.;
+const R_SMALL: f32 = 6.;
+
+/// The radius of a shape inset `by` px inside a corner of radius `outer`.
+const fn nested(outer: f32, by: f32) -> f32 {
+    if outer - by > 2. { outer - by } else { 2. }
+}
+
+const MAX_CHANGES: usize = 200;
+const MAX_CHANGE_CHARS: usize = 400;
 // The embedded Inter faces (assets/inter.ttf, inter-bold.ttf) name their family only by their full names. Linux's font
 // database knows them as "Inter Medium" and "Inter SemiBold"; DirectWrite groups faces under the family name without
 // the weight, so on Windows both are "Inter" and only the weight picks the face. Set both everywhere.
@@ -116,6 +138,8 @@ pub struct Launcher {
     sources: Vec<(String, PathBuf)>,
     profiles: Vec<String>,
     mods: Vec<(String, String)>,
+    /// The Overview changelog's scroll position.
+    log_scroll: gpui::ScrollHandle,
     tx: async_channel::Sender<Msg>,
 }
 
@@ -153,6 +177,7 @@ impl Launcher {
             sources: vec![],
             profiles: vec![],
             mods: vec![],
+            log_scroll: gpui::ScrollHandle::new(),
             tx,
         };
         app.reload_local();
@@ -474,19 +499,19 @@ fn label_width(window: &Window, s: &'static str, size: f32) -> f32 {
 }
 
 fn card() -> gpui::Div {
-    div().bg(rgb(CARD)).border_1().border_color(rgb(LINE)).rounded(px(12.))
+    div().bg(rgb(CARD)).border_1().border_color(rgb(LINE)).rounded(px(R_CARD))
 }
 
 /// A button that does something; there are no disabled ones (what can't work isn't shown).
 fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, primary: bool) -> gpui::Stateful<gpui::Div> {
     let (bg, fg, hover) = if primary { (ACCENT, ON_ACCENT, ACCENT_HI) } else { (CHIP, TEXT, 0x26262a) };
-    fx::control(id, hover, if primary { 8. } else { 7. })
+    fx::control(id, hover, if primary { R_CTRL } else { nested(R_CTRL, 1.) })
         .px(px(14.))
         .h(px(CTRL_H))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(8.))
+        .rounded(px(R_CTRL))
         .bg(rgb(bg))
         .when(!primary, |d| d.border_1().border_color(rgb(LINE)))
         .text_size(px(13.))
@@ -506,7 +531,7 @@ struct Tip(SharedString);
 
 impl Render for Tip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().px(px(8.)).py(px(4.)).rounded(px(6.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).font_family(BODY).font_weight(BODY_WEIGHT).text_size(px(12.)).text_color(rgb(TEXT)).child(self.0.clone())
+        div().px(px(8.)).py(px(4.)).rounded(px(R_SMALL)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).font_family(BODY).font_weight(BODY_WEIGHT).text_size(px(12.)).text_color(rgb(TEXT)).child(self.0.clone())
     }
 }
 
@@ -521,83 +546,94 @@ enum Icon {
     Maximize,
     Restore,
     Close,
+    More,
 }
 
+/// The icons, drawn on one 24-unit grid with 1.75-unit strokes, round ends and joins and rounded corners, so the set
+/// reads as one soft family at every size.
 fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
     canvas(
         |_, _, _| (),
         move |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| {
-            let (x, y, w, h) = (b.origin.x, b.origin.y, b.size.width, b.size.height);
-            let c: Rgba = rgb(color);
-            let mut p = match kind {
-                Icon::Play => PathBuilder::fill(),
-                _ => PathBuilder::stroke(px(1.6)),
+            let k = b.size.width / 24.;
+            let at = |x: f32, y: f32| point(b.origin.x + k * x, b.origin.y + k * y);
+            let stroke = || {
+                PathBuilder::fill().with_style(PathStyle::Stroke(
+                    StrokeOptions::default().with_line_width(1.75 * f32::from(k)).with_line_cap(LineCap::Round).with_line_join(LineJoin::Round),
+                ))
             };
-            match kind {
+            let line = |p: &mut PathBuilder, pts: &[(f32, f32)]| {
+                for (i, (x, y)) in pts.iter().enumerate() {
+                    if i == 0 { p.move_to(at(*x, *y)) } else { p.line_to(at(*x, *y)) }
+                }
+            };
+            let p = match kind {
                 Icon::Play => {
-                    p.move_to(point(x + w * 0.2, y + h * 0.1));
-                    p.line_to(point(x + w * 0.9, y + h * 0.5));
-                    p.line_to(point(x + w * 0.2, y + h * 0.9));
-                    p.close();
+                    let mut p = PathBuilder::fill();
+                    rounded(&mut p, &at, &[(7.5, 5.), (19., 12.), (7.5, 19.)], 2.5);
+                    p
+                }
+                Icon::More => {
+                    let mut p = PathBuilder::fill();
+                    for cx_ in [6., 12., 18.] {
+                        dot(&mut p, &at, cx_, 12., 1.7);
+                    }
+                    p
                 }
                 Icon::Chevron => {
-                    p.move_to(point(x + w * 0.2, y + h * 0.38));
-                    p.line_to(point(x + w * 0.5, y + h * 0.66));
-                    p.line_to(point(x + w * 0.8, y + h * 0.38));
+                    let mut p = stroke();
+                    line(&mut p, &[(7., 10.), (12., 15.), (17., 10.)]);
+                    p
                 }
                 Icon::Check => {
-                    p.move_to(point(x + w * 0.2, y + h * 0.52));
-                    p.line_to(point(x + w * 0.42, y + h * 0.74));
-                    p.line_to(point(x + w * 0.8, y + h * 0.3));
+                    let mut p = stroke();
+                    line(&mut p, &[(5.5, 12.5), (10., 17.), (18.5, 7.5)]);
+                    p
                 }
                 Icon::Arrow => {
-                    p.move_to(point(x + w * 0.12, y + h * 0.5));
-                    p.line_to(point(x + w * 0.88, y + h * 0.5));
-                    p.move_to(point(x + w * 0.58, y + h * 0.22));
-                    p.line_to(point(x + w * 0.88, y + h * 0.5));
-                    p.line_to(point(x + w * 0.58, y + h * 0.78));
+                    let mut p = stroke();
+                    line(&mut p, &[(5., 12.), (19., 12.)]);
+                    line(&mut p, &[(13., 6.), (19., 12.), (13., 18.)]);
+                    p
                 }
                 Icon::Minimize => {
-                    p.move_to(point(x + w * 0.2, y + h * 0.5));
-                    p.line_to(point(x + w * 0.8, y + h * 0.5));
+                    let mut p = stroke();
+                    line(&mut p, &[(6., 12.), (18., 12.)]);
+                    p
                 }
                 Icon::Maximize => {
-                    p.move_to(point(x + w * 0.2, y + h * 0.2));
-                    p.line_to(point(x + w * 0.8, y + h * 0.2));
-                    p.line_to(point(x + w * 0.8, y + h * 0.8));
-                    p.line_to(point(x + w * 0.2, y + h * 0.8));
-                    p.close();
+                    let mut p = stroke();
+                    rounded(&mut p, &at, &[(6., 6.), (18., 6.), (18., 18.), (6., 18.)], 2.5);
+                    p
                 }
                 Icon::Restore => {
-                    p.move_to(point(x + w * 0.2, y + h * 0.34));
-                    p.line_to(point(x + w * 0.66, y + h * 0.34));
-                    p.line_to(point(x + w * 0.66, y + h * 0.8));
-                    p.line_to(point(x + w * 0.2, y + h * 0.8));
-                    p.close();
-                    p.move_to(point(x + w * 0.34, y + h * 0.34));
-                    p.line_to(point(x + w * 0.34, y + h * 0.2));
-                    p.line_to(point(x + w * 0.8, y + h * 0.2));
-                    p.line_to(point(x + w * 0.8, y + h * 0.66));
-                    p.line_to(point(x + w * 0.66, y + h * 0.66));
+                    let mut p = stroke();
+                    rounded(&mut p, &at, &[(5., 9.), (15., 9.), (15., 19.), (5., 19.)], 2.5);
+                    // The window behind: only its top and right edges show.
+                    p.move_to(at(9., 9.));
+                    p.line_to(at(9., 7.5));
+                    p.curve_to(at(11.5, 5.), at(9., 5.));
+                    p.line_to(at(16.5, 5.));
+                    p.curve_to(at(19., 7.5), at(19., 5.));
+                    p.line_to(at(19., 12.5));
+                    p.curve_to(at(16.5, 15.), at(19., 15.));
+                    p.line_to(at(15., 15.));
+                    p
                 }
                 Icon::Close => {
-                    p.move_to(point(x + w * 0.22, y + h * 0.22));
-                    p.line_to(point(x + w * 0.78, y + h * 0.78));
-                    p.move_to(point(x + w * 0.78, y + h * 0.22));
-                    p.line_to(point(x + w * 0.22, y + h * 0.78));
+                    let mut p = stroke();
+                    line(&mut p, &[(7., 7.), (17., 17.)]);
+                    line(&mut p, &[(17., 7.), (7., 17.)]);
+                    p
                 }
                 Icon::Folder => {
-                    p.move_to(point(x + w * 0.08, y + h * 0.22));
-                    p.line_to(point(x + w * 0.4, y + h * 0.22));
-                    p.line_to(point(x + w * 0.5, y + h * 0.34));
-                    p.line_to(point(x + w * 0.92, y + h * 0.34));
-                    p.line_to(point(x + w * 0.92, y + h * 0.82));
-                    p.line_to(point(x + w * 0.08, y + h * 0.82));
-                    p.close();
+                    let mut p = stroke();
+                    rounded(&mut p, &at, &[(3.5, 6.), (9.5, 6.), (11.5, 8.5), (20.5, 8.5), (20.5, 18.5), (3.5, 18.5)], 2.);
+                    p
                 }
-            }
+            };
             if let Ok(path) = p.build() {
-                window.paint_path(path, c);
+                window.paint_path(path, rgb(color));
             }
         },
     )
@@ -606,46 +642,97 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
     .flex_none()
 }
 
-/// The banner: a sun behind three ridges, drawn (no image files).
-fn banner() -> impl IntoElement {
-    canvas(
-        |_, _, _| (),
-        |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| {
-            let (x, y, w, h) = (b.origin.x, b.origin.y, b.size.width, b.size.height);
-            let poly = |pts: &[(f32, f32)], color: u32, window: &mut Window| {
-                let mut p = PathBuilder::fill();
-                for (i, (px_, py_)) in pts.iter().enumerate() {
-                    let pt = point(x + w * *px_, y + h * *py_);
-                    if i == 0 { p.move_to(pt) } else { p.line_to(pt) }
-                }
-                p.close();
-                if let Ok(path) = p.build() {
-                    window.paint_path(path, rgb(color));
-                }
-            };
-            // Dusk sky, a glow and the sun, then ridges stepping from deep rust to Sunset orange in front.
-            poly(&[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], 0x221006, window);
-            poly(&[(0., 0.45), (1., 0.45), (1., 1.), (0., 1.)], 0x341607, window);
-            let (cx_, cy, r) = (0.75, 0.38, 0.17 * h / w);
-            let circle = |r: f32| -> Vec<(f32, f32)> {
-                (0..64)
-                    .map(|i| {
-                        let a = i as f32 / 64. * std::f32::consts::TAU;
-                        (cx_ + r * a.cos(), cy + r * (w / h) * a.sin())
-                    })
-                    .collect()
-            };
-            poly(&circle(r * 1.7), 0x4a1d06, window);
-            poly(&circle(r * 1.3), 0x6b2a05, window);
-            poly(&circle(r), ACCENT_HI, window);
-            poly(&[(0., 0.86), (0.2, 0.3), (0.42, 0.62), (0.56, 0.4), (0.8, 0.9), (0., 1.)], 0x5c2104, window);
-            poly(&[(0., 1.), (0., 0.92), (0.2, 0.55), (0.45, 0.85), (0.6, 0.6), (0.82, 0.52), (1., 0.88), (1., 1.)], 0x9a3802, window);
-            poly(&[(0., 1.), (0., 0.98), (0.18, 0.78), (0.4, 0.95), (0.62, 0.8), (0.86, 0.72), (1., 0.84), (1., 1.)], ACCENT, window);
-        },
-    )
-    .w_full()
-    .h(px(176.))
-    .rounded(px(8.))
+/// A closed outline through `pts` (icon grid units) with every corner rounded by up to `r` units.
+fn rounded(p: &mut PathBuilder, at: &dyn Fn(f32, f32) -> Point<Pixels>, pts: &[(f32, f32)], r: f32) {
+    let toward = |a: (f32, f32), b: (f32, f32)| {
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        let len = (dx * dx + dy * dy).sqrt().max(1e-3);
+        let d = r.min(len / 2.);
+        (a.0 + dx / len * d, a.1 + dy / len * d)
+    };
+    let n = pts.len();
+    for i in 0..n {
+        let (prev, v, next) = (pts[(i + n - 1) % n], pts[i], pts[(i + 1) % n]);
+        let (a, c) = (toward(v, prev), toward(v, next));
+        if i == 0 { p.move_to(at(a.0, a.1)) } else { p.line_to(at(a.0, a.1)) }
+        p.curve_to(at(c.0, c.1), at(v.0, v.1));
+    }
+    p.close();
+}
+
+/// A filled dot of radius `r` units at (`x`, `y`).
+fn dot(p: &mut PathBuilder, at: &dyn Fn(f32, f32) -> Point<Pixels>, x: f32, y: f32, r: f32) {
+    for i in 0..24 {
+        let a = i as f32 / 24. * std::f32::consts::TAU;
+        let pt = at(x + r * a.cos(), y + r * a.sin());
+        if i == 0 { p.move_to(pt) } else { p.line_to(pt) }
+    }
+    p.close();
+}
+
+/// One line of the changelog: its section as a fixed-width tag, then the text, wrapped. Important lines get an
+/// accent tag and full-strength text.
+fn change_row(c: &core::Change) -> gpui::Div {
+    let kind = match c.kind.trim() {
+        "" => "Note".to_string(),
+        k => k.chars().take(9).collect(),
+    };
+    let mut line = c.text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if line.chars().count() > MAX_CHANGE_CHARS {
+        line = line.chars().take(MAX_CHANGE_CHARS).collect::<String>() + "…";
+    }
+    let tag = div()
+        .flex_none()
+        .w(px(64.))
+        .h(px(20.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(R_SMALL))
+        .bg(rgb(if c.important { ACCENT } else { CHIP }))
+        .text_size(px(11.))
+        .font_family(BOLD).font_weight(BOLD_WEIGHT)
+        .text_color(rgb(if c.important { ON_ACCENT } else { MUTED }))
+        .child(kind);
+    let body = div()
+        .flex_1()
+        .min_w(px(0.))
+        .pt(px(1.))
+        .text_size(px(13.))
+        .line_height(px(18.))
+        .text_color(rgb(if c.important { TEXT } else { SOFT }))
+        .when(c.important, |d| d.font_family(BOLD).font_weight(BOLD_WEIGHT))
+        .child(line);
+    div().w_full().min_w(px(0.)).flex().items_start().gap(px(10.)).child(tag).child(body)
+}
+
+/// The changelog's scroll cues, painted over the list: a fade on an edge with more text past it, and a thin thumb.
+/// Painted from the scroll handle each frame, so they follow the list without a re-render.
+fn scroll_cues(handle: &gpui::ScrollHandle, window: &mut Window) {
+    let b = handle.bounds();
+    let (view, max, off) = (f32::from(b.size.height), f32::from(handle.max_offset().y), -f32::from(handle.offset().y));
+    if view <= 0. || max <= 0.5 {
+        return;
+    }
+    const FADE: f32 = 24.;
+    let (clear, solid) = (Hsla::from(gpui::rgba(INSET << 8)), Hsla::from(rgb(INSET)));
+    if off > 0.5 {
+        let at = Bounds::new(b.origin, size(b.size.width, px(FADE)));
+        window.paint_quad(gpui::fill(at, linear_gradient(180., linear_color_stop(solid, 0.), linear_color_stop(clear, 1.))));
+    }
+    if off < max - 0.5 {
+        let at = Bounds::new(point(b.origin.x, b.origin.y + b.size.height - px(FADE)), size(b.size.width, px(FADE)));
+        let r = px(nested(R_CTRL, 1.));
+        window.paint_quad(
+            gpui::fill(at, linear_gradient(180., linear_color_stop(clear, 0.), linear_color_stop(solid, 1.)))
+                .corner_radii(Corners { top_left: px(0.), top_right: px(0.), bottom_left: r, bottom_right: r }),
+        );
+    }
+    let track = view - 12.;
+    let thumb = (track * view / (view + max)).clamp(24f32.min(track), track);
+    let y = 6. + (off / max).clamp(0., 1.) * (track - thumb);
+    let at = Bounds::new(point(b.origin.x + b.size.width - px(7.), b.origin.y + px(y)), size(px(3.), px(thumb)));
+    window.paint_quad(gpui::fill(at, rgb(0x3a3a40)).corner_radii(Corners::all(px(1.5))));
 }
 
 /// The Sunset mark (the site's and the game's): two half rings, drawn `w` wide and half as tall.
@@ -686,7 +773,7 @@ fn mark(w: f32, color: u32) -> impl IntoElement {
 
 fn face(pixels: &[[u8; 4]], s: f32) -> impl IntoElement {
     let cell = s / 8.;
-    div().flex().flex_col().w(px(s)).h(px(s)).rounded(px(3.)).overflow_hidden().children((0..8).map(|y| {
+    div().flex().flex_col().w(px(s)).h(px(s)).rounded(px(nested(R_CTRL, 7.))).overflow_hidden().children((0..8).map(|y| {
         div().flex().h(px(cell)).children((0..8).map(move |x| {
             let [r, g, b, _] = pixels[y * 8 + x];
             div().w(px(cell)).h(px(cell)).bg(rgb(((r as u32) << 16) | ((g as u32) << 8) | b as u32))
@@ -731,15 +818,15 @@ fn page_head(title: &str, action: Option<gpui::AnyElement>) -> gpui::Div {
     div().flex().flex_none().items_center().justify_between().h(px(CTRL_H)).child(bold(title.to_string(), 26.)).children(action)
 }
 
-/// The top bar's pill buttons (platform, instance, account) share this shape.
+/// The top bar's chips (platform, instance, account) share this shape.
 fn top_chip(id: impl Into<ElementId>) -> gpui::Stateful<gpui::Div> {
-    fx::control(id, 0x26262a, CTRL_H / 2. - 1.)
+    fx::control(id, 0x26262a, nested(R_CTRL, 1.))
         .flex()
         .items_center()
         .gap(px(8.))
         .h(px(CTRL_H))
         .px(px(14.))
-        .rounded(px(CTRL_H / 2.))
+        .rounded(px(R_CTRL))
         .bg(rgb(CHIP))
         .border_1()
         .border_color(rgb(LINE))
@@ -765,13 +852,13 @@ fn window_controls(window: &Window) -> Option<gpui::Div> {
         return None;
     }
     let ctl = |id: &'static str, kind: Icon, area: WindowControlArea, hover: u32| {
-        fx::control(id, hover, 8.)
+        fx::control(id, hover, R_CTRL)
             .w(px(40.))
             .h(px(CTRL_H))
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(8.))
+            .rounded(px(R_CTRL))
             .cursor_pointer()
             .window_control_area(area)
             .child(icon(kind, 14., TEXT))
@@ -839,7 +926,9 @@ impl Launcher {
                 let shown: Vec<_> = tabs.into_iter().filter(|(t, _)| has || *t == Tab::Overview || *t == Tab::Settings).collect();
                 // Tabs are sized here from their labels, so the pill that slides under them knows where each one is
                 // in the same frame.
+                // Inside the strip's 1 px border and 3 px padding.
                 let tab_h = CTRL_H - 8.;
+                let tab_r = nested(R_CTRL, 4.);
                 let mut x = 0.;
                 let spans: Vec<(f32, f32)> = shown
                     .iter()
@@ -851,7 +940,7 @@ impl Launcher {
                     .collect();
                 let widths: Vec<f32> = spans.iter().map(|s| s.1).collect();
                 let pill = shown.iter().position(|(t, _)| *t == self.tab).map(|at| {
-                    div().absolute().top(px(3.)).h(px(tab_h)).rounded(px(tab_h / 2.)).bg(rgb(0x2a2a2e)).with_spring(
+                    div().absolute().top(px(3.)).h(px(tab_h)).rounded(px(tab_r)).bg(rgb(0x2a2a2e)).with_spring(
                         "tab-pill",
                         SpringAnimation::new(fx::SLIDE).to(at as f32).with_epsilon(0.002),
                         move |d, p| {
@@ -860,11 +949,11 @@ impl Launcher {
                         },
                     )
                 });
-                div().relative().flex().p(px(3.)).gap(px(2.)).rounded(px(CTRL_H / 2.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).children(pill).children(shown.into_iter().zip(widths).map(|((t, label), w)| {
+                div().relative().flex().p(px(3.)).gap(px(2.)).rounded(px(R_CTRL)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).children(pill).children(shown.into_iter().zip(widths).map(|((t, label), w)| {
                     let on = self.tab == t;
                     let id = ElementId::from(label);
                     let lit = on || fx::hovered(&id);
-                    fx::pressable(id, None, tab_h / 2.)
+                    fx::pressable(id, None, tab_r)
                         .w(px(w))
                         .h(px(tab_h))
                         .flex()
@@ -1005,7 +1094,7 @@ impl Launcher {
         let Some(a) = self.accounts.iter().find(|a| a.selected).or(self.accounts.first()) else {
             return top_chip("sign-in").child(text("Sign in", 13., TEXT)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_sign_in(cx))).into_any_element();
         };
-        let head = self.faces.iter().find(|(u, _)| u == &a.uuid).map(|(_, f)| face(f, 22.).into_any_element()).unwrap_or_else(|| div().w(px(22.)).h(px(22.)).rounded(px(3.)).bg(rgb(0x3a3a40)).into_any_element());
+        let head = self.faces.iter().find(|(u, _)| u == &a.uuid).map(|(_, f)| face(f, 22.).into_any_element()).unwrap_or_else(|| div().w(px(22.)).h(px(22.)).rounded(px(nested(R_CTRL, 7.))).bg(rgb(0x3a3a40)).into_any_element());
         let chip = top_chip("account")
             .pl(px(8.))
             .pr(px(10.))
@@ -1021,12 +1110,13 @@ impl Launcher {
     }
 
     fn menu_row(&self, id: impl Into<ElementId>, label: gpui::Div, cx: &mut Context<Self>, f: impl Fn(&mut Self, &mut Context<Self>) + 'static) -> gpui::Stateful<gpui::Div> {
-        fx::control(id, 0x26262a, 6.)
+        // Inside the menu's 1 px border and 4 px padding.
+        fx::control(id, 0x26262a, nested(R_CARD, 5.))
             .px(px(12.))
             .h(px(32.))
             .flex()
             .items_center()
-            .rounded(px(6.))
+            .rounded(px(nested(R_CARD, 5.)))
             .cursor_pointer()
             .text_size(px(13.))
             .text_color(rgb(TEXT))
@@ -1113,7 +1203,7 @@ impl Launcher {
                     }
                     cx.notify();
                 }))))
-                .child(div().h(px(6.)).w_full().rounded(px(3.)).bg(rgb(0x2a2a2e)).child(div().h_full().rounded(px(3.)).bg(rgb(ACCENT)).w(gpui::relative(if j.frac.is_some() { frac } else { 1. })).when(j.frac.is_none(), |d| d.opacity(0.35)))),
+                .child(div().h(px(6.)).w_full().rounded_full().bg(rgb(0x2a2a2e)).child(div().h_full().rounded_full().bg(rgb(ACCENT)).w(gpui::relative(if j.frac.is_some() { frac } else { 1. })).when(j.frac.is_none(), |d| d.opacity(0.35)))),
         )
     }
 
@@ -1128,14 +1218,14 @@ impl Launcher {
                 .items_center()
                 .gap(px(8.))
                 .child(
-                    if self.playing { div().id("play") } else { fx::control("play", ACCENT_HI, 8.) }
+                    if self.playing { div().id("play") } else { fx::control("play", ACCENT_HI, R_CTRL) }
                         .flex()
                         .items_center()
                         .justify_center()
                         .gap(px(10.))
                         .w(px(200.))
                         .h(px(BIG_H))
-                        .rounded(px(8.))
+                        .rounded(px(R_CTRL))
                         .bg(rgb(ACCENT))
                         .when(self.playing, |d| d.opacity(0.6))
                         .when(!self.playing, |d| d.cursor_pointer())
@@ -1149,7 +1239,7 @@ impl Launcher {
                     this.open(p, cx)
                 })))
                 .child(div().flex_1())
-                .child(self.with_menu(Menu::More, button("more", "…", false).w(px(BIG_H)).h(px(BIG_H)).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::More, ev, cx))), true, cx))
+                .child(self.with_menu(Menu::More, icon_button("more", Icon::More, "More", BIG_H).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::More, ev, cx))), true, cx))
                 .into_any_element(),
         };
         let title = div()
@@ -1166,14 +1256,16 @@ impl Launcher {
             )
             .child(text(format!("Minecraft {}", m.horizon.game), 13., MUTED));
         // The Play row sits at the bottom so it lines up with the right card's buttons.
+        // min_w(0): the changelog's long lines wrap inside the card instead of widening it past the window.
         let left = card()
             .flex_1()
+            .min_w(px(0.))
             .p(px(PAD))
             .flex()
             .flex_col()
             .justify_between()
             .gap(px(GAP))
-            .child(div().flex().flex_col().gap(px(GAP)).child(banner()).child(title))
+            .child(div().flex().flex_col().min_w(px(0.)).gap(px(GAP)).child(self.changelog(m)).child(title))
             .child(play_area);
         let plugins = self.mods.iter().filter(|(id, _)| id != "sunset").count();
         let right = card()
@@ -1220,11 +1312,11 @@ impl Launcher {
             .when_some(self.import_prompt(cx), |d, p| d.child(p))
             .child(div().flex().gap(px(GAP)).child(left).child(right))
             .child(
-                fx::control("instance-dir", 0x18181b, 11.)
+                fx::control("instance-dir", 0x18181b, nested(R_CARD, 1.))
                     .bg(rgb(CARD))
                     .border_1()
                     .border_color(rgb(LINE))
-                    .rounded(px(12.))
+                    .rounded(px(R_CARD))
                     .flex()
                     .items_center()
                     .gap(px(10.))
@@ -1239,6 +1331,47 @@ impl Launcher {
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(dir.clone(), cx))),
             )
             .into_any_element()
+    }
+
+    /// The installed version's changelog, from its signed manifest, where the banner was and as large. The list
+    /// scrolls inside the panel; edge fades and a thin thumb show there is more (`scroll_cues`).
+    fn changelog(&self, m: &Manifest) -> gpui::Div {
+        let changes: Vec<&core::Change> = m.changelog.iter().filter(|c| !c.text.trim().is_empty()).take(MAX_CHANGES).collect();
+        let count = match changes.len() {
+            0 => String::new(),
+            1 => "1 change".into(),
+            n => format!("{n} changes"),
+        };
+        let panel = div()
+            .relative()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .w_full()
+            .min_w(px(0.))
+            .h(px(PANEL_H))
+            .rounded(px(R_CTRL))
+            .bg(rgb(INSET))
+            .border_1()
+            .border_color(rgb(LINE))
+            .overflow_hidden()
+            .child(div().flex_none().flex().items_center().justify_between().h(px(40.)).px(px(14.)).child(bold(format!("What's new in {}", m.version), 13.)).child(text(count, 12., MUTED)));
+        if changes.is_empty() {
+            return panel.child(div().flex_1().flex().items_center().justify_center().child(text(format!("Sunset {} came without a changelog.", m.version), 12., MUTED)));
+        }
+        let handle = self.log_scroll.clone();
+        panel
+            .child(
+                div()
+                    .id("changelog")
+                    .flex_1()
+                    .w_full()
+                    .min_h(px(0.))
+                    .overflow_y_scroll()
+                    .track_scroll(&self.log_scroll)
+                    .child(div().flex_none().w_full().flex().flex_col().gap(px(10.)).px(px(14.)).pb(px(14.)).children(changes.into_iter().map(change_row))),
+            )
+            .child(canvas(|_, _, _| (), move |_, _, window: &mut Window, _| scroll_cues(&handle, window)).absolute().top_0().left_0().size_full())
     }
 
     fn import_prompt(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
@@ -1301,10 +1434,10 @@ impl Launcher {
                 .relative()
                 .w(px(38.))
                 .h(px(22.))
-                .rounded(px(11.))
+                .rounded_full()
                 .bg(rgb(0x3a3a40))
                 .cursor_pointer()
-                .child(div().size_full().rounded(px(11.)).bg(rgb(ACCENT)).with_spring("track", slide.clone(), |d, t| d.opacity(t)))
+                .child(div().size_full().rounded_full().bg(rgb(ACCENT)).with_spring("track", slide.clone(), |d, t| d.opacity(t)))
                 .child(
                     div()
                         .absolute()
@@ -1433,7 +1566,7 @@ impl Launcher {
                         .flex()
                         .items_center()
                         .gap(px(12.))
-                        .child(div().px(px(16.)).py(px(8.)).rounded(px(8.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).child(text(code.clone(), 26., TEXT).font_family(BOLD).font_weight(BOLD_WEIGHT)))
+                        .child(div().px(px(16.)).py(px(8.)).rounded(px(R_CTRL)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).child(text(code.clone(), 26., TEXT).font_family(BOLD).font_weight(BOLD_WEIGHT)))
                         .child(button("si-copy", if s.copied { "Copied" } else { "Copy code" }, true).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                             cx.write_to_clipboard(ClipboardItem::new_string(c.clone()));
                             if let Some(s) = this.sign_in.as_mut() {
@@ -1487,7 +1620,7 @@ impl Render for Launcher {
                 .py(px(10.))
                 .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(if err { RED } else { GREEN })))
                 .child(div().flex_1().child(text(msg, 13., if err { RED } else { TEXT })))
-                .child(div().id("note-close").cursor_pointer().child(text("×", 16., MUTED)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                .child(div().id("note-close").cursor_pointer().child(icon(Icon::Close, 16., MUTED)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.note = None;
                     cx.notify();
                 })))

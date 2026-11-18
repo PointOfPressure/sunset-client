@@ -4966,6 +4966,7 @@ dependencies = [
  "flate2",
  "gpui-fast",
  "gpui-fast-platform",
+ "lyon_tessellation",
  "minisign-verify",
  "png 0.18.1",
  "ruzstd",
