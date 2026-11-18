@@ -41,7 +41,6 @@ enum Tab {
     Plugins,
     Profiles,
     Settings,
-    Launcher,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -94,7 +93,6 @@ pub struct Launcher {
     job: Option<Job>,
     note: Option<(bool, String)>,
     sign_in: Option<SignInView>,
-    about: bool,
     /// Armed by a press on the title bar; the first move then hands the drag to the window manager.
     title_drag: bool,
     playing: bool,
@@ -131,7 +129,6 @@ impl Launcher {
             job: None,
             note: None,
             sign_in: None,
-            about: false,
             title_drag: false,
             playing: false,
             sources: vec![],
@@ -672,11 +669,13 @@ fn setting_row(label: impl Into<SharedString>, value: impl IntoElement, last: bo
         .flex()
         .items_center()
         .justify_between()
+        .gap(px(GAP))
         .min_h(px(52.))
         .px(px(PAD))
+        .py(px(8.))
         .when(!last, |d| d.border_b_1().border_color(rgb(LINE)))
-        .child(text(label, 13., TEXT))
-        .child(value)
+        .child(div().flex_1().min_w(px(0.)).child(text(label, 13., TEXT)))
+        .child(div().flex_none().child(value))
 }
 
 fn section(title: &str, rows: Vec<gpui::Div>) -> gpui::Div {
@@ -807,7 +806,7 @@ impl Launcher {
             .child(self.dropdown(Menu::Platform, "Horizon", cx))
             .child(self.dropdown(Menu::Instance, if has { "Sunset" } else { "No instance" }, cx))
             .child(
-                div().flex().p(px(3.)).gap(px(2.)).rounded(px(CTRL_H / 2.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).children(tabs.into_iter().filter(|(t, _)| has || *t == Tab::Overview).map(|(t, label)| {
+                div().flex().p(px(3.)).gap(px(2.)).rounded(px(CTRL_H / 2.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).children(tabs.into_iter().filter(|(t, _)| has || *t == Tab::Overview || *t == Tab::Settings).map(|(t, label)| {
                     let on = self.tab == t;
                     div()
                         .id(label)
@@ -824,7 +823,7 @@ impl Launcher {
                         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                             this.tab = t;
                             this.menu = None;
-                            if t == Tab::Profiles || t == Tab::Plugins {
+                            if t != Tab::Overview {
                                 this.reload_local();
                             }
                             cx.notify();
@@ -1111,6 +1110,7 @@ impl Launcher {
         let dir = self.paths.instance();
         let manage = button("manage", "Manage instance", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
             this.tab = Tab::Settings;
+            this.reload_local();
             cx.notify();
         }));
         div()
@@ -1184,8 +1184,14 @@ impl Launcher {
         div().flex().flex_col().gap(px(GAP)).size_full().child(page_head("Sunset", None)).child(card().flex_1().min_h(px(300.)).flex().items_center().justify_center().child(inner))
     }
 
+    /// Settings: the instance's (when there is one) on the left, the launcher's and About on the right.
     fn settings_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let Some(m) = self.installed.as_ref() else { return self.no_instance(cx).into_any_element() };
+        let launcher = self.launcher_sections(cx);
+        let page = div().flex().flex_col().gap(px(GAP)).child(page_head("Settings", None));
+        let Some(m) = self.installed.as_ref() else {
+            let (main, about) = launcher;
+            return page.child(div().flex().items_start().gap(px(GAP)).child(main).child(about)).into_any_element();
+        };
         let toggle = {
             let on = self.settings.auto_update;
             div()
@@ -1208,58 +1214,37 @@ impl Launcher {
         let (inst, logs) = (self.paths.instance(), self.paths.logs());
         let left = div()
             .flex_1()
+            .min_w(px(0.))
             .flex()
             .flex_col()
             .gap(px(24.))
-            .child(section("Installation", vec![
-                setting_row("Instance name", text("Sunset", 13., TEXT), false),
+            .child(section("Instance", vec![
+                setting_row("Name", text("Sunset", 13., TEXT), false),
                 setting_row("Sunset version", version, false),
-                setting_row("Runtime", text(format!("Horizon {} ({})", m.short_pin(), m.horizon.tag), 13., TEXT), true),
+                setting_row("Runtime", text(format!("Horizon {} ({})", m.short_pin(), m.horizon.tag), 13., TEXT), false),
+                setting_row(
+                    "Window size",
+                    self.with_menu(Menu::Window, button("s-window", window_label(&self.settings.window), false).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Window, ev, cx))), true, cx),
+                    true,
+                ),
             ]))
             .child(section("Updates", vec![
                 setting_row("Install new Sunset releases automatically", toggle, false),
                 setting_row("Check for updates", button("s-check", "Check", false).on_click(cx.listener(|this, _: &ClickEvent, _, _| this.check(false))), true),
-            ]));
-        let right = div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .gap(px(24.))
-            .child(section("Launch", vec![setting_row(
-                "Window size",
-                self.with_menu(Menu::Window, button("s-window", window_label(&self.settings.window), false).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Window, ev, cx))), true, cx),
-                true,
-            )]))
+            ]))
             .child(section("Files", vec![
                 setting_row("Instance directory", button("s-open", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(inst.clone(), cx))), false),
                 setting_row("Logs", button("s-logs", "Open logs", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(logs.clone(), cx))), false),
                 setting_row("Repair installation (check and download again)", button("s-repair", "Repair", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(true, cx))), true),
             ]));
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(GAP))
-            .child(page_head("Instance settings", None))
-            .when_some(self.progress(cx), |d, p| d.child(card().p(px(PAD)).child(p)))
-            .child(div().flex().gap(px(GAP)).child(left).child(right))
+        let (main, about) = launcher;
+        page.when_some(self.progress(cx), |d, p| d.child(card().p(px(PAD)).child(p)))
+            .child(div().flex().items_start().gap(px(GAP)).child(left).child(main.child(about)))
             .into_any_element()
     }
 
-    fn list_view(&self, title: &str, empty: String, items: Vec<(String, String)>, folder: Option<PathBuf>, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let n = items.len();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(GAP))
-            .child(page_head(title, folder.map(|f| button("list-folder", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(f.clone(), cx))).into_any_element())))
-            .child(if items.is_empty() {
-                card().p(px(PAD)).child(text(empty, 13., MUTED))
-            } else {
-                card().flex().flex_col().children(items.into_iter().enumerate().map(move |(i, (a, b))| setting_row(a, text(b, 13., MUTED), i + 1 == n)))
-            })
-    }
-
-    fn launcher_view(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    /// The launcher's own sections (data folder, release source, horizon-launcher, import) and About, as two columns.
+    fn launcher_sections(&self, cx: &mut Context<Self>) -> (gpui::Div, gpui::Div) {
         let root = self.paths.root.clone();
         let source = std::env::var("SUNSET_MANIFEST").ok().filter(|s| !s.is_empty()).or(self.settings.manifest_url.clone()).unwrap_or_else(|| format!("GitHub Releases ({})", core::REPO));
         let cli = core::cli_path(&self.paths).map(|p| p.parent().and_then(|d| d.file_name()).map(|v| v.to_string_lossy().into_owned()).unwrap_or_default());
@@ -1278,16 +1263,44 @@ impl Launcher {
         if import_rows.is_empty() {
             import_rows.push(setting_row("No Horizon instance with Sunset configs found", div(), true));
         }
+        let key = include_str!("../sunset.pub").lines().next().unwrap_or("").rsplit(' ').next().unwrap_or("").to_string();
+        let main = div()
+            .flex_1()
+            .min_w(px(0.))
+            .flex()
+            .flex_col()
+            .gap(px(24.))
+            .child(section("Launcher", vec![
+                setting_row("Data folder", button("l-data", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(root.clone(), cx))), false),
+                setting_row("Release source", text(source, 12., MUTED), false),
+                setting_row("horizon-launcher (sign-in, install, play)", text(cli.unwrap_or_else(|| "comes with the first install".into()), 13., TEXT), true),
+            ]))
+            .child(section("Import Sunset configs and profiles from Horizon", import_rows));
+        let about = div().flex_1().min_w(px(0.)).flex().flex_col().gap(px(8.)).child(bold("About", 15.)).child(
+            card()
+                .flex()
+                .flex_col()
+                .child(setting_row("Sunset launcher", text(core::VERSION, 13., TEXT), false))
+                .child(setting_row("Signing key", text(key, 12., MUTED), false))
+                .child(setting_row("Platform", text(core::PLATFORM, 13., TEXT), false))
+                .child(setting_row("Licence", text("PolyForm Strict 1.0.0", 13., TEXT), false))
+                .child(div().p(px(PAD)).flex().flex_col().gap(px(8.)).child(text("Installs the signed prebuilt Sunset client for the Horizon Nightly it was built and tested on, and plays it through the stock horizon-launcher, which keeps your Microsoft sign-in.", 12., MUTED)).child(text("Horizon is LGPL-3.0-or-later; the exact source each prebuilt is built from is published with it. Not affiliated with Mojang or Microsoft.", 12., MUTED))),
+        );
+        (main, about)
+    }
+
+    fn list_view(&self, title: &str, empty: String, items: Vec<(String, String)>, folder: Option<PathBuf>, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let n = items.len();
         div()
             .flex()
             .flex_col()
             .gap(px(GAP))
-            .child(page_head("Launcher settings", None))
-            .child(div().flex().gap(px(GAP)).child(div().flex_1().flex().flex_col().gap(px(24.)).child(section("Launcher", vec![
-                setting_row("Data folder", button("l-data", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(root.clone(), cx))), false),
-                setting_row("Release source", text(source, 12., MUTED), false),
-                setting_row("horizon-launcher (sign-in, install, play)", text(cli.unwrap_or_else(|| "comes with the first install".into()), 13., TEXT), true),
-            ]))).child(div().flex_1().flex().flex_col().gap(px(24.)).child(section("Import Sunset configs and profiles from Horizon", import_rows))))
+            .child(page_head(title, folder.map(|f| button("list-folder", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(f.clone(), cx))).into_any_element())))
+            .child(if items.is_empty() {
+                card().p(px(PAD)).child(text(empty, 13., MUTED))
+            } else {
+                card().flex().flex_col().children(items.into_iter().enumerate().map(move |(i, (a, b))| setting_row(a, text(b, 13., MUTED), i + 1 == n)))
+            })
     }
 
     fn sign_in_modal(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
@@ -1327,32 +1340,7 @@ impl Launcher {
         Some(div().absolute().top_0().left_0().size_full().flex().items_center().justify_center().bg(Hsla::from(gpui::rgba(0x000000b0))).child(body))
     }
 
-    fn about_modal(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
-        if !self.about {
-            return None;
-        }
-        let key = include_str!("../sunset.pub").lines().next().unwrap_or("").rsplit(' ').next().unwrap_or("").to_string();
-        let body = card()
-            .w(px(440.))
-            .p(px(24.))
-            .flex()
-            .flex_col()
-            .gap(px(10.))
-            .occlude()
-            .child(bold(format!("Sunset launcher {}", core::VERSION), 20.))
-            .child(text("Installs the signed prebuilt Sunset client for the Horizon Nightly it was built and tested on, and plays it through the stock horizon-launcher, which keeps your Microsoft sign-in.", 13., MUTED))
-            .child(row("Release signing key", text(key, 13., TEXT)))
-            .child(row("Platform", text(core::PLATFORM, 13., TEXT)))
-            .child(row("Licence", text("PolyForm Strict 1.0.0", 13., TEXT)))
-            .child(text("Horizon is LGPL-3.0-or-later; the exact source each prebuilt is built from is published with it. Not affiliated with Mojang or Microsoft.", 12., MUTED))
-            .child(div().flex().justify_end().child(button("about-close", "Close", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.about = false;
-                cx.notify();
-            }))));
-        Some(div().absolute().top_0().left_0().size_full().flex().items_center().justify_center().bg(Hsla::from(gpui::rgba(0x000000b0))).child(body))
-    }
-
-    fn footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn footer(&self) -> impl IntoElement + use<> {
         div()
             .flex()
             .items_center()
@@ -1361,26 +1349,6 @@ impl Launcher {
             .h(px(48.))
             .child(mark(22., ACCENT))
             .child(text(format!("Launcher {}", core::VERSION), 12., MUTED))
-            .child(div().flex_1())
-            .child(
-                div().id("launcher-settings").cursor_pointer().child(text("Launcher settings", 12., if self.tab == Tab::Launcher { TEXT } else { MUTED })).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.tab = Tab::Launcher;
-                    this.menu = None;
-                    if core::cli_path(&this.paths).is_some() {
-                        let (p, tx) = (this.paths.clone(), this.send());
-                        std::thread::spawn(move || {
-                            let _ = tx.send_blocking(Msg::Sources(core::import_sources(&p)));
-                        });
-                    }
-                    cx.notify();
-                })),
-            )
-            .child(
-                div().id("about").w(px(20.)).h(px(20.)).rounded_full().border_1().border_color(rgb(MUTED)).flex().items_center().justify_center().cursor_pointer().child(text("i", 11., MUTED)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.about = true;
-                    cx.notify();
-                })),
-            )
     }
 }
 
@@ -1398,7 +1366,6 @@ impl Render for Launcher {
                 let empty = "No saved profiles yet. Save one in game from Sunset's menu (Right Shift).".to_string();
                 self.list_view("Profiles", empty, items, Some(self.paths.sunset_data().join("profiles")), cx).into_any_element()
             }
-            Tab::Launcher => self.launcher_view(cx).into_any_element(),
         };
         let note = self.note.clone().map(|(err, msg)| {
             card()
@@ -1426,10 +1393,9 @@ impl Render for Launcher {
             .child(self.top_bar(window, cx))
             .child(div().id("page").flex_1().mt(px(8.)).overflow_y_scroll().child(page))
             .when_some(note, |d, n| d.child(n.mt(px(GAP))))
-            .child(self.footer(cx))
+            .child(self.footer())
             .when_some(self.menu_popup(cx), |d, m| d.child(m))
             .when_some(self.sign_in_modal(cx), |d, m| d.child(m))
-            .when_some(self.about_modal(cx), |d, m| d.child(m))
             .when_some(resize_edges(window), |d, e| d.child(e))
     }
 }
