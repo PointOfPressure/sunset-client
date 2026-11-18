@@ -153,6 +153,12 @@ def tracked_blobs(root: Path, commit: str, paths: tuple[str, ...] = ()):
 
 
 def head() -> str:
+    """The build id: HEAD, or HORIZON_SDK_BUILD_ID for a branch built as the commit it patches (its source is still
+    HEAD's, [`source_head`])."""
+    return os.environ.get("HORIZON_SDK_BUILD_ID") or source_head()
+
+
+def source_head() -> str:
     return run(["git", "rev-parse", "HEAD"], cwd=ROOT).strip()
 
 
@@ -204,7 +210,7 @@ def stage(target_dir: Path, stage_tool: Path | None = None, prepare=None) -> Pat
     if staged.exists():
         shutil.rmtree(staged)
     commit = head()
-    for name, data in tracked_blobs(ROOT, commit):
+    for name, data in tracked_blobs(ROOT, source_head()):
         (staged / name).parent.mkdir(parents=True, exist_ok=True)
         (staged / name).write_bytes(data)
     arguments = [str(staged), str(staged / POINTS), str(staged / INTERNALS), commit]
