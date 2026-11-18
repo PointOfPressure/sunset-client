@@ -2190,6 +2190,61 @@ cancellable = true
 helper = "src/mixins/auto_sign_hook.rs"
 bindings = [{ name = "p", ty = "&play::OpenSignEditor", value = "&p" }]
 
+[[native.mixin]]
+id = "ambience-fog"
+target = "horizon_client::game::render_tick::Game<'_>::frame_fog"
+kind = "WRAP_OPERATION"
+selector = "horizon_client::fog::clear_distance_fog"
+require = 1
+ordinal = 0
+helper = "src/mixins/ambience_fog.rs"
+bindings = [
+  { name = "fog", ty = "&mut FogData", value = "$arg0" },
+  { name = "input", ty = "&FogInputs", value = "$arg1" },
+  { name = "operation", ty = "impl FnOnce(&mut FogData, &FogInputs) -> ()", value = "$operation" },
+]
+
+[[native.mixin]]
+id = "scoreboard_offset"
+target = "horizon_client::game::scoreboard::Game<'_>::draw_scoreboard"
+kind = "WRAP_OPERATION"
+selector = "hud_overlays::sidebar"
+require = 1
+ordinal = 0
+helper = "src/mixins/scoreboard_offset_hook.rs"
+bindings = [
+  { name = "w", ty = "i32", value = "$arg0" },
+  { name = "h", ty = "i32", value = "$arg1" },
+  { name = "board", ty = "&horizon_client::scoreboard::Scoreboard", value = "$arg2" },
+  { name = "objective", ty = "&horizon_client::scoreboard::Objective", value = "$arg3" },
+  { name = "font", ty = "&horizon_client::font::Font", value = "$arg4" },
+  { name = "background", ty = "u32", value = "$arg5" },
+  { name = "header", ty = "u32", value = "$arg6" },
+  { name = "operation", ty = "impl FnOnce(i32, i32, &horizon_client::scoreboard::Scoreboard, &horizon_client::scoreboard::Objective, &horizon_client::font::Font, u32, u32) -> Vec<horizon_client::hud_layout::GuiDraw>", value = "$operation" },
+]
+
+[[native.mixin]]
+id = "mount_hearts"
+target = "horizon_client::game::mounts::Game<'_>::draw_mount_hud"
+kind = "WRAP_OPERATION"
+selector = "horizon_client::hud_layout::vehicle_health"
+require = 1
+ordinal = 0
+helper = "src/mixins/mount_hearts_hook.rs"
+bindings = [
+  { name = "w", ty = "i32", value = "$arg0" },
+  { name = "h", ty = "i32", value = "$arg1" },
+  { name = "hearts", ty = "i32", value = "$arg2" },
+  { name = "health", ty = "f32", value = "$arg3" },
+  { name = "operation", ty = "impl FnOnce(i32, i32, i32, f32) -> Vec<horizon_client::hud_layout::GuiDraw>", value = "$operation" },
+]
+
+[[native.mixin]]
+id = "client_local"
+target = "horizon_client::game::developer_launch::Game<'_>::connect_local"
+kind = "HEAD"
+helper = "src/mixins/client_local_hook.rs"
+
 # Not ported yet: these targets are below the game crate and not replaceable on this build.
 
 # [[native.mixin]]
@@ -2219,16 +2274,6 @@ bindings = [{ name = "p", ty = "&play::OpenSignEditor", value = "&p" }]
 #   { name = "changed", ty = "[bool; 2]", value = "changed" },
 # ]
 
-# [[native.mixin]]
-# id = "ambience-fog"
-# target = "horizon_client_render::fog::clear_distance_fog"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/ambience_fog.rs"
-# bindings = [
-#   { name = "fog", ty = "&mut FogData", value = "&mut *fog" },
-#   { name = "input", ty = "&FogInputs", value = "input" },
-# ]
 
 # [[native.mixin]]
 # id = "hurt-cam"
@@ -2237,12 +2282,6 @@ bindings = [{ name = "p", ty = "&play::OpenSignEditor", value = "&p" }]
 # cancellable = true
 # helper = "src/mixins/hurt_cam.rs"
 
-# [[native.mixin]]
-# id = "scoreboard_offset"
-# target = "horizon_client_render::hud_overlays::sidebar"
-# kind = "RETURN"
-# helper = "src/mixins/scoreboard_offset_hook.rs"
-# bindings = [{ name = "value", ty = "Vec<GuiDraw>", value = "$value" }]
 
 # [[native.mixin]]
 # id = "particle-push"
@@ -2468,11 +2507,6 @@ bindings = [
 # cancellable = true
 # helper = "src/mixins/client_brand_hook.rs"
 
-# [[native.mixin]]
-# id = "client_local"
-# target = "horizon_client_lib::net::Session::connect_local"
-# kind = "HEAD"
-# helper = "src/mixins/client_local_hook.rs"
 
 # [[native.mixin]]
 # id = "crosshair_rect"
@@ -2517,12 +2551,6 @@ bindings = [
 #   { name = "h", ty = "i32", value = "h" },
 # ]
 
-# [[native.mixin]]
-# id = "mount_hearts"
-# target = "horizon_client_render::hud_layout::vehicle_health"
-# kind = "RETURN"
-# helper = "src/mixins/mount_hearts_hook.rs"
-# bindings = [{ name = "value", ty = "Vec<GuiDraw>", value = "$value" }]
 
 # [[native.mixin]]
 # id = "mount_xp"

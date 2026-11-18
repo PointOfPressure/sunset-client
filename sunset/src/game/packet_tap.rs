@@ -847,3 +847,15 @@ pub fn poll(session: &horizon_client::net::Session, events: &mut std::collection
     events.extend(new);
 }
 
+
+// The bridge from the client library's hooks (sunset_core::bridge): the configuration payloads the network thread sees.
+pub fn register() {
+    ::sunset_core::bridge::CONFIG_PAYLOAD.set(config_payload);
+}
+
+fn config_payload(payload: ::sunset_core::bridge::Ptr) {
+    // SAFETY: receive_brand's hook passes its `&CustomPayload`, valid for this call.
+    #[allow(unsafe_code)]
+    let payload = unsafe { &*(payload as *const horizon_protocol::packets::configuration::CustomPayload) };
+    scan_config(payload);
+}

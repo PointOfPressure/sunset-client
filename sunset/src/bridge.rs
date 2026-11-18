@@ -29,8 +29,6 @@ impl<F: Copy> Default for Hook<F> {
 
 pub type Ptr = *mut u8;
 
-// The client library's network session poll (horizon_client::net::Session::poll): &Session, &mut Vec<Event>.
-pub static SESSION_POLL: Hook<fn(Ptr, Ptr)> = Hook::new();
 // A configuration custom payload (horizon_client::net::receive_brand): &CustomPayload.
 pub static CONFIG_PAYLOAD: Hook<fn(Ptr)> = Hook::new();
 // The renderer's frame (horizon_client::gfx::Renderer::render): &mut Renderer, &Frame.
