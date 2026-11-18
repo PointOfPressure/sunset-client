@@ -84,8 +84,20 @@ fn id(body: &[u8]) -> Option<(i32, usize)> {
     None
 }
 
+// Debug Report's packet log as horizon_protocol's sent-packet observer: every body a connection writer sends, on its
+// own thread (the game's play packets and what the network thread sends by itself).
+pub fn observed(body: &[u8]) {
+    if crate::lifecycle::RUNTIME.running() {
+        sent(body);
+    }
+}
+
 pub fn sent(body: &[u8]) {
-    if std::thread::current().name().is_some_and(|n| n.starts_with("horizon-lan") || n.starts_with("horizon-local")) {
+    // Single player's own server (and a LAN guest's connection) writes clientbound packets: not ours.
+    if std::thread::current()
+        .name()
+        .is_some_and(|n| n == "Server thread" || n.starts_with("horizon-lan") || n.starts_with("horizon-local"))
+    {
         return;
     }
     let Some((id, start)) = id(body) else {

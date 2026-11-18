@@ -35,7 +35,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Lunar Fabric tag", true)
             .text("LabyMod version", "")
             .text("Per server", "")
-            .bool("Brand after join", true)
             .bool("Fake resource packs", false)
             .num("Pack load time", 1.5, 0.3, 10.0, 0.1)
             .bool("Diagnostics", true),
@@ -114,27 +113,43 @@ pub(crate) fn pack_tick(game: &Game<'_>) {
     packs.retain(|p| !p.due.is_empty());
 }
 
-// A server being joined: its plan from the settings as they are now (none with the module off or on Horizon).
-// Horizon sends its own brand ("vanilla") as configuration starts, where no Sunset hook reaches on this build: the plan
-// is taken here, and its packets go out after the play Login, the brand first with Brand after join (the server then
-// has both brands, the spoofed one last).
+// A server being joined: its plan from the settings as they are now (none with the module off or on Horizon). The
+// network thread takes its brand as configuration starts (net::brand's hook), and its packets go out after the play
+// Login. Debug Report's packet log is installed here too, before the connection's first packet.
 pub(crate) fn connecting(address: &str) {
-    let plan = super::sunset::with(|s| {
-        s.module(NAME).filter(|m| m.on).and_then(|m| {
-            let mut plan = plan(m, address)?;
-            if m.b("Brand after join") {
-                let mut w = Writer::new();
-                w.string(&plan.brand);
-                plan.joins.insert(0, ("minecraft:brand", w.data));
-                plan.notes.push("the brand went out after joining, after Horizon's own \"vanilla\"");
-            } else {
-                plan.notes.push("Horizon's own brand (\"vanilla\") went out; this build can't replace it");
-            }
-            Some(plan)
-        })
-    });
+    observe();
+    let plan = super::sunset::with(|s| s.module(NAME).filter(|m| m.on).and_then(|m| plan(m, address)));
     wire::next(plan);
-    let _ = wire::payload();
+}
+
+// Debug Report's packet log: Sunset's observer of every packet a connection writer sends, once per process.
+pub(crate) fn observe() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        use horizon_protocol::packets::play::{self, Serverbound as S};
+        let id = |p: S| {
+            let body = p.encode();
+            let mut value = 0i32;
+            for (i, b) in body.iter().take(5).enumerate() {
+                value |= i32::from(b & 0x7F) << (7 * i);
+                if b & 0x80 == 0 {
+                    return value;
+                }
+            }
+            -1
+        };
+        ::sunset_core::wire::set_ids(::sunset_core::wire::Ids {
+            moves: [
+                id(S::MovePlayerPos(play::MovePlayerPos { x: 0.0, y: 0.0, z: 0.0, flags: 0 })),
+                id(S::MovePlayerPosRot(play::MovePlayerPosRot { x: 0.0, y: 0.0, z: 0.0, yaw: 0.0, pitch: 0.0, flags: 0 })),
+                id(S::MovePlayerRot(play::MovePlayerRot { yaw: 0.0, pitch: 0.0, flags: 0 })),
+                id(S::MovePlayerStatus(play::MovePlayerStatus { flags: 0 })),
+            ],
+            player_input: id(S::PlayerInput(play::PlayerInput { flags: 0 })),
+            client_tick_end: id(S::ClientTickEnd(horizon_protocol::packets::Empty)),
+        });
+        horizon_protocol::connection::observe_sent(::sunset_core::wire::observed);
+    });
 }
 
 // After each play Login, the plan's join packets; once in the world, Diagnostics.

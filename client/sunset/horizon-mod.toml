@@ -2277,23 +2277,42 @@ bindings = [
 
 # (removed font_over)
 
-# [[native.mixin]]
-# id = "speed_move"
-# target = "horizon_client_lib::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::move_self"
-# kind = "MODIFY_ARG"
-# selector = "MotionWorld::move_self"
-# require = 1
-# ordinal = 0
-# argument = 1
-# helper = "src/mixins/move_hook.rs"
-# bindings = [{ name = "value", ty = "Vec3", value = "$value" }]
+# Speed and Legacy Speed's jump: the local player's own move, LocalPlayer.move (#[replaceable] on Sunset's Horizon
+# fork, patch 0005): the movement it arms the move gate with, and the velocity before it
+[[native.mixin]]
+id = "speed_move"
+target = "horizon_client_lib::motion::MotionWorld<'_,'_,'_>::move_self"
+kind = "MODIFY_ARG"
+selector = "crate::move_gate::arm"
+require = 1
+ordinal = 0
+argument = 5
+helper = "src/mixins/move_hook.rs"
+bindings = [{ name = "value", ty = "Vec3", value = "$value" }]
 
-# [[native.mixin]]
-# id = "legacy_speed_jump"
-# target = "horizon_client_lib::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::move_self"
-# kind = "HEAD"
-# helper = "src/mixins/legacy_jump_hook.rs"
-# bindings = [{ name = "world", ty = "&mut MotionWorld<'_, '_, '_>", value = "self" }]
+[[native.mixin]]
+id = "legacy_speed_jump"
+target = "horizon_client_lib::motion::MotionWorld<'_,'_,'_>::move_self"
+kind = "HEAD"
+helper = "src/mixins/legacy_jump_hook.rs"
+bindings = [{ name = "world", ty = "&mut MotionWorld<'_, '_, '_>", value = "&mut *self" }]
+
+# Client Spoofer's brand in the configuration phase (#[replaceable] net::brand, fork patch 0002)
+[[native.mixin]]
+id = "client_brand"
+target = "horizon_client_lib::net::brand"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/client_brand_hook.rs"
+bindings = []
+
+# HUD's Tab game modes and Streamer Mode in single player's tab list (the integrated server's players)
+[[native.mixin]]
+id = "tab_marks_local"
+target = "horizon_client::game::scoreboard::local_tab_players"
+kind = "RETURN"
+helper = "src/mixins/tab_marks_local.rs"
+bindings = [{ name = "value", ty = "Vec<TabPlayer>", value = "$value" }]
 
 
 
@@ -2521,37 +2540,16 @@ bindings = [
 ]
 
 # Debug Report's packet log, No Render's particles made outside the options path, Clear Water's tint
+# No Render's particles made outside the options path (block breaking, cracks, the warden's digging, the renderer's
+# own): ParticleEngine::push, #[replaceable] on Sunset's Horizon fork (patch 0003). Debug Report's packet log is
+# horizon_protocol's observe_sent (fork patch 0004), installed by client_spoofer::observe.
 [[native.mixin]]
-id = "debug_wire"
-target = "horizon_client::game::remote::Game<'_>::send_play"
-kind = "BEFORE_CALL"
-selector = "r.session.send"
-require = 1
-ordinal = 0
-helper = "src/mixins/debug_wire_hook.rs"
-bindings = [{ name = "packet", ty = "&S", value = "&packet" }]
-
-[[native.mixin]]
-id = "particle-push-crack"
-target = "horizon_client::game::block_particles::Game<'_>::crack_particle"
-kind = "MODIFY_ARG"
-selector = "self.particles.push"
-require = 1
-ordinal = 0
-argument = 0
+id = "particle-push"
+target = "horizon_client_render::particles::ParticleEngine::push"
+kind = "HEAD"
+cancellable = true
 helper = "src/mixins/particle_push.rs"
-bindings = [{ name = "value", ty = "horizon_client::particles::Particle", value = "$value" }]
-
-[[native.mixin]]
-id = "particle-push-warden"
-target = "horizon_client::game::sculk::Game<'_>::warden_dig_particles"
-kind = "MODIFY_ARG"
-selector = "self.particles.push"
-require = 1
-ordinal = 0
-argument = 0
-helper = "src/mixins/particle_push.rs"
-bindings = [{ name = "value", ty = "horizon_client::particles::Particle", value = "$value" }]
+bindings = [{ name = "particle", ty = "&Particle", value = "&particle" }]
 
 [[native.mixin]]
 id = "water-tint"

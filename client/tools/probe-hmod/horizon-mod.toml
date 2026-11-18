@@ -1,0 +1,36 @@
+# verify.py's test probe as an .hmod package, built next to Sunset on the test machine only (never packed or shipped):
+# once a frame, just before the frame is drawn, it appends what the frame is drawn from to the file named by
+# SUNSET_PROBE; and each move packet, hit and end of a client tick as it goes on the wire (horizon_protocol's
+# observe_sent, Sunset's fork patch 0004). The .hnmod probe's AntiBot test hooks are not ported.
+id = "probe"
+name = "Sunset test probe"
+version = "0.1.0"
+description = "verify.py's test probe (test machine only)."
+authors = ["PointOfPressure"]
+api = "0.2"
+side = "client"
+capabilities = ["registries"]
+
+[native]
+game = "26.3"
+horizon = "0b14f8acfd97fa2c750e42795249dcc981178ca4"
+mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
+
+[[native.module]]
+id = "probe"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_probe"
+source = "src/game/probe.rs"
+
+[[native.module]]
+id = "probe_wire"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_probe_wire"
+source = "src/game/wire.rs"
+
+[[native.mixin]]
+id = "frame"
+target = "horizon_client::game::pad::Game<'_>::pad_look"
+kind = "HEAD"
+helper = "src/mixins/frame.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]

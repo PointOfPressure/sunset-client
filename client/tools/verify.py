@@ -6965,6 +6965,39 @@ def _():
     return ok, f"(flame, villager) made: off {shown}, Hide all {none}, Particles = flame {listed}"
 
 
+@test("No Render particles (block breaking)")
+def _():
+    # Block-breaking crumbs come from the game itself (a destroy effect, ParticleEngine::push), not the particle
+    # options path: a 7x7 floor of stone broken with /fill ... destroy makes them with No Render off; none with Hide
+    # all or with Particles = block; with Particles = flame they still come.
+    def broken():
+        # The most crumbs alive in a frame after the floor breaks (the probe's "crumbs" lines; status counts only
+        # particles made through the options path).
+        cmd(f"fill {X0-3} {Y+3} {Z0+3} {X0+3} {Y+3} {Z0+9} minecraft:stone")
+        wait(50)  # the last run's crumbs (up to 40 ticks old) gone first
+        mark = probe_mark()
+        cmd(f"fill {X0-3} {Y+3} {Z0+3} {X0+3} {Y+3} {Z0+9} minecraft:air destroy")
+        wait(20)
+        with open(probe_path()) as f:
+            f.seek(mark)
+            return max([int(l.split()[1]) for l in f.read().split("\n") if l.startswith("crumbs ")] or [0])
+
+    reset("creative")
+    shown = broken()
+    setting("norender", "hide all particles", "true")
+    toggle("norender", True)
+    none = broken()
+    setting("norender", "hide all particles", "false")
+    setting("norender", "particles", "block")
+    listed = broken()
+    setting("norender", "particles", "flame")
+    other = broken()
+    toggle("norender", False)
+    setting("norender", "particles", "")
+    ok = shown > 100 and none == 0 and listed == 0 and other > 100
+    return ok, f"block crumbs alive: off {shown}, Hide all {none}, Particles = block {listed}, Particles = flame {other}"
+
+
 @test("Chat feedback switches")
 def _():
     # Notifications' Module toggles off: Fullbright turned on and off by its key writes no line, .t still answers;
@@ -10229,7 +10262,7 @@ def _():
         return None, "servers only"
     tap = BrandTap()
     relay = f"127.0.0.1:{tap.port}"
-    got, said, laby = {}, [], False
+    got, said, laby, sends = {}, [], False, {}
     try:
         for name, mods, settings in (
                 ("off", (), ()),
@@ -10243,6 +10276,7 @@ def _():
             before, mark = len(tap.brands), log_mark()
             join(relay)
             got[name] = tap.brands[before] if len(tap.brands) > before else None
+            sends[name] = len(tap.brands) - before
             if name == "Fabric":
                 said = [line for line in sunset_said(mark) if "Client Spoofer" in line]
             if name == "LabyMod":
@@ -10250,9 +10284,12 @@ def _():
     finally:
         only()
         join(SERVER)
-    want = {"off": "horizon", "Fabric": "fabric", "Custom": "Test Brand 1", "LabyMod": "labymod", "Per server": "neoforge"}
-    ok = got == want and laby and any('"fabric" (Fabric' in line for line in said)
-    return ok, f"brands the server got: {got}; LabyMod's version packet: {laby}; Diagnostics: {said[:1]}"
+    # Horizon's own brand on this build is vanilla's ("vanilla", net::brand).
+    want = {"off": "vanilla", "Fabric": "fabric", "Custom": "Test Brand 1", "LabyMod": "labymod", "Per server": "neoforge"}
+    # One brand per connection, the spoofed one in the configuration phase (never a second one after joining).
+    ok = got == want and laby and any('"fabric" (Fabric' in line for line in said) and set(sends.values()) == {1}
+    return ok, (f"brands the server got: {got}; brand packets per join {sends}; LabyMod's version packet: {laby}; "
+                f"Diagnostics: {said[:1]}")
 
 
 @test("Velocity (knockback delay)")
@@ -12515,6 +12552,26 @@ def _():
     return ok, (f"missing sections {missing}; Grim table {counts}; ESP line {esp!r}; packet log has W's input, the "
                 f"commands and moves {wire}; chat lines {chat_ok}; {len(text)} chars, no colour codes {clean}; module row copies once "
                 f"and goes off {once}; clipboard {'unchecked' if clip is None else clip}")
+
+
+@test("Debug report (network thread packets)")
+def _():
+    # The packet log also holds what the network thread answers by itself (keep-alives, every 15 s from a server),
+    # which only horizon_protocol's sent-packet observer sees; and still the game's own move packets.
+    # The report's log covers its last few seconds, so a report is made every 5 s until one has a keep-alive (40 s at
+    # most; single player's own server sends none).
+    reset()
+    packets = ""
+    for _ in range(8 if SERVER else 1):
+        wait(5 * 20)
+        line, text = debug_report(lambda: say(".debug 60"))
+        if text is None:
+            return False, f"no report file: {line}"
+        packets = text.split("## Packets sent", 1)[-1].split("## Chat", 1)[0]
+        if "KeepAlive" in packets:
+            break
+    ok = ("KeepAlive" in packets or not SERVER) and "MovePos" in packets
+    return ok, f"KeepAlive in the packet log {'KeepAlive' in packets}, MovePos {'MovePos' in packets} ({len(packets)} chars)"
 
 
 @test("Debug report save folder")

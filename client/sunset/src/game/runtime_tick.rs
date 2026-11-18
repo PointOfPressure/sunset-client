@@ -13,6 +13,7 @@ use super::sunset::*;
 // Before the game ticks: keys this mod holds, abilities, step height.
 pub(super) fn pre_tick(game: &mut Game<'_>) {
     finish_shutdown(game);
+    super::sunset_client_spoofer::observe();
     super::sunset_baritone::maintain(game);
     if !running() { return; }
     sync_binds(game);
