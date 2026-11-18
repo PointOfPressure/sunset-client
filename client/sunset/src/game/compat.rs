@@ -37,22 +37,19 @@ impl SunsetExtra for horizon_client::mobs::Extra {
     }
 }
 
-// The held keys (horizon_client::held::HeldKeys) as Sunset changed them, a set of keys: Sunset's own presses are a
-// mod's (Source::Mod), and letting a key go lets it go whatever held it.
+// The held keys (horizon_client::held::HeldKeys) as Sunset changes them, a set of keys as before the game told the
+// devices apart: a key Sunset holds is held as the keyboard holds it (HeldKeys::insert), and letting a key go lets it
+// go whatever held it. Never Source::Mod: Sunset gives back a key you hold by holding it again, and the keyboard
+// letting go releases only its own hold, so a key held as a mod's stayed down after you let it go (Telly kept
+// walking and sprinting after it was turned off).
 pub(crate) fn key_down(keys: &mut horizon_client::held::HeldKeys, key: winit::keyboard::KeyCode) {
-    keys.press(key, horizon_client::held::Source::Mod);
+    keys.insert(key);
 }
 pub(crate) fn key_up(keys: &mut horizon_client::held::HeldKeys, key: &winit::keyboard::KeyCode) {
-    use horizon_client::held::Source;
-    for source in [Source::Keyboard, Source::Pad, Source::Agent, Source::Mod] {
-        keys.release(key, source);
-    }
+    keys.remove(key);
 }
 pub(crate) fn keys_clear(keys: &mut horizon_client::held::HeldKeys) {
-    use horizon_client::held::Source;
-    for source in [Source::Keyboard, Source::Pad, Source::Agent, Source::Mod] {
-        keys.release_source(source);
-    }
+    keys.clear();
 }
 
 // Puts a copy of the local player's gear on a mob (Fake Player's Copy inventory).
