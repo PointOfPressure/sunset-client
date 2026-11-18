@@ -35,8 +35,19 @@ const PAD: f32 = 16.; // inside cards and their rows
 const CTRL_H: f32 = 36.; // buttons, top-bar chips and the tab pill
 const BIG_H: f32 = 40.; // the Play row
 const BAR_H: f32 = 68.; // the top bar, chips centred in it
+// The embedded Inter faces (assets/inter.ttf, inter-bold.ttf) name their family only by their full names. Linux's font
+// database knows them as "Inter Medium" and "Inter SemiBold"; DirectWrite groups faces under the family name without
+// the weight, so on Windows both are "Inter" and only the weight picks the face. Set both everywhere.
+#[cfg(windows)]
+const BODY: &str = "Inter";
+#[cfg(windows)]
+const BOLD: &str = "Inter";
+#[cfg(not(windows))]
 const BODY: &str = "Inter Medium";
+#[cfg(not(windows))]
 const BOLD: &str = "Inter SemiBold";
+const BODY_WEIGHT: gpui::FontWeight = gpui::FontWeight::MEDIUM;
+const BOLD_WEIGHT: gpui::FontWeight = gpui::FontWeight::SEMIBOLD;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
@@ -453,12 +464,12 @@ fn text(s: impl Into<SharedString>, size_px: f32, color: u32) -> gpui::Div {
 }
 
 fn bold(s: impl Into<SharedString>, size_px: f32) -> gpui::Div {
-    text(s, size_px, TEXT).font_family(BOLD)
+    text(s, size_px, TEXT).font_family(BOLD).font_weight(BOLD_WEIGHT)
 }
 
 /// How wide `s` sets in BODY at `size` px.
 fn label_width(window: &Window, s: &'static str, size: f32) -> f32 {
-    let run = TextRun { len: s.len(), font: gpui::font(BODY), color: rgb(TEXT).into(), background_color: None, underline: None, strikethrough: None };
+    let run = TextRun { len: s.len(), font: gpui::Font { weight: BODY_WEIGHT, ..gpui::font(BODY) }, color: rgb(TEXT).into(), background_color: None, underline: None, strikethrough: None };
     f32::from(window.text_system().shape_line(s.into(), px(size), &[run], None).width)
 }
 
@@ -480,7 +491,7 @@ fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, primary: boo
         .when(!primary, |d| d.border_1().border_color(rgb(LINE)))
         .text_size(px(13.))
         .text_color(rgb(fg))
-        .font_family(BOLD)
+        .font_family(BOLD).font_weight(BOLD_WEIGHT)
         .cursor_pointer()
         .child(label.into())
 }
@@ -495,7 +506,7 @@ struct Tip(SharedString);
 
 impl Render for Tip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().px(px(8.)).py(px(4.)).rounded(px(6.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).font_family(BODY).text_size(px(12.)).text_color(rgb(TEXT)).child(self.0.clone())
+        div().px(px(8.)).py(px(4.)).rounded(px(6.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).font_family(BODY).font_weight(BODY_WEIGHT).text_size(px(12.)).text_color(rgb(TEXT)).child(self.0.clone())
     }
 }
 
@@ -1129,7 +1140,7 @@ impl Launcher {
                         .when(self.playing, |d| d.opacity(0.6))
                         .when(!self.playing, |d| d.cursor_pointer())
                         .child(icon(Icon::Play, 14., ON_ACCENT))
-                        .child(div().text_size(px(16.)).font_family(BOLD).text_color(rgb(ON_ACCENT)).child(if self.playing { "Playing" } else { "Play" }))
+                        .child(div().text_size(px(16.)).font_family(BOLD).font_weight(BOLD_WEIGHT).text_color(rgb(ON_ACCENT)).child(if self.playing { "Playing" } else { "Play" }))
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.play(cx))),
                 )
                 .when_some(update, |d, v| d.child(button("update", format!("Update to {v}"), false).h(px(BIG_H)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx)))))
@@ -1422,7 +1433,7 @@ impl Launcher {
                         .flex()
                         .items_center()
                         .gap(px(12.))
-                        .child(div().px(px(16.)).py(px(8.)).rounded(px(8.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).child(text(code.clone(), 26., TEXT).font_family(BOLD)))
+                        .child(div().px(px(16.)).py(px(8.)).rounded(px(8.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).child(text(code.clone(), 26., TEXT).font_family(BOLD).font_weight(BOLD_WEIGHT)))
                         .child(button("si-copy", if s.copied { "Copied" } else { "Copy code" }, true).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                             cx.write_to_clipboard(ClipboardItem::new_string(c.clone()));
                             if let Some(s) = this.sign_in.as_mut() {
@@ -1485,7 +1496,7 @@ impl Render for Launcher {
             .size_full()
             .relative()
             .bg(rgb(BG))
-            .font_family(BODY)
+            .font_family(BODY).font_weight(BODY_WEIGHT)
             .text_color(rgb(TEXT))
             .flex()
             .flex_col()
