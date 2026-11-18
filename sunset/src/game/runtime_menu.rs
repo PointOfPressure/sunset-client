@@ -88,6 +88,24 @@ pub(super) fn buttons(game: &Game<'_>, out: &mut Vec<String>) {
     });
 }
 
+// Sunset's page in Options > Mods, drawn by the game as setting rows: each button of the menu page the player is on,
+// a module's on or off shown as its switch.
+pub(crate) fn page_rows(game: &Game<'_>) -> Vec<(String, bool)> {
+    let mut out = Vec::new();
+    buttons(game, &mut out);
+    let on = format!(": {}", on_off(true));
+    out.into_iter().map(|label| {
+        let switched = label.ends_with(&on);
+        (label, switched)
+    }).collect()
+}
+
+// A row of Sunset's page pressed: the menu's button, and the page drawn again for where it went.
+pub(crate) fn page_pressed(game: &mut Game<'_>, row: usize) {
+    click(game, row);
+    refresh(game);
+}
+
 pub(super) fn click(game: &mut Game<'_>, button: usize) {
     if !running() { return; }
     ensure_loaded(game);

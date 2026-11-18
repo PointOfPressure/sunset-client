@@ -2556,3 +2556,37 @@ target = "horizon_client::game::native_hooks::base::Game<'_>::native_biome_color
 kind = "HEAD"
 helper = "src/mixins/water_sprites.rs"
 bindings = [{ name = "colors", ty = "&mut BiomeColors", value = "&mut *colors" }]
+
+# Sunset's page in Options > Mods (its menu as the page's setting rows), Streamer Mode in item tooltips
+[[native.mixin]]
+id = "settings"
+target = "horizon_client::game::native_hooks::Game<'_>::native_page_settings"
+kind = "RETURN"
+helper = "src/mixins/settings.rs"
+bindings = [
+  { name = "value", ty = "Vec<NativeSetting>", value = "$value" },
+  { name = "game", ty = "&Game<'_>", value = "self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+]
+
+[[native.mixin]]
+id = "click"
+target = "horizon_client::game::native_hooks::Game<'_>::native_setting_event"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/click.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "i", ty = "usize", value = "i" },
+  { name = "j", ty = "usize", value = "j" },
+]
+
+[[native.mixin]]
+id = "streamer_tooltip"
+target = "horizon_client::game::stations::tooltip::Game<'_>::draw_stack_tooltip_with"
+kind = "BEFORE_CALL"
+selector = "self.native_tooltip_component"
+require = 1
+ordinal = 0
+helper = "src/mixins/streamer_ui_measure_hook.rs"
+bindings = [{ name = "lines", ty = "&mut Vec<(horizon_client::text::Text, u32)>", value = "$local_mut:lines:0" }]
