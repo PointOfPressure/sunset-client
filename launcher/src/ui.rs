@@ -826,9 +826,15 @@ fn setting_row(label: impl Into<SharedString>, value: impl IntoElement, last: bo
         .px(px(PAD))
         .py(px(8.))
         .when(!last, |d| d.border_b_1().border_color(rgb(LINE)))
-        .child(div().flex_1().min_w(px(0.)).child(text(label, 13., TEXT)))
-        .child(div().flex_none().child(value))
+        // The label takes the rest of the row but never less than LABEL_MIN, wrapping by words; the value keeps its
+        // own width while it fits and otherwise shrinks and wraps, right-aligned (a long address or key), instead of
+        // squeezing the label down to a letter per line.
+        .child(div().flex_1().min_w(px(LABEL_MIN)).child(text(label, 13., TEXT)))
+        .child(div().min_w(px(0.)).flex().flex_col().items_end().text_right().child(value))
 }
+
+/// The narrowest a settings row's label gets when its value is long.
+const LABEL_MIN: f32 = 140.;
 
 fn section(title: &str, rows: Vec<gpui::Div>) -> gpui::Div {
     let n = rows.len();
