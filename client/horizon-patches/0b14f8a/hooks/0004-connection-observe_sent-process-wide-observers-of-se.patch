@@ -1,0 +1,46 @@
+From c15a3b988257ab39c7cceb8ec1202cdccbe7106c Mon Sep 17 00:00:00 2001
+From: pointofpressure <pointofpressure@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 18:43:41 +0000
+Subject: [PATCH 4/6] connection: observe_sent, process-wide observers of sent
+ packet bodies
+
+ConnWriter::send hands each body (id + payload, before adaptation and framing) to the functions
+installed with observe_sent (up to four, in order), on the sending thread. Covers what a client's network
+thread sends by itself (login, configuration, keep-alives, pongs) as well as the game's play
+packets, for packet logs. horizon-protocol is below the crates function replacement reaches,
+so this is a plain hook; unset, it costs one atomic load per packet.
+---
+ crates/horizon-protocol/src/connection.rs | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/crates/horizon-protocol/src/connection.rs b/crates/horizon-protocol/src/connection.rs
+index 518112877b..3c107b3a37 100644
+--- a/crates/horizon-protocol/src/connection.rs
++++ b/crates/horizon-protocol/src/connection.rs
+@@ -591,6 +591,16 @@ impl Framing {
+         }
+     }
+ }
++/// Process-wide observers of every packet body a [`ConnWriter`] sends (VarInt id + payload, before the transport's
++/// adaptation, compression and framing), on the sending thread, in the order installed: for client diagnostics such
++/// as packet logs.
++static SENT_OBSERVERS: [std::sync::OnceLock<fn(&[u8])>; 4] = [const { std::sync::OnceLock::new() }; 4];
++
++/// Installs one of [`SENT_OBSERVERS`] for the rest of the process; false when all are taken.
++pub fn observe_sent(observer: fn(&[u8])) -> bool {
++    SENT_OBSERVERS.iter().any(|slot| slot.set(observer).is_ok())
++}
++
+ impl ConnWriter {
+     /// Remove this exact writer, leaving an explicitly disconnected placeholder.
+     pub fn take(&mut self) -> Self {
+@@ -665,6 +675,9 @@ impl ConnWriter {
+     }
+     /// Send one packet body (VarInt id + payload).
+     pub fn send(&mut self, body: &[u8]) -> Result<()> {
++        for observe in SENT_OBSERVERS.iter().map_while(|slot| slot.get()) {
++            observe(body);
++        }
+         if self.older_client.is_some() {
+             return match self.for_client(body)? {
+                 Some(body) => self.send_contents(&self.contents(&body)?),

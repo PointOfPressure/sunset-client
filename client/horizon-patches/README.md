@@ -16,9 +16,19 @@ functions they replace) and `libsunset_core.so` (Sunset's `sunset_core` crate). 
 - `<pin>/` here: commits 3 and 4 as `git format-patch` files (the readable part) and `series` (all four commit ids).
   Commit 1 is `client/sunset` itself and commit 2 is generated (4.5 MB of upstream code), so they live on the fork only.
 
+## Hook patches and the fork SDK
+
+Hooks Horizon lacks are small patches on the pin, branch `sunset-hooks/<pin>` of the fork, one per feature, exported
+to `<pin>/hooks/` (`upstream-asks.md` in `../docs/` asks for the same upstream). A `#[replaceable]` below the game
+crate only takes effect in a game built with it, so the prebuilt uses an SDK built from that branch:
+`FORK=<worktree at sunset-hooks/<pin>> ../scripts/fork-sdk.sh build` (about 1 h cold, the launcher's own Rust), then
+`HOOKS=sunset-hooks/<pin> FORK=<horizon checkout> build-prebuilt.sh`, which seeds its launcher home with that SDK and
+starts `sunset/<pin>` from the hooks branch. The shipped Horizon libraries are then the fork's build, not the
+Nightly's: their source is the same branch.
+
 ## LGPL (Horizon is LGPL-3.0-or-later): what we publish and why
 
-- Horizon's libraries ship unmodified and **dynamically linked** (`libhorizon_mod_host.so`, `libmod_*.so`,
+- Horizon's libraries ship **dynamically linked** (built from `sunset-hooks/<pin>` when HOOKS is set, unmodified otherwise) (`libhorizon_mod_host.so`, `libmod_*.so`,
   `libhorizon_core.so`, ...; the `horizon-client` launcher stub finds them through `$ORIGIN`). Users can replace them
   with their own builds; that is LGPL-3 section 4(d)(1).
 - `libhorizon_patch.so` contains modified Horizon code, so its complete source is published: the fork branch above,

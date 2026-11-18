@@ -1,7 +1,10 @@
 # Sunset @VERSION@ on Horizon @REV@
 
 This branch is upstream Horizon `@REV@` (@TAG@) plus the source of what Sunset's prebuilt client adds to it.
-Horizon is LGPL-3.0-or-later (`LICENSE` at the root); everything outside `sunset/` is unmodified upstream.
+Horizon is LGPL-3.0-or-later (`LICENSE` at the root). Outside `sunset/`, the commits between `@REV@` and the first
+`sunset/` commit are Sunset's hook patches (branch `sunset-hooks/@REV@` when there are any; one feature each, also
+LGPL-3.0-or-later); the prebuilt's Horizon libraries are built from that tree with `tools/prebuilt_game.py`
+(`HORIZON_SDK_BUILD_ID=@REV@`). The rest is unmodified upstream.
 
 - `sunset/package/`: Sunset's .hmod package (PointOfPressure/sunset-client `@SRC@`, `client/sunset`). Its own
   licence is `sunset/package/LICENSE`; it is here so the shipped build can be reproduced.

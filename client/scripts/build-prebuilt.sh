@@ -16,6 +16,9 @@
 #   FORK       a horizon-rust/horizon checkout: writes local branch sunset/<pin> (the LGPL corresponding source,
 #              never pushed) and exports its readable patches into client/horizon-patches/<pin>/
 #   RELINK=0   skips the relink kit (client/horizon-patches/README.md, "LGPL")
+#   HOOKS      with FORK: the commit or branch holding Sunset's hook patches on the pin (sunset-hooks/<pin>). The build
+#              then uses the fork's SDK (client/scripts/fork-sdk.sh build, in SDK, default ~/sunset-ops/tmp/fork-sdk),
+#              which must be of exactly that commit, and the fork branch starts from it
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
@@ -76,6 +79,19 @@ INST=sunset-prebuilt
 hl instance create $INST >/dev/null 2>&1 || true
 hl instance version $INST "$TAG" >/dev/null
 
+# ---- the fork's SDK (HOOKS) or the Nightly's published one; a home seeded with the fork's never builds without it
+if [ -n "${HOOKS:-}" ]; then
+	[ -n "${FORK:-}" ] || die "HOOKS needs FORK"
+	SDK=${SDK:-$REAL_HOME/sunset-ops/tmp/fork-sdk}; HOOKS_HEAD=$(git -C "$FORK" rev-parse "$HOOKS^{commit}")
+	[ "$(cat "$SDK/fork-commit" 2>/dev/null)" = "$HOOKS_HEAD" ] || die "$SDK is not the SDK of $HOOKS (${HOOKS_HEAD:0:10}): FORK=<worktree at it> client/scripts/fork-sdk.sh build"
+	git -C "$FORK" merge-base --is-ancestor "$REV" "$HOOKS_HEAD" || die "$HOOKS is not based on $SHORT"
+	[ "$(cat "$LDATA/native/.fork-seeded" 2>/dev/null)" = "$HOOKS_HEAD" ] || SDK=$SDK "$REPO/client/scripts/fork-sdk.sh" seed "$WORK/home"
+	hl() { HOME="$WORK/home" HORIZON_LAUNCHER_NO_SELF_UPDATE=1 HORIZON_SDK_BASE="$SDK" "$L" "$@"; }
+	say "Horizon fork SDK of ${HOOKS_HEAD:0:10} (hook patches $(git -C "$FORK" rev-list --count "$REV..$HOOKS_HEAD"))"
+elif [ -e "$LDATA/native/.fork-seeded" ]; then
+	die "$WORK's launcher home holds the fork SDK: set HOOKS, or use another WORK"
+fi
+
 # ---- patched source + release build (the launcher's optimized profile)
 STAGE=$WORK/stage
 rm -rf "$STAGE"; mkdir -p "$STAGE/sunset"
@@ -123,7 +139,7 @@ if [ -n "${FORK:-}" ]; then
 	git -C "$FORK" cat-file -e "$REV^{commit}" 2>/dev/null || git -C "$FORK" fetch -q origin "$REV"
 	FW=$WORK/fork-tree; rm -rf "$FW"
 	git -C "$FORK" worktree prune
-	git -C "$FORK" worktree add -q -f -B "$BR" "$FW" "$REV"
+	git -C "$FORK" worktree add -q -f -B "$BR" "$FW" "${HOOKS_HEAD:-$REV}"
 	export GIT_AUTHOR_DATE="@$(git -C "$REPO" log -1 --format=%ct)" GIT_COMMITTER_DATE="@$(git -C "$REPO" log -1 --format=%ct)"
 	gc() { git -C "$FW" add -A sunset && git -C "$FW" commit -q -m "$1" -m "$2"; }
 	mkdir -p "$FW/sunset/package" "$FW/sunset/patch"
@@ -144,6 +160,8 @@ if [ -n "${FORK:-}" ]; then
 	# The weave and the notes are the readable part; the package is client/sunset itself and the extract is generated.
 	git -C "$FW" format-patch -q --no-signature -o "$P" "$BR~2..$BR"
 	git -C "$FW" log --reverse --format='%H %s' "$REV..$BR" > "$P/series"
+	# Sunset's hook patches on the pin (the fork SDK's source), one per feature.
+	[ -n "${HOOKS_HEAD:-}" ] && git -C "$FORK" format-patch -q --no-signature -o "$P/hooks" "$REV..$HOOKS_HEAD"
 	git -C "$FORK" worktree remove --force "$FW"
 	say "fork branch $BR = ${FORK_HEAD:0:10} (local, not pushed); patches in client/horizon-patches/$SHORT"
 fi

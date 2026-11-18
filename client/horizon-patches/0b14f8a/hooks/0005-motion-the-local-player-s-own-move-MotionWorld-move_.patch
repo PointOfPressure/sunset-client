@@ -1,0 +1,43 @@
+From 74bf92f4c055367beb656d3c30a9b339cfddb049 Mon Sep 17 00:00:00 2001
+From: pointofpressure <pointofpressure@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 18:44:26 +0000
+Subject: [PATCH 5/6] motion: the local player's own move
+ (MotionWorld::move_self) is replaceable
+
+LocalPlayer.move: what living travel (and every other self-move) hands the client's own player each tick,
+after input, jumping and friction and before collision: the one client-side place a native mod can change the local
+player's own movement and velocity (entity_move's hook fires on the server only).
+
+living_attributes::attribute_error becomes pub: the copy is compiled in a mod's patch crate and keeps
+motion's grouped use of it whole, which a pub(crate) item fails.
+---
+ crates/horizon-client/src/living_attributes.rs | 3 ++-
+ crates/horizon-client/src/motion.rs            | 1 +
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/crates/horizon-client/src/living_attributes.rs b/crates/horizon-client/src/living_attributes.rs
+index 2b24a6d99d..653112a2e1 100644
+--- a/crates/horizon-client/src/living_attributes.rs
++++ b/crates/horizon-client/src/living_attributes.rs
+@@ -28,7 +28,8 @@ use {
+ /// An entity's attribute instances, as a player has them.
+ pub type Live = LiveAttributes<Box<dyn Identities>>;
+ 
+-pub(crate) fn attribute_error(error: impl fmt::Debug) -> io::Error {
++/// Public so a copy of `motion`'s functions in a mod's patch crate can keep `motion`'s grouped `use` of it.
++pub fn attribute_error(error: impl fmt::Debug) -> io::Error {
+     io::Error::other(format!("movement attribute: {error:?}"))
+ }
+ 
+diff --git a/crates/horizon-client/src/motion.rs b/crates/horizon-client/src/motion.rs
+index 9cf8a87af7..440470a2f5 100644
+--- a/crates/horizon-client/src/motion.rs
++++ b/crates/horizon-client/src/motion.rs
+@@ -2036,6 +2036,7 @@ impl MotionWorld<'_, '_, '_> {
+     /// `LocalPlayer.move`: the move, then `updateAutoJump` with the float
+     /// horizontal displacement. The gate is this invocation's (arismoko/horizon#2414), armed
+     /// here before the move's own handling, no-physics included.
++    #[horizon_mod_api_macros::replaceable]
+     pub fn move_self(&mut self, gate: &mut MoveGate, movement: Vec3) -> Result<()> {
+         crate::move_gate::arm(
+             gate,
