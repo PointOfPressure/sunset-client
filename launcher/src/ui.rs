@@ -461,6 +461,20 @@ fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, primary: boo
         .child(label.into())
 }
 
+/// A square button with only an icon; `tip` names it on hover.
+fn icon_button(id: impl Into<ElementId>, kind: Icon, tip: &'static str, side: f32) -> gpui::Stateful<gpui::Div> {
+    button(id, "", false).w(px(side)).h(px(side)).px_0().child(icon(kind, 18., TEXT)).tooltip(move |_, cx| cx.new(|_| Tip(tip.into())).into())
+}
+
+/// A hover label.
+struct Tip(SharedString);
+
+impl Render for Tip {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().px(px(8.)).py(px(4.)).rounded(px(6.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).font_family(BODY).text_size(px(12.)).text_color(rgb(TEXT)).child(self.0.clone())
+    }
+}
+
 #[derive(Clone, Copy)]
 enum Icon {
     Play,
@@ -905,7 +919,7 @@ impl Launcher {
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.play(cx))),
                 )
                 .when_some(update, |d, v| d.child(button("update", format!("Update to {v}"), false).h(px(BIG_H)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx)))))
-                .child(button("open-folder", "Open folder", false).h(px(BIG_H)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                .child(icon_button("open-folder", Icon::Folder, "Open folder", BIG_H).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     let p = this.paths.instance();
                     this.open(p, cx)
                 })))
