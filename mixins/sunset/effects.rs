@@ -1,11 +1,10 @@
-// Effects: visuals in the world that only you see. Jump circles (a ring grows where a player jumps), Trails
-// (footsteps, rings or sparks where players walk), Hit particles (glowing sparks off what you hit, and off a totem
-// pop) and Weather (rain, snow, fireflies or embers round you). Drawn on the HUD as projected shapes; nothing is
-// sent. Also the shield breaks ESP colours by.
+// Client-side world effects drawn through Sunset’s overlay canvas.
+// Shield-break and totem-pop tracking also feeds ESP and Nametags.
 use super::Game;
 use super::sunset::{Camera, Canvas, Category, Module, accent, own_id, with};
 use horizon_protocol::packets::play::{Clientbound as C, Serverbound as S};
 use std::f32::consts::TAU;
+use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -13,29 +12,47 @@ pub(super) const NAME: &str = "Effects";
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(NAME, Category::Render, "Jump circles, trails, hit particles and weather.")
+        Module::new(NAME, Category::Render, "Jump circles, trails, hit particles, shockwaves and weather.")
+            .group("Jump circles")
             .bool("Jump circles", true)
             .bool("Circles self only", false)
+            .pick("Circle style", &["Single", "Double"])
             .num("Circle radius", 1.0, 0.2, 5.0, 0.1)
             .num("Circle duration (ms)", 1200.0, 200.0, 4000.0, 100.0)
             .num("Circle thickness", 0.02, 0.005, 0.1, 0.005)
             .num("Circle glow", 0.15, 0.0, 0.5, 0.01)
+            .group("Trails")
             .bool("Trails", false)
             .pick("Trail mode", &["Footsteps", "Ring", "Particles"])
             .bool("Trails self only", true)
             .num("Trail duration (ms)", 1500.0, 200.0, 5000.0, 100.0)
             .num("Trail size", 1.0, 0.2, 3.0, 0.1)
+            .group("Hit particles")
             .bool("Hit particles", false)
+            .pick("Particle shape", &["Glow", "Diamond"])
+            .num("Particle size", 1.0, 0.25, 2.0, 0.05)
             .num("Particle amount", 10.0, 1.0, 20.0, 1.0)
             .num("Particle lifespan (s)", 10.0, 1.0, 60.0, 1.0)
             .bool("Particle physics", true)
             .bool("On totem pops", true)
+            .group("Landing ripples")
+            .bool("Landing ripples", false)
+            .bool("Landings self only", true)
+            .num("Minimum fall", 0.6, 0.4, 4.0, 0.1)
+            .num("Landing radius", 1.5, 0.4, 4.0, 0.1)
+            .num("Landing duration (ms)", 650.0, 200.0, 2000.0, 50.0)
+            .group("Explosion shockwaves")
+            .bool("Explosion shockwaves", false)
+            .num("Shockwave scale", 1.0, 0.5, 2.0, 0.1)
+            .num("Shockwave duration (ms)", 850.0, 250.0, 2000.0, 50.0)
+            .group("Weather")
             .bool("Weather", false)
             .pick("Weather mode", &["Rain", "Snow", "Fireflies", "Embers"])
             .num("Density", 200.0, 10.0, 1500.0, 10.0)
             .num("Weather radius", 50.0, 5.0, 100.0, 5.0)
             .num("Weather speed", 1.0, 0.1, 5.0, 0.1)
             .num("Weather size", 3.0, 0.1, 5.0, 0.1)
+            .group("Color")
             .pick("Color", &["Accent", "Custom"])
             .colour("Custom color", "Purple"),
     ]
@@ -43,9 +60,11 @@ pub(super) fn defaults() -> Vec<Module> {
 
 pub(super) fn visible(m: &Module, name: &str) -> bool {
     match name {
-        "Circles self only" | "Circle radius" | "Circle duration (ms)" | "Circle thickness" | "Circle glow" => m.b("Jump circles"),
+        "Circles self only" | "Circle style" | "Circle radius" | "Circle duration (ms)" | "Circle thickness" | "Circle glow" => m.b("Jump circles"),
         "Trail mode" | "Trails self only" | "Trail duration (ms)" | "Trail size" => m.b("Trails"),
-        "Particle amount" | "Particle lifespan (s)" | "Particle physics" | "On totem pops" => m.b("Hit particles"),
+        "Landings self only" | "Minimum fall" | "Landing radius" | "Landing duration (ms)" => m.b("Landing ripples"),
+        "Shockwave scale" | "Shockwave duration (ms)" => m.b("Explosion shockwaves"),
+        "Particle shape" | "Particle size" | "Particle amount" | "Particle lifespan (s)" | "Particle physics" | "On totem pops" => m.b("Hit particles"),
         "Weather mode" | "Density" | "Weather radius" | "Weather speed" | "Weather size" => m.b("Weather"),
         "Custom color" => m.p("Color") == "Custom",
         _ => true,
@@ -109,20 +128,30 @@ fn ring(cam: &Camera, out: &mut impl Canvas, at: [f64; 3], radius: f32, thicknes
     if !cam.sees(at, f64::from(radius + thickness + glow)) {
         return;
     }
-    let point = |r: f32, k: usize| {
-        let t = k as f32 * TAU / N as f32;
-        cam.project([at[0] + f64::from(r * t.cos()), at[1], at[2] + f64::from(r * t.sin())])
+    // Project each rim point once, and share the edges between the core and glow bands.
+    let edges = |r: f32| -> [Option<[f32; 2]>; N] {
+        std::array::from_fn(|k| {
+            let (sin, cos) = (k as f64 * std::f64::consts::TAU / N as f64).sin_cos();
+            cam.project([at[0] + f64::from(r) * cos, at[1], at[2] + f64::from(r) * sin])
+        })
     };
-    let (inner, outer) = (radius - thickness / 2.0, radius + thickness / 2.0);
-    let bands = [(inner - glow, inner, a * 0.3), (inner, outer, a), (outer, outer + glow, a * 0.3)];
-    for (lo, hi, a) in bands.into_iter().filter(|b| b.1 > b.0.max(0.0)) {
-        let colour = alpha(rgb, a);
-        let lo = lo.max(0.0);
+    let inner = (radius - thickness / 2.0).max(0.0);
+    let outer = radius + thickness / 2.0;
+    let inner_edge = edges(inner);
+    let outer_edge = edges(outer);
+    let mut band = |lo: &[_; N], hi: &[_; N], opacity| {
+        let color = alpha(rgb, opacity);
         for k in 0..N {
-            if let (Some(p), Some(q), Some(r), Some(s)) = (point(lo, k), point(hi, k), point(hi, k + 1), point(lo, k + 1)) {
-                out.quad([p, q, r, s], colour);
+            let n = (k + 1) % N;
+            if let (Some(p), Some(q), Some(r), Some(s)) = (lo[k], hi[k], hi[n], lo[n]) {
+                out.quad([p, q, r, s], color);
             }
         }
+    };
+    band(&inner_edge, &outer_edge, a);
+    if glow > 0.0 {
+        band(&edges((inner - glow).max(0.0)), &inner_edge, a * 0.3);
+        band(&outer_edge, &edges(outer + glow), a * 0.3);
     }
 }
 
@@ -147,6 +176,27 @@ fn oval(cam: &Camera, out: &mut impl Canvas, at: [f64; 3], yaw: f32, half: [f32;
 }
 
 // ---- state
+
+struct PlayerTrack {
+    id: u32,
+    at: [f64; 3],
+    ground: bool,
+    peak: f64,
+}
+
+struct Pulse {
+    at: [f64; 3],
+    born: Instant,
+    radius: f32,
+    life: f32,
+}
+
+fn keep_recent<T>(queue: &mut VecDeque<T>, item: T, limit: usize) {
+    if queue.len() >= limit {
+        queue.pop_front();
+    }
+    queue.push_back(item);
+}
 
 struct Circle {
     at: [f64; 3],
@@ -191,13 +241,16 @@ struct Drop {
 #[derive(Default)]
 struct Fx {
     // Players last tick: on the ground, and their y; where the last trail mark went, and which foot.
-    last: Vec<(u32, bool, f64)>,
+    last: Vec<PlayerTrack>,
     steps: Vec<(u32, [f64; 3], bool)>,
-    circles: Vec<Circle>,
-    marks: Vec<Mark>,
+    circles: VecDeque<Circle>,
+    marks: VecDeque<Mark>,
+    landings: VecDeque<Pulse>,
+    explosions: VecDeque<Pulse>,
     sparks: Vec<Spark>,
     drops: Vec<Drop>,
     weather_from: Option<[f64; 3]>,
+    weather_mode: Option<&'static str>,
     frame: Option<Instant>,
     epoch: Option<Instant>,
     // A player's shield put out by an axe: until when (tick).
@@ -231,7 +284,7 @@ fn colour(m: &Module) -> u32 {
 fn sparks_at(fx: &mut Fx, m: &Module, at: [f64; 3], count: usize, pop: bool) {
     let cap = (m.n("Particle lifespan (s)") * 20.0) as usize;
     for _ in 0..count {
-        if fx.sparks.len() > cap {
+        if fx.sparks.len() >= cap {
             break;
         }
         let p = [at[0] + (random(fx) - 0.5) * 0.5, at[1] + random(fx) + 0.5, at[2] + (random(fx) - 0.5) * 0.5];
@@ -260,6 +313,22 @@ pub(super) fn sent(game: &Game<'_>, packet: &S) {
 
 // A player's totem pop (event 35): twice the sparks; a shield put out (event 30): remembered five seconds for ESP.
 pub(super) fn packet(game: &Game<'_>, packet: &C) {
+    if matches!(packet, C::Login(_) | C::Respawn(_) | C::Disconnect(_)) {
+        st(|fx| *fx = Fx::default());
+        return;
+    }
+    if let C::Explode(blast) = packet {
+        if let Some(m) = module().filter(|m| m.b("Explosion shockwaves"))
+            && let Some(eye) = game.eye_position()
+            && super::sunset_util::dist(eye, blast.center) <= 48.0
+            && blast.radius.is_finite() && blast.radius > 0.0
+        {
+            let radius = (blast.radius.clamp(0.7, 6.0) * m.n("Shockwave scale") as f32).min(10.0);
+            let life = (m.n("Shockwave duration (ms)") / 1000.0) as f32;
+            st(|fx| keep_recent(&mut fx.explosions, Pulse { at: blast.center, born: Instant::now(), radius, life }, 24));
+        }
+        return;
+    }
     let C::EntityEvent(e) = packet else {
         return;
     };
@@ -314,7 +383,8 @@ pub(super) fn tick(game: &Game<'_>) {
     let Some(m) = module().filter(|_| game.player.is_some()) else {
         st(|fx| {
             let broken = std::mem::take(&mut fx.broken);
-            *fx = Fx { broken, roll: fx.roll, ..Fx::default() };
+            let pops = std::mem::take(&mut fx.pops);
+            *fx = Fx { broken, pops, roll: fx.roll, ..Fx::default() };
         });
         return;
     };
@@ -334,20 +404,33 @@ pub(super) fn tick(game: &Game<'_>) {
         let mut seen = Vec::with_capacity(players.len());
         for &(id, at, ground, yaw) in &players {
             let own = Some(id) == me;
-            // Jump circles: off the ground since last tick and going up.
-            let before = fx.last.iter().find(|l| l.0 == id).copied();
-            if m.b("Jump circles")
-                && (own || !m.b("Circles self only"))
-                && let Some((_, was_ground, was_y)) = before
-                && was_ground
-                && !ground
-                && at[1] - was_y > 0.05
-            {
-                fx.circles.push(Circle { at: [at[0], was_y + 0.01, at[2]], born: now, life: (m.n("Circle duration (ms)") / 1000.0) as f32 });
+            let before = fx.last.iter().find(|last| last.id == id)
+                .filter(|last| super::sunset_util::dist(last.at, at) <= 4.0);
+            let peak = before.map_or(at[1], |last| if last.ground { at[1] } else { last.peak.max(at[1]) });
+            if let Some(last) = before {
+                if m.b("Jump circles") && (own || !m.b("Circles self only"))
+                    && last.ground && !ground && at[1] - last.at[1] > 0.05
+                {
+                    let at = [at[0], last.at[1] + 0.01, at[2]];
+                    let life = (m.n("Circle duration (ms)") / 1000.0) as f32;
+                    keep_recent(&mut fx.circles, Circle { at, born: now, life }, 48);
+                }
+                if m.b("Landing ripples") && (own || !m.b("Landings self only"))
+                    && !last.ground && ground && peak - at[1] >= m.n("Minimum fall")
+                {
+                    let at = [at[0], at[1] + 0.02, at[2]];
+                    let radius = m.n("Landing radius") as f32;
+                    let life = (m.n("Landing duration (ms)") / 1000.0) as f32;
+                    keep_recent(&mut fx.landings, Pulse { at, radius, life, born: now }, 48);
+                }
             }
-            seen.push((id, ground, at[1]));
-            // Trails: a mark each so far walked on the ground.
-            if m.b("Trails") && (own || !m.b("Trails self only")) && ground {
+            seen.push(PlayerTrack { id, at, ground, peak: if ground { at[1] } else { peak } });
+            // A teleport, airborne step or disabled trail ends the current set of footprints.
+            if before.is_none() || !ground || !m.b("Trails") || (!own && m.b("Trails self only")) {
+                fx.steps.retain(|s| s.0 != id);
+                continue;
+            }
+            {
                 let kind = match m.p("Trail mode") {
                     "Ring" => Trail::Ring,
                     "Particles" => Trail::Spark,
@@ -368,7 +451,7 @@ pub(super) fn tick(game: &Game<'_>) {
                                 let (s, c) = (f64::from(yaw.to_radians().sin()), f64::from(yaw.to_radians().cos()));
                                 let side = if left { -0.18 } else { 0.18 };
                                 let foot = [at[0] + c * side, at[1] + 0.02, at[2] + s * side];
-                                fx.marks.push(Mark { at: foot, yaw, kind, vel: [0.0; 3], shade: 0.5, born: now, life });
+                                keep_recent(&mut fx.marks, Mark { at: foot, yaw, kind, vel: [0.0; 3], shade: 0.5, born: now, life }, 512);
                             }
                             Trail::Spark => {
                                 for _ in 0..4 {
@@ -376,12 +459,12 @@ pub(super) fn tick(game: &Game<'_>) {
                                     let speed = 0.025 + random(fx) * 0.05;
                                     let vel = [a.cos() * speed, 0.05 + random(fx) * 0.05, a.sin() * speed];
                                     let shade = random(fx) as f32;
-                                    fx.marks.push(Mark { at, yaw, kind, vel, shade, born: now, life });
+                                    keep_recent(&mut fx.marks, Mark { at, yaw, kind, vel, shade, born: now, life }, 512);
                                 }
                             }
                             Trail::Ring => {
                                 let shade = random(fx) as f32;
-                                fx.marks.push(Mark { at: [at[0], at[1] + 0.01, at[2]], yaw, kind, vel: [0.0; 3], shade, born: now, life });
+                                keep_recent(&mut fx.marks, Mark { at: [at[0], at[1] + 0.01, at[2]], yaw, kind, vel: [0.0; 3], shade, born: now, life }, 512);
                             }
                         }
                         fx.steps[i] = (id, at, !left);
@@ -392,8 +475,13 @@ pub(super) fn tick(game: &Game<'_>) {
         }
         fx.last = seen;
         fx.steps.retain(|s| players.iter().any(|p| p.0 == s.0));
-        fx.circles.retain(|c| c.born.elapsed().as_secs_f32() < c.life);
-        fx.marks.retain(|k| k.born.elapsed().as_secs_f32() < k.life);
+        fx.circles.retain(|c| m.b("Jump circles") && c.born.elapsed().as_secs_f32() < c.life);
+        fx.marks.retain(|k| m.b("Trails") && k.born.elapsed().as_secs_f32() < k.life);
+        fx.landings.retain(|p| m.b("Landing ripples") && p.born.elapsed().as_secs_f32() < p.life);
+        fx.explosions.retain(|p| m.b("Explosion shockwaves") && p.born.elapsed().as_secs_f32() < p.life);
+        if !m.b("Hit particles") {
+            fx.sparks.clear();
+        }
         // Sparks fall slowly, bounce off blocks (with Particle physics) and go after Particle lifespan or 20 blocks off.
         let life = m.n("Particle lifespan (s)") as f32;
         let physics = m.b("Particle physics");
@@ -448,9 +536,15 @@ fn weather(game: &Game<'_>, fx: &mut Fx, m: &Module, dt: f32) {
         return;
     };
     let (mode, density, radius) = (m.p("Weather mode"), m.n("Density") as usize, m.n("Weather radius"));
-    let refill = fx.drops.is_empty() || fx.weather_from.is_some_and(|w| super::sunset_util::dist(w, eye) > 16.0);
+    let refill = fx.weather_mode != Some(mode)
+        || fx.weather_from.is_none_or(|w| super::sunset_util::dist(w, eye) > 16.0);
+    if refill {
+        fx.weather_mode = Some(mode);
+        fx.drops.clear();
+    }
+    fx.drops.truncate(density);
     fx.weather_from = Some(eye);
-    let tries = if refill { density * 6 } else { (dt * (density / 20).max(1) as f32).ceil() as usize };
+    let tries = if refill { (density * 2).min(360) } else { (dt * (density / 20).max(1) as f32).ceil() as usize };
     for _ in 0..tries {
         if fx.drops.len() >= density {
             break;
@@ -485,6 +579,7 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
             weather(game, fx, m, dt);
         } else {
             fx.drops.clear();
+            fx.weather_mode = None;
         }
         let ease = |f: f32| 1.0 - (1.0 - f) * (1.0 - f);
         // Jump circles: grow to Circle radius, in over the first fifth of their time, out over the rest.
@@ -492,7 +587,24 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
         for c in &fx.circles {
             let f = c.born.elapsed().as_secs_f32() / c.life;
             let a = if f < 0.2 { f / 0.2 } else { 1.0 - (f - 0.2) / 0.8 };
-            ring(cam, out, c.at, 0.1 + (radius - 0.1) * ease(f), thick, glow_w, bright, a.clamp(0.0, 1.0));
+            let r = 0.1 + (radius - 0.1) * ease(f.clamp(0.0, 1.0));
+            ring(cam, out, c.at, r, thick, glow_w, bright, a.clamp(0.0, 1.0));
+            if m.p("Circle style") == "Double" {
+                ring(cam, out, c.at, r * 0.66, thick * 0.7, glow_w * 0.6, rgb, a * 0.65);
+            }
+        }
+        for (waves, setting, thickness) in [
+            (&fx.landings, "Landing ripples", 0.035),
+            (&fx.explosions, "Explosion shockwaves", 0.07),
+        ] {
+            if !m.b(setting) { continue; }
+            for wave in waves {
+                let f = (wave.born.elapsed().as_secs_f32() / wave.life).clamp(0.0, 1.0);
+                let a = (1.0 - f).powi(2);
+                let r = wave.radius * (0.16 + 0.84 * ease(f));
+                ring(cam, out, wave.at, r, thickness, thickness * 3.5, bright, a);
+                ring(cam, out, wave.at, r * 0.7, thickness * 0.55, thickness, rgb, a * 0.7);
+            }
         }
         let size = m.n("Trail size") as f32;
         for k in &fx.marks {
@@ -522,7 +634,15 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
             };
             let f = s.born.elapsed().as_secs_f32() / life;
             let wave = ((t * 4.0 + i as f32 * 0.55).sin() + 1.0) * 0.5;
-            glow(out, p, if s.pop { 0.14 } else { 0.09 } * px, alpha(mix(dark, bright, wave), 1.0 - f));
+            let r = ((if s.pop { 0.14 } else { 0.09 }) * px * m.n("Particle size") as f32).min(24.0);
+            if !cam.on_screen(p, r * 3.0) { continue; }
+            let color = alpha(mix(dark, bright, wave), 1.0 - f);
+            if m.p("Particle shape") == "Diamond" {
+                let [x, y] = p;
+                out.quad([[x, y - r], [x + r * 0.7, y], [x, y + r], [x - r * 0.7, y]], color);
+            } else {
+                glow(out, p, r, color);
+            }
         }
         let mode = m.p("Weather mode");
         let wsize = m.n("Weather size") as f32 * 0.04;
