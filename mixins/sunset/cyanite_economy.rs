@@ -216,8 +216,10 @@ fn listing_key(stack: &horizon_client::items::ItemStack) -> String {
     use horizon_world::nbt::Tag;
     let mut stable = stack.clone();
     if let Some(extra) = &mut stable.extra {
+        // The cached wire image also contains the original lore and its countdown.
+        extra.wire = Default::default();
         for (name, value) in &mut extra.other {
-            if name != "minecraft:lore" { continue; }
+            if name.as_str() != "minecraft:lore" { continue; }
             if let Tag::List(lines) = value {
                 lines.retain(|line| {
                     let json = horizon_client::scoreboard::tag_to_json(line);
