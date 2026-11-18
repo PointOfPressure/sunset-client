@@ -4,7 +4,7 @@ use crate::core::{self, Account, Manifest, Paths, Release, Settings, SignIn};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     App, AppContext as _, Application, Bounds, ClickEvent, ClipboardItem, Context, ElementId, Hsla, Image, ImageFormat, InteractiveElement as _,
-    IntoElement, MouseButton, MouseDownEvent, Pixels, Point, ParentElement as _, PathBuilder, Render, Rgba, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    IntoElement, MouseButton, MouseDownEvent, Pixels, Point, ParentElement as _, Anchor, PathBuilder, Render, Rgba, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
     WindowBounds, WindowOptions, anchored, canvas, deferred, div, img, point, px, rgb, size,
 };
 use std::path::PathBuf;
@@ -23,6 +23,14 @@ const ON_ACCENT: u32 = 0x1c130d;
 const GREEN: u32 = 0x6fcf97;
 const AMBER: u32 = 0xe7b04a;
 const RED: u32 = 0xef6b6b;
+
+// One spacing scale for every page, so gutters, gaps and control heights line up across views.
+const GUTTER: f32 = 24.; // window edge to content, left and right
+const GAP: f32 = 16.; // between cards, columns and page blocks
+const PAD: f32 = 16.; // inside cards and their rows
+const CTRL_H: f32 = 36.; // buttons, top-bar chips and the tab pill
+const BIG_H: f32 = 40.; // the Play row
+const BAR_H: f32 = 68.; // the top bar, chips centred in it
 const BODY: &str = "Inter Medium";
 const BOLD: &str = "Inter SemiBold";
 
@@ -440,7 +448,7 @@ fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, primary: boo
     div()
         .id(id)
         .px(px(14.))
-        .h(px(34.))
+        .h(px(CTRL_H))
         .flex()
         .items_center()
         .justify_center()
@@ -573,8 +581,8 @@ fn setting_row(label: impl Into<SharedString>, value: impl IntoElement, last: bo
         .flex()
         .items_center()
         .justify_between()
-        .min_h(px(50.))
-        .px(px(14.))
+        .min_h(px(52.))
+        .px(px(PAD))
         .when(!last, |d| d.border_b_1().border_color(rgb(LINE)))
         .child(text(label, 13., TEXT))
         .child(value)
@@ -594,6 +602,11 @@ fn window_label(w: &str) -> String {
     if w == "fullscreen" { "Fullscreen".into() } else { w.replace('x', " × ") }
 }
 
+/// A page's title row, the same height on every page whether or not it has a button on the right.
+fn page_head(title: &str, action: Option<gpui::AnyElement>) -> gpui::Div {
+    div().flex().flex_none().items_center().justify_between().h(px(CTRL_H)).child(bold(title.to_string(), 26.)).children(action)
+}
+
 /// The top bar's pill buttons (platform, instance, account) share this shape.
 fn top_chip(id: impl Into<ElementId>) -> gpui::Stateful<gpui::Div> {
     div()
@@ -601,9 +614,9 @@ fn top_chip(id: impl Into<ElementId>) -> gpui::Stateful<gpui::Div> {
         .flex()
         .items_center()
         .gap(px(8.))
-        .h(px(36.))
+        .h(px(CTRL_H))
         .px(px(14.))
-        .rounded(px(18.))
+        .rounded(px(CTRL_H / 2.))
         .bg(rgb(CHIP))
         .border_1()
         .border_color(rgb(LINE))
@@ -631,20 +644,22 @@ impl Launcher {
         let tabs = [(Tab::Overview, "Overview"), (Tab::Plugins, "Plugins"), (Tab::Profiles, "Profiles"), (Tab::Settings, "Settings")];
         div()
             .flex()
+            .flex_none()
             .items_center()
+            .h(px(BAR_H))
             .gap(px(8.))
             .child(self.dropdown(Menu::Platform, "Horizon", cx))
             .child(self.dropdown(Menu::Instance, if has { "Sunset" } else { "No instance" }, cx))
             .child(
-                div().flex().ml(px(4.)).p(px(3.)).gap(px(2.)).rounded(px(20.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).children(tabs.into_iter().filter(|(t, _)| has || *t == Tab::Overview).map(|(t, label)| {
+                div().flex().p(px(3.)).gap(px(2.)).rounded(px(CTRL_H / 2.)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).children(tabs.into_iter().filter(|(t, _)| has || *t == Tab::Overview).map(|(t, label)| {
                     let on = self.tab == t;
                     div()
                         .id(label)
                         .px(px(18.))
-                        .h(px(30.))
+                        .h(px(CTRL_H - 8.))
                         .flex()
                         .items_center()
-                        .rounded(px(15.))
+                        .rounded(px((CTRL_H - 8.) / 2.))
                         .when(on, |d| d.bg(rgb(0x2a2a2e)))
                         .cursor_pointer()
                         .text_size(px(13.))
@@ -671,22 +686,60 @@ impl Launcher {
             .child(text(label, 13., TEXT))
             .child(icon(Icon::Chevron, 14., MUTED))
             .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| this.toggle_menu(menu, ev, cx)));
+        self.with_menu(menu, chip, false, cx)
+    }
+
+    /// `trigger` with `menu`'s list dropping down under it while open, lined up with its left or right edge. The
+    /// backdrop that closes it is in `menu_popup`.
+    fn with_menu(&self, menu: Menu, trigger: impl IntoElement, right: bool, cx: &mut Context<Self>) -> gpui::Div {
         let list = (self.menu == Some(menu)).then(|| {
-            let pop = card().mt(px(6.)).p(px(4.)).min_w(px(200.)).flex().flex_col().shadow_lg().occlude();
-            let pop = match menu {
-                // Reserved for Sunrise/Java later; Horizon is the only platform today.
-                Menu::Platform => pop.child(self.menu_row("p-horizon", checked("Horizon", true), cx, |_, _| {})),
-                _ => {
-                    let pop = match self.installed {
-                        Some(_) => pop.child(self.menu_row("i-sunset", checked("Sunset", true), cx, |this, _| this.tab = Tab::Overview)),
-                        None => pop,
-                    };
-                    pop.child(self.menu_item("i-new", "New instance", cx, |this, cx| this.new_instance(cx)))
-                }
-            };
-            div().absolute().top_full().left_0().child(deferred(anchored().child(pop)).with_priority(1))
+            let pop = self.menu_items(menu, card().mt(px(6.)).p(px(4.)).min_w(px(200.)).flex().flex_col().shadow_lg().occlude(), cx);
+            let at = if right { anchored().anchor(Anchor::TopRight) } else { anchored() };
+            div().absolute().top_full().when(right, |d| d.right_0()).when(!right, |d| d.left_0()).child(deferred(at.child(pop)).with_priority(1))
         });
-        div().relative().child(chip).children(list)
+        div().relative().flex_none().child(trigger).children(list)
+    }
+
+    fn menu_items(&self, menu: Menu, pop: gpui::Div, cx: &mut Context<Self>) -> gpui::Div {
+        match menu {
+            // Reserved for Sunrise/Java later; Horizon is the only platform today.
+            Menu::Platform => pop.child(self.menu_row("p-horizon", checked("Horizon", true), cx, |_, _| {})),
+            Menu::Instance => {
+                let pop = match self.installed {
+                    Some(_) => pop.child(self.menu_row("i-sunset", checked("Sunset", true), cx, |this, _| this.tab = Tab::Overview)),
+                    None => pop,
+                };
+                pop.child(self.menu_item("i-new", "New instance", cx, |this, cx| this.new_instance(cx)))
+            }
+            Menu::Account => {
+                let mut pop = pop;
+                for (i, a) in self.accounts.iter().enumerate() {
+                    let (uuid, name) = (a.uuid.clone(), a.name.clone());
+                    let label = if a.selected { format!("{}  (playing)", a.name) } else { format!("Play as {}", a.name) };
+                    pop = pop.child(self.menu_item(("acct", i), label, cx, move |this, cx| {
+                        this.cli_action(vec!["account".into(), "select".into(), uuid.clone()], "Account selected", cx)
+                    }));
+                    let uuid = a.uuid.clone();
+                    pop = pop.child(self.menu_item(("signout", i), format!("Sign out {name}"), cx, move |this, cx| {
+                        this.cli_action(vec!["account".into(), "sign-out".into(), uuid.clone()], "Signed out", cx)
+                    }));
+                }
+                pop.child(self.menu_item("add-account", "Add account", cx, |this, cx| this.start_sign_in(cx)))
+            }
+            Menu::More => {
+                let logs = self.paths.logs();
+                pop.child(self.menu_item("m-logs", "Open logs", cx, move |this, cx| this.open(logs.clone(), cx)))
+                    .child(self.menu_item("m-check", "Check for updates", cx, |this, _| this.check(false)))
+                    .child(self.menu_item("m-repair", "Repair installation", cx, |this, cx| this.start_install(true, cx)))
+            }
+            Menu::Window => {
+                let mut pop = pop;
+                for w in core::WINDOW_SIZES {
+                    pop = pop.child(self.menu_item(SharedString::from(w), window_label(w), cx, move |this, cx| this.set_settings(|s| s.window = w.into(), cx)));
+                }
+                pop
+            }
+        }
     }
 
     /// The menu's New instance: the same install the empty Overview offers. Only one instance exists for now, so
@@ -705,14 +758,14 @@ impl Launcher {
             return top_chip("sign-in").child(text("Sign in", 13., TEXT)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_sign_in(cx))).into_any_element();
         };
         let head = self.faces.iter().find(|(u, _)| u == &a.uuid).map(|(_, f)| face(f, 22.).into_any_element()).unwrap_or_else(|| div().w(px(22.)).h(px(22.)).rounded(px(3.)).bg(rgb(0x3a3a40)).into_any_element());
-        top_chip("account")
+        let chip = top_chip("account")
             .pl(px(8.))
             .pr(px(10.))
             .child(head)
             .child(text(a.name.clone(), 13., TEXT))
             .child(icon(Icon::Chevron, 14., MUTED))
-            .on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Account, ev, cx)))
-            .into_any_element()
+            .on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Account, ev, cx)));
+        self.with_menu(Menu::Account, chip, true, cx).into_any_element()
     }
 
     fn menu_item(&self, id: impl Into<ElementId>, label: impl Into<SharedString>, cx: &mut Context<Self>, f: impl Fn(&mut Self, &mut Context<Self>) + 'static) -> gpui::Stateful<gpui::Div> {
@@ -748,53 +801,13 @@ impl Launcher {
         cx.notify();
     }
 
+    /// The backdrop under an open menu (the menus themselves hang off their buttons, see `with_menu`).
     fn menu_popup(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
-        let m = self.menu?;
-        let pop = card().absolute().p(px(4.)).min_w(px(200.)).flex().flex_col().shadow_lg();
-        let pop = match m {
-            Menu::Platform | Menu::Instance => None,
-            Menu::Account => Some({
-                let mut pop = pop.top(px(64.)).right(px(20.));
-                for (i, a) in self.accounts.iter().enumerate() {
-                    let (uuid, name) = (a.uuid.clone(), a.name.clone());
-                    let label = if a.selected { format!("{}  (playing)", a.name) } else { format!("Play as {}", a.name) };
-                    pop = pop.child(self.menu_item(("acct", i), label, cx, move |this, cx| {
-                        this.cli_action(vec!["account".into(), "select".into(), uuid.clone()], "Account selected", cx)
-                    }));
-                    let uuid = a.uuid.clone();
-                    pop = pop.child(self.menu_item(("signout", i), format!("Sign out {name}"), cx, move |this, cx| {
-                        this.cli_action(vec!["account".into(), "sign-out".into(), uuid.clone()], "Signed out", cx)
-                    }));
-                }
-                pop.child(self.menu_item("add-account", "Add account", cx, |this, cx| this.start_sign_in(cx)))
-            }),
-            Menu::More => Some({
-                let logs = self.paths.logs();
-                pop.top(px(400.)).left(px(330.))
-                    .child(self.menu_item("m-logs", "Open logs", cx, move |this, cx| this.open(logs.clone(), cx)))
-                    .child(self.menu_item("m-check", "Check for updates", cx, |this, _| this.check(false)))
-                    .child(self.menu_item("m-repair", "Repair installation", cx, |this, cx| this.start_install(true, cx)))
-            }),
-            Menu::Window => Some({
-                let mut pop = pop.top(px(200.)).right(px(40.));
-                for w in core::WINDOW_SIZES {
-                    pop = pop.child(self.menu_item(SharedString::from(w), window_label(w), cx, move |this, cx| this.set_settings(|s| s.window = w.into(), cx)));
-                }
-                pop
-            }),
-        };
-        Some(
-            div()
-                .absolute()
-                .size_full()
-                .top_0()
-                .left_0()
-                .child(div().id("menu-backdrop").absolute().size_full().on_mouse_down(MouseButton::Left, cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-                    this.dismissed = this.menu.take().map(|m| (m, ev.position));
-                    cx.notify();
-                })))
-                .children(pop.map(|p| p.occlude())),
-        )
+        self.menu?;
+        Some(div().id("menu-backdrop").absolute().size_full().top_0().left_0().on_mouse_down(MouseButton::Left, cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+            this.dismissed = this.menu.take().map(|m| (m, ev.position));
+            cx.notify();
+        })))
     }
 
     fn status(&self) -> (u32, String) {
@@ -839,7 +852,7 @@ impl Launcher {
             None => div()
                 .flex()
                 .items_center()
-                .gap(px(10.))
+                .gap(px(8.))
                 .child(
                     div()
                         .id("play")
@@ -848,8 +861,8 @@ impl Launcher {
                         .justify_center()
                         .gap(px(10.))
                         .w(px(200.))
-                        .h(px(44.))
-                        .rounded(px(10.))
+                        .h(px(BIG_H))
+                        .rounded(px(8.))
                         .bg(rgb(ACCENT))
                         .when(self.playing, |d| d.opacity(0.6))
                         .when(!self.playing, |d| d.cursor_pointer().hover(|s| s.bg(rgb(0xf5b88f))))
@@ -857,79 +870,88 @@ impl Launcher {
                         .child(div().text_size(px(16.)).font_family(BOLD).text_color(rgb(ON_ACCENT)).child(if self.playing { "Playing" } else { "Play" }))
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.play(cx))),
                 )
-                .when_some(update, |d, v| d.child(button("update", format!("Update to {v}"), false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx)))))
-                .child(button("open-folder", "Open folder", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                .when_some(update, |d, v| d.child(button("update", format!("Update to {v}"), false).h(px(BIG_H)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx)))))
+                .child(button("open-folder", "Open folder", false).h(px(BIG_H)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     let p = this.paths.instance();
                     this.open(p, cx)
                 })))
                 .child(div().flex_1())
-                .child(button("more", "…", false).w(px(40.)).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::More, ev, cx))))
+                .child(self.with_menu(Menu::More, button("more", "…", false).w(px(BIG_H)).h(px(BIG_H)).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::More, ev, cx))), true, cx))
                 .into_any_element(),
         };
-        let left = card()
-            .flex_1()
-            .p(px(16.))
+        let title = div()
             .flex()
             .flex_col()
-            .gap(px(14.))
-            .child(banner())
+            .gap(px(2.))
             .child(
                 div()
                     .flex()
+                    .items_center()
                     .justify_between()
-                    .items_start()
-                    .child(div().flex().flex_col().gap(px(2.)).child(bold(format!("Sunset {}", m.version), 20.)).child(text(format!("Minecraft {}", m.horizon.game), 13., MUTED)))
+                    .child(bold(format!("Sunset {}", m.version), 20.))
                     .child(div().flex().items_center().gap(px(6.)).child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(dot))).child(text(status, 12., dot))),
             )
+            .child(text(format!("Minecraft {}", m.horizon.game), 13., MUTED));
+        // The Play row sits at the bottom so it lines up with the right card's buttons.
+        let left = card()
+            .flex_1()
+            .p(px(PAD))
+            .flex()
+            .flex_col()
+            .justify_between()
+            .gap(px(GAP))
+            .child(div().flex().flex_col().gap(px(GAP)).child(banner()).child(title))
             .child(play_area);
         let plugins = self.mods.iter().filter(|(id, _)| id != "sunset").count();
         let right = card()
-            .w(px(330.))
-            .p(px(18.))
+            .w(px(320.))
+            .flex_none()
+            .p(px(PAD))
             .flex()
             .flex_col()
             .child(bold("Installation", 16.))
             .child(row("Platform", text("Horizon", 13., TEXT)))
             .child(row("Runtime", text(m.short_pin().to_string(), 13., TEXT)))
             .child(row("Sunset", text(m.version.clone(), 13., TEXT)))
-            .child(div().h(px(1.)).bg(rgb(LINE)).my(px(10.)))
+            .child(div().h(px(1.)).bg(rgb(LINE)).my(px(12.)))
             .child(bold("Configuration", 16.))
             .child(row("Profiles", text(format!("{} saved", self.profiles.len()), 13., TEXT)))
             .child(row("Plugins", text(if plugins == 0 { "Built in".to_string() } else { format!("{plugins} built in") }, 13., TEXT)))
-            .child(div().flex_1().min_h(px(12.)))
+            .child(div().flex_1().min_h(px(GAP)))
             .child(
                 div()
                     .flex()
                     .gap(px(8.))
-                    .child(button("to-plugins", "Plugins", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    .child(button("to-plugins", "Plugins", false).h(px(BIG_H)).flex_1().on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                         this.tab = Tab::Plugins;
                         cx.notify();
                     })))
-                    .child(button("to-profiles", "Profiles", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    .child(button("to-profiles", "Profiles", false).h(px(BIG_H)).flex_1().on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                         this.tab = Tab::Profiles;
                         this.reload_local();
                         cx.notify();
                     }))),
             );
         let dir = self.paths.instance();
+        let manage = button("manage", "Manage instance", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+            this.tab = Tab::Settings;
+            cx.notify();
+        }));
         div()
             .flex()
             .flex_col()
-            .gap(px(14.))
-            .child(div().flex().items_center().justify_between().child(bold("Sunset", 28.)).child(button("manage", "Manage instance", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.tab = Tab::Settings;
-                cx.notify();
-            }))))
+            .gap(px(GAP))
+            .child(page_head("Sunset", Some(manage.into_any_element())))
             .when_some(self.import_prompt(cx), |d, p| d.child(p))
-            .child(div().flex().gap(px(14.)).child(left).child(right))
+            .child(div().flex().gap(px(GAP)).child(left).child(right))
             .child(
                 card()
                     .id("instance-dir")
                     .flex()
                     .items_center()
                     .gap(px(10.))
-                    .h(px(46.))
-                    .px(px(16.))
+                    .h(px(48.))
+                    .px(px(PAD))
                     .cursor_pointer()
                     .hover(|s| s.bg(rgb(0x18181b)))
                     .child(icon(Icon::Folder, 16., MUTED))
@@ -951,8 +973,8 @@ impl Launcher {
             card()
                 .flex()
                 .items_center()
-                .gap(px(10.))
-                .p(px(14.))
+                .gap(px(12.))
+                .p(px(PAD))
                 .child(div().flex_1().child(text(format!("Bring your Sunset configs and profiles over from the Horizon instance \"{name}\"? Files already here are kept."), 13., TEXT)))
                 .child(button("import-0", "Import", true).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.import(0, cx))))
                 .child(button("import-no", "Not now", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.set_settings(|s| s.import_decided = true, cx)))),
@@ -983,7 +1005,7 @@ impl Launcher {
                 })
                 .into_any_element(),
         };
-        div().flex().flex_col().gap(px(14.)).size_full().child(bold("Sunset", 28.)).child(card().flex_1().min_h(px(300.)).flex().items_center().justify_center().child(inner))
+        div().flex().flex_col().gap(px(GAP)).size_full().child(page_head("Sunset", None)).child(card().flex_1().min_h(px(300.)).flex().items_center().justify_center().child(inner))
     }
 
     fn settings_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -1012,7 +1034,7 @@ impl Launcher {
             .flex_1()
             .flex()
             .flex_col()
-            .gap(px(18.))
+            .gap(px(24.))
             .child(section("Installation", vec![
                 setting_row("Instance name", text("Sunset", 13., TEXT), false),
                 setting_row("Sunset version", version, false),
@@ -1026,10 +1048,10 @@ impl Launcher {
             .flex_1()
             .flex()
             .flex_col()
-            .gap(px(18.))
+            .gap(px(24.))
             .child(section("Launch", vec![setting_row(
                 "Window size",
-                button("s-window", window_label(&self.settings.window), false).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Window, ev, cx))),
+                self.with_menu(Menu::Window, button("s-window", window_label(&self.settings.window), false).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Window, ev, cx))), true, cx),
                 true,
             )]))
             .child(section("Files", vec![
@@ -1040,10 +1062,10 @@ impl Launcher {
         div()
             .flex()
             .flex_col()
-            .gap(px(16.))
-            .child(bold("Instance settings", 28.))
-            .when_some(self.progress(cx), |d, p| d.child(card().p(px(14.)).child(p)))
-            .child(div().flex().gap(px(16.)).child(left).child(right))
+            .gap(px(GAP))
+            .child(page_head("Instance settings", None))
+            .when_some(self.progress(cx), |d, p| d.child(card().p(px(PAD)).child(p)))
+            .child(div().flex().gap(px(GAP)).child(left).child(right))
             .into_any_element()
     }
 
@@ -1052,12 +1074,10 @@ impl Launcher {
         div()
             .flex()
             .flex_col()
-            .gap(px(16.))
-            .child(div().flex().items_center().justify_between().child(bold(title.to_string(), 28.)).when_some(folder, |d, f| {
-                d.child(button("list-folder", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(f.clone(), cx))))
-            }))
+            .gap(px(GAP))
+            .child(page_head(title, folder.map(|f| button("list-folder", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(f.clone(), cx))).into_any_element())))
             .child(if items.is_empty() {
-                card().p(px(18.)).child(text(empty, 13., MUTED))
+                card().p(px(PAD)).child(text(empty, 13., MUTED))
             } else {
                 card().flex().flex_col().children(items.into_iter().enumerate().map(move |(i, (a, b))| setting_row(a, text(b, 13., MUTED), i + 1 == n)))
             })
@@ -1085,13 +1105,13 @@ impl Launcher {
         div()
             .flex()
             .flex_col()
-            .gap(px(16.))
-            .child(bold("Launcher settings", 28.))
-            .child(div().flex().gap(px(16.)).child(div().flex_1().flex().flex_col().gap(px(18.)).child(section("Launcher", vec![
+            .gap(px(GAP))
+            .child(page_head("Launcher settings", None))
+            .child(div().flex().gap(px(GAP)).child(div().flex_1().flex().flex_col().gap(px(24.)).child(section("Launcher", vec![
                 setting_row("Data folder", button("l-data", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(root.clone(), cx))), false),
                 setting_row("Release source", text(source, 12., MUTED), false),
                 setting_row("horizon-launcher (sign-in, install, play)", text(cli.unwrap_or_else(|| "comes with the first install".into()), 13., TEXT), true),
-            ]))).child(div().flex_1().flex().flex_col().gap(px(18.)).child(section("Import Sunset configs and profiles from Horizon", import_rows))))
+            ]))).child(div().flex_1().flex().flex_col().gap(px(24.)).child(section("Import Sunset configs and profiles from Horizon", import_rows))))
     }
 
     fn sign_in_modal(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
@@ -1161,7 +1181,8 @@ impl Launcher {
             .flex()
             .items_center()
             .gap(px(8.))
-            .h(px(40.))
+            .flex_none()
+            .h(px(48.))
             .child(img(self.logo.clone()).w(px(16.)).h(px(16.)))
             .child(text(format!("Launcher {}", core::VERSION), 12., MUTED))
             .child(div().flex_1())
@@ -1208,7 +1229,7 @@ impl Render for Launcher {
                 .flex()
                 .items_center()
                 .gap(px(10.))
-                .px(px(14.))
+                .px(px(PAD))
                 .py(px(10.))
                 .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(if err { RED } else { GREEN })))
                 .child(div().flex_1().child(text(msg, 13., if err { RED } else { TEXT })))
@@ -1225,12 +1246,10 @@ impl Render for Launcher {
             .text_color(rgb(TEXT))
             .flex()
             .flex_col()
-            .px(px(20.))
-            .pt(px(16.))
-            .gap(px(18.))
+            .px(px(GUTTER))
             .child(self.top_bar(cx))
-            .child(div().id("page").flex_1().overflow_y_scroll().child(page))
-            .when_some(note, |d, n| d.child(n))
+            .child(div().id("page").flex_1().mt(px(8.)).overflow_y_scroll().child(page))
+            .when_some(note, |d, n| d.child(n.mt(px(GAP))))
             .child(self.footer(cx))
             .when_some(self.menu_popup(cx), |d, m| d.child(m))
             .when_some(self.sign_in_modal(cx), |d, m| d.child(m))
