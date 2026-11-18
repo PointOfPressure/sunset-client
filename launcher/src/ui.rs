@@ -55,6 +55,11 @@ const fn nested(outer: f32, by: f32) -> f32 {
     if outer - by > 2. { outer - by } else { 2. }
 }
 
+/// The account face and the platform mark in their top-bar chips, and how far they sit from the chip's outer edge
+/// (the chip's 1 px border included), which their corner radius follows.
+const FACE: f32 = 22.;
+const FACE_INSET: f32 = (CTRL_H - FACE) / 2.;
+
 const MAX_CHANGES: usize = 200;
 const MAX_CHANGE_CHARS: usize = 400;
 // The embedded Inter faces (assets/inter.ttf, inter-bold.ttf) name their family only by their full names. Linux's font
@@ -735,6 +740,32 @@ fn scroll_cues(handle: &gpui::ScrollHandle, window: &mut Window) {
     window.paint_quad(gpui::fill(at, rgb(0x3a3a40)).corner_radii(Corners::all(px(1.5))));
 }
 
+/// Horizon's mark (horizon-rust/horizon docs/media/brand/icon.svg), drawn on its 16-unit grid: an H on a dark tile
+/// whose crossbar is the horizon, a violet line edge to edge, with the stems above it at full strength and their
+/// reflection below at a third. The tile takes the chip's nested radius.
+fn horizon_mark(s: f32) -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        move |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| {
+            let u = b.size.width / 16.;
+            let rect = |x: f32, y: f32, w: f32, h: f32| Bounds::new(point(b.origin.x + u * x, b.origin.y + u * y), size(u * w, u * h));
+            // A hairline edge keeps the tile readable as a box on the dark chip it sits in.
+            window.paint_quad(
+                gpui::fill(b, rgb(0x16181f)).corner_radii(Corners::all(px(nested(R_CTRL, FACE_INSET)))).border_widths(px(1.)).border_color(rgb(0x34364a)),
+            );
+            for (y, colour) in [(3., gpui::rgba(0xecedf3ff)), (8., gpui::rgba(0xecedf35c))] {
+                for x in [4., 10.] {
+                    window.paint_quad(gpui::fill(rect(x, y, 2., 4.), colour));
+                }
+            }
+            window.paint_quad(gpui::fill(rect(0., 7., 16., 1.), rgb(0x9a86ff)));
+        },
+    )
+    .w(px(s))
+    .h(px(s))
+    .flex_none()
+}
+
 /// The Sunset mark (the site's and the game's): two half rings, drawn `w` wide and half as tall.
 fn mark(w: f32, color: u32) -> impl IntoElement {
     canvas(
@@ -773,7 +804,7 @@ fn mark(w: f32, color: u32) -> impl IntoElement {
 
 fn face(pixels: &[[u8; 4]], s: f32) -> impl IntoElement {
     let cell = s / 8.;
-    div().flex().flex_col().w(px(s)).h(px(s)).rounded(px(nested(R_CTRL, 7.))).overflow_hidden().children((0..8).map(|y| {
+    div().flex().flex_col().w(px(s)).h(px(s)).rounded(px(nested(R_CTRL, FACE_INSET))).overflow_hidden().children((0..8).map(|y| {
         div().flex().h(px(cell)).children((0..8).map(move |x| {
             let [r, g, b, _] = pixels[y * 8 + x];
             div().w(px(cell)).h(px(cell)).bg(rgb(((r as u32) << 16) | ((g as u32) << 8) | b as u32))
@@ -1013,6 +1044,8 @@ impl Launcher {
     fn dropdown(&self, menu: Menu, label: &'static str, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let id = if menu == Menu::Platform { "platform" } else { "instance" };
         let chip = top_chip(id)
+            // The platform chip leads with the platform's mark, inset like the account chip's face.
+            .when(menu == Menu::Platform, |d| d.pl(px(FACE_INSET - 1.)).child(horizon_mark(FACE)))
             .child(text(label, 13., TEXT))
             .child(icon(Icon::Chevron, 14., MUTED))
             .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| this.toggle_menu(menu, ev, cx)));
@@ -1100,9 +1133,9 @@ impl Launcher {
         let Some(a) = self.accounts.iter().find(|a| a.selected).or(self.accounts.first()) else {
             return top_chip("sign-in").child(text("Sign in", 13., TEXT)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_sign_in(cx))).into_any_element();
         };
-        let head = self.faces.iter().find(|(u, _)| u == &a.uuid).map(|(_, f)| face(f, 22.).into_any_element()).unwrap_or_else(|| div().w(px(22.)).h(px(22.)).rounded(px(nested(R_CTRL, 7.))).bg(rgb(0x3a3a40)).into_any_element());
+        let head = self.faces.iter().find(|(u, _)| u == &a.uuid).map(|(_, f)| face(f, FACE).into_any_element()).unwrap_or_else(|| div().w(px(FACE)).h(px(FACE)).rounded(px(nested(R_CTRL, FACE_INSET))).bg(rgb(0x3a3a40)).into_any_element());
         let chip = top_chip("account")
-            .pl(px(8.))
+            .pl(px(FACE_INSET - 1.))
             .pr(px(10.))
             .child(head)
             .child(text(a.name.clone(), 13., TEXT))
@@ -1235,7 +1268,7 @@ impl Launcher {
                         .bg(rgb(ACCENT))
                         .when(self.playing, |d| d.opacity(0.6))
                         .when(!self.playing, |d| d.cursor_pointer())
-                        .child(icon(Icon::Play, 14., ON_ACCENT))
+                        .child(icon(Icon::Play, 20., ON_ACCENT))
                         .child(div().text_size(px(16.)).font_family(BOLD).font_weight(BOLD_WEIGHT).text_color(rgb(ON_ACCENT)).child(if self.playing { "Playing" } else { "Play" }))
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.play(cx))),
                 )
@@ -1304,17 +1337,11 @@ impl Launcher {
                     }))),
             );
         let dir = self.paths.instance();
-        let manage = button("manage", "Manage instance", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-            this.tab = Tab::Settings;
-            this.reload_local();
-            this.refresh_sources();
-            cx.notify();
-        }));
         div()
             .flex()
             .flex_col()
             .gap(px(GAP))
-            .child(page_head("Sunset", Some(manage.into_any_element())))
+            .child(page_head("Sunset", None))
             .when_some(self.import_prompt(cx), |d, p| d.child(p))
             .child(div().flex().gap(px(GAP)).child(left).child(right))
             .child(
