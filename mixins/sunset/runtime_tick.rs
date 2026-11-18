@@ -372,10 +372,21 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     super::sunset_snap_tap::post_tick(game);
     super::sunset_scaffold_bridge::post_tick(game);
     super::sunset_combat_inventory::post_tick(game);
-    if !game.native_window() || !game.native_on(ID) {
+    if !game.native_window() {
+        return;
+    }
+    if !game.native_on(ID) {
+        super::sunset_cyanite_utilities::shutdown();
+        super::sunset_cyanite_economy::stopped(game);
+        super::sunset_cyanite_drill::shutdown();
         return;
     }
     super::sunset_sky::keep_shown(game);
+    ensure_loaded(game);
+    let utility_modules = snapshot();
+    super::sunset_cyanite_utilities::tick(game, &utility_modules);
+    super::sunset_cyanite_economy::tick(game, &utility_modules);
+    super::sunset_cyanite_drill::tick(game, &utility_modules);
     super::sunset_melee::post_input(game);
     turned(game);
     super::sunset_api::tick(game);

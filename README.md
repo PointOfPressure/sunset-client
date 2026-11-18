@@ -452,6 +452,9 @@ What's planned and what a contribution needs: [feature roadmap](docs/feature-roa
 
 ## Credits
 
+The optional native utilities in [the Cyanite comparison](docs/cyanite-parity.md) were written by
+[compkrx](https://github.com/compkrx), using Cyanite's documented behavior as a reference.
+
 Made by [PointOfPressure](https://github.com/PointOfPressure) and [vstxx](https://github.com/vstxx).
 Core contributor: [Rust](https://github.com/zackmsa777-a11y).
 

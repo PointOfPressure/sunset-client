@@ -6,6 +6,7 @@ use std::fmt::Write as _;
 use super::sunset::*;
 
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
+    super::sunset_cyanite_utilities::draw(game, cam, mods, out, lw);
     super::sunset_explosive_aura::draw(game, cam, mods, out, lw);
     super::sunset_lag::draw(game, cam, mods, out, lw);
     super::sunset_backtrack::draw(cam, mods, out, lw);
@@ -359,8 +360,11 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             && drawn[0] < l.max
             && d <= l.range
             && l.kinds.wants(kind, &mob.kind.id)
+            && super::sunset_cyanite_render::villager_wanted(mods[0].unwrap(), mob)
         {
             let col = if l.potato { l.kinds.colour(kind, false) } else { faded(l.kinds.colour(kind, friend()), d, l.fade) };
+            let col = super::sunset_cyanite_render::villager_color(mods[0].unwrap(), mob)
+                .map_or(col, |color| faded(color, d, l.fade));
             let shield = two.as_ref().filter(|_| !l.potato).and_then(|t| super::sunset_esp2d::shield_colour(game, t, mob));
             let col = shield.map_or(col, |c| faded(c, d, l.fade));
             let col = match &murderer {
@@ -373,6 +377,12 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             };
             if shown {
                 drawn[0] += 1;
+                if mob.kind.id == "minecraft:villager" && mods[0].is_some_and(|m| m.b("Villager level label"))
+                    && let Some([x, y]) = cam.project([mid[0], hi[1] + 0.15, mid[2]])
+                {
+                    let label = format!("L{}", mob.extra.variant3.max(1));
+                    out.text(&label, [x - game.native_text_width(&label) / 2.0, y], col);
+                }
             }
         }
         if let Some(l) = &tracers

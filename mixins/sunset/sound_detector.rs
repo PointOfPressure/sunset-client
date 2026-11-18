@@ -26,6 +26,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .group("General")
             .num("Range", 64.0, 4.0, 128.0, 4.0)
             .num("Ignore near you", 5.0, 0.0, 16.0, 1.0)
+            .num("Ignore near players", 0.0, 0.0, 16.0, 1.0)
+            .num("Max Y", 4095.0, -64.0, 4095.0, 1.0)
             .bool("Players only", false)
             .num("Cooldown", 10.0, 0.0, 120.0, 1.0)
             .num("Group radius", 6.0, 1.0, 32.0, 1.0)
@@ -43,13 +45,23 @@ pub(super) fn defaults() -> Vec<Module> {
             .group("Markers")
             .bool("Markers", true)
             .num("Marker time", 30.0, 1.0, 300.0, 1.0)
-            .colour("Color", "Yellow"),
+            .bool("Labels", false)
+            .bool("Beams", false).num("Beam height", 32.0, 4.0, 128.0, 4.0)
+            .colour("Color", "Yellow")
+            .bool("Event colors", false)
+            .colour("Containers color", "Gold").colour("Doors color", "Orange")
+            .colour("Building color", "Cyan").colour("Mining color", "Blue")
+            .colour("Crafting color", "Purple").colour("Player color", "Lime")
+            .colour("Redstone color", "Red").colour("Explosions color", "Orange")
+            .colour("Far color", "Pink"),
     ]
 }
 
 pub(super) fn visible(m: &Module, name: &str) -> bool {
     match name {
-        "Marker time" | "Color" => m.b("Markers"),
+        "Marker time" | "Color" | "Labels" | "Beams" | "Event colors" => m.b("Markers"),
+        "Beam height" => m.b("Markers") && m.b("Beams"),
+        name if name.ends_with(" color") => m.b("Markers") && m.b("Event colors"),
         _ => true,
     }
 }
@@ -69,6 +81,15 @@ enum Kind {
 }
 
 impl Kind {
+    fn color(self) -> &'static str {
+        match self {
+            Kind::Containers => "Containers color", Kind::Doors => "Doors color",
+            Kind::Building => "Building color", Kind::Mining => "Mining color",
+            Kind::Crafting => "Crafting color", Kind::Player => "Player color",
+            Kind::Redstone => "Redstone color", Kind::Explosions => "Explosions color",
+            Kind::Far => "Far color",
+        }
+    }
     fn switch(self) -> &'static str {
         match self {
             Kind::Containers => "Containers",
@@ -192,6 +213,7 @@ struct Heard {
 // A thing heard and its repeats: where, what, how many times, who, and when it was last heard and last said.
 struct Incident {
     at: [f64; 3],
+    kind: Kind,
     label: String,
     actor: Option<String>,
     count: u32,
@@ -298,7 +320,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
     let me = super::sunset::own_id(game);
     let mut lines = Vec::new();
     for h in hear(game, packets) {
-        if !m.b(h.kind.switch()) {
+        if !m.b(h.kind.switch()) || h.at[1] > m.n("Max Y") {
             continue;
         }
         let d = dist(here, h.at);
@@ -307,10 +329,12 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
         }
         // Who is there: a player right by it, and whether a mob is closer to it than any player.
         let mut player_near: Option<(f64, String)> = None;
+        let mut player_distance = f64::MAX;
         let mut mob_near = f64::MAX;
         for x in game.mobs.iter().filter(|x| x.alive() && !x.removed && Some(x.id) != me) {
             let e = dist([x.position.x, x.position.y, x.position.z], h.at);
             if x.kind.id == "minecraft:player" {
+                player_distance = player_distance.min(e);
                 if e <= 4.0 && player_near.as_ref().is_none_or(|(b, _)| e < *b) && let Some(name) = game.remote_player_name(x.id) {
                     player_near = Some((e, name.to_owned()));
                 }
@@ -319,6 +343,11 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
             }
         }
         if h.actor.is_none() && player_near.is_none() && h.kind.mob_made() && mob_near <= 2.5 {
+            continue;
+        }
+        if m.n("Ignore near players") > 0.0
+            && player_distance < m.n("Ignore near players")
+        {
             continue;
         }
         let actor = h.actor.clone().or(player_near.map(|(_, n)| n));
@@ -338,7 +367,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
                 i.told = i.count;
                 return Some((i.label.clone(), i.at, i.actor.clone(), more));
             }
-            s.incidents.push(Incident { at: h.at, label: h.label.clone(), actor: actor.clone(), count: 1, seen: now, said: now, told: 1 });
+            s.incidents.push(Incident { at: h.at, kind: h.kind, label: h.label.clone(), actor: actor.clone(), count: 1, seen: now, said: now, told: 1 });
             Some((h.label.clone(), h.at, actor.clone(), 1))
         });
         if let Some((label, at, actor, n)) = said {
@@ -359,10 +388,11 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
 
 pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut impl Canvas, lw: f32) {
     let Some(m) = mods.iter().find(|m| m.name == NAME && m.on && m.b("Markers")) else { return };
-    let (argb, keep) = (m.c("Color"), (m.n("Marker time") * 20.0).max(1.0));
+    let keep = (m.n("Marker time") * 20.0).max(1.0);
     let now = game.ticks;
     sd(|s| {
         for i in &s.incidents {
+            let argb = m.c(if m.b("Event colors") { i.kind.color() } else { "Color" });
             let age = (now - i.seen) as f64;
             if age > keep {
                 continue;
@@ -371,6 +401,14 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
             let [x, y, z] = i.at;
             let (lo, hi) = ([x - 0.5, y - 0.5, z - 0.5], [x + 0.5, y + 0.5, z + 0.5]);
             draw_box(cam, out, &Look::BOXED, lo, hi, alpha << 24 | (argb & 0x00FF_FFFF), lw);
+            if m.b("Beams") {
+                draw_box(cam, out, &Look::BOXED, [x - 0.05, y + 0.5, z - 0.05],
+                    [x + 0.05, y + m.n("Beam height"), z + 0.05], alpha << 24 | (argb & 0x00FF_FFFF), lw);
+            }
+            if m.b("Labels") && let Some([sx, sy]) = cam.project([x, y + 0.75, z]) {
+                let label = format!("{} x{} {:.0}s ago", i.label, i.count, age / 20.0);
+                out.text(&label, [sx - game.native_text_width(&label) / 2.0, sy], argb);
+            }
         }
     });
 }

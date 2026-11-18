@@ -345,6 +345,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Passive", true)
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "")
+            .pick("Villager filter", &["All", "Employed", "Librarians", "Master level"])
+            .bool("Villager babies", true)
+            .bool("Villager profession colors", false)
+            .bool("Villager level label", false)
             .bool("Items", false)
             .bool("Item names", false)
             .bool("Item tracers", false)
@@ -696,6 +700,9 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_hands::defaults());
     v.extend(super::sunset_packet_mine::defaults());
     v.extend(super::sunset_vein_miner::defaults());
+    v.extend(super::sunset_cyanite_utilities::defaults());
+    v.extend(super::sunset_cyanite_economy::defaults());
+    v.extend(super::sunset_cyanite_drill::defaults());
     v.extend(super::sunset_render::defaults());
     v.extend(super::sunset_effects::defaults());
     v.extend(super::sunset_radar::defaults());
