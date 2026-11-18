@@ -28,4 +28,34 @@ pub mod xray;
 struct Sunset;
 
 #[mod_api::horizon_mod]
-impl mod_api::Hooks for Sunset {}
+impl mod_api::Hooks for Sunset {
+    // Safe Walk: the player holds to edges as if sneaking. The client's own prediction only: the switches are the
+    // client thread's, so the integrated server's tick of the player is unchanged.
+    fn player_stays_on_ground_surface(
+        &self,
+        context: &dyn mod_api::LoopContext,
+        event: &mut mod_api::PlayerStaysOnGroundSurfaceEvent,
+    ) {
+        if lifecycle::RUNTIME.running() && matches!(context.side(), mod_api::LoopSide::Client) {
+            event.staying = motion::clip_at_ledge(event.staying);
+        }
+    }
+
+    // Flight: the air's pull on the player's input, in Velocity mode.
+    fn living_flying_speed(&self, context: &dyn mod_api::LoopContext, event: &mut mod_api::LivingFlyingSpeedEvent<'_>) {
+        if lifecycle::RUNTIME.running()
+            && matches!(context.side(), mod_api::LoopSide::Client)
+            && event.kind == "minecraft:player"
+        {
+            event.speed = motion::flying_speed(event.speed);
+        }
+    }
+
+    // Velocity: the push of each flowing fluid block, scaled. On the client only the player is pushed by its own
+    // tick (other entities move as the server says).
+    fn fluid_flow(&self, context: &dyn mod_api::LoopContext, event: &mut mod_api::FluidFlowEvent<'_>) {
+        if lifecycle::RUNTIME.running() && matches!(context.side(), mod_api::LoopSide::Client) {
+            *event.flow = motion::liquid_flow(*event.flow);
+        }
+    }
+}

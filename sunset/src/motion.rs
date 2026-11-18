@@ -312,3 +312,25 @@ pub fn set_restore_yaw(yaw: Option<f32>) {
 pub fn take_restore_yaw() -> Option<f32> {
     RESTORE_YAW.with(Cell::take)
 }
+
+// What the move-keys hook decided for this tick's move, for the hook that sets the player up after the game synced
+// it (mixins/screen_keys_hook.rs, screen_move_hook.rs).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PendingMove {
+    pub block_scale: Option<f32>,
+    pub turn: Option<f32>,
+    pub no_sprint: bool,
+    pub freeze: bool,
+}
+
+thread_local! {
+    static PENDING_MOVE: Cell<Option<PendingMove>> = const { Cell::new(None) };
+}
+
+pub fn set_pending_move(pending: Option<PendingMove>) {
+    PENDING_MOVE.with(|c| c.set(pending));
+}
+
+pub fn take_pending_move() -> Option<PendingMove> {
+    PENDING_MOVE.with(Cell::take)
+}

@@ -1,33 +1,12 @@
-// GUI Move: behind a screen the tick's movement takes the move keys held (the call again has them, so it passes
-// through here).
-// No Slow's Skip: the move goes without the item-use slowdown.
-// A knockback hit since the last movement (Player.attack): the speed across cut to 0.6 for each, the sprint stopped.
-// Scaffold's Normal: the move goes by the yaw the server is told (movement correction; Silent already turned the keys
-// before the tick, so the PlayerInput sent says the same keys), and without a sprint when its Sprint is Off. Both are
-// taken here, so the call again passes.
-fn sunset_screen_keys(
-    mut world: MotionWorld<'_, '_, '_>,
-    keys: horizon_client::sprint::Keys,
-    window: i32,
-    operation: impl FnOnce(MotionWorld<'_, '_, '_>, horizon_client::sprint::Keys, i32) -> Result<()>,
-) -> Result<()> {
-    if !::sunset_core::lifecycle::RUNTIME.running() { return operation(world, keys, window); }
-
+// The keys the tick's move takes (after the PlayerInput the server hears was made from the real ones):
+// GUI Move behind a screen takes the move keys held; a scale, a freeze or a stopped sprint from Sunset's movement.
+// What it decided for the player itself is applied once the game synced the player (screen_move_hook.rs).
+fn sunset_screen_keys(value: Keys) -> Keys {
+    if !::sunset_core::lifecycle::RUNTIME.running() {
+        return value;
+    }
+    let keys = value;
     let block_scale = ::sunset_core::motion::take_block_use_scale();
-    if (world.player.item_use_speed.is_some() || block_scale.is_some()) && ::sunset_core::motion::no_slow_grim() {
-        ::sunset_core::motion::set_across(None);
-        ::sunset_core::motion::set_up(None);
-    }
-    if ::sunset_core::motion::no_slow_skip() {
-        world.player.item_use_speed = None;
-    }
-    let hits = ::sunset_core::motion::take_attack_slow().min(5);
-    if hits > 0 {
-        let cut = 0.6f64.powi(hits as i32);
-        world.player.velocity.x *= cut;
-        world.player.velocity.z *= cut;
-        let _ = world.player.set_sprinting(false);
-    }
     let core = ::sunset_core::motion::Keys {
         forward: keys.forward,
         backward: keys.backward,
@@ -38,7 +17,7 @@ fn sunset_screen_keys(
         sprint: keys.sprint,
         analog: keys.analog,
     };
-    let screen = ::sunset_core::motion::screen_keys(core).map(|k| horizon_client::sprint::Keys {
+    let screen = ::sunset_core::motion::screen_keys(core).map(|k| Keys {
         forward: k.forward,
         backward: k.backward,
         left: k.left,
@@ -56,8 +35,9 @@ fn sunset_screen_keys(
         (Some(a), Some(b)) => Some(a * b),
         (a, b) => a.or(b),
     };
-    if screen.is_none() && turn.is_none() && !no_sprint && !freeze && scale.is_none() {
-        return operation(world, keys, window);
+    ::sunset_core::motion::set_pending_move(Some(::sunset_core::motion::PendingMove { block_scale, turn, no_sprint, freeze }));
+    if screen.is_none() && !no_sprint && !freeze && scale.is_none() {
+        return keys;
     }
     let mut keys = screen.unwrap_or(keys);
     if let Some(scale) = scale {
@@ -72,15 +52,6 @@ fn sunset_screen_keys(
     }
     if no_sprint || freeze {
         keys.sprint = false;
-        let _ = world.player.set_sprinting(false);
     }
-    let view = world.player.yaw;
-    if let Some(yaw) = turn {
-        world.player.yaw = yaw;
-    }
-    // The view comes back after the move (screen_keys_after): the world goes into the move.
-    if turn.is_some() {
-        ::sunset_core::motion::set_restore_yaw(Some(view));
-    }
-    operation(world, keys, window)
+    keys
 }

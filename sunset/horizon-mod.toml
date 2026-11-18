@@ -1927,7 +1927,6 @@ argument = 1
 helper = "src/mixins/look_hook.rs"
 bindings = [{ name = "value", ty = "(f32, f32)", value = "$value" }]
 
-# (screen_keys moved to the blocked list at the end)
 
 [[native.mixin]]
 id = "explode"
@@ -2360,13 +2359,6 @@ bindings = [
 # bindings = [{ name = "screen", ty = "crate::game::Screen", value = "self" }]
 
 # [[native.mixin]]
-# id = "safe_walk"
-# target = "horizon_client_lib::motion::<MotionWorld<'_,'_,'_> as EdgeBackoffWorld>::staying_on_ground_surface"
-# kind = "RETURN"
-# helper = "src/mixins/ledge_hook.rs"
-# bindings = [{ name = "value", ty = "Result<bool>", value = "$value" }]
-
-# [[native.mixin]]
 # id = "speed_move"
 # target = "horizon_client_lib::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::move_self"
 # kind = "MODIFY_ARG"
@@ -2383,20 +2375,6 @@ bindings = [
 # kind = "HEAD"
 # helper = "src/mixins/legacy_jump_hook.rs"
 # bindings = [{ name = "world", ty = "&mut MotionWorld<'_, '_, '_>", value = "self" }]
-
-# [[native.mixin]]
-# id = "liquid_flow"
-# target = "horizon_client_lib::motion::fluids::<MotionWorld<'_,'_,'_> as FluidInteractionWorld>::flow"
-# kind = "RETURN"
-# helper = "src/mixins/flow_hook.rs"
-# bindings = [{ name = "value", ty = "Result<Vec3>", value = "$value" }]
-
-# [[native.mixin]]
-# id = "flying_speed"
-# target = "horizon_client_lib::motion::<MotionWorld<'_,'_,'_> as LivingAirWorld>::flying_speed"
-# kind = "RETURN"
-# helper = "src/mixins/flying_hook.rs"
-# bindings = [{ name = "value", ty = "Result<f32>", value = "$value" }]
 
 # [[native.mixin]]
 # id = "tab_modes_name"
@@ -2567,34 +2545,39 @@ bindings = [
 #   { name = "width", ty = "&dyn Fn(&str) -> i32", value = "width" },
 # ]
 
-# Blocked on this game build: horizon-client/src/motion.rs (horizon_client_lib::motion) imports a private item in a
-# grouped `use crate::{Result, ..., living_attributes::attribute_error, ...}`, and the launcher's function-replacement
-# mirror keeps that whole import, so no function of that module can be replaced (E0603). These rows wait for that:
-# [[native.mixin]]
-# id = "screen_keys"
-# target = "horizon_client::game::remote::Game<'_>::tick_local_player"
-# kind = "WRAP_OPERATION"
-# selector = "controlled_simulation_tick_with_sprint_window"
-# require = 1
-# ordinal = 0
-# helper = "src/mixins/screen_keys_hook.rs"
-# bindings = [
-#   { name = "world", ty = "MotionWorld<'_, '_, '_>", value = "$receiver" },
-#   { name = "keys", ty = "horizon_client::sprint::Keys", value = "$arg0" },
-#   { name = "window", ty = "i32", value = "$arg1" },
-#   { name = "operation", ty = "impl FnOnce(MotionWorld<'_, '_, '_>, horizon_client::sprint::Keys, i32) -> Result<()>", value = "$operation" },
-# ]
-# 
-# [[native.mixin]]
-# id = "screen_keys_after"
-# target = "horizon_client::game::remote::Game<'_>::tick_local_player"
-# kind = "AFTER_CALL"
-# selector = "controlled_simulation_tick_with_sprint_window"
-# require = 1
-# ordinal = 0
-# result = "Result<()>"
-# helper = "src/mixins/screen_keys_after.rs"
-# bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+# The move keys and the player's own move state (GUI Move, No Slow, knockback slow, Scaffold's movement correction):
+# the call into the motion has a struct-literal receiver no selector can name, so the keys are changed where they are
+# stored and the player after the game synced it, and the view comes back after the move.
+[[native.mixin]]
+id = "screen_keys"
+target = "horizon_client::game::remote::Game<'_>::tick_local_player"
+kind = "MODIFY_VARIABLE"
+variable = { name = "keys", ordinal = 2, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/screen_keys_hook.rs"
+bindings = [{ name = "value", ty = "Keys", value = "$value" }]
+
+[[native.mixin]]
+id = "screen_move"
+target = "horizon_client::game::remote::Game<'_>::tick_local_player"
+kind = "AFTER_CALL"
+selector = "self.sync_player_body"
+require = 1
+ordinal = 0
+result = "()"
+helper = "src/mixins/screen_move_hook.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "screen_keys_after"
+target = "horizon_client::game::remote::Game<'_>::tick_local_player"
+kind = "BEFORE_CALL"
+selector = "self.seat_own_stands"
+require = 1
+ordinal = 0
+helper = "src/mixins/screen_keys_after.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
 
 # Blocked on this game build: the launcher's copy of these functions can't reach what their bodies use (the render
 # crate's private `mod sprite_cache`; methods private to gfx's child modules, core_lines::draw and capture::write_capture).
