@@ -1661,6 +1661,16 @@ fn pi(x: i32, y: i32, z: i32) -> usize {
 const fn step_index(n: [i32; 3]) -> isize {
     (n[0] + P as i32 * n[2] + (P * P) as i32 * n[1]) as isize
 }
+/// Where a client mod keeps blocks drawn although [`Mesher::hidden_states`] hides their state (the blocks a player
+/// placed, under an ore finder): asked once per meshed section that hides any, on the meshing worker, with the
+/// lowest and highest block of the section and its border (world coordinates, inclusive) and a function to call
+/// with each such place among them. A change shows when the section is next meshed.
+pub type ShownAt = fn(min: [i32; 3], max: [i32; 3], keep: &mut dyn FnMut([i32; 3]));
+static SHOWN_AT: std::sync::OnceLock<ShownAt> = std::sync::OnceLock::new();
+/// Installs [`ShownAt`] for the rest of the process; false when one is already set.
+pub fn show_hidden_at(shown_at: ShownAt) -> bool {
+    SHOWN_AT.set(shown_at).is_ok()
+}
 /// Blocks and light of one section plus a `B`-block border.
 #[derive(Default)]
 struct Padded {
@@ -2591,10 +2601,25 @@ impl Mesher<'_> {
         let own = scratch.own.get_or_insert_with(|| Box::new([0; 4096]));
         scratch.padded.fill(region, sy, own);
         if !self.hidden_states.is_empty() {
+            // The places a mod keeps shown (`show_hidden_at`) keep their block.
+            let origin = [center.x * 16, base_y, center.z * 16];
+            let mut kept = Vec::new();
+            if let Some(shown_at) = SHOWN_AT.get() {
+                let blocks = &scratch.padded.blocks;
+                shown_at(origin.map(|c| c - B), origin.map(|c| c + 15 + B), &mut |at| {
+                    let [x, y, z] = [0, 1, 2].map(|i| at[i] - origin[i]);
+                    if [x, y, z].iter().all(|c| (-B..16 + B).contains(c)) {
+                        kept.push((pi(x, y, z), blocks[pi(x, y, z)]));
+                    }
+                });
+            }
             for id in &mut scratch.padded.blocks {
                 if self.hidden_states[*id as usize] {
                     *id = 0;
                 }
+            }
+            for (i, id) in kept {
+                scratch.padded.blocks[i] = id;
             }
         }
         let pad = &scratch.padded;
