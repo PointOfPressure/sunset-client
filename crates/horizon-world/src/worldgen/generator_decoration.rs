@@ -58,6 +58,8 @@ use {
     horizon_core::bounding_box::BoundingBox,
 };
 
+pub mod replay;
+
 pub(super) struct Decoration {
     plan: FeatureDecorationPlan,
     names: Vec<String>,

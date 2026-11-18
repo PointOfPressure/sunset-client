@@ -464,6 +464,14 @@ impl GeneratorData {
         preset: &str,
         dimension: &str,
     ) -> Result<(), GeneratorError> {
+        self.decoration_of(preset, dimension).map(drop)
+    }
+    /// The decoration of `preset`'s `dimension` generator, built as [`Self::prepare_decoration`] builds it.
+    pub(in crate::worldgen) fn decoration_of(
+        self: &Arc<Self>,
+        preset: &str,
+        dimension: &str,
+    ) -> Result<Option<Arc<super::super::generator_decoration::Decoration>>, GeneratorError> {
         let preset_json: Value = serde_json::from_str(
             self.world_presets
                 .get(preset)
@@ -476,7 +484,7 @@ impl GeneratorData {
             .decode(&source_json)?
             .resolve(&self.presets, 0)
             .map_err(|e| resource(format!("biome source: {e}")))?;
-        self.decoration_for(&source_json, &source).map(drop)
+        self.decoration_for(&source_json, &source)
     }
     pub fn registry(&self) -> &'static BlockRegistry {
         self.registry

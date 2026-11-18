@@ -43,6 +43,8 @@ pub mod fungus;
 pub mod generator;
 mod generator_blocks;
 mod generator_decoration;
+/// Placed features of a chunk's decoration, replayed against a caller's view of the world.
+pub use generator_decoration::replay as decoration_replay;
 mod generator_structures;
 pub(crate) use generator_structures::tag_json;
 pub mod height_provider;
