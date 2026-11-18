@@ -18,8 +18,9 @@ const LINE: u32 = 0x242428;
 const CHIP: u32 = 0x1b1b1e;
 const TEXT: u32 = 0xececee;
 const MUTED: u32 = 0x8e8e95;
-const ACCENT: u32 = 0xf0a575;
-const ON_ACCENT: u32 = 0x1c130d;
+const ACCENT: u32 = 0xdb5000; // Sunset orange, as on the site
+const ACCENT_HI: u32 = 0xf26a12; // its hover
+const ON_ACCENT: u32 = 0xffffff;
 const GREEN: u32 = 0x6fcf97;
 const AMBER: u32 = 0xe7b04a;
 const RED: u32 = 0xef6b6b;
@@ -442,7 +443,7 @@ fn card() -> gpui::Div {
 
 /// A button that does something; there are no disabled ones (what can't work isn't shown).
 fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, primary: bool) -> gpui::Stateful<gpui::Div> {
-    let (bg, fg, hover) = if primary { (ACCENT, ON_ACCENT, 0xf5b88f) } else { (CHIP, TEXT, 0x26262a) };
+    let (bg, fg, hover) = if primary { (ACCENT, ON_ACCENT, ACCENT_HI) } else { (CHIP, TEXT, 0x26262a) };
     div()
         .id(id)
         .px(px(14.))
@@ -555,18 +556,24 @@ fn banner() -> impl IntoElement {
                     window.paint_path(path, rgb(color));
                 }
             };
-            poly(&[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], 0x3a251d, window);
+            // Dusk sky, a glow and the sun, then ridges stepping from deep rust to Sunset orange in front.
+            poly(&[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], 0x221006, window);
+            poly(&[(0., 0.45), (1., 0.45), (1., 1.), (0., 1.)], 0x341607, window);
             let (cx_, cy, r) = (0.75, 0.38, 0.17 * h / w);
-            let circle: Vec<(f32, f32)> = (0..64)
-                .map(|i| {
-                    let a = i as f32 / 64. * std::f32::consts::TAU;
-                    (cx_ + r * a.cos(), cy + r * (w / h) * a.sin())
-                })
-                .collect();
-            poly(&circle, ACCENT, window);
-            poly(&[(0., 0.86), (0.2, 0.3), (0.42, 0.62), (0.56, 0.4), (0.8, 0.9), (0., 1.)], 0x7a4535, window);
-            poly(&[(0., 1.), (0., 0.92), (0.2, 0.55), (0.45, 0.85), (0.6, 0.6), (0.82, 0.52), (1., 0.88), (1., 1.)], 0xb0664a, window);
-            poly(&[(0., 1.), (0., 0.98), (0.18, 0.78), (0.4, 0.95), (0.62, 0.8), (0.86, 0.72), (1., 0.84), (1., 1.)], 0xd98a62, window);
+            let circle = |r: f32| -> Vec<(f32, f32)> {
+                (0..64)
+                    .map(|i| {
+                        let a = i as f32 / 64. * std::f32::consts::TAU;
+                        (cx_ + r * a.cos(), cy + r * (w / h) * a.sin())
+                    })
+                    .collect()
+            };
+            poly(&circle(r * 1.7), 0x4a1d06, window);
+            poly(&circle(r * 1.3), 0x6b2a05, window);
+            poly(&circle(r), ACCENT_HI, window);
+            poly(&[(0., 0.86), (0.2, 0.3), (0.42, 0.62), (0.56, 0.4), (0.8, 0.9), (0., 1.)], 0x5c2104, window);
+            poly(&[(0., 1.), (0., 0.92), (0.2, 0.55), (0.45, 0.85), (0.6, 0.6), (0.82, 0.52), (1., 0.88), (1., 1.)], 0x9a3802, window);
+            poly(&[(0., 1.), (0., 0.98), (0.18, 0.78), (0.4, 0.95), (0.62, 0.8), (0.86, 0.72), (1., 0.84), (1., 1.)], ACCENT, window);
         },
     )
     .w_full()
@@ -913,7 +920,7 @@ impl Launcher {
                         .rounded(px(8.))
                         .bg(rgb(ACCENT))
                         .when(self.playing, |d| d.opacity(0.6))
-                        .when(!self.playing, |d| d.cursor_pointer().hover(|s| s.bg(rgb(0xf5b88f))))
+                        .when(!self.playing, |d| d.cursor_pointer().hover(|s| s.bg(rgb(ACCENT_HI))))
                         .child(icon(Icon::Play, 14., ON_ACCENT))
                         .child(div().text_size(px(16.)).font_family(BOLD).text_color(rgb(ON_ACCENT)).child(if self.playing { "Playing" } else { "Play" }))
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.play(cx))),
