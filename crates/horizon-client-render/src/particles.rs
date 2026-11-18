@@ -1619,6 +1619,7 @@ impl ParticleEngine {
         self.pending.push(PendingParticle::Ordinary(q));
     }
     /// `ParticleEngine.add` (via `particlesToAdd`, applied on the next tick).
+    #[horizon_mod_api_macros::replaceable]
     pub fn push(&mut self, particle: Particle) {
         self.pending.push(PendingParticle::Ordinary(particle));
     }
