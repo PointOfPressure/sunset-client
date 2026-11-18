@@ -64,6 +64,9 @@ pub fn ensure(font: &horizon_client::font::Font) {
     {
         let cache = font.cache.borrow();
         if cache.sets.iter().any(|(id, _)| id.starts_with("sunset:")) {
+            if !::sunset_core::font::READY.load(std::sync::atomic::Ordering::Relaxed) {
+                ::sunset_core::font::loaded();
+            }
             return;
         }
     }
@@ -100,6 +103,12 @@ pub fn ensure(font: &horizon_client::font::Font) {
             },
         ));
     }
+    let count = sets.len();
     font.cache.borrow_mut().sets.extend(sets);
+    log::info!(
+        "Sunset: {count} fonts put into the game's font ({} sets now), style {}",
+        font.cache.borrow().sets.len(),
+        STYLE.load(std::sync::atomic::Ordering::Relaxed)
+    );
     ::sunset_core::font::loaded();
 }
