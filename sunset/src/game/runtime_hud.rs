@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): the HUD each frame and the GUI on top of it.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::{Game, Screen};
 use horizon_client::extras::Corner;
@@ -44,7 +45,7 @@ fn place_element(
 }
 
 pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corners) {
-    if !running() || !game.native_window() || !game.native_on(ID) {
+    if !running() || !game.sunset_window() || !game.native_on(ID) {
         return;
     }
     ensure_loaded(game);
@@ -111,8 +112,8 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             let line = cased(&if own.is_empty() { format!("{NAME} {VERSION}") } else { own.to_owned() });
             let profile = hud.b("Watermark profile").then(|| cased(&with(|s| format!("Profile: {}", s.selection.label()))));
             // One block: the name, and the profile under it (as the Default layout has them).
-            let tw = game.native_text_width(&line) + 4.0;
-            let pw = profile.as_ref().map_or(0.0, |p| game.native_text_width(p) + 4.0);
+            let tw = game.sunset_text_width(&line) + 4.0;
+            let pw = profile.as_ref().map_or(0.0, |p| game.sunset_text_width(p) + 4.0);
             let size = [tw.max(pw), if profile.is_some() { 24.0 } else { 12.0 }];
             let place = super::sunset_hud_place::parse(hud.p("Watermark position"), Corner::TopLeft);
             // In a right corner the lines keep to the screen's edge.
@@ -185,7 +186,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         // (another corner, or where they were dragged to) they go on their own.
         let custom = coordinates_at != super::sunset_hud_place::Place::Corner(Corner::TopLeft);
         if custom && let Some(text) = &coordinates {
-            let size = [game.native_text_width(text) + 4.0, 12.0];
+            let size = [game.sunset_text_width(text) + 4.0, 12.0];
             if let Some((x, y)) = place_element(game, corners, hud, "Coordinates", coordinates_at, size, false, [w, h]) {
                 shapes.push(Shape::Text(text.clone(), [x + 2.0, y + 2.0], 0xFFFFFF));
             }
@@ -221,7 +222,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             .map(|(name, text)| (name, cased(&text)))
             .partition(|(name, _)| hud.p(&format!("{name} position")) == "Custom");
         for (name, text) in moved {
-            let (tw, th) = (game.native_text_width(&text) + 4.0, 12.0);
+            let (tw, th) = (game.sunset_text_width(&text) + 4.0, 12.0);
             let [x, y] = super::sunset_hud_place::custom([hud.n(&format!("{name} x")), hud.n(&format!("{name} y"))], [tw, th], [w, h], false);
             super::sunset_hud_bars::place(name, [x, y, tw, th], w, h);
             shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], 0xFFFFFF));
@@ -236,19 +237,19 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             if !in_line.is_empty() {
                 lines.push(in_line.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join(GAP));
             }
-            let width = lines.iter().map(|l| game.native_text_width(l)).fold(0.0, f32::max);
+            let width = lines.iter().map(|l| game.sunset_text_width(l)).fold(0.0, f32::max);
             if !lines.is_empty() {
                 let (bx, by) = corners.place(Corner::TopLeft, width + 4.0, lines.len() as f32 * 10.0 + 2.0);
                 if let Some(text) = &in_corner {
-                    super::sunset_hud_bars::place("Coordinates", [bx, by, game.native_text_width(text) + 4.0, 12.0], w, h);
+                    super::sunset_hud_bars::place("Coordinates", [bx, by, game.sunset_text_width(text) + 4.0, 12.0], w, h);
                 }
                 // The Info line is the last: each part of it framed where it sits in the line.
                 let row = by + 1.0 + (lines.len() - 1) as f32 * 10.0;
                 let mut x = bx + 1.0;
                 for (name, text) in &in_line {
-                    let tw = game.native_text_width(text) + 2.0;
+                    let tw = game.sunset_text_width(text) + 2.0;
                     super::sunset_hud_bars::place(name, [x, row, tw, 11.0], w, h);
-                    x += tw - 2.0 + game.native_text_width(GAP);
+                    x += tw - 2.0 + game.sunset_text_width(GAP);
                 }
                 for (i, line) in lines.into_iter().enumerate() {
                     shapes.push(Shape::Text(line, [bx + 2.0, by + 2.0 + i as f32 * 10.0], 0xFFFFFF));
@@ -274,7 +275,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         let text = format!("{blocks} {}", if blocks == 1 { "block" } else { "blocks" });
         let colour = if blocks < 16 { 0xFF5555 } else { 0xFFFFFF };
         let from = shapes.len();
-        shapes.push(Shape::Text(text.clone(), [(w - game.native_text_width(&text)) / 2.0, h - 71.0], colour));
+        shapes.push(Shape::Text(text.clone(), [(w - game.sunset_text_width(&text)) / 2.0, h - 71.0], colour));
         super::sunset_hud_bars::editable(game, &mut shapes, from, m, "Block counter", w, h);
     }
     // Radar's place (after the HUD's corners, as it is drawn last), so the layout editor can take it too.
@@ -340,7 +341,7 @@ pub(super) fn gui_top(game: &Game<'_>, batch: &mut HudBatch) {
     if !shapes.is_empty() {
         gui_shapes(game, batch, &mut shapes, scale);
     }
-    if game.native_window() && game.native_on(ID) {
+    if game.sunset_window() && game.native_on(ID) {
         super::sunset_toast::draw(game, batch);
     }
 }

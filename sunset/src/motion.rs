@@ -84,6 +84,8 @@ thread_local! {
     // Scaffold's movement correction: the yaw the next movement goes by (the look the server is told), so the move
     // matches the keys it is told at that yaw. Taken by that movement.
     static MOVE_YAW: Cell<Option<f32>> = const { Cell::new(None) };
+    // The view to turn back to after a move made by another yaw (movement correction).
+    static RESTORE_YAW: Cell<Option<f32>> = const { Cell::new(None) };
     // Scaffold's Sprint Off: the next movement goes without a sprint. Taken by that movement.
     static NO_SPRINT: Cell<bool> = const { Cell::new(false) };
 }
@@ -301,4 +303,12 @@ mod tests {
         set_input_scale(Some(f32::NAN));
         assert_eq!(take_input_scale(), None);
     }
+}
+
+pub fn set_restore_yaw(yaw: Option<f32>) {
+    RESTORE_YAW.with(|c| c.set(yaw));
+}
+
+pub fn take_restore_yaw() -> Option<f32> {
+    RESTORE_YAW.with(Cell::take)
 }

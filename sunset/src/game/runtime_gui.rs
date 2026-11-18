@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): the click GUI: its state, layout and hit testing.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::{Game, Screen};
 use super::sunset_text_edit::{Draft, EditKey};
@@ -545,7 +546,7 @@ fn window_hits(s: &State) -> Vec<([f32; 4], Hit)> {
 
 // A number field's width, for its text.
 pub(super) fn field_width(game: &Game<'_>, text: &str) -> f32 {
-    (game.native_text_width(text) + 6.0).max(24.0)
+    (game.sunset_text_width(text) + 6.0).max(24.0)
 }
 
 // A description in lines that fit `width`.
@@ -553,7 +554,7 @@ pub(super) fn wrap(game: &Game<'_>, text: &str, width: f32) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     for word in text.split_whitespace() {
         match lines.last_mut() {
-            Some(l) if game.native_text_width(&format!("{l} {word}")) <= width => {
+            Some(l) if game.sunset_text_width(&format!("{l} {word}")) <= width => {
                 l.push(' ');
                 l.push_str(word);
             }

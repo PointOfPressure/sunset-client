@@ -1,4 +1,5 @@
 // Protect Loot: no explosion near where a player just died, so their drops aren't blown up.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::remote::sunset_loot_remote::{self, Death};
 use super::sunset_explosive_damage::Blast;
 use super::sunset_loot_policy::{Dimension, Guard, LOOT_BOX, Reason};
@@ -40,7 +41,7 @@ fn scene(game: &Game<'_>, name: &str, login: bool) {
     });
 }
 pub(super) fn packet(game: &Game<'_>, packet: &C) {
-    if !game.native_window() {
+    if !game.sunset_window() {
         return;
     }
     match packet {

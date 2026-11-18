@@ -1,4 +1,5 @@
 // GUI Move's GrimAC mode holds only the inventory packets. The native menu still handles every local click.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::remote::sunset_gui_move_remote::{self as inventory, Snapshot};
 use super::sunset;
 use super::{Game, Screen};
@@ -49,7 +50,7 @@ pub(super) fn direct<R>(f: impl FnOnce() -> R) -> R {
 }
 
 fn enabled(game: &Game<'_>) -> bool {
-    game.native_window()
+    game.sunset_window()
         && game.native_on(sunset::ID)
         && sunset::with(|s| {
             s.module("GUI Move")
@@ -467,7 +468,7 @@ pub(super) fn menu_state(game: &mut Game<'_>, container: i32) {
 }
 
 pub(super) fn suppress_shift(game: &Game<'_>) -> bool {
-    if !game.native_window()
+    if !game.sunset_window()
         || !game.native_on(sunset::ID)
         || sunset::gui_open()
         || game.recipe_search_focused()

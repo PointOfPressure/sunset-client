@@ -1,5 +1,6 @@
 // Sunset modules: Wind Jump, Eat Tap and Pearl Catch
 // (Loadouts are in loadouts.rs).
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{Category, Module, hold, with};
 use super::sunset_util as util;
 use super::{Game, Screen};
@@ -167,7 +168,7 @@ fn module(name: &str) -> Option<Module> {
 
 // The use hook: a wind charge thrown from the ground looking down far enough (Wind Jump waits for its blast).
 pub(super) fn used(game: &Game<'_>, slot: usize) {
-    if !game.native_window() || !game.native_on(super::sunset::ID) {
+    if !game.sunset_window() || !game.native_on(super::sunset::ID) {
         return;
     }
     let Some(stack) = game.stack_in(slot) else {

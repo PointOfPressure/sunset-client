@@ -1,3 +1,4 @@
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{self, Module};
 use super::sunset_click_clock::{Clock, Config, Mode};
 use super::sunset_rotation::Rng;

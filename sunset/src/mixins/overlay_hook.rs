@@ -24,6 +24,7 @@ fn sunset_overlay_hook(this: &ScreenEffects, input: &ScreenInputs<'_>) -> std::o
         on_fire: input.on_fire && !fire,
         fire_lower: input.fire_lower,
         gui_overlays: if gui { none } else { input.gui_overlays },
+        custom: input.custom,
     };
     let quads = this.build(&changed);
     ::sunset_core::overlay::set_busy(false);

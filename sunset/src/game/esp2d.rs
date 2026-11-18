@@ -2,6 +2,8 @@
 // round it, a health bar on one side (with the health as a number), the name over it and the distance under it;
 // and Shield colors, a player's box coloured by their shield (held or raised, or put out by an axe in the last five
 // seconds).
+use crate::game::sunset_compat::SunsetExtra as _;
+use crate::game::sunset_compat::SunsetGame as _;
 use super::Game;
 use super::sunset::{Camera, Canvas, Module, outline};
 use super::sunset_effects::{alpha, mix};
@@ -83,8 +85,8 @@ pub(super) fn shield_colour(game: &Game<'_>, two: &TwoD, mob: &Mob) -> Option<u3
         return None;
     }
     let has = |item: &Option<std::sync::Arc<str>>| item.as_deref() == Some("minecraft:shield");
-    let holds = has(&mob.extra.main_hand) || has(&mob.extra.off_hand);
-    let raised = mob.extra.blocking && mob.extra.using_item > 0;
+    let holds = has(&mob.extra.sunset_main_hand()) || has(&mob.extra.sunset_off_hand());
+    let raised = mob.extra.sunset_blocking();
     let out = super::sunset_effects::shield_broken(game, mob.id);
     match mode {
         _ if out && mode != ShieldMode::Raised => Some(broken),
@@ -166,7 +168,7 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, out: &mut impl Canvas, two: &T
         bar(out, full, colour);
         if two.health_text {
             let hp = (mob.health.max(0.0).round() as i32).to_string();
-            let tw = game.native_text_width(&hp);
+            let tw = game.sunset_text_width(&hp);
             let at = match side {
                 Side::Left => [track[0] - tw - 2.0, full[1] - 4.0],
                 Side::Right => [track[0] + 4.0, full[1] - 4.0],
@@ -179,14 +181,14 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, out: &mut impl Canvas, two: &T
     if two.names {
         let mut name = String::new();
         super::sunset_util::name_into(game, mob, &mut name);
-        let tw = game.native_text_width(&name);
+        let tw = game.sunset_text_width(&name);
         let at = [(x1 + x2) / 2.0 - tw / 2.0, y1 - 14.0];
         out.fill([at[0] - 3.0, at[1] - 2.0, tw + 6.0, 12.0], alpha(0x10_1016, a * 0.6));
         out.text(&name, at, 0xF0F0FA);
     }
     if two.distance {
         let text = format!("{}m", d.round() as i64);
-        let tw = game.native_text_width(&text);
+        let tw = game.sunset_text_width(&text);
         let at = [(x1 + x2) / 2.0 - tw / 2.0, y2 + 4.0];
         out.fill([at[0] - 2.0, at[1] - 1.0, tw + 4.0, 11.0], alpha(0x10_1016, a * 0.5));
         out.text(&text, at, 0xC8C8DC);

@@ -1,6 +1,8 @@
 // ESP's Murderer finder: every other player seen with one of the Murderer items in hand is
 // remembered until the world changes, drawn in the Murderer color, listed at the top of the screen and, with Callout,
 // named in chat, one line a delay.
+use crate::game::sunset_compat::SunsetExtra as _;
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{Module, Shape};
 use super::{Dim, Game};
 use std::collections::VecDeque;
@@ -68,7 +70,7 @@ pub(super) fn tick(game: &mut Game<'_>, esp: Option<&Module>) {
         .mobs
         .iter()
         .filter(|mob| mob.kind.id == "minecraft:player" && mob.alive() && !mob.removed && Some(mob.id as i32) != own)
-        .filter(|mob| mob.extra.main_hand.as_deref().is_some_and(|item| listed(game, m.t("Murderer items"), item)))
+        .filter(|mob| mob.extra.sunset_main_hand().as_deref().is_some_and(|item| listed(game, m.t("Murderer items"), item)))
         .filter(|mob| finder(|f| f.suspects.iter().all(|s| s.0 != mob.id)))
         .map(|mob| (mob.id, names.iter().find(|n| n.0 == mob.id).map_or_else(|| format!("#{}", mob.id), |n| n.1.clone())))
         .collect();
@@ -99,9 +101,9 @@ pub(super) fn draw(game: &Game<'_>, esp: &Module, w: f32, out: &mut Vec<Shape>) 
     }
     let colour = esp.c("Murderer color") & 0xFF_FFFF;
     let title = "Murderer list";
-    out.push(Shape::Text(title.to_owned(), [(w - game.native_text_width(title)) / 2.0, 15.0], 0xFFFFFF));
+    out.push(Shape::Text(title.to_owned(), [(w - game.sunset_text_width(title)) / 2.0, 15.0], 0xFFFFFF));
     for (row, name) in here.into_iter().enumerate() {
-        out.push(Shape::Text(name.clone(), [(w - game.native_text_width(&name)) / 2.0, 26.0 + row as f32 * 10.0], colour));
+        out.push(Shape::Text(name.clone(), [(w - game.sunset_text_width(&name)) / 2.0, 26.0 + row as f32 * 10.0], colour));
     }
 }
 

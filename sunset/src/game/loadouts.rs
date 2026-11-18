@@ -4,6 +4,7 @@
 // Sunset module that moves items; Refill broken tools puts the same tool from the inventory in the hotbar slot whose
 // tool just broke; Auto hotbar keeps hotbar slots filled by rules. Loadouts are shared as files
 // through the exports and imports folders, as profiles are.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{Canvas, Category, Module, Shape, say, with};
 use super::sunset_util as util;
 use super::{Game, Screen};
@@ -420,7 +421,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
         }
         panel(|p| p.listing = now);
         if now {
-            game.keys.clear();
+            crate::game::sunset_compat::keys_clear(&mut game.keys);
             game.capture(false);
             return;
         }
@@ -481,7 +482,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     let list = loadouts();
     let (top, x) = (top(h, list.len()), bar_x(w));
     let centred = |out: &mut Vec<Shape>, text: &str, y: f32, colour: u32| {
-        out.text(text, [(w - game.native_text_width(text)) / 2.0, y], colour);
+        out.text(text, [(w - game.sunset_text_width(text)) / 2.0, y], colour);
     };
     centred(out, if list.is_empty() { "No loadouts yet" } else { "Loadouts" }, top - 14.0, 0xFFFFFF);
     let hover = row_at(w, h, list.len(), game.cursor);
@@ -504,7 +505,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
             .collect();
         if !more.is_empty() {
             let text = more.join(" \u{b7} ");
-            out.text(&text, [x + BAR_W - game.native_text_width(&text), y], 0xA0A0A0);
+            out.text(&text, [x + BAR_W - game.sunset_text_width(&text), y], 0xA0A0A0);
         }
         out.fill([x, y + 10.0, BAR_W, 22.0], 0xFF1E_1E1E);
         for k in 0..9 {

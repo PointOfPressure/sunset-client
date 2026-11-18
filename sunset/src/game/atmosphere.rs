@@ -1,6 +1,7 @@
 // Atmosphere: a nebula, aurora or ringed planet sky over the Overworld, off by default (a shader pack keeps the sky),
 // or the game's own sky (None); Custom fog sets where the fog starts and is full, and its colour (out of water and
 // lava), with Cover horizon band ending the sky's fog there too (render.rs turns the game's Fog option off for it).
+use crate::game::sunset_compat::SunsetGame as _;
 use super::{Dim, Game};
 use super::sunset::{Category, ID, Module};
 use ::sunset_core::atmosphere::{Config, configure};
@@ -37,7 +38,7 @@ pub(super) fn visible(m: &Module, name: &str) -> bool {
 
 
 pub(super) fn sync(game: &Game<'_>) {
-    if !game.native_window() || !game.native_on(ID) {
+    if !game.sunset_window() || !game.native_on(ID) {
         configure(Config::default());
         *FOG.lock().unwrap_or_else(|e| e.into_inner()) = None;
         return;

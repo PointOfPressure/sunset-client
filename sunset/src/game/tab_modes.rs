@@ -41,7 +41,7 @@ pub fn tag(mode: i32) -> Option<(&'static str, u32)> {
 
 // The marked name: the game's own (team colours, italic spectators), then the tag. None while marking is off, for a
 // mode with no tag, or inside the game's own call made here.
-pub fn marked(p: &horizon_client::tab_list::TabPlayer, board: &horizon_client::tab_list::Scoreboard) -> Option<horizon_client::tab_list::Text> {
+pub fn marked(p: &horizon_client::tab_list::TabPlayer, board: &horizon_client::scoreboard::Scoreboard) -> Option<horizon_client::text::Text> {
     if BUSY.with(Cell::get) {
         return None;
     }
@@ -54,10 +54,10 @@ pub fn marked(p: &horizon_client::tab_list::TabPlayer, board: &horizon_client::t
     let mut name = horizon_client::tab_list::name_for_display(p, board);
     BUSY.with(|b| b.set(false));
     if icon {
-        name = horizon_client::tab_list::Text::colored(ICON, ICON_COLOR).append(name);
+        name = horizon_client::text::Text::colored(ICON, ICON_COLOR).append(name);
     }
     Some(match tag {
-        Some((tag, color)) => name.append(horizon_client::tab_list::Text::colored(tag, color)),
+        Some((tag, color)) => name.append(horizon_client::text::Text::colored(tag, color)),
         None => name,
     })
 }

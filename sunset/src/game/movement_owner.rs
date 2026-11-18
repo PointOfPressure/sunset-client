@@ -1,4 +1,5 @@
 // One generation-tagged lease for Sunset's ordinary movement drivers. Foreign agent/script input is never taken.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::Game;
 use horizon_client::held::Source;
 use std::sync::Mutex;
@@ -53,7 +54,7 @@ pub(super) fn conflict(mods: &[super::sunset::Module]) -> Option<&'static str> {
 }
 
 pub(super) fn can_acquire(game: &Game<'_>) -> Result<(), String> {
-    if !game.native_window() || !super::sunset::running() || !game.native_on("sunset") {
+    if !game.sunset_window() || !super::sunset::running() || !game.native_on("sunset") {
         return Err("Sunset is off.".into());
     }
     if super::agent::sunset_goto::foreign_busy(game) {
@@ -97,13 +98,13 @@ pub(super) fn acquire(game: &mut Game<'_>, owner: Owner) -> Result<Lease, String
 }
 
 pub(super) fn keys(game: &mut Game<'_>, lease: Lease, wanted: &[KeyCode]) -> bool {
-    if !game.native_window() || !super::sunset::running() || !game.native_on("sunset") { return false; }
+    if !game.sunset_window() || !super::sunset::running() || !game.native_on("sunset") { return false; }
     let mut broker = BROKER.lock().unwrap_or_else(|e| e.into_inner());
     broker.set_keys(&mut game.keys, lease, wanted)
 }
 
 pub(super) fn release(game: &mut Game<'_>, lease: Lease) {
-    if !game.native_window() { return; }
+    if !game.sunset_window() { return; }
     let (foreign, _) = super::agent::sunset_goto::foreign_input(game);
     let mut broker = BROKER.lock().unwrap_or_else(|e| e.into_inner());
     broker.retire(&mut game.keys, lease, &foreign);

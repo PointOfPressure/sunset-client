@@ -5,6 +5,7 @@
 // on a raised shield, a second glowstone in an anchor, an ender chest opened with combat gear in hand, glowstone put
 // down off an anchor, a firework fired on foot) and Ghost place (a block put behind the mob you click instead of a use on
 // it).
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{self, Module, attack, gui_open, look_at, with};
 use super::sunset_util as util;
 use super::Game;
@@ -425,7 +426,7 @@ pub(super) fn use_blocked(game: &Game<'_>) -> bool {
         return false;
     }
     let main = game.held().map(|s| &*s.item);
-    let sneaking = game.keys.contains(&winit::keyboard::KeyCode::ShiftLeft);
+    let sneaking = game.keys.raw(&winit::keyboard::KeyCode::ShiftLeft);
     if m.b("Ground firework")
         && main == Some("minecraft:firework_rocket")
         && !game.player.as_ref().is_some_and(|p| p.fall_flying)

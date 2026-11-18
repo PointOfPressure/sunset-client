@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): Nuker, logouts, waypoints, deaths and holes.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset_util::block_pos;

@@ -1,5 +1,6 @@
 // One owner of the hotbar and the next look at a time (Crystal Aura, Anchor Aura, a macro, Auto Eat): the others
 // wait. Dropped on a new world, life or connection.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset_combat_lease::Lease;
 use super::{Dim, Game};
 use std::sync::{Arc, Mutex};

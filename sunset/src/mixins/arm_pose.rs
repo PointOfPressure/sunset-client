@@ -1,6 +1,6 @@
 // Hand View: the bare arm, moved, turned and sized, and lit at full brightness with No hand shadow (drawn again
 // with the new pose and light, once).
-fn sunset_arm_pose(this: &Game<'_>, left: bool, m: glam::Mat4, light: u32, out: &mut Vec<Vertex>) -> std::ops::ControlFlow<()> {
+fn sunset_arm_pose(this: &Game<'_>, left: bool, m: glam::Mat4, light: u32, partial: f32, out: &mut Vec<Vertex>) -> std::ops::ControlFlow<()> {
     if !::sunset_core::lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
 
     use crate::game::sunset_hand_view as view;
@@ -13,7 +13,7 @@ fn sunset_arm_pose(this: &Game<'_>, left: bool, m: glam::Mat4, light: u32, out: 
         return std::ops::ControlFlow::Continue(());
     }
     view::set_posing(true);
-    this.first_person_arm(left, posed, lit, out);
+    this.first_person_arm(left, posed, lit, partial, out);
     view::set_posing(false);
     std::ops::ControlFlow::Break(())
 }

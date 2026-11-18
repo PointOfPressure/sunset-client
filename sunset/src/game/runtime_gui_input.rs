@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): the click GUI's keys, clicks, wheel and the HUD layout editor.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::{Game, Screen};
 use super::sunset_text_edit::{Draft, EditKey};
@@ -314,7 +315,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                 };
                 // A click on the number: it is typed instead (all of it selected, so typing replaces it).
                 if let (Some(v), false) = (number, right)
-                    && at.0 >= r[0] + r[2] - RIGHT_PAD - game.native_text_width(&num(v)) - 3.0
+                    && at.0 >= r[0] + r[2] - RIGHT_PAD - game.sunset_text_width(&num(v)) - 3.0
                     && at.1 < number_band(r)
                 {
                     let mut draft = Draft::new(&num(v));

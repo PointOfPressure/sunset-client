@@ -13,6 +13,12 @@ game = "26.3"
 horizon = "f86cffb9ac33d95530af420ed51e67cc0c3ae609"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
 
+[[native.module]]
+id = "compat"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_compat"
+source = "src/game/compat.rs"
+
 # Moved up from the crates below the game: support modules may only go into the game crate now.
 [[native.module]]
 id = "tab_modes"
@@ -67,12 +73,6 @@ id = "ore_sim_source"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_ore_sim_source"
 source = "src/game/ore_sim_source.rs"
-
-[[native.module]]
-id = "ore_sim_replay"
-file = "crates/horizon-client/src/game.rs"
-name = "sunset_ore_sim_replay"
-source = "src/game/ore_sim_replay.rs"
 
 [[native.module]]
 id = "atmosphere_renderer"
@@ -1330,7 +1330,7 @@ bindings = [
 
 [[native.mixin]]
 id = "gui_move_incoming_boundary"
-target = "horizon_client::game::native_hooks::client_packet::Game<'_>::native_client_packet"
+target = "horizon_client::game::native_hooks::Game<'_>::observe_client_packet"
 kind = "HEAD"
 helper = "src/mixins/gui_move_incoming_hook.rs"
 bindings = [
@@ -1371,12 +1371,7 @@ target = "horizon_client::game::remote::Game<'_>::enter_remote_dimension"
 kind = "HEAD"
 helper = "src/mixins/antibot_world_hook.rs"
 
-[[native.mixin]]
-id = "server_scan_tree"
-target = "horizon_client::game::chat::Game<'_>::chat_tree_for"
-kind = "HEAD"
-helper = "src/mixins/server_tree_hook.rs"
-bindings = [{ name = "base", ty = "Option<&horizon_client::command::Dispatcher>", value = "base" }]
+# (removed server_scan_tree)
 
 [[native.mixin]]
 id = "key"
@@ -1400,8 +1395,8 @@ bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *s
 [[native.mixin]]
 id = "hud"
 target = "horizon_client::game::extras::Game<'_>::draw_extras"
-kind = "AFTER_CALL"
-selector = "self.draw_pvp_hud"
+kind = "BEFORE_CALL"
+selector = "self.native_render_gui_post"
 require = 1
 ordinal = 0
 helper = "src/mixins/hud.rs"
@@ -1662,6 +1657,7 @@ bindings = [
   { name = "left", ty = "bool", value = "left" },
   { name = "m", ty = "glam::Mat4", value = "m" },
   { name = "light", ty = "u32", value = "light" },
+  { name = "partial", ty = "f32", value = "partial" },
   { name = "out", ty = "&mut Vec<Vertex>", value = "&mut *out" },
 ]
 
@@ -1698,19 +1694,6 @@ helper = "src/mixins/particle_add.rs"
 bindings = [{ name = "options", ty = "&ParticleOptions", value = "options" }]
 
 [[native.mixin]]
-id = "water-sprites"
-target = "horizon_client_render::sprites::Sprites::register"
-kind = "HEAD"
-cancellable = true
-helper = "src/mixins/water_sprites.rs"
-bindings = [
-  { name = "this", ty = "&mut Sprites", value = "&mut *self" },
-  { name = "root", ty = "&Path", value = "root" },
-  { name = "name", ty = "&str", value = "name" },
-  { name = "decoded", ty = "&crate::sprite_cache::Decoded", value = "&decoded" },
-]
-
-[[native.mixin]]
 id = "boat-ride"
 target = "horizon_client::game::remote_vehicles::Game<'_>::remote_ride"
 kind = "HEAD"
@@ -1731,6 +1714,7 @@ helper = "src/mixins/timer.rs"
 bindings = [
   { name = "this", ty = "&mut FixedStep", value = "&mut *self" },
   { name = "elapsed", ty = "std::time::Duration", value = "elapsed" },
+  { name = "target_millis", ty = "f32", value = "target_millis" },
 ]
 
 [[native.mixin]]
@@ -1762,15 +1746,21 @@ bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
 
 [[native.mixin]]
 id = "portal_before"
-target = "horizon_client::game::nether_portal::Game<'_>::client_portal_effect"
-kind = "HEAD"
+target = "horizon_client::game::render_tick::Game<'_>::tick_particle_spawns"
+kind = "BEFORE_CALL"
+selector = "self.client_portal_effect"
+require = 1
+ordinal = 0
 helper = "src/mixins/portal_before.rs"
 bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
 
 [[native.mixin]]
 id = "portal_after"
-target = "horizon_client::game::nether_portal::Game<'_>::client_portal_effect"
-kind = "RETURN"
+target = "horizon_client::game::render_tick::Game<'_>::tick_particle_spawns"
+kind = "MODIFY_EXPRESSION_VALUE"
+selector = "self.client_portal_effect()"
+require = 1
+ordinal = 0
 helper = "src/mixins/portal_after.rs"
 bindings = [
   { name = "value", ty = "bool", value = "$value" },
@@ -1852,6 +1842,7 @@ bindings = [
   { name = "facts", ty = "&BlockFacts", value = "facts" },
   { name = "camera", ty = "[f64; 3]", value = "camera" },
   { name = "near", ty = "&NearPlane", value = "near" },
+  { name = "seen", ty = "&dyn Fn(BlockStateId, [i32; 3]) -> BlockStateId", value = "seen" },
 ]
 
 [[native.mixin]]
@@ -1865,12 +1856,7 @@ bindings = [
   { name = "input", ty = "&ScreenInputs<'_>", value = "input" },
 ]
 
-[[native.mixin]]
-id = "font"
-target = "horizon_client_render::font::Font::load"
-kind = "HEAD"
-helper = "src/mixins/font_hook.rs"
-bindings = [{ name = "root", ty = "&Path", value = "root" }]
+# (removed font)
 
 [[native.mixin]]
 id = "text"
@@ -1883,7 +1869,7 @@ bindings = [
   { name = "batch", ty = "&mut HudBatch", value = "batch" },
   { name = "text", ty = "&str", value = "text" },
   { name = "at", ty = "[f32; 2]", value = "at" },
-  { name = "rgb", ty = "u32", value = "rgb" },
+  { name = "argb", ty = "u32", value = "argb" },
   { name = "shadow", ty = "bool", value = "shadow" },
 ]
 
@@ -1943,17 +1929,7 @@ argument = 1
 helper = "src/mixins/look_hook.rs"
 bindings = [{ name = "value", ty = "(f32, f32)", value = "$value" }]
 
-[[native.mixin]]
-id = "screen_keys"
-target = "horizon_client_lib::motion::MotionWorld<'_,'_,'_>::controlled_simulation_tick_with_sprint_window"
-kind = "HEAD"
-cancellable = true
-helper = "src/mixins/screen_keys_hook.rs"
-bindings = [
-  { name = "world", ty = "&mut MotionWorld<'_, '_, '_>", value = "&mut *self" },
-  { name = "keys", ty = "crate::sprint::Keys", value = "keys" },
-  { name = "window", ty = "i32", value = "sprint_window" },
-]
+# (screen_keys moved to the blocked list at the end)
 
 [[native.mixin]]
 id = "explode"
@@ -2046,28 +2022,11 @@ helper = "src/mixins/block_overlay_render_hook.rs"
 bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
 
 [[native.mixin]]
-id = "block_outline_draw"
-target = "horizon_client_render::gfx::Renderer::draw_outline"
-kind = "HEAD"
-cancellable = true
-helper = "src/mixins/block_overlay_draw_hook.rs"
-
-[[native.mixin]]
 id = "atmosphere_sync"
 target = "horizon_client::game::Game<'_>::hud_layers"
 kind = "HEAD"
 helper = "src/mixins/atmosphere_sync_hook.rs"
 bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
-
-[[native.mixin]]
-id = "atmosphere_render"
-target = "horizon_client_render::gfx::Renderer::render"
-kind = "HEAD"
-helper = "src/mixins/atmosphere_render_hook.rs"
-bindings = [
-  { name = "renderer", ty = "&mut Renderer", value = "&mut *self" },
-  { name = "frame", ty = "&Frame<'_>", value = "frame" },
-]
 
 [[native.mixin]]
 id = "atmosphere_release"
@@ -2100,13 +2059,10 @@ bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *s
 
 [[native.mixin]]
 id = "packet_tap"
-target = "horizon_client_lib::net::Session::poll"
-kind = "RETURN"
+target = "horizon_client::game::remote::Game<'_>::poll_remote"
+kind = "HEAD"
 helper = "src/mixins/packet_tap_hook.rs"
-bindings = [
-  { name = "session", ty = "&Session", value = "&*self" },
-  { name = "value", ty = "Vec<Event>", value = "$value" },
-]
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
 
 [[native.mixin]]
 id = "scaffold_telly_use"
@@ -2118,7 +2074,7 @@ bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
 
 [[native.mixin]]
 id = "seedcracker_incoming_boundary"
-target = "horizon_client::game::native_hooks::client_packet::Game<'_>::native_client_packet"
+target = "horizon_client::game::native_hooks::Game<'_>::observe_client_packet"
 kind = "HEAD"
 helper = "src/mixins/seedcracker_packet_hook.rs"
 bindings = [
@@ -2128,7 +2084,7 @@ bindings = [
 
 [[native.mixin]]
 id = "place_recipe"
-target = "horizon_client::game::native_hooks::base::Game<'_>::place_recipe"
+target = "horizon_client::game::recipe_book::Game<'_>::place_book_recipe"
 kind = "HEAD"
 cancellable = true
 helper = "src/mixins/recipes_hook.rs"
@@ -2341,12 +2297,7 @@ bindings = [
   { name = "pressed", ty = "bool", value = "pressed" },
 ]
 
-# [[native.mixin]]
-# id = "font_over"
-# target = "horizon_client_render::font::Font::load_over"
-# kind = "HEAD"
-# helper = "src/mixins/font_over_hook.rs"
-# bindings = [{ name = "root", ty = "&Path", value = "root" }]
+# (removed font_over)
 
 # [[native.mixin]]
 # id = "menu_dark"
@@ -2588,4 +2539,64 @@ bindings = [
 #   { name = "level", ty = "i32", value = "level" },
 #   { name = "bar", ty = "bool", value = "bar" },
 #   { name = "width", ty = "&dyn Fn(&str) -> i32", value = "width" },
+# ]
+
+# Blocked on this game build: horizon-client/src/motion.rs (horizon_client_lib::motion) imports a private item in a
+# grouped `use crate::{Result, ..., living_attributes::attribute_error, ...}`, and the launcher's function-replacement
+# mirror keeps that whole import, so no function of that module can be replaced (E0603). These rows wait for that:
+# [[native.mixin]]
+# id = "screen_keys"
+# target = "horizon_client::game::remote::Game<'_>::tick_local_player"
+# kind = "WRAP_OPERATION"
+# selector = "controlled_simulation_tick_with_sprint_window"
+# require = 1
+# ordinal = 0
+# helper = "src/mixins/screen_keys_hook.rs"
+# bindings = [
+#   { name = "world", ty = "MotionWorld<'_, '_, '_>", value = "$receiver" },
+#   { name = "keys", ty = "horizon_client::sprint::Keys", value = "$arg0" },
+#   { name = "window", ty = "i32", value = "$arg1" },
+#   { name = "operation", ty = "impl FnOnce(MotionWorld<'_, '_, '_>, horizon_client::sprint::Keys, i32) -> Result<()>", value = "$operation" },
+# ]
+# 
+# [[native.mixin]]
+# id = "screen_keys_after"
+# target = "horizon_client::game::remote::Game<'_>::tick_local_player"
+# kind = "AFTER_CALL"
+# selector = "controlled_simulation_tick_with_sprint_window"
+# require = 1
+# ordinal = 0
+# result = "Result<()>"
+# helper = "src/mixins/screen_keys_after.rs"
+# bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+# Blocked on this game build: the launcher's copy of these functions can't reach what their bodies use (the render
+# crate's private `mod sprite_cache`; methods private to gfx's child modules, core_lines::draw and capture::write_capture).
+# [[native.mixin]]
+# id = "water-sprites"
+# target = "horizon_client_render::sprites::Sprites::register"
+# kind = "HEAD"
+# cancellable = true
+# helper = "src/mixins/water_sprites.rs"
+# bindings = [
+#   { name = "this", ty = "&mut Sprites", value = "&mut *self" },
+#   { name = "name", ty = "&str", value = "name" },
+#   { name = "decoded", ty = "&crate::sprite_cache::Decoded", value = "&decoded" },
+# ]
+
+# [[native.mixin]]
+# id = "block_outline_draw"
+# target = "horizon_client_render::gfx::Renderer::draw_outline"
+# kind = "HEAD"
+# cancellable = true
+# helper = "src/mixins/block_overlay_draw_hook.rs"
+
+# [[native.mixin]]
+# id = "atmosphere_render"
+# target = "horizon_client_render::gfx::Renderer::render"
+# kind = "HEAD"
+# helper = "src/mixins/atmosphere_render_hook.rs"
+# bindings = [
+#   { name = "renderer", ty = "&mut Renderer", value = "&mut *self" },
+#   { name = "frame", ty = "&Frame<'_>", value = "frame" },
 # ]

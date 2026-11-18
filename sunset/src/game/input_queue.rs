@@ -1,24 +1,25 @@
-// Access to the private native click counters, kept in their owning module.
-pub fn counts(input: &horizon_client::interaction_input::InteractionInput) -> [u32; 3] { input.clicks }
+// The click queues Sunset adds its own clicks to. The remote game's queue (InteractionInput) keeps its counts private
+// on this game build, so Sunset can't tell its clicks from the player's there: counts reads none and cancel drops the
+// whole queue (a click the player made in the same tick goes too). The local game's queues (Game::attack_clicks and
+// use_clicks) are read and trimmed exactly.
+use horizon_client::input_queue::ClickQueue;
+use horizon_client::interaction_input::InteractionInput;
 
-pub fn cancel(input: &mut horizon_client::interaction_input::InteractionInput, owned: [u32; 3]) {
-    for (pending, ours) in input.clicks.iter_mut().zip(owned) {
-        *pending = pending.saturating_sub(ours);
+pub fn counts(_input: &InteractionInput) -> [u32; 3] {
+    [0; 3]
+}
+
+pub fn cancel(input: &mut InteractionInput, owned: [u32; 3]) {
+    if owned != [0; 3] {
+        let _ = input.take_queued();
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn panic_cancels_owned_clicks_and_preserves_physical_clicks() {
-        let mut input = super::super::InteractionInput::default();
-        for button in [super::super::Button::Attack, super::super::Button::Use,
-            super::super::Button::Use, super::super::Button::Pick] { input.press(button); }
-        cancel(&mut input, [0, 1, 0]);
-        assert_eq!(counts(&input), [1, 1, 1]);
-        cancel(&mut input, [0, 1, 0]);
-        assert_eq!(counts(&input), [1, 0, 1]);
+// Takes `n` clicks off the end of a queue.
+pub fn trim(queue: &mut ClickQueue, n: u32) {
+    let left = queue.count().saturating_sub(n);
+    queue.clear();
+    for _ in 0..left {
+        queue.press();
     }
 }

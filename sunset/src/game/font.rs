@@ -1,6 +1,6 @@
 // Sunset's fonts on the game's side: the glyphs drawn at the screen's own pixel size, and text in the chosen font. The
 // switches and the files are in sunset_core::font.
-pub use ::sunset_core::font::{BOLD, READY, STYLE, enabled, install, style};
+pub use ::sunset_core::font::{BOLD, READY, STYLE, enabled, style};
 use ::sunset_core::font_data::FONTS;
 use ::sunset_core::font::SCALE;
 
@@ -21,7 +21,7 @@ pub fn sync(font: &horizon_client::font::Font, gui_scale: f32) {
             let Some(size) = id
                 .strip_prefix("sunset:")
                 .and_then(|n| FONTS.iter().find(|f| f.0 == n.strip_suffix("-bold").unwrap_or(n)))
-                .map(|f| f.3)
+                .map(|f| f.1)
             else {
                 continue;
             };

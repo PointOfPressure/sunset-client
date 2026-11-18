@@ -29,7 +29,7 @@ pub(crate) fn use_block(game: &mut Game<'_>, hit: crate::game::Hit, look: (f32, 
     let animation = game.swing;
     let view = (game.yaw, game.pitch);
     (game.yaw, game.pitch) = look;
-    game.remote_use();
+    game.remote_use(mod_api::InteractionAttempt::Press);
     (game.yaw, game.pitch) = view;
     game.forced_hit = previous_hit;
     if !swing {

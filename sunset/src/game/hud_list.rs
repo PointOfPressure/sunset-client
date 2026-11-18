@@ -10,6 +10,7 @@
 //
 // Behaviour after Rise 6's Interface module (array list colour modes, suffix, lowercase, remove spaces, background and
 // sidebar, slide animations); written anew for Sunset.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset::{Category, Module, Shape, accent};
@@ -192,11 +193,11 @@ pub(super) fn draw(game: &Game<'_>, hud: &Module, mods: &[Module], right: bool, 
         let row = &mut list.rows[i];
         row.shown = true;
         if remeasure || row.name != name {
-            row.name_w = game.native_text_width(&name);
+            row.name_w = game.sunset_text_width(&name);
             row.name = name;
         }
         if remeasure || row.detail != detail {
-            row.detail_w = if detail.is_empty() { 0.0 } else { game.native_text_width(&detail) };
+            row.detail_w = if detail.is_empty() { 0.0 } else { game.sunset_text_width(&detail) };
             row.detail = detail;
         }
     }

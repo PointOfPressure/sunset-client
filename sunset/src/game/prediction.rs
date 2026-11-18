@@ -1,5 +1,6 @@
 // Where enemy players will be when a hit lands (their movement, stepped through Horizon's collisions), and which of
 // them can be hurt yet: the server's hurt time after each hit, as observed.
+use crate::game::sunset_compat::SunsetExtra as _;
 use super::sunset_explosive_damage::{self as damage, Blast};
 use super::sunset_explosive_policy::Budget;
 use super::sunset_hurt_policy as hurt;
@@ -143,7 +144,7 @@ fn vec(value: [f64; 3]) -> Vec3 {
 fn context<'a>(game: &'a Game<'_>, target: &Target) -> Option<CollisionContext<'a>> {
     let mob = game.mobs.iter().find(|m| m.id == target.id && !m.removed)?;
     let held =
-        mob.extra.main_hand.as_deref().map(|item| CollisionItem { item, count: 1 }).unwrap_or(CollisionItem::EMPTY);
+        mob.extra.slot_stack(horizon_items::equipment::MAINHAND).map(|s| CollisionItem { item: &s.item, count: 1 }).unwrap_or(CollisionItem::EMPTY);
     Some(CollisionContext::for_entity(
         CollisionEntity {
             identity: EntityIdentity(u64::from(target.id)),
@@ -155,11 +156,11 @@ fn context<'a>(game: &'a Game<'_>, target: &Target) -> Option<CollisionContext<'
         false,
     ))
 }
-fn subject(game: &Game<'_>, id: u32) -> Option<PowderSnowSubject> {
+fn subject<'a>(game: &'a Game<'_>, id: u32) -> Option<PowderSnowSubject<'a>> {
     let mob = game.mobs.iter().find(|m| m.id == id)?;
     Some(PowderSnowSubject {
         fall_distance: mob.fall_distance,
-        leather_boots: mob.extra.feet.as_deref() == Some("minecraft:leather_boots"),
+        leather_boots: mob.extra.sunset_armor_id(3).as_deref() == Some("minecraft:leather_boots"),
         ..Default::default()
     })
 }
@@ -244,7 +245,7 @@ pub(super) fn face_facts(game: &Game<'_>, target: &Target) -> super::sunset_face
     use super::{sunset_durability_patch::Prototype, sunset_faceplace_native as native};
     let armor = game.mobs.iter().find(|m| m.id == target.id).map_or([None; 4], |mob| {
         std::array::from_fn(|i| {
-            let stack = mob.extra.armor[i].as_ref()?;
+            let stack = mob.extra.sunset_armor(i)?;
             let info = game.items().get(&stack.item)?;
             let name = stack.item.strip_prefix("minecraft:")?;
             if !["helmet", "chestplate", "leggings", "boots"].iter().any(|suffix| name.ends_with(suffix))

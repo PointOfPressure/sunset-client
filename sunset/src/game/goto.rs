@@ -1,5 +1,6 @@
 // .goto x y z (from Rust's PR #24): walks there on Horizon's own A* path and walking task, the one horizon-ctl's goto
 // runs, so it lives next to them in agent.rs. Movement keys, a screen, the menu, Panic or turning Sunset off stop it.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::{Game, Goto, MOVE_KEYS, Progress, TaskKind};
 use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
@@ -73,7 +74,7 @@ pub(crate) fn command(game: &mut Game<'_>, args: &[&str]) -> Result<String, Stri
         let stopped = cancel(game, "navigation stopped");
         return Ok(if stopped { "Stopped walking." } else { "Not walking anywhere." }.into());
     };
-    game.playing().map_err(|e| e.to_string())?;
+    game.require_playing_screen().map_err(|e| e.to_string())?;
     if game.screen_over_playing() || game.sleeping.is_some() { return Err("Close the prompt and wake up before walking.".into()); }
     crate::game::sunset_movement_owner::can_acquire(game)?;
     let p = game.player.as_ref().ok_or("No player.")?;
@@ -117,12 +118,12 @@ pub(crate) fn command(game: &mut Game<'_>, args: &[&str]) -> Result<String, Stri
 
 // Each frame, before Horizon steps the task: stop it when it should, and say how it ended.
 pub(crate) fn frame(game: &mut Game<'_>) {
-    if !game.native_window() { return; }
+    if !game.sunset_window() { return; }
     let mut walk = WALK.lock().unwrap_or_else(|e| e.into_inner());
     let Some((rx, dim)) = walk.as_ref() else {
         return;
     };
-    if *dim != game.dim.id() || !game.native_on("sunset") || crate::game::sunset::gui_open() || game.playing().is_err()
+    if *dim != game.dim.id() || !game.native_on("sunset") || crate::game::sunset::gui_open() || game.require_playing_screen().is_err()
         || game.screen_over_playing() || game.sleeping.is_some() {
         cancel(game, "stopped: a screen opened or Sunset was turned off");
     }

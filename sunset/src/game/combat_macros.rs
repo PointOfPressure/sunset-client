@@ -1,6 +1,7 @@
 // Crystal Aura's and Anchor Aura's Macro (Rust's Crystal Macro and Anchor Macro, PR #16): a right click with a crystal
 // or anchor does the whole place and break (or place, charge, set off) as fast as the server takes it. Each starts from
 // your own click, at what you look at. Its settings are the aura module's, while that module's Macro section is on.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{self, Module, gui_open, hold, with};
 use super::sunset_explosive_damage::{Blast, clear_line, observed_local_damage};
 use super::sunset_explosive_policy::{Budget, in_range};
@@ -165,10 +166,10 @@ fn down(game: &Game<'_>) -> bool {
 // The native use path reads canonical Sneak, which includes rebound keys and
 // ToggleKeyMapping state. Raw physical Shift is a screen modifier, not this.
 fn anchor_can_click(game: &Game<'_>) -> bool {
-    !game.keys.contains(&winit::keyboard::KeyCode::ShiftLeft)
+    !game.keys.raw(&winit::keyboard::KeyCode::ShiftLeft)
 }
 fn allowed(game: &Game<'_>) -> bool {
-    game.native_window()
+    game.sunset_window()
         && game.native_on(sunset::ID)
         && util::in_world(game)
         && !gui_open()
@@ -1043,7 +1044,7 @@ pub(super) fn intercept_use(game: &mut Game<'_>) -> bool {
         return true;
     }
     let pick = game.pick().map(|hit| (hit.pos, hit.face));
-    if game.native_window() && game.native_on(sunset::ID) && util::in_world(game) && !game.anchor_works() {
+    if game.sunset_window() && game.native_on(sunset::ID) && util::in_world(game) && !game.anchor_works() {
         if let (Some(m), Some((p, _))) = (anchor.as_ref(), pick) {
             if anchor_charge(game, p).is_some()
                 && !super::sunset_loot_guard::allows(game, Blast::anchor(p), m.b("Protect loot"))

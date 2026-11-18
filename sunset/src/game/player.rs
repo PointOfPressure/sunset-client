@@ -825,7 +825,7 @@ fn auto_steal(game: &mut Game<'_>, m: &Module) {
     // A chest of your own world, or the menu a server opened.
     let (id, size) = match game.container {
         Some(key) if matches!(game.container_kind(), Some(super::BlockEntity::Chest(_))) => {
-            (key.0 ^ key.1.rotate_left(10) ^ key.2.rotate_left(20) | 1, game.container_size())
+            (key.0 ^ key.1.rotate_left(10) ^ key.2.rotate_left(20) | 1, game.container_kind().and_then(|be| match be { super::BlockEntity::Chest(items) => Some(items.len()), _ => None }).unwrap_or(27))
         }
         Some(_) => return,
         None => {
@@ -877,7 +877,7 @@ const PRESETS: [(&str, f64, f64, f64, f64, &str); 4] = [
 pub(super) fn plan_item(game: &Game<'_>, stack: &horizon_client::items::ItemStack) -> plan::Item {
     let info = game.res.items().get(&stack.item);
     let modifier = |attribute: &str| {
-        info.as_ref().map_or(0.0, |i| i.modifiers.iter().filter(|m| m.0 == attribute).map(|m| m.2 as f32).sum::<f32>())
+        info.as_ref().map_or(0.0, |i| i.modifiers.iter().filter(|m| m.attribute == attribute).map(|m| m.amount as f32).sum::<f32>())
     };
     let mining = info.as_ref().map_or(1.0, |i| i.tool.iter().filter_map(|r| r.speed).fold(i.tool_default_speed.max(1.0), f32::max));
     plan::Item {

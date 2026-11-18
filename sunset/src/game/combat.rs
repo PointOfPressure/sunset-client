@@ -1,5 +1,6 @@
 // Sunset's combat modules beyond the core ones, implemented for Sunset:
 // BlockIn, Self Trap, Auto Trap, Self Web, Auto Web, Offhand and Auto EXP.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::sunset::{Category, Module, gui_open, hold, own_id, with};
 use super::sunset_util::*;
@@ -1315,7 +1316,7 @@ fn simple_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
         range: m.n("Distance"),
         own: own_id(game),
     };
-    let held = |k: winit::keyboard::KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
+    let held = |k: winit::keyboard::KeyCode| game.keys.raw(&k) || game.physical_keys.contains(&k);
     let strafe = f32::from(u8::from(held(winit::keyboard::KeyCode::KeyA))) - f32::from(u8::from(held(winit::keyboard::KeyCode::KeyD)));
     let down = game.left || game.physical_buttons.contains(&winit::event::MouseButton::Left);
     let require = m.b("Require mouse down");

@@ -1,6 +1,7 @@
 // Time Changer and Weather Changer. The server's packets arrive once a frame, between ticks, and write the time and the
 // weather straight into the world: the world gets the real ones back before them, and what you asked for again before
 // anything is drawn, so a frame never shows the server's and turning a module off gives back what the server last said.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::sunset_sky_math::{Cover, Levels, kept, lay, lift, shown_time, shown_weather};
 use super::Game;
@@ -32,7 +33,7 @@ fn set_levels(game: &mut Game<'_>, l: Levels) {
 
 // Before the frame's packets.
 pub(super) fn real(game: &mut Game<'_>) {
-    if !game.native_window() {
+    if !game.sunset_window() {
         return;
     }
     let (time, weather) = (game.world.day_time, levels(game));
@@ -44,7 +45,7 @@ pub(super) fn real(game: &mut Game<'_>) {
 // After the packets, and again before drawing. Only over a server's world (single player's is one too): with the world
 // in this `Game`, what is here is what gets saved.
 pub(super) fn shown(game: &mut Game<'_>) {
-    if !game.native_window() {
+    if !game.sunset_window() {
         return;
     }
     if game.title.is_some() || game.remote.is_none() {

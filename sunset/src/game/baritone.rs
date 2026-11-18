@@ -1,4 +1,6 @@
 // Sunset controls the optional Baritone companion. All pathfinding and mining policy stays in its replaceable DLL.
+use crate::game::sunset_compat::SunsetGame as _;
+use crate::game::remote::sunset_baritone_remote::SunsetBaritone as _;
 use super::{Game, Screen, sunset_baritone_actions as actions, sunset_baritone_targets as targets,
     sunset_movement_owner as owner, sunset_ore_sim as ores, sunset_api as api};
 use super::sunset::{Category, Module};
@@ -119,7 +121,7 @@ pub(super) fn execution_changed(a: &Module, b: &Module) -> bool {
 }
 
 pub(super) fn stop(game: &mut Game<'_>, reason: StopReason) {
-    if !game.native_window() { return; }
+    if !game.sunset_window() { return; }
     if let Some(full) = api::baritone_service().and_then(|s| s.full) { (full.stop)(game); }
     let world = (reason == StopReason::SourceChanged).then(|| super::sunset_seedcracker::world_id(game));
     let (lease, stale_world) = state(|c| {
@@ -152,7 +154,7 @@ pub(super) fn stop(game: &mut Game<'_>, reason: StopReason) {
 pub(super) fn legacy_active() -> bool { state(|c| c.job.is_some()) }
 
 pub(super) fn maintain(game: &mut Game<'_>) {
-    if !game.native_window() { return; }
+    if !game.sunset_window() { return; }
     let available = ready(game).is_some();
     let module = super::sunset::with(|s| s.module(NAME).cloned());
     let active = state(|c| {
@@ -183,14 +185,14 @@ pub(super) fn maintain(game: &mut Game<'_>) {
         else {
             let held = super::sunset::native_held_input(game);
             (owner::MOVE_KEYS.iter().any(|k| held.0.contains(k)) || !held.1.is_empty() || actions::slot_changed(game)
-                || (game.yaw, game.pitch) != view || game.selected != selected || !game.hotbar_presses.is_empty())
+                || (game.yaw, game.pitch) != view || game.selected != selected || !game.hotbar_presses.entries().is_empty())
                 .then_some(StopReason::InputOverride)
         };
     if let Some(reason) = reason { stop(game, reason); }
 }
 
 pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
-    if !pressed || !game.native_window() { return; }
+    if !pressed || !game.sunset_window() { return; }
     let actions = ["key.forward", "key.back", "key.left", "key.right", "key.jump", "key.sneak", "key.sprint", "key.attack", "key.use",
         "key.pickItem", "key.drop", "key.swapOffhand", "key.inventory", "key.hotbar.1", "key.hotbar.2", "key.hotbar.3",
         "key.hotbar.4", "key.hotbar.5", "key.hotbar.6", "key.hotbar.7", "key.hotbar.8", "key.hotbar.9"];
@@ -222,7 +224,7 @@ fn configure(game: &Game<'_>, job: &Job, service: api::BaritoneServiceV1) -> Res
 }
 
 fn start(game: &mut Game<'_>, command: Command) -> Result<String, String> {
-    if !game.native_window() || !super::sunset::running() || !game.native_on("sunset") { return Err("Sunset is off.".into()); }
+    if !game.sunset_window() || !super::sunset::running() || !game.native_on("sunset") { return Err("Sunset is off.".into()); }
     if !input_available(game) { return Err("Start Baritone in a world with the menu closed and the player awake.".into()); }
     if game.player.as_ref().is_none_or(|p| p.health.health() <= 0.0) { return Err("A living player is required.".into()); }
     if game.spectator() || game.riding.is_some() || game.player.as_ref().is_some_and(|p| p.flying || p.fall_flying) {
@@ -446,7 +448,7 @@ fn update(game: &Game<'_>, job: &mut Job, value: &Value) -> Result<(String, [u64
 
 pub(super) fn pre_tick(game: &mut Game<'_>, mods: &[Module]) {
     maintain(game);
-    if !game.native_window() { return; }
+    if !game.sunset_window() { return; }
     let Some(mut job) = state(|c| c.job.take()) else { return; };
     if job.last_tick == Some(game.ticks) { state(|c| c.job = Some(job)); return; }
     job.last_tick = Some(game.ticks);

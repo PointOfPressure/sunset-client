@@ -1,6 +1,7 @@
 // The inventory modules: Offhand (including Auto Totem and Rust's Hover Totem from PR #16), Tap Use (#16) and Fast Use's Throwables (#16's FastXP). A Hover totem moves by one
 // swap click, never by picking stacks up, and counts as moved once the server's own slot packets say both slots
 // changed.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{self, Category, Module, with};
 use super::sunset_combat_control as control;
 use super::sunset_inventory_policy::{self as policy, Failure, OFFHAND, Status, Swap};
@@ -295,7 +296,7 @@ fn same_session(game: &Game<'_>, old: &Session) -> bool {
 }
 
 fn alive(game: &Game<'_>) -> bool {
-    game.native_window()
+    game.sunset_window()
         && game.native_on(sunset::ID)
         && game.remote.is_some()
         && !game.spectator()
@@ -754,7 +755,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>, m: Option<&Module>) {
     });
     if held && m.is_some() {
         for k in HELD_KEYS {
-            game.keys.remove(&k);
+            crate::game::sunset_compat::key_up(&mut game.keys, &k);
         }
         (game.left, game.right) = (false, false);
         state(|s| s.totem.took = true);
@@ -777,7 +778,7 @@ fn give_back(game: &mut Game<'_>) {
     use winit::event::MouseButton;
     for k in HELD_KEYS {
         if game.physical_keys.contains(&k) {
-            game.keys.insert(k);
+            crate::game::sunset_compat::key_down(&mut game.keys, k);
         }
     }
     game.left = game.physical_buttons.contains(&MouseButton::Left);

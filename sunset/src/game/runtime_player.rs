@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): blocks and items, Scaffold, Legit Sneak, Auto Eat, block scans and inventory clicks.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset_util::block_pos;
@@ -23,7 +24,7 @@ pub(super) fn parkour_jump(game: &Game<'_>, m: &Module) -> bool {
         return false;
     };
     let (forward, side) = move_input(game);
-    let held = |k: KeyCode| game.keys.contains(&k);
+    let held = |k: KeyCode| game.keys.raw(&k);
     if !p.ground.on_ground
         || held(KeyCode::Space)
         || (forward == 0.0 && side == 0.0)
@@ -198,7 +199,7 @@ pub(super) fn scaffold_fade() {
 // go, if it was Scaffold's and you are not holding it yourself.
 pub(super) fn legit_sneak(game: &mut Game<'_>, down: bool) {
     let ours = with(|s| s.scaffold_sneak);
-    if down && !game.keys.contains(&KeyCode::ShiftLeft) {
+    if down && !game.keys.raw(&KeyCode::ShiftLeft) {
         game.keys.insert(KeyCode::ShiftLeft);
         with(|s| s.scaffold_sneak = true);
     } else if !down && ours {

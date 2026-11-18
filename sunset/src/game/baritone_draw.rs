@@ -1,4 +1,5 @@
 // The engine supplies positions only. Sunset owns projection, palette, shapes and frame/DPI stroke width.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::{Dim, Game};
 use super::sunset::{Camera, Canvas, Module, gui_open, line};
@@ -8,11 +9,9 @@ use std::collections::HashSet;
 
 pub(super) fn draw(game: &Game<'_>, camera: &Camera, modules: &[Module], out: &mut impl Canvas, line_width: f32) {
     let Some(module) = modules.iter().find(|m| m.name == "Baritone" && m.on) else { return };
-    if !game.native_window() || !game.native_playing() || game.ui.hide_gui || gui_open() || game.player.is_none() { return; }
+    if !game.sunset_window() || !game.native_playing() || game.ui.hide_gui || gui_open() || game.player.is_none() { return; }
     let Some(snapshot) = super::sunset_baritone::draw_snapshot() else { return };
-    let dimension = match game.dim {
-        Dim::Overworld => "minecraft:overworld", Dim::Nether => "minecraft:the_nether", Dim::End => "minecraft:the_end",
-    };
+    let dimension = game.dim.id();
     if snapshot.job == 0 || snapshot.world != super::sunset_seedcracker::world_id(game) || snapshot.dimension != dimension { return; }
     let look = Look::of(module);
     let width = line_width * bounded(module.n("Line width"), 0.5, 4.0, 1.0) as f32;
@@ -61,7 +60,7 @@ fn block(
         let b = translated(shape, base);
         valid_box(b) && draw_box(camera, out, look, [b[0], b[1], b[2]], [b[3], b[4], b[5]], colour, width)
     };
-    if let Some(shape) = game.context_outline(pos, state) { return draw(out, shape); }
+    if let Some(shape) = game.context_outline(pos, state, true, &game.be_anims) { return draw(out, shape); }
     let fact = game.res.facts().get(state);
     if fact.outline.is_empty() { return draw(out, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]); }
     let offset = if fact.outline_offset {

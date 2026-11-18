@@ -1,5 +1,6 @@
 // World modules implemented for Sunset: Auto Shearer, Auto Nametag,
 // Auto Mount, Auto Breed, Flamethrower; and Bow Aimbot and Spawner Alerts.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::sunset::{Camera, Canvas, Category, Module, hold};
 use super::sunset_util::*;
@@ -7,7 +8,7 @@ use super::Game;
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use horizon_client::containers::BlockEntity;
 use horizon_client::mobs::spawner::SpawnerExt;
-use horizon_world::nbt::{JavaString, Tag};
+use horizon_core::nbt::{JavaString, Tag};
 use std::sync::Mutex;
 
 pub(super) fn defaults() -> Vec<Module> {
@@ -444,7 +445,7 @@ fn auto_nametag(game: &mut Game<'_>, m: &Module) {
 }
 
 fn auto_mount(game: &mut Game<'_>, m: &Module) {
-    if game.riding.is_some() || game.keys.contains(&winit::keyboard::KeyCode::ShiftLeft) {
+    if game.riding.is_some() || game.keys.raw(&winit::keyboard::KeyCode::ShiftLeft) {
         return;
     }
     if game.held().is_some_and(|s| short(&s.item).ends_with("_spawn_egg")) {
@@ -452,7 +453,7 @@ fn auto_mount(game: &mut Game<'_>, m: &Module) {
     }
     let (list, blacklist) = (m.t("Entities").to_owned(), m.p("List mode") == "Blacklist");
     let eye = game.eye_position().unwrap_or([0.0; 3]);
-    let saddled = |t: &Target| game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.extra.saddled);
+    let saddled = |t: &Target| game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.extra.saddled());
     let pick = every_living(game).into_iter().find(|t| {
         if t.player || dist(eye, t.pos) > 4.0 || cooling(t.id) || listed(&list, &t.kind) == blacklist {
             return false;
@@ -685,7 +686,7 @@ pub(super) fn spawner_labels(game: &Game<'_>, cam: &Camera, range: f64, out: &mu
                 continue;
             };
             let text = format!("{label} {d:.0}m");
-            let tw = game.native_text_width(&text);
+            let tw = game.sunset_text_width(&text);
             out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000);
             out.text(&text, [x - tw / 2.0, y], 0xFFAA00);
         }

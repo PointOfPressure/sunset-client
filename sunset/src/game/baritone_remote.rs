@@ -1,11 +1,19 @@
 // Read the native prediction handler rather than treating client-predicted air as a confirmed break.
 use crate::game::Game;
 
-impl Game<'_> {
+// Methods on the game, as an extension trait: a support module can't add inherent methods to the game's own type.
+pub(crate) trait SunsetBaritone {
+    fn sunset_baritone_tool_strength(&self, state_id: u32, slot: usize) -> Option<(f64, bool)>;
+    fn sunset_baritone_click_counts(&self) -> [u32; 3];
+    fn sunset_baritone_cancel_clicks(&mut self, clicks: [u32; 3]);
+    fn sunset_baritone_observation( &self, pos: [i32; 3], ) -> Option<(u32, Option<(i32, u32)>)>;
+}
+
+impl SunsetBaritone for Game<'_> {
     // Read-only counterpart of the native mining formula. It never changes the held slot or dispatches mutable
     // native break-speed hooks; the actual dig still runs those hooks through Horizon's mapped input tick.
     #[allow(dead_code)] // Optional API v3 host read: the companion is not required to be installed.
-    pub(in crate::game) fn sunset_baritone_tool_strength(&self, state_id: u32, slot: usize) -> Option<(f64, bool)> {
+    fn sunset_baritone_tool_strength(&self, state_id: u32, slot: usize) -> Option<(f64, bool)> {
         use horizon_items::mining::{DestroySpeedModifiers, destroy_progress, destroy_speed};
         use horizon_client::blocks::Fluid;
         let id = horizon_world::registry::BlockStateId(state_id);
@@ -47,21 +55,21 @@ impl Game<'_> {
         Some((f64::from(progress.max(0.0)), harvest))
     }
 
-    pub(in crate::game) fn sunset_baritone_click_counts(&self) -> [u32; 3] {
-        self.remote.as_ref().map_or([self.attack_clicks, self.use_clicks, 0], |r|
+    fn sunset_baritone_click_counts(&self) -> [u32; 3] {
+        self.remote.as_ref().map_or([self.attack_clicks.count(), self.use_clicks.count(), 0], |r|
             crate::game::sunset_owned_clicks::counts(&r.input))
     }
 
-    pub(in crate::game) fn sunset_baritone_cancel_clicks(&mut self, clicks: [u32; 3]) {
+    fn sunset_baritone_cancel_clicks(&mut self, clicks: [u32; 3]) {
         if let Some(r) = self.remote.as_mut() {
             crate::game::sunset_owned_clicks::cancel(&mut r.input, clicks);
         } else {
-            self.attack_clicks = self.attack_clicks.saturating_sub(clicks[0]);
-            self.use_clicks = self.use_clicks.saturating_sub(clicks[1]);
+            crate::game::sunset_owned_clicks::trim(&mut self.attack_clicks, clicks[0]);
+            crate::game::sunset_owned_clicks::trim(&mut self.use_clicks, clicks[1]);
         }
     }
 
-    pub(in crate::game) fn sunset_baritone_observation(
+    fn sunset_baritone_observation(
         &self, pos: [i32; 3],
     ) -> Option<(u32, Option<(i32, u32)>)> {
         if !self.world.loaded(pos[0], pos[2]) { return None; }

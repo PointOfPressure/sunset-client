@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): drawing the click GUI: text measuring, pickers, panels and the profile menu.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset_text_edit::Draft;
@@ -23,7 +24,7 @@ fn measured<R>(f: impl FnOnce(&mut Measured) -> R) -> R {
 
 // Once a frame, while the menu draws.
 fn check_measured(game: &Game<'_>) {
-    let font = game.native_text_width("Mm");
+    let font = game.sunset_text_width("Mm");
     measured(|m| {
         if m.font != font || m.widths.len() + m.cuts.len() > 4096 {
             *m = Measured { font, ..Measured::default() };
@@ -44,7 +45,7 @@ fn width_of(game: &Game<'_>, text: &str) -> f32 {
     if let Some(width) = measured(|m| m.widths.get(&key).copied()) {
         return width;
     }
-    let width = game.native_text_width(text);
+    let width = game.sunset_text_width(text);
     measured(|m| m.widths.insert(key, width));
     width
 }
@@ -55,11 +56,11 @@ pub(super) fn fit_to(game: &Game<'_>, text: &str, max: f32) -> String {
     if let Some(cut) = measured(|m| m.cuts.get(&key).cloned()) {
         return cut;
     }
-    let cut = if game.native_text_width(text) <= max {
+    let cut = if game.sunset_text_width(text) <= max {
         text.to_owned()
     } else {
         let mut t = text.to_owned();
-        while !t.is_empty() && game.native_text_width(&format!("{t}...")) > max {
+        while !t.is_empty() && game.sunset_text_width(&format!("{t}...")) > max {
             t.pop();
         }
         format!("{t}...")
@@ -121,7 +122,7 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
     let done = pick::done_button(r);
     out.push(Shape::Text(fit(&note, done[0] - x - 12.0), [x + 8.0, done[1] + text_y(done[3])], 0x909090));
     out.push(Shape::Round(done, panel_radius(), solid(accent())));
-    let tw = game.native_text_width("Done");
+    let tw = game.sunset_text_width("Done");
     out.push(Shape::Text("Done".to_owned(), [done[0] + (done[2] - tw) / 2.0, done[1] + text_y(done[3])], 0xFFFFFF));
 }
 
@@ -306,7 +307,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                                 };
                                 out.push(Shape::Round([fx - 3.0, y + 1.0, fw, row_hh() - 2.0], control, colour));
                                 out.push(Shape::Text(draft.text().to_owned(), [fx, y + text_y(row_hh())], 0xFFFFFF));
-                                let caret = game.native_text_width(&draft.text()[..draft.caret()]);
+                                let caret = game.sunset_text_width(&draft.text()[..draft.caret()]);
                                 out.push(Shape::Fill([fx + caret, y + 3.0, 1.0, row_hh() - 6.0], solid(accent())));
                                 fw
                             }
@@ -384,7 +385,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
             let name = CATEGORIES[c].label();
             let on = modules.iter().filter(|m| m.category == CATEGORIES[c] && m.in_gui && m.on).count();
             let count = format!("{on}");
-            let cw = game.native_text_width(&count);
+            let cw = game.sunset_text_width(&count);
             out.push(Shape::Head(fit(name, rw - indent() - RIGHT_PAD - cw - 3.0), [x + indent(), y + text_y(rh)], 0xFFFFFF));
             out.push(Shape::Text(count, [x + rw - RIGHT_PAD - cw, y + text_y(rh)], 0x808080));
             // The scroll marker: how much of the panel shows, and where.
@@ -482,7 +483,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         };
         // Wrapped to half the screen and kept on it.
         let lines = wrap(game, &about, (w * 0.5).max(120.0).min(w - 16.0));
-        let tw = lines.iter().map(|l| game.native_text_width(l)).fold(0.0, f32::max);
+        let tw = lines.iter().map(|l| game.sunset_text_width(l)).fold(0.0, f32::max);
         let th = lines.len() as f32 * 10.0 + 4.0;
         let bx = (at.0 + 8.0).min(w - tw - 8.0).max(0.0);
         let by = (at.1 + 10.0).min(h - th).max(0.0);
@@ -493,7 +494,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     }
     // A setting's name cut short, whole under the pointer.
     if let (Some(Hit::Setting(..)), Some(name)) = (hover, whole) {
-        let tw = game.native_text_width(name);
+        let tw = game.sunset_text_width(name);
         let bx = (at.0 + 8.0).min(w - tw - 8.0).max(0.0);
         let by = (at.1 + 10.0).min(h - 14.0);
         out.push(Shape::Round([bx, by, tw + 8.0, 14.0], panel_radius(), 0xF80A_0A0A));
@@ -520,11 +521,11 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                 // The end of the text near the caret shows, with the caret at its place.
                 let before = &draft.text()[..draft.caret()];
                 let mut from = 0;
-                while game.native_text_width(&before[from..]) > room - 4.0 {
+                while game.sunset_text_width(&before[from..]) > room - 4.0 {
                     from += before[from..].chars().next().map_or(1, char::len_utf8);
                 }
                 let shown = fit(&draft.text()[from..], room);
-                let caret = game.native_text_width(&before[from..]);
+                let caret = game.sunset_text_width(&before[from..]);
                 out.push(Shape::Text(shown, [x + 10.0, y + 22.0 + text_y(16.0)], 0xFFFFFF));
                 out.push(Shape::Fill([x + 10.0 + caret, y + 25.0, 1.0, 10.0], solid(accent())));
                 draft.error.unwrap_or("Enter or Apply keeps it, Esc or Cancel leaves it as it was")
@@ -535,7 +536,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         let (apply, cancel) = editor_buttons(r);
         for (b, label, colour) in [(apply, "Apply", solid(accent())), (cancel, "Cancel", 0xFF3A_3A3A)] {
             out.push(Shape::Round(b, panel_radius(), colour));
-            let tw = game.native_text_width(label);
+            let tw = game.sunset_text_width(label);
             out.push(Shape::Text(label.to_owned(), [b[0] + (b[2] - tw) / 2.0, b[1] + text_y(b[3])], 0xFFFFFF));
         }
     }
@@ -553,11 +554,11 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         (format!("Search: {search}_"), accent())
     };
     let selected = with(|s| s.gui.select_all) && !search.is_empty();
-    let lw_ = game.native_text_width(&text);
+    let lw_ = game.sunset_text_width(&text);
     out.push(Shape::Round([(w - lw_) / 2.0 - 6.0, 14.0, lw_ + 12.0, 14.0], panel_radius(), if selected { 0xFF30_60B0 } else { bg(0xC00E_0E0E) }));
     out.push(Shape::Text(text, [(w - lw_) / 2.0, 14.0 + text_y(14.0)], if selected { 0xFFFFFF } else { colour }));
     let hint = "Right click: settings   Enter: toggle search result   Esc: close";
-    let hw = game.native_text_width(hint);
+    let hw = game.sunset_text_width(hint);
     out.push(Shape::Text(hint.to_owned(), [(w - hw) / 2.0, 3.0], 0xA0A0A0));
 }
 

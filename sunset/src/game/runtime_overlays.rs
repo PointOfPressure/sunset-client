@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): world and entity overlays, trajectories and storage.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset_visual::{Draw, Kinds, Look, distance_colour, draw_box, faded, potato};
@@ -93,7 +94,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
                 if item.stack.count > 1 {
                     let _ = write!(text, " x{}", item.stack.count);
                 }
-                let tw = game.native_text_width(&text);
+                let tw = game.sunset_text_width(&text);
                 out.fill([x - tw / 2.0 - 2.0, y - 14.0, tw + 4.0, 12.0], 0x7800_0000);
                 out.text(&text, [x - tw / 2.0, y - 12.0], colour & 0x00FF_FFFF);
             }
@@ -201,7 +202,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
                 if let Some([x, y]) = cam.project([sp.pos[0], sp.pos[1] + 2.2, sp.pos[2]]) {
                     text.clear();
                     let _ = write!(text, "{} logged out {}m ago", sp.name, game.ticks.saturating_sub(sp.at) / 1200);
-                    let tw = game.native_text_width(&text);
+                    let tw = game.sunset_text_width(&text);
                     out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000);
                     out.text(&text, [x - tw / 2.0, y], 0xFF5555);
                 }
@@ -252,7 +253,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
                 };
                 text.clear();
                 let _ = write!(text, "{} {}m", w.name, d.round());
-                let tw = game.native_text_width(&text);
+                let tw = game.sunset_text_width(&text);
                 out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000);
                 out.text(&text, [x - tw / 2.0, y], accent());
                 out.fill([x - 1.0, y + 11.0, 2.0, 4.0], colour);
@@ -415,7 +416,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             drawn[2] += 1;
             super::sunset_util::name_into(game, mob, &mut name);
             let name_colour = if friend { 0x55FFFF } else { tag_colour };
-            let nw = game.native_text_width(&name);
+            let nw = game.sunset_text_width(&name);
             if kind == Kind::Player {
                 tagged.push((mob.id, [x, y - 2.0]));
             }
@@ -444,7 +445,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             if show_distance {
                 let _ = write!(tail, " {}m", d.round() as i64);
             }
-            let (hw, tw) = (game.native_text_width(&hp), game.native_text_width(&tail));
+            let (hw, tw) = (game.sunset_text_width(&hp), game.sunset_text_width(&tail));
             let gap = if hp.is_empty() { 0.0 } else { 4.0 };
             let total = nw + gap + hw + tw;
             let x0 = x - total / 2.0;
@@ -496,7 +497,7 @@ pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, m: &Module, out: &mut im
                 && let Some([x, y]) = cam.project(f.land).filter(|p| cam.on_screen(*p, 50.0))
             {
                 let tag = format!("{:.1}s", f64::from(f.ticks) / 20.0);
-                let tw = game.native_text_width(&tag);
+                let tw = game.sunset_text_width(&tag);
                 out.fill([x - tw / 2.0 - 2.0, y - 14.0, tw + 4.0, 12.0], 0x7800_0000);
                 out.text(&tag, [x - tw / 2.0, y - 12.0], colour);
             }

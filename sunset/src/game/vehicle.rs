@@ -35,7 +35,7 @@ pub(super) fn boat(game: &Game<'_>, velocity: Vec3, on_ground: bool, in_water: b
 }
 
 fn drive(game: &Game<'_>, m: &Module, velocity: Vec3, on_ground: bool, in_water: bool) -> (Vec3, Option<f32>) {
-    let held = |k: KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
+    let held = |k: KeyCode| game.keys.raw(&k) || game.physical_keys.contains(&k);
     let mut v = velocity;
     if m.b("Speed") && (!m.b("Only on ground") || on_ground || m.b("Fly")) && (m.b("In water") || !in_water) {
         // Turn the keys' direction by the view.

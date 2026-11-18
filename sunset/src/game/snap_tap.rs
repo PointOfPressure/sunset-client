@@ -49,7 +49,7 @@ fn losers(held: [bool; 4], pressed: [u64; 4], forward_back: bool) -> Vec<(usize,
 // Before the tick: the presses seen since the last one counted, then the losing keys taken out. Returns them, for GUI
 // Move's keys behind a screen.
 pub(super) fn pre_tick(game: &mut Game<'_>, m: Option<&Module>) -> Vec<KeyCode> {
-    let held = KEYS.map(|k| game.keys.contains(&k) || game.physical_keys.contains(&k));
+    let held = KEYS.map(|k| game.keys.raw(&k) || game.physical_keys.contains(&k));
     let order = snap(|s| {
         // Keys first seen in the same tick share their count.
         let new = std::array::from_fn::<bool, 4, _>(|i| held[i] && !s.held[i]);
@@ -84,7 +84,7 @@ pub(super) fn last() -> Vec<(KeyCode, KeyCode)> {
 // key, a death or a screen, keeps it out).
 pub(super) fn post_tick(game: &mut Game<'_>) {
     for (key, winner) in snap(|s| std::mem::take(&mut s.took)) {
-        if game.keys.contains(&winner) {
+        if game.keys.raw(&winner) {
             game.keys.insert(key);
         }
     }

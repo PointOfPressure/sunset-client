@@ -1,6 +1,7 @@
 // Anchor Aura (Rust's, PR #16): places, charges and sets off
 // respawn anchors on enemy players outside the Nether. Each step waits for the server to show the block changed; the
 // client never predicts it.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{Category, Module, cancel_turns, gui_open, look_at, try_turn_then, with};
 use super::sunset_anchor_state::{self as order, Step, Wait};
 use super::sunset_explosive_aura::Rating;

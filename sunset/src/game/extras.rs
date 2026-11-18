@@ -4,6 +4,7 @@
 // sort key does the same, on the hotbar only while the pointer is on it. The clicks go out a few a tick, an operation
 // at least two ticks after the one before. Shift fill shift-clicks the slot under the pointer
 // while you hold Shift and the left button.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::sunset::{Category, Module};
 use super::Game;
@@ -59,7 +60,7 @@ pub(super) fn note_hover(slot: Option<usize>) {
 // in five.
 fn shift_fill(game: &mut Game<'_>, m: &Module) {
     let held = (game.physical_buttons.contains(&winit::event::MouseButton::Left) || game.left)
-        && [KeyCode::ShiftLeft, KeyCode::ShiftRight].iter().any(|k| game.physical_keys.contains(k) || game.keys.contains(k));
+        && [KeyCode::ShiftLeft, KeyCode::ShiftRight].iter().any(|k| game.physical_keys.contains(k) || game.keys.raw(k));
     let now = std::time::Instant::now();
     let Some(slot) = fill(|f| f.hovered).filter(|_| held && game.carried.is_none()) else {
         fill(|f| f.last = None);

@@ -2,6 +2,7 @@
 // Rotations, No Status Effects (render.rs keeps the effects aside), Mine Through Mobs
 // (player.rs's crosshair pick reads it), Portals, Multitask, Fake Player (single player only), Quiver,
 // Liquid Interact and No Interact (with Hit select in click_fix.rs).
+use crate::game::sunset_compat::SunsetGame as _;
 use super::{Game, Screen};
 use super::sunset::{Category, Module, with};
 use super::sunset_util::{self as util, facts, feet_block, find_held, is_air, listed, place_block, short, toggle_off};
@@ -282,9 +283,7 @@ fn fake_player(game: &mut Game<'_>, m: Option<&Module>) {
             if m.b("Copy inventory") {
                 let e = &mut mob.extra;
                 e.set_main_hand_stack(game.held().cloned());
-                e.off_hand = game.offhand.as_ref().map(|s| s.item.clone());
-                e.armor = game.armor.clone();
-                [e.head, e.chest, e.legs, e.feet] = std::array::from_fn(|i| game.armor[i].as_ref().map(|s| s.item.clone()));
+                crate::game::sunset_compat::wear(e, game.offhand.clone(), &game.armor);
             }
             game.mobs.push(mob);
             parity(|p| p.fake = true);
@@ -440,7 +439,7 @@ pub(super) fn use_blocked(game: &Game<'_>) -> bool {
 // the game makes it, or when that meets no block, the first water or lava along the look within reach as the block it
 // hits (its face the one the look comes in by).
 pub(super) fn liquid_pick(game: &Game<'_>) -> Option<Option<super::Hit>> {
-    if !LIQUID.load(Ordering::Relaxed) || game.forced_hit.is_some() || game.tick_hit.is_some() {
+    if !LIQUID.load(Ordering::Relaxed) || game.forced_hit.is_some() || game.tick_hit.get().flatten().is_some() {
         return None;
     }
     let Some((eye, dir)) = game.aim() else {
@@ -463,7 +462,7 @@ fn liquid_ray(game: &Game<'_>, eye: [f64; 3], dir: [f64; 3], reach: f64) -> Opti
                 let axis = (0..3).find(|&a| last[a] != pos[a]).unwrap_or(1);
                 let mut face = [0; 3];
                 face[axis] = (last[axis] - pos[axis]).signum();
-                return Some(super::Hit { pos, face, point });
+                return Some(super::Hit { pos, face, point, inside: false });
             }
             last = pos;
         }

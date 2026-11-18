@@ -1,5 +1,7 @@
 // Hand View: the totem pop sized and moved on the screen.
 fn sunset_totem_pose(value: Mat4, aspect: f32) -> Mat4 {
+    // Names the module's Mth import, which the game's copy of this function needs for its own trigonometry.
+    let _: fn(f32) -> f32 = <f32 as Mth>::msin;
     if !::sunset_core::lifecycle::RUNTIME.running() { return value; }
 
     let Some(pop) = ::sunset_core::hand_view::TOTEM.read().ok().and_then(|t| *t) else {

@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): velocity, Flight, strafe, Bhop and Speed, and pushes.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use horizon_protocol::packets::play::{self, Serverbound as S};
@@ -259,7 +260,7 @@ pub(super) fn bhop(game: &Game<'_>, m: &Module, base: f64, scale: f64) -> Option
     };
     let ground = p.ground.on_ground;
     // The jump goes this tick: on the ground with jump held (pressed by Bhop, or by you with Hop when Jump held).
-    let jumping = ground && game.keys.contains(&KeyCode::Space);
+    let jumping = ground && game.keys.raw(&KeyCode::Space);
     let (hop, gain, max) = (m.n("Hop speed") / 20.0, m.n("Hop gain (%)") / 100.0, m.n("Hop max speed") / 20.0);
     let (slope, friction) = (m.n("Hop slope").clamp(0.0, 1.0), (m.n("Air friction (%)") / 100.0).clamp(0.0, 1.0));
     let boost = m.b("Damage boost");
@@ -356,9 +357,9 @@ pub(super) fn bhop_hops(game: &Game<'_>, m: &Module) -> bool {
         && !p.flying
         && !p.fall_flying
         && game.riding.is_none()
-        && (m.b("When sneaking") || !game.keys.contains(&KeyCode::ShiftLeft))
+        && (m.b("When sneaking") || !game.keys.raw(&KeyCode::ShiftLeft))
         && (m.b("In liquids") || !(p.fluids.was_touching_water || p.is_in_lava()))
-        && !game.block_in_tag("minecraft:climbable", &game.block_name(feet))
+        && !game.sunset_block_in_tag("minecraft:climbable", &game.block_name(feet))
 }
 
 // NCP's distinct controller; actual attributes include Speed/Slowness and server modifications. Remove only the
@@ -411,9 +412,9 @@ pub(super) fn legacy_strafe_frame(
     game: &mut Game<'_>,
 ) -> Option<(super::sunset_legacy_speed::Input, super::sunset_legacy_speed::Allowance)> {
     use super::sunset_legacy_speed::{Allowance, Input};
-    let held = |k: KeyCode| f64::from(u8::from(game.keys.contains(&k)));
+    let held = |k: KeyCode| f64::from(u8::from(game.keys.raw(&k)));
     let (forward, left) = (held(KeyCode::KeyW) - held(KeyCode::KeyS), held(KeyCode::KeyA) - held(KeyCode::KeyD));
-    let sneaking = game.keys.contains(&KeyCode::ShiftLeft);
+    let sneaking = game.keys.raw(&KeyCode::ShiftLeft);
     let no_slow = with(|s| s.module("No Slow").filter(|m| m.on).map(|m| [m.n("Ground %"), m.n("Air %")]));
     let using = game.using.is_some() || super::sunset_hands::legacy_using();
     let level = |id: &str| game.potions.effects.amplifier(id).map(|a| (a + 1).max(0) as u32);
@@ -496,7 +497,7 @@ pub(super) fn watchdog_stop(game: &mut Game<'_>, reset: bool) {
 pub(super) fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     if m.p("Mode") != "Watchdog" { watchdog_stop(game, true); }
     let p = game.player.as_ref()?;
-    let held = |k: KeyCode| game.keys.contains(&k);
+    let held = |k: KeyCode| game.keys.raw(&k);
     let feet = [p.position.x.floor() as i32, p.position.y.floor() as i32, p.position.z.floor() as i32];
     let mode = m.p("Mode");
     if mode != "NCP" { with(|s| s.ncp.reset()); }
@@ -529,7 +530,7 @@ pub(super) fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option
     let effect = |id: &str| game.potions.effects.amplifier(id).map_or(0.0, |a| f64::from(a + 1));
     // Sunset's stopSpeed.
     if p.fall_flying
-        || game.block_in_tag("minecraft:climbable", &game.block_name(feet))
+        || game.sunset_block_in_tag("minecraft:climbable", &game.block_name(feet))
         || game.riding.is_some()
         || (!m.b("When sneaking") && held(KeyCode::ShiftLeft))
         || (vanilla && m.b("Only on ground") && !p.ground.on_ground)

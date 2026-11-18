@@ -5,8 +5,13 @@
 // Scaffold's Normal: the move goes by the yaw the server is told (movement correction; Silent already turned the keys
 // before the tick, so the PlayerInput sent says the same keys), and without a sprint when its Sprint is Off. Both are
 // taken here, so the call again passes.
-fn sunset_screen_keys(world: &mut MotionWorld<'_, '_, '_>, keys: crate::sprint::Keys, window: i32) -> std::ops::ControlFlow<Result<()>> {
-    if !::sunset_core::lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
+fn sunset_screen_keys(
+    mut world: MotionWorld<'_, '_, '_>,
+    keys: horizon_client::sprint::Keys,
+    window: i32,
+    operation: impl FnOnce(MotionWorld<'_, '_, '_>, horizon_client::sprint::Keys, i32) -> Result<()>,
+) -> Result<()> {
+    if !::sunset_core::lifecycle::RUNTIME.running() { return operation(world, keys, window); }
 
     let block_scale = ::sunset_core::motion::take_block_use_scale();
     if (world.player.item_use_speed.is_some() || block_scale.is_some()) && ::sunset_core::motion::no_slow_grim() {
@@ -23,7 +28,27 @@ fn sunset_screen_keys(world: &mut MotionWorld<'_, '_, '_>, keys: crate::sprint::
         world.player.velocity.z *= cut;
         let _ = world.player.set_sprinting(false);
     }
-    let screen = ::sunset_core::motion::screen_keys(keys);
+    let core = ::sunset_core::motion::Keys {
+        forward: keys.forward,
+        backward: keys.backward,
+        left: keys.left,
+        right: keys.right,
+        jump: keys.jump,
+        shift: keys.shift,
+        sprint: keys.sprint,
+        analog: keys.analog,
+    };
+    let screen = ::sunset_core::motion::screen_keys(core).map(|k| horizon_client::sprint::Keys {
+        forward: k.forward,
+        backward: k.backward,
+        left: k.left,
+        right: k.right,
+        jump: k.jump,
+        shift: k.shift,
+        sprint: k.sprint,
+        analog: k.analog,
+        ..keys
+    });
     let turn = ::sunset_core::motion::take_move_yaw();
     let no_sprint = ::sunset_core::motion::take_no_sprint() || block_scale.is_some_and(|s| s < 1.0);
     let freeze = ::sunset_core::motion::take_freeze();
@@ -32,7 +57,7 @@ fn sunset_screen_keys(world: &mut MotionWorld<'_, '_, '_>, keys: crate::sprint::
         (a, b) => a.or(b),
     };
     if screen.is_none() && turn.is_none() && !no_sprint && !freeze && scale.is_none() {
-        return std::ops::ControlFlow::Continue(());
+        return operation(world, keys, window);
     }
     let mut keys = screen.unwrap_or(keys);
     if let Some(scale) = scale {
@@ -53,9 +78,9 @@ fn sunset_screen_keys(world: &mut MotionWorld<'_, '_, '_>, keys: crate::sprint::
     if let Some(yaw) = turn {
         world.player.yaw = yaw;
     }
-    let done = world.controlled_simulation_tick_with_sprint_window(keys, window);
+    // The view comes back after the move (screen_keys_after): the world goes into the move.
     if turn.is_some() {
-        world.player.yaw = view;
+        ::sunset_core::motion::set_restore_yaw(Some(view));
     }
-    std::ops::ControlFlow::Break(done)
+    operation(world, keys, window)
 }

@@ -50,7 +50,7 @@ pub(super) fn direction(game: &Game<'_>, m: &Module, speed_on: bool) -> Option<[
     if !wanted {
         return None;
     }
-    let (left, right) = (game.keys.contains(&KeyCode::KeyA), game.keys.contains(&KeyCode::KeyD));
+    let (left, right) = (game.keys.raw(&KeyCode::KeyA), game.keys.raw(&KeyCode::KeyD));
     let ticks = game.ticks;
     let wall = p.collision.horizontal;
     let side = way(|w| {

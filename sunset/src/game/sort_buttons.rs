@@ -63,7 +63,7 @@ pub(crate) fn press(game: &mut Game<'_>) -> bool {
     let Some(r) = game.renderer.as_ref() else {
         return false;
     };
-    let batch = HudBatch::new([r.config.width, r.config.height]);
+    let batch = HudBatch::new([r.config.width, r.config.height], game.settings.gui_scale_inputs());
     let (ox, oy) = game.inventory_origin(&batch);
     let (cx, cy) = game.cursor;
     let hit = buttons(game).into_iter().find(|((x, y), ..)| {

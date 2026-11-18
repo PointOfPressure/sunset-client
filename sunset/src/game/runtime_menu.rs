@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): the menu on the Mods page, toggling modules, keys and binds.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset_bind_state::Held;
@@ -7,21 +8,6 @@ use winit::keyboard::KeyCode;
 use super::sunset::*;
 
 // ---------------------------------------------------------------- the menu
-
-// Sunset's row in Options > Mods; none after Panic, when the list is made again (`unlist` took the one it had).
-pub(super) fn listed(mods: &mut Vec<super::native_hooks::NativeMod>) {
-    if !running() { return; }
-    super::sunset_session::sweep();
-    mods.push(super::native_hooks::NativeMod {
-        id: ID.into(),
-        title: format!("{NAME} {VERSION}"),
-        description: DESCRIPTION.into(),
-        keys: vec![
-            [MENU_KEY.into(), "Open Sunset menu".into(), MENU_DEFAULT.into()],
-            [MENU2_KEY.into(), "Open Sunset menu (2nd key)".into(), MENU2_DEFAULT.into()],
-        ],
-    });
-}
 
 pub(super) fn mod_index(game: &Game<'_>) -> Option<usize> {
     game.settings.mods.installed.iter().position(|m| m.id == ID)
@@ -309,7 +295,7 @@ pub(super) fn set_bind(s: &mut State, module: usize, key: Option<String>) {
 // Each tick, whatever the screen: keys let go of where no release came (from what is physically down), and no holds
 // while the menu or a screen has the input (another window taking it is the window's Focused event, in bind_event).
 pub(super) fn sync_binds(game: &Game<'_>) {
-    if !game.native_window() {
+    if !game.sunset_window() {
         return;
     }
     with(|s| {
@@ -375,7 +361,7 @@ pub(super) fn bind_event(event: &winit::event::WindowEvent) {
 pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     finish_shutdown(game);
     if !running() { return; }
-    if !game.native_window() {
+    if !game.sunset_window() {
         return;
     }
     ensure_loaded(game);

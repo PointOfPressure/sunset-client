@@ -1,30 +1,43 @@
-// Sunset's Ore Sim, the part that needs the bundle's own world presets: the decoration of a preset's dimension
-// (built once and cached by the bundle, as a world opening builds it), handed to the replay.
+// Sunset's Ore Sim, the part that replays the world generator's ore placement. On this Horizon build the generator's
+// decoration (horizon_world::worldgen::generator_decoration) is a private module that function replacement can't
+// reach, so the replay is not available: ore_sim says so and Ore Sim shows the message instead of boxes. The rest of
+// the module (its settings, the view of the world, the drawing) is kept for when the generator exposes it again.
 
-pub use crate::game::sunset_ore_sim_replay::{KINDS, OreSim, SeenWorld};
-use horizon_world::worldgen::generator::GeneratorData;
-use std::sync::Arc;
+pub const KINDS: [&str; 10] = ["coal", "copper", "iron", "lapis", "redstone", "gold", "diamond", "emerald", "quartz", "debris"];
 
-// The ore roots of `preset`'s `dimension`, ready to replay for any seed: `build` is the level's build range
-// (minimum, height), `generation` the generator's (minimum, height, sea level). None when the bundle has no
-// features for it.
+// What the replay reads of the world the player sees.
+pub trait SeenWorld {
+    // The block at a position, None where no chunk is loaded.
+    fn block(&self, p: [i32; 3]) -> Option<horizon_world::registry::BlockStateId>;
+    // The decoration biome (an index into the bundle's biome names) at a position.
+    fn biome(&self, p: [i32; 3]) -> Option<u32>;
+    // One above the highest solid block of a column (OCEAN_FLOOR_WG).
+    fn floor(&self, x: i32, z: i32) -> Option<i32>;
+    // The decoration biomes of the 3x3 chunks round this one, which choose the roots that run.
+    fn biomes_near(&self) -> Vec<u32>;
+}
+
+// A dimension's ore roots, ready to replay: never made on this build.
+pub enum OreSim {}
+
+impl OreSim {
+    pub fn biome_index(&self, _name: &str) -> Option<u32> {
+        match *self {}
+    }
+    pub fn roots(&self) -> usize {
+        match *self {}
+    }
+    pub fn chunk(&self, _seed: i64, _x: i32, _z: i32, _seen: &impl SeenWorld) -> Vec<([i32; 3], u8)> {
+        match *self {}
+    }
+}
+
 pub fn ore_sim(
-    data: &Arc<GeneratorData>,
-    preset: &str,
-    dimension: &str,
-    build: (i32, i32),
-    generation: (i32, i32, i32),
+    _data: &std::sync::Arc<horizon_world::worldgen::generator::GeneratorData>,
+    _preset: &str,
+    _dimension: &str,
+    _build: (i32, i32),
+    _generation: (i32, i32, i32),
 ) -> Result<Option<OreSim>, String> {
-    let preset_json: serde_json::Value =
-        serde_json::from_str(data.world_presets.get(preset).ok_or("no such world preset")?).map_err(|e| e.to_string())?;
-    let source_json = preset_json["dimensions"][dimension]["generator"]["biome_source"].to_string();
-    let source = data
-        .source_catalog
-        .decode(&source_json)
-        .map_err(|e| e.to_string())?
-        .resolve(&data.presets)
-        .map_err(|e| e.to_string())?;
-    let decoration = data.decoration_for(&source_json, &source).map_err(|e| e.to_string())?;
-    let context = horizon_world::worldgen::anchor::WorldGenerationContext::new(generation.0, generation.1, generation.2);
-    Ok(decoration.map(|d| OreSim::new(d, data.registry(), data.biome_names(), build, context)))
+    Err("Ore Sim needs the world generator's ore placement, which this Horizon build keeps private".into())
 }

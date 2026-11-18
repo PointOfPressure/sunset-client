@@ -1,5 +1,6 @@
 // Telly's jump cycle is separate from Normal's aiming presets. Movement, placement and returning all follow the
 // look actually forwarded by the connection; the camera never supplies an unforwarded placement ray.
+use crate::game::sunset_compat::SunsetGame as _;
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 enum Phase {
     #[default]
@@ -166,17 +167,17 @@ mod native {
     }
 
     pub(crate) fn manual_use_blocked(game: &Game<'_>) -> bool {
-        game.native_window() && BLOCK_USE.with(Cell::get) && !PLACING.with(Cell::get)
+        crate::game::sunset_compat::SunsetGame::sunset_window(&*game) && BLOCK_USE.with(Cell::get) && !PLACING.with(Cell::get)
     }
 
     fn set_key(game: &mut Game<'_>, key: KeyCode, on: bool, before: &mut Option<bool>) {
-        let held = game.keys.contains(&key);
+        let held = game.keys.raw(&key);
         if held != on {
             before.get_or_insert(held);
             if on {
-                game.keys.insert(key);
+                crate::game::sunset_compat::key_down(&mut game.keys, key);
             } else {
-                game.keys.remove(&key);
+                crate::game::sunset_compat::key_up(&mut game.keys, &key);
             }
         }
     }
@@ -184,9 +185,9 @@ mod native {
     fn restore_key(game: &mut Game<'_>, key: KeyCode, before: &mut Option<bool>) {
         if let Some(held) = before.take() {
             if held {
-                game.keys.insert(key);
+                crate::game::sunset_compat::key_down(&mut game.keys, key);
             } else {
-                game.keys.remove(&key);
+                crate::game::sunset_compat::key_up(&mut game.keys, &key);
             }
         }
     }
@@ -208,6 +209,10 @@ mod native {
             collision_binding: game.collision,
             resources: game.motion,
             health: &game.health_resources,
+            loop_context: &game.loop_context,
+            damage_hooks: &game.damage_hooks,
+            tag_items: Some(world_items!(game)),
+            block_registries: Some(&game.pack.block_registries),
         }
         .no_player_collision(bounds)
         .unwrap_or(false)
@@ -365,9 +370,9 @@ mod native {
         if moves.iter().any(|k| game.physical_keys.contains(k)) {
             for k in moves {
                 if game.physical_keys.contains(&k) {
-                    game.keys.insert(k);
+                    crate::game::sunset_compat::key_down(&mut game.keys, k);
                 } else {
-                    game.keys.remove(&k);
+                    crate::game::sunset_compat::key_up(&mut game.keys, &k);
                 }
             }
         }
@@ -376,7 +381,7 @@ mod native {
         // bridges whichever way you walk (strafing too), and sprints doing it.
         let forward = input != (0.0, 0.0);
         let walk = normal::walk_yaw(camera.0, input);
-        let jump = game.keys.contains(&KeyCode::Space);
+        let jump = game.keys.raw(&KeyCode::Space);
         let keep = m.p("Keep Y") == "Telly" && (!m.b("Keep Y on press") || clicking);
         let automatic = t.run.advance(
             ground,
@@ -449,6 +454,7 @@ mod native {
                     pos: click.pos,
                     face: click.face,
                     point: click.point,
+                    inside: false,
                 };
                 let Some(cell) = remote::places_into(game, &hit, slot) else {
                     break;
@@ -558,7 +564,7 @@ mod native {
     }
 
     pub(crate) fn post_tick(game: &mut Game<'_>) {
-        if !game.native_window() {
+        if !crate::game::sunset_compat::SunsetGame::sunset_window(&*game) {
             return;
         }
         BLOCK_USE.with(|c| c.set(false));
@@ -569,9 +575,9 @@ mod native {
                     .zip(before)
                 {
                     if held {
-                        game.keys.insert(key);
+                        crate::game::sunset_compat::key_down(&mut game.keys, key);
                     } else {
-                        game.keys.remove(&key);
+                        crate::game::sunset_compat::key_up(&mut game.keys, &key);
                     }
                 }
             }

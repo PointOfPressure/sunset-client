@@ -76,7 +76,7 @@ pub(super) fn open(game: &Game<'_>, kind: ListKind) -> Picker {
             .chain(horizon_client::mobs::species::ALL.iter().map(|d| short(d.name)))
             .map(Into::into)
             .collect(),
-        ListKind::Particles => ::sunset_core::particles::names().into_iter().map(Into::into).collect(),
+        ListKind::Particles => horizon_client::particles::ParticleType::ALL.iter().map(|t| t.name().into()).collect(),
         ListKind::Players => online().into_iter().map(|(name, _)| name.into()).collect(),
     };
     names.retain(|n| !matches!(&**n, "air" | "cave_air" | "void_air"));

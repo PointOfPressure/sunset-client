@@ -4,6 +4,7 @@
 // mouse counts that the game's own move packet carries (see sunset_rotation). A hit goes within Attack range; with
 // Ray cast, only once the look the server has, or the one sent right after the hit, meets the target. It leaves the
 // look and the hand to Scaffold while Scaffold places.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::sunset::{Canvas, Category, Module, health_colour, hold, look_at, toggle_named};
 use super::sunset_aura_aim as aim;
@@ -1042,7 +1043,7 @@ pub(super) fn draw_target(game: &Game<'_>, w: f32, h: f32, potato: bool, out: &m
     let name = display_name(game, mob);
     let away = format!("{:.1}m", reach(eye, &mob_target(mob)));
     let health = format!("{:.1}", (mob.health * 10.0).round() / 10.0);
-    let (nw, aw, hw) = (game.native_text_width(&name), game.native_text_width(&away), game.native_text_width(&health));
+    let (nw, aw, hw) = (game.sunset_text_width(&name), game.sunset_text_width(&away), game.sunset_text_width(&health));
     let width = (nw + aw + 16.0).max(90.0);
     out.fill([x, y, width, 26.0], 0x9000_0000);
     out.text(&name, [x + 4.0, y + 3.0], 0xFFFFFF);

@@ -1,5 +1,6 @@
 // Shared helpers for Sunset's modules: placing blocks, finding items in the
 // hotbar, picking targets, seeing a block through the world.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::sunset::{Camera, Canvas, Module, hold, look_at, say, toggle, turn_then, with};
 use super::sunset_visual::{Look, draw_box};

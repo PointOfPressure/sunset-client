@@ -1,4 +1,6 @@
 // Independently authored Horizon input mapping. No packets or engine algorithms live here.
+use crate::game::sunset_compat::SunsetGame as _;
+use crate::game::remote::sunset_baritone_remote::SunsetBaritone as _;
 use super::{Game, sunset_movement_owner as owner};
 use horizon_client::held::Source;
 use serde::Deserialize;
@@ -88,7 +90,7 @@ fn checked_block(game: &Game<'_>, action: &BlockAction) -> bool {
 }
 
 pub(super) fn apply(game: &mut Game<'_>, lease: owner::Lease, intent: &Intent, allow_break: bool, allow_place: bool) -> Result<(), String> {
-    if !game.native_window() || !super::sunset::running() || !game.native_on("sunset") {
+    if !game.sunset_window() || !super::sunset::running() || !game.native_on("sunset") {
         return Err("Baritone input is unavailable while the client/runtime is off.".into());
     }
     validate(intent)?;
@@ -142,7 +144,7 @@ pub(super) fn apply(game: &mut Game<'_>, lease: owner::Lease, intent: &Intent, a
 }
 
 pub(super) fn post_tick(game: &mut Game<'_>) {
-    if !game.native_window() { return; }
+    if !game.sunset_window() { return; }
     let mut held = HELD.lock().unwrap_or_else(|e| e.into_inner());
     held.clicks = [0; 3]; // The game's ordinary input tick consumed these clicks.
     if let Some((before, applied)) = held.look.take() {
@@ -163,7 +165,7 @@ pub(super) fn discard(game: &mut Game<'_>, lease: owner::Lease) {
 }
 
 fn release_owned(game: &mut Game<'_>, lease: owner::Lease, restore: bool) {
-    if !game.native_window() { return; }
+    if !game.sunset_window() { return; }
     let mut held = {
         let mut owned = HELD.lock().unwrap_or_else(|e| e.into_inner());
         if owned.lease != Some(lease) { return; }

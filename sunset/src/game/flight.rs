@@ -185,7 +185,7 @@ pub(super) fn bounce_tick(t: u32, period: u32, boost: f64, now: [f64; 3], saved:
 
 // The way you move, as a unit vector on the ground (your keys along your yaw, or straight ahead with none).
 fn heading(game: &Game<'_>) -> [f64; 2] {
-    let held = |k: KeyCode| f64::from(u8::from(game.keys.contains(&k)));
+    let held = |k: KeyCode| f64::from(u8::from(game.keys.raw(&k)));
     let (forward, left) = (held(KeyCode::KeyW) - held(KeyCode::KeyS), held(KeyCode::KeyA) - held(KeyCode::KeyD));
     let (forward, left) = if forward == 0.0 && left == 0.0 { (1.0, 0.0) } else { (forward, left) };
     let yaw = f64::from(game.yaw).to_radians();

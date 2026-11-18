@@ -5,6 +5,7 @@
 //
 // Every action goes out at the start of a tick, before that tick's move packet, with the look the move packet before
 // it carried (Grim's Post and rotation checks), one slot change a tick at most.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{Category, Module, hold, look_at, turn, with};
 use super::sunset_explosive_damage::{Blast, local_damage};
 use super::sunset_explosive_policy::Budget;

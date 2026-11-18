@@ -24,6 +24,7 @@
 // and on the last tick before a fall Late click clicks with the look this tick's move packet carries.
 // Written fresh against GrimAC's and NoCheatPlus's place checks. A block the server takes back is retried; a cell taken
 // back twice waits two seconds.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::Game;
 use super::sunset::{Module, legit_sneak, look_at, move_input, scaffold_slot};
 use super::sunset_rotation::{Rng, degrees_per_count, direction, step, whole_counts};
@@ -676,7 +677,7 @@ fn turn_keys(game: &mut Game<'_>, n: &mut Normal, view: f32, look: f32) {
 
 pub(super) fn turn_input(game: &mut Game<'_>, before: &mut Option<[bool; 4]>, view: f32, look: f32) {
     let keys = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyA, KeyCode::KeyD];
-    let held = keys.map(|k| game.keys.contains(&k));
+    let held = keys.map(|k| game.keys.raw(&k));
     let forward = i8::from(held[0]) - i8::from(held[1]);
     let left = i8::from(held[2]) - i8::from(held[3]);
     let (f, l) = turned_keys(forward, left, view, look);
@@ -721,7 +722,7 @@ fn stands(game: &Game<'_>, x: f64, z: f64, y: i32) -> bool {
 // The game's own right click on `click`, if the game says it puts a block in one of the cells: the slot to the blocks
 // first (the game tells the server before the click), then the click.
 fn click(game: &mut Game<'_>, n: &mut Normal, click: Click, slot: usize, render: bool) -> Option<[i32; 3]> {
-    let hit = super::Hit { pos: click.pos, face: click.face, point: click.point };
+    let hit = super::Hit { pos: click.pos, face: click.face, point: click.point, inside: false };
     let cell = super::remote::sunset_remote::places_into(game, &hit, slot)?;
     if !n.cells.has(cell) {
         return None;
@@ -788,8 +789,8 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
     n.air = if ground { 0 } else { n.air.saturating_add(1) };
     let input = move_input(game);
     let moving = input != (0.0, 0.0);
-    let space = game.keys.contains(&KeyCode::Space);
-    let own_sneak = game.physical_keys.contains(&KeyCode::ShiftLeft) || (game.keys.contains(&KeyCode::ShiftLeft) && !n.sneaking);
+    let space = game.keys.raw(&KeyCode::Space);
+    let own_sneak = game.physical_keys.contains(&KeyCode::ShiftLeft) || (game.keys.raw(&KeyCode::ShiftLeft) && !n.sneaking);
     let mode = m.p("Rotations");
     let telly = mode == "Telly";
     let camera = (game.yaw, game.pitch);
@@ -994,7 +995,7 @@ fn bridge(game: &mut Game<'_>, m: &Module, n: &mut Normal, slot: usize) {
     // Sprint: Keep leaves your sprint be, Off stops it, Vanilla allows it only when vanilla would for the look the
     // server has: your move at least 0.8 forward along it (a silent look behind you allows none).
     let sent_yaw = match next { Some(look) if !visible => look.0, _ => camera.0 };
-    let held = |k: KeyCode| f32::from(u8::from(game.keys.contains(&k)));
+    let held = |k: KeyCode| f32::from(u8::from(game.keys.raw(&k)));
     let input = (held(KeyCode::KeyW) - held(KeyCode::KeyS), held(KeyCode::KeyA) - held(KeyCode::KeyD));
     let no_sprint = match m.p("Sprint") {
         "Off" => true,
@@ -1094,7 +1095,7 @@ pub(super) fn tower_action(room: bool, supported: bool) -> Tower {
 // room above, set on the block's top under a ceiling (tower_action).
 fn fast_tower(game: &mut Game<'_>, m: &Module) {
     let moving = move_input(game) != (0.0, 0.0);
-    let (space, sneak) = (game.keys.contains(&KeyCode::Space), game.keys.contains(&KeyCode::ShiftLeft));
+    let (space, sneak) = (game.keys.raw(&KeyCode::Space), game.keys.raw(&KeyCode::ShiftLeft));
     if !m.b("Fast tower") || !space || sneak || (moving && !m.b("While moving")) {
         return;
     }
@@ -1121,7 +1122,7 @@ fn fast_tower(game: &mut Game<'_>, m: &Module) {
 // click's block is checked (the game predicts it at once; none means the game refused it). Only the window's game:
 // single player's own server ticks one too, and what Normal gave is the window's.
 pub(super) fn post_tick(game: &mut Game<'_>) {
-    if !game.native_window() {
+    if !game.sunset_window() {
         return;
     }
     let (forced, pressed, render, jumped, right, keys) = with(|n| {

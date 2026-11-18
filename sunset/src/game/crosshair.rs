@@ -1,5 +1,6 @@
 // Crosshair: Sunset's own crosshair, drawn as shapes. Each hud_layers call hands the frame to the hud crate's hook,
 // which draws it only where the game draws its own crosshair.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset::{Category, ID, Module};
@@ -28,8 +29,8 @@ pub(super) fn defaults() -> Vec<Module> {
 // screen/loading exit, so a previous enabled frame cannot suppress vanilla.
 pub(super) fn prepare(game: &Game<'_>, size: [u32; 2]) {
     bridge::set_frame(Frame::empty());
-    if !game.native_window() || !game.native_on(ID) || !game.native_playing()
-        || game.player.is_none() || game.ui.hide_gui || !game.camera_type.first_person()
+    if !game.sunset_window() || !game.native_on(ID) || !game.native_playing()
+        || game.player.is_none() || game.ui.hide_gui || !game.camera_type.is_first_person()
         || game.debug_crosshair() || (game.spectator() && !game.spectator_crosshair())
     {
         return;

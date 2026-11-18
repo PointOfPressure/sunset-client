@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): cooldowns, Criticals, the attack guard, strikes, Kill Aura and Trigger Bot.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use horizon_protocol::packets::Empty;

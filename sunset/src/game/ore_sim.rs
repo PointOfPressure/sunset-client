@@ -5,6 +5,7 @@
 // world generator put them. What the server sends as stone where an ore should be is drawn as that ore; a block
 // mined away stops being drawn. When the chunks round you are done it says how many it found and how many of
 // them already show as ore, which tells a wrong seed (almost none) from the right one.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::{Dim, Game, Screen};
 use super::sunset::{Camera, Canvas, Category, Module};
@@ -200,7 +201,7 @@ fn input(game: &Game<'_>, module: &Module) -> Option<(u64, i64)> {
 }
 
 fn mining_source(game: &Game<'_>) -> Result<(u64, i64, &'static str), PredictionUnavailable> {
-    if !game.native_window() { return Err(PredictionUnavailable::StaleWorld); }
+    if !game.sunset_window() { return Err(PredictionUnavailable::StaleWorld); }
     if !super::sunset::running() || !game.native_on(super::sunset::ID) {
         return Err(PredictionUnavailable::Disabled);
     }
@@ -271,7 +272,7 @@ fn reap_worker() -> bool {
 
 // Runs even when the normal module tick cannot: no old ores or work survive a world/lifecycle boundary.
 pub(super) fn maintain(game: &Game<'_>) {
-    if !game.native_window() { return; }
+    if !game.sunset_window() { return; }
     if !super::sunset::running() || !game.native_on(super::sunset::ID)
         || game.player.is_none() || game.screen == Screen::Dead
     {
@@ -294,6 +295,8 @@ fn dimension(game: &Game<'_>) -> (&'static str, (i32, i32), (i32, i32, i32)) {
         Dim::Overworld => ("minecraft:overworld", (-64, 384), (-64, 384, 63)),
         Dim::Nether => ("minecraft:the_nether", (0, 256), (0, 128, 32)),
         Dim::End => ("minecraft:the_end", (0, 256), (0, 128, 0)),
+        // A datapack's own dimension: the overworld's generation is the closest guess.
+        _ => ("minecraft:overworld", (-64, 384), (-64, 384, 63)),
     }
 }
 

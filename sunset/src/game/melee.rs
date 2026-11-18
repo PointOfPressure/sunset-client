@@ -2,6 +2,8 @@
 // before)), Auto Spear (Spear Swap before, then Auto Weapon's Spear), W Tap, Jump Reset and Friend Guard, and the
 // weapon they pick for Kill Aura's and Trigger Bot's hits. Hits use the game's own inventory, movement, item
 // components, packets and spear ray. The mace is Auto Mace's (auto_mace.rs).
+use crate::game::sunset_compat::SunsetExtra as _;
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{Canvas, Category, Module, gui_open, hold, try_turn_then, with};
 use super::sunset_combat_control as control;
 use super::sunset_melee_policy::{self as policy, SlotLease};
@@ -187,7 +189,7 @@ fn best_fits(game: &Game<'_>, m: &Module, slot: usize) -> bool {
 }
 
 fn alive(game: &Game<'_>) -> bool {
-    game.native_window()
+    game.sunset_window()
         && game.native_on(super::sunset::ID)
         && game.remote.is_some()
         && game.player.as_ref().is_some_and(|p| p.health.health().is_finite() && p.health.health() > 0.0)
@@ -412,11 +414,12 @@ pub(super) fn observed_shield(game: &Game<'_>, id: u32) -> bool {
     let Some(mob) = game.mobs.iter().find(|m| m.id == id && m.alive() && !m.removed) else {
         return false;
     };
-    if !mob.extra.blocking || mob.extra.using_item <= 0 {
+    if !mob.extra.sunset_blocking() {
         return false;
     }
-    let used = if mob.extra.using_off_hand { mob.extra.off_hand.as_ref() } else { mob.extra.main_hand.as_ref() };
-    let Some(component) = used.and_then(|item| game.res.items().get(item)).and_then(|i| i.blocks_attacks.as_ref()) else {
+    let used = if mob.extra.using_off_hand { mob.extra.sunset_off_hand() } else { mob.extra.sunset_main_hand() };
+    let used = used.as_ref();
+    let Some(component) = used.and_then(|item| game.res.items().get(&**item)).and_then(|i| i.blocks_attacks.as_ref()) else {
         return false;
     };
     let lead = super::remote::sunset_combat_remote::latency(game).map_or(0.0, |ms| (f64::from(ms) / 50.0).round().clamp(0.0, 4.0)) as f32;
@@ -440,10 +443,10 @@ pub(super) fn observed_shield(game: &Game<'_>, id: u32) -> bool {
 // A shield in either of `id`'s hands, raised or not.
 fn holds_shield(game: &Game<'_>, id: u32) -> bool {
     game.mobs.iter().find(|m| m.id == id).is_some_and(|mob| {
-        [mob.extra.main_hand.as_ref(), mob.extra.off_hand.as_ref()]
+        [mob.extra.sunset_main_hand(), mob.extra.sunset_off_hand()]
             .into_iter()
             .flatten()
-            .any(|item| game.res.items().get(item).is_some_and(|i| i.blocks_attacks.is_some()))
+            .any(|item| game.res.items().get(&*item).is_some_and(|i| i.blocks_attacks.is_some()))
     })
 }
 
@@ -660,7 +663,7 @@ fn note_attack(game: &Game<'_>, id: u32) {
     if let Some(m) = &tap
         && policy::should_tap(
             p.sprinting,
-            game.keys.contains(&KeyCode::KeyW),
+            game.keys.raw(&KeyCode::KeyW),
             slot_strength(game, game.selected, 0.5).unwrap_or(0.0),
             living,
         )
@@ -740,8 +743,8 @@ fn keep_sprint(game: &Game<'_>, id: u32) {
     let player = game.mobs.iter().any(|t| t.id == id && t.alive() && !t.removed && t.kind.id == "minecraft:player");
     if !player
         || !p.sprinting
-        || !game.keys.contains(&KeyCode::KeyW)
-        || game.keys.contains(&KeyCode::ShiftLeft)
+        || !game.keys.raw(&KeyCode::KeyW)
+        || game.keys.raw(&KeyCode::ShiftLeft)
         || p.collision.horizontal
         || game.using.is_some()
         || p.health.food.food <= 6
@@ -764,7 +767,7 @@ fn note_stab_at(game: &Game<'_>, yaw: f32, pitch: f32) {
     note_action(game);
     if let Some(m) = module(TAP)
         && super::sunset_combat_wire::sent_sprinting(game)
-        && game.keys.contains(&KeyCode::KeyW)
+        && game.keys.raw(&KeyCode::KeyW)
         && let Some(&first) = spear_hits_at(game, yaw, pitch).as_deref().and_then(|hits| hits.first())
         && let Some(target) = game.mobs.get(first)
     {
@@ -826,7 +829,7 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     }
     let knocked = state(|s| std::mem::take(&mut s.jump_pending))
         && module(JUMP).is_some()
-        && game.keys.contains(&KeyCode::KeyW)
+        && game.keys.raw(&KeyCode::KeyW)
         && game.player.as_ref().is_some_and(|p| p.sprinting);
     let jump = knocked
         && game.player.as_ref().is_some_and(|p| {
@@ -843,19 +846,19 @@ pub(super) fn pre_input(game: &mut Game<'_>) {
     if tap.is_none() && !jump {
         return;
     }
-    let before = INPUT_KEYS.map(|key| game.keys.contains(&key));
+    let before = INPUT_KEYS.map(|key| game.keys.raw(&key));
     let physical = INPUT_KEYS.map(|key| game.physical_keys.contains(&key));
     if let Some(back) = tap {
-        game.keys.remove(&KeyCode::KeyW);
-        game.keys.remove(&KeyCode::ControlLeft);
+        crate::game::sunset_compat::key_up(&mut game.keys, &KeyCode::KeyW);
+        crate::game::sunset_compat::key_up(&mut game.keys, &KeyCode::ControlLeft);
         if back {
-            game.keys.insert(KeyCode::KeyS);
+            crate::game::sunset_compat::key_down(&mut game.keys, KeyCode::KeyS);
         }
     }
     if jump {
-        game.keys.insert(KeyCode::Space);
+        crate::game::sunset_compat::key_down(&mut game.keys, KeyCode::Space);
     }
-    let changed = std::array::from_fn(|i| before[i] != game.keys.contains(&INPUT_KEYS[i]));
+    let changed = std::array::from_fn(|i| before[i] != game.keys.raw(&INPUT_KEYS[i]));
     state(|s| s.input = Some(InputSave { before, physical, changed }));
 }
 
@@ -874,10 +877,10 @@ fn s_tap_tick(game: &mut Game<'_>, jump: bool) -> Option<bool> {
     let back_pressed = game.physical_keys.contains(&KeyCode::KeyS);
     let stop = policy::tap_stop(policy::TapCheck {
         s_tap_mode,
-        forward_held: game.keys.contains(&KeyCode::KeyW),
+        forward_held: game.keys.raw(&KeyCode::KeyW),
         back_pressed,
         target_valid: game.mobs.iter().any(|t| t.id == tap.target && t.alive() && !t.removed),
-        movement_taken: movement_taken || (!back_pressed && game.keys.contains(&KeyCode::KeyS)),
+        movement_taken: movement_taken || (!back_pressed && game.keys.raw(&KeyCode::KeyS)),
     });
     if let Some(why) = stop {
         end_s_tap(game, why);
@@ -982,13 +985,13 @@ pub(super) fn tap_report(game: &Game<'_>) -> String {
 // go.
 pub(super) fn press_jump(game: &mut Game<'_>) {
     const SPACE: usize = 3;
-    if game.keys.contains(&INPUT_KEYS[SPACE]) {
+    if game.keys.raw(&INPUT_KEYS[SPACE]) {
         return;
     }
-    let before = INPUT_KEYS.map(|key| game.keys.contains(&key));
+    let before = INPUT_KEYS.map(|key| game.keys.raw(&key));
     let physical = INPUT_KEYS.map(|key| game.physical_keys.contains(&key));
     state(|s| s.input.get_or_insert(InputSave { before, physical, changed: [false; INPUT_KEYS.len()] }).changed[SPACE] = true);
-    game.keys.insert(INPUT_KEYS[SPACE]);
+    crate::game::sunset_compat::key_down(&mut game.keys, INPUT_KEYS[SPACE]);
 }
 
 // The keys pre_input changed go back to what you hold.
@@ -998,9 +1001,9 @@ pub(super) fn post_input(game: &mut Game<'_>) {
     };
     for (i, key) in INPUT_KEYS.iter().enumerate().filter(|(i, _)| saved.changed[*i]) {
         if policy::key_back(game.physical_keys.contains(key), saved.before[i], saved.physical[i]) {
-            game.keys.insert(*key);
+            crate::game::sunset_compat::key_down(&mut game.keys, *key);
         } else {
-            game.keys.remove(key);
+            crate::game::sunset_compat::key_up(&mut game.keys, key);
         }
     }
 }
@@ -1386,7 +1389,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
         }
         return;
     }
-    if !allowed(game) || acted(game) || game.attack_clicks > 0 || game.clicks.miss_time > 0 || state(|s| s.lease.is_some()) {
+    if !allowed(game) || acted(game) || game.attack_clicks.count() > 0 || game.clicks.miss_time > 0 || state(|s| s.lease.is_some()) {
         return;
     }
     if let Some(m) = section(SPEAR)
@@ -1420,7 +1423,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
 
 // A hit went out this tick: the game's own click and use wait.
 pub(super) fn claim_tick(game: &mut Game<'_>) {
-    game.attack_clicks = 0;
+    game.attack_clicks.clear();
     game.clicks.miss_time = game.clicks.miss_time.max(1);
     game.clicks.right_click_delay = game.clicks.right_click_delay.max(2);
     game.use_delay = game.use_delay.max(2);
@@ -1548,7 +1551,7 @@ pub(super) fn draw_spear(game: &Game<'_>, w: f32, h: f32, out: &mut impl Canvas)
     let (x, y) = (w / 2.0 - bw / 2.0, h / 2.0 + 30.0);
     let share = (damage / 20.0).clamp(0.0, 1.0) as f32;
     out.fill([x, y, bw, bh], 0x960E_0E0E);
-    out.text(&text, [x + (bw - game.native_text_width(&text)) / 2.0, y + 3.0], 0xFFFFFF);
+    out.text(&text, [x + (bw - game.sunset_text_width(&text)) / 2.0, y + 3.0], 0xFFFFFF);
     out.fill([x + 7.0, y + bh - 7.0, bw - 14.0, 4.0], 0x5A00_0000);
     let red = ((1.0 - share) * 255.0) as u32;
     let green = (share * 255.0) as u32;

@@ -4,6 +4,8 @@
 // inventory, kept loaded while you hold it, put back when you change slot) and Offhand's Double hand (a hotbar totem
 // in hand when a blast or a smash near an enemy could take more than the health you have). All of it at the start of
 // a tick, before its move packet, and only in a tick no other slot change went in.
+use crate::game::sunset_compat::SunsetExtra as _;
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{Category, Module, gui_open, hold, with};
 use super::sunset_util as util;
 use super::Game;
@@ -374,7 +376,8 @@ fn block(game: &mut Game<'_>, m: &Module, busy: bool) -> Option<bool> {
     if away > m.n("Target distance") {
         return None;
     }
-    let weapon = target.extra.main_hand.as_deref().unwrap_or("");
+    let weapon = target.extra.sunset_main_hand();
+    let weapon = weapon.as_deref().unwrap_or("");
     // An axe would take the shield out; anything but a sword or a mace does little.
     if tagged(game, weapon, "minecraft:axes") || !(tagged(game, weapon, "minecraft:swords") || weapon == "minecraft:mace") {
         return Some(false);
@@ -435,7 +438,7 @@ fn double_hand(game: &mut Game<'_>, busy: bool) -> bool {
         .map(|t| (t, util::dist(me, [t.position.x, t.position.y, t.position.z])))
         .filter(|(_, d)| *d <= 10.0)
         .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(t, _)| (t.id, [t.position.x, t.position.y, t.position.z], t.extra.main_hand.clone(), t.fall_distance));
+        .map(|(t, _)| (t.id, [t.position.x, t.position.y, t.position.z], t.extra.sunset_main_hand(), t.fall_distance));
     let pearl = thrown && on("pearl");
     let threat = enemy.as_ref().is_some_and(|(_, at, weapon, fall)| {
         let weapon = weapon.as_deref().unwrap_or("");

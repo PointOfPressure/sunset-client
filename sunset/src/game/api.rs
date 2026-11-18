@@ -12,6 +12,7 @@
 // with direct Horizon hooks must check `running()` themselves and cancel their own threads and resources in on_stop
 // (the last call they get). A currently executing callback returns normally; stop handlers run after dispatch
 // releases it. Do not block on a worker that waits for the game thread from on_stop.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::{Game, Screen};
 use super::sunset::{Out, with};
@@ -340,7 +341,7 @@ fn plain_name(name: &str) -> bool {
 // native_tick hook every tick. `id` is your mod's id (lower case letters, digits, - and _).
 #[allow(dead_code)]
 pub(super) fn plugin(game: &mut Game<'_>, id: &'static str, version: &'static str, setup: impl FnOnce(&mut Plugin)) {
-    if !RUNTIME.running() || !game.native_window() {
+    if !RUNTIME.running() || !game.sunset_window() {
         return;
     }
     {
@@ -643,7 +644,7 @@ impl Draw<'_> {
 // How wide a line of text is in GUI pixels, in the HUD's font.
 #[allow(dead_code)]
 pub(super) fn text_width(game: &Game<'_>, text: &str) -> f32 {
-    game.native_text_width(text)
+    game.sunset_text_width(text)
 }
 
 // ---------------------------------------------------------------- the scheduler
@@ -1376,10 +1377,10 @@ fn chat_lines(game: &mut Game<'_>) {
     let (total, lines) = ::sunset_core::chat_log::since(CHAT_SEEN.load(Ordering::Relaxed));
     CHAT_SEEN.store(total, Ordering::Relaxed);
     for l in lines {
-        if matches!(l.source, ChatSource::Client) {
+        if l.source == ChatSource::Client as u8 {
             continue;
         }
-        let line = ChatLine { text: l.text, player: matches!(l.source, ChatSource::Player) };
+        let line = ChatLine { text: l.text, player: l.source == ChatSource::Player as u8 };
         each(12, |on| {
             if let On::Chat(f) = on {
                 f(game, &line);
@@ -1391,7 +1392,7 @@ fn chat_lines(game: &mut Game<'_>) {
 
 // Once a frame, in a world or not: joins and disconnects as the connection saw them.
 pub(super) fn frame(game: &mut Game<'_>) {
-    if !game.native_window() {
+    if !game.sunset_window() {
         return;
     }
     if RUNTIME.running() && LEAVE.swap(false, Ordering::Relaxed) && game.remote.is_some() {
@@ -1427,7 +1428,7 @@ pub(super) fn frame(game: &mut Game<'_>) {
 
 // Sunset's send hook, after its own modules changed the packet.
 pub(super) fn packet_out(game: &Game<'_>, packet: &Serverbound) -> Out {
-    if LIVE.load(Ordering::Relaxed) & (1 << 3) == 0 || !game.native_window() {
+    if LIVE.load(Ordering::Relaxed) & (1 << 3) == 0 || !game.sunset_window() {
         return Out::Pass;
     }
     let mut out = Outgoing { packet: packet.clone(), cancelled: false, replaced: false };

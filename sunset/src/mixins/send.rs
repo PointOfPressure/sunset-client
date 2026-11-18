@@ -15,8 +15,8 @@ fn sunset_send(
 
     use crate::game::sunset::Out;
     // Friend Guard: no hit on a friend, whoever sends it.
-    if game.native_window()
-        && game.native_on(crate::game::sunset::ID)
+    if crate::game::sunset_compat::SunsetGame::sunset_window(&*game)
+        && crate::game::sunset_compat::SunsetGame::native_on(&*game, crate::game::sunset::ID)
         && !crate::game::sunset_melee::allowed_out(game, packet)
     {
         return std::ops::ControlFlow::Break(());

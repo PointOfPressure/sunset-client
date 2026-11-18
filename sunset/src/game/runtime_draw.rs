@@ -31,7 +31,7 @@ impl Camera {
         let (last_pos, last_yaw, last_pitch, fov) = game.locator_camera?;
         let p = game.player.as_ref()?;
         let alpha = game.clock.camera_fraction();
-        let (pos, yaw, pitch) = if game.camera_type.first_person() {
+        let (pos, yaw, pitch) = if game.camera_type.is_first_person() {
             let lerp = |a: f64, b: f64| a + alpha * (b - a);
             let eye = f64::from(game.previous_eye) + alpha * f64::from(game.eye - game.previous_eye);
             (

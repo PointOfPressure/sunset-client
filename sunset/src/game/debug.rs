@@ -298,7 +298,7 @@ fn input(out: &mut String, game: &Game<'_>) {
         _ => "none this game (the game sends one only when the keys change)".to_owned(),
     };
     let _ = writeln!(out, "- Last PlayerInput sent: {last_input}");
-    let held = |k: winit::keyboard::KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
+    let held = |k: winit::keyboard::KeyCode| game.keys.raw(&k) || game.physical_keys.contains(&k);
     use winit::keyboard::KeyCode as K;
     let keys: Vec<&str> = [(K::KeyW, "W"), (K::KeyA, "A"), (K::KeyS, "S"), (K::KeyD, "D"), (K::Space, "Space"), (K::ShiftLeft, "Shift"), (K::ControlLeft, "Ctrl")]
         .iter()
@@ -469,7 +469,7 @@ struct Count {
 
 fn counts(chat: &[::sunset_core::chat_log::Line]) -> Vec<Count> {
     let mut out: Vec<Count> = Vec::new();
-    for line in chat.iter().filter(|l| l.source == horizon_client::chat::ChatSource::Server) {
+    for line in chat.iter().filter(|l| l.source == horizon_client::chat::ChatSource::Server as u8) {
         let Some(a) = alert(&line.text) else {
             continue;
         };
@@ -689,9 +689,9 @@ fn chat_log(out: &mut String, chat: &[::sunset_core::chat_log::Line], want: usiz
         .take(want)
         .map(|l| {
             let source = match l.source {
-                ChatSource::Player => "player",
-                ChatSource::Server => "server",
-                ChatSource::Client => "client",
+                s if s == ChatSource::Player as u8 => "player",
+                s if s == ChatSource::Server as u8 => "server",
+                _ => "client",
             };
             format!("[{}] [{source}] {}", clock(l.at), l.text)
         })

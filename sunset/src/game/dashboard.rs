@@ -2,6 +2,7 @@
 // left, the modules of the one picked, and the settings of the module chosen, in its sections. Its rows are the menu's own,
 // so draw_gui draws them and gui_press clicks them as ever; this file places them and draws around them. A left click on a
 // module turns it on or off, a right click shows its settings; the switch over its settings turns it on or off too.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset::{CATEGORIES, Hit, Shape, State, accent, control_radius, dash_menu, dash_search_clear, fit_to, panel_radius, row_h, row_hh, snap_scroll, text_y, wanted_panel_w};
@@ -512,7 +513,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     let band_y = list[1] - BAND_H;
     out.push(Shape::Head(title.to_owned(), [list[0] + 10.0, band_y + text_y(BAND_H)], 0xFFFFFF));
     let count = count.to_string();
-    let tw = game.native_text_width(title) + 1.0;
+    let tw = game.sunset_text_width(title) + 1.0;
     out.push(Shape::Text(count, [list[0] + 10.0 + tw + 6.0, band_y + text_y(BAND_H)], MUTED));
 
     // The list's rows: the chosen one lit (an enabled module's name is in the accent colour: draw_row).

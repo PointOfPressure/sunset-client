@@ -1,5 +1,6 @@
 // Block Overlay: the block you look at, its own selection shape outlined and filled in a colour. Drawn with the rest
 // of Sunset's overlays over the frame (so not hidden by terrain); the game's own outline is left out while it shows.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset::{Camera, Canvas, Category, Module, gui_open, line};
@@ -23,7 +24,7 @@ fn active(game: &Game<'_>, m: &Module) -> bool {
 /// Game::pick itself: gameplay and our own current-target read must stay intact.
 /// No state is changed, so disabling immediately restores the native stroke.
 pub(super) fn suppress_native_outline(game: &Game<'_>) -> bool {
-    if !game.native_window() || !game.native_on("sunset") {
+    if !game.sunset_window() || !game.native_on("sunset") {
         return false;
     }
     // gui_open() takes the same lock as with(), so evaluate visibility first.
@@ -65,7 +66,7 @@ pub(super) fn overlay(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut 
 
     // Held light/scaffolding and animated shulker shapes use the same context
     // bounds as the host. Draw these directly, without outline_boxes()'s Vec.
-    if let Some(shape) = game.context_outline(hit.pos, state) {
+    if let Some(shape) = game.context_outline(hit.pos, state, true, &game.be_anims) {
         let b = translated(shape, position);
         if valid_box(b) {
             if fill >> 24 != 0 {

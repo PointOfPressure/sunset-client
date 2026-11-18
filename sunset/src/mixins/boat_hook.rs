@@ -40,7 +40,7 @@ fn sunset_boat_ride(this: &mut Game<'_>, keys: Keys, sprint_window: i32) -> std:
         let keep = |want: f64, got: f64| if (got - want).abs() > 1.0e-7 { 0.0 } else { want };
         b.velocity = Vec3::new(keep(v.x, moved.x), keep(v.y, moved.y), keep(v.z, moved.z));
     }
-    this.boats[i] = b;
+    this.boats.update(i, |slot| *slot = b);
     let seat = this.player_boat_seat(i);
     if let Some(p) = this.player.as_mut() {
         p.position = seat;

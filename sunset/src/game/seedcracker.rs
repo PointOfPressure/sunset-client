@@ -1,5 +1,6 @@
 // Ore Sim's SeedCracker controller. Each run owns its Host, storage and immutable world views; only a
 // current, hash-verified result (or an authoritative local seed) can leave this module.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset::Module;
@@ -127,7 +128,7 @@ struct Identity {
 
 impl Identity {
     fn of(game: &Game<'_>) -> Option<Self> {
-        if !RUNTIME.running() || !game.native_window() || !game.native_on(super::sunset::ID)
+        if !RUNTIME.running() || !game.sunset_window() || !game.native_on(super::sunset::ID)
             || game.player.is_none() || game.screen == super::Screen::Dead {
             return None;
         }
@@ -138,8 +139,7 @@ impl Identity {
                 (Some(Link::of(&r.session)), None, None, r.level.clone(), Some(r.hashed_seed))
             }
             None => {
-                let level = game.native_level(game.dim.id())?;
-                let seed = game.native_level_seed(level)?;
+                let seed = game.sunset_local_seed()?;
                 (None, Some(Arc::downgrade(&game.save)), game.native_lifecycle.epoch().map(|e| e.get()),
                     game.dim.id().to_owned(), Some(world_seed::to_hash(seed)))
             }
@@ -366,8 +366,8 @@ impl WorkerInput {
         let biomes = game.world_biomes.as_deref().unwrap_or_else(|| game.res.biomes());
         let dimension = match game.dim { super::Dim::Nether => Dimension::Nether, super::Dim::End => Dimension::End, _ => Dimension::Overworld };
         let local = if *FORCE_CRACK { None } else { match &game.remote {
-            None => game.native_level(game.dim.id()).and_then(|l| game.native_level_seed(l)).map(LocalSeed::Direct),
-            Some(remote) if game.integrated.is_some() => remote.save_folder.as_ref().and_then(|folder| {
+            None => game.sunset_local_seed().map(LocalSeed::Direct),
+            Some(_) if game.integrated.is_some() => game.integrated.as_ref().map(|i| i.save_folder.clone()).and_then(|folder| {
                 // This is the integrated server's actual save folder, not a server address or seed guess.
                 std::env::current_dir().ok().map(|p| LocalSeed::Saved(p.join("saves").join(folder)))
             }),
@@ -597,14 +597,14 @@ fn current_policy() -> Policy {
 }
 
 pub(super) fn maintain(game: &Game<'_>) {
-    if !game.native_window() { return; }
+    if !game.sunset_window() { return; }
     // Acquire runtime settings before the controller; HUD/status reads never take the runtime lock.
     let policy = current_policy();
     lock(&CONTROLLER).synchronize(game, policy);
 }
 
 pub(super) fn tick(game: &mut Game<'_>, module: Option<&Module>) {
-    if !game.native_window() { return; }
+    if !game.sunset_window() { return; }
     let policy = Policy::of(module);
     let mut c = lock(&CONTROLLER);
     c.synchronize(game, policy);
@@ -626,13 +626,13 @@ pub(super) fn tick(game: &mut Game<'_>, module: Option<&Module>) {
 }
 
 pub(super) fn world_id(game: &Game<'_>) -> u64 {
-    if !game.native_window() { return 0; }
+    if !game.sunset_window() { return 0; }
     maintain(game);
     lock(&CONTROLLER).world
 }
 
 pub(super) fn resolved(game: &Game<'_>) -> Option<FoundSeed> {
-    if !game.native_window() { return None; }
+    if !game.sunset_window() { return None; }
     maintain(game);
     let c = lock(&CONTROLLER);
     if !c.policy.is_some_and(|p| p.automatic) || c.identity.is_none() { return None; }

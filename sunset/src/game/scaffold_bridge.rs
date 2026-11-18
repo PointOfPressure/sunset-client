@@ -143,7 +143,7 @@ fn edge_sneak(game: &mut Game<'_>, b: &mut Bridge, delay: (f64, f64)) {
         legit_sneak(game, false);
         return;
     }
-    if !game.keys.contains(&KeyCode::ShiftLeft) {
+    if !game.keys.raw(&KeyCode::ShiftLeft) {
         let (lo, hi) = (delay.0.min(delay.1), delay.0.max(delay.1));
         let span = (hi - lo) as u64 + 1;
         b.delay = Duration::from_millis(lo as u64 + next_random(b) % span);
@@ -175,7 +175,7 @@ fn count_placed(game: &Game<'_>, m: &Module, b: &mut Bridge) -> Option<Line> {
     };
     let enough = m.n("Activation blocks");
     if f64::from(b.placed) >= enough {
-        if !game.physical_keys.contains(&KeyCode::KeyS) || game.keys.contains(&KeyCode::Space) {
+        if !game.physical_keys.contains(&KeyCode::KeyS) || game.keys.raw(&KeyCode::Space) {
             return None;
         }
         (b.place, b.placed) = (None, 0);

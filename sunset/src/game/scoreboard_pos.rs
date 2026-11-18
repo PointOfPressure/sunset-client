@@ -66,6 +66,12 @@ fn shift(d: &mut GuiDraw, dx: i32, dy: i32) {
             *x += dx;
             *y += dy;
         }
+        GuiDraw::FillGradient { x0, y0, x1, y1, .. } => {
+            *x0 += dx;
+            *x1 += dx;
+            *y0 += dy;
+            *y1 += dy;
+        }
         GuiDraw::Push(_) | GuiDraw::Pop => {}
     }
 }

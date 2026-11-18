@@ -1,8 +1,9 @@
 // Camera and engine-level modules, implemented for Sunset: Freecam, Free
 // Look, Xray, Tunnel ESP, Void ESP, Light Overlay, and the two that sit on
 // engine hooks, Timer and No Slow.
+use crate::game::sunset_compat::SunsetGame as _;
 
-use super::perspective::CameraType;
+use horizon_client::camera::CameraType;
 use super::sunset::{Camera, Canvas, Category, Module, accent, line};
 use super::sunset_visual::{Look, draw_box, potato};
 use super::sunset_util::*;
@@ -217,7 +218,7 @@ fn zoom_state<R>(f: impl FnOnce(&mut Zoom) -> R) -> R {
 // The zoom the view is at this frame, if zoomed: it eases to the held level and back out to 1 in about a tenth of a
 // second (at once with Smooth off).
 pub(super) fn zoom_now(game: &Game<'_>) -> Option<f32> {
-    if !game.native_window() || !game.native_on(super::sunset::ID) || !game.native_playing() {
+    if !game.sunset_window() || !game.native_on(super::sunset::ID) || !game.native_playing() {
         return None;
     }
     let m = super::sunset::with(|s| s.module("Zoom").map(|m| (m.on, m.n("Zoom") as f32, m.b("Smooth"), m.b("Remember zoom"))));
@@ -249,7 +250,7 @@ pub(super) fn zoom_turn(game: &Game<'_>) -> Option<f64> {
 
 // The wheel while Zoom is held changes the zoom (each notch by a tenth), while Freecam flies its speed.
 pub(super) fn camera_wheel(game: &Game<'_>, steps: f32) -> bool {
-    if !game.native_window() || !game.native_on(super::sunset::ID) || steps == 0.0 {
+    if !game.sunset_window() || !game.native_on(super::sunset::ID) || steps == 0.0 {
         return false;
     }
     let (zoom, scroll, fly) = super::sunset::with(|s| {
@@ -660,7 +661,7 @@ pub(super) fn no_slow_reset() {
 pub(super) static NO_SCOREBOARD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn no_render(game: &mut Game<'_>, mods: &[Module]) {
-    use horizon_client::{fog::sunset_fog as fog, screen_effects::sunset_overlay as overlay};
+    use ::sunset_core::{fog, overlay};
     let m = on(mods, "No Render");
     let flag = |name: &str| m.as_ref().is_some_and(|m| m.b(name));
     // Fog: Horizon's Fog option, remembered and put back (Atmosphere's Custom fog sets the fog where the game would
@@ -674,7 +675,15 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
         game.settings.horizon.fog = before;
     }
     // Particles: all of them, or the listed types, never made.
-    ::sunset_core::particles::set(flag("Hide all particles"), m.as_ref().map_or("", |m| m.t("Particles")));
+    let listed = m.as_ref().map_or("", |m| m.t("Particles"));
+    ::sunset_core::particles::set(
+        flag("Hide all particles"),
+        listed
+            .split(',')
+            .filter_map(|n| horizon_client::particles::ParticleType::from_name(n.trim()))
+            .map(|t| t.name().to_owned())
+            .collect(),
+    );
     let clear_fog = mods.iter().any(|m| m.name == "Clear Water" && m.on && m.b("Hide fog"));
     fog::NO_WATER.store(flag("Hide water fog") || clear_fog, Ordering::Relaxed);
     fog::NO_LAVA.store(flag("Hide lava and powder snow fog"), Ordering::Relaxed);
@@ -844,7 +853,7 @@ fn ender_seen(game: &mut Game<'_>) {
 // Shulker Peek, drawn before a stack's tooltip: a shulker box's (or the ender chest's last seen) slots in a 9 by 3
 // grid above the pointer, tinted the box's colour. Remembered as hovered, for a middle click to pin it.
 pub(super) fn peek(game: &Game<'_>, batch: &mut horizon_client::hud::HudBatch, stack: &horizon_client::items::ItemStack, x: f32, y: f32) {
-    if !game.native_window() || !game.native_on(super::sunset::ID) {
+    if !game.sunset_window() || !game.native_on(super::sunset::ID) {
         return;
     }
     let Some(m) = super::sunset::with(|s| s.module("Shulker Peek").filter(|m| m.on).cloned()) else {

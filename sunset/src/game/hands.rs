@@ -1,5 +1,6 @@
 // RF Click (R and F as the mouse buttons) and Kill Aura's and Trigger Bot's Shield (a shield kept up, lowered for each
 // of your hits).
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{Category, Module, gui_open, with};
 use super::sunset_util as util;
 use super::{Game, Screen};
@@ -293,8 +294,8 @@ fn wanted(game: &Game<'_>, m: &Module) -> bool {
 // Before the tick's hits (Kill Aura's and Trigger Bot's queued ones, your click): the shield comes down, so the hit
 // goes in the same tick.
 pub(super) fn before_hits(game: &mut Game<'_>, hits: bool) {
-    legacy_pre_tick(game, hits || game.attack_clicks > 0);
-    if !shielding(game) || !(hits || game.attack_clicks > 0) {
+    legacy_pre_tick(game, hits || game.attack_clicks.count() > 0);
+    if !shielding(game) || !(hits || game.attack_clicks.count() > 0) {
         return;
     }
     send_owned(game, release_packet());

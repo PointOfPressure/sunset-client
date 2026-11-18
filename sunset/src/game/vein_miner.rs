@@ -5,6 +5,7 @@
 // Rotate has the server see you look at a block before its START and STOP. A click, another slot, a menu, using an item
 // or Packet Mine ends the vein, and a dig the server is still counting is dropped (PlayerAction 0 start, 2 abort, 3
 // stop). No movement packets are sent.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{Category, Module, cancel_turns, gui_open, with};
 use super::sunset_util::{center_of, sequence, turned_to};
 use super::{Dim, Game};

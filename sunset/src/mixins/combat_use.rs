@@ -22,7 +22,7 @@ fn sunset_combat_use(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<
         return std::ops::ControlFlow::Break(());
     }
     while inventory::burst_more(game) {
-        game.remote_use();
+        game.remote_use(mod_api::InteractionAttempt::Press);
     }
     std::ops::ControlFlow::Continue(())
 }

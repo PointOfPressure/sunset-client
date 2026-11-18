@@ -4,6 +4,7 @@
 // Default place with a right click — Coordinates, FPS, Speed, Facing and Totems (each on its own), the Compass, the
 // Armor HUD, Shield status, the watermark, the module list, the Target HUD, the server's scoreboard, other modules'
 // (Scaffold's block counter, the Murderer list, Auto Spear's damage indicator, Radar) and Horizon's own HUD widgets.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::Game;
 use super::sunset::{Module, Shape};
 use horizon_client::extras::Corner;
@@ -83,7 +84,7 @@ fn left_fraction(damage: u32, max: u32) -> f32 {
 
 // The game's durability bar colour: green when whole, through yellow, to red as it wears.
 pub(super) fn wear_rgb(fraction: f32) -> u32 {
-    horizon_client::hud_layout::hsv_to_argb(fraction / 3.0, 1.0, 1.0, 0) & 0x00FF_FFFF
+    horizon_core::color::hsv_to_argb(fraction / 3.0, 1.0, 1.0, 0) & 0x00FF_FFFF
 }
 
 // Percent left rounds as follows: 1 for the last point, never 0 while it holds.
@@ -332,8 +333,8 @@ pub(super) fn bounds(game: &Game<'_>, shapes: &[Shape]) -> Option<[f32; 4]> {
                 }
                 continue;
             }
-            Shape::Text(t, p, _) | Shape::Head(t, p, _) => [p[0], p[1], game.native_text_width(t), 9.0],
-            Shape::Scaled(t, p, _, k) => [p[0], p[1], game.native_text_width(t) * k, 9.0 * k],
+            Shape::Text(t, p, _) | Shape::Head(t, p, _) => [p[0], p[1], game.sunset_text_width(t), 9.0],
+            Shape::Scaled(t, p, _, k) => [p[0], p[1], game.sunset_text_width(t) * k, 9.0 * k],
             Shape::Item(_, p, size) | Shape::Face(_, p, size) => [p[0], p[1], *size, *size],
             Shape::ClipStart | Shape::ClipEnd(_) => continue,
         };
@@ -434,14 +435,14 @@ fn compass(game: &Game<'_>, hud: &Module, w: f32, h: f32, out: &mut Vec<Shape>) 
         if degree % 15 == 0 {
             let text = if major { ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][(degree / 45) as usize].to_owned() } else { degree.to_string() };
             let (scale, colour) = if major { (0.8, 0xFFFFFF) } else { (0.6, 0xAAAAAA) };
-            let tx = x - game.native_text_width(&text) * scale / 2.0;
+            let tx = x - game.sunset_text_width(&text) * scale / 2.0;
             out.push(Shape::Scaled(text, [tx, middle + 1.0], colour, scale));
         }
     }
     let mid = x0 + WIDTH / 2.0;
     out.push(Shape::Fill([mid - 0.5, y0 + 9.0, 1.0, HEIGHT - 9.0], 0xFFE5_2E33));
     let text = (heading as i32).rem_euclid(360).to_string();
-    let tx = mid - game.native_text_width(&text) * 0.4;
+    let tx = mid - game.sunset_text_width(&text) * 0.4;
     out.push(Shape::Scaled(text, [tx, y0], 0xE6E6E6, 0.8));
 }
 
@@ -504,7 +505,7 @@ pub(super) fn draw(game: &Game<'_>, hud: &Module, w: f32, h: f32, corners: &mut 
     // Each piece's size: a slot box, or (Compact) the icon and its words beside it.
     let sizes: Vec<[f32; 2]> = pieces
         .iter()
-        .map(|p| if compact { [16.0 + label(p).map_or(0.0, |t| 3.0 + game.native_text_width(&t)), 16.0] } else { [SLOT + 2.0, SLOT + 2.0] })
+        .map(|p| if compact { [16.0 + label(p).map_or(0.0, |t| 3.0 + game.sunset_text_width(&t)), 16.0] } else { [SLOT + 2.0, SLOT + 2.0] })
         .collect();
     let gap = if compact { 4.0 } else { 0.0 };
     // Boxes in a row share their frames, as on the hotbar.
@@ -557,7 +558,7 @@ pub(super) fn draw(game: &Game<'_>, hud: &Module, w: f32, h: f32, corners: &mut 
             out.push(Shape::Text(text, [ix + 19.0, iy + 4.0], rgb));
         } else {
             // In the box: over the icon's foot, or (with the bar) its head.
-            let tw = game.native_text_width(&text) * 0.75;
+            let tw = game.sunset_text_width(&text) * 0.75;
             let ty = if bar { iy } else { iy + 16.0 - 6.75 };
             out.push(Shape::Scaled(text, [ix + 16.0 - tw, ty], rgb, 0.75));
         }
@@ -592,7 +593,7 @@ fn shield(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
     let (elapsed, run) = (now - start, first - left);
     let total = if elapsed >= 2.0 && run > 0.005 { elapsed / run } else { 100.0 };
     let text = format!("{:.1}s", left * total / 20.0);
-    let width = 24.0 + game.native_text_width(&text);
+    let width = 24.0 + game.sunset_text_width(&text);
     let (x, y) = (w / 2.0 - 12.0 - width, h / 2.0 + 12.0);
     out.push(Shape::Fill([x, y, width, 24.0], 0x9000_0000));
     out.push(Shape::Item(std::sync::Arc::from("minecraft:shield"), [x + 2.0, y + 2.0], 16.0));

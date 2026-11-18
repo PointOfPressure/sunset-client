@@ -17,6 +17,8 @@
 //
 // The server sends another player's armour and main hand with their components (enchantments, damage, count) and their
 // off hand by id only, so an off hand piece has no count or enchantments here.
+use crate::game::sunset_compat::SunsetExtra as _;
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::sunset::{Camera, Canvas, Category, Module};
 use super::sunset_util::*;
@@ -361,9 +363,9 @@ fn shown(mob: &horizon_client::mobs::Mob) -> ([Option<ItemStack>; SHOWN], Option
     let by_id = |id: &Option<std::sync::Arc<str>>| id.as_ref().map(|id| ItemStack::new(id, 1));
     let main_stack = e.main_hand_stack().cloned();
     let count = main_stack.as_ref().map(|s| s.count);
-    let main = main_stack.or_else(|| by_id(&e.main_hand));
-    let worn = |a: usize, id: &Option<std::sync::Arc<str>>| e.armor[a].clone().filter(|s| Some(&s.item) == id.as_ref()).or_else(|| by_id(id));
-    ([main, by_id(&e.off_hand), worn(0, &e.head), worn(1, &e.chest), worn(2, &e.legs), worn(3, &e.feet)], count)
+    let main = main_stack.or_else(|| by_id(&e.sunset_main_hand()));
+    let worn = |a: usize| e.sunset_armor(a).cloned();
+    ([main, by_id(&e.sunset_off_hand()), worn(0), worn(1), worn(2), worn(3)], count)
 }
 
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
@@ -542,7 +544,7 @@ fn mob_gear(game: &mut Game<'_>, m: &Module) {
 // "?" (may be gone); counts over 1 in the corner, wear as a bar under damageable pieces.
 fn row(game: &Game<'_>, out: &mut impl Canvas, icons: &[(&ItemStack, Option<u32>, bool)], tail: Option<&str>, x: f32, bottom: f32, size: f32) -> f32 {
     let gap = 1.0;
-    let tail_w = tail.map_or(0.0, |t| game.native_text_width(t) * 0.6 + 2.0);
+    let tail_w = tail.map_or(0.0, |t| game.sunset_text_width(t) * 0.6 + 2.0);
     let width = icons.len() as f32 * (size + gap) - gap + tail_w;
     let (left, top) = (x - width / 2.0, bottom - size - 2.0);
     out.fill([left - 2.0, top - 1.0, width + 4.0, size + 3.0], 0x7000_0000);
@@ -562,7 +564,7 @@ fn row(game: &Game<'_>, out: &mut impl Canvas, icons: &[(&ItemStack, Option<u32>
         }
         if let Some(n) = count.filter(|n| *n > 1) {
             let t = n.to_string();
-            let w = game.native_text_width(&t) * 0.6;
+            let w = game.sunset_text_width(&t) * 0.6;
             out.scaled(&t, [at[0] + size - w, at[1] + size - 5.0], if *sure { 0xFFFFFF } else { 0xAAAAAA }, 0.6);
         }
     }

@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): small shared helpers: chat lines, numbers, keys, players, aiming.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::{Game, Screen};
 use super::sunset_bind_state::canonical;
@@ -122,7 +123,7 @@ pub(super) fn move_input(game: &Game<'_>) -> (f64, f64) {
     if !game.native_playing() {
         return (0.0, 0.0);
     }
-    let held = |k: KeyCode| f64::from(u8::from(game.keys.contains(&k)));
+    let held = |k: KeyCode| f64::from(u8::from(game.keys.raw(&k)));
     (
         held(KeyCode::KeyW) - held(KeyCode::KeyS),
         held(KeyCode::KeyA) - held(KeyCode::KeyD),

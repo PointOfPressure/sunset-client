@@ -1,5 +1,5 @@
 // Clear Water: a water sprite is laid out at every lower opacity just before itself, so its own layer follows them.
-fn sunset_water_sprites(this: &mut Sprites, root: &Path, name: &str, decoded: &crate::sprite_cache::Decoded) -> std::ops::ControlFlow<Result<u32>> {
+fn sunset_water_sprites(this: &mut Sprites, name: &str, decoded: &crate::sprite_cache::Decoded) -> std::ops::ControlFlow<Result<u32>> {
     if !::sunset_core::lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
 
     use ::sunset_core::water as w;
@@ -14,7 +14,7 @@ fn sunset_water_sprites(this: &mut Sprites, root: &Path, name: &str, decoded: &c
         copy.opaque = false;
         copy.has_transparent |= step == 0;
         copy.translucent = step > 0;
-        match this.register(root, &["sunset:", path, "_", &step.to_string()].concat(), copy) {
+        match this.register(&["sunset:", path, "_", &step.to_string()].concat(), copy) {
             Ok(l) => *layer = l,
             Err(e) => return std::ops::ControlFlow::Break(Err(e)),
         }

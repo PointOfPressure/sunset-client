@@ -3,6 +3,19 @@
 // (horizon_client::game::sunset::combat_packets). Kept to the last 4096, should no tick come to read them.
 
 use horizon_protocol::packets::play::Clientbound as C;
+use horizon_client::net::Event;
+
+// What the game took in from the network, in order, each with its receive credit (crate::game::raw_backlog): Sunset
+// reads, drops and holds these. A held one keeps its credit, so held packets still count against the connection's
+// receive window, as the game's own backlog does.
+pub(crate) type Item = crate::game::raw_backlog::Received;
+
+fn ev(item: &Item) -> Option<&Event> {
+    match item {
+        Item::Event(event, _) => Some(event),
+        Item::Chunk(..) => None,
+    }
+}
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -53,15 +66,15 @@ impl Link {
     }
 }
 
-fn boundary(event: &horizon_client::net::Event) -> bool {
+fn boundary(event: &Event) -> bool {
     matches!(
         event,
-        horizon_client::net::Event::Joined { .. } | horizon_client::net::Event::Reconfiguring | horizon_client::net::Event::Reconfigured(_) | horizon_client::net::Event::Disconnected { .. }
+        Event::Joined { .. } | Event::Reconfiguring | Event::Reconfigured(_) | Event::Disconnected { .. }
     )
 }
 
 // Every poll, before anything reads its events (also while Sunset is stopped).
-pub fn note(session: &horizon_client::net::Session, events: &[horizon_client::net::Event]) {
+pub fn note(session: &horizon_client::net::Session, events: &[Item]) {
     {
         let mut last = LAST_SESSION.lock().unwrap_or_else(|e| e.into_inner());
         if last.as_ref().is_none_or(|w| !std::ptr::eq(w.as_ptr(), Arc::as_ptr(&session.counters))) {
@@ -69,7 +82,7 @@ pub fn note(session: &horizon_client::net::Session, events: &[horizon_client::ne
             SERIAL.fetch_add(1, Ordering::AcqRel);
         }
     }
-    let n = events.iter().filter(|e| boundary(e)).count() as u64;
+    let n = events.iter().filter_map(ev).filter(|e| boundary(e)).count() as u64;
     if n > 0 {
         EPOCH.fetch_add(n, Ordering::AcqRel);
     }
@@ -149,11 +162,11 @@ mod gui_move_boundary_tests {
     }
 }
 
-pub fn gui_move_hold(events: Vec<super::Event>) -> Vec<super::Event> {
+pub fn gui_move_hold(events: Vec<Item>) -> Vec<Item> {
     if !GUI_MOVE_ACTIVE.load(Ordering::Acquire) { return events; }
     let mut holding = true;
     events.into_iter().filter(|event| {
-        let super::Event::Packet(packet) = event else { return true; };
+        let Some(Event::Packet(packet)) = ev(event) else { return true; };
         // A boundary is applied by native_client_packet's HEAD hook before its native handler. Only updates
         // preceding it belong to the old shadow. Everything after it retains the network's original order.
         let boundary = matches!(&**packet, C::OpenScreen(_) | C::MountScreenOpen(_) | C::ContainerClose(_)
@@ -212,7 +225,7 @@ pub fn scan_clear() {
 pub fn scan_generation() -> u32 { PLAY_GEN.load(Ordering::Relaxed) }
 
 // The connection is in a configuration after the first (a proxy switching backends) right now.
-pub fn scan_configuring(session: &super::Session) -> bool { session.configuring.load(Ordering::Relaxed) }
+pub fn scan_configuring(session: &horizon_client::net::Session) -> bool { session.configuring.load(Ordering::Relaxed) }
 
 fn scan_push(event: ScanEvent) {
     let mut queue = SCAN.lock().unwrap_or_else(|e| e.into_inner());
@@ -263,22 +276,22 @@ fn brand_to(generation: u32) {
     }
 }
 
-fn scan_seen(event: &super::Event, active: bool) {
+fn scan_seen(event: &Event, active: bool) {
     let generation = match event {
-        super::Event::Joined { .. } | super::Event::Reconfigured(_) => PLAY_GEN.fetch_add(1, Ordering::Relaxed) + 1,
+        Event::Joined { .. } | Event::Reconfigured(_) => PLAY_GEN.fetch_add(1, Ordering::Relaxed) + 1,
         _ => PLAY_GEN.load(Ordering::Relaxed),
     };
     if !active { return; }
     match event {
-        super::Event::Brand(brand) => {
+        Event::Brand(brand) => {
             *BRAND.lock().unwrap_or_else(|e| e.into_inner()) = Some(brand.chars().take(128).collect());
             BRAND_WAITING.store(true, Ordering::Relaxed);
         }
-        super::Event::Joined { .. } | super::Event::Reconfigured(_) => {
+        Event::Joined { .. } | Event::Reconfigured(_) => {
             brand_to(generation);
             scan_push(ScanEvent::Generation(generation));
         }
-        super::Event::Packet(packet) => match &**packet {
+        Event::Packet(packet) => match &**packet {
             _ if BRAND_WAITING.load(Ordering::Relaxed) => {
                 brand_to(generation);
                 scan_seen(event, active);
@@ -338,14 +351,14 @@ pub fn plugin_connection() -> Vec<Connection> {
     std::mem::take(&mut *PLUGIN_CONNECTION.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
-fn plugin_seen(event: &super::Event) {
+fn plugin_seen(event: &Event) {
     match event {
-        super::Event::Joined { .. } => PLUGIN_CONNECTION.lock().unwrap_or_else(|e| e.into_inner()).push(Connection::Joined),
-        super::Event::Disconnected { reason, key, from_server } => PLUGIN_CONNECTION
+        Event::Joined { .. } => PLUGIN_CONNECTION.lock().unwrap_or_else(|e| e.into_inner()).push(Connection::Joined),
+        Event::Disconnected { reason, key, from_server } => PLUGIN_CONNECTION
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(Connection::Left(reason.chars().take(512).collect(), key.clone(), *from_server)),
-        super::Event::Packet(p) if PLUGIN_PACKETS.load(Ordering::Relaxed) => {
+        Event::Packet(p) if PLUGIN_PACKETS.load(Ordering::Relaxed) => {
             let mut queue = PLUGIN_IN.lock().unwrap_or_else(|e| e.into_inner());
             if queue.len() == 4096 {
                 queue.pop_front();
@@ -361,17 +374,17 @@ fn plugin_seen(event: &super::Event) {
 static CLOCK: Mutex<VecDeque<(Instant, i64)>> = Mutex::new(VecDeque::new());
 static ENDS: Mutex<VecDeque<(std::time::SystemTime, String, bool)>> = Mutex::new(VecDeque::new());
 
-fn debug_seen(event: &super::Event) {
+fn debug_seen(event: &Event) {
     match event {
-        super::Event::Joined { .. } => CLOCK.lock().unwrap_or_else(|e| e.into_inner()).clear(),
-        super::Event::Disconnected { reason, from_server, .. } => {
+        Event::Joined { .. } => CLOCK.lock().unwrap_or_else(|e| e.into_inner()).clear(),
+        Event::Disconnected { reason, from_server, .. } => {
             let mut ends = ENDS.lock().unwrap_or_else(|e| e.into_inner());
             if ends.len() == 20 {
                 ends.pop_front();
             }
             ends.push_back((std::time::SystemTime::now(), reason.chars().take(512).collect(), *from_server));
         }
-        super::Event::Packet(p) => {
+        Event::Packet(p) => {
             if let C::SetTime(t) = &**p {
                 let mut clock = CLOCK.lock().unwrap_or_else(|e| e.into_inner());
                 if clock.len() == 30 {
@@ -398,14 +411,28 @@ pub fn ends() -> Vec<(std::time::SystemTime, String, bool)> {
     ENDS.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect()
 }
 
-pub fn seen(events: &[super::Event]) {
+pub fn seen(events: &[Item]) {
     let scan_active = SCAN_ACTIVE.load(Ordering::Relaxed);
     let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
-    for event in events {
+    for event in events.iter().filter_map(ev) {
+        if let Event::Packet(p) = event && matches!(**p, C::Login(_)) {
+            ::sunset_core::client_brand::login_seen();
+        }
+        // Server Scan: the command tree the server sent (none yet on a new connection).
+        match event {
+            Event::Joined { .. } => crate::game::remote::sunset_server_scan_remote::server_tree(None),
+            Event::Packet(p) => {
+                if let C::Commands(commands) = &**p {
+                    let tree = horizon_client::command::network::from_packet(commands, horizon_client::command::vanilla::dispatcher());
+                    crate::game::remote::sunset_server_scan_remote::server_tree(Some(&tree));
+                }
+            }
+            _ => {}
+        }
         scan_seen(event, scan_active);
         debug_seen(event);
         plugin_seen(event);
-        if let super::Event::Packet(p) = event
+        if let Event::Packet(p) = event
             && matches!(
                 **p,
                 C::Login(_)
@@ -434,7 +461,7 @@ pub fn seen(events: &[super::Event]) {
         {
             seen.push((**p).clone());
         }
-        if let super::Event::Packet(p) = event
+        if let Event::Packet(p) = event
             && SOUNDS_ON.load(Ordering::Relaxed)
             && matches!(
                 **p,
@@ -490,13 +517,13 @@ pub fn trap_off() {
     *TRAP.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
-pub fn trap_filter(mut events: Vec<super::Event>) -> Vec<super::Event> {
+pub fn trap_filter(mut events: Vec<Item>) -> Vec<Item> {
     let guard = TRAP.lock().unwrap_or_else(|e| e.into_inner());
     let Some(trap) = guard.as_ref().filter(|t| t.told.elapsed() < Duration::from_millis(250)) else {
         return events;
     };
     events.retain(|event| {
-        let super::Event::Packet(p) = event else {
+        let Some(Event::Packet(p)) = ev(event) else {
             return true;
         };
         match &**p {
@@ -524,7 +551,7 @@ struct Delay {
     wait: [u64; 2],
     told: Instant,
     link: Option<Link>,
-    held: VecDeque<(Instant, super::Event)>,
+    held: VecDeque<(Instant, Item)>,
     roll: u64,
     stats: QueueStats,
 }
@@ -557,7 +584,7 @@ pub fn delay_stats() -> Option<QueueStats> {
 }
 
 // Held packets of another Session never reach this one; true when they were thrown away.
-fn rebind(link: &mut Option<Link>, session: &super::Session, held: usize, stats: &mut QueueStats) -> bool {
+fn rebind(link: &mut Option<Link>, session: &horizon_client::net::Session, held: usize, stats: &mut QueueStats) -> bool {
     let stale = link.as_ref().is_some_and(|l| l.to(Some(session)) == Linked::Other);
     if stale {
         stats.discarded_session += held as u64;
@@ -568,7 +595,7 @@ fn rebind(link: &mut Option<Link>, session: &super::Session, held: usize, stats:
     stale
 }
 
-pub fn hold(session: &super::Session, events: Vec<super::Event>) -> Vec<super::Event> {
+pub fn hold(session: &horizon_client::net::Session, events: Vec<Item>) -> Vec<Item> {
     let mut guard = DELAY.lock().unwrap_or_else(|e| e.into_inner());
     let Some(d) = guard.as_mut() else {
         return events;
@@ -587,9 +614,9 @@ pub fn hold(session: &super::Session, events: Vec<super::Event>) -> Vec<super::E
     d.stats.released += due as u64;
     out.extend(d.held.drain(..due).map(|(_, e)| e));
     for event in events {
-        let super::Event::Packet(p) = &event else {
+        let Some(Event::Packet(p)) = ev(&event) else {
             // The connection's boundary: what was held goes first, in order.
-            if boundary(&event) {
+            if ev(&event).is_some_and(boundary) {
                 flushed(&mut d.held, &mut d.stats, 0, &mut out);
             }
             out.push(event);
@@ -654,7 +681,7 @@ struct Backtrack {
     switched: bool,
     away: bool,
     last_due: Option<Instant>,
-    held: VecDeque<(Instant, super::Event)>,
+    held: VecDeque<(Instant, Item)>,
     roll: u64,
     stats: QueueStats,
 }
@@ -710,7 +737,7 @@ fn far(eye: [f64; 3], at: [f64; 3]) -> f64 {
     (0..3).map(|i| (centre[i] - eye[i]).powi(2)).sum::<f64>().sqrt()
 }
 
-pub fn backtrack_hold(session: &super::Session, events: Vec<super::Event>) -> Vec<super::Event> {
+pub fn backtrack_hold(session: &horizon_client::net::Session, events: Vec<Item>) -> Vec<Item> {
     let mut guard = BACKTRACK.lock().unwrap_or_else(|e| e.into_inner());
     let Some(b) = guard.as_mut() else {
         return events;
@@ -741,10 +768,10 @@ pub fn backtrack_hold(session: &super::Session, events: Vec<super::Event>) -> Ve
         flushed(&mut b.held, &mut b.stats, 6, &mut out);
     }
     for event in events {
-        let super::Event::Packet(p) = &event else {
+        let Some(Event::Packet(p)) = ev(&event) else {
             flushed(&mut b.held, &mut b.stats, 0, &mut out);
             b.away = false;
-            if boundary(&event) {
+            if ev(&event).is_some_and(boundary) {
                 b.server = None;
             }
             out.push(event);
@@ -797,3 +824,26 @@ pub fn backtrack_hold(session: &super::Session, events: Vec<super::Event>) -> Ve
     }
     out
 }
+
+// The events receive_credited_backlog just took in (from `from` on in `events`), through Sunset's filters, holds and
+// copies; what is not dropped or held goes back in the same order. Also while Sunset is stopped, so held packets are let
+// go and the connection's boundaries counted, without observers or filters.
+pub fn poll(session: &horizon_client::net::Session, events: &mut std::collections::VecDeque<Item>, from: usize) {
+    if from > events.len() {
+        return;
+    }
+    let new: Vec<Item> = events.drain(from..).collect();
+    note(session, &new);
+    let new = if ::sunset_core::lifecycle::RUNTIME.running() {
+        let new = trap_filter(new);
+        let new = backtrack_hold(session, new);
+        let new = hold(session, new);
+        seen(&new);
+        gui_move_hold(new)
+    } else {
+        let new = backtrack_hold(session, new);
+        hold(session, new)
+    };
+    events.extend(new);
+}
+

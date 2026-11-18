@@ -1,5 +1,6 @@
 // What an explosion would do to you or a target, from Horizon's own collision shapes and damage rules: never
 // changes the world, equipment or anything else.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::Game;
 use super::sunset_explosive_policy::{Budget, in_range, raw_damage, samples};
 use super::sunset_util::Target;
@@ -358,7 +359,7 @@ fn reduced(mut defenses: Defenses<'_>, damage: f32) -> Option<f64> {
     }
     let armored = damage_reduction::after_armor(&mut defenses, damage).ok()?;
     let result = damage_reduction::after_magic(&mut defenses, armored).ok()?;
-    (result.is_finite() && result >= 0.0).then_some(f64::from(result))
+    (result.damage.is_finite() && result.damage >= 0.0).then_some(f64::from(result.damage))
 }
 
 pub(super) fn local_damage(game: &mut Game<'_>, blast: Blast, budget: &mut Budget) -> Option<Prediction> {
@@ -426,7 +427,7 @@ fn target_blocked(game: &Game<'_>, target: &Target, blast: Blast, scaled: f32) -
         Some(tag) => tags.get(tag).is_some_and(|set| set.contains(damage_type)),
         None => spec == damage_type,
     };
-    if component.bypassed_by.as_deref().is_some_and(matches) {
+    if component.bypassed_by.as_deref().is_some_and(|specs| specs.iter().any(|s| matches(s))) {
         return Some(0.0);
     }
     let mob = game.mobs.iter().find(|m| m.id == target.id)?;
@@ -475,8 +476,8 @@ pub(super) fn reduce_target_hurt_raw(game: &Game<'_>, target: &Target, sample: T
         return None;
     }
     let mob = game.mobs.iter().find(|m| m.id == target.id && !m.removed && m.alive())?;
-    let (armor, toughness) = mob.worn_armor();
-    let resistance = mob.extra.effects.iter().find(|e| e.0 == "resistance" && e.1 != 0).map(|e| e.2);
+    let (armor, toughness) = game.sunset_worn_armor(mob);
+    let resistance = mob.extra.effects.iter().find(|e| e.id.trim_start_matches("minecraft:") == "resistance" && e.duration != 0).map(|e| e.amplifier);
     let protection = horizon_client::mobs::gear::protection(mob, horizon_client::mobs::DamageKind::Explosion);
     reduced(
         Defenses {

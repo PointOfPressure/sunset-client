@@ -3,6 +3,7 @@
 // (longer for warnings and errors); a click on one in the open menu closes it. Settings are the Notifications module's
 // (Client). Drawn last in the frame (gui_top), straight into the HUD batch: a frame with toasts showing allocates nothing,
 // as their lines are wrapped once, when first drawn or when the window's width changes.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset::{Category, Module};
@@ -261,8 +262,8 @@ pub(super) fn draw(game: &Game<'_>, batch: &mut HudBatch) {
     let mut y = if bottom { h - MARGIN } else { MARGIN };
     for t in q.iter_mut().rev() {
         if t.laid_for != max {
-            t.lines = wrap(&t.text, max - 2.0 * PAD - 3.0, if t.long { LONG_LINES } else { LINES }, &|s| game.native_text_width(s));
-            let text_w = t.lines.iter().map(|l| game.native_text_width(l)).fold(0.0, f32::max);
+            t.lines = wrap(&t.text, max - 2.0 * PAD - 3.0, if t.long { LONG_LINES } else { LINES }, &|s| game.sunset_text_width(s));
+            let text_w = t.lines.iter().map(|l| game.sunset_text_width(l)).fold(0.0, f32::max);
             t.size = [text_w + 2.0 * PAD + 3.0, t.lines.len() as f32 * LINE_H + 2.0 * PAD - 2.0];
             t.laid_for = max;
         }

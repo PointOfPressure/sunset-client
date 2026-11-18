@@ -21,7 +21,7 @@ fn preview(game: &mut Game<'_>, desired: [i32; 3], slot: usize, click: BaseClick
     let Some(stack) = stack.filter(|s| s.count > 0 && &*s.item == "minecraft:obsidian").cloned() else {
         return false;
     };
-    game.remote_can_place(&Hit { pos: click.clicked, face: click.normal, point: click.point }, &stack).is_some_and(
+    game.remote_can_place(&Hit { pos: click.clicked, face: click.normal, point: click.point, inside: false }, &stack).is_some_and(
         |(pos, changes)| {
             [pos.x, pos.y, pos.z] == desired
                 && changes.iter().any(|(p, id)| {

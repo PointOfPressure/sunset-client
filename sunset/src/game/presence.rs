@@ -19,6 +19,7 @@
 //
 // All network work is on one background thread ("sunset-presence"); the game thread only hands it a snapshot once a
 // second (settings, the server, and the tab list's UUIDs when it asks for them). Failures are silent, with backoff.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset::{Category, ID, Module, with};

@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): the game tick: before and after it, and each module's turn in it.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::{Game, Screen};
 use super::sunset_util::Sweep;
@@ -17,7 +18,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     sync_binds(game);
     // Single player's own server ticks a game of its own (no window) through here too: it must leave the player's
     // state alone, or it clears Velocity's baseline and Speed's push between the client's ticks.
-    if !game.native_window() {
+    if !game.sunset_window() {
         return;
     }
     if game.player.is_none() {
@@ -180,10 +181,10 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     let snapped = super::sunset_snap_tap::pre_tick(game, get("Snap Tap").filter(|m| m.on));
     // GUI Move: behind a screen the game takes no move keys, so its movement is given the ones held and walks you as
     // it would without the screen (its own speeds, sprint, jumps, and the walk's look in first and third person).
-    let held = |k: KeyCode| !snapped.contains(&k) && (game.keys.contains(&k) || game.physical_keys.contains(&k));
+    let held = |k: KeyCode| !snapped.contains(&k) && (game.keys.raw(&k) || game.physical_keys.contains(&k));
     // Flight flies you behind a screen by itself.
     let flying = on("Flight") && super::sunset_flight::damage_open();
-    let screen_keys = get("GUI Move").filter(|m| m.on && !flying && !gui_open() && gui_move_screen(game, m)).map(|m| horizon_client::sprint::Keys {
+    let screen_keys = get("GUI Move").filter(|m| m.on && !flying && !gui_open() && gui_move_screen(game, m)).map(|m| ::sunset_core::motion::Keys {
         forward: held(KeyCode::KeyW),
         backward: held(KeyCode::KeyS),
         left: held(KeyCode::KeyA),
@@ -297,7 +298,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
 // How high Step lets you climb this tick: the setting, or vanilla's 0.6 when
 // its conditions say no (Sunset's Step: active when, safe step).
 fn step_height(game: &Game<'_>, m: &Module) -> f64 {
-    let sneaking = game.keys.contains(&KeyCode::ShiftLeft);
+    let sneaking = game.keys.raw(&KeyCode::ShiftLeft);
     let active = match m.p("Active when") {
         "Sneaking" => sneaking,
         "Not sneaking" => !sneaking,
@@ -358,7 +359,7 @@ fn gui_move_screen(game: &Game<'_>, m: &Module) -> bool {
 pub(super) fn post_tick(game: &mut Game<'_>) {
     // native_window identifies the client role, including offscreen clients. An integrated server ticks another
     // Game in this process; its missing player/window must not retire the window client's workers.
-    if game.native_window() {
+    if game.sunset_window() {
         super::sunset_baritone::post_tick(game);
         super::sunset_seedcracker::maintain(game);
         super::sunset_ore_sim::maintain(game);
@@ -370,7 +371,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     super::sunset_snap_tap::post_tick(game);
     super::sunset_scaffold_bridge::post_tick(game);
     super::sunset_combat_inventory::post_tick(game);
-    if !game.native_window() || !game.native_on(ID) {
+    if !game.sunset_window() || !game.native_on(ID) {
         return;
     }
     super::sunset_sky::keep_shown(game);
@@ -462,7 +463,7 @@ fn module_tick(game: &mut Game<'_>) {
     // GUI Move: the game ignores the keys while a menu is open, so what is held steers by hand. Flight,
     // Speed and the rest read the same keys, so they work with it open too.
     let screen_move = get("GUI Move").filter(|m| !gui_open() && gui_move_screen(game, m));
-    let held = |k: KeyCode| game.keys.contains(&k) || game.physical_keys.contains(&k);
+    let held = |k: KeyCode| game.keys.raw(&k) || game.physical_keys.contains(&k);
     let screen_keys = screen_move.as_ref().map(|m| {
         (
             f64::from(i8::from(held(KeyCode::KeyW)) - i8::from(held(KeyCode::KeyS))),
@@ -488,8 +489,8 @@ fn module_tick(game: &mut Game<'_>) {
         (len > 0.0).then(|| [x / len, z / len])
     };
     let dir = move_direction(game).or_else(|| screen_keys.and_then(|(f, s, ..)| flat(f, s)));
-    let jump = game.native_playing() && game.keys.contains(&KeyCode::Space) || screen_keys.is_some_and(|k| k.2);
-    let sneak = game.native_playing() && game.keys.contains(&KeyCode::ShiftLeft) || screen_keys.is_some_and(|k| k.3);
+    let jump = game.native_playing() && game.keys.raw(&KeyCode::Space) || screen_keys.is_some_and(|k| k.2);
+    let sneak = game.native_playing() && game.keys.raw(&KeyCode::ShiftLeft) || screen_keys.is_some_and(|k| k.3);
     let forward = move_input(game).0 > 0.0 || screen_keys.is_some_and(|k| k.0 > 0.0);
     let dim = game.dim.id();
     let flight = get("Flight").filter(|_| super::sunset_flight::damage_open());
@@ -641,7 +642,7 @@ fn module_tick(game: &mut Game<'_>) {
         }
     }
     let (jump_now, ground_now) = (
-        game.native_playing() && game.keys.contains(&KeyCode::Space),
+        game.native_playing() && game.keys.raw(&KeyCode::Space),
         game.player.as_ref().is_some_and(|p| p.ground.on_ground),
     );
     let was_ground = with(|s| std::mem::replace(&mut s.was_ground, ground_now));
@@ -679,7 +680,7 @@ fn module_tick(game: &mut Game<'_>) {
         if let Some(i) = with(|s| s.find("Auto Log")) {
             toggle(game, i, false);
         }
-        let _ = game.leave_server(Some(format!("Sunset Auto Log: health was {health}")));
+        let _ = game.leave_server(Some(format!("Sunset Auto Log: health was {health}").into()));
         return;
     }
     scaffold_fade();

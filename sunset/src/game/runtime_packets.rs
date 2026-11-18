@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): outgoing packets: moves, the look and fall the server sees, turns and Blink.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use horizon_protocol::packets::play::{self, Serverbound as S};
@@ -390,7 +391,7 @@ pub(super) fn fall_cleared(game: &Game<'_>) -> bool {
     p.fluids.was_touching_water
         || (game.creative && p.flying)
         || game.spectator()
-        || game.block_in_tag("minecraft:climbable", &game.block_name(feet))
+        || game.sunset_block_in_tag("minecraft:climbable", &game.block_name(feet))
 }
 
 // Nothing of a fall is counted (Damage fly's self damage adds exactly its own).

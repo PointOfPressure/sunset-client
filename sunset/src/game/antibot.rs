@@ -1,5 +1,6 @@
 // One tick's classification, shared by combat paths. Network lifecycle hooks
 // invalidate identities when the world actually applies a spawn or removal.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::Module;
 use super::sunset_antibot_state::{self as state, Class, Observation, Sensitivity, Tracker};
 pub(super) use state::Token;

@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): the client's state, its lifecycle (start, shutdown) and saving.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset_bind_state::Inputs;

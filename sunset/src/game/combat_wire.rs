@@ -1,4 +1,5 @@
 // What went on the wire last (after Sunset changed it): the look and the sprint the server has.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::{Dim, Game};
 use horizon_protocol::packets::play::Serverbound as S;
 use std::sync::{Arc, Mutex};
@@ -81,8 +82,8 @@ pub(super) fn delivered(game: &Game<'_>, packet: &S) {
 
 pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
     observe(game, packet);
-    if !game.native_window() || !game.native_on(super::sunset::ID) {
-        if game.native_window() {
+    if !game.sunset_window() || !game.native_on(super::sunset::ID) {
+        if game.sunset_window() {
             super::sunset_gui_move::forwarded(game, packet);
         }
         return;

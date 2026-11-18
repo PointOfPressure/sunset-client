@@ -1,4 +1,5 @@
 // Native-resolution player radar.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset::{Category, Module, accent, own_id};
@@ -210,7 +211,7 @@ pub(super) fn draw(game: &Game<'_>, batch: &mut HudBatch, [x, y, size]: [f32; 3]
     ] {
         let [ox, oy] = offset(dx, dz, yaw, rotate);
         let at = [
-            center[0] + ox as f32 * (radius - 8.0) - game.native_text_width(label) / 2.0,
+            center[0] + ox as f32 * (radius - 8.0) - game.sunset_text_width(label) / 2.0,
             center[1] + oy as f32 * (radius - 8.0) - 4.0,
         ];
         game.native_text(

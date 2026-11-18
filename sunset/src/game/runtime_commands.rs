@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): the . commands, Panic, profiles and presets.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset_util::Sweep;
@@ -10,7 +11,7 @@ use super::sunset::*;
 // ---------------------------------------------------------------- commands
 
 pub(super) fn chat(game: &mut Game<'_>, message: &str) -> bool {
-    if !game.native_window() || !game.native_on(ID) {
+    if !game.sunset_window() || !game.native_on(ID) {
         return false;
     }
     // After Panic the chat is the game's own: no command is read, .panic included, until restart.

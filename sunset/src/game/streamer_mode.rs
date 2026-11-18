@@ -4,6 +4,7 @@
 // Player 2... (Numbered, the same number for a name while it is on) or all as Others' name. The names come from the
 // server's player list (and the last word of a listed display name, a nickname), the players in the world, your
 // profile and signed-in account, and Also hide. Nothing sent to the server changes: only what is drawn.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
 use super::sunset::{Category, Module};

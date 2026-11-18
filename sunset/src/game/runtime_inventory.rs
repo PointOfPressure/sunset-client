@@ -1,4 +1,5 @@
 // Runtime part (see runtime.rs): armour, Chest Swap, Auto Replenish, Auto Tool and middle click.
+use crate::game::sunset_compat::SunsetGame as _;
 
 use super::{Game, Screen};
 use winit::keyboard::KeyCode;
@@ -161,7 +162,7 @@ pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
 pub(super) fn chest_swap(game: &mut Game<'_>) -> bool {
     let moving_now = [KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD, KeyCode::Space, KeyCode::ShiftLeft]
         .into_iter()
-        .any(|key| game.keys.contains(&key) || game.physical_keys.contains(&key));
+        .any(|key| game.keys.raw(&key) || game.physical_keys.contains(&key));
     if !inventory_idle(game)
         || moving_now
         || super::sunset_combat_wire::sent_input(game) & 0x3f != 0

@@ -1,6 +1,7 @@
 // The list the Profiles module's row opens: the saved profiles, or (its Presets tab) the pre-made ones. A click, or
 // the arrows and Enter, loads a saved one; a preset first shows what taking it turns on and off, with Apply and Back.
 // Save (under the saved ones) writes the settings as they are now to the profile in use. Left and Right change tabs. The files are read when it opens and when one loads, never while drawing.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::{Game, sunset::{Shape, accent, panel_radius}};
 use super::sunset_presets::PRESETS;
 
@@ -245,7 +246,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
         let (apply, back) = buttons(r);
         for (b, label, colour) in [(apply, "Apply", 0xFF00_0000 | accent()), (back, "Back", 0xFF3A_3A3A)] {
             out.push(Shape::Round(b, panel_radius(), colour));
-            let tw = game.native_text_width(label);
+            let tw = game.sunset_text_width(label);
             out.push(Shape::Text(label.to_owned(), [b[0] + (b[2] - tw) / 2.0, b[1] + super::sunset::text_y(b[3])], 0xFFFFFF));
         }
         if let Some(error) = &menu.error {
@@ -258,7 +259,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
         if menu.tab == tab {
             out.push(Shape::Round(t, panel_radius(), 0xFF28_282C));
         }
-        let tw = game.native_text_width(label);
+        let tw = game.sunset_text_width(label);
         out.push(Shape::Text(label.to_owned(), [t[0] + (t[2] - tw) / 2.0, t[1] + 3.0], if menu.tab == tab { accent() } else { 0x909090 }));
     }
     if menu.tab == Tab::Saved && menu.names.is_empty() {
@@ -280,7 +281,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
                 let preset = &PRESETS[i];
                 let colour = if selected == Some(preset.id) { accent() } else { 0xFFFFFF };
                 let title = fit(game, preset.title, row[2] - 10.0);
-                let tw = game.native_text_width(&title);
+                let tw = game.sunset_text_width(&title);
                 out.push(Shape::Text(title, at_text, colour));
                 let room = row[2] - 18.0 - tw;
                 if room > 30.0 {
@@ -294,7 +295,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
         let b = save_button(r);
         out.push(Shape::Round(b, panel_radius(), if inside(b, at) { 0xFF00_0000 | accent() } else { 0xFF3A_3A3A }));
         let label = fit(game, &format!("Save {name}"), b[2] - 8.0);
-        let tw = game.native_text_width(&label);
+        let tw = game.sunset_text_width(&label);
         out.push(Shape::Text(label, [b[0] + (b[2] - tw) / 2.0, b[1] + 3.0], 0xFFFFFF));
     }
     if let Some(error) = &menu.error {

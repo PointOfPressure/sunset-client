@@ -2,6 +2,9 @@
 // every channel (which blends as the coverage squared and thins every edge), and a touch of weight is added.
 // Only grey texels are changed, so the bitmap fonts' white and transparent ones stay as they are.
 fn sunset_patches(this: &Font) -> std::ops::ControlFlow<Vec<Patch>> {
+    // Names the crate root's re-exports the game's copy of the font module reaches through its imports.
+    #[allow(unused_imports)]
+    use crate::{resource_source as _, zip as _};
     if !::sunset_core::lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
 
     if ::sunset_core::font::STYLE.load(std::sync::atomic::Ordering::Relaxed) == 0 {

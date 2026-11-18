@@ -157,10 +157,10 @@ pub fn protect(text: &Text) -> Option<Text> {
     if found.is_empty() {
         return None;
     }
-    let mut out = Text::default();
-    let mut push = |s: &str, style: &Style| match out.spans.last_mut() {
+    let mut spans: Vec<Span> = Vec::new();
+    let mut push = |s: &str, style: &Style| match spans.last_mut() {
         Some(last) if last.style == *style => last.text.push_str(s),
-        _ => out.spans.push(Span { text: s.to_owned(), style: style.clone() }),
+        _ => spans.push(Span::new(s, style.clone())),
     };
     let mut at = 0;
     let mut one = [0u8; 4];
@@ -174,7 +174,7 @@ pub fn protect(text: &Text) -> Option<Text> {
     for &(c, style) in &styled[at..] {
         push(c.encode_utf8(&mut one), style);
     }
-    Some(out)
+    Some(Text::from_spans(spans))
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 // Crystal Aura and Anchor Aura, run together: one acts at a time (the better hit first), and the box each would use
 // next is drawn.
+use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{self, Module};
 use super::{Game, Screen};
 use std::sync::atomic::AtomicBool;
@@ -106,7 +107,7 @@ pub(super) fn draw(
         let top = [lo[0] + 0.5, lo[1] + 1.25, lo[2] + 0.5];
         if let Some([x, y]) = camera.project(top) {
             let label = format!("{damage:.1}  self {own:.1}");
-            let width = game.native_text_width(&label);
+            let width = game.sunset_text_width(&label);
             out.text(&label, [x - width * 0.5, y], color & 0xffffff);
         }
     }
@@ -116,7 +117,7 @@ pub(super) use super::sunset_explosive_choice::Rating;
 use super::sunset_explosive_choice::prefer_first;
 
 pub(super) fn can_act(game: &Game<'_>) -> bool {
-    game.native_window()
+    game.sunset_window()
         && game.native_on(sunset::ID)
         && game.native_playing()
         && game.screen == Screen::Playing
