@@ -15,7 +15,7 @@ import pack
 
 class Packages(unittest.TestCase):
     def setUp(self):
-        scratch = pack.ROOT / "dist" / "pack-tests"
+        scratch = pack.REPO / "dist" / "pack-tests"
         scratch.mkdir(parents=True, exist_ok=True)
         self.directory = tempfile.TemporaryDirectory(prefix="baritone-", dir=scratch)
         self.addCleanup(self.directory.cleanup)

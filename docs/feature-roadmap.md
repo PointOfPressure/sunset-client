@@ -5,7 +5,7 @@ Horizon-native features, with what each contribution needs to show.
 
 ## Landed contributions
 
-Contributions are ported by hand onto the current tree (our names and style, tests in `tools/verify.py`); the
+Contributions are ported by hand onto the current tree (our names and style, tests in `client/tools/verify.py`); the
 original PRs are closed rather than merged on GitHub:
 
 - Radar (#1), profiles with recovery and export/import (#2), the text editor with Apply/Enter and Cancel/Esc (#4),

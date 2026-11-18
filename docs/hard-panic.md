@@ -5,7 +5,7 @@ The next launch starts it as usual; nothing about Panic is saved.
 
 ## Lifecycle
 
-`mixins/sunset/lifecycle.rs` (`horizon_protocol::connection::sunset_lifecycle::RUNTIME`, shared by the game,
+`client/mixins/sunset/lifecycle.rs` (`horizon_protocol::connection::sunset_lifecycle::RUNTIME`, shared by the game,
 network and renderer crates) goes `Running → Stopping → Dormant`, one way, with atomic compare-and-swap steps:
 
 - `runtime::shutdown` makes the one `Running → Stopping` step. Every hook checks `running()`, so dispatch closes
@@ -27,7 +27,7 @@ A plugin's `api::stop_everything` is not Panic: it runs `all_off` and the stop h
 saved, so the mod stays built in and on and `horizon-mods.txt` is untouched. Panic removes Sunset's row
 (`runtime::unlist`), and `runtime::listed` adds none if the list is made again. The options screen keeps indices
 into the rows (its page stack's `Page::NativeMod(i)` and the native key waiting to be bound, private to
-`options_ui`), so `mixins/sunset/mod_rows.rs` (a module in `options_ui.rs`) closes a page of the removed row,
+`options_ui`), so `client/mixins/sunset/mod_rows.rs` (a module in `options_ui.rs`) closes a page of the removed row,
 back to the list, and moves later rows' indices up. The search box filters options, not mod rows, so it needs
 nothing more. `not_built()` adds no row for Sunset either, because the build's `native-mods.json` lists it.
 
@@ -36,7 +36,7 @@ nothing more. `not_built()` adds no row for Sunset either, because the build's `
 The launcher is another process. The game tells it through a file:
 `<game folder>/horizon-session/hidden/<mod id>.<pid>.lock`. The game process creates it after Panic, holds it
 under an exclusive OS lock (`File::try_lock`) until the process exits, and never deletes it itself
-(`mixins/sunset/session.rs`). The OS releases the lock however the process ends, crash or kill included, so:
+(`client/mixins/sunset/session.rs`). The OS releases the lock however the process ends, crash or kill included, so:
 
 - a marker whose lock can be taken belongs to a game that has ended; it hides nothing, and whoever finds it
   removes it (the launcher, or Sunset's next start);
@@ -46,7 +46,7 @@ under an exclusive OS lock (`File::try_lock`) until the process exits, and never
 - PIDs are only in the name to keep two game processes of one instance apart. A reused PID changes nothing,
   because the lock is the proof the process is alive.
 
-The launcher side is [horizon-patches/launcher-session-hidden.patch](horizon-patches/launcher-session-hidden.patch),
+The launcher side is [client/horizon-patches/launcher-session-hidden.patch](../client/horizon-patches/launcher-session-hidden.patch),
 made against Horizon 66f3981 (`launcher/src/native_status.rs`, `launcher/src/instance_mods.rs`). It is not part of
 Sunset's build: horizon-mixins patches the game's crates only, so the patch has to land in Horizon's launcher (an
 upstream change to `horizon-rust/horizon`) or in a locally built launcher. It adds `native_status::hidden(home)`,

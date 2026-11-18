@@ -43,7 +43,7 @@ does not establish a bypass for any deployed anti-cheat, and no live mainstream 
 
 ## Validation
 
-31 planner/executor tests pass using `rustc --edition 2024 --test -O tools/inventory_tests.rs` and running the
+31 planner/executor tests pass using `rustc --edition 2024 --test -O client/tools/inventory_tests.rs` and running the
 resulting test binary. Native test compilation passed, and the complete local tree built successfully through
 the launcher as `native-66f3981-d45c7c3ff296` for final testing. These results do not establish server acceptance.
 

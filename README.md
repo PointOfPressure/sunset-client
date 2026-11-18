@@ -50,7 +50,7 @@ After that, start the **Native mods** instance from the launcher whenever you wa
 
 **Built-in Baritone.** The Baritone-enabled Sunset package contains the complete supplied runtime and its
 Ore Sim mining engine; no separate plugin is needed. Keep the matching engine-source archive with the package. See
-[Baritone installation, engine replacement and limits](docs/baritone.md).
+[Baritone installation, engine replacement and limits](client/docs/baritone.md).
 
 **Which Horizon version?** Each Sunset release is built for one Horizon version, and the Native mods instance runs on
 that version:
@@ -324,7 +324,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
     Database fetch off and Auto-crack enabled, a local world then exercises the same chunk snapshot, finder,
     solver, hash-verification and Ore Sim path as a remote world. The optional diagnostic-only
     **`SUNSET_SEEDCRACKER_START_DELAY`** is a collection window in seconds (default 0, capped at 300; ignored
-    unless FORCE_CRACK is on). For `tools/verify.py CTL_PATH "Ore Sim seed crack"`, launch the fresh normal-terrain
+    unless FORCE_CRACK is on). For `client/tools/verify.py CTL_PATH "Ore Sim seed crack"`, launch the fresh normal-terrain
     world with both FORCE_CRACK=1 and START_DELAY=240, using the full variable names above. The check collects
     natural pyramids and monuments, checks the recovered seed and compares the drawn ore overlay on/off.
     No diagnostic value is saved in profiles; the delay does not change the engine or its search space.
@@ -341,7 +341,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
     line width and a separate render cap. Movement is shared with Auto Walk and `.goto`; explicit handoff,
     manual input, stop, disable, world changes and Panic cancel jobs. Profiles save preferences without paths.
   - The engine ships for Linux and Windows (x86_64). Full runtime commands use the original `#` prefix; the
-    bounded Ore Sim controller keeps the `.b` commands above. See [commands, installation, source and DLL replacement](docs/baritone.md).
+    bounded Ore Sim controller keeps the `.b` commands above. See [commands, installation, source and DLL replacement](client/docs/baritone.md).
 - **Nuker**, **Packet Mine**, **Vein Miner** (the ore touching an ore you break), **Liquid Filler** (also drains an
   enemy's water or lava), **Spawn Proofer**, **Build Height**.
 - **Auto Sign**: writes signs without the editor ever showing, with text from its settings (front and back) or the
@@ -434,15 +434,20 @@ check or ask about it at runtime (by then it is already built in), so the instal
 
 ## Building from source
 
-- `python3 tools/pack.py` writes `dist/sunset-<version>.hnmod`.
-- To compile-check against the Horizon Nightly pinned in `horizon-native.json`: stage the mod with
+The repository is a cargo workspace: `client/` is Sunset (the mod in `client/mixins/`, the Baritone engine, `tools/`,
+`horizon-native.json` and the Horizon patch series), `launcher/` the Sunset launcher (a stub for now) and `plugins/`
+the plugin API's test plugin and smoke test. The plugin API itself is `client/mixins/sunset/api.rs`, compiled into
+Sunset. The `.hnmod` line (0.8.x/1.x fixes) is the `hnmod` branch.
+
+- `python3 client/tools/pack.py` writes `dist/sunset-<version>.hnmod`.
+- To compile-check against the Horizon Nightly pinned in `client/horizon-native.json`: stage the mod with
   [horizon-mixins](https://github.com/horizon-rust/horizon-mixins)
-  (`horizon-mixins apply --workspace <horizon at that commit> --mods mixins --out stage`), then run
+  (`horizon-mixins apply --workspace <horizon at that commit> --mods client/mixins --out stage`), then run
   `cargo check -p horizon-client` in the stage.
-- `tools/verify.py` runs modules in a test arena in a headless game.
-- Before a release, `python3 tools/plugsmoke.py` builds Sunset with the plugin SDK's examples (hello and afk from a
+- `client/tools/verify.py` runs modules in a test arena in a headless game.
+- Before a release, `python3 plugins/plugsmoke.py` builds Sunset with the plugin SDK's examples (hello and afk from a
   [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) checkout, `SDK=`) and the test plugin
-  `tools/plugcheck` on Sunset's pin, then runs verify.py's `Plugin API:` checks on single player and Horizon's
+  `plugins/plugcheck` on Sunset's pin, then runs verify.py's `Plugin API:` checks on single player and Horizon's
   server. It stops the release on a pin or API mismatch, a plugin left out of the build, a compiler warning or a
   failed check. Paths and options are at the top of the script.
 
@@ -478,15 +483,15 @@ Elytra Target was asked for by muhalo1545 on the Sunset Discord; its behaviour f
 Ore Sim's automatic seed discovery uses [horizon-seedcrackerx](https://github.com/luhnox/horizon-seedcrackerx) by
 [luhnox](https://github.com/luhnox), a Rust port of [SeedCrackerX](https://github.com/19MisterX98/SeedcrackerX),
 originally by KaptainWutax and maintained by 19MisterX98 and contributors, with the SeedFinding libraries. The reused
-code is MIT licensed; its [license](mixins/sunset/seedcracker.LICENSE) and
-[notices](mixins/sunset/seedcracker.NOTICE.md) ship in Sunset's `.hnmod`, together with the exact upstream revision,
-[file mapping and local changes](mixins/sunset/seedcracker.UPSTREAM.md).
+code is MIT licensed; its [license](client/mixins/sunset/seedcracker.LICENSE) and
+[notices](client/mixins/sunset/seedcracker.NOTICE.md) ship in Sunset's `.hnmod`, together with the exact upstream revision,
+[file mapping and local changes](client/mixins/sunset/seedcracker.UPSTREAM.md).
 
 Baritone uses [horizon-baritone](https://github.com/luhnox/horizon-baritone) by [luhnox](https://github.com/luhnox),
 a Rust port of [Baritone](https://github.com/cabaletta/baritone) 1.21.4 by leijurv and contributors, brought into Sunset by Rust.
-Its source ([mixins/baritone/upstream](mixins/baritone/upstream/README.md)) builds both the in-game runtime and the
-replaceable Ore Sim mining engine ([baritone-engine](baritone-engine/NOTICE.md)); both stay under its LGPL-3.0; their
-licence texts and notices ship unchanged in Sunset's package. See [source and replacement](docs/baritone.md).
+Its source ([client/mixins/baritone/upstream](client/mixins/baritone/upstream/README.md)) builds both the in-game runtime and the
+replaceable Ore Sim mining engine ([baritone-engine](client/baritone-engine/NOTICE.md)); both stay under its LGPL-3.0; their
+licence texts and notices ship unchanged in Sunset's package. See [source and replacement](client/docs/baritone.md).
 
 Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -495,7 +500,7 @@ Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
 Sunset 0.8.1 and later is under the [PolyForm Strict License 1.0.0](LICENSE): you can use it for yourself (not commercially) and read the source; you can't change it or share copies. Plugins are fine, and the plugin docs and example in [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) are MIT. Versions up to 0.8.0 stay under the MIT licence they were released with. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 The Baritone parts above are LGPL-3.0 and their MIT loader keeps its own licence; Sunset's licence does not replace
-theirs. Your rights to change, rebuild and replace them are in [docs/baritone.md](docs/baritone.md#source-and-licences).
+theirs. Your rights to change, rebuild and replace them are in [client/docs/baritone.md](client/docs/baritone.md#source-and-licences).
 
 <details>
 <summary>Font credits</summary>

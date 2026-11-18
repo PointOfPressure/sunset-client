@@ -1,6 +1,6 @@
 # Fake Lag: design notes
 
-Fake Lag delays what the client sends. Since the rebuild (`mixins/sunset/lag.rs`, `lag_line.rs`) it is one ordered
+Fake Lag delays what the client sends. Since the rebuild (`client/mixins/sunset/lag.rs`, `lag_line.rs`) it is one ordered
 line. The modes decide only when the line holds and for how long.
 
 ## The line's rules

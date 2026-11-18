@@ -107,7 +107,7 @@ profile-migration and motion-flag tests were compiled, not executed. No live ser
 Reproduce the 25 pure checks without a Horizon checkout:
 
 ```powershell
-rustc --edition 2024 --test -O tools/legacy_pvp_tests.rs -o "$env:TEMP/sunset-legacy-pvp-tests.exe"
+rustc --edition 2024 --test -O client/tools/legacy_pvp_tests.rs -o "$env:TEMP/sunset-legacy-pvp-tests.exe"
 & "$env:TEMP/sunset-legacy-pvp-tests.exe"
 ```
 

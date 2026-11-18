@@ -14056,7 +14056,7 @@ def _():
 
 
 # ---- the plugin API (version 2), through the example plugins (sunset-plugins: hello, afk) and the test plugin
-# (tools/plugcheck), all three staged next to Sunset on the test machine. They answer in chat: the log has it.
+# (plugins/plugcheck), all three staged next to Sunset on the test machine. They answer in chat: the log has it.
 
 def said_since(mark, *lines, settle=4):
     """Types each line, waits, and gives what Sunset said since mark."""

@@ -1,6 +1,6 @@
 # Sunset Presence backend
 
-Two Cloudflare Workers on the maintainer's account. The client side is `mixins/sunset/presence.rs`; the privacy
+Two Cloudflare Workers on the maintainer's account. The client side is `client/mixins/sunset/presence.rs`; the privacy
 summary is in the main README.
 
 | Piece | Why |

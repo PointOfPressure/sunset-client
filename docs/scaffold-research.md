@@ -18,7 +18,7 @@ working.
 ## 0.1 Rise 6.9.5 source (added later)
 
 A Rise 6.9.5 source tree turned up later (`docs/Rise-6.9.5-main.zip`, untracked, never to be committed). It was read as
-text inside the zip, nothing extracted or run, and Sunset's Normal mode (`mixins/sunset/scaffold_normal.rs`) follows
+text inside the zip, nothing extracted or run, and Sunset's Normal mode (`client/mixins/sunset/scaffold_normal.rs`) follows
 its behaviour, written fresh. What it does:
 
 - **RotationComponent**: a module asks for a look and a speed each tick (speed setting x 36 degrees a tick, plus up to
@@ -223,7 +223,7 @@ What this means for the design:
 
 ## 6. Proposal: a "Fast" mode alongside Normal, Legit and Godbridge
 
-Kept: Normal, Legit, Godbridge, Kill Aura as they are. New mode `Fast` in `mixins/sunset/scaffold_fast.rs` (new file),
+Kept: Normal, Legit, Godbridge, Kill Aura as they are. New mode `Fast` in `client/mixins/sunset/scaffold_fast.rs` (new file),
 built on what Sunset already has.
 
 ### 6.1 Pieces Sunset already has

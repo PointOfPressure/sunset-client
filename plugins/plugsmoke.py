@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # Plugin SDK smoke test, part of every release: builds Sunset with the SDK's example plugins (hello, afk from
-# sunset-plugins) and the test plugin (tools/plugcheck), then runs verify.py's "Plugin API:" checks on single player
+# sunset-plugins) and the test plugin (plugins/plugcheck), then runs verify.py's "Plugin API:" checks on single player
 # and Horizon's server. Exits non-zero on any failure, so a broken SDK, pin or plugin API stops the release.
 #
-#   tools/plugsmoke.py [--no-run] [target...]      targets default to: sp horizon
+#   plugins/plugsmoke.py [--no-run] [target...]      targets default to: sp horizon
 #
 # Environment (defaults are the test machine's):
 #   SDK=~/dev/sunset-plugins             the sunset-plugins checkout whose examples are built
@@ -15,7 +15,8 @@ import json, os, pathlib, re, shutil, subprocess, sys, time
 
 sys.stdout.reconfigure(line_buffering=True)
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+HERE = pathlib.Path(__file__).resolve().parent  # plugins/
+ROOT = HERE.parent / "client"                   # Sunset: horizon-native.json, mixins/, tools/
 HOME = pathlib.Path.home()
 SDK = pathlib.Path(os.environ.get("SDK", HOME / "dev" / "sunset-plugins"))
 LHOME = pathlib.Path(os.environ.get("LAUNCHER_HOME", HOME / "sunset-hp-build"))
@@ -68,7 +69,7 @@ shutil.rmtree(BUILD, ignore_errors=True)
 BUILD.mkdir(parents=True)
 stage(BUILD, "sunset", ROOT / "mixins" / "sunset", pins)
 stage(BUILD, "probe", ROOT / "tools" / "probe")
-stage(BUILD, "plugcheck", ROOT / "tools" / "plugcheck")
+stage(BUILD, "plugcheck", HERE / "plugcheck")
 for pid in ("hello", "afk"):
     example = SDK / "examples" / f"{pid}-plugin"
     if not (example / "mixins" / pid).is_dir():

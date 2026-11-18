@@ -6,4 +6,4 @@ By opening a pull request you confirm you wrote the change (or are allowed to gi
 
 Keep your work in its own files where you can, so changes don't collide.
 
-Run `tools/verify.py` if you can (see the README).
+Run `client/tools/verify.py` if you can (see the README).

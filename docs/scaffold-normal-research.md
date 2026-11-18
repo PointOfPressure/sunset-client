@@ -184,7 +184,7 @@ Kept as ideas: placing through `press_use` + `forced_hit`; a Scaffold slot in `s
 
 ## 6. Architecture (implemented)
 
-`mixins/sunset/scaffold_normal.rs`, one module, called from `runtime::pre_tick` after Legit/Godbridge and from
+`client/mixins/sunset/scaffold_normal.rs`, one module, called from `runtime::pre_tick` after Legit/Godbridge and from
 `runtime::post_tick` first (it gives back keys before Snap Tap gives back its own).
 
 ```text

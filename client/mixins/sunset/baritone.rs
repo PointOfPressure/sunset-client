@@ -147,7 +147,7 @@ pub(super) fn stop(game: &mut Game<'_>, reason: StopReason) {
 }
 
 // Called only by the built-in Baritone runtime (mixins/baritone/full.rs); Sunset built without it (tools/pack.py
-// --without-baritone, tools/plugsmoke.py) has no caller.
+// --without-baritone, plugins/plugsmoke.py) has no caller.
 #[allow(dead_code)]
 pub(super) fn legacy_active() -> bool { state(|c| c.job.is_some()) }
 

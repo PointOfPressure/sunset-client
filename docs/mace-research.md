@@ -23,7 +23,7 @@ Written 2026-11-03. All third-party code was read statically. Nothing was built 
 
 - **Smash attack:** the attacker has fallen more than 1.5 blocks and isn't gliding.
 - **Bonus damage:** 4 per block for the first 3 blocks, 2 per block up to 8, then 1 per block. Sunset implements this
-  as `smash_bonus` in `mixins/sunset/melee_policy.rs`.
+  as `smash_bonus` in `client/mixins/sunset/melee_policy.rs`.
 - **Density:** adds `smash_damage_per_fallen_block`, which is 0.5 per level per block fallen.
 - **Breach:** lowers how much the target's armour protects, 15 % per level.
 - **Wind Burst:** a smash hit launches the attacker upward. You get a new fall without touching the ground, which is
@@ -39,7 +39,7 @@ Written 2026-11-03. All third-party code was read statically. Nothing was built 
 
 ## Sunset today (main `cb6f6b3`)
 
-Auto Weapon is defined in `mixins/sunset/melee.rs`, in `defaults()`. Its Mace settings are:
+Auto Weapon is defined in `client/mixins/sunset/melee.rs`, in `defaults()`. Its Mace settings are:
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -228,7 +228,7 @@ anticheats detect. If they're ever wanted, they belong next to Criticals' Mace s
 
 ## Tests
 
-The rig tests live in `tools/verify.py`. The existing ones to extend or put new tests next to are
+The rig tests live in `client/tools/verify.py`. The existing ones to extend or put new tests next to are
 `@test("Auto Weapon (Mace)")`, `"Auto Weapon (Stun slam)"`, `"Auto Weapon (Axe on shields)"`, `"Criticals"` and
 `"Auto Weapon (settings from before 0.9)"`. That last one is the place for a config migration test if settings get
 renamed. The rig runs on Linux only; the user runs it and tests in game by hand.
@@ -443,7 +443,7 @@ Before any mace test:
 
 ### Proving it: a Grim profile on the rig
 
-Add a Grim profile to the Paper rig in `tools/verify.py`:
+Add a Grim profile to the Paper rig in `client/tools/verify.py`:
 - **Server:** Paper 1.21.11 with the latest Grim 2.3.x and `experimental-checks: true`. Test with
   `update-equipment-on-player-actions` set to both true and false.
 - **Cases**, each with START/END markers, Prism-style:

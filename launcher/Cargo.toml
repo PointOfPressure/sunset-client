@@ -1,0 +1,9 @@
+[package]
+name = "sunset-launcher"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+license-file.workspace = true
+description = "Sunset launcher: downloads the signed prebuilt Sunset client for the pinned Horizon and runs it"
+
+[dependencies]

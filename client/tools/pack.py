@@ -13,7 +13,10 @@ import shutil
 import tempfile
 import zipfile
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parent.parent  # client/
+# The repository root, where the ignored dist/ output (dist/sunset.hnmod) stays.
+REPO = ROOT.parent
+
 # Rust target -> the library file the loader looks for on that system.
 ENGINES = {"x86_64-unknown-linux-gnu": "libsunset_baritone_engine.so", "x86_64-pc-windows-gnu": "sunset_baritone_engine.dll"}
 NOTICES = ("LICENSE", "COPYING", "NOTICE.md", "LICENSE-Part-2.jpg", "UPSTREAM.md", "CHANGES.md", "DEPENDENCIES.md")
@@ -294,11 +297,11 @@ def pack_baritone(root, output, metadata, engine_version, engines):
     return out, source
 
 
-def package(root=ROOT, with_baritone=None, engines=None):
+def package(root=ROOT, with_baritone=None, engines=None, output=None):
     if with_baritone is None:
         with_baritone = (root / "mixins/baritone/full.rs").is_file()
     manifest = json.loads((root / "horizon-native.json").read_text(encoding="utf-8"))
-    output = root / "dist"
+    output = output or (REPO / "dist" if root == ROOT else root / "dist")
     output.mkdir(exist_ok=True)
     bundle = None
     if with_baritone:
