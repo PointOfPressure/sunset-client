@@ -76,3 +76,17 @@ pub fn draw(batch: &mut HudBatch, atlas: &HudAtlas) {
         batch.fill_quad(atlas, [[x, y], [x + w, y], [x + w, y + h], [x, y + h]], rgba(r, g, b, a));
     }
 }
+
+// The vanilla mark leaves the crosshair's draws while Sunset's crosshair draws (an empty fill keeps the attack
+// indicator's place in the list).
+pub fn hide_mark(draws: &mut [horizon_client::hud_layout::GuiDraw]) {
+    use horizon_client::hud_layout::GuiDraw;
+    if !ACTIVE.with(Cell::get) {
+        return;
+    }
+    if let Some(first) = draws.first_mut()
+        && matches!(first, GuiDraw::Sprite { sprite, .. } if sprite == "hud/crosshair")
+    {
+        *first = GuiDraw::Fill { x0: 0, y0: 0, x1: 0, y1: 0, color: 0 };
+    }
+}

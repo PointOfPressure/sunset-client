@@ -758,6 +758,13 @@ fn xray(game: &mut Game<'_>, mods: &[Module]) {
     let (water, lava) = m.as_ref().map_or((false, false), |m| (m.b("Show water"), m.b("Show lava")));
     let key = (want.is_some(), want.clone().unwrap_or_default(), water, lava);
     if rs(|r| r.xray.as_ref() == Some(&key)) {
+        // The game rebuilt the hidden states without Xray's (a join, another mod's refresh): Xray's go back in.
+        if want.is_some()
+            && std::sync::Arc::as_ptr(&game.pack.context.hidden_states).cast::<u8>() as usize
+                != XRAY_TABLE.load(Ordering::Relaxed)
+        {
+            xray_hide(game);
+        }
         return;
     }
     let shown = |name: &str| (water && short(name) == "water") || (lava && short(name) == "lava");
@@ -777,8 +784,45 @@ fn xray(game: &mut Game<'_>, mods: &[Module]) {
         *set = ids;
     }
     ::sunset_core::xray::ON.store(want.is_some(), Ordering::Relaxed);
-    game.all_sections_changed();
+    xray_hide(game);
     rs(|r| r.xray = Some(key));
+}
+
+// The table of states the mesher hides (`block_render_visibility`): the mods' answers, and with Xray every state it
+// doesn't list, so those draw as air and the listed blocks show with every face. As the game's own
+// refresh_render_visibility, the loaded sections are meshed again when the table changes.
+static XRAY_TABLE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn xray_hide(game: &mut Game<'_>) {
+    use std::sync::Arc;
+    let on = ::sunset_core::xray::ON.load(Ordering::Relaxed);
+    let asked = mod_api::__private::has_scoped_hook(mod_api::HookId::BlockRenderVisibility);
+    let visible = ::sunset_core::xray::VISIBLE.read().map(|v| v.clone()).unwrap_or_default();
+    let states = game.pack.assets.registry.len();
+    let mut table = Vec::with_capacity(states);
+    for state in 0..states {
+        let mut hidden = false;
+        if asked {
+            game.native_block_render_visibility(horizon_world::registry::BlockStateId(state as u32), &mut hidden);
+        }
+        table.push(hidden || (on && state != 0 && !visible.contains(&(state as u32))));
+    }
+    let table: Arc<[bool]> = if table.contains(&true) { table.into() } else { Arc::from([]) };
+    if table != game.pack.context.hidden_states {
+        let old = &game.pack.context;
+        game.pack.context = Arc::new(horizon_client::streaming::WorkerContext {
+            assets: old.assets.clone(),
+            render: old.render.clone(),
+            tables: old.tables.clone(),
+            biomes: old.biomes.clone(),
+            light: old.light.clone(),
+            hidden_states: table,
+            part_tables: old.part_tables.clone(),
+        });
+        let context = game.worker_context();
+        game.streaming.reload_resources(&mut game.world, context);
+    }
+    XRAY_TABLE.store(Arc::as_ptr(&game.pack.context.hidden_states).cast::<u8>() as usize, Ordering::Relaxed);
 }
 
 // Clear Water: the mesher draws water with the copy of its sprites at the chosen opacity and a lighter tint; the

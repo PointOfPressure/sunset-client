@@ -2245,71 +2245,12 @@ helper = "src/mixins/client_local_hook.rs"
 # Not ported yet: these targets are below the game crate and not replaceable on this build.
 
 # [[native.mixin]]
-# id = "xray"
-# target = "horizon_client_render::mesher::Mesher<'_>::mesh_reusing"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/xray.rs"
-# bindings = [
-#   { name = "this", ty = "&mut Mesher<'_>", value = "&mut *self" },
-#   { name = "region", ty = "&[[Option<&Chunk>; 3]; 3]", value = "region" },
-#   { name = "sy", ty = "i32", value = "sy" },
-#   { name = "out", ty = "&mut SectionMesh", value = "&mut out" },
-#   { name = "scratch", ty = "&mut MeshScratch", value = "&mut *scratch" },
-# ]
-
-# [[native.mixin]]
-# id = "equip-hold"
-# target = "horizon_client_lib::first_person::HandHeights::tick"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/equip_hold.rs"
-# bindings = [
-#   { name = "this", ty = "&mut HandHeights", value = "&mut *self" },
-#   { name = "hands_busy", ty = "bool", value = "hands_busy" },
-#   { name = "swap_scale", ty = "f32", value = "swap_scale" },
-#   { name = "changed", ty = "[bool; 2]", value = "changed" },
-# ]
-
-
-# [[native.mixin]]
-# id = "hurt-cam"
-# target = "horizon_client_render::camera::bob_hurt"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/hurt_cam.rs"
-
-
-# [[native.mixin]]
 # id = "particle-push"
 # target = "horizon_client_render::particles::ParticleEngine::push"
 # kind = "HEAD"
 # cancellable = true
 # helper = "src/mixins/particle_push.rs"
 # bindings = [{ name = "particle", ty = "&Particle", value = "&particle" }]
-
-# [[native.mixin]]
-# id = "xray-get"
-# target = "horizon_client_render::chunk::Chunk::get"
-# kind = "RETURN"
-# helper = "src/mixins/xray_get.rs"
-# bindings = [
-#   { name = "chunk", ty = "&Chunk", value = "&*self" },
-#   { name = "x", ty = "i32", value = "x" },
-#   { name = "y", ty = "i32", value = "y" },
-#   { name = "z", ty = "i32", value = "z" },
-#   { name = "value", ty = "u32", value = "$value" },
-# ]
-
-# [[native.mixin]]
-# id = "xray-unpack"
-# target = "horizon_client_render::chunk::Section::unpack"
-# kind = "RETURN"
-# helper = "src/mixins/xray_unpack.rs"
-# bindings = [
-#   { name = "out", ty = "&mut [u32; 4096]", value = "&mut *out" },
-#   { name = "value", ty = "()", value = "$value" },
-# ]
 
 [[native.mixin]]
 id = "multitask_click"
@@ -2334,29 +2275,6 @@ bindings = [
 ]
 
 # (removed font_over)
-
-# [[native.mixin]]
-# id = "menu_dark"
-# target = "horizon_client_render::hud::HudBatch::fill"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/menu_hook.rs"
-# bindings = [
-#   { name = "this", ty = "&HudBatch", value = "&*self" },
-#   { name = "x", ty = "f32", value = "x" },
-#   { name = "y", ty = "f32", value = "y" },
-#   { name = "w", ty = "f32", value = "w" },
-#   { name = "h", ty = "f32", value = "h" },
-#   { name = "color", ty = "u32", value = "color" },
-# ]
-
-# [[native.mixin]]
-# id = "inventory_blur"
-# target = "horizon_client::game::screens::Screen::blurs_background"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/inventory_blur_hook.rs"
-# bindings = [{ name = "screen", ty = "crate::game::Screen", value = "self" }]
 
 # [[native.mixin]]
 # id = "speed_move"
@@ -2485,22 +2403,6 @@ bindings = [
 
 
 # [[native.mixin]]
-# id = "crosshair_rect"
-# target = "horizon_client_render::hud::HudBatch::rect_uv"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/crosshair_rect_hook.rs"
-# bindings = [
-#   { name = "batch", ty = "&crate::hud::HudBatch", value = "&*self" },
-#   { name = "x", ty = "f32", value = "x" },
-#   { name = "y", ty = "f32", value = "y" },
-#   { name = "w", ty = "f32", value = "w" },
-#   { name = "h", ty = "f32", value = "h" },
-#   { name = "rect", ty = "crate::hud::Rect", value = "r" },
-#   { name = "color", ty = "u32", value = "color" },
-# ]
-
-# [[native.mixin]]
 # id = "debug_wire"
 # target = "horizon_protocol::connection::ConnWriter::send"
 # kind = "HEAD"
@@ -2514,36 +2416,6 @@ bindings = [
 # helper = "src/mixins/debug_chat_signed_hook.rs"
 # bindings = [{ name = "content", ty = "&crate::text::Text", value = "&content" }]
 
-# [[native.mixin]]
-# id = "hunger_bars"
-# target = "horizon_client_render::hud_layout::HealthHud::layout"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/hunger_hook.rs"
-# bindings = [
-#   { name = "hud", ty = "&mut HealthHud", value = "&mut *self" },
-#   { name = "i", ty = "&HealthInputs", value = "i" },
-#   { name = "w", ty = "i32", value = "w" },
-#   { name = "h", ty = "i32", value = "h" },
-# ]
-
-
-# [[native.mixin]]
-# id = "mount_xp"
-# target = "horizon_client_render::hud_layout::experience_colored"
-# kind = "HEAD"
-# cancellable = true
-# helper = "src/mixins/mount_xp_hook.rs"
-# bindings = [
-#   { name = "number", ty = "Option<u32>", value = "number" },
-#   { name = "outline", ty = "Option<u32>", value = "outline" },
-#   { name = "w", ty = "i32", value = "w" },
-#   { name = "h", ty = "i32", value = "h" },
-#   { name = "progress", ty = "f32", value = "progress" },
-#   { name = "level", ty = "i32", value = "level" },
-#   { name = "bar", ty = "bool", value = "bar" },
-#   { name = "width", ty = "&dyn Fn(&str) -> i32", value = "width" },
-# ]
 
 # The move keys and the player's own move state (GUI Move, No Slow, knockback slow, Scaffold's movement correction):
 # the call into the motion has a struct-literal receiver no selector can name, so the keys are changed where they are
@@ -2609,3 +2481,93 @@ bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
 #   { name = "renderer", ty = "&mut Renderer", value = "&mut *self" },
 #   { name = "frame", ty = "&Frame<'_>", value = "frame" },
 # ]
+
+# HUD, menus and the hands (the game crate's own callers of the render functions the old hooks used)
+[[native.mixin]]
+id = "menu_dark"
+target = "horizon_client::game::screen_backgrounds::Game<'_>::render_transparent_background"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/menu_hook.rs"
+bindings = [{ name = "game", ty = "&Game<'_>", value = "self" }]
+
+[[native.mixin]]
+id = "hurt-cam"
+target = "horizon_client::game::fov::Game<'_>::bob_matrix"
+kind = "MODIFY_ARG"
+selector = "bob_matrix"
+require = 1
+ordinal = 0
+argument = 1
+helper = "src/mixins/hurt_cam.rs"
+bindings = [{ name = "value", ty = "f64", value = "$value" }]
+
+[[native.mixin]]
+id = "equip-legacy"
+target = "horizon_client::game::hand::Game<'_>::tick_hand"
+kind = "MODIFY_ARG"
+selector = "self.heights.tick_with"
+require = 1
+ordinal = 0
+argument = 3
+helper = "src/mixins/equip_legacy.rs"
+bindings = [{ name = "value", ty = "bool", value = "$value" }]
+
+[[native.mixin]]
+id = "equip-hold"
+target = "horizon_client::game::hand::Game<'_>::tick_hand"
+kind = "MODIFY_VARIABLE"
+variable = { name = "replace", ordinal = 0, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/equip_hold.rs"
+bindings = [
+  { name = "value", ty = "[bool; 2]", value = "$value" },
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "changed", ty = "[bool; 2]", value = "$local:changed:1" },
+]
+
+[[native.mixin]]
+id = "hunger_bars"
+target = "horizon_client::game::Game<'_>::hud_layers"
+kind = "AFTER_CALL"
+selector = "self.native_health_hud"
+require = 1
+ordinal = 0
+result = "()"
+helper = "src/mixins/hunger_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "draws", ty = "&mut Option<Vec<hud_layout::GuiDraw>>", value = "$local_mut:native_health_hud:0" },
+  { name = "inputs", ty = "&hud_layout::HealthInputs", value = "$local_ref:inputs:0" },
+  { name = "batch", ty = "&HudBatch", value = "$local_ref:batch:0" },
+]
+
+[[native.mixin]]
+id = "mount_xp"
+target = "horizon_client::game::Game<'_>::hud_layers"
+kind = "MODIFY_VARIABLE"
+variable = { name = "contextual", ordinal = 0, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/mount_xp_hook.rs"
+bindings = [
+  { name = "value", ty = "crate::game::sunset_hunger::InfoBar", value = "$value" },
+  { name = "has_experience", ty = "bool", value = "$local:has_experience:0" },
+]
+
+[[native.mixin]]
+id = "crosshair_rect"
+target = "horizon_client::game::Game<'_>::hud_layers"
+kind = "WRAP_OPERATION"
+selector = "hud_layout::crosshair"
+require = 1
+ordinal = 0
+helper = "src/mixins/crosshair_rect_hook.rs"
+bindings = [
+  { name = "w", ty = "i32", value = "$arg0" },
+  { name = "h", ty = "i32", value = "$arg1" },
+  { name = "attack", ty = "Option<f32>", value = "$arg2" },
+  { name = "full", ty = "bool", value = "$arg3" },
+  { name = "operation", ty = "impl FnOnce(i32, i32, Option<f32>, bool) -> Vec<hud_layout::GuiDraw>", value = "$operation" },
+]

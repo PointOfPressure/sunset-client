@@ -1,16 +1,18 @@
-// No Render: the dark sheet drawn behind an inventory, a book, a trade and the like is left out.
-fn sunset_menu_dark(this: &HudBatch, x: f32, y: f32, w: f32, h: f32, color: u32) -> std::ops::ControlFlow<()> {
-    if !::sunset_core::lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
-
+// Before the dark sheet behind an in-game screen. ClickGUI's Inventory blur: your inventory blurs the world behind
+// it as the pause menu does, at the game's Menu blur strength (the request a mod's apply_screen_blur makes).
+// No Render: the dark sheet behind an inventory, a book, a trade and the like is left out.
+fn sunset_menu_dark(game: &Game<'_>) -> ::core::ops::ControlFlow<()> {
     use std::sync::atomic::Ordering::Relaxed;
-    if ::sunset_core::overlay::NO_MENU.load(Relaxed)
-        && x == 0.0
-        && y == 0.0
-        && w == this.width
-        && h == this.height
-        && color == rgba(16, 16, 16, 160)
-    {
-        return std::ops::ControlFlow::Break(());
+    if !::sunset_core::lifecycle::RUNTIME.running() {
+        return ::core::ops::ControlFlow::Continue(());
     }
-    std::ops::ControlFlow::Continue(())
+    if ::sunset_core::overlay::INVENTORY_BLUR.load(Relaxed)
+        && (game.screen == Screen::Inventory || game.screen == Screen::Creative)
+    {
+        game.screen_blur_requested.set(true);
+    }
+    if ::sunset_core::overlay::NO_MENU.load(Relaxed) {
+        return ::core::ops::ControlFlow::Break(());
+    }
+    ::core::ops::ControlFlow::Continue(())
 }

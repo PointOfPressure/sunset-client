@@ -151,3 +151,11 @@ pub fn experience(
     INSIDE.with(|c| c.set(false));
     ControlFlow::Break(draws)
 }
+
+// The bar above the hotbar (hud_layers' contextual bar), named apart from the game's local import of it.
+pub type InfoBar = horizon_client::locator_bar::ContextualBar;
+
+// Mount HUD: the XP bar while riding, in the jump bar's place while no jump charges.
+pub fn mount_xp_bar(bar: InfoBar, has_experience: bool) -> InfoBar {
+    if has_experience && bars().mount_xp { InfoBar::Experience } else { bar }
+}
