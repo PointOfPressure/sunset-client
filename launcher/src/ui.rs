@@ -28,7 +28,6 @@ const ACCENT_HI: u32 = 0xf26a12; // its hover
 const ON_ACCENT: u32 = 0xffffff;
 const RED: u32 = 0xef6b6b; // errors only; orange is the one accent
 const SOFT: u32 = 0xd2d2d7; // labels and unselected tabs: a step under TEXT
-const PILL: u32 = 0x26262b; // the changelog's kind labels, all one style
 const TAB_ON: u32 = 0x47220c; // the selected tab: Sunset orange deep enough not to compete with Play
 
 // One type scale: the page's title, a card's heading, body text, small print.
@@ -46,15 +45,15 @@ const BIG_H: f32 = 48.; // the Play row
 const BAR_H: f32 = 68.; // the top bar, chips centred in it
 const HEAD_H: f32 = 48.; // a card's heading row, so headings in cards side by side share a baseline
 const LOG_MAX: f32 = 236.; // the changelog list scrolls past this
+const PAGE_MAX: (f32, f32) = (1280., 760.); // Overview's block in a big window
 
-// Corner radii: one scale for the whole window. Cards, menus and dialogs are R_CARD, everything you press is R_CTRL,
-// small labels are R_SMALL. A shape nested close inside another (a tab in the tab strip, a menu row in its menu, the
+// Corner radii: one radius for the whole window. Cards, menus and dialogs are R_CARD, everything you press is R_CTRL,
+// and both are the same. A shape nested close inside another (a tab in the tab strip, a menu row in its menu, the
 // hover light inside a bordered button, the face in the account chip) takes the outer radius minus its inset, so both
 // corners share one centre and read as the same curve. Round things (status dots, the switch, the progress bar) stay
 // round.
 const R_CARD: f32 = 10.;
 const R_CTRL: f32 = 10.;
-const R_SMALL: f32 = 6.;
 
 /// The radius of a shape inset `by` px inside a corner of radius `outer`.
 const fn nested(outer: f32, by: f32) -> f32 {
@@ -549,21 +548,6 @@ fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, primary: boo
         .child(label.into())
 }
 
-/// A square button with only an icon; `tip` names it on hover.
-fn icon_button(id: impl Into<ElementId>, kind: Icon, tip: &'static str, side: f32) -> gpui::Stateful<gpui::Div> {
-    button(id, "", false).w(px(side)).h(px(side)).px_0().child(icon(kind, 18., TEXT)).tooltip(move |_, cx| cx.new(|_| Tip(tip.into())).into())
-}
-
-/// A hover label.
-struct Tip(SharedString);
-
-impl Render for Tip {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().px(px(8.)).py(px(4.)).rounded(px(R_SMALL)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).font_family(BODY).font_weight(BODY_WEIGHT).text_size(px(12.)).text_color(rgb(TEXT)).child(self.0.clone())
-    }
-}
-
-#[derive(Clone, Copy)]
 enum Icon {
     Play,
     Chevron,
@@ -574,7 +558,6 @@ enum Icon {
     Maximize,
     Restore,
     Close,
-    More,
     User,
 }
 
@@ -603,13 +586,6 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
                 Icon::Play => {
                     let mut p = PathBuilder::fill();
                     rounded(&mut p, &at, &[(7.5, 5.), (19., 12.), (7.5, 19.)], 2.5);
-                    p
-                }
-                Icon::More => {
-                    let mut p = PathBuilder::fill();
-                    for cx_ in [6., T_SMALL, 18.] {
-                        dot(&mut p, &at, cx_, T_SMALL, 1.7);
-                    }
                     p
                 }
                 Icon::Chevron => {
@@ -716,18 +692,7 @@ fn rounded(p: &mut PathBuilder, at: &dyn Fn(f32, f32) -> Point<Pixels>, pts: &[(
     p.close();
 }
 
-/// A filled dot of radius `r` units at (`x`, `y`).
-fn dot(p: &mut PathBuilder, at: &dyn Fn(f32, f32) -> Point<Pixels>, x: f32, y: f32, r: f32) {
-    for i in 0..24 {
-        let a = i as f32 / 24. * std::f32::consts::TAU;
-        let pt = at(x + r * a.cos(), y + r * a.sin());
-        if i == 0 { p.move_to(pt) } else { p.line_to(pt) }
-    }
-    p.close();
-}
-
-/// One line of the changelog: its section as a fixed-width tag, then the text, wrapped. Important lines get an
-/// accent tag and full-strength text.
+/// One line of the changelog: its section as a fixed-width label, then the text, wrapped.
 fn change_row(c: &core::Change) -> gpui::Div {
     let kind = match c.kind.trim() {
         "" => "Note".to_string(),
@@ -737,18 +702,15 @@ fn change_row(c: &core::Change) -> gpui::Div {
     if line.chars().count() > MAX_CHANGE_CHARS {
         line = line.chars().take(MAX_CHANGE_CHARS).collect::<String>() + "…";
     }
+    // The kind is a quiet label in its own column, not a pill that looks pressable.
     let tag = div()
         .flex_none()
-        .w(px(64.))
-        .h(px(20.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(R_SMALL))
-        .bg(rgb(PILL))
-        .text_size(px(11.))
+        .w(px(72.))
+        .pt(px(1.))
+        .text_size(px(T_SMALL))
+        .line_height(px(18.))
         .font_family(BOLD).font_weight(BOLD_WEIGHT)
-        .text_color(rgb(TEXT))
+        .text_color(rgb(MUTED))
         .child(kind);
     let body = div()
         .flex_1()
@@ -849,8 +811,10 @@ fn hero_art() -> impl IntoElement {
                     .corner_radii(Corners { top_left: r, top_right: r, bottom_left: px(0.), bottom_right: px(0.) }),
             );
             window.paint_quad(gpui::fill(at(x, horizon, w, y + h - horizon), rgb(0x0f0d0c)).corner_radii(Corners { top_left: px(0.), top_right: px(0.), bottom_left: r, bottom_right: r }));
-            let sr = (h * 0.5).min(w * 0.17).min(200.);
-            let cx = x + w * 0.76;
+            // The outer glow (1.6 sun radii) stays inside the card's top edge.
+            let sr = ((horizon - y) * 0.58).min(w * 0.17).min(200.);
+            // Right of centre, with the glow clear of the card's right edge.
+            let cx = x + (w * 0.76).min(w - sr * 1.6 - 24.);
             for (k, a) in [(1.6, 0xdb50000cu32), (1.38, 0xdb500010), (1.18, 0xdb500016)] {
                 if let Ok(p) = half_disc(cx, horizon, sr * k).build() {
                     window.paint_path(p, gpui::rgba(a));
@@ -863,15 +827,20 @@ fn hero_art() -> impl IntoElement {
             for i in 0..4 {
                 let f = i as f32;
                 let (top, band) = (horizon - sr * (0.5 - 0.12 * f), (sr * (0.025 + 0.018 * f)).max(1.));
-                let dy = horizon - top;
-                let half = (sr * sr - dy * dy).max(0.).sqrt();
-                window.paint_quad(gpui::fill(at(cx - half - 1., top, 2. * half + 2., band), ember));
+                // Each band follows the disc's edge (its chord at top and bottom), so nothing pokes out past the curve.
+                let chord = |yy: f32| (sr * sr - (horizon - yy).powi(2)).max(0.).sqrt();
+                let (ht, hb) = (chord(top), chord(top + band));
+                let mut p = PathBuilder::fill();
+                p.move_to(point(px(cx - ht), px(top)));
+                p.line_to(point(px(cx + ht), px(top)));
+                p.line_to(point(px(cx + hb), px(top + band)));
+                p.line_to(point(px(cx - hb), px(top + band)));
+                p.close();
+                if let Ok(p) = p.build() {
+                    window.paint_path(p, ember);
+                }
             }
             window.paint_quad(gpui::fill(at(x, horizon, w, 1.), gpui::rgba(0xdb500080)));
-            for (i, a) in [0x99u32, 0x66, 0x40, 0x22].into_iter().enumerate() {
-                let half = sr * (0.85 - 0.2 * i as f32);
-                window.paint_quad(gpui::fill(at(cx - half, horizon + 7. + 7. * i as f32, 2. * half, 2.), gpui::rgba(0xdb500000 | a)).corner_radii(Corners::all(px(1.))));
-            }
             window.paint_quad(gpui::fill(b, gpui::rgba(0)).corner_radii(Corners::all(r)).border_widths(px(1.)).border_color(rgb(LINE)));
         },
     )
@@ -889,6 +858,12 @@ fn face(pixels: &[[u8; 4]], s: f32) -> impl IntoElement {
             div().w(px(cell)).h(px(cell)).bg(rgb(((r as u32) << 16) | ((g as u32) << 8) | b as u32))
         }))
     }))
+}
+
+/// A page's content as one block: at most PAGE_MAX wide and tall, centred in the space under the top bar, so a big or
+/// maximised window frames it instead of stretching it into empty areas. In a smaller window it fills the space.
+fn page_block(block: gpui::Div) -> gpui::Div {
+    div().size_full().flex().flex_col().items_center().justify_center().child(block.w_full().max_w(px(PAGE_MAX.0)).flex_1().max_h(px(PAGE_MAX.1)))
 }
 
 /// A card's heading row; cards side by side use it so their headings share one size and baseline.
@@ -924,6 +899,22 @@ fn section(title: &str, rows: Vec<gpui::Div>) -> gpui::Div {
         .gap(px(8.))
         .child(bold(title.to_string(), T_HEAD))
         .child(card().flex().flex_col().children(rows.into_iter().enumerate().map(move |(i, r)| r.when(i + 1 == n, |d| d.border_b_0()))))
+}
+
+/// An error line from `core` as a sentence: a capital first letter, the address in brackets dropped (a button opens
+/// it), a full stop.
+fn sentence(e: &str) -> String {
+    let mut s = match e.find(" (") {
+        Some(i) if e.ends_with(')') && e[i..].contains('/') => e[..i].to_string(),
+        _ => e.trim().to_string(),
+    };
+    if let Some(c) = s.chars().next() {
+        s.replace_range(..c.len_utf8(), &c.to_uppercase().to_string());
+    }
+    if !s.ends_with(['.', '!', '?', '…']) {
+        s.push('.');
+    }
+    s
 }
 
 fn window_label(w: &str) -> String {
@@ -1361,11 +1352,18 @@ impl Launcher {
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.play(cx))),
                 )
                 .when_some(update, |d, v| d.child(button("update", format!("Update to {v}"), false).h(px(BIG_H)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx)))))
-                .child(icon_button("open-folder", Icon::Folder, "Open the game folder", BIG_H).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                .child(button("open-folder", "", false).h(px(BIG_H)).gap(px(8.)).child(icon(Icon::Folder, 20., TEXT)).child("Game folder").on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     let p = this.paths.instance();
                     this.open(p, cx)
                 })))
-                .child(self.with_menu(Menu::More, icon_button("more", Icon::More, "More", BIG_H).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::More, ev, cx))), false, cx))
+                .child(self.with_menu(
+                    Menu::More,
+                    button("more", "", false).h(px(BIG_H)).gap(px(6.)).child("Logs and repair").child(icon(Icon::Chevron, 16., TEXT)).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::More, ev, cx))),
+                    false,
+                    cx,
+                ))
+                .child(div().flex_1())
+                .children(self.play_stats())
                 .into_any_element(),
         };
         // The banner says what this is once: Sunset, its version and the game it runs. Play is the first thing under it.
@@ -1388,9 +1386,9 @@ impl Launcher {
                     .child(bold("Sunset", T_TITLE))
                     .child(text(format!("Version {} for Minecraft {}", m.version, m.horizon.game), 14., TEXT)),
             )
-            .child(div().relative().child(play_area));
+            .child(div().relative().flex().flex_col().child(play_area));
         let plugins = self.mods.iter().filter(|(id, _)| id != "sunset").count();
-        let mut facts = vec![
+        let facts = vec![
             ("Horizon build", m.horizon_build()),
             ("Profiles", if self.profiles.is_empty() { "None saved".to_string() } else { format!("{} saved", self.profiles.len()) }),
             ("Plugins", match plugins {
@@ -1399,13 +1397,6 @@ impl Launcher {
                 n => format!("{n} built into Sunset"),
             }),
         ];
-        // Only what this launcher saw itself: when it last started the game and how long the game ran.
-        if let Some(t) = self.settings.last_played {
-            facts.push(("Last played", core::ago(t, core::now_secs())));
-        }
-        if self.settings.playtime > 0 {
-            facts.push(("Play time", core::play_time(self.settings.playtime)));
-        }
         let n = facts.len();
         let right = card()
             .w(px(320.))
@@ -1425,15 +1416,22 @@ impl Launcher {
                     .child(text(k, T_BODY, SOFT))
                     .child(text(v, T_BODY, TEXT).font_family(BOLD).font_weight(BOLD_WEIGHT))
             }));
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(GAP))
-            .size_full()
-            .when_some(self.import_prompt(cx), |d, p| d.child(p))
-            .child(hero)
-            .child(div().flex().flex_none().gap(px(GAP)).child(self.changelog(m)).child(right))
-            .into_any_element()
+        let block = div().flex().flex_col().gap(px(GAP)).when_some(self.import_prompt(cx), |d, p| d.child(p)).child(hero).child(div().flex().flex_none().gap(px(GAP)).child(self.changelog(m)).child(right));
+        page_block(block).into_any_element()
+    }
+
+    /// When this launcher last started the game and how long it has run, for the right of the Play row. Only what
+    /// the launcher recorded itself; nothing until it has.
+    fn play_stats(&self) -> Vec<gpui::Div> {
+        let stat = |label: &'static str, value: String| div().flex().flex_col().items_end().gap(px(2.)).child(text(label, T_SMALL, MUTED)).child(bold(value, 15.));
+        let mut v = vec![];
+        if let Some(t) = self.settings.last_played {
+            v.push(stat("Last played", core::ago(t, core::now_secs())));
+        }
+        if self.settings.playtime > 0 {
+            v.push(stat("Play time", core::play_time(self.settings.playtime)).ml(px(28.)));
+        }
+        v
     }
 
     /// The installed version's changelog, from its signed manifest: one card, its lines scrolling inside it past
@@ -1443,7 +1441,7 @@ impl Launcher {
         // The release's highlights (bold in CHANGELOG.md) lead; every line is then set the same.
         changes.sort_by_key(|c| !c.important);
         // min_w(0): long lines wrap inside the card instead of widening it past the window.
-        let panel = card().relative().flex_1().min_w(px(0.)).flex().flex_col().overflow_hidden().child(card_head("What's new"));
+        let panel = card().relative().flex_1().min_w(px(0.)).flex().flex_col().overflow_hidden().child(card_head("What's new in this version"));
         if changes.is_empty() {
             return panel.child(div().px(px(PAD)).pb(px(PAD)).child(text("This version came without a list of changes.", T_BODY, TEXT)));
         }
@@ -1480,6 +1478,7 @@ impl Launcher {
     }
 
     fn no_instance(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let failed = self.latest.is_none() && self.latest_err.is_some();
         let action = match self.progress(cx) {
             Some(p) => div().w(px(460.)).max_w_full().child(p).into_any_element(),
             None if self.latest.is_some() => button("new-instance", "Install Sunset", true)
@@ -1488,27 +1487,35 @@ impl Launcher {
                 .text_size(px(16.))
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx)))
                 .into_any_element(),
-            None => button("retry", "Try again", false).h(px(BIG_H)).on_click(cx.listener(|this, _: &ClickEvent, _, _| this.check(false))).into_any_element(),
-        };
-        let about = match &self.latest {
-            Some(r) => format!("No instance yet. Version {} for Minecraft {} is ready to install.", r.manifest.version, r.manifest.horizon.game),
-            None => self.latest_err.clone().unwrap_or_else(|| "Looking for the latest Sunset release…".into()),
-        };
-        // The same banner as Overview, filling the page, with the install in place of Play.
-        div().flex().flex_col().gap(px(GAP)).size_full().child(
-            div()
-                .relative()
-                .flex_1()
-                .min_h(px(300.))
+            None if failed => div()
                 .flex()
-                .flex_col()
-                .justify_end()
-                .gap(px(22.))
-                .p(px(28.))
-                .child(hero_art())
-                .child(div().relative().flex().flex_col().gap(px(4.)).child(bold("Sunset", T_TITLE)).child(text(about, 14., TEXT)))
-                .child(div().relative().flex().child(action)),
-        )
+                .gap(px(8.))
+                .child(button("retry", "Try again", true).h(px(BIG_H)).px(px(24.)).on_click(cx.listener(|this, _: &ClickEvent, _, _| this.check(false))))
+                .child(button("releases", "Open the releases page", false).h(px(BIG_H)).on_click(cx.listener(|_, _: &ClickEvent, _, cx| cx.open_url(&format!("https://github.com/{}/releases", core::REPO)))))
+                .into_any_element(),
+            None => div().into_any_element(),
+        };
+        let about = match (&self.latest, &self.latest_err) {
+            (Some(r), _) => text(format!("Version {} for Minecraft {} is ready to install.", r.manifest.version, r.manifest.horizon.game), 14., TEXT),
+            // A failed check reads as a status: a red dot and a sentence, the address behind the button instead.
+            (None, Some(e)) => div().flex().items_center().gap(px(8.)).child(div().flex_none().w(px(8.)).h(px(8.)).rounded_full().bg(rgb(RED))).child(text(sentence(e), 14., TEXT)),
+            (None, None) => text("Looking for the latest Sunset release…", 14., TEXT),
+        };
+        // The same banner as Overview with the install in place of Play, and the release's changelog under it.
+        let hero = div()
+            .relative()
+            .flex_1()
+            .min_h(px(250.))
+            .flex()
+            .flex_col()
+            .justify_end()
+            .gap(px(22.))
+            .p(px(28.))
+            .child(hero_art())
+            .child(div().relative().flex().flex_col().gap(px(6.)).child(bold("Install Sunset", T_TITLE)).child(about))
+            .child(div().relative().flex().child(action));
+        let block = div().flex().flex_col().gap(px(GAP)).child(hero).when_some(self.latest.as_ref(), |d, r| d.child(div().flex().flex_none().child(self.changelog(&r.manifest))));
+        page_block(block)
     }
 
     /// Settings: the instance's (when there is one) on the left, the launcher's and About on the right.
