@@ -94,10 +94,7 @@ pub fn observed(body: &[u8]) {
 
 pub fn sent(body: &[u8]) {
     // Single player's own server (and a LAN guest's connection) writes clientbound packets: not ours.
-    if std::thread::current()
-        .name()
-        .is_some_and(|n| n == "Server thread" || n.starts_with("horizon-lan") || n.starts_with("horizon-local"))
-    {
+    if crate::lifecycle::local_server_thread() {
         return;
     }
     let Some((id, start)) = id(body) else {

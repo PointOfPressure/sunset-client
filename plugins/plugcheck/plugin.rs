@@ -77,8 +77,11 @@ fn setup(p: &mut api::Plugin) {
     p.on_key(|_game, key, down| {
         if down {
             seen("key");
-            if key == "key.keyboard.h" {
-                seen("hkey");
+            match key {
+                "key.keyboard.h" => seen("hkey"),
+                "key.keyboard.j" => seen("jkey"),
+                k if k.starts_with("key.mouse.") => seen("mousekey"),
+                _ => {}
             }
         }
     });

@@ -93,6 +93,10 @@ def results(lines):
     return by_name, other
 
 
+# Checks that press real keys: run in a windowed game of their own (see below).
+WINDOWED = ["Plugin API: on_key from a real key press"]
+
+
 def judge(tests, first, rerun):
     """Which checks passed, from the run's output lines and the rerun's: a check passes with exactly one result, a PASS,
     or exactly one FAIL whose rerun gives exactly one PASS. Gives (passed, passed on the rerun, problems)."""
@@ -190,19 +194,29 @@ if __name__ == "__main__":
 
     verify = (ROOT / "tools" / "verify.py").read_text()
     tests = re.findall(r'@test\("(Plugin API:[^"]+)"\)', verify)
+    if missing := [t for t in WINDOWED if t not in tests]:
+        fail(f"verify.py has no check {missing}")
     shutil.copy(ROOT / "tools" / "verify.py", RIG / "verify-plug.py")
     run = f"plug-{time.strftime('%m%d-%H%M')}"
-    print(f"Running {len(tests)} plugin checks on {', '.join(targets)} (logs in {RIG / run})")
+    print(f"Running {len(tests)} plugin checks on {', '.join(targets)} (logs in {RIG / run} and {RIG / run}-window)")
     # RETRY=1: a check that failed runs once more on its own (the send check can miss its line after the others under
     # load); it passes only if that run passes, and is named either way.
     res = data / "versions" / tag / ".local/horizon-client" / native["game"]
-    subprocess.run([str(RIG / os.environ.get("RUNALL", "runall-hmod.sh")), run, "|".join(tests), *targets], cwd=RIG,
-                   env={**os.environ, "BIN": str(BIN), "RES": str(res), "VERIFY": "verify-plug.py", "RETRY": "1",
-                        "SUNSET_PLUGIN_API_VERSION": str(api)}, stdout=subprocess.DEVNULL)
+    # The checks in WINDOWED press real keys (xdotool), which an --offscreen game's window can't take: they run in a
+    # game of their own with a real window (OFFSCREEN=0). The others run offscreen, as a windowed game on the rig's
+    # software renderer draws a few frames a second, too slow for the timing checks.
+    passes = [(run, [t for t in tests if t not in WINDOWED], {}), (f"{run}-window", WINDOWED, {"OFFSCREEN": "0"})]
+    for d, names, extra in passes:
+        subprocess.run([str(RIG / os.environ.get("RUNALL", "runall-hmod.sh")), d, "|".join(names), *targets], cwd=RIG,
+                       env={**os.environ, "BIN": str(BIN), "RES": str(res), "VERIFY": "verify-plug.py", "RETRY": "1",
+                            "SUNSET_PLUGIN_API_VERSION": str(api), **extra}, stdout=subprocess.DEVNULL)
 
     bad = []
     for t in targets:
-        ok, retried, problems = judge(tests, read_lines(RIG / run / f"{t}.log"), read_lines(RIG / run / f"{t}.retry.log"))
+        ok, retried, problems = [], [], []
+        for d, names, _ in passes:
+            o, r, p = judge(names, read_lines(RIG / d / f"{t}.log"), read_lines(RIG / d / f"{t}.retry.log"))
+            ok, retried, problems = ok + o, retried + r, problems + p
         print(f"{t}: {len(ok)}/{len(tests)} plugin checks passed"
               + (f" ({len(retried)} on the rerun: {'; '.join(retried)})" if retried else ""))
         bad += [f"{t}: {l[:200]}" for l in problems]

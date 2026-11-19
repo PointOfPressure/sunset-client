@@ -12763,6 +12763,21 @@ def x_keys(window, *keys):
         wait(8)
 
 
+def x_press(key):
+    """A real press of `key` (xdotool) in the game's window: focused, the pointer in it and a right click first (the
+    first press after a screen only takes the cursor back). False without xdotool or a window that takes input (an
+    --offscreen game's isn't viewable)."""
+    window = x_window()
+    if not window:
+        return False
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+    for args in (("windowfocus", "--sync", window), ("mousemove", "--window", window, "200", "150"), ("click", "3"), ("key", key)):
+        if subprocess.run(["xdotool", *args], env=env, capture_output=True).returncode != 0:
+            return False
+        wait(6)
+    return True
+
+
 @test("RF Click")
 def _():
     # Real R and F presses (xdotool on the test display): R three times at a pig 2 blocks off, F three times holding
@@ -14801,7 +14816,7 @@ def _():
     mark = log_mark()
     tot = said_since(mark, ".hello total", ".hello total")
     nums = [int(n) for l in tot for n in re.findall(r"ran (\d+) times", l)]
-    data = [os.path.join(r, f) for r, _, fs in os.walk(session_dir()) for f in fs if r.endswith(os.path.join(".horizon-mod-data", "hello")) and f == "total"]
+    data = [os.path.join(r, f) for r, _, fs in os.walk(session_dir()) for f in fs if r.endswith(os.path.join(".horizon-mod-data", "sunset", "plugins", "hello")) and f == "total"]
     kept = open(data[0]).read().strip() if data else None
     ok = (three == 3 and first_three is not None and first_three >= 15 and any("Use .hello [times]" in l for l in bad)
           and nine == 5 and panicked <= 1 and len(nums) == 2 and nums[1] == nums[0] + 1 and kept == str(nums[1]))
@@ -14903,14 +14918,19 @@ def _():
     # none for a while; a command typed in the chat box doesn't reach the server from a test).
     # After other tests the game can be many seconds behind the typed line: the command goes once the line has run
     # (its "said" reply), and the refusal is waited for; 30 s at most each.
+    # The refusal is a toast: Notifications back on if an earlier stop (Hello's test ends with .plugcheck stop, which
+    # turns every module off) left it off.
+    if not is_on("Notifications"):
+        say(".t notifications")
+    mark = log_mark()
     said_since(mark, ".plugcheck send", settle=1)
     for _ in range(30):
         if any("plugcheck ok: said" in line for line in sunset_said(mark)):
             break
-        wait(1)
+        wait(20)
     cmd("time query daytime")
     for _ in range(30):
-        wait(1)
+        wait(20)
         said = sunset_said(mark)
         if any("can't be replaced by a move packet" in line for line in said):
             break
@@ -14930,10 +14950,10 @@ def _():
     return ok, f"send checks {sends}; game alive after the panic {alive}, crash line {crashed}, listed off {listed}, command refused {refused}"
 
 
-@test("Plugin API: events (ticks, toggles, keys, chat, packets, hurt, low health, death, priorities)")
+@test("Plugin API: events (ticks, toggles, chat, packets, hurt, low health, death, priorities)")
 def _():
     # The test plugin counts each event from .plugcheck reset: ticks before and after the move (about as many),
-    # HUD and world frames, a toggle (Sprint on), a key, two server chat lines with its marker (Sunset's own line with
+    # HUD and world frames, a toggle (Sprint on), two server chat lines with its marker (Sunset's own line with
     # it doesn't count), the server's time packets, hurts (with health before and after), low health once per crossing
     # under 10, a death, no join (a respawn is no reconnect). Priorities: the HIGH tick handler before the LOW one; the
     # HIGH packet handler cancels "/plugblock" so the LOW one never sees it.
@@ -14941,7 +14961,6 @@ def _():
     say(".plugcheck reset")
     wait(40)
     toggle("sprint", True)
-    ctl("key", "h", "tap")
     cmd("say plugcheck-chat one", "say plugcheck-chat two", "plugblock now")
     cmd("damage @s 6")
     wait(4)
@@ -14965,7 +14984,6 @@ def _():
         "ticks": c("tick", 0) >= 40 and abs(c("tick", 0) - c("pretick", 0)) <= 3,
         "frames": c("hud", 0) > 10 and c("world", 0) > 10,
         "toggle": c("toggle", 0) >= 1,
-        "key": c("hkey", 0) >= 1,
         "chat": c("chat", 0) == 2,
         "packets in": c("settime", 0) >= 1,
         "hurt": c("hurt", 0) >= 4 and hurt_last == "hurt 14 from 20",
@@ -14977,6 +14995,29 @@ def _():
     }
     ok = all(checks.values())
     return ok, f"failed {[k for k, v in checks.items() if not v]}; counts {counts}, order {order}, first hurt {hurt_last!r}"
+
+
+@test("Plugin API: on_key from a real key press")
+def _():
+    # Real keys (xdotool on the game's window; plugsmoke.py runs this check in a windowed game, as an --offscreen
+    # window takes no input): on_key sees each press by its name, H as "key.keyboard.h" and J as "key.keyboard.j".
+    # horizon-ctl's key is no such press: it goes to the game's key bindings, not through the window's key events
+    # that plugins (and Sunset's binds) get, so it can't stand in for one here. A windowed game on the rig's software
+    # renderer is slow to take the first typed line after it starts, and the reset before a check can drop the player
+    # before the floor is under them: it settles, alive, first.
+    wait(60)
+    ensure_alive()
+    wait(20)
+    say(".plugcheck reset")
+    wait(10)
+    pressed = x_press("h") and x_press("j")
+    wait(10)
+    counts, _, _ = plugcheck_events()
+    c = counts.get
+    # The right clicks before the keys are presses too (mouse buttons come by their names, key.mouse.right).
+    ok = pressed and c("hkey", 0) == 1 and c("jkey", 0) == 1 and c("key", 0) - c("mousekey", 0) == 2
+    return ok, (f"real keys {'pressed' if pressed else 'not pressed (needs xdotool and a windowed game, not --offscreen)'}; "
+                f"keys {c('key', 0)} of them mouse buttons {c('mousekey', 0)}, h {c('hkey', 0)}, j {c('jkey', 0)} (want 1 each)")
 
 
 @test("Plugin API: scheduler, data, stop everything, reads and friends")
@@ -14991,7 +15032,7 @@ def _():
     mark = log_mark()
     store = said_since(mark, ".plugcheck store", ".plugcheck store")
     runs = [int(n) for l in store for n in re.findall(r"plugcheck ok: runs (\d+)", l)]
-    data = [os.path.join(r, f) for r, _, fs in os.walk(session_dir()) for f in fs if r.endswith(os.path.join(".horizon-mod-data", "plugcheck")) and f == "runs"]
+    data = [os.path.join(r, f) for r, _, fs in os.walk(session_dir()) for f in fs if r.endswith(os.path.join(".horizon-mod-data", "sunset", "plugins", "plugcheck")) and f == "runs"]
     on_disk = open(data[0]).read().strip() if data else None
     toggle("fullbright", True)
     say(".plugcheck reset")

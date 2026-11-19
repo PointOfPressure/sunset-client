@@ -21,6 +21,14 @@ static LOG: Mutex<VecDeque<Line>> = Mutex::new(VecDeque::new());
 static ADDED: AtomicU64 = AtomicU64::new(0);
 
 pub fn added(content: &crate::text::Text, source: crate::chat::ChatSource) {
+    // Single player's own server (and a LAN guest's connection) adds a player's line to its own chat too (its log):
+    // the window has it already.
+    if std::thread::current()
+        .name()
+        .is_some_and(|n| n == "Server thread" || n.starts_with("horizon-lan") || n.starts_with("horizon-local"))
+    {
+        return;
+    }
     let text: String = content.strip_legacy().plain().chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
     let mut log = LOG.lock().unwrap_or_else(|e| e.into_inner());
     if log.len() == KEEP {

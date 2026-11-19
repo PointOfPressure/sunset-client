@@ -22,6 +22,10 @@ static LOG: Mutex<VecDeque<Line>> = Mutex::new(VecDeque::new());
 static ADDED: AtomicU64 = AtomicU64::new(0);
 
 pub fn added(plain: &str, source: u8) {
+    // Single player's own server adds a player's line to its chat too (its log): the window has it already.
+    if crate::lifecycle::local_server_thread() {
+        return;
+    }
     let text: String = plain.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
     let mut log = LOG.lock().unwrap_or_else(|e| e.into_inner());
     if log.len() == KEEP {

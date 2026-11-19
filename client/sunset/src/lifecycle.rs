@@ -115,3 +115,11 @@ mod tests {
         assert!(life.dormant() && life.idle());
     }
 }
+
+// The local world's own server (single player, LAN hosting) and a LAN guest's connection run on these threads: the
+// packets and chat lines there are that server's (it keeps its own chat for its log), not the window's.
+pub fn local_server_thread() -> bool {
+    std::thread::current()
+        .name()
+        .is_some_and(|n| n == "Server thread" || n.starts_with("horizon-lan") || n.starts_with("horizon-local"))
+}
