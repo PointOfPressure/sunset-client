@@ -35,6 +35,7 @@ const SOFT: u32 = 0xd2d2d7; // labels and unselected tabs: a step under TEXT
 // One type scale: the page's title, a card's heading, body text, small print.
 const T_TITLE: f32 = 30.;
 const T_HEAD: f32 = 15.;
+const T_BODY: f32 = 13.;
 const T_SMALL: f32 = 12.;
 
 // One spacing scale for every page, so gutters, gaps and control heights line up across views.
@@ -64,6 +65,9 @@ const fn nested(outer: f32, by: f32) -> f32 {
 /// (the chip's 1 px border included), which their corner radius follows.
 const FACE: f32 = 22.;
 const FACE_INSET: f32 = (CTRL_H - FACE) / 2.;
+
+/// The one instance's name; the instance chip reads as an instance switcher with it.
+const INSTANCE_NAME: &str = "Default";
 
 const MAX_CHANGES: usize = 200;
 const MAX_CHANGE_CHARS: usize = 400;
@@ -562,6 +566,7 @@ enum Icon {
     Restore,
     Close,
     More,
+    User,
 }
 
 /// The icons, drawn on one 24-unit grid with 1.75-unit strokes, round ends and joins and rounded corners, so the set
@@ -570,6 +575,9 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
     canvas(
         |_, _, _| (),
         move |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| {
+            if matches!(kind, Icon::Minimize | Icon::Maximize | Icon::Restore) {
+                return window_glyph(kind, b, color, window);
+            }
             let k = b.size.width / 24.;
             let at = |x: f32, y: f32| point(b.origin.x + k * x, b.origin.y + k * y);
             let stroke = || {
@@ -590,8 +598,8 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
                 }
                 Icon::More => {
                     let mut p = PathBuilder::fill();
-                    for cx_ in [6., 12., 18.] {
-                        dot(&mut p, &at, cx_, 12., 1.7);
+                    for cx_ in [6., T_SMALL, 18.] {
+                        dot(&mut p, &at, cx_, T_SMALL, 1.7);
                     }
                     p
                 }
@@ -611,28 +619,16 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
                     line(&mut p, &[(13., 6.), (19., 12.), (13., 18.)]);
                     p
                 }
-                Icon::Minimize => {
+                Icon::Minimize | Icon::Maximize | Icon::Restore => return,
+                Icon::User => {
                     let mut p = stroke();
-                    line(&mut p, &[(6., 12.), (18., 12.)]);
-                    p
-                }
-                Icon::Maximize => {
-                    let mut p = stroke();
-                    rounded(&mut p, &at, &[(6., 6.), (18., 6.), (18., 18.), (6., 18.)], 2.5);
-                    p
-                }
-                Icon::Restore => {
-                    let mut p = stroke();
-                    rounded(&mut p, &at, &[(5., 9.), (15., 9.), (15., 19.), (5., 19.)], 2.5);
-                    // The window behind: only its top and right edges show.
-                    p.move_to(at(9., 9.));
-                    p.line_to(at(9., 7.5));
-                    p.curve_to(at(11.5, 5.), at(9., 5.));
-                    p.line_to(at(16.5, 5.));
-                    p.curve_to(at(19., 7.5), at(19., 5.));
-                    p.line_to(at(19., 12.5));
-                    p.curve_to(at(16.5, 15.), at(19., 15.));
-                    p.line_to(at(15., 15.));
+                    let head: Vec<(f32, f32)> = (0..=24).map(|i| {
+                        let a = std::f32::consts::TAU * i as f32 / 24.;
+                        (12. + 3.75 * a.cos(), 8.5 + 3.75 * a.sin())
+                    }).collect();
+                    line(&mut p, &head);
+                    p.move_to(at(5., 19.5));
+                    p.curve_to(at(19., 19.5), at(12., 10.5));
                     p
                 }
                 Icon::Close => {
@@ -655,6 +651,36 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
     .w(px(s))
     .h(px(s))
     .flex_none()
+}
+
+/// The window buttons' minimise, maximise and restore glyphs: 1 px lines on whole device pixels, so they stay sharp
+/// at every scale instead of smearing across two pixel rows like a stroked path.
+fn window_glyph(kind: Icon, b: Bounds<Pixels>, color: u32, window: &mut Window) {
+    let scale = window.scale_factor();
+    let snap = |v: f32| (v * scale).round() / scale;
+    let t = scale.round().max(1.) / scale;
+    let (bw, bh) = (f32::from(b.size.width), f32::from(b.size.height));
+    let side = snap(bw * 10. / 16.);
+    let (x0, y0) = (snap(f32::from(b.origin.x) + (bw - side) / 2.), snap(f32::from(b.origin.y) + (bh - side) / 2.));
+    let bar = |window: &mut Window, x: f32, y: f32, w: f32, h: f32| window.paint_quad(gpui::fill(Bounds::new(point(px(x), px(y)), size(px(w), px(h))), rgb(color)));
+    let square = |window: &mut Window, x: f32, y: f32, s: f32| {
+        bar(window, x, y, s, t);
+        bar(window, x, y + s - t, s, t);
+        bar(window, x, y, t, s);
+        bar(window, x + s - t, y, t, s);
+    };
+    match kind {
+        Icon::Minimize => bar(window, x0, snap(y0 + side / 2.), side, t),
+        Icon::Maximize => square(window, x0, y0, side),
+        _ => {
+            // The window in front, lower left, and the top and right edges of the one behind it.
+            let s = snap(side * 0.8);
+            let back = x0 + side - s;
+            square(window, x0, y0 + side - s, s);
+            bar(window, back + 2. * t, y0, s - 2. * t, t);
+            bar(window, x0 + side - t, y0, t, s - 2. * t);
+        }
+    }
 }
 
 /// A closed outline through `pts` (icon grid units) with every corner rounded by up to `r` units.
@@ -777,35 +803,41 @@ fn horizon_mark(s: f32) -> impl IntoElement {
     .flex_none()
 }
 
-/// The Sunset mark (the site's and the game's): two half rings, drawn `w` wide and half as tall.
+/// A filled half disc standing on `cy`.
+fn half_disc(cx: f32, cy: f32, r: f32) -> PathBuilder {
+    let mut p = PathBuilder::fill();
+    p.move_to(point(px(cx - r), px(cy)));
+    for i in 1..=48 {
+        let a = std::f32::consts::PI * (1. + i as f32 / 48.);
+        p.line_to(point(px(cx + r * a.cos()), px(cy + r * a.sin())));
+    }
+    p.close();
+    p
+}
+
+/// The Sunset mark: a sun half set on the horizon with five rays, drawn `w` wide and half as tall.
 fn mark(w: f32, color: u32) -> impl IntoElement {
     canvas(
         |_, _, _| (),
         move |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| {
-            // In the mark's own 432 x 216 units: centre x, baseline y, outer and inner radius, foot below the baseline.
-            let k = b.size.width / 432.;
-            let at = |x: f32, y: f32| point(b.origin.x + k * x, b.origin.y + k * y);
-            for (cx_, cy, ro, ri, foot) in [(216., 216., 216., 167., 0.), (216., 211., 121., 72., 5.)] {
-                let arc = |r: f32| (0..=32).map(move |i| {
-                    let a = std::f32::consts::PI * (1. + i as f32 / 32.);
-                    (cx_ + r * a.cos(), cy + r * a.sin())
-                });
-                let mut p = PathBuilder::fill();
-                p.move_to(at(cx_ - ro, cy + foot));
-                for (x, y) in arc(ro) {
-                    p.line_to(at(x, y));
-                }
-                p.line_to(at(cx_ + ro, cy + foot));
-                p.line_to(at(cx_ + ri, cy + foot));
-                for (x, y) in arc(ri).collect::<Vec<_>>().into_iter().rev() {
-                    p.line_to(at(x, y));
-                }
-                p.line_to(at(cx_ - ri, cy + foot));
-                p.close();
-                if let Ok(path) = p.build() {
-                    window.paint_path(path, rgb(color));
-                }
+            let (x, y, w) = (f32::from(b.origin.x), f32::from(b.origin.y), f32::from(b.size.width));
+            let (cx, base) = (x + w / 2., y + w * 0.42);
+            if let Ok(p) = half_disc(cx, base, w * 0.24).build() {
+                window.paint_path(p, rgb(color));
             }
+            let mut rays = PathBuilder::fill().with_style(PathStyle::Stroke(
+                StrokeOptions::default().with_line_width(w * 0.06).with_line_cap(LineCap::Round),
+            ));
+            for deg in [200f32, 235., 270., 305., 340.] {
+                let (s, c) = deg.to_radians().sin_cos();
+                rays.move_to(point(px(cx + w * 0.31 * c), px(base + w * 0.31 * s)));
+                rays.line_to(point(px(cx + w * 0.38 * c), px(base + w * 0.38 * s)));
+            }
+            if let Ok(p) = rays.build() {
+                window.paint_path(p, rgb(color));
+            }
+            let t = (w * 0.05).max(1.5);
+            window.paint_quad(gpui::fill(Bounds::new(point(px(x + w * 0.04), px(base + w * 0.03)), size(px(w * 0.92), px(t))), rgb(color)).corner_radii(Corners::all(px(t / 2.))));
         },
     )
     .w(px(w))
@@ -900,13 +932,13 @@ fn window_controls(window: &Window) -> Option<gpui::Div> {
         return None;
     }
     let ctl = |id: &'static str, kind: Icon, area: WindowControlArea, hover: u32| {
-        fx::control(id, hover, R_CTRL)
+        // Square, full bar height and flush with the window's top-right corner, like any desktop title bar.
+        fx::control(id, hover, 0.)
             .w(px(46.))
-            .h(px(CTRL_H))
+            .h(px(BAR_H))
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(R_CTRL))
             .cursor_pointer()
             .window_control_area(area)
             .child(icon(kind, 16., TEXT))
@@ -922,8 +954,10 @@ fn window_controls(window: &Window) -> Option<gpui::Div> {
         div()
             .flex()
             .items_center()
-            .gap(px(2.))
-            .ml(px(8.))
+            .flex_none()
+            .h(px(BAR_H))
+            .ml(px(12.))
+            .mr(px(-GUTTER))
             .occlude()
             .child(ctl("win-min", Icon::Minimize, WindowControlArea::Min, 0x26262a).when(own, |d| d.on_click(|_, window, _| window.minimize_window())))
             .child(ctl("win-max", max, WindowControlArea::Max, 0x26262a).when(own, |d| d.on_click(|_, window, _| window.zoom_window())))
@@ -973,9 +1007,10 @@ impl Launcher {
         let tabs = [(Tab::Overview, "Overview"), (Tab::Plugins, "Plugins"), (Tab::Profiles, "Profiles"), (Tab::Settings, "Settings")];
         let group = || div().flex().items_center().gap(px(8.)).occlude().on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
         let left = group()
+            .child(div().flex_none().pr(px(6.)).child(mark(30., ACCENT)))
             .child(self.dropdown(Menu::Platform, "Horizon", cx))
-            .child(self.dropdown(Menu::Instance, if has { "Sunset" } else { "No instance" }, cx))
-            .child({
+            .child(self.dropdown(Menu::Instance, if has { INSTANCE_NAME } else { "No instance" }, cx));
+        let tab_strip = group().child({
                 let shown: Vec<_> = tabs.into_iter().filter(|(t, _)| has || *t == Tab::Overview || *t == Tab::Settings).collect();
                 // Tabs are sized here from their labels, so the pill that slides under them knows where each one is
                 // in the same frame.
@@ -993,7 +1028,7 @@ impl Launcher {
                     .collect();
                 let widths: Vec<f32> = spans.iter().map(|s| s.1).collect();
                 let pill = shown.iter().position(|(t, _)| *t == self.tab).map(|at| {
-                    div().absolute().top(px(3.)).h(px(tab_h)).rounded(px(tab_r)).bg(rgb(0x2a2a2e)).with_spring(
+                    div().absolute().top(px(3.)).h(px(tab_h)).rounded(px(tab_r)).bg(rgb(ACCENT)).with_spring(
                         "tab-pill",
                         SpringAnimation::new(fx::SLIDE).to(at as f32).with_epsilon(0.002),
                         move |d, p| {
@@ -1002,7 +1037,8 @@ impl Launcher {
                         },
                     )
                 });
-                div().relative().flex().p(px(3.)).gap(px(2.)).rounded(px(R_CTRL)).bg(rgb(CHIP)).border_1().border_color(rgb(LINE)).children(pill).children(shown.into_iter().zip(widths).map(|((t, label), w)| {
+                // No box around the tabs: the orange pill under the selected one is the only shape.
+                div().relative().flex().p(px(3.)).gap(px(2.)).children(pill).children(shown.into_iter().zip(widths).map(|((t, label), w)| {
                     let on = self.tab == t;
                     let id = ElementId::from(label);
                     let lit = on || fx::hovered(&id);
@@ -1014,10 +1050,11 @@ impl Launcher {
                         .justify_center()
                         .cursor_pointer()
                         .text_size(px(13.))
+                        .font_family(BOLD).font_weight(BOLD_WEIGHT)
                         .child(div().child(label).with_spring(
                             "tab-text",
                             SpringAnimation::new(fx::HOVER).to(if lit { 1f32 } else { 0. }).with_epsilon(0.004),
-                            |d, t| d.text_color(fx::mix(MUTED, TEXT, t)),
+                            move |d, t| d.text_color(if on { rgb(ON_ACCENT) } else { fx::mix(SOFT, ON_ACCENT, t) }),
                         ))
                         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                             this.tab = t;
@@ -1051,10 +1088,10 @@ impl Launcher {
                     window.start_window_move();
                 }
             }))
-            .child(left)
-            .child(div().flex_1())
-            .child(group().child(self.account_chip(cx)))
-            .children(window_controls(window))
+            // Equal-width sides keep the tabs in the middle of the window whatever the sides hold.
+            .child(div().flex_1().flex_basis(px(0.)).min_w(px(0.)).flex().child(left))
+            .child(tab_strip)
+            .child(div().flex_1().flex_basis(px(0.)).min_w(px(0.)).flex().items_center().justify_end().child(group().child(self.account_chip(cx))).children(window_controls(window)))
     }
 
     /// A top-bar chip that toggles `menu`; its list drops down under it (the backdrop is in `menu_popup`).
@@ -1099,7 +1136,7 @@ impl Launcher {
             Menu::Platform => pop.child(self.menu_row("p-horizon", checked("Horizon", true), cx, |_, _| {})),
             Menu::Instance => {
                 let pop = match self.installed {
-                    Some(_) => pop.child(self.menu_row("i-sunset", checked("Sunset", true), cx, |this, _| this.tab = Tab::Overview)),
+                    Some(_) => pop.child(self.menu_row("i-sunset", checked(INSTANCE_NAME, true), cx, |this, _| this.tab = Tab::Overview)),
                     None => pop,
                 };
                 pop.child(self.menu_item("i-new", "New instance", cx, |this, cx| this.new_instance(cx)))
@@ -1148,7 +1185,19 @@ impl Launcher {
 
     fn account_chip(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(a) = self.accounts.iter().find(|a| a.selected).or(self.accounts.first()) else {
-            return top_chip("sign-in").child(text("Sign in", 13., TEXT)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_sign_in(cx))).into_any_element();
+            // Not a chip like the switchers: a plain button that says what it signs into.
+            return fx::control("sign-in", 0x26262a, R_CTRL)
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .h(px(CTRL_H))
+                .px(px(12.))
+                .rounded(px(R_CTRL))
+                .cursor_pointer()
+                .child(icon(Icon::User, 18., TEXT))
+                .child(text("Sign in with Microsoft", T_BODY, TEXT))
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_sign_in(cx)))
+                .into_any_element();
         };
         let head = self.faces.iter().find(|(u, _)| u == &a.uuid).map(|(_, f)| face(f, FACE).into_any_element()).unwrap_or_else(|| div().w(px(FACE)).h(px(FACE)).rounded(px(nested(R_CTRL, FACE_INSET))).bg(rgb(0x3a3a40)).into_any_element());
         let chip = top_chip("account")
@@ -1513,7 +1562,7 @@ impl Launcher {
             .flex_col()
             .gap(px(24.))
             .child(section("Instance", vec![
-                setting_row("Name", text("Sunset", 13., TEXT), false),
+                setting_row("Name", text(INSTANCE_NAME, 13., TEXT), false),
                 setting_row("Sunset version", version, false),
                 setting_row("Runtime", text(format!("Horizon {} ({})", m.short_pin(), m.horizon.tag), 13., TEXT), false),
                 setting_row(
