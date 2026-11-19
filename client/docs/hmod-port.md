@@ -68,7 +68,10 @@ Through Sunset's Horizon fork (18 Nov, `PointOfPressure/horizon` `sunset-hooks/0
   (Streamer Mode's name replacement taking the tag for a name; the server path marks the same way).
 
 Still missing, and what Horizon would need to add: see the end of this file.
-- Plugins (`api.rs`, sunset-plugins): not adapted to separate .hmod packages yet; pack.py, install scripts, README too.
+- Plugins: a plugin is now an .hmod package of its own built next to Sunset (its support module in `game.rs` calls
+  `super::sunset_api`), which the launcher's Plugins tab builds in (`plugins/README.md`; test plugin
+  `plugins/launcher-test`). sunset-plugins' template and examples, pack.py and the install scripts still use the
+  .hnmod layout.
 
 ## Building it
 

@@ -24,8 +24,8 @@ png = "0.18"
 image = { version = "0.25", default-features = false }
 # The round line caps and joins of the icons' strokes (gpui draws paths with lyon and re-exports its StrokeOptions).
 lyon_tessellation = "1"
-
-[target.'cfg(windows)'.dependencies]
+# Plugins: their horizon-mod.toml, and .hmod packages (zip archives); zip also unpacks the Windows horizon-launcher.
+toml = "1.2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [build-dependencies]

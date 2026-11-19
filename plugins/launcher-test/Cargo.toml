@@ -1,0 +1,11 @@
+[package]
+name = "sunset-launcher-test"
+version = "1.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+mod_api = { package = "horizon-mod-api", path = ".horizon/sdk/api/crates/horizon-mod-api" }

@@ -19,6 +19,10 @@
 #   HOOKS      with FORK: the commit or branch holding Sunset's hook patches on the pin (sunset-hooks/<pin>). The build
 #              then uses the fork's SDK (client/scripts/fork-sdk.sh build, in SDK, default ~/sunset-ops/tmp/fork-sdk),
 #              which must be of exactly that commit, and the fork branch starts from it
+#
+# Besides the game package, the release carries the launcher's plugin kit: `…-source.tar.zst` (Sunset's .hmod package
+# as built, one sunset/ folder: the launcher builds installed plugins into it) and, with HOOKS, `sunset-sdk-<pin>-<fork
+# commit>-<platform>.tar.zst` (that SDK and the fork's source, one fork-sdk/ folder), both signed like the package.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
@@ -123,6 +127,17 @@ UNPACKED=$(du -sb "$PKG" | cut -f1)
 tar -C "$WORK/pkg" --owner=0 --group=0 --numeric-owner --mtime=@"$(git -C "$REPO" log -1 --format=%ct)" --sort=name \
 	-cf - "$VDIR" | zstd -q -19 -T0 -f -o "$OUT/$NAME.tar.zst"
 
+# ---- plugin kit (see the header): the launcher downloads it only when plugins are turned on
+MTIME=@"$(git -C "$REPO" log -1 --format=%ct)"
+tar -C "$STAGE" --owner=0 --group=0 --numeric-owner --mtime="$MTIME" --sort=name --exclude=sunset/.horizon --exclude=sunset/target \
+	-cf - sunset | zstd -q -19 -T0 -f -o "$OUT/$NAME-source.tar.zst"
+SDKNAME=
+if [ -n "${HOOKS:-}" ]; then
+	SDKNAME=sunset-sdk-$SHORT-${HOOKS_HEAD:0:10}-$PLATFORM
+	tar -C "$(dirname "$SDK")" --owner=0 --group=0 --numeric-owner --mtime="$MTIME" --sort=name \
+		--transform "s,^$(basename "$SDK"),fork-sdk," -cf - "$(basename "$SDK")" | zstd -q -19 -T0 -f -o "$OUT/$SDKNAME.tar.zst"
+fi
+
 # ---- relink kit: the objects of Sunset's two libraries and their link inputs (see horizon-patches/README.md)
 if [ "${RELINK:-1}" != 0 ]; then
 	KIT=$WORK/relink/$NAME-relink; rm -rf "$WORK/relink"; mkdir -p "$KIT"
@@ -175,10 +190,11 @@ CLI_SHA=$(curl -fsSL "https://github.com/horizon-rust/horizon/releases/download/
 # The launcher shows this version's client/CHANGELOG.md section on Overview (empty when it has none).
 CHANGELOG_JSON=$(python3 "$REPO/client/scripts/changelog.py" "$VERSION" "$REPO/client/CHANGELOG.md")
 [ "$CHANGELOG_JSON" != "[]" ] || say "client/CHANGELOG.md has no $VERSION section: the launcher will show no changelog"
-python3 - "$OUT" "$NAME" "$VDIR" "$UNPACKED" "$CHANGELOG_JSON" <<EOF
+python3 - "$OUT" "$NAME" "$VDIR" "$UNPACKED" "$CHANGELOG_JSON" "$SDKNAME" <<EOF
 import hashlib, json, os, sys, datetime
 out, name, vdir, unpacked = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
 changelog = json.loads(sys.argv[5])
+sdkname = sys.argv[6]
 def art(f, kind):
     p = os.path.join(out, f)
     h = hashlib.sha256(open(p, "rb").read()).hexdigest()
@@ -187,6 +203,9 @@ arts = [art(name + ".tar.zst", "game")]
 arts[0]["unpacked_size"] = unpacked
 if os.path.exists(os.path.join(out, name + "-relink.tar.zst")):
     arts.append(art(name + "-relink.tar.zst", "relink"))
+arts.append(art(name + "-source.tar.zst", "source"))
+if sdkname:
+    arts.append(art(sdkname + ".tar.zst", "sdk"))
 m = {
     "schema": 1,
     "id": "sunset",
@@ -207,9 +226,10 @@ if changelog:
 json.dump(m, open(os.path.join(out, "manifest.json"), "w"), indent=2)
 open(os.path.join(out, "manifest.json"), "a").write("\n")
 EOF
-(cd "$OUT" && sha256sum manifest.json "$NAME".tar.zst $(ls "$NAME"-relink.tar.zst 2>/dev/null) > SHA256SUMS)
+KIT_FILES="$NAME-source.tar.zst${SDKNAME:+ $SDKNAME.tar.zst}"
+(cd "$OUT" && sha256sum manifest.json "$NAME".tar.zst $(ls "$NAME"-relink.tar.zst 2>/dev/null) $KIT_FILES > SHA256SUMS)
 if [ "${SIGN:-1}" != 0 ]; then
-	for f in "$NAME.tar.zst" $(cd "$OUT" && ls "$NAME"-relink.tar.zst 2>/dev/null) manifest.json; do
+	for f in "$NAME.tar.zst" $(cd "$OUT" && ls "$NAME"-relink.tar.zst 2>/dev/null) $KIT_FILES manifest.json; do
 		minisign -S -s "$KEY" -m "$OUT/$f" -t "sunset $VERSION $SHORT $PLATFORM $f" >/dev/null </dev/null
 	done
 	minisign -V -q -p "$REPO/launcher/sunset.pub" -m "$OUT/manifest.json" || die "signature check failed"
