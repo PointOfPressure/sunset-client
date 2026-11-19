@@ -449,6 +449,7 @@ pub fn seen(events: &[Item]) {
                     | C::SetEquipment(_)
                     | C::DamageEvent(_)
                     | C::EntityEvent(_)
+                    | C::Explode(_)
                     | C::SetEntityMotion(_)
                     | C::ContainerSetSlot(_)
                     | C::ContainerSetContent(_)

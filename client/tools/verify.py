@@ -14033,6 +14033,59 @@ def _():
     return all(v > 150 for v in got.values()), f"pixels changed with Effects on: {got}"
 
 
+@test("Effects (landing ripples and explosion shockwaves)")
+def _():
+    only("Effects")
+    setting("effects", "jump circles", "false")
+    setting("effects", "color", "Custom")
+    setting("effects", "custom color", "Pink")
+
+    def colored(name):
+        return sum(r > 170 and r - g > 35 and b - g > 18
+                   for r, g, b in colour_frame(name).getdata())
+
+    setting("effects", "landing duration (ms)", 2000)
+    landing = {}
+    for enabled in ("false", "true"):
+        setting("effects", "landing ripples", enabled)
+        reset("creative")
+        ctl("look", "0", "80")
+        clear_chat()
+        cmd(f"tp @s {X0 + 0.5} {Y + 5} {Z0 + 0.5} 0 80")
+        for _ in range(24):
+            if state()["player"].get("on_ground"):
+                break
+            wait(1)
+        landing[enabled] = colored(f"effects-landing-{enabled}")
+    # A fall shorter than Minimum fall: no ripple.
+    setting("effects", "minimum fall", 4.0)
+    reset("creative")
+    ctl("look", "0", "80")
+    cmd(f"tp @s {X0 + 0.5} {Y + 3} {Z0 + 0.5} 0 80")
+    for _ in range(24):
+        if state()["player"].get("on_ground"):
+            break
+        wait(1)
+    landing["short"] = colored("effects-landing-short")
+    setting("effects", "minimum fall", 0.6)
+
+    setting("effects", "landing ripples", "false")
+    setting("effects", "shockwave duration (ms)", 2000)
+    blast = {}
+    for enabled in ("false", "true"):
+        setting("effects", "explosion shockwaves", enabled)
+        reset("creative")
+        ctl("look-at", str(X0 + 0.5), str(Y + 5), str(Z0 + 9.5))
+        clear_chat()
+        cmd(f"summon tnt {X0 + 0.5} {Y + 5} {Z0 + 9.5} {{fuse:1s,NoGravity:1b}}")
+        wait(3)
+        blast[enabled] = colored(f"effects-shockwave-{enabled}")
+
+    return (landing["true"] > landing["false"] + 30 and landing["short"] < landing["true"] - 30
+            and blast["true"] > blast["false"] + 30,
+            f"pink pixels with each option off/on: landing {landing}, explosion {blast}")
+
+
 @test("ESP (2D style, health bar, shield colors)")
 def _():
     # A husk ahead of a wall: ESP's 2D box with Corners, a health bar, its name and a glow draws differently from the

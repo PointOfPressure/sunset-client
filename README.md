@@ -275,7 +275,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   module list and the coordinates go in any corner or anywhere you drag them (kept in proportion when the window is
   resized, and saved in profiles); Low health warning tints or flashes the screen's edges below a health you set.
 - **ClickGUI** (the menu's look), **No Render** (fog, overlays, hurt cam and more), **Effects** (jump circles,
-  trails, hit sparks, weather), **Hand View** (1.9+ and 1.8 swing and sword block animations), **Crosshair**,
+  trails, hit sparks, landing ripples, explosion shockwaves and weather), **Hand View** (1.9+ and 1.8 swing and sword block animations), **Crosshair**,
   **Block Overlay**, **Atmosphere** (custom skies).
 
 </details>
@@ -498,7 +498,7 @@ Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover 
 Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback
 Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps, Ore Sim's automatic seed (SeedCrackerX) and the Baritone/Ore Sim integration, and the plugin release gate (verify.py's exit status, strict plugin results).
 
-**compkrx** ([compkrx](https://github.com/compkrx)): Vein Miner.
+**compkrx** ([compkrx](https://github.com/compkrx)): Vein Miner and Effects refinements.
 
 **pxdns** ([pxdns](https://github.com/pxdns)): HUD placement (corners and Custom places for the watermark, module list
 and coordinates) and Low health warning.
