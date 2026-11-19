@@ -17,10 +17,13 @@ use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-const BG: u32 = 0x0b0b0c;
-const CARD: u32 = 0x141416;
-const LINE: u32 = 0x242428;
-const CHIP: u32 = 0x1b1b1e;
+// Surfaces sit close to black, each a small step above the one under it, so borders and the orange carry the shapes.
+const BG: u32 = 0x050506;
+const BAR: u32 = 0x09090b; // the title bar, a step above the page
+const CARD: u32 = 0x0d0d0f;
+const LINE: u32 = 0x202024;
+const CHIP: u32 = 0x141417;
+const LIT: u32 = 0x202024; // hover light on CHIP controls
 const TEXT: u32 = 0xececee;
 const MUTED: u32 = 0xb4b4bb; // secondary text: quieter than TEXT, still easy to read on CARD and BG
 const ACCENT: u32 = 0xdb5000; // Sunset orange, as on the site
@@ -28,7 +31,6 @@ const ACCENT_HI: u32 = 0xf26a12; // its hover
 const ON_ACCENT: u32 = 0xffffff;
 const RED: u32 = 0xef6b6b; // errors only; orange is the one accent
 const SOFT: u32 = 0xd2d2d7; // labels and unselected tabs: a step under TEXT
-const TAB_ON: u32 = 0x47220c; // the selected tab: Sunset orange deep enough not to compete with Play
 
 // One type scale: the page's title, a card's heading, body text, small print.
 const T_TITLE: f32 = 30.;
@@ -40,9 +42,12 @@ const T_SMALL: f32 = 12.;
 const GUTTER: f32 = 24.; // window edge to content, left and right
 const GAP: f32 = 16.; // between cards, columns and page blocks
 const PAD: f32 = 16.; // inside cards and their rows
-const CTRL_H: f32 = 36.; // buttons, top-bar chips and the tab pill
-const BIG_H: f32 = 48.; // the Play row
-const BAR_H: f32 = 68.; // the top bar, chips centred in it
+const CTRL_H: f32 = 36.; // buttons
+const BIG_H: f32 = 48.; // the Play row and the banner's other buttons
+const T_BIG: f32 = 15.; // their labels
+const STRIP_H: f32 = BIG_H + 40.; // the banner's strip under its horizon, the button row centred in it
+const BAR_H: f32 = 53.; // the title bar with its 1 px bottom border; tabs and window buttons fill the 52 above it
+const TOP_H: f32 = 32.; // the title bar's chips (platform, instance, account), centred in it
 const HEAD_H: f32 = 48.; // a card's heading row, so headings in cards side by side share a baseline
 const LOG_MAX: f32 = 236.; // the changelog list scrolls past this
 const PAGE_MAX: (f32, f32) = (1280., 760.); // Overview's block in a big window
@@ -62,8 +67,8 @@ const fn nested(outer: f32, by: f32) -> f32 {
 
 /// The account face and the platform mark in their top-bar chips, and how far they sit from the chip's outer edge
 /// (the chip's 1 px border included), which their corner radius follows.
-const FACE: f32 = 22.;
-const FACE_INSET: f32 = (CTRL_H - FACE) / 2.;
+const FACE: f32 = 20.;
+const FACE_INSET: f32 = (TOP_H - FACE) / 2.;
 
 /// The one instance's name; the instance chip reads as an instance switcher with it.
 const INSTANCE_NAME: &str = "Default";
@@ -529,9 +534,19 @@ fn card() -> gpui::Div {
     div().bg(rgb(CARD)).border_1().border_color(rgb(LINE)).rounded(px(R_CARD))
 }
 
+/// A button in the banner's row: Play's height, label size and spacing, an icon optional before or after the label.
+fn big_button(id: impl Into<ElementId>, primary: bool) -> gpui::Stateful<gpui::Div> {
+    button_shape(id, primary).h(px(BIG_H)).px(px(20.)).gap(px(8.)).text_size(px(T_BIG))
+}
+
 /// A button that does something; there are no disabled ones (what can't work isn't shown).
 fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, primary: bool) -> gpui::Stateful<gpui::Div> {
-    let (bg, fg, hover) = if primary { (ACCENT, ON_ACCENT, ACCENT_HI) } else { (CHIP, TEXT, 0x26262a) };
+    button_shape(id, primary).child(label.into())
+}
+
+/// `button` without its label, for buttons that lay out their own content.
+fn button_shape(id: impl Into<ElementId>, primary: bool) -> gpui::Stateful<gpui::Div> {
+    let (bg, fg, hover) = if primary { (ACCENT, ON_ACCENT, ACCENT_HI) } else { (CHIP, TEXT, LIT) };
     fx::control(id, hover, if primary { R_CTRL } else { nested(R_CTRL, 1.) })
         .px(px(14.))
         .h(px(CTRL_H))
@@ -545,7 +560,6 @@ fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, primary: boo
         .text_color(rgb(fg))
         .font_family(BOLD).font_weight(BOLD_WEIGHT)
         .cursor_pointer()
-        .child(label.into())
 }
 
 enum Icon {
@@ -749,7 +763,7 @@ fn scroll_cues(handle: &gpui::ScrollHandle, window: &mut Window) {
     let thumb = (track * view / (view + max)).clamp(24f32.min(track), track);
     let y = 6. + (off / max).clamp(0., 1.) * (track - thumb);
     let at = Bounds::new(point(b.origin.x + b.size.width - px(7.), b.origin.y + px(y)), size(px(3.), px(thumb)));
-    window.paint_quad(gpui::fill(at, rgb(0x3a3a40)).corner_radii(Corners::all(px(1.5))));
+    window.paint_quad(gpui::fill(at, rgb(0x34343a)).corner_radii(Corners::all(px(1.5))));
 }
 
 /// A filled half disc standing on `cy`.
@@ -764,29 +778,39 @@ fn half_disc(cx: f32, cy: f32, r: f32) -> PathBuilder {
     p
 }
 
-/// The Sunset mark: a sun half set on the horizon with five rays, drawn `w` wide and half as tall.
+/// The official Sunset mark (launcher/assets/sunset-launcher.svg, docs/images/logo.png): two concentric half rings,
+/// drawn `w` wide and half as tall, its baseline on the box's bottom edge.
 fn mark(w: f32, color: u32) -> impl IntoElement {
     canvas(
         |_, _, _| (),
         move |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| {
-            let (x, y, w) = (f32::from(b.origin.x), f32::from(b.origin.y), f32::from(b.size.width));
-            let (cx, base) = (x + w / 2., y + w * 0.42);
-            if let Ok(p) = half_disc(cx, base, w * 0.24).build() {
+            // The SVG's 256-unit grid: the outer ring spans x 33.28..222.72 and stands on y 180.48.
+            let k = f32::from(b.size.width) / 189.44;
+            let (x0, y0) = (f32::from(b.origin.x) - 33.28 * k, (f32::from(b.origin.y) + f32::from(b.size.height)).round() - 180.48 * k);
+            let at = |x: f32, y: f32| point(px(x0 + x * k), px(y0 + y * k));
+            // An arc over the top from the left end to the right (or back), centred on (128, cy).
+            let arc = |p: &mut PathBuilder, cy: f32, r: f32, back: bool| {
+                for i in 0..=64 {
+                    let f = if back { 64 - i } else { i } as f32 / 64.;
+                    let a = std::f32::consts::PI * (1. + f);
+                    p.line_to(at(128. + r * a.cos(), cy + r * a.sin()));
+                }
+            };
+            let mut p = PathBuilder::fill();
+            p.move_to(at(33.28, 180.48));
+            arc(&mut p, 180.48, 94.72, false);
+            arc(&mut p, 180.48, 73.233, true);
+            p.close();
+            p.move_to(at(74.939, 180.48));
+            arc(&mut p, 178.287, 53.061, false);
+            p.line_to(at(181.061, 180.48));
+            p.line_to(at(159.573, 180.48));
+            arc(&mut p, 178.287, 31.573, true);
+            p.line_to(at(96.427, 180.48));
+            p.close();
+            if let Ok(p) = p.build() {
                 window.paint_path(p, rgb(color));
             }
-            let mut rays = PathBuilder::fill().with_style(PathStyle::Stroke(
-                StrokeOptions::default().with_line_width(w * 0.06).with_line_cap(LineCap::Round),
-            ));
-            for deg in [200f32, 235., 270., 305., 340.] {
-                let (s, c) = deg.to_radians().sin_cos();
-                rays.move_to(point(px(cx + w * 0.31 * c), px(base + w * 0.31 * s)));
-                rays.line_to(point(px(cx + w * 0.38 * c), px(base + w * 0.38 * s)));
-            }
-            if let Ok(p) = rays.build() {
-                window.paint_path(p, rgb(color));
-            }
-            let t = (w * 0.05).max(1.5);
-            window.paint_quad(gpui::fill(Bounds::new(point(px(x + w * 0.04), px(base + w * 0.03)), size(px(w * 0.92), px(t))), rgb(color)).corner_radii(Corners::all(px(t / 2.))));
         },
     )
     .w(px(w))
@@ -804,13 +828,13 @@ fn hero_art() -> impl IntoElement {
             let r = px(R_CARD);
             let at = |x: f32, y: f32, w: f32, h: f32| Bounds::new(point(px(x), px(y)), size(px(w), px(h)));
             // The horizon runs through the gap between the banner's text and its button row, at any height.
-            let horizon = (y + h - (28. + BIG_H + 11.)).round();
-            let ember = Hsla::from(rgb(0x2c1307));
+            let horizon = (y + h - STRIP_H).round();
+            let ember = Hsla::from(rgb(0x221003));
             window.paint_quad(
                 gpui::fill(at(x, y, w, horizon - y), linear_gradient(180., linear_color_stop(Hsla::from(rgb(CARD)), 0.), linear_color_stop(ember, 1.)))
                     .corner_radii(Corners { top_left: r, top_right: r, bottom_left: px(0.), bottom_right: px(0.) }),
             );
-            window.paint_quad(gpui::fill(at(x, horizon, w, y + h - horizon), rgb(0x0f0d0c)).corner_radii(Corners { top_left: px(0.), top_right: px(0.), bottom_left: r, bottom_right: r }));
+            window.paint_quad(gpui::fill(at(x, horizon, w, y + h - horizon), rgb(0x080706)).corner_radii(Corners { top_left: px(0.), top_right: px(0.), bottom_left: r, bottom_right: r }));
             // The outer glow (1.6 sun radii) stays inside the card's top edge.
             let sr = ((horizon - y) * 0.58).min(w * 0.17).min(200.);
             // Right of centre, with the glow clear of the card's right edge.
@@ -848,6 +872,20 @@ fn hero_art() -> impl IntoElement {
     .top_0()
     .left_0()
     .size_full()
+}
+
+/// The banner: `hero_art` behind a title block above the horizon and a button row centred in the strip under it.
+fn banner(title: gpui::Div, row: gpui::AnyElement) -> gpui::Div {
+    div()
+        .relative()
+        .flex_1()
+        .min_h(px(250.))
+        .flex()
+        .flex_col()
+        .justify_end()
+        .child(hero_art())
+        .child(title.relative().px(px(28.)).pb(px(24.)))
+        .child(div().relative().flex().flex_none().items_center().h(px(STRIP_H)).px(px(28.)).child(row))
 }
 
 fn face(pixels: &[[u8; 4]], s: f32) -> impl IntoElement {
@@ -928,12 +966,12 @@ fn page_head(title: &str, action: Option<gpui::AnyElement>) -> gpui::Div {
 
 /// The top bar's chips (platform, instance, account) share this shape.
 fn top_chip(id: impl Into<ElementId>) -> gpui::Stateful<gpui::Div> {
-    fx::control(id, 0x26262a, nested(R_CTRL, 1.))
+    fx::control(id, LIT, nested(R_CTRL, 1.))
         .flex()
         .items_center()
         .gap(px(8.))
-        .h(px(CTRL_H))
-        .px(px(14.))
+        .h(px(TOP_H))
+        .px(px(12.))
         .rounded(px(R_CTRL))
         .bg(rgb(CHIP))
         .border_1()
@@ -963,7 +1001,7 @@ fn window_controls(window: &Window) -> Option<gpui::Div> {
         // Square, full bar height and flush with the window's top-right corner, like any desktop title bar.
         fx::control(id, hover, 0.)
             .w(px(46.))
-            .h(px(BAR_H))
+            .h_full()
             .flex()
             .items_center()
             .justify_center()
@@ -983,12 +1021,12 @@ fn window_controls(window: &Window) -> Option<gpui::Div> {
             .flex()
             .items_center()
             .flex_none()
-            .h(px(BAR_H))
+            .h_full()
             .ml(px(12.))
             .mr(px(-GUTTER))
             .occlude()
-            .child(ctl("win-min", Icon::Minimize, WindowControlArea::Min, 0x26262a).when(own, |d| d.on_click(|_, window, _| window.minimize_window())))
-            .child(ctl("win-max", max, WindowControlArea::Max, 0x26262a).when(own, |d| d.on_click(|_, window, _| window.zoom_window())))
+            .child(ctl("win-min", Icon::Minimize, WindowControlArea::Min, LIT).when(own, |d| d.on_click(|_, window, _| window.minimize_window())))
+            .child(ctl("win-max", max, WindowControlArea::Max, LIT).when(own, |d| d.on_click(|_, window, _| window.zoom_window())))
             .child(ctl("win-close", Icon::Close, WindowControlArea::Close, 0xc42b1c).when(own, |d| d.on_click(|_, _, cx| cx.quit()))),
     )
 }
@@ -1034,76 +1072,80 @@ impl Launcher {
         let has = self.installed.is_some();
         let tabs = [(Tab::Overview, "Overview"), (Tab::Plugins, "Plugins"), (Tab::Profiles, "Profiles"), (Tab::Settings, "Settings")];
         let group = || div().flex().items_center().gap(px(8.)).occlude().on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
+        // The mark and the two switchers, then the tabs: a desktop title bar, read left to right, the window's
+        // own buttons at the far right and the free space between as the drag area.
         let left = group()
-            .child(div().flex_none().pr(px(6.)).child(mark(30., ACCENT)))
+            .child(div().flex_none().pr(px(8.)).child(mark(32., ACCENT)))
             .child(self.dropdown(Menu::Platform, "Horizon", cx))
             .child(self.dropdown(Menu::Instance, if has { INSTANCE_NAME } else { "No instance" }, cx));
-        let tab_strip = group().child({
-                // All four always, so the tabs never move; with no instance Plugins and Profiles say what to do.
-                let shown: Vec<_> = tabs.to_vec();
-                // Tabs are sized here from their labels, so the pill that slides under them knows where each one is
-                // in the same frame.
-                // Inside the strip's 1 px border and 3 px padding.
-                let tab_h = CTRL_H - 8.;
-                let tab_r = R_CTRL;
-                let mut x = 0.;
-                let spans: Vec<(f32, f32)> = shown
-                    .iter()
-                    .map(|(_, label)| {
-                        let w = (label_width(window, label, 13.) + 36.).ceil();
-                        x += w + 2.;
-                        (x - w - 2., w)
-                    })
-                    .collect();
-                let widths: Vec<f32> = spans.iter().map(|s| s.1).collect();
-                let pill = shown.iter().position(|(t, _)| *t == self.tab).map(|at| {
-                    div().absolute().top(px(3.)).h(px(tab_h)).rounded(px(tab_r)).bg(rgb(TAB_ON)).with_spring(
-                        "tab-pill",
-                        SpringAnimation::new(fx::SLIDE).to(at as f32).with_epsilon(0.002),
-                        move |d, p| {
-                            let (left, w) = fx::pill_span(&spans, p);
-                            d.left(px(3. + left)).w(px(w))
-                        },
-                    )
-                });
-                // No box around the tabs: the ember pill under the selected one is the only shape, quieter than Play.
-                div().relative().flex().p(px(3.)).gap(px(2.)).children(pill).children(shown.into_iter().zip(widths).map(|((t, label), w)| {
-                    let on = self.tab == t;
-                    let id = ElementId::from(label);
-                    let lit = on || fx::hovered(&id);
-                    fx::pressable(id, None, tab_r)
-                        .w(px(w))
-                        .h(px(tab_h))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .cursor_pointer()
-                        .text_size(px(13.))
-                        .font_family(BOLD).font_weight(BOLD_WEIGHT)
-                        .child(div().child(label).with_spring(
-                            "tab-text",
-                            SpringAnimation::new(fx::HOVER).to(if lit { 1f32 } else { 0. }).with_epsilon(0.004),
-                            move |d, t| d.text_color(if on { rgb(ON_ACCENT) } else { fx::mix(SOFT, ON_ACCENT, t) }),
-                        ))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.tab = t;
-                            this.set_menu(None, cx);
-                            if t != Tab::Overview {
-                                this.reload_local();
-                            }
-                            if t == Tab::Settings {
-                                this.refresh_sources();
-                            }
-                            cx.notify();
-                        }))
-                }))
-            });
+        // All four tabs always, so they never move; with no instance Plugins and Profiles say what to do. Each fills
+        // the bar's height like the window buttons; the selected one is lit and underlined in orange on the bar's
+        // bottom edge. Widths come from the labels, so the underline that slides between them knows where each one is
+        // in the same frame.
+        let spans: Vec<(f32, f32)> = {
+            let mut x = 0.;
+            tabs.iter()
+                .map(|(_, label)| {
+                    let w = (label_width(window, label, 13.) + 28.).ceil();
+                    x += w;
+                    (x - w, w)
+                })
+                .collect()
+        };
+        let widths: Vec<f32> = spans.iter().map(|s| s.1).collect();
+        let underline = tabs.iter().position(|(t, _)| *t == self.tab).map(|at| {
+            div().absolute().bottom_0().h(px(2.)).rounded_t(px(1.)).bg(rgb(ACCENT)).with_spring(
+                "tab-line",
+                SpringAnimation::new(fx::SLIDE).to(at as f32).with_epsilon(0.002),
+                move |d, p| {
+                    let (left, w) = fx::pill_span(&spans, p);
+                    d.left(px(left + 10.)).w(px(w - 20.))
+                },
+            )
+        });
+        let tab_strip = group().gap_0().h_full().child(div().w(px(1.)).h(px(20.)).mx(px(12.)).bg(rgb(LINE))).child(
+            div().relative().flex().h_full().children(underline).children(tabs.into_iter().zip(widths).map(|((t, label), w)| {
+                let on = self.tab == t;
+                let id = ElementId::from(label);
+                let lit = on || fx::hovered(&id);
+                fx::pressable(id, None, 0.)
+                    .w(px(w))
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .text_size(px(13.))
+                    .font_family(BOLD).font_weight(BOLD_WEIGHT)
+                    .child(div().child(label).with_spring(
+                        "tab-text",
+                        SpringAnimation::new(fx::HOVER).to(if lit { 1f32 } else { 0. }).with_epsilon(0.004),
+                        move |d, t| d.text_color(fx::mix(MUTED, TEXT, t)),
+                    ))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.tab = t;
+                        this.set_menu(None, cx);
+                        if t != Tab::Overview {
+                            this.reload_local();
+                        }
+                        if t == Tab::Settings {
+                            this.refresh_sources();
+                        }
+                        cx.notify();
+                    }))
+            })),
+        );
         div()
             .flex()
             .flex_none()
             .items_center()
             .h(px(BAR_H))
-            .gap(px(8.))
+            // Edge to edge across the window, its contents still on the page's gutter.
+            .mx(px(-GUTTER))
+            .px(px(GUTTER))
+            .bg(rgb(BAR))
+            .border_b_1()
+            .border_color(rgb(LINE))
             .window_control_area(WindowControlArea::Drag)
             .on_mouse_down(MouseButton::Left, cx.listener(|this, ev: &MouseDownEvent, window, _| {
                 this.title_drag = ev.click_count < 2;
@@ -1117,10 +1159,11 @@ impl Launcher {
                     window.start_window_move();
                 }
             }))
-            // Equal-width sides keep the tabs in the middle of the window whatever the sides hold.
-            .child(div().flex_1().flex_basis(px(0.)).min_w(px(0.)).flex().child(left))
+            .child(left)
             .child(tab_strip)
-            .child(div().flex_1().flex_basis(px(0.)).min_w(px(0.)).flex().items_center().justify_end().child(group().child(self.account_chip(cx))).children(window_controls(window)))
+            .child(div().flex_1().min_w(px(12.)).h_full())
+            .child(group().child(self.account_chip(cx)))
+            .children(window_controls(window))
     }
 
     /// A top-bar chip that toggles `menu`; its list drops down under it (the backdrop is in `menu_popup`).
@@ -1212,21 +1255,15 @@ impl Launcher {
 
     fn account_chip(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(a) = self.accounts.iter().find(|a| a.selected).or(self.accounts.first()) else {
-            // Not a chip like the switchers: a plain button that says what it signs into.
-            return fx::control("sign-in", 0x26262a, R_CTRL)
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .h(px(CTRL_H))
-                .px(px(12.))
-                .rounded(px(R_CTRL))
-                .cursor_pointer()
-                .child(icon(Icon::User, 18., TEXT))
-                .child(text("Sign in with Microsoft", T_BODY, TEXT))
+            // The same chip as when signed in, with a person in place of the face.
+            return top_chip("sign-in")
+                .pl(px(8.))
+                .child(icon(Icon::User, 16., TEXT))
+                .child(text("Sign in", 13., TEXT))
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_sign_in(cx)))
                 .into_any_element();
         };
-        let head = self.faces.iter().find(|(u, _)| u == &a.uuid).map(|(_, f)| face(f, FACE).into_any_element()).unwrap_or_else(|| div().w(px(FACE)).h(px(FACE)).rounded(px(nested(R_CTRL, FACE_INSET))).bg(rgb(0x3a3a40)).into_any_element());
+        let head = self.faces.iter().find(|(u, _)| u == &a.uuid).map(|(_, f)| face(f, FACE).into_any_element()).unwrap_or_else(|| div().w(px(FACE)).h(px(FACE)).rounded(px(nested(R_CTRL, FACE_INSET))).bg(rgb(0x2a2a2f)).into_any_element());
         let chip = top_chip("account")
             .pl(px(FACE_INSET - 1.))
             .pr(px(10.))
@@ -1243,7 +1280,7 @@ impl Launcher {
 
     fn menu_row(&self, id: impl Into<ElementId>, label: gpui::Div, cx: &mut Context<Self>, f: impl Fn(&mut Self, &mut Context<Self>) + 'static) -> gpui::Stateful<gpui::Div> {
         // Inside the menu's 1 px border and 4 px padding.
-        fx::control(id, 0x26262a, nested(R_CARD, 5.))
+        fx::control(id, LIT, nested(R_CARD, 5.))
             .px(px(12.))
             .h(px(32.))
             .flex()
@@ -1322,7 +1359,7 @@ impl Launcher {
                     }
                     cx.notify();
                 }))))
-                .child(div().h(px(6.)).w_full().rounded_full().bg(rgb(0x2a2a2e)).child(div().h_full().rounded_full().bg(rgb(ACCENT)).w(gpui::relative(if j.frac.is_some() { frac } else { 1. })).when(j.frac.is_none(), |d| d.opacity(0.35)))),
+                .child(div().h(px(6.)).w_full().rounded_full().bg(rgb(0x1c1c20)).child(div().h_full().rounded_full().bg(rgb(ACCENT)).w(gpui::relative(if j.frac.is_some() { frac } else { 1. })).when(j.frac.is_none(), |d| d.opacity(0.35)))),
         )
     }
 
@@ -1340,53 +1377,38 @@ impl Launcher {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .gap(px(10.))
+                        .gap(px(8.))
                         .w(px(220.))
                         .h(px(BIG_H))
                         .rounded(px(R_CTRL))
                         .bg(rgb(ACCENT))
                         .when(self.playing, |d| d.opacity(0.6))
                         .when(!self.playing, |d| d.cursor_pointer())
-                        .child(icon(Icon::Play, 26., ON_ACCENT))
-                        .child(div().text_size(px(17.)).font_family(BOLD).font_weight(BOLD_WEIGHT).text_color(rgb(ON_ACCENT)).child(if self.playing { "Playing" } else { "Play" }))
+                        .child(icon(Icon::Play, 18., ON_ACCENT))
+                        .child(div().text_size(px(T_BIG)).font_family(BOLD).font_weight(BOLD_WEIGHT).text_color(rgb(ON_ACCENT)).child(if self.playing { "Playing" } else { "Play" }))
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.play(cx))),
                 )
-                .when_some(update, |d, v| d.child(button("update", format!("Update to {v}"), false).h(px(BIG_H)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx)))))
-                .child(button("open-folder", "", false).h(px(BIG_H)).gap(px(8.)).child(icon(Icon::Folder, 20., TEXT)).child("Game folder").on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                .when_some(update, |d, v| d.child(big_button("update", false).child(format!("Update to {v}")).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx)))))
+                .child(big_button("open-folder", false).child(icon(Icon::Folder, 18., TEXT)).child("Game folder").on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     let p = this.paths.instance();
                     this.open(p, cx)
                 })))
                 .child(self.with_menu(
                     Menu::More,
-                    button("more", "", false).h(px(BIG_H)).gap(px(6.)).child("Logs and repair").child(icon(Icon::Chevron, 16., TEXT)).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::More, ev, cx))),
+                    big_button("more", false).pr(px(16.)).child("Logs and repair").child(icon(Icon::Chevron, 16., TEXT)).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::More, ev, cx))),
                     false,
                     cx,
                 ))
                 .child(div().flex_1())
                 .children(self.play_stats())
+                .w_full()
                 .into_any_element(),
         };
         // The banner says what this is once: Sunset, its version and the game it runs. Play is the first thing under it.
-        let hero = div()
-            .relative()
-            .flex_1()
-            .min_h(px(250.))
-            .flex()
-            .flex_col()
-            .justify_end()
-            .gap(px(22.))
-            .p(px(28.))
-            .child(hero_art())
-            .child(
-                div()
-                    .relative()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .child(bold("Sunset", T_TITLE))
-                    .child(text(format!("Version {} for Minecraft {}", m.version, m.horizon.game), 14., TEXT)),
-            )
-            .child(div().relative().flex().flex_col().child(play_area));
+        let hero = banner(
+            div().flex().flex_col().gap(px(4.)).child(bold("Sunset", T_TITLE)).child(text(format!("Version {} for Minecraft {}", m.version, m.horizon.game), 14., TEXT)),
+            play_area,
+        );
         let plugins = self.mods.iter().filter(|(id, _)| id != "sunset").count();
         let facts = vec![
             ("Horizon build", m.horizon_build()),
@@ -1481,17 +1503,16 @@ impl Launcher {
         let failed = self.latest.is_none() && self.latest_err.is_some();
         let action = match self.progress(cx) {
             Some(p) => div().w(px(460.)).max_w_full().child(p).into_any_element(),
-            None if self.latest.is_some() => button("new-instance", "Install Sunset", true)
-                .h(px(BIG_H))
+            None if self.latest.is_some() => big_button("new-instance", true)
                 .px(px(28.))
-                .text_size(px(16.))
+                .child("Install Sunset")
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx)))
                 .into_any_element(),
             None if failed => div()
                 .flex()
                 .gap(px(8.))
-                .child(button("retry", "Try again", true).h(px(BIG_H)).px(px(24.)).on_click(cx.listener(|this, _: &ClickEvent, _, _| this.check(false))))
-                .child(button("releases", "Open the releases page", false).h(px(BIG_H)).on_click(cx.listener(|_, _: &ClickEvent, _, cx| cx.open_url(&format!("https://github.com/{}/releases", core::REPO)))))
+                .child(big_button("retry", true).child("Try again").on_click(cx.listener(|this, _: &ClickEvent, _, _| this.check(false))))
+                .child(big_button("releases", false).child("Open the releases page").on_click(cx.listener(|_, _: &ClickEvent, _, cx| cx.open_url(&format!("https://github.com/{}/releases", core::REPO)))))
                 .into_any_element(),
             None => div().into_any_element(),
         };
@@ -1502,18 +1523,7 @@ impl Launcher {
             (None, None) => text("Looking for the latest Sunset release…", 14., TEXT),
         };
         // The same banner as Overview with the install in place of Play, and the release's changelog under it.
-        let hero = div()
-            .relative()
-            .flex_1()
-            .min_h(px(250.))
-            .flex()
-            .flex_col()
-            .justify_end()
-            .gap(px(22.))
-            .p(px(28.))
-            .child(hero_art())
-            .child(div().relative().flex().flex_col().gap(px(6.)).child(bold("Install Sunset", T_TITLE)).child(about))
-            .child(div().relative().flex().child(action));
+        let hero = banner(div().flex().flex_col().gap(px(6.)).child(bold("Install Sunset", T_TITLE)).child(about), action);
         let block = div().flex().flex_col().gap(px(GAP)).child(hero).when_some(self.latest.as_ref(), |d, r| d.child(div().flex().flex_none().child(self.changelog(&r.manifest))));
         page_block(block)
     }
@@ -1739,7 +1749,7 @@ impl Render for Launcher {
                     .relative()
                     .flex_1()
                     .min_h(px(0.))
-                    .mt(px(8.))
+                    .mt(px(GAP))
                     .flex()
                     .flex_col()
                     .child(div().id("page").flex_1().min_h(px(0.)).overflow_y_scroll().track_scroll(&self.page_scroll).child(page))
