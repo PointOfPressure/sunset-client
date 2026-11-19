@@ -634,8 +634,8 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                     let parsed = setting.parse(value);
                     let shown = setting.shown();
                     if parsed && alias {
-                        let mode = if m.b("Shield") { "Modern" } else { "Off" };
-                        if let Some(s) = m.settings.iter_mut().find(|s| s.name == "AutoBlock") { s.parse(mode); }
+                        let on = m.b("Shield").to_string();
+                        if let Some(s) = m.settings.iter_mut().find(|s| s.name == "Shield block") { s.parse(&on); }
                     }
                     Some((parsed, shown, seed_changed))
                 })

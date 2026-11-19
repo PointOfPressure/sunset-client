@@ -20,11 +20,17 @@ pub(super) enum Version {
     Modern,
 }
 
-// The combat model for the Combat version setting and your current attack speed, and why.
+// The combat setting of a module: Kill Aura's Version (1.8 or 1.9+), else its Combat version (Trigger Bot's Auto,
+// Legacy (1.8) or Modern (1.9+)).
+pub(super) fn setting_of(m: &super::sunset::Module) -> &'static str {
+    if m.name == "Kill Aura" { m.p("Version") } else { m.p("Combat version") }
+}
+
+// The combat model for a combat setting (Kill Aura's Version or a Combat version) and your current attack speed, and why.
 pub(super) fn version(setting: &str, attack_speed: f64) -> (Version, &'static str) {
     match setting {
-        "Legacy (1.8)" => (Version::Legacy, "Legacy, picked"),
-        "Modern (1.9+)" => (Version::Modern, "Modern, picked"),
+        "Legacy (1.8)" | "1.8" => (Version::Legacy, "1.8, picked"),
+        "Modern (1.9+)" | "1.9+" => (Version::Modern, "1.9+, picked"),
         _ if attack_speed.is_finite() && attack_speed >= NO_COOLDOWN_SPEED => (Version::Legacy, "Legacy: the server removed the attack cooldown"),
         _ => (Version::Modern, "Modern: the attack cooldown is in force"),
     }
@@ -142,6 +148,9 @@ mod tests {
         assert_eq!(version("Auto", f64::NAN).0, Version::Modern);
         assert_eq!(version("Legacy (1.8)", 4.0).0, Version::Legacy);
         assert_eq!(version("Modern (1.9+)", 1024.0).0, Version::Modern);
+        // Kill Aura's Version never guesses.
+        assert_eq!(version("1.8", 4.0).0, Version::Legacy);
+        assert_eq!(version("1.9+", 1024.0).0, Version::Modern);
     }
 
     #[test]

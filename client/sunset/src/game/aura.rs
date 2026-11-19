@@ -20,15 +20,17 @@ use std::sync::atomic::Ordering;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new("Kill Aura", Category::Combat, "Attacks nearby entities. Legacy AutoBlock is experimental and requires translated sword use.")
+        Module::new("Kill Aura", Category::Combat, "Attacks nearby entities. Pick the server's combat first: 1.8 or 1.9+. 1.8 AutoBlock is experimental and requires translated sword use.")
             // The menu shows these in sections (General, Targeting, Rotations, Timing, Inventory, Blocking, Movement);
-            // saved settings go by name. Two orders matter on loading: Max targets before Attack mode, the Shield alias
-            // before AutoBlock (set_field).
+            // saved settings go by name. Orders that matter on loading: Max targets before Attack mode, the Shield alias
+            // before AutoBlock and AutoBlock before Shield block (set_field).
             .group("General")
+            // How hits work on this server, above everything: the settings below show by it (setting_visible). 1.8:
+            // a click rate, the swing before the hit, reach to the target's middle line, the look the server has, a
+            // sword block. 1.9+: the attack cooldown, the swing after the hit, reach to the box, a shield.
+            .pick("Version", &["1.9+", "1.8"])
             // Settings for a way of fighting, filled in when picked (preset); Custom leaves them.
             .pick("Preset", &["Custom", "HvH", "Blatant", "Ghost"])
-            // How hits work on this server.
-            .pick("Combat version", &["Auto", "Legacy (1.8)", "Modern (1.9+)"])
             // Range: who it may target and track. Attack range: how far a hit may go (the server's reach: Horizon's,
             // vanilla's, takes 3 blocks to the target's box).
             .num("Range", 4.5, 1.0, 6.0, 0.1)
@@ -93,11 +95,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Swap back", false)
             .num("Weapon switch delay", 0.0, 0.0, 10.0, 1.0)
             .group("Blocking")
-            // The retained Shield alias (hidden) comes before AutoBlock, so an explicit new profile value overrides the
-            // old bool's migration; Modern's shield settings follow.
+            // The retained Shield alias (hidden) comes before AutoBlock and Shield block, so an explicit new profile
+            // value overrides the old bool's migration. 1.8: AutoBlock blocks with the sword (Packet sends the use and
+            // lets go for each hit; Fake only shows it). 1.9+: Shield block and its settings.
             .bool("Shield", false)
-            .pick("AutoBlock", &["Off", "Legacy", "Modern"])
+            .pick("AutoBlock", &["Off", "Packet", "Fake"])
             .num("Legacy reblock delay", 1.0, 0.0, 10.0, 1.0)
+            .bool("Shield block", false)
             .bool("Shield only with a weapon", true)
             .bool("Shield only near a target", true)
             .num("Shield range", 6.0, 2.0, 16.0, 0.5)
@@ -690,7 +694,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         return;
     }
     // Pick the weapon: never out of a hand eating, blocking or mining.
-    let legacy_now = timing::version(m.p("Combat version"), game.main_hand_attack_speed()).0 == timing::Version::Legacy;
+    let legacy_now = timing::version(m.p("Version"), game.main_hand_attack_speed()).0 == timing::Version::Legacy;
     let Some(slot) = weapon_slot(game, m, legacy_now) else {
         stop(game, m);
         st(|s| s.why("no usable weapon"));
@@ -816,7 +820,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     }
     // Legacy clicks at a rate; Modern waits for the cooldown, a fixed delay, or (Hit select) the hurt time too.
     let speed = game.main_hand_attack_speed();
-    let (version, why) = timing::version(m.p("Combat version"), speed);
+    let (version, why) = timing::version(m.p("Version"), speed);
     st(|s| s.version = why);
     let legacy = version == timing::Version::Legacy;
     let timing = if legacy { "Clicks" } else { m.p("Attack timing") };

@@ -1149,7 +1149,7 @@ fn inventory_context(game: &Game<'_>, m: &Module, locked: &[bool; 36], loot: boo
     locked.hash(&mut h);
     loot.hash(&mut h);
     (game.screen == Screen::Inventory).hash(&mut h);
-    super::sunset::with(|s| s.module("Kill Aura").map(|k| k.p("Combat version"))).hash(&mut h);
+    super::sunset::with(|s| s.module("Kill Aura").map(|k| super::sunset_aura_timing::setting_of(k))).hash(&mut h);
     // Auto combat mode can change via server attributes without changing any stack.
     let legacy = super::sunset_aura_timing::version("Auto", game.main_hand_attack_speed()).0 == super::sunset_aura_timing::Version::Legacy;
     legacy.hash(&mut h);
@@ -1161,7 +1161,7 @@ fn inventory_context(game: &Game<'_>, m: &Module, locked: &[bool; 36], loot: boo
 // unknown items), junk, items past their limits and excess duplicates; then merging and sorting.
 fn plan_step(game: &Game<'_>, m: &Module, preset: &str, locked: &[bool; 36]) -> Option<Step> {
     let items: Vec<Option<plan::Item>> = (0..36).map(|i| game.inventory.get(i).and_then(|s| s.as_ref()).map(|s| plan_item(game, s))).collect();
-    let kill_aura = super::sunset::with(|s| s.module("Kill Aura").map(|k| k.p("Combat version")).unwrap_or("Auto"));
+    let kill_aura = super::sunset::with(|s| s.module("Kill Aura").map(|k| super::sunset_aura_timing::setting_of(k)).unwrap_or("Auto"));
     let legacy = super::sunset_aura_timing::version(kill_aura, game.main_hand_attack_speed()).0 == super::sunset_aura_timing::Version::Legacy;
     let slot_words: [&str; 9] = std::array::from_fn(|i| m.p(["Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8", "Slot 9"][i]));
     let wants = plan::wants(slot_words, m.t("Hotbar layout"));

@@ -282,9 +282,11 @@ impl Module {
         match self.name {
             "Ore Sim" if matches!(name, "Database fetch" | "Cracker threads") => self.p("Seed source") == "Auto-crack",
             // Kill Aura's and Trigger Bot's Shield: its settings with it on.
-            "Kill Aura" if name == "Shield" => false, // Retained compatibility alias, superseded by AutoBlock.
-            "Kill Aura" if name.starts_with("Shield ") => self.p("AutoBlock") == "Modern",
-            "Kill Aura" if name == "Legacy reblock delay" => self.p("AutoBlock") == "Legacy",
+            "Kill Aura" if name == "Shield" => false, // Retained compatibility alias, superseded by Shield block.
+            // 1.9+ blocks with a shield (Shield block, then its settings); 1.8 with the sword (AutoBlock).
+            "Kill Aura" if name == "Shield block" => self.p("Version") != "1.8",
+            "Kill Aura" if name.starts_with("Shield ") => self.p("Version") != "1.8" && self.b("Shield block"),
+            "Kill Aura" if name == "Legacy reblock delay" => self.p("Version") == "1.8" && self.p("AutoBlock") == "Packet",
             "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
             // Streamer Mode: what shows in place of a name, with that name hidden.
             "Streamer Mode" => match name {
@@ -481,6 +483,7 @@ impl Module {
             },
             "Kill Aura" => {
                 let always = self.p("Rotate") == "Always";
+                let legacy = self.p("Version") == "1.8";
                 match name {
                     "Rotation mode" | "Rotation view" => always,
                     "Yaw speed" | "Pitch speed" => always && matches!(self.p("Rotation mode"), "Custom" | "Adaptive"),
@@ -493,11 +496,11 @@ impl Module {
                     "Max targets" => self.p("Attack mode") == "Multi",
                     "Target lock" => self.p("Attack mode") == "Single",
                     "Target switch delay" => self.p("Attack mode") != "Multi",
-                    // Modern's timing and Legacy's clicks; Auto may run either, so it shows both.
-                    "Attack timing" => self.p("Combat version") != "Legacy (1.8)",
-                    "Cooldown" => self.p("Combat version") != "Legacy (1.8)" && self.p("Attack timing") != "Custom delay",
-                    "Hit delay" => self.p("Combat version") != "Legacy (1.8)" && self.p("Attack timing") == "Custom delay",
-                    "Min CPS" | "Max CPS" | "CPS pattern" => self.p("Combat version") != "Modern (1.9+)",
+                    // Version decides the rest: 1.9+'s cooldown timing, 1.8's clicks and sword block.
+                    "Attack timing" => !legacy,
+                    "Cooldown" => !legacy && self.p("Attack timing") != "Custom delay",
+                    "Hit delay" => !legacy && self.p("Attack timing") == "Custom delay",
+                    "Min CPS" | "Max CPS" | "CPS pattern" | "AutoBlock" => legacy,
                     "Strafe radius" | "Strafe when" | "Avoid edges" => self.b("Target strafe"),
                     "Selected weapon types" => self.p("Attack when holding") == "Weapons",
                     "Swap back" => self.b("Auto switch"),

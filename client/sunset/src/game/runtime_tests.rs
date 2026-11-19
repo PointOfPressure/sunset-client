@@ -203,21 +203,34 @@ mod movement_config_tests {
 
     #[test]
     fn legacy_autoblock_preserves_old_shield_profiles_and_explicit_new_choices() {
+        let shown = |m: &Module, name: &str| m.setting_visible(m.settings.iter().position(|s| s.name == name).unwrap());
         let mut state = State::new();
+        // The old Shield bool and AutoBlock Modern are Shield block now, shown with 1.9+.
         state.load_text("killaura.shield=true\n");
-        assert_eq!(state.module("Kill Aura").unwrap().p("AutoBlock"), "Modern");
-        state.load_text("killaura.shield=true\nkillaura.autoblock=Legacy\n");
         let aura = state.module("Kill Aura").unwrap();
-        assert_eq!(aura.p("AutoBlock"), "Legacy");
-        assert!(aura.setting_visible(aura.settings.iter().position(|s| s.name == "Legacy reblock delay").unwrap()));
-        assert!(!aura.setting_visible(aura.settings.iter().position(|s| s.name == "Shield").unwrap()));
-        assert!(!aura.setting_visible(aura.settings.iter().position(|s| s.name == "Shield range").unwrap()));
-        state.load_text("killaura.shield=true\nkillaura.autoblock=Off\n");
-        assert_eq!(state.module("Kill Aura").unwrap().p("AutoBlock"), "Off");
+        assert!(aura.b("Shield block"));
+        assert!(shown(aura, "Shield range") && !shown(aura, "AutoBlock"));
+        state.load_text("killaura.shield=false\nkillaura.autoblock=Modern\n");
+        assert!(state.module("Kill Aura").unwrap().b("Shield block"));
+        // AutoBlock Legacy under Legacy combat: the 1.8 Packet block; an old config's AutoBlock decides the shield.
+        state.load_text("killaura.combatversion=Legacy (1.8)\nkillaura.shield=true\nkillaura.autoblock=Legacy\n");
+        let aura = state.module("Kill Aura").unwrap();
+        assert_eq!((aura.p("Version"), aura.p("AutoBlock")), ("1.8", "Packet"));
+        assert!(!aura.b("Shield block"));
+        assert!(shown(aura, "Legacy reblock delay") && shown(aura, "Min CPS") && !shown(aura, "Attack timing"));
+        assert!(!shown(aura, "Shield") && !shown(aura, "Shield block") && !shown(aura, "Shield range"));
+        state.load_text("killaura.combatversion=Auto\nkillaura.shield=true\nkillaura.autoblock=Off\n");
+        let aura = state.module("Kill Aura").unwrap();
+        assert_eq!((aura.p("Version"), aura.p("AutoBlock")), ("1.9+", "Off"));
+        assert!(!aura.b("Shield block") && !shown(aura, "Min CPS") && shown(aura, "Attack timing"));
+        // A config saved now loads back as it was, its own Shield block after AutoBlock.
+        state.load_text("killaura.shieldblock=true\n");
         let saved = state.module_text();
         let mut loaded = State::new();
         loaded.load_text(&saved);
-        assert_eq!(loaded.module("Kill Aura").unwrap().p("AutoBlock"), "Off");
+        let aura = loaded.module("Kill Aura").unwrap();
+        assert_eq!((aura.p("Version"), aura.p("AutoBlock")), ("1.9+", "Off"));
+        assert!(aura.b("Shield block"));
     }
 
     #[test]

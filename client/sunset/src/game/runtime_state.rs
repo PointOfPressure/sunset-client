@@ -368,8 +368,26 @@ impl State {
                 if id == "killaura" && field == "shield" {
                     let parsed = m.settings.iter_mut().find(|s| s.name == "Shield").is_some_and(|s| s.parse(v));
                     if parsed {
-                        let mode = if m.b("Shield") { "Modern" } else { "Off" };
-                        if let Some(s) = m.settings.iter_mut().find(|s| s.name == "AutoBlock") { s.parse(mode); }
+                        let on = m.b("Shield").to_string();
+                        if let Some(s) = m.settings.iter_mut().find(|s| s.name == "Shield block") { s.parse(&on); }
+                    }
+                    return;
+                }
+                // Kill Aura's AutoBlock before the Version split: Legacy was the sword block (now Packet), Modern the
+                // shield (now Shield block). Such a config decides the shield by AutoBlock alone; a newer one's own
+                // Shield block comes after this line and has the last word.
+                if id == "killaura" && field == "autoblock" {
+                    let (block, shield) = match v {
+                        "Legacy" => ("Packet", Some(false)),
+                        "Modern" => ("Off", Some(true)),
+                        "Off" => ("Off", Some(false)),
+                        other => (other, None),
+                    };
+                    if let Some(s) = m.settings.iter_mut().find(|s| s.name == "AutoBlock") { s.parse(block); }
+                    if let Some(on) = shield
+                        && let Some(s) = m.settings.iter_mut().find(|s| s.name == "Shield block")
+                    {
+                        s.parse(&on.to_string());
                     }
                     return;
                 }
@@ -390,6 +408,8 @@ impl State {
                     // Kill Aura before its Attack timing, and when Switch delay was its only one.
                     ("killaura", "customdelay") => Some(("attacktiming", if v == "true" { "Custom delay" } else { "Vanilla cooldown" }.to_owned())),
                     ("killaura", "switchdelay") => Some(("weaponswitchdelay", v.to_owned())),
+                    // Kill Aura's Combat version before Version: Auto (which mostly ran 1.9+) becomes 1.9+.
+                    ("killaura", "combatversion") => Some(("version", if v == "Legacy (1.8)" { "1.8" } else { "1.9+" }.to_owned())),
                     // Range was 64 by default before All (0): an unchanged one becomes All.
                     ("esp" | "tracers" | "nametags", "range") if v == "64" => Some(("range", "0".to_owned())),
                     // Offhand before Sunset's Auto Totem: Refill Inventory opened the inventory for the totem; Off and

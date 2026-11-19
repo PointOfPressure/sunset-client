@@ -533,7 +533,7 @@ fn hand_view() -> Module {
         .num("Totem pop Y", 0.0, -1.0, 1.0, 0.05)
         .num("Totem pop speed", 1.0, 1.0, 6.0, 1.0)
         // How a held item swings and a sword blocks (hand_view_flags): 1.9+ in the game's own pose, 1.8 in 1.8's
-        // (flat items in the right main hand). A sword blocks while Kill Aura's Legacy AutoBlock has a target, or
+        // (flat items in the right main hand). A sword blocks while Kill Aura's 1.8 AutoBlock has a target, or
         // while you hold right click with Block on right click.
         .group("Animations")
         .pick("Animations", &["1.9+", "1.8"])
@@ -595,13 +595,13 @@ fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
     hv::BLOCK.store(pick("Block animation", hv::BLOCKS), Ordering::Relaxed);
     hv::SLOW_SWING.store(hands.is_some_and(|m| m.b("Slow swing")), Ordering::Relaxed);
     hv::NO_EQUIP_DROP.store(hands.is_some_and(|m| m.b("No equip drop")), Ordering::Relaxed);
-    // Kill Aura's Legacy AutoBlock, with the Legacy combat version it blocks under and someone to hit (engaged, which
-    // holds through the tick a hit waits to go, so the block does not drop for a frame at each hit): the sword shows
-    // the block (hand_item), as a 1.8 client's does, Hand View on or not.
+    // Kill Aura's 1.8 AutoBlock (Packet, or Fake, which only shows it), with Version 1.8 and someone to hit (engaged,
+    // which holds through the tick a hit waits to go, so the block does not drop for a frame at each hit): the sword
+    // shows the block (hand_item), as a 1.8 client's does, Hand View on or not.
     let speed = game.main_hand_attack_speed();
     let blocking = on(mods, "Kill Aura").is_some_and(|m| {
-        m.p("AutoBlock") == "Legacy"
-            && super::sunset_aura_timing::version(m.p("Combat version"), speed).0 == super::sunset_aura_timing::Version::Legacy
+        matches!(m.p("AutoBlock"), "Packet" | "Fake")
+            && super::sunset_aura_timing::version(super::sunset_aura_timing::setting_of(m), speed).0 == super::sunset_aura_timing::Version::Legacy
     }) && super::sunset_aura::engaged();
     // Block on right click: right click held with a sword in hand and nothing in use (Horizon has no sword block of
     // its own; a 1.8 server behind ViaVersion takes the click as one).

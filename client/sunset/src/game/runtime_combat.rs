@@ -453,12 +453,12 @@ fn strike_now(game: &mut Game<'_>, guard: AttackGuard) {
 }
 
 // Hits go the 1.8 way (swing first) by the Combat version of the module that sent them: Trigger Bot's own for its hits,
-// Kill Aura's for the rest. Auto decides by your attack speed.
+// Kill Aura's Version for the rest. Trigger Bot's Auto decides by your attack speed.
 fn legacy_combat(game: &Game<'_>, source: Option<AttackSource>) -> bool {
     let speed = game.main_hand_attack_speed();
     let owner = if matches!(source, Some(AttackSource::TriggerBot | AttackSource::TriggerReach)) { "Trigger Bot" } else { "Kill Aura" };
     with(|s| {
-        let setting = s.module(owner).map_or("Auto", |m| m.p("Combat version"));
+        let setting = s.module(owner).map_or("Auto", super::sunset_aura_timing::setting_of);
         super::sunset_aura_timing::version(setting, speed).0 == super::sunset_aura_timing::Version::Legacy
     })
 }

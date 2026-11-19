@@ -313,7 +313,8 @@ fn legacy_pre_tick(game: &mut Game<'_>, hits: bool) {
         hands(|h| { h.legacy.stop(); });
         return;
     }
-    let m = module("Kill Aura").filter(|m| m.p("AutoBlock") == "Legacy" && game.native_on(super::sunset::ID));
+    // Kill Aura's 1.8 Packet AutoBlock (Fake only shows the block: render.rs).
+    let m = module("Kill Aura").filter(|m| m.p("AutoBlock") == "Packet" && game.native_on(super::sunset::ID));
     let desired = m.as_ref().filter(|m| {
         game.native_playing() && game.screen == Screen::Playing && !gui_open() && game.remote.is_some()
             && !game.spectator() && game.player.as_ref().is_some_and(|p| p.health.health() > 0.0)
@@ -321,7 +322,7 @@ fn legacy_pre_tick(game: &mut Game<'_>, hits: bool) {
             && game.held().is_some_and(|s| s.item.ends_with("_sword"))
             && super::sunset_combat_control::available("Kill Aura")
             && !with(|s| s.is_on("Blink")) && !super::sunset_lag::pending()
-            && super::sunset_aura_timing::version(m.p("Combat version"), game.main_hand_attack_speed()).0
+            && super::sunset_aura_timing::version(super::sunset_aura_timing::setting_of(m), game.main_hand_attack_speed()).0
                 == super::sunset_aura_timing::Version::Legacy
             && super::sunset_aura::target_id().is_some_and(|id| game.mobs.iter().any(|mob| mob.id == id && mob.alive() && !mob.removed))
     }).map(|_| game.selected);
@@ -348,10 +349,12 @@ fn legacy_pre_tick(game: &mut Game<'_>, hits: bool) {
 }
 
 pub(super) fn tick(game: &mut Game<'_>) {
-    // Kill Aura's Shield, else Trigger Bot's: the first of them on with it.
+    // Kill Aura's Shield block (its 1.9+ blocking), else Trigger Bot's Shield: the first of them on with it. Kill Aura
+    // blocking with the sword (1.8 Packet) leaves Trigger Bot's shield down too.
     let aura = module("Kill Aura");
-    let legacy_selected = aura.as_ref().is_some_and(|m| m.p("AutoBlock") == "Legacy");
-    let m = aura.filter(|m| m.p("AutoBlock") == "Modern")
+    let modern = |m: &Module| m.p("Version") != "1.8";
+    let legacy_selected = aura.as_ref().is_some_and(|m| !modern(m) && m.p("AutoBlock") == "Packet");
+    let m = aura.filter(|m| modern(m) && m.b("Shield block"))
         .or_else(|| (!legacy_selected).then(|| module("Trigger Bot").filter(|m| m.b("Shield"))).flatten())
         .filter(|_| game.native_on(super::sunset::ID));
     let want = m.as_ref().is_some_and(|m| wanted(game, m));
