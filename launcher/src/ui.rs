@@ -1911,6 +1911,8 @@ impl Launcher {
                 let list: Vec<&str> = b.plugins.iter().map(|p| p.id.as_str()).collect();
                 text(format!("Sunset with {} ({}), built {}", names(b.plugins.len()), list.join(", "), core::ago(b.built, core::now_secs()).to_lowercase()), 13., TEXT).into_any_element()
             }
+            // The failed build's card below has Try again.
+            Some(plugins::Status::NeedsBuild) if self.build_failed.is_some() => text("Not built: the last build failed", 13., MUTED).into_any_element(),
             Some(plugins::Status::NeedsBuild) if !busy => div()
                 .flex()
                 .items_center()
@@ -2041,8 +2043,10 @@ impl Launcher {
             body = body.child(div().flex().gap(px(8.)).children(plugins::PHASES.iter().map(|p| step_chip(*p, state_at(*p)))));
         }
         match (running, failed) {
+            // The step marks say how far the build is; the bar is the running step's own share, so a long first
+            // download or compile moves it instead of creeping along a sliver of the whole.
             (Some((j, b)), _) => {
-                body = body.child(bar(j.frac)).child(text(b.line.clone(), T_BODY, MUTED));
+                body = body.child(bar(if cleaning { j.frac } else { b.frac })).child(text(b.line.clone(), T_BODY, MUTED));
             }
             (None, Some(f)) => {
                 let log = plugins::log_path(&self.paths);

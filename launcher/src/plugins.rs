@@ -450,7 +450,7 @@ fn build(p: &Paths, m: &Manifest, plugins: &[Plugin], cancel: &AtomicBool, repor
     let estimate = record(p).map(|b| b.compile_secs).filter(|s| *s > 0).unwrap_or(240);
     let out = native_build(p, &stage, &m.horizon.tag, kit.sdk_base.as_deref(), estimate, cancel, report)?;
 
-    report(Phase::Packaging, "Checking the new build", Some(0.6));
+    report(Phase::Packaging, "Checking the new build", Some(0.7));
     let vdir = out.version_dir;
     let built = core::built_in_mods(p, &vdir);
     let left_out = left_out(p, &vdir);
@@ -729,16 +729,23 @@ impl Lines {
         }
         if let Some(v) = line.strip_suffix(" built and selected for its instance.").filter(|v| v.starts_with("native-")) {
             self.version_dir = Some(v.to_string());
-            return Some((Phase::Packaging, "Build ready".into(), Some(1.0)));
+            return Some((Phase::Packaging, "Build ready".into(), Some(0.5)));
         }
         if line.starts_with("Compiling the mods") {
             self.phase = Phase::Compiling;
             self.compiling = Some(Instant::now());
-            self.current = "Compiling".into();
-            return Some((Phase::Compiling, "Compiling Sunset and the plugins".into(), Some(0.0)));
+            self.current = "Compiling Sunset and the plugins".into();
+            return Some((Phase::Compiling, self.current.clone(), Some(0.0)));
         }
+        // "Compiling <id> (i of n)": the mods compile side by side, so the last one started says little (Sunset is
+        // the long one); the line says how many.
         if let Some(rest) = line.strip_prefix("Compiling ").filter(|_| self.phase == Phase::Compiling) {
-            self.current = format!("Compiling {}", rest);
+            if let Some(n) = rest.rsplit_once(" of ").and_then(|(_, n)| n.trim_end_matches(')').parse::<usize>().ok()) {
+                self.current = match n {
+                    2 => "Compiling Sunset and 1 plugin".into(),
+                    n => format!("Compiling Sunset and {} plugins", n.saturating_sub(1)),
+                };
+            }
             return self.tick();
         }
         if line.starts_with("Installing the build") {
@@ -747,7 +754,7 @@ impl Lines {
             return Some((Phase::Packaging, "Linking and writing the game folder".into(), Some(0.2)));
         }
         if line.starts_with("Your mods are built") {
-            return Some((Phase::Packaging, line.trim_end_matches('.').to_string(), Some(0.5)));
+            return Some((Phase::Packaging, line.trim_end_matches('.').to_string(), Some(0.4)));
         }
         if self.phase == Phase::Staging {
             // Downloads print their share: "…: 40%" (Rust) or "…: 12 of 300 MB" (the SDK's slices).
@@ -767,7 +774,15 @@ impl Lines {
         if self.errors.is_empty() {
             return None;
         }
-        let head: Vec<&str> = self.errors.iter().map(String::as_str).filter(|l| !l.starts_with("-->") && !l.starts_with('|') && !l.chars().all(|c| c.is_ascii_digit() || c == ' ' || c == '|')).take(6).collect();
+        // rustc's location arrows, empty gutters and closing remarks say nothing a player can use here.
+        let noise = |l: &str| {
+            l.starts_with("-->")
+                || l.starts_with('|')
+                || l.chars().all(|c| c.is_ascii_digit() || c == ' ' || c == '|')
+                || l.starts_with("error: aborting due to")
+                || l.starts_with("For more information about")
+        };
+        let head: Vec<&str> = self.errors.iter().map(String::as_str).filter(|l| !noise(l)).take(6).collect();
         Some(head.join("\n"))
     }
 }
@@ -1001,7 +1016,7 @@ mod tests {
         assert_eq!(l.line("Compiling the mods against the prebuilt game").map(|s| s.0), Some(Phase::Compiling));
         let (ph, msg, _) = l.line("Compiling sunset (1 of 2)").unwrap();
         assert_eq!(ph, Phase::Compiling);
-        assert!(msg.starts_with("Compiling sunset (1 of 2) · 0:0"), "{msg}");
+        assert!(msg.starts_with("Compiling Sunset and 1 plugin · 0:0"), "{msg}");
         assert_eq!(l.line("Installing the build").map(|s| s.0), Some(Phase::Packaging));
         l.line("native-0b14f8a-a93f3ccc8155 built and selected for its instance.");
         assert_eq!(l.version_dir.as_deref(), Some("native-0b14f8a-a93f3ccc8155"));
@@ -1012,9 +1027,10 @@ mod tests {
         e.line("error[E0425]: cannot find function `x` in module `y`");
         e.line("     --> C:\\x\\lib.rs:1:1");
         e.line("      |");
+        e.line("error: aborting due to 1 previous error");
         assert_eq!(e.phase, Phase::Compiling);
         let msg = e.error().unwrap();
-        assert!(msg.contains("E0425") && !msg.contains("-->"), "{msg}");
+        assert!(msg.contains("E0425") && !msg.contains("-->") && !msg.contains("aborting"), "{msg}");
     }
 
     #[test]

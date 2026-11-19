@@ -145,7 +145,15 @@ fn plugins_cmd(p: &core::Paths, mut s: core::Settings, args: &[String], progress
 
 {HELP}")),
     }
-    let report = |phase: plugins::Phase, msg: &str, f: Option<f32>| progress(&format!("{}: {msg}", phase.label()), f.map(|f| phase.overall(f)));
+    // The compile's clock ticks four times a second: a line is printed once.
+    let last = std::cell::RefCell::new(String::new());
+    let report = |phase: plugins::Phase, msg: &str, f: Option<f32>| {
+        let line = format!("{}: {msg}", phase.label());
+        if *last.borrow() != line {
+            progress(&line, f.map(|f| phase.overall(f)));
+            *last.borrow_mut() = line;
+        }
+    };
     match plugins::sync(p, &m, s.plugins_enabled, &AtomicBool::new(false), &report) {
         Ok(plugins::Synced::Unchanged) => Ok("the instance already plays that".into()),
         Ok(plugins::Synced::Cleaned) => Ok("the instance plays Sunset as released".into()),
