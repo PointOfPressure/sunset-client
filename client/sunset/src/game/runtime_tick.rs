@@ -371,6 +371,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
     if !running() { return; }
     super::sunset_scaffold_telly::post_tick(game);
     super::sunset_scaffold_normal::post_tick(game);
+    super::sunset_aura::post_tick(game);
     super::sunset_snap_tap::post_tick(game);
     super::sunset_scaffold_bridge::post_tick(game);
     super::sunset_combat_inventory::post_tick(game);

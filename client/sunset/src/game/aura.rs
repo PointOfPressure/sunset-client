@@ -60,9 +60,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .group("Rotations")
             .pick("Rotate", &["Always", "On hit", "None"])
             // Snap turns at once (Instant); Normal, Smooth and Custom follow at their speeds (Tracked); Adaptive turns
-            // fast when far, settles near the point, holds inside a deadzone and lands as a hit is due.
-            .pick("Rotation mode", &["Silent aura", "Snap", "Normal", "Smooth", "Custom", "Adaptive"])
+            // fast when far, settles near the point, holds inside a deadzone and lands as a hit is due. Advanced
+            // (aura_advanced.rs) moves the look like a hand on a mouse, after Rise's: its own settings below.
+            .pick("Rotation mode", &["Silent aura", "Snap", "Normal", "Smooth", "Custom", "Adaptive", "Advanced"])
             .pick("Rotation view", &["Silent", "Visible"])
+            // With a silent look, how your walk follows it: Silent turns the move keys so you still walk your way at
+            // the server's yaw, Strict moves by that yaw as the keys are (what a player looking there would do).
+            .pick("Movement correction", &["Off", "Silent", "Strict"])
             // Aiming starts within Rotation range; where in the box (aura_aim.rs), and how far ahead of its movement.
             .num("Rotation range", 4.5, 1.0, 8.0, 0.1)
             .pick("Aim point", &["Dynamic", "Center", "Nearest", "Custom"])
@@ -74,6 +78,33 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Smoothing", 0.0, 0.0, 0.9, 0.05)
             // Silent aura's turning speed.
             .num("Aim speed", 7.0, 1.0, 10.0, 0.1)
+            // Advanced's tuning (Rise's defaults): the pull and the noise, the step size, overshoots, accuracy, the
+            // aim point's lead and reaction, the deadzone hold, the cruise floor, bursts, the flick guard, and how long
+            // the first hit on a new target waits.
+            .num("Advanced gravity", 9.0, 1.0, 20.0, 0.1)
+            .num("Advanced wind", 6.0, 0.0, 10.0, 0.1)
+            .num("Advanced damped distance", 12.0, 1.0, 45.0, 1.0)
+            .num("Advanced max step", 15.0, 3.0, 60.0, 0.5)
+            .num("Advanced min step", 0.0, 0.0, 8.0, 0.1)
+            .num("Advanced overshoot chance", 77.0, 0.0, 100.0, 1.0)
+            .num("Advanced overshoot scale", 0.0, 0.0, 0.6, 0.01)
+            .num("Advanced overshoot max", 17.0, 2.0, 45.0, 0.5)
+            .num("Advanced gaussian", 0.0, 0.0, 0.6, 0.01)
+            .num("Advanced accuracy", 40.0, 40.0, 100.0, 1.0)
+            .num("Advanced prediction", 1.0, 0.0, 3.5, 0.05)
+            .num("Advanced deadzone", 1.0, 0.25, 4.5, 0.05)
+            .num("Advanced anchor", 0.0, 0.0, 0.7, 0.01)
+            .num("Advanced hold ticks", 2.0, 0.0, 8.0, 1.0)
+            .num("Advanced cruise floor", 1.0, 0.0, 5.0, 0.05)
+            .num("Advanced pace jitter", 0.0, 0.0, 0.8, 0.01)
+            .num("Advanced burst chance", 21.0, 0.0, 100.0, 1.0)
+            .num("Advanced burst strength", 0.0, 0.0, 1.0, 0.01)
+            .bool("Advanced flick guard", true)
+            .num("Advanced flick max", 29.0, 4.0, 60.0, 0.5)
+            .num("Advanced aim reaction", 180.0, 30.0, 450.0, 5.0)
+            .num("Advanced aim reaction jitter", 44.0, 0.0, 220.0, 1.0)
+            .num("Advanced trigger reaction", 95.0, 0.0, 300.0, 5.0)
+            .num("Advanced trigger reaction jitter", 30.0, 0.0, 140.0, 1.0)
             .bool("Ray cast", false)
             // Knockback aim (aura_knockback.rs): while a hit is due, the look's yaw points the knockback at lava, a
             // web, fire, cactus, the void or a drop next to the target (Ray cast off: the look leaves its box).
@@ -86,6 +117,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Pause on use", false)
             .pick("Attack timing", &["Vanilla cooldown", "Custom delay", "Hit select"])
             .num("Cooldown", 1.0, 0.5, 1.0, 0.05)
+            // 1.9+: each hit waits up to this much longer, as if your attack speed were up to this much slower
+            // (Rise's Randomize 1.9+ speed), so the hits don't keep one exact rhythm.
+            .num("Cooldown jitter", 0.0, 0.0, 1.0, 0.05)
             .num("Hit delay", 11.0, 0.0, 60.0, 1.0)
             .num("Min CPS", 9.0, 1.0, 20.0, 0.5)
             .num("Max CPS", 13.0, 1.0, 20.0, 0.5)
@@ -177,6 +211,11 @@ struct As {
     last_hit: Option<u64>,
     // Knockback aim's plan for the target this tick (.auradebug).
     knock: Option<super::sunset_aura_knockback::Plan>,
+    // Advanced rotation's state; the move keys as they were before Movement correction turned them (put back after
+    // the tick); Cooldown jitter's extra ticks still to wait.
+    advanced: super::sunset_aura_advanced::Advanced,
+    keys_before: Option<[bool; 4]>,
+    jitter_wait: u32,
     stats: Stats,
 }
 
@@ -465,6 +504,7 @@ fn stop(game: &mut Game<'_>, m: &Module) {
         s.look = None;
         s.aimed = None;
         s.knock = None;
+        s.advanced.reset();
         if let Some(c) = s.clicks.as_mut() { c.stop(); }
         (std::mem::take(&mut s.attacking), std::mem::take(&mut s.swapped), s.prev, s.given)
     });
@@ -798,6 +838,9 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     // The look this tick: from where the last tick's got to (or your own), a step toward the target. Silent tells only
     // the server; Visible turns your view. A hit made now goes out before that look does, so it counts the last one.
     let sent = st(|s| s.look);
+    // Advanced rotation (aura_advanced.rs): its tuning this tick, when it turns the look.
+    let tuning = (rotate_mode == "Always" && m.p("Rotation mode") == "Advanced").then(|| super::sunset_aura_advanced::Tuning::of(m));
+    let now_ms = game.ticks * 50;
     if rotate_mode == "Always" {
         let from = sent.unwrap_or((game.yaw, game.pitch));
         // The look is checked next tick: aim at where you and the target will be by then, each moving as this tick.
@@ -823,6 +866,15 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         let mut visible = |p: [f64; 3]| dist(eye_next, p) <= walls || clear_line(game, p, [i32::MIN; 3]);
         let (point, share) = aim::plan_point(eye_next, lo, hi, from, point_mode, attack_range, kept, &mut visible);
         let to = look_at(eye_next, point);
+        // Advanced aims at a point of its own: the upper body, led by how the target moves relative to you, held
+        // where it was until its reaction time passes.
+        let (point, to) = match &tuning {
+            Some(k) => {
+                let p = st(|s| s.advanced.aim_point(&primary, yours, eye, now_ms, k));
+                (p, look_at(eye_next, p))
+            }
+            None => (point, to),
+        };
         // Knockback aim: the plan's yaw instead, the pitch still on the target.
         let to = knock.map_or(to, |k| {
             let yaw = to.0 + ((k.yaw - to.0 + 180.0).rem_euclid(360.0) - 180.0);
@@ -838,7 +890,13 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             // Silent aura: the game's own move packet carries it (only when it changed), whatever Rotation view says.
             silent_aim(game, m, &primary, eye)
         } else {
-            let next = if m.p("Rotation mode") == "Adaptive" {
+            let next = if let Some(k) = &tuning {
+                // Advanced: a step from the look the server has; it holds still while that look is on the target
+                // inside the deadzone.
+                let on_target = ray_hits(game, m, eye, from, &primary, attack_range + 0.15);
+                let sensitivity = f64::from(game.settings.sensitivity);
+                st(|s| s.advanced.step(from, to, primary.id, on_target, sensitivity, k))
+            } else if m.p("Rotation mode") == "Adaptive" {
                 // A hit is due when the cooldown (Modern) is nearly charged; Legacy's clicks can come any tick.
                 let due = legacy_now || game.hand_strength.scale(0.5, game.main_hand_attack_speed()) >= 0.85;
                 let carried = was.map_or(from, |w| (from.0 + ((to.0 - w.0 + 180.0).rem_euclid(360.0) - 180.0), from.1 + (to.1 - w.1)));
@@ -853,6 +911,20 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             }
             next
         };
+        // Movement correction: your walk follows the silent look (a look you see needs none).
+        let shown = !silent && m.p("Rotation view") == "Visible";
+        match m.p("Movement correction") {
+            "Silent" | "Strict" if !shown => {
+                if m.p("Movement correction") == "Silent" {
+                    let view = game.yaw;
+                    let mut before = st(|s| s.keys_before.take());
+                    super::sunset_scaffold_normal::turn_input(game, &mut before, view, next.0);
+                    st(|s| s.keys_before = before);
+                }
+                ::sunset_core::motion::set_move_yaw(Some(next.0));
+            }
+            _ => {}
+        }
         st(|s| s.look = Some(next));
     }
     // Target switch delay: the new target waits.
@@ -899,7 +971,13 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         // 1.9+'s boost skips the delay, never the cooldown share: a hit under it would be a weak one.
         waited || (boost && timing::modern_ready(game.hand_strength.scale(0.5, speed), m.n("Cooldown")))
     } else {
-        timing::modern_ready(game.hand_strength.scale(0.5, speed), m.n("Cooldown"))
+        // Cooldown jitter: the extra ticks drawn at the last hit wait too.
+        let jittered = st(|s| {
+            let wait = s.jitter_wait;
+            s.jitter_wait = wait.saturating_sub(1);
+            wait > 0
+        });
+        timing::modern_ready(game.hand_strength.scale(0.5, speed), m.n("Cooldown")) && !jittered
     };
     let spear = game.held().is_some_and(|s| Kinetic::of(&s.item).is_some());
     if !ready || (spear && game.cannot_attack_with_item(game.hand_strength.ticker, 0)) {
@@ -958,7 +1036,12 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         // Legacy: reach to the target's middle line, as a 1.8 server's anticheat measures it.
         let far = if legacy { axis_reach(game, eye, t) } else { reach(eye, t) };
         if !spear && far > attack_range {
-            st(|s| s.why("out of attack range"));
+            st(|s| {
+                if tuning.is_some() && t.id == primary.id {
+                    s.advanced.disarm_trigger();
+                }
+                s.why("out of attack range");
+            });
             continue;
         }
         // Legacy: the hit reaches a 1.8 server before the look sent after it, so only the look it has counts.
@@ -986,6 +1069,15 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             st(|s| s.why("the look does not meet the target"));
             continue;
         }
+        // Advanced: the first hit on a target in reach waits a reaction time.
+        if let Some(k) = &tuning
+            && t.id == primary.id
+            && !st(|s| s.advanced.trigger_ready(t.id, now_ms, k))
+        {
+            st(|s| s.why("advanced: reacting to the target"));
+            held_back = true;
+            continue;
+        }
         super::sunset::attack_for(game, t.id, crits, on_hit, super::sunset::AttackSource::KillAura);
         let tick = game.ticks;
         st(|s| {
@@ -1010,6 +1102,15 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             st(|s| if let Some(c) = s.clicks.as_mut() { c.missed(); });
         }
     }
+    if hit && !legacy && timing != "Custom delay" && m.n("Cooldown jitter") > 0.0 {
+        // Cooldown jitter: the next hit waits as if the attack speed were up to Cooldown jitter slower.
+        let mut x = (game.ticks ^ u64::from(primary.id) << 24).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        x ^= x >> 29;
+        let r = (x >> 11) as f64 / (1u64 << 53) as f64;
+        let slower = (speed - r * m.n("Cooldown jitter")).max(0.1);
+        let extra = if speed > 0.0 { (20.0 / slower - 20.0 / speed).max(0.0).round() as u32 } else { 0 };
+        st(|s| s.jitter_wait = extra);
+    }
     if hit {
         st(|s| {
             s.hit_timer = 0;
@@ -1017,6 +1118,21 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             s.why("hit sent");
             s.hit = Some(control::finish(HAND));
         });
+    }
+}
+
+// After the tick: the move keys Movement correction turned go back to what they were.
+pub(super) fn post_tick(game: &mut Game<'_>) {
+    let Some(before) = st(|s| s.keys_before.take()) else {
+        return;
+    };
+    use winit::keyboard::KeyCode;
+    for (key, held) in [KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyA, KeyCode::KeyD].into_iter().zip(before) {
+        if held {
+            crate::game::sunset_compat::key_down(&mut game.keys, key);
+        } else {
+            crate::game::sunset_compat::key_up(&mut game.keys, &key);
+        }
     }
 }
 

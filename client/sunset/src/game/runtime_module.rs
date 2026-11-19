@@ -490,9 +490,14 @@ impl Module {
                     "Smoothing" => always && self.p("Rotation mode") == "Custom",
                     "Aim speed" => always && self.p("Rotation mode") == "Silent aura",
                     "Rotation range" => self.p("Rotate") != "None",
-                    "Aim point" | "Prediction" => always && self.p("Rotation mode") != "Silent aura",
-                    "Aim height (%)" => always && self.p("Rotation mode") != "Silent aura" && self.p("Aim point") == "Custom",
-                    "Prediction strength" => always && self.p("Rotation mode") != "Silent aura" && self.p("Prediction") != "Off",
+                    // Silent aura and Advanced pick their own aim point and lead.
+                    "Aim point" | "Prediction" => always && !matches!(self.p("Rotation mode"), "Silent aura" | "Advanced"),
+                    "Aim height (%)" => always && !matches!(self.p("Rotation mode"), "Silent aura" | "Advanced") && self.p("Aim point") == "Custom",
+                    "Prediction strength" => always && !matches!(self.p("Rotation mode"), "Silent aura" | "Advanced") && self.p("Prediction") != "Off",
+                    _ if name.starts_with("Advanced ") => always && self.p("Rotation mode") == "Advanced",
+                    // A look you see needs no correction (Silent aura's is silent whatever Rotation view says).
+                    "Movement correction" => always && (self.p("Rotation view") == "Silent" || self.p("Rotation mode") == "Silent aura"),
+                    "Cooldown jitter" => !legacy && self.p("Attack timing") != "Custom delay",
                     "Max targets" => self.p("Attack mode") == "Multi",
                     "Target lock" => self.p("Attack mode") == "Single",
                     "Target switch delay" => self.p("Attack mode") != "Multi",

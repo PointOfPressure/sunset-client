@@ -1159,6 +1159,12 @@ name = "sunset_aura_knockback"
 source = "src/game/aura_knockback.rs"
 
 [[native.module]]
+id = "aura_advanced"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_aura_advanced"
+source = "src/game/aura_advanced.rs"
+
+[[native.module]]
 id = "lag_line"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_lag_line"
