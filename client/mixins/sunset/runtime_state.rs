@@ -27,6 +27,8 @@ pub(super) struct State {
     pub(super) binding: Option<usize>,
     // Keys and buttons down, and the modules Hold binds have on.
     pub(super) inputs: Inputs,
+    // Each preset choice as last seen, by module name: fill_picked_presets.
+    pub(super) presets_seen: Vec<(&'static str, &'static str)>,
     pub(super) friends: Vec<String>,
     // The config file as read: modules a plugin registers later take their saved settings from it.
     raw: String,
@@ -162,6 +164,7 @@ impl State {
             page: Page::Main,
             binding: None,
             inputs: Inputs::default(),
+            presets_seen: Vec::new(),
             friends: Vec::new(),
             raw: String::new(),
             plugin_defaults: Vec::new(),
@@ -288,7 +291,7 @@ impl State {
             out.push_str(&format!("{id}.on={on}\n"));
             out.push_str(&format!("{id}.key={}\n", m.key.as_deref().unwrap_or("none")));
             for s in &m.settings {
-                out.push_str(&format!("{id}.{}={}\n", norm(s.name), s.stored()));
+                out.push_str(&format!("{id}.{}={}\n", norm(s.name), kept_as(&id, s)));
             }
         }
         out
@@ -345,6 +348,7 @@ impl State {
         }
         // A config saved with the menu open (as every close saves, or a crash) doesn't open it: ClickGUI follows it.
         mirror_gui(self);
+        self.see_presets();
         let snapshot = self.profile_text();
         self.selection.refresh(&snapshot);
     }
@@ -472,6 +476,38 @@ impl State {
             }
         }
         mirror_gui(self);
+        self.see_presets();
+    }
+    // A load (the config, a profile or an imported one, a Sunset preset) brings each preset choice with the settings
+    // saved beside it: what it loaded counts as seen, so nothing is filled in over the loaded settings.
+    pub(super) fn see_presets(&mut self) {
+        self.presets_seen = PRESET_CHOICES.iter().filter_map(|&(name, choice)| Some((name, self.module(name)?.p(choice)))).collect();
+    }
+    // A preset picked since the last look (in the menu, with .set, by a plugin), the module on or off: its settings
+    // filled in, once; a change made after that stays. Whether anything was filled in.
+    pub(super) fn fill_picked_presets(&mut self) -> bool {
+        let mut filled = false;
+        for &(name, choice) in &PRESET_CHOICES {
+            let Some(now) = self.module(name).map(|m| m.p(choice)) else {
+                continue;
+            };
+            let before = match self.presets_seen.iter_mut().find(|seen| seen.0 == name) {
+                Some(seen) => std::mem::replace(&mut seen.1, now),
+                None => {
+                    self.presets_seen.push((name, now));
+                    continue;
+                }
+            };
+            if before == now {
+                continue;
+            }
+            let id = norm(name);
+            for (field, value) in preset_fields(&id, now) {
+                Self::set_field(&mut self.modules, &format!("{id}.{field}"), &value);
+                filled = true;
+            }
+        }
+        filled
     }
     // Profiles predating Baritone cannot arm it or carry new preferences across a legacy load.
     fn absent_baritone_defaults(&mut self, text: &str) {
@@ -866,5 +902,36 @@ pub(super) fn say_notices(game: &mut Game<'_>) {
     let _ = game;
     for line in lines {
         super::sunset_toast::push(super::sunset_toast::Kind::Warning, &line);
+    }
+}
+
+// A setting as the config and profiles write it. ESP's, Tracers' and Nametags' Range of 64 is written 64.0: a bare 64
+// is the default from before All (0), which set_field turns into All, so a 64 you chose would come back as All.
+fn kept_as(id: &str, s: &Setting) -> String {
+    let stored = s.stored();
+    if stored == "64" && s.name == "Range" && matches!(id, "esp" | "tracers" | "nametags") { "64.0".to_owned() } else { stored }
+}
+
+// The modules whose choice fills in other settings (a preset), and that choice.
+const PRESET_CHOICES: [(&str, &str); 4] =
+    [("Scaffold", "Preset"), ("Kill Aura", "Preset"), ("Inventory Manager", "Preset"), ("Auto Sign", "Anticheat")];
+
+// What picking `preset` in module `id` fills in, as config fields and values.
+pub(super) fn preset_fields(id: &str, preset: &str) -> Vec<(String, String)> {
+    fn listed(presets: &[(&str, &[(&str, &str)])], preset: &str) -> Vec<(String, String)> {
+        presets.iter().filter(|p| p.0 == preset).flat_map(|p| p.1.iter().map(|(f, v)| (norm(f), (*v).to_owned()))).collect()
+    }
+    match id {
+        "scaffold" => listed(&SCAFFOLD_PRESETS, preset),
+        "killaura" => listed(&super::sunset_aura::PRESETS, preset),
+        "autosign" => listed(super::sunset_auto_sign::PRESETS, preset),
+        "inventorymanager" => super::sunset_player::PRESETS.iter().filter(|p| p.0 == preset)
+            .flat_map(|&(_, blocks, food, arrows, pearls, junk)| {
+                [("blocks", blocks.to_string()), ("food", food.to_string()), ("arrows", arrows.to_string()),
+                    ("pearls", pearls.to_string()), ("junk", junk.to_owned())]
+            })
+            .map(|(f, v)| (f.to_owned(), v))
+            .collect(),
+        _ => Vec::new(),
     }
 }

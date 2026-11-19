@@ -203,8 +203,9 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
             injected.push(k);
         }
     }
-    if let Some(m) = get("Scaffold") {
-        scaffold_preset(game, m);
+    // A preset picked since the last frame fills in its settings; a load's doesn't (State::see_presets).
+    if with(State::fill_picked_presets) {
+        save(game);
     }
     // Scaffold's Legit and Godbridge sneak, turn and click before the game's tick moves you.
     let bridging = get("Scaffold")

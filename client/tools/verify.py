@@ -1977,6 +1977,195 @@ def _():
                 f"broken file: {refused[:1]}; bad name: {bad_name[:1]}; list: {listed[:1]}")
 
 
+# ---- profiles: what a load leaves
+
+def sunset_source():
+    """The .hmod client's game folder: SUNSET_SRC, beside this script in the repo, or the usual checkout."""
+    import pathlib
+    for path in (os.environ.get("SUNSET_SRC"), pathlib.Path(__file__).resolve().parents[1] / "sunset" / "src" / "game",
+                 pathlib.Path.home() / "dev" / "horizon-meteor" / "client" / "sunset" / "src" / "game"):
+        if path and pathlib.Path(path).is_dir():
+            return pathlib.Path(path)
+    return None
+
+
+def setting_kinds():
+    """Every catalog setting's kind, read from the source: {"module.field": ("bool",) | ("num", min, max) |
+    ("pick", options)}. Text settings and what the reader can't work out are left out."""
+    src = sunset_source()
+    if src is None:
+        return {}
+    texts = [p.read_text(errors="replace") for p in sorted(src.glob("*.rs"))]
+    every = "\n".join(texts)
+    strings = lambda body: re.findall(r'"((?:[^"\\]|\\.)*)"', body)
+    norm = lambda s: "".join(c.lower() for c in s if c.isascii() and c.isalnum())
+    lists = {}
+    for name, body in re.findall(r'(?:const|static)\s+([A-Z_][A-Z0-9_]*)\s*:[^=]*=\s*&?\[([^\]]*)\]', every):
+        lists.setdefault(name, strings(body))
+    # Modules built by a file's own module(m) (Module::new("Auto Sign", ...) handed to it from the catalog).
+    built = dict(re.findall(r'sunset_(\w+)::module\(\s*Module::new\(\s*"([^"]+)"', every))
+    for path, text in zip(sorted(src.glob("*.rs")), list(texts)):
+        if path.stem in built and "fn module(" in text:
+            texts.append(built[path.stem] + '"' + text.split("fn module(", 1)[1])
+    kinds = {}
+    for text in texts:
+        for chunk in re.split(r'Module::new\(\s*"', text)[1:] if not text.startswith(tuple(built.values())) else [text]:
+            module = norm(chunk.split('"', 1)[0])
+            for kind, name, rest in re.findall(r'\.(bool|num|pick)\(\s*"([^"]+)"\s*,\s*([^)]*)\)', chunk):
+                key = f"{module}.{norm(name)}"
+                if key in kinds:
+                    continue
+                if kind == "bool":
+                    kinds[key] = ("bool",)
+                elif kind == "num":
+                    parts = [p.strip() for p in rest.split(",")]
+                    try:
+                        kinds[key] = ("num", float(parts[1]), float(parts[2]))
+                    except (ValueError, IndexError):
+                        pass
+                else:
+                    options = strings(rest) if rest.lstrip().startswith("&[") else lists.get(rest.strip().split("::")[-1], [])
+                    if options:
+                        kinds[key] = ("pick", options)
+    return kinds
+
+
+def profile_lines(text):
+    return dict(l.split("=", 1) for l in text.splitlines() if "=" in l and not l.startswith("sunset-profile"))
+
+
+def same_value(a, b):
+    try:
+        return abs(float(a) - float(b)) < 1e-6
+    except ValueError:
+        return a == b
+
+
+def profiles_dir(name):
+    found = [r for r, _, fs in os.walk(os.path.join(session_dir(), "home")) if f"{name}.profile" in fs and r.endswith("profiles")]
+    return found[0] if found else None
+
+
+def saved_profile(name):
+    say(f".profile save {name}")
+    wait(4)
+    folder = profiles_dir(name)
+    if not folder:
+        return None, {}
+    with open(os.path.join(folder, f"{name}.profile")) as f:
+        return folder, profile_lines(f.read())
+
+
+# Every setting the catalog lets the reader change (bools flipped, numbers to an end, choices to another) goes into a
+# profile, with Kill Aura, Auto Sign and Inventory Manager on (their presets were watched only while on) and every
+# module's Preset on a preset; loaded from defaults (Custom) and left 40 ticks, every line of it is still as saved.
+# Modules on by default (HUD, the menu...) keep theirs: the harness needs them.
+@test("Profile round trip (every setting survives a load)")
+def _():
+    kinds = setting_kinds()
+    folder, base = saved_profile("rt0")
+    if not folder or len(kinds) < 200:
+        return False, f"profile folder {folder}, {len(kinds)} settings read from the source ({sunset_source()})"
+    keep_on = {k.split(".")[0] for k, v in base.items() if k.endswith(".on") and v == "true"}
+    want = dict(base)
+    changed = 0
+    for key, value in base.items():
+        module, field = key.split(".", 1)
+        kind = kinds.get(key)
+        if module in keep_on or field in ("on", "key") or not kind:
+            continue
+        if kind[0] == "bool" and value in ("true", "false"):
+            want[key] = "false" if value == "true" else "true"
+        elif kind[0] == "num" and kind[1] < kind[2]:
+            try:
+                v = float(value)
+            except ValueError:
+                continue
+            new = kind[2] if abs(v - kind[2]) > 1e-9 else kind[1]
+            want[key] = ("%f" % new).rstrip("0").rstrip(".")
+        elif kind[0] == "pick" and value in kind[1] and len(kind[1]) > 1:
+            want[key] = kind[1][-1] if value != kind[1][-1] else kind[1][0]
+        else:
+            continue
+        changed += 1
+    for module in ("killaura", "autosign", "inventorymanager"):
+        want[f"{module}.on"] = "true"
+    with open(os.path.join(folder, "rt1.profile"), "w") as f:
+        f.write("sunset-profile=1\n" + "".join(f"{k}={v}\n" for k, v in want.items()))
+    try:
+        say(".profile load rt1")
+        wait(40)
+        _, after = saved_profile("rt2")
+        lost = [f"{k}: {want[k]} -> {after.get(k)}" for k in want if not same_value(want[k], after.get(k, "(gone)"))]
+        presets = {k: after.get(k) for k in ("scaffold.preset", "killaura.preset", "inventorymanager.preset", "autosign.anticheat")}
+        return changed > 300 and not lost, f"{changed} settings changed, {len(want)} lines; lost after the load: {lost[:12]}; presets {presets}"
+    finally:
+        say(".profile load rt0")
+        for n in ("rt0", "rt1", "rt2"):
+            say(f".profile delete {n}")
+
+
+# A preset still fills in its settings when picked by hand (.set, as the menu's click), the module on or off; a
+# profile load with a preset in it keeps the profile's own values; Keep Y stays as set either way.
+@test("Preset picks fill in, profile loads don't")
+def _():
+    def now():
+        return saved_profile("pp")[1]
+    out = []
+    setting("scaffold", "keep y", "Off")
+    setting("scaffold", "preset", "Blatant")
+    wait(3)
+    a = now()
+    out.append(("hand pick (off)", a.get("scaffold.movementcorrection") == "Silent" and a.get("scaffold.samey") == "Off"
+                and a.get("scaffold.keepy") == "Off"))
+    setting("scaffold", "movement correction", "Off")
+    setting("scaffold", "same y", "On")
+    wait(3)
+    say(".profile save pp-blatant")
+    setting("scaffold", "preset", "Custom")
+    setting("scaffold", "movement correction", "Strict")
+    wait(3)
+    say(".profile load pp-blatant")
+    wait(20)
+    b = now()
+    out.append(("load keeps", b.get("scaffold.preset") == "Blatant" and b.get("scaffold.movementcorrection") == "Off"
+                and b.get("scaffold.samey") == "On" and b.get("scaffold.keepy") == "Off"))
+    # Kill Aura off: a hand pick fills in; then a profile with Ghost and a Range of its own keeps that Range.
+    setting("killaura", "preset", "Custom")
+    setting("killaura", "range", "4")
+    wait(3)
+    setting("killaura", "preset", "HvH")
+    wait(3)
+    c = now()
+    out.append(("aura pick", same_value(c.get("killaura.range", ""), "6") and c.get("killaura.rotationmode") == "Adaptive"))
+    setting("killaura", "preset", "Ghost")
+    wait(3)
+    setting("killaura", "range", "5")
+    say(".profile save pp-ghost")
+    setting("killaura", "preset", "Custom")
+    wait(3)
+    say(".profile load pp-ghost")
+    wait(20)
+    d = now()
+    out.append(("aura load keeps", d.get("killaura.preset") == "Ghost" and same_value(d.get("killaura.range", ""), "5")))
+    # Inventory Manager: the same.
+    setting("inventorymanager", "preset", "Mining")
+    wait(3)
+    setting("inventorymanager", "blocks", "100")
+    say(".profile save pp-inv")
+    setting("inventorymanager", "preset", "Custom")
+    wait(3)
+    say(".profile load pp-inv")
+    wait(20)
+    e = now()
+    out.append(("inventory load keeps", e.get("inventorymanager.preset") == "Mining" and same_value(e.get("inventorymanager.blocks", ""), "100")))
+    say(".profile load before-load")
+    for n in ("pp", "pp-blatant", "pp-ghost", "pp-inv"):
+        say(f".profile delete {n}")
+    touched.update(["scaffold", "killaura", "inventorymanager"])
+    return all(ok for _, ok in out), ", ".join(f"{n}: {'ok' if ok else 'FAILED'}" for n, ok in out) + f"; scaffold after load {dict((k, b.get(k)) for k in ('scaffold.preset', 'scaffold.movementcorrection', 'scaffold.samey', 'scaffold.keepy'))}"
+
+
 def said_after(line, wait_ticks=4):
     """What Sunset says in the chat after `line` is typed."""
     mark = log_mark()

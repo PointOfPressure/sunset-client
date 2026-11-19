@@ -1288,3 +1288,149 @@ mod panel_layout_tests {
         assert_eq!(loaded.gui.panels.iter().map(|p| p.home).collect::<Vec<_>>(), homes);
     }
 }
+
+#[cfg(test)]
+mod preset_load_tests {
+    use super::super::sunset::*;
+
+    fn stored(state: &State, module: &str, setting: &str) -> String {
+        state.module(module).and_then(|m| m.setting(setting)).map(|s| s.stored()).unwrap_or_default()
+    }
+
+    // A state that has run (its presets seen), its settings at the defaults: every preset choice Custom or the first.
+    fn running() -> State {
+        let mut state = State::new();
+        assert!(!state.fill_picked_presets(), "the first look fills nothing in");
+        state
+    }
+
+    // Coming from Custom, a profile with Scaffold on Blatant keeps its own Movement correction and Same Y (both in
+    // Blatant) and Keep Y (in no preset); a later pick by hand still fills Blatant in, and Keep Y is left alone.
+    #[test]
+    fn scaffold_profile_load_keeps_its_settings_and_a_hand_pick_fills_in() {
+        let mut state = running();
+        state.load_profile("scaffold.preset=Blatant\nscaffold.movementcorrection=Off\nscaffold.samey=On\nscaffold.keepy=Off\nscaffold.expand=4\n");
+        assert!(!state.fill_picked_presets());
+        assert!(!state.fill_picked_presets(), "nor on a later frame");
+        assert_eq!(stored(&state, "Scaffold", "Movement correction"), "Off");
+        assert_eq!(stored(&state, "Scaffold", "Same Y"), "On");
+        assert_eq!(stored(&state, "Scaffold", "Keep Y"), "Off");
+        assert_eq!(stored(&state, "Scaffold", "Expand"), "4");
+        // Custom fills in nothing; Blatant picked again fills in its settings once.
+        State::set_field(&mut state.modules, "scaffold.preset", "Custom");
+        assert!(!state.fill_picked_presets());
+        State::set_field(&mut state.modules, "scaffold.preset", "Blatant");
+        assert!(state.fill_picked_presets());
+        assert_eq!(stored(&state, "Scaffold", "Movement correction"), "Silent");
+        assert_eq!(stored(&state, "Scaffold", "Same Y"), "Off");
+        assert_eq!(stored(&state, "Scaffold", "Keep Y"), "Off");
+        State::set_field(&mut state.modules, "scaffold.samey", "On");
+        assert!(!state.fill_picked_presets(), "a change after the pick stays");
+        assert_eq!(stored(&state, "Scaffold", "Same Y"), "On");
+        // One preset to another by hand: Speedbridge's own fields.
+        State::set_field(&mut state.modules, "scaffold.preset", "Speedbridge");
+        assert!(state.fill_picked_presets());
+        assert_eq!((stored(&state, "Scaffold", "Mode"), stored(&state, "Scaffold", "Longest sneak delay (ms)")), ("Legit".into(), "50".into()));
+    }
+
+    // The config (load_text, as at start-up or a plugin's module arriving) the same way for Kill Aura, off or on.
+    #[test]
+    fn kill_aura_config_load_keeps_its_settings_and_a_hand_pick_fills_in() {
+        for on in [false, true] {
+            let mut state = running();
+            state.load_text(&format!("killaura.on={on}\nkillaura.preset=Ghost\nkillaura.range=5\nkillaura.targetfov=180\n"));
+            assert!(!state.fill_picked_presets());
+            assert_eq!(stored(&state, "Kill Aura", "Range"), "5");
+            assert_eq!(stored(&state, "Kill Aura", "Target FOV"), "180");
+            State::set_field(&mut state.modules, "killaura.preset", "HvH");
+            assert!(state.fill_picked_presets(), "a pick with Kill Aura {}", if on { "on" } else { "off" });
+            assert_eq!((stored(&state, "Kill Aura", "Range"), stored(&state, "Kill Aura", "Rotation mode")), ("6".into(), "Adaptive".into()));
+            assert_eq!(stored(&state, "Kill Aura", "Target FOV"), "180", "HvH leaves Target FOV");
+        }
+    }
+
+    // Inventory Manager and Auto Sign's Anticheat; and a load straight after a pick (not yet looked at) wins.
+    #[test]
+    fn inventory_manager_and_auto_sign_loads_keep_their_settings() {
+        let mut state = running();
+        state.load_profile("inventorymanager.preset=Mining\ninventorymanager.blocks=100\nautosign.anticheat=Horizon\nautosign.delay=7\n");
+        assert!(!state.fill_picked_presets());
+        assert_eq!(stored(&state, "Inventory Manager", "Blocks"), "100");
+        assert_eq!(stored(&state, "Auto Sign", "Delay"), "7");
+        State::set_field(&mut state.modules, "inventorymanager.preset", "PvP");
+        State::set_field(&mut state.modules, "autosign.anticheat", "Grim");
+        assert!(state.fill_picked_presets());
+        assert_eq!((stored(&state, "Inventory Manager", "Blocks"), stored(&state, "Inventory Manager", "Pearls")), ("128".into(), "16".into()));
+        assert!(stored(&state, "Inventory Manager", "Junk").starts_with("dirt,gravel"));
+        assert_eq!((stored(&state, "Auto Sign", "Delay"), stored(&state, "Auto Sign", "Range")), ("2".into(), "4.4".into()));
+        State::set_field(&mut state.modules, "inventorymanager.preset", "Survival");
+        state.load_profile("inventorymanager.preset=Building\ninventorymanager.food=5\n");
+        assert!(!state.fill_picked_presets(), "the load came after the pick");
+        assert_eq!(stored(&state, "Inventory Manager", "Food"), "5");
+    }
+
+    // Every setting of every module changed (switches flipped, numbers to an end, choices to another, text swapped),
+    // the preset choices on presets: through a profile and through the config into a state that has run, then a
+    // look for picks, everything is as it was saved.
+    #[test]
+    fn every_setting_survives_a_profile_and_a_config_load() {
+        let mut saved = State::new();
+        let mut changed = 0;
+        for m in &mut saved.modules {
+            // ClickGUI's Friends is the friends list shown as a setting: the config keeps the list on its own line.
+            for s in m.settings.iter_mut().filter(|s| s.name != "Friends") {
+                let value = match &s.value {
+                    Value::Bool(b) => (!b).to_string(),
+                    Value::Num { v, min, max, .. } if min < max => (if (v - max).abs() > 1e-9 { *max } else { *min }).to_string(),
+                    Value::Pick { i, of } if of.len() > 1 => of[if *i + 1 == of.len() { 0 } else { of.len() - 1 }].to_string(),
+                    Value::Text(t) => if t.is_empty() { "sunset".into() } else { String::new() },
+                    _ => continue,
+                };
+                assert!(s.parse(&value), "{}.{}", m.name, s.name);
+                changed += 1;
+            }
+        }
+        assert!(changed > 1000, "{changed}");
+        let lost = |loaded: &State, only: &str| -> Vec<String> {
+            saved.modules.iter().zip(&loaded.modules).flat_map(|(a, b)| {
+                a.settings.iter().zip(&b.settings).filter(|(x, y)| x.stored() != y.stored())
+                    .map(move |(x, y)| format!("{}.{}: {} -> {}", norm(a.name), norm(x.name), x.stored(), y.stored()))
+            }).filter(|line| only.lines().any(|l| line.starts_with(&format!("{}:", l.split('=').next().unwrap_or(""))))).collect()
+        };
+        let profile = saved.profile_text();
+        let mut loaded = running();
+        loaded.load_profile(&profile);
+        assert!(!loaded.fill_picked_presets());
+        assert_eq!(lost(&loaded, &profile), Vec::<String>::new(), "after a profile load");
+        let config = saved.save_text();
+        let mut loaded = running();
+        loaded.load_text(&config);
+        assert!(!loaded.fill_picked_presets());
+        assert_eq!(lost(&loaded, &config), Vec::<String>::new(), "after a config load");
+    }
+
+    // A Range of 64 chosen in ESP, Tracers or Nametags comes back as 64 (not All), through a profile and the config;
+    // a config from before All, with the old default 64, still becomes All.
+    #[test]
+    fn a_chosen_range_of_64_survives_and_the_old_default_still_becomes_all() {
+        for module in ["ESP", "Tracers", "Nametags"] {
+            let id = norm(module);
+            let mut saved = State::new();
+            // As the menu or .set chooses it (a "64" through set_field is an old config's default: All).
+            let range = saved.modules.iter_mut().find(|m| m.name == module).and_then(|m| m.settings.iter_mut().find(|s| s.name == "Range"));
+            assert!(range.is_some_and(|s| s.parse("64")), "{module}");
+            assert_eq!(stored(&saved, module, "Range"), "64");
+            for text in [saved.profile_text(), saved.save_text()] {
+                assert!(text.contains(&format!("{id}.range=64.0\n")), "{module}");
+                let mut loaded = running();
+                loaded.load_text(&text);
+                assert_eq!(stored(&loaded, module, "Range"), "64", "{module}");
+            }
+            let mut old = running();
+            old.load_profile(&format!("{id}.range=64\n"));
+            assert_eq!(stored(&old, module, "Range"), "0", "{module}: the old default");
+            old.load_profile(&format!("{id}.range=128\n"));
+            assert_eq!(stored(&old, module, "Range"), "128", "{module}");
+        }
+    }
+}

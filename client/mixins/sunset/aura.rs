@@ -584,7 +584,6 @@ fn silent_return(game: &Game<'_>, m: &Module) {
 }
 
 pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
-    preset(game, m);
     observe_hits(game);
     st(|s| s.target = None);
     // Who it is engaged with is decided again below; a hit still on its way keeps it.
@@ -947,11 +946,11 @@ fn observe_hits(game: &Game<'_>) {
     });
 }
 
-// Kill Aura's presets: real settings for a way of fighting, filled in when picked (not on the first look, so a change
-// made afterwards stays). HvH: one locked target, Smart priority, Adaptive aim at a dynamic point with adaptive
+// Kill Aura's presets: real settings for a way of fighting, filled in when picked by hand (State::fill_picked_presets;
+// a profile load keeps its own, and a change made afterwards stays). HvH: one locked target, Smart priority, Adaptive aim at a dynamic point with adaptive
 // prediction. Blatant: fast switching and snapping at the nearest point, at full range. Ghost: only while you click,
 // within a narrow field of view, slow adaptive turns.
-const PRESETS: [(&str, &[(&str, &str)]); 3] = [
+pub(super) const PRESETS: [(&str, &[(&str, &str)]); 3] = [
     ("HvH", &[("Attack mode", "Single"), ("Target lock", "true"), ("Priority", "Smart"), ("Hurt time priority", "false"),
         ("Rotate", "Always"), ("Rotation mode", "Adaptive"), ("Aim point", "Dynamic"), ("Prediction", "Adaptive"),
         ("Ray cast", "true"), ("Auto switch", "true"), ("Range", "6"), ("Rotation range", "6"), ("Only on click", "false"),
@@ -963,21 +962,6 @@ const PRESETS: [(&str, &[(&str, &str)]); 3] = [
         ("Aim point", "Dynamic"), ("Prediction", "Basic"), ("Range", "3.8"), ("Rotation range", "3.8"), ("Target FOV", "90"),
         ("Only on click", "true"), ("Yaw speed", "25"), ("Pitch speed", "20")]),
 ];
-static LAST_PRESET: Mutex<String> = Mutex::new(String::new());
-
-fn preset(game: &Game<'_>, m: &Module) {
-    let picked = m.p("Preset");
-    let before = std::mem::replace(&mut *LAST_PRESET.lock().unwrap_or_else(|e| e.into_inner()), picked.to_owned());
-    if before.is_empty() || before == picked {
-        return;
-    }
-    if let Some((_, fields)) = PRESETS.iter().find(|p| p.0 == picked) {
-        for (name, value) in fields.iter() {
-            super::sunset::set_setting(game, &format!("killaura.{}", super::sunset::norm(name)), value);
-        }
-    }
-}
-
 #[cfg(test)]
 mod preset_tests {
     use super::*;

@@ -59,8 +59,8 @@ pub(super) fn visible(m: &Module, name: &str) -> bool {
     }
 }
 
-// What each Anticheat pick sets when picked; the settings stay yours to change after.
-const PRESETS: &[(&str, &[(&str, &str)])] = &[
+// What each Anticheat pick sets when picked by hand (State::fill_picked_presets); the settings stay yours to change after.
+pub(super) const PRESETS: &[(&str, &[(&str, &str)])] = &[
     ("Grim", &[("Clicks per tick", "1"), ("Cooldown", "1"), ("Range", "4.4"), ("Delay", "2")]),
     ("Horizon", &[("Clicks per tick", "8"), ("Cooldown", "0"), ("Range", "4.5"), ("Delay", "0")]),
 ];
@@ -89,7 +89,6 @@ struct St {
     asked: Option<u64>,
     keep: Option<(f32, f32)>,
     rng: u64,
-    preset: String,
 }
 
 static ST: Mutex<Option<St>> = Mutex::new(None);
@@ -129,14 +128,10 @@ pub(super) fn outgoing(packet: &S) {
 pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
     let Some(m) = m.filter(|_| game.remote.is_some() && game.player.is_some()) else {
         ON.store(false, Ordering::Relaxed);
-        st(|s| {
-            let preset = std::mem::take(&mut s.preset);
-            *s = St { preset, ..St::default() };
-        });
+        st(|s| *s = St::default());
         return;
     };
     ON.store(true, Ordering::Relaxed);
-    preset(game, m);
     let settings = m.p("Text source") == "Settings";
     let line = |side: &str, i: usize| m.t(&format!("{side} {i}")).chars().take(384).collect::<String>();
     let lines = |side: &str| Some([1, 2, 3, 4].map(|i| line(side, i))).filter(|l| l.iter().any(|t| !t.is_empty()));
@@ -198,19 +193,6 @@ fn side_lines<'a>(game: &'a Game<'_>, pos: [i32; 3], front: bool) -> Option<&'a 
     match game.world.block_entities.get(&(pos[0], pos[1], pos[2])) {
         Some(BlockEntity::Sign(sign)) => Some(if front { &sign.front.lines } else { &sign.back.lines }),
         _ => None,
-    }
-}
-
-fn preset(game: &Game<'_>, m: &Module) {
-    let picked = m.p("Anticheat");
-    let before = st(|s| std::mem::replace(&mut s.preset, picked.to_owned()));
-    if before.is_empty() || before == picked {
-        return;
-    }
-    if let Some((_, fields)) = PRESETS.iter().find(|p| p.0 == picked) {
-        for (name, value) in fields.iter() {
-            set_setting(game, &format!("autosign.{}", norm(name)), value);
-        }
     }
 }
 

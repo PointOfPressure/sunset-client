@@ -117,8 +117,8 @@ pub(super) fn scaffold_item(game: &Game<'_>, m: &Module, slot: usize) -> bool {
     listed == (m.p("Blocks filter") == "Whitelist") && f.full_collision && !falls
 }
 
-// Scaffold's presets: settings of its modes made for one style, filled in when the Preset is picked (not on the first
-// look, so a change you made afterwards stays). Speedbridge is Legit's edge sneaking at its quickest; Blatant is Normal
+// Scaffold's presets: settings of its modes made for one style, filled in when the Preset is picked by hand
+// (State::fill_picked_presets; a profile load keeps its own, and a change you made afterwards stays). Speedbridge is Legit's edge sneaking at its quickest; Blatant is Normal
 // with snap rotations, no ray cast, sprint kept, a reach ahead and fast tower while moving. Neither adds an algorithm.
 pub(super) const SCAFFOLD_PRESETS: [(&str, &[(&str, &str)]); 2] = [
     ("Speedbridge", &[("Mode", "Legit"), ("Shortest sneak delay (ms)", "0"), ("Longest sneak delay (ms)", "50")]),
@@ -126,20 +126,6 @@ pub(super) const SCAFFOLD_PRESETS: [(&str, &[(&str, &str)]); 2] = [
         ("Movement correction", "Silent"), ("Sprint", "Keep"), ("Expand", "2"), ("Same Y", "Off"), ("Ledge sneak", "false"),
         ("Fast tower", "true"), ("While moving", "true")]),
 ];
-static SCAFFOLD_PRESET: Mutex<String> = Mutex::new(String::new());
-
-pub(super) fn scaffold_preset(game: &Game<'_>, m: &Module) {
-    let preset = m.p("Preset");
-    let before = std::mem::replace(&mut *SCAFFOLD_PRESET.lock().unwrap_or_else(|e| e.into_inner()), preset.to_owned());
-    if before.is_empty() || before == preset {
-        return;
-    }
-    if let Some((_, fields)) = SCAFFOLD_PRESETS.iter().find(|p| p.0 == preset) {
-        for (name, value) in fields.iter() {
-            set_setting(game, &format!("scaffold.{}", norm(name)), value);
-        }
-    }
-}
 
 // Scaffold waits while Blink is on, and while Kill Aura has someone to hit if Disable with Kill Aura says so (Kill
 // Aura on with no one about leaves Scaffold be; without the setting Kill Aura waits for Scaffold instead).

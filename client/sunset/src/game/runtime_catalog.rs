@@ -440,7 +440,7 @@ pub(super) fn defaults() -> Vec<Module> {
             // Sections in the menu; each mode shows only its own settings (setting_visible). Saved settings go by name.
             .group("General")
             .pick("Mode", &["Normal", "Legit", "Godbridge", "Telly"])
-            // Settings made for a style of bridging, filled in when picked (scaffold_preset); Custom leaves them.
+            // Settings made for a style of bridging, filled in when picked (State::fill_picked_presets); Custom leaves them.
             .pick("Preset", &["Custom", "Speedbridge", "Blatant"])
             .bool("Only on click", false)
             .bool("Disable with Kill Aura", true)

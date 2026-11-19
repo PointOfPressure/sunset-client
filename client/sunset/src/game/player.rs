@@ -216,8 +216,6 @@ struct Ps {
     steal_last: usize,
     steal_same: u32,
     steal_done: i32,
-    // Inventory Manager's Preset as last seen.
-    clean_preset: String,
     // No Break Reset: the step the block's break took last tick, with the item held then.
     break_step: f32,
     // No Fall's Place: what it put down to land in, the item, the ticks since, the ticks you have stood still, and
@@ -866,7 +864,7 @@ fn auto_steal(game: &mut Game<'_>, m: &Module) {
 }
 
 // Inventory Manager's presets: name, then the blocks, food, arrows and pearls kept, and the junk.
-const PRESETS: [(&str, f64, f64, f64, f64, &str); 4] = [
+pub(super) const PRESETS: [(&str, f64, f64, f64, f64, &str); 4] = [
     ("PvP", 128.0, 64.0, 64.0, 16.0, "dirt,gravel,sand,rotten_flesh,spider_eye,poisonous_potato,wheat_seeds,bone,string,feather,flint,stick,egg"),
     ("Building", 1728.0, 32.0, 0.0, 16.0, "rotten_flesh,spider_eye,poisonous_potato,wheat_seeds,bone,string,feather,flint,egg"),
     ("Mining", 64.0, 64.0, 0.0, 0.0, "dirt,gravel,cobblestone,cobbled_deepslate,netherrack,andesite,diorite,granite,tuff,rotten_flesh,spider_eye,poisonous_potato,wheat_seeds"),
@@ -956,19 +954,8 @@ fn junk_slots(m: &Module, items: &[Option<plan::Item>], keep: &[bool]) -> Vec<us
 fn inventory_manager(game: &mut Game<'_>, m: &Module) {
     use horizon_client::menu::Input::{Pickup, Swap, Throw};
     if super::sunset_gui_move::inventory_busy() { return; }
-    // A preset just picked fills in its limits and junk (not on the first look, so a change you made stays).
+    // Its Preset's limits and junk are filled in when picked (State::fill_picked_presets).
     let preset = m.p("Preset");
-    let before = ps(|p| std::mem::replace(&mut p.clean_preset, preset.to_owned()));
-    if !before.is_empty() && before != preset
-        && let Some(&(_, blocks, food, arrows, pearls, junk)) = PRESETS.iter().find(|p| p.0 == preset)
-    {
-        for (field, value) in [("blocks", blocks.to_string()), ("food", food.to_string()), ("arrows", arrows.to_string()),
-            ("pearls", pearls.to_string()), ("junk", junk.to_owned())]
-        {
-            super::sunset::set_setting(game, &format!("inventorymanager.{field}"), &value);
-        }
-        return;
-    }
     let menu = game.remote_menu();
     let in_screen = game.screen == Screen::Inventory && menu.0 == 0 && menu.1 == "inventory";
     // Off the screen: only with no other menu open (the player inventory's clicks need no screen on the server).
