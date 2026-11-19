@@ -111,6 +111,31 @@ fn main() {
     }
 }
 
+/// A flag that Ctrl+C (or SIGTERM) sets, for the CLI's plugin build to cancel on; a second Ctrl+C quits at once.
+/// On Windows the build's job ends with the launcher already.
+fn interrupt_cancels() -> &'static AtomicBool {
+    static CANCEL: AtomicBool = AtomicBool::new(false);
+    #[cfg(unix)]
+    {
+        unsafe extern "C" {
+            fn signal(sig: i32, handler: usize) -> usize;
+        }
+        extern "C" fn on_signal(sig: i32) {
+            CANCEL.store(true, std::sync::atomic::Ordering::Relaxed);
+            // SAFETY: signal() is async-signal-safe; back to the default action for the next one.
+            unsafe { signal(sig, 0) };
+        }
+        const SIGINT: i32 = 2;
+        const SIGTERM: i32 = 15;
+        // SAFETY: the handler only stores to an atomic and resets itself.
+        unsafe {
+            signal(SIGINT, on_signal as extern "C" fn(i32) as usize);
+            signal(SIGTERM, on_signal as extern "C" fn(i32) as usize);
+        }
+    }
+    &CANCEL
+}
+
 fn plugins_cmd(p: &core::Paths, mut s: core::Settings, args: &[String], progress: core::Progress) -> core::Result<String> {
     let m = core::installed(p).ok_or("Sunset is not installed yet (install first)")?;
     match args.first().map(String::as_str) {
@@ -154,7 +179,9 @@ fn plugins_cmd(p: &core::Paths, mut s: core::Settings, args: &[String], progress
             *last.borrow_mut() = line;
         }
     };
-    match plugins::sync(p, &m, s.plugins_enabled, &AtomicBool::new(false), &report) {
+    // Ctrl+C cancels the build: native-build runs in its own process group, so the terminal's signal would miss it.
+    let cancel = interrupt_cancels();
+    match plugins::sync(p, &m, s.plugins_enabled, cancel, &report) {
         Ok(plugins::Synced::Unchanged) => Ok("the instance already plays that".into()),
         Ok(plugins::Synced::Cleaned) => Ok("the instance plays Sunset as released".into()),
         Ok(plugins::Synced::Built(b)) => Ok(format!("built {} with {}", b.version_dir, b.plugins.iter().map(|b| b.id.as_str()).collect::<Vec<_>>().join(", "))),

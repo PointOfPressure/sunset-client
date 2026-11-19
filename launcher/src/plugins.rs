@@ -824,15 +824,67 @@ fn of_total(line: &str) -> Option<f32> {
     (total > 0.).then(|| (done / total).clamp(0., 1.))
 }
 
+/// Ends every plugin build still running, and refuses to start new ones: for when the launcher quits. A build left
+/// running would hold cargo's lock and could still switch the instance to its build after the launcher is gone.
+pub fn stop_builds() {
+    proc_tree::kill_all();
+}
+
 /// A child process and everything it starts, killed together: a Job Object on Windows (also killed if the launcher
-/// goes away), a process group elsewhere.
+/// goes away), a process group elsewhere. Every live tree is listed so `kill_all` can end them as the launcher quits;
+/// a tree is killed when dropped too.
 mod proc_tree {
     use std::process::{Child, Command};
+    use std::sync::Mutex;
+
+    /// The live trees (by id) and whether the launcher is quitting.
+    static LIVE: Mutex<Live> = Mutex::new(Live { quitting: false, next: 0, trees: Vec::new() });
+
+    struct Live {
+        quitting: bool,
+        next: u64,
+        trees: Vec<(u64, Handle)>,
+    }
+
+    /// What kills a tree: its process group (unix) or its job (Windows; the handle is closed only after the tree has
+    /// left `LIVE`, under its lock).
+    #[derive(Clone, Copy)]
+    struct Handle(#[cfg(unix)] i32, #[cfg(windows)] usize);
+
+    impl Handle {
+        fn kill(self) {
+            #[cfg(unix)]
+            unsafe {
+                unsafe extern "C" {
+                    fn kill(pid: i32, sig: i32) -> i32;
+                }
+                // SAFETY: a plain syscall; the group is ours (the child leads it).
+                kill(-self.0, 9);
+            }
+            #[cfg(windows)]
+            Job::terminate_raw(self.0 as *mut _);
+        }
+    }
+
+    fn live() -> std::sync::MutexGuard<'static, Live> {
+        LIVE.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn kill_all() {
+        let mut l = live();
+        l.quitting = true;
+        for (_, h) in &l.trees {
+            h.kill();
+        }
+    }
 
     pub struct Tree {
         pub child: Child,
+        id: u64,
+        handle: Handle,
+        /// Owns the job handle `handle` names; closing it ends the tree too.
         #[cfg(windows)]
-        job: Job,
+        _job: Job,
     }
 
     impl Tree {
@@ -842,28 +894,44 @@ mod proc_tree {
                 use std::os::unix::process::CommandExt;
                 c.process_group(0);
             }
+            // Held across the spawn so a quit can't slip in between it and the listing.
+            let mut l = live();
+            if l.quitting {
+                return Err(std::io::Error::other("the launcher is closing"));
+            }
             let child = c.spawn()?;
             #[cfg(windows)]
-            {
-                let job = Job::new();
-                job.assign(&child);
-                Ok(Tree { child, job })
-            }
-            #[cfg(not(windows))]
-            Ok(Tree { child })
+            let job = Job::new();
+            #[cfg(windows)]
+            job.assign(&child);
+            #[cfg(windows)]
+            let handle = Handle(job.0 as usize);
+            #[cfg(unix)]
+            let handle = Handle(child.id() as i32);
+            l.next += 1;
+            let id = l.next;
+            l.trees.push((id, handle));
+            Ok(Tree {
+                child,
+                id,
+                handle,
+                #[cfg(windows)]
+                _job: job,
+            })
         }
 
         pub fn kill(&mut self) {
-            #[cfg(windows)]
-            self.job.terminate();
-            #[cfg(unix)]
-            unsafe {
-                unsafe extern "C" {
-                    fn kill(pid: i32, sig: i32) -> i32;
-                }
-                kill(-(self.child.id() as i32), 9);
-            }
+            self.handle.kill();
             let _ = self.child.kill();
+        }
+    }
+
+    impl Drop for Tree {
+        fn drop(&mut self) {
+            let mut l = live();
+            l.trees.retain(|(id, _)| *id != self.id);
+            // Whatever the build left running ends with it (on Windows closing the job does that as well).
+            self.handle.kill();
         }
     }
 
@@ -932,10 +1000,10 @@ mod proc_tree {
                 unsafe { AssignProcessToJobObject(self.0, child.as_raw_handle() as *mut _) };
             }
         }
-        fn terminate(&self) {
-            if !self.0.is_null() {
-                // SAFETY: our own job handle.
-                unsafe { TerminateJobObject(self.0, 1) };
+        fn terminate_raw(h: *mut core::ffi::c_void) {
+            if !h.is_null() {
+                // SAFETY: a job handle still open: callers hold it through `Tree` or `LIVE`.
+                unsafe { TerminateJobObject(h, 1) };
             }
         }
     }

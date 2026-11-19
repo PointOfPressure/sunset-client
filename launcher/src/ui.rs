@@ -688,10 +688,12 @@ impl Launcher {
 
 impl Drop for Launcher {
     fn drop(&mut self) {
-        // A sign-in still waiting for the browser ends with the window; a running game keeps going.
+        // A sign-in still waiting for the browser ends with the window, and so does a plugin build; a running game
+        // keeps going.
         if let Some(c) = self.sign_in.take().and_then(|s| s.child) {
             let _ = c.lock().unwrap().kill();
         }
+        plugins::stop_builds();
     }
 }
 
@@ -2249,6 +2251,14 @@ pub fn run() {
             cx.quit();
         }
         cx.on_window_closed(|cx, _| cx.quit()).detach();
+        // A plugin build must not outlive the launcher: it would hold cargo's lock and could still switch the
+        // instance after the launcher is gone. (Windows also ends it with the build's job.)
+        cx.on_app_quit(|_| {
+            plugins::stop_builds();
+            async {}
+        })
+        .detach();
         cx.activate(true);
     });
+    plugins::stop_builds();
 }
