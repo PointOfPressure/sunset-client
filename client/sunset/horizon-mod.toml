@@ -2603,3 +2603,59 @@ bindings = [
   { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
   { name = "p", ty = "&ResourcePackPush", value = "&p" },
 ]
+
+# @@sunset-meshcache
+[[native.module]]
+id = "sunset_meshcache_grid"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_grid"
+source = "src/game/mc_grid.rs"
+
+[[native.module]]
+id = "sunset_meshcache_feed"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_feed"
+source = "src/game/mc_feed.rs"
+
+[[native.module]]
+id = "sunset_meshcache_warm"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_warm"
+source = "src/game/mc_warm.rs"
+
+[[native.module]]
+id = "sunset_meshcache_facet"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_facet"
+source = "src/game/mc_facet.rs"
+
+[[native.module]]
+id = "sunset_meshcache_batch"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_batch"
+source = "src/game/mc_batch.rs"
+
+[[native.module]]
+id = "sunset_meshcache_decay"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_decay"
+source = "src/game/mc_decay.rs"
+
+[[native.module]]
+id = "sunset_meshcache_label"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_label"
+source = "src/game/mc_label.rs"
+
+[[native.module]]
+id = "sunset_meshcache_arena"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_arena"
+source = "src/game/mc_arena.rs"
+
+[[native.module]]
+id = "sunset_meshcache_atlas"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_atlas"
+source = "src/game/mc_atlas.rs"
+

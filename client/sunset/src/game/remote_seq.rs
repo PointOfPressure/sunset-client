@@ -136,3 +136,27 @@ pub(crate) fn players_changed_key(game: &Game<'_>) -> u128 {
         listed ^ level ^ ((r.tab_players.len() as u128) << 96) ^ ((r.level_player_names.len() as u128) << 64)
     })
 }
+
+// @@sunset-meshcache
+// These fields belong to game::remote, so access stays in that module.
+type MeshLease = std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<horizon_protocol::connection::Counters>>>>;
+pub(crate) fn mesh_ctx(game: &crate::game::Game<'_>) -> Option<(MeshLease, u128, String, u64)> {
+    let r = game.remote.as_ref()?;
+    if r.reconfiguring.is_some() || crate::game::sunset_packets::scan_configuring(&r.session) { return None; }
+    let epoch = crate::game::sunset_packets::Link::of(&r.session).epoch;
+    Some((r.session.counters.clone(), r.profile, r.level.clone(), epoch))
+}
+pub(crate) fn mesh_labels(game: &crate::game::Game<'_>) -> Vec<(u128, String, bool)> {
+    game.remote.as_ref().map_or_else(Vec::new, |r| r.players.iter()
+        .map(|(&u, n)| (u, n.clone(), r.tab_players.contains_key(&u))).collect())
+}
+
+pub(crate) fn mesh_kind(game:&crate::game::Game<'_>)->Option<i32>{
+    game.remote.as_ref()?.builtin.get("minecraft:entity_type")?.id("minecraft:player")
+}
+pub(crate) fn mesh_batch(game:&crate::game::Game<'_>)->Vec<(i32,Option<u128>,[f64;3],[f64;3])>{
+    game.remote.as_ref().map_or_else(Vec::new,|r|r.entities.iter().take(4097).map(|(&id,e)|
+        (id,if e.kind=="minecraft:player"{r.level_players.get(&id).copied()}else{None},e.position,e.codec_base)).collect())
+}
+pub(crate) fn mesh_self(game:&crate::game::Game<'_>)->Option<i32>{Some(game.remote.as_ref()?.entity_id)}
+

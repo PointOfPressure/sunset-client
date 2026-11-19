@@ -20,6 +20,36 @@ use std::sync::Mutex;
 pub(super) fn defaults() -> Vec<Module> {
     vec![
         Module::new("Anti Vanish", Category::Player, "Reports vanished players.")
+            .pick("Mode", &["Generic", "HorizonSMP"])
+            .group("Evidence")
+            .bool("UUID evidence", true)
+            .bool("Locator evidence", true)
+            .bool("Entity activity", true)
+            .bool("Block activity", true)
+            .bool("Passenger evidence", true)
+            .bool("Unknown actors", true)
+            .num("Local age", 20.0, 2.0, 120.0, 1.0)
+            .num("Notify interval", 10.0, 1.0, 300.0, 1.0)
+            .bool("Anonymous notifications", false)
+            .group("Horizon display")
+            .bool("Activity markers", true)
+            .colour("Activity color", "Orange")
+            .bool("Show idle", true)
+            .num("Max markers", 64.0, 8.0, 256.0, 8.0)
+            .num("Label limit", 12.0, 0.0, 64.0, 1.0)
+            .num("HUD page", 1.0, 1.0, 1024.0, 1.0)
+            .bool("Horizon markers", true)
+            .bool("Horizon labels", true)
+            .bool("Horizon tracers", false)
+            .bool("Horizon HUD", true)
+            .bool("Horizon notifications", true)
+            .bool("Show UUID", false)
+            .colour("Horizon color", "Gold")
+            .num("Evidence age", 90.0, 5.0, 600.0, 5.0)
+            .num("HUD rows", 6.0, 1.0, 20.0, 1.0)
+            .pick("Horizon HUD position", &["Default", "Custom"])
+            .num("Horizon HUD x", 0.01, 0.0, 1.0, 0.001)
+            .num("Horizon HUD y", 0.35, 0.0, 1.0, 0.001)
             .num("Interval", 100.0, 20.0, 600.0, 10.0)
             .text("Watched players", "")
             .text("Server watchlists", "")
@@ -34,6 +64,21 @@ pub(super) fn defaults() -> Vec<Module> {
 }
 
 pub(super) fn visible(m: &Module, name: &str) -> bool {
+    if name == "Mode" { return true; }
+    let horizon = m.p("Mode") == "HorizonSMP";
+    match name {
+        // The panel's place is the layout editor's (drag it with the chat open); x and y show once it was moved.
+        "Horizon HUD x" | "Horizon HUD y" => return horizon && m.b("Horizon HUD") && m.p("Horizon HUD position") == "Custom",
+        "Horizon HUD position" | "HUD rows" | "HUD page" | "Show idle" => return horizon && m.b("Horizon HUD"),
+        "Horizon labels" | "Label limit" | "Horizon tracers" | "Max markers" => return horizon && (m.b("Horizon markers") || m.b("Activity markers")),
+        "Activity color" => return horizon && m.b("Activity markers"),
+        "Notify interval" | "Anonymous notifications" => return horizon && m.b("Horizon notifications"),
+        "Horizon markers" | "Horizon HUD" | "Horizon notifications" | "Show UUID" | "Horizon color" | "Evidence age"
+        | "UUID evidence" | "Locator evidence" | "Entity activity" | "Block activity" | "Passenger evidence" | "Unknown actors"
+        | "Local age" | "Activity markers" => return horizon,
+        _ => {}
+    }
+    if m.p("Mode") == "HorizonSMP" { return matches!(name, "Watched players" | "Server watchlists"); }
     match name {
         "Command" | "Confirmations" => m.b("Completion check"),
         "Nearby range" => m.b("Invisible players"),
@@ -95,7 +140,7 @@ fn watchlist<'a>(m: &'a Module, server: &str) -> &'a str {
         .map_or(m.t("Watched players"), |(_, names)| names)
 }
 
-fn watched(m: &Module, server: &str, name: &str) -> bool {
+pub(super) fn watched(m: &Module, server: &str, name: &str) -> bool {
     let list = watchlist(m, server);
     list.trim().is_empty() || list.split(',').any(|n| n.trim().eq_ignore_ascii_case(name))
 }
@@ -106,6 +151,8 @@ fn player_name(name: &str) -> bool {
 }
 
 pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
+    super::sunset_meshcache_warm::tick(game, m);
+    let m = m.filter(|m| m.p("Mode") != "HorizonSMP");
     let Some(m) = m.filter(|_| game.remote.is_some()) else {
         vs(|v| {
             v.timer = 0;
@@ -225,7 +272,7 @@ pub(super) fn completions(game: &mut Game<'_>, data: &[u8]) -> bool {
     .unwrap_or_default();
     let tab = super::remote::sunset_remote::tab_names(game);
     let own = game.options.player_name();
-    let Some(m) = with(|s| s.module("Anti Vanish").filter(|m| m.on).cloned()) else {
+    let Some(m) = with(|s| s.module("Anti Vanish").filter(|m| m.on && m.p("Mode") != "HorizonSMP").cloned()) else {
         return true;
     };
     let hidden: Vec<String> = names
@@ -261,3 +308,7 @@ mod tests {
         assert!(!player_name("") && !player_name("CIT-1a2b3c4d") && !player_name("§6Shop") && !player_name("seventeen_chars_x"));
     }
 }
+
+// @@sunset-meshcache
+pub(super) fn horizon_server() -> String { vs(|v| v.server.clone()) }
+pub(super) fn horizon_all(m: &Module, server: &str) -> bool { watchlist(m, server).trim().is_empty() }

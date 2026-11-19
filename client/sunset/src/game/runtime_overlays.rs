@@ -14,6 +14,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     super::sunset_util::draw_shown(cam, out, lw);
     super::sunset_effects::draw(game, cam, mods, out);
     super::sunset_render::overlay(game, cam, mods, out, lw);
+    super::sunset_meshcache_warm::draw(game, cam, mods, lw, out);
     super::sunset_new_chunks::draw(cam, mods, out);
     super::sunset_ore_sim::draw(game, cam, mods, out, lw);
     super::sunset_baritone_draw::draw(game, cam, mods, out, lw);

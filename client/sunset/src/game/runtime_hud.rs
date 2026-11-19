@@ -280,6 +280,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     }
     // Radar's place (after the HUD's corners, as it is drawn last), so the layout editor can take it too.
     let radar = if with(|s| s.gui.open) { None } else { super::sunset_radar::place(game, w, h, corners, &mods) };
+    super::sunset_meshcache_warm::hud(game, &mods, w, h, &mut shapes);
     chat_layout(game, &mut shapes);
 
     if with(|s| s.gui.open && s.gui.closing) {

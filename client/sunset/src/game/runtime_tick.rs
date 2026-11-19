@@ -32,6 +32,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     let packets = crate::game::sunset_packets::take();
     super::sunset_antibot::packets(game, &packets);
     super::sunset_gui_move::packets(game, &packets);
+    super::sunset_meshcache_warm::packets(game, &packets);
     let inventory_stop = super::sunset_gui_move::pre_tick(game);
     ::sunset_core::motion::set_freeze(inventory_stop);
     if !game.native_on(ID) || game.player.is_none() {
