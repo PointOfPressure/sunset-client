@@ -2,6 +2,7 @@
 
 use crate::core::{self, Account, Manifest, Paths, Release, Settings, SignIn};
 use crate::fx;
+use crate::plugins::{self, Phase};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     Animation, AnimationExt as _, SpringAnimation, TextRun, ease_out_quint, quadratic,
@@ -115,12 +116,28 @@ enum Msg {
     GameExited(Option<String>),
     Sources(Vec<(String, PathBuf)>),
     Info(core::Result<String>),
+    /// A plugin build's step: which, what it is doing, how far through the step.
+    BuildStep(Phase, String, Option<f32>),
+    BuildDone(std::result::Result<plugins::Synced, plugins::Failure>),
+    /// A plugin was added (its name) or couldn't be.
+    PluginAdded(core::Result<String>),
 }
 
 struct Job {
     label: String,
     frac: Option<f32>,
     cancel: Arc<AtomicBool>,
+    /// Set for a plugin build (or the switch back to the clean build): its steps, for the Plugins tab.
+    build: Option<BuildView>,
+}
+
+/// A plugin build as it runs: the step it is in, its line and how far through that step.
+struct BuildView {
+    phase: Phase,
+    line: String,
+    frac: Option<f32>,
+    /// Going back to the signed build rather than building.
+    cleaning: bool,
 }
 
 struct SignInView {
@@ -157,6 +174,13 @@ pub struct Launcher {
     sources: Vec<(String, PathBuf)>,
     profiles: Vec<String>,
     mods: Vec<(String, String)>,
+    /// The installed plugins and what the instance plays against what they and the settings ask for.
+    plugins: Vec<plugins::Plugin>,
+    plugin_status: Option<plugins::Status>,
+    /// The last plugin build that failed, shown on the Plugins tab until the next one starts.
+    build_failed: Option<plugins::Failure>,
+    /// A change arrived while a job ran: bring the plugin build in line once it ends.
+    resync: bool,
     /// The Overview changelog's scroll position.
     log_scroll: gpui::ScrollHandle,
     /// The page's (below the top bar) scroll position, and the tab it was last drawn for.
@@ -200,6 +224,10 @@ impl Launcher {
             sources: vec![],
             profiles: vec![],
             mods: vec![],
+            plugins: vec![],
+            plugin_status: None,
+            build_failed: None,
+            resync: false,
             log_scroll: gpui::ScrollHandle::new(),
             page_scroll: gpui::ScrollHandle::new(),
             shown_tab: Tab::Overview,
@@ -218,7 +246,14 @@ impl Launcher {
     fn reload_local(&mut self) {
         self.installed = core::installed(&self.paths);
         self.profiles = core::profiles(&self.paths);
-        self.mods = self.installed.as_ref().map(|m| core::built_in_mods(&self.paths, &m.version_dir)).unwrap_or_default();
+        self.plugins = plugins::list(&self.paths);
+        self.plugin_status = self.installed.as_ref().map(|m| plugins::status(&self.paths, m, self.settings.plugins_enabled, &self.plugins));
+        // What the instance plays: the plugin build when there is one, else the signed version.
+        let playing = plugins::instance_version(&self.paths).filter(|v| self.paths.versions().join(v).is_dir());
+        self.mods = playing
+            .or_else(|| self.installed.as_ref().map(|m| m.version_dir.clone()))
+            .map(|v| core::built_in_mods(&self.paths, &v))
+            .unwrap_or_default();
         if self.installed.is_some() && !self.settings.import_decided {
             let (p, tx) = (self.paths.clone(), self.send());
             std::thread::spawn(move || {
@@ -280,7 +315,7 @@ impl Launcher {
         };
         let cancel = Arc::new(AtomicBool::new(false));
         let label = if repair { "Repairing" } else { "Installing" };
-        self.job = Some(Job { label: format!("{label} Sunset {}", rel.manifest.version), frac: None, cancel: cancel.clone() });
+        self.job = Some(Job { label: format!("{label} Sunset {}", rel.manifest.version), frac: None, cancel: cancel.clone(), build: None });
         self.note = None;
         let (p, tx) = (self.paths.clone(), self.send());
         std::thread::spawn(move || {
@@ -392,6 +427,7 @@ impl Launcher {
             }
             Msg::JobDone(r) => {
                 let cancelled = self.job.take().is_some_and(|j| j.cancel.load(Ordering::Relaxed));
+                let ok = r.is_ok();
                 self.note = match r {
                     Ok(s) => Some((false, s)),
                     Err(_) if cancelled => Some((false, "Cancelled".into())),
@@ -399,7 +435,55 @@ impl Launcher {
                 };
                 self.reload_local();
                 self.refresh_accounts();
+                // An install or repair points the instance at the signed build: plugins, when on, are built for it again.
+                if std::mem::take(&mut self.resync) || ok {
+                    self.sync_plugins(cx);
+                }
             }
+            Msg::BuildStep(phase, line, frac) => {
+                if let Some(j) = self.job.as_mut().filter(|j| !j.cancel.load(Ordering::Relaxed)) {
+                    if let Some(b) = j.build.as_mut() {
+                        b.phase = phase;
+                        b.line = line;
+                        b.frac = frac;
+                        j.frac = Some(phase.overall(frac.unwrap_or(0.)));
+                    }
+                }
+            }
+            Msg::BuildDone(r) => {
+                let cancelled = self.job.take().is_some_and(|j| j.cancel.load(Ordering::Relaxed));
+                self.build_failed = None;
+                self.note = match r {
+                    Ok(plugins::Synced::Built(b)) => Some((false, match b.plugins.len() {
+                        1 => "Sunset is built with 1 plugin. Press Play to try it.".to_string(),
+                        n => format!("Sunset is built with {n} plugins. Press Play to try them."),
+                    })),
+                    Ok(plugins::Synced::Cleaned) => Some((false, "The instance plays Sunset as released again.".into())),
+                    Ok(plugins::Synced::Unchanged) => None,
+                    Err(_) if cancelled => Some((false, "Plugin build cancelled. The instance still plays what it played before.".into())),
+                    Err(f) => {
+                        let msg = format!("The plugin build failed while {}. The Plugins tab says why.", phase_doing(f.phase));
+                        self.build_failed = Some(f);
+                        Some((true, msg))
+                    }
+                };
+                self.reload_local();
+                if std::mem::take(&mut self.resync) {
+                    self.sync_plugins(cx);
+                }
+            }
+            Msg::PluginAdded(r) => match r {
+                Ok(name) => {
+                    self.note = Some((false, if self.settings.plugins_enabled {
+                        format!("{name} is installed.")
+                    } else {
+                        format!("{name} is installed. Turn plugins on to build it into Sunset.")
+                    }));
+                    self.reload_local();
+                    self.sync_plugins(cx);
+                }
+                Err(e) => self.note = Some((true, e)),
+            },
             Msg::Latest(r, auto) => match r {
                 Ok(rel) => {
                     self.latest = Some(rel);
@@ -475,6 +559,104 @@ impl Launcher {
                 }
                 Err(e) => self.note = Some((true, e)),
             },
+        }
+        cx.notify();
+    }
+
+    /// Brings the instance in line with the plugin switch and the installed plugins: a plugin build when plugins are
+    /// on and one is installed, the signed build otherwise. A change while a job runs waits for it (and cancels a
+    /// plugin build, which would be out of date).
+    fn sync_plugins(&mut self, cx: &mut Context<Self>) {
+        if let Some(j) = self.job.as_ref() {
+            self.resync = true;
+            if j.build.as_ref().is_some_and(|b| !b.cleaning) {
+                j.cancel.store(true, Ordering::Relaxed);
+            }
+            cx.notify();
+            return;
+        }
+        self.reload_local();
+        let Some(m) = self.installed.clone() else { return };
+        let cleaning = match self.plugin_status {
+            Some(plugins::Status::NeedsBuild) => false,
+            Some(plugins::Status::NeedsClean) => true,
+            _ => {
+                cx.notify();
+                return;
+            }
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        let label = if cleaning { "Going back to Sunset as released".to_string() } else { "Building Sunset with plugins".to_string() };
+        let first = if cleaning { Phase::Installing } else { Phase::Staging };
+        self.job = Some(Job { label, frac: Some(0.), cancel: cancel.clone(), build: Some(BuildView { phase: first, line: "Starting".into(), frac: None, cleaning }) });
+        self.build_failed = None;
+        self.note = None;
+        let (p, tx, enabled) = (self.paths.clone(), self.send(), self.settings.plugins_enabled);
+        std::thread::spawn(move || {
+            let stx = tx.clone();
+            let report = move |phase: Phase, line: &str, frac: Option<f32>| {
+                let _ = stx.send_blocking(Msg::BuildStep(phase, line.to_string(), frac));
+            };
+            let r = plugins::sync(&p, &m, enabled, &cancel, &report);
+            let _ = tx.send_blocking(Msg::BuildDone(r));
+        });
+        cx.notify();
+    }
+
+    fn set_plugins_enabled(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.set_settings(|s| s.plugins_enabled = on, cx);
+        if on && self.plugins.is_empty() {
+            self.note = Some((false, "Plugins are on. Add a plugin and it is built into Sunset.".into()));
+        }
+        self.sync_plugins(cx);
+    }
+
+    /// Asks for a plugin (a folder, or an .hmod file) and installs it.
+    fn pick_plugin(&mut self, folder: bool, cx: &mut Context<Self>) {
+        let Some(m) = self.installed.clone() else { return };
+        let picked = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: !folder,
+            directories: folder,
+            multiple: false,
+            prompt: Some(if folder { "Add plugin folder".into() } else { "Add plugin".into() }),
+        });
+        let (p, tx) = (self.paths.clone(), self.send());
+        cx.spawn(async move |_, _| {
+            if let Ok(Ok(Some(paths))) = picked.await {
+                if let Some(path) = paths.into_iter().next() {
+                    std::thread::spawn(move || {
+                        let _ = tx.send_blocking(Msg::PluginAdded(plugins::add(&p, &path, &m).map(|pl| format!("{} {}", pl.name, pl.version))));
+                    });
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Installs plugins dropped on the Plugins tab.
+    fn drop_plugins(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let Some(m) = self.installed.clone() else { return };
+        if self.job.is_some() {
+            return;
+        }
+        let (p, tx) = (self.paths.clone(), self.send());
+        std::thread::spawn(move || {
+            for path in paths {
+                let _ = tx.send_blocking(Msg::PluginAdded(plugins::add(&p, &path, &m).map(|pl| format!("{} {}", pl.name, pl.version))));
+            }
+        });
+        cx.notify();
+    }
+
+    fn remove_plugin(&mut self, id: String, cx: &mut Context<Self>) {
+        let name = self.plugins.iter().find(|p| p.id == id).map(|p| p.name.clone()).unwrap_or_else(|| id.clone());
+        match plugins::remove(&self.paths, &id) {
+            Ok(()) => {
+                self.note = Some((false, format!("{name} is removed.")));
+                self.reload_local();
+                self.sync_plugins(cx);
+            }
+            Err(e) => self.note = Some((true, e)),
         }
         cx.notify();
     }
@@ -928,6 +1110,79 @@ fn setting_row(label: impl Into<SharedString>, value: impl IntoElement, last: bo
 /// The narrowest a settings row's label gets when its value is long.
 const LABEL_MIN: f32 = 140.;
 
+/// An on/off switch: the knob slides over and the track lights in orange when on.
+fn switch(id: &'static str, on: bool) -> gpui::Stateful<gpui::Div> {
+    let slide = SpringAnimation::new(fx::SLIDE).to(if on { 1f32 } else { 0. }).with_epsilon(0.002);
+    div()
+        .id(id)
+        .relative()
+        .flex_none()
+        .w(px(38.))
+        .h(px(22.))
+        .rounded_full()
+        .bg(rgb(0x3a3a40))
+        .cursor_pointer()
+        .child(div().size_full().rounded_full().bg(rgb(ACCENT)).with_spring("track", slide.clone(), |d, t| d.opacity(t)))
+        .child(
+            div()
+                .absolute()
+                .top(px(3.))
+                .size(px(16.))
+                .rounded_full()
+                .bg(rgb(MUTED))
+                .child(div().size_full().rounded_full().bg(rgb(ON_ACCENT)).with_spring("knob-lit", slide.clone(), |d, t| d.opacity(t)))
+                .with_spring("knob", slide, |d, t| d.left(px(3. + 16. * t))),
+        )
+}
+
+/// A build step's word in a sentence: "failed while compiling".
+fn phase_doing(p: Phase) -> &'static str {
+    match p {
+        Phase::Staging => "staging",
+        Phase::Compiling => "compiling",
+        Phase::Packaging => "packaging",
+        Phase::Installing => "installing",
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum StepState {
+    Pending,
+    Running,
+    Done,
+    Failed,
+}
+
+/// One step of a plugin build in the Plugins tab's step row: a mark (a check when done, an orange dot while it
+/// runs, a red one where it failed, an empty ring still to come) and its name.
+fn step_chip(phase: Phase, state: StepState) -> gpui::Div {
+    let mark = match state {
+        StepState::Done => icon(Icon::Check, 16., ACCENT).into_any_element(),
+        StepState::Running => div().size(px(10.)).m(px(3.)).rounded_full().bg(rgb(ACCENT)).into_any_element(),
+        StepState::Failed => div().size(px(10.)).m(px(3.)).rounded_full().bg(rgb(RED)).into_any_element(),
+        StepState::Pending => div().size(px(10.)).m(px(3.)).rounded_full().border_1().border_color(rgb(0x4a4a52)).into_any_element(),
+    };
+    let color = match state {
+        StepState::Pending => MUTED,
+        StepState::Failed => RED,
+        _ => TEXT,
+    };
+    div()
+        .flex()
+        .flex_1()
+        .items_center()
+        .gap(px(8.))
+        .h(px(32.))
+        .child(mark)
+        .child(text(phase.label(), T_BODY, color).when(state == StepState::Running, |d| d.font_family(BOLD).font_weight(BOLD_WEIGHT)))
+}
+
+/// A thin progress bar; None: busy without a known share (the bar dims).
+fn bar(frac: Option<f32>) -> gpui::Div {
+    let f = frac.unwrap_or(1.).clamp(0., 1.);
+    div().h(px(6.)).w_full().rounded_full().bg(rgb(0x1c1c20)).child(div().h_full().rounded_full().bg(rgb(ACCENT)).w(gpui::relative(f)).when(frac.is_none(), |d| d.opacity(0.35)))
+}
+
 fn section(title: &str, rows: Vec<gpui::Div>) -> gpui::Div {
     let n = rows.len();
     div()
@@ -1351,7 +1606,10 @@ impl Launcher {
                 .flex_col()
                 .gap(px(8.))
                 .w_full()
-                .child(div().flex().items_center().justify_between().child(text(j.label.clone(), 13., TEXT)).child(button("cancel-job", "Cancel", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                .child(div().flex().items_center().justify_between().gap(px(12.)).child(text(match &j.build {
+                    Some(b) if !b.cleaning && !j.cancel.load(Ordering::Relaxed) => format!("{}: {}", j.label, b.phase.label()),
+                    _ => j.label.clone(),
+                }, 13., TEXT)).child(button("cancel-job", "Cancel", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     if let Some(j) = this.job.as_mut() {
                         j.cancel.store(true, Ordering::Relaxed);
                         j.label = "Cancelling…".into();
@@ -1412,10 +1670,12 @@ impl Launcher {
         let facts = vec![
             ("Horizon build", m.horizon_build()),
             ("Profiles", if self.profiles.is_empty() { "None saved".to_string() } else { format!("{} saved", self.profiles.len()) }),
-            ("Plugins", match plugins {
-                0 => "None yet".to_string(),
-                1 => "1 built into Sunset".to_string(),
-                n => format!("{n} built into Sunset"),
+            ("Plugins", match (&self.plugin_status, plugins) {
+                (Some(plugins::Status::NeedsBuild), _) => "Not built yet".to_string(),
+                (_, 0) if !self.settings.plugins_enabled => "Off".to_string(),
+                (_, 0) => "None yet".to_string(),
+                (_, 1) => "1 built into Sunset".to_string(),
+                (_, n) => format!("{n} built into Sunset"),
             }),
         ];
         let n = facts.len();
@@ -1534,30 +1794,8 @@ impl Launcher {
         let root = self.paths.root.clone();
 
         if let Some(m) = self.installed.as_ref() {
-            let toggle = {
-                let on = self.settings.auto_update;
-                let slide = SpringAnimation::new(fx::SLIDE).to(if on { 1f32 } else { 0. }).with_epsilon(0.002);
-                div()
-                    .id("auto-update")
-                    .relative()
-                    .w(px(38.))
-                    .h(px(22.))
-                    .rounded_full()
-                    .bg(rgb(0x3a3a40))
-                    .cursor_pointer()
-                    .child(div().size_full().rounded_full().bg(rgb(ACCENT)).with_spring("track", slide.clone(), |d, t| d.opacity(t)))
-                    .child(
-                        div()
-                            .absolute()
-                            .top(px(3.))
-                            .size(px(16.))
-                            .rounded_full()
-                            .bg(rgb(MUTED))
-                            .child(div().size_full().rounded_full().bg(rgb(ON_ACCENT)).with_spring("knob-lit", slide.clone(), |d, t| d.opacity(t)))
-                            .with_spring("knob", slide, |d, t| d.left(px(3. + 16. * t))),
-                    )
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.set_settings(|s| s.auto_update = !s.auto_update, cx)))
-            };
+            let toggle = switch("auto-update", self.settings.auto_update)
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.set_settings(|s| s.auto_update = !s.auto_update, cx)));
             let version = match self.update_available() {
                 Some(u) => button("s-update", format!("{} / Update to {}", m.version, u.version), false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx))).into_any_element(),
                 None => text(m.version.clone(), 13., TEXT).into_any_element(),
@@ -1648,6 +1886,191 @@ impl Launcher {
             )
     }
 
+    /// Plugins: the switch that builds them into Sunset, what the instance plays, the running (or failed) build with
+    /// its steps, and the installed plugins. Full width, like Settings.
+    fn plugins_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        if self.installed.is_none() {
+            return self.list_view("Plugins", "Install Sunset from Overview to add plugins to it.".into(), vec![], None, cx).into_any_element();
+        }
+        let busy = self.job.is_some();
+        let actions = (!busy).then(|| {
+            div()
+                .flex()
+                .gap(px(8.))
+                .child(button("pl-folder", "Add folder", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.pick_plugin(true, cx))))
+                .child(button("pl-file", "Add .hmod file", true).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.pick_plugin(false, cx))))
+                .into_any_element()
+        });
+
+        let on = self.settings.plugins_enabled;
+        let building = self.job.as_ref().is_some_and(|j| j.build.is_some());
+        let names = |n: usize| if n == 1 { "1 plugin".to_string() } else { format!("{n} plugins") };
+        let state: gpui::AnyElement = match &self.plugin_status {
+            _ if building => text("Building…", 13., MUTED).into_any_element(),
+            Some(plugins::Status::Built(b)) => {
+                let list: Vec<&str> = b.plugins.iter().map(|p| p.id.as_str()).collect();
+                text(format!("Sunset with {} ({}), built {}", names(b.plugins.len()), list.join(", "), core::ago(b.built, core::now_secs()).to_lowercase()), 13., TEXT).into_any_element()
+            }
+            Some(plugins::Status::NeedsBuild) if !busy => div()
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .child(text(format!("Not built with {} yet", if self.plugins.len() == 1 { "this plugin".to_string() } else { format!("these {}", names(self.plugins.len())) }), 13., MUTED))
+                .child(button("pl-build", "Build now", true).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.sync_plugins(cx))))
+                .into_any_element(),
+            Some(plugins::Status::NeedsClean) if !busy => div()
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .child(text("The plugin build, still", 13., MUTED))
+                .child(button("pl-clean", "Go back to Sunset as released", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.sync_plugins(cx))))
+                .into_any_element(),
+            _ => text("Sunset as released", 13., TEXT).into_any_element(),
+        };
+        let about = div().px(px(PAD)).py(px(12.)).child(text(
+            "Plugins compile into Sunset on this computer: a few minutes per build, and the first one also downloads the build tools. Off, or with no plugin installed, the instance plays Sunset exactly as released.",
+            T_SMALL,
+            MUTED,
+        ));
+        let mut sections = vec![section("Build", vec![
+            setting_row(
+                "Build plugins into Sunset",
+                switch("pl-enabled", on).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.set_plugins_enabled(!on, cx))),
+                false,
+            ),
+            setting_row("The instance plays", state, false),
+            about,
+        ])];
+        if let Some(c) = self.build_card(cx) {
+            sections.push(c);
+        }
+
+        let n = self.plugins.len();
+        let rows: Vec<gpui::Div> = if self.plugins.is_empty() {
+            vec![div().p(px(PAD)).child(text("No plugins yet. Add a plugin's folder or its .hmod file, or drop one on this page.", 13., MUTED))]
+        } else {
+            self.plugins
+                .iter()
+                .enumerate()
+                .map(|(i, pl)| {
+                    let id = pl.id.clone();
+                    let sub = if pl.description.is_empty() { pl.id.clone() } else { format!("{} · {}", pl.id, pl.description) };
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap(px(GAP))
+                        .min_h(px(56.))
+                        .px(px(PAD))
+                        .py(px(8.))
+                        .when(i + 1 < n, |d| d.border_b_1().border_color(rgb(LINE)))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w(px(LABEL_MIN))
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.))
+                                .child(div().flex().items_baseline().gap(px(8.)).child(bold(pl.name.clone(), 13.)).child(text(pl.version.clone(), T_SMALL, MUTED)))
+                                .child(text(sub, T_SMALL, MUTED)),
+                        )
+                        .when(!busy, |d| d.child(button(("pl-remove", i), "Remove", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_plugin(id.clone(), cx)))))
+                })
+                .collect()
+        };
+        sections.push(section("Installed plugins", rows));
+
+        div()
+            .id("plugins-page")
+            .flex()
+            .flex_col()
+            .gap(px(GAP))
+            .child(page_head("Plugins", actions))
+            .children(sections)
+            .child(text(
+                "Plugins are native code: they run with your rights, like Sunset itself. Add only plugins whose source you have read or whose author you trust.",
+                T_SMALL,
+                MUTED,
+            ))
+            .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, _, cx| this.drop_plugins(paths.paths().to_vec(), cx)))
+            .into_any_element()
+    }
+
+    /// The running plugin build (or the last failed one): its four steps, the bar, what it does now, and Cancel, or
+    /// why it failed with Try again and the build log.
+    fn build_card(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
+        let running = self.job.as_ref().and_then(|j| j.build.as_ref().map(|b| (j, b)));
+        let failed = self.build_failed.as_ref().filter(|_| running.is_none());
+        if running.is_none() && failed.is_none() {
+            return None;
+        }
+        let (current, state_at): (Phase, Box<dyn Fn(Phase) -> StepState>) = match (running, failed) {
+            (Some((_, b)), _) => {
+                let at = b.phase;
+                (at, Box::new(move |p| if p < at { StepState::Done } else if p == at { StepState::Running } else { StepState::Pending }))
+            }
+            (None, Some(f)) => {
+                let at = f.phase;
+                (at, Box::new(move |p| if p < at { StepState::Done } else if p == at { StepState::Failed } else { StepState::Pending }))
+            }
+            _ => return None,
+        };
+        let cleaning = running.is_some_and(|(_, b)| b.cleaning);
+        let title = match (running, failed) {
+            (Some((j, _)), _) if j.cancel.load(Ordering::Relaxed) => "Cancelling the build…".to_string(),
+            (Some((j, _)), _) => j.label.clone(),
+            _ => format!("The plugin build failed while {}", phase_doing(current)),
+        };
+        let head = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(12.))
+            .h(px(CTRL_H))
+            .child(bold(title, T_HEAD))
+            .when(running.is_some_and(|(j, _)| !j.cancel.load(Ordering::Relaxed)), |d| {
+                d.child(button("pl-cancel", "Cancel", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    if let Some(j) = this.job.as_ref() {
+                        j.cancel.store(true, Ordering::Relaxed);
+                    }
+                    cx.notify();
+                })))
+            });
+        let mut body = card().p(px(PAD)).flex().flex_col().gap(px(12.)).child(head);
+        if !cleaning {
+            body = body.child(div().flex().gap(px(8.)).children(plugins::PHASES.iter().map(|p| step_chip(*p, state_at(*p)))));
+        }
+        match (running, failed) {
+            (Some((j, b)), _) => {
+                body = body.child(bar(j.frac)).child(text(b.line.clone(), T_BODY, MUTED));
+            }
+            (None, Some(f)) => {
+                let log = plugins::log_path(&self.paths);
+                let target = if log.is_file() { log } else { plugins::dir(&self.paths) };
+                body = body
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.))
+                            .children(f.error.lines().take(8).map(|l| text(l.to_string(), T_BODY, RED))),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(8.))
+                            .child(button("pl-retry", "Try again", true).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                                this.build_failed = None;
+                                this.sync_plugins(cx);
+                            })))
+                            .child(button("pl-log", "Open build log", false).on_click(cx.listener(move |_, _: &ClickEvent, _, cx| cx.open_with_system(&target)))),
+                    );
+            }
+            _ => {}
+        }
+        Some(div().flex().flex_col().gap(px(8.)).child(bold("Plugin build", T_HEAD)).child(body))
+    }
+
     fn list_view(&self, title: &str, empty: String, items: Vec<(String, String)>, folder: Option<PathBuf>, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let n = items.len();
         div()
@@ -1713,11 +2136,7 @@ impl Render for Launcher {
         let page = match self.tab {
             Tab::Overview => self.overview(cx),
             Tab::Settings => self.settings_view(cx),
-            Tab::Plugins => {
-                let items = self.mods.iter().map(|(id, v)| (if id == "sunset" { "Sunset".to_string() } else { id.clone() }, v.clone())).collect();
-                let empty = if self.installed.is_some() { "Nothing built into this version yet." } else { "Install Sunset from Overview to see the plugins built into it." };
-                self.list_view("Plugins", empty.into(), items, None, cx).into_any_element()
-            }
+            Tab::Plugins => self.plugins_view(cx),
             Tab::Profiles => {
                 let items = self.profiles.iter().map(|p| (p.clone(), String::new())).collect();
                 let empty = "No saved profiles yet. Save one in game from Sunset's menu (Right Shift).".to_string();
