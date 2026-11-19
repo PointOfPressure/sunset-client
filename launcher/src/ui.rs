@@ -1697,16 +1697,6 @@ impl Launcher {
         Some(div().absolute().top_0().left_0().size_full().flex().items_center().justify_center().bg(Hsla::from(gpui::rgba(0x000000b0))).child(body))
     }
 
-    fn footer(&self) -> impl IntoElement + use<> {
-        div()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .flex_none()
-            .h(px(48.))
-            .child(mark(22., ACCENT))
-            .child(text(format!("Launcher {}", core::VERSION), 12., MUTED))
-    }
 }
 
 impl Render for Launcher {
@@ -1754,6 +1744,7 @@ impl Render for Launcher {
             .flex()
             .flex_col()
             .px(px(GUTTER))
+            .pb(px(GUTTER))
             .child(self.top_bar(window, cx))
             .child(
                 div()
@@ -1767,7 +1758,6 @@ impl Render for Launcher {
                     .child(fx::smooth_scroll("page", &self.page_scroll)),
             )
             .when_some(note, |d, n| d.child(n.mt(px(GAP))))
-            .child(self.footer())
             .when_some(self.menu_popup(cx), |d, m| d.child(m))
             .when_some(self.sign_in_modal(cx), |d, m| d.child(m))
             .when_some(resize_edges(window), |d, e| d.child(e))
