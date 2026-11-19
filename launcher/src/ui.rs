@@ -218,7 +218,7 @@ impl Launcher {
     fn reload_local(&mut self) {
         self.installed = core::installed(&self.paths);
         self.profiles = core::profiles(&self.paths);
-        self.mods = self.installed.as_ref().map(|m| core::built_in_mods(&self.paths, m)).unwrap_or_default();
+        self.mods = self.installed.as_ref().map(|m| core::built_in_mods(&self.paths, &m.version_dir)).unwrap_or_default();
         if self.installed.is_some() && !self.settings.import_decided {
             let (p, tx) = (self.paths.clone(), self.send());
             std::thread::spawn(move || {

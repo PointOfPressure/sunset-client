@@ -98,6 +98,9 @@ pub struct Settings {
     /// Seconds the game ran when started from this launcher, counted when it exits.
     #[serde(skip_serializing_if = "is_zero")]
     pub playtime: u64,
+    /// Plugins are built into Sunset (Plugins tab). Off until the player turns it on: until then the instance plays the
+    /// signed build exactly as released.
+    pub plugins_enabled: bool,
 }
 
 fn is_zero(n: &u64) -> bool {
@@ -106,7 +109,15 @@ fn is_zero(n: &u64) -> bool {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { auto_update: true, window: "1280x720".into(), import_decided: false, manifest_url: None, last_played: None, playtime: 0 }
+        Settings {
+            auto_update: true,
+            window: "1280x720".into(),
+            import_decided: false,
+            manifest_url: None,
+            last_played: None,
+            playtime: 0,
+            plugins_enabled: false,
+        }
     }
 }
 
@@ -131,7 +142,7 @@ impl Settings {
     }
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|e| format!("can't make {}: {e}", dir.display()))?;
     }
@@ -203,7 +214,12 @@ impl Manifest {
         horizon_build(&self.horizon.tag)
     }
     fn game(&self) -> Result<&Artifact> {
-        self.artifacts.iter().find(|a| a.kind == "game").ok_or_else(|| "the manifest names no game package".to_string())
+        self.artifact("game").ok_or_else(|| "the manifest names no game package".to_string())
+    }
+    /// The artifact of `kind`: "game" (the version folder), and for plugin builds "source" (Sunset's .hmod package)
+    /// and "sdk" (the mod SDK of Sunset's Horizon fork, when its hooks need one).
+    pub fn artifact(&self, kind: &str) -> Option<&Artifact> {
+        self.artifacts.iter().find(|a| a.kind == kind)
     }
     /// Names from the manifest become paths: one plain component each, nothing else.
     fn check(&self) -> Result<()> {
@@ -289,6 +305,11 @@ pub fn fetch_release(settings: &Settings) -> Result<Release> {
     Ok(Release { manifest, raw, base })
 }
 
+/// Where the installed release's files were downloaded from (written by `install`), for the plugin build's downloads.
+pub fn installed_base(p: &Paths) -> Option<String> {
+    fs::read_to_string(p.file("installed-base")).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
 /// The manifest of what is installed, or None.
 pub fn installed(p: &Paths) -> Option<Manifest> {
     let m: Manifest = serde_json::from_slice(&fs::read(p.file("installed.json")).ok()?).ok()?;
@@ -327,8 +348,20 @@ pub fn fetch(url: &str) -> Result<Vec<u8>> {
 
 pub type Progress<'a> = &'a dyn Fn(&str, Option<f32>);
 
+/// A signed artifact of the release at `base`, in `p.downloads()`: kept when its SHA-256 still matches, else downloaded and
+/// checked against its signature. Returns the file.
+pub(crate) fn fetch_artifact(p: &Paths, base: &str, a: &Artifact, what: &str, cancel: &AtomicBool, progress: Progress) -> Result<PathBuf> {
+    let cached = p.downloads().join(&a.file);
+    if cached.is_file() && sha256_file(&cached).is_ok_and(|h| h.eq_ignore_ascii_case(&a.sha256)) {
+        return Ok(cached);
+    }
+    let sig = fetch(&format!("{base}/{}", a.signature))?;
+    download(&format!("{base}/{}", a.file), &cached, &a.sha256, Some(&String::from_utf8_lossy(&sig)), what, cancel, progress)?;
+    Ok(cached)
+}
+
 /// Downloads `url` to `dest`, refusing it unless its SHA-256 is `sha256` and (with `sig`) its minisign signature holds.
-fn download(url: &str, dest: &Path, sha256: &str, sig: Option<&str>, what: &str, cancel: &AtomicBool, progress: Progress) -> Result<()> {
+pub(crate) fn download(url: &str, dest: &Path, sha256: &str, sig: Option<&str>, what: &str, cancel: &AtomicBool, progress: Progress) -> Result<()> {
     let sig = sig.map(minisign_verify::Signature::decode).transpose().map_err(|e| format!("{what}: unreadable signature: {e}"))?;
     let key = public_key();
     let mut verifier = sig.as_ref().map(|s| key.verify_stream(s)).transpose().map_err(|e| format!("{what}: {e}"))?;
@@ -678,41 +711,56 @@ pub fn install(p: &Paths, rel: &Release, repair: bool, cancel: &AtomicBool, prog
         }
     }
     write_atomic(&p.file("installed.json"), &rel.raw)?;
+    write_atomic(&p.file("installed-base"), rel.base.as_bytes())?;
     progress("Ready to play", Some(1.0));
     Ok(())
 }
 
 /// Unpacks the package (one `<version_dir>/` folder) beside the old copy, then swaps it in.
 fn unpack_game(archive: &Path, versions: &Path, vdir: &str, cancel: &AtomicBool) -> Result<()> {
-    let tmp = versions.join(format!(".{vdir}.tmp"));
-    let _ = fs::remove_dir_all(&tmp);
-    fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
-    let f = io::BufReader::new(fs::File::open(archive).map_err(|e| e.to_string())?);
-    let dec = ruzstd::decoding::StreamingDecoder::new(f).map_err(|e| format!("Sunset package: {e}"))?;
-    let mut ar = tar::Archive::new(dec);
-    ar.set_preserve_permissions(true);
-    for entry in ar.entries().map_err(|e| format!("Sunset package: {e}"))? {
-        if cancel.load(Ordering::Relaxed) {
-            let _ = fs::remove_dir_all(&tmp);
-            return Err("cancelled".into());
-        }
-        let mut entry = entry.map_err(|e| format!("Sunset package: {e}"))?;
-        // unpack_in refuses absolute paths and `..`; the top folder must be the version's.
-        let first = entry.path().ok().and_then(|p| p.components().next().map(|c| c.as_os_str().to_owned()));
-        if first.as_deref() != Some(std::ffi::OsStr::new(vdir)) {
-            let _ = fs::remove_dir_all(&tmp);
-            return Err(format!("the Sunset package holds files outside {vdir}/"));
-        }
-        entry.unpack_in(&tmp).map_err(|e| format!("Sunset package: {e}"))?;
-    }
-    let dest = versions.join(vdir);
-    let _ = fs::remove_dir_all(&dest);
-    fs::rename(tmp.join(vdir), &dest).map_err(|e| e.to_string())?;
-    let _ = fs::remove_dir_all(&tmp);
-    if !dest.join(".installed").exists() {
+    unpack_tar_zst(archive, versions, vdir, "Sunset package", cancel)?;
+    if !versions.join(vdir).join(".installed").exists() {
         return Err("the Sunset package is incomplete (no .installed)".into());
     }
     Ok(())
+}
+
+/// Unpacks a `.tar.zst` whose entries all sit under one `top/` folder into `parent/top`, beside the old copy, then
+/// swaps it in. Anything outside `top/` (absolute paths, `..`, another folder) refuses the whole archive.
+pub(crate) fn unpack_tar_zst(archive: &Path, parent: &Path, top: &str, what: &str, cancel: &AtomicBool) -> Result<()> {
+    let tmp = parent.join(format!(".{top}.tmp"));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+    let f = io::BufReader::new(fs::File::open(archive).map_err(|e| e.to_string())?);
+    let dec = ruzstd::decoding::StreamingDecoder::new(f).map_err(|e| format!("{what}: {e}"))?;
+    let mut ar = tar::Archive::new(dec);
+    ar.set_preserve_permissions(true);
+    let fail = |tmp: &Path, e: String| {
+        let _ = fs::remove_dir_all(tmp);
+        Err(e)
+    };
+    for entry in ar.entries().map_err(|e| format!("{what}: {e}"))? {
+        if cancel.load(Ordering::Relaxed) {
+            return fail(&tmp, "cancelled".into());
+        }
+        let mut entry = match entry {
+            Ok(e) => e,
+            Err(e) => return fail(&tmp, format!("{what}: {e}")),
+        };
+        // unpack_in refuses absolute paths and `..`; the top folder must be the one named.
+        let first = entry.path().ok().and_then(|p| p.components().next().map(|c| c.as_os_str().to_owned()));
+        if first.as_deref() != Some(std::ffi::OsStr::new(top)) {
+            return fail(&tmp, format!("the {what} holds files outside {top}/"));
+        }
+        if let Err(e) = entry.unpack_in(&tmp) {
+            return fail(&tmp, format!("{what}: {e}"));
+        }
+    }
+    let dest = parent.join(top);
+    let _ = fs::remove_dir_all(&dest);
+    let moved = fs::rename(tmp.join(top), &dest).map_err(|e| e.to_string());
+    let _ = fs::remove_dir_all(&tmp);
+    moved
 }
 
 // ---------------------------------------------------------------- play
@@ -776,9 +824,9 @@ pub fn profiles(p: &Paths) -> Vec<String> {
     v
 }
 
-/// The native mods built into the installed version (`native-mods.json`): Sunset and the plugins compiled into it.
-pub fn built_in_mods(p: &Paths, m: &Manifest) -> Vec<(String, String)> {
-    let Ok(b) = fs::read(p.versions().join(&m.version_dir).join("native-mods.json")) else { return vec![] };
+/// The native mods built into the version folder `vdir` (`native-mods.json`): Sunset and the plugins compiled into it.
+pub fn built_in_mods(p: &Paths, vdir: &str) -> Vec<(String, String)> {
+    let Ok(b) = fs::read(p.versions().join(vdir).join("native-mods.json")) else { return vec![] };
     let v: serde_json::Value = serde_json::from_slice(&b).unwrap_or_default();
     v["mods"]
         .as_array()

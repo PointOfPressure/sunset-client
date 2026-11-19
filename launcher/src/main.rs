@@ -3,6 +3,7 @@
 
 mod core;
 mod fx;
+mod plugins;
 mod ui;
 
 use std::sync::atomic::AtomicBool;
@@ -19,6 +20,11 @@ Without a command, opens the window.
   sign-in          Sign in with Microsoft (prints the link and the code)
   play             Play the sunset instance
   import [NAME]    Copy Sunset configs and profiles from a Horizon instance (keeps files already here)
+  plugins          The installed plugins and what the instance plays
+  plugins on|off   Build plugins into Sunset, or go back to Sunset as released
+  plugins add PATH Install a plugin (its folder or .hmod file), then build when plugins are on
+  plugins remove ID  Remove a plugin, then build again (or go back to Sunset as released)
+  plugins build    Build (or go back) now if the instance doesn't play what is asked for
 
 Environment: SUNSET_LAUNCHER_HOME (data folder), SUNSET_MANIFEST (manifest address: https://, http:// or file://)";
 
@@ -91,6 +97,7 @@ fn main() {
                 }),
             }
         }
+        "plugins" => plugins_cmd(&p, s, &args[1..], &progress),
         "-h" | "--help" | "help" => Ok(HELP.into()),
         "-V" | "--version" => Ok(format!("sunset-launcher {}", core::VERSION)),
         other => Err(format!("unknown command {other:?}\n\n{HELP}")),
@@ -101,5 +108,49 @@ fn main() {
             eprintln!("sunset-launcher: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+fn plugins_cmd(p: &core::Paths, mut s: core::Settings, args: &[String], progress: core::Progress) -> core::Result<String> {
+    let m = core::installed(p).ok_or("Sunset is not installed yet (install first)")?;
+    match args.first().map(String::as_str) {
+        None => {
+            let list = plugins::list(p);
+            let mut out: Vec<String> = list.iter().map(|pl| format!("{} {} ({})", pl.id, pl.version, pl.name)).collect();
+            if out.is_empty() {
+                out.push("no plugins installed".into());
+            }
+            let state = match plugins::status(p, &m, s.plugins_enabled, &list) {
+                plugins::Status::Clean => "Sunset as released".to_string(),
+                plugins::Status::Built(b) => format!("Sunset with {} plugin(s) ({})", b.plugins.len(), b.version_dir),
+                plugins::Status::NeedsBuild => "needs a plugin build (sunset-launcher plugins build)".into(),
+                plugins::Status::NeedsClean => "still a plugin build (sunset-launcher plugins build goes back)".into(),
+            };
+            out.push(format!("plugins {}; the instance plays {state}", if s.plugins_enabled { "on" } else { "off" }));
+            return Ok(out.join("
+"));
+        }
+        Some("on") | Some("off") => {
+            s.plugins_enabled = args[0] == "on";
+            s.save(p)?;
+        }
+        Some("add") => {
+            let path = args.get(1).ok_or("plugins add PATH")?;
+            let pl = plugins::add(p, std::path::Path::new(path), &m)?;
+            eprintln!("installed {} {}", pl.id, pl.version);
+        }
+        Some("remove") => plugins::remove(p, args.get(1).ok_or("plugins remove ID")?)?,
+        Some("build") => {}
+        Some(other) => return Err(format!("unknown plugins command {other:?}
+
+{HELP}")),
+    }
+    let report = |phase: plugins::Phase, msg: &str, f: Option<f32>| progress(&format!("{}: {msg}", phase.label()), f.map(|f| phase.overall(f)));
+    match plugins::sync(p, &m, s.plugins_enabled, &AtomicBool::new(false), &report) {
+        Ok(plugins::Synced::Unchanged) => Ok("the instance already plays that".into()),
+        Ok(plugins::Synced::Cleaned) => Ok("the instance plays Sunset as released".into()),
+        Ok(plugins::Synced::Built(b)) => Ok(format!("built {} with {}", b.version_dir, b.plugins.iter().map(|b| b.id.as_str()).collect::<Vec<_>>().join(", "))),
+        Err(f) => Err(format!("{} failed: {}
+(whole output: {})", f.phase.label(), f.error, plugins::log_path(p).display())),
     }
 }
