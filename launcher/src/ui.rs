@@ -145,6 +145,9 @@ pub struct Launcher {
     mods: Vec<(String, String)>,
     /// The Overview changelog's scroll position.
     log_scroll: gpui::ScrollHandle,
+    /// The page's (below the top bar) scroll position, and the tab it was last drawn for.
+    page_scroll: gpui::ScrollHandle,
+    shown_tab: Tab,
     tx: async_channel::Sender<Msg>,
 }
 
@@ -183,6 +186,8 @@ impl Launcher {
             profiles: vec![],
             mods: vec![],
             log_scroll: gpui::ScrollHandle::new(),
+            page_scroll: gpui::ScrollHandle::new(),
+            shown_tab: Tab::Overview,
             tx,
         };
         app.reload_local();
@@ -890,7 +895,7 @@ fn window_controls(window: &Window) -> Option<gpui::Div> {
     }
     let ctl = |id: &'static str, kind: Icon, area: WindowControlArea, hover: u32| {
         fx::control(id, hover, R_CTRL)
-            .w(px(40.))
+            .w(px(46.))
             .h(px(CTRL_H))
             .flex()
             .items_center()
@@ -898,7 +903,7 @@ fn window_controls(window: &Window) -> Option<gpui::Div> {
             .rounded(px(R_CTRL))
             .cursor_pointer()
             .window_control_area(area)
-            .child(icon(kind, 14., TEXT))
+            .child(icon(kind, 16., TEXT))
     };
     // Windows answers these areas itself (as caption buttons), so the clicks are only ours elsewhere. There the press
     // must reach the platform layer: it only remembers which caption button went down (and acts on its release) when
@@ -1410,6 +1415,7 @@ impl Launcher {
                     .track_scroll(&self.log_scroll)
                     .child(div().flex_none().w_full().flex().flex_col().gap(px(10.)).px(px(14.)).pb(px(14.)).children(changes.into_iter().map(change_row))),
             )
+            .child(fx::smooth_scroll("changelog", &self.log_scroll))
             .child(canvas(|_, _, _| (), move |_, _, window: &mut Window, _| scroll_cues(&handle, window)).absolute().top_0().left_0().size_full())
     }
 
@@ -1637,6 +1643,12 @@ impl Launcher {
 impl Render for Launcher {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         fx::begin_frame();
+        // Another page (however the tab changed) starts at its top.
+        if self.shown_tab != self.tab {
+            self.shown_tab = self.tab;
+            fx::stop_scroll("page");
+            self.page_scroll.set_offset(point(px(0.), px(0.)));
+        }
         let page = match self.tab {
             Tab::Overview => self.overview(cx),
             Tab::Settings => self.settings_view(cx),
@@ -1674,7 +1686,17 @@ impl Render for Launcher {
             .flex_col()
             .px(px(GUTTER))
             .child(self.top_bar(window, cx))
-            .child(div().id("page").flex_1().mt(px(8.)).overflow_y_scroll().child(page))
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h(px(0.))
+                    .mt(px(8.))
+                    .flex()
+                    .flex_col()
+                    .child(div().id("page").flex_1().min_h(px(0.)).overflow_y_scroll().track_scroll(&self.page_scroll).child(page))
+                    .child(fx::smooth_scroll("page", &self.page_scroll)),
+            )
             .when_some(note, |d, n| d.child(n.mt(px(GAP))))
             .child(self.footer())
             .when_some(self.menu_popup(cx), |d, m| d.child(m))

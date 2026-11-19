@@ -5,7 +5,9 @@
 use gpui::{
     AnimationExt as _, Div, ElementId, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, SpringAnimation, SpringConfig,
     Rgba, Stateful, StatefulInteractiveElement as _, Styled as _, Window, div, px, rgb, rgba,
+    DispatchPhase, ScrollEvent, ScrollHandle, canvas, point,
 };
+use std::time::Instant;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -23,6 +25,17 @@ pub const MENU_IN: Duration = Duration::from_millis(150);
 pub const MENU_OUT: Duration = Duration::from_millis(120);
 /// The dim a pressed control gets on top of its hover colour.
 const PRESS_DIM: u32 = 0x0000002e;
+/// Smooth wheel scrolling: the distance left to the target shrinks by a factor e every SCROLL_TAU seconds (a notch
+/// settles in about a quarter second, most of it in the first 100 ms), and never overshoots.
+const SCROLL_TAU: f32 = 0.075;
+
+/// A smooth scroll in progress: where the wheel asked the offset to go, and when the last frame moved it.
+#[derive(Default)]
+struct Glide {
+    target: f32,
+    last: Option<Instant>,
+    moving: bool,
+}
 
 #[derive(Clone, Copy, Default)]
 struct Hot {
@@ -36,6 +49,8 @@ thread_local! {
     // context to hang state on, so it lives here.
     static HOT: RefCell<HashMap<ElementId, Hot>> = RefCell::new(HashMap::new());
     static FRAME: Cell<u64> = const { Cell::new(0) };
+    // Smooth scrolls per scroll area, by the name given to `smooth_scroll`.
+    static GLIDES: RefCell<HashMap<&'static str, Glide>> = RefCell::new(HashMap::new());
 }
 
 /// Call once at the top of each render. A control left out of a render (a closed menu's row, the Play button while
@@ -105,6 +120,87 @@ pub fn pressable(id: ElementId, light: Option<u32>, radius: f32) -> Stateful<Div
         .on_mouse_down(MouseButton::Left, move |_, window, _| set(&on_down, window, |h| h.press = true))
         .on_mouse_up(MouseButton::Left, move |_, window, _| set(&on_up, window, |h| h.press = false))
         .on_mouse_up_out(MouseButton::Left, move |_, window, _| set(&on_up_out, window, |h| h.press = false))
+}
+
+/// Smooth wheel scrolling for the vertical scroll container tracked by `handle`, named `id`. A wheel notch moves a
+/// target and the offset eases to it over the next frames instead of jumping; trackpads (precise deltas) still move
+/// one to one, and with the system's reduced motion every step lands at once. Add the returned element after the
+/// container and outside it (it paints nothing and takes no space).
+///
+/// It takes the wheel in the capture phase, before the container's own scrolling, and only while it can still move
+/// that way: a container inside another one is painted first (with the outer one's content), so it scrolls until its
+/// end and then hands the wheel on to the outer one.
+pub fn smooth_scroll(id: &'static str, handle: &ScrollHandle) -> impl IntoElement {
+    let handle = handle.clone();
+    canvas(
+        |_, _, _| (),
+        move |_, _, window: &mut Window, _| {
+            let now = Instant::now();
+            let step = GLIDES.with_borrow_mut(|m| {
+                let g = m.get_mut(id).filter(|g| g.moving)?;
+                let dt = g.last.map_or(1. / 60., |t| now.duration_since(t).as_secs_f32()).min(0.1);
+                g.last = Some(now);
+                let at = f32::from(handle.offset().y);
+                let next = if (g.target - at).abs() < 0.5 {
+                    g.moving = false;
+                    g.target
+                } else {
+                    at + (g.target - at) * (1. - (-dt / SCROLL_TAU).exp())
+                };
+                Some((next, g.moving))
+            });
+            if let Some((y, more)) = step {
+                handle.set_offset(point(handle.offset().x, px(y)));
+                if more {
+                    window.request_animation_frame();
+                } else {
+                    window.refresh();
+                }
+            }
+            let handle = handle.clone();
+            window.on_mouse_event(move |ev: &ScrollEvent, phase, window, cx| {
+                if phase != DispatchPhase::Capture || !handle.bounds().contains(&ev.position) {
+                    return;
+                }
+                let max = f32::from(handle.max_offset().y);
+                let dy = f32::from(ev.delta.pixel_delta(window.line_height()).y);
+                if max <= 0. || dy == 0. {
+                    return;
+                }
+                let instant = ev.delta.precise() || cx.reduce_motion();
+                let moved = GLIDES.with_borrow_mut(|m| {
+                    let g = m.entry(id).or_default();
+                    let at = f32::from(handle.offset().y);
+                    if !g.moving {
+                        g.target = at;
+                        g.last = None;
+                    }
+                    let next = (g.target + dy).clamp(-max, 0.);
+                    if next == g.target {
+                        return None; // at this end: an outer container may take it
+                    }
+                    g.target = next;
+                    g.moving = !instant;
+                    Some(next)
+                });
+                let Some(next) = moved else { return };
+                cx.stop_propagation();
+                if instant {
+                    handle.set_offset(point(handle.offset().x, px(next)));
+                }
+                window.refresh();
+            });
+        },
+    )
+    .absolute()
+    .size_0()
+}
+
+/// Stops `id`'s smooth scroll, for a container that jumps somewhere itself (a new page shown at its top).
+pub fn stop_scroll(id: &'static str) {
+    GLIDES.with_borrow_mut(|m| {
+        m.remove(id);
+    });
 }
 
 /// Where the tab pill sits at `at` (a tab index, fractional while it slides), from each tab's left edge and width.
