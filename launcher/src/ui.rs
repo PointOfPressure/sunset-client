@@ -26,11 +26,9 @@ const MUTED: u32 = 0xb4b4bb; // secondary text: quieter than TEXT, still easy to
 const ACCENT: u32 = 0xdb5000; // Sunset orange, as on the site
 const ACCENT_HI: u32 = 0xf26a12; // its hover
 const ON_ACCENT: u32 = 0xffffff;
-const GREEN: u32 = 0x6fcf97;
-const AMBER: u32 = 0xe7b04a;
-const INSET: u32 = 0x0f0f11; // a well set into a card (the changelog)
 const RED: u32 = 0xef6b6b; // errors only; orange is the one accent
 const SOFT: u32 = 0xd2d2d7; // labels and unselected tabs: a step under TEXT
+const PILL: u32 = 0x26262b; // the changelog's kind labels, all one style
 
 // One type scale: the page's title, a card's heading, body text, small print.
 const T_TITLE: f32 = 30.;
@@ -43,9 +41,10 @@ const GUTTER: f32 = 24.; // window edge to content, left and right
 const GAP: f32 = 16.; // between cards, columns and page blocks
 const PAD: f32 = 16.; // inside cards and their rows
 const CTRL_H: f32 = 36.; // buttons, top-bar chips and the tab pill
-const BIG_H: f32 = 40.; // the Play row
+const BIG_H: f32 = 48.; // the Play row
 const BAR_H: f32 = 68.; // the top bar, chips centred in it
-const PANEL_H: f32 = 176.; // the changelog on Overview
+const HEAD_H: f32 = 48.; // a card's heading row, so headings in cards side by side share a baseline
+const LOG_MAX: f32 = 236.; // the changelog list scrolls past this
 
 // Corner radii: one scale for the whole window. Cards, menus and dialogs are R_CARD, everything you press is R_CTRL,
 // small labels are R_SMALL. A shape nested close inside another (a tab in the tab strip, a menu row in its menu, the
@@ -149,6 +148,8 @@ pub struct Launcher {
     /// Armed by a press on the title bar; the first move then hands the drag to the window manager.
     title_drag: bool,
     playing: bool,
+    /// When this launcher started the running game, for the play time it adds when the game exits.
+    started: Option<std::time::Instant>,
     sources: Vec<(String, PathBuf)>,
     profiles: Vec<String>,
     mods: Vec<(String, String)>,
@@ -191,6 +192,7 @@ impl Launcher {
             sign_in: None,
             title_drag: false,
             playing: false,
+            started: None,
             sources: vec![],
             profiles: vec![],
             mods: vec![],
@@ -342,6 +344,8 @@ impl Launcher {
         match core::play(&self.paths, &self.settings) {
             Ok(mut child) => {
                 self.playing = true;
+                self.started = Some(std::time::Instant::now());
+                self.set_settings(|s| s.last_played = Some(core::now_secs()), cx);
                 self.note = None;
                 let tx = self.send();
                 let stderr = child.stderr.take();
@@ -446,6 +450,10 @@ impl Launcher {
             },
             Msg::GameExited(err) => {
                 self.playing = false;
+                if let Some(t) = self.started.take() {
+                    let ran = t.elapsed().as_secs();
+                    self.set_settings(|s| s.playtime = s.playtime.saturating_add(ran), cx);
+                }
                 if let Some(e) = err {
                     self.note = Some((true, e));
                 }
@@ -730,19 +738,18 @@ fn change_row(c: &core::Change) -> gpui::Div {
         .items_center()
         .justify_center()
         .rounded(px(R_SMALL))
-        .bg(rgb(if c.important { ACCENT } else { CHIP }))
+        .bg(rgb(PILL))
         .text_size(px(11.))
         .font_family(BOLD).font_weight(BOLD_WEIGHT)
-        .text_color(rgb(if c.important { ON_ACCENT } else { MUTED }))
+        .text_color(rgb(TEXT))
         .child(kind);
     let body = div()
         .flex_1()
         .min_w(px(0.))
         .pt(px(1.))
-        .text_size(px(13.))
+        .text_size(px(T_BODY))
         .line_height(px(18.))
-        .text_color(rgb(if c.important { TEXT } else { SOFT }))
-        .when(c.important, |d| d.font_family(BOLD).font_weight(BOLD_WEIGHT))
+        .text_color(rgb(TEXT))
         .child(line);
     div().w_full().min_w(px(0.)).flex().items_start().gap(px(10.)).child(tag).child(body)
 }
@@ -756,7 +763,7 @@ fn scroll_cues(handle: &gpui::ScrollHandle, window: &mut Window) {
         return;
     }
     const FADE: f32 = 24.;
-    let (clear, solid) = (Hsla::from(gpui::rgba(INSET << 8)), Hsla::from(rgb(INSET)));
+    let (clear, solid) = (Hsla::from(gpui::rgba(CARD << 8)), Hsla::from(rgb(CARD)));
     if off > 0.5 {
         let at = Bounds::new(b.origin, size(b.size.width, px(FADE)));
         window.paint_quad(gpui::fill(at, linear_gradient(180., linear_color_stop(solid, 0.), linear_color_stop(clear, 1.))));
@@ -845,6 +852,55 @@ fn mark(w: f32, color: u32) -> impl IntoElement {
     .flex_none()
 }
 
+/// Overview's banner: a striped sun setting on a dark horizon, in Sunset orange only, with its glow and reflection.
+/// It fills its box (a card's shape, border included), so the card can grow with the window.
+fn hero_art() -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        move |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| {
+            let (x, y, w, h) = (f32::from(b.origin.x), f32::from(b.origin.y), f32::from(b.size.width), f32::from(b.size.height));
+            let r = px(R_CARD);
+            let at = |x: f32, y: f32, w: f32, h: f32| Bounds::new(point(px(x), px(y)), size(px(w), px(h)));
+            // The horizon runs through the gap between the banner's text and its button row, at any height.
+            let horizon = (y + h - (28. + BIG_H + 11.)).round();
+            let ember = Hsla::from(rgb(0x2c1307));
+            window.paint_quad(
+                gpui::fill(at(x, y, w, horizon - y), linear_gradient(180., linear_color_stop(Hsla::from(rgb(CARD)), 0.), linear_color_stop(ember, 1.)))
+                    .corner_radii(Corners { top_left: r, top_right: r, bottom_left: px(0.), bottom_right: px(0.) }),
+            );
+            window.paint_quad(gpui::fill(at(x, horizon, w, y + h - horizon), rgb(0x0f0d0c)).corner_radii(Corners { top_left: px(0.), top_right: px(0.), bottom_left: r, bottom_right: r }));
+            let sr = (h * 0.5).min(w * 0.17).min(200.);
+            let cx = x + w * 0.76;
+            for (k, a) in [(1.6, 0xdb50000cu32), (1.38, 0xdb500010), (1.18, 0xdb500016)] {
+                if let Ok(p) = half_disc(cx, horizon, sr * k).build() {
+                    window.paint_path(p, gpui::rgba(a));
+                }
+            }
+            if let Ok(p) = half_disc(cx, horizon, sr).build() {
+                window.paint_path(p, rgb(ACCENT));
+            }
+            // Bands cut across the lower sun, thickening towards the horizon.
+            for i in 0..4 {
+                let f = i as f32;
+                let (top, band) = (horizon - sr * (0.5 - 0.12 * f), (sr * (0.025 + 0.018 * f)).max(1.));
+                let dy = horizon - top;
+                let half = (sr * sr - dy * dy).max(0.).sqrt();
+                window.paint_quad(gpui::fill(at(cx - half - 1., top, 2. * half + 2., band), ember));
+            }
+            window.paint_quad(gpui::fill(at(x, horizon, w, 1.), gpui::rgba(0xdb500080)));
+            for (i, a) in [0x99u32, 0x66, 0x40, 0x22].into_iter().enumerate() {
+                let half = sr * (0.85 - 0.2 * i as f32);
+                window.paint_quad(gpui::fill(at(cx - half, horizon + 7. + 7. * i as f32, 2. * half, 2.), gpui::rgba(0xdb500000 | a)).corner_radii(Corners::all(px(1.))));
+            }
+            window.paint_quad(gpui::fill(b, gpui::rgba(0)).corner_radii(Corners::all(r)).border_widths(px(1.)).border_color(rgb(LINE)));
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
 fn face(pixels: &[[u8; 4]], s: f32) -> impl IntoElement {
     let cell = s / 8.;
     div().flex().flex_col().w(px(s)).h(px(s)).rounded(px(nested(R_CTRL, FACE_INSET))).overflow_hidden().children((0..8).map(|y| {
@@ -855,8 +911,9 @@ fn face(pixels: &[[u8; 4]], s: f32) -> impl IntoElement {
     }))
 }
 
-fn row(label: impl Into<SharedString>, value: impl IntoElement) -> gpui::Div {
-    div().flex().items_center().justify_between().h(px(32.)).child(text(label, 13., MUTED)).child(value)
+/// A card's heading row; cards side by side use it so their headings share one size and baseline.
+fn card_head(title: &str) -> gpui::Div {
+    div().flex().flex_none().items_center().h(px(HEAD_H)).px(px(PAD)).child(bold(title.to_string(), T_HEAD))
 }
 
 fn setting_row(label: impl Into<SharedString>, value: impl IntoElement, last: bool) -> gpui::Div {
@@ -1279,19 +1336,6 @@ impl Launcher {
         })))
     }
 
-    fn status(&self) -> (u32, String) {
-        if self.playing {
-            return (GREEN, "Playing".into());
-        }
-        if self.job.is_some() {
-            return (AMBER, "Working…".into());
-        }
-        match self.update_available() {
-            Some(m) => (AMBER, format!("Sunset {} available", m.version)),
-            None => (GREEN, "Ready to play".into()),
-        }
-    }
-
     fn progress(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         let j = self.job.as_ref()?;
         let frac = j.frac.unwrap_or(0.).clamp(0., 1.);
@@ -1314,10 +1358,9 @@ impl Launcher {
 
     fn overview(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(m) = self.installed.as_ref() else { return self.no_instance(cx).into_any_element() };
-        let (dot, status) = self.status();
         let update = self.update_available().map(|u| u.version.clone());
         let play_area = match self.progress(cx) {
-            Some(p) => p.into_any_element(),
+            Some(p) => div().w(px(460.)).max_w_full().child(p).into_any_element(),
             None => div()
                 .flex()
                 .items_center()
@@ -1328,147 +1371,113 @@ impl Launcher {
                         .items_center()
                         .justify_center()
                         .gap(px(10.))
-                        .w(px(200.))
+                        .w(px(220.))
                         .h(px(BIG_H))
                         .rounded(px(R_CTRL))
                         .bg(rgb(ACCENT))
                         .when(self.playing, |d| d.opacity(0.6))
                         .when(!self.playing, |d| d.cursor_pointer())
-                        .child(icon(Icon::Play, 20., ON_ACCENT))
-                        .child(div().text_size(px(16.)).font_family(BOLD).font_weight(BOLD_WEIGHT).text_color(rgb(ON_ACCENT)).child(if self.playing { "Playing" } else { "Play" }))
+                        .child(icon(Icon::Play, 26., ON_ACCENT))
+                        .child(div().text_size(px(17.)).font_family(BOLD).font_weight(BOLD_WEIGHT).text_color(rgb(ON_ACCENT)).child(if self.playing { "Playing" } else { "Play" }))
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.play(cx))),
                 )
                 .when_some(update, |d, v| d.child(button("update", format!("Update to {v}"), false).h(px(BIG_H)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx)))))
-                .child(icon_button("open-folder", Icon::Folder, "Open folder", BIG_H).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                .child(icon_button("open-folder", Icon::Folder, "Open the game folder", BIG_H).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     let p = this.paths.instance();
                     this.open(p, cx)
                 })))
-                .child(div().flex_1())
-                .child(self.with_menu(Menu::More, icon_button("more", Icon::More, "More", BIG_H).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::More, ev, cx))), true, cx))
+                .child(self.with_menu(Menu::More, icon_button("more", Icon::More, "More", BIG_H).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::More, ev, cx))), false, cx))
                 .into_any_element(),
         };
-        let title = div()
+        // The banner says what this is once: Sunset, its version and the game it runs. Play is the first thing under it.
+        let hero = div()
+            .relative()
+            .flex_1()
+            .min_h(px(250.))
             .flex()
             .flex_col()
-            .gap(px(2.))
+            .justify_end()
+            .gap(px(22.))
+            .p(px(28.))
+            .child(hero_art())
             .child(
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .child(bold("Sunset", T_TITLE))
+                    .child(text(format!("Version {} for Minecraft {}", m.version, m.horizon.game), 14., TEXT)),
+            )
+            .child(div().relative().child(play_area));
+        let plugins = self.mods.iter().filter(|(id, _)| id != "sunset").count();
+        let mut facts = vec![
+            ("Horizon build", m.horizon_build()),
+            ("Profiles", if self.profiles.is_empty() { "None saved".to_string() } else { format!("{} saved", self.profiles.len()) }),
+            ("Plugins", match plugins {
+                0 => "None yet".to_string(),
+                1 => "1 built into Sunset".to_string(),
+                n => format!("{n} built into Sunset"),
+            }),
+        ];
+        // Only what this launcher saw itself: when it last started the game and how long the game ran.
+        if let Some(t) = self.settings.last_played {
+            facts.push(("Last played", core::ago(t, core::now_secs())));
+        }
+        if self.settings.playtime > 0 {
+            facts.push(("Play time", core::play_time(self.settings.playtime)));
+        }
+        let n = facts.len();
+        let right = card()
+            .w(px(320.))
+            .flex_none()
+            .flex()
+            .flex_col()
+            .pb(px(8.))
+            .child(card_head("Installation"))
+            .children(facts.into_iter().enumerate().map(|(i, (k, v))| {
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(bold(format!("Sunset {}", m.version), 20.))
-                    .child(div().flex().items_center().gap(px(6.)).child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(dot))).child(text(status, 12., dot))),
-            )
-            .child(text(format!("Minecraft {}", m.horizon.game), 13., MUTED));
-        // The Play row sits at the bottom so it lines up with the right card's buttons.
-        // min_w(0): the changelog's long lines wrap inside the card instead of widening it past the window.
-        let left = card()
-            .flex_1()
-            .min_w(px(0.))
-            .p(px(PAD))
-            .flex()
-            .flex_col()
-            .justify_between()
-            .gap(px(GAP))
-            .child(div().flex().flex_col().min_w(px(0.)).gap(px(GAP)).child(self.changelog(m)).child(title))
-            .child(play_area);
-        let plugins = self.mods.iter().filter(|(id, _)| id != "sunset").count();
-        let right = card()
-            .w(px(320.))
-            .flex_none()
-            .p(px(PAD))
-            .flex()
-            .flex_col()
-            .child(bold("Installation", 16.))
-            .child(row("Platform", text("Horizon", 13., TEXT)))
-            .child(row("Runtime", text(m.short_pin().to_string(), 13., TEXT)))
-            .child(row("Sunset", text(m.version.clone(), 13., TEXT)))
-            .child(div().h(px(1.)).bg(rgb(LINE)).my(px(12.)))
-            .child(bold("Configuration", 16.))
-            .child(row("Profiles", text(format!("{} saved", self.profiles.len()), 13., TEXT)))
-            .child(row("Plugins", text(if plugins == 0 { "Built in".to_string() } else { format!("{plugins} built in") }, 13., TEXT)))
-            .child(div().flex_1().min_h(px(GAP)))
-            .child(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(button("to-plugins", "Plugins", false).h(px(BIG_H)).flex_1().on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                        this.tab = Tab::Plugins;
-                        cx.notify();
-                    })))
-                    .child(button("to-profiles", "Profiles", false).h(px(BIG_H)).flex_1().on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                        this.tab = Tab::Profiles;
-                        this.reload_local();
-                        cx.notify();
-                    }))),
-            );
-        let dir = self.paths.instance();
+                    .h(px(38.))
+                    .mx(px(PAD))
+                    .when(i + 1 < n, |d| d.border_b_1().border_color(rgb(LINE)))
+                    .child(text(k, T_BODY, SOFT))
+                    .child(text(v, T_BODY, TEXT).font_family(BOLD).font_weight(BOLD_WEIGHT))
+            }));
         div()
             .flex()
             .flex_col()
             .gap(px(GAP))
-            .child(page_head("Sunset", None))
+            .size_full()
             .when_some(self.import_prompt(cx), |d, p| d.child(p))
-            .child(div().flex().gap(px(GAP)).child(left).child(right))
-            .child(
-                fx::control("instance-dir", 0x18181b, nested(R_CARD, 1.))
-                    .bg(rgb(CARD))
-                    .border_1()
-                    .border_color(rgb(LINE))
-                    .rounded(px(R_CARD))
-                    .flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .h(px(48.))
-                    .px(px(PAD))
-                    .cursor_pointer()
-                    .child(icon(Icon::Folder, 16., MUTED))
-                    .child(text("Instance directory", 13., TEXT))
-                    .child(div().flex_1())
-                    .child(text(dir.display().to_string(), 12., MUTED))
-                    .child(icon(Icon::Arrow, 16., MUTED))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(dir.clone(), cx))),
-            )
+            .child(hero)
+            .child(div().flex().flex_none().gap(px(GAP)).child(self.changelog(m)).child(right))
             .into_any_element()
     }
 
-    /// The installed version's changelog, from its signed manifest, where the banner was and as large. The list
-    /// scrolls inside the panel; edge fades and a thin thumb show there is more (`scroll_cues`).
+    /// The installed version's changelog, from its signed manifest: one card, its lines scrolling inside it past
+    /// LOG_MAX, with edge fades and a thin thumb when there is more (`scroll_cues`).
     fn changelog(&self, m: &Manifest) -> gpui::Div {
-        let changes: Vec<&core::Change> = m.changelog.iter().filter(|c| !c.text.trim().is_empty()).take(MAX_CHANGES).collect();
-        let count = match changes.len() {
-            0 => String::new(),
-            1 => "1 change".into(),
-            n => format!("{n} changes"),
-        };
-        let panel = div()
-            .relative()
-            .flex()
-            .flex_col()
-            .flex_none()
-            .w_full()
-            .min_w(px(0.))
-            .h(px(PANEL_H))
-            .rounded(px(R_CTRL))
-            .bg(rgb(INSET))
-            .border_1()
-            .border_color(rgb(LINE))
-            .overflow_hidden()
-            .child(div().flex_none().flex().items_center().justify_between().h(px(40.)).px(px(14.)).child(bold(format!("What's new in {}", m.version), 13.)).child(text(count, 12., MUTED)));
+        let mut changes: Vec<&core::Change> = m.changelog.iter().filter(|c| !c.text.trim().is_empty()).take(MAX_CHANGES).collect();
+        // The release's highlights (bold in CHANGELOG.md) lead; every line is then set the same.
+        changes.sort_by_key(|c| !c.important);
+        // min_w(0): long lines wrap inside the card instead of widening it past the window.
+        let panel = card().relative().flex_1().min_w(px(0.)).flex().flex_col().overflow_hidden().child(card_head("What's new"));
         if changes.is_empty() {
-            return panel.child(div().flex_1().flex().items_center().justify_center().child(text(format!("Sunset {} came without a changelog.", m.version), 12., MUTED)));
+            return panel.child(div().px(px(PAD)).pb(px(PAD)).child(text("This version came without a list of changes.", T_BODY, TEXT)));
         }
         let handle = self.log_scroll.clone();
         panel
             .child(
                 div()
                     .id("changelog")
-                    .flex_1()
                     .w_full()
-                    .min_h(px(0.))
+                    .max_h(px(LOG_MAX))
                     .overflow_y_scroll()
                     .track_scroll(&self.log_scroll)
-                    .child(div().flex_none().w_full().flex().flex_col().gap(px(10.)).px(px(14.)).pb(px(14.)).children(changes.into_iter().map(change_row))),
+                    .child(div().flex_none().w_full().flex().flex_col().gap(px(12.)).px(px(PAD)).pb(px(PAD)).children(changes.into_iter().map(change_row))),
             )
             .child(fx::smooth_scroll("changelog", &self.log_scroll))
             .child(canvas(|_, _, _| (), move |_, _, window: &mut Window, _| scroll_cues(&handle, window)).absolute().top_0().left_0().size_full())
@@ -1492,30 +1501,35 @@ impl Launcher {
     }
 
     fn no_instance(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let inner = match self.progress(cx) {
-            Some(p) => div().w(px(460.)).child(p).into_any_element(),
-            None => div()
+        let action = match self.progress(cx) {
+            Some(p) => div().w(px(460.)).max_w_full().child(p).into_any_element(),
+            None if self.latest.is_some() => button("new-instance", "Install Sunset", true)
+                .h(px(BIG_H))
+                .px(px(28.))
+                .text_size(px(16.))
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx)))
+                .into_any_element(),
+            None => button("retry", "Try again", false).h(px(BIG_H)).on_click(cx.listener(|this, _: &ClickEvent, _, _| this.check(false))).into_any_element(),
+        };
+        let about = match &self.latest {
+            Some(r) => format!("No instance yet. Version {} for Minecraft {} is ready to install.", r.manifest.version, r.manifest.horizon.game),
+            None => self.latest_err.clone().unwrap_or_else(|| "Looking for the latest Sunset release…".into()),
+        };
+        // The same banner as Overview, filling the page, with the install in place of Play.
+        div().flex().flex_col().gap(px(GAP)).size_full().child(
+            div()
+                .relative()
+                .flex_1()
+                .min_h(px(300.))
                 .flex()
                 .flex_col()
-                .items_center()
-                .gap(px(12.))
-                .child(bold("No instances", 22.))
-                .child(text(
-                    match &self.latest {
-                        Some(r) => format!("Sunset {} for Minecraft {} (Horizon {})", r.manifest.version, r.manifest.horizon.game, r.manifest.short_pin()),
-                        None => self.latest_err.clone().unwrap_or_else(|| "Looking for the Sunset release…".into()),
-                    },
-                    13.,
-                    MUTED,
-                ))
-                .child(if self.latest.is_some() {
-                    button("new-instance", "New instance", true).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx))).into_any_element()
-                } else {
-                    button("retry", "Try again", false).on_click(cx.listener(|this, _: &ClickEvent, _, _| this.check(false))).into_any_element()
-                })
-                .into_any_element(),
-        };
-        div().flex().flex_col().gap(px(GAP)).size_full().child(page_head("Sunset", None)).child(card().flex_1().min_h(px(300.)).flex().items_center().justify_center().child(inner))
+                .justify_end()
+                .gap(px(22.))
+                .p(px(28.))
+                .child(hero_art())
+                .child(div().relative().flex().flex_col().gap(px(4.)).child(bold("Sunset", T_TITLE)).child(text(about, 14., TEXT)))
+                .child(div().relative().flex().child(action)),
+        )
     }
 
     /// Settings: the instance's (when there is one) on the left, the launcher's and About on the right.
@@ -1564,7 +1578,7 @@ impl Launcher {
             .child(section("Instance", vec![
                 setting_row("Name", text(INSTANCE_NAME, 13., TEXT), false),
                 setting_row("Sunset version", version, false),
-                setting_row("Runtime", text(format!("Horizon {} ({})", m.short_pin(), m.horizon.tag), 13., TEXT), false),
+                setting_row("Horizon", text(format!("{} (commit {})", m.horizon_build(), m.short_pin()), 13., TEXT), false),
                 setting_row(
                     "Window size",
                     self.with_menu(Menu::Window, button("s-window", window_label(&self.settings.window), false).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Window, ev, cx))), true, cx),

@@ -92,11 +92,21 @@ pub struct Settings {
     pub import_decided: bool,
     /// Where the manifest comes from instead of GitHub Releases (`SUNSET_MANIFEST` wins over it).
     pub manifest_url: Option<String>,
+    /// When the launcher last started the game (Unix seconds); None until it has.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_played: Option<u64>,
+    /// Seconds the game ran when started from this launcher, counted when it exits.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub playtime: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { auto_update: true, window: "1280x720".into(), import_decided: false, manifest_url: None }
+        Settings { auto_update: true, window: "1280x720".into(), import_decided: false, manifest_url: None, last_played: None, playtime: 0 }
     }
 }
 
@@ -186,6 +196,11 @@ pub struct Artifact {
 impl Manifest {
     pub fn short_pin(&self) -> &str {
         &self.horizon.revision[..self.horizon.revision.len().min(7)]
+    }
+    /// The Horizon build as people say it: its release version when the pin is a release ("v0.4.1" -> "0.4.1"), else
+    /// "Nightly". Never the bare commit.
+    pub fn horizon_build(&self) -> String {
+        horizon_build(&self.horizon.tag)
     }
     fn game(&self) -> Result<&Artifact> {
         self.artifacts.iter().find(|a| a.kind == "game").ok_or_else(|| "the manifest names no game package".to_string())
@@ -702,6 +717,42 @@ fn unpack_game(archive: &Path, versions: &Path, vdir: &str, cancel: &AtomicBool)
 
 // ---------------------------------------------------------------- play
 
+/// See `Manifest::horizon_build`.
+pub fn horizon_build(tag: &str) -> String {
+    let t = tag.trim().trim_start_matches(['v', 'V']);
+    let release = t.split(['.', '-', '+']).next().is_some_and(|major| !major.is_empty() && major.bytes().all(|b| b.is_ascii_digit())) && t.contains('.');
+    if release { t.to_string() } else { "Nightly".into() }
+}
+
+pub fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// How long ago `then` was, from `now` (both Unix seconds), in plain words.
+pub fn ago(then: u64, now: u64) -> String {
+    let s = now.saturating_sub(then);
+    let plural = |n: u64, unit: &str| if n == 1 { format!("1 {unit} ago") } else { format!("{n} {unit}s ago") };
+    match s {
+        0..60 => "Just now".into(),
+        60..3600 => plural(s / 60, "minute"),
+        3600..86400 => plural(s / 3600, "hour"),
+        86400..172800 => "Yesterday".into(),
+        172800..2592000 => plural(s / 86400, "day"),
+        _ => plural(s / 2592000, "month"),
+    }
+}
+
+/// A play time total: "Under a minute", "45 min", "3 h 20 min".
+pub fn play_time(secs: u64) -> String {
+    let m = secs / 60;
+    match (m / 60, m % 60) {
+        (0, 0) => "Under a minute".into(),
+        (0, m) => format!("{m} min"),
+        (h, 0) => format!("{h} h"),
+        (h, m) => format!("{h} h {m} min"),
+    }
+}
+
 /// Starts the game through the CLI (it adds the signed-in account), with the window settings.
 pub fn play(p: &Paths, s: &Settings) -> Result<Child> {
     let mut c = cli(p)?;
@@ -850,6 +901,42 @@ pub fn face_from_png(bytes: &[u8]) -> Result<Vec<[u8; 4]>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn horizon_build_is_never_a_hash() {
+        assert_eq!(horizon_build("nightly-0b14f8a"), "Nightly");
+        assert_eq!(horizon_build("0b14f8a"), "Nightly");
+        assert_eq!(horizon_build("1234567"), "Nightly");
+        assert_eq!(horizon_build(""), "Nightly");
+        assert_eq!(horizon_build("v0.4.1"), "0.4.1");
+        assert_eq!(horizon_build("0.5.0-rc1"), "0.5.0-rc1");
+        assert_eq!(horizon_build("v.1"), "Nightly");
+    }
+
+    #[test]
+    fn ago_and_play_time() {
+        let now = 10_000_000;
+        assert_eq!(ago(now, now), "Just now");
+        assert_eq!(ago(now + 50, now), "Just now"); // a clock that went back
+        assert_eq!(ago(now - 60, now), "1 minute ago");
+        assert_eq!(ago(now - 7200, now), "2 hours ago");
+        assert_eq!(ago(now - 90000, now), "Yesterday");
+        assert_eq!(ago(now - 3 * 86400, now), "3 days ago");
+        assert_eq!(ago(0, now), "3 months ago");
+        assert_eq!(play_time(0), "Under a minute");
+        assert_eq!(play_time(59), "Under a minute");
+        assert_eq!(play_time(45 * 60), "45 min");
+        assert_eq!(play_time(3600), "1 h");
+        assert_eq!(play_time(3 * 3600 + 20 * 60 + 5), "3 h 20 min");
+    }
+
+    #[test]
+    fn settings_without_play_records_load() {
+        let s: Settings = serde_json::from_str(r#"{"auto_update":true,"window":"1280x720","import_decided":true,"manifest_url":null}"#).unwrap();
+        assert_eq!((s.last_played, s.playtime), (None, 0));
+        let j = serde_json::to_string(&s).unwrap();
+        assert!(!j.contains("last_played") && !j.contains("playtime"));
+    }
 
     #[test]
     fn public_key_parses() {
