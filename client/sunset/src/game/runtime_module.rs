@@ -288,6 +288,7 @@ impl Module {
             "Kill Aura" if name.starts_with("Shield ") => self.p("Version") != "1.8" && self.b("Shield block"),
             "Kill Aura" if name == "Legacy reblock delay" => self.p("Version") == "1.8" && self.p("AutoBlock") == "Packet",
             "Trigger Bot" if name.starts_with("Shield ") => self.b("Shield"),
+            "Anti Void" if name == "Fall distance" => self.p("Mode") == "Blink",
             // Streamer Mode: what shows in place of a name, with that name hidden.
             "Streamer Mode" => match name {
                 "Your name" => self.b("Hide your name"),

@@ -112,7 +112,8 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     let Some(sent) = Move::of(packet) else {
         return Out::Pass;
     };
-    if BLINK.load(Ordering::Relaxed) && !super::sunset_gui_move::stopping() {
+    // Blink, or Anti Void's Blink mode over the void, holds the move back.
+    if (BLINK.load(Ordering::Relaxed) || super::sunset_anti_void::holding()) && !super::sunset_gui_move::stopping() {
         BLINK_HELD.store(true, Ordering::Relaxed);
         return Out::Drop;
     }

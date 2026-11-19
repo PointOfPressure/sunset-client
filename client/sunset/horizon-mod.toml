@@ -1165,6 +1165,12 @@ name = "sunset_aura_advanced"
 source = "src/game/aura_advanced.rs"
 
 [[native.module]]
+id = "anti_void"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anti_void"
+source = "src/game/anti_void.rs"
+
+[[native.module]]
 id = "lag_line"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_lag_line"

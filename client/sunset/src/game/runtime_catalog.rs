@@ -194,7 +194,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Lava", true)
             .bool("Dip on sneak", true)
             .bool("Dip if burning", true),
-        Module::new("Anti Void", Movement, "Bounces you out of the void."),
+        // Bounce: up out of the void once below the world. Blink (anti_void.rs): the moves are held while you are
+        // over the void; past Fall distance you are put back where the server still has you.
+        Module::new("Anti Void", Movement, "Keeps you out of the void: Bounce back up, or Blink back to where you stood.")
+            .pick("Mode", &["Bounce", "Blink"])
+            .num("Fall distance", 4.0, 1.0, 10.0, 0.5),
         // Player
         Module::new("Fast Place", Player, "Places blocks faster.")
             .num("Speed", 5.0, 1.0, 5.0, 1.0),

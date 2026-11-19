@@ -624,7 +624,7 @@ fn module_tick(game: &mut Game<'_>) {
         {
             p.velocity.y = 0.0;
         }
-        if get("Anti Void").is_some() {
+        if get("Anti Void").is_some_and(|m| m.p("Mode") == "Bounce") {
             let floor = if dim == "minecraft:overworld" { -64.0 } else { 0.0 };
             if p.position.y < floor && p.velocity.y < 0.0 {
                 p.velocity.y = 0.6;
@@ -640,7 +640,12 @@ fn module_tick(game: &mut Game<'_>) {
     } else if fall_cleared(game) {
         fall(|f| f.clear_count());
     }
-    // Blink: let go of what it held when it turns off, or at its limit.
+    // Anti Void's Blink mode: hold, rewind or let go, after this tick's move packet.
+    match get("Anti Void") {
+        Some(m) => super::sunset_anti_void::tick(game, m, get("Blink").is_some(), get("Flight").is_some()),
+        None => super::sunset_anti_void::off(game),
+    }
+    // Blink: let go of what it held when it turns off, or at its limit (not what Anti Void holds).
     {
         let max = get("Blink").map_or(0.0, |m| m.n("Max ticks")) as u32;
         let held = BLINK_HELD.load(Ordering::Relaxed);
@@ -648,7 +653,7 @@ fn module_tick(game: &mut Game<'_>) {
             s.blink_ticks = if get("Blink").is_some() && held { s.blink_ticks + 1 } else { 0 };
             s.blink_ticks
         });
-        if held && (get("Blink").is_none() || (max > 0 && ticks >= max)) {
+        if held && !super::sunset_anti_void::holding() && (get("Blink").is_none() || (max > 0 && ticks >= max)) {
             // Moves go through again from the next tick; this one carries the player.
             let was_on = BLINK.swap(false, Ordering::Relaxed);
             flush_blink(game);
