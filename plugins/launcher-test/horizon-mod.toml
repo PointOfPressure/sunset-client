@@ -1,0 +1,36 @@
+# The Sunset launcher's test plugin: install it from the launcher's Plugins tab (Add plugin, this folder) to check the
+# whole plugin path (enable, install, rebuild, launch). In game it greets you in chat, shows a badge at the top of the
+# screen and boxes the block under your feet (its "Test Beacon" module, on the first time). .testplugin says it is
+# there. Not shipped with Sunset.
+id = "launcher_test"
+name = "Launcher test plugin"
+version = "1.0.0"
+description = "Checks the Sunset launcher's plugin build end to end: a chat line, a HUD badge and a world box."
+authors = ["PointOfPressure"]
+api = "0.2"
+side = "client"
+capabilities = ["registries"]
+
+# The same pins as Sunset's own horizon-mod.toml: a plugin is built into Sunset, so it is made for exactly its build.
+[native]
+game = "26.3"
+horizon = "0b14f8acfd97fa2c750e42795249dcc981178ca4"
+mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
+
+[dependencies]
+sunset = "^1.2"
+
+# The plugin's code, beside Sunset's in the game crate's `game` module, where `super::sunset_api` is Sunset's plugin API.
+[[native.module]]
+id = "plugin"
+file = "crates/horizon-client/src/game.rs"
+name = "launcher_test_plugin"
+source = "src/game/plugin.rs"
+
+# Each client tick: hands the plugin to Sunset (the first call runs its setup).
+[[native.mixin]]
+id = "tick"
+target = "horizon_client::game::native_hooks::client_tick_post::Game<'_>::native_client_tick_post"
+kind = "HEAD"
+helper = "src/mixins/tick.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
