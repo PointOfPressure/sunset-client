@@ -57,6 +57,7 @@ const HELP: &[(&str, &str)] = &[
     (".auradebug", "why Kill Aura did what it did last, and who has the hand"),
     (".antibotdebug [entity id]", "show cached decoy confidence and supporting observations"),
     (".plugins", "the plugins loaded, their modules and commands"),
+    (".relog [delay seconds]", "leave and rejoin this multiplayer server once (default 1 second; Back cancels the countdown)"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
     (".waypoint add|remove|list [name]", "save a place (.wp)"),
     (".vclip <blocks>", "move up or down"),
@@ -144,6 +145,9 @@ pub(super) fn native_held_input(game: &Game<'_>) -> (std::collections::HashSet<K
 }
 
 pub(super) fn all_off(game: &mut Game<'_>) {
+    super::sunset_survival_tools::shutdown();
+    super::sunset_auction::stopped(game);
+    super::sunset_drill_logger::shutdown();
     super::sunset_baritone::stop(game, super::sunset_baritone::StopReason::Disabled);
     if let Some(lease) = super::sunset_movement_owner::current() { super::sunset_movement_owner::release(game, lease); }
     watchdog_stop(game, true);
@@ -486,6 +490,32 @@ fn seed_command(game: &mut Game<'_>, args: &[&str]) {
     }
 }
 
+fn relog_command(game: &mut Game<'_>, args: &[&str]) {
+    use std::time::{Duration, Instant};
+    let seconds = match args { [] => Some(1.0), [value] => value.parse::<f64>().ok(), _ => None };
+    let at = seconds.and_then(|n| Duration::try_from_secs_f64(n).ok())
+        .and_then(|delay| Instant::now().checked_add(delay));
+    let Some(at) = at else {
+        say(game, "Usage: .relog [delay seconds] (a finite non-negative duration).");
+        return;
+    };
+    let Some(remote) = game.remote.as_ref().filter(|_| game.integrated.is_none() && !game.realm_session) else {
+        say(game, "Relog needs an active multiplayer server connection (not single player or Realms).");
+        return;
+    };
+    let retry = horizon_client::reconnect::Retry {
+        address: remote.session.address.clone(), name: remote.session.name.clone(),
+        lan: game.server_is_lan(), at, attempt: 1,
+    };
+    if let Err(error) = game.leave_server(Some("Rejoining the server.".into())) {
+        say(game, &format!("Relog could not leave: {error}"));
+        return;
+    }
+    // Use Horizon's existing countdown, Back button and reconnect path. No module,
+    // saved timer, background loop or automatic-reconnect preference is added.
+    game.offer_reconnect(Some(retry));
+}
+
 pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
     let cmd = args[0].to_ascii_lowercase();
     let module_arg = |game: &mut Game<'_>, name: Option<&&str>| -> Option<usize> {
@@ -500,6 +530,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         found
     };
     match cmd.as_str() {
+        "relog" => relog_command(game, &args[1..]),
         "seed" => seed_command(game, &args[1..]),
         "auradebug" => say(game, &super::sunset_aura::diagnostics()),
         "elytratarget" => say(game, &super::sunset_elytra_target::diagnostics()),

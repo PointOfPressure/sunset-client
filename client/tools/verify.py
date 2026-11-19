@@ -1994,6 +1994,25 @@ def modules_on():
     return names
 
 
+@test("Relog command")
+def _():
+    invalid = all(any("Usage: .relog" in line for line in said_after(f".relog {value}"))
+                  for value in ("-1", "NaN", "inf", "1 2"))
+    if not SERVER:
+        lines = said_after(".relog 0")
+        refused = any("active multiplayer server" in line for line in lines)
+        return invalid and refused and bool(state().get("player")), f"invalid delays rejected: {invalid}; single player stays open: {refused}"
+    start = time.monotonic()
+    say(".relog 1")
+    left = not state().get("player")
+    deadline = start + 20
+    while time.monotonic() < deadline and not state().get("player"):
+        time.sleep(0.1)
+    elapsed = time.monotonic() - start
+    joined = bool(state().get("player"))
+    return invalid and left and joined and elapsed >= 0.9, f"invalid delays rejected: {invalid}; left: {left}; rejoined after {elapsed:.2f}s: {joined}"
+
+
 @test("Modules")
 def _():
     # Jesus is hidden by default: the menu's search leaves it out (Enter on "jesus" turns nothing on) until its switch
@@ -11075,6 +11094,254 @@ def dig_wire(ticks):
     moves = max((t.count("order move") for t in ticks), default=0)
     looks = {(round(float(w[1])), round(float(w[2]))) for t in ticks for w in (line.split() for line in t) if w[0] == "look"}
     return max(digs, default=0), bare, moves, looks
+
+
+@test("Depth Alert (each trigger) and Chest Index (chest and shulker contents)")
+def _():
+    only("Depth Alert")
+    reset("creative")
+    setting("depthalert", "y level", str(Y + 3))
+
+    def crossings(trigger):
+        setting("depthalert", "trigger", trigger)
+        wait(2)
+        mark = log_mark()
+        cmd(f"tp @s {X0 + 0.5} {Y + 5} {Z0 + 0.5}")
+        wait(30)  # up by the teleport, then down by the fall
+        return sum("Depth Alert: crossed" in line for line in sunset_said(mark))
+
+    depth = {t: crossings(t) for t in ("Going down", "Going up", "Either way")}
+    root = session_dir()
+
+    def files(suffix):
+        return [os.path.join(path, name) for path, _, names in os.walk(root)
+                for name in names if name.endswith(suffix) and ".horizon-mod-data" in path]
+
+    only("Chest Index")
+    at = (X0, Y + 1, Z0 + 2)
+    shulker = ('{Slot:1b,id:"minecraft:shulker_box",count:1,components:{"minecraft:container":'
+               '[{slot:0,item:{id:"minecraft:emerald",count:5}}]}}')
+    cmd(f'setblock {at[0]} {at[1]} {at[2]} minecraft:chest{{Items:[{{Slot:0b,id:"minecraft:diamond",count:7}},{shulker}]}}')
+    wait(2)
+    ctl("interact", *map(str, at))
+    wait(20)
+    ctl("close")
+    wait(2)
+    saved = {}
+    for path in files(".json"):
+        if "chest-index" not in path:
+            continue
+        with open(path, encoding="utf-8") as f:
+            for c in json.load(f):
+                if c["pos"] == list(at):
+                    saved = c["items"]
+    indexed = saved.get("minecraft:diamond") == 7 and saved.get("minecraft:emerald") == 5
+    ok = depth == {"Going down": 1, "Going up": 1, "Either way": 2} and indexed
+    return ok, f"alerts per trigger (want 1, 1, 2): {depth}; chest saved: {saved}"
+
+
+@test("Staff List and Base Guard (Bot1)")
+def _():
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    reset("creative")
+    bot_respawned()
+    bot_ready(60.5)
+
+    def staff(names):
+        setting("stafflist", "names", names)
+        setting("stafflist", "ranks", "admin")
+        mark = log_mark()
+        only("Staff List")
+        wait(20)
+        only()
+        return any("Staff online: Bot1" in line for line in sunset_said(mark))
+
+    named, unnamed = staff("Bot1"), staff("Nobody")
+    setting("baseguard", "range", 32)
+    setting("baseguard", "start after (s)", 0)
+    setting("baseguard", "log out", "false")
+
+    def guard(ignore):
+        bot_ready(60.5)
+        setting("baseguard", "ignore", ignore)
+        wait(10)
+        mark = log_mark()
+        only("Base Guard")
+        wait(20)
+        far = any("Base Guard: Bot1" in line for line in sunset_said(mark))
+        bot_ready(3.5)
+        wait(20)
+        only()
+        said = sunset_said(mark)
+        near = any("Base Guard: Bot1 nearby" in line for line in said)
+        return far, near
+
+    (far, near), (_, ignored) = guard(""), guard("Bot1")
+    bot_done()
+    ok = named and not unnamed and not far and near and not ignored
+    return ok, (f"staff by name {named}, not listed {unnamed}; guard: far alert {far}, near alert {near}, "
+                f"ignored alert {ignored}")
+
+
+@test("Sound Detector (Max Y, Ignore near players, labels, beams)")
+def _():
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    reset("creative")
+    bot_ready(12.5)
+    for name, value in (("cooldown", 0), ("range", 64), ("ignore near you", 5), ("players only", "false"),
+                        ("containers", "true"), ("markers", "true"), ("labels", "false"), ("beams", "false")):
+        setting("sounddetector", name, value)
+    only("Sound Detector")
+
+    def heard(x, max_y=4095, near_players=0):
+        # Bot1 opens a chest 12 blocks ahead; a new spot each time so earlier ones don't group with it.
+        setting("sounddetector", "max y", max_y)
+        setting("sounddetector", "ignore near players", near_players)
+        at = (X0 + x, Y + 1, Z0 + 11)
+        cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:chest", f"tp Bot1 {X0 + x + 0.5} {Y + 1} {Z0 + 12.5} 180 30")
+        wait(10)
+        mark = log_mark()
+        ctl2("interact", *map(str, at))
+        wait(15)
+        ctl2("close")
+        return any("Heard chest opened" in line for line in sunset_said(mark))
+
+    plain = heard(-16)
+    above_max = heard(-8, max_y=Y - 5)
+    near_bot = heard(0, near_players=4)
+    for name in ("labels", "beams", "event colors"):
+        setting("sounddetector", name, "true")
+    shown = heard(8)
+    frame("sound-detector-labels")
+    for name in ("labels", "beams", "event colors"):
+        setting("sounddetector", name, "false")
+    only()
+    bot_done()
+    ok = plain and not above_max and not near_bot and shown
+    return ok, (f"heard: plain {plain}, above Max Y {above_max}, within Ignore near players of Bot1 {near_bot}, "
+                f"with labels {shown}")
+
+
+@test("Drill Logger")
+def _():
+    # Survival: a creative break is predicted before its dig packet goes, so the block is already air by then.
+    only("Drill Logger")
+    reset("survival")
+    setting("drilllogger", "observe ticks", 30)
+    cmd("give @s minecraft:diamond_pickaxe", "give @s minecraft:dirt")
+    root = session_dir()
+
+    def records():
+        out = []
+        for path, _, names in os.walk(root):
+            if os.path.basename(path) == "drill" and ".horizon-mod-data" in path:
+                for name in names:
+                    with open(os.path.join(path, name), encoding="utf-8") as f:
+                        out += [json.loads(line) for line in f if line.strip()]
+        return out
+
+    def dig(slot, at):
+        cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:stone")
+        ctl("select", slot)
+        wait(4)
+        before = len(records())
+        mark = log_mark()
+        ctl("break", *map(str, at), "--timeout", "10", timeout=30)
+        wait(35)
+        return records()[before:], sunset_said(mark)
+
+    pick, said = dig("1", (X0, Y + 1, Z0 + 2))
+    hand, _ = dig("2", (X0 + 1, Y + 1, Z0 + 2))
+    got = pick[-1] if pick else {}
+    ok = (len(pick) == 1 and got.get("origin") == [X0, Y + 1, Z0 + 2] and [0, 0, 0] in got.get("observed_removals", [])
+          and any("Drill Logger: 1 nearby removals" in line for line in said) and not hand)
+    return ok, f"pickaxe: {got}; said: {said[-1:]}; records without a pickaxe: {len(hand)}"
+
+
+@test("Auto Sell and Auction Sniper stop cleanly without a server shop")
+def _():
+    reset("creative")
+    # Nothing to sell: off at once.
+    setting("autosell", "items", "diamond")
+    setting("autosell", "mode", "Shop")
+    only("Auto Sell")
+    wait(10)
+    empty_off = "Auto Sell" not in modules_on()
+    on.discard("autosell")  # it turned itself off
+    # A diamond and no /shop menu: off after the 5 s menu deadline, with a line.
+    cmd("give @s minecraft:diamond 3")
+    wait(4)
+    mark = log_mark()
+    only("Auto Sell")
+    wait(20)
+    shop_waiting = "Auto Sell" in modules_on()
+    wait(110)
+    shop_said = any("Auto Sell stopped" in line for line in sunset_said(mark))
+    shop_off = "Auto Sell" not in modules_on()
+    on.discard("autosell")
+    # Auction mode: /ah sell for the hotbar's diamond (not a server command here), then off, back on the first slot.
+    ctl("select", "3")
+    wait(2)
+    before = state().get("selected")
+    setting("autosell", "mode", "Auction")
+    setting("autosell", "delay (s)", 0.5)
+    mark = log_mark()
+    only("Auto Sell")
+    wait(40)
+    sent = any("ah sell" in line.lower() for line in chat_since(mark)) or any("Unknown" in line for line in chat_since(mark))
+    auction_off = "Auto Sell" not in modules_on()
+    on.discard("autosell")
+    slot = state().get("selected")
+    switched_back = slot == before
+    # Auction Sniper: with no Max price it waits; with one it opens /ah and stops when no menu comes.
+    setting("auctionsniper", "max price", "")
+    only("Auction Sniper")
+    wait(110)
+    idle_on = "Auction Sniper" in modules_on()
+    setting("auctionsniper", "max price", "100")
+    mark = log_mark()
+    wait(115)
+    sniper_said = any("auction menu did not arrive" in line for line in sunset_said(mark))
+    sniper_off = "Auction Sniper" not in modules_on()
+    on.discard("auctionsniper")
+    only()
+    ok = empty_off and shop_waiting and shop_said and shop_off and sent and auction_off and switched_back and idle_on and sniper_said and sniper_off
+    return ok, (f"empty: off {empty_off}; shop: waited {shop_waiting}, said {shop_said}, off {shop_off}; auction: sent {sent}, "
+                f"off {auction_off}, slot {before}->{slot}; sniper: idle without price {idle_on}, said {sniper_said}, off {sniper_off}")
+
+
+@test("ESP villager filters and profession colors")
+def _():
+    reset("creative")
+    only("ESP")
+    setting("esp", "passive", "true")
+    setting("esp", "villager filter", "All")
+    setting("esp", "villager profession colors", "false")
+    cmd(f'summon villager {X0 + 0.5} {Y + 1} {Z0 + 5.5} {{NoAI:1b,Silent:1b,'
+        f'VillagerData:{{profession:"minecraft:librarian",level:1,type:"minecraft:plains"}}}}')
+    ctl("look-at", str(X0 + 0.5), str(Y + 2), str(Z0 + 5.5))
+    wait(20)
+
+    def red(name):
+        return sum(r > 200 and g < 110 and b < 110 for r, g, b in colour_frame(name).getdata())
+
+    plain = red("esp-villager-plain")
+    setting("esp", "villager profession colors", "true")
+    wait(4)
+    coloured = red("esp-villager-librarian")
+    setting("esp", "villager filter", "Master level")
+    wait(4)
+    hidden = red("esp-villager-master-only")
+    setting("esp", "villager filter", "Librarians")
+    wait(4)
+    librarians = red("esp-villager-librarians")
+    setting("esp", "villager filter", "All")
+    setting("esp", "villager profession colors", "false")
+    only()
+    ok = coloured > plain + 30 and hidden < coloured - 30 and librarians > hidden + 30
+    return ok, f"red pixels: plain {plain}, librarian colour {coloured}, master-only filter {hidden}, librarians filter {librarians}"
 
 
 @test("Vein Miner")

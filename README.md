@@ -141,6 +141,7 @@ and setting names, the start of the name is enough.
 | `.goto <x> <y> <z>`, `.goto stop` | walk somewhere through loaded terrain (up to 128 blocks); any movement key stops it |
 | `.vclip <n>`, `.hclip <n>` | move up or down, or forward |
 | `.plugins` | list loaded plugins with their modules and commands |
+| `.relog [seconds]` | leave and rejoin this multiplayer server once (default 1 second, decimals allowed); Back cancels the countdown |
 | `.debug [lines]` | copy a debug report to the clipboard (see below) |
 | `.menu [text]` | open the menu with a search already typed |
 | `.panic` | shut Sunset down until the game restarts |
@@ -251,7 +252,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 <details>
 <summary><b>Render</b> (31 modules)</summary>
 
-- **ESP**: boxes or 2D frames with health bars and shield colours; Murderer finder for Murder Mystery.
+- **ESP**: boxes or 2D frames with health bars and shield colours; Murderer finder for Murder Mystery; villager
+  filters (employed, librarians, master level, babies), profession colours and level labels.
 - **Tracers**, **Nametags** (health colours, totem pops), **Storage ESP**, **Block ESP**, **Hole ESP**,
   **Tunnel ESP**, **Void ESP**, **Light Overlay**, **Logout Spots**.
 - **Light ESP**: light the server sends underground (torches of bases dug into the deepslate), or only the light no
@@ -291,7 +293,14 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Geode Finder**: geodes the server hides, from their palettes, their buds' light or the light edges a hiding plugin
   leaves.
 - **Sound Detector**: what players nearby are doing (chests, doors, building, mining, crafting, eating, explosions,
-  withers spawned anywhere), with where and often who.
+  withers spawned anywhere), with where and often who; labels, beams and a colour per kind on its markers, a Max Y,
+  and Ignore near players.
+- **Depth Alert** (a line when you cross a height), **Staff List** (staff online by name or tab rank), **Base Guard**
+  (a line, or leaving, when an unknown player comes near), **Chest Index** (what was in the containers you opened,
+  per world, boxed when it matches a search), **Drill Logger** (which blocks round your pickaxe swing the server
+  removed, as JSON lines), **Auto Trident** (lets go of a charged Riptide trident).
+- **Auto Sell** (through a server's /shop menu or /ah sell) and **Auction Sniper** (buys /ah listings under a price,
+  within a budget): for servers with those commands; without them each stops itself with a line.
 - **Ore Sim**: shows ores worked out from the world seed, for servers that hide them.
   - **Seed source** defaults to *Manual*. Enter a signed number (including `0`) or a text seed in **Seed**, with
     `.seed <seed text>` or `.set oresim seed <seed text>`. A nonempty Seed always overrides automatic discovery,
@@ -498,7 +507,9 @@ Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover 
 Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback
 Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps, Ore Sim's automatic seed (SeedCrackerX) and the Baritone/Ore Sim integration, and the plugin release gate (verify.py's exit status, strict plugin results).
 
-**compkrx** ([compkrx](https://github.com/compkrx)): Vein Miner and Effects refinements.
+**compkrx** ([compkrx](https://github.com/compkrx)): Vein Miner, Effects refinements, the Relog command, Auto Sell,
+Auction Sniper, Chest Index, Drill Logger, Auto Trident, Depth Alert, Staff List, Base Guard, ESP's villager filters
+and Sound Detector's labels and beams.
 
 **pxdns** ([pxdns](https://github.com/pxdns)): HUD placement (corners and Custom places for the watermark, module list
 and coordinates) and Low health warning.

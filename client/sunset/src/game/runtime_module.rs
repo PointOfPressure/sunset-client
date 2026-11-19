@@ -270,6 +270,7 @@ impl Module {
             "Client Spoofer" => Some(self.p("Client").to_owned()),
             "Ore Sim" => super::sunset_ore_sim::info(self),
             "Baritone" => super::sunset_baritone::info(self),
+            "Auto Sell" | "Auction Sniper" => super::sunset_auction::info(self),
             "Offhand" if self.b("Show totem count") => Some(super::sunset_combat_inventory::totem_count().to_string()),
             _ => None,
         }
@@ -302,6 +303,16 @@ impl Module {
                 }
             }
             "Auto Sign" => super::sunset_auto_sign::visible(self, name),
+            "Auto Sell" => match name {
+                "Shop command" | "Shop title" | "Stacks per visit" => self.p("Mode") == "Shop",
+                "Price" | "Skip tools and weapons" | "Skip food" | "Switch back" => self.p("Mode") == "Auction",
+                _ => true,
+            },
+            "Auction Sniper" => match name {
+                "Auction command" => self.b("Open auction"),
+                "Confirm title" | "Confirm button text" | "Confirm item" => self.b("Confirm screen"),
+                _ => true,
+            },
             "HUD" => match name {
                 "Second color" => self.p("List color mode") != "Static" || self.p("Watermark color mode") != "Static",
                 "Color speed" => [self.p("List color mode"), self.p("Watermark color mode")].iter().any(|m| *m != "Static"),
@@ -621,6 +632,8 @@ impl Module {
             super::sunset_pvp_bot::NAME => super::sunset_pvp_bot::visible(self, name),
             "Atmosphere" => super::sunset_atmosphere::visible(self, name),
             "ESP" => match name {
+                "Villager filter" | "Villager babies" | "Villager profession colors" | "Villager level label" =>
+                    self.b("Passive") || super::sunset_util::listed(self.t("Entities"), "villager"),
                 "2D style" | "Health bar" | "2D names" | "2D distance" | "Glow" => self.p("Mode") == "2D box",
                 "Health side" | "Health text" => self.p("Mode") == "2D box" && self.b("Health bar"),
                 "Shield mode" | "Shield color" | "Broken shield color" => self.b("Shield colors"),

@@ -7,6 +7,33 @@ pub(crate) fn next(game: &mut Game<'_>) -> i32 {
     game.next_sequence()
 }
 
+pub(crate) fn release_charged_trident(game: &mut Game<'_>, charge: u32) {
+    let Some((slot, ticks)) = game.using else { return };
+    let Some(stack) = game.stack_in(slot) else { return };
+    if game.right && stack.item.as_ref() == "minecraft:trident"
+        && stack.enchantments().iter().any(|(id, level)| id.as_ref() == "minecraft:riptide" && *level > 0)
+        && game.ticks_held(stack, ticks) >= charge
+    {
+        game.release_remote_use();
+    }
+}
+
+// A plugin menu owns the result of this ordinary left click. Predicting a pickup
+// would put a listing/control on the local cursor while its next menu is in flight.
+pub(crate) fn server_menu_click(game: &mut Game<'_>, window: i32, slot: usize) -> bool {
+    use horizon_protocol::packets::play::{self, Serverbound as S};
+    let (open, menu) = game.remote_menu();
+    if window == 0 || open != window || game.carried.is_some() { return false; }
+    let Some(index) = crate::game::Game::menu_slot_index(&menu, slot) else { return false };
+    let Some(remote) = game.remote.as_ref() else { return false };
+    let state = remote.state_id;
+    game.send(S::ContainerClick(play::ContainerClick {
+        container: window, state, slot: index as i16, button: 0, input: 0,
+        changed: Vec::new(), carried: None,
+    }));
+    true
+}
+
 // A right click for the tick's keybind pass (Minecraft's keyUse.consumeClick): it waits for no use delay, and the
 // game places with its own sequence number and prediction, before the tick's movement. Scaffold's Godbridge.
 pub(crate) fn press_use(game: &mut Game<'_>) {
@@ -100,6 +127,20 @@ pub(crate) fn tab_uuids(game: &Game<'_>, max: usize) -> Option<(u128, Vec<u128>)
 pub(crate) fn tab_names(game: &Game<'_>) -> Vec<String> {
     game.remote.as_ref().map_or_else(Vec::new, |r| {
         r.tab_players.values().filter(|p| p.uuid != r.profile && r.listed.contains(&p.uuid)).map(|p| p.name.clone()).collect()
+    })
+}
+
+// A server's displayed rank or an explicit local name list can mark staff.
+pub(crate) fn staff_names(game: &Game<'_>, names: &str, ranks: &str) -> Vec<String> {
+    game.remote.as_ref().map_or_else(Vec::new, |r| {
+        r.tab_players.values().filter(|p| p.uuid != r.profile && r.listed.contains(&p.uuid))
+            .filter(|p| {
+                if crate::game::sunset_util::listed(names, &p.name) { return true; }
+                let shown = p.display_name.as_ref().map(horizon_client::scoreboard::comp_text)
+                    .map(|text| text.plain().to_lowercase()).unwrap_or_default();
+                shown.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty())
+                    .any(|w| ranks.split(',').any(|rank| !rank.trim().is_empty() && w.eq_ignore_ascii_case(rank.trim())))
+            }).map(|p| p.name.clone()).collect()
     })
 }
 
