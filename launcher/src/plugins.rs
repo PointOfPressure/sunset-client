@@ -408,17 +408,42 @@ impl Failure {
 }
 
 /// Builds Sunset with `plugins` into a new version folder and makes the instance play it. On failure or cancel the
-/// instance is left on what it played before.
+/// instance is left on what it played before, and whatever version folder the failed build wrote is removed.
 pub fn rebuild(p: &Paths, m: &Manifest, plugins: &[Plugin], cancel: &AtomicBool, report: StepReport) -> std::result::Result<Build, Failure> {
     let before = instance_version(p);
+    let had = native_dirs(p);
     let r = build(p, m, plugins, cancel, report);
     if r.is_err() {
         // native-build selects its build as it finishes; a failure after that (or a check of ours) puts the instance back.
         if let Some(v) = before.filter(|v| instance_version(p).as_deref() != Some(v.as_str())) {
             let _ = core::run_cli(p, &["instance", "version", core::INSTANCE, &v]);
         }
+        remove_new_builds(p, m, &had);
     }
     r
+}
+
+/// The `native-*` version folders in the game's data.
+fn native_dirs(p: &Paths) -> std::collections::BTreeSet<String> {
+    fs::read_dir(p.versions())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("native-"))
+        .collect()
+}
+
+/// Removes the version folders a failed build added (a whole build, or what a cancel left of one), leaving every
+/// folder that was there before it, the signed build, the recorded build and whatever the instance plays now.
+fn remove_new_builds(p: &Paths, m: &Manifest, had: &std::collections::BTreeSet<String>) {
+    let keep = [Some(m.version_dir.clone()), record(p).map(|b| b.version_dir), instance_version(p)];
+    for d in native_dirs(p).difference(had) {
+        if !keep.iter().flatten().any(|k| k == d) {
+            let _ = fs::remove_dir_all(p.versions().join(d));
+        }
+    }
 }
 
 fn build(p: &Paths, m: &Manifest, plugins: &[Plugin], cancel: &AtomicBool, report: StepReport) -> std::result::Result<Build, Failure> {
@@ -462,7 +487,6 @@ fn build(p: &Paths, m: &Manifest, plugins: &[Plugin], cancel: &AtomicBool, repor
         missing.insert(0, "Sunset");
     }
     if !missing.is_empty() {
-        let _ = fs::remove_dir_all(p.versions().join(&vdir));
         return Err(Failure::new(Phase::Packaging, format!("the build doesn't hold {}", missing.join(", "))));
     }
     stop(Phase::Packaging)?;
@@ -1031,6 +1055,27 @@ mod tests {
         assert_eq!(e.phase, Phase::Compiling);
         let msg = e.error().unwrap();
         assert!(msg.contains("E0425") && !msg.contains("-->") && !msg.contains("aborting"), "{msg}");
+    }
+
+    #[test]
+    fn a_failed_build_leaves_no_version_folder_behind() {
+        let t = temp("leftover");
+        let p = Paths { root: t.clone() };
+        let m = manifest("abc");
+        let mk = |n: &str| fs::create_dir_all(p.versions().join(n)).unwrap();
+        mk("native-x"); // the signed build
+        mk("native-old"); // there before the build
+        let had = native_dirs(&p);
+        mk("native-new"); // the failed build's, finished or cut short
+        mk("native-playing"); // native-build selected it and putting the instance back failed
+        mk("other");
+        fs::create_dir_all(p.horizon()).unwrap();
+        fs::write(p.horizon().join("instances.json"), serde_json::json!({"instances": {"sunset": {"version": "native-playing"}}}).to_string()).unwrap();
+        remove_new_builds(&p, &m, &had);
+        let left: Vec<String> = native_dirs(&p).into_iter().collect();
+        assert_eq!(left, ["native-old", "native-playing", "native-x"]);
+        assert!(p.versions().join("other").is_dir());
+        let _ = fs::remove_dir_all(&t);
     }
 
     #[test]
