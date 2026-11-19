@@ -14,7 +14,7 @@ const _: () = api::needs(3);
 const ID: &str = "launcher_test";
 const VERSION: &str = "1.0.0";
 const BEACON: &str = "Test Beacon";
-const BADGE: &str = "Test plugin: built in by the Sunset launcher";
+const BADGE: &str = "Test plugin running";
 
 // Said in chat once per world joined.
 static GREETED: AtomicBool = AtomicBool::new(false);
