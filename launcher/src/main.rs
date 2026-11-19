@@ -4,6 +4,7 @@
 mod art;
 mod core;
 mod fx;
+mod nick_field;
 mod plugins;
 mod ui;
 
@@ -20,6 +21,7 @@ Without a command, opens the window.
   deps             Linux: the libraries horizon-launcher is missing, and how to install them
   sign-in          Sign in with Microsoft (prints the link and the code)
   play             Play the sunset instance
+  offline NICK     Play the sunset instance offline (cracked) as NICK, for joining offline-mode servers
   import [NAME]    Copy Sunset configs and profiles from a Horizon instance (keeps files already here)
   plugins          The installed plugins and what the instance plays
   plugins on|off   Build plugins into Sunset, or go back to Sunset as released
@@ -82,6 +84,21 @@ fn main() {
             let st = c.wait().map_err(|e| e.to_string())?;
             if st.success() { Ok("the game exited".into()) } else { Err(err.trim().lines().last().unwrap_or("play failed").to_string()) }
         }),
+        "offline" => match args.get(1) {
+            None => Err("usage: sunset-launcher offline NICK".into()),
+            Some(_) if !core::owner_ever(&p) => Err(
+                "Offline play needs a Microsoft account that owns Minecraft: Java Edition to have signed in at least once. Sign in with `sunset-launcher sign-in`.".into(),
+            ),
+            Some(nick) => core::play_offline(&p, &s, nick).and_then(|mut c| {
+                use std::io::Read;
+                let mut err = String::new();
+                if let Some(mut e) = c.stderr.take() {
+                    let _ = e.read_to_string(&mut err);
+                }
+                let st = c.wait().map_err(|e| e.to_string())?;
+                if st.success() { Ok("the game exited".into()) } else { Err(err.trim().lines().last().unwrap_or("play failed").to_string()) }
+            }),
+        },
         "import" => {
             let src = core::import_sources(&p);
             let pick = match args.get(1) {

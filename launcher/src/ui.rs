@@ -6,7 +6,7 @@ use crate::plugins::{self, Phase};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     Animation, AnimationExt as _, SpringAnimation, TextRun, ease_out_quint, quadratic,
-    App, AppContext as _, Application, Bounds, ClickEvent, ClipboardItem, Context, ElementId, Hsla, InteractiveElement as _,
+    App, AppContext as _, Application, Bounds, ClickEvent, ClipboardItem, Context, ElementId, FocusHandle, Hsla, InteractiveElement as _, KeyDownEvent,
     IntoElement, MouseButton, MouseDownEvent, Pixels, Point, ParentElement as _, Anchor, CursorStyle, Decorations, MouseMoveEvent, MouseUpEvent, ResizeEdge, WindowControlArea, WindowDecorations, PathBuilder, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
     WindowBounds, WindowOptions, anchored, canvas, deferred, div, point, px, rgb, size,
     Corners, PathStyle, StrokeOptions, linear_color_stop, linear_gradient,
@@ -111,6 +111,7 @@ enum Msg {
     JobDone(core::Result<String>),
     Latest(core::Result<Release>, bool),
     Accounts(Vec<Account>),
+    OwnerEver(bool),
     Face(String, Vec<[u8; 4]>),
     SignIn(SignIn),
     GameExited(Option<String>),
@@ -148,6 +149,15 @@ struct SignInView {
     child: Option<Arc<Mutex<Child>>>,
 }
 
+/// The "Add offline name" dialog: the nickname field and whatever it last refused.
+struct OfflineDialog {
+    input: crate::nick_field::NickField,
+    focus: FocusHandle,
+    /// Focused on the first frame it is shown; keeps later frames from stealing focus back.
+    focused_once: bool,
+    error: Option<String>,
+}
+
 pub struct Launcher {
     paths: Paths,
     settings: Settings,
@@ -166,6 +176,9 @@ pub struct Launcher {
     job: Option<Job>,
     note: Option<(bool, String)>,
     sign_in: Option<SignInView>,
+    offline_dialog: Option<OfflineDialog>,
+    /// Whether a Microsoft account that owns Minecraft has ever signed in (gates offline play).
+    owner_ever: bool,
     /// Armed by a press on the title bar; the first move then hands the drag to the window manager.
     title_drag: bool,
     playing: bool,
@@ -218,6 +231,8 @@ impl Launcher {
             job: None,
             note: None,
             sign_in: None,
+            offline_dialog: None,
+            owner_ever: false,
             title_drag: false,
             playing: false,
             started: None,
@@ -281,6 +296,9 @@ impl Launcher {
         std::thread::spawn(move || {
             let list = core::accounts(&p).unwrap_or_default();
             let _ = tx.send_blocking(Msg::Accounts(list.clone()));
+            if core::owner_ever(&p) {
+                let _ = tx.send_blocking(Msg::OwnerEver(true));
+            }
             for a in list {
                 if let Ok(face) = core::skin_face(&a.uuid) {
                     let _ = tx.send_blocking(Msg::Face(a.uuid, face));
@@ -305,6 +323,12 @@ impl Launcher {
 
     fn start_install(&mut self, repair: bool, cx: &mut Context<Self>) {
         if self.job.is_some() {
+            return;
+        }
+        // The running game uses the version folder an install or repair replaces (offline play runs it in place).
+        if self.playing {
+            self.note = Some((true, "Close the game first.".into()));
+            cx.notify();
             return;
         }
         let Some(rel) = self.latest.clone() else {
@@ -372,15 +396,82 @@ impl Launcher {
         cx.notify();
     }
 
+    /// Opens the "Add offline name" dialog, gated on an owning account having signed in at least once.
+    fn open_offline_dialog(&mut self, cx: &mut Context<Self>) {
+        self.set_menu(None, cx);
+        if !self.owner_ever {
+            self.note = Some((true, core::OWNER_NEEDED.into()));
+            cx.notify();
+            return;
+        }
+        self.offline_dialog = Some(OfflineDialog {
+            input: crate::nick_field::NickField::default(),
+            focus: cx.focus_handle(),
+            focused_once: false,
+            error: None,
+        });
+        cx.notify();
+    }
+
+    /// Validates the dialog's name, saves it and makes it the identity Play starts as.
+    fn submit_offline(&mut self, cx: &mut Context<Self>) {
+        let Some(d) = self.offline_dialog.as_mut() else { return };
+        let name = d.input.text().trim().to_string();
+        if !core::valid_offline_name(&name) {
+            d.error = Some("An offline name is 3 to 16 letters, digits or underscores.".into());
+            cx.notify();
+            return;
+        }
+        self.offline_dialog = None;
+        self.set_settings(
+            move |s| {
+                if !s.offline_names.contains(&name) {
+                    s.offline_names.push(name.clone());
+                }
+                s.offline_active = Some(name);
+            },
+            cx,
+        );
+    }
+
+    fn choose_offline(&mut self, name: String, cx: &mut Context<Self>) {
+        self.set_settings(move |s| s.offline_active = Some(name), cx);
+    }
+
+    fn forget_offline(&mut self, name: String, cx: &mut Context<Self>) {
+        self.set_settings(
+            move |s| {
+                s.offline_names.retain(|n| n != &name);
+                if s.offline_active.as_ref() == Some(&name) {
+                    s.offline_active = None;
+                }
+            },
+            cx,
+        );
+    }
+
+    fn use_microsoft(&mut self, cx: &mut Context<Self>) {
+        self.set_settings(|s| s.offline_active = None, cx);
+    }
+
     fn play(&mut self, cx: &mut Context<Self>) {
         if self.playing || self.job.is_some() {
             return;
         }
-        if self.accounts.is_empty() {
-            self.start_sign_in(cx);
-            return;
-        }
-        match core::play(&self.paths, &self.settings) {
+        let offline = self.settings.offline_active.clone().filter(|n| self.settings.offline_names.contains(n));
+        let result = match &offline {
+            // play_offline checks ownership itself; this only spares the window a CLI call.
+            Some(_) if !self.owner_ever => Err(core::OWNER_NEEDED.to_string()),
+            Some(nick) => core::play_offline(&self.paths, &self.settings, nick),
+            None => {
+                if self.accounts.is_empty() {
+                    self.start_sign_in(cx);
+                    return;
+                }
+                core::play(&self.paths, &self.settings)
+            }
+        };
+        match result {
             Ok(mut child) => {
                 self.playing = true;
                 self.started = Some(std::time::Instant::now());
@@ -506,6 +597,7 @@ impl Launcher {
                 }
             },
             Msg::Accounts(a) => self.accounts = a,
+            Msg::OwnerEver(v) => self.owner_ever = v,
             Msg::Face(uuid, face) => {
                 self.faces.retain(|(u, _)| u != &uuid);
                 self.faces.push((uuid, face));
@@ -524,6 +616,10 @@ impl Launcher {
                     match r {
                         Ok(name) => {
                             self.sign_in = None;
+                            // A new sign-in is the account to play: leave offline mode.
+                            if self.settings.offline_active.is_some() {
+                                self.set_settings(|s| s.offline_active = None, cx);
+                            }
                             self.note = Some((false, if name.is_empty() { "Signed in".into() } else { format!("Signed in as {name}") }));
                             self.refresh_accounts();
                         }
@@ -1417,10 +1513,13 @@ impl Launcher {
             }
             Menu::Account => {
                 let mut pop = pop;
+                let offline_active = self.settings.offline_active.clone();
                 for (i, a) in self.accounts.iter().enumerate() {
                     let (uuid, name) = (a.uuid.clone(), a.name.clone());
-                    let label = if a.selected { format!("{}  (playing)", a.name) } else { format!("Play as {}", a.name) };
+                    let playing = a.selected && offline_active.is_none();
+                    let label = if playing { format!("{}  (playing)", a.name) } else { format!("Play as {}", a.name) };
                     pop = pop.child(self.menu_item(("acct", i), label, cx, move |this, cx| {
+                        this.set_settings(|s| s.offline_active = None, cx);
                         this.cli_action(vec!["account".into(), "select".into(), uuid.clone()], "Account selected", cx)
                     }));
                     let uuid = a.uuid.clone();
@@ -1428,7 +1527,23 @@ impl Launcher {
                         this.cli_action(vec!["account".into(), "sign-out".into(), uuid.clone()], "Signed out", cx)
                     }));
                 }
-                pop.child(self.menu_item("add-account", "Add account", cx, |this, cx| this.start_sign_in(cx)))
+                // Offline (cracked) nicknames: play on offline-mode servers as the chosen name.
+                for (i, nick) in self.settings.offline_names.iter().enumerate() {
+                    let playing = offline_active.as_deref() == Some(nick.as_str());
+                    let label = if playing { format!("{nick}  (playing, offline)") } else { format!("Play as {nick} (offline)") };
+                    let choose = nick.clone();
+                    pop = pop.child(self.menu_item(("off", i), label, cx, move |this, cx| this.choose_offline(choose.clone(), cx)));
+                    let forget = nick.clone();
+                    pop = pop.child(self.menu_item(("off-forget", i), format!("Forget {nick}"), cx, move |this, cx| this.forget_offline(forget.clone(), cx)));
+                }
+                if offline_active.is_some() && !self.accounts.is_empty() {
+                    pop = pop.child(self.menu_item("use-msa", "Use Microsoft account", cx, |this, cx| this.use_microsoft(cx)));
+                }
+                pop = pop.child(self.menu_item("add-account", "Add account", cx, |this, cx| this.start_sign_in(cx)));
+                if self.owner_ever {
+                    pop = pop.child(self.menu_item("add-offline", "Add offline name", cx, |this, cx| this.open_offline_dialog(cx)));
+                }
+                pop
             }
             Menu::More => {
                 let logs = self.paths.logs();
@@ -1458,6 +1573,16 @@ impl Launcher {
     }
 
     fn account_chip(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        if let Some(nick) = self.settings.offline_active.clone() {
+            let chip = top_chip("account")
+                .pl(px(8.))
+                .child(icon(Icon::User, 16., MUTED))
+                .child(text(nick, 13., TEXT))
+                .child(text("offline", 11., MUTED))
+                .child(icon(Icon::Chevron, 14., MUTED))
+                .on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Account, ev, cx)));
+            return self.with_menu(Menu::Account, chip, true, cx).into_any_element();
+        }
         let Some(a) = self.accounts.iter().find(|a| a.selected).or(self.accounts.first()) else {
             // The same chip as when signed in, with a person in place of the face.
             return top_chip("sign-in")
@@ -2076,11 +2201,97 @@ impl Launcher {
         Some(div().absolute().top_0().left_0().size_full().flex().items_center().justify_center().bg(Hsla::from(gpui::rgba(0x000000b0))).child(body))
     }
 
+    fn offline_modal(&self, window: &Window, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let d = self.offline_dialog.as_ref()?;
+        let focused = d.focus.is_focused(window);
+        let field = div()
+            .id("offline-name")
+            .track_focus(&d.focus)
+            .flex()
+            .items_center()
+            .w_full()
+            .h(px(40.))
+            .px(px(12.))
+            .overflow_hidden()
+            .rounded(px(R_CTRL))
+            .bg(rgb(CHIP))
+            .border_1()
+            .border_color(rgb(if focused { ACCENT } else { LINE }))
+            .text_size(px(15.))
+            .cursor_text()
+            .child(crate::nick_field::content(&d.input, focused, "Nickname".into(), TEXT, MUTED, ACCENT))
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                if let Some(d) = this.offline_dialog.as_ref() {
+                    window.focus(&d.focus, cx);
+                }
+                cx.notify();
+            }))
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                let key = match this.offline_dialog.as_mut() {
+                    Some(d) => crate::nick_field::handle(&mut d.input, ev, cx),
+                    None => return,
+                };
+                match key {
+                    crate::nick_field::Key::Pass => return,
+                    crate::nick_field::Key::Enter => this.submit_offline(cx),
+                    crate::nick_field::Key::Escape => {
+                        this.offline_dialog = None;
+                        window.blur(cx);
+                    }
+                    crate::nick_field::Key::Edited => {
+                        if let Some(d) = this.offline_dialog.as_mut() {
+                            d.error = None;
+                        }
+                    }
+                    crate::nick_field::Key::Refused => {
+                        if let Some(d) = this.offline_dialog.as_mut() {
+                            d.error = Some("Only letters, digits and underscores, up to 16.".into());
+                        }
+                    }
+                    _ => {}
+                }
+                cx.stop_propagation();
+                cx.notify();
+            }));
+        let mut body = card()
+            .w(px(420.))
+            .p(px(24.))
+            .flex()
+            .flex_col()
+            .gap(px(14.))
+            .occlude()
+            .child(bold("Play offline", 20.))
+            .child(text("Choose a nickname to play offline-mode (cracked) servers under. It uses that name's offline UUID, not a Microsoft account — online-mode servers will still refuse it.", 13., MUTED))
+            .child(field);
+        if let Some(e) = &d.error {
+            body = body.child(text(e.clone(), 13., RED));
+        }
+        body = body.child(
+            div()
+                .flex()
+                .justify_end()
+                .gap(px(8.))
+                .child(button("off-cancel", "Cancel", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.offline_dialog = None;
+                    cx.notify();
+                })))
+                .child(button("off-add", "Add", true).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.submit_offline(cx)))),
+        );
+        Some(div().absolute().top_0().left_0().size_full().flex().items_center().justify_center().bg(Hsla::from(gpui::rgba(0x000000b0))).child(body))
+    }
+
 }
 
 impl Render for Launcher {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         fx::begin_frame();
+        // The offline dialog's field takes focus the first frame it shows, so typing just works.
+        if let Some(d) = self.offline_dialog.as_mut() {
+            if !d.focused_once {
+                d.focused_once = true;
+                window.focus(&d.focus, cx);
+            }
+        }
         // Another page (however the tab changed) starts at its top.
         if self.shown_tab != self.tab {
             self.shown_tab = self.tab;
@@ -2137,6 +2348,7 @@ impl Render for Launcher {
             .when_some(note, |d, n| d.child(n.mt(px(GAP))))
             .when_some(self.menu_popup(cx), |d, m| d.child(m))
             .when_some(self.sign_in_modal(cx), |d, m| d.child(m))
+            .when_some(self.offline_modal(window, cx), |d, m| d.child(m))
             .when_some(resize_edges(window), |d, e| d.child(e))
     }
 }

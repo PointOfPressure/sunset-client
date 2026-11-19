@@ -101,6 +101,14 @@ pub struct Settings {
     /// Plugins are built into Sunset (Plugins tab). Off until the player turns it on: until then the instance plays the
     /// signed build exactly as released.
     pub plugins_enabled: bool,
+    /// Saved offline (cracked) nicknames. Offline play needs a Microsoft account that owns Minecraft
+    /// to have signed in at least once (`owner_ever`); the game then joins offline-mode servers under
+    /// the chosen name, with that name's offline UUID.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub offline_names: Vec<String>,
+    /// The offline name Play starts the game as; `None` plays with the Microsoft account instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offline_active: Option<String>,
 }
 
 fn is_zero(n: &u64) -> bool {
@@ -117,6 +125,8 @@ impl Default for Settings {
             last_played: None,
             playtime: 0,
             plugins_enabled: false,
+            offline_names: vec![],
+            offline_active: None,
         }
     }
 }
@@ -646,6 +656,127 @@ pub fn sign_in(p: &Paths, on: impl Fn(SignIn) + Send + 'static) -> Result<Arc<st
     Ok(child)
 }
 
+// ---------------------------------------------------------------- offline (cracked) play
+
+fn client_name() -> &'static str {
+    if cfg!(windows) { "horizon-client.exe" } else { "horizon-client" }
+}
+
+/// A Minecraft name: 3 to 16 of letters, digits and underscore. An offline-mode server derives the
+/// player's UUID from the name (vanilla's `OfflinePlayer:<name>`, which Horizon calls `offline_uuid`),
+/// so the launcher keeps to the same rule a server will accept.
+pub fn valid_offline_name(name: &str) -> bool {
+    let n = name.chars().count();
+    (3..=16).contains(&n) && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+/// Whether a Microsoft account that owns Minecraft: Java Edition has signed in here at least once.
+/// Offline play is only for owners: Horizon's Minecraft files are prepared from the owner's own copy,
+/// so a chosen nick is never a way to play without owning the game. The answer is sticky — a `.owned`
+/// marker is written the first time an owner is seen — so signing the account out later does not take
+/// offline play away ("logged in at least once").
+pub fn owner_ever(p: &Paths) -> bool {
+    if p.file(".owned").is_file() {
+        return true;
+    }
+    if cli_owns_java(p) {
+        let _ = write_atomic(&p.file(".owned"), b"");
+        return true;
+    }
+    false
+}
+
+/// Asks the stock CLI whether a signed-in account owns Java Edition (`account list --json` reports
+/// `owner`). Any trouble reaching it reads as "not an owner yet", never a false yes.
+fn cli_owns_java(p: &Paths) -> bool {
+    #[derive(Deserialize)]
+    struct List {
+        #[serde(default)]
+        owner: bool,
+    }
+    cli_path(p).is_some()
+        && run_cli(p, &["account", "list", "--json"]).ok().and_then(|out| serde_json::from_str::<List>(&out).ok()).is_some_and(|l| l.owner)
+}
+
+/// Starts the game offline under `name`, by running the installed `horizon-client` directly: the stock
+/// CLI's `play` only starts a signed-in Microsoft account, so an offline launch cannot go through it.
+/// Same instance, resources and window as a normal start, but no account session, so the game joins
+/// offline-mode servers as `name`. Refused until an owning account has signed in ([`owner_ever`]).
+///
+/// What the stock CLI adds on its own and this start cannot: on Windows it runs the game from a
+/// fixed runtime slot and holds run leases, so here the game runs from its version folder, whose
+/// files stay in use until it exits (the window refuses Install and Repair while it plays).
+pub fn play_offline(p: &Paths, s: &Settings, name: &str) -> Result<Child> {
+    if !valid_offline_name(name) {
+        return Err("An offline name is 3 to 16 letters, digits or underscores.".into());
+    }
+    if !owner_ever(p) {
+        return Err(OWNER_NEEDED.into());
+    }
+    let m = installed(p).ok_or("Sunset isn't installed yet.")?;
+    let version = p.versions().join(offline_version_dir(p, &m));
+    let exe = version.join(client_name());
+    if !exe.is_file() {
+        return Err("The game isn't installed yet. Install or repair Sunset first.".into());
+    }
+    // The prebuilt native client reads its prepared Minecraft files from the base Nightly it was
+    // built on, not from its own version folder.
+    let resources = p.versions().join(&m.horizon.tag).join(".local").join("horizon-client").join(&m.horizon.game);
+    if !resources.is_dir() {
+        return Err("Minecraft's files aren't prepared yet. Repair Sunset to prepare them.".into());
+    }
+    let instance = p.instance();
+    fs::create_dir_all(&instance).map_err(|e| format!("can't make {}: {e}", instance.display()))?;
+    let mut c = Command::new(&exe);
+    // As the stock CLI's client_command: the launcher's own renderer workarounds and account
+    // handover stay out of the game, and the "I'm playing" ping follows Horizon's setting.
+    for key in ["LIBGL_ALWAYS_SOFTWARE", "GALLIUM_DRIVER", "WEBKIT_DISABLE_DMABUF_RENDERER", "WEBKIT_DISABLE_COMPOSITING_MODE", "HORIZON_ACCOUNT_SESSIONS", "HORIZON_PLAYER_NAME"] {
+        c.env_remove(key);
+    }
+    if horizon_ping_off(p) {
+        c.env("HORIZON_NO_HEARTBEAT", "1");
+    }
+    if cfg!(target_os = "linux") && std::env::var_os("PIPEWIRE_PROPS").is_none() {
+        c.env("PIPEWIRE_PROPS", "{ application.name = \"Horizon\" media.role = \"Game\" }");
+    }
+    c.current_dir(&instance)
+        .env("HORIZON_HOME", &instance)
+        // The launcher-owned marker for the version folder the running game's files come from, so a
+        // Repair that would replace them can tell the game is using them (run_leases.rs `SOURCE`).
+        .env("HORIZON_RUNTIME_SOURCE", &version)
+        .arg("--resources").arg(&resources)
+        .arg("--game-dir").arg(&instance)
+        .arg("--home").arg(&instance)
+        .arg("--name").arg(name);
+    for a in s.game_args() {
+        c.arg(a);
+    }
+    c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
+    c.spawn().map_err(|e| format!("can't start the game: {e}"))
+}
+
+pub const OWNER_NEEDED: &str = "Offline play needs a Microsoft account that owns Minecraft: Java Edition to have signed in at least once.";
+
+/// The version folder the instance plays: a plugin build when plugins are built in (plugins.rs selects
+/// it with `instance version`), else the signed release. Only a plain folder name that holds the game counts.
+fn offline_version_dir(p: &Paths, m: &Manifest) -> String {
+    crate::plugins::instance_version(p)
+        .filter(|v| plain_folder_name(v) && p.versions().join(v).join(client_name()).is_file())
+        .unwrap_or_else(|| m.version_dir.clone())
+}
+
+fn plain_folder_name(v: &str) -> bool {
+    !v.is_empty() && v != "." && v != ".." && !v.contains(['/', '\\', ':'])
+}
+
+/// Horizon's own "I'm playing" ping switch (`ping_off` in the stock CLI's settings.json).
+fn horizon_ping_off(p: &Paths) -> bool {
+    fs::read(p.horizon().join("settings.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .is_some_and(|v| v["ping_off"].as_bool() == Some(true))
+}
+
 // ---------------------------------------------------------------- install
 
 /// Installs (or with `repair`, re-verifies and re-unpacks) the release: the stock CLI, the pinned Horizon Nightly,
@@ -949,6 +1080,25 @@ pub fn face_from_png(bytes: &[u8]) -> Result<Vec<[u8; 4]>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offline_names_and_the_owner_gate() {
+        for ok in ["Steve", "abc", "Player_1234567890"[..16].as_ref(), "___"] {
+            assert!(valid_offline_name(ok), "{ok}");
+        }
+        for bad in ["", "ab", "Player_12345678901", "two words", "émile", "a-b-c", "../x"] {
+            assert!(!valid_offline_name(bad), "{bad}");
+        }
+        assert!(plain_folder_name("native-0b14f8a-98af49efc335"));
+        for bad in ["", ".", "..", "../evil", "a/b", r"a\b", "C:x"] {
+            assert!(!plain_folder_name(bad), "{bad}");
+        }
+        // No owner seen here (no marker, no CLI): offline play is refused before anything starts.
+        let t = std::env::temp_dir().join(format!("sunset-offline-test-{}", std::process::id()));
+        let p = Paths { root: t.clone() };
+        assert_eq!(play_offline(&p, &Settings::default(), "Steve").err().as_deref(), Some(OWNER_NEEDED));
+        let _ = fs::remove_dir_all(&t);
+    }
 
     #[test]
     fn horizon_build_is_never_a_hash() {
