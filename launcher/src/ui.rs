@@ -29,6 +29,7 @@ const ON_ACCENT: u32 = 0xffffff;
 const RED: u32 = 0xef6b6b; // errors only; orange is the one accent
 const SOFT: u32 = 0xd2d2d7; // labels and unselected tabs: a step under TEXT
 const PILL: u32 = 0x26262b; // the changelog's kind labels, all one style
+const TAB_ON: u32 = 0x47220c; // the selected tab: Sunset orange deep enough not to compete with Play
 
 // One type scale: the page's title, a card's heading, body text, small print.
 const T_TITLE: f32 = 30.;
@@ -583,7 +584,7 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
     canvas(
         |_, _, _| (),
         move |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| {
-            if matches!(kind, Icon::Minimize | Icon::Maximize | Icon::Restore) {
+            if matches!(kind, Icon::Minimize | Icon::Maximize | Icon::Restore | Icon::Close) {
                 return window_glyph(kind, b, color, window);
             }
             let k = b.size.width / 24.;
@@ -627,7 +628,7 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
                     line(&mut p, &[(13., 6.), (19., 12.), (13., 18.)]);
                     p
                 }
-                Icon::Minimize | Icon::Maximize | Icon::Restore => return,
+                Icon::Minimize | Icon::Maximize | Icon::Restore | Icon::Close => return,
                 Icon::User => {
                     let mut p = stroke();
                     let head: Vec<(f32, f32)> = (0..=24).map(|i| {
@@ -637,12 +638,6 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
                     line(&mut p, &head);
                     p.move_to(at(5., 19.5));
                     p.curve_to(at(19., 19.5), at(12., 10.5));
-                    p
-                }
-                Icon::Close => {
-                    let mut p = stroke();
-                    line(&mut p, &[(7., 7.), (17., 17.)]);
-                    line(&mut p, &[(17., 7.), (7., 17.)]);
                     p
                 }
                 Icon::Folder => {
@@ -661,8 +656,9 @@ fn icon(kind: Icon, s: f32, color: u32) -> impl IntoElement {
     .flex_none()
 }
 
-/// The window buttons' minimise, maximise and restore glyphs: 1 px lines on whole device pixels, so they stay sharp
-/// at every scale instead of smearing across two pixel rows like a stroked path.
+/// The window buttons' glyphs, all in one square: minimise, maximise and restore as 1 px lines on whole device pixels,
+/// so they stay sharp at every scale instead of smearing across two pixel rows like a stroked path; close as two
+/// diagonals corner to corner.
 fn window_glyph(kind: Icon, b: Bounds<Pixels>, color: u32, window: &mut Window) {
     let scale = window.scale_factor();
     let snap = |v: f32| (v * scale).round() / scale;
@@ -680,6 +676,17 @@ fn window_glyph(kind: Icon, b: Bounds<Pixels>, color: u32, window: &mut Window) 
     match kind {
         Icon::Minimize => bar(window, x0, snap(y0 + side / 2.), side, t),
         Icon::Maximize => square(window, x0, y0, side),
+        Icon::Close => {
+            let mut p = PathBuilder::fill().with_style(PathStyle::Stroke(StrokeOptions::default().with_line_width(1.15).with_line_cap(LineCap::Square)));
+            let at = |x: f32, y: f32| point(px(x), px(y));
+            p.move_to(at(x0 + 0.5, y0 + 0.5));
+            p.line_to(at(x0 + side - 0.5, y0 + side - 0.5));
+            p.move_to(at(x0 + side - 0.5, y0 + 0.5));
+            p.line_to(at(x0 + 0.5, y0 + side - 0.5));
+            if let Ok(p) = p.build() {
+                window.paint_path(p, rgb(color));
+            }
+        }
         _ => {
             // The window in front, lower left, and the top and right edges of the one behind it.
             let s = snap(side * 0.8);
@@ -781,33 +788,6 @@ fn scroll_cues(handle: &gpui::ScrollHandle, window: &mut Window) {
     let y = 6. + (off / max).clamp(0., 1.) * (track - thumb);
     let at = Bounds::new(point(b.origin.x + b.size.width - px(7.), b.origin.y + px(y)), size(px(3.), px(thumb)));
     window.paint_quad(gpui::fill(at, rgb(0x3a3a40)).corner_radii(Corners::all(px(1.5))));
-}
-
-/// Horizon's mark (horizon-rust/horizon docs/media/brand/icon.svg), drawn on its 16-unit grid: an H on a dark tile
-/// whose crossbar is the horizon, a violet line edge to edge, with the stems above it at full strength and their
-/// reflection below at a third. The tile takes the chip's nested radius.
-fn horizon_mark(s: f32) -> impl IntoElement {
-    canvas(
-        |_, _, _| (),
-        move |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| {
-            let u = b.size.width / 16.;
-            let rect = |x: f32, y: f32, w: f32, h: f32| Bounds::new(point(b.origin.x + u * x, b.origin.y + u * y), size(u * w, u * h));
-            // A hairline edge keeps the tile readable as a box on the dark chip it sits in.
-            window.paint_quad(
-                gpui::fill(b, rgb(0x18181b)).corner_radii(Corners::all(px(nested(R_CTRL, FACE_INSET)))).border_widths(px(1.)).border_color(rgb(0x38383e)),
-            );
-            for (y, colour) in [(3., gpui::rgba(0xecedf3ff)), (8., gpui::rgba(0xecedf35c))] {
-                for x in [4., 10.] {
-                    window.paint_quad(gpui::fill(rect(x, y, 2., 4.), colour));
-                }
-            }
-            // Horizon's line is violet in its own brand; here it is neutral, so orange stays the window's one accent.
-            window.paint_quad(gpui::fill(rect(0., 7., 16., 1.), rgb(0xa8a8b0)));
-        },
-    )
-    .w(px(s))
-    .h(px(s))
-    .flex_none()
 }
 
 /// A filled half disc standing on `cy`.
@@ -1068,12 +1048,13 @@ impl Launcher {
             .child(self.dropdown(Menu::Platform, "Horizon", cx))
             .child(self.dropdown(Menu::Instance, if has { INSTANCE_NAME } else { "No instance" }, cx));
         let tab_strip = group().child({
-                let shown: Vec<_> = tabs.into_iter().filter(|(t, _)| has || *t == Tab::Overview || *t == Tab::Settings).collect();
+                // All four always, so the tabs never move; with no instance Plugins and Profiles say what to do.
+                let shown: Vec<_> = tabs.to_vec();
                 // Tabs are sized here from their labels, so the pill that slides under them knows where each one is
                 // in the same frame.
                 // Inside the strip's 1 px border and 3 px padding.
                 let tab_h = CTRL_H - 8.;
-                let tab_r = nested(R_CTRL, 4.);
+                let tab_r = R_CTRL;
                 let mut x = 0.;
                 let spans: Vec<(f32, f32)> = shown
                     .iter()
@@ -1085,7 +1066,7 @@ impl Launcher {
                     .collect();
                 let widths: Vec<f32> = spans.iter().map(|s| s.1).collect();
                 let pill = shown.iter().position(|(t, _)| *t == self.tab).map(|at| {
-                    div().absolute().top(px(3.)).h(px(tab_h)).rounded(px(tab_r)).bg(rgb(ACCENT)).with_spring(
+                    div().absolute().top(px(3.)).h(px(tab_h)).rounded(px(tab_r)).bg(rgb(TAB_ON)).with_spring(
                         "tab-pill",
                         SpringAnimation::new(fx::SLIDE).to(at as f32).with_epsilon(0.002),
                         move |d, p| {
@@ -1094,7 +1075,7 @@ impl Launcher {
                         },
                     )
                 });
-                // No box around the tabs: the orange pill under the selected one is the only shape.
+                // No box around the tabs: the ember pill under the selected one is the only shape, quieter than Play.
                 div().relative().flex().p(px(3.)).gap(px(2.)).children(pill).children(shown.into_iter().zip(widths).map(|((t, label), w)| {
                     let on = self.tab == t;
                     let id = ElementId::from(label);
@@ -1155,8 +1136,6 @@ impl Launcher {
     fn dropdown(&self, menu: Menu, label: &'static str, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let id = if menu == Menu::Platform { "platform" } else { "instance" };
         let chip = top_chip(id)
-            // The platform chip leads with the platform's mark, inset like the account chip's face.
-            .when(menu == Menu::Platform, |d| d.pl(px(FACE_INSET - 1.)).child(horizon_mark(FACE)))
             .child(text(label, 13., TEXT))
             .child(icon(Icon::Chevron, 14., MUTED))
             .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| this.toggle_menu(menu, ev, cx)));
@@ -1713,12 +1692,14 @@ impl Render for Launcher {
             Tab::Settings => self.settings_view(cx),
             Tab::Plugins => {
                 let items = self.mods.iter().map(|(id, v)| (if id == "sunset" { "Sunset".to_string() } else { id.clone() }, v.clone())).collect();
-                self.list_view("Plugins", "Nothing built into this version yet.".into(), items, None, cx).into_any_element()
+                let empty = if self.installed.is_some() { "Nothing built into this version yet." } else { "Install Sunset from Overview to see the plugins built into it." };
+                self.list_view("Plugins", empty.into(), items, None, cx).into_any_element()
             }
             Tab::Profiles => {
                 let items = self.profiles.iter().map(|p| (p.clone(), String::new())).collect();
                 let empty = "No saved profiles yet. Save one in game from Sunset's menu (Right Shift).".to_string();
-                self.list_view("Profiles", empty, items, Some(self.paths.sunset_data().join("profiles")), cx).into_any_element()
+                let folder = self.installed.is_some().then(|| self.paths.sunset_data().join("profiles"));
+                self.list_view("Profiles", empty, items, folder, cx).into_any_element()
             }
         };
         let note = self.note.clone().map(|(err, msg)| {
