@@ -51,7 +51,6 @@ const TOP_H: f32 = 32.; // the title bar's chips (platform, instance, account), 
 const HEAD_H: f32 = 48.; // a card's heading row, so headings in cards side by side share a baseline
 const LOG_MAX: f32 = 236.; // the changelog list scrolls past this
 const PAGE_MAX: (f32, f32) = (1280., 760.); // Overview's block in a big window
-
 // Corner radii: one radius for the whole window. Cards, menus and dialogs are R_CARD, everything you press is R_CTRL,
 // and both are the same. A shape nested close inside another (a tab in the tab strip, a menu row in its menu, the
 // hover light inside a bordered button, the face in the account chip) takes the outer radius minus its inset, so both
@@ -1528,50 +1527,44 @@ impl Launcher {
         page_block(block)
     }
 
-    /// Settings: the instance's (when there is one) on the left, the launcher's and About on the right.
+    /// Settings as one centred column: the installed instance, updates and files, importing from Horizon, and About.
+    /// One column of sections reads top to bottom, instead of two unbalanced stacks of cards side by side.
     fn settings_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let launcher = self.launcher_sections(cx);
-        let page = div().flex().flex_col().gap(px(GAP)).child(page_head("Settings", None));
-        let Some(m) = self.installed.as_ref() else {
-            let (main, about) = launcher;
-            return page.child(div().flex().items_start().gap(px(GAP)).child(main).child(about)).into_any_element();
-        };
-        let toggle = {
-            let on = self.settings.auto_update;
-            let slide = SpringAnimation::new(fx::SLIDE).to(if on { 1f32 } else { 0. }).with_epsilon(0.002);
-            div()
-                .id("auto-update")
-                .relative()
-                .w(px(38.))
-                .h(px(22.))
-                .rounded_full()
-                .bg(rgb(0x3a3a40))
-                .cursor_pointer()
-                .child(div().size_full().rounded_full().bg(rgb(ACCENT)).with_spring("track", slide.clone(), |d, t| d.opacity(t)))
-                .child(
-                    div()
-                        .absolute()
-                        .top(px(3.))
-                        .size(px(16.))
-                        .rounded_full()
-                        .bg(rgb(MUTED))
-                        .child(div().size_full().rounded_full().bg(rgb(ON_ACCENT)).with_spring("knob-lit", slide.clone(), |d, t| d.opacity(t)))
-                        .with_spring("knob", slide, |d, t| d.left(px(3. + 16. * t))),
-                )
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.set_settings(|s| s.auto_update = !s.auto_update, cx)))
-        };
-        let version = match self.update_available() {
-            Some(u) => button("s-update", format!("{} / Update to {}", m.version, u.version), false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx))).into_any_element(),
-            None => text(m.version.clone(), 13., TEXT).into_any_element(),
-        };
-        let (inst, logs) = (self.paths.instance(), self.paths.logs());
-        let left = div()
-            .flex_1()
-            .min_w(px(0.))
-            .flex()
-            .flex_col()
-            .gap(px(24.))
-            .child(section("Instance", vec![
+        let mut sections: Vec<gpui::Div> = Vec::new();
+        let root = self.paths.root.clone();
+
+        if let Some(m) = self.installed.as_ref() {
+            let toggle = {
+                let on = self.settings.auto_update;
+                let slide = SpringAnimation::new(fx::SLIDE).to(if on { 1f32 } else { 0. }).with_epsilon(0.002);
+                div()
+                    .id("auto-update")
+                    .relative()
+                    .w(px(38.))
+                    .h(px(22.))
+                    .rounded_full()
+                    .bg(rgb(0x3a3a40))
+                    .cursor_pointer()
+                    .child(div().size_full().rounded_full().bg(rgb(ACCENT)).with_spring("track", slide.clone(), |d, t| d.opacity(t)))
+                    .child(
+                        div()
+                            .absolute()
+                            .top(px(3.))
+                            .size(px(16.))
+                            .rounded_full()
+                            .bg(rgb(MUTED))
+                            .child(div().size_full().rounded_full().bg(rgb(ON_ACCENT)).with_spring("knob-lit", slide.clone(), |d, t| d.opacity(t)))
+                            .with_spring("knob", slide, |d, t| d.left(px(3. + 16. * t))),
+                    )
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.set_settings(|s| s.auto_update = !s.auto_update, cx)))
+            };
+            let version = match self.update_available() {
+                Some(u) => button("s-update", format!("{} / Update to {}", m.version, u.version), false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx))).into_any_element(),
+                None => text(m.version.clone(), 13., TEXT).into_any_element(),
+            };
+            let (inst, data, logs) = (self.paths.instance(), root.clone(), self.paths.logs());
+
+            sections.push(section("Instance", vec![
                 setting_row("Name", text(INSTANCE_NAME, 13., TEXT), false),
                 setting_row("Sunset version", version, false),
                 setting_row("Horizon", text(format!("{} (commit {})", m.horizon_build(), m.short_pin()), 13., TEXT), false),
@@ -1580,28 +1573,40 @@ impl Launcher {
                     self.with_menu(Menu::Window, button("s-window", window_label(&self.settings.window), false).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Window, ev, cx))), true, cx),
                     true,
                 ),
-            ]))
-            .child(section("Updates", vec![
+            ]));
+            sections.push(section("Updates", vec![
                 setting_row("Install new Sunset releases automatically", toggle, false),
                 setting_row("Check for updates", button("s-check", "Check", false).on_click(cx.listener(|this, _: &ClickEvent, _, _| this.check(false))), true),
-            ]))
-            .child(section("Files", vec![
+            ]));
+            sections.push(section("Files", vec![
                 setting_row("Instance directory", button("s-open", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(inst.clone(), cx))), false),
+                setting_row("Launcher data folder", button("l-data", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(data.clone(), cx))), false),
                 setting_row("Logs", button("s-logs", "Open logs", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(logs.clone(), cx))), false),
                 setting_row("Repair installation (check and download again)", button("s-repair", "Repair", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(true, cx))), true),
             ]));
-        let (main, about) = launcher;
-        page.when_some(self.progress(cx), |d, p| d.child(card().p(px(PAD)).child(p)))
-            .child(div().flex().items_start().gap(px(GAP)).child(left).child(main.child(about)))
+        } else {
+            sections.push(section("Files", vec![
+                setting_row("Launcher data folder", button("l-data", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(root.clone(), cx))), true),
+            ]));
+        }
+
+        sections.push(self.import_section(cx));
+        sections.push(self.about_section());
+
+        // Full width, like the Plugins and Profiles pages: page title, then the sections stacked down the page.
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(GAP))
+            .child(page_head("Settings", None))
+            .when_some(self.progress(cx), |d, p| d.child(card().p(px(PAD)).child(p)))
+            .children(sections)
             .into_any_element()
     }
 
-    /// The launcher's own sections (data folder, release source, horizon-launcher, import) and About, as two columns.
-    fn launcher_sections(&self, cx: &mut Context<Self>) -> (gpui::Div, gpui::Div) {
-        let root = self.paths.root.clone();
-        let source = std::env::var("SUNSET_MANIFEST").ok().filter(|s| !s.is_empty()).or(self.settings.manifest_url.clone()).unwrap_or_else(|| format!("GitHub Releases ({})", core::REPO));
-        let cli = core::cli_path(&self.paths).map(|p| p.parent().and_then(|d| d.file_name()).map(|v| v.to_string_lossy().into_owned()).unwrap_or_default());
-        let mut import_rows: Vec<gpui::Div> = self
+    /// Importing Sunset's config and profiles from another Horizon instance: one row per source found.
+    fn import_section(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let mut rows: Vec<gpui::Div> = self
             .sources
             .iter()
             .enumerate()
@@ -1613,33 +1618,34 @@ impl Launcher {
                 )
             })
             .collect();
-        if import_rows.is_empty() {
-            import_rows.push(setting_row("No Horizon instance with Sunset configs found", div(), true));
+        if rows.is_empty() {
+            rows.push(setting_row("No Horizon instance with Sunset configs found", div(), true));
         }
+        section("Import Sunset configs and profiles from Horizon", rows)
+    }
+
+    /// The launcher's own facts: version, where it installs from, the stock CLI it drives, its signing key, and what it is.
+    fn about_section(&self) -> gpui::Div {
+        let source = std::env::var("SUNSET_MANIFEST").ok().filter(|s| !s.is_empty()).or(self.settings.manifest_url.clone()).unwrap_or_else(|| format!("GitHub Releases ({})", core::REPO));
+        let cli = core::cli_path(&self.paths).map(|p| p.parent().and_then(|d| d.file_name()).map(|v| v.to_string_lossy().into_owned()).unwrap_or_default());
         let key = include_str!("../sunset.pub").lines().next().unwrap_or("").rsplit(' ').next().unwrap_or("").to_string();
-        let main = div()
-            .flex_1()
-            .min_w(px(0.))
+        div()
             .flex()
             .flex_col()
-            .gap(px(24.))
-            .child(section("Launcher", vec![
-                setting_row("Data folder", button("l-data", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(root.clone(), cx))), false),
-                setting_row("Release source", text(source, T_SMALL, MUTED), false),
-                setting_row("horizon-launcher (sign-in, install, play)", text(cli.unwrap_or_else(|| "comes with the first install".into()), 13., TEXT), true),
-            ]))
-            .child(section("Import Sunset configs and profiles from Horizon", import_rows));
-        let about = div().flex_1().min_w(px(0.)).flex().flex_col().gap(px(8.)).child(bold("About", 15.)).child(
-            card()
-                .flex()
-                .flex_col()
-                .child(setting_row("Sunset launcher", text(core::VERSION, 13., TEXT), false))
-                .child(setting_row("Signing key", text(key, T_SMALL, MUTED), false))
-                .child(setting_row("Platform", text(core::PLATFORM, 13., TEXT), false))
-                .child(setting_row("Licence", text("PolyForm Strict 1.0.0", 13., TEXT), false))
-                .child(div().p(px(PAD)).flex().flex_col().gap(px(8.)).child(text("Installs the signed prebuilt Sunset client for the Horizon Nightly it was built and tested on, and plays it through the stock horizon-launcher, which keeps your Microsoft sign-in.", T_SMALL, MUTED)).child(text("Horizon is LGPL-3.0-or-later; the exact source each prebuilt is built from is published with it. Not affiliated with Mojang or Microsoft.", T_SMALL, MUTED))),
-        );
-        (main, about)
+            .gap(px(8.))
+            .child(bold("About", T_HEAD))
+            .child(
+                card()
+                    .flex()
+                    .flex_col()
+                    .child(setting_row("Sunset launcher", text(core::VERSION, 13., TEXT), false))
+                    .child(setting_row("Platform", text(core::PLATFORM, 13., TEXT), false))
+                    .child(setting_row("Licence", text("PolyForm Strict 1.0.0", 13., TEXT), false))
+                    .child(setting_row("Release source", text(source, T_SMALL, MUTED), false))
+                    .child(setting_row("horizon-launcher (sign-in, install, play)", text(cli.unwrap_or_else(|| "comes with the first install".into()), 13., TEXT), false))
+                    .child(setting_row("Signing key", text(key, T_SMALL, MUTED), false))
+                    .child(div().p(px(PAD)).flex().flex_col().gap(px(8.)).child(text("Installs the signed prebuilt Sunset client for the Horizon Nightly it was built and tested on, and plays it through the stock horizon-launcher, which keeps your Microsoft sign-in.", T_SMALL, MUTED)).child(text("Horizon is LGPL-3.0-or-later; the exact source each prebuilt is built from is published with it. Not affiliated with Mojang or Microsoft.", T_SMALL, MUTED))),
+            )
     }
 
     fn list_view(&self, title: &str, empty: String, items: Vec<(String, String)>, folder: Option<PathBuf>, cx: &mut Context<Self>) -> impl IntoElement + use<> {
