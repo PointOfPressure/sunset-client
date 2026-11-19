@@ -54,14 +54,20 @@ Through Sunset's Horizon fork (18 Nov, `PointOfPressure/horizon` `sunset-hooks/0
   join is gone). No Render's block-breaking and renderer particles (`ParticleEngine::push`, 0003). Debug Report's
   packet log of every packet sent, the network thread's keep-alives included (`observe_sent`, 0004; the log had no
   packet ids before, so it held nothing). Speed and Legacy Speed's jump (`MotionWorld::move_self`, 0005).
+- Streamer Mode in Horizon's own menus, sign text (in the world and its edit screen) and item tooltips: the text
+  display filter (`text::filter_display`, 0007; signs drawn before a change of names are made again through
+  `display_changed`). Atmosphere's sky: `gfx::before_render` (0008; the sky shader now starts with Horizon's
+  `HDR_LIGHT` prefix, which declares `HDR_WRITE_LIGHT`, and replaces `sky_base`, the pipeline the world pass draws
+  the sky with on this build, as well as the mirrors' `sky`). Clear Water's opacity: `sprites::filter_sprites` (0009) fades
+  the water sprites as the atlas takes them, so a change of opacity reloads the resources (a second after the slider
+  stops; at once when turned off; the water colours are asked again for 5 s after, as a server's reload brought back
+  the old tint). Xray's Show placed blocks: `mesher::show_hidden_at` (0010).
 - Tab game modes and Streamer Mode in single player's tab list: `local_tab_players`'s return (no fork patch).
 - verify.py's probe as an .hmod (`client/tools/probe-hmod`, its AntiBot hooks not ported).
 - Seen once, not chased: in single player with Streamer Mode, a spectator guest's " [S]" tab tag read "[Player 2]"
   (Streamer Mode's name replacement taking the tag for a name; the server path marks the same way).
 
 Still missing, and what Horizon would need to add: see the end of this file.
-- Streamer Mode in Horizon's own menus, signs and text tooltips; Clear Water's opacity; Atmosphere's sky; X-ray's Show
-  placed blocks (items 3, 6 and 7 below: each needs a run of visibility patches, one SDK rebuild of about 45 min each).
 - Plugins (`api.rs`, sunset-plugins): not adapted to separate .hmod packages yet; pack.py, install scripts, README too.
 
 ## Building it
@@ -79,7 +85,7 @@ A newer Nightly needs the `[native] horizon` pin moved to its commit (each build
 
 ## What Horizon would need to add
 
-Items 1, 2, 4, 5 and 8 are closed by the fork's patches (above); they stay listed as the upstream asks.
+All items but 9 are closed by the fork's patches (above); they stay listed as the upstream asks.
 
 1. Speed, Legacy Speed jump: a client-side movement hook for the local player's own move (the `entity_move` hook
    fires on the server only), or a hook on the local travel's movement before collision, plus a writable velocity

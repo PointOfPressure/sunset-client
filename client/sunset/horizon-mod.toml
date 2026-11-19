@@ -2350,17 +2350,9 @@ ordinal = 0
 helper = "src/mixins/screen_keys_after.rs"
 bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
 
-# Blocked on this game build: the launcher's copy of these functions can't reach what their bodies use (the render
-# crate's private `mod sprite_cache`; methods private to gfx's child modules, core_lines::draw and capture::write_capture).
-# [[native.mixin]]
-# id = "atmosphere_render"
-# target = "horizon_client_render::gfx::Renderer::render"
-# kind = "HEAD"
-# helper = "src/mixins/atmosphere_render_hook.rs"
-# bindings = [
-#   { name = "renderer", ty = "&mut Renderer", value = "&mut *self" },
-#   { name = "frame", ty = "&Frame<'_>", value = "frame" },
-# ]
+# Atmosphere's sky before each frame, Clear Water's opacity, Streamer Mode's text everywhere and Xray's placed blocks:
+# the fork's plain hooks (gfx::before_render, sprites::filter_sprites, text::filter_display, mesher::show_hidden_at),
+# installed from sky_frame.rs.
 
 # HUD, menus and the hands (the game crate's own callers of the render functions the old hooks used)
 [[native.mixin]]

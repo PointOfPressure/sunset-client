@@ -23,7 +23,14 @@ pub fn set(names: Option<HashMap<String, String>>) {
     let lengths = names.as_ref().map_or(0, |n| n.keys().filter(|k| k.len() <= LONGEST).fold(0u32, |m, k| m | 1 << k.len()));
     LENGTHS.store(lengths, Ordering::Release);
     ON.store(names.as_ref().is_some_and(|n| !n.is_empty()), Ordering::Release);
-    *NAMES.write().unwrap_or_else(|e| e.into_inner()) = names.map(Arc::new);
+    let mut slot = NAMES.write().unwrap_or_else(|e| e.into_inner());
+    let changed = slot.as_deref() != names.as_ref();
+    *slot = names.map(Arc::new);
+    drop(slot);
+    // Text the game keeps as it was shown (signs) is made again with the new names.
+    if changed {
+        horizon_client::text::display_changed();
+    }
 }
 
 fn names() -> Option<Arc<HashMap<String, String>>> {
@@ -227,6 +234,22 @@ pub fn protect_json(value: &mut serde_json::Value) -> bool {
 // The bridge from the chat's hook (sunset_core::bridge): a line coming into the chat.
 pub fn register() {
     ::sunset_core::bridge::STREAMER_TEXT.set(chat_line);
+    // Everything else the game shows (its own menus, signs, tooltips): the text filter of Sunset's Horizon fork.
+    let _ = horizon_client::text::filter_display((shown_text, shown_str));
+}
+
+fn shown_text(text: &Text) -> Option<Text> {
+    if !ON.load(Ordering::Acquire) {
+        return None;
+    }
+    protect(text)
+}
+
+fn shown_str(s: &str) -> Option<String> {
+    if !ON.load(Ordering::Acquire) {
+        return None;
+    }
+    protect_str(s)
 }
 
 fn chat_line(text: ::sunset_core::bridge::Ptr) {

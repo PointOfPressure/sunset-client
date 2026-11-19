@@ -31,6 +31,21 @@ pub fn set_placed(at: HashSet<[i32; 3]>) {
         *set = at;
     }
 }
+// The remembered places from min to max (inclusive) while Xray is on: the mesher's show_hidden_at (Sunset's Horizon
+// fork), on its worker threads.
+pub fn placed_in(min: [i32; 3], max: [i32; 3], keep: &mut dyn FnMut([i32; 3])) {
+    if !ON.load(Ordering::Relaxed) || !ANY_PLACED.load(Ordering::Relaxed) {
+        return;
+    }
+    let Ok(set) = PLACED.read() else {
+        return;
+    };
+    for &at in set.iter() {
+        if (0..3).all(|i| (min[i]..=max[i]).contains(&at[i])) {
+            keep(at);
+        }
+    }
+}
 fn placed(at: [i32; 3]) -> bool {
     ANY_PLACED.load(Ordering::Relaxed) && PLACED.read().is_ok_and(|set| set.contains(&at))
 }

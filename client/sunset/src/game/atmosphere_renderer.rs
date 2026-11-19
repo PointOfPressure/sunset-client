@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
 use ::sunset_core::atmosphere::{Config, snapshot};
-use horizon_client::gfx::wgsl_prefix::{TERRAIN, section};
+use horizon_client::gfx::wgsl_prefix::{HDR_LIGHT, TERRAIN, section};
 use horizon_client::gfx::{Frame, Renderer};
 
 const DEBOUNCE: Duration = Duration::from_millis(250);
@@ -38,6 +38,8 @@ struct State {
     globals: wgpu::Buffer,
     format: wgpu::TextureFormat,
     original: wgpu::RenderPipeline,
+    // The world pass draws the sky with sky_base (sky is the mirrors'): both are replaced, both put back.
+    original_base: wgpu::RenderPipeline,
     shader: Option<wgpu::ShaderModule>,
     effect: Option<(Key, wgpu::RenderPipeline)>,
     requested: Key,
@@ -54,7 +56,9 @@ thread_local! {
 }
 
 fn shader(device: &wgpu::Device) -> Option<wgpu::ShaderModule> {
+    // HDR_LIGHT first: the terrain sections below use its overrides (HDR_WRITE_LIGHT) and functions.
     let text = [
+        HDR_LIGHT,
         section(TERRAIN, "struct Globals {", "@group(0) @binding(1)"),
         section(TERRAIN, "fn linear_fog(", "fn apply_fog("),
         section(TERRAIN, "struct SkyOut {", "// rendertype_lines"),
@@ -168,6 +172,20 @@ fn supported(renderer: &Renderer, frame: &Frame<'_>, config: Config) -> bool {
         && renderer.pack_post.is_none()
 }
 
+// The fork's before_render runs prepare at the start of each frame (once installed; called every frame).
+pub fn register() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        horizon_client::gfx::before_render(before_render);
+    });
+}
+
+fn before_render(renderer: &mut Renderer, frame: &Frame<'_>) {
+    if ::sunset_core::lifecycle::RUNTIME.running() {
+        prepare(renderer, frame);
+    }
+}
+
 pub(super) fn prepare(renderer: &mut Renderer, frame: &Frame<'_>) {
     let config = snapshot();
     let enabled = supported(renderer, frame, config);
@@ -187,6 +205,7 @@ pub(super) fn prepare(renderer: &mut Renderer, frame: &Frame<'_>) {
         if !enabled {
             if let Some(state) = slot.as_ref() {
                 renderer.sky = state.original.clone();
+                renderer.sky_base = state.original_base.clone();
             }
             return;
         }
@@ -196,6 +215,7 @@ pub(super) fn prepare(renderer: &mut Renderer, frame: &Frame<'_>) {
             globals: renderer.globals.clone(),
             format: renderer.config.format.remove_srgb_suffix(),
             original: renderer.sky.clone(),
+            original_base: renderer.sky_base.clone(),
             shader: shader(&renderer.device),
             effect: None,
             requested: key,
@@ -227,10 +247,10 @@ pub(super) fn prepare(renderer: &mut Renderer, frame: &Frame<'_>) {
                 }
             }
         }
-        renderer.sky = state
-            .effect
-            .as_ref()
-            .map_or_else(|| state.original.clone(), |(_, pipeline)| pipeline.clone());
+        (renderer.sky, renderer.sky_base) = match &state.effect {
+            Some((_, pipeline)) => (pipeline.clone(), pipeline.clone()),
+            None => (state.original.clone(), state.original_base.clone()),
+        };
         state.active = state.effect.is_some();
     });
 }
@@ -248,6 +268,7 @@ pub fn release(renderer: &mut Renderer) {
             && state.globals == renderer.globals
         {
             renderer.sky = state.original.clone();
+            renderer.sky_base = state.original_base.clone();
             *slot = None;
         }
     });

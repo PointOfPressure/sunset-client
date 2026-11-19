@@ -825,8 +825,7 @@ fn xray_hide(game: &mut Game<'_>) {
     XRAY_TABLE.store(Arc::as_ptr(&game.pack.context.hidden_states).cast::<u8>() as usize, Ordering::Relaxed);
 }
 
-// Clear Water: the mesher draws water with the copy of its sprites at the chosen opacity and a lighter tint; the
-// world is rebuilt when that changes.
+// Clear Water: water's sprites at the chosen opacity and a lighter tint.
 fn clear_water(game: &mut Game<'_>, mods: &[Module]) {
     use ::sunset_core::water as w;
     let key = mods.iter().find(|m| m.name == "Clear Water" && m.on).map_or((w::STEPS as u32, 0), |m| {
@@ -834,11 +833,38 @@ fn clear_water(game: &mut Game<'_>, mods: &[Module]) {
     });
     // The tint goes into the biomes' water colours (mixins/water_sprites.rs); the game asks for them only when told,
     // so they are asked again on a change and each second (a new world brings its own table; unchanged colours
-    // rebuild nothing). The opacity can't be changed on this build.
-    let changed = (w::LEVEL.swap(key.0, Ordering::Relaxed), w::TINT.swap(key.1, Ordering::Relaxed)) != key;
-    if changed || (key.1 > 0 && game.ticks % 20 == 0) {
+    // rebuild nothing).
+    let level_was = w::LEVEL.swap(key.0, Ordering::Relaxed);
+    let changed = (level_was, w::TINT.swap(key.1, Ordering::Relaxed)) != key;
+    // A resource reload brings the colours it asked for when it started: they are asked again for a few seconds
+    // after one (on a server, a tint changed while it ran was otherwise lost).
+    let after_reload = game.ticks < WATER_RELOAD.load(Ordering::Relaxed) + 100;
+    if changed || ((key.1 > 0 || after_reload) && game.ticks % 20 == 0) {
         game.refresh_biome_colors();
     }
+    // The opacity is in the sprites' pixels (the fork's filter_sprites, sunset_core::water::fade_sprite), so a change
+    // reloads the resources: at once when the water is whole again, a second after the slider last moved otherwise.
+    if level_was != key.0 {
+        let wait = if key.0 as usize >= w::STEPS { 0 } else { 20 };
+        WATER_RELOAD.store(game.ticks + wait, Ordering::Relaxed);
+        WATER_RELOAD_DUE.store(true, Ordering::Relaxed);
+    }
+    if WATER_RELOAD_DUE.load(Ordering::Relaxed) && game.ticks >= WATER_RELOAD.load(Ordering::Relaxed) {
+        WATER_RELOAD_DUE.store(false, Ordering::Relaxed);
+        game.reload_packs();
+    }
+}
+
+static WATER_RELOAD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static WATER_RELOAD_DUE: AtomicBool = AtomicBool::new(false);
+
+// The fork's hooks this module answers, installed once (called every frame).
+pub fn register() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        horizon_client::sprites::filter_sprites(::sunset_core::water::fade_sprite);
+        horizon_client::mesher::show_hidden_at(::sunset_core::xray::placed_in);
+    });
 }
 
 // Show placed blocks: where your own placing put a block, oldest first, for the world or server they are in (kept

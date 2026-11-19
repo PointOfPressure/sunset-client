@@ -43,3 +43,31 @@ One attribute.
 Ask: `HORIZON_SDK_BUILD_ID`, so a branch of patches on a Nightly's commit builds an SDK with that commit's build id
 (staging still copies HEAD's source). With it, a fork's SDK works with the stock launcher (kept `sdk.json` and
 `HORIZON_SDK_BASE`); an official way to point the launcher at a locally built, self-signed SDK would replace that.
+
+## 7. A display filter for shown text (`horizon_client_core::text::filter_display`)
+
+Ask: one process-wide filter of the text the client shows. `Text::resolved`, which every draw and measure of a
+component goes through (HUD, menus, sign text, tooltips), hands its result to it; `Font::width` and the menus' own
+font (`ui_theme`'s layout) ask `shown_str` for plain strings, so measuring and drawing agree. A thread-local guard
+keeps the filter's own resolving and measuring unfiltered. `display_changed` tells the caches of shown text (the
+renderer's sign text, keyed by `display_generation`) to make it again. For streamer-style name hiding; one atomic
+load per text when unset. The alternative, `#[replaceable]` on each text path, can't hand back a changed borrowed
+string and misses `Text::resolved`'s callers in other crates.
+
+## 8. `before_render` in `horizon_client_render::gfx`
+
+Ask: up to four functions `Renderer::render` runs after its lost-device check, before anything of the frame is drawn,
+with the renderer and the frame: for a mod's own passes (a sky). `render`'s body reaches gfx's private child modules
+(`core_lines::draw`, `capture::write_capture`), so the launcher's copy of it can't be built for a mixin.
+
+## 9. A sprite filter (`horizon_client_render::sprites::filter_sprites`)
+
+Ask: one function `Sprites::register` hands each sprite's name and RGBA frames as the atlas takes it; a changed
+sprite becomes translucent. For see-through water and similar texture changes (shown after a resource reload).
+`register` is replaceable, but its signature names the private `sprite_cache` module, which the copy can't reach.
+
+## 10. Position-aware hidden blocks (`horizon_client_render::mesher::show_hidden_at`)
+
+Ask: when a mod hides states from the mesher (`block_render_visibility`), one function asked once per meshed section
+for the places in it (and its border) whose block stays drawn: an ore finder showing the blocks the player placed.
+The per-state table can't say where a block is.

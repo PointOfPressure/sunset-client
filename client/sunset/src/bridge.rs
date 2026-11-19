@@ -31,8 +31,6 @@ pub type Ptr = *mut u8;
 
 // A configuration custom payload (horizon_client::net::receive_brand): &CustomPayload.
 pub static CONFIG_PAYLOAD: Hook<fn(Ptr)> = Hook::new();
-// The renderer's frame (horizon_client::gfx::Renderer::render): &mut Renderer, &Frame.
-pub static RENDER: Hook<fn(Ptr, Ptr)> = Hook::new();
 // The renderer giving up its surface (Renderer::release_surface): &mut Renderer.
 pub static RELEASE_SURFACE: Hook<fn(Ptr)> = Hook::new();
 // Streamer Mode: a chat line coming into the chat (horizon_client::chat::Chat::add): &mut Text, its names replaced in

@@ -2417,7 +2417,8 @@ def _():
     # under water (its fog hidden) closer than plain. The frame rate with it on holds against off.
     from PIL import ImageStat
 
-    def patch(name, settle=80):
+    # Long enough for an opacity change's resource reload (a second after the change) and the world meshed again.
+    def patch(name, settle=240):
         wait(settle)
         f = colour_frame(name)
         w, h = f.size
@@ -6673,7 +6674,8 @@ def _():
     only()
     cmd("time set 6000")
     share = {m: recoloured(plain, f) / (1280 * 720) for m, (f, _) in seen.items()}
-    ok = all(v > noise + 0.005 for v in share.values()) and all(fps > 0.5 * fps0 for _, fps in seen.values())
+    # Each sky recolours a good part of the frame (a sky drawn by the game alone moved it by about 3% at most).
+    ok = all(v > noise + 0.08 for v in share.values()) and all(fps > 0.5 * fps0 for _, fps in seen.values())
     return ok, (f"share of the frame recoloured: " + ", ".join(f"{m} {v:.1%} at {seen[m][1]:.0f} fps" for m, v in share.items())
                 + f"; the game's sky {fps0:.0f} fps, {noise:.1%} by itself (frames in {SHOTS}/atmo_*.png)")
 
@@ -10229,12 +10231,26 @@ def _():
     return ok, f"roots {roots[:2]!r}; weather {sub[:3]!r}; unknown {nope[:1]!r}; studio {studio[:1]!r}; module off {off[:1]!r}"
 
 
+def my_name():
+    """Your player name, read off a /say of yours in the chat (Streamer Mode off: the probe's status has no name)."""
+    import re
+    mark = log_mark()
+    cmd("say whoami-probe")
+    for _ in range(15):
+        wait(4)
+        for line in chat_since(mark):
+            m = re.search(r"[\[<](\w+)[\]>] whoami-probe", line)
+            if m:
+                return m.group(1)
+    return "Tester"
+
+
 @test("Streamer Mode")
 def _():
     # A visual: with Streamer Mode on, your name shows as "You" in chat (a /say of yours, which names you twice), in
     # the tab list (Tab held) and over an armor stand named after you; nowhere your own name (a screenshot).
     reset()
-    me = ctl("status").get("name") or "Tester"
+    me = my_name()
     only("streamermode")
     wait(10)
     cmd(f"say hi, {me} here", f"summon armor_stand {X0 + 0.5} {Y + 1} {Z0 + 2.5} "
@@ -10251,6 +10267,49 @@ def _():
     cmd("kill @e[type=minecraft:armor_stand]")
     say(".reset streamermode")
     return None, f"look at {path}: 'You' in chat, the tab list and over the armor stand, and no '{me}'"
+
+
+@test("Streamer Mode signs, menus and tooltips")
+def _():
+    # A visual (the fork's text filter): with Streamer Mode on, your name on a sign shows as "You" in the world and in
+    # the sign's edit screen, and as an item's name in its tooltip (the inventory, the pointer on it); the three frames
+    # side by side in one image. Off, the sign shows the name again (its share of changed pixels is the check).
+    from PIL import Image, ImageChops
+    reset()
+    me = my_name()
+    cmd(f"setblock {X0} {Y+1} {Z0+2} minecraft:oak_sign[rotation=8]{{front_text:{{messages:['\"{me}\"','\"\"','\"\"','\"\"']}}}}",
+        f"item replace entity @s hotbar.0 with minecraft:diamond_sword[custom_name='\"{me}\"']", "item replace entity @s hotbar.1 with minecraft:air")
+    ctl("select", "2")
+    ctl("look-at", str(X0 + 0.5), str(Y + 1.6), str(Z0 + 2.5))
+    wait(40)
+    plain = frame("streamer_sign_off")
+    only("streamermode")
+    wait(40)
+    sign = frame("streamer_sign")
+    click_sign_at(2)
+    wait(10)
+    edit = frame("streamer_sign_edit")
+    ctl("key", "escape", "tap")
+    wait(5)
+    ctl("key", "e", "tap")
+    wait(10)
+    w, h = hud_size()
+    book = 77 if (ctl("screen").get("recipe_book") or {}).get("open") else 0
+    x, y = (w - 176) / 2 + book + 8 + 8, (h - 166) / 2 + 142 + 8
+    ctl("drag-at", "4", "4", str(x), str(y))
+    wait(10)
+    tip = frame("streamer_tooltip")
+    ctl("key", "escape", "tap")
+    only()
+    cmd(f"setblock {X0} {Y+1} {Z0+2} minecraft:air", "clear @s")
+    diff = sum(1 for d in ImageChops.difference(plain, sign).getdata() if d > 30) / (plain.width * plain.height)
+    row = Image.new("L", (sign.width * 3, sign.height))
+    for i, f in enumerate((sign, edit, tip)):
+        row.paste(f, (i * sign.width, 0))
+    path = f"{SHOTS}/streamer-text.png"
+    row.resize((2880, 2880 * sign.height // (sign.width * 3))).save(path)
+    return diff > 0.0005, (f"sign {diff:.2%} of the frame changed by Streamer Mode; look at {path}: 'You' on the sign, "
+                           f"in its edit screen and in the sword's tooltip, and no '{me}'")
 
 
 @test("Client Spoofer")

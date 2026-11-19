@@ -22,6 +22,17 @@ pub fn set_layers(sprite: usize, own: u32, copies: [u32; STEPS]) {
         l[sprite] = (own, copies);
     }
 }
+// The fork's filter_sprites: a water sprite's alpha at LEVEL/STEPS of its own, as the atlas takes it.
+pub fn fade_sprite(name: &str, frames: &mut [Vec<u8>]) -> bool {
+    let level = LEVEL.load(Relaxed);
+    if level as usize >= STEPS || !SPRITES.contains(&name) {
+        return false;
+    }
+    for pixel in frames.iter_mut().flat_map(|f| f.chunks_exact_mut(4)) {
+        pixel[3] = (u32::from(pixel[3]) * level / STEPS as u32) as u8;
+    }
+    true
+}
 // A sprite's frames with every pixel's alpha at step/STEPS of its own.
 pub fn faded(frames: &[Vec<u8>], step: usize) -> Vec<Vec<u8>> {
     let scale = |a: u8| (u32::from(a) * step as u32 / STEPS as u32) as u8;
