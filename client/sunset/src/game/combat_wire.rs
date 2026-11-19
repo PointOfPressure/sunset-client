@@ -39,9 +39,29 @@ pub(super) fn sent_input(game: &Game<'_>) -> u8 {
         })
         .map_or(0, |(_, _, input)| *input)
 }
+// The tick a block place, dig, item use or window click went in, until the next move packet (u64::MAX: none since).
+// Kill Aura's 1.8 BadPackets check holds a hit back after one: anticheats' post checks flag a hit sent after such a
+// packet within one tick. Sunset's own sword-block use and its release do not count (AutoBlock lets go before a hit).
+static ACTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+pub(super) fn acted_since_move(game: &Game<'_>) -> bool {
+    let at = ACTED.load(std::sync::atomic::Ordering::Relaxed);
+    // A client that stands still sends no move packet for a while: only this tick's and the last one's count.
+    at != u64::MAX && at.saturating_add(1) >= game.ticks
+}
+fn note_action(game: &Game<'_>, packet: &S) {
+    use std::sync::atomic::Ordering::Relaxed;
+    match packet {
+        S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_) | S::MovePlayerStatus(_) => ACTED.store(u64::MAX, Relaxed),
+        S::UseItemOn(_) | S::ContainerClick(_) => ACTED.store(game.ticks, Relaxed),
+        S::PlayerAction(a) if matches!(a.action, 0..=2) => ACTED.store(game.ticks, Relaxed),
+        S::UseItem(_) if !super::sunset_hands::owned_block_packet() => ACTED.store(game.ticks, Relaxed),
+        _ => {}
+    }
+}
 // Lifecycle bookkeeping only: keep native sendChanges retry caches accurate
 // while ordinary module observers are stopped.
 pub(super) fn observe(game: &Game<'_>, packet: &S) {
+    note_action(game, packet);
     if let (S::PlayerInput(input), Some(remote)) = (packet, &game.remote) {
         *INPUT.lock().unwrap_or_else(|e| e.into_inner()) =
             Some((remote.session.counters.clone(), game.dim, input.flags));

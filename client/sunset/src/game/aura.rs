@@ -75,8 +75,11 @@ pub(super) fn defaults() -> Vec<Module> {
             // Silent aura's turning speed.
             .num("Aim speed", 7.0, 1.0, 10.0, 0.1)
             .bool("Ray cast", false)
-            // When it attacks (aura_timing.rs). Modern: the cooldown (or a fixed delay, or Hit select's wait for the hurt
-            // time to pass); Legacy: a click rate.
+            // Knockback aim (aura_knockback.rs): while a hit is due, the look's yaw points the knockback at lava, a
+            // web, fire, cactus, the void or a drop next to the target (Ray cast off: the look leaves its box).
+            .bool("Knockback aim", false)
+            // When it attacks (aura_timing.rs). 1.9+: the cooldown (or a fixed delay, or Hit select's wait for the
+            // hurt time to pass); 1.8: a click rate, with its own Hit select.
             .group("Timing")
             .bool("Only on click", false)
             .bool("Only on look", false)
@@ -87,6 +90,17 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Min CPS", 9.0, 1.0, 20.0, 0.5)
             .num("Max CPS", 13.0, 1.0, 20.0, 0.5)
             .pick("CPS pattern", &["Random", "Drift", "Steady"])
+            // 1.8 Hit select: a hit only once the target's hurt time (seen a ping late) has run out, or while you
+            // have just been hit yourself.
+            .bool("Hit select", false)
+            // Velocity boost: hit back at once for Boost ticks after you are hit (1.8: past the click rate; 1.9+:
+            // past a Custom delay or Hit select, never past the cooldown).
+            .bool("Velocity boost", false)
+            .num("Boost ticks", 4.0, 1.0, 10.0, 1.0)
+            // 1.8: a due click that meets no one still swings, as a hand clicking does.
+            .bool("Miss swing", false)
+            // 1.8: no hit in a tick that already placed, dug or clicked a window (anticheats' post checks).
+            .bool("BadPackets check", true)
             // What it hits with.
             .group("Inventory")
             .pick("Attack when holding", &["Weapons", "All"])
@@ -161,6 +175,8 @@ struct As {
     pending: Vec<(u32, u64)>,
     // The tick of the last hit sent (Elytra Target's Sync with Kill Aura times its rockets by it).
     last_hit: Option<u64>,
+    // Knockback aim's plan for the target this tick (.auradebug).
+    knock: Option<super::sunset_aura_knockback::Plan>,
     stats: Stats,
 }
 
@@ -448,6 +464,7 @@ fn stop(game: &mut Game<'_>, m: &Module) {
         s.switch_next = false;
         s.look = None;
         s.aimed = None;
+        s.knock = None;
         if let Some(c) = s.clicks.as_mut() { c.stop(); }
         (std::mem::take(&mut s.attacking), std::mem::take(&mut s.swapped), s.prev, s.given)
     });
@@ -586,6 +603,27 @@ fn silent_return(game: &Game<'_>, m: &Module) {
             mm.send();
         }
     });
+}
+
+// Knockback aim's plan for the target (aura_knockback.rs), when it applies: you have knockback of your own to give (a
+// sprint the server knows of, or the Knockback enchantment), no crit to wait for (a crit outweighs it), a hit is due
+// (1.8's clicks can come any tick; 1.9+'s cooldown nearly charged), and the target is hurt, the plan is worth 120 or
+// more, or the target is within 2.6 blocks.
+fn knockback_plan(game: &Game<'_>, t: &Target, eye: [f64; 3], legacy: bool) -> Option<super::sunset_aura_knockback::Plan> {
+    let p = game.player.as_ref()?;
+    let enchanted = game.held().is_some_and(|s| s.enchantment_level("minecraft:knockback") > 0);
+    if !enchanted && !super::sunset_combat_wire::sent_sprinting(game) {
+        return None;
+    }
+    if p.fall_distance > 0.0 && !p.ground.on_ground && p.velocity.y < 0.0 {
+        return None;
+    }
+    if !legacy && game.hand_strength.scale(0.5, game.main_hand_attack_speed()) < 0.85 {
+        return None;
+    }
+    let plan = super::sunset_aura_knockback::plan_for(game, t)?;
+    let hurt = game.mobs.iter().any(|x| x.id == t.id && x.hurt_time > 0);
+    (hurt || plan.score >= 120.0 || reach(eye, t) <= 2.6).then_some(plan)
 }
 
 pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
@@ -747,6 +785,16 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     } else if !silent {
         silent_return(game, m);
     }
+    // Knockback aim (aura_knockback.rs): the yaw that knocks the target into a hazard, while a hit on it is due. Not
+    // with Ray cast (the look leaves its box), Silent aura (its own managed look) or Elytra Target steering.
+    let knock = (m.b("Knockback aim") && !m.b("Ray cast") && !steered && !silent && rotate_mode != "None")
+        .then(|| knockback_plan(game, &primary, eye, legacy_now))
+        .flatten();
+    let knock_changed = st(|s| {
+        let changed = s.knock.is_some() != knock.is_some();
+        s.knock = knock;
+        changed
+    });
     // The look this tick: from where the last tick's got to (or your own), a step toward the target. Silent tells only
     // the server; Visible turns your view. A hit made now goes out before that look does, so it counts the last one.
     let sent = st(|s| s.look);
@@ -775,11 +823,17 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         let mut visible = |p: [f64; 3]| dist(eye_next, p) <= walls || clear_line(game, p, [i32::MIN; 3]);
         let (point, share) = aim::plan_point(eye_next, lo, hi, from, point_mode, attack_range, kept, &mut visible);
         let to = look_at(eye_next, point);
+        // Knockback aim: the plan's yaw instead, the pitch still on the target.
+        let to = knock.map_or(to, |k| {
+            let yaw = to.0 + ((k.yaw - to.0 + 180.0).rem_euclid(360.0) - 180.0);
+            (yaw, super::sunset_aura_knockback::pitch_for(eye_next, &primary, k.yaw))
+        });
         st(|s| {
             s.aim_share = Some(share);
             s.aimed_at = Some((point, ahead, aim::angle(from, to)));
         });
-        let was = st(|s| s.aimed.replace((primary.id, to))).filter(|a| a.0 == primary.id).map(|a| a.1);
+        // A plan starting or ending is a new aim, not the target moving: nothing carried over from last tick's.
+        let was = st(|s| s.aimed.replace((primary.id, to))).filter(|a| a.0 == primary.id && !knock_changed).map(|a| a.1);
         let next = if silent {
             // Silent aura: the game's own move packet carries it (only when it changed), whatever Rotation view says.
             silent_aim(game, m, &primary, eye)
@@ -824,25 +878,40 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     st(|s| s.version = why);
     let legacy = version == timing::Version::Legacy;
     let timing = if legacy { "Clicks" } else { m.p("Attack timing") };
+    // Velocity boost: you were hit within Boost ticks (your hurt time runs from 10 down to 0), so hit back at once.
+    let own_hurt = game.player.as_ref().map_or(0, |p| p.health.hurt.hurt_time);
+    let boost = m.b("Velocity boost") && own_hurt > 0 && 10 - own_hurt < m.n("Boost ticks") as i32;
     let ready = if legacy {
         let seed = u64::from(primary.id) << 32 ^ game.ticks;
         let pattern = timing::Pattern::named(m.p("CPS pattern"));
-        st(|s| s.clicks.get_or_insert_with(|| timing::Clicks::new(seed)).tick(m.n("Min CPS"), m.n("Max CPS"), pattern))
+        // The click clock keeps its count through a boost; 1.8 has no cooldown for the boost to wait for.
+        let click = st(|s| s.clicks.get_or_insert_with(|| timing::Clicks::new(seed)).tick(m.n("Min CPS"), m.n("Max CPS"), pattern));
+        click || boost
     } else if timing == "Custom delay" {
-        st(|s| {
+        let waited = st(|s| {
             if s.hit_timer < m.n("Hit delay") as u32 {
                 s.hit_timer += 1;
                 false
             } else {
                 true
             }
-        })
+        });
+        // 1.9+'s boost skips the delay, never the cooldown share: a hit under it would be a weak one.
+        waited || (boost && timing::modern_ready(game.hand_strength.scale(0.5, speed), m.n("Cooldown")))
     } else {
         timing::modern_ready(game.hand_strength.scale(0.5, speed), m.n("Cooldown"))
     };
     let spear = game.held().is_some_and(|s| Kinetic::of(&s.item).is_some());
     if !ready || (spear && game.cannot_attack_with_item(game.hand_strength.ticker, 0)) {
         st(|s| s.why("cooling down"));
+        return;
+    }
+    // 1.8 BadPackets check: not in a tick that already placed, dug, used an item or clicked a window.
+    if legacy && m.b("BadPackets check") && super::sunset_combat_wire::acted_since_move(game) {
+        st(|s| {
+            if let Some(c) = s.clicks.as_mut() { c.missed(); }
+            s.why("a block, item or window action went this tick");
+        });
         return;
     }
     if !control::claim(HAND) {
@@ -856,15 +925,33 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
     let coming = if rotate_mode == "Always" { st(|s| s.look).unwrap_or(server) } else { (game.yaw, game.pitch) };
     let ray_cast = m.b("Ray cast");
     let mut hit = false;
+    // A target passed over by Hit select: no click was made, so no Miss swing either.
+    let mut held_back = false;
+    // 1.8 Hit select sees the target's hurt time a ping late: it lets a hit go once that shows at most ping/50 - 1
+    // ticks left (the hurt time is out by the time the hit arrives), or while you have just been hit yourself.
+    let ping_ticks = super::remote::sunset_combat_remote::latency(game).unwrap_or(0).max(0) / 50;
     st(|s| s.reason = "the look does not meet the target");
     // A stab is one action, whoever it goes through.
     for t in list.iter().take(if spear { 1 } else { usize::MAX }) {
         // Hit select: not while the target's hurt time still guards it; its last tick counts (the hit lands as it ends).
-        if timing == "Hit select" && game.mobs.iter().any(|x| x.id == t.id && x.hurt_time > 1) {
+        // Velocity boost hits back through it.
+        let hurt = game.mobs.iter().find(|x| x.id == t.id).map_or(0, |x| x.hurt_time);
+        let guarded = if legacy {
+            m.b("Hit select") && hurt > ping_ticks - 1 && own_hurt <= 0
+        } else {
+            timing == "Hit select" && hurt > 1
+        };
+        if guarded && !boost {
             st(|s| s.why("hit select: the target is still hurt"));
+            held_back = true;
             continue;
         }
-        let on_hit = (rotate_mode == "On hit").then(|| look_at(eye, centre(t)));
+        // Knockback aim's look for its target: the plan's yaw with the pitch on the target.
+        let knocked = knock.filter(|_| t.id == primary.id);
+        let on_hit = (rotate_mode == "On hit").then(|| match knocked {
+            Some(k) => (k.yaw, super::sunset_aura_knockback::pitch_for(eye, t, k.yaw)),
+            None => look_at(eye, centre(t)),
+        });
         // A hit goes within Attack range (Range only picks whom it aims at). With Ray cast it also needs a look that
         // meets the target: the one the server has or the one sent right after the hit (On hit's own turn goes first).
         // Without, the rotation aims but the hit does not wait for it. A stab goes along the look the server has.
@@ -880,6 +967,9 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
             stab_hits(game, m, eye, on_hit.unwrap_or(server), t)
         } else if let Some(look) = on_hit {
             !ray_cast || meets(look)
+        } else if knocked.is_some() {
+            // Knockback aim turned the look off the box on purpose (no Ray cast with it): the hit goes by reach.
+            true
         } else if ray_cast || steered {
             // Steered: the server judges the hit by the look it has or the one sent right after (Grim's Hitboxes and
             // Reach take either), so one of them has to meet the box.
@@ -910,8 +1000,15 @@ pub(super) fn tick(game: &mut Game<'_>, m: &Module, crits: bool) {
         hit = true;
     }
     if !hit && legacy {
-        // The click was due: it goes as soon as the look meets, not a whole gap later.
-        st(|s| if let Some(c) = s.clicks.as_mut() { c.missed(); });
+        if m.b("Miss swing") && !spear && !held_back && game.mining.is_none() {
+            // Miss swing: the due click swings at the air, as a 1.8 hand's does; the clock counts it as made.
+            game.swing_arm();
+            game.send(horizon_protocol::packets::play::Serverbound::Punch(horizon_protocol::packets::Empty));
+            st(|s| s.why("missed: swung at the air"));
+        } else {
+            // The click was due: it goes as soon as the look meets, not a whole gap later.
+            st(|s| if let Some(c) = s.clicks.as_mut() { c.missed(); });
+        }
     }
     if hit {
         st(|s| {
@@ -1001,6 +1098,9 @@ pub(super) fn diagnostics() -> String {
         if let Some((point, ahead, error)) = s.aimed_at {
             out.push_str(&format!(" aim=[{:.2},{:.2},{:.2}] predicted=[{:.2},{:.2},{:.2}] turn_left={error:.1} trust={:.2}",
                 point[0], point[1], point[2], ahead[0], ahead[1], ahead[2], s.track.trust()));
+        }
+        if let Some(k) = s.knock {
+            out.push_str(&format!(" knockback={} score={:.0} yaw={:.1}", k.hazard, k.score, k.yaw));
         }
         out.push_str(&format!(" | sent={} landed={} unseen={} (landed/unseen inferred from hurt time)", s.stats.sent, s.stats.landed, s.stats.unseen));
         let mut reasons: Vec<&(&str, u64)> = s.stats.reasons.iter().filter(|r| !r.0.is_empty()).collect();

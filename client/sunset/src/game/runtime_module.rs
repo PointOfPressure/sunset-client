@@ -496,11 +496,14 @@ impl Module {
                     "Max targets" => self.p("Attack mode") == "Multi",
                     "Target lock" => self.p("Attack mode") == "Single",
                     "Target switch delay" => self.p("Attack mode") != "Multi",
-                    // Version decides the rest: 1.9+'s cooldown timing, 1.8's clicks and sword block.
+                    // Knockback aim turns the look off the box, so only without Ray cast.
+                    "Knockback aim" => !self.b("Ray cast"),
+                    // Version decides the rest: 1.9+'s cooldown timing, 1.8's clicks and the 1.8-only extras.
                     "Attack timing" => !legacy,
                     "Cooldown" => !legacy && self.p("Attack timing") != "Custom delay",
                     "Hit delay" => !legacy && self.p("Attack timing") == "Custom delay",
-                    "Min CPS" | "Max CPS" | "CPS pattern" | "AutoBlock" => legacy,
+                    "Min CPS" | "Max CPS" | "CPS pattern" | "Hit select" | "Miss swing" | "BadPackets check" | "AutoBlock" => legacy,
+                    "Boost ticks" => self.b("Velocity boost"),
                     "Strafe radius" | "Strafe when" | "Avoid edges" => self.b("Target strafe"),
                     "Selected weapon types" => self.p("Attack when holding") == "Weapons",
                     "Swap back" => self.b("Auto switch"),
