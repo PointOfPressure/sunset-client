@@ -765,16 +765,47 @@ fn scroll_cues(handle: &gpui::ScrollHandle, window: &mut Window) {
     window.paint_quad(gpui::fill(at, rgb(0x34343a)).corner_radii(Corners::all(px(1.5))));
 }
 
-/// The Sunset logo (launcher/assets/sunset-launcher.svg, docs/images/logo.png): a striped half sun on its horizon
-/// with rays around it, drawn `w` wide and half as tall, its horizon bar on the box's bottom edge.
+/// The official Sunset mark (launcher/assets/sunset-launcher.svg, docs/images/logo.png): two concentric half rings,
+/// drawn `w` wide and half as tall, its baseline on the box's bottom edge.
 fn mark(w: f32, color: u32) -> impl IntoElement {
-    canvas(|_, _, _| (), move |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| crate::art::paint_logo(window, b, color))
-        .w(px(w))
-        .h(px(w / 2.))
-        .flex_none()
+    canvas(
+        |_, _, _| (),
+        move |b: Bounds<gpui::Pixels>, _, window: &mut Window, _| {
+            // The SVG's 256-unit grid: the outer ring spans x 33.28..222.72 and stands on y 180.48.
+            let k = f32::from(b.size.width) / 189.44;
+            let (x0, y0) = (f32::from(b.origin.x) - 33.28 * k, (f32::from(b.origin.y) + f32::from(b.size.height)).round() - 180.48 * k);
+            let at = |x: f32, y: f32| point(px(x0 + x * k), px(y0 + y * k));
+            // An arc over the top from the left end to the right (or back), centred on (128, cy).
+            let arc = |p: &mut PathBuilder, cy: f32, r: f32, back: bool| {
+                for i in 0..=64 {
+                    let f = if back { 64 - i } else { i } as f32 / 64.;
+                    let a = std::f32::consts::PI * (1. + f);
+                    p.line_to(at(128. + r * a.cos(), cy + r * a.sin()));
+                }
+            };
+            let mut p = PathBuilder::fill();
+            p.move_to(at(33.28, 180.48));
+            arc(&mut p, 180.48, 94.72, false);
+            arc(&mut p, 180.48, 73.233, true);
+            p.close();
+            p.move_to(at(74.939, 180.48));
+            arc(&mut p, 178.287, 53.061, false);
+            p.line_to(at(181.061, 180.48));
+            p.line_to(at(159.573, 180.48));
+            arc(&mut p, 178.287, 31.573, true);
+            p.line_to(at(96.427, 180.48));
+            p.close();
+            if let Ok(p) = p.build() {
+                window.paint_path(p, rgb(color));
+            }
+        },
+    )
+    .w(px(w))
+    .h(px(w / 2.))
+    .flex_none()
 }
 
-/// Overview's banner: a striped sun setting on a dark horizon, in Sunset orange only, with its glow and reflection
+/// Overview's banner: the Sunset mark setting on a dark horizon, in Sunset orange only, with its glow and reflection
 /// (art.rs draws it). It fills its box (a card's shape, border included), so the card can grow with the window.
 fn hero_art() -> impl IntoElement {
     canvas(
