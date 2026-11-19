@@ -22,15 +22,20 @@ const CARD: u32 = 0x141416;
 const LINE: u32 = 0x242428;
 const CHIP: u32 = 0x1b1b1e;
 const TEXT: u32 = 0xececee;
-const MUTED: u32 = 0x8e8e95;
+const MUTED: u32 = 0xb4b4bb; // secondary text: quieter than TEXT, still easy to read on CARD and BG
 const ACCENT: u32 = 0xdb5000; // Sunset orange, as on the site
 const ACCENT_HI: u32 = 0xf26a12; // its hover
 const ON_ACCENT: u32 = 0xffffff;
 const GREEN: u32 = 0x6fcf97;
 const AMBER: u32 = 0xe7b04a;
-const RED: u32 = 0xef6b6b;
-const SOFT: u32 = 0xc6c6cc; // body text a step under TEXT (changelog lines)
 const INSET: u32 = 0x0f0f11; // a well set into a card (the changelog)
+const RED: u32 = 0xef6b6b; // errors only; orange is the one accent
+const SOFT: u32 = 0xd2d2d7; // labels and unselected tabs: a step under TEXT
+
+// One type scale: the page's title, a card's heading, body text, small print.
+const T_TITLE: f32 = 30.;
+const T_HEAD: f32 = 15.;
+const T_SMALL: f32 = 12.;
 
 // One spacing scale for every page, so gutters, gaps and control heights line up across views.
 const GUTTER: f32 = 24.; // window edge to content, left and right
@@ -46,7 +51,7 @@ const PANEL_H: f32 = 176.; // the changelog on Overview
 // hover light inside a bordered button, the face in the account chip) takes the outer radius minus its inset, so both
 // corners share one centre and read as the same curve. Round things (status dots, the switch, the progress bar) stay
 // round.
-const R_CARD: f32 = 14.;
+const R_CARD: f32 = 10.;
 const R_CTRL: f32 = 10.;
 const R_SMALL: f32 = 6.;
 
@@ -732,7 +737,7 @@ fn scroll_cues(handle: &gpui::ScrollHandle, window: &mut Window) {
     }
     if off < max - 0.5 {
         let at = Bounds::new(point(b.origin.x, b.origin.y + b.size.height - px(FADE)), size(b.size.width, px(FADE)));
-        let r = px(nested(R_CTRL, 1.));
+        let r = px(nested(R_CARD, 1.));
         window.paint_quad(
             gpui::fill(at, linear_gradient(180., linear_color_stop(clear, 0.), linear_color_stop(solid, 1.)))
                 .corner_radii(Corners { top_left: px(0.), top_right: px(0.), bottom_left: r, bottom_right: r }),
@@ -756,14 +761,15 @@ fn horizon_mark(s: f32) -> impl IntoElement {
             let rect = |x: f32, y: f32, w: f32, h: f32| Bounds::new(point(b.origin.x + u * x, b.origin.y + u * y), size(u * w, u * h));
             // A hairline edge keeps the tile readable as a box on the dark chip it sits in.
             window.paint_quad(
-                gpui::fill(b, rgb(0x16181f)).corner_radii(Corners::all(px(nested(R_CTRL, FACE_INSET)))).border_widths(px(1.)).border_color(rgb(0x34364a)),
+                gpui::fill(b, rgb(0x18181b)).corner_radii(Corners::all(px(nested(R_CTRL, FACE_INSET)))).border_widths(px(1.)).border_color(rgb(0x38383e)),
             );
             for (y, colour) in [(3., gpui::rgba(0xecedf3ff)), (8., gpui::rgba(0xecedf35c))] {
                 for x in [4., 10.] {
                     window.paint_quad(gpui::fill(rect(x, y, 2., 4.), colour));
                 }
             }
-            window.paint_quad(gpui::fill(rect(0., 7., 16., 1.), rgb(0x9a86ff)));
+            // Horizon's line is violet in its own brand; here it is neutral, so orange stays the window's one accent.
+            window.paint_quad(gpui::fill(rect(0., 7., 16., 1.), rgb(0xa8a8b0)));
         },
     )
     .w(px(s))
@@ -847,7 +853,7 @@ fn section(title: &str, rows: Vec<gpui::Div>) -> gpui::Div {
         .flex()
         .flex_col()
         .gap(px(8.))
-        .child(bold(title.to_string(), 15.))
+        .child(bold(title.to_string(), T_HEAD))
         .child(card().flex().flex_col().children(rows.into_iter().enumerate().map(move |(i, r)| r.when(i + 1 == n, |d| d.border_b_0()))))
 }
 
@@ -857,7 +863,7 @@ fn window_label(w: &str) -> String {
 
 /// A page's title row, the same height on every page whether or not it has a button on the right.
 fn page_head(title: &str, action: Option<gpui::AnyElement>) -> gpui::Div {
-    div().flex().flex_none().items_center().justify_between().h(px(CTRL_H)).child(bold(title.to_string(), 26.)).children(action)
+    div().flex().flex_none().items_center().justify_between().h(px(CTRL_H)).child(bold(title.to_string(), T_TITLE)).children(action)
 }
 
 /// The top bar's chips (platform, instance, account) share this shape.
@@ -1560,7 +1566,7 @@ impl Launcher {
             .gap(px(24.))
             .child(section("Launcher", vec![
                 setting_row("Data folder", button("l-data", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(root.clone(), cx))), false),
-                setting_row("Release source", text(source, 12., MUTED), false),
+                setting_row("Release source", text(source, T_SMALL, MUTED), false),
                 setting_row("horizon-launcher (sign-in, install, play)", text(cli.unwrap_or_else(|| "comes with the first install".into()), 13., TEXT), true),
             ]))
             .child(section("Import Sunset configs and profiles from Horizon", import_rows));
@@ -1569,10 +1575,10 @@ impl Launcher {
                 .flex()
                 .flex_col()
                 .child(setting_row("Sunset launcher", text(core::VERSION, 13., TEXT), false))
-                .child(setting_row("Signing key", text(key, 12., MUTED), false))
+                .child(setting_row("Signing key", text(key, T_SMALL, MUTED), false))
                 .child(setting_row("Platform", text(core::PLATFORM, 13., TEXT), false))
                 .child(setting_row("Licence", text("PolyForm Strict 1.0.0", 13., TEXT), false))
-                .child(div().p(px(PAD)).flex().flex_col().gap(px(8.)).child(text("Installs the signed prebuilt Sunset client for the Horizon Nightly it was built and tested on, and plays it through the stock horizon-launcher, which keeps your Microsoft sign-in.", 12., MUTED)).child(text("Horizon is LGPL-3.0-or-later; the exact source each prebuilt is built from is published with it. Not affiliated with Mojang or Microsoft.", 12., MUTED))),
+                .child(div().p(px(PAD)).flex().flex_col().gap(px(8.)).child(text("Installs the signed prebuilt Sunset client for the Horizon Nightly it was built and tested on, and plays it through the stock horizon-launcher, which keeps your Microsoft sign-in.", T_SMALL, MUTED)).child(text("Horizon is LGPL-3.0-or-later; the exact source each prebuilt is built from is published with it. Not affiliated with Mojang or Microsoft.", T_SMALL, MUTED))),
         );
         (main, about)
     }
@@ -1620,7 +1626,7 @@ impl Launcher {
                             cx.notify();
                         }))),
                 )
-                .child(text("Waiting for you to finish in the browser…", 12., MUTED));
+                .child(text("Waiting for you to finish in the browser…", T_SMALL, MUTED));
         } else {
             body = body.child(text("Asking Microsoft for a sign-in code…", 13., MUTED));
         }
@@ -1669,7 +1675,7 @@ impl Render for Launcher {
                 .gap(px(10.))
                 .px(px(PAD))
                 .py(px(10.))
-                .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(if err { RED } else { GREEN })))
+                .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(if err { RED } else { ACCENT })))
                 .child(div().flex_1().child(text(msg, 13., if err { RED } else { TEXT })))
                 .child(div().id("note-close").cursor_pointer().child(icon(Icon::Close, 16., MUTED)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.note = None;
