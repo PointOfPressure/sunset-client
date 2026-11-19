@@ -28,7 +28,7 @@ from the Plugins tab. It is a test plugin, not shipped.
 
 ## Test tools
 
-- `plugcheck/`: the test plugin verify.py's `Plugin API:` checks drive (staged next to Sunset on the test machine
-  only, never shipped). Still in the .hnmod layout.
-- `plugsmoke.py`: builds Sunset with the SDK's example plugins and plugcheck, then runs those checks. Run it before a
-  release; its options are at the top of the script.
+- `plugcheck/`: the test plugin verify.py's `Plugin API:` checks drive (built into Sunset on the test machine only,
+  never shipped). It keeps the .hnmod layout, like the SDK's examples; plugsmoke.py wraps them as .hmod plugin packages.
+- `plugsmoke.py`: builds the .hmod Sunset with the SDK's example plugins and plugcheck, then runs those checks on single
+  player. Run it before a release; its options are at the top of the script, its tests in `test_plugsmoke.py`.

@@ -6,4 +6,6 @@ By opening a pull request you confirm you wrote the change (or are allowed to gi
 
 Keep your work in its own files where you can, so changes don't collide.
 
-Run `client/tools/verify.py` if you can (see the README).
+Run `client/tools/verify.py` if you can (see the README). A change to the plugin API (`client/sunset/src/game/api.rs`)
+also needs `plugins/plugsmoke.py`, the release's plugin gate: it builds the SDK's examples and `plugins/plugcheck` into
+Sunset and fails unless every `Plugin API:` check passes in game.

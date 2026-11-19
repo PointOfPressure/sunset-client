@@ -445,11 +445,13 @@ Sunset. The `.hnmod` line (0.8.x/1.x fixes) is the `hnmod` branch.
   (`horizon-mixins apply --workspace <horizon at that commit> --mods client/mixins --out stage`), then run
   `cargo check -p horizon-client` in the stage.
 - `client/tools/verify.py` runs modules in a test arena in a headless game.
-- Before a release, `python3 plugins/plugsmoke.py` builds Sunset with the plugin SDK's examples (hello and afk from a
-  [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) checkout, `SDK=`) and the test plugin
-  `plugins/plugcheck` on Sunset's pin, then runs verify.py's `Plugin API:` checks on single player and Horizon's
-  server. It stops the release on a pin or API mismatch, a plugin left out of the build, a compiler warning or a
-  failed check. Paths and options are at the top of the script.
+- `client/tools/verify.py` exits non-zero on a failed check, an unknown test name or a run with no checks.
+- Before a release, `python3 plugins/plugsmoke.py` builds the .hmod Sunset with the plugin SDK's examples (hello and
+  afk from a [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) checkout, `SDK=`) and the test plugin
+  `plugins/plugcheck`, each wrapped as a launcher plugin package on Sunset's pins, then runs verify.py's `Plugin API:`
+  checks on single player. It stops the release on a plugin needing a newer API, a plugin left out of the build, a
+  compiler warning, another plugin API version in game, or a check that failed, was skipped or ran twice. Paths and
+  options are at the top of the script; its own tests are `plugins/test_plugsmoke.py` and `client/tools/test_verify.py`.
 
 ### Sunset launcher (2.0, not released yet)
 
@@ -494,7 +496,7 @@ Anchor Aura, Crystal Macro and Anchor Macro (their Macro sections), Shield Break
 Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smash fall count Auto Mace goes by), W Tap,
 Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast
 Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback
-Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps, Ore Sim's automatic seed (SeedCrackerX) and the Baritone/Ore Sim integration.
+Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps, Ore Sim's automatic seed (SeedCrackerX) and the Baritone/Ore Sim integration, and the plugin release gate (verify.py's exit status, strict plugin results).
 
 **compkrx** ([compkrx](https://github.com/compkrx)): Vein Miner.
 
