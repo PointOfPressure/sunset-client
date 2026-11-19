@@ -20,6 +20,8 @@ tar = { version = "0.4", default-features = false }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 base64 = "0.22"
 png = "0.18"
+# The frames of the pictures art.rs rasterises (the version gpui already builds; no codecs).
+image = { version = "0.25", default-features = false }
 # The round line caps and joins of the icons' strokes (gpui draws paths with lyon and re-exports its StrokeOptions).
 lyon_tessellation = "1"
 

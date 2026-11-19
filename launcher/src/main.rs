@@ -1,6 +1,7 @@
 //! Sunset launcher. Without arguments it opens the window; the subcommands do the same work in a terminal
 //! (for scripts and headless checks).
 
+mod art;
 mod core;
 mod fx;
 mod ui;
