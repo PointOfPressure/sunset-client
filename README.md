@@ -465,6 +465,8 @@ Sunset. The `.hnmod` line (0.8.x/1.x fixes) is the `hnmod` branch.
 
 ### Sunset launcher (2.0, not released yet)
 
+![The Sunset launcher's Overview page: Play, Game folder, Logs and repair, the 2.0.0 changes and the installation](docs/images/launcher.png)
+
 `launcher/` is a GPUI app that installs the signed prebuilt client (`client/scripts/build-prebuilt.sh`) and plays it.
 It only offers the Horizon Nightly that build pins, never a newer one. The stock `horizon-launcher` CLI does the
 sign-in, the Nightly and Play. The Sunset launcher downloads it (its SHA-256 is in the signed manifest) and runs it as a
