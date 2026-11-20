@@ -608,6 +608,8 @@ pub(super) fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packe
         super::sunset_drill_logger::packet(game, packet);
         super::sunset_throws::packet(game, packet);
         super::sunset_effects::packet(game, packet);
+        super::sunset_villager_roller::packet(game, packet);
+        super::sunset_use_tracker::packet(game, packet);
         super::recipe_book::sunset_recipes::packet(packet);
         super::sunset_vanish::staff_packet(game, packet);
         if let C::SetEntityMotion(p) = packet {

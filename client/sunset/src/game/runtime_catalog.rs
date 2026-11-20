@@ -79,7 +79,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Self damage health", 10.0, 2.0, 20.0, 1.0)
             .pick("Self damage method", &["Burst", "Spread"]),
         Module::new("Speed", Movement, "Moves faster on the ground. NCP, NCP Hop and Watchdog are legacy (1.8) strategies.")
-            .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop", "NCP", "NCP Hop", "Watchdog"])
+            .pick("Mode", &["Vanilla", "Strafe", "Smooth", "Low Hop", "Custom", "Bhop", "NCP", "NCP Hop", "Watchdog", "Grim collide"])
             .bool("NCP reduced jump", false)
             // NCP Hop (legacy_speed::NcpHop): its jump (0.4, else the full 0.42), the launch as a share of the allowed
             // distance, the first air tick's pull back toward it, a boost for the first ticks of a hurt, and the hop
@@ -93,6 +93,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("NCP hop low hop", false)
             .bool("NCP hop Y-port", false)
             .bool("Watchdog knockback boost", false)
+            // Grim collide: the push other bodies may give, taken as speed while your box touches theirs.
+            .num("Collide boost", 0.08, 0.01, 0.3, 0.01)
+            .num("Collide reach", 0.5, 0.0, 1.5, 0.05)
+            .num("Collide max entities", 3.0, 1.0, 10.0, 1.0)
+            .num("Collide speed cap", 12.0, 4.0, 40.0, 0.5)
             .num("Vanilla speed", 5.6, 0.0, 20.0, 0.1)
             .num("Strafe speed", 1.6, 0.0, 3.0, 0.05)
             .bool("Speed limit", false)
@@ -737,6 +742,9 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_player::defaults());
     v.extend(super::sunset_world::defaults());
     v.extend(super::sunset_base_finder::defaults());
+    v.extend(super::sunset_villager_roller::defaults());
+    v.extend(super::sunset_sign_historian::defaults());
+    v.extend(super::sunset_use_tracker::defaults());
     v.extend(super::sunset_hunting::defaults());
     v.extend(super::sunset_light_scan::defaults());
     v.extend(super::sunset_sound_detector::defaults());

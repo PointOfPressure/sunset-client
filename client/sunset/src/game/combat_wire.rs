@@ -109,6 +109,7 @@ pub(super) fn delivered(game: &Game<'_>, packet: &S) {
     super::sunset_survival_tools::sent(game, packet);
     super::sunset_drain::sent(game, packet);
     super::sunset_effects::sent(game, packet);
+    super::sunset_sign_historian::sent(packet);
     super::sunset_lag::sent(game, packet);
     super::sunset_backtrack::sent(game, packet);
     super::sunset_player::sent(packet);

@@ -206,6 +206,9 @@ pub(super) fn all_off(game: &mut Game<'_>) {
     super::sunset_world_parity::tick(game, &[]);
     super::sunset_vanish::tick(game, None);
     super::sunset_base_finder::tick(game, None);
+    super::sunset_villager_roller::tick(game, None);
+    super::sunset_sign_historian::tick(game, None);
+    super::sunset_use_tracker::tick(game, None);
     super::sunset_hunting::tick(game, &[]);
     super::sunset_light_scan::tick(game, &[]);
     super::sunset_sound_detector::tick(game, None);

@@ -541,6 +541,12 @@ Bomb; Base Finder's Hidden bases that of Sky's Hidden Bases; Elytra Fly's Bounce
 ThunderHack's Elytra Recast (GPL-3.0), Dimasik's Elytra Bounce, Ballshack's infinite glide and Lemon's (GPL-3.0) and
 BepHax's Pitch 40. All written fresh for Sunset with no code taken.
 
+Speed's Grim collide mode follows the behaviour of Andromeda's Collide Boost and BepHax's Grim Entity Boost; Base
+Finder's Reasons that of the base hints in Zorin, Radium, Sky, Odin, BepHax (Rotation Detector, Cave Air ESP) and
+Combatant; Villager Roller that of Lemon's Villager Roller (GPL-3.0); Sign Historian that of Path-Seeker's Sign Historian
+(a Meteor addon, GPL-3.0); Use Tracker that of Nuclear's Use Tracker, Arc's Pearl and Potion Prediction and Sky's Pearl
+Trajectory. All written fresh for Sunset with no code taken.
+
 Ore Sim's automatic seed discovery uses [horizon-seedcrackerx](https://github.com/luhnox/horizon-seedcrackerx) by
 [luhnox](https://github.com/luhnox), a Rust port of [SeedCrackerX](https://github.com/19MisterX98/SeedcrackerX),
 originally by KaptainWutax and maintained by 19MisterX98 and contributors, with the SeedFinding libraries. The reused

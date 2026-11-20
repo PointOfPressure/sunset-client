@@ -152,6 +152,9 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         spawner_alerts(game, m);
     }
     super::sunset_base_finder::tick(game, get("Base Finder"));
+    super::sunset_villager_roller::tick(game, get(super::sunset_villager_roller::NAME));
+    super::sunset_sign_historian::tick(game, get(super::sunset_sign_historian::NAME));
+    super::sunset_use_tracker::tick(game, get(super::sunset_use_tracker::NAME));
 }
 
 // Within `range` of the player as the shape says: a ball, or a cube.

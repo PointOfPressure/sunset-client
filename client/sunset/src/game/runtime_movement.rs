@@ -494,6 +494,45 @@ pub(super) fn watchdog_stop(game: &mut Game<'_>, reset: bool) {
 // Speed (Sunset's): this tick's own move across the ground, blocks a tick (and Strafe's hop up), or None to leave
 // it to the game. Vanilla moves the setting's blocks a second the way the move keys point, and stands still without
 // them; Strafe hops, faster at each jump, slowing in the air.
+// Speed's Grim collide (after Andromeda's Collide Boost and BepHax's Grim Entity Boost, behaviour only, written anew):
+// Grim leaves room for the push of every body your box touches, so while you touch others (within Collide reach)
+// the move keys get Collide boost more speed a tick for each, Collide max entities at most, up to Collide speed cap.
+// Nothing extra is sent: the boost rides on the tick's own move.
+fn grim_collide(game: &mut Game<'_>, m: &Module) {
+    let Some(dir) = move_direction(game) else { return };
+    let own = super::sunset::own_id(game);
+    let Some(p) = game.player.as_ref() else { return };
+    let reach = m.n("Collide reach");
+    let half = f64::from(p.dimensions.width) / 2.0 + reach;
+    let lo = [p.position.x - half, p.position.y - reach, p.position.z - half];
+    let hi = [p.position.x + half, p.position.y + f64::from(p.dimensions.height) + reach, p.position.z + half];
+    let touching = game
+        .mobs
+        .iter()
+        .filter(|e| e.alive() && !e.removed && Some(e.id) != own && e.kind.id != "minecraft:armor_stand")
+        .filter(|e| {
+            let b = e.bounds();
+            let (a, c) = (b.min_position(), b.max_position());
+            a.x < hi[0] && c.x > lo[0] && a.y < hi[1] && c.y > lo[1] && a.z < hi[2] && c.z > lo[2]
+        })
+        .count()
+        .min(m.n("Collide max entities") as usize);
+    // The keys add their own push after this (about 0.13 a tick walking on the ground, 0.17 sprinting, 0.02 in the
+    // air): the cap leaves room for it.
+    let keys = if p.ground.on_ground { if p.sprinting { 0.17 } else { 0.13 } } else { 0.02 };
+    let cap = (m.n("Collide speed cap") / 20.0 - keys).max(0.0);
+    if touching == 0 || p.velocity.x.hypot(p.velocity.z) >= cap {
+        return;
+    }
+    let k = m.n("Collide boost") * touching as f64;
+    if let Some(p) = game.player.as_mut() {
+        let (x, z) = (p.velocity.x + dir[0] * k, p.velocity.z + dir[1] * k);
+        let scale = (cap / x.hypot(z).max(1e-9)).min(1.0);
+        p.velocity.x = x * scale;
+        p.velocity.z = z * scale;
+    }
+}
+
 pub(super) fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option<f64>)> {
     if m.p("Mode") != "Watchdog" { watchdog_stop(game, true); }
     let p = game.player.as_ref()?;
@@ -541,6 +580,10 @@ pub(super) fn speed(game: &mut Game<'_>, m: &Module) -> Option<([f64; 2], Option
     }
     if matches!(mode, "NCP" | "Watchdog") {
         return legacy_speed_move(game, m, slow_factor);
+    }
+    if mode == "Grim collide" {
+        grim_collide(game, m);
+        return None;
     }
     if mode == "NCP Hop" {
         return ncp_hop(game, m);
