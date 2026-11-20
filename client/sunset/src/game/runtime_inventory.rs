@@ -10,13 +10,20 @@ use super::sunset::*;
 // worn piece back to `i`). Never by picking pieces up: a server that refuses one of the clicks would leave a piece on
 // the cursor, and a refused middle swap puts both back.
 // Ungated: Chest Swap and Take off check the input themselves, and a restore must go out.
+// An old server behind ViaVersion refuses the shift-click (inventory_gate.rs): there the piece goes by swaps too.
 pub(super) fn wear(game: &mut Game<'_>, i: usize, a: usize) {
+    wear_clicks(game, i, a);
+}
+
+// `wear`, and how many clicks went (0: none).
+pub(super) fn wear_clicks(game: &mut Game<'_>, i: usize, a: usize) -> usize {
     use horizon_client::menu::Input::{QuickMove, Swap};
     let armor = 500 + a;
     if super::sunset_loadouts::locked(i) || super::sunset_loadouts::locked(armor) {
-        return;
+        return 0;
     }
-    let ops: Vec<(Option<usize>, i32, horizon_client::menu::Input)> = if game.armor[a].is_none() {
+    let shift = game.armor[a].is_none() && !super::sunset_inventory_gate::legacy(game);
+    let ops: Vec<(Option<usize>, i32, horizon_client::menu::Input)> = if shift {
         vec![(Some(i), 0, QuickMove)]
     } else if i < 9 {
         vec![(Some(armor), i as i32, Swap)]
@@ -24,11 +31,18 @@ pub(super) fn wear(game: &mut Game<'_>, i: usize, a: usize) {
         let empty: [bool; 9] = std::array::from_fn(|h| game.inventory.get(h).is_none_or(|s| s.is_none()));
         let locked: [bool; 9] = std::array::from_fn(super::sunset_loadouts::locked);
         let Some(h) = super::sunset_inventory_plan::pivot(empty, locked, game.selected) else {
-            return;
+            return 0;
         };
         vec![(Some(i), h as i32, Swap), (Some(armor), h as i32, Swap), (Some(i), h as i32, Swap)]
     };
-    game.remote_menu_ops(&ops);
+    if !game.remote_menu_ops(&ops) {
+        return 0;
+    }
+    super::sunset_inventory_gate::clicked(ops.len());
+    if shift {
+        super::sunset_inventory_gate::refusable(game, true);
+    }
+    ops.len()
 }
 
 // An armour piece's material: `diamond` of diamond_helmet.
@@ -82,8 +96,9 @@ pub(super) fn auto_armor(game: &mut Game<'_>, m: &Module) {
     if m.on && m.p("Mode") == "Slots" {
         return;
     }
-    // One inventory step at a time: Inventory Manager's last one settles first.
-    if super::sunset_player::inventory_stepping(game.ticks) {
+    // One inventory step at a time: Inventory Manager's last one settles first, and a click an old server refused is
+    // answered first (inventory_gate.rs).
+    if super::sunset_player::inventory_stepping(game.ticks) || !super::sunset_inventory_gate::ready(game) {
         return;
     }
     let set = with(|s| s.armor_set.clone());

@@ -382,9 +382,30 @@ pub fn pings() -> (Option<Instant>, Vec<(Instant, i32)>) {
     (pings.0, pings.1.iter().copied().collect())
 }
 
+// Clicks a translated old server refused (inventory_gate.rs): ViaVersion turns a pre-1.17 server's refused
+// ContainerClick acknowledgement into a play Ping of (1 << 30) | (window << 16) | action id, the action id always the 0
+// it wrote, and turns the answering Pong back into the acknowledgement the server waits for. Counted with the logins,
+// so a count is only compared within one connection.
+static LOGINS: AtomicU64 = AtomicU64::new(0);
+static REFUSALS: AtomicU64 = AtomicU64::new(0);
+
+pub fn refusals() -> (u64, u64) {
+    (LOGINS.load(Ordering::Acquire), REFUSALS.load(Ordering::Acquire))
+}
+
+pub(crate) fn refusal_ping(id: i32) -> bool {
+    id as u32 & 0xFF00_FFFF == 0x4000_0000
+}
+
 fn ping_seen(packet: &C) {
     match packet {
-        C::Login(_) => *PINGS.lock().unwrap_or_else(|e| e.into_inner()) = (Some(Instant::now()), VecDeque::new()),
+        C::Login(_) => {
+            LOGINS.fetch_add(1, Ordering::AcqRel);
+            *PINGS.lock().unwrap_or_else(|e| e.into_inner()) = (Some(Instant::now()), VecDeque::new());
+        }
+        C::Ping(p) if refusal_ping(p.id) => {
+            REFUSALS.fetch_add(1, Ordering::AcqRel);
+        }
         C::Ping(p) => {
             let mut pings = PINGS.lock().unwrap_or_else(|e| e.into_inner());
             if pings.1.len() == 400 {

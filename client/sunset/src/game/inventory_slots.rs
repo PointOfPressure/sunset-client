@@ -9,12 +9,16 @@
 // - nothing for 10 ticks after you attack, place a block or have a container open, nor while Scaffold is on; off the
 //   inventory screen only with GUI Move on and no click held (Only in inventory: on the screen only), and the
 //   inventory counts as opened a tick before the first action and closed after two passes with nothing to do;
+// - the pause after each action rolled between Delay min and max (ms, carried over between ticks so every 10 ms
+//   counts, several actions a tick under 50 ms), within NoCheatPlus's click limits with NCP click limit on, and on an
+//   old server behind ViaVersion the clicks it refuses answered before the next (inventory_gate.rs);
 // - an item with a custom name (a server's menu item) is neither moved nor thrown unless Use / Drop custom items say.
 // Slots in this file are numbered as the classic player inventory is: 0 to 8 the hotbar, 9 to 35 the rest, 36 to 39
 // the boots, leggings, chestplate and helmet worn. Of two equal armour pieces the worn one stays.
 
 use super::Game;
 use super::sunset::Module;
+use super::sunset_inventory_gate::{self as gate, Pacer};
 use std::sync::Mutex;
 
 pub(super) const SLOTS: usize = 40;
@@ -369,8 +373,9 @@ pub(super) fn next_action(inv: &[Option<Stack>; SLOTS], cursor: bool, cfg: &Cfg,
 // The manager's own state: its pause after an action, the counts since an attack, a block placed and a container,
 // and whether the inventory counts as open.
 struct State {
-    next_click: std::time::Duration,
-    since_click: std::time::Instant,
+    pacer: Pacer,
+    // The pause rolled after the last action: also the pause from the inventory opening to the first.
+    next: std::time::Duration,
     attack: u32,
     place: u32,
     container: u32,
@@ -387,8 +392,8 @@ static STATE: Mutex<Option<State>> = Mutex::new(None);
 fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
     let mut g = STATE.lock().unwrap_or_else(|e| e.into_inner());
     f(g.get_or_insert_with(|| State {
-        next_click: std::time::Duration::ZERO,
-        since_click: std::time::Instant::now(),
+        pacer: Pacer::default(),
+        next: std::time::Duration::ZERO,
         attack: 100,
         place: 100,
         container: 100,
@@ -451,7 +456,8 @@ const NOT_BUILDING: [&str; 14] = [
 // Items a classic manager keeps besides weapons, tools, armour, food, potions and building blocks.
 const KEPT: [&str; 10] = ["fishing_rod", "water_bucket", "bucket", "arrow", "bow", "snowball", "egg", "ender_pearl", "clay_ball", "fire_charge"];
 
-fn describe(game: &Game<'_>, m: &Module, stack: &horizon_client::items::ItemStack) -> Stack {
+// `protected`: Inventory Manager's Protected items (kept whatever they are).
+pub(super) fn describe(game: &Game<'_>, protected: &str, stack: &horizon_client::items::ItemStack) -> Stack {
     let item = super::sunset_player::plan_item(game, stack);
     let name = item.name.clone();
     let level = |e: &str| item.enchants.iter().find(|(x, _)| super::sunset_util::short(x) == e).map_or(0, |x| x.1);
@@ -506,7 +512,7 @@ fn describe(game: &Game<'_>, m: &Module, stack: &horizon_client::items::ItemStac
     let food = info.as_ref().and_then(|i| i.food).map(|(nutrition, saturation)| {
         if nutrition > 0 { saturation as f32 / (nutrition as f32 * 2.0) } else { 0.0 }
     });
-    let kept = super::sunset_util::listed(m.t("Protected items"), &name);
+    let kept = super::sunset_util::listed(protected, &name);
     let useful = building
         || name == "tnt"
         || name.ends_with("glass")
@@ -596,20 +602,22 @@ pub(super) fn pre_tick(game: &mut Game<'_>, m: Option<&Module>) {
     let scaffold = super::sunset::with(|s| s.is_on("Scaffold"));
     let gui_move = super::sunset::with(|s| s.is_on("GUI Move"));
     // Only in inventory: on the inventory screen only, the pause counting from when it opened.
+    let now = std::time::Instant::now();
     if m.b("Only in inventory") && !in_inventory {
         st(|s| {
-            s.since_click = std::time::Instant::now();
+            let next = s.next;
+            s.pacer.wait(now, next);
             close(s);
         });
         return;
     }
-    let paused = st(|s| s.since_click.elapsed() < s.next_click || s.container < 10 || s.attack < 10 || s.place < 10);
+    let paused = st(|s| !s.pacer.ready(now) || s.container < 10 || s.attack < 10 || s.place < 10);
     if paused || scaffold || foreign || (!gui_move && !in_inventory) || super::sunset_gui_move::inventory_busy() {
         st(close);
         return;
     }
     let locked = super::sunset_loadouts::locked_slots();
-    let inv: [Option<Stack>; SLOTS] = std::array::from_fn(|i| stack_at(game, i).map(|s| describe(game, m, s)));
+    let inv: [Option<Stack>; SLOTS] = std::array::from_fn(|i| stack_at(game, i).map(|s| describe(game, m.t("Protected items"), s)));
     let cursor = game.carried.is_some();
     let c = cfg(m);
     let work = needs_work(&inv, cursor, &c);
@@ -651,42 +659,73 @@ pub(super) fn pre_tick(game: &mut Game<'_>, m: Option<&Module>) {
         let i = internal(slot);
         !(i < 36 && locked[i]) && !super::sunset_loadouts::locked(i)
     };
-    let action = next_action(&inv, cursor, &c, may);
-    let moved = action.is_some_and(|a| act(game, a, &locked));
     let (lo, hi) = (m.n("Delay min (ms)"), m.n("Delay max (ms)"));
-    st(|s| {
-        if moved {
+    let limit = m.b("NCP click limit");
+    let legacy = gate::legacy(game);
+    // As many actions as are due this tick (one, unless Delay is under a tick).
+    let (mut done, mut nothing) = (0, false);
+    while done < 16 && gate::ready(game) && st(|s| s.pacer.ready(now)) {
+        let inv: [Option<Stack>; SLOTS] = std::array::from_fn(|i| stack_at(game, i).map(|s| describe(game, m.t("Protected items"), s)));
+        let Some(action) = next_action(&inv, game.carried.is_some(), &c, may) else {
+            nothing = true;
+            break;
+        };
+        if limit && !gate::room(clicks(action, legacy)) {
+            break;
+        }
+        let sent = act(game, action, &locked, legacy);
+        if sent == 0 {
+            nothing = true;
+            break;
+        }
+        gate::clicked(sent);
+        done += 1;
+        st(|s| {
             let roll = unit(&mut s.rng);
-            s.next_click = std::time::Duration::from_millis((lo.min(hi) + (hi - lo).abs() * roll).round() as u64);
-            s.since_click = std::time::Instant::now();
+            s.next = gate::roll(lo, hi, roll);
+            let next = s.next;
+            s.pacer.sent(now, next);
             s.idle = 0;
-        } else {
-            // Two passes with nothing done: the inventory counts as closed.
+        });
+    }
+    if done == 0 && nothing {
+        // Two passes with nothing to do: the inventory counts as closed.
+        st(|s| {
             s.idle += 1;
             if s.idle >= 2 {
                 close(s);
             }
-        }
-    });
+        });
+    }
 }
 
-// The clicks of an action. True when they went.
-fn act(game: &mut Game<'_>, action: Action, locked: &[bool; 36]) -> bool {
+// How many clicks an action takes.
+fn clicks(action: Action, legacy: bool) -> usize {
+    match action {
+        Action::Wear(from, _) => if from < 9 { 1 } else { 3 },
+        Action::DropPart(_, keep) if !legacy => keep as usize + 2,
+        _ => 1,
+    }
+}
+
+// The clicks of an action: how many went. An old server behind ViaVersion refuses a click that puts part of a stack
+// down (inventory_gate.rs), so there a stack over its limit is cut down one item a click.
+fn act(game: &mut Game<'_>, action: Action, locked: &[bool; 36], legacy: bool) -> usize {
     use horizon_client::menu::Input::{Pickup, Swap, Throw};
     let ops: Vec<(Option<usize>, i32, horizon_client::menu::Input)> = match action {
         Action::Cursor(Some(slot)) => vec![(Some(internal(slot)), 0, Pickup)],
         Action::Cursor(None) => vec![(None, 0, Pickup)],
         Action::Wear(from, t) => {
-            super::sunset_gui_move::direct(|| super::sunset::wear(game, internal(from), t));
-            return true;
+            return super::sunset_gui_move::direct(|| super::sunset::wear_clicks(game, internal(from), t));
         }
         Action::Hotbar(from, to) => {
             if locked[to] {
-                return false;
+                return 0;
             }
             vec![(Some(internal(from)), to as i32, Swap)]
         }
         Action::Drop(slot) => vec![(Some(internal(slot)), 1, Throw)],
+        Action::DropPart(slot, _) if legacy => vec![(Some(internal(slot)), 0, Throw)],
         Action::DropPart(slot, keep) => {
             let mut ops = vec![(Some(internal(slot)), 0, Pickup)];
             ops.extend((0..keep).map(|_| (Some(internal(slot)), 1, Pickup)));
@@ -694,7 +733,15 @@ fn act(game: &mut Game<'_>, action: Action, locked: &[bool; 36]) -> bool {
             ops
         }
     };
-    super::sunset_gui_move::direct(|| game.remote_menu_ops(&ops))
+    let n = ops.len();
+    if !super::sunset_gui_move::direct(|| game.remote_menu_ops(&ops)) {
+        return 0;
+    }
+    // Put down part by part: refused there, and the rest of the clicks with it until the answer.
+    if matches!(action, Action::DropPart(..)) && !legacy {
+        gate::refusable(game, false);
+    }
+    n
 }
 
 #[cfg(test)]

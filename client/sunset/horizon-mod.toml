@@ -1135,6 +1135,12 @@ name = "sunset_inventory_exec"
 source = "src/game/inventory_exec.rs"
 
 [[native.module]]
+id = "inventory_gate"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_inventory_gate"
+source = "src/game/inventory_gate.rs"
+
+[[native.module]]
 id = "inventory_slots"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_inventory_slots"

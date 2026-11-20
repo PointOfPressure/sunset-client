@@ -48,10 +48,12 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Mode", &["Slots", "Planner"])
             // Profiles: a preset fills in Cleanup's limits and junk.
             .pick("Preset", &["Custom", "PvP", "Building", "Mining", "Survival"])
-            // General: one step every Delay ticks (plus up to Delay variation more), with the inventory open unless
-            // Only in inventory is off.
-            .num("Delay (ticks)", 1.0, 0.0, 10.0, 1.0)
-            .num("Delay variation", 0.0, 0.0, 5.0, 1.0)
+            // General: the pause after each action, rolled between Delay min and max (ms) each time, in both modes
+            // (inventory_gate.rs: carried over between ticks, so each 10 ms counts); NCP click limit keeps the clicks
+            // within NoCheatPlus's FastClick limits; with the inventory open unless Only in inventory is off.
+            .num("Delay min (ms)", 100.0, 0.0, 150.0, 10.0)
+            .num("Delay max (ms)", 150.0, 0.0, 150.0, 10.0)
+            .bool("NCP click limit", true)
             .bool("Only in inventory", true)
             // Equipment: worse duplicates of your weapons, tools and armour go (inventory_plan.rs); these never go.
             .bool("Duplicates", true)
@@ -97,10 +99,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Loot key", "None")
             .num("Keep totems", 1.0, 1.0, 20.0, 1.0)
             .num("Keep pearl stacks", 5.0, 1.0, 10.0, 1.0)
-            // Slots: the pause after each action, menu items, the limits, and each kept item's hotbar slot (1 to 9,
-            // 0 for none; a range for blocks, potions and food).
-            .num("Delay min (ms)", 100.0, 0.0, 500.0, 50.0)
-            .num("Delay max (ms)", 150.0, 0.0, 500.0, 50.0)
+            // Slots: menu items, the limits, and each kept item's hotbar slot (1 to 9, 0 for none; a range for
+            // blocks, potions and food).
             .bool("Drop custom items", false)
             .bool("Use custom items", false)
             .bool("Prioritize splash potions", false)
@@ -1111,6 +1111,10 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
     let fingerprint = inventory_fingerprint(game);
     let context = inventory_context(game, m, &locked, loot);
     exec(|e| e.context(context));
+    // A click an old server refused is answered before the next (inventory_gate.rs).
+    if !super::sunset_inventory_gate::ready(game) {
+        return;
+    }
     // An item on the cursor: the player's is left alone (nothing else moves until it is put down); the manager's own,
     // left by a refused click of a Merge, goes back before anything else.
     if game.carried.is_some() {
@@ -1121,7 +1125,10 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
         return;
     }
     exec(|e| e.cursor_empty(now));
-    if exec(|e| e.gate(now, fingerprint)) == Gate::Wait || super::sunset_combat_control::owner().is_some() {
+    if exec(|e| e.gate(now, fingerprint)) == Gate::Wait
+        || super::sunset_combat_control::owner().is_some()
+        || !pace(|p| p.ready(std::time::Instant::now()))
+    {
         return;
     }
     // A correction can refuse one operation without blocking all other work. Protect its slots until contents or
@@ -1174,19 +1181,36 @@ fn inventory_manager(game: &mut Game<'_>, m: &Module) {
             .into_iter()
             .map(|(slot, key)| (Some(slot), key as i32, Swap))
             .collect(),
+        // An old server refuses the put-down onto the other stack and drops the clicks after it until its answer
+        // (inventory_gate.rs): there what does not fit stays on the cursor, and goes back as the put-back.
+        Step::Merge { from, into } if super::sunset_inventory_gate::legacy(game) => vec![(Some(from), 0, Pickup), (Some(into), 0, Pickup)],
         Step::Merge { from, into } => vec![(Some(from), 0, Pickup), (Some(into), 0, Pickup), (Some(from), 0, Pickup)],
         Step::Place(_) => return,
     };
+    if m.b("NCP click limit") && !super::sunset_inventory_gate::room(clicks.len()) {
+        return;
+    }
     if !super::sunset_gui_move::direct(|| game.remote_menu_ops(&clicks)) { return; }
+    super::sunset_inventory_gate::clicked(clicks.len());
     // rand() takes the PS lock itself: rolled here, outside any ps() or exec() closure.
-    let delay = m.n("Delay (ticks)") as u64 + rand(m.n("Delay variation") as usize + 1) as u64;
+    let delay = super::sunset_inventory_gate::roll(m.n("Delay min (ms)"), m.n("Delay max (ms)"), rand(1001) as f64 / 1000.0);
+    pace(|p| p.sent(std::time::Instant::now(), delay));
     let latency = super::remote::sunset_combat_remote::latency(game);
     if step.cursor() {
-        // Nothing follows it until the server's answer is in: a round trip, at least Delay.
-        exec(|e| e.sent(step, fingerprint, now, super::sunset_inventory_exec::settle_ticks(latency, delay)));
+        // Nothing follows it until the server's answer is in: a round trip.
+        exec(|e| e.sent(step, fingerprint, now, super::sunset_inventory_exec::settle_ticks(latency, 0)));
+        super::sunset_inventory_gate::refusable(game, false);
     } else {
-        exec(|e| e.sent_predicted(step, via, fingerprint, now, delay, latency));
+        // One step a tick at most; Delay (ms) is the pacer's.
+        exec(|e| e.sent_predicted(step, via, fingerprint, now, 0, latency));
     }
+}
+
+// Inventory Manager's Planner cadence: Delay min to max (ms) between steps (inventory_gate.rs).
+static PACE: Mutex<super::sunset_inventory_gate::Pacer> = Mutex::new(super::sunset_inventory_gate::Pacer::new());
+
+fn pace<R>(f: impl FnOnce(&mut super::sunset_inventory_gate::Pacer) -> R) -> R {
+    f(&mut PACE.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
 // The stack the manager left on the cursor goes into a slot that takes it (`place_target`): where it came from, a
@@ -1210,8 +1234,13 @@ fn put_back(game: &mut Game<'_>, origin: Option<usize>, locked: &[bool; 36], fin
         report(game, "Inventory Manager: an item it moved is left on the cursor, and no slot takes it.");
         return;
     };
+    let onto = game.inventory.get(target).is_some_and(|s| s.is_some());
     if !super::sunset_gui_move::direct(|| game.remote_menu_ops(&[(Some(target), 0, horizon_client::menu::Input::Pickup)])) {
         return;
+    }
+    super::sunset_inventory_gate::clicked(1);
+    if onto {
+        super::sunset_inventory_gate::refusable(game, false);
     }
     let settle = super::sunset_inventory_exec::settle_ticks(super::remote::sunset_combat_remote::latency(game), 1);
     exec(|e| e.sent(Step::Place(target), fingerprint, now, settle));

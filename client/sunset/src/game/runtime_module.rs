@@ -401,9 +401,9 @@ impl Module {
                 match name {
                     "Armor key" => self.p("Armor mode") == "Key",
                     "Switch sets" => key_from_text(self.t("Switch key")).is_some(),
-                    "Mode" | "Only in inventory" | "Protected items" | "Auto Armor" | "Auto Armor key"
-                    | "Armor delay (ticks)" | "Armor mode" | "Avoid cursed" | "Switch key" => true,
-                    "Delay min (ms)" | "Delay max (ms)" | "Drop custom items" | "Use custom items" | "Prioritize splash potions"
+                    "Mode" | "Delay min (ms)" | "Delay max (ms)" | "NCP click limit" | "Only in inventory" | "Protected items"
+                    | "Auto Armor" | "Auto Armor key" | "Armor delay (ticks)" | "Armor mode" | "Avoid cursed" | "Switch key" => true,
+                    "Drop custom items" | "Use custom items" | "Prioritize splash potions"
                     | "Block limit" | "Arrow limit" | "Bucket limit" | "Snowball and egg limit" | "Ender pearl limit"
                     | "Sword slot" | "Second sword slot" | "Pickaxe slot" | "Axe slot" | "Shovel slot" | "Block slots from"
                     | "Block slots to" | "Potion slots from" | "Potion slots to" | "Bow slot" | "Rod slot" | "Food slots from"
