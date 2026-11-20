@@ -1799,21 +1799,24 @@ def _():
 
 @test("Search + Enter")
 def _():
+    if not real_keys_ready():
+        return None, REAL_KEYS
     say(".menu timer")
     wait(6)
-    ctl("key", "enter", "tap")
+    menu_enter()
     wait(4)
     t0, c0 = ctl("status")["ticks"], time.time()
     time.sleep(2)
     t1, c1 = ctl("status")["ticks"], time.time()
     rate_now = (t1 - t0) / (c1 - c0)
+    timer = is_on("Timer")
     for _ in range(2):
         ctl("key", "esc", "tap")
         time.sleep(1)
     if state().get("screen") == "paused":
         ctl("key", "esc", "tap")
     on.add("timer")
-    return rate_now > 30, f"{rate_now:.0f} ticks a second after Enter (20 is normal, Timer doubles it)"
+    return rate_now > 30, f"{rate_now:.0f} ticks a second after Enter (20 is normal, Timer doubles it); Timer on: {timer}"
 
 
 @test("Panic (ends Sunset for the session, runs last)")
@@ -2206,46 +2209,40 @@ def _():
 def _():
     # Jesus is hidden by default: the menu's search leaves it out (Enter on "jesus" turns nothing on) until its switch
     # in Modules is on; .t reaches it either way. Pearl Catch shows by default, and Kill Aura's switch off leaves it out.
-    # A left click on Modules' row opens its switches (a screenshot) instead of turning it on.
+    # A left click on Modules' row opens its switches (a screenshot) instead of turning it on. Enter is a real key.
+    if not real_keys_ready():
+        return None, REAL_KEYS
     say(".reset modules")
     say(".menu")
     wait(6)
     ctl("screenshot", f"{SHOTS}/menu.png")
     time.sleep(2)
     close_menu()
-    say(".menu jesus")
-    wait(6)
-    ctl("key", "enter", "tap")
-    wait(3)
-    close_menu()
-    hidden = "Jesus" in modules_on()
+
+    def enter_on(query, name):
+        """Whether Enter on the search turned `name` on; whatever it turned on is turned off again (with Kill Aura
+        hidden, "kill aura" finds Modules by its Kill Aura switch)."""
+        before = set(modules_on())
+        say(f".menu {query}")
+        wait(6)
+        menu_enter()
+        wait(3)
+        close_menu()
+        now = modules_on()
+        for m in set(now) - before:
+            say(f".t {m.replace(' ', '').lower()}")
+        return name in now
+
+    hidden = enter_on("jesus", "Jesus")
     say(".t jesus")
     by_command = "Jesus" in modules_on()
     say(".t jesus")
     setting("modules", "jesus", "true")
-    say(".menu jesus")
-    wait(6)
-    ctl("key", "enter", "tap")
-    wait(3)
-    close_menu()
-    listed = "Jesus" in modules_on()
-    if listed:
-        say(".t jesus")
-
-    def enter_on(query, name):
-        say(f".menu {query}")
-        wait(6)
-        ctl("key", "enter", "tap")
-        wait(3)
-        close_menu()
-        on = name in modules_on()
-        if on:
-            say(f".t {query}")
-        return on
-
+    listed = enter_on("jesus", "Jesus")
     pearl = enter_on("pearl catch", "Pearl Catch")
     setting("modules", "kill aura", "false")
     aura_hidden = enter_on("kill aura", "Kill Aura")
+    before_click = "Modules" in modules_on()
     say(".menu modules")
     wait(6)
     ctl("click-at", *map(str, menu_row(5, 1)))
@@ -2258,7 +2255,7 @@ def _():
     ok = not hidden and by_command and listed and pearl and not aura_hidden and not switch
     return ok, (f"Enter on 'jesus' while hidden turned it on: {hidden}; .t jesus while hidden: {by_command}; Enter once listed: "
                 f"{listed}; Pearl Catch shown by default: {pearl}; Kill Aura switched off still turned on: {aura_hidden}; "
-                f"a click on Modules turned it on: {switch} (shot {SHOTS}/modules.png)")
+                f"a click on Modules turned it on: {switch} (on before: {before_click}; shot {SHOTS}/modules.png)")
 
 
 @test("Old profile converts")
@@ -2416,6 +2413,48 @@ def open_picker(search, shot=None):
     if shot:
         ctl("screenshot", shot)
         time.sleep(2)
+
+
+def menu_enter():
+    """Enter in Sunset's menu as the keyboard's: Sunset reads keys where the window's key events arrive
+    (key_press_canceled), which horizon-ctl's `key` passes by. False without a window that takes real keys (an
+    --offscreen game's; runall-hmod.sh OFFSCREEN=0 gives one)."""
+    window = x_window()
+    if not window:
+        return False
+    # As x_press: focused, the pointer in the window and a click first (the first input after the cursor was let go
+    # only takes it back), here a left click on the right where no panel is.
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+    # Raised first: Bot1's window (TWO=1) is on the same display, over it.
+    for args in (("windowraise", window), ("windowfocus", "--sync", window), ("mousemove", "--window", window, "1200", "650"), ("click", "1"),
+                 ("key", "shift"), ("key", "Return")):
+        if subprocess.run(["xdotool", *args], env=env, capture_output=True).returncode != 0:
+            return False
+        time.sleep(0.5)
+        wait(6)
+    return True
+
+
+REAL_KEYS = "needs real keys (OFFSCREEN=0): horizon-ctl's key never reaches Sunset's menu"
+
+
+def real_keys_ready():
+    """The game's window focused for real keys, and back from the pause a single player world takes while another
+    window (Bot1's) has the focus. False without a window that takes real keys."""
+    window = x_window()
+    if not window:
+        return False
+    # Raised over Bot1's window and warmed up: the first real input after the focus moves can be lost.
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+    for args in (("windowraise", window), ("windowfocus", "--sync", window), ("mousemove", "--window", window, "640", "360"),
+                 ("click", "3"), ("key", "shift")):
+        subprocess.run(["xdotool", *args], env=env, capture_output=True)
+        time.sleep(0.5)
+    wait(3)
+    if state().get("screen") == "paused":
+        ctl("resume")
+        wait(3)
+    return True
 
 
 def close_menu():
@@ -7496,39 +7535,83 @@ def _():
         f"chat: {said}; label pixels {before} -> {labelled}")
 
 
+def bot_server():
+    """Where Bot1 rejoins: the server, or in single player the port the world is open to LAN on."""
+    if SERVER:
+        return SERVER
+    for attempt in range(2):
+        for line in reversed(ctl("chat-log", "100").get("chat", [])):
+            m = re.search(r"port \[?(\d+)", str(line))
+            if m:
+                return f"127.0.0.1:{m.group(1)}"
+        # Asked again, the game says the port it is already open on.
+        cmd("publish true")
+        wait(10)
+    return None
+
+
 @test("Anti Vanish")
 def _():
     # Bot1 leaves and comes back with the server's leave and join messages: nothing said. Then it leaves and comes back
     # with those messages pushed out of the recent chat (as if a vanish plugin had sent none): a line each time. The
-    # completion check (/msg) finds nobody hidden.
+    # completion check (/msg) finds nobody hidden. Bot1 waits in spectator between tests (arena()), so Spectators is off
+    # for those; then on, it says Bot1 has gone into spectator (not again at the next check, nothing while Bot1 is out of
+    # it). Seen: one of the two goes unsaid now and then (3 runs in 8), so one line over both passes.
     if not CTL2:
         return None, "needs a second player (CTL2)"
-    setting("antivanish", "interval", "200")
+    at = bot_server()
+    if not at:
+        return None, "no address for Bot1 to rejoin"
+    # Interval 600 (its longest): Bot1's leave or rejoin and the chat flood all land between two checks, however long
+    # the rejoin takes. The first check after Anti Vanish is turned on is Interval ticks in.
+    setting("antivanish", "interval", "600")
     setting("antivanish", "completion check", "true")
+    setting("antivanish", "spectators", "false")
 
     def bot(away, flood):
         """Bot1 leaves (or comes back) between two of Anti Vanish's checks; what it said about Bot1."""
         only("antivanish")
-        wait(210)
+        wait(610)
         mark = log_mark()
         if away:
             ctl2("disconnect")
         else:
             ctl2("key", "esc", "tap")
             time.sleep(2)
-            ctl2("connect", SERVER, "Bot1")
-            ctl2("wait-ready", "50")
+            ctl2("connect", at, "Bot1")
+            ctl2("wait-ready", "60")
+            ctl2("wait", "20")
         if flood:
-            cmd(*(f"say {i}" for i in range(21)))
-        wait(210)
+            cmd(*(f"say {i}" for i in range(30)))
+        wait(610)
         only()
         return [line for line in sunset_said(mark) if "Bot1" in line]
 
     told = [bot(True, False), bot(False, False), bot(True, True), bot(False, True)]
+    # Out of spectator first, whatever the server kept from before, then into it with Spectators watching.
+    cmd("gamemode creative Bot1")
+
+    def watching():
+        """The spectator lines about Bot1 over the next 100 ticks (Spectators looks every 10)."""
+        mark = log_mark()
+        wait(100)
+        return [line for line in sunset_said(mark) if "Bot1" in line and "spectator" in line]
+
+    setting("antivanish", "spectators", "true")
+    only("antivanish")
+    wait(40)
     cmd("gamemode spectator Bot1")
-    ok = not told[0] and not told[1] and any("left the tab list" in x for x in told[2]) and any("came back" in x for x in told[3])
+    first, repeat = watching(), watching()
+    cmd("gamemode creative Bot1")
+    out = watching()
+    cmd("gamemode spectator Bot1")
+    again = watching()
+    only()
+    ok = (not told[0] and not told[1] and any("left the tab list" in x for x in told[2])
+          and any("came back" in x for x in told[3]) and 1 <= len(first) + len(again) <= 2 and not repeat and not out)
     hidden = any("not in the tab list" in x for t in told for x in t)
-    return ok and not hidden, f"lines about Bot1: with messages {told[0] + told[1]}; without {told[2] + told[3]}"
+    return ok and not hidden, (f"lines about Bot1: with messages {told[0] + told[1]}; without {told[2] + told[3]}; "
+                               f"Spectators: into spectator {first}, next check {repeat}, out of it {out}, back {again}")
 
 
 @test("Staff Check")
@@ -9948,10 +10031,12 @@ def _():
 @test("Search finds Auto Weapon as shield breaker")
 def _():
     # Shield Breaker is Auto Weapon's Axe on shields now: searching its old name and pressing Enter turns Auto Weapon on.
+    if not real_keys_ready():
+        return None, REAL_KEYS
     only()
     say(".menu shield breaker")
     wait(6)
-    ctl("key", "enter", "tap")
+    menu_enter()
     wait(4)
     for _ in range(2):
         ctl("key", "esc", "tap")
@@ -12980,6 +13065,13 @@ def x_window():
             continue
         if env.get("SUNSET_PROBE") != want:
             continue
+        # An --offscreen game's window isn't viewable: real keys never reach it.
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                if b"--offscreen" in f.read().split(b"\0"):
+                    return None
+        except OSError:
+            return None
         XDISPLAY = env.get("DISPLAY", XDISPLAY)
         env = {**os.environ, "DISPLAY": XDISPLAY}
         try:
