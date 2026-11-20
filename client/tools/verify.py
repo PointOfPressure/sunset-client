@@ -2304,20 +2304,17 @@ def _():
 
 @test("Presets")
 def _():
-    # .preset pvp-crystal says what it turns on and off and changes nothing; .preset pvp-crystal apply turns Crystal
-    # Aura and Fullbright on and Kill Aura off (HUD stays); .profile load before-load undoes it. Then in the menu: the
-    # Profiles row, the Presets tab, the first preset's preview (a screenshot), Enter applies it.
+    # One preset, Default (Sunset's defaults): .preset default says what it turns on and off and changes nothing;
+    # .preset default apply turns Kill Aura off (HUD stays); .profile load before-load undoes it. Then in the menu: the
+    # Profiles row, the Presets tab, the preset's preview (a screenshot), Enter applies it.
     say(".reset killaura")
     toggle("killaura", True)
     listing = said_after(".preset")
-    preview = said_after(".preset pvp-crystal")
-    # PvP: mace (Sayer's mace setup) reads whole: its preview turns Aim Assist and Wind Jump on.
-    mace = said_after(".preset pvp-mace")
-    mace_ok = any(l.startswith("Turns on:") and "Aim Assist" in l and "Wind Jump" in l for l in mace)
-    unchanged = "Crystal Aura" not in modules_on()
-    taken = said_after(".preset pvp-crystal apply")
+    preview = said_after(".preset default")
+    unchanged = "Kill Aura" in modules_on()
+    taken = said_after(".preset default apply")
     after = modules_on()
-    applied = {"Crystal Aura", "Fullbright", "HUD"} <= set(after) and "Kill Aura" not in after
+    applied = "HUD" in after and "Kill Aura" not in after
     say(".profile load before-load")
     undone = "Kill Aura" in modules_on() and "Crystal Aura" not in modules_on()
     # The menu: with no profile saved it opens on Presets; with one, the tab is clicked.
@@ -2348,13 +2345,12 @@ def _():
     time.sleep(2)
     close_menu()
     by_menu = modules_on()
-    menu_applied = "Crystal Aura" in by_menu and "Kill Aura" not in by_menu
+    menu_applied = "Kill Aura" not in by_menu
     say(".profile load before-load")
     toggle("killaura", False)
-    ok = (any("pvp-crystal" in l for l in listing) and any(l.startswith("Turns on:") and "Crystal Aura" in l for l in preview)
-          and any(l.startswith("Turns off:") and "Kill Aura" in l for l in preview) and unchanged and applied and undone
-          and menu_applied and any("Took preset" in l for l in taken) and mace_ok)
-    return ok, (f"list {listing[:1]}; preview {preview[:3]}; mace preview {mace[:3]}; unchanged before apply: {unchanged}; applied: {applied} ({taken[:1]}); "
+    ok = (any("default" in l for l in listing) and any(l.startswith("Turns off:") and "Kill Aura" in l for l in preview)
+          and unchanged and applied and undone and menu_applied and any("Took preset" in l for l in taken))
+    return ok, (f"list {listing[:1]}; preview {preview[:3]}; unchanged before apply: {unchanged}; applied: {applied} ({taken[:1]}); "
                 f"undone: {undone}; from the menu: {menu_applied} (shot {SHOTS}/preset_preview.png)")
 
 

@@ -3,7 +3,7 @@
 use super::sunset_bind_state::holds;
 use super::sunset::*;
 
-// Every module with its defaults, in menu order.
+// Every module with its defaults, in menu order: each module's code defaults, then Sunset's default setup over them.
 pub(super) fn defaults() -> Vec<Module> {
     use Category::*;
     let mut v = vec![
@@ -763,5 +763,7 @@ pub(super) fn defaults() -> Vec<Module> {
     if let Some(m) = v.iter_mut().find(|m| m.name == "Zoom") {
         m.key = Some("key.keyboard.v".into());
     }
+    // Sunset's default setup over the code defaults (default_config.rs).
+    super::sunset_default_config::apply(&mut v);
     v
 }

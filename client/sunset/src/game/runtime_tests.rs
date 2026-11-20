@@ -780,18 +780,19 @@ mod cleanup_tests {
     }
 
     #[test]
-    fn presets_are_valid_profiles_that_cut_down() {
+    fn the_default_preset_is_a_valid_profile_and_the_defaults() {
         use super::super::sunset_presets::{PRESETS, find};
         let mut state = State::new();
+        assert_eq!((PRESETS.len(), find("default"), find("Default")), (1, Some(0), Some(0)));
+        let checked = state.check_profile(PRESETS[0].text).unwrap();
+        assert!(checked.skipped.is_empty(), "every line is a setting: {:?}", checked.skipped);
+        // What a fresh install starts with is what the preset sets.
+        let after = state.preview(&PRESETS[0]).unwrap();
+        assert!(after.on.is_empty() && after.off.is_empty() && after.settings == 0, "{:?} {:?} {}", after.on, after.off, after.settings);
         State::set_field(&mut state.modules, "killaura.on", "true");
-        for (i, preset) in PRESETS.iter().enumerate() {
-            assert_eq!(find(preset.id), Some(i));
-            let preview = state.preview(preset).unwrap_or_else(|e| panic!("{}: {e}", preset.id));
-            assert!(!preview.on.is_empty(), "{} turns something on", preset.id);
-            assert!(!preview.off.contains(&"HUD") && !preview.on.contains(&"HUD"));
-            assert_eq!(preview.off.contains(&"Kill Aura"), !preset.text.contains("killaura.on=true"), "{}", preset.id);
-        }
-        assert!(find("pvp-cart").is_some());
+        let preview = state.preview(&PRESETS[0]).unwrap();
+        assert_eq!(preview.off.contains(&"Kill Aura"), !PRESETS[0].text.contains("killaura.on=true"));
+        assert!(!preview.off.contains(&"HUD"));
     }
 
     #[test]
