@@ -36,7 +36,9 @@ failures are the harness against this Horizon pin, not Sunset:
 
 A real bug found: Criticals' test (Kill Aura or Trigger Bot hitting a pig, Packet, Jump and Mini jump modes) gets the
 player kicked with "Invalid move player packet received" in single player and four times on Paper (two position
-packets in a tick). Kill Aura on its own for 100 ticks in each mode did not reproduce it; not fixed yet.
+packets in a tick). Fixed after the run: Packet mode's own hop move goes after the game's ClientTickEnd, so the game's
+move in the next tick (its 20-tick reminder, the settle after a teleport) was a second one; that move is left out now.
+Criticals and the new "Criticals (one move packet a tick)" pass on sp, horizon, vanilla and paper.
 
 Known, not ours: Folia's /item and /data; Horizon sends no chat session keys.
 

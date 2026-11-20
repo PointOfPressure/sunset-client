@@ -6801,6 +6801,43 @@ def crit_run(hits, act=None, keys=(), look=True):
     return landed, crits, teleports
 
 
+@test("Criticals (one move packet a tick)")
+def _():
+    # Packet mode's hop moves go after the game's ClientTickEnd when the game sent none: the game's own move in the
+    # tick after (its 20-tick reminder, a look) must not be a second one, or the server kicks ("Invalid move player
+    # packet received", Horizon and Paper). Standing hits by your clicks and by Kill Aura, a sword: not kicked, on a
+    # server at most one move packet in any tick and every hit critical (single player's own physics takes no crit
+    # from a hop, so there only the first two).
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    setting("killaura", "entities", "pig")
+    setting("criticals", "mode", "Packet")
+    on_server = SERVER is not None and probe_path() is not None
+    tick = {"n": 0}
+
+    def click():
+        tick["n"] += 1
+        if tick["n"] % 5 == 0:
+            ctl("mouse", "left", "click")
+    runs = {}
+    for how in ("clicks", "killaura"):
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        only("criticals", *(() if how == "clicks" else (how,)))
+        mark = probe_mark() if on_server else None
+        landed, crits, teleports = crit_run(40, click if how == "clicks" else None)
+        runs[how] = (landed, crits, wire_stats(mark)[1] if mark is not None else None, teleports)
+        only()
+        if not state().get("player"):
+            return False, f"kicked during {how}: {json.dumps(ctl('screen'))[:200]}"
+    crits_ok = not on_server or all(c == n for n, c, _, _ in runs.values())
+    ok = (all(n >= 40 and most in (None, 0, 1) and back in (None, 0) for n, _, most, back in runs.values()) and crits_ok)
+    return ok, "; ".join(f"{h}: {c}/{n} critical, at most {most} move packet(s) in a tick, put back {back} time(s)"
+                         for h, (n, c, most, back) in runs.items()) + "; not kicked"
+
+
 @test("Criticals (200 hits)")
 def _():
     # Every hit at full cooldown is critical: 200 by Kill Aura in each mode, and 50 each by your own clicks, Trigger

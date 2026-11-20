@@ -529,8 +529,10 @@ pub(super) fn crit_tick(game: &mut Game<'_>) {
             return;
         };
         let (x, y, z) = (p.position.x, p.position.y, p.position.z);
-        // outgoing makes it the hop and moves the stage on.
+        // outgoing makes it the hop and moves the stage on. It goes after the game's ClientTickEnd, so it is the next
+        // wire tick's position packet: the game's own move in that tick leaves its position out (CRIT_LOOSE).
         game.send(S::MovePlayerPos(play::MovePlayerPos { x, y, z, flags: 0 }));
+        CRIT_LOOSE.store(true, Ordering::Relaxed);
     }
     if CRIT_STAGE.load(Ordering::Relaxed) == CRIT_HIT {
         CRIT_STAGE.store(CRIT_LAND, Ordering::Relaxed);

@@ -73,6 +73,7 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     if !running() { return Out::Pass; }
     if let S::ClientTickEnd(_) = packet {
         LOOSE_LOOK.store(false, Ordering::Relaxed);
+        CRIT_LOOSE.store(false, Ordering::Relaxed);
     }
     if let Some(changed) = super::sunset_world_parity::outgoing(game, packet) {
         return Out::Replace(changed);
@@ -133,6 +134,16 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
         && [p.position.x, p.position.y, p.position.z] == [game.previous_position.x, game.previous_position.y, game.previous_position.z]
         && matches!(packet, S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_))
     {
+        if sent.look.is_some() {
+            turns(|t| t.restore = true);
+        }
+        return Out::Drop;
+    }
+    // Criticals' hop move already went in this wire tick (crit_tick sends it after the last ClientTickEnd): a second
+    // position packet in a tick gets you kicked ("Invalid move player packet received" on Horizon and Paper). The
+    // game's move is left out, as after end_turns' look (a look it carried comes back with the next one); the hop goes
+    // on with the next tick's move (MOVED_THIS_TICK stays unset, so crit_tick sends it if the game doesn't).
+    if CRIT_LOOSE.load(Ordering::Relaxed) {
         if sent.look.is_some() {
             turns(|t| t.restore = true);
         }

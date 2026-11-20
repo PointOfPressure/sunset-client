@@ -729,6 +729,9 @@ pub(super) const CRIT_SPRINT_STOPPED: u8 = 1;
 pub(super) const CRIT_SPRINT_DUE: u8 = 2;
 // A move packet went out this tick (the game's or Sunset's): Sunset never sends a second.
 pub(super) static MOVED_THIS_TICK: AtomicBool = AtomicBool::new(false);
+// Criticals sent a hop move of its own after the game's ClientTickEnd (crit_tick runs then), so it is that wire tick's
+// position packet: until the next ClientTickEnd the game's own move goes without its position (outgoing).
+pub(super) static CRIT_LOOSE: AtomicBool = AtomicBool::new(false);
 // Blink held at least one move packet.
 pub(super) static BLINK_HELD: AtomicBool = AtomicBool::new(false);
 // Scaffold's block placements count up from here (the game's own are small).
