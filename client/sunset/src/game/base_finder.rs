@@ -14,7 +14,7 @@
 // the chunk that scores highest round it with at least Sensitivity is where the player stayed. On servers that hide
 // the geodes (DonutSMP's DonutFolia, or Amethyst method Palette) the sections' palettes say what they hold: a bud
 // named rules out, clusters with no bud score one. (After Donut Client 3.0's Base Finder, the Spectre 26.2 Sus Chunk
-// Finder's Classic method and growth clues, written anew.)
+// Finder's Classic method and growth clues, written anew.) Reasons adds small signs up a chunk (see Reasons below).
 
 use super::sunset::{Category, Module};
 use super::sunset_util::*;
@@ -76,6 +76,9 @@ pub(super) fn defaults() -> Vec<Module> {
         .num("Cave vine length", 20.0, 4.0, 64.0, 1.0)
         .bool("Honey nests", true)
         .num("Honey level", 5.0, 1.0, 5.0, 1.0)
+        .bool("Reasons", true)
+        .num("Reason score", 10.0, 4.0, 60.0, 1.0)
+        .num("Reason cap (%)", 60.0, 20.0, 100.0, 5.0)
         .num("Entity scan delay", 20.0, 1.0, 200.0, 1.0)
         .bool("Item frames", true)
         .bool("Ender pearls", true)
@@ -102,6 +105,7 @@ pub(super) fn visible(m: &Module, name: &str) -> bool {
         "Amethyst method" | "Simulation distance" | "Sensitivity" => m.b("Grown amethyst"),
         "Kelp length" | "Vine length" | "Cave vine length" => m.b("Long plants"),
         "Honey level" => m.b("Honey nests"),
+        "Reason score" | "Reason cap (%)" => m.b("Reasons"),
         _ => true,
     }
 }
@@ -152,6 +156,8 @@ struct Plan {
     // Hidden bases: the height its light spots are looked for below, and the states whose light is the world's own.
     deep: Option<i32>,
     natural: Vec<bool>,
+    // Reasons: each state's code (None: Reasons off).
+    reasons: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -176,6 +182,8 @@ enum Out {
     Amethyst(Amethyst),
     // Hidden bases: a chunk's light spots (where, how bright), every scan of it.
     Lights((i32, i32), Vec<([i32; 3], u8)>),
+    // Reasons: a chunk's points by reason and where its strongest is, every scan of it.
+    Reasons((i32, i32), [f32; NR], [i32; 3]),
 }
 
 // A chunk with a sign of a base: why, where to look, and the most common listed kinds with their counts.
@@ -201,6 +209,12 @@ struct Scan {
     // Hidden bases: what each chunk gave away, and the chunks to score again.
     hidden: HashMap<(i32, i32), Hidden>,
     hidden_dirty: HashSet<(i32, i32)>,
+    // Reasons: each chunk's points from its blocks, from the items and orbs lying in it, and the chunks to score again.
+    reasons: HashMap<(i32, i32), ([f32; NR], [i32; 3])>,
+    drops: HashMap<(i32, i32), (f32, [i32; 3])>,
+    reasons_dirty: HashSet<(i32, i32)>,
+    // The Reason score and cap the chunks were last scored with.
+    reason_need: (f32, f32),
 }
 
 static SCAN: Mutex<Option<Scan>> = Mutex::new(None);
@@ -217,6 +231,10 @@ fn look(plan: &Plan, states: &mut [u32; 4096], chunk: &Chunk, out: &mut Vec<Out>
     }
     if plan.growth != Growth::Off && let Some(t) = &plan.table {
         out.push(Out::Amethyst(amethyst(plan.growth, t, states, chunk)));
+    }
+    if let Some(codes) = &plan.reasons {
+        let (pts, at) = reasons(plan.dim == "minecraft:overworld", codes, states, chunk);
+        out.push(Out::Reasons((chunk.x, chunk.z), pts, at));
     }
     let nether = plan.dim == "minecraft:the_nether";
     let overworld = plan.dim == "minecraft:overworld";
@@ -525,6 +543,14 @@ fn plan(game: &Game<'_>, m: &Module) -> Plan {
         states: states.iter().map(|s| s.name.clone()).collect(),
         hidden: m.b("Hidden light").then(|| m.n("Hidden light level") as u8),
         growth: growth(game, m),
+        reasons: m.b("Reasons").then(|| {
+            (0..states.len())
+                .map(|id| {
+                    let state = registry.state(BlockStateId(id as u32));
+                    reason_code(short(&states[id].name), |k| state.and_then(|b| b.properties.get(k)).map(|v| v.to_string()))
+                })
+                .collect()
+        }),
     }
 }
 
@@ -542,10 +568,10 @@ fn growth(game: &Game<'_>, m: &Module) -> Growth {
 }
 
 // What the scan depends on: the dimension and the settings the thread reads (the lists and the block signs).
-const BLOCK_SIGNS: [&str; 20] = [
+const BLOCK_SIGNS: [&str; 21] = [
     "Open portals", "Bubble columns", "Sky builds", "Sky build Y", "Bedrock", "Bedrock layers", "Lone spawners", "Nether roof",
     "Hidden light", "Hidden light level", "Hidden bases", "Hidden base Y", "Grown amethyst", "Amethyst method", "Long plants", "Kelp length", "Vine length",
-    "Cave vine length", "Honey nests", "Honey level",
+    "Cave vine length", "Honey nests", "Honey level", "Reasons",
 ];
 
 fn key(game: &Game<'_>, m: &Module) -> String {
@@ -587,6 +613,10 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
                 amethyst_dirty: false,
                 hidden: HashMap::new(),
                 hidden_dirty: HashSet::new(),
+                reasons: HashMap::new(),
+                drops: HashMap::new(),
+                reasons_dirty: HashSet::new(),
+                reason_need: (0.0, 0.0),
             })
         });
     }
@@ -606,6 +636,14 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
                 Out::Amethyst(a) => {
                     s.amethyst.insert(a.chunk, (a.grown, a.ungrown, a.y));
                     s.amethyst_dirty = true;
+                }
+                Out::Reasons(chunk, pts, at) => {
+                    if pts.iter().any(|p| *p > 0.0) {
+                        s.reasons.insert(chunk, (pts, at));
+                        s.reasons_dirty.insert(chunk);
+                    } else if s.reasons.remove(&chunk).is_some() {
+                        s.reasons_dirty.insert(chunk);
+                    }
                 }
                 Out::Lights(chunk, spots) => {
                     if !spots.is_empty() || s.hidden.contains_key(&chunk) {
@@ -644,8 +682,17 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
     if entity_scan {
         let found = entity_signs(game, m);
         let deep = m.b("Hidden bases").then(|| deep_entities(game, m.n("Hidden base Y")));
+        let drops = m.b("Reasons").then(|| drops(game));
         scan(|s| {
             if let Some(s) = s.as_mut() {
+                if let Some(drops) = drops {
+                    for chunk in s.drops.keys().chain(drops.keys()) {
+                        if s.drops.get(chunk).map(|d| d.0) != drops.get(chunk).map(|d| d.0) {
+                            s.reasons_dirty.insert(*chunk);
+                        }
+                    }
+                    s.drops = drops;
+                }
                 if let Some(deep) = deep {
                     for (chunk, h) in s.hidden.iter_mut().filter(|(_, h)| !h.entities.is_empty()) {
                         h.entities.clear();
@@ -677,6 +724,31 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
             };
             if f64::from(score) >= need && s.said.insert(chunk) {
                 s.fresh.push(Found { chunk, why: format!("a hidden base likely (score {score}: {why})"), at, kinds: Vec::new() });
+            }
+        }
+    });
+    // Reasons: each chunk that changed is scored again, each reason's points capped; one at Reason score is said once.
+    let (need, cap) = (m.n("Reason score") as f32, m.n("Reason cap (%)") as f32 / 100.0);
+    scan(|s| {
+        let Some(s) = s.as_mut() else {
+            return;
+        };
+        if s.reason_need != (need, cap) {
+            s.reason_need = (need, cap);
+            s.reasons_dirty.extend(s.reasons.keys().chain(s.drops.keys()).copied());
+        }
+        for chunk in std::mem::take(&mut s.reasons_dirty) {
+            let (mut pts, mut at) = s.reasons.get(&chunk).copied().unwrap_or(([0.0; NR], [0; 3]));
+            if let Some(&(p, where_)) = s.drops.get(&chunk) {
+                pts[NR - 1] += p;
+                if pts.iter().take(NR - 1).all(|p| *p <= 0.0) {
+                    at = where_;
+                }
+            }
+            let (total, parts) = reason_score(&pts, need, cap);
+            if total >= need && s.said.insert(chunk) {
+                let why: Vec<String> = parts.iter().map(|&(r, p)| format!("{} {}", REASONS[r], (p * 10.0).round() / 10.0)).collect();
+                s.fresh.push(Found { chunk, why: format!("reasons add up (score {}: {})", total.round(), why.join(", ")), at, kinds: Vec::new() });
             }
         }
     });
@@ -822,6 +894,266 @@ fn hidden_score(h: &Hidden) -> Option<(u32, String, [i32; 3])> {
     Some((score, why.join(", "), at))
 }
 
+// ---- Reasons (after Zorin's, Radium's, Sky's, Odin's and BepHax's base hints and Combatant's, behaviour only, written
+// anew): signs that each prove little, added up a chunk. Deepslate lying sideways (the world stands it up) 3 a block;
+// cobblestone below Y 0 (eight or more) half a block; ladder runs of 5 or more and 1x1 shafts (8 or more open cells with four solid
+// sides, below Y 50) 4 each; pointed dripstone 7 or more long 2 each; plain air beside cave air with no air beside it
+// (carved caves are cave air, a block dug out leaves air) 1 a cell; single closed cells at Y 18 to 50 (a mined ore) 2
+// each; kelp tops aged 24 or 25 (the world makes 20 to 23) 1 each; four or more cocoa pods 90% ripe, or ten or more
+// cave vines 40% in berries, 4; sugar cane and cactus with any age 0.5 a block; logs lying down 0.25, basalt, purpur
+// and quartz pillars and hay lying down 1; a geode with six or more budding blocks and buds on a fifth of them at most
+// (harvested) 6; ten or more chests or barrels below Y 0 6, repeaters there 1 each; 128 or more seagrass (bone meal; an
+// ocean grows a lot of its own) 2; six or more
+// flowers below Y 40 (potted ones too) 4; items and orbs lying about 1 and 0.5 each. In a chunk with a structure's
+// blocks (a spawner, cobwebs, rails, an ancient city's or trial chamber's) cobblestone, ladders, shafts, dug air,
+// closed cells and storage don't count. No one reason gives more than Reason cap (60%) of Reason score (10).
+const NR: usize = 16;
+const REASONS: [&str; NR] = [
+    "rotated deepslate", "deep cobblestone", "ladder shafts", "1x1 shafts", "long dripstone", "dug cave air", "mined-out cells",
+    "grown kelp", "ripe crops", "aged cane or cactus", "sideways logs or pillars", "a harvested geode", "deep storage",
+    "thick seagrass", "flowers underground", "dropped items",
+];
+
+const RX_ROT_DEEPSLATE: u8 = 1;
+const RX_COBBLE: u8 = 2;
+const RX_LADDER: u8 = 3;
+const RX_AIR: u8 = 4;
+const RX_CAVE_AIR: u8 = 5;
+const RX_FLUID: u8 = 6;
+const RX_KELP_OLD: u8 = 7;
+const RX_COCOA_RIPE: u8 = 8;
+const RX_COCOA: u8 = 9;
+const RX_BERRIES: u8 = 10;
+const RX_CAVE_VINE: u8 = 11;
+const RX_AGED: u8 = 12;
+const RX_SIDE_LOG: u8 = 13;
+const RX_SIDE_RARE: u8 = 14;
+const RX_DRIP: u8 = 15;
+const RX_SEAGRASS: u8 = 16;
+const RX_FLOWER: u8 = 17;
+const RX_CHEST: u8 = 18;
+const RX_REPEATER: u8 = 19;
+const RX_BUDDING: u8 = 20;
+const RX_BUD: u8 = 21;
+const RX_STRUCT: u8 = 22;
+
+const FLOWERS: [&str; 18] = [
+    "dandelion", "poppy", "blue_orchid", "allium", "azure_bluet", "red_tulip", "orange_tulip", "white_tulip", "pink_tulip",
+    "oxeye_daisy", "cornflower", "lily_of_the_valley", "torchflower", "sunflower", "lilac", "rose_bush", "peony", "wither_rose",
+];
+
+// A block state's code for Reasons, from its short name and properties.
+fn reason_code(name: &str, prop: impl Fn(&str) -> Option<String>) -> u8 {
+    let lying = || prop("axis").is_some_and(|a| a != "y");
+    let age = || prop("age").and_then(|a| a.parse::<u32>().ok()).unwrap_or(0);
+    match name {
+        "deepslate" if lying() => RX_ROT_DEEPSLATE,
+        "cobblestone" => RX_COBBLE,
+        "ladder" => RX_LADDER,
+        "air" => RX_AIR,
+        "cave_air" => RX_CAVE_AIR,
+        "water" | "lava" | "bubble_column" => RX_FLUID,
+        "kelp" if age() >= 24 => RX_KELP_OLD,
+        "cocoa" if age() >= 2 => RX_COCOA_RIPE,
+        "cocoa" => RX_COCOA,
+        "cave_vines" | "cave_vines_plant" if prop("berries").as_deref() == Some("true") => RX_BERRIES,
+        "cave_vines" | "cave_vines_plant" => RX_CAVE_VINE,
+        "sugar_cane" | "cactus" if age() > 0 => RX_AGED,
+        "basalt" | "polished_basalt" | "purpur_pillar" | "quartz_pillar" | "hay_block" if lying() => RX_SIDE_RARE,
+        n if (n.ends_with("_log") || n.ends_with("_stem")) && lying() => RX_SIDE_LOG,
+        "pointed_dripstone" => RX_DRIP,
+        "seagrass" | "tall_seagrass" => RX_SEAGRASS,
+        n if n.starts_with("potted_") || FLOWERS.contains(&n) => RX_FLOWER,
+        "chest" | "trapped_chest" | "barrel" => RX_CHEST,
+        "repeater" => RX_REPEATER,
+        "budding_amethyst" => RX_BUDDING,
+        "amethyst_cluster" | "large_amethyst_bud" | "medium_amethyst_bud" | "small_amethyst_bud" => RX_BUD,
+        "spawner" | "mossy_cobblestone" | "cobweb" | "rail" | "stone_bricks" | "mossy_stone_bricks" | "cracked_stone_bricks"
+        | "sculk_shrieker" | "reinforced_deepslate" | "deepslate_tiles" | "deepslate_bricks" | "polished_deepslate"
+        | "trial_spawner" | "vault" | "tuff_bricks" => RX_STRUCT,
+        _ => 0,
+    }
+}
+
+// A chunk's points by reason and where each was first seen.
+struct Tally {
+    pts: [f32; NR],
+    at: [Option<[i32; 3]>; NR],
+}
+
+impl Tally {
+    fn add(&mut self, r: usize, p: f32, at: [i32; 3]) {
+        self.pts[r] += p;
+        self.at[r].get_or_insert(at);
+    }
+}
+
+// On the scan thread: a chunk's Reasons points and where the strongest is.
+fn reasons(overworld: bool, codes: &[u8], states: &mut [u32; 4096], chunk: &Chunk) -> ([f32; NR], [i32; 3]) {
+    let code = |v: u32| codes.get(v as usize).copied().unwrap_or(0);
+    let open = |c: u8| matches!(c, RX_AIR | RX_CAVE_AIR | RX_FLUID);
+    let mut t = Tally { pts: [0.0; NR], at: [None; NR] };
+    let (mut cobble, mut cocoa, mut ripe, mut vines, mut berries, mut budding, mut buds) = (0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
+    let (mut chests, mut repeaters, mut seagrass, mut flowers) = (0u32, 0u32, 0u32, 0u32);
+    let mut first: [Option<[i32; 3]>; 4] = [None; 4];
+    let mut structure = false;
+    // Each column's run going up: what (1 ladder, 2 shaft, 3 dripstone), how long, its lowest cell.
+    let mut runs = [(0u8, 0u32, [0i32; 3]); 256];
+    let mut held: Vec<(u8, u32, [i32; 3])> = Vec::new();
+    let top = chunk.min_y() + chunk.sections.len() as i32 * 16;
+    let (bx, bz) = (chunk.x * 16, chunk.z * 16);
+    for (i, section) in chunk.sections.iter().enumerate() {
+        let y0 = chunk.min_y() + i as i32 * 16;
+        let first_state = section.get(0);
+        if section.is_uniform(first_state) {
+            held.extend(runs.iter_mut().map(std::mem::take).filter(|r| r.0 > 0));
+            continue;
+        }
+        section.unpack(states);
+        let at = |x: i32, y: i32, z: i32, states: &[u32; 4096]| -> Option<u8> {
+            if !(0..16).contains(&x) || !(0..16).contains(&z) || y < chunk.min_y() || y >= top {
+                return None;
+            }
+            Some(code(if (y0..y0 + 16).contains(&y) { states[((y - y0) << 8 | z << 4 | x) as usize] } else { chunk.get(x, y, z) }))
+        };
+        for j in 0..4096usize {
+            let c = code(states[j]);
+            let (x, y, z) = (j as i32 & 15, y0 + (j as i32 >> 8), j as i32 >> 4 & 15);
+            let pos = [bx + x, y, bz + z];
+            let mut column = 0u8;
+            match c {
+                RX_ROT_DEEPSLATE => t.add(0, 3.0, pos),
+                RX_COBBLE if overworld && y < 0 => {
+                    cobble += 1;
+                    first[0].get_or_insert(pos);
+                }
+                RX_LADDER => column = 1,
+                RX_DRIP => column = 3,
+                RX_KELP_OLD => t.add(7, 1.0, pos),
+                RX_COCOA_RIPE | RX_COCOA => {
+                    cocoa += 1;
+                    ripe += u32::from(c == RX_COCOA_RIPE);
+                    first[1].get_or_insert(pos);
+                }
+                RX_BERRIES | RX_CAVE_VINE => {
+                    vines += 1;
+                    berries += u32::from(c == RX_BERRIES);
+                    first[1].get_or_insert(pos);
+                }
+                RX_AGED => t.add(9, 0.5, pos),
+                RX_SIDE_LOG => t.add(10, 0.25, pos),
+                RX_SIDE_RARE => t.add(10, 1.0, pos),
+                RX_SEAGRASS => {
+                    seagrass += 1;
+                    first[2].get_or_insert(pos);
+                }
+                RX_FLOWER if overworld && y < 40 => {
+                    flowers += 1;
+                    first[3].get_or_insert(pos);
+                }
+                RX_CHEST if y < 0 => {
+                    chests += 1;
+                    t.at[12].get_or_insert(pos);
+                }
+                RX_REPEATER if y < 0 => {
+                    repeaters += 1;
+                    t.at[12].get_or_insert(pos);
+                }
+                RX_BUDDING => {
+                    budding += 1;
+                    t.at[11].get_or_insert(pos);
+                }
+                RX_BUD => buds += 1,
+                RX_STRUCT => structure = true,
+                RX_AIR | RX_CAVE_AIR if y < 50 => {
+                    let sides = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]].map(|d| at(x + d[0], y + d[1], z + d[2], states));
+                    let closed = |s: &[Option<u8>]| s.iter().all(|n| n.is_some_and(|n| !open(n)));
+                    if closed(&sides[..4]) {
+                        column = 2;
+                        if (18..=50).contains(&y) && closed(&sides[4..]) {
+                            t.add(6, 2.0, pos);
+                        }
+                    }
+                    if c == RX_AIR && sides.contains(&Some(RX_CAVE_AIR)) && !sides.contains(&Some(RX_AIR)) {
+                        t.add(5, 1.0, pos);
+                    }
+                }
+                _ => {}
+            }
+            let run = &mut runs[j & 255];
+            if column > 0 && run.0 == column {
+                run.1 += 1;
+            } else {
+                let old = std::mem::replace(run, if column > 0 { (column, 1, pos) } else { (0, 0, [0; 3]) });
+                if old.0 > 0 {
+                    held.push(old);
+                }
+            }
+        }
+    }
+    held.extend(runs);
+    for (kind, n, at) in held {
+        match kind {
+            1 if n >= 5 => t.add(2, 4.0, at),
+            2 if n >= 8 => t.add(3, 4.0, at),
+            3 if n >= 7 => t.add(4, 2.0, at),
+            _ => {}
+        }
+    }
+    let at = |i: usize| first[i].unwrap_or([bx + 8, 0, bz + 8]);
+    // Lava meeting water makes a little cobblestone of its own.
+    if cobble >= 8 {
+        t.add(1, 0.5 * cobble as f32, at(0));
+    }
+    if (cocoa >= 4 && ripe * 10 >= cocoa * 9) || (vines >= 10 && berries * 10 >= vines * 4) {
+        t.add(8, 4.0, at(1));
+    }
+    if budding >= 6 && buds * 5 <= budding {
+        t.pts[11] += 6.0;
+    }
+    if chests >= 10 {
+        t.pts[12] += 6.0;
+    }
+    t.pts[12] += repeaters as f32;
+    if seagrass >= 128 {
+        t.add(13, 2.0, at(2));
+    }
+    if flowers >= 6 {
+        t.add(14, 4.0, at(3));
+    }
+    if structure {
+        for r in [1, 2, 3, 5, 6, 12] {
+            t.pts[r] = 0.0;
+        }
+    }
+    let best = (0..NR).filter(|&r| t.pts[r] > 0.0).max_by(|&a, &b| t.pts[a].total_cmp(&t.pts[b]));
+    (t.pts, best.and_then(|r| t.at[r]).unwrap_or([bx + 8, 0, bz + 8]))
+}
+
+// A chunk's Reasons score: its points, each reason's capped at `cap` of `need`, and the reasons that gave them, most first.
+fn reason_score(pts: &[f32; NR], need: f32, cap: f32) -> (f32, Vec<(usize, f32)>) {
+    let most = need * cap;
+    let mut parts: Vec<(usize, f32)> = pts.iter().enumerate().filter(|(_, p)| **p > 0.0).map(|(r, p)| (r, p.min(most))).collect();
+    parts.sort_by(|a, b| b.1.total_cmp(&a.1));
+    (parts.iter().map(|p| p.1).sum(), parts)
+}
+
+// Reasons: the items (eggs left out: chickens lay them) and orbs lying in each chunk, as points and where the first is.
+fn drops(game: &Game<'_>) -> HashMap<(i32, i32), (f32, [i32; 3])> {
+    let mut out: HashMap<(i32, i32), (f32, [i32; 3])> = HashMap::new();
+    let mut add = |at: [f64; 3], p: f32| {
+        let at = at.map(|v| v.floor() as i32);
+        out.entry((at[0] >> 4, at[2] >> 4)).or_insert((0.0, at)).0 += p;
+    };
+    for d in game.dropped.iter().filter(|d| short(&d.stack.item) != "egg") {
+        add([d.position.x, d.position.y, d.position.z], 1.0);
+    }
+    for o in game.orbs.iter() {
+        add([o.position.x, o.position.y, o.position.z], 0.5);
+    }
+    out
+}
+
 // The entities below `below` that a base keeps: (chunk, what, where).
 fn deep_entities(game: &Game<'_>, below: f64) -> Vec<((i32, i32), &'static str, [i32; 3])> {
     let mut out = Vec::new();
@@ -944,6 +1276,37 @@ mod tests {
         let (score, why, at) = hidden_score(&h).unwrap();
         assert_eq!((score, at), (14, [1, -20, 1]));
         assert_eq!(why, "door opened, a villager x5");
+    }
+
+    #[test]
+    fn reasons_cap_each_share_of_the_score() {
+        let mut pts = [0.0; NR];
+        pts[0] = 30.0;
+        // One reason alone: at most 60% of 10.
+        assert_eq!(reason_score(&pts, 10.0, 0.6).0, 6.0);
+        // Two reasons: 6 + 4.
+        pts[2] = 4.0;
+        let (total, parts) = reason_score(&pts, 10.0, 0.6);
+        assert_eq!(total, 10.0);
+        assert_eq!(parts[0], (0, 6.0));
+        // Cap 100%: the one reason is enough.
+        pts[2] = 0.0;
+        assert_eq!(reason_score(&pts, 10.0, 1.0).0, 10.0);
+    }
+
+    #[test]
+    fn reason_codes_read_axis_age_and_berries() {
+        let props = |list: &'static [(&'static str, &'static str)]| move |k: &str| list.iter().find(|p| p.0 == k).map(|p| p.1.to_string());
+        assert_eq!(reason_code("deepslate", props(&[("axis", "x")])), RX_ROT_DEEPSLATE);
+        assert_eq!(reason_code("deepslate", props(&[("axis", "y")])), 0);
+        assert_eq!(reason_code("oak_log", props(&[("axis", "z")])), RX_SIDE_LOG);
+        assert_eq!(reason_code("oak_log", props(&[("axis", "y")])), 0);
+        assert_eq!(reason_code("kelp", props(&[("age", "23")])), 0);
+        assert_eq!(reason_code("kelp", props(&[("age", "25")])), RX_KELP_OLD);
+        assert_eq!(reason_code("cave_vines_plant", props(&[("berries", "true")])), RX_BERRIES);
+        assert_eq!(reason_code("sugar_cane", props(&[("age", "0")])), 0);
+        assert_eq!(reason_code("sugar_cane", props(&[("age", "3")])), RX_AGED);
+        assert_eq!(reason_code("potted_poppy", props(&[])), RX_FLOWER);
     }
 
     #[test]

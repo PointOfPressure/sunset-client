@@ -454,7 +454,8 @@ impl Module {
                 }
             }
             "Speed" => match name {
-                "Vanilla speed" => !matches!(self.p("Mode"), "Strafe" | "Bhop" | "NCP" | "NCP Hop" | "Watchdog"),
+                "Vanilla speed" => !matches!(self.p("Mode"), "Strafe" | "Bhop" | "NCP" | "NCP Hop" | "Watchdog" | "Grim collide"),
+                "Collide boost" | "Collide reach" | "Collide max entities" | "Collide speed cap" => self.p("Mode") == "Grim collide",
                 "NCP reduced jump" => self.p("Mode") == "NCP",
                 "NCP hop jump" | "NCP hop ground speed" | "NCP hop slope" | "NCP hop custom boost" | "NCP hop low hop"
                 | "NCP hop Y-port" => self.p("Mode") == "NCP Hop",

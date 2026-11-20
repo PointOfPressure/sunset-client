@@ -504,6 +504,7 @@ pub fn seen(events: &[Item]) {
                     | C::SetCursorItem(_)
                     | C::ContainerClose(_)
                     | C::OpenScreen(_)
+                    | C::MerchantOffers(_)
             )
             && seen.len() < 4096
         {

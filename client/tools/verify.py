@@ -17426,6 +17426,366 @@ def _():
         note += f"; Sound Detector heard Bot1's chest with chat open: {heard}"
     return ok, note
 
+# ---- ports 2: Speed's Grim collide, Base Finder's Reasons, Villager Roller, Sign Historian, Use Tracker
+
+@test("Speed (Grim collide)")
+def _():
+    # NoAI cows in a lane 1.1 blocks beside the walk (0.35 between the boxes: no push of their own). Grim collide adds
+    # Collide boost a tick for each body within Collide reach: faster beside the cows than walking; walking speed with
+    # no one near, beside armor stands (left out), or with Collide reach 0; Collide speed cap 6 holds it under 6.3.
+    def lane(kind):
+        cmd(*[f"summon minecraft:{kind} {X0 + 1.6} {Y + 1} {Z0 + z + 0.5} {NOAI}" for z in range(-16, 10)])
+        wait(10)
+
+    only()
+    reset(z=-14.5)
+    plain = rate()
+    setting("speed", "mode", "Grim collide")
+    only("speed")
+    reset(z=-14.5)
+    alone = rate()
+    reset(z=-14.5)
+    lane("cow")
+    boosted = rate()
+    reset(z=-14.5)
+    lane("armor_stand")
+    stands = rate()
+    setting("speed", "collide reach", "0")
+    reset(z=-14.5)
+    lane("cow")
+    far = rate()
+    setting("speed", "collide reach", "0.5")
+    setting("speed", "collide speed cap", "6")
+    reset(z=-14.5)
+    lane("cow")
+    capped = rate()
+    setting("speed", "collide speed cap", "12")
+    setting("speed", "mode", "Vanilla")
+    only()
+    reset()
+    ok = (abs(alone - plain) < 0.3 and boosted > plain * 1.25 and abs(stands - plain) < 0.3 and abs(far - plain) < 0.3
+          and plain + 0.3 < capped < 6.3)
+    return ok, (f"walking {plain:.2f} b/s; Grim collide alone {alone:.2f}, beside cows {boosted:.2f}, armor stands {stands:.2f}, "
+                f"reach 0 {far:.2f}, cap 6 {capped:.2f}")
+
+
+@test("Base Finder (Reasons)")
+def _():
+    # Reason score 10, cap 60%: four sideways deepslate (3 each, capped at 6) alone are not said; with a ladder run of
+    # six (4) they are ("rotated deepslate", "ladder shafts"); four item stacks lying beside the deepslate (4) too
+    # ("dropped items"); cap 100% scores the deepslate chunk again and says it; Reasons off says nothing.
+    reset("creative")
+    setting("basefinder", "message cooldown", "0")
+    setting("basefinder", "hidden bases", "false")
+    setting("basefinder", "reasons", "true")
+    setting("basefinder", "reason score", "10")
+    setting("basefinder", "reason cap (%)", "60")
+    ax, az = X0 >> 4, Z0 >> 4
+    chunks = {k: (ax + dx, az + dz) for k, (dx, dz) in
+              {"rot": (-2, 2), "two": (-3, 2), "items": (2, 2), "off": (3, 2)}.items()}
+
+    def build(name, ladders=False, items=False):
+        cx, cz = chunks[name]
+        x0, z0 = cx * 16 + 4, cz * 16 + 4
+        lines = [f"setblock {x0 + 2 * i} {Y + 1} {z0} minecraft:deepslate[axis=x]" for i in range(4)]
+        if ladders:
+            lines += [f"fill {x0} {Y + 1} {z0 + 4} {x0} {Y + 6} {z0 + 4} minecraft:stone",
+                      f"fill {x0} {Y + 1} {z0 + 5} {x0} {Y + 6} {z0 + 5} minecraft:ladder[facing=south]"]
+        if items:
+            lines += [f"summon minecraft:item {x0 + 1 + i} {Y + 1} {z0 + 2} {{Item:{{id:\"minecraft:stone\",count:1}},NoGravity:1b,PickupDelay:32767}}"
+                      for i in range(4)]
+        cmd(*lines)
+
+    def said(mark, name):
+        cx, cz = chunks[name]
+        return [l for l in sunset_said(mark) if "reasons add up" in l and f"chunk {cx} {cz} " in l]
+
+    def clear():
+        for cx, cz in chunks.values():
+            cmd(f"fill {cx * 16} {Y + 1} {cz * 16} {cx * 16 + 15} {Y + 8} {cz * 16 + 15} minecraft:air")
+
+    clear()
+    build("rot")
+    build("two", ladders=True)
+    build("items", items=True)
+    wait(10)
+    mark = log_mark()
+    toggle("base finder", False)
+    only("base finder")
+    wait(60)
+    rot, two, items = said(mark, "rot"), said(mark, "two"), said(mark, "items")
+    # Cap 100%, scanned again: the deepslate alone (12, capped at 10) is enough.
+    setting("basefinder", "reason cap (%)", "100")
+    mark_full = log_mark()
+    toggle("base finder", False)
+    toggle("base finder", True)
+    wait(60)
+    rot_full = said(mark_full, "rot")
+    setting("basefinder", "reason cap (%)", "60")
+    build("off", ladders=True)
+    setting("basefinder", "reasons", "false")
+    mark2 = log_mark()
+    toggle("base finder", False)
+    toggle("base finder", True)
+    wait(40)
+    off = said(mark2, "off")
+    only()
+    setting("basefinder", "reasons", "true")
+    setting("basefinder", "hidden bases", "true")
+    setting("basefinder", "message cooldown", "20")
+    cmd("kill @e[type=item]")
+    clear()
+    # The world's own signs can add to a chunk (a fallen log, an ocean's seagrass): the deepslate alone must not say it.
+    alone = [l for l in rot if "score " in l and l.split("score ")[1].split(":")[1].strip().startswith("rotated deepslate 6)")]
+    full = [l for l in rot_full if "rotated deepslate 10" in l]
+    ok = (not alone and two and "rotated deepslate 6" in two[0] and "ladder shafts 4" in two[0]
+          and items and "dropped items" in items[0] and bool(full) and not off)
+    return ok, (f"deepslate alone {rot[:1]}, with ladders {two[:1]}, with items {items[:1]}, cap 100% {rot_full[-1:]}, "
+                f"Reasons off {bool(off)}")
+
+
+@test("Villager Roller")
+def _():
+    # A villager shut in glass with a lectern in its one opening, you 1.5 blocks off with a netherite axe and lectern.
+    # No lectern near: "no lectern" and off. Enchants none can match: it rolls (the lectern broken and put back, at
+    # least once) and stays on. Every common enchant at 64: "found ... emeralds" and off. A librarian with Xp (traded
+    # with): "has been traded with" and off.
+    reset("survival", x=1.5, z=1.5)
+    vx, vz = X0 + 2, Z0 + 3
+    lectern = (vx, Y + 1, vz - 1)
+    cmd(f"fill {X0 - 1} {Y + 1} {Z0 - 1} {X0 + 5} {Y + 4} {Z0 + 6} minecraft:air",
+        f"fill {vx - 1} {Y + 1} {vz - 1} {vx + 1} {Y + 3} {vz + 1} minecraft:glass",
+        f"fill {vx} {Y + 1} {vz} {vx} {Y + 2} {vz} minecraft:air",
+        f"setblock {lectern[0]} {lectern[1]} {lectern[2]} minecraft:air",
+        f"item replace entity @s hotbar.0 with minecraft:netherite_axe", f"item replace entity @s hotbar.1 with minecraft:lectern 4",
+        f'summon minecraft:villager {vx + 0.5} {Y + 1} {vz + 0.5} {{VillagerData:{{profession:"minecraft:none",level:1,type:"minecraft:plains"}},PersistenceRequired:1b}}')
+    ctl("key", "1", "tap")
+    wait(10)
+
+    def lines(mark):
+        return [l for l in sunset_said(mark) if "Villager Roller:" in l]
+
+    def block():
+        b = ctl("block", *map(str, lectern)).get("block", "")
+        return "lectern" if "lectern" in b else "air" if "air" in b else b
+
+    mark = log_mark()
+    only("villager roller")
+    wait(20)
+    none = lines(mark)
+    # It turned itself off.
+    on.discard("villagerroller")
+    cmd(f"setblock {lectern[0]} {lectern[1]} {lectern[2]} minecraft:lectern")
+    setting("villagerroller", "enchants", "zzz_nothing")
+    setting("villagerroller", "verbose", "true")
+    # The villager takes the job first (up to 30 s).
+    wait(200)
+    screen_before = state().get("screen")
+    mark = log_mark()
+    only("villager roller")
+    t0 = state().get("ticks")
+    seen = poll(900, 5, lambda: (block(), state().get("screen")))
+    ticked = state().get("ticks", 0) - (t0 or 0)
+    rolled = sum(1 for a, b in zip(seen, seen[1:]) if a[0] == "air" and b[0] == "lectern")
+    trace = []
+    for b, sc in seen:
+        mark_ = f"{b[0]}:{sc}"
+        if not trace or trace[-1][0] != mark_:
+            trace.append([mark_, 0])
+        trace[-1][1] += 1
+    hired = check('execute if entity @e[type=villager,nbt={VillagerData:{profession:"minecraft:librarian"}}]')
+    still = not [l for l in lines(mark) if "stops" in l or not any(w in l for w in ("book", "opening", "breaking", "waiting", "putting"))]
+    steps = [l.split(": ", 1)[1] for l in lines(mark)][:10]
+    after_roll = (screen_before, ticked, len(mobs("villager")), hired, trace[:12], steps)
+    ctl("close")
+    wait(5)
+    only()
+    setting("villagerroller", "verbose", "false")
+    setting("villagerroller", "enchants", "mending,unbreaking,efficiency,protection,sharpness,silk touch,fortune,looting,"
+            "power,feather falling,respawn anchor,smite,bane of arthropods,knockback,fire aspect,thorns,respiration,aqua affinity,"
+            "depth strider,frost walker,infinity,flame,punch,luck of the sea,lure,loyalty,impaling,riptide,channeling,"
+            "multishot,quick charge,piercing,blast protection,fire protection,projectile protection,swift sneak,soul speed,"
+            "density,breach,wind burst,lunge,binding curse,vanishing curse")
+    setting("villagerroller", "max price", "64")
+    setting("villagerroller", "keep trades open", "false")
+    if block() != "lectern":
+        cmd(f"setblock {lectern[0]} {lectern[1]} {lectern[2]} minecraft:lectern")
+        wait(200)
+    mark = log_mark()
+    only("villager roller")
+    found = []
+    # Up to 60 s; any line means it stopped (found, or why not).
+    for _ in range(60):
+        wait(20)
+        said_now = lines(mark)
+        if said_now:
+            found = [l for l in said_now if "found" in l]
+            on.discard("villagerroller")
+            break
+    ctl("close")
+    wait(5)
+    only()
+    cmd("kill @e[type=villager]",
+        f'summon minecraft:villager {vx + 0.5} {Y + 1} {vz + 0.5} {{VillagerData:{{profession:"minecraft:librarian",level:1,type:"minecraft:plains"}},Xp:5,PersistenceRequired:1b}}')
+    setting("villagerroller", "enchants", "zzz_nothing")
+    wait(40)
+    mark = log_mark()
+    only("villager roller")
+    wait(80)
+    ctl("close")
+    wait(5)
+    traded = [l for l in lines(mark) if "traded with" in l]
+    if traded:
+        on.discard("villagerroller")
+    only()
+    ctl("close")
+    setting("villagerroller", "enchants", "mending,unbreaking 3,efficiency 5,protection 4,sharpness 5,silk touch,fortune 3,feather falling 4")
+    setting("villagerroller", "max price", "40")
+    setting("villagerroller", "keep trades open", "true")
+    cmd("kill @e[type=villager]", f"fill {X0 - 1} {Y + 1} {Z0 - 1} {X0 + 5} {Y + 4} {Z0 + 6} minecraft:air")
+    ok = bool(none) and "no lectern" in none[0] and rolled >= 1 and still and bool(found) and bool(traded)
+    return ok, (f"no lectern {none[:1]}; never matched: {rolled} rolls, still on {still}; {found[:1]}; traded {traded[:1]}; "
+                f"villagers, held, lectern after rolling {after_roll}; said {lines(0)[-6:]}")
+
+
+@test("Sign Historian")
+def _():
+    # Three signs remembered. Watched: one's text changed ("changed", said: before) and one's wax taken off
+    # ("unwaxed"); the third untouched says nothing. Off, the untouched one broken, on again (a revisit): "gone" (said:
+    # keep), and the two changes already seen are not said again. Changed off: a new change says nothing.
+    reset("creative")
+    a, b, c = (X0 + 3, Y + 1, Z0 + 3), (X0 + 5, Y + 1, Z0 + 3), (X0 + 7, Y + 1, Z0 + 3)
+
+    def sign(p, text, waxed=False):
+        msgs = ",".join([f"'\"{text}\"'"] + ["'\"\"'"] * 3)
+        wax = ",is_waxed:1b" if waxed else ""
+        cmd(f"setblock {p[0]} {p[1]} {p[2]} minecraft:oak_sign{{front_text:{{messages:[{msgs}]}}{wax}}} replace")
+
+    def lines(mark, p):
+        return [l for l in sunset_said(mark) if "Sign Historian" in l and f"at {p[0]} {p[1]} {p[2]} " in l]
+
+    cmd(f"fill {X0 + 2} {Y + 1} {Z0 + 2} {X0 + 8} {Y + 2} {Z0 + 4} minecraft:air")
+    sign(a, "keep")
+    sign(b, "before")
+    sign(c, "wax", waxed=True)
+    wait(10)
+    only("sign historian")
+    wait(30)
+    def text(p, words):
+        msgs = ",".join([f"'\"{words}\"'"] + ["'\"\"'"] * 3)
+        cmd(f"data merge block {p[0]} {p[1]} {p[2]} {{front_text:{{messages:[{msgs}]}}}}")
+
+    mark = log_mark()
+    text(b, "after")
+    cmd(f"data merge block {c[0]} {c[1]} {c[2]} {{is_waxed:0b}}")
+    wait(30)
+    changed, unwaxed, quiet = lines(mark, b), lines(mark, c), lines(mark, a)
+    only()
+    wait(5)
+    cmd(f"setblock {a[0]} {a[1]} {a[2]} minecraft:air")
+    mark2 = log_mark()
+    only("sign historian")
+    wait(40)
+    gone, again = lines(mark2, a), lines(mark2, b) + lines(mark2, c)
+    setting("signhistorian", "changed", "false")
+    mark3 = log_mark()
+    text(b, "third")
+    wait(30)
+    hushed = lines(mark3, b)
+    setting("signhistorian", "changed", "true")
+    only()
+    cmd(f"fill {X0 + 2} {Y + 1} {Z0 + 2} {X0 + 8} {Y + 2} {Z0 + 4} minecraft:air")
+    ok = (bool(changed) and "changed" in changed[0] and "before" in changed[0] and bool(unwaxed) and "unwaxed" in unwaxed[0]
+          and not quiet and bool(gone) and "gone" in gone[0] and "keep" in gone[0] and not again and not hushed)
+    return ok, (f"changed {changed[:1]}, unwaxed {unwaxed[:1]}, untouched {bool(quiet)}; after a revisit gone {gone[:1]}, "
+                f"said again {bool(again)}; Changed off {bool(hushed)}")
+
+
+@test("Use Tracker")
+def _():
+    # Chat on. Your own pearl: nothing with Own throws off; with it on "pearl lands at ..." where you then land (1.5
+    # blocks at most). Your splash potion: "potion lands". With a second player (CTL2): Bot1 drinking a strength potion
+    # ("Bot1 took strength 3:00") and Bot1's pearl ("Bot1's pearl lands"). Module off: nothing.
+    reset("creative")
+    cmd(f"fill {X0 - 6} {Y + 1} {Z0 - 2} {X0 + 6} {Y + 8} {Z0 + 30} minecraft:air",
+        f"fill {X0 - 6} {Y} {Z0 - 2} {X0 + 6} {Y} {Z0 + 30} minecraft:stone")
+    setting("usetracker", "chat", "true")
+    setting("usetracker", "own throws", "false")
+    slot(0, "ender_pearl", 8)
+    slot(1, 'splash_potion[potion_contents={potion:"minecraft:water"}]', 4)
+    ctl("key", "1", "tap")
+
+    def lines(mark, what):
+        return [l for l in sunset_said(mark) if "Use Tracker" in l and what in l]
+
+    def throw(key="1", pitch="-10"):
+        slot(0, "ender_pearl", 8)
+        slot(1, 'splash_potion[potion_contents={potion:"minecraft:water"}]', 4)
+        wait(2)
+        ctl("key", key, "tap")
+        ctl("look", "0", pitch)
+        wait(2)
+        ctl("mouse", "right", "click")
+
+    only("use tracker")
+    mark = log_mark()
+    throw()
+    wait(50)
+    own_off = lines(mark, "pearl lands")
+    setting("usetracker", "own throws", "true")
+    reset("creative")
+    mark = log_mark()
+    throw()
+    wait(6)
+    told = lines(mark, "pearl lands")
+    eta = float(told[0].split(" in ")[1].rstrip("s")) if told else 2.0
+    wait(int(eta * 20) + 20)
+    landed = pos()
+    near = None
+    if told:
+        x, y, z = (float(v) for v in told[0].split(" lands at ")[1].split(" in ")[0].split())
+        near = math.hypot(landed[0] - x, landed[2] - z)
+    reset("survival")
+    mark = log_mark()
+    throw("2")
+    wait(3)
+    left = ctl("inventory").get("counts", {}).get("minecraft:splash_potion", 0)
+    kinds = (left, sorted({e.get("type", "?") for e in ctl("entities").get("entities", []) if e.get("kind") != "mob"}))
+    wait(37)
+    potion = lines(mark, "potion lands") or [f"none; entities then {kinds}"]
+    drank = thrown = None
+    if CTL2:
+        bot_ready(4.5, 180)
+        cmd('item replace entity Bot1 weapon.mainhand with minecraft:potion[potion_contents={potion:"minecraft:strength"}]')
+        wait(5)
+        mark = log_mark()
+        ctl2("mouse", "right", "down")
+        wait(45)
+        ctl2("mouse", "right", "up")
+        wait(10)
+        drank = lines(mark, "took strength 3:00")
+        cmd("item replace entity Bot1 weapon.mainhand with minecraft:ender_pearl 4", "tp Bot1 ~ ~ ~ 180 -20")
+        wait(5)
+        mark = log_mark()
+        ctl2("mouse", "right", "click")
+        wait(20)
+        thrown = lines(mark, "Bot1's pearl lands")
+        bot_done()
+    only()
+    reset("creative")
+    mark = log_mark()
+    throw()
+    wait(40)
+    off = lines(mark, "lands")
+    setting("usetracker", "chat", "false")
+    setting("usetracker", "own throws", "false")
+    reset()
+    ok = (not own_off and bool(told) and near is not None and near <= 1.5 and "lands" in potion[0] and not off
+          and (drank is None or (drank and thrown)))
+    return ok, (f"own pearl with Own throws off {bool(own_off)}; on {told[:1]}, landed {near if near is None else round(near, 2)} off; "
+                f"potion {potion[:1]}; Bot1 drank {drank[:1] if drank is not None else 'no CTL2'}, threw "
+                f"{thrown[:1] if thrown is not None else 'no CTL2'}; off {bool(off)}")
+
 
 if __name__ == "__main__":
     unknown = sorted(set(ONLY) - {fn.test_name for fn in TESTS})

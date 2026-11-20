@@ -22,6 +22,8 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     super::sunset_hunting::draw(cam, mods, out, lw);
     super::sunset_light_scan::draw(cam, mods, out, lw);
     super::sunset_sound_detector::draw(game, cam, mods, out, lw);
+    super::sunset_sign_historian::draw(game, cam, mods, out, lw);
+    super::sunset_use_tracker::draw(game, cam, mods, out, lw);
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
     if let Some(m) = get("Nuker") {
         let (look, argb) = (Look::of(m), m.c("Broken color"));

@@ -453,6 +453,24 @@ name = "sunset_search"
 source = "src/game/search.rs"
 
 [[native.module]]
+id = "villager_roller"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_villager_roller"
+source = "src/game/villager_roller.rs"
+
+[[native.module]]
+id = "sign_historian"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sign_historian"
+source = "src/game/sign_historian.rs"
+
+[[native.module]]
+id = "use_tracker"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_use_tracker"
+source = "src/game/use_tracker.rs"
+
+[[native.module]]
 id = "sound_detector"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_sound_detector"
