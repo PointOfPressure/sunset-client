@@ -229,8 +229,15 @@ struct Ps {
     // No Fall's Place: what it put down to land in, the item, the ticks since, the ticks you have stood still, and
     // whether the server's answer (the water there) has come.
     fall_placed: Option<([i32; 3], &'static str, u32, u32, bool)>,
-    // Fast Place: the share of a block earned so far, in twentieths.
+    // Fast Place: the share of a block earned so far, in twentieths. Anticheat Grim (see sent): the yaw turn of the
+    // last move packet that turned, whether one has turned since the last place, the turn the last place went with, the
+    // last yaw sent and a place sent since the last move packet.
     place_credit: u32,
+    place_turn: f32,
+    place_turned: bool,
+    place_last: Option<f32>,
+    place_yaw: Option<f32>,
+    place_pending: bool,
 }
 
 static PS: Mutex<Option<Ps>> = Mutex::new(None);
@@ -631,6 +638,11 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     } else {
         exec(|e| e.reset());
     }
+    // A fall is saved with chat or a server's pause menu open too.
+    match get("No Fall").filter(|_| connected(game)) {
+        Some(m) => no_fall(game, m),
+        None => ps(|p| p.fall_placed = None),
+    }
     if !in_world(game) {
         ps(|p| p.place_credit = 0);
         return;
@@ -666,10 +678,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         spam(game, m);
     } else {
         ps(|p| p.spam_timer = 0);
-    }
-    match get("No Fall") {
-        Some(m) => no_fall(game, m),
-        None => ps(|p| p.fall_placed = None),
     }
 }
 
@@ -880,6 +888,67 @@ fn fast_place(game: &mut Game<'_>, m: &Module) {
     let speed = m.n("Speed") as usize;
     let ready = ps(|p| place_ready(&mut p.place_credit, speed));
     game.use_delay = if ready { 0 } else { game.use_delay.max(1) };
+}
+
+// Grim's DuplicateRotPlace judges a block place at the move packet after it, by the yaw turn of the last move packet that
+// turned: when there has been a turn since the last place, it is over 2 degrees and it is the same as the turn the last
+// place went with, it flags (turning at a steady speed while placing every tick does exactly that). sent() keeps the
+// same books from the packets as they go.
+pub(super) fn sent(packet: &S) {
+    let yaw = match packet {
+        S::MovePlayerPosRot(p) => Some(p.yaw),
+        S::MovePlayerRot(p) => Some(p.yaw),
+        S::MovePlayerPos(_) | S::MovePlayerStatus(_) => None,
+        S::UseItemOn(_) => {
+            ps(|p| p.place_pending = true);
+            return;
+        }
+        S::AcceptTeleportation(t) => {
+            ps(|p| p.place_yaw = Some(t.yaw));
+            return;
+        }
+        _ => return,
+    };
+    ps(|p| {
+        if let Some(yaw) = yaw {
+            if let Some(was) = p.place_yaw.replace(yaw)
+                && yaw != was
+            {
+                p.place_turn = wrap_degrees(yaw - was).abs();
+                p.place_turned = true;
+            }
+        }
+        if std::mem::take(&mut p.place_pending) && std::mem::take(&mut p.place_turned) {
+            p.place_last = Some(p.place_turn);
+        }
+    });
+}
+
+// Anticheat Grim, at the tick's start (a place this tick goes before its move packet, which carries the look you have
+// now): if a place may go this tick and the turn it would be judged by repeats the last place's, the view turns one
+// mouse count more the way you turn. That keeps the look on the mouse's grid and moves it by a hair.
+pub(super) fn fast_place_pre(game: &mut Game<'_>) {
+    let Some(m) = super::sunset::with(|s| s.module("Fast Place").filter(|m| m.on).cloned()) else {
+        return;
+    };
+    if m.p("Anticheat") != "Grim" || !game.right || game.using.is_some() || game.use_delay > 1 || !holds_block(game) {
+        return;
+    }
+    let Some(sent) = super::sunset_combat_wire::sent_look(game) else {
+        return;
+    };
+    let (turned, turn, last) = ps(|p| (p.place_turned, p.place_turn, p.place_last));
+    let now = wrap_degrees(game.yaw - sent.0);
+    let judged = if (game.yaw, game.pitch) != sent { Some(now.abs()) } else { turned.then_some(turn) };
+    if judged.is_some_and(|t| t > 2.0 && last.is_some_and(|l| (l - t).abs() < 0.001)) {
+        let count = super::sunset_rotation::degrees_per_count(f64::from(game.settings.sensitivity));
+        // No turn this tick (the repeat is an older one's): any turn under 2 degrees clears it.
+        game.yaw += if now == 0.0 { count } else { count.copysign(now) };
+    }
+}
+
+fn wrap_degrees(d: f32) -> f32 {
+    (d + 180.0).rem_euclid(360.0) - 180.0
 }
 
 // ---- Fast Use

@@ -1029,10 +1029,16 @@ fn aim_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
     let gap = gap_yaw.hypot(gap_pitch);
     let on_target = gap < 0.05;
     let mut turn = [0.0; 2];
+    let user = [wrap(yaw - f64::from(before[0])), pitch - f64::from(before[1])];
+    let moved = user[0].hypot(user[1]);
+    // Your own turn this frame leads away from the target (from its middle: on the hitbox the gap is no direction).
+    // Tracking lets go then: following the target against your pull and let go the next frame, it turned the view back
+    // and forth while you pulled away. Stickiness still slows you while the crosshair is on the hitbox (that is its job).
+    let away = moved > 1e-4 && wrap(yaw_to - yaw) * user[0] + (pitch_to - pitch) * user[1] < 0.0;
     // Tracking fades out as the crosshair drifts off the hitbox, instead of switching off at a hard edge.
     let within = m.n("Track within (degrees)");
     let identity = super::sunset_antibot::token(target.id);
-    if previous.is_some() && previous == identity && gap < within {
+    if previous.is_some() && previous == identity && gap < within && !away {
         let t = tracking * (1.0 - gap / within);
         turn[0] += wrap(yaw_to - last[0]) * t;
         turn[1] += (pitch_to - last[1]) * t;
@@ -1042,8 +1048,6 @@ fn aim_turn(game: &Game<'_>, m: &Module, dt: f64) -> [f64; 2] {
         turn[0] += gap_yaw * f;
         turn[1] += gap_pitch * f;
     }
-    let user = [wrap(yaw - f64::from(before[0])), pitch - f64::from(before[1])];
-    let moved = user[0].hypot(user[1]);
     if moved > 1e-4 {
         // Stickiness ramps in over the last degree, so there is no hard edge to stutter on.
         let stick = m.n("Stickiness") * (1.0 - gap).clamp(0.0, 1.0);

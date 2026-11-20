@@ -191,7 +191,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Elytra Target**: while you glide, steers your view at a player for Kill Aura's hits (prediction, Ideal distance,
   capped turns, Safe climb) and fires rockets from the hotbar or offhand when they get away.
 - **Crystal Aura**, **Anchor Aura**: place and set off crystals or anchors on enemies, or on your right click
-  (Macro). Never more self damage than *Max self damage*. **Crystal Optimizer** breaks hit crystals at once.
+  (Macro). Never more self damage than *Max self damage*; Anticheat Grim keeps each place and break out of the
+  tick its look went in. **Crystal Optimizer** breaks hit crystals at once.
 - **PvP Bot**: fights the nearest player by itself, with a sword or with crystals and anchors.
 - **Cart**: TNT minecart PvP (break, place, set off and cover carts).
 - **Offhand**: totem or another item in your offhand; Double hand, Totem on low health.
@@ -236,7 +237,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   - PvP, Building, Mining and Survival presets; a Loot key drops spare totems and pearls.
 - **Chest Stealer**: empties containers you open. **Auto Replenish**: refills hotbar stacks. **Loadouts**: saved
   inventory layouts on K.
-- **Auto Tool**, **Fast Break** (was Speed Mine), **Fast Place**, **Fast Use**, **Break Delay**, **No Break Reset**, **Air Place**,
+- **Auto Tool**, **Fast Break** (was Speed Mine), **Fast Place** (Anticheat Grim: no repeated turn between places), **Fast Use**, **Break Delay**, **No Break Reset**, **Air Place**,
   **Ghost Hand** (use containers through blocks).
 - **Auto Eat**, **Auto Gap** (also potions and soup), **Eat Tap** (hold a key to eat the best food,
   Switch back), **Auto Fish**, **Auto Clicker** (fixed delay
@@ -352,7 +353,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
     manual input, stop, disable, world changes and Panic cancel jobs. Profiles save preferences without paths.
   - The engine ships for Linux and Windows (x86_64). Full runtime commands use the original `#` prefix; the
     bounded Ore Sim controller keeps the `.b` commands above. See [commands, installation, source and DLL replacement](client/docs/baritone.md).
-- **Nuker**, **Packet Mine**, **Vein Miner** (the ore touching an ore you break), **Liquid Filler** (also drains an
+- **Nuker**, **Packet Mine** (Anticheat Grim: the vanilla dig, with the full break time and a swing every tick),
+  **Vein Miner** (the ore touching an ore you break), **Liquid Filler** (also drains an
   enemy's water or lava), **Spawn Proofer**, **Build Height**.
 - **Auto Sign**: writes signs without the editor ever showing, with text from its settings (front and back) or the
   first sign you write; both sides (a server opens the side you stand on, so the other side is written once you're on
@@ -524,6 +526,10 @@ Elytra Target was asked for by muhalo1545 on the Sunset Discord; its behaviour f
 
 Anti Vanish's Staff check follows the behaviour of Blackout's Staff Check (GPL-3.0), written fresh for Sunset with no
 code taken.
+
+The Anticheat Grim settings of Packet Mine, Fast Place and Crystal Aura keep to the behaviour of GrimAC's FastBreak,
+NoSwingBreak, DuplicateRotPlace, PacketOrderO and Post checks (GPL-3.0), written fresh for Sunset with no code taken.
+Crystal Aura's Grim report and flag capture: vs. (vstxx).
 
 Radar's Locator marks and Notifier's Locator alerts, Server Scan's ping ids, Ghost Hand's Click through and Kill Aura's
 Projectiles follow the behaviour of Combatant's Visual Range, AntiCheat Detect, Click Through and Projectile Puncher

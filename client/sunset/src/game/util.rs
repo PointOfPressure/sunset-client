@@ -431,13 +431,13 @@ pub(super) fn mob_target(m: &horizon_client::mobs::Mob) -> Target {
     }
 }
 
-// Every other player the client knows of, friends left out.
+// Every other player the client knows of, friends and bots (the shared Anti bot classification) left out.
 pub(super) fn other_players(game: &Game<'_>) -> Vec<Target> {
     let names = game.remote_player_names();
     let friends = with(|s| s.friends.clone());
     game.mobs
         .iter()
-        .filter(|m| m.kind.id == "minecraft:player" && m.alive() && !m.removed)
+        .filter(|m| m.kind.id == "minecraft:player" && m.alive() && !m.removed && !super::sunset_antibot::blocked(m.id))
         .filter_map(|m| {
             let name = names.iter().find(|(i, _)| *i == m.id).map(|(_, n)| n.clone())?;
             if friends.iter().any(|f| f.eq_ignore_ascii_case(&name)) {
@@ -457,6 +457,7 @@ pub(super) fn player_enemy(game: &Game<'_>, mob: &horizon_client::mobs::Mob) -> 
         || mob.removed
         || Some(mob.id) == super::sunset::own_id(game)
         || game.riding == Some(mob.id)
+        || super::sunset_antibot::blocked(mob.id)
         || !matches!(super::remote::sunset_combat_remote::player_mode(game, mob.id), Some(0 | 2))
     {
         return false;
@@ -619,6 +620,12 @@ pub(super) fn world_hash(game: &Game<'_>) -> Option<u64> {
 
 pub(super) fn in_world(game: &Game<'_>) -> bool {
     game.native_playing() && game.remote.is_some() && game.player.is_some() && game.screen == Screen::Playing
+}
+
+// In a world with any screen open (chat, a server's pause menu, the inventory): for modules that need no input of
+// yours and must not stop while you type, such as alerts and saving a fall.
+pub(super) fn connected(game: &Game<'_>) -> bool {
+    game.remote.is_some() && game.player.is_some() && game.screen != Screen::Dead
 }
 
 // The most damage the nearest end crystal would do to something standing at `at`

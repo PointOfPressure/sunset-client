@@ -48,8 +48,19 @@ pub(super) fn acted_since_move(game: &Game<'_>) -> bool {
     // A client that stands still sends no move packet for a while: only this tick's and the last one's count.
     at != u64::MAX && at.saturating_add(1) >= game.ticks
 }
+// A move packet has gone since the last ClientTickEnd: Grim counts a client's ticks by that packet, and an action after
+// a move packet in the same one is its Post (and PacketOrderO).
+static MOVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub(super) fn moved_this_tick() -> bool {
+    MOVED.load(std::sync::atomic::Ordering::Relaxed)
+}
 fn note_action(game: &Game<'_>, packet: &S) {
     use std::sync::atomic::Ordering::Relaxed;
+    match packet {
+        S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_) | S::MovePlayerStatus(_) => MOVED.store(true, Relaxed),
+        S::ClientTickEnd(_) => MOVED.store(false, Relaxed),
+        _ => {}
+    }
     match packet {
         S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_) | S::MovePlayerStatus(_) => ACTED.store(u64::MAX, Relaxed),
         S::UseItemOn(_) | S::ContainerClick(_) => ACTED.store(game.ticks, Relaxed),
@@ -100,6 +111,7 @@ pub(super) fn delivered(game: &Game<'_>, packet: &S) {
     super::sunset_effects::sent(game, packet);
     super::sunset_lag::sent(game, packet);
     super::sunset_backtrack::sent(game, packet);
+    super::sunset_player::sent(packet);
 }
 
 pub(super) fn forwarded(game: &Game<'_>, packet: &S) {

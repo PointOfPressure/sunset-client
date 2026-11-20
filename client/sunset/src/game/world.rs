@@ -605,6 +605,7 @@ fn bow_aimbot(game: &mut Game<'_>, m: &Module) {
         .filter(|t| m.b("Nametagged") || !game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.custom_name.is_some()))
         .filter(|t| m.b("Babies") || !game.mobs.iter().find(|x| x.id == t.id).is_some_and(|x| x.is_baby()))
         .filter(|t| !(t.player && names.iter().any(|(i, n)| *i == t.id && friends.iter().any(|f| f.eq_ignore_ascii_case(n)))))
+        .filter(|t| !(t.player && super::sunset_antibot::blocked(t.id)))
         .collect();
     sort_targets(game, &mut cands, m.p("Priority"));
     let Some(t) = cands.into_iter().next() else {

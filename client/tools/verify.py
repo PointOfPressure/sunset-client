@@ -9471,6 +9471,48 @@ def _():
                 f"{fast['fps']:.0f} fps; holding {fast['held']} after")
 
 
+@test("Crystal Aura (Grim)")
+def _():
+    # (Here, beside the other crystal tests: after the Packet Mine tests' held-button breaks the game can still count a
+    # break in progress, and Crystal Aura waits for none.)
+    # Crystal Aura's Anticheat Grim: the usual crystal run on Bot1, then the probe: no place, hit, swing or slot change
+    # after its tick's move packet (Grim's PacketOrderO and Post; Anticheat None is reported beside it), never two slot
+    # changes in a tick (BadPacketsA), still a crystal a second or more and the sword back after.
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    if not probe_path():
+        return None, "needs the wire probe"
+    reset()
+    blast_arena()
+    hand_crystal()
+    setting("crystalaura", "max self damage", "20")
+    runs = {}
+    for mode in ("None", "Grim"):
+        setting("crystalaura", "anticheat", mode)
+        if runs:
+            blast_bot()
+        mark = probe_mark()
+        r = blast_run("crystalaura", [("end_crystal", 64), ("obsidian", 64)], 200, health=200)
+        ensure_alive()
+        ticks = wire_ticks(mark)
+        runs[mode] = dict(rate=round(r["used"]["end_crystal"] / r["seconds"], 1), dealt=round(r["dealt"]),
+                          late=sum(t[3] for t in ticks), doubled=sum(1 for t in ticks if t[2] > 1), held=r["held"],
+                          most=r["most"])
+        if not r["used"]["end_crystal"]:
+            # Nothing placed: what the shared Anti bot made of Bot1, for the note.
+            said = log_mark()
+            say(".antibotdebug")
+            wait(5)
+            runs[mode]["antibot"] = [line[-200:] for line in sunset_said(said)][3:12]
+    blast_done()
+    setting("crystalaura", "anticheat", "None")
+    g = runs["Grim"]
+    # (Two move packets in one of Grim's ticks, "most", come from the look Sunset sends for a still player after the
+    # tick's end; the Crystal Aura test checks that, with Anticheat None too.)
+    ok = g["rate"] >= 1 and g["late"] == 0 and g["doubled"] == 0 and g["held"] == "diamond_sword"
+    return ok, f"{runs}"
+
+
 @test("Crystal Aura from any hand")
 def _():
     """vs.'s report (3 Nov 2026): walking up to a player, Crystal Aura at its defaults did nothing. Holding a pickaxe,
@@ -17002,6 +17044,254 @@ def _():
     ok = not two and three and " lights" in three[0] and not high and not off and (sound is None or (sound and "chest opened" in sound[0]))
     return ok, (f"two torches {bool(two)}, three {three[:1]}, above Y {bool(high)}, Hidden bases off {bool(off)}, "
                 f"chest heard {sound[:1] if sound is not None else 'no CTL2'}")
+
+
+# ---- open bugs (20 Nov 2026): Anticheat Grim for Packet Mine, Fast Place and Crystal Aura; Aim Assist (Duelkit) pulling
+# away; modules that keep going with chat open.
+
+def wire_ticks(mark):
+    """Per client tick since mark: (dig packets, swings, slot changes, digs/swings/slot changes/uses/places/hits after
+    the tick's move packet, Grim's PacketOrderO and Post)."""
+    out = []
+    for t in probe_ticks(mark):
+        digs = swings = slots = late = 0
+        moved = False
+        for line in t:
+            if line == "order move":
+                moved = True
+            elif line == f"pkt {PLAYER_ACTION}":
+                digs += 1
+                late += moved
+            elif line == f"pkt {PUNCH}":
+                swings += 1
+                late += moved
+            elif line == f"pkt {SET_CARRIED_ITEM}":
+                slots += 1
+                late += moved
+            elif line in (f"pkt {USE_ITEM_ON}", f"pkt {USE_ITEM}", "order attack"):
+                late += moved
+        out.append((digs, swings, slots, late))
+    return out
+
+
+@test("Packet Mine (Grim)")
+def _():
+    # Anticheat Grim mines the vanilla client's way. Stone 2 blocks ahead at head height, a sword held, a diamond
+    # pickaxe in slot 3; Delay 0. Rotate on, then off: one click mines it, not sooner than holding the button with the
+    # pickaxe takes (Grim times the dig with the tools held: the server's early STOP at 0.7 is its FastBreak), the sword
+    # back after; one START and one STOP; a swing on the wire every tick from START to STOP (NoSwingBreak); no dig, swing
+    # or slot change after its tick's move packet (PacketOrderO); never two slot changes in a tick. Anticheat None after
+    # it: the old way, done sooner. Then two stones queued by two clicks under Grim: both go.
+    if not probe_path():
+        return None, "needs the wire probe"
+    at = (X0, Y + 2, Z0 + 2)
+
+    def setup(x=0):
+        reset()
+        slot(0, "diamond_sword")
+        slot(2, "diamond_pickaxe")
+        ctl("key", "1", "tap")
+        cmd(f"setblock {at[0] + x} {at[1]} {at[2]} minecraft:stone")
+        ctl("look-at", str(at[0] + x + 0.5), str(at[1] + 0.5), str(at[2] + 0.5))
+        wait(3)
+
+    def gone(limit):
+        n = 0
+        while n < limit and ctl("block", *map(str, at)).get("block") == "minecraft:stone":
+            wait(1)
+            n += 1
+        return n
+
+    setup()
+    ctl("key", "3", "tap")
+    wait(2)
+    ctl("mouse", "left", "down")
+    plain = gone(100)
+    ctl("mouse", "left", "up")
+    got = {}
+    for anticheat, rotate in (("Grim", "true"), ("Grim", "false"), ("None", "true")):
+        setup()
+        setting("packetmine", "anticheat", anticheat)
+        setting("packetmine", "rotate", rotate)
+        setting("packetmine", "delay (ticks)", "0")
+        only("packetmine")
+        mark = probe_mark()
+        ctl("mouse", "left", "click")
+        n = gone(100)
+        wait(5)
+        hand = held().get("item", "").replace("minecraft:", "")
+        only()
+        ticks = wire_ticks(mark)
+        dug = [i for i, t in enumerate(ticks) if t[0]]
+        span = ticks[dug[0]:dug[-1] + 1] if dug else []
+        got[(anticheat, rotate)] = dict(ticks=n, hand=hand, digs=sum(t[0] for t in ticks),
+                                        unswung=sum(1 for t in span if not t[1]), late=sum(t[3] for t in ticks),
+                                        doubled=sum(1 for t in ticks if t[2] > 1))
+    setup()
+    cmd(f"setblock {at[0] + 1} {at[1]} {at[2]} minecraft:stone")
+    setting("packetmine", "anticheat", "Grim")
+    only("packetmine")
+    for dx in (0, 1):
+        ctl("look-at", str(at[0] + dx + 0.5), str(at[1] + 0.5), str(at[2] + 0.5))
+        ctl("mouse", "left", "click")
+        wait(1)
+    wait(60)
+    queued = 2 - count(at[0], at[1], at[2], at[0] + 1, at[1], at[2], "stone")
+    only()
+    setting("packetmine", "anticheat", "None")
+    grim = [got[("Grim", r)] for r in ("true", "false")]
+    # A diamond pickaxe does 0.178 of stone a tick: 6 ticks after START before Grim lets a STOP through.
+    ok = (all(g["ticks"] >= 6 and g["ticks"] < 100 and g["hand"] == "diamond_sword" and g["digs"] == 2
+              and g["unswung"] == 0 and g["late"] == 0 and g["doubled"] == 0 for g in grim)
+          and got[("None", "true")]["ticks"] < grim[0]["ticks"] and queued == 2)
+    return ok, f"holding the pickaxe {plain} ticks; {got}; Grim queue of two: {queued} mined"
+
+
+def dup_rot_places(mark):
+    """Grim's DuplicateRotPlace reckoned from the probe since mark: (places, flags). A place is judged at the move
+    packet after it by the yaw turn of the last move packet that turned; with a turn since the last place, over 2
+    degrees and the same as the turn the last place was judged by, it flags."""
+    last_yaw, turn, turned, judged, pending, places, flags = None, 0.0, False, None, False, 0, 0
+    for t in probe_ticks(mark):
+        for i, line in enumerate(t):
+            if line == f"pkt {USE_ITEM_ON}":
+                pending = True
+                places += 1
+            elif line == "order move":
+                # The probe writes a move packet's look just before its "order move" line.
+                look = next((l.split() for l in reversed(t[max(0, i - 3):i]) if l.startswith("look ")), None)
+                if look:
+                    yaw = float(look[1])
+                    if last_yaw is not None and yaw != last_yaw:
+                        turn, turned = abs(wrap(yaw - last_yaw)), True
+                    last_yaw = yaw
+                if pending and turned:
+                    flags += turn > 2.0 and judged is not None and abs(turn - judged) < 0.005
+                    judged, turned = turn, False
+                pending = False
+    return places, flags
+
+
+@test("Fast Place (Grim)")
+def _():
+    # Cobblestone held over a stone floor, looking down 70 degrees, use held while the view turns 20 mouse counts a
+    # tick (3 degrees at the default sensitivity) for 3 s, at Speed 5 (a place most ticks). Anticheat None: places whose
+    # turn repeats the last place's are reported (Grim's DuplicateRotPlace); Grim: none, and still most of the blocks.
+    # Fast Place off: the game's own 4-tick delay.
+    if not probe_path():
+        return None, "needs the wire probe"
+    got = {}
+    clear = f"fill {X0 - 8} {Y + 1} {Z0 - 8} {X0 + 8} {Y + 12} {Z0 + 8} minecraft:air"
+    for mode in ("off", "None", "Grim"):
+        reset()
+        cmd(clear, f"fill {X0 - 6} {Y} {Z0 - 6} {X0 + 6} {Y} {Z0 + 6} minecraft:stone")
+        slot(0, "cobblestone", 64)
+        ctl("key", "1", "tap")
+        if mode != "off":
+            setting("fastplace", "speed", "5")
+            setting("fastplace", "anticheat", mode)
+            only("fastplace")
+        ctl("look", "0", "70")
+        wait(5)
+        mark = probe_mark()
+        ctl("mouse", "right", "down")
+        for _ in range(60):
+            ctl("mouse-move", "20", "0")
+            wait(1)
+        ctl("mouse", "right", "up")
+        wait(3)
+        only()
+        got[mode] = dup_rot_places(mark)
+    # The blocks put down would wall in the next tests' arena.
+    cmd(clear)
+    setting("fastplace", "anticheat", "None")
+    ok = got["Grim"][1] == 0 and got["Grim"][0] >= got["off"][0] + 10
+    return ok, f"(places, DuplicateRotPlace flags) over 60 turning ticks: {got}"
+
+
+@test("Aim Assist (Duelkit, pulling away)")
+def _():
+    # Duelkit with Stickiness 0.9 and Tracking 1, a husk on the crosshair: the mouse pulls away 20 counts a tick for a
+    # second. The view goes the way you pull every tick, never back toward the husk (Stickiness and Tracking held
+    # against your pull and let go the next frame: the view flickered). Then 20 counts a tick toward it from 30
+    # degrees off: it still helps (gets there no slower than the mouse alone).
+    eid = aim_setup()
+    say(".reset aimassist")
+    for k, v in (("mode", "Duelkit"), ("stickiness", "0.9"), ("tracking", "1"), ("require mouse down", "false"),
+                 ("only while turning", "false")):
+        setting("aimassist", k, v)
+    face(eid, 0)
+    only("aimassist")
+    wait(10)
+    yaws = []
+    for _ in range(20):
+        ctl("mouse-move", "20", "0")
+        wait(1)
+        yaws.append(aim_view()[0])
+    only()
+    aim_done()
+    say(".reset aimassist")
+    steps = [wrap(b - a) for a, b in zip(yaws, yaws[1:])]
+    back = sum(1 for d in steps if d < -0.01)
+    pulled = wrap(yaws[-1] - yaws[0])
+    ok = back == 0 and pulled > 20.0
+    return ok, f"pulled {pulled:.1f} deg in a second, {back} ticks back toward the husk (each tick: {[round(d, 2) for d in steps]})"
+
+
+@test("Chat open (No Fall, Sound Detector)")
+def _():
+    # With the chat box open (it stops nothing in single player, unlike the pause menu): No Fall's Air place still puts
+    # a block under a 12-block fall (with No Fall off the same fall hurts); Sound Detector still reports Bot1 opening a
+    # chest 12 blocks off.
+    def fall(on, dx):
+        reset()
+        slot(0, "cobblestone", 16)
+        setting("nofall", "mode", "Air place")
+        setting("nofall", "air place mode", "Before damage")
+        only(*(["nofall"] if on else []))
+        cmd("gamerule natural_health_regeneration false")
+        ctl("key", "t", "tap")
+        wait(3)
+        screen = state().get("screen")
+        cmd(f"tp @s {X0 + dx + 0.5} {Y + 13} {Z0 + 0.5}")
+        wait(40)
+        lost = 20 - hp()
+        ctl("key", "esc", "tap")
+        wait(2)
+        cmd("gamerule natural_health_regeneration true")
+        only()
+        return lost, screen
+
+    saved, screen = fall(True, 0)
+    # Away from the block the first fall left in the air.
+    hurt, _ = fall(False, 3)
+    setting("nofall", "mode", "Packet")
+    note = f"screen {screen}; a 12-block fall with chat open: {saved:.0f} lost with Air place, {hurt:.0f} with No Fall off"
+    ok = saved == 0 and hurt > 0 and screen != "playing"
+    if CTL2:
+        reset("creative")
+        bot_ready(12.5)
+        for name, value in (("cooldown", 0), ("range", 64), ("ignore near you", 5), ("players only", "false"),
+                            ("containers", "true"), ("max y", 4095), ("ignore near players", 0)):
+            setting("sounddetector", name, value)
+        only("Sound Detector")
+        at = (X0 + 4, Y + 1, Z0 + 11)
+        cmd(f"setblock {at[0]} {at[1]} {at[2]} minecraft:chest", f"tp Bot1 {at[0] + 0.5} {Y + 1} {Z0 + 12.5} 180 30")
+        wait(10)
+        ctl("key", "t", "tap")
+        wait(3)
+        mark = log_mark()
+        ctl2("interact", *map(str, at))
+        wait(15)
+        ctl2("close")
+        heard = any("Heard chest opened" in line for line in sunset_said(mark))
+        ctl("key", "esc", "tap")
+        wait(2)
+        only()
+        bot_done()
+        ok = ok and heard
+        note += f"; Sound Detector heard Bot1's chest with chat open: {heard}"
+    return ok, note
 
 
 if __name__ == "__main__":

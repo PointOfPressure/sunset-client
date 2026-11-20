@@ -217,7 +217,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Fall distance", 4.0, 1.0, 10.0, 0.5),
         // Player
         Module::new("Fast Place", Player, "Places blocks faster.")
-            .num("Speed", 5.0, 1.0, 5.0, 1.0),
+            .num("Speed", 5.0, 1.0, 5.0, 1.0)
+            .pick("Anticheat", &["None", "Grim"]),
         Module::new("Break Delay", Player, "Changes the delay between breaks.")
             .num("Cooldown (ticks)", 0.0, 0.0, 5.0, 1.0),
         Module::new("Auto Respawn", Player, "Respawns when you die."),

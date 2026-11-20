@@ -323,7 +323,8 @@ fn bearing(from: [f64; 3], at: [f64; 3]) -> String {
 pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
     // Base Finder's Hidden bases hears through it, on or off.
     let bases = super::sunset_base_finder::hears() && in_world(game);
-    let Some(m) = m.filter(|_| in_world(game)) else {
+    // Alerts keep coming with chat or a server's pause menu open.
+    let Some(m) = m.filter(|_| connected(game)) else {
         crate::game::sunset_packets::sounds_on(bases);
         if bases {
             let heard = hear(game, crate::game::sunset_packets::take_sounds());

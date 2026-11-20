@@ -1,8 +1,9 @@
 // Packet Mine (Sunset's): a click on a block queues it, and it is mined by packets in the background: START, then
 // STOP once the server takes it (ServerPlayerGameMode: what a tick of digging adds with the item held at the STOP,
 // times the ticks since the START, reaching 0.7), the best tool in the hotbar held only for the STOP tick. You can
-// walk, look away or click more blocks meanwhile.
-use super::sunset::{Category, Module, hold, with};
+// walk, look away or click more blocks meanwhile. Anticheat Grim mines the vanilla client's way instead (see
+// after_tick_end).
+use super::sunset::{Category, Module, hold, look_at, turn, with};
 use super::sunset_util::{center_of, dist, sequence, show, turned_to};
 use super::Game;
 use horizon_protocol::packets::Empty;
@@ -26,8 +27,13 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Best tool", true)
             .bool("Not on use", true)
             .bool("Render", true)
-            .num("Queue", 8.0, 1.0, 32.0, 1.0),
+            .num("Queue", 8.0, 1.0, 32.0, 1.0)
+            .pick("Anticheat", &["None", "Grim"]),
     ]
+}
+
+fn grim(m: &Module) -> bool {
+    m.p("Anticheat") == "Grim"
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -185,7 +191,10 @@ pub(super) fn tick(game: &mut Game<'_>) {
             s.scene = now;
         });
     }
-    if let Some((before, tool)) = st(|s| s.back.take()) {
+    // (Anticheat Grim gives the slot back itself, once nothing is being dug.)
+    if !module().is_some_and(|m| grim(&m))
+        && let Some((before, tool)) = st(|s| s.back.take())
+    {
         // Unless the slot was changed since (by you or another module).
         if game.selected == tool {
             hold(game, before);
@@ -233,6 +242,13 @@ pub(super) fn tick(game: &mut Game<'_>) {
     let rotate = m.b("Rotate");
     let (pos, direction) = (b.pos, b.direction);
     let mut shown = 0.0;
+    if grim(&m) {
+        shown = match b.phase {
+            Phase::Digging(start) => (progress_with(game, game.selected, pos) * ticks.saturating_sub(start) as f32).min(1.0),
+            Phase::Done(_) => 1.0,
+            _ => 0.0,
+        };
+    } else {
     match b.phase {
         Phase::Wait(n) if n > 0 => set_phase(pos, Phase::Wait(n - 1)),
         Phase::Wait(_) => {
@@ -288,6 +304,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
         Phase::Stopping(_, _) | Phase::Done(_) => shown = 1.0,
         Phase::Starting(_) => {}
     }
+    }
     if m.b("Render") {
         for b in st(|s| s.queue.clone()) {
             let p = if b.pos == pos { shown } else { 0.0 };
@@ -295,6 +312,89 @@ pub(super) fn tick(game: &mut Game<'_>) {
             show(b.pos, 0x6000_0000 | r << 16 | g << 8);
         }
     }
+}
+
+// Anticheat Grim, run just after the game's ClientTickEnd (post_tick's start, before module_tick's tick above):
+// everything goes before the next move packet, as the vanilla client sends its digs (one after a move packet in the same
+// tick, as Grim counts ticks by ClientTickEnd, is its PacketOrderO). With Rotate the look goes out in a move packet of
+// the tick before START and before STOP. The best tool is taken at START and kept for the whole dig, and STOP waits for
+// the full break time with what is held (Grim's FastBreak times a dig by the tools held through it, not the server's
+// 0.7). The arm swings on the wire every dig tick, as holding the button does (NoSwingBreak). The slot goes back once
+// nothing is being dug.
+pub(super) fn after_tick_end(game: &mut Game<'_>) {
+    let Some(m) = module().filter(grim) else {
+        return;
+    };
+    if game.remote.is_none() || game.creative || super::sunset_combat_wire::moved_this_tick() || st(|s| s.scene != scene(game)) {
+        return;
+    }
+    let head = st(|s| s.queue.first().copied());
+    let busy = head.is_some_and(|b| matches!(b.phase, Phase::Digging(_) | Phase::Wait(0)));
+    if !busy && let Some((before, tool)) = st(|s| s.back.take()) {
+        if game.selected == tool {
+            hold(game, before);
+        }
+        return;
+    }
+    let Some(b) = head else {
+        return;
+    };
+    let rotate = m.b("Rotate");
+    let (pos, direction) = (b.pos, b.direction);
+    match b.phase {
+        Phase::Wait(n) if n > 0 => set_phase(pos, Phase::Wait(n - 1)),
+        Phase::Wait(_) => {
+            if !looked(game, rotate, pos) {
+                return;
+            }
+            let slot = best_slot(game, &m, pos);
+            if slot != game.selected {
+                let before = game.selected;
+                st(|s| s.back = Some((s.back.map_or(before, |(b, _)| b), slot)));
+                hold(game, slot);
+            }
+            let sequence = sequence(game);
+            game.send(S::PlayerAction(play::PlayerAction { action: 0, pos, direction, sequence }));
+            swing(game);
+            // A block one tick breaks goes with the START alone, as the game's own click does.
+            let at_once = progress_with(game, game.selected, pos) >= 1.0;
+            set_phase(pos, if at_once { Phase::Done(game.ticks) } else { Phase::Digging(game.ticks) });
+        }
+        Phase::Digging(start) => {
+            let since = game.ticks.saturating_sub(start);
+            if progress_with(game, game.selected, pos) * since as f32 >= 1.0 && looked(game, rotate, pos) {
+                let sequence = sequence(game);
+                game.send(S::PlayerAction(play::PlayerAction { action: 3, pos, direction, sequence }));
+                set_phase(pos, Phase::Done(game.ticks));
+            }
+            // After the tick's dig packet, as the game swings after its own.
+            swing(game);
+        }
+        _ => {}
+    }
+}
+
+// The arm's swing on the wire (swing_arm alone only shows it).
+fn swing(game: &mut Game<'_>) {
+    game.swing_arm();
+    game.send(S::Punch(Empty));
+}
+
+// With Rotate: true once the look the server has (from the last move packet) is on the block; otherwise the look is
+// asked for the next move packet and the deed waits.
+fn looked(game: &mut Game<'_>, rotate: bool, pos: [i32; 3]) -> bool {
+    let Some(eye) = game.eye_position().filter(|_| rotate) else {
+        return true;
+    };
+    let (yaw, pitch) = look_at(eye, center_of(pos));
+    let on = super::sunset_combat_wire::sent_look(game).is_some_and(|(y, p)| {
+        let dy = (y - yaw + 180.0).rem_euclid(360.0) - 180.0;
+        dy.abs() <= 4.0 && (p - pitch).abs() <= 4.0
+    });
+    if !on {
+        turn(NAME, yaw, pitch);
+    }
+    on
 }
 
 // A new login or respawn: the server forgot the dig with the old life, and the queue goes with it.

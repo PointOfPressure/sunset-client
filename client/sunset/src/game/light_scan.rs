@@ -387,7 +387,8 @@ fn ls<R>(f: impl FnOnce(&mut Ls) -> R) -> R {
 }
 
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
-    let get = |n: &str| mods.iter().find(|m| m.name == n && m.on).filter(|_| in_world(game));
+    // Finds stay (and scanning goes on) with chat or a server's pause menu open; leaving the world clears them.
+    let get = |n: &str| mods.iter().find(|m| m.name == n && m.on).filter(|_| connected(game));
     let (geode, light) = (get(GEODE), get(LIGHT));
     if geode.is_none() && light.is_none() {
         ls(|s| *s = Ls::default());

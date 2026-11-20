@@ -82,6 +82,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         toggle(game, i, false);
     }
     super::sunset_parity::pre_tick(game);
+    super::sunset_player::fast_place_pre(game);
     MOVED_THIS_TICK.store(false, Ordering::Relaxed);
     crit_sprint_back(game);
     // Slots borrowed for earlier hits come back first, before this tick's move packet and any hit or use in it, one
@@ -385,6 +386,9 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
         super::sunset_drill_logger::shutdown();
         return;
     }
+    // Anticheat Grim's actions, just after the game's ClientTickEnd and before any move packet of the next tick.
+    super::sunset_crystal_aura::after_tick_end(game);
+    super::sunset_packet_mine::after_tick_end(game);
     super::sunset_sky::keep_shown(game);
     ensure_loaded(game);
     let utility_modules = snapshot();

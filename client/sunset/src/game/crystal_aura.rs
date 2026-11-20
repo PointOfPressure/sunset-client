@@ -275,14 +275,33 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Auto obsidian", true)
             .bool("Switch back", true)
             .bool("Human pace", true)
-            .bool("Protect loot", true),
+            .bool("Protect loot", true)
+            .pick("Anticheat", &["None", "Grim"]),
     ]
+}
+
+// Anticheat Grim: Grim counts ticks by the client's ClientTickEnd, and a place, hit or slot change after a move packet
+// in the same one of them is its PacketOrderO and Post. A deed whose look went out in a move packet sent since the last
+// ClientTickEnd (the look Sunset sends itself for a player standing still goes after it) waits for the next one: it
+// goes at the start of post_tick, just after the game's ClientTickEnd and before the next move packet.
+type Deferred = Box<dyn for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send>;
+static DEFERRED: std::sync::Mutex<Option<Deferred>> = std::sync::Mutex::new(None);
+
+pub(super) fn after_tick_end(game: &mut Game<'_>) {
+    if super::sunset_combat_wire::moved_this_tick() {
+        return;
+    }
+    let deed = DEFERRED.lock().unwrap_or_else(|e| e.into_inner()).take();
+    if let Some(deed) = deed {
+        deed(game);
+    }
 }
 
 // A temporary menu, manual use or competing action invalidates queued work,
 // but must not replenish an unchanged setup cell's retry budget or lose its
 // authoritative acknowledgement. Only a module/scene reset clears history.
 pub(super) fn suspend() {
+    DEFERRED.lock().unwrap_or_else(|e| e.into_inner()).take();
     super::sunset_combat_control::release(NAME);
     sunset::cancel_turns(NAME);
     st(|s| {
@@ -295,6 +314,7 @@ pub(super) fn suspend() {
     });
 }
 pub(super) fn reset() {
+    DEFERRED.lock().unwrap_or_else(|e| e.into_inner()).take();
     super::sunset_explosive_aura::clear_view(false);
     prediction::reset_receipts();
     suspend();
@@ -1520,7 +1540,18 @@ fn queue(
         st(|s| s.clock.sent(action, tick, (delay.clamp(0.0, 30.0) as u64).saturating_add(1).max(gap)));
     };
     let (yaw, pitch) = turn;
-    if !sunset::try_turn_then(NAME, yaw, pitch, deed) {
+    let taken = if m.p("Anticheat") == "Grim" {
+        sunset::try_turn_then(NAME, yaw, pitch, move |game: &mut Game<'_>| {
+            if super::sunset_combat_wire::moved_this_tick() {
+                *DEFERRED.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(deed));
+            } else {
+                deed(game);
+            }
+        })
+    } else {
+        sunset::try_turn_then(NAME, yaw, pitch, deed)
+    };
+    if !taken {
         st(|s| {
             s.clock.queued = false;
             s.queued_at = None;
