@@ -61,6 +61,3 @@ index b7ce599d99..0dd41de31c 100644
          }
          let pad = &scratch.padded;
          solid_rows(pad, &self.tables.solid, &mut scratch.solid_rows);
--- 
-2.43.0
-

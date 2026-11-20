@@ -43,6 +43,3 @@ index 1ea80d4be9..018d49fa8e 100644
          if let Some(request) = self.capture.take() {
              let result = self.write_capture(&request, frame);
              self.capture_result = Some(result.map_err(|e| e.to_string()));
--- 
-2.43.0
-

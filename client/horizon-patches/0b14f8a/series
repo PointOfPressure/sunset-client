@@ -1,4 +1,14 @@
-605639e8197a8cad5ab47f2e4151d2235ab2b31e Sunset 1.2.1: the .hmod package
-79355349d08e538b847fc619fc6eae7c52af397f Function-replacement crates of 0b14f8a, as generated
-7a3808729cbbef1f18d9ac298e8daf42613e1fbf Sunset's mixins woven in (horizon-mixins e59da90)
-d8aa455f8845a6a2b84d7e4532891b54f2af5df7 Sunset: how this branch is built and licensed
+dcc23485a271cb746ca065bae90607653421e4e9 worldgen: decoration_replay, a chunk's placed features replayed against a caller's view
+791013ca4d7a53c9374dbd404aa3c07c6f92de72 net: brand() is replaceable
+306661eb59b2724b909a2c2c84611deb5e23bb8f particles: ParticleEngine::push is replaceable
+c15a3b988257ab39c7cceb8ec1202cdccbe7106c connection: observe_sent, process-wide observers of sent packet bodies
+74bf92f4c055367beb656d3c30a9b339cfddb049 motion: the local player's own move (MotionWorld::move_self) is replaceable
+4ed1e43faf277511e90a4fdd2cdca58b45ab6f45 tools: build the SDK of a patched branch as the build it patches
+6642853e3e8808033a677eb391c5aa3f5337ec97 text: filter_display, a client filter of the text it shows
+da088965993dfaf527da930efcdafdc5a72de786 gfx: before_render, functions a client mod runs at the start of each frame
+1b967a3589ef0bfdfe6e202c1aadf5f842454a22 sprites: filter_sprites, a client rewrite of a sprite's pixels as the atlas takes it
+95b6ab99cbb0da6a6daa1b53c92dba345cf7a586 mesher: show_hidden_at, places kept drawn although their state is hidden
+0075ef9bce852e04100b9f6ab5ca7ea5cc777875 Sunset 2.0.0: the .hmod package
+abf1815732d889b02e70ee485ffd0ab36a4cdb0e Function-replacement crates of 0b14f8a, as generated
+48e8f4113ccfc48cf064bbcb75c68707c2eb2210 Sunset's mixins woven in (horizon-mixins e59da90)
+f1f7866a5cd3dfa8ac39df24699a7c6768f21fcb Sunset: how this branch is built and licensed

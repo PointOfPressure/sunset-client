@@ -55,6 +55,3 @@ index 169aa49c79..de5041a903 100644
          let animation = animation_text
              .as_deref()
              .map(AnimationMetadata::from_json)
--- 
-2.43.0
-

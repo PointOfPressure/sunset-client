@@ -1,7 +1,7 @@
 From 306661eb59b2724b909a2c2c84611deb5e23bb8f Mon Sep 17 00:00:00 2001
 From: pointofpressure <pointofpressure@users.noreply.github.com>
 Date: Wed, 18 Nov 2026 18:43:41 +0000
-Subject: [PATCH 3/6] particles: ParticleEngine::push is replaceable
+Subject: [PATCH 03/10] particles: ParticleEngine::push is replaceable
 
 push is where every ordinary particle the client makes itself joins the engine (block
 breaking, the renderer's own effects), past add_with's options path; a cell there lets a

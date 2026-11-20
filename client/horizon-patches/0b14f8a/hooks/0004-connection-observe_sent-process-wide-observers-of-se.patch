@@ -1,8 +1,8 @@
 From c15a3b988257ab39c7cceb8ec1202cdccbe7106c Mon Sep 17 00:00:00 2001
 From: pointofpressure <pointofpressure@users.noreply.github.com>
 Date: Wed, 18 Nov 2026 18:43:41 +0000
-Subject: [PATCH 4/6] connection: observe_sent, process-wide observers of sent
- packet bodies
+Subject: [PATCH 04/10] connection: observe_sent, process-wide observers of
+ sent packet bodies
 
 ConnWriter::send hands each body (id + payload, before adaptation and framing) to the functions
 installed with observe_sent (up to four, in order), on the sending thread. Covers what a client's network

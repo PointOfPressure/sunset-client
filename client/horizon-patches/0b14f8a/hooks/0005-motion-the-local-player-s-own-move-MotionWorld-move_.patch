@@ -1,7 +1,7 @@
 From 74bf92f4c055367beb656d3c30a9b339cfddb049 Mon Sep 17 00:00:00 2001
 From: pointofpressure <pointofpressure@users.noreply.github.com>
 Date: Wed, 18 Nov 2026 18:44:26 +0000
-Subject: [PATCH 5/6] motion: the local player's own move
+Subject: [PATCH 05/10] motion: the local player's own move
  (MotionWorld::move_self) is replaceable
 
 LocalPlayer.move: what living travel (and every other self-move) hands the client's own player each tick,

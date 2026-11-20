@@ -1,8 +1,8 @@
 From 4ed1e43faf277511e90a4fdd2cdca58b45ab6f45 Mon Sep 17 00:00:00 2001
 From: pointofpressure <pointofpressure@users.noreply.github.com>
 Date: Wed, 18 Nov 2026 18:48:41 +0000
-Subject: [PATCH 6/6] tools: build the SDK of a patched branch as the build it
- patches
+Subject: [PATCH 06/10] tools: build the SDK of a patched branch as the build
+ it patches
 
 HORIZON_SDK_BUILD_ID names the build id the prebuilt game, its build data and its index are
 made for, while staging still copies HEAD's own tracked source. A branch of hook patches on

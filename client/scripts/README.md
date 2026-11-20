@@ -32,3 +32,26 @@ A Windows builder needs: Windows 10/11 x64 (a VM or a GitHub Actions `windows-la
 account for `prepare --download`), about 5 GB of disk, and Git Bash with python3, zstd and minisign to run this
 script once its Linux-only parts (`.so` names, `linux-x86_64`, the launcher download) take the platform. Sign on
 the threadripper: copy the unsigned files back so the secret key never leaves it.
+
+### Windows 2.0.0 prebuilt (vs.)
+
+Build it from what the 2.0.0 Linux prebuilt was built from (its `manifest.json`): sunset-client `7fb2d3f`, Horizon
+pin `0b14f8acfd97fa2c750e42795249dcc981178ca4` (`nightly-2026-11-18-0b14f8a`, game 26.3), horizon-mixins `e59da90`,
+the fork SDK of PointOfPressure/horizon `sunset-hooks/0b14f8a` = `95b6ab99cb` (the 10 patches in
+`../horizon-patches/0b14f8a/hooks/`), launcher 0.2.78 and its rustc 1.99.1 (`horizon-launcher rust install`,
+`x86_64-pc-windows-gnu`). The SDK must be the fork's: Sunset's hooks call functions only it has. Not yet run on
+Windows; the Linux build is the reference.
+
+1. `git clone -b sunset-hooks/0b14f8a https://github.com/PointOfPressure/horizon horizon-fork` (HEAD `95b6ab99cb`) and
+   sunset-client at `7fb2d3f`.
+2. The fork's SDK, Windows leg, as `fork-sdk.sh build` makes the Linux one: in horizon-fork, with the launcher's
+   rustc 1.99.1 first on PATH and `HORIZON_SDK_BUILD_ID=0b14f8acfd97fa2c750e42795249dcc981178ca4`:
+   `python tools/prebuilt_game.py build out`, `… pack out legs/windows`, `… gather legs dist`, `… index dist`. Move
+   `dist` to `<SDK>/sdk-0b14f8acfd97fa2c750e42795249dcc981178ca4`, unpack `git archive --prefix=source/ HEAD` into
+   `<SDK>`, and write the pin to `<SDK>/source/.horizon-revision` and `git rev-parse HEAD` to `<SDK>/fork-commit`.
+3. In sunset-client: `SDK=<SDK> FORK=<horizon-fork> HOOKS=sunset-hooks/0b14f8a MINECRAFT=<.minecraft with 26.3> SIGN=0
+   client/scripts/build-prebuilt.sh`, once its Linux-only parts take the platform (`PLATFORM=linux-x86_64`, the `.so`
+   names; the launcher download already knows `horizon-launcher-windows-x64.zip`). It seeds its launcher home with
+   the SDK (`fork-sdk.sh seed`).
+4. Copy the unsigned files to the threadripper, sign them there with `~/.config/sunset/minisign.key`, and run
+   `check-prebuilt.sh` on them.

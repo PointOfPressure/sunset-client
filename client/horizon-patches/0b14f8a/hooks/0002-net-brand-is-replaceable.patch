@@ -1,7 +1,7 @@
 From 791013ca4d7a53c9374dbd404aa3c07c6f92de72 Mon Sep 17 00:00:00 2001
 From: pointofpressure <pointofpressure@users.noreply.github.com>
 Date: Wed, 18 Nov 2026 18:43:41 +0000
-Subject: [PATCH 2/6] net: brand() is replaceable
+Subject: [PATCH 02/10] net: brand() is replaceable
 
 The client brand the configuration phase sends (ClientBrandRetriever.getClientModName) gets a
 replacement cell, so a native mod can send another brand from the first packet instead of

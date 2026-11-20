@@ -1,7 +1,7 @@
 From dcc23485a271cb746ca065bae90607653421e4e9 Mon Sep 17 00:00:00 2001
 From: pointofpressure <pointofpressure@users.noreply.github.com>
 Date: Wed, 18 Nov 2026 18:35:15 +0000
-Subject: [PATCH 1/6] worldgen: decoration_replay, a chunk's placed features
+Subject: [PATCH 01/10] worldgen: decoration_replay, a chunk's placed features
  replayed against a caller's view
 
 DecorationReplay (horizon_world::worldgen::decoration_replay) gives a preset dimension's

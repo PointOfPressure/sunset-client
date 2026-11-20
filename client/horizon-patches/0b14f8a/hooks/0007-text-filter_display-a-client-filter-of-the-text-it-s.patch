@@ -177,6 +177,3 @@ index e8a6fd58d5..425777b751 100644
          with_cache(atlas, |c| {
              let (ascent, descent, scale, all_pack) = {
                  let Some(fonts) = &c.fonts else {
--- 
-2.43.0
-
