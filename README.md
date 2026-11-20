@@ -244,7 +244,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Rotations** (keep or lock your look), **No Status Effects**, **Portals** (menus in portals), **Liquid
   Interact**, **No Interact**, **Mine Through Mobs**, **Middle Click Extra**, **RF Click**.
 - **Server Scan** (the server's software, plugins and channels), **Anti Vanish** (tab list, /msg completions,
-  spectators, invisible and unlisted players), **Fake Player** (single player),
+  spectators, invisible and unlisted players; Staff check: a knockback nothing explains), **Fake Player** (single player),
   **Panic**.
 
 </details>
@@ -518,6 +518,9 @@ and coordinates) and Low health warning.
 
 Elytra Target was asked for by muhalo1545 on the Sunset Discord; its behaviour follows LiquidBounce's ElytraTarget
 (GPL-3.0), written fresh for Sunset with no code taken.
+
+Anti Vanish's Staff check follows the behaviour of Blackout's Staff Check (GPL-3.0), written fresh for Sunset with no
+code taken.
 
 Ore Sim's automatic seed discovery uses [horizon-seedcrackerx](https://github.com/luhnox/horizon-seedcrackerx) by
 [luhnox](https://github.com/luhnox), a Rust port of [SeedCrackerX](https://github.com/19MisterX98/SeedcrackerX),

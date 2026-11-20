@@ -53,6 +53,7 @@ const HELP: &[(&str, &str)] = &[
     (".debug [chat lines]", "copy a debug report (chat, anticheat flags, the client's state, the last packets sent) to the clipboard and its configured Save folder"),
     (".scan [plugins|details|channels|commands|status|run] [page]", "show server-reported findings; run optional Extended checks manually"),
     (".auradebug", "why Kill Aura did what it did last, and who has the hand"),
+    (".staffcheck [test [x y z]]", "what explained the pushes Anti Vanish's Staff check saw; test sends it a fake one"),
     (".antibotdebug [entity id]", "show cached decoy confidence and supporting observations"),
     (".plugins", "the plugins loaded, their modules and commands"),
     (".friend add|remove|list [name]", "Kill Aura, Trigger Bot and Aim Assist skip friends"),
@@ -500,6 +501,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
     match cmd.as_str() {
         "seed" => seed_command(game, &args[1..]),
         "auradebug" => say(game, &super::sunset_aura::diagnostics()),
+        "staffcheck" => super::sunset_vanish::staff_command(game, &args[1..]),
         "elytratarget" => say(game, &super::sunset_elytra_target::diagnostics()),
         "antibotdebug" => {
             let id = args.get(1).and_then(|id| id.parse::<u32>().ok());

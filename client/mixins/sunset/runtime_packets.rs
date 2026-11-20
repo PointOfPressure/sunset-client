@@ -577,6 +577,7 @@ pub(super) fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packe
         super::sunset_throws::packet(game, packet);
         super::sunset_effects::packet(game, packet);
         super::recipe_book::sunset_recipes::packet(packet);
+        super::sunset_vanish::staff_packet(game, packet);
         if let C::SetEntityMotion(p) = packet {
             super::sunset_melee::note_velocity(game, p.id, p.velocity);
             if game.remote.as_ref().is_some_and(|r| r.entity_id == p.id) {

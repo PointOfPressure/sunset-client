@@ -44,6 +44,7 @@ const HELP: &[(&str, &str)] = &[
     (".settings <module>", "list a module's settings"),
     (".set <module> <setting> <value>", "change a setting"),
     (".vanish debug", "show passive AntiVanish HorizonSMP evidence diagnostics"),
+    (".staffcheck [test [x y z]]", "what explained the pushes Anti Vanish's Staff check saw; test sends it a fake one"),
     (".seed [status|auto|clear|restart|seed text]", "Ore Sim's seed, automatic discovery and progress; manual text always wins"),
     (".movementpreset <subtle|balanced|aggressive>", "apply explicit movement settings"),
     (".bind <module> <key|mouse4|none>", "bind a key or mouse button to a module"),
@@ -540,6 +541,7 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         }
         "scan" => super::sunset_server_scan::command(game, &args[1..]),
         "vanish" => super::sunset_meshcache_warm::command(game, &args[1..]),
+        "staffcheck" => super::sunset_vanish::staff_command(game, &args[1..]),
         "goto" => {
             let text = super::agent::sunset_goto::command(game, &args[1..]).unwrap_or_else(|e| e);
             say(game, &text);

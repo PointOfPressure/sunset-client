@@ -489,6 +489,12 @@ name = "sunset_vanish"
 source = "vanish.rs"
 
 [[module]]
+id = "staff_check"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_staff_check"
+source = "staff_check.rs"
+
+[[module]]
 id = "server_scan"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_server_scan"

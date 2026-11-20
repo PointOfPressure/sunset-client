@@ -7531,6 +7531,118 @@ def _():
     return ok and not hidden, f"lines about Bot1: with messages {told[0] + told[1]}; without {told[2] + told[3]}"
 
 
+@test("Staff Check")
+def _():
+    # Anti Vanish's Staff check: a push for you that nothing explains (no hit, explosion, attacker in reach, hook,
+    # riding or own motion) is said once its window has passed; one with an attacker near or a hit is not. Staff names
+    # holds it back unless one of them is on, the cooldown spaces alerts, and in HorizonSMP it follows Horizon
+    # notifications and Anonymous notifications. .staffcheck test pushes as the server would (no vanilla command
+    # sends a bare velocity packet); .staffcheck shows the menu's rows for it in either Mode and what explained each.
+    # .set takes no empty value: "," is an empty list of names.
+    def said(line, ticks=4):
+        mark = log_mark()
+        say(line)
+        wait(ticks)
+        return sunset_said(mark)
+
+    def status():
+        return next((x for x in said(".staffcheck") if x.startswith("Staff check (")), "")
+
+    def push(args="", ticks=12):
+        """A test push; the alerts said within `ticks` of it."""
+        mark = log_mark()
+        say(f".staffcheck test {args}".strip())
+        wait(ticks)
+        return [x for x in sunset_said(mark) if "staff knockback test" in x]
+
+    cmd("kill @e[type=!player,distance=..20]")
+    only("antivanish")
+    setting("antivanish", "mode", "Generic")
+    setting("antivanish", "staff check", "false")
+    off, refused = status(), said(".staffcheck test")
+    for k, v in (("staff check", "true"), ("staff window", "5"), ("staff cooldown", "0"), ("staff names", ",")):
+        setting("antivanish", k, v)
+    generic = status()
+    setting("antivanish", "mode", "HorizonSMP")
+    horizon = status()
+    setting("antivanish", "mode", "Generic")
+    wait(20)
+    # Said only once the window (5 ticks) has passed.
+    mark = log_mark()
+    say(".staffcheck test 0.4 0.36 0")
+    wait(2)
+    early = [x for x in sunset_said(mark) if "staff knockback test" in x]
+    wait(10)
+    late = [x for x in sunset_said(mark) if "staff knockback test" in x]
+    small = said(".staffcheck test 0.01 0 0.02")
+    p = pos()
+    # A mob in reach (a pig: the arena may be on peaceful) explains a push.
+    cmd(f"summon pig {p[0] + 2} {p[1]} {p[2]} {NOAI}")
+    wait(5)
+    attacked = push()
+    cmd("kill @e[type=pig]")
+    wait(5)
+    # Staff names: nobody on it is on, nothing; Bot1 on it and on, said with Bot1 named (yourself never counts).
+    setting("antivanish", "staff names", "NoSuchMod1")
+    nobody = push()
+    # Single player has no player info to find names in.
+    named = []
+    if CTL2 and SERVER:
+        setting("antivanish", "staff names", "nosuchmod1, Bot1")
+        named = push()
+    setting("antivanish", "staff names", ",")
+    setting("antivanish", "staff cooldown", "30")
+    cooled = push()
+    setting("antivanish", "staff cooldown", "0")
+    again = push()
+    # HorizonSMP: its notifications' switch, anonymity and interval (seconds) take over.
+    setting("antivanish", "staff names", "Bot1" if CTL2 and SERVER else ",")
+    setting("antivanish", "mode", "HorizonSMP")
+    setting("antivanish", "notify interval", "1")
+    setting("antivanish", "horizon notifications", "false")
+    wait(25)
+    muted = push()
+    setting("antivanish", "horizon notifications", "true")
+    setting("antivanish", "anonymous notifications", "true")
+    wait(25)
+    anon = push()
+    setting("antivanish", "anonymous notifications", "false")
+    setting("antivanish", "staff names", ",")
+    # A real hit from a zombie out of reach: the server's push comes with the hurt (a server only: single player has
+    # no packets to read).
+    before = status()
+    hurt = []
+    if SERVER:
+        cmd("difficulty easy", f"summon pig {p[0] + 10} {p[1]} {p[2]} {NOAI}")
+        wait(5)
+        mark = log_mark()
+        cmd("damage @s 1 minecraft:mob_attack by @e[type=pig,limit=1,sort=nearest]")
+        wait(15)
+        hurt = [x for x in sunset_said(mark) if "staff knockback test" in x]
+        cmd("kill @e[type=pig]", "difficulty peaceful")
+    after = status()
+    setting("antivanish", "mode", "Generic")
+    setting("antivanish", "staff check", "false")
+    only()
+    count = lambda line, cause: int(re.search(rf"{cause} (\d+)", line).group(1)) if re.search(rf"{cause} (\d+)", line) else 0
+    checks = {
+        "off": "(off; menu: Staff check)" in off and any("Turn on" in x for x in refused),
+        "menu generic": "menu: Staff check, Staff window, Staff names, Staff cooldown)" in generic,
+        "menu horizon": "menu: Staff check, Staff window, Staff names)" in horizon,
+        "window": not early and len(late) == 1,
+        "small": any("too small" in x for x in small),
+        "attacker": not attacked and count(before, "attacker in reach") >= 1,
+        "names": not nobody and "no Staff names on 1" in before and (not (CTL2 and SERVER) or (len(named) == 1 and "Likely: Bot1" in named[0])),
+        "cooldown": not cooled and len(again) == 1,
+        "horizon": (not muted and "notifications off 1" in before and len(anon) == 1 and "Bot1" not in anon[0]
+                    and (not (CTL2 and SERVER) or "1 spectating or on Staff names" in anon[0])),
+        "hurt": not SERVER or (not hurt and count(after, "hurt") > count(before, "hurt")),
+    }
+    bad = [k for k, ok in checks.items() if not ok]
+    return not bad, (f"failed {bad}; off {off!r}; generic {generic!r}; horizon {horizon!r}; late {late}; named {named}; "
+                     f"anon {anon}; hurt {hurt}; before {before!r}; after {after!r}")
+
+
 @test("Hole ESP")
 def _():
     # An obsidian hole, a bedrock one, and a double (two side by side, obsidian), each a block deep, in front.

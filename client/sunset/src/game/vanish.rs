@@ -14,8 +14,11 @@ use super::Game;
 use super::sunset::{Category, Module, with};
 use horizon_protocol::buf::{Reader, Writer};
 use horizon_protocol::packets::play::Serverbound as S;
+use super::sunset_staff_check as sc;
+use horizon_protocol::packets::play::Clientbound as C;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
@@ -59,13 +62,21 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Spectators", true)
             .bool("Invisible players", true)
             .num("Nearby range", 64.0, 8.0, 256.0, 8.0)
-            .bool("Unlisted players", true),
+            .bool("Unlisted players", true)
+            .group("Staff check")
+            .bool("Staff check", false)
+            .num("Staff window", 5.0, 1.0, 20.0, 1.0)
+            .text("Staff names", "")
+            .num("Staff cooldown", 10.0, 0.0, 300.0, 1.0),
     ]
 }
 
 pub(super) fn visible(m: &Module, name: &str) -> bool {
     if name == "Mode" { return true; }
     let horizon = m.p("Mode") == "HorizonSMP";
+    if let Some(shown) = sc::shown(name, m.b("Staff check"), horizon) {
+        return shown;
+    }
     match name {
         // The panel's place is the layout editor's (drag it with the chat open); x and y show once it was moved.
         "Horizon HUD x" | "Horizon HUD y" => return horizon && m.b("Horizon HUD") && m.p("Horizon HUD position") == "Custom",
@@ -102,6 +113,7 @@ struct Vs {
     spectators: Vec<String>,
     invisible: Vec<String>,
     unlisted: Vec<String>,
+    staff: sc::Staff,
 }
 
 static VS: Mutex<Option<Vs>> = Mutex::new(None);
@@ -151,6 +163,7 @@ fn player_name(name: &str) -> bool {
 }
 
 pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
+    staff_tick(game, m);
     super::sunset_meshcache_warm::tick(game, m);
     let m = m.filter(|m| m.p("Mode") != "HorizonSMP");
     let Some(m) = m.filter(|_| game.remote.is_some()) else {
@@ -296,6 +309,143 @@ pub(super) fn completions(game: &mut Game<'_>, data: &[u8]) -> bool {
         super::sunset_util::report(game, &format!("{name} is online but not in the tab list: in vanish?"));
     }
     true
+}
+
+// ---------------------------------------------------------------- Staff check
+// A push for you (SetEntityMotion) that nothing explains: see staff_check.rs. The packets come as copies before the
+// game (and Velocity, Anti Knockback or Knockback Delay) handles them; the alert waits Staff window ticks for a late
+// hit. In HorizonSMP it goes out as that mode's notifications do (Horizon notifications, Anonymous notifications,
+// Notify interval for the cooldown).
+
+static STAFF_ON: AtomicBool = AtomicBool::new(false);
+
+// What was around you just now that would push you: attackers, projectiles and hooks, riding, own motion.
+fn surroundings(game: &Game<'_>) -> sc::Around {
+    let me = super::sunset::own_id(game);
+    let (attacker, projectile) = super::sunset_util::player_pos(game).map_or((false, false), |here| {
+        let others = game.mobs.iter().filter(|x| x.alive() && !x.removed && Some(x.id) != me);
+        let near = others.map(|x| (x.kind.id.as_str(), super::sunset_util::dist(here, [x.position.x, x.position.y, x.position.z])));
+        // Single player has no own id here; a player where you stand is you.
+        sc::entities(near.filter(|(kind, d)| !(*kind == "minecraft:player" && *d < 0.3)))
+    });
+    let own = game.player.as_ref().is_some_and(|p| p.fall_flying || p.auto_spin_attack_ticks > 0)
+        || game.potions.effects.get("levitation").is_some();
+    sc::Around { attacker, projectile, riding: game.riding.is_some(), own, ..sc::Around::default() }
+}
+
+// Each packet Sunset reads (a copy, at its next tick).
+pub(super) fn staff_packet(game: &Game<'_>, packet: &C) {
+    if !STAFF_ON.load(Ordering::Relaxed) {
+        return;
+    }
+    let me = game.remote.as_ref().map(|r| r.entity_id);
+    let now = game.ticks;
+    match packet {
+        C::SetEntityMotion(p) if Some(p.id) == me => {
+            let around = surroundings(game);
+            vs(|v| v.staff.push(sc::Push { tick: now, velocity: p.velocity, around }));
+        }
+        C::DamageEvent(p) if Some(p.id) == me => vs(|v| v.staff.event(sc::Event::Hurt, now)),
+        C::SetHealth(p) => vs(|v| v.staff.health(p.health, now)),
+        C::Explode(x) => {
+            let near = super::sunset_util::player_pos(game).is_some_and(|h| super::sunset_util::dist(h, x.center) <= sc::BLAST_RANGE);
+            if x.knockback.is_some() || near {
+                vs(|v| v.staff.event(sc::Event::Blast, now));
+            }
+        }
+        C::Login(_) | C::Respawn(_) | C::PlayerPosition(_) => vs(|v| v.staff.event(sc::Event::Teleport, now)),
+        _ => {}
+    }
+}
+
+fn staff_tick(game: &mut Game<'_>, m: Option<&Module>) {
+    let m = m.filter(|m| m.b("Staff check"));
+    STAFF_ON.store(m.is_some(), Ordering::Relaxed);
+    let Some(m) = m else {
+        vs(|v| v.staff.clear());
+        return;
+    };
+    let now = game.ticks;
+    let judged = vs(|v| v.staff.settle(now, m.n("Staff window").max(0.0) as u64));
+    let Some(push) = judged.iter().filter(|(_, c)| c.is_none()).map(|(p, _)| *p).max_by(|a, b| a.across().total_cmp(&b.across())) else {
+        return;
+    };
+    let horizon = m.p("Mode") == "HorizonSMP";
+    if horizon && !m.b("Horizon notifications") {
+        vs(|v| v.staff.held[2] += 1);
+        return;
+    }
+    // Who is on: the player info (vanished staff are often kept there unlisted) and the players near.
+    let info = super::remote::sunset_remote::tab_presence(game);
+    let near: Vec<String> = game.mobs.iter().filter(|x| x.kind.id == "minecraft:player")
+        .filter_map(|x| game.remote_player_name(x.id).map(str::to_owned)).collect();
+    let on = |n: &str| info.iter().any(|(i, ..)| i.eq_ignore_ascii_case(n)) || near.iter().any(|i| i.eq_ignore_ascii_case(n));
+    let wanted = sc::names(m.t("Staff names"));
+    let about: Vec<String> = wanted.iter().filter(|n| on(n)).map(|n| (*n).to_owned()).collect();
+    if !wanted.is_empty() && about.is_empty() {
+        vs(|v| v.staff.held[0] += 1);
+        return;
+    }
+    let cooldown = if horizon { m.n("Notify interval") } else { m.n("Staff cooldown") };
+    if !vs(|v| v.staff.may_alert(now, (cooldown.max(0.0) * 20.0) as u64)) {
+        return;
+    }
+    let mut likely: Vec<String> = info.iter().filter(|(_, mode, _)| *mode == 3).map(|(n, ..)| n.clone()).collect();
+    for n in about {
+        if !likely.iter().any(|l| l.eq_ignore_ascii_case(&n)) {
+            likely.push(n);
+        }
+    }
+    let mut line = format!(
+        "Anti Vanish: pushed {:.2} across, {:+.2} up with no hit, explosion, attacker, hook or own motion: a staff knockback test?",
+        push.across(),
+        push.velocity[1]
+    );
+    if !likely.is_empty() {
+        if horizon && m.b("Anonymous notifications") {
+            line.push_str(&format!(" {} spectating or on Staff names", likely.len()));
+        } else {
+            line.push_str(&format!(" Likely: {}", likely.join(", ")));
+        }
+    }
+    super::sunset_util::report(game, &line);
+}
+
+// .staffcheck: what explained your pushes so far; .staffcheck test [x y z]: a push as if the server sent one now.
+pub(super) fn staff_command(game: &mut Game<'_>, args: &[&str]) {
+    let on = with(|s| s.module("Anti Vanish").is_some_and(|m| m.on && m.b("Staff check")));
+    if args.first().is_some_and(|a| a.eq_ignore_ascii_case("test")) {
+        if !on {
+            super::sunset::say(game, "Turn on Anti Vanish and its Staff check first.");
+            return;
+        }
+        let v: Vec<f64> = args[1..].iter().filter_map(|a| a.parse().ok()).collect();
+        let velocity = if v.len() == 3 { [v[0], v[1], v[2]] } else { [0.4, 0.36, 0.0] };
+        let around = surroundings(game);
+        let tick = game.ticks;
+        let taken = vs(|v| v.staff.push(sc::Push { tick, velocity, around }));
+        let line = match (taken, around.cause()) {
+            (false, _) => "Staff check: that push is too small to count.".to_owned(),
+            (true, Some(c)) => format!("Staff check: test push sent ({} now explains it).", sc::CAUSES[c]),
+            (true, None) => "Staff check: test push sent.".to_owned(),
+        };
+        super::sunset::say(game, &line);
+        return;
+    }
+    let (counts, alerts, held) = vs(|v| (v.staff.counts, v.staff.alerts, v.staff.held));
+    let total: u32 = counts.iter().sum();
+    let parts: Vec<String> = counts.iter().zip(sc::CAUSES).filter(|(n, _)| **n > 0).map(|(n, c)| format!("{c} {n}")).collect();
+    let state = if on { "on" } else { "off" };
+    // The rows the menu shows for it now (they change with Staff check and Mode).
+    let menu: Vec<&str> = with(|s| {
+        s.module("Anti Vanish").map_or_else(Vec::new, |m| {
+            m.settings.iter().enumerate().filter(|(j, x)| x.name.starts_with("Staff ") && m.setting_visible(*j)).map(|(_, x)| x.name).collect()
+        })
+    });
+    let parts = if parts.is_empty() { String::new() } else { format!(": {}", parts.join(", ")) };
+    let held: Vec<String> = held.iter().zip(sc::HELD).filter(|(n, _)| **n > 0).map(|(n, h)| format!("{h} {n}")).collect();
+    let held = if held.is_empty() { String::new() } else { format!(", held back: {}", held.join(", ")) };
+    super::sunset::say(game, &format!("Staff check ({state}; menu: {}): {total} pushes judged{parts}; alerts {alerts}{held}", menu.join(", ")));
 }
 
 #[cfg(test)]
