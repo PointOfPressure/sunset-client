@@ -50,7 +50,11 @@ const STRIP_H: f32 = BIG_H + 40.; // the banner's strip under its horizon, the b
 const BAR_H: f32 = 53.; // the title bar with its 1 px bottom border; tabs and window buttons fill the 52 above it
 const TOP_H: f32 = 32.; // the title bar's chips (platform, instance, account), centred in it
 const HEAD_H: f32 = 48.; // a card's heading row, so headings in cards side by side share a baseline
-const LOG_MAX: f32 = 236.; // the changelog list scrolls past this
+const FACT_H: f32 = 38.; // a row of Overview's Installation card
+const FACTS: usize = 3; // its rows (Horizon build, Profiles, Plugins)
+const FACTS_PB: f32 = 8.; // the space under its last row
+// The changelog list scrolls past this: its card is never taller than the Installation card beside it.
+const LOG_MAX: f32 = FACT_H * FACTS as f32 + FACTS_PB;
 const PAGE_MAX: (f32, f32) = (1280., 760.); // Overview's block in a big window
 // Corner radii: one radius for the whole window. Cards, menus and dialogs are R_CARD, everything you press is R_CTRL,
 // and both are the same. A shape nested close inside another (a tab in the tab strip, a menu row in its menu, the
@@ -1766,19 +1770,20 @@ impl Launcher {
             }),
         ];
         let n = facts.len();
+        debug_assert_eq!(n, FACTS, "LOG_MAX follows the Installation card's height");
         let right = card()
             .w(px(320.))
             .flex_none()
             .flex()
             .flex_col()
-            .pb(px(8.))
+            .pb(px(FACTS_PB))
             .child(card_head("Installation"))
             .children(facts.into_iter().enumerate().map(|(i, (k, v))| {
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .h(px(38.))
+                    .h(px(FACT_H))
                     .mx(px(PAD))
                     .when(i + 1 < n, |d| d.border_b_1().border_color(rgb(LINE)))
                     .child(text(k, T_BODY, SOFT))
