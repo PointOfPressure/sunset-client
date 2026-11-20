@@ -14,8 +14,8 @@ Sunset adds over 160 modules to Horizon: combat, movement, building, ESP and wor
 a click menu or chat commands, can be bound to a key, and can be saved as a profile. It is written in Rust and
 compiled into the game, so it runs as part of Horizon rather than on top of it.
 
-> **Current version: Sunset 2.0.0, for Horizon Nightly 2026-11-18 (`0b14f8a`)**, listed in the launcher as
-> `nightly-2026-11-18-0b14f8a`. You don't have to install that Nightly yourself: the installer builds Sunset on it.
+> **Current version: Sunset 2.0.0, for Horizon Nightly 2026-11-18 (`0b14f8a`).** The Sunset launcher installs it
+> already built, together with that Nightly, so nothing is compiled on your computer.
 
 ![Sunset's click menu with the Combat, Movement, Player, Render, World and Client panels](docs/images/gui-overview.png)
 
@@ -24,29 +24,31 @@ compiled into the game, so it runs as part of Horizon rather than on top of it.
 
 ## Install
 
-You need the [Horizon launcher](https://playhorizon.dev), opened at least once. Then run one command:
+Sunset 2.0 comes with its own launcher, the **Sunset launcher**, for Windows 10 (1903 or later) and Linux (x86_64).
 
-**Windows** (PowerShell, not Command Prompt)
+1. Download the launcher for your system from the [latest release](https://github.com/PointOfPressure/sunset-client/releases/latest)
+   and start it.
+2. Sign in with your Microsoft account: the launcher shows a link and a code to enter there.
+3. Click **Install**. The launcher downloads the prebuilt client, checks its signature, and sets up the Horizon
+   Nightly it was built for and Minecraft 26.3.
+4. Click **Play**.
 
-```powershell
-irm https://github.com/PointOfPressure/sunset-client/releases/latest/download/install.ps1 | iex
-```
+The launcher keeps everything in its own folder (`~/.local/share/sunset-launcher` on Linux,
+`%APPDATA%\sunset-launcher` on Windows), including the game and an instance called `sunset`. It does not use or
+change the Horizon launcher's accounts and instances. Settings > Import copies Sunset's settings and profiles from a
+Horizon instance once, if you used Sunset 1.x.
 
-**Linux and macOS** (terminal)
+**Linux** needs `libxkbcommon0 libxkbcommon-x11-0 libxcb1` (Fedora and Arch: `libxkbcommon libxkbcommon-x11 libxcb`).
+`sunset-launcher deps` lists anything else the game is missing.
 
-```sh
-curl -fsSL https://github.com/PointOfPressure/sunset-client/releases/latest/download/install.sh | sh
-```
+**Offline play.** Once a Microsoft account that owns Minecraft: Java Edition has signed in, the account menu can add
+offline names for offline-mode servers.
 
-The command downloads Sunset, builds it into Horizon and starts the game. The first build compiles the whole game
-and takes **10 to 30 minutes**; later updates are quicker. On Linux it may ask for your password once, to install
-two system libraries the build needs.
-
-If you have other native mods installed (plugins, for example), the build compiles them in too, and they run with
-full access to your computer. The command lists them and asks first; answer `y` only for mods you trust. To answer
-yes from a script: `sh -s -- --yes` after `| sh`, or `$env:SUNSET_YES = "1"` before the PowerShell command.
-
-After that, start the **Native mods** instance from the launcher whenever you want to play with Sunset.
+**macOS and Sunset 1.x.** There is no 2.0 build for macOS. Sunset 1.2.1 is a `.hnmod` mod that the Horizon launcher
+builds into the game (launchers from 0.2.70 on no longer build `.hnmod` mods). Download `install.sh` and
+`sunset-1.2.1.hnmod` from its [release page](https://github.com/PointOfPressure/sunset-client/releases/tag/v1.2.1)
+and run `sh install.sh sunset-1.2.1.hnmod` (on Windows, `install.ps1` from the same page). The first build takes 10 to
+30 minutes.
 
 **Built-in Baritone.** The Baritone-enabled Sunset package contains the complete supplied runtime and its
 Ore Sim mining engine; no separate plugin is needed. Keep the matching engine-source archive with the package. See
@@ -63,9 +65,8 @@ that version:
 | 1.1.0 | Nightly 2026-11-08, `fdc87ae` |
 | 1.0.0 | Nightly 2026-11-05, `66f3981` |
 
-The build fetches the right Horizon source on its own, even if that Nightly is no longer on the launcher's Versions
-page. Other native mods you use must be made for the same Horizon version (see
-[Troubleshooting](#troubleshooting)).
+The launcher sets up that Nightly itself, also after Horizon has rebuilt it and taken its release down. Plugins must
+be made for the same Horizon version.
 
 ## Getting started
 
@@ -92,6 +93,8 @@ Changes are saved as you make them.
 - **Dashboard**: one window with a header and search, the categories on the left, the module list in the middle and
   the chosen module's settings on the right.
 
+*ClickGUI > Theme* is **OLED** (true black, the default) or **Grey** (the colours before 2.0).
+
 Both list each category's modules A to Z (a search shows its best matches first). The **ClickGUI** module is on
 while the menu is open: its bind or `.t clickgui` opens and closes the menu like the menu key.
 
@@ -105,9 +108,9 @@ as ESP, Tracers and Zoom also offer *Bind mode: Hold*, which keeps them on only 
 friends, and never Panic). Save and load them from the **Profiles** module (Client; its Save button writes the
 settings to the profile in use) or with `.profile`. A profile from another version loads what this one knows and
 names the lines it left out. The settings file is written whole or not at all, and a damaged one is replaced by
-the copy kept at the last launch. Presets are ready-made profiles: PvP (crystal,
-sword and mace, mace, carts), Anarchy and base hunting, Building, Legit (Grim-safe) and Survival QoL. Each one lists
-what it turns on and off before you apply it. The HUD shows the active profile under the watermark, with
+the copy kept at the last launch. Sunset's
+defaults are the maintainer's own setup, and the one preset, Default, puts them back; it lists what it changes before
+you apply it. The HUD shows the active profile under the watermark, with
 "(modified)" once you change something.
 
 **Hiding modules.** The **Modules** module (Client) has a switch for every module. A hidden module is left out of
@@ -169,12 +172,15 @@ A few highlights:
 Modules marked *experimental* below are new strategies that haven't been proven against anticheats.
 
 <details>
-<summary><b>Combat</b> (30 modules)</summary>
+<summary><b>Combat</b> (32 modules)</summary>
 
 - **Kill Aura**: attacks nearby entities.
   - Combat version: *Legacy (1.8)* clicks between Min and Max CPS; *Modern (1.9+)* waits for the attack cooldown, a
     set delay or Hit select; *Auto* picks per server.
-  - Single, Switch or Multi targets; Silent aura, Snap, Normal, Smooth, Custom or Adaptive rotations; Ray cast.
+  - Single, Switch or Multi targets; Silent aura, Snap, Normal, Smooth, Custom, Adaptive or Advanced rotations;
+    Movement correction; Ray cast.
+  - Hit select, Velocity boost, Miss swing, Knockback aim and Cooldown jitter. *Projectiles* hits ghast fireballs,
+    shulker bullets and wind charges away.
   - Target strafe circles your target while avoiding walls, drops and lava. AutoBlock (Legacy is experimental).
 - **Trigger Bot**: attacks what you aim at, timing crits and the cooldown, with its own 1.8 or 1.9+ hit order; can miss on purpose.
 - **Aim Assist**: helps your aim. *Simple* turns you toward the target while you hold attack; *Duelkit* only adds to
@@ -188,6 +194,9 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   updates while the player you hit moves away.
 - **Auto Weapon**: picks the weapon for each hit (sword, axe on shields, or both). **Auto Spear**: lunges, jabs and
   reach with the spear. **Auto Mace**: takes the mace while you fall, with Stun slam and Breach checks.
+- **Mace Bomber**: launches you with a wind charge, takes the mace on the way down (Breach or Density by the target's
+  armour) and smashes in reach. **Displace**: holds a hit back a tick so its knockback goes toward a hazard, a side
+  or back.
 - **Elytra Target**: while you glide, steers your view at a player for Kill Aura's hits (prediction, Ideal distance,
   capped turns, Safe climb) and fires rockets from the hotbar or offhand when they get away.
 - **Crystal Aura**, **Anchor Aura**: place and set off crystals or anchors on enemies, or on your right click
@@ -218,9 +227,9 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Sprint**, **Sneak**, **Auto Walk**, **Auto Jump**, **Safe Walk**, **Parkour**, **Snap Tap** (of two opposite
   keys, the last pressed wins).
 - **Step**, **Spider**, **High Jump**, **Long Jump**, **Air Jump**, **No Jump Delay**, **Fast Climb**, **Glide**,
-  **Anti Void**, **Blink**, **Click TP**.
+  **Anti Void** (with a Blink mode), **Blink**, **Click TP**.
 - **Elytra Fly** (Control: fly freely; Boost: speeds up your glide, optionally only while a firework boosts you;
-  Elytra Boost's settings carry over), **Chest Swap** (swap chestplate and elytra; Take off launches you with a rocket).
+  Bounce, Glide cycle and Pitch 40 for long trips; Elytra Boost's settings carry over), **Chest Swap** (swap chestplate and elytra; Take off launches you with a rocket).
 - **Wind Jump**, **Pearl Catch**, **Trident Boost**, **Entity Control** (drive and fly boats), **Jesus**, **Slippy**.
 
 </details>
@@ -235,18 +244,20 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   - Includes **Auto Armor** with its own switch: always, with your inventory open, or on a key; armour set
     switching.
   - PvP, Building, Mining and Survival presets; a Loot key drops spare totems and pearls.
-- **Chest Stealer**: empties containers you open. **Auto Replenish**: refills hotbar stacks. **Loadouts**: saved
+  - Delay between clicks: 0 to 150 ms.
+- **Chest Stealer**: empties containers you open, keeping to Inventory Manager's rules, with a 0 to 150 ms Delay. **Auto Replenish**: refills hotbar stacks. **Loadouts**: saved
   inventory layouts on K.
 - **Auto Tool**, **Fast Break** (was Speed Mine), **Fast Place** (Anticheat Grim: no repeated turn between places), **Fast Use**, **Break Delay**, **No Break Reset**, **Air Place**,
-  **Ghost Hand** (use containers through blocks).
+  **Ghost Hand** (use containers through blocks, or through a sign, banner or item frame on one).
 - **Auto Eat**, **Auto Gap** (also potions and soup), **Eat Tap** (hold a key to eat the best food,
   Switch back), **Auto Fish**, **Auto Clicker** (fixed delay
   or random CPS, separate right-click settings), **Multitask** (hit while eating).
-- **Auto Log**, **Auto Respawn**, **Death Location**, **Anti AFK**, **Anti Hunger**, **Notifier**, **Spam**.
+- **Auto Log**, **Auto Respawn**, **Death Location**, **Anti AFK**, **Anti Hunger**, **Notifier** (also players the locator bar shows coming within 332
+  blocks), **Spam**.
 - **Rotations** (keep or lock your look), **No Status Effects**, **Portals** (menus in portals), **Liquid
   Interact**, **No Interact**, **Mine Through Mobs**, **Middle Click Extra**, **RF Click**.
-- **Server Scan** (the server's software, plugins and channels), **Anti Vanish** (tab list, /msg completions,
-  spectators, invisible and unlisted players; Staff check: a knockback nothing explains), **Fake Player** (single player),
+- **Server Scan** (the server's software, plugins, channels and anticheat, read from its ping ids), **Anti Vanish** (tab list, /msg completions,
+  spectators, invisible and unlisted players; Staff check: a knockback nothing explains; a HorizonSMP mode), **Fake Player** (single player),
   **Panic**.
 
 </details>
@@ -263,7 +274,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Gear ESP**: what nearby players wear and hold, and what they are known to carry, above their name; mobs
   wearing what players have lost.
 - **Xray**, **Clear Water**, **Fullbright**, **Freecam**, **Free Look**, **Zoom**.
-- **Trajectories** (crossbows, wind charges, pearls in flight), **Breadcrumbs**, **Waypoints**, **Radar**,
+- **Trajectories** (crossbows, wind charges, pearls in flight), **Breadcrumbs**, **Waypoints**, **Radar** (with
+  Locator marks for players beyond entity range),
   **Shulker Peek**.
 - **HUD**: module list, Target HUD, Armor HUD, coordinates, compass, item durability, food preview, spectators and
   creative players tagged in the tab list and more. Open the chat (or the menu) and every element is framed and drags
@@ -291,7 +303,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   **Portal Pattern Finder**, **Activated Spawner Detector**, **Spawner Alerts**: find bases and where players have
   been. Base Finder also reads what time near a place leaves: hidden light sources, kelp and vines grown long, bee
   nests full of honey, and Grown amethyst (geodes ripened all round where someone stayed; on DonutSMP from the
-  palettes its DonutFolia leaves).
+  palettes its DonutFolia leaves). *Hidden bases* scores chunks below a set height by light that isn't natural, sounds
+  and entities underground.
 - **Geode Finder**: geodes the server hides, from their palettes, their buds' light or the light edges a hiding plugin
   leaves.
 - **Sound Detector**: what players nearby are doing (chests, doors, building, mining, crafting, eating, explosions,
@@ -374,7 +387,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Modules**: show or hide each module in the menu.
 - **Friend Guard**: no hits on your friends.
 - **Client Sort**: Sort, Fill Stacks and Restock buttons in inventories.
-- **Client Spoofer**: tells servers you use another client (Lunar Client, LabyMod).
+- **Client Spoofer**: tells servers you use another client (Lunar Client, LabyMod); Fake resource packs accepts a
+  server's resource pack without downloading it.
 - **Packet Order** (on by default): actions made after the tick's move packet go out at the start of the next tick, as vanilla orders them (Grim's Post check).
 - **Streamer Mode**: hides your name and other players' names on screen.
 - **Debug Report**: see [Debug reports](#chat-commands).
@@ -402,7 +416,26 @@ chat lines, apart from replies to commands you type.
 
 ## Updating and removing
 
-**Update:** run the install command again. It replaces the old version and keeps your settings and profiles.
+**Update:** the launcher installs a newer Sunset when it starts, and keeps your settings and profiles. **Repair** on
+Overview checks the installed files and unpacks them again.
+
+**Remove:** delete the launcher and its folder (`~/.local/share/sunset-launcher` or `%APPDATA%\sunset-launcher`).
+That folder holds the game, the `sunset` instance and your settings.
+
+## Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| The launcher doesn't open on Linux | Install `libxkbcommon0 libxkbcommon-x11-0 libxcb1` (Fedora and Arch: `libxkbcommon libxkbcommon-x11 libxcb`). |
+| The game doesn't start after Install | Run `sunset-launcher deps` and install what it lists, then click Repair. |
+| No Sunset in game | You started Horizon from the Horizon launcher. Start it with Play in the Sunset launcher. |
+| A module misbehaves or a server flags you | Type `.debug` right away and attach the report to your ticket. |
+| Still stuck | Open a ticket on [Discord](https://discord.gg/fhD2frFdzm) or an [issue](https://github.com/PointOfPressure/sunset-client/issues) with the launcher's log (Logs on Overview), your OS and the Sunset version. |
+
+<details>
+<summary>Sunset 1.2.1 and earlier (<code>.hnmod</code>)</summary>
+
+**Update:** run the install script again. It replaces the old version and keeps your settings and profiles.
 (Sunset was called Solstice before 0.8.1; the installer removes `solstice.hnmod` and Sunset takes over its settings.)
 
 **Remove:** delete `sunset.hnmod` from the `horizon-native-mods` folder in Horizon's game folder, and from the same
@@ -414,35 +447,32 @@ folder inside `instances/native-mods`. Then play the plain **Horizon** instance.
 | Linux | `~/.local/share/horizon` |
 | macOS | `~/Library/Application Support/horizon` |
 
-Each Sunset release is built for one Horizon version (the release notes name it). The Native mods instance stays on
-that version until you update Sunset.
-
-## Troubleshooting
-
 | Problem | Fix |
 | --- | --- |
-| "I couldn't find the Horizon launcher" | Install it from [playhorizon.dev](https://playhorizon.dev), open it once, run the command again. |
+| "I couldn't find the Horizon launcher" | Install it from [playhorizon.dev](https://playhorizon.dev), open it once, run the script again. |
 | The command does nothing on Windows | Run it in PowerShell, not Command Prompt. |
 | No Sunset in game | You started the plain Horizon instance. Pick **Native mods**. |
-| The first build is slow | That's normal: it compiles the whole game once. |
-| Linux build fails mentioning `alsa` or `libudev` | Install `libasound2-dev libudev-dev pkg-config` (Debian/Ubuntu) or your system's equivalents, then run the command again. |
-| "These mods were made for different Horizon revisions" | Another native mod (for example `mousetricks`) was made for a different Horizon version. Turn it off on the launcher's Mods page or delete its `.hnmod` from `horizon-native-mods`, then run the command again. You don't need to install the Nightly named in the release notes yourself. |
-| Windows: `windres: preprocessing failed` with a path cut off at a space | Your Windows user name contains a space, which Horizon's build can't handle. The current installer moves the launcher to `C:\horizon-launcher` for you (you sign in again), or set `HORIZON_LAUNCHER_HOME` to a folder without spaces. |
-| A module misbehaves or a server flags you | Type `.debug` right away and attach the report to your ticket. |
-| Still stuck | Open a ticket on [Discord](https://discord.gg/fhD2frFdzm) or an [issue](https://github.com/PointOfPressure/sunset-client/issues) with the installer output, your OS and Horizon version. |
+| Linux build fails mentioning `alsa` or `libudev` | Install `libasound2-dev libudev-dev pkg-config` (Debian/Ubuntu) or your system's equivalents, then run the script again. |
+| "These mods were made for different Horizon revisions" | Another native mod (for example `mousetricks`) was made for a different Horizon version. Turn it off on the launcher's Mods page or delete its `.hnmod` from `horizon-native-mods`, then run the script again. |
+| Windows: `windres: preprocessing failed` with a path cut off at a space | Your Windows user name contains a space. The installer moves the launcher to `C:\horizon-launcher` for you (you sign in again), or set `HORIZON_LAUNCHER_HOME` to a folder without spaces. |
+
+</details>
 
 ## Plugins
 
 Other native mods can extend Sunset with modules, commands, HUD and world drawing, packet handlers and timers. A
-plugin is a single Rust file. Plugin API 2 can do anything a built-in module can, including unattended (AFK) play
+plugin is a single Rust file, built as an `.hmod` package next to Sunset. The plugin API can do anything a built-in module can, including unattended (AFK) play
 with events for hurts, deaths and disconnects, a safe stop, and Horizon's auto-reconnect.
 
 The API reference, a template, build scripts and two example plugins (Hello and AFK Fisher) are in
 [sunset-plugins](https://github.com/PointOfPressure/sunset-plugins) (MIT).
 
+The launcher's **Plugins** tab builds plugins in: with its switch on and a plugin added, the launcher downloads the
+release's plugin kit (Sunset's package and the Horizon SDK), builds Sunset with your plugins on your computer and
+plays that build. With the switch off, or no plugins left, it goes back to the signed build.
+
 A plugin is native code compiled into the game, not sandboxed: it can do anything on your computer. Sunset can't
-check or ask about it at runtime (by then it is already built in), so the install script and sunset-plugins'
-`build.py` ask before building one in. Install only plugins you wrote, read or trust.
+check it at runtime (by then it is already built in). Install only plugins you wrote, read or trust.
 
 ## Building from source
 
@@ -451,7 +481,10 @@ The repository is a cargo workspace: `client/` is Sunset (the mod in `client/mix
 the plugin API's test plugin and smoke test. The plugin API itself is `client/mixins/sunset/api.rs`, compiled into
 Sunset. The `.hnmod` line (0.8.x/1.x fixes) is the `hnmod` branch.
 
-- `python3 client/tools/pack.py` writes `dist/sunset-<version>.hnmod`.
+- `client/scripts/build-prebuilt.sh` builds the 2.0 prebuilt client on the Horizon
+  [fork](https://github.com/PointOfPressure/horizon) (the patches in `client/horizon-patches`), then packages and
+  signs it with its source, relink kit and licence files.
+- `python3 client/tools/pack.py` writes the 1.x package, `dist/sunset-<version>.hnmod`.
 - To compile-check against the Horizon Nightly pinned in `client/horizon-native.json`: stage the mod with
   [horizon-mixins](https://github.com/horizon-rust/horizon-mixins)
   (`horizon-mixins apply --workspace <horizon at that commit> --mods client/mixins --out stage`), then run
@@ -465,7 +498,7 @@ Sunset. The `.hnmod` line (0.8.x/1.x fixes) is the `hnmod` branch.
   compiler warning, another plugin API version in game, or a check that failed, was skipped or ran twice. Paths and
   options are at the top of the script; its own tests are `plugins/test_plugsmoke.py` and `client/tools/test_verify.py`.
 
-### Sunset launcher (2.0, not released yet)
+### Sunset launcher
 
 ![The Sunset launcher's Overview page: Play, Game folder, Logs and repair, the 2.0.0 changes and the installation](docs/images/launcher.png)
 
@@ -485,13 +518,12 @@ separate program, with its data inside the launcher's own folder (`~/.local/shar
   checks the package and unpacks it again. Auto-update installs a newer pin at start.
 - **Play:** `horizon-launcher play --instance sunset`, with the window size from Settings.
 - **Import:** once, if you want, Sunset's config and profiles from a Horizon instance (files already here are kept).
-- **Linux:** the window and horizon-launcher both need `libxkbcommon0 libxkbcommon-x11-0 libxcb1` (Fedora and Arch:
-  `libxkbcommon libxkbcommon-x11 libxcb`). Without them the launcher can't start. `sunset-launcher deps` lists what
-  horizon-launcher is missing.
+- **Plugins:** with the Plugins switch on, `horizon-launcher native-build` builds the release's plugin kit with the
+  added plugins into a version folder of its own, which Play and offline play then use.
 - **Build:** `cargo build --release -p sunset-launcher` (Linux x86_64: 18.8 MB). Windows from Linux:
   `cargo build --profile release-cross --target x86_64-pc-windows-gnu -p sunset-launcher` (8.5 MB, Windows 10 1903 or
   later; this build compiles its shaders when it runs).
-- **Terminal:** `sunset-launcher check | install | repair | deps | sign-in | play | import`. `SUNSET_MANIFEST`
+- **Terminal:** `sunset-launcher check | install | repair | deps | sign-in | play | import | offline NICK`. `SUNSET_MANIFEST`
   (`https://`, `http://` or `file://`) and `SUNSET_LAUNCHER_HOME` point it at a test release and data folder.
 
 What's planned and what a contribution needs: [feature roadmap](docs/feature-roadmap.md) and
@@ -499,7 +531,8 @@ What's planned and what a contribution needs: [feature roadmap](docs/feature-roa
 
 ## Credits
 
-Made by [PointOfPressure](https://github.com/PointOfPressure) and [vstxx](https://github.com/vstxx).
+Made by [PointOfPressure](https://github.com/PointOfPressure) and [vstxx](https://github.com/vstxx) (vs.; pull requests
+#6, #7, #8, #14, #18, #19, #25, #27, #30, #31, #32, #33 and #38).
 Core contributor: [Rust](https://github.com/zackmsa777-a11y).
 
 <details>
@@ -511,19 +544,24 @@ Anchor Aura, Crystal Macro and Anchor Macro (their Macro sections), Shield Break
 Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smash fall count Auto Mace goes by), W Tap,
 Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast
 Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback
-Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps, Ore Sim's automatic seed (SeedCrackerX) and the Baritone/Ore Sim integration, and the plugin release gate (verify.py's exit status, strict plugin results).
+Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps, Ore Sim's automatic seed (SeedCrackerX) and the Baritone/Ore Sim integration, and the plugin release gate (verify.py's exit status, strict plugin results). Pull requests #1, #2, #4, #5, #9, #10,
+#11, #12, #13, #16, #20, #21, #22, #23, #24, #26, #28, #36, #37 and #40.
 
 **compkrx** ([compkrx](https://github.com/compkrx)): Vein Miner, Effects refinements, the Relog command, Auto Sell,
 Auction Sniper, Chest Index, Drill Logger, Auto Trident, Depth Alert, Staff List, Base Guard, ESP's villager filters
-and Sound Detector's labels and beams.
+and Sound Detector's labels and beams. Pull requests #39, #42 and #43.
 
 **pxdns** ([pxdns](https://github.com/pxdns)): HUD placement (corners and Custom places for the watermark, module list
-and coordinates) and Low health warning.
+and coordinates) and Low health warning. Pull request #35.
 
 </details>
 
 Elytra Target was asked for by muhalo1545 on the Sunset Discord; its behaviour follows LiquidBounce's ElytraTarget
 (GPL-3.0), written fresh for Sunset with no code taken.
+
+Kill Aura's Advanced rotation, Hit select, Velocity boost and Miss swing, Anti Void's Blink mode and Chest Stealer's
+Delay and rules follow the behaviour of Rise 6's KillAura, Anti Void and Stealer, written fresh for Sunset with no
+code taken.
 
 Anti Vanish's Staff check follows the behaviour of Blackout's Staff Check (GPL-3.0), written fresh for Sunset with no
 code taken.
