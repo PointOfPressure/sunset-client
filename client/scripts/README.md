@@ -4,7 +4,10 @@
   `sunset-<version>-<pin>-linux-x86_64.tar.zst` (one `native-<pin>-<id>/` folder, ready to drop into the stock
   launcher's `versions/`), `…-relink.tar.zst`, `manifest.json`, `SHA256SUMS` and a `.minisig` for each, signed with
   `~/.config/sunset/minisign.key` (public key: `launcher/sunset.pub`). Uploading them is a manual step.
-  `FORK=~/dev/horizon-src` also writes the LGPL source branch and `../horizon-patches/<pin>/`.
+  `FORK=~/dev/horizon-src` (required) also writes the LGPL source branch and `../horizon-patches/<pin>/`, and gives
+  the release Horizon's source (`…-horizon-source.tar.zst`, `…-horizon-series.bundle`) and its licence files
+  (`../release/`: the game folder's `licences/` and the same beside the release; needs
+  `cargo install cargo-about --version 0.9.3 --locked --features cli`).
 - `check-prebuilt.sh dist/prebuilt`: signatures (a tampered package, an edited manifest and another key must fail),
   checksums, the package layout, and no Sunset source in the package.
 

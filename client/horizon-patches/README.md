@@ -1,5 +1,8 @@
 # Horizon patch series and LGPL source
 
+Everything in this directory (the patch series, `<pin>/hooks/` and the other patches) changes Horizon and is
+LGPL-3.0-or-later like Horizon, not under Sunset's licence: `../release/LICENSE-LGPL-3.0.txt`.
+
 Sunset's prebuilt client (`../scripts/build-prebuilt.sh`) is the pinned Horizon Nightly's own SDK libraries plus two
 libraries we compile: `libhorizon_patch.so` (Sunset's mixins and support modules woven into copies of the Horizon
 functions they replace) and `libsunset_core.so` (Sunset's `sunset_core` crate). The script builds them with the stock
@@ -34,13 +37,15 @@ Nightly's: their source is the same branch.
 - `libhorizon_patch.so` contains modified Horizon code, so its complete source is published: the fork branch above,
   with the exact launcher, mixins and Rust versions in `sunset/README.md`. Anyone can rebuild it, changed or not.
 - Relink kit (`sunset-<version>-<pin>-<platform>-relink.tar.zst`, beside each release): the rlibs, `--extern` lists
-  (SDK paths as `$SDK`) and identity files both libraries were linked from. Chosen in addition to the source because
-  the decision asked for relink objects. Limitation: Rust rlibs only link against crates with the same metadata
-  hashes, so relinking against a modified SDK needs the same rustc (see `manifest.json` `build.rust`); the route
-  that always works is rebuilding from the fork branch with `native-build`.
-- Not settled (needs Sayer): LGPL-3 section 4 also asks that the combined work's terms allow modifying it for the
-  user's own use and reverse engineering to debug such changes. Sunset's PolyForm Strict licence forbids changes,
-  so `LICENSE` may need a carve-out for that.
+  (SDK paths as `$SDK`) and identity files both libraries were linked from, and `relink.sh`, which runs the
+  launcher's own link line for `libhorizon_patch.so` and installs the result (`../release/relink/README.md`).
+  Limitation: Rust rlibs only link against crates with the same metadata hashes, so relinking against a modified SDK
+  needs the same rustc (see `manifest.json` `build.rust`); the route that always works is rebuilding from the fork
+  branch with `native-build`.
+- LGPL-3 section 4's terms for the combined work (modifying it for your own use, reverse engineering to debug
+  that): `../release/PREBUILT-TERMS.md`, shipped in the game folder's `licences/` with the Horizon notice, the
+  LGPL and GPL texts and `THIRD-PARTY-LICENSES.txt` (`../release/third-party.sh`), and beside each release with
+  `…-horizon-source.tar.zst` (the fork tree) and `…-horizon-series.bundle` (its commits on the pin).
 
 ## Other patches
 

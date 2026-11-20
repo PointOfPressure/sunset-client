@@ -26,6 +26,34 @@ pub const PLATFORM: &str = "unsupported";
 
 pub type Result<T> = std::result::Result<T, String>;
 
+// ---------------------------------------------------------------- licences
+
+/// Sunset's licence (the repository's LICENSE), which the launcher is under.
+const SUNSET_LICENCE: &str = include_str!("../../LICENSE");
+/// launcher/THIRD-PARTY-LICENSES.txt, compressed by build.rs.
+const THIRD_PARTY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/third-party.zst"));
+pub const HORIZON_NOTICE: &str = "Horizon (https://github.com/horizon-rust/horizon) is licensed under the GNU Lesser General Public License, version 3 or later. The launcher runs the stock horizon-launcher, downloaded from Horizon's own releases, as a separate program and links nothing from it. The prebuilt Sunset client it installs contains Horizon, modified by Sunset: its game folder's licences/ has the Horizon notice (copyright, the exact source and how to rebuild or relink it), the LGPL and GPL texts, PREBUILT-TERMS.md (your right to modify the Horizon part and to reverse engineer the build to debug that) and its third-party licences, and each release carries the same files with Horizon's source.";
+
+/// Everything `sunset-launcher licences` prints and About opens: Sunset's licence, the Horizon notice, and the
+/// launcher's third-party licences.
+pub fn licences() -> String {
+    let mut third = String::new();
+    if let Err(e) = ruzstd::decoding::StreamingDecoder::new(THIRD_PARTY).map_err(|e| e.to_string()).and_then(|mut d| std::io::Read::read_to_string(&mut d, &mut third).map_err(|e| e.to_string())) {
+        third = format!("(the embedded third-party licences could not be read: {e}; they are THIRD-PARTY-LICENSES.txt in the launcher's source)\n");
+    }
+    let rule = "=".repeat(100);
+    format!("Sunset launcher {VERSION}: licences\n\nThe Sunset launcher is licensed under the PolyForm Strict License 1.0.0 (Sunset's licence, below).\n\n{HORIZON_NOTICE}\n\n{rule}\nSunset's licence\n{rule}\n\n{SUNSET_LICENCE}\n\n{third}")
+}
+
+/// `licences()` written to `<data>/licences/LICENCES.txt`, for the system's text viewer.
+pub fn write_licences(p: &Paths) -> Result<PathBuf> {
+    let dir = p.root.join("licences");
+    fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let path = dir.join("LICENCES.txt");
+    fs::write(&path, licences()).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(path)
+}
+
 // ---------------------------------------------------------------- paths and settings
 
 #[derive(Clone, Debug)]

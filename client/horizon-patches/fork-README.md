@@ -10,7 +10,8 @@ LGPL-3.0-or-later); the prebuilt's Horizon libraries are built from that tree wi
   licence is `sunset/package/LICENSE`; it is here so the shipped build can be reproduced.
 - `sunset/patch/`: the function-replacement crates (`horizon_patched*`) the launcher extracts from this revision,
   with Sunset's mixins and support modules woven in by horizon-mixins `@MIXINS@`, and `horizon_patch.rs`, the
-  launcher's entry module. Compiled, this is `libhorizon_patch.so`. Read the commits one by one to see the extract
+  launcher's entry module. Compiled, this is `libhorizon_patch.so`. A modified Horizon: LGPL-3.0-or-later as a
+  whole, the woven-in code included. Read the commits one by one to see the extract
   first and then exactly what Sunset changes.
 
 ## Rebuild

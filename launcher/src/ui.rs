@@ -775,6 +775,18 @@ impl Launcher {
         self.reload_local();
     }
 
+    /// About's "Third-party licences": the launcher's licences written to its data folder, shown by the system.
+    fn open_licences(&mut self, cx: &mut Context<Self>) {
+        self.set_menu(None, cx);
+        match core::write_licences(&self.paths) {
+            Ok(path) => cx.open_with_system(&path),
+            Err(e) => {
+                self.note = Some((true, e));
+                cx.notify();
+            }
+        }
+    }
+
     fn open(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.set_menu(None, cx);
         let _ = std::fs::create_dir_all(&path);
@@ -1904,7 +1916,7 @@ impl Launcher {
         }
 
         sections.push(self.import_section(cx));
-        sections.push(self.about_section());
+        sections.push(self.about_section(cx));
 
         // Full width, like the Plugins and Profiles pages: page title, then the sections stacked down the page.
         div()
@@ -1938,10 +1950,12 @@ impl Launcher {
     }
 
     /// The launcher's own facts: version, where it installs from, the stock CLI it drives, its signing key, and what it is.
-    fn about_section(&self) -> gpui::Div {
+    fn about_section(&self, cx: &mut Context<Self>) -> gpui::Div {
         let source = std::env::var("SUNSET_MANIFEST").ok().filter(|s| !s.is_empty()).or(self.settings.manifest_url.clone()).unwrap_or_else(|| format!("GitHub Releases ({})", core::REPO));
         let cli = core::cli_path(&self.paths).map(|p| p.parent().and_then(|d| d.file_name()).map(|v| v.to_string_lossy().into_owned()).unwrap_or_default());
         let key = include_str!("../sunset.pub").lines().next().unwrap_or("").rsplit(' ').next().unwrap_or("").to_string();
+        // The installed prebuilt's own licences/ (older prebuilts have none).
+        let game_licences = self.installed.as_ref().map(|m| self.paths.versions().join(&m.version_dir).join("licences")).filter(|d| d.is_dir());
         div()
             .flex()
             .flex_col()
@@ -1953,7 +1967,10 @@ impl Launcher {
                     .flex_col()
                     .child(setting_row("Sunset launcher", text(core::VERSION, 13., TEXT), false))
                     .child(setting_row("Platform", text(core::PLATFORM, 13., TEXT), false))
-                    .child(setting_row("Licence", text("PolyForm Strict 1.0.0", 13., TEXT), false))
+                    .child(setting_row("Sunset licence", text("PolyForm Strict 1.0.0", 13., TEXT), false))
+                    .child(setting_row("Horizon", text("LGPL-3.0-or-later; its notice, source and terms come with each prebuilt", T_SMALL, MUTED), false))
+                    .child(setting_row("Third-party licences", button("ab-lic", "Open", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_licences(cx))), false))
+                    .children(game_licences.map(|dir| setting_row("Game licences (Horizon notice, LGPL, terms)", button("ab-glic", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(dir.clone(), cx))), false)))
                     .child(setting_row("Release source", text(source, T_SMALL, MUTED), false))
                     .child(setting_row("horizon-launcher (sign-in, install, play)", text(cli.unwrap_or_else(|| "comes with the first install".into()), 13., TEXT), false))
                     .child(setting_row("Signing key", text(key, T_SMALL, MUTED), false))

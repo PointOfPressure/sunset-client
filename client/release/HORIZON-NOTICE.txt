@@ -1,0 +1,27 @@
+Horizon in Sunset @VERSION@ (@PLATFORM@)
+
+This build of Sunset contains Horizon, Minecraft Java Edition 26.3 rewritten in Rust:
+https://github.com/horizon-rust/horizon
+Copyright the Horizon Team and Horizon's contributors
+(https://github.com/horizon-rust/horizon/graphs/contributors); founded by Ludovic Marie.
+
+Licence: GNU Lesser General Public License, version 3 or (at your option) any later version
+(LICENSE-LGPL-3.0.txt, which adds to the GNU GPL version 3 in LICENSE-GPL-3.0.txt). Code merged into Horizon
+before it moved from MIT stays available under the MIT licence as well (HORIZON-MIT.txt). Horizon's
+dependencies keep their own licences (THIRD-PARTY-LICENSES.txt, which includes Horizon's own notices).
+
+Version: Horizon @REV@ (@TAG@).
+Modified: yes. Sunset's hook patches on that revision (one per feature) and Sunset's mixins woven into copies of
+Horizon's functions (libhorizon_patch.so). These modifications are LGPL-3.0-or-later. Readable patch series:
+https://github.com/PointOfPressure/sunset-client/tree/@SRC@/client/horizon-patches
+
+Corresponding source of this exact build:
+  https://github.com/PointOfPressure/horizon/tree/@FORK@ (branch sunset/@SHORT@)
+  also beside this release: @NAME@-horizon-source.tar.zst (that whole tree) and
+  @NAME@-horizon-series.bundle (git bundle of the commits on top of @REV@)
+  How to rebuild it: sunset/README.md in that tree.
+Relinking libhorizon_patch.so from its objects: @NAME@-relink.tar.zst (README.md inside).
+
+Everything in this game folder other than Sunset's own code (libsunset_core.so and horizon-native-mods/sunset) is
+Horizon or comes with it. PREBUILT-TERMS.md has the terms of the prebuilt as a whole, including your right to
+modify the Horizon part and to reverse engineer the build to debug such modifications.

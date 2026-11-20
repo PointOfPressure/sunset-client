@@ -28,6 +28,7 @@ Without a command, opens the window.
   plugins add PATH Install a plugin (its folder or .hmod file), then build when plugins are on
   plugins remove ID  Remove a plugin, then build again (or go back to Sunset as released)
   plugins build    Build (or go back) now if the instance doesn't play what is asked for
+  licences         Print the licences: Sunset's, the Horizon notice and the launcher's third-party licences
 
 Environment: SUNSET_LAUNCHER_HOME (data folder), SUNSET_MANIFEST (manifest address: https://, http:// or file://)";
 
@@ -116,12 +117,17 @@ fn main() {
             }
         }
         "plugins" => plugins_cmd(&p, s, &args[1..], &progress),
+        "licences" | "licenses" | "--licences" | "--licenses" => Ok(core::licences()),
         "-h" | "--help" | "help" => Ok(HELP.into()),
         "-V" | "--version" => Ok(format!("sunset-launcher {}", core::VERSION)),
         other => Err(format!("unknown command {other:?}\n\n{HELP}")),
     };
     match r {
-        Ok(out) => println!("{out}"),
+        // Not println!: a closed pipe (`sunset-launcher licences | head`) is not an error worth a panic.
+        Ok(out) => {
+            use std::io::Write;
+            let _ = writeln!(std::io::stdout().lock(), "{out}");
+        }
         Err(e) => {
             eprintln!("sunset-launcher: {e}");
             std::process::exit(1);

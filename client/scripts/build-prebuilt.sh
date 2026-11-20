@@ -13,8 +13,9 @@
 #   LAUNCHER_VERSION  the stock horizon-launcher release used to build (default 0.2.78)
 #   MINECRAFT  a Minecraft folder with 26.3 for `prepare` (default: the official launcher's ~/.minecraft)
 #   KEY        minisign secret key (default ~/.config/sunset/minisign.key); SIGN=0 skips signing
-#   FORK       a horizon-rust/horizon checkout: writes local branch sunset/<pin> (the LGPL corresponding source,
-#              never pushed) and exports its readable patches into client/horizon-patches/<pin>/
+#   FORK       a horizon-rust/horizon checkout (required): writes local branch sunset/<pin> (the LGPL corresponding
+#              source, never pushed), exports its readable patches into client/horizon-patches/<pin>/, and gives the
+#              release Horizon's source (tarball + git bundle) and the third-party licences of its dependency tree
 #   RELINK=0   skips the relink kit (client/horizon-patches/README.md, "LGPL")
 #   HOOKS      with FORK: the commit or branch holding Sunset's hook patches on the pin (sunset-hooks/<pin>). The build
 #              then uses the fork's SDK (client/scripts/fork-sdk.sh build, in SDK, default ~/sunset-ops/tmp/fork-sdk),
@@ -23,6 +24,9 @@
 # Besides the game package, the release carries the launcher's plugin kit: `…-source.tar.zst` (Sunset's .hmod package
 # as built, one sunset/ folder: the launcher builds installed plugins into it) and, with HOOKS, `sunset-sdk-<pin>-<fork
 # commit>-<platform>.tar.zst` (that SDK and the fork's source, one fork-sdk/ folder), both signed like the package.
+# Licences (client/release/): the game folder gets licences/ (Horizon notice, LGPL and GPL texts, PREBUILT-TERMS.md,
+# Sunset's licence, THIRD-PARTY-LICENSES.txt from client/release/third-party.sh, which needs cargo-about), and the
+# same files, Horizon's source and the launcher's THIRD-PARTY-LICENSES.txt go beside the release, signed.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
@@ -38,6 +42,8 @@ REAL_HOME=$HOME
 say() { echo "build-prebuilt: $*" >&2; }
 die() { say "$*"; exit 1; }
 for tool in curl git python3 sha256sum tar zstd rsync; do command -v $tool >/dev/null || die "needs $tool"; done
+[ -n "${FORK:-}" ] || die "needs FORK=<a horizon-rust/horizon checkout>: the release carries Horizon's source and licences"
+"$REPO/client/release/third-party.sh" check
 [ "${SIGN:-1}" = 0 ] || { command -v minisign >/dev/null || die "needs minisign (SIGN=0 skips signing)"; [ -f "$KEY" ] || die "no minisign key at $KEY"; }
 
 # ---- pin
@@ -68,6 +74,8 @@ LDATA=$WORK/home/.local/share/horizon-launcher
 TAG=$(hl --json versions 2>/dev/null | python3 -c 'import json,sys
 t=[v["tag"] for v in json.load(sys.stdin) if v["tag"].startswith("nightly-") and v["tag"].endswith("-"+sys.argv[1])]
 print(t[0] if t else "")' "$SHORT")
+# A Nightly drops off the list after a while: one this home already installed still builds (its SDK is cached).
+[ -n "$TAG" ] || TAG=$(cd "$LDATA/versions" 2>/dev/null && ls -d nightly-*-"$SHORT" 2>/dev/null | head -1) || true
 [ -n "$TAG" ] || die "no Nightly release for $SHORT (pin a Nightly that still has its SDK)"
 
 if [ ! -e "$LDATA/versions/$TAG/.installed" ]; then
@@ -113,15 +121,74 @@ BUILD=$(ls -dt "$LDATA"/native/prebuilt-build/rustc-"${REV:0:12}"-* | head -1)
 [ -d "$BUILD/patch-applied" ] || die "no woven patch workspace in $BUILD"
 RUST=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["rust"])' "$V/native-mods.json")
 
+# ---- the LGPL corresponding source as a patch series on the pin (local branch; pushing is a manual step), released
+# as a tarball of the whole tree and a git bundle of the series; and the third-party licences of that tree
+NAME=sunset-$VERSION-$SHORT-$PLATFORM
+LIC=$WORK/licences; rm -rf "$LIC"; mkdir -p "$LIC"
+{
+	BR=sunset/$SHORT
+	git -C "$FORK" cat-file -e "$REV^{commit}" 2>/dev/null || git -C "$FORK" fetch -q origin "$REV"
+	FW=$WORK/fork-tree; rm -rf "$FW"
+	git -C "$FORK" worktree prune
+	git -C "$FORK" worktree add -q -f -B "$BR" "$FW" "${HOOKS_HEAD:-$REV}"
+	# The tree the shipped Horizon libraries are built from, before Sunset's commits: its whole dependency tree.
+	RUSTDIR=$(ls -d "$LDATA/rust/$RUST"-* | head -1)
+	say "third-party licences (cargo-about)"
+	FLAGS=$WORK/licence-flags.txt "$REPO/client/release/third-party.sh" prebuilt "$FW" "$RUSTDIR" "$LIC/THIRD-PARTY-LICENSES.txt"
+	cp "$FW/LICENSES/MIT.txt" "$LIC/HORIZON-MIT.txt"
+	export GIT_AUTHOR_DATE="@$(git -C "$REPO" log -1 --format=%ct)" GIT_COMMITTER_DATE="@$(git -C "$REPO" log -1 --format=%ct)"
+	gc() { git -C "$FW" add -A sunset && git -C "$FW" commit -q -m "$1" -m "$2"; }
+	mkdir -p "$FW/sunset/package" "$FW/sunset/patch"
+	rsync -a "$STAGE/sunset/" "$FW/sunset/package/"
+	cp "$REPO/LICENSE" "$FW/sunset/package/LICENSE"
+	gc "Sunset $VERSION: the .hmod package" "client/sunset of PointOfPressure/sunset-client $SRC_COMMIT$($DIRTY && echo ' (with local changes)'), under its own licence (sunset/package/LICENSE), not Horizon's."
+	rsync -a --exclude /.horizon-mixins-stage.json --exclude /native-post-build.json --exclude /target "$BUILD/patch-workspace/" "$FW/sunset/patch/"
+	gc "Function-replacement crates of $SHORT, as generated" "What horizon-launcher $LAUNCHER_VERSION native-build extracts from this revision's horizon-client, horizon-client-lib, -render and -input for the replaced functions, before any mod is applied. Unmodified Horizon code (LGPL-3.0-or-later)."
+	rsync -a --exclude /target "$BUILD/patch-applied/" "$FW/sunset/patch/"
+	cp "$BUILD/horizon_patch.rs" "$FW/sunset/patch/horizon_patch.rs"
+	gc "Sunset's mixins woven in (horizon-mixins ${MIXINS:0:7})" "The source of libhorizon_patch.so as shipped: sunset/package/horizon-mod.toml's mixins and support modules applied by horizon-mixins, and the launcher's entry module (horizon_patch.rs). Rust $RUST. A modified version of Horizon: LGPL-3.0-or-later, the woven-in code included."
+	sed -e "s/@VERSION@/$VERSION/g; s/@REV@/$REV/g; s/@TAG@/$TAG/g; s/@LAUNCHER@/$LAUNCHER_VERSION/g; s/@MIXINS@/$MIXINS/g; s/@RUST@/$RUST/g; s/@SRC@/$SRC_COMMIT/g" \
+		"$REPO/client/horizon-patches/fork-README.md" > "$FW/sunset/README.md"
+	gc "Sunset: how this branch is built and licensed" "sunset/README.md."
+	FORK_HEAD=$(git -C "$FW" rev-parse HEAD)
+	P=$REPO/client/horizon-patches/$SHORT
+	rm -rf "$P"; mkdir -p "$P"
+	# The weave and the notes are the readable part; the package is client/sunset itself and the extract is generated.
+	git -C "$FW" format-patch -q --no-signature -o "$P" "$BR~2..$BR"
+	git -C "$FW" log --reverse --format='%H %s' "$REV..$BR" > "$P/series"
+	# Sunset's hook patches on the pin (the fork SDK's source), one per feature.
+	[ -n "${HOOKS_HEAD:-}" ] && git -C "$FORK" format-patch -q --no-signature -o "$P/hooks" "$REV..$HOOKS_HEAD"
+	git -C "$FW" archive --format=tar --prefix="horizon-$SHORT-sunset/" HEAD | zstd -q -19 -T0 -f -o "$OUT/$NAME-horizon-source.tar.zst"
+	git -C "$FORK" bundle create -q "$OUT/$NAME-horizon-series.bundle" "$REV..$BR"
+	git -C "$FORK" worktree remove --force "$FW"
+	say "fork branch $BR = ${FORK_HEAD:0:10} (local, not pushed: push it before publishing); patches in client/horizon-patches/$SHORT"
+}
+
+# ---- licences: in the game folder (licences/), in the relink kit and beside the release
+sed -e "s/@VERSION@/$VERSION/g; s/@PLATFORM@/$PLATFORM/g; s/@REV@/$REV/g; s/@TAG@/$TAG/g; s/@SRC@/$SRC_COMMIT/g" \
+	-e "s/@FORK@/$FORK_HEAD/g; s/@SHORT@/$SHORT/g; s/@NAME@/$NAME/g" "$REPO/client/release/HORIZON-NOTICE.txt" > "$LIC/HORIZON-NOTICE.txt"
+cp "$REPO/client/release/PREBUILT-TERMS.md" "$REPO/client/release/LICENSE-LGPL-3.0.txt" "$REPO/client/release/LICENSE-GPL-3.0.txt" "$LIC/"
+cp "$REPO/LICENSE" "$LIC/SUNSET-LICENSE.txt"
+# The launcher embeds its own list: regenerated here so a release never ships a stale one.
+cp "$REPO/launcher/THIRD-PARTY-LICENSES.txt" "$WORK/launcher-licences.old"
+FLAGS=$WORK/launcher-licence-flags.txt "$REPO/client/release/third-party.sh" launcher
+cmp -s "$WORK/launcher-licences.old" "$REPO/launcher/THIRD-PARTY-LICENSES.txt" ||
+	say "launcher/THIRD-PARTY-LICENSES.txt changed: commit it and rebuild the launcher"
+LICENCE_FILES="LICENSE-LGPL-3.0.txt LICENSE-GPL-3.0.txt HORIZON-MIT.txt PREBUILT-TERMS.md SUNSET-LICENSE.txt $NAME-HORIZON-NOTICE.txt $NAME-THIRD-PARTY-LICENSES.txt sunset-launcher-THIRD-PARTY-LICENSES.txt"
+for f in LICENSE-LGPL-3.0.txt LICENSE-GPL-3.0.txt HORIZON-MIT.txt PREBUILT-TERMS.md SUNSET-LICENSE.txt; do cp "$LIC/$f" "$OUT/$f"; done
+cp "$LIC/HORIZON-NOTICE.txt" "$OUT/$NAME-HORIZON-NOTICE.txt"
+cp "$LIC/THIRD-PARTY-LICENSES.txt" "$OUT/$NAME-THIRD-PARTY-LICENSES.txt"
+cp "$REPO/launcher/THIRD-PARTY-LICENSES.txt" "$OUT/sunset-launcher-THIRD-PARTY-LICENSES.txt"
+
 # ---- package: the version folder as the launcher installs it, minus Horizon's developer tools, anything prepared
 # from Mojang's files (.local) and Sunset's Rust source. The game checks each exported package at start
 # (horizon-mod-package runtime.rs: horizon-mod.toml's id, version and side, and that Cargo.toml and src/ are both
 # there), so horizon-native-mods/<id>/ keeps its manifest, Cargo.toml and assets with an empty src/.
-NAME=sunset-$VERSION-$SHORT-$PLATFORM
 PKG=$WORK/pkg/$VDIR
 rm -rf "$WORK/pkg"; mkdir -p "$PKG"
 rsync -a --exclude /.local --exclude /tools --exclude '/horizon-native-mods/*/src/*' "$V/" "$PKG/"
 [ -z "$(find "$PKG/horizon-native-mods" -name '*.rs')" ] || die "Rust source left in the package"
+cp -r "$LIC" "$PKG/licences"
 (cd "$PKG" && find . -type f ! -name files.sha256 -printf '%P\n' | LC_ALL=C sort | xargs -d '\n' sha256sum > files.sha256)
 UNPACKED=$(du -sb "$PKG" | cut -f1)
 tar -C "$WORK/pkg" --owner=0 --group=0 --numeric-owner --mtime=@"$(git -C "$REPO" log -1 --format=%ct)" --sort=name \
@@ -141,44 +208,23 @@ fi
 # ---- relink kit: the objects of Sunset's two libraries and their link inputs (see horizon-patches/README.md)
 if [ "${RELINK:-1}" != 0 ]; then
 	KIT=$WORK/relink/$NAME-relink; rm -rf "$WORK/relink"; mkdir -p "$KIT"
-	cp "$BUILD"/*.rlib "$BUILD"/*.externs "$BUILD"/*.identity.json "$BUILD"/libhorizon_patch.so "$BUILD"/libsunset_core.so "$BUILD"/horizon_patch.rs "$KIT/"
+	# Every mod library too: the patched rlibs depend on the mods they call (libsunset_core.so), found beside them.
+	cp "$BUILD"/*.rlib "$BUILD"/*.externs "$BUILD"/*.identity.json "$BUILD"/*.so "$BUILD"/horizon_patch.rs "$KIT/"
 	sed -i "s|$LDATA/native/prebuilt-package|\$SDK|g; s|$BUILD|\$KIT|g" "$KIT"/*.externs
-	cp "$REPO/client/horizon-patches/README.md" "$KIT/README.md"
+	# The patch library's own --extern lines, as horizon-launcher $LAUNCHER_VERSION passes them (native_mods/prebuilt.rs
+	# wrapper_externs: the SDK's shared library of each crate, else its one rmeta; then the patched rlibs).
+	SDKP=$LDATA/native/prebuilt-package
+	for c in horizon_client horizon_mod_host horizon_mod_package mod_api mod_points mod_vocab; do
+		if [ -f "$SDKP/deps/lib$c.so" ]; then f=lib$c.so; else f=$(cd "$SDKP/deps" && echo lib$c-*.rmeta); fi
+		[ -f "$SDKP/deps/$f" ] || die "relink kit: no single library for $c in $SDKP/deps ($f)"
+		printf -- '--extern\n%s=$SDK/deps/%s\n' "$c" "$f"
+	done > "$KIT/horizon_patch.link"
+	for r in "$BUILD"/libhorizon_patched*.rlib; do n=$(basename "$r" .rlib); printf -- '--extern\n%s=$KIT/%s.rlib\n' "${n#lib}" "$n"; done >> "$KIT/horizon_patch.link"
+	echo "$RUST" > "$KIT/RUST"
+	cp "$REPO/client/release/relink/relink.sh" "$KIT/"
+	sed -e "s/@VERSION@/$VERSION/g; s/@SHORT@/$SHORT/g; s/@PLATFORM@/$PLATFORM/g; s/@RUST@/$RUST/g" "$REPO/client/release/relink/README.md" > "$KIT/README.md"
+	cp "$LIC/HORIZON-NOTICE.txt" "$LIC/PREBUILT-TERMS.md" "$LIC/LICENSE-LGPL-3.0.txt" "$LIC/LICENSE-GPL-3.0.txt" "$KIT/"
 	tar -C "$WORK/relink" --owner=0 --group=0 --numeric-owner --sort=name -cf - "$NAME-relink" | zstd -q -19 -T0 -f -o "$OUT/$NAME-relink.tar.zst"
-fi
-
-# ---- the LGPL corresponding source as a patch series on the pin (local branch; pushing is a manual step)
-FORK_HEAD=
-if [ -n "${FORK:-}" ]; then
-	BR=sunset/$SHORT
-	git -C "$FORK" cat-file -e "$REV^{commit}" 2>/dev/null || git -C "$FORK" fetch -q origin "$REV"
-	FW=$WORK/fork-tree; rm -rf "$FW"
-	git -C "$FORK" worktree prune
-	git -C "$FORK" worktree add -q -f -B "$BR" "$FW" "${HOOKS_HEAD:-$REV}"
-	export GIT_AUTHOR_DATE="@$(git -C "$REPO" log -1 --format=%ct)" GIT_COMMITTER_DATE="@$(git -C "$REPO" log -1 --format=%ct)"
-	gc() { git -C "$FW" add -A sunset && git -C "$FW" commit -q -m "$1" -m "$2"; }
-	mkdir -p "$FW/sunset/package" "$FW/sunset/patch"
-	rsync -a "$STAGE/sunset/" "$FW/sunset/package/"
-	cp "$REPO/LICENSE" "$FW/sunset/package/LICENSE"
-	gc "Sunset $VERSION: the .hmod package" "client/sunset of PointOfPressure/sunset-client $SRC_COMMIT$($DIRTY && echo ' (with local changes)'), under its own licence (sunset/package/LICENSE), not Horizon's."
-	rsync -a --exclude /.horizon-mixins-stage.json --exclude /native-post-build.json --exclude /target "$BUILD/patch-workspace/" "$FW/sunset/patch/"
-	gc "Function-replacement crates of $SHORT, as generated" "What horizon-launcher $LAUNCHER_VERSION native-build extracts from this revision's horizon-client, horizon-client-lib, -render and -input for the replaced functions, before any mod is applied. Unmodified Horizon code (LGPL-3.0-or-later)."
-	rsync -a --exclude /target "$BUILD/patch-applied/" "$FW/sunset/patch/"
-	cp "$BUILD/horizon_patch.rs" "$FW/sunset/patch/horizon_patch.rs"
-	gc "Sunset's mixins woven in (horizon-mixins ${MIXINS:0:7})" "The source of libhorizon_patch.so as shipped: sunset/package/horizon-mod.toml's mixins and support modules applied by horizon-mixins, and the launcher's entry module (horizon_patch.rs). Rust $RUST."
-	sed -e "s/@VERSION@/$VERSION/g; s/@REV@/$REV/g; s/@TAG@/$TAG/g; s/@LAUNCHER@/$LAUNCHER_VERSION/g; s/@MIXINS@/$MIXINS/g; s/@RUST@/$RUST/g; s/@SRC@/$SRC_COMMIT/g" \
-		"$REPO/client/horizon-patches/fork-README.md" > "$FW/sunset/README.md"
-	gc "Sunset: how this branch is built and licensed" "sunset/README.md."
-	FORK_HEAD=$(git -C "$FW" rev-parse HEAD)
-	P=$REPO/client/horizon-patches/$SHORT
-	rm -rf "$P"; mkdir -p "$P"
-	# The weave and the notes are the readable part; the package is client/sunset itself and the extract is generated.
-	git -C "$FW" format-patch -q --no-signature -o "$P" "$BR~2..$BR"
-	git -C "$FW" log --reverse --format='%H %s' "$REV..$BR" > "$P/series"
-	# Sunset's hook patches on the pin (the fork SDK's source), one per feature.
-	[ -n "${HOOKS_HEAD:-}" ] && git -C "$FORK" format-patch -q --no-signature -o "$P/hooks" "$REV..$HOOKS_HEAD"
-	git -C "$FORK" worktree remove --force "$FW"
-	say "fork branch $BR = ${FORK_HEAD:0:10} (local, not pushed); patches in client/horizon-patches/$SHORT"
 fi
 
 # ---- manifest + signatures
@@ -226,7 +272,7 @@ if changelog:
 json.dump(m, open(os.path.join(out, "manifest.json"), "w"), indent=2)
 open(os.path.join(out, "manifest.json"), "a").write("\n")
 EOF
-KIT_FILES="$NAME-source.tar.zst${SDKNAME:+ $SDKNAME.tar.zst}"
+KIT_FILES="$NAME-source.tar.zst${SDKNAME:+ $SDKNAME.tar.zst} $NAME-horizon-source.tar.zst $NAME-horizon-series.bundle $LICENCE_FILES"
 (cd "$OUT" && sha256sum manifest.json "$NAME".tar.zst $(ls "$NAME"-relink.tar.zst 2>/dev/null) $KIT_FILES > SHA256SUMS)
 if [ "${SIGN:-1}" != 0 ]; then
 	for f in "$NAME.tar.zst" $(cd "$OUT" && ls "$NAME"-relink.tar.zst 2>/dev/null) $KIT_FILES manifest.json; do
