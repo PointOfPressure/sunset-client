@@ -4,7 +4,43 @@ Full suite (213 tests) run against each server, Sunset 0.8.1 on Horizon Nightly 
 Folia on 31 Oct 2026 04:24–07:36; Paper and Purpur again 11:55–13:25 after the harness fix below (they first ran 170
 and 165). Totals: Horizon 204, vanilla 208, Spigot 204, Paper 209, Purpur 202, Folia 161.
 
-## What fails where
+## 2.0.0 run (20 Nov 2026): partial, stopped by pressure
+
+Sunset 2.0.0 (578adcf) on Horizon 0b14f8a, the rig's .hmod build of the release source plus the test probe
+(`bin-200p`; the signed prebuilt itself has no probe), TWO=1 RETRY=1, Horizon's server a copy of srv-hmod with its
+anticheat off. pressure stopped the matrix at 18:59; no target finished and no retry pass ran, so these are counts of
+the tests that had run (about 413 test functions, more with the sweeps' cases):
+
+| Target | Pass | Fail | Skip | Note |
+|---|---|---|---|---|
+| spigot | 136 | 194 | 26 | m4b, stopped |
+| purpur | 137 | 254 | 63 | m4b, stopped |
+| folia | 77 | 225 | 22 | m4b, stopped; /item and /data disabled (known, not ours) |
+| sp | 146 | 389 | 37 | m3a, cut at 2 h; kicked from its own world partway (below), single player can't rejoin |
+| horizon | 133 | 63 | 20 | m3a, cut at 2 h |
+| vanilla | 136 | 99 | 22 | m3a, cut at 2 h |
+| paper | 136 | 142 | 22 | m3a, cut at 2 h |
+
+Not comparable with the 31 Oct table yet: the full suite had not run on the .hmod build before, and most of these
+failures are the harness against this Horizon pin, not Sunset:
+
+- horizon-ctl's `key` calls `key_pressed` directly; Sunset reads keys in its hook on `key_press_canceled`, which only
+  the window's key events reach. Every test whose key Sunset must see (menu Enter, binds, Air Jump...) fails offscreen.
+  Modules, Search + Enter and the shield breaker search use real keys now (OFFSCREEN=0) and skip offscreen; the rest
+  still need the same treatment, or a fork patch that sends ctl keys through `key_press_canceled`.
+- `ctl entities` returns an empty list on 0b14f8a (19 mobs tracked, none listed), so `mobs()` is empty and every test
+  that finds its pig, husk or Bot1 through it fails (Aim Assist, Criticals, Trigger Bot targets...).
+- Horizon's server anticheat (on by default since the baseline) kicks, then bans for ever, at the second `ground`
+  flag (Flight, No Fall): run the matrix with `[anticheat] enabled = false` or the rest of the target has no player.
+- Display :104 on the rig belongs to another session's Xvfb with auth: runall with DISPLAY0 >= 140.
+
+A real bug found: Criticals' test (Kill Aura or Trigger Bot hitting a pig, Packet, Jump and Mini jump modes) gets the
+player kicked with "Invalid move player packet received" in single player and four times on Paper (two position
+packets in a tick). Kill Aura on its own for 100 ticks in each mode did not reproduce it; not fixed yet.
+
+Known, not ours: Folia's /item and /data; Horizon sends no chat session keys.
+
+## What fails where (31 Oct baseline)
 
 - Paper, Purpur and Folia (fixed): the player was never dead. These servers kick a chat command over 256 characters
   (the chat box's limit), and Auto Steal's chest was one 1100-character setblock, so the player was kicked there; the
