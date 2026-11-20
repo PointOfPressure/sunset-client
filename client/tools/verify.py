@@ -2291,12 +2291,14 @@ def _():
     say(".profile delete oldcfg")
     for m in ("cheststealer", "step", "minethroughmobs", "modules", "ghosthand", "hitthroughwalls"):
         touched.add(m)
-    ok = (any("Imported" in l for l in imported) and any("Loaded" in l for l in loaded) and "Items per tick: 3" in stealer
+    # Chest Stealer's Items per tick is gone since its Delay (b73855e): the import names the line it left out.
+    ok = (any("Imported" in l for l in imported) and any("Loaded" in l for l in loaded)
+          and any("cheststealer.itemspertick" in l for l in imported) and any(l.startswith("Delay") for l in stealer)
           and "Step up: OFF" in step and "Reverse step: ON" in step and "Fall speed: 2" in step
           and "Only with a pickaxe: OFF" in mine and "Step: ON" in extras and "Mine Through Mobs: ON" in extras
           and "Mode: Any block" in walls and "Ignore passive: OFF" in walls
           and {"Chest Stealer", "Step", "Mine Through Mobs", "Hit Through Walls"} <= set(now_on))
-    return ok, (f"import {imported[:1]}, load {loaded[:1]}; Chest Stealer {[l for l in stealer if 'tick' in l]}; Step "
+    return ok, (f"import {imported[:1]}, load {loaded[:1]}; Chest Stealer {[l for l in stealer if 'Delay' in l][:1]}; Step "
                 f"{[l for l in step if 'step' in l.lower() or 'Fall' in l]}; Mine Through Mobs {mine[-1:]}; Modules on: "
                 f"{[l for l in extras if l.endswith(': ON')]}; Hit Through Walls {[l for l in walls if 'Mode' in l or 'passive' in l]}; "
                 f"on: {[n for n in now_on if n in ('Chest Stealer', 'Step', 'Mine Through Mobs', 'Hit Through Walls')]}")
@@ -2339,17 +2341,23 @@ def _():
     wait(4)
     ctl("screenshot", f"{SHOTS}/preset_preview.png")
     time.sleep(2)
-    ctl("key", "enter", "tap")
+    # Enter is a real key (horizon-ctl's never reaches Sunset's menu): offscreen the menu part is left unjudged.
+    keys = menu_enter()
     wait(4)
     ctl("screenshot", f"{SHOTS}/preset_applied.png")
     time.sleep(2)
     close_menu()
     by_menu = modules_on()
-    menu_applied = "Kill Aura" not in by_menu
-    say(".profile load before-load")
-    toggle("killaura", False)
+    menu_applied = "Kill Aura" not in by_menu if keys else None
+    if keys:
+        say(".profile load before-load")
+    # Each load keeps the settings it replaced as before-load, so which load came last decides Kill Aura: turn it off
+    # by what is on, not by what the test last asked for (a .t on a Kill Aura already off turns it on for the next test).
+    if "Kill Aura" in modules_on():
+        say(".t killaura")
+    on.discard("killaura")
     ok = (any("default" in l for l in listing) and any(l.startswith("Turns off:") and "Kill Aura" in l for l in preview)
-          and unchanged and applied and undone and menu_applied and any("Took preset" in l for l in taken))
+          and unchanged and applied and undone and menu_applied is not False and any("Took preset" in l for l in taken))
     return ok, (f"list {listing[:1]}; preview {preview[:3]}; unchanged before apply: {unchanged}; applied: {applied} ({taken[:1]}); "
                 f"undone: {undone}; from the menu: {menu_applied} (shot {SHOTS}/preset_preview.png)")
 
