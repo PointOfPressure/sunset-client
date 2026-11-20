@@ -76,6 +76,123 @@ pub(super) fn fitted_size(requested: f32, width: f32, height: f32) -> Option<f32
     (size.is_finite() && size >= 64.0).then_some(size)
 }
 
+// ---- Locator radar (behaviour after Combatant's Visual Range, written fresh): where the server's locator bar puts a
+// player. Horizon and vanilla send every player's waypoint in the dimension: the exact block while their chunk is in
+// your view, the chunk while it is not, a bearing only past 332 blocks; a carved pumpkin or a mob head hides them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Fix {
+    Block([i32; 3]),
+    Chunk([i32; 2]),
+    // The yaw that faces them, in radians (yaw 0 looks to +Z, 90 degrees to -X).
+    Bearing(f32),
+}
+
+impl Fix {
+    // How close the server says they are: 1 a bearing only, 2 within 332 blocks, 3 in your view range.
+    pub(super) fn rank(self) -> u8 {
+        match self {
+            Fix::Bearing(_) => 1,
+            Fix::Chunk(_) => 2,
+            Fix::Block(_) => 3,
+        }
+    }
+
+    // From (x, z) to them; None for a bearing only.
+    pub(super) fn offset_from(self, x: f64, z: f64) -> Option<[f64; 2]> {
+        match self {
+            Fix::Block([bx, _, bz]) => Some([f64::from(bx) + 0.5 - x, f64::from(bz) + 0.5 - z]),
+            Fix::Chunk([cx, cz]) => Some([f64::from(cx) * 16.0 + 8.0 - x, f64::from(cz) * 16.0 + 8.0 - z]),
+            Fix::Bearing(_) => None,
+        }
+    }
+
+    // The unit direction to them from (x, z).
+    pub(super) fn direction_from(self, x: f64, z: f64) -> Option<[f64; 2]> {
+        let d = match self {
+            Fix::Bearing(a) => {
+                let a = f64::from(a);
+                [-a.sin(), a.cos()]
+            }
+            _ => {
+                let [dx, dz] = self.offset_from(x, z)?;
+                let length = dx.hypot(dz);
+                if length < 1e-6 {
+                    return None;
+                }
+                [dx / length, dz / length]
+            }
+        };
+        d.iter().all(|v| v.is_finite()).then_some(d)
+    }
+}
+
+// A compass point for a direction (x east, z south).
+pub(super) fn compass([dx, dz]: [f64; 2]) -> &'static str {
+    const POINTS: [&str; 8] = ["S", "SW", "W", "NW", "N", "NE", "E", "SE"];
+    let yaw = (-dx).atan2(dz).to_degrees().rem_euclid(360.0);
+    POINTS[(((yaw + 22.5) / 45.0) as usize) % 8]
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Op {
+    Track,
+    Untrack,
+    Update,
+}
+
+// The waypoints as the server keeps them for you, and who it has just brought closer. A waypoint that moves more than
+// a block in a tick (or changes kind) is untracked and tracked again, so the kind it had just before (within
+// REMEMBER ms) still counts as where it was.
+#[derive(Default)]
+pub(super) struct Book {
+    pub(super) players: Vec<(u128, Fix)>,
+    gone: Vec<(u128, u8, u64)>,
+    // Brought closer: who, the rank before (0 none), the fix now.
+    pub(super) closer: Vec<(u128, u8, Fix)>,
+}
+
+const REMEMBER: u64 = 2000;
+
+impl Book {
+    pub(super) fn clear(&mut self) {
+        self.players.clear();
+        self.gone.clear();
+        self.closer.clear();
+    }
+
+    pub(super) fn apply(&mut self, op: Op, uuid: u128, fix: Option<Fix>, now: u64, alerts: bool) {
+        let at = self.players.iter().position(|(u, _)| *u == uuid);
+        let before = at.map(|i| self.players[i].1);
+        self.gone.retain(|(_, _, when)| now.saturating_sub(*when) <= REMEMBER);
+        let after = match (op, fix) {
+            (Op::Untrack, _) => {
+                if let Some(i) = at {
+                    self.players.swap_remove(i);
+                    self.gone.retain(|(u, ..)| *u != uuid);
+                    if self.gone.len() < 256 {
+                        self.gone.push((uuid, before.map_or(0, Fix::rank), now));
+                    }
+                }
+                return;
+            }
+            (Op::Track, Some(f)) => f,
+            // Vanilla's update moves a waypoint of the same kind only.
+            (Op::Update, Some(f)) if before.is_some_and(|b| b.rank() == f.rank()) => f,
+            _ => return,
+        };
+        let was = before.map(Fix::rank).or_else(|| self.gone.iter().find(|(u, ..)| *u == uuid).map(|g| g.1)).unwrap_or(0);
+        self.gone.retain(|(u, ..)| *u != uuid);
+        match at {
+            Some(i) => self.players[i].1 = after,
+            None if self.players.len() < 1024 => self.players.push((uuid, after)),
+            None => return,
+        }
+        if alerts && after.rank() >= 2 && after.rank() > was && self.closer.len() < 64 {
+            self.closer.push((uuid, was, after));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,5 +273,50 @@ mod tests {
         let [x, y] = circle_point([0., 0.], 10., 1, 64);
         assert!((x.hypot(y) - 10.0).abs() < 0.00001);
         assert!((y - y.round()).abs() > 0.01);
+    }
+
+    #[test]
+    fn locator_bearing_points_where_the_server_measured() {
+        // Horizon's azimuth: atan2(receiver.x - source.x, source.z - receiver.z); a source due east (+X) of you.
+        let a = (0.0f64 - 100.0).atan2(0.0) as f32;
+        let d = Fix::Bearing(a).direction_from(0.0, 0.0).unwrap();
+        assert!((d[0] - 1.0).abs() < 1e-6 && d[1].abs() < 1e-6, "{d:?}");
+        assert_eq!(compass(d), "E");
+        assert_eq!(compass([0.0, -1.0]), "N");
+        assert_eq!(compass([-1.0, 1.0]), "SW");
+        let c = Fix::Chunk([2, -1]).offset_from(0.0, 0.0).unwrap();
+        assert_eq!(c, [40.0, -8.0]);
+        assert!(Fix::Block([0, 64, 0]).direction_from(0.5, 0.5).is_none());
+    }
+
+    #[test]
+    fn locator_book_reports_only_coming_closer() {
+        let mut b = Book::default();
+        b.apply(Op::Track, 1, Some(Fix::Bearing(0.5)), 0, true);
+        assert!(b.closer.is_empty(), "a bearing only is not close");
+        // Kind changes come as untrack + track.
+        b.apply(Op::Untrack, 1, None, 100, true);
+        b.apply(Op::Track, 1, Some(Fix::Chunk([30, 0])), 100, true);
+        assert_eq!(b.closer, vec![(1, 1, Fix::Chunk([30, 0]))]);
+        b.closer.clear();
+        b.apply(Op::Update, 1, Some(Fix::Chunk([29, 0])), 150, true);
+        b.apply(Op::Update, 1, Some(Fix::Block([5, 64, 5])), 160, true);
+        assert_eq!(b.players, vec![(1, Fix::Chunk([29, 0]))], "an update of another kind is ignored");
+        b.apply(Op::Untrack, 1, None, 200, true);
+        b.apply(Op::Track, 1, Some(Fix::Block([5, 64, 5])), 200, true);
+        assert_eq!(b.closer, vec![(1, 2, Fix::Block([5, 64, 5]))]);
+        b.closer.clear();
+        // A fast mover re-tracked at the same kind, and one moving away: nothing.
+        b.apply(Op::Untrack, 1, None, 300, true);
+        b.apply(Op::Track, 1, Some(Fix::Block([9, 64, 5])), 300, true);
+        b.apply(Op::Untrack, 1, None, 400, true);
+        b.apply(Op::Track, 1, Some(Fix::Chunk([3, 3])), 400, true);
+        assert!(b.closer.is_empty(), "{:?}", b.closer);
+        // Gone long enough (out of the dimension, a pumpkin) and back close: counts again; quiet (just joined): not.
+        b.apply(Op::Untrack, 1, None, 500, true);
+        b.apply(Op::Track, 1, Some(Fix::Block([1, 64, 1])), 5000, true);
+        b.apply(Op::Track, 2, Some(Fix::Block([1, 64, 1])), 5000, false);
+        assert_eq!(b.closer, vec![(1, 0, Fix::Block([1, 64, 1]))]);
+        assert_eq!(b.players.len(), 2);
     }
 }

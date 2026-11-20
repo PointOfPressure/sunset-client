@@ -717,7 +717,14 @@ fn module_tick(game: &mut Game<'_>) {
         }
     }
     if let Some(m) = get("Notifier") {
+    // Locator alerts are taken every tick, so turning Notifier on never brings old ones.
+    let located = super::sunset_radar::locator_alerts(game);
         notify(game, m);
+        if m.b("Locator") {
+            for line in located {
+                super::sunset_util::report(game, &line);
+            }
+        }
     } else {
         with(|s| s.notify = None);
     }
@@ -812,7 +819,9 @@ fn module_tick(game: &mut Game<'_>) {
     crit_tick(game);
     // Elytra Target's look first: Kill Aura hits by it.
     super::sunset_elytra_target::post_tick(game);
-    if let Some(m) = get("Kill Aura") {
+    if let Some(m) = get("Kill Aura")
+        && !(m.b("Projectiles") && super::sunset_aura::punch_projectiles(game))
+    {
         kill_aura(game, m, get("Criticals").is_some());
     }
     if let Some(m) = get("Trigger Bot") {

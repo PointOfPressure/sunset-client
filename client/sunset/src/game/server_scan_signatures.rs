@@ -208,9 +208,109 @@ pub(crate) fn query_plugin(raw: &str) -> Match {
         .unwrap_or(hit("Unknown", Kind::Unknown, Strength::Reported))
 }
 
+// ---- Ping ids (behaviour after Combatant's anticheat fingerprint, written fresh): what the ids of the server's play
+// Ping packets do. Grim-style anticheats send transactions counting down through the negative shorts; Horizon's
+// anticheat (while it records) sends one at the end of every server tick with the tick number as its id, so the ids
+// count up by one and their rate is the server's TPS. Samples: (seconds since watching began, id).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Pings {
+    // Too few yet (how many).
+    Watching(usize),
+    // None at all in this many seconds.
+    Quiet(u64),
+    Transactions(usize),
+    // Counting up by one: how many, and the ids a second over the last 10 seconds.
+    Counter(usize, f64),
+    // Many but no pattern: how many, a second.
+    Random(usize, f64),
+    Irregular(usize),
+}
+
+pub(crate) fn pings(samples: &[(f64, i32)], watched: f64) -> Pings {
+    let n = samples.len();
+    if n == 0 {
+        return if watched >= 30.0 { Pings::Quiet(watched as u64) } else { Pings::Watching(0) };
+    }
+    if n < 12 {
+        return Pings::Watching(n);
+    }
+    let steps = n - 1;
+    let (mut down, mut up) = (0, 0);
+    for w in samples.windows(2) {
+        let (a, b) = (w[0].1, w[1].1);
+        if (a <= 0 && b == a - 1 && b >= -32768) || (a <= -32767 && (b == 0 || b == -1)) {
+            down += 1;
+        }
+        if b == a.wrapping_add(1) {
+            up += 1;
+        }
+    }
+    let span = samples[n - 1].0 - samples[0].0;
+    let rate = if span > 0.0 { steps as f64 / span } else { 0.0 };
+    if down * 5 >= steps * 4 {
+        Pings::Transactions(n)
+    } else if up * 5 >= steps * 4 {
+        let end = samples[n - 1];
+        let first = samples.iter().find(|s| s.0 >= end.0 - 10.0).copied().unwrap_or(samples[0]);
+        let per_second = if end.0 - first.0 >= 1.0 { f64::from(end.1.wrapping_sub(first.1)) / (end.0 - first.0) } else { rate };
+        Pings::Counter(n, per_second)
+    } else if rate >= 2.0 {
+        Pings::Random(n, rate)
+    } else {
+        Pings::Irregular(n)
+    }
+}
+
+// The line Server Scan shows; `horizon`: the server named itself Horizon.
+pub(crate) fn pings_line(p: Pings, horizon: bool) -> String {
+    let sure = |n: usize| if n >= 40 { "" } else { ", few samples" };
+    match p {
+        Pings::Watching(n) => format!("Ping ids: watching ({n} so far)"),
+        Pings::Quiet(s) => format!("Ping ids: none in {s} s (no transaction pings)"),
+        Pings::Transactions(n) => format!("Ping ids: Grim-style transactions, counting down ({n} seen{})", sure(n)),
+        Pings::Counter(n, tps) if horizon => format!("Ping ids: Horizon's anticheat, ids are server ticks: {tps:.1} TPS ({n} seen{})", sure(n)),
+        Pings::Counter(n, rate) => format!("Ping ids: counting up by one, {rate:.1} a second ({n} seen{})", sure(n)),
+        Pings::Random(n, rate) => format!("Ping ids: no pattern, {rate:.1} a second ({n} seen)"),
+        Pings::Irregular(n) => format!("Ping ids: {n} seen, no pattern"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ping_ids_tell_transactions_tick_counters_and_silence_apart() {
+        assert_eq!(pings(&[], 10.0), Pings::Watching(0));
+        assert_eq!(pings(&[], 31.0), Pings::Quiet(31));
+        let few: Vec<(f64, i32)> = (0..5).map(|i| (f64::from(i) * 0.05, i)).collect();
+        assert_eq!(pings(&few, 40.0), Pings::Watching(5));
+        // Horizon: one a tick, the tick number; 20 TPS, then a server at 10 TPS.
+        let ticks: Vec<(f64, i32)> = (0..400).map(|i| (f64::from(i) * 0.05, 9000 + i)).collect();
+        let Pings::Counter(400, tps) = pings(&ticks, 20.0) else { panic!("{:?}", pings(&ticks, 20.0)) };
+        assert!((tps - 20.0).abs() < 0.01, "{tps}");
+        let slow: Vec<(f64, i32)> = (0..100).map(|i| (f64::from(i) * 0.1, i)).collect();
+        let Pings::Counter(_, tps) = pings(&slow, 10.0) else { panic!() };
+        assert!((tps - 10.0).abs() < 0.01, "{tps}");
+        assert!(pings_line(Pings::Counter(400, 20.0), true).contains("20.0 TPS"));
+        assert!(!pings_line(Pings::Counter(400, 20.0), false).contains("TPS"));
+        // Grim: down through the negative shorts, wrapping.
+        let mut id = -32760;
+        let grim: Vec<(f64, i32)> = (0..30)
+            .map(|i| {
+                let s = (f64::from(i) * 0.05, id);
+                id = if id <= -32767 { 0 } else { id - 1 };
+                s
+            })
+            .collect();
+        assert_eq!(pings(&grim, 5.0), Pings::Transactions(30));
+        assert!(pings_line(Pings::Transactions(30), false).contains("few samples"));
+        // Scrambled ids, fast and slow.
+        let noise: Vec<(f64, i32)> = (0..40).map(|i| (f64::from(i) * 0.1, (i * 7919) % 613 - 300)).collect();
+        assert!(matches!(pings(&noise, 5.0), Pings::Random(40, _)));
+        let rare: Vec<(f64, i32)> = (0..12).map(|i| (f64::from(i) * 2.0, i * 37)).collect();
+        assert_eq!(pings(&rare, 30.0), Pings::Irregular(12));
+    }
 
     #[test]
     fn declared_brand_is_reported_and_not_authenticated() {

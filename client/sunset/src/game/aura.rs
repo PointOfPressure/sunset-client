@@ -48,6 +48,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Target FOV", 360.0, 10.0, 360.0, 5.0)
             .pick("List mode", &["Whitelist", "Blacklist"])
             .text("Entities", "player")
+            // Ghast fireballs, shulker bullets and wind charges coming at you, in reach: hit away first.
+            .bool("Projectiles", false)
             .num("Health threshold", 0.0, 0.0, 100.0, 1.0)
             .bool("Anti bot", true)
             .pick("Anti bot sensitivity", &["Balanced", "Conservative", "Sensitive"])
@@ -1256,4 +1258,61 @@ pub(super) fn draw_target(game: &Game<'_>, w: f32, h: f32, potato: bool, out: &m
     out.fill([x + 4.0, y + 17.0, bar, 4.0], 0xFF30_3030);
     out.fill([x + 4.0, y + 17.0, bar * fraction, 4.0], 0xFF00_0000 | health_colour(fraction));
     out.text(&health, [x + width - 4.0 - hw, y + 14.0], health_colour(fraction));
+}
+
+// ---- Projectiles (behaviour after Combatant's Projectile Puncher, written fresh): a ghast's fireball, a shulker bullet
+// or a wind charge coming at you is hit while it is in attack reach of where it will be next tick (the server measures 3 blocks
+// to its box). The look turns to it on this tick's move packet and the hit follows, so the deflection (along your look,
+// as vanilla's) sends it back where it came from. Each one is tried once in 10 ticks. True: a turn is under way, and
+// Kill Aura waits this tick.
+static PUNCHED: Mutex<(u32, u64)> = Mutex::new((0, 0));
+
+pub(super) fn punch_projectiles(game: &mut Game<'_>) -> bool {
+    use horizon_protocol::packets::play::{self, Serverbound as S};
+    let Some(eye) = game.eye_position() else {
+        return false;
+    };
+    let now = game.ticks;
+    let last = *PUNCHED.lock().unwrap_or_else(|e| e.into_inner());
+    let best = game
+        .creatures
+        .projectiles
+        .iter()
+        .filter(|p| p.id != 0 && !p.stuck && !(p.id == last.0 && now < last.1 + 10))
+        .filter_map(|p| {
+            let half = match p.kind.id() {
+                "minecraft:fireball" => 0.5,
+                // Not a blaze's small fireball: it is no redirectable projectile, a hit does nothing.
+                "minecraft:shulker_bullet" | "minecraft:wind_charge" | "minecraft:breeze_wind_charge" => 0.156_25,
+                _ => return None,
+            };
+            let v = [p.velocity.x, p.velocity.y, p.velocity.z];
+            let next = [p.position.x + v[0], p.position.y + v[1], p.position.z + v[2]];
+            let centre = [next[0], next[1] + half, next[2]];
+            let towards = [0, 1, 2].map(|a| eye[a] - centre[a]);
+            // Coming at you (a homing bullet always is), not one of yours on its way out.
+            if p.kind.id() != "minecraft:shulker_bullet" && v[0] * towards[0] + v[1] * towards[1] + v[2] * towards[2] <= 0.0 {
+                return None;
+            }
+            let gap = [0, 1, 2].map(|a| (towards[a].abs() - half).max(0.0));
+            let distance = (gap[0] * gap[0] + gap[1] * gap[1] + gap[2] * gap[2]).sqrt();
+            (distance.is_finite() && distance <= 2.9).then_some((distance, p.id, centre))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0));
+    let Some((_, id, centre)) = best else {
+        return false;
+    };
+    let (yaw, pitch) = look_at(eye, centre);
+    // Another look already waiting (a macro's, Kill Aura's own): this one waits for the next tick.
+    let turning = super::sunset::try_turn_then("Projectiles", yaw, pitch, move |game| {
+        if game.creatures.projectiles.iter().any(|p| p.id == id && !p.stuck) {
+            game.send(S::Attack(play::Attack { id: id as i32 }));
+            game.swing_arm();
+            game.reset_attack_strength();
+        }
+    });
+    if turning {
+        *PUNCHED.lock().unwrap_or_else(|e| e.into_inner()) = (id, now);
+    }
+    turning
 }

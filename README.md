@@ -523,6 +523,10 @@ Elytra Target was asked for by muhalo1545 on the Sunset Discord; its behaviour f
 Anti Vanish's Staff check follows the behaviour of Blackout's Staff Check (GPL-3.0), written fresh for Sunset with no
 code taken.
 
+Radar's Locator marks and Notifier's Locator alerts, Server Scan's ping ids, Ghost Hand's Click through and Kill Aura's
+Projectiles follow the behaviour of Combatant's Visual Range, AntiCheat Detect, Click Through and Projectile Puncher
+(GPL-3.0), written fresh for Sunset with no code taken.
+
 Ore Sim's automatic seed discovery uses [horizon-seedcrackerx](https://github.com/luhnox/horizon-seedcrackerx) by
 [luhnox](https://github.com/luhnox), a Rust port of [SeedCrackerX](https://github.com/19MisterX98/SeedcrackerX),
 originally by KaptainWutax and maintained by 19MisterX98 and contributors, with the SeedFinding libraries. The reused

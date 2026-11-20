@@ -373,8 +373,33 @@ fn plugin_seen(event: &Event) {
 // ends with their reasons.
 static CLOCK: Mutex<VecDeque<(Instant, i64)>> = Mutex::new(VecDeque::new());
 static ENDS: Mutex<VecDeque<(std::time::SystemTime, String, bool)>> = Mutex::new(VecDeque::new());
+// Server Scan's ping ids: since when this server's play has been watched (its Login), and the play Pings since then
+// (when, the id), the last 400.
+static PINGS: Mutex<(Option<Instant>, VecDeque<(Instant, i32)>)> = Mutex::new((None, VecDeque::new()));
+
+pub fn pings() -> (Option<Instant>, Vec<(Instant, i32)>) {
+    let pings = PINGS.lock().unwrap_or_else(|e| e.into_inner());
+    (pings.0, pings.1.iter().copied().collect())
+}
+
+fn ping_seen(packet: &C) {
+    match packet {
+        C::Login(_) => *PINGS.lock().unwrap_or_else(|e| e.into_inner()) = (Some(Instant::now()), VecDeque::new()),
+        C::Ping(p) => {
+            let mut pings = PINGS.lock().unwrap_or_else(|e| e.into_inner());
+            if pings.1.len() == 400 {
+                pings.1.pop_front();
+            }
+            pings.1.push_back((Instant::now(), p.id));
+        }
+        _ => {}
+    }
+}
 
 fn debug_seen(event: &Event) {
+    if let Event::Packet(p) = event {
+        ping_seen(p);
+    }
     match event {
         Event::Joined { .. } => CLOCK.lock().unwrap_or_else(|e| e.into_inner()).clear(),
         Event::Disconnected { reason, from_server, .. } => {
@@ -431,6 +456,7 @@ pub fn seen(events: &[Item]) {
         }
         scan_seen(event, scan_active);
         debug_seen(event);
+        crate::game::sunset_radar::locator_seen(event);
         plugin_seen(event);
         if let Event::Packet(p) = event
             && matches!(

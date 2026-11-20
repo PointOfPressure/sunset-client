@@ -670,12 +670,25 @@ fn overview(s: &Session, module: &Module, now: Instant) -> Vec<String> {
         (0, 0) => "Plugins: none identified".to_owned(),
         (i, p) => format!("Plugins: {i} identified, {p} possible"),
     });
-    let anti = names(s, Kind::AntiCheat);
+    let mut anti = names(s, Kind::AntiCheat);
+    let horizon = software.iter().any(|name| name.to_ascii_lowercase().contains("horizon"));
+    let (since, samples) = packets::pings();
+    let watched = since.map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f64());
+    let samples: Vec<(f64, i32)> = since
+        .map(|at| samples.iter().map(|(when, id)| (when.saturating_duration_since(at).as_secs_f64(), *id)).collect())
+        .unwrap_or_default();
+    let ping_ids = signatures::pings(&samples, watched);
+    match ping_ids {
+        signatures::Pings::Transactions(_) => anti.push("one that checks transactions (Grim-style pings)".to_owned()),
+        signatures::Pings::Counter(..) if horizon => anti.push("Horizon's (recording moves)".to_owned()),
+        _ => {}
+    }
     out.push(if anti.is_empty() {
         "Anti-cheat: none identified (not proof that there is none)".to_owned()
     } else {
         format!("Anti-cheat: {}", anti.join(", "))
     });
+    out.push(signatures::pings_line(ping_ids, horizon));
     out.push(if s.commands_seen { format!("Commands: {} visible", s.roots.len()) } else { "Commands: not received yet".to_owned() });
     let observed = s.cur.config_channels.len() + s.cur.play_channels.len();
     out.push(format!("Channels: {observed} observed{}", if s.cur.config_seen { "" } else { " (Configuration not observed)" }));

@@ -11,6 +11,7 @@ fn sunset_combat_use(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<
     }
     if crate::game::sunset_parity::use_blocked(game)
         || crate::game::sunset_click_fix::use_blocked(game)
+        || crate::game::sunset_player::click_through(game)
         || crate::game::sunset_combat_macros::intercept_use(game)
         || inventory::intercept_use(game)
     {

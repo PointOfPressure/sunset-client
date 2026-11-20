@@ -632,7 +632,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Minutes", 10.0, 1.0, 60.0, 1.0),
         Module::new("Notifier", Player, "Reports joins and leaves.")
             .bool("Join", true)
-            .bool("Leave", true),
+            .bool("Leave", true)
+            // From the locator bar: a player coming within 332 blocks, or into your view range, before you see them.
+            .bool("Locator", true),
         Module::new("Weather Changer", World, "Sets the weather you see.")
             .pick("Weather", &["Clear", "Rain", "Thunder"]),
         Module::new("Hole ESP", Render, "Marks safe holes.")

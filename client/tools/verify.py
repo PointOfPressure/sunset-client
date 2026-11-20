@@ -10552,7 +10552,7 @@ def _():
     studio = ask(".scan commands studio")
     only()
     off = ask(".scan commands")
-    seen = any("Server Scan â€” Commands (" in l and "visible" in l for l in roots)
+    seen = any("Server Scan — Commands (" in l and "visible" in l for l in roots)
     ok = (seen and any("/weather clear" in l for l in sub) and any("no visible command /sunsetnope" in l for l in nope)
           and any("no visible command /studio" in l for l in studio))
     return ok, f"roots {roots[:2]!r}; weather {sub[:3]!r}; unknown {nope[:1]!r}; studio {studio[:1]!r}; module off {off[:1]!r}"
@@ -12190,6 +12190,142 @@ def _():
         got[name] = (flight, round(top - ground, 1), 16 - sum(s.get("count", 0) for s in hotbar if s and "wind_charge" in (s.get("item") or "")))
         cmd("effect give @s minecraft:instant_health 1 10 true")
     ok = got["on"][2] == 1 and got["off"][2] == 0 and got["on"][1] > got["off"][1] + 5
+@test("Ghost Hand (Click through)")
+def _():
+    # A wall sign, then an item frame, on a chest's face, and a sign on stone: a right click at the sign or frame opens
+    # the chest with Click through (Blocks off, so only Click through can), and not without the module, with Click
+    # through off, or with stone behind.
+    reset()
+    chest, front = (X0, Y + 1, Z0 + 3), (X0, Y + 1, Z0 + 2)
+    setting("ghosthand", "blocks", "false")
+
+    def click(at, mods, through="true"):
+        setting("ghosthand", "click through", through)
+        only(*mods)
+        ctl("look-at", *(str(v) for v in at))
+        wait(2)
+        ctl("mouse", "right", "click")
+        wait(10)
+        screen = state().get("screen")
+        while state().get("screen") not in ("playing", None):
+            ctl("key", "esc", "tap")
+            wait(5)
+        only()
+        return screen
+
+    cmd(f"setblock {chest[0]} {chest[1]} {chest[2]} minecraft:chest[facing=north]")
+    wait(5)
+    direct = click((X0 + 0.5, Y + 1.7, Z0 + 3.5), ())
+    cmd(f"setblock {front[0]} {front[1]} {front[2]} minecraft:oak_wall_sign[facing=north]")
+    wait(5)
+    sign_at = (X0 + 0.5, Y + 1.5, Z0 + 2.95)
+    sign = {"off": click(sign_at, ()), "on": click(sign_at, ("ghosthand",)), "setting off": click(sign_at, ("ghosthand",), "false")}
+    cmd(f"setblock {front[0]} {front[1]} {front[2]} minecraft:air",
+        f"summon minecraft:item_frame {X0 + 0.5} {Y + 1.5} {Z0 + 2.97} {{Facing:2b,Tags:[\"ct\"]}}")
+    wait(10)
+    frame = {"off": click(sign_at, ()), "on": click(sign_at, ("ghosthand",))}
+    cmd("kill @e[type=minecraft:item_frame,tag=ct]", f"setblock {chest[0]} {chest[1]} {chest[2]} minecraft:stone",
+        f"setblock {front[0]} {front[1]} {front[2]} minecraft:oak_wall_sign[facing=north]")
+    wait(5)
+    stone = click(sign_at, ("ghosthand",))
+    cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 2} {X0 + 1} {Y + 3} {Z0 + 3} minecraft:air")
+    container = direct not in ("playing", None)
+    ok = (container and sign["on"] == direct and sign["off"] != direct and sign["setting off"] != direct
+          and frame["on"] == direct and frame["off"] != direct and stone != direct)
+    return ok, f"chest {direct}; sign {sign}; frame {frame}; sign on stone {stone}"
+
+
+@test("Locator radar")
+def _():
+    # Bot1 (creative, so it transmits a waypoint) comes from 600 blocks off to 250 (its chunk out of view: within 332)
+    # to 20 (in view range): Notifier's Locator says both before anything else could see Bot1, with Radar drawing the
+    # locator marks. Locator off: nothing. A carved pumpkin on Bot1: nothing (the locator bar leaves it out).
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    cmd("gamemode creative Bot1")
+
+    def approach(locator, head=None):
+        cmd(f"tp Bot1 {X0 + 600.5} {Y + 30} {Z0 + 0.5}")
+        if head:
+            cmd(f"item replace entity Bot1 armor.head with {head}")
+        setting("notifier", "locator", locator)
+        only("notifier", "radar")
+        wait(80)
+        mark = log_mark()
+        cmd(f"tp Bot1 {X0 + 250.5} {Y + 30} {Z0 + 0.5}")
+        wait(80)
+        if locator == "true" and not head:
+            ctl("screenshot", f"{SHOTS}/locator_radar.png")
+        cmd(f"tp Bot1 {X0 + 20.5} {Y + 30} {Z0 + 0.5}")
+        wait(80)
+        only()
+        return [line for line in sunset_said(mark) if "Bot1" in line]
+
+    on = approach("true")
+    off = approach("false")
+    hidden = approach("true", "minecraft:carved_pumpkin")
+    cmd("item replace entity Bot1 armor.head with minecraft:air", "gamemode spectator Bot1",
+        f"tp Bot1 {X0 + 0.5} {Y + 30} {Z0 + 60}")
+    near = any("within 332 blocks" in l and " E)" in l for l in on)
+    view = any("in view range" in l for l in on)
+    return near and view and not off and not hidden, f"on {on}; Locator off {off}; pumpkin {hidden}"
+
+
+@test("Server Scan (ping ids)")
+def _():
+    # Server Scan names what the server's Ping ids do: Horizon's anticheat sends the server tick (counting up, about
+    # 20 a second, read as TPS), vanilla and Paper send none (watched 30 s on), and nothing is ever called Grim-style.
+    import re
+    only("serverscan")
+    setting("serverscan", "mode", "Passive")
+    wait(700)
+    lines = said_after(".scan", 20)
+    only()
+    software = next((l for l in lines if l.startswith("Software:")), "")
+    ping = next((l for l in lines if l.startswith("Ping ids:")), "")
+    anti = next((l for l in lines if l.startswith("Anti-cheat:")), "")
+    rate = re.search(r"([0-9.]+) (TPS|a second)", ping)
+    if not ping or "Grim" in ping:
+        ok = False
+    elif SERVER and "horizon" in software.lower():
+        ok = bool(rate) and 15.0 <= float(rate.group(1)) <= 21.0 and "TPS" in ping and "Horizon" in anti
+    elif SERVER:
+        ok = "none in" in ping
+    else:
+        ok = "watching" not in ping or "(0 so far)" in ping
+    return ok, f"{software!r}; {ping!r}; {anti!r}"
+
+
+@test("Kill Aura (Projectiles)")
+def _():
+    # A ghast's fireball (no explosion) flying at you from 5 blocks: with Projectiles on, Kill Aura hits it away (an
+    # attack, no harm); with it off, it hits you. One flying away from you, with it on: never attacked. (A blaze's small
+    # fireball is no redirectable projectile: a hit does nothing, so it is left alone.)
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    setting("killaura", "entities", "zombie")
+
+    def shot(on, z, motion):
+        reset()
+        setting("killaura", "projectiles", "true" if on else "false")
+        only("killaura")
+        wait(5)
+        before, mark = hp(), probe_mark()
+        cmd(f"summon minecraft:fireball {X0 + 0.5} {Y + 1.8} {Z0 + z} {{Motion:[0.0,0.0,{motion}],acceleration_power:0.0d,ExplosionPower:0b}}")
+        wait(40)
+        hits = sum(1 for t in probe_ticks(mark) for line in t if line == "order attack")
+        only()
+        cmd("kill @e[type=minecraft:fireball]")
+        lost = before - hp()
+        return hits, round(lost, 1)
+
+    # Hurting projectiles keep 95% of their speed a tick: 0.6 a tick from 6.5 blocks arrives in about 12 ticks.
+    on, off, away = shot(True, 6.5, -0.6), shot(False, 6.5, -0.6), shot(True, 2.0, 0.6)
+    reset()
+    ok = on[0] >= 1 and on[1] == 0 and off[0] == 0 and off[1] > 0 and away[0] == 0
+    return ok, f"(attacks, health lost): coming with Projectiles {on}, without {off}; going away {away}"
+
+
     return ok, f"(tick the pearl took you, highest you got, wind charges used): off {got['off']}, on {got['on']}"
 
 

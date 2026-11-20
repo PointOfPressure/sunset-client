@@ -177,7 +177,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Passive mob age filter", &["Adult", "Baby", "Both"])
             .pick("Hostile mob age filter", &["Both", "Adult", "Baby"]),
         Module::new("Ghost Hand", Player, "Uses containers through blocks.")
-            .bool("Blocks", true),
+            .bool("Blocks", true)
+            // A right click on a sign, banner or item frame hanging on a container opens the container instead.
+            .bool("Click through", true),
         Module::new("Air Place", Player, "Places blocks in the air.")
             .num("Range", 5.0, 2.0, 6.0, 0.5),
         Module::new("Fast Break", Player, "Breaks blocks faster.")
@@ -398,10 +400,137 @@ fn usable(game: &Game<'_>, p: [i32; 3]) -> bool {
             .any(|k| name == *k || name.ends_with(&format!("_{k}")))
 }
 
+// Click through: what a sign, a banner or an item frame can hang on and be clicked through to.
+fn container(name: &str) -> bool {
+    ["chest", "trapped_chest", "ender_chest", "barrel", "shulker_box", "hopper", "dispenser", "dropper", "furnace",
+        "blast_furnace", "smoker", "brewing_stand", "crafter"]
+        .iter()
+        .any(|k| name == *k || name.ends_with(&format!("_{k}")))
+}
+
+// Click Through (Ghost Hand's; behaviour after Combatant's, written fresh): the container behind the sign, banner or
+// item frame your crosshair is on, within reach, through at most three of them; the block, the face the look enters
+// it by and where on it. None while sneaking (a sneak-click is for the item in hand), attacking or on a mob.
+fn through_target(game: &Game<'_>) -> Option<([i32; 3], i32, [f32; 3])> {
+    if !in_world(game) || game.left || game.keys.raw(&KeyCode::ShiftLeft) || game.mob_hit().is_some_and(|(_, d, _)| game.before_block(d)) {
+        return None;
+    }
+    let eye = game.eye_position()?;
+    let look = super::view_vector(game.yaw, game.pitch);
+    let reach = game.reach();
+    // An item frame is the 12 by 12 pixel, one pixel deep plate against the block it hangs on; facing 0-5 is down,
+    // up, north, south, west, east (the way it looks out).
+    let frame_at = |p: [i32; 3]| game.item_frames.iter().any(|f| f.pos == p);
+    let frame_hit = game.item_frames.iter().filter_map(|f| {
+        let out: [f64; 3] = match f.facing { 0 => [0.0, -1.0, 0.0], 1 => [0.0, 1.0, 0.0], 2 => [0.0, 0.0, -1.0], 3 => [0.0, 0.0, 1.0], 4 => [-1.0, 0.0, 0.0], _ => [1.0, 0.0, 0.0] };
+        let (mut lo, mut hi) = ([0.0; 3], [0.0; 3]);
+        for a in 0..3 {
+            let base = f64::from(f.pos[a]);
+            (lo[a], hi[a]) = match out[a] as i32 {
+                1 => (base, base + 1.0 / 16.0),
+                -1 => (base + 15.0 / 16.0, base + 1.0),
+                _ => (base + 2.0 / 16.0, base + 14.0 / 16.0),
+            };
+        }
+        // The ray's entry into the plate's box (slab method).
+        let (mut near, mut far) = (0.0f64, reach);
+        for a in 0..3 {
+            if look[a].abs() < 1e-9 {
+                if eye[a] < lo[a] || eye[a] > hi[a] {
+                    return None;
+                }
+                continue;
+            }
+            let (t1, t2) = ((lo[a] - eye[a]) / look[a], (hi[a] - eye[a]) / look[a]);
+            near = near.max(t1.min(t2));
+            far = far.min(t1.max(t2));
+        }
+        (near <= far).then_some(near)
+    }).fold(None, |best: Option<f64>, t| Some(best.map_or(t, |b| b.min(t))));
+    let see_through = |p: [i32; 3]| {
+        let name = short(&facts(game, p).name);
+        name.ends_with("sign") || name.ends_with("banner")
+    };
+    // On a frame nearer than the block picked, or on a sign or banner: else this is an ordinary click.
+    let picked = game.pick();
+    let on_frame = frame_hit.is_some_and(|t| picked.as_ref().is_none_or(|h| {
+        let c = [0, 1, 2].map(|a| f64::from(h.pos[a]) + 0.5 - eye[a]);
+        t <= (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt()
+    }));
+    if !on_frame && !picked.as_ref().is_some_and(|h| see_through(h.pos)) {
+        return None;
+    }
+    let (mut last, mut layers) = (None, 0);
+    let mut i = 1;
+    while f64::from(i) * 0.02 <= reach {
+        let t = f64::from(i) * 0.02;
+        i += 1;
+        let at = [0, 1, 2].map(|a| eye[a] + look[a] * t);
+        let p = at.map(|v| v.floor() as i32);
+        if last == Some(p) {
+            continue;
+        }
+        let entered = last.map(|l: [i32; 3]| (0..3).find(|&a| l[a] != p[a]).unwrap_or(1));
+        last = Some(p);
+        let state = game.world.block(p[0], p[1], p[2]);
+        let frame = frame_at(p);
+        if see_through(p) || frame {
+            layers += 1;
+            if layers > 3 {
+                return None;
+            }
+            if !see_through(p) && !game.res.facts().is_air(state) {
+                // A frame's own cell holds a block too: only a container ends the search there.
+                if !container(short(&facts(game, p).name)) {
+                    return None;
+                }
+            } else {
+                continue;
+            }
+        } else if game.res.facts().is_air(state) {
+            continue;
+        }
+        if !container(short(&facts(game, p).name)) {
+            return None;
+        }
+        let axis = entered.unwrap_or(1);
+        let face = match (axis, look[axis] > 0.0) {
+            (0, true) => 4,
+            (0, false) => 5,
+            (1, true) => 0,
+            (1, false) => 1,
+            (_, true) => 2,
+            (_, false) => 3,
+        };
+        let cursor = [0, 1, 2].map(|a| (at[a] - f64::from(p[a])).clamp(0.0, 1.0) as f32);
+        return Some((p, face, cursor));
+    }
+    None
+}
+
+// Click Through, at the game's use: true takes the click (the container is used, the sign or frame is left alone).
+pub(super) fn click_through(game: &mut Game<'_>) -> bool {
+    if !super::sunset::with(|s| s.module("Ghost Hand").is_some_and(|m| m.on && m.b("Click through"))) {
+        return false;
+    }
+    let Some((pos, face, cursor)) = through_target(game) else {
+        return false;
+    };
+    let sequence = sequence(game);
+    game.send(S::UseItemOn(play::UseItemOn { hand: 0, pos, face, cursor, inside: false, world_border: false, sequence }));
+    game.swing_arm();
+    game.use_delay = 4;
+    true
+}
+
 // Ghost Hand (Sunset's): your right click is not on a usable block, so the first one along the look within reach is
 // used instead, through whatever is in between (servers check the distance only).
 fn ghost_hand(game: &mut Game<'_>) {
     if !super::sunset::with(|s| s.module("Ghost Hand").is_some_and(|m| m.on && m.b("Blocks"))) {
+        return;
+    }
+    // Click through takes this click at the game's use.
+    if super::sunset::with(|s| s.module("Ghost Hand").is_some_and(|m| m.b("Click through"))) && through_target(game).is_some() {
         return;
     }
     let Some(eye) = game.eye_position() else {
