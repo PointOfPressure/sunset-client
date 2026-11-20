@@ -580,6 +580,7 @@ pub(super) fn combat_packets(game: &Game<'_>, packets: &[horizon_protocol::packe
         super::sunset_loot_guard::packet(game, packet);
         super::sunset_prediction::packet(game, packet);
         super::sunset_crystal_aura::packet(game, packet);
+        super::sunset_packet_mine::packet(packet);
         if matches!(packet, C::Login(_) | C::Respawn(_) | C::PlayerPosition(_)) {
             super::sunset_combat_wire::reset_look();
         }
