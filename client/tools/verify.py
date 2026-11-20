@@ -16886,8 +16886,8 @@ def _():
     # Daytime: a zombie walking up at night is a target too (Players only off).
     cmd("time set noon")
     if CTL2:
-        # Bot1 well away: a player in reach is a target too.
-        cmd(f"tp Bot1 {X0 + 40.5} {Y + 1} {Z0 + 40.5}")
+        # Bot1 out of it: a player in reach is a target too (a spectator is not).
+        cmd("gamemode spectator Bot1", f"tp Bot1 {X0 + 0.5} {Y + 30} {Z0 + 60}")
 
     def bomb(on=True, launch="Ground", min_height="3", dz=2.0):
         reset()
@@ -16919,7 +16919,7 @@ def _():
         cmd("kill @e[type=pig]")
         return round(lost, 1), round(top - Y - 1, 1), charges, hand.replace("minecraft:", "")
 
-    got = {"ground": bomb(), "jump": bomb(launch="Jump"), "min height 12": bomb(min_height="12"),
+    got = {"ground": bomb(), "jump": bomb(launch="Jump", min_height="2"), "min height 12": bomb(min_height="12"),
            "off": bomb(on=False), "out of range": bomb(dz=6.0)}
     setting("macebomber", "launch", "Ground")
     setting("macebomber", "min height", "3")
