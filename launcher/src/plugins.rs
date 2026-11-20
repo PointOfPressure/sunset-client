@@ -187,8 +187,8 @@ pub fn add(p: &Paths, from: &Path, sunset: &Manifest) -> Result<Plugin> {
 }
 
 pub fn remove(p: &Paths, id: &str) -> Result<()> {
-    if !valid_id(id) {
-        return Err(format!("no plugin {id}"));
+    if !valid_id(id) || !packages(p).join(id).is_dir() {
+        return Err(format!("no plugin {id} is installed"));
     }
     fs::remove_dir_all(packages(p).join(id)).map_err(|e| format!("can't remove {id}: {e}"))
 }

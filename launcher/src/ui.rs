@@ -203,6 +203,8 @@ pub struct Launcher {
     /// The page's (below the top bar) scroll position, and the tab it was last drawn for.
     page_scroll: gpui::ScrollHandle,
     shown_tab: Tab,
+    /// The window's own focus, so Escape reaches it with nothing else focused (closes a menu or the sign-in).
+    root_focus: FocusHandle,
     tx: async_channel::Sender<Msg>,
 }
 
@@ -250,6 +252,7 @@ impl Launcher {
             log_scroll: gpui::ScrollHandle::new(),
             page_scroll: gpui::ScrollHandle::new(),
             shown_tab: Tab::Overview,
+            root_focus: cx.focus_handle(),
             tx,
         };
         app.reload_local();
@@ -364,7 +367,10 @@ impl Launcher {
         if core::cli_path(&self.paths).is_none() {
             // The CLI comes with the first install: fetch just the CLI now.
             let Some(rel) = self.latest.clone() else {
-                self.note = Some((true, self.latest_err.clone().unwrap_or_else(|| "Still looking for the Sunset release…".into())));
+                self.note = Some((true, match &self.latest_err {
+                    Some(e) => format!("Signing in needs the Sunset release, which brings horizon-launcher. {}", sentence(e)),
+                    None => "Still looking for the Sunset release…".into(),
+                }));
                 cx.notify();
                 return;
             };
@@ -559,7 +565,8 @@ impl Launcher {
                     Err(f) => {
                         let msg = format!("The plugin build failed while {}. The Plugins tab says why.", phase_doing(f.phase));
                         self.build_failed = Some(f);
-                        Some((true, msg))
+                        // On the Plugins tab the failure card already says it.
+                        (self.tab != Tab::Plugins).then_some((true, msg))
                     }
                 };
                 self.reload_local();
@@ -649,9 +656,11 @@ impl Launcher {
             }
             Msg::Sources(s) => self.sources = s,
             Msg::Info(r) => match r {
+                // horizon-launcher is in place: sign in now, unless the dialog was cancelled while it downloaded.
                 Ok(s) if s == "sign-in" => {
-                    self.sign_in = None;
-                    self.start_sign_in(cx);
+                    if self.sign_in.take().is_some() {
+                        self.start_sign_in(cx);
+                    }
                 }
                 Ok(s) => {
                     self.note = Some((false, s));
@@ -722,11 +731,18 @@ impl Launcher {
         });
         let (p, tx) = (self.paths.clone(), self.send());
         cx.spawn(async move |_, _| {
-            if let Ok(Ok(Some(paths))) = picked.await {
-                if let Some(path) = paths.into_iter().next() {
-                    std::thread::spawn(move || {
-                        let _ = tx.send_blocking(Msg::PluginAdded(plugins::add(&p, &path, &m).map(|pl| format!("{} {}", pl.name, pl.version))));
-                    });
+            match picked.await {
+                Ok(Ok(Some(paths))) => {
+                    if let Some(path) = paths.into_iter().next() {
+                        std::thread::spawn(move || {
+                            let _ = tx.send_blocking(Msg::PluginAdded(plugins::add(&p, &path, &m).map(|pl| format!("{} {}", pl.name, pl.version))));
+                        });
+                    }
+                }
+                Ok(Ok(None)) => {}
+                // No file chooser on this desktop (no xdg-desktop-portal, say): say so rather than do nothing.
+                _ => {
+                    let _ = tx.send(Msg::PluginAdded(Err("no file chooser opened. Drop the plugin's folder or .hmod file on this page instead".into()))).await;
                 }
             }
         })
@@ -1147,6 +1163,12 @@ fn page_block(block: gpui::Div) -> gpui::Div {
     div().size_full().flex().flex_col().items_center().justify_center().child(block.w_full().max_w(px(PAGE_MAX.0)).flex_1().max_h(px(PAGE_MAX.1)))
 }
 
+/// A list page (Settings, Plugins, Profiles): at most as wide as Overview's block and centred, so a big window
+/// doesn't put a row's label and value a screen apart.
+fn column(page: gpui::AnyElement) -> gpui::AnyElement {
+    div().w_full().flex().justify_center().child(div().w_full().max_w(px(PAGE_MAX.0)).child(page)).into_any_element()
+}
+
 /// A card's heading row; cards side by side use it so their headings share one size and baseline.
 fn card_head(title: &str) -> gpui::Div {
     div().flex().flex_none().items_center().h(px(HEAD_H)).px(px(PAD)).child(bold(title.to_string(), T_HEAD))
@@ -1269,6 +1291,16 @@ fn sentence(e: &str) -> String {
         s.push('.');
     }
     s
+}
+
+/// A note reads as a sentence, whatever error text it carries: a capital first, a full stop last.
+fn capitalised(s: &str) -> String {
+    let mut c = s.trim().chars();
+    let mut out: String = c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default();
+    if out.ends_with(|ch: char| ch.is_alphanumeric()) {
+        out.push('.');
+    }
+    out
 }
 
 fn window_label(w: &str) -> String {
@@ -1600,13 +1632,14 @@ impl Launcher {
             return self.with_menu(Menu::Account, chip, true, cx).into_any_element();
         }
         let Some(a) = self.accounts.iter().find(|a| a.selected).or(self.accounts.first()) else {
-            // The same chip as when signed in, with a person in place of the face.
-            return top_chip("sign-in")
-                .pl(px(8.))
-                .child(icon(Icon::User, 16., TEXT))
-                .child(text("Sign in", 13., TEXT))
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_sign_in(cx)))
-                .into_any_element();
+            // The same chip as when signed in, with a person in place of the face. An owner who signed out still
+            // has offline play, so then it opens the menu (Add account, the offline names) instead.
+            let chip = top_chip("sign-in").pl(px(8.)).child(icon(Icon::User, 16., TEXT)).child(text("Sign in", 13., TEXT));
+            if !self.owner_ever && self.settings.offline_names.is_empty() {
+                return chip.on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_sign_in(cx))).into_any_element();
+            }
+            let chip = chip.child(icon(Icon::Chevron, 14., MUTED)).on_click(cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_menu(Menu::Account, ev, cx)));
+            return self.with_menu(Menu::Account, chip, true, cx).into_any_element();
         };
         let head = self.faces.iter().find(|(u, _)| u == &a.uuid).map(|(_, f)| face(f, FACE).into_any_element()).unwrap_or_else(|| div().w(px(FACE)).h(px(FACE)).rounded(px(nested(R_CTRL, FACE_INSET))).bg(rgb(0x2a2a2f)).into_any_element());
         let chip = top_chip("account")
@@ -1816,7 +1849,7 @@ impl Launcher {
         // min_w(0): long lines wrap inside the card instead of widening it past the window.
         let panel = card().relative().flex_1().min_w(px(0.)).flex().flex_col().overflow_hidden().child(card_head("What's new in this version"));
         if changes.is_empty() {
-            return panel.child(div().px(px(PAD)).pb(px(PAD)).child(text("This version came without a list of changes.", T_BODY, TEXT)));
+            return panel.child(div().px(px(PAD)).pb(px(PAD)).child(text("No list of changes came with this version.", T_BODY, TEXT)));
         }
         let handle = self.log_scroll.clone();
         panel
@@ -1868,7 +1901,11 @@ impl Launcher {
             None => div().into_any_element(),
         };
         let about = match (&self.latest, &self.latest_err) {
-            (Some(r), _) => text(format!("Version {} for Minecraft {} is ready to install.", r.manifest.version, r.manifest.horizon.game), 14., TEXT),
+            (Some(r), _) => {
+                let doing = if self.job.is_some() { "Installing version" } else { "Version" };
+                let tail = if self.job.is_some() { "" } else { " is ready to install" };
+                text(format!("{doing} {} for Minecraft {}{tail}.", r.manifest.version, r.manifest.horizon.game), 14., TEXT)
+            }
             // A failed check reads as a status: a red dot and a sentence, the address behind the button instead.
             (None, Some(e)) => div().flex().items_center().gap(px(8.)).child(div().flex_none().w(px(8.)).h(px(8.)).rounded_full().bg(rgb(RED))).child(text(sentence(e), 14., TEXT)),
             (None, None) => text("Looking for the latest Sunset release…", 14., TEXT),
@@ -1889,7 +1926,13 @@ impl Launcher {
             let toggle = switch("auto-update", self.settings.auto_update)
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.set_settings(|s| s.auto_update = !s.auto_update, cx)));
             let version = match self.update_available() {
-                Some(u) => button("s-update", format!("{} / Update to {}", m.version, u.version), false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx))).into_any_element(),
+                Some(u) => div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .child(text(m.version.clone(), 13., TEXT))
+                    .child(button("s-update", format!("Update to {}", u.version), false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(false, cx))))
+                    .into_any_element(),
                 None => text(m.version.clone(), 13., TEXT).into_any_element(),
             };
             let (inst, data, logs) = (self.paths.instance(), root.clone(), self.paths.logs());
@@ -1909,7 +1952,7 @@ impl Launcher {
                 setting_row("Check for updates", button("s-check", "Check", false).on_click(cx.listener(|this, _: &ClickEvent, _, _| this.check(false))), true),
             ]));
             sections.push(section("Files", vec![
-                setting_row("Instance directory", button("s-open", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(inst.clone(), cx))), false),
+                setting_row("Instance folder", button("s-open", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(inst.clone(), cx))), false),
                 setting_row("Launcher data folder", button("l-data", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(data.clone(), cx))), false),
                 setting_row("Logs", button("s-logs", "Open logs", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(logs.clone(), cx))), false),
                 setting_row("Repair installation (check and download again)", button("s-repair", "Repair", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_install(true, cx))), true),
@@ -1973,13 +2016,13 @@ impl Launcher {
                     .child(setting_row("Sunset launcher", text(core::VERSION, 13., TEXT), false))
                     .child(setting_row("Platform", text(core::PLATFORM, 13., TEXT), false))
                     .child(setting_row("Sunset licence", text("PolyForm Strict 1.0.0", 13., TEXT), false))
-                    .child(setting_row("Horizon", text("LGPL-3.0-or-later; its notice, source and terms come with each prebuilt", T_SMALL, MUTED), false))
+                    .child(setting_row("Horizon", text("LGPL-3.0-or-later", 13., TEXT), false))
                     .child(setting_row("Third-party licences", button("ab-lic", "Open", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_licences(cx))), false))
                     .children(game_licences.map(|dir| setting_row("Game licences (Horizon notice, LGPL, terms)", button("ab-glic", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(dir.clone(), cx))), false)))
-                    .child(setting_row("Release source", text(source, T_SMALL, MUTED), false))
+                    .child(setting_row("Release source", text(source, 13., TEXT), false))
                     .child(setting_row("horizon-launcher (sign-in, install, play)", text(cli.unwrap_or_else(|| "comes with the first install".into()), 13., TEXT), false))
-                    .child(setting_row("Signing key", text(key, T_SMALL, MUTED), false))
-                    .child(div().p(px(PAD)).flex().flex_col().gap(px(8.)).child(text("Installs the signed prebuilt Sunset client for the Horizon Nightly it was built and tested on, and plays it through the stock horizon-launcher, which keeps your Microsoft sign-in.", T_SMALL, MUTED)).child(text("Horizon is LGPL-3.0-or-later; the exact source each prebuilt is built from is published with it. Not affiliated with Mojang or Microsoft.", T_SMALL, MUTED))),
+                    .child(setting_row("Signing key", text(key, 13., TEXT), false))
+                    .child(div().p(px(PAD)).flex().flex_col().gap(px(8.)).child(text("Installs the signed prebuilt Sunset client for the Horizon Nightly it was built and tested on, and plays it through the stock horizon-launcher, which keeps your Microsoft sign-in.", T_SMALL, MUTED)).child(text("Each prebuilt comes with Horizon's notice, licence terms and the exact source it was built from. Not affiliated with Mojang or Microsoft.", T_SMALL, MUTED))),
             )
     }
 
@@ -2021,7 +2064,7 @@ impl Launcher {
                 .flex()
                 .items_center()
                 .gap(px(12.))
-                .child(text("The plugin build, still", 13., MUTED))
+                .child(text("An older plugin build", 13., MUTED))
                 .child(button("pl-clean", "Go back to Sunset as released", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.sync_plugins(cx))))
                 .into_any_element(),
             _ => text("Sunset as released", 13., TEXT).into_any_element(),
@@ -2314,6 +2357,9 @@ impl Render for Launcher {
                 window.focus(&d.focus, cx);
             }
         }
+        if window.focused(cx).is_none() {
+            window.focus(&self.root_focus, cx);
+        }
         // Another page (however the tab changed) starts at its top.
         if self.shown_tab != self.tab {
             self.shown_tab = self.tab;
@@ -2322,13 +2368,13 @@ impl Render for Launcher {
         }
         let page = match self.tab {
             Tab::Overview => self.overview(cx),
-            Tab::Settings => self.settings_view(cx),
-            Tab::Plugins => self.plugins_view(cx),
+            Tab::Settings => column(self.settings_view(cx)),
+            Tab::Plugins => column(self.plugins_view(cx)),
             Tab::Profiles => {
                 let items = self.profiles.iter().map(|p| (p.clone(), String::new())).collect();
                 let empty = "No saved profiles yet. Save one in game from Sunset's menu (Right Shift).".to_string();
                 let folder = self.installed.is_some().then(|| self.paths.sunset_data().join("profiles"));
-                self.list_view("Profiles", empty, items, folder, cx).into_any_element()
+                column(self.list_view("Profiles", empty, items, folder, cx).into_any_element())
             }
         };
         let note = self.note.clone().map(|(err, msg)| {
@@ -2340,13 +2386,24 @@ impl Render for Launcher {
                 .py(px(10.))
                 .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(if err { RED } else { ACCENT })))
                 // min_w(0): a long message wraps inside the card instead of pushing the close button out of it.
-                .child(div().flex_1().min_w(px(0.)).child(text(msg, 13., if err { RED } else { TEXT })))
+                .child(div().flex_1().min_w(px(0.)).child(text(capitalised(&msg), 13., if err { RED } else { TEXT })))
                 .child(div().id("note-close").flex_none().cursor_pointer().child(icon(Icon::Close, 16., MUTED)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.note = None;
                     cx.notify();
                 })))
         });
         div()
+            .track_focus(&self.root_focus)
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                if ev.keystroke.key != "escape" {
+                    return;
+                }
+                if this.sign_in.is_some() {
+                    this.cancel_sign_in(cx);
+                } else if this.menu.is_some() {
+                    this.set_menu(None, cx);
+                }
+            }))
             .size_full()
             .relative()
             .bg(rgb(BG))
@@ -2368,7 +2425,7 @@ impl Render for Launcher {
                     .child(div().id("page").flex_1().min_h(px(0.)).overflow_y_scroll().track_scroll(&self.page_scroll).child(page))
                     .child(fx::smooth_scroll("page", &self.page_scroll)),
             )
-            .when_some(note, |d, n| d.child(n.mt(px(GAP))))
+            .when_some(note, |d, n| d.child(div().mt(px(GAP)).flex().justify_center().child(n.w_full().max_w(px(PAGE_MAX.0)))))
             .when_some(self.menu_popup(cx), |d, m| d.child(m))
             .when_some(self.sign_in_modal(cx), |d, m| d.child(m))
             .when_some(self.offline_modal(window, cx), |d, m| d.child(m))

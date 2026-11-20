@@ -336,7 +336,7 @@ pub fn fetch_release(settings: &Settings) -> Result<Release> {
     let url = manifest_url(settings)?;
     let raw = fetch(&url)?;
     let sig = fetch(&format!("{url}.minisig"))?;
-    verify_signature(&raw, &String::from_utf8_lossy(&sig)).map_err(|e| format!("manifest refused, {e}"))?;
+    verify_signature(&raw, &String::from_utf8_lossy(&sig)).map_err(|_| "the release failed its signature check, so it was refused".to_string())?;
     let manifest: Manifest = serde_json::from_slice(&raw).map_err(|e| format!("unreadable manifest: {e}"))?;
     manifest.check()?;
     let base = url.rsplit_once('/').map(|(b, _)| b.to_string()).unwrap_or_default();
@@ -356,8 +356,21 @@ pub fn installed(p: &Paths) -> Option<Manifest> {
 
 // ---------------------------------------------------------------- network
 
+const READ_TIMEOUT: u64 = 30;
+
+/// The host of an address, for the "can't reach" error.
+fn host(url: &str) -> &str {
+    url.split_once("://").map_or(url, |(_, r)| r).split('/').next().unwrap_or(url)
+}
+
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new().user_agent(&format!("sunset-launcher/{VERSION}")).timeout_connect(std::time::Duration::from_secs(20)).build()
+    // A read that gets nothing for READ_TIMEOUT fails, so a stalled download ends instead of hanging (Cancel is only
+    // seen between reads).
+    ureq::AgentBuilder::new()
+        .user_agent(&format!("sunset-launcher/{VERSION}"))
+        .timeout_connect(std::time::Duration::from_secs(20))
+        .timeout_read(std::time::Duration::from_secs(READ_TIMEOUT))
+        .build()
 }
 
 fn open(url: &str) -> Result<(Box<dyn Read + Send>, Option<u64>)> {
@@ -371,7 +384,11 @@ fn open(url: &str) -> Result<(Box<dyn Read + Send>, Option<u64>)> {
     }
     let resp = agent().get(url).call().map_err(|e| match e {
         ureq::Error::Status(code, _) => format!("{url}: HTTP {code}"),
-        e => format!("{url}: {e}"),
+        // ureq's own text already starts with the address and goes on about DNS lookups.
+        ureq::Error::Transport(t) => match t.kind() {
+            ureq::ErrorKind::Dns | ureq::ErrorKind::ConnectionFailed => format!("can't reach {}. Check the internet connection", host(url)),
+            k => format!("{url}: {}", t.message().map(str::to_string).unwrap_or_else(|| k.to_string())),
+        },
     })?;
     let len = resp.header("Content-Length").and_then(|l| l.parse().ok());
     Ok((Box::new(resp.into_reader()), len))
@@ -415,7 +432,18 @@ pub(crate) fn download(url: &str, dest: &Path, sha256: &str, sig: Option<&str>, 
             let _ = fs::remove_file(&part);
             return Err("cancelled".into());
         }
-        let n = r.read(&mut buf).map_err(|e| format!("{what}: {e}"))?;
+        let n = match r.read(&mut buf) {
+            Ok(n) => n,
+            Err(e) => {
+                // Nothing resumes a partial file, so it goes.
+                drop(out);
+                let _ = fs::remove_file(&part);
+                return Err(match e.kind() {
+                    io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => format!("{what}: the download stalled (nothing arrived for {READ_TIMEOUT} seconds)"),
+                    _ => format!("{what}: the download broke off ({e})"),
+                });
+            }
+        };
         if n == 0 {
             break;
         }
@@ -1322,6 +1350,33 @@ mod tests {
     #[test]
     fn bad_signature_refused() {
         assert!(verify_signature(b"x", "junk").is_err());
+    }
+
+    /// A download the server cuts off fails plainly and leaves no .part behind; an unreachable host says so once.
+    #[test]
+    fn cut_download_and_unreachable_host() {
+        use std::io::Write as _;
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for _ in 0..2 {
+                let (mut s, _) = l.accept().unwrap();
+                let mut req = [0u8; 1024];
+                let _ = s.read(&mut req);
+                let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\npartial");
+            }
+        });
+        let dir = std::env::temp_dir().join(format!("sunset-cut-{}", std::process::id()));
+        let dest = dir.join("pkg.tar.zst");
+        let none = AtomicBool::new(false);
+        let e = download(&format!("http://127.0.0.1:{port}/pkg"), &dest, "00", None, "Sunset", &none, &|_, _| {}).unwrap_err();
+        assert!(e.starts_with("Sunset: the download broke off"), "{e}");
+        assert!(!dest.with_extension("part").exists() && !dest.exists());
+        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(host("https://api.github.com/repos/x"), "api.github.com");
+        assert_eq!(host("http://127.0.0.1:9/m.json"), "127.0.0.1:9");
+        let e = fetch("http://127.0.0.1:9/m.json").unwrap_err();
+        assert_eq!(e, "can't reach 127.0.0.1:9. Check the internet connection");
     }
 
     #[test]

@@ -170,12 +170,12 @@ fn plugins_cmd(p: &core::Paths, mut s: core::Settings, args: &[String], progress
                 out.push("no plugins installed".into());
             }
             let state = match plugins::status(p, &m, s.plugins_enabled, &list) {
-                plugins::Status::Clean => "Sunset as released".to_string(),
-                plugins::Status::Built(b) => format!("Sunset with {} plugin(s) ({})", b.plugins.len(), b.version_dir),
-                plugins::Status::NeedsBuild => "needs a plugin build (sunset-launcher plugins build)".into(),
-                plugins::Status::NeedsClean => "still a plugin build (sunset-launcher plugins build goes back)".into(),
+                plugins::Status::Clean => "the instance plays Sunset as released".to_string(),
+                plugins::Status::Built(b) => format!("the instance plays Sunset with {} plugin(s) ({})", b.plugins.len(), b.version_dir),
+                plugins::Status::NeedsBuild => "the instance needs a plugin build (sunset-launcher plugins build)".into(),
+                plugins::Status::NeedsClean => "the instance still plays a plugin build (sunset-launcher plugins build goes back)".into(),
             };
-            out.push(format!("plugins {}; the instance plays {state}", if s.plugins_enabled { "on" } else { "off" }));
+            out.push(format!("plugins {}; {state}", if s.plugins_enabled { "on" } else { "off" }));
             return Ok(out.join("
 "));
         }
