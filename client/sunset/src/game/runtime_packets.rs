@@ -4,7 +4,7 @@ use crate::game::sunset_compat::SunsetGame as _;
 use super::Game;
 use horizon_protocol::packets::play::{self, Serverbound as S};
 use std::sync::Mutex;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use super::sunset::*;
 
 // ---------------------------------------------------------------- packets
@@ -71,6 +71,9 @@ fn kept_using(game: &Game<'_>) -> bool {
 // tick's own move packet, never another one.
 pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     if !running() { return Out::Pass; }
+    if let S::ClientTickEnd(_) = packet {
+        LOOSE_LOOK.store(false, Ordering::Relaxed);
+    }
     if let Some(changed) = super::sunset_world_parity::outgoing(game, packet) {
         return Out::Replace(changed);
     }
@@ -120,6 +123,20 @@ pub(super) fn outgoing(game: &Game<'_>, packet: &S) -> Out {
     if super::sunset_gui_move::stopping() {
         // This native movement supersedes Blink's held endpoint; never add a second move to drain it.
         BLINK_HELD.store(false, Ordering::Relaxed);
+    }
+    // A look end_turns sent on its own already went in this tick (it goes after the last tick's ClientTickEnd): the
+    // game's own packet, when it only repeats where you stand (its 20-tick reminder) or brings your look back, is left
+    // out, so no tick has two; a look still to come back goes with end_turns' next one.
+    if LOOSE_LOOK.load(Ordering::Relaxed)
+        && let Some(p) = game.player.as_ref()
+        && sent.at.is_none_or(|at| at == [p.position.x, p.position.y, p.position.z])
+        && [p.position.x, p.position.y, p.position.z] == [game.previous_position.x, game.previous_position.y, game.previous_position.z]
+        && matches!(packet, S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_))
+    {
+        if sent.look.is_some() {
+            turns(|t| t.restore = true);
+        }
+        return Out::Drop;
     }
     MOVED_THIS_TICK.store(true, Ordering::Relaxed);
     let Some(p) = game.player.as_ref() else {
@@ -747,6 +764,9 @@ pub(super) fn turned(game: &mut Game<'_>) {
 
 // The end of the tick: with no move packet in it, one to carry the first look asked for (or the player's own back),
 // and what waited for it.
+// end_turns sent a look on its own since the last ClientTickEnd went (see outgoing).
+static LOOSE_LOOK: AtomicBool = AtomicBool::new(false);
+
 pub(super) fn end_turns(game: &mut Game<'_>) {
     // The look that packet would carry is the one the server has already: nothing to send, and what waited for it goes.
     // Your own look back waits for the next tick, as it would after a packet (Quiver keeps the look up across its
@@ -770,10 +790,14 @@ pub(super) fn end_turns(game: &mut Game<'_>) {
         });
     if already {
         turned(game);
-    } else if quiet && turns(|t| !t.queue.is_empty() || t.restore) {
+    } else if quiet && turns(|t| !t.queue.is_empty()) {
+        // A look on its own goes after this tick's ClientTickEnd, in the next tick's window: only for what waits on
+        // it. Your own look back (restore) rides the game's next move packet instead, which may be in that same
+        // window (a knockback, a jump), never a second one there.
         let ground = game.player.as_ref().is_some_and(|p| p.ground.on_ground);
         // outgoing puts the look in.
         game.send(S::MovePlayerRot(play::MovePlayerRot { yaw: game.yaw, pitch: game.pitch, flags: u8::from(ground) }));
+        LOOSE_LOOK.store(true, Ordering::Relaxed);
         turned(game);
     }
     turns(|t| {

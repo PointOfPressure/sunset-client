@@ -39,6 +39,11 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Mace smash", true)
             .bool("Only with a weapon", false)
             .bool("Only on ground", false),
+        // Your own hit held back a tick so its knockback goes where Direction says (aura_knockback.rs).
+        Module::new("Displace", Combat, "Turns your hits' knockback toward a hazard or a side.")
+            .pick("Direction", &["Hazard", "Left", "Right", "Back"])
+            .num("Angle", 90.0, 10.0, 180.0, 5.0)
+            .bool("Players only", false),
         // Movement
         Module::new("Sprint", Movement, "Sprints for you.")
             .bool("Keep sprint", false)
@@ -176,15 +181,26 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Fall speed", 2.5, 0.5, 8.0, 0.5),
         Module::new("No Jump Delay", Movement, "Jumps again on landing."),
         Module::new("Air Jump", Movement, "Jumps in mid-air."),
-        // Control flies freely; Boost (Elytra Boost before 1.3) speeds up the game's own glide.
-        Module::new("Elytra Fly", Movement, "Flies with an elytra: freely, or boosting your glide.")
-            .pick("Mode", &["Control", "Boost"])
+        // Control flies freely; Boost (Elytra Boost before 1.3) speeds up the game's own glide; Bounce, Glide cycle and
+        // Pitch 40 travel with no fireworks (flight.rs).
+        Module::new("Elytra Fly", Movement, "Flies with an elytra: freely, boosting your glide, or travelling without fireworks.")
+            .pick("Mode", &["Control", "Boost", "Bounce", "Glide cycle", "Pitch 40"])
             .num("Horizontal speed", 1.0, 0.1, 5.0, 0.1)
             .num("Vertical speed", 1.0, 0.1, 5.0, 0.1)
             .num("Fall multiplier", 0.01, 0.0, 1.0, 0.01)
             .num("Boost", 0.05, 0.01, 0.2, 0.01)
             .num("Max speed", 2.0, 0.5, 5.0, 0.5)
             .bool("Boost only on firework", false)
+            .num("Bounce pitch", 55.0, -90.0, 90.0, 1.0)
+            .bool("Auto walk", true)
+            .bool("Yaw wobble", false)
+            .num("Dive pitch", 32.5, 0.0, 90.0, 0.5)
+            .num("Climb pitch", -49.0, -90.0, 0.0, 0.5)
+            .num("Cycle drop", 50.0, 5.0, 200.0, 5.0)
+            .num("Max height", 200.0, -64.0, 640.0, 10.0)
+            .num("Lower Y", 80.0, -64.0, 640.0, 5.0)
+            .num("Upper Y", 120.0, -64.0, 640.0, 5.0)
+            .bool("Rockets", false)
             .bool("Auto take off", false)
             .bool("Stop in water", true),
         Module::new("Slippy", Movement, "Makes every block slippery.")
@@ -693,6 +709,7 @@ pub(super) fn defaults() -> Vec<Module> {
     v.extend(super::sunset_anchor_aura::defaults());
     v.extend(super::sunset_melee::defaults());
     v.extend(super::sunset_auto_mace::defaults());
+    v.extend(super::sunset_throws::bomber_defaults());
     v.extend(super::sunset_elytra_target::defaults());
     v.extend(super::sunset_combat_inventory::defaults());
     v.extend(super::sunset_lag::defaults());

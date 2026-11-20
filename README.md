@@ -527,6 +527,11 @@ Radar's Locator marks and Notifier's Locator alerts, Server Scan's ping ids, Gho
 Projectiles follow the behaviour of Combatant's Visual Range, AntiCheat Detect, Click Through and Projectile Puncher
 (GPL-3.0), written fresh for Sunset with no code taken.
 
+Displace follows the behaviour of Echo's and Celeste's Displace; Mace Bomber that of Sky's Mace Bomber and Echo's Dive
+Bomb; Base Finder's Hidden bases that of Sky's Hidden Bases; Elytra Fly's Bounce, Glide cycle and Pitch 40 modes that of
+ThunderHack's Elytra Recast (GPL-3.0), Dimasik's Elytra Bounce, Ballshack's infinite glide and Lemon's (GPL-3.0) and
+BepHax's Pitch 40. All written fresh for Sunset with no code taken.
+
 Ore Sim's automatic seed discovery uses [horizon-seedcrackerx](https://github.com/luhnox/horizon-seedcrackerx) by
 [luhnox](https://github.com/luhnox), a Rust port of [SeedCrackerX](https://github.com/19MisterX98/SeedcrackerX),
 originally by KaptainWutax and maintained by 19MisterX98 and contributors, with the SeedFinding libraries. The reused

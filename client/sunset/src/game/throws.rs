@@ -4,6 +4,7 @@
 // one (asked a tick ahead); a hotbar item is held for it and the slot from before comes back at the start of a later
 // tick, never after a use in the same one; one slot change a tick.
 use super::sunset::{Module, hold, own_id, turn, with};
+use super::sunset_compat::SunsetGame as _;
 use super::sunset_rotation::Rng;
 use super::sunset_util::{self as util, OFFHAND};
 use super::{Game, Screen};
@@ -16,6 +17,7 @@ const CATCH: &str = "Pearl Catch";
 const WIND: &str = "Wind Jump";
 const GAP: &str = "Auto Gap";
 const BOT: &str = "PvP Bot";
+const BOMBER: &str = "Mace Bomber";
 
 // A pearl leaves at 1.5 blocks a tick, slowed by 0.99 and pulled down 0.03 a tick; a wind charge flies at 1.5.
 const THROW_SPEED: f64 = 1.5;
@@ -190,6 +192,9 @@ struct Throws {
     queue_owner: &'static str,
     queue_at: u64,
     queue_gap: (f64, f64),
+    // Mace Bomber: the run under way, and when the last one ended.
+    bomb: Option<Bomb>,
+    bomb_at: u64,
 }
 
 impl Throws {
@@ -382,8 +387,11 @@ pub(super) fn reset(game: &mut Game<'_>) {
     if let Some(owner) = lease {
         super::sunset_combat_control::release(owner);
     }
-    for owner in [THROW, CATCH, WIND, GAP, BOT] {
+    for owner in [THROW, CATCH, WIND, GAP, BOT, BOMBER] {
         super::sunset::cancel_turns(owner);
+    }
+    if let Some(b) = st(|s| s.bomb.take()).filter(|b| b.mace_at.is_some() && b.slot < 9 && b.slot != game.selected && game.player.is_some()) {
+        hold(game, b.slot);
     }
     st(|s| {
         s.single = None;
@@ -783,11 +791,12 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
     let (throw_m, catch_m, wind_m) = (module(THROW), module(CATCH), module(WIND));
     let gap_m = module(GAP).filter(|m| m.b("Auto pot") || m.b("Soup"));
     let bot_m = module(BOT);
+    let bomber_m = module(BOMBER);
     if live(game) {
         track(game);
     }
-    if !live(game) || (throw_m.is_none() && catch_m.is_none() && wind_m.is_none() && gap_m.is_none() && bot_m.is_none()) {
-        if st(|s| s.back.is_some() || s.lease.is_some() || s.legit.is_some() || s.catch.is_some() || s.single.is_some()) {
+    if !live(game) || (throw_m.is_none() && catch_m.is_none() && wind_m.is_none() && gap_m.is_none() && bot_m.is_none() && bomber_m.is_none()) {
+        if st(|s| s.back.is_some() || s.lease.is_some() || s.legit.is_some() || s.catch.is_some() || s.single.is_some() || s.bomb.is_some()) {
             reset(game);
         }
         return;
@@ -796,6 +805,15 @@ pub(super) fn pre_tick(game: &mut Game<'_>, busy: bool) {
         return;
     }
     if settle(game) {
+        return;
+    }
+    if bomber_m.is_none() && st(|s| s.bomb.is_some()) {
+        bomb_end(game);
+    }
+    if let Some(m) = &bomber_m
+        && st(|s| s.bomb.is_some() || (s.single.is_none() && s.legit.is_none() && s.catch.is_none() && s.queue.is_empty()))
+        && bomb_step(game, m)
+    {
         return;
     }
     if let Some(m) = &throw_m
@@ -857,6 +875,243 @@ fn auto_pot(game: &mut Game<'_>, m: &Module) {
     let pitch = m.n("Pot pitch") as f32 - 1.0 + roll(game, 0.0, 1.0) as f32;
     let at = game.ticks;
     st(|s| s.single = Some(Single { owner: GAP, item: Item::HealPot, aim: Aim::Pitch(pitch), at, until: at + 10, jump: false, then_wind: false }));
+}
+
+// ---- Mace Bomber (after Sky's Mace Bomber and Echo's Dive Bomb, behaviour only): with a target within Launch range
+// (across, feet to feet) while you stand on the ground, a wind charge thrown straight down launches you: at once
+// (Ground) or Jump ticks into a jump (Jump). The top of the rise below Min height ends it there; else the mace comes
+// into hand (Swap mace: after the throw, at the top, or once falling) and, falling 1.5 blocks or more (the least a
+// smash needs), the target is hit as soon as it is in reach, the look turned to it on the wire. Smart mace takes the
+// hotbar mace with the most Breach against a target wearing Breach armour points or more, else the most Density. The
+// slot from before comes back after the hit, on landing or when the target is gone (8 blocks across). Auto Mace's own
+// mace rules are left as they are: this only starts the launch and takes a mace for its one hit.
+pub(super) fn bomber_defaults() -> Vec<Module> {
+    vec![
+        Module::new(BOMBER, super::sunset::Category::Combat, "Launches you with a wind charge and smashes the target with a mace.")
+            .pick("Launch", &["Ground", "Jump"])
+            .num("Jump ticks", 3.0, 1.0, 8.0, 1.0)
+            .num("Launch range", 3.0, 0.5, 6.0, 0.5)
+            .num("Min height", 3.0, 1.5, 10.0, 0.5)
+            .pick("Swap mace", &["After throw", "At top", "Falling"])
+            .bool("Smart mace", true)
+            .num("Breach armour", 15.0, 0.0, 30.0, 1.0)
+            .bool("Players only", true),
+    ]
+}
+
+pub(super) fn bomber_visible(m: &Module, name: &str) -> bool {
+    match name {
+        "Jump ticks" => m.p("Launch") == "Jump",
+        "Breach armour" => m.b("Smart mace"),
+        _ => true,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BombStage {
+    Jump,
+    Throw,
+    Rise,
+    Fall,
+    Done,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Bomb {
+    target: u32,
+    stage: BombStage,
+    since: u64,
+    start_y: f64,
+    top: f64,
+    // The slot held before, and the tick the mace was taken.
+    slot: usize,
+    mace_at: Option<u64>,
+}
+
+// Whether the mace is due in hand at this stage of the run.
+pub(super) fn bomb_mace_due(swap: &str, rising: bool, falling: bool, fall: f64) -> bool {
+    match swap {
+        "After throw" => rising || falling,
+        "At top" => falling,
+        _ => falling && fall >= 1.0,
+    }
+}
+
+// The hotbar mace for a target with `armour` points: the most Breach against Breach armour or more (Smart mace), else
+// the most Density; the first of equals.
+fn bomb_mace(game: &Game<'_>, m: &Module, armour: f64) -> Option<usize> {
+    let enchantment = if m.b("Smart mace") && armour >= m.n("Breach armour") { "minecraft:breach" } else { "minecraft:density" };
+    let mut best: Option<(usize, u32)> = None;
+    for slot in 0..9 {
+        if let Some(s) = game.stack_in(slot).filter(|s| s.count > 0 && &*s.item == "minecraft:mace") {
+            let level = s.enchantment_level(enchantment);
+            if best.is_none_or(|(_, top)| level > top) {
+                best = Some((slot, level));
+            }
+        }
+    }
+    best.map(|(slot, _)| slot)
+}
+
+fn bomb_target(game: &Game<'_>, m: &Module) -> Option<u32> {
+    let p = game.player.as_ref()?;
+    let own = own_id(game);
+    let range = m.n("Launch range");
+    game.mobs
+        .iter()
+        .filter(|t| t.alive() && !t.removed && Some(t.id) != own && game.riding != Some(t.id) && t.kind.id != "minecraft:armor_stand")
+        .filter(|t| if t.kind.id == "minecraft:player" {
+            !bomb_friend(game, t.id) && !super::sunset_parity::fake(t.id)
+                && super::remote::sunset_combat_remote::player_mode(game, t.id) != Some(3)
+        } else {
+            !m.b("Players only")
+        })
+        .filter_map(|t| {
+            let d = (t.position.x - p.position.x).hypot(t.position.z - p.position.z);
+            (d <= range).then_some((t.id, d))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(id, _)| id)
+}
+
+fn bomb_friend(game: &Game<'_>, id: u32) -> bool {
+    game.remote_player_name(id).is_some_and(|name| with(|s| s.friends.iter().any(|f| f.eq_ignore_ascii_case(name))))
+}
+
+// The run ends: the slot from before back (when the mace was taken), and a second's rest before the next.
+fn bomb_end(game: &mut Game<'_>) {
+    let now = game.ticks;
+    let Some(b) = st(|s| {
+        s.bomb_at = now;
+        s.bomb.take()
+    }) else {
+        return;
+    };
+    super::sunset::cancel_turns(BOMBER);
+    if b.mace_at.is_some() && b.slot < 9 && b.slot != game.selected && game.player.is_some() {
+        hold(game, b.slot);
+    }
+}
+
+// A tick of Mace Bomber: true while a run holds the throws (nothing else is thrown meanwhile).
+fn bomb_step(game: &mut Game<'_>, m: &Module) -> bool {
+    let now = game.ticks;
+    let Some(p) = game.player.as_ref() else {
+        return false;
+    };
+    let (pos, vy, ground, gliding) = ([p.position.x, p.position.y, p.position.z], p.velocity.y, p.ground.on_ground, p.fall_flying);
+    let Some(mut b) = st(|s| s.bomb) else {
+        if now < st(|s| s.bomb_at) + 20 || !ground || gliding || game.using.is_some() || slot_of(game, Item::Wind).is_none() {
+            return false;
+        }
+        let Some(id) = bomb_target(game, m) else {
+            return false;
+        };
+        let armour = game.mobs.iter().find(|t| t.id == id).map_or(0.0, |t| f64::from(game.sunset_worn_armor(t).0));
+        if bomb_mace(game, m, armour).is_none() {
+            return false;
+        }
+        let jump = m.p("Launch") == "Jump";
+        let bomb = Bomb {
+            target: id,
+            stage: if jump { BombStage::Jump } else { BombStage::Throw },
+            since: now,
+            start_y: pos[1],
+            top: pos[1],
+            slot: game.selected,
+            mace_at: None,
+        };
+        st(|s| {
+            s.bomb = Some(bomb);
+            s.jump = jump;
+        });
+        return true;
+    };
+    let target = game.mobs.iter().find(|t| t.id == b.target && t.alive() && !t.removed).map(|t| {
+        let bx = t.bounds();
+        let (lo, hi) = (bx.min_position(), bx.max_position());
+        ([lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z], f64::from(game.sunset_worn_armor(t).0))
+    });
+    let Some((lo, hi, armour)) = target.filter(|(lo, hi, _)| ((lo[0] + hi[0]) / 2.0 - pos[0]).hypot((lo[2] + hi[2]) / 2.0 - pos[2]) <= 8.0) else {
+        bomb_end(game);
+        return true;
+    };
+    b.top = b.top.max(pos[1]);
+    let fall = b.top - pos[1];
+    match b.stage {
+        BombStage::Jump if now >= b.since + m.n("Jump ticks") as u64 => b.stage = BombStage::Throw,
+        BombStage::Jump => {}
+        BombStage::Throw => match throw(game, BOMBER, Item::Wind, (game.yaw, 90.0)) {
+            Some(true) => {
+                b.stage = BombStage::Rise;
+                b.since = now;
+            }
+            Some(false) if now <= b.since + 10 => {}
+            _ => {
+                bomb_end(game);
+                return true;
+            }
+        },
+        BombStage::Rise => {
+            if vy <= 0.0 && now > b.since + 2 {
+                // The top of the rise: too low for a smash worth it, it ends here.
+                if b.top - b.start_y < m.n("Min height") {
+                    bomb_end(game);
+                    return true;
+                }
+                b.stage = BombStage::Fall;
+                b.since = now;
+            } else if now > b.since + 40 {
+                bomb_end(game);
+                return true;
+            }
+        }
+        BombStage::Fall => {
+            if (ground && now > b.since) || now > b.since + 100 {
+                bomb_end(game);
+                return true;
+            }
+            let eye = game.eye_position();
+            let reach = if game.creative { 5.0 } else { 3.0 };
+            let in_reach = eye.and_then(|e| super::sunset_melee_policy::box_distance(e, lo, hi)).is_some_and(|d| d <= reach);
+            let mace = game.stack_in(game.selected).is_some_and(|s| &*s.item == "minecraft:mace");
+            if fall >= 1.5 && in_reach && mace && b.mace_at.is_some_and(|t| t < now)
+                && let Some(eye) = eye
+            {
+                let at = [(lo[0] + hi[0]) / 2.0, lo[1] + (hi[1] - lo[1]) * 0.5, (lo[2] + hi[2]) / 2.0];
+                let (yaw, pitch) = look_to(eye, at);
+                super::sunset::attack(game, b.target, false, Some((yaw, pitch)));
+                b.stage = BombStage::Done;
+                b.since = now;
+            }
+        }
+        // The hit goes at the start of the tick after its look; the slot comes back once it has.
+        BombStage::Done => {
+            if now > b.since + 2 || ground {
+                st(|s| s.bomb = Some(b));
+                bomb_end(game);
+                return true;
+            }
+        }
+    }
+    let rising = b.stage == BombStage::Rise;
+    let falling = matches!(b.stage, BombStage::Fall);
+    // Not in the tick of the throw: one slot change a tick, none after a use.
+    if b.mace_at.is_none() && !(rising && b.since == now) && bomb_mace_due(m.p("Swap mace"), rising, falling, fall) {
+        match bomb_mace(game, m, armour) {
+            Some(slot) if slot != game.selected => {
+                hold(game, slot);
+                b.mace_at = Some(now);
+            }
+            Some(_) => b.mace_at = Some(now.saturating_sub(1)),
+            None => {
+                bomb_end(game);
+                return true;
+            }
+        }
+    }
+    st(|s| s.bomb = Some(b));
+    true
 }
 
 // The jump a throw asked for, in this tick's input.
@@ -1461,4 +1716,19 @@ fn hit_charges(game: &mut Game<'_>, m: &Module) {
     game.send(S::Punch(horizon_protocol::packets::Empty));
     game.reset_attack_strength();
     st(|s| s.hit_at = now);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_bombers_mace_comes_when_swap_mace_says() {
+        assert!(!bomb_mace_due("After throw", false, false, 0.0));
+        assert!(bomb_mace_due("After throw", true, false, 0.0));
+        assert!(!bomb_mace_due("At top", true, false, 0.0));
+        assert!(bomb_mace_due("At top", false, true, 0.0));
+        assert!(!bomb_mace_due("Falling", false, true, 0.5));
+        assert!(bomb_mace_due("Falling", false, true, 1.0));
+    }
 }

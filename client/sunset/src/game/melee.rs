@@ -984,14 +984,22 @@ pub(super) fn tap_report(game: &Game<'_>) -> String {
 // Wind Jump: jump held for this tick (after pre_input, before the tick's move and PlayerInput); post_input lets it
 // go.
 pub(super) fn press_jump(game: &mut Game<'_>) {
-    const SPACE: usize = 3;
-    if game.keys.raw(&INPUT_KEYS[SPACE]) {
+    press_input(game, 3);
+}
+
+// Forward held for this tick, as press_jump (Elytra Fly's Bounce walks).
+pub(super) fn press_forward(game: &mut Game<'_>) {
+    press_input(game, 0);
+}
+
+fn press_input(game: &mut Game<'_>, i: usize) {
+    if game.keys.raw(&INPUT_KEYS[i]) {
         return;
     }
     let before = INPUT_KEYS.map(|key| game.keys.raw(&key));
     let physical = INPUT_KEYS.map(|key| game.physical_keys.contains(&key));
-    state(|s| s.input.get_or_insert(InputSave { before, physical, changed: [false; INPUT_KEYS.len()] }).changed[SPACE] = true);
-    crate::game::sunset_compat::key_down(&mut game.keys, INPUT_KEYS[SPACE]);
+    state(|s| s.input.get_or_insert(InputSave { before, physical, changed: [false; INPUT_KEYS.len()] }).changed[i] = true);
+    crate::game::sunset_compat::key_down(&mut game.keys, INPUT_KEYS[i]);
 }
 
 // The keys pre_input changed go back to what you hold.

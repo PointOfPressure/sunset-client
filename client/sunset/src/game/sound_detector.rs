@@ -294,6 +294,19 @@ fn hear(game: &Game<'_>, packets: Vec<C>) -> Vec<Heard> {
 }
 
 // Where `at` is from `from`: how far, which way and how far up or down.
+// What a heard thing scores for Base Finder's Hidden bases (none for explosions and far events).
+fn for_bases(h: &Heard) -> Option<super::sunset_base_finder::Sound> {
+    let points = match h.kind {
+        Kind::Containers => 6,
+        Kind::Crafting | Kind::Redstone => 3,
+        Kind::Building if h.label.ends_with(" broken") => 1,
+        Kind::Doors | Kind::Building | Kind::Player => 2,
+        Kind::Mining => 1,
+        Kind::Explosions | Kind::Far => return None,
+    };
+    Some(super::sunset_base_finder::Sound { label: h.label.clone(), points, at: h.at.map(|v| v.floor() as i32) })
+}
+
 fn bearing(from: [f64; 3], at: [f64; 3]) -> String {
     const WAYS: [&str; 8] = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
     let (dx, dz) = (at[0] - from[0], at[2] - from[2]);
@@ -308,19 +321,28 @@ fn bearing(from: [f64; 3], at: [f64; 3]) -> String {
 }
 
 pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
+    // Base Finder's Hidden bases hears through it, on or off.
+    let bases = super::sunset_base_finder::hears() && in_world(game);
     let Some(m) = m.filter(|_| in_world(game)) else {
-        crate::game::sunset_packets::sounds_on(false);
+        crate::game::sunset_packets::sounds_on(bases);
+        if bases {
+            let heard = hear(game, crate::game::sunset_packets::take_sounds());
+            super::sunset_base_finder::heard(heard.iter().filter_map(for_bases));
+        }
         sd(|s| s.incidents.clear());
         return;
     };
     crate::game::sunset_packets::sounds_on(true);
-    let packets = crate::game::sunset_packets::take_sounds();
+    let heard = hear(game, crate::game::sunset_packets::take_sounds());
+    if bases {
+        super::sunset_base_finder::heard(heard.iter().filter_map(for_bases));
+    }
     let Some(here) = player_pos(game) else { return };
     let now = game.ticks;
     let (cooldown, group, keep) = ((m.n("Cooldown") * 20.0) as u64, m.n("Group radius"), (m.n("Marker time") * 20.0) as u64);
     let me = super::sunset::own_id(game);
     let mut lines = Vec::new();
-    for h in hear(game, packets) {
+    for h in heard {
         if !m.b(h.kind.switch()) || h.at[1] > m.n("Max Y") {
             continue;
         }

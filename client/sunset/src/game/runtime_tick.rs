@@ -294,6 +294,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     super::sunset_duel::pre_input(game);
     super::sunset_throws::pre_input(game);
     super::sunset_takeoff::pre_input(game);
+    super::sunset_flight::elytra_travel(game, &mods);
     // The only Baritone driver runs after arbitration and before Horizon's ordinary movement/mining tick.
     super::sunset_baritone::pre_tick(game, &mods);
 }
@@ -574,7 +575,7 @@ fn module_tick(game: &mut Game<'_>) {
                         (v.x, v.y, v.z) = (v.x * k, v.y * k, v.z * k);
                     }
                 }
-            } else if p.fall_flying {
+            } else if p.fall_flying && e.p("Mode") == "Control" {
                 let h = e.n("Horizontal speed");
                 let [x, z] = dir.map_or([0.0, 0.0], |[x, z]| [x * h, z * h]);
                 let y = if jump {

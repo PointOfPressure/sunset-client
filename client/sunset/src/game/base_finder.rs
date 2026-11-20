@@ -25,6 +25,7 @@ use horizon_world::registry::BlockStateId;
 use super::sunset_chunk_feed::Feed;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const NAME: &str = "Base Finder";
 
@@ -62,6 +63,9 @@ pub(super) fn defaults() -> Vec<Module> {
         .bool("Nether roof", true)
         .bool("Hidden light", true)
         .num("Hidden light level", 10.0, 1.0, 15.0, 1.0)
+        .bool("Hidden bases", true)
+        .num("Hidden base Y", 0.0, -64.0, 320.0, 1.0)
+        .num("Hidden base score", 12.0, 4.0, 60.0, 1.0)
         .bool("Grown amethyst", true)
         .pick("Amethyst method", &["Auto", "Blocks", "Palette"])
         .num("Simulation distance", 5.0, 2.0, 16.0, 1.0)
@@ -94,6 +98,7 @@ pub(super) fn visible(m: &Module, name: &str) -> bool {
         "Bedrock layers" => m.b("Bedrock"),
         "Cluster size" | "Cluster entities" => m.b("Entity clusters"),
         "Hidden light level" => m.b("Hidden light"),
+        "Hidden base Y" | "Hidden base score" => m.b("Hidden bases"),
         "Amethyst method" | "Simulation distance" | "Sensitivity" => m.b("Grown amethyst"),
         "Kelp length" | "Vine length" | "Cave vine length" => m.b("Long plants"),
         "Honey level" => m.b("Honey nests"),
@@ -144,6 +149,9 @@ struct Plan {
     hidden: Option<u8>,
     // Grown amethyst: off, from the blocks, or from the palettes.
     growth: Growth,
+    // Hidden bases: the height its light spots are looked for below, and the states whose light is the world's own.
+    deep: Option<i32>,
+    natural: Vec<bool>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -166,6 +174,8 @@ struct Amethyst {
 enum Out {
     Found(Found),
     Amethyst(Amethyst),
+    // Hidden bases: a chunk's light spots (where, how bright), every scan of it.
+    Lights((i32, i32), Vec<([i32; 3], u8)>),
 }
 
 // A chunk with a sign of a base: why, where to look, and the most common listed kinds with their counts.
@@ -188,6 +198,9 @@ struct Scan {
     // Grown amethyst: each scanned chunk's amethyst, and whether it changed since the peaks were last looked for.
     amethyst: HashMap<(i32, i32), (u32, bool, i32)>,
     amethyst_dirty: bool,
+    // Hidden bases: what each chunk gave away, and the chunks to score again.
+    hidden: HashMap<(i32, i32), Hidden>,
+    hidden_dirty: HashSet<(i32, i32)>,
 }
 
 static SCAN: Mutex<Option<Scan>> = Mutex::new(None);
@@ -199,6 +212,9 @@ fn scan<R>(f: impl FnOnce(&mut Option<Scan>) -> R) -> R {
 // On the scan thread: a chunk's blocks counted by list and kind, and the signs looked for; a chunk with any is found.
 // With Grown amethyst on, every chunk's amethyst goes back too.
 fn look(plan: &Plan, states: &mut [u32; 4096], chunk: &Chunk, out: &mut Vec<Out>) {
+    if let Some(below) = plan.deep {
+        out.push(Out::Lights((chunk.x, chunk.z), light_spots(chunk, &plan.natural, below)));
+    }
     if plan.growth != Growth::Off && let Some(t) = &plan.table {
         out.push(Out::Amethyst(amethyst(plan.growth, t, states, chunk)));
     }
@@ -504,6 +520,8 @@ fn plan(game: &Game<'_>, m: &Module) -> Plan {
         roof: m.b("Nether roof"),
         plants: m.b("Long plants").then(|| ["Kelp length", "Vine length", "Cave vine length"].map(|n| m.n(n) as u32)),
         table: (m.b("Hidden light") || m.b("Grown amethyst")).then(|| super::sunset_light_scan::Table::of(game)),
+        deep: m.b("Hidden bases").then(|| m.n("Hidden base Y") as i32),
+        natural: states.iter().map(|s| natural_light(short(&s.name))).collect(),
         states: states.iter().map(|s| s.name.clone()).collect(),
         hidden: m.b("Hidden light").then(|| m.n("Hidden light level") as u8),
         growth: growth(game, m),
@@ -524,9 +542,9 @@ fn growth(game: &Game<'_>, m: &Module) -> Growth {
 }
 
 // What the scan depends on: the dimension and the settings the thread reads (the lists and the block signs).
-const BLOCK_SIGNS: [&str; 18] = [
+const BLOCK_SIGNS: [&str; 20] = [
     "Open portals", "Bubble columns", "Sky builds", "Sky build Y", "Bedrock", "Bedrock layers", "Lone spawners", "Nether roof",
-    "Hidden light", "Hidden light level", "Grown amethyst", "Amethyst method", "Long plants", "Kelp length", "Vine length",
+    "Hidden light", "Hidden light level", "Hidden bases", "Hidden base Y", "Grown amethyst", "Amethyst method", "Long plants", "Kelp length", "Vine length",
     "Cave vine length", "Honey nests", "Honey level",
 ];
 
@@ -540,6 +558,8 @@ fn key(game: &Game<'_>, m: &Module) -> String {
 
 // Each tick, with Base Finder on (`m`) or off (None).
 pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
+    HEARS.store(m.is_some_and(|m| m.b("Hidden bases")) && in_world(game), Ordering::Relaxed);
+    let heard: Vec<Sound> = std::mem::take(&mut *SOUNDS.lock().unwrap_or_else(|e| e.into_inner()));
     let Some(m) = m.filter(|_| in_world(game)) else {
         if m.is_none() {
             // Off: stop scanning and take its waypoints away, saved ones from earlier sessions included.
@@ -565,6 +585,8 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
                 entity_timer: 0,
                 amethyst: HashMap::new(),
                 amethyst_dirty: false,
+                hidden: HashMap::new(),
+                hidden_dirty: HashSet::new(),
             })
         });
     }
@@ -585,6 +607,22 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
                     s.amethyst.insert(a.chunk, (a.grown, a.ungrown, a.y));
                     s.amethyst_dirty = true;
                 }
+                Out::Lights(chunk, spots) => {
+                    if !spots.is_empty() || s.hidden.contains_key(&chunk) {
+                        s.hidden.entry(chunk).or_default().lights = spots;
+                        s.hidden_dirty.insert(chunk);
+                    }
+                }
+            }
+        }
+        if let Some(below) = m.b("Hidden bases").then(|| m.n("Hidden base Y")) {
+            for h in heard.into_iter().filter(|h| f64::from(h.at[1]) < below) {
+                let chunk = (h.at[0] >> 4, h.at[2] >> 4);
+                let sounds = &mut s.hidden.entry(chunk).or_default().sounds;
+                if sounds.len() < 64 {
+                    sounds.push(h);
+                }
+                s.hidden_dirty.insert(chunk);
             }
         }
         if let Some((r, need)) = stay.filter(|_| std::mem::take(&mut s.amethyst_dirty)) {
@@ -605,8 +643,19 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
     });
     if entity_scan {
         let found = entity_signs(game, m);
+        let deep = m.b("Hidden bases").then(|| deep_entities(game, m.n("Hidden base Y")));
         scan(|s| {
             if let Some(s) = s.as_mut() {
+                if let Some(deep) = deep {
+                    for (chunk, h) in s.hidden.iter_mut().filter(|(_, h)| !h.entities.is_empty()) {
+                        h.entities.clear();
+                        s.hidden_dirty.insert(*chunk);
+                    }
+                    for (chunk, what, at) in deep {
+                        s.hidden.entry(chunk).or_default().entities.push((what, at));
+                        s.hidden_dirty.insert(chunk);
+                    }
+                }
                 s.entity_timer = m.n("Entity scan delay") as u32;
                 for f in found {
                     if s.said.insert(f.chunk) {
@@ -616,6 +665,21 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
             }
         });
     }
+    // Hidden bases: each chunk that changed is scored again; one at Hidden base score or more is said once.
+    let need = m.n("Hidden base score");
+    scan(|s| {
+        let Some(s) = s.as_mut() else {
+            return;
+        };
+        for chunk in std::mem::take(&mut s.hidden_dirty) {
+            let Some((score, why, at)) = s.hidden.get(&chunk).and_then(hidden_score) else {
+                continue;
+            };
+            if f64::from(score) >= need && s.said.insert(chunk) {
+                s.fresh.push(Found { chunk, why: format!("a hidden base likely (score {score}: {why})"), at, kinds: Vec::new() });
+            }
+        }
+    });
     // What is new and not near spawn gets its waypoint at once; its chat line waits for the cooldown.
     let near = m.n("Ignore near spawn");
     let spawn = game.spawn.filter(|_| game.dim.id() == "minecraft:overworld").map(|s| [s.x, s.z]);
@@ -645,6 +709,143 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
     if let Some(line) = line {
         report(game, &line);
     }
+}
+
+// ---- Hidden bases (after Sky's Hidden Bases, behaviour only): one score a chunk from three things a base dug in
+// below Hidden base Y (0) gives away. Light: a cell lit 15, 14 or 10 (a lantern or glowstone, a torch, a soul torch)
+// whose six sides are all darker, where the block shown is no light the world makes itself (lava, cave vines, glow
+// lichen, fire, crying obsidian, candles and copper bulbs, sculk, trial chambers' and ancient cities' lights); 4 each,
+// the brightest 4 counted. Sounds heard down there (Sound Detector's, whether it is on or not): a container opened 6,
+// a workstation or redstone 3, a door, a block placed or a player eating or hurt 2, a block broken 1; 24 at most.
+// Entities down there: item frames, armor stands, villagers and name-tagged mobs, 3 each, 12 at most. A chunk is said
+// once, at Hidden base score (12) or more, with what made it.
+#[derive(Default)]
+struct Hidden {
+    lights: Vec<([i32; 3], u8)>,
+    sounds: Vec<Sound>,
+    entities: Vec<(&'static str, [i32; 3])>,
+}
+
+// A sound for Hidden bases: what it was, what it scores, where.
+#[derive(Clone, Debug)]
+pub(super) struct Sound {
+    pub label: String,
+    pub points: u32,
+    pub at: [i32; 3],
+}
+
+static HEARS: AtomicBool = AtomicBool::new(false);
+static SOUNDS: Mutex<Vec<Sound>> = Mutex::new(Vec::new());
+
+// Whether Hidden bases listens: Sound Detector hands it what it hears.
+pub(super) fn hears() -> bool {
+    HEARS.load(Ordering::Relaxed)
+}
+
+pub(super) fn heard(sounds: impl IntoIterator<Item = Sound>) {
+    let mut q = SOUNDS.lock().unwrap_or_else(|e| e.into_inner());
+    for s in sounds {
+        if q.len() < 256 {
+            q.push(s);
+        }
+    }
+}
+
+// The light the world makes itself (and structures down there): not a base's.
+fn natural_light(name: &str) -> bool {
+    matches!(
+        name,
+        "lava" | "magma_block" | "glow_lichen" | "fire" | "soul_fire" | "crying_obsidian" | "soul_lantern" | "trial_spawner"
+            | "vault" | "amethyst_cluster" | "end_portal" | "end_gateway" | "sea_pickle"
+    ) || name.starts_with("cave_vines")
+        || name.starts_with("sculk")
+        || name.ends_with("candle")
+        || name.ends_with("candle_cake")
+        || name.ends_with("copper_bulb")
+        || name.ends_with("amethyst_bud")
+}
+
+// A chunk's light spots below `below`, the brightest 8.
+fn light_spots(chunk: &Chunk, natural: &[bool], below: i32) -> Vec<([i32; 3], u8)> {
+    use super::sunset_light_scan::{block_light, dark};
+    let mut out: Vec<([i32; 3], u8)> = Vec::new();
+    for (i, section) in chunk.sections.iter().enumerate() {
+        let y0 = chunk.min_y() + i as i32 * 16;
+        if y0 >= below || dark(section) {
+            continue;
+        }
+        for j in 0..4096usize {
+            let l = section.light(j) & 15;
+            if !matches!(l, 10 | 14 | 15) {
+                continue;
+            }
+            let (x, y, z) = (j as i32 & 15, y0 + (j as i32 >> 8), j as i32 >> 4 & 15);
+            if y >= below || natural.get(section.get(j) as usize).copied().unwrap_or(false) {
+                continue;
+            }
+            // Its six sides darker (a side in the next chunk is not looked at).
+            let darker = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].iter().all(|d| {
+                let (nx, ny, nz) = (x + d[0], y + d[1], z + d[2]);
+                !(0..16).contains(&nx) || !(0..16).contains(&nz) || block_light(chunk, nx, ny, nz) < l
+            });
+            if darker {
+                out.push(([chunk.x * 16 + x, y, chunk.z * 16 + z], l));
+            }
+        }
+    }
+    out.sort_by(|a, b| b.1.cmp(&a.1));
+    out.truncate(8);
+    out
+}
+
+// A chunk's score, why, and where to look (the brightest spot, else the first sound, else an entity).
+fn hidden_score(h: &Hidden) -> Option<(u32, String, [i32; 3])> {
+    let lights = h.lights.len().min(4) as u32;
+    let heard = h.sounds.iter().map(|s| s.points).sum::<u32>().min(24);
+    let things = (h.entities.len() as u32 * 3).min(12);
+    let score = lights * 4 + heard + things;
+    let at = h.lights.first().map(|l| l.0).or_else(|| h.sounds.first().map(|s| s.at)).or_else(|| h.entities.first().map(|e| e.1))?;
+    let mut why: Vec<String> = Vec::new();
+    if lights > 0 {
+        why.push(format!("{lights} light{}", if lights == 1 { "" } else { "s" }));
+    }
+    let mut tally: Vec<(&str, u32)> = Vec::new();
+    for label in h.sounds.iter().map(|s| s.label.as_str()).chain(h.entities.iter().map(|e| e.0)) {
+        match tally.iter_mut().find(|t| t.0 == label) {
+            Some(t) => t.1 += 1,
+            None => tally.push((label, 1)),
+        }
+    }
+    for (label, n) in tally {
+        why.push(if n == 1 { label.to_owned() } else { format!("{label} x{n}") });
+    }
+    Some((score, why.join(", "), at))
+}
+
+// The entities below `below` that a base keeps: (chunk, what, where).
+fn deep_entities(game: &Game<'_>, below: f64) -> Vec<((i32, i32), &'static str, [i32; 3])> {
+    let mut out = Vec::new();
+    let mut add = |what: &'static str, at: [f64; 3]| {
+        if at[1] < below {
+            let at = at.map(|v| v.floor() as i32);
+            out.push(((at[0] >> 4, at[2] >> 4), what, at));
+        }
+    };
+    for f in &game.item_frames {
+        add("an item frame", f.pos.map(f64::from));
+    }
+    let me = super::sunset::own_id(game);
+    for mob in game.mobs.iter().filter(|x| x.alive() && !x.removed && Some(x.id) != me) {
+        let at = [mob.position.x, mob.position.y, mob.position.z];
+        match short(&mob.kind.id) {
+            "player" => {}
+            "armor_stand" => add("an armor stand", at),
+            "villager" => add("a villager", at),
+            _ if mob.custom_name.is_some() => add("a name-tagged mob", at),
+            _ => {}
+        }
+    }
+    out
 }
 
 // The signs that are not blocks: written signs (block entities), and the entities no world spawns.
@@ -719,7 +920,41 @@ fn entity_signs(game: &Game<'_>, m: &Module) -> Vec<Found> {
 
 #[cfg(test)]
 mod tests {
-    use super::{base_point, entry};
+    use super::{Hidden, Sound, base_point, entry, hidden_score, natural_light};
+
+    fn sound(label: &str, points: u32) -> Sound {
+        Sound { label: label.into(), points, at: [1, -20, 1] }
+    }
+
+    #[test]
+    fn hidden_bases_scores_lights_sounds_and_entities_with_caps() {
+        let mut h = Hidden::default();
+        assert!(hidden_score(&h).is_none());
+        h.lights = (0..6).map(|i| ([i, -30, 0], 14)).collect();
+        // Only the 4 brightest lights count.
+        assert_eq!(hidden_score(&h).unwrap().0, 16);
+        h.sounds = (0..6).map(|_| sound("chest opened", 6)).collect();
+        // Sounds give 24 at most.
+        let (score, why, at) = hidden_score(&h).unwrap();
+        assert_eq!((score, at), (40, [0, -30, 0]));
+        assert_eq!(why, "4 lights, chest opened x6");
+        h.lights.clear();
+        h.sounds = vec![sound("door opened", 2)];
+        h.entities = vec![("a villager", [2, -10, 2]); 5];
+        let (score, why, at) = hidden_score(&h).unwrap();
+        assert_eq!((score, at), (14, [1, -20, 1]));
+        assert_eq!(why, "door opened, a villager x5");
+    }
+
+    #[test]
+    fn natural_light_is_left_out() {
+        for n in ["lava", "cave_vines_plant", "glow_lichen", "soul_lantern", "white_candle", "waxed_copper_bulb", "sculk_catalyst"] {
+            assert!(natural_light(n), "{n}");
+        }
+        for n in ["torch", "wall_torch", "lantern", "soul_torch", "glowstone", "sea_lantern"] {
+            assert!(!natural_light(n), "{n}");
+        }
+    }
 
     #[test]
     fn base_finder_claims_only_its_own_waypoints() {

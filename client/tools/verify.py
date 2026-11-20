@@ -16733,6 +16733,281 @@ def _():
     return all(checks.values()), f"failed {[k for k, v in checks.items() if not v]}; {detail}"
 
 
+# ---- ports 1: Displace, Elytra Fly travel modes, Mace Bomber, Base Finder's Hidden bases
+
+def most_moves(mark):
+    """The most move packets any one client tick sent since mark (the wire probe)."""
+    return max((sum(line == "order move" for line in t) for t in probe_ticks(mark)), default=0)
+
+
+@test("Displace")
+def _():
+    # A pig 2 blocks south of you (1000 health, its AI on so knockback moves it), a Knockback II sword, one click.
+    # Without Displace it goes south (along the line between you); Displace Left (Angle 90) sends it east, Right west,
+    # and Hazard with lava 3 blocks west of it west too; Hazard with nothing found, and Left with a plain sword and
+    # no sprint (its knockback is not along your yaw), hit as ever. On a server the probe sees one move packet a tick.
+    tough = "{PersistenceRequired:1b,Silent:1b,Health:1000f,attributes:[{id:'minecraft:max_health',base:1000.0},{id:'minecraft:movement_speed',base:0.0}]}"
+    probe = SERVER and probe_path()
+    moves = [0]
+
+    def push(direction=None, sword="diamond_sword[enchantments={knockback:2}]", lava=False):
+        reset()
+        slot(0, sword)
+        ctl("key", "1", "tap")
+        if lava:
+            cmd(f"fill {X0 - 3} {Y} {Z0 + 1} {X0 - 2} {Y} {Z0 + 4} minecraft:lava")
+        pid = pig(tag=tough)
+        ctl("look-at-entity", str(pid))
+        wait(25)
+        if direction:
+            setting("displace", "direction", direction)
+            only("displace")
+        else:
+            only()
+        before = mobs("pig")[0]["pos"]
+        mark = probe_mark() if probe else None
+        ctl("mouse", "left", "click")
+        wait(12)
+        after = (mobs("pig") or [{"pos": before}])[0]["pos"]
+        if mark is not None:
+            moves[0] = max(moves[0], most_moves(mark))
+        only()
+        cmd(f"fill {X0 - 3} {Y} {Z0 + 1} {X0 - 2} {Y} {Z0 + 4} minecraft:stone", "kill @e[type=pig]")
+        return round(after[0] - before[0], 2), round(after[2] - before[2], 2)
+
+    got = {
+        "off": push(),
+        "Left": push("Left"),
+        "Right": push("Right"),
+        "Hazard lava": push("Hazard", lava=True),
+        "Hazard none": push("Hazard"),
+        "Left plain sword": push("Left", sword="diamond_sword"),
+    }
+    setting("displace", "direction", "Hazard")
+    moves = moves[0]
+    ok = (got["off"][1] > 0.3 and abs(got["off"][0]) < 0.3 and got["Left"][0] > 0.5 and got["Right"][0] < -0.5
+          and got["Hazard lava"][0] < -0.5 and abs(got["Hazard none"][0]) < 0.3 and got["Hazard none"][1] > 0.3
+          and abs(got["Left plain sword"][0]) < 0.3 and moves <= 1)
+    return ok, f"pig moved (dx, dz): {got}; most move packets a tick {moves}"
+
+
+def ely_pitches(mode, y_up, ticks, settings=()):
+    """Gliding from `y_up` over the arena in Elytra Fly's `mode`: the pitches seen each tick."""
+    reset("creative")
+    cmd("gamemode survival")
+    setting("elytrafly", "mode", mode)
+    for name, value in settings:
+        setting("elytrafly", name, value)
+    gliding = ely_glide(y_up)
+    only("elytrafly")
+    seen = []
+    for _ in range(ticks):
+        wait(1)
+        seen.append(round(ctl("status")["pitch"], 1))
+    only()
+    cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}", "clear @s")
+    wait(5)
+    return gliding, seen
+
+
+@test("Elytra Fly (Glide cycle)")
+def _():
+    # Gliding high up, Glide cycle with Cycle drop 25: a dive at 32.5, then the climb at -49 and the pitch eased back
+    # down half a degree a tick. Pitch 40 started above Upper Y dives at 40 and climbs at -40 below Lower Y. Control
+    # leaves the pitch alone.
+    y_top = Y + 120
+    glide, seen = ely_pitches("Glide cycle", 120, 200, (("cycle drop", "25"), ("max height", "600")))
+    eased = any(-49.0 < p < 0.0 for p in seen)
+    cycle = 32.5 in seen and -49.0 in seen and eased
+    up, low = y_top - 4, y_top - 12
+    glide2, seen40 = ely_pitches("Pitch 40", 120, 120, (("upper y", str(up)), ("lower y", str(low))))
+    corridor = seen40[:3].count(40.0) >= 1 and -40.0 in seen40
+    glide3, control = ely_pitches("Control", 120, 20)
+    still = all(abs(p - control[0]) < 0.5 for p in control)
+    setting("elytrafly", "mode", "Control")
+    ok = glide and glide2 and cycle and corridor and still
+    return ok, (f"Glide cycle pitches {sorted(set(seen))[:3]}..{sorted(set(seen))[-2:]} eased {eased}; "
+                f"Pitch 40 {seen40[:3]}.. climbs {-40.0 in seen40}; Control pitch kept {still}")
+
+
+@test("Elytra Fly (Bounce)")
+def _():
+    # On the ground with an elytra, Bounce (pitch 55, Auto walk): it jumps, opens the glide in the air and goes
+    # forward with the pitch held at 55; Auto walk off it still holds the pitch and opens the glide but goes less far.
+    # Off: nothing moves. No elytra: neither jumps nor walks. The probe sees one move packet a tick on a server.
+    probe = SERVER and probe_path()
+    moves = [0]
+
+    def bounce(on, walk="true", elytra=True):
+        reset()
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 - 10.5} 0 0")
+        if elytra:
+            cmd("item replace entity @s armor.chest with minecraft:elytra")
+        cmd(f"fill {X0 - 1} {Y + 1} {Z0 - 11} {X0 + 1} {Y + 4} {Z0 + 12} minecraft:air")
+        setting("elytrafly", "mode", "Bounce")
+        setting("elytrafly", "auto walk", walk)
+        wait(5)
+        a = pos()
+        mark = probe_mark() if probe else None
+        only("elytrafly") if on else only()
+        glided, pitch = False, 0.0
+        for _ in range(60):
+            wait(1)
+            s = state()
+            glided = glided or bool(s["player"].get("fall_flying"))
+        pitch = round(ctl("status")["pitch"], 1)
+        if mark is not None:
+            moves[0] = max(moves[0], most_moves(mark))
+        b = pos()
+        only()
+        cmd("clear @s")
+        return round(b[2] - a[2], 1), glided, pitch
+
+    got = {"on": bounce(True), "no walk": bounce(True, walk="false"), "off": bounce(False), "no elytra": bounce(True, elytra=False)}
+    setting("elytrafly", "mode", "Control")
+    setting("elytrafly", "auto walk", "true")
+    moves = moves[0]
+    on, nowalk, off, bare = got["on"], got["no walk"], got["off"], got["no elytra"]
+    ok = (on[0] > 4 and on[1] and on[2] == 55.0 and nowalk[1] and nowalk[2] == 55.0 and nowalk[0] < on[0]
+          and abs(off[0]) < 0.5 and abs(bare[0]) < 0.5 and moves <= 1)
+    return ok, f"(forward, glided, pitch): {got}; most move packets a tick {moves}"
+
+
+@test("Mace Bomber")
+def _():
+    # A pig 2 blocks south (1000 health, no knockback), a sword held, wind charges in slot 2 and a mace in slot 3:
+    # Mace Bomber (Players only off) throws a charge down, you fly up, the mace comes into hand and the fall smashes
+    # the pig (a smash is more than the sword's 7), and the sword is back in hand after. Jump launch too. Min
+    # height 12 (more than a charge lifts you): the run ends at the top, no hit. Off, and a pig out of Launch range:
+    # no charge used (noon, so no zombie walks up to be the target instead). On a server the probe sees one move packet a tick.
+    probe = SERVER and probe_path()
+    moves = [0]
+    setting("macebomber", "players only", "false")
+    # Daytime: a zombie walking up at night is a target too (Players only off).
+    cmd("time set noon")
+    if CTL2:
+        # Bot1 well away: a player in reach is a target too.
+        cmd(f"tp Bot1 {X0 + 40.5} {Y + 1} {Z0 + 40.5}")
+
+    def bomb(on=True, launch="Ground", min_height="3", dz=2.0):
+        reset()
+        slot(0, "diamond_sword")
+        slot(1, "wind_charge", 8)
+        slot(2, "mace")
+        ctl("key", "1", "tap")
+        # Only the pig to aim at (a server's world has its own animals about).
+        cmd("kill @e[type=!minecraft:player,distance=..16]", f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 0.5 + dz} {TOUGH_PIG}")
+        wait(10)
+        setting("macebomber", "launch", launch)
+        setting("macebomber", "min height", min_height)
+        mark = probe_mark() if probe else None
+        only("macebomber") if on else only()
+        top, lost = Y + 1, 0.0
+        for _ in range(80):
+            wait(1)
+            top = max(top, pos()[1])
+            m = mobs("pig")
+            if m and m[0]["health"] < 1000:
+                lost = 1000 - m[0]["health"]
+        wait(10)
+        if mark is not None:
+            moves[0] = max(moves[0], most_moves(mark))
+        only()
+        inv = ctl("inventory").get("hotbar") or []
+        charges = sum(s.get("count", 0) for s in inv if s and "wind_charge" in (s.get("item") or ""))
+        hand = held().get("item", "")
+        cmd("kill @e[type=pig]")
+        return round(lost, 1), round(top - Y - 1, 1), charges, hand.replace("minecraft:", "")
+
+    got = {"ground": bomb(), "jump": bomb(launch="Jump"), "min height 12": bomb(min_height="12"),
+           "off": bomb(on=False), "out of range": bomb(dz=6.0)}
+    setting("macebomber", "launch", "Ground")
+    setting("macebomber", "min height", "3")
+    setting("macebomber", "players only", "true")
+    moves = moves[0]
+    g, j, h, off, far = got["ground"], got["jump"], got["min height 12"], got["off"], got["out of range"]
+    ok = (g[0] > 8 and g[1] >= 3 and g[3] == "diamond_sword" and j[0] > 8 and j[3] == "diamond_sword"
+          and h[0] == 0 and h[2] < 8 and h[3] == "diamond_sword" and off[2] == 8 and off[0] == 0 and far[2] == 8
+          and moves <= 1)
+    return ok, f"(pig health lost, rise, charges left, hand after): {got}; most move packets a tick {moves}"
+
+
+@test("Base Finder (Hidden bases)")
+def _():
+    # Hidden base Y set over the arena (Y + 10), score 12, Sound Detector off: torches on stone posts, each chunk its
+    # own. Two torches (8) are not said, three (12) are ("3 lights", more where the world has its own); three above Hidden base Y are not; with a
+    # second player (CTL2) Bot1 opening a chest beside two torches (8 + 6) says that chunk ("chest opened"). Hidden
+    # bases off: four torches say nothing.
+    reset("creative")
+    setting("basefinder", "message cooldown", "0")
+    setting("basefinder", "hidden base y", str(Y + 10))
+    setting("basefinder", "hidden base score", "12")
+    setting("basefinder", "hidden bases", "true")
+    ax, az = X0 >> 4, Z0 >> 4
+    chunks = {k: (ax + dx, az + dz) for k, (dx, dz) in
+              {"two": (-2, 2), "three": (-3, 2), "high": (2, 2), "sound": (3, 2), "off": (-2, -3)}.items()}
+
+    def torches(name, n, y=Y + 2):
+        cx, cz = chunks[name]
+        x0, z0 = cx * 16 + 2, cz * 16 + 4
+        lines = []
+        for i in range(n):
+            lines += [f"setblock {x0 + 4 * i} {y - 1} {z0} minecraft:stone", f"setblock {x0 + 4 * i} {y} {z0} minecraft:torch"]
+        cmd(*lines)
+
+    def said(mark, name):
+        cx, cz = chunks[name]
+        return [l for l in sunset_said(mark) if "hidden base likely" in l and f"chunk {cx} {cz} " in l]
+
+    def clear():
+        for cx, cz in chunks.values():
+            cmd(f"fill {cx * 16} {Y + 1} {cz * 16} {cx * 16 + 15} {Y + 25} {cz * 16 + 15} minecraft:air")
+
+    clear()
+    torches("two", 2)
+    torches("three", 3)
+    torches("high", 3, y=Y + 20)
+    sound = None
+    if CTL2:
+        torches("sound", 2)
+        cx, cz = chunks["sound"]
+        chest = (cx * 16 + 8, Y + 1, cz * 16 + 10)
+        # A floor to stand on out there (a world may have none at this height).
+        cmd(f"fill {cx * 16} {Y} {cz * 16} {cx * 16 + 15} {Y} {cz * 16 + 15} minecraft:stone")
+        bot_ready(2.5)
+        cmd(f"setblock {chest[0]} {chest[1]} {chest[2]} minecraft:chest", f"tp Bot1 {chest[0] + 0.5} {Y + 1} {chest[2] + 1.5} 180 30")
+    wait(10)
+    mark = log_mark()
+    toggle("base finder", False)
+    only("base finder")
+    wait(40)
+    if CTL2:
+        # Sounds carry 16 blocks: stand near the chest.
+        cmd(f"tp @s {chest[0] + 0.5} {Y + 1} {chest[2] - 5.5}")
+        wait(10)
+        ctl2("interact", *map(str, chest))
+        wait(30)
+        ctl2("close")
+        sound = said(mark, "sound")
+        bot_done()
+    two, three, high = said(mark, "two"), said(mark, "three"), said(mark, "high")
+    torches("off", 4)
+    setting("basefinder", "hidden bases", "false")
+    mark2 = log_mark()
+    toggle("base finder", False)
+    toggle("base finder", True)
+    wait(40)
+    off = said(mark2, "off")
+    only()
+    setting("basefinder", "hidden bases", "true")
+    setting("basefinder", "hidden base y", "0")
+    setting("basefinder", "message cooldown", "20")
+    clear()
+    ok = not two and three and " lights" in three[0] and not high and not off and (sound is None or (sound and "chest opened" in sound[0]))
+    return ok, (f"two torches {bool(two)}, three {three[:1]}, above Y {bool(high)}, Hidden bases off {bool(off)}, "
+                f"chest heard {sound[:1] if sound is not None else 'no CTL2'}")
+
+
 if __name__ == "__main__":
     unknown = sorted(set(ONLY) - {fn.test_name for fn in TESTS})
     if unknown:

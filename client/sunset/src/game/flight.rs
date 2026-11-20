@@ -20,6 +20,7 @@
 
 use super::Game;
 use super::sunset::Module;
+use super::sunset_compat::SunsetGame as _;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use winit::keyboard::KeyCode;
@@ -765,9 +766,199 @@ pub(super) fn report(out: &mut String) {
     }
 }
 
+// ---- Elytra Fly's travel modes: the look and the keys for this tick's glide, before the tick's input is read.
+// Bounce (after ThunderHack's Elytra Recast and Dimasik's Elytra Bounce, behaviour only): the pitch held at Bounce
+// pitch, forward held (Auto walk), a jump on landing and a fresh jump press in the air to open the glide again; Yaw
+// wobble sways the yaw up to 20 degrees either way. Glide cycle (after Ballshack's infinite glide): a dive at Dive
+// pitch until Cycle drop below where the cycle began, a climb at Climb pitch until the climb takes over, then the pitch
+// eased down half a degree a tick until you fall again (or pass Max height), and the cycle begins again there. Pitch 40
+// (after Lemon's and BepHax's): 40 down to Lower Y, then 40 up to Upper Y; Rockets fires a hotbar firework when a climb
+// below Lower Y stops rising (one every 2 s at most). No fireworks are needed for the others; none sends any packet of
+// its own but the rocket.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Glide {
+    pub stage: u8,
+    pub start_y: f64,
+    pub pitch: f32,
+}
+
+// One tick of Glide cycle: its stage and pitch from your height and vertical speed.
+pub(super) fn glide_cycle(g: Glide, y: f64, vy: f64, dive: f32, climb: f32, drop: f64, max: f64) -> Glide {
+    match g.stage {
+        0 if y <= g.start_y - drop => Glide { stage: 1, pitch: climb, ..g },
+        0 => Glide { pitch: dive, ..g },
+        1 if vy >= 0.0 => Glide { stage: 2, pitch: (climb + 0.5).min(dive), ..g },
+        1 => Glide { pitch: climb, ..g },
+        _ if vy < 0.0 || y > max => Glide { stage: 0, start_y: y, pitch: dive },
+        _ => Glide { pitch: (g.pitch + 0.5).min(dive), ..g },
+    }
+}
+
+// Pitch 40: climbing below Lower Y until Upper Y, diving above it until Lower Y, as it was between them.
+pub(super) fn corridor(climbing: bool, y: f64, lower: f64, upper: f64) -> bool {
+    if y <= lower.min(upper) {
+        true
+    } else if y >= upper.max(lower) {
+        false
+    } else {
+        climbing
+    }
+}
+
+struct Travel {
+    mode: String,
+    glide: Glide,
+    climbing: bool,
+    jumped: u64,
+    wobble: f32,
+    rocket_at: u64,
+    back: Option<usize>,
+}
+
+static TRAVEL: Mutex<Option<Travel>> = Mutex::new(None);
+
+pub(super) const TRAVEL_MODES: [&str; 3] = ["Bounce", "Glide cycle", "Pitch 40"];
+
+pub(super) fn elytra_travel(game: &mut Game<'_>, mods: &[Module]) {
+    let mut guard = TRAVEL.lock().unwrap_or_else(|e| e.into_inner());
+    let worn = game.armor[1].as_ref().is_some_and(|s| s.item.ends_with("elytra"));
+    let m = mods.iter().find(|m| m.on && m.name == "Elytra Fly" && TRAVEL_MODES.contains(&m.p("Mode")));
+    let (Some(m), Some(p)) = (m, game.player.as_ref()) else {
+        *guard = None;
+        return;
+    };
+    let (y, vy, ground, gliding, water) =
+        (p.position.y, p.velocity.y, p.ground.on_ground, p.fall_flying, p.fluids.was_touching_water);
+    let mode = m.p("Mode");
+    if guard.as_ref().is_some_and(|t| t.mode != mode) {
+        *guard = None;
+    }
+    let t = guard.get_or_insert_with(|| Travel {
+        mode: mode.to_owned(),
+        glide: Glide { stage: 0, start_y: y, pitch: m.n("Dive pitch") as f32 },
+        climbing: y < m.n("Upper Y"),
+        jumped: 0,
+        wobble: 0.0,
+        rocket_at: 0,
+        back: None,
+    });
+    let now = game.ticks;
+    // A rocket's hotbar slot goes back the tick after.
+    if let Some(b) = t.back.take()
+        && b != game.selected
+    {
+        super::sunset::hold(game, b);
+    }
+    if !worn || !game.native_playing() || (m.b("Stop in water") && water) {
+        return;
+    }
+    match mode {
+        "Bounce" => {
+            if m.b("Auto walk") {
+                super::sunset_melee::press_forward(game);
+            }
+            // A jump on the ground, and in the air a fresh press (the last tick's let go) opens the glide.
+            if !gliding && now > t.jumped + 1 {
+                super::sunset_melee::press_jump(game);
+                t.jumped = now;
+            }
+            if m.b("Yaw wobble") {
+                let w = 20.0 * ((now as f32) * 0.3).sin();
+                game.yaw += w - t.wobble;
+                t.wobble = w;
+            }
+            game.pitch = (m.n("Bounce pitch") as f32).clamp(-90.0, 90.0);
+        }
+        "Glide cycle" if gliding => {
+            let (dive, climb) = (m.n("Dive pitch") as f32, m.n("Climb pitch") as f32);
+            t.glide = glide_cycle(t.glide, y, vy, dive, climb, m.n("Cycle drop"), m.n("Max height"));
+            game.pitch = t.glide.pitch.clamp(-90.0, 90.0);
+        }
+        "Pitch 40" if gliding => {
+            let lower = m.n("Lower Y");
+            t.climbing = corridor(t.climbing, y, lower, m.n("Upper Y"));
+            game.pitch = if t.climbing { -40.0 } else { 40.0 };
+            if m.b("Rockets") && t.climbing && y < lower && vy <= 0.0 && now >= t.rocket_at + 40 && !boosted(game) {
+                if let Some(back) = rocket(game) {
+                    t.rocket_at = now;
+                    t.back = back;
+                }
+            }
+        }
+        // Glide cycle and Pitch 40 start once you glide; a start below the corridor climbs.
+        _ => {
+            t.glide = Glide { stage: 0, start_y: y, pitch: m.n("Dive pitch") as f32 };
+            t.climbing = y < m.n("Upper Y");
+        }
+    }
+}
+
+// A firework boosting your glide now (as runtime_tick.rs reads it).
+fn boosted(game: &Game<'_>) -> bool {
+    let me = super::sunset::own_id(game);
+    game.rockets.iter().any(|r| (r.attached && r.guest.is_none()) || (me.is_some() && r.attached_to == me))
+}
+
+// A firework used from the offhand, the held slot or the hotbar (held for it: the slot to go back to). None: none.
+fn rocket(game: &mut Game<'_>) -> Option<Option<usize>> {
+    let is_rocket = |game: &Game<'_>, slot: usize| game.stack_in(slot).is_some_and(|s| s.count > 0 && s.item.ends_with("firework_rocket"));
+    let off = super::sunset_util::OFFHAND;
+    let slot = [off, game.selected].into_iter().chain(0..9).find(|&s| is_rocket(game, s))?;
+    let mut back = None;
+    if slot != off && slot != game.selected {
+        back = Some(game.selected);
+        super::sunset::hold(game, slot);
+    }
+    let sequence = super::sunset_util::sequence(game);
+    let yaw = super::sunset::wire_yaw(game, game.yaw);
+    let pitch = game.pitch;
+    game.send(horizon_protocol::packets::play::Serverbound::UseItem(horizon_protocol::packets::play::UseItem {
+        hand: i32::from(slot == off),
+        sequence,
+        yaw,
+        pitch,
+    }));
+    game.swing_arm();
+    Some(back)
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn glide_cycle_dives_climbs_eases_and_starts_again() {
+        let g = Glide { stage: 0, start_y: 200.0, pitch: 32.5 };
+        // Diving until 50 below the start.
+        let g = glide_cycle(g, 160.0, -1.0, 32.5, -49.0, 50.0, 300.0);
+        assert_eq!((g.stage, g.pitch), (0, 32.5));
+        let g = glide_cycle(g, 150.0, -1.0, 32.5, -49.0, 50.0, 300.0);
+        assert_eq!((g.stage, g.pitch), (1, -49.0));
+        // Climbing while still falling, then easing once it rises.
+        let g = glide_cycle(g, 149.0, -0.2, 32.5, -49.0, 50.0, 300.0);
+        assert_eq!((g.stage, g.pitch), (1, -49.0));
+        let g = glide_cycle(g, 150.0, 0.4, 32.5, -49.0, 50.0, 300.0);
+        assert_eq!((g.stage, g.pitch), (2, -48.5));
+        let g = glide_cycle(g, 151.0, 0.3, 32.5, -49.0, 50.0, 300.0);
+        assert_eq!((g.stage, g.pitch), (2, -48.0));
+        // Falling again: a new cycle from here.
+        let g = glide_cycle(g, 152.0, -0.1, 32.5, -49.0, 50.0, 300.0);
+        assert_eq!(g, Glide { stage: 0, start_y: 152.0, pitch: 32.5 });
+        // Past Max height ends a climb too.
+        let g = glide_cycle(Glide { stage: 2, start_y: 0.0, pitch: -10.0 }, 301.0, 0.5, 32.5, -49.0, 50.0, 300.0);
+        assert_eq!((g.stage, g.start_y), (0, 301.0));
+    }
+
+    #[test]
+    fn pitch_40_corridor_turns_at_its_bounds() {
+        assert!(corridor(false, 79.0, 80.0, 120.0));
+        assert!(corridor(true, 100.0, 80.0, 120.0));
+        assert!(!corridor(true, 120.0, 80.0, 120.0));
+        assert!(!corridor(false, 100.0, 80.0, 120.0));
+        // Bounds the wrong way round still make a corridor.
+        assert!(corridor(false, 79.0, 120.0, 80.0));
+    }
 
     #[test]
     fn old_ncp_offset_alternates_around_its_raise() {

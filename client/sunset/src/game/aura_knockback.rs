@@ -166,6 +166,57 @@ pub(super) fn pitch_for(eye: [f64; 3], t: &Target, yaw: f32) -> f32 {
     (-dy).atan2(forward).to_degrees().clamp(-90.0, 90.0) as f32
 }
 
+// ---- Displace (your own clicks; after Echo's and Celeste's Displace, behaviour only): a hit whose knockback goes
+// along your yaw (a sprinting hit at full charge, or a Knockback weapon) is held back a tick so the server first has
+// the yaw Direction asks for: Hazard turns it toward the plan above (lava, fire, a web, the void, a drop; with none
+// found the hit goes as it is), Left and Right turn your own yaw Angle that way, Back turns it round (the target
+// comes toward you). The pitch still looks at the target. The look goes with the next move packet and the hit right
+// after it, before the move packet after that one brings your own look back: the hit lands a tick late, and nothing
+// but your look changes (Horizon and vanilla check a hit's distance to the box, not the look).
+pub(super) fn displace_yaw(direction: &str, yaw: f32, angle: f32, hazard: Option<f32>) -> Option<f32> {
+    match direction {
+        "Left" => Some(yaw - angle),
+        "Right" => Some(yaw + angle),
+        "Back" => Some(yaw + 180.0),
+        _ => hazard,
+    }
+}
+
+pub(super) fn displace_click(game: &mut Game<'_>) -> Option<bool> {
+    let m = super::sunset::with(|s| s.module("Displace").filter(|m| m.on).cloned())?;
+    if game.remote.is_none() || game.spectator() || game.clicks.miss_time > 0 || game.using.is_some() {
+        return None;
+    }
+    if super::sunset::strike_waiting() || super::sunset::turn_pending() || super::sunset::CRIT_STAGE.load(std::sync::atomic::Ordering::Relaxed) != 0 {
+        return None;
+    }
+    if game.held().is_some_and(|s| horizon_client::spear::Kinetic::of(&s.item).is_some()) {
+        return None;
+    }
+    let (i, distance, _) = game.mob_hit()?;
+    let projectile = game.redirectable_hit().is_some_and(|(_, d)| d <= distance);
+    if projectile || !game.before_block(distance) {
+        return None;
+    }
+    let mob = &game.mobs[i];
+    if (m.b("Players only") && mob.kind.id != "minecraft:player") || mob.attrs.knockback_resistance >= 1.0 {
+        return None;
+    }
+    let enchanted = game.held().is_some_and(|s| s.enchantment_level("minecraft:knockback") > 0);
+    let charged = game.hand_strength.scale(0.5, game.main_hand_attack_speed()) > 0.9;
+    if !enchanted && !(charged && super::sunset_combat_wire::sent_sprinting(game)) {
+        return None;
+    }
+    let t = super::sunset_util::mob_target(mob);
+    let eye = game.eye_position()?;
+    let direction = m.p("Direction");
+    let hazard = if direction == "Hazard" { plan_for(game, &t).map(|p| p.yaw) } else { None };
+    let yaw = displace_yaw(direction, game.yaw, m.n("Angle") as f32, hazard)?;
+    let pitch = pitch_for(eye, &t, yaw);
+    super::sunset::attack(game, t.id, true, Some((yaw, pitch)));
+    Some(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,6 +231,16 @@ mod tests {
         }
     }
     const PLAYER: ([f64; 3], [f64; 3]) = ([-0.3, 0.0, -0.3], [0.3, 1.8, 0.3]);
+
+    #[test]
+    fn displace_turns_the_yaw_its_way() {
+        assert_eq!(displace_yaw("Left", 10.0, 90.0, None), Some(-80.0));
+        assert_eq!(displace_yaw("Right", 10.0, 45.0, Some(3.0)), Some(55.0));
+        assert_eq!(displace_yaw("Back", 10.0, 90.0, None), Some(190.0));
+        assert_eq!(displace_yaw("Hazard", 10.0, 90.0, Some(-30.0)), Some(-30.0));
+        // Hazard with nothing found: the hit goes as it is.
+        assert_eq!(displace_yaw("Hazard", 10.0, 90.0, None), None);
+    }
 
     #[test]
     fn flat_ground_has_no_plan() {

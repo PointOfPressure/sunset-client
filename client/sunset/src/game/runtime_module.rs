@@ -664,6 +664,8 @@ impl Module {
             "Cart" => super::sunset_cart::visible(self, name),
             super::sunset_gear::NAME => super::sunset_gear::visible(self, name),
             "Auto Mace" => super::sunset_auto_mace::visible(self, name),
+            "Mace Bomber" => super::sunset_throws::bomber_visible(self, name),
+            "Displace" => name != "Angle" || matches!(self.p("Direction"), "Left" | "Right"),
             "ClickGUI" => match name {
                 "Inventory blur" => self.b("Menu dim"),
                 _ => true,
@@ -672,6 +674,10 @@ impl Module {
             "Elytra Fly" => match name {
                 "Horizontal speed" | "Vertical speed" | "Fall multiplier" => self.p("Mode") == "Control",
                 "Boost" | "Max speed" | "Boost only on firework" => self.p("Mode") == "Boost",
+                "Bounce pitch" | "Auto walk" | "Yaw wobble" => self.p("Mode") == "Bounce",
+                "Dive pitch" | "Climb pitch" | "Cycle drop" | "Max height" => self.p("Mode") == "Glide cycle",
+                "Lower Y" | "Upper Y" | "Rockets" => self.p("Mode") == "Pitch 40",
+                "Auto take off" => !super::sunset_flight::TRAVEL_MODES.contains(&self.p("Mode")),
                 _ => true,
             },
             "Auto Weapon" => match name {
