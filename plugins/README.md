@@ -16,7 +16,7 @@ version. `sunset-launcher plugins …` does the same from a terminal. Code: `lau
 A plugin for the launcher is an .hmod package of its own (a folder, or the zip `cargo horizon-mod build` writes):
 
 - `horizon-mod.toml` with the same `[native]` pins as `client/sunset/horizon-mod.toml` (it is made for exactly that
-  build) and `[dependencies] sunset = "^1.2"`;
+  build) and `[dependencies] sunset = "^2.0"`;
 - a `[[native.module]]` in `crates/horizon-client/src/game.rs`, where `super::sunset_api` is Sunset's plugin API;
 - a `[[native.mixin]]` HEAD on `…::client_tick_post::Game<'_>::native_client_tick_post` that calls
   `sunset_api::plugin(game, ID, VERSION, setup)` each tick;

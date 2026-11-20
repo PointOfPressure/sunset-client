@@ -18,7 +18,7 @@ def refuse(msg):
 
 
 NS = {"re": re, "shutil": shutil, "tomllib": tomllib, "fail": refuse, "api": 3,
-      "sunset": {"api": "0.2", "version": "1.2.1"}, "native": {"game": "26.3", "horizon": "0b14", "mixins": "e59d"}}
+      "sunset": {"api": "0.2", "version": "2.0.0"}, "native": {"game": "26.3", "horizon": "0b14", "mixins": "e59d"}}
 for node in TREE.body:
     if isinstance(node, ast.FunctionDef) and node.name in ("results", "judge", "wrap"):
         exec(compile(ast.Module(body=[node], type_ignores=[]), str(SOURCE), "exec"), NS)
@@ -79,7 +79,7 @@ class WrapTests(unittest.TestCase):
             toml = tomllib.loads((dest / "horizon-mod.toml").read_text())
             self.assertEqual((toml["id"], toml["version"]), ("plugcheck", "0.1.0"))
             self.assertEqual({k: toml["native"][k] for k in ("game", "horizon", "mixins")}, NS["native"])
-            self.assertEqual(toml["dependencies"], {"sunset": "^1.2"})
+            self.assertEqual(toml["dependencies"], {"sunset": "^2.0"})
             self.assertEqual([m["name"] for m in toml["native"]["module"]], ["plugcheck_plugin"])
             self.assertEqual((dest / "src/game/plugin.rs").read_text(), (PLUGCHECK / "plugin.rs").read_text())
             self.assertIn("crate::game::plugcheck_plugin::tick(game)", (dest / "src/mixins/tick.rs").read_text())

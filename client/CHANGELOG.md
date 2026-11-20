@@ -7,6 +7,22 @@ section of the version they build into the signed manifest, and the launcher sho
 - One short line per change (`- ...`); the GitHub release notes keep the long form.
 - An important change is written in bold (`- **...**`): the launcher highlights it.
 
+## 2.0.0
+
+### New
+- **Sunset is a .hmod package for Horizon Nightly 2026-11-18 (`0b14f8a`)**
+- **The Sunset launcher: sign-in, signed install, update and repair, Play, import, offline play for owners**
+- **Plugins: the launcher builds them into Sunset on this computer (Plugins tab)**
+- Kill Aura: 1.8 / 1.9+ version, Hit select, Velocity boost, Miss swing, Advanced rotation, Movement correction, Cooldown jitter
+- Anti Void: Blink mode; Anti Vanish: HorizonSMP mode; Client Spoofer: Fake resource packs
+- .relog, survival tools, auction modules, ESP villager filters, Sound Detector markers
+- Effects: landing ripples and explosion shockwaves
+
+### Fixed
+- Loading a profile no longer re-applies module presets over its settings
+- Settings are read before joining and never saved before they are read
+- Keys Sunset holds are held as the keyboard holds them again
+
 ## 1.2.1
 
 ### Fixed

@@ -18,7 +18,7 @@ horizon = "0b14f8acfd97fa2c750e42795249dcc981178ca4"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
 
 [dependencies]
-sunset = "^1.2"
+sunset = "^2.0"
 
 # The plugin's code, beside Sunset's in the game crate's `game` module, where `super::sunset_api` is Sunset's plugin API.
 [[native.module]]
