@@ -80,11 +80,11 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
     let room = (rw - 16.0).max(0.0);
     let control = control_radius();
     out.push(Shape::Fill([0.0, 0.0, w, h], 0x9000_0000));
-    out.push(Shape::Round(r, panel_radius(), 0xF814_1414));
+    framed(out, r, panel_radius(), pal().dialog, 1.0);
     let m = &modules[edit.module];
     out.push(Shape::Head(fit(&format!("{} / {}", m.name, m.settings[edit.setting].name), room), [x + 8.0, y + 6.0], accent()));
     let search = edit.draft.as_ref().map_or("", Draft::text);
-    out.push(Shape::Round([x + 6.0, y + 22.0, rw - 12.0, 16.0], panel_radius(), 0xFF08_0808));
+    out.push(Shape::Round([x + 6.0, y + 22.0, rw - 12.0, 16.0], panel_radius(), pal().field));
     let (shown, colour) = if search.is_empty() { ("Type to search", 0x909090) } else { (search, 0xFFFFFF) };
     out.push(Shape::Text(fit(shown, room - 4.0), [x + 10.0, y + 22.0 + text_y(16.0)], colour));
     let text = match &m.settings[edit.setting].value {
@@ -106,7 +106,7 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
         if inside(row, at) {
             out.push(Shape::Round(row, control, 0x40FF_FFFF));
         }
-        out.push(Shape::Round([area[0] + 3.0, ry + 3.0, 6.0, 6.0], 3.0, if *have { solid(accent()) } else { 0xFF3A_3A3A }));
+        out.push(Shape::Round([area[0] + 3.0, ry + 3.0, 6.0, 6.0], 3.0, if *have { solid(accent()) } else { pal().check_off }));
         // The block's, item's or mob's icon (only the rows on screen are drawn), then its name.
         let icon = pick::icon(game, picker, name, [area[0] + 13.0, ry + 1.0], pick::ROW - 2.0);
         let left = if icon.is_some() { 26.0 } else { 14.0 };
@@ -249,7 +249,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         let tw = width_of(game, &text);
         let bw = tw + 8.0;
         let bx = r[0] + r[2] - RIGHT_PAD - bw;
-        out.push(Shape::Round([bx, r[1] + 2.0, bw, row_hh() - 4.0], control, 0xFF1E_1E1E));
+        out.push(Shape::Round([bx, r[1] + 2.0, bw, row_hh() - 4.0], control, pal().value_box));
         out.push(Shape::Text(text, [bx + 4.0, r[1] + text_y(row_hh())], colour));
         bw
     };
@@ -289,10 +289,10 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                         let (tw, th) = (14.0, 8.0);
                         let (tx, ty) = (x + rw - RIGHT_PAD - tw, y + (rh - th) / 2.0);
                         // Off is the same pill in grey; on follows the accent colour.
-                        out.push(Shape::Round([tx, ty, tw, th], control, if b { solid(accent()) } else { 0xFF5A_5A5A }));
+                        out.push(Shape::Round([tx, ty, tw, th], control, if b { solid(accent()) } else { pal().toggle_off }));
                         let knob = th - 2.0;
                         let kx = if b { tx + tw - knob - 1.0 } else { tx + 1.0 };
-                        out.push(Shape::Round([kx, ty + 1.0, knob, knob], (control - 1.0).max(0.0), 0xFF10_1010));
+                        out.push(Shape::Round([kx, ty + 1.0, knob, knob], (control - 1.0).max(0.0), pal().knob));
                         tw
                     }
                     Value::Num { v, min, max, .. } => {
@@ -303,7 +303,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                                 let colour = match (draft.error, draft.selected()) {
                                     (Some(_), _) => 0xFF60_2020,
                                     (None, true) => 0xFF30_60B0,
-                                    (None, false) => 0xFF08_0808,
+                                    (None, false) => pal().field,
                                 };
                                 out.push(Shape::Round([fx - 3.0, y + 1.0, fw, row_hh() - 2.0], control, colour));
                                 out.push(Shape::Text(draft.text().to_owned(), [fx, y + text_y(row_hh())], 0xFFFFFF));
@@ -321,7 +321,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                         let (tx, track) = slider_track(r);
                         let t = if max > min { ((v - min) / (max - min)) as f32 } else { 0.0 };
                         let ty = y + row_hh();
-                        out.push(Shape::Round([tx, ty, track, 2.0], 1.0, 0xFF2A_2A2A));
+                        out.push(Shape::Round([tx, ty, track, 2.0], 1.0, pal().track));
                         out.push(Shape::Round([tx, ty, track * t, 2.0], 1.0, solid(accent())));
                         out.push(Shape::Round([tx + track * t - 2.5, ty - 1.5, 5.0, 5.0], control.min(2.5), 0xFFE4_E4E4));
                         vw
@@ -371,16 +371,16 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
             // The Dashboard draws lines only between the settings of a section.
             false
         } else {
-            out.push(Shape::Fill([x, y, rw, px], 0x12FF_FFFF));
+            out.push(Shape::Fill([x, y, rw, px], pal().line));
             true
         };
         if let Hit::Header(c) = *hit {
             let (content, room, scroll, folded) = bodies[c];
             body = [y + rh, y + rh + room];
             let body = if folded || content <= 0.0 { 0.0 } else { content.min(room) + body_pad() };
-            out.push(Shape::Round([x, y, rw, rh + body], panel_radius(), bg(0xC00E_0E0E)));
+            framed(out, [x, y, rw, rh + body], panel_radius(), bg(pal().panel), px);
             if body > 0.0 {
-                out.push(Shape::Fill([x, y + rh - px, rw, px], 0x24FF_FFFF));
+                out.push(Shape::Fill([x, y + rh - px, rw, px], pal().rule));
             }
             let name = CATEGORIES[c].label();
             let on = modules.iter().filter(|m| m.category == CATEGORIES[c] && m.in_gui && m.on).count();
@@ -417,7 +417,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     // The settings window, over the panels: its title, close button, description, groups and rows.
     if let Some((win, frame, list, about)) = &window {
         let [x, y, ww, wh] = *frame;
-        out.push(Shape::Round(*frame, panel_radius(), 0xF812_1212));
+        framed(out, *frame, panel_radius(), pal().frame, px);
         let hh = head_h();
         out.push(Shape::Head(fit(modules[win.module].name, ww - indent() - hh - 4.0), [x + indent(), y + text_y(hh)], accent()));
         // The close button: a cross, lit under the pointer.
@@ -429,7 +429,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         for (a, b) in [([cx - d, cy - d], [cx + d, cy + d]), ([cx - d, cy + d], [cx + d, cy - d])] {
             line(out, a, b, 0xFFE4_E4E4, 1.5);
         }
-        out.push(Shape::Fill([x, y + hh - px, ww, px], 0x24FF_FFFF));
+        out.push(Shape::Fill([x, y + hh - px, ww, px], pal().rule));
         for (n, l) in about.iter().enumerate() {
             out.push(Shape::Text(l.clone(), [x + indent(), y + hh + 3.0 + n as f32 * 10.0], 0xA8A8A8));
         }
@@ -447,7 +447,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                 }
                 WinRow::Row(hit) => {
                     if line {
-                        out.push(Shape::Fill([r[0], r[1], r[2], px], 0x12FF_FFFF));
+                        out.push(Shape::Fill([r[0], r[1], r[2], px], pal().line));
                     }
                     let hovered = hover == Some(*hit);
                     if hovered {
@@ -487,7 +487,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         let th = lines.len() as f32 * 10.0 + 4.0;
         let bx = (at.0 + 8.0).min(w - tw - 8.0).max(0.0);
         let by = (at.1 + 10.0).min(h - th).max(0.0);
-        out.push(Shape::Round([bx, by, tw + 8.0, th], panel_radius(), 0xF80A_0A0A));
+        framed(out, [bx, by, tw + 8.0, th], panel_radius(), pal().tooltip, px);
         for (n, line) in lines.into_iter().enumerate() {
             out.push(Shape::Text(line, [bx + 4.0, by + 3.0 + n as f32 * 10.0], 0xE4E4E4));
         }
@@ -497,7 +497,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         let tw = game.sunset_text_width(name);
         let bx = (at.0 + 8.0).min(w - tw - 8.0).max(0.0);
         let by = (at.1 + 10.0).min(h - 14.0);
-        out.push(Shape::Round([bx, by, tw + 8.0, 14.0], panel_radius(), 0xF80A_0A0A));
+        framed(out, [bx, by, tw + 8.0, 14.0], panel_radius(), pal().tooltip, px);
         out.push(Shape::Text(name.to_owned(), [bx + 4.0, by + text_y(14.0)], 0xE4E4E4));
     }
     // The list picker, over everything.
@@ -511,11 +511,11 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         let [x, y, rw, _] = r;
         let room = (rw - 16.0).max(0.0);
         out.push(Shape::Fill([0.0, 0.0, w, h], 0x9000_0000));
-        out.push(Shape::Round(r, panel_radius(), 0xF814_1414));
+        framed(out, r, panel_radius(), pal().dialog, px);
         let m = &modules[edit.module];
         out.push(Shape::Head(fit(&format!("{} / {}", m.name, m.settings[edit.setting].name), room), [x + 8.0, y + 6.0], accent()));
         let selected = edit.draft.as_ref().is_ok_and(Draft::selected);
-        out.push(Shape::Round([x + 6.0, y + 22.0, rw - 12.0, 16.0], panel_radius(), if selected { 0xFF30_60B0 } else { 0xFF08_0808 }));
+        out.push(Shape::Round([x + 6.0, y + 22.0, rw - 12.0, 16.0], panel_radius(), if selected { 0xFF30_60B0 } else { pal().field }));
         let note = match &edit.draft {
             Ok(draft) => {
                 // The end of the text near the caret shows, with the caret at its place.
@@ -534,7 +534,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         };
         out.push(Shape::Text(fit(note, room), [x + 8.0, y + 41.0], if matches!(&edit.draft, Ok(d) if d.error.is_none()) { 0x909090 } else { 0xFF7070 }));
         let (apply, cancel) = editor_buttons(r);
-        for (b, label, colour) in [(apply, "Apply", solid(accent())), (cancel, "Cancel", 0xFF3A_3A3A)] {
+        for (b, label, colour) in [(apply, "Apply", solid(accent())), (cancel, "Cancel", pal().button)] {
             out.push(Shape::Round(b, panel_radius(), colour));
             let tw = game.sunset_text_width(label);
             out.push(Shape::Text(label.to_owned(), [b[0] + (b[2] - tw) / 2.0, b[1] + text_y(b[3])], 0xFFFFFF));
@@ -555,7 +555,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     };
     let selected = with(|s| s.gui.select_all) && !search.is_empty();
     let lw_ = game.sunset_text_width(&text);
-    out.push(Shape::Round([(w - lw_) / 2.0 - 6.0, 14.0, lw_ + 12.0, 14.0], panel_radius(), if selected { 0xFF30_60B0 } else { bg(0xC00E_0E0E) }));
+    framed(out, [(w - lw_) / 2.0 - 6.0, 14.0, lw_ + 12.0, 14.0], panel_radius(), if selected { 0xFF30_60B0 } else { bg(pal().panel) }, px);
     out.push(Shape::Text(text, [(w - lw_) / 2.0, 14.0 + text_y(14.0)], if selected { 0xFFFFFF } else { colour }));
     let hint = "Right click: settings   Enter: toggle search result   Esc: close";
     let hw = game.sunset_text_width(hint);

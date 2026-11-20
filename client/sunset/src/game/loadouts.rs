@@ -522,7 +522,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
         }
     }
     let b = save_button(w, h, list.len());
-    out.push(Shape::Round(b, 3.0, if inside(b, game.cursor) { 0xC050_5050 } else { 0xC030_3030 }));
+    out.push(Shape::Round(b, 3.0, if inside(b, game.cursor) { super::sunset::pal().hud_button_hover } else { super::sunset::pal().hud_button }));
     centred(out, "Save current", b[1] + 3.0, 0xFFFFFF);
     centred(out, "Release K over one to equip  \u{b7}  right-click deletes", h - 46.0, 0xA0A0A0);
 }

@@ -97,7 +97,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
                     let _ = write!(text, " x{}", item.stack.count);
                 }
                 let tw = game.sunset_text_width(&text);
-                out.fill([x - tw / 2.0 - 2.0, y - 14.0, tw + 4.0, 12.0], 0x7800_0000);
+                out.fill([x - tw / 2.0 - 2.0, y - 14.0, tw + 4.0, 12.0], super::sunset::pal().label_bg);
                 out.text(&text, [x - tw / 2.0, y - 12.0], colour & 0x00FF_FFFF);
             }
         }
@@ -205,7 +205,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
                     text.clear();
                     let _ = write!(text, "{} logged out {}m ago", sp.name, game.ticks.saturating_sub(sp.at) / 1200);
                     let tw = game.sunset_text_width(&text);
-                    out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000);
+                    out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], super::sunset::pal().label_bg);
                     out.text(&text, [x - tw / 2.0, y], 0xFF5555);
                 }
             }
@@ -256,7 +256,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
                 text.clear();
                 let _ = write!(text, "{} {}m", w.name, d.round());
                 let tw = game.sunset_text_width(&text);
-                out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000);
+                out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], super::sunset::pal().label_bg);
                 out.text(&text, [x - tw / 2.0, y], accent());
                 out.fill([x - 1.0, y + 11.0, 2.0, 4.0], colour);
             }
@@ -461,7 +461,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
             let total = nw + gap + hw + tw;
             let x0 = x - total / 2.0;
             if tag_back {
-                out.fill([x0 - 2.0, y - 2.0, total + 4.0, 12.0], 0x7800_0000);
+                out.fill([x0 - 2.0, y - 2.0, total + 4.0, 12.0], super::sunset::pal().label_bg);
             }
             out.text(&name, [x0, y], name_colour);
             if !hp.is_empty() {
@@ -509,7 +509,7 @@ pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, m: &Module, out: &mut im
             {
                 let tag = format!("{:.1}s", f64::from(f.ticks) / 20.0);
                 let tw = game.sunset_text_width(&tag);
-                out.fill([x - tw / 2.0 - 2.0, y - 14.0, tw + 4.0, 12.0], 0x7800_0000);
+                out.fill([x - tw / 2.0 - 2.0, y - 14.0, tw + 4.0, 12.0], super::sunset::pal().label_bg);
                 out.text(&tag, [x - tw / 2.0, y - 12.0], colour);
             }
         }

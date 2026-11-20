@@ -2464,8 +2464,8 @@ def close_menu():
 
 @test("ClickGUI Dashboard (look and frame cost)")
 def _():
-    # Style Dashboard at GUI scale 2 and 4: screenshots (dash2.png, dash4.png), and its #121214 surface fills the
-    # middle of the screen. Then the game thread's CPU ms a frame with the menu shut, open as panels and open as the
+    # Style Dashboard at GUI scale 2 (Theme OLED) and 4 (Theme Grey): screenshots (dash2.png, dash4.png), and its
+    # surface (#000000 in OLED, #121214 in Grey) fills the middle of the screen. Then the game thread's CPU ms a frame with the menu shut, open as panels and open as the
     # Dashboard (the median of 4 samples of 2 s): the Dashboard should cost under 0.3 ms over the panels.
     from PIL import Image
     sock = os.path.join(session_dir(), "c.sock").encode()
@@ -2491,7 +2491,8 @@ def _():
 
     setting("clickgui", "style", "Dashboard")
     surface = {}
-    for scale in (2, 4):
+    for scale, theme, want in ((2, "OLED", (0, 0, 0)), (4, "Grey", (0x12, 0x12, 0x14))):
+        setting("clickgui", "theme", theme)
         ctl("options-set", "guiScale", str(scale))
         wait(5)
         say(".menu")
@@ -2500,8 +2501,9 @@ def _():
         time.sleep(2)
         img = Image.open(f"{SHOTS}/dash{scale}.png").convert("RGB")
         middle = img.crop((img.width // 2 - 40, img.height * 3 // 4, img.width // 2 + 40, img.height * 3 // 4 + 20))
-        surface[scale] = sum(1 for px in middle.getdata() if px == (0x12, 0x12, 0x14)) / (80 * 20)
+        surface[scale] = sum(1 for px in middle.getdata() if px == want) / (80 * 20)
         close_menu()
+    setting("clickgui", "theme", "OLED")
     ctl("options-set", "guiScale", "0")
     ms = {"shut": [], "Dropdown": [], "Dashboard": []}
     if stat:
@@ -2542,6 +2544,92 @@ def _():
     wait(5)
     return abs(after - shown) < abs(after - shut) / 10 and abs(hidden - shut) > 0.001, (
         f"mean brightness: menu shut {shut:.4f}, open {shown:.4f}, after F1 {after:.4f}; F1 with it shut {hidden:.4f}")
+
+
+@test("ClickGUI Theme (OLED and Grey)")
+def _():
+    # Each Theme (Grey at the old Background opacity 0.95): screenshots theme_<what>_<theme>.png of the panels with
+    # Xray's settings open in the panel, its Blocks picker, the settings window, the Dashboard and the HUD. The share
+    # of true black (#000000) pixels in the Xray panel's body, the picker's empty right side, the settings window and
+    # the Dashboard's surface: over half in OLED, under a tenth in Grey, where over half are its dark greys instead.
+    from PIL import Image
+
+    def shot(name):
+        path = f"{SHOTS}/theme_{name}.png"
+        ctl("screenshot", path)
+        time.sleep(2)
+        return Image.open(path).convert("RGB")
+
+    def black(img, box):
+        k = img.width / gui_size()[0]
+        part = img.crop(tuple(int(v * k) for v in box))
+        return sum(1 for px in part.getdata() if px == (0, 0, 0)) / max(part.width * part.height, 1)
+
+    def grey(img, box):
+        # Grey's surfaces: #0E0E0E-#141414 drawn at 0.95 or more over the dimmed world.
+        k = img.width / gui_size()[0]
+        part = img.crop(tuple(int(v * k) for v in box))
+        return sum(1 for px in part.getdata() if all(8 <= c <= 28 for c in px)) / max(part.width * part.height, 1)
+
+    width = panel_width()
+    x0 = 2 + 3 * (width + 3)
+    shares = {}
+    for theme, opacity in (("OLED", "1"), ("Grey", "0.95")):
+        setting("clickgui", "theme", theme)
+        setting("clickgui", "background opacity", opacity)
+        setting("clickgui", "style", "Dropdown")
+        setting("clickgui", "settings", "Inline")
+        got, look = {}, {}
+        say(".menu xray")
+        wait(5)
+        ctl("click-at", *map(str, menu_row(3, 1)), "right")
+        wait(4)
+        box = (x0 + 3, 48 + 14 * 3, x0 + width - 3, 48 + 14 * 7)
+        img = shot(f"dropdown_{theme}")
+        got["panel"], look["panel"] = black(img, box), grey(img, box)
+        ctl("click-at", *map(str, menu_row(3, 4)))
+        wait(4)
+        w, h = gui_size()
+        pw, ph = min(max(w - 8, 1), 300), min(max(h - 16, 1), 280)
+        px, py = (w - pw) / 2, max((h - ph) / 2, 0)
+        box = (px + pw - 50, py + 60, px + pw - 10, py + ph - 40)
+        img = shot(f"picker_{theme}")
+        got["picker"], look["picker"] = black(img, box), grey(img, box)
+        close_menu()
+        # Xray's settings shut again in the panel (a right click opens and shuts them), for the next theme.
+        say(".menu xray")
+        wait(5)
+        ctl("click-at", *map(str, menu_row(3, 1)), "right")
+        wait(3)
+        close_menu()
+        setting("clickgui", "settings", "Window")
+        say(".menu xray")
+        wait(5)
+        ctl("click-at", *map(str, menu_row(3, 1)), "right")
+        wait(4)
+        img = shot(f"window_{theme}")
+        box = (w / 2 - 20, h / 2 - 10, w / 2 + 20, h / 2 + 10)
+        got["window"], look["window"] = black(img, box), grey(img, box)
+        close_menu()
+        setting("clickgui", "settings", "Inline")
+        setting("clickgui", "style", "Dashboard")
+        say(".menu")
+        wait(8)
+        box = (w / 2 - 40, h * 3 / 4, w / 2 + 40, h * 3 / 4 + 20)
+        img = shot(f"dashboard_{theme}")
+        got["dashboard"], look["dashboard"] = black(img, box), grey(img, box)
+        close_menu()
+        setting("clickgui", "style", "Dropdown")
+        wait(10)
+        shot(f"hud_{theme}")
+        shares[theme] = got
+        if theme == "Grey":
+            shares["Grey dark grey"] = look
+    setting("clickgui", "theme", "OLED")
+    setting("clickgui", "background opacity", "1")
+    ok = (all(v > 0.5 for v in shares["OLED"].values()) and all(v < 0.1 for v in shares["Grey"].values())
+          and all(v > 0.5 for v in shares["Grey dark grey"].values()))
+    return ok, " ".join(f"{t}: " + ",".join(f"{k} {v:.2f}" for k, v in got.items()) for t, got in shares.items())
 
 
 @test("List picker")

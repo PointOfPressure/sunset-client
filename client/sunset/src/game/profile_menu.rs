@@ -234,7 +234,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
     };
     let r = menu.rect(w, h);
     out.push(Shape::Fill([0.0, 0.0, w, h], 0x8000_0000));
-    out.push(Shape::Round(r, panel_radius(), 0xFF12_1214));
+    super::sunset::framed(out, r, panel_radius(), super::sunset::pal().profile_panel, 1.0);
     out.push(Shape::Text("x".into(), [r[0] + r[2] - 15.0, r[1] + 7.0], 0xFFFFFF));
     if let Some(p) = &menu.preview {
         out.push(Shape::Head(fit(game, PRESETS[p.preset].title, r[2] - 40.0), [r[0] + 8.0, r[1] + 7.0], 0xFFFFFF));
@@ -244,7 +244,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
             out.push(Shape::Text(fit(game, &text, r[2] - 16.0), [r[0] + 8.0, r[1] + TOP + n as f32 * LINE], *colour));
         }
         let (apply, back) = buttons(r);
-        for (b, label, colour) in [(apply, "Apply", 0xFF00_0000 | accent()), (back, "Back", 0xFF3A_3A3A)] {
+        for (b, label, colour) in [(apply, "Apply", 0xFF00_0000 | accent()), (back, "Back", super::sunset::pal().button)] {
             out.push(Shape::Round(b, panel_radius(), colour));
             let tw = game.sunset_text_width(label);
             out.push(Shape::Text(label.to_owned(), [b[0] + (b[2] - tw) / 2.0, b[1] + super::sunset::text_y(b[3])], 0xFFFFFF));
@@ -257,7 +257,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
     out.push(Shape::Head("Profiles".into(), [r[0] + 8.0, r[1] + 7.0], 0xFFFFFF));
     for (t, tab, label) in tabs(r) {
         if menu.tab == tab {
-            out.push(Shape::Round(t, panel_radius(), 0xFF28_282C));
+            out.push(Shape::Round(t, panel_radius(), super::sunset::pal().profile_tab));
         }
         let tw = game.sunset_text_width(label);
         out.push(Shape::Text(label.to_owned(), [t[0] + (t[2] - tw) / 2.0, t[1] + 3.0], if menu.tab == tab { accent() } else { 0x909090 }));
@@ -268,7 +268,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
     for i in (menu.start..menu.count()).take(rows(r)) {
         let row = [r[0] + 4.0, r[1] + TOP + (i - menu.start) as f32 * ROW, r[2] - 8.0, ROW];
         if inside(row, at) || i == menu.focus {
-            out.push(Shape::Round(row, panel_radius(), 0xFF28_282C));
+            out.push(Shape::Round(row, panel_radius(), super::sunset::pal().profile_tab));
         }
         let at_text = [row[0] + 5.0, row[1] + 5.0];
         match menu.tab {
@@ -293,7 +293,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
     let saving = menu.tab == Tab::Saved && menu.in_use.is_some();
     if let Some(name) = menu.in_use.as_deref().filter(|_| saving) {
         let b = save_button(r);
-        out.push(Shape::Round(b, panel_radius(), if inside(b, at) { 0xFF00_0000 | accent() } else { 0xFF3A_3A3A }));
+        out.push(Shape::Round(b, panel_radius(), if inside(b, at) { 0xFF00_0000 | accent() } else { super::sunset::pal().button }));
         let label = fit(game, &format!("Save {name}"), b[2] - 8.0);
         let tw = game.sunset_text_width(&label);
         out.push(Shape::Text(label, [b[0] + (b[2] - tw) / 2.0, b[1] + 3.0], 0xFFFFFF));

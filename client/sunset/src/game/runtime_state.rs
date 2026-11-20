@@ -778,11 +778,12 @@ pub(super) fn sync_flags(s: &mut State) {
         s.friends = list;
     }
     let g = s.module("ClickGUI");
+    OLED_THEME.store(g.is_none_or(|m| m.p("Theme") != "Grey"), Ordering::Relaxed);
     super::sunset_dashboard::set_on(g.is_some_and(|m| m.p("Style") == "Dashboard"));
     super::sunset_smooth::set_enabled(g.is_none_or(|m| m.p("Animations") != "Off"));
     LOOK[0].store(g.map_or(0xFFB020, |m| m.c("Accent color") & 0x00FF_FFFF), Ordering::Relaxed);
     LOOK[1].store(g.map_or(120.0, |m| m.n("Panel width") as f32).to_bits(), Ordering::Relaxed);
-    LOOK[2].store(g.map_or(0.95, |m| m.n("Background opacity") as f32).to_bits(), Ordering::Relaxed);
+    LOOK[2].store(g.map_or(1.0, |m| m.n("Background opacity") as f32).to_bits(), Ordering::Relaxed);
     LOOK[3].store(g.map_or(35.0, |m| m.n("Background dim")) as u32, Ordering::Relaxed);
     LOOK[5].store(g.map_or(2.0, |m| m.n("Text indent") as f32).to_bits(), Ordering::Relaxed);
     LOOK[6].store(g.map_or(1.0, |m| m.n("GUI scale") as f32).to_bits(), Ordering::Relaxed);

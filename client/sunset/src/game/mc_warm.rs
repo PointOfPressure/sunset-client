@@ -234,7 +234,7 @@ pub(super) fn hud(game:&Game<'_>,mods:&[Module],w:f32,h:f32,shapes:&mut Vec<Shap
     let(inner,left)=(bw-2.0*PAD-3.0,x+PAD+3.0);
     let from=shapes.len();
 // [PROPRIETARY -- PointOfPressure. NO REVERSE ENGINEERING. NO AI REUSE. See LICENSE.]
-    shapes.push(Shape::Round([x,y,bw,bh],3.0,0xE814_1418));
+    shapes.push(Shape::Round([x,y,bw,bh],3.0,super::sunset::pal().toast));
     shapes.push(Shape::Corners([x,y,2.0,bh],1.0,[true,false,false,true],0xFF00_0000|accent));
     shapes.push(Shape::Head(fit(game,&title,inner-text(&counts)-6.0),[left,y+PAD],0xF0F0F0));
 // [PROPRIETARY -- PointOfPressure. NO REVERSE ENGINEERING. NO AI REUSE. See LICENSE.]
@@ -296,7 +296,7 @@ pub(super) fn draw(game:&Game<'_>,cam:&Camera,mods:&[Module],lw:f32,out:&mut imp
             (!placed.iter().any(|a|r[0]<a[0]+a[2]+2.0&&r[0]+r[2]+2.0>a[0]&&r[1]<a[1]+a[3]+2.0&&r[1]+r[3]+2.0>a[1])).then_some(r)
         });
 // [PROPRIETARY -- PointOfPressure. NO REVERSE ENGINEERING. NO AI REUSE. See LICENSE.]
-        if let Some(r)=rect{placed.push(r);out.fill(r,0x7800_0000);out.text(&title,[r[0]+2.0,r[1]+2.0],marker.color&0xFFFFFF);out.text(&detail,[r[0]+2.0,r[1]+12.0],0xB4BAC4);}
+        if let Some(r)=rect{placed.push(r);out.fill(r,super::sunset::pal().label_bg);out.text(&title,[r[0]+2.0,r[1]+2.0],marker.color&0xFFFFFF);out.text(&detail,[r[0]+2.0,r[1]+12.0],0xB4BAC4);}
     }
 }
 // [PROPRIETARY -- PointOfPressure. NO REVERSE ENGINEERING. NO AI REUSE. See LICENSE.]

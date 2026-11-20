@@ -273,7 +273,7 @@ pub(super) fn draw(game: &Game<'_>, batch: &mut HudBatch) {
         let x = if right { w - MARGIN - tw + slide } else { MARGIN - slide };
         let top = if bottom { y - th } else { y };
         let start = batch.vertices.len();
-        super::sunset::round_fill(game, batch, [x, top, tw, th], 3.0, [true; 4], 0xE814_1418, px);
+        super::sunset::round_fill(game, batch, [x, top, tw, th], 3.0, [true; 4], super::sunset::pal().toast, px);
         super::sunset::round_fill(game, batch, [x, top, 2.0, th], 1.0, [true, false, false, true], 0xFF00_0000 | t.kind.accent(), px);
         for (i, line) in t.lines.iter().enumerate() {
             game.native_text(batch, line, [x + PAD + 2.0, top + PAD + i as f32 * LINE_H], 0xF0F0F0, false);

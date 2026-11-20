@@ -228,6 +228,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Panic", Player, "Stops Sunset until the game restarts: every module off, its menu, HUD and commands gone, and it leaves Options > Mods. The server connection stays."),
         // Render
         Module::new("ClickGUI", Render, "How this menu looks.")
+            .pick("Theme", &["OLED", "Grey"])
             .pick("Style", &["Dropdown", "Dashboard"])
             .pick("Animations", &["Minimal", "Off"])
             .colour("Accent color", "Sunset Orange")
@@ -238,7 +239,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Spacing", &["Comfortable", "Compact"])
             .num("Text indent", 2.0, 0.0, 12.0, 1.0)
             .pick("Settings", &["Inline", "Window"])
-            .num("Background opacity", 0.95, 0.2, 1.0, 0.05)
+            .num("Background opacity", 1.0, 0.2, 1.0, 0.05)
             .num("Background dim", 35.0, 0.0, 100.0, 5.0)
             .bool("Menu dim", true)
             .bool("Inventory blur", false)

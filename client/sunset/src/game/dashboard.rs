@@ -5,7 +5,7 @@
 use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
-use super::sunset::{CATEGORIES, Hit, Shape, State, accent, control_radius, dash_menu, dash_search_clear, fit_to, panel_radius, row_h, row_hh, snap_scroll, text_y, wanted_panel_w};
+use super::sunset::{CATEGORIES, Hit, Shape, State, accent, pal, control_radius, dash_menu, dash_search_clear, fit_to, panel_radius, row_h, row_hh, snap_scroll, text_y, wanted_panel_w};
 use super::sunset_smooth as smooth;
 use horizon_client::hud::HudBatch;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -119,10 +119,6 @@ const CARD_PAD: f32 = 3.0;
 const CARD_IN: f32 = 2.0;
 const TITLE_H: f32 = 13.0;
 
-const SURFACE: u32 = 0xFF12_1214;
-const HAIRLINE: u32 = 0xFF26_262B;
-const CONTROL: u32 = 0xFF1C_1C20;
-const CARD: u32 = 0xFF17_171A;
 const MUTED: u32 = 0x8C8C94;
 // A lit row or category at its brightest.
 const LIT: u32 = 0x10;
@@ -478,17 +474,17 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     let page = if menu.search.is_empty() { view(|v| v.page) } else { 0 };
     let body = f[1] + HEADER_H;
 
-    out.push(Shape::Squircle([f[0] - px, f[1] - px, f[2] + 2.0 * px, f[3] + 2.0 * px], radius + px, HAIRLINE));
-    out.push(Shape::Squircle(f, radius, SURFACE));
-    out.push(Shape::Fill([f[0], body, f[2], px], HAIRLINE));
-    out.push(Shape::Fill([list[0], body, px, f[1] + f[3] - body], HAIRLINE));
-    out.push(Shape::Fill([pane[0], body, px, f[1] + f[3] - body], HAIRLINE));
+    out.push(Shape::Squircle([f[0] - px, f[1] - px, f[2] + 2.0 * px, f[3] + 2.0 * px], radius + px, pal().dash_hairline));
+    out.push(Shape::Squircle(f, radius, pal().dash_surface));
+    out.push(Shape::Fill([f[0], body, f[2], px], pal().dash_hairline));
+    out.push(Shape::Fill([list[0], body, px, f[1] + f[3] - body], pal().dash_hairline));
+    out.push(Shape::Fill([pane[0], body, px, f[1] + f[3] - body], pal().dash_hairline));
 
     // The header: the name, and the search box over the columns (typing anywhere goes to it).
     out.push(Shape::Head("Sunset".to_owned(), [f[0] + 14.0, f[1] + text_y(HEADER_H)], 0xFFFFFF));
     let r = [list[0] + CARD_M, f[1] + (HEADER_H - SEARCH_H) / 2.0, (list[2] + pane[2] - 2.0 * CARD_M).clamp(0.0, SEARCH_MAX), SEARCH_H];
     let selected = menu.select_all && !menu.search.is_empty();
-    out.push(Shape::Round(r, radius, if selected { 0xFF30_60B0 } else { CONTROL }));
+    out.push(Shape::Round(r, radius, if selected { 0xFF30_60B0 } else { pal().dash_control }));
     let text = if menu.search.is_empty() { "Search modules".to_owned() } else { format!("{}_", menu.search) };
     let colour = if menu.search.is_empty() { MUTED } else { 0xFFFFFF };
     out.push(Shape::Text(fit_to(game, &text, r[2] - 16.0), [r[0] + 8.0, r[1] + text_y(r[3])], colour));
@@ -540,7 +536,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         out.push(Shape::Head(fit_to(game, m.name, room), [pane[0] + CARD_M + 2.0, band_y + 5.0], 0xFFFFFF));
         out.push(Shape::Text(fit_to(game, m.about, room), [pane[0] + CARD_M + 2.0, band_y + 18.0], MUTED));
         let lit = glow(Hit::Dash(Part::Toggle));
-        out.push(Shape::Round(t, TOGGLE_H / 2.0, if m.on { solid } else { 0xFF2E_2E33 + (lit << 16 | lit << 8 | lit) }));
+        out.push(Shape::Round(t, TOGGLE_H / 2.0, if m.on { solid } else { pal().dash_toggle_off + (lit << 16 | lit << 8 | lit) }));
         let knob = TOGGLE_H - 4.0;
         let kx = if m.on { t[0] + t[2] - knob - 2.0 } else { t[0] + 2.0 };
         out.push(Shape::Round([kx, t[1] + 2.0, knob, knob], knob / 2.0, if m.on { 0xFFFF_FFFF } else { 0xFFB4_B4BA }));
@@ -555,7 +551,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
             if bottom < pane[1] || top > pane[1] + pane[3] {
                 continue;
             }
-            out.push(Shape::Round([pane[0] + CARD_M, top, pane[2] - 2.0 * CARD_M, bottom - top], control_radius().max(4.0), CARD));
+            out.push(Shape::Round([pane[0] + CARD_M, top, pane[2] - 2.0 * CARD_M, bottom - top], control_radius().max(4.0), pal().dash_card));
             if let Some(title) = card.title {
                 out.push(Shape::Text(title.to_owned(), [pane[0] + CARD_M + 7.0, top + 3.0], MUTED));
             }

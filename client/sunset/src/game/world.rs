@@ -688,7 +688,7 @@ pub(super) fn spawner_labels(game: &Game<'_>, cam: &Camera, range: f64, out: &mu
             };
             let text = format!("{label} {d:.0}m");
             let tw = game.sunset_text_width(&text);
-            out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], 0x7800_0000);
+            out.fill([x - tw / 2.0 - 2.0, y - 2.0, tw + 4.0, 12.0], super::sunset::pal().label_bg);
             out.text(&text, [x - tw / 2.0, y], 0xFFAA00);
         }
     });

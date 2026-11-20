@@ -955,7 +955,7 @@ const GRID: [f32; 2] = [9.0 * 18.0 + 8.0, 3.0 * 18.0 + 8.0];
 fn draw_grid(game: &Game<'_>, batch: &mut horizon_client::hud::HudBatch, slots: &[(u8, horizon_client::items::ItemStack)], tint: u32, left: f32, top: f32) {
     let [w, h] = GRID;
     game.native_fill(batch, [left, top, w, h], 0xF000_0000 | tint);
-    game.native_fill(batch, [left + 2.0, top + 2.0, w - 4.0, h - 4.0], 0xE018_1818);
+    game.native_fill(batch, [left + 2.0, top + 2.0, w - 4.0, h - 4.0], super::sunset::pal().grid);
     for i in 0..27u8 {
         let at = [left + 4.0 + f32::from(i % 9) * 18.0, top + 4.0 + f32::from(i / 9) * 18.0];
         game.native_fill(batch, [at[0], at[1], 18.0, 18.0], 0x6000_0000 | tint);

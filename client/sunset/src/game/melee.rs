@@ -1558,7 +1558,7 @@ pub(super) fn draw_spear(game: &Game<'_>, w: f32, h: f32, out: &mut impl Canvas)
     let (bw, bh) = (64.0_f32, 20.0_f32);
     let (x, y) = (w / 2.0 - bw / 2.0, h / 2.0 + 30.0);
     let share = (damage / 20.0).clamp(0.0, 1.0) as f32;
-    out.fill([x, y, bw, bh], 0x960E_0E0E);
+    out.fill([x, y, bw, bh], super::sunset::pal().hud_box);
     out.text(&text, [x + (bw - game.sunset_text_width(&text)) / 2.0, y + 3.0], 0xFFFFFF);
     out.fill([x + 7.0, y + bh - 7.0, bw - 14.0, 4.0], 0x5A00_0000);
     let red = ((1.0 - share) * 255.0) as u32;
