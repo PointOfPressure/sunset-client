@@ -478,10 +478,11 @@ separate program, with its data inside the launcher's own folder (`~/.local/shar
 - **Sign in:** the Microsoft device code from `horizon-launcher account sign-in` (link, code, Copy). The tokens stay
   with horizon-launcher.
 - **Install:** `manifest.json` and its `.minisig` from the newest `client-v*` GitHub release (`manifest-<platform>.json`
-  first), checked against `launcher/sunset.pub`. Then the pinned Nightly (`install`, then `prepare`, which takes
-  Minecraft 26.3 from another launcher or, once you are signed in, from Mojang). Then the package (minisign and SHA-256)
-  goes into `versions/`, with an instance `sunset` on it. **Repair** checks the package and unpacks it again. Auto-update
-  installs a newer pin at start.
+  first), checked against `launcher/sunset.pub`. Then the package (minisign and SHA-256) goes into `versions/`, then the
+  pinned Nightly (`install`; when Horizon has rebuilt that day's Nightly since and its release is gone, the launcher sets
+  that version up from the package, which carries the same revision's files), then `prepare`, which takes Minecraft 26.3
+  from another launcher or, once you are signed in, from Mojang, and an instance `sunset` on the package. **Repair**
+  checks the package and unpacks it again. Auto-update installs a newer pin at start.
 - **Play:** `horizon-launcher play --instance sunset`, with the window size from Settings.
 - **Import:** once, if you want, Sunset's config and profiles from a Horizon instance (files already here are kept).
 - **Linux:** the window and horizon-launcher both need `libxkbcommon0 libxkbcommon-x11-0 libxcb1` (Fedora and Arch:

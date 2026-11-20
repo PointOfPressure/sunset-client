@@ -821,10 +821,33 @@ pub fn install(p: &Paths, rel: &Release, repair: bool, cancel: &AtomicBool, prog
     run_cli(p, &["settings", "install-new-versions", "off"])?;
     run_cli(p, &["settings", "prune-old-versions", "off"])?;
     stop()?;
+    // The package comes first: it can stand in for the pinned Nightly when that is gone from GitHub (below).
+    let game = m.game()?;
+    let cached = p.downloads().join(&game.file);
+    let cache_ok = cached.is_file() && sha256_file(&cached).is_ok_and(|h| h.eq_ignore_ascii_case(&game.sha256));
+    if !cache_ok {
+        let sig = fetch(&format!("{}/{}", rel.base, game.signature))?;
+        download(&format!("{}/{}", rel.base, game.file), &cached, &game.sha256, Some(&String::from_utf8_lossy(&sig)), &format!("Sunset {}", m.version), cancel, progress)?;
+    }
+    let vdir = p.versions().join(&m.version_dir);
+    if repair || !vdir.join(".installed").exists() {
+        progress(&format!("Unpacking Sunset {}", m.version), None);
+        unpack_game(&cached, &p.versions(), &m.version_dir, cancel)?;
+    }
+    stop()?;
     let base = p.versions().join(&m.horizon.tag);
     if !base.join(".installed").exists() {
         progress(&format!("Installing Horizon {}", m.horizon.tag), None);
-        run_cli(p, &["install", &m.horizon.tag])?;
+        if let Err(e) = run_cli(p, &["install", &m.horizon.tag]) {
+            // Horizon rebuilds a day's Nightly under the same date, and the earlier build's release goes. The
+            // package holds that same revision's game files, so the base is set up from it instead.
+            let listed = run_cli(p, &["versions"]).map_err(|_| e.clone())?;
+            if listed.split_whitespace().any(|w| w == m.horizon.tag) {
+                return Err(e);
+            }
+            progress(&format!("Setting up Horizon {} from the Sunset package", m.horizon.tag), None);
+            base_from_package(&p.versions(), &m.version_dir, &m.horizon.tag)?;
+        }
     }
     stop()?;
     if !base.join(".local").join("horizon-client").is_dir() {
@@ -841,19 +864,6 @@ pub fn install(p: &Paths, rel: &Release, repair: bool, cancel: &AtomicBool, prog
             progress(&format!("Downloading Minecraft {} for your account", m.horizon.game), None);
             run_cli(p, &["prepare", "--download", "--version", &m.horizon.tag])?;
         }
-    }
-    stop()?;
-    let game = m.game()?;
-    let cached = p.downloads().join(&game.file);
-    let cache_ok = cached.is_file() && sha256_file(&cached).is_ok_and(|h| h.eq_ignore_ascii_case(&game.sha256));
-    if !cache_ok {
-        let sig = fetch(&format!("{}/{}", rel.base, game.signature))?;
-        download(&format!("{}/{}", rel.base, game.file), &cached, &game.sha256, Some(&String::from_utf8_lossy(&sig)), &format!("Sunset {}", m.version), cancel, progress)?;
-    }
-    let vdir = p.versions().join(&m.version_dir);
-    if repair || !vdir.join(".installed").exists() {
-        progress(&format!("Unpacking Sunset {}", m.version), None);
-        unpack_game(&cached, &p.versions(), &m.version_dir, cancel)?;
     }
     stop()?;
     progress("Setting up the sunset instance", None);
@@ -880,6 +890,71 @@ fn unpack_game(archive: &Path, versions: &Path, vdir: &str, cancel: &AtomicBool)
     unpack_tar_zst(archive, versions, vdir, "Sunset package", cancel)?;
     if !versions.join(vdir).join(".installed").exists() {
         return Err("the Sunset package is incomplete (no .installed)".into());
+    }
+    Ok(())
+}
+
+/// What a base set up from the package leaves out: Sunset's own game and libraries, so the base never plays Sunset
+/// under Horizon's name, and the record that makes the package a native build.
+fn sunset_only(name: &str) -> bool {
+    matches!(name, "native-mods.json" | "files.sha256" | "horizon-client" | "horizon-client.exe" | "horizon-native-mods" | ".installed")
+        || name.ends_with(".so")
+        || name.ends_with(".dll")
+}
+
+/// Sets up the Horizon version `base` (the Nightly the package was built on) from the unpacked package `vdir`, when
+/// Horizon's GitHub no longer has that Nightly. The package carries the same revision's preparer, exporters and
+/// server; the client takes only the base's prepared resources from it. Files are hard links where the disk allows.
+pub(crate) fn base_from_package(versions: &Path, vdir: &str, base: &str) -> Result<()> {
+    fn link_tree(from: &Path, to: &Path) -> io::Result<()> {
+        fs::create_dir_all(to)?;
+        for entry in fs::read_dir(from)? {
+            let entry = entry?;
+            let dest = to.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                link_tree(&entry.path(), &dest)?;
+            } else if fs::hard_link(entry.path(), &dest).is_err() {
+                fs::copy(entry.path(), &dest)?;
+            }
+        }
+        Ok(())
+    }
+    let src = versions.join(vdir);
+    if !src.join(".installed").exists() {
+        return Err("the Sunset package isn't unpacked".into());
+    }
+    let tmp = versions.join(format!(".{base}.tmp"));
+    let _ = fs::remove_dir_all(&tmp);
+    let made = (|| -> io::Result<()> {
+        fs::create_dir_all(&tmp)?;
+        for entry in fs::read_dir(&src)? {
+            let entry = entry?;
+            if sunset_only(&entry.file_name().to_string_lossy()) {
+                continue;
+            }
+            let dest = tmp.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                link_tree(&entry.path(), &dest)?;
+            } else if fs::hard_link(entry.path(), &dest).is_err() {
+                fs::copy(entry.path(), &dest)?;
+            }
+        }
+        fs::write(
+            tmp.join("SUNSET-BASE.txt"),
+            format!(
+                "Set up by the Sunset launcher from the signed Sunset package {vdir}, because Horizon's GitHub no longer \
+                 has the release {base}. It holds that Horizon revision's preparer and, once prepared, the Minecraft \
+                 resources Sunset plays with. It has no game of its own: play from the sunset instance.\n"
+            ),
+        )?;
+        fs::write(tmp.join(".installed"), "")?;
+        let dest = versions.join(base);
+        let _ = fs::remove_dir_all(&dest);
+        fs::rename(&tmp, &dest)
+    })();
+    if let Err(e) = made {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(format!("couldn't set up Horizon {base} from the Sunset package: {e}"));
     }
     Ok(())
 }
@@ -1247,6 +1322,41 @@ mod tests {
     #[test]
     fn bad_signature_refused() {
         assert!(verify_signature(b"x", "junk").is_err());
+    }
+
+    #[test]
+    fn base_from_package_leaves_sunset_out() {
+        let t = std::env::temp_dir().join(format!("sunset-base-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        let v = t.join("versions");
+        assert!(base_from_package(&v, "native-x", "nightly-x").is_err(), "nothing unpacked");
+        let pkg = v.join("native-x");
+        fs::create_dir_all(pkg.join("crates/horizon-prepare/src")).unwrap();
+        fs::create_dir_all(pkg.join("horizon-native-mods/sunset")).unwrap();
+        for f in ["horizon-prepare", "horizon-server", "PLAY.txt", "crates/horizon-prepare/src/lib.rs", "native-mods.json",
+            "files.sha256", "horizon-client", "libsunset_core.so", "libhorizon_patch.so", "horizon-native-mods/sunset/Cargo.toml"] {
+            fs::write(pkg.join(f), f).unwrap();
+        }
+        assert!(base_from_package(&v, "native-x", "nightly-x").is_err(), "no .installed: not unpacked");
+        fs::write(pkg.join(".installed"), "").unwrap();
+        base_from_package(&v, "native-x", "nightly-x").unwrap();
+        let b = v.join("nightly-x");
+        for kept in [".installed", "SUNSET-BASE.txt", "horizon-prepare", "horizon-server", "PLAY.txt", "crates/horizon-prepare/src/lib.rs"] {
+            assert!(b.join(kept).is_file(), "{kept} kept");
+        }
+        for out in ["native-mods.json", "files.sha256", "horizon-client", "libsunset_core.so", "libhorizon_patch.so", "horizon-native-mods"] {
+            assert!(!b.join(out).exists(), "{out} left out");
+        }
+        assert_eq!(fs::read_to_string(b.join("crates/horizon-prepare/src/lib.rs")).unwrap(), "crates/horizon-prepare/src/lib.rs");
+        // Again over a half-made base: replaced whole, no temporary folder left.
+        fs::remove_file(b.join(".installed")).unwrap();
+        fs::write(b.join("stale"), "").unwrap();
+        base_from_package(&v, "native-x", "nightly-x").unwrap();
+        assert!(b.join(".installed").is_file() && !b.join("stale").exists());
+        assert!(!v.join(".nightly-x.tmp").exists());
+        // The package itself is untouched.
+        assert!(pkg.join("horizon-client").is_file() && pkg.join("native-mods.json").is_file());
+        fs::remove_dir_all(&t).unwrap();
     }
 
     #[test]

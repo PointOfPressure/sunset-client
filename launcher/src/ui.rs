@@ -2339,8 +2339,9 @@ impl Render for Launcher {
                 .px(px(PAD))
                 .py(px(10.))
                 .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(if err { RED } else { ACCENT })))
-                .child(div().flex_1().child(text(msg, 13., if err { RED } else { TEXT })))
-                .child(div().id("note-close").cursor_pointer().child(icon(Icon::Close, 16., MUTED)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                // min_w(0): a long message wraps inside the card instead of pushing the close button out of it.
+                .child(div().flex_1().min_w(px(0.)).child(text(msg, 13., if err { RED } else { TEXT })))
+                .child(div().id("note-close").flex_none().cursor_pointer().child(icon(Icon::Close, 16., MUTED)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.note = None;
                     cx.notify();
                 })))

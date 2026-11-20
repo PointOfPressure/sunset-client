@@ -45,7 +45,8 @@ Nightly's: their source is the same branch.
 - LGPL-3 section 4's terms for the combined work (modifying it for your own use, reverse engineering to debug
   that): `../release/PREBUILT-TERMS.md`, shipped in the game folder's `licences/` with the Horizon notice, the
   LGPL and GPL texts and `THIRD-PARTY-LICENSES.txt` (`../release/third-party.sh`), and beside each release with
-  `…-horizon-source.tar.zst` (the fork tree) and `…-horizon-series.bundle` (its commits on the pin).
+  `…-horizon-source.tar.zst` (the fork tree) and `…-horizon-series.bundle` (its commits on the pin). The maintainer
+  read and signed off this text for 2.0.0 on 20 Nov 2026 at 03:11.
 
 ## Other patches
 
