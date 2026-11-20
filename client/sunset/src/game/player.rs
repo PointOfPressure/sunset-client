@@ -36,9 +36,19 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Soup health", 17.0, 1.0, 20.0, 1.0)
             .num("Soup delay (ms)", 500.0, 50.0, 1000.0, 50.0)
             .bool("Drop bowls", true),
-        Module::new("Chest Stealer", Player, "Empties containers you open.")
-            .num("Items per tick", 3.0, 1.0, 27.0, 1.0)
-            .num("Delay (ticks)", 0.0, 0.0, 10.0, 1.0)
+        Module::new("Chest Stealer", Player, "Empties containers you open of what is worth having.")
+            // The pause after each item, rolled between min and max (ms) each time; and before the first, from the
+            // container opening.
+            .num("Delay min (ms)", 100.0, 0.0, 150.0, 10.0)
+            .num("Delay max (ms)", 150.0, 0.0, 150.0, 10.0)
+            .num("First delay min (ms)", 0.0, 0.0, 500.0, 10.0)
+            .num("First delay max (ms)", 0.0, 0.0, 500.0, 10.0)
+            // Ignore trash: only what Inventory Manager keeps (weapons, tools, armour, food, potions, building blocks,
+            // its protected items...). Respect manager rules: nothing worse than what you have, nothing past Inventory
+            // Manager's limits, no menu items when it drops them (Rise's rules).
+            .bool("Ignore trash", true)
+            .bool("Respect manager rules", true)
+            .bool("NCP click limit", true)
             .pick("Take", &["All", "Carts from shulkers"])
             .bool("Close when done", false)
             .text("Steal key", "None"),
@@ -213,11 +223,7 @@ struct Ps {
     afk_message: i32,
     afk_index: usize,
     afk_wander: Wander,
-    steal_wait: u32,
-    steal_id: i32,
-    steal_last: usize,
-    steal_same: u32,
-    steal_done: i32,
+    steal: Steal,
     // No Break Reset: the step the block's break took last tick, with the item held then.
     break_step: f32,
     // No Fall's Place: what it put down to land in, the item, the ticks since, the ticks you have stood still, and
@@ -933,11 +939,26 @@ fn container_size(menu: &str) -> Option<usize> {
     }
 }
 
+// Chest Stealer's state for the open container.
+#[derive(Default)]
+struct Steal {
+    id: Option<i32>,
+    opened: u64,
+    done: bool,
+    clicks: usize,
+    pacer: super::sunset_inventory_gate::Pacer,
+}
+
+// Chest Stealer, after Rise's Stealer (its behaviour, not its code): from the container's first slot on, each item
+// worth having taken a random Delay after the last, the first a First delay after it opened. On an old server behind
+// ViaVersion a Shift click is refused (inventory_gate.rs): there each item is picked up and put down in an empty slot,
+// two clicks it takes, and a Shift click only when no slot is empty (the next then waits for its answer).
 fn auto_steal(game: &mut Game<'_>, m: &Module) {
-    use horizon_client::menu::Input::QuickMove;
+    use super::sunset_inventory_gate as gate;
+    use horizon_client::menu::Input::{Pickup, QuickMove};
     if game.screen != Screen::Inventory {
-        // Closed: the next chest starts afresh.
-        ps(|p| p.steal_done = i32::MIN);
+        // Closed: the next container starts afresh.
+        ps(|p| p.steal = Steal::default());
         return;
     }
     // Carts from shulkers (a cart PvP restock): only TNT minecarts, only out of shulker boxes.
@@ -963,33 +984,234 @@ fn auto_steal(game: &mut Game<'_>, m: &Module) {
             }
         }
     };
-    // With a Steal key, only while it is held.
+    let now = std::time::Instant::now();
+    if ps(|p| p.steal.id != Some(id)) {
+        // rand() takes the PS lock itself: rolled outside any ps() closure.
+        let first = gate::roll(m.n("First delay min (ms)"), m.n("First delay max (ms)"), rand(1001) as f64 / 1000.0);
+        let opened = game.ticks;
+        ps(|p| {
+            p.steal = Steal { id: Some(id), opened, ..Steal::default() };
+            p.steal.pacer.wait(now, first);
+        });
+    }
+    // With a Steal key, only while it is held. Nothing in the tick it opened: its items come after the menu.
     let key = m.t("Steal key") != "None";
-    if ps(|p| p.steal_done == id) || (key && !super::sunset_util::setting_key_down(game, m, "Steal key")) || ps(|p| {
-        p.steal_wait = p.steal_wait.saturating_sub(1);
-        p.steal_wait > 0
-    }) {
+    let opened = ps(|p| p.steal.opened);
+    if ps(|p| p.steal.done) || (key && !super::sunset_util::setting_key_down(game, m, "Steal key")) || game.ticks <= opened {
         return;
     }
-    let items: Vec<usize> =
-        (0..size).filter(|&i| game.slot_mut(300 + i).as_ref().is_some_and(|s| !carts || &*s.item == "minecraft:tnt_minecart")).collect();
-    // Done when there is nothing to take, or when taking stopped changing it (your inventory is full). Close when
-    // done shuts the container then.
-    let stuck = ps(|p| {
-        p.steal_same = if p.steal_id == id && p.steal_last == items.len() { p.steal_same + 1 } else { 0 };
-        (p.steal_id, p.steal_last) = (id, items.len());
-        p.steal_same >= 6
-    });
-    if items.is_empty() || stuck {
-        ps(|p| p.steal_done = id);
+    let manager = super::sunset::with(|s| s.module("Inventory Manager").cloned());
+    let limit = m.b("NCP click limit");
+    let finish = |game: &mut Game<'_>| {
+        ps(|p| p.steal.done = true);
         if m.b("Close when done") {
             super::sunset_combat_inventory::close_inventory(game);
         }
-        return;
+    };
+    // As many as are due this tick (one, unless Delay is under a tick). A container is left after four clicks a slot,
+    // should a server keep giving items back.
+    for _ in 0..64 {
+        if !gate::ready(game) || !ps(|p| p.steal.pacer.ready(now)) {
+            return;
+        }
+        // An item on the cursor (a put-down a server refused) goes into an empty slot of yours first.
+        if game.carried.is_some() {
+            let Some(to) = (9..36).chain(0..9).find(|&s| game.inventory.get(s).is_some_and(|x| x.is_none()) && !super::sunset_loadouts::locked(s)) else {
+                return;
+            };
+            if (limit && !gate::room(1)) || game.physical_buttons.contains(&MouseButton::Left) || !game.menu_ops(&[(Some(to), 0, Pickup)]) {
+                return;
+            }
+            gate::clicked(1);
+            let delay = gate::roll(m.n("Delay min (ms)"), m.n("Delay max (ms)"), rand(1001) as f64 / 1000.0);
+            ps(|p| p.steal.pacer.sent(now, delay));
+            continue;
+        }
+        let wanted = steal_wanted(game, m, manager.as_ref(), size, carts);
+        let Some(&i) = wanted.first().filter(|_| ps(|p| p.steal.clicks) < size * 4) else {
+            finish(game);
+            return;
+        };
+        let empty = if gate::legacy(game) {
+            (9..36).chain(0..9).find(|&s| game.inventory.get(s).is_some_and(|x| x.is_none()) && !super::sunset_loadouts::locked(s))
+        } else {
+            None
+        };
+        let ops: Vec<_> = match empty {
+            Some(to) => vec![(Some(300 + i), 0, Pickup), (Some(to), 0, Pickup)],
+            None => vec![(Some(300 + i), 0, QuickMove)],
+        };
+        if limit && !gate::room(ops.len()) {
+            return;
+        }
+        let before = game.slot_mut(300 + i).clone();
+        if !game.menu_ops(&ops) {
+            finish(game);
+            return;
+        }
+        gate::clicked(ops.len());
+        let moved = *game.slot_mut(300 + i) != before;
+        if empty.is_none() && moved && game.remote.is_some() {
+            gate::refusable(game, true);
+        }
+        let delay = gate::roll(m.n("Delay min (ms)"), m.n("Delay max (ms)"), rand(1001) as f64 / 1000.0);
+        ps(|p| {
+            p.steal.clicks += ops.len();
+            p.steal.pacer.sent(now, delay);
+        });
+        if !moved {
+            // Nothing went: your inventory is full.
+            finish(game);
+            return;
+        }
     }
-    let ops: Vec<_> = items.iter().take(m.n("Items per tick") as usize).map(|&i| (Some(300 + i), 0, QuickMove)).collect();
-    game.menu_ops(&ops);
-    ps(|p| p.steal_wait = m.n("Delay (ticks)") as u32);
+}
+
+// The container slots Chest Stealer takes from, in order. Ignore trash leaves what Inventory Manager would throw;
+// Respect manager rules also leaves a weapon, tool, bow or armour piece no better than the best you have (or than
+// another in the container), a second fishing rod, a stack that would take you past Inventory Manager's limits (Slots
+// mode's), and named items when Inventory Manager drops those.
+fn steal_wanted(game: &mut Game<'_>, m: &Module, manager: Option<&Module>, size: usize, carts: bool) -> Vec<usize> {
+    use super::sunset_inventory_slots::{Stack, describe};
+    let protected = manager.map_or("", |mm| mm.t("Protected items"));
+    let stacks: Vec<Option<horizon_client::items::ItemStack>> = (0..size).map(|i| game.slot_mut(300 + i).clone()).collect();
+    if carts {
+        return (0..size).filter(|&i| stacks[i].as_ref().is_some_and(|s| &*s.item == "minecraft:tnt_minecart")).collect();
+    }
+    let chest: Vec<Option<Stack>> = stacks.iter().map(|s| s.as_ref().map(|s| describe(game, protected, s))).collect();
+    let mine: Vec<Stack> = game.inventory.iter().take(36).chain(game.armor.iter()).flatten().map(|s| describe(game, protected, s)).collect();
+    steal_pick(&chest, &mine, m.b("Ignore trash"), m.b("Respect manager rules").then(|| steal_rules(manager)))
+}
+
+// Inventory Manager's limits (blocks, arrows, buckets, snowballs and eggs, pearls) and whether it drops named items.
+fn steal_rules(manager: Option<&Module>) -> ([u32; 5], bool) {
+    let n = |name: &str, default: f64| manager.map_or(default, |mm| mm.n(name)) as u32;
+    (
+        [n("Block limit", 512.0), n("Arrow limit", 128.0), n("Bucket limit", 1.0), n("Snowball and egg limit", 16.0), n("Ender pearl limit", 16.0)],
+        manager.is_some_and(|mm| mm.b("Drop custom items")),
+    )
+}
+
+// An item's kind and score, for the kinds only the best of is kept: armour by type (0 to 3), swords, each tool, bows.
+fn steal_graded(s: &super::sunset_inventory_slots::Stack) -> Option<(u8, f32)> {
+    if let Some((t, score)) = s.armor {
+        Some((t as u8, score as f32))
+    } else if let Some(score) = s.sword {
+        Some((4, score))
+    } else if let Some((tool, score)) = s.tool {
+        Some((5 + tool as u8, score))
+    } else {
+        s.bow.map(|power| (8, power))
+    }
+}
+
+// Which of Inventory Manager's limits an item counts toward.
+fn steal_limited(s: &super::sunset_inventory_slots::Stack) -> Option<usize> {
+    if s.block {
+        return Some(0);
+    }
+    match s.name.as_str() {
+        "arrow" => Some(1),
+        "bucket" | "water_bucket" | "lava_bucket" | "milk_bucket" => Some(2),
+        "snowball" | "egg" => Some(3),
+        "ender_pearl" => Some(4),
+        _ => None,
+    }
+}
+
+fn steal_pick(
+    chest: &[Option<super::sunset_inventory_slots::Stack>],
+    mine: &[super::sunset_inventory_slots::Stack],
+    trash: bool,
+    rules: Option<([u32; 5], bool)>,
+) -> Vec<usize> {
+    let mut out = Vec::new();
+    for (i, s) in chest.iter().enumerate() {
+        let Some(s) = s else { continue };
+        if (trash || rules.is_some()) && !s.useful {
+            continue;
+        }
+        let Some((limits, drop_named)) = rules else {
+            out.push(i);
+            continue;
+        };
+        if s.custom && drop_named {
+            continue;
+        }
+        if let Some((kind, score)) = steal_graded(s) {
+            let have = mine.iter().filter_map(steal_graded).filter(|g| g.0 == kind).map(|g| g.1).fold(f32::NEG_INFINITY, f32::max);
+            // The best of its kind in the container: none after it better, none before it as good.
+            let best_here = chest
+                .iter()
+                .enumerate()
+                .filter_map(|(j, c)| c.as_ref().and_then(steal_graded).map(|g| (j, g)))
+                .filter(|&(j, g)| j != i && g.0 == kind)
+                .all(|(j, g)| if j < i { g.1 < score } else { g.1 <= score });
+            if score <= have || !best_here {
+                continue;
+            }
+        } else if s.rod && mine.iter().any(|x| x.rod) {
+            continue;
+        } else if let Some(k) = steal_limited(s) {
+            let held: u32 = mine.iter().filter(|x| steal_limited(x) == Some(k)).map(|x| x.count).sum();
+            if held + s.count > limits[k] {
+                continue;
+            }
+        }
+        out.push(i);
+    }
+    out
+}
+
+#[cfg(test)]
+mod steal_tests {
+    use super::steal_pick;
+    use super::super::sunset_inventory_slots::Stack;
+
+    fn sword(score: f32) -> Option<Stack> {
+        Some(Stack { name: "iron_sword".into(), count: 1, useful: true, sword: Some(score), ..Stack::default() })
+    }
+
+    fn named(name: &str, count: u32, useful: bool) -> Option<Stack> {
+        Some(Stack { name: name.into(), count, useful, block: name.ends_with("planks"), ..Stack::default() })
+    }
+
+    const RULES: Option<([u32; 5], bool)> = Some(([512, 128, 1, 16, 16], false));
+
+    #[test]
+    fn trash_and_worse_gear_stay() {
+        let chest = [named("rotten_flesh", 3, false), sword(6.0), named("oak_planks", 64, true), sword(7.0)];
+        assert_eq!(steal_pick(&chest, &[], true, None), [1, 2, 3], "Ignore trash alone");
+        assert_eq!(steal_pick(&chest, &[], false, None), [0, 1, 2, 3], "everything");
+        // Only the better sword of the two, and none when yours is as good.
+        assert_eq!(steal_pick(&chest, &[], true, RULES), [2, 3]);
+        let mine = [sword(7.0).unwrap()];
+        assert_eq!(steal_pick(&chest, &mine, true, RULES), [2]);
+    }
+
+    #[test]
+    fn of_two_equal_pieces_the_first_is_taken() {
+        let chest = [sword(7.0), sword(7.0)];
+        assert_eq!(steal_pick(&chest, &[], true, RULES), [0]);
+    }
+
+    #[test]
+    fn limits_count_what_you_have() {
+        let chest = [named("ender_pearl", 8, true), named("oak_planks", 64, true)];
+        let mine = [named("ender_pearl", 10, true).unwrap(), named("oak_planks", 480, true).unwrap()];
+        assert_eq!(steal_pick(&chest, &mine, true, RULES), Vec::<usize>::new(), "18 pearls > 16, 544 blocks > 512");
+        let mine = [named("ender_pearl", 8, true).unwrap()];
+        assert_eq!(steal_pick(&chest, &mine, true, RULES), [0, 1]);
+    }
+
+    #[test]
+    fn named_items_stay_when_the_manager_drops_them() {
+        let mut item = named("golden_apple", 1, true);
+        item.as_mut().unwrap().custom = true;
+        let chest = [item];
+        assert_eq!(steal_pick(&chest, &[], true, RULES), [0]);
+        assert_eq!(steal_pick(&chest, &[], true, Some(([512, 128, 1, 16, 16], true))), Vec::<usize>::new());
+    }
 }
 
 // Inventory Manager's presets: name, then the blocks, food, arrows and pearls kept, and the junk.
