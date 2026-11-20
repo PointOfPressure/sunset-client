@@ -134,6 +134,7 @@ pub(super) fn can_act(game: &Game<'_>) -> bool {
         && game.player.as_ref().is_some_and(|p| p.health.health().is_finite() && p.health.health() > 0.0)
         && sunset::CRIT_STAGE.load(Ordering::Relaxed) == 0
         && super::sunset_combat_control::owner().is_none_or(|o| o == "Crystal Aura" || o == "Anchor Aura")
+        && !super::sunset_packet_mine::borrowed()
         && !sunset::with(|s| ["Blink", "Nuker", "Scaffold"].iter().any(|name| s.is_on(name)))
 }
 

@@ -174,7 +174,11 @@ struct State {
     lookahead: Option<Plan>,
     opening: f64,
     probe: usize,
-    attempts: Vec<(u32, u8)>,
+    // Hits on a crystal that is still there: how many, and the tick of the last.
+    attempts: Vec<(u32, u8, u64)>,
+    // Placements on a spot the server sent back no crystal for (an item, an orb or anything else in it): how many in a
+    // row.
+    misses: Vec<([i32; 3], u8)>,
     setup: setup::Ledger,
     setup_scene: Option<SetupScene>,
     weapon: Option<WeaponLease>,
@@ -201,6 +205,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     opening: 0.0,
     probe: 0,
     attempts: Vec::new(),
+    misses: Vec::new(),
     setup: setup::Ledger::new(),
     setup_scene: None,
     weapon: None,
@@ -209,6 +214,38 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(&mut STATE.lock().unwrap_or_else(|e| e.into_inner()))
+}
+// A placement on `base` answered: by its crystal, or (`missed`) by none in time. Two misses in a row and the spot is
+// left alone for SKIP_TICKS, like one its look can't reach: the server refuses it for something the client doesn't
+// rule out, and asking again every few ticks only repeats the refusal.
+fn miss(s: &mut State, base: [i32; 3], missed: bool, ticks: u64) {
+    let at = s.misses.iter().position(|&(cell, _)| cell == base);
+    if !missed {
+        if let Some(i) = at {
+            s.misses.swap_remove(i);
+        }
+        return;
+    }
+    let count = match at {
+        Some(i) => {
+            s.misses[i].1 = s.misses[i].1.saturating_add(1);
+            s.misses[i].1
+        }
+        None if s.misses.len() < 32 => {
+            s.misses.push((base, 1));
+            1
+        }
+        None => return,
+    };
+    if count >= 2 {
+        s.misses.retain(|&(cell, _)| cell != base);
+        if s.retained.and_then(setup_cell) == Some(base) {
+            s.retained = None;
+        }
+        if s.skipped.len() < 32 {
+            s.skipped.push((base, ticks + SKIP_TICKS));
+        }
+    }
 }
 fn rank(rating: &Rating) -> f64 {
     rating.planning_value()
@@ -264,6 +301,7 @@ pub(super) fn reset() {
     st(|s| {
         s.clock.reset();
         s.attempts.clear();
+        s.misses.clear();
         s.setup.clear();
         s.setup_scene = None;
         s.aim_wait = None;
@@ -276,7 +314,9 @@ fn restore_weapon(game: &mut Game<'_>, requested: bool) {
     restore_shared(game, NAME, requested);
 }
 pub(super) fn restore_shared(game: &mut Game<'_>, owner: &str, requested: bool) {
-    if !st(|s| s.weapon.as_ref().is_some_and(|h| h.owner == owner)) {
+    // Packet Mine holds its tool for a STOP and gives the hand back next tick: that is not the player changing slot,
+    // so the lease stays for then.
+    if !st(|s| s.weapon.as_ref().is_some_and(|h| h.owner == owner)) || super::sunset_packet_mine::borrowed() {
         return;
     }
     // A competing queued/native hand action gets to finish before a return.
@@ -548,6 +588,18 @@ fn crystal_column(game: &Game<'_>, base: [i32; 3]) -> bool {
     // (using the predicted boxes below). Anyone else in the way does.
     if game.player.as_ref().is_some_and(|p| hits(p.bounds()))
         || game.mobs.iter().any(|mob| !mob.removed && hits(mob.bounds()) && !util::player_enemy(game, mob))
+    {
+        return false;
+    }
+    // EndCrystalItem.useOn refuses a spot with any entity in it, not only living ones: dropped items (the loot after
+    // a kill), experience orbs and arrows too. Their boxes: an item 0.25 wide and high, an orb 0.5, a projectile taken
+    // as 0.5 (an arrow; pearls and snowballs are smaller).
+    let small = |x: f64, y: f64, z: f64, half: f64, height: f64| {
+        x - half < hi[0] && x + half > lo[0] && y < hi[1] && y + height > lo[1] && z - half < hi[2] && z + half > lo[2]
+    };
+    if game.dropped.iter().any(|i| small(i.position.x, i.position.y, i.position.z, 0.125, 0.25))
+        || game.orbs.iter().any(|o| small(o.position.x, o.position.y, o.position.z, 0.25, 0.5))
+        || game.creatures.projectiles.iter().any(|p| small(p.position.x, p.position.y, p.position.z, 0.25, 0.5))
     {
         return false;
     }
@@ -900,14 +952,18 @@ pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Op
             .map(|r| (r.entity_id, game.dim, r.session.counters.clone() as Arc<dyn Any + Send + Sync>));
         s.tick = ticks;
         s.plan = None;
-        s.attempts.retain(|(id, _)| game.crystals.iter().any(|c| c.id == *id));
+        s.attempts.retain(|(id, _, _)| game.crystals.iter().any(|c| c.id == *id));
     });
     if st(|s| s.queued_at.is_some_and(|t| t.elapsed() > Duration::from_millis(200))) {
         suspend();
     }
     if let Some(waiting) = st(|s| s.clock.waiting) {
-        let ack = observed(game, waiting.action)
-            || ticks.saturating_sub(waiting.sent) >= u64::from(prediction::rtt(game).saturating_add(2).clamp(4, 20));
+        let seen = observed(game, waiting.action);
+        let ack =
+            seen || ticks.saturating_sub(waiting.sent) >= u64::from(prediction::rtt(game).saturating_add(2).clamp(4, 20));
+        if let (Action::Place(base), true) = (waiting.action, ack) {
+            st(|s| miss(s, base, !seen, ticks));
+        }
         st(|s| s.clock.observe(ticks, ack));
     }
     if st(|s| s.clock.queued) {
@@ -934,7 +990,14 @@ pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Op
         if st(|s| s.clock.waiting.is_some_and(|w| matches!(w.action,Action::Break(id,_) if id==c.id))) {
             continue;
         }
-        if c.id == 0 || c.invulnerable || st(|s| s.attempts.iter().any(|&(id, attempts)| id == c.id && attempts >= 3)) {
+        if c.id == 0
+            || c.invulnerable
+            || st(|s| {
+                s.attempts.iter().any(|&(id, attempts, last)| {
+                    id == c.id && attempts >= 3 && ticks < last.saturating_add(SKIP_TICKS)
+                })
+            })
+        {
             continue;
         }
         let at = [c.position.x, c.position.y, c.position.z];
@@ -1397,6 +1460,9 @@ fn queue(
                 };
                 take_weapon(game, weapon);
                 if super::sunset_combat_macros::weak_settling(game) {
+                    // Weakness: the weapon just swapped in reaches the server with the next ticks. The hit waits for
+                    // it, asking for no looks meanwhile.
+                    st(|s| s.clock.next_break = s.clock.next_break.max(game.ticks.saturating_add(2)));
                     return;
                 }
                 if !prediction::arm_blast(
@@ -1414,16 +1480,24 @@ fn queue(
                 game.send(S::Attack(play::Attack { id: id as i32 }));
                 game.reset_attack_strength();
                 st(|s| {
-                    if let Some((_, count)) = s.attempts.iter_mut().find(|(cid, _)| *cid == id) {
-                        *count = count.saturating_add(1);
+                    let now = s.tick.max(ticks);
+                    if let Some((_, count, last)) = s.attempts.iter_mut().find(|(cid, _, _)| *cid == id) {
+                        // A crystal left alone for SKIP_TICKS gets its three tries again.
+                        *count = if now >= last.saturating_add(SKIP_TICKS) { 1 } else { count.saturating_add(1) };
+                        *last = now;
                     } else if s.attempts.len() < MAX_ENTITIES {
-                        s.attempts.push((id, 1));
+                        s.attempts.push((id, 1, now));
                     }
                 });
             }
         }
+        // The swing is the client's own for a use; in 26.3 the server shows it to the others itself. Punch is a left
+        // click's (ServerGamePacketListenerImpl.handlePunch restarts the attack strength), so only the hit sends it: a
+        // placement's would leave the next sword hit uncharged on the server.
         game.swing_arm();
-        game.send(S::Punch(Empty));
+        if matches!(action, Action::Break(_, _)) {
+            game.send(S::Punch(Empty));
+        }
         let tick = st(|s| s.tick.max(ticks));
         st(|s| {
             if let Some(lease) = s.weapon.as_mut() {
