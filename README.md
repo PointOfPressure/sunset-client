@@ -455,7 +455,7 @@ The repository is a cargo workspace:
 
 The 1.x `.hnmod` line is the `hnmod` branch.
 
-- `client/scripts/build-prebuilt.sh` builds the prebuilt client on the Horizon
+- `client/scripts/build-prebuilt.sh` builds the prebuilt client (Linux x86_64, or Windows x64 in Git Bash) on the Horizon
   [fork](https://github.com/PointOfPressure/horizon) (patches in `client/horizon-patches`), then packages and signs
   it with its source, relink kit and licence files.
 - `python3 client/tools/pack.py` writes the 1.x package, `dist/sunset-<version>.hnmod`.
@@ -512,6 +512,7 @@ and coordinates) and Low health warning. ([pull requests](https://github.com/Poi
 </details>
 
 Elytra Target was asked for by muhalo1545 on the Sunset Discord. Crystal Aura's Grim report and flag capture: vs.
+The Windows x64 prebuilt and its build (`build-prebuilt.sh` on Windows): vs.
 
 These features follow the behaviour of other clients and mods. Each was written fresh for Sunset; no code was taken.
 - Elytra Target: LiquidBounce's ElytraTarget (GPL-3.0).
