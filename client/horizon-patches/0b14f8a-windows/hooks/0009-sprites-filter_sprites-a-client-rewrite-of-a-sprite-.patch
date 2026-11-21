@@ -1,0 +1,57 @@
+From 1b967a3589ef0bfdfe6e202c1aadf5f842454a22 Mon Sep 17 00:00:00 2001
+From: pointofpressure <pointofpressure@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 22:28:35 +0000
+Subject: [PATCH 09/10] sprites: filter_sprites, a client rewrite of a sprite's
+ pixels as the atlas takes it
+
+Sprites::register hands the sprite's name and RGBA frames to the installed filter; a changed sprite
+becomes translucent. For see-through water and similar texture tweaks; register's signature names the
+private sprite_cache module, which a function replacement can't reach.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ crates/horizon-client-render/src/sprites.rs | 20 ++++++++++++++++----
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/crates/horizon-client-render/src/sprites.rs b/crates/horizon-client-render/src/sprites.rs
+index 169aa49c79..de5041a903 100644
+--- a/crates/horizon-client-render/src/sprites.rs
++++ b/crates/horizon-client-render/src/sprites.rs
+@@ -98,6 +98,15 @@ impl SpriteAnimation {
+     }
+ }
+ 
++/// A client mod's rewrite of a sprite's RGBA frames as the atlas takes them, by sprite name (`minecraft:block/water_still`):
++/// true when it changed them, which makes the sprite translucent. Read on every layout of the atlas, so a change
++/// shows after the next resource reload.
++static SPRITE_FILTER: std::sync::OnceLock<fn(&str, &mut [Vec<u8>]) -> bool> = std::sync::OnceLock::new();
++/// Installs the sprite filter for the rest of the process; false when one is already set.
++pub fn filter_sprites(filter: fn(&str, &mut [Vec<u8>]) -> bool) -> bool {
++    SPRITE_FILTER.set(filter).is_ok()
++}
++
+ #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+ struct StillKey {
+     frame: u64,
+@@ -731,14 +740,17 @@ impl Sprites {
+     fn register(&mut self, name: &str, decoded: crate::sprite_cache::Decoded) -> Result<u32> {
+         let crate::sprite_cache::Decoded {
+             side,
+-            frames,
++            mut frames,
+             animation: animation_text,
+             strategy,
+             alpha_cutoff_bias,
+-            has_transparent,
+-            opaque,
+-            translucent,
++            mut has_transparent,
++            mut opaque,
++            mut translucent,
+         } = decoded;
++        if SPRITE_FILTER.get().is_some_and(|filter| filter(name, &mut frames)) {
++            (has_transparent, opaque, translucent) = (true, false, true);
++        }
+         let animation = animation_text
+             .as_deref()
+             .map(AnimationMetadata::from_json)
