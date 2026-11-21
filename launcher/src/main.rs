@@ -1,6 +1,10 @@
 //! Sunset launcher. Without arguments it opens the window; the subcommands do the same work in a terminal
 //! (for scripts and headless checks).
 
+// A window app on Windows, so opening it shows no console window beside it; the subcommands attach to the terminal
+// they were started from (attach_console).
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod art;
 mod core;
 mod fx;
@@ -39,6 +43,8 @@ fn main() {
         ui::run();
         return;
     };
+    #[cfg(windows)]
+    attach_console();
     let p = core::Paths::new();
     let s = core::Settings::load(&p);
     let since = std::time::SystemTime::now();
@@ -141,6 +147,37 @@ fn main() {
         Err(e) => {
             eprintln!("sunset-launcher: {e}");
             std::process::exit(1);
+        }
+    }
+}
+
+/// The launcher is a window app on Windows, which starts with no console: a subcommand writes to the terminal it was
+/// started from by attaching to that terminal's console. Output already redirected (a pipe, a file, Git Bash) keeps
+/// going where it goes. cmd.exe and PowerShell don't wait for a window app: `start /wait`, or a pipe, makes them wait.
+#[cfg(windows)]
+fn attach_console() {
+    type Handle = *mut std::ffi::c_void;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn AttachConsole(process: u32) -> i32;
+        fn GetStdHandle(which: u32) -> Handle;
+        fn SetStdHandle(which: u32, handle: Handle) -> i32;
+    }
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    // STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE
+    const STD: [u32; 3] = [-10i32 as u32, -11i32 as u32, -12i32 as u32];
+    // SAFETY: plain Win32 calls; the handles are only passed back to SetStdHandle.
+    unsafe {
+        let before = STD.map(|n| GetStdHandle(n));
+        // Started from Explorer or with every stream redirected: no console to attach to, or no need.
+        if before.iter().all(|h| !h.is_null() && *h as isize != -1) || AttachConsole(ATTACH_PARENT_PROCESS) == 0 {
+            return;
+        }
+        // Attaching points every stream at the console: the redirected ones go back to where they went.
+        for (n, h) in STD.iter().zip(before) {
+            if !h.is_null() && h as isize != -1 {
+                SetStdHandle(*n, h);
+            }
         }
     }
 }

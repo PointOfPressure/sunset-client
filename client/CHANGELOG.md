@@ -16,6 +16,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - Minecraft's download from Mojang is tried again when the connection drops, and its errors no longer repeat the file counter
 - Offline play works before the first signed-in Play ("cannot acquire launcher cache leases")
 - When the game crashes, the launcher says why (from the game's log) instead of keeping Play's last step
+- Windows: the launcher opens without a console window
 
 ## 2.0.0
 

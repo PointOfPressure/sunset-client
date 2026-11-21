@@ -896,6 +896,11 @@ pub fn play_offline(p: &Paths, s: &Settings, name: &str) -> Result<Child> {
         c.arg(a);
     }
     c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: the window has no console to share
+    }
     c.spawn().map_err(|e| format!("can't start the game: {e}"))
 }
 
