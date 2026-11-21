@@ -1,36 +1,22 @@
-// Unit tests of the dashboard Worker's Access check and aggregation: node --test presence-backend/test/dash.test.mjs
+// Unit tests of the dashboard Worker's password check and aggregation: node --test presence-backend/test/dash.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accessOk, summarise } from "../dash/src/index.js";
+import { passwordOk, summarise } from "../dash/src/index.js";
 
-const env = { ACCESS_TEAM: "sunset", ACCESS_AUD: "aud-1" };
-const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
-const { publicKey, privateKey } = await crypto.subtle.generateKey(
-  { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
-const jwk = { ...(await crypto.subtle.exportKey("jwk", publicKey)), kid: "k1" };
-const fetchCerts = async () => ({ json: async () => ({ keys: [jwk] }) });
-async function token(payload, kid = "k1", key = privateKey) {
-  const h = enc({ alg: "RS256", kid }), p = enc(payload);
-  const sig = Buffer.from(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${h}.${p}`))).toString("base64url");
-  return `${h}.${p}.${sig}`;
-}
-const req = (jwt) => new Request("https://dash.example/", { headers: jwt ? { "cf-access-jwt-assertion": jwt } : {} });
-const now = Date.now();
-const good = { iss: "https://sunset.cloudflareaccess.com", aud: ["aud-1"], exp: now / 1000 + 600 };
+const req = (auth) => new Request("https://dash.example/", { headers: auth ? { authorization: auth } : {} });
+const basic = (user, pass) => `Basic ${btoa(`${user}:${pass}`)}`;
 
-test("Access: only a valid token for this app passes", async () => {
-  assert.equal(await accessOk(req(await token(good)), env, now, fetchCerts), true);
-  assert.equal(await accessOk(req(), env, now, fetchCerts), false);
-  assert.equal(await accessOk(req("a.b.c"), env, now, fetchCerts), false);
-  assert.equal(await accessOk(req(await token({ ...good, aud: ["other"] })), env, now, fetchCerts), false);
-  assert.equal(await accessOk(req(await token({ ...good, iss: "https://evil.cloudflareaccess.com" })), env, now, fetchCerts), false);
-  assert.equal(await accessOk(req(await token({ ...good, exp: now / 1000 - 1 })), env, now, fetchCerts), false);
-  assert.equal(await accessOk(req(await token(good, "k2")), env, now, fetchCerts), false);
-  // Signed by another key.
-  const other = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign"]);
-  assert.equal(await accessOk(req(await token(good, "k1", other.privateKey)), env, now, fetchCerts), false);
+test("password: only the configured password passes", async () => {
+  const env = { DASH_PASSWORD: "hunter2:x" };
+  assert.equal(await passwordOk(req(basic("", "hunter2:x")), env), true);
+  assert.equal(await passwordOk(req(basic("anyone", "hunter2:x")), env), true);
+  assert.equal(await passwordOk(req(basic("", "hunter2")), env), false);
+  assert.equal(await passwordOk(req(basic("hunter2:x", "")), env), false);
+  assert.equal(await passwordOk(req(), env), false);
+  assert.equal(await passwordOk(req("Basic !!!"), env), false);
+  assert.equal(await passwordOk(req("Bearer hunter2:x"), env), false);
   // Not configured: closed to everyone.
-  assert.equal(await accessOk(req(await token(good)), { ACCESS_TEAM: "", ACCESS_AUD: "" }, now, fetchCerts), false);
+  assert.equal(await passwordOk(req(basic("", "")), {}), false);
 });
 
 test("summarise: actives from flags, peaks from 10-minute slots", () => {

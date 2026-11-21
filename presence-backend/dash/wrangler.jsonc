@@ -1,6 +1,6 @@
-// Sunset Presence dashboard: private aggregate stats. Every request (page and API) must carry a valid Cloudflare Access
-// token for this app (ACCESS_TEAM, ACCESS_AUD); without them configured it answers 403 to everyone.
-// Secrets: AE_TOKEN (API token, Account Analytics: Read), ACCOUNT_ID. See ../README.md.
+// Sunset Presence dashboard: private aggregate stats. Every request (page and API) needs the DASH_PASSWORD secret
+// (HTTP Basic auth, any username); without it set the Worker answers 401 to everyone.
+// Secrets: DASH_PASSWORD, AE_TOKEN (API token, Account Analytics: Read), ACCOUNT_ID. See ../README.md.
 {
   "name": "sunset-presence-dash",
   "main": "src/index.js",
@@ -9,8 +9,6 @@
   "observability": { "enabled": false },
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
   "vars": {
-    "ACCESS_TEAM": "s4yerh4rris0n",
-    "ACCESS_AUD": "9c9711278fde2bc635cb435d476138c647201ec15c57e7cede8328c04475b26c",
     "INGEST_URL": "https://sunset-presence.s4yerh4rris0n.workers.dev"
   }
 }

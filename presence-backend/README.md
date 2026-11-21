@@ -9,7 +9,7 @@ summary is in the main README.
 | Workers Analytics Engine `sunset_analytics` | Aggregate counts and trends. No database to run; 90-day retention. |
 | Durable Object `Room` (one per server) | Presence sessions need one consistent place per server to match players and developers. Sessions are rows in the object's own SQLite storage, deleted on leave or expiry (2.5 min developers, 5 min players). |
 | `dash/` Worker `sunset-presence-dash` + Static Assets | The private dashboard page and its `/api/stats` (Analytics Engine SQL, cached 5 min). |
-| Cloudflare Access | Per-developer login in front of the dashboard. The Worker also checks the Access token itself and refuses everything when Access isn't configured. |
+| Password | HTTP Basic auth on every dashboard request, checked by the Worker against the `DASH_PASSWORD` secret (any username). Unset, it refuses everything. |
 
 No D1, no KV: nothing needs them.
 
@@ -47,9 +47,7 @@ cd ../dash && npx wrangler deploy
 ```
 
 Dashboard secrets (once): `npx wrangler secret put AE_TOKEN` (an API token with *Account Analytics: Read*) and
-`npx wrangler secret put ACCOUNT_ID`. Then in the dashboard: Workers > `sunset-presence-dash` > Settings > Domains &
-Routes > workers.dev > enable Cloudflare Access, add the developers' emails to its policy, and copy the application's
-AUD tag. Put the team name and AUD in `dash/wrangler.jsonc` (`ACCESS_TEAM`, `ACCESS_AUD`) and deploy again.
+`npx wrangler secret put ACCOUNT_ID`, and the page password: `npx wrangler secret put DASH_PASSWORD`.
 
 ## Developer keys
 

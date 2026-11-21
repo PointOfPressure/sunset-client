@@ -2,36 +2,25 @@
 // Nothing here can see presence sessions, UUIDs or servers: they never reach Analytics Engine.
 
 const CACHE_SECONDS = 300;
-let certs = { at: 0, keys: [] };
+const enc = new TextEncoder();
 
-const b64url = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "=")), (c) => c.charCodeAt(0));
-const b64json = (s) => JSON.parse(new TextDecoder().decode(b64url(s)));
-
-// A Cloudflare Access token for this application, signed by the team's current keys and unexpired.
-export async function accessOk(req, env, now = Date.now(), fetchCerts = fetch) {
-  if (!env.ACCESS_TEAM || !env.ACCESS_AUD) return false;
-  const jwt = req.headers.get("cf-access-jwt-assertion");
-  const parts = jwt ? jwt.split(".") : [];
-  if (parts.length !== 3) return false;
+// HTTP Basic auth against the DASH_PASSWORD secret (any username). Unset: closed to everyone.
+export async function passwordOk(req, env) {
+  if (!env.DASH_PASSWORD) return false;
+  const h = req.headers.get("authorization") || "";
+  if (!h.startsWith("Basic ")) return false;
+  let given;
   try {
-    const [h, p, sig] = parts;
-    const header = b64json(h);
-    const payload = b64json(p);
-    const issuer = `https://${env.ACCESS_TEAM}.cloudflareaccess.com`;
-    const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-    if (header.alg !== "RS256" || payload.iss !== issuer || !aud.includes(env.ACCESS_AUD)) return false;
-    if (typeof payload.exp !== "number" || payload.exp * 1000 < now) return false;
-    if (now - certs.at > 3_600_000 || !certs.keys.some((k) => k.kid === header.kid)) {
-      const r = await fetchCerts(`${issuer}/cdn-cgi/access/certs`);
-      certs = { at: now, keys: (await r.json()).keys || [] };
-    }
-    const jwk = certs.keys.find((k) => k.kid === header.kid);
-    if (!jwk) return false;
-    const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
-    return await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64url(sig), new TextEncoder().encode(`${h}.${p}`));
+    const raw = atob(h.slice(6).trim());
+    given = raw.slice(raw.indexOf(":") + 1);
   } catch {
     return false;
   }
+  // Compare digests so the time taken doesn't depend on where the strings differ.
+  const [a, b] = await Promise.all([given, env.DASH_PASSWORD].map(async (x) => new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(x)))));
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
 }
 
 const SQL = {
@@ -134,7 +123,8 @@ async function stats(env, ctx) {
 
 export default {
   async fetch(req, env, ctx) {
-    if (!(await accessOk(req, env))) return new Response("Forbidden", { status: 403 });
+    if (!(await passwordOk(req, env)))
+      return new Response("Password required", { status: 401, headers: { "www-authenticate": 'Basic realm="Sunset Presence", charset="UTF-8"', "cache-control": "no-store" } });
     const url = new URL(req.url);
     if (url.pathname === "/api/stats") return stats(env, ctx);
     return env.ASSETS.fetch(req);
