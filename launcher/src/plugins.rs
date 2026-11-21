@@ -832,7 +832,7 @@ pub fn stop_builds() {
 /// A child process and everything it starts, killed together: a Job Object on Windows (also killed if the launcher
 /// goes away), a process group elsewhere. Every live tree is listed so `kill_all` can end them as the launcher quits;
 /// a tree is killed when dropped too.
-mod proc_tree {
+pub(crate) mod proc_tree {
     use std::process::{Child, Command};
     use std::sync::Mutex;
 

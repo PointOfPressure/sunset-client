@@ -7,6 +7,12 @@ section of the version they build into the signed manifest, and the launcher sho
 - One short line per change (`- ...`); the GitHub release notes keep the long form.
 - An important change is written in bold (`- **...**`): the launcher highlights it.
 
+## 2.0.1
+
+### Fixed
+- **New installs work again: the launcher sets up Horizon Nightly 2026-11-18 (`0b14f8a`) from Sunset's signed package instead of Horizon's release, which Horizon deleted**
+- Cancel stops Install while it prepares Minecraft's files, and the next Install prepares them again
+
 ## 2.0.0
 
 ### New

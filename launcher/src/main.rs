@@ -54,7 +54,7 @@ fn main() {
                 m.version, m.short_pin(), m.horizon.tag, m.horizon.game, m.cli.version, p.root.display()
             )
         }),
-        "install" | "repair" => core::fetch_release(&s).and_then(|r| core::install(&p, &r, cmd == "repair", &AtomicBool::new(false), &progress)).map(|_| "done".into()),
+        "install" | "repair" => core::fetch_release(&s).and_then(|r| core::install(&p, &r, cmd == "repair", interrupt_cancels(), &progress)).map(|_| "done".into()),
         "deps" => match core::cli_path(&p) {
             None => Err("horizon-launcher is not installed yet (install fetches it)".into()),
             Some(exe) => {
@@ -144,7 +144,8 @@ fn main() {
     }
 }
 
-/// A flag that Ctrl+C (or SIGTERM) sets, for the CLI's plugin build to cancel on; a second Ctrl+C quits at once.
+/// A flag that Ctrl+C (or SIGTERM) sets, for the CLI's install and plugin build to cancel on (their steps run in
+/// their own process groups, so the terminal's signal would miss them); a second Ctrl+C quits at once.
 /// On Windows the build's job ends with the launcher already.
 fn interrupt_cancels() -> &'static AtomicBool {
     static CANCEL: AtomicBool = AtomicBool::new(false);

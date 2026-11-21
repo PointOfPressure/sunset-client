@@ -525,13 +525,59 @@ pub fn cli(p: &Paths) -> Result<Command> {
 /// Runs the CLI to the end: its stdout, or its last error lines.
 pub fn run_cli(p: &Paths, args: &[&str]) -> Result<String> {
     let out = cli(p)?.args(args).output().map_err(|e| format!("can't start horizon-launcher: {e}"))?;
-    if out.status.success() {
-        return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
+    cli_result(args, out.status, &out.stdout, &out.stderr)
+}
+
+fn cli_result(args: &[&str], status: std::process::ExitStatus, stdout: &[u8], stderr: &[u8]) -> Result<String> {
+    if status.success() {
+        return Ok(String::from_utf8_lossy(stdout).into_owned());
     }
-    let err = String::from_utf8_lossy(&out.stderr);
+    let err = String::from_utf8_lossy(stderr);
     let tail: Vec<&str> = err.lines().filter(|l| !l.trim().is_empty()).collect();
     let tail = tail[tail.len().saturating_sub(3)..].join(" ");
-    Err(format!("horizon-launcher {} failed: {}", args.first().unwrap_or(&""), if tail.is_empty() { out.status.to_string() } else { tail }))
+    Err(format!("horizon-launcher {} failed: {}", args.first().unwrap_or(&""), if tail.is_empty() { status.to_string() } else { tail }))
+}
+
+/// `run_cli` for the long steps (prepare and its downloads): the CLI runs as its own process tree, and setting
+/// `cancel` ends it and everything it started (horizon-prepare, its exporters) and returns "cancelled".
+pub fn run_cli_cancellable(p: &Paths, args: &[&str], cancel: &AtomicBool) -> Result<String> {
+    if cancel.load(Ordering::Relaxed) {
+        return Err("cancelled".into());
+    }
+    let mut c = cli(p)?;
+    c.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut tree = crate::plugins::proc_tree::Tree::spawn(&mut c).map_err(|e| format!("can't start horizon-launcher: {e}"))?;
+    // Both pipes are drained as the CLI writes, so a chatty step can't fill one and stall.
+    fn drain(r: Option<impl Read + Send + 'static>) -> Option<std::thread::JoinHandle<Vec<u8>>> {
+        r.map(|mut r| {
+            std::thread::spawn(move || {
+                let mut b = Vec::new();
+                let _ = r.read_to_end(&mut b);
+                b
+            })
+        })
+    }
+    let (out, err) = (drain(tree.child.stdout.take()), drain(tree.child.stderr.take()));
+    let status = loop {
+        if cancel.load(Ordering::Relaxed) {
+            tree.kill();
+            let _ = tree.child.wait();
+            return Err("cancelled".into());
+        }
+        match tree.child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(e) => {
+                tree.kill();
+                return Err(format!("horizon-launcher {}: {e}", args.first().unwrap_or(&"")));
+            }
+        }
+    };
+    // Anything the CLI left running goes with the tree, so the pipes close and the readers end.
+    drop(tree);
+    let read = |h: Option<std::thread::JoinHandle<Vec<u8>>>| h.and_then(|h| h.join().ok()).unwrap_or_default();
+    let (out, err) = (read(out), read(err));
+    cli_result(args, status, &out, &err)
 }
 
 /// Downloads the stock CLI the manifest pins (its SHA-256 is in the signed manifest) unless it is already there.
@@ -876,23 +922,26 @@ pub fn install(p: &Paths, rel: &Release, repair: bool, cancel: &AtomicBool, prog
     stop()?;
     let base = p.versions().join(&m.horizon.tag);
     if !base.join(".installed").exists() {
-        progress(&format!("Installing Horizon {}", m.horizon.tag), None);
-        if let Err(e) = run_cli(p, &["install", &m.horizon.tag]) {
-            // Horizon rebuilds a day's Nightly under the same date, and the earlier build's release goes. The
-            // package holds that same revision's game files, so the base is set up from it instead.
-            let listed = run_cli(p, &["versions"]).map_err(|_| e.clone())?;
-            if listed.split_whitespace().any(|w| w == m.horizon.tag) {
-                return Err(e);
-            }
-            progress(&format!("Setting up Horizon {} from the Sunset package", m.horizon.tag), None);
-            base_from_package(&p.versions(), &m.version_dir, &m.horizon.tag)?;
-        }
+        // The base Nightly comes from the signed package, never from Horizon's GitHub: Horizon replaces a day's
+        // Nightly when it rebuilds it and deletes the earlier build's release, which broke fresh 2.0.0 installs. The
+        // package holds that same revision's preparer, exporters and server. A base the stock CLI installed earlier
+        // (it has .installed) stays as it is.
+        progress(&format!("Setting up Horizon {} from the Sunset package", m.horizon.tag), None);
+        base_from_package(&p.versions(), &m.version_dir, &m.horizon.tag)?;
     }
     stop()?;
-    if !base.join(".local").join("horizon-client").is_dir() {
+    let prepared = base.join(".local").join("horizon-client");
+    // A prepare that stopped half way (Cancel, an error) leaves nothing behind, so the next install prepares again.
+    let prepare = |args: &[&str]| {
+        run_cli_cancellable(p, args, cancel).inspect_err(|_| {
+            let _ = fs::remove_dir_all(&prepared);
+        })
+    };
+    if !prepared.is_dir() {
         progress(&format!("Preparing Minecraft {} files", m.horizon.game), None);
         // Minecraft's own files come from a launcher that has them, else from Mojang for the signed-in owner.
-        if run_cli(p, &["prepare", "--version", &m.horizon.tag]).is_err() {
+        if prepare(&["prepare", "--version", &m.horizon.tag]).is_err() {
+            stop()?;
             if accounts(p).unwrap_or_default().is_empty() {
                 return Err(format!(
                     "Minecraft {0} isn't on this computer yet. Sign in with the account that owns Minecraft: Java Edition \
@@ -901,7 +950,7 @@ pub fn install(p: &Paths, rel: &Release, repair: bool, cancel: &AtomicBool, prog
                 ));
             }
             progress(&format!("Downloading Minecraft {} for your account", m.horizon.game), None);
-            run_cli(p, &["prepare", "--download", "--version", &m.horizon.tag])?;
+            prepare(&["prepare", "--download", "--version", &m.horizon.tag])?;
         }
     }
     stop()?;
@@ -913,7 +962,8 @@ pub fn install(p: &Paths, rel: &Release, repair: bool, cancel: &AtomicBool, prog
         progress("Looking for Minecraft's sounds", None);
         if !sounds_from_stock(&res, &m.horizon.game) && !accounts(p).unwrap_or_default().is_empty() {
             progress(&format!("Downloading Minecraft {}'s sounds for your account", m.horizon.game), None);
-            if let Err(e) = run_cli(p, &["prepare", "--download", "--version", &m.horizon.tag]) {
+            if let Err(e) = prepare(&["prepare", "--download", "--version", &m.horizon.tag]) {
+                stop()?;
                 progress(&format!("Sounds not downloaded ({e}); Repair tries again"), None);
             }
         }
@@ -1066,8 +1116,8 @@ fn link_tree(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Sets up the Horizon version `base` (the Nightly the package was built on) from the unpacked package `vdir`, when
-/// Horizon's GitHub no longer has that Nightly. The package carries the same revision's preparer, exporters and
+/// Sets up the Horizon version `base` (the Nightly the package was built on) from the unpacked package `vdir`, so an
+/// install never depends on Horizon's GitHub still having that Nightly. The package carries the same revision's preparer, exporters and
 /// server; the client takes only the base's prepared resources from it. Files are hard links where the disk allows.
 pub(crate) fn base_from_package(versions: &Path, vdir: &str, base: &str) -> Result<()> {
     let src = versions.join(vdir);
@@ -1093,8 +1143,8 @@ pub(crate) fn base_from_package(versions: &Path, vdir: &str, base: &str) -> Resu
         fs::write(
             tmp.join("SUNSET-BASE.txt"),
             format!(
-                "Set up by the Sunset launcher from the signed Sunset package {vdir}, because Horizon's GitHub no longer \
-                 has the release {base}. It holds that Horizon revision's preparer and, once prepared, the Minecraft \
+                "Set up by the Sunset launcher from the signed Sunset package {vdir}, so Sunset never needs Horizon's \
+                 GitHub release {base} (Horizon replaces a Nightly when it rebuilds it). It holds that Horizon revision's preparer and, once prepared, the Minecraft \
                  resources Sunset plays with. It has no game of its own: play from the sunset instance.\n"
             ),
         )?;
@@ -1800,6 +1850,67 @@ mod tests {
         assert_eq!(host("http://127.0.0.1:9/m.json"), "127.0.0.1:9");
         let e = fetch("http://127.0.0.1:9/m.json").unwrap_err();
         assert_eq!(e, "can't reach 127.0.0.1:9. Check the internet connection");
+    }
+
+    /// A stand-in horizon-launcher for run_cli_cancellable: its output, errors, a lot of stderr, and a slow step that
+    /// starts a child of its own.
+    #[cfg(unix)]
+    fn fake_cli(t: &Path) -> Paths {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::remove_dir_all(t);
+        let dir = t.join("cli").join("0.0.0");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(t.join("cli").join("current"), "0.0.0").unwrap();
+        let exe = dir.join(cli_name());
+        fs::write(
+            &exe,
+            "#!/bin/sh\ncase \"$1\" in\n ok) echo hello; echo noise >&2 ;;\n fail) for l in one two three four; do echo $l >&2; done; exit 3 ;;\n \
+             chatty) head -c 300000 /dev/zero | tr '\\0' x >&2; echo done ;;\n slow) (sleep 2; touch \"$2\") & sleep 30 ;;\nesac\n",
+        )
+        .unwrap();
+        fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+        Paths { root: t.to_path_buf() }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancellable_cli_reads_like_run_cli() {
+        let t = std::env::temp_dir().join(format!("sunset-cli-test-{}", std::process::id()));
+        let p = fake_cli(&t);
+        let no = AtomicBool::new(false);
+        assert_eq!(run_cli_cancellable(&p, &["ok"], &no).unwrap(), "hello\n");
+        assert_eq!(run_cli(&p, &["ok"]).unwrap(), "hello\n");
+        let e = run_cli_cancellable(&p, &["fail"], &no).unwrap_err();
+        assert_eq!(e, "horizon-launcher fail failed: two three four");
+        assert_eq!(run_cli(&p, &["fail"]).unwrap_err(), e);
+        // 300 kB on stderr: more than a pipe holds, so it is read while the CLI runs.
+        assert_eq!(run_cli_cancellable(&p, &["chatty"], &no).unwrap(), "done\n");
+        // Cancelled before it starts: nothing runs.
+        assert_eq!(run_cli_cancellable(&p, &["ok"], &AtomicBool::new(true)).unwrap_err(), "cancelled");
+        fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancel_ends_the_cli_and_what_it_started() {
+        let t = std::env::temp_dir().join(format!("sunset-cli-cancel-test-{}", std::process::id()));
+        let p = fake_cli(&t);
+        let mark = t.join("child-finished");
+        let cancel = Arc::new(AtomicBool::new(false));
+        let c = cancel.clone();
+        let flip = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            c.store(true, Ordering::Relaxed);
+        });
+        let started = std::time::Instant::now();
+        let e = run_cli_cancellable(&p, &["slow", &mark.to_string_lossy()], &cancel).unwrap_err();
+        flip.join().unwrap();
+        assert_eq!(e, "cancelled");
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "Cancel took {:?}", started.elapsed());
+        // The CLI's own child went with it: it never gets to write its file.
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        assert!(!mark.exists(), "the CLI's child outlived Cancel");
+        fs::remove_dir_all(&t).unwrap();
     }
 
     #[test]
