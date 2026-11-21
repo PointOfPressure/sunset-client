@@ -8,7 +8,7 @@ c15a3b988257ab39c7cceb8ec1202cdccbe7106c connection: observe_sent, process-wide 
 da088965993dfaf527da930efcdafdc5a72de786 gfx: before_render, functions a client mod runs at the start of each frame
 1b967a3589ef0bfdfe6e202c1aadf5f842454a22 sprites: filter_sprites, a client rewrite of a sprite's pixels as the atlas takes it
 95b6ab99cbb0da6a6daa1b53c92dba345cf7a586 mesher: show_hidden_at, places kept drawn although their state is hidden
-0075ef9bce852e04100b9f6ab5ca7ea5cc777875 Sunset 2.0.0: the .hmod package
-abf1815732d889b02e70ee485ffd0ab36a4cdb0e Function-replacement crates of 0b14f8a, as generated
-48e8f4113ccfc48cf064bbcb75c68707c2eb2210 Sunset's mixins woven in (horizon-mixins e59da90)
-f1f7866a5cd3dfa8ac39df24699a7c6768f21fcb Sunset: how this branch is built and licensed
+a40865b62826484eaf7e6ece00d8921c00e0db20 Sunset 2.0.0: the .hmod package
+d12d5230878796530b03ca7df01034a9ee60d156 Function-replacement crates of 0b14f8a, as generated
+ade94fca568739ed34fbe2f379fb12957e62abbc Sunset's mixins woven in (horizon-mixins e59da90)
+d7eda672ace7404e970f750334b362adf199d94c Sunset: how this branch is built and licensed
