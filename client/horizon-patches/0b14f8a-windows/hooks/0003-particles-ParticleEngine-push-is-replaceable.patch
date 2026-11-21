@@ -1,0 +1,24 @@
+From 306661eb59b2724b909a2c2c84611deb5e23bb8f Mon Sep 17 00:00:00 2001
+From: pointofpressure <pointofpressure@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 18:43:41 +0000
+Subject: [PATCH 03/10] particles: ParticleEngine::push is replaceable
+
+push is where every ordinary particle the client makes itself joins the engine (block
+breaking, the renderer's own effects), past add_with's options path; a cell there lets a
+native mod filter all of them.
+---
+ crates/horizon-client-render/src/particles.rs | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/crates/horizon-client-render/src/particles.rs b/crates/horizon-client-render/src/particles.rs
+index 15aff2faa0..5c7b7c6e63 100644
+--- a/crates/horizon-client-render/src/particles.rs
++++ b/crates/horizon-client-render/src/particles.rs
+@@ -1457,6 +1457,7 @@ impl ParticleEngine {
+         self.pending.push(PendingParticle::Ordinary(q));
+     }
+     /// `ParticleEngine.add` (via `particlesToAdd`, applied on the next tick).
++    #[horizon_mod_api_macros::replaceable]
+     pub fn push(&mut self, particle: Particle) {
+         self.pending.push(PendingParticle::Ordinary(particle));
+     }
