@@ -2,7 +2,8 @@
 # fork-sdk.sh: the mod SDK of Sunset's Horizon fork (PointOfPressure/horizon sunset-hooks/<pin>: upstream <pin> plus
 # the hook patches in client/horizon-patches/<pin>/hooks/), built as build id <pin>, and a launcher home seeded with it.
 #
-#   fork-sdk.sh build             FORK=<worktree at the hooks branch>: SDK assets into $SDK/sdk-<pin>/ (Linux client leg)
+#   fork-sdk.sh build             FORK=<worktree at the hooks branch>: SDK assets into $SDK/sdk-<pin>/ (this OS's client
+#                                 leg: Linux, or Windows in Git Bash)
 #   fork-sdk.sh seed <home>       the launcher home <home> (its .local/share/horizon-launcher) set to use $SDK's SDK
 #                                 and the fork's source for <pin> instead of the published ones
 #
@@ -15,7 +16,9 @@
 # ~/sunset-ops/tmp/target-sdk), RUST_BIN (the launcher's toolchain bin folder).
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
-REV=$(python3 -c 'import sys,tomllib;print(tomllib.load(open(sys.argv[1],"rb"))["native"]["horizon"])' "$REPO/client/sunset/horizon-mod.toml")
+# Windows' python3 is often the Microsoft Store's stub.
+PY=python3; $PY -c '' 2>/dev/null || PY=python
+REV=$($PY -c 'import sys,tomllib;print(tomllib.load(open(sys.argv[1],"rb"))["native"]["horizon"])' "$REPO/client/sunset/horizon-mod.toml")
 SDK=${SDK:-$HOME/sunset-ops/tmp/fork-sdk}
 say() { echo "fork-sdk: $*" >&2; }
 die() { say "$*"; exit 1; }
@@ -28,8 +31,9 @@ build)
 	git -C "$F" merge-base --is-ancestor "$REV" HEAD || die "$F is not based on $REV"
 	say "building the SDK of $(git -C "$F" rev-parse --short HEAD) as $REV ($(rustc -V))"
 	W=$CARGO_TARGET_DIR/fork-sdk; rm -rf "$W"; mkdir -p "$W"
-	(cd "$F" && python3 tools/prebuilt_game.py build "$W/out" && python3 tools/prebuilt_game.py pack "$W/out" "$W/legs/linux" \
-		&& python3 tools/prebuilt_game.py gather "$W/legs" "$W/dist" && python3 tools/prebuilt_game.py index "$W/dist")
+	case $(uname -s) in MINGW*|MSYS*|CYGWIN*) LEG=windows ;; *) LEG=linux ;; esac
+	(cd "$F" && $PY tools/prebuilt_game.py build "$W/out" && $PY tools/prebuilt_game.py pack "$W/out" "$W/legs/$LEG" \
+		&& $PY tools/prebuilt_game.py gather "$W/legs" "$W/dist" && $PY tools/prebuilt_game.py index "$W/dist")
 	rm -rf "$SDK"; mkdir -p "$SDK"; mv "$W/dist" "$SDK/sdk-$REV"
 	git -C "$F" -c core.autocrlf=false archive --format=tar --prefix=source/ HEAD | tar -x -C "$SDK"
 	find "$SDK/source" -type l -delete  # as the launcher's own download leaves links out

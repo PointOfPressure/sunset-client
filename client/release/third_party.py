@@ -66,7 +66,7 @@ def main():
             flags_file = a[i + 1]; i += 2
         else:
             sys.exit(f"third_party.py: unknown argument {a[i]}")
-    d = json.load(open(src))
+    d = json.load(open(src, encoding="utf-8"))
 
     def is_own(pkg):
         mp = os.path.realpath(pkg["manifest_path"])
@@ -131,14 +131,14 @@ def main():
         w.append(f"\n{RULE}\n{t}\n{RULE}\n\n")
         w.append(html_text(path) if kind == "--html" else open(path, encoding="utf-8").read().strip() + "\n")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-    with open(out, "w", encoding="utf-8") as f:
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write("".join(w))
     summary = f"{title}: {len(third)} third-party crates, {len(notices)} NOTICE files, {len(extra)} extra sections"
     print(summary, file=sys.stderr)
     for fl in flags:
         print("  " + fl, file=sys.stderr)
     if flags_file:
-        with open(flags_file, "w") as f:
+        with open(flags_file, "w", encoding="utf-8", newline="\n") as f:
             f.write(summary + "\n" + "".join(f"  {fl}\n" for fl in flags))
 
 

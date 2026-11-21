@@ -51,11 +51,11 @@ prebuilt)
 	[ -f "$tree/THIRD_PARTY_NOTICES.md" ] || die "$tree is not a Horizon checkout"
 	about "$tree/Cargo.toml" "$TMP/h.json" --workspace
 	fonts=(); for f in "$REPO"/client/sunset/assets/sunset/licenses/*.txt; do
-		fonts+=(--text "Font: $(basename "$f" .txt | sed 's/^ofl-//') (SIL Open Font License 1.1), in libsunset_core.so (subset)" "$f"); done
+		fonts+=(--text "Font: $(basename "$f" .txt | sed 's/^ofl-//') (SIL Open Font License 1.1), in ${DLL_PREFIX-lib}sunset_core${DLL:-.so} (subset)" "$f"); done
 	render "$out" "Sunset prebuilt client (Horizon $(git -C "$tree" rev-parse --short=10 HEAD) and Sunset)" "$TMP/h.json" --own "$tree" \
 		--text "Horizon's own third-party notices (THIRD_PARTY_NOTICES.md at $(git -C "$tree" rev-parse HEAD))" "$tree/THIRD_PARTY_NOTICES.md" \
 		"${fonts[@]}" \
-		--html "Rust standard library $(basename "$rust" | cut -d- -f1) (libstd-*.so)" "$(std_notices "$rust")"
+		--html "Rust standard library $(basename "$rust" | cut -d- -f1) (${DLL_PREFIX-lib}std-*${DLL:-.so})" "$(std_notices "$rust")"
 	;;
 *) die "usage: third-party.sh launcher | baritone | prebuilt TREE RUST OUT | check" ;;
 esac

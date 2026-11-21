@@ -26,6 +26,9 @@ tar --zstd -xf sunset-@VERSION@-@SHORT@-@PLATFORM@-relink.tar.zst && cd sunset-@
 ./relink.sh <SDK> <game folder> [<path to rustc @RUST@>]
 ```
 
+On Windows, run it in Git Bash with the toolchain's `bin` and `mingw64/bin` (the launcher's
+`rust/@RUST@-x86_64-pc-windows-gnu/`) first on PATH.
+
 `<game folder>` is the installed `versions/native-…` folder (`-` only links, into `out/`). The script keeps the
 original as `libhorizon_patch.so.orig` and updates the library's hash in `native-mods.json` (the game refuses a
 library whose hash differs) and in `files.sha256`.
