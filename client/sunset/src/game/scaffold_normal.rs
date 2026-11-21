@@ -207,6 +207,11 @@ fn with<R>(f: impl FnOnce(&mut Normal) -> R) -> R {
     f(guard.get_or_insert_with(Normal::default))
 }
 
+// Normal put a block down in the last `ticks` ticks (Crystal Aura waits only for a Scaffold that is placing).
+pub(super) fn placed_within(now: u64, ticks: u64) -> bool {
+    with(|n| n.last_place.is_some_and(|at| now <= at + ticks))
+}
+
 impl Normal {
     fn random(&mut self, seed: u64) -> f64 {
         self.rng.get_or_insert_with(|| Rng::new(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1)).next()

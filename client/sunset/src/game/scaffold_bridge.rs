@@ -325,6 +325,11 @@ fn end(game: &mut Game<'_>, b: &mut Bridge) {
     (b.place, b.placed, b.stalled) = (None, 0, None);
 }
 
+// Godbridge has taken over the bridging (its look and keys): Crystal Aura waits only for a Scaffold that is placing.
+pub(super) fn bridging() -> bool {
+    with(|b| b.line.is_some())
+}
+
 // Each tick before the game's: Scaffold when Legit or Godbridge is the mode and it may work now, else None.
 pub(super) fn pre_tick(game: &mut Game<'_>, m: Option<&Module>) {
     let Some(m) = m else {

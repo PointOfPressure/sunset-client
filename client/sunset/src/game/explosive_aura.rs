@@ -135,7 +135,17 @@ pub(super) fn can_act(game: &Game<'_>) -> bool {
         && sunset::CRIT_STAGE.load(Ordering::Relaxed) == 0
         && super::sunset_combat_control::owner().is_none_or(|o| o == "Crystal Aura" || o == "Anchor Aura")
         && !super::sunset_packet_mine::borrowed()
-        && !sunset::with(|s| ["Blink", "Nuker", "Scaffold"].iter().any(|name| s.is_on(name)))
+        && !sunset::with(|s| s.is_on("Blink") || s.is_on("Nuker"))
+        // Scaffold being on is not enough: only while it is putting blocks down (or Godbridge has the bridging), as both
+        // would turn the look of the same move packet.
+        && !scaffold_placing(game)
+}
+
+fn scaffold_placing(game: &Game<'_>) -> bool {
+    sunset::with(|s| s.is_on("Scaffold"))
+        && (super::sunset_scaffold_normal::placed_within(game.ticks, 10)
+            || super::sunset_scaffold_telly::placed_within(game.ticks, 10)
+            || super::sunset_scaffold_bridge::bridging())
 }
 
 pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], ticks: u64) {

@@ -166,6 +166,11 @@ mod native {
         f(guard.get_or_insert_with(Telly::default))
     }
 
+    // Telly put a block down in the last `ticks` ticks (Crystal Aura waits only for a Scaffold that is placing).
+    pub(crate) fn placed_within(now: u64, ticks: u64) -> bool {
+        with(|t| t.last_place.is_some_and(|at| now <= at + ticks))
+    }
+
     pub(crate) fn manual_use_blocked(game: &Game<'_>) -> bool {
         crate::game::sunset_compat::SunsetGame::sunset_window(&*game) && BLOCK_USE.with(Cell::get) && !PLACING.with(Cell::get)
     }
