@@ -193,9 +193,13 @@ def clean():
             ctl("close")
     # Every module a test turned on back to its defaults (off), whatever it left (a toggle typed while dead never
     # arrives), then the HUD as it starts. Not .panic: that stops Sunset until the game restarts.
-    for m in sorted(on | touched):
+    reset = sorted(on | touched)
+    for m in reset:
         say(f".reset {m}")
     say(".reset hud")
+    # Notifications' default is off (see __main__): reset, it goes back on for the next test's toasts.
+    if "notifications" in reset:
+        say(".t notifications")
     on.clear()
     touched.clear()
     # Land first, in whatever game mode, so a fall a test left you in costs nothing.
@@ -17796,6 +17800,10 @@ if __name__ == "__main__":
     if has_alarm:
         signal.signal(signal.SIGALRM, overran)
     arena()
+    # Notifications is off in Sunset's defaults (the maintainer's setup, 99c4063); the tests read its toasts (clean()
+    # turns it on again after resetting it).
+    if not is_on("Notifications"):
+        say(".t notifications")
     # A test that ends Sunset's session (Hard Panic) goes after every other one, and nothing is cleaned up after it.
     for fn in sorted(TESTS, key=lambda t: getattr(t, "ends_session", False)):
         if ONLY and fn.test_name not in ONLY:
