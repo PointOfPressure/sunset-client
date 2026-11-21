@@ -14,6 +14,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - Cancel stops Install while it prepares Minecraft's files, and the next Install prepares them again
 - Install and Repair prepare Minecraft's files again when an earlier prepare stopped half way ("is not prepared yet" at Play)
 - Minecraft's download from Mojang is tried again when the connection drops, and its errors no longer repeat the file counter
+- Offline play works before the first signed-in Play ("cannot acquire launcher cache leases")
 
 ## 2.0.0
 

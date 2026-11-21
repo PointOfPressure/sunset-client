@@ -867,6 +867,8 @@ pub fn play_offline(p: &Paths, s: &Settings, name: &str) -> Result<Child> {
         return Err(NOT_PREPARED.into());
     }
     drop_stale_data_file(&resources);
+    // Best effort: when it fails, the game says what it could not hold.
+    let _ = register_leases(p, &[&version, &resources]);
     let instance = p.instance();
     fs::create_dir_all(&instance).map_err(|e| format!("can't make {}: {e}", instance.display()))?;
     let mut c = Command::new(&exe);
@@ -895,6 +897,70 @@ pub fn play_offline(p: &Paths, s: &Settings, name: &str) -> Result<Child> {
     }
     c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
     c.spawn().map_err(|e| format!("can't start the game: {e}"))
+}
+
+/// Registers `dirs` with Horizon's run-lease registry (`<horizon>/run-leases`) the way the stock CLI's Play does
+/// before it starts the game. A game started directly holds a lease on its version folder and on its resources when
+/// the registry exists, and refuses to start ("unregistered cache directories") when the registry has no entry for one
+/// of them: offline play before any signed-in Play (Hirox's report). An entry is an empty file named after the SHA-256
+/// of the folder's "device:file id" (Horizon's runtime_leases.rs `Registry::lock`, with cap-fs-ext's `dev`/`ino`:
+/// the volume serial number and file index on Windows). Without a registry the game holds no leases: nothing to do.
+fn register_leases(p: &Paths, dirs: &[&Path]) -> io::Result<()> {
+    let registry = p.horizon().join("run-leases");
+    if !registry.is_dir() {
+        return Ok(());
+    }
+    for d in dirs {
+        let (dev, ino) = file_id(&fs::canonicalize(d)?)?;
+        let key = hex(&Sha256::digest(format!("{dev}:{ino}").as_bytes()));
+        match fs::OpenOptions::new().write(true).create_new(true).open(registry.join(key)) {
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+/// A folder's (device, file id), as Horizon's lease registry names it.
+#[cfg(unix)]
+fn file_id(dir: &Path) -> io::Result<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    let m = fs::metadata(dir)?;
+    Ok((m.dev(), m.ino()))
+}
+
+#[cfg(windows)]
+fn file_id(dir: &Path) -> io::Result<(u64, u64)> {
+    use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+    #[repr(C)]
+    #[derive(Default)]
+    struct Info {
+        attributes: u32,
+        times: [u32; 6],
+        volume_serial: u32,
+        size: [u32; 2],
+        links: u32,
+        index_high: u32,
+        index_low: u32,
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetFileInformationByHandle(file: *mut core::ffi::c_void, info: *mut Info) -> i32;
+    }
+    // FILE_FLAG_BACKUP_SEMANTICS opens a folder.
+    let f = fs::OpenOptions::new().read(true).custom_flags(0x0200_0000).open(dir)?;
+    let mut info = Info::default();
+    // SAFETY: a valid handle that `f` owns, and a BY_HANDLE_FILE_INFORMATION-shaped buffer.
+    if unsafe { GetFileInformationByHandle(f.as_raw_handle().cast(), &mut info) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((info.volume_serial as u64, (info.index_high as u64) << 32 | info.index_low as u64))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn file_id(_: &Path) -> io::Result<(u64, u64)> {
+    Err(io::ErrorKind::Unsupported.into())
 }
 
 /// Said at Play when the prepared files have no sounds: the game then plays silent.
@@ -2021,6 +2087,35 @@ mod tests {
         fs::write(t.join("blocks.json"), "[]").unwrap();
         fs::write(t.join("horizon-resources.json"), "{\"a\":").unwrap();
         assert!(!is_prepared(&t), "a cut manifest");
+        fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn leases_are_registered_like_the_cli_does() {
+        let t = std::env::temp_dir().join(format!("sunset-lease-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        let p = Paths { root: t.clone() };
+        let (v, r) = (p.versions().join("native-x"), p.versions().join("nightly-x/.local/horizon-client/9.9"));
+        fs::create_dir_all(&v).unwrap();
+        fs::create_dir_all(&r).unwrap();
+        // No registry: the game holds no leases, and none is made.
+        register_leases(&p, &[&v, &r]).unwrap();
+        assert!(!p.horizon().join("run-leases").exists());
+        fs::create_dir_all(p.horizon().join("run-leases")).unwrap();
+        register_leases(&p, &[&v, &r]).unwrap();
+        register_leases(&p, &[&v, &r]).unwrap();
+        let mut names: Vec<String> = fs::read_dir(p.horizon().join("run-leases")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        let mut want: Vec<String> = [&v, &r]
+            .iter()
+            .map(|d| {
+                let (dev, ino) = file_id(&fs::canonicalize(d).unwrap()).unwrap();
+                hex(&Sha256::digest(format!("{dev}:{ino}").as_bytes()))
+            })
+            .collect();
+        want.sort();
+        assert_eq!(names, want);
+        assert_ne!(want[0], want[1]);
         fs::remove_dir_all(&t).unwrap();
     }
 
