@@ -61,21 +61,26 @@ pub struct Paths {
     pub root: PathBuf,
 }
 
+/// The per-user data folder (Linux `$XDG_DATA_HOME` or `~/.local/share`, Windows `%APPDATA%`): the stock launcher's
+/// `dirs::data_dir()` too.
+fn data_base() -> Option<PathBuf> {
+    if cfg!(windows) {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    } else {
+        std::env::var_os("XDG_DATA_HOME")
+            .filter(|h| !h.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+    }
+}
+
 impl Paths {
     /// `SUNSET_LAUNCHER_HOME`, else `<data dir>/sunset-launcher` (Linux `~/.local/share`, Windows `%APPDATA%`).
     pub fn new() -> Self {
         if let Some(home) = std::env::var_os("SUNSET_LAUNCHER_HOME").filter(|h| !h.is_empty()) {
             return Paths { root: PathBuf::from(home) };
         }
-        let base = if cfg!(windows) {
-            std::env::var_os("APPDATA").map(PathBuf::from)
-        } else {
-            std::env::var_os("XDG_DATA_HOME")
-                .filter(|h| !h.is_empty())
-                .map(PathBuf::from)
-                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
-        };
-        Paths { root: base.unwrap_or_else(std::env::temp_dir).join("sunset-launcher") }
+        Paths { root: data_base().unwrap_or_else(std::env::temp_dir).join("sunset-launcher") }
     }
     /// The stock CLI's own data (`HORIZON_LAUNCHER_HOME`): versions, accounts, settings.
     pub fn horizon(&self) -> PathBuf {
@@ -774,12 +779,11 @@ pub fn play_offline(p: &Paths, s: &Settings, name: &str) -> Result<Child> {
     if !exe.is_file() {
         return Err("The game isn't installed yet. Install or repair Sunset first.".into());
     }
-    // The prebuilt native client reads its prepared Minecraft files from the base Nightly it was
-    // built on, not from its own version folder.
-    let resources = p.versions().join(&m.horizon.tag).join(".local").join("horizon-client").join(&m.horizon.game);
+    let resources = resources(p, &m);
     if !resources.is_dir() {
         return Err("Minecraft's files aren't prepared yet. Repair Sunset to prepare them.".into());
     }
+    drop_stale_data_file(&resources);
     let instance = p.instance();
     fs::create_dir_all(&instance).map_err(|e| format!("can't make {}: {e}", instance.display()))?;
     let mut c = Command::new(&exe);
@@ -808,6 +812,14 @@ pub fn play_offline(p: &Paths, s: &Settings, name: &str) -> Result<Child> {
     }
     c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
     c.spawn().map_err(|e| format!("can't start the game: {e}"))
+}
+
+/// Said at Play when the prepared files have no sounds: the game then plays silent.
+pub const NO_SOUNDS: &str = "Minecraft's sounds aren't prepared, so the game is silent. Signed in, Repair downloads them from Mojang.";
+
+/// Whether the installed Sunset's prepared files lack the sounds.
+pub fn sounds_missing(p: &Paths) -> bool {
+    installed(p).is_some_and(|m| resources(p, &m).is_dir() && !has_sounds(&resources(p, &m)))
 }
 
 pub const OWNER_NEEDED: &str = "Offline play needs a Microsoft account that owns Minecraft: Java Edition to have signed in at least once.";
@@ -893,6 +905,21 @@ pub fn install(p: &Paths, rel: &Release, repair: bool, cancel: &AtomicBool, prog
         }
     }
     stop()?;
+    let res = resources(p, m);
+    if !has_sounds(&res) {
+        // horizon-prepare copies the sounds from the Minecraft folder's asset store and leaves them all out when one
+        // file is missing there, which leaves the game silent. A stock Horizon install of the same game often has
+        // them; else Mojang's store comes with the owner's download.
+        progress("Looking for Minecraft's sounds", None);
+        if !sounds_from_stock(&res, &m.horizon.game) && !accounts(p).unwrap_or_default().is_empty() {
+            progress(&format!("Downloading Minecraft {}'s sounds for your account", m.horizon.game), None);
+            if let Err(e) = run_cli(p, &["prepare", "--download", "--version", &m.horizon.tag]) {
+                progress(&format!("Sounds not downloaded ({e}); Repair tries again"), None);
+            }
+        }
+    }
+    drop_stale_data_file(&res);
+    stop()?;
     progress("Setting up the sunset instance", None);
     if !p.instance().is_dir() {
         run_cli(p, &["instance", "create", INSTANCE])?;
@@ -912,6 +939,101 @@ pub fn install(p: &Paths, rel: &Release, repair: bool, cancel: &AtomicBool, prog
     Ok(())
 }
 
+/// The prepared Minecraft files the game plays with: the prebuilt native client reads the base Nightly's (the one it
+/// was built on), not its own version folder's.
+pub fn resources(p: &Paths, m: &Manifest) -> PathBuf {
+    p.versions().join(&m.horizon.tag).join(".local").join("horizon-client").join(&m.horizon.game)
+}
+
+const SOUNDS_JSON: &str = "assets/minecraft/sounds.json";
+
+/// Whether prepared resources hold Minecraft's sounds (`horizon-prepare sounds` puts them there).
+pub fn has_sounds(res: &Path) -> bool {
+    res.join(SOUNDS_JSON).is_file() && res.join("assets/minecraft/sounds").is_dir()
+}
+
+/// The asset index entries of the sounds (`minecraft/sounds.json` and `minecraft/sounds/…`), from a prepared
+/// folder's `asset-index.json`: two folders with the same entries have the same sound files.
+fn sound_entries(res: &Path) -> Option<Vec<(String, String)>> {
+    let index: serde_json::Value = serde_json::from_slice(&fs::read(res.join("asset-index.json")).ok()?).ok()?;
+    let mut v: Vec<(String, String)> = index["objects"]
+        .as_object()?
+        .iter()
+        .filter(|(k, _)| k.starts_with("minecraft/sounds"))
+        .filter_map(|(k, o)| Some((k.clone(), o["hash"].as_str()?.to_string())))
+        .collect();
+    v.sort();
+    (!v.is_empty()).then_some(v)
+}
+
+/// Fills `res` with the sounds of a stock Horizon version prepared for the same Minecraft `game` with the same
+/// sound assets, as hard links where the disk allows. Whether it did.
+fn sounds_from_stock(res: &Path, game: &str) -> bool {
+    let Some(versions) = data_base().map(|d| d.join("horizon-launcher").join("versions")) else { return false };
+    sounds_from(res, &versions, game)
+}
+
+fn sounds_from(res: &Path, versions: &Path, game: &str) -> bool {
+    let Some(want) = sound_entries(res) else { return false };
+    let Ok(dirs) = fs::read_dir(versions) else { return false };
+    for d in dirs.flatten() {
+        let from = d.path().join(".local").join("horizon-client").join(game);
+        if from == res || !has_sounds(&from) || sound_entries(&from).as_ref() != Some(&want) {
+            continue;
+        }
+        let assets = res.join("assets").join("minecraft");
+        let tmp = assets.join(".sounds.tmp");
+        let _ = fs::remove_dir_all(&tmp);
+        let copied = (|| -> io::Result<()> {
+            link_tree(&from.join("assets/minecraft/sounds"), &tmp)?;
+            let _ = fs::remove_dir_all(assets.join("sounds"));
+            fs::rename(&tmp, assets.join("sounds"))?;
+            // sounds.json last: until it is there, the folder reads as without sounds and the next install tries again.
+            fs::copy(from.join(SOUNDS_JSON), assets.join(".sounds.json.tmp"))?;
+            fs::rename(assets.join(".sounds.json.tmp"), res.join(SOUNDS_JSON))
+        })();
+        if copied.is_ok() {
+            return true;
+        }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+    false
+}
+
+/// Horizon (0b14f8a and later) answers reads under `assets/` from the prepared folder's `horizon-data.bin`, the copy
+/// the game made of it at a first start, and keeps using that copy while `horizon-resources.json` is unchanged. Sounds
+/// prepared after it was written are then never read: the game says "no sounds in the active resources" and is
+/// silent. Such a file goes here; the game writes a new one.
+pub fn drop_stale_data_file(res: &Path) {
+    let bin = res.join("horizon-data.bin");
+    if has_sounds(res) && bin.is_file() && data_file_holds(&bin, SOUNDS_JSON).is_ok_and(|held| !held) {
+        let _ = fs::remove_file(&bin);
+    }
+}
+
+/// Whether `horizon-data.bin` (horizon-core prepared_files.rs, layout 2) lists `name`. A file of another layout reads
+/// as holding it, so it is left alone.
+fn data_file_holds(bin: &Path, name: &str) -> io::Result<bool> {
+    use std::io::{Seek, SeekFrom};
+    let mut f = fs::File::open(bin)?;
+    let mut h = [0u8; 40];
+    f.read_exact(&mut h)?;
+    let u32_at = |i: usize| u32::from_le_bytes([h[i], h[i + 1], h[i + 2], h[i + 3]]);
+    let u64_at = |i: usize| u64::from_le_bytes(h[i..i + 8].try_into().unwrap_or([0; 8]));
+    if &h[..8] != b"HZDATA\0\0" || u32_at(8) != 2 {
+        return Ok(true);
+    }
+    let pad = |n: u64| n.div_ceil(8) * 8;
+    let (count, root, source, pool) = (u64::from(u32_at(12)), u64_at(16), u64_at(24), u64_at(32));
+    if pool > 1 << 28 {
+        return Ok(true);
+    }
+    f.seek(SeekFrom::Start(40 + pad(root) + pad(source) + count * 24))?;
+    let mut names = vec![0; pool as usize];
+    f.read_exact(&mut names)?;
+    Ok(names.windows(name.len()).any(|w| w == name.as_bytes()))
+}
+
 /// Unpacks the package (one `<version_dir>/` folder) beside the old copy, then swaps it in.
 fn unpack_game(archive: &Path, versions: &Path, vdir: &str, cancel: &AtomicBool) -> Result<()> {
     unpack_tar_zst(archive, versions, vdir, "Sunset package", cancel)?;
@@ -929,23 +1051,25 @@ fn sunset_only(name: &str) -> bool {
         || name.ends_with(".dll")
 }
 
+/// `from`'s tree at `to`, files as hard links where the disk allows, else copies.
+fn link_tree(from: &Path, to: &Path) -> io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let dest = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            link_tree(&entry.path(), &dest)?;
+        } else if fs::hard_link(entry.path(), &dest).is_err() {
+            fs::copy(entry.path(), &dest)?;
+        }
+    }
+    Ok(())
+}
+
 /// Sets up the Horizon version `base` (the Nightly the package was built on) from the unpacked package `vdir`, when
 /// Horizon's GitHub no longer has that Nightly. The package carries the same revision's preparer, exporters and
 /// server; the client takes only the base's prepared resources from it. Files are hard links where the disk allows.
 pub(crate) fn base_from_package(versions: &Path, vdir: &str, base: &str) -> Result<()> {
-    fn link_tree(from: &Path, to: &Path) -> io::Result<()> {
-        fs::create_dir_all(to)?;
-        for entry in fs::read_dir(from)? {
-            let entry = entry?;
-            let dest = to.join(entry.file_name());
-            if entry.file_type()?.is_dir() {
-                link_tree(&entry.path(), &dest)?;
-            } else if fs::hard_link(entry.path(), &dest).is_err() {
-                fs::copy(entry.path(), &dest)?;
-            }
-        }
-        Ok(())
-    }
     let src = versions.join(vdir);
     if !src.join(".installed").exists() {
         return Err("the Sunset package isn't unpacked".into());
@@ -1065,6 +1189,9 @@ pub fn play_time(secs: u64) -> String {
 /// Starts the game through the CLI (it adds the signed-in account), with the window settings.
 pub fn play(p: &Paths, s: &Settings) -> Result<Child> {
     let mut c = cli(p)?;
+    if let Some(m) = installed(p) {
+        drop_stale_data_file(&resources(p, &m));
+    }
     c.args(["play", "--instance", INSTANCE]);
     for a in s.game_args() {
         c.arg(format!("--arg={a}"));
@@ -1407,6 +1534,106 @@ pub fn face_from_png(bytes: &[u8]) -> Result<Vec<[u8; 4]>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `horizon-data.bin` of layout 2 listing `names` (prepared_files.rs; file bytes left out, which the check never reads).
+    fn data_file(path: &Path, names: &[&str]) {
+        let root = b"/some/root";
+        let source = b"{}";
+        let pool: Vec<u8> = names.concat().into_bytes();
+        let pad = |v: &mut Vec<u8>| v.resize(v.len().div_ceil(8) * 8, 0);
+        let mut b = b"HZDATA\0\0".to_vec();
+        b.extend(2u32.to_le_bytes());
+        b.extend((names.len() as u32).to_le_bytes());
+        for n in [root.len(), source.len(), pool.len()] {
+            b.extend((n as u64).to_le_bytes());
+        }
+        b.extend(root);
+        pad(&mut b);
+        b.extend(source);
+        pad(&mut b);
+        b.extend(vec![0u8; names.len() * 24]);
+        b.extend(&pool);
+        pad(&mut b);
+        fs::write(path, b).unwrap();
+    }
+
+    fn prepared(dir: &Path, sounds: bool, sound_hash: &str) {
+        fs::create_dir_all(dir.join("assets/minecraft/lang")).unwrap();
+        fs::write(dir.join("assets/minecraft/lang/en_us.json"), "{}").unwrap();
+        let index = format!(
+            r#"{{"objects": {{"icons/a.png": {{"hash": "aa"}}, "minecraft/sounds.json": {{"hash": "{sound_hash}"}}, "minecraft/sounds/x/y.ogg": {{"hash": "bb"}}}}}}"#
+        );
+        fs::write(dir.join("asset-index.json"), index).unwrap();
+        if sounds {
+            fs::create_dir_all(dir.join("assets/minecraft/sounds/x")).unwrap();
+            fs::write(dir.join("assets/minecraft/sounds/x/y.ogg"), "ogg").unwrap();
+            fs::write(dir.join(SOUNDS_JSON), "{\"y\": {}}").unwrap();
+        }
+    }
+
+    #[test]
+    fn a_data_file_from_before_the_sounds_goes() {
+        let t = std::env::temp_dir().join(format!("sunset-datafile-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        let bin = t.join("horizon-data.bin");
+        // No sounds yet: the file stays (a later prepare that adds them is what makes it stale).
+        prepared(&t, false, "cc");
+        data_file(&bin, &["assets/minecraft/lang/en_us.json"]);
+        assert!(!data_file_holds(&bin, SOUNDS_JSON).unwrap());
+        drop_stale_data_file(&t);
+        assert!(bin.is_file());
+        // Sounds prepared after it: it goes.
+        prepared(&t, true, "cc");
+        drop_stale_data_file(&t);
+        assert!(!bin.exists());
+        // Written with the sounds there: it stays.
+        data_file(&bin, &["assets/minecraft/lang/en_us.json", SOUNDS_JSON]);
+        assert!(data_file_holds(&bin, SOUNDS_JSON).unwrap());
+        drop_stale_data_file(&t);
+        assert!(bin.is_file());
+        // Another layout, or a short file: left alone.
+        let mut other = fs::read(&bin).unwrap();
+        other[8] = 3;
+        fs::write(&bin, &other).unwrap();
+        data_file(&t.join("unused.bin"), &[]);
+        drop_stale_data_file(&t);
+        assert!(bin.is_file());
+        fs::write(&bin, b"HZDATA").unwrap();
+        drop_stale_data_file(&t);
+        assert!(bin.is_file());
+        // No data file at all: nothing to do.
+        fs::remove_file(&bin).unwrap();
+        drop_stale_data_file(&t);
+        let _ = fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn sounds_come_from_a_stock_version_with_the_same_assets() {
+        let t = std::env::temp_dir().join(format!("sunset-sounds-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        let res = t.join("sunset/nightly/.local/horizon-client/9.9");
+        let stock = t.join("stock");
+        prepared(&res, false, "cc");
+        // A stock version of another game, one without sounds and one with other sound assets: none of them.
+        prepared(&stock.join("a/.local/horizon-client/9.8"), true, "cc");
+        prepared(&stock.join("b/.local/horizon-client/9.9"), false, "cc");
+        prepared(&stock.join("c/.local/horizon-client/9.9"), true, "dd");
+        assert!(!sounds_from(&res, &stock, "9.9"));
+        assert!(!has_sounds(&res));
+        // Nothing to compare with: no index here.
+        assert!(!sounds_from(&t.join("nowhere"), &stock, "9.9"));
+        // The same sound assets: copied, sounds.json and the files, and a half-copied folder is replaced.
+        prepared(&stock.join("d/.local/horizon-client/9.9"), true, "cc");
+        fs::create_dir_all(res.join("assets/minecraft/sounds/partial")).unwrap();
+        assert!(sounds_from(&res, &stock, "9.9"));
+        assert!(has_sounds(&res));
+        assert_eq!(fs::read_to_string(res.join("assets/minecraft/sounds/x/y.ogg")).unwrap(), "ogg");
+        assert!(!res.join("assets/minecraft/sounds/partial").exists());
+        assert!(!res.join("assets/minecraft/.sounds.tmp").exists());
+        // The stock copy is untouched.
+        assert!(has_sounds(&stock.join("d/.local/horizon-client/9.9")));
+        let _ = fs::remove_dir_all(&t);
+    }
 
     #[test]
     fn offline_names_and_the_owner_gate() {

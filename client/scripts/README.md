@@ -49,8 +49,8 @@ xtask -- package <bin>/horizon-client[.exe] <folder>` and on Windows `python too
 
 ### Windows 2.0.0 prebuilt (vs.)
 
-Build it from what the 2.0.0 Linux prebuilt was built from (its `manifest.json`): sunset-client `bd6ee8c` (client/sunset as
-`7419693`, which vs.'s Windows build used), Horizon
+Build it from what the 2.0.0 Linux prebuilt was built from (its `manifest.json`): sunset-client `e2f82e3` (its client/sunset has the
+ClickGUI Theme default Grey, so a Windows build from `7419693` or `bd6ee8c` is older), Horizon
 pin `0b14f8acfd97fa2c750e42795249dcc981178ca4` (`nightly-2026-11-18-0b14f8a`, game 26.3), horizon-mixins `e59da90`,
 the fork SDK of PointOfPressure/horizon `sunset-hooks/0b14f8a` = `95b6ab99cb` (the 10 patches in
 `../horizon-patches/0b14f8a/hooks/`), launcher 0.2.78 and its rustc 1.99.1 (`horizon-launcher rust install`,

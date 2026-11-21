@@ -79,6 +79,9 @@ fn main() {
         }
         "play" => core::play(&p, &s).and_then(|mut c| {
             use std::io::Read;
+            if core::sounds_missing(&p) {
+                eprintln!("sunset-launcher: {}", core::NO_SOUNDS);
+            }
             let mut err = String::new();
             if let Some(mut e) = c.stderr.take() {
                 let _ = e.read_to_string(&mut err);
@@ -93,6 +96,9 @@ fn main() {
             ),
             Some(nick) => core::play_offline(&p, &s, nick).and_then(|mut c| {
                 use std::io::Read;
+                if core::sounds_missing(&p) {
+                    eprintln!("sunset-launcher: {}", core::NO_SOUNDS);
+                }
                 let mut err = String::new();
                 if let Some(mut e) = c.stderr.take() {
                     let _ = e.read_to_string(&mut err);

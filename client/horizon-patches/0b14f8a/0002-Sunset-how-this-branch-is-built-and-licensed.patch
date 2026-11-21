@@ -1,6 +1,6 @@
-From d7eda672ace7404e970f750334b362adf199d94c Mon Sep 17 00:00:00 2001
+From d150ae949ff38271a74117d202238bb86ba5c6e4 Mon Sep 17 00:00:00 2001
 From: pointofpressure <s4yerh4rris0n@gmail.com>
-Date: Sat, 21 Nov 2026 01:29:18 +0000
+Date: Sat, 21 Nov 2026 03:28:18 +0000
 Subject: [PATCH 2/2] Sunset: how this branch is built and licensed
 
 sunset/README.md.
@@ -11,7 +11,7 @@ sunset/README.md.
 
 diff --git a/sunset/README.md b/sunset/README.md
 new file mode 100644
-index 0000000000..6d6537e2f1
+index 0000000000..bdf3cf1499
 --- /dev/null
 +++ b/sunset/README.md
 @@ -0,0 +1,31 @@
@@ -23,7 +23,7 @@ index 0000000000..6d6537e2f1
 +LGPL-3.0-or-later); the prebuilt's Horizon libraries are built from that tree with `tools/prebuilt_game.py`
 +(`HORIZON_SDK_BUILD_ID=0b14f8acfd97fa2c750e42795249dcc981178ca4`). The rest is unmodified upstream.
 +
-+- `sunset/package/`: Sunset's .hmod package (PointOfPressure/sunset-client `bd6ee8c0ceb092eff116280aa3e94a0be7e55d3d`, `client/sunset`). Its own
++- `sunset/package/`: Sunset's .hmod package (PointOfPressure/sunset-client `e2f82e36913ef3fcb006f691619330843695b429`, `client/sunset`). Its own
 +  licence is `sunset/package/LICENSE`; it is here so the shipped build can be reproduced.
 +- `sunset/patch/`: the function-replacement crates (`horizon_patched*`) the launcher extracts from this revision,
 +  with Sunset's mixins and support modules woven in by horizon-mixins `e59da9094f0c2fdda6c627fe9eff22dec6a906f0`, and `horizon_patch.rs`, the

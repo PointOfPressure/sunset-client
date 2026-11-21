@@ -1,6 +1,6 @@
-From ade94fca568739ed34fbe2f379fb12957e62abbc Mon Sep 17 00:00:00 2001
+From c0fb22ad7d45cf2a51fae438a2d3b6fd69e31bdb Mon Sep 17 00:00:00 2001
 From: pointofpressure <s4yerh4rris0n@gmail.com>
-Date: Sat, 21 Nov 2026 01:29:18 +0000
+Date: Sat, 21 Nov 2026 03:28:18 +0000
 Subject: [PATCH 1/2] Sunset's mixins woven in (horizon-mixins e59da90)
 
 The source of libhorizon_patch.so as shipped: sunset/package/horizon-mod.toml's mixins and support modules applied by horizon-mixins, and the launcher's entry module (horizon_patch.rs). Rust 1.99.1. A modified version of Horizon: LGPL-3.0-or-later, the woven-in code included.
@@ -19,7 +19,7 @@ The source of libhorizon_patch.so as shipped: sunset/package/horizon-mod.toml's 
 
 diff --git a/sunset/patch/.horizon-mixins-stage.json b/sunset/patch/.horizon-mixins-stage.json
 new file mode 100644
-index 0000000000..ae765dc18f
+index 0000000000..35869b4030
 --- /dev/null
 +++ b/sunset/patch/.horizon-mixins-stage.json
 @@ -0,0 +1,5551 @@
@@ -32,7 +32,7 @@ index 0000000000..ae765dc18f
 +    "Cargo.lock": "5d88172f9a904be1638ce079289e33690c95ab266d2b3685eb45e16ed0c3396d",
 +    "Cargo.toml": "395410af809e85c5ec922634dc75f3e059b849b26a4d05e37ae06df3314f3d6c",
 +    "horizon_patched/Cargo.toml": "1e61701f06559467e136f502efcff32bf1df9c42e33e8d46b8b19353e6cd6149",
-+    "horizon_patched/src/lib.rs": "eeb5c2244989fe7ac105a07355cd1d1eacf1b14c0c1793296b898b7a558c0731",
++    "horizon_patched/src/lib.rs": "0fcec6b32a8e7058e1ae4b5d11a0f2f7b07426c0f9393fa3215d57fdeb25e9ed",
 +    "horizon_patched_client_input/Cargo.toml": "88cfe112fcda3462f71627da9f0e60b9e181db9220049c570589a3ff30e932b0",
 +    "horizon_patched_client_input/src/lib.rs": "ed25ecb1dc23a67f7d5d9398ebd943007e617772ab7f3ba3211e5576c1de7ba0",
 +    "horizon_patched_client_lib/Cargo.toml": "f6c08bf626d03b0207290e5f09af3438eeeeec4c15bf614a57847bd74067bf6f",
@@ -5729,7 +5729,7 @@ index 0000000000..31023975e0
 +
 +extern crate horizon_mod_host as _;
 diff --git a/sunset/patch/horizon_patched/src/lib.rs b/sunset/patch/horizon_patched/src/lib.rs
-index bd6ba6ff68..29c8233298 100644
+index b36fa9bea9..338a3572b7 100644
 --- a/sunset/patch/horizon_patched/src/lib.rs
 +++ b/sunset/patch/horizon_patched/src/lib.rs
 @@ -576,6 +576,20 @@ pub mod game {
@@ -10150,7 +10150,7 @@ index bd6ba6ff68..29c8233298 100644
                      .is_some_and(|s| s.count > 0 && s.item.ends_with("firework_rocket"))
              };
              let off = super::sunset_util::OFFHAND;
-@@ -105059,8 +107230,7 @@ modules.sunsetpresence=true
+@@ -105060,8 +107231,7 @@ modules.sunsetpresence=true
              let item = super::sunset_player::plan_item(game, stack);
              let name = item.name.clone();
              let level = |e: &str| {
@@ -10160,7 +10160,7 @@ index bd6ba6ff68..29c8233298 100644
                      .iter()
                      .find(|(x, _)| super::sunset_util::short(x) == e)
                      .map_or(0, |x| x.1)
-@@ -105841,8 +108011,7 @@ modules.sunsetpresence=true
+@@ -105842,8 +108012,7 @@ modules.sunsetpresence=true
                          score(b.1, legacy)
                              .total_cmp(&score(a.1, legacy))
                              .then_with(|| {
@@ -10170,7 +10170,7 @@ index bd6ba6ff68..29c8233298 100644
                                      .map_or(-1, |i| i as i64)
                                      .cmp(&b.0.map_or(-1, |i| i as i64))
                              })
-@@ -109439,8 +111608,7 @@ modules.sunsetpresence=true
+@@ -109440,8 +111609,7 @@ modules.sunsetpresence=true
                          || ["minecraft:swords", "minecraft:axes"]
                              .iter()
                              .any(|t| {
@@ -10180,7 +10180,7 @@ index bd6ba6ff68..29c8233298 100644
                                      .items()
                                      .item_tags
                                      .get(*t)
-@@ -109794,8 +111962,7 @@ modules.sunsetpresence=true
+@@ -109795,8 +111963,7 @@ modules.sunsetpresence=true
                  .filter(|mob| Some(mob.id) != me && util::player_enemy(game, mob))
                  .map(util::mob_target)
                  .filter(|t| {
@@ -10190,7 +10190,7 @@ index bd6ba6ff68..29c8233298 100644
                          .as_ref()
                          .is_some_and(|p| {
                              util::dist([p.position.x, p.position.y, p.position.z], t.pos)
-@@ -110034,8 +112201,7 @@ modules.sunsetpresence=true
+@@ -110035,8 +112202,7 @@ modules.sunsetpresence=true
                          .any(|d| !air(game, [cell[0], feet - d, cell[2]]));
                      let lava = (0..=3)
                          .any(|d| {
@@ -10200,7 +10200,7 @@ index bd6ba6ff68..29c8233298 100644
                                  .facts()
                                  .get(game.world.block(cell[0], feet - d, cell[2]))
                                  .name
-@@ -111288,8 +113454,7 @@ modules.sunsetpresence=true
+@@ -111289,8 +113455,7 @@ modules.sunsetpresence=true
              let Some(m) = module(mods, "Chest Index")
                  .filter(|m| !m.t("Search").trim().is_empty()) else { return };
              let mut matches = state(|s| {
@@ -10210,7 +10210,7 @@ index bd6ba6ff68..29c8233298 100644
                      .iter()
                      .filter_map(|c| {
                          let count: u32 = c
-@@ -111630,8 +113795,7 @@ modules.sunsetpresence=true
+@@ -111631,8 +113796,7 @@ modules.sunsetpresence=true
                  return;
              }
              let next = state(|s| {
@@ -10220,7 +10220,7 @@ index bd6ba6ff68..29c8233298 100644
                      .as_mut()
                      .and_then(|shop| {
                          if shop.slots.is_empty() {
-@@ -111705,8 +113869,7 @@ modules.sunsetpresence=true
+@@ -111706,8 +113870,7 @@ modules.sunsetpresence=true
                  return;
              }
              let item = state(|s| {
@@ -10230,7 +10230,7 @@ index bd6ba6ff68..29c8233298 100644
                      .as_mut()
                      .and_then(|sale| {
                          if sale.slots.is_empty() {
-@@ -112306,8 +114469,7 @@ modules.sunsetpresence=true
+@@ -112307,8 +114470,7 @@ modules.sunsetpresence=true
          fn block<'a>(game: &'a Game<'_>, pos: Pos) -> Option<&'a str> {
              loaded(game, pos)
                  .then(|| {
@@ -10240,7 +10240,7 @@ index bd6ba6ff68..29c8233298 100644
                          .facts()
                          .get(game.world.block(pos[0], pos[1], pos[2]))
                          .name
-@@ -112937,8 +115099,7 @@ modules.sunsetpresence=true
+@@ -112938,8 +115100,7 @@ modules.sunsetpresence=true
                              .0 == super::sunset_aura_timing::Version::Legacy
                          && super::sunset_aura::target_id()
                              .is_some_and(|id| {
@@ -10250,7 +10250,7 @@ index bd6ba6ff68..29c8233298 100644
                                      .iter()
                                      .any(|mob| mob.id == id && mob.alive() && !mob.removed)
                              })
-@@ -112972,8 +115133,7 @@ modules.sunsetpresence=true
+@@ -112973,8 +115134,7 @@ modules.sunsetpresence=true
              let scale = legacy_using()
                  .then(|| {
                      let no_slow = with(|s| {
@@ -10260,7 +10260,7 @@ index bd6ba6ff68..29c8233298 100644
                              .filter(|m| m.on && m.p("Mode") != "GrimAC")
                              .map(|m| [m.n("Ground %"), m.n("Air %")])
                      });
-@@ -113279,8 +115439,7 @@ modules.sunsetpresence=true
+@@ -113280,8 +115440,7 @@ modules.sunsetpresence=true
              let feet = p.position;
              let here = connection(game);
              let learned = duel(|d| {
@@ -10270,7 +10270,7 @@ index bd6ba6ff68..29c8233298 100644
                      .as_ref()
                      .filter(|(at, _)| Some(*at) == here)
                      .and_then(|(_, after)| after.iter().min().copied())
-@@ -113658,8 +115817,7 @@ modules.sunsetpresence=true
+@@ -113659,8 +115818,7 @@ modules.sunsetpresence=true
          }
          pub(super) fn locked_slots() -> [bool; 36] {
              with(|s| {
@@ -10280,7 +10280,7 @@ index bd6ba6ff68..29c8233298 100644
                          .filter(|m| m.on)
                          .map(|m| slot_numbers(m.t("Locked slots")))
                  })
-@@ -113714,8 +115872,7 @@ modules.sunsetpresence=true
+@@ -113715,8 +115873,7 @@ modules.sunsetpresence=true
                      })
              };
              let slots = |s: Option<&str>| {
@@ -10290,7 +10290,7 @@ index bd6ba6ff68..29c8233298 100644
                      .map_or_else(Vec::new, |s| s.split(',').map(slot).collect())
              };
              let hotbar = slots(parts.next());
-@@ -113942,8 +116099,7 @@ modules.sunsetpresence=true
+@@ -113943,8 +116100,7 @@ modules.sunsetpresence=true
                  let spare = (9..36)
                      .filter(|&k| !locked[k])
                      .filter_map(|k| {
@@ -10300,7 +10300,7 @@ index bd6ba6ff68..29c8233298 100644
                              .as_ref()
                              .filter(|s| *s.item == **item)
                              .map(|s| (s.damage, k))
-@@ -113958,8 +116114,7 @@ modules.sunsetpresence=true
+@@ -113959,8 +116115,7 @@ modules.sunsetpresence=true
          fn rule_score(game: &Game<'_>, rule: &str, s: &ItemStack) -> Option<f64> {
              let info = game.res.items().get(&s.item);
              let tag = |t: &str| {
@@ -10310,7 +10310,7 @@ index bd6ba6ff68..29c8233298 100644
                      .items()
                      .item_tags
                      .get(t)
-@@ -114256,8 +116411,7 @@ modules.sunsetpresence=true
+@@ -114257,8 +116412,7 @@ modules.sunsetpresence=true
                          Some(i) => {
                              let name = list[i].name.clone();
                              with(|s| {
@@ -10320,7 +10320,7 @@ index bd6ba6ff68..29c8233298 100644
                                      .retain(|l| parse(l).is_none_or(|l| l.name != name))
                              });
                              store(game);
-@@ -114270,8 +116424,7 @@ modules.sunsetpresence=true
+@@ -114271,8 +116425,7 @@ modules.sunsetpresence=true
                      match find_loadout(&list, &what) {
                          Some(i) => {
                              let line = with(|s| {
@@ -10330,7 +10330,7 @@ index bd6ba6ff68..29c8233298 100644
                                      .iter()
                                      .find(|l| parse(l).is_some_and(|l| l.name == list[i].name))
                                      .cloned()
-@@ -114514,8 +116667,7 @@ modules.sunsetpresence=true
+@@ -114515,8 +116668,7 @@ modules.sunsetpresence=true
          }
          pub(super) fn ignored_effect(id: &str) -> bool {
              with(|s| {
@@ -10340,7 +10340,7 @@ index bd6ba6ff68..29c8233298 100644
                      .filter(|m| m.on)
                      .is_some_and(|m| listed(m.t("Effects"), id))
              })
-@@ -116893,8 +119045,7 @@ modules.sunsetpresence=true
+@@ -116894,8 +119046,7 @@ modules.sunsetpresence=true
                  .iter()
                  .flatten()
                  .all(|s| {
@@ -10350,7 +10350,7 @@ index bd6ba6ff68..29c8233298 100644
                          .items()
                          .get(&s.item)
                          .is_some_and(|info| s.count > 0 && s.count <= info.max_stack)
-@@ -116904,8 +119055,7 @@ modules.sunsetpresence=true
+@@ -116905,8 +119056,7 @@ modules.sunsetpresence=true
              }
              if before[0].is_none() || before[0] == before[1]
                  || state(|s| {
@@ -10360,7 +10360,7 @@ index bd6ba6ff68..29c8233298 100644
                          .iter()
                          .any(|(o, f)| *o == owner && f.blocks([from, to], &before))
                  })
-@@ -117131,8 +119281,7 @@ modules.sunsetpresence=true
+@@ -117132,8 +119282,7 @@ modules.sunsetpresence=true
          }
          fn count_totems(game: &Game<'_>) -> u32 {
              let totems = |s: &Option<ItemStack>| {
@@ -10370,7 +10370,7 @@ index bd6ba6ff68..29c8233298 100644
                      .filter(|s| &*s.item == "minecraft:totem_of_undying")
                      .map_or(0, |s| s.count)
              };
-@@ -117955,14 +120104,13 @@ modules.sunsetpresence=true
+@@ -117956,14 +120105,13 @@ modules.sunsetpresence=true
                          .to_string();
                      let path = (1..)
                          .map(|n| {
@@ -10392,7 +10392,7 @@ index bd6ba6ff68..29c8233298 100644
                          })
                          .find(|p| !p.exists())
                          .unwrap_or_else(|| dir.join(format!("{base}.md")));
-@@ -120230,8 +122378,7 @@ modules.sunsetpresence=true
+@@ -120231,8 +122379,7 @@ modules.sunsetpresence=true
                      .map_or_else(
                          Vec::new,
                          |s| {
@@ -10402,7 +10402,7 @@ index bd6ba6ff68..29c8233298 100644
                                  .update(
                                      &entries,
                                      d.time,
-@@ -120666,16 +122813,15 @@ modules.sunsetpresence=true
+@@ -120667,16 +122814,15 @@ modules.sunsetpresence=true
              evidence::SOURCES
                  .into_iter()
                  .filter(|source| {

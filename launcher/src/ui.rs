@@ -496,7 +496,7 @@ impl Launcher {
                 self.playing = true;
                 self.started = Some(std::time::Instant::now());
                 self.set_settings(|s| s.last_played = Some(core::now_secs()), cx);
-                self.note = None;
+                self.note = core::sounds_missing(&self.paths).then(|| (false, core::NO_SOUNDS.into()));
                 let tx = self.send();
                 let stderr = child.stderr.take();
                 std::thread::spawn(move || {
