@@ -532,10 +532,47 @@ fn cli_result(args: &[&str], status: std::process::ExitStatus, stdout: &[u8], st
     if status.success() {
         return Ok(String::from_utf8_lossy(stdout).into_owned());
     }
-    let err = String::from_utf8_lossy(stderr);
-    let tail: Vec<&str> = err.lines().filter(|l| !l.trim().is_empty()).collect();
-    let tail = tail[tail.len().saturating_sub(3)..].join(" ");
+    let tail = error_tail(&String::from_utf8_lossy(stderr));
     Err(format!("horizon-launcher {} failed: {}", args.first().unwrap_or(&""), if tail.is_empty() { status.to_string() } else { tail }))
+}
+
+/// The CLI's last error lines, for a message. Its download counter ("67 of 76 files", redrawn in place with \r) is
+/// left out, and so is a line said twice in a row; when a line starts with "error", the message starts there.
+fn error_tail(stderr: &str) -> String {
+    fn counter(l: &str) -> bool {
+        let mut w = l.split_whitespace();
+        let num = |s: Option<&str>| s.is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()));
+        num(w.next()) && w.next() == Some("of") && num(w.next())
+    }
+    let mut lines: Vec<&str> = Vec::new();
+    for l in stderr.split(['\n', '\r']).map(str::trim) {
+        // A counter the error was printed right after, on the same line.
+        let l = match l.find("error:") {
+            Some(i) if i > 0 && counter(&l[..i]) => &l[i..],
+            _ => l,
+        };
+        if !l.is_empty() && !(counter(l) && !l.contains("error")) && lines.last() != Some(&l) {
+            lines.push(l);
+        }
+    }
+    let start = lines
+        .iter()
+        .rposition(|l| l.get(..5).is_some_and(|s| s.eq_ignore_ascii_case("error")))
+        .unwrap_or(lines.len().saturating_sub(3));
+    lines[start..].iter().take(3).copied().collect::<Vec<_>>().join(" ")
+}
+
+/// Whether a failed step failed on the network (a dropped, reset or refused connection, a timeout, a name that did
+/// not resolve), so trying it again can help. KRAMMC's download of Minecraft stopped on Windows' 10053.
+pub fn network_error(e: &str) -> bool {
+    let e = e.to_ascii_lowercase();
+    [
+        "os error 10053", "os error 10054", "os error 10060", "os error 10061", "os error 11001", "os error 104", "os error 110",
+        "os error 111", "connection reset", "connection aborted", "connection refused", "connection closed", "timed out",
+        "broken pipe", "unexpected eof", "dns error", "failed to lookup address", "error sending request", "temporary failure in name resolution",
+    ]
+    .iter()
+    .any(|k| e.contains(k))
 }
 
 /// `run_cli` for the long steps (prepare and its downloads): the CLI runs as its own process tree, and setting
@@ -826,8 +863,8 @@ pub fn play_offline(p: &Paths, s: &Settings, name: &str) -> Result<Child> {
         return Err("The game isn't installed yet. Install or repair Sunset first.".into());
     }
     let resources = resources(p, &m);
-    if !resources.is_dir() {
-        return Err("Minecraft's files aren't prepared yet. Repair Sunset to prepare them.".into());
+    if !is_prepared(&resources) {
+        return Err(NOT_PREPARED.into());
     }
     drop_stale_data_file(&resources);
     let instance = p.instance();
@@ -867,6 +904,8 @@ pub const NO_SOUNDS: &str = "Minecraft's sounds aren't prepared, so the game is 
 pub fn sounds_missing(p: &Paths) -> bool {
     installed(p).is_some_and(|m| resources(p, &m).is_dir() && !has_sounds(&resources(p, &m)))
 }
+
+pub const NOT_PREPARED: &str = "Minecraft's files aren't fully prepared (an earlier prepare stopped half way). Repair prepares them again.";
 
 pub const OWNER_NEEDED: &str = "Offline play needs a Microsoft account that owns Minecraft: Java Edition to have signed in at least once.";
 
@@ -931,13 +970,41 @@ pub fn install(p: &Paths, rel: &Release, repair: bool, cancel: &AtomicBool, prog
     }
     stop()?;
     let prepared = base.join(".local").join("horizon-client");
+    let res = resources(p, m);
     // A prepare that stopped half way (Cancel, an error) leaves nothing behind, so the next install prepares again.
+    // One that failed on top of complete files (the sounds' download below) leaves them as they are.
     let prepare = |args: &[&str]| {
         run_cli_cancellable(p, args, cancel).inspect_err(|_| {
-            let _ = fs::remove_dir_all(&prepared);
+            if !is_prepared(&res) {
+                let _ = fs::remove_dir_all(&prepared);
+            }
         })
     };
-    if !prepared.is_dir() {
+    // Mojang's download can drop on a flaky connection (os error 10053 on Windows): it is tried again twice.
+    let download = |what: &str| -> Result<String> {
+        let mut tries = 1;
+        loop {
+            match prepare(&["prepare", "--download", "--version", &m.horizon.tag]) {
+                Err(e) if tries < 3 && network_error(&e) => {
+                    progress(&format!("{what}: the connection dropped, trying again ({} of 3)", tries + 1), None);
+                    for _ in 0..tries * 30 {
+                        stop()?;
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                    tries += 1;
+                }
+                Err(e) if network_error(&e) => {
+                    return Err(format!("{e}\nThe connection to Mojang dropped 3 times. Check the internet connection (a VPN or firewall can cut long downloads), then Repair."));
+                }
+                r => return r,
+            }
+        }
+    };
+    // Only complete files count as prepared, as Horizon's Play checks them. A prepare that stopped before 2.0.1 (or
+    // with the launcher killed) left its folder behind, and Install and Repair took that as prepared (KRAMMC's
+    // "is not prepared yet" at Play); what is left of it goes before preparing again.
+    if !is_prepared(&res) {
+        let _ = fs::remove_dir_all(&prepared);
         progress(&format!("Preparing Minecraft {} files", m.horizon.game), None);
         // Minecraft's own files come from a launcher that has them, else from Mojang for the signed-in owner.
         if prepare(&["prepare", "--version", &m.horizon.tag]).is_err() {
@@ -949,20 +1016,21 @@ pub fn install(p: &Paths, rel: &Release, repair: bool, cancel: &AtomicBool, prog
                     m.horizon.game
                 ));
             }
-            progress(&format!("Downloading Minecraft {} for your account", m.horizon.game), None);
-            prepare(&["prepare", "--download", "--version", &m.horizon.tag])?;
+            let what = format!("Downloading Minecraft {} for your account", m.horizon.game);
+            progress(&what, None);
+            download(&what)?;
         }
     }
     stop()?;
-    let res = resources(p, m);
     if !has_sounds(&res) {
         // horizon-prepare copies the sounds from the Minecraft folder's asset store and leaves them all out when one
         // file is missing there, which leaves the game silent. A stock Horizon install of the same game often has
         // them; else Mojang's store comes with the owner's download.
         progress("Looking for Minecraft's sounds", None);
         if !sounds_from_stock(&res, &m.horizon.game) && !accounts(p).unwrap_or_default().is_empty() {
-            progress(&format!("Downloading Minecraft {}'s sounds for your account", m.horizon.game), None);
-            if let Err(e) = prepare(&["prepare", "--download", "--version", &m.horizon.tag]) {
+            let what = format!("Downloading Minecraft {}'s sounds for your account", m.horizon.game);
+            progress(&what, None);
+            if let Err(e) = download(&what) {
                 stop()?;
                 progress(&format!("Sounds not downloaded ({e}); Repair tries again"), None);
             }
@@ -993,6 +1061,19 @@ pub fn install(p: &Paths, rel: &Release, repair: bool, cancel: &AtomicBool, prog
 /// was built on), not its own version folder's.
 pub fn resources(p: &Paths, m: &Manifest) -> PathBuf {
     p.versions().join(&m.horizon.tag).join(".local").join("horizon-client").join(&m.horizon.game)
+}
+
+/// Whether `res` holds complete prepared files, by the stock CLI's own test before Play (backend.rs `prepared_at`):
+/// a readable horizon-resources.json, and no empty .json beside it.
+pub fn is_prepared(res: &Path) -> bool {
+    let manifest = fs::read(res.join("horizon-resources.json")).ok().and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok());
+    manifest.is_some()
+        && fs::read_dir(res).is_ok_and(|entries| {
+            entries.flatten().all(|e| {
+                let path = e.path();
+                path.extension() != Some(std::ffi::OsStr::new("json")) || fs::metadata(&path).is_ok_and(|m| m.len() > 0)
+            })
+        })
 }
 
 const SOUNDS_JSON: &str = "assets/minecraft/sounds.json";
@@ -1910,6 +1991,36 @@ mod tests {
         // The CLI's own child went with it: it never gets to write its file.
         std::thread::sleep(std::time::Duration::from_millis(2500));
         assert!(!mark.exists(), "the CLI's child outlived Cancel");
+        fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn cli_errors_leave_the_download_counter_out() {
+        // KRAMMC's prepare: the counter redrawn in place, then the error.
+        let krammc = "67 of 76 files\r67 of 76 files\nerror: lwjgl-shaderc-3.4.3-natives-windows.jar: An established connection was aborted by the software in your host machine. (os error 10053)\n";
+        let tail = error_tail(krammc);
+        assert_eq!(tail, "error: lwjgl-shaderc-3.4.3-natives-windows.jar: An established connection was aborted by the software in your host machine. (os error 10053)");
+        assert!(network_error(&tail));
+        assert_eq!(error_tail("67 of 76 files error: boom\n"), "error: boom");
+        assert_eq!(error_tail("one\ntwo\ntwo\nthree\nfour\n"), "two three four");
+        assert_eq!(error_tail("Error: no such version\n  hint: run versions\n"), "Error: no such version hint: run versions");
+        assert!(!network_error("horizon-launcher prepare failed: error: no Minecraft 26.3 found"));
+    }
+
+    #[test]
+    fn prepared_means_complete() {
+        let t = std::env::temp_dir().join(format!("sunset-prepared-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        fs::create_dir_all(&t).unwrap();
+        assert!(!is_prepared(&t), "an empty folder (a prepare that stopped) is not prepared");
+        assert!(!is_prepared(&t.join("missing")));
+        fs::write(t.join("horizon-resources.json"), "{\"a\":1}").unwrap();
+        assert!(is_prepared(&t));
+        fs::write(t.join("blocks.json"), "").unwrap();
+        assert!(!is_prepared(&t), "an empty table");
+        fs::write(t.join("blocks.json"), "[]").unwrap();
+        fs::write(t.join("horizon-resources.json"), "{\"a\":").unwrap();
+        assert!(!is_prepared(&t), "a cut manifest");
         fs::remove_dir_all(&t).unwrap();
     }
 

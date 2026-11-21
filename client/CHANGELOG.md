@@ -12,6 +12,8 @@ section of the version they build into the signed manifest, and the launcher sho
 ### Fixed
 - **New installs work again: the launcher sets up Horizon Nightly 2026-11-18 (`0b14f8a`) from Sunset's signed package instead of Horizon's release, which Horizon deleted**
 - Cancel stops Install while it prepares Minecraft's files, and the next Install prepares them again
+- Install and Repair prepare Minecraft's files again when an earlier prepare stopped half way ("is not prepared yet" at Play)
+- Minecraft's download from Mojang is tried again when the connection drops, and its errors no longer repeat the file counter
 
 ## 2.0.0
 
