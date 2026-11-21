@@ -41,6 +41,7 @@ fn main() {
     };
     let p = core::Paths::new();
     let s = core::Settings::load(&p);
+    let since = std::time::SystemTime::now();
     let progress = |msg: &str, f: Option<f32>| match f {
         Some(f) => eprintln!("{msg} ({:.0}%)", f * 100.),
         None => eprintln!("{msg}"),
@@ -88,8 +89,8 @@ fn main() {
             }
             let st = c.wait().map_err(|e| e.to_string())?;
             // The stock CLI names its own sign-in command; here it is ours.
-            let last = err.trim().lines().last().unwrap_or("play failed").replace("`horizon-launcher account sign-in`", "`sunset-launcher sign-in`");
-            if st.success() { Ok("the game exited".into()) } else { Err(last) }
+            let last = err.trim().lines().last().unwrap_or("").replace("`horizon-launcher account sign-in`", "`sunset-launcher sign-in`");
+            if st.success() { Ok("the game exited".into()) } else { Err(core::game_failure(&p, since, &last)) }
         }),
         "offline" => match args.get(1) {
             None => Err("usage: sunset-launcher offline NICK".into()),
@@ -106,7 +107,7 @@ fn main() {
                     let _ = e.read_to_string(&mut err);
                 }
                 let st = c.wait().map_err(|e| e.to_string())?;
-                if st.success() { Ok("the game exited".into()) } else { Err(err.trim().lines().last().unwrap_or("play failed").to_string()) }
+                if st.success() { Ok("the game exited".into()) } else { Err(core::game_failure(&p, since, err.trim().lines().last().unwrap_or(""))) }
             }),
         },
         "import" => {

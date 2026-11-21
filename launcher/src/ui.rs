@@ -497,7 +497,7 @@ impl Launcher {
                 self.started = Some(std::time::Instant::now());
                 self.set_settings(|s| s.last_played = Some(core::now_secs()), cx);
                 self.note = core::sounds_missing(&self.paths).then(|| (false, core::NO_SOUNDS.into()));
-                let tx = self.send();
+                let (tx, paths, since) = (self.send(), self.paths.clone(), std::time::SystemTime::now());
                 let stderr = child.stderr.take();
                 std::thread::spawn(move || {
                     use std::io::BufRead;
@@ -510,7 +510,7 @@ impl Launcher {
                         }
                     }
                     let ok = child.wait().map(|s| s.success()).unwrap_or(false);
-                    let _ = tx.send_blocking(Msg::GameExited((!ok).then(|| if last.is_empty() { "The game stopped with an error".into() } else { last })));
+                    let _ = tx.send_blocking(Msg::GameExited((!ok).then(|| core::game_failure(&paths, since, &last))));
                 });
             }
             Err(e) => self.note = Some((true, e)),

@@ -971,6 +971,53 @@ pub fn sounds_missing(p: &Paths) -> bool {
     installed(p).is_some_and(|m| resources(p, &m).is_dir() && !has_sounds(&resources(p, &m)))
 }
 
+/// What to say when the game stopped with an error. `last` is the last line the game (or the CLI's Play) wrote to
+/// stderr: often only Play's step, as "Horizon: Play: checking the game's assets…" was for lexii, whose game had
+/// stopped on a graphics device error that only latest.log held. So the log of this run (written since `since`) is
+/// read for its last ERROR line, and the message names the log.
+pub fn game_failure(p: &Paths, since: std::time::SystemTime, last: &str) -> String {
+    if last.contains("is not prepared yet") {
+        return NOT_PREPARED.into();
+    }
+    if last.contains("cannot acquire launcher cache leases") {
+        return format!("{last}. Play once with the Microsoft account, then offline play starts too.");
+    }
+    let log = p.logs().join("latest.log");
+    let fresh = fs::metadata(&log).and_then(|m| m.modified()).is_ok_and(|t| t + std::time::Duration::from_secs(2) >= since);
+    let error = fresh.then(|| fs::read_to_string(&log).ok()).flatten().and_then(|text| log_error(&text));
+    match error {
+        Some(e) => {
+            let gpu = e.contains("graphics device") || e.contains("graphics driver") || e.contains("GPU");
+            format!(
+                "The game crashed: {e}{}\nIts log: {}",
+                if gpu { "\nUpdating the graphics driver usually fixes this. Settings → Import from Horizon also brings over the graphics settings of a Horizon install that works." } else { "" },
+                log.display()
+            )
+        }
+        None => match last.strip_prefix("Horizon: Play: ") {
+            Some(step) => format!("The game stopped while {}. Its log: {}", step.trim_end_matches(['…', '.']), log.display()),
+            None if last.is_empty() => "The game stopped with an error".into(),
+            None => last.into(),
+        },
+    }
+}
+
+/// The last ERROR (or FATAL) line of a game log (`[time] [thread/ERROR]: message`), or else its last panic line,
+/// shortened for the window.
+fn log_error(text: &str) -> Option<String> {
+    let lines: Vec<&str> = text.lines().collect();
+    let error = lines
+        .iter()
+        .rev()
+        .find_map(|l| ["/ERROR]: ", "/FATAL]: "].iter().find_map(|k| l.find(k).map(|i| l[i + k.len()..].trim())))
+        .or_else(|| lines.iter().rev().find(|l| l.contains("panicked at")).map(|l| l.trim()))?;
+    let mut e: String = error.chars().take(300).collect();
+    if e.len() < error.len() {
+        e.push('…');
+    }
+    Some(e)
+}
+
 pub const NOT_PREPARED: &str = "Minecraft's files aren't fully prepared (an earlier prepare stopped half way). Repair prepares them again.";
 
 pub const OWNER_NEEDED: &str = "Offline play needs a Microsoft account that owns Minecraft: Java Edition to have signed in at least once.";
@@ -2071,6 +2118,28 @@ mod tests {
         assert_eq!(error_tail("one\ntwo\ntwo\nthree\nfour\n"), "two three four");
         assert_eq!(error_tail("Error: no such version\n  hint: run versions\n"), "Error: no such version hint: run versions");
         assert!(!network_error("horizon-launcher prepare failed: error: no Minecraft 26.3 found"));
+    }
+
+    #[test]
+    fn crash_reasons_come_from_the_log() {
+        let log = "[01:16:14] [Render thread/INFO]: Horizon 0.1.0\n[01:16:45] [horizon-worker-gpu-watchdog/ERROR]: Horizon could not get a graphics device: the graphics driver stopped answering while the game was picking a GPU (30s)\nthread 'x' panicked at device.rs:293:5\n";
+        assert_eq!(log_error(log).unwrap(), "Horizon could not get a graphics device: the graphics driver stopped answering while the game was picking a GPU (30s)");
+        assert_eq!(log_error("a\nthread 'main' panicked at src/x.rs:1:1:\n").unwrap(), "thread 'main' panicked at src/x.rs:1:1:");
+        assert!(log_error("[t] [main/INFO]: fine\n").is_none());
+        let t = std::env::temp_dir().join(format!("sunset-crash-test-{}", std::process::id()));
+        let p = Paths { root: t.clone() };
+        let _ = fs::remove_dir_all(&t);
+        let since = std::time::SystemTime::now();
+        // No log of this run: the step Play stopped at.
+        let e = game_failure(&p, since, "Horizon: Play: checking the game's assets…");
+        assert!(e.starts_with("The game stopped while checking the game's assets. Its log: "), "{e}");
+        fs::create_dir_all(p.logs()).unwrap();
+        fs::write(p.logs().join("latest.log"), log).unwrap();
+        let e = game_failure(&p, since, "Horizon: Play: checking the game's assets…");
+        assert!(e.starts_with("The game crashed: Horizon could not get a graphics device"), "{e}");
+        assert!(e.contains("graphics driver usually fixes"), "{e}");
+        assert_eq!(game_failure(&p, since, "Error: x is not prepared yet. Prepare it first"), NOT_PREPARED);
+        fs::remove_dir_all(&t).unwrap();
     }
 
     #[test]

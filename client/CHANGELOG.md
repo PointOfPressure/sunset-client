@@ -15,6 +15,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - Install and Repair prepare Minecraft's files again when an earlier prepare stopped half way ("is not prepared yet" at Play)
 - Minecraft's download from Mojang is tried again when the connection drops, and its errors no longer repeat the file counter
 - Offline play works before the first signed-in Play ("cannot acquire launcher cache leases")
+- When the game crashes, the launcher says why (from the game's log) instead of keeping Play's last step
 
 ## 2.0.0
 
