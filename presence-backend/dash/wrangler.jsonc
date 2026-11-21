@@ -8,7 +8,5 @@
   "workers_dev": true,
   "observability": { "enabled": false },
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
-  "vars": {
-    "INGEST_URL": "https://sunset-presence.s4yerh4rris0n.workers.dev"
-  }
+  "services": [{ "binding": "INGEST", "service": "sunset-presence" }]
 }

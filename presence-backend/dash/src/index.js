@@ -103,7 +103,8 @@ async function stats(env, ctx) {
   const started = Date.now();
   let ingest = { ok: false, ms: null };
   try {
-    const r = await fetch(`${env.INGEST_URL}/health`);
+    // Service binding: a Worker can't fetch another workers.dev Worker on the same account (error 1042).
+    const r = await env.INGEST.fetch("https://ingest/health");
     ingest = { ok: r.ok, ms: Date.now() - started };
   } catch {}
   let body;
