@@ -277,7 +277,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Module details", &["Gray", "Brackets", "Dash", "Off"])
             .bool("Remove spaces", false)
             .pick("List sort", &["Width", "Name"])
-            .pick("List color mode", &["Fade", "Static", "Breathe", "Rainbow"])
+            .pick("List color mode", &["Static", "Fade", "Breathe", "Rainbow"])
             .num("List background", 0.35, 0.0, 1.0, 0.05)
             .pick("List bar", &["Outer", "Inner", "Off"])
             .num("List spacing", 11.0, 9.0, 16.0, 1.0)
