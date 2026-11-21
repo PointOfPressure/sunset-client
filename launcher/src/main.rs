@@ -22,7 +22,8 @@ Without a command, opens the window.
   sign-in          Sign in with Microsoft (prints the link and the code)
   play             Play the sunset instance
   offline NICK     Play the sunset instance offline (cracked) as NICK, for joining offline-mode servers
-  import [NAME]    Copy Sunset configs and profiles from a Horizon instance (keeps files already here)
+  import [NAME]    Copy settings, keybinds, servers, worlds, packs and Sunset configs from a Horizon
+                   instance (files it replaces go to a backup folder; close the game first)
   plugins          The installed plugins and what the instance plays
   plugins on|off   Build plugins into Sunset, or go back to Sunset as released
   plugins add PATH Install a plugin (its folder or .hmod file), then build when plugins are on
@@ -103,16 +104,16 @@ fn main() {
         "import" => {
             let src = core::import_sources(&p);
             let pick = match args.get(1) {
-                Some(n) => src.iter().find(|(name, _)| name == n),
+                Some(n) => src.iter().find(|(name, _)| name.eq_ignore_ascii_case(n)),
                 None => src.first(),
             };
             match pick {
-                None => Err(format!("no Horizon instance with Sunset configs{}", args.get(1).map(|n| format!(" named {n}")).unwrap_or_default())),
-                Some((name, dir)) => core::import_from(&p, dir, false).map(|n| {
+                None => Err(format!("no Horizon instance{}", args.get(1).map(|n| format!(" named {n}")).unwrap_or_default())),
+                Some((name, dir)) => core::import_from(&p, dir).map(|i| {
                     let mut s = s.clone();
                     s.import_decided = true;
                     let _ = s.save(&p);
-                    format!("imported {n} files from {name}")
+                    i.note(name)
                 }),
             }
         }

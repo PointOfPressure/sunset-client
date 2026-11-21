@@ -202,8 +202,8 @@ const OLED: Palette = Palette {
     hud_button_hover: 0xE02E_2E2E,
 };
 
-// ClickGUI's Theme: OLED (true) or Grey.
-pub(super) static OLED_THEME: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+// ClickGUI's Theme: OLED (true) or Grey (false, the default).
+pub(super) static OLED_THEME: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub(super) fn pal() -> &'static Palette {
     if OLED_THEME.load(Ordering::Relaxed) { &OLED } else { &GREY }

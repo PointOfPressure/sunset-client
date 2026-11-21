@@ -18,12 +18,12 @@ use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-// Surfaces sit close to black, each a small step above the one under it, so borders and the orange carry the shapes.
-const BG: u32 = 0x050506;
-const BAR: u32 = 0x09090b; // the title bar, a step above the page
-const CARD: u32 = 0x0d0d0f;
+// OLED: the page is true black and the surfaces sit just above it, so borders and the orange carry the shapes.
+const BG: u32 = 0x000000;
+const BAR: u32 = 0x040405; // the title bar, a step above the page
+const CARD: u32 = 0x070708;
 const LINE: u32 = 0x202024;
-const CHIP: u32 = 0x141417;
+const CHIP: u32 = 0x0e0e10;
 const LIT: u32 = 0x202024; // hover light on CHIP controls
 const TEXT: u32 = 0xececee;
 const MUTED: u32 = 0xb4b4bb; // secondary text: quieter than TEXT, still easy to read on CARD and BG
@@ -48,7 +48,7 @@ const BIG_H: f32 = 48.; // the Play row and the banner's other buttons
 const T_BIG: f32 = 15.; // their labels
 const STRIP_H: f32 = BIG_H + 40.; // the banner's strip under its horizon, the button row centred in it
 const BAR_H: f32 = 53.; // the title bar with its 1 px bottom border; tabs and window buttons fill the 52 above it
-const TOP_H: f32 = 32.; // the title bar's chips (platform, instance, account), centred in it
+const TOP_H: f32 = 32.; // the title bar's chips (platform mark, instance, account), centred in it
 const HEAD_H: f32 = 48.; // a card's heading row, so headings in cards side by side share a baseline
 const FACT_H: f32 = 38.; // a row of Overview's Installation card
 const FACTS: usize = 3; // its rows (Horizon build, Profiles, Plugins)
@@ -71,7 +71,7 @@ const fn nested(outer: f32, by: f32) -> f32 {
 
 /// The account face and the platform mark in their top-bar chips, and how far they sit from the chip's outer edge
 /// (the chip's 1 px border included), which their corner radius follows.
-const FACE: f32 = 20.;
+const FACE: f32 = 24.; // 8 cells of a whole 3 px, so none round away at 1x
 const FACE_INSET: f32 = (TOP_H - FACE) / 2.;
 
 /// The one instance's name; the instance chip reads as an instance switcher with it.
@@ -106,20 +106,21 @@ enum Menu {
     Account,
     More,
     Window,
-    Platform,
     Instance,
 }
 
 enum Msg {
     Progress(String, Option<f32>),
     JobDone(core::Result<String>),
-    Latest(core::Result<Release>, bool),
+    Latest(Box<core::Result<Release>>, bool),
     Accounts(Vec<Account>),
     OwnerEver(bool),
     Face(String, Vec<[u8; 4]>),
     SignIn(SignIn),
     GameExited(Option<String>),
     Sources(Vec<(String, PathBuf)>),
+    /// An import finished: its note, or why it stopped.
+    Imported(core::Result<String>),
     Info(core::Result<String>),
     /// A plugin build's step: which, what it is doing, how far through the step.
     BuildStep(Phase, String, Option<f32>),
@@ -186,6 +187,8 @@ pub struct Launcher {
     /// Armed by a press on the title bar; the first move then hands the drag to the window manager.
     title_drag: bool,
     playing: bool,
+    /// An import is copying files (Play waits for it).
+    importing: bool,
     /// When this launcher started the running game, for the play time it adds when the game exits.
     started: Option<std::time::Instant>,
     sources: Vec<(String, PathBuf)>,
@@ -200,6 +203,10 @@ pub struct Launcher {
     resync: bool,
     /// The Overview changelog's scroll position.
     log_scroll: gpui::ScrollHandle,
+    /// The changelog card shows its whole list (the page scrolls) instead of scrolling inside LOG_MAX.
+    log_open: bool,
+    /// Whether the collapsed list is longer than LOG_MAX (set while painting it), so Expand only shows when it does something.
+    log_overflows: std::rc::Rc<std::cell::Cell<bool>>,
     /// The page's (below the top bar) scroll position, and the tab it was last drawn for.
     page_scroll: gpui::ScrollHandle,
     shown_tab: Tab,
@@ -241,6 +248,7 @@ impl Launcher {
             owner_ever: false,
             title_drag: false,
             playing: false,
+            importing: false,
             started: None,
             sources: vec![],
             profiles: vec![],
@@ -250,6 +258,8 @@ impl Launcher {
             build_failed: None,
             resync: false,
             log_scroll: gpui::ScrollHandle::new(),
+            log_open: false,
+            log_overflows: Default::default(),
             page_scroll: gpui::ScrollHandle::new(),
             shown_tab: Tab::Overview,
             root_focus: cx.focus_handle(),
@@ -284,7 +294,7 @@ impl Launcher {
         }
     }
 
-    /// Asks horizon-launcher for Horizon instances with Sunset data to import from (Settings lists them).
+    /// Asks horizon-launcher for Horizon instances to import from (Settings lists them).
     fn refresh_sources(&self) {
         if core::cli_path(&self.paths).is_none() {
             return;
@@ -319,7 +329,7 @@ impl Launcher {
     fn check(&self, auto: bool) {
         let (s, tx) = (self.settings.clone(), self.send());
         std::thread::spawn(move || {
-            let _ = tx.send_blocking(Msg::Latest(core::fetch_release(&s), auto));
+            let _ = tx.send_blocking(Msg::Latest(Box::new(core::fetch_release(&s)), auto));
         });
     }
 
@@ -465,7 +475,7 @@ impl Launcher {
     }
 
     fn play(&mut self, cx: &mut Context<Self>) {
-        if self.playing || self.job.is_some() {
+        if self.playing || self.importing || self.job.is_some() {
             return;
         }
         let offline = self.settings.offline_active.clone().filter(|n| self.settings.offline_names.contains(n));
@@ -542,14 +552,13 @@ impl Launcher {
                 }
             }
             Msg::BuildStep(phase, line, frac) => {
-                if let Some(j) = self.job.as_mut().filter(|j| !j.cancel.load(Ordering::Relaxed)) {
-                    if let Some(b) = j.build.as_mut() {
+                if let Some(j) = self.job.as_mut().filter(|j| !j.cancel.load(Ordering::Relaxed))
+                    && let Some(b) = j.build.as_mut() {
                         b.phase = phase;
                         b.line = line;
                         b.frac = frac;
                         j.frac = Some(phase.overall(frac.unwrap_or(0.)));
                     }
-                }
             }
             Msg::BuildDone(r) => {
                 let cancelled = self.job.take().is_some_and(|j| j.cancel.load(Ordering::Relaxed));
@@ -586,7 +595,7 @@ impl Launcher {
                 }
                 Err(e) => self.note = Some((true, e)),
             },
-            Msg::Latest(r, auto) => match r {
+            Msg::Latest(r, auto) => match *r {
                 Ok(rel) => {
                     self.latest = Some(rel);
                     self.latest_err = None;
@@ -655,6 +664,14 @@ impl Launcher {
                 self.reload_local();
             }
             Msg::Sources(s) => self.sources = s,
+            Msg::Imported(r) => {
+                self.importing = false;
+                self.note = Some(match r {
+                    Ok(n) => (false, n),
+                    Err(e) => (true, e),
+                });
+                self.reload_local();
+            }
             Msg::Info(r) => match r {
                 // horizon-launcher is in place: sign in now, unless the dialog was cancelled while it downloaded.
                 Ok(s) if s == "sign-in" => {
@@ -787,12 +804,22 @@ impl Launcher {
 
     fn import(&mut self, i: usize, cx: &mut Context<Self>) {
         let Some((name, dir)) = self.sources.get(i).cloned() else { return };
-        self.note = Some(match core::import_from(&self.paths, &dir, false) {
-            Ok(n) => (false, format!("Imported {n} files from {name} (files already here were kept)")),
-            Err(e) => (true, e),
+        if self.importing {
+            return;
+        }
+        if self.playing {
+            self.note = Some((true, core::GAME_RUNNING.into()));
+            cx.notify();
+            return;
+        }
+        // Worlds and packs can be big: copied off the UI thread.
+        self.importing = true;
+        self.note = Some((false, format!("Importing from {name}…")));
+        let (p, tx) = (self.paths.clone(), self.send());
+        std::thread::spawn(move || {
+            let _ = tx.send_blocking(Msg::Imported(core::import_from(&p, &dir).map(|i| i.note(&name))));
         });
         self.set_settings(|s| s.import_decided = true, cx);
-        self.reload_local();
     }
 
     /// About's "Third-party licences": the launcher's licences written to its data folder, shown by the system.
@@ -1159,7 +1186,11 @@ fn face(pixels: &[[u8; 4]], s: f32) -> impl IntoElement {
 
 /// A page's content as one block: at most PAGE_MAX wide and tall, centred in the space under the top bar, so a big or
 /// maximised window frames it instead of stretching it into empty areas. In a smaller window it fills the space.
-fn page_block(block: gpui::Div) -> gpui::Div {
+/// With `grow` (an expanded changelog) it is as tall as it needs and the page scrolls.
+fn page_block(block: gpui::Div, grow: bool) -> gpui::Div {
+    if grow {
+        return div().w_full().min_h_full().flex().flex_col().items_center().child(block.w_full().max_w(px(PAGE_MAX.0)));
+    }
     div().size_full().flex().flex_col().items_center().justify_center().child(block.w_full().max_w(px(PAGE_MAX.0)).flex_1().max_h(px(PAGE_MAX.1)))
 }
 
@@ -1313,6 +1344,21 @@ fn page_head(title: &str, action: Option<gpui::AnyElement>) -> gpui::Div {
 }
 
 /// The top bar's chips (platform, instance, account) share this shape.
+/// The platform the launcher plays, Horizon, as a plain mark in a chip's place: nothing to pick yet.
+fn platform_mark() -> gpui::Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .h(px(TOP_H))
+        .px(px(12.))
+        .rounded(px(R_CTRL))
+        .bg(rgb(CHIP))
+        .border_1()
+        .border_color(rgb(LINE))
+        .child(text("Horizon", 13., TEXT))
+}
+
 fn top_chip(id: impl Into<ElementId>) -> gpui::Stateful<gpui::Div> {
     fx::control(id, LIT, nested(R_CTRL, 1.))
         .flex()
@@ -1424,7 +1470,7 @@ impl Launcher {
         // own buttons at the far right and the free space between as the drag area.
         let left = group()
             .child(div().flex_none().pr(px(8.)).child(mark(32., ACCENT)))
-            .child(self.dropdown(Menu::Platform, "Horizon", cx))
+            .child(platform_mark())
             .child(self.dropdown(Menu::Instance, if has { INSTANCE_NAME } else { "No instance" }, cx));
         // All four tabs always, so they never move; with no instance Plugins and Profiles say what to do. Each fills
         // the bar's height like the window buttons; the selected one is lit and underlined in orange on the bar's
@@ -1514,10 +1560,9 @@ impl Launcher {
             .children(window_controls(window))
     }
 
-    /// A top-bar chip that toggles `menu`; its list drops down under it (the backdrop is in `menu_popup`).
+    /// The instance chip, which toggles `menu`; its list drops down under it (the backdrop is in `menu_popup`).
     fn dropdown(&self, menu: Menu, label: &'static str, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let id = if menu == Menu::Platform { "platform" } else { "instance" };
-        let chip = top_chip(id)
+        let chip = top_chip("instance")
             .child(text(label, 13., TEXT))
             .child(icon(Icon::Chevron, 14., MUTED))
             .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| this.toggle_menu(menu, ev, cx)));
@@ -1550,8 +1595,6 @@ impl Launcher {
 
     fn menu_items(&self, menu: Menu, pop: gpui::Div, cx: &mut Context<Self>) -> gpui::Div {
         match menu {
-            // Reserved for Sunrise/Java later; Horizon is the only platform today.
-            Menu::Platform => pop.child(self.menu_row("p-horizon", checked("Horizon", true), cx, |_, _| {})),
             Menu::Instance => {
                 let pop = match self.installed {
                     Some(_) => pop.child(self.menu_row("i-sunset", checked(INSTANCE_NAME, true), cx, |this, _| this.tab = Tab::Overview)),
@@ -1822,8 +1865,8 @@ impl Launcher {
                     .child(text(k, T_BODY, SOFT))
                     .child(text(v, T_BODY, TEXT).font_family(BOLD).font_weight(BOLD_WEIGHT))
             }));
-        let block = div().flex().flex_col().gap(px(GAP)).when_some(self.import_prompt(cx), |d, p| d.child(p)).child(hero).child(div().flex().flex_none().gap(px(GAP)).child(self.changelog(m)).child(right));
-        page_block(block).into_any_element()
+        let block = div().flex().flex_col().gap(px(GAP)).when_some(self.import_prompt(cx), |d, p| d.child(p)).child(hero).child(div().flex().flex_none().gap(px(GAP)).child(self.changelog(m, cx)).child(right));
+        page_block(block, self.log_open).into_any_element()
     }
 
     /// When this launcher last started the game and how long it has run, for the right of the Play row. Only what
@@ -1842,28 +1885,59 @@ impl Launcher {
 
     /// The installed version's changelog, from its signed manifest: one card, its lines scrolling inside it past
     /// LOG_MAX, with edge fades and a thin thumb when there is more (`scroll_cues`).
-    fn changelog(&self, m: &Manifest) -> gpui::Div {
+    fn changelog(&self, m: &Manifest, cx: &mut Context<Self>) -> gpui::Div {
         let mut changes: Vec<&core::Change> = m.changelog.iter().filter(|c| !c.text.trim().is_empty()).take(MAX_CHANGES).collect();
         // The release's highlights (bold in CHANGELOG.md) lead; every line is then set the same.
         changes.sort_by_key(|c| !c.important);
         // min_w(0): long lines wrap inside the card instead of widening it past the window.
-        let panel = card().relative().flex_1().min_w(px(0.)).flex().flex_col().overflow_hidden().child(card_head("What's new in this version"));
+        let open = self.log_open;
+        // Expand / Collapse, only when the list is longer than the card (or is open).
+        let toggle = (open || self.log_overflows.get()).then(|| {
+            div()
+                .id("log-toggle")
+                .px(px(8.))
+                .py(px(4.))
+                .rounded(px(R_CTRL))
+                .cursor_pointer()
+                .hover(|d| d.bg(rgb(CHIP)))
+                .child(text(if open { "Collapse" } else { "Expand" }, T_SMALL, MUTED))
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.log_open = !this.log_open;
+                    this.log_scroll.set_offset(point(px(0.), px(0.)));
+                    cx.notify();
+                }))
+        });
+        let head = card_head("What's new in this version").justify_between().children(toggle);
+        let panel = card().relative().flex_1().min_w(px(0.)).flex().flex_col().overflow_hidden().child(head);
         if changes.is_empty() {
             return panel.child(div().px(px(PAD)).pb(px(PAD)).child(text("No list of changes came with this version.", T_BODY, TEXT)));
         }
-        let handle = self.log_scroll.clone();
+        let (handle, overflows) = (self.log_scroll.clone(), self.log_overflows.clone());
         panel
             .child(
                 div()
                     .id("changelog")
                     .w_full()
-                    .max_h(px(LOG_MAX))
+                    .when(!open, |d| d.max_h(px(LOG_MAX)))
                     .overflow_y_scroll()
                     .track_scroll(&self.log_scroll)
                     .child(div().flex_none().w_full().flex().flex_col().gap(px(12.)).px(px(PAD)).pb(px(PAD)).children(changes.into_iter().map(change_row))),
             )
             .child(fx::smooth_scroll("changelog", &self.log_scroll))
-            .child(canvas(|_, _, _| (), move |_, _, window: &mut Window, _| scroll_cues(&handle, window)).absolute().top_0().left_0().size_full())
+            .child(
+                canvas(|_, _, _| (), move |_, _, window: &mut Window, _| {
+                    scroll_cues(&handle, window);
+                    let more = f32::from(handle.max_offset().y) > 0.5;
+                    if !open && overflows.get() != more {
+                        overflows.set(more);
+                        window.refresh();
+                    }
+                })
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full(),
+            )
     }
 
     fn import_prompt(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
@@ -1877,7 +1951,7 @@ impl Launcher {
                 .items_center()
                 .gap(px(12.))
                 .p(px(PAD))
-                .child(div().flex_1().child(text(format!("Bring your Sunset configs and profiles over from the Horizon instance \"{name}\"? Files already here are kept."), 13., TEXT)))
+                .child(div().flex_1().child(text(format!("Bring everything over from the Horizon instance \"{name}\": settings, keybinds, servers, worlds, packs and Sunset configs? Files it replaces are moved to a backup folder first."), 13., TEXT)))
                 .child(button("import-0", "Import", true).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.import(0, cx))))
                 .child(button("import-no", "Not now", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.set_settings(|s| s.import_decided = true, cx)))),
         )
@@ -1912,8 +1986,8 @@ impl Launcher {
         };
         // The same banner as Overview with the install in place of Play, and the release's changelog under it.
         let hero = banner(div().flex().flex_col().gap(px(6.)).child(bold("Install Sunset", T_TITLE)).child(about), action);
-        let block = div().flex().flex_col().gap(px(GAP)).child(hero).when_some(self.latest.as_ref(), |d, r| d.child(div().flex().flex_none().child(self.changelog(&r.manifest))));
-        page_block(block)
+        let block = div().flex().flex_col().gap(px(GAP)).child(hero).when_some(self.latest.as_ref(), |d, r| d.child(div().flex().flex_none().child(self.changelog(&r.manifest, cx))));
+        page_block(block, self.log_open)
     }
 
     /// Settings as one centred column: the installed instance, updates and files, importing from Horizon, and About.
@@ -1977,7 +2051,7 @@ impl Launcher {
             .into_any_element()
     }
 
-    /// Importing Sunset's config and profiles from another Horizon instance: one row per source found.
+    /// Importing everything (settings, keybinds, servers, worlds, packs, Sunset data) from a Horizon instance: one row per source found.
     fn import_section(&self, cx: &mut Context<Self>) -> gpui::Div {
         let mut rows: Vec<gpui::Div> = self
             .sources
@@ -1992,9 +2066,9 @@ impl Launcher {
             })
             .collect();
         if rows.is_empty() {
-            rows.push(setting_row("No Horizon instance with Sunset configs found", div(), true));
+            rows.push(setting_row("No Horizon instance found", div(), true));
         }
-        section("Import Sunset configs and profiles from Horizon", rows)
+        section("Import settings, keybinds and Sunset configs from Horizon", rows)
     }
 
     /// The launcher's own facts: version, where it installs from, the stock CLI it drives, its signing key, and what it is.
@@ -2351,12 +2425,11 @@ impl Render for Launcher {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         fx::begin_frame();
         // The offline dialog's field takes focus the first frame it shows, so typing just works.
-        if let Some(d) = self.offline_dialog.as_mut() {
-            if !d.focused_once {
+        if let Some(d) = self.offline_dialog.as_mut()
+            && !d.focused_once {
                 d.focused_once = true;
                 window.focus(&d.focus, cx);
             }
-        }
         if window.focused(cx).is_none() {
             window.focus(&self.root_focus, cx);
         }

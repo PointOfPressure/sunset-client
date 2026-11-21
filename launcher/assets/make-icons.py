@@ -37,7 +37,7 @@ def render(size):
     d.rounded_rectangle((0, 0, s - 1, s - 1), radius=CORNER * s, fill=TILE)
     w = mark_width(size) * s
     k = w / 432
-    ox, oy = (s - w) / 2, (s - 216 * k) / 2 + 0.02 * s  # a touch low: the arch's weight sits at its feet
+    ox, oy = (s - w) / 2, (s - 216 * k) / 2  # the rings' box centred in the tile
     for ring in RINGS:
         d.polygon(ring_points(*ring, k, ox, oy), fill=MARK)
     return img.resize((size, size), Image.LANCZOS)
@@ -46,7 +46,7 @@ def render(size):
 def svg(side=256):
     w = mark_width(256) * side
     k = w / 432
-    ox, oy = (side - w) / 2, (side - 216 * k) / 2 + 0.02 * side
+    ox, oy = (side - w) / 2, (side - 216 * k) / 2
     f = lambda v: f"{v:.3f}".rstrip("0").rstrip(".")
     paths = []
     for cx, cy, ro, ri, foot in RINGS:

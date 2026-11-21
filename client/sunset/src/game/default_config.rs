@@ -341,6 +341,7 @@ clickgui.controlradius=3
 clickgui.spacing=Comfortable
 clickgui.textindent=2
 clickgui.settings=Inline
+clickgui.theme=Grey
 clickgui.backgroundopacity=0.95
 clickgui.backgrounddim=35
 clickgui.menudim=true

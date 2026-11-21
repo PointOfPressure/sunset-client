@@ -228,7 +228,7 @@ pub(super) fn defaults() -> Vec<Module> {
         Module::new("Panic", Player, "Stops Sunset until the game restarts: every module off, its menu, HUD and commands gone, and it leaves Options > Mods. The server connection stays."),
         // Render
         Module::new("ClickGUI", Render, "How this menu looks.")
-            .pick("Theme", &["OLED", "Grey"])
+            .pick("Theme", &["Grey", "OLED"])
             .pick("Style", &["Dropdown", "Dashboard"])
             .pick("Animations", &["Minimal", "Off"])
             .colour("Accent color", "Sunset Orange")

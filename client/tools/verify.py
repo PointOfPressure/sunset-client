@@ -2511,7 +2511,7 @@ def _():
         middle = img.crop((img.width // 2 - 40, img.height * 3 // 4, img.width // 2 + 40, img.height * 3 // 4 + 20))
         surface[scale] = sum(1 for px in middle.getdata() if px == want) / (80 * 20)
         close_menu()
-    setting("clickgui", "theme", "OLED")
+    setting("clickgui", "theme", "Grey")
     ctl("options-set", "guiScale", "0")
     ms = {"shut": [], "Dropdown": [], "Dashboard": []}
     if stat:
@@ -2633,8 +2633,8 @@ def _():
         shares[theme] = got
         if theme == "Grey":
             shares["Grey dark grey"] = look
-    setting("clickgui", "theme", "OLED")
-    setting("clickgui", "background opacity", "1")
+    setting("clickgui", "theme", "Grey")
+    setting("clickgui", "background opacity", "0.95")
     ok = (all(v > 0.5 for v in shares["OLED"].values()) and all(v < 0.1 for v in shares["Grey"].values())
           and all(v > 0.5 for v in shares["Grey dark grey"].values()))
     return ok, " ".join(f"{t}: " + ",".join(f"{k} {v:.2f}" for k, v in got.items()) for t, got in shares.items())

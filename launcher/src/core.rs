@@ -321,11 +321,10 @@ pub fn manifest_url(settings: &Settings) -> Result<String> {
         }
         let assets = r["assets"].as_array().cloned().unwrap_or_default();
         for name in &wanted {
-            if let Some(a) = assets.iter().find(|a| a["name"].as_str() == Some(name)) {
-                if let Some(u) = a["browser_download_url"].as_str() {
+            if let Some(a) = assets.iter().find(|a| a["name"].as_str() == Some(name))
+                && let Some(u) = a["browser_download_url"].as_str() {
                     return Ok(u.to_string());
                 }
-            }
         }
     }
     Err(format!("no Sunset client release for {PLATFORM} yet (github.com/{REPO}/releases)"))
@@ -1100,7 +1099,8 @@ pub fn built_in_mods(p: &Paths, vdir: &str) -> Vec<(String, String)> {
 
 // ---------------------------------------------------------------- import from Horizon
 
-/// The stock launcher's instances (its own homes) that have Sunset configs or profiles: (name, game folder).
+/// The stock launcher's instances (its own homes) to import from: (name, game folder). Any of them is worth
+/// importing, Sunset data or not: its settings and keybinds alone are.
 pub fn import_sources(p: &Paths) -> Vec<(String, PathBuf)> {
     let Some(exe) = cli_path(p) else { return vec![] };
     let mut c = Command::new(exe);
@@ -1114,51 +1114,247 @@ pub fn import_sources(p: &Paths) -> Vec<(String, PathBuf)> {
     let list: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap_or_default();
     list.iter()
         .filter_map(|i| Some((i["name"].as_str()?.to_string(), PathBuf::from(i["home"].as_str()?))))
-        .filter(|(_, home)| home != &p.instance() && has_sunset_data(&sunset_data_in(home)))
+        .filter(|(_, home)| home != &p.instance() && home.is_dir())
         .collect()
 }
 
-fn has_sunset_data(d: &Path) -> bool {
-    d.join("config").is_file() || d.join("profiles").is_dir()
+/// Files at the top of a game folder that an import brings over: Horizon's settings (options.txt holds the
+/// keybinds, video and sound settings), the server list, and the rest the pinned game reads back as
+/// settings. Never accounts, sessions, logs, caches, assets or the game's binaries.
+const IMPORT_FILES: &[&str] = &[
+    "options.txt",
+    "horizon-graphics.txt",
+    "horizon-extras.txt",
+    "horizon-pad.txt",
+    "horizon-controller.txt",
+    "horizon-player.txt",
+    "horizon-bluemap.txt",
+    "horizon-mod-content-warnings.txt",
+    "servers.dat",
+    "command_history.txt",
+    "cosmetics-owned.txt",
+    "cosmetics-visible.txt",
+    "realms_persistence.json",
+];
+/// Folders whose entries (a world, a pack) are each replaced whole: half of one world over another is no world.
+const IMPORT_WHOLE: &[&str] = &["saves", "resourcepacks", "shaderpacks"];
+/// Folders merged file by file.
+const IMPORT_MERGED: &[&str] = &["config"];
+/// Left out of Sunset's own data: its debug dumps.
+const SUNSET_SKIP: &[&str] = &["debug"];
+
+pub const GAME_RUNNING: &str = "Close Sunset's game first: it writes its settings back when it exits, over the imported ones.";
+
+/// What an import did: files copied, and the folder the files it replaced were moved to (none if it replaced nothing).
+#[derive(Debug)]
+pub struct Imported {
+    pub files: usize,
+    pub backup: Option<PathBuf>,
 }
 
-/// Copies Sunset's config and profiles (never accounts) from another game folder. Files already here are kept
-/// unless `overwrite`; returns how many files were copied.
-pub fn import_from(p: &Paths, game_dir: &Path, overwrite: bool) -> Result<usize> {
-    let from = sunset_data_in(game_dir);
-    let to = p.sunset_data();
-    if !has_sunset_data(&from) {
-        return Err(format!("no Sunset configs in {}", game_dir.display()));
+impl Imported {
+    fn count(&self) -> String {
+        if self.files == 1 { "1 file".into() } else { format!("{} files", self.files) }
     }
-    let mut n = 0;
-    for rel in ["config", "profiles", "exports"] {
-        n += copy_tree(&from.join(rel), &to.join(rel), overwrite).map_err(|e| format!("import: {e}"))?;
+
+    pub fn note(&self, from: &str) -> String {
+        match &self.backup {
+            Some(b) => format!("Imported {} from {from}. The files they replaced were moved to {}", self.count(), b.display()),
+            None => format!("Imported {} from {from}", self.count()),
+        }
     }
-    Ok(n)
 }
 
-fn copy_tree(from: &Path, to: &Path, overwrite: bool) -> io::Result<usize> {
-    let meta = match fs::symlink_metadata(from) {
-        Ok(m) => m,
-        Err(_) => return Ok(0),
+/// Copies another game folder's settings, keybinds, servers, worlds, packs and Sunset data (never accounts)
+/// into the instance. It overwrites, as the explicit ask it is, but first moves each file or world it would
+/// replace into `backup-import-<time>` in the instance; files already the same are left alone. Refused
+/// while the game runs.
+pub fn import_from(p: &Paths, game_dir: &Path) -> Result<Imported> {
+    if game_running(p) {
+        return Err(GAME_RUNNING.into());
+    }
+    let to = p.instance();
+    if !game_dir.is_dir() {
+        return Err(format!("no game folder at {}", game_dir.display()));
+    }
+    if fs::canonicalize(game_dir).ok() == fs::canonicalize(&to).ok() {
+        return Err("that is Sunset's own instance".into());
+    }
+    let mut backup = to.join(format!("backup-import-{}", stamp(now_secs())));
+    for n in 2.. {
+        if !backup.exists() {
+            break;
+        }
+        backup.set_file_name(format!("backup-import-{}-{n}", stamp(now_secs())));
+    }
+    let mut job = Import { root: to.clone(), backup, files: 0, moved: false };
+    let run = |job: &mut Import| -> io::Result<()> {
+        for f in IMPORT_FILES {
+            job.unit(&game_dir.join(f), &to.join(f))?;
+        }
+        for d in IMPORT_WHOLE {
+            job.entries(&game_dir.join(d), &to.join(d), false, &[])?;
+        }
+        for d in IMPORT_MERGED {
+            job.entries(&game_dir.join(d), &to.join(d), true, &[])?;
+        }
+        job.entries(&sunset_data_in(game_dir), &p.sunset_data(), true, SUNSET_SKIP)
     };
+    let r = run(&mut job);
+    let backup = job.moved.then_some(job.backup);
+    match r {
+        Ok(()) => Ok(Imported { files: job.files, backup }),
+        Err(e) => Err(match backup {
+            Some(b) => format!("import stopped: {e} (the files it replaced so far are in {})", b.display()),
+            None => format!("import stopped: {e}"),
+        }),
+    }
+}
+
+struct Import {
+    root: PathBuf,
+    backup: PathBuf,
+    files: usize,
+    moved: bool,
+}
+
+impl Import {
+    /// Copies `from` (a file, or a folder whole) to `to`, moving what is at `to` into the backup first.
+    fn unit(&mut self, from: &Path, to: &Path) -> io::Result<()> {
+        let Ok(meta) = fs::symlink_metadata(from) else { return Ok(()) };
+        if !meta.is_file() && !meta.is_dir() {
+            return Ok(()); // symlinks and the like stay behind
+        }
+        if same(from, to) {
+            return Ok(());
+        }
+        self.back_up(to)?;
+        self.files += copy_all(from, to)?;
+        Ok(())
+    }
+
+    /// Each entry of the folder `from` as a unit; with `merge`, sub-folders are walked down to their files.
+    fn entries(&mut self, from: &Path, to: &Path, merge: bool, skip: &[&str]) -> io::Result<()> {
+        if !fs::symlink_metadata(from).is_ok_and(|m| m.is_dir()) {
+            return Ok(());
+        }
+        for e in fs::read_dir(from)? {
+            let e = e?;
+            let name = e.file_name();
+            if skip.iter().any(|s| name == *s) {
+                continue;
+            }
+            let (f, t) = (e.path(), to.join(&name));
+            if merge && e.file_type()?.is_dir() {
+                if fs::symlink_metadata(&t).is_ok_and(|m| !m.is_dir()) {
+                    self.back_up(&t)?;
+                }
+                self.entries(&f, &t, true, &[])?;
+            } else {
+                self.unit(&f, &t)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Moves `path` (in the instance) to the same place in the backup folder, if there is anything there.
+    fn back_up(&mut self, path: &Path) -> io::Result<()> {
+        if fs::symlink_metadata(path).is_err() {
+            return Ok(());
+        }
+        let rel = path.strip_prefix(&self.root).map_err(|_| io::Error::other(format!("{} is outside the instance", path.display())))?;
+        let dest = self.backup.join(rel);
+        fs::create_dir_all(dest.parent().unwrap_or(&self.backup))?;
+        fs::rename(path, &dest)?;
+        self.moved = true;
+        Ok(())
+    }
+}
+
+/// Whether `b` already holds what `a` does: the same bytes, or a folder of the same (a world's session.lock aside).
+fn same(a: &Path, b: &Path) -> bool {
+    let (Ok(ma), Ok(mb)) = (fs::symlink_metadata(a), fs::symlink_metadata(b)) else { return false };
+    if ma.is_file() {
+        return mb.is_file() && ma.len() == mb.len() && fs::read(a).ok() == fs::read(b).ok();
+    }
+    if !ma.is_dir() || !mb.is_dir() {
+        return false;
+    }
+    let names = |d: &Path| -> Option<Vec<std::ffi::OsString>> {
+        let mut v: Vec<_> = fs::read_dir(d).ok()?.map(|e| e.map(|e| e.file_name())).collect::<io::Result<_>>().ok()?;
+        v.retain(|n| n != "session.lock" && fs::symlink_metadata(d.join(n)).is_ok_and(|m| m.is_file() || m.is_dir()));
+        v.sort();
+        Some(v)
+    };
+    match (names(a), names(b)) {
+        (Some(x), Some(y)) => x == y && x.iter().all(|n| same(&a.join(n), &b.join(n))),
+        _ => false,
+    }
+}
+
+/// Copies a file or a folder tree (no symlinks, no worlds' session.lock); returns how many files.
+fn copy_all(from: &Path, to: &Path) -> io::Result<usize> {
+    let meta = fs::symlink_metadata(from)?;
     if meta.is_file() {
-        if to.exists() && !overwrite {
+        if from.file_name().is_some_and(|n| n == "session.lock") {
             return Ok(0);
         }
-        fs::create_dir_all(to.parent().unwrap())?;
+        if let Some(parent) = to.parent() {
+            fs::create_dir_all(parent)?;
+        }
         fs::copy(from, to)?;
         return Ok(1);
     }
     if !meta.is_dir() {
-        return Ok(0); // symlinks and the like stay behind
+        return Ok(0);
     }
+    fs::create_dir_all(to)?;
     let mut n = 0;
     for e in fs::read_dir(from)? {
         let e = e?;
-        n += copy_tree(&e.path(), &to.join(e.file_name()), overwrite)?;
+        n += copy_all(&e.path(), &to.join(e.file_name()))?;
     }
     Ok(n)
+}
+
+/// Unix seconds as UTC `YYYYMMDD-HHMMSS`.
+fn stamp(secs: u64) -> String {
+    let (days, s) = ((secs / 86_400) as i64, secs % 86_400);
+    // Civil from days (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}{m:02}{d:02}-{:02}{:02}{:02}", s / 3600, s / 60 % 60, s % 60)
+}
+
+/// Whether a game from the launcher's version folders runs (it writes options.txt back when it exits).
+pub fn game_running(p: &Paths) -> bool {
+    let versions = fs::canonicalize(p.versions()).unwrap_or_else(|_| p.versions());
+    #[cfg(target_os = "linux")]
+    {
+        fs::read_dir("/proc").into_iter().flatten().flatten().any(|e| fs::read_link(e.path().join("exe")).is_ok_and(|x| x.starts_with(&versions)))
+    }
+    #[cfg(windows)]
+    {
+        // A running .exe can't be opened for writing (a sharing violation).
+        fs::read_dir(&versions).into_iter().flatten().flatten().any(|e| {
+            let exe = e.path().join(client_name());
+            exe.is_file() && fs::OpenOptions::new().write(true).open(&exe).is_err_and(|err| err.raw_os_error() == Some(32))
+        })
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        Command::new("ps")
+            .args(["-axo", "comm="])
+            .output()
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| Path::new(l.trim()).starts_with(&versions)))
+    }
 }
 
 // ---------------------------------------------------------------- skin head
@@ -1415,23 +1611,81 @@ mod tests {
     }
 
     #[test]
-    fn import_keeps_existing() {
+    fn import_overwrites_with_backup() {
         let t = std::env::temp_dir().join(format!("sunset-import-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&t);
+        let w = |path: &Path, s: &str| {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, s).unwrap();
+        };
         let src = t.join("src");
         let d = sunset_data_in(&src);
-        fs::create_dir_all(d.join("profiles")).unwrap();
-        fs::write(d.join("config"), "a=1").unwrap();
-        fs::write(d.join("profiles/pvp.profile"), "p").unwrap();
+        w(&d.join("config"), "a=1");
+        w(&d.join("profiles/pvp.profile"), "p");
+        w(&d.join("newchunks/x.bin"), "n");
+        w(&d.join("debug/dump.txt"), "debug");
+        w(&src.join("options.txt"), "key_key.jump:key.keyboard.k");
+        w(&src.join("horizon-graphics.txt"), "g");
+        w(&src.join("servers.dat"), "s");
+        w(&src.join("config/mod.toml"), "c");
+        w(&src.join("saves/World/level.dat"), "new world");
+        w(&src.join("saves/World/session.lock"), "lock");
+        // Never copied: accounts and sessions, logs, caches, assets, the game's binaries and its mod switches.
+        for f in ["sessions/s.json", "logs/latest.log", ".horizon-cache/c", "assets/a", "horizon-mods.txt", "horizon-native-mods/sunset.hnmod", "horizon-boot/b", ".last-used", "backup-fps/options.txt", "telemetry/t"] {
+            w(&src.join(f), "no");
+        }
         let p = Paths { root: t.join("home") };
-        fs::create_dir_all(p.sunset_data()).unwrap();
-        fs::write(p.sunset_data().join("config"), "mine").unwrap();
-        assert_eq!(import_from(&p, &src, false).unwrap(), 1);
-        assert_eq!(fs::read_to_string(p.sunset_data().join("config")).unwrap(), "mine");
-        assert_eq!(profiles(&p), ["pvp"]);
-        assert_eq!(import_from(&p, &src, true).unwrap(), 2);
-        assert_eq!(fs::read_to_string(p.sunset_data().join("config")).unwrap(), "a=1");
-        assert!(import_from(&p, &t.join("nothing"), false).is_err());
+        let inst = p.instance();
+        w(&p.sunset_data().join("config"), "mine");
+        w(&p.sunset_data().join("profiles/own.profile"), "o");
+        w(&inst.join("options.txt"), "key_key.jump:key.keyboard.space");
+        w(&inst.join("saves/World/level.dat"), "old world");
+        w(&inst.join("saves/World/region/r.0.0.mca"), "old region");
+        w(&inst.join("saves/Mine/level.dat"), "kept");
+        w(&inst.join("servers.dat"), "s"); // the same already: left alone
+        let i = import_from(&p, &src).unwrap();
+        // config, pvp, x.bin, options, graphics, mod.toml, level.dat (no session.lock, servers.dat the same).
+        assert_eq!(i.files, 7, "{i:?}");
+        let rd = |path: PathBuf| fs::read_to_string(path).unwrap();
+        assert_eq!(rd(p.sunset_data().join("config")), "a=1");
+        assert_eq!(rd(inst.join("options.txt")), "key_key.jump:key.keyboard.k");
+        assert_eq!(rd(inst.join("saves/World/level.dat")), "new world");
+        assert!(!inst.join("saves/World/region").exists() && !inst.join("saves/World/session.lock").exists(), "a world is replaced whole");
+        assert_eq!(rd(inst.join("saves/Mine/level.dat")), "kept");
+        assert_eq!(profiles(&p), ["own", "pvp"]);
+        assert!(p.sunset_data().join("newchunks/x.bin").is_file() && !p.sunset_data().join("debug").exists());
+        for f in ["sessions", "logs", ".horizon-cache", "assets", "horizon-mods.txt", "horizon-native-mods", "horizon-boot", ".last-used", "backup-fps", "telemetry"] {
+            assert!(!inst.join(f).exists(), "{f} copied");
+        }
+        // What was replaced is in the backup, at the same place.
+        let b = i.backup.clone().unwrap();
+        assert!(b.starts_with(&inst) && b.file_name().unwrap().to_str().unwrap().starts_with("backup-import-"));
+        assert_eq!(rd(b.join("options.txt")), "key_key.jump:key.keyboard.space");
+        assert_eq!(rd(b.join("horizon-mods/.horizon-mod-data/sunset/config")), "mine");
+        assert_eq!(rd(b.join("saves/World/region/r.0.0.mca")), "old region");
+        assert!(!b.join("servers.dat").exists() && !b.join("saves/Mine").exists());
+        assert!(i.note("Horizon").contains(&b.display().to_string()));
+        // Again: everything is the same now (the world too), so nothing is copied or backed up.
+        let again = import_from(&p, &src).unwrap();
+        assert!(again.files == 0 && again.backup.is_none(), "{again:?}");
+        // One changed file in the world: the world is replaced whole again, the old one backed up.
+        w(&src.join("saves/World/level.dat"), "newer world");
+        let world = import_from(&p, &src).unwrap();
+        assert_eq!(world.note("Horizon").split(" from").next(), Some("Imported 1 file"));
+        assert_eq!(rd(world.backup.unwrap().join("saves/World/level.dat")), "new world");
+        // A folder with nothing to import is fine; no folder, or Sunset's own instance, is not.
+        fs::create_dir_all(t.join("empty")).unwrap();
+        let none = import_from(&p, &t.join("empty")).unwrap();
+        assert!(none.files == 0 && none.backup.is_none() && none.note("x") == "Imported 0 files from x");
+        assert!(import_from(&p, &t.join("nothing")).is_err());
+        assert!(import_from(&p, &inst).is_err());
         fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn import_stamp_is_utc() {
+        assert_eq!(stamp(0), "19700101-000000");
+        assert_eq!(stamp(1_795_229_220), "20261121-024700");
+        assert_eq!(stamp(951_782_400), "20000229-000000");
     }
 }

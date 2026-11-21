@@ -781,7 +781,7 @@ pub(super) fn sync_flags(s: &mut State) {
         s.friends = list;
     }
     let g = s.module("ClickGUI");
-    OLED_THEME.store(g.is_none_or(|m| m.p("Theme") != "Grey"), Ordering::Relaxed);
+    OLED_THEME.store(g.is_some_and(|m| m.p("Theme") == "OLED"), Ordering::Relaxed);
     super::sunset_dashboard::set_on(g.is_some_and(|m| m.p("Style") == "Dashboard"));
     super::sunset_smooth::set_enabled(g.is_none_or(|m| m.p("Animations") != "Off"));
     LOOK[0].store(g.map_or(0xFFB020, |m| m.c("Accent color") & 0x00FF_FFFF), Ordering::Relaxed);

@@ -312,11 +312,10 @@ fn same_plugins(built: &[Built], installed: &[Plugin]) -> bool {
 /// Points the instance back at the signed build and removes the plugin build.
 pub fn clean(p: &Paths, m: &Manifest) -> Result<()> {
     core::run_cli(p, &["instance", "version", core::INSTANCE, &m.version_dir])?;
-    if let Some(b) = record(p) {
-        if b.version_dir != m.version_dir {
+    if let Some(b) = record(p)
+        && b.version_dir != m.version_dir {
             let _ = fs::remove_dir_all(p.versions().join(&b.version_dir));
         }
-    }
     match fs::remove_file(record_path(p)) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!("can't remove {}: {e}", record_path(p).display())),
         _ => Ok(()),
