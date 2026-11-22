@@ -307,7 +307,7 @@ pub(super) fn release_binds() {
 pub(super) fn set_bind(s: &mut State, module: usize, key: Option<String>) {
     let held = s.inputs.take_where(|h| h.module == module);
     restore_holds(s, held);
-    s.modules[module].key = key;
+    s.modules[module].key = key.filter(|_| !gui_only(s.modules[module].name));
 }
 
 // Each tick, whatever the screen: keys let go of where no release came (from what is physically down), and no holds
@@ -474,7 +474,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
     }
     let bound: Vec<usize> = with(|s| {
         (0..s.modules.len())
-            .filter(|&i| s.modules[i].key.as_deref() == Some(key))
+            .filter(|&i| s.modules[i].key.as_deref() == Some(key) && !gui_only(s.modules[i].name))
             .collect()
     });
     for i in bound {

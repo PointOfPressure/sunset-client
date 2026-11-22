@@ -571,7 +571,12 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         "pages" => open_menu(game),
         "toggle" | "t" => {
             if let Some(i) = module_arg(game, args.get(1)) {
-                toggle(game, i, true);
+                let name = with(|s| s.modules[i].name);
+                if gui_only(name) {
+                    say(game, &format!("{name} only turns on in the ClickGUI."));
+                } else {
+                    toggle(game, i, true);
+                }
             }
         }
         "modules" | "list" => {
@@ -579,7 +584,8 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
                 CATEGORIES
                     .iter()
                     .map(|&c| {
-                        let names: Vec<String> = alphabetical(&s.modules, (0..s.modules.len()).filter(|&i| s.modules[i].category == c))
+                        let names: Vec<String> = alphabetical(&s.modules, (0..s.modules.len())
+                            .filter(|&i| s.modules[i].category == c && !gui_only(s.modules[i].name)))
                             .into_iter()
                             .map(|i| &s.modules[i])
                             .map(|m| if m.on { format!("{}*", m.name) } else { m.name.to_owned() })
@@ -671,6 +677,10 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
             let Some(i) = module_arg(game, args.get(1)) else {
                 return;
             };
+            if with(|s| gui_only(s.modules[i].name)) {
+                say(game, "That one takes no bind. Turn it on in the ClickGUI.");
+                return;
+            }
             let Some(k) = args.get(2) else {
                 say(game, "Use .bind <module> <key or mouse1 to mouse5>, or none");
                 return;

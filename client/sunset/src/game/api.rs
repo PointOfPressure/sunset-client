@@ -804,6 +804,9 @@ pub(super) fn toggle(game: &mut Game<'_>, name: &str, on: bool) -> Result<(), St
     let Some((i, now)) = with(|s| s.find(name).map(|i| (i, s.modules[i].on))) else {
         return Err(no_module(name));
     };
+    if super::sunset::gui_only(name) {
+        return Err(format!("{name} only turns on in the ClickGUI."));
+    }
     if now != on {
         super::sunset::toggle(game, i, false);
     }

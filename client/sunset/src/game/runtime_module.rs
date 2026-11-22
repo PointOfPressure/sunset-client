@@ -24,6 +24,12 @@ pub(super) const CATEGORIES: [Category; 6] = [
     Category::Client,
 ];
 
+// Modules only the menus (ClickGUI and Dashboard) switch: no bind, no `.toggle`, no plugin toggle, no toast and not in
+// `.modules`. Client modules are already out of the HUD list.
+pub(super) fn gui_only(name: &str) -> bool {
+    name == "Gooning"
+}
+
 // The menus (both ClickGUI styles, the Options pages, .modules, Modules' switches) list modules A to Z, as Rise,
 // Meteor and LiquidBounce do, whatever order the catalog and plugins add them in. Case is ignored; equal names keep
 // their order. A search still ranks what it finds best first (search.rs).
