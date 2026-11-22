@@ -488,7 +488,7 @@ fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw
     }
 }
 
-// Where what the player holds would land: a bow being drawn, a loaded crossbow (each of a multishot's three arrows),
+// Where what the player holds would land: a bow being drawn, each projectile in a loaded crossbow,
 // or a throwable, as Show lets through; with Pearls in flight, every pearl in the air too, and with Landing time how
 // long each has left. Potato: only a square where it lands.
 pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, m: &Module, out: &mut impl Canvas, lw: f32) {
@@ -531,36 +531,60 @@ pub(super) fn trajectory(game: &Game<'_>, cam: &Camera, m: &Module, out: &mut im
     if !wanted {
         return;
     }
-    let charged = || stack.data().map_or(0, |d| d.charged.len());
-    let (speed, gravity, drag, spread): (f64, f64, f64, &[f32]) = match name {
+    let charged = if name == "crossbow" {
+        stack.data().map_or(&[][..], |d| d.charged.as_slice())
+    } else {
+        &[]
+    };
+    let (speed, gravity, drag): (f64, f64, f64) = match name {
         "bow" => match game.using {
             Some((_, ticks)) => {
                 let t = f64::from(ticks) / 20.0;
-                (((t * t + t * 2.0) / 3.0).min(1.0) * 3.0, 0.05, 0.99, &[0.0])
+                (((t * t + t * 2.0) / 3.0).min(1.0) * 3.0, 0.05, 0.99)
             }
             None => return,
         },
-        "crossbow" if charged() > 0 => {
-            let rocket = stack.data().is_some_and(|d| d.charged.iter().any(|a| a.item.ends_with("firework_rocket")));
-            let fan: &[f32] = if charged() > 1 { &[-10.0, 0.0, 10.0] } else { &[0.0] };
-            if rocket { (1.6, 0.0, 1.0, fan) } else { (3.15, 0.05, 0.99, fan) }
+        "crossbow" if !charged.is_empty() => {
+            let power = if charged.iter().any(|a| &*a.item == "minecraft:firework_rocket") { 1.6 } else { 3.15 };
+            (power, 0.05, 0.99)
         }
-        "trident" => (2.5, 0.05, 0.99, &[0.0]),
-        "ender_pearl" | "snowball" | "egg" => (1.5, 0.03, 0.99, &[0.0]),
-        "wind_charge" => (1.5, 0.0, 1.0, &[0.0]),
-        "splash_potion" | "lingering_potion" => (0.5, 0.05, 0.99, &[0.0]),
-        "experience_bottle" => (0.7, 0.07, 0.99, &[0.0]),
+        "trident" => (2.5, 0.05, 0.99),
+        "ender_pearl" | "snowball" | "egg" => (1.5, 0.03, 0.99),
+        "wind_charge" => (1.5, 0.0, 1.0),
+        "splash_potion" | "lingering_potion" => (0.5, 0.05, 0.99),
+        "experience_bottle" => (0.7, 0.07, 0.99),
         _ => return,
     };
     let Some(eye) = game.eye_position() else {
         return;
     };
-    for turn in spread {
-        let (yaw, pitch) = (f64::from(game.yaw + turn).to_radians(), f64::from(game.pitch).to_radians());
-        let dir = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
-        let mut pos = [eye[0], eye[1] - 0.1, eye[2]];
-        let mut vel = [dir[0] * speed, dir[1] * speed, dir[2] * speed];
-        let mut path = vec![pos];
+    let count = charged.len().max(1);
+    let step = if count > 1 {
+        // The charge supplies the shot count. The enchantment's projectile_spread is the half-angle.
+        let spread = game.stations().enchantments.modify_value(
+            Some(stack), "minecraft:projectile_spread", &Default::default(), &mut horizon_core::random::LegacyRandom::new(0), 0.0,
+        );
+        2.0 * f64::from(spread.max(0.0)).to_radians() / (count - 1) as f64
+    } else {
+        0.0
+    };
+    let (sin_yaw, cos_yaw) = f64::from(game.yaw).to_radians().sin_cos();
+    let (sin_pitch, cos_pitch) = f64::from(game.pitch).to_radians().sin_cos();
+    let forward = glam::DVec3::new(-sin_yaw * cos_pitch, -sin_pitch, cos_yaw * cos_pitch);
+    let side = glam::DVec3::new(cos_yaw, 0.0, sin_yaw);
+    // Java fires from the middle out, alternating sides. Even-sized loads straddle the centre.
+    let offset = if count.is_multiple_of(2) { step * 0.5 } else { 0.0 };
+    let mut path = Vec::with_capacity(201);
+    for index in 0..count {
+        let pair = index.div_ceil(2) as f64 * step;
+        let angle = if index.is_multiple_of(2) { offset + pair } else { offset - pair };
+        let (sin, cos) = angle.sin_cos();
+        let mut vel = ((forward * cos + side * sin) * speed).to_array();
+        let rocket = charged.get(index).is_some_and(|a| &*a.item == "minecraft:firework_rocket");
+        let (height, gravity, drag) = if rocket { (0.15, 0.0, 1.0) } else { (0.1, gravity, drag) };
+        let mut pos = [eye[0], eye[1] - height, eye[2]];
+        path.clear();
+        path.push(pos);
         for _ in 0..200 {
             for i in 0..3 {
                 pos[i] += vel[i];
