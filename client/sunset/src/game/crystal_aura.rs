@@ -138,6 +138,7 @@ enum Idle {
     Weak(f64),
     // The least a base that pays off does to you.
     Costly(f64),
+    // What it waits for.
     Waits(&'static str),
 }
 impl Idle {
@@ -160,7 +161,7 @@ impl Idle {
             }
             Idle::Costly(own) if own.is_finite() => format!("the spots would do {own:.1} to you, too much for Anti suicide"),
             Idle::Costly(_) => "can't tell what the spots would do to you".to_owned(),
-            Idle::Waits(module) => format!("waits while {module} is on"),
+            Idle::Waits(what) => format!("waits while {what}"),
         }
     }
 }
@@ -455,12 +456,15 @@ pub(super) fn disabled(game: &mut Game<'_>) {
 }
 // The game can't be played right now (a screen, using an item): the sequence waits where it is; its stage clock runs
 // on, so one that waits too long ends.
-pub(super) fn paused(_game: &mut Game<'_>) {
-    let waits = with(|s| ["Blink", "Nuker", "Scaffold"].into_iter().find(|name| s.is_on(name)));
-    if let Some(module) = waits
+pub(super) fn paused(game: &mut Game<'_>) {
+    let on = with(|s| [("Blink", "Blink is on"), ("Nuker", "Nuker is on")].into_iter().find(|(name, _)| s.is_on(name)));
+    let waits = on
+        .map(|(_, what)| what)
+        .or_else(|| super::sunset_explosive_aura::scaffold_placing(game).then_some("Scaffold places blocks"));
+    if let Some(what) = waits
         && let Some(m) = with(|s| s.module(NAME).cloned())
     {
-        explain(&m, Idle::Waits(module));
+        explain(&m, Idle::Waits(what));
     }
 }
 

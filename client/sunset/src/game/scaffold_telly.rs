@@ -168,7 +168,7 @@ mod native {
 
     // Telly put a block down in the last `ticks` ticks (Crystal Aura waits only for a Scaffold that is placing).
     pub(crate) fn placed_within(now: u64, ticks: u64) -> bool {
-        with(|t| t.last_place.is_some_and(|at| now <= at + ticks))
+        with(|t| t.last_place.is_some_and(|at| (at..=at + ticks).contains(&now)))
     }
 
     pub(crate) fn manual_use_blocked(game: &Game<'_>) -> bool {

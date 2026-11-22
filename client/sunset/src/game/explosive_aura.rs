@@ -141,7 +141,7 @@ pub(super) fn can_act(game: &Game<'_>) -> bool {
         && !scaffold_placing(game)
 }
 
-fn scaffold_placing(game: &Game<'_>) -> bool {
+pub(super) fn scaffold_placing(game: &Game<'_>) -> bool {
     sunset::with(|s| s.is_on("Scaffold"))
         && (super::sunset_scaffold_normal::placed_within(game.ticks, 10)
             || super::sunset_scaffold_telly::placed_within(game.ticks, 10)

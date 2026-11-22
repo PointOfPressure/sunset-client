@@ -209,7 +209,7 @@ fn with<R>(f: impl FnOnce(&mut Normal) -> R) -> R {
 
 // Normal put a block down in the last `ticks` ticks (Crystal Aura waits only for a Scaffold that is placing).
 pub(super) fn placed_within(now: u64, ticks: u64) -> bool {
-    with(|n| n.last_place.is_some_and(|at| now <= at + ticks))
+    with(|n| n.last_place.is_some_and(|at| (at..=at + ticks).contains(&now)))
 }
 
 impl Normal {
