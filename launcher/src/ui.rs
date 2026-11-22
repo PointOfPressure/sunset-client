@@ -53,9 +53,15 @@ const HEAD_H: f32 = 48.; // a card's heading row, so headings in cards side by s
 const FACT_H: f32 = 38.; // a row of Overview's Installation card
 const FACTS: usize = 3; // its rows (Horizon build, Profiles, Plugins)
 const FACTS_PB: f32 = 8.; // the space under its last row
-// The changelog list scrolls past this: its card is never taller than the Installation card beside it.
+// The changelog list scrolls past this. Up to the default window's height its card is never taller than the
+// Installation card beside it; a taller window gives the list LOG_GROW of the height it adds, the banner the rest.
 const LOG_MAX: f32 = FACT_H * FACTS as f32 + FACTS_PB;
-const PAGE_MAX: (f32, f32) = (1280., 760.); // Overview's block in a big window
+const LOG_GROW: f32 = 0.4;
+const WINDOW: (f32, f32) = (1100., 700.); // the window's size when it opens
+// A list page (Settings, Plugins, Profiles) is LIST_SHARE of a big window's width, so a row's label and value don't end
+// up a screen apart, and never narrower than LIST_MIN where the window has that much.
+const LIST_MIN: f32 = 1280.;
+const LIST_SHARE: f32 = 0.8;
 // Corner radii: one radius for the whole window. Cards, menus and dialogs are R_CARD, everything you press is R_CTRL,
 // and both are the same. A shape nested close inside another (a tab in the tab strip, a menu row in its menu, the
 // hover light inside a bordered button, the face in the account chip) takes the outer radius minus its inset, so both
@@ -207,9 +213,9 @@ pub struct Launcher {
     resync: bool,
     /// The Overview changelog's scroll position.
     log_scroll: gpui::ScrollHandle,
-    /// The changelog card shows its whole list (the page scrolls) instead of scrolling inside LOG_MAX.
+    /// The changelog card shows its whole list (the page scrolls) instead of scrolling inside its height.
     log_open: bool,
-    /// Whether the collapsed list is longer than LOG_MAX (set while painting it), so Expand only shows when it does something.
+    /// Whether the collapsed list is longer than its height (set while painting it), so Expand only shows when it does something.
     log_overflows: std::rc::Rc<std::cell::Cell<bool>>,
     /// The page's (below the top bar) scroll position, and the tab it was last drawn for.
     page_scroll: gpui::ScrollHandle,
@@ -1206,20 +1212,28 @@ fn face(pixels: &[[u8; 4]], s: f32) -> impl IntoElement {
     }))
 }
 
-/// A page's content as one block: at most PAGE_MAX wide and tall, centred in the space under the top bar, so a big or
-/// maximised window frames it instead of stretching it into empty areas. In a smaller window it fills the space.
-/// With `grow` (an expanded changelog) it is as tall as it needs and the page scrolls.
+/// A page's content as one block that fills the space under the top bar at every window size, maximised and
+/// fullscreen too. With `grow` (an expanded changelog) it is as tall as it needs and the page scrolls.
 fn page_block(block: gpui::Div, grow: bool) -> gpui::Div {
     if grow {
-        return div().w_full().min_h_full().flex().flex_col().items_center().child(block.w_full().max_w(px(PAGE_MAX.0)));
+        return div().w_full().min_h_full().flex().flex_col().child(block.w_full());
     }
-    div().size_full().flex().flex_col().items_center().justify_center().child(block.w_full().max_w(px(PAGE_MAX.0)).flex_1().max_h(px(PAGE_MAX.1)))
+    div().size_full().flex().flex_col().child(block.w_full().flex_1())
 }
 
-/// A list page (Settings, Plugins, Profiles): at most as wide as Overview's block and centred, so a big window
-/// doesn't put a row's label and value a screen apart.
-fn column(page: gpui::AnyElement) -> gpui::AnyElement {
-    div().w_full().flex().justify_center().child(div().w_full().max_w(px(PAGE_MAX.0)).child(page)).into_any_element()
+/// How wide a list page gets in this window (see LIST_SHARE).
+fn list_width(window: &Window) -> f32 {
+    (f32::from(window.viewport_size().width) * LIST_SHARE).max(LIST_MIN)
+}
+
+/// How tall the changelog's list gets in this window before it scrolls (see LOG_MAX).
+fn log_height(window: &Window) -> f32 {
+    LOG_MAX + (f32::from(window.viewport_size().height) - WINDOW.1).max(0.) * LOG_GROW
+}
+
+/// A list page (Settings, Plugins, Profiles): `width` at most, and centred.
+fn column(page: gpui::AnyElement, width: f32) -> gpui::AnyElement {
+    div().w_full().flex().justify_center().child(div().w_full().max_w(px(width)).child(page)).into_any_element()
 }
 
 /// A card's heading row; cards side by side use it so their headings share one size and baseline.
@@ -1809,8 +1823,8 @@ impl Launcher {
         )
     }
 
-    fn overview(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let Some(m) = self.installed.as_ref() else { return self.no_instance(cx).into_any_element() };
+    fn overview(&self, log_max: f32, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(m) = self.installed.as_ref() else { return self.no_instance(log_max, cx).into_any_element() };
         let update = self.update_available().map(|u| u.version.clone());
         let play_area = match self.progress(cx) {
             Some(p) => div().w(px(460.)).max_w_full().child(p).into_any_element(),
@@ -1887,7 +1901,7 @@ impl Launcher {
                     .child(text(k, T_BODY, SOFT))
                     .child(text(v, T_BODY, TEXT).font_family(BOLD).font_weight(BOLD_WEIGHT))
             }));
-        let block = div().flex().flex_col().gap(px(GAP)).when_some(self.import_prompt(cx), |d, p| d.child(p)).child(hero).child(div().flex().flex_none().gap(px(GAP)).child(self.changelog(m, cx)).child(right));
+        let block = div().flex().flex_col().gap(px(GAP)).when_some(self.import_prompt(cx), |d, p| d.child(p)).child(hero).child(div().flex().flex_none().gap(px(GAP)).child(self.changelog(m, log_max, cx)).child(right));
         page_block(block, self.log_open).into_any_element()
     }
 
@@ -1906,8 +1920,8 @@ impl Launcher {
     }
 
     /// The installed version's changelog, from its signed manifest: one card, its lines scrolling inside it past
-    /// LOG_MAX, with edge fades and a thin thumb when there is more (`scroll_cues`).
-    fn changelog(&self, m: &Manifest, cx: &mut Context<Self>) -> gpui::Div {
+    /// `max` (`log_height`), with edge fades and a thin thumb when there is more (`scroll_cues`).
+    fn changelog(&self, m: &Manifest, max: f32, cx: &mut Context<Self>) -> gpui::Div {
         let mut changes: Vec<&core::Change> = m.changelog.iter().filter(|c| !c.text.trim().is_empty()).take(MAX_CHANGES).collect();
         // The release's highlights (bold in CHANGELOG.md) lead; every line is then set the same.
         changes.sort_by_key(|c| !c.important);
@@ -1940,7 +1954,7 @@ impl Launcher {
                 div()
                     .id("changelog")
                     .w_full()
-                    .when(!open, |d| d.max_h(px(LOG_MAX)))
+                    .when(!open, |d| d.max_h(px(max)))
                     .overflow_y_scroll()
                     .track_scroll(&self.log_scroll)
                     .child(div().flex_none().w_full().flex().flex_col().gap(px(12.)).px(px(PAD)).pb(px(PAD)).children(changes.into_iter().map(change_row))),
@@ -1979,7 +1993,7 @@ impl Launcher {
         )
     }
 
-    fn no_instance(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn no_instance(&self, log_max: f32, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let failed = self.latest.is_none() && self.latest_err.is_some();
         let action = match self.progress(cx) {
             Some(p) => div().w(px(460.)).max_w_full().child(p).into_any_element(),
@@ -2008,7 +2022,7 @@ impl Launcher {
         };
         // The same banner as Overview with the install in place of Play, and the release's changelog under it.
         let hero = banner(div().flex().flex_col().gap(px(6.)).child(bold("Install Sunset", T_TITLE)).child(about), action);
-        let block = div().flex().flex_col().gap(px(GAP)).child(hero).when_some(self.latest.as_ref(), |d, r| d.child(div().flex().flex_none().child(self.changelog(&r.manifest, cx))));
+        let block = div().flex().flex_col().gap(px(GAP)).child(hero).when_some(self.latest.as_ref(), |d, r| d.child(div().flex().flex_none().child(self.changelog(&r.manifest, log_max, cx))));
         page_block(block, self.log_open)
     }
 
@@ -2461,15 +2475,16 @@ impl Render for Launcher {
             fx::stop_scroll("page");
             self.page_scroll.set_offset(point(px(0.), px(0.)));
         }
+        let list_w = list_width(window);
         let page = match self.tab {
-            Tab::Overview => self.overview(cx),
-            Tab::Settings => column(self.settings_view(cx)),
-            Tab::Plugins => column(self.plugins_view(cx)),
+            Tab::Overview => self.overview(log_height(window), cx),
+            Tab::Settings => column(self.settings_view(cx), list_w),
+            Tab::Plugins => column(self.plugins_view(cx), list_w),
             Tab::Profiles => {
                 let items = self.profiles.iter().map(|p| (p.clone(), String::new())).collect();
                 let empty = "No saved profiles yet. Save one in game from Sunset's menu (Right Shift).".to_string();
                 let folder = self.installed.is_some().then(|| self.paths.sunset_data().join("profiles"));
-                column(self.list_view("Profiles", empty, items, folder, cx).into_any_element())
+                column(self.list_view("Profiles", empty, items, folder, cx).into_any_element(), list_w)
             }
         };
         let note = self.note.clone().map(|(err, msg)| {
@@ -2527,7 +2542,7 @@ impl Render for Launcher {
                     .child(div().id("page").flex_1().min_h(px(0.)).overflow_y_scroll().track_scroll(&self.page_scroll).child(page))
                     .child(fx::smooth_scroll("page", &self.page_scroll)),
             )
-            .when_some(note, |d, n| d.child(div().mt(px(GAP)).flex().justify_center().child(n.w_full().max_w(px(PAGE_MAX.0)))))
+            .when_some(note, |d, n| d.child(div().mt(px(GAP)).flex().justify_center().child(n.w_full().when(self.tab != Tab::Overview, |n| n.max_w(px(list_w))))))
             .when_some(self.menu_popup(cx), |d, m| d.child(m))
             .when_some(self.sign_in_modal(cx), |d, m| d.child(m))
             .when_some(self.offline_modal(window, cx), |d, m| d.child(m))
@@ -2578,7 +2593,7 @@ pub fn run() {
         if let Err(e) = cx.text_system().add_fonts(fonts) {
             eprintln!("sunset-launcher: fonts: {e}");
         }
-        let bounds = Bounds::centered(None, size(px(1100.), px(700.)), cx);
+        let bounds = Bounds::centered(None, size(px(WINDOW.0), px(WINDOW.1)), cx);
         let opts = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             window_min_size: Some(size(px(980.), px(620.))),
