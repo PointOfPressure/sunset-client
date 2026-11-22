@@ -18,6 +18,10 @@ section of the version they build into the signed manifest, and the launcher sho
 - When the game crashes, the launcher says why (from the game's log) instead of keeping Play's last step
 - Windows: the launcher opens without a console window
 
+### Changed
+- **Crystal Aura is rewritten: one sequence at a time on the nearest enemy (obsidian, crystal, hit, again), bases scored by damage, knockback direction, turn and distance, silent look turning up to 90 degrees a tick**
+- Crystal Aura: Break mode (Attack, Swap attack, Manual), randomised delays in ms, target and self prediction, and boxes for the target, the base and the next candidates
+
 ## 2.0.0
 
 ### New

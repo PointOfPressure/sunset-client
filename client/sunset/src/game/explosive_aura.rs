@@ -1,5 +1,5 @@
-// Crystal Aura and Anchor Aura, run together: one acts at a time (the better hit first), and the box each would use
-// next is drawn.
+// Crystal Aura and Anchor Aura, run together: Crystal Aura's sequence first, Anchor Aura while none runs; the box
+// Anchor Aura would use next is drawn.
 use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset::{self, Module};
 use super::{Game, Screen};
@@ -79,8 +79,9 @@ pub(super) fn draw(
                 )
             })
     });
-    for (index, name) in ["Crystal Aura", "Anchor Aura"].iter().enumerate() {
-        let Some(module) = modules.iter().find(|m| m.name == *name && m.on && m.b("Aura") && m.b("Render")) else {
+    // Crystal Aura draws its own boxes (crystal_aura.rs); slot 0 stays unused.
+    for (index, name) in [(1, "Anchor Aura")] {
+        let Some(module) = modules.iter().find(|m| m.name == name && m.on && m.b("Aura") && m.b("Render")) else {
             continue;
         };
         let Some((lo, damage, own, alpha)) = views[index] else {
@@ -114,7 +115,6 @@ pub(super) fn draw(
 }
 
 pub(super) use super::sunset_explosive_choice::Rating;
-use super::sunset_explosive_choice::prefer_first;
 
 pub(super) fn can_act(game: &Game<'_>) -> bool {
     game.sunset_window()
@@ -164,48 +164,26 @@ pub(super) fn tick(game: &mut Game<'_>, modules: &[Module], ticks: u64) {
         }
         return;
     }
-    if crystal.is_some()
-        && !super::sunset_crystal_aura::owns_selection(game)
-        && !super::sunset_explosive_tactics::may_take_hand(game)
+    // Crystal Aura runs its sequence first; Anchor Aura acts only while it has none running.
+    if let Some(m) = crystal
+        && super::sunset_crystal_aura::tick(game, m)
     {
-        super::sunset_crystal_aura::idle(game);
+        if anchor.is_some() {
+            super::sunset_anchor_aura::idle(game);
+        }
+        return;
+    }
+    let Some(m) = anchor else {
+        return;
+    };
+    if !super::sunset_crystal_aura::owns_selection(game) && !super::sunset_explosive_tactics::may_take_hand(game) {
         super::sunset_anchor_aura::idle(game);
         return;
     }
-    // Prepare each at most once, then claim only the chosen action. A pending
-    // server acknowledgement is not a new inventory/rotation owner.
-    let c = crystal.and_then(|m| super::sunset_crystal_aura::prepare(game, Some(m), ticks)).filter(|r| r.valid());
-    super::sunset_anchor_aura::rival(if crystal.is_some() { super::sunset_crystal_aura::opening_value() } else { 0.0 });
-    let a = anchor.and_then(|m| super::sunset_anchor_aura::prepare(game, m, ticks)).filter(|r| r.valid());
-    let crystal_first = match (c, a) {
-        (Some(c), Some(a)) => prefer_first(c, a, ticks % 2 == 0),
-        (Some(_), None) => true,
-        _ => false,
-    };
-    if c.is_none() && a.is_none() {
-        let c = super::sunset_crystal_aura::lookahead();
-        let a = super::sunset_anchor_aura::lookahead();
-        let first = match (c, a) {
-            (Some(c), Some(a)) => prefer_first(c, a, true),
-            (Some(_), None) => true,
-            _ => false,
-        };
-        if first {
-            if let Some(m) = crystal {
-                super::sunset_crystal_aura::advance_look(game, m);
-            }
-        } else if let Some(m) = anchor {
-            super::sunset_anchor_aura::advance_look(game, m);
-        }
-        return;
-    }
-    if crystal_first {
-        if let Some(m) = crystal {
-            super::sunset_crystal_aura::execute(game, m, ticks);
-        }
-    } else if a.is_some() {
-        if let Some(m) = anchor {
-            super::sunset_anchor_aura::execute(game, m, ticks);
-        }
+    super::sunset_anchor_aura::rival(0.0);
+    if super::sunset_anchor_aura::prepare(game, m, ticks).is_some_and(|r| r.valid()) {
+        super::sunset_anchor_aura::execute(game, m, ticks);
+    } else if super::sunset_anchor_aura::lookahead().is_some() {
+        super::sunset_anchor_aura::advance_look(game, m);
     }
 }

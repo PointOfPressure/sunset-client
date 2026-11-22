@@ -416,15 +416,7 @@ impl Module {
                 }
             }
             // Crystal Aura and Anchor Aura: each section's settings with it on, the shared ones with either.
-            "Crystal Aura" => match name {
-                "Aura" | "Macro" => true,
-                "Hold key" => self.b("Aura") && self.b("Require hold"),
-                "Render color" => self.b("Aura") && self.b("Render"),
-                "Require hold" | "Min damage" | "Face place" | "Force face place" | "Turn speed" | "View angle" | "Render" => self.b("Aura"),
-                "Obsidian delay" => self.b("Macro") && self.b("Auto obsidian"),
-                "Perfect timing" => self.b("Macro"),
-                _ => self.b("Aura") || self.b("Macro"),
-            },
+            "Crystal Aura" => super::sunset_crystal_aura::visible(self, name),
             "Anchor Aura" => match name {
                 "Aura" | "Macro" | "Pearl catch" => true,
                 "Scan range" | "Catch min damage" | "Catch max self damage" | "Anti suicide" | "Damage tick" | "Safe cover"

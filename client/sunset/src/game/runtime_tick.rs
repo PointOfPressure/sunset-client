@@ -387,7 +387,6 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
         return;
     }
     // Anticheat Grim's actions, just after the game's ClientTickEnd and before any move packet of the next tick.
-    super::sunset_crystal_aura::after_tick_end(game);
     super::sunset_packet_mine::after_tick_end(game);
     super::sunset_sky::keep_shown(game);
     ensure_loaded(game);

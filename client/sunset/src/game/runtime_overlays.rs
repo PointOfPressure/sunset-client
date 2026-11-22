@@ -9,6 +9,7 @@ use super::sunset::*;
 pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw: f32, out: &mut impl Canvas) {
     super::sunset_survival_tools::draw(game, cam, mods, out, lw);
     super::sunset_explosive_aura::draw(game, cam, mods, out, lw);
+    super::sunset_crystal_aura::draw(game, cam, mods, out, lw);
     super::sunset_lag::draw(game, cam, mods, out, lw);
     super::sunset_backtrack::draw(cam, mods, out, lw);
     super::sunset_block_overlay::overlay(game, cam, mods, out, lw);

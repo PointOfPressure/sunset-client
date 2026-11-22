@@ -1,334 +1,285 @@
-// Crystal Aura (Rust's, PR #16): places end crystals (and
-// the obsidian under them, Auto Obsidian) and breaks them on enemy players, for the damage it can see they take and
-// never more than Max Self Damage to you or a friend. Only crystals the server has shown are hit; a placement waits for
-// its crystal or a timeout.
-use super::remote::sunset_aura_base::{self as base_native, BaseClick};
-use super::sunset::{self, Category, Module, gui_open, own_id, with};
-use super::sunset_crystal_setup_policy as setup;
-use super::sunset_explosive_aura::Rating;
-use super::sunset_explosive_damage::{Blast, clear_line, local_damage_at};
-use super::sunset_explosive_policy::{Budget, in_range};
-use super::{sunset_explosive_choice::Kind, sunset_explosive_tactics as tactics};
-use horizon_world::registry::BlockStateId;
-use std::{any::Any, sync::Arc};
-type SetupScene = (i32, super::Dim, Arc<dyn Any + Send + Sync>);
-use super::Game;
+// Crystal Aura: one crystal sequence at a time on the nearest enemy. It picks a base next to them (obsidian or
+// bedrock already there, or a spot it puts obsidian on), places an end crystal on it, hits it, and places again on the
+// same base until the target leaves or the spot stops paying off. The pick scores every base around the target by the
+// damage it does (with the target led by its velocity and ping), what it costs you, where the blast pushes them, how
+// far the look has to turn and how close it is. Its Macro section is combat_macros.rs's (a right click with a crystal).
+use super::sunset::{self, Category, Module, with};
+use super::sunset_explosive_damage::{Blast, local_damage_at};
+use super::sunset_explosive_policy::Budget;
+use super::sunset_explosive_tactics as tactics;
 use super::sunset_util::{self as util, Target};
-use super::{sunset_faceplace_policy as face, sunset_lead_policy as lead, sunset_prediction as prediction};
+use super::{Game, sunset_prediction as prediction};
 use horizon_protocol::packets::{
     Empty,
-    play::{self, Clientbound as C, Serverbound as S},
+    play::{self, Serverbound as S},
 };
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::any::Any;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+type SetupScene = (i32, super::Dim, Arc<dyn Any + Send + Sync>);
 
 const NAME: &str = "Crystal Aura";
-const MAX_ENTITIES: usize = 512;
-const MAX_CANDIDATES: usize = 4;
-// Evaluate up to eight crystal and obsidian setups after ranking them by potential damage.
-const MAX_SETUPS: usize = 8;
-// A crystal or obsidian spot it has turned toward this long without reaching it is left alone for SKIP_TICKS
-// (Anchor Aura does the same).
-const AIM_TICKS: u64 = 12;
-const SKIP_TICKS: u64 = 40;
-const PREDICTIONS: usize = 24;
+// The scan around the target: 4 blocks out, 2 up and down, and only cells within 5.25 of the eyes.
+const SCAN_SIDE: i32 = 4;
+const SCAN_UP: i32 = 2;
+const SCAN_EYE_SQ: f64 = 5.25 * 5.25;
+// The farthest a click or a support face may be from the eyes.
+const CLICK_REACH: f64 = 4.25;
+const AIM_LIMIT: f64 = 4.4;
+// The most the look turns in one tick while it is silent.
+const TURN_STEP: f32 = 90.0;
+// One error message every 3 s at most.
+const NOTICE_MS: f64 = 3000.0;
 
-mod state {
-    // Unit direction, slab intersection with the actual entity bounds. Return
-    // the first contact, including the eye when it is already inside the box.
-    pub(super) fn ray_box(
-        eye: [f64; 3],
-        direction: [f64; 3],
-        lo: [f64; 3],
-        hi: [f64; 3],
-        range: f64,
-    ) -> Option<[f64; 3]> {
-        if !eye
-            .iter()
-            .chain(direction.iter())
-            .chain(lo.iter())
-            .chain(hi.iter())
-            .chain([range].iter())
-            .all(|v| v.is_finite())
-            || range < 0.0
-            || (0..3).any(|i| lo[i] > hi[i])
-        {
-            return None;
-        }
-        let norm = direction.iter().map(|v| v * v).sum::<f64>().sqrt();
-        if norm < 1.0e-12 {
-            return None;
-        }
-        let dir = direction.map(|v| v / norm);
-        let (mut near, mut far) = (0.0f64, range);
-        for i in 0..3 {
-            if dir[i].abs() < 1.0e-12 {
-                if eye[i] < lo[i] || eye[i] > hi[i] {
-                    return None;
-                }
-            } else {
-                let a = (lo[i] - eye[i]) / dir[i];
-                let b = (hi[i] - eye[i]) / dir[i];
-                near = near.max(a.min(b));
-                far = far.min(a.max(b));
-                if near > far {
-                    return None;
-                }
-            }
-        }
-        Some(std::array::from_fn(|i| eye[i] + dir[i] * near))
-    }
-    pub(super) fn ray_end(eye: [f64; 3], hit: [f64; 3]) -> [f64; 3] {
-        let length = (0..3).map(|i| (hit[i] - eye[i]).powi(2)).sum::<f64>().sqrt();
-        if length <= 1.0e-5 {
-            return eye;
-        }
-        std::array::from_fn(|i| hit[i] + (eye[i] - hit[i]) / length * 1.0e-5)
-    }
+// ---------------------------------------------------------------- settings
 
-    #[derive(Clone, Copy, Debug, PartialEq)]
-    pub(super) enum Action {
-        Place([i32; 3]),
-        Base([i32; 3]),
-        Break(u32, [f64; 3]),
-    }
-    #[derive(Clone, Copy, Debug)]
-    pub(super) struct Waiting {
-        pub action: Action,
-        pub sent: u64,
-    }
-    #[derive(Default)]
-    pub(super) struct Clock {
-        pub crystals: usize,
-        pub queued: bool,
-        pub waiting: Option<Waiting>,
-        pub next: u64,
-        pub next_base: u64,
-        pub next_place: u64,
-        pub next_break: u64,
-        pub generation: u64,
-    }
-    impl Clock {
-        pub fn suspend(&mut self) {
-            self.queued = false;
-            self.generation = self.generation.wrapping_add(1);
-        }
-        pub fn reset(&mut self) {
-            let generation = self.generation.wrapping_add(1);
-            *self = Self { generation, ..Self::default() };
-        }
-        pub fn sent(&mut self, action: Action, tick: u64, delay: u64) {
-            self.queued = false;
-            self.waiting = Some(Waiting { action, sent: tick });
-            self.next = tick.saturating_add(delay.max(1));
-            match action {
-                Action::Base(_) | Action::Place(_) => {
-                    self.next_base = self.next;
-                    self.next_place = self.next;
-                }
-                Action::Break(_, _) => self.next_break = self.next,
-            }
-        }
-        pub fn observe(&mut self, tick: u64, acknowledged: bool) {
-            if self.waiting.is_some_and(|w| acknowledged || tick.saturating_sub(w.sent) >= 30) {
-                self.waiting = None;
-            }
-        }
+pub(super) fn defaults() -> Vec<Module> {
+    vec![
+        Module::new(NAME, Category::Combat, "Places obsidian and crystals by the nearest enemy and breaks them, or on your right click.")
+            .bool("Aura", true)
+            .bool("Advanced", false)
+            .group("Target")
+            .num("Target range", 10.0, 1.0, 16.0, 0.5)
+            .num("Max target distance", 12.0, 1.0, 20.0, 0.5)
+            .num("Movement tolerance", 3.0, 1.0, 8.0, 1.0)
+            .group("Damage")
+            .num("Min damage", 6.0, 0.0, 36.0, 0.5)
+            .num("Max self damage", 8.0, 0.0, 36.0, 0.5)
+            .bool("Anti suicide", true)
+            .num("Recheck factor", 0.6, 0.0, 1.0, 0.05)
+            .group("Actions")
+            .pick("Break mode", &["Attack", "Swap attack", "Manual"])
+            .bool("Silent rotation", true)
+            .num("Silent FOV", 180.0, 0.0, 180.0, 5.0)
+            .bool("Fast swap", true)
+            .bool("Switch back", true)
+            .num("Reach", 2.95, 1.0, 3.0, 0.05)
+            .group("Timing")
+            .num("Shortest crystal delay (ms)", 60.0, 0.0, 500.0, 10.0)
+            .num("Longest crystal delay (ms)", 120.0, 0.0, 500.0, 10.0)
+            .num("Shortest break delay (ms)", 60.0, 0.0, 500.0, 10.0)
+            .num("Longest break delay (ms)", 140.0, 0.0, 500.0, 10.0)
+            .num("Shortest reaction (ms)", 40.0, 0.0, 200.0, 10.0)
+            .num("Longest reaction (ms)", 80.0, 0.0, 200.0, 10.0)
+            .group("Placement")
+            .bool("Prefer adjacent", true)
+            .bool("Prefer placed obsidian", true)
+            .bool("Placed obsidian only", false)
+            .pick("Momentum", &["None", "Toward hole", "Away from you", "Toward center"])
+            .num("Momentum weight", 1.0, 0.0, 5.0, 0.1)
+            .num("Turn cost", 0.05, 0.0, 1.0, 0.01)
+            .num("Turn cost cap", 60.0, 0.0, 180.0, 5.0)
+            .num("Path lookahead", 3.0, 0.0, 10.0, 1.0)
+            .group("Prediction")
+            .bool("Predict target", true)
+            .num("Lead ticks", 3.0, 0.0, 10.0, 0.5)
+            .num("Ping lead", 1.0, 0.0, 2.0, 0.1)
+            .num("Max lead", 3.0, 0.0, 8.0, 0.5)
+            .bool("Predict self", true)
+            .num("Self lead ticks", 2.0, 0.0, 8.0, 0.5)
+            .num("Self max lead", 2.0, 0.0, 6.0, 0.5)
+            .group("Render")
+            .bool("Render", true)
+            .bool("Render target", true)
+            .bool("Render placement", true)
+            .bool("Render candidates", true)
+            .num("Candidates shown", 8.0, 1.0, 30.0, 1.0)
+            .text("Target color", "#FFFF5050")
+            .text("Obsidian color", "#FF963CDC")
+            .text("Crystal color", "#FFE678E6")
+            .text("Candidate color", "#FF78C8FF")
+            .bool("Debug aborts", false)
+            .group("Macro")
+            .bool("Macro", false)
+            .num("Obsidian delay", 2.0, 0.0, 10.0, 1.0)
+            .bool("Perfect timing", false)
+            .num("Place delay", 0.0, 0.0, 10.0, 1.0)
+            .num("Break delay", 0.0, 0.0, 10.0, 1.0)
+            .bool("Auto obsidian", true)
+            .bool("Human pace", true)
+            .bool("Protect loot", true),
+    ]
+}
 
-        pub fn available(&self) -> bool {
-            !self.queued && self.waiting.is_none()
-        }
-        pub fn due(&self, action: Action, tick: u64) -> bool {
-            self.available()
-                && tick
-                    >= match action {
-                        Action::Base(_) => self.next_base,
-                        Action::Place(_) => self.next_place,
-                        Action::Break(_, _) => self.next_break,
-                    }
+// Which settings the menu shows: the Aura's own with Aura on (its fine tuning with Advanced), the Macro's with Macro
+// on, and the two both read with either.
+pub(super) fn visible(m: &Module, name: &str) -> bool {
+    let (aura, macro_on, advanced) = (m.b("Aura"), m.b("Macro"), m.b("Advanced"));
+    let tuned = aura && advanced;
+    let render = aura && m.b("Render");
+    match name {
+        "Aura" | "Macro" => true,
+        "Max self damage" | "Switch back" => aura || macro_on,
+        "Obsidian delay" => macro_on && m.b("Auto obsidian"),
+        "Perfect timing" | "Place delay" | "Break delay" | "Auto obsidian" | "Human pace" | "Protect loot" => macro_on,
+        "Advanced" | "Target range" | "Min damage" | "Anti suicide" | "Break mode" | "Silent rotation" | "Render" => aura,
+        "Silent FOV" => tuned && m.b("Silent rotation"),
+        "Momentum weight" => tuned && m.p("Momentum") != "None",
+        "Turn cost cap" => tuned && m.n("Turn cost") > 0.0,
+        "Lead ticks" | "Ping lead" | "Max lead" => tuned && m.b("Predict target"),
+        "Self lead ticks" | "Self max lead" => tuned && m.b("Predict self"),
+        "Render target" | "Render placement" | "Render candidates" => tuned && render,
+        "Target color" => tuned && render && m.b("Render target"),
+        "Obsidian color" | "Crystal color" => tuned && render && m.b("Render placement"),
+        "Candidates shown" | "Candidate color" => tuned && render && m.b("Render candidates"),
+        _ => tuned,
+    }
+}
+
+// ---------------------------------------------------------------- state
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Stage {
+    Idle,
+    // Obsidian goes on the base first.
+    Base,
+    // A crystal goes on the base.
+    Place,
+    // The crystal on the base is hit.
+    Hit,
+}
+impl Stage {
+    fn label(self) -> &'static str {
+        match self {
+            Stage::Idle => "idle",
+            Stage::Base => "obsidian",
+            Stage::Place => "crystal",
+            Stage::Hit => "hit",
         }
     }
 }
-use state::{Action, Clock};
 
-struct Plan {
-    action: Action,
-    target: u32,
+// A base the scan found: where the crystal goes on, how obsidian gets there when it isn't yet (the block clicked and
+// its face), the point to look at first and the score.
+#[derive(Clone, Copy, Debug)]
+struct Spot {
+    base: [i32; 3],
+    support: Option<([i32; 3], i32)>,
     aim: [f64; 3],
-    rating: Rating,
-    click: Option<BaseClick>,
+    needs_base: bool,
+    armed: bool,
+    score: f64,
 }
+
+// A delay between two settings, drawn again after each use.
+#[derive(Clone, Copy)]
+struct Roll {
+    ms: f64,
+}
+impl Roll {
+    const ZERO: Roll = Roll { ms: 0.0 };
+    fn draw(m: &Module, short: &str, long: &str, rng: &mut u64) -> Roll {
+        let (a, b) = (m.n(short), m.n(long));
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        Roll { ms: lo + unit(rng) * (hi - lo) }
+    }
+}
+
+// A stopwatch in milliseconds.
+#[derive(Clone, Copy)]
+struct Watch(Option<Instant>);
+impl Watch {
+    const NEW: Watch = Watch(None);
+    fn reset(&mut self) {
+        self.0 = Some(Instant::now());
+    }
+    fn ms(&self) -> f64 {
+        self.0.map_or(f64::MAX, |t| t.elapsed().as_secs_f64() * 1000.0)
+    }
+    fn past(&self, ms: f64) -> bool {
+        self.ms() >= ms
+    }
+}
+
+struct State {
+    stage: Stage,
+    target: Option<u32>,
+    spot: Option<Spot>,
+    // The target's block when the sequence began.
+    origin: Option<[i32; 3]>,
+    // A click or hit went out in this sequence.
+    acted: bool,
+    // Obsidian was just placed: its crystal goes without the crystal delay.
+    fresh_base: bool,
+    // A hit stage that ran out of time places once more before giving up.
+    retried: bool,
+    // A crystal on the base is out of reach.
+    far: bool,
+    // The last crystal hit: ignored until it is gone.
+    hit_id: Option<u32>,
+    // The slot held before the first action, for Switch back and Swap attack.
+    home: Option<usize>,
+    stage_clock: Watch,
+    place_clock: Watch,
+    break_clock: Watch,
+    first_clock: Watch,
+    notice_clock: Watch,
+    place_roll: Roll,
+    break_roll: Roll,
+    first_roll: Roll,
+    // The eyes as of the last tick: where the server last had them.
+    last_eye: Option<[f64; 3]>,
+    // The tick something went out (a click, a hit, a slot change): one a tick.
+    acted_tick: u64,
+    // Velocity tracking: whose, where last tick, which tick and the smoothed motion per tick.
+    tracked: Option<u32>,
+    tracked_pos: Option<[f64; 3]>,
+    tracked_tick: u64,
+    motion: [f64; 3],
+    // First seen tick of each crystal, for its age.
+    seen: Vec<(u32, u64)>,
+    candidates: Vec<Spot>,
+    rng: u64,
+    weapon: Option<WeaponLease>,
+}
+static STATE: Mutex<State> = Mutex::new(State {
+    stage: Stage::Idle,
+    target: None,
+    spot: None,
+    origin: None,
+    acted: false,
+    fresh_base: false,
+    retried: false,
+    far: false,
+    hit_id: None,
+    home: None,
+    stage_clock: Watch::NEW,
+    place_clock: Watch::NEW,
+    break_clock: Watch::NEW,
+    first_clock: Watch::NEW,
+    notice_clock: Watch::NEW,
+    place_roll: Roll::ZERO,
+    break_roll: Roll::ZERO,
+    first_roll: Roll::ZERO,
+    last_eye: None,
+    acted_tick: u64::MAX,
+    tracked: None,
+    tracked_pos: None,
+    tracked_tick: 0,
+    motion: [0.0; 3],
+    seen: Vec::new(),
+    candidates: Vec::new(),
+    rng: 0x9E37_79B9_7F4A_7C15,
+    weapon: None,
+});
+fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
+    f(&mut STATE.lock().unwrap_or_else(|e| e.into_inner()))
+}
+fn unit(rng: &mut u64) -> f64 {
+    *rng ^= *rng << 13;
+    *rng ^= *rng >> 7;
+    *rng ^= *rng << 17;
+    (*rng >> 11) as f64 / (1u64 << 53) as f64
+}
+
+// ---------------------------------------------------------------- the shared hand (Anchor Aura uses it too)
+
 struct WeaponLease {
     scene: SetupScene,
     original: usize,
     owned: usize,
     owner: &'static str,
     until: u64,
-}
-struct State {
-    clock: Clock,
-    queued_at: Option<Instant>,
-    tick: u64,
-    plan: Option<Plan>,
-    retained: Option<Action>,
-    lookahead: Option<Plan>,
-    opening: f64,
-    probe: usize,
-    // Hits on a crystal that is still there: how many, and the tick of the last.
-    attempts: Vec<(u32, u8, u64)>,
-    // Placements on a spot the server sent back no crystal for (an item, an orb or anything else in it): how many in a
-    // row.
-    misses: Vec<([i32; 3], u8)>,
-    setup: setup::Ledger,
-    setup_scene: Option<SetupScene>,
-    weapon: Option<WeaponLease>,
-    // The spot being turned toward: since when, and the last tick it was.
-    aim_wait: Option<([i32; 3], u64, u64)>,
-    skipped: Vec<([i32; 3], u64)>,
-}
-static STATE: Mutex<State> = Mutex::new(State {
-    clock: Clock {
-        crystals: 0,
-        queued: false,
-        waiting: None,
-        next: 0,
-        next_base: 0,
-        next_place: 0,
-        next_break: 0,
-        generation: 0,
-    },
-    queued_at: None,
-    tick: 0,
-    plan: None,
-    retained: None,
-    lookahead: None,
-    opening: 0.0,
-    probe: 0,
-    attempts: Vec::new(),
-    misses: Vec::new(),
-    setup: setup::Ledger::new(),
-    setup_scene: None,
-    weapon: None,
-    aim_wait: None,
-    skipped: Vec::new(),
-});
-fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
-    f(&mut STATE.lock().unwrap_or_else(|e| e.into_inner()))
-}
-// A placement on `base` answered: by its crystal, or (`missed`) by none in time. Two misses in a row and the spot is
-// left alone for SKIP_TICKS, like one its look can't reach: the server refuses it for something the client doesn't
-// rule out, and asking again every few ticks only repeats the refusal.
-fn miss(s: &mut State, base: [i32; 3], missed: bool, ticks: u64) {
-    let at = s.misses.iter().position(|&(cell, _)| cell == base);
-    if !missed {
-        if let Some(i) = at {
-            s.misses.swap_remove(i);
-        }
-        return;
-    }
-    let count = match at {
-        Some(i) => {
-            s.misses[i].1 = s.misses[i].1.saturating_add(1);
-            s.misses[i].1
-        }
-        None if s.misses.len() < 32 => {
-            s.misses.push((base, 1));
-            1
-        }
-        None => return,
-    };
-    if count >= 2 {
-        s.misses.retain(|&(cell, _)| cell != base);
-        if s.retained.and_then(setup_cell) == Some(base) {
-            s.retained = None;
-        }
-        if s.skipped.len() < 32 {
-            s.skipped.push((base, ticks + SKIP_TICKS));
-        }
-    }
-}
-fn rank(rating: &Rating) -> f64 {
-    rating.planning_value()
-}
-
-pub(super) fn defaults() -> Vec<Module> {
-    vec![
-        // Aura places and breaks on enemies by itself; Macro (the old Crystal Macro, combat_macros.rs) does it on your
-        // right click with a crystal. The settings from Place delay on are both sections'.
-        Module::new(NAME, Category::Combat, "Places and breaks crystals on enemies, or on your right click.")
-            .bool("Aura", true)
-            .bool("Require hold", false)
-            .text("Hold key", "mouse4")
-            .num("Min damage", 4.0, 0.0, 20.0, 0.5)
-            .bool("Face place", true)
-            .text("Force face place", "None")
-            .num("Turn speed", 4.5, 1.0, 10.0, 0.5)
-            .num("View angle", 90.0, 30.0, 180.0, 5.0)
-            .bool("Render", true)
-            .text("Render color", "#FFD65CFF")
-            .bool("Macro", false)
-            .num("Obsidian delay", 2.0, 0.0, 10.0, 1.0)
-            .bool("Perfect timing", false)
-            .num("Place delay", 0.0, 0.0, 10.0, 1.0)
-            .num("Break delay", 0.0, 0.0, 10.0, 1.0)
-            .num("Max self damage", 8.0, 0.0, 20.0, 0.5)
-            .bool("Auto obsidian", true)
-            .bool("Switch back", true)
-            .bool("Human pace", true)
-            .bool("Protect loot", true)
-            .pick("Anticheat", &["None", "Grim"]),
-    ]
-}
-
-// Anticheat Grim: Grim counts ticks by the client's ClientTickEnd, and a place, hit or slot change after a move packet
-// in the same one of them is its PacketOrderO and Post. A deed whose look went out in a move packet sent since the last
-// ClientTickEnd (the look Sunset sends itself for a player standing still goes after it) waits for the next one: it
-// goes at the start of post_tick, just after the game's ClientTickEnd and before the next move packet.
-type Deferred = Box<dyn for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send>;
-static DEFERRED: std::sync::Mutex<Option<Deferred>> = std::sync::Mutex::new(None);
-
-pub(super) fn after_tick_end(game: &mut Game<'_>) {
-    if super::sunset_combat_wire::moved_this_tick() {
-        return;
-    }
-    let deed = DEFERRED.lock().unwrap_or_else(|e| e.into_inner()).take();
-    if let Some(deed) = deed {
-        deed(game);
-    }
-}
-
-// A temporary menu, manual use or competing action invalidates queued work,
-// but must not replenish an unchanged setup cell's retry budget or lose its
-// authoritative acknowledgement. Only a module/scene reset clears history.
-pub(super) fn suspend() {
-    DEFERRED.lock().unwrap_or_else(|e| e.into_inner()).take();
-    super::sunset_combat_control::release(NAME);
-    sunset::cancel_turns(NAME);
-    st(|s| {
-        s.clock.suspend();
-        s.queued_at = None;
-        s.plan = None;
-        s.retained = None;
-        s.lookahead = None;
-        s.opening = 0.0;
-    });
-}
-pub(super) fn reset() {
-    DEFERRED.lock().unwrap_or_else(|e| e.into_inner()).take();
-    super::sunset_explosive_aura::clear_view(false);
-    prediction::reset_receipts();
-    suspend();
-    st(|s| {
-        s.clock.reset();
-        s.attempts.clear();
-        s.misses.clear();
-        s.setup.clear();
-        s.setup_scene = None;
-        s.aim_wait = None;
-        s.skipped.clear();
-        s.lookahead = None;
-        s.opening = 0.0;
-    });
 }
 fn restore_weapon(game: &mut Game<'_>, requested: bool) {
     restore_shared(game, NAME, requested);
@@ -410,358 +361,6 @@ fn weapon_hold(game: &mut Game<'_>, slot: usize) {
     sunset::hold(game, slot);
     super::sunset_combat_macros::note_main(game);
 }
-
-pub(super) fn paused(game: &mut Game<'_>) {
-    let requested = with(|s| s.module(NAME).is_none_or(|m| m.b("Switch back")));
-    restore_weapon(game, requested);
-    suspend();
-}
-pub(super) fn disabled(game: &mut Game<'_>) {
-    cleanup_shared(game);
-    reset();
-}
-
-fn allowed(game: &Game<'_>) -> bool {
-    super::sunset_explosive_aura::can_act(game)
-        && util::in_world(game)
-        && !gui_open()
-        && !game.spectator()
-        && game.using.is_none()
-        && game.mining.is_none()
-        && util::inventory_idle(game)
-        && game.player.as_ref().is_some_and(|p| p.health.health().is_finite() && p.health.health() > 0.0)
-        && game.mobs.len() <= MAX_ENTITIES
-        && game.crystals.len() <= MAX_ENTITIES
-}
-
-// Refuse nameless players: identity must be known before deciding friendship.
-// Scan the complete bounded list, so omitted friends cannot silently disappear.
-fn players(game: &Game<'_>, _m: &Module) -> Option<(Vec<Target>, Vec<Target>)> {
-    tactics::players(game)
-}
-fn cap(m: &Module) -> f64 {
-    m.n("Max self damage")
-}
-fn valid_damage(
-    game: &mut Game<'_>,
-    m: &Module,
-    at: [f64; 3],
-    targets: &[Target],
-    friends: &[Target],
-    action: Action,
-    budget: &mut Budget,
-) -> Option<(Rating, u32)> {
-    damage_pair(game, m, at, targets, friends, action, budget)?.0
-}
-// One geometric sample per victim; temporal readiness reuses that raw sample.
-fn damage_pair(
-    game: &mut Game<'_>,
-    m: &Module,
-    at: [f64; 3],
-    targets: &[Target],
-    friends: &[Target],
-    action: Action,
-    budget: &mut Budget,
-) -> Option<(Option<(Rating, u32)>, Option<(Rating, u32)>)> {
-    let blast = match action {
-        Action::Base(base) => {
-            Blast::explosion(at, 6.0).with_block(base, game.items().get("minecraft:obsidian")?.block?)
-        }
-        _ => Blast::explosion(at, 6.0),
-    };
-    if !super::sunset_loot_guard::allows(game, blast, m.b("Protect loot")) {
-        return None;
-    }
-    let breaking = matches!(action, Action::Break(_, _));
-    let horizon =
-        lead::horizons(if breaking { lead::Use::CrystalBreak } else { lead::Use::CrystalPlace }, prediction::rtt(game));
-    let offset = prediction::local_offset(game, horizon.local)?;
-    let own = local_damage_at(game, blast, offset, budget)?.estimate;
-    let p = game.player.as_ref()?;
-    let health = f64::from(p.health.health() + p.health.absorption());
-    let max = cap(m);
-    if own > max || tactics::endangered(own, health, game.creative) {
-        return None;
-    }
-    for friend in friends {
-        let projected = prediction::target(game, friend, horizon.others)?;
-        if !in_range(at, friend.pos, 12.0) && !in_range(at, projected.pos, 12.0) {
-            continue;
-        }
-        let damage = tactics::friend_damage(game, &projected, blast, budget)?;
-        let creative = super::remote::sunset_combat_remote::player_mode(game, friend.id) == Some(1);
-        if damage > max || tactics::endangered(damage, tactics::friend_health(game, friend), creative) {
-            return None;
-        }
-    }
-    let mut best: [Option<(Rating, u32)>; 2] = [None, None];
-    for target in targets {
-        let projected = prediction::target(game, target, horizon.others)?;
-        let ahead = if breaking { 0 } else { prediction::rtt(game) };
-        let opening = if breaking { prediction::opens_in(target.id, prediction::rtt(game)) } else { ahead };
-        let (damage, _) =
-            prediction::estimate_pair(game, &projected, blast, ahead, opening, prediction::rtt(game), budget)?;
-        let facts = prediction::face_facts(game, target);
-        let minimum = m.n("Min damage");
-        let threshold = face::crystal(
-            minimum,
-            m.b("Face place"),
-            util::setting_key_down(game, m, "Force face place"),
-            breaking,
-            &facts,
-        )?
-        .minimum;
-        for i in 0..2 {
-            if !face::sufficient(damage[i], threshold, facts.effective_health) {
-                continue;
-            }
-            let kind = match action {
-                Action::Break(_, _) => Kind::CrystalHit,
-                Action::Place(_) => Kind::CrystalPlace,
-                Action::Base(_) => Kind::ObsidianPlace,
-            };
-            let ready = match action {
-                Action::Break(_, _) => {
-                    if i == 0 {
-                        0
-                    } else {
-                        opening
-                    }
-                }
-                Action::Place(_) => prediction::rtt(game),
-                Action::Base(_) => prediction::rtt(game) + 1,
-            };
-            let mut rating = Rating::new(
-                kind,
-                damage[i],
-                prediction::effective_health(game, target).unwrap_or(f64::from(target.health)),
-                own,
-                prediction::held_totem(target.id),
-                ready.min(u32::from(u16::MAX)) as u16,
-            );
-            rating.full_damage = damage[2];
-            if best[i].as_ref().is_none_or(|(old, _)| rank(&rating) > rank(old)) {
-                best[i] = Some((rating, target.id));
-            }
-        }
-    }
-    Some((best[0], best[1]))
-}
-
-fn center(base: [i32; 3]) -> [f64; 3] {
-    [f64::from(base[0]) + 0.5, f64::from(base[1]) + 1.0, f64::from(base[2]) + 0.5]
-}
-fn obsidian(game: &Game<'_>, base: [i32; 3]) -> bool {
-    &*util::facts(game, base).name == "minecraft:obsidian"
-}
-fn place_valid(game: &Game<'_>, base: [i32; 3]) -> bool {
-    if !tactics::breakable(game, base) {
-        return false;
-    }
-    matches!(&*util::facts(game, base).name, "minecraft:obsidian" | "minecraft:bedrock")
-        && st(|s| s.setup.crystal_allowed(base, s.tick, obsidian(game, base)))
-        && crystal_column(game, base)
-}
-fn setup_valid(game: &Game<'_>, base: [i32; 3]) -> bool {
-    let f = util::facts(game, base);
-    if !f.replaceable || f.fluid != super::Fluid::None || f.fluid_level != 0 || f.waterlogged {
-        return false;
-    }
-    // Require solid ground under the obsidian.
-    util::facts(game, [base[0], base[1] - 1, base[2]]).full_collision
-        && tactics::breakable(game, base)
-        && util::can_place(game, base, true)
-        && crystal_column(game, base)
-}
-// Keep only a cell identity between scan slices. The current world, ledger,
-// bot floor and setting choose its action again; no hit, damage or slot survives.
-fn setup_action(game: &Game<'_>, m: &Module, base: [i32; 3], ticks: u64) -> Option<Action> {
-    if place_valid(game, base) {
-        Some(Action::Place(base))
-    } else if m.b("Auto obsidian") && setup_valid(game, base) && st(|s| s.setup.can_send(base, ticks)) {
-        Some(Action::Base(base))
-    } else {
-        None
-    }
-}
-fn setup_cell(action: Action) -> Option<[i32; 3]> {
-    match action {
-        Action::Place(base) | Action::Base(base) => Some(base),
-        Action::Break(_, _) => None,
-    }
-}
-fn crystal_column(game: &Game<'_>, base: [i32; 3]) -> bool {
-    if !game.world.loaded(base[0], base[2]) || base[1] < -64 || base[1] >= 318 {
-        return false;
-    }
-    if !util::is_air(game, [base[0], base[1] + 1, base[2]]) {
-        return false;
-    }
-    let at = center(base);
-    let lo = [at[0] - 0.5, at[1], at[2] - 0.5];
-    let hi = [lo[0] + 1.0, lo[1] + 2.0, lo[2] + 1.0];
-    let hits = |a: horizon_core::geometry::Aabb| {
-        let (a, b) = (a.min_position(), a.max_position());
-        a.x < hi[0] && b.x > lo[0] && a.y < hi[1] && b.y > lo[1] && a.z < hi[2] && b.z > lo[2]
-    };
-    // An enemy standing in the spot now doesn't rule it out if it will have moved out by the time the click arrives
-    // (using the predicted boxes below). Anyone else in the way does.
-    if game.player.as_ref().is_some_and(|p| hits(p.bounds()))
-        || game.mobs.iter().any(|mob| !mob.removed && hits(mob.bounds()) && !util::player_enemy(game, mob))
-    {
-        return false;
-    }
-    // EndCrystalItem.useOn refuses a spot with any entity in it, not only living ones: dropped items (the loot after
-    // a kill), experience orbs and arrows too. Their boxes: an item 0.25 wide and high, an orb 0.5, a projectile taken
-    // as 0.5 (an arrow; pearls and snowballs are smaller).
-    let small = |x: f64, y: f64, z: f64, half: f64, height: f64| {
-        x - half < hi[0] && x + half > lo[0] && y < hi[1] && y + height > lo[1] && z - half < hi[2] && z + half > lo[2]
-    };
-    if game.dropped.iter().any(|i| small(i.position.x, i.position.y, i.position.z, 0.125, 0.25))
-        || game.orbs.iter().any(|o| small(o.position.x, o.position.y, o.position.z, 0.25, 0.5))
-        || game.creatures.projectiles.iter().any(|p| small(p.position.x, p.position.y, p.position.z, 0.25, 0.5))
-    {
-        return false;
-    }
-    for mob in game.mobs.iter().filter(|m| m.kind.id == "minecraft:player" && !m.removed && m.alive()) {
-        let Some(future) =
-            prediction::target(game, &util::mob_target(mob), prediction::rtt(game).saturating_mul(2).min(5))
-        else {
-            return false;
-        };
-        if future.lo[0] < hi[0]
-            && future.hi[0] > lo[0]
-            && future.lo[1] < hi[1]
-            && future.hi[1] > lo[1]
-            && future.lo[2] < hi[2]
-            && future.hi[2] > lo[2]
-        {
-            return false;
-        }
-    }
-    !game.crystals.iter().any(|c| {
-        !st(|s| s.clock.waiting.is_some_and(|w| matches!(w.action,Action::Break(id,_) if id==c.id)))
-            && (c.position.x - at[0]).abs() < 1.5
-            && c.position.y < hi[1]
-            && c.position.y + 2.0 > lo[1]
-            && (c.position.z - at[2]).abs() < 1.5
-    })
-}
-
-fn hit_visible(
-    game: &Game<'_>,
-    _m: &Module,
-    eye: [f64; 3],
-    hit: [f64; 3],
-    ray_end: [f64; 3],
-    range: f64,
-    budget: &mut Budget,
-) -> bool {
-    let range = range.clamp(0.0, 64.0);
-    in_range(eye, hit, range) && (in_range(eye, hit, 0.0) || clear_line(game, eye, ray_end, None, budget))
-}
-fn break_contact(game: &Game<'_>, m: &Module, at: [f64; 3], aim: [f64; 3], budget: &mut Budget) -> Option<[f64; 3]> {
-    let eye = game.eye_position()?;
-    let lo = [at[0] - 1.0, at[1], at[2] - 1.0];
-    let hi = [at[0] + 1.0, at[1] + 2.0, at[2] + 1.0];
-    let direction = std::array::from_fn(|i| aim[i] - eye[i]);
-    let hit = state::ray_box(eye, direction, lo, hi, tactics::entity_range(game).clamp(0.0, 64.0))?;
-    hit_visible(game, m, eye, hit, state::ray_end(eye, hit), tactics::entity_range(game), budget).then_some(hit)
-}
-fn reachable(game: &Game<'_>, m: &Module, action: Action, budget: &mut Budget) -> Option<[f64; 3]> {
-    let eye = game.eye_position()?;
-    match action {
-        Action::Base(_) => None,
-        Action::Place(base) => {
-            let from = tactics::aim_eye(game).unwrap_or(eye);
-            let range = tactics::block_range(game);
-            place_aims(game, base).into_iter().find(|aim| {
-                in_range(eye, *aim, range) && util::block_hit(game, sunset::look_at(from, *aim), base, range).is_some()
-            })
-        }
-        Action::Break(_, at) => {
-            let (yaw, pitch) = (f64::from(game.yaw).to_radians(), f64::from(game.pitch).to_radians());
-            let dir = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
-            let current = std::array::from_fn(|i| eye[i] + dir[i] * 64.0);
-            if let Some(hit) = break_contact(game, m, at, current, budget) {
-                return Some(std::array::from_fn(|i| hit[i] + dir[i] * 0.01));
-            }
-            if tactics::fixed_look(game) {
-                return None;
-            }
-            let nearest = [
-                eye[0].clamp(at[0] - 0.9, at[0] + 0.9),
-                eye[1].clamp(at[1] + 0.1, at[1] + 1.9),
-                eye[2].clamp(at[2] - 0.9, at[2] + 0.9),
-            ];
-            for aim in [nearest, [at[0], at[1] + 1.0, at[2]]] {
-                if break_contact(game, m, at, aim, budget).is_some() {
-                    return Some(aim);
-                }
-            }
-            None
-        }
-    }
-}
-
-// Where to look to click the obsidian under a crystal spot, best first: the point of its top your look
-// already crosses, the middle of its top, then the middle of each side facing you. The points are 0.1 inside the
-// block, so a look a little off still lands on it; any face of it takes the crystal.
-fn place_aims(game: &Game<'_>, base: [i32; 3]) -> Vec<[f64; 3]> {
-    let [x, y, z] = base.map(f64::from);
-    let top = y + 0.9;
-    let mut aims = Vec::with_capacity(6);
-    let Some(eye) = tactics::aim_eye(game) else {
-        return aims;
-    };
-    let look = super::sunset_combat_wire::sent_look(game).unwrap_or((game.yaw, game.pitch));
-    let (yaw, pitch) = (f64::from(look.0).to_radians(), f64::from(look.1).to_radians());
-    let dir = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
-    if dir[1] < -1.0e-6 && eye[1] > top {
-        let along = (top - eye[1]) / dir[1];
-        aims.push([
-            (eye[0] + dir[0] * along).clamp(x + 0.1, x + 0.9),
-            top,
-            (eye[2] + dir[2] * along).clamp(z + 0.1, z + 0.9),
-        ]);
-    }
-    aims.push([x + 0.5, top, z + 0.5]);
-    for (dx, dz) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
-        let side = [x + 0.5 + dx * 0.4, y + 0.5, z + 0.5 + dz * 0.4];
-        if (eye[0] - side[0]) * dx + (eye[2] - side[2]) * dz > 0.0 {
-            aims.push(side);
-        }
-    }
-    aims
-}
-
-fn crystal_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
-    item_slot(game, m, "end_crystal")
-}
-fn obsidian_slot(game: &Game<'_>, m: &Module) -> Option<usize> {
-    item_slot(game, m, "obsidian")
-}
-fn item_slot(game: &Game<'_>, _m: &Module, wanted: &str) -> Option<usize> {
-    let slot = util::find_held(game, |name| name == wanted)?;
-    let stack =
-        if slot == util::OFFHAND { game.offhand.as_ref() } else { game.inventory.get(slot).and_then(|s| s.as_ref()) }?;
-    if stack.count == 0 {
-        return None;
-    }
-    Some(slot)
-}
-
-fn observed(game: &Game<'_>, action: Action) -> bool {
-    match action {
-        Action::Base(pos) => st(|s| s.setup.acknowledged(pos, obsidian(game, pos))),
-        Action::Break(id, _) => !game.crystals.iter().any(|c| c.id == id),
-        Action::Place(base) => {
-            let at = center(base);
-            game.crystals.iter().any(|c| in_range(at, [c.position.x, c.position.y, c.position.z], 0.25))
-        }
-    }
-}
-
 fn same_setup_scene(game: &Game<'_>, old: &SetupScene) -> bool {
     game.remote.as_ref().is_some_and(|r| {
         r.entity_id == old.0
@@ -769,796 +368,1297 @@ fn same_setup_scene(game: &Game<'_>, old: &SetupScene) -> bool {
             && Arc::as_ptr(&r.session.counters) as *const () == Arc::as_ptr(&old.2) as *const ()
     })
 }
-fn setup_payload(game: &Game<'_>, pos: [i32; 3], id: u32) {
-    let id = BlockStateId(id);
-    if game.pack.assets.registry.state(id).is_none() {
-        return;
-    }
-    let is_obsidian = &*game.res.facts().get(id).name == "minecraft:obsidian";
-    st(|s| s.setup.payload(pos, id.0, is_obsidian));
+pub(super) fn owns_selection(game: &Game<'_>) -> bool {
+    st(|s| s.weapon.as_ref().is_some_and(|lease| same_setup_scene(game, &lease.scene) && lease.owned == game.selected))
 }
-// Called from the accepted native packet observer; never from prediction/ACK.
-// A protocol world/life boundary can keep the same connection/dimension/id.
-// Never restore a pre-boundary hand or allow its captured deed in the new life.
+
+// ---------------------------------------------------------------- module life
+
+pub(super) fn reset() {
+    sunset::cancel_turns(NAME);
+    st(|s| {
+        s.stage = Stage::Idle;
+        s.target = None;
+        s.spot = None;
+        s.origin = None;
+        s.home = None;
+        s.fresh_base = false;
+        s.retried = false;
+        s.acted = false;
+        s.hit_id = None;
+        s.last_eye = None;
+        s.tracked = None;
+        s.tracked_pos = None;
+        s.motion = [0.0; 3];
+        s.candidates.clear();
+        s.seen.clear();
+    });
+    view(|v| *v = View::NEW);
+}
+// Turned off (or the Aura section): the slot held before goes back, then everything is forgotten.
+pub(super) fn disabled(game: &mut Game<'_>) {
+    let home = st(|s| s.home.take());
+    if let Some(home) = home
+        && with(|s| s.module(NAME).is_none_or(|m| m.b("Switch back")))
+        && game.selected != home
+    {
+        weapon_hold(game, home);
+    }
+    cleanup_shared(game);
+    reset();
+}
+// The game can't be played right now (a screen, using an item): the sequence waits where it is; its stage clock runs
+// on, so one that waits too long ends.
+pub(super) fn paused(_game: &mut Game<'_>) {}
+
+// A new world, life or connection.
 pub(super) fn discard_scene() {
     super::sunset_combat_control::reset();
     st(|s| s.weapon = None);
     reset();
     super::sunset_anchor_aura::reset();
 }
-
-pub(super) fn packet(game: &Game<'_>, packet: &C) {
+pub(super) fn packet(_game: &Game<'_>, packet: &horizon_protocol::packets::play::Clientbound) {
+    use horizon_protocol::packets::play::Clientbound as C;
     if matches!(packet, C::Login(_) | C::Respawn(_) | C::Disconnect(_)) {
         discard_scene();
-        return;
     }
-    if !matches!(packet, C::BlockUpdate(_) | C::SectionBlocksUpdate(_)) {
-        return;
-    }
-    if !st(|s| s.setup.len() != 0 && s.setup_scene.as_ref().is_some_and(|old| same_setup_scene(game, old))) {
-        return;
-    }
-    match packet {
-        C::BlockUpdate(p) => {
-            if let Ok(id) = u32::try_from(p.state) {
-                setup_payload(game, p.pos, id);
-            }
-        }
-        C::SectionBlocksUpdate(p) => {
-            for change in p.changes.iter().take(4096) {
-                if let Some((pos, id)) = setup::unpack_section(p.section, *change) {
-                    setup_payload(game, pos, id);
-                }
-            }
-        }
-        _ => {}
-    }
+}
+// Anchor Aura leaves the cells of a running sequence alone: the base and the crystal's.
+pub(super) fn reserved_cell(cell: [i32; 3]) -> bool {
+    st(|s| s.stage != Stage::Idle && s.spot.is_some_and(|p| cell == p.base || cell == up(p.base)))
 }
 
-pub(super) fn opening_value() -> f64 {
-    st(|s| s.opening)
+// ---------------------------------------------------------------- world helpers
+
+fn base_block(game: &Game<'_>, p: [i32; 3]) -> bool {
+    matches!(&*util::facts(game, p).name, "minecraft:obsidian" | "minecraft:bedrock")
 }
-pub(super) fn reserved_cell(cell: [i32; 3]) -> bool {
-    st(|s| {
-        s.clock.waiting.is_some_and(|w| {
-            if let Action::Place(base) = w.action {
-                let at = center(base);
-                (0..3).all(|i| {
-                    let (lo, hi) = if i == 1 { (at[i], at[i] + 2.0) } else { (at[i] - 1.0, at[i] + 1.0) };
-                    f64::from(cell[i]) < hi && f64::from(cell[i]) + 1.0 > lo
-                })
-            } else {
-                false
-            }
-        })
+// Taken: obsidian can't go there (a block, fire or grass in it).
+fn taken(game: &Game<'_>, p: [i32; 3]) -> bool {
+    let f = util::facts(game, p);
+    !f.replaceable || matches!(&*f.name, "minecraft:fire" | "minecraft:short_grass")
+}
+fn up(p: [i32; 3]) -> [i32; 3] {
+    [p[0], p[1] + 1, p[2]]
+}
+fn mid(p: [i32; 3]) -> [f64; 3] {
+    [f64::from(p[0]) + 0.5, f64::from(p[1]) + 0.5, f64::from(p[2]) + 0.5]
+}
+// Where the crystal on a base stands.
+fn crystal_at(base: [i32; 3]) -> [f64; 3] {
+    [f64::from(base[0]) + 0.5, f64::from(base[1]) + 1.0, f64::from(base[2]) + 0.5]
+}
+fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
+    util::dist(a, b)
+}
+fn overlaps(alo: [f64; 3], ahi: [f64; 3], blo: [f64; 3], bhi: [f64; 3]) -> bool {
+    (0..3).all(|i| alo[i] < bhi[i] && ahi[i] > blo[i])
+}
+fn cell_box(p: [i32; 3], height: f64) -> ([f64; 3], [f64; 3]) {
+    let lo = p.map(f64::from);
+    (lo, [lo[0] + 1.0, lo[1] + height, lo[2] + 1.0])
+}
+fn crystal_box(c: [f64; 3]) -> ([f64; 3], [f64; 3]) {
+    ([c[0] - 1.0, c[1], c[2] - 1.0], [c[0] + 1.0, c[1] + 2.0, c[2] + 1.0])
+}
+fn bounds(b: horizon_core::geometry::Aabb) -> ([f64; 3], [f64; 3]) {
+    let (lo, hi) = (b.min_position(), b.max_position());
+    ([lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z])
+}
+
+// A crystal (not the last one hit) standing in the cell: within 1 block of its middle, as the hit stage looks for it.
+// A crystal on a neighbouring base reaches into the cell too (they are 2 wide), but only blocks it (occupied).
+fn crystal_in(game: &Game<'_>, cell: [i32; 3]) -> bool {
+    let hit = st(|s| {
+        if s.hit_id.is_some_and(|id| !game.crystals.iter().any(|c| c.id == id)) {
+            s.hit_id = None;
+        }
+        s.hit_id
+    });
+    let spot = mid(cell);
+    game.crystals.iter().any(|c| Some(c.id) != hit && dist([c.position.x, c.position.y, c.position.z], spot) <= 1.0)
+}
+// Anything in the cell (and the cells above it up to height) but dropped items and the last crystal hit: what keeps
+// a block or a crystal out.
+fn occupied(game: &Game<'_>, cell: [i32; 3], height: f64) -> bool {
+    let (lo, hi) = cell_box(cell, height);
+    let hit = st(|s| s.hit_id);
+    let small = |x: f64, y: f64, z: f64| overlaps([x - 0.25, y, z - 0.25], [x + 0.25, y + 0.5, z + 0.25], lo, hi);
+    game.player.as_ref().is_some_and(|p| {
+        let (a, b) = bounds(p.bounds());
+        overlaps(a, b, lo, hi)
+    }) || game.mobs.iter().any(|m| {
+        let (a, b) = bounds(m.bounds());
+        !m.removed && overlaps(a, b, lo, hi)
+    }) || game.crystals.iter().any(|c| {
+        let (a, b) = crystal_box([c.position.x, c.position.y, c.position.z]);
+        Some(c.id) != hit && overlaps(a, b, lo, hi)
+    }) || game.orbs.iter().any(|o| small(o.position.x, o.position.y, o.position.z))
+        || game.creatures.projectiles.iter().any(|p| small(p.position.x, p.position.y, p.position.z))
+}
+// occupied, or someone walking into it within Path lookahead ticks: the target at its tracked motion, you at yours.
+fn crowded(game: &Game<'_>, m: &Module, cell: [i32; 3], height: f64, target: Option<&Target>) -> bool {
+    if occupied(game, cell, height) {
+        return true;
+    }
+    let ticks = m.n("Path lookahead").round().max(0.0) as i32;
+    if ticks <= 0 {
+        return false;
+    }
+    let (lo, hi) = cell_box(cell, height);
+    let swept = |blo: [f64; 3], bhi: [f64; 3], v: [f64; 3]| {
+        v.iter().map(|x| x * x).sum::<f64>() > 1.0e-6
+            && (1..=ticks).any(|k| {
+                let k = f64::from(k);
+                overlaps(std::array::from_fn(|i| blo[i] + v[i] * k), std::array::from_fn(|i| bhi[i] + v[i] * k), lo, hi)
+            })
+    };
+    if let Some(t) = target
+        && swept(t.lo, t.hi, motion_of(t.id))
+    {
+        return true;
+    }
+    game.player.as_ref().is_some_and(|p| {
+        let (a, b) = bounds(p.bounds());
+        swept(a, b, [p.velocity.x, p.velocity.y, p.velocity.z])
     })
 }
-pub(super) fn owns_selection(game: &Game<'_>) -> bool {
-    st(|s| s.weapon.as_ref().is_some_and(|lease| same_setup_scene(game, &lease.scene) && lease.owned == game.selected))
-}
-pub(super) fn idle(game: &mut Game<'_>) {
-    let restore = with(|s| s.module(NAME).is_none_or(|m| m.b("Switch back")));
-    idle_weapon(game, restore);
-    suspend();
-}
-pub(super) fn lookahead() -> Option<Rating> {
-    st(|s| s.lookahead.as_ref().map(|p| p.rating))
-}
-pub(super) fn advance_look(game: &mut Game<'_>, m: &Module) {
-    if !allowed(game) || tactics::fixed_look(game) || super::sunset_combat_control::owner().is_some() {
-        return;
+
+// ---------------------------------------------------------------- looks
+
+fn wrap(a: f32) -> f32 {
+    let mut a = a % 360.0;
+    if a >= 180.0 {
+        a -= 360.0;
     }
-    let Some((aim, action)) = st(|s| s.lookahead.as_ref().map(|p| (p.aim, p.action))) else {
-        return;
-    };
-    let Some(eye) = game.eye_position() else {
-        return;
-    };
-    if !view_allowed(game, m, action, aim) {
-        return;
+    if a < -180.0 {
+        a += 360.0;
     }
-    let desired = sunset::look_at(tactics::aim_eye(game).unwrap_or(eye), aim);
-    let turn = tactics::next_look(game, desired, m.n("Turn speed"));
-    sunset::turn(NAME, turn.0, turn.1);
+    a
 }
-fn held(game: &Game<'_>, m: &Module, action: Action) -> bool {
-    let Some(look) = super::sunset_combat_wire::sent_look(game) else {
-        return false;
-    };
-    let Some(eye) = game.eye_position() else {
-        return false;
-    };
-    match action {
-        Action::Break(_, at) => {
-            let y = f64::from(look.0).to_radians();
-            let p = f64::from(look.1).to_radians();
-            break_contact(
-                game,
-                m,
-                at,
-                [eye[0] - y.sin() * p.cos() * 64.0, eye[1] - p.sin() * 64.0, eye[2] + y.cos() * p.cos() * 64.0],
-                &mut Budget::new(0),
-            )
-            .is_some()
+fn angles(eye: [f64; 3], to: [f64; 3]) -> (f32, f32) {
+    let (dx, dy, dz) = (to[0] - eye[0], to[1] - eye[1], to[2] - eye[2]);
+    let flat = (dx * dx + dz * dz).sqrt();
+    ((dz.atan2(dx).to_degrees() - 90.0) as f32, (-dy.atan2(flat).to_degrees()) as f32)
+}
+// A look turned from the last one the server has toward a point, at most TURN_STEP of yaw; true when it was cut short.
+fn step_look(game: &Game<'_>, to: [f64; 3]) -> Option<((f32, f32), bool)> {
+    let eye = game.eye_position()?;
+    let from = super::sunset_combat_wire::sent_look(game).unwrap_or((game.yaw, game.pitch));
+    let (yaw, pitch) = angles(eye, to);
+    let turn = wrap(yaw - from.0);
+    let short = turn.abs() > TURN_STEP;
+    Some(((from.0 + turn.clamp(-TURN_STEP, TURN_STEP), from.1 + wrap(pitch - from.1)), short))
+}
+// The look from the camera straight at a point.
+fn camera_look(game: &Game<'_>, to: [f64; 3]) -> Option<(f32, f32)> {
+    let (yaw, pitch) = angles(game.eye_position()?, to);
+    Some((game.yaw + wrap(yaw - game.yaw), game.pitch + wrap(pitch - game.pitch)))
+}
+fn off_camera(game: &Game<'_>, look: (f32, f32)) -> f64 {
+    f64::from(wrap(look.0 - game.yaw).abs())
+}
+fn direction(look: (f32, f32)) -> [f64; 3] {
+    let (yaw, pitch) = (f64::from(look.0).to_radians(), f64::from(look.1).to_radians());
+    [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()]
+}
+// Where a segment first enters a box (None from inside it).
+fn enters(from: [f64; 3], to: [f64; 3], lo: [f64; 3], hi: [f64; 3]) -> Option<[f64; 3]> {
+    let d: [f64; 3] = std::array::from_fn(|i| to[i] - from[i]);
+    let (mut near, mut far) = (0.0f64, 1.0f64);
+    let mut entered = false;
+    for i in 0..3 {
+        if d[i].abs() < 1.0e-12 {
+            if from[i] < lo[i] || from[i] > hi[i] {
+                return None;
+            }
+            continue;
         }
-        Action::Place(base) => util::block_hit(game, look, base, tactics::block_range(game)).is_some(),
-        Action::Base(_) => false,
+        let (a, b) = ((lo[i] - from[i]) / d[i], (hi[i] - from[i]) / d[i]);
+        let (a, b) = if a < b { (a, b) } else { (b, a) };
+        if a > near {
+            near = a;
+            entered = true;
+        }
+        far = far.min(b);
+        if near > far {
+            return None;
+        }
     }
+    entered.then(|| std::array::from_fn(|i| from[i] + d[i] * near))
 }
-fn view_allowed(game: &Game<'_>, m: &Module, action: Action, aim: [f64; 3]) -> bool {
-    if tactics::fixed_look(game) {
-        return tactics::same_camera(game);
+// The look from an eye meets the box within Reach.
+fn look_meets(from: [f64; 3], look: (f32, f32), lo: [f64; 3], hi: [f64; 3], reach: f64) -> bool {
+    let d = direction(look);
+    enters(from, std::array::from_fn(|i| from[i] + d[i] * 6.0), lo, hi).is_some_and(|p| dist(from, p) <= reach)
+}
+fn box_distance(lo: [f64; 3], hi: [f64; 3], p: [f64; 3]) -> f64 {
+    let d: [f64; 3] = std::array::from_fn(|i| (lo[i] - p[i]).max((p[i] - hi[i]).max(0.0)));
+    d.iter().map(|v| v * v).sum::<f64>().sqrt()
+}
+// A clear line from the eyes to a point on a block: the first block it meets is met there, and no one stands on it.
+fn clear_to(game: &Game<'_>, eye: [f64; 3], point: [f64; 3]) -> bool {
+    let length = dist(eye, point);
+    if length < 1.0e-6 {
+        return true;
     }
-    let Some(eye) = game.eye_position() else {
+    let d: [f64; 3] = std::array::from_fn(|i| (point[i] - eye[i]) / length);
+    if !game.clip_ray(eye, d, length + 0.1).is_some_and(|hit| dist(hit.point, point) < 0.1) {
+        return false;
+    }
+    let own = game.remote.as_ref().map(|r| r.entity_id as u32);
+    let blocks = |lo: [f64; 3], hi: [f64; 3]| enters(eye, point, lo.map(|v| v - 0.3), hi.map(|v| v + 0.3)).is_some();
+    !game.mobs.iter().any(|m| {
+        let (lo, hi) = bounds(m.bounds());
+        !m.removed && Some(m.id) != own && m.alive() && blocks(lo, hi)
+    }) && !game.crystals.iter().any(|c| {
+        let (lo, hi) = crystal_box([c.position.x, c.position.y, c.position.z]);
+        blocks(lo, hi)
+    })
+}
+// The point of a block to click it at: the middle of its top when the eyes see it, else the nearest middle of a side
+// they see, else the nearest of its corners they see.
+fn click_point(game: &Game<'_>, block: [i32; 3]) -> Option<[f64; 3]> {
+    const POINTS: [[f64; 3]; 13] = [
+        [0.5, 1.0, 0.5],
+        [0.5, 0.5, 0.0],
+        [0.0, 0.5, 0.5],
+        [1.0, 0.5, 0.5],
+        [0.5, 0.5, 1.0],
+        [1.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [1.0, 1.0, 1.0],
+        [0.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ];
+    let eye = game.eye_position()?;
+    let at = |o: [f64; 3]| -> [f64; 3] { std::array::from_fn(|i| f64::from(block[i]) + o[i]) };
+    let mut best: Option<[f64; 3]> = None;
+    for (i, o) in POINTS.iter().take(5).enumerate() {
+        let p = at(*o);
+        if dist(eye, p) > CLICK_REACH || !clear_to(game, eye, p) {
+            continue;
+        }
+        if i == 0 {
+            return Some(p);
+        }
+        if best.is_none_or(|b| dist(eye, p) < dist(eye, b)) {
+            best = Some(p);
+        }
+    }
+    if best.is_some() {
+        return best;
+    }
+    for o in POINTS {
+        let p = at(o);
+        if dist(eye, p) <= CLICK_REACH && clear_to(game, eye, p) && best.is_none_or(|b| dist(eye, p) < dist(eye, b)) {
+            best = Some(p);
+        }
+    }
+    best
+}
+// A silent look at the point can click the block: within Silent FOV, and either still turning or already on it.
+fn silent_clicks(game: &Game<'_>, m: &Module, point: [f64; 3], block: [i32; 3]) -> bool {
+    let Some((look, short)) = step_look(game, point) else {
         return false;
     };
-    let desired = sunset::look_at(tactics::aim_eye(game).unwrap_or(eye), aim);
-    let angle = f64::from((desired.0 - game.yaw + 180.0).rem_euclid(360.0) - 180.0).abs();
-    angle <= m.n("View angle") + if held(game, m, action) { 20.0 } else { 0.0 }
+    if off_camera(game, look) > m.n("Silent FOV") {
+        return false;
+    }
+    short || util::block_hit(game, look, block, 6.0).is_some()
 }
-fn credit(game: &Game<'_>, m: &Module, action: Action, aim: [f64; 3]) -> f64 {
-    if tactics::fixed_look(game) {
+
+// The same for one face of the block: the click that puts obsidian against it.
+fn silent_clicks_face(game: &Game<'_>, m: &Module, point: [f64; 3], block: [i32; 3], face: i32) -> bool {
+    let Some((look, short)) = step_look(game, point) else {
+        return false;
+    };
+    if off_camera(game, look) > m.n("Silent FOV") {
+        return false;
+    }
+    short || util::block_contact(game, look, block, face, 6.0).is_some()
+}
+
+// ---------------------------------------------------------------- targets and damage
+
+fn ping_of(game: &Game<'_>, id: u32) -> i32 {
+    super::remote::sunset_combat_remote::player_uuid(game, id)
+        .and_then(|uuid| game.remote.as_ref()?.tab_players.get(&uuid).map(|p| p.latency))
+        .unwrap_or(0)
+        .max(0)
+}
+fn own_ping(game: &Game<'_>) -> i32 {
+    super::remote::sunset_combat_remote::latency(game).unwrap_or(0).max(0)
+}
+// Every player that may be attacked (not you, a friend, a bot Antibot caught, a teammate or one in creative), however far.
+fn enemies(game: &Game<'_>) -> Vec<Target> {
+    game.mobs.iter().filter(|mob| util::player_enemy(game, mob)).map(util::mob_target).collect()
+}
+fn nearest(game: &Game<'_>, list: &[Target]) -> Option<Target> {
+    let feet = util::player_pos(game)?;
+    let sq = |t: &Target| (0..3).map(|i| (t.pos[i] - feet[i]).powi(2)).sum::<f64>();
+    list.iter().filter(|t| t.health > 0.0).min_by(|a, b| sq(a).total_cmp(&sq(b))).cloned()
+}
+// The motion per tick of whoever is tracked, each tick's averaged half and half with what it was.
+fn track(game: &Game<'_>, who: Option<&Target>) {
+    st(|s| match who {
+        None => {
+            s.tracked = None;
+            s.tracked_pos = None;
+            s.motion = [0.0; 3];
+            s.tracked_tick = game.ticks;
+        }
+        Some(t) => {
+            match s.tracked_pos {
+                Some(last) if s.tracked == Some(t.id) && game.ticks == s.tracked_tick.wrapping_add(1) => {
+                    s.motion = std::array::from_fn(|i| s.motion[i] * 0.5 + (t.pos[i] - last[i]) * 0.5);
+                }
+                _ => {
+                    s.tracked = Some(t.id);
+                    s.motion = [0.0; 3];
+                }
+            }
+            s.tracked_pos = Some(t.pos);
+            s.tracked_tick = game.ticks;
+        }
+    });
+}
+fn motion_of(id: u32) -> [f64; 3] {
+    st(|s| if s.tracked == Some(id) { s.motion } else { [0.0; 3] })
+}
+fn moving(id: u32) -> bool {
+    let v = motion_of(id);
+    v[0] * v[0] + v[2] * v[2] > 4.0e-4
+}
+fn clamp_len(v: [f64; 3], max: f64) -> [f64; 3] {
+    let sq: f64 = v.iter().map(|x| x * x).sum();
+    if sq <= max * max {
+        return v;
+    }
+    if sq <= 1.0e-6 {
+        return [0.0; 3];
+    }
+    let k = max / sq.sqrt();
+    v.map(|x| x * k)
+}
+// Where the target will be: its feet led by its motion for Lead ticks and its ping, no more than Max lead.
+fn led(game: &Game<'_>, m: &Module, t: &Target) -> [f64; 3] {
+    let v = motion_of(t.id);
+    if !m.b("Predict target") || v.iter().map(|x| x * x).sum::<f64>() < 1.0e-6 {
+        return t.pos;
+    }
+    let ticks = (m.n("Lead ticks") + f64::from(ping_of(game, t.id)) / 50.0 * m.n("Ping lead")).clamp(0.0, 20.0);
+    let lead = clamp_len([v[0] * ticks, 0.0, v[2] * ticks], m.n("Max lead"));
+    std::array::from_fn(|i| t.pos[i] + lead[i])
+}
+// Where your eyes will be, led the same way by your own velocity.
+fn led_eye(game: &Game<'_>, m: &Module) -> Option<[f64; 3]> {
+    let eye = game.eye_position()?;
+    let p = game.player.as_ref()?;
+    let v = [p.velocity.x, p.velocity.y, p.velocity.z];
+    if !m.b("Predict self") || v.iter().map(|x| x * x).sum::<f64>() < 1.0e-6 {
+        return Some(eye);
+    }
+    let ticks = m.n("Self lead ticks");
+    let lead = clamp_len([v[0] * ticks, 0.0, v[2] * ticks], m.n("Self max lead"));
+    Some(std::array::from_fn(|i| eye[i] + lead[i]))
+}
+fn blast(game: &Game<'_>, base: [i32; 3]) -> Option<Blast> {
+    let obsidian = game.items().get("minecraft:obsidian")?.block?;
+    Some(Blast::explosion(crystal_at(base), 6.0).with_block(base, obsidian))
+}
+// What a crystal on the base does to the target standing with its feet there.
+fn damage_to(game: &Game<'_>, t: &Target, feet: [f64; 3], base: [i32; 3]) -> f64 {
+    if super::remote::sunset_combat_remote::player_mode(game, t.id) == Some(1) {
         return 0.0;
     }
-    let mut score = if held(game, m, action) { 2.0 } else { 0.0 };
-    if let Action::Place(base) = action {
-        if let Some(eye) = game.eye_position() {
-            let at = center(base);
-            let dir = std::array::from_fn(|i| aim[i] - eye[i]);
-            if state::ray_box(
-                eye,
-                dir,
-                [at[0] - 1.0, at[1], at[2] - 1.0],
-                [at[0] + 1.0, at[1] + 2.0, at[2] + 1.0],
-                tactics::entity_range(game),
-            )
-            .is_some()
-            {
-                score += 2.0;
+    let Some(blast) = blast(game, base) else {
+        return 0.0;
+    };
+    let shift: [f64; 3] = std::array::from_fn(|i| feet[i] - t.pos[i]);
+    let mut moved = t.clone();
+    moved.pos = feet;
+    moved.lo = std::array::from_fn(|i| t.lo[i] + shift[i]);
+    moved.hi = std::array::from_fn(|i| t.hi[i] + shift[i]);
+    tactics::friend_damage(game, &moved, blast, &mut Budget::new(64)).unwrap_or(0.0)
+}
+// What it does to you where you stand (unknown counts as too much).
+fn damage_to_self(game: &mut Game<'_>, base: [i32; 3]) -> f64 {
+    let Some(blast) = blast(game, base) else {
+        return f64::INFINITY;
+    };
+    local_damage_at(game, blast, [0.0; 3], &mut Budget::new(64)).map_or(f64::INFINITY, |p| p.estimate)
+}
+fn own_health(game: &Game<'_>) -> f64 {
+    game.player.as_ref().map_or(0.0, |p| f64::from(p.health.health() + p.health.absorption()))
+}
+fn too_costly(own: f64, health: f64, m: &Module) -> bool {
+    own > m.n("Max self damage") || m.b("Anti suicide") && own >= health - 1.0
+}
+
+// ---------------------------------------------------------------- the scan
+
+// The nearest hole around the target: an air cell with air above, a block under and on all four sides.
+fn nearest_hole(game: &Game<'_>, feet: [i32; 3]) -> Option<[i32; 3]> {
+    let mut best: Option<([i32; 3], i32)> = None;
+    for dx in -6..=6 {
+        for dz in -6..=6 {
+            let c = [feet[0] + dx, feet[1], feet[2] + dz];
+            if !util::is_air(game, c) || !util::is_air(game, up(c)) || !taken(game, [c[0], c[1] - 1, c[2]]) {
+                continue;
+            }
+            if [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|(x, z)| !taken(game, [c[0] + x, c[1], c[2] + z])) {
+                continue;
+            }
+            let d = dx * dx + dz * dz;
+            if best.is_none_or(|(_, b)| d < b) {
+                best = Some((c, d));
             }
         }
     }
-    score
+    best.map(|(c, _)| c)
 }
-fn optimistic(at: [f64; 3], targets: &[Target]) -> f64 {
-    targets
-        .iter()
-        .map(|t| {
-            let raw = super::sunset_explosive_policy::raw_damage(util::dist(at, t.pos), 6.0, 1.0).unwrap_or(0.0);
-            let hp = f64::from(t.health).max(0.01);
-            let damage = f64::from(raw) * 1.5;
-            damage.min(hp) + if damage >= hp { 1000.0 } else { 0.0 }
+// Which way the blast should push the target (flat, unit), for Momentum.
+fn push_goal(game: &Game<'_>, m: &Module, target: &Target, at: [f64; 3]) -> Option<[f64; 3]> {
+    let flat = |v: [f64; 3]| {
+        let sq = v[0] * v[0] + v[2] * v[2];
+        (sq > 1.0e-4).then(|| {
+            let l = sq.sqrt();
+            [v[0] / l, 0.0, v[2] / l]
         })
-        .fold(0.0, f64::max)
+    };
+    match m.p("Momentum") {
+        "Away from you" => {
+            let feet = util::player_pos(game)?;
+            flat(std::array::from_fn(|i| at[i] - feet[i]))
+        }
+        "Toward center" => flat([-at[0], 0.0, -at[2]]),
+        "Toward hole" => {
+            let hole = mid(nearest_hole(game, target.pos.map(|v| v.floor() as i32))?);
+            flat(std::array::from_fn(|i| hole[i] - at[i]))
+        }
+        _ => None,
+    }
 }
-fn keep(best: &mut Option<Plan>, plan: Plan) {
-    if best.as_ref().is_none_or(|old| rank(&plan.rating) > rank(&old.rating)) {
-        *best = Some(plan);
-    }
-}
-pub(super) fn prepare(game: &mut Game<'_>, m: Option<&Module>, ticks: u64) -> Option<Rating> {
-    let Some(m) = m.filter(|m| m.on) else {
-        disabled(game);
-        return None;
-    };
-    if st(|s| s.setup_scene.as_ref().is_some_and(|old| !same_setup_scene(game, old))) {
-        reset();
-    }
-    st(|s| {
-        s.lookahead = None;
-        s.opening = 0.0;
-    });
-    if !allowed(game) || m.b("Require hold") && !util::setting_key_down(game, m, "Hold key") {
-        paused(game);
-        return None;
-    }
-    if tactics::fixed_look(game) && !tactics::same_camera(game) {
-        suspend();
-        return None;
-    }
-    if st(|s| {
-        s.weapon.as_ref().is_some_and(|lease| !same_setup_scene(game, &lease.scene) || lease.owned != game.selected)
-    }) {
-        st(|s| s.weapon = None);
-        suspend();
-        return None;
-    }
-    idle_weapon(game, m.b("Switch back"));
-    super::sunset_combat_macros::note_main(game);
-    st(|s| {
-        s.setup_scene = game
-            .remote
-            .as_ref()
-            .map(|r| (r.entity_id, game.dim, r.session.counters.clone() as Arc<dyn Any + Send + Sync>));
-        s.tick = ticks;
-        s.plan = None;
-        s.attempts.retain(|(id, _, _)| game.crystals.iter().any(|c| c.id == *id));
-    });
-    if st(|s| s.queued_at.is_some_and(|t| t.elapsed() > Duration::from_millis(200))) {
-        suspend();
-    }
-    if let Some(waiting) = st(|s| s.clock.waiting) {
-        let seen = observed(game, waiting.action);
-        let ack =
-            seen || ticks.saturating_sub(waiting.sent) >= u64::from(prediction::rtt(game).saturating_add(2).clamp(4, 20));
-        if let (Action::Place(base), true) = (waiting.action, ack) {
-            st(|s| miss(s, base, !seen, ticks));
-        }
-        st(|s| s.clock.observe(ticks, ack));
-    }
-    if st(|s| s.clock.queued) {
-        return None;
-    }
-    let Some((targets, friends)) = players(game, m).filter(|(t, _)| !t.is_empty()) else {
-        st(|s| s.retained = None);
-        restore_weapon(game, m.b("Switch back"));
-        return None;
-    };
-    let mut budget = Budget::new(PREDICTIONS);
-    let mut best = None;
-    let mut opening = None;
-    let mut evaluated = 0;
-    let mut stage = super::sunset_explosive_choice::Stage {
-        crystal_receipt_pending: st(|s| s.clock.waiting.is_some_and(|w| matches!(w.action, Action::Place(_)))),
-        ..Default::default()
-    };
-    let count = game.crystals.len();
-    let start = st(|s| s.clock.crystals);
-    let mut shortlist = Vec::with_capacity(count.min(64));
-    for n in 0..count.min(64) {
-        let c = &game.crystals[(start + n) % count];
-        if st(|s| s.clock.waiting.is_some_and(|w| matches!(w.action,Action::Break(id,_) if id==c.id))) {
-            continue;
-        }
-        if c.id == 0
-            || c.invulnerable
-            || st(|s| {
-                s.attempts.iter().any(|&(id, attempts, last)| {
-                    id == c.id && attempts >= 3 && ticks < last.saturating_add(SKIP_TICKS)
-                })
-            })
-        {
-            continue;
-        }
-        let at = [c.position.x, c.position.y, c.position.z];
-        let action = Action::Break(c.id, at);
-        let Some(aim) = reachable(game, m, action, &mut budget) else {
-            continue;
-        };
-        if !view_allowed(game, m, action, aim) {
-            continue;
-        }
-        shortlist.push((optimistic(at, &targets) + credit(game, m, action, aim), action, aim));
-    }
-    shortlist.sort_by(|a, b| b.0.total_cmp(&a.0));
-    // Reserve one exposure evaluation for a placement when all examined breaks
-    // are ineffective. Rotate a tie/failure probe so four stale entities cannot
-    // permanently starve an unseen candidate in a short list.
-    let probe = st(|s| {
-        let n = s.probe;
-        s.probe = s.probe.wrapping_add(1);
-        n
-    });
-    if shortlist.len() > 2 {
-        let tail = 1 + probe % (shortlist.len() - 1);
-        shortlist.swap(1, tail);
-    }
-    for (_, action, aim) in shortlist.into_iter().take(MAX_CANDIDATES - 1) {
-        let Action::Break(_, at) = action else {
-            continue;
-        };
-        evaluated += 1;
-        if let Some((now, later)) = damage_pair(game, m, at, &targets, &friends, action, &mut budget) {
-            stage.immediate_crystal |= now.is_some();
-            stage.opening_crystal |= later.is_some();
-            if let Some((mut rating, target)) = later {
-                st(|s| s.opening = s.opening.max(rating.value()));
-                rating.look_credit = credit(game, m, action, aim);
-                keep(&mut opening, Plan { rating, target, action, aim, click: None });
-            }
-            if let Some((mut rating, target)) = now {
-                rating.look_credit = credit(game, m, action, aim);
-                if st(|s| s.clock.due(action, ticks)) {
-                    keep(&mut best, Plan { rating, target, action, aim, click: None });
+// Every base around the target that pays off, best first; the best is returned.
+fn scan(game: &mut Game<'_>, m: &Module, target: &Target) -> Option<Spot> {
+    let feet = target.pos.map(|v| v.floor() as i32);
+    let ahead = led(game, m, target);
+    let eye = game.eye_position()?;
+    let eye_ahead = led_eye(game, m).unwrap_or(eye);
+    let goal = push_goal(game, m, target, ahead);
+    let health = own_health(game);
+    let leading = m.b("Predict target") && moving(target.id);
+    let target_health = prediction::effective_health(game, target).unwrap_or(f64::from(target.health));
+    let silent = m.b("Silent rotation");
+    let reach = m.n("Reach");
+    let mut found: Vec<Spot> = Vec::new();
+    for dx in -SCAN_SIDE..=SCAN_SIDE {
+        for dz in -SCAN_SIDE..=SCAN_SIDE {
+            for dy in -SCAN_UP..=SCAN_UP {
+                let base = [feet[0] + dx, feet[1] + dy, feet[2] + dz];
+                let middle = mid(base);
+                let sq = |e: [f64; 3]| (0..3).map(|i| (e[i] - middle[i]).powi(2)).sum::<f64>();
+                if sq(eye) > SCAN_EYE_SQ && sq(eye_ahead) > SCAN_EYE_SQ {
+                    continue;
                 }
-            }
-        }
-    }
-    st(|s| s.clock.crystals = if count == 0 { 0 } else { (start + 64) % count });
-    if best.is_none() && stage.new_crystal() && evaluated < MAX_CANDIDATES && crystal_slot(game, m).is_some() {
-        // Consider crystal spots around the player's eyes in damage order.
-        let Some(origin) = game.eye_position().map(|eye| eye.map(|v| v.floor() as i32)) else {
-            return None;
-        };
-        let skipped = st(|s| {
-            s.skipped.retain(|&(_, until)| ticks < until);
-            s.skipped.iter().map(|&(cell, _)| cell).collect::<Vec<_>>()
-        });
-        let retained = st(|s| s.retained)
-            .and_then(setup_cell)
-            .filter(|base| !skipped.contains(base))
-            .and_then(|base| setup_action(game, m, base, ticks));
-        let radius = tactics::block_range(game).ceil().clamp(1.0, 8.0) as i32;
-        let mut cells = Vec::new();
-        for dx in -radius..=radius {
-            for dy in -radius..=radius {
-                for dz in -radius..=radius {
-                    let base = [origin[0] + dx, origin[1] + dy, origin[2] + dz];
-                    if retained.and_then(setup_cell) == Some(base) || skipped.contains(&base) {
+                let above = up(base);
+                let existing = base_block(game, base);
+                let armed = existing && crystal_in(game, above);
+                if !armed && (!util::is_air(game, above) || crowded(game, m, above, 2.0, Some(target))) {
+                    continue;
+                }
+                let mut support = None;
+                let aim;
+                if armed {
+                    let c = [middle[0], middle[1] + 1.0, middle[2]];
+                    if dist(eye, c) > reach + 0.5 && dist(eye_ahead, c) > reach + 0.5 {
                         continue;
                     }
-                    if let Some(action) = setup_action(game, m, base, ticks) {
-                        cells.push((optimistic(center(base), &targets), action));
+                    if silent && step_look(game, c).is_none_or(|(look, _)| off_camera(game, look) > m.n("Silent FOV")) {
+                        continue;
+                    }
+                    aim = c;
+                } else if existing {
+                    let Some(p) = click_point(game, base) else {
+                        continue;
+                    };
+                    if silent && !silent_clicks(game, m, p, base) {
+                        continue;
+                    }
+                    aim = p;
+                } else {
+                    if m.b("Placed obsidian only") || taken(game, base) || crowded(game, m, base, 1.0, Some(target)) {
+                        continue;
+                    }
+                    // The nearest face of a block beside it the eyes can click (the face toward the base).
+                    let mut best: Option<([i32; 3], i32, [f64; 3], f64)> = None;
+                    for (face, d) in [(1, [0, -1, 0]), (0, [0, 1, 0]), (3, [0, 0, -1]), (2, [0, 0, 1]), (5, [-1, 0, 0]), (4, [1, 0, 0])] {
+                        let by = [base[0] + d[0], base[1] + d[1], base[2] + d[2]];
+                        if util::facts(game, by).replaceable {
+                            continue;
+                        }
+                        let c = mid(by);
+                        let point: [f64; 3] = std::array::from_fn(|i| c[i] - f64::from(d[i]) * 0.5);
+                        let near = dist(eye, point);
+                        if near > CLICK_REACH && dist(eye_ahead, point) > CLICK_REACH {
+                            continue;
+                        }
+                        // The face toward the base has to face the eyes: a click on any other face of the support puts
+                        // the obsidian somewhere else, so a support seen from its back would never take it.
+                        if (0..3).map(|i| (eye[i] - point[i]) * -f64::from(d[i])).sum::<f64>() <= 0.0 {
+                            continue;
+                        }
+                        if silent && !silent_clicks_face(game, m, point, by, face) {
+                            continue;
+                        }
+                        if best.is_none_or(|b| near < b.3) {
+                            best = Some((by, face, point, near));
+                        }
+                    }
+                    let Some((by, face, point, _)) = best else {
+                        continue;
+                    };
+                    let top = [middle[0], middle[1] + 0.5, middle[2]];
+                    if dist(eye, top) > CLICK_REACH && dist(eye_ahead, top) > CLICK_REACH {
+                        continue;
+                    }
+                    support = Some((by, face));
+                    aim = point;
+                }
+                let now = damage_to(game, target, target.pos, base);
+                let mut dealt = now;
+                if leading && now < m.n("Min damage") {
+                    dealt = now.max(damage_to(game, target, ahead, base));
+                }
+                if dealt < m.n("Min damage") {
+                    continue;
+                }
+                if too_costly(damage_to_self(game, base), health, m) {
+                    continue;
+                }
+                let mut score = dealt;
+                if dealt >= target_health {
+                    score += 50.0;
+                }
+                if let Some(goal) = goal {
+                    let c = crystal_at(base);
+                    let push = [ahead[0] - c[0], ahead[2] - c[2]];
+                    let sq = push[0] * push[0] + push[1] * push[1];
+                    if sq > 1.0e-4 {
+                        let along = (push[0] * goal[0] + push[1] * goal[2]) / sq.sqrt();
+                        score += m.n("Momentum weight") * 8.0 * along.max(0.0);
                     }
                 }
-            }
-        }
-        cells.sort_by(|a, b| b.0.total_cmp(&a.0));
-        // The retained cell gets the reserved fourth evaluation before newly
-        // scanned cells. It still uses every fresh geometry/material/damage
-        // check below and shares the same MAX_CANDIDATES and ray budgets.
-        if let Some(action) = retained {
-            cells.insert(0, (0.0, action));
-        }
-        let mut base_best = None;
-        let mut crystal_best = None;
-        let mut rays = 48;
-        let mut weighed = 0;
-        for (bound, action) in cells {
-            // The most a spot's look can add: held (2) and one look for the crystal too (2).
-            let kind_best = if matches!(action, Action::Base(_)) { &base_best } else { &crystal_best };
-            if weighed >= MAX_SETUPS {
-                break;
-            }
-            if kind_best.as_ref().is_some_and(|b: &Plan| rank(&b.rating) >= bound + 4.0) {
-                continue;
-            }
-            let (aim, click) = match action {
-                Action::Place(_) => {
-                    let Some(aim) = reachable(game, m, action, &mut budget) else {
-                        continue;
-                    };
-                    (aim, None)
+                if m.b("Prefer adjacent") && base[1] == feet[1] && (base[0] - feet[0]).abs().max((base[2] - feet[2]).abs()) == 1 {
+                    score += 3.0;
                 }
-                Action::Base(base) => {
-                    let Some(slot) = obsidian_slot(game, m) else {
-                        continue;
-                    };
-                    let Some(click) = base_native::plan(game, base, slot, tactics::block_range(game), &mut rays) else {
-                        continue;
-                    };
-                    (click.point, Some(click))
+                if existing && m.b("Prefer placed obsidian") {
+                    score += if armed { 8.0 } else { 4.0 };
                 }
-                _ => continue,
-            };
-            if !view_allowed(game, m, action, aim) {
-                continue;
-            }
-            weighed += 1;
-            let at = match action {
-                Action::Place(base) | Action::Base(base) => center(base),
-                _ => continue,
-            };
-            let Some((mut rating, target)) = valid_damage(game, m, at, &targets, &friends, action, &mut budget) else {
-                continue;
-            };
-            rating.look_credit = credit(game, m, action, aim);
-            let plan = Plan { rating, target, action, aim, click };
-            if matches!(action, Action::Base(_)) {
-                keep(&mut base_best, plan);
-            } else {
-                keep(&mut crystal_best, plan);
+                if m.n("Turn cost") > 0.0
+                    && let Some((look, _)) = step_look(game, aim)
+                {
+                    score -= m.n("Turn cost") * off_camera(game, look).min(m.n("Turn cost cap"));
+                }
+                score -= 0.2 * dist(eye, aim);
+                found.push(Spot { base, support, aim, needs_base: !existing, armed, score });
             }
         }
-        best = match (crystal_best, base_best) {
-            (Some(c), Some(b)) => Some(if setup::upgrade(c.rating.full_damage, b.rating.full_damage) { b } else { c }),
-            (c, b) => c.or(b),
-        };
     }
-    st(|s| s.retained = best.as_ref().and_then(|p| setup_cell(p.action).map(|_| p.action)));
-    if let Some(plan) = best {
-        let due = st(|s| s.clock.due(plan.action, ticks));
-        let rating = plan.rating;
-        let cell = match plan.action {
-            Action::Place(p) | Action::Base(p) => p,
-            Action::Break(_, p) => [p[0].floor() as i32, p[1].floor() as i32 - 1, p[2].floor() as i32],
-        };
-        super::sunset_explosive_aura::show(game, false, cell, rating);
+    found.sort_by(|a, b| b.score.total_cmp(&a.score));
+    let best = found.first().copied();
+    st(|s| s.candidates = found);
+    best
+}
+
+// ---------------------------------------------------------------- the sequence
+
+fn notify(kind: super::sunset_toast::Kind, text: &str) {
+    super::sunset_toast::push(kind, &format!("{NAME}: {text}"));
+}
+// The sequence ends (with Debug aborts, saying why).
+fn stop(game: &mut Game<'_>, m: &Module, why: &str) {
+    if m.b("Debug aborts")
+        && let Some(stage) = st(|s| (s.stage != Stage::Idle).then_some(s.stage))
+    {
+        notify(super::sunset_toast::Kind::Info, &format!("abort: {}, {why}", stage.label()));
+    }
+    end(game, m);
+}
+// The slot goes back and everything about the sequence is dropped.
+fn end(game: &mut Game<'_>, m: &Module) {
+    give_back(game, m);
+    st(|s| {
+        s.stage = Stage::Idle;
+        s.target = None;
+        s.spot = None;
+        s.origin = None;
+        s.fresh_base = false;
+        s.retried = false;
+        s.candidates.clear();
+    });
+}
+// A hotbar item is missing: said once every 3 s, and the sequence ends.
+fn missing(game: &mut Game<'_>, m: &Module, text: &str) {
+    let due = st(|s| {
+        let due = s.notice_clock.past(NOTICE_MS);
         if due {
-            st(|s| s.plan = Some(plan));
-            return Some(rating);
+            s.notice_clock.reset();
         }
-        keep(&mut opening, plan);
+        due
+    });
+    if due {
+        notify(super::sunset_toast::Kind::Error, text);
     }
-    st(|s| s.lookahead = opening);
+    end(game, m);
+}
+// The slot held before the sequence comes back (Switch back), unless something already went out this tick.
+fn give_back(game: &mut Game<'_>, m: &Module) {
+    let Some(home) = st(|s| s.home) else {
+        return;
+    };
+    if acted_now(game) {
+        return;
+    }
+    if m.b("Switch back") && game.selected != home {
+        weapon_hold(game, home);
+        mark_acted(game);
+    }
+    st(|s| s.home = None);
+}
+fn acted_now(game: &Game<'_>) -> bool {
+    st(|s| s.acted_tick == game.ticks)
+}
+fn mark_acted(game: &Game<'_>) {
+    st(|s| s.acted_tick = game.ticks);
+}
+fn restart_stage() {
+    st(|s| s.stage_clock.reset());
+}
+fn set_stage(stage: Stage) {
+    st(|s| {
+        s.stage = stage;
+        s.stage_clock.reset();
+    });
+}
+// How long a stage may take: a hit waits longer for its crystal than a placement for its block.
+fn stage_limit(game: &Game<'_>, stage: Stage) -> f64 {
+    let ping = f64::from(own_ping(game));
+    if stage == Stage::Hit { (300.0 + ping * 1.5).clamp(500.0, 1500.0) } else { (120.0 + ping * 0.8).clamp(200.0, 600.0) }
+}
+fn draw_rolls(s: &mut State, m: &Module, reaction: bool, place: bool, hit: bool) {
+    let mut rng = s.rng;
+    if reaction {
+        s.first_roll = Roll::draw(m, "Shortest reaction (ms)", "Longest reaction (ms)", &mut rng);
+    }
+    if place {
+        s.place_roll = Roll::draw(m, "Shortest crystal delay (ms)", "Longest crystal delay (ms)", &mut rng);
+    }
+    if hit {
+        s.break_roll = Roll::draw(m, "Shortest break delay (ms)", "Longest break delay (ms)", &mut rng);
+    }
+    s.rng = rng;
+}
+// Idle: the nearest enemy in Target range, and the best base around them.
+fn begin(game: &mut Game<'_>, m: &Module) {
+    let Some(target) = nearest(game, &enemies(game)) else {
+        return;
+    };
+    if util::player_pos(game).is_none_or(|feet| dist(feet, target.pos) > m.n("Target range")) {
+        return;
+    }
+    st(|s| s.target = Some(target.id));
+    let Some(spot) = scan(game, m, &target) else {
+        st(|s| s.target = None);
+        return;
+    };
+    st(|s| {
+        s.spot = Some(spot);
+        s.origin = Some(target.pos.map(|v| v.floor() as i32));
+        s.retried = false;
+        s.stage = if spot.armed {
+            Stage::Hit
+        } else if spot.needs_base {
+            Stage::Base
+        } else {
+            Stage::Place
+        };
+        s.stage_clock.reset();
+        s.acted = false;
+        s.fresh_base = false;
+        s.first_clock.reset();
+        s.place_clock.reset();
+        s.break_clock.reset();
+        draw_rolls(s, m, true, true, true);
+    });
+}
+// The current stage may act now: the reaction delay before the first action, then each stage's own delay.
+fn due(m: &Module) -> bool {
+    let manual = m.p("Break mode") == "Manual";
+    st(|s| {
+        if !s.acted {
+            return !(s.stage == Stage::Hit && manual) && s.stage != Stage::Idle && s.first_clock.past(s.first_roll.ms);
+        }
+        match s.stage {
+            Stage::Base => true,
+            Stage::Place => s.fresh_base || s.place_clock.past(s.place_roll.ms),
+            Stage::Hit => !manual && s.break_clock.past(s.break_roll.ms),
+            Stage::Idle => false,
+        }
+    })
+}
+fn age(game: &Game<'_>, id: u32) -> u64 {
+    st(|s| s.seen.iter().find(|(c, _)| *c == id).map_or(0, |(_, at)| game.ticks.saturating_sub(*at)))
+}
+fn note_crystals(game: &Game<'_>) {
+    st(|s| {
+        s.seen.retain(|(id, _)| game.crystals.iter().any(|c| c.id == *id));
+        for c in game.crystals.iter() {
+            if !s.seen.iter().any(|(id, _)| *id == c.id) && s.seen.len() < 1024 {
+                s.seen.push((c.id, game.ticks));
+            }
+        }
+    });
+}
+// The crystal on the base that may be hit: not the last one hit, at least 2 ticks old, within Reach of the eyes (now
+// and as the server last had them). One out of Reach marks the stage unreachable.
+fn base_crystal(game: &Game<'_>, m: &Module) -> Option<(u32, [f64; 3])> {
+    st(|s| s.far = false);
+    let base = st(|s| s.spot.map(|p| p.base))?;
+    if !crystal_in(game, up(base)) {
+        return None;
+    }
+    let spot = mid(up(base));
+    let eye = game.eye_position()?;
+    let (last, hit) = st(|s| (s.last_eye, s.hit_id));
+    let (zone_lo, zone_hi) = (spot.map(|v| v - 2.0), spot.map(|v| v + 2.0));
+    for c in game.crystals.iter() {
+        let at = [c.position.x, c.position.y, c.position.z];
+        let (lo, hi) = crystal_box(at);
+        if !overlaps(lo, hi, zone_lo, zone_hi) || Some(c.id) == hit || c.invulnerable || age(game, c.id) < 2 || dist(at, spot) > 1.0 {
+            continue;
+        }
+        let far = box_distance(lo, hi, eye).max(last.map_or(0.0, |l| box_distance(lo, hi, l)));
+        if far <= m.n("Reach") {
+            return Some((c.id, at));
+        }
+        st(|s| s.far = true);
+    }
     None
 }
-
-pub(super) fn execute(game: &mut Game<'_>, m: &Module, ticks: u64) -> bool {
-    let Some(plan) = st(|s| s.plan.take()) else {
+// Where to look for the current stage: the support face for obsidian, the base's click point for a crystal, the
+// point of the crystal nearest the eyes (0.15 into it) for a hit.
+fn stage_aim(game: &Game<'_>, m: &Module) -> Option<[f64; 3]> {
+    let (stage, spot) = st(|s| (s.stage, s.spot));
+    let spot = spot?;
+    match stage {
+        Stage::Base => Some(spot.aim),
+        Stage::Place => click_point(game, spot.base),
+        Stage::Hit => {
+            let (_, at) = base_crystal(game, m)?;
+            let eye = game.eye_position()?;
+            let (lo, hi) = crystal_box(at);
+            let near: [f64; 3] = std::array::from_fn(|i| eye[i].clamp(lo[i], hi[i]));
+            let centre = [at[0], at[1] + 1.0, at[2]];
+            let to: [f64; 3] = std::array::from_fn(|i| centre[i] - near[i]);
+            let l = to.iter().map(|v| v * v).sum::<f64>().sqrt();
+            Some(if l * l > 1.0e-6 { std::array::from_fn(|i| near[i] + to[i] / l * 0.15) } else { near })
+        }
+        Stage::Idle => None,
+    }
+}
+fn unreachable(game: &Game<'_>, aim: Option<[f64; 3]>) -> bool {
+    if st(|s| s.stage) == Stage::Hit {
+        return st(|s| s.far);
+    }
+    let (Some(aim), Some(eye)) = (aim, game.eye_position()) else {
         return false;
     };
-    if !m.on || !allowed(game) || !st(|s| s.clock.due(plan.action, ticks)) {
-        return false;
-    }
-    queue(game, m, plan.action, plan.target, plan.aim, plan.click, ticks)
+    dist(eye, aim) > AIM_LIMIT || st(|s| s.last_eye).is_some_and(|l| dist(l, aim) > AIM_LIMIT)
+}
+fn target_now(game: &Game<'_>) -> Option<Target> {
+    let id = st(|s| s.target)?;
+    enemies(game).into_iter().find(|t| t.id == id)
 }
 
-fn queue(
-    game: &mut Game<'_>,
-    m: &Module,
-    action: Action,
-    target: u32,
-    aim: [f64; 3],
-    click: Option<BaseClick>,
-    ticks: u64,
-) -> bool {
-    let Some(eye) = game.eye_position() else {
-        return false;
-    };
-    let desired = sunset::look_at(tactics::aim_eye(game).unwrap_or(eye), aim);
-    let turn = if !tactics::fixed_look(game) {
-        tactics::next_look(game, desired, m.n("Turn speed"))
-    } else {
-        (game.yaw, game.pitch)
-    };
-    let angle = f64::from((desired.0 - game.yaw + 180.0).rem_euclid(360.0) - 180.0).abs();
-    let held = super::sunset_combat_wire::sent_look(game).is_some_and(|look| match action {
-        Action::Break(_, at) => {
-            let y = f64::from(look.0).to_radians();
-            let p = f64::from(look.1).to_radians();
-            break_contact(
-                game,
-                m,
-                at,
-                [eye[0] - y.sin() * p.cos() * 64.0, eye[1] - p.sin() * 64.0, eye[2] + y.cos() * p.cos() * 64.0],
-                &mut Budget::new(0),
-            )
-            .is_some()
-        }
-        Action::Base(_) => click.is_some_and(|c| {
-            util::block_contact(game, look, c.clicked, base_native::face(c), tactics::block_range(game)).is_some()
-        }),
-        Action::Place(base) => util::block_hit(game, look, base, tactics::block_range(game)).is_some(),
-    });
-    if !tactics::fixed_look(game)
-        && m.n("View angle") < 180.0
-        && angle > m.n("View angle") + if held { 20.0 } else { 0.0 }
-    {
-        return false;
-    }
-    let mut click = click;
-    let contact = match action {
-        Action::Base(_) => click.and_then(|mut c| {
-            c.point = util::block_contact(game, turn, c.clicked, base_native::face(c), tactics::block_range(game))?;
-            click = Some(c);
-            Some(c.point)
-        }),
-        Action::Place(base) => util::block_hit(game, turn, base, tactics::block_range(game)).map(|hit| hit.1),
-        Action::Break(_, at) => {
-            let y = f64::from(turn.0).to_radians();
-            let p = f64::from(turn.1).to_radians();
-            let along = [eye[0] - y.sin() * p.cos() * 64.0, eye[1] - p.sin() * 64.0, eye[2] + y.cos() * p.cos() * 64.0];
-            break_contact(game, m, at, along, &mut Budget::new(0))
-        }
-    };
-    let Some(aim) = contact else {
-        // Turned toward a spot this long and still not on it (reach or a block cuts the look short): leave it.
-        if let Some(cell) = setup_cell(action) {
-            let stuck = st(|s| {
-                let since = s
-                    .aim_wait
-                    .filter(|&(c, _, last)| c == cell && ticks.saturating_sub(last) <= 2)
-                    .map_or(ticks, |(_, since, _)| since);
-                s.aim_wait = Some((cell, since, ticks));
-                ticks.saturating_sub(since) >= AIM_TICKS
-            });
-            if stuck {
-                st(|s| {
-                    s.aim_wait = None;
-                    s.retained = None;
-                    if s.skipped.len() < 32 {
-                        s.skipped.push((cell, ticks + SKIP_TICKS));
-                    }
-                });
-                return false;
+// Runs the Aura for this tick. True while a sequence runs (Anchor Aura waits for it).
+pub(super) fn tick(game: &mut Game<'_>, m: &Module) -> bool {
+    note_crystals(game);
+    let tracked = target_now(game).or_else(|| nearest(game, &enemies(game)));
+    track(game, tracked.as_ref());
+    if st(|s| s.stage) != Stage::Idle {
+        let target = target_now(game);
+        let valid = target.as_ref().is_some_and(|t| {
+            t.health > 0.0 && util::player_pos(game).is_some_and(|feet| dist(feet, t.pos) <= m.n("Max target distance"))
+        });
+        if !valid {
+            stop(game, m, "invalid target");
+        } else if let (Some(t), Some(origin)) = (target.as_ref(), st(|s| s.origin)) {
+            let now = t.pos.map(|v| v.floor() as i32);
+            let drift = (0..3).map(|i| (now[i] - origin[i]).abs()).max().unwrap_or(0);
+            let allowed = if st(|s| s.stage) == Stage::Base { 2 } else { m.n("Movement tolerance").round() as i32 };
+            if drift > allowed {
+                stop(game, m, &format!("target moved {drift}"));
             }
         }
-        if !tactics::fixed_look(game) {
-            sunset::turn(NAME, turn.0, turn.1);
+    }
+    let stage = st(|s| s.stage);
+    if stage != Stage::Idle && st(|s| s.stage_clock.ms()) >= stage_limit(game, stage) {
+        if stage == Stage::Hit && !st(|s| s.retried) {
+            st(|s| s.retried = true);
+            set_stage(Stage::Place);
+        } else {
+            stop(game, m, &format!("stage took {} ms", stage_limit(game, stage) as i64));
         }
-        return false;
+    }
+    let manual = m.p("Break mode") == "Manual";
+    match st(|s| s.stage) {
+        Stage::Idle => {
+            give_back(game, m);
+            begin(game, m);
+        }
+        Stage::Hit if manual => {
+            let base = st(|s| s.spot.map(|p| p.base));
+            if base.is_some_and(|b| !crystal_in(game, up(b))) && st(|s| s.break_clock.past(s.break_roll.ms)) {
+                set_stage(Stage::Place);
+            }
+        }
+        _ if acted_now(game) => {}
+        _ if m.b("Silent rotation") => silent(game, m),
+        _ => plain(game, m),
+    }
+    let stage = st(|s| s.stage);
+    // While it runs, your own clicks wait (a manual hit on its crystal goes through).
+    if stage != Stage::Idle {
+        game.right = false;
+        if !(manual && stage == Stage::Hit) {
+            game.left = false;
+        }
+    }
+    let eye = game.eye_position();
+    st(|s| s.last_eye = eye);
+    stage != Stage::Idle
+}
+
+// Silent: the look turns at most 90 degrees a tick toward the stage's aim (the camera stays), with a little jitter,
+// and the stage acts once the look is on it.
+fn silent(game: &mut Game<'_>, m: &Module) {
+    if !due(m) {
+        return;
+    }
+    let aim = stage_aim(game, m);
+    if unreachable(game, aim) {
+        stop(game, m, "unreachable");
+        return;
+    }
+    let (Some(aim), Some(eye)) = (aim, game.eye_position()) else {
+        return;
     };
-    st(|s| s.aim_wait = None);
-    let own = own_id(game);
-    let selected_slot = game.selected;
-    let dimension = game.dim;
-    // Retain a unique session allocation: an in-place Remote address can be
-    // reused by a reconnect, while this live Arc cannot be recycled.
-    let Some(session) = game.remote.as_ref().map(|r| r.session.counters.clone()) else {
-        return false;
+    let Some(((yaw, pitch), short)) = step_look(game, aim) else {
+        return;
     };
-    let snapshot = m.clone();
-    let at = match action {
-        Action::Base(p) | Action::Place(p) => center(p),
-        Action::Break(_, at) => at,
-    };
-    let generation = st(|s| {
-        s.clock.queued = true;
-        s.queued_at = Some(Instant::now());
-        s.clock.generation
+    let wobble = (0.18 / dist(eye, aim).max(1.0)).clamp(0.005, 0.15);
+    let (jy, jp) = st(|s| {
+        let mut rng = s.rng;
+        let a = (unit(&mut rng) * 2.0 - 1.0) * wobble;
+        let b = (unit(&mut rng) * 2.0 - 1.0) * wobble;
+        s.rng = rng;
+        (a as f32, b as f32)
     });
-    let deadline = Instant::now();
+    let look = (yaw + jy, (pitch + jp).clamp(-89.9, 89.9));
+    if off_camera(game, look) > m.n("Silent FOV") {
+        stop(game, m, "outside Silent FOV");
+        return;
+    }
+    if short {
+        sunset::turn(NAME, look.0, look.1);
+        return;
+    }
+    act(game, m, look);
+}
+// Not silent: the camera turns straight onto the aim and the stage acts.
+fn plain(game: &mut Game<'_>, m: &Module) {
+    if !due(m) {
+        return;
+    }
+    let aim = stage_aim(game, m);
+    if unreachable(game, aim) {
+        stop(game, m, "unreachable");
+        return;
+    }
+    let Some(look) = aim.and_then(|a| camera_look(game, a)) else {
+        return;
+    };
+    game.yaw = look.0;
+    game.pitch = look.1.clamp(-90.0, 90.0);
+    act(game, m, (game.yaw, game.pitch));
+}
+fn act(game: &mut Game<'_>, m: &Module, look: (f32, f32)) {
+    match st(|s| s.stage) {
+        Stage::Base => put_base(game, m, look),
+        Stage::Place => put_crystal(game, m, look),
+        Stage::Hit => hit(game, m, look),
+        Stage::Idle => {}
+    }
+}
+// The slot for the next click: the first action notes the slot held before. Without Fast swap the change takes this
+// tick's action and the click waits for the next.
+fn swap(game: &mut Game<'_>, m: &Module, slot: usize) -> bool {
+    let held = game.selected;
+    st(|s| {
+        s.home.get_or_insert(held);
+    });
+    if held == slot || m.b("Fast swap") {
+        return true;
+    }
+    weapon_hold(game, slot);
+    mark_acted(game);
+    restart_stage();
+    false
+}
+fn hotbar(game: &Game<'_>, item: &str) -> Option<usize> {
+    util::find_hotbar(game, |name| name == item)
+}
+// Sends the look, then the deed with it; false when another look already waits this tick.
+fn send_with_look(
+    game: &mut Game<'_>,
+    look: (f32, f32),
+    deed: impl for<'a, 'b> FnOnce(&'a mut Game<'b>) + Send + 'static,
+) -> bool {
     if !super::sunset_combat_control::claim(NAME) {
-        st(|s| {
-            s.clock.queued = false;
-            s.queued_at = None;
-        });
         return false;
     }
     let finish = super::sunset_combat_control::finish(NAME);
-    let deed = move |game: &mut Game<'_>| {
-        let _finish = finish;
-        if !_finish.current() {
+    let session = game.remote.as_ref().map(|r| r.session.counters.clone());
+    let taken = sunset::try_turn_then(NAME, look.0, look.1, move |game: &mut Game<'_>| {
+        let finish = finish;
+        if !finish.current() {
             return;
         }
-        if st(|s| s.clock.generation != generation || !s.clock.queued) {
-            return;
+        let same = session
+            .as_ref()
+            .is_some_and(|old| game.remote.as_ref().is_some_and(|r| Arc::ptr_eq(old, &r.session.counters)));
+        if same {
+            deed(game);
         }
-        st(|s| {
-            s.clock.queued = false;
-            s.queued_at = None;
-        });
-        if deadline.elapsed() > Duration::from_millis(200) {
-            return;
-        }
-        if !tactics::refresh(game) || !allowed(game) {
-            return;
-        }
-        if own_id(game) != own {
-            return;
-        }
-        if game.selected != selected_slot {
-            st(|s| s.weapon = None);
-            return;
-        }
-        if game.dim != dimension {
-            return;
-        }
-        if !game.remote.as_ref().is_some_and(|r| std::sync::Arc::ptr_eq(&session, &r.session.counters)) {
-            return;
-        }
-        if !game.eye_position().is_some_and(|now| in_range(now, eye, 0.5)) {
-            return;
-        }
-        if !with(|s| s.module(NAME).is_some_and(|current| current == &snapshot && current.on)) {
-            return;
-        }
-        let Some((targets, friends)) = players(game, &snapshot) else {
-            return;
-        };
-        let Some(selected) = targets.iter().find(|t| t.id == target).cloned() else {
-            return;
-        };
-        let mut budget = Budget::new(PREDICTIONS);
-        let Some(sent_look) = super::sunset_combat_wire::sent_look(game) else {
-            return;
-        };
-        let Some(now_eye) = game.eye_position() else {
-            return;
-        };
-        let mut click = click;
-        let mut place_face = 1;
-        let current_contact = match action {
-            Action::Base(base) => click.and_then(|mut current| {
-                current.point = util::block_contact(
-                    game,
-                    sent_look,
-                    current.clicked,
-                    base_native::face(current),
-                    tactics::block_range(game),
-                )?;
-                let slot = obsidian_slot(game, &snapshot)?;
-                if !base_native::valid(game, base, slot, current, tactics::block_range(game), &mut 48) {
-                    return None;
-                }
-                click = Some(current);
-                Some(current.point)
-            }),
-            Action::Place(base) => {
-                util::block_hit(game, sent_look, base, tactics::block_range(game)).map(|(face, point)| {
-                    place_face = face;
-                    point
-                })
-            }
-            Action::Break(_, position) => {
-                let y = f64::from(sent_look.0).to_radians();
-                let p = f64::from(sent_look.1).to_radians();
-                let along = [
-                    now_eye[0] - y.sin() * p.cos() * 64.0,
-                    now_eye[1] - p.sin() * 64.0,
-                    now_eye[2] + y.cos() * p.cos() * 64.0,
-                ];
-                break_contact(game, &snapshot, position, along, &mut budget)
-            }
-        };
-        let reached = current_contact.is_some();
-        let aim = current_contact.unwrap_or(aim);
-        if !reached {
-            return;
-        }
-        let slot = match action {
-            Action::Base(base) => {
-                let tick = st(|s| s.tick.max(ticks));
-                if !snapshot.b("Auto obsidian")
-                    || !setup_valid(game, base)
-                    || crystal_slot(game, &snapshot).is_none()
-                    || !st(|s| s.setup.can_send(base, tick))
-                {
-                    return;
-                }
-                let Some(slot) = obsidian_slot(game, &snapshot) else {
-                    return;
-                };
-                Some(slot)
-            }
-            Action::Place(base) => {
-                if !place_valid(game, base) {
-                    return;
-                }
-                let Some(slot) = crystal_slot(game, &snapshot) else {
-                    return;
-                };
-                Some(slot)
-            }
-            Action::Break(id, position) => {
-                if !game.crystals.iter().any(|c| {
-                    c.id == id
-                        && !c.invulnerable
-                        && in_range(position, [c.position.x, c.position.y, c.position.z], 0.01)
-                }) {
-                    return;
-                }
-                let Some(weapon) = super::sunset_combat_macros::weapon_route(game) else {
-                    return;
-                };
-
-                Some(weapon)
-            }
-        };
-        if valid_damage(game, &snapshot, at, &[selected.clone()], &friends, action, &mut budget).is_none() {
-            return;
-        }
-        // Slot changes are inside the accepted action. No inventory rewrite,
-        // offhand swap or client entity removal is performed.
-        match action {
-            Action::Base(base) => {
-                let (Some(slot), Some(click)) = (slot, click) else {
-                    return;
-                };
-                let tick = st(|s| s.tick.max(ticks));
-                let before_state = game.world.block(base[0], base[1], base[2]).0;
-                if !st(|s| s.setup.sent(base, before_state, tick, 0)) {
-                    return;
-                }
-                if slot != util::OFFHAND {
-                    take_weapon(game, slot);
-                }
-                let sequence = util::sequence(game);
-                game.send(S::UseItemOn(play::UseItemOn {
-                    hand: i32::from(slot == util::OFFHAND),
-                    pos: click.clicked,
-                    face: base_native::face(click),
-                    cursor: std::array::from_fn(|i| (click.point[i] - f64::from(click.clicked[i])) as f32),
-                    inside: false,
-                    world_border: false,
-                    sequence,
-                }));
-            }
-            Action::Place(base) => {
-                let slot = slot.unwrap_or(util::OFFHAND);
-                if slot != util::OFFHAND {
-                    take_weapon(game, slot);
-                }
-                let sequence = util::sequence(game);
-                game.send(S::UseItemOn(play::UseItemOn {
-                    hand: i32::from(slot == util::OFFHAND),
-                    pos: base,
-                    face: place_face,
-                    cursor: std::array::from_fn(|i| (aim[i] - f64::from(base[i])) as f32),
-                    inside: false,
-                    world_border: false,
-                    sequence,
-                }));
-                if !snapshot.b("Switch back") && slot != util::OFFHAND {
-                    st(|s| s.weapon = None);
-                }
-            }
-            Action::Break(id, _) => {
-                let Some(weapon) = slot else {
-                    return;
-                };
-                take_weapon(game, weapon);
-                if super::sunset_combat_macros::weak_settling(game) {
-                    // Weakness: the weapon just swapped in reaches the server with the next ticks. The hit waits for
-                    // it, asking for no looks meanwhile.
-                    st(|s| s.clock.next_break = s.clock.next_break.max(game.ticks.saturating_add(2)));
-                    return;
-                }
-                if !prediction::arm_blast(
-                    game,
-                    super::sunset_hurt_policy::ShotSource::Crystal(id),
-                    Blast::explosion(at, 6.0),
-                    &targets,
-                    selected.id,
-                    prediction::rtt(game).min(5),
-                    &mut budget,
-                ) {
-                    restore_weapon(game, snapshot.b("Switch back"));
-                    return;
-                }
-                game.send(S::Attack(play::Attack { id: id as i32 }));
-                game.reset_attack_strength();
-                st(|s| {
-                    let now = s.tick.max(ticks);
-                    if let Some((_, count, last)) = s.attempts.iter_mut().find(|(cid, _, _)| *cid == id) {
-                        // A crystal left alone for SKIP_TICKS gets its three tries again.
-                        *count = if now >= last.saturating_add(SKIP_TICKS) { 1 } else { count.saturating_add(1) };
-                        *last = now;
-                    } else if s.attempts.len() < MAX_ENTITIES {
-                        s.attempts.push((id, 1, now));
-                    }
-                });
-            }
-        }
-        // The swing is the client's own for a use; in 26.3 the server shows it to the others itself. Punch is a left
-        // click's (ServerGamePacketListenerImpl.handlePunch restarts the attack strength), so only the hit sends it: a
-        // placement's would leave the next sword hit uncharged on the server.
-        game.swing_arm();
-        if matches!(action, Action::Break(_, _)) {
-            game.send(S::Punch(Empty));
-        }
-        let tick = st(|s| s.tick.max(ticks));
-        st(|s| {
-            if let Some(lease) = s.weapon.as_mut() {
-                lease.until = game.ticks + 10;
-            }
-        });
-        let delay = match action {
-            Action::Base(_) | Action::Place(_) => snapshot.n("Place delay"),
-            Action::Break(_, _) => snapshot.n("Break delay"),
-        };
-        let gap = if snapshot.b("Human pace") {
-            match ((tick ^ u64::from(target)).wrapping_mul(6364136223846793005) >> 32) % 100 {
-                0..=69 => 2,
-                70..=94 => 3,
-                _ => 4,
-            }
-        } else {
-            0
-        };
-        st(|s| s.clock.sent(action, tick, (delay.clamp(0.0, 30.0) as u64).saturating_add(1).max(gap)));
-    };
-    let (yaw, pitch) = turn;
-    let taken = if m.p("Anticheat") == "Grim" {
-        sunset::try_turn_then(NAME, yaw, pitch, move |game: &mut Game<'_>| {
-            if super::sunset_combat_wire::moved_this_tick() {
-                *DEFERRED.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(deed));
-            } else {
-                deed(game);
-            }
-        })
-    } else {
-        sunset::try_turn_then(NAME, yaw, pitch, deed)
-    };
+    });
     if !taken {
-        st(|s| {
-            s.clock.queued = false;
-            s.queued_at = None;
-        });
-
+        super::sunset_combat_control::release(NAME);
         return false;
     }
-
+    mark_acted(game);
     true
+}
+fn use_on(game: &mut Game<'_>, slot: usize, pos: [i32; 3], face: i32, point: [f64; 3]) {
+    if game.selected != slot {
+        weapon_hold(game, slot);
+    }
+    let sequence = util::sequence(game);
+    game.send(S::UseItemOn(play::UseItemOn {
+        hand: 0,
+        pos,
+        face,
+        cursor: std::array::from_fn(|i| (point[i] - f64::from(pos[i])) as f32),
+        inside: false,
+        world_border: false,
+        sequence,
+    }));
+    game.swing_arm();
+}
+fn put_base(game: &mut Game<'_>, m: &Module, look: (f32, f32)) {
+    let Some(spot) = st(|s| s.spot) else {
+        return;
+    };
+    if base_block(game, spot.base) {
+        set_stage(Stage::Place);
+        return;
+    }
+    if taken(game, spot.base) || occupied(game, spot.base, 1.0) {
+        stop(game, m, "base blocked");
+        return;
+    }
+    let Some(slot) = hotbar(game, "obsidian") else {
+        missing(game, m, "no obsidian in the hotbar");
+        return;
+    };
+    let Some((support, face)) = spot.support else {
+        return;
+    };
+    // The look has to land on the support's face toward the base.
+    let Some(point) = util::block_contact(game, look, support, face, 6.0) else {
+        return;
+    };
+    if !swap(game, m, slot) {
+        return;
+    }
+    if send_with_look(game, look, move |game: &mut Game<'_>| use_on(game, slot, support, face, point)) {
+        st(|s| {
+            s.acted = true;
+            s.fresh_base = true;
+        });
+        set_stage(Stage::Place);
+    }
+}
+fn put_crystal(game: &mut Game<'_>, m: &Module, look: (f32, f32)) {
+    let Some(spot) = st(|s| s.spot) else {
+        return;
+    };
+    if !base_block(game, spot.base) {
+        return;
+    }
+    let above = up(spot.base);
+    if crystal_in(game, above) {
+        set_stage(Stage::Hit);
+        return;
+    }
+    if !util::is_air(game, above) || occupied(game, above, 2.0) {
+        stop(game, m, "crystal spot blocked");
+        return;
+    }
+    let Some(target) = target_now(game) else {
+        return;
+    };
+    let mut dealt = damage_to(game, &target, target.pos, spot.base);
+    if m.b("Predict target") && moving(target.id) {
+        dealt = dealt.max(damage_to(game, &target, led(game, m, &target), spot.base));
+    }
+    let own = damage_to_self(game, spot.base);
+    if dealt < m.n("Min damage") * m.n("Recheck factor") {
+        stop(game, m, &format!("target damage now {dealt:.1}"));
+        return;
+    }
+    if too_costly(own, own_health(game), m) {
+        stop(game, m, &format!("self damage now {own:.1}"));
+        return;
+    }
+    let Some(slot) = hotbar(game, "end_crystal") else {
+        missing(game, m, "no end crystals in the hotbar");
+        return;
+    };
+    let Some((face, point)) = util::block_hit(game, look, spot.base, 6.0) else {
+        return;
+    };
+    if !swap(game, m, slot) {
+        return;
+    }
+    let base = spot.base;
+    if send_with_look(game, look, move |game: &mut Game<'_>| use_on(game, slot, base, face, point)) {
+        st(|s| {
+            s.acted = true;
+            s.fresh_base = false;
+            s.break_clock.reset();
+            draw_rolls(s, m, false, false, true);
+        });
+        set_stage(Stage::Hit);
+    }
+}
+fn hit(game: &mut Game<'_>, m: &Module, look: (f32, f32)) {
+    let Some((id, at)) = base_crystal(game, m) else {
+        return;
+    };
+    let (lo, hi) = crystal_box(at);
+    let Some(eye) = game.eye_position() else {
+        return;
+    };
+    let reach = m.n("Reach");
+    if !look_meets(eye, look, lo, hi, reach) || st(|s| s.last_eye).is_some_and(|l| !look_meets(l, look, lo, hi, reach)) {
+        return;
+    }
+    let Some(base) = st(|s| s.spot.map(|p| p.base)) else {
+        return;
+    };
+    let own = damage_to_self(game, base);
+    if too_costly(own, own_health(game), m) {
+        return;
+    }
+    // Swap attack: the slot held before the sequence (your weapon) comes back first, as its own action.
+    if m.p("Break mode") == "Swap attack"
+        && let Some(home) = st(|s| s.home)
+        && game.selected != home
+    {
+        weapon_hold(game, home);
+        mark_acted(game);
+        restart_stage();
+        return;
+    }
+    let sent = send_with_look(game, look, move |game: &mut Game<'_>| {
+        game.send(S::Attack(play::Attack { id: id as i32 }));
+        game.reset_attack_strength();
+        game.swing_arm();
+        game.send(S::Punch(Empty));
+    });
+    if sent {
+        st(|s| {
+            s.acted = true;
+            s.hit_id = Some(id);
+            s.place_clock.reset();
+            s.retried = false;
+            draw_rolls(s, m, false, true, false);
+        });
+        set_stage(Stage::Place);
+    }
+}
+
+// ---------------------------------------------------------------- drawing
+
+// A box's fade: toward shown or hidden over 180 ms, eased in and out.
+#[derive(Clone, Copy)]
+struct Fade {
+    shown: bool,
+    progress: f64,
+    at: Option<Instant>,
+}
+impl Fade {
+    const NEW: Fade = Fade { shown: false, progress: 0.0, at: None };
+    fn value(&mut self, shown: bool) -> f64 {
+        let now = Instant::now();
+        let step = self.at.map_or(0.0, |t| now.duration_since(t).as_secs_f64() / 0.18);
+        self.at = Some(now);
+        self.shown = shown;
+        self.progress = if shown { (self.progress + step).min(1.0) } else { (self.progress - step).max(0.0) };
+        -((std::f64::consts::PI * self.progress).cos() - 1.0) / 2.0
+    }
+}
+struct View {
+    target: Fade,
+    target_at: Option<[i32; 3]>,
+    placement: Fade,
+    placement_at: Option<[i32; 3]>,
+    ghosts: Vec<([i32; 3], Fade)>,
+}
+impl View {
+    const NEW: View = View { target: Fade::NEW, target_at: None, placement: Fade::NEW, placement_at: None, ghosts: Vec::new() };
+}
+static VIEW: Mutex<View> = Mutex::new(View::NEW);
+fn view<R>(f: impl FnOnce(&mut View) -> R) -> R {
+    f(&mut VIEW.lock().unwrap_or_else(|e| e.into_inner()))
+}
+// A colour setting: #AARRGGBB, or #RRGGBB (opaque).
+fn argb(text: &str) -> u32 {
+    let t = text.trim();
+    t.strip_prefix('#')
+        .or_else(|| t.strip_prefix("0x"))
+        .and_then(|s| u32::from_str_radix(s, 16).ok())
+        .map(|n| if n <= 0x00ff_ffff { n | 0xff00_0000 } else { n })
+        .unwrap_or(0xffff_ffff)
+}
+fn with_alpha(color: u32, alpha: f64) -> u32 {
+    ((alpha.round().clamp(0.0, 255.0) as u32) << 24) | (color & 0x00ff_ffff)
+}
+// An alpha, faded and pulsing (60 to 100 % with a 0.9 s pulse).
+fn pulsed(alpha: f64, fade: f64, pulse: f64) -> f64 {
+    (alpha * fade * (0.6 + 0.4 * pulse)).round().clamp(0.0, 255.0)
+}
+// The target (feet and head), the base and its crystal (filled until the obsidian is there), and while idle the best
+// bases the scan found, fading out down the list.
+pub(super) fn draw(
+    game: &Game<'_>,
+    camera: &sunset::Camera,
+    modules: &[Module],
+    out: &mut impl sunset::Canvas,
+    width: f32,
+) {
+    let Some(m) = modules.iter().find(|m| m.name == NAME && m.on && m.b("Aura") && m.b("Render")) else {
+        return;
+    };
+    if game.player.is_none() {
+        return;
+    }
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64() * 1000.0);
+    let pulse = 0.5 + 0.5 * (millis / 900.0 * std::f64::consts::TAU).sin();
+    let (target, base, stage, candidates) = st(|s| {
+        let target = s
+            .target
+            .and_then(|id| game.mobs.iter().find(|mob| mob.id == id))
+            .map(|mob| [mob.position.x.floor() as i32, mob.position.y.floor() as i32, mob.position.z.floor() as i32]);
+        (target, s.spot.map(|p| p.base), s.stage, s.candidates.iter().map(|c| up(c.base)).collect::<Vec<_>>())
+    });
+    let lines = super::sunset_visual::Look::LINES;
+    let sides = super::sunset_visual::Look::SIDES;
+    let outline = |out: &mut _, cell: [i32; 3], color: u32| {
+        let (lo, hi) = cell_box(cell, 1.0);
+        super::sunset_visual::draw_box(camera, out, &lines, lo, hi, color, width);
+    };
+    view(|v| {
+        let show = m.b("Render target") && target.is_some();
+        if show {
+            v.target_at = target;
+        }
+        let f = v.target.value(show);
+        if m.b("Render target")
+            && f > 0.01
+            && let Some(cell) = v.target_at
+        {
+            let c = argb(m.t("Target color"));
+            let a = pulsed(f64::from(c >> 24), f, pulse);
+            if a > 0.0 {
+                outline(out, cell, with_alpha(c, a));
+                outline(out, up(cell), with_alpha(c, a));
+            }
+        }
+        let show = m.b("Render placement") && base.is_some();
+        if show {
+            v.placement_at = base;
+        }
+        let f = v.placement.value(show);
+        if m.b("Render placement")
+            && f > 0.01
+            && let Some(cell) = v.placement_at
+        {
+            let placed = base_block(game, cell);
+            for (box_cell, color, filled) in
+                [(cell, argb(m.t("Obsidian color")), !placed), (up(cell), argb(m.t("Crystal color")), true)]
+            {
+                let a = pulsed(f64::from(color >> 24), f, pulse);
+                if filled {
+                    let grow = 0.01 * pulse;
+                    let (lo, hi) = cell_box(box_cell, 1.0);
+                    let fill = with_alpha(color, (a / 4.0).max(1.0));
+                    super::sunset_visual::draw_box(camera, out, &sides, lo.map(|x| x - grow), hi.map(|x| x + grow), fill, width);
+                }
+                outline(out, box_cell, with_alpha(color, a));
+            }
+        }
+        let shown = m.n("Candidates shown").max(1.0) as usize;
+        let wanted: Vec<[i32; 3]> = if m.b("Render candidates") && stage == Stage::Idle {
+            candidates.iter().take(shown).copied().collect()
+        } else {
+            Vec::new()
+        };
+        let c = argb(m.t("Candidate color"));
+        let alpha = f64::from(c >> 24);
+        let n = wanted.len().max(1) as f64;
+        for (i, cell) in wanted.iter().enumerate() {
+            if !v.ghosts.iter().any(|(g, _)| g == cell) {
+                v.ghosts.push((*cell, Fade::NEW));
+            }
+            let fade = v.ghosts.iter_mut().find(|(g, _)| g == cell).map_or(0.0, |(_, f)| f.value(true));
+            let a = pulsed((alpha - alpha * i as f64 / n).max(30.0), fade, pulse);
+            if a > 0.0 {
+                outline(out, *cell, with_alpha(c, a));
+            }
+        }
+        let ghosts = m.b("Render candidates");
+        v.ghosts.retain_mut(|(cell, fade)| {
+            if wanted.contains(cell) {
+                return true;
+            }
+            let f = fade.value(false);
+            if f < 0.01 {
+                return false;
+            }
+            let a = pulsed(30.0, f, pulse);
+            if ghosts && a > 0.0 {
+                outline(out, *cell, with_alpha(c, a));
+            }
+            true
+        });
+    });
 }

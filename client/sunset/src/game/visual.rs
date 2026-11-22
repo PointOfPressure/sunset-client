@@ -149,6 +149,9 @@ impl Look {
     }
     // Lines and a light fill in 3D: the boxes modules show where they place or break, a throw's landing.
     pub(super) const BOXED: Self = Self { draw: Draw::Box3d, sides: true, lines: true, fill: 40.0 / 255.0 };
+    // Edges only, and sides only in the colour's own alpha (Crystal Aura's boxes).
+    pub(super) const LINES: Self = Self { draw: Draw::Box3d, sides: false, lines: true, fill: 0.0 };
+    pub(super) const SIDES: Self = Self { draw: Draw::Box3d, sides: true, lines: false, fill: 1.0 };
 }
 
 // Potato: one small square on `at`. True when it was on screen.
