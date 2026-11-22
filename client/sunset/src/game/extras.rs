@@ -29,7 +29,59 @@ pub(super) fn defaults() -> Vec<Module> {
             "Sorts inventories in your order.")
             .bool("Shift fill", false)
             .num("Fill CPS", 15.0, 1.0, 20.0, 1.0),
+        Module::new("Gooning", Category::Client, "A joke. Keeps time on your gooning session.")
+            .bool("Reminders", true)
+            .num("Every (min)", 5.0, 1.0, 30.0, 1.0),
     ]
+}
+
+// Gooning, a joke (off like every module): chat lines on your screen only, nothing goes to the server. It notes the
+// start, nags every few minutes while it stays on and says how long it lasted when it goes off.
+struct Goon {
+    since: Option<std::time::Instant>,
+    nags: u64,
+}
+
+static GOON: Mutex<Goon> = Mutex::new(Goon { since: None, nags: 0 });
+
+const NAGS: &[&str] = &[
+    "Hydrate.",
+    "Touch grass.",
+    "The villagers can see you.",
+    "Blink at some point.",
+    "Your hunger bar is fine, unlike you.",
+    "Pressure has been notified.",
+];
+
+fn gooning(game: &mut Game<'_>, mods: &[Module]) {
+    let m = mods.iter().find(|m| m.name == "Gooning" && m.on);
+    let line = {
+        let mut g = GOON.lock().unwrap_or_else(|e| e.into_inner());
+        match (m, g.since) {
+            (Some(_), None) => {
+                *g = Goon { since: Some(std::time::Instant::now()), nags: 0 };
+                Some("Gooning session started.".to_owned())
+            }
+            (Some(m), Some(t)) if m.b("Reminders") => {
+                let every = (m.n("Every (min)").max(1.0) as u64) * 60;
+                let secs = t.elapsed().as_secs();
+                (secs >= every * (g.nags + 1)).then(|| {
+                    g.nags = secs / every;
+                    let nag = NAGS[(g.nags as usize - 1) % NAGS.len()];
+                    format!("Gooning for {} min. {nag}", secs / 60)
+                })
+            }
+            (Some(_), Some(_)) | (None, None) => None,
+            (None, Some(t)) => {
+                g.since = None;
+                let mins = t.elapsed().as_secs() / 60;
+                Some(if mins == 0 { "Gooned for under a minute. Weak.".to_owned() } else { format!("Gooned for {mins} min.") })
+            }
+        }
+    };
+    if let Some(line) = line {
+        super::sunset_util::report(game, &line);
+    }
 }
 
 // Client Sort is on (read by the buttons' hooks each frame).
@@ -215,6 +267,7 @@ fn restock_clicks(game: &mut Game<'_>, slots: &[usize]) -> Vec<(usize, bool)> {
 // Each tick: Horizon's sort (its key) on while Client Sort is, and the next clicks of an operation; none once the
 // screen they were for has closed.
 pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
+    gooning(game, mods);
     super::recipe_book::sunset_recipes::sync(game, mods.iter().any(|m| m.name == "Unlock All Recipes" && m.on));
     let on = mods.iter().any(|m| m.name == "Client Sort" && m.on);
     ON.store(on, Ordering::Relaxed);

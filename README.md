@@ -386,7 +386,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 </details>
 
 <details>
-<summary><b>Client</b> (8 modules)</summary>
+<summary><b>Client</b> (9 modules)</summary>
 
 - **Profiles**: saved and ready-made settings.
 - **Modules**: show or hide each module in the menu.
@@ -397,6 +397,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Packet Order** (on by default): actions made after the tick's move packet go out at the start of the next tick, as vanilla orders them (Grim's Post check).
 - **Streamer Mode**: hides your name and other players' names on screen.
 - **Debug Report**: see [Debug reports](#chat-commands).
+- **Gooning**: a joke. Times your session in chat (on your screen only) and nags every few minutes.
 
 </details>
 
