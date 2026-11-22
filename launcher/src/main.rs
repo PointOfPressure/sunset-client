@@ -94,9 +94,15 @@ fn main() {
                 let _ = e.read_to_string(&mut err);
             }
             let st = c.wait().map_err(|e| e.to_string())?;
-            // The stock CLI names its own sign-in command; here it is ours.
-            let last = err.trim().lines().last().unwrap_or("").replace("`horizon-launcher account sign-in`", "`sunset-launcher sign-in`");
-            if st.success() { Ok("the game exited".into()) } else { Err(core::game_failure(&p, since, &last)) }
+            if st.success() {
+                return Ok("the game exited".into());
+            }
+            let last = err.trim().lines().last().unwrap_or("");
+            // The window has a Sign in button for this; here it is our command.
+            Err(match core::sign_in_refusal(last) {
+                Some(why) => format!("{why} Run `sunset-launcher sign-in`."),
+                None => core::game_failure(&p, since, last),
+            })
         }),
         "offline" => match args.get(1) {
             None => Err("usage: sunset-launcher offline NICK".into()),

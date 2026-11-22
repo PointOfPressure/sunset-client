@@ -117,6 +117,10 @@ enum Msg {
     OwnerEver(bool),
     Face(String, Vec<[u8; 4]>),
     SignIn(SignIn),
+    /// The game itself is running, since then.
+    GameStarted(std::time::Instant),
+    /// The game starts without the account's session: why.
+    PlayingOffline(String),
     GameExited(Option<String>),
     Sources(Vec<(String, PathBuf)>),
     /// An import finished: its note, or why it stopped.
@@ -189,7 +193,7 @@ pub struct Launcher {
     playing: bool,
     /// An import is copying files (Play waits for it).
     importing: bool,
-    /// When this launcher started the running game, for the play time it adds when the game exits.
+    /// When the running game itself started (not the CLI's Play before it), for the play time it adds when it exits.
     started: Option<std::time::Instant>,
     sources: Vec<(String, PathBuf)>,
     profiles: Vec<String>,
@@ -494,22 +498,34 @@ impl Launcher {
         match result {
             Ok(mut child) => {
                 self.playing = true;
-                self.started = Some(std::time::Instant::now());
-                self.set_settings(|s| s.last_played = Some(core::now_secs()), cx);
+                self.started = None;
                 self.note = core::sounds_missing(&self.paths).then(|| (false, core::NO_SOUNDS.into()));
                 let (tx, paths, since) = (self.send(), self.paths.clone(), std::time::SystemTime::now());
                 let stderr = child.stderr.take();
+                let spawned = std::time::Instant::now();
                 std::thread::spawn(move || {
                     use std::io::BufRead;
-                    let mut last = String::new();
+                    let (mut last, mut started) = (String::new(), false);
                     if let Some(e) = stderr {
                         for l in std::io::BufReader::new(e).lines().map_while(|l| l.ok()) {
+                            if !started {
+                                if core::game_started(&l) {
+                                    started = true;
+                                    let _ = tx.send_blocking(Msg::GameStarted(std::time::Instant::now()));
+                                } else if let Some(why) = core::offline_reason(&l) {
+                                    let _ = tx.send_blocking(Msg::PlayingOffline(why.to_string()));
+                                }
+                            }
                             if !l.trim().is_empty() {
                                 last = l;
                             }
                         }
                     }
                     let ok = child.wait().map(|s| s.success()).unwrap_or(false);
+                    // A game that ended well was played, whatever its first line said.
+                    if ok && !started {
+                        let _ = tx.send_blocking(Msg::GameStarted(spawned));
+                    }
                     let _ = tx.send_blocking(Msg::GameExited((!ok).then(|| core::game_failure(&paths, since, &last))));
                 });
             }
@@ -652,6 +668,12 @@ impl Launcher {
                     }
                 }
             },
+            Msg::GameStarted(at) => {
+                self.started = Some(at);
+                let when = core::now_secs().saturating_sub(at.elapsed().as_secs());
+                self.set_settings(|s| s.last_played = Some(when), cx);
+            }
+            Msg::PlayingOffline(why) => self.note = Some((true, format!("Playing offline: {why}"))),
             Msg::GameExited(err) => {
                 self.playing = false;
                 if let Some(t) = self.started.take() {
@@ -2451,6 +2473,12 @@ impl Render for Launcher {
             }
         };
         let note = self.note.clone().map(|(err, msg)| {
+            let sign_in = (err && core::needs_sign_in(&msg)).then(|| {
+                button("note-sign-in", "Sign in", true).flex_none().on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.note = None;
+                    this.start_sign_in(cx);
+                }))
+            });
             card()
                 .flex()
                 .items_center()
@@ -2460,6 +2488,7 @@ impl Render for Launcher {
                 .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(if err { RED } else { ACCENT })))
                 // min_w(0): a long message wraps inside the card instead of pushing the close button out of it.
                 .child(div().flex_1().min_w(px(0.)).child(text(capitalised(&msg), 13., if err { RED } else { TEXT })))
+                .children(sign_in)
                 .child(div().id("note-close").flex_none().cursor_pointer().child(icon(Icon::Close, 16., MUTED)).on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.note = None;
                     cx.notify();

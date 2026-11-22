@@ -981,6 +981,9 @@ pub fn sounds_missing(p: &Paths) -> bool {
 /// stopped on a graphics device error that only latest.log held. So the log of this run (written since `since`) is
 /// read for its last ERROR line, and the message names the log.
 pub fn game_failure(p: &Paths, since: std::time::SystemTime, last: &str) -> String {
+    if let Some(why) = sign_in_refusal(last) {
+        return why;
+    }
     if last.contains("is not prepared yet") {
         return NOT_PREPARED.into();
     }
@@ -1005,6 +1008,38 @@ pub fn game_failure(p: &Paths, since: std::time::SystemTime, last: &str) -> Stri
             None => last.into(),
         },
     }
+}
+
+/// The stock CLI's own sign-in command, which its refusals end on (the words around it follow the system's language).
+const CLI_SIGN_IN: &str = "`horizon-launcher account sign-in`";
+
+/// Whether a message asks for a sign-in, so the window puts Sign in beside it.
+pub fn needs_sign_in(msg: &str) -> bool {
+    let m = msg.to_ascii_lowercase();
+    m.contains("sign in again") || m.contains("sign in with")
+}
+
+/// Why Play was refused for want of a sign-in, from the CLI's last line, without its "error: " and the sentence naming
+/// its own command: the window has a button for that, and the terminal its own command. None for any other error.
+pub fn sign_in_refusal(last: &str) -> Option<String> {
+    let e = last.trim().strip_prefix("error: ")?;
+    let why = match e.find(CLI_SIGN_IN) {
+        Some(at) => e[..at].rfind(". ").map_or("", |end| &e[..=end]),
+        None if needs_sign_in(e) => e,
+        None => return None,
+    };
+    Some(if needs_sign_in(why) { why.into() } else { format!("{why} Sign in again.").trim_start().into() })
+}
+
+/// Why the CLI started the game without a session (an expired sign-in of an account that owns it, no network).
+pub fn offline_reason(line: &str) -> Option<&str> {
+    line.strip_prefix("Playing offline: ")
+}
+
+/// Whether a line of Play's stderr shows the game itself running: the client first logs "Horizon <version>", while the
+/// CLI's own lines start "Horizon: " (or "Horizon launcher: "). Spawning the CLI alone is not a game played.
+pub fn game_started(line: &str) -> bool {
+    line.strip_prefix("Horizon ").is_some_and(|rest| !rest.starts_with("launcher"))
 }
 
 /// The last ERROR (or FATAL) line of a game log (`[time] [thread/ERROR]: message`), or else its last panic line,
@@ -2145,6 +2180,36 @@ mod tests {
         assert!(e.contains("graphics driver usually fixes"), "{e}");
         assert_eq!(game_failure(&p, since, "Error: x is not prepared yet. Prepare it first"), NOT_PREPARED);
         fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn sign_in_refusals_read_plainly() {
+        let owner = "error: Sign in with a Microsoft account that owns Minecraft: Java Edition to play. Sign in with `horizon-launcher account sign-in`.";
+        let want = "Sign in with a Microsoft account that owns Minecraft: Java Edition to play.";
+        assert_eq!(sign_in_refusal(owner).as_deref(), Some(want));
+        // The CLI translates the sentence around its command.
+        let de = "error: Konto gesperrt. Melde dich mit `horizon-launcher account sign-in` an.";
+        assert_eq!(sign_in_refusal(de).as_deref(), Some("Konto gesperrt. Sign in again."));
+        assert_eq!(sign_in_refusal("error: `horizon-launcher account sign-in`").as_deref(), Some("Sign in again."));
+        let expired = "Your Microsoft sign-in expired. Sign in again.";
+        assert_eq!(sign_in_refusal(&format!("error: {expired}")).as_deref(), Some(expired));
+        assert!(needs_sign_in(want) && needs_sign_in(expired));
+        assert_eq!(sign_in_refusal("error: nightly-x is not prepared yet."), None);
+        // A game's own output is not the CLI refusing.
+        assert_eq!(sign_in_refusal(expired), None);
+        assert_eq!(offline_reason(&format!("Playing offline: {expired}")), Some(expired));
+        let p = Paths { root: std::env::temp_dir().join("sunset-sign-in-test") };
+        assert_eq!(game_failure(&p, std::time::SystemTime::now(), owner), want);
+    }
+
+    #[test]
+    fn only_the_games_own_lines_count_as_played() {
+        for game in ["Horizon 0.1.0", "Horizon Nightly 2026-11-18 0b14f8a", "Horizon renderer: creating the pipelines"] {
+            assert!(game_started(game), "{game}");
+        }
+        for cli in ["Horizon: Play: reading the sign-in…", "Horizon launcher: could not switch", "error: Sign in again.", "Playing offline: no network"] {
+            assert!(!game_started(cli), "{cli}");
+        }
     }
 
     #[test]
