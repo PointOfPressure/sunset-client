@@ -448,9 +448,22 @@ pub(super) fn other_players(game: &Game<'_>) -> Vec<Target> {
         .collect()
 }
 
-// A player Crystal Aura and Anchor Aura may hurt: listed as playing in survival or adventure, not a friend, and on no
-// team that keeps you from hurting them.
+// A player listed as playing in survival or adventure that you may hurt (hurtable).
 pub(super) fn player_enemy(game: &Game<'_>, mob: &horizon_client::mobs::Mob) -> bool {
+    matches!(super::remote::sunset_combat_remote::player_mode(game, mob.id), Some(0 | 2)) && hurtable(game, mob)
+}
+
+// A player Crystal Aura and Anchor Aura may hurt. Servers' practice bots can leave the player list once spawned, so a
+// player with no game mode known counts (as for Kill Aura); one known to be in creative or spectator doesn't.
+pub(super) fn blast_enemy(game: &Game<'_>, mob: &horizon_client::mobs::Mob) -> bool {
+    blast_mode(super::remote::sunset_combat_remote::player_mode(game, mob.id)) && hurtable(game, mob)
+}
+fn blast_mode(mode: Option<i32>) -> bool {
+    matches!(mode, None | Some(0 | 2))
+}
+
+// Not you, not what Antibot caught, not a friend, and on no team that keeps you from hurting them.
+fn hurtable(game: &Game<'_>, mob: &horizon_client::mobs::Mob) -> bool {
     if mob.kind.id != "minecraft:player"
         || !mob.health.is_finite()
         || !mob.alive()
@@ -458,7 +471,6 @@ pub(super) fn player_enemy(game: &Game<'_>, mob: &horizon_client::mobs::Mob) -> 
         || Some(mob.id) == super::sunset::own_id(game)
         || game.riding == Some(mob.id)
         || super::sunset_antibot::blocked(mob.id)
-        || !matches!(super::remote::sunset_combat_remote::player_mode(game, mob.id), Some(0 | 2))
     {
         return false;
     }
@@ -642,4 +654,12 @@ pub(super) fn crystal_damage(game: &Game<'_>, at: [f64; 3]) -> f64 {
         worst = worst.max(((impact * impact + impact) / 2.0 * 7.0 * 12.0 + 1.0).floor());
     }
     worst
+}
+
+#[cfg(test)]
+mod blast_tests {
+    #[test]
+    fn an_unlisted_player_is_a_target_but_creative_and_spectator_are_not() {
+        assert_eq!([None, Some(0), Some(1), Some(2), Some(3)].map(super::blast_mode), [true, true, false, true, false]);
+    }
 }

@@ -726,7 +726,7 @@ fn enemy_hurt(game: &Game<'_>) -> bool {
     };
     game.mobs
         .iter()
-        .filter(|t| util::player_enemy(game, t))
+        .filter(|t| util::blast_enemy(game, t))
         .map(|t| (t.hurt_time, util::dist(me, [t.position.x, t.position.y, t.position.z])))
         .filter(|(_, d)| *d <= 10.0)
         .min_by(|a, b| a.1.total_cmp(&b.1))

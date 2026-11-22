@@ -28,7 +28,8 @@ const CLICK_REACH: f64 = 4.25;
 const AIM_LIMIT: f64 = 4.4;
 // The most the look turns in one tick while it is silent.
 const TURN_STEP: f32 = 90.0;
-// One error message every 3 s at most.
+// An idle reason is said after a second of it; one error message every 3 s at most.
+const IDLE_MS: f64 = 1000.0;
 const NOTICE_MS: f64 = 3000.0;
 
 // ---------------------------------------------------------------- settings
@@ -128,6 +129,42 @@ pub(super) fn visible(m: &Module, name: &str) -> bool {
 
 // ---------------------------------------------------------------- state
 
+// Why nothing starts though the Aura is on: said once for each reason each time it is turned on (explain).
+#[derive(Clone, Copy, Debug)]
+enum Idle {
+    Skipped,
+    NoBase,
+    // The most damage a base in reach does.
+    Weak(f64),
+    // The least a base that pays off does to you.
+    Costly(f64),
+    Waits(&'static str),
+}
+impl Idle {
+    fn bit(self) -> u8 {
+        match self {
+            Idle::Skipped => 1,
+            Idle::NoBase => 2,
+            Idle::Weak(_) => 4,
+            Idle::Costly(_) => 8,
+            Idle::Waits(_) => 16,
+        }
+    }
+    fn text(self, m: &Module) -> String {
+        match self {
+            Idle::Skipped => "skips the player nearby (friend, teammate, creative, spectator or an Antibot catch)".to_owned(),
+            Idle::NoBase => "no spot for a crystal by the target in reach".to_owned(),
+            Idle::Weak(best) => format!("the best spot does {best:.1} damage, Min damage is {}", m.n("Min damage")),
+            Idle::Costly(own) if own.is_finite() && own > m.n("Max self damage") => {
+                format!("the spots would do {own:.1} to you, Max self damage is {}", m.n("Max self damage"))
+            }
+            Idle::Costly(own) if own.is_finite() => format!("the spots would do {own:.1} to you, too much for Anti suicide"),
+            Idle::Costly(_) => "can't tell what the spots would do to you".to_owned(),
+            Idle::Waits(module) => format!("waits while {module} is on"),
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Stage {
     Idle,
@@ -214,6 +251,10 @@ struct State {
     break_clock: Watch,
     first_clock: Watch,
     notice_clock: Watch,
+    // The reason nothing starts (Idle's bit), since when, and those already said.
+    idle: u8,
+    idle_clock: Watch,
+    idle_said: u8,
     place_roll: Roll,
     break_roll: Roll,
     first_roll: Roll,
@@ -248,6 +289,9 @@ static STATE: Mutex<State> = Mutex::new(State {
     break_clock: Watch::NEW,
     first_clock: Watch::NEW,
     notice_clock: Watch::NEW,
+    idle: 0,
+    idle_clock: Watch::NEW,
+    idle_said: 0,
     place_roll: Roll::ZERO,
     break_roll: Roll::ZERO,
     first_roll: Roll::ZERO,
@@ -392,6 +436,8 @@ pub(super) fn reset() {
         s.motion = [0.0; 3];
         s.candidates.clear();
         s.seen.clear();
+        s.idle = 0;
+        s.idle_said = 0;
     });
     view(|v| *v = View::NEW);
 }
@@ -409,7 +455,14 @@ pub(super) fn disabled(game: &mut Game<'_>) {
 }
 // The game can't be played right now (a screen, using an item): the sequence waits where it is; its stage clock runs
 // on, so one that waits too long ends.
-pub(super) fn paused(_game: &mut Game<'_>) {}
+pub(super) fn paused(_game: &mut Game<'_>) {
+    let waits = with(|s| ["Blink", "Nuker", "Scaffold"].into_iter().find(|name| s.is_on(name)));
+    if let Some(module) = waits
+        && let Some(m) = with(|s| s.module(NAME).cloned())
+    {
+        explain(&m, Idle::Waits(module));
+    }
+}
 
 // A new world, life or connection.
 pub(super) fn discard_scene() {
@@ -696,7 +749,7 @@ fn own_ping(game: &Game<'_>) -> i32 {
 }
 // Every player that may be attacked (not you, a friend, a bot Antibot caught, a teammate or one in creative), however far.
 fn enemies(game: &Game<'_>) -> Vec<Target> {
-    game.mobs.iter().filter(|mob| util::player_enemy(game, mob)).map(util::mob_target).collect()
+    game.mobs.iter().filter(|mob| util::blast_enemy(game, mob)).map(util::mob_target).collect()
 }
 fn nearest(game: &Game<'_>, list: &[Target]) -> Option<Target> {
     let feet = util::player_pos(game)?;
@@ -845,11 +898,12 @@ fn push_goal(game: &Game<'_>, m: &Module, target: &Target, at: [f64; 3]) -> Opti
     }
 }
 // Every base around the target that pays off, best first; the best is returned.
-fn scan(game: &mut Game<'_>, m: &Module, target: &Target) -> Option<Spot> {
+fn scan(game: &mut Game<'_>, m: &Module, target: &Target) -> Result<Spot, Idle> {
     let feet = target.pos.map(|v| v.floor() as i32);
     let ahead = led(game, m, target);
-    let eye = game.eye_position()?;
+    let eye = game.eye_position().ok_or(Idle::NoBase)?;
     let eye_ahead = led_eye(game, m).unwrap_or(eye);
+    let (mut weak, mut costly): (Option<f64>, Option<f64>) = (None, None);
     let goal = push_goal(game, m, target, ahead);
     let health = own_health(game);
     let leading = m.b("Predict target") && moving(target.id);
@@ -936,9 +990,12 @@ fn scan(game: &mut Game<'_>, m: &Module, target: &Target) -> Option<Spot> {
                     dealt = now.max(damage_to(game, target, ahead, base));
                 }
                 if dealt < m.n("Min damage") {
+                    weak = Some(weak.map_or(dealt, |most| most.max(dealt)));
                     continue;
                 }
-                if too_costly(damage_to_self(game, base), health, m) {
+                let own = damage_to_self(game, base);
+                if too_costly(own, health, m) {
+                    costly = Some(costly.map_or(own, |least| least.min(own)));
                     continue;
                 }
                 let mut score = dealt;
@@ -973,13 +1030,31 @@ fn scan(game: &mut Game<'_>, m: &Module, target: &Target) -> Option<Spot> {
     found.sort_by(|a, b| b.score.total_cmp(&a.score));
     let best = found.first().copied();
     st(|s| s.candidates = found);
-    best
+    best.ok_or_else(|| costly.map(Idle::Costly).or(weak.map(Idle::Weak)).unwrap_or(Idle::NoBase))
 }
 
 // ---------------------------------------------------------------- the sequence
 
 fn notify(kind: super::sunset_toast::Kind, text: &str) {
     super::sunset_toast::push(kind, &format!("{NAME}: {text}"));
+}
+// Nothing has started for a second, always for the same reason: that is said.
+fn explain(m: &Module, why: Idle) {
+    let due = st(|s| {
+        if s.idle != why.bit() {
+            s.idle = why.bit();
+            s.idle_clock.reset();
+            return false;
+        }
+        if s.idle_said & s.idle != 0 || !s.idle_clock.past(IDLE_MS) {
+            return false;
+        }
+        s.idle_said |= s.idle;
+        true
+    });
+    if due {
+        notify(super::sunset_toast::Kind::Info, &why.text(m));
+    }
 }
 // The sequence ends (with Debug aborts, saying why).
 fn stop(game: &mut Game<'_>, m: &Module, why: &str) {
@@ -1066,18 +1141,35 @@ fn draw_rolls(s: &mut State, m: &Module, reaction: bool, place: bool, hit: bool)
 }
 // Idle: the nearest enemy in Target range, and the best base around them.
 fn begin(game: &mut Game<'_>, m: &Module) {
-    let Some(target) = nearest(game, &enemies(game)) else {
+    let Some(feet) = util::player_pos(game) else {
         return;
     };
-    if util::player_pos(game).is_none_or(|feet| dist(feet, target.pos) > m.n("Target range")) {
+    let range = m.n("Target range");
+    let near = |pos: [f64; 3]| dist(feet, pos) <= range;
+    let Some(target) = nearest(game, &enemies(game)).filter(|t| near(t.pos)) else {
+        let own = sunset::own_id(game);
+        let skipped = game.mobs.iter().any(|mob| {
+            mob.kind.id == "minecraft:player" && mob.alive() && !mob.removed && Some(mob.id) != own
+                && near([mob.position.x, mob.position.y, mob.position.z]) && !util::blast_enemy(game, mob)
+        });
+        if skipped {
+            explain(m, Idle::Skipped);
+        } else {
+            st(|s| s.idle = 0);
+        }
         return;
-    }
+    };
     st(|s| s.target = Some(target.id));
-    let Some(spot) = scan(game, m, &target) else {
-        st(|s| s.target = None);
-        return;
+    let spot = match scan(game, m, &target) {
+        Ok(spot) => spot,
+        Err(why) => {
+            st(|s| s.target = None);
+            explain(m, why);
+            return;
+        }
     };
     st(|s| {
+        s.idle = 0;
         s.spot = Some(spot);
         s.origin = Some(target.pos.map(|v| v.floor() as i32));
         s.retried = false;

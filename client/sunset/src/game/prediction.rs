@@ -388,7 +388,7 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
     // Keep the shared collision budget: invalidation must not replenish it.
     state(|s| s.cache.clear());
     if let Some(notice) = super::remote::sunset_hurt_remote::damage_notice(game, packet, |id| {
-        game.mobs.iter().find(|m| m.id == id).is_some_and(|m| util::player_enemy(game, m))
+        game.mobs.iter().find(|m| m.id == id).is_some_and(|m| util::blast_enemy(game, m))
     }) && let Some(id) = game.remote.as_ref().and_then(|r| u32::try_from(r.entity_id).ok())
     {
         state(|s| s.clock.damaged(id, notice));

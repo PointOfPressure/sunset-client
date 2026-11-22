@@ -91,7 +91,7 @@ pub(super) fn players(game: &Game<'_>) -> Option<(Vec<Target>, Vec<Target>)> {
             game.remote_player_name(mob.id).is_some_and(|name| names.iter().any(|f| f.eq_ignore_ascii_case(name)));
         if friend {
             friends.push(t);
-        } else if util::dist(feet, t.pos) < 10.0 && util::player_enemy(game, mob) {
+        } else if util::dist(feet, t.pos) < 10.0 && util::blast_enemy(game, mob) {
             targets.push(t);
         }
     }
