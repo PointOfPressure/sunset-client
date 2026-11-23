@@ -382,7 +382,7 @@ fn fit(m: &Measure, text: &str, room: i32) -> String {
 struct Live<'a, 'b>(&'a Game<'b>);
 
 fn module_info(m: &super::sunset::Module) -> ModuleInfo {
-    ModuleInfo { name: m.name.to_owned(), about: m.about.to_owned(), on: m.on, key: m.key.clone() }
+    ModuleInfo { name: m.name.to_owned(), about: m.about.to_owned(), on: m.on, key: m.key.clone(), gui_only: super::sunset::gui_only(m.name) }
 }
 
 impl Live<'_, '_> {

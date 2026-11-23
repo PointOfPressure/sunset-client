@@ -51,6 +51,8 @@ pub(crate) struct ModuleInfo {
     pub(crate) about: String,
     pub(crate) on: bool,
     pub(crate) key: Option<String>,
+    // Only the menus switch it (runtime_module.rs `gui_only`): no `.toggle`, no bind.
+    pub(crate) gui_only: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -135,7 +137,7 @@ const COMMANDS: &[Command] = &[
     Command { name: "help", aliases: &["commands"], usage: "", about: "list the commands", args: none },
     Command { name: "menu", aliases: &["gui"], usage: "[search]", about: "open the click GUI, searching for the text", args: menu },
     Command { name: "pages", aliases: &[], usage: "", about: "the same settings as pages in Options > Mods", args: none },
-    Command { name: "toggle", aliases: &["t"], usage: "<module>", about: "turn a module on or off", args: one_module },
+    Command { name: "toggle", aliases: &["t"], usage: "<module>", about: "turn a module on or off", args: toggle },
     Command { name: "modules", aliases: &["list"], usage: "", about: "list every module", args: none },
     Command { name: "settings", aliases: &["get"], usage: "<module>", about: "list a module's settings", args: one_module },
     Command { name: "set", aliases: &[], usage: "<module> <setting> <value>", about: "change a setting", args: set },
@@ -172,8 +174,18 @@ fn command(name: &str) -> Option<&'static Command> {
 }
 
 fn modules(src: &dyn Source) -> Vec<Suggestion> {
+    modules_where(src, |_| true)
+}
+
+// The modules a key or `.toggle` can switch.
+fn switched(src: &dyn Source) -> Vec<Suggestion> {
+    modules_where(src, |m| !m.gui_only)
+}
+
+fn modules_where(src: &dyn Source, keep: impl Fn(&ModuleInfo) -> bool) -> Vec<Suggestion> {
     src.modules()
         .into_iter()
+        .filter(|m| keep(m))
         .map(|m| {
             let state = if m.on { "on" } else { "off" };
             Suggestion::new(norm(&m.name), format!("{} ({state}): {}", m.name, m.about)).also(m.name)
@@ -188,6 +200,24 @@ fn module_word(src: &dyn Source, word: &str) -> Result<ModuleInfo, Step> {
 fn one_module(src: &dyn Source, before: &[&str], _: &str) -> Step {
     match before {
         [] => pick(modules(src), "<module>", "No module called"),
+        _ => Step::Done,
+    }
+}
+
+// A menus-only module's name, typed whole: why `.t` and `.bind` won't take it.
+fn gui_only(src: &dyn Source, word: &str, why: &str) -> Option<Step> {
+    src.find_module(word).filter(|m| m.gui_only).map(|m| Step::Bad(format!("{} {why}", m.name)))
+}
+
+fn toggle(src: &dyn Source, before: &[&str], partial: &str) -> Step {
+    match before {
+        [] => gui_only(src, partial, "only turns on in the ClickGUI")
+            .unwrap_or_else(|| pick(switched(src), "<module>", "No module called")),
+        [module] => match module_word(src, module) {
+            Ok(m) if m.gui_only => Step::Bad(format!("{} only turns on in the ClickGUI", m.name)),
+            Ok(_) => Step::Done,
+            Err(bad) => bad,
+        },
         _ => Step::Done,
     }
 }
@@ -315,11 +345,13 @@ const KEYS: &[&str] = &[
     "kp9",
 ];
 
-fn bind(src: &dyn Source, before: &[&str], _: &str) -> Step {
+fn bind(src: &dyn Source, before: &[&str], partial: &str) -> Step {
     match before {
-        [] => pick(modules(src), "<module> <key|mouse4|none>", "No module called"),
+        [] => gui_only(src, partial, "takes no bind: turn it on in the ClickGUI")
+            .unwrap_or_else(|| pick(switched(src), "<module> <key|mouse4|none>", "No module called")),
         [module] => {
             let module = match module_word(src, module) {
+                Ok(m) if m.gui_only => return Step::Bad(format!("{} takes no bind: turn it on in the ClickGUI", m.name)),
                 Ok(m) => m,
                 Err(bad) => return bad,
             };
@@ -771,9 +803,9 @@ mod tests {
     struct Fake;
     impl Source for Fake {
         fn modules(&self) -> Vec<ModuleInfo> {
-            ["Kill Aura", "Crystal Aura", "Auto Totem", "Flight"]
+            ["Kill Aura", "Crystal Aura", "Auto Totem", "Flight", "Gooning"]
                 .iter()
-                .map(|n| ModuleInfo { name: (*n).into(), about: "about".into(), on: *n == "Flight", key: None })
+                .map(|n| ModuleInfo { name: (*n).into(), about: "about".into(), on: *n == "Flight", key: None, gui_only: *n == "Gooning" })
                 .collect()
         }
         fn find_module(&self, word: &str) -> Option<ModuleInfo> {
@@ -861,6 +893,13 @@ mod tests {
         let c = at_end(".t ");
         assert_eq!(texts(&c), ["autototem", "crystalaura", "flight", "killaura"]);
         assert_eq!(c.start, 3);
+        // A menus-only module: offered where its settings are, refused where `.t` and `.bind` refuse it.
+        assert!(texts(&at_end(".settings ")).contains(&"gooning"));
+        assert!(!texts(&at_end(".bind ")).contains(&"gooning"));
+        assert_eq!(at_end(".t gooning ").error.as_deref(), Some("Gooning only turns on in the ClickGUI"));
+        assert!(at_end(".bind gooning ").error.is_some());
+        assert_eq!(at_end(".t gooning").error.as_deref(), Some("Gooning only turns on in the ClickGUI"));
+        assert_eq!(texts(&at_end(".t goo")), Vec::<&str>::new());
         assert_eq!(texts(&at_end(".t aura")), ["crystalaura", "killaura"]);
         assert_eq!(texts(&at_end(".toggle Kill")), ["killaura"]);
         let bad = at_end(".t nothing");
@@ -932,7 +971,7 @@ mod tests {
         struct Walls;
         impl Source for Walls {
             fn modules(&self) -> Vec<ModuleInfo> {
-                vec![ModuleInfo { name: "ESP".into(), about: String::new(), on: false, key: None }]
+                vec![ModuleInfo { name: "ESP".into(), about: String::new(), on: false, key: None, gui_only: false }]
             }
             fn find_module(&self, word: &str) -> Option<ModuleInfo> {
                 self.modules().into_iter().find(|m| norm(&m.name) == norm(word))
