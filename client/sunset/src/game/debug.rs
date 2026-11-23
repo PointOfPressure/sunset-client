@@ -17,7 +17,7 @@ use std::time::SystemTime;
 pub(super) const NAME: &str = "Debug Report";
 // tools/pack.py writes the commit it packs here; a build straight from the source folder says so.
 const COMMIT: &str = "unpacked";
-const HORIZON_PIN: &str = "66f3981";
+const HORIZON_PIN: &str = "9defaa0 (main 2e7d2c6 + Sunset's hooks)";
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
