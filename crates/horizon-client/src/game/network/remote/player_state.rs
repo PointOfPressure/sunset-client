@@ -102,7 +102,7 @@ impl Game<'_> {
         let (paddles, vehicle): (Vec<S>, Vec<S>) = self
             .remote_vehicle_packets()
             .into_iter()
-            .partition(|p| matches!(p, S::PaddleBoat(_)));
+            .partition(|p| ::core::matches!(p, S::PaddleBoat(_)));
         let Some(r) = self.remote.as_mut() else {
             return;
         };
@@ -172,7 +172,8 @@ impl Game<'_> {
             } else {
                 0
             };
-            let crouching = p.local_crouching || matches!(p.pose, crate::pose::Pose::Crouching);
+            let crouching =
+                p.local_crouching || ::core::matches!(p.pose, crate::pose::Pose::Crouching);
             let mut shared: u8 = 0;
             if crouching {
                 shared |= 0x02;
@@ -197,7 +198,7 @@ impl Game<'_> {
                 let pkt = horizon_protocol::packets::play::Clientbound::SetEntityData(
                     horizon_protocol::packets::play::SetEntityData {
                         id: r.entity_id,
-                        values: vec![
+                        values: ::std::vec![
                             (0, serializer::BYTE, Value::Byte(shared as i8)),
                             (6, serializer::POSE, Value::Id(p.pose.id())),
                             (8, serializer::BYTE, Value::Byte(living_flags as i8)),
