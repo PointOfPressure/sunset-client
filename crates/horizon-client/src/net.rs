@@ -374,6 +374,12 @@ impl Session {
         let writer = Arc::new(Mutex::new(None));
         let configuring = Arc::new(AtomicBool::new(true));
         let counters = Arc::new(Mutex::new(None));
+        let serial = next_serial();
+        let initial_brand = if local.is_none() {
+            prepare_client_brand(address, serial, &counters)
+        } else {
+            None
+        };
         // Connection.initiateServerboundPlayConnection: a transfer's
         // handshake says so (ClientIntent.TRANSFER).
         let transferred = cookies.is_some();
@@ -408,6 +414,7 @@ impl Session {
                     lan,
                     &thread_recorder,
                     &thread_payloads,
+                    initial_brand,
                 )
             });
             thread_payloads.close();
@@ -443,7 +450,7 @@ impl Session {
             debug,
             far,
             recorder,
-            serial: next_serial(),
+            serial,
         }
     }
     /// Validate an untrusted mod packet once, reserve its physical writer credit,
@@ -1009,6 +1016,7 @@ fn run(
     lan: bool,
     recorder: &RecorderSlot,
     payloads: &Arc<crate::raw_payloads::Transport>,
+    initial_brand: Option<ClientBrandProvider>,
 ) -> Result<Reason, Reason> {
     let (host, port, mut c) = if let Some(pipe) = local {
         (address.to_owned(), 0, Connection::local(pipe))
@@ -1154,7 +1162,7 @@ fn run(
     c.send(
         &cfg::Serverbound::CustomPayload(cfg::CustomPayload {
             channel: "minecraft:brand".into(),
-            data: brand(),
+            data: initial_brand.and_then(|provide| provide()).unwrap_or_else(brand),
         })
         .try_encode()
         .map_err(e)?,
@@ -1740,6 +1748,19 @@ fn receive_brand(payload: &cfg::CustomPayload, send: &ingress::Producer<Event>) 
     {
         let _ = send.send(Event::FarTerrain(offer));
     }
+}
+
+type ClientBrandProvider = Box<dyn FnOnce() -> Option<Vec<u8>> + Send>;
+
+/// Captures an optional initial brand on the thread creating the session.
+/// The network worker invokes the provider only when it reaches the brand packet.
+#[horizon_mod_api_macros::replaceable]
+fn prepare_client_brand(
+    _address: &str,
+    _serial: u64,
+    _counters: &Arc<Mutex<Option<Arc<Counters>>>>,
+) -> Option<ClientBrandProvider> {
+    None
 }
 
 /// `ClientBrandRetriever.getClientModName`: vanilla's default client brand.
