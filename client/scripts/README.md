@@ -43,8 +43,15 @@ windows-gnu on PATH, `-c core.autocrlf=false` checkouts. Checked on 23 Nov 2026 
    `client/sunset` (and `client/tools/probe-hmod`, `plugins/launcher-test`) pin the fork head: a new hooks commit
    means a new SDK, a new developer install and new pins.
 
-Not done for this pin yet: `build-prebuilt.sh` (release packaging, relink kit, signing) and the Sunset launcher's
-release manifest (its `horizon` revision and `cli` entry) on this route.
+The Sunset launcher installs such a build as it is (checked on 23 Nov 2026 with a TEST-key release: install, base
+from the package, prepare, instance). Its manifest pins the newest stock CLI, `launcher@0.2.107` (built from
+`41d546ef2f`, 216 commits before 2e7d2c6; its runtime-lease and launch-entry code is the same as at 2e7d2c6), and
+the package's `native-mods.json` names its base as a Nightly-style tag (`nightly-2026-11-23-9defaa0`) instead of the
+developer install it was built on, without `developer.json` and `developer-source.tar`. The launcher sets that base
+up from the package (`core.rs` `base_from_package`). Play on 0.2.107 still needs a check with a signed-in account.
+
+Not done for this pin yet: `build-prebuilt.sh` (release packaging, relink kit, signing) on this route, and the
+Plugins tab: its builds seed a published-style SDK index for a Nightly base, which this route doesn't make.
 
 ## Windows
 
