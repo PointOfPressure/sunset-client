@@ -1,0 +1,29 @@
+From b69182e7182bc8a9b885e441fb52a8f354462e36 Mon Sep 17 00:00:00 2001
+From: pointofpressure <pointofpressure@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 18:43:41 +0000
+Subject: [PATCH 02/11] net: brand() is replaceable
+
+The client brand the configuration phase sends (ClientBrandRetriever.getClientModName) gets a
+replacement cell, so a native mod can send another brand from the first packet instead of
+after joining.
+
+(cherry picked from commit 791013ca4d7a53c9374dbd404aa3c07c6f92de72)
+---
+ crates/horizon-client/src/net.rs | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/crates/horizon-client/src/net.rs b/crates/horizon-client/src/net.rs
+index 6a836721d2..963914d66a 100644
+--- a/crates/horizon-client/src/net.rs
++++ b/crates/horizon-client/src/net.rs
+@@ -1743,6 +1743,7 @@ fn receive_brand(payload: &cfg::CustomPayload, send: &ingress::Producer<Event>)
+ }
+ 
+ /// `ClientBrandRetriever.getClientModName`: vanilla's default client brand.
++#[horizon_mod_api_macros::replaceable]
+ fn brand() -> Vec<u8> {
+     let mut w = horizon_protocol::buf::Writer::new();
+     w.string("vanilla");
+-- 
+2.55.0.windows.3
+

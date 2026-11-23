@@ -16,6 +16,36 @@ Nightly, prepare, Rust, SDK, native-build 222-230 s); a source change about 120 
 70 s (packaging). Package 86 MB (353 MiB unpacked, most of it the SDK's `libhorizon_mod_host.so`), relink kit 21 MB.
 Two builds at the same `WORK` path give identical libraries.
 
+## Pin 2e7d2c6: the developer route (rebase/horizon-2e7d2c6)
+
+`build-prebuilt.sh` still drives launcher 0.2.78 against a Nightly. The rebased package (fork `sunset-hooks/2e7d2c6`,
+head `9defaa0433`: upstream `2e7d2c6` plus `../horizon-patches/2e7d2c6/hooks/`) is built with the fork's own launcher
+instead, in a launcher home of its own (`HORIZON_LAUNCHER_HOME`). Windows, Git Bash, the launcher's Rust 1.99.1
+windows-gnu on PATH, `-c core.autocrlf=false` checkouts. Checked on 23 Nov 2026 (native-build 257 s; a
+`--test-terrain --world-frames 600` start reached the world with Sunset loaded):
+
+1. In the fork: `python tools/prebuilt_game.py build <SDK>` (build id = HEAD; 37 min cold, ~36 min after a hooks
+   commit). Game and companions: `cargo build --locked --release -p horizon-official --bin horizon-official -p
+   horizon-prepare -p horizon-server` and `-p horizon-client-lib --bin horizon-ctl`, `horizon-official.exe` copied to
+   `horizon-client.exe`; `cargo-horizon-mod wasm-std <bin>/horizon-wasm-std.wasm` with rustup's 1.99.1 (it needs
+   `rust-src`, which the launcher's toolchain lacks); the launcher is its own workspace: `cargo build --release` in
+   `launcher/`.
+2. Exporters: `horizon-prepare --prepare --root <fork> --minecraft-dir <dir with 26.3> --server-jar <26.3 server jar>`,
+   then `horizon-prepare compile-exporters --root <fork>` and copy its `server/`, `client/` and `manifest.json` into
+   `<fork>/exporters/` (Java 25 with javac: Mojang's `java-runtime-epsilon`).
+3. `horizon-launcher developer-install <fork> --program <bin>/horizon-client.exe --trust-unsigned`, then
+   `horizon-launcher prepare --version <developer tag> --minecraft <dir>`.
+4. Seed the pinned source the mixins copy functions from (the launcher otherwise downloads it from
+   horizon-rust/horizon, which doesn't have the fork's commits): `git archive HEAD` of the fork into
+   `$HORIZON_LAUNCHER_HOME/native/source/<fork head>/`, plus a `.horizon-revision` file holding that commit.
+5. `HORIZON_LAUNCHER_DEVELOPER_SDK=<SDK> horizon-launcher native-build client/sunset --version <developer tag>
+   --trust-native-code` installs `native-<fork head 7>-<key>`. A developer base's revision is its checkout's HEAD, so
+   `client/sunset` (and `client/tools/probe-hmod`, `plugins/launcher-test`) pin the fork head: a new hooks commit
+   means a new SDK, a new developer install and new pins.
+
+Not done for this pin yet: `build-prebuilt.sh` (release packaging, relink kit, signing) and the Sunset launcher's
+release manifest (its `horizon` revision and `cli` entry) on this route.
+
 ## Windows
 
 The SDK's Windows build is `x86_64-pc-windows-gnu`, so MSVC/xwin can't link against it. What was tried here:

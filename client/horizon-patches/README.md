@@ -29,6 +29,10 @@ crate only takes effect in a game built with it, so the prebuilt uses an SDK bui
 starts `sunset/<pin>` from the hooks branch. The shipped Horizon libraries are then the fork's build, not the
 Nightly's: their source is the same branch.
 
+`2e7d2c6/hooks/` is the same series rebased onto upstream `2e7d2c6` (fork branch `sunset-hooks/2e7d2c6`, head
+`9defaa0433`), built through the launcher's developer route rather than as a Nightly's stand-in SDK
+(`../docs/hmod-port.md`, "Rebase onto Horizon 2e7d2c6").
+
 Sunset 2.0's Client Spoofer needs the session-aware brand hook from patch `0011`. Build the fork SDK
 from a hooks branch that includes this patch before running `native-build` for the updated package.
 

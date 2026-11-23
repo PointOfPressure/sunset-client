@@ -1,0 +1,183 @@
+From c3f8f5801c30908126eb0e24e27c57b26b711fa8 Mon Sep 17 00:00:00 2001
+From: pointofpressure <pointofpressure@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 22:28:35 +0000
+Subject: [PATCH 07/11] text: filter_display, a client filter of the text it
+ shows
+
+Text::resolved, which every draw and measure of a component goes through (HUD, menus, signs, tooltips),
+hands its result to the installed filter; Font::width and the menus' own font (ui_theme's layout) ask
+shown_str for plain strings, so width and drawing agree. Not applied while the filter itself runs.
+Unset, it costs one load per text. display_changed tells the caches of shown text (the renderer's sign
+text) that the filter's answers changed. For Streamer Mode-style name hiding everywhere text is shown.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit 6642853e3e8808033a677eb391c5aa3f5337ec97)
+---
+ crates/horizon-client-core/src/text.rs        | 62 ++++++++++++++++++-
+ .../src/block_entity_render.rs                |  9 ++-
+ crates/horizon-client-render/src/font.rs      |  4 +-
+ crates/horizon-client/src/ui_theme.rs         |  2 +
+ 4 files changed, 72 insertions(+), 5 deletions(-)
+
+diff --git a/crates/horizon-client-core/src/text.rs b/crates/horizon-client-core/src/text.rs
+index 6a4e1d91ed..153f835c0b 100644
+--- a/crates/horizon-client-core/src/text.rs
++++ b/crates/horizon-client-core/src/text.rs
+@@ -339,6 +339,59 @@ impl From<String> for Text {
+         Text::untrusted(s)
+     }
+ }
++/// A client's filter of the text it shows, such as names hidden while streaming: the first function is handed each
++/// component [`Text::resolved`] gives, the second each plain string [`shown_str`] is asked about (plain-text
++/// measuring, the menus' own font); `None` shows the text as it is. Not applied to what the filter itself resolves
++/// or measures, so it can use both.
++pub type DisplayFilter = (fn(&Text) -> Option<Text>, fn(&str) -> Option<String>);
++
++static DISPLAY_FILTER: std::sync::OnceLock<DisplayFilter> = std::sync::OnceLock::new();
++
++thread_local! {
++    static FILTERING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
++}
++
++/// Installs the [`DisplayFilter`] for the rest of the process; false when one is already set.
++pub fn filter_display(filter: DisplayFilter) -> bool {
++    DISPLAY_FILTER.set(filter).is_ok()
++}
++
++static DISPLAY_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++
++/// Tells the caches of shown text (sign text) that the filter's answers changed, so they are made again.
++pub fn display_changed() {
++    DISPLAY_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++}
++
++/// How many times [`display_changed`] was called: a cache of shown text keeps the count it was made at.
++pub fn display_generation() -> u64 {
++    DISPLAY_GENERATION.load(std::sync::atomic::Ordering::Relaxed)
++}
++
++/// `s` as the [`DisplayFilter`] shows it.
++pub fn shown_str(s: &str) -> std::borrow::Cow<'_, str> {
++    match display_filtered(|filter| (filter.1)(s)) {
++        Some(shown) => std::borrow::Cow::Owned(shown),
++        None => std::borrow::Cow::Borrowed(s),
++    }
++}
++
++/// `apply` with the installed filter, unless there is none or it is already running on this thread.
++fn display_filtered<T>(apply: impl FnOnce(&DisplayFilter) -> Option<T>) -> Option<T> {
++    struct Done;
++    impl Drop for Done {
++        fn drop(&mut self) {
++            FILTERING.with(|on| on.set(false));
++        }
++    }
++    let filter = DISPLAY_FILTER.get()?;
++    if FILTERING.with(|on| on.replace(true)) {
++        return None;
++    }
++    let _done = Done;
++    apply(filter)
++}
++
+ impl Text {
+     pub fn empty() -> Self {
+         Self::default()
+@@ -941,12 +994,17 @@ impl Text {
+         Self::from_spans(out.rendered.spans)
+     }
+     /// `resolve_legacy` borrowing `self` when no span holds a `§` code (the
+-    /// common case).
++    /// common case), as the client's [`DisplayFilter`] shows it: every draw
++    /// and measure of a component goes through here.
+     pub fn resolved(&self) -> std::borrow::Cow<'_, Text> {
+-        if self.rendered.spans.iter().any(|s| s.text.contains('§')) {
++        let resolved = if self.rendered.spans.iter().any(|s| s.text.contains('§')) {
+             std::borrow::Cow::Owned(self.resolve_legacy())
+         } else {
+             std::borrow::Cow::Borrowed(self)
++        };
++        match display_filtered(|filter| (filter.0)(&resolved)) {
++            Some(shown) => std::borrow::Cow::Owned(shown),
++            None => resolved,
+         }
+     }
+     /// The text without its legacy `§` codes (ChatFormatting.stripFormatting:
+diff --git a/crates/horizon-client-render/src/block_entity_render.rs b/crates/horizon-client-render/src/block_entity_render.rs
+index 2f3cc1b36b..f0722f13e4 100644
+--- a/crates/horizon-client-render/src/block_entity_render.rs
++++ b/crates/horizon-client-render/src/block_entity_render.rs
+@@ -1172,6 +1172,8 @@ struct SignTextEntry {
+     /// Within the glowing text outline's distance (only kept for glowing text).
+     near: bool,
+     glyphs: u64,
++    /// `text::display_generation` when it was made: the display filter's answers it shows.
++    shown: u64,
+     /// Game time it was last drawn.
+     used: i64,
+     vertices: Vec<Vertex>,
+@@ -2496,13 +2498,14 @@ impl BlockEntityRenderer {
+                 .retain(|_, e| (now - SIGN_TEXT_KEEP..=now).contains(&e.used));
+         }
+         let glyphs = scene.glyphs;
++        let shown = crate::text::display_generation();
+         let signs = &mut cache.signs;
+         let entry = match signs.entry(pos) {
+             std::collections::hash_map::Entry::Occupied(mut occupied) => {
+                 let entry = occupied.get_mut();
+                 let changed = entry.data != *data;
+-                if (entry.state, entry.packed, entry.near, entry.glyphs)
+-                    != (state, packed, near, glyphs)
++                if (entry.state, entry.packed, entry.near, entry.glyphs, entry.shown)
++                    != (state, packed, near, glyphs, shown)
+                     || changed
+                     || entry.animated
+                 {
+@@ -2526,6 +2529,7 @@ impl BlockEntityRenderer {
+                     entry.packed = packed;
+                     entry.near = near;
+                     entry.glyphs = glyphs;
++                    entry.shown = shown;
+                 }
+                 occupied.into_mut()
+             }
+@@ -2549,6 +2553,7 @@ impl BlockEntityRenderer {
+                     packed,
+                     near,
+                     glyphs,
++                    shown,
+                     used: now,
+                     vertices,
+                 })
+diff --git a/crates/horizon-client-render/src/font.rs b/crates/horizon-client-render/src/font.rs
+index fb5380837f..2d2b558ba2 100644
+--- a/crates/horizon-client-render/src/font.rs
++++ b/crates/horizon-client-render/src/font.rs
+@@ -1795,8 +1795,10 @@ impl Font {
+         let g = self.glyph_styled(c, style);
+         g.advance + if style.is_bold() { g.offset } else { 0.0 }
+     }
+-    /// Font.width of plain text (legacy codes are formatting, not glyphs).
++    /// Font.width of plain text (legacy codes are formatting, not glyphs), as
++    /// the client's display filter shows it (`text::shown_str`).
+     pub fn width(&self, s: &str) -> f32 {
++        let s = &*crate::text::shown_str(s);
+         if s.contains('§') {
+             return self.width_text(&Text::legacy(s));
+         }
+diff --git a/crates/horizon-client/src/ui_theme.rs b/crates/horizon-client/src/ui_theme.rs
+index e8a6fd58d5..425777b751 100644
+--- a/crates/horizon-client/src/ui_theme.rs
++++ b/crates/horizon-client/src/ui_theme.rs
+@@ -561,6 +561,8 @@ impl<'a> Ui<'a> {
+         text: &str,
+         mut emit: impl FnMut(f32, f32, f32, f32, Rect),
+     ) -> f32 {
++        // Measured and drawn as the client's display filter shows it.
++        let text = &*crate::text::shown_str(text);
+         with_cache(atlas, |c| {
+             let (ascent, descent, scale, all_pack) = {
+                 let Some(fonts) = &c.fonts else {
+-- 
+2.55.0.windows.3
+

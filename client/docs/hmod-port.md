@@ -6,6 +6,28 @@ It pins **Nightly 2026-11-18 · 0b14f8a**, the first Horizon build with a publis
 (`sdk-0b14f8acfd…`): the launcher (0.2.78) downloads the SDK by itself, so a player installs that Nightly and builds
 the package from the Mods page or with `native-build`.
 
+## Rebase onto Horizon 2e7d2c6 (branch rebase/horizon-2e7d2c6, 23 Nov 2026)
+
+The package now pins Sunset's fork commit `9defaa0433` = upstream `2e7d2c6` (main, 23 Nov) plus the 13 hook patches
+(`client/horizon-patches/2e7d2c6/hooks/`; only 0008 and 0009 needed hand merges: `before_render` runs after the new
+`frame_export` draw gate, `filter_sprites` keeps the new `frame_size`). It is built through the newest launcher's
+developer route instead of a Horizon Nightly: the fork checkout is installed as a developer base
+(`horizon-launcher developer-install`), its SDK is built from the same checkout (`tools/prebuilt_game.py build`), and
+`HORIZON_LAUNCHER_DEVELOPER_SDK=<sdk> horizon-launcher native-build` compiles the package. A developer base's revision
+is its checkout's HEAD, and the launcher refuses mods pinned to another revision, so the pin names the fork commit.
+
+What the rebase changed in the package:
+- Horizon split `game/remote/mod.rs`: its functions are wrappers of `*_body` functions in `remote/tick.rs`,
+  `player_state.rs`, ... Selector hooks moved to the bodies: `sent_look` to `remote_send_state_body`, `screen_keys`,
+  `screen_move` and `screen_keys_after` to `tick_local_player_body`. HEAD/RETURN hooks on the wrappers still work.
+  The mixins tool refuses `remote_send_state_body` as upstream writes it (`matches!`/`vec!` under `use super::*`
+  could be shadowed), so fork patch 0012 spells them `::core::matches!` and `::std::vec!`.
+- `debug_chat_signed` hooks `signed_chat_line_body` (`remote/chat.rs`). Upstream's `Renderer::release_surface`
+  now calls the `pub(super)` `stop_display_reader`, which Atmosphere's replacement of it can't reach from its crate
+  (only the game crate's items are widened in the SDK): fork patch 0013 makes it `pub`.
+- `chunk_packet` hooks `ChunkFormat::column_with_scratch`: the decoder worker no longer calls `column`.
+- `packet_tap_hook`: the backlog holds `(Received, Instant)` (BACKLOG_LIMIT counts from that time).
+
 ## Layout
 
 - `sunset/horizon-mod.toml`: the manifest (id `sunset`), 208 support modules and ~105 mixins.
