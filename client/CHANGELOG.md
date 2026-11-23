@@ -7,6 +7,11 @@ section of the version they build into the signed manifest, and the launcher sho
 - One short line per change (`- ...`); the GitHub release notes keep the long form.
 - An important change is written in bold (`- **...**`): the launcher highlights it.
 
+## 2.1.0
+
+### Changed
+- **Sunset runs on Horizon main of 23 Nov 2026 (`2e7d2c6`, through Sunset's Horizon fork `9defaa0`) and horizon-launcher 0.2.107**
+
 ## 2.0.1
 
 ### Fixed

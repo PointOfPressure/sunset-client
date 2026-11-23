@@ -1,6 +1,6 @@
 id = "sunset"
 name = "Sunset"
-version = "2.0.0"
+version = "2.1.0"
 description = "A utility client for Horizon: modules, a click GUI, HUD and world overlays."
 authors = ["PointOfPressure", "Sunset contributors"]
 api = "0.2"
