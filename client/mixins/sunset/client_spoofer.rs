@@ -2,8 +2,8 @@
 // starts, names another client instead, and with Protocol packets on, the packets that client sends once in the world
 // go out too where their format is known from the client's server API (Lunar Client, LabyMod). Per server can name a
 // profile for a server, its subdomains or one port. The settings are read as a connection starts (a join, a reconnect,
-// a transfer), so a change applies on the next one; single player keeps Horizon's own. Diagnostics says what went out
-// and what a server can still tell apart.
+// a transfer), so a change applies on the next one; single player keeps Horizon's own. Diagnostics reports brand
+// preparation, Horizon's compatibility brand, join payload submission and configuration fallbacks.
 
 use super::Game;
 use super::sunset::{Category, Module};
@@ -41,41 +41,37 @@ pub(super) fn defaults() -> Vec<Module> {
 
 // A server being joined: its plan from the settings as they are now (none with the module off or on Horizon).
 pub(crate) fn connecting(address: &str) {
-    wire::next(super::sunset::with(|s| s.module(NAME).filter(|m| m.on).and_then(|m| plan(m, address))));
+    let plan = super::sunset::with(|s| s.module(NAME).filter(|m| m.on).and_then(|m| plan(m, address)));
+    wire::next(address, plan);
 }
 
 // After each play Login, the plan's join packets; once in the world, Diagnostics.
 pub(super) fn tick(game: &mut Game<'_>, module: Option<&Module>) {
-    if let Some(plan) = wire::joins()
-        && game.remote.is_some()
-    {
+    let Some(remote) = game.remote.as_ref() else {
+        return;
+    };
+    let diagnostics = module.is_some_and(|m| m.b("Diagnostics"));
+    let report = if diagnostics && game.player.is_some() { wire::report(&remote.session) } else { None };
+    if let Some(plan) = wire::joins(&remote.session) {
         for (channel, data) in &plan.joins {
             game.send(Serverbound::CustomPayload(CustomPayload { channel: (*channel).into(), data: data.clone() }));
         }
+        if diagnostics {
+            let channels = plan.joins.iter().map(|(channel, _)| *channel).collect::<Vec<_>>().join(", ");
+            super::sunset::say(game, &format!("Client Spoofer: submitted join payloads for {} ({channels}).", plan.host));
+        }
     }
-    if game.player.is_none() {
-        return;
-    }
-    let Some(plan) = wire::sent() else {
+    let Some((plan, horizon_brand)) = report else {
         return;
     };
-    if !module.is_some_and(|m| m.b("Diagnostics")) {
-        return;
+    let scope = if plan.joins.is_empty() { "brand only" } else { "join payloads configured" };
+    super::sunset::say(game, &format!("Client Spoofer: prepared brand \"{}\" ({}, {scope}) for {}.", plan.brand, plan.profile, plan.host));
+    if horizon_brand && plan.brand != "horizon" {
+        super::sunset::say(game, "Client Spoofer: Horizon sent its compatibility brand during configuration.");
     }
-    let after = match plan.joins.as_slice() {
-        [] => "brand only".to_owned(),
-        joins => format!("then {}", joins.iter().map(|(c, _)| *c).collect::<Vec<_>>().join(", ")),
-    };
-    super::sunset::say(game, &format!("Client Spoofer: sent \"{}\" ({}, {after}) to {}.", plan.brand, plan.profile, plan.host));
-    let mut gaps = vec!["the known packs answer stays empty (vanilla names minecraft:core)"];
-    if let Some(gap) = unsent(plan.profile) {
-        gaps.push(gap);
+    if !plan.notes.is_empty() {
+        super::sunset::say(game, &format!("Client Spoofer settings: {}.", plan.notes.join(". ")));
     }
-    if game.remote.as_ref().is_some_and(|r| r.brand.to_ascii_lowercase().contains("horizon")) {
-        gaps.push("Horizon's server checks Horizon's content identity, so it can tell anyway");
-    }
-    gaps.extend(plan.notes.iter().copied());
-    super::sunset::say(game, &format!("Not covered: {}.", gaps.join("; ")));
 }
 
 // The settings a profile reads.
@@ -193,20 +189,6 @@ fn register(channels: &[&str], after_each: bool) -> Vec<u8> {
         }
     }
     out
-}
-
-// What the profile's own client sends that Horizon does not.
-fn unsent(profile: &str) -> Option<&'static str> {
-    Some(match profile {
-        "Fabric" => "as Fabric Loader without Fabric API (no play minecraft:register of Fabric API's channels)",
-        "Lunar Client" => "no Apollo handshake (it lists Lunar's own mods and their settings) and only Apollo's channels registered",
-        "LabyMod" => "no Intave client config, and only the channels of LabyMod's own code registered",
-        "Feather" => "no feather:client handshake or hello (the hello lists Feather's mods)",
-        "Forge" => "no FORGE handshake marker or Forge mod handshake",
-        "NeoForge" => "no NeoForge channel negotiation (its configuration and play channel lists)",
-        "Badlion" => "Badlion's brand is from client detectors, not its own code",
-        _ => return None,
-    })
 }
 
 fn usable(brand: &str) -> bool {

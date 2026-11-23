@@ -1779,11 +1779,32 @@ helper = "client_brand_hook.rs"
 bindings = []
 
 [[injection]]
-id = "client_local"
+id = "client_brand_worker"
 kind = "HEAD"
-target = "horizon_client_lib::net::Session::connect_local"
-helper = "client_local_hook.rs"
-bindings = []
+target = "horizon_client_lib::net::run"
+helper = "client_brand_worker.rs"
+bindings = [{ name = "counters", ty = "&crate::net::sunset_client_brand::CountersCell", value = "shared_counters" }]
+
+[[injection]]
+id = "client_brand_start"
+kind = "AFTER_ASSIGN"
+target = "horizon_client_lib::net::Session::start"
+selector = "Arc::new"
+require = 5
+ordinal = 2
+helper = "client_brand_start.rs"
+bindings = [
+  { name = "address", ty = "&str", value = "address" },
+  { name = "local", ty = "&Option<horizon_protocol::connection::Pipe>", value = "&local" },
+  { name = "counters", ty = "&std::sync::Arc<crate::net::sunset_client_brand::CountersCell>", value = "$local_ref:counters:0" },
+]
+
+[[injection]]
+id = "client_brand_disconnect"
+kind = "HEAD"
+target = "horizon_client_lib::net::Session::disconnect"
+helper = "client_brand_disconnect.rs"
+bindings = [{ name = "session", ty = "&Session", value = "&*self" }]
 
 [[injection]]
 id = "server_scan_config_channel"

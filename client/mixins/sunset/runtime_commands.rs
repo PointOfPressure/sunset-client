@@ -160,7 +160,7 @@ pub(super) fn all_off(game: &mut Game<'_>) {
         if !native_input.0.contains(&k) { game.keys.remove(&k); }
     }
     super::sunset_server_scan::disabled();
-    horizon_client::net::sunset_client_brand::next(None);
+    horizon_client::net::sunset_client_brand::clear();
     super::agent::sunset_goto::cancel(game, "stopped by Panic");
     super::sunset_gui_move::shutdown(game);
     combat_cleanup(game);

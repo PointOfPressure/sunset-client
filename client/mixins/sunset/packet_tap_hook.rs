@@ -14,6 +14,6 @@ fn sunset_packet_tap(session: &Session, value: Vec<Event>) -> Vec<Event> {
     let value = crate::net::sunset_packets::backtrack_hold(session, value);
     let value = crate::net::sunset_packets::hold(session, value);
     crate::net::sunset_packets::seen(&value);
-    crate::net::sunset_client_brand::seen(&value);
+    crate::net::sunset_client_brand::seen(session, &value);
     crate::net::sunset_packets::gui_move_hold(value)
 }
