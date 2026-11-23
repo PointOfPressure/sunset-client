@@ -45,13 +45,29 @@ impl Camera {
         } else {
             (last_pos, last_yaw, last_pitch)
         };
+        Some(Self::aimed(pos, yaw, pitch, fov, w, h))
+    }
+
+    // A view from `eye` toward `target`, `fov` degrees tall, `w` by `h` pixels: the Sidebar menu's ESP preview's.
+    pub(super) fn looking_at(eye: [f64; 3], target: [f64; 3], fov: f32, w: f32, h: f32) -> Self {
+        let d = [target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]];
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1e-9);
+        let d = [d[0] / len, d[1] / len, d[2] / len];
+        // The inverse of `aimed`'s forward: [-sin yaw cos pitch, -sin pitch, cos yaw cos pitch].
+        let pitch = (-d[1]).clamp(-1.0, 1.0).asin().to_degrees() as f32;
+        let yaw = (-d[0]).atan2(d[2]).to_degrees() as f32;
+        Self::aimed(eye, yaw, pitch, fov, w, h)
+    }
+
+    // A view from `pos` turned `yaw` and `pitch` degrees, `fov` degrees tall, `w` by `h` pixels.
+    fn aimed(pos: [f64; 3], yaw: f32, pitch: f32, fov: f32, w: f32, h: f32) -> Self {
         let (sy, cy) = f64::from(yaw.to_radians()).sin_cos();
         let (sp, cp) = f64::from(pitch.to_radians()).sin_cos();
         let focal = 1.0 / f64::from((fov / 2.0).to_radians()).tan();
         let aspect = f64::from(w) / f64::from(h);
         let (sh, ch) = (aspect / focal).atan().sin_cos();
         let (sv, cv) = (1.0 / focal).atan().sin_cos();
-        Some(Self {
+        Self {
             pos,
             fwd: [-sy * cp, -sp, cy * cp],
             up: [-sy * sp, cp, cy * sp],
@@ -61,7 +77,7 @@ impl Camera {
             w: f64::from(w),
             h: f64::from(h),
             cone: [sh, ch, sv, cv],
-        })
+        }
     }
     // Whether anything of a ball round `at` can be on screen: the test before any other work on a thing.
     pub(super) fn sees(&self, at: [f64; 3], radius: f64) -> bool {
@@ -141,6 +157,8 @@ pub(super) enum Shape {
     Face(String, [f32; 2], f32),
     // A panel with squircle corners, and their radius.
     Squircle([f32; 4], f32, u32),
+    // One of the menu's icons (a Lucide character) at a size (1: the text's).
+    Icon(&'static str, [f32; 2], u32, f32),
     // What is drawn from ClipStart on is cut to the rectangle ClipEnd gives: x0, y0, x1, y1.
     ClipStart,
     ClipEnd([f32; 4]),
@@ -280,6 +298,7 @@ pub(super) fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shap
     for s in shapes.drain(..) {
         match s {
             Shape::Squircle(r, radius, argb) => super::sunset_dashboard::squircle(game, batch, r, radius, argb, px),
+            Shape::Icon(glyph, at, argb, size) => crate::game::sunset_font::icon(game, batch, glyph, at, argb, size),
             Shape::ClipStart => clip = batch.vertices.len(),
             Shape::ClipEnd([x0, y0, x1, y1]) => batch.clip_since(clip, x0, y0, x1, y1),
             Shape::Fill(r, argb) => game.native_fill(batch, r, argb),

@@ -304,6 +304,29 @@ impl EntityLook {
 
 // ESP, Tracers and Nametags in one pass over the mobs: those in range of any of them, nearest first when a Max
 // leaves some out.
+// ESP on one entity, as entity_overlays draws it for a mob in the world (its look, kind colours, fade, shield colours
+// and 2D extras), but for any `mob`, in or out of the world, at distance `d`: the Sidebar menu's ESP preview. Friends
+// and the murderer finder are left out (they are about who it is). True when anything was drawn.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn esp_one(game: &Game<'_>, cam: &Camera, out: &mut impl Canvas, m: &Module, mob: &horizon_client::mobs::Mob, lo: [f64; 3], hi: [f64; 3], d: f64, lw: f32) -> bool {
+    let l = EntityLook::of(m);
+    let kind = kind_of(mob);
+    if !l.kinds.wants(kind, &mob.kind.id) {
+        return false;
+    }
+    let col = if l.potato { l.kinds.colour(kind, false) } else { faded(l.kinds.colour(kind, false), d, l.fade) };
+    let two = super::sunset_esp2d::TwoD::of(m);
+    let col = match (!l.potato).then(|| super::sunset_esp2d::shield_colour(game, &two, mob)).flatten() {
+        Some(c) => faded(c, d, l.fade),
+        None => col,
+    };
+    if l.look.draw == Draw::Box2d && two.extras() {
+        super::sunset_esp2d::draw(game, cam, out, &two, mob, lo, hi, d, col, lw)
+    } else {
+        draw_box(cam, out, &l.look, lo, hi, col, lw)
+    }
+}
+
 fn entity_overlays(game: &Game<'_>, cam: &Camera, mods: [Option<&Module>; 3], lw: f32, out: &mut impl Canvas, tagged: &mut Vec<(u32, [f32; 2])>) {
     let [esp, tracers, tags] = mods.map(|m| m.map(EntityLook::of));
     let two = mods[0].map(super::sunset_esp2d::TwoD::of);

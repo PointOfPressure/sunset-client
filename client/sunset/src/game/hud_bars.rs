@@ -308,7 +308,7 @@ pub(super) fn shift(shape: &mut Shape, dx: f32, dy: f32) {
             }
         }
         Shape::Text(_, p, _) | Shape::Head(_, p, _) | Shape::Item(_, p, _) | Shape::Scaled(_, p, _, _)
-        | Shape::Face(_, p, _) => {
+        | Shape::Face(_, p, _) | Shape::Icon(_, p, _, _) => {
             p[0] += dx;
             p[1] += dy;
         }
@@ -336,6 +336,7 @@ pub(super) fn bounds(game: &Game<'_>, shapes: &[Shape]) -> Option<[f32; 4]> {
             Shape::Text(t, p, _) | Shape::Head(t, p, _) => [p[0], p[1], game.sunset_text_width(t), 9.0],
             Shape::Scaled(t, p, _, k) => [p[0], p[1], game.sunset_text_width(t) * k, 9.0 * k],
             Shape::Item(_, p, size) | Shape::Face(_, p, size) => [p[0], p[1], *size, *size],
+            Shape::Icon(_, p, _, k) => [p[0], p[1], 9.0 * k, 9.0 * k],
             Shape::ClipStart | Shape::ClipEnd(_) => continue,
         };
         x0 = x0.min(r[0]);
