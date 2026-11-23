@@ -642,7 +642,7 @@ impl Renderer {
 
     /// Ends the display reader's thread, which holds the surface: before the surface is
     /// handed over or made again.
-    pub(super) fn stop_display_reader(&mut self) {
+    pub fn stop_display_reader(&mut self) {
         if let Some(watch) = &mut self.display {
             watch.reader = None;
         }
