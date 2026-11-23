@@ -501,7 +501,7 @@ Anchor Aura, Crystal Macro and Anchor Macro (their Macro sections), Shield Break
 Axe on shields, Auto Spear's Lunge key, Reach poke and Spear reach, and the smash fall count Auto Mace goes by), W Tap,
 Jump Reset, Friend Guard, Auto Inventory Totem (Offhand's old Refill) and Hover Totem (Offhand's Hover), FastXP (Fast
 Use's Throwables), Key Throw, world labels sharing the menu's glyph scale, faster Atmosphere skies, .goto, Knockback
-Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps, Ore Sim's automatic seed (SeedCrackerX) and the Baritone/Ore Sim integration, and the plugin release gate (verify.py's exit status, strict plugin results). ([pull requests](https://github.com/PointOfPressure/sunset-client/pulls?q=is%3Apr+author%3Azackmsa777-a11y))
+Delay in Velocity, PvP Bot's Sword mode and the rival history store its Crystal mode keeps, Ore Sim's automatic seed (SeedCrackerX) and the Baritone/Ore Sim integration, the plugin release gate (verify.py's exit status, strict plugin results) and Trajectories' full Multishot crossbow fan. ([pull requests](https://github.com/PointOfPressure/sunset-client/pulls?q=is%3Apr+author%3Azackmsa777-a11y))
 
 **compkrx** ([compkrx](https://github.com/compkrx)): Vein Miner, Effects refinements, the Relog command, Auto Sell,
 Auction Sniper, Chest Index, Drill Logger, Auto Trident, Depth Alert, Staff List, Base Guard, ESP's villager filters

@@ -22,6 +22,7 @@ section of the version they build into the signed manifest, and the launcher sho
 ## 2.0.1
 
 ### Fixed
+- Trajectories shows every loaded crossbow projectile at its Multishot angle, including all eleven arrows from Multishot V
 - **New installs work again: the launcher sets up Horizon Nightly 2026-11-18 (`0b14f8a`) from Sunset's signed package instead of Horizon's release, which Horizon deleted**
 - Cancel stops Install while it prepares Minecraft's files, and the next Install prepares them again
 - Install and Repair prepare Minecraft's files again when an earlier prepare stopped half way ("is not prepared yet" at Play)

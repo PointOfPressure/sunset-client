@@ -14581,7 +14581,10 @@ def _():
         ctl("key", "1", "tap")
         only("trajectories")
         wait(10)
-        got[name] = shot_pixels(f"trajectories-{name}", accent)
+        with colour_frame(f"trajectories-{name}") as frame:
+            w, h = frame.size
+            # Count the lines just below the crosshair, clear of chat, the held item and orange HUD text.
+            got[name] = coloured(frame, (w//4, h//2 + h//60, 3*w//4, 11*h//20), accent)
         only()
     pearl = None
     if CTL2:
@@ -14601,6 +14604,48 @@ def _():
     setting("trajectories", "pearls in flight", "false")
     ok = got["single"] > 0 and got["multishot"] > got["single"] * 1.5 and (pearl is None or pearl > 0)
     return ok, f"accent pixels: one arrow {got['single']}, multishot {got['multishot']}, a flying pearl {pearl}"
+
+
+@test("Trajectories (Multishot V crossbow fan)")
+def _():
+    from itertools import groupby
+
+    reset("creative")
+    # A grey wall gives every shot a visible landing marker. At vertical FOV 90 the focal length is h/2.
+    wall = f"{X0-22} {Y+1} {Z0+12} {X0+22} {Y+9} {Z0+16}"
+    fov = ctl("options-get", "fov")["options"]["fov"]["value"]
+    observed = {}
+    try:
+        cmd(f"fill {wall} minecraft:light_gray_concrete")
+        ctl("options-set", "fov", "90")
+        setting("trajectories", "mode", "Potato")
+        only("trajectories")
+        for level, count, angles in ((5, 0, []), (0, 1, [0]), (1, 3, [-10, 0, 10]),
+                                     (5, 11, range(-50, 51, 10)), (5, 4, [-50, -50/3, 50/3, 50])):
+            charge = ",".join(["{id:arrow}"] * count)
+            ench = f",enchantments={{multishot:{level}}}" if level else ""
+            slot(0, f"crossbow[charged_projectiles=[{charge}]{ench}]")
+            wait(8)
+            with colour_frame(f"crossbow-level-{level}-loaded-{count}") as image:
+                w, h = image.size
+                band = image.crop((0, h//2-4, w, 3*h//5))
+                pixels = band.load()
+                def has_marker(x):
+                    return any(r > 200 and 60 < g < 140 and b < 60 for r, g, b in (pixels[x, y] for y in range(band.height)))
+                centres = []
+                for marked, columns in groupby(range(w), key=has_marker):
+                    if marked:
+                        run = list(columns)
+                        centres.append((run[0] + run[-1]) / 2)
+            expected = [w/2 + h/2 * math.tan(math.radians(a)) for a in angles]
+            observed[(level, count)] = centres
+            if len(centres) != len(expected) or any(abs(got - want) > 0.015*w for got, want in zip(centres, expected)):
+                return False, f"level {level}, {count} loaded: marker columns {centres}, expected {expected}"
+    finally:
+        only()
+        ctl("options-set", "fov", str(fov))
+        cmd(f"fill {wall} minecraft:air")
+    return True, f"landing marker columns by (level, loaded): {observed}"
 
 
 HEAL_POT = 'splash_potion[potion_contents={potion:"minecraft:healing"}]'
