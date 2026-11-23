@@ -10,7 +10,7 @@ capabilities = ["registries"]
 # Sunset changes the game's own functions, so it is made for exactly this game build.
 [native]
 game = "26.3"
-horizon = "0b14f8acfd97fa2c750e42795249dcc981178ca4"
+horizon = "9defaa04337e68d6f368842491834af7bc5727f9"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
 
 [[native.module]]
@@ -2002,7 +2002,7 @@ bindings = [
 
 [[native.mixin]]
 id = "sent_look"
-target = "horizon_client::game::remote::Game<'_>::remote_send_state"
+target = "horizon_client::game::remote::player_state::Game<'_>::remote_send_state_body"
 kind = "MODIFY_ARG"
 selector = "r.position_sender.update"
 require = 1
@@ -2190,7 +2190,7 @@ bindings = [
 
 [[native.mixin]]
 id = "chunk_packet"
-target = "horizon_client::game::remote_chunks::ChunkFormat::column"
+target = "horizon_client::game::remote_chunks::ChunkFormat::column_with_scratch"
 kind = "HEAD"
 helper = "src/mixins/chunk_packet_hook.rs"
 bindings = [
@@ -2397,7 +2397,7 @@ bindings = [{ name = "value", ty = "Vec<TabPlayer>", value = "$value" }]
 # stored and the player after the game synced it, and the view comes back after the move.
 [[native.mixin]]
 id = "screen_keys"
-target = "horizon_client::game::remote::Game<'_>::tick_local_player"
+target = "horizon_client::game::remote::tick::Game<'_>::tick_local_player_body"
 kind = "MODIFY_VARIABLE"
 variable = { name = "keys", ordinal = 2, at = "STORE" }
 require = 1
@@ -2407,7 +2407,7 @@ bindings = [{ name = "value", ty = "Keys", value = "$value" }]
 
 [[native.mixin]]
 id = "screen_move"
-target = "horizon_client::game::remote::Game<'_>::tick_local_player"
+target = "horizon_client::game::remote::tick::Game<'_>::tick_local_player_body"
 kind = "AFTER_CALL"
 selector = "self.sync_player_body"
 require = 1
@@ -2418,7 +2418,7 @@ bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
 
 [[native.mixin]]
 id = "screen_keys_after"
-target = "horizon_client::game::remote::Game<'_>::tick_local_player"
+target = "horizon_client::game::remote::tick::Game<'_>::tick_local_player_body"
 kind = "BEFORE_CALL"
 selector = "self.seat_own_stands"
 require = 1
@@ -2523,7 +2523,7 @@ bindings = [
 # Debug Report's signed chat, the native block outline
 [[native.mixin]]
 id = "debug_chat_signed"
-target = "horizon_client::game::remote::Game<'_>::signed_chat_line"
+target = "horizon_client::game::remote::chat::Game<'_>::signed_chat_line_body"
 kind = "MODIFY_ARG"
 selector = "self.ui.chat.add_signed"
 require = 1

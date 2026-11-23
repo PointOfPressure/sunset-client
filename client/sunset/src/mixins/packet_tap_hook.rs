@@ -9,6 +9,13 @@ fn sunset_packet_tap(game: &mut Game<'_>) {
     };
     let mut fresh = std::collections::VecDeque::new();
     r.receive_credited_backlog(&mut fresh);
-    crate::game::sunset_packets::poll(&r.session, &mut fresh, 0);
-    r.backlog.extend(fresh);
+    // The game stamps each event with the time it took it in (its backlog's BACKLOG_LIMIT counts from it). What is
+    // new here was all taken in now; what Sunset held before and lets go now joins with that same time.
+    let now = fresh.front().map_or_else(std::time::Instant::now, |(_, at)| *at);
+    let mut items: std::collections::VecDeque<_> = fresh.into_iter().map(|(item, _)| item).collect();
+    crate::game::sunset_packets::poll(&r.session, &mut items, 0);
+    if r.backlog.is_empty() && !items.is_empty() {
+        r.backlog_since = Some(now);
+    }
+    r.backlog.extend(items.into_iter().map(|item| (item, now)));
 }
