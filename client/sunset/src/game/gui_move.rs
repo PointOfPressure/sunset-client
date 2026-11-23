@@ -91,6 +91,10 @@ pub(super) fn before_click(game: &mut Game<'_>) -> bool {
     if replaying() {
         return true;
     }
+    // Offhand's Auto Totem has its own inventory open for a swap: no other click in it.
+    if super::sunset_combat_inventory::holds_screen(game) {
+        return false;
+    }
     // Your click (or another module's, outside `direct`): what the cursor holds is no longer Inventory Manager's.
     super::sunset_player::inventory_clicked(game.ticks);
     if game.remote_menu().0 != 0 && inventory_busy() {

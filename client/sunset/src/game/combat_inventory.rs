@@ -134,6 +134,9 @@ struct Totem {
     took: bool,
     seed: u64,
     work: Option<Work>,
+    // The click waits for the server to know you stand still (server_still): tried again after the next tick, with no
+    // Totem delay on top.
+    settling: bool,
 }
 
 // What a tick asks of Auto Totem. Its clicks and closes go out in the next frame, after the tick's end packet, as a
@@ -577,8 +580,37 @@ fn contents(game: &Game<'_>) -> Vec<Option<ItemStack>> {
 // The swap-with-offhand click (SWAP, button 40) on `slot`: the game's own click, predicted here and numbered with its
 // menu state. Never on a locked slot.
 fn swap_to_offhand(game: &mut Game<'_>, slot: usize) -> bool {
-    !super::sunset_loadouts::locked(slot)
-        && game.remote_menu_ops(&[(Some(slot), 40, horizon_client::menu::Input::Swap)])
+    if super::sunset_loadouts::locked(slot) {
+        return false;
+    }
+    OWN_CLICK.store(true, Ordering::Relaxed);
+    let sent = game.remote_menu_ops(&[(Some(slot), 40, horizon_client::menu::Input::Swap)]);
+    OWN_CLICK.store(false, Ordering::Relaxed);
+    sent
+}
+
+// Auto Totem's swap click on its way (holds_screen lets it through).
+static OWN_CLICK: AtomicBool = AtomicBool::new(false);
+
+// Grim's MultiActionsC flags (and cancels) an inventory click while the server knows of a move key, jump, sneak
+// (PlayerInput) or sprint (PlayerCommand), each as soon as its packet arrives. An open screen takes the game's move
+// keys, so the inventory's first tick sends the stop; the click waits until it is on the wire, and until nothing Fake
+// Lag holds (an older input it would let go ahead of the click) is left.
+fn server_still(game: &Game<'_>) -> bool {
+    super::remote::sunset_combat_remote::quiet(game)
+        && super::sunset_combat_wire::sent_input(game) & 0b0011_1111 == 0
+        && !super::sunset_combat_wire::sent_sprinting(game)
+        && !super::sunset_lag::pending()
+}
+
+// The inventory Auto Totem opened for its swap, still shown: clicks, number keys and throws in it are not yours (you
+// were fighting when it opened). One in its first tick reaches the server ahead of the stop the open screen sends
+// (MultiActionsC, sprinting and moving), and any can pick up a stack the swap needs. Its own click goes.
+pub(super) fn holds_screen(game: &Game<'_>) -> bool {
+    !OWN_CLICK.load(Ordering::Relaxed)
+        && game.screen == Screen::Inventory
+        && game.remote_menu().0 == 0
+        && state(|s| s.totem.opened)
 }
 
 // A silent session ends: the server's look goes back to yours, and the inventory it used is closed on the server
@@ -622,6 +654,10 @@ fn totem_step(game: &mut Game<'_>, m: &Module, t: &mut Totem, now: Instant) -> b
         totem_cancel(game, t, now);
         return false;
     }
+    // The inventory it opened was closed (by you or the server): one shown later is not Auto Totem's to click or close.
+    if t.opened && !screen {
+        t.opened = false;
+    }
     if let Some(p) = &t.pending {
         if stack(game, p.slot) != p.expected || game.carried.is_some() {
             t.pending = None;
@@ -659,6 +695,10 @@ fn totem_step(game: &mut Game<'_>, m: &Module, t: &mut Totem, now: Instant) -> b
         return true;
     }
     if game.carried.is_some() {
+        return false;
+    }
+    if !server_still(game) {
+        t.settling = true;
         return false;
     }
     let source = if m.b("Random slot") { sources[(t.next() % sources.len() as u64) as usize] } else { sources[0] };
@@ -700,10 +740,11 @@ fn totem_frame(game: &mut Game<'_>, m: &Module) {
     let now = Instant::now();
     let mut t = state(|s| std::mem::take(&mut s.totem));
     if t.due.is_none_or(|due| now >= due) {
+        t.settling = false;
         let acted = totem_step(game, m, &mut t, now);
         let range = (m.n("Shortest totem delay (ms)") as u64, m.n("Longest totem delay (ms)") as u64);
         let wait = t.delay(range, m.b("Extra randomization"));
-        t.due = (acted || t.active()).then(|| now + Duration::from_millis(wait));
+        t.due = (!t.settling && (acted || t.active())).then(|| now + Duration::from_millis(wait));
     }
     state(|s| s.totem = t);
 }
