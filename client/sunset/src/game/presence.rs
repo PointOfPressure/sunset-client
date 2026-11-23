@@ -204,6 +204,18 @@ fn roster_of(game: &Game<'_>) -> Vec<u128> {
     super::remote::sunset_remote::tab_uuids(game, ROSTER_MAX).map(|(_, list)| list).unwrap_or_default()
 }
 
+// The developer key, if there is one. Windows saves it as presence-dev-key.txt with the extension hidden, and Notepad
+// may start it with a byte-order mark: both are accepted. The log says whether a key was found, never the key.
+fn read_dev_key(dir: &std::path::Path) -> Option<String> {
+    let text = [KEY_FILE.to_owned(), format!("{KEY_FILE}.txt")]
+        .iter()
+        .find_map(|name| std::fs::read_to_string(dir.join(name)).ok())?;
+    let key = text.trim_start_matches('\u{feff}').trim();
+    let ok = (24..=128).contains(&key.len()) && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    log_line(if ok { "developer key found" } else { "developer key file is not a valid key" });
+    ok.then(|| key.to_owned())
+}
+
 fn room_of(game: &Game<'_>) -> Option<Room> {
     let r = game.remote.as_ref()?;
     let address = horizon_client::net::shown_address(&r.session.address);
@@ -212,11 +224,7 @@ fn room_of(game: &Game<'_>) -> Option<Room> {
     }
     let mut cache = ROOM_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if cache.as_ref().is_none_or(|(a, _, _)| *a != address) {
-        let key = std::fs::read_to_string(game.native_data_dir(ID).join(KEY_FILE))
-            .ok()
-            .map(|k| k.trim().to_owned())
-            .filter(|k| (24..=128).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'));
-        *cache = Some((address.clone(), room_key(&address), key));
+        *cache = Some((address.clone(), room_key(&address), read_dev_key(&game.native_data_dir(ID))));
     }
     let (_, key, dev_key) = cache.as_ref()?;
     let (uuid, _) = super::remote::sunset_remote::tab_uuids(game, 0)?;
