@@ -29,6 +29,9 @@ crate only takes effect in a game built with it, so the prebuilt uses an SDK bui
 starts `sunset/<pin>` from the hooks branch. The shipped Horizon libraries are then the fork's build, not the
 Nightly's: their source is the same branch.
 
+Sunset 2.0's Client Spoofer needs the session-aware brand hook from patch `0011`. Build the fork SDK
+from a hooks branch that includes this patch before running `native-build` for the updated package.
+
 ## LGPL (Horizon is LGPL-3.0-or-later): what we publish and why
 
 - Horizon's libraries ship **dynamically linked** (built from `sunset-hooks/<pin>` when HOOKS is set, unmodified otherwise) (`libhorizon_mod_host.so`, `libmod_*.so`,

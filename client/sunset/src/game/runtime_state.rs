@@ -832,12 +832,13 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
     take_over_old_settings(game);
     let data = game.native_data_dir(ID);
     super::sunset_profiles::sweep(&data);
-    let mut text = game.native_setting(ID, "config").unwrap_or_default();
+    // Sunset saves its config in its data directory as a single file.
+    let mut text = std::fs::read_to_string(data.join("config")).unwrap_or_default();
     let mut recovered = false;
     // A config cut short (a crash while an older version wrote it, a disk that filled up): the copy kept at the last
     // launch that loaded a whole one. Without either, the defaults (a first launch).
     if !super::sunset_profiles::whole_config(&text)
-        && let Some(copy) = game.native_setting(ID, "config.bak").filter(|t| super::sunset_profiles::whole_config(t))
+        && let Some(copy) = std::fs::read_to_string(data.join("config.bak")).ok().filter(|t| super::sunset_profiles::whole_config(t))
     {
         notice(format!(
             "Sunset's settings file was {}: loaded the copy kept at the last launch.",

@@ -1,14 +1,22 @@
-// Client Spoofer: the brand the configuration phase sends (network thread), Horizon's own when no plan names one.
-fn sunset_client_brand() -> std::ops::ControlFlow<Vec<u8>> {
-    if !::sunset_core::lifecycle::RUNTIME.running() {
+// This runs on the session creator. The returned provider runs on that session's worker.
+fn sunset_client_brand(
+    address: &str,
+    serial: u64,
+    counters: &Arc<Mutex<Option<Arc<Counters>>>>,
+) -> std::ops::ControlFlow<Option<ClientBrandProvider>> {
+    let owner: std::sync::Arc<dyn Send + Sync> = counters.clone();
+    if !::sunset_core::lifecycle::RUNTIME.running()
+        || !::sunset_core::client_brand::attach(address, serial, std::sync::Arc::downgrade(&owner))
+    {
         return std::ops::ControlFlow::Continue(());
     }
-    match ::sunset_core::client_brand::payload() {
-        Some(brand) => {
-            let mut w = horizon_protocol::buf::Writer::new();
-            w.string(&brand);
-            std::ops::ControlFlow::Break(w.data)
+    std::ops::ControlFlow::Break(Some(Box::new(move || {
+        if !::sunset_core::lifecycle::RUNTIME.running() {
+            return None;
         }
-        None => std::ops::ControlFlow::Continue(()),
-    }
+        let brand = ::sunset_core::client_brand::payload(serial)?;
+        let mut writer = horizon_protocol::buf::Writer::new();
+        writer.string(&brand);
+        Some(writer.data)
+    })))
 }

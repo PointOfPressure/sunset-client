@@ -2323,12 +2323,6 @@ bindings = [
   { name = "operation", ty = "impl FnOnce(i32, i32, i32, f32) -> Vec<horizon_client::hud_layout::GuiDraw>", value = "$operation" },
 ]
 
-[[native.mixin]]
-id = "client_local"
-target = "horizon_client::game::developer_launch::Game<'_>::connect_local"
-kind = "HEAD"
-helper = "src/mixins/client_local_hook.rs"
-
 # Not ported yet: these targets are below the game crate and not replaceable on this build.
 
 [[native.mixin]]
@@ -2375,14 +2369,18 @@ kind = "HEAD"
 helper = "src/mixins/legacy_jump_hook.rs"
 bindings = [{ name = "world", ty = "&mut MotionWorld<'_, '_, '_>", value = "&mut *self" }]
 
-# Client Spoofer's brand in the configuration phase (#[replaceable] net::brand, fork patch 0002)
+# Client Spoofer's per-session initial brand (Sunset's Horizon fork hook 0011).
 [[native.mixin]]
 id = "client_brand"
-target = "horizon_client_lib::net::brand"
+target = "horizon_client_lib::net::prepare_client_brand"
 kind = "HEAD"
 cancellable = true
 helper = "src/mixins/client_brand_hook.rs"
-bindings = []
+bindings = [
+  { name = "address", ty = "&str", value = "_address" },
+  { name = "serial", ty = "u64", value = "_serial" },
+  { name = "counters", ty = "&Arc<Mutex<Option<Arc<Counters>>>>", value = "_counters" },
+]
 
 # HUD's Tab game modes and Streamer Mode in single player's tab list (the integrated server's players)
 [[native.mixin]]

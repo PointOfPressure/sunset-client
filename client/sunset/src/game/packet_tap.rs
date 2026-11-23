@@ -457,12 +457,21 @@ pub fn ends() -> Vec<(std::time::SystemTime, String, bool)> {
     ENDS.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect()
 }
 
-pub fn seen(events: &[Item]) {
+pub fn seen(serial: u64, events: &[Item]) {
+    use ::sunset_core::client_brand as brand;
     let scan_active = SCAN_ACTIVE.load(Ordering::Relaxed);
     let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
     for event in events.iter().filter_map(ev) {
-        if let Event::Packet(p) = event && matches!(**p, C::Login(_)) {
-            ::sunset_core::client_brand::login_seen();
+        let brand_event = match event {
+            Event::Reconfiguring => Some(brand::Event::Configuring),
+            Event::Joined { .. } | Event::Reconfigured(_) => Some(brand::Event::Play),
+            Event::Brand(name) if name == "horizon" => Some(brand::Event::HorizonBrand),
+            Event::Packet(packet) if matches!(**packet, C::Login(_)) => Some(brand::Event::Login),
+            Event::Disconnected { .. } | Event::Transfer { .. } => Some(brand::Event::Closed),
+            _ => None,
+        };
+        if let Some(event) = brand_event {
+            brand::seen(serial, event);
         }
         // Server Scan: the command tree the server sent (none yet on a new connection).
         match event {
@@ -887,7 +896,7 @@ pub fn poll(session: &horizon_client::net::Session, events: &mut std::collection
         let new = trap_filter(new);
         let new = backtrack_hold(session, new);
         let new = hold(session, new);
-        seen(&new);
+        seen(session.serial(), &new);
         gui_move_hold(new)
     } else {
         let new = backtrack_hold(session, new);
