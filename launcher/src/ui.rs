@@ -202,6 +202,8 @@ pub struct Launcher {
     /// When the running game itself started (not the CLI's Play before it), for the play time it adds when it exits.
     started: Option<std::time::Instant>,
     sources: Vec<(String, PathBuf)>,
+    /// The Overview's import offer was put off ("Not now") until the launcher starts again.
+    import_later: bool,
     profiles: Vec<String>,
     mods: Vec<(String, String)>,
     /// The installed plugins and what the instance plays against what they and the settings ask for.
@@ -261,6 +263,7 @@ impl Launcher {
             importing: false,
             started: None,
             sources: vec![],
+            import_later: false,
             profiles: vec![],
             mods: vec![],
             plugins: vec![],
@@ -1977,19 +1980,34 @@ impl Launcher {
     }
 
     fn import_prompt(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
-        if self.settings.import_decided || self.sources.is_empty() || self.job.is_some() {
+        // Signing in changes nothing here: the offer stays until Import, Not now (this launch) or Don't ask again.
+        if self.settings.import_decided || self.import_later || self.sources.is_empty() || self.job.is_some() {
             return None;
         }
         let (name, _) = &self.sources[0];
         Some(
+            // The text wraps on its own line (min_w 0 lets it shrink below its one-line width) and the buttons sit
+            // under it, so a narrow window never pushes them out of sight.
             card()
+                .w_full()
+                .min_w(px(0.))
                 .flex()
-                .items_center()
-                .gap(px(12.))
+                .flex_col()
+                .gap(px(10.))
                 .p(px(PAD))
-                .child(div().flex_1().child(text(format!("Bring everything over from the Horizon instance \"{name}\": settings, keybinds, servers, worlds, packs and Sunset configs? Files it replaces are moved to a backup folder first."), 13., TEXT)))
-                .child(button("import-0", "Import", true).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.import(0, cx))))
-                .child(button("import-no", "Not now", false).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.set_settings(|s| s.import_decided = true, cx)))),
+                .child(div().w_full().min_w(px(0.)).line_height(px(18.)).child(text(format!("Bring everything over from the Horizon instance \"{name}\": settings, keybinds, servers, worlds, packs and Sunset configs? Files it replaces are moved to a backup folder first."), 13., TEXT)))
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap(px(8.))
+                        .child(button("import-0", "Import", true).flex_none().on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.import(0, cx))))
+                        .child(button("import-later", "Not now", false).flex_none().on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                            this.import_later = true;
+                            cx.notify();
+                        })))
+                        .child(button("import-never", "Don't ask again", false).flex_none().on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.set_settings(|s| s.import_decided = true, cx)))),
+                ),
         )
     }
 
