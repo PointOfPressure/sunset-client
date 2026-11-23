@@ -351,6 +351,18 @@ name = "sunset_text_edit"
 source = "src/game/text_edit.rs"
 
 [[native.module]]
+id = "command_complete"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_command_complete"
+source = "src/game/command_complete.rs"
+
+[[native.module]]
+id = "chat_suggest"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_chat_suggest"
+source = "src/game/chat_suggest.rs"
+
+[[native.module]]
 id = "dashboard"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_dashboard"
@@ -1527,6 +1539,49 @@ helper = "src/mixins/chat.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
   { name = "message", ty = "&str", value = "message" },
+]
+
+# The chat's suggestions for . commands (chat_suggest.rs): its keys, clicks and wheel while they show, and its list
+# over the chat screen's box (the screen's foreground phase, drawn after the box).
+[[native.mixin]]
+id = "chat_suggest_key"
+target = "horizon_client::game::chat::Game<'_>::chat_key_code"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/chat_suggest_key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "winit::keyboard::KeyCode", value = "key" },
+]
+
+[[native.mixin]]
+id = "chat_suggest_click"
+target = "horizon_client::game::chat::Game<'_>::chat_click"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/chat_suggest_click.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "chat_suggest_scroll"
+target = "horizon_client::game::chat::Game<'_>::chat_scroll"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/chat_suggest_scroll.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "amount", ty = "f32", value = "amount" },
+]
+
+[[native.mixin]]
+id = "chat_suggest_draw"
+target = "horizon_client::game::screen_backgrounds::Game<'_>::draw_screen_phase"
+kind = "HEAD"
+helper = "src/mixins/chat_suggest_draw.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+  { name = "phase", ty = "horizon_client::screen_draw::RenderPhase", value = "phase" },
 ]
 
 [[native.mixin]]

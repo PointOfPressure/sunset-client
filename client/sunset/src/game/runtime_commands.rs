@@ -35,6 +35,7 @@ pub(super) fn chat(game: &mut Game<'_>, message: &str) -> bool {
     true
 }
 
+// A new command or argument also goes in command_complete.rs: the chat's suggestions read their grammar there.
 const HELP: &[(&str, &str)] = &[
     (".menu", "open the click GUI (or press Right Shift)"),
     (".pages", "the same settings as pages in Options > Mods"),

@@ -140,6 +140,11 @@ fn loadouts() -> Vec<Loadout> {
     with(|s| s.loadouts.iter().filter_map(|l| parse(l)).collect())
 }
 
+// Their names, for the chat's suggestions.
+pub(super) fn names() -> Vec<String> {
+    loadouts().into_iter().map(|l| l.name).collect()
+}
+
 fn file(game: &Game<'_>) -> std::path::PathBuf {
     game.native_data_dir(super::sunset::ID).join("loadouts.txt")
 }
