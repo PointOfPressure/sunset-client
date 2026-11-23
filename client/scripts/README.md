@@ -50,8 +50,14 @@ the package's `native-mods.json` names its base as a Nightly-style tag (`nightly
 developer install it was built on, without `developer.json` and `developer-source.tar`. The launcher sets that base
 up from the package (`core.rs` `base_from_package`). Play on 0.2.107 still needs a check with a signed-in account.
 
-Not done for this pin yet: `build-prebuilt.sh` (release packaging, relink kit, signing) on this route, and the
-Plugins tab: its builds seed a published-style SDK index for a Nightly base, which this route doesn't make.
+The Plugins tab's "sdk" artifact is the fork SDK in its published layout, made from the step 1 folder in the fork:
+`prebuilt_game.py pack <SDK> <W>/legs/windows`, `gather <W>/legs <W>/dist`, `index <W>/dist --nightly
+nightly-2026-11-23-9defaa0` (pack about 7 min), then `<W>/dist` as `fork-sdk/sdk-<fork head>/` beside `git archive`
+of the fork as `fork-sdk/source/` (with `.horizon-revision`) and a `fork-sdk/fork-commit` file. Its index's Rust
+(1.99.1) and package format (6) are what CLI 0.2.107 reads; the SDK reader is the same at 41d546ef2f and 2e7d2c6.
+A plugin build on 0.2.107 was checked with `plugins/launcher-test` (see `plugins/README.md`).
+
+Not done for this pin yet: `build-prebuilt.sh` (release packaging, relink kit, signing) on this route.
 
 ## Windows
 

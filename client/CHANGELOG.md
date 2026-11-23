@@ -11,6 +11,10 @@ section of the version they build into the signed manifest, and the launcher sho
 
 ### Changed
 - **Sunset runs on Horizon main of 23 Nov 2026 (`2e7d2c6`, through Sunset's Horizon fork `9defaa0`) and horizon-launcher 0.2.107**
+- **Plugins must be pinned to Horizon `9defaa0`; plugins made for 2.0 need that pin (and new targets for their own hooks on split game functions)**
+
+### Fixed
+- The launcher's Plugins tab builds again on a Horizon base it set up from Sunset's package
 
 ## 2.0.1
 

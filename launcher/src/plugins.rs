@@ -459,6 +459,7 @@ fn build(p: &Paths, m: &Manifest, plugins: &[Plugin], cancel: &AtomicBool, repor
     }
     core::cli_path(p).ok_or_else(|| Failure::new(Phase::Staging, "horizon-launcher is not installed yet: install Sunset first"))?;
     let kit = kit(p, m, cancel, &staging).map_err(|e| Failure::new(Phase::Staging, e))?;
+    base_program(p, m).map_err(|e| Failure::new(Phase::Staging, e))?;
     stop(Phase::Staging)?;
 
     staging("Copying Sunset and the plugins into the build folder", Some(0.9));
@@ -587,6 +588,29 @@ fn kit(p: &Paths, m: &Manifest, cancel: &AtomicBool, staging: &dyn Fn(&str, Opti
         }
     };
     Ok(Kit { sunset: sunset_dir.join("sunset"), sdk_base })
+}
+
+/// On Windows, native-build reads the base's game program to pick the build's target (horizon-launcher's
+/// `platform_for_game`: only its PE machine type) and never carries it into the new build (`carried_over`). A base the
+/// launcher set up from Sunset's package has no program (`core::base_from_package` leaves Sunset's out), so the
+/// package's own is linked in for that check. Without its libraries it can't run as the base.
+fn base_program(p: &Paths, m: &Manifest) -> Result<()> {
+    if !cfg!(windows) {
+        return Ok(());
+    }
+    let name = "horizon-client.exe";
+    let dest = p.versions().join(&m.horizon.tag).join(name);
+    if dest.is_file() {
+        return Ok(());
+    }
+    let from = p.versions().join(&m.version_dir).join(name);
+    if !from.is_file() {
+        return Err(format!("Sunset {} has no {name}: repair it from Overview, then build again", m.version));
+    }
+    if fs::hard_link(&from, &dest).is_err() {
+        fs::copy(&from, &dest).map_err(|e| format!("can't set up Horizon {} for the build: {e}", m.horizon.tag))?;
+    }
+    Ok(())
 }
 
 /// What client/scripts/fork-sdk.sh `seed` does, for horizon-launcher's data in our folder: its kept `sdk.json` of the
