@@ -584,9 +584,9 @@ fn key(game: &Game<'_>, m: &Module) -> String {
 
 // Each tick, with Base Finder on (`m`) or off (None).
 pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
-    HEARS.store(m.is_some_and(|m| m.b("Hidden bases")) && in_world(game), Ordering::Relaxed);
+    HEARS.store(m.is_some_and(|m| m.b("Hidden bases")) && connected(game), Ordering::Relaxed);
     let heard: Vec<Sound> = std::mem::take(&mut *SOUNDS.lock().unwrap_or_else(|e| e.into_inner()));
-    let Some(m) = m.filter(|_| in_world(game)) else {
+    let Some(m) = m.filter(|_| connected(game)) else {
         if m.is_none() {
             // Off: stop scanning and take its waypoints away, saved ones from earlier sessions included.
             scan(|s| *s = None);

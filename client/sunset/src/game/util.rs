@@ -634,6 +634,17 @@ pub(super) fn in_world(game: &Game<'_>) -> bool {
     game.native_playing() && game.remote.is_some() && game.player.is_some() && game.screen == Screen::Playing
 }
 
+// In a world with nothing over it but the chat box, the pause menu or one of its pages (no inventory or container, not
+// dead): for modules that work on their own (fishing, shearing, Anti AFK) and should not stop while you type or sit in
+// the Esc menu on a server.
+pub(super) fn unattended(game: &Game<'_>) -> bool {
+    connected(game)
+        && matches!(
+            game.screen,
+            Screen::Playing | Screen::Chat | Screen::Paused | Screen::Options | Screen::Stats | Screen::Advancements
+        )
+}
+
 // In a world with any screen open (chat, a server's pause menu, the inventory): for modules that need no input of
 // yours and must not stop while you type, such as alerts and saving a fall.
 pub(super) fn connected(game: &Game<'_>) -> bool {

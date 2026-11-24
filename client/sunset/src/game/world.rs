@@ -121,38 +121,48 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
             w.spawner_dim = dim;
         });
     }
-    if !in_world(game) {
+    // Bow Aimbot follows your own draw and Villager Roller your own trade screen: only while playing. The ones that work
+    // on their own keep going behind chat or the pause menu; the ones that only watch, behind any screen.
+    let playing = in_world(game);
+    let alone = unattended(game);
+    if !connected(game) {
         return;
     }
-    if let Some(m) = get("Auto Shearer") {
-        auto_shearer(game, m);
+    if alone {
+        if let Some(m) = get("Auto Shearer") {
+            auto_shearer(game, m);
+        }
+        if let Some(m) = get("Auto Nametag") {
+            auto_nametag(game, m);
+        }
+        if let Some(m) = get("Auto Breed") {
+            auto_breed(game, m);
+        }
+        if let Some(m) = get("Auto Mount") {
+            auto_mount(game, m);
+        }
+        if let Some(m) = get("Flamethrower") {
+            flamethrower(game, m);
+        }
     }
-    if let Some(m) = get("Auto Nametag") {
-        auto_nametag(game, m);
-    }
-    if let Some(m) = get("Auto Breed") {
-        auto_breed(game, m);
-    }
-    if let Some(m) = get("Auto Mount") {
-        auto_mount(game, m);
-    }
-    if let Some(m) = get("Flamethrower") {
-        flamethrower(game, m);
-    }
-    if let Some(m) = get("Bow Aimbot") {
+    if playing && let Some(m) = get("Bow Aimbot") {
         bow_aimbot(game, m);
     }
-    if let Some(m) = get("Liquid Filler").filter(|m| m.p("Mode") == "Fill") {
-        liquid_filler(game, m);
-    }
-    if let Some(m) = get("Spawn Proofer") {
-        spawn_proofer(game, m);
+    if alone {
+        if let Some(m) = get("Liquid Filler").filter(|m| m.p("Mode") == "Fill") {
+            liquid_filler(game, m);
+        }
+        if let Some(m) = get("Spawn Proofer") {
+            spawn_proofer(game, m);
+        }
     }
     if let Some(m) = get("Spawner Alerts") {
         spawner_alerts(game, m);
     }
     super::sunset_base_finder::tick(game, get("Base Finder"));
-    super::sunset_villager_roller::tick(game, get(super::sunset_villager_roller::NAME));
+    if playing {
+        super::sunset_villager_roller::tick(game, get(super::sunset_villager_roller::NAME));
+    }
     super::sunset_sign_historian::tick(game, get(super::sunset_sign_historian::NAME));
     super::sunset_use_tracker::tick(game, get(super::sunset_use_tracker::NAME));
 }

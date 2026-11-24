@@ -136,7 +136,7 @@ pub(super) fn sent(packet: &S) {
 }
 
 pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
-    let Some(m) = m.filter(|_| util::in_world(game)) else {
+    let Some(m) = m.filter(|_| util::connected(game)) else {
         if m.is_none() {
             save(game);
             *STATE.lock().unwrap_or_else(|e| e.into_inner()) = None;

@@ -17725,6 +17725,50 @@ def _():
         note += f"; Sound Detector heard Bot1's chest with chat open: {heard}"
     return ok, note
 
+@test("Chat open (Anti AFK, Spam)")
+def _():
+    # Anti AFK and Spam work on their own: both keep going with the chat box open, and behind the pause menu where the
+    # game does not pause there (a server, or single player open to LAN). With the inventory open Anti AFK waits (no
+    # turning under a container), and both do nothing while off.
+    reset("creative")
+    for name, value in (("mode", "Meteor"), ("jump", "false"), ("spin mode", "Client"), ("speed", "7")):
+        setting("antiafk", name, value)
+    setting("spam", "messages", "/say sunset-chat-open")
+    setting("spam", "delay (ticks)", "5")
+    setting("spam", "once", "false")
+
+    def behind(open_it, close_it, *mods):
+        # On before the screen opens (the .t commands go through the chat), measured only while it is open.
+        only(*mods)
+        open_it()
+        wait(4)
+        screen = state().get("screen")
+        mark = log_mark()
+        y0 = ctl("status").get("yaw", 0)
+        wait(20)
+        y1 = ctl("status").get("yaw", 0)
+        said = len([line for line in chat_since(mark) if "sunset-chat-open" in line and "Messages" not in line])
+        close_it()
+        wait(4)
+        only()
+        return abs(y1 - y0), said, screen
+
+    tap = lambda key: (lambda: ctl("key", key, "tap"))
+    chat = behind(tap("t"), tap("esc"), "antiafk", "spam")
+    off = behind(tap("t"), tap("esc"))
+    bag = behind(lambda: ctl("open-inventory"), lambda: ctl("close"), "antiafk")
+    ok = chat[2] == "chat" and 90 < chat[0] < 280 and chat[1] >= 2 and off[0] < 1 and off[1] == 0 and bag[0] < 1
+    note = (f"chat open ({chat[2]}): turned {chat[0]:.0f} deg in 20 ticks, {chat[1]} spam lines; both off: {off[0]:.0f} deg, "
+            f"{off[1]} lines; inventory open ({bag[2]}): {bag[0]:.0f} deg")
+    if SERVER or CTL2:
+        menu = behind(tap("esc"), tap("esc"), "antiafk", "spam")
+        ok = ok and menu[2] == "paused" and 90 < menu[0] < 280 and menu[1] >= 2
+        note += f"; pause menu ({menu[2]}): {menu[0]:.0f} deg, {menu[1]} lines"
+    say(".reset antiafk")
+    say(".reset spam")
+    return ok, note
+
+
 # ---- ports 2: Speed's Grim collide, Base Finder's Reasons, Villager Roller, Sign Historian, Use Tracker
 
 @test("Speed (Grim collide)")

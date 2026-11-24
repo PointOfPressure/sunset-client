@@ -171,7 +171,7 @@ fn landing(game: &Game<'_>, mut pos: [f64; 3], mut vel: [f64; 3], g: f64) -> Opt
 }
 
 pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
-    let Some(m) = m.filter(|_| util::in_world(game)) else {
+    let Some(m) = m.filter(|_| util::connected(game)) else {
         if m.is_none() {
             *STATE.lock().unwrap_or_else(|e| e.into_inner()) = None;
         }

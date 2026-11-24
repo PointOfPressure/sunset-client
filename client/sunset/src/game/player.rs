@@ -643,14 +643,34 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         Some(m) => no_fall(game, m),
         None => ps(|p| p.fall_placed = None),
     }
+    // Auto Fish, Anti AFK and Spam work on their own: they keep going behind chat or a server's pause menu.
+    let alone = unattended(game);
+    if let Some(m) = get("Auto Fish").filter(|_| alone) {
+        auto_fish(game, m);
+    } else if get("Auto Fish").is_none() {
+        ps(|p| p.fish_state = 0);
+    }
+    if let Some(m) = get("Anti AFK") {
+        if alone {
+            anti_afk(game, m);
+        }
+    } else {
+        ps(|p| {
+            p.afk_yaw = None;
+            p.afk_message = 0;
+            p.afk_wander = Wander::default();
+        });
+    }
+    if let Some(m) = get("Spam") {
+        if alone {
+            spam(game, m);
+        }
+    } else {
+        ps(|p| p.spam_timer = 0);
+    }
     if !in_world(game) {
         ps(|p| p.place_credit = 0);
         return;
-    }
-    if let Some(m) = get("Auto Fish") {
-        auto_fish(game, m);
-    } else {
-        ps(|p| p.fish_state = 0);
     }
     if let Some(m) = get("Auto Gap") {
         auto_gap(game, m);
@@ -664,20 +684,6 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
     }
     if let Some(m) = get("Fast Use") {
         fast_use(game, m);
-    }
-    if let Some(m) = get("Anti AFK") {
-        anti_afk(game, m);
-    } else {
-        ps(|p| {
-            p.afk_yaw = None;
-            p.afk_message = 0;
-            p.afk_wander = Wander::default();
-        });
-    }
-    if let Some(m) = get("Spam") {
-        spam(game, m);
-    } else {
-        ps(|p| p.spam_timer = 0);
     }
 }
 
@@ -1725,7 +1731,7 @@ fn wander(game: &mut Game<'_>, m: &Module) -> Vec<KeyCode> {
         // Up to a second plus the Frequency's interval between one and the next.
         let interval = 20 + (20.0 / m.n("Frequency").max(0.1)) as usize;
         let (yaw, pitch) = (game.yaw, game.pitch);
-        if m.b("Turn") && in_world(game) && now.saturating_sub(w.turned_at) >= w.next_turn {
+        if m.b("Turn") && unattended(game) && now.saturating_sub(w.turned_at) >= w.next_turn {
             w.origin.get_or_insert((at, yaw, pitch));
             w.next_turn = rand(interval) as u64;
             w.turned_at = now;
@@ -1826,9 +1832,6 @@ pub(super) fn afk_keys(game: &mut Game<'_>, m: &Module) -> Vec<KeyCode> {
 }
 
 fn anti_afk(game: &mut Game<'_>, m: &Module) {
-    if !in_world(game) {
-        return;
-    }
     let meteor = m.p("Mode") == "Meteor";
     if meteor && m.b("Swing") && rand(99) == 0 {
         game.swing_arm();
