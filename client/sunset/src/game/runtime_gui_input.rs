@@ -270,6 +270,13 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             (Hit::WinClose, false) => s.gui.window = None,
             (Hit::WinBody | Hit::WinTitle | Hit::WinClose, _) => {}
             (Hit::Dash(super::sunset_dashboard::Part::Toggle), false) => toggled = super::sunset_dashboard::chosen(),
+            (Hit::Dash(super::sunset_dashboard::Part::Side(super::sunset_sidebar::Part::Title)), false) => {
+                let [x, y] = super::sunset_sidebar::corner(s);
+                s.gui.drag = Some(Drag::Sidebar(at.0 - x, at.1 - y));
+            }
+            (Hit::Dash(super::sunset_dashboard::Part::Side(p)), false) if super::sunset_sidebar::toggles(s, p).is_some() => {
+                toggled = super::sunset_sidebar::toggles(s, p);
+            }
             (Hit::Dash(part), right) => super::sunset_dashboard::press(s, part, right),
             (Hit::Header(c), false) => {
                 let p = s.gui.panels[c];
@@ -507,6 +514,7 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
             }
         }
         Some(Drag::Hud(name, dx, dy)) => move_hud(s, game, name, dx, dy),
+        Some(Drag::Sidebar(dx, dy)) => super::sunset_sidebar::move_to([at.0 - dx, at.1 - dy]),
         None => {}
     });
     // The left button came up: the drag ends where the pointer is.

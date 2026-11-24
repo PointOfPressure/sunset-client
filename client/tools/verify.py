@@ -2536,6 +2536,256 @@ def _():
                 f"{med['Dropdown']:.3f}, Dashboard {med['Dashboard']:.3f} (Dashboard over panels {extra:+.3f})" if stat else "no game thread found")
 
 
+SIDEBAR_SECTIONS = ["Combat", "Combat", "Visuals", "Visuals", "General", "General", "General", "Client"]
+
+
+def sidebar_gui():
+    """The GUI's size at GUI scale 2, which the Sidebar tests set (gui_size() can still read the old scale)."""
+    d = ctl("status")["display"]
+    return d["width"] / 2, d["height"] / 2
+
+
+def sidebar_frame(panel_w=120):
+    """The Sidebar style's window in GUI pixels (x, y, w, h), in the middle as sidebar.rs places it."""
+    gw, gh = sidebar_gui()
+    w = math.floor(min(max(gw - 16, 0), 260 + panel_w * 3.5))
+    h = math.floor(min(max(gh - 16, 0), 440))
+    return math.floor((gw - w) / 2), math.floor((gh - h) / 2), w, h
+
+
+def sidebar_tab(t, f):
+    """The middle of tab t (Rage 0, Legit 1, ESP 2 ... Client 7, Appearance 8) in the window f, at Comfortable spacing
+    in a window tall enough for the section titles."""
+    yy, section = f[1] + 34, None
+    for k, sec in enumerate(SIDEBAR_SECTIONS + [None]):
+        if sec is None:
+            yy += 6
+        elif sec != section:
+            section, yy = sec, yy + 13
+        if k == t:
+            return f[0] + 40, yy + 10
+        yy += 21
+
+
+def sidebar_shots(gw):
+    from PIL import Image
+
+    def shot(name):
+        path = f"{SHOTS}/sidebar_{name}.png"
+        ctl("screenshot", path)
+        time.sleep(2)
+        return Image.open(path).convert("RGB")
+
+    def share(img, box, want, tol=2):
+        k = img.width / gw
+        part = img.crop(tuple(int(v * k) for v in box))
+        px = list(part.getdata())
+        return sum(1 for p in px if all(abs(a - b) <= tol for a, b in zip(p, want))) / max(len(px), 1)
+
+    return shot, share
+
+
+@test("ClickGUI Sidebar (style, theme, accent, width, opacity)")
+def _():
+    # Style Sidebar at GUI scale 2 (sidebar_*.png): the window is the Dashboard's surface (#121214 Grey, #000000 OLED)
+    # with the sidebar's strip (4% white over it) down its left, 260 + 3.5 x Panel width wide (at most the screen less
+    # 16); the accent (the open tab's mark and the icons) is Accent color's (Sunset Orange, then Cyan, none of the
+    # other left); Background opacity 0.3 lets the world through the surface. Dropdown and Dashboard draw no strip.
+    ensure_alive()
+    ctl("options-set", "guiScale", "2")
+    for k, v in (("style", "Sidebar"), ("theme", "Grey"), ("accent color", "Sunset Orange"), ("panel width", "120"),
+                 ("background opacity", "1")):
+        setting("clickgui", k, v)
+    wait(5)
+    gw, gh = sidebar_gui()
+    shot, share = sidebar_shots(gw)
+    orange, cyan = (0xDB, 0x50, 0x00), (0x50, 0xFF, 0xFF)
+    out = {}
+
+    def look(name, panel_w=120, click=True):
+        say(".menu")
+        wait(10)
+        f = sidebar_frame(panel_w)
+        if click:
+            ctl("click-at", *map(str, sidebar_tab(0, f)))
+            wait(3)
+        img = shot(name)
+        close_menu()
+        x, y, w, h = f
+        top = (x + 130, y + 2, x + w - 220, y + 8)
+        strip = (x + 4, y + h - 40, x + 100, y + h - 8)
+        side = (x, y, x + 116, y + h)
+        k = img.width / gw
+        row = [img.getpixel((px, int((y + 5) * k))) for px in range(img.width)]
+        run = [px for px, p in enumerate(row) if all(abs(a - b) <= 2 for a, b in zip(p, (0x12, 0x12, 0x14)))]
+        return img, top, strip, side, ((run[-1] - run[0] + 1) / k if run else 0), w
+
+    img, top, strip, side, span, w = look("grey")
+    out["grey"] = (share(img, top, (0x12, 0x12, 0x14)), share(img, strip, (0x1B, 0x1B, 0x1D)), share(img, side, orange, 8),
+                   share(img, side, cyan, 8), span, w)
+    setting("clickgui", "panel width", "60")
+    img, top, strip, side, span, w = look("width60", 60)
+    out["width60"] = (span, w)
+    setting("clickgui", "panel width", "120")
+    setting("clickgui", "accent color", "Cyan")
+    setting("clickgui", "theme", "OLED")
+    img, top, strip, side, span, w = look("oled_cyan")
+    out["oled"] = (share(img, top, (0, 0, 0)), share(img, strip, (0x0A, 0x0A, 0x0A)), share(img, side, orange, 8),
+                   share(img, side, cyan, 8))
+    setting("clickgui", "theme", "Grey")
+    setting("clickgui", "accent color", "Sunset Orange")
+    setting("clickgui", "background opacity", "0.3")
+    img, top, strip, side, span, w = look("opacity")
+    out["opacity"] = share(img, top, (0x12, 0x12, 0x14))
+    setting("clickgui", "background opacity", "1")
+    for style in ("Dropdown", "Dashboard"):
+        setting("clickgui", "style", style)
+        img, top, strip, side, span, w = look(style.lower(), click=False)
+        out[style] = share(img, strip, (0x1B, 0x1B, 0x1D))
+    setting("clickgui", "style", "Dropdown")
+    ctl("options-set", "guiScale", "0")
+    g, o = out["grey"], out["oled"]
+    ok = (g[0] > 0.9 and g[1] > 0.9 and g[2] > 0.0008 and g[3] < 0.0001 and abs(g[4] - (g[5] - 117)) <= 3
+          and abs(out["width60"][0] - (out["width60"][1] - 117)) <= 3 and out["width60"][1] < g[5]
+          and o[0] > 0.9 and o[1] > 0.9 and o[3] > 0.0008 and o[2] < 0.0001
+          and out["opacity"] < 0.3 and out["Dropdown"] < 0.3 and out["Dashboard"] < 0.3)
+    return ok, json.dumps(out, default=lambda v: round(v, 4) if isinstance(v, float) else v)
+
+
+@test("ClickGUI Sidebar (tabs, Modules, Settings Inline and Window)")
+def _():
+    # Style Sidebar at GUI scale 2, Rage's Aura group: its cards' area (#17171A pixels) shrinks by over a third with six
+    # of its ten modules hidden in Modules, and comes back with them. Settings Inline: a click on the first card's
+    # header opens its page (the intro card spans the gap between the two columns), Back returns to the cards. Settings
+    # Window: the same click opens the settings window over the middle of the screen and the cards stay.
+    ensure_alive()
+    ctl("options-set", "guiScale", "2")
+    setting("clickgui", "style", "Sidebar")
+    setting("clickgui", "settings", "Inline")
+    wait(5)
+    gw, gh = sidebar_gui()
+    shot, share = sidebar_shots(gw)
+    card = (0x17, 0x17, 0x1A)
+    f = sidebar_frame()
+    x, y, w, h = f
+    c0, cw = x + 126, w - 136
+    col = math.floor((cw - 8) / 2)
+    cards_box = (c0, y + 70, x + w - 10, y + h - 10)
+    # Between the columns at the intro card's height (a module page's content starts 30 higher: no pills).
+    gap_box = (c0 + col + 2, y + 40 + 24, c0 + col + 6, y + 40 + 46)
+    head = (c0 + 20, y + 70 + 10)
+    aura = ["Criticals", "Reach", "Hitboxes", "Backtrack", "Fake Lag", "Hit Through Walls"]
+    out = {}
+
+    def open_rage():
+        say(".menu")
+        wait(10)
+        ctl("click-at", *map(str, sidebar_tab(0, f)))
+        wait(3)
+
+    open_rage()
+    out["all"] = share(shot("aura"), cards_box, card, 1)
+    close_menu()
+    for name in aura:
+        setting("modules", name.lower(), "false")
+    wait(3)
+    open_rage()
+    out["hidden"] = share(shot("aura_hidden"), cards_box, card, 1)
+    close_menu()
+    for name in aura:
+        setting("modules", name.lower(), "true")
+    wait(3)
+    open_rage()
+    out["back"] = share(shot("aura_back"), cards_box, card, 1)
+    out["gap_tab"] = share(shot("tab"), gap_box, card, 1)
+    ctl("click-at", *map(str, head))
+    wait(3)
+    out["gap_page"] = share(shot("inline_page"), gap_box, card, 1)
+    ctl("click-at", str(c0 + 20), str(y + 40 + 10))
+    wait(3)
+    out["gap_after_back"] = share(shot("after_back"), gap_box, card, 1)
+    close_menu()
+    setting("clickgui", "settings", "Window")
+    wait(3)
+    open_rage()
+    before = shot("window_before")
+    ctl("click-at", *map(str, head))
+    wait(3)
+    after = shot("window")
+    k = after.width / gw
+    box = tuple(int(v * k) for v in (gw / 2 - 40, 46, gw / 2 + 40, 70))
+    a, b = list(before.crop(box).getdata()), list(after.crop(box).getdata())
+    out["window_change"] = sum(sum(abs(p - q) for p, q in zip(u, v)) for u, v in zip(a, b)) / max(len(a), 1) / 3
+    out["gap_window"] = share(after, gap_box, card, 1)
+    ctl("click-at", *map(str, head))
+    wait(3)
+    close_menu()
+    setting("clickgui", "settings", "Inline")
+    setting("clickgui", "style", "Dropdown")
+    ctl("options-set", "guiScale", "0")
+    ok = (out["hidden"] < out["all"] * 0.66 and abs(out["back"] - out["all"]) < out["all"] * 0.2 and out["gap_tab"] < 0.2
+          and out["gap_page"] > 0.6 and out["gap_after_back"] < 0.2 and out["window_change"] > 8
+          and out["gap_window"] < 0.2)
+    return ok, json.dumps({k: round(v, 4) for k, v in out.items()})
+
+
+@test("ClickGUI Sidebar (tour shots)")
+def _():
+    # Screenshots of the Sidebar style for a look by eye (sidebar_tour_*.png): every tab with ESP and Kill Aura on
+    # (their cards show their main settings), ESP's page (its settings in sections), Appearance, Compact spacing with
+    # square controls and a 12 panel radius, and GUI scale 3 (the sidebar without section titles).
+    ensure_alive()
+    ctl("options-set", "guiScale", "2")
+    setting("clickgui", "style", "Sidebar")
+    setting("clickgui", "settings", "Inline")
+    toggle("esp", True)
+    toggle("kill aura", True)
+    wait(5)
+    gw, gh = sidebar_gui()
+    shot, share = sidebar_shots(gw)
+    f = sidebar_frame()
+    names = []
+    say(".menu")
+    wait(10)
+    for t in range(9):
+        ctl("click-at", *map(str, sidebar_tab(t, f)))
+        wait(3)
+        names.append(f"tour_tab{t}")
+        shot(names[-1])
+    # ESP's tab: ESP's card first (Players group); its header opens its page.
+    ctl("click-at", *map(str, sidebar_tab(2, f)))
+    wait(3)
+    ctl("click-at", str(f[0] + 146), str(f[1] + 80))
+    wait(3)
+    names.append("tour_esp_page")
+    shot(names[-1])
+    close_menu()
+    setting("clickgui", "spacing", "Compact")
+    setting("clickgui", "control radius", "0")
+    setting("clickgui", "panel radius", "12")
+    say(".menu")
+    wait(10)
+    ctl("click-at", *map(str, sidebar_tab(0, f)))
+    wait(3)
+    names.append("tour_compact")
+    shot(names[-1])
+    close_menu()
+    for k, v in (("spacing", "Comfortable"), ("control radius", "3"), ("panel radius", "4")):
+        setting("clickgui", k, v)
+    ctl("options-set", "guiScale", "3")
+    wait(5)
+    say(".menu")
+    wait(10)
+    names.append("tour_scale3")
+    shot(names[-1])
+    close_menu()
+    toggle("esp", False)
+    toggle("kill aura", False)
+    setting("clickgui", "style", "Dropdown")
+    ctl("options-set", "guiScale", "0")
+    missing = [n for n in names if not os.path.exists(f"{SHOTS}/sidebar_{n}.png")]
+    return not missing, f"{len(names) - len(missing)} shots in {SHOTS}" + (f", missing {missing}" if missing else "")
+
 @test("F1 with the menu open")
 def _():
     # F1 leaves the HUD (and the menu drawn with it) shown while the menu is open; closed, F1 hides the HUD again.

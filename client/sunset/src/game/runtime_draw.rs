@@ -141,6 +141,8 @@ pub(super) enum Shape {
     Face(String, [f32; 2], f32),
     // A panel with squircle corners, and their radius.
     Squircle([f32; 4], f32, u32),
+    // One of the menu's icons (a Lucide character) at a size (1: the text's).
+    Icon(&'static str, [f32; 2], u32, f32),
     // What is drawn from ClipStart on is cut to the rectangle ClipEnd gives: x0, y0, x1, y1.
     ClipStart,
     ClipEnd([f32; 4]),
@@ -280,6 +282,7 @@ pub(super) fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shap
     for s in shapes.drain(..) {
         match s {
             Shape::Squircle(r, radius, argb) => super::sunset_dashboard::squircle(game, batch, r, radius, argb, px),
+            Shape::Icon(glyph, at, argb, size) => crate::game::sunset_font::icon(game, batch, glyph, at, argb, size),
             Shape::ClipStart => clip = batch.vertices.len(),
             Shape::ClipEnd([x0, y0, x1, y1]) => batch.clip_since(clip, x0, y0, x1, y1),
             Shape::Fill(r, argb) => game.native_fill(batch, r, argb),

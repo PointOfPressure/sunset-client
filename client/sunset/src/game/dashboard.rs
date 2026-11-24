@@ -18,6 +18,8 @@ pub(super) enum Part {
     Frame,
     Page(usize),
     Toggle,
+    // The Sidebar style's parts (sidebar.rs): the calls here go there while it is the style.
+    Side(super::sunset_sidebar::Part),
 }
 
 // The modules a category and search list, kept until those change.
@@ -88,8 +90,13 @@ pub(super) fn set_on(on: bool) {
     ON.store(on, Ordering::Relaxed);
 }
 
+// Whether the menu is a single window (this style or Sidebar): draw_gui and the input lay it out through here.
 pub(super) fn on() -> bool {
-    ON.load(Ordering::Relaxed)
+    ON.load(Ordering::Relaxed) || super::sunset_sidebar::on()
+}
+
+fn sidebar() -> bool {
+    super::sunset_sidebar::on()
 }
 
 // How wide the panel is for ClickGUI's Panel width: 400 at its least, 610 by default, 680 at its most.
@@ -177,6 +184,9 @@ pub(super) fn module_text([x, y, w, h]: [f32; 4]) -> [f32; 4] {
 
 // Whether a row has a line above it: only the settings after the first of a section.
 pub(super) fn line_above(hit: Hit) -> bool {
+    if sidebar() {
+        return super::sunset_sidebar::line_above(hit);
+    }
     view(|v| v.lined.contains(&hit))
 }
 
@@ -187,6 +197,10 @@ pub(super) fn chosen() -> Option<usize> {
 
 // Once a frame, before anything reads the columns; a column that got shorter comes back to its end.
 pub(super) fn prepare(s: &State) {
+    if sidebar() {
+        super::sunset_sidebar::prepare(s);
+        return;
+    }
     if !on() {
         return;
     }
@@ -279,15 +293,24 @@ pub(super) fn prepare(s: &State) {
 }
 
 pub(super) fn list_scroll() -> f32 {
+    if sidebar() {
+        return 0.0;
+    }
     view(|v| v.list.scroll)
 }
 
 pub(super) fn pane_scroll() -> f32 {
+    if sidebar() {
+        return super::sunset_sidebar::scroll();
+    }
     view(|v| v.pane.scroll)
 }
 
 // The top and bottom of both columns, in this style.
 pub(super) fn list_y(s: &State) -> Option<[f32; 2]> {
+    if sidebar() {
+        return Some(super::sunset_sidebar::list_y(s));
+    }
     on().then(|| {
         let [_, y, _, room] = columns(s).0;
         [y, y + room]
@@ -306,6 +329,9 @@ fn column_rows(s: &State, column: &Column, [x, y, w, room]: [f32; 4], scroll: f3
 
 // The rows in view, and where. One part way in view is drawn cut. The settings sit inside their cards.
 pub(super) fn rows(s: &State) -> Vec<([f32; 4], Hit)> {
+    if sidebar() {
+        return super::sunset_sidebar::rows(s);
+    }
     let (list, pane) = columns(s);
     let inset = CARD_M + CARD_IN;
     let pane = [pane[0] + inset, pane[1], (pane[2] - 2.0 * inset).max(0.0), pane[3]];
@@ -321,6 +347,9 @@ pub(super) fn rows(s: &State) -> Vec<([f32; 4], Hit)> {
 
 // What the pointer can hit around the rows.
 pub(super) fn hits(s: &State) -> Vec<([f32; 4], Hit)> {
+    if sidebar() {
+        return super::sunset_sidebar::hits(s);
+    }
     if !on() {
         return Vec::new();
     }
@@ -333,6 +362,10 @@ pub(super) fn hits(s: &State) -> Vec<([f32; 4], Hit)> {
 }
 
 pub(super) fn press(s: &mut State, part: Part, right: bool) {
+    if let Part::Side(p) = part {
+        super::sunset_sidebar::press(s, p);
+        return;
+    }
     if let (Part::Page(page), false) = (part, right) {
         view(|v| {
             v.page = page;
@@ -355,6 +388,10 @@ pub(super) fn choose(i: usize) {
 }
 
 pub(super) fn wheel(s: &State, steps: f32, at: (f32, f32)) {
+    if sidebar() {
+        super::sunset_sidebar::wheel(s, steps, at);
+        return;
+    }
     let (list, pane) = columns(s);
     let by = -steps * 2.0;
     let by = if by > 0.0 { by.ceil() } else { by.floor() } as i32;
@@ -399,7 +436,7 @@ pub(super) fn glow(hit: Hit) -> u32 {
     })
 }
 
-fn follow_hover(hover: Option<Hit>) {
+pub(super) fn follow_hover(hover: Option<Hit>) {
     let animate = smooth::enabled();
     view(|v| {
         if v.hover.map(|(h, _)| h) != hover {
@@ -465,6 +502,10 @@ pub(super) fn squircle(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f32
 // Everything under the rows: the panel, the header with the search box, the categories, the module list's title and the
 // mark of the chosen module, and the chosen module's band (name, description, switch) and sections.
 pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out: &mut Vec<Shape>) {
+    if sidebar() {
+        super::sunset_sidebar::back(s, game, hover, px, out);
+        return;
+    }
     follow_hover(hover);
     let solid = 0xFF00_0000 | accent();
     let radius = panel_radius();

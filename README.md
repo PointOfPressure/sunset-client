@@ -108,11 +108,13 @@ changed in Options > Mods > Sunset. Changes are saved as you make them.
 | Drag a panel's title | move the panel |
 | Right click a panel's title | fold the panel |
 
-*ClickGUI > Style* switches between two menus. Both list each category's modules A to Z.
+*ClickGUI > Style* switches between three menus. Dropdown and Dashboard list each category's modules A to Z.
 - **Dropdown**: one panel per category, as in the picture above. Settings open inside the panel, or in their own
   window with *Settings: Window*.
 - **Dashboard**: one window with the categories on the left, the module list in the middle and the chosen module's
   settings on the right.
+- **Sidebar**: one window with tabs down its left (Rage, Legit, ESP, Visuals...), each tab's modules split into groups,
+  and each module a card showing its main settings while it is on, with a link to a page of all of them.
 
 *ClickGUI > Theme* is **OLED** (true black, the default) or **Grey** (the colours before 2.0). Large modules such as
 Kill Aura and Scaffold group their settings into sections, and settings that don't apply to the chosen mode are hidden.
@@ -510,6 +512,8 @@ and Sound Detector's labels and beams. ([pull requests](https://github.com/Point
 **pxdns** ([pxdns](https://github.com/pxdns)): HUD placement (corners and Custom places for the watermark, module list
 and coordinates) and Low health warning. ([pull requests](https://github.com/PointOfPressure/sunset-client/pulls?q=is%3Apr+author%3Apxdns))
 
+**Ace** ([Ace00018](https://github.com/Ace00018)): the Sidebar ClickGUI style. ([pull requests](https://github.com/PointOfPressure/sunset-client/pulls?q=is%3Apr+author%3AAce00018))
+
 </details>
 
 Elytra Target was asked for by muhalo1545 on the Sunset Discord. Crystal Aura's Grim report and flag capture: vs.
@@ -551,6 +555,8 @@ licence texts and notices ship unchanged in Sunset's package. See [source and re
 The Sunset launcher is built on [GPUI](https://github.com/zed-industries/zed) ([gpui-fast](https://github.com/longbridge/gpui-fast),
 Apache-2.0). It also uses MIT and Apache-2.0 crates (ureq and rustls, minisign-verify, ruzstd, tar, sha2 and png) and
 draws its text in Inter (OFL).
+
+The Sidebar menu's icons are from [Lucide](https://lucide.dev) (ISC, [licence](client/sunset/assets/sunset/licenses/isc-lucide.txt)).
 
 ## Licence
 

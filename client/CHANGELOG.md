@@ -11,6 +11,7 @@ section of the version they build into the signed manifest, and the launcher sho
 
 ### New
 - **Typing `.` in the chat lists Sunset's commands, then each argument's choices as you type (modules, settings and their values, profiles, players...): Tab completes, Up/Down choose, Escape hides, as for / commands**
+- ClickGUI > Style has a third menu, Sidebar: tabs down the side, modules in groups, each module a card (by Ace)
 
 ### Changed
 - **Sunset runs on Horizon main of 23 Nov 2026 (`2e7d2c6`, through Sunset's Horizon fork `9defaa0`) and horizon-launcher 0.2.107**

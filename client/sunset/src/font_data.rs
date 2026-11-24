@@ -57,3 +57,6 @@ pub const FILES: [(&str, &[u8]); 32] = [
     ("jetbrains", include_bytes!("../assets/sunset/font/jetbrains.ttf")),
     ("jetbrains-bold", include_bytes!("../assets/sunset/font/jetbrains-bold.ttf")),
 ];
+
+// Lucide's icons (ISC, assets/sunset/licenses/isc-lucide.txt): the menu's icons, drawn as text in this font.
+pub const ICONS: &[u8] = include_bytes!("../assets/sunset/font/lucide-icons.ttf");

@@ -369,6 +369,12 @@ name = "sunset_dashboard"
 source = "src/game/dashboard.rs"
 
 [[native.module]]
+id = "sidebar"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sidebar"
+source = "src/game/sidebar.rs"
+
+[[native.module]]
 id = "smooth"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_smooth"

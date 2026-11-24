@@ -23,6 +23,7 @@ pub fn sync(font: &horizon_client::font::Font, gui_scale: f32) {
                 .strip_prefix("sunset:")
                 .and_then(|n| FONTS.iter().find(|f| f.0 == n.strip_suffix("-bold").unwrap_or(n)))
                 .map(|f| f.1)
+                .or_else(|| (id == ICON_FONT).then_some(ICON_SIZE))
             else {
                 continue;
             };
@@ -45,6 +46,25 @@ pub fn sync(font: &horizon_client::font::Font, gui_scale: f32) {
         }
     }
     font.reset_cache();
+}
+
+// The menu's icon font (Lucide), its size like the text's.
+pub const ICON_FONT: &str = "sunset:icons";
+const ICON_SIZE: f32 = 8.0;
+
+// An icon (one of Lucide's characters) at `at` in `argb`, `size` times the text's height.
+pub fn icon(game: &crate::game::Game<'_>, batch: &mut horizon_client::hud::HudBatch, glyph: &str, at: [f32; 2], argb: u32, size: f32) {
+    let [a, r, g, b] = argb.to_be_bytes();
+    let a = if a == 0 { 0xFF } else { a };
+    let atlas = &game.gui.atlas;
+    ensure(&atlas.font);
+    sync(&atlas.font, batch.scale);
+    let text = horizon_client::text::Text::styled(glyph, horizon_client::text::Style { font: Some(ICON_FONT.to_owned()), ..Default::default() });
+    let start = batch.vertices.len();
+    batch.text_styled(atlas, &text, at[0], at[1], horizon_client::hud::rgba(r, g, b, a), false);
+    if (size - 1.0).abs() > 0.001 {
+        batch.scale_since(start, at[0], at[1], size, size);
+    }
 }
 
 // A line of text in the chosen font.
@@ -89,6 +109,9 @@ pub fn ensure(font: &horizon_client::font::Font) {
             serde_json::json!({"type": "ttf", "file": format!("sunset:{stem}.ttf"), "size": size, "oversample": 4.0}),
         ));
     }
+    // The menu's icons, as a font of their own.
+    files.insert("assets/sunset/font/icons.ttf".to_owned(), horizon_assets::resource_source::Resource::bytes(::sunset_core::font_data::ICONS.to_vec()));
+    definitions.push((ICON_FONT.to_owned(), serde_json::json!({"type": "ttf", "file": "sunset:icons.ttf", "size": ICON_SIZE, "oversample": 4.0})));
     let source = horizon_assets::resource_source::ResourceSource::indexed(files);
     let mut sets = Vec::new();
     for (id, definition) in definitions {

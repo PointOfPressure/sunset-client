@@ -783,6 +783,7 @@ pub(super) fn sync_flags(s: &mut State) {
     let g = s.module("ClickGUI");
     OLED_THEME.store(g.is_some_and(|m| m.p("Theme") == "OLED"), Ordering::Relaxed);
     super::sunset_dashboard::set_on(g.is_some_and(|m| m.p("Style") == "Dashboard"));
+    super::sunset_sidebar::set_on(g.is_some_and(|m| m.p("Style") == "Sidebar"));
     super::sunset_smooth::set_enabled(g.is_none_or(|m| m.p("Animations") != "Off"));
     LOOK[0].store(g.map_or(0xFFB020, |m| m.c("Accent color") & 0x00FF_FFFF), Ordering::Relaxed);
     LOOK[1].store(g.map_or(120.0, |m| m.n("Panel width") as f32).to_bits(), Ordering::Relaxed);

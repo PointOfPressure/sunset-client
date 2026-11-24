@@ -234,7 +234,8 @@ pub(super) fn defaults() -> Vec<Module> {
         // Render
         Module::new("ClickGUI", Render, "How this menu looks.")
             .pick("Theme", &["Grey", "OLED"])
-            .pick("Style", &["Dropdown", "Dashboard"])
+            // Sidebar: tabs down the side, each module a card (sidebar.rs).
+            .pick("Style", &["Dropdown", "Dashboard", "Sidebar"])
             .pick("Animations", &["Minimal", "Off"])
             .colour("Accent color", "Sunset Orange")
             .num("GUI scale", 1.0, 0.75, 2.0, 0.05)
