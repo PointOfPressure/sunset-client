@@ -1,6 +1,6 @@
-// Outgoing packets: Friend Guard drops hits on friends, Blink holds moves, Anti Hunger and No Fall change them, Fake Lag
-// holds what goes out for a while; what goes on the wire is noted (sunset_combat_wire::delivered, the same for a packet
-// Fake Lag lets go later).
+// Outgoing packets: Packet Order holds an action that comes after the tick's move packet, Friend Guard drops hits on
+// friends, Blink holds moves, Anti Hunger and No Fall change them, Fake Lag holds what goes out for a while; what goes
+// on the wire is noted (sunset_combat_wire::delivered, the same for a packet Fake Lag lets go later).
 fn sunset_send(
     game: &crate::game::Game<'_>,
     packet: &horizon_protocol::packets::play::Serverbound,
@@ -14,6 +14,11 @@ fn sunset_send(
     }
 
     use crate::game::sunset::Out;
+    let replay = crate::game::sunset_gui_move::replaying();
+    // Packet Order: an action after the tick's move packet waits for the next tick, and goes through here again then.
+    if !replay && crate::game::sunset::order_hold(game, packet) {
+        return std::ops::ControlFlow::Break(());
+    }
     // Friend Guard: no hit on a friend, whoever sends it.
     if crate::game::sunset_compat::SunsetGame::sunset_window(&*game)
         && crate::game::sunset_compat::SunsetGame::native_on(&*game, crate::game::sunset::ID)
@@ -21,7 +26,6 @@ fn sunset_send(
     {
         return std::ops::ControlFlow::Break(());
     }
-    let replay = crate::game::sunset_gui_move::replaying();
     let changed = match if replay { Out::Pass } else { crate::game::sunset::outgoing(game, packet) } {
         Out::Pass => None,
         Out::Drop => return std::ops::ControlFlow::Break(()),
