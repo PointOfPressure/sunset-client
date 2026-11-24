@@ -17725,6 +17725,38 @@ def _():
         note += f"; Sound Detector heard Bot1's chest with chat open: {heard}"
     return ok, note
 
+@test("HUD (No auto pause, places by command)")
+def _():
+    # HUD's No auto pause is a setting like any other (the pause itself needs a real window losing focus: the game
+    # never auto-pauses under horizon-ctl, so that part is checked by hand). The position, x and y settings are not
+    # rows in the menus any more but still take commands, as the layout editor and old configs need.
+    def said(name, value):
+        mark = log_mark()
+        setting("hud", name, value)
+        wait(2)
+        return [line for line in sunset_said(mark) if line.lower().startswith(name)]
+
+    reset("creative")
+    on = said("no auto pause", "true")
+    setting("clickgui", "settings", "Window")
+    say(".menu hud")
+    wait(8)
+    ctl("click-at", *map(str, menu_row(3, 1)), "right")
+    wait(8)
+    frame("hud-settings")
+    ctl("key", "esc", "tap")
+    wait(3)
+    if state().get("screen") == "paused":
+        ctl("resume")
+        wait(3)
+    off = said("no auto pause", "false")
+    place = said("watermark position", "Custom") + said("watermark x", "0.25")
+    say(".reset hud")
+    say(".reset clickgui")
+    ok = any("ON" in line for line in on) and any("OFF" in line for line in off) and len(place) == 2
+    return ok, f"No auto pause on: {on}, off: {off}; Watermark position and x by command: {place}"
+
+
 @test("Chat open (Anti AFK, Spam)")
 def _():
     # Anti AFK and Spam work on their own: both keep going with the chat box open, and behind the pause menu where the

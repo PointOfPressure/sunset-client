@@ -41,6 +41,21 @@ thread_local! {
 // A slot box of the hotbar's sprite: one slot and its frame.
 const SLOT: f32 = 20.0;
 
+// HUD's No auto pause: the game leaves the pause menu shut when its window loses focus. It is the game's own
+// --no-pause launch option, set while the setting is on and put back once it, the HUD or Sunset goes off (never
+// cleared when the game was started with it).
+static NO_PAUSE_OURS: AtomicBool = AtomicBool::new(false);
+pub(super) fn auto_pause(game: &mut Game<'_>, keep_playing: bool) {
+    if keep_playing {
+        if !game.options.no_pause {
+            game.options.no_pause = true;
+            NO_PAUSE_OURS.store(true, Relaxed);
+        }
+    } else if NO_PAUSE_OURS.swap(false, Relaxed) {
+        game.options.no_pause = false;
+    }
+}
+
 // Each tick: the settings the game's own drawing reads.
 pub(super) fn tick(game: &Game<'_>, mods: &[Module], shown: bool) {
     let hud = mods.iter().find(|m| m.name == "HUD" && m.on).filter(|_| shown);

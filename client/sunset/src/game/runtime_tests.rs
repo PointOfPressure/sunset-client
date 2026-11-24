@@ -275,10 +275,12 @@ mod movement_config_tests {
         let shown = |m: &Module, name: &str| m.setting_visible(m.settings.iter().position(|s| s.name == name).unwrap());
         let set = |m: &mut Module, name: &str, value: &str| m.settings.iter_mut().find(|s| s.name == name).unwrap().parse(value);
         let hud = state.modules.iter_mut().find(|m| m.name == "HUD").unwrap();
-        assert!(shown(hud, "Coordinates position") && !shown(hud, "Coordinates x") && !shown(hud, "Compass position"));
+        // The layout editor places HUD elements: no position, x or y row, whatever is on or Custom.
+        assert!(!shown(hud, "Coordinates position") && !shown(hud, "Coordinates x") && !shown(hud, "Compass position"));
         set(hud, "Coordinates position", "Custom");
         set(hud, "Compass", "true");
-        assert!(shown(hud, "Coordinates x") && shown(hud, "Coordinates y") && shown(hud, "Compass position") && !shown(hud, "Compass x"));
+        assert!(!shown(hud, "Coordinates x") && !shown(hud, "Coordinates y") && !shown(hud, "Compass position") && !shown(hud, "Compass x"));
+        assert!(shown(hud, "Coordinates") && shown(hud, "No auto pause"));
         let gui = state.modules.iter_mut().find(|m| m.name == "ClickGUI").unwrap();
         assert!(shown(gui, "Inventory blur"), "Menu dim is on by default");
         set(gui, "Menu dim", "false");

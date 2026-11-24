@@ -258,6 +258,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Font", &::sunset_core::font_data::LABELS)
             .pick("Text case", &["Normal", "lowercase", "UPPERCASE"])
             .bool("Text shadow", true)
+            // The pause menu stays shut when the window loses focus (hud_bars.rs auto_pause).
+            .bool("No auto pause", false)
             .pick("Theme color", super::sunset_hud_list::COLOURS)
             .pick("Second color", super::sunset_hud_list::SECOND_COLOURS)
             .num("Color speed", 1.0, 0.1, 5.0, 0.1)

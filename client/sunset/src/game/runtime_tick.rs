@@ -383,6 +383,7 @@ pub(super) fn post_tick(game: &mut Game<'_>) {
         return;
     }
     if !game.native_on(ID) {
+        super::sunset_hud_bars::auto_pause(game, false);
         super::sunset_survival_tools::shutdown();
         super::sunset_auction::stopped(game);
         super::sunset_drill_logger::shutdown();
@@ -807,6 +808,8 @@ fn module_tick(game: &mut Game<'_>) {
     super::sunset_render::tick(game, &mods, ticks);
     super::sunset_effects::tick(game);
     super::sunset_player::tick(game, &mods);
+    let keep_playing = mods.iter().any(|m| m.name == "HUD" && m.on && m.b("No auto pause"));
+    super::sunset_hud_bars::auto_pause(game, keep_playing);
     super::sunset_hud_bars::tick(game, &mods, game.native_on(ID));
     super::sunset_world::tick(game, &mods);
     super::sunset_hunting::tick(game, &mods);
