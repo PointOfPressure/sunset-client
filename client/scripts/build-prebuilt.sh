@@ -14,6 +14,9 @@
 #              C:/sunset-prebuilt). rustc embeds this path in the libraries: keep it fixed and outside home folders
 #              (no user names, reproducible)
 #   LAUNCHER_VERSION  the stock horizon-launcher release used to build (default 0.2.78)
+#   CLI_ARCHIVE  that release's stock archive for PLATFORM (required): unpacked to build with when WORK has no
+#              launcher yet, copied into OUT and pinned by the manifest (its SHA-256), to be attached to the release
+#   CLI_URL    where the Sunset launcher downloads it (default: this version's client-v release on GitHub)
 #   MINECRAFT  a Minecraft folder with 26.3 for `prepare` (default: the official launcher's ~/.minecraft, on Windows
 #              %APPDATA%/.minecraft)
 #   KEY        minisign secret key (default ~/.config/sunset/minisign.key); SIGN=0 skips signing
@@ -128,21 +131,18 @@ SRC_COMMIT=$(git -C "$REPO" rev-parse HEAD)
 DIRTY=false; [ -z "$(git -C "$REPO" status --porcelain -- client/sunset)" ] || DIRTY=true
 say "Sunset $VERSION on Horizon $SHORT (mixins ${MIXINS:0:7}, game $GAME), sunset-client ${SRC_COMMIT:0:7}$($DIRTY && echo ' + local changes')"
 
-# ---- the stock launcher, checked against its release's SHA256SUMS, in its own home under $WORK
+# ---- the stock launcher in its own home under $WORK: unpacked from CLI_ARCHIVE (the archive the manifest will pin;
+# upstream's releases, where this used to download it and its SHA256SUMS, have been unreachable since 24 Nov 2026)
 mkdir -p "$WORK/launcher-$LAUNCHER_VERSION" "$WORK/home" "$OUT"
 L=$WORK/launcher-$LAUNCHER_VERSION/$LAUNCHER_EXE
 if [ ! -x "$L" ]; then
-	url=https://github.com/horizon-rust/horizon/releases/download/launcher@$LAUNCHER_VERSION
-	tmp=$(mktemp -d)
-	curl -fsSL -o "$tmp/$LAUNCHER_FILE" "$url/$LAUNCHER_FILE"
-	curl -fsSL -o "$tmp/SHA256SUMS" "$url/SHA256SUMS"
-	(cd "$tmp" && grep " $LAUNCHER_FILE\$" SHA256SUMS | sha256sum -c --quiet -) || die "launcher checksum mismatch"
+	[ -f "${CLI_ARCHIVE:-}" ] || die "no launcher $LAUNCHER_VERSION in $WORK: CLI_ARCHIVE must name its stock $LAUNCHER_FILE"
 	case $LAUNCHER_FILE in
-	*.zip) unzip -q -o "$tmp/$LAUNCHER_FILE" "$LAUNCHER_EXE" -d "$WORK/launcher-$LAUNCHER_VERSION" ;;
-	*) tar xzf "$tmp/$LAUNCHER_FILE" -C "$WORK/launcher-$LAUNCHER_VERSION" ;;
+	*.zip) unzip -q -o "$CLI_ARCHIVE" "$LAUNCHER_EXE" -d "$WORK/launcher-$LAUNCHER_VERSION" ;;
+	*) tar xzf "$CLI_ARCHIVE" -C "$WORK/launcher-$LAUNCHER_VERSION" ;;
 	esac
-	rm -rf "$tmp"
 fi
+[ "$("$L" --version 2>/dev/null | awk '{print $2}')" = "$LAUNCHER_VERSION" ] || die "$L is not horizon-launcher $LAUNCHER_VERSION"
 LDATA=$WORK/home/.local/share/horizon-launcher
 # The launcher's data in $LDATA on both systems (Linux finds it from HOME; Windows' launcher reads %APPDATA% unless
 # HORIZON_LAUNCHER_HOME and HORIZON_HOME name the folders), and nothing of it on the real desktop or in its Trash.
@@ -338,9 +338,13 @@ fi
 # ---- manifest + signatures
 # The Sunset launcher downloads the same stock CLI from upstream and checks it against this signed hash.
 case $PLATFORM in windows-x86_64) CLI_FILE=horizon-launcher-windows-x64.zip ;; *) CLI_FILE=horizon-launcher-$PLATFORM.tar.gz ;; esac
-CLI_URL=https://github.com/horizon-rust/horizon/releases/download/launcher@$LAUNCHER_VERSION/$CLI_FILE
-CLI_SHA=$(curl -fsSL "https://github.com/horizon-rust/horizon/releases/download/launcher@$LAUNCHER_VERSION/SHA256SUMS" | awk -v f="$CLI_FILE" '$2 == f || $2 == "*" f {print $1}')
-[ ${#CLI_SHA} = 64 ] || die "no SHA-256 for $CLI_FILE in launcher@$LAUNCHER_VERSION's SHA256SUMS"
+# Upstream's repository (github.com/horizon-rust/horizon) has been unreachable since 24 Nov 2026, so the manifest
+# names Sunset's own copy of that archive: CLI_ARCHIVE is the file to attach to the client-v$VERSION release beside
+# the package (with the launcher's source, LGPL), and its hash is what gets signed. CLI_URL overrides the address.
+CLI_URL=${CLI_URL:-https://github.com/PointOfPressure/sunset-client/releases/download/client-v$VERSION/$CLI_FILE}
+[ -f "${CLI_ARCHIVE:-}" ] || die "CLI_ARCHIVE must name the stock $CLI_FILE of launcher $LAUNCHER_VERSION (see README.md, Horizon CLI mirror)"
+CLI_SHA=$(sha256sum "$CLI_ARCHIVE" | cut -d' ' -f1)
+cp "$CLI_ARCHIVE" "$OUT/$CLI_FILE"
 # The launcher shows this version's client/CHANGELOG.md section on Overview (empty when it has none).
 CHANGELOG_JSON=$(python3 "$REPO/client/scripts/changelog.py" "$VERSION" "$REPO/client/CHANGELOG.md")
 [ "$CHANGELOG_JSON" != "[]" ] || say "client/CHANGELOG.md has no $VERSION section: the launcher will show no changelog"

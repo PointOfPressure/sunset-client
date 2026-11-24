@@ -280,8 +280,11 @@ impl Manifest {
         if let Some(bad) = names.into_iter().find(|n| !plain(n)) {
             return Err(format!("the manifest has an unsafe name: {bad:?}"));
         }
-        if !hex(&self.cli.sha256) || !self.cli.url.starts_with("https://github.com/horizon-rust/horizon/releases/download/") {
-            return Err("the manifest's horizon-launcher entry is not a signed upstream download".into());
+        // The stock CLI comes from upstream's releases, or from Sunset's own (a mirror of the same archive with its
+        // source: upstream's repository has been unreachable). Either way the signed manifest's hash decides.
+        let from = |base: &str| self.cli.url.starts_with(&format!("https://github.com/{base}/releases/download/"));
+        if !hex(&self.cli.sha256) || !(from("horizon-rust/horizon") || from(REPO)) {
+            return Err("the manifest's horizon-launcher entry is not a signed upstream or Sunset download".into());
         }
         for a in &self.artifacts {
             if !plain(&a.file) || !plain(&a.signature) || !hex(&a.sha256) {
@@ -2046,6 +2049,20 @@ mod tests {
         let mut m = manifest();
         m.cli.url = "https://evil.example/h.tar.gz".into();
         assert!(m.check().is_err());
+        // Sunset's own release mirrors the stock CLI; another repository of the same owner, or a look-alike, does not.
+        let mut m = manifest();
+        m.cli.url = format!("https://github.com/{REPO}/releases/download/client-v2.1.0/horizon-launcher-linux-x86_64.tar.gz");
+        assert!(m.check().is_ok());
+        for bad in [
+            "https://github.com/PointOfPressure/sunset-client-evil/releases/download/x/h.tar.gz",
+            "https://github.com/PointOfPressure/other/releases/download/x/h.tar.gz",
+            "https://github.com.evil.example/PointOfPressure/sunset-client/releases/download/x/h.tar.gz",
+            "http://github.com/PointOfPressure/sunset-client/releases/download/x/h.tar.gz",
+        ] {
+            let mut m = manifest();
+            m.cli.url = bad.into();
+            assert!(m.check().is_err(), "{bad}");
+        }
         let mut m = manifest();
         m.artifacts[0].file = "a/b".into();
         assert!(m.check().is_err());

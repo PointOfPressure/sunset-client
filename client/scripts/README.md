@@ -59,6 +59,22 @@ A plugin build on 0.2.107 was checked with `plugins/launcher-test` (see `plugins
 
 Not done for this pin yet: `build-prebuilt.sh` (release packaging, relink kit, signing) on this route.
 
+## Horizon CLI mirror
+
+github.com/horizon-rust/horizon has returned 404 since 24 Nov 2026, so a fresh install can no longer download the
+stock `horizon-launcher` CLI a manifest pins from upstream's `launcher@<version>` release (installs that have it keep
+working). The CLI is therefore attached to Sunset's own release: `build-prebuilt.sh` takes `CLI_ARCHIVE` (the stock
+archive, `horizon-launcher-linux-x86_64.tar.gz` or `horizon-launcher-windows-x64.zip`), copies it into `OUT` and
+pins its SHA-256 with a `client-v<version>` release address; the Sunset launcher accepts a CLI address under
+`horizon-rust/horizon` or `PointOfPressure/sunset-client` releases (`core.rs` `Manifest::check`) and checks the hash
+from the signed manifest as before.
+
+Use upstream's own binary, not a rebuild: launcher.yml bakes `HORIZON_MSA_CLIENT_ID` (a repository variable) into
+the release build, and without it the CLI says sign-in is not configured. An archive is just the binary at its top
+level (`tar czf` / zip of `horizon-launcher[.exe]`). The launcher is LGPL: attach its source beside it, `git archive`
+of the `launcher@<version>` tag (0.2.78 is `0d34b3e34c`, 0.2.107 is `41d546ef2f`; both are in the PointOfPressure/horizon
+fork, fetch by full commit id).
+
 ## Windows
 
 The SDK's Windows build is `x86_64-pc-windows-gnu`, so MSVC/xwin can't link against it. What was tried here:
