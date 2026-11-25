@@ -433,6 +433,7 @@ fn module_tick(game: &mut Game<'_>) {
     }
 
     super::sunset_vein_miner::tick(game, get("Packet Mine").is_some());
+    super::sunset_bed_breaker::tick(game, get(super::sunset_bed_breaker::NAME));
     if game.player.is_none() {
         super::sunset_player::inventory_reset();
         return;

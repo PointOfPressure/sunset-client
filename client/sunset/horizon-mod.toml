@@ -81,6 +81,12 @@ name = "sunset_atmosphere_renderer"
 source = "src/game/atmosphere_renderer.rs"
 
 [[native.module]]
+id = "bed_breaker"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_bed_breaker"
+source = "src/game/bed_breaker.rs"
+
+[[native.module]]
 id = "atmosphere_shader"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_atmosphere_shader"

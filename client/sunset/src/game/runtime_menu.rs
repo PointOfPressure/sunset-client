@@ -213,6 +213,9 @@ pub(super) fn switched_effects(game: &mut Game<'_>, name: &'static str, on: bool
     if name == super::sunset_vein_miner::NAME && !on {
         super::sunset_vein_miner::stop(game);
     }
+    if name == super::sunset_bed_breaker::NAME && !on {
+        super::sunset_bed_breaker::stop(game);
+    }
     if name == "Friend Guard" {
         super::sunset_melee::reset_friend_feedback();
     }

@@ -50,7 +50,7 @@ pub(super) fn conflict(mods: &[super::sunset::Module]) -> Option<&'static str> {
         "Glide" | "Spider" | "High Jump" | "Long Jump" | "Jesus" | "Freecam" |
         "Aim Assist" | "Bow Aim" | "Auto City" | "Hole Filler" | "Liquid Filler" | "Burrow" |
         "Tap Use" | "Wind Jump" | "Pearl Catch" | "Middle Click Extra" | "Auto Clicker" |
-        "Fast Place" | "Step" | "Anti Void" | "No Fall" | "Fast Break" | "Auto Fish" | "Fast Use" |
+        "Fast Place" | "Step" | "Anti Void" | "No Fall" | "Fast Break" | "Auto Fish" | "Fast Use" | "Bed Breaker" |
         "BlockIn" | "Self Trap" | "Auto Trap" | "Self Web" | "Auto Web" | "Auto EXP" | "Crystal Optimizer" |
         "Bow Aimbot" | "Auto Shearer" | "Auto Nametag" | "Auto Breed" | "Auto Mount" | "Flamethrower" | "Spawn Proofer" |
         "Shield" | "RF Click" | "Rotations" | "Anvil" | "Quiver" | "Ghost Hand" | "Air Place"

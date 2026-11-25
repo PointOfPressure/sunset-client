@@ -12,6 +12,7 @@ pub(super) fn world_overlays(game: &Game<'_>, cam: &Camera, mods: &[Module], lw:
     super::sunset_crystal_aura::draw(game, cam, mods, out, lw);
     super::sunset_lag::draw(game, cam, mods, out, lw);
     super::sunset_backtrack::draw(cam, mods, out, lw);
+    super::sunset_bed_breaker::draw(cam, mods, out, lw);
     super::sunset_block_overlay::overlay(game, cam, mods, out, lw);
     super::sunset_util::draw_shown(cam, out, lw);
     super::sunset_effects::draw(game, cam, mods, out);

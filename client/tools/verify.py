@@ -14118,6 +14118,79 @@ def tick_times(mark):
         return [float(line.split()[1]) for line in f if line.startswith("tickat ")]
 
 
+@test("Bed Breaker")
+def _():
+    # A bed 2 blocks ahead: on, both its blocks are broken; off, it stays. A bed boxed in wool: with Cover on Break
+    # wool is broken on the way and then the bed; on Ignore the bed is dug through the wool, which stays (if the
+    # server takes that). Spare own bed: the bed beside you as the module comes on stays, one further off goes. On a
+    # server the probe counts the dig starts in a tick (one at most) and the move packets (one at most).
+    def bed(z, colour="red"):
+        cmd(f"setblock {X0} {Y + 1} {Z0 + z} minecraft:{colour}_bed[part=foot,facing=south]",
+            f"setblock {X0} {Y + 1} {Z0 + z + 1} minecraft:{colour}_bed[part=head,facing=south]")
+
+    def left(colour="red"):
+        return count(X0 - 2, Y + 1, Z0 - 3, X0 + 2, Y + 2, Z0 + 8, f"{colour}_bed")
+
+    def wool():
+        return count(X0 - 2, Y + 1, Z0, X0 + 2, Y + 3, Z0 + 6, "white_wool")
+
+    def run(setup, ticks=80, mods=("bedbreaker",)):
+        reset()
+        cmd(f"fill {X0 - 2} {Y + 1} {Z0 - 3} {X0 + 2} {Y + 3} {Z0 + 8} minecraft:air", "kill @e[type=item]")
+        ctl("look", "90", "0")
+        setup()
+        wait(10)
+        mark = probe_mark() if SERVER and probe_path() else None
+        only(*mods)
+        for _ in range(ticks // 5):
+            wait(5)
+            if not left():
+                break
+        wait(10)
+        only()
+        starts = moves = None
+        if mark is not None:
+            per_tick = probe_ticks(mark)
+            starts = max((t.count(f"pkt {PLAYER_ACTION}") for t in per_tick), default=0)
+            moves = max((t.count("order move") for t in per_tick), default=0)
+        return starts, moves
+
+    got = {}
+    setting("bedbreaker", "spare own bed", "false")
+    setting("bedbreaker", "cover", "Break")
+    wire = run(lambda: bed(2))
+    got["open"] = left()
+    run(lambda: bed(2), ticks=30, mods=())
+    got["off"] = left()
+
+    def boxed():
+        cmd(f"fill {X0 - 1} {Y + 1} {Z0 + 1} {X0 + 1} {Y + 2} {Z0 + 4} minecraft:white_wool")
+        bed(2)
+
+    # The box is 24 blocks, two of them the bed's.
+    run(boxed, ticks=160)
+    got["covered, Break"] = (left(), 22 - wool())
+    setting("bedbreaker", "cover", "Ignore")
+    run(boxed, ticks=80)
+    got["covered, Ignore"] = (left(), 22 - wool())
+    setting("bedbreaker", "cover", "Break")
+    setting("bedbreaker", "spare own bed", "true")
+
+    def two():
+        bed(-1)
+        bed(2, "blue")
+
+    run(two, ticks=80)
+    got["spared"] = (left("red"), left("blue"))
+    cmd(f"fill {X0 - 2} {Y + 1} {Z0 - 3} {X0 + 2} {Y + 3} {Z0 + 8} minecraft:air", "kill @e[type=item]")
+    say(".reset bedbreaker")
+    ok = (got["open"] == 0 and got["off"] == 2 and got["covered, Break"][0] == 0 and got["covered, Break"][1] >= 1
+          and got["covered, Ignore"][1] == 0 and got["spared"] == (2, 0))
+    if wire[0] is not None:
+        ok = ok and wire[0] <= 2 and wire[1] <= 1
+    return ok, f"bed blocks left (and wool broken): {got}; most dig packets and moves in a tick: {wire}"
+
+
 @test("Fake Lag (Hold: what Blink was)")
 def _():
     # .t blink turns Fake Lag on in Mode Hold. Walking 20 ticks: on a server the probe counts the tick's move packets
