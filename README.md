@@ -378,9 +378,9 @@ Modules marked *experimental* below are new strategies that haven't been proven 
     bounded Ore Sim controller keeps the `.b` commands above. See [commands, installation, source and DLL replacement](client/docs/baritone.md).
 - **Nuker**, **Packet Mine** (Anticheat Grim: the vanilla dig, with the full break time and a swing every tick),
   **Vein Miner** (the ore touching an ore you break), **Liquid Filler** (also drains an
+  enemy's water or lava), **Spawn Proofer**, **Build Height**.
 - **Bed Breaker** (BedWars): breaks the nearest bed in reach that is not yours, and what covers it first (or digs the
   bed through its cover); the bed beside you when it comes on is left alone.
-  enemy's water or lava), **Spawn Proofer**, **Build Height**.
 - **Auto Sign**: writes signs without the editor ever showing, with text from its settings (front and back) or the
   first sign you write; both sides (a server opens the side you stand on, so the other side is written once you're on
   it); Aura clicks the signs in reach around you, with an Anticheat mode: Grim (one click a tick, the look in that
