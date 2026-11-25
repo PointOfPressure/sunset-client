@@ -210,15 +210,17 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
         // The editor is in front of everything: its buttons, nothing else; a picker's rows too.
         if let Some(Editor { module, setting, draft: Ok(draft), list: Some(picker), .. }) = &s.gui.editor {
             use super::sunset_picker as pick;
-            let r = pick::rect(s.gui.view_w, s.gui.view_h);
-            let area = pick::list_area(r);
-            if !right && inside(pick::done_button(r), at) {
+            let l = pick::layout(s.gui.view_w, s.gui.view_h);
+            if !right && inside(l.done, at) {
                 s.gui.editor = None;
-            } else if !right && inside(area, at) {
+            } else if !right {
                 let (i, j) = (*module, *setting);
-                let row = ((at.1 - area[1] + super::sunset_smooth::shown(super::sunset_smooth::PICKER, picker.scroll)) / pick::ROW) as usize;
+                // The row under the pointer, by the same scrolled list the picker is drawn from.
                 if let Value::Text(t) = &s.modules[i].settings[j].value
-                    && let Some((name, _)) = pick::rows(picker, t, draft.text()).get(row)
+                    && let rows = pick::rows(picker, t, draft.text())
+                    && let Some((name, _)) = pick::scroll(l.list, rows.len(), super::sunset_smooth::shown(super::sunset_smooth::PICKER, picker.scroll))
+                        .row_at(at)
+                        .and_then(|n| rows.get(n))
                 {
                     let list = pick::clicked(picker, t, name);
                     s.modules[i].settings[j].value = Value::Text(list);

@@ -24,6 +24,7 @@ section of the version they build into the signed manifest, and the launcher sho
 
 ### Changed
 - **Blink is now Fake Lag's Hold mode: your Blink key, switch and Max ticks carry over, and `.t blink` still works**
+- **The menu's panels, rows and buttons are drawn by Sunset's own GPU pipeline: smoother rounded corners and edges at any GUI scale. The list picker (Xray's Blocks and the like) blurs the menu behind it and casts a shadow. ClickGUI > GPU shapes turns it off**
 - HUD's position, x and y settings are no longer rows in the menus: open the chat and drag an element (right click puts it back); saved layouts stay as they are
 - **Sunset runs on Horizon main of 23 Nov 2026 (`2e7d2c6`, through Sunset's Horizon fork `9defaa0`) and horizon-launcher 0.2.107**
 - **Plugins must be pinned to Horizon `9defaa0`; plugins made for 2.0 need that pin (and new targets for their own hooks on split game functions)**

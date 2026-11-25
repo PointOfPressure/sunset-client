@@ -33,6 +33,11 @@ Nightly's: their source is the same branch.
 `9defaa0433`), built through the launcher's developer route rather than as a Nightly's stand-in SDK
 (`../docs/hmod-port.md`, "Rebase onto Horizon 2e7d2c6").
 
+Patch `0014` (`gfx::hud_cut`, for the UI pipeline in `client/sunset/src/game/ui_renderer.rs`) is newer than that head:
+a hooks branch with it has a new head commit, the SDK is rebuilt from it on each platform, and `[native] horizon`
+in `client/sunset/horizon-mod.toml` (and plugins' pins) must name that commit. On the Linux test rig the series
+applied with `git am` gives `1670bd8fac`.
+
 Sunset 2.0's Client Spoofer needs the session-aware brand hook from patch `0011`. Build the fork SDK
 from a hooks branch that includes this patch before running `native-build` for the updated package.
 

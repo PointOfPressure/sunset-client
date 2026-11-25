@@ -1,0 +1,195 @@
+From edcd1764787605f1bef9a8275b26bfe7231c8fc3 Mon Sep 17 00:00:00 2001
+From: pointofpressure <pointofpressure@users.noreply.github.com>
+Date: Wed, 25 Nov 2026 08:40:00 +0000
+Subject: [PATCH] gfx: hud_cut, a client mod's own passes between parts of the
+ HUD
+
+draw_overlay draws the HUD's vertices in two ranges (before and after a menu's blur). set_hud_cuts names more
+places to stop at, as vertex counts of the frame's HudBatch, and at each the installed hud_cut function gets the
+encoder, the HUD's target, its format and size, and the frame's texture when it can be copied (for a blur of
+what is behind): a mod's own pipeline draws there, under the HUD drawn after it. Nothing changes without one.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+---
+ crates/horizon-client-render/src/gfx.rs | 151 ++++++++++++++++++++----
+ 1 file changed, 131 insertions(+), 20 deletions(-)
+
+diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
+index ae3b6972c0..ee06f76690 100644
+--- a/crates/horizon-client-render/src/gfx.rs
++++ b/crates/horizon-client-render/src/gfx.rs
+@@ -1203,6 +1203,43 @@ static BEFORE_RENDER: [std::sync::OnceLock<fn(&mut Renderer, &Frame<'_>)>; 4] =
+ pub fn before_render(prepare: fn(&mut Renderer, &Frame<'_>)) -> bool {
+     BEFORE_RENDER.iter().any(|slot| slot.set(prepare).is_ok())
+ }
++/// A client mod's own draws between two parts of the frame's HUD ([`hud_cut`]): the HUD's vertices before
++/// `at` are drawn, the mod draws on `target` with passes of its own on `encoder`, then the rest of the HUD goes over it.
++pub struct HudCut<'a> {
++    pub device: &'a wgpu::Device,
++    pub queue: &'a wgpu::Queue,
++    pub encoder: &'a mut wgpu::CommandEncoder,
++    /// What the HUD draws on, in `format`.
++    pub target: &'a wgpu::TextureView,
++    /// The texture behind `target` when it holds the whole picture so far (the world with the HUD drawn until
++    /// now) and can be copied from, for a blur of what is behind: None when the HUD is a layer of its own (HDR
++    /// output) or the frame has no COPY_SRC.
++    pub frame: Option<&'a wgpu::Texture>,
++    /// The HUD's own passes also write the layered frame's coverage, which a pass on `target` alone leaves as
++    /// it was: such a frame may not show what the mod draws.
++    pub coverage: bool,
++    pub format: wgpu::TextureFormat,
++    /// `target`'s size in pixels.
++    pub size: [u32; 2],
++    /// Pixels per unit of the HUD's coordinates (`HudBatch::scale` times the renderer's zoom).
++    pub scale: f32,
++    /// The count of HUD vertices drawn before this cut, as given to [`set_hud_cuts`].
++    pub at: u32,
++}
++static HUD_CUT: std::sync::OnceLock<fn(&mut HudCut<'_>)> = std::sync::OnceLock::new();
++static HUD_CUTS: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
++/// Installs the process's one drawer of HUD cuts; false when another was installed first.
++pub fn hud_cut(draw: fn(&mut HudCut<'_>)) -> bool {
++    HUD_CUT.set(draw).is_ok()
++}
++/// Where the installed [`hud_cut`] draws in the frames rendered from now on, as counts of the `HudBatch`'s
++/// vertices that come before each cut (ascending; one past the batch's end never draws). A cut at or before the
++/// batch's `blur_at` is blurred with the HUD under a menu.
++pub fn set_hud_cuts(cuts: &[u32]) {
++    let mut held = HUD_CUTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
++    held.clear();
++    held.extend_from_slice(cuts);
++}
+ pub struct Frame<'a> {
+     pub camera: DVec3,
+     pub yaw: f32,
+@@ -12806,16 +12843,61 @@ impl Renderer {
+             }
+         }
+         let blur_at = menu_blur.map_or(0, |_| frame.hud.blur_at);
+-        self.hud.draw_range(
+-            encoder,
+-            hud_target,
+-            coverage.as_ref(),
+-            self.depth.as_ref().expect(WINDOW_DEPTH),
+-            frame.hud,
+-            [self.config.width, self.config.height],
+-            0..blur_at,
+-            timing.as_mut(),
+-        );
++        // A client mod's draws between parts of the HUD (`hud_cut`): the HUD is drawn up to each cut in turn.
++        let hud_end = frame.hud.vertices.len() as u32;
++        let cut_draw = HUD_CUT.get().copied();
++        let mut cuts = match cut_draw {
++            Some(_) => HUD_CUTS
++                .lock()
++                .unwrap_or_else(std::sync::PoisonError::into_inner)
++                .clone(),
++            None => Vec::new(),
++        };
++        cuts.retain(|cut| *cut <= hud_end);
++        cuts.sort_unstable();
++        cuts.dedup();
++        let cut_frame = (hud.is_none()
++            && self.config.usage.contains(wgpu::TextureUsages::COPY_SRC))
++        .then_some(target_texture);
++        let mut hud_from = 0;
++        for &cut in cuts.iter().filter(|cut| **cut <= blur_at) {
++            let Some(draw) = cut_draw else { break };
++            self.hud.draw_range(
++                encoder,
++                hud_target,
++                coverage.as_ref(),
++                self.depth.as_ref().expect(WINDOW_DEPTH),
++                frame.hud,
++                [self.config.width, self.config.height],
++                hud_from..cut,
++                timing.as_mut(),
++            );
++            draw(&mut HudCut {
++                device: &self.device,
++                queue: &self.queue,
++                encoder: &mut *encoder,
++                target: hud_target,
++                frame: cut_frame,
++                coverage: coverage.is_some(),
++                format: self.output.frame.overlay_format,
++                size: [self.config.width, self.config.height],
++                scale: frame.hud.scale * self.hud.zoom,
++                at: cut,
++            });
++            hud_from = cut;
++        }
++        {
++            self.hud.draw_range(
++                encoder,
++                hud_target,
++                coverage.as_ref(),
++                self.depth.as_ref().expect(WINDOW_DEPTH),
++                frame.hud,
++                [self.config.width, self.config.height],
++                hud_from..blur_at,
++                timing.as_mut(),
++            );
++        }
+         if let Some(radius) = menu_blur {
+             let format = self.output.frame.overlay_format;
+             let device = &self.device;
+@@ -12860,16 +12942,45 @@ impl Renderer {
+         {
+             blur.release();
+         }
+-        self.hud.draw_range(
+-            encoder,
+-            hud_target,
+-            coverage.as_ref(),
+-            self.depth.as_ref().expect(WINDOW_DEPTH),
+-            frame.hud,
+-            [self.config.width, self.config.height],
+-            blur_at..frame.hud.vertices.len() as u32,
+-            timing.as_mut(),
+-        );
++        let mut hud_from = blur_at;
++        for &cut in cuts.iter().filter(|cut| **cut > blur_at) {
++            let Some(draw) = cut_draw else { break };
++            self.hud.draw_range(
++                encoder,
++                hud_target,
++                coverage.as_ref(),
++                self.depth.as_ref().expect(WINDOW_DEPTH),
++                frame.hud,
++                [self.config.width, self.config.height],
++                hud_from..cut,
++                timing.as_mut(),
++            );
++            draw(&mut HudCut {
++                device: &self.device,
++                queue: &self.queue,
++                encoder: &mut *encoder,
++                target: hud_target,
++                frame: cut_frame,
++                coverage: coverage.is_some(),
++                format: self.output.frame.overlay_format,
++                size: [self.config.width, self.config.height],
++                scale: frame.hud.scale * self.hud.zoom,
++                at: cut,
++            });
++            hud_from = cut;
++        }
++        {
++            self.hud.draw_range(
++                encoder,
++                hud_target,
++                coverage.as_ref(),
++                self.depth.as_ref().expect(WINDOW_DEPTH),
++                frame.hud,
++                [self.config.width, self.config.height],
++                hud_from..hud_end,
++                timing.as_mut(),
++            );
++        }
+         if overlay.real {
+             self.own_timing = timing;
+         }
+-- 
+2.43.0
+

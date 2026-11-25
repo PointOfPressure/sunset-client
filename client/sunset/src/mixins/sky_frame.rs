@@ -6,6 +6,7 @@ fn sunset_sky_frame(game: &mut crate::game::Game<'_>) {
     crate::game::sunset_packets::register();
     crate::game::sunset_streamer::register();
     crate::game::sunset_atmosphere_renderer::register();
+    crate::game::sunset_ui_renderer::begin_frame();
     crate::game::sunset_render::register();
     crate::game::sunset::finish_shutdown(game);
     crate::game::sunset_baritone::maintain(game);

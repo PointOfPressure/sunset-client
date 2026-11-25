@@ -354,6 +354,10 @@ pub(super) fn shift(shape: &mut Shape, dx: f32, dy: f32) {
             p[0] += dx;
             p[1] += dy;
         }
+        Shape::Prim(p) => {
+            p.rect[0] += dx;
+            p.rect[1] += dy;
+        }
         Shape::ClipStart => {}
     }
 }
@@ -405,6 +409,10 @@ pub(super) fn resize(shapes: &mut [Shape], origin: [f32; 2], s: f32) {
                 let ([x0, y0], [x1, y1]) = (at([r[0], r[1]]), at([r[2], r[3]]));
                 *r = [x0, y0, x1, y1];
             }
+            Shape::Prim(p) => {
+                p.rect = rect(p.rect);
+                p.radii = p.radii.map(|r| r * s);
+            }
             Shape::ClipStart => {}
         }
     }
@@ -418,6 +426,7 @@ pub(super) fn bounds(game: &Game<'_>, shapes: &[Shape]) -> Option<[f32; 4]> {
         let r = match s {
             Shape::Fill(r, _) | Shape::Round(r, _, _) | Shape::Corners(r, _, _, _) | Shape::Sprite(_, r, _)
             | Shape::Squircle(r, _, _) => *r,
+            Shape::Prim(p) => p.rect,
             Shape::Quad(c, _) => {
                 for p in c {
                     x0 = x0.min(p[0]);

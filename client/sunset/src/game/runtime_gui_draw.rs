@@ -73,57 +73,66 @@ pub(super) fn fit_to(game: &Game<'_>, text: &str, max: f32) -> String {
 // first) and Done.
 fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::sunset_picker::Picker, modules: &[Module], at: (f32, f32), out: &mut Vec<Shape>) {
     use super::sunset_picker as pick;
+    use ::sunset_core::ui::{self, Prim};
     let fit = |text: &str, max: f32| fit_to(game, text, max);
     let solid = |rgb: u32| 0xFF00_0000 | rgb;
-    let r = pick::rect(w, h);
-    let [x, y, rw, _] = r;
+    // Laid out by the UI layer (picker.rs layout); its rows' hover fades by the layer's widgets.
+    let l = pick::layout(w, h);
+    let [x, y, rw, _] = l.frame;
     let room = (rw - 16.0).max(0.0);
     let control = control_radius();
-    out.push(Shape::Fill([0.0, 0.0, w, h], 0x9000_0000));
-    framed(out, r, panel_radius(), pal().dialog, 1.0);
+    let mut held = pick::WIDGETS.lock().unwrap_or_else(|e| e.into_inner());
+    let widgets = held.get_or_insert_with(Default::default);
+    widgets.begin(ui::Pointer { at, down: false }, pick::clock());
+    let smooth = super::sunset_smooth::enabled();
+    let glow = |r: ui::Response| if smooth { r.glow } else { f32::from(u8::from(r.hovered)) };
+    // The menu behind it dims, and blurs where the pipeline can show the frame behind; the box casts a shadow.
+    out.push(Shape::Prim(Prim::new([0.0, 0.0, w, h], 0.0, 0x9000_0000).backdrop(1.0)));
+    out.push(Shape::Prim(Prim::new(l.frame, panel_radius(), 0).shadow(10.0, [0.0, 3.0], 0x7000_0000)));
+    framed(out, l.frame, panel_radius(), pal().dialog, 1.0);
     let m = &modules[edit.module];
     out.push(Shape::Head(fit(&format!("{} / {}", m.name, m.settings[edit.setting].name), room), [x + 8.0, y + 6.0], accent()));
     let search = edit.draft.as_ref().map_or("", Draft::text);
-    out.push(Shape::Round([x + 6.0, y + 22.0, rw - 12.0, 16.0], panel_radius(), pal().field));
+    out.push(Shape::Round(l.field, panel_radius(), pal().field));
     let (shown, colour) = if search.is_empty() { ("Type to search", 0x909090) } else { (search, 0xFFFFFF) };
-    out.push(Shape::Text(fit(shown, room - 4.0), [x + 10.0, y + 22.0 + text_y(16.0)], colour));
+    out.push(Shape::Text(fit(shown, room - 4.0), [l.field[0] + 4.0, l.field[1] + text_y(l.field[3])], colour));
     let text = match &m.settings[edit.setting].value {
         Value::Text(t) => t.as_str(),
         _ => "",
     };
     let rows = pick::rows(picker, text, search);
-    let area = pick::list_area(r);
+    let view = pick::scroll(l.list, rows.len(), super::sunset_smooth::shown(super::sunset_smooth::PICKER, picker.scroll));
     let mut icons = Vec::new();
-    let scroll = super::sunset_smooth::shown(super::sunset_smooth::PICKER, picker.scroll).min(pick::max_scroll(rows.len(), r));
-    let first = (scroll / pick::ROW) as usize;
     out.push(Shape::ClipStart);
-    for (n, (name, have)) in rows.iter().enumerate().skip(first) {
-        let ry = area[1] + n as f32 * pick::ROW - scroll;
-        if ry >= area[1] + area[3] {
-            break;
+    widgets.push_clip(l.list);
+    for (n, row) in view.seen() {
+        let (name, have) = rows[n];
+        let (rx, ry) = (row[0], row[1]);
+        let lit = glow(widgets.interact((pick::SURFACE, n as u32), row));
+        if lit > 0.0 {
+            out.push(Shape::Round(row, control, ui::mix(0x00FF_FFFF, 0x40FF_FFFF, lit)));
         }
-        let row = [area[0], ry, area[2], pick::ROW];
-        if inside(row, at) {
-            out.push(Shape::Round(row, control, 0x40FF_FFFF));
-        }
-        out.push(Shape::Round([area[0] + 3.0, ry + 3.0, 6.0, 6.0], 3.0, if *have { solid(accent()) } else { pal().check_off }));
+        out.push(Shape::Round([rx + 3.0, ry + 3.0, 6.0, 6.0], 3.0, if have { solid(accent()) } else { pal().check_off }));
         // The block's, item's or mob's icon (only the rows on screen are drawn), then its name.
-        let icon = pick::icon(game, picker, name, [area[0] + 13.0, ry + 1.0], pick::ROW - 2.0);
+        let icon = pick::icon(game, picker, name, [rx + 13.0, ry + 1.0], pick::ROW - 2.0);
         let left = if icon.is_some() { 26.0 } else { 14.0 };
         // An icon can't be cut, so it waits outside the cut part until its row is all in view.
-        icons.extend(icon.filter(|_| ry >= area[1] && ry + pick::ROW <= area[1] + area[3]));
-        let label = if picker.kind == pick::ListKind::Players { (*name).to_owned() } else { pick::readable(name) };
-        out.push(Shape::Text(fit(&label, area[2] - left - 4.0), [area[0] + left, ry + text_y(pick::ROW)], 0xFFFFFF));
+        icons.extend(icon.filter(|_| view.whole(row)));
+        let label = if picker.kind == pick::ListKind::Players { name.to_owned() } else { pick::readable(name) };
+        out.push(Shape::Text(fit(&label, row[2] - left - 4.0), [rx + left, ry + text_y(pick::ROW)], 0xFFFFFF));
     }
-    out.push(Shape::ClipEnd([area[0], area[1], area[0] + area[2], area[1] + area[3]]));
+    widgets.pop_clip();
+    out.push(Shape::ClipEnd(view.clip()));
     out.extend(icons);
     let chosen = rows.iter().filter(|(_, have)| *have).count();
     let note = format!("{chosen} chosen, {} more. Click to add or take away; Esc closes.", rows.len() - chosen);
-    let done = pick::done_button(r);
-    out.push(Shape::Text(fit(&note, done[0] - x - 12.0), [x + 8.0, done[1] + text_y(done[3])], 0x909090));
-    out.push(Shape::Round(done, panel_radius(), solid(accent())));
+    out.push(Shape::Text(fit(&note, l.note[2]), [l.note[0] + 2.0, l.note[1] + text_y(l.note[3])], 0x909090));
+    // Done lights up a little under the pointer.
+    let lit = glow(widgets.interact((pick::SURFACE, pick::DONE), l.done));
+    out.push(Shape::Round(l.done, panel_radius(), ui::mix(solid(accent()), 0xFFFF_FFFF, 0.18 * lit)));
     let tw = game.sunset_text_width("Done");
-    out.push(Shape::Text("Done".to_owned(), [done[0] + (done[2] - tw) / 2.0, done[1] + text_y(done[3])], 0xFFFFFF));
+    out.push(Shape::Text("Done".to_owned(), [l.done[0] + (l.done[2] - tw) / 2.0, l.done[1] + text_y(l.done[3])], 0xFFFFFF));
+    widgets.end();
 }
 
 // The width the panels are drawn: the Panel width asked for, or less, so all of them sit in a row on a screen `w` wide.

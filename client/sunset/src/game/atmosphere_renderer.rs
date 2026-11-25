@@ -260,6 +260,8 @@ pub(super) fn owns_sky() -> bool {
 }
 
 pub fn release(renderer: &mut Renderer) {
+    // The UI pipeline's device objects go with the sky's.
+    crate::game::sunset_ui_renderer::release();
     // Shutdown may be exceptional; never attempt to re-enter an already-destroyed TLS.
     let _ = STATE.try_with(|cell| {
         let mut slot = cell.borrow_mut();

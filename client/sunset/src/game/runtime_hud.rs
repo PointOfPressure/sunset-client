@@ -366,20 +366,35 @@ pub(super) fn gui_top(game: &Game<'_>, batch: &mut HudBatch) {
     if game.sunset_window() && game.native_on(ID) {
         super::sunset_toast::draw(game, batch);
     }
+    super::sunset_ui_renderer::end_frame();
 }
 
 fn gui_shapes(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, scale: f32) {
     let real = batch.scale;
     batch.scale = real * scale;
     let start = batch.vertices.len();
-    paint(game, batch, shapes, 1.0 / batch.scale, true);
+    // The menu's rectangles go through the UI pipeline where it draws; until a frame has said it does, an empty layer
+    // asks it.
+    let prims = ::sunset_core::ui::frame(|layers| {
+        if !::sunset_core::ui::active() && ::sunset_core::ui::WANTED.load(Ordering::Relaxed) {
+            layers.probe(start as u32);
+        }
+        layers.prims.len()
+    });
+    paint_layered(game, batch, shapes, 1.0 / batch.scale, true);
     // Opening, it rises into place as it fades in.
-    if let Some((opacity, below)) = super::sunset_dashboard::open_motion() {
+    let motion = super::sunset_dashboard::open_motion();
+    if let Some((opacity, below)) = motion {
         for v in &mut batch.vertices[start..] {
             v.pos[1] += below;
             v.color = (v.color & 0x00FF_FFFF) | (((v.color >> 24) as f32 * opacity) as u32) << 24;
         }
     }
     batch.scale_since(start, 0.0, 0.0, scale, scale);
+    let (opacity, below) = motion.unwrap_or((1.0, 0.0));
+    ::sunset_core::ui::frame(|layers| {
+        layers.place_since(prims, below, opacity, scale);
+        layers.seal();
+    });
     batch.scale = real;
 }

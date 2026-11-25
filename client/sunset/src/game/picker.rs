@@ -211,26 +211,19 @@ pub(super) fn rows<'a>(picker: &'a Picker, text: &'a str, search: &'a str) -> Ve
         .collect()
 }
 
-pub(super) const ROW: f32 = 12.0;
+// Where its pieces are (picker_layout.rs).
+pub(super) use super::sunset_picker_layout::{ROW, layout, scroll};
 
-// The picker's box, its list's area and its Done button.
-pub(super) fn rect(w: f32, h: f32) -> [f32; 4] {
-    let width = (w - 8.0).clamp(1.0, 300.0);
-    let height = (h - 16.0).clamp(1.0, 280.0);
-    [(w - width) / 2.0, ((h - height) / 2.0).max(0.0), width, height]
-}
+// The rows' hover and its fades, from frame to frame.
+pub(super) static WIDGETS: std::sync::Mutex<Option<::sunset_core::ui::Widgets>> = std::sync::Mutex::new(None);
+// The surface the picker's widgets are named in; its Done button's place in it (rows are their index).
+pub(super) const SURFACE: u32 = 1;
+pub(super) const DONE: u32 = u32::MAX;
 
-pub(super) fn list_area(r: [f32; 4]) -> [f32; 4] {
-    [r[0] + 6.0, r[1] + 42.0, r[2] - 12.0, (r[3] - 64.0).max(0.0)]
-}
-
-pub(super) fn done_button(r: [f32; 4]) -> [f32; 4] {
-    [r[0] + r[2] - 62.0, r[1] + r[3] - 19.0, 56.0, 15.0]
-}
-
-// How far the list can scroll.
-pub(super) fn max_scroll(count: usize, r: [f32; 4]) -> f32 {
-    (count as f32 * ROW - list_area(r)[3]).max(0.0)
+// Seconds since the first call: the widgets' clock.
+pub(super) fn clock() -> f64 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64() + 1.0
 }
 
 #[cfg(test)]

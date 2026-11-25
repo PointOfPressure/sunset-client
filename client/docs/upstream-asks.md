@@ -60,6 +60,16 @@ Ask: up to four functions `Renderer::render` runs after its lost-device check, b
 with the renderer and the frame: for a mod's own passes (a sky). `render`'s body reaches gfx's private child modules
 (`core_lines::draw`, `capture::write_capture`), so the launcher's copy of it can't be built for a mixin.
 
+## 11. `hud_cut` in `horizon_client_render::gfx`
+
+Ask: a mod's own passes between two parts of the frame's HUD. `set_hud_cuts(&[u32])` names vertex counts of the
+frame's `HudBatch`; `draw_overlay` draws the HUD up to each and calls the installed `hud_cut` function with the
+encoder, the HUD's target view, its format and size, pixels per HUD unit, and the frame's texture when it can be
+copied (for a blur of what is behind). For a UI pipeline of the mod's own (signed-distance shapes, shadows, backdrop
+blur) whose shapes sit under HUD text drawn after them. `HudRenderer`'s pipelines and `draw_range` are private to
+the render crate and `draw_overlay` reaches private modules, so nothing replaceable gets there; `MenuBlur::apply`
+is replaceable but runs once, only while a screen blurs. (Listed after 10; fork patch 0014.)
+
 ## 9. A sprite filter (`horizon_client_render::sprites::filter_sprites`)
 
 Ask: one function `Sprites::register` hands each sprite's name and RGBA frames as the atlas takes it; a changed
