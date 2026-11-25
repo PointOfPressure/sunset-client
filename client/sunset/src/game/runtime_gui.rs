@@ -37,6 +37,8 @@ pub(super) enum Drag {
     Window(f32, f32),
     // A HUD element (Coordinates, Compass, Armor HUD), where in it the pointer took it (in the HUD's own units).
     Hud(&'static str, f32, f32),
+    // A HUD element by its corner handle: its left edge and its width at size 1 (its size follows the pointer).
+    HudSize(&'static str, f32, f32),
     // The Sidebar style's window by its title bar, where in it the pointer took it.
     Sidebar(f32, f32),
 }

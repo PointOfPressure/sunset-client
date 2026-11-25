@@ -137,6 +137,9 @@ pub(super) enum Shape {
     Sprite(&'static str, [f32; 4], [f32; 4]),
     // A line of text at a size (1: the usual).
     Scaled(String, [f32; 2], u32, f32),
+    // A HUD element's text at the element's own size (the layout editor's): drawn from a font made for that size, so
+    // it stays sharp, not stretched; true for the bolder weight.
+    Sized(String, [f32; 2], u32, f32, bool),
     // A player's face from a skin texture (and its hat layer), and its size.
     Face(String, [f32; 2], f32),
     // A panel with squircle corners, and their radius.
@@ -317,6 +320,7 @@ pub(super) fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shap
                 game.native_text(batch, &t, [x, y], rgb, shadow);
                 batch.scale_since(start, x, y, size, size);
             }
+            Shape::Sized(t, at, argb, size, bold) => crate::game::sunset_font::draw_sized(game, batch, &t, at, argb, shadow, size, bold),
             Shape::Face(skin, [x, y], size) => {
                 // The face is 8 by 8 at (8, 8) of the 64 by 64 skin, its hat beside it at (40, 8).
                 let Some(r) = game.gui.atlas.sprites.get(skin.as_str()).copied() else {

@@ -325,7 +325,8 @@ impl Module {
             "HUD" => match name {
                 // Where each element sits is the layout editor's (open the chat and drag; right click puts one
                 // back): its position, x and y stay saved settings, set by the editor and by commands, not rows here.
-                _ if name.ends_with(" position") || name.ends_with(" x") || name.ends_with(" y") => false,
+                // Its size too (a corner handle on its frame in the editor).
+                _ if name.ends_with(" position") || name.ends_with(" x") || name.ends_with(" y") || name.ends_with(" size") => false,
                 "Second color" => self.p("List color mode") != "Static" || self.p("Watermark color mode") != "Static",
                 "Color speed" => [self.p("List color mode"), self.p("Watermark color mode")].iter().any(|m| *m != "Static"),
                 "Watermark text" | "Watermark profile" | "Watermark color mode" | "Watermark position" => self.b("Watermark"),

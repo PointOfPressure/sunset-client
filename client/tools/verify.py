@@ -15560,6 +15560,105 @@ def _():
     return all(v > 150 for v in got.values()), f"pixels changed with Effects on: {got}"
 
 
+@test("HUD layout editor (element size)")
+def _():
+    # An element's size (what the corner handle of its frame in the layout editor sets, here by .set): the watermark at
+    # 2 covers about four times the pixels of its text at 1 and is the same again back at 1; Coordinates at a place of
+    # its own grows the same way at 2 and shrinks at 0.5; the module list (in its corner) grows at 1.5.
+    # Looking down at the floor, so only the HUD's text is that bright.
+    reset()
+    ctl("look", "0", "90")
+    only("sprint", "fullbright")
+    for key, value in (("watermark", "true"), ("watermark color mode", "Static"), ("coordinates", "true"), ("coordinates position", "Custom"),
+                       ("coordinates x", "0.08"), ("coordinates y", "0.6"), ("module list", "false"), ("module list side", "Left"),
+                       ("fps", "false"), ("speed", "false"), ("facing", "false"), ("totems", "false")):
+        setting("hud", key, value)
+
+    def lit(name, box):
+        clear_chat()
+        wait(4)
+        return sum(1 for r, g, b in colour_frame(f"hud-size-{name}").crop(box).getdata() if min(r, g, b) > 225 or (r > 215 and 60 < g < 190 and b < 120))
+
+    mark_box, coords_box, list_box = (0, 0, 520, 150), (40, 380, 640, 540), (0, 0, 520, 300)
+    got = {}
+    for size in ("1", "2", "1"):
+        setting("hud", "watermark size", size)
+        got.setdefault("watermark", []).append(lit(f"watermark-{size}", mark_box))
+    for size in ("1", "2", "0.5"):
+        setting("hud", "coordinates size", size)
+        got.setdefault("coordinates", []).append(lit(f"coordinates-{size}", coords_box))
+    setting("hud", "coordinates size", "1")
+    # The module list on the left, in the watermark's corner with the watermark off.
+    # Whatever its colours: the pixels that differ from the same frame without it.
+    setting("hud", "watermark", "false")
+    setting("hud", "list animations", "false")
+    setting("hud", "list color mode", "Static")
+    clear_chat()
+    wait(6)
+    bare = colour_frame("hud-size-list-off").crop(list_box)
+    setting("hud", "module list", "true")
+    wait(20)
+    for size in ("1", "1.5"):
+        setting("hud", "module list size", size)
+        clear_chat()
+        wait(10)
+        got.setdefault("module list", []).append(recoloured(bare, colour_frame(f"hud-size-list-{size}").crop(list_box)))
+    # The editor itself: with the chat open the Coordinates' frame has a handle at its corner (the one solid white
+    # square: text has no 8 by 8 block of white); dragged 60 units right the element is bigger, at a place of its own;
+    # a right click on it puts its size back.
+    def coordinates():
+        rows = said_after(".settings hud", 6)
+        return [r.split(": ", 1)[1] for key in ("Coordinates size", "Coordinates position") for r in rows if r.startswith(key + ":")]
+
+    for key, value in (("watermark", "false"), ("module list", "false"), ("coordinates position", "Top left")):
+        setting("hud", key, value)
+    dragged = righted = handle = None
+    # Real presses only: horizon-ctl's mouse does not reach the chat's layout editor (it reads the window's buttons).
+    window = x_window() if real_keys_ready() else None
+    if window:
+        env = {**os.environ, "DISPLAY": XDISPLAY}
+        xdo = lambda *args: (subprocess.run(["xdotool", *map(str, args)], env=env, capture_output=True), wait(3))
+        x_keys(window, "t")
+        wait(6)
+        img = colour_frame("hud-size-editor").crop((0, 0, 700, 120)).convert("L")
+        px, (iw, ih) = img.load(), img.size
+        handle = next(((x + 4, y + 4) for y in range(0, ih - 8, 2) for x in range(0, iw - 8, 2)
+                       if all(px[x + i, y + j] > 215 for i in range(0, 8, 2) for j in range(0, 8, 2))), None)
+        if handle:
+            hx, hy = handle
+            xdo("mousemove", "--window", window, hx, hy)
+            xdo("mousedown", 1)
+            xdo("mousemove", "--window", window, hx + 60, hy)
+            xdo("mousemove", "--window", window, hx + 120, hy)
+            xdo("mouseup", 1)
+            x_keys(window, "Escape")
+            wait(4)
+            dragged = coordinates()
+            x_keys(window, "t")
+            wait(6)
+            # Held over a frame or two: the editor reads the button each frame.
+            xdo("mousemove", "--window", window, hx - 30, hy - 6)
+            xdo("mousedown", 3)
+            wait(4)
+            xdo("mouseup", 3)
+            x_keys(window, "Escape")
+            wait(4)
+            righted = coordinates()
+        else:
+            x_keys(window, "Escape")
+    say(".reset hud")
+    only()
+    w, c, l = got["watermark"], got["coordinates"], got["module list"]
+    ok = (w[0] > 40 and 2.6 * w[0] < w[1] < 5.5 * w[0] and abs(w[2] - w[0]) <= w[0] * 0.05
+          and c[0] > 40 and 2.6 * c[0] < c[1] < 5.5 * c[0] and c[2] < 0.6 * c[0]
+          and l[0] > 40 and 1.5 * l[0] < l[1] < 6.0 * l[0])
+    if window:
+        ok = (ok and dragged is not None and len(dragged) == 2 and float(dragged[0]) > 1.15 and dragged[1] == "Custom"
+              and righted is not None and float(righted[0]) == 1.0)
+    return ok, (f"bright pixels at sizes 1, 2, 1 / 1, 2, 0.5 / 1, 1.5: {got}; the corner handle "
+                + (f"at {handle}: dragged to (size, position) {dragged}, after a right click {righted}" if window else "needs real presses (OFFSCREEN=0)"))
+
+
 @test("Effects (kill, crit sparks, break bursts, target aura)")
 def _():
     # Each new effect in a colour the scene has none of (Custom, Purple), in front of a wall, counted as purple pixels

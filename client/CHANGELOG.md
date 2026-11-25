@@ -10,6 +10,7 @@ section of the version they build into the signed manifest, and the launcher sho
 ## 2.1.0
 
 ### New
+- **HUD layout editor: each of Sunset's elements (watermark, module list, coordinates, FPS, speed, facing, totems, compass, Target HUD) has a size: with the chat open, drag the handle at the corner of its frame; a right click puts its size and place back. Text is drawn at the new size, not stretched, so it stays sharp**
 - Effects: Kill effect (a burst or a pillar of light where what you hit dies), Crit sparks, Break bursts (chips off a block as it breaks) and Target aura (a ring or two lights round what you last hit), each with its own switch
 - Effects > Hide behind blocks (on by default): effects no longer show through walls, and they fade with distance
 - Fake Lag > Mode Repel: a hit on a target that is still red from the last one waits until it can be hurt again

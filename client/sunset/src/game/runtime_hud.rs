@@ -24,6 +24,10 @@ fn place_element(
     screen: [f32; 2],
 ) -> Option<(f32, f32)> {
     use super::sunset_hud_place::{Place, custom, nearest};
+    // As big as its size (the layout editor's) makes it: the caller draws it at the usual size from the corner given
+    // back and resizes what it drew (hud_bars::resize).
+    let scale = super::sunset_hud_bars::size_of(hud, name);
+    let size = [size[0] * scale, size[1] * scale];
     let (x, y) = match place {
         Place::Corner(c) => {
             if !game.native_corner_shown(c) {
@@ -121,10 +125,12 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             if let Some((x, y)) = place_element(game, corners, hud, "Watermark", place, size, false, [w, h]) {
                 let at = |width: f32| if flush { x + size[0] - width + 2.0 } else { x + 2.0 };
                 let colour = super::sunset_hud_list::colour_at(hud, hud.p("Watermark color mode"), y);
+                let from = shapes.len();
                 shapes.push(Shape::Text(line, [at(tw), y + 2.0], colour));
                 if let Some(p) = profile {
                     shapes.push(Shape::Text(p, [at(pw), y + 14.0], 0xE4E4E4));
                 }
+                super::sunset_hud_bars::resize(&mut shapes[from..], [x, y], super::sunset_hud_bars::size_of(hud, "Watermark"));
             }
         }
         let left = hud.p("Module list side") == "Left";
@@ -141,7 +147,13 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
                 }
             };
             if shown {
+                let list_size = super::sunset_hud_bars::size_of(hud, "Module list");
+                let list_at = std::cell::Cell::new(None);
+                let from = shapes.len();
                 let mut put = |width: f32, height: f32| {
+                    // Room for the list at its size; it is drawn at the usual size from the corner given back, then
+                    // resized about that corner.
+                    let (width, height) = (width * list_size, height * list_size);
                     let (x, y) = match place {
                         Place::Corner(c) => corners.place(c, width, height),
                         Place::Custom => {
@@ -153,9 +165,13 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
                     // game's corner leaves them room only while playing, not with the chat open).
                     let (x, y) = super::sunset_hud_bars::below_effects(game, [x, y, width, height], w, h);
                     super::sunset_hud_bars::place("Module list", [x, y, width, height], w, h);
+                    list_at.set(Some([x, y]));
                     (x, y)
                 };
                 super::sunset_hud_list::draw(game, hud, &mods, !left, &mut put, &mut shapes);
+                if let Some(at) = list_at.get() {
+                    super::sunset_hud_bars::resize(&mut shapes[from..], at, list_size);
+                }
             }
         }
         // The server's scoreboard sidebar (drawn by the game itself): framed here so the chat editor can grab it, and
@@ -188,7 +204,9 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         if custom && let Some(text) = &coordinates {
             let size = [game.sunset_text_width(text) + 4.0, 12.0];
             if let Some((x, y)) = place_element(game, corners, hud, "Coordinates", coordinates_at, size, false, [w, h]) {
+                let from = shapes.len();
                 shapes.push(Shape::Text(text.clone(), [x + 2.0, y + 2.0], 0xFFFFFF));
+                super::sunset_hud_bars::resize(&mut shapes[from..], [x, y], super::sunset_hud_bars::size_of(hud, "Coordinates"));
             }
         }
         // The Info line's parts (FPS, Speed, Facing, Totems), by name: each in the corner's line (Default) or on its own
@@ -222,10 +240,13 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             .map(|(name, text)| (name, cased(&text)))
             .partition(|(name, _)| hud.p(&format!("{name} position")) == "Custom");
         for (name, text) in moved {
-            let (tw, th) = (game.sunset_text_width(&text) + 4.0, 12.0);
+            let scale = super::sunset_hud_bars::size_of(hud, name);
+            let (tw, th) = ((game.sunset_text_width(&text) + 4.0) * scale, 12.0 * scale);
             let [x, y] = super::sunset_hud_place::custom([hud.n(&format!("{name} x")), hud.n(&format!("{name} y"))], [tw, th], [w, h], false);
             super::sunset_hud_bars::place(name, [x, y, tw, th], w, h);
+            let from = shapes.len();
             shapes.push(Shape::Text(text, [x + 2.0, y + 2.0], 0xFFFFFF));
+            super::sunset_hud_bars::resize(&mut shapes[from..], [x, y], scale);
         }
         if game.native_corner_shown(Corner::TopLeft) {
             let mut lines: Vec<String> = Vec::new();

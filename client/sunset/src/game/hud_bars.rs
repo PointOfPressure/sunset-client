@@ -219,24 +219,51 @@ pub(super) enum ChatDrag {
     End,
     // A right click on an element: back to its Default place.
     Reset(&'static str),
+    // A press on an element's corner handle: its size follows the pointer. The element's left edge, and its width at
+    // size 1.
+    Size(&'static str, f32, f32),
+}
+
+// The corner handle of an element's frame (bottom right), for its size.
+const HANDLE: f32 = 5.0;
+
+fn handle([x, y, w, h]: [f32; 4]) -> [f32; 4] {
+    [x + w - HANDLE + 1.0, y + h - HANDLE + 1.0, HANDLE, HANDLE]
+}
+
+// The size an element dragged by its corner handle has: the pointer's distance from its left edge over its width at
+// size 1, in twentieths.
+pub(super) fn dragged_size(pointer_x: f32, left: f32, width: f32) -> f32 {
+    (((pointer_x - left) / width.max(1.0) * 20.0).round() / 20.0).clamp(SIZES.0, SIZES.1)
 }
 
 // The layout editor with the chat open: a frame round each element, a press on one takes it, its release ends the drag;
 // a right click on one sends it back.
-pub(super) fn chat_layout(game: &Game<'_>, dragging: Option<&'static str>, out: &mut Vec<Shape>) -> Option<ChatDrag> {
+pub(super) fn chat_layout(game: &Game<'_>, dragging: Option<&'static str>, sized: &dyn Fn(&str) -> Option<f32>, out: &mut Vec<Shape>) -> Option<ChatDrag> {
     let down = game.physical_buttons.contains(&winit::event::MouseButton::Left);
     let was = CHAT_PRESSED.swap(down, Relaxed);
     let right = game.physical_buttons.contains(&winit::event::MouseButton::Right);
     let right_was = CHAT_RIGHT.swap(right, Relaxed);
+    let mut on_handle = None;
     for (name, [x, y, w, h], _) in placed(|p| p.clone()) {
         let colour = if dragging == Some(name) { 0xC0FF_FFFF } else { 0x60FF_FFFF };
         out.push(Shape::Fill([x - 1.0, y - 1.0, w + 2.0, 1.0], colour));
         out.push(Shape::Fill([x - 1.0, y + h, w + 2.0, 1.0], colour));
         out.push(Shape::Fill([x - 1.0, y, 1.0, h], colour));
         out.push(Shape::Fill([x + w, y, 1.0, h], colour));
+        // An element with a size of its own has a handle at its corner: dragged, it grows and shrinks.
+        if let Some(size) = sized(name) {
+            let [hx, hy, hw, hh] = handle([x, y, w, h]);
+            out.push(Shape::Fill([hx, hy, hw, hh], 0xE0FF_FFFF));
+            let (cx, cy) = game.cursor;
+            if cx >= hx - 1.0 && cx < hx + hw + 2.0 && cy >= hy - 1.0 && cy < hy + hh + 2.0 {
+                on_handle = Some(ChatDrag::Size(name, x, w / size.max(0.01)));
+            }
+        }
     }
     match dragging {
         Some(_) if !down => Some(ChatDrag::End),
+        None if down && !was && on_handle.is_some() => on_handle,
         None if down && !was => grab(game.cursor).map(|(name, dx, dy)| ChatDrag::Start(name, dx, dy)),
         None if right && !right_was => grab(game.cursor).map(|(name, _, _)| ChatDrag::Reset(name)),
         _ => None,
@@ -323,11 +350,63 @@ pub(super) fn shift(shape: &mut Shape, dx: f32, dy: f32) {
             }
         }
         Shape::Text(_, p, _) | Shape::Head(_, p, _) | Shape::Item(_, p, _) | Shape::Scaled(_, p, _, _)
-        | Shape::Face(_, p, _) | Shape::Icon(_, p, _, _) => {
+        | Shape::Face(_, p, _) | Shape::Icon(_, p, _, _) | Shape::Sized(_, p, _, _, _) => {
             p[0] += dx;
             p[1] += dy;
         }
         Shape::ClipStart => {}
+    }
+}
+
+// An element's size from the layout editor ("<name> size", 1 the usual; a module without the setting has 1).
+pub(super) fn size_of(m: &Module, name: &str) -> f32 {
+    let key = format!("{name} size");
+    if !m.settings.iter().any(|s| s.name == key) {
+        return 1.0;
+    }
+    let size = m.n(&key) as f32;
+    if size > 0.0 { size.clamp(SIZES.0, SIZES.1) } else { 1.0 }
+}
+
+// The sizes the layout editor gives an element.
+pub(super) const SIZES: (f32, f32) = (0.5, 3.0);
+
+// A run of shapes drawn at the usual size made `s` times as big about `origin` (the element's top left corner): every
+// place and length, and its text as text of that size (Shape::Sized: drawn sharp from a font of that size, not
+// stretched).
+pub(super) fn resize(shapes: &mut [Shape], origin: [f32; 2], s: f32) {
+    if (s - 1.0).abs() < 0.001 {
+        return;
+    }
+    let at = |p: [f32; 2]| [origin[0] + (p[0] - origin[0]) * s, origin[1] + (p[1] - origin[1]) * s];
+    let rect = |r: [f32; 4]| {
+        let [x, y] = at([r[0], r[1]]);
+        [x, y, r[2] * s, r[3] * s]
+    };
+    for shape in shapes {
+        match shape {
+            Shape::Fill(r, _) | Shape::Sprite(_, r, _) => *r = rect(*r),
+            Shape::Round(r, radius, _) | Shape::Corners(r, radius, _, _) | Shape::Squircle(r, radius, _) => {
+                *r = rect(*r);
+                *radius *= s;
+            }
+            Shape::Quad(corners, _) => *corners = corners.map(at),
+            Shape::Text(t, p, argb) => *shape = Shape::Sized(std::mem::take(t), at(*p), *argb, s, false),
+            Shape::Head(t, p, argb) => *shape = Shape::Sized(std::mem::take(t), at(*p), *argb, s, true),
+            Shape::Scaled(_, p, _, k) | Shape::Sized(_, p, _, k, _) | Shape::Icon(_, p, _, k) => {
+                *p = at(*p);
+                *k *= s;
+            }
+            Shape::Item(_, p, size) | Shape::Face(_, p, size) => {
+                *p = at(*p);
+                *size *= s;
+            }
+            Shape::ClipEnd(r) => {
+                let ([x0, y0], [x1, y1]) = (at([r[0], r[1]]), at([r[2], r[3]]));
+                *r = [x0, y0, x1, y1];
+            }
+            Shape::ClipStart => {}
+        }
     }
 }
 
@@ -349,7 +428,7 @@ pub(super) fn bounds(game: &Game<'_>, shapes: &[Shape]) -> Option<[f32; 4]> {
                 continue;
             }
             Shape::Text(t, p, _) | Shape::Head(t, p, _) => [p[0], p[1], game.sunset_text_width(t), 9.0],
-            Shape::Scaled(t, p, _, k) => [p[0], p[1], game.sunset_text_width(t) * k, 9.0 * k],
+            Shape::Scaled(t, p, _, k) | Shape::Sized(t, p, _, k, _) => [p[0], p[1], game.sunset_text_width(t) * k, 9.0 * k],
             Shape::Item(_, p, size) | Shape::Face(_, p, size) => [p[0], p[1], *size, *size],
             Shape::Icon(_, p, _, k) => [p[0], p[1], 9.0 * k, 9.0 * k],
             Shape::ClipStart | Shape::ClipEnd(_) => continue,
@@ -410,8 +489,10 @@ pub(super) fn editable(game: &Game<'_>, shapes: &mut Vec<Shape>, from: usize, m:
     let Some([bx, by, bw, bh]) = bounds(game, &shapes[from..]) else {
         return;
     };
+    // At the size the layout editor gave it: placed as big as it will be, then made so about its corner.
+    let size = size_of(m, name);
     let (x, y) = if m.p(&format!("{name} position")) == "Custom" {
-        let [x, y] = super::sunset_hud_place::custom([m.n(&format!("{name} x")), m.n(&format!("{name} y"))], [bw, bh], [w, h], false);
+        let [x, y] = super::sunset_hud_place::custom([m.n(&format!("{name} x")), m.n(&format!("{name} y"))], [bw * size, bh * size], [w, h], false);
         (x, y)
     } else {
         (bx, by)
@@ -422,7 +503,8 @@ pub(super) fn editable(game: &Game<'_>, shapes: &mut Vec<Shape>, from: usize, m:
             shift(s, dx, dy);
         }
     }
-    place(name, [x, y, bw, bh], w, h);
+    resize(&mut shapes[from..], [x, y], size);
+    place(name, [x, y, bw * size, bh * size], w, h);
 }
 
 // Compass: 140 degrees of headings round the one you face, a tick every 5 degrees, a label
@@ -433,13 +515,16 @@ fn compass(game: &Game<'_>, hud: &Module, w: f32, h: f32, out: &mut Vec<Shape>) 
     let Some(p) = game.player.as_ref() else {
         return;
     };
+    // Placed as big as its size makes it, drawn at the usual size from that corner, then resized (the function's end).
+    let size = size_of(hud, "Compass");
     let (x0, y0) = if hud.p("Compass position") == "Custom" {
-        let [x, y] = super::sunset_hud_place::custom([hud.n("Compass x"), hud.n("Compass y")], [WIDTH, HEIGHT], [w, h], false);
+        let [x, y] = super::sunset_hud_place::custom([hud.n("Compass x"), hud.n("Compass y")], [WIDTH * size, HEIGHT * size], [w, h], false);
         (x, y)
     } else {
-        ((w - WIDTH) / 2.0, 2.0)
+        ((w - WIDTH * size) / 2.0, 2.0)
     };
-    place("Compass", [x0, y0, WIDTH, HEIGHT], w, h);
+    place("Compass", [x0, y0, WIDTH * size, HEIGHT * size], w, h);
+    let from = out.len();
     out.push(Shape::Fill([x0, y0 + 9.0, WIDTH, HEIGHT - 9.0], 0x5000_0000));
     let heading = heading(p.yaw);
     let middle = y0 + 9.0 + (HEIGHT - 9.0) / 2.0;
@@ -460,6 +545,7 @@ fn compass(game: &Game<'_>, hud: &Module, w: f32, h: f32, out: &mut Vec<Shape>) 
     let text = (heading as i32).rem_euclid(360).to_string();
     let tx = mid - game.sunset_text_width(&text) * 0.4;
     out.push(Shape::Scaled(text, [tx, y0], 0xE6E6E6, 0.8));
+    resize(&mut out[from..], [x0, y0], size);
 }
 
 // Your heading from north (0) round through east (90), as a compass reads it: the game's yaw is 0 facing south.

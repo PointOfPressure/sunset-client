@@ -374,6 +374,18 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
 
 // The module that keeps an element's place: the one with its `name position` setting (HUD's own, Scaffold's block
 // counter, ESP's Murderer list, Auto Spear's damage indicator, Radar).
+// An element's size from the layout editor: its "<name> size" setting.
+fn set_size(s: &mut State, name: &str, size: f32) {
+    let key = format!("{name} size");
+    for m in &mut s.modules {
+        if let Some(st) = m.settings.iter_mut().find(|st| st.name == key)
+            && let Value::Num { v, .. } = &mut st.value
+        {
+            *v = f64::from(size);
+        }
+    }
+}
+
 fn place_owner<'a>(modules: &'a mut [Module], name: &str) -> Option<&'a mut Module> {
     let key = format!("{name} position");
     modules.iter_mut().find(|m| m.settings.iter().any(|st| st.name == key))
@@ -430,13 +442,21 @@ pub(super) fn reset_place(game: &mut Game<'_>, name: &str) {
     }
     let key = format!("{name} position");
     let fresh = defaults();
+    // Its size goes back with its place.
+    let resized = with(|s| {
+        let was = s.modules.iter().any(|m| m.settings.iter().any(|st| st.name == format!("{name} size")) && super::sunset_hud_bars::size_of(m, name) != 1.0);
+        if was {
+            set_size(s, name, 1.0);
+        }
+        was
+    });
     let reset = with(|s| {
         let m = place_owner(&mut s.modules, name)?;
         let default = fresh.iter().find(|f| f.name == m.name)?.settings.iter().find(|st| st.name == key)?.value.clone();
         let st = m.settings.iter_mut().find(|st| st.name == key)?;
         (st.value != default).then(|| st.value = default)
     });
-    if reset.is_some() {
+    if reset.is_some() || resized {
         save(game);
     }
 }
@@ -465,15 +485,40 @@ pub(super) fn chat_layout(game: &mut Game<'_>, out: &mut Vec<Shape>) {
         Some(Drag::Hud(name, dx, dy)) => Some((name, dx, dy)),
         _ => None,
     });
+    let sizing = with(|s| match s.gui.drag {
+        Some(Drag::HudSize(name, left, width)) => Some((name, left, width)),
+        _ => None,
+    });
     if game.screen != Screen::Chat || with(|s| s.gui.open) {
         super::sunset_hud_bars::chat_closed();
-        if dragging.is_some() && !with(|s| s.gui.open) {
+        if (dragging.is_some() || sizing.is_some()) && !with(|s| s.gui.open) {
             with(|s| s.gui.drag = None);
             save(game);
         }
         return;
     }
-    match super::sunset_hud_bars::chat_layout(game, dragging.map(|d| d.0), out) {
+    // The elements with a size of their own (a "<name> size" setting), and that size.
+    let sizes: Vec<(String, f32)> = with(|s| {
+        s.modules
+            .iter()
+            .flat_map(|m| m.settings.iter().filter_map(|st| st.name.strip_suffix(" size").map(|n| (n.to_owned(), super::sunset_hud_bars::size_of(m, n)))))
+            .collect()
+    });
+    let sized = |name: &str| sizes.iter().find(|(n, _)| n == name).map(|(_, size)| *size);
+    match super::sunset_hud_bars::chat_layout(game, dragging.map(|d| d.0).or(sizing.map(|d| d.0)), &sized, out) {
+        Some(ChatDrag::Size(name, left, width)) => {
+            // Resized, it keeps the place it has (as one dragged does): a part of a corner's line is its own from here.
+            if let Some(([x, y, _, _], _)) = super::sunset_hud_bars::placed_rect(name) {
+                with(|s| move_hud(s, game, name, game.cursor.0 - x, game.cursor.1 - y));
+            }
+            with(|s| s.gui.drag = Some(Drag::HudSize(name, left, width)));
+        }
+        None if sizing.is_some() => {
+            if let Some((name, left, width)) = sizing {
+                let size = super::sunset_hud_bars::dragged_size(game.cursor.0, left, width);
+                with(|s| set_size(s, name, size));
+            }
+        }
         Some(ChatDrag::Start(name, dx, dy)) => with(|s| s.gui.drag = Some(Drag::Hud(name, dx, dy))),
         Some(ChatDrag::End) => {
             with(|s| s.gui.drag = None);
@@ -514,6 +559,7 @@ pub(super) fn follow_drag(game: &Game<'_>, w: f32, h: f32) {
             }
         }
         Some(Drag::Hud(name, dx, dy)) => move_hud(s, game, name, dx, dy),
+        Some(Drag::HudSize(name, left, width)) => set_size(s, name, super::sunset_hud_bars::dragged_size(game.cursor.0, left, width)),
         Some(Drag::Sidebar(dx, dy)) => super::sunset_sidebar::move_to([at.0 - dx, at.1 - dy]),
         None => {}
     });
