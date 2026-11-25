@@ -253,6 +253,8 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
         "bowspam", "antibed", "rotation", "norotate",
         // Removed after 1.1.0.
         "burrow", "holefiller", "autocity", "arrowdodge", "targetesp",
+        // Blink is Fake Lag's Hold mode (2.1): its lines become Fake Lag's below.
+        "blink",
     ];
     // A gone module's entry in the Modules list goes with it.
     let dropped = lines.iter().any(|&(id, field, _)| DROPPED.contains(&(id, field)) || (id == "modules" && gone.contains(&field)));
@@ -282,6 +284,25 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
         out.push("hitthroughwalls.entities=@all".into());
         out.push("hitthroughwalls.ignorepassive=false".into());
         out.push("hitthroughwalls.passivemobagefilter=Both".into());
+    }
+    // Blink is Fake Lag's Hold mode. On, Fake Lag is on in Hold (whatever it was set to: Blink took the stream from it
+    // anyway); off, its key goes to a Fake Lag that had none and was off, in Hold, so the key still blinks. Max ticks
+    // goes over as it is.
+    if had("blink") {
+        let key = get("blink", "key").filter(|k| *k != "none");
+        let lag_free = !on("fakelag") && get("fakelag", "key").is_none_or(|k| k == "none");
+        if on("blink") {
+            out.push("fakelag.on=true".into());
+            out.push("fakelag.mode=Hold".into());
+        } else if key.is_some() && lag_free {
+            out.push("fakelag.mode=Hold".into());
+        }
+        if let Some(key) = key.filter(|_| lag_free || on("blink") && get("fakelag", "key").is_none_or(|k| k == "none")) {
+            out.push(format!("fakelag.key={key}"));
+        }
+        if let Some(ticks) = get("blink", "maxticks") {
+            out.push(format!("fakelag.maxticks={ticks}"));
+        }
     }
     // Knockback Delay is Velocity's Knockback delay: on alone, Velocity comes on with its own pushes left alone.
     if had("knockbackdelay") && get("velocity", "knockbackdelay").is_none() {

@@ -268,6 +268,8 @@ impl State {
     pub(super) fn find(&self, name: &str) -> Option<usize> {
         let n = norm(name);
         let n = RENAMED.iter().find(|(from, _)| *from == n).map_or(n.as_str(), |(_, to)| to);
+        // Blink is Fake Lag's Hold mode (.t blink sets the mode too: runtime_commands.rs).
+        let n = if n == "blink" { "fakelag" } else { n };
         self.modules.iter().position(|m| norm(m.name) == n)
     }
     pub(super) fn save_text(&self) -> String {
@@ -625,7 +627,11 @@ impl State {
         let listed = self.listed();
         move |m| m.in_gui && listed(m)
     }
+    // Blink is Fake Lag's Hold mode now: the modules that step aside for it still ask by its old name.
     pub(super) fn is_on(&self, name: &str) -> bool {
+        if name == "Blink" {
+            return super::sunset_lag::hold_of(&self.modules).is_some();
+        }
         self.module(name).is_some_and(|m| m.on)
     }
 }

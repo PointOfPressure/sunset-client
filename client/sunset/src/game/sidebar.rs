@@ -876,7 +876,7 @@ const MENU: &[(&str, &str, &str, &[Group])] = &[
         &[
             ("Ground", &["Sprint", "Pearl Catch", "Speed", "Step", "Safe Walk", "Sneak", "Auto Walk", "Auto Jump", "Parkour"]),
             ("Control", &["No Slow", "No Jump Delay", "Jesus", "Slippy", "Fast Climb", "Spider", "GUI Move"]),
-            ("Air", &["Flight", "Glide", "High Jump", "Long Jump", "Air Jump", "No Fall", "Anti Void", "Blink", "Click TP"]),
+            ("Air", &["Flight", "Glide", "High Jump", "Long Jump", "Air Jump", "No Fall", "Anti Void", "Click TP"]),
             (
                 "Travel",
                 &["Elytra Fly", "Chest Swap", "Trident Boost", "Auto Trident", "Entity Control", "Wind Jump", "Timer"],

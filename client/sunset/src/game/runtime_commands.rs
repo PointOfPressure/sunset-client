@@ -573,6 +573,16 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         "toggle" | "t" => {
             if let Some(i) = module_arg(game, args.get(1)) {
                 let name = with(|s| s.modules[i].name);
+                // Blink is Fake Lag's Hold mode: by its old name the mode comes with it (on in another mode, it
+                // changes to Hold and stays on).
+                if args.get(1).is_some_and(|a| norm(a) == "blink") && with(|s| s.modules[i].p("Mode") != "Hold") {
+                    let was_on = with(|s| s.modules[i].on);
+                    set_setting(game, "fakelag.mode", "Hold");
+                    if was_on {
+                        say(game, "Fake Lag: Mode Hold (Blink).");
+                        return;
+                    }
+                }
                 if gui_only(name) {
                     say(game, &format!("{name} only turns on in the ClickGUI."));
                 } else {

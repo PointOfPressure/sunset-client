@@ -686,6 +686,47 @@ mod cleanup_tests {
     }
 
     #[test]
+    fn blink_is_fake_lags_hold_mode() {
+        // On with a key: Fake Lag is on in Hold with that key and its Max ticks.
+        let out = fields("blink.on=true
+blink.key=key.keyboard.b
+blink.maxticks=40
+fakelag.on=false
+fakelag.key=none
+fakelag.mode=Delay
+");
+        for (field, value) in [("on", "true"), ("key", "key.keyboard.b"), ("mode", "Hold"), ("maxticks", "40")] {
+            assert_eq!(out[&format!("fakelag.{field}")], value, "{field}");
+        }
+        assert!(!out.keys().any(|k| k.starts_with("blink.")));
+        // Off but bound, Fake Lag unused: the key still blinks.
+        let out = fields("blink.on=false
+blink.key=key.keyboard.b
+fakelag.on=false
+fakelag.key=none
+fakelag.mode=Pulse
+");
+        assert_eq!((out["fakelag.on"].as_str(), out["fakelag.key"].as_str(), out["fakelag.mode"].as_str()), ("false", "key.keyboard.b", "Hold"));
+        // Off, and Fake Lag in use with its own key: Fake Lag is left as it was.
+        let out = fields("blink.on=false
+blink.key=key.keyboard.b
+fakelag.on=true
+fakelag.key=key.keyboard.l
+fakelag.mode=Pulse
+");
+        assert_eq!((out["fakelag.on"].as_str(), out["fakelag.key"].as_str(), out["fakelag.mode"].as_str()), ("true", "key.keyboard.l", "Pulse"));
+        // Off and unbound: nothing of Fake Lag changes but Max ticks.
+        let out = fields("blink.on=false
+blink.key=none
+blink.maxticks=0
+fakelag.on=false
+fakelag.mode=Delay
+");
+        assert_eq!((out["fakelag.on"].as_str(), out["fakelag.mode"].as_str(), out["fakelag.maxticks"].as_str()), ("false", "Delay", "0"));
+        assert!(!out.contains_key("fakelag.key"));
+    }
+
+    #[test]
     fn reverse_step_is_steps_section_and_potion_saver_is_gone() {
         let out = fields("step.on=false\nstep.key=none\nreversestep.on=true\nreversestep.key=key.keyboard.r\nreversestep.speed=2\npotionsaver.on=true\n");
         for (field, value) in [("on", "true"), ("key", "key.keyboard.r"), ("stepup", "false"), ("reversestep", "true"), ("fallspeed", "2")] {

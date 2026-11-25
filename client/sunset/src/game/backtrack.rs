@@ -107,10 +107,10 @@ pub(super) fn draw(cam: &Camera, mods: &[Module], out: &mut impl Canvas, lw: f32
     }
 }
 
-// Debug Report: what Backtrack and Knockback Delay held of what came in.
+// Debug Report: what Backtrack, Knockback Delay and Fake Lag's Hold (Bi-directional) held of what came in.
 pub(super) fn report(out: &mut String) {
-    let _ = writeln!(out, "\n## Incoming delays (Backtrack, Knockback Delay)");
-    for (name, stats) in [("Backtrack", net::backtrack_stats()), ("Knockback Delay", net::delay_stats())] {
+    let _ = writeln!(out, "\n## Incoming delays (Backtrack, Knockback Delay, Fake Lag Hold)");
+    for (name, stats) in [("Backtrack", net::backtrack_stats()), ("Knockback Delay", net::delay_stats()), ("Fake Lag Hold (Bi-directional)", net::stall_stats())] {
         let Some(s) = stats else {
             let _ = writeln!(out, "- {name}: not used this game");
             continue;

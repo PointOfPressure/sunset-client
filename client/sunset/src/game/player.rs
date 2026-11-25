@@ -138,6 +138,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .text("Items", "ender_pearl,experience_bottle,snowball,egg")
             .bool("Blocks", false)
             .num("Cooldown (ticks)", 0.0, 0.0, 4.0, 1.0)
+            // Past once a tick: with Cooldown 0, this many uses in each tick (player.rs use_more).
+            .num("Uses per tick", 1.0, 1.0, 4.0, 1.0)
             .bool("Throwables", false)
             .pick("Throw mode", &["Delay", "Every tick", "Burst"])
             .num("Throw delay", 2.0, 2.0, 5.0, 1.0)
@@ -233,6 +235,8 @@ struct Ps {
     // last move packet that turned, whether one has turned since the last place, the turn the last place went with, the
     // last yaw sent and a place sent since the last move packet.
     place_credit: u32,
+    // More than one use in a tick: Fast Place's extra places and Fast Use's extra uses made this tick.
+    extra_uses: u32,
     place_turn: f32,
     place_turned: bool,
     place_last: Option<f32>,
@@ -863,8 +867,14 @@ fn stop_eating(game: &mut Game<'_>) {
 
 // ---- Fast Place
 
-// Blocks a second at each speed. The game's own is one every 4 ticks (5 a second), and a tick places one at most (20).
-const PLACE_RATES: [u32; 5] = [6, 8, 10, 14, 20];
+// Blocks a second at each speed. The game's own is one every 4 ticks (5 a second). Up to Speed 5 a tick places one at
+// most (20 a second); past it a tick places more: the game's own place and then more of the same click, each aimed
+// anew (so at the block just placed), all before the tick's one move packet (use_more).
+const PLACE_RATES: [u32; 9] = [6, 8, 10, 14, 20, 30, 40, 60, 80];
+// The fastest that places once a tick: all Anticheat Grim takes (its own turns are judged a place a tick).
+const ONE_A_TICK: usize = 5;
+// Extra uses in one tick, at most: with the game's own, 4 (80 a second).
+const EXTRA_USES: u32 = 3;
 
 fn holds_block(game: &Game<'_>) -> bool {
     [game.held(), game.offhand.as_ref()]
@@ -888,12 +898,67 @@ fn place_ready(credit: &mut u32, speed: usize) -> bool {
 // opens when a whole one is earned. So speeds between two whole delays average out to their exact rate.
 fn fast_place(game: &mut Game<'_>, m: &Module) {
     if !game.right || game.using.is_some() || !holds_block(game) {
-        ps(|p| p.place_credit = 0);
+        ps(|p| {
+            p.place_credit = 0;
+            p.extra_uses = 0;
+        });
         return;
     }
-    let speed = m.n("Speed") as usize;
-    let ready = ps(|p| place_ready(&mut p.place_credit, speed));
+    let speed = place_speed(m);
+    let ready = ps(|p| {
+        p.extra_uses = 0;
+        let ready = place_ready(&mut p.place_credit, speed);
+        // What a tick could not place is not kept for later (nothing to place on for a while, then a burst).
+        p.place_credit = p.place_credit.min(PLACE_RATES[PLACE_RATES.len() - 1]);
+        ready
+    });
     game.use_delay = if ready { 0 } else { game.use_delay.max(1) };
+}
+
+fn place_speed(m: &Module) -> usize {
+    let speed = m.n("Speed") as usize;
+    if m.p("Anticheat") == "Grim" { speed.min(ONE_A_TICK) } else { speed }
+}
+
+// More uses in this tick, asked by the use hook (mixins/combat_use.rs) as the game makes its own: true while one more
+// should go, each as one more click (the game's sequence counter, its aim taken anew).
+// Fast Place past Speed 5: while whole blocks are earned and there is a block under the crosshair to place on.
+// Fast Use with Cooldown 0 and Uses per tick over 1: the item it applies to, while nothing is being used up (food
+// and the like take one use).
+static USING_MORE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(super) fn using_more() -> bool {
+    USING_MORE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub(super) fn use_more(game: &Game<'_>) -> bool {
+    let more = game.right && game.using.is_none() && game.screen == Screen::Playing && super::sunset::with(|s| {
+        let place = s.module("Fast Place").filter(|m| m.on);
+        if holds_block(game) && place.is_some() {
+            return place.is_some_and(|m| place_speed(m) > ONE_A_TICK)
+                && game.pick().is_some()
+                && ps(|p| {
+                    let more = p.place_credit >= 20 && p.extra_uses < EXTRA_USES;
+                    if more {
+                        p.place_credit -= 20;
+                        p.extra_uses += 1;
+                    }
+                    more
+                });
+        }
+        s.module("Fast Use").filter(|m| m.on).is_some_and(|m| {
+            m.n("Cooldown (ticks)") == 0.0
+                && !super::sunset_combat_inventory::thrown_in_hand(game, m)
+                && fast_use_applies(game, m)
+                && ps(|p| {
+                    let more = p.extra_uses + 1 < m.n("Uses per tick") as u32 && p.extra_uses < EXTRA_USES;
+                    p.extra_uses += u32::from(more);
+                    more
+                })
+        })
+    });
+    USING_MORE.store(more, std::sync::atomic::Ordering::Relaxed);
+    more
 }
 
 // Grim's DuplicateRotPlace judges a block place at the move packet after it, by the yaw turn of the last move packet that
@@ -964,15 +1029,23 @@ fn fast_use(game: &mut Game<'_>, m: &Module) {
     if holds_block(game) && super::sunset::with(|s| s.is_on("Fast Place")) || super::sunset_combat_inventory::thrown_in_hand(game, m) {
         return;
     }
+    // Fast Place's count of extra uses is its own; without it this tick's starts here.
+    if !super::sunset::with(|s| s.is_on("Fast Place")) {
+        ps(|p| p.extra_uses = 0);
+    }
+    if fast_use_applies(game, m) && game.use_delay > m.n("Cooldown (ticks)") as u32 {
+        game.use_delay = m.n("Cooldown (ticks)") as u32;
+    }
+}
+
+// What is held is Fast Use's: anything (Mode All), or what its Items list and Blocks switch say.
+fn fast_use_applies(game: &Game<'_>, m: &Module) -> bool {
     let item = game.held().map(|s| short(&s.item).to_owned());
-    let applies = m.p("Mode") == "All"
+    m.p("Mode") == "All"
         || item.as_ref().is_some_and(|i| {
             passes(m, "Items", i)
                 || m.b("Blocks") && game.res.items().get(&format!("minecraft:{i}")).is_some_and(|inf| inf.block.is_some())
-        });
-    if applies && game.use_delay > m.n("Cooldown (ticks)") as u32 {
-        game.use_delay = m.n("Cooldown (ticks)") as u32;
-    }
+        })
 }
 
 #[cfg(test)]
@@ -998,6 +1071,28 @@ mod fast_place_tests {
         let high_count = (0..20).filter(|_| place_ready(&mut high, 99)).count();
         assert_eq!(low_count, 6);
         assert_eq!(high_count, 20);
+    }
+
+    // Past Speed 5 every tick places once by the game's own click and leaves the rest as credit for the extra ones:
+    // a second of ticks earns the speed's whole count.
+    #[test]
+    fn faster_speeds_leave_credit_for_more_places_a_tick() {
+        for (speed, rate) in [(6, 30), (7, 40), (8, 60), (9, 80)] {
+            let (mut credit, mut placed) = (0, 0);
+            for _ in 0..20 {
+                assert!(place_ready(&mut credit, speed));
+                placed += 1;
+                // The use hook: more while whole blocks are earned, three at most.
+                let mut extra = 0;
+                while credit >= 20 && extra < super::EXTRA_USES {
+                    credit -= 20;
+                    extra += 1;
+                    placed += 1;
+                }
+            }
+            assert_eq!(placed, rate, "speed {speed}");
+            assert_eq!(credit, 0);
+        }
     }
 }
 

@@ -212,12 +212,12 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
     }
     // Scaffold's Legit and Godbridge sneak, turn and click before the game's tick moves you.
     let bridging = get("Scaffold")
-        .filter(|m| m.on && matches!(m.p("Mode"), "Legit" | "Godbridge") && !scaffold_paused(m, on("Kill Aura") && super::sunset_aura::engaged(), on("Blink")))
+        .filter(|m| m.on && matches!(m.p("Mode"), "Legit" | "Godbridge") && !scaffold_paused(m, on("Kill Aura") && super::sunset_aura::engaged(), super::sunset_lag::hold_of(&mods).is_some()))
         .filter(|_| playing && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
     super::sunset_scaffold_bridge::pre_tick(game, bridging);
     // Scaffold's Normal clicks, looks and turns the keys before the game's tick moves you (its look rides the move).
     let normal = get("Scaffold")
-        .filter(|m| m.on && m.p("Mode") == "Normal" && !scaffold_paused(m, on("Kill Aura") && super::sunset_aura::engaged(), on("Blink")))
+        .filter(|m| m.on && m.p("Mode") == "Normal" && !scaffold_paused(m, on("Kill Aura") && super::sunset_aura::engaged(), super::sunset_lag::hold_of(&mods).is_some()))
         .filter(|_| playing && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
     if normal.is_some() { super::sunset_scaffold_telly::pre_tick(game, None); }
     if get("Scaffold").is_some_and(|m| m.on && m.p("Mode") == "Telly") {
@@ -226,7 +226,7 @@ pub(super) fn pre_tick(game: &mut Game<'_>) {
         super::sunset_scaffold_normal::pre_tick(game, normal);
     }
     let telly = get("Scaffold")
-        .filter(|m| m.on && m.p("Mode") == "Telly" && !scaffold_paused(m, on("Kill Aura") && super::sunset_aura::engaged(), on("Blink")))
+        .filter(|m| m.on && m.p("Mode") == "Telly" && !scaffold_paused(m, on("Kill Aura") && super::sunset_aura::engaged(), super::sunset_lag::hold_of(&mods).is_some()))
         .filter(|_| playing && !inventory_stop && game.remote.is_some() && super::sunset_combat_control::available("Scaffold"));
     if normal.is_none() { super::sunset_scaffold_telly::pre_tick(game, telly); }
     // Inventory Manager's Slots mode: its action goes before the tick's move packet (inventory_slots.rs).
@@ -647,24 +647,26 @@ fn module_tick(game: &mut Game<'_>) {
     } else if fall_cleared(game) {
         fall(|f| f.clear_count());
     }
+    // Fake Lag in its Hold mode: what Blink was.
+    let blink = super::sunset_lag::hold_of(&mods);
     // Anti Void's Blink mode: hold, rewind or let go, after this tick's move packet.
     match get("Anti Void") {
-        Some(m) => super::sunset_anti_void::tick(game, m, get("Blink").is_some(), get("Flight").is_some()),
+        Some(m) => super::sunset_anti_void::tick(game, m, blink.is_some(), get("Flight").is_some()),
         None => super::sunset_anti_void::off(game),
     }
     // Blink: let go of what it held when it turns off, or at its limit (not what Anti Void holds).
     {
-        let max = get("Blink").map_or(0.0, |m| m.n("Max ticks")) as u32;
+        let max = blink.map_or(0.0, |m| m.n("Max ticks")) as u32;
         let held = BLINK_HELD.load(Ordering::Relaxed);
         let ticks = with(|s| {
-            s.blink_ticks = if get("Blink").is_some() && held { s.blink_ticks + 1 } else { 0 };
+            s.blink_ticks = if blink.is_some() && held { s.blink_ticks + 1 } else { 0 };
             s.blink_ticks
         });
-        if held && !super::sunset_anti_void::holding() && (get("Blink").is_none() || (max > 0 && ticks >= max)) {
+        if held && !super::sunset_anti_void::holding() && (blink.is_none() || (max > 0 && ticks >= max)) {
             // Moves go through again from the next tick; this one carries the player.
             let was_on = BLINK.swap(false, Ordering::Relaxed);
             flush_blink(game);
-            BLINK.store(was_on && get("Blink").is_some(), Ordering::Relaxed);
+            BLINK.store(was_on && blink.is_some(), Ordering::Relaxed);
             with(|s| s.blink_ticks = 0);
         }
     }

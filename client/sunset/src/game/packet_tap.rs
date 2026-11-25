@@ -720,6 +720,83 @@ pub fn hold(session: &horizon_client::net::Session, events: Vec<Item>) -> Vec<It
     out
 }
 
+// Fake Lag's Hold (what Blink was) with Direction Bi-directional (after vape-rs's Blink, MIT): while your moves are
+// held, what the server sends waits too, in order, and comes all at once when Hold lets go, so the world stands
+// still with you. Keep-alives and pings are never held and pass ahead of what is (their answers keep the connection,
+// and a server that pings every tick, as Horizon's does, would otherwise let nothing wait). Never held either, and
+// letting everything before them through first: the connection's boundaries, a new world or life, a teleport, a
+// disconnect, a reconfiguration, cookies, custom payloads, resource packs and transfers. Sunset's tick says each
+// tick that it holds; a tick that stops coming, or 4096 packets waiting, lets go of it all.
+struct Stall {
+    told: Instant,
+    link: Option<Link>,
+    held: VecDeque<(Instant, Item)>,
+    stats: QueueStats,
+}
+
+static STALL: Mutex<Option<Stall>> = Mutex::new(None);
+
+pub fn stall() {
+    let mut s = STALL.lock().unwrap_or_else(|e| e.into_inner());
+    let s = s.get_or_insert_with(|| Stall { told: Instant::now(), link: None, held: VecDeque::new(), stats: QueueStats::default() });
+    s.told = Instant::now();
+}
+
+pub fn stall_off() {
+    if let Some(s) = STALL.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        s.told -= Duration::from_secs(1);
+    }
+}
+
+pub fn stall_stats() -> Option<QueueStats> {
+    STALL.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|s| QueueStats { depth: s.held.len(), ..s.stats })
+}
+
+pub fn stall_hold(session: &horizon_client::net::Session, events: Vec<Item>) -> Vec<Item> {
+    let mut guard = STALL.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(s) = guard.as_mut() else {
+        return events;
+    };
+    if rebind(&mut s.link, session, s.held.len(), &mut s.stats) {
+        s.held.clear();
+    }
+    let now = Instant::now();
+    let on = ::sunset_core::lifecycle::RUNTIME.running() && now - s.told < Duration::from_millis(250);
+    if s.held.is_empty() && !on {
+        return events;
+    }
+    let mut out = Vec::with_capacity(events.len() + s.held.len());
+    if !on || s.held.len() >= 4096 {
+        flushed(&mut s.held, &mut s.stats, 6, &mut out);
+    }
+    for event in events {
+        let Some(Event::Packet(p)) = ev(&event) else {
+            flushed(&mut s.held, &mut s.stats, 0, &mut out);
+            out.push(event);
+            continue;
+        };
+        if on && matches!(&**p, C::KeepAlive(_) | C::Ping(_) | C::PongResponse(_)) {
+            out.push(event);
+            continue;
+        }
+        let through = match &**p {
+            C::Login(_) | C::Respawn(_) | C::Disconnect(_) | C::StartConfiguration(_) | C::Transfer(_) => Some(0),
+            C::PlayerPosition(_) => Some(1),
+            C::CookieRequest(_) | C::StoreCookie(_) | C::CustomPayload(_) | C::ResourcePackPush(_) | C::ResourcePackPop(_) => Some(6),
+            _ => None,
+        };
+        if let Some(reason) = through.or((!on).then_some(6)) {
+            flushed(&mut s.held, &mut s.stats, reason, &mut out);
+            out.push(event);
+            continue;
+        }
+        s.held.push_back((now, event));
+        s.stats.held += 1;
+        s.stats.max_depth = s.stats.max_depth.max(s.held.len());
+    }
+    out
+}
+
 // Backtrack: while the player you last hit moves away from you, everything the server sends waits a little (each
 // packet Shortest to Longest latency, in order), so the world, them included, reaches you that much later and stays in
 // reach a moment longer; when they stop moving away, all of it comes at once. A teleport, your own velocity, a new
@@ -896,11 +973,13 @@ pub fn poll(session: &horizon_client::net::Session, events: &mut std::collection
         let new = trap_filter(new);
         let new = backtrack_hold(session, new);
         let new = hold(session, new);
+        let new = stall_hold(session, new);
         seen(session.serial(), &new);
         gui_move_hold(new)
     } else {
         let new = backtrack_hold(session, new);
-        hold(session, new)
+        let new = hold(session, new);
+        stall_hold(session, new)
     };
     events.extend(new);
 }

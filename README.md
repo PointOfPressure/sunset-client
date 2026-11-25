@@ -197,7 +197,9 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   entity filters (Horizon, vanilla, Paper and Grim do not check line of sight; other anticheats may).
 - **Shield**: keeps your shield up while an enemy can hit you, lowers it for an axe or your own crit; Block hit.
 - **W Tap**, **Jump Reset**: sprint resets between hits (Adaptive S Tap with spacing) and less knockback.
-- **Fake Lag**: delays what you send, in order (Delay, Pulse, Dynamic, Knockback). **Backtrack**: holds the server's
+- **Fake Lag**: delays what you send, in order (Delay, Pulse, Dynamic, Knockback; Repel holds a hit on a target that
+  is still red until it can be hurt again; Hold is what Blink was: your moves stay back until you turn it off or Max
+  ticks pass, with Breadcrumbs of the way you went and, Bi-directional, what the server sends held too). **Backtrack**: holds the server's
   updates while the player you hit moves away.
 - **Auto Weapon**: picks the weapon for each hit (sword, axe on shields, or both). **Auto Spear**: lunges, jabs and
   reach with the spear. **Auto Mace**: takes the mace while you fall, with Stun slam and Breach checks.
@@ -234,7 +236,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Sprint**, **Sneak**, **Auto Walk**, **Auto Jump**, **Safe Walk**, **Parkour**, **Snap Tap** (of two opposite
   keys, the last pressed wins).
 - **Step**, **Spider**, **High Jump**, **Long Jump**, **Air Jump**, **No Jump Delay**, **Fast Climb**, **Glide**,
-  **Anti Void** (with a Blink mode), **Blink**, **Click TP**.
+  **Anti Void** (with a Blink mode), **Click TP**. (Blink is now Fake Lag's Hold mode, under Combat.)
 - **Elytra Fly** (Control: fly freely; Boost: speeds up your glide, optionally only while a firework boosts you;
   Bounce, Glide cycle and Pitch 40 for long trips; Elytra Boost's settings carry over), **Chest Swap** (swap chestplate and elytra; Take off launches you with a rocket).
 - **Wind Jump**, **Pearl Catch**, **Trident Boost**, **Entity Control** (drive and fly boats), **Jesus**, **Slippy**.

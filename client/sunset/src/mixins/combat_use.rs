@@ -1,12 +1,12 @@
 // A right click: No Interact stops it on what it lists and by Anti action, or puts its block behind the mob clicked
 // (Ghost place); a combat macro takes it when you click with a crystal or an
 // anchor; Fast Use's Throwables hold one back, and with Burst add more of the same use before it (each re-enters here
-// and goes through).
+// and goes through); Fast Place past Speed 5 and Fast Use's Uses per tick add more the same way.
 fn sunset_combat_use(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<()> {
     if !::sunset_core::lifecycle::RUNTIME.running() { return std::ops::ControlFlow::Continue(()); }
 
     use crate::game::sunset_combat_inventory as inventory;
-    if inventory::bursting() {
+    if inventory::bursting() || crate::game::sunset_player::using_more() {
         return std::ops::ControlFlow::Continue(());
     }
     if crate::game::sunset_parity::use_blocked(game)
@@ -23,6 +23,9 @@ fn sunset_combat_use(game: &mut crate::game::Game<'_>) -> std::ops::ControlFlow<
         return std::ops::ControlFlow::Break(());
     }
     while inventory::burst_more(game) {
+        game.remote_use(mod_api::InteractionAttempt::Press);
+    }
+    while crate::game::sunset_player::use_more(game) {
         game.remote_use(mod_api::InteractionAttempt::Press);
     }
     std::ops::ControlFlow::Continue(())

@@ -121,12 +121,15 @@ def toggle(name, want):
     if (key in on) != want:
         say(f".t {key}")
         (on.add if want else on.discard)(key)
+        # Blink is Fake Lag's Hold mode: .t blink turns Fake Lag on in it. Off again, the mode goes back, so a later
+        # test's Fake Lag is its default Delay.
+        if key == "blink" and not want:
+            say(".set fakelag mode Delay")
 
 
 def only(*names):
     for n in list(on):
-        say(f".t {n}")
-        on.discard(n)
+        toggle(n, False)
     for n in names:
         toggle(n, True)
 
@@ -667,7 +670,7 @@ def _():
     only("flight", "nofall")
     lost["Flight off 30 blocks up"] = hurt(lambda: (held_keys(("space",), 50), only("nofall"), wait(fall_ticks(30))))
     # Each on through a fall (Blink holds the whole fall and lets it go in one move as you land).
-    setting("blink", "max ticks", "0")
+    setting("fakelag", "max ticks", "0")
     for mod in ("speed", "velocity", "blink", "antihunger", "criticals", "step"):
         only("nofall", mod)
         lost[mod] = dropped(40, during=lambda: held_keys(("w",), 10))
@@ -5894,6 +5897,88 @@ def _():
     plain, one, five, together = row(None), row(1), row(5), row(5, True)
     ok = (0 < five < one < plain or (0 < five < plain and one <= plain)) and 0 < together <= five + 3
     return ok, f"4 blocks placed in {plain} ticks without, {one} at Speed 1, {five} at Speed 5, {together} with Auto Clicker right at 1 CPS"
+
+
+@test("Fast Place (more than one a tick)")
+def _():
+    # As Fast Place (speeds): a row of 4 back towards you from a stone 5 blocks ahead. Past Speed 5 a tick places more
+    # than one: the most block places sent in one tick (the wire probe; on a server), the ticks until all 4 are in,
+    # the blocks there once the server has had its say, and the most move packets in a tick (one). Speed 9 with
+    # Anticheat Grim stays at one place a tick; Speed 5 is as it was.
+    def row(speed, grim=False):
+        reset()
+        cmd(f"setblock {X0} {Y+2} {Z0+5} minecraft:stone")
+        slot(0, "cobblestone", 64)
+        ctl("key", "1", "tap")
+        setting("fastplace", "speed", str(speed))
+        setting("fastplace", "anticheat", "Grim" if grim else "None")
+        only("fastplace")
+        ctl("look", "0", "0")
+        wait(5)
+        mark = probe_mark() if SERVER and probe_path() else None
+        t0 = state()["ticks"]
+        ctl("mouse", "right", "down")
+        took = -1
+        for _ in range(40):
+            wait(1)
+            if count(X0, Y + 2, Z0 + 1, X0, Y + 2, Z0 + 4, "cobblestone") >= 4:
+                took = state()["ticks"] - t0
+                break
+        ctl("mouse", "right", "up")
+        wait(15)
+        there = count(X0, Y + 2, Z0 + 1, X0, Y + 2, Z0 + 4, "cobblestone")
+        most = moves = None
+        if mark is not None:
+            ticks = probe_ticks(mark)
+            most = max((t.count(f"pkt {USE_ITEM_ON}") for t in ticks), default=0)
+            moves = max((t.count("order move") for t in ticks), default=0)
+        only()
+        cmd(f"fill {X0} {Y+2} {Z0+1} {X0} {Y+2} {Z0+5} minecraft:air")
+        return took, there, most, moves
+
+    got = {name: row(*args) for name, args in (("5", (5,)), ("7", (7,)), ("9", (9,)), ("9 Grim", (9, True)))}
+    setting("fastplace", "speed", "5")
+    setting("fastplace", "anticheat", "None")
+    # The ticks until the row is in are not compared: the first place's wait is most of them, and the row is short.
+    ok = all(took > 0 and there == 4 for took, there, _, _ in got.values())
+    if got["5"][2] is not None:
+        ok = ok and got["5"][2] == 1 and got["7"][2] == 2 and got["9"][2] >= 3 and got["9 Grim"][2] == 1
+        ok = ok and all(moves <= 1 for _, _, _, moves in got.values())
+    return ok, "; ".join(f"Speed {k}: 4 in {t} ticks, {n} kept, most places in a tick {m}, most moves {v}" for k, (t, n, m, v) in got.items())
+
+
+@test("Fast Use (uses per tick)")
+def _():
+    # Experience bottles used in 10 ticks of holding use with Fast Use (Cooldown 0): one a tick, and three with Uses per tick 3
+    # (counted once the server has had its say); with Cooldown 1 the setting does nothing. On a server, no tick has
+    # more than one move packet. Paper drops use packets that come in a burst (Spigot's limit: past 4 within 30 ms of
+    # each other), which a client whose ticks bunch up runs into, so a server need only keep clearly more than one a
+    # tick.
+    def used(per_tick, cooldown=0):
+        reset()
+        slot(0, "experience_bottle", 64)
+        ctl("key", "1", "tap")
+        setting("fastuse", "cooldown (ticks)", str(cooldown))
+        setting("fastuse", "uses per tick", str(per_tick))
+        only("fastuse")
+        ctl("look", "0", "-30")
+        wait(5)
+        mark = probe_mark() if SERVER and probe_path() else None
+        ctl("mouse", "right", "down")
+        wait(10)
+        ctl("mouse", "right", "up")
+        wait(15)
+        gone = 64 - held().get("count", 0)
+        moves = max((t.count("order move") for t in probe_ticks(mark)), default=0) if mark is not None else 0
+        only()
+        return gone, moves
+
+    one, three, slow = used(1), used(3), used(3, 1)
+    setting("fastuse", "uses per tick", "1")
+    setting("fastuse", "cooldown (ticks)", "0")
+    most = 22 if SERVER is None else one[0] + 4
+    ok = 7 <= one[0] <= 14 and most <= three[0] <= 42 and abs(slow[0] - one[0]) <= 4 and max(one[1], three[1], slow[1]) <= 1
+    return ok, f"bottles used in 10 ticks: {one[0]} at one a tick, {three[0]} at Uses per tick 3, {slow[0]} at Cooldown 1; most move packets in a tick {max(one[1], three[1], slow[1])}"
 
 
 @test("Middle Click Extra")
@@ -13981,6 +14066,159 @@ def tick_times(mark):
     with open(probe_path(), errors="replace") as f:
         f.seek(mark)
         return [float(line.split()[1]) for line in f if line.startswith("tickat ")]
+
+
+@test("Fake Lag (Hold: what Blink was)")
+def _():
+    # .t blink turns Fake Lag on in Mode Hold. Walking 20 ticks: on a server the probe counts the tick's move packets
+    # (about one a tick without, none while it holds; with Max ticks 10 one goes each time the limit is reached, as
+    # Blink's did). Direction: a pig summoned
+    # while it holds shows at once with Outgoing only, and only after it lets go with Bi-directional. Breadcrumbs: the
+    # way walked is drawn in red (red pixels over the floor, looking back down at it, against the same walk without).
+    reset()
+    setting("fakelag", "max ticks", "0")
+    setting("fakelag", "direction", "Outgoing only")
+    setting("fakelag", "breadcrumbs", "false")
+    toggle("blink", True)
+    mark = log_mark()
+    say(".settings fakelag")
+    wait(4)
+    mode = next((c for c in sunset_said(mark) if c.startswith("Mode:")), "")
+    toggle("blink", False)
+    wire = SERVER is not None and probe_path() is not None
+
+    def walked(hold, max_ticks=0):
+        reset()
+        setting("fakelag", "max ticks", str(max_ticks))
+        if hold:
+            toggle("blink", True)
+        wait(5)
+        mark = probe_mark() if wire else None
+        ctl("key", "w", "down")
+        wait(20)
+        ctl("key", "w", "up")
+        moves = sum(t.count("order move") for t in probe_ticks(mark)) if wire else None
+        toggle("blink", False)
+        return moves
+
+    plain, held, limited = walked(False), walked(True), walked(True, 10)
+
+    def pig_seen(direction):
+        reset()
+        cmd("kill @e[type=pig]")
+        setting("fakelag", "max ticks", "0")
+        setting("fakelag", "direction", direction)
+        toggle("blink", True)
+        ctl("key", "w", "down")
+        wait(6)
+        cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 6.5} {NOAI}")
+        wait(14)
+        during = len(mobs("pig"))
+        ctl("key", "w", "up")
+        toggle("blink", False)
+        wait(14)
+        after = len(mobs("pig"))
+        cmd("kill @e[type=pig]")
+        return during, after
+
+    out_only, both_ways = (pig_seen("Outgoing only"), pig_seen("Bi-directional")) if SERVER is not None else ((1, 1), (0, 1))
+    setting("fakelag", "direction", "Outgoing only")
+
+    def trail(crumbs):
+        reset()
+        setting("fakelag", "breadcrumbs", "true" if crumbs else "false")
+        ctl("look", "0", "0")
+        toggle("blink", True)
+        ctl("key", "w", "down")
+        wait(20)
+        ctl("key", "w", "up")
+        wait(4)
+        ctl("look", "180", "35")
+        clear_chat()
+        wait(6)
+        img = colour_frame(f"fakelag-crumbs-{'on' if crumbs else 'off'}").crop((240, 60, 1040, 480))
+        toggle("blink", False)
+        return sum(1 for r, g, b in img.getdata() if r > 200 and g < 130 and b < 130)
+
+    drawn = (trail(True) - trail(False)) if SERVER is not None else None
+    setting("fakelag", "breadcrumbs", "false")
+    ok = "Hold" in mode and out_only == (1, 1) and both_ways == (0, 1)
+    if wire:
+        ok = ok and plain >= 12 and held <= 1 and 1 <= limited <= 5
+    if drawn is not None:
+        ok = ok and drawn > 100
+    return ok, (f".t blink: {mode!r}; move packets in 20 ticks of walking: {plain} without, {held} held, {limited} with Max ticks 10; "
+                f"pigs seen while holding and after: Outgoing only {out_only}, Bi-directional {both_ways}; breadcrumb pixels {drawn}")
+
+
+@test("Fake Lag (an old profile's Blink)")
+def _():
+    # A profile from before 2.1 with Blink on, bound and Max ticks 40, Fake Lag off in Pulse: imported and loaded, Fake
+    # Lag is on in Mode Hold with Max ticks 40, and no Blink module is left to set.
+    found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
+    if not found:
+        say(".profile list")
+        found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
+    if not found:
+        return False, "no imports folder"
+    with open(os.path.join(found[0], "oldblink.profile"), "w") as f:
+        f.write("sunset-profile=1\nblink.on=true\nblink.key=key.keyboard.b\nblink.maxticks=40\nfakelag.on=false\nfakelag.key=none\n"
+                "fakelag.mode=Pulse\n")
+    imported = said_after(".profile import oldblink")
+    loaded = said_after(".profile load oldblink")
+    lag = said_after(".settings fakelag")
+    now_on = modules_on()
+    say(".profile load before-load")
+    say(".profile delete oldblink")
+    touched.add("fakelag")
+    on.discard("fakelag")
+    ok = (any("Imported" in l for l in imported) and any("Loaded" in l for l in loaded) and "Mode: Hold" in lag
+          and "Max ticks: 40" in lag and "Fake Lag" in now_on and not any("Blink" == m for m in now_on))
+    return ok, f"{imported} {loaded}; Fake Lag: {[l for l in lag if l.startswith(('Mode', 'Max ticks'))]}; on: {sorted(now_on)[:6]}"
+
+
+@test("Fake Lag (Repel)")
+def _():
+    # Two clicks on a pig, the second as soon as the first has hurt it (so while it is still red), Delay 500 ms: with
+    # Repel the second hit waits for the pig's hurt time to run out and lands (two swords' worth of damage); the same
+    # clicks in Delay mode send the second while the pig can't be hurt, and it is lost.
+    if SERVER is None or not probe_path():
+        return None, "needs a server and the probe"
+
+    def hits(mode):
+        reset()
+        slot(0, "diamond_sword")
+        ctl("key", "1", "tap")
+        cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 2.5} {TOUGH_PIG}")
+        wait(10)
+        ctl("look-at-entity", str(mobs("pig")[0]["id"]))
+        setting("fakelag", "mode", mode)
+        setting("fakelag", "delay", "500")
+        only("fakelag")
+        wait(20)
+        start = mobs("pig")[0]["health"]
+        mark = probe_mark()
+        ctl("mouse", "left", "click")
+        for _ in range(40):
+            wait(1)
+            if mobs("pig")[0]["health"] < start:
+                break
+        ctl("mouse", "left", "click")
+        wait(30)
+        at = [i for i, t in enumerate(probe_ticks(mark)) if "order attack" in t]
+        lost = start - mobs("pig")[0]["health"]
+        only()
+        cmd("kill @e[type=pig]")
+        return len(at), (at[1] - at[0]) if len(at) > 1 else None, lost
+
+    repel, delay = hits("Repel"), hits("Delay")
+    setting("fakelag", "mode", "Delay")
+    setting("fakelag", "delay", "100")
+    note = f"(attacks sent, ticks between the two, damage done): Repel {repel}, Delay mode {delay}"
+    # The second click came after the pig's hurt time (a slow frame, a server slow to tell the hit): nothing to judge.
+    if delay[2] > 9:
+        return None, "the second click was too late to be lost without Repel: " + note
+    return repel[0] == 2 and delay[0] == 2 and repel[2] > 12, note
 
 
 @test("Fake Lag (Pulse)")

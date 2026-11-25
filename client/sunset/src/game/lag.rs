@@ -8,6 +8,14 @@
 // - Dynamic: Delay's line while an enemy is near (Trigger: one you face and walk towards, or the nearest closing in),
 //   kept a few ticks after it stops, so the edge of the range does not flip it every tick.
 // - Knockback: one choke after each push the game takes (after Velocity's Knockback delay, if that holds it).
+// - Repel (after vape-rs's Fake Lag, MIT): a hit on a target still red from the last one (its hurt time no longer than
+//   Delay) waits, with everything behind it, Delay and up to 100 ms more, or until the target's hurt time has all but
+//   run out: the hit lands as the target can be hurt again. A second hit sends it all.
+// - Hold (what Blink was): the game's moves are not sent at all while it is on (runtime_packets.rs BLINK), and one
+//   move carries you to where you are when it goes off or after Max ticks. This line holds nothing then. With
+//   Direction Bi-directional what the server sends waits too, but for its pings (sunset_packets::stall, after
+//   vape-rs's Blink);
+//   Breadcrumbs draws where you went since it began.
 // An action (a hit, a use, a click, chat), with Release on action, sends what is held first and goes at once; so does
 // an accepted teleport. A teleport, a respawn or a new dimension lets everything held go before the game answers it,
 // and the answering tick goes undelayed. A disconnect, a transfer or a proxy's reconfiguration throws what is held
@@ -34,9 +42,13 @@ const TOLD: Duration = Duration::from_millis(250);
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(LAG, Category::Combat, "Delays what you send, in order.")
-            .pick("Mode", &["Delay", "Pulse", "Dynamic", "Knockback"])
+        Module::new(LAG, Category::Combat, "Delays what you send, in order. Hold (what Blink was) keeps your moves back until you turn it off.")
+            .pick("Mode", &["Delay", "Pulse", "Dynamic", "Knockback", "Repel", "Hold"])
             .num("Delay (ms)", 100.0, 10.0, 1000.0, 10.0)
+            // Hold (Blink): 0 holds until you turn it off.
+            .num("Max ticks", 0.0, 0.0, 200.0, 10.0)
+            .pick("Direction", &["Outgoing only", "Bi-directional"])
+            .bool("Breadcrumbs", false)
             .pick("Trigger", &["Facing", "Closing"])
             .num("Range", 6.0, 3.0, 12.0, 0.5)
             .num("Shortest choke (ms)", 100.0, 0.0, 1000.0, 10.0)
@@ -51,7 +63,9 @@ pub(super) fn defaults() -> Vec<Module> {
 pub(super) fn setting_visible(m: &Module, name: &str) -> bool {
     let mode = m.p("Mode");
     match name {
-        "Delay (ms)" => matches!(mode, "Delay" | "Dynamic"),
+        "Delay (ms)" => matches!(mode, "Delay" | "Dynamic" | "Repel"),
+        "Max ticks" | "Direction" | "Breadcrumbs" => mode == "Hold",
+        "Release on action" => mode != "Hold",
         "Trigger" | "Range" => mode == "Dynamic",
         "Shortest choke (ms)" | "Longest choke (ms)" => matches!(mode, "Pulse" | "Knockback"),
         "Pulse gap (ms)" => matches!(mode, "Pulse" | "Knockback"),
@@ -94,6 +108,11 @@ struct Lag {
     sent_at: Option<[f64; 3]>,
     roll: u64,
     notes: VecDeque<Note>,
+    // Repel: Delay as Sunset's tick last said, and the hold under way: until when, and whose hit began it.
+    delay: Duration,
+    repel: Option<(Instant, i32)>,
+    // Hold's Breadcrumbs: where you were each tick since it began to hold.
+    crumbs: Vec<[f64; 3]>,
 }
 
 static LAG_STATE: Mutex<Option<Lag>> = Mutex::new(None);
@@ -128,9 +147,11 @@ fn action(packet: &S) -> bool {
     )
 }
 
-fn kind(packet: &S, actions: bool) -> Kind {
+fn kind(packet: &S, actions: bool, repel: bool) -> Kind {
     match packet {
         S::ClientTickEnd(_) => Kind::TickEnd,
+        // Repel holds a hit: the swing that follows it is no reason to let it go.
+        S::Punch(_) if repel => Kind::Other,
         // Answers to the server's re-anchoring: never behind what was written before it.
         S::AcceptTeleportation(_) | S::ConfigurationAcknowledged(_) => Kind::Trigger,
         _ if actions && action(packet) => Kind::Trigger,
@@ -217,12 +238,33 @@ pub(super) fn held(game: &Game<'_>, packet: &S) -> bool {
     let now = Instant::now();
     if DELIVERING.with(Cell::get) > 0 {
         lag(|l| {
-            let k = kind(packet, l.actions);
+            let k = kind(packet, l.actions, l.mode == "Repel");
             l.line.push(packet.clone(), k, now, now);
         });
         return true;
     }
     let session = game.remote.as_ref().map(|r| &r.session);
+    // Repel: a hit on a target whose hurt time is no longer than Delay starts a hold, and waits in it itself.
+    let began = match packet {
+        S::Attack(a) if lag(|l| l.mode == "Repel" && l.repel.is_none() && l.told.is_some_and(|t| now - t < TOLD)) => {
+            let hurt = game.mobs.iter().find(|m| m.id as i32 == a.id).map_or(0, |m| m.hurt_time);
+            lag(|l| {
+                let ticks = l.delay.as_millis().div_ceil(50) as i32;
+                let begins = hurt > 0 && hurt as i32 <= ticks;
+                if begins {
+                    l.roll ^= l.roll << 13;
+                    l.roll ^= l.roll >> 7;
+                    l.roll ^= l.roll << 17;
+                    let until = now + l.delay + Duration::from_millis(l.roll % 100);
+                    l.repel = Some((until, a.id));
+                    l.line.hold(Plan::Until(until));
+                    note(l, "repel: holding a hit", 0);
+                }
+                begins
+            })
+        }
+        _ => false,
+    };
     // The ordinary path: one lock, nothing held, the packet goes.
     let idle = lag(|l| {
         bind(l, session);
@@ -237,7 +279,7 @@ pub(super) fn held(game: &Game<'_>, packet: &S) -> bool {
     }
     release(game, now);
     let decision = lag(|l| {
-        let k = kind(packet, l.actions);
+        let k = if began { Kind::Other } else { kind(packet, l.actions, l.mode == "Repel") };
         let d = l.line.decide(k, now);
         match d {
             Decision::Pass => l.line.passed(k),
@@ -341,8 +383,8 @@ fn live(game: &Game<'_>) -> bool {
 
 // Another module owns the outgoing stream this tick: Fake Lag hands it over empty.
 fn yielding(mods: &[Module]) -> Option<&'static str> {
-    if mods.iter().any(|m| m.name == "Blink" && m.on) {
-        return Some("Blink");
+    if hold_of(mods).is_some() {
+        return Some("Hold");
     }
     if let Some(owner) = super::sunset_combat_control::owner() {
         return Some(owner);
@@ -391,6 +433,12 @@ fn nearest_enemy(game: &Game<'_>) -> Option<f64> {
 }
 
 // When this tick's mode wants the line to hold, and how.
+// Fake Lag on in its Hold mode: what Blink was. The game's moves are held elsewhere (runtime_packets.rs), so the
+// modules that asked whether Blink is on ask this (State::is_on answers "Blink" with it).
+pub(super) fn hold_of(mods: &[Module]) -> Option<&Module> {
+    mods.iter().find(|m| m.name == LAG && m.on && m.p("Mode") == "Hold")
+}
+
 fn plan(game: &Game<'_>, m: &Module, now: Instant) -> Option<Plan> {
     let delay = Plan::Latency(Duration::from_millis(m.n("Delay (ms)").clamp(10.0, 1000.0) as u64));
     let gap = Duration::from_millis(m.n("Pulse gap (ms)").max(0.0) as u64);
@@ -419,6 +467,19 @@ fn plan(game: &Game<'_>, m: &Module, now: Instant) -> Option<Plan> {
             };
             lag(|l| l.dynamic.gate.step(near, EXIT_TICKS)).then_some(delay)
         }
+        // Repel: nothing waits until a hit begins a hold (held), which lasts until its time, or until the target's
+        // hurt time has all but run out (the hit then lands as it can be hurt again).
+        "Repel" => {
+            let Some((until, id)) = lag(|l| l.repel) else {
+                return None;
+            };
+            let hurt = game.mobs.iter().find(|x| x.id as i32 == id).map(|x| x.hurt_time as i32);
+            if now >= until || hurt.is_none_or(|h| h <= 1) {
+                lag(|l| l.repel = None);
+                return None;
+            }
+            Some(Plan::Until(until))
+        }
         _ => Some(delay),
     }
 }
@@ -444,6 +505,30 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         });
     }
     let m = mods.iter().find(|m| m.name == LAG && m.on);
+    // Hold: its breadcrumbs while moves are held, and what the server sends held too with Bi-directional.
+    let holding = hold_of(mods).filter(|_| sunset::BLINK_HELD.load(std::sync::atomic::Ordering::Relaxed));
+    match (holding, game.player.as_ref()) {
+        (Some(hold), Some(p)) => {
+            let at = [p.position.x, p.position.y, p.position.z];
+            lag(|l| {
+                if hold.b("Breadcrumbs") && l.crumbs.len() < 2000 && l.crumbs.last() != Some(&at) {
+                    l.crumbs.push(at);
+                }
+            });
+            if hold.p("Direction") == "Bi-directional" && live(game) {
+                crate::game::sunset_packets::stall();
+            } else {
+                crate::game::sunset_packets::stall_off();
+            }
+        }
+        _ => {
+            lag(|l| l.crumbs.clear());
+            crate::game::sunset_packets::stall_off();
+        }
+    }
+    if m.is_none_or(|m| m.p("Mode") != "Repel") {
+        lag(|l| l.repel = None);
+    }
     if let Some(who) = yielding(mods) {
         if pending() {
             let n = flush(game, Flush::Yield);
@@ -473,12 +558,28 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         l.told = Some(now);
         l.actions = m.is_none_or(|m| m.b("Release on action"));
         l.mode = m.map_or("", |m| m.p("Mode"));
+        l.delay = Duration::from_millis(m.map_or(100.0, |m| m.n("Delay (ms)")).clamp(10.0, 1000.0) as u64);
     });
     release(game, now);
 }
 
 // Show server position: where the server has you while Fake Lag holds what you send.
 pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut impl Canvas, lw: f32) {
+    // Hold's Breadcrumbs: the way you went since it began to hold, the first stretch yellow and the rest red.
+    if hold_of(mods).is_some_and(|m| m.b("Breadcrumbs")) {
+        let crumbs = lag(|l| l.crumbs.clone());
+        for (i, pair) in crumbs.windows(2).enumerate() {
+            if let (Some(a), Some(b)) = (cam.project(pair[0]), cam.project(pair[1])) {
+                let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+                let len = (dx * dx + dy * dy).sqrt();
+                if len > 0.01 && len < 4000.0 {
+                    let (nx, ny) = (-dy / len * lw, dx / len * lw);
+                    let colour = if i == 0 { 0xFFFF_E050 } else { 0xFFFF_5555 };
+                    out.quad([[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]], colour);
+                }
+            }
+        }
+    }
     if !mods.iter().any(|m| m.name == LAG && m.on && m.b("Show server position")) {
         return;
     }

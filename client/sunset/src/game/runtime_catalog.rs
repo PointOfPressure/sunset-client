@@ -221,8 +221,10 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Mode", &["Bounce", "Blink"])
             .num("Fall distance", 4.0, 1.0, 10.0, 0.5),
         // Player
-        Module::new("Fast Place", Player, "Places blocks faster.")
-            .num("Speed", 5.0, 1.0, 5.0, 1.0)
+        // Speeds 1-5: 6, 8, 10, 14 and 20 blocks a second (one a tick at most); 6-9: 30, 40, 60 and 80, more than one
+        // a tick (player.rs PLACE_RATES). Anticheat Grim stays at one a tick.
+        Module::new("Fast Place", Player, "Places blocks faster. Past Speed 5 it places more than one block a tick.")
+            .num("Speed", 5.0, 1.0, 9.0, 1.0)
             .pick("Anticheat", &["None", "Grim"]),
         Module::new("Break Delay", Player, "Changes the delay between breaks.")
             .num("Cooldown (ticks)", 0.0, 0.0, 5.0, 1.0),
@@ -464,8 +466,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .bool("Only while sprinting", false)
             .bool("Only when moving forward", false)
             .bool("Ignore sneaking", false),
-        Module::new("Blink", Movement, "Holds back your movement, then sends it.")
-            .num("Max ticks", 0.0, 0.0, 200.0, 10.0),
         Module::new("Scaffold", Movement, "Places blocks under you. Normal places from a silent look; Legit sneaks at edges; Godbridge bridges backwards; Telly sprint-jumps with timed silent placement.")
             // Sections in the menu; each mode shows only its own settings (setting_visible). Saved settings go by name.
             .group("General")

@@ -38,12 +38,16 @@ pub(super) const MOVE_KEYS: [KeyCode; 7] = [KeyCode::KeyW, KeyCode::KeyS, KeyCod
 pub(super) fn current() -> Option<Lease> { BROKER.lock().unwrap_or_else(|e| e.into_inner()).lease }
 
 pub(super) fn conflict(mods: &[super::sunset::Module]) -> Option<&'static str> {
+    // Fake Lag in its Hold mode (what Blink was) holds the moves themselves.
+    if let Some(hold) = super::sunset_lag::hold_of(mods) {
+        return Some(hold.name);
+    }
     mods.iter().find(|m| (m.name == "Inventory Manager" && m.b("Auto Armor")) || m.on && matches!(m.name,
         "Flight" | "Speed" | "Scaffold" | "Packet Mine" | "Nuker" | "Kill Aura" | "Trigger Bot" |
         "Crystal Aura" | "Anchor Aura" | "Cart" | "PvP Bot" | "Auto Mace" | "Elytra Target" | "Auto Spear" |
         "Auto Tool" | "Auto Eat" | "Auto Gap" | "Inventory Manager" | "Auto Replenish" | "Chest Swap" |
         "Offhand" | "Anti AFK" | "Parkour" | "Auto Jump" | "Sneak" | "Elytra Fly" |
-        "Glide" | "Spider" | "High Jump" | "Long Jump" | "Jesus" | "Blink" | "Freecam" |
+        "Glide" | "Spider" | "High Jump" | "Long Jump" | "Jesus" | "Freecam" |
         "Aim Assist" | "Bow Aim" | "Auto City" | "Hole Filler" | "Liquid Filler" | "Burrow" |
         "Tap Use" | "Wind Jump" | "Pearl Catch" | "Middle Click Extra" | "Auto Clicker" |
         "Fast Place" | "Step" | "Anti Void" | "No Fall" | "Fast Break" | "Auto Fish" | "Fast Use" |
