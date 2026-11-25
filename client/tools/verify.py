@@ -2304,6 +2304,7 @@ def _():
 
 @test("Old profile converts")
 def _():
+    reset()
     # A profile from before 0.9: Auto Steal and No Mining Trace by their old names, Reverse Step on its own, Potion
     # Saver, Ghost Hand with Hits. Imported and loaded: Chest Stealer and Mine Through Mobs have their settings, Step is
     # on with only its Reverse step section, Potion Saver's lines are gone, Modules shows the hidden modules it used,
@@ -14278,6 +14279,7 @@ def _():
 def _():
     # A profile from before 2.1 keeps Target HUD as HUD's lines: imported and loaded, the module Target HUD has them
     # (Mode Potato, a Custom place) and is on.
+    reset()
     found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
     if not found:
         say(".profile list")
