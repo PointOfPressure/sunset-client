@@ -1792,6 +1792,13 @@ cancellable = true
 helper = "src/mixins/scoreboard_hook.rs"
 
 [[native.mixin]]
+id = "title"
+target = "horizon_client::game::titles::Game<'_>::draw_title"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/title_hook.rs"
+
+[[native.mixin]]
 id = "arm-pose"
 target = "horizon_client::game::frame_geometry::Game<'_>::first_person_arm"
 kind = "HEAD"

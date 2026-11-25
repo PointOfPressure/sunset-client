@@ -15488,6 +15488,43 @@ def _():
     return got > 500, f"pixels changed with the scoreboard and title hidden: {got}"
 
 
+@test("No Render (titles never flash)")
+def _():
+    # A title sent again and again with Hide titles on: no frame taken just after one shows it (it used to show until
+    # the next tick cleared it: a title lands between ticks). With Hide titles off the same frames do show it.
+    reset()
+    ctl("look", "0", "80")
+
+    def middle(img):
+        # Where the title and subtitle are, at any window size (a small window draws more frames between two ticks).
+        w, h = img.size
+        return img.crop((w * 3 // 16, h // 6, w * 13 // 16, h * 2 // 3))
+
+    def flashes(hidden):
+        setting("norender", "hide titles", "true" if hidden else "false")
+        only("norender")
+        # No "Showing new title" lines in the chat, which would be in the frames.
+        cmd("gamerule send_command_feedback false", "title @s clear", "title @s times 0 200 0")
+        clear_chat()
+        wait(10)
+        tag = "hidden" if hidden else "shown"
+        base = middle(colour_frame(f"titles-{tag}-base"))
+        worst = 0
+        for i in range(12):
+            cmd('title @s subtitle "below"', f'title @s title "SUNSET {i}"')
+            # Frames at different moments after the command: the title's packet comes back within a few ticks.
+            if i % 4:
+                wait(i % 4)
+            worst = max(worst, recoloured(base, middle(colour_frame(f"titles-{tag}-{i}"))))
+        cmd("title @s clear", "gamerule send_command_feedback true")
+        return worst, base.size[0] * base.size[1]
+
+    (hidden, area), (shown, _) = flashes(True), flashes(False)
+    only()
+    say(".reset norender")
+    return hidden * 4000 < area and shown * 100 > area, f"most pixels of {area} a title changed in 12 frames: Hide titles on {hidden}, off {shown}"
+
+
 @test("Atmosphere (Custom fog)")
 def _():
     # Atmosphere with Mode None (the game's sky) and Custom fog from 0 to 10 blocks in Red: the view turns red.

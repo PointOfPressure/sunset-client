@@ -659,6 +659,8 @@ pub(super) fn no_slow_reset() {
 // not want to see taken off its list, and the overlay switches.
 // No Render's Hide scoreboard, read where the sidebar is drawn.
 pub(super) static NO_SCOREBOARD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+// Hide titles: read by the hook on the title's draw (mixins/title_hook.rs).
+pub(super) static NO_TITLES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     use ::sunset_core::{fog, overlay};
@@ -693,6 +695,9 @@ fn no_render(game: &mut Game<'_>, mods: &[Module]) {
     overlay::NO_GUI.store(flag("Hide pumpkin, spyglass and powder snow overlays"), Ordering::Relaxed);
     overlay::NO_HURT.store(flag("Hide hurt cam"), Ordering::Relaxed);
     NO_SCOREBOARD.store(flag("Hide scoreboard"), Ordering::Relaxed);
+    // The draw is skipped (title_hook.rs), so no frame shows a title that came between ticks; the clear keeps one
+    // that was already up from coming back when the setting goes off.
+    NO_TITLES.store(flag("Hide titles"), Ordering::Relaxed);
     if flag("Hide titles") {
         game.titles.clear();
     }
