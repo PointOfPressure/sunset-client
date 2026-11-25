@@ -57,7 +57,24 @@ of the fork as `fork-sdk/source/` (with `.horizon-revision`) and a `fork-sdk/for
 (1.99.1) and package format (6) are what CLI 0.2.107 reads; the SDK reader is the same at 41d546ef2f and 2e7d2c6.
 A plugin build on 0.2.107 was checked with `plugins/launcher-test` (see `plugins/README.md`).
 
-Not done for this pin yet: `build-prebuilt.sh` (release packaging, relink kit, signing) on this route.
+Release packaging on this route (Linux, 2.1.0): `build-prebuilt.sh` with `DEVELOPER=<fork checkout at the hooks
+head>`, `UPSTREAM=2e7d2c6`, `DEV_LAUNCHER=<the fork's launcher/target/release/horizon-launcher>`, `DEV_BIN=<step 1's
+programs>`, `DEV_SDK=<step 1's SDK as built>`, `SDK=<its published layout>` and `NIGHTLY=nightly-2026-11-23-<head 7>`
+does steps 3 to 5 in its own launcher home under `WORK`, then packages, signs and writes the manifest as on the
+Nightly route: the package drops `developer.json` and `developer-source.tar` and names its base `NIGHTLY`; the LGPL
+series and `horizon-patches/2e7d2c6/` go from `UPSTREAM`; the fork README is `../horizon-patches/fork-README-developer.md`.
+The fork head both platforms build on is `9defaa0`: its commits can be made again anywhere from `hooks/` (`git am`,
+then each commit re-made with committer vstxx and the committer times of the Windows branch), which gives the same
+ids, so a Linux release, the Windows release and the plugins all pin `9defaa0`.
+
+## Sunset launcher
+
+`build-launcher.sh` builds the launcher's release files: `sunset-launcher-linux-x86_64.tar.gz` (one `sunset-launcher/`
+folder: program, LICENSE, THIRD-PARTY-LICENSES.txt) and `sunset-launcher-windows-x86_64.exe`, cross-built from Linux
+(`PLATFORMS` picks). Pass one to `build-prebuilt.sh` as `SUNSET_LAUNCHER`: it is signed with the release's files and named
+in the manifest (`"launcher": {version, file, size, sha256, signature}`), and launchers from 2.1.0 on update themselves to
+it when its version is newer (`launcher/src/selfupdate.rs`; read apart from the rest of the manifest, so a manifest an old
+launcher can't install still updates it). Windows' manifest names the `.exe`: build it before the Windows prebuilt.
 
 ## Horizon CLI mirror
 
@@ -67,7 +84,10 @@ working). The CLI is therefore attached to Sunset's own release: `build-prebuilt
 archive, `horizon-launcher-linux-x86_64.tar.gz` or `horizon-launcher-windows-x64.zip`), copies it into `OUT` and
 pins its SHA-256 with a `client-v<version>` release address; the Sunset launcher accepts a CLI address under
 `horizon-rust/horizon` or `PointOfPressure/sunset-client` releases (`core.rs` `Manifest::check`) and checks the hash
-from the signed manifest as before.
+from the signed manifest as before. 2.1.0 pins `launcher@0.2.108` (`7954f21558`): upstream's own signed archives, checked
+with Horizon's `horizon-release-sign verify --tag launcher@0.2.108 --only <archive>` against its SHA256SUMS and
+SHA256SUMS.sig, and attached untouched with `git archive` of that commit as the source. The 2e7d2c6 package needs a CLI
+from 0.2.107 on: with 0.2.78 the game refuses Play ("... isn't registered by the launcher").
 
 Use upstream's own binary, not a rebuild: launcher.yml bakes `HORIZON_MSA_CLIENT_ID` (a repository variable) into
 the release build, and without it the CLI says sign-in is not configured. An archive is just the binary at its top

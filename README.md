@@ -21,13 +21,13 @@ compiled into the game.
 
 ## Install
 
-Sunset 2.0 installs with the Sunset launcher, for Windows 10 (1903 or later) and Linux (x86_64).
+Sunset 2.1 installs with the Sunset launcher, for Windows 10 (1903 or later) and Linux (x86_64).
 
 1. Download the launcher for your system from the [latest release](https://github.com/PointOfPressure/sunset-client/releases/latest)
    and start it.
 2. Sign in with your Microsoft account: the launcher shows a link and a code to enter there.
 3. Click **Install**. The launcher downloads Sunset already built, checks its signature, and sets up Minecraft 26.3
-   and the Horizon Nightly Sunset was built for. Nothing is compiled on your computer.
+   and the Horizon build Sunset was built for. Nothing is compiled on your computer.
 4. Click **Play**.
 
 ![The Sunset launcher's Overview page: Play, Game folder, Logs and repair, the 2.0.0 changes and the installation](docs/images/launcher.png)
@@ -54,12 +54,13 @@ offline names for offline-mode servers.
 <details>
 <summary>Horizon version of each release</summary>
 
-The launcher installs only the Nightly its Sunset was built for, even after Horizon has removed that Nightly from its
-releases.
+The launcher installs only the Horizon build its Sunset was built for, from Sunset's own signed package, so it keeps
+working after Horizon removes a Nightly (or, since 24 Nov 2026, its whole GitHub repository).
 
 | Sunset | Horizon |
 | --- | --- |
-| **2.0.0** (current) | Nightly 2026-11-18, `0b14f8a` |
+| **2.1.0** (current) | main of 23 Nov 2026, `2e7d2c6`, with Sunset's hook patches (fork `9defaa0`) |
+| 2.0.0 | Nightly 2026-11-18, `0b14f8a` |
 | 1.2.1 | Nightly 2026-11-13, `9f42064` |
 | 1.2.0 | Nightly 2026-11-13, `9f42064` |
 | 1.1.0 | Nightly 2026-11-08, `fdc87ae` |
@@ -425,7 +426,10 @@ rate limit. No chat, coordinates, files or movement are sent. Details:
 
 ## Updating and removing
 
-The launcher installs a newer Sunset when it starts and keeps your settings and profiles. **Repair** on its Overview
+The launcher installs a newer Sunset when it starts and keeps your settings and profiles. From 2.1.0 on it also updates
+itself: when a release has a newer launcher, it downloads it, checks its signature, replaces its own program and
+starts again (if the game or an install is running, the new one opens the next time). Launchers from 2.0 can't: download
+2.1.0 once by hand. **Repair** on its Overview
 page checks the installed files and unpacks them again. To remove Sunset, delete the launcher and its folder (see
 [Install](#install)).
 
@@ -488,9 +492,12 @@ cargo build --release -p sunset-launcher                                        
 cargo build --profile release-cross --target x86_64-pc-windows-gnu -p sunset-launcher     # Windows, from Linux
 ```
 
-From a terminal: `sunset-launcher check | install | repair | deps | sign-in | play | import | offline NICK`.
+From a terminal: `sunset-launcher check | self-update | install | repair | deps | sign-in | play | import | offline NICK`.
 `SUNSET_MANIFEST` (`https://`, `http://` or `file://`) and `SUNSET_LAUNCHER_HOME` point it at a test release and
-data folder.
+data folder; `SUNSET_NO_SELF_UPDATE=1` keeps the window from replacing the launcher (debug builds never do).
+`client/scripts/build-launcher.sh` makes the release files of both (`sunset-launcher-linux-x86_64.tar.gz`,
+`sunset-launcher-windows-x86_64.exe`); `build-prebuilt.sh` names one in the signed manifest (`SUNSET_LAUNCHER`), and
+that entry is what launchers update themselves to (`launcher/src/selfupdate.rs`).
 
 What's planned: [feature roadmap](docs/feature-roadmap.md).
 
@@ -523,6 +530,7 @@ and coordinates) and Low health warning. ([pull requests](https://github.com/Poi
 
 Elytra Target was asked for by muhalo1545 on the Sunset Discord. Crystal Aura's Grim report and flag capture: vs.
 The Windows x64 prebuilt and its build (`build-prebuilt.sh` on Windows): vs.
+The rebase onto Horizon main `2e7d2c6` and its hook patches (fork `9defaa0`), for 2.1.0: vs.
 
 These features follow the behaviour of other clients and mods. Each was written fresh for Sunset; no code was taken.
 - Elytra Target: LiquidBounce's ElytraTarget (GPL-3.0).

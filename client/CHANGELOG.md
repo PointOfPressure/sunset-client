@@ -10,6 +10,7 @@ section of the version they build into the signed manifest, and the launcher sho
 ## 2.1.0
 
 ### New
+- **The launcher updates itself: when a release has a newer launcher, it downloads it, checks its signature as it does Sunset's files, puts it in place and restarts. 2.1.0 is the last launcher you download by hand**
 - **Bed Breaker (World): breaks the nearest bed in reach that is not yours, mining through what covers it (or digging the bed through its cover); spares the bed beside you when it comes on**
 - Profiles: `.profile copy <name>` puts a profile's text on the clipboard and `.profile paste <name>` keeps the one on it (to pass a config through Discord); `.profile import` alone lists the imports folder; a name that is taken asks whether to keep both or replace
 - **HUD layout editor: each of Sunset's elements (watermark, module list, coordinates, FPS, speed, facing, totems, compass, Target HUD) has a size: with the chat open, drag the handle at the corner of its frame; a right click puts its size and place back. Text is drawn at the new size, not stretched, so it stays sharp**
@@ -22,35 +23,39 @@ section of the version they build into the signed manifest, and the launcher sho
 - HUD > No auto pause: the pause menu stays shut when the game window loses focus (asked by Martin)
 - **Typing `.` in the chat lists Sunset's commands, then each argument's choices as you type (modules, settings and their values, profiles, players...): Tab completes, Up/Down choose, Escape hides, as for / commands**
 - ClickGUI > Style has a third menu, Sidebar: tabs down the side, modules in groups, each module a card (by Ace)
+- Villager Roller, Sign Historian and Use Tracker; Speed > Mode Grim collide; Base Finder > Reasons
+- Gooning (Client, off by default): a joke that times your session in chat, on your screen only
 
 ### Changed
 - Target HUD is a module of its own (Render) instead of a switch in HUD: its switch, mode and place carry over, and it shows with HUD off too
 - **Blink is now Fake Lag's Hold mode: your Blink key, switch and Max ticks carry over, and `.t blink` still works**
 - HUD's position, x and y settings are no longer rows in the menus: open the chat and drag an element (right click puts it back); saved layouts stay as they are
-- **Sunset runs on Horizon main of 23 Nov 2026 (`2e7d2c6`, through Sunset's Horizon fork `9defaa0`) and horizon-launcher 0.2.107**
+- **Sunset runs on Horizon main of 23 Nov 2026 (`2e7d2c6`, through Sunset's Horizon fork `9defaa0`) and horizon-launcher 0.2.108**
 - **Plugins must be pinned to Horizon `9defaa0`; plugins made for 2.0 need that pin (and new targets for their own hooks on split game functions)**
+- The launcher downloads the stock horizon-launcher from Sunset's own release, as Horizon's GitHub repository is gone
+- **Crystal Aura is rewritten: one sequence at a time on the nearest enemy (obsidian, crystal, hit, again), bases scored by damage, knockback direction, turn and distance, silent look turning up to 90 degrees a tick (by vs.)**
+- Crystal Aura: Break mode (Attack, Swap attack, Manual), randomised delays in ms, target and self prediction, and boxes for the target, the base and the next candidates
+- Crystal Aura and Anchor Aura target players missing from the player list, wait for Scaffold only while it places, and say why nothing starts (by vs.)
+- HUD > List color mode starts as Static (gradient off), in the same order as Watermark color mode
+- Launcher: the Horizon import offer wraps and can be put off; pages follow a maximised or fullscreen window (by vs.)
 
 ### Fixed
 - No Render > Hide titles no longer lets a title flash for a moment when it arrives: it is not drawn at all (reported by pressure)
 - Auto Fish, Anti AFK, Spam, Auto Shearer, Auto Nametag, Auto Breed, Auto Mount, Flamethrower, Liquid Filler and Spawn Proofer keep working with chat or a server's Esc menu open; Base Finder, Spawner Alerts, Sign Historian and Use Tracker behind any screen
 - Packet Order (Client, on by default) is back: 2.0 had lost it, so actions made after the tick's move packet went out late (Grim's Post check). With it on, the look Sunset sends for a player standing still goes before the tick's end, not after it
 - The launcher's Plugins tab builds again on a Horizon base it set up from Sunset's package
-
-## 2.0.1
-
-### Fixed
-- Trajectories shows every loaded crossbow projectile at its Multishot angle, including all eleven arrows from Multishot V
-- **New installs work again: the launcher sets up Horizon Nightly 2026-11-18 (`0b14f8a`) from Sunset's signed package instead of Horizon's release, which Horizon deleted**
+- Trajectories shows every loaded crossbow projectile at its Multishot angle, including all eleven arrows from Multishot V (by Rust)
+- **New installs work again: the launcher sets up Horizon from Sunset's signed package, never from Horizon's releases (Horizon deleted them)**
 - Cancel stops Install while it prepares Minecraft's files, and the next Install prepares them again
-- Install and Repair prepare Minecraft's files again when an earlier prepare stopped half way ("is not prepared yet" at Play)
-- Minecraft's download from Mojang is tried again when the connection drops, and its errors no longer repeat the file counter
-- Offline play works before the first signed-in Play ("cannot acquire launcher cache leases")
-- When the game crashes, the launcher says why (from the game's log) instead of keeping Play's last step
-- Windows: the launcher opens without a console window
-
-### Changed
-- **Crystal Aura is rewritten: one sequence at a time on the nearest enemy (obsidian, crystal, hit, again), bases scored by damage, knockback direction, turn and distance, silent look turning up to 90 degrees a tick**
-- Crystal Aura: Break mode (Attack, Swap attack, Manual), randomised delays in ms, target and self prediction, and boxes for the target, the base and the next candidates
+- Install and Repair prepare Minecraft's files again when an earlier prepare stopped half way ("is not prepared yet" at Play) (by vs.)
+- Minecraft's download from Mojang is tried again when the connection drops, and its errors no longer repeat the file counter (by vs.)
+- Offline play works before the first signed-in Play ("cannot acquire launcher cache leases") (by vs.)
+- When the game crashes, the launcher says why (from the game's log) instead of keeping Play's last step (by vs.)
+- Windows: the launcher opens without a console window (by vs.)
+- Client Spoofer works again, and old Client Spoofer profiles keep to their own sessions (by vs.)
+- Offhand: Auto Totem's inventory takes no other clicks, and its swap waits until the server knows you stand still (by vs.)
+- Auto Clicker skips a repeat when the same action is already queued and follows Horizon's mapped buttons; Trigger Bot checks the held attack and the screen again before a queued hit (by vs.)
+- Launcher: a failed sign-in reads plainly and doesn't count as played (by vs.)
 
 ## 2.0.0
 

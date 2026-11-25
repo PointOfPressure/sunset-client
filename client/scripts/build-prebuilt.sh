@@ -27,6 +27,14 @@
 #   BASE, NIGHTLY  a Horizon game folder of the pin (`cargo run -p xtask -- package`, what a Nightly's archive holds)
 #              installed as Nightly NIGHTLY (nightly-<date>-<pin>) when the launcher can no longer download that
 #              Nightly. Needs HOOKS (the fork SDK stands in for the Nightly's signed SDK index)
+#   DEVELOPER  the developer route (scripts/README.md, "Pin 2e7d2c6"): a fork checkout at Sunset's hook patches (its HEAD
+#              is the build's revision), installed as a developer base by the fork's own launcher, DEV_LAUNCHER, from
+#              its game programs in DEV_BIN, and built against its SDK as built (DEV_SDK) with the same SDK's published
+#              layout (SDK, see HOOKS) as the release's sdk artifact. UPSTREAM is the upstream commit the patches sit on
+#              (names, the LGPL series); NIGHTLY the base name the package carries (nightly-<date>-<HEAD's 7>);
+#              TOOLS_FROM a launcher home's native/tools with horizon-mixins already built (its source is gone)
+#   SUNSET_LAUNCHER  the Sunset launcher's release file for PLATFORM (client/scripts/build-launcher.sh: Linux .tar.gz,
+#              Windows .exe): copied into OUT, signed, and named in the manifest, so launchers update themselves to it
 #   HOOKS      with FORK: the commit or branch holding Sunset's hook patches on the pin (sunset-hooks/<pin>). The build
 #              then uses the fork's SDK (client/scripts/fork-sdk.sh build, in SDK, default ~/sunset-ops/tmp/fork-sdk),
 #              which must be of exactly that commit, and the fork branch starts from it
@@ -56,7 +64,7 @@ if [ "$PLATFORM" = windows-x86_64 ]; then
 	WORK=${WORK:-C:/sunset-prebuilt}
 	MINECRAFT=${MINECRAFT:-$APPDATA/.minecraft}
 	# One spelling of every path (/c/...): GNU tar reads C:/... as a remote host, and the sed rewrites below match it.
-	for v in OUT WORK MINECRAFT KEY ${SDK:+SDK} ${FORK:+FORK} ${BASE:+BASE}; do printf -v "$v" %s "$(cygpath -u "${!v}")"; done
+	for v in OUT WORK MINECRAFT KEY ${SDK:+SDK} ${FORK:+FORK} ${BASE:+BASE} ${DEVELOPER:+DEVELOPER DEV_BIN DEV_SDK DEV_LAUNCHER} ${SUNSET_LAUNCHER:+SUNSET_LAUNCHER}; do printf -v "$v" %s "$(cygpath -u "${!v}")"; done
 	LAUNCHER_FILE=horizon-launcher-windows-x64.zip; LAUNCHER_EXE=horizon-launcher.exe
 	DLL_PREFIX= DLL=.dll
 	# The commits' bytes in every checkout this script makes (Git for Windows defaults to core.autocrlf=true), and
@@ -116,8 +124,8 @@ for root, dirs, files in os.walk(src):
 PY
 	fi
 }
-[ -n "${FORK:-}" ] || die "needs FORK=<a horizon-rust/horizon checkout>: the release carries Horizon's source and licences"
-git -C "$FORK" var GIT_COMMITTER_IDENT >/dev/null 2>&1 || die "git has no identity in $FORK (user.name, user.email): the fork branch's commits need one"
+[ -n "${FORK:-}${DEVELOPER:-}" ] || die "needs FORK=<a horizon-rust/horizon checkout>: the release carries Horizon's source and licences"
+git -C "${FORK:-$DEVELOPER}" var GIT_COMMITTER_IDENT >/dev/null 2>&1 || die "git has no identity in $FORK (user.name, user.email): the fork branch's commits need one"
 "$REPO/client/release/third-party.sh" check
 [ "${SIGN:-1}" = 0 ] || { command -v minisign >/dev/null || die "needs minisign (SIGN=0 skips signing)"; [ -f "$KEY" ] || die "no minisign key at $KEY"; }
 
@@ -126,11 +134,25 @@ toml() { python3 -c 'import sys,tomllib;d=tomllib.load(open(sys.argv[1],"rb"))
 for k in sys.argv[2].split("."): d=d[k]
 print(d)' "$MOD/horizon-mod.toml" "$1"; }
 REV=$(toml native.horizon); MIXINS=$(toml native.mixins); GAME=$(toml native.game); VERSION=$(toml version)
-SHORT=${REV:0:7}
+# What Sunset's commits sit on in the LGPL series, and the pin that names the release: the pin itself, or on the
+# developer route the upstream commit under the fork's hook patches (the fork's head is then the build's revision).
+SERIES_BASE=$REV
+if [ -n "${DEVELOPER:-}" ]; then
+	[ -n "${UPSTREAM:-}" ] || die "DEVELOPER needs UPSTREAM, the upstream commit its hook patches sit on"
+	HOOKS_HEAD=$(git -C "$DEVELOPER" rev-parse HEAD)
+	SERIES_BASE=$(git -C "$DEVELOPER" rev-parse "$UPSTREAM^{commit}")
+	git -C "$DEVELOPER" merge-base --is-ancestor "$SERIES_BASE" "$HOOKS_HEAD" || die "$DEVELOPER's HEAD is not based on $UPSTREAM"
+	[ -z "$(git -C "$DEVELOPER" status --porcelain --untracked-files=no)" ] || die "$DEVELOPER has uncommitted changes: the build must be its HEAD"
+	REV=$HOOKS_HEAD
+	FORK=${FORK:-$DEVELOPER}
+fi
+SHORT=${SERIES_BASE:0:7}
 SRC_COMMIT=$(git -C "$REPO" rev-parse HEAD)
 DIRTY=false; [ -z "$(git -C "$REPO" status --porcelain -- client/sunset)" ] || DIRTY=true
 say "Sunset $VERSION on Horizon $SHORT (mixins ${MIXINS:0:7}, game $GAME), sunset-client ${SRC_COMMIT:0:7}$($DIRTY && echo ' + local changes')"
 
+BUILD_LAUNCHER="horizon-launcher $LAUNCHER_VERSION"
+if [ -z "${DEVELOPER:-}" ]; then
 # ---- the stock launcher in its own home under $WORK: unpacked from CLI_ARCHIVE (the archive the manifest will pin;
 # upstream's releases, where this used to download it and its SHA256SUMS, have been unreachable since 24 Nov 2026)
 mkdir -p "$WORK/launcher-$LAUNCHER_VERSION" "$WORK/home" "$OUT"
@@ -205,14 +227,65 @@ if [ -n "${HOOKS:-}" ]; then
 elif [ -e "$LDATA/native/.fork-seeded" ]; then
 	die "$WORK's launcher home holds the fork SDK: set HOOKS, or use another WORK"
 fi
+BUILD_ARGS=(--instance $INST)
+else
+# ---- the developer route: the fork's own launcher, in its own home under $WORK, installs the fork checkout as a
+# developer base and builds against the fork's SDK (no Nightly, no stock launcher: those can't build this pin)
+L=${DEV_LAUNCHER:?DEVELOPER needs DEV_LAUNCHER, the horizon-launcher built from the fork}
+GAME_EXE=horizon-client; [ "$PLATFORM" = windows-x86_64 ] && GAME_EXE=horizon-client.exe
+[ -f "${DEV_BIN:-}/$GAME_EXE" ] || die "DEVELOPER needs DEV_BIN, the fork's game programs ($GAME_EXE, horizon-prepare, ...)"
+[ -f "${DEV_SDK:-}/horizon-prebuilt.json" ] || die "DEVELOPER needs DEV_SDK, the fork's SDK as built (prebuilt_game.py build)"
+[ -n "${SDK:-}" ] && [ "$(cat "$SDK/fork-commit" 2>/dev/null)" = "$HOOKS_HEAD" ] ||
+	die "DEVELOPER needs SDK, the published layout of the SDK of ${HOOKS_HEAD:0:10} (fork-commit, sdk-<head>/, source/)"
+case ${NIGHTLY:-} in nightly-????-??-??-"${REV:0:7}") TAG=$NIGHTLY ;; *) die "DEVELOPER needs NIGHTLY=nightly-<date>-${REV:0:7}, the base the package names" ;; esac
+LDATA=$WORK/home/.local/share/horizon-launcher
+mkdir -p "$LDATA" "$OUT"
+hl() {
+	local rb; rb=$(ls -d "$LDATA"/rust/*/bin 2>/dev/null | head -1) || true
+	HOME="$WORK/home" HORIZON_LAUNCHER_HOME="$LDATA" HORIZON_LAUNCHER_NO_SELF_UPDATE=1 HORIZON_LAUNCHER_DEVELOPER_SDK="$(native_path "$DEV_SDK")" \
+		PATH="${rb:+$rb:}$PATH" "$L" "$@"
+}
+# The launcher's own Rust (developer-install and native-build run its cargo; rustup's would read the real home).
+[ -n "$(ls -d "$LDATA"/rust/*/bin 2>/dev/null)" ] || { say "installing the launcher's Rust"; hl rust install >/dev/null; }
+DEVTAG=$(cat "$WORK/developer-base" 2>/dev/null || true)
+if [ -z "$DEVTAG" ] || [ ! -e "$LDATA/versions/$DEVTAG" ] || [ "$(cat "$WORK/developer-head" 2>/dev/null)" != "$REV" ]; then
+	say "developer-install of $DEVELOPER (${REV:0:10})"
+	hl developer-install "$(native_path "$DEVELOPER")" --program "$(native_path "$DEV_BIN/$GAME_EXE")" --trust-unsigned > "$WORK/developer-install.log" 2>&1 ||
+		{ tail -8 "$WORK/developer-install.log" >&2; die "developer-install failed ($WORK/developer-install.log)"; }
+	DEVTAG=$(grep -o 'developer-[0-9a-f]\{64\}' "$WORK/developer-install.log" | tail -1)
+	[ -n "$DEVTAG" ] || DEVTAG=$(cd "$LDATA/versions" && ls -td developer-* 2>/dev/null | head -1)
+	[ -n "$DEVTAG" ] || die "developer-install named no version ($WORK/developer-install.log)"
+	echo "$DEVTAG" > "$WORK/developer-base"; echo "$REV" > "$WORK/developer-head"
+fi
+if [ ! -d "$LDATA/versions/$DEVTAG/.local/horizon-client" ]; then
+	[ -d "$MINECRAFT/versions/$GAME" ] || die "prepare needs Minecraft $GAME: set MINECRAFT to a folder with versions/$GAME"
+	say "preparing $DEVTAG from $MINECRAFT"; hl prepare --version "$DEVTAG" --minecraft "$MINECRAFT" >/dev/null
+fi
+# horizon-mixins as the launcher builds it, from another launcher home (TOOLS_FROM, its native/tools): the launcher
+# downloads its source from github.com/horizon-rust, gone since 24 Nov 2026.
+if [ -z "$(ls "$LDATA/native/tools/${MIXINS:0:12}"/patched-*/bin/horizon-mixins* 2>/dev/null)" ] && [ -n "${TOOLS_FROM:-}" ]; then
+	mkdir -p "$LDATA/native/tools"; cp -a "$TOOLS_FROM"/* "$LDATA/native/tools/"
+fi
+# The pinned source the mixins copy functions from: the launcher would download it from upstream, which lacks the
+# fork's commits.
+S=$LDATA/native/source/$REV
+if [ ! -f "$S/.horizon-revision" ]; then
+	rm -rf "$S"; mkdir -p "$S"; git -C "$DEVELOPER" archive "$REV" | tar -x -C "$S"; echo "$REV" > "$S/.horizon-revision"
+fi
+BUILD_LAUNCHER="the fork's horizon-launcher $("$L" --version 2>/dev/null | awk '{print $2}') (developer base)"
+BUILD_ARGS=(--version "$DEVTAG")
+say "Horizon fork ${REV:0:10} on $SHORT (hook patches $(git -C "$DEVELOPER" rev-list --count "$SERIES_BASE..$REV")), developer base ${DEVTAG:0:20}"
+fi
 
 # ---- patched source + release build (the launcher's optimized profile)
 STAGE=$WORK/stage
 rm -rf "$STAGE"; mkdir -p "$STAGE/sunset"
 copy "$MOD" "$STAGE/sunset" /.horizon /target
-say "native-build (launcher $LAUNCHER_VERSION)"
+# A developer base's revision is its checkout's HEAD: the package pins that (scripts/README.md, step 5).
+[ -z "${DEVELOPER:-}" ] || sed -i "s/^horizon = \"[0-9a-f]*\"/horizon = \"$REV\"/" "$STAGE/sunset/horizon-mod.toml"
+say "native-build ($BUILD_LAUNCHER)"
 start=$(date +%s)
-hl native-build "$STAGE" --instance $INST --trust-native-code > "$WORK/native-build.log" 2>&1 || { tail -20 "$WORK/native-build.log" >&2; die "native-build failed ($WORK/native-build.log)"; }
+hl native-build "$STAGE" "${BUILD_ARGS[@]}" --trust-native-code > "$WORK/native-build.log" 2>&1 || { tail -20 "$WORK/native-build.log" >&2; die "native-build failed ($WORK/native-build.log)"; }
 BUILD_SECS=$(( $(date +%s) - start ))
 VDIR=$(grep -o 'native-[0-9a-f]*-[0-9a-f]* built' "$WORK/native-build.log" | tail -1 | cut -d' ' -f1)
 [ -n "$VDIR" ] || die "native-build printed no version"
@@ -229,7 +302,7 @@ NAME=sunset-$VERSION-$SHORT-$PLATFORM
 LIC=$WORK/licences; rm -rf "$LIC"; mkdir -p "$LIC"
 {
 	BR=sunset/$SHORT
-	git -C "$FORK" cat-file -e "$REV^{commit}" 2>/dev/null || git -C "$FORK" fetch -q origin "$REV"
+	git -C "$FORK" cat-file -e "$SERIES_BASE^{commit}" 2>/dev/null || git -C "$FORK" fetch -q origin "$SERIES_BASE"
 	FW=$WORK/fork-tree; rm -rf "$FW"
 	git -C "$FORK" worktree prune
 	git -C "$FORK" worktree add -q -f -B "$BR" "$FW" "${HOOKS_HEAD:-$REV}"
@@ -245,29 +318,39 @@ LIC=$WORK/licences; rm -rf "$LIC"; mkdir -p "$LIC"
 	cp "$REPO/LICENSE" "$FW/sunset/package/LICENSE"
 	gc "Sunset $VERSION: the .hmod package" "client/sunset of PointOfPressure/sunset-client $SRC_COMMIT$($DIRTY && echo ' (with local changes)'), under its own licence (sunset/package/LICENSE), not Horizon's."
 	copy "$BUILD/patch-workspace" "$FW/sunset/patch" /.horizon-mixins-stage.json /native-post-build.json /target
-	gc "Function-replacement crates of $SHORT, as generated" "What horizon-launcher $LAUNCHER_VERSION native-build extracts from this revision's horizon-client, horizon-client-lib, -render and -input for the replaced functions, before any mod is applied. Unmodified Horizon code (LGPL-3.0-or-later)."
+	gc "Function-replacement crates of $SHORT, as generated" "What $BUILD_LAUNCHER native-build extracts from this revision's horizon-client, horizon-client-lib, -render and -input for the replaced functions, before any mod is applied. Unmodified Horizon code (LGPL-3.0-or-later)."
 	copy "$BUILD/patch-applied" "$FW/sunset/patch" /target
 	cp "$BUILD/horizon_patch.rs" "$FW/sunset/patch/horizon_patch.rs"
 	gc "Sunset's mixins woven in (horizon-mixins ${MIXINS:0:7})" "The source of $PATCH_LIB as shipped: sunset/package/horizon-mod.toml's mixins and support modules applied by horizon-mixins, and the launcher's entry module (horizon_patch.rs). Rust $RUST. A modified version of Horizon: LGPL-3.0-or-later, the woven-in code included."
-	sed -e "s/@VERSION@/$VERSION/g; s/@REV@/$REV/g; s/@TAG@/$TAG/g; s/@LAUNCHER@/$LAUNCHER_VERSION/g; s/@MIXINS@/$MIXINS/g; s/@RUST@/$RUST/g; s/@SRC@/$SRC_COMMIT/g" \
-		"$REPO/client/horizon-patches/fork-README.md" | dllnames > "$FW/sunset/README.md"
+	README_IN=fork-README.md; [ -z "${DEVELOPER:-}" ] || README_IN=fork-README-developer.md
+	sed -e "s/@VERSION@/$VERSION/g; s/@REV@/$SERIES_BASE/g; s/@HEAD@/$REV/g; s/@TAG@/$TAG/g; s/@LAUNCHER@/$LAUNCHER_VERSION/g; s/@MIXINS@/$MIXINS/g; s/@RUST@/$RUST/g; s/@SRC@/$SRC_COMMIT/g" \
+		"$REPO/client/horizon-patches/$README_IN" | dllnames > "$FW/sunset/README.md"
 	gc "Sunset: how this branch is built and licensed" "sunset/README.md."
 	FORK_HEAD=$(git -C "$FW" rev-parse HEAD)
 	P=$REPO/client/horizon-patches/$SHORT
+	OLDHOOKS=$WORK/hooks.old; rm -rf "$OLDHOOKS"; [ ! -d "$P/hooks" ] || cp -a "$P/hooks" "$OLDHOOKS"
 	rm -rf "$P"; mkdir -p "$P"
 	# The weave and the notes are the readable part; the package is client/sunset itself and the extract is generated.
 	git -C "$FW" format-patch -q --no-signature -o "$P" "$BR~2..$BR"
-	git -C "$FW" log --reverse --format='%H %s' "$REV..$BR" > "$P/series"
+	git -C "$FW" log --reverse --format='%H %s' "$SERIES_BASE..$BR" > "$P/series"
 	# Sunset's hook patches on the pin (the fork SDK's source), one per feature.
-	[ -n "${HOOKS_HEAD:-}" ] && git -C "$FORK" format-patch -q --no-signature -o "$P/hooks" "$REV..$HOOKS_HEAD"
+	# Kept as they were when they already are those commits (written by another git, the Windows builder's).
+	if [ -n "${HOOKS_HEAD:-}" ]; then
+		if [ -d "$OLDHOOKS" ] && [ "$(head -qn1 "$OLDHOOKS"/*.patch | cut -d' ' -f2)" = "$(git -C "$FORK" rev-list --reverse "$SERIES_BASE..$HOOKS_HEAD")" ]; then
+			cp -a "$OLDHOOKS" "$P/hooks"
+		else
+			git -C "$FORK" format-patch -q --no-signature -o "$P/hooks" "$SERIES_BASE..$HOOKS_HEAD"
+		fi
+	fi
 	git -C "$FW" archive --format=tar --prefix="horizon-$SHORT-sunset/" HEAD | zstd -q -19 -T0 -f -o "$OUT/$NAME-horizon-source.tar.zst"
-	git -C "$FORK" bundle create -q "$OUT/$NAME-horizon-series.bundle" "$REV..$BR"
+	git -C "$FORK" bundle create -q "$OUT/$NAME-horizon-series.bundle" "$SERIES_BASE..$BR"
 	git -C "$FORK" worktree remove --force "$FW"
 	say "fork branch $BR = ${FORK_HEAD:0:10} (local, not pushed: push it before publishing); patches in client/horizon-patches/$SHORT"
 }
 
 # ---- licences: in the game folder (licences/), in the relink kit and beside the release
-sed -e "s/@VERSION@/$VERSION/g; s/@PLATFORM@/$PLATFORM/g; s/@REV@/$REV/g; s/@TAG@/$TAG/g; s/@SRC@/$SRC_COMMIT/g" \
+TAG_TEXT=$TAG; [ -z "${DEVELOPER:-}" ] || TAG_TEXT="with Sunset's hook patches up to fork commit ${REV:0:10}"
+sed -e "s/@VERSION@/$VERSION/g; s/@PLATFORM@/$PLATFORM/g; s/@REV@/$SERIES_BASE/g; s/@TAG@/$TAG_TEXT/g; s/@SRC@/$SRC_COMMIT/g" \
 	-e "s/@FORK@/$FORK_HEAD/g; s/@SHORT@/$SHORT/g; s/@NAME@/$NAME/g" "$REPO/client/release/HORIZON-NOTICE.txt" | dllnames > "$LIC/HORIZON-NOTICE.txt"
 dllnames < "$REPO/client/release/PREBUILT-TERMS.md" > "$LIC/PREBUILT-TERMS.md"
 cp "$REPO/client/release/LICENSE-LGPL-3.0.txt" "$REPO/client/release/LICENSE-GPL-3.0.txt" "$LIC/"
@@ -289,7 +372,17 @@ cp "$REPO/launcher/THIRD-PARTY-LICENSES.txt" "$OUT/sunset-launcher-THIRD-PARTY-L
 # there), so horizon-native-mods/<id>/ keeps its manifest, Cargo.toml and assets with an empty src/.
 PKG=$WORK/pkg/$VDIR
 rm -rf "$WORK/pkg"; mkdir -p "$PKG"
-copy "$V" "$PKG" /.local /tools '/horizon-native-mods/*/src/*'
+copy "$V" "$PKG" /.local /tools '/horizon-native-mods/*/src/*' /developer.json /developer-source.tar
+# A developer base isn't on players' computers: the package names its base as TAG, which the Sunset launcher sets up
+# from the package itself (core.rs base_from_package).
+[ -z "${DEVELOPER:-}" ] || python3 - "$PKG/native-mods.json" "$TAG" <<'PY'
+import json, sys
+p, tag = sys.argv[1], sys.argv[2]
+d = json.load(open(p))
+d["base"] = tag
+with open(p, "w", newline="\n") as f:
+    json.dump(d, f, separators=(",", ":"))  # as the launcher writes it
+PY
 [ -z "$(find "$PKG/horizon-native-mods" -name '*.rs')" ] || die "Rust source left in the package"
 cp -r "$LIC" "$PKG/licences"
 (cd "$PKG" && find . -type f ! -name files.sha256 -printf '%P\n' | LC_ALL=C sort | xargs -d '\n' sha256sum | sums_fix > files.sha256)
@@ -302,7 +395,7 @@ MTIME=@"$(git -C "$REPO" log -1 --format=%ct)"
 tar -C "$STAGE" --owner=0 --group=0 --numeric-owner --mtime="$MTIME" --sort=name --exclude=sunset/.horizon --exclude=sunset/target \
 	-cf - sunset | zstd -q -19 -T0 -f -o "$OUT/$NAME-source.tar.zst"
 SDKNAME=
-if [ -n "${HOOKS:-}" ]; then
+if [ -n "${HOOKS:-}${DEVELOPER:-}" ]; then
 	SDKNAME=sunset-sdk-$SHORT-${HOOKS_HEAD:0:10}-$PLATFORM
 	tar -C "$(dirname "$SDK")" --owner=0 --group=0 --numeric-owner --mtime="$MTIME" --sort=name \
 		--transform "s,^$(basename "$SDK"),fork-sdk," -cf - "$(basename "$SDK")" | zstd -q -19 -T0 -f -o "$OUT/$SDKNAME.tar.zst"
@@ -335,6 +428,22 @@ if [ "${RELINK:-1}" != 0 ]; then
 	tar -C "$WORK/relink" --owner=0 --group=0 --numeric-owner --sort=name -cf - "$NAME-relink" | zstd -q -19 -T0 -f -o "$OUT/$NAME-relink.tar.zst"
 fi
 
+# ---- the Sunset launcher's own build for PLATFORM (client/scripts/build-launcher.sh): launchers from 2.1.0 on
+# update themselves to it (launcher/src/selfupdate.rs), checked like the package
+LAUNCHER_REL= SL_VERSION=
+if [ -n "${SUNSET_LAUNCHER:-}" ]; then
+	SL_VERSION=$(python3 -c 'import sys,tomllib;print(tomllib.load(open(sys.argv[1],"rb"))["package"]["version"])' "$REPO/launcher/Cargo.toml")
+	case $PLATFORM in windows-x86_64) LAUNCHER_REL=sunset-launcher-$PLATFORM.exe ;; *) LAUNCHER_REL=sunset-launcher-$PLATFORM.tar.gz ;; esac
+	cp "$SUNSET_LAUNCHER" "$OUT/$LAUNCHER_REL"
+	t=$(mktemp -d)
+	if [ "$PLATFORM" = windows-x86_64 ]; then cp "$OUT/$LAUNCHER_REL" "$t/sunset-launcher.exe"; sl=$t/sunset-launcher.exe
+	else tar xzf "$OUT/$LAUNCHER_REL" -C "$t" sunset-launcher/sunset-launcher || die "$SUNSET_LAUNCHER has no sunset-launcher/sunset-launcher"; sl=$t/sunset-launcher/sunset-launcher; fi
+	said=$(SUNSET_NO_SELF_UPDATE=1 "$sl" --version 2>/dev/null | tr -d '\r'); rm -rf "$t"
+	[ "$said" = "sunset-launcher $SL_VERSION" ] || die "$SUNSET_LAUNCHER is not Sunset launcher $SL_VERSION (it says: $said)"
+else
+	say "no SUNSET_LAUNCHER: the manifest offers launchers no update of themselves"
+fi
+
 # ---- manifest + signatures
 # The Sunset launcher downloads the same stock CLI from upstream and checks it against this signed hash.
 case $PLATFORM in windows-x86_64) CLI_FILE=horizon-launcher-windows-x64.zip ;; *) CLI_FILE=horizon-launcher-$PLATFORM.tar.gz ;; esac
@@ -348,11 +457,12 @@ cp "$CLI_ARCHIVE" "$OUT/$CLI_FILE"
 # The launcher shows this version's client/CHANGELOG.md section on Overview (empty when it has none).
 CHANGELOG_JSON=$(python3 "$REPO/client/scripts/changelog.py" "$VERSION" "$REPO/client/CHANGELOG.md")
 [ "$CHANGELOG_JSON" != "[]" ] || say "client/CHANGELOG.md has no $VERSION section: the launcher will show no changelog"
-python3 - "$OUT" "$NAME" "$VDIR" "$UNPACKED" "$CHANGELOG_JSON" "$SDKNAME" <<EOF
+python3 - "$OUT" "$NAME" "$VDIR" "$UNPACKED" "$CHANGELOG_JSON" "$SDKNAME" "$LAUNCHER_REL" "$SL_VERSION" <<EOF
 import hashlib, json, os, sys, datetime
 out, name, vdir, unpacked = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
 changelog = json.loads(sys.argv[5])
 sdkname = sys.argv[6]
+launcher, launcher_version = sys.argv[7], sys.argv[8]
 def art(f, kind):
     p = os.path.join(out, f)
     h = hashlib.sha256(open(p, "rb").read()).hexdigest()
@@ -371,7 +481,7 @@ m = {
     "platform": "$PLATFORM",
     "version_dir": vdir,
     "horizon": {"revision": "$REV", "tag": "$TAG", "game": "$GAME", "mixins": "$MIXINS", "sdk": "sdk-$REV"},
-    "build": {"launcher": "$LAUNCHER_VERSION", "rust": "$RUST", "profile": "optimized", "seconds": $BUILD_SECS,
+    "build": {"launcher": "$BUILD_LAUNCHER", "rust": "$RUST", "profile": "optimized", "seconds": $BUILD_SECS,
               "built": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
     "cli": {"version": "$LAUNCHER_VERSION", "file": "$CLI_FILE", "url": "$CLI_URL", "sha256": "$CLI_SHA"},
     "source": {"sunset_client": "$SRC_COMMIT", "local_changes": "$DIRTY" == "true",
@@ -381,14 +491,16 @@ m = {
 }
 if changelog:
     m["changelog"] = changelog
+if launcher:
+    m["launcher"] = {"version": launcher_version, **{k: v for k, v in art(launcher, "launcher").items() if k != "kind"}}
 with open(os.path.join(out, "manifest.json"), "w", newline="\n") as f:
     json.dump(m, f, indent=2)
     f.write("\n")
 EOF
 KIT_FILES="$NAME-source.tar.zst${SDKNAME:+ $SDKNAME.tar.zst} $NAME-horizon-source.tar.zst $NAME-horizon-series.bundle $LICENCE_FILES"
-(cd "$OUT" && sums manifest.json "$NAME".tar.zst $(ls "$NAME"-relink.tar.zst 2>/dev/null) $KIT_FILES > SHA256SUMS)
+(cd "$OUT" && sums manifest.json "$NAME".tar.zst $(ls "$NAME"-relink.tar.zst 2>/dev/null) $KIT_FILES $LAUNCHER_REL > SHA256SUMS)
 if [ "${SIGN:-1}" != 0 ]; then
-	for f in "$NAME.tar.zst" $(cd "$OUT" && ls "$NAME"-relink.tar.zst 2>/dev/null) $KIT_FILES manifest.json; do
+	for f in "$NAME.tar.zst" $(cd "$OUT" && ls "$NAME"-relink.tar.zst 2>/dev/null) $KIT_FILES $LAUNCHER_REL manifest.json; do
 		minisign -S -s "$KEY" -m "$OUT/$f" -t "sunset $VERSION $SHORT $PLATFORM $f" >/dev/null </dev/null
 	done
 	minisign -V -q -p "$REPO/launcher/sunset.pub" -m "$OUT/manifest.json" || die "signature check failed"
