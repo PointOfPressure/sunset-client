@@ -144,7 +144,7 @@ const COMMANDS: &[Command] = &[
     Command { name: "bind", aliases: &[], usage: "<module> <key|mouse4|none>", about: "bind a key or mouse button to a module", args: bind },
     Command { name: "binds", aliases: &[], usage: "", about: "list the binds", args: none },
     Command { name: "reset", aliases: &[], usage: "<module>", about: "put a module back to its defaults", args: one_module },
-    Command { name: "profile", aliases: &["profiles", "config", "cfg"], usage: "save|load|delete|export|import|list [name]", about: "keep the modules' settings under a name and bring them back", args: profile },
+    Command { name: "profile", aliases: &["profiles", "config", "cfg"], usage: "save|load|delete|export|import|copy|paste|list [name]", about: "keep the modules' settings under a name and bring them back", args: profile },
     Command { name: "preset", aliases: &["presets"], usage: "[name] [apply]", about: "the pre-made profiles: what a preset turns on and off, apply takes it", args: preset },
     Command { name: "movementpreset", aliases: &[], usage: "<subtle|balanced|aggressive>", about: "apply explicit movement settings", args: movement_preset },
     Command { name: "friend", aliases: &["friends", "f"], usage: "add|remove|list [name]", about: "Kill Aura, Trigger Bot and Aim Assist skip friends", args: friend },
@@ -375,10 +375,12 @@ fn profile(src: &dyn Source, before: &[&str], _: &str) -> Step {
         ("delete", "delete a profile"),
         ("export", "copy a profile to the exports folder, to share"),
         ("import", "keep a profile from the imports folder"),
+        ("copy", "put a profile's text on the clipboard, to send"),
+        ("paste", "keep the profile whose text is on the clipboard"),
         ("list", "the profiles, and the one in use"),
     ];
     let Some((sub, name)) = before.split_first() else {
-        return ordered(words(SUBS), "save|load|delete|export|import|list [name]", "Profile: use save, load, delete, export, import or list, not");
+        return ordered(words(SUBS), "save|load|delete|export|import|copy|paste|list [name]", "Profile: use save, load, delete, export, import, copy, paste or list, not");
     };
     let back = name.len();
     let names = |src: &dyn Source| src.profiles().into_iter().map(|p| Suggestion::new(p, "profile")).collect::<Vec<_>>();
@@ -390,14 +392,15 @@ fn profile(src: &dyn Source, before: &[&str], _: &str) -> Step {
             list.push(Suggestion::new("before-load", "the settings before the last load"));
             Step::Pick { list, usage: "<name>".into(), strict: Some("No profile called".into()), back, ordered: false }
         }
-        "delete" | "export" => {
+        "delete" | "export" | "copy" => {
             Step::Pick { list: names(src), usage: "<name>".into(), strict: Some("No profile called".into()), back, ordered: false }
         }
+        "paste" => Step::Free { list: names(src), usage: "<name> [keep|replace]".into(), back },
         "import" => {
             let list = src.imports("profile").into_iter().map(|p| Suggestion::new(p, "in the imports folder")).collect();
             Step::Pick { list, usage: "<name>".into(), strict: Some("No profile in the imports folder called".into()), back, ordered: false }
         }
-        other => Step::Bad(format!("Profile: use save, load, delete, export, import or list, not {other}")),
+        other => Step::Bad(format!("Profile: use save, load, delete, export, import, copy, paste or list, not {other}")),
     }
 }
 

@@ -52,7 +52,7 @@ const HELP: &[(&str, &str)] = &[
     (".binds", "list the binds"),
     (".reset <module>", "put a module back to its defaults"),
     (".panic", "stop Sunset until the game restarts (nothing brings it back sooner)"),
-    (".profile save|load|delete|export|import|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load)"),
+    (".profile save|load|delete|export|import|copy|paste|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load; copy and paste pass one through the clipboard; import alone lists the imports folder)"),
     (".preset [name] [apply]", "the pre-made profiles: a name says what it turns on and off, apply takes it (.profile load before-load undoes it)"),
     (".debug [chat lines]", "copy a debug report (chat, anticheat flags, the client's state, the last packets sent) to the clipboard and its configured Save folder"),
     (".scan [plugins|details|channels|commands|status|run] [page]", "show server-reported findings; run optional Extended checks manually"),
@@ -303,8 +303,42 @@ pub(super) fn profile_action(game: &mut Game<'_>, args: &[&str]) -> Result<Strin
                 format!("Profiles: {}. In use: {in_use}", all.join(", "))
             });
         }
-        let Some(name) = args.get(1..).filter(|rest| !rest.is_empty()).map(|rest| profiles::name(&rest.join(" "))).transpose()? else {
-            return Err("use .profile save|load|delete|export|import <name>, or .profile list".into());
+        // .profile import alone: what is in the imports folder.
+        if sub == "import" && args.len() < 2 {
+            let mut found: Vec<String> = std::fs::read_dir(store.imports())
+                .map(|dir| dir.flatten().filter_map(|e| e.file_name().to_str().and_then(|f| f.strip_suffix(".profile")).map(str::to_owned)).collect())
+                .unwrap_or_default();
+            found.sort();
+            return Ok(if found.is_empty() {
+                format!("Nothing to import: put a .profile file in {} (or copy one's text and use .profile paste <name>).", store.imports().display())
+            } else {
+                format!("In the imports folder: {}. .profile import <name> keeps one.", found.join(", "))
+            });
+        }
+        // A last word of keep or replace answers what to do when the name is taken (import and paste).
+        let taking = matches!(sub.as_str(), "import" | "paste");
+        let (rest, clash) = match args.get(1..).unwrap_or_default() {
+            [rest @ .., last] if taking && !rest.is_empty() && matches!(last.to_ascii_lowercase().as_str(), "keep" | "replace") => {
+                (rest, Some(last.eq_ignore_ascii_case("replace")))
+            }
+            rest => (rest, None),
+        };
+        let Some(name) = Some(rest).filter(|rest| !rest.is_empty()).map(|rest| profiles::name(&rest.join(" "))).transpose()? else {
+            return Err("use .profile save|load|delete|export|import|copy|paste <name>, or .profile list".into());
+        };
+        // Where a profile taken in goes: its own name, or with the name taken, as asked (keep: both, the new one
+        // numbered; replace: over the old one), or not at all until the question is answered.
+        let landing = |name: &str| -> Result<String, String> {
+            if !store.exists(name) || clash == Some(true) {
+                return Ok(name.to_owned());
+            }
+            if clash == Some(false) {
+                return (2..100)
+                    .map(|n| format!("{name}-{n}"))
+                    .find(|free| !store.exists(free))
+                    .ok_or_else(|| format!("too many profiles named {name}"));
+            }
+            Err(format!("There is a profile {name} already: .profile {sub} {name} replace puts this one in its place, .profile {sub} {name} keep keeps both"))
         };
         if name == BACKUP && sub != "load" {
             return Err(format!("{BACKUP} is the settings before the last load; .profile load {BACKUP} puts them back"));
@@ -335,10 +369,37 @@ pub(super) fn profile_action(game: &mut Game<'_>, args: &[&str]) -> Result<Strin
             "import" => {
                 let text = store.import(&name).map_err(|e| format!("{e} (put {name}.profile in {})", store.imports().display()))?;
                 let checked = with(|s| s.check_profile(&text))?;
-                store.write(&name, &text)?;
-                Ok(format!("Imported profile {name}; .profile load {name} uses it.{}", checked.skipped_note()))
+                let to = landing(&name)?;
+                store.write(&to, &text)?;
+                Ok(format!("Imported profile {to}; .profile load {to} uses it.{}", checked.skipped_note()))
             }
-            _ => Err("use .profile save|load|delete|export|import <name>, or .profile list".into()),
+            // The profile's text on the clipboard, to send to someone (they use .profile paste).
+            "copy" => {
+                use horizon_client::clipboard::Clipboard;
+                let text = store.read(&name)?;
+                game.clipboard.set(&text);
+                Ok(format!("Profile {name} is on the clipboard ({} lines); .profile paste <name> keeps one from there.", text.lines().count()))
+            }
+            // A profile's text from the clipboard, checked as an imported file is (a text without the profile's first
+            // line is taken as its settings).
+            "paste" => {
+                use horizon_client::clipboard::Clipboard;
+                let pasted = game.clipboard.get();
+                let pasted = pasted.trim();
+                if pasted.is_empty() {
+                    return Err("The clipboard is empty: copy a profile's text first (.profile copy <name> puts one there)".into());
+                }
+                // Settings are lines of module.setting=value: text with none is not a profile (a link, a chat line).
+                if !pasted.lines().any(|l| l.split_once('=').is_some_and(|(k, _)| k.trim().contains('.') && !k.trim().contains(' '))) {
+                    return Err("The clipboard does not hold a profile (no module.setting=value lines)".into());
+                }
+                let text = if pasted.lines().next().is_some_and(|l| l.trim() == HEADER) { format!("{pasted}\n") } else { format!("{HEADER}\n{pasted}\n") };
+                let checked = with(|s| s.check_profile(&text)).map_err(|e| format!("The clipboard does not hold a profile: {e}"))?;
+                let to = landing(&name)?;
+                store.write(&to, &text)?;
+                Ok(format!("Pasted profile {to}; .profile load {to} uses it.{}", checked.skipped_note()))
+            }
+            _ => Err("use .profile save|load|delete|export|import|copy|paste <name>, or .profile list".into()),
         }
 }
 

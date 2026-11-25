@@ -2265,6 +2265,43 @@ def _():
                 f"a click on Modules turned it on: {switch} (on before: {before_click}; shot {SHOTS}/modules.png)")
 
 
+@test("Profile copy, paste and name clashes")
+def _():
+    # A profile's text goes to the clipboard (.profile copy) and comes back under another name (.profile paste); a
+    # name that is taken asks first: keep puts the new one beside it (numbered), replace over it. The same for a file
+    # in the imports folder (whose unknown line is named), and .profile import alone lists that folder.
+    one = lambda line: " ".join(said_after(line, 6))
+    reset()
+    setting("sprint", "keep sprint", "true")
+    saved = one(".profile save clipa")
+    copied = one(".profile copy clipa")
+    setting("sprint", "keep sprint", "false")
+    pasted = one(".profile paste clipb")
+    asks = one(".profile paste clipb")
+    kept = one(".profile paste clipb keep")
+    replaced = one(".profile paste clipb replace")
+    loaded = one(".profile load clipb")
+    sprint = one(".settings sprint")
+    found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
+    listed = imported_asks = imported_kept = ""
+    if found:
+        with open(os.path.join(found[0], "clipa.profile"), "w") as f:
+            f.write("sunset-profile=1\nsprint.keepsprint=false\nnosuchmodule.x=1\n")
+        listed = one(".profile import")
+        imported_asks = one(".profile import clipa")
+        imported_kept = one(".profile import clipa keep")
+    names = one(".profile list")
+    one(".profile load before-load")
+    for name in ("clipa", "clipb", "clipb-2", "clipa-2"):
+        say(f".profile delete {name}")
+    touched.add("sprint")
+    ok = ("Saved" in saved and "clipboard" in copied and "Pasted profile clipb;" in pasted and "already" in asks and "replace" in asks
+          and "Pasted profile clipb-2;" in kept and "Pasted profile clipb;" in replaced and "Loaded" in loaded and "Keep sprint: ON" in sprint
+          and "clipa" in listed and "already" in imported_asks and "Imported profile clipa-2;" in imported_kept and "nosuchmodule" in imported_kept
+          and all(n in names for n in ("clipa", "clipb", "clipb-2", "clipa-2")))
+    return ok, f"copy: {copied!r}; paste: {pasted!r}; again: {asks!r}; keep: {kept!r}; replace: {replaced!r}; import alone: {listed!r}; import taken: {imported_asks!r}; keep: {imported_kept!r}; list: {names!r}"
+
+
 @test("Old profile converts")
 def _():
     # A profile from before 0.9: Auto Steal and No Mining Trace by their old names, Reverse Step on its own, Potion
