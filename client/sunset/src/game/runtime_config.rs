@@ -260,7 +260,9 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
     let dropped = lines.iter().any(|&(id, field, _)| DROPPED.contains(&(id, field)) || (id == "modules" && gone.contains(&field)));
     // A config from before Auto Spear: Auto Weapon's spear lines go to it.
     let spear_moved = !had("autospear") && (get("autoweapon", "spear").is_some() || get("autoweapon", "mode") == Some("Spear"));
-    if !old_offhand && !dropped && !spear_moved && !gone.iter().any(|id| had(id)) {
+    // A config from before Target HUD was a module of its own: HUD's Target HUD lines go to it.
+    let target_moved = !had("targethud") && lines.iter().any(|&(id, field, _)| id == "hud" && field.starts_with("targethud"));
+    if !old_offhand && !dropped && !spear_moved && !target_moved && !gone.iter().any(|id| had(id)) {
         return std::borrow::Cow::Borrowed(text);
     }
     let mut out: Vec<String> = text
@@ -269,6 +271,7 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
             let key = l.split_once('=').map_or("", |(k, _)| k);
             let (id, field) = key.split_once('.').unwrap_or((key, ""));
             !gone.contains(&id)
+                && !(target_moved && id == "hud" && field.starts_with("targethud"))
                 && !(old_offhand && id == "offhand")
                 && !DROPPED.contains(&(id, field))
                 && !(id == "modules" && gone.contains(&field))
@@ -284,6 +287,17 @@ fn merge_lines(text: &str) -> std::borrow::Cow<'_, str> {
         out.push("hitthroughwalls.entities=@all".into());
         out.push("hitthroughwalls.ignorepassive=false".into());
         out.push("hitthroughwalls.passivemobagefilter=Both".into());
+    }
+    // Target HUD is a module of its own: on where HUD's switch for it was (shown only with HUD on, as it was), in its
+    // mode, at its place.
+    if target_moved {
+        let shown = get("hud", "targethud") != Some("false") && get("hud", "on") != Some("false");
+        out.push(format!("targethud.on={shown}"));
+        for (from, to) in [("targethudmode", "mode"), ("targethudposition", "targethudposition"), ("targethudx", "targethudx"), ("targethudy", "targethudy"), ("targethudsize", "targethudsize")] {
+            if let Some(v) = get("hud", from) {
+                out.push(format!("targethud.{to}={v}"));
+            }
+        }
     }
     // Blink is Fake Lag's Hold mode. On, Fake Lag is on in Hold (whatever it was set to: Blink took the stream from it
     // anyway); off, its key goes to a Fake Lag that had none and was off, in Hold, so the key still blinks. Max ticks

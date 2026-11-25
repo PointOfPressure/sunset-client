@@ -286,7 +286,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
 - **Trajectories** (crossbows, wind charges, pearls in flight), **Breadcrumbs**, **Waypoints**, **Radar** (with
   Locator marks for players beyond entity range),
   **Shulker Peek**.
-- **HUD**: module list, Target HUD, Armor HUD, coordinates, compass, item durability, food preview, spectators and
+- **Target HUD** (who Kill Aura is hitting: name, distance and health by the crosshair). **HUD**: module list, Armor HUD, coordinates, compass, item durability, food preview, spectators and
   creative players tagged in the tab list and more. Open the chat (or the menu) and every element is framed and drags
   to anywhere on screen — the watermark, the module list, the Target HUD, coordinates, FPS, speed, facing and totems
   (each on its own), the compass, the Armor HUD, Shield status, the server's own scoreboard, Scaffold's block counter,

@@ -324,12 +324,6 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Compass y", 0.0, 0.0, 1.0, 0.001)
             .num("Compass size", 1.0, 0.5, 3.0, 0.05)
             .group("Combat")
-            .bool("Target HUD", true)
-            .pick("Target HUD mode", &["Full", "Potato"])
-            .pick("Target HUD position", &["Default", "Custom"])
-            .num("Target HUD x", 0.5, 0.0, 1.0, 0.001)
-            .num("Target HUD y", 0.5, 0.0, 1.0, 0.001)
-            .num("Target HUD size", 1.0, 0.5, 3.0, 0.05)
             .bool("Shield status", false)
             .pick("Shield status position", &["Default", "Custom"])
             .num("Shield status x", 0.45, 0.0, 1.0, 0.001)
@@ -364,6 +358,15 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Scoreboard position", &["Default", "Custom"])
             .num("Scoreboard x", 1.0, 0.0, 1.0, 0.001)
             .num("Scoreboard y", 0.4, 0.0, 1.0, 0.001),
+        // Its place and size are the layout editor's (open the chat: drag it, drag its corner; hud_place.rs), kept as
+        // "Target HUD position", x, y and size. HUD's own until 2.1 (runtime_config.rs moves a config's lines).
+        Module::new("Target HUD", Render, "Who Kill Aura is hitting, by the crosshair: name, distance and health.")
+            .on()
+            .pick("Mode", &["Full", "Potato"])
+            .pick("Target HUD position", &["Default", "Custom"])
+            .num("Target HUD x", 0.5, 0.0, 1.0, 0.001)
+            .num("Target HUD y", 0.5, 0.0, 1.0, 0.001)
+            .num("Target HUD size", 1.0, 0.5, 3.0, 0.05),
         Module::new("Fullbright", Render, "Lights everything up."),
         Module::new("ESP", Render, "Boxes around entities.")
             .pick("Mode", &["3D box", "2D box", "Outline", "Potato"])

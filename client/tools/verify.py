@@ -8268,14 +8268,27 @@ def _():
     wait(10)
     ctl("screenshot", f"{SHOTS}/targethud.png")
     time.sleep(2)
-    only()
     from PIL import Image
     img = Image.open(f"{SHOTS}/targethud.png").convert("RGB")
     w, h = img.size
     # The box sits right of and below the crosshair: count the health bar's green and the box's dark fill.
     region = img.crop((w // 2 + 20, h // 2 + 20, w // 2 + 20 + 260, h // 2 + 20 + 80))
-    green = sum(1 for px in region.getdata() if px[1] > 110 and px[1] - max(px[0], px[2]) > 60)
-    return green > 150, f"{green} health-bar pixels beside the crosshair"
+    count = lambda im: sum(1 for px in im.getdata() if px[1] > 110 and px[1] - max(px[0], px[2]) > 60)
+    green = count(region)
+    # A module of its own (HUD's until 2.1), on by default as HUD is: off, nothing is drawn there; with HUD off it
+    # still draws.
+    box = (w // 2 + 20, h // 2 + 20, w // 2 + 20 + 260, h // 2 + 20 + 80)
+    only("killaura")
+    say(".t targethud")
+    wait(10)
+    off = count(colour_frame("targethud-off").crop(box))
+    say(".t targethud")
+    say(".t hud")
+    wait(10)
+    no_hud = count(colour_frame("targethud-nohud").crop(box))
+    say(".t hud")
+    only()
+    return green > 150 and off < 20 and no_hud > 150, f"health-bar pixels beside the crosshair: {green} on, {off} with Target HUD off, {no_hud} with HUD off"
 
 
 @test("Kill Aura (Target strafe)")
@@ -14186,6 +14199,32 @@ def _():
         ok = ok and drawn > 100
     return ok, (f".t blink: {mode!r}; move packets in 20 ticks of walking: {plain} without, {held} held, {limited} with Max ticks 10; "
                 f"pigs seen while holding and after: Outgoing only {out_only}, Bi-directional {both_ways}; breadcrumb pixels {drawn}")
+
+
+@test("Target HUD (an old profile's HUD lines)")
+def _():
+    # A profile from before 2.1 keeps Target HUD as HUD's lines: imported and loaded, the module Target HUD has them
+    # (Mode Potato, a Custom place) and is on.
+    found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
+    if not found:
+        say(".profile list")
+        found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
+    if not found:
+        return False, "no imports folder"
+    with open(os.path.join(found[0], "oldtarget.profile"), "w") as f:
+        f.write("sunset-profile=1\nhud.on=true\nhud.targethud=true\nhud.targethudmode=Potato\nhud.targethudposition=Custom\n"
+                "hud.targethudx=0.25\nhud.targethudy=0.75\n")
+    imported = said_after(".profile import oldtarget")
+    loaded = said_after(".profile load oldtarget")
+    rows = said_after(".settings targethud", 6)
+    now_on = modules_on()
+    say(".profile load before-load")
+    say(".profile delete oldtarget")
+    touched.add("targethud")
+    ok = (any("Imported" in l for l in imported) and any("Loaded" in l for l in loaded) and "Mode: Potato" in rows
+          and "Target HUD position: Custom" in rows and "Target HUD x: 0.25" in rows and "Target HUD" in now_on
+          and not any("Left out" in l for l in imported + loaded))
+    return ok, f"{imported} {loaded}; Target HUD: {rows}; on: {'Target HUD' in now_on}"
 
 
 @test("Fake Lag (an old profile's Blink)")

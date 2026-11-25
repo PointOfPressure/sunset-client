@@ -92,6 +92,13 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     if let Some(spear) = get("Auto Spear") {
         super::sunset_hud_bars::editable(game, &mut shapes, from, spear, "Damage indicator", w, h);
     }
+    // Target HUD (a module of its own since 2.1; once HUD's): by the crosshair, drawn there, then slid to its dragged
+    // place and made its size.
+    if let Some(target) = get("Target HUD").filter(|_| get("Kill Aura").is_some() && game.native_playing()) {
+        let from = shapes.len();
+        super::sunset_aura::draw_target(game, w, h, target.p("Mode") == "Potato", &mut shapes);
+        super::sunset_hud_bars::editable(game, &mut shapes, from, target, "Target HUD", w, h);
+    }
     if let Some(esp) = get("ESP") {
         let from = shapes.len();
         super::sunset_murder::draw(game, esp, w, &mut shapes);
@@ -103,12 +110,6 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         // First, so the HUD's text and boxes stay over the tint.
         if game.native_playing() {
             super::sunset_hud_health::draw(game, hud, w, h, &mut shapes);
-        }
-        if hud.b("Target HUD") && get("Kill Aura").is_some() {
-            // Target HUD sits by the crosshair; drawn there, then slid to its dragged place if moved.
-            let from = shapes.len();
-            super::sunset_aura::draw_target(game, w, h, hud.p("Target HUD mode") == "Potato", &mut shapes);
-            super::sunset_hud_bars::editable(game, &mut shapes, from, hud, "Target HUD", w, h);
         }
         let cased = |text: &str| super::sunset_hud_list::cased(hud, text);
         if hud.b("Watermark") {

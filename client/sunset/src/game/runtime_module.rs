@@ -322,6 +322,8 @@ impl Module {
                 "Confirm title" | "Confirm button text" | "Confirm item" => self.b("Confirm screen"),
                 _ => true,
             },
+            // Its place and size are the layout editor's, not rows.
+            "Target HUD" => name == "Mode",
             "HUD" => match name {
                 // Where each element sits is the layout editor's (open the chat and drag; right click puts one
                 // back): its position, x and y stay saved settings, set by the editor and by commands, not rows here.
@@ -334,8 +336,6 @@ impl Module {
                 "Module list side" | "Modules shown" | "Module details" | "Remove spaces" | "List sort" | "List color mode"
                 | "List background" | "List bar" | "List spacing" | "List animations" | "Module list position" => self.b("Module list"),
                 "Module list x" | "Module list y" => self.b("Module list") && self.p("Module list position") == "Custom",
-                "Target HUD position" => self.b("Target HUD"),
-                "Target HUD x" | "Target HUD y" => self.b("Target HUD") && self.p("Target HUD position") == "Custom",
                 "Scoreboard x" | "Scoreboard y" => self.p("Scoreboard position") == "Custom",
                 "Coordinates position" => self.b("Coordinates"),
                 "Coordinates x" | "Coordinates y" => self.b("Coordinates") && self.p("Coordinates position") == "Custom",
@@ -354,7 +354,6 @@ impl Module {
                 "Shield status x" | "Shield status y" => self.b("Shield status") && self.p("Shield status position") == "Custom",
                 _ if name.starts_with("Armor HUD ") => self.b("Armor HUD"),
                 "Durability format" | "Durability tooltip" => self.b("Item durability"),
-                "Target HUD mode" => self.b("Target HUD"),
                 "Low health below" | "Low health style" | "Low health strength" => self.b("Low health warning"),
                 _ => true,
             },

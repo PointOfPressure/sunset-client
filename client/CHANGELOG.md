@@ -23,6 +23,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - ClickGUI > Style has a third menu, Sidebar: tabs down the side, modules in groups, each module a card (by Ace)
 
 ### Changed
+- Target HUD is a module of its own (Render) instead of a switch in HUD: its switch, mode and place carry over, and it shows with HUD off too
 - **Blink is now Fake Lag's Hold mode: your Blink key, switch and Max ticks carry over, and `.t blink` still works**
 - HUD's position, x and y settings are no longer rows in the menus: open the chat and drag an element (right click puts it back); saved layouts stay as they are
 - **Sunset runs on Horizon main of 23 Nov 2026 (`2e7d2c6`, through Sunset's Horizon fork `9defaa0`) and horizon-launcher 0.2.107**

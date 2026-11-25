@@ -612,9 +612,7 @@ mod section_merge_tests {
 
     #[test]
     fn crystal_macro_alone_is_crystal_auras_macro_with_its_settings() {
-        let out = fields("crystalaura.on=false\ncrystalaura.key=none\ncrystalaura.placedelay=0\ncrystalaura.switchback=true\n\
-            crystalmacro.on=true\ncrystalmacro.key=key.mouse.4\ncrystalmacro.placedelay=3\ncrystalmacro.switchback=false\n\
-            crystalmacro.obsidiandelay=5\n");
+        let out = fields("crystalaura.on=false\ncrystalaura.key=none\ncrystalaura.placedelay=0\ncrystalaura.switchback=true\n\\n            crystalmacro.on=true\ncrystalmacro.key=key.mouse.4\ncrystalmacro.placedelay=3\ncrystalmacro.switchback=false\n\\n            crystalmacro.obsidiandelay=5\n");
         for (field, value) in [("on", "true"), ("key", "key.mouse.4"), ("aura", "false"), ("macro", "true"), ("placedelay", "3"),
             ("switchback", "false"), ("obsidiandelay", "5")] {
             assert_eq!(out[&format!("crystalaura.{field}")], value, "{field}");
@@ -624,8 +622,7 @@ mod section_merge_tests {
 
     #[test]
     fn crystal_aura_on_keeps_its_shared_settings_and_key() {
-        let out = fields("crystalaura.on=true\ncrystalaura.key=key.keyboard.c\ncrystalaura.placedelay=1\n\
-            crystalmacro.on=true\ncrystalmacro.key=key.mouse.4\ncrystalmacro.placedelay=3\n");
+        let out = fields("crystalaura.on=true\ncrystalaura.key=key.keyboard.c\ncrystalaura.placedelay=1\n\\n            crystalmacro.on=true\ncrystalmacro.key=key.mouse.4\ncrystalmacro.placedelay=3\n");
         for (field, value) in [("on", "true"), ("key", "key.keyboard.c"), ("aura", "true"), ("macro", "true"), ("placedelay", "1")] {
             assert_eq!(out[&format!("crystalaura.{field}")], value, "{field}");
         }
@@ -645,8 +642,7 @@ mod section_merge_tests {
 
     #[test]
     fn anvil_modules_become_its_sections() {
-        let out = fields("antianvil.on=true\nantianvil.key=none\nantianvil.rotate=false\nselfanvil.on=false\nselfanvil.key=key.keyboard.v\n\
-            autoanvil.on=true\nautoanvil.key=none\nautoanvil.height=4\nautoanvil.rotate=true\n");
+        let out = fields("antianvil.on=true\nantianvil.key=none\nantianvil.rotate=false\nselfanvil.on=false\nselfanvil.key=key.keyboard.v\n\\n            autoanvil.on=true\nautoanvil.key=none\nautoanvil.height=4\nautoanvil.rotate=true\n");
         for (field, value) in [("on", "true"), ("key", "key.keyboard.v"), ("antianvil", "true"), ("selfanvil", "false"),
             ("autoanvil", "true"), ("rotate", "false"), ("height", "4")] {
             assert_eq!(out[&format!("anvil.{field}")], value, "{field}");
@@ -686,42 +682,36 @@ mod cleanup_tests {
     }
 
     #[test]
+    fn target_hud_is_a_module_of_its_own() {
+        let out = fields("hud.on=true\nhud.targethud=true\nhud.targethudmode=Potato\nhud.targethudposition=Custom\nhud.targethudx=0.25\nhud.targethudy=0.75\nhud.watermark=true\n");
+        for (field, value) in [("on", "true"), ("mode", "Potato"), ("targethudposition", "Custom"), ("targethudx", "0.25"), ("targethudy", "0.75")] {
+            assert_eq!(out[&format!("targethud.{field}")], value, "{field}");
+        }
+        assert!(!out.keys().any(|k| k.starts_with("hud.targethud")));
+        assert_eq!(out["hud.watermark"], "true");
+        // Off in HUD, or HUD itself off: the module starts off. A config that has the module already is left alone.
+        assert_eq!(fields("hud.on=true\nhud.targethud=false\n")["targethud.on"], "false");
+        assert_eq!(fields("hud.on=false\nhud.targethud=true\n")["targethud.on"], "false");
+        let kept = fields("targethud.on=false\ntargethud.mode=Full\nhud.on=true\n");
+        assert_eq!((kept["targethud.on"].as_str(), kept["targethud.mode"].as_str()), ("false", "Full"));
+    }
+
+    #[test]
     fn blink_is_fake_lags_hold_mode() {
         // On with a key: Fake Lag is on in Hold with that key and its Max ticks.
-        let out = fields("blink.on=true
-blink.key=key.keyboard.b
-blink.maxticks=40
-fakelag.on=false
-fakelag.key=none
-fakelag.mode=Delay
-");
+        let out = fields("blink.on=true\nblink.key=key.keyboard.b\nblink.maxticks=40\nfakelag.on=false\nfakelag.key=none\nfakelag.mode=Delay\n");
         for (field, value) in [("on", "true"), ("key", "key.keyboard.b"), ("mode", "Hold"), ("maxticks", "40")] {
             assert_eq!(out[&format!("fakelag.{field}")], value, "{field}");
         }
         assert!(!out.keys().any(|k| k.starts_with("blink.")));
         // Off but bound, Fake Lag unused: the key still blinks.
-        let out = fields("blink.on=false
-blink.key=key.keyboard.b
-fakelag.on=false
-fakelag.key=none
-fakelag.mode=Pulse
-");
+        let out = fields("blink.on=false\nblink.key=key.keyboard.b\nfakelag.on=false\nfakelag.key=none\nfakelag.mode=Pulse\n");
         assert_eq!((out["fakelag.on"].as_str(), out["fakelag.key"].as_str(), out["fakelag.mode"].as_str()), ("false", "key.keyboard.b", "Hold"));
         // Off, and Fake Lag in use with its own key: Fake Lag is left as it was.
-        let out = fields("blink.on=false
-blink.key=key.keyboard.b
-fakelag.on=true
-fakelag.key=key.keyboard.l
-fakelag.mode=Pulse
-");
+        let out = fields("blink.on=false\nblink.key=key.keyboard.b\nfakelag.on=true\nfakelag.key=key.keyboard.l\nfakelag.mode=Pulse\n");
         assert_eq!((out["fakelag.on"].as_str(), out["fakelag.key"].as_str(), out["fakelag.mode"].as_str()), ("true", "key.keyboard.l", "Pulse"));
         // Off and unbound: nothing of Fake Lag changes but Max ticks.
-        let out = fields("blink.on=false
-blink.key=none
-blink.maxticks=0
-fakelag.on=false
-fakelag.mode=Delay
-");
+        let out = fields("blink.on=false\nblink.key=none\nblink.maxticks=0\nfakelag.on=false\nfakelag.mode=Delay\n");
         assert_eq!((out["fakelag.on"].as_str(), out["fakelag.mode"].as_str(), out["fakelag.maxticks"].as_str()), ("false", "Delay", "0"));
         assert!(!out.contains_key("fakelag.key"));
     }
