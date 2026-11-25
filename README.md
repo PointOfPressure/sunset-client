@@ -300,7 +300,8 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   module list and the coordinates go in any corner or anywhere you drag them (kept in proportion when the window is
   resized, and saved in profiles); Low health warning tints or flashes the screen's edges below a health you set.
 - **ClickGUI** (the menu's look), **No Render** (fog, overlays, hurt cam and more), **Effects** (jump circles,
-  trails, hit sparks, landing ripples, explosion shockwaves and weather), **Hand View** (1.9+ and 1.8 swing and sword block animations), **Crosshair**,
+  trails, hit sparks, landing ripples, explosion shockwaves and weather;
+  kill effects, crit sparks, break bursts and a target aura; hidden behind blocks), **Hand View** (1.9+ and 1.8 swing and sword block animations), **Crosshair**,
   **Block Overlay**, **Atmosphere** (custom skies).
 
 </details>

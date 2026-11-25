@@ -15560,6 +15560,98 @@ def _():
     return all(v > 150 for v in got.values()), f"pixels changed with Effects on: {got}"
 
 
+@test("Effects (kill, crit sparks, break bursts, target aura)")
+def _():
+    # Each new effect in a colour the scene has none of (Custom, Purple), in front of a wall, counted as purple pixels
+    # with its switch on and off: Target aura (a ring, then two lights, round a husk you hit), Crit sparks (stars off
+    # a hit Criticals' Jump mode makes while you fall), Kill effect in both styles (a pig with one health hit dead), Break bursts
+    # (chips off a block of dirt mined by hand).
+    purple = lambda img: sum(r - g > 40 and b - g > 40 for r, g, b in img.crop((340, 100, 980, 560)).getdata())
+    click = lambda: ctl("mouse", "left", "click")
+
+
+    def mine():
+        # Until the block is gone, and no longer: the chips last about a second.
+        ctl("mouse", "left", "down")
+        for _ in range(40):
+            wait(1)
+            if not count(X0, Y + 2, Z0 + 2, X0, Y + 2, Z0 + 2, "dirt"):
+                break
+        ctl("mouse", "left", "up")
+
+    def tally(name, switch, mob, act=click, settle=4, extra=(), mods=("effects",)):
+        seen = {}
+        for state in ("false", "true"):
+            reset()
+            back_wall()
+            cmd("difficulty easy")
+            if mob == "pig":
+                cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 2.5} {{NoAI:1b,PersistenceRequired:1b,Silent:1b,Health:1f}}")
+            elif mob == "husk":
+                cmd(f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 2.5} {HUSK}")
+            else:
+                cmd(f"setblock {X0} {Y + 2} {Z0 + 2} minecraft:dirt")
+            slot(0, "stick")
+            ctl("key", "1", "tap")
+            ctl("look-at", str(X0 + 0.5), str(Y + 1.9), str(Z0 + 2.5))
+            for key, value in (("jump circles", "false"), ("hit particles", "false"), ("color", "Custom"), ("custom color", "Purple"),
+                               ("target aura", "false"), ("crit sparks", "false"), ("kill effect", "false"), ("break bursts", "false"),
+                               (switch, state)) + extra:
+                setting("effects", key, value)
+            only(*mods)
+            clear_chat()
+            wait(5)
+            act()
+            wait(settle)
+            seen[state] = purple(colour_frame(f"effects-{name}-{'on' if state == 'true' else 'off'}"))
+            only()
+            cmd("kill @e[type=!player]", f"setblock {X0} {Y + 2} {Z0 + 2} minecraft:air")
+        return seen["false"], seen["true"]
+
+    setting("criticals", "mode", "Jump")
+    got = {
+        "aura ring": tally("aura", "target aura", "husk", extra=(("aura style", "Ring"),)),
+        "aura orbit": tally("aura-orbit", "target aura", "husk", extra=(("aura style", "Orbit"),)),
+        "crit": tally("crit", "crit sparks", "husk", settle=10, mods=("effects", "criticals")),
+        "kill burst": tally("kill", "kill effect", "pig", extra=(("kill style", "Burst"),)),
+        "kill pillar": tally("kill-pillar", "kill effect", "pig", extra=(("kill style", "Pillar"),)),
+        "break": tally("break", "break bursts", None, act=mine, settle=0),
+    }
+    back_wall("air")
+    say(".reset effects")
+    say(".reset criticals")
+    # Off is the scene's own purple, if it has any (a server's world may): on must add to it.
+    return all(on > off + 60 for off, on in got.values()), f"purple pixels (off, on): {got}"
+
+
+@test("Effects (hidden behind blocks)")
+def _():
+    # A jump circle left at a spot (4 s long), then seen from behind a stone wall: with Hide behind blocks (the default)
+    # nothing of it draws through the wall, without it the ring shows on the wall; a ring in plain view shows either
+    # way. Counted as pixels in the Custom colour (pink) the scene has none of.
+    # The ring has faded some by the frame: any pinkish tint on the grey floor and wall counts (the HUD is cut off).
+    pink = lambda img: sum(r - g > 12 and b - g > 4 for r, g, b in img.crop((0, 150, 1280, 560)).getdata())
+    got = {}
+    for name, hide, wall in (("hidden", "true", True), ("through", "false", True), ("in view", "true", False)):
+        reset()
+        for key, value in (("color", "Custom"), ("custom color", "Pink"), ("circle duration (ms)", "4000"), ("circle radius", "2"),
+                           ("circle thickness", "0.08"), ("hide behind blocks", hide)):
+            setting("effects", key, value)
+        only("effects")
+        if wall:
+            cmd(f"fill {X0 - 3} {Y + 1} {Z0 + 2} {X0 + 3} {Y + 4} {Z0 + 2} minecraft:stone")
+        ctl("jump")
+        wait(8)
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 5.5} 180 20")
+        clear_chat()
+        wait(6)
+        got[name] = pink(colour_frame(f"effects-occlude-{name.replace(' ', '-')}"))
+        only()
+        cmd(f"fill {X0 - 3} {Y + 1} {Z0 + 2} {X0 + 3} {Y + 4} {Z0 + 2} minecraft:air")
+    say(".reset effects")
+    return got["hidden"] < 30 and got["through"] > 150 and got["in view"] > 150, f"pink pixels of a jump circle: {got}"
+
+
 @test("Effects (landing ripples and explosion shockwaves)")
 def _():
     only("Effects")

@@ -10,6 +10,8 @@ section of the version they build into the signed manifest, and the launcher sho
 ## 2.1.0
 
 ### New
+- Effects: Kill effect (a burst or a pillar of light where what you hit dies), Crit sparks, Break bursts (chips off a block as it breaks) and Target aura (a ring or two lights round what you last hit), each with its own switch
+- Effects > Hide behind blocks (on by default): effects no longer show through walls, and they fade with distance
 - Fake Lag > Mode Repel: a hit on a target that is still red from the last one waits until it can be hurt again
 - Fake Lag > Mode Hold has Breadcrumbs (the way you went while it holds) and Direction Bi-directional (what the server sends waits too)
 - Fast Place > Speed goes to 9: speeds 6 to 9 place 30, 40, 60 and 80 blocks a second, more than one a tick (Anticheat Grim stays at one a tick)

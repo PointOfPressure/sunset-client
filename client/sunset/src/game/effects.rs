@@ -1,8 +1,12 @@
 // Effects: visuals in the world that only you see. Jump circles (a ring grows where a player jumps), Trails
 // (footsteps, rings or sparks where players walk), Hit particles (glowing sparks off what you hit, and off a totem
 // pop), Landing ripples (a ring spreads where a player lands from a fall), Explosion shockwaves (a ring spreads from
-// an explosion's centre) and Weather (rain, snow, fireflies or embers round you). Drawn on the HUD as projected
-// shapes; nothing is sent. Also the shield breaks and totem pops ESP and Nametags colour by.
+// an explosion's centre) and Weather (rain, snow, fireflies or embers round you); Kill effect (a burst or a pillar of
+// light where what you hit dies), Crit sparks (stars off your critical hits), Break bursts (chips off a block as it
+// breaks) and Target aura (a ring or two lights round what you last hit). Drawn on the HUD as projected shapes;
+// nothing is sent. With Hide behind blocks an effect a block stands in front of is not drawn (trail marks and
+// weather are not tested: there are too many), and everything fades with distance. A dot too small to show its
+// halo is one quad. Also the shield breaks and totem pops ESP and Nametags colour by.
 use super::Game;
 use super::sunset::{Camera, Canvas, Category, Module, accent, own_id, with};
 use horizon_protocol::packets::play::{Clientbound as C, Serverbound as S};
@@ -55,9 +59,21 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Weather radius", 50.0, 5.0, 100.0, 5.0)
             .num("Weather speed", 1.0, 0.1, 5.0, 0.1)
             .num("Weather size", 3.0, 0.1, 5.0, 0.1)
+            .group("Kill effect")
+            .bool("Kill effect", false)
+            .pick("Kill style", &["Burst", "Pillar"])
+            .group("Crit sparks")
+            .bool("Crit sparks", false)
+            .group("Break bursts")
+            .bool("Break bursts", false)
+            .group("Target aura")
+            .bool("Target aura", false)
+            .pick("Aura style", &["Ring", "Orbit"])
+            .num("Aura time (s)", 3.0, 1.0, 10.0, 0.5)
             .group("Color")
             .pick("Color", &["Accent", "Custom"])
-            .colour("Custom color", "Purple"),
+            .colour("Custom color", "Purple")
+            .bool("Hide behind blocks", true),
     ]
 }
 
@@ -69,6 +85,8 @@ pub(super) fn visible(m: &Module, name: &str) -> bool {
         "Shockwave scale" | "Shockwave duration (ms)" => m.b("Explosion shockwaves"),
         "Particle shape" | "Particle size" | "Particle amount" | "Particle lifespan (s)" | "Particle physics" | "On totem pops" => m.b("Hit particles"),
         "Weather mode" | "Density" | "Weather radius" | "Weather speed" | "Weather size" => m.b("Weather"),
+        "Kill style" => m.b("Kill effect"),
+        "Aura style" | "Aura time (s)" => m.b("Target aura"),
         "Custom color" => m.p("Color") == "Custom",
         _ => true,
     }
@@ -80,6 +98,11 @@ pub(super) fn visible(m: &Module, name: &str) -> bool {
 pub(super) fn disc(out: &mut impl Canvas, [x, y]: [f32; 2], r: f32, argb: u32) {
     const N: usize = 12;
     if r < 0.3 || argb >> 24 == 0 {
+        return;
+    }
+    // Under a pixel and a half across no corner shows: one quad instead of six.
+    if r < 1.5 {
+        out.fill([x - r, y - r, 2.0 * r, 2.0 * r], argb);
         return;
     }
     let rim = |k: usize| {
@@ -95,6 +118,11 @@ pub(super) fn disc(out: &mut impl Canvas, [x, y]: [f32; 2], r: f32, argb: u32) {
 pub(super) fn glow(out: &mut impl Canvas, at: [f32; 2], r: f32, argb: u32) {
     let a = (argb >> 24) as f32;
     let with = |k: f32| ((a * k).round().clamp(0.0, 255.0) as u32) << 24 | (argb & 0x00FF_FFFF);
+    // Too small for a halo to show (far weather, far sparks): the core alone, one quad, not eighteen.
+    if r < 1.2 {
+        disc(out, at, (r * 1.1).max(0.6), with(0.9));
+        return;
+    }
     disc(out, at, r * 2.2, with(0.12));
     disc(out, at, r * 1.4, with(0.3));
     disc(out, at, r * 0.7, with(0.85));
@@ -232,6 +260,36 @@ struct Spark {
     born: Instant,
 }
 
+// A piece of a burst (Kill effect, Crit sparks, Break bursts): it flies, falls and fades.
+struct Bit {
+    prev: [f64; 3],
+    at: [f64; 3],
+    vel: [f64; 3],
+    born: Instant,
+    life: f32,
+    // Blocks across.
+    size: f32,
+    shape: Shape,
+    shade: f32,
+    gravity: f64,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Shape {
+    Glow,
+    Star,
+    Chip,
+}
+
+struct Kill {
+    at: [f64; 3],
+    born: Instant,
+    pillar: bool,
+}
+
+const KILL_LIFE: f32 = 1.1;
+const BITS: usize = 320;
+
 struct Drop {
     at: [f64; 3],
     vel: [f64; 3],
@@ -261,6 +319,14 @@ struct Fx {
     // Each player's or mob's totem pops (event 35) since they appeared: Nametags' Totem pops.
     pops: Vec<(u32, u32)>,
     roll: u64,
+    // What you hit, newest last: Target aura's target, and whose death is your kill or crit.
+    hits: VecDeque<(u32, Instant)>,
+    bits: Vec<Bit>,
+    kills: VecDeque<Kill>,
+    // A block you began to break, and when (tick): gone within two ticks, it broke at once.
+    digging: Option<([f64; 3], u64)>,
+    // The last Crit sparks: on whom and when (a server's crit packet after your own hit is the same crit).
+    crit: Option<(u32, Instant)>,
 }
 
 static FX: Mutex<Option<Fx>> = Mutex::new(None);
@@ -297,21 +363,109 @@ fn sparks_at(fx: &mut Fx, m: &Module, at: [f64; 3], count: usize, pop: bool) {
     }
 }
 
+// A burst of count bits from at, flying out at up to speed blocks a tick.
+fn burst(fx: &mut Fx, at: [f64; 3], count: usize, speed: f64, up: f64, size: f32, life: f32, shape: Shape, gravity: f64) {
+    for _ in 0..count {
+        if fx.bits.len() >= BITS {
+            break;
+        }
+        let a = random(fx) * std::f64::consts::TAU;
+        let v = speed * (0.35 + 0.65 * random(fx));
+        let vel = [a.cos() * v, up * (0.4 + 0.6 * random(fx)), a.sin() * v];
+        let shade = random(fx) as f32;
+        let life = life * (0.6 + 0.4 * random(fx) as f32);
+        fx.bits.push(Bit { prev: at, at, vel, born: Instant::now(), life, size, shape, shade, gravity });
+    }
+}
+
+// You hit it in the last secs seconds.
+fn hit_lately(fx: &Fx, id: u32, secs: f32) -> bool {
+    fx.hits.iter().any(|(i, at)| *i == id && at.elapsed().as_secs_f32() <= secs)
+}
+
+// A block stands between the eye and a place (stepped through, a third of a block at a time, up to 48 blocks).
+fn hidden(game: &Game<'_>, eye: [f64; 3], at: [f64; 3]) -> bool {
+    let d = [at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]];
+    let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    if len > 48.0 {
+        return true;
+    }
+    let steps = (len / 0.33).ceil() as usize;
+    // Not the last steps: an effect on the ground or on a block's face is not behind that block.
+    (1..steps.saturating_sub(2)).any(|i| {
+        let t = i as f64 / steps as f64;
+        solid(game, [eye[0] + d[0] * t, eye[1] + d[1] * t, eye[2] + d[2] * t])
+    })
+}
+
+// Light falls off with distance: full to 20 blocks, gone at 44.
+fn falloff(eye: [f64; 3], at: [f64; 3]) -> f32 {
+    (1.0 - (super::sunset_util::dist(eye, at) as f32 - 20.0) / 24.0).clamp(0.0, 1.0)
+}
+
 fn mob_feet(game: &Game<'_>, id: u32) -> Option<[f64; 3]> {
     game.mobs.iter().find(|mob| mob.id == id).map(|mob| [mob.position.x, mob.position.y, mob.position.z])
 }
 
 // Your attack on a mob: Hit particles off it.
 pub(super) fn sent(game: &Game<'_>, packet: &S) {
+    // A block you finished breaking (PlayerAction 3): Break bursts' chips off it. One that breaks at once only ever
+    // sends its start (0): tick sees whether the block went.
+    if let S::PlayerAction(p) = packet {
+        if matches!(p.action, 0 | 3) && module().is_some_and(|m| m.b("Break bursts")) {
+            let at = [f64::from(p.pos[0]) + 0.5, f64::from(p.pos[1]) + 0.5, f64::from(p.pos[2]) + 0.5];
+            st(|fx| {
+                if p.action == 3 {
+                    fx.digging = None;
+                    burst(fx, at, 14, 0.09, 0.14, 0.11, 1.6, Shape::Chip, 0.022);
+                } else {
+                    fx.digging = Some((at, game.ticks));
+                }
+            });
+        }
+        return;
+    }
     let S::Attack(a) = packet else {
         return;
     };
-    let (Some(m), Ok(id)) = (module().filter(|m| m.b("Hit particles")), u32::try_from(a.id)) else {
+    let (Some(m), Ok(id)) = (module(), u32::try_from(a.id)) else {
         return;
     };
-    if let Some(at) = mob_feet(game, id) {
+    st(|fx| {
+        fx.hits.retain(|(i, _)| *i != id);
+        keep_recent(&mut fx.hits, (id, Instant::now()), 8);
+    });
+    if m.b("Hit particles")
+        && let Some(at) = mob_feet(game, id)
+    {
         st(|fx| sparks_at(fx, &m, at, m.n("Particle amount") as usize, false));
     }
+    // Crit sparks, as you see the hit: falling, off the ground, not gliding, swimming or climbing (the game's own
+    // rule for a critical hit, less the charge, which the hit has already spent). Horizon's servers send no crit
+    // animation; a vanilla or Paper server's (packet) is not counted twice.
+    if m.b("Crit sparks")
+        && game.player.as_ref().is_some_and(|p| {
+            !p.ground.on_ground && p.velocity.y < 0.0 && !p.fall_flying && !p.fluids.was_touching_water && p.last_climbable.is_none()
+        })
+        && game.riding.is_none()
+    {
+        crit_stars(game, id);
+    }
+}
+
+fn crit_stars(game: &Game<'_>, id: u32) {
+    let Some(mob) = game.mobs.iter().find(|mob| mob.id == id) else {
+        return;
+    };
+    let b = mob.bounds();
+    let at = [mob.position.x, mob.position.y + (b.max_position().y - b.min_position().y) * 0.6, mob.position.z];
+    st(|fx| {
+        if fx.crit.is_some_and(|(i, since)| i == id && since.elapsed().as_secs_f32() < 0.5) {
+            return;
+        }
+        fx.crit = Some((id, Instant::now()));
+        burst(fx, at, 12, 0.11, 0.1, 0.13, 1.4, Shape::Star, 0.012);
+    });
 }
 
 // A player's totem pop (event 35): twice the sparks; a shield put out (event 30): remembered five seconds for ESP.
@@ -332,12 +486,54 @@ pub(super) fn packet(game: &Game<'_>, packet: &C) {
         }
         return;
     }
+    // A critical hit's stars (Animate 4, and 5 for an enchanted weapon's) on what you just hit: Crit sparks.
+    if let C::Animate(a) = packet {
+        if matches!(a.action, 4 | 5)
+            && let Ok(id) = u32::try_from(a.id)
+            && module().is_some_and(|m| m.b("Crit sparks"))
+            && st(|fx| hit_lately(fx, id, 1.5))
+        {
+            crit_stars(game, id);
+        }
+        return;
+    }
+    // A block broken near you by someone else (level event 2001): Break bursts.
+    if let C::LevelEvent(e) = packet {
+        if e.kind == 2001
+            && module().is_some_and(|m| m.b("Break bursts"))
+            && let Some(eye) = game.eye_position()
+        {
+            let at = [f64::from(e.pos[0]) + 0.5, f64::from(e.pos[1]) + 0.5, f64::from(e.pos[2]) + 0.5];
+            if super::sunset_util::dist(eye, at) <= 24.0 {
+                st(|fx| burst(fx, at, 10, 0.08, 0.13, 0.1, 1.4, Shape::Chip, 0.022));
+            }
+        }
+        return;
+    }
     let C::EntityEvent(e) = packet else {
         return;
     };
     let Ok(id) = u32::try_from(e.id) else {
         return;
     };
+    // What you hit in the last five seconds died (event 3): Kill effect.
+    if e.event == 3
+        && let Some(m) = module().filter(|m| m.b("Kill effect"))
+        && let Some(at) = mob_feet(game, id)
+    {
+        let pillar = m.p("Kill style") == "Pillar";
+        st(|fx| {
+            if hit_lately(fx, id, 5.0) {
+                keep_recent(&mut fx.kills, Kill { at, born: Instant::now(), pillar }, 12);
+                let mid = [at[0], at[1] + 0.9, at[2]];
+                if pillar {
+                    burst(fx, mid, 10, 0.03, 0.22, 0.1, 1.1, Shape::Glow, -0.002);
+                } else {
+                    burst(fx, mid, 26, 0.16, 0.2, 0.12, 1.0, Shape::Glow, 0.014);
+                }
+            }
+        });
+    }
     let player = game.mobs.iter().any(|mob| mob.id == id && mob.kind.id == "minecraft:player");
     if e.event == 30 && player {
         let until = game.ticks + 100;
@@ -506,6 +702,30 @@ pub(super) fn tick(game: &Game<'_>) {
             s.vel[1] -= if s.pop { 0.01375 } else { 0.00375 };
         }
         fx.sparks.retain(|s| s.born.elapsed().as_secs_f32() < life && super::sunset_util::dist(eye, s.at) <= 20.0);
+        // Bursts' bits fly, fall (or rise) and stop on blocks.
+        for b in &mut fx.bits {
+            b.prev = b.at;
+            let next = [b.at[0] + b.vel[0], b.at[1] + b.vel[1], b.at[2] + b.vel[2]];
+            if physics && solid(game, next) {
+                b.vel = [b.vel[0] * 0.3, b.vel[1] * -0.35, b.vel[2] * 0.3];
+            } else {
+                b.at = next;
+            }
+            b.vel = [b.vel[0] * 0.96, b.vel[1] - b.gravity, b.vel[2] * 0.96];
+        }
+        fx.bits.retain(|b| b.born.elapsed().as_secs_f32() < b.life && super::sunset_util::dist(eye, b.at) <= 48.0);
+        if let Some((at, since)) = fx.digging {
+            if !solid(game, at) {
+                fx.digging = None;
+                if m.b("Break bursts") {
+                    burst(fx, at, 14, 0.09, 0.14, 0.11, 1.6, Shape::Chip, 0.022);
+                }
+            } else if game.ticks.saturating_sub(since) > 2 {
+                fx.digging = None;
+            }
+        }
+        fx.kills.retain(|k| k.born.elapsed().as_secs_f32() < KILL_LIFE);
+        fx.hits.retain(|(_, at)| at.elapsed().as_secs_f32() < 12.0);
     });
 }
 
@@ -585,11 +805,17 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
             fx.weather_mode = None;
         }
         let ease = |f: f32| 1.0 - (1.0 - f) * (1.0 - f);
+        let eye = cam.eye();
+        let occlude = m.b("Hide behind blocks");
+        // How much of an effect at a place shows: nothing behind a block, less far off.
+        let shown = |at: [f64; 3]| if occlude && hidden(game, eye, at) { 0.0 } else { falloff(eye, at) };
         // Jump circles: grow to Circle radius, in over the first fifth of their time, out over the rest.
         let (thick, glow_w, radius) = (m.n("Circle thickness") as f32, m.n("Circle glow") as f32, m.n("Circle radius") as f32);
         for c in &fx.circles {
             let f = c.born.elapsed().as_secs_f32() / c.life;
             let a = if f < 0.2 { f / 0.2 } else { 1.0 - (f - 0.2) / 0.8 };
+            let a = a * shown([c.at[0], c.at[1] + 0.2, c.at[2]]);
+            if a <= 0.0 { continue; }
             let r = 0.1 + (radius - 0.1) * ease(f.clamp(0.0, 1.0));
             ring(cam, out, c.at, r, thick, glow_w, bright, a.clamp(0.0, 1.0));
             if m.p("Circle style") == "Double" {
@@ -603,7 +829,8 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
             if !m.b(setting) { continue; }
             for wave in waves {
                 let f = (wave.born.elapsed().as_secs_f32() / wave.life).clamp(0.0, 1.0);
-                let a = (1.0 - f).powi(2);
+                let a = (1.0 - f).powi(2) * shown([wave.at[0], wave.at[1] + 0.2, wave.at[2]]);
+                if a <= 0.0 { continue; }
                 let r = wave.radius * (0.16 + 0.84 * ease(f));
                 ring(cam, out, wave.at, r, thickness, thickness * 3.5, bright, a);
                 ring(cam, out, wave.at, r * 0.7, thickness * 0.55, thickness, rgb, a * 0.7);
@@ -639,12 +866,82 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
             let wave = ((t * 4.0 + i as f32 * 0.55).sin() + 1.0) * 0.5;
             let r = ((if s.pop { 0.14 } else { 0.09 }) * px * m.n("Particle size") as f32).min(24.0);
             if !cam.on_screen(p, r * 3.0) { continue; }
-            let color = alpha(mix(dark, bright, wave), 1.0 - f);
+            let see = shown(at);
+            if see <= 0.0 { continue; }
+            let color = alpha(mix(dark, bright, wave), (1.0 - f) * see);
             if m.p("Particle shape") == "Diamond" {
                 let [x, y] = p;
                 out.quad([[x, y - r], [x + r * 0.7, y], [x, y + r], [x - r * 0.7, y]], color);
             } else {
                 glow(out, p, r, color);
+            }
+        }
+        // Bursts' bits: a glow, a four-pointed star or a square chip.
+        for b in &fx.bits {
+            let at = [0, 1, 2].map(|k| b.prev[k] + (b.at[k] - b.prev[k]) * partial);
+            let (Some(p), Some(px)) = (cam.project(at), cam.pixels_per_block(at)) else {
+                continue;
+            };
+            let f = (b.born.elapsed().as_secs_f32() / b.life).clamp(0.0, 1.0);
+            let r = (b.size * px * (1.0 - 0.5 * f)).min(28.0);
+            if !cam.on_screen(p, r * 3.0) { continue; }
+            let see = shown(at);
+            if see <= 0.0 { continue; }
+            let color = alpha(mix(rgb, bright, b.shade), (1.0 - f * f) * see);
+            let [x, y] = p;
+            match b.shape {
+                Shape::Glow => glow(out, p, r * 0.6, color),
+                Shape::Star => {
+                    out.quad([[x, y - r], [x + r * 0.22, y], [x, y + r], [x - r * 0.22, y]], color);
+                    out.quad([[x - r, y], [x, y - r * 0.22], [x + r, y], [x, y + r * 0.22]], color);
+                }
+                Shape::Chip => out.fill([x - r * 0.5, y - r * 0.5, r, r], color),
+            }
+        }
+        // Kill effect: a ring spreads from the feet; Pillar adds a column of light that thins as it fades.
+        for k in &fx.kills {
+            let f = (k.born.elapsed().as_secs_f32() / KILL_LIFE).clamp(0.0, 1.0);
+            let see = shown([k.at[0], k.at[1] + 0.9, k.at[2]]);
+            if see <= 0.0 { continue; }
+            let a = (1.0 - f).powi(2) * see;
+            ring(cam, out, [k.at[0], k.at[1] + 0.05, k.at[2]], 0.3 + 1.5 * ease(f), 0.05, 0.16, bright, a);
+            if k.pillar {
+                let top = [k.at[0], k.at[1] + 3.2, k.at[2]];
+                if let (Some(lo), Some(hi), Some(px)) = (cam.project(k.at), cam.project(top), cam.pixels_per_block(k.at)) {
+                    for (width, strength) in [(0.34, 0.25), (0.16, 0.6), (0.06, 0.95)] {
+                        let w = width * px * (1.0 - 0.7 * f);
+                        out.quad([[lo[0] - w, lo[1]], [lo[0] + w, lo[1]], [hi[0] + w, hi[1]], [hi[0] - w, hi[1]]], alpha(bright, a * strength));
+                    }
+                }
+            }
+        }
+        // Target aura: round what you last hit, for Aura time after the hit.
+        if m.b("Target aura")
+            && let Some((id, since)) = fx.hits.back().copied()
+            && since.elapsed().as_secs_f32() < m.n("Aura time (s)") as f32
+            && let Some(mob) = game.mobs.iter().find(|mob| mob.id == id && mob.alive() && !mob.removed)
+        {
+            let feet = [mob.position.x, mob.position.y, mob.position.z];
+            let b = mob.bounds();
+            let (wide, tall) = (((b.max_position().x - b.min_position().x) as f32).max(0.6), (b.max_position().y - b.min_position().y) as f32);
+            let left = 1.0 - since.elapsed().as_secs_f32() / m.n("Aura time (s)") as f32;
+            let see = shown([feet[0], feet[1] + f64::from(tall) * 0.5, feet[2]]) * left.min(0.25) * 4.0;
+            if see > 0.0 {
+                let t = fx.epoch.get_or_insert(now).elapsed().as_secs_f32();
+                if m.p("Aura style") == "Orbit" {
+                    for k in 0..2 {
+                        let a = f64::from(t * 3.2 + k as f32 * std::f32::consts::PI);
+                        let r = f64::from(wide) * 0.85;
+                        let at = [feet[0] + a.cos() * r, feet[1] + f64::from(tall * (0.5 + 0.35 * (t * 1.7 + k as f32).sin())), feet[2] + a.sin() * r];
+                        if let (Some(p), Some(px)) = (cam.project(at), cam.pixels_per_block(at)) {
+                            glow(out, p, 0.09 * px, alpha(bright, see));
+                        }
+                    }
+                } else {
+                    let pulse = 0.5 + 0.5 * (t * 5.0).sin();
+                    ring(cam, out, [feet[0], feet[1] + 0.06, feet[2]], wide * (0.85 + 0.06 * pulse), 0.035, 0.12, bright, see);
+                    ring(cam, out, [feet[0], feet[1] + f64::from(tall) * 0.5, feet[2]], wide * 0.75, 0.02, 0.07, rgb, see * 0.6);
+                }
             }
         }
         let mode = m.p("Weather mode");
@@ -665,6 +962,11 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
             let (Some(p), Some(px)) = (cam.project(d.at), cam.pixels_per_block(d.at)) else {
                 continue;
             };
+            // Off screen: nothing to draw (most of the drops behind and beside you). Far ones are fainter.
+            if !cam.on_screen(p, 8.0) {
+                continue;
+            }
+            a *= falloff(eye, d.at);
             match mode {
                 "Rain" => {
                     let w = (0.5 * wsize * px).max(1.0);
