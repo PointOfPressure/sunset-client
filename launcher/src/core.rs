@@ -938,8 +938,20 @@ fn register_leases(p: &Paths, dirs: &[&Path]) -> io::Result<()> {
     if !registry.is_dir() {
         return Ok(());
     }
+    // Each folder and the ones above it inside the CLI's data, as the game holds them (horizon-mod-package
+    // game_entry.rs lease_paths, from 2e7d2c6 on: <base>/.local and <base>/.local/horizon-client too).
+    let data = fs::canonicalize(p.horizon())?;
+    let mut held: Vec<PathBuf> = Vec::new();
     for d in dirs {
-        let (dev, ino) = file_id(&fs::canonicalize(d)?)?;
+        let d = fs::canonicalize(d)?;
+        for a in d.ancestors().take_while(|a| a.starts_with(&data) && *a != data) {
+            if !held.iter().any(|h| h == a) {
+                held.push(a.to_path_buf());
+            }
+        }
+    }
+    for d in &held {
+        let (dev, ino) = file_id(d)?;
         let key = hex(&Sha256::digest(format!("{dev}:{ino}").as_bytes()));
         match fs::OpenOptions::new().write(true).create_new(true).open(registry.join(key)) {
             Ok(_) => {}
@@ -2282,7 +2294,11 @@ mod tests {
         register_leases(&p, &[&v, &r]).unwrap();
         let mut names: Vec<String> = fs::read_dir(p.horizon().join("run-leases")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         names.sort();
-        let mut want: Vec<String> = [&v, &r]
+        // Each folder and every one above it inside the CLI's data, once.
+        let vs = p.versions();
+        let nx = vs.join("nightly-x");
+        let held = [v.clone(), vs.clone(), r.clone(), nx.join(".local/horizon-client"), nx.join(".local"), nx];
+        let mut want: Vec<String> = held
             .iter()
             .map(|d| {
                 let (dev, ino) = file_id(&fs::canonicalize(d).unwrap()).unwrap();
@@ -2291,7 +2307,8 @@ mod tests {
             .collect();
         want.sort();
         assert_eq!(names, want);
-        assert_ne!(want[0], want[1]);
+        want.dedup();
+        assert_eq!(want.len(), 6);
         fs::remove_dir_all(&t).unwrap();
     }
 
