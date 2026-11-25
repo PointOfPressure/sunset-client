@@ -1,4 +1,5 @@
 use crate::game::sunset_compat::SunsetGame as _;
+use super::remote::sunset_combat_remote;
 use super::sunset::{self, Module};
 use super::sunset_click_clock::{Clock, Config, Mode};
 use super::sunset_rotation::Rng;
@@ -23,6 +24,7 @@ pub(super) fn button(button: MouseButton) {
 }
 fn live(game: &Game<'_>) -> bool {
     game.native_on(sunset::ID) && game.native_playing() && !sunset::gui_open()
+        && !game.screen_over_playing()
         && game.remote.is_some() && !game.spectator() && game.sleeping.is_none()
         && game.player.as_ref().is_some_and(|p| p.health.health() > 0.0)
 }
@@ -41,11 +43,11 @@ pub(super) fn tick(game: &mut Game<'_>) {
         || super::sunset_combat_macros::active() || sunset::strike_waiting() || super::sunset_melee::acted(game)
     { reset(); return; }
     let Some(m) = sunset::with(|s| s.module("Auto Clicker").filter(|m| m.on).cloned()) else { reset(); return; };
+    if !sunset_combat_remote::click_input_ready(game) { reset(); return; }
     let weapon = !m.b("Only with a weapon") || super::sunset_combat::holds_weapon(game);
     let entity_first = game.mob_hit().is_some_and(|(_, distance, _)| game.before_block(distance));
     let block = !entity_first && game.pick().is_some();
-    let left = m.b("Left") && weapon && !(m.b("Stop on blocks") && block)
-        && (game.left || game.physical_buttons.contains(&MouseButton::Left));
+    let left = m.b("Left") && game.left && weapon && !(m.b("Stop on blocks") && block);
     let items = m.t("Right items").trim();
     let item_ok = items.is_empty() || game.held().is_some_and(|held| {
         super::sunset_util::listed(items, &held.item) || (super::sunset_util::listed(items, "blocks")
@@ -57,9 +59,8 @@ pub(super) fn tick(game: &mut Game<'_>) {
         (block_item && s.is_on("Fast Place")) || s.module("Fast Use").is_some_and(|m|
             m.on && super::sunset_combat_inventory::thrown_in_hand(game, m))
     });
-    let right = m.b("Right") && weapon && item_ok && !other_right
-        && (!m.b("Right sneak only") || game.player.as_ref().is_some_and(|p| p.shift_key_down))
-        && (game.right || game.physical_buttons.contains(&MouseButton::Right));
+    let right = m.b("Right") && game.right && weapon && item_ok && !other_right
+        && (!m.b("Right sneak only") || game.player.as_ref().is_some_and(|p| p.shift_key_down));
     let (click_left, click_right) = {
         let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
         let state = guard.get_or_insert_with(State::default);
@@ -72,12 +73,16 @@ pub(super) fn tick(game: &mut Game<'_>) {
     // the requested right-click rate is lower. The initial real click and
     // item-use holds remain the engine's; only its repeat waits for our clock.
     if right { game.use_delay = game.use_delay.max(1); }
-    if click_left {
+    if !click_left && !click_right { return; }
+    let [pending_attack, pending_use] = sunset_combat_remote::pending_clicks(game);
+    if click_left && !pending_attack {
         // An air miss installs a ten-tick delay. Clear it only for a due
         // held-button repeat. The handoff/owner checks above protect melee's
         // intentional wait, including a one-tick handoff.
         if !m.b("Respect miss cooldown") { game.clicks.miss_time = 0; }
-        super::remote::sunset_combat_remote::click(game, true);
+        sunset_combat_remote::click(game, true);
     }
-    if click_right { super::remote::sunset_combat_remote::click(game, false); }
+    if click_right && !pending_use {
+        sunset_combat_remote::click(game, false);
+    }
 }

@@ -165,6 +165,9 @@ impl AttackGuard {
             AttackSource::SilentAim | AttackSource::HitFlick => "Aim Assist",
         };
         let Some(m) = with(|s| s.module(name).filter(|m| m.on).cloned()) else { return false; };
+        if matches!(source, AttackSource::TriggerBot | AttackSource::TriggerReach) && !trigger_input_ready(game, &m) {
+            return false;
+        }
         if !super::sunset_util::combat_eligible(game, &m, mob) { return false; }
         match source {
             AttackSource::KillAura => super::sunset_aura::eligible(game, &m, mob.id),
@@ -575,14 +578,20 @@ pub(super) fn kill_aura(game: &mut Game<'_>, m: &Module, crits: bool) {
     super::sunset_aura::tick(game, m, crits);
 }
 
-pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
+fn trigger_input_ready(game: &Game<'_>, m: &Module) -> bool {
     use winit::event::MouseButton;
+    !game.screen_over_playing()
+        && game.sleeping.is_none()
+        && (!m.b("Only on left click") || game.left || game.physical_buttons.contains(&MouseButton::Left))
+}
+
+pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     if !game.native_playing()
+        || !trigger_input_ready(game, m)
         || game.remote.is_none()
         || (game.using.is_some() && !super::sunset_hands::shielding(game))
         || CRIT_STAGE.load(Ordering::Relaxed) != 0
         || strike_waiting()
-        || (m.b("Only on left click") && !(game.physical_buttons.contains(&MouseButton::Left) || game.left))
     {
         return;
     }

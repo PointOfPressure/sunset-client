@@ -86,6 +86,16 @@ pub(crate) fn mouse(game: &mut crate::game::Game<'_>, button: winit::event::Mous
     }
 }
 
+// The native input pass discards clicks until the level has finished loading.
+pub(crate) fn click_input_ready(game: &crate::game::Game<'_>) -> bool {
+    game.remote.as_ref().is_some_and(|remote| remote.loaded_sent)
+}
+
+pub(crate) fn pending_clicks(game: &mut crate::game::Game<'_>) -> [bool; 2] {
+    game.remote.as_mut().map_or([false; 2], |remote|
+        crate::game::sunset_owned_clicks::pending_buttons(&mut remote.input))
+}
+
 pub(crate) fn click(game: &mut crate::game::Game<'_>, attack: bool) {
     if !crate::game::sunset::running() { return; }
     if let Some(remote) = game.remote.as_mut() {
