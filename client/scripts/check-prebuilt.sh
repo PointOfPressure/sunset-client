@@ -46,6 +46,15 @@ ok "manifest signature" "minisign -Vq -p $PUB -m $O/manifest.json"
 for f in $O/*.tar.zst; do ok "signature $(basename $f)" "minisign -Vq -p $PUB -m $f"; done
 ok "SHA256SUMS" "cd $O && sha256sum -c --quiet SHA256SUMS"
 ok "manifest sha256 = file" "python3 -c 'import json,hashlib,os,sys;O=sys.argv[1];m=json.load(open(os.path.join(O,\"manifest.json\")));assert all(hashlib.sha256(open(os.path.join(O,a[\"file\"]),\"rb\").read()).hexdigest()==a[\"sha256\"] and a[\"size\"]>0 for a in m[\"artifacts\"])' $O"
+# The launcher's own update (selfupdate.rs), when the release has one: its file, hash and signature, and that it is
+# the launcher it says it is.
+if python3 -c 'import json,sys;sys.exit(0 if "launcher" in json.load(open(sys.argv[1])) else 1)' $O/manifest.json; then
+	LF=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["launcher"]["file"])' $O/manifest.json)
+	LV=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["launcher"]["version"])' $O/manifest.json)
+	ok "launcher entry sha256 and size = $LF" "python3 -c 'import json,hashlib,os,sys;O=sys.argv[1];l=json.load(open(os.path.join(O,\"manifest.json\")))[\"launcher\"];p=os.path.join(O,l[\"file\"]);assert hashlib.sha256(open(p,\"rb\").read()).hexdigest()==l[\"sha256\"] and os.path.getsize(p)==l[\"size\"] and l[\"signature\"]==l[\"file\"]+\".minisig\"' $O"
+	ok "launcher signature" "minisign -Vq -p $PUB -m $O/$LF"
+	[ "$PLAT" != linux-x86_64 ] || ok "launcher says it is $LV" "tar xzf $O/$LF -C $T sunset-launcher/sunset-launcher && [ \"\$(SUNSET_NO_SELF_UPDATE=1 $T/sunset-launcher/sunset-launcher --version)\" = 'sunset-launcher $LV' ]"
+fi
 cp $O/$N $T/x.tar.zst; cp $O/$N.minisig $T/x.tar.zst.minisig
 printf '\x00' | dd of=$T/x.tar.zst bs=1 seek=4096 conv=notrunc 2>/dev/null
 no "tampered package rejected" "minisign -Vq -p $PUB -m $T/x.tar.zst"

@@ -10,6 +10,7 @@ mod core;
 mod fx;
 mod nick_field;
 mod plugins;
+mod selfupdate;
 mod ui;
 
 use std::sync::atomic::AtomicBool;
@@ -20,6 +21,7 @@ Usage: sunset-launcher [COMMAND]
 
 Without a command, opens the window.
   check            Fetch and verify the signed manifest, and say what is installed
+  self-update      Update the launcher itself to the release's build (the window does this when it opens)
   install          Install Sunset (or update it to the manifest's pin)
   repair           Check and download Sunset again, then unpack it again
   deps             Linux: the libraries horizon-launcher is missing, and how to install them
@@ -35,10 +37,12 @@ Without a command, opens the window.
   plugins build    Build (or go back) now if the instance doesn't play what is asked for
   licences         Print the licences: Sunset's, the Horizon notice and the launcher's third-party licences
 
-Environment: SUNSET_LAUNCHER_HOME (data folder), SUNSET_MANIFEST (manifest address: https://, http:// or file://)";
+Environment: SUNSET_LAUNCHER_HOME (data folder), SUNSET_MANIFEST (manifest address: https://, http:// or file://),
+SUNSET_NO_SELF_UPDATE (the window leaves the launcher as it is)";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    selfupdate::remove_replaced();
     let Some(cmd) = args.first() else {
         ui::run();
         return;
@@ -53,13 +57,24 @@ fn main() {
         None => eprintln!("{msg}"),
     };
     let r: core::Result<String> = match cmd.as_str() {
-        "check" => core::fetch_release(&s).map(|r| {
+        "check" => core::fetch_signed(&s).and_then(|sg| {
+            let launcher = match selfupdate::offered(&sg.raw, core::VERSION) {
+                Ok(Some(pin)) => format!("{} (the release has {}: sunset-launcher self-update)", core::VERSION, pin.version),
+                Ok(None) => format!("{}, up to date", core::VERSION),
+                Err(e) => format!("{} ({e})", core::VERSION),
+            };
+            let r = core::Release::from_signed(sg).map_err(|e| format!("{e}\nlauncher: {launcher}"))?;
             let m = &r.manifest;
             let inst = core::installed(&p).map(|i| format!("Sunset {} ({})", i.version, i.version_dir)).unwrap_or_else(|| "nothing".into());
-            format!(
-                "manifest: Sunset {} on Horizon {} ({}), Minecraft {}, horizon-launcher {}\ninstalled: {inst}\ndata: {}",
+            Ok(format!(
+                "manifest: Sunset {} on Horizon {} ({}), Minecraft {}, horizon-launcher {}\ninstalled: {inst}\nlauncher: {launcher}\ndata: {}",
                 m.version, m.short_pin(), m.horizon.tag, m.horizon.game, m.cli.version, p.root.display()
-            )
+            ))
+        }),
+        "self-update" => core::fetch_signed(&s).and_then(|sg| match selfupdate::offered(&sg.raw, core::VERSION)? {
+            None => Ok(format!("the launcher is up to date ({})", core::VERSION)),
+            Some(pin) => selfupdate::apply(&p, &sg.base, &pin, interrupt_cancels(), &progress)
+                .map(|exe| format!("updated the launcher to {} ({}): start it again", pin.version, exe.display())),
         }),
         "install" | "repair" => core::fetch_release(&s).and_then(|r| core::install(&p, &r, cmd == "repair", interrupt_cancels(), &progress)).map(|_| "done".into()),
         "deps" => match core::cli_path(&p) {

@@ -3,6 +3,7 @@
 use crate::core::{self, Account, Manifest, Paths, Release, Settings, SignIn};
 use crate::fx;
 use crate::plugins::{self, Phase};
+use crate::selfupdate;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     Animation, AnimationExt as _, SpringAnimation, TextRun, ease_out_quint, quadratic,
@@ -119,6 +120,8 @@ enum Msg {
     Progress(String, Option<f32>),
     JobDone(core::Result<String>),
     Latest(Box<core::Result<Release>>, bool),
+    /// The launcher put a newer build of itself in place (its version and program), or why it couldn't.
+    LauncherUpdated(core::Result<(String, PathBuf)>),
     Accounts(Vec<Account>),
     OwnerEver(bool),
     Face(String, Vec<[u8; 4]>),
@@ -339,10 +342,28 @@ impl Launcher {
 
     /// Fetches the signed manifest. `auto` (start-up) installs a newer pin when auto-update is on and Sunset is
     /// installed; a first install waits for New instance. Otherwise the result is shown.
+    ///
+    /// First the launcher updates itself when the release has a newer build of it (selfupdate.rs); it then restarts
+    /// as that build unless something is running.
     fn check(&self, auto: bool) {
-        let (s, tx) = (self.settings.clone(), self.send());
+        let (s, p, tx) = (self.settings.clone(), self.paths.clone(), self.send());
         std::thread::spawn(move || {
-            let _ = tx.send_blocking(Msg::Latest(Box::new(core::fetch_release(&s)), auto));
+            let signed = core::fetch_signed(&s);
+            if let Ok(sg) = &signed
+                && selfupdate::disabled().is_none()
+            {
+                match selfupdate::offered(&sg.raw, core::VERSION) {
+                    Ok(Some(pin)) => {
+                        let r = selfupdate::apply(&p, &sg.base, &pin, &AtomicBool::new(false), &|_, _| {}).map(|exe| (pin.version, exe));
+                        let _ = tx.send_blocking(Msg::LauncherUpdated(r));
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        let _ = tx.send_blocking(Msg::LauncherUpdated(Err(e)));
+                    }
+                }
+            }
+            let _ = tx.send_blocking(Msg::Latest(Box::new(signed.and_then(Release::from_signed)), auto));
         });
     }
 
@@ -619,6 +640,15 @@ impl Launcher {
                     self.sync_plugins(cx);
                 }
                 Err(e) => self.note = Some((true, e)),
+            },
+            Msg::LauncherUpdated(r) => match r {
+                // Nothing to lose: start the new build in its place now.
+                Ok((v, exe)) if self.job.is_none() && !self.playing && !self.importing && self.sign_in.is_none() => match selfupdate::restart(&exe) {
+                    Ok(()) => cx.quit(),
+                    Err(e) => self.note = Some((true, format!("Sunset launcher {v} is installed. {e}: start it again"))),
+                },
+                Ok((v, _)) => self.note = Some((false, format!("Sunset launcher {v} is installed: it opens the next time you start the launcher"))),
+                Err(e) => self.note = Some((true, format!("The launcher couldn't update itself: {e}"))),
             },
             Msg::Latest(r, auto) => match *r {
                 Ok(rel) => {

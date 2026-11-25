@@ -338,16 +338,36 @@ pub fn manifest_url(settings: &Settings) -> Result<String> {
     Err(format!("no Sunset client release for {PLATFORM} yet (github.com/{REPO}/releases)"))
 }
 
-/// Fetches the manifest and its `.minisig`, checks the signature with the built-in key, then the contents.
-pub fn fetch_release(settings: &Settings) -> Result<Release> {
+/// A manifest that passed its signature check, before its contents are checked: the launcher's own update
+/// (selfupdate.rs) reads its entry from it even when this launcher can't install the rest.
+#[derive(Clone, Debug)]
+pub struct Signed {
+    pub raw: Vec<u8>,
+    pub base: String,
+}
+
+/// Fetches the manifest and its `.minisig` and checks the signature with the built-in key.
+pub fn fetch_signed(settings: &Settings) -> Result<Signed> {
     let url = manifest_url(settings)?;
     let raw = fetch(&url)?;
     let sig = fetch(&format!("{url}.minisig"))?;
     verify_signature(&raw, &String::from_utf8_lossy(&sig)).map_err(|_| "the release failed its signature check, so it was refused".to_string())?;
-    let manifest: Manifest = serde_json::from_slice(&raw).map_err(|e| format!("unreadable manifest: {e}"))?;
-    manifest.check()?;
     let base = url.rsplit_once('/').map(|(b, _)| b.to_string()).unwrap_or_default();
-    Ok(Release { manifest, raw, base })
+    Ok(Signed { raw, base })
+}
+
+impl Release {
+    /// The signed manifest's contents, checked.
+    pub fn from_signed(s: Signed) -> Result<Release> {
+        let manifest: Manifest = serde_json::from_slice(&s.raw).map_err(|e| format!("unreadable manifest: {e}"))?;
+        manifest.check()?;
+        Ok(Release { manifest, raw: s.raw, base: s.base })
+    }
+}
+
+/// Fetches the manifest and its `.minisig`, checks the signature with the built-in key, then the contents.
+pub fn fetch_release(settings: &Settings) -> Result<Release> {
+    Release::from_signed(fetch_signed(settings)?)
 }
 
 /// Where the installed release's files were downloaded from (written by `install`), for the plugin build's downloads.
