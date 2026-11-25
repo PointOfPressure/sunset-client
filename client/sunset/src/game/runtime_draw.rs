@@ -146,6 +146,9 @@ pub(super) enum Shape {
     Squircle([f32; 4], f32, u32),
     // One of the menu's icons (a Lucide character) at a size (1: the text's).
     Icon(&'static str, [f32; 2], u32, f32),
+    // A shape only the UI pipeline (ui_renderer.rs) draws in full: a shadow, a gradient, a border, the blurred frame
+    // behind. Where it can't, a shadow is left out and the rest is a plain rounded fill.
+    Prim(::sunset_core::ui::Prim),
     // What is drawn from ClipStart on is cut to the rectangle ClipEnd gives: x0, y0, x1, y1.
     ClipStart,
     ClipEnd([f32; 4]),
@@ -281,9 +284,79 @@ pub(super) fn round_fill(game: &Game<'_>, batch: &mut HudBatch, [x, y, w, h]: [f
 // Text whose colour has an alpha byte (other than 0 and FF: opaque) is drawn that see-through: the module list's
 // rows fading in and out. `shadow`: text with its drop shadow (the HUD's Text shadow; the menu always has it).
 pub(super) fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32, shadow: bool) {
+    paint_to(game, batch, shapes, px, shadow, false);
+}
+
+// The same for the menu: where the UI pipeline draws, its rectangles go to it, in layers under the text and icons
+// drawn after them (::sunset_core::ui::Layers), and only the rest into the batch.
+pub(super) fn paint_layered(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32, shadow: bool) {
+    paint_to(game, batch, shapes, px, shadow, ::sunset_core::ui::active());
+}
+
+// A shape as the pipeline draws it (None: one for the batch).
+fn prim_of(s: &Shape) -> Option<::sunset_core::ui::Prim> {
+    use ::sunset_core::ui::Prim;
+    let mut prim = match s {
+        Shape::Fill(r, argb) => Prim::new(*r, 0.0, *argb),
+        Shape::Round(r, radius, argb) => Prim::new(*r, *radius, *argb),
+        Shape::Corners(r, radius, which, argb) => Prim::new(*r, *radius, *argb).corners(*which),
+        Shape::Squircle(r, radius, argb) => Prim::new(*r, *radius, *argb).squircle(),
+        Shape::Prim(p) => *p,
+        _ => return None,
+    };
+    // As the batch's fills: turned inside out on both axes is the same rectangle, on one or without area nothing.
+    let [x, y, w, h] = prim.rect;
+    if w < 0.0 && h < 0.0 {
+        prim.rect = [x + w, y + h, -w, -h];
+    }
+    Some(prim)
+}
+
+fn paint_to(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shape>, px: f32, shadow: bool, layered: bool) {
     let mut clip = 0;
+    let mut layers = layered.then(|| ::sunset_core::ui::FRAME.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
+    // In layers each shape is cut as it is drawn (a cut of a run of the batch afterwards would move the places the
+    // layers were put at): the rectangles the ClipEnds give, in order.
+    let clips: Vec<[f32; 4]> = match layers {
+        Some(_) => shapes.iter().filter_map(|s| if let Shape::ClipEnd(r) = s { Some(*r) } else { None }).collect(),
+        None => Vec::new(),
+    };
+    let (mut next_clip, mut cut_to) = (0, None::<[f32; 4]>);
     for s in shapes.drain(..) {
+        let start = batch.vertices.len();
+        if let Some(layers) = layers.as_mut() {
+            match &s {
+                Shape::ClipStart => {
+                    cut_to = clips.get(next_clip).copied();
+                    next_clip += 1;
+                    continue;
+                }
+                Shape::ClipEnd(_) => {
+                    cut_to = None;
+                    continue;
+                }
+                _ => {}
+            }
+            if let Some(mut prim) = prim_of(&s) {
+                let [_, _, w, h] = prim.rect;
+                if prim.rect.iter().all(|v| v.is_finite()) && w > 0.0 && h > 0.0 {
+                    if let Some([x0, y0, x1, y1]) = cut_to {
+                        prim.clip = [prim.clip[0].max(x0), prim.clip[1].max(y0), prim.clip[2].min(x1), prim.clip[3].min(y1)];
+                    }
+                    layers.push(prim, start as u32);
+                }
+                continue;
+            }
+        }
         match s {
+            Shape::Prim(p) => {
+                // Without the pipeline: no shadow, and a plain fill of its colour.
+                if p.params[1] == 0.0 {
+                    let argb = u32::from_be_bytes([p.fill[3], p.fill[0], p.fill[1], p.fill[2]].map(|c| (c * 255.0).round() as u8));
+                    let radius = p.radii.iter().fold(0.0_f32, |a, r| a.max(*r));
+                    round_fill(game, batch, p.rect, radius, p.radii.map(|r| r > 0.0), argb, px);
+                }
+            }
             Shape::Squircle(r, radius, argb) => super::sunset_dashboard::squircle(game, batch, r, radius, argb, px),
             Shape::Icon(glyph, at, argb, size) => crate::game::sunset_font::icon(game, batch, glyph, at, argb, size),
             Shape::ClipStart => clip = batch.vertices.len(),
@@ -338,6 +411,18 @@ pub(super) fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shap
                     batch.rect_uv(x, y, size, size, part, horizon_client::hud::rgba(255, 255, 255, 255));
                 }
             }
+        }
+        if let Some(layers) = layers.as_mut()
+            && batch.vertices.len() > start
+        {
+            if let Some([x0, y0, x1, y1]) = cut_to {
+                batch.clip_since(start, x0, y0, x1, y1);
+            }
+            // What the batch now holds there lies over the layer's shapes: a later shape under it starts a new layer.
+            let bounds = batch.vertices[start..].iter().fold([f32::MAX, f32::MAX, f32::MIN, f32::MIN], |b, v| {
+                [b[0].min(v.pos[0]), b[1].min(v.pos[1]), b[2].max(v.pos[0]), b[3].max(v.pos[1])]
+            });
+            layers.cover(bounds);
         }
     }
 }

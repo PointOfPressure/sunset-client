@@ -2826,6 +2826,41 @@ def _():
     missing = [n for n in names if not os.path.exists(f"{SHOTS}/sidebar_{n}.png")]
     return not missing, f"{len(names) - len(missing)} shots in {SHOTS}" + (f", missing {missing}" if missing else "")
 
+@test("ClickGUI GPU shapes (same look on and off)")
+def _():
+    # The menu drawn by Sunset's UI pipeline (ClickGUI > GPU shapes, on by default) and as triangles in the game's HUD:
+    # the same picture but for edge pixels, as panels, as the Dashboard and with the list picker open (whose shadow
+    # and blurred backdrop only the pipeline draws, so it differs more). The log says the pipeline was made.
+    reset()
+    setting("clickgui", "background dim", "100")
+    setting("clickgui", "settings", "Inline")
+    setting("xray", "list", "Simple")
+    got = {}
+    for style in ("Dropdown", "Dashboard", "picker"):
+        setting("clickgui", "style", "Dropdown" if style == "picker" else style)
+        frames = {}
+        for on in ("true", "false"):
+            setting("clickgui", "gpu shapes", on)
+            # The chat's lines (this setting's among them) would differ between the two frames.
+            clear_chat()
+            if style == "picker":
+                open_picker("")
+                wait(10)
+            else:
+                say(".menu xray")
+                wait(30)
+            frames[on] = frame(f"gpu-shapes-{style}-{on}")
+            close_menu()
+        got[style] = changed(frames["true"], frames["false"])
+    for name, value in (("style", "Dropdown"), ("gpu shapes", "true"), ("background dim", "35")):
+        setting("clickgui", name, value)
+    with open(os.path.join(session_dir(), "home", "logs", "latest.log"), errors="replace") as f:
+        made = "Sunset UI pipeline ready" in f.read()
+    area = frames["true"].size[0] * frames["true"].size[1]
+    ok = made and got["Dropdown"] < area // 100 and got["Dashboard"] < area // 100 and area // 200 < got["picker"]
+    return ok, f"pipeline made: {made}; pixels of {area} that differ with GPU shapes on and off: {got}"
+
+
 @test("F1 with the menu open")
 def _():
     # F1 leaves the HUD (and the menu drawn with it) shown while the menu is open; closed, F1 hides the HUD again.

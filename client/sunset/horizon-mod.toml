@@ -81,6 +81,18 @@ name = "sunset_atmosphere_renderer"
 source = "src/game/atmosphere_renderer.rs"
 
 [[native.module]]
+id = "picker_layout"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_picker_layout"
+source = "src/game/picker_layout.rs"
+
+[[native.module]]
+id = "ui_renderer"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_ui_renderer"
+source = "src/game/ui_renderer.rs"
+
+[[native.module]]
 id = "atmosphere_shader"
 file = "crates/horizon-client/src/game.rs"
 name = "sunset_atmosphere_shader"

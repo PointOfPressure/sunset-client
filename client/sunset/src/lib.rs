@@ -20,6 +20,7 @@ pub mod overlay;
 pub mod particles;
 pub mod sync;
 pub mod timer;
+pub mod ui;
 pub mod water;
 pub mod wire;
 pub mod xray;

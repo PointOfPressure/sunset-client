@@ -251,6 +251,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Background dim", 35.0, 0.0, 100.0, 5.0)
             .bool("Menu dim", true)
             .bool("Inventory blur", false)
+            // The menu's rectangles through Sunset's own pipeline (ui_renderer.rs); off, as triangles in the game's HUD.
+            .bool("GPU shapes", true)
             .text("Friends", ""),
         // Sections as Rise's Interface groups them; setting names are what configs and profiles keep, so a move
         // between sections changes nothing saved.

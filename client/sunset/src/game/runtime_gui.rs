@@ -603,8 +603,7 @@ pub(super) fn gui_wheel(game: &Game<'_>, steps: f32) {
                 Value::Text(t) => pick::rows(picker, t, draft.text()).len(),
                 _ => 0,
             };
-            let max = pick::max_scroll(count, pick::rect(view_w, view_h));
-            picker.scroll = (picker.scroll - steps * pick::ROW * 3.0).clamp(0.0, max);
+            picker.scroll = pick::scroll(pick::layout(view_w, view_h).list, count, picker.scroll).wheel(steps, 3.0);
             return;
         }
         // Over the settings window: it scrolls.

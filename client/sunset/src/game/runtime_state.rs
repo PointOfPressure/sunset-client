@@ -800,6 +800,7 @@ pub(super) fn sync_flags(s: &mut State) {
     LOOK[8].store(g.map_or(4.0, |m| m.n("Panel radius") as f32).to_bits(), Ordering::Relaxed);
     LOOK[9].store(g.map_or(3.0, |m| m.n("Control radius") as f32).to_bits(), Ordering::Relaxed);
     LOOK[10].store(u32::from(g.is_some_and(|m| m.p("Spacing") == "Compact")), Ordering::Relaxed);
+    ::sunset_core::ui::WANTED.store(g.is_none_or(|m| m.b("GPU shapes")), Ordering::Relaxed);
     let no_fall = s.module("No Fall").filter(|m| m.on);
     NO_FALL.store(no_fall.map_or(0, |m| match m.p("Mode") {
         "Packet" => 1,
