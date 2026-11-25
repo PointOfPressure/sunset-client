@@ -11653,7 +11653,8 @@ def _():
     only("tapuse")
     kept, mark = 0, probe_mark()
     for key in "555666":
-        ctl("key", key, "tap")
+        if not x_press(key):
+            ctl("key", key, "tap")
         wait(25)
         kept += "sword" in held().get("item", "")
     only()
@@ -12650,13 +12651,20 @@ def _():
         ctl("key", "1", "tap")
         cmd(f"summon pig {X0 + 0.5} {Y + 1} {Z0 + 3.0} {TOUGH_PIG}")
         wait(10)
+        # A real press where the window takes one: Sunset's keys are read from the window's key events, which
+        # horizon-ctl's key passes by (so under --offscreen the "on" case can only show the game's own slot change).
+        # The window is made ready first: the pointer coming into it turns the view, so the aim comes after.
+        window = x_window() if real_keys_ready() else None
         ctl("look-at-entity", str(mobs("pig")[0]["id"]))
         if mods:
             setting("tapuse", "hotbar keys", "true")
         only(*mods)
         wait(5)
         a, mark = pos(), probe_mark()
-        ctl("key", "5", "tap")
+        if window:
+            x_keys(window, "5")
+        else:
+            ctl("key", "5", "tap")
         wait(15)
         got[name] = (round(flat(a, pos()), 2), held().get("item", ""))
         if mods:
