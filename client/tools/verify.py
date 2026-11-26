@@ -4024,6 +4024,11 @@ def _():
     mark = log_mark()
     # Every line at once: the world's own builds (a server's test world has some) don't hold this one back.
     setting("basefinder", "message cooldown", "0")
+    # Placed blocks only: a server's test world has been loaded round the arena for days (Bot1 stands there), so its
+    # kelp and amethyst really have grown and Grown amethyst, Long plants and Hidden bases rightly say so. They have
+    # their own test (Base Finder signs, Hidden bases).
+    for name in ("grown amethyst", "long plants", "hidden bases", "reasons"):
+        setting("basefinder", name, "false")
     toggle("base finder", True)
     wait(40)
     ax, az = X0 >> 4, Z0 >> 4
@@ -4069,6 +4074,7 @@ def _():
     points_off = base_points()
     said_off = [line for line in sunset_said(mark3) if line.startswith("Base?")]
     say(".waypoint remove Base")
+    say(".reset basefinder")
     cmd(*build(X0 + 3, Y + 1, Z0 + 6))
     line = far[0] if far else ""
     off_ok = len(points_on) >= 2 and [p.split(":")[0] for p in points_off] == ["Base"] and not said_off
@@ -11730,7 +11736,7 @@ def _():
         return None, "servers only"
     tap = BrandTap()
     relay = f"127.0.0.1:{tap.port}"
-    got, said, laby, sends = {}, [], False, {}
+    got, said, laby, sends, laby_said, laby_streams = {}, [], False, {}, [], []
     try:
         for name, mods, settings in (
                 ("off", (), ()),
@@ -11741,14 +11747,18 @@ def _():
             only(*mods)
             for k, v in settings:
                 setting("clientspoofer", k, v)
-            before, mark = len(tap.brands), log_mark()
+            before, mark, opened = len(tap.brands), log_mark(), len(tap.streams)
             join(relay)
             got[name] = tap.brands[before] if len(tap.brands) > before else None
             sends[name] = len(tap.brands) - before
             if name == "Fabric":
                 said = [line for line in sunset_said(mark) if "Client Spoofer" in line]
             if name == "LabyMod":
-                laby = b"\x0blabymod:neo\x00\x064.2.60" in bytes(tap.streams[-1])
+                wait(20)
+                # Every connection this join made: the game can open another (a status ping) after the play one.
+                laby = any(b"\x0blabymod:neo\x00\x064.2.60" in bytes(s) for s in tap.streams[opened:])
+                laby_streams = [(len(s), b"labymod:neo" in bytes(s)) for s in tap.streams[opened:]]
+                laby_said = [line for line in sunset_said(mark) if "Client Spoofer" in line]
     finally:
         only()
         join(SERVER)
@@ -11757,7 +11767,7 @@ def _():
     # One brand per connection, the spoofed one in the configuration phase (never a second one after joining).
     ok = got == want and laby and any('"fabric" (Fabric' in line for line in said) and set(sends.values()) == {1}
     return ok, (f"brands the server got: {got}; brand packets per join {sends}; LabyMod's version packet: {laby}; "
-                f"Diagnostics: {said[:1]}")
+                f"Diagnostics: {said[:1]}, with LabyMod: {laby_said[:3]}; its connections (bytes, labymod:neo in them): {laby_streams}")
 
 
 @test("Velocity (knockback delay)")
@@ -13402,18 +13412,18 @@ def _():
         wait(5)
         before, mark = hp(), probe_mark()
         cmd(f"summon minecraft:fireball {X0 + 0.5} {Y + 1.8} {Z0 + z} {{Motion:[0.0,0.0,{motion}],acceleration_power:0.0d,ExplosionPower:0b}}")
-        wait(40)
+        # The lowest health while it flies: reset()'s saturation heals a hit back within the 40 ticks.
+        lowest = min(poll(40, 2, hp) + [hp()])
         hits = sum(1 for t in probe_ticks(mark) for line in t if line == "order attack")
         only()
         cmd("kill @e[type=minecraft:fireball]")
-        lost = before - hp()
-        return hits, round(lost, 1)
+        return hits, round(before - lowest, 1)
 
     # Hurting projectiles keep 95% of their speed a tick: 0.6 a tick from 6.5 blocks arrives in about 12 ticks.
     on, off, away = shot(True, 6.5, -0.6), shot(False, 6.5, -0.6), shot(True, 2.0, 0.6)
     reset()
     ok = on[0] >= 1 and on[1] == 0 and off[0] == 0 and off[1] > 0 and away[0] == 0
-    return ok, f"(attacks, health lost): coming with Projectiles {on}, without {off}; going away {away}"
+    return ok, f"(attacks, most health lost): coming with Projectiles {on}, without {off}; going away {away}"
 
 
     return ok, f"(tick the pearl took you, highest you got, wind charges used): off {got['off']}, on {got['on']}"
@@ -15657,6 +15667,9 @@ def _():
     setting("trajectories", "pearls in flight", "true")
     reset()
     ctl("look", "0", "-10")
+    # The chat (reset()'s command lines) sits over the band counted below the crosshair and darkens the paths.
+    chat_scale = ctl("options-get", "chatScale")["options"]["chatScale"]["value"]
+    ctl("options-set", "chatScale", "0")
     accent = lambda r, g, b: r > 200 and 60 < g < 140 and b < 60
     got = {}
     for name, item in (("single", "crossbow[charged_projectiles=[{id:arrow}]]"),
@@ -15686,6 +15699,7 @@ def _():
         only()
         bot_done()
     setting("trajectories", "pearls in flight", "false")
+    ctl("options-set", "chatScale", str(chat_scale))
     ok = got["single"] > 0 and got["multishot"] > got["single"] * 1.5 and (pearl is None or pearl > 0)
     return ok, f"accent pixels: one arrow {got['single']}, multishot {got['multishot']}, a flying pearl {pearl}"
 
@@ -15698,10 +15712,13 @@ def _():
     # A grey wall gives every shot a visible landing marker. At vertical FOV 90 the focal length is h/2.
     wall = f"{X0-22} {Y+1} {Z0+12} {X0+22} {Y+9} {Z0+16}"
     fov = ctl("options-get", "fov")["options"]["fov"]["value"]
+    chat_scale = ctl("options-get", "chatScale")["options"]["chatScale"]["value"]
     observed = {}
     try:
         cmd(f"fill {wall} minecraft:light_gray_concrete")
         ctl("options-set", "fov", "90")
+        # The chat (reset()'s command lines) covers the band the markers are looked for in.
+        ctl("options-set", "chatScale", "0")
         setting("trajectories", "mode", "Potato")
         only("trajectories")
         for level, count, angles in ((5, 0, []), (0, 1, [0]), (1, 3, [-10, 0, 10]),
@@ -15728,6 +15745,7 @@ def _():
     finally:
         only()
         ctl("options-set", "fov", str(fov))
+        ctl("options-set", "chatScale", str(chat_scale))
         cmd(f"fill {wall} minecraft:air")
     return True, f"landing marker columns by (level, loaded): {observed}"
 
@@ -18995,7 +19013,7 @@ def _():
         f"fill {vx - 1} {Y + 1} {vz - 1} {vx + 1} {Y + 3} {vz + 1} minecraft:glass",
         f"fill {vx} {Y + 1} {vz} {vx} {Y + 2} {vz} minecraft:air",
         f"setblock {lectern[0]} {lectern[1]} {lectern[2]} minecraft:air",
-        f"item replace entity @s hotbar.0 with minecraft:netherite_axe", f"item replace entity @s hotbar.1 with minecraft:lectern 4",
+        f"item replace entity @s hotbar.0 with minecraft:netherite_axe", f"item replace entity @s hotbar.1 with minecraft:lectern 64",
         f'summon minecraft:villager {vx + 0.5} {Y + 1} {vz + 0.5} {{VillagerData:{{profession:"minecraft:none",level:1,type:"minecraft:plains"}},PersistenceRequired:1b}}')
     ctl("key", "1", "tap")
     wait(10)
@@ -19150,7 +19168,7 @@ def _():
     setting("usetracker", "chat", "true")
     setting("usetracker", "own throws", "false")
     slot(0, "ender_pearl", 8)
-    slot(1, 'splash_potion[potion_contents={potion:"minecraft:water"}]', 4)
+    slot(1, 'splash_potion[potion_contents={potion:"minecraft:water"}]', 1)
     ctl("key", "1", "tap")
 
     def lines(mark, what):
@@ -19158,7 +19176,7 @@ def _():
 
     def throw(key="1", pitch="-10"):
         slot(0, "ender_pearl", 8)
-        slot(1, 'splash_potion[potion_contents={potion:"minecraft:water"}]', 4)
+        slot(1, 'splash_potion[potion_contents={potion:"minecraft:water"}]', 1)
         wait(2)
         ctl("key", key, "tap")
         ctl("look", "0", pitch)

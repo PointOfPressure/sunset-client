@@ -49,6 +49,12 @@ struct Roll {
     villager: u32,
     step: Step,
     rolls: u32,
+    // Until this tick a trades screen is its own to close, whatever the step by then: each of its Interacts can be
+    // answered, a retry's screen after the first one's offers (while the lectern is being broken), and one it left
+    // open stops everything until you close it.
+    ours_until: u64,
+    // Verbose has said that a screen it did not open holds it.
+    told_screen: bool,
 }
 
 #[derive(Default)]
@@ -171,7 +177,7 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
             return stop(game, "no villager within 8 blocks of the lectern");
         };
         let step = if villager_job(game, villager).as_deref() == Some("librarian") { Step::Open { asked: 0, tries: 0 } } else { Step::Hire { until: now + ticks(m, "Profession wait (s)") } };
-        st(|s| s.roll = Some(Roll { lectern, villager, step, rolls: 0 }));
+        st(|s| s.roll = Some(Roll { lectern, villager, step, rolls: 0, ours_until: 0, told_screen: false }));
     }
     let Some((lectern, villager, step, rolls)) = st(|s| s.roll.as_ref().map(|r| (r.lectern, r.villager, r.step, r.rolls))) else {
         return;
@@ -187,8 +193,10 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
     // offers come in the tick after.
     if game.station.is_some() {
         // Only the trades it opened; a screen you opened waits.
-        if matches!(step, Step::Open { asked, .. } if asked > 0) {
+        if st(|s| s.roll.as_ref().is_some_and(|r| now <= r.ours_until)) {
             close(game, 0);
+        } else if m.b("Verbose") && st(|s| s.roll.as_mut().is_some_and(|r| !std::mem::replace(&mut r.told_screen, true))) {
+            super::sunset::chat_line(game, "Villager Roller: waiting for the trades you opened to close");
         }
         return;
     }
@@ -220,6 +228,11 @@ pub(super) fn tick(game: &mut Game<'_>, m: Option<&Module>) {
                 }
                 game.send(S::Interact(play::Interact { id: villager as i32, hand: 0, location: [0.0, 1.0, 0.0], secondary: false }));
                 game.swing_arm();
+                st(|s| {
+                    if let Some(r) = s.roll.as_mut() {
+                        r.ours_until = now + 100;
+                    }
+                });
                 Step::Open { asked: now, tries: tries + 1 }
             } else {
                 step
