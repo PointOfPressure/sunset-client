@@ -280,6 +280,35 @@ pub(super) fn write_config(data: &Path, key: &str, text: &str) -> Result<(), Str
     write_limited(&data.join(key), text, 16 * MAX_BYTES)
 }
 
+// The plain way, for when the rename over the old file is refused (a virus scanner holding it): written in place.
+pub(super) fn write_in_place(data: &Path, key: &str, text: &str) -> Result<(), String> {
+    let path = folder(data.to_path_buf())?.join(key);
+    if fs::symlink_metadata(&path).is_ok() {
+        plain(&path, false)?;
+    }
+    fs::write(&path, text).map_err(|e| format!("can't write {}: {e}", path.display()))
+}
+
+// A small file of Sunset's own in its data folder, by name (the presence notice, a world's placed blocks), trimmed.
+// The game's setting reader answers only for settings a mod registered with it, so it never gave these back.
+pub(super) fn kept(data: &Path, key: &str) -> Option<String> {
+    read(&own(data, key)?).ok().map(|text| text.trim().to_owned())
+}
+
+// Keeps one, written whole as the config is.
+pub(super) fn keep(data: &Path, key: &str, text: &str) -> Result<(), String> {
+    if own(data, key).is_none() {
+        return Err(format!("\"{key}\" is not a file name"));
+    }
+    write_config(data, key, text)
+}
+
+// The file `key` in the data folder: one plain name, nothing that leads out of the folder.
+fn own(data: &Path, key: &str) -> Option<PathBuf> {
+    let mut parts = Path::new(key).components();
+    matches!((parts.next(), parts.next()), (Some(std::path::Component::Normal(_)), None)).then(|| data.join(key))
+}
+
 // A config that holds settings: anything else (empty, cut short before its first module) is not one to load.
 pub(super) fn whole_config(text: &str) -> bool {
     text.lines().any(|l| l.contains(".on="))
@@ -344,6 +373,34 @@ mod store_tests {
         assert!(!dir.join("config.tmp4242").exists() && !dir.join("profiles").join("pvp.tmp99").exists());
         assert!(dir.join("profiles").join("pvp.profile").exists() && dir.join("config").exists());
         assert!(whole_config("sprint.on=true") && !whole_config("") && !whole_config("friends=a"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // Sunset's own small files come back as they were kept, under any plain name; a name that leads out of the
+    // folder, a folder and a missing file give nothing. The in-place write replaces a file and refuses a folder.
+    #[test]
+    fn own_files_are_kept_and_read_by_plain_names_only() {
+        let dir = std::env::temp_dir().join(format!("sunset-kept-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(kept(&dir, "presence-notice-2"), None);
+        keep(&dir, "presence-notice-2", "1").unwrap();
+        assert_eq!(kept(&dir, "presence-notice-2").as_deref(), Some("1"));
+        keep(&dir, "xray-placed-00000000000000ab", " 1,2,3;4,5,6\n").unwrap();
+        assert_eq!(kept(&dir, "xray-placed-00000000000000ab").as_deref(), Some("1,2,3;4,5,6"));
+        keep(&dir, "xray-placed-00000000000000ab", "").unwrap();
+        assert_eq!(kept(&dir, "xray-placed-00000000000000ab").as_deref(), Some(""));
+        fs::create_dir_all(dir.join("profiles")).unwrap();
+        assert_eq!(kept(&dir, "profiles"), None);
+        fs::write(dir.join("profiles").join("pvp.profile"), "x").unwrap();
+        for out in ["profiles/pvp.profile", "../outside", "", ".", "..", "/etc/hostname"] {
+            assert_eq!(kept(&dir, out), None, "{out}");
+            assert!(keep(&dir, out, "x").is_err(), "{out}");
+        }
+        assert!(!dir.parent().unwrap().join("outside").exists());
+        write_in_place(&dir, "config", "sprint.on=true\n").unwrap();
+        write_in_place(&dir, "config", "sprint.on=false\n").unwrap();
+        assert_eq!(kept(&dir, "config").as_deref(), Some("sprint.on=false"));
+        assert!(write_in_place(&dir, "profiles", "x").is_err());
         let _ = fs::remove_dir_all(&dir);
     }
 }

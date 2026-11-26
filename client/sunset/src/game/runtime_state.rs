@@ -934,10 +934,20 @@ pub(super) fn save(game: &Game<'_>) {
     match written {
         Ok(()) => *last = Some(hash),
         Err(e) => {
-            // A virus scanner holding the old file can stop the rename: the game's own writer still gets it saved.
-            game.native_set_setting(ID, "config", &text);
+            // A virus scanner holding the old file can stop the rename: written in place instead, and tried again
+            // at the next save. Said once a launch for each outcome, not at every change.
             *last = None;
-            notice(format!("Couldn't save the settings safely ({e}); saved them the plain way."));
+            let plain = super::sunset_profiles::write_in_place(&game.native_data_dir(ID), "config", &text);
+            if let Some(kept) = KEPT.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+                let first = if plain.is_ok() { !std::mem::replace(&mut kept.said_plain, true) } else { !std::mem::replace(&mut kept.said_lost, true) };
+                if !first {
+                    return;
+                }
+            }
+            match plain {
+                Ok(()) => notice(format!("Couldn't save the settings safely ({e}); saved them the plain way.")),
+                Err(second) => notice(format!("Couldn't save the settings: {e}; {second}. Changes made now are lost when the game closes.")),
+            }
         }
     }
 }
@@ -954,6 +964,9 @@ struct Kept {
     saves: u32,
     failed: u32,
     last_error: String,
+    // The notice for a save that went the plain way, and for one that did not go at all, was shown this launch.
+    said_plain: bool,
+    said_lost: bool,
 }
 
 static KEPT: Mutex<Option<Kept>> = Mutex::new(None);

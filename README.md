@@ -473,6 +473,8 @@ The 1.x `.hnmod` line is the `hnmod` branch.
 - `python3 client/tools/pack.py` writes the 1.x package, `dist/sunset-<version>.hnmod`.
 - `client/tools/verify.py` runs modules in a test arena in a headless game and exits non-zero on a failed check, an
   unknown test name or a run with no checks.
+- `client/tools/restart_check.py BIN RESOURCES` starts a built version twice in an empty home and checks that the
+  settings the first run changed are the ones the second comes up with (verify.py's tests all run inside one launch).
 - `python3 plugins/plugsmoke.py` is the plugin release gate: it builds Sunset with the example and test plugins and
   runs verify.py's `Plugin API:` checks. Options are at the top of the script.
 

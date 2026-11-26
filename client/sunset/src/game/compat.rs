@@ -91,10 +91,22 @@ impl SunsetGame for Game<'_> {
     fn native_playing(&self) -> bool {
         self.playing()
     }
+    // The game's `setting` and `set_setting` answer only for settings a mod registered with the game: for any other
+    // name a read gives None and a write does nothing (so 2.0.0, which read its config this way, started from the
+    // defaults at every launch). Sunset's own are plain files in its data folder, read and written as such.
     fn native_setting(&self, mod_id: &str, key: &str) -> Option<String> {
+        if mod_id == super::sunset::ID {
+            return super::sunset_profiles::kept(&self.native_data_dir(mod_id), key).or_else(|| self.setting(mod_id, key));
+        }
         self.setting(mod_id, key)
     }
     fn native_set_setting(&self, mod_id: &str, key: &str, value: &str) {
+        if mod_id == super::sunset::ID {
+            if let Err(e) = super::sunset_profiles::keep(&self.native_data_dir(mod_id), key, value) {
+                log::warn!("Sunset: {e}");
+            }
+            return;
+        }
         self.set_setting(mod_id, key, value);
     }
     fn native_mod_key(&self, mod_id: &str, name: &str, default: &str) -> String {

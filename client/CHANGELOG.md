@@ -49,6 +49,9 @@ section of the version they build into the signed manifest, and the launcher sho
 - Launcher: the Horizon import offer wraps and can be put off; pages follow a maximised or fullscreen window (by vs.)
 
 ### Fixed
+- **Settings no longer come back reset at every launch: 2.0.0 never read its settings file when it started, so each launch began from the defaults (friends and binds too). The file itself was kept, so your last settings load again after the update (reported by pressure)**
+- Sunset Presence's first-launch notice is shown once, not at every launch, and Xray > Show placed blocks remembers a world's placed blocks between launches (neither was ever kept)
+- A settings save that can't replace the file safely is written in place, and says so once instead of at every change
 - Hand View: a blocking sword no longer jumps between two poses on a 1.8 server (the game's own block while the block is held, Hand View's before it and between hits): it is Hand View's block all the way, whatever the Block animation (reported by vs.)
 - No Render > Hide titles no longer lets a title flash for a moment when it arrives: it is not drawn at all (reported by pressure)
 - Auto Fish, Anti AFK, Spam, Auto Shearer, Auto Nametag, Auto Breed, Auto Mount, Flamethrower, Liquid Filler and Spawn Proofer keep working with chat or a server's Esc menu open; Base Finder, Spawner Alerts, Sign Historian and Use Tracker behind any screen
