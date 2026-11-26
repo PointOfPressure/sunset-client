@@ -377,20 +377,32 @@ def _():
     setting("speed", "hop speed", "15")
     reset(z=-14.5)
     fast = rate(ticks=24)
+    reset(z=-14.5)
     setting("speed", "hop speed", "11")
 
     def peak():
+        # W is let go before the platform's far side: on a slow rig a poll takes several ticks, and 24 of them ran
+        # him off it, so the setting typed next went into a fall or the death screen and was lost (the second hop
+        # was then measured at the first one's height).
         reset(z=-14.5)
         y0 = pos()[1]
         ctl("key", "w", "down")
-        ys = poll(24, 1, lambda: pos()[1])
+        ys = []
+        for _ in range(24):
+            wait(1)
+            p = pos()
+            ys.append(p[1])
+            if p[2] - Z0 > 8:
+                break
         ctl("key", "w", "up")
         wait(5)
         return max(ys) - y0
 
     high = peak()
+    reset(z=-14.5)
     setting("speed", "hop height", "0.3")
     low = peak()
+    reset(z=-14.5)
     setting("speed", "hop height", "0.42")
     reset(z=-14.5)
     ctl("key", "w", "down")
