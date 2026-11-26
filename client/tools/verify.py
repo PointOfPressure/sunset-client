@@ -2269,7 +2269,8 @@ def _():
 def _():
     # A profile's text goes to the clipboard (.profile copy) and comes back under another name (.profile paste); a
     # name that is taken asks first: keep puts the new one beside it (numbered), replace over it. The same for a file
-    # in the imports folder (whose unknown line is named), and .profile import alone lists that folder.
+    # in the imports folder (whose unknown line is named). .profile import alone opens the system's file chooser
+    # (zenity or kdialog here): shut, it says nothing was chosen; a computer without one is told where files go.
     one = lambda line: " ".join(said_after(line, 6))
     reset()
     setting("sprint", "keep sprint", "true")
@@ -2283,11 +2284,19 @@ def _():
     loaded = one(".profile load clipb")
     sprint = one(".settings sprint")
     found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
-    listed = imported_asks = imported_kept = ""
+    listed = imported_asks = imported_kept = closed = ""
     if found:
         with open(os.path.join(found[0], "clipa.profile"), "w") as f:
             f.write("sunset-profile=1\nsprint.keepsprint=false\nnosuchmodule.x=1\n")
+        mark = log_mark()
         listed = one(".profile import")
+        for _ in range(30):
+            # The chooser as Sunset starts it (the program itself, by its title): shut without a pick.
+            subprocess.run(["pkill", "-f", "^(zenity|kdialog) .*Import Sunset profiles"], capture_output=True)
+            wait(4)
+            closed = " ".join(sunset_said(mark))
+            if "nothing was chosen" in closed or "no file chooser" in closed:
+                break
         imported_asks = one(".profile import clipa")
         imported_kept = one(".profile import clipa keep")
     names = one(".profile list")
@@ -2297,9 +2306,9 @@ def _():
     touched.add("sprint")
     ok = ("Saved" in saved and "clipboard" in copied and "Pasted profile clipb;" in pasted and "already" in asks and "replace" in asks
           and "Pasted profile clipb-2;" in kept and "Pasted profile clipb;" in replaced and "Loaded" in loaded and "Keep sprint: ON" in sprint
-          and "clipa" in listed and "already" in imported_asks and "Imported profile clipa-2;" in imported_kept and "nosuchmodule" in imported_kept
+          and "Choose" in listed and ("nothing was chosen" in closed or "no file chooser" in closed) and "already" in imported_asks and "Imported profile clipa-2;" in imported_kept and "nosuchmodule" in imported_kept
           and all(n in names for n in ("clipa", "clipb", "clipb-2", "clipa-2")))
-    return ok, f"copy: {copied!r}; paste: {pasted!r}; again: {asks!r}; keep: {kept!r}; replace: {replaced!r}; import alone: {listed!r}; import taken: {imported_asks!r}; keep: {imported_kept!r}; list: {names!r}"
+    return ok, f"copy: {copied!r}; paste: {pasted!r}; again: {asks!r}; keep: {kept!r}; replace: {replaced!r}; import alone: {listed!r} then {closed[-60:]!r}; import taken: {imported_asks!r}; keep: {imported_kept!r}; list: {names!r}"
 
 
 @test("Profiles menu (Import tab, a name that is taken, Paste a profile)")

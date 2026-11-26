@@ -2135,6 +2135,16 @@ bindings = [
 ]
 
 [[native.mixin]]
+id = "profile_drop"
+target = "horizon_client::game::packs::Game<'_>::drop_pack_file"
+kind = "HEAD"
+helper = "src/mixins/profile_drop.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "path", ty = "&std::path::Path", value = "path" },
+]
+
+[[native.mixin]]
 id = "vanish_connect"
 target = "horizon_client::game::extras::reconnect::Game<'_>::extras_connecting"
 kind = "HEAD"

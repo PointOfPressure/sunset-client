@@ -792,6 +792,7 @@ pub(super) fn profile_menu_choice(game: &mut Game<'_>, choice: super::sunset_pro
                     if let Some(m) = &mut s.gui.profile_menu {
                         m.error = None;
                         m.ask = Some(name);
+                        m.ask_file = None;
                     }
                 });
             }
@@ -799,7 +800,12 @@ pub(super) fn profile_menu_choice(game: &mut Game<'_>, choice: super::sunset_pro
             return taken_in(game, result);
         }
         Choice::ImportAs(name, replace) => {
-            let result = profile_action(game, &["import", &name, if replace { "replace" } else { "keep" }]);
+            // The answer for a file dropped on the menu goes to that file; else to the imports folder's, by its name.
+            let dropped = with(|s| s.gui.profile_menu.as_mut().and_then(|m| m.ask_file.take()));
+            let result = match dropped {
+                Some(file) => profile_take_file(game, &file, Some(replace)),
+                None => profile_action(game, &["import", &name, if replace { "replace" } else { "keep" }]),
+            };
             return taken_in(game, result);
         }
         // The clipboard's profile is kept as "pasted" (numbered when that is taken: nothing of yours is replaced).
@@ -820,6 +826,73 @@ pub(super) fn profile_menu_choice(game: &mut Game<'_>, choice: super::sunset_pro
             }
         }
     });
+}
+
+// A file dropped on the game's window while the click GUI is open: a .profile file is taken in as an import is, with
+// the Profiles menu open to show it. A name that is taken asks there (keep both, or replace); while a question is
+// already waiting, the next taken name keeps both, and the question stays.
+pub(super) fn profile_dropped(game: &mut Game<'_>, path: &std::path::Path) {
+    use super::sunset_profiles as profiles;
+    if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("profile")) || !with(|s| s.gui.open) {
+        return;
+    }
+    if with(|s| s.gui.profile_menu.is_none()) {
+        open_profile_menu(game);
+    }
+    let waiting = with(|s| s.gui.profile_menu.as_ref().and_then(|m| Some((m.ask.clone()?, m.ask_file.clone()))));
+    let asks = |name: String, file: Option<std::path::PathBuf>| {
+        with(|s| {
+            let (w, h) = (s.gui.view_w, s.gui.view_h);
+            if let Some(m) = &mut s.gui.profile_menu {
+                m.asks(name, file, w, h);
+            }
+        });
+    };
+    let name = profiles::outside_name(path).ok();
+    let taken = name.as_ref().is_some_and(|n| profiles::Store::new(game.native_data_dir(ID)).is_ok_and(|store| store.exists(n)));
+    if let (true, None, Some(name)) = (taken, &waiting, name) {
+        return asks(name, Some(path.to_owned()));
+    }
+    let result = profile_take_file(game, path, None);
+    match waiting {
+        None => taken_in(game, result),
+        // The menu goes back to its question: what this file did is said as Sunset says things (a toast).
+        Some((name, file)) => {
+            if let Err(e) = &result {
+                say(game, &format!("Profile: {e}."));
+            }
+            taken_in(game, result);
+            asks(name, file);
+        }
+    }
+}
+
+// The file chooser that .profile import opened has closed: each file picked is taken in (a taken name keeps both),
+// said in the chat (the late answer to a command typed there) and, with the Profiles menu open, shown there.
+pub(super) fn profile_files_chosen(game: &mut Game<'_>) {
+    let Some(answer) = super::sunset_profiles::chosen() else {
+        return;
+    };
+    REPLYING.store(true, Ordering::Relaxed);
+    profile_files_taken(game, answer);
+    REPLYING.store(false, Ordering::Relaxed);
+}
+
+fn profile_files_taken(game: &mut Game<'_>, answer: Option<Vec<std::path::PathBuf>>) {
+    let Some(files) = answer else {
+        let folder = super::sunset_profiles::Store::new(game.native_data_dir(ID)).map(|store| store.imports().display().to_string()).unwrap_or_default();
+        return say(game, &format!("Profile: no file chooser on this computer (zenity or kdialog). Drop .profile files on the Profiles menu, or put them in {folder} and use .profile import <name>."));
+    };
+    if files.is_empty() {
+        return say(game, "Profile: nothing was chosen.");
+    }
+    for file in files {
+        let result = profile_take_file(game, &file, None);
+        if let Err(e) = &result {
+            say(game, &format!("Profile: {e}."));
+        }
+        taken_in(game, result);
+    }
 }
 
 // An import or a paste from the Profiles menu: done, the menu shows the saved profiles with the new one marked and

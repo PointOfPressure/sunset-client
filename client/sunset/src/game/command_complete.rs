@@ -374,7 +374,7 @@ fn profile(src: &dyn Source, before: &[&str], _: &str) -> Step {
         ("load", "bring a profile's settings back"),
         ("delete", "delete a profile"),
         ("export", "copy a profile to the exports folder, to share"),
-        ("import", "keep a profile from the imports folder"),
+        ("import", "choose .profile files to keep (or name one of the imports folder)"),
         ("copy", "put a profile's text on the clipboard, to send"),
         ("paste", "keep the profile whose text is on the clipboard"),
         ("list", "the profiles, and the one in use"),

@@ -12,7 +12,7 @@ section of the version they build into the signed manifest, and the launcher sho
 ### New
 - **The launcher updates itself: when a release has a newer launcher, it downloads it, checks its signature as it does Sunset's files, puts it in place and restarts. 2.1.0 is the last launcher you download by hand**
 - **Bed Breaker (World): breaks the nearest bed in reach that is not yours, mining through what covers it (or digging the bed through its cover); spares the bed beside you when it comes on**
-- Profiles: `.profile copy <name>` puts a profile's text on the clipboard and `.profile paste <name>` keeps the one on it (to pass a config through Discord); `.profile import` alone lists the imports folder; a name that is taken asks whether to keep both or replace
+- Profiles: `.profile copy <name>` puts a profile's text on the clipboard and `.profile paste <name>` keeps the one on it (to pass a config through Discord); `.profile import` alone opens your system's file chooser, where you pick one .profile file or several (a name that is taken keeps both); with a name, a taken one asks whether to keep both or replace
 - **HUD layout editor: each of Sunset's elements (watermark, module list, coordinates, FPS, speed, facing, totems, compass, Target HUD) has a size: with the chat open, drag the handle at the corner of its frame; a right click puts its size and place back. Text is drawn at the new size, not stretched, so it stays sharp**
 - Effects: Kill effect (a burst or a pillar of light where what you hit dies), Crit sparks, Break bursts (chips off a block as it breaks) and Target aura (a ring or two lights round what you last hit), each with its own switch
 - Effects > Hide behind blocks (on by default): effects no longer show through walls, and they fade with distance
@@ -29,6 +29,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - Debug Report has a Settings file section: the folder your settings are kept in, how they were read at this launch and how the saves since went (for settings that come back reset)
 - Debug Report has a Trigger Bot section: of the ticks it ran since it was turned on, how many had something under the crosshair, how many of those hit, and what held each of the others (the cooldown, an item in use, Anti bot, Miss chance...), to compare two players' fights
 - **Profiles menu (the Profiles row) has an Import tab: the .profile files in the imports folder, one click each; a name that is taken asks whether to keep both or replace; Paste a profile keeps the one on the clipboard. No command needed**
+- **Drop .profile files on the game's window while the click GUI is open: the Profiles menu opens and keeps them (a name that is taken asks there)**
 - **Launcher > Profiles has Import: pick .profile files, drop them on the page, or open one with the launcher (`sunset-launcher FILE.profile`); a name that is saved already asks whether to keep both, replace or skip. `sunset-launcher import-profile FILE [keep|replace]` does it from a terminal**
 - HUD > Facing axis: off, the facing reads "South" instead of "South +Z"
 

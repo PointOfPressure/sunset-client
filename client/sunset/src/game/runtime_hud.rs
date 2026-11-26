@@ -53,6 +53,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         return;
     }
     ensure_loaded(game);
+    profile_files_chosen(game);
     super::sunset_crosshair::draw(game, batch);
     let mods = snapshot();
     let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);

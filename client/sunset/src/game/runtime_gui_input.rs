@@ -5,6 +5,20 @@ use super::{Game, Screen};
 use super::sunset_text_edit::{Draft, EditKey};
 use super::sunset::*;
 
+// The Profiles menu, opened: the Profiles row's click, a .profile file dropped on the click GUI.
+pub(super) fn open_profile_menu(game: &Game<'_>) {
+    let store = super::sunset_profiles::Store::new(game.native_data_dir(ID));
+    let result = store.as_ref().map_err(Clone::clone).and_then(|store| store.list());
+    let (imports, folder) = store.as_ref().map(|store| (store.import_names(), store.imports().display().to_string())).unwrap_or_default();
+    with(|s| {
+        let names = result.as_ref().cloned().unwrap_or_default();
+        let mut menu = super::sunset_profile_menu::Menu::new(names, imports, folder, s.selection.selected(), s.gui.view_w, s.gui.view_h);
+        menu.error = result.err();
+        s.gui.profile_menu = Some(menu);
+        s.gui.drag = None;
+    });
+}
+
 pub(super) fn gui_open() -> bool {
     with(|s| s.gui.open)
 }
@@ -177,16 +191,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             && s.binding.is_none()
             && hit_at(s, at).is_some_and(|(_, hit)| matches!(hit, Hit::Module(i) if s.modules[i].name == "Profiles"))
     }) {
-        let store = super::sunset_profiles::Store::new(game.native_data_dir(ID));
-        let result = store.as_ref().map_err(Clone::clone).and_then(|store| store.list());
-        let (imports, folder) = store.as_ref().map(|store| (store.import_names(), store.imports().display().to_string())).unwrap_or_default();
-        with(|s| {
-            let names = result.as_ref().cloned().unwrap_or_default();
-            let mut menu = super::sunset_profile_menu::Menu::new(names, imports, folder, s.selection.selected(), s.gui.view_w, s.gui.view_h);
-            menu.error = result.err();
-            s.gui.profile_menu = Some(menu);
-            s.gui.drag = None;
-        });
+        open_profile_menu(game);
         return;
     }
     // A bind being chosen takes any button but the left one (which clicks as ever).

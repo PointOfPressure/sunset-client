@@ -52,7 +52,7 @@ const HELP: &[(&str, &str)] = &[
     (".binds", "list the binds"),
     (".reset <module>", "put a module back to its defaults"),
     (".panic", "stop Sunset until the game restarts (nothing brings it back sooner)"),
-    (".profile save|load|delete|export|import|copy|paste|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load; copy and paste pass one through the clipboard; import alone lists the imports folder)"),
+    (".profile save|load|delete|export|import|copy|paste|list [name]", "keep the modules' settings under a name and bring them back (files in the mod's data folder; .profile load before-load undoes a load; copy and paste pass one through the clipboard; import alone opens a file chooser for one .profile file or several)"),
     (".preset [name] [apply]", "the pre-made profiles: a name says what it turns on and off, apply takes it (.profile load before-load undoes it)"),
     (".debug [chat lines]", "copy a debug report (chat, anticheat flags, the client's state, the last packets sent) to the clipboard and its configured Save folder"),
     (".scan [plugins|details|channels|commands|status|run] [page]", "show server-reported findings; run optional Extended checks manually"),
@@ -304,13 +304,13 @@ pub(super) fn profile_action(game: &mut Game<'_>, args: &[&str]) -> Result<Strin
                 format!("Profiles: {}. In use: {in_use}", all.join(", "))
             });
         }
-        // .profile import alone: what is in the imports folder.
+        // .profile import alone: the system's file chooser, for one profile or several (profile_files_chosen takes
+        // them in when it closes).
         if sub == "import" && args.len() < 2 {
-            let found = store.import_names();
-            return Ok(if found.is_empty() {
-                format!("Nothing to import: put a .profile file in {} (or copy one's text and use .profile paste <name>).", store.imports().display())
+            return Ok(if profiles::choose() {
+                "Choose the .profile files to import in the window that opened (it may be behind the game).".to_owned()
             } else {
-                format!("In the imports folder: {}. .profile import <name> keeps one.", found.join(", "))
+                "A file chooser is open already.".to_owned()
             });
         }
         // A last word of keep or replace answers what to do when the name is taken (import and paste).
@@ -327,16 +327,9 @@ pub(super) fn profile_action(game: &mut Game<'_>, args: &[&str]) -> Result<Strin
         // Where a profile taken in goes: its own name, or with the name taken, as asked (keep: both, the new one
         // numbered; replace: over the old one), or not at all until the question is answered.
         let landing = |name: &str| -> Result<String, String> {
-            if !store.exists(name) || clash == Some(true) {
-                return Ok(name.to_owned());
-            }
-            if clash == Some(false) {
-                return (2..100)
-                    .map(|n| format!("{name}-{n}"))
-                    .find(|free| !store.exists(free))
-                    .ok_or_else(|| format!("too many profiles named {name}"));
-            }
-            Err(format!("There is a profile {name} already: .profile {sub} {name} replace puts this one in its place, .profile {sub} {name} keep keeps both"))
+            profile_landing(&store, name, clash)?.ok_or_else(|| {
+                format!("There is a profile {name} already: .profile {sub} {name} replace puts this one in its place, .profile {sub} {name} keep keeps both")
+            })
         };
         if name == BACKUP && sub != "load" {
             return Err(format!("{BACKUP} is the settings before the last load; .profile load {BACKUP} puts them back"));
@@ -399,6 +392,32 @@ pub(super) fn profile_action(game: &mut Game<'_>, args: &[&str]) -> Result<Strin
             }
             _ => Err("use .profile save|load|delete|export|import|copy|paste <name>, or .profile list".into()),
         }
+}
+
+// Where a profile taken in goes: its own name, or with the name taken, as asked (keep: both, the new one numbered;
+// replace: over the old one). None: the name is taken and nothing was said.
+fn profile_landing(store: &super::sunset_profiles::Store, name: &str, clash: Option<bool>) -> Result<Option<String>, String> {
+    if !store.exists(name) || clash == Some(true) {
+        return Ok(Some(name.to_owned()));
+    }
+    if clash == Some(false) {
+        return (2..100).map(|n| format!("{name}-{n}")).find(|free| !store.exists(free)).map(Some).ok_or_else(|| format!("too many profiles named {name}"));
+    }
+    Ok(None)
+}
+
+// A .profile file from anywhere on the disk (dropped on the Profiles menu, picked in the file chooser), taken in as
+// one of the imports folder is, under the file's own name. A taken name with no answer keeps both: nothing of yours
+// is replaced unasked.
+pub(super) fn profile_take_file(game: &mut Game<'_>, path: &std::path::Path, clash: Option<bool>) -> Result<String, String> {
+    use super::sunset_profiles as profiles;
+    let store = profiles::Store::new(game.native_data_dir(ID))?;
+    let (name, text) = profiles::outside(path)?;
+    let file = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+    let checked = with(|s| s.check_profile(&text)).map_err(|e| format!("{file}: {e}"))?;
+    let to = profile_landing(&store, &name, clash.or(Some(false)))?.unwrap_or(name);
+    store.write(&to, &text)?;
+    Ok(format!("Imported profile {to}; .profile load {to} uses it.{}", checked.skipped_note()))
 }
 
 // .preset [name] [apply]: the pre-made profiles. A name alone says what taking it turns on and off; apply takes it.

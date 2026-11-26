@@ -280,6 +280,99 @@ pub(super) fn write_config(data: &Path, key: &str, text: &str) -> Result<(), Str
     write_limited(&data.join(key), text, 16 * MAX_BYTES)
 }
 
+// A .profile file from anywhere on the disk (dropped on the Profiles menu, picked in the file chooser): the name it
+// is kept under, the file's own made a profile name, and its text, read as a file of the imports folder is.
+pub(super) fn outside(path: &Path) -> Result<(String, String), String> {
+    Ok((outside_name(path)?, read(path)?))
+}
+
+pub(super) fn outside_name(path: &Path) -> Result<String, String> {
+    let stem = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .and_then(|f| f.rsplit_once('.'))
+        .filter(|(_, ext)| ext.eq_ignore_ascii_case("profile"))
+        .map(|(stem, _)| stem)
+        .ok_or_else(|| format!("{} is not a .profile file", path.display()))?;
+    // Letters, digits, - and _ stay; anything else is a -. Short enough for a number after it (keep both).
+    let plain: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c.to_ascii_lowercase() } else { '-' }).collect();
+    let plain: String = plain.trim_matches(['-', '_']).chars().take(28).collect();
+    Ok(name(&plain).ok().filter(|n| n != BACKUP).unwrap_or_else(|| "imported".to_owned()))
+}
+
+// The file chooser's answer, from the thread that waits for it to close.
+static CHOOSING: std::sync::Mutex<Option<std::sync::mpsc::Receiver<Option<Vec<PathBuf>>>>> = std::sync::Mutex::new(None);
+
+// Opens the system's file chooser for .profile files; false while one is open already.
+pub(super) fn choose() -> bool {
+    let mut waiting = CHOOSING.lock().unwrap_or_else(|e| e.into_inner());
+    if waiting.is_some() {
+        return false;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let started = std::thread::Builder::new().name("sunset-file-chooser".into()).spawn(move || {
+        let _ = tx.send(choose_files());
+    });
+    // A thread that could not start drops the sender: `chosen` then says there is no chooser.
+    drop(started);
+    *waiting = Some(rx);
+    true
+}
+
+// The files picked, once the chooser `choose` opened has closed (none: it was shut without picking). The inner None:
+// this computer has no chooser program. None while it is open, and when none was asked for.
+pub(super) fn chosen() -> Option<Option<Vec<PathBuf>>> {
+    use std::sync::mpsc::TryRecvError;
+    let mut waiting = CHOOSING.lock().unwrap_or_else(|e| e.into_inner());
+    let answer = match waiting.as_ref()?.try_recv() {
+        Ok(files) => files,
+        Err(TryRecvError::Empty) => return None,
+        Err(TryRecvError::Disconnected) => None,
+    };
+    *waiting = None;
+    Some(answer)
+}
+
+// The desktop's own chooser, as a program: Sunset has no window toolkit of its own. It prints the files picked, one a
+// line. SUNSET_FILE_CHOOSER names another program that does the same (a desktop without zenity or kdialog, a test).
+fn choose_files() -> Option<Vec<PathBuf>> {
+    use std::ffi::OsStr;
+    use std::process::{Command, Stdio};
+    fn run(program: &OsStr, args: &[&str]) -> Option<Vec<PathBuf>> {
+        let mut c = Command::new(program);
+        c.args(args).stdin(Stdio::null()).stderr(Stdio::null());
+        // No console window flashes up behind the chooser.
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::creation_flags(&mut c, 0x0800_0000);
+        let out = c.output().ok()?;
+        Some(String::from_utf8_lossy(&out.stdout).lines().map(str::trim).filter(|l| !l.is_empty()).map(PathBuf::from).collect())
+    }
+    const TITLE: &str = "Import Sunset profiles";
+    if let Some(own) = std::env::var_os("SUNSET_FILE_CHOOSER").filter(|p| !p.is_empty()) {
+        return run(&own, &[]);
+    }
+    if cfg!(windows) {
+        let script = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; \
+            $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Title = 'Import Sunset profiles'; \
+            $d.Filter = 'Sunset profiles (*.profile)|*.profile|All files (*.*)|*.*'; $d.Multiselect = $true; \
+            if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $d.FileNames | ForEach-Object { [Console]::Out.WriteLine($_) } }";
+        run(OsStr::new("powershell"), &["-NoProfile", "-STA", "-Command", script])
+    } else if cfg!(target_os = "macos") {
+        run(OsStr::new("osascript"), &[
+            "-e", "set picked to choose file with prompt \"Import Sunset profiles\" with multiple selections allowed",
+            "-e", "set out to \"\"",
+            "-e", "repeat with f in picked",
+            "-e", "set out to out & POSIX path of f & linefeed",
+            "-e", "end repeat",
+            "-e", "return out",
+        ])
+    } else {
+        let title = format!("--title={TITLE}");
+        run(OsStr::new("zenity"), &["--file-selection", "--multiple", "--separator=\n", &title, "--file-filter=Sunset profiles (*.profile) | *.profile", "--file-filter=All files | *"])
+            .or_else(|| run(OsStr::new("kdialog"), &["--title", TITLE, "--multiple", "--separate-output", "--getopenfilename", ".", "Sunset profiles (*.profile)"]))
+    }
+}
+
 // The plain way, for when the rename over the old file is refused (a virus scanner holding it): written in place.
 pub(super) fn write_in_place(data: &Path, key: &str, text: &str) -> Result<(), String> {
     let path = folder(data.to_path_buf())?.join(key);
@@ -373,6 +466,26 @@ mod store_tests {
         assert!(!dir.join("config.tmp4242").exists() && !dir.join("profiles").join("pvp.tmp99").exists());
         assert!(dir.join("profiles").join("pvp.profile").exists() && dir.join("config").exists());
         assert!(whole_config("sprint.on=true") && !whole_config("") && !whole_config("friends=a"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // A file from outside is kept under its own name made a profile name; only .profile files are taken.
+    #[test]
+    fn outside_files_get_profile_names() {
+        let named = |file: &str| outside_name(Path::new(file));
+        assert_eq!(named("/home/a/Sword PvP (v2).profile").as_deref(), Ok("sword-pvp--v2"));
+        assert_eq!(named("C:\\Users\\a\\Downloads\\crystal.PROFILE").map(|n| n.ends_with("crystal")), Ok(true));
+        assert_eq!(named("x/__.profile").as_deref(), Ok("imported"));
+        assert_eq!(named("x/con.profile").as_deref(), Ok("imported"));
+        assert_eq!(named("x/before-load.profile").as_deref(), Ok("imported"));
+        assert_eq!(named("x/a-very-long-name-that-goes-on-and-on-and-on.profile").map(|n| n.len()), Ok(28));
+        assert!(named("x/notes.txt").is_err() && named("x/profile").is_err() && named("x/").is_err());
+        let dir = std::env::temp_dir().join(format!("sunset-outside-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Duels 1.profile"), "sunset-profile=1\nsprint.on=true\n").unwrap();
+        assert_eq!(outside(&dir.join("Duels 1.profile")), Ok(("duels-1".to_owned(), "sunset-profile=1\nsprint.on=true\n".to_owned())));
+        assert!(outside(&dir.join("missing.profile")).is_err());
         let _ = fs::remove_dir_all(&dir);
     }
 

@@ -53,6 +53,8 @@ pub(super) struct Menu {
     note: Option<String>,
     // An import whose name is taken: the menu asks whether to keep both or replace.
     pub(super) ask: Option<String>,
+    // The file that question is about when it is not one of the imports folder: one dropped on the menu.
+    pub(super) ask_file: Option<std::path::PathBuf>,
     pub(super) tab: Tab,
     pub(super) preview: Option<Preview>,
     // The saved profile in use, which Save writes to.
@@ -125,7 +127,7 @@ impl Menu {
         let tab = if names.is_empty() { Tab::Presets } else { Tab::Saved };
         let focus = selected.and_then(|n| names.iter().position(|p| p == n)).unwrap_or(0);
         let in_use = selected.filter(|n| names.iter().any(|p| p == n)).map(str::to_owned);
-        let mut menu = Self { names, imports, folder, error: None, note: None, ask: None, tab, preview: None, in_use, focus, start: 0 };
+        let mut menu = Self { names, imports, folder, error: None, note: None, ask: None, ask_file: None, tab, preview: None, in_use, focus, start: 0 };
         menu.reveal(w, h);
         menu
     }
@@ -163,8 +165,19 @@ impl Menu {
             self.error = None;
             self.note = None;
             self.ask = None;
+            self.ask_file = None;
             self.reveal(w, h);
         }
+    }
+
+    // A file whose name is taken: the Import tab asks (keep both, or replace). `file`: one dropped on the menu.
+    pub(super) fn asks(&mut self, name: String, file: Option<std::path::PathBuf>, w: f32, h: f32) {
+        self.preview = None;
+        self.switch(Tab::Import, w, h);
+        self.error = None;
+        self.note = None;
+        self.ask = Some(name);
+        self.ask_file = file;
     }
 
     // An import or a paste went in: the saved profiles again with the new one marked, and what happened.
@@ -175,6 +188,7 @@ impl Menu {
         self.start = 0;
         self.error = None;
         self.ask = None;
+        self.ask_file = None;
         self.note = Some(note);
         self.reveal(w, h);
     }
@@ -199,6 +213,7 @@ impl Menu {
     // Esc: out of a preview or a question (true), else the menu closes.
     pub(super) fn back(&mut self) -> bool {
         self.error = None;
+        self.ask_file = None;
         self.ask.take().is_some() || self.preview.take().is_some()
     }
 
@@ -328,7 +343,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
     }
     if menu.tab == Tab::Import && menu.imports.is_empty() {
         // Where files go: the end of the folder's path shows when it is too long for the line.
-        out.push(Shape::Text("No files to import yet. Put .profile files in:".into(), [r[0] + 8.0, r[1] + TOP + 5.0], 0xFFFFFF));
+        out.push(Shape::Text("Drop .profile files on this menu, or put them in:".into(), [r[0] + 8.0, r[1] + TOP + 5.0], 0xFFFFFF));
         let mut folder = menu.folder.as_str();
         while game.sunset_text_width(folder) > r[2] - 30.0 && !folder.is_empty() {
             folder = &folder[folder.chars().next().map_or(1, char::len_utf8)..];
