@@ -26,6 +26,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - Villager Roller, Sign Historian and Use Tracker; Speed > Mode Grim collide; Base Finder > Reasons
 - Gooning (Client, off by default): a joke that times your session in chat, on your screen only
 - Debug Report has a Settings file section: the folder your settings are kept in, how they were read at this launch and how the saves since went (for settings that come back reset)
+- Debug Report has a Trigger Bot section: of the ticks it ran since it was turned on, how many had something under the crosshair, how many of those hit, and what held each of the others (the cooldown, an item in use, Anti bot, Miss chance...), to compare two players' fights
 
 ### Changed
 - Target HUD is a module of its own (Render) instead of a switch in HUD: its switch, mode and place carry over, and it shows with HUD off too

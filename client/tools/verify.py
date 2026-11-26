@@ -6753,6 +6753,93 @@ def _():
     return ok, f"hits in 3 s: {full} at the full cooldown, {half} at 50%; Miss chance 25: {missed} of 16 looks let go ({windows})"
 
 
+@test("Trigger Bot (what each tick did, Debug Report)")
+def _():
+    # A husk that can't be hurt, a sword in hand. The Debug Report's Trigger Bot section counts every tick Trigger Bot
+    # ran since it was turned on: steady on the husk it hits at the sword's cooldown and every other tick waits on
+    # it; an apple being eaten holds the hits (an item in use); walking across in front of the husk, each pass is hit;
+    # Wait for cooldown off with Delay 4 hits every fifth tick; looking away, nothing counts as under the crosshair.
+    def section():
+        line, text = debug_report(lambda: say(".debug 20"))
+        sec = (text or "").split("## Trigger Bot", 1)[-1].split("\n## ", 1)[0] if text and "## Trigger Bot" in text else ""
+        ran = re.search(r"(\d+) ticks \(\d+ s\), (\d+) of them", sec)
+        of = re.search(r"Of those \d+: (\d+) hits; held by: (.*)", sec)
+        if not ran or not of:
+            return {"ticks": 0, "seen": 0, "hits": 0, "held": {}, "raw": sec.strip() or line}
+        held = {why.strip(): int(n) for n, why in re.findall(r"(\d+) ([^;\n]+)", of.group(2))}
+        return {"ticks": int(ran.group(1)), "seen": int(ran.group(2)), "hits": int(of.group(1)), "held": held}
+
+    reset()
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    cmd("difficulty easy", f"summon husk {X0 + 0.5} {Y + 1} {Z0 + 3.0} {HUSK}", "item replace entity @s weapon.offhand with minecraft:golden_apple 8")
+    wait(10)
+    eid = next(e["id"] for e in ctl("entities")["entities"] if e.get("type") == "minecraft:husk")
+    setting("triggerbot", "hostiles", "true")
+    ctl("look-at-entity", str(eid))
+    wait(3)
+    look = state().get("player", {})
+
+    only("triggerbot")
+    before = ctl("status")
+    wait(100)
+    after = ctl("status")
+    fps = (after["frames"] - before["frames"]) / max(after["uptime_seconds"] - before["uptime_seconds"], 1e-6)
+    steady = section()
+    only()
+
+    only("triggerbot")
+    wait(4)
+    ctl("mouse", "right", "down")
+    wait(26)
+    ctl("mouse", "right", "up")
+    wait(2)
+    eating = section()
+    only()
+    cmd("item replace entity @s weapon.offhand with minecraft:air")
+
+    # Six passes in front of the husk, a second apart (the sword is ready again each time).
+    ctl("move", "left", "0.5")
+    only("triggerbot")
+    passes = 6
+    for i in range(passes):
+        ctl("move", "right" if i % 2 == 0 else "left", "1.0")
+        wait(2)
+    across = section()
+    only()
+
+    cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5}")
+    wait(5)
+    ctl("look-at-entity", str(eid))
+    setting("triggerbot", "wait for cooldown", "false")
+    setting("triggerbot", "delay (ticks)", "4")
+    only("triggerbot")
+    wait(100)
+    delayed = section()
+    only()
+
+    ctl("look", "180", "0")
+    wait(3)
+    only("triggerbot")
+    wait(40)
+    away = section()
+    only()
+    say(".reset triggerbot")
+
+    cooldown = "the cooldown or the delay"
+    waited = lambda r: r["held"].get(cooldown, 0)
+    rate = lambda r: round(r["hits"] * 20 / r["seen"], 2) if r["seen"] else 0
+    ok = (steady["seen"] >= 80 and 6 <= steady["hits"] <= 10 and steady["hits"] + waited(steady) == steady["seen"]
+          and eating["held"].get("an item in use", 0) >= 15 and eating["hits"] <= 4
+          and eating["hits"] + waited(eating) + eating["held"].get("an item in use", 0) == eating["seen"]
+          and across["hits"] >= passes - 1 and across["seen"] >= passes
+          and 16 <= delayed["hits"] <= 22 and delayed["hits"] + waited(delayed) == delayed["seen"]
+          and away["seen"] == 0 and away["ticks"] >= 30)
+    brief = lambda r: r.get("raw") or f"{r['hits']} hits in {r['seen']} ticks on target of {r['ticks']} ({rate(r)}/s), held {r['held']}"
+    return ok, (f"{fps:.0f} FPS; steady: {brief(steady)}; eating: {brief(eating)}; {passes} passes across: {brief(across)}; "
+                f"no cooldown, Delay 4: {brief(delayed)}; looking away: {brief(away)}")
+
+
 @test("Velocity (knockback chance)")
 def _():
     # Knockback chance 0: every knockback is taken whole, as with Velocity off.

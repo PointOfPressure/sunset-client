@@ -585,14 +585,102 @@ fn trigger_input_ready(game: &Game<'_>, m: &Module) -> bool {
         && (!m.b("Only on left click") || game.left || game.physical_buttons.contains(&MouseButton::Left))
 }
 
+// Debug Report: what Trigger Bot did with each tick since it was last turned on: how many had something under the
+// crosshair, how many of those hit, and what held each of the others. The answer to "does it hit when it could".
+#[derive(Clone, Copy, Default)]
+struct TriggerStats {
+    last: u64,
+    ticks: u32,
+    seen: u32,
+    hits: u32,
+    held: [u32; TRIGGER_HELD.len()],
+}
+
+const TRIGGER_HELD: [&str; 8] = [
+    "a screen over the game, asleep, or Only on left click with no click",
+    "an item in use",
+    "a hit already on its way (Criticals, a queued strike)",
+    "not a target (its kind, a friend, a team mate, Anti bot)",
+    "Sticky target on another",
+    "Crit timing or Crits only",
+    "the cooldown or the delay",
+    "Miss chance",
+];
+const HELD_INPUT: usize = 0;
+const HELD_USING: usize = 1;
+const HELD_BUSY: usize = 2;
+const HELD_UNWANTED: usize = 3;
+const HELD_STICKY: usize = 4;
+const HELD_CRIT: usize = 5;
+const HELD_COOLDOWN: usize = 6;
+const HELD_MISS: usize = 7;
+
+static TRIGGER_STATS: std::sync::Mutex<TriggerStats> = std::sync::Mutex::new(TriggerStats { last: 0, ticks: 0, seen: 0, hits: 0, held: [0; TRIGGER_HELD.len()] });
+
+fn trigger_stats<R>(f: impl FnOnce(&mut TriggerStats) -> R) -> R {
+    f(&mut TRIGGER_STATS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+// A tick with something under the crosshair that was not hit, and why.
+fn trigger_held(why: usize) {
+    trigger_stats(|s| {
+        s.seen += 1;
+        s.held[why] += 1;
+    });
+}
+
+pub(super) fn trigger_report(game: &Game<'_>, out: &mut String) {
+    use std::fmt::Write as _;
+    let s = trigger_stats(|s| *s);
+    let _ = writeln!(out, "\n## Trigger Bot");
+    if s.ticks == 0 {
+        let _ = writeln!(out, "- Not used since the game started");
+        return;
+    }
+    let _ = writeln!(
+        out,
+        "- Since it was last turned on: {} ticks ({:.0} s), {} of them with something under the crosshair",
+        s.ticks,
+        f64::from(s.ticks) / 20.0,
+        s.seen
+    );
+    let held: Vec<String> = TRIGGER_HELD.iter().zip(s.held).filter(|(_, n)| *n > 0).map(|(why, n)| format!("{n} {why}")).collect();
+    let _ = writeln!(out, "- Of those {}: {} hits; held by: {}", s.seen, s.hits, if held.is_empty() { "nothing".to_owned() } else { held.join("; ") });
+    if s.seen > 0 {
+        let _ = writeln!(
+            out,
+            "- Hits a second with something under the crosshair: {:.2} (the held item's attack speed: {:.2} a second)",
+            f64::from(s.hits) * 20.0 / f64::from(s.seen),
+            game.main_hand_attack_speed()
+        );
+    }
+}
+
 pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
-    if !game.native_playing()
-        || !trigger_input_ready(game, m)
-        || game.remote.is_none()
-        || (game.using.is_some() && !super::sunset_hands::shielding(game))
-        || CRIT_STAGE.load(Ordering::Relaxed) != 0
-        || strike_waiting()
-    {
+    // A tick it did not run (the module off, out of a world): the count starts again.
+    trigger_stats(|s| {
+        if game.ticks != s.last.wrapping_add(1) {
+            *s = TriggerStats::default();
+        }
+        s.last = game.ticks;
+    });
+    if !game.native_playing() || game.remote.is_none() {
+        return;
+    }
+    trigger_stats(|s| s.ticks += 1);
+    let held = if !trigger_input_ready(game, m) {
+        Some(HELD_INPUT)
+    } else if game.using.is_some() && !super::sunset_hands::shielding(game) {
+        Some(HELD_USING)
+    } else if CRIT_STAGE.load(Ordering::Relaxed) != 0 || strike_waiting() {
+        Some(HELD_BUSY)
+    } else {
+        None
+    };
+    if let Some(why) = held {
+        if game.mob_hit().is_some() {
+            trigger_held(why);
+        }
         return;
     }
     // Nobody under the crosshair: Auto Spear's Extended reach may give a target along your look (Works with Trigger
@@ -613,9 +701,11 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
         with(|s| s.trigger_missed = None);
     }
     if !want || (player && is_friend(&friends, &names, id)) || !super::sunset_util::combat_eligible(game, m, mob) {
+        trigger_held(HELD_UNWANTED);
         return;
     }
     if m.b("Sticky target") && trigger_sticky_elsewhere(game, m, id) {
+        trigger_held(HELD_STICKY);
         return;
     }
     // Crit timing waits out the rise of a jump to hit as you fall; Crits only hits only then (with a sword, axe,
@@ -623,6 +713,7 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     if super::sunset_combat::holds_weapon(game) && let Some(p) = game.player.as_ref() {
         let falling = !p.ground.on_ground && p.fall_distance > 0.0 && p.velocity.y < 0.0;
         if (m.b("Crit timing") && !p.ground.on_ground && !falling) || (m.b("Crits only") && !falling) {
+            trigger_held(HELD_CRIT);
             return;
         }
     }
@@ -630,14 +721,20 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     let ready = cooldown_ready(game, m, &mut wait, with(|s| s.trigger_need));
     with(|s| s.trigger_wait = wait);
     if !ready || with(|s| s.trigger_missed.is_some_and(|t| Some(t) == identity)) {
+        trigger_held(if ready { HELD_MISS } else { HELD_COOLDOWN });
         return;
     }
     let mut rng = super::sunset_rotation::Rng::new(game.ticks.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ u64::from(id));
     // Miss chance: a target rolled as missed is let go until the crosshair leaves it or another is under it.
     if rng.next() * 100.0 < m.n("Miss chance (%)") {
         with(|s| s.trigger_missed = identity);
+        trigger_held(HELD_MISS);
         return;
     }
+    trigger_stats(|s| {
+        s.seen += 1;
+        s.hits += 1;
+    });
     if reach == Some(id) {
         if let Some(guard) = attack_guard(id, AttackSource::TriggerReach) {
             super::sunset_melee::reach_strike(guard);

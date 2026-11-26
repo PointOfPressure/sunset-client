@@ -127,6 +127,7 @@ fn report(game: &Game<'_>, limits: &Limits) -> String {
     super::sunset_scaffold_telly::report(&mut out);
     super::sunset_lag::report(&mut out);
     super::sunset_backtrack::report(&mut out);
+    super::sunset::trigger_report(game, &mut out);
     super::sunset_player::inventory_report(&mut out);
     super::sunset_flight::report(&mut out);
     wire_sequence(&mut out);
