@@ -336,6 +336,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Shield status position", &["Default", "Custom"])
             .num("Shield status x", 0.45, 0.0, 1.0, 0.001)
             .num("Shield status y", 0.55, 0.0, 1.0, 0.001)
+            .num("Shield status size", 1.0, 0.5, 3.0, 0.05)
             // The screen's edges tinted red below a health (hud_health.rs).
             .bool("Low health warning", false)
             .num("Low health below", 6.0, 1.0, 20.0, 1.0)
@@ -351,6 +352,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Armor HUD position", &["Hotbar", "Top left", "Top right", "Bottom left", "Bottom right", "Custom"])
             .num("Armor HUD x", 0.5, 0.0, 1.0, 0.001)
             .num("Armor HUD y", 0.5, 0.0, 1.0, 0.001)
+            .num("Armor HUD size", 1.0, 0.5, 3.0, 0.05)
             .group("Items and food")
             .bool("Item durability", false)
             .pick("Durability format", &["Number", "Percent"])
@@ -418,6 +420,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Murderer list position", &["Default", "Custom"])
             .num("Murderer list x", 0.5, 0.0, 1.0, 0.001)
             .num("Murderer list y", 0.0, 0.0, 1.0, 0.001)
+            .num("Murderer list size", 1.0, 0.5, 3.0, 0.05)
             .bool("Callout", false)
             .num("Callout delay (ms)", 3100.0, 0.0, 5000.0, 100.0)
             .text("Callout messages", "%s is the murderer!; i saw that %s!")

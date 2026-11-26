@@ -615,7 +615,10 @@ pub(super) fn draw(game: &Game<'_>, hud: &Module, w: f32, h: f32, corners: &mut 
     let step = |s: [f32; 2]| if vertical { s[1] + gap } else if compact { s[0] + gap } else { SLOT };
     let along: f32 = sizes.iter().map(|s| step(*s)).sum::<f32>() - gap + if vertical || compact { 0.0 } else { 2.0 };
     let across = sizes.iter().map(|s| if vertical { s[0] } else { s[1] }).fold(0.0, f32::max);
-    let (bw, bh) = if vertical { (across, along) } else { (along, across) };
+    // Placed as big as its size (the layout editor's) makes it, drawn at the usual size from that corner, then resized.
+    let size = size_of(hud, "Armor HUD");
+    let (drawn_w, drawn_h) = if vertical { (across, along) } else { (along, across) };
+    let (bw, bh) = (drawn_w * size, drawn_h * size);
     let (x0, y0) = match hud.p("Armor HUD position") {
         "Top left" => corners.place(Corner::TopLeft, bw, bh),
         "Top right" => corners.place(Corner::TopRight, bw, bh),
@@ -630,6 +633,7 @@ pub(super) fn draw(game: &Game<'_>, hud: &Module, w: f32, h: f32, corners: &mut 
         _ => (w / 2.0 + 91.0 + 6.0, h - bh),
     };
     place("Armor HUD", [x0, y0, bw, bh], w, h);
+    let from = out.len();
     if !compact && !vertical {
         frame(out, x0, y0, pieces.len());
     }
@@ -666,6 +670,7 @@ pub(super) fn draw(game: &Game<'_>, hud: &Module, w: f32, h: f32, corners: &mut 
             out.push(Shape::Scaled(text, [ix + 16.0 - tw, ty], rgb, 0.75));
         }
     }
+    resize(&mut out[from..], [x0, y0], size);
 }
 
 // Slot boxes from the hotbar's own sprite: its left end and `slots` slots, then its right edge.

@@ -53,6 +53,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Horizon HUD position", &["Default", "Custom"])
             .num("Horizon HUD x", 0.01, 0.0, 1.0, 0.001)
             .num("Horizon HUD y", 0.35, 0.0, 1.0, 0.001)
+            .num("Horizon HUD size", 1.0, 0.5, 3.0, 0.05)
             .num("Interval", 100.0, 20.0, 600.0, 10.0)
             .text("Watched players", "")
             .text("Server watchlists", "")
@@ -80,6 +81,8 @@ pub(super) fn visible(m: &Module, name: &str) -> bool {
     match name {
         // The panel's place is the layout editor's (drag it with the chat open); x and y show once it was moved.
         "Horizon HUD x" | "Horizon HUD y" => return horizon && m.b("Horizon HUD") && m.p("Horizon HUD position") == "Custom",
+        // Its size is the layout editor's too (the handle at its frame's corner), not a row.
+        "Horizon HUD size" => return false,
         "Horizon HUD position" | "HUD rows" | "HUD page" | "Show idle" => return horizon && m.b("Horizon HUD"),
         "Horizon labels" | "Label limit" | "Horizon tracers" | "Max markers" => return horizon && (m.b("Horizon markers") || m.b("Activity markers")),
         "Activity color" => return horizon && m.b("Activity markers"),

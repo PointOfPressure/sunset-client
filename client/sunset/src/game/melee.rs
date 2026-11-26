@@ -64,6 +64,7 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Damage indicator position", &["Default", "Custom"])
             .num("Damage indicator x", 0.5, 0.0, 1.0, 0.001)
             .num("Damage indicator y", 0.55, 0.0, 1.0, 0.001)
+            .num("Damage indicator size", 1.0, 0.5, 3.0, 0.05)
             .text("Holding", "sword,axe,spear,mace,trident,empty")
             .bool("Swap back", true)
             .pick("Back after", &["Same tick", "A delay"])

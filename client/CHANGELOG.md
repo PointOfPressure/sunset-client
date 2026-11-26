@@ -14,6 +14,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - **Bed Breaker (World): breaks the nearest bed in reach that is not yours, mining through what covers it (or digging the bed through its cover); spares the bed beside you when it comes on**
 - Profiles: `.profile copy <name>` puts a profile's text on the clipboard and `.profile paste <name>` keeps the one on it (to pass a config through Discord); `.profile import` alone opens your system's file chooser, where you pick one .profile file or several (a name that is taken keeps both); with a name, a taken one asks whether to keep both or replace
 - **HUD layout editor: each of Sunset's elements (watermark, module list, coordinates, FPS, speed, facing, totems, compass, Target HUD) has a size: with the chat open, drag the handle at the corner of its frame; a right click puts its size and place back. Text is drawn at the new size, not stretched, so it stays sharp**
+- HUD layout editor: the Armor HUD, Shield status, the Murderer list, Auto Spear's damage indicator and Anti Vanish's Horizon HUD have a size too (the same handle)
 - Effects: Kill effect (a burst or a pillar of light where what you hit dies), Crit sparks, Break bursts (chips off a block as it breaks) and Target aura (a ring or two lights round what you last hit), each with its own switch
 - Effects > Hide behind blocks (on by default): effects no longer show through walls, and they fade with distance
 - Fake Lag > Mode Repel: a hit on a target that is still red from the last one waits until it can be hurt again

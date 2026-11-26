@@ -687,6 +687,8 @@ impl Module {
                 "Murderer list x" | "Murderer list y" => {
                     self.b("Murderer finder") && self.b("Murderer list") && self.p("Murderer list position") == "Custom"
                 }
+                // The layout editor's (the handle at its frame's corner), not a row.
+                "Murderer list size" => false,
                 "Callout delay (ms)" | "Callout messages" => self.b("Murderer finder") && self.b("Callout"),
                 _ => true,
             },
@@ -727,6 +729,7 @@ impl Module {
                 "Reach chance (%)" | "Reach weapons" | "Works with Trigger Bot" => self.b("Extended reach"),
                 "Damage indicator position" => self.b("Damage indicator"),
                 "Damage indicator x" | "Damage indicator y" => self.b("Damage indicator") && self.p("Damage indicator position") == "Custom",
+                "Damage indicator size" => false,
                 "Back after" => self.b("Swap back"),
                 "Shortest delay" | "Longest delay" => self.b("Swap back") && self.p("Back after") == "A delay",
                 _ => true,
