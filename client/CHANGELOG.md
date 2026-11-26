@@ -29,6 +29,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - Debug Report has a Settings file section: the folder your settings are kept in, how they were read at this launch and how the saves since went (for settings that come back reset)
 - Debug Report has a Trigger Bot section: of the ticks it ran since it was turned on, how many had something under the crosshair, how many of those hit, and what held each of the others (the cooldown, an item in use, Anti bot, Miss chance...), to compare two players' fights
 - **Profiles menu (the Profiles row) has an Import tab: the .profile files in the imports folder, one click each; a name that is taken asks whether to keep both or replace; Paste a profile keeps the one on the clipboard. No command needed**
+- **Launcher > Profiles has Import: pick .profile files, drop them on the page, or open one with the launcher (`sunset-launcher FILE.profile`); a name that is saved already asks whether to keep both, replace or skip. `sunset-launcher import-profile FILE [keep|replace]` does it from a terminal**
 - HUD > Facing axis: off, the facing reads "South" instead of "South +Z"
 
 ### Changed
@@ -112,5 +113,6 @@ section of the version they build into the signed manifest, and the launcher sho
 ### Fixed
 - Profiles with Fake Lag's old Range choke value load again
 - Streamer Mode no longer slows down text drawing
+
 
 

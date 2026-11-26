@@ -134,6 +134,8 @@ enum Msg {
     Sources(Vec<(String, PathBuf)>),
     /// An import finished: its note, or why it stopped.
     Imported(core::Result<String>),
+    /// A .profile file was taken in (or its name is taken, or why not).
+    ProfileImported(PathBuf, core::Result<core::ProfileImport>),
     Info(core::Result<String>),
     /// A plugin build's step: which, what it is doing, how far through the step.
     BuildStep(Phase, String, Option<f32>),
@@ -208,6 +210,8 @@ pub struct Launcher {
     /// The Overview's import offer was put off ("Not now") until the launcher starts again.
     import_later: bool,
     profiles: Vec<String>,
+    /// Imported files whose profile name is saved already, waiting for an answer: the file and the name.
+    profile_clash: Vec<(PathBuf, String)>,
     mods: Vec<(String, String)>,
     /// The installed plugins and what the instance plays against what they and the settings ask for.
     plugins: Vec<plugins::Plugin>,
@@ -268,6 +272,7 @@ impl Launcher {
             sources: vec![],
             import_later: false,
             profiles: vec![],
+            profile_clash: vec![],
             mods: vec![],
             plugins: vec![],
             plugin_status: None,
@@ -629,6 +634,19 @@ impl Launcher {
                     self.sync_plugins(cx);
                 }
             }
+            Msg::ProfileImported(path, r) => match r {
+                Ok(core::ProfileImport::Saved(name)) => {
+                    self.profile_clash.retain(|(p, _)| *p != path);
+                    self.note = Some((false, format!("Imported the profile {name}. Load it in game from Sunset's menu: Profiles.")));
+                    self.reload_local();
+                }
+                Ok(core::ProfileImport::Taken(name)) => {
+                    if !self.profile_clash.iter().any(|(p, _)| *p == path) {
+                        self.profile_clash.push((path, name));
+                    }
+                }
+                Err(e) => self.note = Some((true, e)),
+            },
             Msg::PluginAdded(r) => match r {
                 Ok(name) => {
                     self.note = Some((false, if self.settings.plugins_enabled {
@@ -825,6 +843,114 @@ impl Launcher {
             }
         })
         .detach();
+    }
+
+    /// Takes .profile files into the saved profiles: the Import button's, ones dropped on the Profiles tab and ones
+    /// the launcher was opened with. A name that is saved already comes back as a question on the Profiles tab.
+    fn import_profiles(&mut self, paths: Vec<PathBuf>, clash: core::Clash, cx: &mut Context<Self>) {
+        self.tab = Tab::Profiles;
+        if self.installed.is_none() {
+            self.note = Some((true, "Install Sunset first: profiles are kept in its instance.".into()));
+            cx.notify();
+            return;
+        }
+        let (p, tx) = (self.paths.clone(), self.send());
+        std::thread::spawn(move || {
+            for path in paths {
+                let r = core::import_profile(&p, &path, clash);
+                let _ = tx.send_blocking(Msg::ProfileImported(path, r));
+            }
+        });
+        cx.notify();
+    }
+
+    /// Asks for .profile files and imports them.
+    fn pick_profiles(&mut self, cx: &mut Context<Self>) {
+        if self.installed.is_none() {
+            return;
+        }
+        let picked = cx.prompt_for_paths(gpui::PathPromptOptions { files: true, directories: false, multiple: true, prompt: Some("Import profile".into()) });
+        let (p, tx) = (self.paths.clone(), self.send());
+        cx.spawn(async move |_, _| {
+            match picked.await {
+                Ok(Ok(Some(paths))) => {
+                    std::thread::spawn(move || {
+                        for path in paths {
+                            let r = core::import_profile(&p, &path, core::Clash::Ask);
+                            let _ = tx.send_blocking(Msg::ProfileImported(path, r));
+                        }
+                    });
+                }
+                Ok(Ok(None)) => {}
+                // No file chooser on this desktop (no xdg-desktop-portal, say): say so rather than do nothing.
+                _ => {
+                    let _ = tx.send(Msg::ProfileImported(PathBuf::new(), Err("no file chooser opened. Drop the .profile file on this page instead".into()))).await;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// The saved profiles, with Import (a file chooser; .profile files can be dropped on the page too) and, for an
+    /// imported file whose name is saved already, the question: keep both, replace, or skip it.
+    fn profiles_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let folder = self.paths.sunset_data().join("profiles");
+        let actions = self.installed.is_some().then(|| {
+            div()
+                .flex()
+                .gap(px(8.))
+                // The one filled button on the page: an open question's Keep both, else Import.
+                .child(button("profile-import", "Import", self.profile_clash.is_empty()).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.pick_profiles(cx))))
+                .child(button("list-folder", "Open folder", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open(folder.clone(), cx))))
+                .into_any_element()
+        });
+        let asks: Vec<gpui::Div> = self
+            .profile_clash
+            .iter()
+            .enumerate()
+            .map(|(i, (path, name))| {
+                let (keep, replace, skip) = (path.clone(), path.clone(), path.clone());
+                card()
+                    .p(px(PAD))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(12.))
+                    .child(text(format!("A profile named {name} is saved already."), 13., TEXT))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_none()
+                            .gap(px(8.))
+                            .child(button(("clash-keep", i), "Keep both", true).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.import_profiles(vec![keep.clone()], core::Clash::KeepBoth, cx))))
+                            .child(button(("clash-replace", i), "Replace", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.import_profiles(vec![replace.clone()], core::Clash::Replace, cx))))
+                            .child(button(("clash-skip", i), "Skip", false).on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                                this.profile_clash.retain(|(p, _)| *p != skip);
+                                cx.notify();
+                            }))),
+                    )
+            })
+            .collect();
+        let n = self.profiles.len();
+        let list = if self.profiles.is_empty() {
+            let empty = if self.installed.is_some() {
+                "No saved profiles yet. Save one in game from Sunset's menu (Right Shift), or import a .profile file: press Import, or drop the file on this page."
+            } else {
+                "No saved profiles yet. Save one in game from Sunset's menu (Right Shift)."
+            };
+            card().p(px(PAD)).child(text(empty.to_string(), 13., MUTED))
+        } else {
+            card().flex().flex_col().children(self.profiles.iter().enumerate().map(|(i, p)| setting_row(p.clone(), text(String::new(), 13., MUTED), i + 1 == n)))
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(GAP))
+            .child(page_head("Profiles", actions))
+            .children(asks)
+            .child(list)
+            .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, _, cx| this.import_profiles(paths.paths().to_vec(), core::Clash::Ask, cx)))
+            .into_any_element()
     }
 
     /// Installs plugins dropped on the Plugins tab.
@@ -2528,12 +2654,7 @@ impl Render for Launcher {
             Tab::Overview => self.overview(log_height(window), cx),
             Tab::Settings => column(self.settings_view(cx), list_w),
             Tab::Plugins => column(self.plugins_view(cx), list_w),
-            Tab::Profiles => {
-                let items = self.profiles.iter().map(|p| (p.clone(), String::new())).collect();
-                let empty = "No saved profiles yet. Save one in game from Sunset's menu (Right Shift).".to_string();
-                let folder = self.installed.is_some().then(|| self.paths.sunset_data().join("profiles"));
-                column(self.list_view("Profiles", empty, items, folder, cx).into_any_element(), list_w)
-            }
+            Tab::Profiles => column(self.profiles_view(cx), list_w),
         };
         let note = self.note.clone().map(|(err, msg)| {
             let sign_in = (err && core::needs_sign_in(&msg)).then(|| {
@@ -2630,10 +2751,11 @@ fn desktop_entry() {
     }
 }
 
-pub fn run() {
+/// Opens the window; `open` are .profile files the launcher was handed, imported once it is up.
+pub fn run(open: Vec<PathBuf>) {
     #[cfg(target_os = "linux")]
     desktop_entry();
-    Application::with_platform(gpui_platform::current_platform(false)).run(|cx: &mut App| {
+    Application::with_platform(gpui_platform::current_platform(false)).run(move |cx: &mut App| {
         let fonts = vec![
             std::borrow::Cow::Borrowed(include_bytes!("../../assets/inter.ttf").as_slice()),
             std::borrow::Cow::Borrowed(include_bytes!("../../assets/inter-bold.ttf").as_slice()),
@@ -2651,7 +2773,16 @@ pub fn run() {
             window_decorations: Some(WindowDecorations::Client),
             ..Default::default()
         };
-        if let Err(e) = cx.open_window(opts, |_, cx| cx.new(Launcher::new)) {
+        let opened = cx.open_window(opts, move |_, cx| {
+            cx.new(|cx| {
+                let mut launcher = Launcher::new(cx);
+                if !open.is_empty() {
+                    launcher.import_profiles(open, core::Clash::Ask, cx);
+                }
+                launcher
+            })
+        });
+        if let Err(e) = opened {
             eprintln!("sunset-launcher: can't open a window: {e}");
             cx.quit();
         }

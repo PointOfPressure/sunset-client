@@ -1531,6 +1531,93 @@ pub fn profiles(p: &Paths) -> Vec<String> {
     v
 }
 
+/// A profile file's first line, the name the game keeps for the settings before the last load, and the largest
+/// profile it reads (client/sunset/src/game/profiles.rs has the same three).
+const PROFILE_HEADER: &str = "sunset-profile=1";
+const PROFILE_BACKUP: &str = "before-load";
+const PROFILE_MAX: u64 = 1024 * 1024;
+
+/// What an import does when a profile of that name is saved already.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Clash {
+    Ask,
+    KeepBoth,
+    Replace,
+}
+
+/// How an import ended: saved under a name, or its name is taken and nobody has said what to do.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ProfileImport {
+    Saved(String),
+    Taken(String),
+}
+
+/// A profile's name from its file's, as the game names profiles (1 to 32 letters, digits, - or _, lower case,
+/// starting with a letter or digit): what a download adds to a name ("PvP config (1).profile") becomes dashes.
+pub fn profile_name(file: &Path) -> Result<String> {
+    let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_ascii_lowercase();
+    let mut n = String::new();
+    for c in stem.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            n.push(c);
+        } else if !n.ends_with('-') {
+            n.push('-');
+        }
+    }
+    let n: String = n.trim_matches(|c| c == '-' || c == '_').chars().take(32).collect();
+    let n = n.trim_end_matches(|c| c == '-' || c == '_').to_string();
+    if n.is_empty() {
+        return Err(format!("{} has no letters or digits in its name: rename it first", file.display()));
+    }
+    let device = |p: &str| n.len() == 4 && n.starts_with(p) && n.as_bytes()[3].is_ascii_digit();
+    if matches!(n.as_str(), "con" | "prn" | "aux" | "nul") || device("com") || device("lpt") {
+        return Err(format!("{n} is a name Windows keeps for itself: rename the file first"));
+    }
+    if n == PROFILE_BACKUP {
+        return Err(format!("{PROFILE_BACKUP} is the name of the settings before the last load: rename the file first"));
+    }
+    Ok(n)
+}
+
+/// Takes a `.profile` file into the instance's saved profiles (the game lists and loads them from its Profiles menu).
+/// The file has to look like a profile: text of a megabyte at most with `module.setting=value` lines; the profile's
+/// first line is added when it is missing (a profile pasted into a file from a chat). Nothing is replaced unless
+/// `clash` says so.
+pub fn import_profile(p: &Paths, file: &Path, clash: Clash) -> Result<ProfileImport> {
+    let name = profile_name(file)?;
+    let meta = fs::metadata(file).map_err(|e| format!("can't read {}: {e}", file.display()))?;
+    if !meta.is_file() {
+        return Err(format!("{} is not a file", file.display()));
+    }
+    if meta.len() > PROFILE_MAX {
+        return Err(format!("{} is over 1 MiB: not a profile", file.display()));
+    }
+    let text = fs::read_to_string(file).map_err(|e| format!("can't read {}: {e}", file.display()))?;
+    let body = text.trim();
+    let setting = |l: &str| l.split_once('=').is_some_and(|(k, _)| k.trim().contains('.') && !k.trim().contains(' '));
+    if !body.lines().any(setting) {
+        return Err(format!("{} is not a Sunset profile (it has no module.setting=value lines)", file.display()));
+    }
+    let text = if body.lines().next().is_some_and(|l| l.trim() == PROFILE_HEADER) { format!("{body}\n") } else { format!("{PROFILE_HEADER}\n{body}\n") };
+    let dir = p.sunset_data().join("profiles");
+    let saved = |n: &str| dir.join(format!("{n}.profile")).exists();
+    let to = if !saved(&name) || clash == Clash::Replace {
+        name
+    } else if clash == Clash::KeepBoth {
+        (2..100).map(|n| format!("{name}-{n}")).find(|n| !saved(n)).ok_or_else(|| format!("too many profiles named {name}"))?
+    } else {
+        return Ok(ProfileImport::Taken(name));
+    };
+    fs::create_dir_all(&dir).map_err(|e| format!("can't make {}: {e}", dir.display()))?;
+    // Whole or not at all: written beside it, then moved over.
+    let (tmp, end) = (dir.join(format!(".{to}.profile.tmp")), dir.join(format!("{to}.profile")));
+    fs::write(&tmp, text).and_then(|()| fs::rename(&tmp, &end)).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("can't save {}: {e}", end.display())
+    })?;
+    Ok(ProfileImport::Saved(to))
+}
+
 /// The native mods built into the version folder `vdir` (`native-mods.json`): Sunset and the plugins compiled into it.
 pub fn built_in_mods(p: &Paths, vdir: &str) -> Vec<(String, String)> {
     let Ok(b) = fs::read(p.versions().join(vdir).join("native-mods.json")) else { return vec![] };
@@ -2344,6 +2431,48 @@ mod tests {
         assert!(!v.join(".nightly-x.tmp").exists());
         // The package itself is untouched.
         assert!(pkg.join("horizon-client").is_file() && pkg.join("native-mods.json").is_file());
+        fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn profile_files_import_by_name_and_ask_before_replacing() {
+        let t = std::env::temp_dir().join(format!("sunset-profile-import-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        fs::create_dir_all(&t).unwrap();
+        let p = Paths { root: t.join("home") };
+        let saved = |n: &str| fs::read_to_string(p.sunset_data().join(format!("profiles/{n}.profile"))).ok();
+        // A download's name, and a profile's text without its first line (pasted into a file from a chat).
+        let file = t.join("My PvP (1).profile");
+        fs::write(&file, "killaura.range=3\n").unwrap();
+        assert_eq!(profile_name(&file).unwrap(), "my-pvp-1");
+        assert_eq!(import_profile(&p, &file, Clash::Ask).unwrap(), ProfileImport::Saved("my-pvp-1".into()));
+        assert_eq!(saved("my-pvp-1").unwrap(), "sunset-profile=1\nkillaura.range=3\n");
+        assert_eq!(profiles(&p), ["my-pvp-1"]);
+        // The name is taken now: asked first, nothing written; then both kept, then replaced.
+        fs::write(&file, "sunset-profile=1\nkillaura.range=4\n").unwrap();
+        assert_eq!(import_profile(&p, &file, Clash::Ask).unwrap(), ProfileImport::Taken("my-pvp-1".into()));
+        assert_eq!(saved("my-pvp-1").unwrap(), "sunset-profile=1\nkillaura.range=3\n");
+        assert_eq!(import_profile(&p, &file, Clash::KeepBoth).unwrap(), ProfileImport::Saved("my-pvp-1-2".into()));
+        assert_eq!(saved("my-pvp-1").unwrap(), "sunset-profile=1\nkillaura.range=3\n");
+        assert_eq!(import_profile(&p, &file, Clash::Replace).unwrap(), ProfileImport::Saved("my-pvp-1".into()));
+        assert_eq!(saved("my-pvp-1").unwrap(), "sunset-profile=1\nkillaura.range=4\n");
+        assert_eq!(profiles(&p), ["my-pvp-1", "my-pvp-1-2"]);
+        // No temporary file is left beside them.
+        assert_eq!(fs::read_dir(p.sunset_data().join("profiles")).unwrap().count(), 2);
+        // Not profiles: other text, a file too big, a folder, a missing file; and names that can't be kept.
+        let other = t.join("notes.profile");
+        fs::write(&other, "just some text\nwith = signs but no setting\n").unwrap();
+        assert!(import_profile(&p, &other, Clash::Ask).unwrap_err().contains("not a Sunset profile"));
+        fs::write(&other, format!("a.b=1\n{}", "x".repeat(1024 * 1024))).unwrap();
+        assert!(import_profile(&p, &other, Clash::Ask).unwrap_err().contains("1 MiB"));
+        fs::create_dir_all(t.join("folder.profile")).unwrap();
+        assert!(import_profile(&p, &t.join("folder.profile"), Clash::Ask).is_err());
+        assert!(import_profile(&p, &t.join("gone.profile"), Clash::Ask).is_err());
+        for bad in ["before-load.profile", "CON.profile", "---.profile", "lpt1.profile"] {
+            assert!(profile_name(Path::new(bad)).is_err(), "{bad}");
+        }
+        assert_eq!(profile_name(Path::new("__A  very long name that goes on and on and on.profile")).unwrap(), "a-very-long-name-that-goes-on-an");
+        assert_eq!(profiles(&p), ["my-pvp-1", "my-pvp-1-2"]);
         fs::remove_dir_all(&t).unwrap();
     }
 

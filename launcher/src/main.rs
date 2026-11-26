@@ -19,7 +19,8 @@ const HELP: &str = "Sunset launcher
 
 Usage: sunset-launcher [COMMAND]
 
-Without a command, opens the window.
+Without a command, opens the window. Given .profile files (Open with, or dropped on the launcher), opens the
+window and imports them.
   check            Fetch and verify the signed manifest, and say what is installed
   self-update      Update the launcher itself to the release's build (the window does this when it opens)
   install          Install Sunset (or update it to the manifest's pin)
@@ -30,6 +31,9 @@ Without a command, opens the window.
   offline NICK     Play the sunset instance offline (cracked) as NICK, for joining offline-mode servers
   import [NAME]    Copy settings, keybinds, servers, worlds, packs and Sunset configs from a Horizon
                    instance (files it replaces go to a backup folder; close the game first)
+  import-profile FILE [keep|replace]
+                   Save a .profile file among Sunset's profiles; when its name is taken, keep puts it
+                   beside the saved one (numbered), replace over it
   plugins          The installed plugins and what the instance plays
   plugins on|off   Build plugins into Sunset, or go back to Sunset as released
   plugins add PATH Install a plugin (its folder or .hmod file), then build when plugins are on
@@ -43,8 +47,15 @@ SUNSET_NO_SELF_UPDATE (the window leaves the launcher as it is)";
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     selfupdate::remove_replaced();
+    // Profile files handed to the launcher (Open with, a double click, a drop on its icon): the window takes them in.
+    let profiles: Vec<std::path::PathBuf> =
+        args.iter().map(std::path::PathBuf::from).filter(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("profile")) && f.is_file()).collect();
+    if !profiles.is_empty() && profiles.len() == args.len() {
+        ui::run(profiles);
+        return;
+    }
     let Some(cmd) = args.first() else {
-        ui::run();
+        ui::run(Vec::new());
         return;
     };
     #[cfg(windows)]
@@ -153,6 +164,21 @@ fn main() {
                 }),
             }
         }
+        "import-profile" => match args.get(1) {
+            None => Err("usage: sunset-launcher import-profile FILE [keep|replace]".into()),
+            Some(_) if core::installed(&p).is_none() => Err("Install Sunset first (sunset-launcher install): profiles are kept in its instance.".into()),
+            Some(file) => {
+                let clash = match args.get(2).map(String::as_str) {
+                    Some("keep") => core::Clash::KeepBoth,
+                    Some("replace") => core::Clash::Replace,
+                    _ => core::Clash::Ask,
+                };
+                core::import_profile(&p, std::path::Path::new(file), clash).and_then(|i| match i {
+                    core::ProfileImport::Saved(name) => Ok(format!("imported the profile {name}: load it in game from Sunset's menu (Profiles)")),
+                    core::ProfileImport::Taken(name) => Err(format!("a profile named {name} is saved already: add keep (both are kept) or replace")),
+                })
+            }
+        },
         "plugins" => plugins_cmd(&p, s, &args[1..], &progress),
         "licences" | "licenses" | "--licences" | "--licenses" => Ok(core::licences()),
         "-h" | "--help" | "help" => Ok(HELP.into()),
