@@ -236,6 +236,11 @@ def clean():
 
 def reset(mode="survival", x=0.5, z=0.5, y=Y + 1):
     ensure_alive()
+    # Landed first, in creative, where a fall costs nothing: Horizon's servers (single player too) keep a fall through
+    # a teleport, so a player the last test left falling (Flight turned off in the air, a run off the platform) died
+    # on landing after the teleport below, and the test's next lines were typed into the death screen.
+    cmd("gamemode creative", f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
+    wait(3)
     # Max health back too: a run stopped in a test that raised it (the explosive auras') leaves it raised in the world.
     cmd(f"gamemode {mode}", "clear @s", "effect clear @s", "attribute @s minecraft:max_health base reset",
         "effect give @s minecraft:instant_health 1 10 true",
