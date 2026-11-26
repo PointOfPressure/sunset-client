@@ -1,0 +1,2813 @@
+id = "sunset"
+name = "Sunset"
+version = "2.1.0"
+description = "A utility client for Horizon: modules, a click GUI, HUD and world overlays."
+authors = ["PointOfPressure", "Sunset contributors"]
+api = "0.2"
+side = "client"
+capabilities = ["registries"]
+
+# Sunset changes the game's own functions, so it is made for exactly this game build.
+[native]
+game = "26.3"
+horizon = "9defaa04337e68d6f368842491834af7bc5727f9"
+mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
+
+[[native.module]]
+id = "compat"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_compat"
+source = "src/game/compat.rs"
+
+# Moved up from the crates below the game: support modules may only go into the game crate now.
+[[native.module]]
+id = "tab_modes"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_tab_modes"
+source = "src/game/tab_modes.rs"
+
+[[native.module]]
+id = "streamer_names"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_streamer"
+source = "src/game/streamer_names.rs"
+
+[[native.module]]
+id = "crosshair_flags"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crosshair_flags"
+source = "src/game/crosshair_flags.rs"
+
+[[native.module]]
+id = "scoreboard_pos"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scoreboard_pos"
+source = "src/game/scoreboard_pos.rs"
+
+[[native.module]]
+id = "hunger_flags"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hunger"
+source = "src/game/hunger_flags.rs"
+
+[[native.module]]
+id = "mod_rows"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_mod_rows"
+source = "src/game/mod_rows.rs"
+
+[[native.module]]
+id = "owned_clicks"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_owned_clicks"
+source = "src/game/input_queue.rs"
+
+[[native.module]]
+id = "packets"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_packets"
+source = "src/game/packet_tap.rs"
+
+[[native.module]]
+id = "ore_sim_source"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_ore_sim_source"
+source = "src/game/ore_sim_source.rs"
+
+[[native.module]]
+id = "atmosphere_renderer"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_atmosphere_renderer"
+source = "src/game/atmosphere_renderer.rs"
+
+[[native.module]]
+id = "bed_breaker"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_bed_breaker"
+source = "src/game/bed_breaker.rs"
+
+[[native.module]]
+id = "atmosphere_shader"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_atmosphere_shader"
+source = "src/game/atmosphere_shader.rs"
+
+[[native.module]]
+id = "hand_view_flags"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hand_view"
+source = "src/game/hand_view.rs"
+
+[[native.module]]
+id = "font_flags"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_font"
+source = "src/game/font.rs"
+
+[[native.module]]
+id = "baritone_controller"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone"
+source = "src/game/baritone.rs"
+
+[[native.module]]
+id = "movement_owner"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_movement_owner"
+source = "src/game/movement_owner.rs"
+
+[[native.module]]
+id = "baritone_actions"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone_actions"
+source = "src/game/baritone_actions.rs"
+
+[[native.module]]
+id = "baritone_remote"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_baritone_remote"
+source = "src/game/baritone_remote.rs"
+
+[[native.module]]
+id = "baritone_targets"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone_targets"
+source = "src/game/baritone_targets.rs"
+
+[[native.module]]
+id = "baritone_draw"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone_draw"
+source = "src/game/baritone_draw.rs"
+
+[[native.module]]
+id = "gui_move"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_gui_move"
+source = "src/game/gui_move.rs"
+
+[[native.module]]
+id = "gui_move_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_gui_move_policy"
+source = "src/game/gui_move_policy.rs"
+
+[[native.module]]
+id = "gui_move_remote"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_gui_move_remote"
+source = "src/game/gui_move_remote.rs"
+
+[[native.module]]
+id = "click_clock"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_click_clock"
+source = "src/game/click_clock.rs"
+
+[[native.module]]
+id = "autoclicker"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_autoclicker"
+source = "src/game/autoclicker.rs"
+
+[[native.module]]
+id = "antibot_state"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_antibot_state"
+source = "src/game/antibot_state.rs"
+
+[[native.module]]
+id = "antibot"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_antibot"
+source = "src/game/antibot.rs"
+
+[[native.module]]
+id = "runtime"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset"
+source = "src/game/runtime.rs"
+
+[[native.module]]
+id = "runtime_module"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_module"
+source = "src/game/runtime_module.rs"
+
+[[native.module]]
+id = "runtime_catalog"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_catalog"
+source = "src/game/runtime_catalog.rs"
+
+[[native.module]]
+id = "runtime_state"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_state"
+source = "src/game/runtime_state.rs"
+
+[[native.module]]
+id = "runtime_config"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_config"
+source = "src/game/runtime_config.rs"
+
+[[native.module]]
+id = "runtime_helpers"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_helpers"
+source = "src/game/runtime_helpers.rs"
+
+[[native.module]]
+id = "runtime_menu"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_menu"
+source = "src/game/runtime_menu.rs"
+
+[[native.module]]
+id = "runtime_tick"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_tick"
+source = "src/game/runtime_tick.rs"
+
+[[native.module]]
+id = "runtime_player"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_player"
+source = "src/game/runtime_player.rs"
+
+[[native.module]]
+id = "runtime_inventory"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_inventory"
+source = "src/game/runtime_inventory.rs"
+
+[[native.module]]
+id = "runtime_world"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_world"
+source = "src/game/runtime_world.rs"
+
+[[native.module]]
+id = "runtime_movement"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_movement"
+source = "src/game/runtime_movement.rs"
+
+[[native.module]]
+id = "runtime_combat"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_combat"
+source = "src/game/runtime_combat.rs"
+
+[[native.module]]
+id = "runtime_packets"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_packets"
+source = "src/game/runtime_packets.rs"
+
+[[native.module]]
+id = "runtime_commands"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_commands"
+source = "src/game/runtime_commands.rs"
+
+[[native.module]]
+id = "runtime_draw"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_draw"
+source = "src/game/runtime_draw.rs"
+
+[[native.module]]
+id = "runtime_hud"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_hud"
+source = "src/game/runtime_hud.rs"
+
+[[native.module]]
+id = "runtime_overlays"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_overlays"
+source = "src/game/runtime_overlays.rs"
+
+[[native.module]]
+id = "runtime_gui"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_gui"
+source = "src/game/runtime_gui.rs"
+
+[[native.module]]
+id = "runtime_gui_input"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_gui_input"
+source = "src/game/runtime_gui_input.rs"
+
+[[native.module]]
+id = "runtime_gui_draw"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_gui_draw"
+source = "src/game/runtime_gui_draw.rs"
+
+[[native.module]]
+id = "runtime_tests"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_runtime_tests"
+source = "src/game/runtime_tests.rs"
+
+[[native.module]]
+id = "movement"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_movement"
+source = "src/game/movement.rs"
+
+[[native.module]]
+id = "legacy_speed"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_legacy_speed"
+source = "src/game/legacy_speed.rs"
+
+[[native.module]]
+id = "autoblock"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_autoblock"
+source = "src/game/autoblock.rs"
+
+[[native.module]]
+id = "rotation"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_rotation"
+source = "src/game/rotation.rs"
+
+[[native.module]]
+id = "util"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_util"
+source = "src/game/util.rs"
+
+[[native.module]]
+id = "bind_state"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_bind_state"
+source = "src/game/bind_state.rs"
+
+[[native.module]]
+id = "text_edit"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_text_edit"
+source = "src/game/text_edit.rs"
+
+[[native.module]]
+id = "command_complete"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_command_complete"
+source = "src/game/command_complete.rs"
+
+[[native.module]]
+id = "chat_suggest"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_chat_suggest"
+source = "src/game/chat_suggest.rs"
+
+[[native.module]]
+id = "dashboard"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_dashboard"
+source = "src/game/dashboard.rs"
+
+[[native.module]]
+id = "sidebar"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sidebar"
+source = "src/game/sidebar.rs"
+
+[[native.module]]
+id = "smooth"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_smooth"
+source = "src/game/smooth.rs"
+
+[[native.module]]
+id = "picker"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_picker"
+source = "src/game/picker.rs"
+
+[[native.module]]
+id = "profiles"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_profiles"
+source = "src/game/profiles.rs"
+
+[[native.module]]
+id = "profile_menu"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_profile_menu"
+source = "src/game/profile_menu.rs"
+
+[[native.module]]
+id = "combat"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat"
+source = "src/game/combat.rs"
+
+[[native.module]]
+id = "player"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_player"
+source = "src/game/player.rs"
+
+[[native.module]]
+id = "vehicle"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_vehicle"
+source = "src/game/vehicle.rs"
+
+[[native.module]]
+id = "world"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_world"
+source = "src/game/world.rs"
+
+[[native.module]]
+id = "base_finder"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_base_finder"
+source = "src/game/base_finder.rs"
+
+[[native.module]]
+id = "chunk_feed"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_chunk_feed"
+source = "src/game/chunk_feed.rs"
+
+[[native.module]]
+id = "hunting"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hunting"
+source = "src/game/hunting.rs"
+
+[[native.module]]
+id = "light_scan"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_light_scan"
+source = "src/game/light_scan.rs"
+
+[[native.module]]
+id = "hud_list"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hud_list"
+source = "src/game/hud_list.rs"
+
+[[native.module]]
+id = "hud_place"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hud_place"
+source = "src/game/hud_place.rs"
+
+[[native.module]]
+id = "hud_health"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hud_health"
+source = "src/game/hud_health.rs"
+
+[[native.module]]
+id = "search"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_search"
+source = "src/game/search.rs"
+
+[[native.module]]
+id = "villager_roller"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_villager_roller"
+source = "src/game/villager_roller.rs"
+
+[[native.module]]
+id = "sign_historian"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sign_historian"
+source = "src/game/sign_historian.rs"
+
+[[native.module]]
+id = "use_tracker"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_use_tracker"
+source = "src/game/use_tracker.rs"
+
+[[native.module]]
+id = "sound_detector"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sound_detector"
+source = "src/game/sound_detector.rs"
+
+[[native.module]]
+id = "gear"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_gear"
+source = "src/game/gear.rs"
+
+[[native.module]]
+id = "new_chunks"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_new_chunks"
+source = "src/game/new_chunks.rs"
+
+[[native.module]]
+id = "auto_sign"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_auto_sign"
+source = "src/game/auto_sign.rs"
+
+[[native.module]]
+id = "world_parity"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_world_parity"
+source = "src/game/world_parity.rs"
+
+[[native.module]]
+id = "vanish"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_vanish"
+source = "src/game/vanish.rs"
+
+[[native.module]]
+id = "staff_check"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_staff_check"
+source = "src/game/staff_check.rs"
+
+[[native.module]]
+id = "server_scan"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_server_scan"
+source = "src/game/server_scan.rs"
+
+[[native.module]]
+id = "server_scan_signatures"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_server_scan_signatures"
+source = "src/game/server_scan_signatures.rs"
+
+[[native.module]]
+id = "server_scan_query"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_server_scan_query"
+source = "src/game/server_scan_query.rs"
+
+[[native.module]]
+id = "tab_marks"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_tab_marks"
+source = "src/game/tab_marks.rs"
+
+[[native.module]]
+id = "server_scan_remote"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_server_scan_remote"
+source = "src/game/server_scan_remote.rs"
+
+[[native.module]]
+id = "sky"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sky"
+source = "src/game/sky.rs"
+
+[[native.module]]
+id = "sky_math"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_sky_math"
+source = "src/game/sky_math.rs"
+
+[[native.module]]
+id = "remote_seq"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_remote"
+source = "src/game/remote_seq.rs"
+
+[[native.module]]
+id = "goto"
+file = "crates/horizon-client/src/game/runtime/agent/mod.rs"
+name = "sunset_goto"
+source = "src/game/goto.rs"
+
+[[native.module]]
+id = "fishing_hook"
+file = "crates/horizon-client/src/game/items/fishing.rs"
+name = "sunset_fishing"
+source = "src/game/fishing_hook.rs"
+
+[[native.module]]
+id = "aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_aura"
+source = "src/game/aura.rs"
+
+[[native.module]]
+id = "api"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_api"
+source = "src/game/api.rs"
+
+[[native.module]]
+id = "visual"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_visual"
+source = "src/game/visual.rs"
+
+[[native.module]]
+id = "radar"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_radar"
+source = "src/game/radar.rs"
+
+[[native.module]]
+id = "radar_math"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_radar_math"
+source = "src/game/radar_math.rs"
+
+[[native.module]]
+id = "radar_players"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_radar_players"
+source = "src/game/radar_players.rs"
+
+[[native.module]]
+id = "render"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_render"
+source = "src/game/render.rs"
+
+[[native.module]]
+id = "extras"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_extras"
+source = "src/game/extras.rs"
+
+[[native.module]]
+id = "extra_modules"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_extra_modules"
+source = "src/game/extra_modules.rs"
+
+[[native.module]]
+id = "presets"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_presets"
+source = "src/game/presets.rs"
+
+[[native.module]]
+id = "sort_buttons"
+file = "crates/horizon-client/src/game/interface/extras/sorting.rs"
+name = "sunset_sort_buttons"
+source = "src/game/sort_buttons.rs"
+
+[[native.module]]
+id = "client_spoofer"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_client_spoofer"
+source = "src/game/client_spoofer.rs"
+
+[[native.module]]
+id = "presence"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_presence"
+source = "src/game/presence.rs"
+
+[[native.module]]
+id = "toast"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_toast"
+source = "src/game/toast.rs"
+
+[[native.module]]
+id = "streamer_mode"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_streamer_mode"
+source = "src/game/streamer_mode.rs"
+
+[[native.module]]
+id = "crosshair"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crosshair"
+source = "src/game/crosshair.rs"
+
+[[native.module]]
+id = "crosshair_math"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crosshair_math"
+source = "src/game/crosshair_math.rs"
+
+[[native.module]]
+id = "block_overlay"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_block_overlay"
+source = "src/game/block_overlay.rs"
+
+[[native.module]]
+id = "block_overlay_math"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_block_overlay_math"
+source = "src/game/block_overlay_math.rs"
+
+[[native.module]]
+id = "atmosphere"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_atmosphere"
+source = "src/game/atmosphere.rs"
+
+[[native.module]]
+id = "explosive_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_policy"
+source = "src/game/explosive_policy.rs"
+
+[[native.module]]
+id = "aura_base"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_aura_base"
+source = "src/game/aura_base.rs"
+
+[[native.module]]
+id = "loot_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_loot_policy"
+source = "src/game/loot_policy.rs"
+
+[[native.module]]
+id = "loot_guard"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_loot_guard"
+source = "src/game/loot_guard.rs"
+
+[[native.module]]
+id = "loot_remote"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_loot_remote"
+source = "src/game/loot_remote.rs"
+
+[[native.module]]
+id = "explosive_damage"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_damage"
+source = "src/game/explosive_damage.rs"
+
+[[native.module]]
+id = "explosive_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_aura"
+source = "src/game/explosive_aura.rs"
+
+[[native.module]]
+id = "explosive_choice"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_choice"
+source = "src/game/explosive_choice.rs"
+
+[[native.module]]
+id = "crystal_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_crystal_aura"
+source = "src/game/crystal_aura.rs"
+
+[[native.module]]
+id = "cart"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_cart"
+source = "src/game/cart.rs"
+
+[[native.module]]
+id = "anchor_state"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anchor_state"
+source = "src/game/anchor_state.rs"
+
+[[native.module]]
+id = "anchor_aura"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anchor_aura"
+source = "src/game/anchor_aura.rs"
+
+[[native.module]]
+id = "combat_lease"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_lease"
+source = "src/game/combat_lease.rs"
+
+[[native.module]]
+id = "combat_control"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_control"
+source = "src/game/combat_control.rs"
+
+[[native.module]]
+id = "combat_macros"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_macros"
+source = "src/game/combat_macros.rs"
+
+[[native.module]]
+id = "macro_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_macro_policy"
+source = "src/game/macro_policy.rs"
+
+[[native.module]]
+id = "combat_wire"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_wire"
+source = "src/game/combat_wire.rs"
+
+[[native.module]]
+id = "combat_remote"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_combat_remote"
+source = "src/game/combat_remote.rs"
+
+[[native.module]]
+id = "lead_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_lead_policy"
+source = "src/game/lead_policy.rs"
+
+[[native.module]]
+id = "faceplace_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_faceplace_policy"
+source = "src/game/faceplace_policy.rs"
+
+[[native.module]]
+id = "durability_patch"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_durability_patch"
+source = "src/game/durability_patch.rs"
+
+[[native.module]]
+id = "faceplace_native"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_faceplace_native"
+source = "src/game/faceplace_native.rs"
+
+[[native.module]]
+id = "prediction_native"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_prediction_native"
+source = "src/game/prediction_native.rs"
+
+[[native.module]]
+id = "prediction"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_prediction"
+source = "src/game/prediction.rs"
+
+[[native.module]]
+id = "hurt_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hurt_policy"
+source = "src/game/hurt_policy.rs"
+
+[[native.module]]
+id = "prediction_remote"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_prediction_remote"
+source = "src/game/prediction_remote.rs"
+
+[[native.module]]
+id = "hurt_remote"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "sunset_hurt_remote"
+source = "src/game/hurt_remote.rs"
+
+[[native.module]]
+id = "explosive_tactics"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_explosive_tactics"
+source = "src/game/explosive_tactics.rs"
+
+[[native.module]]
+id = "snap_tap"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_snap_tap"
+source = "src/game/snap_tap.rs"
+
+[[native.module]]
+id = "scaffold_bridge"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scaffold_bridge"
+source = "src/game/scaffold_bridge.rs"
+
+[[native.module]]
+id = "scaffold_normal"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scaffold_normal"
+source = "src/game/scaffold_normal.rs"
+
+[[native.module]]
+id = "scaffold_telly"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scaffold_telly"
+source = "src/game/scaffold_telly.rs"
+
+[[native.module]]
+id = "melee"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_melee"
+source = "src/game/melee.rs"
+
+[[native.module]]
+id = "click_fix"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_click_fix"
+source = "src/game/click_fix.rs"
+
+[[native.module]]
+id = "swap_keys"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_swap_keys"
+source = "src/game/swap_keys.rs"
+
+[[native.module]]
+id = "throws"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_throws"
+source = "src/game/throws.rs"
+
+[[native.module]]
+id = "anti_trap"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anti_trap"
+source = "src/game/anti_trap.rs"
+
+[[native.module]]
+id = "drain"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_drain"
+source = "src/game/drain.rs"
+
+[[native.module]]
+id = "takeoff"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_takeoff"
+source = "src/game/takeoff.rs"
+
+[[native.module]]
+id = "effects"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_effects"
+source = "src/game/effects.rs"
+
+[[native.module]]
+id = "seedcracker_version"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_version"
+source = "src/game/seedcracker_version.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_mth"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_mth"
+source = "src/game/seedcracker_mth.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_lcg"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_lcg"
+source = "src/game/seedcracker_lcg.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_sha256"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_sha256"
+source = "src/game/seedcracker_sha256.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_rand"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_rand"
+source = "src/game/seedcracker_rand.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_seeds"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_seeds"
+source = "src/game/seedcracker_seeds.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_dimension"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_dimension"
+source = "src/game/seedcracker_dimension.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_biome"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_biome"
+source = "src/game/seedcracker_biome.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_worldgen_random"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_worldgen_random"
+source = "src/game/seedcracker_worldgen_random.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_feature"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_feature"
+source = "src/game/seedcracker_feature.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_features"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_features"
+source = "src/game/seedcracker_features.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_cracker_data"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_cracker_data"
+source = "src/game/seedcracker_cracker_data.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_cracker_storage"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_cracker_storage"
+source = "src/game/seedcracker_cracker_storage.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_cracker_time_machine"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_cracker_time_machine"
+source = "src/game/seedcracker_cracker_time_machine.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_config"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_config"
+source = "src/game/seedcracker_config.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_lang"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_lang"
+source = "src/game/seedcracker_lang.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_database"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_database"
+source = "src/game/seedcracker_database.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_level"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_level"
+source = "src/game/seedcracker_level.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_finder_piece"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_finder_piece"
+source = "src/game/seedcracker_finder_piece.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_finder_structures"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_finder_structures"
+source = "src/game/seedcracker_finder_structures.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_finder"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_finder"
+source = "src/game/seedcracker_finder.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker_finders"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_scx_finders"
+source = "src/game/seedcracker_finders.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "seedcracker"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_seedcracker"
+source = "src/game/seedcracker.rs"
+
+[[native.module]]
+id = "seedcracker_world"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_seedcracker_world"
+source = "src/game/seedcracker_world.rs"
+
+[[native.module]]
+id = "ore_sim"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_ore_sim"
+source = "src/game/ore_sim.rs"
+
+[[native.module]]
+id = "murder"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_murder"
+source = "src/game/murder.rs"
+
+[[native.module]]
+id = "esp2d"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_esp2d"
+source = "src/game/esp2d.rs"
+
+[[native.module]]
+id = "refill"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_refill"
+source = "src/game/refill.rs"
+
+[[native.module]]
+id = "anchor_catch"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anchor_catch"
+source = "src/game/anchor_catch.rs"
+
+[[native.module]]
+id = "lag"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_lag"
+source = "src/game/lag.rs"
+
+[[native.module]]
+id = "flight"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_flight"
+source = "src/game/flight.rs"
+
+[[native.module]]
+id = "inventory_exec"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_inventory_exec"
+source = "src/game/inventory_exec.rs"
+
+[[native.module]]
+id = "default_config"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_default_config"
+source = "src/game/default_config.rs"
+
+[[native.module]]
+id = "inventory_gate"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_inventory_gate"
+source = "src/game/inventory_gate.rs"
+
+[[native.module]]
+id = "inventory_slots"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_inventory_slots"
+source = "src/game/inventory_slots.rs"
+
+[[native.module]]
+id = "inventory_plan"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_inventory_plan"
+source = "src/game/inventory_plan.rs"
+
+[[native.module]]
+id = "aura_aim"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_aura_aim"
+source = "src/game/aura_aim.rs"
+
+[[native.module]]
+id = "aura_timing"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_aura_timing"
+source = "src/game/aura_timing.rs"
+
+[[native.module]]
+id = "aura_knockback"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_aura_knockback"
+source = "src/game/aura_knockback.rs"
+
+[[native.module]]
+id = "aura_advanced"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_aura_advanced"
+source = "src/game/aura_advanced.rs"
+
+[[native.module]]
+id = "anti_void"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_anti_void"
+source = "src/game/anti_void.rs"
+
+[[native.module]]
+id = "lag_line"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_lag_line"
+source = "src/game/lag_line.rs"
+
+[[native.module]]
+id = "backtrack"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_backtrack"
+source = "src/game/backtrack.rs"
+
+[[native.module]]
+id = "knockback_delay"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_knockback_delay"
+source = "src/game/knockback_delay.rs"
+
+[[native.module]]
+id = "pvp_bot"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_pvp_bot"
+source = "src/game/pvp_bot.rs"
+
+[[native.module]]
+id = "rival_store"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_rival_store"
+source = "src/game/rival_store.rs"
+
+[[native.module]]
+id = "recipes"
+file = "crates/horizon-client/src/game/items/recipe_book.rs"
+name = "sunset_recipes"
+source = "src/game/recipes.rs"
+
+[[native.module]]
+id = "packet_mine"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_packet_mine"
+source = "src/game/packet_mine.rs"
+
+[[native.module]]
+id = "survival_tools"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_survival_tools"
+source = "src/game/survival_tools.rs"
+
+[[native.module]]
+id = "auction_parse"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_auction_parse"
+source = "src/game/auction_parse.rs"
+
+[[native.module]]
+id = "auction"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_auction"
+source = "src/game/auction.rs"
+
+[[native.module]]
+id = "esp_villager"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_esp_villager"
+source = "src/game/esp_villager.rs"
+
+[[native.module]]
+id = "drill_logger"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_drill_logger"
+source = "src/game/drill_logger.rs"
+
+[[native.module]]
+id = "vein_miner"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_vein_miner"
+source = "src/game/vein_miner.rs"
+
+[[native.module]]
+id = "hands"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hands"
+source = "src/game/hands.rs"
+
+[[native.module]]
+id = "duel"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_duel"
+source = "src/game/duel.rs"
+
+[[native.module]]
+id = "loadouts"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_loadouts"
+source = "src/game/loadouts.rs"
+
+[[native.module]]
+id = "parity"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_parity"
+source = "src/game/parity.rs"
+
+[[native.module]]
+id = "melee_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_melee_policy"
+source = "src/game/melee_policy.rs"
+
+[[native.module]]
+id = "mace_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_mace_policy"
+source = "src/game/mace_policy.rs"
+
+[[native.module]]
+id = "target_strafe"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_target_strafe"
+source = "src/game/target_strafe.rs"
+
+[[native.module]]
+id = "elytra_target"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_elytra_target"
+source = "src/game/elytra_target.rs"
+
+[[native.module]]
+id = "auto_mace"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_auto_mace"
+source = "src/game/auto_mace.rs"
+
+[[native.module]]
+id = "combat_collision"
+file = "crates/horizon-client/src/game/items/spear.rs"
+name = "sunset_combat_collision"
+source = "src/game/combat_collision.rs"
+
+[[native.module]]
+id = "combat_inventory"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_combat_inventory"
+source = "src/game/combat_inventory.rs"
+
+[[native.module]]
+id = "inventory_policy"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_inventory_policy"
+source = "src/game/inventory_policy.rs"
+
+[[native.module]]
+id = "debug"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_debug"
+source = "src/game/debug.rs"
+
+[[native.module]]
+id = "session"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_session"
+source = "src/game/session.rs"
+
+[[native.module]]
+id = "hud_bars"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_hud_bars"
+source = "src/game/hud_bars.rs"
+
+[[native.mixin]]
+id = "gui_move_click"
+target = "horizon_client::game::remote::Game<'_>::remote_menu_ops"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/gui_move_click_hook.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "gui_move_throw"
+target = "horizon_client::game::remote::Game<'_>::remote_throw"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/gui_move_action_hook.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "gui_move_quick_move"
+target = "horizon_client::game::remote::Game<'_>::remote_quick_move_all"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/gui_move_action_hook.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "gui_move_shift"
+target = "horizon_client::game::inventory_input::Game<'_>::has_shift_down"
+kind = "RETURN"
+helper = "src/mixins/gui_move_shift_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "value", ty = "bool", value = "$value" },
+]
+
+[[native.mixin]]
+id = "gui_move_server_menu"
+target = "horizon_client::game::remote::Game<'_>::remote_menu_state"
+kind = "HEAD"
+helper = "src/mixins/gui_move_state_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "container", ty = "i32", value = "container" },
+]
+
+[[native.mixin]]
+id = "gui_move_incoming_boundary"
+target = "horizon_client::game::native_hooks::Game<'_>::observe_client_packet"
+kind = "HEAD"
+helper = "src/mixins/gui_move_incoming_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "packet", ty = "&horizon_protocol::packets::play::Clientbound", value = "packet" },
+]
+
+[[native.mixin]]
+id = "autoclicker_input"
+target = "horizon_client::game::remote::Game<'_>::remote_handle_input"
+kind = "HEAD"
+helper = "src/mixins/autoclicker_hook.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "antibot_spawn"
+target = "horizon_client::game::remote::Game<'_>::spawn_entity"
+kind = "HEAD"
+helper = "src/mixins/antibot_entity_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "id", ty = "i32", value = "id" },
+]
+
+[[native.mixin]]
+id = "antibot_despawn"
+target = "horizon_client::game::remote_removal::Game<'_>::remove_entities"
+kind = "HEAD"
+helper = "src/mixins/antibot_despawn_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "ids", ty = "&[i32]", value = "ids" },
+]
+
+[[native.mixin]]
+id = "antibot_world"
+target = "horizon_client::game::remote::Game<'_>::enter_remote_dimension"
+kind = "HEAD"
+helper = "src/mixins/antibot_world_hook.rs"
+
+# (removed server_scan_tree)
+
+[[native.mixin]]
+id = "key"
+target = "horizon_client::game::play_input::Game<'_>::key_press_canceled"
+kind = "HEAD"
+helper = "src/mixins/key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "winit::keyboard::KeyCode", value = "key" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+  { name = "repeat", ty = "bool", value = "repeat" },
+]
+
+[[native.mixin]]
+id = "tick"
+target = "horizon_client::game::native_hooks::client_tick_post::Game<'_>::native_client_tick_post"
+kind = "HEAD"
+helper = "src/mixins/tick.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "hud"
+target = "horizon_client::game::extras::Game<'_>::draw_extras"
+kind = "BEFORE_CALL"
+selector = "self.native_render_gui_post"
+require = 1
+ordinal = 0
+helper = "src/mixins/hud.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+  { name = "corners", ty = "&mut horizon_client::extras_hud::Corners", value = "$local_mut:corners:0" },
+]
+
+[[native.mixin]]
+id = "pretick"
+target = "horizon_client::game::Game<'_>::tick"
+kind = "HEAD"
+helper = "src/mixins/pretick.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "sky_real"
+target = "horizon_client::game::options::Game<'_>::observe_fullscreen"
+kind = "HEAD"
+helper = "src/mixins/sky_real.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "sky_shown"
+target = "horizon_client::game::player_spawn::Game<'_>::spawn_player"
+kind = "HEAD"
+helper = "src/mixins/sky_shown.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "sky_frame"
+target = "horizon_client::game::native_hooks::render_frame_pre::Game<'_>::native_render_frame_pre"
+kind = "HEAD"
+helper = "src/mixins/sky_frame.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "chat"
+target = "horizon_client::game::chat::Game<'_>::handle_chat_input"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/chat.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "message", ty = "&str", value = "message" },
+]
+
+# The chat's suggestions for . commands (chat_suggest.rs): its keys, clicks and wheel while they show, and its list
+# over the chat screen's box (the screen's foreground phase, drawn after the box).
+[[native.mixin]]
+id = "chat_suggest_key"
+target = "horizon_client::game::chat::Game<'_>::chat_key_code"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/chat_suggest_key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "winit::keyboard::KeyCode", value = "key" },
+]
+
+[[native.mixin]]
+id = "chat_suggest_click"
+target = "horizon_client::game::chat::Game<'_>::chat_click"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/chat_suggest_click.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "chat_suggest_scroll"
+target = "horizon_client::game::chat::Game<'_>::chat_scroll"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/chat_suggest_scroll.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "amount", ty = "f32", value = "amount" },
+]
+
+[[native.mixin]]
+id = "chat_suggest_draw"
+target = "horizon_client::game::screen_backgrounds::Game<'_>::draw_screen_phase"
+kind = "HEAD"
+helper = "src/mixins/chat_suggest_draw.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+  { name = "phase", ty = "horizon_client::screen_draw::RenderPhase", value = "phase" },
+]
+
+[[native.mixin]]
+id = "send"
+target = "horizon_client::game::remote::Game<'_>::send"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/send.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "packet", ty = "&horizon_protocol::packets::play::Serverbound", value = "&packet" },
+]
+
+[[native.mixin]]
+id = "server_correction"
+target = "horizon_client::game::remote::Game<'_>::remote_teleport"
+kind = "HEAD"
+helper = "src/mixins/correction_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "position", ty = "&horizon_protocol::packets::play::PlayerPosition", value = "p" },
+]
+
+[[native.mixin]]
+id = "keys"
+target = "horizon_client::game::play_input::Game<'_>::mapped_key"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/input.rs"
+bindings = [{ name = "pressed", ty = "bool", value = "pressed" }]
+
+[[native.mixin]]
+id = "buttons"
+target = "horizon_client::game::play_input::Game<'_>::play_mouse"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/buttons.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "button", ty = "winit::event::MouseButton", value = "button" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
+
+[[native.mixin]]
+id = "press"
+target = "horizon_client::game::extras::sorting::Game<'_>::sort_mouse_press"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/press.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "button", ty = "winit::event::MouseButton", value = "button" },
+]
+
+[[native.mixin]]
+id = "sort_draw"
+target = "horizon_client::game::extras::sorting::Game<'_>::draw_sort_buttons"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/sort_draw.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+  { name = "ox", ty = "f32", value = "ox" },
+  { name = "oy", ty = "f32", value = "oy" },
+]
+
+[[native.mixin]]
+id = "sort_press"
+target = "horizon_client::game::extras::sorting::Game<'_>::sort_press"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/sort_press.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "sort"
+target = "horizon_client::game::extras::sorting::Game<'_>::sort_slots"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/sort_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "slots", ty = "&[usize]", value = "slots" },
+]
+
+[[native.mixin]]
+id = "peek"
+target = "horizon_client::game::stations::tooltip::Game<'_>::draw_stack_tooltip_with"
+kind = "HEAD"
+helper = "src/mixins/peek.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *batch" },
+  { name = "stack", ty = "&ItemStack", value = "stack" },
+  { name = "x", ty = "f32", value = "x" },
+  { name = "y", ty = "f32", value = "y" },
+]
+
+[[native.mixin]]
+id = "peek-pinned"
+target = "horizon_client::game::stations::Game<'_>::draw_slot_tooltip"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/peek_pinned.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *batch" },
+]
+
+[[native.mixin]]
+id = "wheel"
+target = "horizon_client::game::native_hooks::base::Game<'_>::native_mouse_scrolling"
+kind = "HEAD"
+helper = "src/mixins/wheel.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "accumulated", ty = "[i32; 2]", value = "accumulated" },
+  { name = "claimed", ty = "&mut bool", value = "&mut *canceled" },
+]
+
+[[native.mixin]]
+id = "zoom-fov"
+target = "horizon_client::game::extras::Game<'_>::zoomed_fov_degrees"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/zoom.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "fov", ty = "f32", value = "fov" },
+]
+
+[[native.mixin]]
+id = "zoom-turn"
+target = "horizon_client::game::extras::Game<'_>::zoom_turn_scale"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/zoom_turn.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[native.mixin]]
+id = "perspective"
+target = "horizon_client::game::perspective::Game<'_>::cycle_camera"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/perspective.rs"
+
+[[native.mixin]]
+id = "camera"
+target = "horizon_client::game::perspective::Game<'_>::camera_view"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/camera.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "partial", ty = "f32", value = "partial" },
+]
+
+[[native.mixin]]
+id = "turn"
+target = "horizon_client::game::perspective::Game<'_>::turn_player"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/turn.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "xo", ty = "f64", value = "xo" },
+  { name = "yo", ty = "f64", value = "yo" },
+]
+
+[[native.mixin]]
+id = "hand-item"
+target = "horizon_client::game::item_draw::Game<'_>::submit_item_world"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/hand_item.rs"
+bindings = [
+  { name = "this", ty = "&Game<'_>", value = "&*self" },
+  { name = "state", ty = "&ItemRenderState", value = "state" },
+  { name = "pose", ty = "glam::Mat4", value = "pose" },
+  { name = "light", ty = "u32", value = "light" },
+  { name = "out", ty = "&mut Vec<Vertex>", value = "&mut *out" },
+]
+
+[[native.mixin]]
+id = "swing-hand"
+target = "horizon_client::game::hand::Game<'_>::swing_hand"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/swing_hand.rs"
+bindings = [
+  { name = "this", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "hand", ty = "Hand", value = "hand" },
+  { name = "animation", ty = "SwingAnimation", value = "animation" },
+]
+
+[[native.mixin]]
+id = "scoreboard"
+target = "horizon_client::game::scoreboard::Game<'_>::draw_scoreboard"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/scoreboard_hook.rs"
+
+[[native.mixin]]
+id = "title"
+target = "horizon_client::game::titles::Game<'_>::draw_title"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/title_hook.rs"
+
+[[native.mixin]]
+id = "arm-pose"
+target = "horizon_client::game::frame_geometry::Game<'_>::first_person_arm"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/arm_pose.rs"
+bindings = [
+  { name = "this", ty = "&Game<'_>", value = "&*self" },
+  { name = "left", ty = "bool", value = "left" },
+  { name = "m", ty = "glam::Mat4", value = "m" },
+  { name = "light", ty = "u32", value = "light" },
+  { name = "partial", ty = "f32", value = "partial" },
+  { name = "out", ty = "&mut Vec<Vertex>", value = "&mut *out" },
+]
+
+[[native.mixin]]
+id = "sway"
+target = "horizon_client_lib::first_person::HandSway::rotation"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/sway.rs"
+
+[[native.mixin]]
+id = "totem-pose"
+target = "horizon_client_lib::item_activation::animation_pose"
+kind = "RETURN"
+helper = "src/mixins/totem_pose.rs"
+bindings = [
+  { name = "value", ty = "Mat4", value = "$value" },
+  { name = "aspect", ty = "f32", value = "aspect" },
+]
+
+[[native.mixin]]
+id = "totem-tick"
+target = "horizon_client_lib::item_activation::ItemActivation::tick"
+kind = "HEAD"
+helper = "src/mixins/totem_tick.rs"
+bindings = [{ name = "this", ty = "&mut ItemActivation", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "particle-add"
+target = "horizon_client_render::particles::ParticleEngine::add_with"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/particle_add.rs"
+bindings = [{ name = "options", ty = "&ParticleOptions", value = "options" }]
+
+[[native.mixin]]
+id = "boat-ride"
+target = "horizon_client::game::remote_vehicles::Game<'_>::remote_ride"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/boat_hook.rs"
+bindings = [
+  { name = "this", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "keys", ty = "Keys", value = "keys" },
+  { name = "sprint_window", ty = "i32", value = "sprint_window" },
+]
+
+[[native.mixin]]
+id = "timer"
+target = "horizon_client_lib::clock::FixedStep::advance"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/timer.rs"
+bindings = [
+  { name = "this", ty = "&mut FixedStep", value = "&mut *self" },
+  { name = "elapsed", ty = "std::time::Duration", value = "elapsed" },
+  { name = "target_millis", ty = "f32", value = "target_millis" },
+]
+
+[[native.mixin]]
+id = "noslow"
+target = "horizon_client_input::input::modify_input"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/noslow.rs"
+bindings = [
+  { name = "input", ty = "[f32; 2]", value = "input" },
+  { name = "item_use", ty = "Option<f32>", value = "item_use" },
+  { name = "sneaking", ty = "Option<f32>", value = "sneaking" },
+]
+
+[[native.mixin]]
+id = "mouse_before"
+target = "horizon_client::game::pointer_capture::Game<'_>::apply_mouse_look"
+kind = "HEAD"
+helper = "src/mixins/mouse_before.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[native.mixin]]
+id = "liquid_pick"
+target = "horizon_client::game::Game<'_>::pick"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/liquid_pick.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[native.mixin]]
+id = "portal_before"
+target = "horizon_client::game::render_tick::Game<'_>::tick_particle_spawns"
+kind = "BEFORE_CALL"
+selector = "self.client_portal_effect"
+require = 1
+ordinal = 0
+helper = "src/mixins/portal_before.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "portal_after"
+target = "horizon_client::game::render_tick::Game<'_>::tick_particle_spawns"
+kind = "MODIFY_EXPRESSION_VALUE"
+selector = "self.client_portal_effect()"
+require = 1
+ordinal = 0
+helper = "src/mixins/portal_after.rs"
+bindings = [
+  { name = "value", ty = "bool", value = "$value" },
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[native.mixin]]
+id = "mouse_after"
+target = "horizon_client::game::pointer_capture::Game<'_>::apply_mouse_look"
+kind = "RETURN"
+helper = "src/mixins/mouse_after.rs"
+bindings = [
+  { name = "value", ty = "()", value = "$value" },
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[native.mixin]]
+id = "reach"
+target = "horizon_client::game::Game<'_>::reach"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/reach.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[native.mixin]]
+id = "mob_hit"
+target = "horizon_client::game::Game<'_>::mob_hit"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/mob_hit_hook.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[native.mixin]]
+id = "wall_hit"
+target = "horizon_client::game::frames::Game<'_>::before_block"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/wall_hit_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "distance", ty = "f64", value = "distance" },
+]
+
+[[native.mixin]]
+id = "crit_click"
+target = "horizon_client::game::remote::interaction_actions::Game<'_>::remote_start_attack"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/crit_hook.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "packet_mine_held"
+target = "horizon_client::game::remote::interaction_actions::Game<'_>::remote_continue_attack"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/packet_mine_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "down", ty = "bool", value = "down" },
+]
+
+[[native.mixin]]
+id = "crystal"
+target = "horizon_client::game::remote::interaction_actions::Game<'_>::remote_start_attack"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/crystal.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "fog"
+target = "horizon_client_render::fog::fog_type"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/fog_hook.rs"
+bindings = [
+  { name = "world", ty = "&World", value = "world" },
+  { name = "facts", ty = "&BlockFacts", value = "facts" },
+  { name = "camera", ty = "[f64; 3]", value = "camera" },
+  { name = "near", ty = "&NearPlane", value = "near" },
+  { name = "seen", ty = "&dyn Fn(BlockStateId, [i32; 3]) -> BlockStateId", value = "seen" },
+]
+
+[[native.mixin]]
+id = "overlay"
+target = "horizon_client_render::screen_effects::ScreenEffects::build"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/overlay_hook.rs"
+bindings = [
+  { name = "this", ty = "&ScreenEffects", value = "&*self" },
+  { name = "input", ty = "&ScreenInputs<'_>", value = "input" },
+]
+
+[[native.mixin]]
+id = "text"
+target = "horizon_client::game::native_hooks::base::Game<'_>::native_text"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/text_hook.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut HudBatch", value = "batch" },
+  { name = "text", ty = "&str", value = "text" },
+  { name = "at", ty = "[f32; 2]", value = "at" },
+  { name = "argb", ty = "u32", value = "argb" },
+  { name = "shadow", ty = "bool", value = "shadow" },
+]
+
+[[native.mixin]]
+id = "text_width"
+target = "horizon_client::game::native_hooks::draw_measures::Game<'_>::native_text_width"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/text_width_hook.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "text", ty = "&str", value = "text" },
+]
+
+[[native.mixin]]
+id = "pause_dark"
+target = "horizon_client_render::ui::menu_background"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/menu_pause_hook.rs"
+bindings = [{ name = "in_world", ty = "bool", value = "in_world" }]
+
+[[native.mixin]]
+id = "menu_blur"
+target = "horizon_client_render::menu_blur::MenuBlur::apply"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/menu_blur_hook.rs"
+
+[[native.mixin]]
+id = "patches"
+target = "horizon_client_render::font::Font::take_patches"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/patches_hook.rs"
+bindings = [{ name = "this", ty = "&Font", value = "&*self" }]
+
+[[native.mixin]]
+id = "screen_input"
+target = "horizon_client::game::remote::Game<'_>::remote_send_state"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/screen_input_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "input", ty = "u8", value = "input" },
+]
+
+[[native.mixin]]
+id = "sent_look"
+target = "horizon_client::game::remote::player_state::Game<'_>::remote_send_state_body"
+kind = "MODIFY_ARG"
+selector = "r.position_sender.update"
+require = 1
+ordinal = 0
+argument = 1
+helper = "src/mixins/look_hook.rs"
+bindings = [{ name = "value", ty = "(f32, f32)", value = "$value" }]
+
+
+[[native.mixin]]
+id = "explode"
+target = "horizon_client::game::lan_particles::Game<'_>::remote_explode"
+kind = "HEAD"
+helper = "src/mixins/explode_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "p", ty = "&play::Explode", value = "p" },
+]
+
+[[native.mixin]]
+id = "position_reminder"
+target = "horizon_client_lib::player_sync::PositionSender::update"
+kind = "HEAD"
+helper = "src/mixins/sync_hook.rs"
+bindings = [{ name = "this", ty = "&mut PositionSender", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "rf_click"
+target = "horizon_client::game::follow_keymap"
+kind = "HEAD"
+helper = "src/mixins/rf_hook.rs"
+bindings = [{ name = "event", ty = "&mut winit::event::WindowEvent", value = "&mut *event" }]
+
+[[native.mixin]]
+id = "window_event"
+target = "horizon_client::game::follow_keymap"
+kind = "HEAD"
+helper = "src/mixins/window_event.rs"
+bindings = [{ name = "event", ty = "&winit::event::WindowEvent", value = "&*event" }]
+
+[[native.mixin]]
+id = "hide_hud"
+target = "horizon_client::game::chat::Game<'_>::toggle_hide_gui"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/hide_hud.rs"
+
+[[native.mixin]]
+id = "gui_top"
+target = "horizon_client::game::dialogs::Game<'_>::draw_dialog"
+kind = "HEAD"
+helper = "src/mixins/gui_top.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+]
+
+[[native.mixin]]
+id = "profile_drop"
+target = "horizon_client::game::packs::Game<'_>::drop_pack_file"
+kind = "HEAD"
+helper = "src/mixins/profile_drop.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "path", ty = "&std::path::Path", value = "path" },
+]
+
+[[native.mixin]]
+id = "vanish_connect"
+target = "horizon_client::game::extras::reconnect::Game<'_>::extras_connecting"
+kind = "HEAD"
+helper = "src/mixins/vanish_connect.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "address", ty = "&str", value = "address" },
+]
+
+[[native.mixin]]
+id = "vanish_completions"
+target = "horizon_client::game::remote::Game<'_>::handle_command_suggestions"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/vanish_completions.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "data", ty = "&[u8]", value = "data" },
+]
+
+[[native.mixin]]
+id = "server_scan_config_channel"
+target = "horizon_client_lib::net::receive_brand"
+kind = "HEAD"
+helper = "src/mixins/server_scan_channel.rs"
+bindings = [{ name = "payload", ty = "&horizon_protocol::packets::configuration::CustomPayload", value = "payload" }]
+
+[[native.mixin]]
+id = "custom_crosshair"
+target = "horizon_client::game::Game<'_>::hud_layers"
+kind = "HEAD"
+helper = "src/mixins/crosshair_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "size", ty = "[u32; 2]", value = "size" },
+]
+
+[[native.mixin]]
+id = "custom_block_outline"
+target = "horizon_client::game::Game<'_>::hud_layers"
+kind = "HEAD"
+helper = "src/mixins/block_overlay_render_hook.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[native.mixin]]
+id = "atmosphere_sync"
+target = "horizon_client::game::Game<'_>::hud_layers"
+kind = "HEAD"
+helper = "src/mixins/atmosphere_sync_hook.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[native.mixin]]
+id = "atmosphere_release"
+target = "horizon_client_render::gfx::Renderer::release_surface"
+kind = "HEAD"
+helper = "src/mixins/atmosphere_release_hook.rs"
+bindings = [{ name = "renderer", ty = "&mut Renderer", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "atmosphere_stars"
+target = "horizon_client_render::gfx::stars::Stars::draw"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/atmosphere_stars_hook.rs"
+
+[[native.mixin]]
+id = "atmosphere_finish"
+target = "horizon_client::game::world_session::Game<'_>::finish_perf"
+kind = "HEAD"
+helper = "src/mixins/atmosphere_finish_hook.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "combat_use"
+target = "horizon_client::game::remote::interaction_actions::Game<'_>::remote_use"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/combat_use.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "packet_tap"
+target = "horizon_client::game::remote::Game<'_>::poll_remote"
+kind = "HEAD"
+helper = "src/mixins/packet_tap_hook.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "scaffold_telly_use"
+target = "horizon_client::game::remote::interaction_actions::Game<'_>::remote_use"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/scaffold_telly_use_hook.rs"
+bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[native.mixin]]
+id = "seedcracker_incoming_boundary"
+target = "horizon_client::game::native_hooks::Game<'_>::observe_client_packet"
+kind = "HEAD"
+helper = "src/mixins/seedcracker_packet_hook.rs"
+bindings = [
+  { name = "_game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "packet", ty = "&horizon_protocol::packets::play::Clientbound", value = "packet" },
+]
+
+[[native.mixin]]
+id = "place_recipe"
+target = "horizon_client::game::recipe_book::Game<'_>::place_book_recipe"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/recipes_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "entry_index", ty = "usize", value = "entry_index" },
+]
+
+[[native.mixin]]
+id = "combat_use_hand"
+target = "horizon_client::game::remote::use_item::Game<'_>::remote_use_item"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/combat_use_hand.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "hand", ty = "horizon_client::first_person::Hand", value = "hand" },
+]
+
+[[native.mixin]]
+id = "chunk_packet"
+target = "horizon_client::game::remote_chunks::ChunkFormat::column_with_scratch"
+kind = "HEAD"
+helper = "src/mixins/chunk_packet_hook.rs"
+bindings = [
+  { name = "format", ty = "&ChunkFormat", value = "&*self" },
+  { name = "p", ty = "&play::LevelChunkWithLight", value = "p" },
+]
+
+[[native.mixin]]
+id = "block_update"
+target = "horizon_client::game::remote::Game<'_>::server_block"
+kind = "HEAD"
+helper = "src/mixins/block_update_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "pos", ty = "[i32; 3]", value = "pos" },
+  { name = "state", ty = "i32", value = "state" },
+]
+
+[[native.mixin]]
+id = "input_consumed"
+target = "horizon_client::game::remote::Game<'_>::remote_handle_input"
+kind = "RETURN"
+helper = "src/mixins/input_consumed.rs"
+bindings = [{ name = "value", ty = "()", value = "$value" }]
+
+[[native.mixin]]
+id = "input_screen"
+target = "horizon_client::game::play_input::Game<'_>::track_toggle_screens"
+kind = "RETURN"
+helper = "src/mixins/input_screen.rs"
+bindings = [
+  { name = "value", ty = "()", value = "$value" },
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[native.mixin]]
+id = "debug_chat"
+target = "horizon_client_render::chat::Chat::add"
+kind = "HEAD"
+helper = "src/mixins/debug_chat_hook.rs"
+bindings = [
+  { name = "content", ty = "&crate::text::Text", value = "&content" },
+  { name = "source", ty = "crate::chat::ChatSource", value = "source" },
+]
+
+[[native.mixin]]
+id = "item_durability"
+target = "horizon_client::game::item_draw::Game<'_>::draw_item_model"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/durability_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *batch" },
+  { name = "stack", ty = "&ItemStack", value = "stack" },
+  { name = "x", ty = "f32", value = "x" },
+  { name = "y", ty = "f32", value = "y" },
+]
+
+[[native.mixin]]
+id = "durability_line"
+target = "horizon_client::game::stations::tooltip::Game<'_>::draw_stack_tooltip_with"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/durability_line_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *batch" },
+  { name = "stack", ty = "&ItemStack", value = "stack" },
+  { name = "creative", ty = "bool", value = "creative" },
+  { name = "x", ty = "f32", value = "x" },
+  { name = "y", ty = "f32", value = "y" },
+  { name = "after_name", ty = "&Vec<(horizon_client::text::Text, u32)>", value = "&after_name" },
+]
+
+[[native.mixin]]
+id = "auto_sign_open"
+target = "horizon_client::game::sign_edit::Game<'_>::remote_open_sign_editor"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/auto_sign_hook.rs"
+bindings = [{ name = "p", ty = "&play::OpenSignEditor", value = "&p" }]
+
+[[native.mixin]]
+id = "ambience-fog"
+target = "horizon_client::game::render_tick::Game<'_>::frame_fog"
+kind = "WRAP_OPERATION"
+selector = "horizon_client::fog::clear_distance_fog"
+require = 1
+ordinal = 0
+helper = "src/mixins/ambience_fog.rs"
+bindings = [
+  { name = "fog", ty = "&mut FogData", value = "$arg0" },
+  { name = "input", ty = "&FogInputs", value = "$arg1" },
+  { name = "operation", ty = "impl FnOnce(&mut FogData, &FogInputs) -> ()", value = "$operation" },
+]
+
+[[native.mixin]]
+id = "scoreboard_offset"
+target = "horizon_client::game::scoreboard::Game<'_>::draw_scoreboard"
+kind = "WRAP_OPERATION"
+selector = "hud_overlays::sidebar"
+require = 1
+ordinal = 0
+helper = "src/mixins/scoreboard_offset_hook.rs"
+bindings = [
+  { name = "w", ty = "i32", value = "$arg0" },
+  { name = "h", ty = "i32", value = "$arg1" },
+  { name = "board", ty = "&horizon_client::scoreboard::Scoreboard", value = "$arg2" },
+  { name = "objective", ty = "&horizon_client::scoreboard::Objective", value = "$arg3" },
+  { name = "font", ty = "&horizon_client::font::Font", value = "$arg4" },
+  { name = "background", ty = "u32", value = "$arg5" },
+  { name = "header", ty = "u32", value = "$arg6" },
+  { name = "operation", ty = "impl FnOnce(i32, i32, &horizon_client::scoreboard::Scoreboard, &horizon_client::scoreboard::Objective, &horizon_client::font::Font, u32, u32) -> Vec<horizon_client::hud_layout::GuiDraw>", value = "$operation" },
+]
+
+[[native.mixin]]
+id = "mount_hearts"
+target = "horizon_client::game::mounts::Game<'_>::draw_mount_hud"
+kind = "WRAP_OPERATION"
+selector = "horizon_client::hud_layout::vehicle_health"
+require = 1
+ordinal = 0
+helper = "src/mixins/mount_hearts_hook.rs"
+bindings = [
+  { name = "w", ty = "i32", value = "$arg0" },
+  { name = "h", ty = "i32", value = "$arg1" },
+  { name = "hearts", ty = "i32", value = "$arg2" },
+  { name = "health", ty = "f32", value = "$arg3" },
+  { name = "operation", ty = "impl FnOnce(i32, i32, i32, f32) -> Vec<horizon_client::hud_layout::GuiDraw>", value = "$operation" },
+]
+
+# Not ported yet: these targets are below the game crate and not replaceable on this build.
+
+[[native.mixin]]
+id = "multitask_click"
+target = "horizon_client::game::extras::Game<'_>::extras_mouse"
+kind = "HEAD"
+helper = "src/mixins/multitask_click.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "button", ty = "winit::event::MouseButton", value = "button" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
+
+[[native.mixin]]
+id = "mouse_key"
+target = "horizon_client::game::extras::Game<'_>::extras_mouse"
+kind = "HEAD"
+helper = "src/mixins/mouse_key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "button", ty = "winit::event::MouseButton", value = "button" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
+
+# (removed font_over)
+
+# Speed and Legacy Speed's jump: the local player's own move, LocalPlayer.move (#[replaceable] on Sunset's Horizon
+# fork, patch 0005): the movement it arms the move gate with, and the velocity before it
+[[native.mixin]]
+id = "speed_move"
+target = "horizon_client_lib::motion::MotionWorld<'_,'_,'_>::move_self"
+kind = "MODIFY_ARG"
+selector = "crate::move_gate::arm"
+require = 1
+ordinal = 0
+argument = 5
+helper = "src/mixins/move_hook.rs"
+bindings = [{ name = "value", ty = "Vec3", value = "$value" }]
+
+[[native.mixin]]
+id = "legacy_speed_jump"
+target = "horizon_client_lib::motion::MotionWorld<'_,'_,'_>::move_self"
+kind = "HEAD"
+helper = "src/mixins/legacy_jump_hook.rs"
+bindings = [{ name = "world", ty = "&mut MotionWorld<'_, '_, '_>", value = "&mut *self" }]
+
+# Client Spoofer's per-session initial brand (Sunset's Horizon fork hook 0011).
+[[native.mixin]]
+id = "client_brand"
+target = "horizon_client_lib::net::prepare_client_brand"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/client_brand_hook.rs"
+bindings = [
+  { name = "address", ty = "&str", value = "_address" },
+  { name = "serial", ty = "u64", value = "_serial" },
+  { name = "counters", ty = "&Arc<Mutex<Option<Arc<Counters>>>>", value = "_counters" },
+]
+
+# HUD's Tab game modes and Streamer Mode in single player's tab list (the integrated server's players)
+[[native.mixin]]
+id = "tab_marks_local"
+target = "horizon_client::game::scoreboard::local_tab_players"
+kind = "RETURN"
+helper = "src/mixins/tab_marks_local.rs"
+bindings = [{ name = "value", ty = "Vec<TabPlayer>", value = "$value" }]
+
+
+
+# The move keys and the player's own move state (GUI Move, No Slow, knockback slow, Scaffold's movement correction):
+# the call into the motion has a struct-literal receiver no selector can name, so the keys are changed where they are
+# stored and the player after the game synced it, and the view comes back after the move.
+[[native.mixin]]
+id = "screen_keys"
+target = "horizon_client::game::remote::tick::Game<'_>::tick_local_player_body"
+kind = "MODIFY_VARIABLE"
+variable = { name = "keys", ordinal = 2, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/screen_keys_hook.rs"
+bindings = [{ name = "value", ty = "Keys", value = "$value" }]
+
+[[native.mixin]]
+id = "screen_move"
+target = "horizon_client::game::remote::tick::Game<'_>::tick_local_player_body"
+kind = "AFTER_CALL"
+selector = "self.sync_player_body"
+require = 1
+ordinal = 0
+result = "()"
+helper = "src/mixins/screen_move_hook.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "screen_keys_after"
+target = "horizon_client::game::remote::tick::Game<'_>::tick_local_player_body"
+kind = "BEFORE_CALL"
+selector = "self.seat_own_stands"
+require = 1
+ordinal = 0
+helper = "src/mixins/screen_keys_after.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+# Atmosphere's sky before each frame, Clear Water's opacity, Streamer Mode's text everywhere and Xray's placed blocks:
+# the fork's plain hooks (gfx::before_render, sprites::filter_sprites, text::filter_display, mesher::show_hidden_at),
+# installed from sky_frame.rs.
+
+# HUD, menus and the hands (the game crate's own callers of the render functions the old hooks used)
+[[native.mixin]]
+id = "menu_dark"
+target = "horizon_client::game::screen_backgrounds::Game<'_>::render_transparent_background"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/menu_hook.rs"
+bindings = [{ name = "game", ty = "&Game<'_>", value = "self" }]
+
+[[native.mixin]]
+id = "hurt-cam"
+target = "horizon_client::game::fov::Game<'_>::bob_matrix"
+kind = "MODIFY_ARG"
+selector = "bob_matrix"
+require = 1
+ordinal = 0
+argument = 1
+helper = "src/mixins/hurt_cam.rs"
+bindings = [{ name = "value", ty = "f64", value = "$value" }]
+
+[[native.mixin]]
+id = "equip-legacy"
+target = "horizon_client::game::hand::Game<'_>::tick_hand"
+kind = "MODIFY_ARG"
+selector = "self.heights.tick_with"
+require = 1
+ordinal = 0
+argument = 3
+helper = "src/mixins/equip_legacy.rs"
+bindings = [{ name = "value", ty = "bool", value = "$value" }]
+
+[[native.mixin]]
+id = "equip-hold"
+target = "horizon_client::game::hand::Game<'_>::tick_hand"
+kind = "MODIFY_VARIABLE"
+variable = { name = "replace", ordinal = 0, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/equip_hold.rs"
+bindings = [
+  { name = "value", ty = "[bool; 2]", value = "$value" },
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "changed", ty = "[bool; 2]", value = "$local:changed:1" },
+]
+
+[[native.mixin]]
+id = "hunger_bars"
+target = "horizon_client::game::Game<'_>::hud_layers"
+kind = "AFTER_CALL"
+selector = "self.native_health_hud"
+require = 1
+ordinal = 0
+result = "()"
+helper = "src/mixins/hunger_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "draws", ty = "&mut Option<Vec<hud_layout::GuiDraw>>", value = "$local_mut:native_health_hud:0" },
+  { name = "inputs", ty = "&hud_layout::HealthInputs", value = "$local_ref:inputs:0" },
+  { name = "batch", ty = "&HudBatch", value = "$local_ref:batch:0" },
+]
+
+[[native.mixin]]
+id = "mount_xp"
+target = "horizon_client::game::Game<'_>::hud_layers"
+kind = "MODIFY_VARIABLE"
+variable = { name = "contextual", ordinal = 0, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/mount_xp_hook.rs"
+bindings = [
+  { name = "value", ty = "crate::game::sunset_hunger::InfoBar", value = "$value" },
+  { name = "has_experience", ty = "bool", value = "$local:has_experience:0" },
+]
+
+[[native.mixin]]
+id = "crosshair_rect"
+target = "horizon_client::game::Game<'_>::hud_layers"
+kind = "WRAP_OPERATION"
+selector = "hud_layout::crosshair"
+require = 1
+ordinal = 0
+helper = "src/mixins/crosshair_rect_hook.rs"
+bindings = [
+  { name = "w", ty = "i32", value = "$arg0" },
+  { name = "h", ty = "i32", value = "$arg1" },
+  { name = "attack", ty = "Option<f32>", value = "$arg2" },
+  { name = "full", ty = "bool", value = "$arg3" },
+  { name = "operation", ty = "impl FnOnce(i32, i32, Option<f32>, bool) -> Vec<hud_layout::GuiDraw>", value = "$operation" },
+]
+
+# Debug Report's signed chat, the native block outline
+[[native.mixin]]
+id = "debug_chat_signed"
+target = "horizon_client::game::remote::chat::Game<'_>::signed_chat_line_body"
+kind = "MODIFY_ARG"
+selector = "self.ui.chat.add_signed"
+require = 1
+ordinal = 0
+argument = 1
+helper = "src/mixins/debug_chat_signed_hook.rs"
+bindings = [{ name = "value", ty = "horizon_client::text::Text", value = "$value" }]
+
+[[native.mixin]]
+id = "block_outline_draw"
+target = "horizon_client::game::native_hooks::base::Game<'_>::native_block_highlight"
+kind = "HEAD"
+helper = "src/mixins/block_overlay_draw_hook.rs"
+bindings = [{ name = "canceled", ty = "&mut bool", value = "&mut *canceled" }]
+
+# Streamer Mode: the names it hides, replaced where each text is made (the chat, name tags, titles, the action bar,
+# boss bars; the sidebar in scoreboard_offset, the tab list in tab_marks)
+[[native.mixin]]
+id = "streamer_chat"
+target = "horizon_client_render::chat::Chat::add"
+kind = "MODIFY_ARG"
+selector = "self.add_message"
+require = 1
+ordinal = 0
+argument = 1
+helper = "src/mixins/streamer_text_hook.rs"
+bindings = [{ name = "value", ty = "Text", value = "$value" }]
+
+[[native.mixin]]
+id = "streamer_name_tag"
+target = "horizon_client::game::names::NameTagLayouts::name_tag"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/streamer_sign_hook.rs"
+bindings = [
+  { name = "this", ty = "&mut NameTagLayouts", value = "&mut *self" },
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *batch" },
+  { name = "atlas", ty = "&HudAtlas", value = "atlas" },
+  { name = "text", ty = "&Text", value = "text" },
+  { name = "y", ty = "f32", value = "y" },
+  { name = "alpha", ty = "u32", value = "alpha" },
+  { name = "background", ty = "bool", value = "background" },
+]
+
+[[native.mixin]]
+id = "streamer_title"
+target = "horizon_client::game::titles::Game<'_>::draw_title"
+kind = "MODIFY_VARIABLE"
+variable = { name = "draws", ordinal = 0, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/streamer_ui_hook.rs"
+bindings = [
+  { name = "value", ty = "Vec<hud_layout::GuiDraw>", value = "$value" },
+  { name = "game", ty = "&Game<'_>", value = "self" },
+]
+
+[[native.mixin]]
+id = "streamer_action_bar"
+target = "horizon_client::game::titles::Game<'_>::draw_overlay_message"
+kind = "MODIFY_VARIABLE"
+variable = { name = "draws", ordinal = 0, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/streamer_ui_hook.rs"
+bindings = [
+  { name = "value", ty = "Vec<hud_layout::GuiDraw>", value = "$value" },
+  { name = "game", ty = "&Game<'_>", value = "self" },
+]
+
+[[native.mixin]]
+id = "streamer_boss_bars"
+target = "horizon_client::game::dragon::Game<'_>::draw_boss_bars"
+kind = "MODIFY_VARIABLE"
+variable = { name = "draws", ordinal = 0, at = "STORE" }
+require = 1
+ordinal = 0
+helper = "src/mixins/streamer_ui_hook.rs"
+bindings = [
+  { name = "value", ty = "Vec<hud_layout::GuiDraw>", value = "$value" },
+  { name = "game", ty = "&Game<'_>", value = "self" },
+]
+
+# Debug Report's packet log, No Render's particles made outside the options path, Clear Water's tint
+# No Render's particles made outside the options path (block breaking, cracks, the warden's digging, the renderer's
+# own): ParticleEngine::push, #[replaceable] on Sunset's Horizon fork (patch 0003). Debug Report's packet log is
+# horizon_protocol's observe_sent (fork patch 0004), installed by client_spoofer::observe.
+[[native.mixin]]
+id = "particle-push"
+target = "horizon_client_render::particles::ParticleEngine::push"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/particle_push.rs"
+bindings = [{ name = "particle", ty = "&Particle", value = "&particle" }]
+
+[[native.mixin]]
+id = "water-tint"
+target = "horizon_client::game::native_hooks::base::Game<'_>::native_biome_colors"
+kind = "HEAD"
+helper = "src/mixins/water_sprites.rs"
+bindings = [{ name = "colors", ty = "&mut BiomeColors", value = "&mut *colors" }]
+
+# Sunset's page in Options > Mods (its menu as the page's setting rows), Streamer Mode in item tooltips
+[[native.mixin]]
+id = "settings"
+target = "horizon_client::game::native_hooks::Game<'_>::native_page_settings"
+kind = "RETURN"
+helper = "src/mixins/settings.rs"
+bindings = [
+  { name = "value", ty = "Vec<NativeSetting>", value = "$value" },
+  { name = "game", ty = "&Game<'_>", value = "self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+]
+
+[[native.mixin]]
+id = "click"
+target = "horizon_client::game::native_hooks::Game<'_>::native_setting_event"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/click.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "i", ty = "usize", value = "i" },
+  { name = "j", ty = "usize", value = "j" },
+]
+
+[[native.mixin]]
+id = "streamer_tooltip"
+target = "horizon_client::game::stations::tooltip::Game<'_>::draw_stack_tooltip_with"
+kind = "BEFORE_CALL"
+selector = "self.native_tooltip_component"
+require = 1
+ordinal = 0
+helper = "src/mixins/streamer_ui_measure_hook.rs"
+bindings = [{ name = "lines", ty = "&mut Vec<(horizon_client::text::Text, u32)>", value = "$local_mut:lines:0" }]
+
+# Client Spoofer's Fake resource packs
+[[native.mixin]]
+id = "fake_pack"
+target = "horizon_client::game::server_packs::Game<'_>::handle_pack_push"
+kind = "HEAD"
+cancellable = true
+helper = "src/mixins/fake_pack_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut Game<'_>", value = "&mut *self" },
+  { name = "p", ty = "&ResourcePackPush", value = "&p" },
+]
+
+# @@sunset-meshcache
+[[native.module]]
+id = "sunset_meshcache_grid"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_grid"
+source = "src/game/mc_grid.rs"
+
+[[native.module]]
+id = "sunset_meshcache_feed"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_feed"
+source = "src/game/mc_feed.rs"
+
+[[native.module]]
+id = "sunset_meshcache_warm"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_warm"
+source = "src/game/mc_warm.rs"
+
+[[native.module]]
+id = "sunset_meshcache_facet"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_facet"
+source = "src/game/mc_facet.rs"
+
+[[native.module]]
+id = "sunset_meshcache_batch"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_batch"
+source = "src/game/mc_batch.rs"
+
+[[native.module]]
+id = "sunset_meshcache_decay"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_decay"
+source = "src/game/mc_decay.rs"
+
+[[native.module]]
+id = "sunset_meshcache_label"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_label"
+source = "src/game/mc_label.rs"
+
+[[native.module]]
+id = "sunset_meshcache_arena"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_arena"
+source = "src/game/mc_arena.rs"
+
+[[native.module]]
+id = "sunset_meshcache_atlas"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_meshcache_atlas"
+source = "src/game/mc_atlas.rs"
+
