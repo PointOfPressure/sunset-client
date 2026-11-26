@@ -5,5 +5,5 @@ fn sunset_text_width_hook(game: &Game<'_>, text: &str) -> std::ops::ControlFlow<
     if !crate::game::sunset_font::enabled() {
         return std::ops::ControlFlow::Continue(());
     }
-    std::ops::ControlFlow::Break(game.gui.atlas.font.width_text(&crate::game::sunset_font::text(text)))
+    std::ops::ControlFlow::Break(crate::game::sunset_font::width(&game.gui.atlas.font, text))
 }

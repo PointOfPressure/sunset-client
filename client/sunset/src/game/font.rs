@@ -1,6 +1,6 @@
 // Sunset's fonts on the game's side: the glyphs drawn at the screen's own pixel size, and text in the chosen font. The
 // switches and the files are in sunset_core::font.
-pub use ::sunset_core::font::{BOLD, READY, STYLE, enabled, style};
+pub use ::sunset_core::font::{BOLD, READY, SMOOTH, STYLE, enabled, style};
 use ::sunset_core::font_data::FONTS;
 use ::sunset_core::font::SCALE;
 
@@ -21,7 +21,7 @@ pub fn sync(font: &horizon_client::font::Font, gui_scale: f32) {
             let Some(size) = set_size(id) else {
                 continue;
             };
-            tune(set, size, gui_scale);
+            tune(set, size, gui_scale, step_of(id));
         }
     }
     font.reset_cache();
@@ -34,6 +34,7 @@ fn set_size(id: &str) -> Option<f32> {
         return Some(ICON_SIZE);
     }
     let name = id.strip_prefix("sunset:")?;
+    let name = name.split_once('#').map_or(name, |(name, _)| name);
     let (name, factor) = match name.split_once('@') {
         Some((name, q)) => (name, q.parse::<f32>().ok()? / 20.0),
         None => (name, 1.0),
@@ -43,7 +44,8 @@ fn set_size(id: &str) -> Option<f32> {
 
 // A set's glyphs drawn for a size in GUI pixels at a GUI scale: an em of whole screen pixels, capitals a whole
 // number of pixels tall.
-fn tune(set: &mut horizon_client::font::FontSet, size: f32, gui_scale: f32) {
+// `step`: the quarter of a pixel its glyphs are drawn at (smooth text's sets "<set>#1" to "#3"; 0 is the set itself).
+fn tune(set: &mut horizon_client::font::FontSet, size: f32, gui_scale: f32, step: u32) {
     use ab_glyph::Font as _;
     for provider in set.providers.iter_mut() {
         if let horizon_client::font::Provider::TrueType(_, tt) = provider {
@@ -58,7 +60,7 @@ fn tune(set: &mut horizon_client::font::FontSet, size: f32, gui_scale: f32) {
             let tall = (cap * em).round().max(1.0) / cap;
             tt.oversample = gui_scale;
             tt.scale = ab_glyph::PxScale { x: em * k, y: tall * k };
-            tt.shift = (0.0, 0.0);
+            tt.shift = (step as f32 / STEPS as f32, 0.0);
         }
     }
 }
@@ -97,7 +99,7 @@ pub fn draw_sized(game: &crate::game::Game<'_>, batch: &mut horizon_client::hud:
     let id = format!("{base}@{q}");
     let known = atlas.font.cache.borrow().sets.iter().any(|(set, _)| *set == id);
     if !known {
-        let sized = atlas.font.cache.borrow().sets.iter().filter(|(set, _)| set.contains('@')).count();
+        let sized = atlas.font.cache.borrow().sets.iter().filter(|(set, _)| set.contains('@') && !set.contains('#')).count();
         let stem = base.strip_prefix("sunset:").unwrap_or(&base);
         let made = (sized < SIZED_SETS).then(|| true_type(stem)).flatten();
         let Some(mut set) = made else {
@@ -105,7 +107,7 @@ pub fn draw_sized(game: &crate::game::Game<'_>, batch: &mut horizon_client::hud:
             return;
         };
         if let Some(size) = set_size(&id) {
-            tune(&mut set, size, batch.scale);
+            tune(&mut set, size, batch.scale, 0);
         }
         atlas.font.cache.borrow_mut().sets.push((id.clone(), set));
     }
@@ -113,12 +115,169 @@ pub fn draw_sized(game: &crate::game::Game<'_>, batch: &mut horizon_client::hud:
     let a = if a == 0 { 0xFF } else { a };
     let snap = |v: f32| (v * batch.scale).round() / batch.scale;
     let (x, y) = (snap(at[0]), snap(at[1]));
+    if smooth(game, batch, &id, text, [x, y], [r, g, b, a], shadow) {
+        return;
+    }
     let styled = horizon_client::text::Text::styled(text, horizon_client::text::Style { font: Some(id), ..Default::default() });
     if shadow {
         let shade = horizon_client::hud::rgba(0, 0, 0, (u32::from(a) * 0x60 / 0xFF) as u8);
         batch.text_styled(atlas, &styled, x + 1.0 / batch.scale, y + 1.0 / batch.scale, shade, false);
     }
     batch.text_styled(atlas, &styled, x, y, horizon_client::hud::rgba(r, g, b, a), false);
+}
+
+// ---- Smooth text (HUD > Smooth text)
+//
+// The game's text puts every glyph on a whole pixel and rounds every advance to whole pixels, which is sharp but
+// uneven: at a menu's sizes half a pixel is a tenth of a letter, so some letters crowd and others gap. Smooth text
+// keeps each advance as the font gives it and draws each glyph at the nearest quarter of a pixel of where it then
+// falls: three more sets of each font ("<set>#1" to "#3"), each with its glyphs drawn a quarter of a pixel further
+// right (the game's TrueType shift), and one glyph at a time taken from the set its place asks for.
+
+// The parts of a pixel a glyph can sit at.
+const STEPS: u32 = 4;
+
+// The step of a set by its name.
+fn step_of(id: &str) -> u32 {
+    id.split_once('#').and_then(|(_, step)| step.parse().ok()).unwrap_or(0)
+}
+
+#[derive(Default)]
+struct Smooth {
+    // The GUI scale the advances were measured at (f32 bits): another one measures them again.
+    scale: u32,
+    sets: std::collections::HashMap<String, SmoothSet>,
+}
+
+#[derive(Default)]
+struct SmoothSet {
+    // A character's advance in screen pixels, unrounded; None for one the font does not have (the game's fallback
+    // draws it).
+    advances: std::collections::HashMap<char, Option<f32>>,
+    // A character as a text of its own in each step's set, made once.
+    texts: std::collections::HashMap<char, [Option<horizon_client::text::Text>; STEPS as usize]>,
+}
+
+thread_local! {
+    static SMOOTHED: std::cell::RefCell<Smooth> = std::cell::RefCell::new(Smooth::default());
+}
+
+// A set's three shifted copies, made when it is first drawn smooth. False when one can't be made (the text is then
+// drawn the old way).
+fn smooth_sets(font: &horizon_client::font::Font, id: &str, gui_scale: f32) -> bool {
+    let Some(size) = set_size(id) else {
+        return false;
+    };
+    let stem = id.strip_prefix("sunset:").map(|name| name.split_once('@').map_or(name, |(name, _)| name));
+    for step in 1..STEPS {
+        let shifted = format!("{id}#{step}");
+        if font.cache.borrow().sets.iter().any(|(set, _)| *set == shifted) {
+            continue;
+        }
+        let Some(mut set) = stem.and_then(true_type) else {
+            return false;
+        };
+        tune(&mut set, size, gui_scale, step);
+        font.cache.borrow_mut().sets.push((shifted, set));
+    }
+    true
+}
+
+// `text` in set `id` as glyphs: each with the whole pixels from the text's start and its step, and the text's width,
+// all in screen pixels. None when the set is not one of Sunset's TrueType ones.
+fn smooth_layout(font: &horizon_client::font::Font, id: &str, text: &str, gui_scale: f32, mut glyph: impl FnMut(char, f32, usize)) -> Option<f32> {
+    use ab_glyph::{Font as _, ScaleFont as _};
+    SMOOTHED.with(|smoothed| {
+        let mut smoothed = smoothed.borrow_mut();
+        if smoothed.scale != gui_scale.to_bits() {
+            smoothed.scale = gui_scale.to_bits();
+            smoothed.sets.values_mut().for_each(|set| set.advances.clear());
+        }
+        if !smoothed.sets.contains_key(id) {
+            smoothed.sets.insert(id.to_owned(), SmoothSet::default());
+        }
+        let set = smoothed.sets.get_mut(id)?;
+        let cache = font.cache.borrow();
+        let tt = cache.sets.iter().find(|(set, _)| *set == id).and_then(|(_, set)| {
+            set.providers.iter().find_map(|p| match p {
+                horizon_client::font::Provider::TrueType(_, tt) => Some(tt),
+                _ => None,
+            })
+        })?;
+        let scaled = tt.font.as_scaled(tt.scale);
+        let mut pen = 0.0f32;
+        for c in text.chars() {
+            // A character the font lacks: the whole text is the game's to draw, with its fallback glyph.
+            let advance = (*set.advances.entry(c).or_insert_with(|| {
+                let glyph = tt.font.glyph_id(c);
+                (glyph.0 != 0).then(|| scaled.h_advance(glyph))
+            }))?;
+            let whole = pen.floor();
+            let step = ((pen - whole) * STEPS as f32).round() as usize;
+            if step == STEPS as usize {
+                glyph(c, whole + 1.0, 0);
+            } else {
+                glyph(c, whole, step);
+            }
+            pen += advance;
+        }
+        Some(pen)
+    })
+}
+
+// `text` drawn smooth in set `id` from `at` (GUI pixels, on a whole screen pixel). False when it was not (Smooth text
+// off, a set that is not Sunset's, a character the font lacks): the caller draws it as before.
+fn smooth(game: &crate::game::Game<'_>, batch: &mut horizon_client::hud::HudBatch, id: &str, text: &str, at: [f32; 2], rgba: [u8; 4], shadow: bool) -> bool {
+    if !SMOOTH.load(std::sync::atomic::Ordering::Relaxed) || text.is_empty() {
+        return false;
+    }
+    let atlas = &game.gui.atlas;
+    let scale = batch.scale;
+    if !smooth_sets(&atlas.font, id, scale) {
+        return false;
+    }
+    let mut glyphs: Vec<(char, f32, usize)> = Vec::with_capacity(text.len());
+    if smooth_layout(&atlas.font, id, text, scale, |c, whole, step| glyphs.push((c, whole, step))).is_none() {
+        return false;
+    }
+    let [r, g, b, a] = rgba;
+    let shade = horizon_client::hud::rgba(0, 0, 0, (u32::from(a) * 0x60 / 0xFF) as u8);
+    let color = horizon_client::hud::rgba(r, g, b, a);
+    // The glyphs' texts are taken out while they are drawn, so nothing of this is borrowed while the game draws.
+    let mut texts = SMOOTHED.with(|smoothed| smoothed.borrow_mut().sets.get_mut(id).map(|set| std::mem::take(&mut set.texts))).unwrap_or_default();
+    // The shadow first, a screen pixel down and right, then the text over it.
+    let passes: &[bool] = if shadow { &[true, false] } else { &[false] };
+    for &shaded in passes {
+        for &(c, whole, step) in &glyphs {
+            let one = texts.entry(c).or_insert_with(|| std::array::from_fn(|_| None))[step].get_or_insert_with(|| {
+                let font = if step == 0 { id.to_owned() } else { format!("{id}#{step}") };
+                horizon_client::text::Text::styled(c.to_string(), horizon_client::text::Style { font: Some(font), ..Default::default() })
+            });
+            let x = at[0] + whole / scale;
+            if shaded {
+                batch.text_styled(atlas, one, x + 1.0 / scale, at[1] + 1.0 / scale, shade, false);
+            } else {
+                batch.text_styled(atlas, one, x, at[1], color, false);
+            }
+        }
+    }
+    SMOOTHED.with(|smoothed| {
+        if let Some(set) = smoothed.borrow_mut().sets.get_mut(id) {
+            set.texts = texts;
+        }
+    });
+    true
+}
+
+// The width of `text` in the chosen font in GUI pixels, as it is drawn: smooth, the sum of its unrounded advances.
+pub fn width(font: &horizon_client::font::Font, text: &str) -> f32 {
+    let scale = f32::from_bits(SCALE.load(std::sync::atomic::Ordering::Relaxed));
+    if SMOOTH.load(std::sync::atomic::Ordering::Relaxed) && scale > 0.0
+        && let Some(pixels) = smooth_layout(font, &::sunset_core::font::name(), text, scale, |_, _, _| {})
+    {
+        return pixels / scale;
+    }
+    font.width_text(&self::text(text))
 }
 
 // One of Sunset's fonts (by its file's stem) as a font set of its own.
@@ -247,6 +406,9 @@ pub fn draw(game: &crate::game::Game<'_>, batch: &mut horizon_client::hud::HudBa
     sync(&atlas.font, batch.scale);
     let snap = |v: f32| (v * batch.scale).round() / batch.scale;
     let (x, y) = (snap(at[0]), snap(at[1]));
+    if smooth(game, batch, &::sunset_core::font::name(), text, [x, y], [r, g, b, a], shadow) {
+        return;
+    }
     let styled = text_styled(text);
     if shadow {
         let shade = horizon_client::hud::rgba(0, 0, 0, (u32::from(a) * 0x60 / 0xFF) as u8);

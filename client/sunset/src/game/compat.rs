@@ -106,7 +106,7 @@ impl SunsetGame for Game<'_> {
     fn sunset_text_width(&self, text: &str) -> f32 {
         crate::game::sunset_font::ensure(&self.gui.atlas.font);
         if crate::game::sunset_font::enabled() {
-            self.gui.atlas.font.width_text(&crate::game::sunset_font::text(text))
+            crate::game::sunset_font::width(&self.gui.atlas.font, text)
         } else {
             horizon_client::hud::HudBatch::text_width(&self.gui.atlas, text)
         }

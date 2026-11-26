@@ -258,6 +258,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .on()
             .group("General")
             .pick("Font", &::sunset_core::font_data::LABELS)
+            // Each letter at its own quarter of a pixel, spaced as the font spaces it (font.rs smooth); off, every
+            // letter sits on a whole pixel. Minecraft's font is not changed.
+            .bool("Smooth text", true)
             .pick("Text case", &["Normal", "lowercase", "UPPERCASE"])
             .bool("Text shadow", true)
             // The pause menu stays shut when the window loses focus (hud_bars.rs auto_pause).

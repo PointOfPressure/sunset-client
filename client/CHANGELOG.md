@@ -25,6 +25,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - ClickGUI > Style has a third menu, Sidebar: tabs down the side, modules in groups, each module a card (by Ace)
 - Villager Roller, Sign Historian and Use Tracker; Speed > Mode Grim collide; Base Finder > Reasons
 - Gooning (Client, off by default): a joke that times your session in chat, on your screen only
+- **HUD > Smooth text (on by default): Sunset's text is spaced as its font spaces it, each letter drawn at the nearest quarter of a pixel, instead of every letter snapped to a whole pixel with its width rounded; turn it off for the old, harder look. Minecraft's font is unchanged**
 - Debug Report has a Settings file section: the folder your settings are kept in, how they were read at this launch and how the saves since went (for settings that come back reset)
 - Debug Report has a Trigger Bot section: of the ticks it ran since it was turned on, how many had something under the crosshair, how many of those hit, and what held each of the others (the cooldown, an item in use, Anti bot, Miss chance...), to compare two players' fights
 

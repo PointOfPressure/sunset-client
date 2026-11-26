@@ -499,6 +499,7 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module], ticks: u64) {
     engine_flags(game, mods);
     let font = mods.iter().find(|m| m.name == "HUD").map_or(1, |m| crate::game::sunset_font::style(m.p("Font")));
     crate::game::sunset_font::STYLE.store(font, Ordering::Relaxed);
+    crate::game::sunset_font::SMOOTH.store(mods.iter().find(|m| m.name == "HUD").is_none_or(|m| m.b("Smooth text")), Ordering::Relaxed);
     no_render(game, mods);
     xray(game, mods);
     clear_water(game, mods);

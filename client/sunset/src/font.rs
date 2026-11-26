@@ -6,6 +6,8 @@ use crate::font_data::FONTS;
 
 // The HUD's Font choice: 0 is the game's own font, 1 and up the fonts of ::sunset_core::font_data::FONTS in order.
 pub static STYLE: AtomicU8 = AtomicU8::new(1);
+// HUD > Smooth text: each glyph is drawn at its own quarter of a pixel, with its advance as the font gives it.
+pub static SMOOTH: AtomicBool = AtomicBool::new(true);
 // Set while a header is drawn: it takes the font's bolder weight.
 pub static BOLD: AtomicBool = AtomicBool::new(false);
 // Set once the game's fonts were loaded with Sunset's (mixins/font_hook.rs).

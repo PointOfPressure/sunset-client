@@ -2849,6 +2849,43 @@ def _():
         f"mean brightness: menu shut {shut:.4f}, open {shown:.4f}, after F1 {after:.4f}; F1 with it shut {hidden:.4f}")
 
 
+@test("Smooth text (on, off, Minecraft's font)")
+def _():
+    # The Dashboard's module list and settings (below the search box and its caret) with HUD > Smooth text on and
+    # off. In Sunset's font the two differ (letters sit at quarter pixels, spaced as the font spaces them), each is
+    # the same when drawn again, and both put about as much text on the screen; in Inter too; in Minecraft's font
+    # the switch changes nothing.
+    from PIL import Image, ImageChops
+
+    def shot(name):
+        say(".menu aim assist")
+        wait(20)
+        path = f"{SHOTS}/smooth_{name}.png"
+        ctl("screenshot", path)
+        time.sleep(2)
+        close_menu()
+        img = Image.open(path).convert("RGB")
+        k = img.width / 1280
+        return img.crop(tuple(int(v * k) for v in (60, 130, 1220, 660)))
+
+    differ = lambda a, b: sum(1 for v in ImageChops.difference(a, b).convert("L").getdata() if v > 24)
+    ink = lambda img: sum(1 for v in img.convert("L").getdata() if v > 150)
+    setting("clickgui", "style", "Dashboard")
+    got = {}
+    for font in ("Sora", "Inter", "Minecraft"):
+        setting("hud", "font", font)
+        setting("hud", "smooth text", "true")
+        on, again = shot(f"{font}_on"), shot(f"{font}_on2")
+        setting("hud", "smooth text", "false")
+        off = shot(f"{font}_off")
+        got[font] = {"changed": differ(on, off), "redrawn": differ(on, again), "ink": round(ink(on) / max(ink(off), 1), 3)}
+    say(".reset hud")
+    say(".reset clickgui")
+    ok = (all(got[f]["changed"] > 300 and got[f]["redrawn"] <= 20 and 0.85 <= got[f]["ink"] <= 1.15 for f in ("Sora", "Inter"))
+          and got["Minecraft"]["changed"] <= 20)
+    return ok, f"pixels changed by the switch, on a redraw, and bright pixels on/off: {got}"
+
+
 @test("ClickGUI Theme (OLED and Grey)")
 def _():
     # Each Theme (Grey at the old Background opacity 0.95): screenshots theme_<what>_<theme>.png of the panels with
